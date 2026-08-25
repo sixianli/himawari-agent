@@ -57,8 +57,22 @@ export interface ModelDescriptor {
   readonly provider: string;
   readonly model: string;
   readonly version: string;
+  readonly routingClass: ModelRoutingClass;
+  readonly priority: number;
+  readonly disclosure: ModelDisclosure;
   readonly capabilities: readonly string[];
   readonly allowedDataClassifications: readonly DataClassification[];
+  readonly secretRequirement: ModelSecretRequirement | null;
+}
+
+export type ModelRoutingClass = "primary" | "specialist" | "local" | "fallback";
+
+export type ModelDisclosure = "local_only" | "trusted_remote" | "external_remote";
+
+export interface ModelSecretRequirement {
+  readonly secretRef: string;
+  readonly secretVersion: string;
+  readonly purpose: string;
 }
 
 export interface ModelInvocationRequest {
@@ -68,6 +82,7 @@ export interface ModelInvocationRequest {
   readonly inputRef: PayloadRef;
   readonly dataClassification: DataClassification;
   readonly allowedDisclosureRef: string;
+  readonly secretHandleRefs: readonly string[];
   readonly correlationId: CorrelationId;
 }
 
@@ -90,6 +105,7 @@ export type ModelInvocationEvent =
       readonly inputTokens: number;
       readonly outputTokens: number;
       readonly costMicros: number;
+      readonly latencyMs: number;
       readonly occurredAt: string;
     }
   | {
@@ -97,6 +113,7 @@ export type ModelInvocationEvent =
       readonly invocationId: string;
       readonly errorCode: string;
       readonly retryable: boolean;
+      readonly latencyMs: number;
       readonly occurredAt: string;
     };
 

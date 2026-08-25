@@ -684,8 +684,12 @@ export function modelPortConformance(
         provider: "deterministic",
         model: "fixture-model",
         version: "1.0.0",
+        routingClass: "primary",
+        priority: 10,
+        disclosure: "trusted_remote",
         capabilities: ["text"],
         allowedDataClassifications: ["public", "private"],
+        secretRequirement: null,
       };
       const events: readonly ModelInvocationEvent[] = [
         { type: "model.started", invocationId: "model-call-01", occurredAt: T0 },
@@ -695,6 +699,7 @@ export function modelPortConformance(
           inputTokens: 10,
           outputTokens: 5,
           costMicros: 0,
+          latencyMs: 1000,
           occurredAt: T1,
         },
       ];
@@ -709,6 +714,7 @@ export function modelPortConformance(
               inputRef: "payload-model-input-01",
               dataClassification: "private",
               allowedDisclosureRef: "disclosure-01",
+              secretHandleRefs: [],
               correlationId: "correlation-01",
             }),
           ),

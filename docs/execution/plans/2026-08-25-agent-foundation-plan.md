@@ -261,12 +261,22 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 10: Implement Model Router and secret-mediated provider access
 
-- [ ] Write routing tests for primary, specialist, local and fallback candidates.
-- [ ] Write tests proving a fallback cannot lower privacy or expand disclosure silently.
-- [ ] Implement data-classification and route-decision records before provider execution.
-- [ ] Implement secret handles that resolve only inside trusted provider adapters.
-- [ ] Ensure provider failures, retries, token usage, cost and latency become product Trace events.
-- [ ] Use deterministic faux providers for all automated tests; do not require paid API calls.
+- [x] Write routing tests for primary, specialist, local and fallback candidates.
+- [x] Write tests proving a fallback cannot lower privacy or expand disclosure silently.
+- [x] Implement data-classification and route-decision records before provider execution.
+- [x] Implement secret handles that resolve only inside trusted provider adapters.
+- [x] Ensure provider failures, retries, token usage, cost and latency become product Trace events.
+- [x] Use deterministic faux providers for all automated tests; do not require paid API calls.
+
+#### Task 10 evidence — 2026-08-25
+
+- Failure-first baseline: all 6 new integration cases failed at the missing `ModelRouterService` and `TrustedModelProviderAdapter` boundaries.
+- Model descriptors now freeze routing class, deterministic priority, disclosure boundary, capabilities, allowed data classifications and an optional secret reference/version/purpose. `ModelRouterService` first evaluates and records all candidate allow/deny reasons, then fixes provider, model, version and disclosure before issuing any Provider request.
+- Primary, specialist and local profiles select only their approved class, with priority and stable model reference as deterministic tie-breakers. A retryable primary failure can select only a separately declared fallback that still satisfies capability, classification and request disclosure constraints.
+- Fallback evaluation additionally compares the failed route's disclosure against the candidate. When policy forbids disclosure expansion, a trusted-remote failure cannot silently fall back to an external-remote model even if the request's broad ceiling would otherwise permit it; the Run ends with `MODEL_FALLBACK_DISCLOSURE_BLOCKED` and no second Provider invocation.
+- Each invocation emits linked `model.route_decided`, `model.request`, Provider lifecycle, failure/retry and terminal Trace events. Protected payloads retain model identity, data classification, disclosure policy reference, output references, stable error/retry fields, token counts, cost and latency without embedding model input or output bodies.
+- `TrustedModelProviderAdapter` validates a Run- and invocation-scoped opaque Secret Handle against the descriptor's exact reference, version, purpose, expiry and revocation state. Only this trusted `platform-node` boundary resolves the raw value into transport memory; its resolution log remains reference-only, and the Router revokes the handle after settlement.
+- All tests use scripted providers, an in-memory handle store and deterministic transport; no network, account, paid model or production credential was used. `npm run check` passed all engineering checks, and `npm run test` passed 87 unit, 59 contract and 42 integration tests including the focused 6-case Task 10 suite.
 
 ### Task 11: Implement the Pi Agent Runtime adapter
 

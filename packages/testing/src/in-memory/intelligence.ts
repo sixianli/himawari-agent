@@ -137,13 +137,17 @@ export class InMemoryMemoryPort implements MemoryPort {
 export class ScriptedModelPort implements ModelPort {
   private readonly descriptors: readonly ModelDescriptor[];
   private readonly events: readonly ModelInvocationEvent[];
+  private readonly eventsByModel: Readonly<Record<string, readonly ModelInvocationEvent[]>>;
+  private readonly requests: ModelInvocationRequest[] = [];
 
   constructor(
     descriptors: readonly ModelDescriptor[] = [],
     events: readonly ModelInvocationEvent[] = [],
+    eventsByModel: Readonly<Record<string, readonly ModelInvocationEvent[]>> = {},
   ) {
     this.descriptors = frozenCopy([...descriptors]);
     this.events = frozenCopy([...events]);
+    this.eventsByModel = frozenCopy(eventsByModel);
   }
 
   async listAvailable(): Promise<readonly ModelDescriptor[]> {
@@ -158,7 +162,15 @@ export class ScriptedModelPort implements ModelPort {
         { modelRef: request.modelRef },
       );
     }
-    for (const event of this.events) yield frozenCopy(event);
+    this.requests.push(frozenCopy(request));
+    const events = this.eventsByModel[request.modelRef] ?? this.events;
+    for (const event of events) {
+      yield frozenCopy({ ...event, invocationId: request.invocationId });
+    }
+  }
+
+  observedRequests(): readonly ModelInvocationRequest[] {
+    return this.requests.map(frozenCopy);
   }
 }
 
