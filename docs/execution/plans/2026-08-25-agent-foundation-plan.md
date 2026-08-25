@@ -372,12 +372,21 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 16: Implement Agent Gateway application service
 
-- [ ] Write tests for authentication-context propagation, command admission, idempotency and authorization failures.
-- [ ] Implement in-process Gateway transport first against the stable contracts.
-- [ ] Implement snapshot query and resumable ordered event subscription semantics.
-- [ ] Keep transport authentication as an adapter responsibility while enforcing product owner/device authorization in the application layer.
-- [ ] Verify all state mutations pass through Control Plane use cases.
-- [ ] Verify no Gateway contract exposes Pi or infrastructure-specific types.
+- [x] Write tests for authentication-context propagation, command admission, idempotency and authorization failures.
+- [x] Implement in-process Gateway transport first against the stable contracts.
+- [x] Implement snapshot query and resumable ordered event subscription semantics.
+- [x] Keep transport authentication as an adapter responsibility while enforcing product owner/device authorization in the application layer.
+- [x] Verify all state mutations pass through Control Plane use cases.
+- [x] Verify no Gateway contract exposes Pi or infrastructure-specific types.
+
+#### Task 16 evidence — 2026-08-25
+
+- Failure-first baseline: all 3 new Gateway integration cases failed because `AgentGatewayService` did not exist.
+- `AgentGatewayService` accepts only the existing `gateway.v1` command, query and subscription types. It compares authenticated Owner/actor scope, delegates device authorization to `GatewayAccessPolicyPort`, rejects failures before dispatch and never receives transport credentials.
+- Every mutation crosses only `GatewayControlPlanePort.execute()` with the verified authentication context and original idempotent command. The service has no state-mutation dependency; duplicate behavior remains a Control Plane responsibility and the focused test returns the original result reference on replay.
+- Thread/Run snapshot and Trace query calls cross the read-only `GatewayReadModelPort`. Resumable subscriptions preserve `afterCursor`, reject out-of-scope events, duplicate cursors and non-increasing Run-local sequence values.
+- `InProcessGatewayTransport` authenticates adapter-specific credentials, strictly parses the stable Gateway contract and propagates only `GatewayAuthenticationContext`. It refuses response-only and malformed inputs before application dispatch.
+- Existing Gateway fixtures still prove that wire types contain neither Pi nor infrastructure-specific types or raw-secret fields. `npm run check` passed all engineering checks; `npm run test:contracts` passed 69 tests and the focused Task 16 integration suite passed 3 tests.
 
 ### Task 17: Build the local composition root
 
