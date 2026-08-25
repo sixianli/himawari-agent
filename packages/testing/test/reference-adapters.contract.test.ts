@@ -13,6 +13,7 @@ import {
   authorizationStorePortConformance,
   authorityLeasePortConformance,
   capabilityPortConformance,
+  capabilityRegistryStorePortConformance,
   clockPortConformance,
   idGeneratorPortConformance,
   memoryPortConformance,
@@ -67,6 +68,9 @@ agentRuntimePortConformance({
 });
 capabilityPortConformance({
   create: (capability) => createReferenceAdapterSet({ capability }).capability,
+});
+capabilityRegistryStorePortConformance({
+  create: () => createReferenceAdapterSet().capabilityRegistry,
 });
 secretPortConformance({ create: () => createReferenceAdapterSet().secret });
 schedulerPortConformance({ create: () => createReferenceAdapterSet().scheduler });

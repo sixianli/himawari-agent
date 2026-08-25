@@ -36,6 +36,7 @@ import {
   InMemoryAuditLedger,
   InMemoryAuthorizationStore,
   InMemoryAuthorityLeasePort,
+  InMemoryCapabilityRegistryStore,
   InMemoryMemoryPort,
   InMemoryPayloadStore,
   InMemoryProductStateRepository,
@@ -81,6 +82,7 @@ export interface ReferenceAdapterSet {
   readonly model: ModelPort;
   readonly runtime: AgentRuntimePort;
   readonly capability: CapabilityPort;
+  readonly capabilityRegistry: InMemoryCapabilityRegistryStore;
   readonly secret: SecretPort;
   readonly scheduler: SchedulerPort;
   readonly attention: AttentionPort;
@@ -104,6 +106,7 @@ export function createReferenceAdapterSet(
   const authority = new InMemoryAuthorityLeasePort(clock, failures);
   const productState = new InMemoryProductStateRepository(authority, failures);
   const payloadProtector = new DeterministicPayloadProtector();
+  const capabilityRegistry = new InMemoryCapabilityRegistryStore(failures);
 
   return Object.freeze({
     state: productState,
@@ -123,6 +126,7 @@ export function createReferenceAdapterSet(
       options.capability?.descriptors,
       options.capability?.events,
     ),
+    capabilityRegistry,
     secret: new InMemorySecretPort(ids, failures),
     scheduler: new InMemoryScheduler(failures),
     attention: new ScriptedAttentionPort(attentionDecision),

@@ -1,8 +1,12 @@
 import type {
   CapabilityDescriptor,
+  CapabilityExecutionHandle,
+  CapabilityExecutionHandleStorePort,
   CapabilityInvocationEvent,
   CapabilityInvocationRequest,
   CapabilityPort,
+  CapabilityRegistryRecord,
+  CapabilityRegistryStorePort,
   IdGeneratorPort,
   SecretHandle,
   SecretHandleRequest,
@@ -38,6 +42,187 @@ export class ScriptedCapabilityPort implements CapabilityPort {
       );
     }
     for (const event of this.events) yield frozenCopy(event);
+  }
+
+  async cancel(_invocationId: string, _reasonCode: string): Promise<void> {}
+}
+
+export class InMemoryCapabilityRegistryStore
+  implements CapabilityRegistryStorePort, CapabilityExecutionHandleStorePort
+{
+  private readonly records = new Map<string, CapabilityRegistryRecord>();
+  private readonly handles = new Map<string, CapabilityExecutionHandle>();
+  private readonly failures: FailureScheduler;
+
+  constructor(failures: FailureScheduler = NO_FAILURES) {
+    this.failures = failures;
+  }
+
+  async create(record: CapabilityRegistryRecord): Promise<CapabilityRegistryRecord> {
+    this.failures.checkpoint("capabilityRegistry.create");
+    if (this.records.has(record.ref)) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.DUPLICATE,
+        `Capability ${record.ref} already exists`,
+        { capabilityRef: record.ref },
+      );
+    }
+    this.records.set(record.ref, frozenCopy(record));
+    return frozenCopy(record);
+  }
+
+  async get(capabilityRef: string): Promise<CapabilityRegistryRecord | undefined> {
+    const record = this.records.get(capabilityRef);
+    return record ? frozenCopy(record) : undefined;
+  }
+
+  async list(): Promise<readonly CapabilityRegistryRecord[]> {
+    return [...this.records.values()].map(frozenCopy);
+  }
+
+  async save(
+    record: CapabilityRegistryRecord,
+    expectedRevision: number,
+  ): Promise<CapabilityRegistryRecord> {
+    this.failures.checkpoint("capabilityRegistry.save");
+    const current = this.records.get(record.ref);
+    if (!current) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_FOUND,
+        `Capability ${record.ref} not found`,
+        { capabilityRef: record.ref },
+      );
+    }
+    if (current.revision !== expectedRevision || record.revision !== expectedRevision + 1) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        `Capability ${record.ref} has a stale revision`,
+        { capabilityRef: record.ref },
+      );
+    }
+    this.records.set(record.ref, frozenCopy(record));
+    return frozenCopy(record);
+  }
+
+  async createExecutionHandle(
+    handle: CapabilityExecutionHandle,
+  ): Promise<CapabilityExecutionHandle> {
+    this.failures.checkpoint("capabilityHandle.create");
+    if (this.handles.has(handle.ref)) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.DUPLICATE,
+        `Capability handle ${handle.ref} already exists`,
+        { handleRef: handle.ref },
+      );
+    }
+    this.handles.set(handle.ref, frozenCopy(handle));
+    return frozenCopy(handle);
+  }
+
+  async getExecutionHandle(handleRef: string): Promise<CapabilityExecutionHandle | undefined> {
+    const handle = this.handles.get(handleRef);
+    return handle ? frozenCopy(handle) : undefined;
+  }
+
+  async revokeExecutionHandle(
+    handleRef: string,
+    revokedAt: string,
+  ): Promise<CapabilityExecutionHandle> {
+    this.failures.checkpoint("capabilityHandle.revoke");
+    const current = this.handles.get(handleRef);
+    if (!current) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_FOUND,
+        `Capability handle ${handleRef} not found`,
+        { handleRef },
+      );
+    }
+    if (current.revokedAt !== null) return frozenCopy(current);
+    const revoked = frozenCopy({ ...current, revokedAt });
+    this.handles.set(handleRef, revoked);
+    return frozenCopy(revoked);
+  }
+}
+
+export class DeterministicRestaurantCapabilityPort implements CapabilityPort {
+  private readonly invocations: CapabilityInvocationRequest[] = [];
+  private readonly cancellations = new Map<string, string>();
+  private readonly startedAt: string;
+  private readonly completedAt: string;
+
+  constructor(startedAt: string, completedAt: string) {
+    this.startedAt = startedAt;
+    this.completedAt = completedAt;
+  }
+
+  async list(): Promise<readonly CapabilityDescriptor[]> {
+    return [
+      {
+        ref: "restaurant-search",
+        version: "1.0.0",
+        integrity: `sha256:${"a".repeat(64)}`,
+        lifecycle: "active",
+        permissionRefs: ["network:maps.test", "secret:map-provider"],
+        isolation: "worker",
+      },
+      {
+        ref: "restaurant-reservation",
+        version: "1.0.0",
+        integrity: `sha256:${"a".repeat(64)}`,
+        lifecycle: "active",
+        permissionRefs: ["network:booking.test", "secret:booking-provider"],
+        isolation: "worker",
+      },
+    ];
+  }
+
+  async *invoke(request: CapabilityInvocationRequest): AsyncIterable<CapabilityInvocationEvent> {
+    this.invocations.push(frozenCopy(request));
+    const reasonCode = this.cancellations.get(request.invocationId);
+    if (reasonCode) {
+      yield {
+        type: "capability.cancelled",
+        invocationId: request.invocationId,
+        reasonCode,
+        occurredAt: this.startedAt,
+      };
+      return;
+    }
+    const valid =
+      (request.capabilityRef === "restaurant-search" && request.operation === "search") ||
+      (request.capabilityRef === "restaurant-reservation" && request.operation === "reserve");
+    if (!valid) {
+      yield {
+        type: "capability.failed",
+        invocationId: request.invocationId,
+        errorCode: "CAPABILITY_OPERATION_UNSUPPORTED",
+        occurredAt: this.startedAt,
+      };
+      return;
+    }
+    yield {
+      type: "capability.progress",
+      invocationId: request.invocationId,
+      sequence: 1,
+      stage: "deterministic_provider_call",
+      progressPermille: 500,
+      payloadRef: null,
+      occurredAt: this.startedAt,
+    };
+    yield {
+      type: "capability.completed",
+      invocationId: request.invocationId,
+      resultRef: `${request.capabilityRef}-result:${request.invocationId}`,
+      occurredAt: this.completedAt,
+    };
+  }
+
+  async cancel(invocationId: string, reasonCode: string): Promise<void> {
+    this.cancellations.set(invocationId, reasonCode);
+  }
+
+  observedInvocations(): readonly CapabilityInvocationRequest[] {
+    return this.invocations.map(frozenCopy);
   }
 }
 

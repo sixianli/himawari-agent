@@ -7,8 +7,10 @@ import type {
   AuthorizationStorePort,
   AuthorityLeasePort,
   CapabilityDescriptor,
+  CapabilityExecutionHandleStorePort,
   CapabilityInvocationEvent,
   CapabilityPort,
+  CapabilityRegistryStorePort,
   ClockPort,
   IdGeneratorPort,
   JsonObject,
@@ -742,12 +744,81 @@ export function capabilityPortConformance(
             capabilityHandleRef: "capability-handle-01",
             operation: "search",
             inputRef: "payload-capability-input-01",
+            delegatedContextRefs: ["payload-capability-context-01"],
             secretHandleRefs: ["secret-handle-01"],
             dataClassification: "private",
           }),
         );
         expect(observed).toEqual(events);
         expect(JSON.stringify(observed)).not.toContain("secretValue");
+        await expect(port.cancel("capability-call-01", "owner_requested")).resolves.toBeUndefined();
+        await expect(port.cancel("capability-call-01", "owner_requested")).resolves.toBeUndefined();
+      });
+    });
+  });
+}
+
+export function capabilityRegistryStorePortConformance(
+  harness: PortConformanceHarness<CapabilityRegistryStorePort & CapabilityExecutionHandleStorePort>,
+): void {
+  describe("CapabilityRegistryStorePort conformance", () => {
+    const declaration = {
+      ref: "restaurant-search",
+      displayName: "Restaurant Search",
+      version: "1.0.0",
+      source: { type: "builtin" as const, locator: "builtin:restaurant-search" },
+      integrity: `sha256:${"a".repeat(64)}`,
+      operations: ["search"],
+      permissionRefs: ["network:maps.test"],
+      isolation: "worker" as const,
+    };
+    const record = {
+      ref: declaration.ref,
+      revision: 1,
+      lifecycle: "discovered" as const,
+      declaration,
+      pendingDeclaration: null,
+      permissionExpansion: false,
+      approvalRefs: [],
+      discoveredAt: T0,
+      updatedAt: T0,
+    };
+
+    it("persists revision-checked lifecycle records", async () => {
+      await withPort(harness, async (port) => {
+        expect(await port.create(record)).toEqual(record);
+        const proposed = { ...record, revision: 2, lifecycle: "installation_proposed" as const };
+        expect(await port.save(proposed, 1)).toEqual(proposed);
+        await expectPortError(
+          () => port.save({ ...proposed, revision: 3 }, 1),
+          PORT_ERROR_CODES.CONFLICT,
+        );
+      });
+    });
+
+    it("keeps short-lived handles separate and makes revocation observable", async () => {
+      await withPort(harness, async (port) => {
+        await port.create(record);
+        const handle = {
+          ref: "capability-handle-conformance-01",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          capabilityRef: declaration.ref,
+          capabilityVersion: declaration.version,
+          authorization: { type: "grant" as const, ref: "grant-conformance-01" },
+          operations: ["search"],
+          inputRefs: ["payload-input-01"],
+          delegatedContextRefs: ["payload-context-01"],
+          secretRefs: [],
+          maxDataClassification: "private" as const,
+          issuedAt: T0,
+          expiresAt: T2,
+          revokedAt: null,
+        };
+        await port.createExecutionHandle(handle);
+        expect(await port.getExecutionHandle(handle.ref)).toEqual(handle);
+        expect(await port.revokeExecutionHandle(handle.ref, T1)).toMatchObject({ revokedAt: T1 });
       });
     });
   });

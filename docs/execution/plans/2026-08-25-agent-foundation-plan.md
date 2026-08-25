@@ -222,12 +222,22 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 8: Implement Capability Registry and execution isolation contracts
 
-- [ ] Write lifecycle tests for discovery, proposed installation, approval, activation, update, permission expansion, disable and uninstall.
-- [ ] Write integrity and version-pinning tests for executable capabilities.
-- [ ] Implement capability declarations separately from grants and short-lived execution handles.
-- [ ] Implement the execution-worker boundary with cancellation, timeout, progress and result events.
-- [ ] Provide deterministic test capabilities for restaurant search and reservation.
-- [ ] Verify a worker cannot access undelegated context, capabilities or secret references.
+- [x] Write lifecycle tests for discovery, proposed installation, approval, activation, update, permission expansion, disable and uninstall.
+- [x] Write integrity and version-pinning tests for executable capabilities.
+- [x] Implement capability declarations separately from grants and short-lived execution handles.
+- [x] Implement the execution-worker boundary with cancellation, timeout, progress and result events.
+- [x] Provide deterministic test capabilities for restaurant search and reservation.
+- [x] Verify a worker cannot access undelegated context, capabilities or secret references.
+
+#### Task 8 evidence — 2026-08-25
+
+- Failure-first baseline: all 11 new integration cases failed because the Capability Registry, Registry Store, execution Handle and Worker service did not exist.
+- `CapabilityRegistryService` now requires exact semantic versions, `sha256:<64 lowercase hex>` integrity, a fixed source locator, at least one operation and non-duplicated permission declarations. Lifecycle tests cover discovery, install proposal, approval, activation, update proposal, permission expansion detection, update approval, reactivation, disable and uninstall.
+- Updates pin an exact new version and a verified integrity value. Installation and every update require an explicit approval reference before activation; a permission-expanding update remains `update_proposed` and cannot activate directly.
+- Capability declarations, Permission/Grant decisions and `CapabilityExecutionHandle` values are separate types and stores. A Handle contains only one Run's allowed operation, input refs, delegated context refs, declared secret refs, maximum classification, authorization reference and expiry; active version changes, disable, revoke or expiry invalidate it.
+- `ExecutionWorkerService` accepts existing `execution.v1` execute/cancel messages, rechecks Owner/Agent/Run, capability/version/operation, input, delegated context, secret reference and classification against the Handle, issues only scoped secret handles, revokes them after settlement, and maps progress, success, failure, unknown result, cancellation and timeout to schema-valid Worker events.
+- Deterministic restaurant-search and restaurant-reservation capabilities emit one progress event and a reference-only result. Tests prove cancellation and pre-execution deadline expiry do not invoke them, and undelegated capability, context or secret requests fail with `PORT_NOT_AUTHORITATIVE` before invocation.
+- `npm run check` passed all engineering checks. `npm run test:contracts` passed 58 tests, including 2 new Registry/Handle conformance cases; the focused Task 8 suite passed 11 integration tests without external network or account access.
 
 ### Task 9: Implement Memory Port and context formation
 
