@@ -1042,36 +1042,79 @@ export function schedulerPortConformance(harness: PortConformanceHarness<Schedul
           id: "job-02",
           ownerId: OWNER_ID,
           agentId: AGENT_ID,
-          triggerRef: "trigger-schedule-02",
-          idempotencyKey: createIdempotencyKey("schedule-job-02"),
+          threadId: THREAD_ID,
+          payloadRef: "payload-schedule-02",
+          sourceProofRef: "proof-schedule-02",
+          dataClassification: "private" as const,
+          authorizationRef: "grant-schedule-02",
+          taskScopeRef: "scope-schedule-02",
+          capabilityRef: "restaurant-monitor",
+          operation: "scan",
+          resourceRef: "restaurant:beef",
+          sideEffect: "none" as const,
+          estimatedCostMicros: 100,
+          intervalMs: 60_000,
+          minimumIntervalMs: 30_000,
+          expiresAt: "2026-08-26T00:00:00.000Z",
+          revokedAt: null,
           nextRunAt: T2,
+          occurrence: 0,
           status: "active" as const,
         };
         const earlier = {
           ...later,
           id: "job-01",
-          triggerRef: "trigger-schedule-01",
-          idempotencyKey: createIdempotencyKey("schedule-job-01"),
+          payloadRef: "payload-schedule-01",
+          sourceProofRef: "proof-schedule-01",
+          authorizationRef: "grant-schedule-01",
+          taskScopeRef: "scope-schedule-01",
+          capabilityRef: "restaurant-monitor",
+          operation: "scan",
+          resourceRef: "restaurant:beef",
+          sideEffect: "none" as const,
+          estimatedCostMicros: 100,
           nextRunAt: T1,
         };
-        await port.upsert(later);
-        await port.upsert(earlier);
+        expect(await port.upsert(later, null)).toMatchObject({ revision: 1 });
+        expect(await port.upsert(earlier, null)).toMatchObject({ revision: 1 });
         expect((await port.listDue(T2, 10)).map(({ id }) => id)).toEqual(["job-01", "job-02"]);
+        await expectPortError(
+          () => port.upsert({ ...earlier, occurrence: 1 }, null),
+          PORT_ERROR_CODES.CONFLICT,
+        );
       });
     });
 
     it("excludes cancelled jobs from due work", async () => {
       await withPort(harness, async (port) => {
-        await port.upsert({
-          id: "job-01",
-          ownerId: OWNER_ID,
-          agentId: AGENT_ID,
-          triggerRef: "trigger-schedule-01",
-          idempotencyKey: createIdempotencyKey("schedule-job-01"),
-          nextRunAt: T1,
-          status: "active",
-        });
-        await port.cancel("job-01");
+        const created = await port.upsert(
+          {
+            id: "job-01",
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            threadId: null,
+            payloadRef: "payload-schedule-01",
+            sourceProofRef: "proof-schedule-01",
+            dataClassification: "private",
+            authorizationRef: "grant-schedule-01",
+            taskScopeRef: "scope-schedule-01",
+            capabilityRef: "restaurant-monitor",
+            operation: "scan",
+            resourceRef: "restaurant:beef",
+            sideEffect: "none",
+            estimatedCostMicros: 100,
+            intervalMs: 60_000,
+            minimumIntervalMs: 60_000,
+            expiresAt: "2026-08-26T00:00:00.000Z",
+            revokedAt: null,
+            nextRunAt: T1,
+            occurrence: 0,
+            status: "active",
+          },
+          null,
+        );
+        expect(await port.read("job-01")).toEqual(created);
+        await port.cancel("job-01", created.revision);
         expect(await port.listDue(T2, 10)).toEqual([]);
       });
     });

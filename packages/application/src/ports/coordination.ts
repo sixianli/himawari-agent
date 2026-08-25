@@ -2,10 +2,11 @@ import type {
   AgentAuthorityLease,
   AgentId,
   AuthorityLeaseId,
-  IdempotencyKey,
   OwnerId,
   RunId,
+  ThreadId,
 } from "@himawari-agent/domain";
+import type { AdmitTriggerCommand } from "@himawari-agent/gateway-contracts";
 import type { DataClassification, PayloadRef } from "./common.js";
 
 export interface WorkerRunBudget {
@@ -71,18 +72,45 @@ export interface WorkerRunPort {
 
 export interface ScheduledJob {
   readonly id: string;
+  readonly revision: number;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
-  readonly triggerRef: string;
-  readonly idempotencyKey: IdempotencyKey;
+  readonly threadId: ThreadId | null;
+  readonly payloadRef: PayloadRef;
+  readonly sourceProofRef: string;
+  readonly dataClassification: DataClassification;
+  readonly authorizationRef: string;
+  readonly taskScopeRef: string;
+  readonly capabilityRef: string;
+  readonly operation: string;
+  readonly resourceRef: string;
+  readonly sideEffect: "none" | "reversible" | "irreversible";
+  readonly estimatedCostMicros: number;
+  readonly intervalMs: number;
+  readonly minimumIntervalMs: number;
+  readonly expiresAt: string;
+  readonly revokedAt: string | null;
   readonly nextRunAt: string;
+  readonly occurrence: number;
   readonly status: "active" | "cancelled";
 }
 
+export type ScheduledJobWrite = Omit<ScheduledJob, "revision">;
+
 export interface SchedulerPort {
-  upsert(job: ScheduledJob): Promise<ScheduledJob>;
+  read(jobId: string): Promise<ScheduledJob | undefined>;
+  upsert(job: ScheduledJobWrite, expectedRevision: number | null): Promise<ScheduledJob>;
   listDue(at: string, limit: number): Promise<readonly ScheduledJob[]>;
-  cancel(jobId: string): Promise<ScheduledJob>;
+  cancel(jobId: string, expectedRevision: number): Promise<ScheduledJob>;
+}
+
+export interface TriggerAdmissionResult {
+  readonly resultRef: string;
+  readonly replayed: boolean;
+}
+
+export interface TriggerAdmissionPort {
+  admit(command: AdmitTriggerCommand): Promise<TriggerAdmissionResult>;
 }
 
 export interface AttentionCandidate {

@@ -337,11 +337,20 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 14: Implement Scheduler and unified trigger ingestion
 
-- [ ] Write contract tests proving user, timer and external-event triggers normalize to the same trigger envelope.
-- [ ] Implement scheduled jobs with stable idempotency keys and authority-lease checks.
-- [ ] Implement long-term task scope, frequency, expiration and revocation checks before each run.
-- [ ] Test duplicate timer delivery and clock jumps.
-- [ ] Verify scheduling does not bypass context formation, Permission or Trace.
+- [x] Write contract tests proving user, timer and external-event triggers normalize to the same trigger envelope.
+- [x] Implement scheduled jobs with stable idempotency keys and authority-lease checks.
+- [x] Implement long-term task scope, frequency, expiration and revocation checks before each run.
+- [x] Test duplicate timer delivery and clock jumps.
+- [x] Verify scheduling does not bypass context formation, Permission or Trace.
+
+#### Task 14 evidence — 2026-08-25
+
+- `UnifiedTriggerIngestionService` normalizes user messages, scheduled timers and external events into the existing strict `gateway.v1 trigger.admit` command and delegates to one `TriggerAdmissionPort`. Three contract cases prove the sources share the same envelope fields, schema validation and downstream admission boundary.
+- Scheduled jobs now persist revision, Owner/Agent/Thread scope, Payload and source-proof references, task semantic scope, long-term authorization reference, interval/minimum interval, expiry, revocation marker, next occurrence and status. `InMemoryScheduler` enforces revision-checked create, advance and cancellation.
+- `SchedulerService` requires the current Agent Authority Lease ID and fencing token before each due job. It also rereads the current long-term Grant and checks kind, ownership, validity, revocation, capability, operation, resource prefix, data classification, side effect, per-use/total cost, remaining uses, frequency and schedule expiry before admission; failures disable the task without producing a Trigger.
+- Every occurrence derives stable message, correlation, Trigger and command idempotency references from job ID plus occurrence. Concurrent timer delivery reaches the unified admission boundary twice with the same key, creates one downstream result, and advances the schedule once through CAS.
+- A forward clock jump emits one due Trigger and advances directly to the first future occurrence instead of replaying a burst of missed intervals. The scheduled occurrence time remains the Trigger `occurredAt`, preserving source chronology.
+- The eight integration cases verify unified downstream context/Permission/Trace routing, stable timer deduplication, clock-jump coalescing, local and current-Grant expiry/revocation/frequency/scope checks, and stale Authority Fence rejection. `npm run check`, 64 contract tests and 57 integration tests passed before commit.
 
 ### Task 15: Implement centralized Attention Policy
 

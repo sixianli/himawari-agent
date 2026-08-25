@@ -6,6 +6,7 @@ import type {
   AuthorityLeaseRecord,
   ClockPort,
   ScheduledJob,
+  ScheduledJobWrite,
   SchedulerPort,
   WorkerRunEvent,
   WorkerRunPort,
@@ -78,9 +79,27 @@ export class InMemoryScheduler implements SchedulerPort {
     this.failures = failures;
   }
 
-  async upsert(job: ScheduledJob): Promise<ScheduledJob> {
+  async read(jobId: string): Promise<ScheduledJob | undefined> {
+    const job = this.jobs.get(jobId);
+    return job ? frozenCopy(job) : undefined;
+  }
+
+  async upsert(job: ScheduledJobWrite, expectedRevision: number | null): Promise<ScheduledJob> {
     this.failures.checkpoint("scheduler.upsert");
-    const stored = frozenCopy(job);
+    const current = this.jobs.get(job.id);
+    const currentRevision = current?.revision ?? null;
+    if (currentRevision !== expectedRevision) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        `Scheduled job ${job.id} revision conflict`,
+        {
+          jobId: job.id,
+          expectedRevision: String(expectedRevision),
+          currentRevision: String(currentRevision),
+        },
+      );
+    }
+    const stored = frozenCopy({ ...job, revision: (current?.revision ?? 0) + 1 });
     this.jobs.set(job.id, stored);
     return frozenCopy(stored);
   }
@@ -96,7 +115,7 @@ export class InMemoryScheduler implements SchedulerPort {
       .map(frozenCopy);
   }
 
-  async cancel(jobId: string): Promise<ScheduledJob> {
+  async cancel(jobId: string, expectedRevision: number): Promise<ScheduledJob> {
     this.failures.checkpoint("scheduler.cancel");
     const current = this.jobs.get(jobId);
     if (!current) {
@@ -104,7 +123,23 @@ export class InMemoryScheduler implements SchedulerPort {
         jobId,
       });
     }
-    const cancelled = frozenCopy({ ...current, status: "cancelled" as const });
+    if (current.revision !== expectedRevision) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        `Scheduled job ${jobId} revision conflict`,
+        {
+          jobId,
+          expectedRevision: String(expectedRevision),
+          currentRevision: String(current.revision),
+        },
+      );
+    }
+    if (current.status === "cancelled") return frozenCopy(current);
+    const cancelled = frozenCopy({
+      ...current,
+      revision: current.revision + 1,
+      status: "cancelled" as const,
+    });
     this.jobs.set(jobId, cancelled);
     return frozenCopy(cancelled);
   }

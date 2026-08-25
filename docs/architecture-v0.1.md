@@ -12,9 +12,9 @@ date: "2026-08-25"
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e 和 Pi compatibility 五个测试项目。
 
-当前代码包含九个 workspace 的公共入口、`packages/domain` 中已实现的不可变身份、所有权工厂、Run 状态机、Agent 权威租约规则和稳定领域错误，`packages/gateway-contracts` 与 `packages/execution-contracts` 中首版严格 wire schema，`packages/application` 的产品端口、Run 状态提交、可靠事件发布、Session Trace、删除传播、Permission/Grant、Capability Registry、Worker 边界、Context Formation、Model Router 和 Run Coordinator 应用服务，`packages/platform-node` 的可信模型 Provider 边界，`packages/runtime-pi` 的 Pi Agent Runtime 适配器，以及 `packages/testing` 的确定性内存参考适配器。当前仍是架构语义验证切片；尚无生产 Memory/持久化、生产加密/沙箱/远程 Worker、真实模型传输、Scheduler、集中 Attention Policy、网络监听器或可启动服务。
+当前代码包含九个 workspace 的公共入口、`packages/domain` 中已实现的不可变身份、所有权工厂、Run 状态机、Agent 权威租约规则和稳定领域错误，`packages/gateway-contracts` 与 `packages/execution-contracts` 中首版严格 wire schema，`packages/application` 的产品端口、Run 状态提交、可靠事件发布、Session Trace、删除传播、Permission/Grant、Capability Registry、Worker 边界、Context Formation、Model Router、Run Coordinator、统一 Trigger 接入和 Scheduler 应用服务，`packages/platform-node` 的可信模型 Provider 边界，`packages/runtime-pi` 的 Pi Agent Runtime 适配器，以及 `packages/testing` 的确定性内存参考适配器。当前仍是架构语义验证切片；尚无生产 Memory/持久化、生产加密/沙箱/远程 Worker、真实模型传输、集中 Attention Policy、网络监听器或可启动服务。
 
-实现范围来自已确认 Spec，并按当前 Plan 的 Task 1 至 Task 13 落地：[SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-1-establish-repository-and-toolchain-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-2-implement-immutable-identities-and-domain-state-machines] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-3-define-versioned-gateway-and-execution-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-4-implement-product-ports-and-adapter-conformance-suites] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-5-implement-product-state-commit-and-reliable-event-semantics] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-6-implement-session-trace-payload-and-audit-separation] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-7-implement-deterministic-permission-and-grant-handling] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-8-implement-capability-registry-and-execution-isolation-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-9-implement-memory-port-and-context-formation] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-10-implement-model-router-and-secret-mediated-provider-access] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-11-implement-the-pi-agent-runtime-adapter] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-12-add-local-pi-source-learning-and-debugging-mode] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-13-implement-run-coordinator-and-worker-delegation]
+实现范围来自已确认 Spec，并按当前 Plan 的 Task 1 至 Task 14 落地：[SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-1-establish-repository-and-toolchain-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-2-implement-immutable-identities-and-domain-state-machines] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-3-define-versioned-gateway-and-execution-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-4-implement-product-ports-and-adapter-conformance-suites] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-5-implement-product-state-commit-and-reliable-event-semantics] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-6-implement-session-trace-payload-and-audit-separation] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-7-implement-deterministic-permission-and-grant-handling] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-8-implement-capability-registry-and-execution-isolation-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-9-implement-memory-port-and-context-formation] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-10-implement-model-router-and-secret-mediated-provider-access] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-11-implement-the-pi-agent-runtime-adapter] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-12-add-local-pi-source-learning-and-debugging-mode] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-13-implement-run-coordinator-and-worker-delegation] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-14-implement-scheduler-and-unified-trigger-ingestion]
 
 ## Boundaries
 
@@ -113,7 +113,7 @@ Clock               IdGenerator
 
 `ReliableEventPublisher` 分批读取 pending 事件，交给 `ReliableEventSinkPort` 后再标记 published。发布前失败保留 pending 事件；Sink 已接收但 published 标记失败时会按同一 event ID 重投，Sink 返回 `duplicate` 而不产生第二次可见交付。新建协调器和发布器只需复用同一 Product State Repository 即可恢复 Run 和 outbox，不读取 Pi Session 文件。
 
-当前保证只由内存参考适配器和可复用 conformance suite 验证，不代表生产跨进程耐久性、加密强度或隔离已经实现。生产 Memory 检索、真实模型 Provider/传输与 Secret material source、Capability 生产沙箱/传输、生产删除适配器、Scheduler、Attention 策略和生产持久化仍属于后续 Plan 任务。
+当前保证只由内存参考适配器和可复用 conformance suite 验证，不代表生产跨进程耐久性、加密强度或隔离已经实现。生产 Memory 检索、真实模型 Provider/传输与 Secret material source、Capability 生产沙箱/传输、生产删除与 Scheduler 适配器、Attention 策略和生产持久化仍属于后续 Plan 任务。
 
 ### Session Trace, protected Payload and deletion propagation
 
@@ -175,6 +175,14 @@ Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请�
 
 协调检查点使用 `run-checkpoint:<RunId>`，在每个可挂起阶段记录形成的 context reference、已完成 Worker result references、Runtime event count、最新 Trace event 和终态。进程重建后由产品 State 恢复，而不是依赖 Pi Session。`RuntimeToolPort` 的参考实现另以稳定 `RunId + toolCallId` 保存外部动作结果，因此“动作已成功、Runtime 尚未发出结果事件”之间崩溃时，重试返回原结果而不再次执行动作。
 
+### Unified trigger ingestion and scheduling
+
+`UnifiedTriggerIngestionService` 把 user message、schedule 和 external event 都转换成严格的 `gateway.v1 trigger.admit` command。三类来源共享 message/correlation/causation、Owner/Agent、actor、数据等级、idempotency key、Trigger/source、时间、Thread、Payload 和 source proof 字段；应用层只有一个 `TriggerAdmissionPort`，因此 Scheduler 不能直接创建 Run 或绕过后续 Context Formation、Permission 与 Trace 管线。
+
+`ScheduledJob` 是 revision-checked 产品值，持有长期 Grant reference 与冻结的任务语义：capability、operation、resource、side effect、数据等级、单次费用、频率、任务 scope reference、期限和 revocation marker。每次 due dispatch 都先验证当前 Agent Authority Fence，再从 Authorization Store 重读 Grant，校验长期类型、Owner/Agent、有效期、撤销、剩余使用/费用预算及完整语义范围。失败会取消该任务而不产生 Trigger。
+
+每个定时 occurrence 以 `job ID + occurrence` 派生稳定 Trigger/admission idempotency references。调度状态在 admission 之后以 CAS 前进；并发节点即使都投递同一 occurrence，下游 admission 仍按相同 key 收敛为一个 Run，只有一个节点能更新 revision。时钟向前跳过多个周期时只投递当前最早 due occurrence，然后把 next time 与 occurrence 直接推进到首个未来槽位，避免恢复后通知风暴。当前 Scheduler 和 admission sink 都是确定性内存测试边界，不是生产 timer 或 Gateway 实现。
+
 本地源码学习模式只改变 `node_modules` 解析状态。只读检查要求 sibling 的 package name、version 和七个 runtime/build entrypoint 与 committed published pin 一致。受管 link 先保留 published package，再创建指向 sibling coding-agent package 的 symlink；恢复时校验 state、link target、manifest/lockfile hash 和 published backup version。它不会写 `file:` 依赖，不会更新 lockfile，也不会让本地路径进入正式安装契约。普通 `npm ci --ignore-scripts` 始终选择 npm 发布物。
 
 ## Main Flows
@@ -190,7 +198,7 @@ npm ci --ignore-scripts
   → selected Vitest project
 ```
 
-unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、全部 Run 状态组合、重复审批等待、终态不可变和单一 Agent 权威租约测试。contracts 项目验证 Gateway/Execution v1 wire schema，并以 61 个测试覆盖产品端口、Product State Repository、Reliable Event Sink、Authorization Store、Capability Registry/Handle Store、Memory、Runtime Tool、Worker Run conformance 和确定性参考适配器。integration 项目包含此前 Task 5 至 Task 10 的 42 个场景、Task 12 的 2 个本地 Pi 链接场景，以及 Task 13 的 5 个 Run Coordinator 场景。Pi compatibility 项目以 6 个测试覆盖 Task 11 adapter mapping、取消、Permission preflight、未知事件、错误脱敏和真实 `0.84.2` faux-provider/custom-tool loop；e2e 仍是显式空基线。
+unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、全部 Run 状态组合、重复审批等待、终态不可变和单一 Agent 权威租约测试。contracts 项目验证 Gateway/Execution v1 wire schema，并以 64 个测试覆盖产品端口、统一 Trigger normalization、Product State Repository、Reliable Event Sink、Authorization Store、Capability Registry/Handle Store、Memory、Runtime Tool、Worker Run conformance 和确定性参考适配器。integration 项目包含此前 Task 5 至 Task 10 的 42 个场景、Task 12 的 2 个本地 Pi 链接场景、Task 13 的 5 个 Run Coordinator 场景，以及 Task 14 的 8 个 Scheduler 场景。Pi compatibility 项目以 6 个测试覆盖 Task 11 adapter mapping、取消、Permission preflight、未知事件、错误脱敏和真实 `0.84.2` faux-provider/custom-tool loop；e2e 仍是显式空基线。
 
 ## Backlog Links
 
