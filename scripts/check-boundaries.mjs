@@ -44,6 +44,7 @@ const allowedInternalDependencies = new Map([
       "@himawari-agent/execution-contracts",
       "@himawari-agent/runtime-pi",
       "@himawari-agent/platform-node",
+      "@himawari-agent/testing",
     ]),
   ],
   [
@@ -52,6 +53,7 @@ const allowedInternalDependencies = new Map([
       "@himawari-agent/application",
       "@himawari-agent/execution-contracts",
       "@himawari-agent/platform-node",
+      "@himawari-agent/testing",
     ]),
   ],
 ]);

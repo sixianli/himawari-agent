@@ -390,12 +390,21 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 17: Build the local composition root
 
-- [ ] Compose trusted components for a foreground local process using reference adapters.
-- [ ] Start the execution-worker boundary separately, even if its first transport is local.
-- [ ] Keep Secret Port replaceable and ensure reference secrets never enter logs or Trace.
-- [ ] Add startup diagnostics that report adapter identity, schema version and readiness without exposing credentials.
-- [ ] Add graceful shutdown and in-flight Run settlement tests.
-- [ ] Verify the same application contracts can be wired to remote adapters without domain changes.
+- [x] Compose trusted components for a foreground local process using reference adapters.
+- [x] Start the execution-worker boundary separately, even if its first transport is local.
+- [x] Keep Secret Port replaceable and ensure reference secrets never enter logs or Trace.
+- [x] Add startup diagnostics that report adapter identity, schema version and readiness without exposing credentials.
+- [x] Add graceful shutdown and in-flight Run settlement tests.
+- [x] Verify the same application contracts can be wired to remote adapters without domain changes.
+
+#### Task 17 evidence — 2026-08-25
+
+- Failure-first baseline: all 4 new local-process unit cases failed because neither composition root nor independently managed Execution Worker process existed.
+- `createLocalAgentServiceComposition()` wires Gateway, Trace, Run state/outbox, context, model routing, Permission, Capability Registry, Attention Policy and Run Coordinator around the reference ports. `SecretPort` remains an explicit replacement input and is used by the composed model service rather than captured from a fixed global.
+- `createLocalExecutionWorkerProcess()` owns `ExecutionWorkerService` behind a strictly parsed `execution.v1` dispatch boundary. The Agent process only accepts a ready structural client and never starts the Worker itself; local in-process and remote HTTP-shaped clients use the same request/event contract.
+- Startup diagnostics contain only component, adapter identity, schema version and readiness. A custom Secret Port test proves it is the injected instance; a protected Trace test preserves `secretRef` but writes `[REDACTED]` instead of the supplied raw value. Neither diagnostic output nor Trace contains the credential.
+- `LocalAgentServiceProcess.shutdown()` first changes to draining, rejects new requests and waits for registered in-flight Run settlements. The focused test holds one Run open, proves shutdown remains pending, then completes the Run and observes a clean stopped state.
+- App manifests and the boundary checker now permit the deployable local composition profile to consume `@himawari-agent/testing` reference adapters without adding reverse dependencies or cycles. `npm run check` passed all engineering checks and all 101 unit tests passed, including the 4 focused Task 17 cases.
 
 ### Task 18: Implement the beef-restaurant end-to-end baseline
 

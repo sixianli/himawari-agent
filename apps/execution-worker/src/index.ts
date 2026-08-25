@@ -1,1 +1,1 @@
-export {};
+export * from "./local-execution-worker.js";
