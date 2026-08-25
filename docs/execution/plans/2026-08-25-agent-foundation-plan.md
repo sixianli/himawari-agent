@@ -184,12 +184,22 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 6: Implement Session Trace, Payload and audit separation
 
-- [ ] Write event-envelope tests for Run-local ordering, parent, causation and correlation relationships.
-- [ ] Write tests for model payload, tool payload and approval payload references.
-- [ ] Write secret-redaction tests covering structured values, headers, URLs, errors and nested tool results.
-- [ ] Implement append-only Trace events, encrypted-payload port semantics and minimal audit records.
-- [ ] Implement deletion propagation state covering Payload, search, cache and archive adapters.
-- [ ] Test that partial deletion remains visible as incomplete and cannot be reported as verified.
+- [x] Write event-envelope tests for Run-local ordering, parent, causation and correlation relationships.
+- [x] Write tests for model payload, tool payload and approval payload references.
+- [x] Write secret-redaction tests covering structured values, headers, URLs, errors and nested tool results.
+- [x] Implement append-only Trace events, encrypted-payload port semantics and minimal audit records.
+- [x] Implement deletion propagation state covering Payload, search, cache and archive adapters.
+- [x] Test that partial deletion remains visible as incomplete and cannot be reported as verified.
+
+#### Task 6 evidence — 2026-08-25
+
+- Failure-first baseline: all 5 new integration scenarios failed because `SessionTraceRecorder`, deletion coordination and Trace ordering enforcement did not exist.
+- `SessionTraceRecorder` now assigns strict Run-local sequences, persists model/tool/approval detail only through protected Payload references, preserves parent/causation/correlation relationships and emits explicitly requested minimal audit records without copying payloads.
+- The reference Trace Store rejects duplicate identities, sequence gaps, cross-Run parents, mismatched Run scope and cross-correlation causes. It supports Run-local resume and deterministic Session timeline reads while remaining append-only.
+- Trace payloads are converted to product JSON and redacted before protection. Tests cover named secret fields, authorization headers, secret URL query parameters, `Error` values, nested tool results and caller-supplied sensitive literals. Cyclic or otherwise unverifiable payloads are not persisted; a payload-free `trace.redaction_failed` event and minimal failed audit record remain visible.
+- `PayloadStorePort` now accepts ciphertext plus algorithm, key reference and digest metadata. The deterministic `test-xor-v1` protector exists only as a test double and does not claim production cryptographic security.
+- `SessionDeletionCoordinator` durably tracks Payload, search, cache and archive targets with per-target attempts, failure codes and verification timestamps. An injected archive failure leaves the operation `incomplete`; a coordinator reconstructed over the same state retries only unfinished targets and reaches `verified` after all four adapters confirm absence. `assertVerified()` rejects every partial state.
+- `npm run check` passed formatting, lint, strict TypeScript and all 9 workspace boundaries. The focused Task 6 suite passed 5 integration tests, and the existing 54 contract tests passed after the Payload contract migration.
 
 ### Task 7: Implement deterministic Permission and Grant handling
 

@@ -6,16 +6,15 @@ supersedes: ""
 superseded_by: ""
 date: "2026-08-25"
 ---
-
 # Himawari Agent Architecture v0.1
 
 ## Current System
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e 和 Pi compatibility 五个测试项目。
 
-当前代码包含九个 workspace 的公共入口、`packages/domain` 中已实现的不可变身份、所有权工厂、Run 状态机、Agent 权威租约规则和稳定领域错误，`packages/gateway-contracts` 与 `packages/execution-contracts` 中首版严格 wire schema，`packages/application` 的产品端口、Run 状态提交协调器与可靠事件发布器，以及 `packages/testing` 的确定性内存参考适配器。Task 5 仅实现产品状态提交这一应用层切片；尚无完整 Run Coordinator、生产持久化、基础设施适配器、Pi Session 创建、网络监听器或可启动服务。
+当前代码包含九个 workspace 的公共入口、`packages/domain` 中已实现的不可变身份、所有权工厂、Run 状态机、Agent 权威租约规则和稳定领域错误，`packages/gateway-contracts` 与 `packages/execution-contracts` 中首版严格 wire schema，`packages/application` 的产品端口、Run 状态提交、可靠事件发布、Session Trace 和删除传播应用服务，以及 `packages/testing` 的确定性内存参考适配器。Task 6 仍是架构语义验证切片；尚无完整 Run Coordinator、生产持久化、生产加密或索引/缓存/归档适配器、Pi Session 创建、网络监听器或可启动服务。
 
-实现范围来自已确认 Spec，并按当前 Plan 的 Task 1 至 Task 5 落地：[SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-1-establish-repository-and-toolchain-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-2-implement-immutable-identities-and-domain-state-machines] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-3-define-versioned-gateway-and-execution-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-4-implement-product-ports-and-adapter-conformance-suites] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-5-implement-product-state-commit-and-reliable-event-semantics]
+实现范围来自已确认 Spec，并按当前 Plan 的 Task 1 至 Task 6 落地：[SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-1-establish-repository-and-toolchain-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-2-implement-immutable-identities-and-domain-state-machines] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-3-define-versioned-gateway-and-execution-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-4-implement-product-ports-and-adapter-conformance-suites] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-5-implement-product-state-commit-and-reliable-event-semantics] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-6-implement-session-trace-payload-and-audit-separation]
 
 ## Boundaries
 
@@ -85,6 +84,7 @@ Gateway 信封携带消息标识、schema 版本、相关关系、可空因果�
 ```text
 StateStore          ReliableEvent      ProductStateRepository
 ReliableEventSink   TraceStore         PayloadStore       AuditLedger
+PayloadProtector    SessionDeletionState/Target
 Memory              Model              AgentRuntime       Capability
 Secret              Scheduler          Attention          AuthorityLease
 Clock               IdGenerator
@@ -110,7 +110,15 @@ Clock               IdGenerator
 
 `ReliableEventPublisher` 分批读取 pending 事件，交给 `ReliableEventSinkPort` 后再标记 published。发布前失败保留 pending 事件；Sink 已接收但 published 标记失败时会按同一 event ID 重投，Sink 返回 `duplicate` 而不产生第二次可见交付。新建协调器和发布器只需复用同一 Product State Repository 即可恢复 Run 和 outbox，不读取 Pi Session 文件。
 
-当前保证只由内存参考适配器和可复用 conformance suite 验证，不代表生产跨进程耐久性或隔离已经实现。完整 Trace/Payload 删除传播、实际记忆排序、模型路由策略、Capability 沙箱、Secret 原值解析、生产 Scheduler、Attention 策略和生产持久化仍属于后续 Plan 任务。
+当前保证只由内存参考适配器和可复用 conformance suite 验证，不代表生产跨进程耐久性、加密强度或隔离已经实现。实际记忆排序、模型路由策略、Capability 沙箱、Secret 原值解析、生产删除适配器、Scheduler、Attention 策略和生产持久化仍属于后续 Plan 任务。
+
+### Session Trace, protected Payload and deletion propagation
+
+`SessionTraceRecorder` 生成 `trace.v1` 信封并由 Trace Store 强制校验 Run 内严格连续序号、稳定 Run scope、父事件归属及已有因果事件的相关关系。事件正文不内嵌模型输入、工具结果或审批快照，而是在写入前转换为产品 JSON、脱敏、交给 `PayloadProtectorPort`，最后只保存 Payload 引用。无法确认安全转换的负载不会写入 Payload；Trace 改写为不含原文的 `trace.redaction_failed`，并留下最小失败审计记录。
+
+Payload 端口的持久化输入是 ciphertext、算法标识、key reference、内容 digest 和分类元数据，不接收明文语义字段。`packages/testing` 的 `test-xor-v1` 只用于证明“写前脱敏、保护后存储、引用组装”的接口顺序和防御性复制，不是生产密码学实现，也不能成为部署配置。
+
+`SessionDeletionCoordinator` 为一次 Session 删除保存独立 revision 和四个固定目标：Payload、search、cache、archive。每个目标记录尝试次数、失败码和验证时间；重建协调器后只重试未验证目标。总状态只有在四个适配器都回读确认内容不存在时才是 `verified`，否则保持 `incomplete`，并且断言接口拒绝把部分清理报告为已验证。Audit Ledger 只保留 Session 引用、结果和时间，不复制被删除正文。
 
 ## Main Flows
 
@@ -125,7 +133,7 @@ npm ci --ignore-scripts
   → selected Vitest project
 ```
 
-unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、全部 Run 状态组合、重复审批等待、终态不可变和单一 Agent 权威租约测试。contracts 项目验证 Gateway/Execution v1 wire schema，并以 54 个测试覆盖原有端口、Product State Repository、Reliable Event Sink 和确定性参考适配器。integration 项目的 7 个 Task 5 测试覆盖原子可见性、提交前失败、发布前失败、投递后标记失败、幂等键冲突、并发重复命令、过期 authority fence 和协调器重建；e2e 和 Pi compatibility 项目仍使用 `--passWithNoTests` 作为空 workspace 基线。
+unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、全部 Run 状态组合、重复审批等待、终态不可变和单一 Agent 权威租约测试。contracts 项目验证 Gateway/Execution v1 wire schema，并以 54 个测试覆盖原有端口、Product State Repository、Reliable Event Sink 和确定性参考适配器。integration 项目包含 7 个 Task 5 状态提交/发布场景，以及 5 个 Task 6 场景验证 Trace 关系、三类 Payload 引用、秘密脱敏、安全失败事件和可恢复删除传播；e2e 和 Pi compatibility 项目仍使用 `--passWithNoTests` 作为空 workspace 基线。
 
 ## Backlog Links
 

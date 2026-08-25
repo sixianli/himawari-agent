@@ -20,6 +20,7 @@ import type {
   RuntimeEvent,
   SchedulerPort,
   SecretPort,
+  SessionDeletionStatePort,
   StateStorePort,
   TraceStorePort,
 } from "@himawari-agent/application";
@@ -30,6 +31,7 @@ import {
   NO_FAILURES,
 } from "./deterministic.js";
 import {
+  DeterministicPayloadProtector,
   InMemoryAuditLedger,
   InMemoryAuthorityLeasePort,
   InMemoryMemoryPort,
@@ -38,6 +40,7 @@ import {
   InMemoryReliableEventSink,
   InMemoryScheduler,
   InMemorySecretPort,
+  InMemorySessionDeletionState,
   InMemoryTraceStore,
   ScriptedAgentRuntime,
   ScriptedAttentionPort,
@@ -68,7 +71,9 @@ export interface ReferenceAdapterSet {
   readonly eventSink: ReliableEventSinkPort;
   readonly trace: TraceStorePort;
   readonly payload: PayloadStorePort;
+  readonly payloadProtector: DeterministicPayloadProtector;
   readonly audit: AuditLedgerPort;
+  readonly deletionState: SessionDeletionStatePort;
   readonly memory: MemoryPort;
   readonly model: ModelPort;
   readonly runtime: AgentRuntimePort;
@@ -95,6 +100,7 @@ export function createReferenceAdapterSet(
   };
   const authority = new InMemoryAuthorityLeasePort(clock, failures);
   const productState = new InMemoryProductStateRepository(authority, failures);
+  const payloadProtector = new DeterministicPayloadProtector();
 
   return Object.freeze({
     state: productState,
@@ -103,7 +109,9 @@ export function createReferenceAdapterSet(
     eventSink: new InMemoryReliableEventSink(failures),
     trace: new InMemoryTraceStore(failures),
     payload: new InMemoryPayloadStore(failures),
+    payloadProtector,
     audit: new InMemoryAuditLedger(failures),
+    deletionState: new InMemorySessionDeletionState(failures),
     memory: new InMemoryMemoryPort(failures),
     model: new ScriptedModelPort(options.model?.descriptors, options.model?.events),
     runtime: new ScriptedAgentRuntime(() => clock.now(), options.runtime?.events),

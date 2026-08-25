@@ -367,18 +367,20 @@ export function payloadStorePortConformance(
   describe("PayloadStorePort conformance", () => {
     it("round-trips defensive byte copies and deletes explicitly", async () => {
       await withPort(harness, async (port) => {
-        const bytes = new Uint8Array([1, 2, 3]);
+        const ciphertext = new Uint8Array([1, 2, 3]);
         await port.put({
           ref: "payload-01",
           dataClassification: "sensitive",
           contentType: "application/octet-stream",
-          bytes,
+          ciphertext,
+          encryption: { algorithm: "test", keyRef: "key-01" },
+          contentDigest: "digest-01",
           createdAt: T0,
         });
-        bytes[0] = 9;
+        ciphertext[0] = 9;
 
         const stored = await port.get("payload-01");
-        expect([...((stored as { bytes: Uint8Array }).bytes ?? [])]).toEqual([1, 2, 3]);
+        expect([...(stored?.ciphertext ?? [])]).toEqual([1, 2, 3]);
         expect(await port.delete("payload-01")).toBe(true);
         expect(await port.get("payload-01")).toBeUndefined();
       });
@@ -390,7 +392,9 @@ export function payloadStorePortConformance(
           ref: "payload-01",
           dataClassification: "private" as const,
           contentType: "text/plain",
-          bytes: new Uint8Array([1]),
+          ciphertext: new Uint8Array([1]),
+          encryption: { algorithm: "test", keyRef: "key-01" },
+          contentDigest: "digest-01",
           createdAt: T0,
         };
         await port.put(payload);
