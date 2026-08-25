@@ -359,6 +359,7 @@ export function createBeefRestaurantFixture() {
     searchIntent,
     reservationIntent,
     reservationSecret,
+    reservationExternalActionId: "external:execution-beef-reservation",
     scheduledJob,
     capabilityDeclarations,
     secondaryClient,

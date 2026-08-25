@@ -17,7 +17,7 @@ import {
   createAuthorityHolderId,
   createAuthorityLeaseId,
 } from "@himawari-agent/domain";
-import type { ExecuteWorkRequest } from "@himawari-agent/execution-contracts";
+import type { ExecuteWorkRequest, ReconcileWorkRequest } from "@himawari-agent/execution-contracts";
 import type { AdmitTriggerCommand, EventSubscription } from "@himawari-agent/gateway-contracts";
 import {
   DeterministicDeliveryPort,
@@ -28,6 +28,7 @@ import {
   InMemoryGatewayReadModel,
   ManualClock,
   ScriptedModelPort,
+  ScriptedExternalActionReconciliationPort,
   createBeefRestaurantFixture,
   createReferenceAdapterSet,
 } from "@himawari-agent/testing";
@@ -87,11 +88,20 @@ async function runJourney() {
   const capability = new DeterministicRestaurantCapabilityPort(
     fixture.times.start,
     fixture.times.providerCompleted,
+    { reservationResultUnknown: true },
   );
+  const reconciliation = new ScriptedExternalActionReconciliationPort({
+    [fixture.reservationExternalActionId]: {
+      outcome: "confirmed_succeeded",
+      resultRef: fixture.payloads.reservationResult,
+      errorCode: null,
+    },
+  });
   const worker = createLocalExecutionWorkerProcess({
     handles: adapters.capabilityRegistry,
     capability,
     secrets: adapters.secret,
+    reconciliation,
     clock,
     ids: adapters.ids,
   });
@@ -491,10 +501,34 @@ async function runJourney() {
     workerRunId: "worker-beef-reservation",
     sequence: 1,
   });
+  await record(fixture.runs.reservation.id, "external_result.pending", {
+    workerRunId: "worker-beef-reservation",
+    externalActionId: fixture.reservationExternalActionId,
+    status: "reconciling_external_result",
+  });
+  const reservationReconcileRequest: ReconcileWorkRequest = {
+    schemaVersion: "execution.v1",
+    kind: "request",
+    type: "work.reconcile",
+    messageId: "reconcile-beef-reservation",
+    correlationId: reservationRequest.correlationId,
+    causationId: reservationRequest.messageId,
+    dataClassification: reservationRequest.dataClassification,
+    scope: reservationRequest.scope,
+    idempotencyKey: "reconcile-beef-reservation",
+    payload: {
+      externalActionId: fixture.reservationExternalActionId,
+      resultLookupRef: "lookup-beef-reservation",
+      requestedAt: fixture.times.providerCompleted,
+    },
+  };
+  const reservationReconciliation = await collect(
+    worker.client.dispatch(reservationReconcileRequest),
+  );
   await record(fixture.runs.reservation.id, "external_result.reconciled", {
     workerRunId: "worker-beef-reservation",
     resultRef: fixture.payloads.reservationResult,
-    outcome: reservationEvents.at(-1)?.type,
+    outcome: reservationReconciliation.at(-1)?.type,
   });
   await record(fixture.runs.reservation.id, "client.resumed", {
     clientId: "client-secondary",
@@ -549,6 +583,7 @@ async function runJourney() {
     reservationApproval,
     reservationDecision: reservationDecision as PermissionAllowDecision,
     reservationEvents,
+    reservationReconciliation,
     reservationInvocation,
     secretHandle,
     allTrace,
@@ -608,6 +643,21 @@ describe("beef-restaurant architecture baseline", () => {
       "work.progress",
       "work.result",
     ]);
+    expect(journey.reservationEvents.at(-1)).toMatchObject({
+      payload: {
+        outcome: "result_unknown",
+        externalActionId: journey.fixture.reservationExternalActionId,
+      },
+    });
+    expect(journey.reservationReconciliation).toMatchObject([
+      {
+        type: "work.reconciled",
+        payload: {
+          outcome: "confirmed_succeeded",
+          resultRef: journey.fixture.payloads.reservationResult,
+        },
+      },
+    ]);
     expect(journey.reservationInvocation).toMatchObject({
       capabilityRef: "restaurant-reservation",
       operation: "reserve",
@@ -663,6 +713,7 @@ describe("beef-restaurant architecture baseline", () => {
       "approval.responded",
       "secret.handle_issued",
       "tool.progress",
+      "external_result.pending",
       "external_result.reconciled",
       "client.resumed",
     ];

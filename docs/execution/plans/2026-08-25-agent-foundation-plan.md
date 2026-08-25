@@ -425,20 +425,31 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 - The proposed monitoring Action Intent returns `ASK`; an exact semantic hash approval creates a bounded long-term Grant. `SchedulerService` rereads that Grant and the current Authority Fence, emits one unified timer Trigger, then the schedule context delegates only the selected context to a Worker.
 - Read-only restaurant search is policy-allowed, executes through the independently managed `execution.v1` Worker and produces progress/result events. Central Attention Policy classifies the non-urgent result as `INBOX`, creates one Delivery Request and records the client acknowledgement.
 - Reservation is outside the monitoring Grant and therefore creates a separate one-time semantic approval. The Capability Handle delegates only the reservation input/context and booking secret reference; the Worker receives an opaque Secret Handle, the handle is revoked after settlement, and Trace contains only reference/version/purpose before the external result is marked reconciled.
-- A second authorized device reads the shared Thread snapshot and all 36 Session Trace events, then resumes an ordered subscription after cursor 10. The test asserts the exact event-type sequence plus Run-local monotonic sequence and same-Run parent relationships, rather than only checking assistant text.
+- A second authorized device reads the shared Thread snapshot and all 37 Session Trace events, then resumes an ordered subscription after cursor 10. The test asserts the exact event-type sequence plus Run-local monotonic sequence and same-Run parent relationships, rather than only checking assistant text.
 - `npm run check` passed all engineering checks. `npm run test:e2e -- beef-restaurant` passed all 3 E2E tests with deterministic adapters and no network, paid model, external account or raw credential.
 
 ### Task 19: Exercise failure and recovery matrix
 
-- [ ] Simulate restart before Run-state commit.
-- [ ] Simulate restart after state commit but before event publication.
-- [ ] Simulate restart while awaiting approval.
-- [ ] Simulate model stream interruption and privacy-incompatible fallback.
-- [ ] Simulate worker crash before and after external side effect.
-- [ ] Simulate unknown external action result and reconciliation.
-- [ ] Simulate authority-lease loss mid-Run.
-- [ ] Simulate partial Trace deletion and delayed third-party cleanup.
-- [ ] Verify every case has a terminal or explicitly pending state visible in Trace.
+- [x] Simulate restart before Run-state commit.
+- [x] Simulate restart after state commit but before event publication.
+- [x] Simulate restart while awaiting approval.
+- [x] Simulate model stream interruption and privacy-incompatible fallback.
+- [x] Simulate worker crash before and after external side effect.
+- [x] Simulate unknown external action result and reconciliation.
+- [x] Simulate authority-lease loss mid-Run.
+- [x] Simulate partial Trace deletion and delayed third-party cleanup.
+- [x] Verify every case has a terminal or explicitly pending state visible in Trace.
+
+#### Task 19 evidence — 2026-08-25
+
+- Failure-first baseline: the focused reconciliation integration case failed because the `execution.v1` Worker had no replaceable external-action reconciliation adapter and did not implement `work.reconcile`.
+- `ExternalActionReconciliationPort` now returns only `confirmed_succeeded`, `confirmed_failed` or `still_unknown` with outcome-consistent references. `ExecutionWorkerService.reconcile()` validates the adapter result and emits a schema-valid `work.reconciled`; the local Worker process dispatches the request through the same stable boundary. A deterministic scripted adapter records reference-only requests.
+- Before-commit failure injects `productState.commit.before`, proves no Run or command result exists, reconstructs the coordinator and commits revision 1 once. After-commit publication failure preserves both Run revision 1 and the pending outbox; a reconstructed publisher sends the existing event without repeating state mutation.
+- An `awaiting_approval` Run is reconstructed from product state and the pending semantic Approval Request remains `queued_no_ui`; neither restart nor model supplies an answer. A primary model emits one partial output then fails, while an external-remote fallback is blocked because it would expand disclosure; Trace ends the case as failed.
+- Worker crash tests cover both boundaries: a crash before execution causes no underlying action, while retry executes once; a crash after execution reuses the stable Run/tool-call key and returns the stored result without another external action.
+- Unknown reservation execution emits `result_unknown` and an `external_result.pending` Trace state. A separate `work.reconcile` request confirms success and produces `external_result.reconciled`. Task 18 now uses this real unknown-result path, increasing its exact graph to 37 events.
+- Authority expiry followed by another holder's claim makes the old fence fail closed; the Run remains visibly `running`/pending. Partial Session deletion verifies payload/search/cache, leaves delayed archive cleanup failed and pending, then a reconstructed coordinator verifies the final target and records completion.
+- All 8 matrix cases assert a protected Trace payload with either an explicit pending/reconciling status or a terminal completed/failed status. `npm run check` passed; all 71 integration tests passed, including the 9 focused Task 19 cases, and the strengthened beef-restaurant E2E suite passed all 3 tests without network, paid providers or external mutations.
 
 ### Task 20: Reconcile current-truth documentation
 

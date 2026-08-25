@@ -183,3 +183,20 @@ export interface SecretPort {
   inspectHandle(handleRef: string): Promise<SecretHandle | undefined>;
   revokeHandle(handleRef: string, revokedAt: string): Promise<SecretHandle>;
 }
+
+export interface ExternalActionReconciliationRequest {
+  readonly externalActionId: string;
+  readonly resultLookupRef: string;
+}
+
+export interface ExternalActionReconciliationResult {
+  readonly outcome: "confirmed_succeeded" | "confirmed_failed" | "still_unknown";
+  readonly resultRef: PayloadRef | null;
+  readonly errorCode: string | null;
+}
+
+export interface ExternalActionReconciliationPort {
+  reconcile(
+    request: ExternalActionReconciliationRequest,
+  ): Promise<ExternalActionReconciliationResult>;
+}

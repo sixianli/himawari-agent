@@ -7,6 +7,9 @@ import type {
   CapabilityPort,
   CapabilityRegistryRecord,
   CapabilityRegistryStorePort,
+  ExternalActionReconciliationPort,
+  ExternalActionReconciliationRequest,
+  ExternalActionReconciliationResult,
   IdGeneratorPort,
   SecretHandle,
   SecretHandleRequest,
@@ -149,10 +152,16 @@ export class DeterministicRestaurantCapabilityPort implements CapabilityPort {
   private readonly cancellations = new Map<string, string>();
   private readonly startedAt: string;
   private readonly completedAt: string;
+  private readonly reservationResultUnknown: boolean;
 
-  constructor(startedAt: string, completedAt: string) {
+  constructor(
+    startedAt: string,
+    completedAt: string,
+    options: { readonly reservationResultUnknown?: boolean } = {},
+  ) {
     this.startedAt = startedAt;
     this.completedAt = completedAt;
+    this.reservationResultUnknown = options.reservationResultUnknown ?? false;
   }
 
   async list(): Promise<readonly CapabilityDescriptor[]> {
@@ -209,6 +218,15 @@ export class DeterministicRestaurantCapabilityPort implements CapabilityPort {
       payloadRef: null,
       occurredAt: this.startedAt,
     };
+    if (request.capabilityRef === "restaurant-reservation" && this.reservationResultUnknown) {
+      yield {
+        type: "capability.result_unknown",
+        invocationId: request.invocationId,
+        externalActionId: `external:${request.invocationId}`,
+        occurredAt: this.completedAt,
+      };
+      return;
+    }
     yield {
       type: "capability.completed",
       invocationId: request.invocationId,
@@ -272,5 +290,31 @@ export class InMemorySecretPort implements SecretPort {
     const revoked = frozenCopy({ ...current, revokedAt });
     this.handles.set(handleRef, revoked);
     return frozenCopy(revoked);
+  }
+}
+
+export class ScriptedExternalActionReconciliationPort implements ExternalActionReconciliationPort {
+  private readonly results: Readonly<Record<string, ExternalActionReconciliationResult>>;
+  private readonly requests: ExternalActionReconciliationRequest[] = [];
+
+  constructor(results: Readonly<Record<string, ExternalActionReconciliationResult>> = {}) {
+    this.results = frozenCopy(results);
+  }
+
+  async reconcile(
+    request: ExternalActionReconciliationRequest,
+  ): Promise<ExternalActionReconciliationResult> {
+    this.requests.push(frozenCopy(request));
+    return frozenCopy(
+      this.results[request.externalActionId] ?? {
+        outcome: "still_unknown",
+        resultRef: null,
+        errorCode: null,
+      },
+    );
+  }
+
+  observedRequests(): readonly ExternalActionReconciliationRequest[] {
+    return this.requests.map(frozenCopy);
   }
 }

@@ -2,8 +2,10 @@ import {
   EXECUTION_SCHEMA_VERSION,
   type CancelWorkRequest,
   type ExecuteWorkRequest,
+  type ReconcileWorkRequest,
   type WorkCancelledEvent,
   type WorkProgressEvent,
+  type WorkReconciledEvent,
   type WorkResultEvent,
 } from "@himawari-agent/execution-contracts";
 import { createAgentId, createOwnerId, createRunId } from "@himawari-agent/domain";
@@ -13,6 +15,7 @@ import type {
   CapabilityPort,
   CapabilityRegistryStorePort,
   CapabilitySecretReference,
+  ExternalActionReconciliationPort,
   SecretPort,
 } from "../ports/capabilities.js";
 import { PORT_ERROR_CODES, ApplicationPortError } from "../ports/common.js";
@@ -20,12 +23,17 @@ import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
 
-export type ExecutionWorkerEvent = WorkProgressEvent | WorkResultEvent | WorkCancelledEvent;
+export type ExecutionWorkerEvent =
+  | WorkProgressEvent
+  | WorkResultEvent
+  | WorkCancelledEvent
+  | WorkReconciledEvent;
 
 export interface ExecutionWorkerServiceDependencies {
   readonly handles: CapabilityRegistryStorePort & CapabilityExecutionHandleStorePort;
   readonly capability: CapabilityPort;
   readonly secrets: SecretPort;
+  readonly reconciliation?: ExternalActionReconciliationPort;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
 }
@@ -148,6 +156,47 @@ export class ExecutionWorkerService {
     };
   }
 
+  async reconcile(request: ReconcileWorkRequest): Promise<WorkReconciledEvent> {
+    const result = this.dependencies.reconciliation
+      ? await this.dependencies.reconciliation.reconcile({
+          externalActionId: request.payload.externalActionId,
+          resultLookupRef: request.payload.resultLookupRef,
+        })
+      : {
+          outcome: "still_unknown" as const,
+          resultRef: null,
+          errorCode: null,
+        };
+    const valid =
+      (result.outcome === "confirmed_succeeded" &&
+        result.resultRef !== null &&
+        result.errorCode === null) ||
+      (result.outcome === "confirmed_failed" &&
+        result.resultRef === null &&
+        result.errorCode !== null) ||
+      (result.outcome === "still_unknown" &&
+        result.resultRef === null &&
+        result.errorCode === null);
+    if (!valid) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        `External reconciliation ${request.payload.externalActionId} returned an invalid result`,
+        { externalActionId: request.payload.externalActionId },
+      );
+    }
+    return {
+      ...this.eventEnvelope(request, "work.reconciled"),
+      payload: {
+        requestId: request.messageId,
+        externalActionId: request.payload.externalActionId,
+        reconciledAt: this.dependencies.clock.now(),
+        outcome: result.outcome,
+        resultRef: result.resultRef,
+        errorCode: result.errorCode,
+      },
+    };
+  }
+
   private async requireHandle(handleRef: string): Promise<CapabilityExecutionHandle> {
     const handle = await this.dependencies.handles.getExecutionHandle(handleRef);
     if (!handle) {
@@ -200,10 +249,9 @@ export class ExecutionWorkerService {
     }
   }
 
-  private eventEnvelope<TType extends "work.progress" | "work.result" | "work.cancelled">(
-    request: ExecuteWorkRequest | CancelWorkRequest,
-    type: TType,
-  ) {
+  private eventEnvelope<
+    TType extends "work.progress" | "work.result" | "work.cancelled" | "work.reconciled",
+  >(request: ExecuteWorkRequest | CancelWorkRequest | ReconcileWorkRequest, type: TType) {
     return {
       schemaVersion: EXECUTION_SCHEMA_VERSION,
       kind: "event" as const,

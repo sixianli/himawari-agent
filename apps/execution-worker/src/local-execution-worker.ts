@@ -72,7 +72,7 @@ export class LocalExecutionWorkerProcess {
         yield await this.service.cancel(parsed);
         return;
       }
-      throw new Error("WORK_RECONCILIATION_ADAPTER_REQUIRED");
+      yield await this.service.reconcile(parsed);
     } finally {
       settle();
       this.activeSettlements.delete(settlement);

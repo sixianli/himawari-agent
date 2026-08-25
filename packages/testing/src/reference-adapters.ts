@@ -12,6 +12,7 @@ import type {
   ClockPort,
   DeliveryAttemptResult,
   DeliveryPort,
+  ExternalActionReconciliationPort,
   IdGeneratorPort,
   MemoryPort,
   ModelDescriptor,
@@ -59,6 +60,7 @@ import {
   ScriptedAgentRuntime,
   ScriptedAttentionPort,
   ScriptedCapabilityPort,
+  ScriptedExternalActionReconciliationPort,
   ScriptedModelPort,
   ScriptedWorkerRunPort,
 } from "./in-memory/index.js";
@@ -107,6 +109,7 @@ export interface ReferenceAdapterSet {
   readonly capability: CapabilityPort;
   readonly capabilityRegistry: InMemoryCapabilityRegistryStore;
   readonly secret: SecretPort;
+  readonly reconciliation: ExternalActionReconciliationPort;
   readonly scheduler: SchedulerPort;
   readonly attention: AttentionPort;
   readonly attentionState: AttentionStatePort;
@@ -160,6 +163,7 @@ export function createReferenceAdapterSet(
     ),
     capabilityRegistry,
     secret: new InMemorySecretPort(ids, failures),
+    reconciliation: new ScriptedExternalActionReconciliationPort(),
     scheduler: new InMemoryScheduler(failures),
     attention: new ScriptedAttentionPort(attentionDecision),
     attentionState: new InMemoryAttentionStatePort(failures),
