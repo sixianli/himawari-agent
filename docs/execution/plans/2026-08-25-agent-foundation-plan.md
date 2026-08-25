@@ -354,12 +354,21 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 15: Implement centralized Attention Policy
 
-- [ ] Write policy tests for `SILENT`, `INBOX`, `DIGEST`, `NOTIFY` and `INTERRUPT`.
-- [ ] Test quiet hours, duplicate results, rate limits, explicit interrupt grants and missing client delivery.
-- [ ] Implement Result Candidate to Delivery Request conversion.
-- [ ] Implement delivery idempotency and acknowledgements independent of Run completion.
-- [ ] Provide a deterministic test delivery adapter, not a fixed product UI.
-- [ ] Verify two clients cannot produce duplicate or conflicting delivery decisions.
+- [x] Write policy tests for `SILENT`, `INBOX`, `DIGEST`, `NOTIFY` and `INTERRUPT`.
+- [x] Test quiet hours, duplicate results, rate limits, explicit interrupt grants and missing client delivery.
+- [x] Implement Result Candidate to Delivery Request conversion.
+- [x] Implement delivery idempotency and acknowledgements independent of Run completion.
+- [x] Provide a deterministic test delivery adapter, not a fixed product UI.
+- [x] Verify two clients cannot produce duplicate or conflicting delivery decisions.
+
+#### Task 15 evidence — 2026-08-25
+
+- `AttentionPolicyService` is the single deterministic decision point for Result Candidates. Fixed urgency/confidence thresholds produce all five levels; duplicate-window state, rate limits, quiet hours and known device availability can only reduce disruption. `INTERRUPT` additionally requires a matching reference from the injected active interrupt-authorization set.
+- Candidate identity and semantic fingerprint are committed under one Owner/Agent policy revision. Concurrent decisions retry after CAS; the first result for a duplicate key receives its normal level while a concurrent duplicate becomes `SILENT`. Reusing one candidate ID with different content is rejected.
+- Every non-silent decision atomically creates one product `DeliveryRequest`; silent decisions create none. Delivery state has its own revision, `pending → delivering → delivered` lifecycle, client claim, attempt count, acknowledgement reference and retryable failure state, without any Run mutation.
+- `InMemoryAttentionStatePort` enforces decision/request consistency and only one active client claim. An unavailable or failed adapter settlement reopens the request as `pending`; an acknowledged settlement is terminal and subsequent client claims return the existing delivery instead of rendering again.
+- `DeterministicDeliveryPort` is a client-keyed test adapter with observable reference-only attempts, not a product UI. Integration coverage proves an offline client leaves delivery pending, another client can acknowledge it later, and the source Run remains `completed` throughout.
+- Ten focused policy tests cover every level, explicit interrupt authorization, quiet hours, concurrent duplicate suppression, frequency limits, device availability and idempotent candidate replay. Two integration cases cover missing-client retry and concurrent two-client claim/ack; three additional conformance cases cover atomic state, delivery claims and deterministic adapters. `npm run check`, 97 unit, 67 contract, 59 integration and 6 Pi compatibility tests passed before commit; e2e remains the explicit empty baseline.
 
 ### Task 16: Implement Agent Gateway application service
 

@@ -9,12 +9,14 @@ import {
 import {
   agentRuntimePortConformance,
   attentionPortConformance,
+  attentionStatePortConformance,
   auditLedgerPortConformance,
   authorizationStorePortConformance,
   authorityLeasePortConformance,
   capabilityPortConformance,
   capabilityRegistryStorePortConformance,
   clockPortConformance,
+  deliveryPortConformance,
   idGeneratorPortConformance,
   memoryPortConformance,
   modelPortConformance,
@@ -84,6 +86,10 @@ secretPortConformance({ create: () => createReferenceAdapterSet().secret });
 schedulerPortConformance({ create: () => createReferenceAdapterSet().scheduler });
 attentionPortConformance({
   create: (attention) => createReferenceAdapterSet({ attention }).attention,
+});
+attentionStatePortConformance({ create: () => createReferenceAdapterSet().attentionState });
+deliveryPortConformance({
+  create: (delivery) => createReferenceAdapterSet({ delivery }).delivery,
 });
 authorityLeasePortConformance({
   create: (clock) => createReferenceAdapterSet({ clock }).authority,

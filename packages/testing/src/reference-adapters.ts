@@ -2,6 +2,7 @@ import type {
   AgentRuntimePort,
   AttentionDecision,
   AttentionPort,
+  AttentionStatePort,
   AuditLedgerPort,
   AuthorizationStorePort,
   AuthorityLeasePort,
@@ -9,6 +10,8 @@ import type {
   CapabilityInvocationEvent,
   CapabilityPort,
   ClockPort,
+  DeliveryAttemptResult,
+  DeliveryPort,
   IdGeneratorPort,
   MemoryPort,
   ModelDescriptor,
@@ -38,8 +41,10 @@ import {
 } from "./deterministic.js";
 import {
   DeterministicPayloadProtector,
+  DeterministicDeliveryPort,
   InMemoryAuditLedger,
   InMemoryAuthorizationStore,
+  InMemoryAttentionStatePort,
   InMemoryAuthorityLeasePort,
   InMemoryCapabilityRegistryStore,
   InMemoryMemoryPort,
@@ -77,6 +82,10 @@ export interface ReferenceAdapterOptions {
     readonly events: readonly CapabilityInvocationEvent[];
   };
   readonly attention?: { readonly decision: AttentionDecision };
+  readonly delivery?: {
+    readonly results: Readonly<Record<string, DeliveryAttemptResult>>;
+    readonly defaultResult?: DeliveryAttemptResult;
+  };
 }
 
 export interface ReferenceAdapterSet {
@@ -100,6 +109,8 @@ export interface ReferenceAdapterSet {
   readonly secret: SecretPort;
   readonly scheduler: SchedulerPort;
   readonly attention: AttentionPort;
+  readonly attentionState: AttentionStatePort;
+  readonly delivery: DeliveryPort;
   readonly authority: AuthorityLeasePort;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
@@ -151,6 +162,11 @@ export function createReferenceAdapterSet(
     secret: new InMemorySecretPort(ids, failures),
     scheduler: new InMemoryScheduler(failures),
     attention: new ScriptedAttentionPort(attentionDecision),
+    attentionState: new InMemoryAttentionStatePort(failures),
+    delivery: new DeterministicDeliveryPort(
+      options.delivery?.results,
+      options.delivery?.defaultResult,
+    ),
     authority,
     clock,
     ids,

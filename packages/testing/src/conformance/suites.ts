@@ -3,6 +3,7 @@ import type {
   ApprovalRequest,
   AttentionDecision,
   AttentionPort,
+  AttentionStatePort,
   AuditLedgerPort,
   AuthorizationStorePort,
   AuthorityLeasePort,
@@ -12,6 +13,8 @@ import type {
   CapabilityPort,
   CapabilityRegistryStorePort,
   ClockPort,
+  DeliveryAttemptResult,
+  DeliveryPort,
   IdGeneratorPort,
   JsonObject,
   GrantRecord,
@@ -1142,15 +1145,177 @@ export function attentionPortConformance(
           ownerId: OWNER_ID,
           agentId: AGENT_ID,
           runId: RUN_ID,
+          sessionId: SESSION_ID,
+          threadId: THREAD_ID,
           resultRef: "payload-result-01",
           dataClassification: "private" as const,
           urgency: 100,
           confidence: 95,
           duplicateKey: "restaurant-alert-01",
+          generatedAt: T0,
+          deviceState: "available" as const,
           interruptAuthorizationRef: "grant-interrupt-01",
         };
         expect(await port.evaluate(candidate)).toEqual(decision);
         expect(await port.evaluate(candidate)).toEqual(decision);
+      });
+    });
+  });
+}
+
+export function attentionStatePortConformance(
+  harness: PortConformanceHarness<AttentionStatePort>,
+): void {
+  describe("AttentionStatePort conformance", () => {
+    const decision = {
+      candidateId: "attention-state-01",
+      level: "NOTIFY" as const,
+      reasonCode: "notifiable_result",
+      interruptAuthorizationRef: null,
+    };
+    const record = {
+      candidateId: decision.candidateId,
+      candidateFingerprint: "fingerprint-attention-state-01",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      duplicateKey: "restaurant-alert-state-01",
+      decision,
+      deliveryRequestId: "delivery-attention-state-01",
+      decidedAt: T0,
+    };
+    const delivery = {
+      id: "delivery-attention-state-01",
+      candidateId: decision.candidateId,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      resultRef: "payload-attention-state-01",
+      dataClassification: "private" as const,
+      level: "NOTIFY" as const,
+      status: "pending" as const,
+      assignedClientId: null,
+      attempts: 0,
+      acknowledgementRef: null,
+      lastErrorCode: null,
+      createdAt: T0,
+      updatedAt: T0,
+    };
+
+    it("commits a decision and delivery request under one policy revision", async () => {
+      await withPort(harness, async (port) => {
+        expect(await port.readPolicyState(OWNER_ID, AGENT_ID)).toEqual({
+          revision: 0,
+          decisions: [],
+        });
+        const committed = await port.commitDecision({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          expectedRevision: 0,
+          record,
+          delivery,
+        });
+        expect(committed).toMatchObject({
+          state: { revision: 1, decisions: [record] },
+          delivery: { ...delivery, revision: 1 },
+        });
+        await expectPortError(
+          () =>
+            port.commitDecision({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              expectedRevision: 0,
+              record: { ...record, candidateId: "attention-state-stale" },
+              delivery: null,
+            }),
+          PORT_ERROR_CODES.CONFLICT,
+        );
+      });
+    });
+
+    it("allows only one client claim and reopens unavailable delivery for retry", async () => {
+      await withPort(harness, async (port) => {
+        const committed = await port.commitDecision({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          expectedRevision: 0,
+          record,
+          delivery,
+        });
+        if (!committed.delivery) throw new Error("Expected Delivery Request");
+        const first = await port.claimDelivery(delivery.id, "client-a", T1);
+        expect(first).toMatchObject({ claimed: true, reasonCode: "CLAIMED" });
+        expect(await port.claimDelivery(delivery.id, "client-b", T1)).toMatchObject({
+          claimed: false,
+          reasonCode: "ALREADY_CLAIMED",
+        });
+        const pending = await port.settleDelivery({
+          requestId: delivery.id,
+          expectedRevision: first.request.revision,
+          clientId: "client-a",
+          outcome: "unavailable",
+          acknowledgementRef: null,
+          errorCode: "CLIENT_UNAVAILABLE",
+          settledAt: T1,
+        });
+        expect(pending).toMatchObject({ status: "pending", assignedClientId: null });
+        const retry = await port.claimDelivery(delivery.id, "client-b", T2);
+        const delivered = await port.settleDelivery({
+          requestId: delivery.id,
+          expectedRevision: retry.request.revision,
+          clientId: "client-b",
+          outcome: "delivered",
+          acknowledgementRef: "ack-client-b",
+          errorCode: null,
+          settledAt: T2,
+        });
+        expect(delivered).toMatchObject({
+          status: "delivered",
+          acknowledgementRef: "ack-client-b",
+        });
+        expect(await port.claimDelivery(delivery.id, "client-a", T2)).toMatchObject({
+          claimed: false,
+          reasonCode: "ALREADY_DELIVERED",
+        });
+      });
+    });
+  });
+}
+
+export interface DeliveryPortFixture {
+  readonly results: Readonly<Record<string, DeliveryAttemptResult>>;
+}
+
+export function deliveryPortConformance(
+  harness: ConfiguredPortConformanceHarness<DeliveryPort, DeliveryPortFixture>,
+): void {
+  describe("DeliveryPort conformance", () => {
+    it("returns deterministic client delivery acknowledgements", async () => {
+      const delivered: DeliveryAttemptResult = {
+        outcome: "delivered",
+        acknowledgementRef: "ack-client-a",
+        errorCode: null,
+      };
+      await withConfiguredPort(harness, { results: { "client-a": delivered } }, async (port) => {
+        const request = {
+          id: "delivery-port-01",
+          revision: 2,
+          candidateId: "candidate-delivery-port-01",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          resultRef: "payload-delivery-port-01",
+          dataClassification: "private" as const,
+          level: "NOTIFY" as const,
+          status: "delivering" as const,
+          assignedClientId: "client-a",
+          attempts: 1,
+          acknowledgementRef: null,
+          lastErrorCode: null,
+          createdAt: T0,
+          updatedAt: T1,
+        };
+        expect(await port.deliver({ request, clientId: "client-a" })).toEqual(delivered);
       });
     });
   });

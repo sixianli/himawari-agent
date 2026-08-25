@@ -1,10 +1,20 @@
 import type {
   AttentionCandidate,
   AttentionDecision,
+  AttentionDecisionCommit,
+  AttentionDecisionCommitResult,
   AttentionPort,
+  AttentionPolicyState,
+  AttentionStatePort,
   AuthorityLeasePort,
   AuthorityLeaseRecord,
   ClockPort,
+  DeliveryAttempt,
+  DeliveryAttemptResult,
+  DeliveryClaim,
+  DeliveryPort,
+  DeliveryRequest,
+  DeliverySettlement,
   ScheduledJob,
   ScheduledJobWrite,
   SchedulerPort,
@@ -16,6 +26,205 @@ import { PORT_ERROR_CODES, ApplicationPortError } from "@himawari-agent/applicat
 import type { AgentAuthorityLease, AgentId, AuthorityLeaseId } from "@himawari-agent/domain";
 import { type FailureScheduler, NO_FAILURES } from "../deterministic.js";
 import { frozenCopy } from "./helpers.js";
+
+function attentionScopeKey(ownerId: string, agentId: string): string {
+  return JSON.stringify([ownerId, agentId]);
+}
+
+export class InMemoryAttentionStatePort implements AttentionStatePort {
+  private readonly policies = new Map<string, AttentionPolicyState>();
+  private readonly deliveries = new Map<string, DeliveryRequest>();
+  private readonly failures: FailureScheduler;
+
+  constructor(failures: FailureScheduler = NO_FAILURES) {
+    this.failures = failures;
+  }
+
+  async readPolicyState(ownerId: string, agentId: string): Promise<AttentionPolicyState> {
+    return frozenCopy(
+      this.policies.get(attentionScopeKey(ownerId, agentId)) ?? {
+        revision: 0,
+        decisions: [],
+      },
+    );
+  }
+
+  async commitDecision(input: AttentionDecisionCommit): Promise<AttentionDecisionCommitResult> {
+    this.failures.checkpoint("attention.commitDecision");
+    const key = attentionScopeKey(input.ownerId, input.agentId);
+    const current = this.policies.get(key) ?? { revision: 0, decisions: [] };
+    if (current.revision !== input.expectedRevision) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        "Attention policy state revision conflict",
+        {
+          expectedRevision: String(input.expectedRevision),
+          currentRevision: String(current.revision),
+        },
+      );
+    }
+    if (
+      input.record.ownerId !== input.ownerId ||
+      input.record.agentId !== input.agentId ||
+      current.decisions.some(({ candidateId }) => candidateId === input.record.candidateId)
+    ) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        `Attention decision ${input.record.candidateId} conflicts with current state`,
+        { candidateId: input.record.candidateId },
+      );
+    }
+    const deliveryMatches =
+      input.record.decision.level === "SILENT"
+        ? input.record.deliveryRequestId === null && input.delivery === null
+        : input.delivery !== null &&
+          input.record.deliveryRequestId === input.delivery.id &&
+          input.record.candidateId === input.delivery.candidateId &&
+          input.record.ownerId === input.delivery.ownerId &&
+          input.record.agentId === input.delivery.agentId &&
+          input.record.runId === input.delivery.runId &&
+          input.record.decision.level === input.delivery.level &&
+          input.delivery.status === "pending" &&
+          input.delivery.assignedClientId === null &&
+          input.delivery.attempts === 0;
+    if (!deliveryMatches) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        `Attention decision ${input.record.candidateId} does not match its Delivery Request`,
+        { candidateId: input.record.candidateId },
+      );
+    }
+    if (input.delivery && this.deliveries.has(input.delivery.id)) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        `Delivery request ${input.delivery.id} already exists`,
+        { requestId: input.delivery.id },
+      );
+    }
+    const state = frozenCopy({
+      revision: current.revision + 1,
+      decisions: [...current.decisions, input.record],
+    });
+    const delivery = input.delivery ? frozenCopy({ ...input.delivery, revision: 1 }) : null;
+    this.policies.set(key, state);
+    if (delivery) this.deliveries.set(delivery.id, delivery);
+    return frozenCopy({ state, record: input.record, delivery });
+  }
+
+  async readDelivery(requestId: string): Promise<DeliveryRequest | undefined> {
+    const request = this.deliveries.get(requestId);
+    return request ? frozenCopy(request) : undefined;
+  }
+
+  async claimDelivery(
+    requestId: string,
+    clientId: string,
+    claimedAt: string,
+  ): Promise<DeliveryClaim> {
+    this.failures.checkpoint("attention.claimDelivery");
+    const current = this.deliveries.get(requestId);
+    if (!current) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_FOUND,
+        `Delivery request ${requestId} not found`,
+        { requestId },
+      );
+    }
+    if (current.status === "delivered") {
+      return frozenCopy({ claimed: false, request: current, reasonCode: "ALREADY_DELIVERED" });
+    }
+    if (current.status === "delivering") {
+      return frozenCopy({ claimed: false, request: current, reasonCode: "ALREADY_CLAIMED" });
+    }
+    const claimed = frozenCopy({
+      ...current,
+      revision: current.revision + 1,
+      status: "delivering" as const,
+      assignedClientId: clientId,
+      attempts: current.attempts + 1,
+      updatedAt: claimedAt,
+    });
+    this.deliveries.set(requestId, claimed);
+    return frozenCopy({ claimed: true, request: claimed, reasonCode: "CLAIMED" });
+  }
+
+  async settleDelivery(input: DeliverySettlement): Promise<DeliveryRequest> {
+    this.failures.checkpoint("attention.settleDelivery");
+    const current = this.deliveries.get(input.requestId);
+    if (!current) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_FOUND,
+        `Delivery request ${input.requestId} not found`,
+        { requestId: input.requestId },
+      );
+    }
+    const validAcknowledgement =
+      input.outcome === "delivered"
+        ? input.acknowledgementRef !== null && input.errorCode === null
+        : input.acknowledgementRef === null;
+    if (
+      current.status !== "delivering" ||
+      current.revision !== input.expectedRevision ||
+      current.assignedClientId !== input.clientId ||
+      !validAcknowledgement
+    ) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        `Delivery request ${input.requestId} cannot settle from its current state`,
+        { requestId: input.requestId },
+      );
+    }
+    const delivered = input.outcome === "delivered";
+    const settled = frozenCopy({
+      ...current,
+      revision: current.revision + 1,
+      status: delivered ? ("delivered" as const) : ("pending" as const),
+      assignedClientId: delivered ? current.assignedClientId : null,
+      acknowledgementRef: delivered ? input.acknowledgementRef : null,
+      lastErrorCode: delivered ? null : (input.errorCode ?? "DELIVERY_UNAVAILABLE"),
+      updatedAt: input.settledAt,
+    });
+    this.deliveries.set(input.requestId, settled);
+    return frozenCopy(settled);
+  }
+}
+
+export class DeterministicDeliveryPort implements DeliveryPort {
+  private readonly results: Readonly<Record<string, DeliveryAttemptResult>>;
+  private readonly defaultResult: DeliveryAttemptResult;
+  private readonly attempts: DeliveryAttempt[] = [];
+
+  constructor(
+    results: Readonly<Record<string, DeliveryAttemptResult>> = {},
+    defaultResult: DeliveryAttemptResult = {
+      outcome: "unavailable",
+      acknowledgementRef: null,
+      errorCode: "CLIENT_UNAVAILABLE",
+    },
+  ) {
+    this.results = frozenCopy(results);
+    this.defaultResult = frozenCopy(defaultResult);
+  }
+
+  async deliver(input: DeliveryAttempt): Promise<DeliveryAttemptResult> {
+    if (
+      input.request.status !== "delivering" ||
+      input.request.assignedClientId !== input.clientId
+    ) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Delivery adapter requires a request claimed by the same client",
+        { requestId: input.request.id, clientId: input.clientId },
+      );
+    }
+    this.attempts.push(frozenCopy(input));
+    return frozenCopy(this.results[input.clientId] ?? this.defaultResult);
+  }
+
+  observedAttempts(): readonly DeliveryAttempt[] {
+    return this.attempts.map(frozenCopy);
+  }
+}
 
 export class ScriptedWorkerRunPort implements WorkerRunPort {
   private readonly events: readonly WorkerRunEvent[];
