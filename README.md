@@ -1,6 +1,6 @@
 # Himawari Agent
 
-Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。当前仓库已完成基础平台 Plan 的 Task 1 至 Task 5：TypeScript/Node.js workspace、包边界、测试分组、固定版本 Pi 依赖，不可变领域身份和状态机，首版 Gateway/Execution wire contracts，产品端口与确定性内存参考适配器，以及 Run 状态提交、幂等命令结果和可靠事件发布的首个应用层切片。完整 Run Coordinator、生产持久化、Pi 运行时适配器和可启动服务尚未实现。
+Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。当前仓库已完成基础平台 Plan 的 Task 1 至 Task 12：工程与领域基础、Gateway/Execution wire contracts、产品端口及确定性参考适配器、状态提交与可靠事件、Trace/Payload、Permission/Grant、Capability/Worker、Memory context formation、Model Router、Pi Agent Runtime 适配器，以及可逆的本地 Pi 源码调试模式。完整 Run Coordinator、Scheduler、集中 Attention Policy、生产持久化和可启动服务仍未实现。
 
 ## Toolchain
 
@@ -18,7 +18,61 @@ Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私�
 npm ci --ignore-scripts
 ```
 
-正式依赖始终来自 npm 发布物。仓库不提交指向相邻 `../pi-mono` 的 `file:` 依赖；本地 Pi 源码学习和可逆链接将在 Plan Task 12 中实现。
+正式依赖始终来自 npm 发布物。仓库不提交指向相邻 `../pi-mono` 的 `file:` 依赖；本地 Pi 源码学习只通过下面的 developer-local link 模式选择。
+
+## Local Pi source debugging
+
+正常安装和 CI 始终使用 published `0.84.2`：
+
+```bash
+npm ci --ignore-scripts
+npm run check:pi-compat
+```
+
+若同级目录存在同版本 `../pi-mono`，先只读检查版本与构建入口，再临时链接：
+
+```bash
+npm run check:local-pi
+npm run link:local-pi
+NODE_OPTIONS=--enable-source-maps npm run check:pi-compat
+npm run unlink:local-pi
+npm run check:local-pi
+```
+
+`link:local-pi` 和 `unlink:local-pi` 只管理 `node_modules` 中的 symlink、published backup 与 recovery state；运行前后都会验证 `packages/runtime-pi/package.json` 和 `package-lock.json` 哈希。若脚本发现版本不一致、构建入口缺失、unmanaged symlink 或 backup 冲突，会 fail closed。无论调试是否成功，结束时都应执行 unlink；最终 check 应显示 `mode: "published"`。
+
+VS Code 可以用下列 launch 配置在 Vitest 中断进 sibling TypeScript source map：
+
+```json
+{
+  "type": "node",
+  "request": "launch",
+  "name": "Himawari Pi compatibility",
+  "cwd": "${workspaceFolder}",
+  "program": "${workspaceFolder}/node_modules/vitest/vitest.mjs",
+  "args": ["run", "--config", "vitest.workspace.ts", "--project", "pi-compat"],
+  "sourceMaps": true,
+  "outFiles": ["${workspaceFolder}/../pi-mono/packages/*/dist/**/*.js"],
+  "resolveSourceMapLocations": [
+    "${workspaceFolder}/../pi-mono/**",
+    "!**/node_modules/**"
+  ],
+  "skipFiles": ["<node_internals>/**"]
+}
+```
+
+适配器操作对应的上游源码如下：
+
+| Adapter operation | `../pi-mono` source |
+| --- | --- |
+| `createAgentSession()`、tool allowlist、model/session 注入 | `packages/coding-agent/src/core/sdk.ts` |
+| Session lifecycle、subscribe、abort、settled、compaction | `packages/coding-agent/src/core/agent-session.ts` |
+| 内存 Session projection 与 entry tree | `packages/coding-agent/src/core/session-manager.ts` |
+| provider/tool lifecycle hook 类型与分发 | `packages/coding-agent/src/core/extensions/types.ts`, `packages/coding-agent/src/core/extensions/runner.ts` |
+| custom ToolDefinition 到 Agent tool 的包装 | `packages/coding-agent/src/core/tools/tool-definition-wrapper.ts` |
+| compaction result 生成 | `packages/coding-agent/src/core/compaction/compaction.ts` |
+| Agent message/turn/tool event loop | `packages/agent/src/types.ts`, `packages/agent/src/agent-loop.ts` |
+| 自动化测试使用的 faux provider | `packages/ai/src/providers/faux.ts` |
 
 ## Workspace boundaries
 
@@ -58,7 +112,7 @@ npm ci --ignore-scripts
 
 ## Application ports
 
-`packages/application` 公开 State、Reliable Event、Product State Repository、Reliable Event Sink、Trace、Payload、Audit、Memory、Model、Agent Runtime、Capability、Secret、Scheduler、Attention、Authority Lease、Clock 和 ID Generator 端口。端口只依赖产品领域和契约类型，不公开数据库、供应商、传输或 Pi 对象。
+`packages/application` 公开 State、Reliable Event、Product State Repository、Reliable Event Sink、Trace、Payload、Audit、Memory、Model、Agent Runtime、Runtime Projection/Tool、Capability、Secret、Scheduler、Attention、Authority Lease、Clock 和 ID Generator 端口。端口只依赖产品领域和契约类型，不公开数据库、供应商、传输或 Pi 对象。
 
 Task 5 新增的提交路径具有以下语义：
 
@@ -96,7 +150,7 @@ npm run check:pi-compat
 - e2e：`test/e2e/**/*.test.ts`
 - Pi compatibility：`packages/runtime-pi/**/*.compat.test.ts`
 
-unit 项目覆盖 Node.js 版本基线和 Task 2 的领域行为。contracts 项目覆盖 Gateway/Execution v1，以及全部产品端口和内存参考适配器。integration 项目已覆盖 Task 5 的原子提交、三类发布失败、幂等并发、authority fence 和协调器重启；e2e 和 Pi compatibility 命令仍以“没有测试文件”为成功基线，后续 Plan 任务必须逐步替换为真实验证，不能把空基线视为功能已实现。
+unit 项目覆盖 Node.js 版本基线和 Task 2 的领域行为。contracts 项目覆盖 Gateway/Execution v1，以及全部产品端口和内存参考适配器。integration 项目覆盖 Task 5–10 的应用语义与 Task 12 的可逆本地 Pi 链接夹具；Pi compatibility 以真实 `0.84.2` session、faux provider 和 custom tool 覆盖 Task 11。e2e 仍是“没有测试文件”的显式基线，不能视为端到端功能已实现。
 
 ## Project documents
 

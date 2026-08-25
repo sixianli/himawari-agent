@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type {
@@ -135,6 +136,18 @@ async function collect(iterable: AsyncIterable<RuntimeEvent>): Promise<readonly 
   const events: RuntimeEvent[] = [];
   for await (const event of iterable) events.push(event);
   return events;
+}
+
+function resolvePiAiEntry(piEntry: string): string {
+  const packageRoot = dirname(dirname(piEntry));
+  let cursor = packageRoot;
+  while (true) {
+    const candidate = join(cursor, "node_modules", "@earendil-works", "pi-ai", "dist", "index.js");
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(cursor);
+    if (parent === cursor) throw new Error("Unable to resolve Pi's matching pi-ai package");
+    cursor = parent;
+  }
 }
 
 function createAdapter(
@@ -369,16 +382,7 @@ describe("Pi Agent Runtime adapter compatibility", () => {
   it("runs the pinned Pi 0.84.2 session with its deterministic faux provider", async () => {
     const piSpecifier: string = "@earendil-works/pi-coding-agent";
     const piEntry = fileURLToPath(import.meta.resolve(piSpecifier));
-    const aiSpecifier = pathToFileURL(
-      join(
-        dirname(dirname(piEntry)),
-        "node_modules",
-        "@earendil-works",
-        "pi-ai",
-        "dist",
-        "index.js",
-      ),
-    ).href;
+    const aiSpecifier = pathToFileURL(resolvePiAiEntry(piEntry)).href;
     const pi = (await import(piSpecifier)) as {
       readonly VERSION: string;
       readonly ModelRuntime: {

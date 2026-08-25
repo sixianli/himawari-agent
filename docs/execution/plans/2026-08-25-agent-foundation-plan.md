@@ -301,12 +301,21 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 12: Add local Pi source learning and debugging mode
 
-- [ ] Write a check that locates the sibling `../pi-mono` checkout and verifies its package version and build artifacts without modifying it.
-- [ ] Implement opt-in link and unlink scripts that never change committed dependency declarations or lockfiles.
-- [ ] Ensure the normal install path always resolves the pinned published Pi package.
-- [ ] Document debugger source-map setup and the exact Pi source files corresponding to each adapter operation.
-- [ ] Verify local linking changes only developer-local installation state and is reversible.
-- [ ] Verify the repository returns to the published dependency after unlinking.
+- [x] Write a check that locates the sibling `../pi-mono` checkout and verifies its package version and build artifacts without modifying it.
+- [x] Implement opt-in link and unlink scripts that never change committed dependency declarations or lockfiles.
+- [x] Ensure the normal install path always resolves the pinned published Pi package.
+- [x] Document debugger source-map setup and the exact Pi source files corresponding to each adapter operation.
+- [x] Verify local linking changes only developer-local installation state and is reversible.
+- [x] Verify the repository returns to the published dependency after unlinking.
+
+#### Task 12 evidence — 2026-08-25
+
+- `npm run check:local-pi` resolves the exact sibling `../pi-mono`, compares `packages/coding-agent/package.json` against the committed `packages/runtime-pi` pin, verifies seven coding-agent/core dependency JS and declaration entrypoints, and reports whether Node currently resolves the local or published package. The check performs no writes.
+- `link:local-pi` moves the installed published package to a developer-local backup under `node_modules`, installs one symlink to the checked sibling package and records recovery state under `node_modules`. It refuses missing artifacts, version mismatch, unmanaged links and conflicting recovery state. `unlink:local-pi` verifies the managed target, restores the exact published backup and verifies its package name/version.
+- Both link and unlink hash `packages/runtime-pi/package.json` and `package-lock.json` before and after mutation. The 2-case integration suite uses an isolated filesystem fixture to prove the only changed state is `node_modules`, the operation is reversible and a mismatched sibling version fails closed.
+- The real sibling was clean at preflight and matched `0.84.2` but initially lacked generated build inputs and `dist`. `npm ci --ignore-scripts` succeeded with 0 vulnerabilities. The live model catalog had drifted beyond the `0.84.2` source types, so the debug build used model data from the already pinned published `0.84.2` dependency graph and TypeScript `--noCheck` only for the ignored `packages/ai/dist` emission; all other Pi workspaces used their normal build scripts. No tracked Pi file changed.
+- Real-mode verification passed in both directions: published mode 6/6 Pi compatibility tests, local-source mode 6/6, then restored published mode 6/6. The final resolver readback is `mode: "published"`; Himawari manifests and lockfile remained unchanged by link/unlink.
+- README documents source-map debugger configuration and maps adapter operations to the exact `pi-mono` source files. A normal `npm ci --ignore-scripts` continues to resolve the committed npm `0.84.2` dependency and does not opt into local mode.
 
 ### Task 13: Implement Run Coordinator and worker delegation
 
