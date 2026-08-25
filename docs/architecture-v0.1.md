@@ -13,9 +13,9 @@ date: "2026-08-25"
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e 和 Pi compatibility 五个测试项目。
 
-当前代码包含九个 workspace 的公共入口，以及 `packages/domain` 中已实现的不可变身份、所有权工厂、Run 状态机、Agent 权威租约规则和稳定领域错误。尚无应用用例、持久化、基础设施适配器、Pi Session 创建、网络监听器或可启动服务。
+当前代码包含九个 workspace 的公共入口、`packages/domain` 中已实现的不可变身份、所有权工厂、Run 状态机、Agent 权威租约规则和稳定领域错误，以及 `packages/gateway-contracts` 与 `packages/execution-contracts` 中首版严格 wire schema。尚无应用用例、持久化、基础设施适配器、Pi Session 创建、网络监听器或可启动服务。
 
-实现范围来自已确认 Spec，并按当前 Plan 的 Task 1 和 Task 2 落地：[SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-1-establish-repository-and-toolchain-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-2-implement-immutable-identities-and-domain-state-machines]
+实现范围来自已确认 Spec，并按当前 Plan 的 Task 1 至 Task 3 落地：[SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-1-establish-repository-and-toolchain-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-2-implement-immutable-identities-and-domain-state-machines] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-3-define-versioned-gateway-and-execution-contracts]
 
 ## Boundaries
 
@@ -68,6 +68,16 @@ completed | failed | cancelled → no next state
 
 Agent 权威租约是一个纯领域单槽位规则。同一 Agent 的同一 lease/holder 重申是幂等的；不同 lease 或 holder 同时声明会返回冲突；释放必须匹配当前 lease ID。当前模型不包含时间、到期、续租、fencing token 或持久化原子性，这些属于后续应用端口和适配器。
 
+## Wire Contracts
+
+`packages/gateway-contracts` 发布 `gateway.v1` 产品协议。它包含统一 Trigger admission，Thread 创建和关闭、Run 取消、语义审批响应，Thread/Run 快照查询、Trace 分页查询、可恢复事件订阅，Thread/Run 快照和有序流事件。Run 只能由统一 Trigger admission 启动；Gateway 不提供绕过触发接纳的新建 Run 命令。
+
+Gateway 信封携带消息标识、schema 版本、相关关系、可空因果关系、数据等级、Owner/Agent scope 和 actor。所有改变状态的命令另带幂等键。流事件以 `messageId` 作为事件标识，并携带 cursor、Session、可选 Thread/Turn、Run、父事件、严格正数 Run 内序号、事件时间、写入时间、事件类型和可空 Payload 引用。
+
+`packages/execution-contracts` 发布 `execution.v1` Worker 协议。请求覆盖工作执行、取消和外部结果对账；事件覆盖进度、结果、取消确认和对账结果。所有请求包含幂等键，所有消息包含相关和因果标识、Owner/Agent/Run/Worker Run scope 及数据等级。工作执行只携带输入、委派上下文、短期能力句柄和秘密引用；结果和错误正文也通过引用或稳定机器码表达。
+
+两类协议使用零外部依赖的运行时 schema，同时导出从 schema 推导的 TypeScript 类型。解析器要求精确字段、规范 UTC 毫秒时间戳、受限枚举和有界整数；未知字段、未知消息类型及不受支持的版本会返回带固定 `CONTRACT_VALIDATION_ERROR` code 和字段路径的错误。`public`、`private`、`sensitive`、`restricted` 是当前四个数据等级。v1 JSON 兼容性夹具固定首版 wire shape；在 v1 中添加未知字段不会被静默接受。
+
 ## Main Flows
 
 当前可执行流程仍限于工程验证和纯领域转换：
@@ -81,7 +91,7 @@ npm ci --ignore-scripts
   → selected Vitest project
 ```
 
-unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、全部 Run 状态组合、重复审批等待、终态不可变和单一 Agent 权威租约测试。contracts、integration、e2e 和 Pi compatibility 项目已配置但尚无功能测试，使用 `--passWithNoTests` 作为空 workspace 基线。
+unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、全部 Run 状态组合、重复审批等待、终态不可变和单一 Agent 权威租约测试。contracts 项目现在以两个 v1 JSON 夹具验证 Gateway 和 Execution 消息的 JSON 往返、非法输入、秘密明文字段与 Pi 类型隔离，以及执行结果的跨字段不变量。integration、e2e 和 Pi compatibility 项目仍使用 `--passWithNoTests` 作为空 workspace 基线。
 
 ## Backlog Links
 
@@ -90,7 +100,10 @@ unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、
 ## Decision Links
 
 - Pi runtime adapter：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
+- Headless Agent Gateway：[SOURCE: docs/adr/0002-headless-agent-gateway.md]
 - Single logical Agent authority：[SOURCE: docs/adr/0003-single-logical-agent-authority.md]
+- Complete Session Trace：[SOURCE: docs/adr/0010-complete-session-trace.md]
+- Composable service boundaries：[SOURCE: docs/adr/0011-composable-service-boundaries.md]
 - Agent, Thread and Run identity model：[SOURCE: docs/adr/0013-agent-thread-run-memory-model.md]
 - TypeScript and Node.js runtime：[SOURCE: docs/adr/0016-typescript-node-runtime.md]
 - Workspace monorepo：[SOURCE: docs/adr/0017-workspace-monorepo.md]

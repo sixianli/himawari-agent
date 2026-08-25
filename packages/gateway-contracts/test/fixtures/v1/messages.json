@@ -1,0 +1,197 @@
+[
+  {
+    "schemaVersion": "gateway.v1",
+    "kind": "command",
+    "type": "trigger.admit",
+    "messageId": "message-trigger-admit-01",
+    "correlationId": "correlation-run-01",
+    "causationId": null,
+    "dataClassification": "private",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "actor": { "actorType": "owner", "actorId": "owner-01" },
+    "idempotencyKey": "message-client-01",
+    "payload": {
+      "triggerId": "trigger-01",
+      "sourceType": "user_message",
+      "sourceId": "client-web-01",
+      "occurredAt": "2026-08-25T00:00:00.000Z",
+      "threadId": "thread-01",
+      "payloadRef": "payload-trigger-01",
+      "sourceProofRef": "proof-client-session-01"
+    }
+  },
+  {
+    "schemaVersion": "gateway.v1",
+    "kind": "command",
+    "type": "thread.create",
+    "messageId": "message-thread-create-01",
+    "correlationId": "correlation-thread-01",
+    "causationId": "message-trigger-admit-01",
+    "dataClassification": "private",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "actor": { "actorType": "owner", "actorId": "owner-01" },
+    "idempotencyKey": "thread-create-client-01",
+    "payload": { "threadId": "thread-01", "metadataRef": "payload-thread-metadata-01" }
+  },
+  {
+    "schemaVersion": "gateway.v1",
+    "kind": "command",
+    "type": "thread.close",
+    "messageId": "message-thread-close-01",
+    "correlationId": "correlation-thread-01",
+    "causationId": "message-thread-create-01",
+    "dataClassification": "private",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "actor": { "actorType": "owner", "actorId": "owner-01" },
+    "idempotencyKey": "thread-close-client-01",
+    "payload": { "threadId": "thread-01", "reasonCode": "owner_requested" }
+  },
+  {
+    "schemaVersion": "gateway.v1",
+    "kind": "command",
+    "type": "run.cancel",
+    "messageId": "message-run-cancel-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "message-trigger-admit-01",
+    "dataClassification": "private",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "actor": { "actorType": "owner", "actorId": "owner-01" },
+    "idempotencyKey": "run-cancel-client-01",
+    "payload": { "runId": "run-01", "reasonCode": "owner_requested" }
+  },
+  {
+    "schemaVersion": "gateway.v1",
+    "kind": "command",
+    "type": "approval.respond",
+    "messageId": "message-approval-response-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "event-approval-requested-01",
+    "dataClassification": "sensitive",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "actor": { "actorType": "owner", "actorId": "owner-01" },
+    "idempotencyKey": "approval-response-client-01",
+    "payload": {
+      "approvalRequestId": "approval-request-01",
+      "runId": "run-01",
+      "decision": "approved",
+      "semanticSnapshotHash": "sha256-approval-snapshot-01"
+    }
+  },
+  {
+    "schemaVersion": "gateway.v1",
+    "kind": "query",
+    "type": "thread.get_snapshot",
+    "messageId": "message-thread-query-01",
+    "correlationId": "correlation-query-01",
+    "causationId": null,
+    "dataClassification": "private",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "actor": { "actorType": "client", "actorId": "client-web-01" },
+    "payload": { "threadId": "thread-01" }
+  },
+  {
+    "schemaVersion": "gateway.v1",
+    "kind": "query",
+    "type": "run.get_snapshot",
+    "messageId": "message-run-query-01",
+    "correlationId": "correlation-query-02",
+    "causationId": null,
+    "dataClassification": "private",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "actor": { "actorType": "client", "actorId": "client-web-01" },
+    "payload": { "runId": "run-01" }
+  },
+  {
+    "schemaVersion": "gateway.v1",
+    "kind": "query",
+    "type": "trace.query",
+    "messageId": "message-trace-query-01",
+    "correlationId": "correlation-query-03",
+    "causationId": null,
+    "dataClassification": "sensitive",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "actor": { "actorType": "client", "actorId": "client-web-01" },
+    "payload": { "sessionId": "session-01", "runId": "run-01", "afterSequence": 0, "limit": 100 }
+  },
+  {
+    "schemaVersion": "gateway.v1",
+    "kind": "subscription",
+    "type": "events.subscribe",
+    "messageId": "message-subscription-01",
+    "correlationId": "correlation-subscription-01",
+    "causationId": null,
+    "dataClassification": "private",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "actor": { "actorType": "client", "actorId": "client-web-01" },
+    "payload": {
+      "subscriptionId": "subscription-01",
+      "sessionId": "session-01",
+      "threadId": "thread-01",
+      "runId": null,
+      "afterCursor": "cursor-41"
+    }
+  },
+  {
+    "schemaVersion": "gateway.v1",
+    "kind": "snapshot",
+    "type": "thread.snapshot",
+    "messageId": "message-thread-snapshot-01",
+    "correlationId": "correlation-query-01",
+    "causationId": "message-thread-query-01",
+    "dataClassification": "private",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "actor": { "actorType": "system", "actorId": "agent-service-01" },
+    "payload": {
+      "threadId": "thread-01",
+      "status": "open",
+      "revision": 7,
+      "sessionIds": ["session-01"],
+      "runIds": ["run-01"]
+    }
+  },
+  {
+    "schemaVersion": "gateway.v1",
+    "kind": "snapshot",
+    "type": "run.snapshot",
+    "messageId": "message-run-snapshot-01",
+    "correlationId": "correlation-query-02",
+    "causationId": "message-run-query-01",
+    "dataClassification": "private",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "actor": { "actorType": "system", "actorId": "agent-service-01" },
+    "payload": {
+      "runId": "run-01",
+      "threadId": "thread-01",
+      "sessionId": "session-01",
+      "triggerId": "trigger-01",
+      "status": "awaiting_approval",
+      "revision": 9,
+      "latestSequence": 41,
+      "activeApprovalRequestId": "approval-request-01"
+    }
+  },
+  {
+    "schemaVersion": "gateway.v1",
+    "kind": "event",
+    "type": "stream.event",
+    "messageId": "event-approval-requested-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "event-tool-intent-01",
+    "dataClassification": "sensitive",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "actor": { "actorType": "system", "actorId": "run-coordinator-01" },
+    "payload": {
+      "cursor": "cursor-41",
+      "sessionId": "session-01",
+      "threadId": "thread-01",
+      "runId": "run-01",
+      "turnId": "turn-02",
+      "parentEventId": "event-tool-intent-01",
+      "sequence": 41,
+      "occurredAt": "2026-08-25T00:00:03.000Z",
+      "recordedAt": "2026-08-25T00:00:03.100Z",
+      "eventType": "approval.requested",
+      "payloadRef": "payload-approval-request-01"
+    }
+  }
+]

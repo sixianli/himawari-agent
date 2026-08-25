@@ -1,0 +1,166 @@
+[
+  {
+    "schemaVersion": "execution.v1",
+    "kind": "request",
+    "type": "work.execute",
+    "messageId": "execution-request-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "event-worker-delegated-01",
+    "dataClassification": "sensitive",
+    "scope": {
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "worker-run-01"
+    },
+    "idempotencyKey": "execute-worker-run-01",
+    "payload": {
+      "capabilityId": "restaurant-search",
+      "capabilityVersion": "1.0.0",
+      "operation": "search",
+      "inputRef": "payload-search-input-01",
+      "capabilityHandleRef": "capability-handle-01",
+      "delegatedContextRefs": ["payload-context-01"],
+      "secretRefs": [
+        {
+          "secretRef": "secret-ref-map-provider-01",
+          "secretVersion": "version-03",
+          "purpose": "map-search"
+        }
+      ],
+      "requestedAt": "2026-08-25T00:00:00.000Z",
+      "deadlineAt": "2026-08-25T00:00:30.000Z"
+    }
+  },
+  {
+    "schemaVersion": "execution.v1",
+    "kind": "request",
+    "type": "work.cancel",
+    "messageId": "execution-cancel-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "execution-request-01",
+    "dataClassification": "sensitive",
+    "scope": {
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "worker-run-01"
+    },
+    "idempotencyKey": "cancel-worker-run-01",
+    "payload": {
+      "targetRequestId": "execution-request-01",
+      "reasonCode": "owner_requested",
+      "requestedAt": "2026-08-25T00:00:05.000Z"
+    }
+  },
+  {
+    "schemaVersion": "execution.v1",
+    "kind": "request",
+    "type": "work.reconcile",
+    "messageId": "execution-reconcile-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "execution-result-unknown-01",
+    "dataClassification": "sensitive",
+    "scope": {
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "worker-run-01"
+    },
+    "idempotencyKey": "reconcile-external-action-01",
+    "payload": {
+      "externalActionId": "external-action-01",
+      "resultLookupRef": "result-lookup-01",
+      "requestedAt": "2026-08-25T00:01:00.000Z"
+    }
+  },
+  {
+    "schemaVersion": "execution.v1",
+    "kind": "event",
+    "type": "work.progress",
+    "messageId": "execution-progress-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "execution-request-01",
+    "dataClassification": "sensitive",
+    "scope": {
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "worker-run-01"
+    },
+    "payload": {
+      "requestId": "execution-request-01",
+      "sequence": 1,
+      "occurredAt": "2026-08-25T00:00:01.000Z",
+      "stage": "calling-provider",
+      "progressPermille": 400,
+      "payloadRef": null
+    }
+  },
+  {
+    "schemaVersion": "execution.v1",
+    "kind": "event",
+    "type": "work.result",
+    "messageId": "execution-result-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "execution-request-01",
+    "dataClassification": "sensitive",
+    "scope": {
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "worker-run-01"
+    },
+    "payload": {
+      "requestId": "execution-request-01",
+      "completedAt": "2026-08-25T00:00:03.000Z",
+      "outcome": "succeeded",
+      "outputRef": "payload-search-result-01",
+      "errorCode": null,
+      "externalActionId": null
+    }
+  },
+  {
+    "schemaVersion": "execution.v1",
+    "kind": "event",
+    "type": "work.cancelled",
+    "messageId": "execution-cancelled-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "execution-cancel-01",
+    "dataClassification": "sensitive",
+    "scope": {
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "worker-run-01"
+    },
+    "payload": {
+      "requestId": "execution-request-01",
+      "cancelledAt": "2026-08-25T00:00:06.000Z",
+      "reasonCode": "owner_requested"
+    }
+  },
+  {
+    "schemaVersion": "execution.v1",
+    "kind": "event",
+    "type": "work.reconciled",
+    "messageId": "execution-reconciled-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "execution-reconcile-01",
+    "dataClassification": "sensitive",
+    "scope": {
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "worker-run-01"
+    },
+    "payload": {
+      "requestId": "execution-reconcile-01",
+      "externalActionId": "external-action-01",
+      "reconciledAt": "2026-08-25T00:01:02.000Z",
+      "outcome": "confirmed_succeeded",
+      "resultRef": "payload-reservation-result-01",
+      "errorCode": null
+    }
+  }
+]

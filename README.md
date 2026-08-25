@@ -1,6 +1,6 @@
 # Himawari Agent
 
-Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。当前仓库已完成基础平台 Plan 的 Task 1 和 Task 2：TypeScript/Node.js workspace、包边界、测试分组、固定版本 Pi 依赖，以及不可变领域身份、所有权约束、Run 状态机和单一逻辑权威租约。应用用例、持久化、Pi 运行时适配器和可启动服务尚未实现。
+Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。当前仓库已完成基础平台 Plan 的 Task 1 至 Task 3：TypeScript/Node.js workspace、包边界、测试分组、固定版本 Pi 依赖，不可变领域身份、所有权约束、Run 状态机和单一逻辑权威租约，以及首版 Gateway/Execution wire contracts。应用用例、持久化、Pi 运行时适配器和可启动服务尚未实现。
 
 ## Toolchain
 
@@ -25,8 +25,8 @@ npm ci --ignore-scripts
 | Workspace | Responsibility | Allowed internal dependencies |
 | --- | --- | --- |
 | `packages/domain` | 领域身份、状态和不变量 | 无 |
-| `packages/gateway-contracts` | 可序列化的客户端协议类型 | 无 |
-| `packages/execution-contracts` | 可序列化的执行协议类型 | 无 |
+| `packages/gateway-contracts` | `gateway.v1` 客户端协议 schema、类型与兼容性夹具 | 无 |
+| `packages/execution-contracts` | `execution.v1` Worker 协议 schema、类型与兼容性夹具 | 无 |
 | `packages/application` | 用例和产品端口 | domain、两类 contracts |
 | `packages/runtime-pi` | 产品 Agent Runtime 端口的 Pi 适配器 | application、固定版本 Pi |
 | `packages/platform-node` | Node.js 基础设施适配器 | application、domain、两类 contracts |
@@ -48,6 +48,14 @@ npm ci --ignore-scripts
 
 领域层不生成 ID、不读取时钟，也不持久化租约；租约到期、续租、fencing token 和存储原子性属于后续应用端口及适配器任务。
 
+## Protocol contracts
+
+- `gateway.v1`：统一 Trigger admission，Thread 创建/关闭、Run 取消、审批响应，Thread/Run 快照与查询、Trace 查询、事件订阅和有序流事件。启动 Run 必须经过 Trigger admission。
+- `execution.v1`：Worker 执行、取消和外部结果对账请求，以及进度、结果、取消确认和对账事件。
+- 两类信封都显式携带 schema 版本、消息标识、correlation、causation、数据等级和产品 scope；改变状态的 Gateway 命令及全部 Worker 请求另带幂等键。
+- wire payload 只承载稳定机器值和受控引用。大型或敏感内容、执行输入/输出、能力句柄和秘密都用引用表示；协议不公开 Pi runtime 类型或凭证明文。
+- `gatewayMessageSchema` 与 `executionMessageSchema` 提供严格 `parse`、`parseJson` 和 `serialize`，并拒绝未知字段、未知版本及自相矛盾的执行结果。
+
 ## Validation
 
 ```bash
@@ -67,7 +75,7 @@ npm run check:pi-compat
 - e2e：`test/e2e/**/*.test.ts`
 - Pi compatibility：`packages/runtime-pi/**/*.compat.test.ts`
 
-unit 项目现在覆盖 Node.js 版本基线和 Task 2 的领域行为。contracts、integration、e2e 和 Pi compatibility 命令目前仍以“没有测试文件”为成功基线，后续 Plan 任务必须逐步替换为真实验证，不能把当前空基线视为功能已实现。
+unit 项目覆盖 Node.js 版本基线和 Task 2 的领域行为。contracts 项目已有 Gateway/Execution v1 的 JSON 兼容性、往返和非法输入测试。integration、e2e 和 Pi compatibility 命令目前仍以“没有测试文件”为成功基线，后续 Plan 任务必须逐步替换为真实验证，不能把当前空基线视为功能已实现。
 
 ## Project documents
 

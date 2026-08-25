@@ -127,12 +127,21 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 3: Define versioned Gateway and execution contracts
 
-- [ ] Write schema round-trip and invalid-input tests for commands, queries, snapshots and streaming events.
-- [ ] Define trigger admission, Thread commands, Run commands, approval responses, Trace queries and event subscription contracts.
-- [ ] Define execution-worker request, progress, result, cancellation and reconciliation contracts.
-- [ ] Include schema version, correlation, causation, idempotency and data-classification fields where required by the Spec.
-- [ ] Ensure serialized contracts contain no Pi types and no secret values.
-- [ ] Add compatibility fixtures for the first protocol version.
+- [x] Write schema round-trip and invalid-input tests for commands, queries, snapshots and streaming events.
+- [x] Define trigger admission, Thread commands, Run commands, approval responses, Trace queries and event subscription contracts.
+- [x] Define execution-worker request, progress, result, cancellation and reconciliation contracts.
+- [x] Include schema version, correlation, causation, idempotency and data-classification fields where required by the Spec.
+- [x] Ensure serialized contracts contain no Pi types and no secret values.
+- [x] Add compatibility fixtures for the first protocol version.
+
+#### Task 3 evidence — 2026-08-25
+
+- Failure-first baseline: two round-trip tests failed because neither contract package exposed a runtime schema; the new invalid-input cases were then exercised against the implemented schemas.
+- `packages/gateway-contracts` now publishes `gateway.v1` with 12 message shapes spanning Trigger admission, Thread and Run commands, semantic approval responses, snapshot and Trace queries, resumable subscription, snapshots and ordered streaming events. Run creation remains part of Trigger admission; the direct Run command is cancellation.
+- `packages/execution-contracts` now publishes `execution.v1` with seven message shapes spanning execute, cancel and reconciliation requests plus progress, result, cancellation and reconciliation events. Result and reconciliation outcomes enforce matching payload/error/external-action references, and execution deadlines must follow request time.
+- Both protocols carry version, message, correlation, causation, data-classification and product-scope fields; state-changing Gateway commands and all Worker requests carry idempotency keys. Parsers reject unknown fields and versions with stable `CONTRACT_VALIDATION_ERROR` details.
+- Committed v1 JSON fixtures contain only machine values and references. Contract tests recursively reject raw-secret field names and scan serialized fixtures for Pi runtime types; secret access is represented only by reference, version and purpose.
+- `npm run test:contracts`: 2 files and 23 tests passed. `npm run typecheck` and `npm run check:boundaries` passed; both contract packages retain zero internal and zero external dependencies.
 
 ### Task 4: Implement product ports and adapter conformance suites
 
