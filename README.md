@@ -1,6 +1,6 @@
 # Himawari Agent
 
-Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。当前仓库已完成基础平台 Plan 的 Task 1 至 Task 4：TypeScript/Node.js workspace、包边界、测试分组、固定版本 Pi 依赖，不可变领域身份和状态机，首版 Gateway/Execution wire contracts，以及产品端口与确定性内存参考适配器。应用用例、生产持久化、Pi 运行时适配器和可启动服务尚未实现。
+Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。当前仓库已完成基础平台 Plan 的 Task 1 至 Task 5：TypeScript/Node.js workspace、包边界、测试分组、固定版本 Pi 依赖，不可变领域身份和状态机，首版 Gateway/Execution wire contracts，产品端口与确定性内存参考适配器，以及 Run 状态提交、幂等命令结果和可靠事件发布的首个应用层切片。完整 Run Coordinator、生产持久化、Pi 运行时适配器和可启动服务尚未实现。
 
 ## Toolchain
 
@@ -27,7 +27,7 @@ npm ci --ignore-scripts
 | `packages/domain` | 领域身份、状态和不变量 | 无 |
 | `packages/gateway-contracts` | `gateway.v1` 客户端协议 schema、类型与兼容性夹具 | 无 |
 | `packages/execution-contracts` | `execution.v1` Worker 协议 schema、类型与兼容性夹具 | 无 |
-| `packages/application` | 产品端口、共享值和稳定端口错误；用例尚未实现 | domain、两类 contracts |
+| `packages/application` | 产品端口、共享值、稳定端口错误，以及 Run 状态提交和可靠事件发布服务 | domain、两类 contracts |
 | `packages/runtime-pi` | 产品 Agent Runtime 端口的 Pi 适配器 | application、固定版本 Pi |
 | `packages/platform-node` | Node.js 基础设施适配器 | application、domain、两类 contracts |
 | `packages/testing` | 可复用端口 conformance suites 和确定性内存参考适配器 | application、domain、两类 contracts |
@@ -46,7 +46,7 @@ npm ci --ignore-scripts
 - 每个 Agent 单槽位的逻辑权威租约规则：同一租约可幂等重申，第二个同时存在的租约会失败，只有当前 lease ID 可以释放。
 - `DomainError` 和固定的 `DOMAIN_*` 机器错误码。
 
-领域层不生成 ID、不读取时钟，也不持久化租约；租约到期、续租、fencing token 和存储原子性属于后续应用端口及适配器任务。
+领域层不生成 ID、不读取时钟，也不持久化租约。参考适配器已在应用端口外侧实现租约到期、续租和 fencing token，并在 Task 5 的产品状态提交路径校验当前 fence；生产级持久化仍未实现。
 
 ## Protocol contracts
 
@@ -58,7 +58,15 @@ npm ci --ignore-scripts
 
 ## Application ports
 
-`packages/application` 公开 State、Reliable Event、Trace、Payload、Audit、Memory、Model、Agent Runtime、Capability、Secret、Scheduler、Attention、Authority Lease、Clock 和 ID Generator 端口。端口只依赖产品领域和契约类型，不公开数据库、供应商、传输或 Pi 对象。
+`packages/application` 公开 State、Reliable Event、Product State Repository、Reliable Event Sink、Trace、Payload、Audit、Memory、Model、Agent Runtime、Capability、Secret、Scheduler、Attention、Authority Lease、Clock 和 ID Generator 端口。端口只依赖产品领域和契约类型，不公开数据库、供应商、传输或 Pi 对象。
+
+Task 5 新增的提交路径具有以下语义：
+
+- `RunStateCommitCoordinator` 使用领域状态机形成下一版 Run 状态，并把状态、命令结果和 outbox 事件交给一次原子提交。
+- 新的 Agent 状态写命令必须携带当前 authority lease ID 和 fencing token；过期或已被替换的 fence 返回 `PORT_NOT_AUTHORITATIVE`，不产生部分写入。
+- 幂等结果按 Owner、Agent 和 idempotency key 共同定址；相同 command type/fingerprint 返回原提交结果，不同命令复用同一键返回冲突，并发重复接纳也只产生一个状态版本和一个事件。
+- `ReliableEventPublisher` 在提交后独立发布 pending 事件。投递前失败会保留 outbox；投递成功但标记失败会重投同一事件 ID，由 Sink 去重后完成标记。
+- 新建协调器可以从同一个产品状态参考适配器恢复 Run 和 pending 事件，不读取或依赖 Pi Session 文件。
 
 `packages/testing` 提供：
 
@@ -67,7 +75,7 @@ npm ci --ignore-scripts
 - `ManualClock` 和 `DeterministicIdGenerator`：可重复的时间与 ID。
 - `DeterministicFailureScheduler`：按 checkpoint 和调用次数安排预写入失败，用于稳定重现崩溃/重试路径。
 
-这些适配器只用于测试和本地架构验证，不提供生产耐久性、加密或进程隔离。Task 5 以后会逐步加入事务/outbox、完整 Trace/Payload 语义和实际供应商适配器。
+这些适配器只用于测试和本地架构验证。内存 Product State Repository 提供可验证的 transaction/outbox 等价语义，但不提供跨进程生产耐久性、加密或进程隔离；完整 Trace/Payload 语义和实际供应商适配器仍属于后续任务。
 
 ## Validation
 
@@ -88,7 +96,7 @@ npm run check:pi-compat
 - e2e：`test/e2e/**/*.test.ts`
 - Pi compatibility：`packages/runtime-pi/**/*.compat.test.ts`
 
-unit 项目覆盖 Node.js 版本基线和 Task 2 的领域行为。contracts 项目覆盖 Gateway/Execution v1，以及全部产品端口和内存参考适配器。integration、e2e 和 Pi compatibility 命令目前仍以“没有测试文件”为成功基线，后续 Plan 任务必须逐步替换为真实验证，不能把当前空基线视为功能已实现。
+unit 项目覆盖 Node.js 版本基线和 Task 2 的领域行为。contracts 项目覆盖 Gateway/Execution v1，以及全部产品端口和内存参考适配器。integration 项目已覆盖 Task 5 的原子提交、三类发布失败、幂等并发、authority fence 和协调器重启；e2e 和 Pi compatibility 命令仍以“没有测试文件”为成功基线，后续 Plan 任务必须逐步替换为真实验证，不能把空基线视为功能已实现。
 
 ## Project documents
 

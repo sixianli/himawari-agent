@@ -15,7 +15,9 @@ import type {
   ModelInvocationEvent,
   ModelPort,
   PayloadStorePort,
+  ProductStateRepositoryPort,
   ReliableEventPort,
+  ReliableEventSinkPort,
   RuntimeEvent,
   SchedulerPort,
   SecretPort,
@@ -150,6 +152,160 @@ export function reliableEventPortConformance(
 
         expect(published.publishedAt).toBe(T1);
         expect(await port.listPending(10)).toEqual([]);
+      });
+    });
+  });
+}
+
+export interface ProductStateRepositoryFixture {
+  readonly repository: ProductStateRepositoryPort;
+  readonly authority: {
+    readonly leaseId: ReturnType<typeof createAuthorityLeaseId>;
+    readonly fencingToken: number;
+  };
+}
+
+export interface ProductStateRepositoryConfiguration {
+  readonly ownerId: typeof OWNER_ID;
+  readonly agentId: typeof AGENT_ID;
+}
+
+export function productStateRepositoryPortConformance(
+  harness: ConfiguredPortConformanceHarness<
+    ProductStateRepositoryFixture,
+    ProductStateRepositoryConfiguration
+  >,
+): void {
+  describe("ProductStateRepositoryPort conformance", () => {
+    it("atomically commits state, outbox events, and a stable command result", async () => {
+      await withConfiguredPort(
+        harness,
+        { ownerId: OWNER_ID, agentId: AGENT_ID },
+        async ({ repository, authority }) => {
+          const input = {
+            command: {
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              idempotencyKey: createIdempotencyKey("command-conformance-01"),
+              commandType: "run.transition",
+              commandFingerprint: "run.transition:accepted:running",
+              authority,
+            },
+            state: {
+              key: "run:conformance",
+              expectedRevision: null,
+              value: { status: "accepted" },
+            },
+            events: [
+              {
+                id: "event-conformance-01",
+                idempotencyKey: createIdempotencyKey("command-conformance-01"),
+                topic: "run.accepted",
+                payloadRef: "payload-event-conformance-01",
+                occurredAt: T0,
+              },
+            ],
+            resultRef: "run:conformance",
+            committedAt: T0,
+          } as const;
+
+          const committed = await repository.commitStateAndEvents(input);
+          const replayed = await repository.commitStateAndEvents(input);
+
+          expect(committed).toMatchObject({
+            replayed: false,
+            state: { revision: 1 },
+            commandResult: { resultRef: "run:conformance", stateRevision: 1 },
+          });
+          expect(await repository.read("run:conformance")).toEqual(committed.state);
+          expect(await repository.listPending(10)).toEqual(committed.events);
+          expect(
+            await repository.findCommandResult({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              idempotencyKey: input.command.idempotencyKey,
+            }),
+          ).toEqual(committed.commandResult);
+          expect(replayed).toEqual({ ...committed, replayed: true });
+        },
+      );
+    });
+
+    it("rejects reuse of an idempotency key for different command content", async () => {
+      await withConfiguredPort(
+        harness,
+        { ownerId: OWNER_ID, agentId: AGENT_ID },
+        async ({ repository, authority }) => {
+          const idempotencyKey = createIdempotencyKey("command-conformance-02");
+          const input = {
+            command: {
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              idempotencyKey,
+              commandType: "run.admit",
+              commandFingerprint: "run.admit:one",
+              authority,
+            },
+            state: {
+              key: "run:conformance",
+              expectedRevision: null,
+              value: { status: "accepted" },
+            },
+            events: [
+              {
+                id: "event-conformance-02",
+                idempotencyKey,
+                topic: "run.accepted",
+                payloadRef: "payload-event-conformance-02",
+                occurredAt: T0,
+              },
+            ],
+            resultRef: "run:conformance",
+            committedAt: T0,
+          } as const;
+          await repository.commitStateAndEvents(input);
+
+          await expectPortError(
+            () =>
+              repository.commitStateAndEvents({
+                ...input,
+                command: { ...input.command, commandFingerprint: "run.admit:different" },
+              }),
+            PORT_ERROR_CODES.CONFLICT,
+          );
+        },
+      );
+    });
+  });
+}
+
+export function reliableEventSinkPortConformance(
+  harness: PortConformanceHarness<ReliableEventSinkPort>,
+): void {
+  describe("ReliableEventSinkPort conformance", () => {
+    it("deduplicates redelivery by event identity", async () => {
+      await withPort(harness, async (port) => {
+        const event = {
+          id: "event-sink-conformance-01",
+          idempotencyKey: createIdempotencyKey("event-sink-command-01"),
+          topic: "run.accepted",
+          payloadRef: "payload-event-sink-conformance-01",
+          occurredAt: T0,
+          publishedAt: null,
+        } as const;
+
+        await expect(port.publish(event)).resolves.toEqual({
+          eventId: event.id,
+          outcome: "published",
+        });
+        await expect(port.publish(event)).resolves.toEqual({
+          eventId: event.id,
+          outcome: "duplicate",
+        });
+        await expectPortError(
+          () => port.publish({ ...event, payloadRef: "payload-different" }),
+          PORT_ERROR_CODES.CONFLICT,
+        );
       });
     });
   });

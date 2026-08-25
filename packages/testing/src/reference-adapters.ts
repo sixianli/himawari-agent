@@ -14,7 +14,9 @@ import type {
   ModelInvocationEvent,
   ModelPort,
   PayloadStorePort,
+  ProductStateRepositoryPort,
   ReliableEventPort,
+  ReliableEventSinkPort,
   RuntimeEvent,
   SchedulerPort,
   SecretPort,
@@ -32,10 +34,10 @@ import {
   InMemoryAuthorityLeasePort,
   InMemoryMemoryPort,
   InMemoryPayloadStore,
-  InMemoryReliableEventPort,
+  InMemoryProductStateRepository,
+  InMemoryReliableEventSink,
   InMemoryScheduler,
   InMemorySecretPort,
-  InMemoryStateStore,
   InMemoryTraceStore,
   ScriptedAgentRuntime,
   ScriptedAttentionPort,
@@ -62,6 +64,8 @@ export interface ReferenceAdapterOptions {
 export interface ReferenceAdapterSet {
   readonly state: StateStorePort;
   readonly reliableEvents: ReliableEventPort;
+  readonly productState: ProductStateRepositoryPort;
+  readonly eventSink: ReliableEventSinkPort;
   readonly trace: TraceStorePort;
   readonly payload: PayloadStorePort;
   readonly audit: AuditLedgerPort;
@@ -89,10 +93,14 @@ export function createReferenceAdapterSet(
     reasonCode: "default_silent",
     interruptAuthorizationRef: null,
   };
+  const authority = new InMemoryAuthorityLeasePort(clock, failures);
+  const productState = new InMemoryProductStateRepository(authority, failures);
 
   return Object.freeze({
-    state: new InMemoryStateStore(failures),
-    reliableEvents: new InMemoryReliableEventPort(failures),
+    state: productState,
+    reliableEvents: productState,
+    productState,
+    eventSink: new InMemoryReliableEventSink(failures),
     trace: new InMemoryTraceStore(failures),
     payload: new InMemoryPayloadStore(failures),
     audit: new InMemoryAuditLedger(failures),
@@ -106,7 +114,7 @@ export function createReferenceAdapterSet(
     secret: new InMemorySecretPort(ids, failures),
     scheduler: new InMemoryScheduler(failures),
     attention: new ScriptedAttentionPort(attentionDecision),
-    authority: new InMemoryAuthorityLeasePort(clock, failures),
+    authority,
     clock,
     ids,
   });

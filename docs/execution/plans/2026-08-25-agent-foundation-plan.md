@@ -163,12 +163,24 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 5: Implement product-state commit and reliable-event semantics
 
-- [ ] Write tests for atomic Run-state and business-event visibility.
-- [ ] Write tests simulating failure before commit, after commit but before publish, and during duplicate publish.
-- [ ] Implement a state repository and reliable-event abstraction supporting transaction/outbox-equivalent semantics.
-- [ ] Implement idempotent command admission and stable result lookup.
-- [ ] Implement authority-lease checks on every command that mutates Agent state.
-- [ ] Demonstrate coordinator restart using the same reference state adapter without relying on a Pi Session file.
+- [x] Write tests for atomic Run-state and business-event visibility.
+- [x] Write tests simulating failure before commit, after commit but before publish, and during duplicate publish.
+- [x] Implement a state repository and reliable-event abstraction supporting transaction/outbox-equivalent semantics.
+- [x] Implement idempotent command admission and stable result lookup.
+- [x] Implement authority-lease checks on every command that mutates Agent state.
+- [x] Demonstrate coordinator restart using the same reference state adapter without relying on a Pi Session file.
+
+#### Task 5 evidence — 2026-08-25
+
+- Failure-first baseline: all 6 initial integration scenarios failed at the missing `RunStateCommitCoordinator`; the implemented suite was then expanded with a concurrent duplicate-admission case.
+- `packages/application` now exposes `ProductStateRepositoryPort`, `ReliableEventSinkPort`, `RunStateCommitCoordinator` and `ReliableEventPublisher`. State changes still use the domain transition table; this is a narrow commit/recovery slice rather than the full Task 13 Run Coordinator.
+- The reference Product State Repository atomically records one State revision, the stable command result and pending outbox events after revision, event-identity and current authority-fence checks. An injected `productState.commit.before` failure leaves all three absent.
+- Command results are keyed by Owner, Agent and idempotency key. Equal command type/fingerprint replays the original commit result without another write; mismatched reuse returns `PORT_CONFLICT`, and concurrent duplicates converge on one State revision and one event.
+- Every new Agent-state commit requires the current authority lease ID and fencing token. The integration suite proves an expired/replaced fence returns `PORT_NOT_AUTHORITATIVE` without advancing State, while the current fence succeeds.
+- Reliable publication remains separate from the state transaction. Tests prove a sink failure leaves the event pending, and a failure after sink delivery but before `markPublished` causes one duplicate attempt that the Sink deduplicates by event ID.
+- A newly constructed coordinator reads and advances the Run using the same reference Product State Repository with two pending events and no Pi Session artifact or runtime dependency.
+- `npm run check` passed formatting, lint, strict TypeScript and dependency boundaries for all 9 workspaces. `npm run test` passed 87 unit, 54 contract and 7 integration tests; e2e remains an explicit empty baseline. `npm run check:pi-compat` also remains an explicit empty baseline.
+- Strict document-governance validation passed with 0 warnings, and `git diff --check` passed.
 
 ### Task 6: Implement Session Trace, Payload and audit separation
 

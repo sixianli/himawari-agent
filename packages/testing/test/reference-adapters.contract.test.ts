@@ -1,5 +1,12 @@
 import { PORT_ERROR_CODES } from "@himawari-agent/application";
 import {
+  createAgent,
+  createAgentAuthorityLease,
+  createAuthorityHolderId,
+  createAuthorityLeaseId,
+  createOwner,
+} from "@himawari-agent/domain";
+import {
   agentRuntimePortConformance,
   attentionPortConformance,
   auditLedgerPortConformance,
@@ -10,7 +17,9 @@ import {
   memoryPortConformance,
   modelPortConformance,
   payloadStorePortConformance,
+  productStateRepositoryPortConformance,
   reliableEventPortConformance,
+  reliableEventSinkPortConformance,
   schedulerPortConformance,
   secretPortConformance,
   stateStorePortConformance,
@@ -26,6 +35,24 @@ import { describe, expect, it } from "vitest";
 
 stateStorePortConformance({ create: () => createReferenceAdapterSet().state });
 reliableEventPortConformance({ create: () => createReferenceAdapterSet().reliableEvents });
+productStateRepositoryPortConformance({
+  create: async ({ ownerId, agentId }) => {
+    const adapters = createReferenceAdapterSet();
+    const owner = createOwner(ownerId);
+    const agent = createAgent({ id: agentId, owner });
+    const lease = createAgentAuthorityLease({
+      id: createAuthorityLeaseId("lease-product-state-conformance"),
+      agent,
+      holderId: createAuthorityHolderId("holder-product-state-conformance"),
+    });
+    const authority = await adapters.authority.claim(lease, 60_000);
+    return {
+      repository: adapters.productState,
+      authority: { leaseId: lease.id, fencingToken: authority.fencingToken },
+    };
+  },
+});
+reliableEventSinkPortConformance({ create: () => createReferenceAdapterSet().eventSink });
 traceStorePortConformance({ create: () => createReferenceAdapterSet().trace });
 payloadStorePortConformance({ create: () => createReferenceAdapterSet().payload });
 auditLedgerPortConformance({ create: () => createReferenceAdapterSet().audit });
