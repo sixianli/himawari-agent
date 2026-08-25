@@ -1,6 +1,6 @@
 # Himawari Agent
 
-Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。当前仓库已完成基础平台 Plan 的 Task 1 至 Task 3：TypeScript/Node.js workspace、包边界、测试分组、固定版本 Pi 依赖，不可变领域身份、所有权约束、Run 状态机和单一逻辑权威租约，以及首版 Gateway/Execution wire contracts。应用用例、持久化、Pi 运行时适配器和可启动服务尚未实现。
+Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。当前仓库已完成基础平台 Plan 的 Task 1 至 Task 4：TypeScript/Node.js workspace、包边界、测试分组、固定版本 Pi 依赖，不可变领域身份和状态机，首版 Gateway/Execution wire contracts，以及产品端口与确定性内存参考适配器。应用用例、生产持久化、Pi 运行时适配器和可启动服务尚未实现。
 
 ## Toolchain
 
@@ -27,14 +27,14 @@ npm ci --ignore-scripts
 | `packages/domain` | 领域身份、状态和不变量 | 无 |
 | `packages/gateway-contracts` | `gateway.v1` 客户端协议 schema、类型与兼容性夹具 | 无 |
 | `packages/execution-contracts` | `execution.v1` Worker 协议 schema、类型与兼容性夹具 | 无 |
-| `packages/application` | 用例和产品端口 | domain、两类 contracts |
+| `packages/application` | 产品端口、共享值和稳定端口错误；用例尚未实现 | domain、两类 contracts |
 | `packages/runtime-pi` | 产品 Agent Runtime 端口的 Pi 适配器 | application、固定版本 Pi |
 | `packages/platform-node` | Node.js 基础设施适配器 | application、domain、两类 contracts |
-| `packages/testing` | 端口契约夹具和确定性测试替身 | application、domain、两类 contracts |
+| `packages/testing` | 可复用端口 conformance suites 和确定性内存参考适配器 | application、domain、两类 contracts |
 | `apps/agent-service` | Agent Gateway 和控制平面组合入口 | application、contracts、runtime-pi、platform-node |
 | `apps/execution-worker` | 隔离执行工作进程入口 | application、execution-contracts、platform-node |
 
-`npm run check:boundaries` 会检查根和 workspace 清单以及 TypeScript import，拒绝非精确的直接外部依赖、非法反向依赖、依赖环、未声明的内部依赖、纯产品层的 `node:` import，以及 `packages/runtime-pi` 之外的直接 Pi import。
+`npm run check:boundaries` 会检查根和 workspace 清单以及 TypeScript import，拒绝非精确的直接外部依赖、非法反向依赖、依赖环、未声明的内部依赖、逃出 workspace 根的相对 import、纯产品层的 `node:` import，以及 `packages/runtime-pi` 之外的直接 Pi import。
 
 ## Domain foundation
 
@@ -56,6 +56,19 @@ npm ci --ignore-scripts
 - wire payload 只承载稳定机器值和受控引用。大型或敏感内容、执行输入/输出、能力句柄和秘密都用引用表示；协议不公开 Pi runtime 类型或凭证明文。
 - `gatewayMessageSchema` 与 `executionMessageSchema` 提供严格 `parse`、`parseJson` 和 `serialize`，并拒绝未知字段、未知版本及自相矛盾的执行结果。
 
+## Application ports
+
+`packages/application` 公开 State、Reliable Event、Trace、Payload、Audit、Memory、Model、Agent Runtime、Capability、Secret、Scheduler、Attention、Authority Lease、Clock 和 ID Generator 端口。端口只依赖产品领域和契约类型，不公开数据库、供应商、传输或 Pi 对象。
+
+`packages/testing` 提供：
+
+- `@himawari-agent/testing/conformance`：未来适配器可以复用的 Vitest harness 和行为 suite。
+- `createReferenceAdapterSet()`：全部端口的隔离内存参考实现。
+- `ManualClock` 和 `DeterministicIdGenerator`：可重复的时间与 ID。
+- `DeterministicFailureScheduler`：按 checkpoint 和调用次数安排预写入失败，用于稳定重现崩溃/重试路径。
+
+这些适配器只用于测试和本地架构验证，不提供生产耐久性、加密或进程隔离。Task 5 以后会逐步加入事务/outbox、完整 Trace/Payload 语义和实际供应商适配器。
+
 ## Validation
 
 ```bash
@@ -75,7 +88,7 @@ npm run check:pi-compat
 - e2e：`test/e2e/**/*.test.ts`
 - Pi compatibility：`packages/runtime-pi/**/*.compat.test.ts`
 
-unit 项目覆盖 Node.js 版本基线和 Task 2 的领域行为。contracts 项目已有 Gateway/Execution v1 的 JSON 兼容性、往返和非法输入测试。integration、e2e 和 Pi compatibility 命令目前仍以“没有测试文件”为成功基线，后续 Plan 任务必须逐步替换为真实验证，不能把当前空基线视为功能已实现。
+unit 项目覆盖 Node.js 版本基线和 Task 2 的领域行为。contracts 项目覆盖 Gateway/Execution v1，以及全部产品端口和内存参考适配器。integration、e2e 和 Pi compatibility 命令目前仍以“没有测试文件”为成功基线，后续 Plan 任务必须逐步替换为真实验证，不能把当前空基线视为功能已实现。
 
 ## Project documents
 

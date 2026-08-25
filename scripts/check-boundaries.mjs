@@ -209,6 +209,16 @@ for (const { directory, manifest, manifestPath } of workspacePackages) {
       const specifier = match[1] ?? match[2];
       if (!specifier) continue;
 
+      if (specifier.startsWith(".")) {
+        const resolvedImport = path.resolve(path.dirname(file), specifier);
+        const relativeImport = path.relative(directory, resolvedImport);
+        if (relativeImport === ".." || relativeImport.startsWith(`..${path.sep}`)) {
+          errors.push(
+            `${fileLabel}: relative import ${specifier} escapes workspace ${packageName}`,
+          );
+        }
+      }
+
       const importedPackage = packageSpecifier(specifier);
       if (
         importedPackage.startsWith("@earendil-works/pi-") &&
@@ -219,12 +229,20 @@ for (const { directory, manifest, manifestPath } of workspacePackages) {
       if (specifier.startsWith("node:") && !nodeImportAllowedPackages.has(packageName)) {
         errors.push(`${fileLabel}: Node.js import ${specifier} is not allowed in ${packageName}`);
       }
-      if (workspaceNames.has(importedPackage) && !declaredDependencies[importedPackage]) {
+      if (
+        workspaceNames.has(importedPackage) &&
+        importedPackage !== packageName &&
+        !declaredDependencies[importedPackage]
+      ) {
         errors.push(
           `${fileLabel}: ${importedPackage} is imported but not declared in ${manifestLabel}`,
         );
       }
-      if (workspaceNames.has(importedPackage) && !allowed.has(importedPackage)) {
+      if (
+        workspaceNames.has(importedPackage) &&
+        importedPackage !== packageName &&
+        !allowed.has(importedPackage)
+      ) {
         errors.push(`${fileLabel}: ${packageName} must not import ${importedPackage}`);
       }
     }

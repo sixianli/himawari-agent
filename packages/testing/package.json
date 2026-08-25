@@ -4,12 +4,16 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./conformance": "./src/conformance/index.ts"
   },
   "dependencies": {
     "@himawari-agent/application": "0.0.0",
     "@himawari-agent/domain": "0.0.0",
     "@himawari-agent/execution-contracts": "0.0.0",
     "@himawari-agent/gateway-contracts": "0.0.0"
+  },
+  "devDependencies": {
+    "vitest": "4.1.9"
   }
 }

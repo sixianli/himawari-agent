@@ -1,0 +1,679 @@
+import type {
+  AgentRuntimePort,
+  AttentionDecision,
+  AttentionPort,
+  AuditLedgerPort,
+  AuthorityLeasePort,
+  CapabilityDescriptor,
+  CapabilityInvocationEvent,
+  CapabilityPort,
+  ClockPort,
+  IdGeneratorPort,
+  JsonObject,
+  MemoryPort,
+  ModelDescriptor,
+  ModelInvocationEvent,
+  ModelPort,
+  PayloadStorePort,
+  ReliableEventPort,
+  RuntimeEvent,
+  SchedulerPort,
+  SecretPort,
+  StateStorePort,
+  TraceEvent,
+  TraceStorePort,
+} from "@himawari-agent/application";
+import { PORT_ERROR_CODES, ApplicationPortError } from "@himawari-agent/application";
+import {
+  createAgent,
+  createAgentAuthorityLease,
+  createAgentId,
+  createAuthorityHolderId,
+  createAuthorityLeaseId,
+  createIdempotencyKey,
+  createOwner,
+  createOwnerId,
+  createRunId,
+  createSessionId,
+  createThreadId,
+  createTurnId,
+} from "@himawari-agent/domain";
+import { describe, expect, it } from "vitest";
+import {
+  type ConfiguredPortConformanceHarness,
+  type PortConformanceHarness,
+  withConfiguredPort,
+  withPort,
+} from "./harness.js";
+
+const OWNER_ID = createOwnerId("owner-conformance");
+const AGENT_ID = createAgentId("agent-conformance");
+const RUN_ID = createRunId("run-conformance");
+const SESSION_ID = createSessionId("session-conformance");
+const THREAD_ID = createThreadId("thread-conformance");
+const TURN_ID = createTurnId("turn-conformance");
+const T0 = "2026-08-25T00:00:00.000Z";
+const T1 = "2026-08-25T00:00:01.000Z";
+const T2 = "2026-08-25T00:00:02.000Z";
+
+async function collect<TValue>(values: AsyncIterable<TValue>): Promise<readonly TValue[]> {
+  const collected: TValue[] = [];
+  for await (const value of values) collected.push(value);
+  return collected;
+}
+
+async function expectPortError(action: () => Promise<unknown>, code: string): Promise<void> {
+  try {
+    await action();
+    throw new Error("Expected an ApplicationPortError");
+  } catch (error) {
+    expect(error).toBeInstanceOf(ApplicationPortError);
+    expect((error as ApplicationPortError).code).toBe(code);
+  }
+}
+
+export function stateStorePortConformance(harness: PortConformanceHarness<StateStorePort>): void {
+  describe("StateStorePort conformance", () => {
+    it("creates and conditionally advances immutable revisions", async () => {
+      await withPort(harness, async (port) => {
+        expect(await port.read("run:01")).toBeUndefined();
+        const created = await port.compareAndSet({
+          key: "run:01",
+          expectedRevision: null,
+          value: { status: "accepted" },
+        });
+        const updated = await port.compareAndSet({
+          key: "run:01",
+          expectedRevision: 1,
+          value: { status: "running" },
+        });
+
+        expect(created).toMatchObject({ revision: 1, value: { status: "accepted" } });
+        expect(updated).toMatchObject({ revision: 2, value: { status: "running" } });
+      });
+    });
+
+    it("rejects stale compare-and-set writes", async () => {
+      await withPort(harness, async (port) => {
+        await port.compareAndSet({ key: "run:01", expectedRevision: null, value: { value: 1 } });
+        await expectPortError(
+          () => port.compareAndSet({ key: "run:01", expectedRevision: null, value: { value: 2 } }),
+          PORT_ERROR_CODES.CONFLICT,
+        );
+      });
+    });
+
+    it("does not expose mutable stored state", async () => {
+      await withPort(harness, async (port) => {
+        const source = { nested: { value: 1 } } as JsonObject;
+        await port.compareAndSet({ key: "run:01", expectedRevision: null, value: source });
+        const first = await port.read("run:01");
+        expect(first).toBeDefined();
+        try {
+          const exposed = first?.value as { nested: { value: number } };
+          exposed.nested.value = 2;
+        } catch {
+          // Frozen values are also valid defensive isolation.
+        }
+        expect(await port.read("run:01")).toMatchObject({ value: { nested: { value: 1 } } });
+      });
+    });
+  });
+}
+
+export function reliableEventPortConformance(
+  harness: PortConformanceHarness<ReliableEventPort>,
+): void {
+  describe("ReliableEventPort conformance", () => {
+    const event = {
+      id: "event-01",
+      idempotencyKey: createIdempotencyKey("event-idempotency-01"),
+      topic: "run.changed",
+      payloadRef: "payload-event-01",
+      occurredAt: T0,
+    } as const;
+
+    it("appends idempotently and lists pending events", async () => {
+      await withPort(harness, async (port) => {
+        const first = await port.append(event);
+        const duplicate = await port.append(event);
+
+        expect(duplicate).toEqual(first);
+        expect(await port.listPending(10)).toEqual([first]);
+      });
+    });
+
+    it("marks publication without deleting the durable event", async () => {
+      await withPort(harness, async (port) => {
+        await port.append(event);
+        const published = await port.markPublished(event.id, T1);
+
+        expect(published.publishedAt).toBe(T1);
+        expect(await port.listPending(10)).toEqual([]);
+      });
+    });
+  });
+}
+
+function traceEvent(id: string, sequence: number): TraceEvent {
+  return {
+    id,
+    schemaVersion: "trace.v1",
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    sessionId: SESSION_ID,
+    threadId: THREAD_ID,
+    runId: RUN_ID,
+    turnId: TURN_ID,
+    parentEventId: sequence === 1 ? null : "trace-01",
+    causationId: sequence === 1 ? null : "trace-01",
+    correlationId: "correlation-01",
+    sequence,
+    occurredAt: sequence === 1 ? T0 : T1,
+    recordedAt: sequence === 1 ? T0 : T1,
+    actorId: "actor-01",
+    dataClassification: "private",
+    eventType: sequence === 1 ? "run.accepted" : "run.running",
+    payloadRef: null,
+  };
+}
+
+export function traceStorePortConformance(harness: PortConformanceHarness<TraceStorePort>): void {
+  describe("TraceStorePort conformance", () => {
+    it("preserves append order and supports Run-local resume", async () => {
+      await withPort(harness, async (port) => {
+        await port.append(traceEvent("trace-01", 1));
+        await port.append(traceEvent("trace-02", 2));
+
+        expect((await port.readRun(RUN_ID, 0, 10)).map(({ id }) => id)).toEqual([
+          "trace-01",
+          "trace-02",
+        ]);
+        expect((await port.readRun(RUN_ID, 1, 10)).map(({ id }) => id)).toEqual(["trace-02"]);
+      });
+    });
+
+    it("rejects a duplicate event identity", async () => {
+      await withPort(harness, async (port) => {
+        await port.append(traceEvent("trace-01", 1));
+        await expectPortError(
+          () => port.append(traceEvent("trace-01", 2)),
+          PORT_ERROR_CODES.DUPLICATE,
+        );
+      });
+    });
+  });
+}
+
+export function payloadStorePortConformance(
+  harness: PortConformanceHarness<PayloadStorePort>,
+): void {
+  describe("PayloadStorePort conformance", () => {
+    it("round-trips defensive byte copies and deletes explicitly", async () => {
+      await withPort(harness, async (port) => {
+        const bytes = new Uint8Array([1, 2, 3]);
+        await port.put({
+          ref: "payload-01",
+          dataClassification: "sensitive",
+          contentType: "application/octet-stream",
+          bytes,
+          createdAt: T0,
+        });
+        bytes[0] = 9;
+
+        const stored = await port.get("payload-01");
+        expect([...((stored as { bytes: Uint8Array }).bytes ?? [])]).toEqual([1, 2, 3]);
+        expect(await port.delete("payload-01")).toBe(true);
+        expect(await port.get("payload-01")).toBeUndefined();
+      });
+    });
+
+    it("rejects duplicate payload references", async () => {
+      await withPort(harness, async (port) => {
+        const payload = {
+          ref: "payload-01",
+          dataClassification: "private" as const,
+          contentType: "text/plain",
+          bytes: new Uint8Array([1]),
+          createdAt: T0,
+        };
+        await port.put(payload);
+        await expectPortError(() => port.put(payload), PORT_ERROR_CODES.DUPLICATE);
+      });
+    });
+  });
+}
+
+export function auditLedgerPortConformance(harness: PortConformanceHarness<AuditLedgerPort>): void {
+  describe("AuditLedgerPort conformance", () => {
+    it("appends minimal records and resumes after a stable identity", async () => {
+      await withPort(harness, async (port) => {
+        const first = {
+          id: "audit-01",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          action: "run.create",
+          targetRef: "run-conformance",
+          outcome: "accepted" as const,
+          occurredAt: T0,
+        };
+        const second = { ...first, id: "audit-02", action: "run.start", occurredAt: T1 };
+        await port.append(first);
+        await port.append(second);
+
+        expect((await port.listByAgent(AGENT_ID, "audit-01")).map(({ id }) => id)).toEqual([
+          "audit-02",
+        ]);
+      });
+    });
+  });
+}
+
+export function memoryPortConformance(harness: PortConformanceHarness<MemoryPort>): void {
+  describe("MemoryPort conformance", () => {
+    it("keeps write proposals separate until explicitly committed", async () => {
+      await withPort(harness, async (port) => {
+        const proposal = {
+          id: "memory-proposal-01",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          contentRef: "payload-memory-01",
+          sourceRef: "trace-source-01",
+          dataClassification: "private" as const,
+          proposedAt: T0,
+        };
+        await port.proposeWrite(proposal);
+        expect(
+          await port.search({ ownerId: OWNER_ID, agentId: AGENT_ID, queryRef: "q", limit: 10 }),
+        ).toEqual([]);
+        expect(await port.listWriteProposals(AGENT_ID)).toEqual([proposal]);
+
+        await port.commitWrite(proposal.id, "memory-01", T1);
+        const candidates = await port.search({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          queryRef: "payload-query-01",
+          limit: 10,
+        });
+        expect(candidates).toMatchObject([
+          { id: "memory-01", contentRef: proposal.contentRef, sourceRef: proposal.sourceRef },
+        ]);
+      });
+    });
+
+    it("supports correction and deletion without losing provenance", async () => {
+      await withPort(harness, async (port) => {
+        await port.proposeWrite({
+          id: "memory-proposal-01",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          contentRef: "payload-memory-01",
+          sourceRef: "trace-source-01",
+          dataClassification: "private",
+          proposedAt: T0,
+        });
+        await port.commitWrite("memory-proposal-01", "memory-01", T1);
+        const corrected = await port.correct({
+          memoryId: "memory-01",
+          contentRef: "payload-memory-corrected-01",
+          sourceRef: "trace-correction-01",
+          correctedAt: T2,
+        });
+
+        expect(corrected).toMatchObject({
+          contentRef: "payload-memory-corrected-01",
+          sourceRef: "trace-correction-01",
+        });
+        expect(await port.delete("memory-01")).toBe(true);
+      });
+    });
+  });
+}
+
+export interface ModelPortFixture {
+  readonly descriptors: readonly ModelDescriptor[];
+  readonly events: readonly ModelInvocationEvent[];
+}
+
+export function modelPortConformance(
+  harness: ConfiguredPortConformanceHarness<ModelPort, ModelPortFixture>,
+): void {
+  describe("ModelPort conformance", () => {
+    it("exposes product descriptors and a deterministic product event stream", async () => {
+      const descriptor: ModelDescriptor = {
+        ref: "model-primary",
+        provider: "deterministic",
+        model: "fixture-model",
+        version: "1.0.0",
+        capabilities: ["text"],
+        allowedDataClassifications: ["public", "private"],
+      };
+      const events: readonly ModelInvocationEvent[] = [
+        { type: "model.started", invocationId: "model-call-01", occurredAt: T0 },
+        {
+          type: "model.completed",
+          invocationId: "model-call-01",
+          inputTokens: 10,
+          outputTokens: 5,
+          costMicros: 0,
+          occurredAt: T1,
+        },
+      ];
+      await withConfiguredPort(harness, { descriptors: [descriptor], events }, async (port) => {
+        expect(await port.listAvailable()).toEqual([descriptor]);
+        expect(
+          await collect(
+            port.invoke({
+              invocationId: "model-call-01",
+              runId: RUN_ID,
+              modelRef: descriptor.ref,
+              inputRef: "payload-model-input-01",
+              dataClassification: "private",
+              allowedDisclosureRef: "disclosure-01",
+              correlationId: "correlation-01",
+            }),
+          ),
+        ).toEqual(events);
+      });
+    });
+  });
+}
+
+export interface RuntimePortFixture {
+  readonly events: readonly RuntimeEvent[];
+}
+
+export function agentRuntimePortConformance(
+  harness: ConfiguredPortConformanceHarness<AgentRuntimePort, RuntimePortFixture>,
+): void {
+  describe("AgentRuntimePort conformance", () => {
+    const request = {
+      runId: RUN_ID,
+      sessionId: SESSION_ID,
+      modelRef: "model-primary",
+      systemInstructionRef: "payload-system-01",
+      messageRefs: ["payload-message-01"],
+      capabilityHandleRefs: ["capability-handle-01"],
+      budget: { maxTurns: 3 },
+      correlationId: "correlation-01",
+    } as const;
+
+    it("streams only product runtime events", async () => {
+      const events: readonly RuntimeEvent[] = [
+        { type: "runtime.model_started", runId: RUN_ID, occurredAt: T0 },
+        { type: "runtime.completed", runId: RUN_ID, occurredAt: T1 },
+      ];
+      await withConfiguredPort(harness, { events }, async (port) => {
+        const observed = await collect(port.run(request));
+        expect(observed).toEqual(events);
+        expect(JSON.stringify(observed)).not.toMatch(/AgentSession|AgentEvent|ToolDefinition/);
+      });
+    });
+
+    it("makes cancellation idempotent and observable", async () => {
+      await withConfiguredPort(harness, { events: [] }, async (port) => {
+        await port.cancel(RUN_ID);
+        await port.cancel(RUN_ID);
+        expect(await collect(port.run(request))).toEqual([
+          { type: "runtime.failed", runId: RUN_ID, errorCode: "RUNTIME_CANCELLED", occurredAt: T0 },
+        ]);
+      });
+    });
+  });
+}
+
+export interface CapabilityPortFixture {
+  readonly descriptors: readonly CapabilityDescriptor[];
+  readonly events: readonly CapabilityInvocationEvent[];
+}
+
+export function capabilityPortConformance(
+  harness: ConfiguredPortConformanceHarness<CapabilityPort, CapabilityPortFixture>,
+): void {
+  describe("CapabilityPort conformance", () => {
+    it("exposes governed descriptors and reference-only execution events", async () => {
+      const descriptor: CapabilityDescriptor = {
+        ref: "restaurant-search",
+        version: "1.0.0",
+        integrity: "sha256-fixture",
+        lifecycle: "active",
+        permissionRefs: ["permission-network-map"],
+        isolation: "worker",
+      };
+      const events: readonly CapabilityInvocationEvent[] = [
+        {
+          type: "capability.completed",
+          invocationId: "capability-call-01",
+          resultRef: "payload-capability-result-01",
+          occurredAt: T1,
+        },
+      ];
+      await withConfiguredPort(harness, { descriptors: [descriptor], events }, async (port) => {
+        expect(await port.list()).toEqual([descriptor]);
+        const observed = await collect(
+          port.invoke({
+            invocationId: "capability-call-01",
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            runId: RUN_ID,
+            capabilityRef: descriptor.ref,
+            capabilityHandleRef: "capability-handle-01",
+            operation: "search",
+            inputRef: "payload-capability-input-01",
+            secretHandleRefs: ["secret-handle-01"],
+            dataClassification: "private",
+          }),
+        );
+        expect(observed).toEqual(events);
+        expect(JSON.stringify(observed)).not.toContain("secretValue");
+      });
+    });
+  });
+}
+
+export function secretPortConformance(harness: PortConformanceHarness<SecretPort>): void {
+  describe("SecretPort conformance", () => {
+    const request = {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      secretRef: "secret-map-provider",
+      secretVersion: "version-01",
+      purpose: "restaurant-search",
+      scopeRef: "capability-call-01",
+      expiresAt: T2,
+    } as const;
+
+    it("issues opaque handles without returning secret material", async () => {
+      await withPort(harness, async (port) => {
+        const handle = await port.issueHandle(request);
+        expect(handle).toMatchObject({
+          ownerId: request.ownerId,
+          agentId: request.agentId,
+          runId: request.runId,
+          secretRef: request.secretRef,
+          secretVersion: request.secretVersion,
+          purpose: request.purpose,
+          scopeRef: request.scopeRef,
+          revokedAt: null,
+        });
+        expect(Object.keys(handle)).not.toContain("secretValue");
+      });
+    });
+
+    it("makes revocation observable through handle inspection", async () => {
+      await withPort(harness, async (port) => {
+        const handle = await port.issueHandle(request);
+        expect((await port.revokeHandle(handle.ref, T1)).revokedAt).toBe(T1);
+        expect((await port.inspectHandle(handle.ref))?.revokedAt).toBe(T1);
+      });
+    });
+  });
+}
+
+export function schedulerPortConformance(harness: PortConformanceHarness<SchedulerPort>): void {
+  describe("SchedulerPort conformance", () => {
+    it("upserts and returns due active jobs in deterministic order", async () => {
+      await withPort(harness, async (port) => {
+        const later = {
+          id: "job-02",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          triggerRef: "trigger-schedule-02",
+          idempotencyKey: createIdempotencyKey("schedule-job-02"),
+          nextRunAt: T2,
+          status: "active" as const,
+        };
+        const earlier = {
+          ...later,
+          id: "job-01",
+          triggerRef: "trigger-schedule-01",
+          idempotencyKey: createIdempotencyKey("schedule-job-01"),
+          nextRunAt: T1,
+        };
+        await port.upsert(later);
+        await port.upsert(earlier);
+        expect((await port.listDue(T2, 10)).map(({ id }) => id)).toEqual(["job-01", "job-02"]);
+      });
+    });
+
+    it("excludes cancelled jobs from due work", async () => {
+      await withPort(harness, async (port) => {
+        await port.upsert({
+          id: "job-01",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          triggerRef: "trigger-schedule-01",
+          idempotencyKey: createIdempotencyKey("schedule-job-01"),
+          nextRunAt: T1,
+          status: "active",
+        });
+        await port.cancel("job-01");
+        expect(await port.listDue(T2, 10)).toEqual([]);
+      });
+    });
+  });
+}
+
+export interface AttentionPortFixture {
+  readonly decision: AttentionDecision;
+}
+
+export function attentionPortConformance(
+  harness: ConfiguredPortConformanceHarness<AttentionPort, AttentionPortFixture>,
+): void {
+  describe("AttentionPort conformance", () => {
+    it("returns a deterministic decision and binds INTERRUPT to explicit authorization", async () => {
+      const decision: AttentionDecision = {
+        candidateId: "attention-01",
+        level: "INTERRUPT",
+        reasonCode: "authorized_urgent_result",
+        interruptAuthorizationRef: "grant-interrupt-01",
+      };
+      await withConfiguredPort(harness, { decision }, async (port) => {
+        const candidate = {
+          id: "attention-01",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          resultRef: "payload-result-01",
+          dataClassification: "private" as const,
+          urgency: 100,
+          confidence: 95,
+          duplicateKey: "restaurant-alert-01",
+          interruptAuthorizationRef: "grant-interrupt-01",
+        };
+        expect(await port.evaluate(candidate)).toEqual(decision);
+        expect(await port.evaluate(candidate)).toEqual(decision);
+      });
+    });
+  });
+}
+
+class SuiteClock implements ClockPort {
+  private current: string;
+
+  constructor(current: string) {
+    this.current = current;
+  }
+
+  now(): string {
+    return this.current;
+  }
+
+  set(now: string): void {
+    this.current = now;
+  }
+}
+
+export interface AuthorityLeasePortHarness {
+  create(clock: ClockPort): AuthorityLeasePort | Promise<AuthorityLeasePort>;
+  dispose?(port: AuthorityLeasePort): void | Promise<void>;
+}
+
+export function authorityLeasePortConformance(harness: AuthorityLeasePortHarness): void {
+  describe("AuthorityLeasePort conformance", () => {
+    const owner = createOwner(OWNER_ID);
+    const agent = createAgent({ id: AGENT_ID, owner });
+    const firstLease = createAgentAuthorityLease({
+      id: createAuthorityLeaseId("authority-lease-01"),
+      agent,
+      holderId: createAuthorityHolderId("authority-holder-01"),
+    });
+    const secondLease = createAgentAuthorityLease({
+      id: createAuthorityLeaseId("authority-lease-02"),
+      agent,
+      holderId: createAuthorityHolderId("authority-holder-02"),
+    });
+
+    it("enforces a single live lease and supports matching renewal", async () => {
+      const clock = new SuiteClock(T0);
+      const port = await harness.create(clock);
+      try {
+        const claimed = await port.claim(firstLease, 1000);
+        expect(claimed).toMatchObject({ fencingToken: 1, acquiredAt: T0, expiresAt: T1 });
+        await expectPortError(() => port.claim(secondLease, 1000), PORT_ERROR_CODES.CONFLICT);
+        expect((await port.renew(firstLease.id, 2000)).expiresAt).toBe(T2);
+      } finally {
+        await harness.dispose?.(port);
+      }
+    });
+
+    it("expires by injected clock and advances the fencing token on a new claim", async () => {
+      const clock = new SuiteClock(T0);
+      const port = await harness.create(clock);
+      try {
+        await port.claim(firstLease, 1000);
+        clock.set(T1);
+        expect(await port.current(AGENT_ID)).toBeUndefined();
+        expect((await port.claim(secondLease, 1000)).fencingToken).toBe(2);
+      } finally {
+        await harness.dispose?.(port);
+      }
+    });
+  });
+}
+
+export function clockPortConformance(harness: PortConformanceHarness<ClockPort>): void {
+  describe("ClockPort conformance", () => {
+    it("returns a stable canonical UTC timestamp until explicitly advanced", async () => {
+      await withPort(harness, async (port) => {
+        expect(port.now()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+        expect(port.now()).toBe(port.now());
+      });
+    });
+  });
+}
+
+export function idGeneratorPortConformance(harness: PortConformanceHarness<IdGeneratorPort>): void {
+  describe("IdGeneratorPort conformance", () => {
+    it("returns stable machine identifiers without collisions in one generator", async () => {
+      await withPort(harness, (port) => {
+        const first = port.next("run");
+        const second = port.next("run");
+        expect(first).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
+        expect(second).not.toBe(first);
+      });
+    });
+  });
+}

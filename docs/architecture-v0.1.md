@@ -13,9 +13,9 @@ date: "2026-08-25"
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e 和 Pi compatibility 五个测试项目。
 
-当前代码包含九个 workspace 的公共入口、`packages/domain` 中已实现的不可变身份、所有权工厂、Run 状态机、Agent 权威租约规则和稳定领域错误，以及 `packages/gateway-contracts` 与 `packages/execution-contracts` 中首版严格 wire schema。尚无应用用例、持久化、基础设施适配器、Pi Session 创建、网络监听器或可启动服务。
+当前代码包含九个 workspace 的公共入口、`packages/domain` 中已实现的不可变身份、所有权工厂、Run 状态机、Agent 权威租约规则和稳定领域错误，`packages/gateway-contracts` 与 `packages/execution-contracts` 中首版严格 wire schema，以及 `packages/application` 的产品端口和 `packages/testing` 的确定性内存参考适配器。尚无应用用例、生产持久化、基础设施适配器、Pi Session 创建、网络监听器或可启动服务。
 
-实现范围来自已确认 Spec，并按当前 Plan 的 Task 1 至 Task 3 落地：[SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-1-establish-repository-and-toolchain-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-2-implement-immutable-identities-and-domain-state-machines] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-3-define-versioned-gateway-and-execution-contracts]
+实现范围来自已确认 Spec，并按当前 Plan 的 Task 1 至 Task 4 落地：[SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-1-establish-repository-and-toolchain-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-2-implement-immutable-identities-and-domain-state-machines] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-3-define-versioned-gateway-and-execution-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-4-implement-product-ports-and-adapter-conformance-suites]
 
 ## Boundaries
 
@@ -31,7 +31,7 @@ domain → no internal dependency
 testing → application + domain + product contracts
 ```
 
-`scripts/check-boundaries.mjs` 从根和各 workspace 的 `package.json` 及 TypeScript import 构建依赖图，检查非精确直接外部依赖、非法方向、循环和未声明依赖。任何 `@earendil-works/pi-*` 依赖或 import 只能位于 `packages/runtime-pi`；domain、contracts 和 application 不能直接 import `node:` 模块。
+`scripts/check-boundaries.mjs` 从根和各 workspace 的 `package.json` 及 TypeScript import 构建依赖图，检查非精确直接外部依赖、非法方向、循环、未声明依赖和逃出 workspace 根的相对 import。任何 `@earendil-works/pi-*` 依赖或 import 只能位于 `packages/runtime-pi`；domain、contracts 和 application 不能直接 import `node:` 模块。
 
 `packages/runtime-pi` 直接固定 `@earendil-works/pi-coding-agent` `0.84.2`；提交的 manifest 和 lockfile 不引用相邻的 `../pi-mono`。该隔离边界落实了产品自有 Pi 适配层决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
 
@@ -78,6 +78,25 @@ Gateway 信封携带消息标识、schema 版本、相关关系、可空因果�
 
 两类协议使用零外部依赖的运行时 schema，同时导出从 schema 推导的 TypeScript 类型。解析器要求精确字段、规范 UTC 毫秒时间戳、受限枚举和有界整数；未知字段、未知消息类型及不受支持的版本会返回带固定 `CONTRACT_VALIDATION_ERROR` code 和字段路径的错误。`public`、`private`、`sensitive`、`restricted` 是当前四个数据等级。v1 JSON 兼容性夹具固定首版 wire shape；在 v1 中添加未知字段不会被静默接受。
 
+## Application Ports and Reference Adapters
+
+`packages/application` 当前公开以下产品端口，不包含任何具体供应商、数据库、传输或 Pi 类型：
+
+```text
+StateStore          ReliableEvent      TraceStore       PayloadStore
+AuditLedger         Memory             Model            AgentRuntime
+Capability          Secret             Scheduler        Attention
+AuthorityLease      Clock              IdGenerator
+```
+
+端口值使用领域 branded identity、产品数据等级、稳定引用、JSON 值、`Uint8Array` Payload 和产品事件。`ApplicationPortError` 提供固定 `PORT_*` 错误码，使冲突、缺失、重复、非法操作、已撤销句柄和测试注入故障可以由应用层稳定分类。Secret Port 只签发与 Owner、Agent、Run、用途、scope 和期限绑定的 opaque handle；Agent Runtime、Model 和 Capability 事件只传 Payload 引用与机器错误码。
+
+`packages/testing` 的 `./conformance` 子路径导出可复用 Vitest suite。每个 suite 接收 adapter harness，所以未来数据库、供应商或远程适配器可以用自己的 setup/teardown 重跑同一行为契约。当前内存参考实现覆盖全部端口，并在读写边界做防御性复制；它们是确定性测试替身，不是生产持久化或安全边界。
+
+测试控制包括 `ManualClock`、按 namespace 递增的 `DeterministicIdGenerator` 和按命名 checkpoint/调用次数触发的 `DeterministicFailureScheduler`。Authority Lease 参考适配器使用注入时钟处理到期、续租和单一 live lease，并在每次新 claim 时递增 fencing token。故障调度在 mutation 之前触发，使失败后的状态保持未写入并可确定性重试。
+
+Task 4 没有实现跨 State 与 Reliable Event 的原子事务、outbox 发布恢复、完整 Trace/Payload 删除传播、实际记忆排序、模型路由策略、Capability 沙箱、Secret 原值解析、生产 Scheduler 或 Attention 策略；这些仍属于后续 Plan 任务。
+
 ## Main Flows
 
 当前可执行流程仍限于工程验证和纯领域转换：
@@ -91,7 +110,7 @@ npm ci --ignore-scripts
   → selected Vitest project
 ```
 
-unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、全部 Run 状态组合、重复审批等待、终态不可变和单一 Agent 权威租约测试。contracts 项目现在以两个 v1 JSON 夹具验证 Gateway 和 Execution 消息的 JSON 往返、非法输入、秘密明文字段与 Pi 类型隔离，以及执行结果的跨字段不变量。integration、e2e 和 Pi compatibility 项目仍使用 `--passWithNoTests` 作为空 workspace 基线。
+unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、全部 Run 状态组合、重复审批等待、终态不可变和单一 Agent 权威租约测试。contracts 项目验证 Gateway/Execution v1 wire schema，并用 25 个可复用端口 conformance cases 与 3 个确定性控制测试验证全部内存参考适配器。integration、e2e 和 Pi compatibility 项目仍使用 `--passWithNoTests` 作为空 workspace 基线。
 
 ## Backlog Links
 
@@ -102,8 +121,13 @@ unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、
 - Pi runtime adapter：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
 - Headless Agent Gateway：[SOURCE: docs/adr/0002-headless-agent-gateway.md]
 - Single logical Agent authority：[SOURCE: docs/adr/0003-single-logical-agent-authority.md]
+- Replaceable Memory boundary：[SOURCE: docs/adr/0005-replaceable-memory-boundary.md]
+- Policy-controlled model routing：[SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
+- Governed Capability Registry：[SOURCE: docs/adr/0008-governed-capability-registry.md]
 - Complete Session Trace：[SOURCE: docs/adr/0010-complete-session-trace.md]
 - Composable service boundaries：[SOURCE: docs/adr/0011-composable-service-boundaries.md]
 - Agent, Thread and Run identity model：[SOURCE: docs/adr/0013-agent-thread-run-memory-model.md]
+- Central Attention Policy：[SOURCE: docs/adr/0014-central-attention-policy.md]
+- Product state over Pi runtime projection：[SOURCE: docs/adr/0015-product-state-over-pi-runtime-projection.md]
 - TypeScript and Node.js runtime：[SOURCE: docs/adr/0016-typescript-node-runtime.md]
 - Workspace monorepo：[SOURCE: docs/adr/0017-workspace-monorepo.md]

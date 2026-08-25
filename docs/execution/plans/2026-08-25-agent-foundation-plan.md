@@ -145,11 +145,21 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 4: Implement product ports and adapter conformance suites
 
-- [ ] Define application ports for state, reliable events, Trace, Payload, audit, memory, models, runtime, capabilities, secrets, scheduler, attention, authority leases and clocks.
-- [ ] For each port, write a reusable conformance suite before implementing an adapter.
-- [ ] Provide deterministic in-memory reference adapters in `packages/testing` that pass the same suites future production adapters must pass.
-- [ ] Test injected clock, ID generation and failure scheduling so crash and retry paths are deterministic.
-- [ ] Verify domain and application packages depend only on ports, not reference adapters.
+- [x] Define application ports for state, reliable events, Trace, Payload, audit, memory, models, runtime, capabilities, secrets, scheduler, attention, authority leases and clocks.
+- [x] For each port, write a reusable conformance suite before implementing an adapter.
+- [x] Provide deterministic in-memory reference adapters in `packages/testing` that pass the same suites future production adapters must pass.
+- [x] Test injected clock, ID generation and failure scheduling so crash and retry paths are deterministic.
+- [x] Verify domain and application packages depend only on ports, not reference adapters.
+
+#### Task 4 evidence — 2026-08-25
+
+- `packages/application` now exposes 15 product-owned ports: the 14 named boundaries plus `IdGeneratorPort`. Shared contracts include product JSON values and references, data classification, complete Trace envelopes and stable `PORT_*` errors; there are no database, provider, transport, Node.js or Pi imports.
+- Failure-first baseline: 25 reusable conformance cases were registered before reference behavior existed, and all 25 failed at the explicit `Reference adapters are not implemented` boundary.
+- `@himawari-agent/testing/conformance` exports factory-based harnesses for State, Reliable Event, Trace, Payload, Audit, Memory, Model, Agent Runtime, Capability, Secret, Scheduler, Attention, Authority Lease, Clock and ID adapters. Configured and async factories let future production adapters run the same suites with their own setup and teardown.
+- `createReferenceAdapterSet()` now supplies defensive-copy in-memory implementations for every port. Scripted Model, Runtime, Capability and Attention adapters emit product types only; Secret handles carry reference/version/purpose and Owner/Agent/Run scope without secret material.
+- `ManualClock`, namespace-local `DeterministicIdGenerator` and checkpoint-based `DeterministicFailureScheduler` make time, identity and pre-mutation failures repeatable. Contract coverage proves a scheduled first write failure leaves no state and the next attempt creates revision 1; Authority Lease coverage proves expiry, renewal, conflict and monotonic fencing tokens under an injected clock.
+- `npm run test:contracts`: 3 files and 51 tests passed, comprising the prior 23 protocol tests, 25 port cases and 3 deterministic-control cases. `npm run typecheck` and `npm run check:boundaries` passed. A temporary negative probe confirmed that `application → ../../testing/src` is rejected for escaping its workspace root; the probe was removed before final validation.
+- This task deliberately does not claim Task 5 transaction/outbox semantics or the deeper production behavior assigned to Tasks 6–15; the reference adapters are test doubles, not production persistence or isolation.
 
 ### Task 5: Implement product-state commit and reliable-event semantics
 
