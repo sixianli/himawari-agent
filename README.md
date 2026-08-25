@@ -1,6 +1,8 @@
 # Himawari Agent
 
-Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。当前仓库已完成基础平台 Plan 的 Task 1 至 Task 12：工程与领域基础、Gateway/Execution wire contracts、产品端口及确定性参考适配器、状态提交与可靠事件、Trace/Payload、Permission/Grant、Capability/Worker、Memory context formation、Model Router、Pi Agent Runtime 适配器，以及可逆的本地 Pi 源码调试模式。完整 Run Coordinator、Scheduler、集中 Attention Policy、生产持久化和可启动服务仍未实现。
+Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。Foundation Plan 的 Task 1 至 Task 20 已在确定性参考配置中完成：产品身份与状态、Gateway/Execution contracts、应用端口、状态/outbox、完整 Trace、Permission/Grant、Capability/Worker、Memory、Model Router、Pi Runtime 投影、Run Coordinator、Scheduler、Attention、Agent Gateway、本地组合根、牛肉餐厅 E2E 和故障恢复矩阵。
+
+当前交付是可编程的架构验证平台，不是生产服务。它没有网络 listener、`npm start` 守护进程、生产数据库/Memory/Vault、真实远程 Worker 沙箱、地图/预订供应商或通知客户端；默认 local composition 使用进程内参考适配器，退出后数据不会保留。完整边界和限制见 [Architecture v0.1](docs/architecture-v0.1.md)。
 
 ## Toolchain
 
@@ -19,6 +21,20 @@ npm ci --ignore-scripts
 ```
 
 正式依赖始终来自 npm 发布物。仓库不提交指向相邻 `../pi-mono` 的 `file:` 依赖；本地 Pi 源码学习只通过下面的 developer-local link 模式选择。
+
+## Local reference composition
+
+`apps/execution-worker` 和 `apps/agent-service` 公开程序化 process API。参考启动顺序是先独立启动 Worker，再把它的 `execution.v1` client 注入前台 Agent composition；Agent process 不会隐式启动 Worker。启动诊断只包含 component、adapter identity、schema version 和 readiness，不包含 credential 或 Secret reference。
+
+这两个入口当前用于自动化测试和本地架构验证，没有命令行 main 或网络 transport。可运行的生命周期与边界验证是：
+
+```bash
+npm run test:unit -- local-execution-worker local-composition-root
+npm run test:integration -- agent-gateway external-action-reconciliation
+npm run test:e2e -- beef-restaurant
+```
+
+关闭 Agent process 会先拒绝新请求，再等待登记的 in-flight Run settlement；Worker 由调用方单独关闭。`SecretPort`、Gateway Control Plane/Read Model 和 Worker client 都是显式注入边界，因此未来远程或持久适配器不需要修改 domain contracts。
 
 ## Local Pi source debugging
 
@@ -81,12 +97,12 @@ VS Code 可以用下列 launch 配置在 Vitest 中断进 sibling TypeScript sou
 | `packages/domain` | 领域身份、状态和不变量 | 无 |
 | `packages/gateway-contracts` | `gateway.v1` 客户端协议 schema、类型与兼容性夹具 | 无 |
 | `packages/execution-contracts` | `execution.v1` Worker 协议 schema、类型与兼容性夹具 | 无 |
-| `packages/application` | 产品端口、共享值、稳定端口错误，以及 Run 状态提交和可靠事件发布服务 | domain、两类 contracts |
+| `packages/application` | 产品端口和 Gateway、Run/Worker、Trace、授权、Memory、Model、Scheduler、Attention、对账应用服务 | domain、两类 contracts |
 | `packages/runtime-pi` | 产品 Agent Runtime 端口的 Pi 适配器 | application、固定版本 Pi |
 | `packages/platform-node` | Node.js 基础设施适配器 | application、domain、两类 contracts |
-| `packages/testing` | 可复用端口 conformance suites 和确定性内存参考适配器 | application、domain、两类 contracts |
-| `apps/agent-service` | Agent Gateway 和控制平面组合入口 | application、contracts、runtime-pi、platform-node |
-| `apps/execution-worker` | 隔离执行工作进程入口 | application、execution-contracts、platform-node |
+| `packages/testing` | 可复用 conformance suites、确定性内存适配器、故障注入和 E2E fixture | application、domain、两类 contracts |
+| `apps/agent-service` | in-process Gateway 与可信前台 local composition | application、contracts、runtime-pi、platform-node、testing reference adapters |
+| `apps/execution-worker` | 独立 `execution.v1` Worker process 边界 | application、execution-contracts、platform-node；测试期使用 testing |
 
 `npm run check:boundaries` 会检查根和 workspace 清单以及 TypeScript import，拒绝非精确的直接外部依赖、非法反向依赖、依赖环、未声明的内部依赖、逃出 workspace 根的相对 import、纯产品层的 `node:` import，以及 `packages/runtime-pi` 之外的直接 Pi import。
 
@@ -112,7 +128,7 @@ VS Code 可以用下列 launch 配置在 Vitest 中断进 sibling TypeScript sou
 
 ## Application ports
 
-`packages/application` 公开 State、Reliable Event、Product State Repository、Reliable Event Sink、Trace、Payload、Audit、Memory、Model、Agent Runtime、Runtime Projection/Tool、Capability、Secret、Scheduler、Attention、Authority Lease、Clock 和 ID Generator 端口。端口只依赖产品领域和契约类型，不公开数据库、供应商、传输或 Pi 对象。
+`packages/application` 公开 State、Reliable Event、Product State Repository、Reliable Event Sink、Trace、Payload、Audit、Memory、Model、Agent Runtime、Runtime Projection/Tool、Capability、Secret、External Action Reconciliation、Scheduler、Attention、Gateway Access/Control Plane/Read Model、Authority Lease、Clock 和 ID Generator 端口。端口只依赖产品领域和契约类型，不公开数据库、供应商、传输或 Pi 对象。
 
 Task 5 新增的提交路径具有以下语义：
 
@@ -128,8 +144,10 @@ Task 5 新增的提交路径具有以下语义：
 - `createReferenceAdapterSet()`：全部端口的隔离内存参考实现。
 - `ManualClock` 和 `DeterministicIdGenerator`：可重复的时间与 ID。
 - `DeterministicFailureScheduler`：按 checkpoint 和调用次数安排预写入失败，用于稳定重现崩溃/重试路径。
+- `createBeefRestaurantFixture()`：固定 Owner/Agent/Thread/Run、Tokyo/牛肉偏好、模型、搜索、监控 Grant、预订和 37-event Session Trace 基准。
+- `ScriptedExternalActionReconciliationPort`：以 reference-only lookup 验证 `result_unknown → work.reconcile → work.reconciled`。
 
-这些适配器只用于测试和本地架构验证。内存 Product State Repository 提供可验证的 transaction/outbox 等价语义，但不提供跨进程生产耐久性、加密或进程隔离；完整 Trace/Payload 语义和实际供应商适配器仍属于后续任务。
+这些适配器只用于测试和本地架构验证。内存 Product State Repository 提供可验证的 transaction/outbox 等价语义，但不提供跨进程生产耐久性、生产加密或进程隔离。
 
 ## Validation
 
@@ -150,10 +168,10 @@ npm run check:pi-compat
 - e2e：`test/e2e/**/*.test.ts`
 - Pi compatibility：`packages/runtime-pi/**/*.compat.test.ts`
 
-unit 项目覆盖 Node.js 版本基线和 Task 2 的领域行为。contracts 项目覆盖 Gateway/Execution v1，以及全部产品端口和内存参考适配器。integration 项目覆盖 Task 5–10 的应用语义与 Task 12 的可逆本地 Pi 链接夹具；Pi compatibility 以真实 `0.84.2` session、faux provider 和 custom tool 覆盖 Task 11。e2e 仍是“没有测试文件”的显式基线，不能视为端到端功能已实现。
+当前 fresh completion 基线为 101 个 unit、69 个 contract、71 个 integration、3 个 E2E 和 6 个 Pi compatibility 测试。E2E 覆盖完整牛肉餐厅参考旅程；integration 包含 8 类恢复矩阵和独立 external-action reconciliation。全部自动化测试使用确定性替身，不访问网络、付费模型、外部账户或生产凭据。
 
 ## Project documents
 
 - 当前实现：[Architecture v0.1](docs/architecture-v0.1.md)
-- 已确认设计：[Foundation Spec](docs/execution/specs/2026-08-25-agent-foundation-design.md)
-- 实施顺序：[Foundation Plan](docs/execution/plans/2026-08-25-agent-foundation-plan.md)
+- 已关闭设计：[Foundation Spec](docs/archive/specs/2026-08-25-agent-foundation-design.md)
+- 已完成计划：[Foundation Plan](docs/archive/plans/2026-08-25-agent-foundation-plan.md)

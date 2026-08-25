@@ -1,5 +1,5 @@
 ---
-status: active
+status: "archived"
 document_type: spec
 supersedes: ""
 superseded_by: ""

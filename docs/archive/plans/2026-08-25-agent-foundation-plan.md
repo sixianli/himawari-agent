@@ -1,5 +1,5 @@
 ---
-status: active
+status: "archived"
 document_type: plan
 supersedes: ""
 superseded_by: ""
@@ -8,7 +8,7 @@ date: "2026-08-25"
 
 # Himawari Agent 基础平台 Implementation Plan
 
-**Source Spec:** [SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md]
+**Source Spec:** [SOURCE: docs/archive/specs/2026-08-25-agent-foundation-design.md]
 
 **Goal:** 建立独立、无头、单一逻辑权威的 Himawari Agent 基础平台，并以确定性适配器贯通“牛肉餐厅”端到端架构基准。
 
@@ -453,12 +453,46 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 20: Reconcile current-truth documentation
 
-- [ ] Create `docs/architecture-v0.1.md` from the official template only after implementation exists.
-- [ ] Describe only implemented packages, adapters, deployment profile, data flow and known limitations.
-- [ ] Add SOURCE links to accepted ADRs and the source Spec without duplicating their rationale.
-- [ ] Update README with verified setup, local Pi debugging and validation commands.
-- [ ] Report any Spec acceptance criterion not fully implemented as unverified; do not present target design as current truth.
-- [ ] Run strict document-governance validation.
+- [x] Create `docs/architecture-v0.1.md` from the official template only after implementation exists.
+- [x] Describe only implemented packages, adapters, deployment profile, data flow and known limitations.
+- [x] Add SOURCE links to accepted ADRs and the source Spec without duplicating their rationale.
+- [x] Update README with verified setup, local Pi debugging and validation commands.
+- [x] Report any Spec acceptance criterion not fully implemented as unverified; do not present target design as current truth.
+- [x] Run strict document-governance validation.
+
+#### Task 20 evidence — 2026-08-25
+
+- `docs/architecture-v0.1.md` 原先已是官方模板结构的部分现状文档；Task 20 在 Tasks 16–19 实现完成后对其做最终对账，而不是另建第二份 Architecture。它现在覆盖 9 个 workspace、Agent Gateway、本地组合根、独立 Worker、牛肉餐厅 E2E、恢复矩阵、主流程和 Known Limitations。
+- Architecture 只把确定性 reference composition 描述为当前实现，并明确列出没有网络 listener、生产持久化、真实供应商、远程 Worker transport/sandbox、生产 Vault/notification 和完整生产 deletion wiring；因此不把目标设计或 reference adapter 描述为生产就绪。
+- Decision Links 覆盖全部 17 个 accepted ADR；Spec、Plan 和 Excluded scope 通过 SOURCE link 引用，未复制其决策理由。README 记录可复现安装、程序化 local composition、本地 Pi 可逆链接、workspace 边界和 fresh validation commands。
+- `npm ci --ignore-scripts` 从 committed lockfile 安装 199 个 package，audit 报告 0 vulnerability。`npm run check`、独立 boundary check、101 unit、69 contract、71 integration、3 E2E 和 6 Pi compatibility 测试全部通过。
+- `npm run check:local-pi` 在最终安装后报告 `mode: "published"`、expected/local version 都是 `0.84.2`，七个 sibling build artifact 均存在。Task 12 已用相同 pin 验证临时 local-source link、source-map compatibility 和恢复 published package；最终状态没有残留 symlink。
+- 严格文档验证通过且为 0 warning。所有自动化验证使用确定性适配器；没有访问付费 provider、生产账户或用户私有生产数据。
+
+#### Source Spec acceptance mapping — 2026-08-25
+
+| Acceptance criterion | Fresh evidence | Status |
+| --- | --- | --- |
+| 重复 user trigger 只创建一个 Run | `product-state-commit.test.ts` concurrent duplicate admission；`agent-gateway.test.ts` command delegation | 已验证（reference profile） |
+| 两个客户端共享同一 Thread 有序事件流 | `agent-gateway.test.ts` cursor subscription；`beef-restaurant.test.ts` second-client resume | 已验证（reference profile） |
+| 非当前 authority 不能本地提交 | `product-state-commit.test.ts` current fence；`failure-recovery-matrix.test.ts` authority loss | 已验证（fail-closed rejection） |
+| 产品领域不暴露 Pi 类型 | boundary/type checks；`pi-runtime-adapter.compat.test.ts` event/error mapping | 已验证 |
+| Pi 版本改变不要求产品契约改变 | 稳定 Agent Runtime Port、固定 `0.84.2` compatibility suite 和 local-source link fixture | 当前 pin 已验证；未来版本升级须在采用时重新验证 |
+| 未批准的 Pi tools/Skills/Extensions 不自动启用 | `pi-runtime-adapter.compat.test.ts` authorized custom-tool allowlist 与 final preflight | 已验证 |
+| 新 Thread 的记忆候选、选择与注入可追踪 | `context-formation.test.ts`；`beef-restaurant.test.ts` | 已验证（reference profile） |
+| Model route 的理由、等级、身份与披露范围可追踪 | `model-router.test.ts`；`beef-restaurant.test.ts` | 已验证（deterministic model） |
+| 隐私不兼容 fallback 不静默执行 | `model-router.test.ts`；`failure-recovery-matrix.test.ts` stream interruption | 已验证 |
+| 明确只读行动可按 `ALLOW` 执行并留依据 | `capability-execution.test.ts`；beef search journey | 已验证（reference capability） |
+| 无 UI 的 `ASK` 持久等待并可恢复 | `permission-grants.test.ts`；`failure-recovery-matrix.test.ts` approval restart | 已验证 |
+| 语义批准只覆盖原资源、费用、期限和副作用 | `permission-grants.test.ts` semantic hash、budgets 与 changed-response rejection；reservation journey | 已验证 |
+| 不可幂等超时进入待对账而非盲重试 | `external-action-reconciliation.test.ts`；recovery matrix；reservation journey | 已验证（reference adapter） |
+| 完成或失败 Run 的完整因果 Session Trace | `session-trace.test.ts`；37-event E2E graph；8-case recovery matrix | 已验证（reference stores） |
+| Secret 原值不进入 Trace | `session-trace.test.ts` structured redaction；`model-router.test.ts` trusted provider；reservation handle | 已验证 |
+| Session 删除覆盖正文、Payload、索引、缓存与归档 | `session-trace.test.ts` 和 recovery matrix 的四类 abstract target、resume、verified tombstone | reference contract 已验证；真实生产存储 wiring 未实现且在 Spec Excluded scope 内 |
+| 长期牛肉偏好在新 Thread 主动形成建议 | `beef-restaurant.test.ts` memory provenance/context/model journey | 已验证（deterministic E2E） |
+| 长期监控 Grant 允许范围内 timer 执行 | beef journey；`scheduler-trigger-ingestion.test.ts` current Grant/fence checks | 已验证（deterministic E2E） |
+| 非紧急结果不未经授权打断 | beef journey 的 `INBOX`；`attention-delivery.test.ts` centralized decision | 已验证（deterministic E2E） |
+| 预订外部副作用在执行前请求语义批准 | beef journey 的 one-time Grant、Secret Handle 和 reconciliation | 已验证（deterministic E2E） |
 
 ## Verification
 
@@ -477,12 +511,14 @@ Validation must use deterministic model, memory, tool and delivery adapters. Rea
 
 ## Closure Checklist
 
-- [ ] Verification has been run and recorded.
-- [ ] Affected current-truth documents are reconciled.
-- [ ] Remaining future work is recorded in Backlog when needed.
-- [ ] This Plan is moved to `docs/archive/plans/` when closed.
-- [ ] Source Spec acceptance criteria are mapped to fresh verification evidence.
-- [ ] `docs/architecture-v0.1.md` reflects only the implemented state.
-- [ ] All accepted ADR links are valid and no new durable decision is hidden only in code or Plan prose.
-- [ ] Pi published-version and local-source modes have both been verified, with local linking fully reversible.
-- [ ] No secrets, paid-provider credentials or user-private production data are present in fixtures, logs or committed artifacts.
+- [x] Verification has been run and recorded.
+- [x] Affected current-truth documents are reconciled.
+- [x] Remaining future work is recorded in Backlog when needed.
+- [x] This Plan is moved to `docs/archive/plans/` when closed.
+- [x] Source Spec acceptance criteria are mapped to fresh verification evidence.
+- [x] `docs/architecture-v0.1.md` reflects only the implemented state.
+- [x] All accepted ADR links are valid and no new durable decision is hidden only in code or Plan prose.
+- [x] Pi published-version and local-source modes have both been verified, with local linking fully reversible.
+- [x] No secrets, paid-provider credentials or user-private production data are present in fixtures, logs or committed artifacts.
+
+没有创建 Backlog item：Foundation Spec 明确排除的生产部署、供应商选择和高可用不构成本 Plan 的已承诺后续工作；Architecture 的 Known Limitations 记录当前事实而不承诺实施日期。
