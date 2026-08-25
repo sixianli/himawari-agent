@@ -109,12 +109,21 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 2: Implement immutable identities and domain state machines
 
-- [ ] Write tests for stable identifiers and ownership rules for Owner, Agent, Thread, Session, Run, Turn and Trigger.
-- [ ] Write table-driven tests for all legal and illegal Run transitions, including repeated approval waits and terminal-state immutability.
-- [ ] Write tests proving one Agent cannot have two simultaneous logical authority leases.
-- [ ] Implement domain values and transition functions without infrastructure dependencies.
-- [ ] Implement domain errors with stable machine-readable codes.
-- [ ] Run domain tests and dependency checks.
+- [x] Write tests for stable identifiers and ownership rules for Owner, Agent, Thread, Session, Run, Turn and Trigger.
+- [x] Write table-driven tests for all legal and illegal Run transitions, including repeated approval waits and terminal-state immutability.
+- [x] Write tests proving one Agent cannot have two simultaneous logical authority leases.
+- [x] Implement domain values and transition functions without infrastructure dependencies.
+- [x] Implement domain errors with stable machine-readable codes.
+- [x] Run domain tests and dependency checks.
+
+#### Task 2 evidence — 2026-08-25
+
+- Failure-first baseline: the new domain suites initially reported 14 failures because the public domain API did not exist.
+- `packages/domain/src` now contains branded identity factories, immutable ownership-derived entities, the exhaustive Run transition table, pure Agent authority lease rules and seven stable `DOMAIN_*` error codes. A compile-only type test proves Agent/Owner and Run/Thread IDs are not interchangeable.
+- `npm run test:unit`: 4 files and 87 tests passed. The suite enumerates every Run status pair, repeated approval waits, every terminal status against every requested next status, ownership mismatches and authority lease conflicts.
+- `npm run check` passed format, lint, strict TypeScript and all 9 workspace boundaries; `packages/domain` still has no direct dependency and imports no Node.js, Pi, database or transport module.
+- `npm run test`, `npm run check:pi-compat` and strict document-governance validation passed. Contract, integration, e2e and Pi compatibility projects remain explicit empty baselines and do not count as Task 2 functional coverage.
+- `docs/architecture-v0.1.md` records the implemented identity, state-machine and lease semantics together with the intentionally unimplemented expiry, fencing and persistence boundaries.
 
 ### Task 3: Define versioned Gateway and execution contracts
 
