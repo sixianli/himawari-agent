@@ -280,15 +280,24 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 11: Implement the Pi Agent Runtime adapter
 
-- [ ] Write adapter contract tests with a deterministic Pi-compatible model provider and custom tools.
-- [ ] Instantiate `createAgentSession()` with an in-memory or controlled SessionManager, explicit model input and product-controlled resources.
-- [ ] Disable default coding tools and expose only capability wrappers authorized for the current Run.
-- [ ] Map Pi message, turn, tool, settled, abort and error events into product Runtime events.
-- [ ] Map product cancellation to Pi abort and verify listeners settle before reporting runtime completion.
-- [ ] Use Pi tool preflight as the final enforcement point for already-computed Permission decisions.
-- [ ] Capture observable provider request/response data through supported hooks with pre-write redaction.
-- [ ] Verify Pi compaction output can be proposed back to product state without making Pi Session authoritative.
-- [ ] Add an exact-version compatibility test and fail clearly on unknown upstream events.
+- [x] Write adapter contract tests with a deterministic Pi-compatible model provider and custom tools.
+- [x] Instantiate `createAgentSession()` with an in-memory or controlled SessionManager, explicit model input and product-controlled resources.
+- [x] Disable default coding tools and expose only capability wrappers authorized for the current Run.
+- [x] Map Pi message, turn, tool, settled, abort and error events into product Runtime events.
+- [x] Map product cancellation to Pi abort and verify listeners settle before reporting runtime completion.
+- [x] Use Pi tool preflight as the final enforcement point for already-computed Permission decisions.
+- [x] Capture observable provider request/response data through supported hooks with pre-write redaction.
+- [x] Verify Pi compaction output can be proposed back to product state without making Pi Session authoritative.
+- [x] Add an exact-version compatibility test and fail clearly on unknown upstream events.
+
+#### Task 11 evidence — 2026-08-25
+
+- `PiAgentRuntimeAdapter` constructs `createAgentSession()` with an explicit product-selected model binding, `SessionManager.inMemory()`, in-memory settings and a resource loader that disables project context, Skills, prompts, themes and discovered Extensions. `noTools: "all"` removes Pi coding tools; the only enabled names are wrappers returned by `RuntimeToolPort.listAuthorized()` for the current Run.
+- The product Runtime boundary now carries Owner, Agent, Thread, data classification and product Payload references. `RuntimeProjectionPort` resolves only the current Run projection, captures redacted message/tool/provider observations and receives compaction output as a proposal reference; no Pi Session entry becomes product state.
+- Pi agent, message, turn, tool, compaction and settled events map to product-only Runtime events. Stable product errors cover model failure, unknown upstream event, incomplete settlement and generic runtime failure. Product cancellation calls `AgentSession.abort()`, waits for Pi idle plus queued listener work, and emits `runtime.cancelled` instead of completion.
+- Custom tool execution performs the product preflight after Pi schema validation and immediately before execution. Denial returns a tool error without invoking the capability. The port contract requires completed external actions to deduplicate by Run and Pi tool-call ID; the durable reference implementation is completed with Task 13.
+- Supported `before_provider_request` and `after_provider_response` hooks capture redacted observations before product persistence. Secret-like keys and URL query parameters are removed locally; provider/model error text is not copied into product Runtime errors.
+- `@earendil-works/pi-coding-agent` is pinned to `0.84.2`; the compatibility test resolves the matching `pi-ai` faux provider from that published package's locked dependency graph rather than adding a second product runtime dependency. `npm run check:pi-compat` ran six tests against the real published Pi session, faux provider and custom tool loop. `npm run check` passed; `npm run test` passed 87 unit, 59 contract and 42 integration tests, while e2e remains the explicit empty baseline.
 
 ### Task 12: Add local Pi source learning and debugging mode
 

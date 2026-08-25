@@ -9,5 +9,8 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.84.2",
     "@himawari-agent/application": "0.0.0"
+  },
+  "devDependencies": {
+    "vitest": "4.1.9"
   }
 }

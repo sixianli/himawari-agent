@@ -187,9 +187,9 @@ export class ScriptedAgentRuntime implements AgentRuntimePort {
   async *run(request: RuntimeRequest): AsyncIterable<RuntimeEvent> {
     if (this.cancelled.has(request.runId)) {
       yield frozenCopy({
-        type: "runtime.failed" as const,
+        type: "runtime.cancelled" as const,
         runId: request.runId,
-        errorCode: "RUNTIME_CANCELLED",
+        reasonCode: "RUNTIME_CANCELLED",
         occurredAt: this.now(),
       });
       return;

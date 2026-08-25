@@ -733,14 +733,18 @@ export function agentRuntimePortConformance(
 ): void {
   describe("AgentRuntimePort conformance", () => {
     const request = {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
       runId: RUN_ID,
       sessionId: SESSION_ID,
+      threadId: null,
       modelRef: "model-primary",
       systemInstructionRef: "payload-system-01",
       messageRefs: ["payload-message-01"],
       capabilityHandleRefs: ["capability-handle-01"],
       budget: { maxTurns: 3 },
       correlationId: "correlation-01",
+      dataClassification: "private",
     } as const;
 
     it("streams only product runtime events", async () => {
@@ -760,7 +764,12 @@ export function agentRuntimePortConformance(
         await port.cancel(RUN_ID);
         await port.cancel(RUN_ID);
         expect(await collect(port.run(request))).toEqual([
-          { type: "runtime.failed", runId: RUN_ID, errorCode: "RUNTIME_CANCELLED", occurredAt: T0 },
+          {
+            type: "runtime.cancelled",
+            runId: RUN_ID,
+            reasonCode: "RUNTIME_CANCELLED",
+            occurredAt: T0,
+          },
         ]);
       });
     });
