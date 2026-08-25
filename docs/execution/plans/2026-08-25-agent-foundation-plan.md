@@ -408,14 +408,25 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 18: Implement the beef-restaurant end-to-end baseline
 
-- [ ] Create deterministic fixtures for owner profile, location, beef preference, restaurant search, monitoring schedule and reservation result.
-- [ ] Test memory write and provenance.
-- [ ] Test a new Thread retrieving the preference and producing a relevant recommendation.
-- [ ] Test proposed monitoring task, Human-in-the-Loop approval and durable Grant.
-- [ ] Test timer-triggered worker research and Attention Policy delivery.
-- [ ] Test reservation Action Intent, semantic approval, secret handle use and external result reconciliation.
-- [ ] Test a second client resuming the Thread and reading the complete Session Trace.
-- [ ] Assert the full expected event graph, not only the final assistant text.
+- [x] Create deterministic fixtures for owner profile, location, beef preference, restaurant search, monitoring schedule and reservation result.
+- [x] Test memory write and provenance.
+- [x] Test a new Thread retrieving the preference and producing a relevant recommendation.
+- [x] Test proposed monitoring task, Human-in-the-Loop approval and durable Grant.
+- [x] Test timer-triggered worker research and Attention Policy delivery.
+- [x] Test reservation Action Intent, semantic approval, secret handle use and external result reconciliation.
+- [x] Test a second client resuming the Thread and reading the complete Session Trace.
+- [x] Assert the full expected event graph, not only the final assistant text.
+
+#### Task 18 evidence — 2026-08-25
+
+- Failure-first baseline: the new three-part E2E suite failed at setup because `createBeefRestaurantFixture()` did not exist, so none of the reference journey assertions could run.
+- `createBeefRestaurantFixture()` fixes Owner/Agent/Thread/Session/Run identities, Tokyo location and owner profile references, beef preference with source provenance, model and capability versions, monitoring scope/schedule, search inputs/results, reservation intent/result and a reference-only booking secret requirement.
+- The journey proposes and commits `memory-likes-beef`, then forms a new-Thread context from `beef`, `restaurant` and `tokyo`. The selected memory retains the original message source, and the deterministic primary model returns the recommendation reference after route/request/start/output/completion Trace.
+- The proposed monitoring Action Intent returns `ASK`; an exact semantic hash approval creates a bounded long-term Grant. `SchedulerService` rereads that Grant and the current Authority Fence, emits one unified timer Trigger, then the schedule context delegates only the selected context to a Worker.
+- Read-only restaurant search is policy-allowed, executes through the independently managed `execution.v1` Worker and produces progress/result events. Central Attention Policy classifies the non-urgent result as `INBOX`, creates one Delivery Request and records the client acknowledgement.
+- Reservation is outside the monitoring Grant and therefore creates a separate one-time semantic approval. The Capability Handle delegates only the reservation input/context and booking secret reference; the Worker receives an opaque Secret Handle, the handle is revoked after settlement, and Trace contains only reference/version/purpose before the external result is marked reconciled.
+- A second authorized device reads the shared Thread snapshot and all 36 Session Trace events, then resumes an ordered subscription after cursor 10. The test asserts the exact event-type sequence plus Run-local monotonic sequence and same-Run parent relationships, rather than only checking assistant text.
+- `npm run check` passed all engineering checks. `npm run test:e2e -- beef-restaurant` passed all 3 E2E tests with deterministic adapters and no network, paid model, external account or raw credential.
 
 ### Task 19: Exercise failure and recovery matrix
 
