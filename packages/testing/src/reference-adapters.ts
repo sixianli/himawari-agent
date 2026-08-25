@@ -3,6 +3,7 @@ import type {
   AttentionDecision,
   AttentionPort,
   AuditLedgerPort,
+  AuthorizationStorePort,
   AuthorityLeasePort,
   CapabilityDescriptor,
   CapabilityInvocationEvent,
@@ -33,6 +34,7 @@ import {
 import {
   DeterministicPayloadProtector,
   InMemoryAuditLedger,
+  InMemoryAuthorizationStore,
   InMemoryAuthorityLeasePort,
   InMemoryMemoryPort,
   InMemoryPayloadStore,
@@ -73,6 +75,7 @@ export interface ReferenceAdapterSet {
   readonly payload: PayloadStorePort;
   readonly payloadProtector: DeterministicPayloadProtector;
   readonly audit: AuditLedgerPort;
+  readonly authorization: AuthorizationStorePort;
   readonly deletionState: SessionDeletionStatePort;
   readonly memory: MemoryPort;
   readonly model: ModelPort;
@@ -111,6 +114,7 @@ export function createReferenceAdapterSet(
     payload: new InMemoryPayloadStore(failures),
     payloadProtector,
     audit: new InMemoryAuditLedger(failures),
+    authorization: new InMemoryAuthorizationStore(failures),
     deletionState: new InMemorySessionDeletionState(failures),
     memory: new InMemoryMemoryPort(failures),
     model: new ScriptedModelPort(options.model?.descriptors, options.model?.events),

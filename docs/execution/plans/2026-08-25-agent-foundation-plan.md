@@ -203,12 +203,22 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 7: Implement deterministic Permission and Grant handling
 
-- [ ] Write decision-table tests for `ALLOW`, `ASK` and `DENY`.
-- [ ] Write tests for one-time grants, long-term grants, scope mismatch, expiration, budget exhaustion and revocation.
-- [ ] Define Action Intent and semantic approval snapshots.
-- [ ] Implement fail-closed policy evaluation outside model-facing code.
-- [ ] Implement durable approval waiting and resume without holding an in-process Promise.
-- [ ] Verify no-UI `ASK` remains pending and cannot become `ALLOW` through timeout or retry.
+- [x] Write decision-table tests for `ALLOW`, `ASK` and `DENY`.
+- [x] Write tests for one-time grants, long-term grants, scope mismatch, expiration, budget exhaustion and revocation.
+- [x] Define Action Intent and semantic approval snapshots.
+- [x] Implement fail-closed policy evaluation outside model-facing code.
+- [x] Implement durable approval waiting and resume without holding an in-process Promise.
+- [x] Verify no-UI `ASK` remains pending and cannot become `ALLOW` through timeout or retry.
+
+#### Task 7 evidence — 2026-08-25
+
+- Failure-first baseline: all 9 new integration cases failed at the missing `PermissionService` boundary.
+- Product-owned `ActionIntent` now freezes capability, operation, resource, data classification, side effect, estimated cost, proposed frequency, idempotency and reversibility into a semantic approval snapshot with a stable hash. A response carrying a different hash is rejected with `PORT_CONFLICT`.
+- `PermissionService` evaluates explicit deny rules before allow rules and otherwise creates `ASK`; any Authorization Store read or mutation failure returns fail-closed `DENY` with `permission_component_error`. The service has no model or Pi dependency.
+- One-time approval creates an exact intent-bound Grant with one use. Long-term Grants bound capability, operations, resource prefixes, maximum classification, side effects, per-use and total cost, proposed frequency, use count, expiry and revocation. Integration tests cover mismatched resource/frequency/cost, exhausted total/use budgets, expiry and owner revocation.
+- `ApprovalRequest` and `GrantRecord` are durable port values. A new `PermissionService` over the same reference Authorization Store resumes the same pending no-UI request; repeated evaluation returns the same request. Deadline expiry records `expired` and later retries return `DENY`, never `ALLOW`.
+- `AuthorizationStorePort` resolves an approval and creates its Grant in one adapter mutation boundary, then uses revision-checked atomic Grant accounting. Its reusable conformance suite covers semantic-hash conflict, approval/Grant visibility and exhausted consumption.
+- `npm run check` passed all engineering checks. `npm run test:contracts` passed 56 tests, including 2 new Authorization Store conformance cases; the focused Task 7 suite passed 9 integration tests.
 
 ### Task 8: Implement Capability Registry and execution isolation contracts
 

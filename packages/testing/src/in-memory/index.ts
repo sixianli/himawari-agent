@@ -1,3 +1,4 @@
+export * from "./authorization.js";
 export * from "./capabilities.js";
 export * from "./coordination.js";
 export * from "./intelligence.js";

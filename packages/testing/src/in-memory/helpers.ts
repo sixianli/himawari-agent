@@ -3,7 +3,14 @@ export function copy<TValue>(value: TValue): TValue {
 }
 
 export function frozenCopy<TValue extends object>(value: TValue): TValue {
-  return Object.freeze(copy(value));
+  const cloned = copy(value);
+  const freeze = (entry: unknown): void => {
+    if (entry === null || typeof entry !== "object" || ArrayBuffer.isView(entry)) return;
+    for (const nested of Object.values(entry)) freeze(nested);
+    Object.freeze(entry);
+  };
+  freeze(cloned);
+  return cloned;
 }
 
 export function valuesEqual(left: unknown, right: unknown): boolean {

@@ -1,8 +1,10 @@
 import type {
   AgentRuntimePort,
+  ApprovalRequest,
   AttentionDecision,
   AttentionPort,
   AuditLedgerPort,
+  AuthorizationStorePort,
   AuthorityLeasePort,
   CapabilityDescriptor,
   CapabilityInvocationEvent,
@@ -10,6 +12,7 @@ import type {
   ClockPort,
   IdGeneratorPort,
   JsonObject,
+  GrantRecord,
   MemoryPort,
   ModelDescriptor,
   ModelInvocationEvent,
@@ -424,6 +427,125 @@ export function auditLedgerPortConformance(harness: PortConformanceHarness<Audit
         expect((await port.listByAgent(AGENT_ID, "audit-01")).map(({ id }) => id)).toEqual([
           "audit-02",
         ]);
+      });
+    });
+  });
+}
+
+export function authorizationStorePortConformance(
+  harness: PortConformanceHarness<AuthorizationStorePort>,
+): void {
+  describe("AuthorizationStorePort conformance", () => {
+    const approval: ApprovalRequest = {
+      id: "approval-conformance-01",
+      revision: 1,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      intentId: "intent-conformance-01",
+      intentSnapshot: {
+        id: "intent-conformance-01",
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        capabilityRef: "restaurant-search",
+        operation: "search",
+        resourceRef: "city:tokyo",
+        dataClassification: "private",
+        sideEffect: "none",
+        estimatedCostMicros: 100,
+        frequency: { count: 1, intervalMs: null },
+        idempotencyKey: createIdempotencyKey("intent-conformance-01"),
+        reversible: true,
+        requestedAt: T0,
+      },
+      semanticSnapshotHash: "intent-hash-conformance-01",
+      status: "pending",
+      deliveryState: "queued_no_ui",
+      requestedAt: T0,
+      expiresAt: T2,
+      decidedAt: null,
+      grantId: null,
+    };
+    const grant: GrantRecord = {
+      id: "grant-conformance-01",
+      revision: 1,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      kind: "one_time",
+      scope: {
+        capabilityRef: "restaurant-search",
+        operations: ["search"],
+        exactResourceRef: "city:tokyo",
+        resourcePrefixes: [],
+        maxDataClassification: "private",
+        sideEffects: ["none"],
+        maxCostMicrosPerUse: 100,
+        maxFrequency: { count: 1, intervalMs: null },
+      },
+      intentFingerprint: "intent-hash-conformance-01",
+      sourceApprovalRequestId: approval.id,
+      validFrom: T0,
+      expiresAt: T2,
+      maxUses: 1,
+      uses: 0,
+      maxTotalCostMicros: 100,
+      spentCostMicros: 0,
+      revokedAt: null,
+      revocationReasonCode: null,
+    };
+
+    it("atomically resolves an approval with its Grant and accounts usage", async () => {
+      await withPort(harness, async (port) => {
+        await port.createApproval(approval);
+        expect(await port.findApprovalByIntent(approval.intentId)).toEqual(approval);
+
+        const resolved = await port.resolveApproval({
+          approvalRequestId: approval.id,
+          expectedRevision: 1,
+          semanticSnapshotHash: approval.semanticSnapshotHash,
+          resolution: "approved",
+          decidedAt: T1,
+          grant,
+        });
+        expect(resolved).toMatchObject({ status: "approved", grantId: grant.id, revision: 2 });
+        expect(await port.listGrants(OWNER_ID, AGENT_ID)).toEqual([grant]);
+
+        const consumed = await port.consumeGrant({
+          grantId: grant.id,
+          expectedRevision: 1,
+          costMicros: 100,
+          consumedAt: T1,
+        });
+        expect(consumed).toMatchObject({ revision: 2, uses: 1, spentCostMicros: 100 });
+        await expectPortError(
+          () =>
+            port.consumeGrant({
+              grantId: grant.id,
+              expectedRevision: 2,
+              costMicros: 1,
+              consumedAt: T1,
+            }),
+          PORT_ERROR_CODES.INVALID_OPERATION,
+        );
+      });
+    });
+
+    it("rejects a changed semantic snapshot during resolution", async () => {
+      await withPort(harness, async (port) => {
+        await port.createApproval(approval);
+        await expectPortError(
+          () =>
+            port.resolveApproval({
+              approvalRequestId: approval.id,
+              expectedRevision: 1,
+              semanticSnapshotHash: "different-hash",
+              resolution: "denied",
+              decidedAt: T1,
+              grant: null,
+            }),
+          PORT_ERROR_CODES.CONFLICT,
+        );
       });
     });
   });

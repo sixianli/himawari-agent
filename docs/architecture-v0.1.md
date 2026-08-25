@@ -12,9 +12,9 @@ date: "2026-08-25"
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e 和 Pi compatibility 五个测试项目。
 
-当前代码包含九个 workspace 的公共入口、`packages/domain` 中已实现的不可变身份、所有权工厂、Run 状态机、Agent 权威租约规则和稳定领域错误，`packages/gateway-contracts` 与 `packages/execution-contracts` 中首版严格 wire schema，`packages/application` 的产品端口、Run 状态提交、可靠事件发布、Session Trace 和删除传播应用服务，以及 `packages/testing` 的确定性内存参考适配器。Task 6 仍是架构语义验证切片；尚无完整 Run Coordinator、生产持久化、生产加密或索引/缓存/归档适配器、Pi Session 创建、网络监听器或可启动服务。
+当前代码包含九个 workspace 的公共入口、`packages/domain` 中已实现的不可变身份、所有权工厂、Run 状态机、Agent 权威租约规则和稳定领域错误，`packages/gateway-contracts` 与 `packages/execution-contracts` 中首版严格 wire schema，`packages/application` 的产品端口、Run 状态提交、可靠事件发布、Session Trace、删除传播和确定性 Permission/Grant 应用服务，以及 `packages/testing` 的确定性内存参考适配器。Task 7 仍是架构语义验证切片；尚无完整 Run Coordinator、生产持久化、生产加密或索引/缓存/归档适配器、Pi Session 创建、网络监听器或可启动服务。
 
-实现范围来自已确认 Spec，并按当前 Plan 的 Task 1 至 Task 6 落地：[SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-1-establish-repository-and-toolchain-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-2-implement-immutable-identities-and-domain-state-machines] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-3-define-versioned-gateway-and-execution-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-4-implement-product-ports-and-adapter-conformance-suites] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-5-implement-product-state-commit-and-reliable-event-semantics] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-6-implement-session-trace-payload-and-audit-separation]
+实现范围来自已确认 Spec，并按当前 Plan 的 Task 1 至 Task 7 落地：[SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-1-establish-repository-and-toolchain-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-2-implement-immutable-identities-and-domain-state-machines] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-3-define-versioned-gateway-and-execution-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-4-implement-product-ports-and-adapter-conformance-suites] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-5-implement-product-state-commit-and-reliable-event-semantics] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-6-implement-session-trace-payload-and-audit-separation] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-7-implement-deterministic-permission-and-grant-handling]
 
 ## Boundaries
 
@@ -85,6 +85,7 @@ Gateway 信封携带消息标识、schema 版本、相关关系、可空因果�
 StateStore          ReliableEvent      ProductStateRepository
 ReliableEventSink   TraceStore         PayloadStore       AuditLedger
 PayloadProtector    SessionDeletionState/Target
+AuthorizationStore
 Memory              Model              AgentRuntime       Capability
 Secret              Scheduler          Attention          AuthorityLease
 Clock               IdGenerator
@@ -120,6 +121,14 @@ Payload 端口的持久化输入是 ciphertext、算法标识、key reference、
 
 `SessionDeletionCoordinator` 为一次 Session 删除保存独立 revision 和四个固定目标：Payload、search、cache、archive。每个目标记录尝试次数、失败码和验证时间；重建协调器后只重试未验证目标。总状态只有在四个适配器都回读确认内容不存在时才是 `verified`，否则保持 `incomplete`，并且断言接口拒绝把部分清理报告为已验证。Audit Ledger 只保留 Session 引用、结果和时间，不复制被删除正文。
 
+### Permission, approval and Grants
+
+`PermissionService` 接受模型或其他调用方提出的产品 `ActionIntent`，但只由版本化确定性策略和持久 Grant 产生 `ALLOW`。显式 `DENY` 规则优先；未命中规则或 Grant 的行动形成 `ASK`。Authorization Store 不可读、Grant 消耗冲突或其他组件故障一律 fail closed，不能由模型输出修正。
+
+Approval Request 保存冻结的语义快照及稳定 hash。快照包含 capability、operation、resource、数据等级、副作用、费用、频率、幂等键和可逆性；响应 hash 不同则拒绝。无 UI 时只把请求标记为 `queued_no_ui`，进程重建后从 Store 恢复。过期只会进入 `expired`，相同 Intent 的超时或重试不能变成允许。
+
+Grant 与 Capability 声明分离。一次性 Grant 精确绑定原 Intent 并只有一次使用预算；长期 Grant 约束 capability、operations、resource prefixes、最大数据等级、副作用、每次/累计费用、频率、次数、期限和撤销状态。每次允许会通过 revision-checked Store mutation 消耗费用和次数，避免并发使用绕过预算。当前参考 Store 是内存语义替身，不代表生产授权持久化已经实现。该边界落实确定性授权决策：[SOURCE: docs/adr/0004-deterministic-authorization.md]
+
 ## Main Flows
 
 当前可执行流程仍限于工程验证和纯领域转换：
@@ -133,7 +142,7 @@ npm ci --ignore-scripts
   → selected Vitest project
 ```
 
-unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、全部 Run 状态组合、重复审批等待、终态不可变和单一 Agent 权威租约测试。contracts 项目验证 Gateway/Execution v1 wire schema，并以 54 个测试覆盖原有端口、Product State Repository、Reliable Event Sink 和确定性参考适配器。integration 项目包含 7 个 Task 5 状态提交/发布场景，以及 5 个 Task 6 场景验证 Trace 关系、三类 Payload 引用、秘密脱敏、安全失败事件和可恢复删除传播；e2e 和 Pi compatibility 项目仍使用 `--passWithNoTests` 作为空 workspace 基线。
+unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、全部 Run 状态组合、重复审批等待、终态不可变和单一 Agent 权威租约测试。contracts 项目验证 Gateway/Execution v1 wire schema，并以 56 个测试覆盖产品端口、Product State Repository、Reliable Event Sink、Authorization Store 和确定性参考适配器。integration 项目包含 7 个 Task 5 状态提交/发布场景、5 个 Task 6 Trace/删除场景，以及 9 个 Task 7 Permission/Grant 场景；e2e 和 Pi compatibility 项目仍使用 `--passWithNoTests` 作为空 workspace 基线。
 
 ## Backlog Links
 
@@ -144,6 +153,7 @@ unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、
 - Pi runtime adapter：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
 - Headless Agent Gateway：[SOURCE: docs/adr/0002-headless-agent-gateway.md]
 - Single logical Agent authority：[SOURCE: docs/adr/0003-single-logical-agent-authority.md]
+- Deterministic authorization：[SOURCE: docs/adr/0004-deterministic-authorization.md]
 - Replaceable Memory boundary：[SOURCE: docs/adr/0005-replaceable-memory-boundary.md]
 - Policy-controlled model routing：[SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
 - Governed Capability Registry：[SOURCE: docs/adr/0008-governed-capability-registry.md]

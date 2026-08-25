@@ -10,6 +10,7 @@ import {
   agentRuntimePortConformance,
   attentionPortConformance,
   auditLedgerPortConformance,
+  authorizationStorePortConformance,
   authorityLeasePortConformance,
   capabilityPortConformance,
   clockPortConformance,
@@ -56,6 +57,7 @@ reliableEventSinkPortConformance({ create: () => createReferenceAdapterSet().eve
 traceStorePortConformance({ create: () => createReferenceAdapterSet().trace });
 payloadStorePortConformance({ create: () => createReferenceAdapterSet().payload });
 auditLedgerPortConformance({ create: () => createReferenceAdapterSet().audit });
+authorizationStorePortConformance({ create: () => createReferenceAdapterSet().authorization });
 memoryPortConformance({ create: () => createReferenceAdapterSet().memory });
 modelPortConformance({
   create: (model) => createReferenceAdapterSet({ model }).model,
