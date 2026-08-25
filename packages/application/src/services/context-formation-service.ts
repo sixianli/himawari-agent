@@ -75,7 +75,11 @@ export interface ContextFormationServiceDependencies {
   readonly trace: SessionTraceRecorder;
 }
 
-export class ContextFormationService {
+export interface ContextFormationPort {
+  form(request: ContextFormationRequest): Promise<FormedContext>;
+}
+
+export class ContextFormationService implements ContextFormationPort {
   private readonly dependencies: ContextFormationServiceDependencies;
 
   constructor(dependencies: ContextFormationServiceDependencies) {

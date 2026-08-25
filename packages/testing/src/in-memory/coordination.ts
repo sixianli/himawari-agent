@@ -7,11 +7,68 @@ import type {
   ClockPort,
   ScheduledJob,
   SchedulerPort,
+  WorkerRunEvent,
+  WorkerRunPort,
+  WorkerRunRequest,
 } from "@himawari-agent/application";
 import { PORT_ERROR_CODES, ApplicationPortError } from "@himawari-agent/application";
 import type { AgentAuthorityLease, AgentId, AuthorityLeaseId } from "@himawari-agent/domain";
 import { type FailureScheduler, NO_FAILURES } from "../deterministic.js";
 import { frozenCopy } from "./helpers.js";
+
+export class ScriptedWorkerRunPort implements WorkerRunPort {
+  private readonly events: readonly WorkerRunEvent[];
+  private readonly eventsByWorker: Readonly<Record<string, readonly WorkerRunEvent[]>>;
+  private readonly replays = new Map<
+    string,
+    { readonly fingerprint: string; readonly events: readonly WorkerRunEvent[] }
+  >();
+  private readonly requests: WorkerRunRequest[] = [];
+  private readonly cancellations = new Map<string, string>();
+
+  constructor(
+    events: readonly WorkerRunEvent[] = [],
+    eventsByWorker: Readonly<Record<string, readonly WorkerRunEvent[]>> = {},
+  ) {
+    this.events = frozenCopy([...events]);
+    this.eventsByWorker = frozenCopy(eventsByWorker);
+  }
+
+  async *run(request: WorkerRunRequest): AsyncIterable<WorkerRunEvent> {
+    const fingerprint = JSON.stringify(request);
+    const replay = this.replays.get(request.idempotencyKey);
+    if (replay && replay.fingerprint !== fingerprint) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        `Worker idempotency key ${request.idempotencyKey} was reused with another request`,
+        { idempotencyKey: request.idempotencyKey },
+      );
+    }
+    const events = replay?.events ?? this.eventsByWorker[request.workerRunId] ?? this.events;
+    if (!replay) {
+      this.requests.push(frozenCopy(request));
+      this.replays.set(request.idempotencyKey, {
+        fingerprint,
+        events: frozenCopy([...events]),
+      });
+    }
+    for (const event of events) {
+      yield frozenCopy({ ...event, workerRunId: request.workerRunId });
+    }
+  }
+
+  async cancel(workerRunId: string, reasonCode: string): Promise<void> {
+    this.cancellations.set(workerRunId, reasonCode);
+  }
+
+  observedRequests(): readonly WorkerRunRequest[] {
+    return this.requests.map(frozenCopy);
+  }
+
+  cancellationReason(workerRunId: string): string | undefined {
+    return this.cancellations.get(workerRunId);
+  }
+}
 
 export class InMemoryScheduler implements SchedulerPort {
   private readonly jobs = new Map<string, ScheduledJob>();

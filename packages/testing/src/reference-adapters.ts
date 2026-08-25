@@ -19,11 +19,16 @@ import type {
   ReliableEventPort,
   ReliableEventSinkPort,
   RuntimeEvent,
+  RuntimeToolDescriptor,
+  RuntimeToolExecutionResult,
+  RuntimeToolPort,
   SchedulerPort,
   SecretPort,
   SessionDeletionStatePort,
   StateStorePort,
   TraceStorePort,
+  WorkerRunEvent,
+  WorkerRunPort,
 } from "@himawari-agent/application";
 import {
   DeterministicIdGenerator,
@@ -45,10 +50,12 @@ import {
   InMemorySecretPort,
   InMemorySessionDeletionState,
   InMemoryTraceStore,
+  IdempotentRuntimeToolPort,
   ScriptedAgentRuntime,
   ScriptedAttentionPort,
   ScriptedCapabilityPort,
   ScriptedModelPort,
+  ScriptedWorkerRunPort,
 } from "./in-memory/index.js";
 
 export interface ReferenceAdapterOptions {
@@ -60,6 +67,11 @@ export interface ReferenceAdapterOptions {
     readonly events: readonly ModelInvocationEvent[];
   };
   readonly runtime?: { readonly events: readonly RuntimeEvent[] };
+  readonly runtimeTools?: {
+    readonly descriptors: readonly RuntimeToolDescriptor[];
+    readonly execution?: RuntimeToolExecutionResult;
+  };
+  readonly workers?: { readonly events: readonly WorkerRunEvent[] };
   readonly capability?: {
     readonly descriptors: readonly CapabilityDescriptor[];
     readonly events: readonly CapabilityInvocationEvent[];
@@ -81,6 +93,8 @@ export interface ReferenceAdapterSet {
   readonly memory: MemoryPort;
   readonly model: ModelPort;
   readonly runtime: AgentRuntimePort;
+  readonly runtimeTools: RuntimeToolPort;
+  readonly workers: WorkerRunPort;
   readonly capability: CapabilityPort;
   readonly capabilityRegistry: InMemoryCapabilityRegistryStore;
   readonly secret: SecretPort;
@@ -122,6 +136,13 @@ export function createReferenceAdapterSet(
     memory: new InMemoryMemoryPort(failures),
     model: new ScriptedModelPort(options.model?.descriptors, options.model?.events),
     runtime: new ScriptedAgentRuntime(() => clock.now(), options.runtime?.events),
+    runtimeTools: new IdempotentRuntimeToolPort({
+      ...(options.runtimeTools?.descriptors
+        ? { descriptors: options.runtimeTools.descriptors }
+        : {}),
+      ...(options.runtimeTools?.execution ? { execution: options.runtimeTools.execution } : {}),
+    }),
+    workers: new ScriptedWorkerRunPort(options.workers?.events),
     capability: new ScriptedCapabilityPort(
       options.capability?.descriptors,
       options.capability?.events,

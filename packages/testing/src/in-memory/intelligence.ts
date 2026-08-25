@@ -12,6 +12,11 @@ import type {
   ModelPort,
   RuntimeEvent,
   RuntimeRequest,
+  RuntimeToolDescriptor,
+  RuntimeToolExecutionResult,
+  RuntimeToolInvocation,
+  RuntimeToolPort,
+  RuntimeToolPreflightDecision,
 } from "@himawari-agent/application";
 import { PORT_ERROR_CODES, ApplicationPortError } from "@himawari-agent/application";
 import type { AgentId, RunId } from "@himawari-agent/domain";
@@ -178,6 +183,7 @@ export class ScriptedAgentRuntime implements AgentRuntimePort {
   private readonly events: readonly RuntimeEvent[];
   private readonly cancelled = new Set<RunId>();
   private readonly now: () => string;
+  private readonly requests: RuntimeRequest[] = [];
 
   constructor(now: () => string, events: readonly RuntimeEvent[] = []) {
     this.events = frozenCopy([...events]);
@@ -185,6 +191,7 @@ export class ScriptedAgentRuntime implements AgentRuntimePort {
   }
 
   async *run(request: RuntimeRequest): AsyncIterable<RuntimeEvent> {
+    this.requests.push(frozenCopy(request));
     if (this.cancelled.has(request.runId)) {
       yield frozenCopy({
         type: "runtime.cancelled" as const,
@@ -199,5 +206,83 @@ export class ScriptedAgentRuntime implements AgentRuntimePort {
 
   async cancel(runId: RunId): Promise<void> {
     this.cancelled.add(runId);
+  }
+
+  observedRequests(): readonly RuntimeRequest[] {
+    return this.requests.map(frozenCopy);
+  }
+}
+
+export class IdempotentRuntimeToolPort implements RuntimeToolPort {
+  private readonly descriptors: readonly RuntimeToolDescriptor[];
+  private readonly decision: RuntimeToolPreflightDecision;
+  private readonly execution: RuntimeToolExecutionResult;
+  private readonly executions = new Map<string, RuntimeToolExecutionResult>();
+  private executionAttempts = 0;
+
+  constructor(
+    input: {
+      readonly descriptors?: readonly RuntimeToolDescriptor[];
+      readonly decision?: RuntimeToolPreflightDecision;
+      readonly execution?: RuntimeToolExecutionResult;
+    } = {},
+  ) {
+    this.descriptors = frozenCopy([...(input.descriptors ?? [])]);
+    this.decision = frozenCopy(
+      input.decision ?? {
+        allowed: true,
+        permissionDecisionRef: "permission-runtime-tool-default",
+        reasonCode: "authorized",
+      },
+    );
+    this.execution = frozenCopy(
+      input.execution ?? {
+        outcome: "succeeded",
+        resultRef: "payload-runtime-tool-result",
+        errorCode: null,
+        externalActionId: null,
+        modelContent: "Tool completed",
+      },
+    );
+  }
+
+  async listAuthorized(
+    _runId: RunId,
+    capabilityHandleRefs: readonly string[],
+  ): Promise<readonly RuntimeToolDescriptor[]> {
+    const handles = new Set(capabilityHandleRefs);
+    return this.descriptors
+      .filter(({ capabilityHandleRef }) => handles.has(capabilityHandleRef))
+      .map(frozenCopy);
+  }
+
+  async preflight(invocation: RuntimeToolInvocation): Promise<RuntimeToolPreflightDecision> {
+    const descriptor = this.descriptors.find(
+      ({ capabilityRef, capabilityHandleRef }) =>
+        capabilityRef === invocation.capabilityRef &&
+        capabilityHandleRef === invocation.capabilityHandleRef,
+    );
+    if (!descriptor) {
+      return frozenCopy({
+        allowed: false,
+        permissionDecisionRef: "permission-runtime-tool-missing",
+        reasonCode: "not_authorized",
+      });
+    }
+    return frozenCopy(this.decision);
+  }
+
+  async execute(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
+    const key = `${invocation.runId}:${invocation.toolCallId}`;
+    const existing = this.executions.get(key);
+    if (existing) return frozenCopy(existing);
+    this.executionAttempts += 1;
+    const stored = frozenCopy(this.execution);
+    this.executions.set(key, stored);
+    return frozenCopy(stored);
+  }
+
+  underlyingExecutionCount(): number {
+    return this.executionAttempts;
   }
 }

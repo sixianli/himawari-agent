@@ -319,12 +319,21 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 13: Implement Run Coordinator and worker delegation
 
-- [ ] Write a full Run-state integration test from accepted trigger through context, model, tool and completion.
-- [ ] Write tests for worker parent-child Trace relationships, budgets, cancellation and result aggregation.
-- [ ] Implement Run Coordinator orchestration using product ports only.
-- [ ] Implement one primary Agent with scoped worker runs and no inherited undelegated grants.
-- [ ] Persist every suspension point needed for crash-safe resume.
-- [ ] Verify a runtime or worker crash cannot duplicate a completed external action.
+- [x] Write a full Run-state integration test from accepted trigger through context, model, tool and completion.
+- [x] Write tests for worker parent-child Trace relationships, budgets, cancellation and result aggregation.
+- [x] Implement Run Coordinator orchestration using product ports only.
+- [x] Implement one primary Agent with scoped worker runs and no inherited undelegated grants.
+- [x] Persist every suspension point needed for crash-safe resume.
+- [x] Verify a runtime or worker crash cannot duplicate a completed external action.
+
+#### Task 13 evidence — 2026-08-25
+
+- `RunCoordinator` now owns the product orchestration path from an admitted Run through `ContextFormationPort`, explicitly delegated `WorkerRunPort` calls and `AgentRuntimePort`, while all Run mutations still pass through `RunStateCommitCoordinator` with the current Authority Fence. It maps settlement to the domain Run state machine and propagates owner cancellation to active runtime and worker calls.
+- Worker requests must match the parent Owner, Agent and Run and may contain only an explicit subset of delegable context and capability-handle references. Worker secret references are rejected at this boundary rather than inherited. Duration, cost and progress budgets are checked by the coordinator, and worker results are added to the runtime message-reference projection.
+- Context completion, worker results, runtime event count, latest Trace event and terminal outcome are persisted under a product checkpoint after each suspension point. A restarted coordinator skips completed context/worker work and replays deterministic runtime events only beyond the recorded count.
+- Worker delegation, progress, terminal settlement and every Runtime event are appended to the parent Run Trace with linked parent and causation identifiers. An unknown external worker result moves the Run to `reconciling_external_result`; budget failure and cancellation settle it explicitly.
+- `ScriptedWorkerRunPort` and `IdempotentRuntimeToolPort` add reusable conformance coverage. Tool execution caches a completed result by `RunId + toolCallId`, and the crash integration case proves an external action completed immediately before a simulated runtime crash executes only once after coordinator reconstruction.
+- Five focused integration cases cover completion and result aggregation, undelegated authority rejection, worker-budget failure, crash-safe resume and active-runtime cancellation. `npm run typecheck` and the focused integration suite passed; full Task 13 validation is recorded with the implementation commit.
 
 ### Task 14: Implement Scheduler and unified trigger ingestion
 

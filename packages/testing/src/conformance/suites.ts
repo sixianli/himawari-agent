@@ -24,11 +24,16 @@ import type {
   ReliableEventPort,
   ReliableEventSinkPort,
   RuntimeEvent,
+  RuntimeToolDescriptor,
+  RuntimeToolExecutionResult,
+  RuntimeToolPort,
   SchedulerPort,
   SecretPort,
   StateStorePort,
   TraceEvent,
   TraceStorePort,
+  WorkerRunEvent,
+  WorkerRunPort,
 } from "@himawari-agent/application";
 import { PORT_ERROR_CODES, ApplicationPortError } from "@himawari-agent/application";
 import {
@@ -771,6 +776,101 @@ export function agentRuntimePortConformance(
             occurredAt: T0,
           },
         ]);
+      });
+    });
+  });
+}
+
+export interface WorkerRunPortFixture {
+  readonly events: readonly WorkerRunEvent[];
+}
+
+export function workerRunPortConformance(
+  harness: ConfiguredPortConformanceHarness<WorkerRunPort, WorkerRunPortFixture>,
+): void {
+  describe("WorkerRunPort conformance", () => {
+    const request = {
+      workerRunId: "worker-run-01",
+      idempotencyKey: "worker-command-01",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      parentRunId: RUN_ID,
+      taskRef: "payload-worker-task-01",
+      delegatedContextRefs: ["payload-worker-context-01"],
+      capabilityHandleRefs: ["capability-handle-01"],
+      secretRefs: [],
+      dataClassification: "private" as const,
+      budget: { maxDurationMs: 1_000, maxCostMicros: 10_000, maxProgressEvents: 2 },
+      deadlineAt: T2,
+    };
+
+    it("streams scoped progress and replays a duplicate command", async () => {
+      const events: readonly WorkerRunEvent[] = [
+        {
+          type: "worker.progress",
+          workerRunId: request.workerRunId,
+          sequence: 1,
+          payloadRef: "payload-worker-progress-01",
+          occurredAt: T0,
+        },
+        {
+          type: "worker.completed",
+          workerRunId: request.workerRunId,
+          resultRef: "payload-worker-result-01",
+          costMicros: 1_000,
+          durationMs: 500,
+          occurredAt: T1,
+        },
+      ];
+      await withConfiguredPort(harness, { events }, async (port) => {
+        expect(await collect(port.run(request))).toEqual(events);
+        expect(await collect(port.run(request))).toEqual(events);
+        await expect(port.cancel(request.workerRunId, "owner_requested")).resolves.toBeUndefined();
+        await expect(port.cancel(request.workerRunId, "owner_requested")).resolves.toBeUndefined();
+      });
+    });
+  });
+}
+
+export interface RuntimeToolPortFixture {
+  readonly descriptors: readonly RuntimeToolDescriptor[];
+  readonly execution: RuntimeToolExecutionResult;
+}
+
+export function runtimeToolPortConformance(
+  harness: ConfiguredPortConformanceHarness<RuntimeToolPort, RuntimeToolPortFixture>,
+): void {
+  describe("RuntimeToolPort conformance", () => {
+    it("authorizes exact handles and deduplicates execution by Run and tool call", async () => {
+      const descriptor: RuntimeToolDescriptor = {
+        capabilityRef: "restaurant-search",
+        capabilityHandleRef: "capability-handle-01",
+        name: "restaurant_search",
+        description: "Search restaurants",
+        parameters: { type: "object" },
+      };
+      const execution: RuntimeToolExecutionResult = {
+        outcome: "succeeded",
+        resultRef: "payload-tool-result-01",
+        errorCode: null,
+        externalActionId: "external-action-01",
+        modelContent: "One matching restaurant",
+      };
+      await withConfiguredPort(harness, { descriptors: [descriptor], execution }, async (port) => {
+        expect(await port.listAuthorized(RUN_ID, [descriptor.capabilityHandleRef])).toEqual([
+          descriptor,
+        ]);
+        const invocation = {
+          runId: RUN_ID,
+          toolCallId: "tool-call-01",
+          capabilityRef: descriptor.capabilityRef,
+          capabilityHandleRef: descriptor.capabilityHandleRef,
+          arguments: { query: "dinner" },
+          dataClassification: "private" as const,
+        };
+        await expect(port.preflight(invocation)).resolves.toMatchObject({ allowed: true });
+        expect(await port.execute(invocation)).toEqual(execution);
+        expect(await port.execute(invocation)).toEqual(execution);
       });
     });
   });

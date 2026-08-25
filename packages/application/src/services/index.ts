@@ -4,6 +4,7 @@ export * from "./execution-worker-service.js";
 export * from "./model-router-service.js";
 export * from "./permission-service.js";
 export * from "./reliable-event-publisher.js";
+export * from "./run-coordinator.js";
 export * from "./run-state-commit-coordinator.js";
 export * from "./session-deletion-coordinator.js";
 export * from "./session-trace-recorder.js";

@@ -22,10 +22,12 @@ import {
   productStateRepositoryPortConformance,
   reliableEventPortConformance,
   reliableEventSinkPortConformance,
+  runtimeToolPortConformance,
   schedulerPortConformance,
   secretPortConformance,
   stateStorePortConformance,
   traceStorePortConformance,
+  workerRunPortConformance,
 } from "@himawari-agent/testing/conformance";
 import {
   DeterministicFailureScheduler,
@@ -65,6 +67,12 @@ modelPortConformance({
 });
 agentRuntimePortConformance({
   create: (runtime) => createReferenceAdapterSet({ runtime }).runtime,
+});
+runtimeToolPortConformance({
+  create: (runtimeTools) => createReferenceAdapterSet({ runtimeTools }).runtimeTools,
+});
+workerRunPortConformance({
+  create: (workers) => createReferenceAdapterSet({ workers }).workers,
 });
 capabilityPortConformance({
   create: (capability) => createReferenceAdapterSet({ capability }).capability,
