@@ -563,12 +563,19 @@ export function memoryPortConformance(harness: PortConformanceHarness<MemoryPort
           agentId: AGENT_ID,
           contentRef: "payload-memory-01",
           sourceRef: "trace-source-01",
+          searchTerms: ["beef", "restaurant"],
           dataClassification: "private" as const,
           proposedAt: T0,
         };
         await port.proposeWrite(proposal);
         expect(
-          await port.search({ ownerId: OWNER_ID, agentId: AGENT_ID, queryRef: "q", limit: 10 }),
+          await port.search({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            queryRef: "q",
+            queryTerms: ["beef"],
+            limit: 10,
+          }),
         ).toEqual([]);
         expect(await port.listWriteProposals(AGENT_ID)).toEqual([proposal]);
 
@@ -577,6 +584,7 @@ export function memoryPortConformance(harness: PortConformanceHarness<MemoryPort
           ownerId: OWNER_ID,
           agentId: AGENT_ID,
           queryRef: "payload-query-01",
+          queryTerms: ["beef"],
           limit: 10,
         });
         expect(candidates).toMatchObject([
@@ -593,6 +601,7 @@ export function memoryPortConformance(harness: PortConformanceHarness<MemoryPort
           agentId: AGENT_ID,
           contentRef: "payload-memory-01",
           sourceRef: "trace-source-01",
+          searchTerms: ["beef"],
           dataClassification: "private",
           proposedAt: T0,
         });
@@ -601,14 +610,60 @@ export function memoryPortConformance(harness: PortConformanceHarness<MemoryPort
           memoryId: "memory-01",
           contentRef: "payload-memory-corrected-01",
           sourceRef: "trace-correction-01",
+          searchTerms: ["wagyu"],
           correctedAt: T2,
         });
 
         expect(corrected).toMatchObject({
           contentRef: "payload-memory-corrected-01",
           sourceRef: "trace-correction-01",
+          searchTerms: ["wagyu"],
         });
         expect(await port.delete("memory-01")).toBe(true);
+      });
+    });
+
+    it("ranks only matching terms and retains candidate provenance", async () => {
+      await withPort(harness, async (port) => {
+        await port.proposeWrite({
+          id: "memory-proposal-beef",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          contentRef: "payload-memory-beef",
+          sourceRef: "trace-source-beef",
+          searchTerms: ["beef", "restaurant"],
+          dataClassification: "private",
+          proposedAt: T0,
+        });
+        await port.commitWrite("memory-proposal-beef", "memory-beef", T1);
+        await port.proposeWrite({
+          id: "memory-proposal-sushi",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          contentRef: "payload-memory-sushi",
+          sourceRef: "trace-source-sushi",
+          searchTerms: ["sushi"],
+          dataClassification: "private",
+          proposedAt: T0,
+        });
+        await port.commitWrite("memory-proposal-sushi", "memory-sushi", T1);
+
+        expect(
+          await port.search({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            queryRef: "payload-query-beef",
+            queryTerms: ["beef", "dinner"],
+            limit: 10,
+          }),
+        ).toMatchObject([
+          {
+            id: "memory-beef",
+            sourceRef: "trace-source-beef",
+            searchTerms: ["beef", "restaurant"],
+            score: 0.5,
+          },
+        ]);
       });
     });
   });

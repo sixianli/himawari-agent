@@ -12,9 +12,9 @@ date: "2026-08-25"
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e 和 Pi compatibility 五个测试项目。
 
-当前代码包含九个 workspace 的公共入口、`packages/domain` 中已实现的不可变身份、所有权工厂、Run 状态机、Agent 权威租约规则和稳定领域错误，`packages/gateway-contracts` 与 `packages/execution-contracts` 中首版严格 wire schema，`packages/application` 的产品端口、Run 状态提交、可靠事件发布、Session Trace、删除传播、Permission/Grant、Capability Registry 和 Worker 边界应用服务，以及 `packages/testing` 的确定性内存参考适配器。Task 8 仍是架构语义验证切片；尚无完整 Run Coordinator、生产持久化、生产加密/沙箱/远程 Worker、Pi Session 创建、网络监听器或可启动服务。
+当前代码包含九个 workspace 的公共入口、`packages/domain` 中已实现的不可变身份、所有权工厂、Run 状态机、Agent 权威租约规则和稳定领域错误，`packages/gateway-contracts` 与 `packages/execution-contracts` 中首版严格 wire schema，`packages/application` 的产品端口、Run 状态提交、可靠事件发布、Session Trace、删除传播、Permission/Grant、Capability Registry、Worker 边界和 Context Formation 应用服务，以及 `packages/testing` 的确定性内存参考适配器。Task 9 仍是架构语义验证切片；尚无完整 Run Coordinator、生产 Memory/持久化、生产加密/沙箱/远程 Worker、Pi Session 创建、网络监听器或可启动服务。
 
-实现范围来自已确认 Spec，并按当前 Plan 的 Task 1 至 Task 8 落地：[SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-1-establish-repository-and-toolchain-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-2-implement-immutable-identities-and-domain-state-machines] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-3-define-versioned-gateway-and-execution-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-4-implement-product-ports-and-adapter-conformance-suites] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-5-implement-product-state-commit-and-reliable-event-semantics] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-6-implement-session-trace-payload-and-audit-separation] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-7-implement-deterministic-permission-and-grant-handling] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-8-implement-capability-registry-and-execution-isolation-contracts]
+实现范围来自已确认 Spec，并按当前 Plan 的 Task 1 至 Task 9 落地：[SOURCE: docs/execution/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-1-establish-repository-and-toolchain-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-2-implement-immutable-identities-and-domain-state-machines] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-3-define-versioned-gateway-and-execution-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-4-implement-product-ports-and-adapter-conformance-suites] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-5-implement-product-state-commit-and-reliable-event-semantics] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-6-implement-session-trace-payload-and-audit-separation] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-7-implement-deterministic-permission-and-grant-handling] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-8-implement-capability-registry-and-execution-isolation-contracts] [SOURCE: docs/execution/plans/2026-08-25-agent-foundation-plan.md#task-9-implement-memory-port-and-context-formation]
 
 ## Boundaries
 
@@ -32,7 +32,7 @@ testing → application + domain + product contracts
 
 `scripts/check-boundaries.mjs` 从根和各 workspace 的 `package.json` 及 TypeScript import 构建依赖图，检查非精确直接外部依赖、非法方向、循环、未声明依赖和逃出 workspace 根的相对 import。任何 `@earendil-works/pi-*` 依赖或 import 只能位于 `packages/runtime-pi`；domain、contracts 和 application 不能直接 import `node:` 模块。
 
-`packages/runtime-pi` 直接固定 `@earendil-works/pi-coding-agent` `0.84.2`；提交的 manifest 和 lockfile 不引用相邻的 `../pi-mono`。该隔离边界落实了产品自有 Pi 适配层决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
+`packages/runtime-pi` 直接固定 `@earendil-works/pi-coding-agent` `0.84.2`；提交的 manifest 和 lockfile 不引用相邻的 `../pi-mono`。它只能从 `@himawari-agent/application/runtime-port` 导入 Agent Runtime request/event 类型，不能通过 application 根入口获得 Memory、Permission、Capability Registry 或持久化写端口。该隔离边界落实了产品自有 Pi 适配层决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
 
 ## Data Model
 
@@ -112,7 +112,7 @@ Clock               IdGenerator
 
 `ReliableEventPublisher` 分批读取 pending 事件，交给 `ReliableEventSinkPort` 后再标记 published。发布前失败保留 pending 事件；Sink 已接收但 published 标记失败时会按同一 event ID 重投，Sink 返回 `duplicate` 而不产生第二次可见交付。新建协调器和发布器只需复用同一 Product State Repository 即可恢复 Run 和 outbox，不读取 Pi Session 文件。
 
-当前保证只由内存参考适配器和可复用 conformance suite 验证，不代表生产跨进程耐久性、加密强度或隔离已经实现。实际记忆排序、模型路由策略、Capability 生产沙箱/传输、Secret 原值解析、生产删除适配器、Scheduler、Attention 策略和生产持久化仍属于后续 Plan 任务。
+当前保证只由内存参考适配器和可复用 conformance suite 验证，不代表生产跨进程耐久性、加密强度或隔离已经实现。生产 Memory 检索、模型路由策略、Capability 生产沙箱/传输、Secret 原值解析、生产删除适配器、Scheduler、Attention 策略和生产持久化仍属于后续 Plan 任务。
 
 ### Session Trace, protected Payload and deletion propagation
 
@@ -138,6 +138,14 @@ Capability Registry 分开保存不可变版本声明、安装生命周期和短
 
 `ExecutionWorkerService` 以现有 `execution.v1` 请求为边界，向能力适配器只转交 Handle 允许的上下文与短期 Secret Handle。取消、调用期限、progress、result、unknown external result 和 failure 映射回版本化 Worker 事件。当前 `DeterministicRestaurantCapabilityPort` 只验证搜索/预订的产品语义；它不是网络客户端、隔离进程或真实供应商。生产 Worker 传输与沙箱仍未实现。该边界落实受治理能力决策：[SOURCE: docs/adr/0008-governed-capability-registry.md]
 
+### Memory and context formation
+
+Memory 端口使用产品自己的 proposal、record、candidate 和 correction 值；正文仍是 Payload 引用，provenance 是 source Trace reference。`packages/testing` 的内存适配器只按标准化 search terms 做可重复 overlap score 和稳定 ID tie-break，不读取正文，也不代表最终召回算法或供应商选择。
+
+`ContextFormationService` 对 Memory 只持有 `search` 子集。每次调用按固定顺序组装 Thread message refs、trigger Payload、policy refs、通过数据等级与数量限制的 memory content refs、Capability summary refs，并把最终清单写成 protected Payload。检索 query、全部 candidates、选择/排除理由和 final context 分成四个父子/因果相连的 Trace 事件；高敏候选会在 candidates 中可见，但不能进入较低等级上下文。
+
+user message、schedule 和 external event 没有各自的上下文实现，三者只改变统一请求中的 `sourceType`。Pi 的公开产品依赖面只包含 Agent Runtime Port，因此不能直接调用 Memory 的 proposal、commit、correct 或 delete；长期记忆写入仍必须由后续 Run Coordinator 的产品策略触发。该边界落实可替换 Memory 决策：[SOURCE: docs/adr/0005-replaceable-memory-boundary.md]
+
 ## Main Flows
 
 当前可执行流程仍限于工程验证和纯领域转换：
@@ -151,7 +159,7 @@ npm ci --ignore-scripts
   → selected Vitest project
 ```
 
-unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、全部 Run 状态组合、重复审批等待、终态不可变和单一 Agent 权威租约测试。contracts 项目验证 Gateway/Execution v1 wire schema，并以 58 个测试覆盖产品端口、Product State Repository、Reliable Event Sink、Authorization Store、Capability Registry/Handle Store 和确定性参考适配器。integration 项目包含 7 个 Task 5 状态提交/发布场景、5 个 Task 6 Trace/删除场景、9 个 Task 7 Permission/Grant 场景，以及 11 个 Task 8 Registry/Worker 隔离场景；e2e 和 Pi compatibility 项目仍使用 `--passWithNoTests` 作为空 workspace 基线。
+unit 项目包含 Node.js 版本下限测试，以及身份格式、所有权、全部 Run 状态组合、重复审批等待、终态不可变和单一 Agent 权威租约测试。contracts 项目验证 Gateway/Execution v1 wire schema，并以 59 个测试覆盖产品端口、Product State Repository、Reliable Event Sink、Authorization Store、Capability Registry/Handle Store、Memory conformance 和确定性参考适配器。integration 项目包含 7 个 Task 5 状态提交/发布场景、5 个 Task 6 Trace/删除场景、9 个 Task 7 Permission/Grant 场景、11 个 Task 8 Registry/Worker 隔离场景，以及 4 个 Task 9 Context Formation 场景；e2e 和 Pi compatibility 项目仍使用 `--passWithNoTests` 作为空 workspace 基线。
 
 ## Backlog Links
 

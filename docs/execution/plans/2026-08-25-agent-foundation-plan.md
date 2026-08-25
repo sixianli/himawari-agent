@@ -241,12 +241,23 @@ Automated checks must reject reverse dependencies, package cycles and direct Pi 
 
 ### Task 9: Implement Memory Port and context formation
 
-- [ ] Write conformance tests for search, provenance, write proposal, correction and deletion.
-- [ ] Implement a deterministic memory adapter used only for tests and local architecture verification.
-- [ ] Implement context formation from Thread messages, trigger payload, policies, memory candidates and capability summaries.
-- [ ] Emit separate Trace events for query, candidates, selection and final injected content.
-- [ ] Verify all trigger types use the same context-formation pipeline.
-- [ ] Verify the Pi adapter cannot write the memory backend directly.
+- [x] Write conformance tests for search, provenance, write proposal, correction and deletion.
+- [x] Implement a deterministic memory adapter used only for tests and local architecture verification.
+- [x] Implement context formation from Thread messages, trigger payload, policies, memory candidates and capability summaries.
+- [x] Emit separate Trace events for query, candidates, selection and final injected content.
+- [x] Verify all trigger types use the same context-formation pipeline.
+- [x] Verify the Pi adapter cannot write the memory backend directly.
+
+#### Task 9 evidence — 2026-08-25
+
+- Failure-first baseline: all 4 new integration cases failed because `ContextFormationService` did not exist.
+- Memory records, write proposals and corrections now carry provider-neutral search terms plus the existing Payload and source Trace references. The deterministic reference adapter normalizes terms, excludes non-matches, scores overlap and breaks ties by stable memory ID; it remains under `packages/testing` and is not a product memory engine.
+- The reusable Memory conformance suite now has 3 cases covering proposal isolation, commit/search with provenance, correction, deletion and deterministic relevance. `npm run test:contracts` passed 59 tests.
+- `ContextFormationService` receives only `Pick<MemoryPort, "search">`. It combines ordered Thread message refs, the trigger payload, policy refs, classification-filtered memory selections and capability summary refs into one final protected context Payload reference.
+- Every formation emits four linked Trace events: `memory.query`, `memory.candidates`, `memory.selection` and `context.formed`. Candidate Trace data preserves source references; selection Trace records explicit inclusion and classification/limit exclusion reasons.
+- User-message, schedule and external-event tests call the same `form()` method and produce the same four-event pipeline. A restricted higher-score candidate remains visible in retrieval Trace but is excluded from a private context.
+- `@himawari-agent/application/runtime-port` exports only Agent Runtime request/event types. The dependency checker now rejects every other application import from `packages/runtime-pi`; a temporary `MemoryPort` import probe failed with the expected runtime-only-import error and was removed.
+- `npm run check` passed formatting, lint, strict TypeScript and all workspace boundaries. The focused Task 9 suite passed 4 integration tests without Pi execution or external memory services.
 
 ### Task 10: Implement Model Router and secret-mediated provider access
 

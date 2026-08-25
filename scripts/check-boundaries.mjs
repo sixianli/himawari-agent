@@ -245,6 +245,15 @@ for (const { directory, manifest, manifestPath } of workspacePackages) {
       ) {
         errors.push(`${fileLabel}: ${packageName} must not import ${importedPackage}`);
       }
+      if (
+        packageName === "@himawari-agent/runtime-pi" &&
+        importedPackage === "@himawari-agent/application" &&
+        specifier !== "@himawari-agent/application/runtime-port"
+      ) {
+        errors.push(
+          `${fileLabel}: runtime-pi may import only @himawari-agent/application/runtime-port`,
+        );
+      }
     }
   }
 }

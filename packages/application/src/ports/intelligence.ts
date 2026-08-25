@@ -7,6 +7,7 @@ export interface MemoryRecord {
   readonly agentId: AgentId;
   readonly contentRef: PayloadRef;
   readonly sourceRef: string;
+  readonly searchTerms: readonly string[];
   readonly dataClassification: DataClassification;
   readonly updatedAt: string;
 }
@@ -19,6 +20,7 @@ export interface MemorySearchRequest {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly queryRef: PayloadRef;
+  readonly queryTerms: readonly string[];
   readonly limit: number;
 }
 
@@ -28,6 +30,7 @@ export interface MemoryWriteProposal {
   readonly agentId: AgentId;
   readonly contentRef: PayloadRef;
   readonly sourceRef: string;
+  readonly searchTerms: readonly string[];
   readonly dataClassification: DataClassification;
   readonly proposedAt: string;
 }
@@ -36,6 +39,7 @@ export interface MemoryCorrection {
   readonly memoryId: string;
   readonly contentRef: PayloadRef;
   readonly sourceRef: string;
+  readonly searchTerms: readonly string[];
   readonly correctedAt: string;
 }
 

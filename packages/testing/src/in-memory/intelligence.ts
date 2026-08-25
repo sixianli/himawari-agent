@@ -29,10 +29,27 @@ export class InMemoryMemoryPort implements MemoryPort {
   }
 
   async search(request: MemorySearchRequest): Promise<readonly MemoryCandidate[]> {
+    const queryTerms = new Set(request.queryTerms.map((term) => term.trim().toLowerCase()));
     return [...this.records.values()]
       .filter((record) => record.ownerId === request.ownerId && record.agentId === request.agentId)
+      .map((record) => {
+        const matches = record.searchTerms.filter((term) =>
+          queryTerms.has(term.trim().toLowerCase()),
+        ).length;
+        return { record, matches };
+      })
+      .filter(({ matches }) => matches > 0)
+      .sort(
+        (left, right) =>
+          right.matches - left.matches || left.record.id.localeCompare(right.record.id),
+      )
       .slice(0, request.limit)
-      .map((record, index) => frozenCopy({ ...record, score: 1 / (index + 1) }));
+      .map(({ record, matches }) =>
+        frozenCopy({
+          ...record,
+          score: matches / Math.max(1, queryTerms.size),
+        }),
+      );
   }
 
   async proposeWrite(proposal: MemoryWriteProposal): Promise<void> {
@@ -81,6 +98,7 @@ export class InMemoryMemoryPort implements MemoryPort {
       agentId: proposal.agentId,
       contentRef: proposal.contentRef,
       sourceRef: proposal.sourceRef,
+      searchTerms: proposal.searchTerms,
       dataClassification: proposal.dataClassification,
       updatedAt: committedAt,
     });
@@ -103,6 +121,7 @@ export class InMemoryMemoryPort implements MemoryPort {
       ...current,
       contentRef: correction.contentRef,
       sourceRef: correction.sourceRef,
+      searchTerms: correction.searchTerms,
       updatedAt: correction.correctedAt,
     });
     this.records.set(correction.memoryId, corrected);

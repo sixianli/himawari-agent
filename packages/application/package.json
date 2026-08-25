@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./runtime-port": "./src/runtime-port.ts"
   },
   "dependencies": {
     "@himawari-agent/domain": "0.0.0",

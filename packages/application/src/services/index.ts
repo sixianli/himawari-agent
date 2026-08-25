@@ -1,4 +1,5 @@
 export * from "./capability-registry-service.js";
+export * from "./context-formation-service.js";
 export * from "./execution-worker-service.js";
 export * from "./permission-service.js";
 export * from "./reliable-event-publisher.js";
