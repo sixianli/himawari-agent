@@ -1,0 +1,35 @@
+{
+  "name": "himawari-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.8.0",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run check:boundaries",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "check:pi-compat": "vitest run --config vitest.workspace.ts --project pi-compat --passWithNoTests",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint --error-on-warnings .",
+    "test": "npm run test:unit && npm run test:contracts && npm run test:integration && npm run test:e2e",
+    "test:contracts": "vitest run --config vitest.workspace.ts --project contracts --passWithNoTests",
+    "test:e2e": "vitest run --config vitest.workspace.ts --project e2e --passWithNoTests",
+    "test:integration": "vitest run --config vitest.workspace.ts --project integration --passWithNoTests",
+    "test:unit": "vitest run --config vitest.workspace.ts --project unit --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.5",
+    "@types/node": "22.19.19",
+    "typescript": "5.9.3",
+    "vitest": "4.1.9"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@himawari-agent/application",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@himawari-agent/domain": "0.0.0",
+    "@himawari-agent/execution-contracts": "0.0.0",
+    "@himawari-agent/gateway-contracts": "0.0.0"
+  }
+}
