@@ -13,10 +13,11 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run check:boundaries",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run check:boundaries && npm run check:v0.2-coverage",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check:local-pi": "node scripts/check-local-pi.mjs",
     "check:pi-compat": "vitest run --config vitest.workspace.ts --project pi-compat --passWithNoTests",
+    "check:v0.2-coverage": "node scripts/check-v0.2-coverage.mjs",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint --error-on-warnings .",

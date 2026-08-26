@@ -1,0 +1,965 @@
+{
+  "schemaVersion": 1,
+  "generatedFrom": "owner-reviewed S0 coverage matrix and active Plan acceptance tables",
+  "prd": {
+    "path": "docs/prd-v0.2.md",
+    "sha256": "54b45f51a4edc7e61e00e138f856209db2fc593f4cf5db60b32cf6139efff206",
+    "markdownListClauseCount": 256
+  },
+  "coverageSource": "docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md",
+  "requirements": [
+    {
+      "id": "V02-GOAL-01",
+      "owner": "S0"
+    },
+    {
+      "id": "V02-GOAL-02",
+      "owner": "S3"
+    },
+    {
+      "id": "V02-GOAL-03",
+      "owner": "S4"
+    },
+    {
+      "id": "V02-GOAL-04",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-GOAL-05",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-GOAL-06",
+      "owner": "S9"
+    },
+    {
+      "id": "V02-USER-01",
+      "owner": "S0"
+    },
+    {
+      "id": "V02-IN-01",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-IN-02",
+      "owner": "S3"
+    },
+    {
+      "id": "V02-IN-03",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-IN-04",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-IN-05",
+      "owner": "S4"
+    },
+    {
+      "id": "V02-IN-06A",
+      "owner": "S4"
+    },
+    {
+      "id": "V02-IN-06B",
+      "owner": "S5"
+    },
+    {
+      "id": "V02-IN-06C",
+      "owner": "S6"
+    },
+    {
+      "id": "V02-IN-06D",
+      "owner": "S7"
+    },
+    {
+      "id": "V02-IN-06E",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-IN-07",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-IN-08",
+      "owner": "S8"
+    },
+    {
+      "id": "V02-IN-09",
+      "owner": "S3"
+    },
+    {
+      "id": "V02-IN-10",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-OUT-01",
+      "owner": "S3"
+    },
+    {
+      "id": "V02-OUT-02",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-OUT-03",
+      "owner": "S3"
+    },
+    {
+      "id": "V02-OUT-04",
+      "owner": "S0"
+    },
+    {
+      "id": "V02-OUT-05",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-OUT-06",
+      "owner": "S9"
+    },
+    {
+      "id": "V02-OUT-07",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-OUT-08",
+      "owner": "S7"
+    },
+    {
+      "id": "V02-OUT-09",
+      "owner": "S4"
+    },
+    {
+      "id": "V02-OUT-10",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-OUT-11",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-OUT-12",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-OUT-13",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-OUT-14",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-OUT-15",
+      "owner": "S0"
+    },
+    {
+      "id": "V02-CORE-01",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-CORE-02",
+      "owner": "S2"
+    },
+    {
+      "id": "V02-CORE-03",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-RULE-01A",
+      "owner": "S3"
+    },
+    {
+      "id": "V02-RULE-01B",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-RULE-02",
+      "owner": "S3"
+    },
+    {
+      "id": "V02-RULE-03",
+      "owner": "S2"
+    },
+    {
+      "id": "V02-RULE-04",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-RULE-05",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-RULE-06",
+      "owner": "S4"
+    },
+    {
+      "id": "V02-RULE-07",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-RULE-08A",
+      "owner": "S4"
+    },
+    {
+      "id": "V02-RULE-08B",
+      "owner": "S5"
+    },
+    {
+      "id": "V02-RULE-08C",
+      "owner": "S6"
+    },
+    {
+      "id": "V02-RULE-08D",
+      "owner": "S7"
+    },
+    {
+      "id": "V02-RULE-08E",
+      "owner": "S4"
+    },
+    {
+      "id": "V02-RULE-09",
+      "owner": "S8"
+    },
+    {
+      "id": "V02-RULE-10",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-RULE-11",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-RULE-12",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-RULE-13",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-RULE-14",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-RULE-15A",
+      "owner": "S9"
+    },
+    {
+      "id": "V02-RULE-15B",
+      "owner": "S0"
+    },
+    {
+      "id": "V02-NFR-01",
+      "owner": "S9"
+    },
+    {
+      "id": "V02-NFR-02",
+      "owner": "S9"
+    },
+    {
+      "id": "V02-NFR-03",
+      "owner": "S9"
+    },
+    {
+      "id": "V02-NFR-04",
+      "owner": "S9"
+    },
+    {
+      "id": "V02-ACC-01",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-ACC-02A",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-ACC-02B",
+      "owner": "S2"
+    },
+    {
+      "id": "V02-ACC-03",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-ACC-04",
+      "owner": "S4"
+    },
+    {
+      "id": "V02-ACC-05A",
+      "owner": "S6"
+    },
+    {
+      "id": "V02-ACC-05B",
+      "owner": "S7"
+    },
+    {
+      "id": "V02-ACC-05C",
+      "owner": "S5"
+    },
+    {
+      "id": "V02-ACC-06",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-ACC-07",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-ACC-08",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-ACC-09",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-ACC-10",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-ACC-11",
+      "owner": "S1"
+    },
+    {
+      "id": "V02-ACC-12",
+      "owner": "S9"
+    }
+  ],
+  "specifications": [
+    {
+      "code": "S0",
+      "spec": "docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md",
+      "plan": "docs/execution/plans/2026-08-26-v0.2-spec-suite-integration-plan.md",
+      "acceptances": [
+        {
+          "id": "S0-A01",
+          "label": "PRD 完整覆盖与唯一主责",
+          "planTasks": "Tasks 1、12",
+          "planEvidence": "digest、256 条款、S0–S9 与 Plan/Task manifest",
+          "planStatus": "部分验证（Task 1）",
+          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+        },
+        {
+          "id": "S0-A02",
+          "label": "canonical identity/authority/authorization",
+          "planTasks": "Tasks 2–3、11",
+          "planEvidence": "schema fixtures、negative contracts、secret scan",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+        },
+        {
+          "id": "S0-A03",
+          "label": "J01–J04",
+          "planTasks": "Task 4",
+          "planEvidence": "process/browser/recovery journeys",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+        },
+        {
+          "id": "S0-A04",
+          "label": "J05–J07",
+          "planTasks": "Task 5",
+          "planEvidence": "capability/platform/side-effect journeys",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+        },
+        {
+          "id": "S0-A05",
+          "label": "J08–J09",
+          "planTasks": "Task 6",
+          "planEvidence": "Worker/isolation/eval journeys",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+        },
+        {
+          "id": "S0-A06",
+          "label": "J10–J12",
+          "planTasks": "Task 7",
+          "planEvidence": "ingress/model/task/Attention journeys",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+        },
+        {
+          "id": "S0-A07",
+          "label": "J13",
+          "planTasks": "Task 8",
+          "planEvidence": "deletion graph、kill/restart、no-resurrection",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+        },
+        {
+          "id": "S0-A08",
+          "label": "J14",
+          "planTasks": "Task 9",
+          "planEvidence": "双向 transfer、fence、host-bound blocked",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+        },
+        {
+          "id": "S0-A09",
+          "label": "J15",
+          "planTasks": "Task 10",
+          "planEvidence": "upgrade/recovery/qualification handoff",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+        },
+        {
+          "id": "S0-A10",
+          "label": "排除项与最终收口",
+          "planTasks": "Tasks 11–12",
+          "planEvidence": "route scan、全量 manifest、fresh evidence",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+        }
+      ]
+    },
+    {
+      "code": "S1",
+      "spec": "docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md",
+      "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+      "acceptances": [
+        {
+          "id": "S1-A01",
+          "label": "可运行部署",
+          "planTasks": "Tasks 2–11、28",
+          "planEvidence": "双平台 immutable install、startup/readiness、graceful drain、无源码 checkout",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S1-A02",
+          "label": "受认证 Web 对话与身份",
+          "planTasks": "Tasks 13–15、27",
+          "planEvidence": "origin 安全、bootstrap/MFA/session/device、Browser E2E、SSE replay",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S1-A03",
+          "label": "持久后台工作",
+          "planTasks": "Tasks 6–7、10、12、26",
+          "planEvidence": "SQLite/outbox、真实 Worker、scheduler/Delivery、kill/restart",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S1-A04",
+          "label": "自动与敏感 Memory",
+          "planTasks": "Tasks 16–19、25",
+          "planEvidence": "双平台 Mem0 conformance、golden dataset、逐项审批、重建与删除",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S1-A05",
+          "label": "模型路由",
+          "planTasks": "Task 20",
+          "planEvidence": "精确 descriptors、Owner 费用授权、deterministic 与有界 live evidence",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S1-A06",
+          "label": "GitHub 在线只读监控",
+          "planTasks": "Tasks 21–22、27",
+          "planEvidence": "权限 manifest、签名/去重、在线事件、coverage gap、无 write surface",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S1-A07",
+          "label": "同机恢复点与跨主机迁移",
+          "planTasks": "Tasks 23–24、28",
+          "planEvidence": "真实 restore、双向 transfer、failure injection、source retired",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S1-A08",
+          "label": "删除与存储压力",
+          "planTasks": "Tasks 23、25–26、28",
+          "planEvidence": "Trash/restore、删除传播、snapshot 清除、disk pressure 与恢复",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S1-A09",
+          "label": "本 Spec 收口",
+          "planTasks": "Tasks 25–30",
+          "planEvidence": "安全/规模/平台、Runbooks、Architecture、immutable release evidence",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "S2",
+      "spec": "docs/execution/specs/2026-08-26-owner-thread-conversation-design.md",
+      "plan": "docs/execution/plans/2026-08-26-owner-thread-conversation-plan.md",
+      "acceptances": [
+        {
+          "id": "S2-A01",
+          "label": "稳定身份与继续对话",
+          "planTasks": "Tasks 2–5、11",
+          "planEvidence": "domain/contract、重复接纳、process recovery",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:unit",
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S2-A02",
+          "label": "生命周期与查找",
+          "planTasks": "Tasks 4、6、10–12",
+          "planEvidence": "query/search、multi-client、规模",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:unit",
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S2-A03",
+          "label": "Fork 与来源",
+          "planTasks": "Tasks 4、7、12",
+          "planEvidence": "lineage、delete、restart",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:unit",
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S2-A04",
+          "label": "回答语言与上下文",
+          "planTasks": "Tasks 8、11",
+          "planEvidence": "中英日组合、context/Trace、browser",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:unit",
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S2-A05",
+          "label": "压缩、审批与任务",
+          "planTasks": "Tasks 9–12",
+          "planEvidence": "checkpoint crash matrix、task/delete coordination",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:unit",
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "S3",
+      "spec": "docs/execution/specs/2026-08-26-control-center-experience-design.md",
+      "plan": "docs/execution/plans/2026-08-26-control-center-experience-plan.md",
+      "acceptances": [
+        {
+          "id": "S3-A01",
+          "label": "完整操作面",
+          "planTasks": "Tasks 5–9、13",
+          "planEvidence": "全导航 browser E2E、状态/安全 readback",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
+        },
+        {
+          "id": "S3-A02",
+          "label": "三语与回答语言",
+          "planTasks": "Tasks 4、6、13",
+          "planEvidence": "key checks、伪本地化、三语/answer locale 组合",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
+        },
+        {
+          "id": "S3-A03",
+          "label": "响应式与实时状态",
+          "planTasks": "Tasks 5、10–11、13",
+          "planEvidence": "桌面/移动、SSE、多标签、offline",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
+        },
+        {
+          "id": "S3-A04",
+          "label": "Attention、Inbox 与 Digest",
+          "planTasks": "Tasks 8、10、13",
+          "planEvidence": "五级呈现、离线恢复、来源",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
+        },
+        {
+          "id": "S3-A05",
+          "label": "WCAG 2.2 AA 与浏览器",
+          "planTasks": "Tasks 3、12–14",
+          "planEvidence": "自动、人工、辅助技术、六类浏览器矩阵",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
+        }
+      ]
+    },
+    {
+      "code": "S4",
+      "spec": "docs/execution/specs/2026-08-26-authorization-capability-governance-design.md",
+      "plan": "docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md",
+      "acceptances": [
+        {
+          "id": "S4-A01",
+          "label": "行动分类与风险",
+          "planTasks": "Tasks 2–3、12",
+          "planEvidence": "table-driven、negative contracts、Trace",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e",
+            "npm run check:pi-compat"
+          ]
+        },
+        {
+          "id": "S4-A02",
+          "label": "授权结果与 Grant",
+          "planTasks": "Tasks 4–5、11–12",
+          "planEvidence": "hash/expiry/CAS/revoke/browser",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e",
+            "npm run check:pi-compat"
+          ]
+        },
+        {
+          "id": "S4-A03",
+          "label": "能力生命周期",
+          "planTasks": "Tasks 6–7、9–12",
+          "planEvidence": "lifecycle/update/Handle/platform recovery",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e",
+            "npm run check:pi-compat"
+          ]
+        },
+        {
+          "id": "S4-A04",
+          "label": "统一能力类型",
+          "planTasks": "Tasks 8–10、12",
+          "planEvidence": "Tool/Skill/MCP/program/API/adapter conformance",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e",
+            "npm run check:pi-compat"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "S5",
+      "spec": "docs/execution/specs/2026-08-26-web-research-browser-actions-design.md",
+      "plan": "docs/execution/plans/2026-08-26-web-research-browser-actions-plan.md",
+      "acceptances": [
+        {
+          "id": "S5-A01",
+          "label": "公共研究",
+          "planTasks": "Tasks 3–5、11–12",
+          "planEvidence": "来源/digest、prompt injection、双平台 research",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S5-A02",
+          "label": "认证会话",
+          "planTasks": "Tasks 6–8、11–12",
+          "planEvidence": "host secret、partition/revoke/migration、browser",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S5-A03",
+          "label": "外部副作用",
+          "planTasks": "Tasks 8–12",
+          "planEvidence": "prepare/hash/approval、kill/reconcile、readback",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "S6",
+      "spec": "docs/execution/specs/2026-08-26-host-files-code-workspaces-design.md",
+      "plan": "docs/execution/plans/2026-08-26-host-files-code-workspaces-plan.md",
+      "acceptances": [
+        {
+          "id": "S6-A01",
+          "label": "目录与文件访问",
+          "planTasks": "Tasks 2–4、12",
+          "planEvidence": "APFS/Hermes、path attacks、Grant/revoke",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S6-A02",
+          "label": "覆盖与删除",
+          "planTasks": "Tasks 5–6、12",
+          "planEvidence": "digest/atomicity、Trash/recovery、disk pressure",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S6-A03",
+          "label": "代码工作区",
+          "planTasks": "Tasks 7–8、12",
+          "planEvidence": "dirty matrix、ownership/conflict、restart",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S6-A04",
+          "label": "命令与本地 commit",
+          "planTasks": "Tasks 9–12",
+          "planEvidence": "CommandProfile、frozen preview、reconcile、no push",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "S7",
+      "spec": "docs/execution/specs/2026-08-26-apple-calendar-integration-design.md",
+      "plan": "docs/execution/plans/2026-08-26-apple-calendar-integration-plan.md",
+      "acceptances": [
+        {
+          "id": "S7-GATE",
+          "label": "双平台 adapter qualification",
+          "planTasks": "Tasks 1–2",
+          "planEvidence": "current official evidence、双平台 spike、Owner 风险确认",
+          "planStatus": "待实施，阻塞后续",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S7-A01",
+          "label": "读取与身份",
+          "planTasks": "Tasks 3–6、10–13",
+          "planEvidence": "identity/pagination/timezone、双平台 conformance",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S7-A02",
+          "label": "可写个人事件",
+          "planTasks": "Tasks 7–13",
+          "planEvidence": "frozen prepare、version guard、readback/reconcile",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S7-A03",
+          "label": "参与人和通知保护",
+          "planTasks": "Tasks 7–13",
+          "planEvidence": "deterministic deny/read-only matrix",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S7-A04",
+          "label": "凭据、撤销与迁移",
+          "planTasks": "Tasks 5、10–13",
+          "planEvidence": "secret scan、revoke、blocked transfer",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:contracts",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "S8",
+      "spec": "docs/execution/specs/2026-08-26-proactivity-workers-self-improvement-design.md",
+      "plan": "docs/execution/plans/2026-08-26-proactivity-workers-self-improvement-plan.md",
+      "acceptances": [
+        {
+          "id": "S8-A01",
+          "label": "主动建议与反思",
+          "planTasks": "Tasks 2–5、11–12",
+          "planEvidence": "history set、quota CAS、DST/offline、browser",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:unit",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S8-A02",
+          "label": "内部 Worker",
+          "planTasks": "Tasks 2、6–7、11–12",
+          "planEvidence": "context/Handle canary、crash recovery、Trace",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:unit",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        },
+        {
+          "id": "S8-A03",
+          "label": "自我改进候选",
+          "planTasks": "Tasks 2、8–12",
+          "planEvidence": "isolation、diff/eval reproducibility、no activation",
+          "planStatus": "待实施",
+          "verificationEntrypoints": [
+            "npm run test:unit",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "S9",
+      "spec": "docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md",
+      "plan": "docs/execution/plans/2026-08-26-production-qualification-upgrade-plan.md",
+      "acceptances": [
+        {
+          "id": "S9-A01",
+          "label": "版本资格",
+          "planTasks": "Tasks 1–3、8、15–17",
+          "planEvidence": "complete manifest、双平台、Owner signature",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check", "npm run test", "npm run check:pi-compat"]
+        },
+        {
+          "id": "S9-A02",
+          "label": "浏览器与无障碍",
+          "planTasks": "Tasks 4–5、15–17",
+          "planEvidence": "fresh majors、Browser E2E、人工/辅助技术",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check", "npm run test", "npm run check:pi-compat"]
+        },
+        {
+          "id": "S9-A03",
+          "label": "规模、性能与恢复",
+          "planTasks": "Tasks 6–9、16–17",
+          "planEvidence": "fixed seed、p50/p95/p99/max、recovery",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check", "npm run test", "npm run check:pi-compat"]
+        },
+        {
+          "id": "S9-A04",
+          "label": "连续运行",
+          "planTasks": "Tasks 9–10、16–17",
+          "planEvidence": "Mac/Hermes 各 7×24h、candidate 固定",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check", "npm run test", "npm run check:pi-compat"]
+        },
+        {
+          "id": "S9-A05",
+          "label": "核心升级",
+          "planTasks": "Tasks 11–16",
+          "planEvidence": "preflight/recovery/drain/migrate/activate/rollback matrix",
+          "planStatus": "待实施",
+          "verificationEntrypoints": ["npm run check", "npm run test", "npm run check:pi-compat"]
+        }
+      ]
+    }
+  ]
+}

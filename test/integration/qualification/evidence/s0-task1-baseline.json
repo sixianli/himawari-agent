@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T10:33:45Z",
+  "scope": "S0 Task 1 fresh repository baseline before implementation changes",
+  "candidateRevision": "3578de717372b77a014f8ab6d97ceed2252cccca",
+  "git": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 0,
+    "behind": 0,
+    "worktree": "clean"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "npm": "11.8.0",
+    "workspaceCount": 9
+  },
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format、lint、typecheck 与 9-workspace boundary check 通过"
+    },
+    {
+      "command": "npm run test:unit",
+      "exitStatus": 0,
+      "result": "7 files、101 tests passed"
+    },
+    {
+      "command": "npm run test:contracts",
+      "exitStatus": 0,
+      "result": "5 files、69 tests passed"
+    },
+    {
+      "command": "npm run test:integration",
+      "exitStatus": 0,
+      "result": "13 files、71 tests passed"
+    },
+    {
+      "command": "npm run test:e2e",
+      "exitStatus": 0,
+      "result": "1 file、3 tests passed"
+    },
+    {
+      "command": "npm run check:pi-compat",
+      "exitStatus": 0,
+      "result": "1 file、6 tests passed"
+    },
+    {
+      "command": "python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict .",
+      "exitStatus": 0,
+      "result": "Document governance validation passed: 0 warning(s)."
+    }
+  ],
+  "coverage": {
+    "prdSha256": "54b45f51a4edc7e61e00e138f856209db2fc593f4cf5db60b32cf6139efff206",
+    "markdownListClauseCount": 256,
+    "requirementCount": 79,
+    "specificationPlanPairCount": 10,
+    "acceptanceAndGateCount": 53
+  },
+  "limitations": [
+    "S1 持久 Web 基础仍未实施，S2–S4 的正式实现前置条件尚不成立。",
+    "本记录不包含真实浏览器、Mac/Hermes、模型、外部账户、迁移或生产证据。"
+  ]
+}
