@@ -49,6 +49,7 @@ import type {
   TraceQuery,
 } from "@himawari-agent/gateway-contracts";
 import type Database from "better-sqlite3";
+import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
 
 export type SqliteApplicationFailure = (
   code: string,
@@ -208,6 +209,7 @@ export class SqliteDurableOperations {
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
+  private readonly memory: SqliteMemoryOperations;
 
   constructor(
     database: Database.Database,
@@ -217,9 +219,13 @@ export class SqliteDurableOperations {
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
+    this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
   }
 
   execute(operation: string, payload: unknown): unknown {
+    if (operation.startsWith("memory.") || operation.startsWith("memoryJob.")) {
+      return this.memory.execute(operation, payload);
+    }
     switch (operation) {
       case "event.append":
         return this.appendEvent(

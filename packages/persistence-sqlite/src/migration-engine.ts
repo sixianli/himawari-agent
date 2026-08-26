@@ -147,6 +147,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0010_identity_bindings.sql",
   },
+  {
+    sequence: 11,
+    name: "memory_projection_reliability",
+    changeSet: "memory-projection-reliability",
+    phase: "expand" as const,
+    file: "0011_memory_projection_reliability.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

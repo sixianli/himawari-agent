@@ -15,6 +15,8 @@ import type {
   BackgroundWorkStatePort,
   StateStorePort,
   OwnerIdentityStatePort,
+  MemoryProjectionJobStatePort,
+  ProductMemoryStatePort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
 import type {
@@ -277,6 +279,31 @@ export class SqliteDurableAdapters {
         this.context.write("identity.saveSession", { session, expectedRevision }),
       revokeSession: (sessionId, expectedRevision, revokedAt) =>
         this.context.write("identity.revokeSession", { sessionId, expectedRevision, revokedAt }),
+    });
+  }
+
+  productMemoryState(): ProductMemoryStatePort {
+    return Object.freeze<ProductMemoryStatePort>({
+      read: (memoryId) => this.context.read("memory.read", { memoryId }),
+      readMany: (input) => this.context.read("memory.readMany", input),
+      searchActive: (input) => this.context.read("memory.searchActive", input),
+      save: (memory, expectedRevision) =>
+        this.context.write("memory.save", { memory, expectedRevision }),
+      listActive: (ownerId, agentId) =>
+        this.context.read("memory.listActive", { ownerId, agentId }),
+      markUsed: (memoryIds, usedAt) => this.context.write("memory.markUsed", { memoryIds, usedAt }),
+    });
+  }
+
+  memoryProjectionJobs(): MemoryProjectionJobStatePort {
+    return Object.freeze<MemoryProjectionJobStatePort>({
+      propose: ({ job, requeueCompleted = false }) =>
+        this.context.write("memoryJob.propose", { job, requeueCompleted }),
+      listPending: (now, limit) => this.context.read("memoryJob.listPending", { now, limit }),
+      claim: (input) => this.context.write("memoryJob.claim", input),
+      complete: (input) => this.context.write("memoryJob.complete", input),
+      retry: (input) => this.context.write("memoryJob.retry", input),
+      listByMemory: (memoryId) => this.context.read("memoryJob.listByMemory", { memoryId }),
     });
   }
 

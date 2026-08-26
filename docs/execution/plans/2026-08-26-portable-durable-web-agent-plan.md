@@ -342,12 +342,16 @@ Task 15 把 `apps/control-center` 从构建占位改为 browser-only React/Vite 
 
 ### Task 17：实现产品 Memory 记录、projection 与检索交集
 
-- [ ] 扩展 product Memory schema 与 service，覆盖 active version、protected content ref、provenance、classification、inference/confidence、provider link、archive/delete tombstone 和最近使用。
-- [ ] Mem0 只能产生新增、更新、合并或不变 proposal；产品 policy 和 SQLite transaction 决定稳定 Memory ID、revision 与 active version。
-- [ ] 用 reliable projection job 协调 SQLite 与 Mem0；对话 commit 不等待 provider，失败有界重试且可观察。
-- [ ] retrieval 把 Mem0 hits 与 active product records 取交集，再执行 classification、source 和数量限制；失活或删除记录立即不可进入 context。
-- [ ] 实现 correction、archive、delete、provider cleanup retry 和 full rebuild；旧 provider 副本不能重新激活删除 tombstone。
-- [ ] 运行 restart、projection loss、duplicate proposal、out-of-order retry、correction/delete propagation 与 rebuild equivalence tests。
+- [x] 扩展 product Memory schema 与 service，覆盖 active version、protected content ref、provenance、classification、inference/confidence、provider link、archive/delete tombstone 和最近使用。
+- [x] Mem0 只能产生新增、更新、合并或不变 proposal；产品 policy 和 SQLite transaction 决定稳定 Memory ID、revision 与 active version。
+- [x] 用 reliable projection job 协调 SQLite 与 Mem0；对话 commit 不等待 provider，失败有界重试且可观察。
+- [x] retrieval 把 Mem0 hits 与 active product records 取交集，再执行 classification、source 和数量限制；失活或删除记录立即不可进入 context。
+- [x] 实现 correction、archive、delete、provider cleanup retry 和 full rebuild；旧 provider 副本不能重新激活删除 tombstone。
+- [x] 运行 restart、projection loss、duplicate proposal、out-of-order retry、correction/delete propagation 与 rebuild equivalence tests。
+
+第 11 个不可变 SQLite migration 为 `memory_records` 补齐最近使用时间，并为 `memory_projection_jobs` 增加可恢复 claim lease。SQLite adapter 以乐观 revision 和单向 lifecycle 保存产品 Memory、来源、classification、inference/confidence、provider link 与 tombstone；projection job 使用由 `MemoryId + revision + operation` 派生的稳定身份，产品 transaction 完成后才由独立 worker claim 和调用 provider，失败进入有界 `retry_wait` 或 `failed_terminal`。
+
+`DurableMemoryService` 只接受 create/update/merge/unchanged proposal，先提交产品状态再排队投影；乱序旧 revision 会完成为空操作，不能覆盖新 revision。检索先取 Mem0 hits，再与同 Owner/Agent 的 active 产品记录、当前 provider link、classification、source 和数量上限取交集。correction 产生新 revision；archive 和 delete 先退出检索，再可靠清理 provider；只有 deletion cleanup 成功才进入 `deleted_verified`。`Mem0ProjectionAdapter` 使用 Task 16 的动态加载和产品自有最小结构类型，每条产品 Memory 单独 `infer: false` add，并强制恰好一个 provider ID 与 metadata round-trip。真实 SQLite restart、duplicate proposal、out-of-order、失败重试、projection loss、correction/delete 和 rebuild equivalence 均已通过；实现与证据位于 `test/integration/qualification/evidence/s1-task17-memory-projection.json`。
 
 ### Task 18：实现增量自动 Memory 与敏感逐项审批
 

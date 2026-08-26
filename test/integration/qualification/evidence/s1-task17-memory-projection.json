@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T23:29:26Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T17",
+  "candidateRevision": "8bd7fe90825440da6dfa00ffb35a0bc1d3a3fbb8",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 7,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["AGENTS.md"]
+  },
+  "migration": {
+    "sequence": 11,
+    "file": "packages/persistence-sqlite/src/migrations/0011_memory_projection_reliability.sql",
+    "sha256": "05d1393028a55cfc4108fd7044b61852b33075ac559555acecba41329bc37d15",
+    "adds": [
+      "memory_records.last_used_at",
+      "memory_projection_jobs.claimed_by",
+      "memory_projection_jobs.claimed_at",
+      "memory_projection_jobs.claim_expires_at",
+      "active/recent 与 claim/retry indexes"
+    ]
+  },
+  "commands": [
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project contracts packages/memory-mem0/test/mem0-projection-adapter.contract.test.ts packages/persistence-sqlite/test/migration-engine.contract.test.ts packages/persistence-sqlite/test/schema-contract.contract.test.ts",
+      "exitStatus": 0,
+      "result": "12 个 Mem0 单条投影、显式配置和不可变 SQLite migration/schema contract 通过"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/durable-memory-projection.test.ts",
+      "exitStatus": 0,
+      "result": "2 个真实 SQLite 集成旅程覆盖独立提交、重复 proposal、乱序 revision、重试、重启、检索交集、纠正、删除和重建"
+    },
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format、lint、strict typecheck、14 workspace boundary 和 v0.2 coverage 全部通过"
+    },
+    {
+      "command": "npm test",
+      "exitStatus": 0,
+      "result": "188 unit、126 contract、290 integration 与 3 E2E 测试通过；Unix socket 测试在允许本地 UDS 的沙箱外运行"
+    }
+  ],
+  "verificationSummary": [
+    "产品 Memory 保存稳定 ID、revision、active/archive/delete lifecycle、受保护 content ref、来源、classification、inference/confidence、policy、provider link 与最近使用时间。",
+    "create/update/merge/unchanged proposal 先以 SQLite 乐观 transaction 决定产品版本，再创建稳定 projection job；产品提交不等待 Mem0。",
+    "projection claim 有 lease、attempt、retry_wait、terminal error 和 restart 恢复；旧 revision 完成为空操作，不能覆盖更新版本。",
+    "Mem0 adapter 动态加载 mem0ai/oss，不暴露供应商类型；每个产品 Memory 独立 infer:false add，并验证恰好一个 provider ID 和产品 metadata round-trip。",
+    "检索结果必须同时命中 active 产品记录、当前 provider link、Owner/Agent scope、classification、source 与数量限制。",
+    "archive/delete 先退出检索；provider cleanup 失败保持 deletion_pending 并重试，成功后才进入 deleted_verified；重建复用产品 ID、revision、来源和 classification。"
+  ],
+  "failureCoverage": [
+    "provider upsert 首次失败后跨 repository restart 重试",
+    "旧 revision job 晚于新 revision 执行",
+    "provider-only stale hit 不进入产品检索",
+    "provider projection 全部丢失后完整重建",
+    "provider delete 失败期间产品 Memory 仍立即不可检索",
+    "重复 create proposal 不产生第二条产品记录或 job"
+  ],
+  "unverified": [
+    "增量提取、敏感逐项审批和 golden dataset 属于 Task 18。",
+    "Thread 稳定检查点、summary 和 exactly-once derivative generation 属于 Task 19。",
+    "正式云端生成与 embedding 模型身份、费用和 live call 属于 Task 20，当前测试未调用付费模型。",
+    "最终 Agent Service production composition 与公开 readiness 属于后续任务。"
+  ],
+  "externalEffects": [
+    "本任务只写仓库文件与本机临时 SQLite/Unix socket 测试目录。",
+    "未修改 Hermes、外部账户、生产 state root、服务管理器或远程 Git。"
+  ],
+  "implementationCommit": null
+}

@@ -25,6 +25,8 @@ import type {
   StateStorePort,
   TraceStorePort,
   OwnerIdentityStatePort,
+  MemoryProjectionJobStatePort,
+  ProductMemoryStatePort,
 } from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
@@ -297,6 +299,14 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   sessionDeviceState(): SessionDeviceStatePort {
     return this.durable.sessionDeviceState();
+  }
+
+  productMemoryState(): ProductMemoryStatePort {
+    return this.durable.productMemoryState();
+  }
+
+  memoryProjectionJobs(): MemoryProjectionJobStatePort {
+    return this.durable.memoryProjectionJobs();
   }
 
   gatewayReadModel(): SqliteGatewayReadModel {
