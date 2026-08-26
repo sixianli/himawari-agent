@@ -182,6 +182,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Agent teardown",
   ),
   entry(
+    "product_state_records",
+    "ProductStateRepositoryPort",
+    "revision-checked current product state",
+    "metadata_only",
+    "cascade with Agent teardown after dependent workflows settle",
+  ),
+  entry(
     "reliable_events",
     "ReliableEventPort",
     "pending to published",

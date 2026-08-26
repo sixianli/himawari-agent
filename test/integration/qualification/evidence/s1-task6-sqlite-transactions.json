@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T13:44:28Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T06",
+  "candidateRevision": "e4d7de613928c805e33771781509816340533478",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 6,
+    "behind": 0,
+    "status": "clean"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "sqlite": "3.53.2",
+    "schemaObjectCount": 43,
+    "migrationCount": 6,
+    "migration0003Sha256": "c2587b0bc265b68d4b6ff2ab3deea2c44fdad9229b2f10f6378a09e572c10676",
+    "migration0004Sha256": "c48e0547cb19fb600d553ca36adaab5c3bd17b2fed08754212fad650adea9d76",
+    "migration0005Sha256": "07e0a676fc4125d3d0618b6063277a830ce9832f85a3dee8f845e58099626c96",
+    "migration0006Sha256": "800b787585e31a40f6ddf84c2c2ad768fb464d82adcb6ec066e789618ec7e471",
+    "externalCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npm run test:integration -- --run test/integration/sqlite-product-state.test.ts",
+      "exitStatus": 0,
+      "result": "17 real-file SQLite transaction, authority, isolation, contention and crash-recovery tests passed"
+    },
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, Node/browser typecheck, 14-workspace dependency boundaries and v0.2 coverage passed"
+    },
+    {
+      "command": "npm test && npm run check:pi-compat",
+      "exitStatus": 0,
+      "result": "121 unit, 101 contract, 258 integration, 3 E2E and 6 Pi compatibility tests passed"
+    },
+    {
+      "command": "npm run build:node",
+      "exitStatus": 0,
+      "result": "the Node TypeScript graph including Worker protocol and SQLite adapters built successfully"
+    }
+  ],
+  "verificationSummary": [
+    "专用 Worker 线程独占同步 SQLite connection；250 ms driver stall 期间主线程 5 ms timer 持续推进，两个并发 writer 由同一队列收敛为 commit 和 replay。",
+    "state root 使用 host/PID/token 原子目录锁；live owner 拒绝第二实例，子进程死亡后才回收 stale lock。",
+    "Product State、command result 和多个 pending Reliable Event 在同一 BEGIN IMMEDIATE transaction 中提交，并在写前验证 active deployment、live lease、epoch/fence、revision、fingerprint 和 event identity。",
+    "SQLite AuthorityLeasePort 与 DeploymentAuthorityStatePort 通过正式 conformance；lease 过期后 fence 单调递增，inactive、retired、stale epoch/token/released lease 均不能提交。",
+    "20 ms SQLITE_BUSY、长 reader 下 PASSIVE checkpoint、低磁盘水位、真实 SQLITE_FULL 和 WAL restart recovery 均形成有界且无部分状态的结果。",
+    "子进程在 state、result、event 三个 mutation checkpoint 被杀死后全部回滚；COMMIT 后回包前死亡则重启重放原结果。"
+  ],
+  "unverified": [
+    "Trace、Authorization、Capability、Scheduler、Attention、Delivery、Deletion 和 Gateway Read Model 的 SQLite repositories 属于 Task 7。",
+    "生产 Payload 加密、host secret source、正式 state-root layout/startup coordinator 和服务进程组合属于 Task 8–11。",
+    "本任务未安装或启动 Mac/Hermes 服务，也未对任何生产 state root 执行 migration。"
+  ],
+  "externalEffects": [
+    "测试只在操作系统临时目录创建 SQLite/WAL、state-root lock 和验证子进程；测试完成后由 harness 清理。",
+    "未访问网络、未调用模型、未读取生产秘密、未修改外部账户且未触碰 Mac/Hermes 服务状态。"
+  ],
+  "implementationCommit": null
+}

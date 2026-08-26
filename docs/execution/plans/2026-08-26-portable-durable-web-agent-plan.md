@@ -198,12 +198,16 @@ Task 5 以 40 个产品表和 2 个内部治理表冻结首版 SQLite schema；`
 
 ### Task 6：实现 SQLite 连接隔离、事务与权威 fencing
 
-- [ ] 在专用 persistence execution context 中独占 SQLite connection；证明同步 driver 调用不会阻塞 Agent Service 的 HTTP/model event loop。
-- [ ] 实现 state-root 独占锁、单 writer queue、transaction duration、busy timeout、WAL checkpoint 和 disk headroom 采样。
-- [ ] 把 ProductState、idempotent command result 和 pending Reliable Event 映射到同一 transaction，并在 commit 前验证 lease ID、fencing token、expected revision 和 command fingerprint。
-- [ ] 实现 authority/deployment/epoch/retired 状态持久化；inactive、retired、stale epoch 和旧 Worker/Gateway 消息一律不能提交。
-- [ ] 对 transaction 的每个 mutation checkpoint 做 child-process kill/restart，证明不会出现 state-only、result-only 或 event-only 的部分提交。
-- [ ] 验证 concurrent duplicate command 收敛、SQLite busy 有界处理、long reader checkpoint、disk full 与实际 WAL recovery。
+- [x] 在专用 persistence execution context 中独占 SQLite connection；证明同步 driver 调用不会阻塞 Agent Service 的 HTTP/model event loop。
+- [x] 实现 state-root 独占锁、单 writer queue、transaction duration、busy timeout、WAL checkpoint 和 disk headroom 采样。
+- [x] 把 ProductState、idempotent command result 和 pending Reliable Event 映射到同一 transaction，并在 commit 前验证 lease ID、fencing token、expected revision 和 command fingerprint。
+- [x] 实现 authority/deployment/epoch/retired 状态持久化；inactive、retired、stale epoch 和旧 Worker/Gateway 消息一律不能提交。
+- [x] 对 transaction 的每个 mutation checkpoint 做 child-process kill/restart，证明不会出现 state-only、result-only 或 event-only 的部分提交。
+- [x] 验证 concurrent duplicate command 收敛、SQLite busy 有界处理、long reader checkpoint、disk full 与实际 WAL recovery。
+
+Task 6 新增专用 Worker execution context；主线程只通过结构化消息访问由 Worker 独占的同步 SQLite connection。显式 state root 由带 host/PID/token 的原子目录锁保护，正常关闭核对 token，崩溃恢复只回收已确认死亡进程的专用锁。writer queue、transaction duration、busy timeout、WAL bytes/checkpoint、filesystem free bytes 和 disk headroom restriction 都有可观察状态。
+
+四段新增 migration 按 `expand → backfill → verify → contract` 增加 `product_state_records`，并把 Outbox 从“一命令最多一个事件”无损升级为一命令可含多个稳定事件。Product State、command result 和 pending events 在单个 `BEGIN IMMEDIATE` transaction 中提交；持久 `AuthorityLeasePort` 与 `DeploymentAuthorityStatePort` 负责单 live lease、续期/过期、单调 fence、active epoch 和永久 retired。17 项真实文件集成测试复用正式 Product State/Authority conformance，并覆盖 event-loop isolation、并发重复、state-root lock、stale authority、20 ms busy、长 reader checkpoint、headroom、真实 `SQLITE_FULL`、三个 transaction mutation kill 点和 COMMIT 后回包前崩溃重放。实现与验证证据位于 `test/integration/qualification/evidence/s1-task6-sqlite-transactions.json`。
 
 ### Task 7：实现生产 repositories、outbox 与持久 Read Model
 

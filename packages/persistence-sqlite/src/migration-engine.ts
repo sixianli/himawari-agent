@@ -91,6 +91,34 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0002_storage_health_samples.sql",
   },
+  {
+    sequence: 3,
+    name: "product_state_transaction_expand",
+    changeSet: "product-state-transaction",
+    phase: "expand" as const,
+    file: "0003_product_state_transaction_expand.sql",
+  },
+  {
+    sequence: 4,
+    name: "product_state_transaction_backfill",
+    changeSet: "product-state-transaction",
+    phase: "backfill" as const,
+    file: "0004_product_state_transaction_backfill.sql",
+  },
+  {
+    sequence: 5,
+    name: "product_state_transaction_verify",
+    changeSet: "product-state-transaction",
+    phase: "verify" as const,
+    file: "0005_product_state_transaction_verify.sql",
+  },
+  {
+    sequence: 6,
+    name: "product_state_transaction_contract",
+    changeSet: "product-state-transaction",
+    phase: "contract" as const,
+    file: "0006_product_state_transaction_contract.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

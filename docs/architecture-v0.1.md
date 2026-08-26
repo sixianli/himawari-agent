@@ -12,7 +12,7 @@ date: "2026-08-25"
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e、Pi compatibility、browser、admin CLI、Node services 和 workspace scaffold 九个可独立选择的测试项目。
 
-当前代码包含十四个 workspace。`packages/domain` 实现不可变身份、所有权规则、Run 状态机、Agent 权威租约，以及 deployment/fence、消息/检查点、产品 session/device、后台 job/occurrence、Memory generation/lifecycle、GitHub receipt/coverage gap、恢复点/transfer 和 health 状态；两类 contracts 保留首版 `gateway.v1` 与 `execution.v1`，并新增显式 `gateway.v2` 与 `execution.v2`；`packages/application` 实现产品端口、Gateway、Run/Worker 编排、可靠事件、Trace、授权、记忆、模型、调度、Attention 和外部结果对账；`packages/platform-node` 与 `packages/runtime-pi` 分别实现可信模型 Provider 边界和 Pi Agent Runtime 适配器；`packages/testing` 提供 conformance suites、内存参考适配器、牛肉餐厅夹具和故障注入器。`packages/persistence-sqlite` 已实现规范 schema、对象责任目录和不可变 migration 引擎；`packages/memory-mem0` 与 `packages/integration-github` 仍只有独立边界与 adapter 描述。三个 workspace 都尚未声称完成后续生产 repository/provider/integration 行为。
+当前代码包含十四个 workspace。`packages/domain` 实现不可变身份、所有权规则、Run 状态机、Agent 权威租约，以及 deployment/fence、消息/检查点、产品 session/device、后台 job/occurrence、Memory generation/lifecycle、GitHub receipt/coverage gap、恢复点/transfer 和 health 状态；两类 contracts 保留首版 `gateway.v1` 与 `execution.v1`，并新增显式 `gateway.v2` 与 `execution.v2`；`packages/application` 实现产品端口、Gateway、Run/Worker 编排、可靠事件、Trace、授权、记忆、模型、调度、Attention 和外部结果对账；`packages/platform-node` 与 `packages/runtime-pi` 分别实现可信模型 Provider 边界和 Pi Agent Runtime 适配器；`packages/testing` 提供 conformance suites、内存参考适配器、牛肉餐厅夹具和故障注入器。`packages/persistence-sqlite` 已实现规范 schema、不可变 migration、专用 SQLite execution context、state-root lock、持久 deployment/lease 和原子 Product State transaction；`packages/memory-mem0` 与 `packages/integration-github` 仍只有独立边界与 adapter 描述。其他生产 repositories 和组合行为仍由后续任务实现。
 
 `apps/agent-service` 现有可编程的本地前台组合根和严格 `gateway.v1` in-process transport；`apps/execution-worker` 现有独立启动、独立关闭的 `execution.v1` Worker 进程边界。组合根可替换 Gateway Control Plane/Read Model、Worker client 和 Secret Port，并把产品服务组合到同一可信前台进程。`apps/control-center` 已具有 browser-only React/Vite 构建入口，`apps/admin-cli` 已具有 offline-admin export 边界；两者仍是后续实现的最小脚手架，不是已完成的控制中心或可执行 CLI。
 
@@ -134,15 +134,23 @@ HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 
 `ReliableEventPublisher` 分批读取 pending 事件，交给 `ReliableEventSinkPort` 后再标记 published。发布前失败保留 pending 事件；Sink 已接收但 published 标记失败时会按同一 event ID 重投，Sink 返回 `duplicate` 而不产生第二次可见交付。新建协调器和发布器只需复用同一 Product State Repository 即可恢复 Run 和 outbox，不读取 Pi Session 文件。
 
-当前保证只由内存参考适配器和可复用 conformance suite 验证，不代表生产跨进程耐久性、加密强度或隔离已经实现。生产 Memory 检索、真实模型 Provider/传输与 Secret material source、Capability 生产沙箱/传输、生产删除、Scheduler 与 Delivery 适配器和生产持久化仍属于后续 Plan 任务。
+内存参考适配器继续为所有端口提供可复用 conformance；Product State、Reliable Event、deployment authority 和 lease 的对应 conformance 也已在真实 SQLite 文件上通过。其他 Trace、Authorization、Capability、Scheduler、Attention、Delivery、删除与 Read Model 生产适配器尚未接入 SQLite；生产 Memory、模型、Secret、Capability 隔离和完整持久化仍属于后续 Plan 任务。
 
 ### SQLite schema and immutable migrations
 
-`packages/persistence-sqlite` 现在以两个连续 SQL migration 建立 40 个产品表及 2 个内部治理表。产品表规范化保存 Owner/Agent、deployment/authority、Thread/Run、session/device、approval/Grant、capability、command result/outbox、Trace/audit、Task/Attention、Memory、GitHub、删除、恢复点与存储健康状态；foreign key、唯一键、revision、authority epoch/fencing token 和稳定幂等键在 schema 层形成第一道约束。`schemaCatalog` 为每个表固定产品端口、生命周期、加密或 Payload 引用分类、删除关系和 migration owner，不能用供应商表替代产品权威状态。
+`packages/persistence-sqlite` 现在以六个连续 SQL migration 建立 41 个产品表及 2 个内部治理表。产品表规范化保存 Owner/Agent、deployment/authority、Thread/Run、session/device、approval/Grant、capability、Product State、command result/outbox、Trace/audit、Task/Attention、Memory、GitHub、删除、恢复点与存储健康状态；foreign key、唯一键、revision、authority epoch/fencing token 和稳定幂等键在 schema 层形成第一道约束。`schemaCatalog` 为每个表固定产品端口、生命周期、加密或 Payload 引用分类、删除关系和 migration owner，不能用供应商表替代产品权威状态。
 
 迁移 ledger 持久化连续 `sequence`、`name`、`phase`、SQL SHA-256 与应用时间。loader 验证定义连续性和 digest；启动会拒绝历史内容不匹配、ledger 空洞、未知已应用 migration、未来 schema 及过旧 writer。`expand → backfill → verify → contract` 是受检查的单向 change-set 阶段，系统不提供自动数据库 downgrade。
 
-真实文件连接固定 `foreign_keys=ON`、本地 WAL、`synchronous=FULL`、5000 ms busy timeout 和 1000 页自动 checkpoint，并要求 SQLite 至少为 `3.51.3` 且 `quick_check` 成功。已有 schema 执行下一 migration 前必须提供由 SQLite backup API 创建、完整性检查通过、绑定当前主机、源路径、schema sequence 和文件 digest 的同机 snapshot；fresh create、连续升级、重复运行、并发 contention、损坏 ledger、未来 schema 与旧 writer 已由真实 SQLite 文件契约测试覆盖。当前 migration 引擎仍由调用方直接使用；专用 execution context、state-root lock、单 writer queue、原子产品 transaction 和生产 repositories 属于后续任务。[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
+真实文件连接固定 `foreign_keys=ON`、本地 WAL、`synchronous=FULL`、5000 ms busy timeout 和 1000 页自动 checkpoint，并要求 SQLite 至少为 `3.51.3` 且 `quick_check` 成功。已有 schema 执行下一 migration 前必须提供由 SQLite backup API 创建、完整性检查通过、绑定当前主机、源路径、schema sequence 和文件 digest 的同机 snapshot；fresh create、连续升级、重复运行、并发 contention、损坏 ledger、未来 schema 与旧 writer 已由真实 SQLite 文件契约测试覆盖。`SqliteProductStateRepository.open()` 在取得 state-root lock 后调用该引擎，再把 current schema 交给专用 execution context；完整 startup coordinator 与正式恢复点保留策略属于后续任务。[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
+
+### SQLite execution, authority and atomic product commits
+
+`SqliteProductStateRepository` 在取得显式 state root 的进程独占锁后启动专用 Worker 线程；只有 Worker 持有 `better-sqlite3` connection。主 Agent Service event loop 通过结构化消息异步等待，所有读写按同一消息队列排序。锁以原子目录和主机/PID/token owner record 表达；只有同机 PID 已确认死亡时才原子回收专用 stale lock，正常关闭会核对 token 后释放。
+
+每个 Product State mutation 在一个 `BEGIN IMMEDIATE` transaction 内依次验证幂等 command、当前 active deployment、未释放且未过期 lease、authority epoch/fencing token、expected revision、command fingerprint 和 Event identity，然后共同写入 `product_state_records`、`command_results` 与 pending `reliable_events`。相同 command 并发收敛为一次 commit 和一次 replay；相同 idempotency key 的不同 fingerprint、inactive/retired deployment、stale epoch/token/lease 和旧进程消息均 fail closed。`AuthorityLeasePort` 与 `DeploymentAuthorityStatePort` 共享同一 execution context，持久化单 live lease、续期/过期、单调 fencing token 和不可复活的 retired lifecycle。
+
+运行状态报告 writer queue 深度、最后 transaction duration、busy timeout、WAL bytes 与文件系统 free bytes；低于配置水位时进入 write restriction。checkpoint 只允许受控 `PASSIVE` 或 `TRUNCATE`。真实文件测试覆盖主线程 timer 在同步 driver stall 期间继续运行、并发重复命令、live state-root lock、20 ms `SQLITE_BUSY`、长 reader 下 bounded checkpoint、配置磁盘水位、由 `max_page_count` 触发的真实 `SQLITE_FULL`，以及子进程在 state/result/event 写入后被杀死的逐点 rollback。COMMIT 后回包前被杀死会在重启后返回原提交，不重复副作用；每次重启都通过 WAL、`quick_check` 与 foreign-key recovery。尚未实现的其他生产 repositories、claim 型 Outbox publisher 和持久 Read Model 属于 Task 7。[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
 
 ### Session Trace, protected Payload and deletion propagation
 
@@ -253,12 +261,12 @@ npm ci --ignore-scripts
   → drain new admission and await in-flight Run settlement on shutdown
 ```
 
-Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi compatibility、独立 workspace 项目和严格文档验证。当前确定性测试集包含 121 个 unit、101 个 contract、241 个 integration、3 个 E2E 和 6 个 Pi compatibility 测试；其中 SQLite contract 使用临时真实文件，不访问网络、付费模型、外部账户或生产凭据。
+Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi compatibility、独立 workspace 项目和严格文档验证。当前确定性测试集包含 121 个 unit、101 个 contract、258 个 integration、3 个 E2E 和 6 个 Pi compatibility 测试；其中 SQLite contract/integration 使用临时真实文件和隔离子进程，不访问网络、付费模型、外部账户或生产凭据。
 
 ## Known Limitations
 
 - `apps/agent-service` 和 `apps/execution-worker` 只公开程序化 process/composition API；没有 `npm start`、socket/HTTP listener、daemon packaging、service manager 或生产 readiness endpoint。
-- `persistence-sqlite` 已实现真实 schema、migration ledger、snapshot gate 和 SQLite runtime qualification，但尚未实现专用 execution context、state-root lock、transaction repository、生产 Payload 加密或完整 adapter；`memory-mem0` 和 `integration-github` 仍只有经过双平台 preflight 的精确依赖与 workspace 边界。`control-center` 只渲染构建占位页，`admin-cli` 也没有可执行命令入口。
+- `persistence-sqlite` 已实现真实 schema/migration、execution context、state-root lock、authority lease/deployment 和原子 Product State transaction，但尚未实现其余生产 repositories、claim 型 Outbox publisher、持久 Read Model 或生产 Payload 加密；`memory-mem0` 和 `integration-github` 仍只有经过双平台 preflight 的精确依赖与 workspace 边界。`control-center` 只渲染构建占位页，`admin-cli` 也没有可执行命令入口。
 - 默认 local composition 使用 `packages/testing` 的内存 State、Memory、Trace、Authorization、Scheduler、Delivery 和 Gateway read model；进程退出后数据丢失，且不提供跨进程 transaction、加密强度、高可用或灾难恢复。
 - Pi adapter 已通过 published `0.84.2` 与 local-source compatibility，但牛肉餐厅 E2E 使用确定性 Model/Capability，不调用真实模型、地图或预订供应商。
 - Execution Worker 在本地配置中保持独立 service object 和协议边界，但尚无真实进程间 transport、sandbox、resource limits 或不可信 MCP 隔离。
