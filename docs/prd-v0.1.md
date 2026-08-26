@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: prd
 version: "0.1"
 supersedes: ""
-superseded_by: ""
+superseded_by: "docs/prd-v0.2.md"
 date: "2026-08-25"
 ---
 
