@@ -16,7 +16,7 @@ date: "2026-08-26"
 
 **架构：** 保持 domain、contracts 和 application 的产品自有边界，以 SQLite 作为单一产品状态权威，以受保护 Payload、host-specific secret source、Mem0 projection、HTTP+SSE Gateway、Cloudflare 身份断言、GitHub App 和 execution.v1 over UDS 作为外层 adapters。Agent Service 负责权威、接纳、编排和持久结果；Execution Worker 作为独立受限进程执行已授权能力；Pi Session 继续只是可重建的单 Run runtime projection。
 
-本 Plan 只实施来源 Spec 的“持久 Web 基础切片”。Thread/对话、控制中心体验、行动授权与能力治理、Web 研究、文件与代码工作区、Apple/iCloud Calendar、主动性/Worker/自我改进和生产资格现已分别由 active Specs 设计；这些 Spec 确认后各自派生 Plan。本 Plan 不越界实现隐藏半成品，也不把基础切片完成等同于 v0.2 production-ready。
+本 Plan 只实施来源 Spec 的“持久 Web 基础切片”。Thread/对话、控制中心体验、行动授权与能力治理、Web 研究、文件与代码工作区、Apple/iCloud Calendar、主动性/Worker/自我改进和生产资格现已分别由 active 且已确认的 Specs 设计，现在可以各自派生 Plan。本 Plan 不越界实现隐藏半成品，也不把基础切片完成等同于 v0.2 production-ready。
 
 ---
 

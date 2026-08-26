@@ -174,6 +174,9 @@ Upgrade lock、authority epoch 和 ingress fence 共同阻止旧/新版本同时
 - 对升级每个状态边界执行 kill/restart、artifact tamper、schema mismatch、恢复点损坏、不可逆 migration 和 rollback-scope 负面测试。
 - 最终运行全仓 `npm run check`、全部测试、构建、依赖/secret/security scan、`git diff --check` 和 strict document validation。
 
-## 确认状态
+## 确认记录
 
-本 Spec 已按 PRD v0.2 完整编写，当前等待 Owner 对“完整能力才可标记 v0.2”、双平台/浏览器/WCAG/规模/7 天硬门禁，以及手动升级与回退边界整体确认。确认前不从本 Spec 创建 Implementation Plan 或生产 Runbook。
+- 确认人：Owner
+- 确认日期：2026-08-26
+- 确认范围：“完整能力才可标记 v0.2”、双平台、浏览器、WCAG、规模、连续 7 天运行硬门禁，以及手动升级与回退边界。
+- 授权边界：允许从本 Spec 派生 Implementation Plan；本次确认不授权创建 Plan/Runbook、执行资格测试、升级、回退、部署或其他生产操作。

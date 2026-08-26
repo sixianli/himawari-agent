@@ -138,6 +138,9 @@ Owner 批准预览 hash 后，短期 execution handle 只允许一次匹配提�
 - 在 Mac 与 Hermes 运行相同 conformance；若所选 browser adapter 任一平台不满足，停止并修订 Spec。
 - 运行 unit、contract、integration、browser/security、`npm run check` 和 strict document validation。
 
-## 确认状态
+## 确认记录
 
-本 Spec 已按 PRD v0.2 完整编写，当前等待 Owner 对公共研究、按域认证会话和 Prepare→Approve→Execute→Reconcile 边界整体确认。确认前不从本 Spec 创建 Implementation Plan。
+- 确认人：Owner
+- 确认日期：2026-08-26
+- 确认范围：公共 Web 研究、按域认证会话和 Prepare→Approve→Execute→Reconcile 边界及其验收标准。
+- 授权边界：允许从本 Spec 派生 Implementation Plan；本次确认不授权创建 Plan、建立认证会话、提交网页动作、调用外部服务或修改产品实现。

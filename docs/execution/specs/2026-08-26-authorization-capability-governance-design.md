@@ -183,6 +183,9 @@ Read Model 为 UI 提供来源、精确版本、完整性、权限、数据范�
 - Browser E2E 覆盖 approval snapshot、recent re-auth、Grant 查看/撤销、capability review/update/disable/rollback 和 blocked task。
 - 运行 secret scan、Trace causality、unit/contract/integration/security、`npm run check` 和 strict document validation。
 
-## 确认状态
+## 确认记录
 
-本 Spec 已按 PRD v0.2 完整编写，当前等待 Owner 对固定 ActionKind、风险下限、Grant 和统一能力生命周期整体确认。确认前不从本 Spec 创建 Implementation Plan。
+- 确认人：Owner
+- 确认日期：2026-08-26
+- 确认范围：固定 ActionKind、风险下限、`ALLOW / ASK / DENY`、Grant 和统一能力生命周期及其验收边界。
+- 授权边界：允许从本 Spec 派生 Implementation Plan；本次确认不授权创建 Plan、启用或更新能力、修改产品实现或执行任何外部行动。

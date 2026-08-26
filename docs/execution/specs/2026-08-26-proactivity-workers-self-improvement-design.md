@@ -157,6 +157,9 @@ Worker 输出包含结论、引用、生成 artifact、未决问题、实际模�
 - Browser E2E 覆盖建议查看/批准/拒绝/过期、配额设置、Worker Trace 和候选 diff/eval review。
 - 运行 unit、contract、integration/security、eval reproducibility、`npm run check` 和 strict document validation。
 
-## 确认状态
+## 确认记录
 
-本 Spec 已按 PRD v0.2 完整编写，当前等待 Owner 对主动建议/反思边界、每日配额、Worker 最小委派和自我改进候选不可自激活规则整体确认。确认前不从本 Spec 创建 Implementation Plan。
+- 确认人：Owner
+- 确认日期：2026-08-26
+- 确认范围：主动建议与反思边界、每日配额、Worker 最小委派和自我改进候选不可自激活规则。
+- 授权边界：允许从本 Spec 派生 Implementation Plan；本次确认不授权创建 Plan、创建后台任务、运行 Worker、生成或应用自我改进候选，或修改产品实现。

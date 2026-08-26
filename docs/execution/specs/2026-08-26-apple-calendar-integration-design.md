@@ -155,6 +155,9 @@ adapter 只在 Owner 操作或已授权 Task 发起时读取。分页 cursor、s
 - 模拟 Mac↔Hermes 迁移，验证连接 blocked、重新授权、身份映射和按需查询恢复。
 - 运行 unit、contract、integration、security、platform conformance、`npm run check` 和 strict document validation。
 
-## 确认状态
+## 确认记录
 
-本 Spec 已按 PRD v0.2 完整编写，当前等待 Owner 对统一 CalendarPort、个人事件可写边界、参与人/通知 fail-closed 规则，以及 Hermes adapter qualification 作为生产硬门禁整体确认。确认前不从本 Spec 创建 Implementation Plan。
+- 确认人：Owner
+- 确认日期：2026-08-26
+- 确认范围：统一 CalendarPort、个人事件可写边界、参与人/通知 fail-closed 规则，以及 Hermes adapter qualification 作为生产硬门禁。
+- 授权边界：允许从本 Spec 派生 Implementation Plan；本次确认不授权创建 Plan、连接 Apple/iCloud 账户、配置凭据、读写真实日历或修改产品实现。

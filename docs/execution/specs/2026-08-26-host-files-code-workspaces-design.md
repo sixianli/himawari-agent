@@ -164,6 +164,9 @@ commit 流程只暂存当前 task change set 中 Owner 已审阅的路径/hunks�
 - 证明 commit 执行路径不存在 push operation，且 repository 指令、模型或能力不能绕过。
 - 运行 secret scan、Trace causality、unit/contract/integration/security、`npm run check`、`git diff --check` 和 strict document validation。
 
-## 确认状态
+## 确认记录
 
-本 Spec 已按 PRD v0.2 完整编写，当前等待 Owner 对主机目录 Grant、Trash/覆盖、工作区改动归属、CommandProfile 和逐次 Commit Gate 整体确认。确认前不从本 Spec 创建 Implementation Plan。
+- 确认人：Owner
+- 确认日期：2026-08-26
+- 确认范围：主机目录 Grant、Trash/覆盖、工作区改动归属、CommandProfile、逐次 Commit Gate 和禁止 push 边界。
+- 授权边界：允许从本 Spec 派生 Implementation Plan；本次确认不授权创建 Plan、修改文件或代码、运行命令、安装依赖、创建 commit 或执行 push。

@@ -173,6 +173,9 @@ Service Worker 或浏览器离线机制不得缓存私人 API 响应供离线浏
 - 输出 WCAG 2.2 A/AA success criteria 适用性矩阵，区分自动化、人工、辅助技术和不适用证据。
 - 运行 `npm run check`、browser tests、security tests、accessibility tests 和 strict document validation。
 
-## 确认状态
+## 确认记录
 
-本 Spec 已按 PRD v0.2 完整编写，当前等待 Owner 对控制中心信息架构、三语边界、Web-only 投递和 WCAG 2.2 AA 验收方式整体确认。确认前不从本 Spec 创建 Implementation Plan。
+- 确认人：Owner
+- 确认日期：2026-08-26
+- 确认范围：控制中心信息架构、三语边界、Web-only 投递、响应式体验、浏览器矩阵和 WCAG 2.2 AA 验收方式。
+- 授权边界：允许从本 Spec 派生 Implementation Plan；本次确认不授权创建 Plan、修改产品实现、调用外部服务或执行生产变更。

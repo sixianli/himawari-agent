@@ -170,6 +170,9 @@ Thread 永久删除的级联和保留 Memory 的 deleted-source marker 遵循持
 - 在两个浏览器和正常主机重启后验证同一 Thread、Run、审批、任务和 cursor 的一致恢复。
 - 运行 unit、contract、integration、browser E2E、规模测试、`npm run check` 和 strict document validation。
 
-## 确认状态
+## 确认记录
 
-本 Spec 已按 PRD v0.2 完整编写，当前等待 Owner 对 Thread 生命周期、Fork、回答语言和压缩语义整体确认。确认前不从本 Spec 创建 Implementation Plan，也不修改产品实现。
+- 确认人：Owner
+- 确认日期：2026-08-26
+- 确认范围：Thread 生命周期、Fork、回答语言、上下文选择、压缩语义及本 Spec 的验收边界。
+- 授权边界：允许从本 Spec 派生 Implementation Plan；本次确认不授权创建 Plan、修改产品实现、调用外部服务或执行生产变更。
