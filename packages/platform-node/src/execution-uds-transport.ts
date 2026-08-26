@@ -171,8 +171,8 @@ function assertEventMessage(input: unknown): ExecutionV2Event {
 export async function readRestrictedExecutionTokenFile(
   tokenPath: string,
 ): Promise<ExecutionUdsCredential> {
-  const stats = await lstat(tokenPath);
-  if (!stats.isFile() || stats.isSymbolicLink() || (stats.mode & 0o077) !== 0) {
+  const stats = await lstat(tokenPath).catch(() => undefined);
+  if (!stats?.isFile() || stats.isSymbolicLink() || (stats.mode & 0o077) !== 0) {
     throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.AUTHENTICATION_FAILED, 500);
   }
   if (typeof process.getuid === "function" && stats.uid !== process.getuid()) {

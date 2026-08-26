@@ -275,14 +275,14 @@ Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi co
 
 ## Known Limitations
 
-- `apps/agent-service` 和 `apps/execution-worker` 已有程序化 composition、production UDS client/server 与真实子进程测试，但没有 `npm start`、正式 `main`、daemon packaging、service manager 或完整生产 readiness 组合。
-- `persistence-sqlite` 已实现真实 schema/migration、execution context、state-root lock、authority lease/deployment、原子 Product State transaction 和 Payload envelope metadata，但尚未实现其余生产 repositories、claim 型 Outbox publisher 或完整持久 Read Model 组合；Payload cryptography 与外部 ciphertext file store 已实现，尚未接入全部产品正文路径。`memory-mem0` 和 `integration-github` 仍只有经过双平台 preflight 的精确依赖与 workspace 边界。`control-center` 只渲染构建占位页，`admin-cli` 也没有可执行命令入口。
+- `apps/agent-service` 和 `apps/execution-worker` 已有正式 `main`、workspace `build/start`、production UDS client/server、信号 drain、稳定退出码、可重定位 Node runtime 和真实子进程测试；尚未安装 launchd/systemd unit，也未把 Task 12–22 的全部 production adapters 组合为最终 readiness。
+- `persistence-sqlite` 已实现真实 schema/migration、execution context、state-root lock、authority lease/deployment、原子 Product State transaction 和 Payload envelope metadata，但尚未实现其余生产 repositories、claim 型 Outbox publisher 或完整持久 Read Model 组合；Payload cryptography 与外部 ciphertext file store 已实现，尚未接入全部产品正文路径。`memory-mem0` 和 `integration-github` 仍只有经过双平台 preflight 的精确依赖与 workspace 边界。`control-center` 只渲染构建占位页；`admin-cli` 已有 doctor、db status 和受 offline lock/confirm 保护的 migration 入口，backup/transfer/delete 等命令仍待后续任务。
 - 默认 local composition 使用 `packages/testing` 的内存 State、Memory、Trace、Authorization、Scheduler、Delivery 和 Gateway read model；进程退出后数据丢失，且不提供跨进程 transaction、加密强度、高可用或灾难恢复。
 - Pi adapter 已通过 published `0.84.2` 与 local-source compatibility，但牛肉餐厅 E2E 使用确定性 Model/Capability，不调用真实模型、地图或预订供应商。
 - Execution Worker 已具有真实 HTTP/JSON over UDS transport、boot-scoped authentication、严格 resource ceiling validation、deadline/progress limits 和 child-process crash/reconnect 证据，但尚无完整 sandbox、service-manager CPU/内存强制或不可信 MCP 隔离。
 - Session deletion 已验证四类抽象 target 的 incomplete/resume/verified 语义；尚无把真实生产 Payload、search、cache 和 archive 全部接入同一次删除的实现。
 - Gateway command 已保证认证/授权/Control Plane 委派边界；默认 `InMemoryGatewayControlPlane` 不实现生产 Thread/Run/Approval command handler，Read Model 也由测试夹具显式填充。
-- `gateway.v2`、`execution.v2` 和新增 application ports 是冻结的产品契约；Execution UDS、严格 configuration/state-root 和 health model 已实现，HTTP/SSE、身份断言、其余 SQLite repositories、Mem0、GitHub、backup/transfer 与正式服务组合尚未实现。
+- `gateway.v2`、`execution.v2` 和新增 application ports 是冻结的产品契约；Execution UDS、严格 configuration/state-root、health model 和可安装服务骨架已实现，HTTP/SSE、身份断言、其余 SQLite repositories、Mem0、GitHub、backup/transfer 与完整 production adapter 组合尚未实现。
 - 生产 Secrets Vault、Provider material source、通知客户端、远程 Worker、持久 Scheduler 和网络 Gateway 均未实现。本版本不应描述为可生产部署。
 
 ## Backlog Links

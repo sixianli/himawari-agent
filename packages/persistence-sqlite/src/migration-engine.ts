@@ -468,6 +468,33 @@ export function openQualifiedDatabase(databasePath: string): SqliteDatabase {
   return database;
 }
 
+export function inspectSqliteDatabaseReadOnly(databasePath: string) {
+  const database = new BetterSqlite3(path.resolve(databasePath), {
+    readonly: true,
+    fileMustExist: true,
+  });
+  try {
+    const tables = database
+      .prepare(
+        "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+      .pluck()
+      .all() as string[];
+    const hasLedger = tables.includes("schema_migration_ledger");
+    const ledger = hasLedger ? readMigrationLedger(database) : [];
+    return Object.freeze({
+      sqliteVersion: database.prepare("SELECT sqlite_version()").pluck().get() as string,
+      quickCheck: database.pragma("quick_check", { simple: true }) as string,
+      schemaSequence: ledger.at(-1)?.sequence ?? 0,
+      migrationCount: ledger.length,
+      managed: hasLedger,
+      applicationTableCount: tables.length,
+    });
+  } finally {
+    database.close();
+  }
+}
+
 export async function createVerifiedMigrationSnapshot(
   database: SqliteDatabase,
   snapshotPath: string,

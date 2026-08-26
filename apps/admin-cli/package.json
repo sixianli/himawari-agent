@@ -6,6 +6,10 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "build": "npm --prefix ../.. run build:node",
+    "start": "node ../../dist/node-runtime/node_modules/@himawari-agent/admin-cli/dist/main.js"
+  },
   "dependencies": {
     "@himawari-agent/application": "0.0.0",
     "@himawari-agent/persistence-sqlite": "0.0.0",

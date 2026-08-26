@@ -261,16 +261,20 @@ startup coordinator 固定 11 个有序阶段，从 configuration 到 HTTP readi
 
 Task 4 已确认严格 v1 parser 不能兼容 handshake、authority fence、resource ceiling 与 cursor 字段，因此本 Task 标题和来源 Spec 中的“execution.v1 over UDS”作为 Worker protocol 的历史名称保留，实际 wire transport 使用已经冻结的 `execution.v2`，原有 `execution.v1` fixture 与接受集合没有变化。`ExecutionUdsServer` 在权限为 `0700` 的 runtime directory 上绑定 HTTP/JSON Unix socket 并设为 `0600`，同时验证 Owner-only boot token、Agent Service instance、bounded body、content type 和 request deadline；活动 socket、普通文件替换与 inode race 均 fail closed，只有同一账户拥有且确认无人监听的 crash residue 才能在 inode 复核后移除。
 
-Agent Service 的 production client 必须先完成 schema/instance/boot-token handshake；Worker 不可用时返回 `EXECUTION_WORKER_UNAVAILABLE` 并撤销 client readiness，不存在进程内 fallback。Production Worker 只依赖注入的 `ExecutionWorkerService`、已注册 adapter 清单和短期 handle，不依赖 SQLite persistence 或授权签发服务；它验证当前 deployment epoch/fence、adapter version/operation 和配置上限，并对 wall deadline、progress 上限、重复 identity、stale handle、取消、cursor replay 与未知外部结果执行 fail-closed 处理。5 项 UDS contract tests、6 项 Worker unit tests和 3 项真实进程 integration tests分别覆盖 Worker `SIGKILL` 后安全 socket 恢复、Agent client 子进程崩溃后的单一结果、重复结果去重和重连；实现与验证证据位于 `test/integration/qualification/evidence/s1-task10-execution-uds.json`。
+Agent Service 的 production client 必须先完成 schema/instance/boot-token handshake；Worker 不可用时返回 `EXECUTION_WORKER_UNAVAILABLE` 并撤销 client readiness，不存在进程内 fallback。Production Worker 只依赖注入的 `ExecutionWorkerService`、已注册 adapter 清单和短期 handle，不依赖 SQLite persistence 或授权签发服务；它验证当前 deployment epoch/fence、adapter version/operation 和配置上限，并对 wall deadline、progress 上限、重复 identity、stale handle、取消、cursor replay 与未知外部结果执行 fail-closed 处理。5 项 UDS contract tests、6 项 Worker unit tests 和 3 项真实进程 integration tests 分别覆盖 Worker `SIGKILL` 后安全 socket 恢复、Agent client 子进程崩溃后的单一结果、重复结果去重和重连；实现与验证证据位于 `test/integration/qualification/evidence/s1-task10-execution-uds.json`。
 
 ### Task 11：建立可安装的 Agent Service、Worker 与 admin CLI 入口
 
-- [ ] 为两个服务添加真正的 `main`、start/build scripts、信号处理、退出码、结构化启动诊断和不依赖源码 checkout 的产物布局。
-- [ ] 让正式 composition 只接受 production adapters；现有 testing adapters 只能通过显式 test/development profile 选择，public mode 不能使用。
-- [ ] 创建 `himawari doctor` 和 `himawari db status` 的只读骨架，输出 deployment、schema、SQLite、authority、Payload、Worker、Memory 和 identity 的脱敏状态。
-- [ ] admin CLI 的写操作必须取得独占管理锁、验证 stopped/drained 条件、显示目标与计划，并使用明确 confirm flag 或交互确认；不得打印秘密。
-- [ ] 运行安装到临时前缀后的 smoke test，证明服务与 CLI 不依赖 repository cwd、TypeScript source 或 sibling `pi-mono`。
-- [ ] 验证正常启动、双启动冲突、错误配置、非安全 SQLite、无 secret source、graceful stop、forced stop 和 service-manager restart。
+- [x] 为两个服务添加真正的 `main`、start/build scripts、信号处理、退出码、结构化启动诊断和不依赖源码 checkout 的产物布局。
+- [x] 让正式 composition 只接受 production adapters；现有 testing adapters 只能通过显式 test/development profile 选择，public mode 不能使用。
+- [x] 创建 `himawari doctor` 和 `himawari db status` 的只读骨架，输出 deployment、schema、SQLite、authority、Payload、Worker、Memory 和 identity 的脱敏状态。
+- [x] admin CLI 的写操作必须取得独占管理锁、验证 stopped/drained 条件、显示目标与计划，并使用明确 confirm flag 或交互确认；不得打印秘密。
+- [x] 运行安装到临时前缀后的 smoke test，证明服务与 CLI 不依赖 repository cwd、TypeScript source 或 sibling `pi-mono`。
+- [x] 验证正常启动、双启动冲突、错误配置、非安全 SQLite、无 secret source、graceful stop、forced stop 和 service-manager restart。
+
+Task 11 新增独立 `main.ts`、workspace `build/start` scripts、稳定 JSON 诊断、退出码和保持事件循环的 SIGINT/SIGTERM drain。`tsconfig.node-build.json` 与 packaging scripts 把已编译 workspace 和精确的 native SQLite runtime closure 组装成可重定位 `dist/node-runtime`，安装器在任意绝对前缀生成 `himawari`、`himawari-agent-service` 与 `himawari-execution-worker` 入口；production artifact 不包含 `@himawari-agent/testing`，临时前缀 smoke 从仓库外 cwd 启动，未读取 TypeScript source、sibling `pi-mono` 或仓库 `node_modules`。
+
+Agent Service 只接受显式 `--profile production`，验证 strict configuration、活动 authority、独占 state-root lock、qualified SQLite 与 production Worker handshake；public mode 在身份/Gateway trust root 尚未完成时以 `SERVICE_PUBLIC_MODE_INCOMPLETE` fail closed。Worker 入口验证相同 authority 和 owner-only boot token，adapter registry 尚未注入时只提供 transport/handshake 并对 work 返回 `WORKER_ADAPTER_REGISTRY_EMPTY`，没有用 deterministic/testing adapter 冒充生产能力。`himawari doctor` 与 `himawari db status` 使用只读 SQLite 打开方式并只输出脱敏状态；`db migrate` 先显示目标/计划，要求精确 confirm、stopped service 和独占 lock。安装测试覆盖正常与双启动、错误 config、损坏 SQLite、缺 token、graceful/forced stop 和 supervisor-style restart；实际 launchd/systemd unit 安装仍由 Task 28 的双主机演练完成。实现与验证证据位于 `test/integration/qualification/evidence/s1-task11-installable-services.json`。
 
 ### Task 12：实现持久 Run、Scheduler、Attention 与 Delivery 恢复
 

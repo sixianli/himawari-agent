@@ -3,6 +3,7 @@ export * from "./execution-uds-transport.js";
 export * from "./host-secret-source.js";
 export * from "./payload-protector.js";
 export * from "./runtime-health.js";
+export * from "./service-runtime.js";
 export * from "./startup-coordinator.js";
 export * from "./state-root-layout.js";
 export * from "./strict-configuration.js";

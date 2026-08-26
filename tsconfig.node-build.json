@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "declaration": false,
+    "incremental": false,
+    "noEmit": false,
+    "outDir": "dist/node-build",
+    "rootDir": ".",
+    "rewriteRelativeImportExtensions": true,
+    "sourceMap": false,
+    "types": ["node"]
+  },
+  "include": [
+    "apps/admin-cli/src/**/*.ts",
+    "apps/agent-service/src/**/*.ts",
+    "apps/execution-worker/src/**/*.ts",
+    "packages/*/src/**/*.ts"
+  ],
+  "exclude": ["apps/control-center/**", "**/*.test.ts"]
+}

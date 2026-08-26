@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T15:46:56Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T11",
+  "candidateRevision": "e625a091e8eef815059c82056cb3a1e8ecd4da25",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 3,
+    "behind": 0,
+    "status": "dirty"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "npm": "11.8.0",
+    "runtimeLayout": "dist/node-runtime",
+    "installedCommands": 3,
+    "externalCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npm run check && npm run build:node",
+      "exitStatus": 0,
+      "result": "format, lint, type, boundary and coverage checks passed; relocatable Node runtime compiled and packaged"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/installable-node-services.test.ts",
+      "exitStatus": 0,
+      "result": "2 install/runtime matrix tests passed outside the filesystem-restricted sandbox"
+    },
+    {
+      "command": "npm run check && npm test && npm run check:pi-compat && python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict . && git diff --check",
+      "exitStatus": 0,
+      "result": "165 unit, 106 contract, 283 integration, 3 E2E and 6 Pi compatibility tests passed; strict document validation and diff check passed"
+    }
+  ],
+  "verificationSummary": [
+    "The installed prefix exposes himawari, himawari-agent-service and himawari-execution-worker from compiled JavaScript and a 16 MB runtime closure, independent of repository cwd, TypeScript source and sibling pi-mono.",
+    "The production artifact excludes @himawari-agent/testing; services accept only the explicit production profile, and public Agent Service startup fails until the identity trust root is implemented.",
+    "Agent Service validates active authority, exclusive state-root ownership, qualified SQLite and Worker handshake; Worker validates authority and an owner-only boot token while an empty production adapter registry rejects all work.",
+    "Doctor and db status open SQLite read-only and report redacted dependency/schema state; db migrate prints an exact plan and requires both APPLY_MIGRATIONS confirmation and an offline exclusive lock.",
+    "Installed-process tests cover normal startup, live lock conflict, unknown configuration, corrupted SQLite, missing token, graceful SIGTERM, forced SIGKILL, stale socket recovery and supervisor-style restart."
+  ],
+  "unverified": [
+    "The installable Worker entrypoint intentionally has no production capability adapters yet; Task 12 and later adapter tasks inject persistent coordination and governed capability implementations.",
+    "The Agent Service entrypoint does not expose the public HTTP Gateway and refuses public mode until Tasks 13–14 complete identity, session and Gateway trust roots.",
+    "No launchd/systemd unit or production path was installed; actual Mac/Hermes service-manager restart and immutable artifact validation remain Task 28."
+  ],
+  "externalEffects": [
+    "Build and tests wrote only ignored dist artifacts, temporary installation prefixes, temporary SQLite state roots, Unix sockets and local child processes.",
+    "No network, provider, external account, public endpoint, service manager or production state was accessed or changed."
+  ],
+  "implementationCommit": null
+}
