@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T11:49:06Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T02",
+  "candidateRevision": "5762b5bde18f768ad3e57bb88affbd7472afdc7b",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 2,
+    "behind": 0,
+    "status": "clean"
+  },
+  "environment": {
+    "macNode": "v25.6.0",
+    "macArchitecture": "darwin-arm64",
+    "macSqlite": "3.53.2",
+    "hermesNode": "v22.19.0",
+    "hermesArchitecture": "linux-x64",
+    "hermesSqlite": "3.53.2",
+    "isolatedLockSha256": "cf3d069ade64b2b8049a246e12b952e77b5d5629d5cbba546768adfda5205a75",
+    "isolatedLockEntries": 359,
+    "auditVulnerabilities": 0,
+    "realProviderCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npm install --no-fund (Mac isolated spike)",
+      "exitStatus": 0,
+      "result": "335 packages audited; 0 vulnerabilities; exact candidate dependency tree generated"
+    },
+    {
+      "command": "node sqlite-spike.mjs (Mac)",
+      "exitStatus": 0,
+      "result": "SQLite 3.53.2, WAL, synchronous FULL, Backup API, restart and 100000-row Worker isolation passed"
+    },
+    {
+      "command": "node mem0-spike.mjs (Mac)",
+      "exitStatus": 0,
+      "result": "CRUD/history, 12 concurrent adds, restart persistence, explicit local providers and zero hidden outbound calls passed"
+    },
+    {
+      "command": "node http-security-spike.mjs (Mac)",
+      "exitStatus": 0,
+      "result": "JWT/JWKS, CSRF, same-origin, body limit, SSE, rate limit, headers, GitHub App and webhook checks passed"
+    },
+    {
+      "command": "npx --no-install vite build && node browser-accessibility-spike.mjs (Mac)",
+      "exitStatus": 0,
+      "result": "React build and Chromium 151 interaction, keyboard focus and axe zero-violation scan passed"
+    },
+    {
+      "command": "npx --no-install tsc -p tsconfig.spike.json (Mac)",
+      "exitStatus": 0,
+      "result": "strict skipLibCheck=false passed with runtime-isolated mem0ai loading and product-owned structural types"
+    },
+    {
+      "command": "sha256sum -c node-v22.19.0-linux-x64.tar.xz (Hermes)",
+      "exitStatus": 0,
+      "result": "official Node 22.19.0 Linux x64 digest c0649af18e6a24f6fe5535a3e86b341dd49a8e71117c8b68bde973ef834f16f2 verified"
+    },
+    {
+      "command": "npm ci --no-fund (Hermes /data isolated target)",
+      "exitStatus": 0,
+      "result": "334 packages installed and 335 audited in the dedicated /data target; 0 vulnerabilities"
+    },
+    {
+      "command": "node sqlite-spike.mjs && node mem0-spike.mjs && node http-security-spike.mjs && npx --no-install tsc -p tsconfig.spike.json && npx --no-install vite build (Hermes)",
+      "exitStatus": 0,
+      "result": "all mandatory Linux x64 Node 22.19.0 compatibility spikes passed; native binding is ELF x86-64"
+    },
+    {
+      "command": "rm -rf -- /data/tmp/himawari-s1-spike-20260826T114355Z && test ! -e /data/tmp/himawari-s1-spike-20260826T114355Z",
+      "exitStatus": 0,
+      "result": "Owner-authorized dedicated 590 MB temporary target deleted and absence verified"
+    }
+  ],
+  "verificationSummary": [
+    "精确候选依赖、许可证、engine、维护状态、原生边界、传递依赖与已知风险记录在 s1-task2-dependency-matrix.json。",
+    "Mac arm64 Node 25.6.0 与 Hermes x86_64 Node 22.19.0 使用相同 package/lock 和 spike hashes。",
+    "SQLite、Mem0、HTTP/SSE、JWT/JWKS、GitHub App、React/Vite、TypeScript 和 Mac 浏览器无障碍栈均通过。",
+    "Mem0 telemetry 在 import 前关闭；本地 provider mock 与 outbound deny 证明隐藏外呼为 0。",
+    "mem0ai 的不完整 optional-provider declarations 被隔离在 adapter runtime load 后，供应商类型不进入产品端口。",
+    "Hermes 只在 /data/tmp 专用目录发生写入；没有修改根盘、Docker、profile、systemd、系统 PATH 或外部账户。"
+  ],
+  "unverified": [
+    "真实生成模型、嵌入模型和费用路径等待 Task 20 的精确模型与预算授权。",
+    "真实 Cloudflare Access/Tunnel 和 GitHub App installation 等待对应外部账户授权。",
+    "Hermes 未安装浏览器；该主机只验证前端 build，真实公共浏览器路径属于 Tasks 27–28。",
+    "Mem0 partial embedding failure 的静默丢失报告留给 Task 16 mandatory conformance 故障注入。"
+  ],
+  "externalEffects": [
+    "Mac 使用 /tmp/himawari-s1-mac-spike.IxcMLw 隔离目录和现有 Playwright browser cache；未修改仓库 manifest。",
+    "Hermes 在 /data/tmp/himawari-s1-spike-20260826T114355Z 下载并运行临时 Node/dependencies，随后按授权删除且确认不存在。",
+    "未发生真实模型/API 调用、费用、生产秘密读取、外部账户修改或部署。"
+  ],
+  "implementationCommit": null
+}

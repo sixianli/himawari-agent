@@ -144,13 +144,17 @@ Task 1 的 evidence format 位于 `test/fixtures/v0.2/task-evidence.schema.json`
 
 ### Task 2：完成外部依赖与平台兼容性 preflight
 
-- [ ] 仅从上游官方文档、release、registry metadata 和安全公告收集候选版本；分别核验 better-sqlite3、mem0ai/oss、HTTP/JWT、Web UI/build、GitHub App client 和必要密码学依赖。
-- [ ] 对每个直接依赖记录精确版本、许可证、Node.js engine、维护状态、原生二进制产物来源、Mac 与 Hermes CPU/OS 支持、传递依赖和已知阻断性问题。
-- [ ] 在隔离 spike 中读取实际 `sqlite_version()`，验证 WAL、Backup API、worker-thread/专用持久化执行上下文和 Node.js `>=22.19.0`；不得只根据 npm package 版本判断安全。
-- [ ] 在 Mac 与 Hermes 分别运行 Mem0 OSS add/search/update/delete/history、显式 LLM/embedder/vector/history 配置、重启持久性、并发、telemetry 和隐藏 provider-call 检查。
-- [ ] 对 HTTP/SSE、JWT/JWKS、GitHub App、前端构建与可访问性栈建立最小兼容 spike；禁止在 spike 中改外部账户或使用生产秘密。
-- [ ] 汇总建议的精确 dependency set、manifest diff 和 lockfile 影响，等待 Owner 授权；未授权前不得安装或提交新依赖。
-- [ ] 任一 mandatory spike 失败时停止，不得静默替换为 Mem0 Cloud、OpenViking、共享数据库、第三生成模型或另一身份网关。
+- [x] 仅从上游官方文档、release、registry metadata 和安全公告收集候选版本；分别核验 better-sqlite3、mem0ai/oss、HTTP/JWT、Web UI/build、GitHub App client 和必要密码学依赖。
+- [x] 对每个直接依赖记录精确版本、许可证、Node.js engine、维护状态、原生二进制产物来源、Mac 与 Hermes CPU/OS 支持、传递依赖和已知阻断性问题。
+- [x] 在隔离 spike 中读取实际 `sqlite_version()`，验证 WAL、Backup API、worker-thread/专用持久化执行上下文和 Node.js `>=22.19.0`；不得只根据 npm package 版本判断安全。
+- [x] 在 Mac 与 Hermes 分别运行 Mem0 OSS add/search/update/delete/history、显式 LLM/embedder/vector/history 配置、重启持久性、并发、telemetry 和隐藏 provider-call 检查。
+- [x] 对 HTTP/SSE、JWT/JWKS、GitHub App、前端构建与可访问性栈建立最小兼容 spike；禁止在 spike 中改外部账户或使用生产秘密。
+- [x] 汇总建议的精确 dependency set、manifest diff 和 lockfile 影响，等待 Owner 授权；未授权前不得安装或提交新依赖。
+- [x] 任一 mandatory spike 失败时停止，不得静默替换为 Mem0 Cloud、OpenViking、共享数据库、第三生成模型或另一身份网关。
+
+Task 2 的精确版本、许可证、engine、传递依赖、原生产物、双平台结果、lockfile 影响和已知风险位于 `test/integration/qualification/evidence/s1-task2-dependency-matrix.json`，任务命令与外部副作用记录位于 `test/integration/qualification/evidence/s1-task2-dependency-preflight.json`。Mac arm64 Node 25.6.0 与 Hermes x86_64 Node 22.19.0 均运行到 SQLite 3.53.2；SQLite、Mem0、HTTP/SSE、JWT/JWKS、GitHub App、严格 TypeScript 和 Vite build mandatory spikes 全部通过，Mac 额外完成 Chromium 交互与 axe 零违规扫描。
+
+固定候选集保持 Owner 已批准的精确直接版本。`mem0ai@3.1.7` 的公开声明会引用未安装的 optional provider 类型，因此正式 adapter 必须通过运行时动态加载和产品自有最小结构类型隔离供应商声明；`better-sqlite3@12.11.1` 的 `prebuild-install@7.1.3` 已停止维护，但 Mem0 当前 peer 范围尚不支持 13.x，故把它保留为已知升级风险而不静默换型。真实模型费用、Cloudflare/GitHub 外部账户和正式部署仍保留各自停止点。
 
 ### Task 3：扩展 workspace、构建与边界检查
 

@@ -1,0 +1,338 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T11:49:06Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T02",
+  "candidateRevision": "5762b5bde18f768ad3e57bb88affbd7472afdc7b",
+  "ownerAuthorization": {
+    "dependencyInstall": "已授权 Mac 隔离 spike；通过后允许生成候选 manifest/lock 影响证据。",
+    "hermesMutation": "已授权只在 /data/tmp 专用目录执行 Hermes spike，并允许完成后删除该目录。",
+    "excluded": [
+      "真实生成模型、嵌入模型或 Mem0 Cloud 调用",
+      "生产秘密、Cloudflare 或 GitHub 外部账户变更",
+      "Hermes 根盘、Docker、shell profile、systemd 或系统 PATH 变更",
+      "仓库 manifests 与 package-lock.json 变更；这些属于 Task 3"
+    ]
+  },
+  "dependencyCandidates": [
+    {
+      "name": "better-sqlite3",
+      "version": "12.11.1",
+      "kind": "runtime",
+      "target": ["packages/persistence-sqlite", "packages/memory-mem0"],
+      "license": "MIT",
+      "nodeEngine": "20.x || 22.x || 23.x || 24.x || 25.x || 26.x",
+      "maintenance": "active 12.x release constrained by mem0ai peer range ^12.6.2; 13.x is not currently peer-compatible",
+      "nativeBinary": "required; prebuild-install fetches platform ABI asset with node-gyp fallback",
+      "platformEvidence": "Mac darwin-arm64 ABI 141 and Hermes linux-x64 ABI 127 native bindings loaded; sqlite_version()=3.53.2 on both",
+      "transitiveSummary": "bindings@1.5.0, prebuild-install@7.1.3",
+      "knownRisks": [
+        "prebuild-install@7.1.3 is deprecated and no longer maintained",
+        "actual SQLite version, WAL, backup and worker isolation remain runtime qualification gates"
+      ]
+    },
+    {
+      "name": "mem0ai",
+      "version": "3.1.7",
+      "kind": "runtime",
+      "target": ["packages/memory-mem0"],
+      "license": "Apache-2.0",
+      "nodeEngine": ">=18",
+      "maintenance": "active; registry release current at preflight time",
+      "nativeBinary": "none directly; required peer better-sqlite3 is native",
+      "platformEvidence": "Mac and Hermes add/search/update/delete/history, 12 concurrent adds and restart persistence passed with explicit local providers",
+      "transitiveSummary": "axios@1.20.0, openai@4.104.0, uuid@11.1.1, zod@3.25.76; required peers resolved compromise@14.16.0, natural@8.1.1, pg@8.11.3, @types/jest@29.5.14 and @types/pg@8.11.0",
+      "knownRisks": [
+        "telemetry defaults on and must be disabled before dynamic import",
+        "default OpenAI model/provider configuration must never be accepted in production",
+        "published declarations reference missing optional provider types under skipLibCheck=false",
+        "adapter must use runtime dynamic loading plus product-owned structural types",
+        "upstream has an open report of silent per-item loss after partial embedding failure; Task 16 must reproduce or bound it"
+      ]
+    },
+    {
+      "name": "fastify",
+      "version": "5.12.1",
+      "kind": "runtime",
+      "target": ["packages/platform-node"],
+      "license": "MIT",
+      "nodeEngine": "package metadata omits engines; Fastify v5 supports Node.js 20+",
+      "maintenance": "active current v5 security release at preflight time",
+      "nativeBinary": "none",
+      "platformEvidence": "Mac Node 25.6.0 and Hermes Node 22.19.0 HTTP/SSE/security spikes passed",
+      "transitiveSummary": "15 direct runtime dependencies; exact closure is fixed by the spike lock SHA-256",
+      "knownRisks": [
+        "5.12.1 is required for the trustProxy hop-count spoofing fix",
+        "production configuration must use an address predicate and reject direct-origin bypass"
+      ]
+    },
+    {
+      "name": "jose",
+      "version": "6.2.10",
+      "kind": "runtime",
+      "target": ["packages/platform-node"],
+      "license": "MIT",
+      "nodeEngine": "not declared; requires supported WebCrypto/Web API runtime",
+      "maintenance": "active supported v6 line",
+      "nativeBinary": "none",
+      "platformEvidence": "remote-style JWKS, RS256 signature, issuer and audience validation passed on Mac and Hermes",
+      "transitiveSummary": "zero dependencies",
+      "knownRisks": ["algorithm availability remains runtime-specific and must stay allow-listed"]
+    },
+    {
+      "name": "@fastify/helmet",
+      "version": "13.1.1",
+      "kind": "runtime",
+      "target": ["packages/platform-node"],
+      "license": "MIT",
+      "nodeEngine": "not declared; plugin line supports Fastify 5",
+      "maintenance": "active",
+      "nativeBinary": "none",
+      "platformEvidence": "CSP, frame and MIME-sniffing headers passed on Mac and Hermes",
+      "transitiveSummary": "helmet@8.3.0, fastify-plugin@6.0.0",
+      "knownRisks": ["CSP remains application policy and cannot rely on plugin defaults"]
+    },
+    {
+      "name": "@fastify/cookie",
+      "version": "11.1.2",
+      "kind": "runtime",
+      "target": ["packages/platform-node"],
+      "license": "MIT",
+      "nodeEngine": "not declared; plugin line supports Fastify 5",
+      "maintenance": "active",
+      "nativeBinary": "none",
+      "platformEvidence": "signed CSRF cookie flow passed on Mac and Hermes",
+      "transitiveSummary": "cookie@2.0.1, fastify-plugin@6.0.0",
+      "knownRisks": [
+        "production cookies require HTTPS secure=true and host-sourced signing material"
+      ]
+    },
+    {
+      "name": "@fastify/rate-limit",
+      "version": "11.2.0",
+      "kind": "runtime",
+      "target": ["packages/platform-node"],
+      "license": "MIT",
+      "nodeEngine": "not declared; >=10.x supports Fastify 5",
+      "maintenance": "active patched release",
+      "nativeBinary": "none",
+      "platformEvidence": "bounded 200/200/429 flow and IPv6 subnet configuration passed on Mac and Hermes",
+      "transitiveSummary": "ip-address@10.5.0, fastify-plugin@6.0.0 and bounded in-memory cache helpers",
+      "knownRisks": ["versions before 11.2.0 allow IPv6 rotation bypass behind trusted proxies"]
+    },
+    {
+      "name": "@fastify/csrf-protection",
+      "version": "8.0.1",
+      "kind": "runtime",
+      "target": ["packages/platform-node"],
+      "license": "MIT",
+      "nodeEngine": "not declared; >=7.x supports Fastify 5",
+      "maintenance": "active",
+      "nativeBinary": "none",
+      "platformEvidence": "valid token accepted and invalid/cross-origin requests rejected on Mac and Hermes",
+      "transitiveSummary": "@fastify/csrf@8.1.0, @fastify/error@4.2.0, fastify-plugin@6.0.0",
+      "knownRisks": ["plugin utilities do not replace Fetch Metadata and exact Origin enforcement"]
+    },
+    {
+      "name": "@fastify/static",
+      "version": "10.1.3",
+      "kind": "runtime",
+      "target": ["packages/platform-node"],
+      "license": "MIT",
+      "nodeEngine": "not declared; >=8.x supports Fastify 5",
+      "maintenance": "active",
+      "nativeBinary": "none",
+      "platformEvidence": "Mac built artifact served to Chromium; Fastify 5 registration passed on both platforms",
+      "transitiveSummary": "@fastify/send@4.1.1, glob@13.0.6, fastify-plugin@6.0.0 and content helpers",
+      "knownRisks": ["static route set must remain behind identity assertion validation"]
+    },
+    {
+      "name": "@octokit/app",
+      "version": "16.1.4",
+      "kind": "runtime",
+      "target": ["packages/integration-github"],
+      "license": "MIT",
+      "nodeEngine": ">=20",
+      "maintenance": "active current release at preflight time",
+      "nativeBinary": "none",
+      "platformEvidence": "offline App JWT and webhook valid/tampered signature checks passed on Mac and Hermes",
+      "transitiveSummary": "@octokit/core@7.0.7, @octokit/webhooks@14.2.0, auth/oauth and pagination modules",
+      "knownRisks": [
+        "real installation token, repository scope and permissions require separate external-account authorization"
+      ]
+    },
+    {
+      "name": "react",
+      "version": "19.2.8",
+      "kind": "runtime",
+      "target": ["apps/control-center"],
+      "license": "MIT",
+      "nodeEngine": ">=0.10.0",
+      "maintenance": "active current release at preflight time",
+      "nativeBinary": "none",
+      "platformEvidence": "Vite build passed on both platforms; Chromium interaction passed on Mac",
+      "transitiveSummary": "zero dependencies",
+      "knownRisks": []
+    },
+    {
+      "name": "react-dom",
+      "version": "19.2.8",
+      "kind": "runtime",
+      "target": ["apps/control-center"],
+      "license": "MIT",
+      "nodeEngine": "not declared",
+      "maintenance": "active current release at preflight time",
+      "nativeBinary": "none",
+      "platformEvidence": "Vite build passed on both platforms; Chromium interaction passed on Mac",
+      "transitiveSummary": "scheduler@0.27.0; peer react@^19.2.8 satisfied exactly",
+      "knownRisks": []
+    },
+    {
+      "name": "vite",
+      "version": "8.2.2",
+      "kind": "development",
+      "target": ["apps/control-center"],
+      "license": "MIT",
+      "nodeEngine": "^20.19.0 || >=22.12.0",
+      "maintenance": "active current release at preflight time",
+      "nativeBinary": "platform optional packages are selected by the lockfile",
+      "platformEvidence": "production build passed on Mac Node 25.6.0 and Hermes Node 22.19.0",
+      "transitiveSummary": "rolldown@1.2.5, lightningcss@1.33.0, postcss@8.5.26 and file matching helpers",
+      "knownRisks": [
+        "odd-numbered Node releases are not Vite CI targets; Hermes minimum-LTS evidence is authoritative"
+      ]
+    },
+    {
+      "name": "@vitejs/plugin-react",
+      "version": "6.1.0",
+      "kind": "development",
+      "target": ["apps/control-center"],
+      "license": "MIT",
+      "nodeEngine": "^20.19.0 || >=22.12.0",
+      "maintenance": "active",
+      "nativeBinary": "none directly",
+      "platformEvidence": "15-module React production build passed on Mac and Hermes",
+      "transitiveSummary": "@rolldown/pluginutils; peer vite@^8.0.0 satisfied",
+      "knownRisks": []
+    },
+    {
+      "name": "@playwright/test",
+      "version": "1.62.1",
+      "kind": "development",
+      "target": ["test/e2e/browser"],
+      "license": "Apache-2.0",
+      "nodeEngine": ">=20",
+      "maintenance": "active current release at preflight time",
+      "nativeBinary": "browser binaries are separately versioned and cached",
+      "platformEvidence": "Chromium 151.0.7922.34 passed on Mac; Hermes browser install intentionally omitted",
+      "transitiveSummary": "playwright@1.62.1",
+      "knownRisks": [
+        "browser download and public-path tests remain explicit later acceptance steps"
+      ]
+    },
+    {
+      "name": "@axe-core/playwright",
+      "version": "4.13.0",
+      "kind": "development",
+      "target": ["test/e2e/browser"],
+      "license": "MPL-2.0",
+      "nodeEngine": "not declared",
+      "maintenance": "active",
+      "nativeBinary": "none",
+      "platformEvidence": "Mac Chromium scan completed with zero violations",
+      "transitiveSummary": "axe-core@4.13.0; playwright-core peer satisfied by Playwright 1.62.1",
+      "knownRisks": [
+        "automated axe results do not replace manual keyboard and assistive-technology acceptance"
+      ]
+    },
+    {
+      "name": "@types/better-sqlite3",
+      "version": "9.6.0",
+      "kind": "development",
+      "target": ["packages/persistence-sqlite"],
+      "license": "MIT",
+      "nodeEngine": "not declared",
+      "maintenance": "active DefinitelyTyped package",
+      "nativeBinary": "none",
+      "platformEvidence": "strict TypeScript 5.9.3 check passed with repository @types/node@22.19.19",
+      "transitiveSummary": "@types/node peer resolved to the repository exact pin",
+      "knownRisks": ["type package major does not mirror better-sqlite3 runtime major"]
+    },
+    {
+      "name": "@types/react",
+      "version": "19.2.18",
+      "kind": "development",
+      "target": ["apps/control-center"],
+      "license": "MIT",
+      "nodeEngine": "not declared",
+      "maintenance": "active DefinitelyTyped package",
+      "nativeBinary": "none",
+      "platformEvidence": "strict TypeScript 5.9.3 check passed",
+      "transitiveSummary": "csstype@^3.2.2",
+      "knownRisks": []
+    },
+    {
+      "name": "@types/react-dom",
+      "version": "19.2.5",
+      "kind": "development",
+      "target": ["apps/control-center"],
+      "license": "MIT",
+      "nodeEngine": "not declared",
+      "maintenance": "active DefinitelyTyped package",
+      "nativeBinary": "none",
+      "platformEvidence": "strict TypeScript 5.9.3 check passed",
+      "transitiveSummary": "peer @types/react@^19.2.0 satisfied exactly",
+      "knownRisks": []
+    }
+  ],
+  "preexistingCompatibilityPins": {
+    "@types/node": "22.19.19",
+    "typescript": "5.9.3"
+  },
+  "isolatedLock": {
+    "sha256": "cf3d069ade64b2b8049a246e12b952e77b5d5629d5cbba546768adfda5205a75",
+    "lockfileVersion": 3,
+    "packageEntries": 359,
+    "peerEntries": 113,
+    "optionalEntries": 29,
+    "installScriptEntries": 3,
+    "macNodeModules": "约 231 MB",
+    "hermesNodeModules": "约 291 MB",
+    "hermesPeakTarget": "约 590 MB",
+    "audit": "Mac 与 Hermes 均为 0 vulnerabilities"
+  },
+  "platforms": {
+    "mac": {
+      "os": "macOS 27.0 arm64",
+      "node": "25.6.0",
+      "moduleAbi": 141,
+      "sqlite": "3.53.2",
+      "nativeBinding": "Mach-O 64-bit bundle arm64",
+      "browser": "Chromium 151.0.7922.34"
+    },
+    "hermes": {
+      "os": "Ubuntu 22.04.5 LTS x86_64",
+      "node": "22.19.0 temporary verified runtime",
+      "moduleAbi": 127,
+      "sqlite": "3.53.2",
+      "nativeBinding": "ELF 64-bit LSB shared object x86-64",
+      "target": "/data/tmp/himawari-s1-spike-20260826T114355Z",
+      "targetCleanup": "verified absent after authorized deletion",
+      "systemMutation": "none; no profile, PATH, package-manager, systemd, Docker or root-filesystem writes by this task"
+    }
+  },
+  "spikes": {
+    "sqlite": "both platforms passed WAL, synchronous FULL, foreign keys, integrity, Backup API, restart and 100000-row Worker isolation",
+    "mem0": "both platforms passed explicit local LLM/embedder, memory SQLite vector store, SQLite history, CRUD, 12 concurrent adds, restart and zero hidden outbound calls",
+    "httpSecurity": "both platforms passed JWT/JWKS issuer+audience, CSRF, Origin/Fetch Metadata, 1024-byte body limit, SSE, patched rate limit, headers and address-predicate trustProxy",
+    "github": "both platforms passed offline App JWT and webhook valid/tampered signature checks",
+    "webBuild": "Vite 8.2.2 React build passed on both platforms",
+    "browserAccessibility": "Mac Chromium interaction, three language choices, keyboard focus and axe zero-violation scan passed",
+    "typecheck": "strict skipLibCheck=false passed after isolating mem0ai runtime loading behind product-owned structural types"
+  },
+  "remainingAuthorizationGates": [
+    "第一次真实生成模型或嵌入调用仍需精确模型、费用和有上限预算授权。",
+    "Cloudflare、GitHub App、DNS、Tunnel、MFA、webhook 和 repository installation 仍需外部账户授权。",
+    "正式 manifests、lockfile、workspace 和 adapter 实现从 Task 3 开始，需保持本矩阵中的精确直接版本。"
+  ]
+}
