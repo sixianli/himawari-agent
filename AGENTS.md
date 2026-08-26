@@ -14,6 +14,17 @@ This repository explicitly adopts the `document-governance` skill for all govern
 - Use the skill templates and validation scripts for creation, reconciliation, closure, supersession, and archival.
 - Keep code and affected current-truth documentation consistent in the same authorized change set.
 
+## Documentation Language and Clarity
+
+- Write all project documentation content in Simplified Chinese.
+- Avoid ambiguous technical jargon; use clear, plain-language wording instead.
+
+## Development Effort and Time
+
+- This project is developed end-to-end by AI Coding Agents. Treat developer workload, labor cost, and implementation time as non-material constraints when making design decisions.
+- Optimize for long-term system quality. Prefer robust, comprehensive, maintainable, and extensible designs over temporary workarounds, shortcuts, or minimum implementations.
+- When a stronger long-term design requires broader foundational work, prefer it when the added complexity is technically justified.
+
 ## Repository Boundary
 
 - Product code and product documentation belong in this repository.
