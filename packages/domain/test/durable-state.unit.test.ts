@@ -220,19 +220,30 @@ describe("background occurrence and Memory lifecycle", () => {
       jobId: createJobId("job-01"),
       ownerId,
       agentId,
+      revision: 1,
       stableKey: "job-01:provider-occurrence-01",
       status: "queued",
       authority: { deploymentId, authorityEpoch: 8, fencingToken: 1 },
+      category: "monitor",
+      dataClassification: "private",
+      foreground: false,
+      parallelSafe: false,
+      estimatedCostMicros: 100,
+      reservedCostMicros: 0,
+      spentCostMicros: 0,
       attemptCount: 0,
       nextRetryAt: null,
       deadlineAt: "2026-08-26T00:05:00.000Z",
       runId: null,
+      workLease: null,
+      lastErrorCode: null,
     };
     const completed = transitionOccurrence(
       transitionOccurrence(transitionOccurrence(occurrence, "admitted"), "running"),
       "completed",
     );
 
+    expect(completed.revision).toBe(4);
     expect(() => transitionOccurrence(completed, "queued")).toThrow(DomainError);
   });
 

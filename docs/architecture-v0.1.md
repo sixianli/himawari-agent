@@ -138,7 +138,7 @@ HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 
 ### SQLite schema and immutable migrations
 
-`packages/persistence-sqlite` 现在以七个连续 SQL migration 建立 47 个产品表及 2 个内部治理表。产品表规范化保存 Owner/Agent、deployment/authority、Thread/Run、session/device、approval/Grant、capability、Product State、command result/outbox、Trace/audit、Task/Attention、Gateway Read Model、Memory、GitHub、删除、恢复点与存储健康状态；foreign key、唯一键、revision、authority epoch/fencing token 和稳定幂等键在 schema 层形成第一道约束。`schemaCatalog` 为每个表固定产品端口、生命周期、加密或 Payload 引用分类、删除关系和 migration owner，不能用供应商表替代产品权威状态。
+`packages/persistence-sqlite` 现在以九个连续 SQL migration 建立 47 个产品表及 2 个内部治理表。产品表规范化保存 Owner/Agent、deployment/authority、Thread/Run、session/device、approval/Grant、capability、Product State、command result/outbox、Trace/audit、Task/Attention、Gateway Read Model、Memory、GitHub、删除、恢复点与存储健康状态；foreign key、唯一键、revision、authority epoch/fencing token 和稳定幂等键在 schema 层形成第一道约束。第九个 migration 为 occurrence 增加 revision、分类、预算保留/实际费用、并行安全标记、work lease、重试错误和完整记录，并为 Run checkpoint 增加可验证记录列。`schemaCatalog` 为每个表固定产品端口、生命周期、加密或 Payload 引用分类、删除关系和 migration owner，不能用供应商表替代产品权威状态。
 
 迁移 ledger 持久化连续 `sequence`、`name`、`phase`、SQL SHA-256 与应用时间。loader 验证定义连续性和 digest；启动会拒绝历史内容不匹配、ledger 空洞、未知已应用 migration、未来 schema 及过旧 writer。`expand → backfill → verify → contract` 是受检查的单向 change-set 阶段，系统不提供自动数据库 downgrade。
 
@@ -160,7 +160,7 @@ Reliable Event 有 `pending → claimed → published` 生命周期。Publisher 
 
 Gateway Read Model 分开保存单调 revision 的 Thread/Run snapshot、全局持久 cursor sequence、scope 列和 retained stream event。查询必须同时匹配 Owner/Agent 及 Session/Thread/Run filter；subscription cursor 也必须属于相同 scope。Thread snapshot 最多保存 1000 个 Session 和 1000 个 Run 引用，同 revision 不允许改写不同内容。Retention watermark 只能单调前移且不能越过最新 cursor，水位以下事件被删除，旧 cursor 返回明确错误而不是静默跳过。
 
-Worker 在 `ready` 前执行冷启动恢复：过期 Outbox claim 回到 `pending`，中断的 `delivering` 以新 revision 回到 `pending` 并记录 `PROCESS_RESTARTED`；恢复报告枚举 pending event、未终结 Run、pending approval/delivery/deletion 与 `queued/retry_wait` occurrence。该恢复只重开可安全重试的产品工作，不代替 Task 9 的完整 startup/readiness coordinator。
+Worker 在 `ready` 前执行冷启动恢复：过期 Outbox claim 回到 `pending`，中断的 `delivering` 以新 revision 回到 `pending` 并记录 `PROCESS_RESTARTED`；恢复报告枚举 pending event、未终结 Run/checkpoint、pending approval/delivery/deletion、到期 work lease、可安全重试 occurrence、可见 blocker、`MODEL_BLOCKED` 和未知外部结果。正式 Agent Service 已在 Worker handshake 前打开专用 SQLite execution context，并把这些脱敏计数写入启动诊断。恢复只重新暴露或 claim 可恢复工作，不回答 Owner 审批、不重放未知外部副作用，也不把旧 authority fence 变成当前权威。
 
 ### Session Trace, protected Payload and deletion propagation
 
@@ -230,7 +230,11 @@ Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请�
 
 `ScheduledJob` 是 revision-checked 产品值，持有长期 Grant reference 与冻结的任务语义：capability、operation、resource、side effect、数据等级、单次费用、频率、任务 scope reference、期限和 revocation marker。每次 due dispatch 都先验证当前 Agent Authority Fence，再从 Authorization Store 重读 Grant，校验长期类型、Owner/Agent、有效期、撤销、剩余使用/费用预算及完整语义范围。失败会取消该任务而不产生 Trigger。
 
-每个定时 occurrence 以 `job ID + occurrence` 派生稳定 Trigger/admission idempotency references。调度状态在 admission 之后以 CAS 前进；并发节点即使都投递同一 occurrence，下游 admission 仍按相同 key 收敛为一个 Run，只有一个节点能更新 revision。时钟向前跳过多个周期时只投递当前最早 due occurrence，然后把 next time 与 occurrence 直接推进到首个未来槽位，避免恢复后通知风暴。当前 Scheduler 和 admission sink 都是确定性内存测试边界，不是生产 timer 或 Gateway 实现。
+每个定时 occurrence 以 `job ID + provider occurrence identity` 派生 stable key，并由 `DurableBackgroundWorkService` 复用唯一 `UnifiedTriggerIngestionService` 生成 Trigger admission idempotency key。SQLite 的 `(job_id, stable_key)` 唯一键把 timer、人工重放和外部投递合并为原 occurrence；同一 job 默认只允许一个 admitted/running Run，只有 occurrence 明确标记 `parallelSafe` 时才允许并行。旧 authority fence 在创建、接纳、claim 和 settle 四个边界都被拒绝。
+
+预算与容量在同一 `BEGIN IMMEDIATE` transaction 内检查并保留：全局、数据分类和单 Run 费用都是硬上限；总并发、category 并发和前台保留槽位共同决定接纳。已在线持久化但资源不足的 occurrence 保持可查询的 `budget_blocked` 或 `capacity_blocked`，不会因浏览器离线丢失。Worker claim 保存 lease ID、holder、取得/到期时间；重启只重新暴露已到期 lease，completed occurrence 不会回退。transport/provider failure 使用 attempt 有界、最大延迟有界且由稳定 seed 决定 jitter 的 exponential backoff；credential、authorization、policy 与 invalid input 没有自动 retry 时间。`MODEL_BLOCKED` 与未知外部结果保留原 occurrence/Run identity，后者必须先走 reconcile。
+
+`evaluateDurableSchedule()` 支持固定 interval、one-shot 和 IANA timezone daily schedule。周期 misfire 直接合并并跳过旧 occurrence，one-shot 超过 grace 后成为 `MISSED`；IANA 日历通过运行时 timezone database 解析，不存在的 DST wall time没有候选，重复 wall time按本地日期只采用第一次。当前生产服务已执行持久恢复并持有这些 adapters，但自动 timer loop 要等 Task 13 的生产 Trigger Control Plane 一起组合，不能把测试用 admission sink 当作公共 Gateway。
 
 ### Central attention and delivery
 
@@ -271,19 +275,19 @@ npm ci --ignore-scripts
   → drain new admission and await in-flight Run settlement on shutdown
 ```
 
-Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi compatibility、独立 workspace 项目和严格文档验证。当前确定性测试集包含 121 个 unit、101 个 contract、258 个 integration、3 个 E2E 和 6 个 Pi compatibility 测试；其中 SQLite contract/integration 使用临时真实文件和隔离子进程，不访问网络、付费模型、外部账户或生产凭据。
+Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi compatibility、独立 workspace 项目和严格文档验证。当前确定性测试集包含 170 个 unit、106 个 contract、287 个 integration、3 个 E2E 和 6 个 Pi compatibility 测试；其中 SQLite contract/integration 使用临时真实文件和隔离子进程，不访问网络、付费模型、外部账户或生产凭据。
 
 ## Known Limitations
 
-- `apps/agent-service` 和 `apps/execution-worker` 已有正式 `main`、workspace `build/start`、production UDS client/server、信号 drain、稳定退出码、可重定位 Node runtime 和真实子进程测试；尚未安装 launchd/systemd unit，也未把 Task 12–22 的全部 production adapters 组合为最终 readiness。
-- `persistence-sqlite` 已实现真实 schema/migration、execution context、state-root lock、authority lease/deployment、原子 Product State transaction 和 Payload envelope metadata，但尚未实现其余生产 repositories、claim 型 Outbox publisher 或完整持久 Read Model 组合；Payload cryptography 与外部 ciphertext file store 已实现，尚未接入全部产品正文路径。`memory-mem0` 和 `integration-github` 仍只有经过双平台 preflight 的精确依赖与 workspace 边界。`control-center` 只渲染构建占位页；`admin-cli` 已有 doctor、db status 和受 offline lock/confirm 保护的 migration 入口，backup/transfer/delete 等命令仍待后续任务。
+- `apps/agent-service` 和 `apps/execution-worker` 已有正式 `main`、workspace `build/start`、production UDS client/server、信号 drain、稳定退出码、可重定位 Node runtime 和真实子进程测试；Agent Service 已打开持久 repository 并读取后台恢复清单，但尚未安装 launchd/systemd unit，也未把 Tasks 13–22 的 HTTP、身份、Memory、模型与 GitHub adapters 组合为最终 readiness。
+- `persistence-sqlite` 已实现真实 schema/migration、execution context、state-root lock、authority lease/deployment、原子 Product State transaction、claim 型 Outbox、持久 Gateway Read Model、Run checkpoint、后台 occurrence/lease/budget/blocker 和 Payload envelope metadata；尚未实现 Memory、GitHub、backup/transfer 与完整删除传播 repositories。Payload cryptography 与外部 ciphertext file store 已实现，尚未接入全部产品正文路径。`memory-mem0` 和 `integration-github` 仍只有经过双平台 preflight 的精确依赖与 workspace 边界。`control-center` 只渲染构建占位页；`admin-cli` 已有 doctor、db status 和受 offline lock/confirm 保护的 migration 入口，backup/transfer/delete 等命令仍待后续任务。
 - 默认 local composition 使用 `packages/testing` 的内存 State、Memory、Trace、Authorization、Scheduler、Delivery 和 Gateway read model；进程退出后数据丢失，且不提供跨进程 transaction、加密强度、高可用或灾难恢复。
 - Pi adapter 已通过 published `0.84.2` 与 local-source compatibility，但牛肉餐厅 E2E 使用确定性 Model/Capability，不调用真实模型、地图或预订供应商。
 - Execution Worker 已具有真实 HTTP/JSON over UDS transport、boot-scoped authentication、严格 resource ceiling validation、deadline/progress limits 和 child-process crash/reconnect 证据，但尚无完整 sandbox、service-manager CPU/内存强制或不可信 MCP 隔离。
 - Session deletion 已验证四类抽象 target 的 incomplete/resume/verified 语义；尚无把真实生产 Payload、search、cache 和 archive 全部接入同一次删除的实现。
 - Gateway command 已保证认证/授权/Control Plane 委派边界；默认 `InMemoryGatewayControlPlane` 不实现生产 Thread/Run/Approval command handler，Read Model 也由测试夹具显式填充。
 - `gateway.v2`、`execution.v2` 和新增 application ports 是冻结的产品契约；Execution UDS、严格 configuration/state-root、health model 和可安装服务骨架已实现，HTTP/SSE、身份断言、其余 SQLite repositories、Mem0、GitHub、backup/transfer 与完整 production adapter 组合尚未实现。
-- 生产 Secrets Vault、Provider material source、通知客户端、远程 Worker、持久 Scheduler 和网络 Gateway 均未实现。本版本不应描述为可生产部署。
+- 生产 Secrets Vault、Provider material source、通知客户端、自动 timer loop、远程 Worker 和网络 Gateway 均未实现。本版本不应描述为可生产部署。
 
 ## Backlog Links
 

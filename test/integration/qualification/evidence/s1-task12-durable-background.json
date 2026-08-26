@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T16:10:29Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T12",
+  "candidateRevision": "e403d89",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 4,
+    "behind": 0,
+    "status": "dirty"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "npm": "11.8.0",
+    "sqliteSchemaSequence": 9,
+    "externalCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project unit packages/application/test/durable-background-work-service.unit.test.ts packages/domain/test/durable-state.unit.test.ts",
+      "exitStatus": 0,
+      "result": "20 focused domain and schedule tests passed"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/durable-background-recovery.test.ts test/integration/sqlite-durable-repositories.test.ts",
+      "exitStatus": 0,
+      "result": "23 real-file SQLite durability and restart tests passed"
+    },
+    {
+      "command": "npm run build:node && npx vitest run --config vitest.workspace.ts --project integration test/integration/installable-node-services.test.ts",
+      "exitStatus": 0,
+      "result": "relocatable runtime built and both installed-service process tests passed outside the filesystem-restricted sandbox"
+    },
+    {
+      "command": "npm run check && npm test && npm run check:pi-compat && python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict . && git diff --check",
+      "exitStatus": 0,
+      "result": "170 unit, 106 contract, 287 integration, 3 E2E and 6 Pi compatibility tests passed; strict document validation and diff check passed"
+    }
+  ],
+  "verificationSummary": [
+    "A ninth immutable migration persists occurrence revisions, stable identities, classification, budget reservation and spending, explicit parallel safety, work leases, retry state and checkpoint records.",
+    "DurableBackgroundWorkService merges manual, timer and external occurrences through the unified Trigger admission path; one job permits one active Run by default and parallel execution requires an explicit safe flag.",
+    "Admission atomically enforces global, classification and per-Run hard cost budgets plus total, category and foreground-reserved capacity; blocked work remains visible as budget_blocked or capacity_blocked.",
+    "Interval, one-shot and IANA daily schedules cover periodic misfire skipping, one-shot MISSED, nonexistent DST time skipping and repeated DST time single execution.",
+    "Retry is restricted to bounded transport/provider failures; credentials, authorization, policy and invalid input have no automatic retry time.",
+    "Real SQLite restart evidence restores a Run checkpoint, awaiting approval, due retry, MODEL_BLOCKED, unknown external result, expired running lease and interrupted Delivery while stale authority fails closed."
+  ],
+  "unverified": [
+    "The production automatic timer loop is intentionally not composed before Task 13 provides the production Trigger Control Plane; Task 12 verifies the durable application service and SQLite adapter directly.",
+    "No external provider, public browser, service manager or second host was used; real Mac/Hermes lifecycle and long-running scale validation remain Tasks 27-28.",
+    "Task 12 does not claim GitHub polling, offline event backfill or external-result compensation; unknown external results remain pending for explicit reconciliation."
+  ],
+  "externalEffects": [
+    "Build and tests wrote only ignored build output, temporary SQLite databases, temporary installed runtimes, local Unix sockets and child processes.",
+    "No network, model provider, Cloudflare/GitHub account, service manager, production state or paid API was accessed or changed."
+  ],
+  "implementationCommit": null
+}

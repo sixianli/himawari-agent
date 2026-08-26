@@ -103,7 +103,7 @@ export interface ScheduledJob {
   readonly revokedAt: string | null;
   readonly nextRunAt: string;
   readonly occurrence: number;
-  readonly status: "active" | "cancelled";
+  readonly status: "active" | "paused" | "cancelled";
 }
 
 export type ScheduledJobWrite = Omit<ScheduledJob, "revision">;

@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
-  acquireStateRootLock,
   openQualifiedDatabase,
   readSqliteRuntimeStatus,
-  type StateRootLock,
+  SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
   initializeStateRoot,
@@ -30,7 +29,7 @@ export async function runAgentService(
   output: NodeJS.WritableStream = process.stdout,
   errorOutput: NodeJS.WritableStream = process.stderr,
 ): Promise<number> {
-  let lock: StateRootLock | undefined;
+  let repository: SqliteProductStateRepository | undefined;
   let worker: AgentServiceExecutionClient | undefined;
   try {
     const args = parseServiceArguments(arguments_);
@@ -39,7 +38,6 @@ export async function runAgentService(
       throw new Error(SERVICE_RUNTIME_ERROR_CODES.PUBLIC_MODE_INCOMPLETE);
     }
     const layout = await initializeStateRoot(configuration.stateRoot);
-    lock = await acquireStateRootLock(configuration.stateRoot);
     const authority = await readAuthorityFile(layout);
     if (authority.status !== "active") {
       throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_INACTIVE);
@@ -55,6 +53,11 @@ export async function runAgentService(
     const sqlite = readSqliteRuntimeStatus(database);
     database.close();
     if (sqlite.quickCheck !== "ok") throw new Error(AGENT_SERVICE_ERROR_CODES.SQLITE_UNQUALIFIED);
+    repository = await SqliteProductStateRepository.open({
+      stateRoot: configuration.stateRoot,
+      databasePath: path.join(layout.data, "product.sqlite"),
+    });
+    const recovery = await repository.startupRecovery();
     const credential = await readRestrictedExecutionTokenFile(args.workerTokenPath);
     let idSequence = 0;
     worker = new AgentServiceExecutionClient({
@@ -82,6 +85,12 @@ export async function runAgentService(
       sqliteVersion: sqlite.sqliteVersion,
       workerSchemaVersion: handshake.payload.selectedSchemaVersion,
       publicMode: false,
+      unfinishedRuns: recovery.unfinishedRunKeys.length,
+      pendingApprovals: recovery.pendingApprovalRequestIds.length,
+      recoverableOccurrences: recovery.retryableJobOccurrenceIds.length,
+      expiredWorkLeases: recovery.expiredWorkLeaseOccurrenceIds.length,
+      blockedOccurrences: recovery.blockedOccurrenceIds.length,
+      pendingDeliveries: recovery.pendingDeliveryRequestIds.length,
     });
     const signal = await waitForTerminationSignal();
     writeServiceDiagnostic(output, {
@@ -90,12 +99,12 @@ export async function runAgentService(
       signal,
     });
     worker.stop();
-    await lock.release();
+    await repository.close();
     writeServiceDiagnostic(output, { component: "agent-service", event: "service.stopped" });
     return 0;
   } catch (error) {
     worker?.stop();
-    await lock?.release().catch(() => undefined);
+    await repository?.close().catch(() => undefined);
     writeServiceDiagnostic(errorOutput, {
       component: "agent-service",
       event: "service.failed",

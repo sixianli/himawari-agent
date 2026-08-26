@@ -317,13 +317,28 @@ export interface BackgroundOccurrence {
   readonly jobId: JobId;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
+  readonly revision: number;
   readonly stableKey: string;
   readonly status: BackgroundOccurrenceStatus;
   readonly authority: ProductAuthorityFence;
+  readonly category: string;
+  readonly dataClassification: ProductDataClassification;
+  readonly foreground: boolean;
+  readonly parallelSafe: boolean;
+  readonly estimatedCostMicros: number;
+  readonly reservedCostMicros: number;
+  readonly spentCostMicros: number;
   readonly attemptCount: number;
   readonly nextRetryAt: string | null;
   readonly deadlineAt: string;
   readonly runId: RunId | null;
+  readonly workLease: {
+    readonly id: string;
+    readonly holderId: string;
+    readonly acquiredAt: string;
+    readonly expiresAt: string;
+  } | null;
+  readonly lastErrorCode: string | null;
 }
 
 const OCCURRENCE_TRANSITIONS: Readonly<
@@ -360,6 +375,7 @@ export function transitionOccurrence(
   }
   return Object.freeze({
     ...occurrence,
+    revision: occurrence.revision + 1,
     status: next,
     attemptCount: next === "running" ? occurrence.attemptCount + 1 : occurrence.attemptCount,
   });

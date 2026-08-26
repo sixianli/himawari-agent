@@ -278,12 +278,16 @@ Agent Service 只接受显式 `--profile production`，验证 strict configurati
 
 ### Task 12：实现持久 Run、Scheduler、Attention 与 Delivery 恢复
 
-- [ ] 把 Run checkpoint、job、occurrence、work lease、retry/deadline、budget、Attention 和 inbox delivery 落到 SQLite，并用现有应用服务复用统一 Trigger admission。
-- [ ] 保证同一 job 默认只有一个活动 Run；重复人工、timer 或 external occurrence 使用稳定 key 合并，只有显式安全配置才能并行。
-- [ ] 实现 IANA timezone、DST 跳过/单次、periodic missed skip、one-shot `MISSED`、有界退避和凭据/授权/策略错误不重试。
-- [ ] 实现全局、分类和单 Run 硬预算与前台保留容量；在线已接纳工作在预算或容量不足时进入可见的 `BUDGET_BLOCKED` 或 `CAPACITY_BLOCKED`。
-- [ ] Attention 只产生固定五级结果并应用确定性最低等级；Web Delivery 持久化、可重放、可去重，浏览器关闭不影响后台任务。
-- [ ] 重启测试覆盖 running、awaiting approval、retry_wait、MODEL_BLOCKED、unknown external result、pending Delivery 和 authority loss。
+- [x] 把 Run checkpoint、job、occurrence、work lease、retry/deadline、budget、Attention 和 inbox delivery 落到 SQLite，并用现有应用服务复用统一 Trigger admission。
+- [x] 保证同一 job 默认只有一个活动 Run；重复人工、timer 或 external occurrence 使用稳定 key 合并，只有显式安全配置才能并行。
+- [x] 实现 IANA timezone、DST 跳过/单次、periodic missed skip、one-shot `MISSED`、有界退避和凭据/授权/策略错误不重试。
+- [x] 实现全局、分类和单 Run 硬预算与前台保留容量；在线已接纳工作在预算或容量不足时进入可见的 `BUDGET_BLOCKED` 或 `CAPACITY_BLOCKED`。
+- [x] Attention 只产生固定五级结果并应用确定性最低等级；Web Delivery 持久化、可重放、可去重，浏览器关闭不影响后台任务。
+- [x] 重启测试覆盖 running、awaiting approval、retry_wait、MODEL_BLOCKED、unknown external result、pending Delivery 和 authority loss。
+
+Task 12 新增第九个不可变 migration，把 background occurrence revision、分类、预算保留/实际费用、显式并行安全标记、work lease、错误和完整记录加入规范 SQLite schema；Run Coordinator 的 `run-checkpoint:<RunId>` 通过受 scope 限制的持久 checkpoint store 跨进程恢复。`DurableBackgroundWorkService` 以 `(job_id, stable_key)` 合并 timer、人工和 external occurrence，并始终经 `UnifiedTriggerIngestionService` 接纳；SQLite 即时事务共同验证 current deployment fence、单 job active Run、全局/分类/单 Run 预算、总量/category 并发与前台保留容量，阻塞状态保持可见。
+
+schedule evaluator 覆盖 interval、one-shot 和 IANA daily schedule；periodic misfire 跳过旧槽位，one-shot 超时标记 `MISSED`，DST 不存在时刻无候选、重复时刻按本地日期只执行一次。work lease 到期后才允许原 identity reclaim；transport/provider 仅按有界 exponential backoff 与稳定 jitter 重试，credential、authorization、policy 和 invalid input 不自动重试。真实 SQLite restart matrix 同时覆盖 awaiting approval、due retry、`MODEL_BLOCKED`、unknown external result、pending/interrupted Delivery、过期 running lease 与 authority fence 变化。正式 Agent Service 已打开 repository 并输出脱敏恢复计数；生产 timer loop 留到 Task 13 的 Trigger Control Plane 组合，不使用测试 sink 冒充公共 Gateway。实现与验证证据位于 `test/integration/qualification/evidence/s1-task12-durable-background.json`。
 
 ### Task 13：实现受认证 HTTP Gateway 与可恢复 SSE
 

@@ -2,6 +2,7 @@ import path from "node:path";
 import type {
   AttentionStatePort,
   AuditLedgerPort,
+  BackgroundWorkStatePort,
   AuthorityLeasePort,
   AuthorityLeaseRecord,
   ClockPort,
@@ -20,6 +21,7 @@ import type {
   SchedulerPort,
   SessionDeletionStatePort,
   StateRecord,
+  StateStorePort,
   TraceStorePort,
 } from "@himawari-agent/application";
 import type {
@@ -232,6 +234,14 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.reliableEventPort(ownerId, agentId);
   }
 
+  authoritativeRunCheckpointStore(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+  ): StateStorePort {
+    return this.durable.authoritativeRunCheckpointStore(ownerId, agentId, authority, this.now);
+  }
+
   reliableEventOutbox(): SqliteReliableEventOutbox {
     return this.durable.reliableEventOutbox();
   }
@@ -265,6 +275,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   scheduler(): SchedulerPort {
     return this.durable.scheduler();
+  }
+
+  backgroundWorkState(): BackgroundWorkStatePort {
+    return this.durable.backgroundWorkState();
   }
 
   attentionState(): AttentionStatePort {

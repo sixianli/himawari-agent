@@ -11,8 +11,10 @@ import type {
   SchedulerPort,
   SessionDeletionStatePort,
   TraceStorePort,
+  BackgroundWorkStatePort,
+  StateStorePort,
 } from "@himawari-agent/application";
-import type { AgentId, OwnerId } from "@himawari-agent/domain";
+import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
 import type {
   EventSubscription,
   RunSnapshot,
@@ -87,6 +89,25 @@ export class SqliteDurableAdapters {
           agentId,
           eventId,
           publishedAt,
+        }),
+    });
+  }
+
+  authoritativeRunCheckpointStore(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    now: () => string,
+  ): StateStorePort {
+    return Object.freeze<StateStorePort>({
+      read: (key) => this.context.read("state.read", { ownerId, agentId, key }),
+      compareAndSet: (input) =>
+        this.context.write("state.compareAndSet", {
+          ownerId,
+          agentId,
+          authority,
+          ...input,
+          updatedAt: now(),
         }),
     });
   }
@@ -183,6 +204,26 @@ export class SqliteDurableAdapters {
       listDue: (at, limit) => this.context.read("scheduler.listDue", { at, limit }),
       cancel: (jobId, expectedRevision) =>
         this.context.write("scheduler.cancel", { jobId, expectedRevision }),
+    });
+  }
+
+  backgroundWorkState(): BackgroundWorkStatePort {
+    return Object.freeze<BackgroundWorkStatePort>({
+      readJob: (jobId) => this.context.read("background.readJob", { jobId }),
+      saveJob: (job, expectedRevision) =>
+        this.context.write("background.saveJob", { job, expectedRevision }),
+      readOccurrence: (occurrenceId) =>
+        this.context.read("background.readOccurrence", { occurrenceId }),
+      createOccurrence: (occurrence) =>
+        this.context.write("background.createOccurrence", { occurrence }),
+      saveOccurrence: (occurrence, expectedRevision) =>
+        this.context.write("background.saveOccurrence", { occurrence, expectedRevision }),
+      reserveAdmission: (input) => this.context.write("background.reserveAdmission", { input }),
+      claimOccurrence: (input) => this.context.write("background.claimOccurrence", { input }),
+      settleOccurrence: (input) => this.context.write("background.settleOccurrence", { input }),
+      listByJob: (jobId, limit) => this.context.read("background.listByJob", { jobId, limit }),
+      listRecoverable: (ownerId, agentId, now, limit) =>
+        this.context.read("background.listRecoverable", { ownerId, agentId, now, limit }),
     });
   }
 

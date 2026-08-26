@@ -65,7 +65,8 @@ export class SqliteExecutionContext {
   }
 
   static async start(configuration: SqliteWorkerConfiguration): Promise<SqliteExecutionContext> {
-    const worker = new Worker(new URL("./sqlite-worker.ts", import.meta.url), {
+    const workerExtension = import.meta.url.endsWith(".ts") ? ".ts" : ".js";
+    const worker = new Worker(new URL(`./sqlite-worker${workerExtension}`, import.meta.url), {
       workerData: configuration,
     });
     const context = new SqliteExecutionContext(worker);

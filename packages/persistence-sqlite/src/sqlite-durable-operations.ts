@@ -4,6 +4,10 @@ import type {
   AttentionDecisionCommitResult,
   AttentionPolicyState,
   AuditRecord,
+  BackgroundAdmissionReservation,
+  BackgroundAdmissionResult,
+  BackgroundOccurrenceClaim,
+  BackgroundOccurrenceSettlement,
   CapabilityExecutionHandle,
   CapabilityRegistryRecord,
   ConsumeGrantInput,
@@ -18,8 +22,17 @@ import type {
   ScheduledJob,
   ScheduledJobWrite,
   SessionDeletionRecord,
+  StateRecord,
+  JsonObject,
   TraceEvent,
 } from "@himawari-agent/application";
+import type {
+  BackgroundJobState,
+  BackgroundOccurrence,
+  JobId,
+  OccurrenceId,
+  ProductAuthorityFence,
+} from "@himawari-agent/domain";
 import type {
   EventSubscription,
   GetRunSnapshotQuery,
@@ -52,6 +65,10 @@ export interface SqliteStartupRecovery {
   readonly pendingDeliveryRequestIds: readonly string[];
   readonly pendingDeletionIds: readonly string[];
   readonly retryableJobOccurrenceIds: readonly string[];
+  readonly expiredWorkLeaseOccurrenceIds: readonly string[];
+  readonly blockedOccurrenceIds: readonly string[];
+  readonly modelBlockedOccurrenceIds: readonly string[];
+  readonly unknownExternalResultOccurrenceIds: readonly string[];
 }
 
 export interface GatewayProjectionMetadata {
@@ -70,6 +87,36 @@ interface EventRow {
   readonly payloadRef: string;
   readonly occurredAt: string;
   readonly publishedAt: string | null;
+}
+
+interface BackgroundOccurrenceRow {
+  readonly id: string;
+  readonly jobId: string;
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly revision: number;
+  readonly stableKey: string;
+  readonly status: BackgroundOccurrence["status"];
+  readonly deploymentId: string;
+  readonly authorityEpoch: number;
+  readonly fencingToken: number;
+  readonly category: string;
+  readonly dataClassification: BackgroundOccurrence["dataClassification"];
+  readonly foreground: number;
+  readonly parallelSafe: number;
+  readonly estimatedCostMicros: number;
+  readonly reservedCostMicros: number;
+  readonly spentCostMicros: number;
+  readonly attemptCount: number;
+  readonly nextRetryAt: string | null;
+  readonly deadlineAt: string;
+  readonly runId: string | null;
+  readonly workLeaseId: string | null;
+  readonly workLeaseHolderId: string | null;
+  readonly workLeaseAcquiredAt: string | null;
+  readonly workLeaseExpiresAt: string | null;
+  readonly lastErrorCode: string | null;
+  readonly recordJson: string | null;
 }
 
 function parseRecord<TRecord>(row: JsonRow | undefined): TRecord | undefined {
@@ -141,6 +188,20 @@ export class SqliteDurableOperations {
       case "event.append":
         return this.appendEvent(
           payload as { ownerId: string; agentId: string; event: ReliableEvent },
+        );
+      case "state.read":
+        return this.readScopedState(payload as { ownerId: string; agentId: string; key: string });
+      case "state.compareAndSet":
+        return this.compareAndSetState(
+          payload as {
+            ownerId: string;
+            agentId: string;
+            authority: ProductAuthorityFence;
+            key: string;
+            expectedRevision: number | null;
+            value: JsonObject;
+            updatedAt: string;
+          },
         );
       case "event.listPending":
         return this.listPendingEvents(
@@ -258,6 +319,34 @@ export class SqliteDurableOperations {
         return this.listDue(payload as { at: string; limit: number });
       case "scheduler.cancel":
         return this.cancelJob(payload as { jobId: string; expectedRevision: number });
+      case "background.readJob":
+        return this.readBackgroundJob((payload as { jobId: JobId }).jobId);
+      case "background.saveJob":
+        return this.saveBackgroundJob(
+          payload as { job: BackgroundJobState; expectedRevision: number },
+        );
+      case "background.readOccurrence":
+        return this.readOccurrence((payload as { occurrenceId: OccurrenceId }).occurrenceId);
+      case "background.createOccurrence":
+        return this.createOccurrence((payload as { occurrence: BackgroundOccurrence }).occurrence);
+      case "background.saveOccurrence":
+        return this.saveOccurrence(
+          payload as { occurrence: BackgroundOccurrence; expectedRevision: number },
+        );
+      case "background.reserveAdmission":
+        return this.reserveBackgroundAdmission(
+          (payload as { input: BackgroundAdmissionReservation }).input,
+        );
+      case "background.claimOccurrence":
+        return this.claimOccurrence((payload as { input: BackgroundOccurrenceClaim }).input);
+      case "background.settleOccurrence":
+        return this.settleOccurrence((payload as { input: BackgroundOccurrenceSettlement }).input);
+      case "background.listByJob":
+        return this.listOccurrencesByJob(payload as { jobId: JobId; limit: number });
+      case "background.listRecoverable":
+        return this.listRecoverableOccurrences(
+          payload as { ownerId: string; agentId: string; now: string; limit: number },
+        );
       case "attention.readPolicy":
         return this.readAttentionPolicy(payload as { ownerId: string; agentId: string });
       case "attention.commitDecision":
@@ -357,8 +446,30 @@ export class SqliteDurableOperations {
         pendingDeletionIds: this.idList(
           "SELECT id FROM deletion_tombstones WHERE status IN ('pending', 'incomplete') ORDER BY requested_at, id",
         ),
-        retryableJobOccurrenceIds: this.idList(
-          "SELECT id FROM job_occurrences WHERE status IN ('queued', 'retry_wait') ORDER BY id",
+        retryableJobOccurrenceIds: this.idListWith(
+          `SELECT id FROM job_occurrences WHERE status IN ('queued', 'admitted')
+            OR (status = 'retry_wait' AND (next_retry_at IS NULL OR next_retry_at <= ?))
+            OR (status = 'running' AND work_lease_expires_at <= ?) ORDER BY id`,
+          now,
+          now,
+        ),
+        expiredWorkLeaseOccurrenceIds: this.idListWith(
+          `SELECT id FROM job_occurrences WHERE status = 'running'
+            AND work_lease_expires_at <= ? ORDER BY id`,
+          now,
+        ),
+        blockedOccurrenceIds: this.idList(
+          `SELECT id FROM job_occurrences WHERE status IN (
+            'blocked_credentials', 'blocked_approval', 'budget_blocked', 'capacity_blocked'
+          ) ORDER BY id`,
+        ),
+        modelBlockedOccurrenceIds: this.idList(
+          `SELECT id FROM job_occurrences WHERE status = 'blocked_approval'
+            AND last_error_code = 'MODEL_BLOCKED' ORDER BY id`,
+        ),
+        unknownExternalResultOccurrenceIds: this.idList(
+          `SELECT id FROM job_occurrences WHERE status = 'retry_wait'
+            AND last_error_code = 'EXTERNAL_RESULT_UNKNOWN' ORDER BY id`,
         ),
       } satisfies SqliteStartupRecovery;
     });
@@ -367,6 +478,74 @@ export class SqliteDurableOperations {
 
   private idList(sql: string): readonly string[] {
     return (this.database.prepare(sql).all() as Array<{ readonly id: string }>).map(({ id }) => id);
+  }
+
+  private readScopedState(input: {
+    ownerId: string;
+    agentId: string;
+    key: string;
+  }): StateRecord | undefined {
+    if (!input.key.startsWith("run-checkpoint:")) {
+      this.fail("PORT_INVALID_OPERATION", "The durable checkpoint store only accepts Run keys");
+    }
+    const row = this.database
+      .prepare(
+        `SELECT key, revision, value_json AS valueJson FROM product_state_records
+        WHERE key = ? AND owner_id = ? AND agent_id = ?`,
+      )
+      .get(input.key, input.ownerId, input.agentId) as
+      | { readonly key: string; readonly revision: number; readonly valueJson: string }
+      | undefined;
+    return row
+      ? { key: row.key, revision: row.revision, value: JSON.parse(row.valueJson) as JsonObject }
+      : undefined;
+  }
+
+  private compareAndSetState(input: {
+    ownerId: string;
+    agentId: string;
+    authority: ProductAuthorityFence;
+    key: string;
+    expectedRevision: number | null;
+    value: JsonObject;
+    updatedAt: string;
+  }): StateRecord {
+    this.assertDiskHeadroom();
+    if (!input.key.startsWith("run-checkpoint:")) {
+      this.fail("PORT_INVALID_OPERATION", "The durable checkpoint store only accepts Run keys");
+    }
+    this.assertBackgroundFence(input.ownerId, input.agentId, input.authority);
+    const transaction = this.database.transaction(() => {
+      const current = this.readScopedState(input);
+      if ((current?.revision ?? null) !== input.expectedRevision) {
+        this.fail("PORT_CONFLICT", `State ${input.key} revision conflict`, { key: input.key });
+      }
+      const revision = (current?.revision ?? 0) + 1;
+      this.database
+        .prepare(
+          `INSERT INTO product_state_records (
+            key, owner_id, agent_id, revision, value_json, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET
+            revision = excluded.revision, value_json = excluded.value_json,
+            updated_at = excluded.updated_at`,
+        )
+        .run(
+          input.key,
+          input.ownerId,
+          input.agentId,
+          revision,
+          JSON.stringify(input.value),
+          input.updatedAt,
+        );
+      return { key: input.key, revision, value: input.value };
+    });
+    return transaction.immediate();
+  }
+
+  private idListWith(sql: string, ...parameters: readonly unknown[]): readonly string[] {
+    return (this.database.prepare(sql).all(...parameters) as Array<{ readonly id: string }>).map(
+      ({ id }) => id,
+    );
   }
 
   private assertPayloadScope(ref: string, ownerId: string, agentId: string): void {
@@ -398,8 +577,12 @@ export class SqliteDurableOperations {
         .prepare("SELECT key, value_json AS valueJson FROM product_state_records ORDER BY key")
         .all() as Array<{ readonly key: string; readonly valueJson: string }>
     )
-      .filter(({ valueJson }) => {
-        const value = JSON.parse(valueJson) as { readonly status?: unknown };
+      .filter(({ key, valueJson }) => {
+        const value = JSON.parse(valueJson) as {
+          readonly status?: unknown;
+          readonly terminalStatus?: unknown;
+        };
+        if (key.startsWith("run-checkpoint:")) return value.terminalStatus === null;
         return typeof value.status === "string" && !terminal.has(value.status);
       })
       .map(({ key }) => key);
@@ -429,6 +612,20 @@ export class SqliteDurableOperations {
       ),
       retryableJobOccurrenceIds: this.idList(
         "SELECT id FROM job_occurrences WHERE status IN ('queued', 'retry_wait') ORDER BY id",
+      ),
+      expiredWorkLeaseOccurrenceIds: [],
+      blockedOccurrenceIds: this.idList(
+        `SELECT id FROM job_occurrences WHERE status IN (
+          'blocked_credentials', 'blocked_approval', 'budget_blocked', 'capacity_blocked'
+        ) ORDER BY id`,
+      ),
+      modelBlockedOccurrenceIds: this.idList(
+        `SELECT id FROM job_occurrences WHERE status = 'blocked_approval'
+          AND last_error_code = 'MODEL_BLOCKED' ORDER BY id`,
+      ),
+      unknownExternalResultOccurrenceIds: this.idList(
+        `SELECT id FROM job_occurrences WHERE status = 'retry_wait'
+          AND last_error_code = 'EXTERNAL_RESULT_UNKNOWN' ORDER BY id`,
       ),
     };
   }
@@ -1313,7 +1510,7 @@ export class SqliteDurableOperations {
         stored.agentId,
         stored.threadId,
         stored.revision,
-        stored.status === "cancelled" ? "revoked" : "active",
+        stored.status === "cancelled" ? "revoked" : stored.status,
         stored.authorizationRef,
         stored.payloadRef,
         stored.nextRunAt,
@@ -1354,6 +1551,718 @@ export class SqliteDurableOperations {
       )
       .run(cancelled.revision, JSON.stringify(cancelled), cancelled.id);
     return cancelled;
+  }
+
+  private readBackgroundJob(jobId: JobId): BackgroundJobState | undefined {
+    const job = this.readJob(jobId);
+    if (!job) return undefined;
+    return {
+      id: job.id as JobId,
+      ownerId: job.ownerId,
+      agentId: job.agentId,
+      threadId: job.threadId,
+      revision: job.revision,
+      status: job.status === "cancelled" ? "revoked" : job.status,
+      authorizationRef: job.authorizationRef,
+      nextOccurrenceAt: job.status === "cancelled" ? null : job.nextRunAt,
+    };
+  }
+
+  private saveBackgroundJob(input: {
+    job: BackgroundJobState;
+    expectedRevision: number;
+  }): BackgroundJobState {
+    this.assertDiskHeadroom();
+    const current = this.readJob(input.job.id);
+    if (!current) this.fail("PORT_NOT_FOUND", `Background job ${input.job.id} not found`);
+    if (
+      current.revision !== input.expectedRevision ||
+      input.job.revision !== input.expectedRevision + 1 ||
+      current.ownerId !== input.job.ownerId ||
+      current.agentId !== input.job.agentId ||
+      current.authorizationRef !== input.job.authorizationRef
+    ) {
+      this.fail("PORT_CONFLICT", `Background job ${input.job.id} has a stale revision or scope`);
+    }
+    const status: ScheduledJob["status"] =
+      input.job.status === "revoked" ? "cancelled" : input.job.status;
+    const stored: ScheduledJob = {
+      ...current,
+      revision: input.job.revision,
+      status,
+      nextRunAt: input.job.nextOccurrenceAt ?? current.nextRunAt,
+    };
+    this.database
+      .prepare(
+        `UPDATE scheduled_jobs SET revision = ?, status = ?, next_occurrence_at = ?,
+          record_json = ? WHERE id = ?`,
+      )
+      .run(
+        stored.revision,
+        input.job.status,
+        input.job.nextOccurrenceAt,
+        JSON.stringify(stored),
+        input.job.id,
+      );
+    return input.job;
+  }
+
+  private occurrenceSelect(): string {
+    return `SELECT id, job_id AS jobId, owner_id AS ownerId, agent_id AS agentId,
+      revision, stable_key AS stableKey, status, deployment_id AS deploymentId,
+      authority_epoch AS authorityEpoch, fencing_token AS fencingToken, category,
+      data_classification AS dataClassification, foreground, parallel_safe AS parallelSafe,
+      estimated_cost_micros AS estimatedCostMicros,
+      reserved_cost_micros AS reservedCostMicros, spent_cost_micros AS spentCostMicros,
+      attempt_count AS attemptCount, next_retry_at AS nextRetryAt, deadline_at AS deadlineAt,
+      run_id AS runId, work_lease_id AS workLeaseId,
+      work_lease_holder_id AS workLeaseHolderId,
+      work_lease_acquired_at AS workLeaseAcquiredAt,
+      work_lease_expires_at AS workLeaseExpiresAt, last_error_code AS lastErrorCode,
+      record_json AS recordJson FROM job_occurrences`;
+  }
+
+  private occurrenceFromRow(row: BackgroundOccurrenceRow): BackgroundOccurrence {
+    if (row.recordJson) return JSON.parse(row.recordJson) as BackgroundOccurrence;
+    const hasLease =
+      row.workLeaseId !== null &&
+      row.workLeaseHolderId !== null &&
+      row.workLeaseAcquiredAt !== null &&
+      row.workLeaseExpiresAt !== null;
+    return {
+      id: row.id as OccurrenceId,
+      jobId: row.jobId as JobId,
+      ownerId: row.ownerId as BackgroundOccurrence["ownerId"],
+      agentId: row.agentId as BackgroundOccurrence["agentId"],
+      revision: row.revision,
+      stableKey: row.stableKey,
+      status: row.status,
+      authority: {
+        deploymentId: row.deploymentId as ProductAuthorityFence["deploymentId"],
+        authorityEpoch: row.authorityEpoch,
+        fencingToken: row.fencingToken,
+      },
+      category: row.category,
+      dataClassification: row.dataClassification,
+      foreground: row.foreground === 1,
+      parallelSafe: row.parallelSafe === 1,
+      estimatedCostMicros: row.estimatedCostMicros,
+      reservedCostMicros: row.reservedCostMicros,
+      spentCostMicros: row.spentCostMicros,
+      attemptCount: row.attemptCount,
+      nextRetryAt: row.nextRetryAt,
+      deadlineAt: row.deadlineAt,
+      runId: row.runId as BackgroundOccurrence["runId"],
+      workLease: hasLease
+        ? {
+            id: row.workLeaseId as string,
+            holderId: row.workLeaseHolderId as string,
+            acquiredAt: row.workLeaseAcquiredAt as string,
+            expiresAt: row.workLeaseExpiresAt as string,
+          }
+        : null,
+      lastErrorCode: row.lastErrorCode,
+    };
+  }
+
+  private readOccurrence(occurrenceId: OccurrenceId): BackgroundOccurrence | undefined {
+    const row = this.database
+      .prepare(`${this.occurrenceSelect()} WHERE id = ?`)
+      .get(occurrenceId) as BackgroundOccurrenceRow | undefined;
+    return row ? this.occurrenceFromRow(row) : undefined;
+  }
+
+  private readOccurrenceByStableKey(
+    jobId: JobId,
+    stableKey: string,
+  ): BackgroundOccurrence | undefined {
+    const row = this.database
+      .prepare(`${this.occurrenceSelect()} WHERE job_id = ? AND stable_key = ?`)
+      .get(jobId, stableKey) as BackgroundOccurrenceRow | undefined;
+    return row ? this.occurrenceFromRow(row) : undefined;
+  }
+
+  private assertBackgroundFence(
+    ownerId: string,
+    agentId: string,
+    fence: ProductAuthorityFence,
+  ): void {
+    const current = this.database
+      .prepare(
+        `SELECT status, authority_epoch AS authorityEpoch, fencing_token AS fencingToken
+        FROM deployments WHERE id = ? AND owner_id = ? AND agent_id = ?`,
+      )
+      .get(fence.deploymentId, ownerId, agentId) as
+      | { readonly status: string; readonly authorityEpoch: number; readonly fencingToken: number }
+      | undefined;
+    if (
+      !current ||
+      current.status !== "active" ||
+      current.authorityEpoch !== fence.authorityEpoch ||
+      current.fencingToken !== fence.fencingToken
+    ) {
+      this.fail("PORT_NOT_AUTHORITATIVE", "Background work carries a stale authority fence", {
+        deploymentId: fence.deploymentId,
+      });
+    }
+  }
+
+  private assertOccurrenceShape(occurrence: BackgroundOccurrence): void {
+    const nonNegative = [
+      occurrence.revision,
+      occurrence.estimatedCostMicros,
+      occurrence.reservedCostMicros,
+      occurrence.spentCostMicros,
+      occurrence.attemptCount,
+    ].every((value) => Number.isSafeInteger(value) && value >= 0);
+    const deadline = new Date(occurrence.deadlineAt);
+    if (
+      !nonNegative ||
+      occurrence.revision < 1 ||
+      occurrence.stableKey.length === 0 ||
+      occurrence.stableKey.length > 512 ||
+      occurrence.category.length === 0 ||
+      occurrence.category.length > 64 ||
+      Number.isNaN(deadline.valueOf()) ||
+      deadline.toISOString() !== occurrence.deadlineAt
+    ) {
+      this.fail("PORT_INVALID_OPERATION", `Background occurrence ${occurrence.id} is invalid`);
+    }
+  }
+
+  private createOccurrence(occurrence: BackgroundOccurrence): BackgroundOccurrence {
+    this.assertDiskHeadroom();
+    this.assertOccurrenceShape(occurrence);
+    this.assertBackgroundFence(occurrence.ownerId, occurrence.agentId, occurrence.authority);
+    const duplicate = this.readOccurrenceByStableKey(occurrence.jobId, occurrence.stableKey);
+    if (duplicate) return duplicate;
+    if (this.readOccurrence(occurrence.id)) {
+      this.fail("PORT_CONFLICT", `Background occurrence ${occurrence.id} already exists`);
+    }
+    const job = this.readJob(occurrence.jobId);
+    if (!job || job.ownerId !== occurrence.ownerId || job.agentId !== occurrence.agentId) {
+      this.fail("PORT_INVALID_OPERATION", `Background job ${occurrence.jobId} is outside scope`);
+    }
+    if (
+      occurrence.status !== "queued" ||
+      occurrence.runId !== null ||
+      occurrence.workLease !== null ||
+      occurrence.reservedCostMicros !== 0 ||
+      occurrence.spentCostMicros !== 0 ||
+      occurrence.attemptCount !== 0
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "A new background occurrence must start queued");
+    }
+    this.database
+      .prepare(
+        `INSERT INTO job_occurrences (
+          id, job_id, owner_id, agent_id, revision, stable_key, status, deployment_id,
+          authority_epoch, fencing_token, category, data_classification, foreground,
+          parallel_safe, estimated_cost_micros, reserved_cost_micros, spent_cost_micros,
+          attempt_count, next_retry_at, deadline_at, run_id, work_lease_id,
+          work_lease_holder_id, work_lease_acquired_at, work_lease_expires_at,
+          last_error_code, record_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        occurrence.id,
+        occurrence.jobId,
+        occurrence.ownerId,
+        occurrence.agentId,
+        occurrence.revision,
+        occurrence.stableKey,
+        occurrence.status,
+        occurrence.authority.deploymentId,
+        occurrence.authority.authorityEpoch,
+        occurrence.authority.fencingToken,
+        occurrence.category,
+        occurrence.dataClassification,
+        occurrence.foreground ? 1 : 0,
+        occurrence.parallelSafe ? 1 : 0,
+        occurrence.estimatedCostMicros,
+        occurrence.reservedCostMicros,
+        occurrence.spentCostMicros,
+        occurrence.attemptCount,
+        occurrence.nextRetryAt,
+        occurrence.deadlineAt,
+        occurrence.runId,
+        null,
+        null,
+        null,
+        null,
+        occurrence.lastErrorCode,
+        JSON.stringify(occurrence),
+      );
+    return occurrence;
+  }
+
+  private writeOccurrence(occurrence: BackgroundOccurrence): void {
+    this.database
+      .prepare(
+        `UPDATE job_occurrences SET revision = ?, status = ?, deployment_id = ?,
+          authority_epoch = ?, fencing_token = ?, category = ?, data_classification = ?,
+          foreground = ?, parallel_safe = ?, estimated_cost_micros = ?,
+          reserved_cost_micros = ?, spent_cost_micros = ?, attempt_count = ?,
+          next_retry_at = ?, deadline_at = ?, run_id = ?, work_lease_id = ?,
+          work_lease_holder_id = ?, work_lease_acquired_at = ?, work_lease_expires_at = ?,
+          last_error_code = ?, record_json = ? WHERE id = ?`,
+      )
+      .run(
+        occurrence.revision,
+        occurrence.status,
+        occurrence.authority.deploymentId,
+        occurrence.authority.authorityEpoch,
+        occurrence.authority.fencingToken,
+        occurrence.category,
+        occurrence.dataClassification,
+        occurrence.foreground ? 1 : 0,
+        occurrence.parallelSafe ? 1 : 0,
+        occurrence.estimatedCostMicros,
+        occurrence.reservedCostMicros,
+        occurrence.spentCostMicros,
+        occurrence.attemptCount,
+        occurrence.nextRetryAt,
+        occurrence.deadlineAt,
+        occurrence.runId,
+        occurrence.workLease?.id ?? null,
+        occurrence.workLease?.holderId ?? null,
+        occurrence.workLease?.acquiredAt ?? null,
+        occurrence.workLease?.expiresAt ?? null,
+        occurrence.lastErrorCode,
+        JSON.stringify(occurrence),
+        occurrence.id,
+      );
+  }
+
+  private saveOccurrence(input: {
+    occurrence: BackgroundOccurrence;
+    expectedRevision: number;
+  }): BackgroundOccurrence {
+    this.assertDiskHeadroom();
+    this.assertOccurrenceShape(input.occurrence);
+    const current = this.readOccurrence(input.occurrence.id);
+    if (!current) this.fail("PORT_NOT_FOUND", `Occurrence ${input.occurrence.id} not found`);
+    if (
+      current.revision !== input.expectedRevision ||
+      input.occurrence.revision !== input.expectedRevision + 1 ||
+      current.jobId !== input.occurrence.jobId ||
+      current.ownerId !== input.occurrence.ownerId ||
+      current.agentId !== input.occurrence.agentId ||
+      current.stableKey !== input.occurrence.stableKey
+    ) {
+      this.fail("PORT_CONFLICT", `Occurrence ${input.occurrence.id} has a stale revision or scope`);
+    }
+    this.assertBackgroundFence(
+      input.occurrence.ownerId,
+      input.occurrence.agentId,
+      input.occurrence.authority,
+    );
+    this.writeOccurrence(input.occurrence);
+    return input.occurrence;
+  }
+
+  private reserveBackgroundAdmission(
+    input: BackgroundAdmissionReservation,
+  ): BackgroundAdmissionResult {
+    this.assertDiskHeadroom();
+    const transaction = this.database.transaction(() => {
+      const current = this.readOccurrence(input.occurrenceId);
+      if (!current) this.fail("PORT_NOT_FOUND", `Occurrence ${input.occurrenceId} not found`);
+      this.assertBackgroundFence(current.ownerId, current.agentId, input.authority);
+      if (
+        current.status === "completed" ||
+        current.status === "failed_terminal" ||
+        current.status === "missed" ||
+        ((current.status === "admitted" || current.status === "running") &&
+          current.runId === input.runId)
+      ) {
+        return {
+          occurrence: current,
+          outcome: "duplicate" as const,
+          reasonCode: "ALREADY_ADMITTED" as const,
+        };
+      }
+      if (current.revision !== input.expectedRevision) {
+        this.fail("PORT_CONFLICT", `Occurrence ${input.occurrenceId} revision conflict`);
+      }
+      if (current.status === "retry_wait" && current.lastErrorCode === "EXTERNAL_RESULT_UNKNOWN") {
+        return {
+          occurrence: current,
+          outcome: "reconcile_required" as const,
+          reasonCode: "EXTERNAL_RESULT_RECONCILIATION_REQUIRED" as const,
+        };
+      }
+      if (current.status === "blocked_credentials") {
+        return {
+          occurrence: current,
+          outcome: "blocked" as const,
+          reasonCode: "CREDENTIALS_BLOCKED" as const,
+        };
+      }
+      if (current.status === "blocked_approval") {
+        return {
+          occurrence: current,
+          outcome: "blocked" as const,
+          reasonCode:
+            current.lastErrorCode === "MODEL_BLOCKED"
+              ? ("MODEL_BLOCKED" as const)
+              : ("AUTHORIZATION_BLOCKED" as const),
+        };
+      }
+      if (
+        current.status === "retry_wait" &&
+        current.nextRetryAt !== null &&
+        current.nextRetryAt > input.admittedAt
+      ) {
+        return {
+          occurrence: current,
+          outcome: "blocked" as const,
+          reasonCode: "RETRY_NOT_DUE" as const,
+        };
+      }
+      if (
+        !["queued", "retry_wait", "budget_blocked", "capacity_blocked"].includes(current.status)
+      ) {
+        this.fail("PORT_INVALID_OPERATION", `Occurrence ${input.occurrenceId} cannot be admitted`);
+      }
+      const admittedAt = new Date(input.admittedAt);
+      if (Number.isNaN(admittedAt.valueOf()) || admittedAt.toISOString() !== input.admittedAt) {
+        this.fail("PORT_INVALID_OPERATION", "Background admission time is invalid");
+      }
+      if (input.admittedAt >= current.deadlineAt) {
+        const expired: BackgroundOccurrence = {
+          ...current,
+          revision: current.revision + 1,
+          status: "failed_terminal",
+          authority: input.authority,
+          runId: input.runId,
+          reservedCostMicros: 0,
+          nextRetryAt: null,
+          lastErrorCode: "DEADLINE_EXCEEDED",
+        };
+        this.writeOccurrence(expired);
+        return {
+          occurrence: expired,
+          outcome: "deadline_exceeded" as const,
+          reasonCode: "DEADLINE_EXCEEDED" as const,
+        };
+      }
+      const limits = input.limits;
+      const positiveCapacity =
+        Number.isSafeInteger(limits.totalRuns) &&
+        limits.totalRuns > 0 &&
+        Number.isSafeInteger(limits.foregroundReserved) &&
+        limits.foregroundReserved >= 0 &&
+        limits.foregroundReserved <= limits.totalRuns;
+      const budgets = [
+        limits.globalCostMicros,
+        limits.perRunCostMicros,
+        limits.perClassificationCostMicros.public,
+        limits.perClassificationCostMicros.private,
+        limits.perClassificationCostMicros.sensitive,
+        limits.perClassificationCostMicros.restricted,
+      ];
+      if (
+        !positiveCapacity ||
+        !budgets.every((value) => Number.isSafeInteger(value) && value >= 0)
+      ) {
+        this.fail("PORT_INVALID_OPERATION", "Background admission limits are invalid");
+      }
+      let reasonCode: BackgroundAdmissionResult["reasonCode"] | null = null;
+      const activeForJob = this.database
+        .prepare(
+          `SELECT COUNT(*) FROM job_occurrences WHERE job_id = ? AND id <> ?
+            AND run_id IS NOT NULL AND status IN (
+              'admitted', 'running', 'retry_wait', 'blocked_credentials', 'blocked_approval'
+            )`,
+        )
+        .pluck()
+        .get(current.jobId, current.id) as number;
+      const unsafeActiveForJob = this.database
+        .prepare(
+          `SELECT COUNT(*) FROM job_occurrences WHERE job_id = ? AND id <> ?
+            AND run_id IS NOT NULL AND parallel_safe = 0 AND status IN (
+              'admitted', 'running', 'retry_wait', 'blocked_credentials', 'blocked_approval'
+            )`,
+        )
+        .pluck()
+        .get(current.jobId, current.id) as number;
+      if ((!current.parallelSafe || unsafeActiveForJob > 0) && activeForJob > 0) {
+        reasonCode = "JOB_ALREADY_ACTIVE";
+      }
+
+      const capacity = this.database
+        .prepare(
+          `SELECT COUNT(*) AS total,
+            COALESCE(SUM(CASE WHEN foreground = 0 THEN 1 ELSE 0 END), 0) AS background
+          FROM job_occurrences WHERE owner_id = ? AND agent_id = ?
+            AND status IN ('admitted', 'running')`,
+        )
+        .get(current.ownerId, current.agentId) as {
+        readonly total: number;
+        readonly background: number;
+      };
+      if (!reasonCode && capacity.total >= limits.totalRuns) {
+        reasonCode = "TOTAL_CAPACITY_EXHAUSTED";
+      }
+      if (
+        !reasonCode &&
+        !current.foreground &&
+        capacity.background >= limits.totalRuns - limits.foregroundReserved
+      ) {
+        reasonCode = "FOREGROUND_CAPACITY_RESERVED";
+      }
+      const categoryLimit = limits.perCategory[current.category];
+      if (categoryLimit !== undefined) {
+        if (!Number.isSafeInteger(categoryLimit) || categoryLimit < 0) {
+          this.fail("PORT_INVALID_OPERATION", `Category ${current.category} limit is invalid`);
+        }
+        const categoryActive = this.database
+          .prepare(
+            `SELECT COUNT(*) FROM job_occurrences WHERE owner_id = ? AND agent_id = ?
+              AND category = ? AND status IN ('admitted', 'running')`,
+          )
+          .pluck()
+          .get(current.ownerId, current.agentId, current.category) as number;
+        if (!reasonCode && categoryActive >= categoryLimit) {
+          reasonCode = "CATEGORY_CAPACITY_EXHAUSTED";
+        }
+      }
+
+      const usage = this.database
+        .prepare(
+          `SELECT COALESCE(SUM(reserved_cost_micros + spent_cost_micros), 0) AS globalUsed,
+            COALESCE(SUM(CASE WHEN data_classification = ?
+              THEN reserved_cost_micros + spent_cost_micros ELSE 0 END), 0) AS classificationUsed
+          FROM job_occurrences WHERE owner_id = ? AND agent_id = ? AND id <> ?`,
+        )
+        .get(current.dataClassification, current.ownerId, current.agentId, current.id) as {
+        readonly globalUsed: number;
+        readonly classificationUsed: number;
+      };
+      if (
+        !reasonCode &&
+        current.spentCostMicros + current.estimatedCostMicros > limits.perRunCostMicros
+      ) {
+        reasonCode = "RUN_BUDGET_EXCEEDED";
+      }
+      if (
+        !reasonCode &&
+        usage.globalUsed + current.spentCostMicros + current.estimatedCostMicros >
+          limits.globalCostMicros
+      ) {
+        reasonCode = "GLOBAL_BUDGET_EXHAUSTED";
+      }
+      if (
+        !reasonCode &&
+        usage.classificationUsed + current.spentCostMicros + current.estimatedCostMicros >
+          limits.perClassificationCostMicros[current.dataClassification]
+      ) {
+        reasonCode = "CLASSIFICATION_BUDGET_EXHAUSTED";
+      }
+
+      const blockedByBudget =
+        reasonCode === "RUN_BUDGET_EXCEEDED" ||
+        reasonCode === "GLOBAL_BUDGET_EXHAUSTED" ||
+        reasonCode === "CLASSIFICATION_BUDGET_EXHAUSTED";
+      const stored: BackgroundOccurrence = {
+        ...current,
+        revision: current.revision + 1,
+        status: reasonCode ? (blockedByBudget ? "budget_blocked" : "capacity_blocked") : "admitted",
+        authority: input.authority,
+        runId: input.runId,
+        reservedCostMicros: reasonCode ? 0 : current.estimatedCostMicros,
+        nextRetryAt: null,
+        lastErrorCode: reasonCode,
+      };
+      this.writeOccurrence(stored);
+      const result: BackgroundAdmissionResult = {
+        occurrence: stored,
+        outcome: reasonCode
+          ? blockedByBudget
+            ? ("budget_blocked" as const)
+            : ("capacity_blocked" as const)
+          : ("admitted" as const),
+        reasonCode: reasonCode ?? "ADMITTED",
+      };
+      return result;
+    });
+    return transaction.immediate();
+  }
+
+  private claimOccurrence(input: BackgroundOccurrenceClaim): BackgroundOccurrence {
+    this.assertDiskHeadroom();
+    const transaction = this.database.transaction(() => {
+      const current = this.readOccurrence(input.occurrenceId);
+      if (!current) this.fail("PORT_NOT_FOUND", `Occurrence ${input.occurrenceId} not found`);
+      this.assertBackgroundFence(current.ownerId, current.agentId, input.authority);
+      if (current.revision !== input.expectedRevision) {
+        this.fail("PORT_CONFLICT", `Occurrence ${input.occurrenceId} revision conflict`);
+      }
+      const claimedAt = new Date(input.claimedAt);
+      const expiresAt = new Date(input.expiresAt);
+      if (
+        Number.isNaN(claimedAt.valueOf()) ||
+        claimedAt.toISOString() !== input.claimedAt ||
+        Number.isNaN(expiresAt.valueOf()) ||
+        expiresAt.toISOString() !== input.expiresAt ||
+        expiresAt <= claimedAt ||
+        input.expiresAt > current.deadlineAt
+      ) {
+        this.fail("PORT_INVALID_OPERATION", "Background work lease is invalid");
+      }
+      const reclaiming =
+        current.status === "running" &&
+        current.workLease !== null &&
+        current.workLease.expiresAt <= input.claimedAt;
+      if (current.status !== "admitted" && !reclaiming) {
+        this.fail("PORT_CONFLICT", `Occurrence ${input.occurrenceId} is not claimable`);
+      }
+      const claimed: BackgroundOccurrence = {
+        ...current,
+        revision: current.revision + 1,
+        status: "running",
+        authority: input.authority,
+        attemptCount: current.attemptCount + 1,
+        workLease: {
+          id: input.leaseId,
+          holderId: input.holderId,
+          acquiredAt: input.claimedAt,
+          expiresAt: input.expiresAt,
+        },
+        lastErrorCode: reclaiming ? "WORK_LEASE_EXPIRED" : null,
+      };
+      this.writeOccurrence(claimed);
+      return claimed;
+    });
+    return transaction.immediate();
+  }
+
+  private settleOccurrence(input: BackgroundOccurrenceSettlement): BackgroundOccurrence {
+    this.assertDiskHeadroom();
+    const transaction = this.database.transaction(() => {
+      const current = this.readOccurrence(input.occurrenceId);
+      if (!current) this.fail("PORT_NOT_FOUND", `Occurrence ${input.occurrenceId} not found`);
+      this.assertBackgroundFence(current.ownerId, current.agentId, input.authority);
+      if (
+        current.revision !== input.expectedRevision ||
+        current.status !== "running" ||
+        current.workLease?.id !== input.leaseId
+      ) {
+        this.fail("PORT_CONFLICT", `Occurrence ${input.occurrenceId} cannot settle`);
+      }
+      if (!Number.isSafeInteger(input.spentCostMicros) || input.spentCostMicros < 0) {
+        this.fail("PORT_INVALID_OPERATION", "Background settlement cost is invalid");
+      }
+      const settledAt = new Date(input.settledAt);
+      if (Number.isNaN(settledAt.valueOf()) || settledAt.toISOString() !== input.settledAt) {
+        this.fail("PORT_INVALID_OPERATION", "Background settlement time is invalid");
+      }
+      let status: BackgroundOccurrence["status"];
+      let nextRetryAt: string | null = null;
+      let errorCode = input.errorCode;
+      if (input.outcome === "completed" && input.spentCostMicros <= current.reservedCostMicros) {
+        status = "completed";
+        errorCode = null;
+      } else if (input.outcome === "model_blocked") {
+        status = "blocked_approval";
+        errorCode = input.errorCode ?? "MODEL_BLOCKED";
+      } else if (input.outcome === "external_result_unknown") {
+        status = "retry_wait";
+        errorCode = input.errorCode ?? "EXTERNAL_RESULT_UNKNOWN";
+      } else if (input.spentCostMicros > current.reservedCostMicros) {
+        status = "failed_terminal";
+        errorCode = "RUN_BUDGET_EXCEEDED";
+      } else if (input.failureClass === "credential") {
+        status = "blocked_credentials";
+      } else if (input.failureClass === "authorization") {
+        status = "blocked_approval";
+      } else if (input.failureClass === "policy" || input.failureClass === "invalid_input") {
+        status = "failed_terminal";
+      } else if (input.failureClass === "transport" || input.failureClass === "provider") {
+        const retry = input.retry;
+        const retryValid =
+          Number.isSafeInteger(retry.maxAttempts) &&
+          retry.maxAttempts >= 1 &&
+          Number.isSafeInteger(retry.baseDelayMs) &&
+          retry.baseDelayMs >= 1 &&
+          Number.isSafeInteger(retry.maxDelayMs) &&
+          retry.maxDelayMs >= retry.baseDelayMs &&
+          Number.isSafeInteger(retry.jitterSeed) &&
+          retry.jitterSeed >= 0;
+        if (!retryValid) this.fail("PORT_INVALID_OPERATION", "Retry policy is invalid");
+        const exponential = Math.min(
+          retry.maxDelayMs,
+          retry.baseDelayMs * 2 ** Math.max(0, current.attemptCount - 1),
+        );
+        const jitter = Math.floor((exponential * (retry.jitterSeed % 201)) / 1000);
+        const retryAt = new Date(settledAt.valueOf() + exponential + jitter);
+        if (
+          current.attemptCount < retry.maxAttempts &&
+          retryAt.toISOString() < current.deadlineAt
+        ) {
+          status = "retry_wait";
+          nextRetryAt = retryAt.toISOString();
+        } else {
+          status = "failed_terminal";
+        }
+      } else {
+        status = "failed_terminal";
+      }
+      const settled: BackgroundOccurrence = {
+        ...current,
+        revision: current.revision + 1,
+        status,
+        authority: input.authority,
+        reservedCostMicros: 0,
+        spentCostMicros: current.spentCostMicros + input.spentCostMicros,
+        nextRetryAt,
+        workLease: null,
+        lastErrorCode: errorCode,
+      };
+      this.writeOccurrence(settled);
+      return settled;
+    });
+    return transaction.immediate();
+  }
+
+  private listOccurrencesByJob(input: {
+    jobId: JobId;
+    limit: number;
+  }): readonly BackgroundOccurrence[] {
+    assertLimit(input.limit, this.fail);
+    return (
+      this.database
+        .prepare(`${this.occurrenceSelect()} WHERE job_id = ? ORDER BY id LIMIT ?`)
+        .all(input.jobId, input.limit) as BackgroundOccurrenceRow[]
+    ).map((row) => this.occurrenceFromRow(row));
+  }
+
+  private listRecoverableOccurrences(input: {
+    ownerId: string;
+    agentId: string;
+    now: string;
+    limit: number;
+  }): readonly BackgroundOccurrence[] {
+    assertLimit(input.limit, this.fail);
+    return (
+      this.database
+        .prepare(
+          `${this.occurrenceSelect()} WHERE owner_id = ? AND agent_id = ? AND (
+            status IN ('queued', 'admitted', 'blocked_credentials', 'blocked_approval',
+              'budget_blocked', 'capacity_blocked')
+            OR (status = 'retry_wait' AND (next_retry_at IS NULL OR next_retry_at <= ?))
+            OR (status = 'running' AND work_lease_expires_at <= ?)
+          ) ORDER BY deadline_at, id LIMIT ?`,
+        )
+        .all(
+          input.ownerId,
+          input.agentId,
+          input.now,
+          input.now,
+          input.limit,
+        ) as BackgroundOccurrenceRow[]
+    ).map((row) => this.occurrenceFromRow(row));
   }
 
   private readAttentionPolicy(input: { ownerId: string; agentId: string }): AttentionPolicyState {
