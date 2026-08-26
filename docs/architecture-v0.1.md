@@ -12,7 +12,7 @@ date: "2026-08-25"
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e、Pi compatibility、browser、admin CLI、Node services 和 workspace scaffold 九个可独立选择的测试项目。
 
-当前代码包含十四个 workspace。`packages/domain` 实现不可变身份、所有权规则、Run 状态机、Agent 权威租约，以及 deployment/fence、消息/检查点、产品 session/device、后台 job/occurrence、Memory generation/lifecycle、GitHub receipt/coverage gap、恢复点/transfer 和 health 状态；两类 contracts 保留首版 `gateway.v1` 与 `execution.v1`，并新增显式 `gateway.v2` 与 `execution.v2`；`packages/application` 实现产品端口、Gateway、Run/Worker 编排、可靠事件、Trace、授权、记忆、模型、调度、Attention 和外部结果对账；`packages/platform-node` 与 `packages/runtime-pi` 分别实现可信模型 Provider 边界和 Pi Agent Runtime 适配器；`packages/testing` 提供 conformance suites、内存参考适配器、牛肉餐厅夹具和故障注入器。新增的 `packages/persistence-sqlite`、`packages/memory-mem0` 和 `packages/integration-github` 已建立独立 manifest、TypeScript、export 与测试边界，目前只公开产品自有的 adapter 描述，不声称生产 adapter 已实现。
+当前代码包含十四个 workspace。`packages/domain` 实现不可变身份、所有权规则、Run 状态机、Agent 权威租约，以及 deployment/fence、消息/检查点、产品 session/device、后台 job/occurrence、Memory generation/lifecycle、GitHub receipt/coverage gap、恢复点/transfer 和 health 状态；两类 contracts 保留首版 `gateway.v1` 与 `execution.v1`，并新增显式 `gateway.v2` 与 `execution.v2`；`packages/application` 实现产品端口、Gateway、Run/Worker 编排、可靠事件、Trace、授权、记忆、模型、调度、Attention 和外部结果对账；`packages/platform-node` 与 `packages/runtime-pi` 分别实现可信模型 Provider 边界和 Pi Agent Runtime 适配器；`packages/testing` 提供 conformance suites、内存参考适配器、牛肉餐厅夹具和故障注入器。`packages/persistence-sqlite` 已实现规范 schema、对象责任目录和不可变 migration 引擎；`packages/memory-mem0` 与 `packages/integration-github` 仍只有独立边界与 adapter 描述。三个 workspace 都尚未声称完成后续生产 repository/provider/integration 行为。
 
 `apps/agent-service` 现有可编程的本地前台组合根和严格 `gateway.v1` in-process transport；`apps/execution-worker` 现有独立启动、独立关闭的 `execution.v1` Worker 进程边界。组合根可替换 Gateway Control Plane/Read Model、Worker client 和 Secret Port，并把产品服务组合到同一可信前台进程。`apps/control-center` 已具有 browser-only React/Vite 构建入口，`apps/admin-cli` 已具有 offline-admin export 边界；两者仍是后续实现的最小脚手架，不是已完成的控制中心或可执行 CLI。
 
@@ -136,6 +136,14 @@ HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 
 当前保证只由内存参考适配器和可复用 conformance suite 验证，不代表生产跨进程耐久性、加密强度或隔离已经实现。生产 Memory 检索、真实模型 Provider/传输与 Secret material source、Capability 生产沙箱/传输、生产删除、Scheduler 与 Delivery 适配器和生产持久化仍属于后续 Plan 任务。
 
+### SQLite schema and immutable migrations
+
+`packages/persistence-sqlite` 现在以两个连续 SQL migration 建立 40 个产品表及 2 个内部治理表。产品表规范化保存 Owner/Agent、deployment/authority、Thread/Run、session/device、approval/Grant、capability、command result/outbox、Trace/audit、Task/Attention、Memory、GitHub、删除、恢复点与存储健康状态；foreign key、唯一键、revision、authority epoch/fencing token 和稳定幂等键在 schema 层形成第一道约束。`schemaCatalog` 为每个表固定产品端口、生命周期、加密或 Payload 引用分类、删除关系和 migration owner，不能用供应商表替代产品权威状态。
+
+迁移 ledger 持久化连续 `sequence`、`name`、`phase`、SQL SHA-256 与应用时间。loader 验证定义连续性和 digest；启动会拒绝历史内容不匹配、ledger 空洞、未知已应用 migration、未来 schema 及过旧 writer。`expand → backfill → verify → contract` 是受检查的单向 change-set 阶段，系统不提供自动数据库 downgrade。
+
+真实文件连接固定 `foreign_keys=ON`、本地 WAL、`synchronous=FULL`、5000 ms busy timeout 和 1000 页自动 checkpoint，并要求 SQLite 至少为 `3.51.3` 且 `quick_check` 成功。已有 schema 执行下一 migration 前必须提供由 SQLite backup API 创建、完整性检查通过、绑定当前主机、源路径、schema sequence 和文件 digest 的同机 snapshot；fresh create、连续升级、重复运行、并发 contention、损坏 ledger、未来 schema 与旧 writer 已由真实 SQLite 文件契约测试覆盖。当前 migration 引擎仍由调用方直接使用；专用 execution context、state-root lock、单 writer queue、原子产品 transaction 和生产 repositories 属于后续任务。[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
+
 ### Session Trace, protected Payload and deletion propagation
 
 `SessionTraceRecorder` 生成 `trace.v1` 信封并由 Trace Store 强制校验 Run 内严格连续序号、稳定 Run scope、父事件归属及已有因果事件的相关关系。事件正文不内嵌模型输入、工具结果或审批快照，而是在写入前转换为产品 JSON、脱敏、交给 `PayloadProtectorPort`，最后只保存 Payload 引用。无法确认安全转换的负载不会写入 Payload；Trace 改写为不含原文的 `trace.redaction_failed`，并留下最小失败审计记录。
@@ -245,18 +253,18 @@ npm ci --ignore-scripts
   → drain new admission and await in-flight Run settlement on shutdown
 ```
 
-Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi compatibility、独立 workspace 项目和严格文档验证。当前确定性测试集包含 121 个 unit、93 个 contract、241 个 integration、3 个 E2E 和 6 个 Pi compatibility 测试；其中 integration 增量主要是完整非法依赖方向和产品类型隔离 probes。E2E 与恢复测试不访问网络、付费模型、外部账户或生产凭据。
+Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi compatibility、独立 workspace 项目和严格文档验证。当前确定性测试集包含 121 个 unit、101 个 contract、241 个 integration、3 个 E2E 和 6 个 Pi compatibility 测试；其中 SQLite contract 使用临时真实文件，不访问网络、付费模型、外部账户或生产凭据。
 
 ## Known Limitations
 
 - `apps/agent-service` 和 `apps/execution-worker` 只公开程序化 process/composition API；没有 `npm start`、socket/HTTP listener、daemon packaging、service manager 或生产 readiness endpoint。
-- `persistence-sqlite`、`memory-mem0` 和 `integration-github` 只有经过双平台 preflight 的精确依赖与 workspace 边界，尚未实现真实数据库、Memory 或 GitHub adapter；`control-center` 只渲染构建占位页，`admin-cli` 也没有可执行命令入口。
+- `persistence-sqlite` 已实现真实 schema、migration ledger、snapshot gate 和 SQLite runtime qualification，但尚未实现专用 execution context、state-root lock、transaction repository、生产 Payload 加密或完整 adapter；`memory-mem0` 和 `integration-github` 仍只有经过双平台 preflight 的精确依赖与 workspace 边界。`control-center` 只渲染构建占位页，`admin-cli` 也没有可执行命令入口。
 - 默认 local composition 使用 `packages/testing` 的内存 State、Memory、Trace、Authorization、Scheduler、Delivery 和 Gateway read model；进程退出后数据丢失，且不提供跨进程 transaction、加密强度、高可用或灾难恢复。
 - Pi adapter 已通过 published `0.84.2` 与 local-source compatibility，但牛肉餐厅 E2E 使用确定性 Model/Capability，不调用真实模型、地图或预订供应商。
 - Execution Worker 在本地配置中保持独立 service object 和协议边界，但尚无真实进程间 transport、sandbox、resource limits 或不可信 MCP 隔离。
 - Session deletion 已验证四类抽象 target 的 incomplete/resume/verified 语义；尚无把真实生产 Payload、search、cache 和 archive 全部接入同一次删除的实现。
 - Gateway command 已保证认证/授权/Control Plane 委派边界；默认 `InMemoryGatewayControlPlane` 不实现生产 Thread/Run/Approval command handler，Read Model 也由测试夹具显式填充。
-- `gateway.v2`、`execution.v2` 和新增 application ports 目前是冻结的产品契约；HTTP/SSE、UDS、身份断言、SQLite、Mem0、GitHub、backup/transfer 和 health adapters 尚未实现或组合进服务。
+- `gateway.v2`、`execution.v2` 和新增 application ports 目前是冻结的产品契约；HTTP/SSE、UDS、身份断言、SQLite repositories、Mem0、GitHub、backup/transfer 和 health adapters 尚未实现或组合进服务。
 - 生产 Secrets Vault、Provider material source、通知客户端、远程 Worker、持久 Scheduler 和网络 Gateway 均未实现。本版本不应描述为可生产部署。
 
 ## Backlog Links

@@ -185,12 +185,16 @@ v1 strict parsers 无法在不改变既有接受集合的情况下安全加入�
 
 ### Task 5：冻结 SQLite schema 与不可变 migration 机制
 
-- [ ] 从 Spec 的 schema 分组建立规范化表、foreign keys、unique constraints、revision/CAS、authority fence、outbox、Payload ownership、deletion tombstone 和 migration ledger。
-- [ ] 为每个 schema 对象写明产品端口、生命周期、加密分类、删除关系、迁移与恢复责任；禁止出现无法追溯到产品模型的供应商权威表。
-- [ ] 实现带 sequence、name 和 SHA-256 digest 的 immutable migration loader；历史 migration 内容改变、顺序缺口、未知已应用 migration 或 digest mismatch 必须拒绝启动。
-- [ ] 固定 `foreign_keys=ON`、本地磁盘 WAL、authority/product commit `synchronous=FULL`、有界 busy timeout 与受控 checkpoint policy。
-- [ ] 实现 expand/backfill/verify/contract migration 骨架，并在迁移前要求一致、已验证的同机 snapshot；应用回滚不得自动执行数据库 downgrade。
-- [ ] 用真实 SQLite 文件验证 fresh create、连续 upgrade、重复执行、并发启动、损坏 ledger、未知新 schema 和旧二进制拒绝写入。
+- [x] 从 Spec 的 schema 分组建立规范化表、foreign keys、unique constraints、revision/CAS、authority fence、outbox、Payload ownership、deletion tombstone 和 migration ledger。
+- [x] 为每个 schema 对象写明产品端口、生命周期、加密分类、删除关系、迁移与恢复责任；禁止出现无法追溯到产品模型的供应商权威表。
+- [x] 实现带 sequence、name 和 SHA-256 digest 的 immutable migration loader；历史 migration 内容改变、顺序缺口、未知已应用 migration 或 digest mismatch 必须拒绝启动。
+- [x] 固定 `foreign_keys=ON`、本地磁盘 WAL、authority/product commit `synchronous=FULL`、有界 busy timeout 与受控 checkpoint policy。
+- [x] 实现 expand/backfill/verify/contract migration 骨架，并在迁移前要求一致、已验证的同机 snapshot；应用回滚不得自动执行数据库 downgrade。
+- [x] 用真实 SQLite 文件验证 fresh create、连续 upgrade、重复执行、并发启动、损坏 ledger、未知新 schema 和旧二进制拒绝写入。
+
+Task 5 以 40 个产品表和 2 个内部治理表冻结首版 SQLite schema；`schemaCatalog` 逐表记录产品端口、生命周期、加密/Payload 分类、删除关系和 migration owner。两个连续 SQL migration 的 SHA-256 进入不可变 ledger，loader 与启动检查会拒绝 gap、历史 digest 改变、损坏 ledger、未知未来 schema 和旧 writer；change set 只允许沿 `expand → backfill → verify → contract` 前进，不提供自动 downgrade。
+
+真实文件连接固定 foreign keys、WAL、FULL synchronous、5000 ms busy timeout 和 1000 页 checkpoint policy。已有 schema 升级前必须提供 SQLite backup API 生成并经 integrity、主机、源路径、sequence 与 digest 验证的同机 snapshot。契约测试覆盖 fresh create、1→2 连续升级、重复执行、并发锁竞争、外键、幂等结果、Outbox、Payload ownership 与删除墓碑；实现与验证证据位于 `test/integration/qualification/evidence/s1-task5-sqlite-schema.json`。专用 execution context、state-root lock、单 writer transaction 与生产 repositories 从 Task 6–7 实现。
 
 ### Task 6：实现 SQLite 连接隔离、事务与权威 fencing
 

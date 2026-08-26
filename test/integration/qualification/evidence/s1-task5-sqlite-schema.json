@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T12:50:23Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T05",
+  "candidateRevision": "b060039f1282fb76d3918f7bb402c8ec9d685074",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 5,
+    "behind": 0,
+    "status": "clean"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "sqlite": "3.53.2",
+    "minimumQualifiedSqlite": "3.51.3",
+    "schemaObjectCount": 42,
+    "migrationCount": 2,
+    "migration0001Sha256": "cd94294a35f8161e7bcd80b64fdcc46f49b35fc0f8ed3adc31db02020089085d",
+    "migration0002Sha256": "363dedb5fb35e0b2e9c15b0573b98b65d6411fe731b749cb2ad1f4f57db92c4f",
+    "externalCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npm run test:contracts",
+      "exitStatus": 0,
+      "result": "101 contract tests passed, including 8 real-file SQLite schema and immutable migration tests"
+    },
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, Node/browser typecheck, 14-workspace dependency boundaries and v0.2 coverage passed"
+    },
+    {
+      "command": "npm test && npm run check:pi-compat",
+      "exitStatus": 0,
+      "result": "121 unit, 101 contract, 241 integration, 3 E2E and 6 Pi compatibility tests passed"
+    },
+    {
+      "command": "npm run build:node",
+      "exitStatus": 0,
+      "result": "the Node TypeScript graph including the SQLite migration engine built successfully"
+    }
+  ],
+  "verificationSummary": [
+    "40 个产品表及 2 个内部治理表具有 foreign keys、唯一约束、revision/CAS 字段、authority fence、稳定幂等结果、Outbox、Payload ownership、删除墓碑和恢复标记。",
+    "schemaCatalog 为每个对象固定产品端口、生命周期、加密/Payload 分类、删除关系和 migration owner，没有供应商权威表。",
+    "连续 migration 以 sequence、name、phase 与 SQL SHA-256 入 ledger；定义 gap、phase 倒退、历史 digest 改变、损坏 ledger 和未知未来 schema 均 fail closed。",
+    "真实 SQLite 文件固定 foreign_keys=ON、WAL、synchronous=FULL、5000 ms busy timeout、1000 页 checkpoint，并通过 quick_check。",
+    "已有 schema 迁移要求 SQLite backup API 生成且绑定当前主机、源路径、schema sequence 与文件 digest 的已验证同机 snapshot；没有自动 downgrade 路径。"
+  ],
+  "unverified": [
+    "专用 persistence execution context、state-root 独占锁、单 writer queue、authority transaction 与 kill/restart WAL recovery 属于 Task 6。",
+    "生产 repositories、Outbox publisher、持久 Read Model、加密 Payload 和正式恢复点保留策略属于 Task 7–9。",
+    "本任务未执行生产 state-root migration，也未在 Mac 或 Hermes 安装、启动或修改服务。"
+  ],
+  "externalEffects": [
+    "测试只在操作系统临时目录创建并由测试清理 SQLite 数据库与 snapshot。",
+    "未访问网络、未调用模型、未读取生产秘密、未修改外部账户且未触碰 Mac/Hermes 服务状态。"
+  ],
+  "implementationCommit": null
+}
