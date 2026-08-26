@@ -16,6 +16,19 @@ export type TriggerId = Identifier<"TriggerId">;
 export type IdempotencyKey = Identifier<"IdempotencyKey">;
 export type AuthorityLeaseId = Identifier<"AuthorityLeaseId">;
 export type AuthorityHolderId = Identifier<"AuthorityHolderId">;
+export type DeploymentId = Identifier<"DeploymentId">;
+export type MessageId = Identifier<"MessageId">;
+export type CheckpointJobId = Identifier<"CheckpointJobId">;
+export type MemoryGenerationId = Identifier<"MemoryGenerationId">;
+export type MemoryId = Identifier<"MemoryId">;
+export type DeviceId = Identifier<"DeviceId">;
+export type JobId = Identifier<"JobId">;
+export type OccurrenceId = Identifier<"OccurrenceId">;
+export type GitHubReceiptId = Identifier<"GitHubReceiptId">;
+export type CoverageGapId = Identifier<"CoverageGapId">;
+export type BackupId = Identifier<"BackupId">;
+export type TransferId = Identifier<"TransferId">;
+export type HealthSnapshotId = Identifier<"HealthSnapshotId">;
 
 const MACHINE_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -69,4 +82,56 @@ export function createAuthorityLeaseId(value: string): AuthorityLeaseId {
 
 export function createAuthorityHolderId(value: string): AuthorityHolderId {
   return createIdentifier(value, "AuthorityHolderId");
+}
+
+export function createDeploymentId(value: string): DeploymentId {
+  return createIdentifier(value, "DeploymentId");
+}
+
+export function createMessageId(value: string): MessageId {
+  return createIdentifier(value, "MessageId");
+}
+
+export function createCheckpointJobId(value: string): CheckpointJobId {
+  return createIdentifier(value, "CheckpointJobId");
+}
+
+export function createMemoryGenerationId(value: string): MemoryGenerationId {
+  return createIdentifier(value, "MemoryGenerationId");
+}
+
+export function createMemoryId(value: string): MemoryId {
+  return createIdentifier(value, "MemoryId");
+}
+
+export function createDeviceId(value: string): DeviceId {
+  return createIdentifier(value, "DeviceId");
+}
+
+export function createJobId(value: string): JobId {
+  return createIdentifier(value, "JobId");
+}
+
+export function createOccurrenceId(value: string): OccurrenceId {
+  return createIdentifier(value, "OccurrenceId");
+}
+
+export function createGitHubReceiptId(value: string): GitHubReceiptId {
+  return createIdentifier(value, "GitHubReceiptId");
+}
+
+export function createCoverageGapId(value: string): CoverageGapId {
+  return createIdentifier(value, "CoverageGapId");
+}
+
+export function createBackupId(value: string): BackupId {
+  return createIdentifier(value, "BackupId");
+}
+
+export function createTransferId(value: string): TransferId {
+  return createIdentifier(value, "TransferId");
+}
+
+export function createHealthSnapshotId(value: string): HealthSnapshotId {
+  return createIdentifier(value, "HealthSnapshotId");
 }

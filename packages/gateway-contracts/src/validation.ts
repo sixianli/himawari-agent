@@ -57,6 +57,13 @@ export const machineString: Schema<string> = {
   },
 };
 
+export const booleanValue: Schema<boolean> = {
+  parse(input, path = "$") {
+    if (typeof input !== "boolean") fail(path, "expected a boolean");
+    return input;
+  },
+};
+
 export const timestamp: Schema<string> = {
   parse(input, path = "$") {
     if (typeof input !== "string") fail(path, "expected an RFC 3339 timestamp string");

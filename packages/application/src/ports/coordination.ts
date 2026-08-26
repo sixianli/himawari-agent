@@ -8,6 +8,11 @@ import type {
   ThreadId,
 } from "@himawari-agent/domain";
 import type { AdmitTriggerCommand } from "@himawari-agent/gateway-contracts";
+import type {
+  ExecutionV2Event,
+  ExecutionV2Request,
+  ExecutionV2Response,
+} from "@himawari-agent/execution-contracts";
 import type { DataClassification, PayloadRef } from "./common.js";
 
 export interface WorkerRunBudget {
@@ -69,6 +74,11 @@ export type WorkerRunEvent =
 export interface WorkerRunPort {
   run(request: WorkerRunRequest): AsyncIterable<WorkerRunEvent>;
   cancel(workerRunId: string, reasonCode: string): Promise<void>;
+}
+
+export interface ExecutionTransportPort {
+  request(message: ExecutionV2Request): Promise<ExecutionV2Response | null>;
+  events(afterCursor: string | null): AsyncIterable<ExecutionV2Event>;
 }
 
 export interface ScheduledJob {

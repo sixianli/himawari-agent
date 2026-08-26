@@ -12,7 +12,7 @@ date: "2026-08-25"
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e、Pi compatibility、browser、admin CLI、Node services 和 workspace scaffold 九个可独立选择的测试项目。
 
-当前代码包含十四个 workspace。`packages/domain` 实现不可变身份、所有权规则、Run 状态机与 Agent 权威租约；两类 contracts 固定 `gateway.v1` 与 `execution.v1`；`packages/application` 实现产品端口、Gateway、Run/Worker 编排、可靠事件、Trace、授权、记忆、模型、调度、Attention 和外部结果对账；`packages/platform-node` 与 `packages/runtime-pi` 分别实现可信模型 Provider 边界和 Pi Agent Runtime 适配器；`packages/testing` 提供 conformance suites、内存参考适配器、牛肉餐厅夹具和故障注入器。新增的 `packages/persistence-sqlite`、`packages/memory-mem0` 和 `packages/integration-github` 已建立独立 manifest、TypeScript、export 与测试边界，目前只公开产品自有的 adapter 描述，不声称生产 adapter 已实现。
+当前代码包含十四个 workspace。`packages/domain` 实现不可变身份、所有权规则、Run 状态机、Agent 权威租约，以及 deployment/fence、消息/检查点、产品 session/device、后台 job/occurrence、Memory generation/lifecycle、GitHub receipt/coverage gap、恢复点/transfer 和 health 状态；两类 contracts 保留首版 `gateway.v1` 与 `execution.v1`，并新增显式 `gateway.v2` 与 `execution.v2`；`packages/application` 实现产品端口、Gateway、Run/Worker 编排、可靠事件、Trace、授权、记忆、模型、调度、Attention 和外部结果对账；`packages/platform-node` 与 `packages/runtime-pi` 分别实现可信模型 Provider 边界和 Pi Agent Runtime 适配器；`packages/testing` 提供 conformance suites、内存参考适配器、牛肉餐厅夹具和故障注入器。新增的 `packages/persistence-sqlite`、`packages/memory-mem0` 和 `packages/integration-github` 已建立独立 manifest、TypeScript、export 与测试边界，目前只公开产品自有的 adapter 描述，不声称生产 adapter 已实现。
 
 `apps/agent-service` 现有可编程的本地前台组合根和严格 `gateway.v1` in-process transport；`apps/execution-worker` 现有独立启动、独立关闭的 `execution.v1` Worker 进程边界。组合根可替换 Gateway Control Plane/Read Model、Worker client 和 Secret Port，并把产品服务组合到同一可信前台进程。`apps/control-center` 已具有 browser-only React/Vite 构建入口，`apps/admin-cli` 已具有 offline-admin export 边界；两者仍是后续实现的最小脚手架，不是已完成的控制中心或可执行 CLI。
 
@@ -77,6 +77,8 @@ completed | failed | cancelled → no next state
 
 Agent 权威租约的领域模型是纯单槽位规则。同一 Agent 的同一 lease/holder 重申是幂等的；不同 lease 或 holder 同时声明会返回冲突；释放必须匹配当前 lease ID。时间、到期、续租和 fencing token 不进入纯领域实体，由 Authority Lease 端口及参考适配器处理；Task 5 的产品状态提交要求每个新写命令携带并匹配当前 lease ID 与 fencing token。
 
+持久 Web 基础新增的产品状态使用独立 branded IDs，供应商 identity 只作为 metadata：Mem0 provider record、外部身份 subject 和 GitHub delivery ID 都不能替代产品 Memory、Session 或 receipt ID。Deployment 只允许 `inactive_ready → active → retired_pending_transfer → retired`，激活必须提高 authority epoch 并使用正 fencing token；任何非 active、deployment 不匹配、epoch 不匹配或 token 不匹配都会返回 `DOMAIN_STALE_AUTHORITY_FENCE`。Thread checkpoint 重试保留同一 job/generation identity；job、occurrence、Memory generation/lifecycle、GitHub receipt/gap、recovery point 和 transfer 均有显式终态，不允许从完成、删除或 retired 状态复活。
+
 ## Wire Contracts
 
 `packages/gateway-contracts` 发布 `gateway.v1` 产品协议。它包含统一 Trigger admission，Thread 创建和关闭、Run 取消、语义审批响应，Thread/Run 快照查询、Trace 分页查询、可恢复事件订阅，Thread/Run 快照和有序流事件。Run 只能由统一 Trigger admission 启动；Gateway 不提供绕过触发接纳的新建 Run 命令。
@@ -84,6 +86,8 @@ Agent 权威租约的领域模型是纯单槽位规则。同一 Agent 的同一 
 Gateway 信封携带消息标识、schema 版本、相关关系、可空因果关系、数据等级、Owner/Agent scope 和 actor。所有改变状态的命令另带幂等键。流事件以 `messageId` 作为事件标识，并携带 cursor、Session、可选 Thread/Turn、Run、父事件、严格正数 Run 内序号、事件时间、写入时间、事件类型和可空 Payload 引用。
 
 `packages/execution-contracts` 发布 `execution.v1` Worker 协议。请求覆盖工作执行、取消和外部结果对账；事件覆盖进度、结果、取消确认和对账结果。所有请求包含幂等键，所有消息包含相关和因果标识、Owner/Agent/Run/Worker Run scope 及数据等级。工作执行只携带输入、委派上下文、短期能力句柄和秘密引用；结果和错误正文也通过引用或稳定机器码表达。
+
+由于 v1 parser 会拒绝未知字段和消息类型，持久 Web 扩展没有暗改 v1，而是分别发布 `gateway.v2` 与 `execution.v2` 和独立 JSON fixtures。`gateway.v2` 覆盖 Thread message/checkpoint、approval、task、inbox、Memory、Trace、product sessions/devices、health、collection snapshot 和 durable stream event；`execution.v2` 覆盖 Worker handshake/readiness、cursor replay、deadline、cancellation、resource ceiling、result 和 reconciliation。两个 v2 信封都携带 deployment/authority epoch/fence、数据等级、风险和授权引用；高风险或关键 mutation 缺授权、零 epoch/fence、不支持版本、未知字段或不匹配 outcome 一律 fail closed。正文、Worker 输入输出和秘密仍只通过 Payload/secret reference 传递。
 
 两类协议使用零外部依赖的运行时 schema，同时导出从 schema 推导的 TypeScript 类型。解析器要求精确字段、规范 UTC 毫秒时间戳、受限枚举和有界整数；未知字段、未知消息类型及不受支持的版本会返回带固定 `CONTRACT_VALIDATION_ERROR` code 和字段路径的错误。`public`、`private`、`sensitive`、`restricted` 是当前四个数据等级。v1 JSON 兼容性夹具固定首版 wire shape；在 v1 中添加未知字段不会被静默接受。
 
@@ -103,6 +107,11 @@ Attention           AttentionState     Delivery            AuthorityLease
 GatewayAccess       GatewayControlPlane                     GatewayReadModel
 ExternalActionReconciliation
 Clock               IdGenerator
+Configuration       PersistenceLifecycle     DeploymentAuthorityState
+ThreadMessage       ThreadCheckpoint         ProductMemoryState/Projection
+IdentityAssertion   SessionDeviceState       BackgroundWorkState
+GitHubIntegration/Read                      RecoveryPoint/AuthorityTransfer
+HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 ```
 
 端口值使用领域 branded identity、产品数据等级、稳定引用、JSON 值、`Uint8Array` Payload 和产品事件。`ApplicationPortError` 提供固定 `PORT_*` 错误码，使冲突、缺失、重复、非法操作、非权威写入、已撤销句柄和测试注入故障可以由应用层稳定分类。Secret Port 只签发与 Owner、Agent、Run、用途、scope 和期限绑定的 opaque handle；Agent Runtime、Model 和 Capability 事件只传 Payload 引用与机器错误码。
@@ -236,7 +245,7 @@ npm ci --ignore-scripts
   → drain new admission and await in-flight Run settlement on shutdown
 ```
 
-Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi compatibility、独立 workspace 项目和严格文档验证。当前确定性测试集包含 106 个 unit、69 个 contract、240 个 integration、3 个 E2E 和 6 个 Pi compatibility 测试；其中 integration 增量主要是完整非法依赖方向 probes。E2E 与恢复测试不访问网络、付费模型、外部账户或生产凭据。
+Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi compatibility、独立 workspace 项目和严格文档验证。当前确定性测试集包含 121 个 unit、93 个 contract、241 个 integration、3 个 E2E 和 6 个 Pi compatibility 测试；其中 integration 增量主要是完整非法依赖方向和产品类型隔离 probes。E2E 与恢复测试不访问网络、付费模型、外部账户或生产凭据。
 
 ## Known Limitations
 
@@ -247,6 +256,7 @@ Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi co
 - Execution Worker 在本地配置中保持独立 service object 和协议边界，但尚无真实进程间 transport、sandbox、resource limits 或不可信 MCP 隔离。
 - Session deletion 已验证四类抽象 target 的 incomplete/resume/verified 语义；尚无把真实生产 Payload、search、cache 和 archive 全部接入同一次删除的实现。
 - Gateway command 已保证认证/授权/Control Plane 委派边界；默认 `InMemoryGatewayControlPlane` 不实现生产 Thread/Run/Approval command handler，Read Model 也由测试夹具显式填充。
+- `gateway.v2`、`execution.v2` 和新增 application ports 目前是冻结的产品契约；HTTP/SSE、UDS、身份断言、SQLite、Mem0、GitHub、backup/transfer 和 health adapters 尚未实现或组合进服务。
 - 生产 Secrets Vault、Provider material source、通知客户端、远程 Worker、持久 Scheduler 和网络 Gateway 均未实现。本版本不应描述为可生产部署。
 
 ## Backlog Links

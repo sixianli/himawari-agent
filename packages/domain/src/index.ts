@@ -1,4 +1,5 @@
 export * from "./authority.js";
+export * from "./durable-state.js";
 export * from "./entities.js";
 export * from "./errors.js";
 export * from "./identifiers.js";

@@ -9,6 +9,10 @@ import type {
   StreamEvent,
   ThreadSnapshot,
   TraceQuery,
+  GatewayV2Command,
+  GatewayV2Event,
+  GatewayV2Query,
+  GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
 
 export interface GatewayAuthenticationContext {
@@ -66,4 +70,21 @@ export interface AgentGatewayPort {
     authentication: GatewayAuthenticationContext,
     subscription: EventSubscription,
   ): AsyncIterable<StreamEvent>;
+}
+
+export interface GatewayV2CommandExecution {
+  readonly authentication: GatewayAuthenticationContext;
+  readonly command: GatewayV2Command;
+}
+
+export interface GatewayV2ControlPlanePort {
+  execute(input: GatewayV2CommandExecution): Promise<GatewayCommandResult>;
+}
+
+export interface GatewayV2ReadModelPort {
+  query(query: GatewayV2Query): Promise<GatewayV2Snapshot>;
+  subscribe(input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly afterCursor: string | null;
+  }): AsyncIterable<GatewayV2Event>;
 }

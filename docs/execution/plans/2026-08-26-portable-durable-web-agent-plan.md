@@ -171,13 +171,17 @@ Task 3 把 workspace 从 9 个扩展到 14 个，并把 Node、browser、CLI、c
 
 ### Task 4：扩展产品领域、协议和端口
 
-- [ ] 先为 deployment、authority epoch/fence、Thread/message/checkpoint、browser session/device、job/occurrence、Memory generation、GitHub receipt/coverage gap、backup/transfer 和 health 状态编写 domain 与 contract tests。
-- [ ] 保留现有 Owner/Agent/Thread/Session/Run/Trigger 身份；新增稳定 product IDs 和显式状态机，不把数据库 row ID、Mem0 ID、Cloudflare subject 或 GitHub delivery ID 当作产品主键。
-- [ ] 扩展 `gateway.v1` 的 Thread/chat、approval、task、inbox、Memory、Trace、session/device 和 health 命令/查询/事件；若现有 v1 无法兼容，新增明确的新 schema version 与 fixture。
-- [ ] 扩展 `execution.v1` 的 handshake、readiness、cursor replay、deadline、cancellation、resource ceiling 和 reconcile 消息，并保持大正文只传 Payload reference。
-- [ ] 新增 persistence、configuration、identity assertion、session/device、Thread checkpoint、Memory projection、GitHub、backup/transfer 和 health ports；禁止 driver、HTTP framework、JWT、Mem0 或 GitHub SDK 类型进入 application/domain/contracts。
-- [ ] 对风险、授权、数据等级、secret exclusion、stale fence 和不支持 schema 编写 fail-closed contract tests。
-- [ ] 运行 domain、contract、type 和 boundary tests，冻结兼容 fixtures 后再进入 adapter 实现。
+- [x] 先为 deployment、authority epoch/fence、Thread/message/checkpoint、browser session/device、job/occurrence、Memory generation、GitHub receipt/coverage gap、backup/transfer 和 health 状态编写 domain 与 contract tests。
+- [x] 保留现有 Owner/Agent/Thread/Session/Run/Trigger 身份；新增稳定 product IDs 和显式状态机，不把数据库 row ID、Mem0 ID、Cloudflare subject 或 GitHub delivery ID 当作产品主键。
+- [x] 扩展 `gateway.v1` 的 Thread/chat、approval、task、inbox、Memory、Trace、session/device 和 health 命令/查询/事件；若现有 v1 无法兼容，新增明确的新 schema version 与 fixture。
+- [x] 扩展 `execution.v1` 的 handshake、readiness、cursor replay、deadline、cancellation、resource ceiling 和 reconcile 消息，并保持大正文只传 Payload reference。
+- [x] 新增 persistence、configuration、identity assertion、session/device、Thread checkpoint、Memory projection、GitHub、backup/transfer 和 health ports；禁止 driver、HTTP framework、JWT、Mem0 或 GitHub SDK 类型进入 application/domain/contracts。
+- [x] 对风险、授权、数据等级、secret exclusion、stale fence 和不支持 schema 编写 fail-closed contract tests。
+- [x] 运行 domain、contract、type 和 boundary tests，冻结兼容 fixtures 后再进入 adapter 实现。
+
+v1 strict parsers 无法在不改变既有接受集合的情况下安全加入新消息，因此 Task 4 保持原 `gateway.v1` / `execution.v1` fixtures 不变，并新增显式 `gateway.v2` 与 `execution.v2`。v2 信封固定 deployment/authority epoch/fence、数据等级、风险与授权引用；正文、Worker 输入输出和 secret 只传引用。协议与领域测试会拒绝缺授权的高风险请求、零或 stale fence、不支持 schema、未知字段、raw secret 和非法终态恢复。
+
+新增产品端口覆盖 persistence lifecycle、严格 configuration、identity assertion、product session/device、Thread message/checkpoint、Memory product state/projection、background work、GitHub receipt/gap/read、同机 recovery point、authority transfer、health 及 v2 Gateway/Worker transport。产品层 source scan 明确禁止 driver、HTTP framework、JWT、Mem0 与 GitHub SDK 类型。实现与验证证据位于 `test/integration/qualification/evidence/s1-task4-domain-contracts.json`。
 
 ### Task 5：冻结 SQLite schema 与不可变 migration 机制
 

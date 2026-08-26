@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T12:35:10Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T04",
+  "candidateRevision": "99964ed499a5fce40bcf97e2b2672c62cf514310",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 4,
+    "behind": 0,
+    "status": "clean"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "gatewayV2FixtureSha256": "d8b67990224816cf0017ac6e2c412c1ecf2b84c764bfc060b887a0d8dab44575",
+    "executionV2FixtureSha256": "cf8afcf5e4c9b68e600452acd0400ca705e152a668f3cca19c1863a2adb173d5",
+    "externalCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npm run test:unit",
+      "exitStatus": 0,
+      "result": "121 domain and application unit tests passed, including durable lifecycle and stale-fence rejection"
+    },
+    {
+      "command": "npm run test:contracts",
+      "exitStatus": 0,
+      "result": "93 contract tests passed across frozen gateway/execution v1 and explicit v2 fixtures"
+    },
+    {
+      "command": "npm run test:integration",
+      "exitStatus": 0,
+      "result": "241 integration tests passed, including product-owned type isolation scan"
+    },
+    {
+      "command": "npm run build:contracts",
+      "exitStatus": 0,
+      "result": "gateway and execution v1/v2 contracts built with zero Node or DOM type authority"
+    },
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, Node/browser typecheck, 14-workspace dependency boundaries and v0.2 coverage passed"
+    }
+  ],
+  "verificationSummary": [
+    "原有 Owner、Agent、Thread、Session、Run 与 Trigger IDs 保持不变；新增 deployment、message、checkpoint、device、job、occurrence、Memory、GitHub receipt/gap、backup、transfer 和 health snapshot 产品 IDs。",
+    "Deployment epoch/fence、Thread checkpoint、Memory generation/lifecycle、job/occurrence、GitHub receipt/gap、recovery point 和 transfer 使用显式且终态不可复活的领域转换。",
+    "严格 v1 wire fixtures 未修改；gateway.v2 与 execution.v2 分别冻结 18 和 12 个新消息类型。",
+    "高风险请求缺授权、非法数据等级、raw secret、零 epoch/fence、非法 outcome 和不支持 schema 均 fail closed。",
+    "application/domain/contracts source 不包含 SQLite driver、HTTP framework、JWT、Mem0 或 GitHub SDK 类型。"
+  ],
+  "unverified": [
+    "新 ports 尚无生产 adapter；SQLite schema、transaction 与 migration 从 Task 5 开始实现。",
+    "gateway.v2 尚未映射到 HTTP/SSE，execution.v2 尚未映射到 UDS 或真实 Worker 进程。",
+    "Cloudflare、GitHub、Mem0、backup/transfer 和 health 的真实平台行为属于后续任务与独立授权停止点。"
+  ],
+  "externalEffects": [
+    "本任务只修改仓库 source、fixtures、tests 和 governed documentation。",
+    "未安装新依赖、未调用模型、未读取生产秘密、未修改外部账户且未触碰 Mac/Hermes 服务状态。"
+  ],
+  "implementationCommit": null
+}
