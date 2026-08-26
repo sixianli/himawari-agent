@@ -252,12 +252,16 @@ startup coordinator 固定 11 个有序阶段，从 configuration 到 HTTP readi
 
 ### Task 10：实现 execution.v1 over UDS 与真实 Worker 进程
 
-- [ ] 先写 UDS transport contract tests，覆盖 `0700` runtime 目录、`0600` socket、boot-scoped token、schema handshake、body limit、deadline、cursor、取消和重连。
-- [ ] 在 Agent Service 实现 execution client，在 Execution Worker 实现 HTTP/JSON server；所有消息继续经过 `execution.v1` 严格 parser。
-- [ ] Worker 启动时验证 instance identity、当前 boot token、支持 schema、resource ceiling 和 adapter registry；不能直接打开 `product.sqlite` 或签发授权。
-- [ ] 实现 work.execute、work.cancel、work.reconcile、event subscription 和 readiness；大输入/结果只使用 Payload/secret/capability handles。
-- [ ] 对重复请求、重复结果、stale handle、stale fence、Worker crash、Agent crash、socket replacement 和未知外部结果运行真实 child-process tests。
-- [ ] 证明 Agent Service 不会在 Worker unavailable 时静默降级为进程内执行。
+- [x] 先写 UDS transport contract tests，覆盖 `0700` runtime 目录、`0600` socket、boot-scoped token、schema handshake、body limit、deadline、cursor、取消和重连。
+- [x] 在 Agent Service 实现 execution client，在 Execution Worker 实现 HTTP/JSON server；所有消息继续经过严格 parser（Task 4 已冻结为 `execution.v2`，见下方说明）。
+- [x] Worker 启动时验证 instance identity、当前 boot token、支持 schema、resource ceiling 和 adapter registry；不能直接打开 `product.sqlite` 或签发授权。
+- [x] 实现 work.execute、work.cancel、work.reconcile、event subscription 和 readiness；大输入/结果只使用 Payload/secret/capability handles。
+- [x] 对重复请求、重复结果、stale handle、stale fence、Worker crash、Agent crash、socket replacement 和未知外部结果运行真实 child-process tests。
+- [x] 证明 Agent Service 不会在 Worker unavailable 时静默降级为进程内执行。
+
+Task 4 已确认严格 v1 parser 不能兼容 handshake、authority fence、resource ceiling 与 cursor 字段，因此本 Task 标题和来源 Spec 中的“execution.v1 over UDS”作为 Worker protocol 的历史名称保留，实际 wire transport 使用已经冻结的 `execution.v2`，原有 `execution.v1` fixture 与接受集合没有变化。`ExecutionUdsServer` 在权限为 `0700` 的 runtime directory 上绑定 HTTP/JSON Unix socket 并设为 `0600`，同时验证 Owner-only boot token、Agent Service instance、bounded body、content type 和 request deadline；活动 socket、普通文件替换与 inode race 均 fail closed，只有同一账户拥有且确认无人监听的 crash residue 才能在 inode 复核后移除。
+
+Agent Service 的 production client 必须先完成 schema/instance/boot-token handshake；Worker 不可用时返回 `EXECUTION_WORKER_UNAVAILABLE` 并撤销 client readiness，不存在进程内 fallback。Production Worker 只依赖注入的 `ExecutionWorkerService`、已注册 adapter 清单和短期 handle，不依赖 SQLite persistence 或授权签发服务；它验证当前 deployment epoch/fence、adapter version/operation 和配置上限，并对 wall deadline、progress 上限、重复 identity、stale handle、取消、cursor replay 与未知外部结果执行 fail-closed 处理。5 项 UDS contract tests、6 项 Worker unit tests和 3 项真实进程 integration tests分别覆盖 Worker `SIGKILL` 后安全 socket 恢复、Agent client 子进程崩溃后的单一结果、重复结果去重和重连；实现与验证证据位于 `test/integration/qualification/evidence/s1-task10-execution-uds.json`。
 
 ### Task 11：建立可安装的 Agent Service、Worker 与 admin CLI 入口
 

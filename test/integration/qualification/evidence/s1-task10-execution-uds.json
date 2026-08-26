@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T15:30:01Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T10",
+  "candidateRevision": "e894a8b5200b0fc214ed5ae48ca541f4e74f434f",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 2,
+    "behind": 0,
+    "status": "dirty"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "npm": "11.8.0",
+    "wireSchema": "execution.v2",
+    "transport": "HTTP/JSON over Unix domain socket",
+    "externalCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project contracts packages/platform-node/test/execution-uds-transport.contract.test.ts",
+      "exitStatus": 0,
+      "result": "5 UDS permission, token, handshake, body, deadline, cursor and socket replacement contract tests passed outside the filesystem-restricted sandbox"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project unit apps/execution-worker/test/production-execution-worker.unit.test.ts",
+      "exitStatus": 0,
+      "result": "6 Worker handshake, fence, ceiling, registry, dedupe, stale handle, cancellation and reconciliation tests passed"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/execution-worker-process.test.ts",
+      "exitStatus": 0,
+      "result": "3 real Worker and Agent child-process crash, restart, reconnect and no-fallback tests passed outside the filesystem-restricted sandbox"
+    },
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, Node/browser typecheck, 14-workspace dependency boundaries and v0.2 coverage passed"
+    },
+    {
+      "command": "npm test && npm run check:pi-compat && python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict . && git diff --check",
+      "exitStatus": 0,
+      "result": "165 unit, 106 contract, 281 integration, 3 E2E and 6 Pi compatibility tests passed; strict document validation and diff check passed"
+    }
+  ],
+  "verificationSummary": [
+    "The UDS server creates an explicit 0700 runtime directory and 0600 socket, requires a constant-time bearer token plus allowlisted Agent Service instance, and validates the matching boot token reference during handshake.",
+    "All request, response and event bodies pass through the frozen execution.v2 strict parser; original execution.v1 fixtures remain unchanged because Task 4 introduced v2 for the incompatible handshake, fence, resource and cursor fields.",
+    "The Worker validates deployment epoch/fence, boot identity, selected schema, registered adapter version/operation and configured resource ceiling before dispatch, while payload bodies and machine secrets remain references or short-lived handles.",
+    "Exact request/idempotency replays do not execute twice; stale handles return one stable failed result, result_unknown remains non-retryable until explicit reconciliation, and cursor replay resumes strictly after the supplied cursor.",
+    "Real child-process tests kill both the Worker and an Agent client, recover only an owner-matched unlistened crash-residue socket, retain one accepted result after Agent restart, and prove unavailable Worker requests fail instead of running in Agent Service."
+  ],
+  "unverified": [
+    "The first production Worker validates per-request CPU and memory ceilings against configured maxima; service-manager process-level CPU/memory enforcement and packaging are completed with the installable service entrypoints in Task 11 and the expanded crash/resource matrix in Task 26.",
+    "Worker replay storage is intentionally process-local and non-authoritative; Task 12 persists parent checkpoints/events in Agent Service so Worker restart recovery does not depend on local Worker memory.",
+    "No launchd/systemd unit or production runtime directory was created; dual-platform installation remains Task 28."
+  ],
+  "externalEffects": [
+    "Tests created and removed only permission-restricted temporary directories, Unix sockets and local Node child processes.",
+    "No network, provider, external account, public endpoint, service manager or production state was accessed or changed."
+  ],
+  "implementationCommit": null
+}

@@ -12,9 +12,9 @@ date: "2026-08-25"
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e、Pi compatibility、browser、admin CLI、Node services 和 workspace scaffold 九个可独立选择的测试项目。
 
-当前代码包含十四个 workspace。`packages/domain` 实现不可变身份、所有权规则、Run 状态机、Agent 权威租约，以及 deployment/fence、消息/检查点、产品 session/device、后台 job/occurrence、Memory generation/lifecycle、GitHub receipt/coverage gap、恢复点/transfer 和 health 状态；两类 contracts 保留首版 `gateway.v1` 与 `execution.v1`，并新增显式 `gateway.v2` 与 `execution.v2`；`packages/application` 实现产品端口、Gateway、Run/Worker 编排、可靠事件、Trace、授权、记忆、模型、调度、Attention 和外部结果对账；`packages/platform-node` 与 `packages/runtime-pi` 分别实现可信模型 Provider 边界和 Pi Agent Runtime 适配器；`packages/testing` 提供 conformance suites、内存参考适配器、牛肉餐厅夹具和故障注入器。`packages/persistence-sqlite` 已实现规范 schema、不可变 migration、专用 SQLite execution context、state-root lock、持久 deployment/lease、原子 Product State transaction、主要产品 repository、可恢复 Outbox 和持久 Gateway Read Model；`packages/memory-mem0` 与 `packages/integration-github` 仍只有独立边界与 adapter 描述。生产加密、正式进程组合及其余外部适配器仍由后续任务实现。
+当前代码包含十四个 workspace。`packages/domain` 实现不可变身份、所有权规则、Run 状态机、Agent 权威租约，以及 deployment/fence、消息/检查点、产品 session/device、后台 job/occurrence、Memory generation/lifecycle、GitHub receipt/coverage gap、恢复点/transfer 和 health 状态；两类 contracts 保留首版 `gateway.v1` 与 `execution.v1`，并新增显式 `gateway.v2` 与 `execution.v2`；`packages/application` 实现产品端口、Gateway、Run/Worker 编排、可靠事件、Trace、授权、记忆、模型、调度、Attention 和外部结果对账；`packages/platform-node` 已实现可信模型 Provider 边界、Payload envelope encryption、host secret source、严格配置、state-root layout、health/lifecycle coordinator 和 `execution.v2` HTTP/JSON over UDS，`packages/runtime-pi` 实现 Pi Agent Runtime 适配器；`packages/testing` 提供 conformance suites、内存参考适配器、牛肉餐厅夹具和故障注入器。`packages/persistence-sqlite` 已实现规范 schema、不可变 migration、专用 SQLite execution context、state-root lock、持久 deployment/lease、原子 Product State transaction、主要产品 repository、可恢复 Outbox、持久 Gateway Read Model 和受保护 Payload envelope metadata；`packages/memory-mem0` 与 `packages/integration-github` 仍只有独立边界与 adapter 描述。正式可安装进程组合及其余外部适配器仍由后续任务实现。
 
-`apps/agent-service` 现有可编程的本地前台组合根和严格 `gateway.v1` in-process transport；`apps/execution-worker` 现有独立启动、独立关闭的 `execution.v1` Worker 进程边界。组合根可替换 Gateway Control Plane/Read Model、Worker client 和 Secret Port，并把产品服务组合到同一可信前台进程。`apps/control-center` 已具有 browser-only React/Vite 构建入口，`apps/admin-cli` 已具有 offline-admin export 边界；两者仍是后续实现的最小脚手架，不是已完成的控制中心或可执行 CLI。
+`apps/agent-service` 现有可编程的本地前台组合根、严格 `gateway.v1` in-process transport 和 production `execution.v2` UDS client；`apps/execution-worker` 同时保留确定性的 `execution.v1` in-process test profile，并新增验证 authority fence、adapter registry、resource ceiling、去重、cursor、取消与对账的 production Worker runtime。组合根可替换 Gateway Control Plane/Read Model、Worker client 和 Secret Port，并把产品服务组合到同一可信前台进程；真正的服务 `main`、安装产物和信号生命周期仍由后续任务组合。`apps/control-center` 已具有 browser-only React/Vite 构建入口，`apps/admin-cli` 已具有 offline-admin export 边界；两者仍是后续实现的最小脚手架，不是已完成的控制中心或可执行 CLI。
 
 已关闭 Foundation Spec 的 Task 1 至 Task 20 已按确定性参考配置实现并验证：[SOURCE: docs/archive/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/archive/plans/2026-08-25-agent-foundation-plan.md]
 
@@ -186,7 +186,7 @@ Capability Registry 分开保存不可变版本声明、安装生命周期和短
 
 `ExecutionWorkerService` 以现有 `execution.v1` 请求为边界，向能力适配器只转交 Handle 允许的上下文与短期 Secret Handle。取消、调用期限、progress、result、unknown external result 和 failure 映射回版本化 Worker 事件。`work.reconcile` 另经 `ExternalActionReconciliationPort` 查询外部动作，只接受 outcome 与引用一致的 `confirmed_succeeded`、`confirmed_failed` 或 `still_unknown`，并返回 `work.reconciled`；未知结果不能被执行请求自动重试。
 
-当前 `DeterministicRestaurantCapabilityPort` 与 `ScriptedExternalActionReconciliationPort` 只验证搜索、预订和对账的产品语义；它们不是网络客户端、隔离进程或真实供应商。生产 Worker 传输与沙箱仍未实现。该边界落实受治理能力决策：[SOURCE: docs/adr/0008-governed-capability-registry.md]
+当前 `DeterministicRestaurantCapabilityPort` 与 `ScriptedExternalActionReconciliationPort` 只验证搜索、预订和对账的产品语义；它们不是网络客户端、沙箱或真实供应商。production Worker 以 `execution.v2` 严格消息在权限受限 UDS 上接收请求，并只执行配置中精确注册的 adapter/version/operation；完整 sandbox、不可信 MCP 隔离和 service-manager 资源强制仍未实现。该边界落实受治理能力决策：[SOURCE: docs/adr/0008-governed-capability-registry.md]
 
 ### Memory and context formation
 
@@ -246,7 +246,7 @@ Delivery 有独立于 Run 的 revision 和 `pending → delivering → delivered
 
 所有 Gateway command 只通过 `GatewayControlPlanePort.execute()` 改变状态；Gateway 本身没有 State Store 写依赖。Thread/Run snapshot、Trace query 和事件订阅只通过 `GatewayReadModelPort`。订阅保留客户端 `afterCursor`，并拒绝越出 Owner/Agent/Session/Thread/Run scope 的事件、重复 cursor 和同一 Run 内非递增 sequence。当前 `InMemoryGatewayControlPlane` 与 `InMemoryGatewayReadModel` 是本地参考适配器，不是生产 Control Plane 或持久 read model。该边界落实无头 Gateway 决策：[SOURCE: docs/adr/0002-headless-agent-gateway.md]
 
-`createLocalAgentServiceComposition()` 组合 Gateway、Run state/outbox、Trace、Context Formation、Model Router、Permission、Capability Registry、Attention 和 Run Coordinator。`createLocalExecutionWorkerProcess()` 必须单独启动，Agent process 只接受 ready 的 `execution.v1` client；相同结构也可以由远程 client 实现。启动诊断只输出 component、adapter identity、schema version 与 readiness。关闭先进入 draining、拒绝新请求，再等待登记的 Run settlement。Secret Port 是显式注入项，诊断和 Trace 不读取原值。该边界落实可组合服务和本地优先部署决策：[SOURCE: docs/adr/0011-composable-service-boundaries.md] [SOURCE: docs/adr/0012-portable-local-first-deployment.md]
+`createLocalAgentServiceComposition()` 组合 Gateway、Run state/outbox、Trace、Context Formation、Model Router、Permission、Capability Registry、Attention 和 Run Coordinator。确定性 test profile 继续由 `createLocalExecutionWorkerProcess()` 单独启动并只接受 ready 的 `execution.v1` client；production profile 使用 `AgentServiceExecutionClient` 完成 instance/boot-token/schema handshake 后，通过 `execution.v2` UDS 请求、结果 cursor 和 readiness 工作，Worker unavailable 时明确失败且不回落到 Agent Service 进程内执行。启动诊断只输出 component、adapter identity、schema version 与 readiness。关闭先进入 draining、拒绝新请求，再等待登记的 Run settlement。Secret Port 是显式注入项，诊断和 Trace 不读取原值。该边界落实可组合服务和本地优先部署决策：[SOURCE: docs/adr/0011-composable-service-boundaries.md] [SOURCE: docs/adr/0012-portable-local-first-deployment.md]
 
 ### Reference E2E and recovery evidence
 
@@ -275,14 +275,14 @@ Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi co
 
 ## Known Limitations
 
-- `apps/agent-service` 和 `apps/execution-worker` 只公开程序化 process/composition API；没有 `npm start`、socket/HTTP listener、daemon packaging、service manager 或生产 readiness endpoint。
-- `persistence-sqlite` 已实现真实 schema/migration、execution context、state-root lock、authority lease/deployment 和原子 Product State transaction，但尚未实现其余生产 repositories、claim 型 Outbox publisher、持久 Read Model 或生产 Payload 加密；`memory-mem0` 和 `integration-github` 仍只有经过双平台 preflight 的精确依赖与 workspace 边界。`control-center` 只渲染构建占位页，`admin-cli` 也没有可执行命令入口。
+- `apps/agent-service` 和 `apps/execution-worker` 已有程序化 composition、production UDS client/server 与真实子进程测试，但没有 `npm start`、正式 `main`、daemon packaging、service manager 或完整生产 readiness 组合。
+- `persistence-sqlite` 已实现真实 schema/migration、execution context、state-root lock、authority lease/deployment、原子 Product State transaction 和 Payload envelope metadata，但尚未实现其余生产 repositories、claim 型 Outbox publisher 或完整持久 Read Model 组合；Payload cryptography 与外部 ciphertext file store 已实现，尚未接入全部产品正文路径。`memory-mem0` 和 `integration-github` 仍只有经过双平台 preflight 的精确依赖与 workspace 边界。`control-center` 只渲染构建占位页，`admin-cli` 也没有可执行命令入口。
 - 默认 local composition 使用 `packages/testing` 的内存 State、Memory、Trace、Authorization、Scheduler、Delivery 和 Gateway read model；进程退出后数据丢失，且不提供跨进程 transaction、加密强度、高可用或灾难恢复。
 - Pi adapter 已通过 published `0.84.2` 与 local-source compatibility，但牛肉餐厅 E2E 使用确定性 Model/Capability，不调用真实模型、地图或预订供应商。
-- Execution Worker 在本地配置中保持独立 service object 和协议边界，但尚无真实进程间 transport、sandbox、resource limits 或不可信 MCP 隔离。
+- Execution Worker 已具有真实 HTTP/JSON over UDS transport、boot-scoped authentication、严格 resource ceiling validation、deadline/progress limits 和 child-process crash/reconnect 证据，但尚无完整 sandbox、service-manager CPU/内存强制或不可信 MCP 隔离。
 - Session deletion 已验证四类抽象 target 的 incomplete/resume/verified 语义；尚无把真实生产 Payload、search、cache 和 archive 全部接入同一次删除的实现。
 - Gateway command 已保证认证/授权/Control Plane 委派边界；默认 `InMemoryGatewayControlPlane` 不实现生产 Thread/Run/Approval command handler，Read Model 也由测试夹具显式填充。
-- `gateway.v2`、`execution.v2` 和新增 application ports 目前是冻结的产品契约；HTTP/SSE、UDS、身份断言、SQLite repositories、Mem0、GitHub、backup/transfer 和 health adapters 尚未实现或组合进服务。
+- `gateway.v2`、`execution.v2` 和新增 application ports 是冻结的产品契约；Execution UDS、严格 configuration/state-root 和 health model 已实现，HTTP/SSE、身份断言、其余 SQLite repositories、Mem0、GitHub、backup/transfer 与正式服务组合尚未实现。
 - 生产 Secrets Vault、Provider material source、通知客户端、远程 Worker、持久 Scheduler 和网络 Gateway 均未实现。本版本不应描述为可生产部署。
 
 ## Backlog Links
