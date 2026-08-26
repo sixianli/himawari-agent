@@ -134,11 +134,13 @@ testing → application + domain + product contracts
 
 ### Task 1：固定基线、追踪矩阵与执行证据格式
 
-- [ ] 在任何实现改动前记录 `git status --short --branch`、Node/npm 版本、现有 workspace、依赖 lock、Architecture Known Limitations 和全部当前测试结果。
-- [ ] 运行现有 `npm run check`、unit、contracts、integration、e2e、Pi compatibility 与 strict document validation，保存精确命令、退出状态、测试数量和 skip 原因。
-- [ ] 建立本 Plan 的 Spec 验收映射：每个验收项绑定负责 Task、测试入口、Mac/Hermes 证据和外部授权门槛。
-- [ ] 定义每个 Task 的证据记录格式：改动范围、设计来源、验证命令、结果、未验证项、外部副作用和 Git commit。
-- [ ] 证明当前 `main` 与 `origin/main` 的关系，并在每个后续任务开始前重新盘点工作树；不把干净工作树误当成远端同步证明。
+- [x] 在任何实现改动前记录 `git status --short --branch`、Node/npm 版本、现有 workspace、依赖 lock、Architecture Known Limitations 和全部当前测试结果。
+- [x] 运行现有 `npm run check`、unit、contracts、integration、e2e、Pi compatibility 与 strict document validation，保存精确命令、退出状态、测试数量和 skip 原因。
+- [x] 建立本 Plan 的 Spec 验收映射：每个验收项绑定负责 Task、测试入口、Mac/Hermes 证据和外部授权门槛。
+- [x] 定义每个 Task 的证据记录格式：改动范围、设计来源、验证命令、结果、未验证项、外部副作用和 Git commit。
+- [x] 证明当前 `main` 与 `origin/main` 的关系，并在每个后续任务开始前重新盘点工作树；不把干净工作树误当成远端同步证明。
+
+Task 1 的 evidence format 位于 `test/fixtures/v0.2/task-evidence.schema.json`，fresh baseline 位于 `test/integration/qualification/evidence/s1-task1-baseline.json`；S1-A01–S1-A09 的任务、证据和验证入口由 `test/fixtures/v0.2/coverage-manifest.json` 固定。
 
 ### Task 2：完成外部依赖与平台兼容性 preflight
 

@@ -228,7 +228,7 @@ npm ci --ignore-scripts
   → drain new admission and await in-flight Run settlement on shutdown
 ```
 
-Fresh completion 验证执行 `npm run check`、四个 Vitest project、Pi compatibility 和严格文档验证。当前确定性测试集包含 101 个 unit、69 个 contract、71 个 integration、3 个 E2E 和 6 个 Pi compatibility 测试。E2E 与恢复测试不访问网络、付费模型、外部账户或生产凭据。
+Fresh completion 验证执行 `npm run check`、四个 Vitest project、Pi compatibility 和严格文档验证。当前确定性测试集包含 101 个 unit、69 个 contract、74 个 integration、3 个 E2E 和 6 个 Pi compatibility 测试。E2E 与恢复测试不访问网络、付费模型、外部账户或生产凭据。
 
 ## Known Limitations
 

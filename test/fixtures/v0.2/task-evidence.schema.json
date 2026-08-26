@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Himawari v0.2 Implementation Task Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordedAt",
+    "plan",
+    "taskId",
+    "candidateRevision",
+    "worktree",
+    "environment",
+    "commands",
+    "verificationSummary",
+    "unverified",
+    "externalEffects"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "plan": {
+      "type": "string",
+      "pattern": "^docs/execution/plans/.+-plan\\.md$"
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^S[0-9]-T[0-9]{2}$"
+    },
+    "candidateRevision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "worktree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch", "upstream", "ahead", "behind", "status"],
+      "properties": {
+        "branch": { "type": "string" },
+        "upstream": { "type": "string" },
+        "ahead": { "type": "integer", "minimum": 0 },
+        "behind": { "type": "integer", "minimum": 0 },
+        "status": { "enum": ["clean", "dirty"] }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": {
+        "type": ["string", "number", "boolean", "null"]
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "exitStatus", "result"],
+        "properties": {
+          "command": { "type": "string", "minLength": 1 },
+          "exitStatus": { "type": "integer" },
+          "result": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "verificationSummary": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "unverified": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "externalEffects": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "implementationCommit": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{7,40}$"
+    }
+  }
+}
