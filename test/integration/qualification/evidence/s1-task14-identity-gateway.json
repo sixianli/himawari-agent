@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T17:16:35Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T14",
+  "candidateRevision": "f235fd1",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 5,
+    "behind": 0,
+    "status": "dirty"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "npm": "11.8.0",
+    "sqliteSchemaSequence": 10,
+    "externalAccountCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project unit packages/application/test/agent-gateway-v2-service.unit.test.ts packages/platform-node/test/identity-gateway.unit.test.ts",
+      "exitStatus": 0,
+      "result": "14 Gateway authorization and identity security tests passed"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/identity-persistence.test.ts",
+      "exitStatus": 0,
+      "result": "one real-file SQLite restart, persistence and revocation integration test passed"
+    },
+    {
+      "command": "npm run check && npm test && npm run check:pi-compat && npm run build",
+      "exitStatus": 0,
+      "result": "188 unit, 122 contract, 288 integration, 3 E2E and 6 Pi compatibility tests passed; dependency boundaries, v0.2 coverage and all builds passed"
+    }
+  ],
+  "verificationSummary": [
+    "A tenth immutable migration persists the unique Owner-to-external-subject binding plus product device and session authentication references without storing bearer token plaintext.",
+    "Loopback bootstrap is disabled by default, bounded by expiry, stores only a token digest and atomically permits one Owner binding before becoming permanently unavailable.",
+    "The Cloudflare Access verifier accepts only RS256 and validates signature, kid/JWKS rotation, issuer, audience, exp, nbf and bounded clock skew; the stable subject reference is derived from issuer and subject rather than forwarded email or username.",
+    "Product sessions and devices persist across repository restart, record activity and recent authentication, and fail closed after session, device or Owner-wide revocation.",
+    "Session-bound HMAC CSRF tokens reject expiry and cross-session use; break-glass requires loopback, an independent credential and an exclusive file lock and only exposes mapping repair, session/device revocation or public-ingress disable operations with audit records.",
+    "Gateway v2 still applies deterministic authorization after identity verification, so a valid public identity does not bypass ALLOW, ASK or DENY."
+  ],
+  "unverified": [
+    "JWT and JWKS tests use local cryptographic fixtures; no real Cloudflare Access tenant, public URL, MFA policy or external account was used. Those staging checks remain Task 27.",
+    "Identity routes and persistence adapters are not yet composed into the final Agent Service public readiness path; Task 23 owns that final composition.",
+    "Service-manager ownership and real recovery credential installation remain the separately authorized Task 28 operation."
+  ],
+  "externalEffects": [
+    "Tests wrote only temporary SQLite files, temporary lock files and generated local key material.",
+    "No Cloudflare configuration, external identity, production credential, account or network service was changed."
+  ],
+  "implementationCommit": null
+}

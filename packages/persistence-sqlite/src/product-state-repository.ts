@@ -19,10 +19,12 @@ import type {
   ReliableEventPort,
   ReliableEventRecord,
   SchedulerPort,
+  SessionDeviceStatePort,
   SessionDeletionStatePort,
   StateRecord,
   StateStorePort,
   TraceStorePort,
+  OwnerIdentityStatePort,
 } from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
@@ -287,6 +289,14 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   sessionDeletionState(): SessionDeletionStatePort {
     return this.durable.sessionDeletionState();
+  }
+
+  ownerIdentityState(): OwnerIdentityStatePort {
+    return this.durable.ownerIdentityState();
+  }
+
+  sessionDeviceState(): SessionDeviceStatePort {
+    return this.durable.sessionDeviceState();
   }
 
   gatewayReadModel(): SqliteGatewayReadModel {

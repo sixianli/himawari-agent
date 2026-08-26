@@ -140,6 +140,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0009_durable_background_recovery.sql",
   },
+  {
+    sequence: 10,
+    name: "identity_bindings",
+    changeSet: "identity-bindings",
+    phase: "expand" as const,
+    file: "0010_identity_bindings.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

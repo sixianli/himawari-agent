@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T17:16:35Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T15",
+  "candidateRevision": "f235fd1",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 5,
+    "behind": 0,
+    "status": "dirty"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "npm": "11.8.0",
+    "platform": "darwin-arm64",
+    "externalAccountCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npm run typecheck && npm run build:browser",
+      "exitStatus": 0,
+      "result": "browser-only TypeScript graph and production Vite bundle passed"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project browser apps/control-center/test/control-center-client.unit.test.ts",
+      "exitStatus": 0,
+      "result": "4 typed client, storage, redaction and SSE synchronization tests passed"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chromium",
+      "exitStatus": 0,
+      "result": "Chromium 151.0.7922.34 completed all base journeys, recovery checks, 390x844 viewport, 44.78125px minimum target and zero axe violations"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs webkit",
+      "exitStatus": 0,
+      "result": "WebKit 26.5 completed the same journeys with a 44px minimum target and zero axe violations"
+    },
+    {
+      "command": "npm run check && npm test && npm run test:browser && npm run check:pi-compat && npm run build",
+      "exitStatus": 0,
+      "result": "188 unit, 122 contract, 288 integration, 3 E2E, 5 browser and 6 Pi compatibility tests passed; the browser bundle and complete build passed"
+    }
+  ],
+  "verificationSummary": [
+    "The browser-only React/Vite workspace uses strict gateway.v1/gateway.v2 clients, a durable SSE synchronizer and browser storage limited to unsent Thread drafts, display density and the last cursor.",
+    "The authenticated UI covers Thread list and chat, streaming Run events, cancellation, approvals, durable tasks and repository monitor, inbox, Memory correction/delete, Trace, sessions/devices and healthy/degraded state.",
+    "Every mutation creates an idempotency key and renders pending, accepted, replayed, rejected or expired status; private draft and Memory correction text first pass through the protected Payload admission route.",
+    "The repeatable real-browser script performs actual clicks and text entry for message submission, Run cancellation, approval, task pause, Memory correction/delete and session revocation, then validates health degradation and SSE recovery.",
+    "Semantic landmarks, labels, live regions, visible focus, non-color connection text, contrast, minimum touch target and axe automation establish the intended baseline without claiming complete WCAG 2.2 AA or trilingual acceptance."
+  ],
+  "unverified": [
+    "The browser fixture returns strict contract-shaped deterministic snapshots; it is not a real public identity, production Control Plane, persisted read model or Cloudflare path.",
+    "Firefox could not launch because the installed Playwright binary was blocked by its macOS content sandbox; full Safari, Chrome, Edge, Firefox, iOS Safari and Android Chrome version coverage remains Task 27.",
+    "Complete trilingual UX and WCAG 2.2 AA remain governed by the dedicated Control Center experience Spec."
+  ],
+  "externalEffects": [
+    "Qualification used only a temporary 127.0.0.1 fixture and local browser processes and left no accepted product command outside the fixture process.",
+    "No user browser profile, browser account, external service, production state or public endpoint was changed."
+  ],
+  "implementationCommit": null
+}

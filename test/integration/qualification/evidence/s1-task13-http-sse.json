@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T17:16:35Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T13",
+  "candidateRevision": "f235fd1",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 5,
+    "behind": 0,
+    "status": "dirty"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "npm": "11.8.0",
+    "platform": "darwin-arm64",
+    "externalAccountCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project contracts packages/platform-node/test/http-gateway-server.contract.test.ts",
+      "exitStatus": 0,
+      "result": "16 HTTP Gateway, SSE and origin security contract tests passed"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project unit packages/application/test/agent-gateway-v2-service.unit.test.ts packages/platform-node/test/identity-gateway.unit.test.ts",
+      "exitStatus": 0,
+      "result": "14 Gateway v2 and identity unit tests passed"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chromium",
+      "exitStatus": 0,
+      "result": "Chromium 151.0.7922.34 on darwin-arm64 passed reconnect, background tab, offline transition, close/reopen, mobile viewport and zero axe violations"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs webkit",
+      "exitStatus": 0,
+      "result": "WebKit 26.5 on darwin-arm64 passed the same browser recovery and accessibility qualification"
+    },
+    {
+      "command": "npm run check && npm test && npm run test:browser && npm run check:pi-compat && npm run test:cli && npm run test:services && npm run test:workspace-scaffolds && npm run build",
+      "exitStatus": 0,
+      "result": "188 unit, 122 contract, 288 integration, 3 E2E, 5 browser, 6 Pi compatibility, 1 admin CLI, 12 Node services and 3 workspace scaffold tests passed; all builds passed"
+    }
+  ],
+  "verificationSummary": [
+    "The Fastify adapter serves same-origin static assets and strict gateway.v1/gateway.v2 commands, queries and durable SSE without granting ordinary business permissions to health, bootstrap or break-glass routes.",
+    "Every business request passes strict runtime parsing, injected authentication, Owner/Agent scope policy and the application Gateway service before reaching a Control Plane or Read Model.",
+    "Mutations reject wrong Host, Origin, Fetch Metadata, CSRF, media type, idempotency header, oversized body, unsupported schema, spoofed identity and cross-owner scope before business execution.",
+    "SSE carries a durable cursor, event ID and scope, sends heartbeats, respects Node stream backpressure and rejects duplicate cursor or non-increasing Run sequence; a stale v1 cursor returns a bounded Thread/Run snapshot refresh.",
+    "Chromium and macOS WebKit browser processes recovered accepted results after offline transitions, background tab activity and close/reopen while retaining only the last durable cursor."
+  ],
+  "unverified": [
+    "The Playwright Firefox 153.0 binary could not start on this Mac because its own content sandbox rejected plugin-container; Firefox and the full supported browser/device version matrix remain explicit Task 27 evidence.",
+    "The HTTP adapter is independently production-shaped but is not yet wired into the final Agent Service main with real identity, Control Plane and public trust roots; that composition remains Task 23.",
+    "No public origin, Cloudflare account, service manager, paid provider or production state was accessed."
+  ],
+  "externalEffects": [
+    "Browser qualification bound a temporary fixture only to 127.0.0.1 and launched local Chromium/WebKit processes; all were stopped after each run.",
+    "Playwright Firefox and WebKit browser binaries were downloaded to the user cache for requested cross-browser qualification; no browser profile, account or remote service was changed."
+  ],
+  "implementationCommit": null
+}

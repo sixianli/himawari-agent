@@ -49,6 +49,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "delete only through governed state-root teardown",
   ),
   entry(
+    "owner_identity_bindings",
+    "OwnerIdentityStatePort",
+    "one-time bootstrap then break-glass repair",
+    "metadata_only",
+    "cascade only after Owner teardown",
+  ),
+  entry(
     "agents",
     "ProductStateRepositoryPort",
     "active to retired",

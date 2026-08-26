@@ -9,10 +9,12 @@ import type {
   ReliableEventPort,
   ReliableEventSinkPort,
   SchedulerPort,
+  SessionDeviceStatePort,
   SessionDeletionStatePort,
   TraceStorePort,
   BackgroundWorkStatePort,
   StateStorePort,
+  OwnerIdentityStatePort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
 import type {
@@ -245,6 +247,36 @@ export class SqliteDurableAdapters {
       get: (deletionId) => this.context.read("deletion.get", { deletionId }),
       save: (record, expectedRevision) =>
         this.context.write("deletion.save", { record, expectedRevision }),
+    });
+  }
+
+  ownerIdentityState(): OwnerIdentityStatePort {
+    return Object.freeze<OwnerIdentityStatePort>({
+      bindFirstOwner: (input) => this.context.write("identity.bindFirstOwner", input),
+      readBySubject: (externalSubjectRef) =>
+        this.context.read("identity.readBySubject", { externalSubjectRef }),
+      readByOwner: (ownerId) => this.context.read("identity.readByOwner", { ownerId }),
+      repairBinding: (input) => this.context.write("identity.repairBinding", input),
+    });
+  }
+
+  sessionDeviceState(): SessionDeviceStatePort {
+    return Object.freeze<SessionDeviceStatePort>({
+      readSession: (sessionId) => this.context.read("identity.readSession", { sessionId }),
+      findSessionByAuthenticationRef: (authenticationRef) =>
+        this.context.read("identity.findSessionByAuthenticationRef", { authenticationRef }),
+      listSessions: (ownerId, includeRevoked) =>
+        this.context.read("identity.listSessions", { ownerId, includeRevoked }),
+      listDevices: (ownerId, includeRevoked) =>
+        this.context.read("identity.listDevices", { ownerId, includeRevoked }),
+      saveDevice: (device, expectedRevision) =>
+        this.context.write("identity.saveDevice", { device, expectedRevision }),
+      revokeDevice: (deviceId, expectedRevision, revokedAt) =>
+        this.context.write("identity.revokeDevice", { deviceId, expectedRevision, revokedAt }),
+      saveSession: (session, expectedRevision) =>
+        this.context.write("identity.saveSession", { session, expectedRevision }),
+      revokeSession: (sessionId, expectedRevision, revokedAt) =>
+        this.context.write("identity.revokeSession", { sessionId, expectedRevision, revokedAt }),
     });
   }
 

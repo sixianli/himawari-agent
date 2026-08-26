@@ -86,13 +86,25 @@ async function copyExternalClosure(rootNames) {
       continue;
     const entry = item.require.resolve(item.name);
     const located = findPackageRoot(entry, item.name);
-    const previous = copied.get(item.name);
-    if (previous && previous !== located.manifest.version) {
-      throw new Error(`Conflicting runtime dependency versions for ${item.name}`);
+    const relativeLocation = path.relative(path.join(repositoryRoot, "node_modules"), located.root);
+    if (
+      relativeLocation === "" ||
+      relativeLocation === ".." ||
+      relativeLocation.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativeLocation)
+    ) {
+      throw new Error(`Runtime dependency escaped root node_modules: ${item.name}`);
+    }
+    const previous = copied.get(relativeLocation);
+    if (
+      previous &&
+      (previous.name !== item.name || previous.version !== located.manifest.version)
+    ) {
+      throw new Error(`Conflicting runtime dependency at ${relativeLocation}`);
     }
     if (previous) continue;
-    copied.set(item.name, located.manifest.version);
-    const destination = path.join(runtimeNodeModules, ...item.name.split("/"));
+    copied.set(relativeLocation, { name: item.name, version: located.manifest.version });
+    const destination = path.join(runtimeNodeModules, relativeLocation);
     await mkdir(path.dirname(destination), { recursive: true });
     await cp(located.root, destination, { recursive: true });
     const packageRequire = createRequire(path.join(located.root, "package.json"));
@@ -112,7 +124,12 @@ async function copyExternalClosure(rootNames) {
 await rm(runtimeRoot, { recursive: true, force: true });
 await mkdir(runtimeNodeModules, { recursive: true });
 for (const relativeRoot of internalRoots.sort()) await copyInternalPackage(relativeRoot);
-const external = await copyExternalClosure(["better-sqlite3"]);
+const external = await copyExternalClosure(["better-sqlite3", "fastify", "jose"]);
+const rootExternal = new Map(
+  [...external.entries()]
+    .filter(([location, { name }]) => location === path.join(...name.split("/")))
+    .map(([, { name, version }]) => [name, version]),
+);
 await writeFile(
   path.join(runtimeRoot, "runtime-manifest.json"),
   `${JSON.stringify(
@@ -124,7 +141,12 @@ await writeFile(
         agentService: "node_modules/@himawari-agent/agent-service/dist/main.js",
         executionWorker: "node_modules/@himawari-agent/execution-worker/dist/main.js",
       },
-      externalDependencies: Object.fromEntries([...external.entries()].sort()),
+      externalDependencies: Object.fromEntries([...rootExternal.entries()].sort()),
+      externalDependencyClosure: Object.fromEntries(
+        [...external.entries()]
+          .map(([location, identity]) => [location.split(path.sep).join("/"), identity])
+          .sort(([left], [right]) => left.localeCompare(right)),
+      ),
     },
     null,
     2,

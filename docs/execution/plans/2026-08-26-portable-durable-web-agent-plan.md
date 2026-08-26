@@ -291,30 +291,42 @@ schedule evaluator 覆盖 interval、one-shot 和 IANA daily schedule；periodic
 
 ### Task 13：实现受认证 HTTP Gateway 与可恢复 SSE
 
-- [ ] 先为 HTTP adapter 写 contract/security tests，证明每个命令、查询和事件请求都经过版本 parser、`GatewayAuthenticationContext`、scope policy、Control Plane 或 Read Model。
-- [ ] 实现同源静态资产、`/api/gateway/v1/commands`、查询和 SSE；机器 webhook、health、bootstrap 与 break-glass 使用独立最小 route，不共享普通业务权限。
-- [ ] mutation 验证 Origin、Fetch Metadata/CSRF、bounded body、content type、idempotency key 和 replay；配置 restrictive CSP、framing、MIME 与 cache headers。
-- [ ] SSE 包含 durable cursor/event ID/scope、heartbeat、backpressure 和 reconnect；旧 cursor 超出 retention 时只执行有界 snapshot refresh，不重复业务结果。
-- [ ] 证明伪造 header、跨 Owner/Agent scope、重复 cursor、同 Run 非递增 sequence、direct-origin bypass 和 unsupported schema 在 Control Plane 前被拒绝。
-- [ ] 在主流浏览器测试重连、后台 tab、移动网络切换和 browser close/reopen 的已接纳结果恢复。
+- [x] 先为 HTTP adapter 写 contract/security tests，证明每个命令、查询和事件请求都经过版本 parser、`GatewayAuthenticationContext`、scope policy、Control Plane 或 Read Model。
+- [x] 实现同源静态资产、`/api/gateway/v1/commands`、查询和 SSE；机器 webhook、health、bootstrap 与 break-glass 使用独立最小 route，不共享普通业务权限。
+- [x] mutation 验证 Origin、Fetch Metadata/CSRF、bounded body、content type、idempotency key 和 replay；配置 restrictive CSP、framing、MIME 与 cache headers。
+- [x] SSE 包含 durable cursor/event ID/scope、heartbeat、backpressure 和 reconnect；旧 cursor 超出 retention 时只执行有界 snapshot refresh，不重复业务结果。
+- [x] 证明伪造 header、跨 Owner/Agent scope、重复 cursor、同 Run 非递增 sequence、direct-origin bypass 和 unsupported schema 在 Control Plane 前被拒绝。
+- [x] 在主流浏览器测试重连、后台 tab、移动网络切换和 browser close/reopen 的已接纳结果恢复。
+
+Task 13 新增 Fastify 同源静态资产与严格 `gateway.v1`/`gateway.v2` HTTP adapter；业务请求先经过版本 parser、注入的认证上下文、Owner/Agent scope policy 和应用 Gateway service，再委派给 Control Plane 或 Read Model。mutation 在业务执行前验证 Host、Origin、Fetch Metadata、session-bound CSRF、精确媒体类型、有限 body 和 header/message 幂等键一致性；静态与 API 响应配置 CSP、framing、MIME 和 no-store 边界。独立最小 health、bootstrap、break-glass route 不继承普通业务权限。
+
+SSE 使用持久 cursor/event ID/scope、heartbeat 和 Node stream backpressure，拒绝重复 cursor 与同 Run 非递增 sequence；v1 旧 cursor 只返回有界 Thread/Run snapshot refresh，不重放业务命令。Chromium `151.0.7922.34` 与 macOS WebKit `26.5` 的真实浏览器进程通过断网恢复、后台 tab、close/reopen 和移动视口验收。Playwright Firefox 因本机 content sandbox 无法启动，已明确留给 Task 27 的完整平台矩阵；Task 13 不据此宣称 Firefox 或公网 staging 已验证。实现与证据位于 `test/integration/qualification/evidence/s1-task13-http-sse.json`。
 
 ### Task 14：实现 Owner bootstrap、身份断言、session/device 与 break-glass
 
-- [ ] 实现仅 loopback、短时有效、默认关闭的一次性 bootstrap；只创建唯一 Owner 并绑定一个稳定外部 subject，成功后不可再次访问。
-- [ ] 实现 Cloudflare Access JWT verifier：按 `kid` 获取 JWKS、有界缓存与轮换，验证 algorithm、signature、issuer、audience、exp、nbf 和 clock skew；不信任 email/username forwarded header。
-- [ ] 实现产品 session/device、撤销、最近活动和 recent-auth；关键操作 recent-auth 不足时返回稳定 reauthentication requirement。
-- [ ] 实现本机独立恢复凭据、独占管理锁和受保护审计下的 break-glass；只允许修复 Owner mapping、撤销 session/device 或关闭公网入口。
-- [ ] 安全测试覆盖 forged/missing JWT、wrong issuer/audience、JWKS rotation、expired/future token、header spoofing、bootstrap replay、session revoke 和非 Owner subject。
-- [ ] 证明公网身份只解决“谁在访问”，不会绕过 `ALLOW / ASK / DENY` 行动授权。
+- [x] 实现仅 loopback、短时有效、默认关闭的一次性 bootstrap；只创建唯一 Owner 并绑定一个稳定外部 subject，成功后不可再次访问。
+- [x] 实现 Cloudflare Access JWT verifier：按 `kid` 获取 JWKS、有界缓存与轮换，验证 algorithm、signature、issuer、audience、exp、nbf 和 clock skew；不信任 email/username forwarded header。
+- [x] 实现产品 session/device、撤销、最近活动和 recent-auth；关键操作 recent-auth 不足时返回稳定 reauthentication requirement。
+- [x] 实现本机独立恢复凭据、独占管理锁和受保护审计下的 break-glass；只允许修复 Owner mapping、撤销 session/device 或关闭公网入口。
+- [x] 安全测试覆盖 forged/missing JWT、wrong issuer/audience、JWKS rotation、expired/future token、header spoofing、bootstrap replay、session revoke 和非 Owner subject。
+- [x] 证明公网身份只解决“谁在访问”，不会绕过 `ALLOW / ASK / DENY` 行动授权。
+
+Task 14 新增第十个不可变 migration，持久保存唯一 Owner 外部 subject binding、产品 device/session、token digest、活动与 recent-auth 状态；真实 SQLite restart 后身份与撤销仍生效。loopback bootstrap 默认关闭、短时有效并原子只允许一次；Cloudflare Access verifier 只接受 RS256，验证 signature、`kid`/JWKS 有界缓存与轮换、issuer、audience、`exp`、`nbf` 和 clock skew，稳定 subject reference 由 issuer 与 subject 派生，不信任 forwarded email/username。
+
+产品 session/device 支持 activity、recent-auth 和分层撤销；session-bound HMAC CSRF 拒绝过期与跨 session 使用。break-glass 使用独立 loopback credential 与独占文件锁，只暴露 Owner mapping 修复、session/device 撤销和关闭公网入口，并写受保护审计。Gateway v2 在身份验证后仍执行确定性授权，因此有效 JWT 不能把 `ASK` 或 `DENY` 变成 `ALLOW`。本任务只使用本地密码学与 SQLite fixture，真实 Cloudflare/MFA 与最终 Agent Service 组合分别保留给 Tasks 27 和 23。实现与证据位于 `test/integration/qualification/evidence/s1-task14-identity-gateway.json`。
 
 ### Task 15：构建持久 Web 控制中心基础旅程
 
-- [ ] 建立 browser-only workspace、typed Gateway client、SSE state synchronizer、本地草稿/last cursor/UI preference storage 和无秘密日志边界。
-- [ ] 实现受认证 Thread list、持久 chat、streaming Run、cancel、pending approval、后台任务、repository monitor、inbox、Memory、Trace、session/device 和 health 页面。
-- [ ] 浏览器本地只能保存未发送草稿、UI preference 和 last cursor；不得本地接纳命令、创建任务、批准行动或缓存长期私人正文。
-- [ ] 所有 mutation 使用稳定 idempotency key，并在 pending/accepted/rejected/expired/replayed 状态间提供明确反馈。
-- [ ] 为键盘、焦点、屏幕阅读器语义、触摸目标、对比度和非颜色提示建立基础自动化检查；完整三语和 WCAG 2.2 AA 由控制中心体验 Spec 收口，不能在本 Plan 中误报完成。
-- [ ] Browser E2E 覆盖 Thread/chat、重连、审批、inbox、Memory correction/delete、Trace、session/device 和 degraded health。
+- [x] 建立 browser-only workspace、typed Gateway client、SSE state synchronizer、本地草稿/last cursor/UI preference storage 和无秘密日志边界。
+- [x] 实现受认证 Thread list、持久 chat、streaming Run、cancel、pending approval、后台任务、repository monitor、inbox、Memory、Trace、session/device 和 health 页面。
+- [x] 浏览器本地只能保存未发送草稿、UI preference 和 last cursor；不得本地接纳命令、创建任务、批准行动或缓存长期私人正文。
+- [x] 所有 mutation 使用稳定 idempotency key，并在 pending/accepted/rejected/expired/replayed 状态间提供明确反馈。
+- [x] 为键盘、焦点、屏幕阅读器语义、触摸目标、对比度和非颜色提示建立基础自动化检查；完整三语和 WCAG 2.2 AA 由控制中心体验 Spec 收口，不能在本 Plan 中误报完成。
+- [x] Browser E2E 覆盖 Thread/chat、重连、审批、inbox、Memory correction/delete、Trace、session/device 和 degraded health。
+
+Task 15 把 `apps/control-center` 从构建占位改为 browser-only React/Vite 控制中心：严格 typed v1/v2 client、受保护 Payload admission、SSE synchronizer 与本地 storage 只保存未发送草稿、显示密度和 last cursor。页面覆盖 Thread/chat、streaming Run/cancel、审批、后台任务与 repository monitor、inbox、Memory correction/delete、Trace、session/device 和 health；所有 mutation 生成独立幂等键，并明确显示 pending、accepted、replayed、rejected 与 expired。
+
+可重复真实浏览器脚本通过实际点击与文本输入完成消息发送、Run 取消、批准、任务暂停、Memory 更正/删除和 session 撤销，再覆盖 degraded health、断网恢复、后台 tab、close/reopen 与 `390x844` 视口。Chromium 与 WebKit 的最小触控目标分别为 `44.78125px` 和 `44px`，axe 均为零 violation；语义 landmark、label、live region、visible focus、对比度和非颜色连接文字只建立基础门槛，不宣称三语或完整 WCAG 2.2 AA。fixture 不是生产 Control Plane、真实身份或公网路径；完整浏览器矩阵仍由 Task 27 收口。实现与证据位于 `test/integration/qualification/evidence/s1-task15-control-center.json`。
 
 ### Task 16：完成 Mem0 OSS 双平台 compatibility gate
 

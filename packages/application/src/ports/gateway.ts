@@ -88,3 +88,23 @@ export interface GatewayV2ReadModelPort {
     readonly afterCursor: string | null;
   }): AsyncIterable<GatewayV2Event>;
 }
+
+export type GatewayV2InboundMessage = GatewayV2Command | GatewayV2Query;
+
+export interface GatewayV2AccessPolicyPort {
+  authorize(input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly message: GatewayV2InboundMessage;
+  }): Promise<GatewayAccessDecision>;
+}
+
+export interface AgentGatewayV2Port {
+  request(
+    authentication: GatewayAuthenticationContext,
+    message: GatewayV2InboundMessage,
+  ): Promise<GatewayCommandResult | GatewayV2Snapshot>;
+  subscribe(
+    authentication: GatewayAuthenticationContext,
+    afterCursor: string | null,
+  ): AsyncIterable<GatewayV2Event>;
+}

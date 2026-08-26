@@ -1,7 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { controlCenterWorkspace } from "./index.ts";
+import { ControlCenterApp } from "./app.js";
+import "./styles.css";
 
 const root = document.querySelector<HTMLDivElement>("#root");
 
@@ -11,9 +12,6 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <main>
-      <h1>Himawari Agent</h1>
-      <p data-workspace={controlCenterWorkspace.applicationKind}>Control Center</p>
-    </main>
+    <ControlCenterApp />
   </StrictMode>,
 );

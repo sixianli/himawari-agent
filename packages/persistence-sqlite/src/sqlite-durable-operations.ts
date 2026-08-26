@@ -16,6 +16,9 @@ import type {
   DeliverySettlement,
   GrantRecord,
   PayloadRecord,
+  ProductDeviceRecord,
+  ProductSessionRecord,
+  OwnerIdentityBindingRecord,
   ReliableEvent,
   ReliableEventRecord,
   ResolveApprovalInput,
@@ -29,9 +32,12 @@ import type {
 import type {
   BackgroundJobState,
   BackgroundOccurrence,
+  DeviceId,
   JobId,
   OccurrenceId,
+  OwnerId,
   ProductAuthorityFence,
+  SessionId,
 } from "@himawari-agent/domain";
 import type {
   EventSubscription,
@@ -117,6 +123,36 @@ interface BackgroundOccurrenceRow {
   readonly workLeaseExpiresAt: string | null;
   readonly lastErrorCode: string | null;
   readonly recordJson: string | null;
+}
+
+interface IdentityBindingRow {
+  readonly ownerId: string;
+  readonly externalSubjectRef: string;
+  readonly boundAt: string;
+  readonly status: OwnerIdentityBindingRecord["status"];
+}
+
+interface ProductDeviceRow {
+  readonly id: string;
+  readonly ownerId: string;
+  readonly revision: number;
+  readonly label: string;
+  readonly status: ProductDeviceRecord["status"];
+  readonly firstSeenAt: string;
+  readonly lastSeenAt: string;
+}
+
+interface ProductSessionRow {
+  readonly id: string;
+  readonly ownerId: string;
+  readonly deviceId: string;
+  readonly revision: number;
+  readonly authenticationRef: string;
+  readonly status: ProductSessionRecord["status"];
+  readonly firstAuthenticatedAt: string;
+  readonly lastActiveAt: string;
+  readonly recentAuthenticatedAt: string;
+  readonly revokedAt: string | null;
 }
 
 function parseRecord<TRecord>(row: JsonRow | undefined): TRecord | undefined {
@@ -366,6 +402,52 @@ export class SqliteDurableOperations {
       case "deletion.save":
         return this.saveDeletion(
           payload as { record: SessionDeletionRecord; expectedRevision: number },
+        );
+      case "identity.bindFirstOwner":
+        return this.bindFirstOwner(
+          payload as { ownerId: string; externalSubjectRef: string; boundAt: string },
+        );
+      case "identity.readBySubject":
+        return this.readIdentityBySubject(
+          (payload as { externalSubjectRef: string }).externalSubjectRef,
+        );
+      case "identity.readByOwner":
+        return this.readIdentityByOwner((payload as { ownerId: string }).ownerId);
+      case "identity.repairBinding":
+        return this.repairIdentityBinding(
+          payload as { ownerId: string; externalSubjectRef: string; repairedAt: string },
+        );
+      case "identity.readSession":
+        return this.readProductSession((payload as { sessionId: string }).sessionId);
+      case "identity.findSessionByAuthenticationRef":
+        return this.findProductSessionByAuthenticationRef(
+          (payload as { authenticationRef: string }).authenticationRef,
+        );
+      case "identity.listSessions":
+        return this.listProductSessions(payload as { ownerId: string; includeRevoked: boolean });
+      case "identity.listDevices":
+        return this.listProductDevices(payload as { ownerId: string; includeRevoked: boolean });
+      case "identity.saveDevice":
+        return this.saveProductDevice(
+          payload as {
+            device: Omit<ProductDeviceRecord, "revision">;
+            expectedRevision: number | null;
+          },
+        );
+      case "identity.revokeDevice":
+        return this.revokeProductDevice(
+          payload as { deviceId: string; expectedRevision: number; revokedAt: string },
+        );
+      case "identity.saveSession":
+        return this.saveProductSession(
+          payload as {
+            session: Omit<ProductSessionRecord, "revision">;
+            expectedRevision: number | null;
+          },
+        );
+      case "identity.revokeSession":
+        return this.revokeProductSession(
+          payload as { sessionId: string; expectedRevision: number; revokedAt: string },
         );
       case "gateway.upsertThread":
         return this.upsertThreadSnapshot((payload as { snapshot: ThreadSnapshot }).snapshot);
@@ -2518,6 +2600,364 @@ export class SqliteDurableOperations {
         input.record.id,
       );
     return input.record;
+  }
+
+  private identityBindingFromRow(
+    row: IdentityBindingRow | undefined,
+  ): OwnerIdentityBindingRecord | undefined {
+    return row
+      ? {
+          ownerId: row.ownerId as OwnerId,
+          externalSubjectRef: row.externalSubjectRef,
+          boundAt: row.boundAt,
+          status: row.status,
+        }
+      : undefined;
+  }
+
+  private bindFirstOwner(input: {
+    ownerId: string;
+    externalSubjectRef: string;
+    boundAt: string;
+  }): OwnerIdentityBindingRecord {
+    this.assertDiskHeadroom();
+    const transaction = this.database.transaction(() => {
+      const bindingCount = (
+        this.database.prepare("SELECT COUNT(*) AS count FROM owner_identity_bindings").get() as {
+          readonly count: number;
+        }
+      ).count;
+      if (bindingCount !== 0) {
+        this.fail("PORT_CONFLICT", "Owner bootstrap has already been consumed");
+      }
+      const owners = this.database.prepare("SELECT id FROM owners ORDER BY id LIMIT 2").all() as {
+        readonly id: string;
+      }[];
+      if (owners.length > 1 || (owners.length === 1 && owners[0]?.id !== input.ownerId)) {
+        this.fail("PORT_CONFLICT", "Owner bootstrap requires one stable product Owner");
+      }
+      if (owners.length === 0) {
+        this.database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(input.ownerId);
+      }
+      this.database
+        .prepare(
+          `INSERT INTO owner_identity_bindings (
+            owner_id, external_subject_ref, bound_at, status
+          ) VALUES (?, ?, ?, 'active')`,
+        )
+        .run(input.ownerId, input.externalSubjectRef, input.boundAt);
+      return this.readIdentityByOwner(input.ownerId);
+    });
+    const result = transaction.immediate();
+    if (!result) this.fail("PORT_INVALID_OPERATION", "Owner bootstrap did not persist a binding");
+    return result;
+  }
+
+  private readIdentityBySubject(
+    externalSubjectRef: string,
+  ): OwnerIdentityBindingRecord | undefined {
+    return this.identityBindingFromRow(
+      this.database
+        .prepare(
+          `SELECT owner_id AS ownerId, external_subject_ref AS externalSubjectRef,
+            bound_at AS boundAt, status
+          FROM owner_identity_bindings WHERE external_subject_ref = ?`,
+        )
+        .get(externalSubjectRef) as IdentityBindingRow | undefined,
+    );
+  }
+
+  private readIdentityByOwner(ownerId: string): OwnerIdentityBindingRecord | undefined {
+    return this.identityBindingFromRow(
+      this.database
+        .prepare(
+          `SELECT owner_id AS ownerId, external_subject_ref AS externalSubjectRef,
+            bound_at AS boundAt, status
+          FROM owner_identity_bindings WHERE owner_id = ?`,
+        )
+        .get(ownerId) as IdentityBindingRow | undefined,
+    );
+  }
+
+  private repairIdentityBinding(input: {
+    ownerId: string;
+    externalSubjectRef: string;
+    repairedAt: string;
+  }): OwnerIdentityBindingRecord {
+    this.assertDiskHeadroom();
+    const result = this.database
+      .prepare(
+        `UPDATE owner_identity_bindings
+        SET external_subject_ref = ?, bound_at = ?, status = 'active'
+        WHERE owner_id = ?`,
+      )
+      .run(input.externalSubjectRef, input.repairedAt, input.ownerId);
+    if (result.changes !== 1) {
+      this.fail("PORT_NOT_FOUND", `Owner identity binding ${input.ownerId} not found`);
+    }
+    const binding = this.readIdentityByOwner(input.ownerId);
+    if (!binding) this.fail("PORT_INVALID_OPERATION", "Repaired identity binding disappeared");
+    return binding;
+  }
+
+  private productDeviceFromRow(row: ProductDeviceRow | undefined): ProductDeviceRecord | undefined {
+    return row
+      ? {
+          ...row,
+          id: row.id as DeviceId,
+          ownerId: row.ownerId as OwnerId,
+        }
+      : undefined;
+  }
+
+  private productSessionFromRow(
+    row: ProductSessionRow | undefined,
+  ): ProductSessionRecord | undefined {
+    return row
+      ? {
+          ...row,
+          id: row.id as SessionId,
+          ownerId: row.ownerId as OwnerId,
+          deviceId: row.deviceId as DeviceId,
+        }
+      : undefined;
+  }
+
+  private readProductSession(sessionId: string): ProductSessionRecord | undefined {
+    return this.productSessionFromRow(
+      this.database
+        .prepare(
+          `SELECT id, owner_id AS ownerId, device_id AS deviceId, revision,
+            authentication_ref AS authenticationRef, status,
+            first_authenticated_at AS firstAuthenticatedAt, last_active_at AS lastActiveAt,
+            recent_authenticated_at AS recentAuthenticatedAt, revoked_at AS revokedAt
+          FROM product_sessions WHERE id = ?`,
+        )
+        .get(sessionId) as ProductSessionRow | undefined,
+    );
+  }
+
+  private findProductSessionByAuthenticationRef(
+    authenticationRef: string,
+  ): ProductSessionRecord | undefined {
+    return this.productSessionFromRow(
+      this.database
+        .prepare(
+          `SELECT id, owner_id AS ownerId, device_id AS deviceId, revision,
+            authentication_ref AS authenticationRef, status,
+            first_authenticated_at AS firstAuthenticatedAt, last_active_at AS lastActiveAt,
+            recent_authenticated_at AS recentAuthenticatedAt, revoked_at AS revokedAt
+          FROM product_sessions WHERE authentication_ref = ?`,
+        )
+        .get(authenticationRef) as ProductSessionRow | undefined,
+    );
+  }
+
+  private listProductSessions(input: {
+    ownerId: string;
+    includeRevoked: boolean;
+  }): readonly ProductSessionRecord[] {
+    const rows = this.database
+      .prepare(
+        `SELECT id, owner_id AS ownerId, device_id AS deviceId, revision,
+          authentication_ref AS authenticationRef, status,
+          first_authenticated_at AS firstAuthenticatedAt, last_active_at AS lastActiveAt,
+          recent_authenticated_at AS recentAuthenticatedAt, revoked_at AS revokedAt
+        FROM product_sessions
+        WHERE owner_id = ? AND (? = 1 OR status = 'active')
+        ORDER BY last_active_at DESC, id`,
+      )
+      .all(input.ownerId, input.includeRevoked ? 1 : 0) as ProductSessionRow[];
+    return rows.map((row) => this.productSessionFromRow(row) as ProductSessionRecord);
+  }
+
+  private listProductDevices(input: {
+    ownerId: string;
+    includeRevoked: boolean;
+  }): readonly ProductDeviceRecord[] {
+    const rows = this.database
+      .prepare(
+        `SELECT id, owner_id AS ownerId, revision, label, status,
+          first_seen_at AS firstSeenAt, last_seen_at AS lastSeenAt
+        FROM devices WHERE owner_id = ? AND (? = 1 OR status = 'active')
+        ORDER BY last_seen_at DESC, id`,
+      )
+      .all(input.ownerId, input.includeRevoked ? 1 : 0) as ProductDeviceRow[];
+    return rows.map((row) => this.productDeviceFromRow(row) as ProductDeviceRecord);
+  }
+
+  private readProductDevice(deviceId: string): ProductDeviceRecord | undefined {
+    return this.productDeviceFromRow(
+      this.database
+        .prepare(
+          `SELECT id, owner_id AS ownerId, revision, label, status,
+            first_seen_at AS firstSeenAt, last_seen_at AS lastSeenAt
+          FROM devices WHERE id = ?`,
+        )
+        .get(deviceId) as ProductDeviceRow | undefined,
+    );
+  }
+
+  private saveProductDevice(input: {
+    device: Omit<ProductDeviceRecord, "revision">;
+    expectedRevision: number | null;
+  }): ProductDeviceRecord {
+    this.assertDiskHeadroom();
+    const current = this.readProductDevice(input.device.id);
+    if (input.expectedRevision === null) {
+      if (current) this.fail("PORT_DUPLICATE", `Device ${input.device.id} already exists`);
+      this.database
+        .prepare(
+          `INSERT INTO devices (
+            id, owner_id, revision, label, status, first_seen_at, last_seen_at
+          ) VALUES (?, ?, 0, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.device.id,
+          input.device.ownerId,
+          input.device.label,
+          input.device.status,
+          input.device.firstSeenAt,
+          input.device.lastSeenAt,
+        );
+    } else {
+      if (!current) this.fail("PORT_NOT_FOUND", `Device ${input.device.id} not found`);
+      if (current.revision !== input.expectedRevision || current.ownerId !== input.device.ownerId) {
+        this.fail("PORT_CONFLICT", `Device ${input.device.id} has a stale revision or scope`);
+      }
+      this.database
+        .prepare(
+          `UPDATE devices SET revision = revision + 1, label = ?, status = ?,
+            first_seen_at = ?, last_seen_at = ? WHERE id = ? AND revision = ?`,
+        )
+        .run(
+          input.device.label,
+          input.device.status,
+          input.device.firstSeenAt,
+          input.device.lastSeenAt,
+          input.device.id,
+          input.expectedRevision,
+        );
+    }
+    const saved = this.readProductDevice(input.device.id);
+    if (!saved) this.fail("PORT_INVALID_OPERATION", `Device ${input.device.id} was not persisted`);
+    return saved;
+  }
+
+  private revokeProductDevice(input: {
+    deviceId: string;
+    expectedRevision: number;
+    revokedAt: string;
+  }): ProductDeviceRecord {
+    this.assertDiskHeadroom();
+    const transaction = this.database.transaction(() => {
+      const current = this.readProductDevice(input.deviceId);
+      if (!current) this.fail("PORT_NOT_FOUND", `Device ${input.deviceId} not found`);
+      if (current.revision !== input.expectedRevision || current.status !== "active") {
+        this.fail("PORT_CONFLICT", `Device ${input.deviceId} cannot be revoked`);
+      }
+      this.database
+        .prepare(
+          `UPDATE devices SET revision = revision + 1, status = 'revoked', last_seen_at = ?
+          WHERE id = ? AND revision = ?`,
+        )
+        .run(input.revokedAt, input.deviceId, input.expectedRevision);
+      this.database
+        .prepare(
+          `UPDATE product_sessions SET revision = revision + 1, status = 'revoked', revoked_at = ?
+          WHERE device_id = ? AND status = 'active'`,
+        )
+        .run(input.revokedAt, input.deviceId);
+      return this.readProductDevice(input.deviceId);
+    });
+    const revoked = transaction.immediate();
+    if (!revoked) this.fail("PORT_INVALID_OPERATION", `Device ${input.deviceId} disappeared`);
+    return revoked;
+  }
+
+  private saveProductSession(input: {
+    session: Omit<ProductSessionRecord, "revision">;
+    expectedRevision: number | null;
+  }): ProductSessionRecord {
+    this.assertDiskHeadroom();
+    const current = this.readProductSession(input.session.id);
+    const device = this.readProductDevice(input.session.deviceId);
+    if (!device || device.ownerId !== input.session.ownerId || device.status !== "active") {
+      this.fail("PORT_NOT_AUTHORITATIVE", "Product session requires an active Owner device");
+    }
+    if (input.expectedRevision === null) {
+      if (current) this.fail("PORT_DUPLICATE", `Product session ${input.session.id} exists`);
+      this.database
+        .prepare(
+          `INSERT INTO product_sessions (
+            id, owner_id, device_id, revision, authentication_ref, status,
+            first_authenticated_at, last_active_at, recent_authenticated_at, revoked_at
+          ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.session.id,
+          input.session.ownerId,
+          input.session.deviceId,
+          input.session.authenticationRef,
+          input.session.status,
+          input.session.firstAuthenticatedAt,
+          input.session.lastActiveAt,
+          input.session.recentAuthenticatedAt,
+          input.session.revokedAt,
+        );
+    } else {
+      if (!current) this.fail("PORT_NOT_FOUND", `Product session ${input.session.id} not found`);
+      if (
+        current.revision !== input.expectedRevision ||
+        current.ownerId !== input.session.ownerId ||
+        current.deviceId !== input.session.deviceId
+      ) {
+        this.fail("PORT_CONFLICT", `Product session ${input.session.id} is stale or re-scoped`);
+      }
+      this.database
+        .prepare(
+          `UPDATE product_sessions SET revision = revision + 1, authentication_ref = ?,
+            status = ?, first_authenticated_at = ?, last_active_at = ?,
+            recent_authenticated_at = ?, revoked_at = ?
+          WHERE id = ? AND revision = ?`,
+        )
+        .run(
+          input.session.authenticationRef,
+          input.session.status,
+          input.session.firstAuthenticatedAt,
+          input.session.lastActiveAt,
+          input.session.recentAuthenticatedAt,
+          input.session.revokedAt,
+          input.session.id,
+          input.expectedRevision,
+        );
+    }
+    const saved = this.readProductSession(input.session.id);
+    if (!saved) {
+      this.fail("PORT_INVALID_OPERATION", `Product session ${input.session.id} was not persisted`);
+    }
+    return saved;
+  }
+
+  private revokeProductSession(input: {
+    sessionId: string;
+    expectedRevision: number;
+    revokedAt: string;
+  }): ProductSessionRecord {
+    this.assertDiskHeadroom();
+    const current = this.readProductSession(input.sessionId);
+    if (!current || current.revision !== input.expectedRevision || current.status !== "active") {
+      this.fail("PORT_CONFLICT", `Product session ${input.sessionId} cannot be revoked`);
+    }
+    this.database
+      .prepare(
+        `UPDATE product_sessions SET revision = revision + 1, status = 'revoked', revoked_at = ?
+        WHERE id = ? AND revision = ?`,
+      )
+      .run(input.revokedAt, input.sessionId, input.expectedRevision);
+    const revoked = this.readProductSession(input.sessionId);
+    if (!revoked) this.fail("PORT_INVALID_OPERATION", `Product session ${input.sessionId} lost`);
+    return revoked;
   }
 
   private upsertThreadSnapshot(snapshot: ThreadSnapshot): ThreadSnapshot {

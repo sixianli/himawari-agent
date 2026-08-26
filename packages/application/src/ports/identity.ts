@@ -41,10 +41,44 @@ export interface ProductDeviceRecord {
   readonly lastSeenAt: string;
 }
 
+export interface OwnerIdentityBindingRecord {
+  readonly ownerId: OwnerId;
+  readonly externalSubjectRef: string;
+  readonly boundAt: string;
+  readonly status: "active" | "disabled";
+}
+
+export interface OwnerIdentityStatePort {
+  bindFirstOwner(input: {
+    readonly ownerId: OwnerId;
+    readonly externalSubjectRef: string;
+    readonly boundAt: string;
+  }): Promise<OwnerIdentityBindingRecord>;
+  readBySubject(externalSubjectRef: string): Promise<OwnerIdentityBindingRecord | undefined>;
+  readByOwner(ownerId: OwnerId): Promise<OwnerIdentityBindingRecord | undefined>;
+  repairBinding(input: {
+    readonly ownerId: OwnerId;
+    readonly externalSubjectRef: string;
+    readonly repairedAt: string;
+  }): Promise<OwnerIdentityBindingRecord>;
+}
+
 export interface SessionDeviceStatePort {
   readSession(sessionId: SessionId): Promise<ProductSessionRecord | undefined>;
+  findSessionByAuthenticationRef(
+    authenticationRef: string,
+  ): Promise<ProductSessionRecord | undefined>;
   listSessions(ownerId: OwnerId, includeRevoked: boolean): Promise<readonly ProductSessionRecord[]>;
   listDevices(ownerId: OwnerId, includeRevoked: boolean): Promise<readonly ProductDeviceRecord[]>;
+  saveDevice(
+    device: Omit<ProductDeviceRecord, "revision">,
+    expectedRevision: number | null,
+  ): Promise<ProductDeviceRecord>;
+  revokeDevice(
+    deviceId: DeviceId,
+    expectedRevision: number,
+    revokedAt: string,
+  ): Promise<ProductDeviceRecord>;
   saveSession(
     session: Omit<ProductSessionRecord, "revision">,
     expectedRevision: number | null,
