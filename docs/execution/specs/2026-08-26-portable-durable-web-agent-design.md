@@ -12,7 +12,7 @@ date: "2026-08-26"
 
 本 Spec 在已经完成的 Foundation 边界之上，设计 v0.2 的持久 Web 基础切片：把当前以进程内测试适配器为主的组合，推进为可真实启动、跨正常重启恢复、经公共 Web 安全访问，并可在 Mac 与 Hermes 之间停机迁移的单一所有者 Agent。
 
-本 Spec 只覆盖这一基础切片，不代表完整 v0.2 已经设计完或达到生产上线条件。Web 研究、文件与代码工作区、Calendar、三语 UI、无障碍、完整主动性与能力管理等已由 PRD 确认为 v0.2 必交能力，但需要后续独立 Spec；所有 Spec 和完整 PRD 验收同时通过后，才能称为 v0.2 生产版。
+本 Spec 只覆盖这一基础切片，不代表完整 v0.2 已经达到生产上线条件。PRD v0.2 的其余能力现已由完整 Spec 套件分别设计；所有 Spec、跨切片旅程和完整 PRD 验收同时通过后，才能称为 v0.2 生产版。
 
 本 Spec 提出以下首个正式适配器建议：
 
@@ -28,6 +28,7 @@ date: "2026-08-26"
 ## 来源上下文
 
 - 产品需求：[SOURCE: docs/prd-v0.2.md]
+- v0.2 完整 Spec 套件与覆盖索引：[SOURCE: docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md]
 - 当前已实现系统：[SOURCE: docs/architecture-v0.1.md]
 - Pi runtime 边界：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
 - 无头 Gateway：[SOURCE: docs/adr/0002-headless-agent-gateway.md]
@@ -77,14 +78,16 @@ date: "2026-08-26"
 
 ### 本 Spec 不设计，但仍属于 v0.2 硬性范围
 
-- Web 研究、受控认证 Web 操作、文件与授权代码工作区。
-- Apple/iCloud Calendar 的读取和已允许写入。
-- 中、英、日三种完整 UI、Thread 级回答语言和 WCAG 2.2 AA 关键流程。
-- 完整的周期反思、主动建议、内部专业 Worker、自我改进候选与治理界面。
-- Tools、Skills、MCP、本地程序、第三方 API 和 adapter 安装、更新、撤销及权限扩张的完整产品流程。
-- PRD 中未由本基础切片明确覆盖的所有验收项。
+- Owner 可见 Thread 生命周期、Fork、压缩、回答语言和对话上下文：[SOURCE: docs/execution/specs/2026-08-26-owner-thread-conversation-design.md]
+- 完整 Web 控制面、中英日三语、响应式和 WCAG 2.2 AA：[SOURCE: docs/execution/specs/2026-08-26-control-center-experience-design.md]
+- ActionKind、风险、Grant 以及 Tools、Skills、MCP、本地程序、第三方 API 和 adapter 生命周期：[SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md]
+- 公共 Web 研究与受控认证 Web 操作：[SOURCE: docs/execution/specs/2026-08-26-web-research-browser-actions-design.md]
+- 主机文件、授权代码工作区、命令和本地 commit gate：[SOURCE: docs/execution/specs/2026-08-26-host-files-code-workspaces-design.md]
+- Apple/iCloud Calendar 读取、个人事件写入和参与人保护：[SOURCE: docs/execution/specs/2026-08-26-apple-calendar-integration-design.md]
+- 周期反思、主动建议、内部专业 Worker 和自我改进候选：[SOURCE: docs/execution/specs/2026-08-26-proactivity-workers-self-improvement-design.md]
+- 完整浏览器/无障碍/规模/长期运行验收与手动核心升级：[SOURCE: docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md]
 
-这些内容必须由后续 Spec 设计并验证，不能因为本 Spec 被确认而从 v0.2 删除，也不能在它们未完成时把产品称为生产版。
+这些 active Specs 与本基础 Spec 共同覆盖完整 v0.2。它们不能因为本 Spec 已确认而被删除、降级或吸收到未经确认的实施范围，也不能在它们未完成时把产品称为生产版。
 
 ### PRD 已明确排除
 
@@ -421,7 +424,7 @@ Worker 是活动主机上的独立进程。首个 transport 把 execution.v1 env
 
 请求与响应有大小限制、严格解析和版本。大输入与结果只传 Payload reference。handshake 验证 execution.v1 compatibility、worker instance identity 与当前 boot token。Agent Service 持久化 parent checkpoints/events；Worker local state 不能成为 Agent 权威。
 
-首个 Worker 只执行产品拥有且已经注册的 adapters，例如有界 work directory 中的 GitHub read operations。任意 MCP/package 隔离由后续 Spec 设计；本切片已经提供真实 process boundary、deadline、cancellation、resource ceilings 和 handle validation。
+首个 Worker 只执行产品拥有且已经注册的 adapters，例如有界 work directory 中的 GitHub read operations。MCP/package 的完整治理和隔离由行动授权与能力治理 Spec 定义；本切片提供真实 process boundary、deadline、cancellation、resource ceilings 和 handle validation。
 
 ### Thread 稳定检查点与自动 Memory
 

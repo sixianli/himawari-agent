@@ -10,11 +10,13 @@ date: "2026-08-26"
 
 **来源 Spec：** [SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
 
+**v0.2 Spec 套件：** [SOURCE: docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md]
+
 **目标：** 在已完成的 Foundation 边界上，实现一个可在 Mac 与 Hermes 正式启动、跨正常重启恢复、经受认证公共 Web 使用，并可通过停机加密迁移切换单一活动权威的 Himawari Agent 基础切片。
 
 **架构：** 保持 domain、contracts 和 application 的产品自有边界，以 SQLite 作为单一产品状态权威，以受保护 Payload、host-specific secret source、Mem0 projection、HTTP+SSE Gateway、Cloudflare 身份断言、GitHub App 和 execution.v1 over UDS 作为外层 adapters。Agent Service 负责权威、接纳、编排和持久结果；Execution Worker 作为独立受限进程执行已授权能力；Pi Session 继续只是可重建的单 Run runtime projection。
 
-本 Plan 只实施来源 Spec 的“持久 Web 基础切片”。Web 研究、认证 Web 操作、文件与代码工作区、Apple/iCloud Calendar、完整三语 UI、完整 WCAG 2.2 AA、完整主动性与通用能力治理仍需后续独立 Spec；本 Plan 不实现隐藏半成品，也不把基础切片完成等同于 v0.2 production-ready。
+本 Plan 只实施来源 Spec 的“持久 Web 基础切片”。Thread/对话、控制中心体验、行动授权与能力治理、Web 研究、文件与代码工作区、Apple/iCloud Calendar、主动性/Worker/自我改进和生产资格现已分别由 active Specs 设计；这些 Spec 确认后各自派生 Plan。本 Plan 不越界实现隐藏半成品，也不把基础切片完成等同于 v0.2 production-ready。
 
 ---
 
@@ -263,7 +265,7 @@ testing → application + domain + product contracts
 - [ ] 实现受认证 Thread list、持久 chat、streaming Run、cancel、pending approval、后台任务、repository monitor、inbox、Memory、Trace、session/device 和 health 页面。
 - [ ] 浏览器本地只能保存未发送草稿、UI preference 和 last cursor；不得本地接纳命令、创建任务、批准行动或缓存长期私人正文。
 - [ ] 所有 mutation 使用稳定 idempotency key，并在 pending/accepted/rejected/expired/replayed 状态间提供明确反馈。
-- [ ] 为键盘、焦点、屏幕阅读器语义、触摸目标、对比度和非颜色提示建立基础自动化检查；完整三语和 WCAG 2.2 AA 仍由后续 Spec 收口，不能在本 Plan 中误报完成。
+- [ ] 为键盘、焦点、屏幕阅读器语义、触摸目标、对比度和非颜色提示建立基础自动化检查；完整三语和 WCAG 2.2 AA 由控制中心体验 Spec 收口，不能在本 Plan 中误报完成。
 - [ ] Browser E2E 覆盖 Thread/chat、重连、审批、inbox、Memory correction/delete、Trace、session/device 和 degraded health。
 
 ### Task 16：完成 Mem0 OSS 双平台 compatibility gate
@@ -375,7 +377,7 @@ testing → application + domain + product contracts
 - [ ] 覆盖 bootstrap、MFA redirect、Thread/chat、SSE reconnect、approval、inbox、Memory、Trace、sessions/devices、recent re-auth、degraded state 和 browser offline draft。
 - [ ] 安全测试覆盖 forged/missing JWT、wrong issuer/audience、JWKS rotation、header spoofing、CSRF/cross-origin、replay、oversized body、CSP 和 direct-origin bypass。
 - [ ] 在得到外部账户授权后运行 staging Cloudflare Access/Tunnel smoke，验证真实 public URL、origin 只绑定受控入口、MFA、SSE heartbeat/reconnect 和最小公共 route set。
-- [ ] 在桌面与手机完成基础键盘、屏幕阅读器、焦点、对比度、触摸和非颜色提示检查，并把三语/WCAG 仍缺部分保留给后续 Spec。
+- [ ] 在桌面与手机完成本基础切片的键盘、屏幕阅读器、焦点、对比度、触摸和非颜色提示检查，并把完整三语/WCAG 验收留在控制中心体验 Spec 的实施范围。
 - [ ] 不把 staging 通过等同于 production deployment 或完整 v0.2 验收。
 
 ### Task 28：完成 Mac/Hermes、规模与迁移验收
@@ -395,7 +397,7 @@ testing → application + domain + product contracts
 - [ ] 更新 `docs/architecture-v0.1.md` 只描述已验证的 packages、schema、processes、adapters、data flow、deployment 与 Known Limitations；不把目标或 staging 状态写成当前生产事实。
 - [ ] 更新 README 的 verified install、development、test、doctor 和安全边界；不写入 secret、临时 URL 或本机私有配置。
 - [ ] 若实施形成新的持久技术决策，先创建并接受单一决策 ADR；不得把 ADR 决策藏在 Plan evidence 或 Architecture 中。
-- [ ] 对仍未设计的 PRD v0.2 硬性范围创建后续 Spec，或在暂不进入设计时记录明确 Backlog；不能用本 Plan 关闭它们，也不能创建 `docs/TODO.md`。
+- [ ] 对账 v0.2 Spec 套件中全部 active sibling Specs、跨切片契约和 Architecture 当前事实；如果 PRD 新增范围尚无 Spec，则阻止收口并按文档治理创建 Spec，不能用本 Plan、Backlog 或 `docs/TODO.md` 代替当前范围。
 
 ### Task 30：完成验收映射、发布证据与文档收口
 
@@ -455,7 +457,7 @@ testing → application + domain + product contracts
 - [ ] paid/live models、Cloudflare、GitHub 和其他外部变更均有独立授权、费用/权限边界和完成后 readback。
 - [ ] production secrets、machine-secret literals、私人生产数据、临时凭据和本机绝对配置未进入 Git、fixture、日志、Trace 或迁移包。
 - [ ] 当前 Architecture、README 和已经实现的 Runbooks 与代码、schema、部署和实际限制一致。
-- [ ] 后续 v0.2 硬性范围已由受治理 Spec 或 Backlog 承接；没有 `docs/TODO.md` 或隐藏在 Plan prose 中的未来工作。
+- [ ] v0.2 全部硬性范围已由 Spec 套件中的 active Specs 承接；没有用 Backlog、`docs/TODO.md` 或 Plan prose 把当前版本范围推迟为未来工作。
 - [ ] 没有新 durable decision 只存在于代码或 Plan；需要的 ADR 已接受，旧 ADR 未被改写。
 - [ ] `npm run check`、全部相关测试、Pi compatibility、严格文档校验和 `git diff --check` 全部通过。
 - [ ] 本 Plan 与来源 Spec 仅在工作真正关闭后移动到 `docs/archive/plans/` 与 `docs/archive/specs/`。
