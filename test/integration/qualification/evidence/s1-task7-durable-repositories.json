@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T14:19:54Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T07",
+  "candidateRevision": "5cdf26afa6eefd9968ef57cb961157fa4adeaef6",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 7,
+    "behind": 0,
+    "status": "task-scoped changes"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "sqlite": "3.53.2",
+    "schemaObjectCount": 49,
+    "migrationCount": 7,
+    "migration0007Sha256": "19c3ac96f811ec48430acc1397dc2c11387b8a045fa11bac22c114c201886718",
+    "externalCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npm run test:contracts -- --run packages/persistence-sqlite/test/migration-engine.contract.test.ts packages/persistence-sqlite/test/schema-contract.contract.test.ts",
+      "exitStatus": 0,
+      "result": "8 focused immutable-migration and schema-catalog contract tests passed"
+    },
+    {
+      "command": "npm run test:integration -- --run test/integration/sqlite-durable-repositories.test.ts test/integration/sqlite-product-state.test.ts",
+      "exitStatus": 0,
+      "result": "36 real-file SQLite conformance, outbox, read-model, restart and transaction tests passed"
+    },
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, Node/browser typecheck, 14-workspace dependency boundaries and v0.2 coverage passed"
+    },
+    {
+      "command": "npm test && npm run check:pi-compat && npm run build:node",
+      "exitStatus": 0,
+      "result": "121 unit, 101 contract, 277 integration, 3 E2E and 6 Pi compatibility tests passed; Node TypeScript build passed"
+    }
+  ],
+  "verificationSummary": [
+    "Trace、Payload、Audit、Authorization、Capability、Scheduler 与 Attention/Delivery 的正式 reference conformance suites 直接运行同一专用 SQLite Worker harness。",
+    "Session 删除状态、Approval/Grant、Capability Handle、Scheduler Job、Delivery revision 和完整端口记录跨关闭与重启保持可恢复。",
+    "Outbox 使用到期 claim 和匹配 acknowledgment；sink 成功而 acknowledgment 未提交时，重启以相同 event ID 重放，consumer receipt 对重复事件返回 false。",
+    "Gateway Thread/Run snapshot 强制 scope 与单调 revision，stream event 绑定 Run scope，cursor 持久化，retention watermark 单调且旧 cursor 明确失效。",
+    "Worker ready 前回收 expired claim 和中断 delivery，并报告 pending event、未终结 Run、待审批、待投递、未完成删除及 queued/retry_wait occurrence。",
+    "Task 7 的 19 项重启/持久化测试与 Task 6 的 17 项 child-process/transaction 测试共同覆盖 reference contract、进程死亡和重新打开 SQLite 的恢复边界。"
+  ],
+  "unverified": [
+    "生产 Payload 加密、host secret source 和 key rotation 属于 Task 8；当前 SQLite adapter 只接收并持久化调用方提供的 ciphertext 与元数据。",
+    "正式 startup/readiness coordinator、state-root 目录生命周期和服务进程组合属于 Task 9–11。",
+    "生产 Memory、模型、Capability 隔离、Web Gateway、Cloudflare、GitHub 和部署资格仍属于后续任务。",
+    "本任务未安装或启动 Mac/Hermes 服务，也未对任何生产 state root 执行 migration。"
+  ],
+  "externalEffects": [
+    "测试只在操作系统临时目录创建 SQLite/WAL、state-root lock 和验证子进程；测试完成后由 harness 清理。",
+    "未访问网络、未调用模型、未读取生产秘密、未修改外部账户且未触碰 Mac/Hermes 服务状态。"
+  ],
+  "implementationCommit": null
+}

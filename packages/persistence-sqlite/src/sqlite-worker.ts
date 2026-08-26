@@ -22,6 +22,7 @@ import type {
   ProductAuthorityFence,
 } from "@himawari-agent/domain";
 import BetterSqlite3 from "better-sqlite3";
+import { SqliteDurableOperations } from "./sqlite-durable-operations.ts";
 import type { SqliteWorkerConfiguration } from "./sqlite-execution-context.js";
 
 interface WorkerRequest {
@@ -530,6 +531,13 @@ function assertDiskHeadroom(): void {
   }
 }
 
+const durableOperations = new SqliteDurableOperations(
+  database,
+  applicationFailure,
+  assertDiskHeadroom,
+);
+const startupRecovery = durableOperations.recoverStartup(configuration.startupNow);
+
 function currentAuthority(input: CommitStateAndEventsInput, now: string): AuthorityRow {
   const row = database
     .prepare(
@@ -820,7 +828,7 @@ channel.on("message", (request: WorkerRequest) => {
     let value: unknown;
     switch (request.operation) {
       case "ready":
-        value = { writerSequence: configuration.writerSequence };
+        value = { writerSequence: configuration.writerSequence, startupRecovery };
         break;
       case "read":
         value = readState((request.payload as { key: string }).key);
@@ -899,7 +907,8 @@ channel.on("message", (request: WorkerRequest) => {
         value = null;
         break;
       default:
-        throw new Error(`Unknown SQLite worker operation ${request.operation}`);
+        value = durableOperations.execute(request.operation, request.payload);
+        break;
     }
     channel.postMessage({ id: request.id, ok: true, value });
     if (request.operation === "close") channel.close();

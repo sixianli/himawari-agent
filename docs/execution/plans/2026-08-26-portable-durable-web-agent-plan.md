@@ -211,12 +211,18 @@ Task 6 新增专用 Worker execution context；主线程只通过结构化消息
 
 ### Task 7：实现生产 repositories、outbox 与持久 Read Model
 
-- [ ] 让现有 persistence、Trace、authorization、capability、scheduler、attention、delivery、audit 和 deletion conformance suites 可以直接运行 SQLite harness。
-- [ ] 实现 ProductStateRepository、ReliableEvent、Trace、Payload metadata、Audit、Authorization、Capability、Scheduler、Attention、Delivery 和 Gateway Read Model 的 SQLite adapters。
-- [ ] publisher 使用可恢复 claim/lease 和稳定 event ID；在 sink 已接收但 acknowledgment 未提交时重放同一事件，由 consumer dedupe。
-- [ ] 实现持久 cursor、scope-safe event query、retention watermark 和 bounded snapshot refresh 所需的 read model 记录。
-- [ ] 启动时恢复 pending outbox、expired claims、未终结 Run、待审批、待投递、未完成删除和可安全重试的工作。
-- [ ] 用多进程与重启测试证明进程内 reference adapter 和 SQLite adapter 遵守同一产品契约，同时明确 reference profile 不代表生产耐久性。
+- [x] 让现有 persistence、Trace、authorization、capability、scheduler、attention、delivery、audit 和 deletion conformance suites 可以直接运行 SQLite harness。
+- [x] 实现 ProductStateRepository、ReliableEvent、Trace、Payload metadata、Audit、Authorization、Capability、Scheduler、Attention、Delivery 和 Gateway Read Model 的 SQLite adapters。
+- [x] publisher 使用可恢复 claim/lease 和稳定 event ID；在 sink 已接收但 acknowledgment 未提交时重放同一事件，由 consumer dedupe。
+- [x] 实现持久 cursor、scope-safe event query、retention watermark 和 bounded snapshot refresh 所需的 read model 记录。
+- [x] 启动时恢复 pending outbox、expired claims、未终结 Run、待审批、待投递、未完成删除和可安全重试的工作。
+- [x] 用多进程与重启测试证明进程内 reference adapter 和 SQLite adapter 遵守同一产品契约，同时明确 reference profile 不代表生产耐久性。
+
+Task 7 把 Trace、受保护 Payload 记录、Audit、Authorization/Grant、Capability Registry/Handle、Scheduler、Attention/Delivery、Session 删除与 Gateway Read Model 全部接入 Task 6 的同一专用 SQLite Worker，不允许适配器另开旁路连接。正式 reference conformance suite 直接运行真实 SQLite harness；Attention State suite 同时覆盖 Delivery Request 的原子创建、单客户端 claim、失败重开和终态确认，外部 `DeliveryPort` 仍是客户端 I/O 边界而不是数据库端口。
+
+第七个不可变 migration 增加完整记录列、Attention policy revision、Gateway Thread/Run snapshots、cursor-ordered stream events、retention metadata 和 consumer receipt。Outbox publisher 使用带到期时间的 claim，只有匹配 claim 才能提交 acknowledgment；sink 成功但 acknowledgment 未提交时，冷启动回收过期 claim 并以原 event ID 重放，consumer receipt 对 `(consumer_id, event_id)` 做持久去重。Gateway 查询强制 Owner/Agent scope，snapshot revision 单调且 Thread 引用窗口有界，cursor 低于 retention watermark 后返回明确的 not-found。
+
+冷启动在对外提供 repository 前恢复过期 Outbox claim，并把中断的 `delivering` 请求带新 revision 重开为 `pending`；恢复报告同时枚举未终结 Run、待审批、待投递、未完成删除及 `queued/retry_wait` occurrence。19 项 Task 7 集成测试叠加 Task 6 的 17 项多进程/事务测试，证明正式 SQLite adapter 与进程内 reference adapter 共享产品契约，并证明重启后的删除、Outbox、Delivery、审批、调度重试和 Read Model 状态仍可恢复。实现与验证证据位于 `test/integration/qualification/evidence/s1-task7-durable-repositories.json`；reference profile 仍只用于确定性测试，不提供跨进程耐久性。
 
 ### Task 8：实现生产 Payload 加密与 host secret sources
 

@@ -1,5 +1,7 @@
 import path from "node:path";
 import type {
+  AttentionStatePort,
+  AuditLedgerPort,
   AuthorityLeasePort,
   AuthorityLeaseRecord,
   ClockPort,
@@ -8,9 +10,17 @@ import type {
   CommitStateAndEventsInput,
   CommitStateAndEventsResult,
   DeploymentAuthorityStatePort,
+  AuthorizationStorePort,
+  CapabilityExecutionHandleStorePort,
+  CapabilityRegistryStorePort,
+  PayloadStorePort,
   ProductStateRepositoryPort,
+  ReliableEventPort,
   ReliableEventRecord,
+  SchedulerPort,
+  SessionDeletionStatePort,
   StateRecord,
+  TraceStorePort,
 } from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
@@ -19,7 +29,15 @@ import type {
   DeploymentAuthorityState,
   DeploymentId,
   ProductAuthorityFence,
+  OwnerId,
 } from "@himawari-agent/domain";
+import {
+  type SqliteGatewayReadModel,
+  type SqliteReliableEventConsumerDeduplicator,
+  type SqliteReliableEventOutbox,
+  type SqliteStartupRecovery,
+  SqliteDurableAdapters,
+} from "./durable-adapters.js";
 import type { VerifiedMigrationSnapshot } from "./migration-engine.js";
 import {
   applyMigrations,
@@ -78,6 +96,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
   private readonly context: SqliteExecutionContext;
   private readonly lock: StateRootLock;
   private readonly now: () => string;
+  private readonly durable: SqliteDurableAdapters;
   private closed = false;
   private queuedWriters = 0;
   private maxObservedQueuedWriters = 0;
@@ -94,6 +113,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     this.context = input.context;
     this.lock = input.lock;
     this.now = input.now;
+    this.durable = new SqliteDurableAdapters({
+      read: (operation, payload) => this.context.request(operation, payload),
+      write: (operation, payload) => this.writeRequest(operation, payload),
+    });
   }
 
   static async open(
@@ -121,6 +144,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
         writerSequence: migrations.length,
         busyTimeoutMs,
         minimumFreeBytes,
+        startupNow: (options.now ?? (() => new Date().toISOString()))(),
         ...(options.qualification ? { qualification: options.qualification } : {}),
       });
       return new SqliteProductStateRepository({
@@ -202,6 +226,62 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
       assertCurrent: (fence: ProductAuthorityFence) =>
         this.context.request<DeploymentAuthorityState>("deployment.assertCurrent", { fence }),
     });
+  }
+
+  reliableEventPort(ownerId: OwnerId, agentId: AgentId): ReliableEventPort {
+    return this.durable.reliableEventPort(ownerId, agentId);
+  }
+
+  reliableEventOutbox(): SqliteReliableEventOutbox {
+    return this.durable.reliableEventOutbox();
+  }
+
+  reliableEventConsumerDeduplicator(): SqliteReliableEventConsumerDeduplicator {
+    return this.durable.reliableEventConsumerDeduplicator();
+  }
+
+  traceStore(): TraceStorePort {
+    return this.durable.traceStore();
+  }
+
+  payloadStore(ownerId: OwnerId, agentId: AgentId): PayloadStorePort {
+    return this.durable.payloadStore(ownerId, agentId);
+  }
+
+  auditLedger(): AuditLedgerPort {
+    return this.durable.auditLedger();
+  }
+
+  authorizationStore(): AuthorizationStorePort {
+    return this.durable.authorizationStore();
+  }
+
+  capabilityStore(
+    ownerId: OwnerId,
+    agentId: AgentId,
+  ): CapabilityRegistryStorePort & CapabilityExecutionHandleStorePort {
+    return this.durable.capabilityStore(ownerId, agentId);
+  }
+
+  scheduler(): SchedulerPort {
+    return this.durable.scheduler();
+  }
+
+  attentionState(): AttentionStatePort {
+    return this.durable.attentionState();
+  }
+
+  sessionDeletionState(): SessionDeletionStatePort {
+    return this.durable.sessionDeletionState();
+  }
+
+  gatewayReadModel(): SqliteGatewayReadModel {
+    return this.durable.gatewayReadModel();
+  }
+
+  startupRecovery(): Promise<SqliteStartupRecovery> {
+    this.assertOpen();
+    return Promise.resolve(this.context.initialRecovery<SqliteStartupRecovery>());
   }
 
   checkpoint(mode: "passive" | "truncate" = "passive"): Promise<SqliteCheckpointResult> {

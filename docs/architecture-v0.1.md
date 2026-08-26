@@ -12,7 +12,7 @@ date: "2026-08-25"
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e、Pi compatibility、browser、admin CLI、Node services 和 workspace scaffold 九个可独立选择的测试项目。
 
-当前代码包含十四个 workspace。`packages/domain` 实现不可变身份、所有权规则、Run 状态机、Agent 权威租约，以及 deployment/fence、消息/检查点、产品 session/device、后台 job/occurrence、Memory generation/lifecycle、GitHub receipt/coverage gap、恢复点/transfer 和 health 状态；两类 contracts 保留首版 `gateway.v1` 与 `execution.v1`，并新增显式 `gateway.v2` 与 `execution.v2`；`packages/application` 实现产品端口、Gateway、Run/Worker 编排、可靠事件、Trace、授权、记忆、模型、调度、Attention 和外部结果对账；`packages/platform-node` 与 `packages/runtime-pi` 分别实现可信模型 Provider 边界和 Pi Agent Runtime 适配器；`packages/testing` 提供 conformance suites、内存参考适配器、牛肉餐厅夹具和故障注入器。`packages/persistence-sqlite` 已实现规范 schema、不可变 migration、专用 SQLite execution context、state-root lock、持久 deployment/lease 和原子 Product State transaction；`packages/memory-mem0` 与 `packages/integration-github` 仍只有独立边界与 adapter 描述。其他生产 repositories 和组合行为仍由后续任务实现。
+当前代码包含十四个 workspace。`packages/domain` 实现不可变身份、所有权规则、Run 状态机、Agent 权威租约，以及 deployment/fence、消息/检查点、产品 session/device、后台 job/occurrence、Memory generation/lifecycle、GitHub receipt/coverage gap、恢复点/transfer 和 health 状态；两类 contracts 保留首版 `gateway.v1` 与 `execution.v1`，并新增显式 `gateway.v2` 与 `execution.v2`；`packages/application` 实现产品端口、Gateway、Run/Worker 编排、可靠事件、Trace、授权、记忆、模型、调度、Attention 和外部结果对账；`packages/platform-node` 与 `packages/runtime-pi` 分别实现可信模型 Provider 边界和 Pi Agent Runtime 适配器；`packages/testing` 提供 conformance suites、内存参考适配器、牛肉餐厅夹具和故障注入器。`packages/persistence-sqlite` 已实现规范 schema、不可变 migration、专用 SQLite execution context、state-root lock、持久 deployment/lease、原子 Product State transaction、主要产品 repository、可恢复 Outbox 和持久 Gateway Read Model；`packages/memory-mem0` 与 `packages/integration-github` 仍只有独立边界与 adapter 描述。生产加密、正式进程组合及其余外部适配器仍由后续任务实现。
 
 `apps/agent-service` 现有可编程的本地前台组合根和严格 `gateway.v1` in-process transport；`apps/execution-worker` 现有独立启动、独立关闭的 `execution.v1` Worker 进程边界。组合根可替换 Gateway Control Plane/Read Model、Worker client 和 Secret Port，并把产品服务组合到同一可信前台进程。`apps/control-center` 已具有 browser-only React/Vite 构建入口，`apps/admin-cli` 已具有 offline-admin export 边界；两者仍是后续实现的最小脚手架，不是已完成的控制中心或可执行 CLI。
 
@@ -134,11 +134,11 @@ HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 
 `ReliableEventPublisher` 分批读取 pending 事件，交给 `ReliableEventSinkPort` 后再标记 published。发布前失败保留 pending 事件；Sink 已接收但 published 标记失败时会按同一 event ID 重投，Sink 返回 `duplicate` 而不产生第二次可见交付。新建协调器和发布器只需复用同一 Product State Repository 即可恢复 Run 和 outbox，不读取 Pi Session 文件。
 
-内存参考适配器继续为所有端口提供可复用 conformance；Product State、Reliable Event、deployment authority 和 lease 的对应 conformance 也已在真实 SQLite 文件上通过。其他 Trace、Authorization、Capability、Scheduler、Attention、Delivery、删除与 Read Model 生产适配器尚未接入 SQLite；生产 Memory、模型、Secret、Capability 隔离和完整持久化仍属于后续 Plan 任务。
+内存参考适配器继续为所有端口提供可复用 conformance，但只代表确定性产品语义，不代表跨进程耐久性。Product State、Reliable Event、deployment authority、lease、Trace、Payload metadata、Audit、Authorization、Capability Registry/Handle、Scheduler、Attention/Delivery state 和删除状态的相同 conformance 已直接在真实 SQLite harness 上通过。Gateway Read Model 的 scope、cursor、retention 与 restart 行为另有真实文件集成测试；生产 Memory、模型、Secret、Capability 隔离和正式服务组合仍属于后续 Plan 任务。
 
 ### SQLite schema and immutable migrations
 
-`packages/persistence-sqlite` 现在以六个连续 SQL migration 建立 41 个产品表及 2 个内部治理表。产品表规范化保存 Owner/Agent、deployment/authority、Thread/Run、session/device、approval/Grant、capability、Product State、command result/outbox、Trace/audit、Task/Attention、Memory、GitHub、删除、恢复点与存储健康状态；foreign key、唯一键、revision、authority epoch/fencing token 和稳定幂等键在 schema 层形成第一道约束。`schemaCatalog` 为每个表固定产品端口、生命周期、加密或 Payload 引用分类、删除关系和 migration owner，不能用供应商表替代产品权威状态。
+`packages/persistence-sqlite` 现在以七个连续 SQL migration 建立 47 个产品表及 2 个内部治理表。产品表规范化保存 Owner/Agent、deployment/authority、Thread/Run、session/device、approval/Grant、capability、Product State、command result/outbox、Trace/audit、Task/Attention、Gateway Read Model、Memory、GitHub、删除、恢复点与存储健康状态；foreign key、唯一键、revision、authority epoch/fencing token 和稳定幂等键在 schema 层形成第一道约束。`schemaCatalog` 为每个表固定产品端口、生命周期、加密或 Payload 引用分类、删除关系和 migration owner，不能用供应商表替代产品权威状态。
 
 迁移 ledger 持久化连续 `sequence`、`name`、`phase`、SQL SHA-256 与应用时间。loader 验证定义连续性和 digest；启动会拒绝历史内容不匹配、ledger 空洞、未知已应用 migration、未来 schema 及过旧 writer。`expand → backfill → verify → contract` 是受检查的单向 change-set 阶段，系统不提供自动数据库 downgrade。
 
@@ -150,7 +150,17 @@ HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 
 每个 Product State mutation 在一个 `BEGIN IMMEDIATE` transaction 内依次验证幂等 command、当前 active deployment、未释放且未过期 lease、authority epoch/fencing token、expected revision、command fingerprint 和 Event identity，然后共同写入 `product_state_records`、`command_results` 与 pending `reliable_events`。相同 command 并发收敛为一次 commit 和一次 replay；相同 idempotency key 的不同 fingerprint、inactive/retired deployment、stale epoch/token/lease 和旧进程消息均 fail closed。`AuthorityLeasePort` 与 `DeploymentAuthorityStatePort` 共享同一 execution context，持久化单 live lease、续期/过期、单调 fencing token 和不可复活的 retired lifecycle。
 
-运行状态报告 writer queue 深度、最后 transaction duration、busy timeout、WAL bytes 与文件系统 free bytes；低于配置水位时进入 write restriction。checkpoint 只允许受控 `PASSIVE` 或 `TRUNCATE`。真实文件测试覆盖主线程 timer 在同步 driver stall 期间继续运行、并发重复命令、live state-root lock、20 ms `SQLITE_BUSY`、长 reader 下 bounded checkpoint、配置磁盘水位、由 `max_page_count` 触发的真实 `SQLITE_FULL`，以及子进程在 state/result/event 写入后被杀死的逐点 rollback。COMMIT 后回包前被杀死会在重启后返回原提交，不重复副作用；每次重启都通过 WAL、`quick_check` 与 foreign-key recovery。尚未实现的其他生产 repositories、claim 型 Outbox publisher 和持久 Read Model 属于 Task 7。[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
+运行状态报告 writer queue 深度、最后 transaction duration、busy timeout、WAL bytes 与文件系统 free bytes；低于配置水位时进入 write restriction。checkpoint 只允许受控 `PASSIVE` 或 `TRUNCATE`。真实文件测试覆盖主线程 timer 在同步 driver stall 期间继续运行、并发重复命令、live state-root lock、20 ms `SQLITE_BUSY`、长 reader 下 bounded checkpoint、配置磁盘水位、由 `max_page_count` 触发的真实 `SQLITE_FULL`，以及子进程在 state/result/event 写入后被杀死的逐点 rollback。COMMIT 后回包前被杀死会在重启后返回原提交，不重复副作用；每次重启都通过 WAL、`quick_check` 与 foreign-key recovery。[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
+
+### SQLite durable repositories, Outbox and Read Model
+
+Trace、Payload metadata、Audit、Authorization/Grant、Capability Registry/Handle、Scheduler、Attention/Delivery 与 Session 删除适配器复用同一 `SqliteExecutionContext`，只有专用 Worker 持有连接。完整产品记录使用 JSON 列保存精确端口值，owner、agent、run、status、revision、时间和 Payload reference 同时进入规范化列与索引；作用域敏感而原端口未携带 scope 的读取，由构造适配器时固定的 Owner/Agent 约束。Payload adapter 只持久化调用方已经提供的 ciphertext、算法、key reference、digest、content type 和分类；正式写前加密与 host secret source 仍由 Task 8 提供。
+
+Reliable Event 有 `pending → claimed → published` 生命周期。Publisher 在一个即时事务中回收已到期 claim、按稳定顺序认领有界批次，并只接受匹配 `claim_id` 的 acknowledgment。若 sink 已接收而进程在 acknowledgment commit 前退出，下一实例会回收 claim、重放同一 event ID；consumer receipt 以 `(consumer_id, event_id)` 唯一键把重复交付收敛为一次处理。传统 `ReliableEventPort` 仍保留同内容 append 幂等语义。
+
+Gateway Read Model 分开保存单调 revision 的 Thread/Run snapshot、全局持久 cursor sequence、scope 列和 retained stream event。查询必须同时匹配 Owner/Agent 及 Session/Thread/Run filter；subscription cursor 也必须属于相同 scope。Thread snapshot 最多保存 1000 个 Session 和 1000 个 Run 引用，同 revision 不允许改写不同内容。Retention watermark 只能单调前移且不能越过最新 cursor，水位以下事件被删除，旧 cursor 返回明确错误而不是静默跳过。
+
+Worker 在 `ready` 前执行冷启动恢复：过期 Outbox claim 回到 `pending`，中断的 `delivering` 以新 revision 回到 `pending` 并记录 `PROCESS_RESTARTED`；恢复报告枚举 pending event、未终结 Run、pending approval/delivery/deletion 与 `queued/retry_wait` occurrence。该恢复只重开可安全重试的产品工作，不代替 Task 9 的完整 startup/readiness coordinator。
 
 ### Session Trace, protected Payload and deletion propagation
 
@@ -166,7 +176,7 @@ Payload 端口的持久化输入是 ciphertext、算法标识、key reference、
 
 Approval Request 保存冻结的语义快照及稳定 hash。快照包含 capability、operation、resource、数据等级、副作用、费用、频率、幂等键和可逆性；响应 hash 不同则拒绝。无 UI 时只把请求标记为 `queued_no_ui`，进程重建后从 Store 恢复。过期只会进入 `expired`，相同 Intent 的超时或重试不能变成允许。
 
-Grant 与 Capability 声明分离。一次性 Grant 精确绑定原 Intent 并只有一次使用预算；长期 Grant 约束 capability、operations、resource prefixes、最大数据等级、副作用、每次/累计费用、频率、次数、期限和撤销状态。每次允许会通过 revision-checked Store mutation 消耗费用和次数，避免并发使用绕过预算。当前参考 Store 是内存语义替身，不代表生产授权持久化已经实现。该边界落实确定性授权决策：[SOURCE: docs/adr/0004-deterministic-authorization.md]
+Grant 与 Capability 声明分离。一次性 Grant 精确绑定原 Intent 并只有一次使用预算；长期 Grant 约束 capability、operations、resource prefixes、最大数据等级、副作用、每次/累计费用、频率、次数、期限和撤销状态。每次允许会通过 revision-checked Store mutation 消耗费用和次数，避免并发使用绕过预算。内存参考 Store 只提供确定性测试语义；SQLite Authorization Store 以同一 conformance 持久化 Approval、Grant revision、费用/次数消耗和撤销，并在一个 transaction 内共同提交审批结果与新 Grant。该边界落实确定性授权决策：[SOURCE: docs/adr/0004-deterministic-authorization.md]
 
 ### Capability Registry and execution boundary
 
