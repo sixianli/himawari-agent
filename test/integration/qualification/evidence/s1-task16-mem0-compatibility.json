@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T23:11:12Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T16",
+  "candidateRevision": "d3a43c8187f550e2c159e81e43bce33a430fb860",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 6,
+    "behind": 0,
+    "status": "dirty"
+  },
+  "dependency": {
+    "package": "mem0ai",
+    "version": "3.1.7",
+    "import": "mem0ai/oss",
+    "configurationVersion": "v1.1",
+    "embeddingDimensions": 12,
+    "telemetryDisabledBeforeImport": true,
+    "customInstructionsSha256": "ef3d2dadd223fdf09f5e29cc9cb47471413812bf9ad9338dcde387bd1010e0d7"
+  },
+  "providers": {
+    "llm": "openai-compatible/deterministic-extraction-v1@loopback",
+    "embedder": "openai-compatible/deterministic-embedding-v1@loopback/12",
+    "vectorStore": "memory/sqlite-explicit-path",
+    "historyStore": "sqlite-explicit-path"
+  },
+  "commands": [
+    {
+      "platform": "mac-darwin-arm64",
+      "runtime": "darwin-arm64 v25.6.0",
+      "command": "node scripts/qualify-mem0-compatibility.mjs --state-root /private/tmp/himawari-task16-mac-d3a43c8-final-2 --platform mac-darwin-arm64",
+      "exitStatus": 0,
+      "socketAttempts": 12,
+      "undeclaredNetworkAttempts": 0,
+      "providerCalls": 30,
+      "childProcesses": 0
+    },
+    {
+      "platform": "hermes-linux-x64",
+      "runtime": "linux-x64 v22.19.0",
+      "command": "node scripts/qualify-mem0-compatibility.mjs --state-root /data/tmp/himawari-task16-d3a43c8-a/state --platform hermes-linux-x64",
+      "exitStatus": 0,
+      "socketAttempts": 13,
+      "undeclaredNetworkAttempts": 0,
+      "providerCalls": 30,
+      "childProcesses": 0
+    }
+  ],
+  "hermes": {
+    "transport": "Tailscale SSH break-glass alias",
+    "targetRoot": "/data/tmp/himawari-task16-d3a43c8-a",
+    "nodeArchive": "node-v22.19.0-linux-x64.tar.xz",
+    "nodeArchiveSha256": "c0649af18e6a24f6fe5535a3e86b341dd49a8e71117c8b68bde973ef834f16f2",
+    "targetDiskUsage": "739M",
+    "stateDiskUsage": "108K",
+    "systemNodeChanged": false,
+    "systemPathChanged": false,
+    "serviceManagerChanged": false,
+    "dockerChanged": false
+  },
+  "conformance": {
+    "add": true,
+    "search": true,
+    "update": true,
+    "delete": true,
+    "history": true,
+    "filterAndMetadata": true,
+    "providerIdRoundTrip": true,
+    "restartPersistence": true,
+    "concurrentAccess": true,
+    "correction": true,
+    "deletion": true,
+    "productProjectionRebuild": true
+  },
+  "stateFilesOnBothPlatforms": [
+    "mem0-config/config.json",
+    "primary-history.sqlite",
+    "primary-vectors.sqlite",
+    "rebuild-history.sqlite",
+    "rebuild-vectors.sqlite"
+  ],
+  "monitoring": {
+    "telemetryDisabledBeforeImport": true,
+    "externalFetchAttempts": 0,
+    "undeclaredSocketAttempts": 0,
+    "unexpectedFiles": 0,
+    "childProcesses": 0,
+    "durability": "vector 与 history 均使用调用方提供的绝对 SQLite 路径，重启后可回读"
+  },
+  "observedRisk": {
+    "injection": "一个推断批次产生两条候选，其中一条 embedding 返回 503",
+    "behavior": "Mem0 记录错误但仍返回并保存嵌入成功的候选，不提供批次全有或全无语义",
+    "requiredProductBoundary": "每条产品 Memory 单独执行一次 Mem0 add，并验证结果中恰好有一个 provider ID",
+    "mandatoryGateBlocked": false,
+    "specRevisionRequired": false
+  },
+  "externalEffects": [
+    "经 Owner 明确授权，把排除 .git、node_modules、dist、output、.playwright-cli、.env* 和 .DS_Store 的候选代码同步到 Hermes 专用目录。",
+    "只在专用目录安装锁定依赖、解压已校验的官方 Node 22.19.0 并写入资格测试 SQLite 状态。",
+    "未修改 Hermes 的 Docker、systemd、全局 PATH、系统 Node、现有服务、用户配置或外部账户。"
+  ]
+}

@@ -330,11 +330,15 @@ Task 15 把 `apps/control-center` 从构建占位改为 browser-only React/Vite 
 
 ### Task 16：完成 Mem0 OSS 双平台 compatibility gate
 
-- [ ] 在获批精确版本上构建独立 harness，显式注入 LLM、embedder、vector/history store、dimensions、paths 和 custom instructions；不接受默认 provider 或临时目录。
-- [ ] 在 Mac 与 Hermes 分别验证 add/search/update/delete/history、filter/metadata、provider ID round-trip、restart persistence、concurrent access、correction 和 deletion。
-- [ ] 监测网络、telemetry、文件和进程行为，证明没有未声明 provider call、隐藏 LLM/embedder、内存-only durability 或 policy 外遥测。
-- [ ] 验证产品 ID/source/classification/version 可以稳定映射并从产品状态重建 provider projection。
-- [ ] 记录版本、平台、实际存储、模型依赖和全部异常；mandatory conformance 任一失败即停止 Task 17–19 并修订 Spec。
+- [x] 在获批精确版本上构建独立 harness，显式注入 LLM、embedder、vector/history store、dimensions、paths 和 custom instructions；不接受默认 provider 或临时目录。
+- [x] 在 Mac 与 Hermes 分别验证 add/search/update/delete/history、filter/metadata、provider ID round-trip、restart persistence、concurrent access、correction 和 deletion。
+- [x] 监测网络、telemetry、文件和进程行为，证明没有未声明 provider call、隐藏 LLM/embedder、内存-only durability 或 policy 外遥测。
+- [x] 验证产品 ID/source/classification/version 可以稳定映射并从产品状态重建 provider projection。
+- [x] 记录版本、平台、实际存储、模型依赖和全部异常；mandatory conformance 任一失败即停止 Task 17–19 并修订 Spec。
+
+独立 harness 在 import `mem0ai/oss@3.1.7` 前关闭 telemetry，显式注入仅监听本机回环的确定性 LLM 与 12 维 embedder，并把 vector/history store 写入调用方提供的绝对 SQLite 路径。Mac `darwin-arm64 / Node 25.6.0` 与 Hermes `linux-x64 / Node 22.19.0` 均通过全部 mandatory conformance、重启持久性、双实例并发和从产品记录重建 projection；套接字监测只观察到资格测试的回环 provider，未观察到未声明网络、子进程或额外文件。
+
+故障注入同时确认 `mem0ai@3.1.7` 的批量推断路径会在一个 embedding 失败时静默保留其余成功项。该行为不阻断已确认的 mandatory gate，但 Task 17 的产品 adapter 必须把每条产品 Memory 独立投影为一次 Mem0 add，并验证恰好返回一个 provider ID，不能依赖批量调用的全有或全无语义。Hermes 使用官方 Node 22.19.0 归档，SHA-256 为 `c0649af18e6a24f6fe5535a3e86b341dd49a8e71117c8b68bde973ef834f16f2`；同步、安装和运行均限定在 `/data/tmp/himawari-task16-d3a43c8-a`。完整命令、平台、存储、监测与异常证据位于 `test/integration/qualification/evidence/s1-task16-mem0-compatibility.json`。
 
 ### Task 17：实现产品 Memory 记录、projection 与检索交集
 
