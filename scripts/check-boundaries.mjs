@@ -2,71 +2,20 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import {
+  allowedInternalDependencies,
+  browserOnlyPackages,
+  isBrowserImportAllowed,
+  isExactExternalVersion,
+  isNodeImportAllowed,
+  packageSpecifier,
+  piDependencyOwner,
+} from "./boundary-policy.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-const allowedInternalDependencies = new Map([
-  ["@himawari-agent/domain", new Set()],
-  ["@himawari-agent/gateway-contracts", new Set()],
-  ["@himawari-agent/execution-contracts", new Set()],
-  [
-    "@himawari-agent/application",
-    new Set([
-      "@himawari-agent/domain",
-      "@himawari-agent/gateway-contracts",
-      "@himawari-agent/execution-contracts",
-    ]),
-  ],
-  ["@himawari-agent/runtime-pi", new Set(["@himawari-agent/application"])],
-  [
-    "@himawari-agent/platform-node",
-    new Set([
-      "@himawari-agent/application",
-      "@himawari-agent/domain",
-      "@himawari-agent/gateway-contracts",
-      "@himawari-agent/execution-contracts",
-    ]),
-  ],
-  [
-    "@himawari-agent/testing",
-    new Set([
-      "@himawari-agent/application",
-      "@himawari-agent/domain",
-      "@himawari-agent/gateway-contracts",
-      "@himawari-agent/execution-contracts",
-    ]),
-  ],
-  [
-    "@himawari-agent/agent-service",
-    new Set([
-      "@himawari-agent/application",
-      "@himawari-agent/gateway-contracts",
-      "@himawari-agent/execution-contracts",
-      "@himawari-agent/runtime-pi",
-      "@himawari-agent/platform-node",
-      "@himawari-agent/testing",
-    ]),
-  ],
-  [
-    "@himawari-agent/execution-worker",
-    new Set([
-      "@himawari-agent/application",
-      "@himawari-agent/execution-contracts",
-      "@himawari-agent/platform-node",
-      "@himawari-agent/testing",
-    ]),
-  ],
-]);
-
 const packageRoots = [path.join(repositoryRoot, "apps"), path.join(repositoryRoot, "packages")];
 const sourceExtensions = new Set([".ts", ".tsx", ".mts", ".cts"]);
-const nodeImportAllowedPackages = new Set([
-  "@himawari-agent/runtime-pi",
-  "@himawari-agent/platform-node",
-  "@himawari-agent/testing",
-  "@himawari-agent/agent-service",
-  "@himawari-agent/execution-worker",
-]);
 const importPattern =
   /(?:import|export)\s+(?:type\s+)?(?:[^"']*?\s+from\s+)?["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g;
 
@@ -117,10 +66,9 @@ function dependenciesOf(manifest) {
 
 function checkExactExternalDependencies(manifest, manifestLabel, workspaceNames) {
   const errors = [];
-  const exactVersionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
   for (const [dependency, version] of Object.entries(dependenciesOf(manifest))) {
-    if (!workspaceNames.has(dependency) && !exactVersionPattern.test(version)) {
+    if (!workspaceNames.has(dependency) && !isExactExternalVersion(version)) {
       errors.push(
         `${manifestLabel}: direct external dependency ${dependency} must use an exact version, found ${version}`,
       );
@@ -128,11 +76,6 @@ function checkExactExternalDependencies(manifest, manifestLabel, workspaceNames)
   }
 
   return errors;
-}
-
-function packageSpecifier(specifier) {
-  if (!specifier.startsWith("@")) return specifier.split("/", 1)[0];
-  return specifier.split("/", 2).join("/");
 }
 
 function detectCycles(graph) {
@@ -192,10 +135,7 @@ for (const { directory, manifest, manifestPath } of workspacePackages) {
       }
     }
 
-    if (
-      dependency.startsWith("@earendil-works/pi-") &&
-      packageName !== "@himawari-agent/runtime-pi"
-    ) {
+    if (dependency.startsWith("@earendil-works/pi-") && packageName !== piDependencyOwner) {
       errors.push(
         `${manifestLabel}: Pi dependency ${dependency} is only allowed in @himawari-agent/runtime-pi`,
       );
@@ -222,14 +162,16 @@ for (const { directory, manifest, manifestPath } of workspacePackages) {
       }
 
       const importedPackage = packageSpecifier(specifier);
-      if (
-        importedPackage.startsWith("@earendil-works/pi-") &&
-        packageName !== "@himawari-agent/runtime-pi"
-      ) {
+      if (importedPackage.startsWith("@earendil-works/pi-") && packageName !== piDependencyOwner) {
         errors.push(`${fileLabel}: direct Pi import ${specifier} is outside packages/runtime-pi`);
       }
-      if (specifier.startsWith("node:") && !nodeImportAllowedPackages.has(packageName)) {
+      if (specifier.startsWith("node:") && !isNodeImportAllowed(packageName)) {
         errors.push(`${fileLabel}: Node.js import ${specifier} is not allowed in ${packageName}`);
+      }
+      if (!isBrowserImportAllowed(packageName, specifier, workspaceNames)) {
+        errors.push(
+          `${fileLabel}: browser-only workspace ${packageName} must not import ${specifier}`,
+        );
       }
       if (
         workspaceNames.has(importedPackage) &&
@@ -248,7 +190,7 @@ for (const { directory, manifest, manifestPath } of workspacePackages) {
         errors.push(`${fileLabel}: ${packageName} must not import ${importedPackage}`);
       }
       if (
-        packageName === "@himawari-agent/runtime-pi" &&
+        packageName === piDependencyOwner &&
         importedPackage === "@himawari-agent/application" &&
         specifier !== "@himawari-agent/application/runtime-port"
       ) {
@@ -256,6 +198,20 @@ for (const { directory, manifest, manifestPath } of workspacePackages) {
           `${fileLabel}: runtime-pi may import only @himawari-agent/application/runtime-port`,
         );
       }
+    }
+  }
+}
+
+for (const { manifest, manifestPath } of workspacePackages) {
+  if (!browserOnlyPackages.has(manifest.name)) continue;
+  for (const dependency of Object.keys(dependenciesOf(manifest))) {
+    if (
+      !workspaceNames.has(dependency) &&
+      !isBrowserImportAllowed(manifest.name, dependency, workspaceNames)
+    ) {
+      errors.push(
+        `${path.relative(repositoryRoot, manifestPath)}: browser-only workspace ${manifest.name} must not declare ${dependency}`,
+      );
     }
   }
 }

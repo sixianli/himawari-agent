@@ -38,6 +38,41 @@ export default defineConfig({
           name: "pi-compat",
         },
       },
+      {
+        test: {
+          environment: "node",
+          include: ["apps/control-center/**/*.unit.test.ts"],
+          name: "browser",
+        },
+      },
+      {
+        test: {
+          environment: "node",
+          include: ["apps/admin-cli/**/*.unit.test.ts"],
+          name: "admin-cli",
+        },
+      },
+      {
+        test: {
+          environment: "node",
+          include: [
+            "apps/agent-service/**/*.{unit,contract}.test.ts",
+            "apps/execution-worker/**/*.{unit,contract}.test.ts",
+          ],
+          name: "node-services",
+        },
+      },
+      {
+        test: {
+          environment: "node",
+          include: [
+            "packages/persistence-sqlite/**/*.unit.test.ts",
+            "packages/memory-mem0/**/*.unit.test.ts",
+            "packages/integration-github/**/*.unit.test.ts",
+          ],
+          name: "workspace-scaffolds",
+        },
+      },
     ],
   },
 });

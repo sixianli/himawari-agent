@@ -3,5 +3,12 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "test/**/*.ts", "vitest.workspace.ts"]
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "packages/**/*.ts",
+    "test/**/*.ts",
+    "vitest.workspace.ts"
+  ],
+  "exclude": ["apps/control-center/**"]
 }

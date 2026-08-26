@@ -158,12 +158,16 @@ Task 2 的精确版本、许可证、engine、传递依赖、原生产物、双�
 
 ### Task 3：扩展 workspace、构建与边界检查
 
-- [ ] 为 `persistence-sqlite`、`memory-mem0`、`integration-github`、`control-center` 和 `admin-cli` 创建最小 package/tsconfig/export 边界；所有获批直接外部依赖使用精确版本。
-- [ ] 更新 root build/test scripts，使 Node 服务、browser bundle、CLI、contracts 和 compatibility projects 可以独立构建与测试。
-- [ ] 扩展 `scripts/check-boundaries.mjs` 的依赖图和 Node/browser import 规则，并为每个非法方向添加可重复 negative probe。
-- [ ] 保留 `packages/runtime-pi` 对 Pi 的唯一导入权；确认 committed manifest/lockfile 不出现 `../pi-mono`、`file:` 或未固定版本。
-- [ ] 增加 build artifact manifest 与 package checksum 入口，为以后不依赖源码 checkout 的安装和发布验证提供稳定证据。
-- [ ] 运行 `npm run check:boundaries`、类型检查和空 workspace 测试，确认基础脚手架不改变现有行为。
+- [x] 为 `persistence-sqlite`、`memory-mem0`、`integration-github`、`control-center` 和 `admin-cli` 创建最小 package/tsconfig/export 边界；所有获批直接外部依赖使用精确版本。
+- [x] 更新 root build/test scripts，使 Node 服务、browser bundle、CLI、contracts 和 compatibility projects 可以独立构建与测试。
+- [x] 扩展 `scripts/check-boundaries.mjs` 的依赖图和 Node/browser import 规则，并为每个非法方向添加可重复 negative probe。
+- [x] 保留 `packages/runtime-pi` 对 Pi 的唯一导入权；确认 committed manifest/lockfile 不出现 `../pi-mono`、`file:` 或未固定版本。
+- [x] 增加 build artifact manifest 与 package checksum 入口，为以后不依赖源码 checkout 的安装和发布验证提供稳定证据。
+- [x] 运行 `npm run check:boundaries`、类型检查和空 workspace 测试，确认基础脚手架不改变现有行为。
+
+Task 3 把 workspace 从 9 个扩展到 14 个，并把 Node、browser、CLI、contracts、Pi compatibility 和 scaffold 测试入口分开。边界测试覆盖依赖图的每个非法方向及 Node/browser/Pi/local-locator 规则；正式 lockfile 包含 564 个 package entries、14 个 workspace 和全部精确直接外部版本，不包含 `../pi-mono`、`file:` 或 `link:` locator。
+
+`scripts/generate-artifact-manifest.mjs` 生成根 manifest/lock、14 个 package 内容和 browser build artifacts 的 SHA-256 入口。实现与验证证据位于 `test/integration/qualification/evidence/s1-task3-workspace-scaffold.json`；新增 adapters、Control Center 与 admin CLI 仍只是边界脚手架，真实行为从后续任务开始。
 
 ### Task 4：扩展产品领域、协议和端口
 

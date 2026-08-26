@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T12:05:59Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T03",
+  "candidateRevision": "428ff864fb78f88a2f09ecb21295bb9b631000db",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 3,
+    "behind": 0,
+    "status": "clean"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "npm": "11.8.0",
+    "workspaceCount": 14,
+    "lockfileVersion": 3,
+    "lockPackageEntries": 564,
+    "packageJsonSha256": "55bc9e4f205ee631fddb012550a2a2101f00b99adf5dc9af0bc1cae4b48cfa8f",
+    "packageLockSha256": "93ea4ffe62abd54cae04abeb4e5b0792a48bbd2931b0e321e040ccecd6094463",
+    "productionAuditVulnerabilities": 0
+  },
+  "commands": [
+    {
+      "command": "npm install --no-fund",
+      "exitStatus": 0,
+      "result": "318 packages added, 532 packages audited and 0 vulnerabilities; approved exact versions written to the committed lockfile"
+    },
+    {
+      "command": "npm audit --omit=dev",
+      "exitStatus": 0,
+      "result": "0 production dependency vulnerabilities"
+    },
+    {
+      "command": "npm run check:boundaries",
+      "exitStatus": 0,
+      "result": "14 workspace dependency graphs accepted; exhaustive negative probes are part of the integration project"
+    },
+    {
+      "command": "npm run typecheck && npm run build:contracts && npm run build:services && npm run build:cli",
+      "exitStatus": 0,
+      "result": "Node, browser, pure contracts, service and offline CLI TypeScript boundaries passed independently"
+    },
+    {
+      "command": "npm run build",
+      "exitStatus": 0,
+      "result": "Node graph and 15-module Vite browser bundle built; artifact manifest recorded 14 package checksums and two browser artifact hashes"
+    },
+    {
+      "command": "npm run test:workspace-scaffolds && npm run test:browser && npm run test:cli && npm run test:services",
+      "exitStatus": 0,
+      "result": "3 scaffold, 1 browser, 1 admin CLI and 6 Node service tests passed in independently selectable projects"
+    },
+    {
+      "command": "npm test && npm run check:pi-compat",
+      "exitStatus": 0,
+      "result": "106 unit, 69 contract, 240 integration, 3 E2E and 6 Pi compatibility tests passed"
+    }
+  ],
+  "verificationSummary": [
+    "新增 persistence-sqlite、memory-mem0、integration-github、control-center 和 admin-cli 五个最小 workspace，并保持供应商类型不进入产品 export。",
+    "Node 与 browser TypeScript 图分离；纯 contracts 的独立 build 不获得 Node 或 DOM 类型。",
+    "每个非法 workspace 方向和 Node、browser、Pi、非精确版本、本地 locator 规则都有可重复 negative probe。",
+    "runtime-pi 仍是唯一可声明或导入 @earendil-works/pi-* 的 workspace。",
+    "artifact manifest 入口会固定 root manifest/lock、各 package 内容与 browser artifacts 的 SHA-256。"
+  ],
+  "unverified": [
+    "三个 adapter workspace 只有边界与精确依赖，真实 SQLite、Mem0 和 GitHub 行为由后续任务实现。",
+    "Control Center 当前只有可构建占位页面，admin CLI 只有 export 边界；可安装入口属于 Task 11，完整 UI 属于 Tasks 17–19。",
+    "当前 artifact manifest 是构建校验入口；不依赖源码 checkout 的正式可安装包仍属于 Task 11 和最终资格任务。"
+  ],
+  "externalEffects": [
+    "npm registry 下载已批准的精确依赖并更新本地 node_modules 与仓库 package-lock.json。",
+    "Vite 与 manifest 构建只写入 gitignored dist 目录。",
+    "未调用真实模型、未读取生产秘密、未修改外部账户、未安装服务且未触碰 Hermes。"
+  ],
+  "implementationCommit": null
+}

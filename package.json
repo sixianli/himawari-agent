@@ -12,7 +12,13 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run build:node && npm run build:browser && npm run build:artifacts",
+    "build:artifacts": "node scripts/generate-artifact-manifest.mjs",
+    "build:browser": "npm run build --workspace @himawari-agent/control-center",
+    "build:cli": "tsc -p apps/admin-cli/tsconfig.json",
+    "build:contracts": "tsc -p packages/gateway-contracts/tsconfig.build.json && tsc -p packages/execution-contracts/tsconfig.build.json",
+    "build:node": "tsc -p tsconfig.json",
+    "build:services": "tsc -p apps/agent-service/tsconfig.json && tsc -p apps/execution-worker/tsconfig.json",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run check:boundaries && npm run check:v0.2-coverage",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check:local-pi": "node scripts/check-local-pi.mjs",
@@ -23,15 +29,21 @@
     "lint": "biome lint --error-on-warnings .",
     "link:local-pi": "node scripts/link-local-pi.mjs",
     "test": "npm run test:unit && npm run test:contracts && npm run test:integration && npm run test:e2e",
+    "test:browser": "vitest run --config vitest.workspace.ts --project browser --passWithNoTests",
+    "test:cli": "vitest run --config vitest.workspace.ts --project admin-cli --passWithNoTests",
     "test:contracts": "vitest run --config vitest.workspace.ts --project contracts --passWithNoTests",
     "test:e2e": "vitest run --config vitest.workspace.ts --project e2e --passWithNoTests",
     "test:integration": "vitest run --config vitest.workspace.ts --project integration --passWithNoTests",
+    "test:services": "vitest run --config vitest.workspace.ts --project node-services --passWithNoTests",
     "test:unit": "vitest run --config vitest.workspace.ts --project unit --passWithNoTests",
-    "typecheck": "tsc -p tsconfig.json",
+    "test:workspace-scaffolds": "vitest run --config vitest.workspace.ts --project workspace-scaffolds --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json",
     "unlink:local-pi": "node scripts/unlink-local-pi.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@biomejs/biome": "2.3.5",
+    "@playwright/test": "1.62.1",
     "@types/node": "22.19.19",
     "typescript": "5.9.3",
     "vitest": "4.1.9"

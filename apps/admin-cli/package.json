@@ -1,0 +1,14 @@
+{
+  "name": "@himawari-agent/admin-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@himawari-agent/application": "0.0.0",
+    "@himawari-agent/persistence-sqlite": "0.0.0",
+    "@himawari-agent/platform-node": "0.0.0"
+  }
+}
