@@ -239,12 +239,16 @@ Task 8 使用 Node.js 维护中的 AES-256-GCM primitive 实现 `aes-256-gcm-env
 
 ### Task 9：实现严格配置、state-root 生命周期与健康模型
 
-- [ ] 定义版本化、未知字段拒绝的非秘密配置 schema，覆盖 IDs、paths、public origin、model/Memory descriptors、repository allowlist、secret refs、预算、并发与 deadline。
-- [ ] 实现显式 state root、目录权限、runtime/cache 分区、lock 文件和 authority.json 的原子读写；不得从当前工作目录推断生产路径。
-- [ ] 按 Spec 顺序实现 startup coordinator：配置、secret refs、deployment lock、authority、SQLite/version/migrations、Payload、repositories/outbox、models/Mem0、Worker、scheduler、HTTP readiness。
-- [ ] 实现 liveness、readiness 和 authenticated dependency health；provider reachability 可以 degraded，但 authority、schema、keyring、Worker、Mem0 persistence、recovery 与 public identity trust root 不满足时不得 ready。
-- [ ] 实现 drain coordinator：先撤销 readiness 和 admission，再停止 scheduling/publisher，checkpoint 或取消在途 Run，最后关闭 Memory/SQLite/socket 并释放 authority。
-- [ ] 为每个启动/关闭阶段注入失败，验证稳定机器码、无秘密诊断、无半 ready 和可重复恢复。
+- [x] 定义版本化、未知字段拒绝的非秘密配置 schema，覆盖 IDs、paths、public origin、model/Memory descriptors、repository allowlist、secret refs、预算、并发与 deadline。
+- [x] 实现显式 state root、目录权限、runtime/cache 分区、lock 文件和 authority.json 的原子读写；不得从当前工作目录推断生产路径。
+- [x] 按 Spec 顺序实现 startup coordinator：配置、secret refs、deployment lock、authority、SQLite/version/migrations、Payload、repositories/outbox、models/Mem0、Worker、scheduler、HTTP readiness。
+- [x] 实现 liveness、readiness 和 authenticated dependency health；provider reachability 可以 degraded，但 authority、schema、keyring、Worker、Mem0 persistence、recovery 与 public identity trust root 不满足时不得 ready。
+- [x] 实现 drain coordinator：先撤销 readiness 和 admission，再停止 scheduling/publisher，checkpoint 或取消在途 Run，最后关闭 Memory/SQLite/socket 并释放 authority。
+- [x] 为每个启动/关闭阶段注入失败，验证稳定机器码、无秘密诊断、无半 ready 和可重复恢复。
+
+Task 9 固定 `himawari.configuration.v1` 严格 JSON contract，所有层级拒绝未知字段、相对或隐式路径、非同源 public URL、未声明 secret ref、重复 descriptor、越界预算/并发/deadline 和机器秘密格式。`stateRoot`、`runtimeDirectory`、`cacheDirectory` 与 Mem0 持久目录必须显式配置；state-root 初始化建立权限受限的 data/runtime/cache/Payload 分区，沿用 Task 6 的独占 deployment lock，并用同目录临时文件、fsync 与 rename 原子维护 `authority.json`。
+
+startup coordinator 固定 11 个有序阶段，从 configuration 到 HTTP readiness；任一阶段失败按逆序 rollback，错误只暴露稳定 phase code。drain 固定先撤销 readiness/admission，再停止 scheduler/publisher、settle in-flight Runs、关闭 Memory/SQLite/socket，最后释放 authority/lock，即使中间阶段失败也继续执行剩余安全关闭。health model 把 liveness 与 readiness 分开：authority、schema、SQLite、Payload keyring、Worker、Mem0 persistence、recovery 和 public identity trust 为 required，model provider reachability 只产生 degraded。24 项 Task 9 新增 unit tests 对每个 startup/drain 阶段逐一注入失败并证明无 half-ready、无秘密错误与失败后可重复启动；实现与验证证据位于 `test/integration/qualification/evidence/s1-task9-startup-health.json`。
 
 ### Task 10：实现 execution.v1 over UDS 与真实 Worker 进程
 

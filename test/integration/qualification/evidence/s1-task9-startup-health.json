@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T15:07:52Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T09",
+  "candidateRevision": "8f3cddb335dfd721bff9c27a9cb303d38fa8dd6e",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 1,
+    "behind": 0,
+    "status": "dirty"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "npm": "11.8.0",
+    "configurationSchema": "himawari.configuration.v1",
+    "startupPhaseCount": 11,
+    "drainPhaseCount": 5,
+    "externalCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npm run test:unit -- --run packages/platform-node/test/startup-configuration.unit.test.ts packages/domain/test/durable-state.unit.test.ts",
+      "exitStatus": 0,
+      "result": "39 strict configuration, state-root, health-domain and lifecycle failure-injection tests passed"
+    },
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, Node/browser typecheck, 14-workspace dependency boundaries and v0.2 coverage passed"
+    },
+    {
+      "command": "npm test && npm run check:pi-compat && python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict . && git diff --check",
+      "exitStatus": 0,
+      "result": "159 unit, 101 contract, 278 integration, 3 E2E and 6 Pi compatibility tests passed; strict document validation and diff check passed"
+    }
+  ],
+  "verificationSummary": [
+    "Strict configuration rejects unknown fields at every parsed level, raw machine-secret formats, implicit or relative paths, insecure public origins, undeclared secret references and unsafe limits.",
+    "State-root initialization creates explicit data, runtime, cache and ciphertext partitions with service-account-only permissions; authority.json uses validated versioned fields and atomic same-directory replacement.",
+    "Startup runs 11 fixed phases and rolls back completed phases in reverse order; all injected phase failures return stable codes without the thrown secret-bearing detail and allow a clean retry.",
+    "Drain runs all five safety phases in order even after one fails, so readiness/admission is always revoked before resources and authority are released.",
+    "Readiness remains false for any unavailable required dependency, requires identity trust in public mode, and treats provider reachability as a non-blocking degraded signal."
+  ],
+  "unverified": [
+    "The Task 9 lifecycle coordinator is adapter-independent; Task 10–11 wire the real UDS Worker and installable production service composition into these phases.",
+    "Real Mem0 persistence, public identity trust and HTTP readiness adapters remain Task 13–16 and must report through this health model before production can become ready.",
+    "No launchd/systemd service or production state root was created; immutable Mac/Hermes installation remains Task 28."
+  ],
+  "externalEffects": [
+    "Tests created and removed only temporary configuration files and permission-restricted state-root directories.",
+    "No network, provider, public endpoint, service manager, external account or production state mutation occurred."
+  ],
+  "implementationCommit": null
+}
