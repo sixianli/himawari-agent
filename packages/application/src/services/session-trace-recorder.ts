@@ -81,6 +81,8 @@ export class SessionTraceRecorder {
           const now = this.dependencies.clock.now();
           const ref = this.dependencies.ids.next("payload");
           const protectedPayload = await this.dependencies.protector.protect({
+            ownerId: input.ownerId,
+            agentId: input.agentId,
             ref,
             dataClassification: input.dataClassification,
             contentType: "application/json",

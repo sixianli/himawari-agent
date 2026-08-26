@@ -226,12 +226,16 @@ Task 7 把 Trace、受保护 Payload 记录、Audit、Authorization/Grant、Capa
 
 ### Task 8：实现生产 Payload 加密与 host secret sources
 
-- [ ] 为 versioned envelope encryption、唯一 nonce、AAD 绑定、tamper rejection、digest、DEK/KEK version、rewrap 和 key rotation 先写 known-answer 与属性测试。
-- [ ] 以维护中的 authenticated-encryption primitive 实现 production `PayloadProtectorPort`；禁止 `test-xor-v1` 被正式配置选择。
-- [ ] 让小 Payload 和可选 content-addressed ciphertext file 走同一 ownership/lifecycle conformance；缺文件、有孤儿、digest/tag 错误均形成明确 integrity failure。
-- [ ] 实现 macOS Keychain-backed secret material adapter，以及 Hermes systemd credential/encrypted credential 或权限等价 secret-file adapter。
-- [ ] production readiness 拒绝 environment/in-memory secret source；产品状态、Trace、日志、迁移包和错误只能保存 secret reference、version、purpose/scope 与验证结果。
-- [ ] 在 model、Memory、GitHub、Worker 和 identity 路径执行 secret-format exclusion；测试原值不会进入模型输入、provider input、Memory、Trace、日志、错误或迁移包。
+- [x] 为 versioned envelope encryption、唯一 nonce、AAD 绑定、tamper rejection、digest、DEK/KEK version、rewrap 和 key rotation 先写 known-answer 与属性测试。
+- [x] 以维护中的 authenticated-encryption primitive 实现 production `PayloadProtectorPort`；禁止 `test-xor-v1` 被正式配置选择。
+- [x] 让小 Payload 和可选 content-addressed ciphertext file 走同一 ownership/lifecycle conformance；缺文件、有孤儿、digest/tag 错误均形成明确 integrity failure。
+- [x] 实现 macOS Keychain-backed secret material adapter，以及 Hermes systemd credential/encrypted credential 或权限等价 secret-file adapter。
+- [x] production readiness 拒绝 environment/in-memory secret source；产品状态、Trace、日志、迁移包和错误只能保存 secret reference、version、purpose/scope 与验证结果。
+- [x] 在 model、Memory、GitHub、Worker 和 identity 路径执行 secret-format exclusion；测试原值不会进入模型输入、provider input、Memory、Trace、日志、错误或迁移包。
+
+Task 8 使用 Node.js 维护中的 AES-256-GCM primitive 实现 `aes-256-gcm-envelope-v1`：每个 Payload 生成独立 DEK、payload nonce 与 wrapping nonce，AAD 固定绑定 Owner、Agent、Payload、classification、content type 和算法版本；SQLite 只保存认证 envelope 元数据，KEK 由 host secret source 即时解析。rewrap 只解开并重新包装 DEK，不解密正文；`test-xor-v1`、environment 和 in-memory source 在 production assertion 中均 fail closed。
+
+小 ciphertext 保持 SQLite blob，超过阈值的 ciphertext 使用受限权限的 content-addressed file；同一 `PayloadStorePort` 负责引用生命周期，integrity inspector 区分 missing、digest corruption 和 orphan。Mac adapter 通过 `/usr/bin/security` 读取 Keychain generic password；Hermes adapter 读取显式 systemd credential 或权限等价的绝对 secret directory，并拒绝 symlink、相对路径及 group/other 可读权限。稳定机器秘密规则只输出 rule ID/count，gateway/execution contracts 继续拒绝 raw secret 字段，model trusted adapter、Trace redaction 及后续 Memory/GitHub/Worker/identity 边界复用同一 exclusion policy。实现与验证证据位于 `test/integration/qualification/evidence/s1-task8-payload-security.json`；真实 Keychain/systemd credential readback 留在 Task 28 的双平台 immutable install 验收。
 
 ### Task 9：实现严格配置、state-root 生命周期与健康模型
 

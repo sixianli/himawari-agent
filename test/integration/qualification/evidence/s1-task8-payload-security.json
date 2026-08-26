@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T14:56:11Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T08",
+  "candidateRevision": "c43e034c997cdaf24da2f9b8d17f3c9f0248377e",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 0,
+    "behind": 0,
+    "status": "dirty"
+  },
+  "environment": {
+    "node": "v25.6.0",
+    "npm": "11.8.0",
+    "payloadAlgorithm": "aes-256-gcm-envelope-v1",
+    "migrationCount": 8,
+    "migration0008Sha256": "bd00a2d7f4e1a42e8a10e092ace681db6189d29649a4d4a8eda555e03454c3b5",
+    "externalCalls": 0
+  },
+  "commands": [
+    {
+      "command": "npm run test:unit -- --run packages/application/test/machine-secret-exclusion.unit.test.ts packages/platform-node/test/payload-protector.unit.test.ts",
+      "exitStatus": 0,
+      "result": "14 known-answer, property, tamper, rewrap, host-secret, ciphertext lifecycle and machine-secret exclusion tests passed"
+    },
+    {
+      "command": "npm run test:contracts -- --run packages/persistence-sqlite/test/migration-engine.contract.test.ts packages/persistence-sqlite/test/schema-contract.contract.test.ts",
+      "exitStatus": 0,
+      "result": "8 immutable migration and normalized schema contract tests passed with migration 0008"
+    },
+    {
+      "command": "npm run test:integration -- --run test/integration/payload-protection.test.ts test/integration/session-trace.test.ts test/integration/model-router.test.ts test/integration/sqlite-durable-repositories.test.ts",
+      "exitStatus": 0,
+      "result": "31 production-envelope persistence, restart, Trace, model-secret and SQLite repository integration tests passed"
+    },
+    {
+      "command": "npm run check && npm test && npm run check:pi-compat && python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict . && git diff --check",
+      "exitStatus": 0,
+      "result": "format, lint, type, 14-workspace boundaries, v0.2 coverage, 135 unit, 101 contract, 278 integration, 3 E2E, 6 Pi compatibility and strict document validation passed"
+    }
+  ],
+  "verificationSummary": [
+    "AES-256-GCM known-answer fixture freezes ciphertext, payload/tag metadata, wrapped DEK, AAD digest and plaintext digest; 64 generated payloads prove nonce uniqueness and round-trip behavior.",
+    "Owner/Agent AAD mismatch, ciphertext mutation, content digest mismatch and file corruption fail with stable integrity codes; KEK rewrap changes only wrapped-DEK metadata and preserves ciphertext.",
+    "SQLite migration 0008 persists complete versioned envelope metadata while content-addressed ciphertext files keep 0700/0600 boundaries and report missing, corrupt and orphan states separately.",
+    "Mac Keychain, systemd credential and restricted secret-file adapters expose only references and versions; production assertions reject environment, in-memory and test-xor profiles.",
+    "Machine-secret exclusion reports rule IDs and counts without original material; trusted model resolution errors, Trace redaction and raw-secret contract rejection do not persist credential values."
+  ],
+  "unverified": [
+    "A real macOS Keychain item and a real Hermes systemd credential were not read because Task 8 does not authorize host secret mutation; immutable dual-platform service verification remains Task 28.",
+    "No production key rotation was executed; rewrap and rotation semantics were verified with generated non-production keys only.",
+    "Memory, GitHub, Worker and identity production adapters are implemented in later tasks; their contract shapes already reject raw secret fields and must reuse this exclusion policy in their task-specific tests."
+  ],
+  "externalEffects": [
+    "Tests created only permission-restricted temporary directories, SQLite files and random non-production keys, then removed them.",
+    "No network, model, Keychain, systemd credential, external account or production state-root mutation occurred."
+  ],
+  "implementationCommit": null
+}

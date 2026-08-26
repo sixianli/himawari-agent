@@ -5,6 +5,7 @@ import type {
   PayloadRecord,
   PayloadProtectionRequest,
   PayloadProtectorPort,
+  PayloadRewrapRequest,
   PayloadStorePort,
   SessionDeletionRecord,
   SessionDeletionStatePort,
@@ -180,14 +181,28 @@ export class DeterministicPayloadProtector implements PayloadProtectorPort {
     });
   }
 
-  async revealForTest(record: PayloadRecord): Promise<unknown> {
-    if (record.encryption.algorithm !== "test-xor-v1") {
+  async unprotect(request: { readonly payload: PayloadRecord }): Promise<Uint8Array> {
+    if (request.payload.encryption.algorithm !== "test-xor-v1") {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
-        `Unsupported test payload algorithm ${record.encryption.algorithm}`,
+        `Unsupported test payload algorithm ${request.payload.encryption.algorithm}`,
       );
     }
-    const plaintext = record.ciphertext.map((byte) => byte ^ DeterministicPayloadProtector.MASK);
+    return request.payload.ciphertext.map((byte) => byte ^ DeterministicPayloadProtector.MASK);
+  }
+
+  async rewrap(request: PayloadRewrapRequest): Promise<PayloadRecord> {
+    if (request.targetKeyRef !== "test-payload-key") {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "The deterministic protector only supports its fixed test key",
+      );
+    }
+    return frozenCopy(request.payload);
+  }
+
+  async revealForTest(record: PayloadRecord): Promise<unknown> {
+    const plaintext = await this.unprotect({ payload: record });
     return JSON.parse(new TextDecoder().decode(plaintext));
   }
 }

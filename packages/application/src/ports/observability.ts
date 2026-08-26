@@ -41,7 +41,24 @@ export interface TraceStorePort {
 export interface PayloadEncryptionMetadata {
   readonly algorithm: string;
   readonly keyRef: string;
+  readonly kekVersion?: string;
+  readonly dekVersion?: string;
+  readonly nonce?: string;
+  readonly authenticationTag?: string;
+  readonly wrappedDek?: string;
+  readonly wrapNonce?: string;
+  readonly wrapAuthenticationTag?: string;
+  readonly aadDigest?: string;
+  readonly ciphertextDigest?: string;
 }
+
+export type PayloadStorageMetadata =
+  | { readonly kind: "inline" }
+  | {
+      readonly kind: "ciphertext_file";
+      readonly relativePath: string;
+      readonly ciphertextDigest: string;
+    };
 
 export interface PayloadRecord {
   readonly ref: PayloadRef;
@@ -49,11 +66,14 @@ export interface PayloadRecord {
   readonly contentType: string;
   readonly ciphertext: Uint8Array;
   readonly encryption: PayloadEncryptionMetadata;
+  readonly storage?: PayloadStorageMetadata;
   readonly contentDigest: string;
   readonly createdAt: string;
 }
 
 export interface PayloadProtectionRequest {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
   readonly ref: PayloadRef;
   readonly dataClassification: DataClassification;
   readonly contentType: string;
@@ -61,8 +81,21 @@ export interface PayloadProtectionRequest {
   readonly createdAt: string;
 }
 
+export interface PayloadUnprotectionRequest {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly payload: PayloadRecord;
+}
+
+export interface PayloadRewrapRequest extends PayloadUnprotectionRequest {
+  readonly targetKeyRef: string;
+  readonly targetKekVersion: string;
+}
+
 export interface PayloadProtectorPort {
   protect(request: PayloadProtectionRequest): Promise<PayloadRecord>;
+  unprotect(request: PayloadUnprotectionRequest): Promise<Uint8Array>;
+  rewrap(request: PayloadRewrapRequest): Promise<PayloadRecord>;
 }
 
 export interface PayloadStorePort {

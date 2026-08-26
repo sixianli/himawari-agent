@@ -1,4 +1,5 @@
 import type { JsonValue } from "../ports/common.js";
+import { redactMachineSecrets } from "./machine-secret-exclusion.js";
 
 const REDACTED = "[REDACTED]";
 const SENSITIVE_KEYS = new Set([
@@ -26,7 +27,7 @@ function normalizedKey(key: string): string {
 }
 
 function redactString(value: string, sensitiveLiterals: readonly string[]): string {
-  let result = value;
+  let result = redactMachineSecrets(value);
   for (const literal of sensitiveLiterals) {
     if (literal.length > 0) result = result.split(literal).join(REDACTED);
   }

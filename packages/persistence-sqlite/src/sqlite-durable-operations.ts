@@ -742,24 +742,29 @@ export class SqliteDurableOperations {
         payloadRef: input.payload.ref,
       });
     }
+    const storage = input.payload.storage ?? { kind: "inline" as const };
     this.database
       .prepare(
         `INSERT INTO payloads (
           ref, owner_id, agent_id, classification, storage_kind, ciphertext,
-          content_digest, encryption_algorithm, key_ref, lifecycle_state, created_at, content_type
-        ) VALUES (?, ?, ?, ?, 'sqlite_blob', ?, ?, ?, ?, 'active', ?, ?)`,
+          ciphertext_path, content_digest, encryption_algorithm, key_ref,
+          lifecycle_state, created_at, content_type, encryption_metadata_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
       )
       .run(
         input.payload.ref,
         input.ownerId,
         input.agentId,
         input.payload.dataClassification,
-        input.payload.ciphertext,
+        storage.kind === "inline" ? "sqlite_blob" : "ciphertext_file",
+        storage.kind === "inline" ? input.payload.ciphertext : null,
+        storage.kind === "ciphertext_file" ? storage.relativePath : null,
         input.payload.contentDigest,
         input.payload.encryption.algorithm,
         input.payload.encryption.keyRef,
         input.payload.createdAt,
         input.payload.contentType,
+        JSON.stringify(input.payload.encryption),
       );
   }
 
@@ -771,7 +776,9 @@ export class SqliteDurableOperations {
     const row = this.database
       .prepare(
         `SELECT ref, classification AS dataClassification, content_type AS contentType,
-          ciphertext, encryption_algorithm AS encryptionAlgorithm, key_ref AS keyRef,
+          storage_kind AS storageKind, ciphertext, ciphertext_path AS ciphertextPath,
+          encryption_algorithm AS encryptionAlgorithm, key_ref AS keyRef,
+          encryption_metadata_json AS encryptionMetadataJson,
           content_digest AS contentDigest, created_at AS createdAt
         FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ? AND lifecycle_state = 'active'`,
       )
@@ -780,23 +787,37 @@ export class SqliteDurableOperations {
           readonly ref: string;
           readonly dataClassification: PayloadRecord["dataClassification"];
           readonly contentType: string | null;
-          readonly ciphertext: Uint8Array;
+          readonly storageKind: "sqlite_blob" | "ciphertext_file";
+          readonly ciphertext: Uint8Array | null;
+          readonly ciphertextPath: string | null;
           readonly encryptionAlgorithm: string | null;
           readonly keyRef: string | null;
+          readonly encryptionMetadataJson: string | null;
           readonly contentDigest: string;
           readonly createdAt: string;
         }
       | undefined;
     if (!row) return undefined;
+    const encryption = row.encryptionMetadataJson
+      ? (JSON.parse(row.encryptionMetadataJson) as PayloadRecord["encryption"])
+      : {
+          algorithm: row.encryptionAlgorithm ?? "unknown",
+          keyRef: row.keyRef ?? "unknown",
+        };
     return {
       ref: row.ref,
       dataClassification: row.dataClassification,
       contentType: row.contentType ?? "application/octet-stream",
-      ciphertext: new Uint8Array(row.ciphertext),
-      encryption: {
-        algorithm: row.encryptionAlgorithm ?? "unknown",
-        keyRef: row.keyRef ?? "unknown",
-      },
+      ciphertext: row.ciphertext ? new Uint8Array(row.ciphertext) : new Uint8Array(),
+      encryption,
+      storage:
+        row.storageKind === "ciphertext_file" && row.ciphertextPath
+          ? {
+              kind: "ciphertext_file",
+              relativePath: row.ciphertextPath,
+              ciphertextDigest: encryption.ciphertextDigest ?? "unknown",
+            }
+          : { kind: "inline" },
       contentDigest: row.contentDigest,
       createdAt: row.createdAt,
     };

@@ -126,6 +126,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0007_durable_repository_records.sql",
   },
+  {
+    sequence: 8,
+    name: "payload_envelope_metadata",
+    changeSet: "payload-envelope-metadata",
+    phase: "expand" as const,
+    file: "0008_payload_envelope_metadata.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

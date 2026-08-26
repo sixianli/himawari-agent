@@ -1,6 +1,7 @@
 import {
   PORT_ERROR_CODES,
   ApplicationPortError,
+  assertMachineSecretFree,
   type ClockPort,
   type ModelDescriptor,
   type ModelInvocationEvent,
@@ -51,6 +52,7 @@ export class TrustedModelProviderAdapter implements ModelPort {
   }
 
   async *invoke(request: ModelInvocationRequest): AsyncIterable<ModelInvocationEvent> {
+    assertMachineSecretFree(JSON.stringify(request));
     const descriptor = this.dependencies.descriptors.find(({ ref }) => ref === request.modelRef);
     if (!descriptor) {
       throw new ApplicationPortError(
@@ -61,12 +63,20 @@ export class TrustedModelProviderAdapter implements ModelPort {
     }
 
     const secretValues = await this.resolveSecrets(descriptor, request);
-    for await (const event of this.dependencies.transport.invoke({
-      descriptor,
-      request,
-      secretValues,
-    })) {
-      yield Object.freeze({ ...event, invocationId: request.invocationId });
+    try {
+      for await (const event of this.dependencies.transport.invoke({
+        descriptor,
+        request,
+        secretValues,
+      })) {
+        yield Object.freeze({ ...event, invocationId: request.invocationId });
+      }
+    } catch {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Trusted model transport failed",
+        { invocationId: request.invocationId, modelRef: request.modelRef },
+      );
     }
   }
 
@@ -115,10 +125,23 @@ export class TrustedModelProviderAdapter implements ModelPort {
         purpose: requirement.purpose,
       }),
     );
-    const secretValue = await this.dependencies.secretSource.resolve(
-      requirement.secretRef,
-      requirement.secretVersion,
-    );
+    let secretValue: string;
+    try {
+      secretValue = await this.dependencies.secretSource.resolve(
+        requirement.secretRef,
+        requirement.secretVersion,
+      );
+    } catch {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_FOUND,
+        "Required model credential could not be resolved",
+        {
+          modelRef: descriptor.ref,
+          secretRef: requirement.secretRef,
+          secretVersion: requirement.secretVersion,
+        },
+      );
+    }
     return Object.freeze([secretValue]);
   }
 
