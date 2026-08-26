@@ -17,6 +17,7 @@ import type {
   OwnerIdentityStatePort,
   MemoryProjectionJobStatePort,
   ProductMemoryStatePort,
+  SensitiveMemoryApprovalStatePort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
 import type {
@@ -304,6 +305,17 @@ export class SqliteDurableAdapters {
       complete: (input) => this.context.write("memoryJob.complete", input),
       retry: (input) => this.context.write("memoryJob.retry", input),
       listByMemory: (memoryId) => this.context.read("memoryJob.listByMemory", { memoryId }),
+    });
+  }
+
+  sensitiveMemoryApprovals(): SensitiveMemoryApprovalStatePort {
+    return Object.freeze<SensitiveMemoryApprovalStatePort>({
+      create: (request) => this.context.write("memoryApproval.create", { request }),
+      read: (requestId) => this.context.read("memoryApproval.read", { requestId }),
+      resolve: (input) => this.context.write("memoryApproval.resolve", input),
+      markCommitted: (input) => this.context.write("memoryApproval.markCommitted", input),
+      listPending: (ownerId, threadId) =>
+        this.context.read("memoryApproval.listPending", { ownerId, threadId }),
     });
   }
 

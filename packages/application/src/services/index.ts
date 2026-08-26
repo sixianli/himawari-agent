@@ -1,5 +1,6 @@
 export * from "./capability-registry-service.js";
 export * from "./attention-policy-service.js";
+export * from "./automatic-memory-service.js";
 export * from "./agent-gateway-service.js";
 export * from "./agent-gateway-v2-service.js";
 export * from "./context-formation-service.js";

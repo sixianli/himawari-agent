@@ -1,4 +1,8 @@
-import type { MemoryProjectionJob, ProductMemoryRecord } from "@himawari-agent/application";
+import type {
+  MemoryProjectionJob,
+  ProductMemoryRecord,
+  SensitiveMemoryApprovalRequest,
+} from "@himawari-agent/application";
 import type {
   AgentId,
   MemoryGenerationId,
@@ -41,6 +45,29 @@ interface ProjectionJobRow {
   readonly claimExpiresAt: string | null;
 }
 
+interface MemoryApprovalRow {
+  readonly id: string;
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly runId: string;
+  readonly threadId: string;
+  readonly generationId: string;
+  readonly sourceRef: string;
+  readonly sourceClassification: SensitiveMemoryApprovalRequest["sourceClassification"];
+  readonly candidateOrdinal: number;
+  readonly productMemoryId: string;
+  readonly decision: SensitiveMemoryApprovalRequest["decision"];
+  readonly existingMemoryId: string | null;
+  readonly classification: SensitiveMemoryApprovalRequest["dataClassification"];
+  readonly policyVersion: string;
+  readonly modelDescriptorRef: string;
+  readonly status: SensitiveMemoryApprovalRequest["status"];
+  readonly deliveryState: SensitiveMemoryApprovalRequest["deliveryState"];
+  readonly requestedAt: string;
+  readonly decidedAt: string | null;
+  readonly committedAt: string | null;
+}
+
 const memorySelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, revision, status,
   content_ref AS contentRef, classification, source_thread_id AS sourceThreadId,
   inference, confidence_permille AS confidencePermille, policy_version AS policyVersion,
@@ -53,6 +80,15 @@ const projectionJobSelect = `SELECT id, memory_id AS memoryId,
   provider_record_id AS providerRecordId, error_code AS errorCode,
   claimed_by AS claimedBy, claim_expires_at AS claimExpiresAt
   FROM memory_projection_jobs`;
+
+const memoryApprovalSelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId,
+  run_id AS runId, thread_id AS threadId, generation_id AS generationId,
+  source_ref AS sourceRef, source_classification AS sourceClassification,
+  candidate_ordinal AS candidateOrdinal, product_memory_id AS productMemoryId,
+  decision, existing_memory_id AS existingMemoryId, classification,
+  policy_version AS policyVersion, model_descriptor_ref AS modelDescriptorRef,
+  status, delivery_state AS deliveryState, requested_at AS requestedAt,
+  decided_at AS decidedAt, committed_at AS committedAt FROM memory_approval_requests`;
 
 function validIsoTimestamp(value: string): boolean {
   const parsed = new Date(value);
@@ -127,6 +163,24 @@ export class SqliteMemoryOperations {
         );
       case "memoryJob.listByMemory":
         return this.listJobsByMemory((payload as { memoryId: MemoryId }).memoryId);
+      case "memoryApproval.create":
+        return this.createApproval(
+          (payload as { request: SensitiveMemoryApprovalRequest }).request,
+        );
+      case "memoryApproval.read":
+        return this.readApproval((payload as { requestId: string }).requestId);
+      case "memoryApproval.resolve":
+        return this.resolveApproval(
+          payload as {
+            requestId: string;
+            resolution: "approved" | "edited" | "rejected" | "expired";
+            decidedAt: string;
+          },
+        );
+      case "memoryApproval.markCommitted":
+        return this.markApprovalCommitted(payload as { requestId: string; committedAt: string });
+      case "memoryApproval.listPending":
+        return this.listPendingApprovals(payload as { ownerId: OwnerId; threadId: ThreadId });
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown Memory operation ${operation}`);
     }
@@ -645,5 +699,178 @@ export class SqliteMemoryOperations {
       .prepare(`${projectionJobSelect} WHERE memory_id = ? ORDER BY memory_revision, operation`)
       .all(memoryId) as ProjectionJobRow[];
     return rows.map((row) => this.jobFromRow(row));
+  }
+
+  private approvalFromRow(row: MemoryApprovalRow): SensitiveMemoryApprovalRequest {
+    return Object.freeze({
+      id: row.id,
+      ownerId: row.ownerId as OwnerId,
+      agentId: row.agentId as AgentId,
+      runId: row.runId as SensitiveMemoryApprovalRequest["runId"],
+      threadId: row.threadId as ThreadId,
+      generationId: row.generationId as MemoryGenerationId,
+      sourceRef: row.sourceRef,
+      sourceClassification: row.sourceClassification,
+      candidateOrdinal: row.candidateOrdinal,
+      productMemoryId: row.productMemoryId as MemoryId,
+      decision: row.decision,
+      existingMemoryId: row.existingMemoryId as MemoryId | null,
+      dataClassification: row.classification,
+      policyVersion: row.policyVersion,
+      modelDescriptorRef: row.modelDescriptorRef,
+      status: row.status,
+      deliveryState: row.deliveryState,
+      requestedAt: row.requestedAt,
+      decidedAt: row.decidedAt,
+      committedAt: row.committedAt,
+    });
+  }
+
+  private readApproval(requestId: string): SensitiveMemoryApprovalRequest | undefined {
+    const row = this.database.prepare(`${memoryApprovalSelect} WHERE id = ?`).get(requestId) as
+      | MemoryApprovalRow
+      | undefined;
+    return row ? this.approvalFromRow(row) : undefined;
+  }
+
+  private createApproval(request: SensitiveMemoryApprovalRequest): SensitiveMemoryApprovalRequest {
+    this.assertDiskHeadroom();
+    if (
+      request.status !== "pending" ||
+      request.decidedAt !== null ||
+      request.committedAt !== null ||
+      !Number.isSafeInteger(request.candidateOrdinal) ||
+      request.candidateOrdinal < 0 ||
+      !validIsoTimestamp(request.requestedAt) ||
+      request.policyVersion.length === 0 ||
+      request.modelDescriptorRef.length === 0
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "Sensitive Memory approval request is invalid");
+    }
+    const transaction = this.database.transaction(() => {
+      const duplicate = this.database
+        .prepare(
+          `${memoryApprovalSelect} WHERE generation_id = ? AND source_ref = ?
+          AND candidate_ordinal = ?`,
+        )
+        .get(request.generationId, request.sourceRef, request.candidateOrdinal) as
+        | MemoryApprovalRow
+        | undefined;
+      if (duplicate) {
+        const existing = this.approvalFromRow(duplicate);
+        const same =
+          existing.id === request.id &&
+          existing.ownerId === request.ownerId &&
+          existing.agentId === request.agentId &&
+          existing.runId === request.runId &&
+          existing.threadId === request.threadId &&
+          existing.productMemoryId === request.productMemoryId &&
+          existing.decision === request.decision &&
+          existing.existingMemoryId === request.existingMemoryId &&
+          existing.dataClassification === request.dataClassification &&
+          existing.policyVersion === request.policyVersion &&
+          existing.modelDescriptorRef === request.modelDescriptorRef;
+        if (!same) {
+          this.fail("PORT_CONFLICT", `Sensitive Memory approval ${request.id} conflicts`);
+        }
+        return existing;
+      }
+      this.database
+        .prepare(
+          `INSERT INTO memory_approval_requests (
+            id, owner_id, agent_id, run_id, thread_id, generation_id, source_ref,
+            source_classification, candidate_ordinal, product_memory_id, decision,
+            existing_memory_id, classification, policy_version, model_descriptor_ref,
+            status, delivery_state, requested_at, decided_at, committed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, NULL, NULL)`,
+        )
+        .run(
+          request.id,
+          request.ownerId,
+          request.agentId,
+          request.runId,
+          request.threadId,
+          request.generationId,
+          request.sourceRef,
+          request.sourceClassification,
+          request.candidateOrdinal,
+          request.productMemoryId,
+          request.decision,
+          request.existingMemoryId,
+          request.dataClassification,
+          request.policyVersion,
+          request.modelDescriptorRef,
+          request.deliveryState,
+          request.requestedAt,
+        );
+      return this.readApproval(request.id) as SensitiveMemoryApprovalRequest;
+    });
+    return transaction.immediate();
+  }
+
+  private resolveApproval(input: {
+    requestId: string;
+    resolution: "approved" | "edited" | "rejected" | "expired";
+    decidedAt: string;
+  }): SensitiveMemoryApprovalRequest {
+    this.assertDiskHeadroom();
+    if (!validIsoTimestamp(input.decidedAt)) {
+      this.fail("PORT_INVALID_OPERATION", "Sensitive Memory approval decision time is invalid");
+    }
+    const current = this.readApproval(input.requestId);
+    if (!current) {
+      this.fail("PORT_NOT_FOUND", `Sensitive Memory approval ${input.requestId} not found`);
+    }
+    if (current.status !== "pending") {
+      if (current.status === input.resolution) return current;
+      this.fail(
+        "PORT_CONFLICT",
+        `Sensitive Memory approval ${input.requestId} is ${current.status}`,
+      );
+    }
+    this.database
+      .prepare("UPDATE memory_approval_requests SET status = ?, decided_at = ? WHERE id = ?")
+      .run(input.resolution, input.decidedAt, input.requestId);
+    return this.readApproval(input.requestId) as SensitiveMemoryApprovalRequest;
+  }
+
+  private markApprovalCommitted(input: {
+    requestId: string;
+    committedAt: string;
+  }): SensitiveMemoryApprovalRequest {
+    this.assertDiskHeadroom();
+    if (!validIsoTimestamp(input.committedAt)) {
+      this.fail("PORT_INVALID_OPERATION", "Sensitive Memory commit time is invalid");
+    }
+    const current = this.readApproval(input.requestId);
+    if (!current) {
+      this.fail("PORT_NOT_FOUND", `Sensitive Memory approval ${input.requestId} not found`);
+    }
+    if (current.status === "committed") return current;
+    if (current.status !== "approved" && current.status !== "edited") {
+      this.fail(
+        "PORT_INVALID_OPERATION",
+        `Sensitive Memory approval ${input.requestId} cannot commit`,
+      );
+    }
+    this.database
+      .prepare(
+        "UPDATE memory_approval_requests SET status = 'committed', committed_at = ? WHERE id = ?",
+      )
+      .run(input.committedAt, input.requestId);
+    return this.readApproval(input.requestId) as SensitiveMemoryApprovalRequest;
+  }
+
+  private listPendingApprovals(input: {
+    ownerId: OwnerId;
+    threadId: ThreadId;
+  }): readonly SensitiveMemoryApprovalRequest[] {
+    const rows = this.database
+      .prepare(
+        `${memoryApprovalSelect} WHERE owner_id = ? AND thread_id = ? AND status = 'pending'
+        ORDER BY requested_at, candidate_ordinal`,
+      )
+      .all(input.ownerId, input.threadId) as MemoryApprovalRow[];
+    return rows.map((row) => this.approvalFromRow(row));
   }
 }

@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T23:43:00Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T18",
+  "candidateRevision": "b7734810ee86e7af2c9a8e99968d6b8b6cc21840",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 8,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["AGENTS.md"]
+  },
+  "migration": {
+    "sequence": 12,
+    "file": "packages/persistence-sqlite/src/migrations/0012_sensitive_memory_approvals.sql",
+    "sha256": "c2272e604cf6825870add23e8799ab4bd1a330f695212d989a4d50581c94733b",
+    "bodyPersistenceBeforeApproval": false,
+    "storedApprovalMetadata": [
+      "source reference",
+      "candidate ordinal",
+      "preallocated product Memory ID",
+      "classification",
+      "policy/model identity",
+      "delivery state and timestamps"
+    ]
+  },
+  "goldenDataset": {
+    "file": "test/integration/fixtures/memory-golden-dataset.json",
+    "sha256": "929e38c45a65888d783dfb07031219d498677fcfbeaddf68cf71e8e07a654b7c",
+    "version": "memory-golden-v1",
+    "caseCount": 14,
+    "categories": [
+      "durable fact",
+      "transient chatter",
+      "correction",
+      "contradiction",
+      "decision",
+      "commitment",
+      "experience",
+      "sensitive personal information",
+      "third-party sensitive information",
+      "machine secret",
+      "multiple sensitive candidates",
+      "explicit remember",
+      "low confidence",
+      "extraction failure"
+    ]
+  },
+  "metrics": {
+    "extractionPrecision": 1,
+    "minimumExtractionPrecision": 0.95,
+    "extractionRecall": 1,
+    "minimumExtractionRecall": 0.95,
+    "falseSecretRetention": 0,
+    "maximumFalseSecretRetention": 0,
+    "correctionPropagation": 1,
+    "minimumCorrectionPropagation": 1,
+    "duplicateGenerationRate": 0,
+    "maximumDuplicateGenerationRate": 0,
+    "unpassedSamples": []
+  },
+  "commands": [
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/automatic-memory-golden.test.ts",
+      "exitStatus": 0,
+      "result": "14 类 golden case 的秘密排除、自动提交、逐项 ASK、批准、编辑、拒绝、后台引用、纠正、幂等与阈值通过"
+    },
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format、lint、strict typecheck、14 workspace boundary 与 v0.2 coverage 通过"
+    },
+    {
+      "command": "npm test",
+      "exitStatus": 0,
+      "result": "188 unit、126 contract、291 integration 与 3 E2E 测试通过"
+    }
+  ],
+  "verificationSummary": [
+    "原始 committed source 在 extractor 前执行机器秘密扫描；命中时 extractor 未观察到来源正文。",
+    "每个 extractor candidate 再次扫描，审计只记录 rule ID、count、source reference、policy/model 与 outcome。",
+    "非敏感高置信候选自动写入稳定 protected Payload；transient 与低置信候选不提交。",
+    "每个敏感候选拥有独立 durable approval；同轮候选分别批准和编辑，第三方与未明确指向项分别拒绝。",
+    "后台请求只以 queued_no_ui 保存 source reference；批准时重新读取来源、重新提取和重新扫描。",
+    "明确请记住只提交指向 ordinal，其余敏感候选仍进入 ASK。",
+    "提取失败返回派生失败，不修改已经存在的 Run、source Payload 或产品 Memory。"
+  ],
+  "limits": [
+    "precision/recall 来自 deterministic golden extractor 与 policy harness，只证明固定基线，不代表真实云端模型质量。",
+    "真实 model/embedding identity、费用授权与 live quality gate 属于 Task 20。",
+    "Thread checkpoint、summary、experience/commitment derivative generation 与 exactly-once recovery 属于 Task 19。"
+  ],
+  "externalEffects": [
+    "本任务只写仓库文件和本机临时 SQLite/Unix socket 测试目录。",
+    "未调用模型供应商、Mem0 live provider、Hermes、外部账户、生产 state root 或远程 Git。"
+  ],
+  "implementationCommit": null
+}

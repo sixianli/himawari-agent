@@ -1,4 +1,5 @@
 export * from "./authorization.js";
+export * from "./automatic-memory.js";
 export * from "./backup-transfer.js";
 export * from "./capabilities.js";
 export * from "./common.js";

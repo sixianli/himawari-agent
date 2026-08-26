@@ -287,6 +287,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade after Memory deletion verification",
   ),
   entry(
+    "memory_approval_requests",
+    "SensitiveMemoryApprovalStatePort",
+    "pending to committed or terminal rejection",
+    "metadata_only",
+    "cascade with source Run or generation deletion",
+  ),
+  entry(
     "github_installations",
     "GitHubIntegrationStatePort",
     "active to revoked",

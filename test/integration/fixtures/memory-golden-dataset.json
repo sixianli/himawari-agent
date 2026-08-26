@@ -1,0 +1,288 @@
+{
+  "schemaVersion": 1,
+  "datasetVersion": "memory-golden-v1",
+  "reviewedAt": "2026-08-27",
+  "policyVersion": "incremental-memory-policy-v1",
+  "modelDescriptorRef": "deterministic-golden-extractor-v1",
+  "thresholds": {
+    "minimumPrecision": 0.95,
+    "minimumRecall": 0.95,
+    "maximumFalseSecretRetention": 0,
+    "minimumCorrectionPropagation": 1,
+    "maximumDuplicateGenerationRate": 0
+  },
+  "cases": [
+    {
+      "id": "durable-fact",
+      "category": "durable_fact",
+      "turns": ["用户：我长期偏好安静、禁烟的餐厅。", "助手：已理解这个稳定偏好。"],
+      "sourceClassification": "private",
+      "expectedCandidates": [
+        {
+          "kind": "durable_fact",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "所有者长期偏好安静、禁烟的餐厅",
+          "dataClassification": "private",
+          "confidencePermille": 980,
+          "inference": false,
+          "sourceRefs": ["message-durable-fact-1"],
+          "expectedDurable": true
+        }
+      ]
+    },
+    {
+      "id": "transient-chatter",
+      "category": "transient",
+      "turns": ["用户：今天天气真不错。", "助手：确实很舒服。"],
+      "sourceClassification": "public",
+      "expectedCandidates": [
+        {
+          "kind": "transient",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "用户认为今天天气不错",
+          "dataClassification": "public",
+          "confidencePermille": 990,
+          "inference": false,
+          "sourceRefs": ["message-transient-1"],
+          "expectedDurable": false
+        }
+      ]
+    },
+    {
+      "id": "correction",
+      "category": "correction",
+      "turns": ["用户：更正一下，我现在偏好热闹的餐厅，不再要求安静。"],
+      "sourceClassification": "private",
+      "expectedCandidates": [
+        {
+          "kind": "durable_fact",
+          "decision": "update",
+          "existingMemoryId": "memory-generation-durable-fact-0",
+          "text": "所有者现在偏好热闹、禁烟的餐厅",
+          "dataClassification": "private",
+          "confidencePermille": 1000,
+          "inference": false,
+          "sourceRefs": ["message-correction-1"],
+          "expectedDurable": true
+        }
+      ]
+    },
+    {
+      "id": "contradiction",
+      "category": "contradiction",
+      "turns": ["用户：工作日不喝咖啡。", "用户：不过周五上午会喝一杯。"],
+      "sourceClassification": "private",
+      "expectedCandidates": [
+        {
+          "kind": "durable_fact",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "所有者通常工作日不喝咖啡，但周五上午例外",
+          "dataClassification": "private",
+          "confidencePermille": 930,
+          "inference": false,
+          "sourceRefs": ["message-contradiction-1", "message-contradiction-2"],
+          "expectedDurable": true
+        }
+      ]
+    },
+    {
+      "id": "decision",
+      "category": "decision",
+      "turns": ["用户：这个项目决定使用 SQLite 作为产品状态权威。"],
+      "sourceClassification": "private",
+      "expectedCandidates": [
+        {
+          "kind": "decision",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "项目决定使用 SQLite 作为产品状态权威",
+          "dataClassification": "private",
+          "confidencePermille": 1000,
+          "inference": false,
+          "sourceRefs": ["message-decision-1"],
+          "expectedDurable": true
+        }
+      ]
+    },
+    {
+      "id": "commitment",
+      "category": "commitment",
+      "turns": ["用户：我承诺下周提交迁移复盘，但不要替我创建任务。"],
+      "sourceClassification": "private",
+      "expectedCandidates": [
+        {
+          "kind": "commitment",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "所有者承诺下周提交迁移复盘",
+          "dataClassification": "private",
+          "confidencePermille": 960,
+          "inference": false,
+          "sourceRefs": ["message-commitment-1"],
+          "expectedDurable": true
+        }
+      ]
+    },
+    {
+      "id": "experience",
+      "category": "experience",
+      "turns": ["用户：上次迁移因为没有先验证恢复点而失败，今后必须先恢复验证。"],
+      "sourceClassification": "private",
+      "expectedCandidates": [
+        {
+          "kind": "experience",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "迁移前必须先验证恢复点，避免重复上次失败",
+          "dataClassification": "private",
+          "confidencePermille": 950,
+          "inference": true,
+          "sourceRefs": ["message-experience-1"],
+          "expectedDurable": true
+        }
+      ]
+    },
+    {
+      "id": "sensitive-personal",
+      "category": "sensitive_personal",
+      "turns": ["用户：我的私人联系电话是 090-1234-5678。"],
+      "sourceClassification": "sensitive",
+      "expectedCandidates": [
+        {
+          "kind": "durable_fact",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "所有者的私人联系电话是 090-1234-5678",
+          "dataClassification": "sensitive",
+          "confidencePermille": 1000,
+          "inference": false,
+          "sourceRefs": ["message-sensitive-personal-1"],
+          "expectedDurable": true
+        }
+      ],
+      "approvalResolution": "approved"
+    },
+    {
+      "id": "third-party-sensitive",
+      "category": "third_party_sensitive",
+      "turns": ["用户：朋友小林的家庭住址在示例区 1-2-3。"],
+      "sourceClassification": "sensitive",
+      "interactive": false,
+      "expectedCandidates": [
+        {
+          "kind": "durable_fact",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "第三方小林的家庭住址在示例区 1-2-3",
+          "dataClassification": "sensitive",
+          "confidencePermille": 990,
+          "inference": false,
+          "sourceRefs": ["message-third-party-1"],
+          "expectedDurable": false
+        }
+      ],
+      "approvalResolution": "rejected"
+    },
+    {
+      "id": "machine-secret",
+      "category": "machine_secret",
+      "turns": ["用户：临时令牌是 sk-proj-abcdefghijklmnopqrstuvwxyz0123456789。"],
+      "sourceClassification": "restricted",
+      "expectedCandidates": [],
+      "expectedSecretExclusion": true
+    },
+    {
+      "id": "multiple-sensitive",
+      "category": "multiple_sensitive",
+      "turns": ["用户：我的私人邮箱是 owner@example.test，私人电话是 090-9999-8888。"],
+      "sourceClassification": "sensitive",
+      "expectedCandidates": [
+        {
+          "kind": "durable_fact",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "所有者的私人邮箱是 owner@example.test",
+          "dataClassification": "sensitive",
+          "confidencePermille": 1000,
+          "inference": false,
+          "sourceRefs": ["message-multiple-sensitive-1"],
+          "expectedDurable": true
+        },
+        {
+          "kind": "durable_fact",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "所有者的私人电话是 090-9999-8888",
+          "dataClassification": "sensitive",
+          "confidencePermille": 1000,
+          "inference": false,
+          "sourceRefs": ["message-multiple-sensitive-1"],
+          "expectedDurable": true
+        }
+      ],
+      "approvalResolution": "approve_and_edit"
+    },
+    {
+      "id": "explicit-remember-one",
+      "category": "explicit_remember",
+      "turns": ["用户：请只记住我的过敏原是花生；同一消息还提到私人病历号 MRN-EXAMPLE-88。"],
+      "sourceClassification": "sensitive",
+      "explicitRememberCandidateOrdinal": 0,
+      "expectedCandidates": [
+        {
+          "kind": "durable_fact",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "所有者的过敏原是花生",
+          "dataClassification": "sensitive",
+          "confidencePermille": 1000,
+          "inference": false,
+          "sourceRefs": ["message-explicit-remember-1"],
+          "expectedDurable": true
+        },
+        {
+          "kind": "durable_fact",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "所有者的私人病历号是 MRN-EXAMPLE-88",
+          "dataClassification": "sensitive",
+          "confidencePermille": 1000,
+          "inference": false,
+          "sourceRefs": ["message-explicit-remember-1"],
+          "expectedDurable": false
+        }
+      ],
+      "approvalResolution": "rejected"
+    },
+    {
+      "id": "low-confidence",
+      "category": "low_confidence",
+      "turns": ["用户：也许以后会喜欢登山。"],
+      "sourceClassification": "private",
+      "expectedCandidates": [
+        {
+          "kind": "durable_fact",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "所有者可能喜欢登山",
+          "dataClassification": "private",
+          "confidencePermille": 500,
+          "inference": true,
+          "sourceRefs": ["message-low-confidence-1"],
+          "expectedDurable": false
+        }
+      ]
+    },
+    {
+      "id": "extraction-failure",
+      "category": "failure",
+      "turns": ["用户：这条已提交消息用于注入提取失败。"],
+      "sourceClassification": "private",
+      "expectedCandidates": [],
+      "extractorFailure": true
+    }
+  ]
+}

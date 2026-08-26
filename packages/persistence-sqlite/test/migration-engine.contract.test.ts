@@ -52,8 +52,8 @@ describe("immutable SQLite migration engine", () => {
     const migrations = await loadBundledMigrations();
 
     expect(applyMigrations(database, migrations)).toEqual({
-      appliedSequences: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-      currentSequence: 11,
+      appliedSequences: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      currentSequence: 12,
     });
     expect(readSqliteRuntimeStatus(database)).toMatchObject({
       foreignKeys: true,
@@ -61,7 +61,7 @@ describe("immutable SQLite migration engine", () => {
       synchronous: "full",
       quickCheck: "ok",
     });
-    expect(readMigrationLedger(database)).toHaveLength(11);
+    expect(readMigrationLedger(database)).toHaveLength(12);
 
     const tables = database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
@@ -92,8 +92,8 @@ describe("immutable SQLite migration engine", () => {
     );
     const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
     expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-      appliedSequences: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-      currentSequence: 11,
+      appliedSequences: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      currentSequence: 12,
     });
     expect(database.prepare("SELECT id FROM owners").pluck().all()).toEqual(["owner-01"]);
     expect(database.prepare("SELECT COUNT(*) FROM storage_health_samples").pluck().get()).toBe(0);
@@ -109,7 +109,7 @@ describe("immutable SQLite migration engine", () => {
 
     expect(applyMigrations(database, migrations)).toEqual({
       appliedSequences: [],
-      currentSequence: 11,
+      currentSequence: 12,
     });
 
     database.close();
@@ -172,7 +172,7 @@ describe("immutable SQLite migration engine", () => {
     );
     database
       .prepare(
-        "INSERT INTO schema_migration_ledger (sequence, name, phase, digest, applied_at) VALUES (12, 'future', 'expand', 'sha256-future', ?)",
+        "INSERT INTO schema_migration_ledger (sequence, name, phase, digest, applied_at) VALUES (13, 'future', 'expand', 'sha256-future', ?)",
       )
       .run("2026-08-26T00:00:00.000Z");
     expectMigrationCode(
@@ -194,9 +194,9 @@ describe("immutable SQLite migration engine", () => {
     expect(() => applyMigrations(second, migrations)).toThrow();
     first.exec("ROLLBACK");
 
-    expect(applyMigrations(second, migrations).currentSequence).toBe(11);
+    expect(applyMigrations(second, migrations).currentSequence).toBe(12);
     expect(second.pragma("foreign_key_check")).toEqual([]);
-    expect(readMigrationLedger(second)).toHaveLength(11);
+    expect(readMigrationLedger(second)).toHaveLength(12);
 
     first.close();
     second.close();

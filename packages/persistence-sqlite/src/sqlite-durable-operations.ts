@@ -223,7 +223,11 @@ export class SqliteDurableOperations {
   }
 
   execute(operation: string, payload: unknown): unknown {
-    if (operation.startsWith("memory.") || operation.startsWith("memoryJob.")) {
+    if (
+      operation.startsWith("memory.") ||
+      operation.startsWith("memoryJob.") ||
+      operation.startsWith("memoryApproval.")
+    ) {
       return this.memory.execute(operation, payload);
     }
     switch (operation) {

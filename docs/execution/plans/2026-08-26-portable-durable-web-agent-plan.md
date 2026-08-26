@@ -355,13 +355,19 @@ Task 15 把 `apps/control-center` 从构建占位改为 browser-only React/Vite 
 
 ### Task 18：实现增量自动 Memory 与敏感逐项审批
 
-- [ ] 建立受治理 multi-turn golden dataset，覆盖 durable facts、transient chatter、correction、contradiction、decision、commitment、experience、敏感个人信息、第三方信息和机器秘密格式。
-- [ ] committed Run 后先执行 machine-secret exclusion 和 classification，再运行增量 extraction；失败不得回滚已提交消息或 Run。
-- [ ] 高置信非敏感结果可按 policy 自动 commit，并保留来源、模型/policy version、推断标记和 Trace。
-- [ ] 交互式敏感候选在当前 Thread 同步逐项 ASK；批准前不保存候选正文，同轮多个候选允许逐项批准、编辑或拒绝。
-- [ ] “请记住”只批准明确指向项；后台只保存指向原始加密 source 的最小 reference，Owner 在线后重新提取或询问。
-- [ ] 机器秘密命中只记录 rule ID、count、source reference 和 outcome；任何秘密原值进入模型、Memory provider、产品 Memory 或 Trace 都是 release blocker。
-- [ ] 测量 extraction precision/recall、false secret retention、correction propagation 和 duplicate-generation rate，记录阈值与未通过样本。
+- [x] 建立受治理 multi-turn golden dataset，覆盖 durable facts、transient chatter、correction、contradiction、decision、commitment、experience、敏感个人信息、第三方信息和机器秘密格式。
+- [x] committed Run 后先执行 machine-secret exclusion 和 classification，再运行增量 extraction；失败不得回滚已提交消息或 Run。
+- [x] 高置信非敏感结果可按 policy 自动 commit，并保留来源、模型/policy version、推断标记和 Trace。
+- [x] 交互式敏感候选在当前 Thread 同步逐项 ASK；批准前不保存候选正文，同轮多个候选允许逐项批准、编辑或拒绝。
+- [x] “请记住”只批准明确指向项；后台只保存指向原始加密 source 的最小 reference，Owner 在线后重新提取或询问。
+- [x] 机器秘密命中只记录 rule ID、count、source reference 和 outcome；任何秘密原值进入模型、Memory provider、产品 Memory 或 Trace 都是 release blocker。
+- [x] 测量 extraction precision/recall、false secret retention、correction propagation 和 duplicate-generation rate，记录阈值与未通过样本。
+
+版本化 `memory-golden-v1` 包含 14 类多轮样本与明确 policy/model identity、review date 和阈值，覆盖稳定事实、寒暄、纠正、矛盾、决定、承诺、经验、个人/第三方敏感信息、同轮多敏感候选、明确“请记住”、低置信、机器秘密与提取失败。`AutomaticMemoryService` 只处理已经 committed 的 Run 来源：先扫描原始来源的机器秘密，再调用显式 extractor，随后对每个候选再次扫描；提取失败只记录派生失败，不修改原消息或 Run。
+
+高置信非敏感候选写入稳定 protected Payload 后交给 Task 17 产品 transaction；低置信和 transient 候选不提交。敏感候选在第 12 个 SQLite migration 引入的 `memory_approval_requests` 中只保存 source ref、候选序号、预分配产品 ID、classification、policy/model 和 delivery metadata，不保存候选正文。交互式候选逐项 ASK；后台使用 `queued_no_ui` 最小引用；批准或编辑时重新读取受保护来源、按原 policy/model 重新提取并再次扫秘密，之后才保存正文。明确“请记住”只直接提交其指向序号，其余敏感候选仍 ASK。
+
+确定性 golden extractor 基线得到 precision `1.0`、recall `1.0`、false secret retention `0`、correction propagation `1.0` 和 duplicate-generation rate `0`，分别通过 `>=0.95`、`>=0.95`、`=0`、`=1.0` 与 `=0` 阈值；未通过样本为空。该结果证明 policy、persistence 和测量 harness，不代表 Task 20 真实模型质量。实现与证据位于 `test/integration/qualification/evidence/s1-task18-automatic-memory.json`。
 
 ### Task 19：实现 Thread 稳定检查点、摘要与候选提炼
 
