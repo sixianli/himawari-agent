@@ -23,7 +23,7 @@ date: "2026-08-26"
 - 浏览器使用同源 HTTP 命令与查询，以及 Server-Sent Events（SSE）事件流；当前切片不需要 WebSocket。
 - Agent Service 与 Execution Worker 通过本机 Unix domain socket 上的 execution.v1 HTTP/JSON transport 通信，保持独立进程与信任边界。
 
-本文件当前等待所有者整体确认。确认前不创建新的 Implementation Plan，不安装依赖，不调用付费模型，不更改 Cloudflare 或 GitHub 账户，也不修改产品代码。确认后才可把本 Spec 转化为文件级 Plan。
+本 Spec 已于 2026-08-26 由所有者确认可以在核对 PRD v0.2 后继续派生文件级 Implementation Plan。该确认只通过 design-to-plan gate；不授权安装依赖、调用付费模型、更改 Cloudflare 或 GitHub 账户、修改产品代码或部署生产环境。
 
 ## 来源上下文
 
@@ -68,6 +68,7 @@ date: "2026-08-26"
 - 可运行的 Agent Service 与 Execution Worker 入口、真实本机 transport、健康状态、drain 和 service-manager 包装。
 - 公共 Web 应用壳、受认证 Gateway HTTP adapter、可恢复 SSE 和持久 read model。
 - 持久 Thread、消息、审批、Trace、收件箱和后台任务恢复。
+- 本基础切片所拥有数据的 Trash、永久删除、删除传播、恢复点清除和存储压力保护。
 - Mem0 OSS conformance spike、产品 adapter、非敏感增量自动记忆、敏感记忆逐项审批、Thread 稳定检查点提炼、检索、纠正、删除和重建。
 - 通过既有产品 router 与 Pi runtime 边界接入一个云端主要生成模型、一个固定云端备用生成模型和独立嵌入模型。
 - GitHub App 配置、签名 webhook 在线入口和只读仓库监控，不进行离线事件补拉。
@@ -159,6 +160,15 @@ date: "2026-08-26"
 - 目标必须在 stopped 且空的 state root 中导入。认证标签、digest、schema、adapter、Agent identity、authority epoch 或 Payload 验证任一失败，都不得留下部分活动状态。
 - 目标在 secret references 单独重配、doctor 与 readiness 全部通过后，才以更高 authority epoch 激活，并保持同一个公共 URL。
 - 目标激活后，源保持不可启动并保留加密副本 7 天，到期删除。回切必须从当前活动目标发起新的反向 transfer，不能直接启动旧副本。
+
+### 删除与存储压力
+
+- 普通删除本基础切片拥有的 Thread、任务或 Memory 时，记录必须立即退出上下文、检索、调度和投递，并进入可恢复 7 天 Trash；Owner 也可以选择立即永久删除。
+- 删除 Thread 前必须列出关联活动任务，并由 Owner 取消、暂停或重新绑定；Thread 永久删除级联其消息、内部 Session、Run、Trace、私人 Payload、审批和 Thread 专属 inbox，但不自动删除已经形成的长期 Memory。
+- 保留的 Memory 如果来源 Thread 已删除，只能保留非正文来源标识并显示“来源已删除”；不得保留已经删除的原始来源正文。
+- 删除任务必须级联任务定义、Run、checkpoint、Trace 和任务 inbox；已发生外部副作用只保留不含原始内容的最小审计墓碑。
+- 删除 Memory 时，产品活动记录先立即失活，并可靠清理 Mem0 projection、search/cache 和可恢复副本；provider cleanup 失败不得让旧内容重新进入检索。
+- 永久删除的数据必须在 30 天内退出本机可恢复 snapshot。严重磁盘不足时停止新的高容量接纳，同时保留只读、transfer export 和人工清理；不得自动删除 Owner 内容。
 
 ### 本 Spec 收口
 
@@ -559,6 +569,24 @@ Web UI 显示 job scope、repository、authorization、last/next run、coverage 
 
 产品状态只保存稳定 secret reference、version、allowed purpose/scope 和 last validation result。trusted adapter 在调用前即时解析，并在使用后丢弃值。
 
+### 数据生命周期、Trash 与删除传播
+
+本基础切片中可删除对象使用产品拥有的 lifecycle state，而不是依赖 adapter 的物理删除结果：
+
+~~~text
+active → trashed → restored
+             └→ deletion_pending → deleted_verified
+active ────────────────→ deletion_pending → deleted_verified
+~~~
+
+`trashed` 记录立即退出 Context Formation、Memory retrieval、Scheduler、Attention 与普通 Read Model。Trash 默认保留 7 天；Owner 选择立即永久删除或 Trash 到期后，Deletion Coordinator 创建稳定 deletion job，并为 product rows、Payload、Trace/search/cache、Mem0 projection 与 recovery snapshots 分别记录 attempt、结果和验证水位线。
+
+只有所有适用目标都回读不存在，状态才成为 `deleted_verified`。任一 adapter cleanup 失败时，产品记录仍保持不可见且旧版本不能重新激活，cleanup 以有界退避继续；Audit 只保存对象引用、删除原因、时间和不含正文的外部副作用墓碑。
+
+Thread 删除必须先解决关联 active jobs。保留的长期 Memory 不随 Thread 自动删除，但来源关系改为不含原文的 deleted-source marker。backup retention 和 snapshot compaction 必须读取 deletion watermark，保证永久删除内容在 30 天内退出全部本机可恢复副本。
+
+存储保护按 headroom 进入 normal、warning 和 write-restricted。write-restricted 停止新的高容量 Payload、mirror 和后台 admission，但保留认证只读查询、删除/人工清理、doctor 和 transfer export。系统不得为了恢复空间自行删除 Owner 内容。
+
 ### 同机恢复点、导出与导入
 
 日常恢复点和 authority transfer 是不同操作：
@@ -694,6 +722,14 @@ himawari identity sessions|devices|break-glass
 - 验证没有 hidden LLM/embedder、telemetry 或临时目录 durability path。
 - 任何 machine secret 进入 Memory 或 provider input 都是 release blocker。
 
+### 删除与存储压力
+
+- 对 Thread、任务、Memory 和 Payload 运行 Trash、restore、立即永久删除、Trash 到期、adapter cleanup failure/retry 和 restart recovery。
+- 验证删除对象立即退出 context、search、scheduler、inbox 和 read model；保留 Memory 的来源只显示 deleted-source marker。
+- 创建包含待删除内容的多个 snapshot，推进 deletion watermark 与 retention，证明 30 天边界内所有可恢复副本都不再包含正文。
+- 注入 Mem0/search/cache/Payload cleanup 失败，验证产品状态持续不可检索，重试后只有全部回读不存在才能报告 `deleted_verified`。
+- 注入 warning、write-restricted 与 disk-full，验证高容量接纳停止而认证只读、删除、doctor 和 transfer export 保持可用，且不会自动删除 Owner 数据。
+
 ### 模型
 
 - paid/live call 前，展示精确 primary、fallback、embedding identity、capabilities、披露范围、费用结构、预计成本与 capped test budget，取得 Owner 对调用和费用的批准。
@@ -723,8 +759,9 @@ himawari identity sessions|devices|break-glass
 - 记录 immutable release identity、package checksums、config/schema versions、live process identity、public endpoint health 和 rollback boundary。
 - 只有本 Spec 的基础旅程全部通过，才可关闭本 Spec；只有其余 v0.2 Specs 和完整 PRD 验收也通过，才可宣称 v0.2 production-ready。
 
-## 确认边界
+## 确认记录
 
-确认本 Spec 表示接受这里的基础设计与首选 adapters：SQLite 加固定 better-sqlite3、产品拥有的增量 Memory 与 Thread 稳定检查点提炼、Mem0 OSS、Cloudflare Access/Tunnel、GitHub App、HTTP+SSE Web Gateway、本机 UDS Worker transport、host-specific secret sources，以及停机加密 authority transfer。
-
-确认不授权外部账户变更、付费模型调用、依赖安装、产品实现、生产部署或直接提交新的 Implementation Plan。确认后下一份受治理文档才是从本 Spec 派生的详细 Plan；精确模型身份、费用与 live-call budget 仍在 Plan preflight 中单独批准。
+- 确认人：Owner
+- 确认日期：2026-08-26
+- 确认范围：本 Spec 的基础切片、验收边界和首选 adapters，包括 SQLite 加固定 better-sqlite3、产品拥有的增量 Memory 与 Thread 稳定检查点提炼、Mem0 OSS、Cloudflare Access/Tunnel、GitHub App、HTTP+SSE Web Gateway、本机 UDS Worker transport、host-specific secret sources，以及停机加密 authority transfer。
+- 授权边界：允许从本 Spec 派生详细 Implementation Plan；不授权外部账户变更、付费模型调用、依赖安装、产品实现或生产部署。精确模型身份、费用与 live-call budget 仍须在 Plan preflight 中单独批准。

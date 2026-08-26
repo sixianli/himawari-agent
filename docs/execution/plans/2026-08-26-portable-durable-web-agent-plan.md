@@ -1,0 +1,462 @@
+---
+status: active
+document_type: plan
+supersedes: ""
+superseded_by: ""
+date: "2026-08-26"
+---
+
+# Himawari Agent v0.2 持久 Web 基础 Implementation Plan
+
+**来源 Spec：** [SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
+
+**目标：** 在已完成的 Foundation 边界上，实现一个可在 Mac 与 Hermes 正式启动、跨正常重启恢复、经受认证公共 Web 使用，并可通过停机加密迁移切换单一活动权威的 Himawari Agent 基础切片。
+
+**架构：** 保持 domain、contracts 和 application 的产品自有边界，以 SQLite 作为单一产品状态权威，以受保护 Payload、host-specific secret source、Mem0 projection、HTTP+SSE Gateway、Cloudflare 身份断言、GitHub App 和 execution.v1 over UDS 作为外层 adapters。Agent Service 负责权威、接纳、编排和持久结果；Execution Worker 作为独立受限进程执行已授权能力；Pi Session 继续只是可重建的单 Run runtime projection。
+
+本 Plan 只实施来源 Spec 的“持久 Web 基础切片”。Web 研究、认证 Web 操作、文件与代码工作区、Apple/iCloud Calendar、完整三语 UI、完整 WCAG 2.2 AA、完整主动性与通用能力治理仍需后续独立 Spec；本 Plan 不实现隐藏半成品，也不把基础切片完成等同于 v0.2 production-ready。
+
+---
+
+## 执行授权与停止点
+
+本 Plan 只规定实施顺序和验证证据，不因文档存在而自动授权代码实现或外部副作用。未来执行时必须遵守以下停止点：
+
+- 新增或升级直接依赖前，先提交精确版本、许可证、维护状态、Node.js `>=22.19.0` 兼容性、Mac/Hermes 原生二进制产物可用性、安全记录和 lockfile 影响；取得 Owner 授权后才能安装或提交依赖变更。
+- 第一次真实生成模型、嵌入模型或 Mem0 所依赖模型调用前，先提交 primary、fallback、embedding 的精确身份或 snapshot、能力、披露范围、费用结构、预计成本和有上限测试预算；取得 Owner 对实际调用和费用边界的授权。
+- 创建或修改 Cloudflare、GitHub App、DNS、Tunnel、MFA、webhook、仓库安装范围或其他外部账户状态前，展示精确目标、权限、外部变化和回退边界并取得授权。
+- 在 Mac 或 Hermes 安装 service、修改 launchd/systemd、切换公共入口、执行真实 transfer、恢复、密钥轮换或生产验收前，完成只读 preflight，展示目标主机、资源影响、变更顺序和回退边界并取得对应授权。
+- 永久删除、清空 state root、销毁迁移包、使旧权威不可启动或清理 7 天保留副本属于破坏性动作，必须逐次确认并以只读证据解析精确目标。
+- 如果 compatibility spike、实现或真实平台证据否定本 Spec 的 adapter、数据模型、安全边界或恢复语义，立即停止相关任务；先修订或 supersede Spec/ADR，再继续实施，不能在 Plan 中暗自引入新设计。
+- 每个任务只暂存和提交该任务范围内的变更；发现用户已有改动时先盘点，重叠范围必须交由 Owner 决定。
+
+## 文件边界
+
+### 新建
+
+- SQLite 产品状态 adapter：
+  - `packages/persistence-sqlite/`
+  - `packages/persistence-sqlite/src/migrations/`
+  - `packages/persistence-sqlite/test/`
+- Mem0 projection adapter：
+  - `packages/memory-mem0/`
+  - `packages/memory-mem0/test/`
+- GitHub App adapter：
+  - `packages/integration-github/`
+  - `packages/integration-github/test/`
+- 浏览器控制中心：
+  - `apps/control-center/`
+  - `apps/control-center/src/`
+  - `apps/control-center/test/`
+- 离线管理 CLI：
+  - `apps/admin-cli/`
+  - `apps/admin-cli/src/`
+  - `apps/admin-cli/test/`
+- 正式部署资产，在对应实现与验证存在后创建：
+  - `packaging/launchd/`
+  - `packaging/systemd/`
+  - `packaging/cloudflare/`
+- 跨进程、浏览器、安全、持久性、规模与迁移验证：
+  - `test/fixtures/memory/`
+  - `test/fixtures/github/`
+  - `test/integration/persistence/`
+  - `test/integration/process/`
+  - `test/integration/security/`
+  - `test/e2e/browser/`
+  - `test/e2e/migration/`
+  - `test/performance/`
+- 只有操作已经实现并被实测后，才从 Runbook 模板创建对应文件：
+  - `docs/runbooks/install-start-stop-runbook.md`
+  - `docs/runbooks/backup-restore-runbook.md`
+  - `docs/runbooks/authority-transfer-runbook.md`
+  - `docs/runbooks/secret-rotation-runbook.md`
+  - `docs/runbooks/github-app-setup-runbook.md`
+  - `docs/runbooks/identity-gateway-runbook.md`
+  - `docs/runbooks/incident-diagnosis-runbook.md`
+
+### 修改
+
+- 根工程契约：`package.json`、`package-lock.json`、`tsconfig.json`、`vitest.workspace.ts`、`biome.json`、`scripts/check-boundaries.mjs`。
+- 产品领域与状态机：`packages/domain/src/`。
+- 稳定 wire contracts：`packages/gateway-contracts/src/`、`packages/execution-contracts/src/` 及其 v1 fixtures；不兼容变化必须使用新 schema version，不能偷偷改变现有 v1 fixture 的语义。
+- 产品端口与应用服务：`packages/application/src/ports/`、`packages/application/src/services/`、`packages/application/src/index.ts`、`packages/application/src/runtime-port.ts`。
+- Node 信任边界：`packages/platform-node/src/`，包括严格配置、state-root lock、Payload encryption、host secrets、HTTP/SSE、UDS、health、日志与指标 adapters。
+- Pi 运行时投影：`packages/runtime-pi/src/` 和 compatibility tests；继续禁止 Pi 类型扩散到产品端口。
+- 正式服务组合：`apps/agent-service/src/`、`apps/execution-worker/src/` 及其 package scripts；保留现有 deterministic local composition 作为测试 profile。
+- 可复用 conformance 与故障注入：`packages/testing/src/`、`packages/testing/test/`。
+- 当前事实与使用入口：`README.md`、`docs/architecture-v0.1.md`；只在相应行为实现并验证后更新。
+- 源 Spec 只在证据发现真实设计冲突且 Owner 确认后修改；ADR 的决策、背景、选项和后果不得由本 Plan 改写。
+
+### 测试
+
+- `packages/domain/test/`
+- `packages/application/test/`
+- `packages/gateway-contracts/test/`
+- `packages/execution-contracts/test/`
+- `packages/persistence-sqlite/test/`
+- `packages/platform-node/test/`
+- `packages/memory-mem0/test/`
+- `packages/integration-github/test/`
+- `packages/runtime-pi/test/`
+- `packages/testing/test/`
+- `apps/agent-service/test/`
+- `apps/execution-worker/test/`
+- `apps/control-center/test/`
+- `apps/admin-cli/test/`
+- `test/integration/`
+- `test/e2e/`
+- `test/performance/`
+
+### 依赖方向
+
+```text
+apps/agent-service → application + contracts + approved adapters + runtime-pi
+apps/execution-worker → application + execution-contracts + approved adapters
+apps/control-center → gateway-contracts + browser-only UI dependencies
+apps/admin-cli → application + approved offline/admin adapters
+
+persistence-sqlite → application + domain + product contracts
+memory-mem0 → application + domain
+integration-github → application + domain + product contracts
+platform-node → application + domain + product contracts
+runtime-pi → application/runtime-port + @earendil-works/pi-*
+application → domain + product contracts
+contracts → no internal dependency
+domain → no internal dependency
+testing → application + domain + product contracts
+```
+
+`scripts/check-boundaries.mjs` 必须识别全部新 workspace，拒绝反向依赖、循环、未声明依赖、非精确直接外部版本、越出 workspace 的相对 import、纯层 `node:` import，以及 `packages/runtime-pi` 之外的任何 `@earendil-works/pi-*` import。
+
+## 实施任务
+
+### Task 1：固定基线、追踪矩阵与执行证据格式
+
+- [ ] 在任何实现改动前记录 `git status --short --branch`、Node/npm 版本、现有 workspace、依赖 lock、Architecture Known Limitations 和全部当前测试结果。
+- [ ] 运行现有 `npm run check`、unit、contracts、integration、e2e、Pi compatibility 与 strict document validation，保存精确命令、退出状态、测试数量和 skip 原因。
+- [ ] 建立本 Plan 的 Spec 验收映射：每个验收项绑定负责 Task、测试入口、Mac/Hermes 证据和外部授权门槛。
+- [ ] 定义每个 Task 的证据记录格式：改动范围、设计来源、验证命令、结果、未验证项、外部副作用和 Git commit。
+- [ ] 证明当前 `main` 与 `origin/main` 的关系，并在每个后续任务开始前重新盘点工作树；不把干净工作树误当成远端同步证明。
+
+### Task 2：完成外部依赖与平台兼容性 preflight
+
+- [ ] 仅从上游官方文档、release、registry metadata 和安全公告收集候选版本；分别核验 better-sqlite3、mem0ai/oss、HTTP/JWT、Web UI/build、GitHub App client 和必要密码学依赖。
+- [ ] 对每个直接依赖记录精确版本、许可证、Node.js engine、维护状态、原生二进制产物来源、Mac 与 Hermes CPU/OS 支持、传递依赖和已知阻断性问题。
+- [ ] 在隔离 spike 中读取实际 `sqlite_version()`，验证 WAL、Backup API、worker-thread/专用持久化执行上下文和 Node.js `>=22.19.0`；不得只根据 npm package 版本判断安全。
+- [ ] 在 Mac 与 Hermes 分别运行 Mem0 OSS add/search/update/delete/history、显式 LLM/embedder/vector/history 配置、重启持久性、并发、telemetry 和隐藏 provider-call 检查。
+- [ ] 对 HTTP/SSE、JWT/JWKS、GitHub App、前端构建与可访问性栈建立最小兼容 spike；禁止在 spike 中改外部账户或使用生产秘密。
+- [ ] 汇总建议的精确 dependency set、manifest diff 和 lockfile 影响，等待 Owner 授权；未授权前不得安装或提交新依赖。
+- [ ] 任一 mandatory spike 失败时停止，不得静默替换为 Mem0 Cloud、OpenViking、共享数据库、第三生成模型或另一身份网关。
+
+### Task 3：扩展 workspace、构建与边界检查
+
+- [ ] 为 `persistence-sqlite`、`memory-mem0`、`integration-github`、`control-center` 和 `admin-cli` 创建最小 package/tsconfig/export 边界；所有获批直接外部依赖使用精确版本。
+- [ ] 更新 root build/test scripts，使 Node 服务、browser bundle、CLI、contracts 和 compatibility projects 可以独立构建与测试。
+- [ ] 扩展 `scripts/check-boundaries.mjs` 的依赖图和 Node/browser import 规则，并为每个非法方向添加可重复 negative probe。
+- [ ] 保留 `packages/runtime-pi` 对 Pi 的唯一导入权；确认 committed manifest/lockfile 不出现 `../pi-mono`、`file:` 或未固定版本。
+- [ ] 增加 build artifact manifest 与 package checksum 入口，为以后不依赖源码 checkout 的安装和发布验证提供稳定证据。
+- [ ] 运行 `npm run check:boundaries`、类型检查和空 workspace 测试，确认基础脚手架不改变现有行为。
+
+### Task 4：扩展产品领域、协议和端口
+
+- [ ] 先为 deployment、authority epoch/fence、Thread/message/checkpoint、browser session/device、job/occurrence、Memory generation、GitHub receipt/coverage gap、backup/transfer 和 health 状态编写 domain 与 contract tests。
+- [ ] 保留现有 Owner/Agent/Thread/Session/Run/Trigger 身份；新增稳定 product IDs 和显式状态机，不把数据库 row ID、Mem0 ID、Cloudflare subject 或 GitHub delivery ID 当作产品主键。
+- [ ] 扩展 `gateway.v1` 的 Thread/chat、approval、task、inbox、Memory、Trace、session/device 和 health 命令/查询/事件；若现有 v1 无法兼容，新增明确的新 schema version 与 fixture。
+- [ ] 扩展 `execution.v1` 的 handshake、readiness、cursor replay、deadline、cancellation、resource ceiling 和 reconcile 消息，并保持大正文只传 Payload reference。
+- [ ] 新增 persistence、configuration、identity assertion、session/device、Thread checkpoint、Memory projection、GitHub、backup/transfer 和 health ports；禁止 driver、HTTP framework、JWT、Mem0 或 GitHub SDK 类型进入 application/domain/contracts。
+- [ ] 对风险、授权、数据等级、secret exclusion、stale fence 和不支持 schema 编写 fail-closed contract tests。
+- [ ] 运行 domain、contract、type 和 boundary tests，冻结兼容 fixtures 后再进入 adapter 实现。
+
+### Task 5：冻结 SQLite schema 与不可变 migration 机制
+
+- [ ] 从 Spec 的 schema 分组建立规范化表、foreign keys、unique constraints、revision/CAS、authority fence、outbox、Payload ownership、deletion tombstone 和 migration ledger。
+- [ ] 为每个 schema 对象写明产品端口、生命周期、加密分类、删除关系、迁移与恢复责任；禁止出现无法追溯到产品模型的供应商权威表。
+- [ ] 实现带 sequence、name 和 SHA-256 digest 的 immutable migration loader；历史 migration 内容改变、顺序缺口、未知已应用 migration 或 digest mismatch 必须拒绝启动。
+- [ ] 固定 `foreign_keys=ON`、本地磁盘 WAL、authority/product commit `synchronous=FULL`、有界 busy timeout 与受控 checkpoint policy。
+- [ ] 实现 expand/backfill/verify/contract migration 骨架，并在迁移前要求一致、已验证的同机 snapshot；应用回滚不得自动执行数据库 downgrade。
+- [ ] 用真实 SQLite 文件验证 fresh create、连续 upgrade、重复执行、并发启动、损坏 ledger、未知新 schema 和旧二进制拒绝写入。
+
+### Task 6：实现 SQLite 连接隔离、事务与权威 fencing
+
+- [ ] 在专用 persistence execution context 中独占 SQLite connection；证明同步 driver 调用不会阻塞 Agent Service 的 HTTP/model event loop。
+- [ ] 实现 state-root 独占锁、单 writer queue、transaction duration、busy timeout、WAL checkpoint 和 disk headroom 采样。
+- [ ] 把 ProductState、idempotent command result 和 pending Reliable Event 映射到同一 transaction，并在 commit 前验证 lease ID、fencing token、expected revision 和 command fingerprint。
+- [ ] 实现 authority/deployment/epoch/retired 状态持久化；inactive、retired、stale epoch 和旧 Worker/Gateway 消息一律不能提交。
+- [ ] 对 transaction 的每个 mutation checkpoint 做 child-process kill/restart，证明不会出现 state-only、result-only 或 event-only 的部分提交。
+- [ ] 验证 concurrent duplicate command 收敛、SQLite busy 有界处理、long reader checkpoint、disk full 与实际 WAL recovery。
+
+### Task 7：实现生产 repositories、outbox 与持久 Read Model
+
+- [ ] 让现有 persistence、Trace、authorization、capability、scheduler、attention、delivery、audit 和 deletion conformance suites 可以直接运行 SQLite harness。
+- [ ] 实现 ProductStateRepository、ReliableEvent、Trace、Payload metadata、Audit、Authorization、Capability、Scheduler、Attention、Delivery 和 Gateway Read Model 的 SQLite adapters。
+- [ ] publisher 使用可恢复 claim/lease 和稳定 event ID；在 sink 已接收但 acknowledgment 未提交时重放同一事件，由 consumer dedupe。
+- [ ] 实现持久 cursor、scope-safe event query、retention watermark 和 bounded snapshot refresh 所需的 read model 记录。
+- [ ] 启动时恢复 pending outbox、expired claims、未终结 Run、待审批、待投递、未完成删除和可安全重试的工作。
+- [ ] 用多进程与重启测试证明进程内 reference adapter 和 SQLite adapter 遵守同一产品契约，同时明确 reference profile 不代表生产耐久性。
+
+### Task 8：实现生产 Payload 加密与 host secret sources
+
+- [ ] 为 versioned envelope encryption、唯一 nonce、AAD 绑定、tamper rejection、digest、DEK/KEK version、rewrap 和 key rotation 先写 known-answer 与属性测试。
+- [ ] 以维护中的 authenticated-encryption primitive 实现 production `PayloadProtectorPort`；禁止 `test-xor-v1` 被正式配置选择。
+- [ ] 让小 Payload 和可选 content-addressed ciphertext file 走同一 ownership/lifecycle conformance；缺文件、有孤儿、digest/tag 错误均形成明确 integrity failure。
+- [ ] 实现 macOS Keychain-backed secret material adapter，以及 Hermes systemd credential/encrypted credential 或权限等价 secret-file adapter。
+- [ ] production readiness 拒绝 environment/in-memory secret source；产品状态、Trace、日志、迁移包和错误只能保存 secret reference、version、purpose/scope 与验证结果。
+- [ ] 在 model、Memory、GitHub、Worker 和 identity 路径执行 secret-format exclusion；测试原值不会进入模型输入、provider input、Memory、Trace、日志、错误或迁移包。
+
+### Task 9：实现严格配置、state-root 生命周期与健康模型
+
+- [ ] 定义版本化、未知字段拒绝的非秘密配置 schema，覆盖 IDs、paths、public origin、model/Memory descriptors、repository allowlist、secret refs、预算、并发与 deadline。
+- [ ] 实现显式 state root、目录权限、runtime/cache 分区、lock 文件和 authority.json 的原子读写；不得从当前工作目录推断生产路径。
+- [ ] 按 Spec 顺序实现 startup coordinator：配置、secret refs、deployment lock、authority、SQLite/version/migrations、Payload、repositories/outbox、models/Mem0、Worker、scheduler、HTTP readiness。
+- [ ] 实现 liveness、readiness 和 authenticated dependency health；provider reachability 可以 degraded，但 authority、schema、keyring、Worker、Mem0 persistence、recovery 与 public identity trust root 不满足时不得 ready。
+- [ ] 实现 drain coordinator：先撤销 readiness 和 admission，再停止 scheduling/publisher，checkpoint 或取消在途 Run，最后关闭 Memory/SQLite/socket 并释放 authority。
+- [ ] 为每个启动/关闭阶段注入失败，验证稳定机器码、无秘密诊断、无半 ready 和可重复恢复。
+
+### Task 10：实现 execution.v1 over UDS 与真实 Worker 进程
+
+- [ ] 先写 UDS transport contract tests，覆盖 `0700` runtime 目录、`0600` socket、boot-scoped token、schema handshake、body limit、deadline、cursor、取消和重连。
+- [ ] 在 Agent Service 实现 execution client，在 Execution Worker 实现 HTTP/JSON server；所有消息继续经过 `execution.v1` 严格 parser。
+- [ ] Worker 启动时验证 instance identity、当前 boot token、支持 schema、resource ceiling 和 adapter registry；不能直接打开 `product.sqlite` 或签发授权。
+- [ ] 实现 work.execute、work.cancel、work.reconcile、event subscription 和 readiness；大输入/结果只使用 Payload/secret/capability handles。
+- [ ] 对重复请求、重复结果、stale handle、stale fence、Worker crash、Agent crash、socket replacement 和未知外部结果运行真实 child-process tests。
+- [ ] 证明 Agent Service 不会在 Worker unavailable 时静默降级为进程内执行。
+
+### Task 11：建立可安装的 Agent Service、Worker 与 admin CLI 入口
+
+- [ ] 为两个服务添加真正的 `main`、start/build scripts、信号处理、退出码、结构化启动诊断和不依赖源码 checkout 的产物布局。
+- [ ] 让正式 composition 只接受 production adapters；现有 testing adapters 只能通过显式 test/development profile 选择，public mode 不能使用。
+- [ ] 创建 `himawari doctor` 和 `himawari db status` 的只读骨架，输出 deployment、schema、SQLite、authority、Payload、Worker、Memory 和 identity 的脱敏状态。
+- [ ] admin CLI 的写操作必须取得独占管理锁、验证 stopped/drained 条件、显示目标与计划，并使用明确 confirm flag 或交互确认；不得打印秘密。
+- [ ] 运行安装到临时前缀后的 smoke test，证明服务与 CLI 不依赖 repository cwd、TypeScript source 或 sibling `pi-mono`。
+- [ ] 验证正常启动、双启动冲突、错误配置、非安全 SQLite、无 secret source、graceful stop、forced stop 和 service-manager restart。
+
+### Task 12：实现持久 Run、Scheduler、Attention 与 Delivery 恢复
+
+- [ ] 把 Run checkpoint、job、occurrence、work lease、retry/deadline、budget、Attention 和 inbox delivery 落到 SQLite，并用现有应用服务复用统一 Trigger admission。
+- [ ] 保证同一 job 默认只有一个活动 Run；重复人工、timer 或 external occurrence 使用稳定 key 合并，只有显式安全配置才能并行。
+- [ ] 实现 IANA timezone、DST 跳过/单次、periodic missed skip、one-shot `MISSED`、有界退避和凭据/授权/策略错误不重试。
+- [ ] 实现全局、分类和单 Run 硬预算与前台保留容量；在线已接纳工作在预算或容量不足时进入可见的 `BUDGET_BLOCKED` 或 `CAPACITY_BLOCKED`。
+- [ ] Attention 只产生固定五级结果并应用确定性最低等级；Web Delivery 持久化、可重放、可去重，浏览器关闭不影响后台任务。
+- [ ] 重启测试覆盖 running、awaiting approval、retry_wait、MODEL_BLOCKED、unknown external result、pending Delivery 和 authority loss。
+
+### Task 13：实现受认证 HTTP Gateway 与可恢复 SSE
+
+- [ ] 先为 HTTP adapter 写 contract/security tests，证明每个命令、查询和事件请求都经过版本 parser、`GatewayAuthenticationContext`、scope policy、Control Plane 或 Read Model。
+- [ ] 实现同源静态资产、`/api/gateway/v1/commands`、查询和 SSE；机器 webhook、health、bootstrap 与 break-glass 使用独立最小 route，不共享普通业务权限。
+- [ ] mutation 验证 Origin、Fetch Metadata/CSRF、bounded body、content type、idempotency key 和 replay；配置 restrictive CSP、framing、MIME 与 cache headers。
+- [ ] SSE 包含 durable cursor/event ID/scope、heartbeat、backpressure 和 reconnect；旧 cursor 超出 retention 时只执行有界 snapshot refresh，不重复业务结果。
+- [ ] 证明伪造 header、跨 Owner/Agent scope、重复 cursor、同 Run 非递增 sequence、direct-origin bypass 和 unsupported schema 在 Control Plane 前被拒绝。
+- [ ] 在主流浏览器测试重连、后台 tab、移动网络切换和 browser close/reopen 的已接纳结果恢复。
+
+### Task 14：实现 Owner bootstrap、身份断言、session/device 与 break-glass
+
+- [ ] 实现仅 loopback、短时有效、默认关闭的一次性 bootstrap；只创建唯一 Owner 并绑定一个稳定外部 subject，成功后不可再次访问。
+- [ ] 实现 Cloudflare Access JWT verifier：按 `kid` 获取 JWKS、有界缓存与轮换，验证 algorithm、signature、issuer、audience、exp、nbf 和 clock skew；不信任 email/username forwarded header。
+- [ ] 实现产品 session/device、撤销、最近活动和 recent-auth；关键操作 recent-auth 不足时返回稳定 reauthentication requirement。
+- [ ] 实现本机独立恢复凭据、独占管理锁和受保护审计下的 break-glass；只允许修复 Owner mapping、撤销 session/device 或关闭公网入口。
+- [ ] 安全测试覆盖 forged/missing JWT、wrong issuer/audience、JWKS rotation、expired/future token、header spoofing、bootstrap replay、session revoke 和非 Owner subject。
+- [ ] 证明公网身份只解决“谁在访问”，不会绕过 `ALLOW / ASK / DENY` 行动授权。
+
+### Task 15：构建持久 Web 控制中心基础旅程
+
+- [ ] 建立 browser-only workspace、typed Gateway client、SSE state synchronizer、本地草稿/last cursor/UI preference storage 和无秘密日志边界。
+- [ ] 实现受认证 Thread list、持久 chat、streaming Run、cancel、pending approval、后台任务、repository monitor、inbox、Memory、Trace、session/device 和 health 页面。
+- [ ] 浏览器本地只能保存未发送草稿、UI preference 和 last cursor；不得本地接纳命令、创建任务、批准行动或缓存长期私人正文。
+- [ ] 所有 mutation 使用稳定 idempotency key，并在 pending/accepted/rejected/expired/replayed 状态间提供明确反馈。
+- [ ] 为键盘、焦点、屏幕阅读器语义、触摸目标、对比度和非颜色提示建立基础自动化检查；完整三语和 WCAG 2.2 AA 仍由后续 Spec 收口，不能在本 Plan 中误报完成。
+- [ ] Browser E2E 覆盖 Thread/chat、重连、审批、inbox、Memory correction/delete、Trace、session/device 和 degraded health。
+
+### Task 16：完成 Mem0 OSS 双平台 compatibility gate
+
+- [ ] 在获批精确版本上构建独立 harness，显式注入 LLM、embedder、vector/history store、dimensions、paths 和 custom instructions；不接受默认 provider 或临时目录。
+- [ ] 在 Mac 与 Hermes 分别验证 add/search/update/delete/history、filter/metadata、provider ID round-trip、restart persistence、concurrent access、correction 和 deletion。
+- [ ] 监测网络、telemetry、文件和进程行为，证明没有未声明 provider call、隐藏 LLM/embedder、内存-only durability 或 policy 外遥测。
+- [ ] 验证产品 ID/source/classification/version 可以稳定映射并从产品状态重建 provider projection。
+- [ ] 记录版本、平台、实际存储、模型依赖和全部异常；mandatory conformance 任一失败即停止 Task 17–19 并修订 Spec。
+
+### Task 17：实现产品 Memory 记录、projection 与检索交集
+
+- [ ] 扩展 product Memory schema 与 service，覆盖 active version、protected content ref、provenance、classification、inference/confidence、provider link、archive/delete tombstone 和最近使用。
+- [ ] Mem0 只能产生新增、更新、合并或不变 proposal；产品 policy 和 SQLite transaction 决定稳定 Memory ID、revision 与 active version。
+- [ ] 用 reliable projection job 协调 SQLite 与 Mem0；对话 commit 不等待 provider，失败有界重试且可观察。
+- [ ] retrieval 把 Mem0 hits 与 active product records 取交集，再执行 classification、source 和数量限制；失活或删除记录立即不可进入 context。
+- [ ] 实现 correction、archive、delete、provider cleanup retry 和 full rebuild；旧 provider 副本不能重新激活删除 tombstone。
+- [ ] 运行 restart、projection loss、duplicate proposal、out-of-order retry、correction/delete propagation 与 rebuild equivalence tests。
+
+### Task 18：实现增量自动 Memory 与敏感逐项审批
+
+- [ ] 建立受治理 multi-turn golden dataset，覆盖 durable facts、transient chatter、correction、contradiction、decision、commitment、experience、敏感个人信息、第三方信息和机器秘密格式。
+- [ ] committed Run 后先执行 machine-secret exclusion 和 classification，再运行增量 extraction；失败不得回滚已提交消息或 Run。
+- [ ] 高置信非敏感结果可按 policy 自动 commit，并保留来源、模型/policy version、推断标记和 Trace。
+- [ ] 交互式敏感候选在当前 Thread 同步逐项 ASK；批准前不保存候选正文，同轮多个候选允许逐项批准、编辑或拒绝。
+- [ ] “请记住”只批准明确指向项；后台只保存指向原始加密 source 的最小 reference，Owner 在线后重新提取或询问。
+- [ ] 机器秘密命中只记录 rule ID、count、source reference 和 outcome；任何秘密原值进入模型、Memory provider、产品 Memory 或 Trace 都是 release blocker。
+- [ ] 测量 extraction precision/recall、false secret retention、correction propagation 和 duplicate-generation rate，记录阈值与未通过样本。
+
+### Task 19：实现 Thread 稳定检查点、摘要与候选提炼
+
+- [ ] 实现由 `ThreadId + source watermark + distillation policy version` 派生的稳定 job/generation identity 和 pending/running/completed/retry/terminal 状态。
+- [ ] 支持 Owner 明确操作、所有 admitted Runs 稳定后的受控 idle、compaction 前和 source-size threshold 四类触发；均不得结束、归档或替换 Thread。
+- [ ] 单次 generation 原子提交 summary、零条或多条 Memory/experience/commitment candidates 和 provenance；中断不能发布 partial generation。
+- [ ] summary 保存来源范围、水位线、policy/model version，可用于 context builder 但不能删除或取代 transcript。
+- [ ] 未解决 commitment 没有持续有效授权时只能形成候选，不能创建 job、capability 或 external action。
+- [ ] 对四类 trigger、重复请求、进程中断、model response 前后、product commit 前后和 compaction/restart 运行 exactly-once recovery tests。
+- [ ] 测量 summary faithfulness/source coverage、跨 Thread retrieval relevance 和 checkpoint generation duplication。
+
+### Task 20：冻结模型配置并接通生产 Model/Pi 路径
+
+- [ ] 在第一次 live call 前向 Owner 展示 primary、fixed fallback 和 embedding 的精确 provider/model/version 或 snapshot、能力、披露、费用、secret ref、预计成本和 capped test budget。
+- [ ] 未获批准时只使用 deterministic provider 与 fault injection；不得添加隐藏第三生成模型、隐式 embedding、动态 marketplace route 或本地生成模型。
+- [ ] 为获批 provider 实现受信任 transport adapter；每次调用记录精确 identity、purpose、classification/disclosure、tokens、cost、latency 和稳定终态，正文只通过 protected Payload。
+- [ ] Router 始终先选 primary；只有配置为 retryable 的 transport/provider failure 可以考虑 fixed fallback，authorization、policy、invalid input 和 disclosure incompatibility 不可绕过。
+- [ ] 非 GitHub fallback 必须满足预批准、能力、预算和不扩大披露；GitHub content 每次 fallback 单独生成 ASK。
+- [ ] Pi adapter 只接收 product-selected binding、context refs 和 authorized tools；继续关闭 Pi 自有 model selection、Session persistence、Skills discovery 和 built-in tools。
+- [ ] 获批后运行有界 live smoke/eval，并与 deterministic recovery、cancellation、tool-call、fallback、cost accounting 和 secret-redaction tests 一起记录证据。
+
+### Task 21：实现 GitHub App 凭据、webhook 与持久接纳
+
+- [ ] 从实际只读调用反推 dedicated GitHub App permission manifest；全部 repository/account write permissions 为 none，并限制到 Owner 选择的 repositories。
+- [ ] App private key 与 webhook secret 只通过 host secret source 解析；installation token 限定仓库/权限、只驻留内存并按过期时间更新。
+- [ ] webhook route 限制 body、content type、rate，按 raw bytes constant-time 验证 `X-Hub-Signature-256`，再验证 event/action、installation 和 repository allowlist。
+- [ ] 在成功响应前把 delivery ID、protected payload reference、scope 和 authority fence 持久化；重复投递只形成一个 external-event Trigger/occurrence。
+- [ ] 默认事件覆盖 default branch push、Pull Request create/update/merge、Release 和 GitHub Actions failure；未知或禁用事件不得触发任意工作。
+- [ ] 测试错误签名、replay、oversized body、错误 installation/repository、revoked credential、rate limit、token refresh 和 2 秒内持久接纳/明确拒绝。
+
+### Task 22：实现只读仓库镜像、在线监控与 coverage gap
+
+- [ ] 连接仓库前在 Web UI 展示当前 primary provider/model 和排除机器秘密后整仓可披露范围；一次明确确认同时启用仓库与这一披露。
+- [ ] 在受保护、有界 cache 中维护所选仓库只读 mirror；所有 Git 操作和 GitHub API surface 都通过无写权限 capability 与 Worker 执行。
+- [ ] 所有通过来源/范围验证的在线事件进入 model relevance 和 Attention；不得增加会绕过模型判断的确定性语义预过滤。
+- [ ] 服务离线时不 polling、不 reconciliation、不 history scan；恢复只记录 coverage gap 起止和可能遗漏说明。
+- [ ] 在线已接纳事件在预算不足时进入有界 `BUDGET_BLOCKED`；普通完成结果进入持久 Web inbox，并保留仓库、事件、模型、授权和 Trace 来源。
+- [ ] 撤销 repository 时立即停止读取并删除 mirror/cache；历史摘要/Trace/任务按 Owner 选择保留或删除，GitHub secret 永不进入迁移包。
+- [ ] 断言初始能力无法 push、comment、merge、dispatch workflow、创建 deployment 或访问 Git credential。
+
+### Task 23：实现同机 snapshot、验证与恢复 CLI
+
+- [ ] 实现 `himawari backup create|verify|restore`，使用 SQLite 一致性 snapshot、受保护 Payload 和 manifest allowlist，不复制 runtime locks/sockets/cache/secrets。
+- [ ] 创建后自动解密到权限受限临时目录，运行 authentication、digest、schema、quick/full integrity、row counts、Payload authentication 和 outbox continuity 验证。
+- [ ] restore 只能在 stopped service、独占管理锁和明确目标下执行，先恢复到新目录并验证，再原子切换；失败不得破坏当前 state root。
+- [ ] 标记恢复点与 retention，确保永久删除数据在 30 天内退出所有可恢复本地副本；不得把同机 snapshot 描述为 off-host disaster recovery。
+- [ ] 对每个 create/verify/restore 阶段注入中断、disk full、tamper、wrong key、schema mismatch 和 SQLite corruption。
+- [ ] 完成真实恢复演练后才创建并 seal backup/restore Runbook。
+
+### Task 24：实现停机加密 authority transfer
+
+- [ ] 实现 transfer/deployment 状态机与 `export|inspect|import|activate|abandon` CLI，验证 target intent、current deployment、monotonic epoch、transfer ID 和 exclusive offline lock。
+- [ ] export 按 Spec 顺序停止 admission/scheduling、drain/checkpoint、关闭服务与 stores、执行 checkpoint/integrity、枚举 allowlist、排除 secrets/cache/log/socket、rewrap DEKs 并生成 canonical manifest。
+- [ ] 使用维护中的 authenticated streaming encryption；passphrase/private key 只从交互输入或 recipient secret source 读取，不进入 argv、环境转储、日志或 Trace。
+- [ ] import 只写临时目录，验证 authentication、digests、versions、Owner/Agent、epoch、transfer consumption、Payload、Memory 和 forward migration，再原子建立 inactive-ready target。
+- [ ] activate 前要求 target secret refs、doctor/readiness 与公共入口 preflight 全部通过；激活后 source 进入 retired 且普通启动失败。
+- [ ] source 加密副本保留 7 天后删除；回切只能由当前 active target 发起 reverse transfer，不能直接启动旧副本。
+- [ ] 在每个 export/import/activate step 后注入失败，证明不存在 partial active target、自动 source restart 或双活普通路径。
+
+### Task 25：完成删除、存储压力、可观察性与安全加固
+
+- [ ] 把 Thread、Run、task、Memory、Payload、Trace、inbox、search/cache/archive 的失活、Trash、永久删除和 tombstone 传播接到真实 stores；不把抽象 deletion target 当作生产完成证据。
+- [ ] 实现 7 天 Trash、立即永久删除和 30 天恢复点清除边界；Thread 删除前处理关联活动任务，外部副作用只保留不含正文的最小墓碑。
+- [ ] 实现 disk headroom warning、严重不足时停止高容量 admission，并保留只读、transfer export 与人工清理；不得自动删除 Owner 内容。
+- [ ] 结构化日志只含 correlation/Run/event/adapter/version/latency/stable error；指标覆盖 DB、WAL/disk、outbox、jobs、Worker、Memory、model/fallback/cost 和 SSE。
+- [ ] 详细 dependency health 需要认证并脱敏；公共 health 不暴露路径、secret ref、repository、Owner 或私人正文。
+- [ ] 运行 secret scan、dependency audit、CSP/CSRF、filesystem/socket permission、request limit、log redaction 和 tamper tests。
+
+### Task 26：扩展真实进程、崩溃与恢复矩阵
+
+- [ ] 以真实 child process 启动 Agent Service、Worker 和测试客户端，在 context formation、model stream、approval wait、Worker result、outbox、Thread checkpoint、Memory projection 与 Delivery 阶段 kill/restart。
+- [ ] 为 SQLite transaction/outbox 每个 crash point、WAL/lock contention、long reader、disk full、migration digest mismatch 和 corruption 记录可重复证据。
+- [ ] 验证 stale Gateway/Worker/event、旧 authority fence、inactive/retired host、重复 webhook、重复 model result 和 duplicate Delivery 都不能产生第二次业务效果。
+- [ ] 验证未知外部副作用总是先 reconcile；取消和超时保留真实副作用，任何补偿都是新的授权行动。
+- [ ] 验证 Thread checkpoint、Memory projection/delete、scheduler 和 inbox 在重建 service object 与重启进程后沿用原 identity。
+- [ ] 所有 fault injection 使用非生产 fixture；不得把一次成功重启误报为覆盖完整恢复矩阵。
+
+### Task 27：完成浏览器、身份与真实公共路径验证
+
+- [ ] 在 Safari、Chrome、Edge、Firefox、iOS Safari 和 Android Chrome 的受支持版本范围运行关键 Browser E2E；记录实际版本和平台。
+- [ ] 覆盖 bootstrap、MFA redirect、Thread/chat、SSE reconnect、approval、inbox、Memory、Trace、sessions/devices、recent re-auth、degraded state 和 browser offline draft。
+- [ ] 安全测试覆盖 forged/missing JWT、wrong issuer/audience、JWKS rotation、header spoofing、CSRF/cross-origin、replay、oversized body、CSP 和 direct-origin bypass。
+- [ ] 在得到外部账户授权后运行 staging Cloudflare Access/Tunnel smoke，验证真实 public URL、origin 只绑定受控入口、MFA、SSE heartbeat/reconnect 和最小公共 route set。
+- [ ] 在桌面与手机完成基础键盘、屏幕阅读器、焦点、对比度、触摸和非颜色提示检查，并把三语/WCAG 仍缺部分保留给后续 Spec。
+- [ ] 不把 staging 通过等同于 production deployment 或完整 v0.2 验收。
+
+### Task 28：完成 Mac/Hermes、规模与迁移验收
+
+- [ ] 在 Mac 与 Hermes 使用同一 immutable build、schema、adapter versions 和配置契约分别完成 install/start/stop、重启、恢复与健康验证。
+- [ ] 执行 Mac→Hermes 与 Hermes→Mac transfer drill，包含非空 Thread、pending/completed Runs、summaries/watermarks、Memory/experience/candidates、jobs、GitHub monitor 和 Payload classifications。
+- [ ] 比较迁移前后 manifest、Owner/Agent/Thread/Run IDs、authority epoch、schema、row counts、Payload authentication、Memory retrieval 和 Trace causality。
+- [ ] 证明迁移包不含 machine secrets，target readiness 精确列出需重配 secret/directory permission，source 在 target 激活后不能普通启动。
+- [ ] 在 20 万 messages、1 万 Threads、50 万 Runs、100 active jobs 和 50 repositories 的生成数据上验证核心 query、search、approval、Memory、Trace、delete 和 transfer；记录 p50/p95/p99、资源与瓶颈。
+- [ ] 验证 Web/GitHub 在 2 秒内持久接纳或拒绝、正常重启后 2 分钟内可查询、任务 5 分钟内恢复或显示阻塞；普通在线 GitHub 分析目标 10 分钟只在模型和外部服务可用的授权环境中测量。
+- [ ] 7 天连续运行属于完整 v0.2 上线门槛；如果其他 Specs 尚未完成，本 Plan 只记录基础切片 soak，不宣称 v0.2 production-ready。
+
+### Task 29：创建已验证 Runbooks 并对账当前事实文档
+
+- [ ] 仅在对应命令与真实演练存在后，从 document-governance Runbook 模板创建 install/start/stop、backup/restore、transfer、secret rotation、GitHub、identity gateway 和 incident diagnosis Runbooks。
+- [ ] 每份 Runbook 写入静态 contract sources、fresh target preflight、effective risk、授权、证据、停止规则、mutation boundary 和 rollback boundary；semantic reconciliation 后显式 seal 并再次 check。
+- [ ] 更新 `docs/architecture-v0.1.md` 只描述已验证的 packages、schema、processes、adapters、data flow、deployment 与 Known Limitations；不把目标或 staging 状态写成当前生产事实。
+- [ ] 更新 README 的 verified install、development、test、doctor 和安全边界；不写入 secret、临时 URL 或本机私有配置。
+- [ ] 若实施形成新的持久技术决策，先创建并接受单一决策 ADR；不得把 ADR 决策藏在 Plan evidence 或 Architecture 中。
+- [ ] 对仍未设计的 PRD v0.2 硬性范围创建后续 Spec，或在暂不进入设计时记录明确 Backlog；不能用本 Plan 关闭它们，也不能创建 `docs/TODO.md`。
+
+### Task 30：完成验收映射、发布证据与文档收口
+
+- [ ] 把本 Spec 每个验收标准映射到 fresh test、平台、artifact、外部 readback 和结果；明确 `已验证`、`部分验证`、`未验证`，不得用推断填补缺口。
+- [ ] 运行 immutable clean-install verification，记录 commit、package checksums、dependency lock、schema/migration digests、actual sqlite_version、adapter/model identities 和测试数量。
+- [ ] 运行全部静态、unit、contract、integration、E2E、Pi compatibility、browser/security、persistence、migration 和 strict document checks。
+- [ ] 对授权后的真实 Cloudflare、GitHub、model 和 transfer 操作执行 readback，区分“命令报告成功”和“目标状态已验证”。
+- [ ] 记录应用回退、数据库恢复、authority transfer 和外部账户回退是不同边界；不得把一个边界的授权扩展到另一个。
+- [ ] 只有本 Spec 基础旅程全部通过 Mac、Hermes、真实 adapters 与公共认证路径，且当前事实文档和 Runbooks 已对账，才关闭并归档本 Spec 与 Plan。
+- [ ] 即使本 Plan 完成，只要其他 v0.2 Specs、三语/WCAG 或完整 PRD 验收未完成，就不得标记或宣传 v0.2 production-ready。
+
+## 验收映射
+
+| Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
+| --- | --- | --- | --- |
+| 可运行部署 | Tasks 2–11、28 | 双平台 immutable install、startup/readiness、graceful drain、无源码 checkout | 待实施 |
+| 受认证 Web 对话与身份 | Tasks 13–15、27 | origin 安全、bootstrap/MFA/session/device、Browser E2E、SSE replay | 待实施 |
+| 持久后台工作 | Tasks 6–7、10、12、26 | SQLite/outbox、真实 Worker、scheduler/Delivery、kill/restart | 待实施 |
+| 自动与敏感 Memory | Tasks 16–19、25 | 双平台 Mem0 conformance、golden dataset、逐项审批、重建与删除 | 待实施 |
+| 模型路由 | Task 20 | 精确 descriptors、Owner 费用授权、deterministic 与有界 live evidence | 待实施 |
+| GitHub 在线只读监控 | Tasks 21–22、27 | 权限 manifest、签名/去重、在线事件、coverage gap、无 write surface | 待实施 |
+| 同机恢复点与跨主机迁移 | Tasks 23–24、28 | 真实 restore、双向 transfer、failure injection、source retired | 待实施 |
+| 删除与存储压力 | Tasks 23、25–26、28 | Trash/restore、删除传播、snapshot 清除、disk pressure 与恢复 | 待实施 |
+| 本 Spec 收口 | Tasks 25–30 | 安全/规模/平台、Runbooks、Architecture、immutable release evidence | 待实施 |
+
+## 验证
+
+基础命令：
+
+- `npm ci --ignore-scripts`
+- `npm run check`
+- `npm run test:unit`
+- `npm run test:contracts`
+- `npm run test:integration`
+- `npm run test:e2e`
+- `npm run check:boundaries`
+- `npm run check:pi-compat`
+- `python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict .`
+- `git diff --check`
+
+实施过程中必须新增并固定以下可重复入口，确切脚本名在 Task 3 落地后写回 evidence：
+
+- SQLite migration、integrity、WAL、backup/restore 和 crash matrix。
+- Agent Service/Worker child-process、UDS、authority fence 和 drain/restart integration。
+- Browser E2E、identity/security、SSE reconnect 与 accessibility checks。
+- Mem0 compatibility、Memory golden dataset、projection/rebuild/delete。
+- GitHub App permission、webhook、read-only monitor 和 coverage gap。
+- Mac/Hermes packaging、transfer drill、规模与 soak。
+
+真实 provider、Cloudflare、GitHub、Mac/Hermes service-manager、迁移和生产类验证必须在对应授权与适用 Runbook/preflight 下单独运行。一次 live success、HTTP 200、测试替身通过或 Compose/配置解析均不能单独证明生产完成。
+
+## 收口清单
+
+- [ ] 所有 Task 已完成，并记录 fresh 命令、结果、平台、artifact、外部 readback、未验证项和 commit。
+- [ ] 本 Spec 全部验收标准已映射到证据，不存在被测试替身、历史结果或推断掩盖的缺口。
+- [ ] Mac 与 Hermes 分别通过本基础切片验收，Mac→Hermes 与 Hermes→Mac transfer 均已验证。
+- [ ] paid/live models、Cloudflare、GitHub 和其他外部变更均有独立授权、费用/权限边界和完成后 readback。
+- [ ] production secrets、machine-secret literals、私人生产数据、临时凭据和本机绝对配置未进入 Git、fixture、日志、Trace 或迁移包。
+- [ ] 当前 Architecture、README 和已经实现的 Runbooks 与代码、schema、部署和实际限制一致。
+- [ ] 后续 v0.2 硬性范围已由受治理 Spec 或 Backlog 承接；没有 `docs/TODO.md` 或隐藏在 Plan prose 中的未来工作。
+- [ ] 没有新 durable decision 只存在于代码或 Plan；需要的 ADR 已接受，旧 ADR 未被改写。
+- [ ] `npm run check`、全部相关测试、Pi compatibility、严格文档校验和 `git diff --check` 全部通过。
+- [ ] 本 Plan 与来源 Spec 仅在工作真正关闭后移动到 `docs/archive/plans/` 与 `docs/archive/specs/`。
+- [ ] 即使本 Plan 关闭，也没有在其余 v0.2 Specs 和完整 PRD 验收完成前宣称 v0.2 production-ready。
