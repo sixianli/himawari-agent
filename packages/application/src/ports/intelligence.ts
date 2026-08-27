@@ -63,6 +63,8 @@ export interface ModelDescriptor {
   readonly capabilities: readonly string[];
   readonly allowedDataClassifications: readonly DataClassification[];
   readonly secretRequirement: ModelSecretRequirement | null;
+  /** Provider-specific request routing is part of the selected model identity. */
+  readonly providerRouting?: ModelProviderRouting;
 }
 
 export type ModelRoutingClass = "primary" | "specialist" | "local" | "fallback";
@@ -73,6 +75,14 @@ export interface ModelSecretRequirement {
   readonly secretRef: string;
   readonly secretVersion: string;
   readonly purpose: string;
+}
+
+export interface ModelProviderRouting {
+  readonly order?: readonly string[];
+  readonly allow_fallbacks?: boolean;
+  readonly require_parameters?: boolean;
+  readonly data_collection?: "allow" | "deny";
+  readonly zdr?: boolean;
 }
 
 export interface ModelInvocationRequest {

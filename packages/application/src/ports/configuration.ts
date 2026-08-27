@@ -1,5 +1,6 @@
 import type { AgentId, DeploymentId, OwnerId } from "@himawari-agent/domain";
 import type { DataClassification } from "./common.js";
+import type { ModelProviderRouting } from "./intelligence.js";
 
 export interface SecretReferenceDescriptor {
   readonly ref: string;
@@ -17,6 +18,7 @@ export interface ConfiguredModelDescriptor {
   readonly allowedDataClassifications: readonly DataClassification[];
   readonly disclosure: "local_only" | "trusted_remote" | "external_remote";
   readonly secretRef: string | null;
+  readonly providerRouting?: ModelProviderRouting;
 }
 
 export interface ConfiguredMemoryDescriptor {

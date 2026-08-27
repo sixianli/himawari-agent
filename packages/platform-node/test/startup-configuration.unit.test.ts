@@ -8,15 +8,15 @@ import {
   CONFIGURATION_ERROR_CODES,
   CONFIGURATION_SCHEMA_VERSION,
   DRAIN_PHASES,
+  initializeStateRoot,
   JsonFileConfigurationPort,
+  parseProductConfiguration,
   RuntimeHealthModel,
+  readAuthorityFile,
+  ServiceLifecycleError,
   STARTUP_PHASES,
   STATE_ROOT_ERROR_CODES,
-  ServiceLifecycleError,
   StartupDrainCoordinator,
-  initializeStateRoot,
-  parseProductConfiguration,
-  readAuthorityFile,
   writeAuthorityFile,
 } from "../src/index.js";
 
@@ -57,6 +57,12 @@ function config(stateRoot: string): Record<string, unknown> {
         allowedDataClassifications: ["public"],
         disclosure: "external_remote",
         secretRef: "provider-fallback",
+        providerRouting: {
+          order: ["z-ai"],
+          allow_fallbacks: false,
+          require_parameters: true,
+          data_collection: "deny",
+        },
       },
       {
         ref: "model-embedding",
@@ -123,6 +129,12 @@ describe("strict product configuration", () => {
       publicMode: true,
       concurrency: { totalRuns: 8, foregroundReserved: 2 },
     });
+    expect(parsed.modelDescriptors[1]?.providerRouting).toEqual({
+      order: ["z-ai"],
+      allow_fallbacks: false,
+      require_parameters: true,
+      data_collection: "deny",
+    });
     expect(parsed.stateRoot).not.toBe(process.cwd());
   });
 
@@ -135,6 +147,16 @@ describe("strict product configuration", () => {
     nested["memory"] = { ...(nested["memory"] as object), vendorDefault: true };
     expect(() => parseProductConfiguration(nested, new Date().toISOString())).toThrowError(
       expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.UNKNOWN_FIELD }),
+    );
+    const invalidRouting = config(stateRoot);
+    const invalidModels = invalidRouting["modelDescriptors"] as Record<string, unknown>[];
+    invalidRouting["modelDescriptors"] = [
+      ...invalidModels.map((entry, index) =>
+        index === 1 ? { ...entry, providerRouting: { order: ["z-ai", "z-ai"] } } : entry,
+      ),
+    ];
+    expect(() => parseProductConfiguration(invalidRouting, new Date().toISOString())).toThrowError(
+      expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
     );
     const secret = config(stateRoot);
     secret["repositoryAllowlistRefs"] = ["password=machine-secret-value"];

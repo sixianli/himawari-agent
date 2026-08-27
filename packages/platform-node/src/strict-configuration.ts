@@ -2,11 +2,12 @@
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  assertMachineSecretFree,
   type ConfigurationPort,
   type ConfiguredModelDescriptor,
   type DataClassification,
+  type ModelProviderRouting,
   type ProductConfiguration,
-  assertMachineSecretFree,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 
@@ -122,6 +123,45 @@ function classifications(value: unknown, field: string): readonly DataClassifica
   return Object.freeze(result);
 }
 
+function providerRouting(value: unknown, field: string): ModelProviderRouting {
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["order", "allow_fallbacks", "require_parameters", "data_collection", "zdr"],
+    field,
+  );
+  let order: readonly string[] | undefined;
+  if (input["order"] !== undefined) {
+    if (!Array.isArray(input["order"]) || input["order"].length === 0) {
+      throw invalid(`${field}.order`, "must be a non-empty array");
+    }
+    const values = input["order"].map((entry, index) =>
+      safeReference(entry, `${field}.order[${index}]`),
+    );
+    if (new Set(values).size !== values.length) {
+      throw invalid(`${field}.order`, "must not contain duplicates");
+    }
+    order = Object.freeze(values);
+  }
+  const dataCollection = input["data_collection"];
+  if (dataCollection !== undefined && dataCollection !== "allow" && dataCollection !== "deny") {
+    throw invalid(`${field}.data_collection`, "must be allow or deny");
+  }
+  return Object.freeze({
+    ...(order === undefined ? {} : { order }),
+    ...(input["allow_fallbacks"] === undefined
+      ? {}
+      : { allow_fallbacks: boolean(input["allow_fallbacks"], `${field}.allow_fallbacks`) }),
+    ...(input["require_parameters"] === undefined
+      ? {}
+      : {
+          require_parameters: boolean(input["require_parameters"], `${field}.require_parameters`),
+        }),
+    ...(dataCollection === undefined ? {} : { data_collection: dataCollection }),
+    ...(input["zdr"] === undefined ? {} : { zdr: boolean(input["zdr"], `${field}.zdr`) }),
+  });
+}
+
 function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
   const field = `modelDescriptors[${index}]`;
   const input = record(value, field);
@@ -136,6 +176,7 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       "allowedDataClassifications",
       "disclosure",
       "secretRef",
+      "providerRouting",
     ],
     field,
   );
@@ -162,6 +203,9 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     disclosure: disclosure as ConfiguredModelDescriptor["disclosure"],
     secretRef:
       input["secretRef"] === null ? null : safeReference(input["secretRef"], `${field}.secretRef`),
+    ...(input["providerRouting"] === undefined
+      ? {}
+      : { providerRouting: providerRouting(input["providerRouting"], `${field}.providerRouting`) }),
   });
 }
 

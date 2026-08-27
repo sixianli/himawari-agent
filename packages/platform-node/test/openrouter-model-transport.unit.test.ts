@@ -5,11 +5,11 @@ import type {
   ModelInvocationRequest,
 } from "@himawari-agent/application";
 import { createRunId } from "@himawari-agent/domain";
-import {
-  OpenRouterModelTransport,
-  type OpenRouterModelPayloadBoundary,
-} from "../src/openrouter-model-transport.ts";
 import { describe, expect, it } from "vitest";
+import {
+  type OpenRouterModelPayloadBoundary,
+  OpenRouterModelTransport,
+} from "../src/openrouter-model-transport.ts";
 
 const MODEL = "deepseek/deepseek-v4-flash-0731";
 const NOW = "2026-08-27T16:00:00.000Z";
@@ -193,6 +193,38 @@ describe("OpenRouterModelTransport", () => {
         costMicros: 12,
       },
     ]);
+  });
+
+  it("uses model-specific provider routing when the descriptor supplies it", async () => {
+    const input = payloads("Say hello");
+    const routedDescriptor: ModelDescriptor = {
+      ...descriptor,
+      providerRouting: {
+        order: ["z-ai"],
+        allow_fallbacks: false,
+        require_parameters: true,
+        data_collection: "deny",
+      },
+    };
+    const calls: RequestInit[] = [];
+    const transport = new OpenRouterModelTransport({
+      payloads: input.boundary,
+      clock,
+      fetch: async (_url, init) => {
+        calls.push(init ?? {});
+        return successResponse();
+      },
+      baseUrl: "http://127.0.0.1:8787/api/v1",
+    });
+
+    await collect(transport.invoke({ descriptor: routedDescriptor, request, secretValues: ["k"] }));
+
+    expect(JSON.parse(String(calls[0]?.body)).provider).toEqual({
+      order: ["z-ai"],
+      allow_fallbacks: false,
+      require_parameters: true,
+      data_collection: "deny",
+    });
   });
 
   it("maps retryable HTTP failures without exposing response content", async () => {

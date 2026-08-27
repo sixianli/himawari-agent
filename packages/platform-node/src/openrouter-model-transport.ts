@@ -1,15 +1,16 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: untrusted OpenRouter JSON remains index-signature typed until validated
 import {
   assertMachineSecretFree,
-  redactMachineSecrets,
   type ClockPort,
   type DataClassification,
   type IdGeneratorPort,
   type ModelInvocationEvent,
   type ModelInvocationRequest,
   type ModelProviderObservation,
+  type ModelProviderRouting,
   type PayloadProtectorPort,
   type PayloadStorePort,
+  redactMachineSecrets,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
 import type {
@@ -30,13 +31,7 @@ export interface OpenRouterModelPayloadBoundary {
   }): Promise<string>;
 }
 
-export interface OpenRouterProviderRouting {
-  readonly order?: readonly string[];
-  readonly allow_fallbacks?: boolean;
-  readonly require_parameters?: boolean;
-  readonly data_collection?: "allow" | "deny";
-  readonly zdr?: boolean;
-}
+export type OpenRouterProviderRouting = ModelProviderRouting;
 
 export interface OpenRouterModelTransportOptions {
   readonly payloads: OpenRouterModelPayloadBoundary;
@@ -445,6 +440,7 @@ export class OpenRouterModelTransport implements TrustedModelTransport {
       return;
     }
 
+    const providerRouting = descriptor.providerRouting ?? this.#provider;
     const body = {
       model: descriptor.model,
       messages: [{ role: "user", content: prompt }],
@@ -452,7 +448,7 @@ export class OpenRouterModelTransport implements TrustedModelTransport {
       stream_options: { include_usage: true },
       max_tokens: this.#maxOutputTokens,
       ...(this.#temperature === undefined ? {} : { temperature: this.#temperature }),
-      ...(this.#provider === undefined ? {} : { provider: this.#provider }),
+      ...(providerRouting === undefined ? {} : { provider: providerRouting }),
     };
     let response: Response;
     try {

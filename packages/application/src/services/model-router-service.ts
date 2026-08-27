@@ -299,6 +299,9 @@ export class ModelRouterService {
       version: descriptor.version,
       routingClass: descriptor.routingClass,
       disclosure: descriptor.disclosure,
+      ...(descriptor.providerRouting === undefined
+        ? {}
+        : { providerRouting: descriptor.providerRouting }),
     };
   }
 
