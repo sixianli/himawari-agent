@@ -29,6 +29,7 @@ This repository explicitly adopts the `document-governance` skill for all govern
 
 - Product code and product documentation belong in this repository.
 - The sibling `pi-mono` repository is an upstream source reference and debugging checkout.
+- Use `/Users/triggerjames/Documents/sxl_code_work_space/pi-mono` as the canonical read-only Pi source checkout; do not rediscover other checkouts, and report if it is unavailable. This does not authorize local dependency linking or committed dependency changes.
 - Do not place Himawari-specific product logic in `pi-mono`.
 
 ## Pi-First Development Principle
