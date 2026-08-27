@@ -457,12 +457,14 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 
 ### Task 26：扩展真实进程、崩溃与恢复矩阵
 
-- [ ] 以真实 child process 启动 Agent Service、Worker 和测试客户端，在 context formation、model stream、approval wait、Worker result、outbox、Thread checkpoint、Memory projection 与 Delivery 阶段 kill/restart。
-- [ ] 为 SQLite transaction/outbox 每个 crash point、WAL/lock contention、long reader、disk full、migration digest mismatch 和 corruption 记录可重复证据。
+- [x] 以真实 child process 启动 Agent Service、Worker 和测试客户端，在 context formation、model stream、approval wait、Worker result、outbox、Thread checkpoint、Memory projection 与 Delivery 阶段 kill/restart。
+- [x] 为 SQLite transaction/outbox 每个 crash point、WAL/lock contention、long reader、disk full、migration digest mismatch 和 corruption 记录可重复证据。
 - [ ] 验证 stale Gateway/Worker/event、旧 authority fence、inactive/retired host、重复 webhook、重复 model result 和 duplicate Delivery 都不能产生第二次业务效果。
-- [ ] 验证未知外部副作用总是先 reconcile；取消和超时保留真实副作用，任何补偿都是新的授权行动。
-- [ ] 验证 Thread checkpoint、Memory projection/delete、scheduler 和 inbox 在重建 service object 与重启进程后沿用原 identity。
-- [ ] 所有 fault injection 使用非生产 fixture；不得把一次成功重启误报为覆盖完整恢复矩阵。
+- [x] 验证未知外部副作用总是先 reconcile；取消和超时保留真实副作用，任何补偿都是新的授权行动。
+- [x] 验证 Thread checkpoint、Memory projection/delete、scheduler 和 inbox 在重建 service object 与重启进程后沿用原 identity。
+- [x] 所有 fault injection 使用非生产 fixture；不得把一次成功重启误报为覆盖完整恢复矩阵。
+
+非生产 `durable-phase-child` fixture 在八个明确业务阶段分别持久化原 identity，向父测试报告已到达边界后由父进程发送 `SIGKILL`，再由全新进程取得同一 state root 独占锁并运行正式 startup recovery。它与既有真实 Agent Service、Execution Worker、测试客户端、四个 SQLite transaction crash point、WAL/锁/长 reader/`SQLITE_FULL`/migration/corruption、故障恢复矩阵和 service-object 重建测试共同构成证据；一次普通重启不计为矩阵覆盖。当前 stale Gateway/Worker/event、旧 fence、inactive/retired host 与 duplicate Delivery 已有确定性证据；重复 webhook 和重复 model result 仍分别依赖 Task 21 与 Task 20，完成前本 Task 保持未收口。阶段性证据位于 `test/integration/qualification/evidence/s1-task26-process-recovery.json`。
 
 ### Task 27：完成浏览器、身份与真实公共路径验证
 

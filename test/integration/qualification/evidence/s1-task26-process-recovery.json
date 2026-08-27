@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-27T02:14:46Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T26",
+  "status": "partial",
+  "candidateRevision": "4a3a093f1c02ef94a6f585856d9cfc014156d0a0",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 13,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["AGENTS.md"]
+  },
+  "realProcessMatrix": {
+    "phases": [
+      "context_formation",
+      "model_stream",
+      "approval_wait",
+      "worker_result",
+      "outbox",
+      "thread_checkpoint",
+      "memory_projection",
+      "delivery"
+    ],
+    "mechanism": "Each non-production fixture process opens the real qualified SQLite repository, persists the stable phase identity, is killed by its parent with SIGKILL, and is inspected by a new process that reacquires the state-root lock and executes startup recovery.",
+    "serviceProcesses": [
+      "installed Agent Service",
+      "installed Execution Worker",
+      "execution.v2 Agent test client"
+    ]
+  },
+  "commands": [
+    {
+      "command": "npm run typecheck",
+      "exitStatus": 0,
+      "result": "Node and Control Center strict TypeScript checks passed"
+    },
+    {
+      "command": "npm run test:integration -- --run test/integration/durable-phase-process-recovery.test.ts",
+      "exitStatus": 0,
+      "result": "8 phase-specific SIGKILL and fresh-process recovery cycles passed in one integration test"
+    },
+    {
+      "command": "npm run test:integration -- --run test/integration/durable-phase-process-recovery.test.ts test/integration/sqlite-product-state.test.ts test/integration/failure-recovery-matrix.test.ts test/integration/durable-background-recovery.test.ts test/integration/thread-checkpoint-distillation.test.ts test/integration/durable-memory-projection.test.ts test/integration/sqlite-durable-repositories.test.ts test/integration/product-state-commit.test.ts",
+      "exitStatus": 0,
+      "result": "62 SQLite crash, WAL/lock/disk/migration/corruption, outbox, reconciliation, checkpoint, Memory, scheduler, inbox and idempotency tests passed"
+    },
+    {
+      "command": "npm run test:integration -- --run test/integration/execution-worker-process.test.ts test/integration/installable-node-services.test.ts",
+      "exitStatus": 0,
+      "execution": "outside sandbox for real Unix Domain Socket coverage",
+      "result": "7 real Agent/Worker/test-client process, stale-fence, crash, reconnect, no-fallback and installed-service restart tests passed"
+    }
+  ],
+  "verified": [
+    "all eight durable business phase identities survive SIGKILL and process restart",
+    "four transaction crash points distinguish rollback from committed idempotent replay",
+    "WAL recovery, writer lock contention, long reader, SQLITE_FULL, migration digest mismatch and corruption fail with repeatable outcomes",
+    "stale Gateway/event/Worker inputs, old authority fences and inactive or retired deployments fail closed in existing contract and integration coverage",
+    "unknown external results remain reconcile-required; cancellation or timeout does not erase a real external effect",
+    "checkpoint, Memory projection/delete, scheduler occurrence and inbox delivery identities survive object reconstruction and repository/process restart",
+    "all newly added fault injection runs only in temporary non-production state roots"
+  ],
+  "remaining": [
+    "Task 20 must supply the model-result idempotency test for repeated provider results.",
+    "Task 21 must supply the webhook delivery-id idempotency test for repeated GitHub deliveries.",
+    "Task 26 remains open until both dependent proofs are fresh and included in this evidence."
+  ],
+  "externalEffects": [
+    "No paid model, GitHub, Cloudflare, production service or Hermes state was accessed or changed.",
+    "All process kills targeted child processes created by the test itself."
+  ],
+  "implementationCommit": null
+}
