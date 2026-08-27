@@ -27,6 +27,12 @@
     "scope": "bounded OpenRouter smoke/eval only",
     "approvedAt": "2026-08-27T15:58:22+09:00"
   },
+  "liveScope": {
+    "realFallbackEnabled": false,
+    "primaryRetryableFailure": "not exercised",
+    "reason": "Owner 暂不希望启用真实 fallback；本次 live smoke/eval 只验证 primary 成功路径，fallback 仅由 deterministic/fault-injection 测试覆盖",
+    "runtimeCaveat": "当前 ModelRouterService 在 retryable primary failure 下仍会按已配置 descriptor 自动寻找 fallback；本次范围不把该故障路径作为 live 测试，也不把此范围约束描述为已实现的 primary-only 运行时开关"
+  },
   "verified": [
     "Strict configuration requires exact primary/fallback/embedding descriptors, disclosure and secret references.",
     "Router selects the product-selected primary first and only retries a retryable provider failure with a compatible fixed fallback.",
@@ -62,7 +68,7 @@
     }
   ],
   "remaining": [
-    "Before any live call, freeze and show the OpenRouter primary plus fixed fallback and embedding provider/model/version or snapshot, capabilities, disclosure, secret refs, provider-routing policy, estimated cost and capped budget.",
+    "Before any live call, freeze and show the OpenRouter primary plus fixed fallback and embedding provider/model/version or snapshot, capabilities, disclosure, secret refs, provider-routing policy, estimated cost and capped budget; this live scope must keep real fallback disabled and must not exercise a retryable primary failure.",
     "Freeze an approved API key source reference and production source selection without putting the key in chat, fixtures, logs or evidence.",
     "After approval, run a bounded live smoke/eval and read back provider identity, token/cost accounting, cancellation, fallback, tool-call, disclosure rejection and redaction evidence."
   ],
