@@ -1,13 +1,49 @@
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
-import { chromium, firefox, webkit } from "@playwright/test";
+import { chromium, devices, firefox, webkit } from "@playwright/test";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const engineName = process.argv[2] ?? "chromium";
-const engine = { chromium, firefox, webkit }[engineName];
-if (!engine) throw new Error(`CONTROL_CENTER_BROWSER_ENGINE_INVALID:${engineName}`);
+const profileName = process.argv[2] ?? "chromium";
+const profiles = {
+  chromium: { engine: chromium, runtime: "playwright-chromium" },
+  chrome: {
+    engine: chromium,
+    runtime: "installed-google-chrome",
+    launchOptions: { channel: "chrome" },
+  },
+  edge: {
+    engine: chromium,
+    runtime: "installed-microsoft-edge",
+    launchOptions: { channel: "msedge" },
+  },
+  firefox: {
+    engine: firefox,
+    runtime: process.env.HIMAWARI_FIREFOX_EXECUTABLE
+      ? "playwright-firefox-explicit-executable"
+      : "playwright-firefox",
+    launchOptions: process.env.HIMAWARI_FIREFOX_EXECUTABLE
+      ? { executablePath: process.env.HIMAWARI_FIREFOX_EXECUTABLE }
+      : undefined,
+  },
+  webkit: { engine: webkit, runtime: "playwright-webkit" },
+  "ios-webkit": {
+    engine: webkit,
+    runtime: "playwright-webkit-ios-emulation",
+    contextOptions: devices["iPhone 15"],
+    emulation: "iPhone 15",
+  },
+  "android-chrome": {
+    engine: chromium,
+    runtime: "installed-google-chrome-android-emulation",
+    launchOptions: { channel: "chrome" },
+    contextOptions: devices["Pixel 7"],
+    emulation: "Pixel 7",
+  },
+};
+const profile = profiles[profileName];
+if (!profile) throw new Error(`CONTROL_CENTER_BROWSER_PROFILE_INVALID:${profileName}`);
 const server = spawn(process.execPath, ["test/e2e/fixtures/control-center-browser-server.mjs"], {
   cwd: repositoryRoot,
   env: { ...process.env, HIMAWARI_BROWSER_FIXTURE_PORT: "4173" },
@@ -35,12 +71,65 @@ async function waitForText(locator, text) {
 let browser;
 try {
   await waitForServer();
-  browser = await engine.launch({ headless: true, timeout: 30_000 });
+  browser = await profile.engine.launch({
+    headless: true,
+    timeout: 30_000,
+    ...profile.launchOptions,
+  });
   const browserVersion = browser.version();
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    ...profile.contextOptions,
+  });
   let page = await context.newPage();
   await page.goto("http://127.0.0.1:4173");
   await waitForText(page.getByRole("status"), "实时连接");
+
+  await page.keyboard.press("Tab");
+  const keyboardFocus = await page.evaluate(() => {
+    const element = document.activeElement;
+    if (!(element instanceof HTMLElement) || element === document.body) return null;
+    const style = getComputedStyle(element);
+    const labelledBy = element.getAttribute("aria-labelledby");
+    const labelledByText = labelledBy
+      ? labelledBy
+          .split(/\s+/)
+          .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
+          .filter(Boolean)
+          .join(" ")
+      : "";
+    const labelText =
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement
+        ? Array.from(element.labels ?? [])
+            .map((label) => label.textContent?.trim() ?? "")
+            .filter(Boolean)
+            .join(" ")
+        : "";
+    return {
+      tagName: element.tagName.toLowerCase(),
+      accessibleName:
+        element.getAttribute("aria-label") ||
+        labelledByText ||
+        labelText ||
+        element.textContent?.trim() ||
+        "",
+      visible:
+        style.outlineStyle !== "none" ||
+        style.boxShadow !== "none" ||
+        Number.parseFloat(style.outlineWidth) > 0,
+    };
+  });
+  if (!keyboardFocus?.visible || !keyboardFocus.accessibleName) {
+    throw new Error(`CONTROL_CENTER_KEYBOARD_FOCUS_NOT_VISIBLE:${JSON.stringify(keyboardFocus)}`);
+  }
+  const ariaSnapshot = await page.locator("body").ariaSnapshot();
+  for (const requiredLandmark of ["navigation", "main", "heading"]) {
+    if (!ariaSnapshot.includes(requiredLandmark)) {
+      throw new Error(`CONTROL_CENTER_ARIA_LANDMARK_MISSING:${requiredLandmark}`);
+    }
+  }
 
   await page.getByLabel("消息草稿").fill("浏览器资格测试消息");
   await page.getByRole("button", { name: "发送并启动 Run" }).click();
@@ -136,9 +225,12 @@ try {
   process.stdout.write(
     `${JSON.stringify({
       schemaVersion: 1,
-      engine: engineName,
+      engine: profile.engine.name(),
+      profile: profileName,
+      runtime: profile.runtime,
       browserVersion,
       platform: `${process.platform}-${process.arch}`,
+      emulation: profile.emulation ?? null,
       journeys: [
         "thread-chat",
         "approval",
@@ -153,6 +245,9 @@ try {
       mobileViewport: "390x844",
       minimumButtonHeight,
       axeViolations: 0,
+      keyboardFocus,
+      semanticLandmarks: ["navigation", "main", "heading"],
+      nonColorConnectionStatus: true,
       cursorAfterReopen,
     })}\n`,
   );

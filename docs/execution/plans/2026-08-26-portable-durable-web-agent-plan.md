@@ -470,10 +470,14 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 
 - [ ] 在 Safari、Chrome、Edge、Firefox、iOS Safari 和 Android Chrome 的受支持版本范围运行关键 Browser E2E；记录实际版本和平台。
 - [ ] 覆盖 bootstrap、MFA redirect、Thread/chat、SSE reconnect、approval、inbox、Memory、Trace、sessions/devices、recent re-auth、degraded state 和 browser offline draft。
-- [ ] 安全测试覆盖 forged/missing JWT、wrong issuer/audience、JWKS rotation、header spoofing、CSRF/cross-origin、replay、oversized body、CSP 和 direct-origin bypass。
+- [x] 安全测试覆盖 forged/missing JWT、wrong issuer/audience、JWKS rotation、header spoofing、CSRF/cross-origin、replay、oversized body、CSP 和 direct-origin bypass。
 - [ ] 在得到外部账户授权后运行 staging Cloudflare Access/Tunnel smoke，验证真实 public URL、origin 只绑定受控入口、MFA、SSE heartbeat/reconnect 和最小公共 route set。
 - [ ] 在桌面与手机完成本基础切片的键盘、屏幕阅读器、焦点、对比度、触摸和非颜色提示检查，并把完整三语/WCAG 验收留在控制中心体验 Spec 的实施范围。
-- [ ] 不把 staging 通过等同于 production deployment 或完整 v0.2 验收。
+- [x] 不把 staging 通过等同于 production deployment 或完整 v0.2 验收。
+
+本机真实 Chrome `151.0.7922.172` 与 Edge `150.0.4078.50` 已通过 Thread/chat、Run cancel、approval、task、inbox、Memory、Trace、sessions、health degraded、SSE 断网/后台/关闭重开、键盘焦点、ARIA landmark、axe、触摸目标和非颜色连接状态资格测试。Playwright WebKit `26.5` 通过同一矩阵；iPhone 15 WebKit 与 Pixel 7 Chrome 仅为 macOS 上的设备模拟，不能当作 iOS/Android 真机证据。系统 Safari 为 `27.0`，但现有设置未启用 `Allow remote automation`，因此没有创建会话或修改该设置；Playwright Firefox `153.0` 在缓存路径和无 provenance 的临时副本中都被自身 macOS content sandbox 阻断。真实 Safari、Firefox、iOS/Android 真机、屏幕阅读器和 staging Cloudflare/MFA 仍是明确缺口。
+
+本地密码学和 HTTP 安全矩阵已覆盖本 Task 列出的全部拒绝路径；bootstrap、session/device、recent re-auth 的产品边界和持久重启已通过，但真实 MFA redirect 只能在授权后的 Cloudflare Access 路径验证。阶段性证据位于 `test/integration/qualification/evidence/s1-task27-browser-identity-public-path.json`；本 Task 保持未收口，且这些本机结果不代表 staging 或 production。
 
 ### Task 28：完成 Mac/Hermes、规模与迁移验收
 

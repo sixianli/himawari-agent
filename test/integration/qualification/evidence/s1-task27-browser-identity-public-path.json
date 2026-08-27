@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-27T02:26:00Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T27",
+  "status": "partial",
+  "candidateRevision": "5e099c0710f0900327a680612e6cb0b6cd258732",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 14,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["AGENTS.md"]
+  },
+  "browserMatrix": [
+    {
+      "target": "Google Chrome desktop",
+      "actualVersion": "151.0.7922.172",
+      "actualPlatform": "darwin-arm64",
+      "result": "passed"
+    },
+    {
+      "target": "Microsoft Edge desktop",
+      "actualVersion": "150.0.4078.50",
+      "actualPlatform": "darwin-arm64",
+      "result": "passed"
+    },
+    {
+      "target": "Playwright WebKit",
+      "actualVersion": "26.5",
+      "actualPlatform": "darwin-arm64",
+      "result": "passed",
+      "limit": "WebKit qualification is not an actual Safari 27 WebDriver session."
+    },
+    {
+      "target": "Safari desktop",
+      "actualVersion": "27.0",
+      "actualPlatform": "darwin-arm64",
+      "result": "blocked",
+      "reason": "safaridriver reported that Safari Settings > Developer > Allow remote automation is disabled; no setting was changed"
+    },
+    {
+      "target": "Playwright Firefox",
+      "actualVersion": "153.0",
+      "actualPlatform": "darwin-arm64",
+      "result": "blocked",
+      "reason": "plugin-container macOS content sandbox rejected the process in both the Playwright cache and a clean temporary copy"
+    },
+    {
+      "target": "iOS Safari",
+      "result": "emulation-passed",
+      "runtime": "Playwright WebKit 26.5 with iPhone 15 device emulation on darwin-arm64",
+      "limit": "not an iOS device or Simulator"
+    },
+    {
+      "target": "Android Chrome",
+      "result": "emulation-passed",
+      "runtime": "installed Chrome 151.0.7922.172 with Pixel 7 device emulation on darwin-arm64",
+      "limit": "not an Android device or emulator"
+    }
+  ],
+  "browserJourneys": [
+    "Thread chat and Run cancellation",
+    "approval",
+    "background task pause",
+    "inbox",
+    "Memory correction and deletion",
+    "Trace",
+    "session revocation",
+    "degraded health",
+    "SSE offline reconnect, background tab and close/reopen",
+    "browser offline draft and durable cursor recovery"
+  ],
+  "accessibilityAutomation": {
+    "axeViolations": 0,
+    "minimumTouchTargetCssPixels": {
+      "chromium": 44.78125,
+      "webkit": 44
+    },
+    "keyboardFocus": "visible and has an accessible name",
+    "semanticLandmarks": ["navigation", "main", "heading"],
+    "nonColorConnectionStatus": true,
+    "limit": "Automated semantics and axe do not replace real VoiceOver/TalkBack or manual keyboard acceptance."
+  },
+  "commands": [
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chrome|edge|webkit|ios-webkit|android-chrome",
+      "exitStatus": 0,
+      "execution": "outside sandbox for loopback server and real browser processes",
+      "result": "five local browser/runtime profiles passed the complete repeatable journey"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs firefox",
+      "exitStatus": 1,
+      "result": "repeatable content-sandbox launch blocker recorded; no product assertion was executed"
+    },
+    {
+      "command": "/usr/bin/safaridriver --version; POST /session to a temporary local driver",
+      "exitStatus": 0,
+      "result": "Safari 27.0 detected; session creation rejected because remote automation is disabled"
+    },
+    {
+      "command": "npm run test:unit -- --run packages/platform-node/test/identity-gateway.unit.test.ts",
+      "exitStatus": 0,
+      "result": "11 JWT/JWKS, bootstrap, session/recent-auth, CSRF and break-glass tests passed"
+    },
+    {
+      "command": "npm run test:contracts -- --run packages/platform-node/test/http-gateway-server.contract.test.ts",
+      "exitStatus": 0,
+      "result": "17 CSP, JWT presence/forgery, spoofing, origin, CSRF, replay, body-limit, direct-origin and SSE tests passed"
+    },
+    {
+      "command": "npm run test:integration -- --run test/integration/identity-persistence.test.ts test/integration/agent-gateway.test.ts",
+      "exitStatus": 0,
+      "result": "4 identity persistence/revocation and authenticated Gateway integration tests passed"
+    },
+    {
+      "command": "npm run test:browser",
+      "exitStatus": 0,
+      "result": "5 Control Center browser unit tests passed"
+    }
+  ],
+  "securityCoverage": [
+    "forged and missing JWT",
+    "wrong issuer and audience",
+    "bounded JWKS rotation",
+    "identity header spoofing",
+    "CSRF expiry and cross-session replay",
+    "cross-origin and Fetch Metadata rejection",
+    "command replay idempotency",
+    "oversized request body",
+    "restrictive CSP",
+    "direct-origin host bypass rejection"
+  ],
+  "remaining": [
+    "Enable Safari remote automation only with Owner approval, then run the actual Safari 27 journey.",
+    "Provide a supported Firefox installation/environment whose content process can launch.",
+    "Run the same journey on real supported iOS Safari and Android Chrome devices.",
+    "Perform manual keyboard and VoiceOver/TalkBack checks on desktop and mobile.",
+    "Authorize and configure a staging Cloudflare Access/Tunnel target before testing public URL, MFA redirect and direct-origin isolation."
+  ],
+  "externalEffects": [
+    "Only temporary loopback servers and local browser processes were started and stopped.",
+    "A temporary Firefox copy under /private/tmp was removed after the repeated blocker; the installed browser cache was not changed.",
+    "Safari settings, Cloudflare, DNS, Tunnel, public ingress, production state and Hermes were not changed."
+  ],
+  "implementationCommit": null
+}
