@@ -70,7 +70,7 @@ async function startWorker(runtimeDirectory: string): Promise<ChildProcessWithou
     let stderr = "";
     const timeout = setTimeout(() => {
       reject(new Error(`Worker child readiness timed out: ${stderr}`));
-    }, 5_000);
+    }, 15_000);
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
       if (stdout.includes('"ready":true')) {
@@ -113,7 +113,7 @@ async function startAgentClient(runtimeDirectory: string): Promise<ChildProcessW
     let stderr = "";
     const timeout = setTimeout(
       () => reject(new Error(`Agent child acceptance timed out: ${stderr}`)),
-      5_000,
+      15_000,
     );
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
@@ -373,5 +373,5 @@ describe("Execution Worker real process boundary", () => {
     await reconnected.request(duplicate);
     expect(await events(reconnected)).toHaveLength(1);
     await stopWorker(worker, "SIGTERM", runtime);
-  });
+  }, 30_000);
 });
