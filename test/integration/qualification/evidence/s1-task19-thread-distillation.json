@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-26T23:57:55Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T19",
+  "candidateRevision": "54cf431e870fbc3361b5b12e0d85acc9a9920002",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 9,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["AGENTS.md"]
+  },
+  "migration": {
+    "sequence": 13,
+    "file": "packages/persistence-sqlite/src/migrations/0013_thread_distillation.sql",
+    "sha256": "4f1af4c9ead9626d62382089a39fa77e577c09390e8bade9985e20b291a5d8c8",
+    "atomicTables": [
+      "thread_summaries",
+      "thread_derivative_candidates",
+      "thread_derivative_provenance"
+    ]
+  },
+  "identity": {
+    "semanticInput": ["ThreadId", "sourceWatermark", "policyVersion"],
+    "job": "checkpoint:<stable-128-bit-fingerprint>",
+    "generation": "generation:<same-stable-128-bit-fingerprint>",
+    "statuses": ["pending", "running", "completed", "retry_wait", "failed_terminal"],
+    "triggers": ["owner_explicit", "controlled_idle", "pre_compaction", "source_threshold"]
+  },
+  "metrics": {
+    "summaryFaithfulness": 1,
+    "sourceCoverage": 1,
+    "crossThreadRetrievalRelevance": 1,
+    "checkpointGenerationDuplication": 0,
+    "unpassedSamples": []
+  },
+  "commands": [
+    {
+      "command": "npm run test:integration -- --run test/integration/thread-checkpoint-distillation.test.ts test/integration/context-formation.test.ts",
+      "exitStatus": 0,
+      "result": "8 项集成测试通过，覆盖四类 trigger、上下文附加、故障边界与重启恢复"
+    },
+    {
+      "command": "npm run test:contracts -- --run packages/persistence-sqlite/test/migration-engine.contract.test.ts packages/persistence-sqlite/test/schema-contract.contract.test.ts",
+      "exitStatus": 0,
+      "result": "8 项 schema/migration contract 通过"
+    },
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format、lint、strict typecheck、14 workspace boundary 与 v0.2 coverage 通过"
+    },
+    {
+      "command": "npm test",
+      "exitStatus": 0,
+      "result": "188 unit、126 contract、295 integration 与 3 E2E 测试通过"
+    }
+  ],
+  "verificationSummary": [
+    "checkpoint job 与 generation identity 只由 ThreadId、水位线和 policy version 决定，重复请求返回原 work。",
+    "受控 idle 要求所有 admitted Runs 稳定，source threshold 未达阈值时拒绝。",
+    "模型响应前、受保护正文写入、产品事务前和产品事务后回包边界均保持 exactly-once 可恢复。",
+    "summary、全部 candidates/provenance 与 completed 标记在单个 SQLite transaction 中发布。",
+    "敏感 commitment 只保存无正文候选，不创建 scheduled job、Capability 或外部动作。",
+    "claim lease 过期后重启沿用原 identity，原 Thread 状态与 transcript 保持不变。",
+    "Context Formation 附加分类允许的最新摘要，同时继续注入原始 Thread messages。"
+  ],
+  "limits": [
+    "qualification 使用 deterministic distiller，只证明固定持久语义和指标 harness。",
+    "真实 primary/fallback/embedding identity、费用授权与 live quality gate 属于 Task 20。"
+  ],
+  "externalEffects": [
+    "本任务只写仓库文件和本机临时 SQLite/Unix socket 测试目录。",
+    "未调用模型供应商、Mem0 live provider、Hermes、外部账户、生产 state root 或远程 Git。"
+  ],
+  "implementationCommit": null
+}

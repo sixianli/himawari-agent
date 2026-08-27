@@ -15,6 +15,7 @@ export * from "./run-state-commit-coordinator.js";
 export * from "./scheduler-service.js";
 export * from "./session-deletion-coordinator.js";
 export * from "./session-trace-recorder.js";
+export * from "./thread-checkpoint-service.js";
 export * from "./trace-redaction.js";
 export * from "./machine-secret-exclusion.js";
 export * from "./unified-trigger-ingestion-service.js";

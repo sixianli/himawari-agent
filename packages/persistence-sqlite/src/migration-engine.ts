@@ -161,6 +161,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0012_sensitive_memory_approvals.sql",
   },
+  {
+    sequence: 13,
+    name: "thread_distillation",
+    changeSet: "thread-distillation",
+    phase: "expand" as const,
+    file: "0013_thread_distillation.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

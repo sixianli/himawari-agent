@@ -28,6 +28,7 @@ import type {
   MemoryProjectionJobStatePort,
   ProductMemoryStatePort,
   SensitiveMemoryApprovalStatePort,
+  ThreadDistillationStatePort,
 } from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
@@ -312,6 +313,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   sensitiveMemoryApprovals(): SensitiveMemoryApprovalStatePort {
     return this.durable.sensitiveMemoryApprovals();
+  }
+
+  threadDistillationState(): ThreadDistillationStatePort {
+    return this.durable.threadDistillationState();
   }
 
   gatewayReadModel(): SqliteGatewayReadModel {

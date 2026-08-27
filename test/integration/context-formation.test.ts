@@ -1,6 +1,8 @@
+import type { ThreadDistillationStatePort } from "@himawari-agent/application";
 import { ContextFormationService, SessionTraceRecorder } from "@himawari-agent/application";
 import {
   createAgentId,
+  createMemoryGenerationId,
   createOwnerId,
   createRunId,
   createSessionId,
@@ -40,7 +42,7 @@ async function seedMemory(
   await memory.commitWrite(`proposal-${input.id}`, input.id, T1);
 }
 
-function createService() {
+function createService(threadSummaries?: Pick<ThreadDistillationStatePort, "latestSummary">) {
   const adapters = createReferenceAdapterSet();
   const trace = new SessionTraceRecorder({
     trace: adapters.trace,
@@ -52,7 +54,11 @@ function createService() {
   });
   return {
     adapters,
-    service: new ContextFormationService({ memory: adapters.memory, trace }),
+    service: new ContextFormationService({
+      memory: adapters.memory,
+      trace,
+      ...(threadSummaries ? { threadSummaries } : {}),
+    }),
   };
 }
 
@@ -99,6 +105,34 @@ function request(sourceType: "user_message" | "schedule" | "external_event") {
 }
 
 describe("Task 9 Memory and context formation", () => {
+  it("adds an eligible durable Thread summary without replacing transcript messages", async () => {
+    const { service } = createService({
+      async latestSummary(threadId) {
+        return {
+          id: "summary-context-01",
+          generationId: createMemoryGenerationId("generation-context-01"),
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          threadId,
+          contentRef: "payload-thread-summary-01",
+          dataClassification: "private",
+          sourceStartSequence: 1,
+          sourceEndSequence: 8,
+          sourceWatermark: 8,
+          policyVersion: "thread-distillation-v1",
+          modelDescriptorRef: "deterministic/thread-distiller@v1",
+          createdAt: T1,
+        };
+      },
+    });
+
+    const formed = await service.form(request("user_message"));
+    expect(formed.injectedContentRefs.slice(0, 2)).toEqual([
+      "payload-thread-summary-01",
+      "payload-thread-message-01",
+    ]);
+  });
+
   it("selects relevant permitted memories with provenance and traces each formation phase", async () => {
     const { adapters, service } = createService();
     await seedMemory(adapters.memory, {

@@ -49,6 +49,7 @@ import type {
   TraceQuery,
 } from "@himawari-agent/gateway-contracts";
 import type Database from "better-sqlite3";
+import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
 
 export type SqliteApplicationFailure = (
@@ -209,6 +210,7 @@ export class SqliteDurableOperations {
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
+  private readonly checkpoint: SqliteCheckpointOperations;
   private readonly memory: SqliteMemoryOperations;
 
   constructor(
@@ -219,10 +221,14 @@ export class SqliteDurableOperations {
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
+    this.checkpoint = new SqliteCheckpointOperations(database, fail, assertDiskHeadroom);
     this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
   }
 
   execute(operation: string, payload: unknown): unknown {
+    if (operation.startsWith("threadDistillation.")) {
+      return this.checkpoint.execute(operation, payload);
+    }
     if (
       operation.startsWith("memory.") ||
       operation.startsWith("memoryJob.") ||

@@ -18,6 +18,7 @@ import type {
   MemoryProjectionJobStatePort,
   ProductMemoryStatePort,
   SensitiveMemoryApprovalStatePort,
+  ThreadDistillationStatePort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
 import type {
@@ -316,6 +317,22 @@ export class SqliteDurableAdapters {
       markCommitted: (input) => this.context.write("memoryApproval.markCommitted", input),
       listPending: (ownerId, threadId) =>
         this.context.read("memoryApproval.listPending", { ownerId, threadId }),
+    });
+  }
+
+  threadDistillationState(): ThreadDistillationStatePort {
+    return Object.freeze<ThreadDistillationStatePort>({
+      request: (work) => this.context.write("threadDistillation.request", { work }),
+      read: (jobId) => this.context.read("threadDistillation.read", { jobId }),
+      findByIdentity: (input) => this.context.read("threadDistillation.findByIdentity", input),
+      listReady: (now, limit) => this.context.write("threadDistillation.listReady", { now, limit }),
+      claim: (input) => this.context.write("threadDistillation.claim", input),
+      commit: (input) => this.context.write("threadDistillation.commit", input),
+      retry: (input) => this.context.write("threadDistillation.retry", input),
+      readOutput: (generationId) =>
+        this.context.read("threadDistillation.readOutput", { generationId }),
+      latestSummary: (threadId) =>
+        this.context.read("threadDistillation.latestSummary", { threadId }),
     });
   }
 

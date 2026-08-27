@@ -371,13 +371,19 @@ Task 15 把 `apps/control-center` 从构建占位改为 browser-only React/Vite 
 
 ### Task 19：实现 Thread 稳定检查点、摘要与候选提炼
 
-- [ ] 实现由 `ThreadId + source watermark + distillation policy version` 派生的稳定 job/generation identity 和 pending/running/completed/retry/terminal 状态。
-- [ ] 支持 Owner 明确操作、所有 admitted Runs 稳定后的受控 idle、compaction 前和 source-size threshold 四类触发；均不得结束、归档或替换 Thread。
-- [ ] 单次 generation 原子提交 summary、零条或多条 Memory/experience/commitment candidates 和 provenance；中断不能发布 partial generation。
-- [ ] summary 保存来源范围、水位线、policy/model version，可用于 context builder 但不能删除或取代 transcript。
-- [ ] 未解决 commitment 没有持续有效授权时只能形成候选，不能创建 job、capability 或 external action。
-- [ ] 对四类 trigger、重复请求、进程中断、model response 前后、product commit 前后和 compaction/restart 运行 exactly-once recovery tests。
-- [ ] 测量 summary faithfulness/source coverage、跨 Thread retrieval relevance 和 checkpoint generation duplication。
+- [x] 实现由 `ThreadId + source watermark + distillation policy version` 派生的稳定 job/generation identity 和 pending/running/completed/retry/terminal 状态。
+- [x] 支持 Owner 明确操作、所有 admitted Runs 稳定后的受控 idle、compaction 前和 source-size threshold 四类触发；均不得结束、归档或替换 Thread。
+- [x] 单次 generation 原子提交 summary、零条或多条 Memory/experience/commitment candidates 和 provenance；中断不能发布 partial generation。
+- [x] summary 保存来源范围、水位线、policy/model version，可用于 context builder 但不能删除或取代 transcript。
+- [x] 未解决 commitment 没有持续有效授权时只能形成候选，不能创建 job、capability 或 external action。
+- [x] 对四类 trigger、重复请求、进程中断、model response 前后、product commit 前后和 compaction/restart 运行 exactly-once recovery tests。
+- [x] 测量 summary faithfulness/source coverage、跨 Thread retrieval relevance 和 checkpoint generation duplication。
+
+第 13 个不可变 SQLite migration 为 checkpoint 增加 trigger、retry 与 claim lease，并新增 source slice、summary、Memory/experience/commitment candidate 和 provenance 表。`ThreadCheckpointService` 由 Thread、水位线与 policy version 派生稳定 job/generation identity；Owner 明确操作、稳定 idle、pre-compaction 与 source threshold 都写入同一持久状态机，不修改 Thread lifecycle。
+
+模型调用前逐条执行机器秘密扫描；summary 与非敏感候选先写稳定 protected Payload，敏感或 restricted 候选只提交无正文的 `awaiting_sensitive_approval` metadata。SQLite 在单个 immediate transaction 中共同写 summary、全部 candidates/provenance 及 completed 标记；事务前失败不可见，COMMIT 后回包丢失按 generation identity 回读原输出。未解决 commitment 不连接 Scheduler、Capability 或 external action。Context Formation 只附加符合分类限制的最新摘要，原始 transcript 仍完整保存并继续注入。
+
+确定性恢复矩阵覆盖四类 trigger、重复请求、模型响应前失败、protected-content 写入失败、产品事务前失败、事务后 acknowledgement loss、claim lease 过期、进程重启与 pre-compaction。资格基线得到 summary faithfulness `1.0`、source coverage `1.0`、跨 Thread retrieval relevance `1.0` 与 generation duplication `0`；真实模型质量仍属于 Task 20。实现与证据位于 `test/integration/qualification/evidence/s1-task19-thread-distillation.json`。
 
 ### Task 20：冻结模型配置并接通生产 Model/Pi 路径
 

@@ -1,5 +1,6 @@
 import type { AgentId, OwnerId, RunId, SessionId, ThreadId } from "@himawari-agent/domain";
 import type { MemoryCandidate, MemoryPort } from "../ports/intelligence.js";
+import type { ThreadDistillationStatePort } from "../ports/conversation.js";
 import type {
   CorrelationId,
   DataClassification,
@@ -73,6 +74,7 @@ export interface FormedContext {
 export interface ContextFormationServiceDependencies {
   readonly memory: Pick<MemoryPort, "search">;
   readonly trace: SessionTraceRecorder;
+  readonly threadSummaries?: Pick<ThreadDistillationStatePort, "latestSummary">;
 }
 
 export interface ContextFormationPort {
@@ -87,6 +89,16 @@ export class ContextFormationService implements ContextFormationPort {
   }
 
   async form(request: ContextFormationRequest): Promise<FormedContext> {
+    const latestSummary =
+      request.threadId && this.dependencies.threadSummaries
+        ? await this.dependencies.threadSummaries.latestSummary(request.threadId)
+        : undefined;
+    const allowedSummary =
+      latestSummary &&
+      CLASSIFICATION_RANK[latestSummary.dataClassification] <=
+        CLASSIFICATION_RANK[request.maxMemoryClassification]
+        ? latestSummary
+        : undefined;
     const query = await this.dependencies.trace.record({
       ...this.traceScope(request),
       parentEventId: request.parentEventId,
@@ -167,6 +179,7 @@ export class ContextFormationService implements ContextFormationPort {
     });
 
     const injectedContentRefs = Object.freeze([
+      ...(allowedSummary ? [allowedSummary.contentRef] : []),
       ...request.threadMessages.map(({ payloadRef }) => payloadRef),
       request.trigger.payloadRef,
       ...request.policies.map(({ payloadRef }) => payloadRef),
@@ -179,6 +192,17 @@ export class ContextFormationService implements ContextFormationPort {
       causationId: selectionTrace.event.id,
       eventType: "context.formed",
       payload: {
+        threadSummary: allowedSummary
+          ? {
+              id: allowedSummary.id,
+              contentRef: allowedSummary.contentRef,
+              sourceStartSequence: allowedSummary.sourceStartSequence,
+              sourceEndSequence: allowedSummary.sourceEndSequence,
+              sourceWatermark: allowedSummary.sourceWatermark,
+              policyVersion: allowedSummary.policyVersion,
+              modelDescriptorRef: allowedSummary.modelDescriptorRef,
+            }
+          : null,
         threadMessages: request.threadMessages,
         trigger: request.trigger,
         policies: request.policies,
