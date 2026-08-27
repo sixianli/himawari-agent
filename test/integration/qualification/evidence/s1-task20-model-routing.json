@@ -16,10 +16,16 @@
   "deterministicQualification": {
     "provider": "ScriptedModelPort, TrustedModelProviderAdapter and OpenRouterModelTransport fixture",
     "liveCall": false,
-    "reason": "Owner selected OpenRouter deepseek/deepseek-v4-flash-0731, but the exact fallback/embedding descriptors, provider routing, API key source and capped paid-call budget are not yet frozen",
+    "reason": "Owner selected OpenRouter deepseek/deepseek-v4-flash-0731 and approved a USD 1.00 capped live budget, but the exact fallback/embedding descriptors, provider routing and API key source are not yet frozen",
     "hiddenRoutes": false,
     "dynamicMarketplaceRoute": false,
     "implicitEmbedding": false
+  },
+  "approvedLiveBudget": {
+    "currency": "USD",
+    "limit": 1.0,
+    "scope": "bounded OpenRouter smoke/eval only",
+    "approvedAt": "2026-08-27T15:58:22+09:00"
   },
   "verified": [
     "Strict configuration requires exact primary/fallback/embedding descriptors, disclosure and secret references.",
