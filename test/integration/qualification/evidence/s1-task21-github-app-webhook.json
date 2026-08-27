@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-27T12:18:00+09:00",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T21",
+  "status": "partial",
+  "candidateRevision": "b46620a",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 2,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": []
+  },
+  "readOnlyManifest": {
+    "permissions": {
+      "actions": "read",
+      "checks": "read",
+      "contents": "read",
+      "deployments": "none",
+      "issues": "read",
+      "metadata": "read",
+      "pull_requests": "read",
+      "statuses": "read",
+      "workflows": "read"
+    },
+    "externalAppReadback": "not_run; real GitHub App authorization is still required"
+  },
+  "verified": [
+    "Installation metadata stores only owner/agent scope, provider installation ID, secret ref, status and creation time.",
+    "Private key and webhook secret resolve through an injected host secret source; installation tokens are repository-scoped, short-lived and process-memory only.",
+    "Webhook admission bounds the raw body, requires application/json, applies a fixed-window rate limit and verifies X-Hub-Signature-256 over raw bytes with timingSafeEqual.",
+    "Installation ID, repository allowlist, event/action allowlist and revoked credentials fail closed.",
+    "Default event keys cover default-branch push, pull request create/update/merge, release and failed workflow_run completion; unknown events do not admit work.",
+    "SQLite atomically persists the protected payload reference, delivery receipt and one queued occurrence; repeated delivery IDs replay the original occurrence."
+  ],
+  "commands": [
+    {
+      "command": "npm run test:workspace-scaffolds -- --run",
+      "exitStatus": 0,
+      "result": "4 files and 14 integration-github boundary/credential/read-only tests passed"
+    },
+    {
+      "command": "npm run test:integration -- --run test/integration/github-durable-state.test.ts",
+      "exitStatus": 0,
+      "result": "2 SQLite installation/monitor, atomic admission/deduplication and coverage-gap tests passed"
+    }
+  ],
+  "remaining": [
+    "Owner must authorize a real GitHub App installation and a dedicated read-only permission manifest; no account or repository was changed.",
+    "Run real signed webhook, revoked-token, rate-limit and installation-token refresh readback, including a measured 2-second acceptance/rejection target."
+  ],
+  "externalEffects": [
+    "No GitHub account, repository, webhook endpoint, App private key or installation token was accessed."
+  ],
+  "implementationCommit": "ae684f0"
+}

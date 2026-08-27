@@ -1,14 +1,14 @@
 # Himawari Agent
 
-Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。Foundation Plan 的 Task 1 至 Task 20 已在确定性参考配置中完成：产品身份与状态、Gateway/Execution contracts、应用端口、状态/outbox、完整 Trace、Permission/Grant、Capability/Worker、Memory、Model Router、Pi Runtime 投影、Run Coordinator、Scheduler、Attention、Agent Gateway、本地组合根、牛肉餐厅 E2E 和故障恢复矩阵。
+Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。Foundation Plan 的 Task 1 至 Task 20 已在确定性参考配置中完成；当前 portable durable web-agent Plan 已补齐模型路由、GitHub webhook/只读 monitor、持久 receipt 去重、浏览器 disclosure preview、真实进程恢复和规模资格的本地实现与证据。真实 paid model、GitHub/Cloudflare 账户、跨主机 transfer 和最终 production composition 仍按证据单独验收。
 
-当前交付是可编程的架构验证平台，不是生产服务。它没有网络 listener、`npm start` 守护进程、生产数据库/Memory/Vault、真实远程 Worker 沙箱、地图/预订供应商或通知客户端；默认 local composition 使用进程内参考适配器，退出后数据不会保留。完整边界和限制见 [Architecture v0.1](docs/architecture-v0.1.md)。
+当前交付是可安装、可运行的架构验证平台，不是 production-ready 服务。Node runtime 已有 Agent Service、Execution Worker 和 admin CLI 的 `main`、受保护 UDS、持久 SQLite、doctor/db status 及信号 drain；最终公网 listener、生产 Vault/Memory/Model/GitHub 组合、真实远程 Worker 沙箱、地图/预订供应商和通知客户端仍未完成。默认 local composition 使用进程内参考适配器，退出后数据不会保留。完整边界和限制见 [Architecture v0.1](docs/architecture-v0.1.md)。
 
 ## Toolchain
 
 - Node.js 要求：`>=22.19.0`
 - npm 锁定工具版本：`11.8.0`
-- 2026-08-25 本地验证基线：Node.js `v25.6.0`、npm `11.8.0`
+- 2026-08-27 Mac 验证基线：Node.js `v25.6.0`、npm `11.8.0`
 - TypeScript：`5.9.3`
 - Biome：`2.3.5`
 - Vitest：`4.1.9`
@@ -24,14 +24,24 @@ npm ci --ignore-scripts
 
 ## Local reference composition
 
-`apps/execution-worker` 和 `apps/agent-service` 公开程序化 process API。参考启动顺序是先独立启动 Worker，再把它的 `execution.v1` client 注入前台 Agent composition；Agent process 不会隐式启动 Worker。启动诊断只包含 component、adapter identity、schema version 和 readiness，不包含 credential 或 Secret reference。
+`apps/execution-worker` 和 `apps/agent-service` 同时公开程序化 process API 与可安装 `main`。参考启动顺序是先独立启动 Worker，再把它的 `execution.v2` client 注入前台 Agent Service；Agent process 不会隐式启动 Worker。启动诊断只包含 component、adapter identity、schema version 和 readiness，不包含 credential 或 Secret reference。
 
-这两个入口当前用于自动化测试和本地架构验证，没有命令行 main 或网络 transport。可运行的生命周期与边界验证是：
+程序化组合用于自动化测试和本地架构验证；可安装入口使用受保护的 `execution.v2` UDS，但最终 public HTTP 组合尚未接入生产 `main`。可运行的生命周期、边界与规模验证是：
 
 ```bash
 npm run test:unit -- local-execution-worker local-composition-root
 npm run test:integration -- agent-gateway external-action-reconciliation
 npm run test:e2e -- beef-restaurant
+npm run qualify:scale
+npm run build
+```
+
+安装已构建的 Node runtime 到绝对临时前缀：
+
+```bash
+tmp_prefix="$(mktemp -d)"
+npm run install:node-runtime -- --prefix "$tmp_prefix"
+"$tmp_prefix/bin/himawari" db status --config /absolute/path/configuration.json
 ```
 
 关闭 Agent process 会先拒绝新请求，再等待登记的 in-flight Run settlement；Worker 由调用方单独关闭。`SecretPort`、Gateway Control Plane/Read Model 和 Worker client 都是显式注入边界，因此未来远程或持久适配器不需要修改 domain contracts。
@@ -149,6 +159,20 @@ Task 5 新增的提交路径具有以下语义：
 
 这些适配器只用于测试和本地架构验证。内存 Product State Repository 提供可验证的 transaction/outbox 等价语义，但不提供跨进程生产耐久性、生产加密或进程隔离。
 
+## Portable durable web-agent qualification
+
+`packages/integration-github` 的当前实现只允许 read-oriented GitHub capability：App private key、webhook secret 和短期 installation token 通过 host secret source，webhook 先做 raw-byte HMAC、安装/仓库 scope、事件 allowlist 和 rate/body 限制，再以 SQLite transaction 持久化 receipt、protected payload reference 与 occurrence。只读 mirror 使用 bounded content-addressed cache；离线只记录 coverage gap，预算不足产生 `BUDGET_BLOCKED`，不会 polling、history scan 或静默确定性过滤。
+
+控制中心在启用仓库前显示 primary provider/model/version、仓库范围和披露分类，并单独标出机器秘密排除；当前确认状态仍是浏览器 session 状态，服务端 monitor enable 和历史保留/删除策略尚未接入。真实 GitHub App 安装、权限 readback、外部 webhook、Cloudflare public path 与 paid model 尚未验证。
+
+规模切片可以用确定性临时 SQLite 重跑，精确生成 200,000 条消息、10,000 个 Thread、500,000 个 Run、100 个 active jobs 和 50 个仓库 monitor，并记录 query/search/approval/Memory/Trace/delete 与 snapshot transfer 的 p50/p95/p99：
+
+```bash
+npm run qualify:scale
+```
+
+这项命令会把生成数据和 snapshot 限制在临时目录并在结束时清理；当前结果见 [S1-T28 scale evidence](test/integration/qualification/evidence/s1-task28-scale.json)。它只代表 Mac 本地规模和 SQLite snapshot，不代表 Mac/Hermes 双向 authority transfer、完整加密迁移、7 天 soak 或 production readiness。
+
 ## Validation
 
 ```bash
@@ -158,6 +182,7 @@ npm run test:contracts
 npm run test:integration
 npm run test:e2e
 npm run check:pi-compat
+npm run qualify:scale
 ```
 
 测试按文件名和目录分组：
@@ -168,7 +193,7 @@ npm run check:pi-compat
 - e2e：`test/e2e/**/*.test.ts`
 - Pi compatibility：`packages/runtime-pi/**/*.compat.test.ts`
 
-当前 fresh completion 基线为 101 个 unit、69 个 contract、71 个 integration、3 个 E2E 和 6 个 Pi compatibility 测试。E2E 覆盖完整牛肉餐厅参考旅程；integration 包含 8 类恢复矩阵和独立 external-action reconciliation。全部自动化测试使用确定性替身，不访问网络、付费模型、外部账户或生产凭据。
+普通 Vitest project 会跳过需要显式开关的规模资格测试；最终 fresh 测试数量、构建产物 checksum、SQLite 版本和外部 readback 以本轮命令及对应 qualification evidence 为准。E2E 覆盖完整牛肉餐厅参考旅程；integration 包含恢复矩阵、GitHub durable state、模型重复结果和安装后服务路径。除明确的 Hermes 主机只读盘点外，自动化测试不访问网络、付费模型、外部账户或生产凭据。
 
 ## Project documents
 

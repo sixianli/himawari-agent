@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-27T12:18:00+09:00",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T20",
+  "status": "partial",
+  "candidateRevision": "b46620a",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 2,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": []
+  },
+  "deterministicQualification": {
+    "provider": "ScriptedModelPort and TrustedModelProviderAdapter fixtures only",
+    "liveCall": false,
+    "reason": "Owner has not supplied an OpenAI API key or approved a paid provider call",
+    "hiddenRoutes": false,
+    "dynamicMarketplaceRoute": false,
+    "implicitEmbedding": false
+  },
+  "verified": [
+    "Strict configuration requires exact primary/fallback/embedding descriptors, disclosure and secret references.",
+    "Router selects the product-selected primary first and only retries a retryable provider failure with a compatible fixed fallback.",
+    "Authorization, invalid input and disclosure expansion never bypass the fallback policy.",
+    "Trusted provider receives raw credentials only inside the adapter; traces contain identity, purpose, refs, usage, cost and latency but no secret value.",
+    "Pi/product boundary remains product-owned; no Pi model selection, Session persistence, Skills discovery or built-in tools were added.",
+    "Repeated streamed output sequences and repeated terminal provider events produce one output reference and one terminal Trace result."
+  ],
+  "commands": [
+    {
+      "command": "npm run typecheck",
+      "exitStatus": 0,
+      "result": "Node and Control Center strict TypeScript checks passed"
+    },
+    {
+      "command": "npm run lint",
+      "exitStatus": 0,
+      "result": "Biome lint passed with no warnings"
+    },
+    {
+      "command": "npm run test:integration -- --run test/integration/model-router.test.ts",
+      "exitStatus": 0,
+      "result": "7 routing, disclosure, secret-redaction and duplicate-terminal tests passed"
+    }
+  ],
+  "remaining": [
+    "Before any live call, Owner must approve exact provider/model/version or snapshot, capability, disclosure, secret ref, estimated cost and capped budget.",
+    "After approval, run a bounded live smoke/eval and read back provider identity, token/cost accounting, cancellation, fallback and redaction evidence."
+  ],
+  "externalEffects": [
+    "No paid model, OpenAI API, GitHub, Cloudflare or production service was called or changed."
+  ],
+  "implementationCommit": "b46620a"
+}

@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-27T02:26:00Z",
+  "recordedAt": "2026-08-27T12:18:00+09:00",
   "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
   "taskId": "S1-T27",
   "status": "partial",
-  "candidateRevision": "5e099c0710f0900327a680612e6cb0b6cd258732",
+  "candidateRevision": "b46620a",
   "worktree": {
     "branch": "main",
     "upstream": "origin/main",
-    "ahead": 14,
+    "ahead": 2,
     "behind": 0,
     "status": "dirty",
-    "intentionallyExcluded": ["AGENTS.md"]
+    "intentionallyExcluded": []
   },
   "browserMatrix": [
     {
@@ -85,10 +85,10 @@
   },
   "commands": [
     {
-      "command": "node scripts/qualify-control-center-browser.mjs chrome|edge|webkit|ios-webkit|android-chrome",
+      "command": "node scripts/qualify-control-center-browser.mjs chromium|chrome|edge|webkit|ios-webkit|android-chrome",
       "exitStatus": 0,
       "execution": "outside sandbox for loopback server and real browser processes",
-      "result": "five local browser/runtime profiles passed the complete repeatable journey"
+      "result": "six local browser/runtime profiles passed the complete repeatable journey, including primary-model/repository disclosure preview and explicit confirmation"
     },
     {
       "command": "node scripts/qualify-control-center-browser.mjs firefox",

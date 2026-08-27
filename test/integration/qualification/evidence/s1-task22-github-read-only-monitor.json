@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-27T12:18:00+09:00",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T22",
+  "status": "partial",
+  "candidateRevision": "b46620a",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 2,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": []
+  },
+  "verified": [
+    "Control Center displays the configured primary provider/model/version, repository allowlist and data classifications, and requires an explicit session confirmation that excludes machine secrets, App keys, installation tokens and Git credentials.",
+    "Read-only capability exposes bounded repository read operations and explicitly denies push, comment, merge, workflow dispatch, deployment creation and Git credential access.",
+    "Mirror storage is bounded, content-addressed, owner-only and symlink-safe; repository revocation removes the monitor cache.",
+    "Every admitted event is passed to model relevance and the shared Attention decision; no deterministic semantic pre-filter bypasses model judgment.",
+    "Offline mode records an open/closed coverage gap and has no polling, reconciliation or history scan path.",
+    "Budget exhaustion records BUDGET_BLOCKED; normal non-silent decisions persist a Web inbox delivery with event/run/result references."
+  ],
+  "commands": [
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chromium",
+      "exitStatus": 0,
+      "execution": "outside sandbox for loopback server and real Chromium process",
+      "result": "Disclosure preview/confirmation plus existing Thread, approval, task, inbox, Memory, Trace, identity, health and SSE journey passed; axe 0; minimum touch target 44.78125px"
+    },
+    {
+      "command": "npm run test:workspace-scaffolds -- --run",
+      "exitStatus": 0,
+      "result": "Read-only capability, mirror, coverage, relevance/Attention and disclosure tests passed"
+    }
+  ],
+  "remaining": [
+    "The current browser confirmation is a UI session record; a server-side GitHub monitor enable command and Owner-selected history retention/deletion policy still require the corresponding gateway contract and account authorization.",
+    "Real GitHub online event relevance, inbox delivery and two-second acceptance/rejection must be measured only with an authorized external App and model/provider."
+  ],
+  "externalEffects": [
+    "Only temporary local mirror directories and loopback/browser fixture processes were used; no GitHub, model, Cloudflare or production state changed."
+  ],
+  "implementationCommit": "ae684f0"
+}

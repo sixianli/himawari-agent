@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-27T02:14:46Z",
+  "recordedAt": "2026-08-27T12:18:00+09:00",
   "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
   "taskId": "S1-T26",
-  "status": "partial",
-  "candidateRevision": "4a3a093f1c02ef94a6f585856d9cfc014156d0a0",
+  "status": "complete",
+  "candidateRevision": "b46620a",
   "worktree": {
     "branch": "main",
     "upstream": "origin/main",
-    "ahead": 13,
+    "ahead": 2,
     "behind": 0,
     "status": "dirty",
-    "intentionallyExcluded": ["AGENTS.md"]
+    "intentionallyExcluded": []
   },
   "realProcessMatrix": {
     "phases": [
@@ -52,6 +52,11 @@
       "exitStatus": 0,
       "execution": "outside sandbox for real Unix Domain Socket coverage",
       "result": "7 real Agent/Worker/test-client process, stale-fence, crash, reconnect, no-fallback and installed-service restart tests passed"
+    },
+    {
+      "command": "npm run test:integration -- --run test/integration/github-durable-state.test.ts test/integration/model-router.test.ts",
+      "exitStatus": 0,
+      "result": "SQLite delivery-id and model-result duplicate tests passed; repeated webhook delivery and repeated terminal model result produce one business occurrence/result"
     }
   ],
   "verified": [
@@ -61,16 +66,13 @@
     "stale Gateway/event/Worker inputs, old authority fences and inactive or retired deployments fail closed in existing contract and integration coverage",
     "unknown external results remain reconcile-required; cancellation or timeout does not erase a real external effect",
     "checkpoint, Memory projection/delete, scheduler occurrence and inbox delivery identities survive object reconstruction and repository/process restart",
-    "all newly added fault injection runs only in temporary non-production state roots"
+    "all newly added fault injection runs only in temporary non-production state roots",
+    "repeated GitHub delivery IDs replay one normalized receipt/occurrence and repeated model output/terminal events produce one result"
   ],
-  "remaining": [
-    "Task 20 must supply the model-result idempotency test for repeated provider results.",
-    "Task 21 must supply the webhook delivery-id idempotency test for repeated GitHub deliveries.",
-    "Task 26 remains open until both dependent proofs are fresh and included in this evidence."
-  ],
+  "remaining": [],
   "externalEffects": [
     "No paid model, GitHub, Cloudflare, production service or Hermes state was accessed or changed.",
     "All process kills targeted child processes created by the test itself."
   ],
-  "implementationCommit": null
+  "implementationCommit": "b46620a"
 }

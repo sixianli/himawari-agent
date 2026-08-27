@@ -388,31 +388,37 @@ Task 15 把 `apps/control-center` 从构建占位改为 browser-only React/Vite 
 ### Task 20：冻结模型配置并接通生产 Model/Pi 路径
 
 - [ ] 在第一次 live call 前向 Owner 展示 primary、fixed fallback 和 embedding 的精确 provider/model/version 或 snapshot、能力、披露、费用、secret ref、预计成本和 capped test budget。
-- [ ] 未获批准时只使用 deterministic provider 与 fault injection；不得添加隐藏第三生成模型、隐式 embedding、动态 marketplace route 或本地生成模型。
-- [ ] 为获批 provider 实现受信任 transport adapter；每次调用记录精确 identity、purpose、classification/disclosure、tokens、cost、latency 和稳定终态，正文只通过 protected Payload。
-- [ ] Router 始终先选 primary；只有配置为 retryable 的 transport/provider failure 可以考虑 fixed fallback，authorization、policy、invalid input 和 disclosure incompatibility 不可绕过。
-- [ ] 非 GitHub fallback 必须满足预批准、能力、预算和不扩大披露；GitHub content 每次 fallback 单独生成 ASK。
-- [ ] Pi adapter 只接收 product-selected binding、context refs 和 authorized tools；继续关闭 Pi 自有 model selection、Session persistence、Skills discovery 和 built-in tools。
+- [x] 未获批准时只使用 deterministic provider 与 fault injection；不得添加隐藏第三生成模型、隐式 embedding、动态 marketplace route 或本地生成模型。
+- [x] 为获批 provider 实现受信任 transport adapter；每次调用记录精确 identity、purpose、classification/disclosure、tokens、cost、latency 和稳定终态，正文只通过 protected Payload。
+- [x] Router 始终先选 primary；只有配置为 retryable 的 transport/provider failure 可以考虑 fixed fallback，authorization、policy、invalid input 和 disclosure incompatibility 不可绕过。
+- [x] 非 GitHub fallback 必须满足预批准、能力、预算和不扩大披露；GitHub content 每次 fallback 单独生成 ASK。
+- [x] Pi adapter 只接收 product-selected binding、context refs 和 authorized tools；继续关闭 Pi 自有 model selection、Session persistence、Skills discovery 和 built-in tools。
 - [ ] 获批后运行有界 live smoke/eval，并与 deterministic recovery、cancellation、tool-call、fallback、cost accounting 和 secret-redaction tests 一起记录证据。
+
+当前实现冻结 strict primary/fallback/embedding descriptor 与 disclosure/secret ref 边界；Router 先走 primary，retryable provider failure 才能走 fixed fallback，并对重复 output sequence 与 terminal result 去重。trusted adapter 只在受信边界解析 credential，Trace 只保存 identity、purpose、分类、usage、cost、latency 与 protected Payload reference。由于 Owner 尚未提供 OpenAI API key 或 live provider 授权，本 Task 的 live call、费用和真实模型质量保持未验证；确定性证据位于 `test/integration/qualification/evidence/s1-task20-model-routing.json`。
 
 ### Task 21：实现 GitHub App 凭据、webhook 与持久接纳
 
 - [ ] 从实际只读调用反推 dedicated GitHub App permission manifest；全部 repository/account write permissions 为 none，并限制到 Owner 选择的 repositories。
-- [ ] App private key 与 webhook secret 只通过 host secret source 解析；installation token 限定仓库/权限、只驻留内存并按过期时间更新。
-- [ ] webhook route 限制 body、content type、rate，按 raw bytes constant-time 验证 `X-Hub-Signature-256`，再验证 event/action、installation 和 repository allowlist。
-- [ ] 在成功响应前把 delivery ID、protected payload reference、scope 和 authority fence 持久化；重复投递只形成一个 external-event Trigger/occurrence。
-- [ ] 默认事件覆盖 default branch push、Pull Request create/update/merge、Release 和 GitHub Actions failure；未知或禁用事件不得触发任意工作。
-- [ ] 测试错误签名、replay、oversized body、错误 installation/repository、revoked credential、rate limit、token refresh 和 2 秒内持久接纳/明确拒绝。
+- [x] App private key 与 webhook secret 只通过 host secret source 解析；installation token 限定仓库/权限、只驻留内存并按过期时间更新。
+- [x] webhook route 限制 body、content type、rate，按 raw bytes constant-time 验证 `X-Hub-Signature-256`，再验证 event/action、installation 和 repository allowlist。
+- [x] 在成功响应前把 delivery ID、protected payload reference、scope 和 authority fence 持久化；重复投递只形成一个 external-event Trigger/occurrence。
+- [x] 默认事件覆盖 default branch push、Pull Request create/update/merge、Release 和 GitHub Actions failure；未知或禁用事件不得触发任意工作。
+- [x] 测试错误签名、replay、oversized body、错误 installation/repository、revoked credential、rate limit、token refresh 和 2 秒内持久接纳/明确拒绝。
+
+GitHub App integration 现在只暴露 read-oriented permission manifest、host secret source、短期 installation token cache、raw-byte HMAC webhook admission 和 SQLite 原子 receipt/occurrence 去重；delivery ID、protected payload reference、scope 和 authority 由 durable state 关联保存。确定性错误/replay/oversized/rate/token refresh/2 秒本地接纳测试已通过，但真实 GitHub App 权限 readback、账号安装和外部 webhook 仍需独立授权；证据位于 `test/integration/qualification/evidence/s1-task21-github-app-webhook.json`。
 
 ### Task 22：实现只读仓库镜像、在线监控与 coverage gap
 
 - [ ] 连接仓库前在 Web UI 展示当前 primary provider/model 和排除机器秘密后整仓可披露范围；一次明确确认同时启用仓库与这一披露。
-- [ ] 在受保护、有界 cache 中维护所选仓库只读 mirror；所有 Git 操作和 GitHub API surface 都通过无写权限 capability 与 Worker 执行。
-- [ ] 所有通过来源/范围验证的在线事件进入 model relevance 和 Attention；不得增加会绕过模型判断的确定性语义预过滤。
-- [ ] 服务离线时不 polling、不 reconciliation、不 history scan；恢复只记录 coverage gap 起止和可能遗漏说明。
-- [ ] 在线已接纳事件在预算不足时进入有界 `BUDGET_BLOCKED`；普通完成结果进入持久 Web inbox，并保留仓库、事件、模型、授权和 Trace 来源。
+- [x] 在受保护、有界 cache 中维护所选仓库只读 mirror；所有 Git 操作和 GitHub API surface 都通过无写权限 capability 与 Worker 执行。
+- [x] 所有通过来源/范围验证的在线事件进入 model relevance 和 Attention；不得增加会绕过模型判断的确定性语义预过滤。
+- [x] 服务离线时不 polling、不 reconciliation、不 history scan；恢复只记录 coverage gap 起止和可能遗漏说明。
+- [x] 在线已接纳事件在预算不足时进入有界 `BUDGET_BLOCKED`；普通完成结果进入持久 Web inbox，并保留仓库、事件、模型、授权和 Trace 来源。
 - [ ] 撤销 repository 时立即停止读取并删除 mirror/cache；历史摘要/Trace/任务按 Owner 选择保留或删除，GitHub secret 永不进入迁移包。
-- [ ] 断言初始能力无法 push、comment、merge、dispatch workflow、创建 deployment 或访问 Git credential。
+- [x] 断言初始能力无法 push、comment、merge、dispatch workflow、创建 deployment 或访问 Git credential。
+
+只读 mirror 使用 bounded、content-addressed、owner-only、symlink-safe cache；事件完整进入 model relevance 与 Attention，离线只形成 coverage gap，预算不足形成 `BUDGET_BLOCKED`，正常结果沿用 Web inbox。控制中心已展示 primary model、仓库范围、分类和机器秘密排除确认，但服务端 monitor enable 命令与 Owner 选择的历史保留/删除策略尚未接入；证据位于 `test/integration/qualification/evidence/s1-task22-github-read-only-monitor.json`。
 
 ### Task 23：实现同机 snapshot、验证与恢复 CLI
 
@@ -459,12 +465,12 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 
 - [x] 以真实 child process 启动 Agent Service、Worker 和测试客户端，在 context formation、model stream、approval wait、Worker result、outbox、Thread checkpoint、Memory projection 与 Delivery 阶段 kill/restart。
 - [x] 为 SQLite transaction/outbox 每个 crash point、WAL/lock contention、long reader、disk full、migration digest mismatch 和 corruption 记录可重复证据。
-- [ ] 验证 stale Gateway/Worker/event、旧 authority fence、inactive/retired host、重复 webhook、重复 model result 和 duplicate Delivery 都不能产生第二次业务效果。
+- [x] 验证 stale Gateway/Worker/event、旧 authority fence、inactive/retired host、重复 webhook、重复 model result 和 duplicate Delivery 都不能产生第二次业务效果。
 - [x] 验证未知外部副作用总是先 reconcile；取消和超时保留真实副作用，任何补偿都是新的授权行动。
 - [x] 验证 Thread checkpoint、Memory projection/delete、scheduler 和 inbox 在重建 service object 与重启进程后沿用原 identity。
 - [x] 所有 fault injection 使用非生产 fixture；不得把一次成功重启误报为覆盖完整恢复矩阵。
 
-非生产 `durable-phase-child` fixture 在八个明确业务阶段分别持久化原 identity，向父测试报告已到达边界后由父进程发送 `SIGKILL`，再由全新进程取得同一 state root 独占锁并运行正式 startup recovery。它与既有真实 Agent Service、Execution Worker、测试客户端、四个 SQLite transaction crash point、WAL/锁/长 reader/`SQLITE_FULL`/migration/corruption、故障恢复矩阵和 service-object 重建测试共同构成证据；一次普通重启不计为矩阵覆盖。当前 stale Gateway/Worker/event、旧 fence、inactive/retired host 与 duplicate Delivery 已有确定性证据；重复 webhook 和重复 model result 仍分别依赖 Task 21 与 Task 20，完成前本 Task 保持未收口。阶段性证据位于 `test/integration/qualification/evidence/s1-task26-process-recovery.json`。
+非生产 `durable-phase-child` fixture 在八个明确业务阶段分别持久化原 identity，向父测试报告已到达边界后由父进程发送 `SIGKILL`，再由全新进程取得同一 state root 独占锁并运行正式 startup recovery。它与既有真实 Agent Service、Execution Worker、测试客户端、四个 SQLite transaction crash point、WAL/锁/长 reader/`SQLITE_FULL`/migration/corruption、故障恢复矩阵和 service-object 重建测试共同构成证据；一次普通重启不计为矩阵覆盖。stale Gateway/Worker/event、旧 fence、inactive/retired host、duplicate Delivery、重复 webhook delivery ID 和重复 model output/terminal result 现在均有确定性证据，重复业务效果被阻断。本 Task 的阶段证据已更新为 complete，位于 `test/integration/qualification/evidence/s1-task26-process-recovery.json`。
 
 ### Task 27：完成浏览器、身份与真实公共路径验证
 
@@ -489,14 +495,18 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 - [ ] 验证 Web/GitHub 在 2 秒内持久接纳或拒绝、正常重启后 2 分钟内可查询、任务 5 分钟内恢复或显示阻塞；普通在线 GitHub 分析目标 10 分钟只在模型和外部服务可用的授权环境中测量。
 - [ ] 7 天连续运行属于完整 v0.2 上线门槛；如果其他 Specs 尚未完成，本 Plan 只记录基础切片 soak，不宣称 v0.2 production-ready。
 
+本轮已在 Mac 临时 qualified SQLite 上完成基础规模切片：20 万 messages、1 万 Threads、50 万 Runs、100 active jobs 和 50 个 GitHub repository monitors，记录 query/search/approval/Memory/Trace/delete 的 p50/p95/p99 以及三次 SQLite snapshot transfer；证据位于 `test/integration/qualification/evidence/s1-task28-scale.json`。可重定位 Node artifact 现包含 GitHub、Mem0 与 Pi runtime 包，并通过临时前缀安装及真实 Agent/Worker child-process 启停测试。Hermes 的 Tailscale break-glass 只读连接已确认主机、Node 26、systemd 和磁盘状态，但远端尚无 Himawari checkout/service，且 `/data/hermes` 是现有 Hermes Agent state root；Mac/Hermes 同构建安装、双向 authority transfer、完整加密 transfer、公网 2 秒门槛和 7 天 soak 仍未验证，不能据此关闭本 Task。
+
 ### Task 29：创建已验证 Runbooks 并对账当前事实文档
 
 - [ ] 仅在对应命令与真实演练存在后，从 document-governance Runbook 模板创建 install/start/stop、backup/restore、transfer、secret rotation、GitHub、identity gateway 和 incident diagnosis Runbooks。
 - [ ] 每份 Runbook 写入静态 contract sources、fresh target preflight、effective risk、授权、证据、停止规则、mutation boundary 和 rollback boundary；semantic reconciliation 后显式 seal 并再次 check。
-- [ ] 更新 `docs/architecture-v0.1.md` 只描述已验证的 packages、schema、processes、adapters、data flow、deployment 与 Known Limitations；不把目标或 staging 状态写成当前生产事实。
-- [ ] 更新 README 的 verified install、development、test、doctor 和安全边界；不写入 secret、临时 URL 或本机私有配置。
-- [ ] 若实施形成新的持久技术决策，先创建并接受单一决策 ADR；不得把 ADR 决策藏在 Plan evidence 或 Architecture 中。
+- [x] 更新 `docs/architecture-v0.1.md` 只描述已验证的 packages、schema、processes、adapters、data flow、deployment 与 Known Limitations；不把目标或 staging 状态写成当前生产事实。
+- [x] 更新 README 的 verified install、development、test、doctor 和安全边界；不写入 secret、临时 URL 或本机私有配置。
+- [x] 若实施形成新的持久技术决策，先创建并接受单一决策 ADR；不得把 ADR 决策藏在 Plan evidence 或 Architecture 中。
 - [ ] 对账 v0.2 Spec 套件中全部 active sibling Specs、跨切片契约和 Architecture 当前事实；如果 PRD 新增范围尚无 Spec，则阻止收口并按文档治理创建 Spec，不能用本 Plan、Backlog 或 `docs/TODO.md` 代替当前范围。
+
+已根据当前实际命令和演练创建并 seal 本地 install/start/stop Runbook，并保留已有 backup/restore 与 authority-transfer Runbook；尚无真实 secret rotation、GitHub、identity gateway 或 incident diagnosis 演练，因此没有创建这些 Runbook。Architecture 与 README 已对账新增 GitHub/model/scale 能力和已知限制；跨 Spec 逐项对账及其他 v0.2 范围仍未完成，故本 Task 不关闭。
 
 ### Task 30：完成验收映射、发布证据与文档收口
 
@@ -561,3 +571,5 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 - [ ] `npm run check`、全部相关测试、Pi compatibility、严格文档校验和 `git diff --check` 全部通过。
 - [ ] 本 Plan 与来源 Spec 仅在工作真正关闭后移动到 `docs/archive/plans/` 与 `docs/archive/specs/`。
 - [ ] 即使本 Plan 关闭，也没有在其余 v0.2 Specs 和完整 PRD 验收完成前宣称 v0.2 production-ready。
+
+本轮 fresh evidence 已覆盖模型/GitHub 的确定性边界、重复结果恢复、浏览器 disclosure preview、本机规模切片和安装后服务；仍缺少 paid/live model、真实 GitHub/Cloudflare、Safari/Firefox/真实移动设备、Mac↔Hermes transfer、immutable clean-install 的双平台 readback、完整测试矩阵和 7 天 soak。因此 Task 30 与本 Plan 收口清单保持未完成，不把本地或历史结果推断为生产验收。
