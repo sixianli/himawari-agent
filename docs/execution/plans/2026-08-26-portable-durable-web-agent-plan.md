@@ -416,12 +416,17 @@ Task 15 把 `apps/control-center` 从构建占位改为 browser-only React/Vite 
 
 ### Task 23：实现同机 snapshot、验证与恢复 CLI
 
-- [ ] 实现 `himawari backup create|verify|restore`，使用 SQLite 一致性 snapshot、受保护 Payload 和 manifest allowlist，不复制 runtime locks/sockets/cache/secrets。
-- [ ] 创建后自动解密到权限受限临时目录，运行 authentication、digest、schema、quick/full integrity、row counts、Payload authentication 和 outbox continuity 验证。
-- [ ] restore 只能在 stopped service、独占管理锁和明确目标下执行，先恢复到新目录并验证，再原子切换；失败不得破坏当前 state root。
-- [ ] 标记恢复点与 retention，确保永久删除数据在 30 天内退出所有可恢复本地副本；不得把同机 snapshot 描述为 off-host disaster recovery。
-- [ ] 对每个 create/verify/restore 阶段注入中断、disk full、tamper、wrong key、schema mismatch 和 SQLite corruption。
-- [ ] 完成真实恢复演练后才创建并 seal backup/restore Runbook。
+- [x] 实现 `himawari backup create|verify|restore`，使用 SQLite 一致性 snapshot、受保护 Payload 和 manifest allowlist，不复制 runtime locks/sockets/cache/secrets。
+- [x] 创建后自动解密到权限受限临时目录，运行 authentication、digest、schema、quick/full integrity、row counts、Payload authentication 和 outbox continuity 验证。
+- [x] restore 只能在 stopped service、独占管理锁和明确目标下执行，先恢复到新目录并验证，再原子切换；失败不得破坏当前 state root。
+- [x] 标记恢复点与 retention，确保永久删除数据在 30 天内退出所有可恢复本地副本；不得把同机 snapshot 描述为 off-host disaster recovery。
+- [x] 对每个 create/verify/restore 阶段注入中断、disk full、tamper、wrong key、schema mismatch 和 SQLite corruption。
+- [x] 完成真实恢复演练后才创建并 seal backup/restore Runbook。
+
+恢复点采用每文件 AES-256-GCM envelope encryption 与 HMAC-SHA256 canonical manifest；allowlist 只包含 SQLite backup API 生成的 `data/product.sqlite` 和该副本实际引用的 Payload ciphertext。create 自动在受限 staging 中独立验证，restore 只在显式目标与确认词匹配、state-root 管理锁可独占取得时原子切换 `data/`，切换阶段失败会移回 previous data。30 天 `retainUntil` 与 `purgeExpired()` 固定本机副本退出边界；该机制不改变 authority，也不提供异地灾难恢复。
+
+9 项恢复点集成测试覆盖 create/verify/restore 全阶段中断、`ENOSPC`、manifest/object 篡改、错误密钥、schema mismatch、SQLite/Payload 损坏、运行中锁和切换回滚；安装后的 `himawari` 二进制另在临时 state root 完成损坏前创建、独立验证与恢复演练。已创建并 seal `docs/runbooks/backup-restore-runbook.md`；实现与证据位于 `test/integration/qualification/evidence/s1-task23-backup-restore.json`。
+
 
 ### Task 24：实现停机加密 authority transfer
 

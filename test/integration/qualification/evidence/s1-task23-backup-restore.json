@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-27T00:36:00Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T23",
+  "candidateRevision": "0d13cec9cafc1cd2b8a84e1ffa1572f152fd8488",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 10,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["AGENTS.md"]
+  },
+  "format": {
+    "implementationSha256": "37278d9bd8813d070ee4841536f0b4e95fbbd272f59970813c06867f52c54f2a",
+    "schema": "himawari.recovery-point.v1",
+    "encryption": "aes-256-gcm-envelope-files-v1",
+    "manifestAuthentication": "hmac-sha256-v1",
+    "retentionDays": 30,
+    "allowlist": ["data/product.sqlite", "referenced data/payload-ciphertext files"],
+    "excluded": ["runtime", "cache", "locks", "sockets", "logs", "secrets"]
+  },
+  "verification": {
+    "checks": [
+      "manifest authentication",
+      "ciphertext and plaintext digest",
+      "schema sequence",
+      "SQLite quick/full integrity and foreign keys",
+      "all-table row counts",
+      "Payload authentication",
+      "Outbox continuity"
+    ],
+    "restore": "restricted staging directory followed by management-lock-protected atomic data partition switch",
+    "rollback": "pre-switch failures preserve current data; switch-phase failures move previous data back"
+  },
+  "commands": [
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/sqlite-recovery-point.test.ts",
+      "exitStatus": 0,
+      "result": "9 项恢复点集成测试通过"
+    },
+    {
+      "command": "npm run test:cli",
+      "exitStatus": 0,
+      "result": "2 项 admin CLI 测试通过，包括 create/verify/confirm/restore"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/installable-node-services.test.ts",
+      "exitStatus": 0,
+      "execution": "outside sandbox for real Unix socket service process",
+      "result": "3 项安装后 runtime 测试通过，构建后的 himawari 入口完成真实损坏前恢复点与恢复演练"
+    },
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format、lint、strict typecheck、14 workspace dependency boundary 与 v0.2 coverage 通过"
+    },
+    {
+      "command": "npm test",
+      "exitStatus": 0,
+      "result": "189 unit、126 contract、305 integration 与 3 E2E 测试通过"
+    },
+    {
+      "command": "npm run build",
+      "exitStatus": 0,
+      "result": "可重定位 Node runtime、Control Center bundle 与 artifact manifest 构建成功"
+    }
+  ],
+  "faultMatrix": [
+    "create/verify/restore 每个关键阶段中断",
+    "ENOSPC",
+    "manifest tamper",
+    "encrypted object tamper",
+    "wrong key",
+    "schema mismatch",
+    "SQLite corruption",
+    "Payload authentication failure",
+    "live state-root lock",
+    "atomic switch rollback"
+  ],
+  "limits": [
+    "恢复点只位于同一主机存储边界，不是 off-host disaster recovery。",
+    "恢复只替换产品 data partition，不回滚应用版本、authority、secret、public ingress 或外部副作用。",
+    "Mac/Hermes 正式安装与平台矩阵属于 Task 28；当前 CLI 已验证 production-suitable restricted secret file source。"
+  ],
+  "externalEffects": [
+    "所有恢复与损坏演练只使用临时 fixture state root 和临时安装前缀。",
+    "未修改 Mac/Hermes 正式服务、生产 state root、外部账户、远程 Git 或付费模型。"
+  ],
+  "implementationCommit": null
+}

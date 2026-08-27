@@ -19,6 +19,7 @@ let stateRoot = "";
 let configurationPath = "";
 let publicConfigurationPath = "";
 let tokenPath = "";
+let secretDirectory = "";
 const children = new Set<ChildProcessWithoutNullStreams>();
 
 function configuration(publicMode = false) {
@@ -78,6 +79,18 @@ function configuration(publicMode = false) {
         purpose: "worker-auth",
         scope: "local-services",
       },
+      {
+        ref: "payload-kek",
+        version: "v1",
+        purpose: "payload-encryption",
+        scope: "agent",
+      },
+      {
+        ref: "backup-kek",
+        version: "v1",
+        purpose: "backup-encryption",
+        scope: "agent",
+      },
     ],
     budgets: {
       globalCostMicros: 0,
@@ -121,6 +134,24 @@ beforeAll(async () => {
   });
   const database = openQualifiedDatabase(path.join(layout.data, "product.sqlite"));
   applyMigrations(database, await loadBundledMigrations());
+  database
+    .prepare("INSERT INTO owners (id, revision) VALUES ('owner-service-integration', 0)")
+    .run();
+  database
+    .prepare(
+      "INSERT INTO agents (id, owner_id, revision) VALUES ('agent-service-integration', 'owner-service-integration', 0)",
+    )
+    .run();
+  database
+    .prepare(
+      `INSERT INTO deployments (
+        id, owner_id, agent_id, revision, status, authority_epoch, fencing_token
+      ) VALUES (
+        'deployment-service-integration', 'owner-service-integration',
+        'agent-service-integration', 0, 'active', 1, 1
+      )`,
+    )
+    .run();
   database.close();
   tokenPath = path.join(layout.runtime, "worker-token.json");
   await writeFile(
@@ -133,6 +164,14 @@ beforeAll(async () => {
   );
   await writeFile(configurationPath, JSON.stringify(configuration()), { mode: 0o600 });
   await writeFile(publicConfigurationPath, JSON.stringify(configuration(true)), { mode: 0o600 });
+  secretDirectory = path.join(testRoot, "secrets");
+  await mkdir(secretDirectory, { mode: 0o700 });
+  await writeFile(path.join(secretDirectory, "payload-kek.v1"), "33".repeat(32), {
+    mode: 0o600,
+  });
+  await writeFile(path.join(secretDirectory, "backup-kek.v1"), "44".repeat(32), {
+    mode: 0o600,
+  });
   await chmod(configurationPath, 0o600);
   await chmod(publicConfigurationPath, 0o600);
 }, 30_000);
@@ -300,10 +339,111 @@ describe("installable Node services and admin CLI", () => {
     expect(invalidConfiguration.status).toBe(1);
     expect(invalidConfiguration.stderr).toContain("CONFIGURATION_UNKNOWN_FIELD");
 
+    const safetyRecoveryPoint = runInstalled("himawari", [
+      "backup",
+      "create",
+      "--config",
+      configurationPath,
+      "--secret-dir",
+      secretDirectory,
+      "--backup-id",
+      "backup-before-corruption-check",
+    ]);
+    expect(safetyRecoveryPoint.status).toBe(0);
     await writeFile(path.join(stateRoot, "data", "product.sqlite"), "not-a-sqlite-database");
     const unsafeSqlite = runInstalled("himawari-agent-service", serviceArguments());
     expect(unsafeSqlite.status).toBe(1);
     expect(unsafeSqlite.stderr).toMatch(/SQLITE_(NOTADB|MIGRATION_INTEGRITY_CHECK_FAILED)/);
+    const recovered = runInstalled("himawari", [
+      "backup",
+      "restore",
+      "--config",
+      configurationPath,
+      "--secret-dir",
+      secretDirectory,
+      "--backup",
+      "backup-before-corruption-check",
+      "--target",
+      stateRoot,
+      "--confirm",
+      "RESTORE_backup-before-corruption-check",
+    ]);
+    expect(recovered.status).toBe(0);
     expect(`${missingSecret.stderr}${publicMode.stderr}`).not.toContain("0123456789abcdef");
+  });
+
+  it("executes a real recovery drill through the installed himawari CLI", () => {
+    const created = runInstalled("himawari", [
+      "backup",
+      "create",
+      "--config",
+      configurationPath,
+      "--secret-dir",
+      secretDirectory,
+      "--backup-id",
+      "backup-installed-drill",
+    ]);
+    expect(created.status).toBe(0);
+    expect(JSON.parse(created.stdout)).toMatchObject({
+      command: "backup.create",
+      backupId: "backup-installed-drill",
+      fullIntegrityCheck: "ok",
+    });
+    const verified = runInstalled("himawari", [
+      "backup",
+      "verify",
+      "--config",
+      configurationPath,
+      "--secret-dir",
+      secretDirectory,
+      "--backup",
+      "backup-installed-drill",
+    ]);
+    expect(verified.status).toBe(0);
+    expect(JSON.parse(verified.stdout)).toMatchObject({
+      command: "backup.verify",
+      backupId: "backup-installed-drill",
+      quickIntegrityCheck: "ok",
+    });
+
+    const databasePath = path.join(stateRoot, "data", "product.sqlite");
+    const changed = openQualifiedDatabase(databasePath);
+    changed
+      .prepare(
+        `INSERT INTO gateway_read_model_metadata (key, value, updated_at)
+        VALUES ('installed-restore-proof', 'after-backup', '2026-08-27T00:00:00.000Z')`,
+      )
+      .run();
+    changed.close();
+
+    const restored = runInstalled("himawari", [
+      "backup",
+      "restore",
+      "--config",
+      configurationPath,
+      "--secret-dir",
+      secretDirectory,
+      "--backup",
+      "backup-installed-drill",
+      "--target",
+      stateRoot,
+      "--confirm",
+      "RESTORE_backup-installed-drill",
+    ]);
+    expect(restored.status).toBe(0);
+    expect(restored.stdout).toContain('"command":"backup.restore"');
+    const restoredDatabase = openQualifiedDatabase(databasePath);
+    try {
+      expect(
+        restoredDatabase
+          .prepare(
+            "SELECT value FROM gateway_read_model_metadata WHERE key = 'installed-restore-proof'",
+          )
+          .pluck()
+          .get(),
+      ).toBeUndefined();
+    } finally {
+      restoredDatabase.close();
+    }
   });
 });

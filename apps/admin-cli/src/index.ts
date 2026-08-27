@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
 import {
+  SqliteRecoveryPointAdapter,
   acquireStateRootLock,
   applyMigrations,
   inspectSqliteDatabaseReadOnly,
@@ -8,7 +10,9 @@ import {
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  EnvelopePayloadProtector,
   JsonFileConfigurationPort,
+  RestrictedSecretFileSource,
   readAuthorityFile,
   stableErrorCode,
   writeServiceDiagnostic,
@@ -26,9 +30,18 @@ export const ADMIN_CLI_ERROR_CODES = Object.freeze({
 } as const);
 
 interface ParsedAdminCommand {
-  readonly command: "doctor" | "db.status" | "db.migrate";
+  readonly command:
+    | "doctor"
+    | "db.status"
+    | "db.migrate"
+    | "backup.create"
+    | "backup.verify"
+    | "backup.restore";
   readonly configurationPath: string;
   readonly confirmation: string | null;
+  readonly secretDirectory: string | null;
+  readonly backupId: string | null;
+  readonly target: string | null;
 }
 
 function parseArguments(arguments_: readonly string[]): ParsedAdminCommand {
@@ -43,6 +56,15 @@ function parseArguments(arguments_: readonly string[]): ParsedAdminCommand {
   } else if (arguments_[0] === "db" && arguments_[1] === "migrate") {
     command = "db.migrate";
     offset = 2;
+  } else if (arguments_[0] === "backup" && arguments_[1] === "create") {
+    command = "backup.create";
+    offset = 2;
+  } else if (arguments_[0] === "backup" && arguments_[1] === "verify") {
+    command = "backup.verify";
+    offset = 2;
+  } else if (arguments_[0] === "backup" && arguments_[1] === "restore") {
+    command = "backup.restore";
+    offset = 2;
   } else {
     throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
   }
@@ -55,19 +77,35 @@ function parseArguments(arguments_: readonly string[]): ParsedAdminCommand {
     }
     values.set(name, value);
   }
-  if (
-    !values.has("--config") ||
-    [...values.keys()].some((key) => !["--config", "--confirm"].includes(key))
-  ) {
+  const common = ["--config"];
+  const allowed =
+    command === "db.migrate"
+      ? [...common, "--confirm"]
+      : command === "backup.create"
+        ? [...common, "--secret-dir", "--backup-id"]
+        : command === "backup.verify"
+          ? [...common, "--secret-dir", "--backup"]
+          : command === "backup.restore"
+            ? [...common, "--secret-dir", "--backup", "--target", "--confirm"]
+            : common;
+  if (!values.has("--config") || [...values.keys()].some((key) => !allowed.includes(key))) {
     throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
   }
-  if (command !== "db.migrate" && values.has("--confirm")) {
+  const requiresBackupId = command === "backup.verify" || command === "backup.restore";
+  if (
+    (command.startsWith("backup.") && !values.has("--secret-dir")) ||
+    (requiresBackupId && !values.has("--backup")) ||
+    (command === "backup.restore" && !values.has("--target"))
+  ) {
     throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
   }
   return Object.freeze({
     command,
     configurationPath: values.get("--config") as string,
     confirmation: values.get("--confirm") ?? null,
+    secretDirectory: values.get("--secret-dir") ?? null,
+    backupId: values.get("--backup") ?? values.get("--backup-id") ?? null,
+    target: values.get("--target") ?? null,
   });
 }
 
@@ -180,6 +218,88 @@ async function migrate(
   }
 }
 
+function requiredSecret(
+  configuration: Awaited<ReturnType<JsonFileConfigurationPort["load"]>>,
+  purpose: "backup-encryption" | "payload-encryption",
+) {
+  const matches = configuration.secretReferences.filter((secret) => secret.purpose === purpose);
+  if (matches.length !== 1) throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  return matches[0] as (typeof matches)[number];
+}
+
+async function recoveryAdapter(configurationPath: string, secretDirectory: string) {
+  const configuration = await new JsonFileConfigurationPort(configurationPath).load();
+  const layout = stateLayout(configuration.stateRoot);
+  const authority = await readAuthorityFile(layout);
+  if (
+    authority.id !== configuration.deploymentId ||
+    authority.ownerId !== configuration.ownerId ||
+    authority.agentId !== configuration.agentId ||
+    authority.status !== "active"
+  ) {
+    throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  }
+  const source = new RestrictedSecretFileSource(secretDirectory);
+  const backupKey = requiredSecret(configuration, "backup-encryption");
+  const payloadKey = requiredSecret(configuration, "payload-encryption");
+  const payloadProtector = new EnvelopePayloadProtector({
+    keys: source,
+    activeKey: {
+      keyRef: payloadKey.ref,
+      kekVersion: payloadKey.version,
+      dekVersion: "dek-v1",
+    },
+  });
+  const expectedSchemaSequence = (await loadBundledMigrations()).at(-1)?.sequence;
+  if (!expectedSchemaSequence) throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  return Object.freeze({
+    adapter: new SqliteRecoveryPointAdapter({
+      stateRoot: configuration.stateRoot,
+      databasePath: path.join(configuration.stateRoot, "data", "product.sqlite"),
+      ownerId: configuration.ownerId,
+      agentId: configuration.agentId,
+      deploymentId: configuration.deploymentId,
+      authorityEpoch: authority.authorityEpoch,
+      keys: source,
+      backupKey: { ref: backupKey.ref, version: backupKey.version },
+      payloadProtector,
+      expectedSchemaSequence,
+    }),
+  });
+}
+
+async function backupCommand(parsed: ParsedAdminCommand, output: NodeJS.WritableStream) {
+  if (!parsed.secretDirectory) throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  const { adapter } = await recoveryAdapter(parsed.configurationPath, parsed.secretDirectory);
+  if (parsed.command === "backup.create") {
+    const backupId = parsed.backupId ?? `backup-${randomUUID()}`;
+    const report = await adapter.createNamed(backupId);
+    return Object.freeze({ outputSchemaVersion: 1, command: "backup.create", ...report });
+  }
+  if (!parsed.backupId) throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  const backupId = parsed.backupId;
+  if (parsed.command === "backup.verify") {
+    const report = await adapter.verifyNamed(backupId);
+    return Object.freeze({ outputSchemaVersion: 1, command: "backup.verify", ...report });
+  }
+  if (!parsed.target) throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  const confirmation = `RESTORE_${backupId}`;
+  writeServiceDiagnostic(output, {
+    component: "admin-cli",
+    event: "mutation.plan",
+    action: "backup.restore",
+    target: parsed.target,
+    backupId,
+    stoppedServiceRequired: true,
+    confirmation,
+  });
+  if (parsed.confirmation !== confirmation) {
+    throw new Error(ADMIN_CLI_ERROR_CODES.CONFIRMATION_REQUIRED);
+  }
+  const report = await adapter.restoreNamed(backupId, parsed.target);
+  return Object.freeze({ outputSchemaVersion: 1, command: "backup.restore", ...report });
+}
+
 export async function runAdminCli(
   arguments_: readonly string[],
   output: NodeJS.WritableStream = process.stdout,
@@ -187,8 +307,9 @@ export async function runAdminCli(
 ): Promise<number> {
   try {
     const parsed = parseArguments(arguments_);
-    const result =
-      parsed.command === "doctor"
+    const result = parsed.command.startsWith("backup.")
+      ? await backupCommand(parsed, output)
+      : parsed.command === "doctor"
         ? await doctor(parsed.configurationPath)
         : parsed.command === "db.status"
           ? await databaseStatus(parsed.configurationPath)
