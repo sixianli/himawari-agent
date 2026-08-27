@@ -1,5 +1,10 @@
 import path from "node:path";
-import type { ProductMemoryRecord } from "@himawari-agent/application";
+import type {
+  ConfiguredEmbeddingModelDescriptor,
+  ConfiguredGenerationModelDescriptor,
+  ConfiguredMemoryDescriptor,
+  ProductMemoryRecord,
+} from "@himawari-agent/application";
 import { PORT_ERROR_CODES } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -8,7 +13,14 @@ import {
   createThreadId,
 } from "@himawari-agent/domain";
 import { describe, expect, it } from "vitest";
-import { Mem0ProjectionAdapter, type Mem0ProjectionConfiguration } from "../src/index.ts";
+import {
+  createOpenRouterMem0ProjectionAdapter,
+  MEM0_OPENROUTER_BASE_URL,
+  Mem0ProjectionAdapter,
+  QWEN3_EMBEDDING_8B_DIMENSIONS,
+  QWEN3_EMBEDDING_8B_MODEL,
+  type Mem0ProjectionConfiguration,
+} from "../src/index.ts";
 
 const OWNER_ID = createOwnerId("owner-mem0-contract");
 const AGENT_ID = createAgentId("agent-mem0-contract");
@@ -218,5 +230,96 @@ describe("Mem0 product projection adapter", () => {
         load: async () => ({ Memory: FakeMem0Memory }),
       }),
     ).rejects.toThrow("vectorStore.dbPath must remain inside stateRoot");
+  });
+
+  it("maps the selected OpenRouter Qwen embedding identity through Mem0's OpenAI provider", async () => {
+    const stateRoot = "/private/tmp/himawari-qwen-embedding-adapter";
+    const primary: ConfiguredGenerationModelDescriptor = {
+      ref: "model-primary",
+      role: "primary",
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4-flash-0731",
+      version: "catalog-2026-08-28",
+      priority: 1,
+      name: "Primary",
+      api: "openai-completions",
+      reasoning: false,
+      input: ["text"],
+      capabilities: ["text"],
+      contextWindow: 1_000,
+      maxTokens: 256,
+      allowedDataClassifications: ["public", "private"],
+      disclosure: "external_remote",
+      secretRef: "openrouter-api-key",
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    };
+    const embedding: ConfiguredEmbeddingModelDescriptor = {
+      ref: "model-embedding",
+      role: "embedding",
+      provider: "openrouter",
+      model: QWEN3_EMBEDDING_8B_MODEL,
+      version: "catalog-2026-08-28",
+      dimensions: QWEN3_EMBEDDING_8B_DIMENSIONS,
+      capabilities: ["embedding"],
+      allowedDataClassifications: ["public", "private"],
+      disclosure: "external_remote",
+      secretRef: "openrouter-api-key",
+      cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 },
+    };
+    const memory: ConfiguredMemoryDescriptor = {
+      adapter: "mem0-oss",
+      version: "3.1.7",
+      storagePath: `${stateRoot}/data/memory`,
+      dimensions: QWEN3_EMBEDDING_8B_DIMENSIONS,
+    };
+    const resolutions: string[] = [];
+    const projection = await createOpenRouterMem0ProjectionAdapter({
+      stateRoot,
+      memory,
+      llm: primary,
+      embedding,
+      llmSecret: {
+        secretRef: "openrouter-api-key",
+        secretVersion: "v1",
+        purpose: "model-provider-auth",
+      },
+      embeddingSecret: {
+        secretRef: "openrouter-api-key",
+        secretVersion: "v1",
+        purpose: "model-provider-auth",
+      },
+      secretSource: {
+        productionSuitable: true,
+        resolve: async (secretRef, secretVersion) => {
+          resolutions.push(`${secretRef}@${secretVersion}`);
+          return "opaque-provider-secret";
+        },
+      },
+      load: async () => ({ Memory: FakeMem0Memory }),
+    });
+    const fake = FakeMem0Memory.latest as FakeMem0Memory;
+
+    expect(resolutions).toEqual(["openrouter-api-key@v1"]);
+    expect(fake.configuration).toMatchObject({
+      llm: {
+        provider: "openai",
+        config: {
+          baseURL: MEM0_OPENROUTER_BASE_URL,
+          model: primary.model,
+        },
+      },
+      embedder: {
+        provider: "openai",
+        config: {
+          baseURL: MEM0_OPENROUTER_BASE_URL,
+          model: QWEN3_EMBEDDING_8B_MODEL,
+          embeddingDims: QWEN3_EMBEDDING_8B_DIMENSIONS,
+        },
+      },
+      vectorStore: {
+        config: { dimension: QWEN3_EMBEDDING_8B_DIMENSIONS },
+      },
+    });
+    await projection.close();
   });
 });

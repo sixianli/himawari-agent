@@ -29,6 +29,10 @@ import {
   createProductionModelCompositionFromConfiguration,
   type ProductionConfiguredModelComposition,
 } from "./production-model-composition.js";
+import {
+  createProductionMemoryCompositionFromConfiguration,
+  type ProductionMemoryComposition,
+} from "./production-memory-composition.js";
 
 export const AGENT_SERVICE_ERROR_CODES = Object.freeze({
   AUTHORITY_INACTIVE: "AGENT_AUTHORITY_INACTIVE",
@@ -47,8 +51,18 @@ export type AgentServiceModelCompositionFactory = (
   context: AgentServiceModelCompositionContext,
 ) => Promise<ProductionConfiguredModelComposition>;
 
+export interface AgentServiceMemoryCompositionContext {
+  readonly configuration: ProductConfiguration;
+  readonly repository: SqliteProductStateRepository;
+}
+
+export type AgentServiceMemoryCompositionFactory = (
+  context: AgentServiceMemoryCompositionContext,
+) => Promise<ProductionMemoryComposition>;
+
 export interface AgentServiceDependencies {
   readonly modelCompositionFactory?: AgentServiceModelCompositionFactory;
+  readonly memoryCompositionFactory?: AgentServiceMemoryCompositionFactory;
 }
 
 function productionClock(): ClockPort {
@@ -150,6 +164,16 @@ async function createDefaultModelComposition(
   }
 }
 
+async function createDefaultMemoryComposition(
+  context: AgentServiceMemoryCompositionContext,
+): Promise<ProductionMemoryComposition> {
+  const sources = hostModelSources(context.configuration);
+  return createProductionMemoryCompositionFromConfiguration({
+    configuration: context.configuration,
+    secretSource: sources.provider,
+  });
+}
+
 export async function runAgentService(
   arguments_: readonly string[],
   output: NodeJS.WritableStream = process.stdout,
@@ -159,6 +183,7 @@ export async function runAgentService(
   let repository: SqliteProductStateRepository | undefined;
   let worker: AgentServiceExecutionClient | undefined;
   let modelComposition: ProductionConfiguredModelComposition | undefined;
+  let memoryComposition: ProductionMemoryComposition | undefined;
   try {
     const args = parseServiceArguments(arguments_);
     const configuration = await new JsonFileConfigurationPort(args.configurationPath).load();
@@ -204,6 +229,8 @@ export async function runAgentService(
     if (!isDeterministicOnly(configuration)) {
       const factory = dependencies.modelCompositionFactory ?? createDefaultModelComposition;
       modelComposition = await factory({ configuration, repository });
+      const memoryFactory = dependencies.memoryCompositionFactory ?? createDefaultMemoryComposition;
+      memoryComposition = await memoryFactory({ configuration, repository });
     }
     const credential = await readRestrictedExecutionTokenFile(args.workerTokenPath);
     let idSequence = 0;
@@ -239,12 +266,25 @@ export async function runAgentService(
       blockedOccurrences: recovery.blockedOccurrenceIds.length,
       pendingDeliveries: recovery.pendingDeliveryRequestIds.length,
       modelPath: modelComposition === undefined ? "deterministic-descriptor-only" : "pi-production",
+      memoryPath:
+        memoryComposition === undefined ? "deterministic-descriptor-only" : "mem0-production",
       embeddingDescriptorRef: modelComposition?.descriptors.embedding.ref ?? embedding.ref,
-      embeddingProvider: modelComposition?.descriptors.embedding.provider ?? embedding.provider,
-      embeddingModel: modelComposition?.descriptors.embedding.model ?? embedding.model,
-      embeddingVersion: modelComposition?.descriptors.embedding.version ?? embedding.version,
+      embeddingProvider:
+        memoryComposition?.descriptor.provider ??
+        modelComposition?.descriptors.embedding.provider ??
+        embedding.provider,
+      embeddingModel:
+        memoryComposition?.descriptor.model ??
+        modelComposition?.descriptors.embedding.model ??
+        embedding.model,
+      embeddingVersion:
+        memoryComposition?.descriptor.version ??
+        modelComposition?.descriptors.embedding.version ??
+        embedding.version,
       embeddingDimensions:
-        modelComposition?.descriptors.embedding.dimensions ?? embedding.dimensions,
+        memoryComposition?.descriptor.dimensions ??
+        modelComposition?.descriptors.embedding.dimensions ??
+        embedding.dimensions,
     });
     const signal = await waitForTerminationSignal();
     writeServiceDiagnostic(output, {
@@ -253,6 +293,8 @@ export async function runAgentService(
       signal,
     });
     worker.stop();
+    await memoryComposition?.close();
+    memoryComposition = undefined;
     await modelComposition?.composition.close();
     modelComposition = undefined;
     await repository.close();
@@ -260,6 +302,7 @@ export async function runAgentService(
     return 0;
   } catch (error) {
     worker?.stop();
+    await memoryComposition?.close().catch(() => undefined);
     await modelComposition?.composition.close().catch(() => undefined);
     await repository?.close().catch(() => undefined);
     writeServiceDiagnostic(errorOutput, {

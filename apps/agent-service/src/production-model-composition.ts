@@ -90,7 +90,7 @@ export interface ProductionConfiguredModelComposition {
   readonly composition: ProductionModelComposition;
 }
 
-function secretRequirementFor(
+export function resolveConfiguredSecretRequirement(
   configuration: ProductConfiguration,
   secretRef: string | null,
 ): ModelSecretRequirement | null {
@@ -121,7 +121,7 @@ function embeddingDescriptor(
     capabilities: Object.freeze([...descriptor.capabilities]),
     allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
     disclosure: descriptor.disclosure,
-    secretRequirement: secretRequirementFor(configuration, descriptor.secretRef),
+    secretRequirement: resolveConfiguredSecretRequirement(configuration, descriptor.secretRef),
     cost: Object.freeze({ ...descriptor.cost }),
   });
 }
@@ -133,7 +133,7 @@ function piGenerationDescriptor(
   if (descriptor.provider !== "openrouter") {
     throw new Error("MODEL_PI_PROVIDER_UNSUPPORTED");
   }
-  const secretRequirement = secretRequirementFor(configuration, descriptor.secretRef);
+  const secretRequirement = resolveConfiguredSecretRequirement(configuration, descriptor.secretRef);
   if (secretRequirement === null) throw new Error("MODEL_PI_SECRET_REQUIRED");
   return Object.freeze({
     ref: descriptor.ref,

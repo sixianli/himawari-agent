@@ -9,6 +9,7 @@ import { createReferenceAdapterSet, type ReferenceAdapterSet } from "@himawari-a
 import { describe, expect, it, vi } from "vitest";
 import {
   createProductionModelComposition,
+  createProductionMemoryCompositionFromConfiguration,
   resolveConfiguredModelDescriptorSet,
 } from "../src/index.js";
 
@@ -120,6 +121,104 @@ function compositionOptions(
     ...overrides,
   };
   return { options, resolve };
+}
+
+function selectedEmbeddingConfiguration(stateRoot: string) {
+  return parseProductConfiguration(
+    {
+      schemaVersion: "himawari.configuration.v1",
+      deploymentId: "deployment-production-memory",
+      ownerId: "owner-production-memory",
+      agentId: "agent-production-memory",
+      stateRoot,
+      runtimeDirectory: `${stateRoot}/runtime`,
+      cacheDirectory: `${stateRoot}/cache`,
+      publicOrigin: "http://127.0.0.1",
+      publicMode: false,
+      modelDescriptors: [
+        {
+          ref: "model-primary",
+          role: "primary",
+          provider: "openrouter",
+          model: primaryModel.model,
+          version: primaryModel.version,
+          priority: primaryModel.priority,
+          name: primaryModel.name,
+          api: "openai-completions",
+          reasoning: primaryModel.reasoning,
+          input: [...primaryModel.input],
+          capabilities: [...primaryModel.capabilities],
+          cost: { ...primaryModel.cost },
+          contextWindow: primaryModel.contextWindow,
+          maxTokens: primaryModel.maxTokens,
+          allowedDataClassifications: ["public", "private"],
+          disclosure: "external_remote",
+          secretRef: "openrouter-api-key",
+        },
+        {
+          ref: "model-fallback",
+          role: "fallback",
+          provider: "openrouter",
+          model: fallbackModel.model,
+          version: fallbackModel.version,
+          priority: fallbackModel.priority,
+          name: fallbackModel.name,
+          api: "openai-completions",
+          reasoning: fallbackModel.reasoning,
+          input: [...fallbackModel.input],
+          capabilities: [...fallbackModel.capabilities],
+          cost: { ...fallbackModel.cost },
+          contextWindow: fallbackModel.contextWindow,
+          maxTokens: fallbackModel.maxTokens,
+          allowedDataClassifications: ["private"],
+          disclosure: "external_remote",
+          secretRef: "openrouter-api-key",
+          providerRouting: fallbackRouting,
+        },
+        {
+          ref: "model-embedding",
+          role: "embedding",
+          provider: "openrouter",
+          model: "qwen/qwen3-embedding-8b",
+          version: "catalog-2026-08-28",
+          capabilities: ["embedding"],
+          cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 },
+          dimensions: 4096,
+          allowedDataClassifications: ["public", "private"],
+          disclosure: "external_remote",
+          secretRef: "openrouter-api-key",
+        },
+      ],
+      memory: {
+        adapter: "mem0-oss",
+        version: "3.1.7",
+        storagePath: `${stateRoot}/data/memory`,
+        dimensions: 4096,
+      },
+      repositoryAllowlistRefs: [],
+      secretReferences: [
+        {
+          ref: "openrouter-api-key",
+          version: "v1",
+          purpose: "model-provider-auth",
+          scope: "model",
+        },
+      ],
+      budgets: {
+        globalCostMicros: 1_000_000,
+        perRunCostMicros: 1_000_000,
+        perClassificationCostMicros: {
+          public: 1_000_000,
+          private: 1_000_000,
+          sensitive: 0,
+          restricted: 0,
+        },
+      },
+      concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
+      deadlines: { runMs: 1000, workerRequestMs: 1000, providerRequestMs: 1000 },
+    },
+    "2026-08-28T00:00:00.000Z",
+  );
 }
 
 describe("production model composition", () => {
@@ -328,5 +427,42 @@ describe("production model composition", () => {
     expect(() => resolveConfiguredModelDescriptorSet(configuration)).toThrow(
       "MODEL_PI_PROVIDER_UNSUPPORTED",
     );
+  });
+
+  it("composes the selected 4096-dimensional Qwen embedding through Mem0", async () => {
+    const configuration = selectedEmbeddingConfiguration(
+      "/private/tmp/himawari-production-memory-composition",
+    );
+    const resolvedSecrets: string[] = [];
+    const composition = await createProductionMemoryCompositionFromConfiguration({
+      configuration,
+      secretSource: {
+        kind: "macos-keychain",
+        productionSuitable: true,
+        resolve: async (secretRef, secretVersion) => {
+          resolvedSecrets.push(`${secretRef}@${secretVersion}`);
+          return "fixture-provider-value";
+        },
+      },
+      load: async () => ({
+        Memory: class {
+          readonly configuration: Readonly<Record<string, unknown>>;
+
+          constructor(configuration: Readonly<Record<string, unknown>>) {
+            this.configuration = configuration;
+          }
+        } as never,
+      }),
+    });
+
+    expect(composition.descriptor).toMatchObject({
+      provider: "openrouter",
+      model: "qwen/qwen3-embedding-8b",
+      version: "catalog-2026-08-28",
+      dimensions: 4096,
+      cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 },
+    });
+    expect(resolvedSecrets).toEqual(["openrouter-api-key@v1"]);
+    await composition.close();
   });
 });
