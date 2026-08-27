@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-27T15:43:12+09:00",
+  "recordedAt": "2026-08-27T16:29:58+09:00",
   "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
   "taskId": "S1-T20",
   "status": "partial",
@@ -16,7 +16,7 @@
   "deterministicQualification": {
     "provider": "ScriptedModelPort, TrustedModelProviderAdapter and OpenRouterModelTransport fixture",
     "liveCall": false,
-    "reason": "Owner selected OpenRouter deepseek/deepseek-v4-flash-0731 and approved a USD 1.00 capped live budget, but the exact fallback/embedding descriptors, provider routing and API key source are not yet frozen",
+    "reason": "Owner selected OpenRouter deepseek/deepseek-v4-flash-0731, selected OpenRouter z-ai/glm-5.3-flash as fallback, approved a USD 1.00 capped live budget, and restricted fallback input to public data; the fallback version/capabilities, embedding descriptor, provider routing and Keychain readback are not yet frozen",
     "hiddenRoutes": false,
     "dynamicMarketplaceRoute": false,
     "implicitEmbedding": false
@@ -29,9 +29,31 @@
   },
   "liveScope": {
     "realFallbackEnabled": false,
-    "primaryRetryableFailure": "not exercised",
-    "reason": "Owner 暂不希望启用真实 fallback；本次 live smoke/eval 只验证 primary 成功路径，fallback 仅由 deterministic/fault-injection 测试覆盖",
-    "runtimeCaveat": "当前 ModelRouterService 在 retryable primary failure 下仍会按已配置 descriptor 自动寻找 fallback；本次范围不把该故障路径作为 live 测试，也不把此范围约束描述为已实现的 primary-only 运行时开关"
+    "realFallbackApproved": true,
+    "activationStatus": "pending_configuration_and_secret_readback",
+    "fallbackModel": "z-ai/glm-5.3-flash",
+    "fallbackAllowedDataClassifications": ["public"],
+    "primaryRetryableFailure": "will be exercised only after the binding and secret source are verified",
+    "reason": "Owner 已确认启用真实 fallback；fallback 与 primary 共用 OpenRouter key，凭据计划放入 macOS Keychain，且 fallback 仅允许接收 public 数据",
+    "runtimeCaveat": "当前 ModelRouterService 在 retryable primary failure 下按已配置 descriptor 自动寻找 fallback；本次尚未完成真实配置或 live 调用，因此 realFallbackEnabled 仍为 false，不能把 Owner approval 误写成 runtime activation"
+  },
+  "fallbackCandidate": {
+    "provider": "openrouter",
+    "model": "z-ai/glm-5.3-flash",
+    "role": "fallback",
+    "secretRef": "provider/openrouter",
+    "secretVersion": "v1",
+    "secretSource": "macos-keychain",
+    "sharedSecretWith": "primary",
+    "disclosure": "external_remote",
+    "allowedDataClassifications": ["public"],
+    "status": "partially_frozen",
+    "pending": [
+      "version_or_snapshot",
+      "capabilities",
+      "OpenRouter provider routing",
+      "Keychain readback"
+    ]
   },
   "verified": [
     "Strict configuration requires exact primary/fallback/embedding descriptors, disclosure and secret references.",
@@ -68,8 +90,8 @@
     }
   ],
   "remaining": [
-    "Before any live call, freeze and show the OpenRouter primary plus fixed fallback and embedding provider/model/version or snapshot, capabilities, disclosure, secret refs, provider-routing policy, estimated cost and capped budget; this live scope must keep real fallback disabled and must not exercise a retryable primary failure.",
-    "Freeze an approved API key source reference and production source selection without putting the key in chat, fixtures, logs or evidence.",
+    "Before any live call, freeze and show the OpenRouter primary plus fixed fallback and embedding provider/model/version or snapshot, capabilities, disclosure, secret refs, provider-routing policy, estimated cost and capped budget; the fallback binding must remain limited to public data.",
+    "Read back the approved shared OpenRouter API key from the macOS Keychain through the selected secret reference without putting the key in chat, fixtures, logs or evidence.",
     "After approval, run a bounded live smoke/eval and read back provider identity, token/cost accounting, cancellation, fallback, tool-call, disclosure rejection and redaction evidence."
   ],
   "externalEffects": [
