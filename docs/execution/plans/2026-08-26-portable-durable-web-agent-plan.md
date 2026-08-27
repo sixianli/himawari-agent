@@ -522,15 +522,15 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 
 | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- |
-| 可运行部署 | Tasks 2–11、28 | 双平台 immutable install、startup/readiness、graceful drain、无源码 checkout | 待实施 |
-| 受认证 Web 对话与身份 | Tasks 13–15、27 | origin 安全、bootstrap/MFA/session/device、Browser E2E、SSE replay | 待实施 |
-| 持久后台工作 | Tasks 6–7、10、12、26 | SQLite/outbox、真实 Worker、scheduler/Delivery、kill/restart | 待实施 |
-| 自动与敏感 Memory | Tasks 16–19、25 | 双平台 Mem0 conformance、golden dataset、逐项审批、重建与删除 | 待实施 |
-| 模型路由 | Task 20 | 精确 descriptors、Owner 费用授权、deterministic 与有界 live evidence | 待实施 |
-| GitHub 在线只读监控 | Tasks 21–22、27 | 权限 manifest、签名/去重、在线事件、coverage gap、无 write surface | 待实施 |
-| 同机恢复点与跨主机迁移 | Tasks 23–24、28 | 真实 restore、双向 transfer、failure injection、source retired | 待实施 |
-| 删除与存储压力 | Tasks 23、25–26、28 | Trash/restore、删除传播、snapshot 清除、disk pressure 与恢复 | 待实施 |
-| 本 Spec 收口 | Tasks 25–30 | 安全/规模/平台、Runbooks、Architecture、immutable release evidence | 待实施 |
+| 可运行部署 | Tasks 2–11、28 | 双平台 immutable install、startup/readiness、graceful drain、无源码 checkout；证据：Task 11 installable-services、Task 28 scale/remote qualification | 部分验证：Mac 与 Hermes 隔离目录均完成构建/安装后服务测试，但平台 native 产物、service-manager 和生产 readiness 尚未完成 |
+| 受认证 Web 对话与身份 | Tasks 13–15、27 | origin 安全、bootstrap/MFA/session/device、Browser E2E、SSE replay；证据：Task 27 browser/identity evidence | 部分验证：本机 loopback、安全契约和 6 个浏览器 profile 通过；Safari 远程自动化、Firefox、真机、屏幕阅读器和 staging public path 未验证 |
+| 持久后台工作 | Tasks 6–7、10、12、26 | SQLite/outbox、真实 Worker、scheduler/Delivery、kill/restart；证据：Task 26 process-recovery evidence | 基础切片已验证：真实 child process、SQLite crash matrix、stale fence、重复 webhook/model result 和 Delivery 去重通过；完整生产编排仍未验证 |
+| 自动与敏感 Memory | Tasks 16–19、25 | 双平台 Mem0 conformance、golden dataset、逐项审批、重建与删除；证据：Tasks 16–19、25 evidence | 部分验证：双平台兼容和确定性 golden/recovery 通过；真实模型提取质量、完整生产 projection 和 30 天可恢复副本 readback 未完成 |
+| 模型路由 | Task 20 | 精确 descriptors、Owner 费用授权、deterministic 与有界 live evidence；证据：Task 20 model-routing evidence | 部分验证：descriptor、primary/fixed fallback、disclosure、secret redaction 和 duplicate result 通过；live provider 身份/费用/eval 等待授权与 API key |
+| GitHub 在线只读监控 | Tasks 21–22、27 | 权限 manifest、签名/去重、在线事件、coverage gap、无 write surface；证据：Tasks 21–22 GitHub evidence | 部分验证：read-only boundary、raw-byte HMAC、durable receipt、mirror、coverage gap、Attention/BUDGET_BLOCKED 通过；真实 App 权限 readback、外部 webhook、线上模型和 server-side enable/revocation policy 未完成 |
+| 同机恢复点与跨主机迁移 | Tasks 23–24、28 | 真实 restore、双向 transfer、failure injection、source retired；证据：Tasks 23–24 evidence、Task 28 scale evidence | 同机与临时安装 transfer 已验证；Mac↔Hermes 双向非空状态、完整加密 transfer 和激活后 source readback 未完成 |
+| 删除与存储压力 | Tasks 23、25–26、28 | Trash/restore、删除传播、snapshot 清除、disk pressure 与恢复；证据：Tasks 23、25–26、28 evidence | 本地删除/恢复/压力路径和规模 p50/p95/p99 已验证；跨主机恢复副本、真实 retention 回读和 7 天 soak 未完成 |
+| 本 Spec 收口 | Tasks 25–30 | 安全/规模/平台、Runbooks、Architecture、immutable release evidence | 未收口：当前文档与 Runbook 已对账，外部 readback、完整 acceptance mapping、双向迁移、live adapters、完整矩阵和 sibling Specs 仍有缺口 |
 
 ## 验证
 
