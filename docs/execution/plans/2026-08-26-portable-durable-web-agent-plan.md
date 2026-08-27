@@ -410,15 +410,16 @@ GitHub App integration 现在只暴露 read-oriented permission manifest、host 
 
 ### Task 22：实现只读仓库镜像、在线监控与 coverage gap
 
-- [ ] 连接仓库前在 Web UI 展示当前 primary provider/model 和排除机器秘密后整仓可披露范围；一次明确确认同时启用仓库与这一披露。
+- [x] 连接仓库前在 Web UI 展示当前 primary provider/model 和排除机器秘密后整仓可披露范围；一次明确确认随服务端命令同时启用仓库与这一披露。
 - [x] 在受保护、有界 cache 中维护所选仓库只读 mirror；所有 Git 操作和 GitHub API surface 都通过无写权限 capability 与 Worker 执行。
 - [x] 所有通过来源/范围验证的在线事件进入 model relevance 和 Attention；不得增加会绕过模型判断的确定性语义预过滤。
 - [x] 服务离线时不 polling、不 reconciliation、不 history scan；恢复只记录 coverage gap 起止和可能遗漏说明。
 - [x] 在线已接纳事件在预算不足时进入有界 `BUDGET_BLOCKED`；普通完成结果进入持久 Web inbox，并保留仓库、事件、模型、授权和 Trace 来源。
-- [ ] 撤销 repository 时立即停止读取并删除 mirror/cache；历史摘要/Trace/任务按 Owner 选择保留或删除，GitHub secret 永不进入迁移包。
+- [x] 服务端 `github.monitor.set_state` 命令以 CAS 更新 monitor，并在撤销时先停止读取、取消对应 scheduler job、删除 mirror/cache，再调用 Owner 选择的历史策略端口；命令只携带 references，不携带 GitHub secret。
+- [ ] 将撤销后的历史摘要、Trace、任务和其他持久记录接入真实删除/保留适配器，并在最终生产组合中完成策略端口的 durable retry/readback。
 - [x] 断言初始能力无法 push、comment、merge、dispatch workflow、创建 deployment 或访问 Git credential。
 
-只读 mirror 使用 bounded、content-addressed、owner-only、symlink-safe cache；事件完整进入 model relevance 与 Attention，离线只形成 coverage gap，预算不足形成 `BUDGET_BLOCKED`，正常结果沿用 Web inbox。控制中心已展示 primary model、仓库范围、分类和机器秘密排除确认，但服务端 monitor enable 命令与 Owner 选择的历史保留/删除策略尚未接入；证据位于 `test/integration/qualification/evidence/s1-task22-github-read-only-monitor.json`。
+只读 mirror 使用 bounded、content-addressed、owner-only、symlink-safe cache；事件完整进入 model relevance 与 Attention，离线只形成 coverage gap，预算不足形成 `BUDGET_BLOCKED`，正常结果沿用 Web inbox。控制中心现在展示 primary model/ref、仓库范围、分类和机器秘密排除确认，并通过 `gateway.v2` 的 `github.monitor.set_state` 命令提交 enable/pause/revoke；服务端按 Owner/Agent scope、安装状态、CAS revision、primary model、repository 和允许分类再次校验，撤销先把 monitor 置为 revoked，再同步 scheduler、清理 mirror 并调用显式 retain/delete history policy port。当前仍未完成真实生产 Gateway 组合、历史摘要/Trace/task 的 durable policy adapter、GitHub App 权限 readback、外部 webhook、线上模型和真实账号授权；证据位于 `test/integration/qualification/evidence/s1-task22-github-read-only-monitor.json`。
 
 ### Task 23：实现同机 snapshot、验证与恢复 CLI
 
@@ -527,7 +528,7 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 | 持久后台工作 | Tasks 6–7、10、12、26 | SQLite/outbox、真实 Worker、scheduler/Delivery、kill/restart；证据：Task 26 process-recovery evidence | 基础切片已验证：真实 child process、SQLite crash matrix、stale fence、重复 webhook/model result 和 Delivery 去重通过；完整生产编排仍未验证 |
 | 自动与敏感 Memory | Tasks 16–19、25 | 双平台 Mem0 conformance、golden dataset、逐项审批、重建与删除；证据：Tasks 16–19、25 evidence | 部分验证：双平台兼容和确定性 golden/recovery 通过；真实模型提取质量、完整生产 projection 和 30 天可恢复副本 readback 未完成 |
 | 模型路由 | Task 20 | 精确 descriptors、Owner 费用授权、deterministic 与有界 live evidence；证据：Task 20 model-routing evidence | 部分验证：descriptor、primary/fixed fallback、disclosure、secret redaction 和 duplicate result 通过；live provider 身份/费用/eval 等待授权与 API key |
-| GitHub 在线只读监控 | Tasks 21–22、27 | 权限 manifest、签名/去重、在线事件、coverage gap、无 write surface；证据：Tasks 21–22 GitHub evidence | 部分验证：read-only boundary、raw-byte HMAC、durable receipt、mirror、coverage gap、Attention/BUDGET_BLOCKED 通过；真实 App 权限 readback、外部 webhook、线上模型和 server-side enable/revocation policy 未完成 |
+| GitHub 在线只读监控 | Tasks 21–22、27 | 权限 manifest、签名/去重、在线事件、coverage gap、无 write surface；证据：Tasks 21–22 GitHub evidence | 部分验证：read-only boundary、raw-byte HMAC、durable receipt、mirror、coverage gap、Attention/BUDGET_BLOCKED 和本地 server-side lifecycle command 通过；真实生产 Gateway 组合、历史策略 durable adapter、App 权限 readback、外部 webhook 和线上模型未完成 |
 | 同机恢复点与跨主机迁移 | Tasks 23–24、28 | 真实 restore、双向 transfer、failure injection、source retired；证据：Tasks 23–24 evidence、Task 28 scale evidence | 同机与临时安装 transfer 已验证；Mac↔Hermes 双向非空状态、完整加密 transfer 和激活后 source readback 未完成 |
 | 删除与存储压力 | Tasks 23、25–26、28 | Trash/restore、删除传播、snapshot 清除、disk pressure 与恢复；证据：Tasks 23、25–26、28 evidence | 本地删除/恢复/压力路径和规模 p50/p95/p99 已验证；跨主机恢复副本、真实 retention 回读和 7 天 soak 未完成 |
 | 本 Spec 收口 | Tasks 25–30 | 安全/规模/平台、Runbooks、Architecture、immutable release evidence | 未收口：当前文档与 Runbook 已对账，外部 readback、完整 acceptance mapping、双向迁移、live adapters、完整矩阵和 sibling Specs 仍有缺口 |

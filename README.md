@@ -163,7 +163,7 @@ Task 5 新增的提交路径具有以下语义：
 
 `packages/integration-github` 的当前实现只允许 read-oriented GitHub capability：App private key、webhook secret 和短期 installation token 通过 host secret source，webhook 先做 raw-byte HMAC、安装/仓库 scope、事件 allowlist 和 rate/body 限制，再以 SQLite transaction 持久化 receipt、protected payload reference 与 occurrence。只读 mirror 使用 bounded content-addressed cache；离线只记录 coverage gap，预算不足产生 `BUDGET_BLOCKED`，不会 polling、history scan 或静默确定性过滤。
 
-控制中心在启用仓库前显示 primary provider/model/version、仓库范围和披露分类，并单独标出机器秘密排除；当前确认状态仍是浏览器 session 状态，服务端 monitor enable 和历史保留/删除策略尚未接入。真实 GitHub App 安装、权限 readback、外部 webhook、Cloudflare public path 与 paid model 尚未验证。
+控制中心在启用仓库前显示 primary provider/model/version/ref、仓库范围和披露分类，并单独标出机器秘密排除；确认会随 `gateway.v2` 的 `github.monitor.set_state` 命令提交，服务端再次校验 Owner/Agent scope、CAS revision、模型/仓库/分类后才改变 monitor 状态。撤销会先停止 monitor 和对应 scheduler job、清理 bounded mirror，再把 Owner 选择的 retain/delete 交给 history policy port；真实生产组合、历史记录 durable 清理/保留 readback、GitHub App 安装、权限 readback、外部 webhook、Cloudflare public path 与 paid model 尚未验证。
 
 规模切片可以用确定性临时 SQLite 重跑，精确生成 200,000 条消息、10,000 个 Thread、500,000 个 Run、100 个 active jobs 和 50 个仓库 monitor，并记录 query/search/approval/Memory/Trace/delete 与 snapshot transfer 的 p50/p95/p99：
 

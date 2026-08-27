@@ -483,7 +483,7 @@
           "label": "GitHub 在线只读监控",
           "planTasks": "Tasks 21–22、27",
           "planEvidence": "权限 manifest、签名/去重、在线事件、coverage gap、无 write surface；证据：Tasks 21–22 GitHub evidence",
-          "planStatus": "部分验证：read-only boundary、raw-byte HMAC、durable receipt、mirror、coverage gap、Attention/BUDGET_BLOCKED 通过；真实 App 权限 readback、外部 webhook、线上模型和 server-side enable/revocation policy 未完成",
+          "planStatus": "部分验证：read-only boundary、raw-byte HMAC、durable receipt、mirror、coverage gap、Attention/BUDGET_BLOCKED 和本地 server-side lifecycle command 通过；真实生产 Gateway 组合、历史策略 durable adapter、App 权限 readback、外部 webhook 和线上模型未完成",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",

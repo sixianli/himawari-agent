@@ -1,20 +1,23 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-27T12:18:00+09:00",
+  "recordedAt": "2026-08-27T14:28:53+09:00",
   "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
   "taskId": "S1-T22",
   "status": "partial",
-  "candidateRevision": "b46620a",
+  "candidateRevision": "92ae9fec5d2aaf15bfa1425d96a0088478d7364d",
   "worktree": {
-    "branch": "main",
+    "branch": "HEAD (detached)",
     "upstream": "origin/main",
-    "ahead": 2,
+    "ahead": 9,
     "behind": 0,
     "status": "dirty",
     "intentionallyExcluded": []
   },
   "verified": [
-    "Control Center displays the configured primary provider/model/version, repository allowlist and data classifications, and requires an explicit session confirmation that excludes machine secrets, App keys, installation tokens and Git credentials.",
+    "Control Center displays the configured primary provider/model/version/ref, repository allowlist and data classifications, and requires an explicit confirmation that excludes machine secrets, App keys, installation tokens and Git credentials before submitting the enable command.",
+    "Gateway v2 strictly parses github.monitor.set_state enable/pause/revoke payloads, requires disclosure for enable, requires an explicit retain/delete history policy for revoke, rejects disclosure on non-enable actions and never carries raw GitHub secrets.",
+    "The server-side monitor lifecycle handler validates authenticated Owner/Agent scope, active installation, configured model/repository/classification disclosure and monitor CAS revision; it synchronizes the repository scheduler job and returns a stable revision result reference.",
+    "Revocation persists the monitor as revoked before cancelling its scheduler job and removing the bounded mirror, then invokes the Owner-selected history policy port; a revoked installation can persist a non-active monitor stop state in SQLite.",
     "Read-only capability exposes bounded repository read operations and explicitly denies push, comment, merge, workflow dispatch, deployment creation and Git credential access.",
     "Mirror storage is bounded, content-addressed, owner-only and symlink-safe; repository revocation removes the monitor cache.",
     "Every admitted event is passed to model relevance and the shared Attention decision; no deterministic semantic pre-filter bypasses model judgment.",
@@ -26,20 +29,36 @@
       "command": "node scripts/qualify-control-center-browser.mjs chromium",
       "exitStatus": 0,
       "execution": "outside sandbox for loopback server and real Chromium process",
-      "result": "Disclosure preview/confirmation plus existing Thread, approval, task, inbox, Memory, Trace, identity, health and SSE journey passed; axe 0; minimum touch target 44.78125px"
+      "result": "Chromium 151.0.7922.34 passed Thread/chat, approval, task, github-monitor-lifecycle, inbox, Memory, Trace, identity, health and SSE journeys; axe 0; minimum touch target 44.78125px; keyboard skip link, ARIA landmarks and cursor recovery passed"
     },
     {
-      "command": "npm run test:workspace-scaffolds -- --run",
+      "command": "npm run test:workspace-scaffolds",
       "exitStatus": 0,
-      "result": "Read-only capability, mirror, coverage, relevance/Attention and disclosure tests passed"
+      "result": "4 files and 17 tests passed, including read-only capability, mirror, coverage, relevance/Attention, disclosure and Control Center command tests"
+    },
+    {
+      "command": "npm run test:contracts",
+      "exitStatus": 0,
+      "result": "12 files and 131 tests passed, including Gateway v2 lifecycle conditional validation and UDS contracts"
+    },
+    {
+      "command": "npm run test:integration",
+      "exitStatus": 0,
+      "result": "32 files passed, 1 skipped; 322 tests passed, 1 skipped, including SQLite GitHub state and process recovery"
+    },
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, typecheck, dependency boundaries, v0.2 coverage and machine-secret scan passed"
     }
   ],
   "remaining": [
-    "The current browser confirmation is a UI session record; a server-side GitHub monitor enable command and Owner-selected history retention/deletion policy still require the corresponding gateway contract and account authorization.",
-    "Real GitHub online event relevance, inbox delivery and two-second acceptance/rejection must be measured only with an authorized external App and model/provider."
+    "The lifecycle handler is not yet wired into the final production Agent Gateway composition or durable command-result/idempotency path.",
+    "The history policy remains an application port; a concrete SQLite delete/retain adapter, durable retry record and post-cleanup readback are still required before Task 22 can close.",
+    "Real GitHub App permission readback, external webhook delivery, online event relevance/inbox delivery and two-second acceptance/rejection must be measured only with an authorized external App and model/provider."
   ],
   "externalEffects": [
     "Only temporary local mirror directories and loopback/browser fixture processes were used; no GitHub, model, Cloudflare or production state changed."
   ],
-  "implementationCommit": "ae684f0"
+  "implementationCommit": "92ae9fec5d2aaf15bfa1425d96a0088478d7364d"
 }
