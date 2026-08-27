@@ -8,7 +8,6 @@ import type {
 } from "@earendil-works/pi-ai";
 import {
   assertMachineSecretFree,
-  redactMachineSecrets,
   type ClockPort,
   type DataClassification,
   type ModelDescriptor,
@@ -17,6 +16,7 @@ import {
   type PayloadProtectionRequest,
   type PayloadProtectorPort,
   type PayloadStorePort,
+  redactMachineSecrets,
 } from "@himawari-agent/application/runtime-port";
 import type { PiModelBindingPort } from "./pi-runtime-adapter.js";
 
@@ -545,6 +545,10 @@ export class PiModelTransport {
       );
       return;
     }
+    if (terminalMessage.stopReason === "length") {
+      yield failed(request, "OPENROUTER_OUTPUT_TRUNCATED", false, Date.now() - startedAt, now());
+      return;
+    }
     if (!sawTextDelta) {
       const content = redactor.append(textOf(terminalMessage));
       if (content.length > 0) {
@@ -576,6 +580,10 @@ export class PiModelTransport {
         );
         return;
       }
+    }
+    if (sequence === 0) {
+      yield failed(request, "OPENROUTER_EMPTY_RESPONSE", true, Date.now() - startedAt, now());
+      return;
     }
 
     const observation = await observationPromise;

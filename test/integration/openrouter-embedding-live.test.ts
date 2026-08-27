@@ -7,19 +7,19 @@ import {
   createOwnerId,
   createThreadId,
 } from "@himawari-agent/domain";
-import { createProductionMemoryCompositionFromConfiguration } from "../../apps/agent-service/src/production-memory-composition.js";
 import {
-  MEM0_OPENROUTER_BASE_URL,
   QWEN3_EMBEDDING_8B_COST,
   QWEN3_EMBEDDING_8B_DIMENSIONS,
   QWEN3_EMBEDDING_8B_MODEL,
-  QWEN3_EMBEDDING_8B_VERSION,
 } from "@himawari-agent/memory-mem0";
-import {
-  parseProductConfiguration,
-  MacOsKeychainProviderSecretSource,
-} from "@himawari-agent/platform-node";
+import { MacOsKeychainProviderSecretSource } from "@himawari-agent/platform-node";
 import { afterEach, describe, expect, it } from "vitest";
+import { createProductionMemoryCompositionFromConfiguration } from "../../apps/agent-service/src/production-memory-composition.js";
+import {
+  createOpenRouterLiveConfiguration,
+  MEM0_OPENROUTER_BASE_URL,
+  OPENROUTER_LIVE_BUDGET_USD,
+} from "./fixtures/openrouter-live-configuration.js";
 
 interface LiveEnvironment {
   readonly HIMAWARI_LIVE_EMBEDDING_PRINT_EVIDENCE?: string;
@@ -53,109 +53,6 @@ const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
-
-function configuration(stateRoot: string) {
-  return parseProductConfiguration(
-    {
-      schemaVersion: "himawari.configuration.v1",
-      deploymentId: "deployment-live-embedding",
-      ownerId: "owner-live-embedding",
-      agentId: "agent-live-embedding",
-      stateRoot,
-      runtimeDirectory: path.join(stateRoot, "runtime"),
-      cacheDirectory: path.join(stateRoot, "cache"),
-      publicOrigin: "http://127.0.0.1",
-      publicMode: false,
-      modelDescriptors: [
-        {
-          ref: "model-primary",
-          role: "primary",
-          provider: "openrouter",
-          model: "deepseek/deepseek-v4-flash-0731",
-          version: "catalog-2026-08-28",
-          priority: 1,
-          name: "DeepSeek V4 Flash 0731",
-          api: "openai-completions",
-          reasoning: false,
-          input: ["text"],
-          capabilities: ["text", "tool_calling", "structured_outputs"],
-          cost: { input: 0.03, output: 0.1, cacheRead: 0.007, cacheWrite: 0 },
-          contextWindow: 1_310_720,
-          maxTokens: 131_072,
-          allowedDataClassifications: ["public", "private"],
-          disclosure: "external_remote",
-          secretRef: "openrouter-api-key",
-        },
-        {
-          ref: "model-fallback",
-          role: "fallback",
-          provider: "openrouter",
-          model: "z-ai/glm-5.3-flash",
-          version: "catalog-2026-08-28",
-          priority: 2,
-          name: "GLM 5.3 Flash",
-          api: "openai-completions",
-          reasoning: false,
-          input: ["text"],
-          capabilities: ["text", "tool_calling", "structured_outputs"],
-          cost: { input: 0.075, output: 0.25, cacheRead: 0.015, cacheWrite: 0 },
-          contextWindow: 1_310_720,
-          maxTokens: 48_000,
-          allowedDataClassifications: ["private"],
-          disclosure: "external_remote",
-          secretRef: "openrouter-api-key",
-          providerRouting: {
-            order: ["z-ai"],
-            allow_fallbacks: false,
-            require_parameters: true,
-            data_collection: "deny",
-          },
-        },
-        {
-          ref: "model-embedding",
-          role: "embedding",
-          provider: "openrouter",
-          model: QWEN3_EMBEDDING_8B_MODEL,
-          version: QWEN3_EMBEDDING_8B_VERSION,
-          capabilities: ["embedding"],
-          cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 },
-          dimensions: QWEN3_EMBEDDING_8B_DIMENSIONS,
-          allowedDataClassifications: ["public", "private"],
-          disclosure: "external_remote",
-          secretRef: "openrouter-api-key",
-        },
-      ],
-      memory: {
-        adapter: "mem0-oss",
-        version: "3.1.7",
-        storagePath: path.join(stateRoot, "data", "memory"),
-        dimensions: QWEN3_EMBEDDING_8B_DIMENSIONS,
-      },
-      repositoryAllowlistRefs: [],
-      secretReferences: [
-        {
-          ref: "openrouter-api-key",
-          version: "v1",
-          purpose: "model-provider-auth",
-          scope: "model",
-        },
-      ],
-      budgets: {
-        globalCostMicros: 1_000_000,
-        perRunCostMicros: 1_000_000,
-        perClassificationCostMicros: {
-          public: 1_000_000,
-          private: 1_000_000,
-          sensitive: 0,
-          restricted: 0,
-        },
-      },
-      concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
-      deadlines: { runMs: 300_000, workerRequestMs: 30_000, providerRequestMs: 60_000 },
-    },
-    "2026-08-28T00:00:00.000Z",
-  );
-}
 
 describe.skipIf(!LIVE_ENABLED)("OpenRouter Qwen3 Embedding 8B live smoke", () => {
   it("uses Mem0's OpenAI-compatible embedder with 4096 dimensions", async () => {
@@ -220,7 +117,7 @@ describe.skipIf(!LIVE_ENABLED)("OpenRouter Qwen3 Embedding 8B live smoke", () =>
       | undefined;
     try {
       composition = await createProductionMemoryCompositionFromConfiguration({
-        configuration: configuration(stateRoot),
+        configuration: createOpenRouterLiveConfiguration(stateRoot),
         secretSource: new MacOsKeychainProviderSecretSource({
           servicePrefix: "himawari-provider",
           account: "himawari-agent",
@@ -282,7 +179,7 @@ describe.skipIf(!LIVE_ENABLED)("OpenRouter Qwen3 Embedding 8B live smoke", () =>
     expect(calls.every((call) => call.totalTokens !== null)).toBe(true);
     const totalTokens = calls.reduce((sum, call) => sum + (call.totalTokens ?? 0), 0);
     const estimatedCostUsd = (totalTokens * QWEN3_EMBEDDING_8B_COST.input) / 1_000_000;
-    expect(estimatedCostUsd).toBeLessThanOrEqual(1);
+    expect(estimatedCostUsd).toBeLessThanOrEqual(OPENROUTER_LIVE_BUDGET_USD);
     if (environment.HIMAWARI_LIVE_EMBEDDING_PRINT_EVIDENCE === "1") {
       process.stdout.write(
         `${JSON.stringify({

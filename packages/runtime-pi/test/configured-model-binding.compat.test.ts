@@ -1,8 +1,8 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  type ConfiguredPiModelDescriptor,
   ConfiguredPiModelBindingPort,
+  type ConfiguredPiModelDescriptor,
   type PiModelRuntime,
   type PiModelRuntimeFactory,
 } from "../src/index.js";
@@ -28,7 +28,7 @@ function modelDescriptor(
     priority: fallback ? 2 : 1,
     provider: "openrouter",
     model: fallback ? "z-ai/glm-5.3-flash" : "deepseek/deepseek-v4-flash-0731",
-    version: fallback ? "catalog-2026-08-27" : "catalog-2026-08-27",
+    version: fallback ? "catalog-2026-08-28" : "catalog-2026-08-28",
     name: fallback ? "GLM 5.3 Flash" : "DeepSeek V4 Flash 0731",
     api: "openai-completions",
     reasoning: false,
@@ -37,7 +37,7 @@ function modelDescriptor(
       ? { input: 0.075, output: 0.25, cacheRead: 0.015, cacheWrite: 0 }
       : { input: 0.03, output: 0.1, cacheRead: 0.007, cacheWrite: 0 },
     contextWindow: 1_310_720,
-    maxTokens: fallback ? 48_000 : 131_072,
+    maxTokens: 131_072,
     capabilities: ["text", "tool_calling", "structured_outputs"],
     disclosure: "external_remote",
     allowedDataClassifications: fallback ? ["private"] : ["public", "private"],

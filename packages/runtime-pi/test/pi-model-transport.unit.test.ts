@@ -14,9 +14,9 @@ import type {
 } from "@himawari-agent/application/runtime-port";
 import { describe, expect, it, vi } from "vitest";
 import {
-  PiModelTransport,
   type PiModelBinding,
   type PiModelPayloadBoundary,
+  PiModelTransport,
 } from "../src/index.js";
 
 const NOW = "2026-08-27T16:00:00.000Z";
@@ -39,7 +39,7 @@ const descriptor: ModelDescriptor = {
   ref: "model-openrouter-primary",
   provider: "openrouter",
   model: MODEL_ID,
-  version: "catalog-2026-08-27",
+  version: "catalog-2026-08-28",
   routingClass: "primary",
   priority: 1,
   disclosure: "external_remote",
@@ -471,6 +471,61 @@ describe("PiModelTransport", () => {
       type: "model.failed",
       errorCode: "OPENROUTER_TOOL_CALL_UNSUPPORTED",
       retryable: false,
+    });
+    expect(payloads.writes).toEqual([]);
+  });
+
+  it("does not report a max-token truncation as a completed result", async () => {
+    const payloads = payloadBoundary();
+    const terminal = { ...assistant("partial"), stopReason: "length" as const };
+    const transport = new PiModelTransport({
+      models: {
+        resolve: async () =>
+          ({
+            model,
+            modelRuntime: runtimeWithTerminal(terminal, { deltas: ["partial"] }),
+          }) as unknown as PiModelBinding,
+      },
+      payloads: payloads.boundary,
+      clock: { now: () => NOW },
+      fetch: async () => observationResponse(),
+    });
+
+    const events = await collect(
+      transport.invoke({ descriptor, request, secretValues: [PROVIDER_SECRET] }),
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      type: "model.failed",
+      errorCode: "OPENROUTER_OUTPUT_TRUNCATED",
+      retryable: false,
+    });
+    expect(events.some(({ type }) => type === "model.completed")).toBe(false);
+  });
+
+  it("treats a successful provider response without output as retryable", async () => {
+    const payloads = payloadBoundary();
+    const transport = new PiModelTransport({
+      models: {
+        resolve: async () =>
+          ({
+            model,
+            modelRuntime: runtimeWithTerminal(assistant("")),
+          }) as unknown as PiModelBinding,
+      },
+      payloads: payloads.boundary,
+      clock: { now: () => NOW },
+      fetch: async () => observationResponse(),
+    });
+
+    const events = await collect(
+      transport.invoke({ descriptor, request, secretValues: [PROVIDER_SECRET] }),
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      type: "model.failed",
+      errorCode: "OPENROUTER_EMPTY_RESPONSE",
+      retryable: true,
     });
     expect(payloads.writes).toEqual([]);
   });

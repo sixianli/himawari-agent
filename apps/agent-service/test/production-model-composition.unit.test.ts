@@ -1,15 +1,16 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
+
+import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import type {
   ConfiguredPiModelDescriptor,
   PiModelRuntime,
   PiModelRuntimeFactory,
 } from "@himawari-agent/runtime-pi";
-import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import { createReferenceAdapterSet, type ReferenceAdapterSet } from "@himawari-agent/testing";
 import { describe, expect, it, vi } from "vitest";
 import {
-  createProductionModelComposition,
   createProductionMemoryCompositionFromConfiguration,
+  createProductionModelComposition,
   resolveConfiguredModelDescriptorSet,
 } from "../src/index.js";
 
@@ -17,7 +18,7 @@ const primaryModel: ConfiguredPiModelDescriptor = {
   ref: "model-openrouter-primary",
   provider: "openrouter",
   model: "deepseek/deepseek-v4-flash-0731",
-  version: "catalog-2026-08-27",
+  version: "catalog-2026-08-28",
   routingClass: "primary",
   priority: 1,
   disclosure: "external_remote",
@@ -48,7 +49,7 @@ const fallbackModel: ConfiguredPiModelDescriptor = {
   ref: "model-openrouter-fallback",
   provider: "openrouter",
   model: "z-ai/glm-5.3-flash",
-  version: "catalog-2026-08-27",
+  version: "catalog-2026-08-28",
   routingClass: "fallback",
   priority: 2,
   disclosure: "external_remote",
@@ -66,7 +67,7 @@ const fallbackModel: ConfiguredPiModelDescriptor = {
   input: ["text"],
   cost: { input: 0.075, output: 0.25, cacheRead: 0.015, cacheWrite: 0 },
   contextWindow: 1_310_720,
-  maxTokens: 48_000,
+  maxTokens: 131_072,
 };
 
 const descriptors = [primaryModel, fallbackModel] as const;
@@ -331,7 +332,7 @@ describe("production model composition", () => {
             role: "embedding",
             provider: "openai-compatible",
             model: "text-embedding-fixture",
-            version: "catalog-2026-08-27",
+            version: "catalog-2026-08-28",
             capabilities: ["embedding"],
             cost: { input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0 },
             dimensions: 1536,
@@ -388,7 +389,7 @@ describe("production model composition", () => {
       ref: "model-embedding",
       provider: "openai-compatible",
       model: "text-embedding-fixture",
-      version: "catalog-2026-08-27",
+      version: "catalog-2026-08-28",
       dimensions: 1536,
       secretRequirement: {
         secretRef: "embedding-api-key",
