@@ -572,4 +572,4 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 - [ ] 本 Plan 与来源 Spec 仅在工作真正关闭后移动到 `docs/archive/plans/` 与 `docs/archive/specs/`。
 - [ ] 即使本 Plan 关闭，也没有在其余 v0.2 Specs 和完整 PRD 验收完成前宣称 v0.2 production-ready。
 
-本轮 fresh evidence 已覆盖模型/GitHub 的确定性边界、重复结果恢复、浏览器 disclosure preview、本机规模切片和安装后服务；仍缺少 paid/live model、真实 GitHub/Cloudflare、Safari/Firefox/真实移动设备、Mac↔Hermes transfer、immutable clean-install 的双平台 readback、完整测试矩阵和 7 天 soak。因此 Task 30 与本 Plan 收口清单保持未完成，不把本地或历史结果推断为生产验收。
+本轮 fresh evidence 已覆盖模型/GitHub 的确定性边界、重复结果恢复、浏览器 disclosure preview、本机规模切片和安装后服务；仍缺少 paid/live model、真实 GitHub/Cloudflare、Safari/Firefox/真实移动设备、Mac↔Hermes transfer、immutable clean-install 的双平台 readback、各验收项的外部 readback 证据、完整跨平台矩阵和 7 天 soak。因此 Task 30 与本 Plan 收口清单保持未完成，不把本地或历史结果推断为生产验收。
