@@ -429,7 +429,12 @@ export class ModelRouterService {
       });
       await record(
         event.type,
-        { invocationId: event.invocationId, modelRef: descriptor.ref, ...usage },
+        {
+          invocationId: event.invocationId,
+          modelRef: descriptor.ref,
+          ...usage,
+          ...(event.providerObservation ? { providerObservation: event.providerObservation } : {}),
+        },
         event.occurredAt,
       );
       return Object.freeze({

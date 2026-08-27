@@ -3,6 +3,7 @@ export * from "./execution-uds-transport.js";
 export * from "./host-secret-source.js";
 export * from "./http-gateway-server.js";
 export * from "./identity-gateway.js";
+export * from "./openrouter-model-transport.js";
 export * from "./payload-protector.js";
 export * from "./runtime-health.js";
 export * from "./runtime-observability.js";

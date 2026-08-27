@@ -13,6 +13,7 @@ import {
   InMemoryDevelopmentSecretSource,
   PAYLOAD_ALGORITHM,
   PAYLOAD_INTEGRITY_ERROR_CODES,
+  RestrictedProviderSecretSource,
   RestrictedSecretFileSource,
   assertProductionPayloadAlgorithm,
   assertProductionSecretSource,
@@ -199,6 +200,25 @@ describe("host secret sources", () => {
 
     await chmod(path.join(root, "payload-kek.v1"), 0o644);
     await expect(source.resolve("payload-kek", "v1")).rejects.toMatchObject({
+      code: HOST_SECRET_ERROR_CODES.SOURCE_UNSAFE,
+    });
+  });
+
+  it("loads opaque provider credentials without applying encryption-key decoding", async () => {
+    const root = path.join(tmpdir(), `himawari-provider-secret-${crypto.randomUUID()}`);
+    temporaryRoots.push(root);
+    await mkdir(root, { mode: 0o700 });
+    await writeFile(path.join(root, "openrouter-api-key.v1"), "opaque-provider-token-123456\n", {
+      mode: 0o600,
+    });
+    const source = new RestrictedProviderSecretSource(root);
+    assertProductionSecretSource(source);
+    await expect(source.resolve("openrouter-api-key", "v1")).resolves.toBe(
+      "opaque-provider-token-123456",
+    );
+
+    await chmod(path.join(root, "openrouter-api-key.v1"), 0o644);
+    await expect(source.resolve("openrouter-api-key", "v1")).rejects.toMatchObject({
       code: HOST_SECRET_ERROR_CODES.SOURCE_UNSAFE,
     });
   });

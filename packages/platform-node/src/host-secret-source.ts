@@ -19,12 +19,28 @@ export interface HostSecretMaterialSource {
   resolve(secretRef: string, secretVersion: string): Promise<Uint8Array>;
 }
 
+export type HostProviderSecretSourceKind = Extract<
+  HostSecretSourceKind,
+  "macos-keychain" | "systemd-credential" | "restricted-secret-file"
+>;
+
+/**
+ * Provider credentials are opaque text values, not fixed-size encryption keys.
+ * Implementations must return the value only to the trusted adapter boundary.
+ */
+export interface HostProviderSecretSource {
+  readonly kind: HostProviderSecretSourceKind;
+  readonly productionSuitable: boolean;
+  resolve(secretRef: string, secretVersion: string): Promise<string>;
+}
+
 export const HOST_SECRET_ERROR_CODES = Object.freeze({
   INVALID_REFERENCE: "HOST_SECRET_INVALID_REFERENCE",
   SOURCE_UNSAFE: "HOST_SECRET_SOURCE_UNSAFE",
   NOT_FOUND: "HOST_SECRET_NOT_FOUND",
   READ_FAILED: "HOST_SECRET_READ_FAILED",
   INVALID_KEY_MATERIAL: "HOST_SECRET_INVALID_KEY_MATERIAL",
+  INVALID_SECRET_MATERIAL: "HOST_SECRET_INVALID_SECRET_MATERIAL",
 } as const);
 
 export type HostSecretErrorCode =
@@ -83,7 +99,9 @@ function assertRestrictedMode(mode: number, target: string): void {
   }
 }
 
-export function assertProductionSecretSource(source: HostSecretMaterialSource): void {
+export function assertProductionSecretSource(
+  source: HostSecretMaterialSource | HostProviderSecretSource,
+): void {
   if (!source.productionSuitable) {
     throw new HostSecretError(
       HOST_SECRET_ERROR_CODES.SOURCE_UNSAFE,
@@ -91,6 +109,83 @@ export function assertProductionSecretSource(source: HostSecretMaterialSource): 
       { sourceKind: source.kind },
     );
   }
+}
+
+async function restrictedSecretFilePath(
+  directory: string,
+  secretRef: string,
+  secretVersion: string,
+): Promise<string> {
+  assertReferencePart(secretRef, "reference");
+  assertReferencePart(secretVersion, "version");
+  const directoryInfo = await stat(directory).catch(() => undefined);
+  if (!directoryInfo?.isDirectory()) {
+    throw new HostSecretError(HOST_SECRET_ERROR_CODES.NOT_FOUND, "Secret directory is missing");
+  }
+  assertRestrictedMode(directoryInfo.mode, "secret-directory");
+  if (typeof process.getuid === "function" && directoryInfo.uid !== process.getuid()) {
+    throw new HostSecretError(
+      HOST_SECRET_ERROR_CODES.SOURCE_UNSAFE,
+      "Secret directory is not owned by the service account",
+      { resource: "secret-directory" },
+    );
+  }
+
+  const filePath = path.join(directory, `${secretRef}.${secretVersion}`);
+  const fileInfo = await lstat(filePath).catch(() => undefined);
+  if (!fileInfo?.isFile() || fileInfo.isSymbolicLink()) {
+    throw new HostSecretError(HOST_SECRET_ERROR_CODES.NOT_FOUND, "Secret material is missing");
+  }
+  assertRestrictedMode(fileInfo.mode, "secret-file");
+  if (typeof process.getuid === "function" && fileInfo.uid !== process.getuid()) {
+    throw new HostSecretError(
+      HOST_SECRET_ERROR_CODES.SOURCE_UNSAFE,
+      "Secret file is not owned by the service account",
+      { resource: "secret-file" },
+    );
+  }
+  return filePath;
+}
+
+async function readRestrictedSecretFile(
+  directory: string,
+  secretRef: string,
+  secretVersion: string,
+): Promise<Uint8Array> {
+  const filePath = await restrictedSecretFilePath(directory, secretRef, secretVersion);
+  try {
+    await access(filePath, constants.R_OK);
+    return new Uint8Array(await readFile(filePath));
+  } catch (error) {
+    if (error instanceof HostSecretError) throw error;
+    throw new HostSecretError(
+      HOST_SECRET_ERROR_CODES.READ_FAILED,
+      "Secret material could not be read",
+    );
+  }
+}
+
+function decodeOpaqueSecret(value: Uint8Array): string {
+  let decoded: string;
+  try {
+    decoded = new TextDecoder("utf-8", { fatal: true }).decode(value).trim();
+  } catch {
+    throw new HostSecretError(
+      HOST_SECRET_ERROR_CODES.INVALID_SECRET_MATERIAL,
+      "Provider secret material must be valid UTF-8 text",
+    );
+  }
+  const containsControlCharacter = [...decoded].some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x1f || codePoint === 0x7f;
+  });
+  if (decoded.length === 0 || decoded.length > 4096 || containsControlCharacter) {
+    throw new HostSecretError(
+      HOST_SECRET_ERROR_CODES.INVALID_SECRET_MATERIAL,
+      "Provider secret material must be bounded printable text",
+    );
+  }
+  return decoded;
 }
 
 export class RestrictedSecretFileSource implements HostSecretMaterialSource {
@@ -109,44 +204,9 @@ export class RestrictedSecretFileSource implements HostSecretMaterialSource {
   }
 
   async resolve(secretRef: string, secretVersion: string): Promise<Uint8Array> {
-    assertReferencePart(secretRef, "reference");
-    assertReferencePart(secretVersion, "version");
-    const directoryInfo = await stat(this.#directory).catch(() => undefined);
-    if (!directoryInfo?.isDirectory()) {
-      throw new HostSecretError(HOST_SECRET_ERROR_CODES.NOT_FOUND, "Secret directory is missing");
-    }
-    assertRestrictedMode(directoryInfo.mode, "secret-directory");
-    if (typeof process.getuid === "function" && directoryInfo.uid !== process.getuid()) {
-      throw new HostSecretError(
-        HOST_SECRET_ERROR_CODES.SOURCE_UNSAFE,
-        "Secret directory is not owned by the service account",
-        { resource: "secret-directory" },
-      );
-    }
-
-    const filePath = path.join(this.#directory, `${secretRef}.${secretVersion}`);
-    const fileInfo = await lstat(filePath).catch(() => undefined);
-    if (!fileInfo?.isFile() || fileInfo.isSymbolicLink()) {
-      throw new HostSecretError(HOST_SECRET_ERROR_CODES.NOT_FOUND, "Secret material is missing");
-    }
-    assertRestrictedMode(fileInfo.mode, "secret-file");
-    if (typeof process.getuid === "function" && fileInfo.uid !== process.getuid()) {
-      throw new HostSecretError(
-        HOST_SECRET_ERROR_CODES.SOURCE_UNSAFE,
-        "Secret file is not owned by the service account",
-        { resource: "secret-file" },
-      );
-    }
-    try {
-      await access(filePath, constants.R_OK);
-      return decodeKeyMaterial(await readFile(filePath));
-    } catch (error) {
-      if (error instanceof HostSecretError) throw error;
-      throw new HostSecretError(
-        HOST_SECRET_ERROR_CODES.READ_FAILED,
-        "Secret material could not be read",
-      );
-    }
+    return decodeKeyMaterial(
+      await readRestrictedSecretFile(this.#directory, secretRef, secretVersion),
+    );
   }
 }
 
@@ -182,6 +242,67 @@ export class MacOsKeychainSecretSource implements HostSecretMaterialSource {
       throw new HostSecretError(
         HOST_SECRET_ERROR_CODES.NOT_FOUND,
         "Keychain secret material could not be resolved",
+        { secretRef, secretVersion },
+      );
+    }
+  }
+}
+
+export class RestrictedProviderSecretSource implements HostProviderSecretSource {
+  readonly kind: HostProviderSecretSourceKind = "restricted-secret-file";
+  readonly productionSuitable = true;
+  readonly #directory: string;
+
+  constructor(directory: string) {
+    if (!path.isAbsolute(directory)) {
+      throw new HostSecretError(
+        HOST_SECRET_ERROR_CODES.SOURCE_UNSAFE,
+        "Secret directory must be an absolute path",
+      );
+    }
+    this.#directory = path.resolve(directory);
+  }
+
+  async resolve(secretRef: string, secretVersion: string): Promise<string> {
+    return decodeOpaqueSecret(
+      await readRestrictedSecretFile(this.#directory, secretRef, secretVersion),
+    );
+  }
+}
+
+export class SystemdProviderSecretSource extends RestrictedProviderSecretSource {
+  override readonly kind = "systemd-credential" as const;
+}
+
+export class MacOsKeychainProviderSecretSource implements HostProviderSecretSource {
+  readonly kind = "macos-keychain" as const;
+  readonly productionSuitable = true;
+  readonly #servicePrefix: string;
+  readonly #account: string;
+
+  constructor(options: { readonly servicePrefix: string; readonly account: string }) {
+    assertReferencePart(options.servicePrefix, "service prefix");
+    assertReferencePart(options.account, "account");
+    this.#servicePrefix = options.servicePrefix;
+    this.#account = options.account;
+  }
+
+  async resolve(secretRef: string, secretVersion: string): Promise<string> {
+    assertReferencePart(secretRef, "reference");
+    assertReferencePart(secretVersion, "version");
+    const service = `${this.#servicePrefix}.${secretRef}.${secretVersion}`;
+    try {
+      const { stdout } = await execFile(
+        "/usr/bin/security",
+        ["find-generic-password", "-a", this.#account, "-s", service, "-w"],
+        { encoding: "buffer", maxBuffer: 4096 },
+      );
+      return decodeOpaqueSecret(new Uint8Array(stdout));
+    } catch (error) {
+      if (error instanceof HostSecretError) throw error;
+      throw new HostSecretError(
+        HOST_SECRET_ERROR_CODES.NOT_FOUND,
+        "Keychain provider secret could not be resolved",
         { secretRef, secretVersion },
       );
     }

@@ -86,6 +86,12 @@ export interface ModelInvocationRequest {
   readonly correlationId: CorrelationId;
 }
 
+export interface ModelProviderObservation {
+  readonly provider: string | null;
+  readonly model: string | null;
+  readonly generationId: string | null;
+}
+
 export type ModelInvocationEvent =
   | {
       readonly type: "model.started";
@@ -106,6 +112,7 @@ export type ModelInvocationEvent =
       readonly outputTokens: number;
       readonly costMicros: number;
       readonly latencyMs: number;
+      readonly providerObservation?: ModelProviderObservation;
       readonly occurredAt: string;
     }
   | {

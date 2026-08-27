@@ -151,6 +151,39 @@ describe("Task 10 Model Router and trusted Provider secrets", () => {
     );
   });
 
+  it("preserves the provider observation from a trusted transport in the terminal Trace", async () => {
+    const primary = descriptor("model-primary-observed", "primary");
+    const model = new ScriptedModelPort([primary], [], {
+      [primary.ref]: completed(primary.ref).map((event) =>
+        event.type === "model.completed"
+          ? {
+              ...event,
+              providerObservation: {
+                provider: "OpenInference",
+                model: "deepseek/deepseek-v4-flash-0731",
+                generationId: "gen-model-router-01",
+              },
+            }
+          : event,
+      ),
+    });
+    const { adapters, router } = createRouter(model);
+
+    await expect(router.route(routeRequest())).resolves.toMatchObject({ status: "completed" });
+    const events = await adapters.trace.readRun(RUN_ID, 0, 20);
+    const terminal = events.at(-1);
+    if (!terminal?.payloadRef) throw new Error("Expected terminal model Trace payload");
+    const payload = await adapters.payload.get(terminal.payloadRef);
+    if (!payload) throw new Error("Expected provider observation payload");
+    await expect(adapters.payloadProtector.revealForTest(payload)).resolves.toMatchObject({
+      providerObservation: {
+        provider: "OpenInference",
+        model: "deepseek/deepseek-v4-flash-0731",
+        generationId: "gen-model-router-01",
+      },
+    });
+  });
+
   it("retries a compatible fallback and traces failure, retry, usage, cost, and latency", async () => {
     const primary = descriptor("model-primary", "primary");
     const fallback = descriptor("model-fallback", "fallback", { priority: 1 });
