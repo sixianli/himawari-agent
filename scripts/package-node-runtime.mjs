@@ -152,6 +152,7 @@ await rm(runtimeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay:
 await mkdir(runtimeNodeModules, { recursive: true });
 for (const relativeRoot of internalRoots.sort()) await copyInternalPackage(relativeRoot);
 const external = await copyExternalClosure([
+  "@earendil-works/pi-ai",
   "@earendil-works/pi-coding-agent",
   "@fastify/cookie",
   "@fastify/csrf-protection",

@@ -150,6 +150,7 @@ date: "2026-08-26"
 - [ ] 使用 ThreadId、source watermark 和 policy version 形成稳定 generation identity。
 - [ ] 支持 explicit、controlled idle、pre-compaction 和 source-size threshold 四类触发。
 - [ ] 原子提交 covered range、retained start、source refs、model/policy version、classification、Trace 和 protected summary ref。
+- [ ] pre-compaction 直接提交 Pi 已保护的同一 summary ref，派生模型只提取候选；禁止第二次摘要生成。其他 trigger 仍走显式 summary model。
 - [ ] 迟到结果只在 watermark 仍匹配时成为 current summary；失败保留 transcript 和旧 summary。
 - [ ] 原始消息不因压缩删除；context 使用 summary 后仍可按相关性回取更早片段。
 - [ ] 对每个 generation checkpoint 运行 kill/restart 和 exactly-once tests。

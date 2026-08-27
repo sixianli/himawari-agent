@@ -1,18 +1,14 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
-import type { ModelDescriptor } from "@himawari-agent/application";
 import type {
-  PiConfiguredModelDescriptor,
+  ConfiguredPiModelDescriptor,
   PiModelRuntime,
   PiModelRuntimeFactory,
 } from "@himawari-agent/runtime-pi";
 import { createReferenceAdapterSet, type ReferenceAdapterSet } from "@himawari-agent/testing";
 import { describe, expect, it, vi } from "vitest";
-import {
-  createProductionModelComposition,
-  type ProductionModelDescriptorBinding,
-} from "../src/index.js";
+import { createProductionModelComposition } from "../src/index.js";
 
-const primaryModel: ModelDescriptor = {
+const primaryModel: ConfiguredPiModelDescriptor = {
   ref: "model-openrouter-primary",
   provider: "openrouter",
   model: "deepseek/deepseek-v4-flash-0731",
@@ -27,6 +23,13 @@ const primaryModel: ModelDescriptor = {
     secretVersion: "v1",
     purpose: "model-provider-auth",
   },
+  name: "DeepSeek V4 Flash 0731",
+  api: "openai-completions",
+  reasoning: false,
+  input: ["text"],
+  cost: { input: 0.03, output: 0.1, cacheRead: 0.007, cacheWrite: 0 },
+  contextWindow: 1_310_720,
+  maxTokens: 131_072,
 };
 
 const fallbackRouting = {
@@ -36,7 +39,7 @@ const fallbackRouting = {
   data_collection: "deny" as const,
 };
 
-const fallbackModel: ModelDescriptor = {
+const fallbackModel: ConfiguredPiModelDescriptor = {
   ref: "model-openrouter-fallback",
   provider: "openrouter",
   model: "z-ai/glm-5.3-flash",
@@ -52,35 +55,6 @@ const fallbackModel: ModelDescriptor = {
     purpose: "model-provider-auth",
   },
   providerRouting: fallbackRouting,
-};
-
-const primaryPi: PiConfiguredModelDescriptor = {
-  ref: primaryModel.ref,
-  role: "primary",
-  provider: "openrouter",
-  model: primaryModel.model,
-  version: primaryModel.version,
-  name: "DeepSeek V4 Flash 0731",
-  api: "openai-completions",
-  reasoning: false,
-  input: ["text"],
-  cost: { input: 0.03, output: 0.1, cacheRead: 0.007, cacheWrite: 0 },
-  contextWindow: 1_310_720,
-  maxTokens: 131_072,
-  capabilities: [...primaryModel.capabilities],
-  disclosure: primaryModel.disclosure,
-  allowedDataClassifications: [...primaryModel.allowedDataClassifications],
-  secretRef: "openrouter-api-key",
-  secretVersion: "v1",
-  secretPurpose: "model-provider-auth",
-};
-
-const fallbackPi: PiConfiguredModelDescriptor = {
-  ref: fallbackModel.ref,
-  role: "fallback",
-  provider: "openrouter",
-  model: fallbackModel.model,
-  version: fallbackModel.version,
   name: "GLM 5.3 Flash",
   api: "openai-completions",
   reasoning: false,
@@ -88,21 +62,11 @@ const fallbackPi: PiConfiguredModelDescriptor = {
   cost: { input: 0.075, output: 0.25, cacheRead: 0.015, cacheWrite: 0 },
   contextWindow: 1_310_720,
   maxTokens: 48_000,
-  capabilities: [...fallbackModel.capabilities],
-  disclosure: fallbackModel.disclosure,
-  allowedDataClassifications: [...fallbackModel.allowedDataClassifications],
-  secretRef: "openrouter-api-key",
-  secretVersion: "v1",
-  secretPurpose: "model-provider-auth",
-  providerRouting: fallbackRouting,
 };
 
-const descriptorBindings: readonly ProductionModelDescriptorBinding[] = [
-  { model: primaryModel, pi: primaryPi },
-  { model: fallbackModel, pi: fallbackPi },
-];
+const descriptors = [primaryModel, fallbackModel] as const;
 
-class RecordingRuntime implements PiModelRuntime {
+class RecordingRuntime {
   readonly models = new Map<string, unknown>();
   readonly removedProviders: string[] = [];
 
@@ -138,7 +102,7 @@ function compositionOptions(
   const options = {
     ownerId: "owner-production-model" as never,
     agentId: "agent-production-model" as never,
-    descriptors: descriptorBindings,
+    descriptors,
     handles: adapters.secret,
     secretSource: {
       kind: "macos-keychain" as const,
@@ -159,12 +123,12 @@ describe("production model composition", () => {
     const adapters = createReferenceAdapterSet();
     const runtime = new RecordingRuntime();
     const runtimeFactory: PiModelRuntimeFactory = {
-      create: async () => runtime,
+      create: async () => runtime as unknown as PiModelRuntime,
     };
     const prepared = compositionOptions(adapters, { runtimeFactory });
     const composition = createProductionModelComposition(prepared.options);
 
-    expect(await composition.model.listAvailable()).toEqual([primaryModel, fallbackModel]);
+    expect(await composition.model.listAvailable()).toEqual(descriptors);
     expect(prepared.resolve).not.toHaveBeenCalled();
     const binding = await composition.piModels.resolve(primaryModel.ref);
     expect(binding.model).toBe(runtime.models.get("openrouter:deepseek/deepseek-v4-flash-0731"));
@@ -177,7 +141,7 @@ describe("production model composition", () => {
     expect(runtime.removedProviders).toEqual(["openrouter"]);
   });
 
-  it("rejects unsafe secret sources and model/Pi descriptor drift", () => {
+  it("rejects unsafe secret sources and conflicting canonical descriptors", () => {
     const adapters = createReferenceAdapterSet();
     expect(() =>
       createProductionModelComposition(
@@ -195,11 +159,14 @@ describe("production model composition", () => {
       createProductionModelComposition(
         compositionOptions(adapters, {
           descriptors: [
-            { model: primaryModel, pi: primaryPi },
-            { model: fallbackModel, pi: { ...fallbackPi, model: "z-ai/drifted-model" } },
+            primaryModel,
+            {
+              ...fallbackModel,
+              secretRequirement: { ...fallbackModel.secretRequirement, secretVersion: "v2" },
+            },
           ],
         }).options,
       ),
-    ).toThrow("descriptors[1] model and Pi descriptors do not describe the same binding");
+    ).toThrow("PI_MODEL_BINDING_REQUIRES_SHARED_PROVIDER_SECRET");
   });
 });

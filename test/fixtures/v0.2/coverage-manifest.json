@@ -471,7 +471,7 @@
           "label": "模型路由",
           "planTasks": "Task 20",
           "planEvidence": "精确 descriptors、Owner 费用授权、deterministic 与有界 live evidence；证据：Task 20 model-routing evidence",
-          "planStatus": "部分验证：descriptor、primary/fixed fallback、disclosure、OpenRouter transport、secret redaction、duplicate result、provider routing、strict configuration、闭合 Pi 模型绑定和模型路径组合通过；generation catalog snapshot 已记录但官方没有 immutable version，仍待 embedding descriptor、最终 Agent Service entrypoint 接入及 live provider 身份/费用/eval",
+          "planStatus": "部分验证：canonical descriptor、primary/fixed fallback、disclosure、Pi ModelRuntime transport、secret redaction、provider metadata observation、provider routing、strict configuration、闭合 Pi 模型绑定和模型路径组合通过；generation catalog snapshot 已记录但官方没有 immutable version，仍待 embedding descriptor、最终 Agent Service entrypoint 接入及 live provider 身份/费用/eval",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",

@@ -502,9 +502,9 @@ Model Router 总是先选 primary。只有配置为 retryable 的 transport/prov
 
 非 GitHub 自动 fallback 还必须同时满足：fallback 已批准、能力足够、费用在预算内、披露不扩大。GitHub content 每次发送 fallback 都创建独立 ASK。模型变化按 PRD 的 whitelist、provider、披露和费用规则执行。
 
-Thread checkpoint、Mem0 extraction 和 embedding 都只能使用显式 descriptor；没有隐式 model。v0.2 不实现本地生成模型，也不静默安装或下载任何本地模型。
+Thread checkpoint、Mem0 extraction 和 embedding 都只能使用显式 descriptor；没有隐式 model。v0.2 不实现本地生成模型，也不静默安装或下载任何本地模型。`pre_compaction` 例外地直接采用 Pi 已生成且已保护的 compaction summary，后续提炼模型只提取派生候选，不得生成第二份摘要；其他 checkpoint trigger 仍使用显式 distillation descriptor。
 
-Pi adapter 只接收产品为单个 Run 选择的 model binding、context references 与 authorized tools。Pi 自有 model selection、Session persistence、Skills discovery 与 built-in tools 都不能绕过产品 routing 或 capability governance。
+Pi adapter 只接收产品为单个 Run 选择的 canonical model descriptor、结构化 history/prompt/checkpoint projection 与 authorized capabilities。模型请求、provider transport、stream parsing、usage 和 Agent Loop 复用 Pi `ModelRuntime`/`AgentSession`；Himawari 只保留 routing policy、Secret Handle、Payload、分类披露、预算、Trace 和 Pi 未公开的 provider/cost observation。Ambient Skills/Extensions/prompts discovery 保持关闭，批准资源只能通过 Pi `DefaultResourceLoader` 的显式 additional paths 装载。Pi built-in coding tools 只能使用产品注入的受治理 Operations，缺失时不得回退到本机默认 I/O。Pi 自有 model selection 或 Session persistence 不能绕过产品 routing、authority 或 capability governance。
 
 ### GitHub 仓库在线监控
 

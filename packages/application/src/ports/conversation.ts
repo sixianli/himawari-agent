@@ -90,6 +90,12 @@ export interface ThreadDistillationWork {
   readonly policyVersion: string;
   readonly modelDescriptorRef: string;
   readonly trigger: ThreadCheckpointTrigger;
+  /**
+   * For `pre_compaction`, this is Pi's already protected compaction summary.
+   * After completion it is also the canonical published summary reference.
+   */
+  readonly summaryRef: PayloadRef | null;
+  readonly summaryClassification: DataClassification | null;
   readonly status: "pending" | "running" | "completed" | "retry_wait" | "failed_terminal";
   readonly revision: number;
   readonly attemptCount: number;
@@ -184,9 +190,15 @@ export interface ThreadDistillationModelPort {
     readonly policyVersion: string;
     readonly modelDescriptorRef: string;
     readonly sources: readonly (ThreadCheckpointSourceRef & { readonly text: string })[];
+    readonly preparedSummary?: {
+      readonly ref: PayloadRef;
+      readonly text: string;
+      readonly dataClassification: DataClassification;
+    };
   }): Promise<{
-    readonly summaryText: string;
-    readonly summaryClassification: DataClassification;
+    /** Must be null when `preparedSummary` is supplied; Pi already summarized the context. */
+    readonly summaryText: string | null;
+    readonly summaryClassification: DataClassification | null;
     readonly candidates: readonly ThreadDistillationModelCandidate[];
   }>;
 }

@@ -94,8 +94,8 @@ class DeterministicDistiller implements ThreadDistillationModelPort {
     }
     const facts = input.sources.map(({ text }) => text).join(" | ");
     return {
-      summaryText: `可信摘要：${facts}`,
-      summaryClassification: "private" as const,
+      summaryText: input.preparedSummary ? null : `可信摘要：${facts}`,
+      summaryClassification: input.preparedSummary ? null : ("private" as const),
       candidates: this.zeroCandidates
         ? []
         : [
@@ -186,6 +186,21 @@ async function seed(): Promise<{
     );
     sourceText.set(ref, text);
   }
+  for (let sequence = 1; sequence <= 8; sequence += 1) {
+    const ref = `payload-pi-compaction-summary-${sequence}`;
+    const text = `可信摘要：${Array.from({ length: sequence }, (_, index) =>
+      sourceText.get(source(index + 1).ref),
+    ).join(" | ")}`;
+    insertPayload.run(
+      ref,
+      OWNER_ID,
+      AGENT_ID,
+      Uint8Array.from(Buffer.from(text, "utf8")),
+      `fixture-pi-summary-digest:${sequence}`,
+      T0,
+    );
+    sourceText.set(ref, text);
+  }
   const secondaryRef = "payload-secondary-source-1";
   const secondaryText = "Second Thread 只讨论园艺浇水";
   insertPayload.run(
@@ -257,6 +272,14 @@ function requestInput(
     sources: [source(watermark)],
     allAdmittedRunsStable: true,
     sourceSize: 100,
+    ...(trigger === "pre_compaction"
+      ? {
+          preparedSummary: {
+            ref: `payload-pi-compaction-summary-${watermark}`,
+            dataClassification: "private" as const,
+          },
+        }
+      : {}),
   } as const;
 }
 
@@ -283,6 +306,13 @@ describe("Task 19 durable Thread checkpoints and distillation", () => {
     expect(() =>
       service.request({ ...requestInput("source_threshold", 4), sourceSize: 99 }),
     ).toThrow(expect.objectContaining({ code: "PORT_INVALID_OPERATION" }));
+    const { preparedSummary: _preparedSummary, ...missingPreparedSummary } = requestInput(
+      "pre_compaction",
+      3,
+    );
+    expect(() => service.request(missingPreparedSummary)).toThrow(
+      expect.objectContaining({ code: "PORT_INVALID_OPERATION" }),
+    );
 
     const owner = await service.request(requestInput("owner_explicit", 1));
     const duplicate = await service.request(requestInput("owner_explicit", 1));
@@ -369,6 +399,8 @@ describe("Task 19 durable Thread checkpoints and distillation", () => {
     expect(recovered).toHaveLength(1);
     const output = recovered[0];
     expect(output?.work.status).toBe("completed");
+    expect(output?.summary.contentRef).toBe(requested.summaryRef);
+    expect(output?.work.summaryRef).toBe(requested.summaryRef);
     expect(output?.work.attemptCount).toBe(4);
     expect(output?.candidates.map(({ kind }) => kind)).toEqual([
       "memory",
@@ -475,7 +507,9 @@ describe("Task 19 durable Thread checkpoints and distillation", () => {
 
     const primarySummary = await state.latestSummary(THREAD_ID);
     const secondarySummary = await state.latestSummary(SECOND_THREAD_ID);
-    const primaryText = restartedContent.plaintextByRef.get(primarySummary?.contentRef ?? "");
+    const primaryText =
+      restartedContent.plaintextByRef.get(primarySummary?.contentRef ?? "") ??
+      sourceText.get(primarySummary?.contentRef ?? "");
     const secondaryText = restartedContent.plaintextByRef.get(secondarySummary?.contentRef ?? "");
     const expectedFacts = [
       sourceText.get(source(1).ref),

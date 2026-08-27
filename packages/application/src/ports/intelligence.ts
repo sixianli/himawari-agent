@@ -248,13 +248,66 @@ export interface RuntimeCompactionProposal {
   readonly dataClassification: DataClassification;
 }
 
+export type RuntimeProjectionContent =
+  | {
+      readonly type: "text";
+      readonly text: string;
+    }
+  | {
+      readonly type: "tool_call";
+      readonly id: string;
+      readonly name: string;
+      readonly arguments: JsonObject;
+    };
+
+export type RuntimeProjectionMessage =
+  | {
+      readonly id: string;
+      readonly role: "user" | "assistant";
+      readonly content: readonly RuntimeProjectionContent[];
+      readonly occurredAt: string;
+      readonly stopReason?: "stop" | "length" | "toolUse" | "error" | "aborted";
+    }
+  | {
+      readonly id: string;
+      readonly role: "tool_result";
+      readonly toolCallId: string;
+      readonly toolName: string;
+      readonly content: readonly Extract<RuntimeProjectionContent, { readonly type: "text" }>[];
+      readonly isError: boolean;
+      readonly occurredAt: string;
+    };
+
+export interface RuntimeProjectionCompaction {
+  readonly summary: string;
+  readonly firstKeptMessageId: string;
+  readonly tokensBefore: number;
+}
+
+export interface RuntimeProjectionContext {
+  /** Ordered historical messages materialized from product-owned state. */
+  readonly history: readonly RuntimeProjectionMessage[];
+  /** The new user prompt for this Run; it is not part of `history`. */
+  readonly prompt: {
+    readonly id: string;
+    readonly content: string;
+    readonly occurredAt: string;
+  };
+  /** Latest accepted product checkpoint, when the projected history was compacted. */
+  readonly compaction?: RuntimeProjectionCompaction;
+}
+
 /**
  * Product-owned projection boundary used by runtime adapters. Implementations
  * resolve product references for one Run and capture redacted observations back
  * as product Payload references. Pi Session data never implements this port.
  */
 export interface RuntimeProjectionPort {
-  resolveText(runId: RunId, payloadRef: PayloadRef): Promise<string>;
+  resolveSystemInstruction(runId: RunId, payloadRef: PayloadRef): Promise<string>;
+  resolveContext(
+    runId: RunId,
+    messageRefs: readonly PayloadRef[],
+  ): Promise<RuntimeProjectionContext>;
   capture(input: RuntimeProjectionCapture): Promise<PayloadRef>;
   proposeCompaction(input: RuntimeCompactionProposal): Promise<PayloadRef>;
 }

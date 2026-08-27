@@ -12,7 +12,7 @@ Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私�
 - TypeScript：`5.9.3`
 - Biome：`2.3.5`
 - Vitest：`4.1.9`
-- `@earendil-works/pi-coding-agent`：`0.84.2`
+- `@earendil-works/pi-coding-agent`、`@earendil-works/pi-ai`：`0.84.2`
 
 安装锁文件中的依赖：
 
@@ -96,6 +96,7 @@ VS Code 可以用下列 launch 配置在 Vitest 中断进 sibling TypeScript sou
 | 内存 Session projection 与 entry tree | `packages/coding-agent/src/core/session-manager.ts` |
 | provider/tool lifecycle hook 类型与分发 | `packages/coding-agent/src/core/extensions/types.ts`, `packages/coding-agent/src/core/extensions/runner.ts` |
 | custom ToolDefinition 到 Agent tool 的包装 | `packages/coding-agent/src/core/tools/tool-definition-wrapper.ts` |
+| 内置 coding tool schemas 与可注入 Operations | `packages/coding-agent/src/core/tools/` |
 | compaction result 生成 | `packages/coding-agent/src/core/compaction/compaction.ts` |
 | Agent message/turn/tool event loop | `packages/agent/src/types.ts`, `packages/agent/src/agent-loop.ts` |
 | 自动化测试使用的 faux provider | `packages/ai/src/providers/faux.ts` |

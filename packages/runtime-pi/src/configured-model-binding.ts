@@ -1,14 +1,18 @@
+import { InMemoryCredentialStore, type Api, type Model } from "@earendil-works/pi-ai";
+import type {
+  CreateModelRuntimeOptions,
+  ModelRuntime,
+  ProviderConfig,
+  ProviderModelConfig,
+} from "@earendil-works/pi-coding-agent";
+import type {
+  ModelDescriptor,
+  ModelProviderRouting,
+  ModelSecretRequirement,
+} from "@himawari-agent/application/runtime-port";
 import type { PiModelBinding, PiModelBindingPort } from "./pi-runtime-adapter.js";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-
-export interface PiProviderRouting {
-  readonly order?: readonly string[];
-  readonly allow_fallbacks?: boolean;
-  readonly require_parameters?: boolean;
-  readonly data_collection?: "allow" | "deny";
-  readonly zdr?: boolean;
-}
 
 export interface PiModelCost {
   readonly input: number;
@@ -18,16 +22,14 @@ export interface PiModelCost {
 }
 
 /**
- * Product-owned model metadata used to construct a closed Pi model runtime.
- * The version is an immutable release or catalog snapshot reference; it is not
- * used as a dynamic marketplace selector.
+ * The single product-owned descriptor for a model that is executable through
+ * Pi. Product policy fields and Pi runtime fields live on one immutable
+ * identity so no paired descriptor can drift.
  */
-export interface PiConfiguredModelDescriptor {
-  readonly ref: string;
-  readonly role: "primary" | "fallback";
+export interface ConfiguredPiModelDescriptor extends ModelDescriptor {
   readonly provider: "openrouter";
-  readonly model: string;
-  readonly version: string;
+  readonly routingClass: "primary" | "fallback";
+  readonly secretRequirement: ModelSecretRequirement;
   readonly name: string;
   readonly api: "openai-completions";
   readonly baseUrl?: string;
@@ -36,18 +38,6 @@ export interface PiConfiguredModelDescriptor {
   readonly cost: PiModelCost;
   readonly contextWindow: number;
   readonly maxTokens: number;
-  readonly capabilities: readonly string[];
-  readonly disclosure: "local_only" | "trusted_remote" | "external_remote";
-  readonly allowedDataClassifications: readonly (
-    | "public"
-    | "private"
-    | "sensitive"
-    | "restricted"
-  )[];
-  readonly secretRef: string;
-  readonly secretVersion: string;
-  readonly secretPurpose: string;
-  readonly providerRouting?: PiProviderRouting;
 }
 
 export interface PiProviderSecretSource {
@@ -55,76 +45,22 @@ export interface PiProviderSecretSource {
   resolve(secretRef: string, secretVersion: string): Promise<string>;
 }
 
-export interface PiModelRuntime {
-  getModel(providerId: string, modelId: string): unknown | undefined;
-  registerProvider(providerId: string, config: Readonly<Record<string, unknown>>): void;
-  setRuntimeApiKey(providerId: string, apiKey: string): Promise<void>;
-  removeRuntimeApiKey?(providerId: string): Promise<void>;
-}
+export type PiModelRuntime = ModelRuntime;
 
 export interface PiModelRuntimeFactory {
-  create(options: Readonly<Record<string, unknown>>): Promise<PiModelRuntime>;
+  create(options: CreateModelRuntimeOptions): Promise<ModelRuntime>;
 }
 
 export interface ConfiguredPiModelBindingPortOptions {
-  readonly descriptors: readonly PiConfiguredModelDescriptor[];
+  readonly descriptors: readonly ConfiguredPiModelDescriptor[];
   readonly secretSource: PiProviderSecretSource;
   readonly runtimeFactory?: PiModelRuntimeFactory;
 }
 
-interface PiSdk {
-  readonly ModelRuntime: {
-    create(options: Readonly<Record<string, unknown>>): Promise<PiModelRuntime>;
-  };
-}
-
-type EphemeralCredential = { readonly type: "api_key"; readonly key: string };
-
-class EphemeralCredentialStore {
-  readonly #credentials = new Map<string, EphemeralCredential>();
-
-  async read(providerId: string, options?: { readonly signal?: AbortSignal }) {
-    options?.signal?.throwIfAborted();
-    const credential = this.#credentials.get(providerId);
-    return credential === undefined ? undefined : { ...credential };
-  }
-
-  async list(options?: { readonly signal?: AbortSignal }) {
-    options?.signal?.throwIfAborted();
-    return [...this.#credentials].map(([providerId, credential]) => ({
-      providerId,
-      type: credential.type,
-    }));
-  }
-
-  async modify(
-    providerId: string,
-    update: (current: EphemeralCredential | undefined) => Promise<EphemeralCredential | undefined>,
-    options?: { readonly signal?: AbortSignal },
-  ) {
-    options?.signal?.throwIfAborted();
-    const next = await update(this.#credentials.get(providerId));
-    options?.signal?.throwIfAborted();
-    if (next === undefined) this.#credentials.delete(providerId);
-    else this.#credentials.set(providerId, { ...next });
-    return next === undefined ? undefined : { ...next };
-  }
-
-  async delete(providerId: string, options?: { readonly signal?: AbortSignal }): Promise<void> {
-    options?.signal?.throwIfAborted();
-    this.#credentials.delete(providerId);
-  }
-}
-
-async function loadPiSdk(): Promise<PiSdk> {
-  const moduleSpecifier: string = "@earendil-works/pi-coding-agent";
-  return (await import(moduleSpecifier)) as PiSdk;
-}
-
-async function defaultRuntimeFactory(
-  options: Readonly<Record<string, unknown>>,
-): Promise<PiModelRuntime> {
-  const piSdk = await loadPiSdk();
+async function defaultRuntimeFactory(options: CreateModelRuntimeOptions): Promise<ModelRuntime> {
+  const piSdk: typeof import("@earendil-works/pi-coding-agent") = await import(
+    "@earendil-works/pi-coding-agent"
+  );
   return piSdk.ModelRuntime.create(options);
 }
 
@@ -158,7 +94,9 @@ function assertBaseUrl(value: string): void {
   }
 }
 
-function freezeRouting(routing: PiProviderRouting | undefined): PiProviderRouting | undefined {
+function freezeRouting(
+  routing: ModelProviderRouting | undefined,
+): ModelProviderRouting | undefined {
   if (routing === undefined) return undefined;
   if (routing.order !== undefined) {
     if (
@@ -189,7 +127,7 @@ function freezeRouting(routing: PiProviderRouting | undefined): PiProviderRoutin
   });
 }
 
-function freezeDescriptor(descriptor: PiConfiguredModelDescriptor): PiConfiguredModelDescriptor {
+function freezeDescriptor(descriptor: ConfiguredPiModelDescriptor): ConfiguredPiModelDescriptor {
   const providerRouting = freezeRouting(descriptor.providerRouting);
   return Object.freeze({
     ...descriptor,
@@ -197,20 +135,21 @@ function freezeDescriptor(descriptor: PiConfiguredModelDescriptor): PiConfigured
     cost: Object.freeze({ ...descriptor.cost }),
     capabilities: Object.freeze([...descriptor.capabilities]),
     allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
+    secretRequirement: Object.freeze({ ...descriptor.secretRequirement }),
     ...(providerRouting === undefined ? {} : { providerRouting }),
   });
 }
 
-function validateDescriptor(descriptor: PiConfiguredModelDescriptor, index: number): void {
+function validateDescriptor(descriptor: ConfiguredPiModelDescriptor, index: number): void {
   const field = `descriptors[${index}]`;
   for (const [name, value] of [
     ["ref", descriptor.ref],
     ["model", descriptor.model],
     ["version", descriptor.version],
     ["name", descriptor.name],
-    ["secretRef", descriptor.secretRef],
-    ["secretVersion", descriptor.secretVersion],
-    ["secretPurpose", descriptor.secretPurpose],
+    ["secretRequirement.secretRef", descriptor.secretRequirement.secretRef],
+    ["secretRequirement.secretVersion", descriptor.secretRequirement.secretVersion],
+    ["secretRequirement.purpose", descriptor.secretRequirement.purpose],
   ] as const) {
     assertNonEmpty(value, `${field}.${name}`);
   }
@@ -232,14 +171,14 @@ function validateDescriptor(descriptor: PiConfiguredModelDescriptor, index: numb
   ) {
     throw new TypeError(`${field}.allowedDataClassifications must be non-empty and unique`);
   }
-  if (descriptor.role === "fallback") {
-    if (
-      descriptor.allowedDataClassifications.length !== 1 ||
-      descriptor.allowedDataClassifications[0] !== "private"
-    ) {
-      throw new TypeError(`${field}.allowedDataClassifications must be exactly private`);
-    }
+  if (
+    descriptor.routingClass === "fallback" &&
+    (descriptor.allowedDataClassifications.length !== 1 ||
+      descriptor.allowedDataClassifications[0] !== "private")
+  ) {
+    throw new TypeError(`${field}.allowedDataClassifications must be exactly private`);
   }
+  assertPositiveInteger(descriptor.priority, `${field}.priority`);
   assertPositiveInteger(descriptor.contextWindow, `${field}.contextWindow`);
   assertPositiveInteger(descriptor.maxTokens, `${field}.maxTokens`);
   for (const [name, value] of Object.entries(descriptor.cost)) {
@@ -248,34 +187,10 @@ function validateDescriptor(descriptor: PiConfiguredModelDescriptor, index: numb
   if (descriptor.baseUrl !== undefined) assertBaseUrl(descriptor.baseUrl);
 }
 
-function providerModelConfig(descriptor: PiConfiguredModelDescriptor, baseUrl: string) {
-  const compat: Record<string, unknown> = {
-    maxTokensField: "max_tokens",
-    supportsUsageInStreaming: true,
-    supportsStrictMode: descriptor.capabilities.includes("structured_outputs"),
-    ...(descriptor.reasoning ? { thinkingFormat: "openrouter" } : {}),
-    ...(descriptor.providerRouting === undefined
-      ? {}
-      : {
-          openRouterRouting: {
-            ...(descriptor.providerRouting.order === undefined
-              ? {}
-              : { order: [...descriptor.providerRouting.order] }),
-            ...(descriptor.providerRouting.allow_fallbacks === undefined
-              ? {}
-              : { allow_fallbacks: descriptor.providerRouting.allow_fallbacks }),
-            ...(descriptor.providerRouting.require_parameters === undefined
-              ? {}
-              : { require_parameters: descriptor.providerRouting.require_parameters }),
-            ...(descriptor.providerRouting.data_collection === undefined
-              ? {}
-              : { data_collection: descriptor.providerRouting.data_collection }),
-            ...(descriptor.providerRouting.zdr === undefined
-              ? {}
-              : { zdr: descriptor.providerRouting.zdr }),
-          },
-        }),
-  };
+function providerModelConfig(
+  descriptor: ConfiguredPiModelDescriptor,
+  baseUrl: string,
+): ProviderModelConfig {
   return {
     id: descriptor.model,
     name: descriptor.name,
@@ -286,17 +201,25 @@ function providerModelConfig(descriptor: PiConfiguredModelDescriptor, baseUrl: s
     cost: { ...descriptor.cost },
     contextWindow: descriptor.contextWindow,
     maxTokens: descriptor.maxTokens,
-    compat,
+    compat: {
+      maxTokensField: "max_tokens",
+      supportsUsageInStreaming: true,
+      supportsStrictMode: descriptor.capabilities.includes("structured_outputs"),
+      ...(descriptor.reasoning ? { thinkingFormat: "openrouter" as const } : {}),
+      ...(descriptor.providerRouting === undefined
+        ? {}
+        : { openRouterRouting: structuredClone(descriptor.providerRouting) }),
+    },
   };
 }
 
 export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
-  readonly #descriptors: readonly PiConfiguredModelDescriptor[];
-  readonly #byRef: ReadonlyMap<string, PiConfiguredModelDescriptor>;
+  readonly #descriptors: readonly ConfiguredPiModelDescriptor[];
+  readonly #byRef: ReadonlyMap<string, ConfiguredPiModelDescriptor>;
   readonly #secretSource: PiProviderSecretSource;
   readonly #runtimeFactory: PiModelRuntimeFactory;
-  #runtime: PiModelRuntime | undefined;
-  #initialization: Promise<PiModelRuntime> | undefined;
+  #runtime: ModelRuntime | undefined;
+  #initialization: Promise<ModelRuntime> | undefined;
 
   constructor(options: ConfiguredPiModelBindingPortOptions) {
     if (!options.secretSource.productionSuitable) {
@@ -307,19 +230,21 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
     }
     const descriptors = options.descriptors.map(freezeDescriptor);
     descriptors.forEach(validateDescriptor);
-    if (descriptors.filter(({ role }) => role === "primary").length !== 1) {
+    if (descriptors.filter(({ routingClass }) => routingClass === "primary").length !== 1) {
       throw new TypeError("PI_MODEL_BINDING_REQUIRES_ONE_PRIMARY");
     }
-    if (descriptors.filter(({ role }) => role === "fallback").length !== 1) {
+    if (descriptors.filter(({ routingClass }) => routingClass === "fallback").length !== 1) {
       throw new TypeError("PI_MODEL_BINDING_REQUIRES_ONE_FALLBACK");
     }
     if (new Set(descriptors.map(({ ref }) => ref)).size !== descriptors.length) {
       throw new TypeError("PI_MODEL_BINDING_REQUIRES_UNIQUE_REFS");
     }
-    const provider = descriptors[0]?.provider;
-    const baseUrl = descriptors[0]?.baseUrl ?? OPENROUTER_BASE_URL;
-    const secretIdentity = descriptors[0]
-      ? `${descriptors[0].secretRef}@${descriptors[0].secretVersion}:${descriptors[0].secretPurpose}`
+    const first = descriptors[0];
+    const provider = first?.provider;
+    const baseUrl = first?.baseUrl ?? OPENROUTER_BASE_URL;
+    const firstSecret = first?.secretRequirement;
+    const secretIdentity = firstSecret
+      ? `${firstSecret.secretRef}@${firstSecret.secretVersion}:${firstSecret.purpose}`
       : "";
     if (
       provider === undefined ||
@@ -332,8 +257,8 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
     }
     if (
       descriptors.some(
-        (descriptor) =>
-          `${descriptor.secretRef}@${descriptor.secretVersion}:${descriptor.secretPurpose}` !==
+        ({ secretRequirement }) =>
+          `${secretRequirement.secretRef}@${secretRequirement.secretVersion}:${secretRequirement.purpose}` !==
           secretIdentity,
       )
     ) {
@@ -345,7 +270,7 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
     this.#runtimeFactory = options.runtimeFactory ?? { create: defaultRuntimeFactory };
   }
 
-  configuredDescriptors(): readonly PiConfiguredModelDescriptor[] {
+  configuredDescriptors(): readonly ConfiguredPiModelDescriptor[] {
     return this.#descriptors.map((descriptor) => freezeDescriptor(descriptor));
   }
 
@@ -355,7 +280,7 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
     const runtime = await this.runtime();
     const model = runtime.getModel(descriptor.provider, descriptor.model);
     if (model === undefined) throw new Error("PI_MODEL_NOT_REGISTERED");
-    return { model, modelRuntime: runtime };
+    return { model: model as Model<Api>, modelRuntime: runtime };
   }
 
   async close(): Promise<void> {
@@ -363,12 +288,12 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
     const runtime = this.#runtime;
     this.#runtime = undefined;
     this.#initialization = undefined;
-    if (runtime?.removeRuntimeApiKey !== undefined) {
+    if (runtime !== undefined) {
       await runtime.removeRuntimeApiKey("openrouter").catch(() => undefined);
     }
   }
 
-  private async runtime(): Promise<PiModelRuntime> {
+  private async runtime(): Promise<ModelRuntime> {
     if (this.#runtime !== undefined) return this.#runtime;
     if (this.#initialization !== undefined) return this.#initialization;
     const initialization = this.initializeRuntime();
@@ -381,12 +306,16 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
     }
   }
 
-  private async initializeRuntime(): Promise<PiModelRuntime> {
+  private async initializeRuntime(): Promise<ModelRuntime> {
     const first = this.#descriptors[0];
     if (first === undefined) throw new Error("PI_MODEL_BINDING_EMPTY");
+    const secretRequirement = first.secretRequirement;
     let secret: string;
     try {
-      secret = await this.#secretSource.resolve(first.secretRef, first.secretVersion);
+      secret = await this.#secretSource.resolve(
+        secretRequirement.secretRef,
+        secretRequirement.secretVersion,
+      );
     } catch {
       throw new Error("PI_PROVIDER_SECRET_UNAVAILABLE");
     }
@@ -394,7 +323,7 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
 
     const baseUrl = first.baseUrl ?? OPENROUTER_BASE_URL;
     const runtime = await this.#runtimeFactory.create({
-      credentials: new EphemeralCredentialStore(),
+      credentials: new InMemoryCredentialStore(),
       modelsPath: null,
       allowModelNetwork: false,
       refreshOnCreate: false,
@@ -406,7 +335,7 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
         api: first.api,
         authHeader: true,
         models: this.#descriptors.map((descriptor) => providerModelConfig(descriptor, baseUrl)),
-      });
+      } satisfies ProviderConfig);
       await runtime.setRuntimeApiKey(first.provider, secret);
       for (const descriptor of this.#descriptors) {
         if (runtime.getModel(descriptor.provider, descriptor.model) === undefined) {
@@ -414,9 +343,7 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
         }
       }
     } catch {
-      if (runtime.removeRuntimeApiKey !== undefined) {
-        await runtime.removeRuntimeApiKey(first.provider).catch(() => undefined);
-      }
+      await runtime.removeRuntimeApiKey(first.provider).catch(() => undefined);
       throw new Error("PI_MODEL_RUNTIME_CONFIGURATION_FAILED");
     }
     return runtime;

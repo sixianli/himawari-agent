@@ -69,6 +69,7 @@ date: "2026-08-26"
 
 - 每项能力展示稳定 ID、类型、来源、签名/完整性、精确版本、operations、permission refs、数据/网络/文件范围、secret refs、隔离、费用、健康和批准历史。
 - 未经来源审查、首次授权或所需批准的能力不能进入 active，也不能出现在 Pi authorized tool list 或 Worker registry。
+- Pi 的 ambient capability discovery 始终关闭；active Extension、Skill 或 prompt 必须由产品校验 Handle 后作为显式 additional resource path 投影。产品不得复制 Pi resource loader 或另建第二套 Extension/Skill discovery protocol。
 - 同一可信来源、签名有效、兼容、没有 permission/operation/data/secret 扩张的更新可以按 Owner 已启用策略自动应用，但必须记录、验证并可回退。
 - 来源、主要版本、完整性不可验证、权限/operation/data/secret 扩张或新增可执行代码的更新必须 `ASK`；拒绝后旧 active version 保持原状态。
 - 停用或撤销立即使新执行和旧短期 Handle 失效，并暂停依赖该能力的任务；不得自动改用相似能力绕过。
@@ -79,6 +80,7 @@ date: "2026-08-26"
 - Skill 或外部内容中的指令属于不可信数据，不能修改系统 policy、Owner Grant、能力 manifest 或信任根。
 - MCP server 只暴露经过产品 manifest 映射和批准的 tools/resources/prompts；远端 server 身份、transport 与权限变化按能力更新处理。
 - 本地程序只能通过声明的 argv/env/workdir/stdin/stdout/network/filesystem contract 执行；未声明的子进程、联网、路径或 secret 请求 fail closed。
+- 文件与命令类 Tool 复用 Pi 内置定义和 schema；Himawari 只提供实现 manifest/Grant/Handle/host scope 的 Operations。Operations 缺失、撤销或过期时 fail closed，不回退 Pi local defaults。
 
 ## 设计
 

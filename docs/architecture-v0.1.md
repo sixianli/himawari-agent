@@ -31,7 +31,7 @@ persistence-sqlite → application + domain + product contracts
 memory-mem0 → application + domain
 integration-github → application + domain + product contracts
 platform-node → application + domain + contracts
-runtime-pi → application + @earendil-works/pi-coding-agent
+runtime-pi → application/runtime-port + @earendil-works/pi-coding-agent + @earendil-works/pi-ai
 application → domain + product contracts
 contracts → no internal dependency
 domain → no internal dependency
@@ -42,7 +42,7 @@ testing → application + domain + product contracts
 
 根构建可以分别验证 Node 图、两类 contracts、两个服务、browser bundle 和 admin CLI。`scripts/generate-artifact-manifest.mjs` 会在构建后生成 machine-readable manifest，固定根 manifest/lock SHA-256、每个 workspace 的内容 checksum，以及当次 browser artifacts 的路径、大小和 SHA-256；生成物位于忽略提交的 `dist/`，脚本和 checksum contract 才是当前受版本控制的稳定入口。
 
-`packages/runtime-pi` 直接固定 `@earendil-works/pi-coding-agent` `0.84.2`；提交的 manifest 和 lockfile 不引用相邻的 `../pi-mono`。它只能从 `@himawari-agent/application/runtime-port` 导入 Agent Runtime request/event 类型，不能通过 application 根入口获得 Memory、Permission、Capability Registry 或持久化写端口。该隔离边界落实了产品自有 Pi 适配层决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
+`packages/runtime-pi` 直接固定 `@earendil-works/pi-coding-agent` 与 `@earendil-works/pi-ai` `0.84.2`；提交的 manifest 和 lockfile 不引用相邻的 `../pi-mono`。它只能从 `@himawari-agent/application/runtime-port` 导入 Agent Runtime request/event 类型，不能通过 application 根入口获得 Memory、Permission、Capability Registry 或持久化写端口。Pi `0.84.2` 的发布声明图在 TypeScript `NodeNext` 下包含上游 JSON import-attribute 与 optional provider 声明问题，因此本仓库启用 `skipLibCheck` 仅跳过第三方声明文件检查；Himawari 自有源码仍由 strict TypeScript 完整检查，并以 published package compatibility test 补足运行时证据。该隔离边界落实了产品自有 Pi 适配层决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md]
 
 ## Data Model
 
@@ -204,7 +204,7 @@ Memory 端口使用产品自己的 proposal、record、candidate 和 correction 
 
 `ContextFormationService` 对 Memory 只持有 `search` 子集，并可读取当前 Thread 最新的已完成摘要。每次调用按固定顺序组装符合数据等级的 Thread summary ref、原始 Thread message refs、trigger Payload、policy refs、通过数据等级与数量限制的 memory content refs、Capability summary refs，并把最终清单写成 protected Payload。检索 query、全部 candidates、选择/排除理由和 final context 分成四个父子/因果相连的 Trace 事件；高敏候选会在 candidates 中可见，但不能进入较低等级上下文。摘要只作为附加上下文，原始 transcript 继续保留并参与组装。
 
-`ThreadCheckpointService` 以 `ThreadId + source watermark + distillation policy version` 派生稳定 checkpoint job 与 generation identity。Owner 明确请求、所有 admitted Runs 已稳定的受控 idle、compaction 前和达到 source-size threshold 都进入同一持久队列；触发本身不关闭、归档或替换 Thread。SQLite claim lease 维护 `pending → running → completed` 或有界 `retry_wait → failed_terminal`，进程中断后只恢复原 identity。
+`ThreadCheckpointService` 以 `ThreadId + source watermark + distillation policy version` 派生稳定 checkpoint job 与 generation identity。Owner 明确请求、所有 admitted Runs 已稳定的受控 idle、compaction 前和达到 source-size threshold 都进入同一持久队列；触发本身不关闭、归档或替换 Thread。SQLite claim lease 维护 `pending → running → completed` 或有界 `retry_wait → failed_terminal`，进程中断后只恢复原 identity。`pre_compaction` 必须携带 Pi 已生成并已保护的 summary Payload；该引用直接占用既有 `summary_ref`，派生模型只提取 Memory/experience/commitment candidates 并必须返回空 summary，产品提交原样发布同一摘要，不再执行第二次摘要生成。其他三类产品触发仍由显式 distillation model 生成摘要。
 
 模型只接收已扫描过机器秘密的受保护来源正文。一次 generation 先准备受保护 Payload，再在单个 SQLite transaction 中共同提交 summary、零条或多条 Memory/experience/commitment candidate 及其 provenance，最后才把 job/generation 标记 completed；事务中断不会暴露 partial generation，COMMIT 后回包丢失则按 generation identity 回读原输出。summary 固定来源起止序号、水位线、policy/model identity。敏感候选正文在批准前不持久化，未解决 commitment 只保持候选状态；该服务不依赖 Scheduler、Capability 或外部动作端口。
 
@@ -220,19 +220,19 @@ primary、specialist、local 只选择对应 approved routing class；retryable 
 
 每次模型调用都把 request、started、output reference、completed 或 failed 转成父子/因果相连的产品 Trace；重试另有 `model.retry` 和新的 route decision。terminal Payload 记录 token usage、cost micros 和 latency milliseconds，错误只记录稳定机器码。输入和流式输出正文仍只通过 Payload reference 传递。
 
-需要供应商凭证时，Router 根据 descriptor 的 reference/version/purpose 签发仅绑定当前 Owner、Agent、Run、invocation 和 deadline 的 opaque Secret Handle。`packages/platform-node` 的 `TrustedModelProviderAdapter` 在进入受信任 transport 前重新验证 Handle，并只在该适配器的局部内存解析原值；应用请求、产品事件、Trace 和 reference-only resolution log 都不包含原值。调用结束后 Router 撤销 Handle。`OpenRouterModelTransport` 已实现产品 Payload reference 到 OpenRouter SSE chat completion 的受信任传输、usage/cost/provider observation 记录，以及跨 chunk 输出落盘前的 machine-secret redaction；`RestrictedProviderSecretSource`、systemd credential 和 macOS Keychain provider-secret 边界也已与固定大小的 Payload 加密密钥 source 分离。Task 20 已通过 strict provider routing、Keychain provider-secret readback、闭合 Pi 两模型注册和 `apps/agent-service` 的 production model-path composition factory 验证；该 factory 尚未由最终 Agent Service `main` 与完整 Gateway/Memory/Worker 组合接入，且真实 paid call、外部 provider readback 和 embedding 仍未完成。该边界落实受策略控制的模型路由：[SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
+需要供应商凭证时，Router 根据 descriptor 的 reference/version/purpose 签发仅绑定当前 Owner、Agent、Run、invocation 和 deadline 的 opaque Secret Handle。`packages/platform-node` 的 `TrustedModelProviderAdapter` 在进入受信任 transport 前重新验证 Handle，并只在该适配器的局部内存解析原值；应用请求、产品事件、Trace 和 reference-only resolution log 都不包含原值。调用结束后 Router 撤销 Handle。模型请求、provider API 选择、HTTP 调用、SSE 解析、usage 与标准重试语义全部交给 Pi `ModelRuntime.stream()`；Himawari 的 `PiModelTransport` 只负责产品 Payload 读写、跨 chunk machine-secret redaction、产品事件映射，以及 Pi `0.84.2` 尚未公开的 OpenRouter generation/provider/实际 cost 元数据旁路观察。观察器只读取克隆 Response，不能替代或影响 Pi 的响应解析。`RestrictedProviderSecretSource`、systemd credential 和 macOS Keychain provider-secret 边界也已与固定大小的 Payload 加密密钥 source 分离。Task 20 已通过 strict provider routing、Keychain provider-secret readback、闭合 Pi 两模型注册和 `apps/agent-service` 的 production model-path composition factory 验证；该 factory 尚未由最终 Agent Service `main` 与完整 Gateway/Memory/Worker 组合接入，且真实 paid call、外部 provider readback 和 embedding 仍未完成。该边界落实受策略控制的模型路由：[SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
 
 ### Pi Agent Runtime projection
 
-`packages/runtime-pi` 是唯一可以加载 `@earendil-works/pi-*` 包的 workspace。它动态加载固定版本的 `pi-coding-agent`，以避免 Pi 的上游声明类型扩散到产品接口，同时由真实 published package compatibility test 验证 `0.84.2` 的导出和运行行为。每个 Run 都显式传入 product-selected model binding、产品 Payload 引用和授权能力 Handle，并创建 `SessionManager.inMemory()`；Pi Session 只在该次执行中存在。
+`packages/runtime-pi` 是唯一可以加载 `@earendil-works/pi-*` 包的 workspace。适配器内部直接使用固定版本的 `AgentSessionEvent`、`CreateAgentSessionOptions`、`ModelRuntime`、`Model`、`ToolDefinition` 和 `SessionManager` 类型；产品端口不暴露这些类型。published package compatibility test 验证 `0.84.2` 的导出和运行行为。每个 Run 都显式传入 product-selected model binding、结构化产品上下文和授权能力 Handle，并创建 `SessionManager.inMemory()`；Pi Session 只在该次执行中存在。
 
-`ConfiguredPiModelBindingPort` 只接受 product-selected 的 primary/fallback descriptor，要求两者身份、能力、分类、披露、secret reference 和 provider routing 与 Model descriptor 一致；它通过 `modelsPath: null`、ephemeral credential store、`allowModelNetwork: false` 和 `refreshOnCreate: false` 关闭磁盘模型发现与网络刷新，只注册闭合的两个 OpenRouter 模型。共享 provider secret 由 production-suitable host source 在首次 binding 时按需解析并只交给 Pi runtime；原值不进入 descriptor、runtime options、Trace 或诊断。fallback 的 `order: ["z-ai"]` 仅作用于 fallback descriptor，不把该上游顺序强加给 primary。
+`ConfiguredPiModelBindingPort` 只接受一组 canonical primary/fallback descriptor；同一个对象同时承载产品策略身份与 Pi provider model config，不再维护可能漂移的 `{ model, pi }` 双描述符。它通过 `modelsPath: null`、Pi `InMemoryCredentialStore`、`allowModelNetwork: false` 和 `refreshOnCreate: false` 关闭磁盘模型发现与网络刷新，只注册闭合的两个 OpenRouter 模型。共享 provider secret 由 production-suitable host source 在首次 binding 时按需解析并只交给 Pi runtime；原值不进入 descriptor、runtime options、Trace 或诊断。fallback 的 `order: ["z-ai"]` 仅作用于 fallback descriptor，不把该上游顺序强加给 primary。
 
-资源加载器关闭项目 context、Skills、prompts、themes 和已发现 Extensions；`noTools: "all"` 同时关闭 Pi 内置 coding tools。适配器只把 `RuntimeToolPort.listAuthorized()` 返回的 custom tools 加入 Session，并在 Pi 参数 schema 验证后调用产品 preflight。Permission 已撤销、Handle 不匹配或其他 fail-closed 决定不会到达 capability execution。
+资源加载器关闭项目 context、themes 和所有 ambient Extensions/Skills/prompts discovery；产品授权端口返回的路径只能通过 `additionalExtensionPaths`、`additionalSkillPaths` 与 `additionalPromptTemplatePaths` 显式加载。`noTools: "all"` 默认关闭 Pi 本机 coding tools，适配器只把 `RuntimeToolPort.listAuthorized()` 返回的 custom tools 加入 Session，并在 Pi 参数 schema 验证后调用产品 preflight。对于后续 Host Files/Code Workspace 能力，`createGovernedPiCodingTools()` 直接复用 Pi 的 read/bash/edit/write/grep/find/ls 定义、参数规范化和结果形状，只要求注入产品受治理的 Operations；Operations 缺失时 fail closed，不回退到 Pi 本机文件或 shell。Permission 已撤销、Handle 不匹配或其他 fail-closed 决定不会到达 capability execution。
 
-Pi 的 message、turn、tool、compaction、abort、error 和 settled lifecycle 被映射为产品 Runtime event。消息、工具参数/结果和 provider observation 在进入产品 Payload capture 前做 adapter-local redaction；Runtime event 只携带 Payload reference 或稳定 error code。`before_provider_request` 与 `after_provider_response` 是当前 request/response 观察点。完成事件只会在 `waitForIdle()`、`agent_settled` 和适配器 listener queue 都完成后产生。
+`RuntimeProjectionPort.resolveContext()` 返回有角色的历史消息、tool call/tool result、独立的新 user prompt 和可选已接受 checkpoint；适配器逐条预填充 Pi `SessionManager`，不再把多个 Payload 文本用空行拼接成一条 user message。Pi 的 message、turn、tool、compaction、abort、error 和 settled lifecycle 被映射为产品 Runtime event。消息、工具参数/结果和 provider observation 在进入产品 Payload capture 前做 adapter-local redaction；Runtime event 只携带 Payload reference 或稳定 error code。内部异步队列在事件映射完成时立即向调用者产出，而不是等整个 Run 结束后回放。`before_provider_request` 与 `after_provider_response` 是当前 request/response 观察点。完成事件只会在 `waitForIdle()`、`agent_settled` 和适配器 listener queue 都完成后产生。
 
-Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请求；它不能直接写 Thread、Memory 或产品消息。Runtime 工具端口以 `RunId + toolCallId` 作为外部动作幂等边界，使 Session 重建不会重新提交已完成动作。该边界落实产品状态高于 Pi 投影的决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md] [SOURCE: docs/adr/0015-product-state-over-pi-runtime-projection.md]
+Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请求；它不能直接写 Thread、Memory 或产品消息。产品接受后把同一受保护 Payload 作为 `pre_compaction` Thread checkpoint 的 prepared summary，派生流程不得再次摘要。Runtime 工具端口以 `RunId + toolCallId` 作为外部动作幂等边界，使 Session 重建不会重新提交已完成动作。该边界落实产品状态高于 Pi 投影的决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md] [SOURCE: docs/adr/0015-product-state-over-pi-runtime-projection.md]
 
 ### Run coordination and scoped worker delegation
 

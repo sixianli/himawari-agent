@@ -1,31 +1,31 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  type ConfiguredPiModelDescriptor,
   ConfiguredPiModelBindingPort,
-  type PiConfiguredModelDescriptor,
   type PiModelRuntime,
   type PiModelRuntimeFactory,
-  type PiProviderRouting,
 } from "../src/index.js";
 
 const PRIMARY_REF = "model-openrouter-primary";
 const FALLBACK_REF = "model-openrouter-fallback";
 const SECRET = "fixture-provider-value";
-const FALLBACK_ROUTING: PiProviderRouting = {
+const FALLBACK_ROUTING = {
   order: ["z-ai"],
   allow_fallbacks: false,
   require_parameters: true,
   data_collection: "deny",
-};
+} as const;
 
 function modelDescriptor(
   role: "primary" | "fallback",
-  overrides: Partial<PiConfiguredModelDescriptor> = {},
-): PiConfiguredModelDescriptor {
+  overrides: Partial<ConfiguredPiModelDescriptor> = {},
+): ConfiguredPiModelDescriptor {
   const fallback = role === "fallback";
   return {
     ref: fallback ? FALLBACK_REF : PRIMARY_REF,
-    role,
+    routingClass: role,
+    priority: fallback ? 2 : 1,
     provider: "openrouter",
     model: fallback ? "z-ai/glm-5.3-flash" : "deepseek/deepseek-v4-flash-0731",
     version: fallback ? "catalog-2026-08-27" : "catalog-2026-08-27",
@@ -41,19 +41,21 @@ function modelDescriptor(
     capabilities: ["text", "tool_calling", "structured_outputs"],
     disclosure: "external_remote",
     allowedDataClassifications: fallback ? ["private"] : ["public", "private"],
-    secretRef: "openrouter-api-key",
-    secretVersion: "v1",
-    secretPurpose: "model-provider-auth",
+    secretRequirement: {
+      secretRef: "openrouter-api-key",
+      secretVersion: "v1",
+      purpose: "model-provider-auth",
+    },
     ...(fallback ? { providerRouting: FALLBACK_ROUTING } : {}),
     ...overrides,
   };
 }
 
-function descriptors(): readonly PiConfiguredModelDescriptor[] {
+function descriptors(): readonly ConfiguredPiModelDescriptor[] {
   return [modelDescriptor("primary"), modelDescriptor("fallback")];
 }
 
-class RecordingRuntime implements PiModelRuntime {
+class RecordingRuntime {
   readonly registered: {
     readonly providerId: string;
     readonly config: Readonly<Record<string, unknown>>;
@@ -94,16 +96,16 @@ describe("ConfiguredPiModelBindingPort", () => {
 
   it("lazily resolves the shared secret and registers exactly the closed model set", async () => {
     const runtime = new RecordingRuntime();
-    const runtimeOptions: Readonly<Record<string, unknown>>[] = [];
-    const create = vi.fn(async (options: Readonly<Record<string, unknown>>) => {
+    const runtimeOptions: Parameters<PiModelRuntimeFactory["create"]>[0][] = [];
+    const create: PiModelRuntimeFactory["create"] = vi.fn(async (options) => {
       runtimeOptions.push(options);
-      return runtime;
+      return runtime as unknown as PiModelRuntime;
     });
     const resolveSecret = vi.fn(async () => SECRET);
     const binding = new ConfiguredPiModelBindingPort({
       descriptors: descriptors(),
       secretSource: { productionSuitable: true, resolve: resolveSecret },
-      runtimeFactory: { create } satisfies PiModelRuntimeFactory,
+      runtimeFactory: { create },
     });
 
     expect(create).not.toHaveBeenCalled();

@@ -24,6 +24,8 @@ interface WorkRow {
   readonly policyVersion: string;
   readonly modelDescriptorRef: string;
   readonly trigger: ThreadDistillationWork["trigger"];
+  readonly summaryRef: string | null;
+  readonly summaryClassification: ThreadDistillationWork["summaryClassification"];
   readonly status: ThreadDistillationWork["status"];
   readonly revision: number;
   readonly attemptCount: number;
@@ -75,12 +77,15 @@ const workSelect = `SELECT checkpoint.id AS jobId, checkpoint.generation_id AS g
   checkpoint.thread_id AS threadId, checkpoint.source_watermark AS sourceWatermark,
   checkpoint.policy_version AS policyVersion,
   generation.model_descriptor_ref AS modelDescriptorRef,
-  checkpoint.trigger_kind AS trigger, checkpoint.status, checkpoint.revision,
+  checkpoint.trigger_kind AS trigger, checkpoint.summary_ref AS summaryRef,
+  summary_payload.classification AS summaryClassification,
+  checkpoint.status, checkpoint.revision,
   checkpoint.attempt_count AS attemptCount, checkpoint.next_retry_at AS nextRetryAt,
   checkpoint.claimed_by AS claimedBy, checkpoint.claim_expires_at AS claimExpiresAt,
   checkpoint.requested_at AS requestedAt, checkpoint.error_code AS errorCode
   FROM thread_checkpoint_jobs checkpoint
-  JOIN memory_generations generation ON generation.id = checkpoint.generation_id`;
+  JOIN memory_generations generation ON generation.id = checkpoint.generation_id
+  LEFT JOIN payloads summary_payload ON summary_payload.ref = checkpoint.summary_ref`;
 
 const summarySelect = `SELECT id, generation_id AS generationId, owner_id AS ownerId,
   agent_id AS agentId, thread_id AS threadId, content_ref AS contentRef,
@@ -176,6 +181,8 @@ export class SqliteCheckpointOperations {
       policyVersion: row.policyVersion,
       modelDescriptorRef: row.modelDescriptorRef,
       trigger: row.trigger,
+      summaryRef: row.summaryRef,
+      summaryClassification: row.summaryClassification,
       status: row.status,
       revision: row.revision,
       attemptCount: row.attemptCount,
@@ -223,6 +230,10 @@ export class SqliteCheckpointOperations {
       work.claimedBy !== null ||
       work.claimExpiresAt !== null ||
       work.errorCode !== null ||
+      (work.trigger === "pre_compaction") !==
+        (work.summaryRef !== null && work.summaryClassification !== null) ||
+      (work.trigger !== "pre_compaction" &&
+        (work.summaryRef !== null || work.summaryClassification !== null)) ||
       work.policyVersion.trim().length === 0 ||
       work.modelDescriptorRef.trim().length === 0 ||
       !validIsoTimestamp(work.requestedAt) ||
@@ -253,6 +264,8 @@ export class SqliteCheckpointOperations {
           existing.ownerId !== work.ownerId ||
           existing.agentId !== work.agentId ||
           existing.modelDescriptorRef !== work.modelDescriptorRef ||
+          existing.summaryRef !== work.summaryRef ||
+          existing.summaryClassification !== work.summaryClassification ||
           !sameSources(existing.sources, work.sources)
         ) {
           this.fail("PORT_CONFLICT", "Thread distillation identity conflicts with existing work");
@@ -269,13 +282,29 @@ export class SqliteCheckpointOperations {
       if (thread.ownerId !== work.ownerId || thread.agentId !== work.agentId) {
         this.fail("PORT_INVALID_OPERATION", "Thread distillation scope does not match Thread");
       }
+      if (work.summaryRef !== null) {
+        const summaryPayload = this.database
+          .prepare(
+            `SELECT classification FROM payloads
+              WHERE ref = ? AND owner_id = ? AND agent_id = ?`,
+          )
+          .get(work.summaryRef, work.ownerId, work.agentId) as
+          | { readonly classification: ThreadDistillationWork["summaryClassification"] }
+          | undefined;
+        if (!summaryPayload) {
+          this.fail("PORT_NOT_FOUND", "Prepared Pi summary Payload is missing or outside scope");
+        }
+        if (summaryPayload.classification !== work.summaryClassification) {
+          this.fail("PORT_INVALID_OPERATION", "Prepared Pi summary classification differs");
+        }
+      }
       this.database
         .prepare(
           `INSERT INTO thread_checkpoint_jobs (
             id, generation_id, owner_id, agent_id, thread_id, revision, source_watermark,
             policy_version, status, attempt_count, summary_ref, requested_at, error_code,
             trigger_kind, next_retry_at, claimed_by, claimed_at, claim_expires_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, NULL, ?, NULL, ?, NULL, NULL, NULL, NULL)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, NULL, ?, NULL, NULL, NULL, NULL)`,
         )
         .run(
           work.jobId,
@@ -286,6 +315,7 @@ export class SqliteCheckpointOperations {
           work.revision,
           work.sourceWatermark,
           work.policyVersion,
+          work.summaryRef,
           work.requestedAt,
           work.trigger,
         );

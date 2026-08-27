@@ -69,6 +69,7 @@ date: "2026-08-26"
 - packages/gateway-contracts/src/、packages/execution-contracts/src/：prepare/execute/verify、command 与 commit contracts。
 - packages/persistence-sqlite/：migrations、Grant、snapshot/change set、operation/reconcile 和 Trash metadata。
 - packages/platform-node/：Mac/Hermes adapters、secret-safe process/Git handling。
+- packages/runtime-pi/：复用 Pi built-in coding ToolDefinition，并注入通过 HostDirectoryGrant/Workspace/Command governance 的 Operations；禁止另写 tool schema/protocol。
 - packages/testing/、apps/agent-service、apps/execution-worker、apps/control-center：conformance、composition 和 UI。
 - scripts/check-boundaries.mjs、manifests/lockfile：仅加入获批精确依赖。
 - Architecture/README：实测后更新。
@@ -113,6 +114,7 @@ date: "2026-08-26"
 
 ### Task 4：实现安全路径解析与读能力
 
+- [ ] 将受治理 ReadOperations 注入 Pi `read` ToolDefinition；复用 Pi 参数与结果语义，不启用默认 local filesystem operations。
 - [ ] 授权时解析并保存真实 filesystem identity，执行时重新验证 opened resource identity。
 - [ ] 使用 descriptor-relative 或平台等价 traversal，拒绝 ..、symlink/hard-link escape、mount change、case alias、rename race 和超深路径。
 - [ ] 未授权路径只返回不含私人正文的范围证据，不自动扩大到父目录/home。

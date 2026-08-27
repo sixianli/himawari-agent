@@ -44,6 +44,10 @@ export interface ThreadCheckpointRequest {
   readonly sources: readonly ThreadCheckpointSourceRef[];
   readonly allAdmittedRunsStable: boolean;
   readonly sourceSize: number;
+  readonly preparedSummary?: {
+    readonly ref: ThreadDistillationWork["summaryRef"] & string;
+    readonly dataClassification: ThreadDistillationWork["summaryClassification"] & string;
+  };
 }
 
 function stableIdentities(
@@ -79,6 +83,15 @@ function validateTrigger(input: ThreadCheckpointRequest, threshold: number): voi
     throw new ApplicationPortError(
       PORT_ERROR_CODES.INVALID_OPERATION,
       "Source-size checkpoint is below the configured threshold",
+    );
+  }
+  if (
+    (input.trigger === "pre_compaction") !== (input.preparedSummary !== undefined) ||
+    input.preparedSummary?.ref.trim().length === 0
+  ) {
+    throw new ApplicationPortError(
+      PORT_ERROR_CODES.INVALID_OPERATION,
+      "Pre-compaction checkpoint requires exactly one protected Pi summary",
     );
   }
   if (
@@ -125,6 +138,8 @@ export class ThreadCheckpointService {
       policyVersion: input.policyVersion,
       modelDescriptorRef: input.modelDescriptorRef,
       trigger: input.trigger,
+      summaryRef: input.preparedSummary?.ref ?? null,
+      summaryClassification: input.preparedSummary?.dataClassification ?? null,
       status: "pending",
       revision: 1,
       attemptCount: 0,
@@ -181,12 +196,21 @@ export class ThreadCheckpointService {
           );
         }
       }
+      const preparedSummary =
+        work.summaryRef === null || work.summaryClassification === null
+          ? null
+          : {
+              ref: work.summaryRef,
+              text: await this.options.readSourceText(work.summaryRef),
+              dataClassification: work.summaryClassification,
+            };
       const result = await this.options.model.distill({
         threadId: work.threadId,
         sourceWatermark: work.sourceWatermark,
         policyVersion: work.policyVersion,
         modelDescriptorRef: work.modelDescriptorRef,
         sources,
+        ...(preparedSummary === null ? {} : { preparedSummary }),
       });
       const sourceClassificationByRef = new Map(
         work.sources.map(({ ref, dataClassification }) => [ref, dataClassification]),
@@ -194,10 +218,17 @@ export class ThreadCheckpointService {
       const summaryClassificationFloor = Math.max(
         ...work.sources.map(({ dataClassification }) => CLASSIFICATION_RANK[dataClassification]),
       );
+      const summaryText = preparedSummary?.text ?? result.summaryText;
+      const summaryClassification =
+        preparedSummary?.dataClassification ?? result.summaryClassification;
       if (
-        result.summaryText.trim().length === 0 ||
-        scanMachineSecrets(result.summaryText).length > 0 ||
-        CLASSIFICATION_RANK[result.summaryClassification] < summaryClassificationFloor ||
+        summaryText === null ||
+        summaryClassification === null ||
+        summaryText.trim().length === 0 ||
+        scanMachineSecrets(summaryText).length > 0 ||
+        CLASSIFICATION_RANK[summaryClassification] < summaryClassificationFloor ||
+        (preparedSummary !== null &&
+          (result.summaryText !== null || result.summaryClassification !== null)) ||
         result.candidates.some(
           (candidate) =>
             candidate.text.trim().length === 0 ||
@@ -218,15 +249,17 @@ export class ThreadCheckpointService {
         );
       }
       const sourceSequences = work.sources.map(({ sequence }) => sequence);
-      const summaryRef = await this.options.content.store({
-        contentKey: `${work.generationId}:summary`,
-        ownerId: work.ownerId,
-        agentId: work.agentId,
-        text: result.summaryText,
-        dataClassification: result.summaryClassification,
-        sourceRef: work.jobId,
-        createdAt: this.options.now(),
-      });
+      const summaryRef =
+        preparedSummary?.ref ??
+        (await this.options.content.store({
+          contentKey: `${work.generationId}:summary`,
+          ownerId: work.ownerId,
+          agentId: work.agentId,
+          text: summaryText,
+          dataClassification: summaryClassification,
+          sourceRef: work.jobId,
+          createdAt: this.options.now(),
+        }));
       const summary: ThreadSummaryRecord = {
         id: `summary:${work.generationId}`,
         generationId: work.generationId,
@@ -234,7 +267,7 @@ export class ThreadCheckpointService {
         agentId: work.agentId,
         threadId: work.threadId,
         contentRef: summaryRef,
-        dataClassification: result.summaryClassification,
+        dataClassification: summaryClassification,
         sourceStartSequence: Math.min(...sourceSequences),
         sourceEndSequence: Math.max(...sourceSequences),
         sourceWatermark: work.sourceWatermark,

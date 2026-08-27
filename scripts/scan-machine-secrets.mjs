@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
@@ -37,6 +37,10 @@ const allowed = new Map(
 );
 const observed = new Map();
 for (const file of tracked.stdout.toString("utf8").split("\0").filter(Boolean)) {
+  // `git ls-files --cached` also reports tracked paths deleted in the current
+  // worktree. A pre-commit scan must ignore those absent files instead of
+  // failing before it can inspect the remaining content.
+  if (!existsSync(file)) continue;
   const content = readFileSync(file);
   if (content.includes(0)) continue;
   const text = content.toString("utf8");

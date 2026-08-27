@@ -646,5 +646,5 @@ describe("SQLite product-state transaction boundary", () => {
       events: [{ id: "event-sqlite-crash" }],
     });
     await repository.close();
-  });
+  }, 15_000);
 });

@@ -65,7 +65,7 @@ date: "2026-08-26"
 - packages/execution-contracts/src/：CapabilityExecutionHandle、execute/reconcile 与 stable failure fixtures。
 - packages/persistence-sqlite/：migrations、stores、outbox、audit 和 recovery。
 - packages/platform-node/：artifact verification、program/MCP/API execution adapters 与 isolation boundary。
-- packages/runtime-pi/：只把已授权短期 tool list/handles 投影给 Pi，不启用 Pi 自有 discovery。
+- packages/runtime-pi/：只把已授权短期 tool list/handles 和显式 Extension/Skill/prompt paths 投影给 Pi；关闭 ambient discovery，并复用 Pi built-in tool definitions 加产品 Operations。
 - packages/testing/、apps/agent-service、apps/execution-worker、apps/control-center：conformance、composition 和 Owner UI。
 - scripts/check-boundaries.mjs、package manifests 与 lockfile：仅在获批依赖/包存在后更新。
 - Architecture/README：行为实证后再对账。
@@ -146,9 +146,11 @@ date: "2026-08-26"
 
 - [ ] 为 Tool、Skill、MCP、本地 program、第三方 API 和 adapter 建立相同 manifest、authorization、secret、budget、revoke、health、Trace 和 result suite。
 - [ ] Skill/网页/外部资源指令不能修改 policy、Grant、manifest 或 trust root。
+- [ ] runtime 只通过 `DefaultResourceLoader` additional paths 加载已授权资源；不得复制 Pi discovery/resource protocol。
 - [ ] MCP 只暴露 manifest 映射且批准的 tools/resources/prompts，server identity/transport/scope 变化按 update 处理。
 - [ ] 本地 program 强制 argv/env/workdir/stdin/stdout/network/filesystem contract，未声明子进程/联网/path/secret fail closed。
 - [ ] API/adapter 只接收最小 Handle 与 protected refs，不接收产品 store 写权限。
+- [ ] 文件与命令类能力复用 Pi read/bash/edit/write/grep/find/ls ToolDefinition，并以受治理 Operations 通过同一 conformance。
 
 ### Task 9：资格验证并实现隔离与 runtime adapters
 

@@ -424,7 +424,8 @@ describe("encrypted same-host SQLite recovery points", () => {
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
       authentication: { value: string };
     };
-    manifest.authentication.value = `${manifest.authentication.value.slice(0, -1)}A`;
+    const authenticationSuffix = manifest.authentication.value.endsWith("A") ? "B" : "A";
+    manifest.authentication.value = `${manifest.authentication.value.slice(0, -1)}${authenticationSuffix}`;
     await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
     await expectRecoveryCode(
       manifestSource.adapter.verify(manifestBackup),

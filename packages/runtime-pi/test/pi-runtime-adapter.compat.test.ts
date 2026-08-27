@@ -8,9 +8,37 @@ import type {
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PiAgentRuntimeAdapter } from "../src/index.js";
+import {
+  PiAgentRuntimeAdapter,
+  type PiAgentRuntimeAdapterDependencies,
+  type PiModelBinding,
+} from "../src/index.js";
 
 const NOW = "2026-08-25T10:00:00.000Z";
+type ProjectionContext = Awaited<ReturnType<RuntimeProjectionPort["resolveContext"]>>;
+
+const DEFAULT_CONTEXT: ProjectionContext = {
+  history: [
+    {
+      id: "message-history-user-task-11",
+      role: "user",
+      content: [{ type: "text", text: "Earlier request." }],
+      occurredAt: NOW,
+    },
+    {
+      id: "message-history-assistant-task-11",
+      role: "assistant",
+      content: [{ type: "text", text: "Earlier answer." }],
+      occurredAt: NOW,
+    },
+  ],
+  prompt: {
+    id: "message-prompt-task-11",
+    content: "Find a beef restaurant.",
+    occurredAt: NOW,
+  },
+};
+
 const request = {
   ownerId: "owner-task-11",
   agentId: "agent-task-11",
@@ -29,11 +57,18 @@ const request = {
 class RecordingProjection implements RuntimeProjectionPort {
   readonly captures: unknown[] = [];
   readonly compactions: unknown[] = [];
+  readonly context: ProjectionContext;
 
-  async resolveText(_runId: RuntimeRequest["runId"], payloadRef: string): Promise<string> {
-    return payloadRef === request.systemInstructionRef
-      ? "You are a controlled restaurant assistant."
-      : "Find a beef restaurant.";
+  constructor(context: ProjectionContext = DEFAULT_CONTEXT) {
+    this.context = context;
+  }
+
+  async resolveSystemInstruction(): Promise<string> {
+    return "You are a controlled restaurant assistant.";
+  }
+
+  async resolveContext(): Promise<Awaited<ReturnType<RuntimeProjectionPort["resolveContext"]>>> {
+    return this.context;
   }
 
   async capture(input: Parameters<RuntimeProjectionPort["capture"]>[0]): Promise<string> {
@@ -89,7 +124,10 @@ interface FakeSessionOptions {
   }[];
   readonly noTools?: string;
   readonly tools?: readonly string[];
-  readonly sessionManager?: { readonly getSessionId?: () => string };
+  readonly sessionManager?: {
+    readonly getSessionId?: () => string;
+    readonly getEntries?: () => readonly unknown[];
+  };
 }
 
 type FakePiEvent = Readonly<Record<string, unknown>> & { readonly type: string };
@@ -158,11 +196,15 @@ function createAdapter(
   return new PiAgentRuntimeAdapter({
     projection,
     tools,
-    models: { resolve: async () => ({ model: {}, modelRuntime: {} }) },
+    models: {
+      resolve: async () => ({ model: {}, modelRuntime: {} }) as unknown as PiModelBinding,
+    },
     cwd: process.cwd(),
     now: () => NOW,
     turnId: (_request, turnIndex) => `turn-task-11-${turnIndex}` as never,
-    createSession,
+    createSession: createSession as unknown as NonNullable<
+      PiAgentRuntimeAdapterDependencies["createSession"]
+    >,
   });
 }
 
@@ -227,6 +269,16 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       noTools: "all",
       tools: ["restaurant_search"],
     });
+    expect(observedOptions[0]?.sessionManager?.getEntries?.()).toEqual([
+      expect.objectContaining({
+        type: "message",
+        message: expect.objectContaining({ role: "user" }),
+      }),
+      expect.objectContaining({
+        type: "message",
+        message: expect.objectContaining({ role: "assistant" }),
+      }),
+    ]);
     expect(tools.preflight).toHaveBeenCalledWith(
       expect.objectContaining({
         runId: request.runId,
@@ -252,6 +304,69 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(projection.compactions).toEqual([
       expect.objectContaining({ summary: "A product-state proposal only" }),
     ]);
+  });
+
+  it("rehydrates an accepted product compaction into Pi's SessionManager", async () => {
+    const projection = new RecordingProjection({
+      ...DEFAULT_CONTEXT,
+      compaction: {
+        summary: "The earlier request was answered.",
+        firstKeptMessageId: "message-history-assistant-task-11",
+        tokensBefore: 91,
+      },
+    });
+    const tools = new RecordingRuntimeTools();
+    const observedOptions: FakeSessionOptions[] = [];
+    const adapter = createAdapter(
+      projection,
+      tools,
+      fakeSessionFactory((emit) => emit({ type: "agent_settled" }), observedOptions),
+    );
+
+    await collect(adapter.run(request));
+
+    const entries = observedOptions[0]?.sessionManager?.getEntries?.();
+    expect(entries).toHaveLength(3);
+    expect(entries?.at(-1)).toEqual(
+      expect.objectContaining({
+        type: "compaction",
+        summary: "The earlier request was answered.",
+        tokensBefore: 91,
+      }),
+    );
+  });
+
+  it("rejects tool calls projected as user content instead of silently dropping them", async () => {
+    const projection = new RecordingProjection({
+      ...DEFAULT_CONTEXT,
+      history: [
+        {
+          id: "message-invalid-user-task-11",
+          role: "user",
+          content: [
+            {
+              type: "tool_call",
+              id: "tool-call-invalid-task-11",
+              name: "restaurant_search",
+              arguments: { query: "beef" },
+            },
+          ],
+          occurredAt: NOW,
+        },
+      ],
+    });
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory(() => undefined),
+    );
+
+    await expect(collect(adapter.run(request))).resolves.toContainEqual({
+      type: "runtime.failed",
+      runId: request.runId,
+      errorCode: "PI_RUNTIME_ERROR",
+      occurredAt: NOW,
+    });
   });
 
   it("uses product preflight as the final enforcement point", async () => {
@@ -325,6 +440,36 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(events.some(({ type }) => type === "runtime.completed")).toBe(false);
   });
 
+  it("streams mapped events before the Pi turn settles", async () => {
+    const projection = new RecordingProjection();
+    const tools = new RecordingRuntimeTools();
+    let releasePrompt: (() => void) | undefined;
+    const promptBlocked = new Promise<void>((resolve) => {
+      releasePrompt = resolve;
+    });
+    const adapter = createAdapter(
+      projection,
+      tools,
+      fakeSessionFactory(async (emit) => {
+        emit({ type: "agent_start" });
+        await promptBlocked;
+        emit({ type: "agent_settled" });
+      }),
+    );
+
+    const iterator = adapter.run(request)[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: "runtime.model_started", runId: request.runId, occurredAt: NOW },
+    });
+    releasePrompt?.();
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: "runtime.completed", runId: request.runId, occurredAt: NOW },
+    });
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
+  });
+
   it("fails clearly when Pi emits an unknown upstream event", async () => {
     const projection = new RecordingProjection();
     const tools = new RecordingRuntimeTools();
@@ -379,6 +524,31 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(JSON.stringify(events)).not.toContain("unsafe raw failure");
   });
 
+  it("redacts machine-secret-shaped Pi observations before product capture", async () => {
+    const projection = new RecordingProjection();
+    const secretShapedOutput = ["password", "x".repeat(12)].join("=");
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        emit({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: secretShapedOutput }],
+            stopReason: "stop",
+          },
+        });
+        emit({ type: "agent_settled" });
+      }),
+    );
+
+    await collect(adapter.run(request));
+
+    expect(JSON.stringify(projection.captures)).not.toContain(secretShapedOutput);
+    expect(JSON.stringify(projection.captures)).toContain("[MACHINE_SECRET_REDACTED]");
+  });
+
   it("runs the pinned Pi 0.84.2 session with its deterministic faux provider", async () => {
     const piSpecifier: string = "@earendil-works/pi-coding-agent";
     const piEntry = fileURLToPath(import.meta.resolve(piSpecifier));
@@ -405,11 +575,15 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(pi.VERSION).toBe("0.84.2");
 
     const faux = ai.fauxProvider();
+    let observedContext: unknown;
     faux.setResponses([
-      ai.fauxAssistantMessage(
-        ai.fauxToolCall("restaurant_search", { query: "beef" }, { id: "stable-tool-call" }),
-        { stopReason: "toolUse" },
-      ),
+      (context: unknown) => {
+        observedContext = context;
+        return ai.fauxAssistantMessage(
+          ai.fauxToolCall("restaurant_search", { query: "beef" }, { id: "stable-tool-call" }),
+          { stopReason: "toolUse" },
+        );
+      },
       ai.fauxAssistantMessage("Finished with the governed result."),
     ]);
     const runtime = await pi.ModelRuntime.create({
@@ -419,12 +593,22 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     });
     runtime.registerNativeProvider(faux.provider);
     await runtime.setRuntimeApiKey("faux", "deterministic-test-key");
-    const projection = new RecordingProjection();
+    const projection = new RecordingProjection({
+      ...DEFAULT_CONTEXT,
+      compaction: {
+        summary: "The earlier request was answered.",
+        firstKeptMessageId: "message-history-assistant-task-11",
+        tokensBefore: 91,
+      },
+    });
     const tools = new RecordingRuntimeTools();
     const adapter = new PiAgentRuntimeAdapter({
       projection,
       tools,
-      models: { resolve: async () => ({ model: faux.getModel(), modelRuntime: runtime }) },
+      models: {
+        resolve: async () =>
+          ({ model: faux.getModel(), modelRuntime: runtime }) as unknown as PiModelBinding,
+      },
       cwd: process.cwd(),
       now: () => NOW,
       turnId: (_runtimeRequest, turnIndex) => `turn-faux-${turnIndex}` as never,
@@ -441,6 +625,9 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       ),
     ).toBe(true);
     expect(events.at(-1)?.type).toBe("runtime.completed");
+    expect(JSON.stringify(observedContext)).toContain("The earlier request was answered.");
+    expect(JSON.stringify(observedContext)).toContain("Earlier answer.");
+    expect(JSON.stringify(observedContext)).not.toContain("Earlier request.");
     expect(JSON.stringify(projection.captures)).not.toContain("deterministic-test-key");
   });
 });

@@ -68,6 +68,8 @@ date: "2026-08-26"
 
 ### 代码工作区
 
+Pi reuse map：read、bash、edit、write、grep、find、ls 的 tool name、参数 schema、模型可见描述、参数兼容处理和结果形状由 `pi-coding-agent` 内置 ToolDefinition 提供；Himawari 不重新实现这些工具协议。Himawari 拥有 HostDirectoryGrant、canonical identity、TOCTOU 防护、分类披露、Approval/Handle、恢复点、WorkspaceSnapshot、命令白名单、实际文件/进程 Operations 和 Trace。每次 Session 只把已授权 Operations 注入 Pi；未注入时对应工具不可用。
+
 - 代码能力只对 Owner 登记并授权的 workspace root 生效；嵌套 repository、submodule、worktree 和链接到外部路径分别识别，不能继承未授予范围。
 - 每次任务首次进入工作区，以及 commit 前，都必须盘点 branch/HEAD、staged、unstaged、untracked、submodule/worktree 和与远端可见的本地状态，形成稳定 `WorkspaceSnapshot`。
 - 已有修改默认归 Owner 所有。Agent 只能改动任务范围内的文件；不相关改动不得重置、恢复、暂存、提交、格式化或删除。
