@@ -1,22 +1,22 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-27T12:18:00+09:00",
+  "recordedAt": "2026-08-27T15:43:12+09:00",
   "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
   "taskId": "S1-T20",
   "status": "partial",
-  "candidateRevision": "b46620a",
+  "candidateRevision": "13a0a21d3264203c9d5400ccc8ee8545dfd7ad21",
   "worktree": {
-    "branch": "main",
+    "branch": "HEAD (detached)",
     "upstream": "origin/main",
-    "ahead": 2,
+    "ahead": 11,
     "behind": 0,
     "status": "dirty",
     "intentionallyExcluded": []
   },
   "deterministicQualification": {
-    "provider": "ScriptedModelPort and TrustedModelProviderAdapter fixtures only",
+    "provider": "ScriptedModelPort, TrustedModelProviderAdapter and OpenRouterModelTransport fixture",
     "liveCall": false,
-    "reason": "Owner has not supplied an OpenAI API key or approved a paid provider call",
+    "reason": "Owner selected OpenRouter deepseek/deepseek-v4-flash-0731, but the exact fallback/embedding descriptors, provider routing, API key source and capped paid-call budget are not yet frozen",
     "hiddenRoutes": false,
     "dynamicMarketplaceRoute": false,
     "implicitEmbedding": false
@@ -26,6 +26,10 @@
     "Router selects the product-selected primary first and only retries a retryable provider failure with a compatible fixed fallback.",
     "Authorization, invalid input and disclosure expansion never bypass the fallback policy.",
     "Trusted provider receives raw credentials only inside the adapter; traces contain identity, purpose, refs, usage, cost and latency but no secret value.",
+    "Opaque provider-secret sources are separate from fixed-size encryption-key sources and return credentials only across the trusted adapter boundary.",
+    "OpenRouter transport posts only the protected input reference's validated text, consumes SSE output, records provider/model/generation metadata and actual token/cost usage, and redacts machine-secret-shaped output before protected persistence.",
+    "OpenRouter retryable HTTP/network failures and non-retryable authentication, payment, input, tool-call and output-persistence failures map to stable terminal events without response-body logging.",
+    "Model Router preserves provider observation in the terminal protected Trace payload.",
     "Pi/product boundary remains product-owned; no Pi model selection, Session persistence, Skills discovery or built-in tools were added.",
     "Repeated streamed output sequences and repeated terminal provider events produce one output reference and one terminal Trace result."
   ],
@@ -41,17 +45,23 @@
       "result": "Biome lint passed with no warnings"
     },
     {
-      "command": "npm run test:integration -- --run test/integration/model-router.test.ts",
+      "command": "npx vitest run --config vitest.workspace.ts --project unit packages/platform-node/test/openrouter-model-transport.unit.test.ts packages/platform-node/test/payload-protector.unit.test.ts",
       "exitStatus": 0,
-      "result": "7 routing, disclosure, secret-redaction and duplicate-terminal tests passed"
+      "result": "16 model transport and host secret tests passed, including SSE output, usage/cost/provider metadata, retryable HTTP failure, input exclusion, cross-chunk output redaction, persistence failure and opaque provider-secret file handling"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/model-router.test.ts",
+      "exitStatus": 0,
+      "result": "9 Model Router tests passed, including provider observation preservation, routing, disclosure, secret-redaction and duplicate-terminal behavior"
     }
   ],
   "remaining": [
-    "Before any live call, Owner must approve exact provider/model/version or snapshot, capability, disclosure, secret ref, estimated cost and capped budget.",
-    "After approval, run a bounded live smoke/eval and read back provider identity, token/cost accounting, cancellation, fallback and redaction evidence."
+    "Before any live call, freeze and show the OpenRouter primary plus fixed fallback and embedding provider/model/version or snapshot, capabilities, disclosure, secret refs, provider-routing policy, estimated cost and capped budget.",
+    "Freeze an approved API key source reference and production source selection without putting the key in chat, fixtures, logs or evidence.",
+    "After approval, run a bounded live smoke/eval and read back provider identity, token/cost accounting, cancellation, fallback, tool-call, disclosure rejection and redaction evidence."
   ],
   "externalEffects": [
-    "No paid model, OpenAI API, GitHub, Cloudflare or production service was called or changed."
+    "No paid OpenRouter call, GitHub, Cloudflare or production service was called or changed."
   ],
-  "implementationCommit": "b46620a"
+  "implementationCommit": "13a0a21d3264203c9d5400ccc8ee8545dfd7ad21"
 }

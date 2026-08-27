@@ -471,7 +471,7 @@
           "label": "模型路由",
           "planTasks": "Task 20",
           "planEvidence": "精确 descriptors、Owner 费用授权、deterministic 与有界 live evidence；证据：Task 20 model-routing evidence",
-          "planStatus": "部分验证：descriptor、primary/fixed fallback、disclosure、secret redaction 和 duplicate result 通过；live provider 身份/费用/eval 等待授权与 API key",
+          "planStatus": "部分验证：descriptor、primary/fixed fallback、disclosure、OpenRouter transport、secret redaction 和 duplicate result 通过；fallback/embedding 冻结、live provider 身份/费用/eval 等待逐项授权",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",

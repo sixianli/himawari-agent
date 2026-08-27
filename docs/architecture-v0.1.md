@@ -220,7 +220,7 @@ primary、specialist、local 只选择对应 approved routing class；retryable 
 
 每次模型调用都把 request、started、output reference、completed 或 failed 转成父子/因果相连的产品 Trace；重试另有 `model.retry` 和新的 route decision。terminal Payload 记录 token usage、cost micros 和 latency milliseconds，错误只记录稳定机器码。输入和流式输出正文仍只通过 Payload reference 传递。
 
-需要供应商凭证时，Router 根据 descriptor 的 reference/version/purpose 签发仅绑定当前 Owner、Agent、Run、invocation 和 deadline 的 opaque Secret Handle。`packages/platform-node` 的 `TrustedModelProviderAdapter` 在进入受信任 transport 前重新验证 Handle，并只在该适配器的局部内存解析原值；应用请求、产品事件、Trace 和 reference-only resolution log 都不包含原值。调用结束后 Router 撤销 Handle。当前 material source 和 transport 只由测试替身验证，尚不是生产 Vault 或 Provider 集成。该边界落实受策略控制的模型路由：[SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
+需要供应商凭证时，Router 根据 descriptor 的 reference/version/purpose 签发仅绑定当前 Owner、Agent、Run、invocation 和 deadline 的 opaque Secret Handle。`packages/platform-node` 的 `TrustedModelProviderAdapter` 在进入受信任 transport 前重新验证 Handle，并只在该适配器的局部内存解析原值；应用请求、产品事件、Trace 和 reference-only resolution log 都不包含原值。调用结束后 Router 撤销 Handle。`OpenRouterModelTransport` 已实现产品 Payload reference 到 OpenRouter SSE chat completion 的受信任传输、usage/cost/provider observation 记录，以及跨 chunk 输出落盘前的 machine-secret redaction；`RestrictedProviderSecretSource`、systemd credential 和 macOS Keychain provider-secret 边界也已与固定大小的 Payload 加密密钥 source 分离。当前只完成本地 fixture qualification，尚未接入最终 Agent Service production composition，也尚未完成真实 host source readback、provider routing、paid call 和外部 readback。该边界落实受策略控制的模型路由：[SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
 
 ### Pi Agent Runtime projection
 
