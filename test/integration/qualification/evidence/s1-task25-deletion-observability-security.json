@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-27T01:59:06Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T25",
+  "candidateRevision": "6ef17f229ae8c6093da323d1d88d43378df93f98",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 12,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["AGENTS.md"]
+  },
+  "deletion": {
+    "trashRetentionDays": 7,
+    "recoveryPointMaximumRetentionDays": 30,
+    "trashObjects": ["thread", "task", "memory"],
+    "permanentObjects": ["thread", "run", "task", "memory", "payload"],
+    "realTargets": [
+      "SQLite product rows",
+      "Payload ciphertext files",
+      "Gateway Read Model",
+      "Trace",
+      "inbox",
+      "state-root managed search artifacts",
+      "state-root managed cache artifacts",
+      "state-root managed archive artifacts"
+    ],
+    "taskImpact": "Thread mutation plan lists associated/active task IDs; Trash pauses active tasks and restore only reactivates those paused by that Trash record.",
+    "memoryProviderBoundary": "Provider-linked Memory remains deletion_pending until the durable Memory projection worker verifies provider cleanup.",
+    "externalEffectTombstone": "Audit stores only a sha256 reference and no deleted payload or owner content."
+  },
+  "storagePressure": {
+    "modes": ["normal", "warning", "write_restricted"],
+    "writeRestrictedBehavior": "normal repository writes fail closed while reads and offline admin deletion/backup/transfer adapters remain outside the admission gate",
+    "automaticOwnerContentDeletion": false
+  },
+  "observability": {
+    "authenticatedRoutes": ["/api/health/v1/dependencies", "/api/metrics/v1"],
+    "publicRoutes": ["/health/live", "/health/ready"],
+    "metrics": [
+      "database and WAL bytes",
+      "disk free bytes",
+      "writer queue and latency",
+      "Outbox backlog",
+      "background job backlog",
+      "Worker inflight",
+      "Memory projection backlog",
+      "deletion backlog",
+      "model calls/fallback/cost",
+      "SSE retained events/connections/backpressure"
+    ],
+    "privateLabels": false,
+    "diagnosticSecretRedaction": true
+  },
+  "commands": [
+    {
+      "command": "npm run test:integration -- --run test/integration/sqlite-governed-deletion.test.ts",
+      "exitStatus": 0,
+      "result": "6 real SQLite/filesystem deletion lifecycle, cascade, retry and provider-boundary tests passed"
+    },
+    {
+      "command": "npm run test:contracts -- --run packages/platform-node/test/http-gateway-server.contract.test.ts",
+      "exitStatus": 0,
+      "result": "17 HTTP security, public health and authenticated dependency/metrics contract tests passed"
+    },
+    {
+      "command": "npm run test:unit -- --run packages/platform-node/test/runtime-observability.unit.test.ts",
+      "exitStatus": 0,
+      "result": "2 fixed-cardinality metrics and structured diagnostic redaction tests passed"
+    },
+    {
+      "command": "npm audit --omit=dev --audit-level=high",
+      "exitStatus": 0,
+      "network": "npm registry official audit endpoint",
+      "result": "0 vulnerabilities"
+    },
+    {
+      "command": "npm run check:secrets",
+      "exitStatus": 0,
+      "result": "370 tracked and unignored worktree files scanned; only exact digest-baselined synthetic fixtures allowed"
+    },
+    {
+      "command": "npm test",
+      "exitStatus": 0,
+      "execution": "outside sandbox for real Unix Domain Socket coverage",
+      "result": "193 unit, 127 contract, 317 integration and 3 E2E tests passed"
+    },
+    {
+      "command": "npm run test:browser",
+      "exitStatus": 0,
+      "result": "5 browser tests passed"
+    },
+    {
+      "command": "npm run test:cli",
+      "exitStatus": 0,
+      "result": "4 admin CLI tests passed including governed deletion confirmation and task-impact output"
+    },
+    {
+      "command": "npm run test:services",
+      "exitStatus": 0,
+      "result": "12 Node service tests passed"
+    },
+    {
+      "command": "npm run test:workspace-scaffolds",
+      "exitStatus": 0,
+      "result": "3 workspace scaffold tests passed"
+    },
+    {
+      "command": "npm run check:pi-compat",
+      "exitStatus": 0,
+      "result": "6 Pi compatibility tests passed"
+    },
+    {
+      "command": "npm run build",
+      "exitStatus": 0,
+      "result": "relocatable Node runtime, Control Center bundle and artifact manifest built"
+    },
+    {
+      "command": "python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict .",
+      "exitStatus": 0,
+      "result": "strict governed-document validation passed with zero warnings after semantic Runbook reseal"
+    }
+  ],
+  "securityCoverage": [
+    "CSP and framing protections",
+    "CSRF and origin rejection",
+    "request body and static asset limits",
+    "host-secret directory/file permissions",
+    "UDS directory/socket permissions and boot authentication",
+    "Payload/backup/transfer authentication tamper",
+    "structured diagnostic machine-secret redaction",
+    "working-tree secret scan",
+    "production dependency audit"
+  ],
+  "limits": [
+    "The managed search/cache/archive targets are real state-root files, but final production composition must ensure every content producer registers only in those managed paths.",
+    "Memory provider cleanup is exercised through the existing durable Memory projection implementation; the offline delete CLI cannot claim provider success by itself.",
+    "The 30-day proof is the bounded lifetime of old local recovery points plus absence from all new snapshots; it is not cryptographic erasure or off-host disaster recovery.",
+    "No paid model, GitHub, Cloudflare, production service or Hermes state was changed by this task."
+  ],
+  "implementationCommit": null
+}

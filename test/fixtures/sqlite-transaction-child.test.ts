@@ -29,6 +29,7 @@ describe("SQLite transaction crash fixture", () => {
       stateRoot,
       databasePath,
       minimumFreeBytes: 0,
+      warningFreeBytes: 0,
       qualification: { crashAt },
     });
     const input: CommitStateAndEventsInput = {

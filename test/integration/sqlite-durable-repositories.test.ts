@@ -573,6 +573,38 @@ describe("SQLite durable repository adapters", () => {
     const retained = [];
     for await (const item of readModel.subscribe(subscription)) retained.push(item.payload.cursor);
     expect(retained).toEqual(["cursor-02"]);
+
+    const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+    database.prepare("UPDATE threads SET status = 'trashed' WHERE id = 'thread-conformance'").run();
+    database.close();
+    await expect(
+      readModel.getThreadSnapshot({
+        ...envelope,
+        kind: "query",
+        type: "thread.get_snapshot",
+        payload: { threadId: "thread-conformance" },
+      }),
+    ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
+    await expect(
+      readModel.getRunSnapshot({
+        ...envelope,
+        kind: "query",
+        type: "run.get_snapshot",
+        payload: { runId: RUN_ID },
+      }),
+    ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
+    expect(
+      await readModel.queryTrace({
+        ...envelope,
+        kind: "query",
+        type: "trace.query",
+        payload: { sessionId: SESSION_ID, runId: RUN_ID, afterSequence: 0, limit: 10 },
+      }),
+    ).toEqual([]);
+    const hidden = [];
+    for await (const item of readModel.subscribe(subscription)) hidden.push(item.payload.cursor);
+    expect(hidden).toEqual([]);
+
     await resource.repository.close();
     const reopened = await SqliteProductStateRepository.open({
       stateRoot: resource.stateRoot,

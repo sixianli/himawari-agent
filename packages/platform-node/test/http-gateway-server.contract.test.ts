@@ -29,6 +29,8 @@ import {
   buildHttpGatewayServer,
   type HttpGatewayAuthenticationPort,
 } from "../src/http-gateway-server.js";
+import { RuntimeHealthModel } from "../src/runtime-health.js";
+import { RuntimeMetricsRegistry } from "../src/runtime-observability.js";
 
 const ORIGIN = "https://agent.example.test";
 const NOW = "2026-08-27T00:00:00.000Z";
@@ -471,6 +473,87 @@ describe("HTTP Gateway contract and security boundary", () => {
     });
     expect(health.statusCode).toBe(200);
     expect(health.json()).toEqual({ status: "alive" });
+  });
+
+  it("keeps public health minimal and requires authentication for dependency details", async () => {
+    const health = new RuntimeHealthModel({ publicMode: true, now: () => NOW });
+    const metrics = new RuntimeMetricsRegistry({ now: () => NOW });
+    metrics.increment("model_calls_total", 2);
+    health.setLive(true);
+    const app = buildHttpGatewayServer({
+      gateway: new AgentGatewayService({
+        access: new AccessPolicy(),
+        controlPlane: new ControlPlane(),
+        reads: new ReadModel(),
+      }),
+      authentication: new Authentication(),
+      csrf: { verify: async () => true },
+      publicOrigin: ORIGIN,
+      staticRoot,
+      health,
+      metrics,
+    });
+    fixtures.push({
+      access: new AccessPolicy(),
+      controlPlane: new ControlPlane(),
+      reads: new ReadModel(),
+      auth: new Authentication(),
+      app,
+    });
+    const live = await app.inject({ method: "GET", url: "/health/live" });
+    const ready = await app.inject({ method: "GET", url: "/health/ready" });
+    const unauthenticated = await app.inject({
+      method: "GET",
+      url: "/api/health/v1/dependencies",
+      headers: { host: "agent.example.test" },
+    });
+    const detailed = await app.inject({
+      method: "GET",
+      url: "/api/health/v1/dependencies",
+      headers: {
+        host: "agent.example.test",
+        "cf-access-jwt-assertion": "assertion-01",
+        cookie: "himawari_session=session-token-01",
+      },
+    });
+    const unauthenticatedMetrics = await app.inject({
+      method: "GET",
+      url: "/api/metrics/v1",
+      headers: { host: "agent.example.test" },
+    });
+    const detailedMetrics = await app.inject({
+      method: "GET",
+      url: "/api/metrics/v1",
+      headers: {
+        host: "agent.example.test",
+        "cf-access-jwt-assertion": "assertion-01",
+        cookie: "himawari_session=session-token-01",
+      },
+    });
+    expect(live).toMatchObject({ statusCode: 200 });
+    expect(live.json()).toEqual({ status: "alive" });
+    expect(ready).toMatchObject({ statusCode: 503 });
+    expect(ready.json()).toEqual({ status: "not_ready" });
+    expect(unauthenticated).toMatchObject({ statusCode: 401 });
+    expect(unauthenticated.body).not.toContain("authority");
+    expect(detailed).toMatchObject({ statusCode: 200 });
+    expect(detailed.json()).toMatchObject({
+      live: true,
+      ready: false,
+      dependencies: expect.arrayContaining([
+        expect.objectContaining({ name: "authority", reasonCode: "NOT_STARTED" }),
+      ]),
+    });
+    expect(detailed.body).not.toContain("/Users/");
+    expect(unauthenticatedMetrics).toMatchObject({ statusCode: 401 });
+    expect(detailedMetrics).toMatchObject({ statusCode: 200 });
+    expect(detailedMetrics.json()).toMatchObject({
+      schemaVersion: 1,
+      metrics: expect.arrayContaining([
+        { name: "model_calls_total", kind: "counter", value: 2, updatedAt: NOW },
+      ]),
+    });
+    expect(detailedMetrics.body).not.toContain("owner-01");
   });
 
   it("applies the authenticated boundary to typed v2 commands, queries and events", async () => {

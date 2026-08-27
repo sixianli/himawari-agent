@@ -8,6 +8,7 @@ import {
   type AgentGatewayV2Port,
   type GatewayAuthenticationContext,
 } from "@himawari-agent/application";
+import type { DeploymentHealthSnapshot } from "@himawari-agent/domain";
 import {
   ContractValidationError,
   type EventSubscription,
@@ -21,6 +22,7 @@ import {
   gatewayV2MessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
 
 export const HTTP_GATEWAY_ERROR_CODES = Object.freeze({
   AUTHENTICATION_REQUIRED: "HTTP_GATEWAY_AUTHENTICATION_REQUIRED",
@@ -55,6 +57,19 @@ export interface HttpGatewayCsrfPort {
   issue?(authentication: GatewayAuthenticationContext): Promise<string>;
 }
 
+export interface HttpGatewayHealthPort {
+  publicSnapshot(): {
+    readonly live: boolean;
+    readonly ready: boolean;
+    readonly status: DeploymentHealthSnapshot["status"];
+  };
+  authenticatedSnapshot(authenticated: boolean): DeploymentHealthSnapshot;
+}
+
+export interface HttpGatewayMetricsPort {
+  authenticatedSnapshot(authenticated: boolean): RuntimeMetricsSnapshot;
+}
+
 export interface HttpGatewayServerOptions {
   readonly gateway: AgentGatewayPort;
   readonly gatewayV2?: AgentGatewayV2Port;
@@ -67,6 +82,8 @@ export interface HttpGatewayServerOptions {
   readonly maximumBodyBytes?: number;
   readonly maximumStaticAssetBytes?: number;
   readonly heartbeatMilliseconds?: number;
+  readonly health?: HttpGatewayHealthPort;
+  readonly metrics?: HttpGatewayMetricsPort;
   readonly browserConfiguration?: {
     readonly agentId: string;
     readonly deploymentId: string;
@@ -433,8 +450,32 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     });
   });
 
-  app.get("/health/live", async (_request, reply) => sendJson(reply, 200, { status: "alive" }));
-  app.get("/health/ready", async (_request, reply) => sendJson(reply, 200, { status: "ready" }));
+  app.get("/health/live", async (_request, reply) => {
+    const snapshot = options.health?.publicSnapshot();
+    const live = snapshot?.live ?? true;
+    return sendJson(reply, live ? 200 : 503, { status: live ? "alive" : "unavailable" });
+  });
+  app.get("/health/ready", async (_request, reply) => {
+    const snapshot = options.health?.publicSnapshot();
+    const ready = snapshot?.ready ?? true;
+    return sendJson(reply, ready ? 200 : 503, {
+      status: ready ? "ready" : (snapshot?.status ?? "not_ready"),
+    });
+  });
+  if (options.health) {
+    app.get("/api/health/v1/dependencies", async (request, reply) => {
+      assertPublicHost(request, publicOrigin);
+      await authenticate(request, options);
+      return sendJson(reply, 200, options.health?.authenticatedSnapshot(true));
+    });
+  }
+  if (options.metrics) {
+    app.get("/api/metrics/v1", async (request, reply) => {
+      assertPublicHost(request, publicOrigin);
+      await authenticate(request, options);
+      return sendJson(reply, 200, options.metrics?.authenticatedSnapshot(true));
+    });
+  }
 
   if (options.browserConfiguration && options.csrf.issue) {
     const configuration = options.browserConfiguration;

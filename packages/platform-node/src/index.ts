@@ -5,6 +5,7 @@ export * from "./http-gateway-server.js";
 export * from "./identity-gateway.js";
 export * from "./payload-protector.js";
 export * from "./runtime-health.js";
+export * from "./runtime-observability.js";
 export * from "./service-runtime.js";
 export * from "./startup-coordinator.js";
 export * from "./state-root-layout.js";

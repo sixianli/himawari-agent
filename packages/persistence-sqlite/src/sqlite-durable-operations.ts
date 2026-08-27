@@ -3159,8 +3159,13 @@ export class SqliteDurableOperations {
   private getThreadSnapshot(query: GetThreadSnapshotQuery): ThreadSnapshot {
     const row = this.database
       .prepare(
-        `SELECT snapshot_json AS recordJson FROM gateway_thread_snapshots
-        WHERE thread_id = ? AND owner_id = ? AND agent_id = ?`,
+        `SELECT gateway_thread_snapshots.snapshot_json AS recordJson
+        FROM gateway_thread_snapshots
+        JOIN threads ON threads.id = gateway_thread_snapshots.thread_id
+        WHERE gateway_thread_snapshots.thread_id = ?
+          AND gateway_thread_snapshots.owner_id = ?
+          AND gateway_thread_snapshots.agent_id = ?
+          AND threads.status = 'open'`,
       )
       .get(query.payload.threadId, query.scope.ownerId, query.scope.agentId) as JsonRow | undefined;
     const snapshot = parseRecord<ThreadSnapshot>(row);
@@ -3171,8 +3176,14 @@ export class SqliteDurableOperations {
   private getRunSnapshot(query: GetRunSnapshotQuery): RunSnapshot {
     const row = this.database
       .prepare(
-        `SELECT snapshot_json AS recordJson FROM gateway_run_snapshots
-        WHERE run_id = ? AND owner_id = ? AND agent_id = ?`,
+        `SELECT gateway_run_snapshots.snapshot_json AS recordJson
+        FROM gateway_run_snapshots
+        JOIN runs ON runs.id = gateway_run_snapshots.run_id
+        LEFT JOIN threads ON threads.id = runs.thread_id
+        WHERE gateway_run_snapshots.run_id = ?
+          AND gateway_run_snapshots.owner_id = ?
+          AND gateway_run_snapshots.agent_id = ?
+          AND (runs.thread_id IS NULL OR threads.status = 'open')`,
       )
       .get(query.payload.runId, query.scope.ownerId, query.scope.agentId) as JsonRow | undefined;
     const snapshot = parseRecord<RunSnapshot>(row);
@@ -3188,6 +3199,10 @@ export class SqliteDurableOperations {
           `SELECT event_json AS recordJson FROM gateway_stream_events
           WHERE owner_id = ? AND agent_id = ? AND session_id = ?
             AND (? IS NULL OR run_id = ?) AND run_sequence > ?
+            AND (thread_id IS NULL OR EXISTS (
+              SELECT 1 FROM threads WHERE threads.id = gateway_stream_events.thread_id
+                AND threads.status = 'open'
+            ))
           ORDER BY cursor_sequence LIMIT ?`,
         )
         .all(
@@ -3216,6 +3231,10 @@ export class SqliteDurableOperations {
             AND (? IS NULL OR session_id = ?)
             AND (? IS NULL OR thread_id = ?)
             AND (? IS NULL OR run_id = ?)
+            AND (thread_id IS NULL OR EXISTS (
+              SELECT 1 FROM threads WHERE threads.id = gateway_stream_events.thread_id
+                AND threads.status = 'open'
+            ))
           ORDER BY cursor_sequence LIMIT 1000`,
         )
         .all(

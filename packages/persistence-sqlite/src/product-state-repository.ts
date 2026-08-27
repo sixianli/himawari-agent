@@ -65,6 +65,7 @@ export interface SqliteProductStateRepositoryOptions {
   readonly migrationSnapshot?: VerifiedMigrationSnapshot;
   readonly busyTimeoutMs?: number;
   readonly minimumFreeBytes?: number;
+  readonly warningFreeBytes?: number;
   readonly now?: () => string;
   readonly qualification?: SqliteWorkerConfiguration["qualification"];
 }
@@ -76,12 +77,21 @@ export interface SqliteCheckpointResult {
 }
 
 export interface SqliteOperationalStatus {
+  readonly databaseBytes: number;
   readonly freeBytes: number;
+  readonly minimumFreeBytes: number;
+  readonly warningFreeBytes: number;
+  readonly storageMode: "normal" | "warning" | "write_restricted";
   readonly walBytes: number;
   readonly busyTimeoutMs: number;
   readonly lastTransactionDurationMs: number;
   readonly queuedWriters: number;
   readonly maxObservedQueuedWriters: number;
+  readonly outboxPending: number;
+  readonly backgroundJobsPending: number;
+  readonly memoryProjectionPending: number;
+  readonly sseEventRows: number;
+  readonly deletionPending: number;
 }
 
 function validBusyTimeout(value: number): number {
@@ -136,6 +146,12 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     );
     const busyTimeoutMs = validBusyTimeout(options.busyTimeoutMs ?? 5000);
     const minimumFreeBytes = validMinimumFreeBytes(options.minimumFreeBytes ?? 256 * 1024 * 1024);
+    const warningFreeBytes = validMinimumFreeBytes(
+      options.warningFreeBytes ?? Math.max(minimumFreeBytes, 1024 * 1024 * 1024),
+    );
+    if (warningFreeBytes < minimumFreeBytes) {
+      throw new RangeError("warningFreeBytes must be greater than or equal to minimumFreeBytes");
+    }
     const lock = await acquireStateRootLock(stateRoot);
     try {
       const migrations = await loadBundledMigrations();
@@ -152,6 +168,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
         writerSequence: migrations.length,
         busyTimeoutMs,
         minimumFreeBytes,
+        warningFreeBytes,
         startupNow: (options.now ?? (() => new Date().toISOString()))(),
         ...(options.qualification ? { qualification: options.qualification } : {}),
       });

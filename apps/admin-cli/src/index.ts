@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  SqliteGovernedDeletionAdapter,
   SqliteRecoveryPointAdapter,
   SqliteAuthorityTransferAdapter,
   acquireStateRootLock,
@@ -9,6 +10,7 @@ import {
   inspectSqliteDatabaseReadOnly,
   loadBundledMigrations,
   openQualifiedDatabase,
+  type GovernedDeletionObjectType,
 } from "@himawari-agent/persistence-sqlite";
 import {
   EnvelopePayloadProtector,
@@ -45,7 +47,12 @@ interface ParsedAdminCommand {
     | "transfer.inspect"
     | "transfer.import"
     | "transfer.activate"
-    | "transfer.abandon";
+    | "transfer.abandon"
+    | "delete.trash"
+    | "delete.restore"
+    | "delete.inspect"
+    | "delete.purge"
+    | "delete.purge-expired";
   readonly configurationPath: string;
   readonly confirmation: string | null;
   readonly secretDirectory: string | null;
@@ -56,6 +63,9 @@ interface ParsedAdminCommand {
   readonly packageRoot: string | null;
   readonly packageRef: string | null;
   readonly preflightPath: string | null;
+  readonly objectType: GovernedDeletionObjectType | null;
+  readonly objectId: string | null;
+  readonly asOf: string | null;
 }
 
 interface ActivationPreflightEvidence {
@@ -105,6 +115,21 @@ function parseArguments(arguments_: readonly string[]): ParsedAdminCommand {
   } else if (arguments_[0] === "transfer" && arguments_[1] === "abandon") {
     command = "transfer.abandon";
     offset = 2;
+  } else if (arguments_[0] === "delete" && arguments_[1] === "trash") {
+    command = "delete.trash";
+    offset = 2;
+  } else if (arguments_[0] === "delete" && arguments_[1] === "restore") {
+    command = "delete.restore";
+    offset = 2;
+  } else if (arguments_[0] === "delete" && arguments_[1] === "inspect") {
+    command = "delete.inspect";
+    offset = 2;
+  } else if (arguments_[0] === "delete" && arguments_[1] === "purge") {
+    command = "delete.purge";
+    offset = 2;
+  } else if (arguments_[0] === "delete" && arguments_[1] === "purge-expired") {
+    command = "delete.purge-expired";
+    offset = 2;
   } else {
     throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
   }
@@ -144,7 +169,13 @@ function parseArguments(arguments_: readonly string[]): ParsedAdminCommand {
                     ? [...common, "--secret-dir", "--transfer-id", "--preflight", "--confirm"]
                     : command === "transfer.abandon"
                       ? [...common, "--secret-dir", "--transfer-id", "--confirm"]
-                      : common;
+                      : command === "delete.purge-expired"
+                        ? [...common, "--as-of", "--confirm"]
+                        : command === "delete.inspect"
+                          ? [...common, "--type", "--id"]
+                          : command.startsWith("delete.")
+                            ? [...common, "--type", "--id", "--confirm"]
+                            : common;
   if (!values.has("--config") || [...values.keys()].some((key) => !allowed.includes(key))) {
     throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
   }
@@ -171,6 +202,19 @@ function parseArguments(arguments_: readonly string[]): ParsedAdminCommand {
   ) {
     throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
   }
+  const deletionTypes = new Set(["thread", "run", "task", "memory", "payload"]);
+  if (
+    (command === "delete.purge-expired" && !values.has("--as-of")) ||
+    (command.startsWith("delete.") &&
+      command !== "delete.purge-expired" &&
+      (!values.has("--type") ||
+        !values.has("--id") ||
+        !deletionTypes.has(values.get("--type") ?? ""))) ||
+    ((command === "delete.trash" || command === "delete.restore") &&
+      !["thread", "task", "memory"].includes(values.get("--type") ?? ""))
+  ) {
+    throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  }
   return Object.freeze({
     command,
     configurationPath: values.get("--config") as string,
@@ -183,6 +227,9 @@ function parseArguments(arguments_: readonly string[]): ParsedAdminCommand {
     packageRoot: values.get("--package-root") ?? null,
     packageRef: values.get("--package") ?? null,
     preflightPath: values.get("--preflight") ?? null,
+    objectType: (values.get("--type") as GovernedDeletionObjectType | undefined) ?? null,
+    objectId: values.get("--id") ?? null,
+    asOf: values.get("--as-of") ?? null,
   });
 }
 
@@ -394,6 +441,7 @@ async function activationPreflight(pathInput: string | null) {
     throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
   }
   const record = value as Record<string, unknown>;
+  const candidate = record as Partial<ActivationPreflightEvidence>;
   const fields = Object.keys(record).sort();
   const expected = [
     "authorityEpoch",
@@ -407,15 +455,15 @@ async function activationPreflight(pathInput: string | null) {
   ].sort();
   if (
     JSON.stringify(fields) !== JSON.stringify(expected) ||
-    record["schemaVersion"] !== 1 ||
-    typeof record["transferId"] !== "string" ||
-    typeof record["deploymentId"] !== "string" ||
-    !Number.isSafeInteger(record["authorityEpoch"]) ||
-    typeof record["secretReferencesReady"] !== "boolean" ||
-    typeof record["doctorReady"] !== "boolean" ||
-    typeof record["publicIngressReady"] !== "boolean" ||
-    typeof record["evidenceRef"] !== "string" ||
-    record["evidenceRef"].length === 0
+    candidate.schemaVersion !== 1 ||
+    typeof candidate.transferId !== "string" ||
+    typeof candidate.deploymentId !== "string" ||
+    !Number.isSafeInteger(candidate.authorityEpoch) ||
+    typeof candidate.secretReferencesReady !== "boolean" ||
+    typeof candidate.doctorReady !== "boolean" ||
+    typeof candidate.publicIngressReady !== "boolean" ||
+    typeof candidate.evidenceRef !== "string" ||
+    candidate.evidenceRef.length === 0
   ) {
     throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
   }
@@ -586,6 +634,91 @@ async function transferCommand(parsed: ParsedAdminCommand, output: NodeJS.Writab
   return Object.freeze({ outputSchemaVersion: 1, command: "transfer.abandon", ...state });
 }
 
+async function deletionCommand(parsed: ParsedAdminCommand, output: NodeJS.WritableStream) {
+  const configuration = await new JsonFileConfigurationPort(parsed.configurationPath).load();
+  const adapter = new SqliteGovernedDeletionAdapter({
+    stateRoot: configuration.stateRoot,
+    databasePath: path.join(configuration.stateRoot, "data", "product.sqlite"),
+    ownerId: configuration.ownerId,
+    agentId: configuration.agentId,
+  });
+  if (parsed.command === "delete.purge-expired") {
+    if (!parsed.asOf || !Number.isFinite(Date.parse(parsed.asOf))) {
+      throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+    }
+    const confirmation = "PURGE_EXPIRED_TRASH";
+    writeServiceDiagnostic(output, {
+      component: "admin-cli",
+      event: "mutation.plan",
+      action: parsed.command,
+      target: `trash:expired-before:${parsed.asOf}`,
+      stoppedServiceRequired: true,
+      confirmation,
+    });
+    if (parsed.confirmation !== confirmation) {
+      throw new Error(ADMIN_CLI_ERROR_CODES.CONFIRMATION_REQUIRED);
+    }
+    const reports = await adapter.purgeExpiredTrash(parsed.asOf);
+    return Object.freeze({
+      outputSchemaVersion: 1,
+      command: parsed.command,
+      asOf: parsed.asOf,
+      purgedCount: reports.length,
+      reports,
+    });
+  }
+  if (!parsed.objectType || !parsed.objectId) {
+    throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  }
+  if (parsed.command === "delete.inspect") {
+    return Object.freeze({
+      outputSchemaVersion: 1,
+      command: parsed.command,
+      report: adapter.inspect(parsed.objectType, parsed.objectId) ?? null,
+    });
+  }
+  const confirmationAction =
+    parsed.command === "delete.trash"
+      ? "TRASH"
+      : parsed.command === "delete.restore"
+        ? "RESTORE"
+        : "DELETE";
+  const confirmation = `${confirmationAction}_${parsed.objectType}_${parsed.objectId}`;
+  const threadImpact =
+    parsed.objectType === "thread"
+      ? adapter.inspectThreadImpact(parsed.objectId)
+      : { associatedTaskIds: [], activeTaskIds: [] };
+  writeServiceDiagnostic(output, {
+    component: "admin-cli",
+    event: "mutation.plan",
+    action: parsed.command,
+    target: `${parsed.objectType}:${parsed.objectId}`,
+    stoppedServiceRequired: true,
+    associatedTaskIds: threadImpact.associatedTaskIds,
+    activeTaskIds: threadImpact.activeTaskIds,
+    confirmation,
+  });
+  if (parsed.confirmation !== confirmation) {
+    throw new Error(ADMIN_CLI_ERROR_CODES.CONFIRMATION_REQUIRED);
+  }
+  const report =
+    parsed.command === "delete.trash"
+      ? await adapter.trashObject({
+          objectType: parsed.objectType as "thread" | "task" | "memory",
+          objectId: parsed.objectId,
+        })
+      : parsed.command === "delete.restore"
+        ? await adapter.restoreObject({
+            objectType: parsed.objectType as "thread" | "task" | "memory",
+            objectId: parsed.objectId,
+          })
+        : await adapter.deleteImmediately({
+            objectType: parsed.objectType,
+            objectId: parsed.objectId,
+          });
+  return Object.freeze({ outputSchemaVersion: 1, command: parsed.command, ...report });
+}
+
 export async function runAdminCli(
   arguments_: readonly string[],
   output: NodeJS.WritableStream = process.stdout,
@@ -597,11 +730,13 @@ export async function runAdminCli(
       ? await backupCommand(parsed, output)
       : parsed.command.startsWith("transfer.")
         ? await transferCommand(parsed, output)
-        : parsed.command === "doctor"
-          ? await doctor(parsed.configurationPath)
-          : parsed.command === "db.status"
-            ? await databaseStatus(parsed.configurationPath)
-            : await migrate(parsed.configurationPath, parsed.confirmation, output);
+        : parsed.command.startsWith("delete.")
+          ? await deletionCommand(parsed, output)
+          : parsed.command === "doctor"
+            ? await doctor(parsed.configurationPath)
+            : parsed.command === "db.status"
+              ? await databaseStatus(parsed.configurationPath)
+              : await migrate(parsed.configurationPath, parsed.confirmation, output);
     output.write(`${JSON.stringify(result)}\n`);
     return 0;
   } catch (error) {

@@ -444,12 +444,16 @@ Task 15 把 `apps/control-center` 从构建占位改为 browser-only React/Vite 
 
 ### Task 25：完成删除、存储压力、可观察性与安全加固
 
-- [ ] 把 Thread、Run、task、Memory、Payload、Trace、inbox、search/cache/archive 的失活、Trash、永久删除和 tombstone 传播接到真实 stores；不把抽象 deletion target 当作生产完成证据。
-- [ ] 实现 7 天 Trash、立即永久删除和 30 天恢复点清除边界；Thread 删除前处理关联活动任务，外部副作用只保留不含正文的最小墓碑。
-- [ ] 实现 disk headroom warning、严重不足时停止高容量 admission，并保留只读、transfer export 与人工清理；不得自动删除 Owner 内容。
-- [ ] 结构化日志只含 correlation/Run/event/adapter/version/latency/stable error；指标覆盖 DB、WAL/disk、outbox、jobs、Worker、Memory、model/fallback/cost 和 SSE。
-- [ ] 详细 dependency health 需要认证并脱敏；公共 health 不暴露路径、secret ref、repository、Owner 或私人正文。
-- [ ] 运行 secret scan、dependency audit、CSP/CSRF、filesystem/socket permission、request limit、log redaction 和 tamper tests。
+- [x] 把 Thread、Run、task、Memory、Payload、Trace、inbox、search/cache/archive 的失活、Trash、永久删除和 tombstone 传播接到真实 stores；不把抽象 deletion target 当作生产完成证据。
+- [x] 实现 7 天 Trash、立即永久删除和 30 天恢复点清除边界；Thread 删除前处理关联活动任务，外部副作用只保留不含正文的最小墓碑。
+- [x] 实现 disk headroom warning、严重不足时停止高容量 admission，并保留只读、transfer export 与人工清理；不得自动删除 Owner 内容。
+- [x] 结构化日志只含 correlation/Run/event/adapter/version/latency/stable error；指标覆盖 DB、WAL/disk、outbox、jobs、Worker、Memory、model/fallback/cost 和 SSE。
+- [x] 详细 dependency health 需要认证并脱敏；公共 health 不暴露路径、secret ref、repository、Owner 或私人正文。
+- [x] 运行 secret scan、dependency audit、CSP/CSRF、filesystem/socket permission、request limit、log redaction 和 tamper tests。
+
+`SqliteGovernedDeletionAdapter` 与 `himawari delete trash|restore|inspect|purge|purge-expired` 已把 Thread/task/Memory 的 7 天 Trash、Run/task/Thread 级联、Payload metadata/ciphertext file、Trace、inbox、Gateway Read Model 和 state-root 内受管 search/cache/archive artifact 接到真实 SQLite 与文件系统。Thread mutation plan 在确认前列出关联 task，并在 Trash 时暂停 active task、恢复时只恢复本次暂停的 task；永久删除把保留 Memory 的来源改为无正文 deleted-source marker。外部可靠事件内容删除后只保存 SHA-256 引用的 Audit 墓碑；任一物理目标失败都会在 durable tombstone 中保持 `deletion_pending` 并可重试。带 provider projection 的 Memory 必须先经既有 durable projection cleanup 到 `deleted_verified`，不能由离线 CLI 冒充外部清理成功。30 天边界由 Task 23 的固定恢复点 retention 保证：永久删除后的新恢复点不再含对应行，旧恢复点最迟在各自 `retainUntil` 退出本机副本。
+
+SQLite status 现在区分 `normal|warning|write_restricted`，并输出 database/WAL/free bytes、writer queue、Outbox、job、Memory projection、deletion 与 SSE retained-event 计数。`RuntimeMetricsRegistry` 另覆盖 Worker、model/fallback/cost、SSE connection/backpressure 和 request latency，固定指标名且不接受私人标签；详细 health/metrics API 要求认证，公共 health 只返回最小状态。结构化诊断统一执行 machine-secret redaction；`npm run check:secrets` 扫描 tracked 与未忽略的新文件，并用精确匹配 digest baseline 区分已有测试假凭据。`npm audit --omit=dev --audit-level=high` fresh 查询报告 0 vulnerabilities。实现与验证证据位于 `test/integration/qualification/evidence/s1-task25-deletion-observability-security.json`。
 
 ### Task 26：扩展真实进程、崩溃与恢复矩阵
 

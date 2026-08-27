@@ -467,7 +467,34 @@ describe("SQLite product-state transaction boundary", () => {
       code: PORT_ERROR_CODES.CONFLICT,
       details: { reason: "disk_headroom" },
     });
+    expect(await repository.operationalStatus()).toMatchObject({
+      storageMode: "write_restricted",
+      minimumFreeBytes: Number.MAX_SAFE_INTEGER,
+    });
     expect(await repository.read("run:sqlite-headroom")).toBeUndefined();
+    await repository.close();
+  });
+
+  it("reports warning headroom without blocking bounded writes", async () => {
+    const { repository } = await integrationRepository("headroom-warning", {
+      stateRoot: "unused",
+      minimumFreeBytes: 0,
+      warningFreeBytes: Number.MAX_SAFE_INTEGER,
+    });
+    expect(await repository.operationalStatus()).toMatchObject({
+      storageMode: "warning",
+      minimumFreeBytes: 0,
+      warningFreeBytes: Number.MAX_SAFE_INTEGER,
+      outboxPending: 0,
+      backgroundJobsPending: 0,
+      memoryProjectionPending: 0,
+      sseEventRows: 0,
+      deletionPending: 0,
+    });
+    expect((await repository.operationalStatus()).databaseBytes).toBeGreaterThan(0);
+    await expect(
+      repository.commitStateAndEvents(commitInput("headroom-warning")),
+    ).resolves.toMatchObject({ replayed: false });
     await repository.close();
   });
 

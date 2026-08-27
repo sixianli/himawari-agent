@@ -7,6 +7,7 @@ export interface SqliteWorkerConfiguration {
   readonly writerSequence: number;
   readonly busyTimeoutMs: number;
   readonly minimumFreeBytes: number;
+  readonly warningFreeBytes: number;
   readonly startupNow: string;
   readonly qualification?: {
     readonly crashAt?: "after_state" | "after_result" | "after_event" | "after_commit";

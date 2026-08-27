@@ -1,4 +1,5 @@
 import process from "node:process";
+import { redactMachineSecrets } from "@himawari-agent/application";
 
 export const SERVICE_RUNTIME_ERROR_CODES = Object.freeze({
   ARGUMENT_INVALID: "SERVICE_ARGUMENT_INVALID",
@@ -61,7 +62,8 @@ export function writeServiceDiagnostic(
   output: NodeJS.WritableStream,
   diagnostic: Readonly<Record<string, string | number | boolean | readonly string[]>>,
 ): void {
-  output.write(`${JSON.stringify({ timestamp: new Date().toISOString(), ...diagnostic })}\n`);
+  const serialized = JSON.stringify({ timestamp: new Date().toISOString(), ...diagnostic });
+  output.write(`${redactMachineSecrets(serialized)}\n`);
 }
 
 export async function waitForTerminationSignal(): Promise<"SIGINT" | "SIGTERM"> {

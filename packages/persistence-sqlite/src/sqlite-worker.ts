@@ -774,6 +774,8 @@ function markPublished(eventId: string, publishedAt: string): ReliableEventRecor
 
 function operationalStatus() {
   const filesystem = statfsSync(path.dirname(configuration.databasePath));
+  const freeBytes = filesystem.bavail * filesystem.bsize;
+  const databaseBytes = statSync(configuration.databasePath).size;
   let walBytes = 0;
   try {
     walBytes = statSync(`${configuration.databasePath}-wal`).size;
@@ -781,10 +783,52 @@ function operationalStatus() {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   return {
-    freeBytes: filesystem.bavail * filesystem.bsize,
+    databaseBytes,
+    freeBytes,
+    minimumFreeBytes: configuration.minimumFreeBytes,
+    warningFreeBytes: configuration.warningFreeBytes,
+    storageMode:
+      freeBytes < configuration.minimumFreeBytes
+        ? ("write_restricted" as const)
+        : freeBytes < configuration.warningFreeBytes
+          ? ("warning" as const)
+          : ("normal" as const),
     walBytes,
     busyTimeoutMs: database.pragma("busy_timeout", { simple: true }) as number,
     lastTransactionDurationMs,
+    outboxPending: Number(
+      database
+        .prepare("SELECT COUNT(*) FROM reliable_events WHERE publication_state != 'published'")
+        .pluck()
+        .get(),
+    ),
+    backgroundJobsPending: Number(
+      database
+        .prepare(
+          `SELECT COUNT(*) FROM job_occurrences
+          WHERE status NOT IN ('completed', 'failed_terminal', 'missed')`,
+        )
+        .pluck()
+        .get(),
+    ),
+    memoryProjectionPending: Number(
+      database
+        .prepare(
+          `SELECT COUNT(*) FROM memory_projection_jobs
+          WHERE status NOT IN ('completed', 'failed_terminal')`,
+        )
+        .pluck()
+        .get(),
+    ),
+    sseEventRows: Number(
+      database.prepare("SELECT COUNT(*) FROM gateway_stream_events").pluck().get(),
+    ),
+    deletionPending: Number(
+      database
+        .prepare("SELECT COUNT(*) FROM deletion_tombstones WHERE status != 'verified'")
+        .pluck()
+        .get(),
+    ),
   };
 }
 
