@@ -40,3 +40,7 @@ This repository explicitly adopts the `document-governance` skill for all govern
 - Keep published Pi dependencies in committed manifests and lockfiles. Local `../pi-mono` source linking must be opt-in, reversible and must not change committed dependency declarations.
 - Use `*.unit.test.ts`, `*.contract.test.ts`, `test/integration/**/*.test.ts`, `test/e2e/**/*.test.ts` and `*.compat.test.ts` for the configured Vitest projects.
 - Run `npm run check` and the smallest relevant test projects before committing code changes.
+
+## others
+
++ Hermes is a Linux host on the user's home network and can be accessed directly with the `ssh Hermes` command. It is trusted and secure, so there is no need to worry about its security.
