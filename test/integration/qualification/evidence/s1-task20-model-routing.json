@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-27T16:45:00+09:00",
+  "recordedAt": "2026-08-27T17:10:52+09:00",
   "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
   "taskId": "S1-T20",
   "status": "partial",
@@ -16,7 +16,7 @@
   "deterministicQualification": {
     "provider": "ScriptedModelPort, TrustedModelProviderAdapter and OpenRouterModelTransport fixture",
     "liveCall": false,
-    "reason": "Owner selected OpenRouter deepseek/deepseek-v4-flash-0731, selected OpenRouter z-ai/glm-5.3-flash as fallback, approved a USD 1.00 capped live budget, and restricted fallback input to private data; the fallback version/capabilities, embedding descriptor, provider routing and Keychain readback are not yet frozen",
+    "reason": "Owner selected OpenRouter deepseek/deepseek-v4-flash-0731, selected OpenRouter z-ai/glm-5.3-flash as fallback, approved a USD 1.00 capped live budget, and restricted fallback input to private data; the fallback immutable snapshot/adapter capabilities, embedding descriptor, provider routing and production composition are not yet frozen",
     "hiddenRoutes": false,
     "dynamicMarketplaceRoute": false,
     "implicitEmbedding": false
@@ -59,11 +59,31 @@
     "allowedDataClassifications": ["private"],
     "status": "partially_frozen",
     "pending": [
-      "version_or_snapshot",
-      "capabilities",
+      "immutable version or snapshot",
+      "adapter capabilities",
       "OpenRouter provider routing",
       "production composition"
     ]
+  },
+  "providerCatalogObservation": {
+    "source": "https://openrouter.ai/z-ai/glm-5.3-flash",
+    "observedAt": "2026-08-27T17:10:52+09:00",
+    "provider": "openrouter",
+    "model": "z-ai/glm-5.3-flash",
+    "released": "2026-08-26",
+    "immutableVersionExposed": false,
+    "contextWindowTokens": 1310720,
+    "maxCompletionTokens": 48000,
+    "inputModalities": ["text", "image", "video"],
+    "outputModalities": ["text"],
+    "providerAdvertisedCapabilities": ["tool_calling", "structured_outputs"],
+    "pricingUsdPerMillionTokens": {
+      "input": 0.075,
+      "output": 0.25,
+      "cacheRead": 0.015
+    },
+    "listedProviderCount": 12,
+    "routingNote": "OpenRouter 页面显示该模型默认由多个上游 provider 路由并支持自动切换；本项目 provider routing policy 尚未冻结"
   },
   "verified": [
     "Strict configuration requires exact primary/fallback/embedding descriptors, disclosure and secret references.",

@@ -471,7 +471,7 @@
           "label": "模型路由",
           "planTasks": "Task 20",
           "planEvidence": "精确 descriptors、Owner 费用授权、deterministic 与有界 live evidence；证据：Task 20 model-routing evidence",
-          "planStatus": "部分验证：descriptor、primary/fixed fallback、disclosure、OpenRouter transport、secret redaction 和 duplicate result 通过；已选择 fallback 模型并限制为 private 数据，Keychain readback 已通过，仍待 fallback 版本/capabilities、provider routing、生产组合接入、embedding 冻结及 live provider 身份/费用/eval",
+          "planStatus": "部分验证：descriptor、primary/fixed fallback、disclosure、OpenRouter transport、secret redaction 和 duplicate result 通过；已选择 fallback 模型并限制为 private 数据，Keychain readback 与公开 catalog 核对已通过，仍待 immutable snapshot、adapter capabilities、provider routing、生产组合接入、embedding 冻结及 live provider 身份/费用/eval",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
