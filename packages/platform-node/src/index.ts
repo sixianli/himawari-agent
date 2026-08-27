@@ -1,5 +1,6 @@
 export * from "./ciphertext-file-store.js";
 export * from "./execution-uds-transport.js";
+export * from "./ephemeral-secret-port.js";
 export * from "./host-secret-source.js";
 export * from "./http-gateway-server.js";
 export * from "./identity-gateway.js";

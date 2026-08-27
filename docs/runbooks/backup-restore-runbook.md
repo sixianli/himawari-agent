@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:35a11b9b3dee5beadd9b3b14298c3a823cc6d87eaae0b806c01cce440c643d0c"
+contract_sha256: "sha256:b32d5549d4168c0a4e20431b3fba617746e2796dc99e22f32f6b3401101b7aee"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -38,6 +38,7 @@ date: "2026-08-27"
 
 - 有效恢复点必须通过 manifest HMAC、每文件 AES-256-GCM authentication、ciphertext/plaintext digest、schema sequence、SQLite quick/full integrity、foreign key、全表行数、Payload authentication 和 Outbox continuity 检查。
 - `backup create` 会向活动 SQLite 写入恢复点与操作 marker，并在 state root 的 `recovery-points/` 下新增加密文件；这是第一次目标 mutation。执行前必须报告主机、deployment、state root、backup ID、预计磁盘增量和 30 天保留上限，并取得覆盖该目标与动作的明确授权。
+- 配置必须通过当前 strict schema，包含一个显式 primary、private-only fallback 和独立 embedding descriptor；embedding dimensions 必须与 Mem0 vector dimension 相等。恢复点流程不改写这些模型身份，也不推断或下载隐式 embedding。
 - `backup restore` 是 critical 恢复 mutation。服务必须已经停止，state-root 管理锁必须可独占取得，目标必须与配置中的 state root 完全相同，且确认词必须精确为 `RESTORE_<backup-id>`。运行前必须再次报告将替换的 `data/`、恢复点 identity、数据回退范围和外部副作用不回滚边界，并取得逐次授权。
 - secret 目录及文件必须由当前服务账号拥有，目录权限为 `0700`、文件权限为 `0600`，且配置中各恰好有一个 `backup-encryption` 和 `payload-encryption` secret reference。
 - 恢复只回退产品 data partition；不回退 public ingress、外部账户、已完成的外部副作用、host secret、authority 或应用版本。

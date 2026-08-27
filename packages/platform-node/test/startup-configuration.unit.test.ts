@@ -44,6 +44,15 @@ function config(stateRoot: string): Record<string, unknown> {
         provider: "provider-primary",
         model: "model-a",
         version: "snapshot-1",
+        priority: 1,
+        name: "Primary fixture",
+        api: "openai-completions",
+        reasoning: false,
+        input: ["text"],
+        capabilities: ["text", "tool_calling"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 8192,
+        maxTokens: 1024,
         allowedDataClassifications: ["public", "private"],
         disclosure: "trusted_remote",
         secretRef: "provider-primary",
@@ -54,7 +63,16 @@ function config(stateRoot: string): Record<string, unknown> {
         provider: "provider-fallback",
         model: "model-b",
         version: "snapshot-1",
-        allowedDataClassifications: ["public"],
+        priority: 2,
+        name: "Fallback fixture",
+        api: "openai-completions",
+        reasoning: false,
+        input: ["text"],
+        capabilities: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 8192,
+        maxTokens: 1024,
+        allowedDataClassifications: ["private"],
         disclosure: "external_remote",
         secretRef: "provider-fallback",
         providerRouting: {
@@ -70,6 +88,9 @@ function config(stateRoot: string): Record<string, unknown> {
         provider: "provider-embedding",
         model: "embed-a",
         version: "snapshot-1",
+        capabilities: ["embedding"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        dimensions: 1536,
         allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
         disclosure: "trusted_remote",
         secretRef: "provider-embedding",
@@ -135,6 +156,18 @@ describe("strict product configuration", () => {
       require_parameters: true,
       data_collection: "deny",
     });
+    expect(parsed.modelDescriptors[0]).toMatchObject({
+      role: "primary",
+      capabilities: ["text", "tool_calling"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 8192,
+      maxTokens: 1024,
+    });
+    expect(parsed.modelDescriptors[2]).toMatchObject({
+      role: "embedding",
+      capabilities: ["embedding"],
+      dimensions: 1536,
+    });
     expect(parsed.stateRoot).not.toBe(process.cwd());
   });
 
@@ -188,6 +221,53 @@ describe("strict product configuration", () => {
     };
     expect(() =>
       parseProductConfiguration(invalidConcurrency, new Date().toISOString()),
+    ).toThrowError();
+    const mismatchedEmbedding = config(stateRoot);
+    mismatchedEmbedding["memory"] = {
+      ...(mismatchedEmbedding["memory"] as object),
+      dimensions: 1024,
+    };
+    expect(() =>
+      parseProductConfiguration(mismatchedEmbedding, new Date().toISOString()),
+    ).toThrowError();
+    const publicFallback = config(stateRoot);
+    const publicFallbackModels = publicFallback["modelDescriptors"] as Record<string, unknown>[];
+    publicFallback["modelDescriptors"] = publicFallbackModels.map((entry, index) =>
+      index === 1 ? { ...entry, allowedDataClassifications: ["public"] } : entry,
+    );
+    expect(() =>
+      parseProductConfiguration(publicFallback, new Date().toISOString()),
+    ).toThrowError();
+    const generationFieldOnEmbedding = config(stateRoot);
+    const embeddingModels = generationFieldOnEmbedding["modelDescriptors"] as Record<
+      string,
+      unknown
+    >[];
+    generationFieldOnEmbedding["modelDescriptors"] = embeddingModels.map((entry, index) =>
+      index === 2 ? { ...entry, input: ["text"] } : entry,
+    );
+    expect(() =>
+      parseProductConfiguration(generationFieldOnEmbedding, new Date().toISOString()),
+    ).toThrowError(expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.UNKNOWN_FIELD }));
+    const missingGenerationCapability = config(stateRoot);
+    const missingGenerationCapabilityModels = missingGenerationCapability[
+      "modelDescriptors"
+    ] as Record<string, unknown>[];
+    missingGenerationCapability["modelDescriptors"] = missingGenerationCapabilityModels.map(
+      (entry, index) => (index === 0 ? { ...entry, capabilities: ["tool_calling"] } : entry),
+    );
+    expect(() =>
+      parseProductConfiguration(missingGenerationCapability, new Date().toISOString()),
+    ).toThrowError();
+    const missingEmbeddingCapability = config(stateRoot);
+    const missingEmbeddingCapabilityModels = missingEmbeddingCapability[
+      "modelDescriptors"
+    ] as Record<string, unknown>[];
+    missingEmbeddingCapability["modelDescriptors"] = missingEmbeddingCapabilityModels.map(
+      (entry, index) => (index === 2 ? { ...entry, capabilities: ["text"] } : entry),
+    );
+    expect(() =>
+      parseProductConfiguration(missingEmbeddingCapability, new Date().toISOString()),
     ).toThrowError();
   });
 

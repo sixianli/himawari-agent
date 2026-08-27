@@ -31,16 +31,40 @@ function sink() {
 }
 
 function configuration(stateRoot: string) {
-  const model = (ref: string, role: "primary" | "fallback" | "embedding") => ({
-    ref,
-    role,
-    provider: "provider-local",
-    model: ref,
-    version: "snapshot-1",
-    allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
-    disclosure: "local_only",
-    secretRef: null,
-  });
+  const model = (ref: string, role: "primary" | "fallback" | "embedding") =>
+    role === "embedding"
+      ? {
+          ref,
+          role,
+          provider: "provider-local",
+          model: ref,
+          version: "snapshot-1",
+          capabilities: ["embedding"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          dimensions: 1536,
+          allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
+          disclosure: "local_only",
+          secretRef: null,
+        }
+      : {
+          ref,
+          role,
+          provider: "provider-local",
+          model: ref,
+          version: "snapshot-1",
+          priority: role === "primary" ? 1 : 2,
+          name: role === "primary" ? "Primary fixture" : "Fallback fixture",
+          api: "openai-completions",
+          reasoning: false,
+          input: ["text"],
+          capabilities: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 8192,
+          maxTokens: 1024,
+          allowedDataClassifications: role === "fallback" ? ["private"] : ["public", "private"],
+          disclosure: "local_only",
+          secretRef: null,
+        };
   return {
     schemaVersion: CONFIGURATION_SCHEMA_VERSION,
     deploymentId: "deployment-deletion-cli",

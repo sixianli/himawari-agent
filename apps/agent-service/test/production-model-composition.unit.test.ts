@@ -4,9 +4,13 @@ import type {
   PiModelRuntime,
   PiModelRuntimeFactory,
 } from "@himawari-agent/runtime-pi";
+import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import { createReferenceAdapterSet, type ReferenceAdapterSet } from "@himawari-agent/testing";
 import { describe, expect, it, vi } from "vitest";
-import { createProductionModelComposition } from "../src/index.js";
+import {
+  createProductionModelComposition,
+  resolveConfiguredModelDescriptorSet,
+} from "../src/index.js";
 
 const primaryModel: ConfiguredPiModelDescriptor = {
   ref: "model-openrouter-primary",
@@ -168,5 +172,161 @@ describe("production model composition", () => {
         }).options,
       ),
     ).toThrow("PI_MODEL_BINDING_REQUIRES_SHARED_PROVIDER_SECRET");
+  });
+
+  it("maps strict configuration into one Pi generation set and an independent embedding descriptor", () => {
+    const stateRoot = "/tmp/himawari-model-descriptor-test";
+    const configuration = parseProductConfiguration(
+      {
+        schemaVersion: "himawari.configuration.v1",
+        deploymentId: "deployment-model-descriptor-test",
+        ownerId: "owner-model-descriptor-test",
+        agentId: "agent-model-descriptor-test",
+        stateRoot,
+        runtimeDirectory: `${stateRoot}/runtime`,
+        cacheDirectory: `${stateRoot}/cache`,
+        publicOrigin: "http://127.0.0.1",
+        publicMode: false,
+        modelDescriptors: [
+          {
+            ref: "model-primary",
+            role: "primary",
+            provider: "openrouter",
+            model: primaryModel.model,
+            version: primaryModel.version,
+            priority: 1,
+            name: primaryModel.name,
+            api: "openai-completions",
+            reasoning: false,
+            input: ["text"],
+            capabilities: [...primaryModel.capabilities],
+            cost: { ...primaryModel.cost },
+            contextWindow: primaryModel.contextWindow,
+            maxTokens: primaryModel.maxTokens,
+            allowedDataClassifications: ["public", "private"],
+            disclosure: "external_remote",
+            secretRef: "openrouter-api-key",
+          },
+          {
+            ref: "model-fallback",
+            role: "fallback",
+            provider: "openrouter",
+            model: fallbackModel.model,
+            version: fallbackModel.version,
+            priority: 2,
+            name: fallbackModel.name,
+            api: "openai-completions",
+            reasoning: false,
+            input: ["text"],
+            capabilities: [...fallbackModel.capabilities],
+            cost: { ...fallbackModel.cost },
+            contextWindow: fallbackModel.contextWindow,
+            maxTokens: fallbackModel.maxTokens,
+            allowedDataClassifications: ["private"],
+            disclosure: "external_remote",
+            secretRef: "openrouter-api-key",
+            providerRouting: fallbackRouting,
+          },
+          {
+            ref: "model-embedding",
+            role: "embedding",
+            provider: "openai-compatible",
+            model: "text-embedding-fixture",
+            version: "catalog-2026-08-27",
+            capabilities: ["embedding"],
+            cost: { input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0 },
+            dimensions: 1536,
+            allowedDataClassifications: ["public", "private"],
+            disclosure: "trusted_remote",
+            secretRef: "embedding-api-key",
+          },
+        ],
+        memory: {
+          adapter: "mem0-oss",
+          version: "3.1.7",
+          storagePath: `${stateRoot}/data/memory`,
+          dimensions: 1536,
+        },
+        repositoryAllowlistRefs: [],
+        secretReferences: [
+          {
+            ref: "openrouter-api-key",
+            version: "v1",
+            purpose: "model-provider-auth",
+            scope: "model",
+          },
+          {
+            ref: "embedding-api-key",
+            version: "v2",
+            purpose: "embedding-provider-auth",
+            scope: "embedding",
+          },
+        ],
+        budgets: {
+          globalCostMicros: 0,
+          perRunCostMicros: 0,
+          perClassificationCostMicros: { public: 0, private: 0, sensitive: 0, restricted: 0 },
+        },
+        concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
+        deadlines: { runMs: 1000, workerRequestMs: 1000, providerRequestMs: 1000 },
+      },
+      "2026-08-27T00:00:00.000Z",
+    );
+
+    const resolved = resolveConfiguredModelDescriptorSet(configuration);
+    expect(resolved.generation).toHaveLength(2);
+    expect(resolved.generation[0]).toMatchObject({
+      ref: "model-primary",
+      provider: "openrouter",
+      secretRequirement: {
+        secretRef: "openrouter-api-key",
+        secretVersion: "v1",
+        purpose: "model-provider-auth",
+      },
+    });
+    expect(resolved.generation[1]?.providerRouting).toEqual(fallbackRouting);
+    expect(resolved.embedding).toMatchObject({
+      ref: "model-embedding",
+      provider: "openai-compatible",
+      model: "text-embedding-fixture",
+      version: "catalog-2026-08-27",
+      dimensions: 1536,
+      secretRequirement: {
+        secretRef: "embedding-api-key",
+        secretVersion: "v2",
+        purpose: "embedding-provider-auth",
+      },
+    });
+    expect(resolved.embedding).not.toHaveProperty("input");
+    expect(resolved.embedding).not.toHaveProperty("api");
+  });
+
+  it("fails closed instead of inventing a Pi route for an unregistered generation provider", () => {
+    const configuration = {
+      modelDescriptors: [
+        { ...primaryModel, role: "primary" as const, provider: "unknown-provider" },
+        { ...fallbackModel, role: "fallback" as const },
+        {
+          ref: "model-embedding",
+          role: "embedding" as const,
+          provider: "deterministic",
+          model: "embedding-fixture",
+          version: "fixture-1",
+          dimensions: 8,
+          capabilities: ["embedding"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          allowedDataClassifications: ["public", "private"],
+          disclosure: "local_only" as const,
+          secretRef: null,
+        },
+      ],
+      memory: { dimensions: 8 },
+      secretReferences: primaryModel.secretRequirement
+        ? [{ ...primaryModel.secretRequirement, scope: "model" }]
+        : [],
+    } as never;
+    expect(() => resolveConfiguredModelDescriptorSet(configuration)).toThrow(
+      "MODEL_PI_PROVIDER_UNSUPPORTED",
+    );
   });
 });

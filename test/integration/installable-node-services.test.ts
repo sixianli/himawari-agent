@@ -40,6 +40,15 @@ function configuration(publicMode = false) {
         provider: "deterministic",
         model: "primary-fixture",
         version: "1.0.0",
+        priority: 1,
+        name: "Primary fixture",
+        api: "openai-completions",
+        reasoning: false,
+        input: ["text"],
+        capabilities: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 8192,
+        maxTokens: 1024,
         allowedDataClassifications: ["public", "private"],
         disclosure: "local_only",
         secretRef: null,
@@ -50,7 +59,16 @@ function configuration(publicMode = false) {
         provider: "deterministic",
         model: "fallback-fixture",
         version: "1.0.0",
-        allowedDataClassifications: ["public"],
+        priority: 2,
+        name: "Fallback fixture",
+        api: "openai-completions",
+        reasoning: false,
+        input: ["text"],
+        capabilities: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 8192,
+        maxTokens: 1024,
+        allowedDataClassifications: ["private"],
         disclosure: "local_only",
         secretRef: null,
       },
@@ -60,6 +78,9 @@ function configuration(publicMode = false) {
         provider: "deterministic",
         model: "embedding-fixture",
         version: "1.0.0",
+        capabilities: ["embedding"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        dimensions: 16,
         allowedDataClassifications: ["public", "private"],
         disclosure: "local_only",
         secretRef: null,
@@ -206,17 +227,25 @@ function serviceArguments(configPath = configurationPath, workerTokenPath = toke
   ];
 }
 
-async function startService(name: string, expectedComponent: string) {
+async function startService(
+  name: string,
+  expectedComponent: string,
+  additionalExpected: readonly string[] = [],
+) {
   const child = spawn(executable(name), serviceArguments(), {
     cwd: testRoot,
     stdio: ["pipe", "pipe", "pipe"],
   });
   children.add(child);
-  await waitForOutput(child, `"component":"${expectedComponent}"`);
+  await waitForOutput(child, `"component":"${expectedComponent}"`, additionalExpected);
   return child;
 }
 
-async function waitForOutput(child: ChildProcessWithoutNullStreams, expected: string) {
+async function waitForOutput(
+  child: ChildProcessWithoutNullStreams,
+  expected: string,
+  additionalExpected: readonly string[] = [],
+) {
   await new Promise<void>((resolve, reject) => {
     let output = "";
     let errors = "";
@@ -226,7 +255,11 @@ async function waitForOutput(child: ChildProcessWithoutNullStreams, expected: st
     );
     child.stdout.on("data", (chunk: Buffer) => {
       output += chunk.toString("utf8");
-      if (output.includes(expected) && output.includes('"event":"service.ready"')) {
+      if (
+        output.includes(expected) &&
+        output.includes('"event":"service.ready"') &&
+        additionalExpected.every((entry) => output.includes(entry))
+      ) {
         clearTimeout(timeout);
         resolve();
       }
@@ -284,7 +317,11 @@ describe("installable Node services and admin CLI", () => {
 
   it("starts, diagnoses, locks, drains, force-restarts and rejects unsafe profiles", async () => {
     let worker = await startService("himawari-execution-worker", "execution-worker");
-    let agent = await startService("himawari-agent-service", "agent-service");
+    let agent = await startService("himawari-agent-service", "agent-service", [
+      '"modelPath":"deterministic-descriptor-only"',
+      '"embeddingDescriptorRef":"model-embedding"',
+      '"embeddingDimensions":16',
+    ]);
 
     const doctor = runInstalled("himawari", ["doctor", "--config", configurationPath]);
     expect(doctor.status).toBe(0);

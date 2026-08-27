@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:737bf16c69a9b7f974c5d1e272affc5f777a434f9a989845dcdd817f1c24be40"
+contract_sha256: "sha256:7b631839ef5577d07578ab3555144232240a25b664a355e34620e3b8eb25dc36"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -45,6 +45,7 @@ date: "2026-08-27"
 - export 前 Agent Service、Execution Worker、新 Trigger admission、scheduler、全部 SQLite/Memory connection 必须停止；在途 Run 必须已完成或形成稳定 checkpoint。CLI 取得 state-root exclusive offline lock 只证明受该锁保护的写者已停止，不能替代服务管理器、进程、socket 和连接回读。
 - target state root 必须停止且 product `data/` 为空，不能先复制 SQLite、Payload 或 authority file。目标 host 的配置与秘密必须独立准备；机器秘密不得进入迁移包。
 - 配置中必须恰好存在一个 `payload-encryption` 和一个 `transfer-recipient` secret reference。当前 CLI 从绝对路径的 restricted secret directory 解析 32-byte key material；目录必须为当前账号所有且 `0700`，文件必须为当前账号所有且 `0600`。密钥值不得进入 argv、环境变量、日志、Trace 或证据。
+- 配置必须通过当前 strict schema，明确声明 primary、private-only fallback 和独立 embedding descriptor 及其 dimensions；迁移只搬运受保护产品状态，不替换、推断或静默刷新这些模型身份。
 - `activate` 只接受权限受限、字段精确的 preflight JSON。CLI 会实际解析目标 Payload 和 recipient key；`doctorReady` 与 `publicIngressReady` 必须来自本次只读检查。文件中的布尔值不是替代证据，缺少原始回读时停止。
 - 迁移包 plaintext staging 只能位于 CLI 生成的受限临时目录。copy-on-write 与 SSD 删除不保证可靠擦除；主要保护来自包加密、受限权限、临时文件清理和后续 key disposal。
 - 任何公网入口切换、Hermes/Mac 服务操作、外部账户变更和旧包删除都保持各自授权边界。

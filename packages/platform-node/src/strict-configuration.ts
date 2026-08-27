@@ -4,8 +4,11 @@ import path from "node:path";
 import {
   assertMachineSecretFree,
   type ConfigurationPort,
+  type ConfiguredEmbeddingModelDescriptor,
+  type ConfiguredGenerationModelDescriptor,
   type ConfiguredModelDescriptor,
   type DataClassification,
+  type ModelCostDescriptor,
   type ModelProviderRouting,
   type ProductConfiguration,
 } from "@himawari-agent/application";
@@ -94,6 +97,13 @@ function integer(value: unknown, field: string, minimum: number, maximum: number
   return value as number;
 }
 
+function nonNegativeNumber(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw invalid(field, "must be a non-negative finite number");
+  }
+  return value;
+}
+
 function absolutePath(value: unknown, field: string): string {
   const candidate = string(value, field);
   if (!path.isAbsolute(candidate) || path.normalize(candidate) !== candidate) {
@@ -162,9 +172,40 @@ function providerRouting(value: unknown, field: string): ModelProviderRouting {
   });
 }
 
+function modelCost(value: unknown, field: string): ModelCostDescriptor {
+  const input = record(value, field);
+  rejectUnknown(input, ["input", "output", "cacheRead", "cacheWrite"], field);
+  return Object.freeze({
+    input: nonNegativeNumber(input["input"], `${field}.input`),
+    output: nonNegativeNumber(input["output"], `${field}.output`),
+    cacheRead: nonNegativeNumber(input["cacheRead"], `${field}.cacheRead`),
+    cacheWrite: nonNegativeNumber(input["cacheWrite"], `${field}.cacheWrite`),
+  });
+}
+
+function inputModalities(value: unknown, field: string): readonly ("text" | "image")[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw invalid(field, "must be a non-empty array");
+  }
+  const result = value.map((entry, index) => {
+    if (entry !== "text" && entry !== "image") {
+      throw invalid(`${field}[${index}]`, "must be text or image");
+    }
+    return entry;
+  });
+  if (!result.includes("text")) throw invalid(field, "must include text");
+  if (new Set(result).size !== result.length) throw invalid(field, "must not contain duplicates");
+  return Object.freeze(result);
+}
+
 function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
   const field = `modelDescriptors[${index}]`;
   const input = record(value, field);
+  const role = string(input["role"], `${field}.role`);
+  if (!(["primary", "fallback", "embedding"] as const).includes(role as never)) {
+    throw invalid(`${field}.role`, "is not a supported role");
+  }
+  const generation = role !== "embedding";
   rejectUnknown(
     input,
     [
@@ -176,23 +217,38 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       "allowedDataClassifications",
       "disclosure",
       "secretRef",
-      "providerRouting",
+      "capabilities",
+      "cost",
+      ...(generation
+        ? [
+            "priority",
+            "name",
+            "api",
+            "reasoning",
+            "input",
+            "contextWindow",
+            "maxTokens",
+            "providerRouting",
+          ]
+        : ["dimensions"]),
     ],
     field,
   );
-  const role = string(input["role"], `${field}.role`);
-  if (!(["primary", "fallback", "embedding"] as const).includes(role as never)) {
-    throw invalid(`${field}.role`, "is not a supported role");
-  }
   const disclosure = string(input["disclosure"], `${field}.disclosure`);
   if (
     !(["local_only", "trusted_remote", "external_remote"] as const).includes(disclosure as never)
   ) {
     throw invalid(`${field}.disclosure`, "is not a supported disclosure boundary");
   }
-  return Object.freeze({
+  const capabilities = stringArray(input["capabilities"], `${field}.capabilities`);
+  if (generation && !capabilities.includes("text")) {
+    throw invalid(`${field}.capabilities`, "generation models must include text");
+  }
+  if (!generation && !capabilities.includes("embedding")) {
+    throw invalid(`${field}.capabilities`, "embedding models must include embedding");
+  }
+  const base = {
     ref: safeReference(input["ref"], `${field}.ref`),
-    role: role as ConfiguredModelDescriptor["role"],
     provider: safeReference(input["provider"], `${field}.provider`),
     model: safeReference(input["model"], `${field}.model`),
     version: safeReference(input["version"], `${field}.version`),
@@ -203,10 +259,50 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     disclosure: disclosure as ConfiguredModelDescriptor["disclosure"],
     secretRef:
       input["secretRef"] === null ? null : safeReference(input["secretRef"], `${field}.secretRef`),
+    capabilities,
+    cost: modelCost(input["cost"], `${field}.cost`),
+  };
+  if (!generation) {
+    const descriptor: ConfiguredEmbeddingModelDescriptor = {
+      ...base,
+      role: "embedding",
+      dimensions: integer(input["dimensions"], `${field}.dimensions`, 1, 65_536),
+    };
+    return Object.freeze(descriptor);
+  }
+  const api = string(input["api"], `${field}.api`);
+  if (api !== "openai-completions") throw invalid(`${field}.api`, "is unsupported");
+  const descriptor: ConfiguredGenerationModelDescriptor = {
+    ...base,
+    role: role as "primary" | "fallback",
+    priority: integer(input["priority"], `${field}.priority`, 1, 10_000),
+    name: string(input["name"], `${field}.name`),
+    api: "openai-completions",
+    reasoning: boolean(input["reasoning"], `${field}.reasoning`),
+    input: inputModalities(input["input"], `${field}.input`),
+    contextWindow: integer(
+      input["contextWindow"],
+      `${field}.contextWindow`,
+      1,
+      Number.MAX_SAFE_INTEGER,
+    ),
+    maxTokens: integer(input["maxTokens"], `${field}.maxTokens`, 1, Number.MAX_SAFE_INTEGER),
     ...(input["providerRouting"] === undefined
       ? {}
       : { providerRouting: providerRouting(input["providerRouting"], `${field}.providerRouting`) }),
-  });
+  };
+  if (role === "fallback") {
+    if (
+      descriptor.allowedDataClassifications.length !== 1 ||
+      descriptor.allowedDataClassifications[0] !== "private"
+    ) {
+      throw invalid(
+        `${field}.allowedDataClassifications`,
+        "fallback must allow exactly the private classification",
+      );
+    }
+  }
+  return Object.freeze(descriptor);
 }
 
 function parseCostMap(value: unknown) {
@@ -308,6 +404,9 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     throw invalid("configuration.modelDescriptors", "must be an array");
   }
   const modelDescriptors = Object.freeze(input["modelDescriptors"].map(parseModel));
+  if (new Set(modelDescriptors.map(({ ref }) => ref)).size !== modelDescriptors.length) {
+    throw invalid("configuration.modelDescriptors", "must not contain duplicate refs");
+  }
   for (const role of ["primary", "fallback", "embedding"] as const) {
     if (modelDescriptors.filter((descriptor) => descriptor.role === role).length !== 1) {
       throw invalid("configuration.modelDescriptors", `must contain exactly one ${role}`);
@@ -325,6 +424,22 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const memoryPath = absolutePath(memory["storagePath"], "configuration.memory.storagePath");
   if (!memoryPath.startsWith(`${stateRoot}${path.sep}`)) {
     throw invalid("configuration.memory.storagePath", "must be under the state root");
+  }
+  const memoryDimensions = integer(
+    memory["dimensions"],
+    "configuration.memory.dimensions",
+    1,
+    65_536,
+  );
+  const embeddingDescriptor = modelDescriptors.find(
+    (descriptor): descriptor is Extract<ConfiguredModelDescriptor, { role: "embedding" }> =>
+      descriptor.role === "embedding",
+  );
+  if (!embeddingDescriptor || embeddingDescriptor.dimensions !== memoryDimensions) {
+    throw invalid(
+      "configuration.memory.dimensions",
+      "must equal modelDescriptors.embedding.dimensions",
+    );
   }
 
   const secretReferencesInput = input["secretReferences"];
@@ -356,6 +471,15 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       throw invalid(
         "configuration.modelDescriptors",
         `model ${descriptor.ref} references an undeclared secret`,
+      );
+    }
+    if (
+      descriptor.secretRef !== null &&
+      secretReferences.filter(({ ref }) => ref === descriptor.secretRef).length !== 1
+    ) {
+      throw invalid(
+        "configuration.secretReferences",
+        `model ${descriptor.ref} must resolve exactly one secret version`,
       );
     }
   }
@@ -408,7 +532,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       adapter: "mem0-oss" as const,
       version: safeReference(memory["version"], "configuration.memory.version"),
       storagePath: memoryPath,
-      dimensions: integer(memory["dimensions"], "configuration.memory.dimensions", 1, 65_536),
+      dimensions: memoryDimensions,
     }),
     repositoryAllowlistRefs: stringArray(
       input["repositoryAllowlistRefs"],
