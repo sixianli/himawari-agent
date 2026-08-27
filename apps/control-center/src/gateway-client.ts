@@ -28,6 +28,18 @@ export interface ControlCenterRuntimeConfiguration {
   readonly fencingToken: number;
   readonly actorId: string;
   readonly csrfToken: string;
+  readonly primaryModel?: {
+    readonly provider: string;
+    readonly model: string;
+    readonly version: string;
+  } | null;
+  readonly repositoryAllowlistRefs?: readonly string[];
+  readonly disclosedDataClassifications?: readonly (
+    | "public"
+    | "private"
+    | "sensitive"
+    | "restricted"
+  )[];
 }
 
 export async function loadRuntimeConfiguration(
@@ -50,6 +62,9 @@ export async function loadRuntimeConfiguration(
     readonly fencingToken?: unknown;
     readonly actorId?: unknown;
     readonly csrfToken?: unknown;
+    readonly primaryModel?: unknown;
+    readonly repositoryAllowlistRefs?: unknown;
+    readonly disclosedDataClassifications?: unknown;
   };
   for (const key of ["ownerId", "agentId", "deploymentId", "actorId", "csrfToken"] as const) {
     if (typeof value[key] !== "string" || value[key].length === 0) {
@@ -64,7 +79,45 @@ export async function loadRuntimeConfiguration(
   ) {
     throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
   }
-  return Object.freeze(value as unknown as ControlCenterRuntimeConfiguration);
+  const primaryModel =
+    value.primaryModel &&
+    typeof value.primaryModel === "object" &&
+    !Array.isArray(value.primaryModel)
+      ? (value.primaryModel as { provider?: unknown; model?: unknown; version?: unknown })
+      : null;
+  const normalizedPrimary =
+    primaryModel &&
+    typeof primaryModel.provider === "string" &&
+    typeof primaryModel.model === "string" &&
+    typeof primaryModel.version === "string"
+      ? Object.freeze({
+          provider: primaryModel.provider,
+          model: primaryModel.model,
+          version: primaryModel.version,
+        })
+      : null;
+  const repositoryAllowlistRefs = Array.isArray(value.repositoryAllowlistRefs)
+    ? value.repositoryAllowlistRefs.filter((item): item is string => typeof item === "string")
+    : [];
+  const disclosedDataClassifications: ("public" | "private" | "sensitive" | "restricted")[] =
+    Array.isArray(value.disclosedDataClassifications)
+      ? value.disclosedDataClassifications.filter(
+          (item): item is "public" | "private" | "sensitive" | "restricted" =>
+            item === "public" ||
+            item === "private" ||
+            item === "sensitive" ||
+            item === "restricted",
+        )
+      : ["private"];
+  return Object.freeze({
+    ...(value as unknown as Omit<
+      ControlCenterRuntimeConfiguration,
+      "primaryModel" | "repositoryAllowlistRefs" | "disclosedDataClassifications"
+    >),
+    primaryModel: normalizedPrimary,
+    repositoryAllowlistRefs: Object.freeze(repositoryAllowlistRefs),
+    disclosedDataClassifications: Object.freeze(disclosedDataClassifications),
+  });
 }
 
 function parsedResponseBody(value: unknown): GatewayV2Snapshot {

@@ -335,6 +335,7 @@ export class ModelRouterService {
       });
 
       const outputRefs: PayloadRef[] = [];
+      const outputSequences = new Set<number>();
       try {
         for await (const event of this.dependencies.model.invoke({
           invocationId,
@@ -355,6 +356,13 @@ export class ModelRouterService {
               0,
               this.dependencies.clock.now(),
             );
+          }
+          // Providers may retry a streamed chunk after a transport boundary. A
+          // repeated sequence is not a second business result and must not create
+          // another Trace/Payload reference.
+          if (event.type === "model.output") {
+            if (outputSequences.has(event.sequence)) continue;
+            outputSequences.add(event.sequence);
           }
           const terminal = await this.mapProviderEvent(descriptor, event, outputRefs, record);
           if (terminal) return terminal;

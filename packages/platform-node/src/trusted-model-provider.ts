@@ -70,6 +70,7 @@ export class TrustedModelProviderAdapter implements ModelPort {
         secretValues,
       })) {
         yield Object.freeze({ ...event, invocationId: request.invocationId });
+        if (event.type === "model.completed" || event.type === "model.failed") break;
       }
     } catch {
       throw new ApplicationPortError(

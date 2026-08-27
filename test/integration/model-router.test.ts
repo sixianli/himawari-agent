@@ -320,4 +320,53 @@ describe("Task 10 Model Router and trusted Provider secrets", () => {
       );
     }
   });
+
+  it("deduplicates repeated streamed output sequences and terminal provider results", async () => {
+    const primary = descriptor("model-duplicate", "primary");
+    const model = new ScriptedModelPort([primary], [], {
+      [primary.ref]: [
+        { type: "model.started", invocationId: "duplicate-call", occurredAt: T0 },
+        {
+          type: "model.output",
+          invocationId: "duplicate-call",
+          sequence: 1,
+          payloadRef: "payload-duplicate-first",
+          occurredAt: T0,
+        },
+        {
+          type: "model.output",
+          invocationId: "duplicate-call",
+          sequence: 1,
+          payloadRef: "payload-duplicate-retry",
+          occurredAt: T0,
+        },
+        {
+          type: "model.completed",
+          invocationId: "duplicate-call",
+          inputTokens: 2,
+          outputTokens: 1,
+          costMicros: 3,
+          latencyMs: 4,
+          occurredAt: T1,
+        },
+        {
+          type: "model.completed",
+          invocationId: "duplicate-call",
+          inputTokens: 2,
+          outputTokens: 1,
+          costMicros: 3,
+          latencyMs: 4,
+          occurredAt: T1,
+        },
+      ],
+    });
+    const { adapters, router } = createRouter(model);
+    await expect(router.route(routeRequest())).resolves.toMatchObject({
+      status: "completed",
+      outputRefs: ["payload-duplicate-first"],
+    });
+    const events = await adapters.trace.readRun(RUN_ID, 0, 20);
+    expect(events.filter(({ eventType }) => eventType === "model.output")).toHaveLength(1);
+    expect(events.filter(({ eventType }) => eventType === "model.completed")).toHaveLength(1);
+  });
 });

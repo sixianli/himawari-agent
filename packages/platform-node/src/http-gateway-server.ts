@@ -89,6 +89,18 @@ export interface HttpGatewayServerOptions {
     readonly deploymentId: string;
     readonly authorityEpoch: number;
     readonly fencingToken: number;
+    readonly primaryModel?: {
+      readonly provider: string;
+      readonly model: string;
+      readonly version: string;
+    };
+    readonly repositoryAllowlistRefs?: readonly string[];
+    readonly disclosedDataClassifications?: readonly (
+      | "public"
+      | "private"
+      | "sensitive"
+      | "restricted"
+    )[];
   };
 }
 
@@ -491,6 +503,9 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         fencingToken: configuration.fencingToken,
         actorId: authentication.subjectId,
         csrfToken: await issueCsrf(authentication),
+        primaryModel: configuration.primaryModel ?? null,
+        repositoryAllowlistRefs: configuration.repositoryAllowlistRefs ?? [],
+        disclosedDataClassifications: configuration.disclosedDataClassifications ?? ["private"],
       });
     });
   }

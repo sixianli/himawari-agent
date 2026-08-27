@@ -107,6 +107,7 @@ export function ControlCenterApp() {
   const [draft, setDraft] = useState(() => storage.readDraft("thread-main"));
   const [targetRef, setTargetRef] = useState("");
   const [memoryCorrection, setMemoryCorrection] = useState("");
+  const [githubDisclosureConfirmed, setGithubDisclosureConfirmed] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -397,10 +398,46 @@ export function ControlCenterApp() {
           ) : null}
 
           {page === "tasks" ? (
-            <div className="notice">
-              <strong>Repository monitor</strong>
+            <section className="notice" aria-labelledby="github-disclosure-title">
+              <strong id="github-disclosure-title">Repository monitor 与披露范围</strong>
               <span>Repository 变更通过持久后台任务进入同一列表与授权管线。</span>
-            </div>
+              <dl className="health-grid" aria-label="GitHub 披露预览">
+                <div>
+                  <dt>Primary provider</dt>
+                  <dd>{configuration?.primaryModel?.provider ?? "未配置"}</dd>
+                </div>
+                <div>
+                  <dt>Primary model/version</dt>
+                  <dd>
+                    {configuration?.primaryModel
+                      ? `${configuration.primaryModel.model} / ${configuration.primaryModel.version}`
+                      : "未配置"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>仓库范围</dt>
+                  <dd>{configuration?.repositoryAllowlistRefs?.join(", ") || "未选择"}</dd>
+                </div>
+                <div>
+                  <dt>可披露分类</dt>
+                  <dd>{configuration?.disclosedDataClassifications?.join(", ") || "未配置"}</dd>
+                </div>
+              </dl>
+              <label htmlFor="github-disclosure-confirmed">
+                <input
+                  id="github-disclosure-confirmed"
+                  type="checkbox"
+                  checked={githubDisclosureConfirmed}
+                  onChange={(event) => setGithubDisclosureConfirmed(event.target.checked)}
+                />
+                我确认仅向所选仓库披露上述分类；机器秘密、App 私钥、安装令牌和 Git 凭据永不披露。
+              </label>
+              <output aria-live="polite">
+                {githubDisclosureConfirmed
+                  ? "披露确认已记录在当前浏览器会话，等待服务端 monitor 接纳。"
+                  : "启用仓库监控前必须明确确认披露范围。"}
+              </output>
+            </section>
           ) : null}
 
           <label htmlFor="target-ref">所选记录引用</label>

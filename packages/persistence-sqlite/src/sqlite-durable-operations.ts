@@ -14,6 +14,10 @@ import type {
   DeliveryClaim,
   DeliveryRequest,
   DeliverySettlement,
+  GitHubCoverageGapRecord,
+  GitHubInstallationRecord,
+  GitHubRepositoryMonitor,
+  GitHubWebhookReceiptRecord,
   GrantRecord,
   PayloadRecord,
   ProductDeviceRecord,
@@ -399,6 +403,39 @@ export class SqliteDurableOperations {
         return this.listRecoverableOccurrences(
           payload as { ownerId: string; agentId: string; now: string; limit: number },
         );
+      case "github.installation.read":
+        return this.readGitHubInstallation(
+          (payload as { installationRef: string }).installationRef,
+        );
+      case "github.installation.save":
+        return this.saveGitHubInstallation(
+          (payload as { record: GitHubInstallationRecord }).record,
+        );
+      case "github.monitor.read":
+        return this.readGitHubMonitor((payload as { monitorId: JobId }).monitorId);
+      case "github.monitor.save":
+        return this.saveGitHubMonitor(
+          payload as { monitor: GitHubRepositoryMonitor; expectedRevision: number | null },
+        );
+      case "github.receipt.record":
+        return this.recordGitHubReceipt(
+          (payload as { receipt: GitHubWebhookReceiptRecord }).receipt,
+        );
+      case "github.receipt.find":
+        return this.readGitHubReceipt(
+          (payload as { providerDeliveryId: string }).providerDeliveryId,
+        );
+      case "github.webhook.admit":
+        return this.admitGitHubWebhook(
+          payload as {
+            receipt: GitHubWebhookReceiptRecord;
+            occurrence: BackgroundOccurrence;
+          },
+        );
+      case "github.coverage.save":
+        return this.saveGitHubCoverageGap((payload as { gap: GitHubCoverageGapRecord }).gap);
+      case "github.coverage.list":
+        return this.listGitHubCoverageGaps((payload as { monitorId: JobId }).monitorId);
       case "attention.readPolicy":
         return this.readAttentionPolicy(payload as { ownerId: string; agentId: string });
       case "attention.commitDecision":
@@ -1703,6 +1740,404 @@ export class SqliteDurableOperations {
         input.job.id,
       );
     return input.job;
+  }
+
+  private githubInstallationRow(installationRef: string): GitHubInstallationRecord | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT id, owner_id AS ownerId, agent_id AS agentId,
+          provider_installation_id AS providerInstallationId, secret_ref AS secretRef,
+          status, created_at AS createdAt
+        FROM github_installations WHERE id = ?`,
+      )
+      .get(installationRef) as GitHubInstallationRecord | undefined;
+    return row
+      ? {
+          ...row,
+          ownerId: row.ownerId as GitHubInstallationRecord["ownerId"],
+          agentId: row.agentId as GitHubInstallationRecord["agentId"],
+        }
+      : undefined;
+  }
+
+  private readGitHubInstallation(installationRef: string): GitHubInstallationRecord | undefined {
+    return this.githubInstallationRow(installationRef);
+  }
+
+  private saveGitHubInstallation(record: GitHubInstallationRecord): GitHubInstallationRecord {
+    this.assertDiskHeadroom();
+    if (
+      record.id.length === 0 ||
+      record.providerInstallationId.length === 0 ||
+      record.secretRef.length === 0
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "GitHub installation metadata is incomplete");
+    }
+    const current = this.githubInstallationRow(record.id);
+    if (current && (current.ownerId !== record.ownerId || current.agentId !== record.agentId)) {
+      this.fail("PORT_CONFLICT", `GitHub installation ${record.id} cannot change scope`);
+    }
+    const providerOwner = this.database
+      .prepare(
+        `SELECT id, owner_id AS ownerId, agent_id AS agentId
+        FROM github_installations WHERE provider_installation_id = ?`,
+      )
+      .get(record.providerInstallationId) as
+      | { readonly id: string; readonly ownerId: string; readonly agentId: string }
+      | undefined;
+    if (
+      providerOwner &&
+      (providerOwner.id !== record.id ||
+        providerOwner.ownerId !== record.ownerId ||
+        providerOwner.agentId !== record.agentId)
+    ) {
+      this.fail("PORT_CONFLICT", "GitHub provider installation is already bound elsewhere");
+    }
+    this.database
+      .prepare(
+        `INSERT INTO github_installations (
+          id, owner_id, agent_id, provider_installation_id, secret_ref, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          provider_installation_id = excluded.provider_installation_id,
+          secret_ref = excluded.secret_ref, status = excluded.status`,
+      )
+      .run(
+        record.id,
+        record.ownerId,
+        record.agentId,
+        record.providerInstallationId,
+        record.secretRef,
+        record.status,
+        record.createdAt,
+      );
+    return record;
+  }
+
+  private githubMonitorRow(monitorId: JobId): GitHubRepositoryMonitor | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT id, owner_id AS ownerId, agent_id AS agentId,
+          installation_id AS installationRef, provider_repository_id AS repositoryRef,
+          revision, status, authorization_ref AS authorizationRef,
+          enabled_events_ref AS enabledEventsRef
+        FROM github_repository_monitors WHERE id = ?`,
+      )
+      .get(monitorId) as
+      | {
+          readonly id: string;
+          readonly ownerId: string;
+          readonly agentId: string;
+          readonly installationRef: string;
+          readonly repositoryRef: string;
+          readonly revision: number;
+          readonly status: GitHubRepositoryMonitor["status"];
+          readonly authorizationRef: string;
+          readonly enabledEventsRef: string;
+        }
+      | undefined;
+    if (!row) return undefined;
+    return {
+      id: row.id as JobId,
+      ownerId: row.ownerId as GitHubRepositoryMonitor["ownerId"],
+      agentId: row.agentId as GitHubRepositoryMonitor["agentId"],
+      revision: row.revision,
+      installationRef: row.installationRef,
+      repositoryRef: row.repositoryRef,
+      // The protected payload is intentionally opaque to SQLite. Callers use this
+      // reference as the durable event-configuration binding.
+      enabledEventRefs: [row.enabledEventsRef],
+      authorizationRef: row.authorizationRef,
+      status: row.status,
+    };
+  }
+
+  private readGitHubMonitor(monitorId: JobId): GitHubRepositoryMonitor | undefined {
+    return this.githubMonitorRow(monitorId);
+  }
+
+  private saveGitHubMonitor(input: {
+    monitor: GitHubRepositoryMonitor;
+    expectedRevision: number | null;
+  }): GitHubRepositoryMonitor {
+    this.assertDiskHeadroom();
+    const monitor = input.monitor;
+    if (monitor.revision < 0 || monitor.enabledEventRefs.length === 0) {
+      this.fail("PORT_INVALID_OPERATION", `GitHub monitor ${monitor.id} is incomplete`);
+    }
+    const current = this.githubMonitorRow(monitor.id);
+    if ((current?.revision ?? null) !== input.expectedRevision) {
+      this.fail("PORT_CONFLICT", `GitHub monitor ${monitor.id} revision conflict`);
+    }
+    if (
+      current &&
+      (current.ownerId !== monitor.ownerId ||
+        current.agentId !== monitor.agentId ||
+        current.installationRef !== monitor.installationRef ||
+        current.repositoryRef !== monitor.repositoryRef)
+    ) {
+      this.fail("PORT_CONFLICT", `GitHub monitor ${monitor.id} cannot change scope`);
+    }
+    const installation = this.githubInstallationRow(monitor.installationRef);
+    if (
+      !installation ||
+      installation.ownerId !== monitor.ownerId ||
+      installation.agentId !== monitor.agentId ||
+      installation.status !== "active"
+    ) {
+      this.fail(
+        "PORT_INVALID_OPERATION",
+        `GitHub installation ${monitor.installationRef} is not active`,
+      );
+    }
+    this.assertPayloadScope(monitor.enabledEventRefs[0] ?? "", monitor.ownerId, monitor.agentId);
+    this.database
+      .prepare(
+        `INSERT INTO github_repository_monitors (
+          id, owner_id, agent_id, installation_id, provider_repository_id, revision,
+          status, authorization_ref, enabled_events_ref
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET revision = excluded.revision,
+          status = excluded.status, authorization_ref = excluded.authorization_ref,
+          enabled_events_ref = excluded.enabled_events_ref`,
+      )
+      .run(
+        monitor.id,
+        monitor.ownerId,
+        monitor.agentId,
+        monitor.installationRef,
+        monitor.repositoryRef,
+        monitor.revision,
+        monitor.status,
+        monitor.authorizationRef,
+        monitor.enabledEventRefs[0],
+      );
+    return monitor;
+  }
+
+  private githubReceiptRow(
+    providerDeliveryId: string,
+    installationRef?: string,
+  ): GitHubWebhookReceiptRecord | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT r.id AS id, r.owner_id AS ownerId, r.agent_id AS agentId,
+          r.provider_delivery_id AS providerDeliveryId, r.installation_id AS installationRef,
+          m.provider_repository_id AS repositoryRef, r.event_name AS eventName, r.action,
+          r.payload_ref AS payloadRef, r.status, r.occurrence_id AS occurrenceId,
+          r.received_at AS receivedAt
+        FROM github_webhook_receipts AS r
+        JOIN github_repository_monitors AS m ON m.id = r.repository_monitor_id
+        WHERE r.provider_delivery_id = ?
+          AND (? IS NULL OR r.installation_id = ?)
+        ORDER BY r.received_at, r.id LIMIT 1`,
+      )
+      .get(providerDeliveryId, installationRef ?? null, installationRef ?? null) as
+      | GitHubWebhookReceiptRecord
+      | undefined;
+    if (!row) return undefined;
+    return {
+      ...row,
+      id: row.id as GitHubWebhookReceiptRecord["id"],
+      ownerId: row.ownerId as GitHubWebhookReceiptRecord["ownerId"],
+      agentId: row.agentId as GitHubWebhookReceiptRecord["agentId"],
+      occurrenceId: row.occurrenceId as GitHubWebhookReceiptRecord["occurrenceId"],
+    };
+  }
+
+  private assertGitHubReceiptScope(receipt: GitHubWebhookReceiptRecord): void {
+    const installation = this.githubInstallationRow(receipt.installationRef);
+    const monitorRow = this.database
+      .prepare(
+        `SELECT owner_id AS ownerId, agent_id AS agentId, installation_id AS installationRef,
+          provider_repository_id AS repositoryRef
+        FROM github_repository_monitors WHERE provider_repository_id = ?
+          AND installation_id = ? LIMIT 1`,
+      )
+      .get(receipt.repositoryRef, receipt.installationRef) as
+      | {
+          readonly ownerId: string;
+          readonly agentId: string;
+          readonly installationRef: string;
+          readonly repositoryRef: string;
+        }
+      | undefined;
+    if (
+      !installation ||
+      installation.ownerId !== receipt.ownerId ||
+      installation.agentId !== receipt.agentId ||
+      !monitorRow ||
+      monitorRow.ownerId !== receipt.ownerId ||
+      monitorRow.agentId !== receipt.agentId ||
+      monitorRow.installationRef !== receipt.installationRef ||
+      monitorRow.repositoryRef !== receipt.repositoryRef
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "GitHub webhook receipt is outside installation scope");
+    }
+    this.assertPayloadScope(receipt.payloadRef, receipt.ownerId, receipt.agentId);
+  }
+
+  private readGitHubReceipt(
+    providerDeliveryId: string,
+    installationRef?: string,
+  ): GitHubWebhookReceiptRecord | undefined {
+    return this.githubReceiptRow(providerDeliveryId, installationRef);
+  }
+
+  private recordGitHubReceipt(receipt: GitHubWebhookReceiptRecord): GitHubWebhookReceiptRecord {
+    this.assertDiskHeadroom();
+    this.assertGitHubReceiptScope(receipt);
+    const existing = this.githubReceiptRow(receipt.providerDeliveryId, receipt.installationRef);
+    if (existing) {
+      if (
+        existing.ownerId !== receipt.ownerId ||
+        existing.agentId !== receipt.agentId ||
+        existing.installationRef !== receipt.installationRef ||
+        existing.repositoryRef !== receipt.repositoryRef ||
+        existing.payloadRef !== receipt.payloadRef
+      ) {
+        this.fail("PORT_CONFLICT", "GitHub delivery ID was reused outside its original scope");
+      }
+      return existing;
+    }
+    const monitor = this.database
+      .prepare(
+        `SELECT id FROM github_repository_monitors
+        WHERE installation_id = ? AND provider_repository_id = ?
+          AND owner_id = ? AND agent_id = ? LIMIT 1`,
+      )
+      .get(receipt.installationRef, receipt.repositoryRef, receipt.ownerId, receipt.agentId) as
+      | { readonly id: string }
+      | undefined;
+    if (!monitor) this.fail("PORT_INVALID_OPERATION", "GitHub monitor scope is not registered");
+    this.database
+      .prepare(
+        `INSERT INTO github_webhook_receipts (
+          id, owner_id, agent_id, installation_id, repository_monitor_id,
+          provider_delivery_id, event_name, action, payload_ref, status,
+          occurrence_id, received_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        receipt.id,
+        receipt.ownerId,
+        receipt.agentId,
+        receipt.installationRef,
+        monitor.id,
+        receipt.providerDeliveryId,
+        receipt.eventName,
+        receipt.action,
+        receipt.payloadRef,
+        receipt.status,
+        receipt.occurrenceId,
+        receipt.receivedAt,
+      );
+    return receipt;
+  }
+
+  private admitGitHubWebhook(input: {
+    receipt: GitHubWebhookReceiptRecord;
+    occurrence: BackgroundOccurrence;
+  }): {
+    receipt: GitHubWebhookReceiptRecord;
+    occurrence: BackgroundOccurrence;
+    replayed: boolean;
+  } {
+    this.assertDiskHeadroom();
+    this.assertGitHubReceiptScope(input.receipt);
+    if (input.receipt.status !== "received" || input.receipt.occurrenceId !== null) {
+      this.fail("PORT_INVALID_OPERATION", "A new GitHub webhook admission must be received");
+    }
+    if (input.occurrence.stableKey.length === 0) {
+      this.fail("PORT_INVALID_OPERATION", "GitHub webhook occurrence requires a stable key");
+    }
+    const transaction = this.database.transaction(() => {
+      const existing = this.githubReceiptRow(
+        input.receipt.providerDeliveryId,
+        input.receipt.installationRef,
+      );
+      if (
+        existing &&
+        (existing.ownerId !== input.receipt.ownerId ||
+          existing.agentId !== input.receipt.agentId ||
+          existing.repositoryRef !== input.receipt.repositoryRef ||
+          existing.eventName !== input.receipt.eventName)
+      ) {
+        this.fail("PORT_CONFLICT", "GitHub delivery ID was reused outside its original scope");
+      }
+      if (existing?.occurrenceId) {
+        const occurrence = this.readOccurrence(existing.occurrenceId);
+        if (!occurrence)
+          this.fail("PORT_INVALID_OPERATION", "GitHub receipt points to missing occurrence");
+        return { receipt: existing, occurrence, replayed: true };
+      }
+      const receipt = existing ?? this.recordGitHubReceipt(input.receipt);
+      const occurrence = this.createOccurrence(input.occurrence);
+      const normalized: GitHubWebhookReceiptRecord = {
+        ...receipt,
+        status: "normalized",
+        occurrenceId: occurrence.id,
+      };
+      this.database
+        .prepare(
+          `UPDATE github_webhook_receipts SET status = 'normalized', occurrence_id = ?
+          WHERE id = ?`,
+        )
+        .run(occurrence.id, receipt.id);
+      return { receipt: normalized, occurrence, replayed: existing !== undefined };
+    });
+    return transaction.immediate();
+  }
+
+  private saveGitHubCoverageGap(gap: GitHubCoverageGapRecord): GitHubCoverageGapRecord {
+    this.assertDiskHeadroom();
+    const monitor = this.githubMonitorRow(gap.monitorId);
+    if (!monitor || monitor.ownerId !== gap.ownerId || monitor.agentId !== gap.agentId) {
+      this.fail("PORT_INVALID_OPERATION", `GitHub monitor ${gap.monitorId} is outside scope`);
+    }
+    if ((gap.status === "open") !== (gap.endedAt === null)) {
+      this.fail("PORT_INVALID_OPERATION", "Open GitHub coverage gaps cannot have an end time");
+    }
+    const existing = this.database
+      .prepare("SELECT id FROM github_coverage_gaps WHERE id = ?")
+      .get(gap.id) as { readonly id: string } | undefined;
+    if (existing) {
+      this.database
+        .prepare(
+          `UPDATE github_coverage_gaps SET status = ?, reason_code = ?,
+            started_at = ?, ended_at = ? WHERE id = ?`,
+        )
+        .run(gap.status, gap.reasonCode, gap.startedAt, gap.endedAt, gap.id);
+    } else {
+      this.database
+        .prepare(
+          `INSERT INTO github_coverage_gaps (
+            id, monitor_id, owner_id, agent_id, status, reason_code,
+            started_at, ended_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          gap.id,
+          gap.monitorId,
+          gap.ownerId,
+          gap.agentId,
+          gap.status,
+          gap.reasonCode,
+          gap.startedAt,
+          gap.endedAt,
+        );
+    }
+    return gap;
+  }
+
+  private listGitHubCoverageGaps(monitorId: JobId): readonly GitHubCoverageGapRecord[] {
+    return this.database
+      .prepare(
+        `SELECT id, monitor_id AS monitorId, owner_id AS ownerId, agent_id AS agentId,
+          status, reason_code AS reasonCode, started_at AS startedAt, ended_at AS endedAt
+        FROM github_coverage_gaps WHERE monitor_id = ? ORDER BY started_at, id`,
+      )
+      .all(monitorId) as GitHubCoverageGapRecord[];
   }
 
   private occurrenceSelect(): string {

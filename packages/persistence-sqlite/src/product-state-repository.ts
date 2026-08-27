@@ -29,6 +29,7 @@ import type {
   ProductMemoryStatePort,
   SensitiveMemoryApprovalStatePort,
   ThreadDistillationStatePort,
+  GitHubIntegrationStatePort,
 } from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
@@ -334,6 +335,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   threadDistillationState(): ThreadDistillationStatePort {
     return this.durable.threadDistillationState();
+  }
+
+  githubIntegrationState(): GitHubIntegrationStatePort {
+    return this.durable.githubIntegrationState();
   }
 
   gatewayReadModel(): SqliteGatewayReadModel {

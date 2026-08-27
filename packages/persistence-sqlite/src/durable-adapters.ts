@@ -5,6 +5,7 @@ import type {
   CapabilityExecutionHandleStorePort,
   CapabilityRegistryStorePort,
   GatewayReadModelPort,
+  GitHubIntegrationStatePort,
   PayloadStorePort,
   ReliableEventPort,
   ReliableEventSinkPort,
@@ -333,6 +334,25 @@ export class SqliteDurableAdapters {
         this.context.read("threadDistillation.readOutput", { generationId }),
       latestSummary: (threadId) =>
         this.context.read("threadDistillation.latestSummary", { threadId }),
+    });
+  }
+
+  githubIntegrationState(): GitHubIntegrationStatePort {
+    return Object.freeze<GitHubIntegrationStatePort>({
+      readInstallation: (installationRef) =>
+        this.context.read("github.installation.read", { installationRef }),
+      saveInstallation: (record) => this.context.write("github.installation.save", { record }),
+      readMonitor: (monitorId) => this.context.read("github.monitor.read", { monitorId }),
+      saveMonitor: (monitor, expectedRevision) =>
+        this.context.write("github.monitor.save", { monitor, expectedRevision }),
+      recordReceipt: (receipt) => this.context.write("github.receipt.record", { receipt }),
+      findReceipt: (providerDeliveryId) =>
+        this.context.read("github.receipt.find", { providerDeliveryId }),
+      readOccurrence: (occurrenceId) =>
+        this.context.read("background.readOccurrence", { occurrenceId }),
+      admitWebhook: (input) => this.context.write("github.webhook.admit", input),
+      saveCoverageGap: (gap) => this.context.write("github.coverage.save", { gap }),
+      listCoverageGaps: (monitorId) => this.context.read("github.coverage.list", { monitorId }),
     });
   }
 

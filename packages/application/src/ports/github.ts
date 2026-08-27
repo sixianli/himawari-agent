@@ -1,5 +1,6 @@
 import type {
   AgentId,
+  BackgroundOccurrence,
   CoverageGapId,
   GitHubReceiptId,
   JobId,
@@ -18,6 +19,17 @@ export interface GitHubRepositoryMonitor {
   readonly enabledEventRefs: readonly string[];
   readonly authorizationRef: string;
   readonly status: "active" | "paused" | "revoked";
+}
+
+/** GitHub App installation metadata. Secret material is never part of this record. */
+export interface GitHubInstallationRecord {
+  readonly id: string;
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly providerInstallationId: string;
+  readonly secretRef: string;
+  readonly status: "active" | "revoked";
+  readonly createdAt: string;
 }
 
 export interface GitHubWebhookReceiptRecord {
@@ -47,6 +59,8 @@ export interface GitHubCoverageGapRecord {
 }
 
 export interface GitHubIntegrationStatePort {
+  readInstallation(installationRef: string): Promise<GitHubInstallationRecord | undefined>;
+  saveInstallation(record: GitHubInstallationRecord): Promise<GitHubInstallationRecord>;
   readMonitor(monitorId: JobId): Promise<GitHubRepositoryMonitor | undefined>;
   saveMonitor(
     monitor: GitHubRepositoryMonitor,
@@ -54,6 +68,16 @@ export interface GitHubIntegrationStatePort {
   ): Promise<GitHubRepositoryMonitor>;
   recordReceipt(receipt: GitHubWebhookReceiptRecord): Promise<GitHubWebhookReceiptRecord>;
   findReceipt(providerDeliveryId: string): Promise<GitHubWebhookReceiptRecord | undefined>;
+  readOccurrence(occurrenceId: OccurrenceId): Promise<BackgroundOccurrence | undefined>;
+  /** Atomically deduplicates a delivery and creates its one background occurrence. */
+  admitWebhook(input: {
+    readonly receipt: GitHubWebhookReceiptRecord;
+    readonly occurrence: BackgroundOccurrence;
+  }): Promise<{
+    readonly receipt: GitHubWebhookReceiptRecord;
+    readonly occurrence: BackgroundOccurrence;
+    readonly replayed: boolean;
+  }>;
   saveCoverageGap(gap: GitHubCoverageGapRecord): Promise<GitHubCoverageGapRecord>;
   listCoverageGaps(monitorId: JobId): Promise<readonly GitHubCoverageGapRecord[]>;
 }

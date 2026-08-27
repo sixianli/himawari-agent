@@ -155,6 +155,11 @@ try {
     await waitForText(page.getByRole("main"), expected);
   }
 
+  await page.getByRole("button", { name: "后台任务", exact: true }).click();
+  await waitForText(page.getByRole("main"), "fixture-primary");
+  await page.getByLabel(/机器秘密、App 私钥/).check();
+  await waitForText(page.getByRole("status"), "披露确认已记录");
+
   await page.getByRole("button", { name: "审批", exact: true }).click();
   await page.getByLabel("所选记录引用").fill("approval-01");
   await page.getByRole("button", { name: "批准", exact: true }).click();
