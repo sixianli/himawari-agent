@@ -25,6 +25,15 @@
     "freeBytesBefore": 20980031488,
     "freeBytesAfter": 20350459904
   },
+  "remotePlatform": {
+    "host": "hermes-home",
+    "platform": "linux-x86_64",
+    "node": "v26.1.0",
+    "npm": "11.13.0",
+    "dataAvailableBytes": 284740902912,
+    "runtimeManifestSha256": "3a70988ed78a043a082b774fede6b8eeee81d043c01f23c0886eeaaf6c014882",
+    "existingHermesState": "present and not modified"
+  },
   "target": {
     "messages": 200000,
     "threads": 10000,
@@ -110,12 +119,31 @@
       "command": "HIMAWARI_SCALE_QUALIFICATION=1 HIMAWARI_SCALE_WRITE_EVIDENCE=1 npm run qualify:scale",
       "exitStatus": 0,
       "result": "Target rows, six core query/delete paths and three SQLite transfer snapshots passed on a temporary qualified database"
+    },
+    {
+      "command": "Hermes: npm ci",
+      "exitStatus": 0,
+      "execution": "ssh hermes-tailscale-breakglass in /data/hermes/himawari-agent",
+      "result": "519 packages installed from the committed lockfile; npm audit found 0 vulnerabilities; cache stayed inside the new isolated directory"
+    },
+    {
+      "command": "Hermes: npm run build:node",
+      "exitStatus": 0,
+      "execution": "ssh hermes-tailscale-breakglass in /data/hermes/himawari-agent",
+      "result": "Linux x86_64 relocatable Node runtime built; runtime-manifest SHA-256 matched the local manifest"
+    },
+    {
+      "command": "Hermes: npm run test:integration -- --run test/integration/installable-node-services.test.ts",
+      "exitStatus": 0,
+      "execution": "ssh hermes-tailscale-breakglass in /data/hermes/himawari-agent",
+      "result": "4 installed-runtime tests passed: source-independent install, start/doctor/db status/lock/drain/force-restart, recovery restore and stopped authority transfer"
     }
   ],
   "verified": [
     "200000 thread_messages, 10000 threads, 500000 runs, 100 active jobs and 50 GitHub repository monitors were generated with foreign keys enabled",
     "query, thread message search, pending approval, active Memory, Trace and rollback-safe governed delete paths recorded p50/p95/p99",
-    "SQLite WAL snapshot transfer preserved the 500000-run row count across three temporary snapshots"
+    "SQLite WAL snapshot transfer preserved the 500000-run row count across three temporary snapshots",
+    "Hermes Linux x86_64 installed and exercised the same source/lockfile runtime manifest in an isolated path; existing Hermes Agent state remained untouched"
   ],
   "remaining": [
     "Mac and Hermes install/start/stop/recovery with the same immutable artifact",

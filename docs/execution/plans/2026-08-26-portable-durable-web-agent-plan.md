@@ -495,7 +495,7 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 - [ ] 验证 Web/GitHub 在 2 秒内持久接纳或拒绝、正常重启后 2 分钟内可查询、任务 5 分钟内恢复或显示阻塞；普通在线 GitHub 分析目标 10 分钟只在模型和外部服务可用的授权环境中测量。
 - [ ] 7 天连续运行属于完整 v0.2 上线门槛；如果其他 Specs 尚未完成，本 Plan 只记录基础切片 soak，不宣称 v0.2 production-ready。
 
-本轮已在 Mac 临时 qualified SQLite 上完成基础规模切片：20 万 messages、1 万 Threads、50 万 Runs、100 active jobs 和 50 个 GitHub repository monitors，记录 query/search/approval/Memory/Trace/delete 的 p50/p95/p99 以及三次 SQLite snapshot transfer；证据位于 `test/integration/qualification/evidence/s1-task28-scale.json`。可重定位 Node artifact 现包含 GitHub、Mem0 与 Pi runtime 包，并通过临时前缀安装及真实 Agent/Worker child-process 启停测试。Hermes 的 Tailscale break-glass 只读连接已确认主机、Node 26、systemd 和磁盘状态，但远端尚无 Himawari checkout/service，且 `/data/hermes` 是现有 Hermes Agent state root；Mac/Hermes 同构建安装、双向 authority transfer、完整加密 transfer、公网 2 秒门槛和 7 天 soak 仍未验证，不能据此关闭本 Task。
+本轮已在 Mac 临时 qualified SQLite 上完成基础规模切片：20 万 messages、1 万 Threads、50 万 Runs、100 active jobs 和 50 个 GitHub repository monitors，记录 query/search/approval/Memory/Trace/delete 的 p50/p95/p99 以及三次 SQLite snapshot transfer；证据位于 `test/integration/qualification/evidence/s1-task28-scale.json`。可重定位 Node artifact 现包含 GitHub、Mem0 与 Pi runtime 包，并通过 Mac 临时前缀安装及真实 Agent/Worker child-process 启停测试。按已授权边界，源码已同步到 Hermes 新隔离目录 `/data/hermes/himawari-agent`，在 Linux x86_64、Node 26 上完成锁定依赖安装、Node runtime 构建及 4 项安装后服务/恢复/authority-transfer 测试；runtime manifest 摘要与本地一致，既有 `/data/hermes` Agent state 未触碰。由于 native 依赖仍需按平台分别构建，Mac/Hermes 双向 authority transfer、完整加密 transfer、公网 2 秒门槛和 7 天 soak 仍未验证，不能据此关闭本 Task。
 
 ### Task 29：创建已验证 Runbooks 并对账当前事实文档
 

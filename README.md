@@ -171,7 +171,7 @@ Task 5 新增的提交路径具有以下语义：
 npm run qualify:scale
 ```
 
-这项命令会把生成数据和 snapshot 限制在临时目录并在结束时清理；当前结果见 [S1-T28 scale evidence](test/integration/qualification/evidence/s1-task28-scale.json)。它只代表 Mac 本地规模和 SQLite snapshot，不代表 Mac/Hermes 双向 authority transfer、完整加密迁移、7 天 soak 或 production readiness。
+这项命令会把生成数据和 snapshot 限制在临时目录并在结束时清理；当前结果见 [S1-T28 scale evidence](test/integration/qualification/evidence/s1-task28-scale.json)。Hermes 新隔离目录也已用同一源码/锁文件 runtime manifest 完成 Linux 构建和安装后服务资格测试，但 native 产物按平台分别构建；这些结果不代表 Mac/Hermes 双向 authority transfer、完整加密迁移、7 天 soak 或 production readiness。
 
 ## Validation
 
