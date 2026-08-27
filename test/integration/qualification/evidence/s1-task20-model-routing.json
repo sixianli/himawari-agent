@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-27T16:29:58+09:00",
+  "recordedAt": "2026-08-27T16:35:00+09:00",
   "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
   "taskId": "S1-T20",
   "status": "partial",
@@ -16,7 +16,7 @@
   "deterministicQualification": {
     "provider": "ScriptedModelPort, TrustedModelProviderAdapter and OpenRouterModelTransport fixture",
     "liveCall": false,
-    "reason": "Owner selected OpenRouter deepseek/deepseek-v4-flash-0731, selected OpenRouter z-ai/glm-5.3-flash as fallback, approved a USD 1.00 capped live budget, and restricted fallback input to public data; the fallback version/capabilities, embedding descriptor, provider routing and Keychain readback are not yet frozen",
+    "reason": "Owner selected OpenRouter deepseek/deepseek-v4-flash-0731, selected OpenRouter z-ai/glm-5.3-flash as fallback, approved a USD 1.00 capped live budget, and restricted fallback input to private data; the fallback version/capabilities, embedding descriptor, provider routing and Keychain readback are not yet frozen",
     "hiddenRoutes": false,
     "dynamicMarketplaceRoute": false,
     "implicitEmbedding": false
@@ -32,21 +32,24 @@
     "realFallbackApproved": true,
     "activationStatus": "pending_configuration_and_secret_readback",
     "fallbackModel": "z-ai/glm-5.3-flash",
-    "fallbackAllowedDataClassifications": ["public"],
+    "fallbackAllowedDataClassifications": ["private"],
     "primaryRetryableFailure": "will be exercised only after the binding and secret source are verified",
-    "reason": "Owner 已确认启用真实 fallback；fallback 与 primary 共用 OpenRouter key，凭据计划放入 macOS Keychain，且 fallback 仅允许接收 public 数据",
+    "reason": "Owner 已确认启用真实 fallback；fallback 与 primary 共用 OpenRouter key，凭据计划放入 macOS Keychain，且 fallback 仅允许接收 private 数据",
     "runtimeCaveat": "当前 ModelRouterService 在 retryable primary failure 下按已配置 descriptor 自动寻找 fallback；本次尚未完成真实配置或 live 调用，因此 realFallbackEnabled 仍为 false，不能把 Owner approval 误写成 runtime activation"
   },
   "fallbackCandidate": {
     "provider": "openrouter",
     "model": "z-ai/glm-5.3-flash",
     "role": "fallback",
-    "secretRef": "provider/openrouter",
+    "secretRef": "openrouter-api-key",
     "secretVersion": "v1",
     "secretSource": "macos-keychain",
+    "keychainServicePrefix": "himawari-provider",
+    "keychainAccount": "himawari-agent",
+    "keychainService": "himawari-provider.openrouter-api-key.v1",
     "sharedSecretWith": "primary",
     "disclosure": "external_remote",
-    "allowedDataClassifications": ["public"],
+    "allowedDataClassifications": ["private"],
     "status": "partially_frozen",
     "pending": [
       "version_or_snapshot",
@@ -90,7 +93,7 @@
     }
   ],
   "remaining": [
-    "Before any live call, freeze and show the OpenRouter primary plus fixed fallback and embedding provider/model/version or snapshot, capabilities, disclosure, secret refs, provider-routing policy, estimated cost and capped budget; the fallback binding must remain limited to public data.",
+    "Before any live call, freeze and show the OpenRouter primary plus fixed fallback and embedding provider/model/version or snapshot, capabilities, disclosure, secret refs, provider-routing policy, estimated cost and capped budget; the fallback binding must remain limited to private data.",
     "Read back the approved shared OpenRouter API key from the macOS Keychain through the selected secret reference without putting the key in chat, fixtures, logs or evidence.",
     "After approval, run a bounded live smoke/eval and read back provider identity, token/cost accounting, cancellation, fallback, tool-call, disclosure rejection and redaction evidence."
   ],
