@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-27T17:10:52+09:00",
+  "recordedAt": "2026-08-27T17:33:04+09:00",
   "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
   "taskId": "S1-T20",
   "status": "partial",
@@ -16,7 +16,7 @@
   "deterministicQualification": {
     "provider": "ScriptedModelPort, TrustedModelProviderAdapter and OpenRouterModelTransport fixture",
     "liveCall": false,
-    "reason": "Owner selected OpenRouter deepseek/deepseek-v4-flash-0731, selected OpenRouter z-ai/glm-5.3-flash as fallback, approved a USD 1.00 capped live budget, and restricted fallback input to private data; the fallback immutable snapshot/adapter capabilities, embedding descriptor, provider routing and production composition are not yet frozen",
+    "reason": "Owner selected OpenRouter deepseek/deepseek-v4-flash-0731, selected OpenRouter z-ai/glm-5.3-flash as fallback, approved a USD 1.00 capped live budget, and restricted fallback input to private data; the fallback immutable snapshot/adapter capabilities, embedding descriptor and production composition are not yet frozen",
     "hiddenRoutes": false,
     "dynamicMarketplaceRoute": false,
     "implicitEmbedding": false
@@ -33,6 +33,12 @@
     "activationStatus": "pending_final_descriptor_and_production_composition",
     "fallbackModel": "z-ai/glm-5.3-flash",
     "fallbackAllowedDataClassifications": ["private"],
+    "providerRouting": {
+      "order": ["z-ai"],
+      "allow_fallbacks": false,
+      "require_parameters": true,
+      "data_collection": "deny"
+    },
     "keychainReadback": {
       "status": "passed",
       "account": "himawari-agent",
@@ -57,13 +63,14 @@
     "sharedSecretWith": "primary",
     "disclosure": "external_remote",
     "allowedDataClassifications": ["private"],
+    "providerRouting": {
+      "order": ["z-ai"],
+      "allow_fallbacks": false,
+      "require_parameters": true,
+      "data_collection": "deny"
+    },
     "status": "partially_frozen",
-    "pending": [
-      "immutable version or snapshot",
-      "adapter capabilities",
-      "OpenRouter provider routing",
-      "production composition"
-    ]
+    "pending": ["immutable version or snapshot", "adapter capabilities", "production composition"]
   },
   "providerCatalogObservation": {
     "source": "https://openrouter.ai/z-ai/glm-5.3-flash",
@@ -83,7 +90,7 @@
       "cacheRead": 0.015
     },
     "listedProviderCount": 12,
-    "routingNote": "OpenRouter 页面显示该模型默认由多个上游 provider 路由并支持自动切换；本项目 provider routing policy 尚未冻结"
+    "routingNote": "OpenRouter 页面显示该模型默认由多个上游 provider 路由并支持自动切换；Owner 已将本项目 policy 冻结为 order=[z-ai]、allow_fallbacks=false、require_parameters=true、data_collection=deny"
   },
   "verified": [
     "Strict configuration requires exact primary/fallback/embedding descriptors, disclosure and secret references.",
@@ -120,7 +127,7 @@
     }
   ],
   "remaining": [
-    "Before any live call, freeze and show the OpenRouter primary plus fixed fallback and embedding provider/model/version or snapshot, capabilities, disclosure, secret refs, provider-routing policy, estimated cost and capped budget; the fallback binding must remain limited to private data.",
+    "Before any live call, freeze and show the OpenRouter primary plus fixed fallback and embedding provider/model/version or snapshot, capabilities, disclosure, secret refs, the confirmed provider-routing policy, estimated cost and capped budget; the fallback binding must remain limited to private data.",
     "Complete final production composition wiring for the verified shared macOS Keychain source without putting the key in chat, fixtures, logs or evidence.",
     "After approval, run a bounded live smoke/eval and read back provider identity, token/cost accounting, cancellation, fallback, tool-call, disclosure rejection and redaction evidence."
   ],
