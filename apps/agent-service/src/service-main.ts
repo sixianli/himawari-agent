@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
+  inspectDeploymentAuthorityReadOnly,
   openQualifiedDatabase,
   readSqliteRuntimeStatus,
   SqliteProductStateRepository,
@@ -46,6 +47,20 @@ export async function runAgentService(
       authority.id !== configuration.deploymentId ||
       authority.ownerId !== configuration.ownerId ||
       authority.agentId !== configuration.agentId
+    ) {
+      throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH);
+    }
+    const persistedAuthority = inspectDeploymentAuthorityReadOnly(
+      path.join(layout.data, "product.sqlite"),
+      configuration.deploymentId,
+    );
+    if (
+      persistedAuthority.ownerId !== authority.ownerId ||
+      persistedAuthority.agentId !== authority.agentId ||
+      persistedAuthority.status !== authority.status ||
+      persistedAuthority.authorityEpoch !== authority.authorityEpoch ||
+      persistedAuthority.fencingToken !== authority.fencingToken ||
+      persistedAuthority.transferId !== authority.transferId
     ) {
       throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH);
     }

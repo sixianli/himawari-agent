@@ -602,12 +602,12 @@ Transfer export：
 1. 验证 target intent、current deployment identity 与 disk space，创建 transfer ID。
 2. readiness 置 false，停止 admission/scheduling，drain 或 checkpoint in-flight Runs。
 3. 关闭 Agent Service、Worker、SQLite 与 Memory connections，取得 exclusive offline admin lock。
-4. 执行 SQLite checkpoint 与 full integrity checks。
-5. 按声明的 manifest allowlist 枚举数据，排除 cache、logs、sockets 和全部 host secrets。
-6. 为迁移包 recipient rewrap Payload DEK keyring，但不导出 host KEK。
-7. 创建 canonical manifest，包含 product/schema/adapter versions、Owner/Agent、source deployment、authority epoch、transfer ID、file size/digest 与 excluded secret references。
-8. 使用维护中的 authenticated encryption 实现流式加密；passphrase/private key 只从交互输入或 recipient secret source 获取。
-9. 解密到临时位置验证完整包，随后把 source 标记 retired_pending_transfer。
+4. 在同一离线锁内先把 source 标记为 `retired_pending_transfer`，使此后的任何导出中断都不能让源部署普通重启。
+5. 执行 SQLite checkpoint 与 full integrity checks。
+6. 按声明的 manifest allowlist 枚举数据，排除 cache、logs、sockets 和全部 host secrets。
+7. 为迁移包 recipient rewrap Payload DEK keyring，但不导出 host KEK。
+8. 创建 canonical manifest，包含 product/schema/adapter versions、Owner/Agent、source deployment、authority epoch/fencing token、transfer ID、file size/digest 与 excluded secret references。
+9. 使用维护中的 authenticated encryption 实现流式加密；passphrase/private key 只从交互输入或 recipient secret source 获取，并解密到临时位置验证完整包。验证失败时 source 保持 stopped/pending，不能自动恢复为 active。
 
 Import：
 

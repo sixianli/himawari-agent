@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-27T01:20:00Z",
+  "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
+  "taskId": "S1-T24",
+  "candidateRevision": "d5561b0df14b9d1f5c41c1879a1235934b1ed9a1",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 11,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["AGENTS.md"]
+  },
+  "format": {
+    "schema": "himawari.authority-transfer.v1",
+    "fileEncryption": "aes-256-gcm-stream-files-v1",
+    "manifestAuthentication": "hmac-sha256-v1",
+    "packageKey": "recipient secret source with wrapped per-package DEK",
+    "payloadKeyTransition": "source KEK to recipient KEK to target KEK",
+    "retentionDays": 7,
+    "allowlist": [
+      "data/product.sqlite",
+      "referenced data/payload-ciphertext files",
+      "data/memory files"
+    ],
+    "excluded": ["runtime", "cache", "locks", "sockets", "logs", "secrets"]
+  },
+  "authority": {
+    "sourceExportState": "retired_pending_transfer",
+    "targetImportState": "inactive_ready with epoch/fence 0/0",
+    "activation": "target epoch and fencing token each increment source by one",
+    "ordinaryStartup": "requires exact active SQLite and authority-file identity/fence match",
+    "reverseTransfer": "only current active deployment satisfies export source checks"
+  },
+  "commands": [
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/sqlite-authority-transfer.test.ts",
+      "exitStatus": 0,
+      "result": "4 项 authority-transfer 集成测试通过"
+    },
+    {
+      "command": "npm run test:cli",
+      "exitStatus": 0,
+      "result": "3 项 admin CLI 测试通过，包括 export/inspect/import/activate confirmation flow"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/installable-node-services.test.ts",
+      "exitStatus": 0,
+      "execution": "outside sandbox for real Unix socket service process",
+      "result": "4 项安装后 runtime 测试通过，编译后的 himawari 完成 stopped transfer drill"
+    },
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format、lint、strict typecheck、14 workspace dependency boundary 与 v0.2 coverage 通过"
+    },
+    {
+      "command": "npm test",
+      "exitStatus": 0,
+      "result": "190 unit、126 contract、310 integration 与 3 E2E 测试通过"
+    },
+    {
+      "command": "npm run test:browser",
+      "exitStatus": 0,
+      "result": "5 项 browser 测试通过"
+    },
+    {
+      "command": "npm run test:cli",
+      "exitStatus": 0,
+      "result": "3 项 admin CLI 测试通过"
+    },
+    {
+      "command": "npm run test:services",
+      "exitStatus": 0,
+      "result": "12 项 Node services 测试通过"
+    },
+    {
+      "command": "npm run test:workspace-scaffolds",
+      "exitStatus": 0,
+      "result": "3 项 workspace scaffold 测试通过"
+    },
+    {
+      "command": "npm run check:pi-compat",
+      "exitStatus": 0,
+      "result": "6 项 Pi compatibility 测试通过"
+    },
+    {
+      "command": "npm run build",
+      "exitStatus": 0,
+      "result": "可重定位 Node runtime、Control Center bundle 与 artifact manifest 构建成功"
+    }
+  ],
+  "faultMatrix": [
+    "7 export stages",
+    "6 import stages",
+    "3 activation stages",
+    "manifest authentication tamper",
+    "incomplete preflight",
+    "old source repeat export",
+    "inactive import abandon",
+    "seven-day encrypted package purge"
+  ],
+  "verifiedData": [
+    "SQLite quick/full integrity and foreign keys",
+    "Owner/Agent/deployment and transfer identity",
+    "product/schema/adapter/Memory versions",
+    "ciphertext and plaintext file digests",
+    "Payload authentication after target KEK rewrap",
+    "Memory file transfer",
+    "at most one active deployment after every injected failure"
+  ],
+  "limits": [
+    "本证据只覆盖临时非生产 fixture 和本地安装后二进制，不是 Mac 到 Hermes 或 Hermes 到 Mac 的真实验收。",
+    "public ingress preflight 使用权限受限的脱敏证据文件；真实 Cloudflare public path 属于 Task 27/28。",
+    "物理源保持 retired_pending_transfer；激活后的 canonical imported database 把源 deployment 标记为 retired。"
+  ],
+  "externalEffects": [
+    "所有迁移、故障和清除演练只使用临时 state roots、临时安装前缀与测试密钥。",
+    "未修改 Mac/Hermes 正式服务、生产 state root、外部账户、远程 Git 或付费模型。"
+  ],
+  "implementationCommit": null
+}

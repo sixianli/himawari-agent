@@ -91,6 +91,12 @@ function configuration(publicMode = false) {
         purpose: "backup-encryption",
         scope: "agent",
       },
+      {
+        ref: "transfer-recipient",
+        version: "v1",
+        purpose: "transfer-recipient",
+        scope: "agent",
+      },
     ],
     budgets: {
       globalCostMicros: 0,
@@ -172,6 +178,9 @@ beforeAll(async () => {
   await writeFile(path.join(secretDirectory, "backup-kek.v1"), "44".repeat(32), {
     mode: 0o600,
   });
+  await writeFile(path.join(secretDirectory, "transfer-recipient.v1"), "55".repeat(32), {
+    mode: 0o600,
+  });
   await chmod(configurationPath, 0o600);
   await chmod(publicConfigurationPath, 0o600);
 }, 30_000);
@@ -242,6 +251,10 @@ async function stopService(child: ChildProcessWithoutNullStreams, signal: NodeJS
 
 function runInstalled(name: string, arguments_: readonly string[]) {
   return spawnSync(executable(name), arguments_, { cwd: testRoot, encoding: "utf8" });
+}
+
+function lastJson(output: string): Record<string, unknown> & { readonly packageRef?: unknown } {
+  return JSON.parse(output.trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
 }
 
 describe("installable Node services and admin CLI", () => {
@@ -444,6 +457,150 @@ describe("installable Node services and admin CLI", () => {
       ).toBeUndefined();
     } finally {
       restoredDatabase.close();
+    }
+  });
+
+  it("executes a stopped authority transfer through the installed himawari CLI", async () => {
+    const targetStateRoot = path.join(testRoot, "transfer-target");
+    await mkdir(targetStateRoot, { mode: 0o700 });
+    const targetConfigurationPath = path.join(testRoot, "transfer-target-configuration.json");
+    const targetConfiguration = {
+      ...configuration(),
+      deploymentId: "deployment-service-integration-hermes",
+      stateRoot: targetStateRoot,
+      runtimeDirectory: path.join(targetStateRoot, "runtime"),
+      cacheDirectory: path.join(targetStateRoot, "cache"),
+      memory: {
+        ...configuration().memory,
+        storagePath: path.join(targetStateRoot, "data", "memory"),
+      },
+      secretReferences: [
+        {
+          ref: "target-payload-kek",
+          version: "v1",
+          purpose: "payload-encryption",
+          scope: "agent",
+        },
+        {
+          ref: "transfer-recipient",
+          version: "v1",
+          purpose: "transfer-recipient",
+          scope: "agent",
+        },
+      ],
+    };
+    await writeFile(targetConfigurationPath, JSON.stringify(targetConfiguration), { mode: 0o600 });
+    const targetSecrets = path.join(testRoot, "transfer-target-secrets");
+    await mkdir(targetSecrets, { mode: 0o700 });
+    await writeFile(path.join(targetSecrets, "target-payload-kek.v1"), "66".repeat(32), {
+      mode: 0o600,
+    });
+    await writeFile(path.join(targetSecrets, "transfer-recipient.v1"), "55".repeat(32), {
+      mode: 0o600,
+    });
+    const packageRoot = path.join(testRoot, "transfer-packages");
+    const exported = runInstalled("himawari", [
+      "transfer",
+      "export",
+      "--config",
+      configurationPath,
+      "--secret-dir",
+      secretDirectory,
+      "--transfer-id",
+      "transfer-installed-drill",
+      "--target-deployment",
+      "deployment-service-integration-hermes",
+      "--package-root",
+      packageRoot,
+      "--confirm",
+      "EXPORT_transfer-installed-drill",
+    ]);
+    expect(exported.status).toBe(0);
+    const packageRef = lastJson(exported.stdout).packageRef as string;
+    expect(packageRef).toBe(path.join(packageRoot, "transfer-installed-drill"));
+
+    const inspected = runInstalled("himawari", [
+      "transfer",
+      "inspect",
+      "--config",
+      targetConfigurationPath,
+      "--secret-dir",
+      targetSecrets,
+      "--package",
+      packageRef,
+    ]);
+    expect(inspected.status).toBe(0);
+    expect(lastJson(inspected.stdout)).toMatchObject({
+      command: "transfer.inspect",
+      transferId: "transfer-installed-drill",
+      authorityEpoch: 2,
+    });
+
+    const imported = runInstalled("himawari", [
+      "transfer",
+      "import",
+      "--config",
+      targetConfigurationPath,
+      "--secret-dir",
+      targetSecrets,
+      "--package",
+      packageRef,
+      "--confirm",
+      "IMPORT_transfer-installed-drill",
+    ]);
+    expect(imported.status).toBe(0);
+    expect(lastJson(imported.stdout)).toMatchObject({
+      command: "transfer.import",
+      status: "inactive_ready",
+    });
+
+    const preflightPath = path.join(testRoot, "transfer-installed-preflight.json");
+    await writeFile(
+      preflightPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        transferId: "transfer-installed-drill",
+        deploymentId: "deployment-service-integration-hermes",
+        authorityEpoch: 2,
+        secretReferencesReady: true,
+        doctorReady: true,
+        publicIngressReady: true,
+        evidenceRef: "installed-cli:transfer-drill",
+      }),
+      { mode: 0o600 },
+    );
+    const activated = runInstalled("himawari", [
+      "transfer",
+      "activate",
+      "--config",
+      targetConfigurationPath,
+      "--secret-dir",
+      targetSecrets,
+      "--transfer-id",
+      "transfer-installed-drill",
+      "--preflight",
+      preflightPath,
+      "--confirm",
+      "ACTIVATE_transfer-installed-drill",
+    ]);
+    expect(activated.status).toBe(0);
+    expect(lastJson(activated.stdout)).toMatchObject({
+      command: "transfer.activate",
+      status: "activated",
+      authorityEpoch: 2,
+    });
+    const targetDatabase = openQualifiedDatabase(
+      path.join(targetStateRoot, "data", "product.sqlite"),
+    );
+    try {
+      expect(
+        targetDatabase
+          .prepare("SELECT COUNT(*) FROM deployments WHERE status = 'active'")
+          .pluck()
+          .get(),
+      ).toBe(1);
+    } finally {
+      targetDatabase.close();
     }
   });
 });

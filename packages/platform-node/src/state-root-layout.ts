@@ -4,10 +4,12 @@ import { chmod, lstat, mkdir, open, readFile, rename, rm, stat } from "node:fs/p
 import path from "node:path";
 import type { DeploymentAuthorityState } from "@himawari-agent/domain";
 import {
+  activateDeployment,
   createAgentId,
   createDeploymentId,
   createOwnerId,
   createTransferId,
+  retireDeployment,
 } from "@himawari-agent/domain";
 
 export const STATE_ROOT_ERROR_CODES = Object.freeze({
@@ -217,4 +219,115 @@ export async function readAuthorityFile(
     transferId:
       input["transferId"] === null ? null : createTransferId(input["transferId"] as string),
   });
+}
+
+export async function markAuthorityTransferPending(
+  layout: StateRootLayout,
+  input: { readonly deploymentId: string; readonly transferId: string },
+): Promise<DeploymentAuthorityState> {
+  const current = await readAuthorityFile(layout);
+  if (
+    current.id === input.deploymentId &&
+    current.status === "retired_pending_transfer" &&
+    current.transferId === input.transferId
+  ) {
+    return current;
+  }
+  if (current.id !== input.deploymentId || current.status !== "active") {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.AUTHORITY_INVALID,
+      "Only the current active deployment may enter transfer-pending state",
+    );
+  }
+  const next = retireDeployment(
+    Object.freeze({ ...current, transferId: createTransferId(input.transferId) }),
+    "retired_pending_transfer",
+  );
+  await writeAuthorityFile(layout, next);
+  return next;
+}
+
+export async function establishImportedAuthority(
+  layout: StateRootLayout,
+  input: {
+    readonly deploymentId: string;
+    readonly ownerId: string;
+    readonly agentId: string;
+    readonly sourceAuthorityEpoch: number;
+    readonly transferId: string;
+  },
+): Promise<DeploymentAuthorityState> {
+  if (!Number.isSafeInteger(input.sourceAuthorityEpoch) || input.sourceAuthorityEpoch < 1) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.AUTHORITY_INVALID,
+      "Imported authority requires a positive source authority epoch",
+    );
+  }
+  if (await lstat(layout.authorityFile).catch(() => undefined)) {
+    const current = await readAuthorityFile(layout);
+    if (
+      current.id === input.deploymentId &&
+      current.ownerId === input.ownerId &&
+      current.agentId === input.agentId &&
+      current.status === "inactive_ready" &&
+      current.authorityEpoch === 0 &&
+      current.fencingToken === 0 &&
+      current.transferId === input.transferId
+    ) {
+      return current;
+    }
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.AUTHORITY_INVALID,
+      "Imported authority requires an empty target authority slot",
+    );
+  }
+  const authority = Object.freeze({
+    id: createDeploymentId(input.deploymentId),
+    ownerId: createOwnerId(input.ownerId),
+    agentId: createAgentId(input.agentId),
+    revision: 0,
+    status: "inactive_ready" as const,
+    authorityEpoch: 0,
+    fencingToken: 0,
+    transferId: createTransferId(input.transferId),
+  });
+  await writeAuthorityFile(layout, authority);
+  return authority;
+}
+
+export async function activateImportedAuthority(
+  layout: StateRootLayout,
+  input: {
+    readonly deploymentId: string;
+    readonly transferId: string;
+    readonly authorityEpoch: number;
+    readonly fencingToken: number;
+  },
+): Promise<DeploymentAuthorityState> {
+  const current = await readAuthorityFile(layout);
+  if (
+    current.id === input.deploymentId &&
+    current.status === "active" &&
+    current.transferId === input.transferId &&
+    current.authorityEpoch === input.authorityEpoch &&
+    current.fencingToken === input.fencingToken
+  ) {
+    return current;
+  }
+  if (
+    current.id !== input.deploymentId ||
+    current.status !== "inactive_ready" ||
+    current.transferId !== input.transferId
+  ) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.AUTHORITY_INVALID,
+      "Imported authority is not ready for this transfer activation",
+    );
+  }
+  const active = activateDeployment(current, {
+    authorityEpoch: input.authorityEpoch,
+    fencingToken: input.fencingToken,
+  });
+  await writeAuthorityFile(layout, active);
+  return active;
 }

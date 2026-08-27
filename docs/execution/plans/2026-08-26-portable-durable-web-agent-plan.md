@@ -430,13 +430,17 @@ Task 15 把 `apps/control-center` 从构建占位改为 browser-only React/Vite 
 
 ### Task 24：实现停机加密 authority transfer
 
-- [ ] 实现 transfer/deployment 状态机与 `export|inspect|import|activate|abandon` CLI，验证 target intent、current deployment、monotonic epoch、transfer ID 和 exclusive offline lock。
-- [ ] export 按 Spec 顺序停止 admission/scheduling、drain/checkpoint、关闭服务与 stores、执行 checkpoint/integrity、枚举 allowlist、排除 secrets/cache/log/socket、rewrap DEKs 并生成 canonical manifest。
-- [ ] 使用维护中的 authenticated streaming encryption；passphrase/private key 只从交互输入或 recipient secret source 读取，不进入 argv、环境转储、日志或 Trace。
-- [ ] import 只写临时目录，验证 authentication、digests、versions、Owner/Agent、epoch、transfer consumption、Payload、Memory 和 forward migration，再原子建立 inactive-ready target。
-- [ ] activate 前要求 target secret refs、doctor/readiness 与公共入口 preflight 全部通过；激活后 source 进入 retired 且普通启动失败。
-- [ ] source 加密副本保留 7 天后删除；回切只能由当前 active target 发起 reverse transfer，不能直接启动旧副本。
-- [ ] 在每个 export/import/activate step 后注入失败，证明不存在 partial active target、自动 source restart 或双活普通路径。
+- [x] 实现 transfer/deployment 状态机与 `export|inspect|import|activate|abandon` CLI，验证 target intent、current deployment、monotonic epoch、transfer ID 和 exclusive offline lock。
+- [x] export 按 Spec 顺序停止 admission/scheduling、drain/checkpoint、关闭服务与 stores、执行 checkpoint/integrity、枚举 allowlist、排除 secrets/cache/log/socket、rewrap DEKs 并生成 canonical manifest。
+- [x] 使用维护中的 authenticated streaming encryption；passphrase/private key 只从交互输入或 recipient secret source 读取，不进入 argv、环境转储、日志或 Trace。
+- [x] import 只写临时目录，验证 authentication、digests、versions、Owner/Agent、epoch、transfer consumption、Payload、Memory 和 forward migration，再原子建立 inactive-ready target。
+- [x] activate 前要求 target secret refs、doctor/readiness 与公共入口 preflight 全部通过；激活后 source 进入 retired 且普通启动失败。
+- [x] source 加密副本保留 7 天后删除；回切只能由当前 active target 发起 reverse transfer，不能直接启动旧副本。
+- [x] 在每个 export/import/activate step 后注入失败，证明不存在 partial active target、自动 source restart 或双活普通路径。
+
+迁移包使用逐文件流式 AES-256-GCM、recipient-wrapped package DEK 和 HMAC-SHA256 canonical manifest；allowlist 只包含一致性 SQLite、被引用的 Payload ciphertext 与 Memory 文件。export 在离线锁内先把源 SQLite/authority file 置为 `retired_pending_transfer`，保证任何后续中断都不能普通重启；import 在受限 staging 验证并以目标 KEK rewrap Payload 后，才原子建立 `epoch/fence=0/0` 的 inactive target；activate 要求受限 preflight 证据并把 epoch/fence 各推进一代。目标 canonical SQLite 把 source 记为 `retired`，物理源保持 pending 并由 Agent Service 的 SQLite/authority 双读校验 fail closed。
+
+4 项 authority-transfer 集成测试覆盖完整导出/检查/导入/激活/放弃、manifest tamper、Payload 目标 KEK authentication、Memory copy、7 天 purge、旧源禁止再导出，以及所有 16 个 export/import/activate 注入阶段；安装后的 `himawari` 二进制另完成 stopped source→inactive target→activated target 演练。已创建 `docs/runbooks/authority-transfer-runbook.md`；实现与证据位于 `test/integration/qualification/evidence/s1-task24-authority-transfer.json`。真实 Mac↔Hermes 双向演练仍属于 Task 28，不能由本 Task 的临时 fixture 替代。
 
 ### Task 25：完成删除、存储压力、可观察性与安全加固
 

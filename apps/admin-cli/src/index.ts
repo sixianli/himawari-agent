@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { lstat } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   SqliteRecoveryPointAdapter,
+  SqliteAuthorityTransferAdapter,
   acquireStateRootLock,
   applyMigrations,
   inspectSqliteDatabaseReadOnly,
@@ -13,6 +14,9 @@ import {
   EnvelopePayloadProtector,
   JsonFileConfigurationPort,
   RestrictedSecretFileSource,
+  activateImportedAuthority,
+  establishImportedAuthority,
+  markAuthorityTransferPending,
   readAuthorityFile,
   stableErrorCode,
   writeServiceDiagnostic,
@@ -36,12 +40,33 @@ interface ParsedAdminCommand {
     | "db.migrate"
     | "backup.create"
     | "backup.verify"
-    | "backup.restore";
+    | "backup.restore"
+    | "transfer.export"
+    | "transfer.inspect"
+    | "transfer.import"
+    | "transfer.activate"
+    | "transfer.abandon";
   readonly configurationPath: string;
   readonly confirmation: string | null;
   readonly secretDirectory: string | null;
   readonly backupId: string | null;
   readonly target: string | null;
+  readonly transferId: string | null;
+  readonly targetDeploymentId: string | null;
+  readonly packageRoot: string | null;
+  readonly packageRef: string | null;
+  readonly preflightPath: string | null;
+}
+
+interface ActivationPreflightEvidence {
+  readonly schemaVersion: 1;
+  readonly transferId: string;
+  readonly deploymentId: string;
+  readonly authorityEpoch: number;
+  readonly secretReferencesReady: boolean;
+  readonly doctorReady: boolean;
+  readonly publicIngressReady: boolean;
+  readonly evidenceRef: string;
 }
 
 function parseArguments(arguments_: readonly string[]): ParsedAdminCommand {
@@ -65,6 +90,21 @@ function parseArguments(arguments_: readonly string[]): ParsedAdminCommand {
   } else if (arguments_[0] === "backup" && arguments_[1] === "restore") {
     command = "backup.restore";
     offset = 2;
+  } else if (arguments_[0] === "transfer" && arguments_[1] === "export") {
+    command = "transfer.export";
+    offset = 2;
+  } else if (arguments_[0] === "transfer" && arguments_[1] === "inspect") {
+    command = "transfer.inspect";
+    offset = 2;
+  } else if (arguments_[0] === "transfer" && arguments_[1] === "import") {
+    command = "transfer.import";
+    offset = 2;
+  } else if (arguments_[0] === "transfer" && arguments_[1] === "activate") {
+    command = "transfer.activate";
+    offset = 2;
+  } else if (arguments_[0] === "transfer" && arguments_[1] === "abandon") {
+    command = "transfer.abandon";
+    offset = 2;
   } else {
     throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
   }
@@ -87,15 +127,47 @@ function parseArguments(arguments_: readonly string[]): ParsedAdminCommand {
           ? [...common, "--secret-dir", "--backup"]
           : command === "backup.restore"
             ? [...common, "--secret-dir", "--backup", "--target", "--confirm"]
-            : common;
+            : command === "transfer.export"
+              ? [
+                  ...common,
+                  "--secret-dir",
+                  "--transfer-id",
+                  "--target-deployment",
+                  "--package-root",
+                  "--confirm",
+                ]
+              : command === "transfer.inspect"
+                ? [...common, "--secret-dir", "--package"]
+                : command === "transfer.import"
+                  ? [...common, "--secret-dir", "--package", "--confirm"]
+                  : command === "transfer.activate"
+                    ? [...common, "--secret-dir", "--transfer-id", "--preflight", "--confirm"]
+                    : command === "transfer.abandon"
+                      ? [...common, "--secret-dir", "--transfer-id", "--confirm"]
+                      : common;
   if (!values.has("--config") || [...values.keys()].some((key) => !allowed.includes(key))) {
     throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
   }
   const requiresBackupId = command === "backup.verify" || command === "backup.restore";
+  const transferCommand = command.startsWith("transfer.");
   if (
     (command.startsWith("backup.") && !values.has("--secret-dir")) ||
     (requiresBackupId && !values.has("--backup")) ||
     (command === "backup.restore" && !values.has("--target"))
+  ) {
+    throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  }
+  if (
+    (transferCommand && !values.has("--secret-dir")) ||
+    (command === "transfer.export" &&
+      (!values.has("--transfer-id") ||
+        !values.has("--target-deployment") ||
+        !values.has("--package-root"))) ||
+    ((command === "transfer.inspect" || command === "transfer.import") &&
+      !values.has("--package")) ||
+    ((command === "transfer.activate" || command === "transfer.abandon") &&
+      !values.has("--transfer-id")) ||
+    (command === "transfer.activate" && !values.has("--preflight"))
   ) {
     throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
   }
@@ -106,6 +178,11 @@ function parseArguments(arguments_: readonly string[]): ParsedAdminCommand {
     secretDirectory: values.get("--secret-dir") ?? null,
     backupId: values.get("--backup") ?? values.get("--backup-id") ?? null,
     target: values.get("--target") ?? null,
+    transferId: values.get("--transfer-id") ?? null,
+    targetDeploymentId: values.get("--target-deployment") ?? null,
+    packageRoot: values.get("--package-root") ?? null,
+    packageRef: values.get("--package") ?? null,
+    preflightPath: values.get("--preflight") ?? null,
   });
 }
 
@@ -220,7 +297,7 @@ async function migrate(
 
 function requiredSecret(
   configuration: Awaited<ReturnType<JsonFileConfigurationPort["load"]>>,
-  purpose: "backup-encryption" | "payload-encryption",
+  purpose: "backup-encryption" | "payload-encryption" | "transfer-recipient",
 ) {
   const matches = configuration.secretReferences.filter((secret) => secret.purpose === purpose);
   if (matches.length !== 1) throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
@@ -300,6 +377,215 @@ async function backupCommand(parsed: ParsedAdminCommand, output: NodeJS.Writable
   return Object.freeze({ outputSchemaVersion: 1, command: "backup.restore", ...report });
 }
 
+async function activationPreflight(pathInput: string | null) {
+  if (!pathInput || !path.isAbsolute(pathInput)) return null;
+  const preflightPath = path.resolve(pathInput);
+  const info = await lstat(preflightPath).catch(() => undefined);
+  if (!info?.isFile() || info.isSymbolicLink() || (info.mode & 0o022) !== 0) {
+    throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(await readFile(preflightPath, "utf8"));
+  } catch {
+    throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  }
+  const record = value as Record<string, unknown>;
+  const fields = Object.keys(record).sort();
+  const expected = [
+    "authorityEpoch",
+    "deploymentId",
+    "doctorReady",
+    "evidenceRef",
+    "publicIngressReady",
+    "schemaVersion",
+    "secretReferencesReady",
+    "transferId",
+  ].sort();
+  if (
+    JSON.stringify(fields) !== JSON.stringify(expected) ||
+    record["schemaVersion"] !== 1 ||
+    typeof record["transferId"] !== "string" ||
+    typeof record["deploymentId"] !== "string" ||
+    !Number.isSafeInteger(record["authorityEpoch"]) ||
+    typeof record["secretReferencesReady"] !== "boolean" ||
+    typeof record["doctorReady"] !== "boolean" ||
+    typeof record["publicIngressReady"] !== "boolean" ||
+    typeof record["evidenceRef"] !== "string" ||
+    record["evidenceRef"].length === 0
+  ) {
+    throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  }
+  return Object.freeze(record as unknown as ActivationPreflightEvidence);
+}
+
+async function transferAdapter(parsed: ParsedAdminCommand) {
+  if (!parsed.secretDirectory) throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  const configuration = await new JsonFileConfigurationPort(parsed.configurationPath).load();
+  const layout = stateLayout(configuration.stateRoot);
+  const authority = await readAuthorityFile(layout).catch(() => undefined);
+  const source = new RestrictedSecretFileSource(parsed.secretDirectory);
+  const payloadKey = requiredSecret(configuration, "payload-encryption");
+  const recipientKey = requiredSecret(configuration, "transfer-recipient");
+  const preflight = await activationPreflight(parsed.preflightPath);
+  const packageRoot = parsed.packageRoot
+    ? path.resolve(parsed.packageRoot)
+    : parsed.packageRef
+      ? path.dirname(path.resolve(parsed.packageRef))
+      : path.join(configuration.stateRoot, "transfers");
+  return new SqliteAuthorityTransferAdapter({
+    stateRoot: configuration.stateRoot,
+    databasePath: path.join(configuration.stateRoot, "data", "product.sqlite"),
+    packageRoot,
+    ownerId: configuration.ownerId,
+    agentId: configuration.agentId,
+    deploymentId: configuration.deploymentId,
+    authorityEpoch: authority?.authorityEpoch ?? 0,
+    fencingToken: authority?.fencingToken ?? 0,
+    productVersion: "0.0.0",
+    adapterVersions: [
+      "persistence-sqlite@0.0.0",
+      `memory-mem0@${configuration.memory.version}`,
+      "runtime-pi@0.0.0",
+    ],
+    memoryVersion: configuration.memory.version,
+    memoryStoragePath: configuration.memory.storagePath,
+    excludedSecretRefs: configuration.secretReferences.map((secret) => secret.ref),
+    keys: source,
+    packageKey: { ref: recipientKey.ref, version: recipientKey.version },
+    packagePayloadKey: { ref: recipientKey.ref, version: recipientKey.version },
+    activePayloadKey: { ref: payloadKey.ref, version: payloadKey.version },
+    payloadProtector: new EnvelopePayloadProtector({
+      keys: source,
+      activeKey: {
+        keyRef: payloadKey.ref,
+        kekVersion: payloadKey.version,
+        dekVersion: "dek-v1",
+      },
+    }),
+    authority: {
+      markSourcePending: async (input) => {
+        await markAuthorityTransferPending(layout, input);
+      },
+      establishTargetInactive: async (input) => {
+        await establishImportedAuthority(layout, input);
+      },
+      activateTarget: async (input) => {
+        await activateImportedAuthority(layout, input);
+      },
+    },
+    activationPreflight: {
+      check: async (input) => {
+        const requiredKeysReady = await Promise.all([
+          source.resolve(payloadKey.ref, payloadKey.version),
+          source.resolve(recipientKey.ref, recipientKey.version),
+        ])
+          .then((values) => values.every((value) => value.byteLength === 32))
+          .catch(() => false);
+        if (
+          !requiredKeysReady ||
+          !preflight ||
+          preflight.transferId !== input.transferId ||
+          preflight.deploymentId !== input.deploymentId ||
+          preflight.authorityEpoch !== input.authorityEpoch
+        ) {
+          return {
+            secretReferencesReady: false,
+            doctorReady: false,
+            publicIngressReady: false,
+            evidenceRef: "",
+          };
+        }
+        return {
+          secretReferencesReady: preflight.secretReferencesReady as boolean,
+          doctorReady: preflight.doctorReady as boolean,
+          publicIngressReady: preflight.publicIngressReady as boolean,
+          evidenceRef: preflight.evidenceRef as string,
+        };
+      },
+    },
+  });
+}
+
+async function transferCommand(parsed: ParsedAdminCommand, output: NodeJS.WritableStream) {
+  const adapter = await transferAdapter(parsed);
+  if (parsed.command === "transfer.export") {
+    if (!parsed.transferId || !parsed.targetDeploymentId || !parsed.packageRoot) {
+      throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+    }
+    const confirmation = `EXPORT_${parsed.transferId}`;
+    writeServiceDiagnostic(output, {
+      component: "admin-cli",
+      event: "mutation.plan",
+      action: "transfer.export",
+      target: parsed.targetDeploymentId,
+      transferId: parsed.transferId,
+      stoppedServiceRequired: true,
+      confirmation,
+    });
+    if (parsed.confirmation !== confirmation) {
+      throw new Error(ADMIN_CLI_ERROR_CODES.CONFIRMATION_REQUIRED);
+    }
+    const manifest = await adapter.exportNamed({
+      transferId: parsed.transferId,
+      targetDeploymentId: parsed.targetDeploymentId,
+    });
+    return Object.freeze({ outputSchemaVersion: 1, command: "transfer.export", ...manifest });
+  }
+  if (parsed.command === "transfer.inspect") {
+    if (!parsed.packageRef) throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+    const manifest = await adapter.inspect(parsed.packageRef);
+    return Object.freeze({ outputSchemaVersion: 1, command: "transfer.inspect", ...manifest });
+  }
+  if (parsed.command === "transfer.import") {
+    if (!parsed.packageRef) throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+    const manifest = await adapter.inspect(parsed.packageRef);
+    const configuration = await new JsonFileConfigurationPort(parsed.configurationPath).load();
+    const confirmation = `IMPORT_${manifest.transferId}`;
+    writeServiceDiagnostic(output, {
+      component: "admin-cli",
+      event: "mutation.plan",
+      action: "transfer.import",
+      target: `deployment:${configuration.deploymentId}`,
+      transferId: manifest.transferId,
+      stoppedServiceRequired: true,
+      confirmation,
+    });
+    if (parsed.confirmation !== confirmation) {
+      throw new Error(ADMIN_CLI_ERROR_CODES.CONFIRMATION_REQUIRED);
+    }
+    const state = await adapter.importPackage(parsed.packageRef);
+    return Object.freeze({ outputSchemaVersion: 1, command: "transfer.import", ...state });
+  }
+  if (!parsed.transferId) throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+  const action = parsed.command === "transfer.activate" ? "ACTIVATE" : "ABANDON";
+  const confirmation = `${action}_${parsed.transferId}`;
+  writeServiceDiagnostic(output, {
+    component: "admin-cli",
+    event: "mutation.plan",
+    action: parsed.command,
+    target: `transfer:${parsed.transferId}`,
+    transferId: parsed.transferId,
+    stoppedServiceRequired: true,
+    confirmation,
+  });
+  if (parsed.confirmation !== confirmation) {
+    throw new Error(ADMIN_CLI_ERROR_CODES.CONFIRMATION_REQUIRED);
+  }
+  if (parsed.command === "transfer.activate") {
+    const preflight = await activationPreflight(parsed.preflightPath);
+    const epoch = preflight?.authorityEpoch;
+    if (typeof epoch !== "number") throw new Error(ADMIN_CLI_ERROR_CODES.ARGUMENT_INVALID);
+    const state = await adapter.activateNamed(parsed.transferId, epoch);
+    return Object.freeze({ outputSchemaVersion: 1, command: "transfer.activate", ...state });
+  }
+  const state = await adapter.abandonNamed(parsed.transferId);
+  return Object.freeze({ outputSchemaVersion: 1, command: "transfer.abandon", ...state });
+}
+
 export async function runAdminCli(
   arguments_: readonly string[],
   output: NodeJS.WritableStream = process.stdout,
@@ -309,11 +595,13 @@ export async function runAdminCli(
     const parsed = parseArguments(arguments_);
     const result = parsed.command.startsWith("backup.")
       ? await backupCommand(parsed, output)
-      : parsed.command === "doctor"
-        ? await doctor(parsed.configurationPath)
-        : parsed.command === "db.status"
-          ? await databaseStatus(parsed.configurationPath)
-          : await migrate(parsed.configurationPath, parsed.confirmation, output);
+      : parsed.command.startsWith("transfer.")
+        ? await transferCommand(parsed, output)
+        : parsed.command === "doctor"
+          ? await doctor(parsed.configurationPath)
+          : parsed.command === "db.status"
+            ? await databaseStatus(parsed.configurationPath)
+            : await migrate(parsed.configurationPath, parsed.confirmation, output);
     output.write(`${JSON.stringify(result)}\n`);
     return 0;
   } catch (error) {
