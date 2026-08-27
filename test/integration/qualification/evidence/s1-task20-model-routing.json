@@ -4,7 +4,7 @@
   "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
   "taskId": "S1-T20",
   "status": "partial",
-  "candidateRevision": "13a0a21d3264203c9d5400ccc8ee8545dfd7ad21",
+  "candidateRevision": "eac05181178d5b279da7f9211aa6952f5082c951",
   "worktree": {
     "branch": "HEAD (detached)",
     "upstream": "origin/main",
