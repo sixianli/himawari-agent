@@ -231,7 +231,9 @@ describe("GitHub App credentials and webhook admission", () => {
   it("verifies raw-byte HMAC, repository scope, protected payload and one occurrence on replay", async () => {
     const state = new MemoryGitHubState();
     const service = admission(state);
+    const startedAt = performance.now();
     const first = await service.admit(request(payload()));
+    expect(performance.now() - startedAt).toBeLessThan(2_000);
     const second = await service.admit(request(payload(), { providerDeliveryId: "delivery-001" }));
     expect(first.outcome).toBe("accepted");
     expect(second.outcome).toBe("replayed");

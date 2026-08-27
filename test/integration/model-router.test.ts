@@ -369,4 +369,54 @@ describe("Task 10 Model Router and trusted Provider secrets", () => {
     expect(events.filter(({ eventType }) => eventType === "model.output")).toHaveLength(1);
     expect(events.filter(({ eventType }) => eventType === "model.completed")).toHaveLength(1);
   });
+
+  it("stops the trusted transport after the first terminal result", async () => {
+    const clock = new ManualClock(T0);
+    const adapters = createReferenceAdapterSet({ clock });
+    const primary = descriptor("model-trusted-duplicate", "primary");
+    const transport: TrustedModelTransport = {
+      async *invoke(): AsyncIterable<ModelInvocationEvent> {
+        yield {
+          type: "model.completed",
+          invocationId: "ignored-by-adapter",
+          inputTokens: 1,
+          outputTokens: 1,
+          costMicros: 1,
+          latencyMs: 1,
+          occurredAt: T1,
+        };
+        yield {
+          type: "model.completed",
+          invocationId: "ignored-by-adapter",
+          inputTokens: 99,
+          outputTokens: 99,
+          costMicros: 99,
+          latencyMs: 99,
+          occurredAt: T1,
+        };
+      },
+    };
+    const provider = new TrustedModelProviderAdapter({
+      descriptors: [primary],
+      handles: adapters.secret,
+      secretSource: { resolve: async () => "unused" },
+      transport,
+      clock,
+    });
+    const events: ModelInvocationEvent[] = [];
+    for await (const event of provider.invoke({
+      invocationId: "invocation-duplicate",
+      runId: RUN_ID,
+      modelRef: primary.ref,
+      inputRef: "payload-model-input",
+      dataClassification: "private",
+      allowedDisclosureRef: "disclosure-policy-model-router",
+      secretHandleRefs: [],
+      correlationId: "correlation-model-duplicate",
+    })) {
+      events.push(event);
+    }
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type).toBe("model.completed");
+  });
 });
