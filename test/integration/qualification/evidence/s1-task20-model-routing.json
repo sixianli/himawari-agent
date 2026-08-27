@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-28T00:02:32+09:00",
+  "recordedAt": "2026-08-28T01:25:21+09:00",
   "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
   "taskId": "S1-T20",
   "status": "partial",
-  "candidateRevision": "8c81c386f721c3820aa1efc5aa5e525f8bff8a66",
+  "candidateRevision": "91868de4053f8f05db53c0ab1159db6d5d9e97b1",
   "worktree": {
     "branch": "main",
     "upstream": "origin/main",
-    "ahead": 25,
+    "ahead": 29,
     "behind": 0,
     "status": "dirty",
     "intentionallyExcluded": ["temp.md"]
@@ -16,7 +16,7 @@
   "deterministicQualification": {
     "provider": "ScriptedModelPort, TrustedModelProviderAdapter, PiModelTransport and OpenRouter response fixture",
     "liveCall": false,
-    "reason": "Owner 已选择 OpenRouter deepseek/deepseek-v4-flash-0731 作为 primary、z-ai/glm-5.3-flash 作为 fallback，批准 1.00 USD 上限并将 fallback 限制为 private。确定性实现现已冻结独立 embedding descriptor，把 strict configuration 映射到 canonical Pi generation binding，并接入 Agent Service 启动；live 身份和费用回读仍保持关闭",
+    "reason": "Owner 已选择 OpenRouter deepseek/deepseek-v4-flash-0731 作为 primary、z-ai/glm-5.3-flash 作为 fallback，批准 1.00 USD 上限并将 fallback 限制为 private。确定性实现现已冻结独立 embedding descriptor，把 strict configuration 映射到 canonical Pi generation binding，并接入 Agent Service 启动；本记录另行记录了 Qwen embedding live smoke，generation live identity、费用和质量回读仍保持关闭",
     "hiddenRoutes": false,
     "dynamicMarketplaceRoute": false,
     "implicitEmbedding": false
@@ -30,7 +30,7 @@
   "liveScope": {
     "realFallbackEnabled": false,
     "realFallbackApproved": true,
-    "activationStatus": "deterministic_descriptor_and_entrypoint_wired_live_pending",
+    "activationStatus": "embedding_live_verified_generation_live_pending",
     "fallbackModel": "z-ai/glm-5.3-flash",
     "fallbackAllowedDataClassifications": ["private"],
     "providerRouting": {
@@ -48,7 +48,28 @@
     },
     "primaryRetryableFailure": "will be exercised only after the binding and secret source are verified",
     "reason": "Owner 已确认启用真实 fallback；fallback 与 primary 共用 OpenRouter key，凭据计划放入 macOS Keychain，且 fallback 仅允许接收 private 数据",
-    "runtimeCaveat": "当前 ModelRouterService 在 retryable primary failure 下按已配置 descriptor 自动寻找 fallback；Keychain readback、closed Pi binding、严格配置映射、独立 embedding descriptor 和 Agent Service model-path lifecycle 已通过。deterministic profile 只报告 descriptor，不创建 Pi 或隐藏模型；realFallbackEnabled 仍为 false，不能把 Owner approval 或 secret readback 误写成 runtime activation"
+    "runtimeCaveat": "当前 ModelRouterService 在 retryable primary failure 下按已配置 descriptor 自动寻找 fallback；Keychain readback、closed Pi binding、严格配置映射、独立 embedding descriptor 和 Agent Service model-path lifecycle 已通过。deterministic profile 只报告 descriptor，不创建 Pi 或隐藏模型；本轮只激活并验证 embedding smoke，realFallbackEnabled 仍为 false，不能把 Owner approval、secret readback 或 embedding 成功误写成 generation runtime activation",
+    "embeddingSmoke": {
+      "status": "passed",
+      "command": "HIMAWARI_LIVE_EMBEDDING_SMOKE=1 HIMAWARI_LIVE_EMBEDDING_PRINT_EVIDENCE=1 npx vitest run --config vitest.workspace.ts --project integration test/integration/openrouter-embedding-live.test.ts --reporter=verbose",
+      "endpoint": "https://openrouter.ai/api/v1/embeddings",
+      "requestedModel": "qwen/qwen3-embedding-8b",
+      "requestedDimensions": 4096,
+      "responseModel": "Qwen/Qwen3-Embedding-8B",
+      "responseModelComparison": "case-insensitive match to selected OpenRouter slug",
+      "returnedDimensions": [4096, 4096, 4096],
+      "successfulCalls": 3,
+      "promptTokens": [13, 4, 4],
+      "totalTokens": [13, 4, 4],
+      "totalTokensObserved": 21,
+      "catalogEstimatedCostUsd": 0.00000021,
+      "providerReportedCostUsd": null,
+      "budgetLimitUsd": 1.0,
+      "fixtureClassification": "public",
+      "secretValueLogged": false,
+      "cleanup": "temporary Mem0 state root removed after the test",
+      "mem0Behavior": "mem0ai/oss@3.1.7: one embedding for upsert and two for search query/entity boost"
+    }
   },
   "modelDescriptorSnapshot": {
     "snapshotId": "task20-openrouter-catalog-2026-08-27",
@@ -102,15 +123,31 @@
       "maxCompletionTokens": 48000
     },
     "embedding": {
-      "status": "已验证独立产品 descriptor schema 与 mapping；尚未选择 live identity",
-      "provider": "由配置提供",
-      "model": "由配置提供",
-      "version": "由配置提供",
-      "dimensions": "必须等于 Mem0 vector dimension",
+      "status": "Owner 已确认并完成 live smoke",
+      "source": "https://openrouter.ai/qwen/qwen3-embedding-8b",
+      "provider": "openrouter",
+      "model": "qwen/qwen3-embedding-8b",
+      "role": "embedding",
+      "version": "catalog-2026-08-28",
+      "immutableUpstreamVersionExposed": false,
+      "dimensions": 4096,
       "capabilities": ["embedding"],
-      "disclosure": "由配置提供",
-      "cost": "显式四字段边界",
-      "secretRef": "由配置提供或为 null"
+      "disclosure": "external_remote",
+      "allowedDataClassifications": ["public", "private"],
+      "secretRef": "openrouter-api-key",
+      "secretVersion": "v1",
+      "secretPurpose": "model-provider-auth",
+      "pricingUsdPerMillionTokens": {
+        "input": 0.01,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "memoryAdapter": "mem0ai/oss@3.1.7",
+      "mem0Provider": "openai",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "vectorDimension": 4096,
+      "upstreamVersionCaveat": "OpenRouter/Qwen 页面未提供不可变 upstream version；日期化 version 只表示本地 catalog snapshot，不冒充 upstream immutable version"
     }
   },
   "fallbackCandidate": {
@@ -173,6 +210,8 @@
     "ConfiguredPiModelBindingPort registers exactly the selected primary and fallback models, disables Pi disk model discovery/network refresh, resolves the production-suitable provider secret lazily, and keeps the raw value out of descriptors, runtime options and diagnostics.",
     "Production model composition matches ModelDescriptor and Pi descriptor identity/capabilities, shares the approved host provider-secret source, and connects the protected OpenRouter transport with the closed Pi binding.",
     "Agent Service validates the embedding descriptor at startup, creates the supported production Model/Pi composition from strict configuration, reports descriptor-only diagnostics for deterministic profiles, and closes the composition before the durable repository.",
+    "Production Memory composition passes the strict embedding descriptor and its dimensions-matched Mem0 storage boundary, resolves the shared provider secret through the production-suitable host source, and maps OpenRouter to Mem0's existing OpenAI-compatible provider without adding a second embedding HTTP client.",
+    "The selected OpenRouter Qwen3 Embedding 8B live smoke returned 4096-dimensional vectors for all three Mem0 embedding requests; request model/dimensions, response model, token usage and catalog-estimated cost were read back without logging the credential or fixture body.",
     "Repeated streamed output sequences and repeated terminal provider events produce one output reference and one terminal Trace result."
   ],
   "commands": [
@@ -232,18 +271,22 @@
       "result": "1 个 installable Agent Service/Execution Worker 集成 test file、4 个 tests 通过，验证可重定位 Node runtime 的启动、deterministic-descriptor-only modelPath、embedding descriptor 诊断、优雅停止和 public-mode 拒绝"
     },
     {
+      "command": "HIMAWARI_LIVE_EMBEDDING_SMOKE=1 HIMAWARI_LIVE_EMBEDDING_PRINT_EVIDENCE=1 npx vitest run --config vitest.workspace.ts --project integration test/integration/openrouter-embedding-live.test.ts --reporter=verbose",
+      "exitStatus": 0,
+      "result": "1 个有界 live embedding smoke test 通过；OpenRouter qwen/qwen3-embedding-8b 请求与返回均为 4096 维，3 次请求共 21 tokens，按 catalog 价格估算 0.00000021 USD，响应模型 Qwen/Qwen3-Embedding-8B 与选定 slug 大小写归一化一致"
+    },
+    {
       "command": "python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict .",
       "exitStatus": 0,
       "result": "受治理文档严格校验通过，0 warnings；三份受影响 active Runbook 已重新 seal/check"
     }
   ],
   "remaining": [
-    "Before any live call, freeze and show the OpenRouter primary plus fixed fallback and embedding provider/model/version or snapshot, capabilities, disclosure, secret refs, the confirmed provider-routing policy, estimated cost and capped budget; the fallback binding must remain limited to private data. The generation-model local catalog snapshot is recorded, but the upstream pages expose no immutable model version.",
-    "Before any live call, show and freeze the Owner-approved embedding provider/model/version or snapshot, dimensions, capabilities, disclosure, cost boundary and secret reference; do not infer it from the deterministic Mem0 fixture.",
-    "After approval, run a bounded live smoke/eval and read back provider identity, token/cost accounting, cancellation, fallback, tool-call, disclosure rejection and redaction evidence."
+    "Generation live smoke/eval remains pending: before the first generation call, revalidate the primary/fixed-fallback catalog snapshots and record the exact provider identity, token/cost accounting, cancellation, fallback, tool-call, disclosure rejection and redaction evidence; the upstream generation pages expose no immutable model version.",
+    "The embedding smoke verifies the Mem0 projection and provider response, but it does not qualify the final Gateway/Memory/Worker production composition or generation model quality."
   ],
   "externalEffects": [
-    "No paid OpenRouter call, GitHub, Cloudflare or production service was called or changed."
+    "A bounded OpenRouter embedding smoke used only the public synthetic fixture and the existing macOS Keychain opaque provider-secret reference; successful runs stayed within the approved 1.00 USD cap, the final observed run used 21 tokens with a catalog-estimated 0.00000021 USD, and temporary Mem0 state was removed. No GitHub, Cloudflare or production service was changed."
   ],
-  "implementationCommit": "8c81c386f721c3820aa1efc5aa5e525f8bff8a66"
+  "implementationCommit": "91868de4053f8f05db53c0ab1159db6d5d9e97b1"
 }

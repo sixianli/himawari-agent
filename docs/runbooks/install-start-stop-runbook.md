@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:7d50b79ff3f192383da8f5b1fed5c97ebdfd9c6d1075d5fb7357cbd460653839"
+contract_sha256: "sha256:718f132a4af5c61fe2ff6a313186f08d88ed0adc5e8dff3b0f5cff8c754e3337"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -16,12 +16,14 @@ date: "2026-08-27"
 - apps/admin-cli/src
 - apps/agent-service/src/service-main.ts
 - apps/agent-service/src/production-model-composition.ts
+- apps/agent-service/src/production-memory-composition.ts
 - apps/execution-worker/src/service-main.ts
 - packages/application/src/ports/configuration.ts
 - packages/platform-node/src/execution-uds-transport.ts
 - packages/platform-node/src/ephemeral-secret-port.ts
 - packages/platform-node/src/strict-configuration.ts
 - packages/platform-node/src/state-root-layout.ts
+- packages/memory-mem0/src/index.ts
 - packages/persistence-sqlite/src/product-state-repository.ts
 - docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md
 -->
@@ -30,7 +32,7 @@ date: "2026-08-27"
 
 本 Runbook 只覆盖当前仓库已经验证的本地 Node runtime：从锁定依赖构建可重定位 artifact，安装到明确的绝对前缀，使用受保护的 Execution Worker UDS 启动 Agent Service，执行只读 doctor/db status，并以有界信号完成正常停止或故障重启。它不负责安装 systemd/launchd unit、不修改公网入口、不切换 authority、不配置真实 provider、不部署到 Hermes，也不替代 authority transfer Runbook。
 
-安装产物包含 Agent Service、Execution Worker、admin CLI 及产品运行时包；它不包含 `packages/testing` 的生产 adapter。Agent Service 启动时只从 strict configuration 读取一个 primary、一个 private-only fallback 和一个独立 embedding descriptor；支持的 OpenRouter 配置创建 production Model/Pi composition，deterministic 配置只报告 descriptor，不创建隐藏模型或调用 provider。每个构建固定提交内容、package-lock、workspace checksum、Node 平台/架构和外部依赖闭包。由于 `better-sqlite3` 等 native 依赖，Mac 与 Linux 必须分别构建和验收，不能把一个平台的二进制包当作另一个平台的 immutable artifact。
+安装产物包含 Agent Service、Execution Worker、admin CLI 及产品运行时包；它不包含 `packages/testing` 的生产 adapter。Agent Service 启动时只从 strict configuration 读取一个 primary、一个 private-only fallback 和一个独立 embedding descriptor；支持的 OpenRouter 配置创建 production Model/Pi 与 Mem0 composition，Mem0 使用配置声明的 embedding provider/model/version 和 dimensions，deterministic 配置只报告 descriptor，不创建隐藏模型或调用 provider。每个构建固定提交内容、package-lock、workspace checksum、Node 平台/架构和外部依赖闭包。由于 `better-sqlite3` 等 native 依赖，Mac 与 Linux 必须分别构建和验收，不能把一个平台的二进制包当作另一个平台的 immutable artifact。
 
 ## Authoritative Sources
 
@@ -84,7 +86,7 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 
 5. 在启动前运行 `himawari db status` 与 `himawari doctor`，确认 SQLite quick check、schema、authority、Payload、Worker 和 identity 的脱敏状态；只读命令失败时不启动普通服务。
 6. 以独立子进程先启动 Worker，再启动 Agent Service；记录 `service.ready` 的 component、schema、identity 和 recovery counters。
-7. 运行只读 doctor、db status 和适用业务查询；确认 Agent Service 通过 UDS handshake、`service.ready` 记录 model path 与 embedding descriptor identity、没有 testing adapter、没有 repository checkout 路径，也没有秘密或私人正文输出。deterministic profile 必须显示 descriptor-only；支持的 Pi profile 只能显示配置中的 primary/fallback/embedding reference、version 和 dimensions，不能显示 secret value。
+7. 运行只读 doctor、db status 和适用业务查询；确认 Agent Service 通过 UDS handshake、`service.ready` 记录 model path、memory path 与 embedding descriptor identity、没有 testing adapter、没有 repository checkout 路径，也没有秘密或私人正文输出。deterministic profile 必须显示 descriptor-only；支持的 Pi/Mem0 profile 只能显示配置中的 primary/fallback/embedding reference、version 和 dimensions，不能显示 secret value。
 8. 正常停止时先向 Agent Service 发送 `SIGTERM)，等待 `service.draining` 与 `service.stopped`，再向 Worker 发送 `SIGTERM)，等待其停止并确认 socket 已删除。超出有界等待后才记录 forced stop，并把后续启动视为 recovery drill。
 9. 重启或 forced stop 后重新取得 state-root lock，确认同一 deployment/Owner/Agent/Run identity、SQLite schema/quick check、pending recovery counters 和 UDS handshake；不得将普通一次重启写成完整 crash matrix。
 10. 完成验证后保存脱敏命令输出、artifact identity、进程退出码、socket/lock 回读和 rollback 状态；临时 prefix、临时 state root 与证据目录按本次授权的保留策略清理。
@@ -94,7 +96,7 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 - `runtime-manifest.json`、build artifact manifest、package-lock 和 `git rev-parse HEAD` 能互相对应；内部 package 版本和外部依赖版本均为精确值。
 - `himawari doctor` 返回 ready，`himawari db status` 显示 managed schema、预期 migration sequence 和 `quickCheck: ok`。
 - Worker 与 Agent Service 均从安装 prefix 运行，不依赖 repository cwd、TypeScript source、未声明 `../pi-mono` 或 testing adapter；Worker 先于 Agent Service ready。
-- `service.ready` 的 model path 与 embedding descriptor 来自 strict configuration；deterministic profile 不初始化 Pi，production Pi profile 只绑定显式 primary/fallback，embedding 不进入 Pi generation registry。
+- `service.ready` 的 model path、memory path 与 embedding descriptor 来自 strict configuration；deterministic profile 不初始化 Pi 或 Mem0，production Pi profile 只绑定显式 primary/fallback，embedding 不进入 Pi generation registry，而由 Mem0 projection 使用显式 dimensions（本次配置为 4096）。
 - 正常停止后无遗留 UDS socket、活跃 state-root lock 或未记录 child process；forced stop 后下次启动仍通过正式 recovery。
 - 目标前缀、state root、authority file、SQLite、Payload、runtime/cache 和证据权限符合当前配置；诊断输出不含 token、配置全文或私人正文。
 - 该 Runbook 的成功只证明本机安装/启停边界，不证明 Mac/Hermes 双向迁移、真实 provider/GitHub/Cloudflare、systemd/launchd 或 production readiness。
