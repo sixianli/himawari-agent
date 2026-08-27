@@ -16,8 +16,11 @@ const internalRoots = [
   "packages/domain",
   "packages/execution-contracts",
   "packages/gateway-contracts",
+  "packages/integration-github",
+  "packages/memory-mem0",
   "packages/persistence-sqlite",
   "packages/platform-node",
+  "packages/runtime-pi",
 ];
 
 function runtimeManifest(manifest, relativeRoot) {
@@ -65,6 +68,10 @@ async function copyInternalPackage(relativeRoot) {
 }
 
 function findPackageRoot(resolvedPath, expectedName) {
+  try {
+    const manifest = JSON.parse(readFileSync(path.join(resolvedPath, "package.json"), "utf8"));
+    if (manifest.name === expectedName) return { root: resolvedPath, manifest };
+  } catch {}
   let current = path.dirname(resolvedPath);
   while (current !== path.dirname(current)) {
     try {
@@ -73,7 +80,27 @@ function findPackageRoot(resolvedPath, expectedName) {
     } catch {}
     current = path.dirname(current);
   }
-  throw new Error(`Unable to locate runtime dependency ${expectedName}`);
+  throw new Error(`Unable to locate runtime dependency ${expectedName} from ${resolvedPath}`);
+}
+
+function packageRootFromNodeModules(name) {
+  const packageParts = name.startsWith("@") ? name.split("/", 2) : [name];
+  return path.join(repositoryRoot, "node_modules", ...packageParts);
+}
+
+function resolvePackageEntry(name, require) {
+  try {
+    return require.resolve(name);
+  } catch (error) {
+    const root = packageRootFromNodeModules(name);
+    try {
+      const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+      const main = typeof manifest.main === "string" ? manifest.main : "index.js";
+      return path.join(root, main);
+    } catch {
+      throw error;
+    }
+  }
 }
 
 async function copyExternalClosure(rootNames) {
@@ -84,7 +111,7 @@ async function copyExternalClosure(rootNames) {
     if (!item) break;
     if (builtinModules.includes(item.name) || builtinModules.includes(`node:${item.name}`))
       continue;
-    const entry = item.require.resolve(item.name);
+    const entry = item.entry ?? resolvePackageEntry(item.name, item.require);
     const located = findPackageRoot(entry, item.name);
     const relativeLocation = path.relative(path.join(repositoryRoot, "node_modules"), located.root);
     if (
@@ -113,18 +140,30 @@ async function copyExternalClosure(rootNames) {
       ...(located.manifest.optionalDependencies ?? {}),
     })) {
       try {
-        packageRequire.resolve(dependency);
-        queue.push({ name: dependency, require: packageRequire });
+        const dependencyEntry = resolvePackageEntry(dependency, packageRequire);
+        queue.push({ name: dependency, require: packageRequire, entry: dependencyEntry });
       } catch {}
     }
   }
   return copied;
 }
 
-await rm(runtimeRoot, { recursive: true, force: true });
+await rm(runtimeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 await mkdir(runtimeNodeModules, { recursive: true });
 for (const relativeRoot of internalRoots.sort()) await copyInternalPackage(relativeRoot);
-const external = await copyExternalClosure(["better-sqlite3", "fastify", "jose"]);
+const external = await copyExternalClosure([
+  "@earendil-works/pi-coding-agent",
+  "@fastify/cookie",
+  "@fastify/csrf-protection",
+  "@fastify/helmet",
+  "@fastify/rate-limit",
+  "@fastify/static",
+  "@octokit/app",
+  "better-sqlite3",
+  "fastify",
+  "jose",
+  "mem0ai",
+]);
 const rootExternal = new Map(
   [...external.entries()]
     .filter(([location, { name }]) => location === path.join(...name.split("/")))

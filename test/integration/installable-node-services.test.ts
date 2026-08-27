@@ -183,12 +183,12 @@ beforeAll(async () => {
   });
   await chmod(configurationPath, 0o600);
   await chmod(publicConfigurationPath, 0o600);
-}, 30_000);
+}, 120_000);
 
 afterAll(async () => {
   for (const child of children) child.kill("SIGKILL");
-  await rm(testRoot, { recursive: true, force: true });
-  await rm(stateRoot, { recursive: true, force: true });
+  await rm(testRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  await rm(stateRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 function executable(name: string): string {
