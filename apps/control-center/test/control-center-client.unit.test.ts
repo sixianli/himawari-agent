@@ -121,6 +121,35 @@ describe("typed browser Gateway client", () => {
     expect(new Headers(calls[0]?.init.headers).get("x-csrf-token")).toBe("csrf-01");
   });
 
+  it("builds an explicit GitHub monitor lifecycle command without raw content", () => {
+    const message = commandMessage(
+      { ...configuration, primaryModelRef: "model:fixture-primary:v1" },
+      "github.monitor.set_state",
+      {
+        monitorId: "monitor-01",
+        action: "enable",
+        expectedRevision: 1,
+        historyPolicy: null,
+        disclosure: {
+          confirmationRef: "confirmation:github-01",
+          primaryModelRef: "model:fixture-primary:v1",
+          repositoryRef: "owner/repository",
+          disclosedDataClassifications: ["private"],
+          machineSecretsExcluded: true,
+        },
+      },
+      { risk: "high", authorizationRef: "authorization:recent-owner" },
+    );
+
+    expect(message).toMatchObject({
+      type: "github.monitor.set_state",
+      risk: "high",
+      authorizationRef: "authorization:recent-owner",
+      payload: { action: "enable", disclosure: { machineSecretsExcluded: true } },
+    });
+    expect(JSON.stringify(message)).not.toContain("accessToken");
+  });
+
   it("accepts only strict snapshots and protects plaintext through a separate endpoint", async () => {
     const bodies: string[] = [];
     const client = new GatewayClient({

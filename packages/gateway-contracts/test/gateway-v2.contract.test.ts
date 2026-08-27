@@ -50,6 +50,39 @@ describe("Gateway v2 fail-closed validation", () => {
     ["invalid classification", { ...messages[0], dataClassification: "secret" }],
     ["missing authorization", { ...messages[2], authorizationRef: null }],
     [
+      "missing GitHub disclosure",
+      { ...messages[4], payload: { ...messages[4]?.payload, disclosure: null } },
+    ],
+    [
+      "missing GitHub revoke history policy",
+      {
+        ...messages[4],
+        payload: {
+          ...messages[4]?.payload,
+          action: "revoke",
+          historyPolicy: null,
+          disclosure: null,
+        },
+      },
+    ],
+    [
+      "GitHub disclosure on pause",
+      {
+        ...messages[4],
+        payload: { ...messages[4]?.payload, action: "pause", historyPolicy: null },
+      },
+    ],
+    [
+      "empty GitHub disclosure classifications",
+      {
+        ...messages[4],
+        payload: {
+          ...messages[4]?.payload,
+          disclosure: { ...messages[4]?.payload?.disclosure, disclosedDataClassifications: [] },
+        },
+      },
+    ],
+    [
       "stale zero epoch",
       { ...messages[0], authority: { ...messages[0]?.authority, authorityEpoch: 0 } },
     ],
@@ -65,8 +98,8 @@ describe("Gateway v2 fail-closed validation", () => {
     [
       "archive with correction content",
       {
-        ...messages[4],
-        payload: { ...messages[4]?.payload, action: "archive", contentRef: "payload-forbidden" },
+        ...messages[5],
+        payload: { ...messages[5]?.payload, action: "archive", contentRef: "payload-forbidden" },
       },
     ],
     ["unknown message type", { ...messages[0], type: "provider.github.raw" }],

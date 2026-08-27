@@ -1883,7 +1883,7 @@ export class SqliteDurableOperations {
       !installation ||
       installation.ownerId !== monitor.ownerId ||
       installation.agentId !== monitor.agentId ||
-      installation.status !== "active"
+      (installation.status !== "active" && monitor.status === "active")
     ) {
       this.fail(
         "PORT_INVALID_OPERATION",

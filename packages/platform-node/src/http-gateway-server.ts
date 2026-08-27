@@ -94,6 +94,7 @@ export interface HttpGatewayServerOptions {
       readonly model: string;
       readonly version: string;
     };
+    readonly primaryModelRef?: string;
     readonly repositoryAllowlistRefs?: readonly string[];
     readonly disclosedDataClassifications?: readonly (
       | "public"
@@ -504,6 +505,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         actorId: authentication.subjectId,
         csrfToken: await issueCsrf(authentication),
         primaryModel: configuration.primaryModel ?? null,
+        primaryModelRef: configuration.primaryModelRef ?? null,
         repositoryAllowlistRefs: configuration.repositoryAllowlistRefs ?? [],
         disclosedDataClassifications: configuration.disclosedDataClassifications ?? ["private"],
       });

@@ -108,6 +108,9 @@ export function ControlCenterApp() {
   const [targetRef, setTargetRef] = useState("");
   const [memoryCorrection, setMemoryCorrection] = useState("");
   const [githubDisclosureConfirmed, setGithubDisclosureConfirmed] = useState(false);
+  const [githubRepositoryRef, setGithubRepositoryRef] = useState("");
+  const [githubMonitorRevision, setGithubMonitorRevision] = useState("0");
+  const [githubHistoryPolicy, setGithubHistoryPolicy] = useState<"retain" | "delete">("retain");
 
   useEffect(() => {
     let active = true;
@@ -115,6 +118,7 @@ export function ControlCenterApp() {
       .then((loaded) => {
         if (!active) return;
         setConfiguration(loaded);
+        setGithubRepositoryRef((current) => current || loaded.repositoryAllowlistRefs?.[0] || "");
         setClient(
           new GatewayClient({
             fetch: window.fetch.bind(window),
@@ -203,10 +207,31 @@ export function ControlCenterApp() {
   };
 
   const performAction = async (
-    action: "approve" | "deny" | "pause" | "resume" | "correct" | "archive" | "delete" | "revoke",
+    action:
+      | "approve"
+      | "deny"
+      | "pause"
+      | "resume"
+      | "correct"
+      | "archive"
+      | "delete"
+      | "revoke"
+      | "enable-github-monitor"
+      | "pause-github-monitor"
+      | "revoke-github-monitor",
   ) => {
     if (!client || !configuration || !targetRef) return;
     if (action === "correct" && !memoryCorrection.trim()) return;
+    if (
+      action === "enable-github-monitor" &&
+      (!githubDisclosureConfirmed ||
+        !githubRepositoryRef ||
+        !configuration.primaryModelRef ||
+        !Number.isSafeInteger(Number(githubMonitorRevision)) ||
+        Number(githubMonitorRevision) < 0)
+    ) {
+      return;
+    }
     await runMutation(async () => {
       switch (action) {
         case "approve":
@@ -232,6 +257,59 @@ export function ControlCenterApp() {
               action,
               reasonCode: "owner_control_center",
             }),
+          );
+        case "enable-github-monitor":
+          return client.mutate(
+            commandMessage(
+              configuration,
+              "github.monitor.set_state",
+              {
+                monitorId: targetRef,
+                action: "enable",
+                expectedRevision: Number(githubMonitorRevision),
+                historyPolicy: null,
+                disclosure: {
+                  confirmationRef: `github-confirmation:${crypto.randomUUID()}`,
+                  primaryModelRef: configuration.primaryModelRef,
+                  repositoryRef: githubRepositoryRef,
+                  disclosedDataClassifications: configuration.disclosedDataClassifications ?? [
+                    "private",
+                  ],
+                  machineSecretsExcluded: true,
+                },
+              },
+              { risk: "high", authorizationRef: "authorization:recent-owner" },
+            ),
+          );
+        case "pause-github-monitor":
+          return client.mutate(
+            commandMessage(
+              configuration,
+              "github.monitor.set_state",
+              {
+                monitorId: targetRef,
+                action: "pause",
+                expectedRevision: Number(githubMonitorRevision),
+                historyPolicy: null,
+                disclosure: null,
+              },
+              { risk: "high", authorizationRef: "authorization:recent-owner" },
+            ),
+          );
+        case "revoke-github-monitor":
+          return client.mutate(
+            commandMessage(
+              configuration,
+              "github.monitor.set_state",
+              {
+                monitorId: targetRef,
+                action: "revoke",
+                expectedRevision: Number(githubMonitorRevision),
+                historyPolicy: githubHistoryPolicy,
+                disclosure: null,
+              },
+              { risk: "high", authorizationRef: "authorization:recent-owner" },
+            ),
           );
         case "correct":
         case "archive":
@@ -415,6 +493,10 @@ export function ControlCenterApp() {
                   </dd>
                 </div>
                 <div>
+                  <dt>Primary model ref</dt>
+                  <dd>{configuration?.primaryModelRef ?? "未配置"}</dd>
+                </div>
+                <div>
                   <dt>仓库范围</dt>
                   <dd>{configuration?.repositoryAllowlistRefs?.join(", ") || "未选择"}</dd>
                 </div>
@@ -432,9 +514,41 @@ export function ControlCenterApp() {
                 />
                 我确认仅向所选仓库披露上述分类；机器秘密、App 私钥、安装令牌和 Git 凭据永不披露。
               </label>
+              <label htmlFor="github-repository-ref">GitHub repository ref</label>
+              <select
+                id="github-repository-ref"
+                value={githubRepositoryRef}
+                onChange={(event) => setGithubRepositoryRef(event.target.value)}
+              >
+                <option value="">请选择允许列表中的仓库</option>
+                {configuration?.repositoryAllowlistRefs?.map((repositoryRef) => (
+                  <option key={repositoryRef} value={repositoryRef}>
+                    {repositoryRef}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="github-monitor-revision">GitHub monitor revision</label>
+              <input
+                id="github-monitor-revision"
+                type="number"
+                min="0"
+                value={githubMonitorRevision}
+                onChange={(event) => setGithubMonitorRevision(event.target.value)}
+              />
+              <label htmlFor="github-history-policy">撤销后的历史处理</label>
+              <select
+                id="github-history-policy"
+                value={githubHistoryPolicy}
+                onChange={(event) =>
+                  setGithubHistoryPolicy(event.target.value as "retain" | "delete")
+                }
+              >
+                <option value="retain">保留历史摘要、Trace 与任务记录</option>
+                <option value="delete">删除历史摘要、Trace 与任务记录</option>
+              </select>
               <output aria-live="polite">
                 {githubDisclosureConfirmed
-                  ? "披露确认已记录在当前浏览器会话，等待服务端 monitor 接纳。"
+                  ? "披露确认待随启用命令提交至服务端；服务端会再次校验模型、仓库和分类。"
                   : "启用仓库监控前必须明确确认披露范围。"}
               </output>
             </section>
@@ -478,6 +592,27 @@ export function ControlCenterApp() {
                 </button>
                 <button type="button" onClick={() => void performAction("resume")}>
                   恢复
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    !githubDisclosureConfirmed ||
+                    !githubRepositoryRef ||
+                    !configuration?.primaryModelRef
+                  }
+                  onClick={() => void performAction("enable-github-monitor")}
+                >
+                  启用 GitHub 监控
+                </button>
+                <button type="button" onClick={() => void performAction("pause-github-monitor")}>
+                  暂停 GitHub 监控
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={() => void performAction("revoke-github-monitor")}
+                >
+                  撤销 GitHub 监控
                 </button>
               </>
             ) : null}

@@ -33,6 +33,7 @@ export interface ControlCenterRuntimeConfiguration {
     readonly model: string;
     readonly version: string;
   } | null;
+  readonly primaryModelRef?: string | null;
   readonly repositoryAllowlistRefs?: readonly string[];
   readonly disclosedDataClassifications?: readonly (
     | "public"
@@ -63,6 +64,7 @@ export async function loadRuntimeConfiguration(
     readonly actorId?: unknown;
     readonly csrfToken?: unknown;
     readonly primaryModel?: unknown;
+    readonly primaryModelRef?: unknown;
     readonly repositoryAllowlistRefs?: unknown;
     readonly disclosedDataClassifications?: unknown;
   };
@@ -109,12 +111,20 @@ export async function loadRuntimeConfiguration(
             item === "restricted",
         )
       : ["private"];
+  const primaryModelRef =
+    typeof value.primaryModelRef === "string" && value.primaryModelRef.length > 0
+      ? value.primaryModelRef
+      : null;
   return Object.freeze({
     ...(value as unknown as Omit<
       ControlCenterRuntimeConfiguration,
-      "primaryModel" | "repositoryAllowlistRefs" | "disclosedDataClassifications"
+      | "primaryModel"
+      | "primaryModelRef"
+      | "repositoryAllowlistRefs"
+      | "disclosedDataClassifications"
     >),
     primaryModel: normalizedPrimary,
+    primaryModelRef,
     repositoryAllowlistRefs: Object.freeze(repositoryAllowlistRefs),
     disclosedDataClassifications: Object.freeze(disclosedDataClassifications),
   });

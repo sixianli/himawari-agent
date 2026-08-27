@@ -76,8 +76,36 @@
   {
     "schemaVersion": "gateway.v2",
     "kind": "command",
-    "type": "memory.mutate",
+    "type": "github.monitor.set_state",
     "messageId": "gateway-v2-message-05",
+    "correlationId": "correlation-github-01",
+    "causationId": null,
+    "dataClassification": "sensitive",
+    "risk": "high",
+    "authorizationRef": "authorization-github-01",
+    "scope": { "ownerId": "owner-01", "agentId": "agent-01" },
+    "authority": { "deploymentId": "deployment-01", "authorityEpoch": 8, "fencingToken": 3 },
+    "actor": { "actorType": "owner", "actorId": "owner-01" },
+    "idempotencyKey": "github-monitor-enable-01",
+    "payload": {
+      "monitorId": "monitor-01",
+      "action": "enable",
+      "expectedRevision": 1,
+      "historyPolicy": null,
+      "disclosure": {
+        "confirmationRef": "confirmation-github-01",
+        "primaryModelRef": "model:primary:v1",
+        "repositoryRef": "owner/repository",
+        "disclosedDataClassifications": ["private"],
+        "machineSecretsExcluded": true
+      }
+    }
+  },
+  {
+    "schemaVersion": "gateway.v2",
+    "kind": "command",
+    "type": "memory.mutate",
+    "messageId": "gateway-v2-message-06",
     "correlationId": "correlation-memory-01",
     "causationId": null,
     "dataClassification": "sensitive",
@@ -98,7 +126,7 @@
     "schemaVersion": "gateway.v2",
     "kind": "command",
     "type": "session.revoke",
-    "messageId": "gateway-v2-message-06",
+    "messageId": "gateway-v2-message-07",
     "correlationId": "correlation-session-01",
     "causationId": null,
     "dataClassification": "private",

@@ -20,6 +20,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "thread.checkpoint.request",
   "approval.respond",
   "task.set_state",
+  "github.monitor.set_state",
   "memory.mutate",
   "session.revoke",
   "thread.list",
@@ -111,6 +112,74 @@ export const setTaskStateCommandSchema = object({
     action: enumeration(["pause", "resume", "revoke"]),
     reasonCode: machineString,
   }),
+});
+
+const githubRepositoryRefSchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (
+      typeof input !== "string" ||
+      input.length === 0 ||
+      input.length > 256 ||
+      [...input].some((character) => {
+        const code = character.charCodeAt(0);
+        return code < 0x20 || code === 0x7f;
+      })
+    ) {
+      throw new ContractValidationError(
+        path,
+        "expected a 1-256 character repository reference without control characters",
+      );
+    }
+    return input;
+  },
+};
+
+const githubDisclosureSchema = object({
+  confirmationRef: machineString,
+  primaryModelRef: machineString,
+  repositoryRef: githubRepositoryRefSchema,
+  disclosedDataClassifications: array(classificationSchema),
+  machineSecretsExcluded: literal(true),
+});
+
+const githubMonitorStatePayloadSchema = object({
+  monitorId: machineString,
+  action: enumeration(["enable", "pause", "revoke"]),
+  expectedRevision: integer(0),
+  historyPolicy: nullable(enumeration(["retain", "delete"])),
+  disclosure: nullable(githubDisclosureSchema),
+});
+
+export const setGitHubMonitorStateCommandSchema = object({
+  ...commandEnvelope("github.monitor.set_state"),
+  payload: {
+    parse(input, path = "$.payload") {
+      const payload = githubMonitorStatePayloadSchema.parse(input, path);
+      if (payload.action === "enable" && payload.disclosure === null) {
+        throw new ContractValidationError(`${path}.disclosure`, "is required when enabling");
+      }
+      if (payload.action !== "enable" && payload.disclosure !== null) {
+        throw new ContractValidationError(`${path}.disclosure`, "is only allowed when enabling");
+      }
+      if (payload.action === "revoke" && payload.historyPolicy === null) {
+        throw new ContractValidationError(`${path}.historyPolicy`, "is required when revoking");
+      }
+      if (payload.action !== "revoke" && payload.historyPolicy !== null) {
+        throw new ContractValidationError(`${path}.historyPolicy`, "is only allowed when revoking");
+      }
+      if (
+        payload.action === "enable" &&
+        payload.disclosure !== null &&
+        payload.disclosure.disclosedDataClassifications.length === 0
+      ) {
+        throw new ContractValidationError(
+          `${path}.disclosure.disclosedDataClassifications`,
+          "must contain at least one classification",
+        );
+      }
+      return payload;
+    },
+  },
 });
 
 const memoryMutationPayloadSchema = object({
@@ -269,6 +338,7 @@ const schemasByType = {
   "thread.checkpoint.request": requestThreadCheckpointCommandSchema,
   "approval.respond": respondApprovalV2CommandSchema,
   "task.set_state": setTaskStateCommandSchema,
+  "github.monitor.set_state": setGitHubMonitorStateCommandSchema,
   "memory.mutate": mutateMemoryCommandSchema,
   "session.revoke": revokeSessionCommandSchema,
   "thread.list": listThreadsQuerySchema,

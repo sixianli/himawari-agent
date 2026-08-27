@@ -83,6 +83,7 @@ const server = createServer(async (request, response) => {
       actorId: "owner-01",
       csrfToken: "csrf-fixture",
       primaryModel: { provider: "fixture-provider", model: "fixture-primary", version: "v1" },
+      primaryModelRef: "model:fixture-primary:v1",
       repositoryAllowlistRefs: ["fixture-owner/fixture-repository"],
       disclosedDataClassifications: ["private"],
     });

@@ -197,6 +197,31 @@ describe("SQLite GitHub integration state", () => {
       repositoryRef: REPOSITORY_REF,
       enabledEventRefs: ["payload:github-events"],
     });
+    await fixture.state.saveInstallation({
+      id: INSTALLATION_REF,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      providerInstallationId: "12345",
+      secretRef: "secret:github:webhook",
+      status: "revoked",
+      createdAt: T0,
+    });
+    await expect(
+      fixture.state.saveMonitor(
+        {
+          id: MONITOR_ID,
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          revision: 2,
+          installationRef: INSTALLATION_REF,
+          repositoryRef: REPOSITORY_REF,
+          enabledEventRefs: ["payload:github-events"],
+          authorizationRef: "authorization:github-read",
+          status: "revoked",
+        },
+        1,
+      ),
+    ).resolves.toMatchObject({ status: "revoked", revision: 2 });
     await fixture.repository.close();
   });
 

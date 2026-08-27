@@ -158,7 +158,16 @@ try {
   await page.getByRole("button", { name: "后台任务", exact: true }).click();
   await waitForText(page.getByRole("main"), "fixture-primary");
   await page.getByLabel(/机器秘密、App 私钥/).check();
-  await waitForText(page.getByRole("status"), "披露确认已记录");
+  await waitForText(page.getByRole("status"), "披露确认待随");
+  await page.getByLabel("所选记录引用").fill("job-repository-monitor");
+  await page.getByLabel("GitHub repository ref").selectOption("fixture-owner/fixture-repository");
+  await page.getByLabel("GitHub monitor revision").fill("1");
+  await page.getByRole("button", { name: "启用 GitHub 监控", exact: true }).click();
+  await waitForText(page.getByText("命令状态："), "已接纳");
+  await page.getByLabel("GitHub monitor revision").fill("2");
+  await page.getByLabel("撤销后的历史处理").selectOption("delete");
+  await page.getByRole("button", { name: "撤销 GitHub 监控", exact: true }).click();
+  await waitForText(page.getByText("命令状态："), "已接纳");
 
   await page.getByRole("button", { name: "审批", exact: true }).click();
   await page.getByLabel("所选记录引用").fill("approval-01");
@@ -240,6 +249,7 @@ try {
         "thread-chat",
         "approval",
         "task",
+        "github-monitor-lifecycle",
         "inbox",
         "memory",
         "trace",

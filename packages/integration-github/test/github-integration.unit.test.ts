@@ -6,13 +6,18 @@ import type {
   AttentionPort,
   AttentionPolicyState,
   AttentionStatePort,
+  GatewayAuthenticationContext,
   GitHubCoverageGapRecord,
   GitHubInstallationRecord,
   GitHubIntegrationStatePort,
+  GitHubMonitorHistoryPolicyPort,
   GitHubRepositoryMonitor,
   GitHubWebhookReceiptRecord,
+  ScheduledJob,
+  SchedulerPort,
 } from "@himawari-agent/application";
 import type { BackgroundOccurrence, OccurrenceId } from "@himawari-agent/domain";
+import type { GatewayV2Command } from "@himawari-agent/gateway-contracts";
 import {
   createAgentId,
   createJobId,
@@ -32,6 +37,8 @@ import {
   GitHubCoverageGapTracker,
   GitHubInstallationTokenAdapter,
   GitHubMirrorStore,
+  GitHubMonitorControlService,
+  GitHubMonitorGatewayV2ControlPlane,
   GitHubReadOnlyWorker,
   GitHubWebhookAdmissionService,
   GitHubWebhookRateLimiter,
@@ -41,6 +48,7 @@ import {
   type GitHubWebhookAdmissionInput,
   type ProtectedWebhookPayloadSink,
 } from "../src/index.ts";
+import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -57,6 +65,40 @@ const REPOSITORY_REF = "98765";
 const SECRET = "webhook-secret-fixture";
 const T0 = "2026-08-27T00:00:00.000Z";
 const T1 = "2026-08-27T00:00:01.000Z";
+const PRIMARY_MODEL_REF = "model:fixture-primary:v1";
+
+const authentication: GatewayAuthenticationContext = {
+  subjectId: OWNER_ID,
+  ownerId: OWNER_ID,
+  deviceId: "device-github",
+  authenticatedAt: T0,
+  authenticationRef: "authentication:github-owner",
+};
+
+const scheduledJob: ScheduledJob = {
+  id: MONITOR_ID,
+  revision: 1,
+  ownerId: OWNER_ID,
+  agentId: AGENT_ID,
+  threadId: null,
+  payloadRef: "payload:github-events",
+  sourceProofRef: "proof:github-monitor",
+  dataClassification: "private",
+  authorizationRef: "authorization:github-read",
+  taskScopeRef: "github:monitor",
+  capabilityRef: "github.read_only",
+  operation: "repository.monitor",
+  resourceRef: REPOSITORY_REF,
+  sideEffect: "none",
+  estimatedCostMicros: 100,
+  intervalMs: 60_000,
+  minimumIntervalMs: 60_000,
+  expiresAt: "2999-12-31T23:59:59.999Z",
+  revokedAt: null,
+  nextRunAt: T1,
+  occurrence: 0,
+  status: "active",
+};
 
 const installation: GitHubInstallationRecord = {
   id: INSTALLATION_REF,
@@ -225,6 +267,69 @@ function admission(
       }),
     ...options,
   });
+}
+
+function monitorCommand(
+  action: "enable" | "pause" | "revoke",
+  expectedRevision: number,
+  overrides: Record<string, unknown> = {},
+): Extract<GatewayV2Command, { readonly type: "github.monitor.set_state" }> {
+  return gatewayV2MessageSchema.parse({
+    schemaVersion: "gateway.v2",
+    kind: "command",
+    type: "github.monitor.set_state",
+    messageId: `message:github-monitor:${action}`,
+    correlationId: "correlation:github-monitor",
+    causationId: null,
+    dataClassification: "sensitive",
+    risk: "high",
+    authorizationRef: "authorization:github-monitor",
+    scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+    authority: { deploymentId: "deployment:github", authorityEpoch: 1, fencingToken: 1 },
+    actor: { actorType: "owner", actorId: OWNER_ID },
+    idempotencyKey: `idempotency:github-monitor:${action}`,
+    payload: {
+      monitorId: MONITOR_ID,
+      action,
+      expectedRevision,
+      historyPolicy: action === "revoke" ? "retain" : null,
+      disclosure:
+        action === "enable"
+          ? {
+              confirmationRef: "confirmation:github-monitor",
+              primaryModelRef: PRIMARY_MODEL_REF,
+              repositoryRef: REPOSITORY_REF,
+              disclosedDataClassifications: ["private"],
+              machineSecretsExcluded: true,
+            }
+          : null,
+      ...overrides,
+    },
+  }) as Extract<GatewayV2Command, { readonly type: "github.monitor.set_state" }>;
+}
+
+function schedulerFixture(initial: ScheduledJob): {
+  readonly scheduler: SchedulerPort;
+  readonly current: () => ScheduledJob;
+} {
+  let job = initial;
+  return {
+    scheduler: {
+      read: async (jobId) => (job.id === jobId ? job : undefined),
+      upsert: async (write, expectedRevision) => {
+        if (job.revision !== expectedRevision) throw new Error("SCHEDULER_REVISION_CONFLICT");
+        job = { ...write, revision: job.revision + 1 };
+        return job;
+      },
+      listDue: async () => [],
+      cancel: async (_jobId, expectedRevision) => {
+        if (job.revision !== expectedRevision) throw new Error("SCHEDULER_REVISION_CONFLICT");
+        job = { ...job, revision: job.revision + 1, status: "cancelled", revokedAt: T1 };
+        return job;
+      },
+    },
+    current: () => job,
+  };
 }
 
 describe("GitHub App credentials and webhook admission", () => {
@@ -488,5 +593,156 @@ describe("GitHub token, mirror, coverage and attention boundaries", () => {
     expect(preview.primary).toEqual({ provider: "fixture", model: "fixture-model", version: "1" });
     expect(preview.excluded).toEqual(["machine_secrets"]);
     expect(JSON.stringify(preview)).not.toContain("secret:provider");
+  });
+});
+
+describe("GitHub monitor lifecycle commands", () => {
+  it("requires server-validated disclosure and uses CAS for enable", async () => {
+    const state = new MemoryGitHubState();
+    await state.saveMonitor({ ...monitor, status: "paused" });
+    const history: GitHubMonitorHistoryPolicyPort = { apply: async () => undefined };
+    const scheduled = schedulerFixture({ ...scheduledJob, status: "paused" });
+    const service = new GitHubMonitorControlService({
+      state,
+      mirror: { revokeMonitor: async () => undefined },
+      history,
+      scheduler: scheduled.scheduler,
+      primaryModelRef: PRIMARY_MODEL_REF,
+      allowedRepositoryRefs: [REPOSITORY_REF],
+      allowedDataClassifications: ["private"],
+      now: () => T1,
+    });
+
+    await expect(
+      service.execute({
+        authentication,
+        command: monitorCommand("enable", 1, {
+          disclosure: {
+            confirmationRef: "confirmation:github-monitor",
+            primaryModelRef: "model:wrong:v1",
+            repositoryRef: REPOSITORY_REF,
+            disclosedDataClassifications: ["private"],
+            machineSecretsExcluded: true,
+          },
+        }),
+      }),
+    ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+
+    const outsideAllowlist = new GitHubMonitorControlService({
+      state,
+      mirror: { revokeMonitor: async () => undefined },
+      history,
+      scheduler: scheduled.scheduler,
+      primaryModelRef: PRIMARY_MODEL_REF,
+      allowedRepositoryRefs: [],
+      allowedDataClassifications: ["private"],
+      now: () => T1,
+    });
+    await expect(
+      outsideAllowlist.execute({ authentication, command: monitorCommand("enable", 1) }),
+    ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+    expect(await state.readMonitor(MONITOR_ID)).toMatchObject({ status: "paused", revision: 1 });
+
+    await expect(
+      service.execute({ authentication, command: monitorCommand("enable", 1) }),
+    ).resolves.toEqual({ resultRef: `github-monitor:${MONITOR_ID}:revision-2`, replayed: false });
+    expect(await state.readMonitor(MONITOR_ID)).toMatchObject({ status: "active", revision: 2 });
+    expect(scheduled.current()).toMatchObject({ status: "active", revision: 2 });
+
+    await expect(
+      service.execute({ authentication, command: monitorCommand("enable", 1) }),
+    ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+  });
+
+  it("revokes first, removes the bounded mirror and applies the Owner history choice", async () => {
+    const state = new MemoryGitHubState();
+    const root = await mkdtemp(path.join(tmpdir(), "himawari-github-revoke-"));
+    const historyCalls: Array<Parameters<GitHubMonitorHistoryPolicyPort["apply"]>[0]> = [];
+    try {
+      const mirror = new GitHubMirrorStore({ root });
+      const stored = await mirror.put({
+        monitorId: MONITOR_ID,
+        repositoryRef: REPOSITORY_REF,
+        ciphertext: new Uint8Array([4, 5, 6]),
+        contentType: "application/octet-stream",
+      });
+      const history: GitHubMonitorHistoryPolicyPort = {
+        apply: async (input) => {
+          historyCalls.push(input);
+        },
+      };
+      const scheduled = schedulerFixture(scheduledJob);
+      const service = new GitHubMonitorControlService({
+        state,
+        mirror,
+        history,
+        scheduler: scheduled.scheduler,
+        primaryModelRef: PRIMARY_MODEL_REF,
+        allowedRepositoryRefs: [REPOSITORY_REF],
+        allowedDataClassifications: ["private"],
+        now: () => T1,
+      });
+
+      await expect(
+        service.execute({
+          authentication,
+          command: monitorCommand("revoke", 1, { historyPolicy: "delete" }),
+        }),
+      ).resolves.toEqual({ resultRef: `github-monitor:${MONITOR_ID}:revision-2`, replayed: false });
+      expect(await state.readMonitor(MONITOR_ID)).toMatchObject({ status: "revoked", revision: 2 });
+      expect(scheduled.current()).toMatchObject({ status: "cancelled", revision: 2 });
+      expect(await mirror.get(stored.relativePath)).toBeUndefined();
+      expect(historyCalls).toHaveLength(1);
+      expect(historyCalls[0]).toMatchObject({
+        policy: "delete",
+        requestedBy: OWNER_ID,
+        monitor: { status: "revoked" },
+        occurredAt: T1,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps unrelated v2 commands on the existing control plane", async () => {
+    const state = new MemoryGitHubState();
+    const service = new GitHubMonitorControlService({
+      state,
+      mirror: { revokeMonitor: async () => undefined },
+      history: { apply: async () => undefined },
+      primaryModelRef: PRIMARY_MODEL_REF,
+      allowedRepositoryRefs: [REPOSITORY_REF],
+      allowedDataClassifications: ["private"],
+      now: () => T1,
+    });
+    const delegated: string[] = [];
+    const controlPlane = new GitHubMonitorGatewayV2ControlPlane({
+      monitor: service,
+      delegate: {
+        execute: async ({ command }) => {
+          delegated.push(command.type);
+          return { resultRef: "delegated:command", replayed: false };
+        },
+      },
+    });
+
+    await expect(
+      controlPlane.execute({ authentication, command: monitorCommand("revoke", 1) }),
+    ).resolves.toMatchObject({ resultRef: `github-monitor:${MONITOR_ID}:revision-2` });
+    const nonGitHub = gatewayV2MessageSchema.parse({
+      ...monitorCommand("revoke", 2),
+      type: "session.revoke",
+      payload: {
+        sessionId: "session-github",
+        deviceId: "device-github",
+        recentAuthenticationRef: "authentication:github-owner",
+        reasonCode: "fixture",
+      },
+    }) as Extract<GatewayV2Command, { readonly type: "session.revoke" }>;
+    await expect(controlPlane.execute({ authentication, command: nonGitHub })).resolves.toEqual({
+      resultRef: "delegated:command",
+      replayed: false,
+    });
+    expect(delegated).toEqual(["session.revoke"]);
   });
 });

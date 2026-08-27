@@ -63,6 +63,7 @@ export function commandMessage(
     | "thread.checkpoint.request"
     | "approval.respond"
     | "task.set_state"
+    | "github.monitor.set_state"
     | "memory.mutate"
     | "session.revoke",
   payload: unknown,

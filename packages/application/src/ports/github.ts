@@ -7,7 +7,7 @@ import type {
   OccurrenceId,
   OwnerId,
 } from "@himawari-agent/domain";
-import type { PayloadRef } from "./common.js";
+import type { DataClassification, PayloadRef } from "./common.js";
 
 export interface GitHubRepositoryMonitor {
   readonly id: JobId;
@@ -19,6 +19,30 @@ export interface GitHubRepositoryMonitor {
   readonly enabledEventRefs: readonly string[];
   readonly authorizationRef: string;
   readonly status: "active" | "paused" | "revoked";
+}
+
+export type GitHubMonitorHistoryPolicy = "retain" | "delete";
+
+export interface GitHubMonitorDisclosureConfirmation {
+  readonly confirmationRef: string;
+  readonly primaryModelRef: string;
+  readonly repositoryRef: string;
+  readonly disclosedDataClassifications: readonly DataClassification[];
+  readonly machineSecretsExcluded: true;
+}
+
+/** Applies the Owner's explicit history choice after a monitor is revoked. */
+export interface GitHubMonitorHistoryPolicyPort {
+  apply(input: {
+    readonly monitor: GitHubRepositoryMonitor;
+    readonly policy: GitHubMonitorHistoryPolicy;
+    readonly requestedBy: string;
+    readonly occurredAt: string;
+  }): Promise<void>;
+}
+
+export interface GitHubMonitorMirrorPort {
+  revokeMonitor(monitorId: JobId): Promise<void>;
 }
 
 /** GitHub App installation metadata. Secret material is never part of this record. */

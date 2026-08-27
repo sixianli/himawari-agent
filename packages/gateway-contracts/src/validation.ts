@@ -21,7 +21,9 @@ function fail(path: string, message: string): never {
   throw new ContractValidationError(path, message);
 }
 
-export function literal<const TValue extends string | null>(expected: TValue): Schema<TValue> {
+export function literal<const TValue extends string | number | boolean | null>(
+  expected: TValue,
+): Schema<TValue> {
   return {
     parse(input, path = "$") {
       if (input !== expected) fail(path, `expected ${JSON.stringify(expected)}`);
