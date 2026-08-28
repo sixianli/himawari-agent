@@ -96,6 +96,20 @@ async function performGovernanceAction(page, actionLabel) {
   return response;
 }
 
+async function performOperationAction(page, actionLabel) {
+  await page.getByRole("button", { name: actionLabel, exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: actionLabel, exact: true });
+  await dialog.getByLabel("我已核对目标、范围、副作用和当前修订。").check();
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" && response.url().endsWith("/api/gateway/v2/commands"),
+  );
+  await dialog.getByRole("button", { name: "确认", exact: true }).click();
+  const response = await responsePromise;
+  await waitForAccepted(page);
+  return response;
+}
+
 async function assertAxeClean(page, checkpoint) {
   const violations = (await new AxeBuilder({ page }).analyze()).violations;
   if (violations.length > 0) {
@@ -119,15 +133,15 @@ async function assertNoDocumentOverflow(page, checkpoint) {
 const surfaces = [
   { label: "对话", title: "对话", policy: "allowed" },
   { label: "审批", title: "审批", policy: "allowed" },
-  { label: "后台任务", title: "后台任务", policy: "baseline_only" },
-  { label: "收件箱与摘要", title: "收件箱与摘要", policy: "baseline_only" },
-  { label: "记忆", title: "记忆", policy: "baseline_only" },
+  { label: "后台任务", title: "后台任务", policy: "allowed" },
+  { label: "收件箱与摘要", title: "收件箱与摘要", policy: "allowed" },
+  { label: "记忆", title: "记忆", policy: "allowed" },
   { label: "能力与适配器", title: "能力与适配器", policy: "allowed" },
   { label: "授权与 Grant", title: "授权与 Grant", policy: "allowed" },
-  { label: "追踪", title: "追踪", policy: "baseline_only" },
-  { label: "设置", title: "设置", policy: "blocked" },
-  { label: "会话与设备", title: "会话与设备", policy: "baseline_only" },
-  { label: "健康与部署", title: "健康与部署", policy: "baseline_only" },
+  { label: "追踪", title: "追踪", policy: "allowed" },
+  { label: "设置", title: "设置", policy: "allowed" },
+  { label: "会话与设备", title: "会话与设备", policy: "allowed" },
+  { label: "健康与部署", title: "健康与部署", policy: "allowed" },
 ];
 const forbiddenBaselineActions = [
   "批准",
@@ -155,6 +169,12 @@ try {
     locale: "zh-CN",
     viewport: { width: 1280, height: 800 },
     ...profile.contextOptions,
+  });
+  await context.addInitScript(() => {
+    window.__himawariSafeLogs = [];
+    window.addEventListener("himawari:safe-log", (event) => {
+      window.__himawariSafeLogs.push(event.detail);
+    });
   });
   let page = await context.newPage();
   const browserErrors = [];
@@ -280,27 +300,45 @@ try {
     }
   }
 
-  await primaryNavigation.getByRole("link", { name: "后台任务", exact: true }).click();
-  await waitForText(page.getByRole("main"), "fixture-primary");
-  await waitForText(page.getByRole("main"), "fixture-owner/fixture-repository");
+  await page.goto("http://127.0.0.1:4173/tasks/job-repository-monitor?view=details");
+  await waitForConnected(page);
+  await waitForText(page.getByRole("main"), "BUDGET_EXHAUSTED");
+  await waitForText(page.getByRole("main"), "NOTIFY");
+  await performOperationAction(page, "暂停");
+  await page.getByText("paused", { exact: true }).waitFor();
+
+  await page.goto("http://127.0.0.1:4173/inbox/inbox-01?view=details");
+  await waitForConnected(page);
+  await waitForText(page.getByRole("main"), "digest-current");
+  await waitForText(page.getByRole("main"), "result-daily-review-01");
+
+  await page.goto("http://127.0.0.1:4173/memory/memory-01?view=details");
+  await waitForConnected(page);
+  await waitForText(page.getByRole("main"), "approval-memory-01");
+  await page.getByLabel("更正后的记忆内容").fill("修正后的敏感记忆正文");
+  await performOperationAction(page, "更正");
+
+  await page.goto("http://127.0.0.1:4173/trace/trace-01?view=details");
+  await waitForConnected(page);
+  await waitForText(page.getByRole("main"), "fixture-provider");
+  await waitForText(page.getByRole("main"), "model:fixture-primary:v1");
 
   await primaryNavigation.getByRole("link", { name: "设置", exact: true }).click();
-  const languageTab = page.getByRole("tab", { name: "界面语言", exact: true });
-  await languageTab.focus();
-  await languageTab.press("ArrowRight");
-  const modelsTab = page.getByRole("tab", { name: "模型与预算", exact: true });
-  if ((await modelsTab.getAttribute("aria-selected")) !== "true") {
-    throw new Error("CONTROL_CENTER_TAB_ROVING_FAILED");
-  }
+  await waitForText(page.getByRole("main"), "model:fixture-fallback:v1");
+  await waitForText(page.getByRole("main"), "github-app:blocked_credentials:secret-ref-github-app");
+
+  await page.goto("http://127.0.0.1:4173/sessions/session-01?view=details");
+  await waitForConnected(page);
+  await waitForText(page.getByRole("main"), "Owner MacBook");
 
   const localeSelect = page.locator(".locale-control select");
   await localeSelect.selectOption("en");
-  await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Sessions and devices", exact: true }).waitFor();
   if ((await page.locator("html").getAttribute("lang")) !== "en") {
     throw new Error("CONTROL_CENTER_EN_LOCALE_NOT_APPLIED");
   }
   await localeSelect.selectOption("ja");
-  await page.getByRole("heading", { name: "設定", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "セッションとデバイス", exact: true }).waitFor();
   if ((await page.locator("html").getAttribute("lang")) !== "ja") {
     throw new Error("CONTROL_CENTER_JA_LOCALE_NOT_APPLIED");
   }
@@ -589,6 +627,43 @@ try {
   if (unexpectedStorageKeys.length > 0) {
     throw new Error(`CONTROL_CENTER_STORAGE_BOUNDARY_FAILED:${unexpectedStorageKeys.join(",")}`);
   }
+  const browserPrivacy = await page.evaluate(async () => {
+    const databaseNames =
+      typeof indexedDB.databases === "function"
+        ? (await indexedDB.databases()).map(({ name }) => name ?? "<unnamed>")
+        : [];
+    const cacheNames = "caches" in window ? await caches.keys() : [];
+    const serviceWorkers =
+      "serviceWorker" in navigator
+        ? (await navigator.serviceWorker.getRegistrations()).map(({ scope }) => scope)
+        : [];
+    const sessionStorageKeys = Array.from({ length: sessionStorage.length }, (_, index) =>
+      sessionStorage.key(index),
+    ).filter((key) => key !== null);
+    return {
+      databaseNames,
+      cacheNames,
+      serviceWorkers,
+      sessionStorageKeys,
+      safeLogs: window.__himawariSafeLogs ?? [],
+    };
+  });
+  if (
+    browserPrivacy.databaseNames.length > 0 ||
+    browserPrivacy.cacheNames.length > 0 ||
+    browserPrivacy.serviceWorkers.length > 0 ||
+    browserPrivacy.sessionStorageKeys.length > 0
+  ) {
+    throw new Error(
+      `CONTROL_CENTER_BROWSER_PRIVATE_CACHE_FAILED:${JSON.stringify(browserPrivacy)}`,
+    );
+  }
+  const serializedSafeLogs = JSON.stringify(browserPrivacy.safeLogs);
+  for (const forbiddenLogValue of ["机器秘密", "semanticSnapshotHash", "authentication:owner"]) {
+    if (serializedSafeLogs.includes(forbiddenLogValue)) {
+      throw new Error(`CONTROL_CENTER_SAFE_LOG_LEAK:${forbiddenLogValue}`);
+    }
+  }
 
   await page.close();
   page = await context.newPage();
@@ -655,7 +730,13 @@ try {
         "grant-revision-conflict-revoke",
         "governance-offline-no-mutation",
         "unapproved-capability-hidden-route-absent",
-        "read-only-task-disclosure",
+        "task-budget-attention-pause",
+        "inbox-digest-result-sources",
+        "memory-sensitive-correction",
+        "trace-observable-causal-chain",
+        "settings-secret-reference-only",
+        "session-device-authoritative-detail",
+        "browser-private-storage-scan",
       ],
       routeStates: [
         "deep-link",
@@ -669,7 +750,22 @@ try {
       ],
       locales: ["zh-CN", "en", "ja"],
       keyboard: ["visible-focus", "settings-tabs-roving"],
-      sse: ["durable-thread-cursor", "offline-reconnect", "multi-tab", "close-reopen"],
+      sse: [
+        "durable-thread-cursor",
+        "event-id-deduplication",
+        "sequence-gap-snapshot-refresh",
+        "authority-scope-snapshot-refresh",
+        "offline-reconnect",
+        "multi-tab",
+        "close-reopen",
+      ],
+      privacy: {
+        indexedDbDatabases: browserPrivacy.databaseNames.length,
+        cacheEntries: browserPrivacy.cacheNames.length,
+        serviceWorkers: browserPrivacy.serviceWorkers.length,
+        sessionStorageKeys: browserPrivacy.sessionStorageKeys.length,
+        safeLogEntries: browserPrivacy.safeLogs.length,
+      },
       responsive: ["desktop-three-pane", "mobile-single-pane", "320px-reflow"],
       minimumTargetHeight,
       axeViolations: 0,

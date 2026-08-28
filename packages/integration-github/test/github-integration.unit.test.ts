@@ -735,6 +735,7 @@ describe("GitHub monitor lifecycle commands", () => {
       payload: {
         sessionId: "session-github",
         deviceId: "device-github",
+        expectedRevision: 1,
         recentAuthenticationRef: "authentication:github-owner",
         reasonCode: "fixture",
       },

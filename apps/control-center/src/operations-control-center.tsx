@@ -1,0 +1,778 @@
+import type { GatewayV2Command, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import type { ControlCenterRouteState } from "./app/router.js";
+import type { ControlCenterBrowserStorage } from "./browser-storage.js";
+import {
+  ActionButton,
+  AppLink,
+  Banner,
+  GovernedActionDialog,
+  SemanticList,
+  StatusRegion,
+} from "./components/index.js";
+import type {
+  ControlCenterRuntimeConfiguration,
+  GatewayClient,
+  MutationStatus,
+} from "./gateway-client.js";
+import type { MessageId } from "./i18n/message-ids.js";
+import { commandMessage, queryMessage } from "./messages.js";
+
+export type OperationsSurfaceId =
+  | "tasks"
+  | "inbox-digest"
+  | "memory"
+  | "trace"
+  | "settings"
+  | "sessions-devices"
+  | "health-deployment";
+
+type DetailSnapshot = Extract<
+  GatewayV2Snapshot,
+  {
+    readonly type:
+      | "task.snapshot"
+      | "inbox.snapshot"
+      | "memory.snapshot"
+      | "trace.snapshot"
+      | "session.snapshot";
+  }
+>;
+type DirectSnapshot = Extract<
+  GatewayV2Snapshot,
+  { readonly type: "digest.snapshot" | "settings.snapshot" | "health.snapshot" }
+>;
+
+type OperationAction =
+  | {
+      readonly kind: "task.pause" | "task.resume" | "task.revoke";
+      readonly snapshot: Extract<DetailSnapshot, { readonly type: "task.snapshot" }>;
+    }
+  | {
+      readonly kind: "memory.correct" | "memory.archive" | "memory.delete";
+      readonly snapshot: Extract<DetailSnapshot, { readonly type: "memory.snapshot" }>;
+    }
+  | {
+      readonly kind: "session.revoke";
+      readonly snapshot: Extract<DetailSnapshot, { readonly type: "session.snapshot" }>;
+    };
+
+interface UseOperationsControlCenterInput {
+  readonly active: boolean;
+  readonly client: GatewayClient | undefined;
+  readonly configuration: ControlCenterRuntimeConfiguration | undefined;
+  readonly connection: "connecting" | "connected" | "offline";
+  readonly message: (
+    id: MessageId,
+    values?: Record<string, string | number | boolean | Date>,
+  ) => string;
+  readonly navigate: (route: ControlCenterRouteState, replace?: boolean) => void;
+  readonly onUnauthorized: () => void;
+  readonly refreshSignal: number;
+  readonly route: ControlCenterRouteState;
+  readonly storage: ControlCenterBrowserStorage;
+}
+
+function errorStatus(error: unknown): number | null {
+  return error && typeof error === "object" && "status" in error
+    ? Number((error as { readonly status?: unknown }).status)
+    : null;
+}
+
+function listQuery(
+  configuration: ControlCenterRuntimeConfiguration,
+  route: ControlCenterRouteState,
+) {
+  switch (route.surfaceId) {
+    case "tasks":
+      return queryMessage(configuration, "task.list", {
+        status: ["active", "paused", "revoked"].includes(route.status ?? "") ? route.status : null,
+        afterCursor: route.afterCursor,
+        limit: 100,
+      });
+    case "inbox-digest":
+      return queryMessage(configuration, "inbox.list", {
+        unreadOnly: route.status === "unread",
+        afterCursor: route.afterCursor,
+        limit: 100,
+      });
+    case "memory":
+      return queryMessage(configuration, "memory.search", {
+        queryRef: "query:recent",
+        status: ["active", "archived", "trashed"].includes(route.status ?? "")
+          ? route.status
+          : null,
+        limit: 100,
+      });
+    case "trace":
+      return queryMessage(configuration, "trace.timeline", {
+        threadId: null,
+        runId: null,
+        afterSequence: 0,
+        limit: 200,
+      });
+    case "sessions-devices":
+      return queryMessage(configuration, "identity.sessions", {
+        includeRevoked: true,
+        afterCursor: route.afterCursor,
+        limit: 100,
+      });
+    default:
+      return null;
+  }
+}
+
+function detailQuery(
+  configuration: ControlCenterRuntimeConfiguration,
+  surfaceId: OperationsSurfaceId,
+  objectId: string,
+) {
+  switch (surfaceId) {
+    case "tasks":
+      return queryMessage(configuration, "task.detail", { jobId: objectId });
+    case "inbox-digest":
+      return queryMessage(configuration, "inbox.detail", { inboxItemId: objectId });
+    case "memory":
+      return queryMessage(configuration, "memory.detail", { memoryId: objectId });
+    case "trace":
+      return queryMessage(configuration, "trace.detail", { traceEventId: objectId });
+    case "sessions-devices":
+      return queryMessage(configuration, "identity.session_detail", { sessionId: objectId });
+    default:
+      return null;
+  }
+}
+
+function directQuery(
+  configuration: ControlCenterRuntimeConfiguration,
+  surfaceId: OperationsSurfaceId,
+) {
+  switch (surfaceId) {
+    case "inbox-digest":
+      return queryMessage(configuration, "inbox.digest", { digestId: null });
+    case "settings":
+      return queryMessage(configuration, "settings.read", { includeIntegrations: true });
+    case "health-deployment":
+      return queryMessage(configuration, "health.status", { includeDependencies: true });
+    default:
+      return null;
+  }
+}
+
+function listCategory(surfaceId: OperationsSurfaceId): string {
+  return surfaceId === "inbox-digest"
+    ? "inbox"
+    : surfaceId === "sessions-devices"
+      ? "sessions"
+      : surfaceId === "memory"
+        ? "memories"
+        : surfaceId;
+}
+
+function Row({ label, value }: { readonly label: ReactNode; readonly value: ReactNode }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function Refs({ values }: { readonly values: readonly string[] }) {
+  return <code>{values.length > 0 ? values.join(", ") : "—"}</code>;
+}
+
+function DetailRows({
+  message,
+  snapshot,
+}: {
+  readonly message: UseOperationsControlCenterInput["message"];
+  readonly snapshot: DetailSnapshot;
+}) {
+  switch (snapshot.type) {
+    case "task.snapshot": {
+      const p = snapshot.payload;
+      return (
+        <dl className="health-grid">
+          <Row label={message("common.selectedRecord")} value={<code>{p.jobId}</code>} />
+          <Row label={message("governance.revision")} value={p.revision} />
+          <Row label={message("common.status")} value={p.status} />
+          <Row label={message("operations.trigger")} value={p.triggerType} />
+          <Row label={message("operations.timezone")} value={<code>{p.timezone}</code>} />
+          <Row label={message("operations.nextRun")} value={p.nextRunAt ?? "—"} />
+          <Row
+            label={message("operations.occurrence")}
+            value={`${p.occurrenceRef ?? "—"} / ${p.occurrenceStatus ?? "—"}`}
+          />
+          <Row label={message("operations.run")} value={<code>{p.runRef ?? "—"}</code>} />
+          <Row label={message("operations.result")} value={<code>{p.resultRef ?? "—"}</code>} />
+          <Row
+            label={message("operations.blockedReason")}
+            value={<code>{p.blockedReasonCode ?? "—"}</code>}
+          />
+          <Row
+            label={message("operations.budget")}
+            value={`${p.spentCostMicros} / ${p.maxCostMicros}`}
+          />
+          <Row
+            label={message("operations.attention")}
+            value={`${p.requestedAttention} → ${p.effectiveAttention}`}
+          />
+          <Row label={message("operations.safetyFloor")} value={p.safetyFloor} />
+          <Row label={message("operations.delivery")} value={<Refs values={p.deliveryRefs} />} />
+        </dl>
+      );
+    }
+    case "inbox.snapshot": {
+      const p = snapshot.payload;
+      return (
+        <dl className="health-grid">
+          <Row label={message("common.selectedRecord")} value={<code>{p.inboxItemId}</code>} />
+          <Row label={message("operations.unread")} value={String(p.unread)} />
+          <Row label={message("operations.priority")} value={p.priority} />
+          <Row label={message("operations.attention")} value={p.attentionLevel} />
+          <Row label={message("operations.result")} value={<code>{p.resultRef}</code>} />
+          <Row label={message("operations.sources")} value={<Refs values={p.sourceRefs} />} />
+        </dl>
+      );
+    }
+    case "memory.snapshot": {
+      const p = snapshot.payload;
+      return (
+        <dl className="health-grid">
+          <Row label={message("common.selectedRecord")} value={<code>{p.memoryId}</code>} />
+          <Row label={message("governance.revision")} value={p.revision} />
+          <Row label={message("common.status")} value={p.status} />
+          <Row label={message("operations.classification")} value={p.dataClassification} />
+          <Row label={message("operations.sources")} value={<Refs values={p.sourceRefs} />} />
+          <Row label={message("operations.confidence")} value={`${p.confidencePermille}‰`} />
+          <Row label={message("operations.policy")} value={<code>{p.policyVersion}</code>} />
+          <Row label={message("operations.projection")} value={p.providerProjectionStatus} />
+          <Row
+            label={message("operations.sensitiveApproval")}
+            value={<code>{p.sensitiveApprovalRef ?? "—"}</code>}
+          />
+          <Row label={message("common.time")} value={p.updatedAt} />
+        </dl>
+      );
+    }
+    case "trace.snapshot": {
+      const p = snapshot.payload;
+      return (
+        <dl className="health-grid">
+          <Row label={message("common.selectedRecord")} value={<code>{p.traceEventId}</code>} />
+          <Row label={message("operations.event")} value={`${p.sequence}: ${p.eventType}`} />
+          <Row label={message("operations.actor")} value={<code>{p.actorRef}</code>} />
+          <Row
+            label={message("operations.causation")}
+            value={<code>{`${p.parentEventRef ?? "—"} / ${p.causationRef ?? "—"}`}</code>}
+          />
+          <Row label={message("operations.run")} value={<code>{p.runRef}</code>} />
+          <Row
+            label={message("operations.modelProvider")}
+            value={<code>{`${p.modelRef ?? "—"} / ${p.providerRef ?? "—"}`}</code>}
+          />
+          <Row
+            label={message("operations.authorization")}
+            value={<code>{p.authorizationRef ?? "—"}</code>}
+          />
+          <Row
+            label={message("operations.capability")}
+            value={<code>{p.capabilityRef ?? "—"}</code>}
+          />
+          <Row label={message("operations.retry")} value={p.retryAttempt} />
+          <Row label={message("operations.result")} value={<code>{p.resultRef ?? "—"}</code>} />
+        </dl>
+      );
+    }
+    case "session.snapshot": {
+      const p = snapshot.payload;
+      return (
+        <dl className="health-grid">
+          <Row label={message("common.selectedRecord")} value={<code>{p.sessionId}</code>} />
+          <Row label={message("governance.revision")} value={p.sessionRevision} />
+          <Row label={message("common.status")} value={p.status} />
+          <Row
+            label={message("operations.device")}
+            value={`${p.deviceLabel} / ${p.deviceId} / ${p.deviceStatus}`}
+          />
+          <Row
+            label={message("operations.authentication")}
+            value={<code>{p.authenticationRef}</code>}
+          />
+          <Row label={message("operations.lastActivity")} value={p.lastActiveAt} />
+        </dl>
+      );
+    }
+  }
+}
+
+function DirectRows({
+  message,
+  snapshot,
+}: {
+  readonly message: UseOperationsControlCenterInput["message"];
+  readonly snapshot: DirectSnapshot;
+}) {
+  if (snapshot.type === "digest.snapshot") {
+    return (
+      <dl className="health-grid">
+        <Row
+          label={message("common.selectedRecord")}
+          value={<code>{snapshot.payload.digestId}</code>}
+        />
+        <Row
+          label={message("operations.digestWindow")}
+          value={`${snapshot.payload.windowStart} — ${snapshot.payload.windowEnd}`}
+        />
+        <Row
+          label={message("operations.sources")}
+          value={<Refs values={snapshot.payload.sourceResultRefs} />}
+        />
+        <Row
+          label={message("common.currentRecords")}
+          value={<Refs values={snapshot.payload.itemRefs} />}
+        />
+      </dl>
+    );
+  }
+  if (snapshot.type === "settings.snapshot") {
+    return (
+      <dl className="health-grid">
+        <Row label={message("governance.revision")} value={snapshot.payload.revision} />
+        <Row
+          label={message("settings.modelsBudgets")}
+          value={
+            <code>{`${snapshot.payload.primaryModelRef ?? "—"} / ${snapshot.payload.fallbackModelRef ?? "—"}`}</code>
+          }
+        />
+        <Row
+          label={message("operations.budget")}
+          value={`${snapshot.payload.spentBudgetMicros} / ${snapshot.payload.globalBudgetMicros}`}
+        />
+        <Row
+          label={message("settings.attentionDigest")}
+          value={`${snapshot.payload.defaultAttention} / ${snapshot.payload.digestTimezone} / ${snapshot.payload.digestScheduleRef ?? "—"}`}
+        />
+        <Row
+          label={message("settings.integrations")}
+          value={
+            <Refs
+              values={snapshot.payload.integrations.map(
+                ({ integrationRef, status, secretRefs }) =>
+                  `${integrationRef}:${status}:${secretRefs.join("+")}`,
+              )}
+            />
+          }
+        />
+      </dl>
+    );
+  }
+  return (
+    <>
+      <dl className="health-grid">
+        <Row label={message("health.service")} value={String(snapshot.payload.live)} />
+        <Row label={message("health.admission")} value={String(snapshot.payload.ready)} />
+        <Row label={message("health.state")} value={snapshot.payload.status} />
+        <Row label={message("health.host")} value={snapshot.payload.activeHost} />
+      </dl>
+      <h3>{message("operations.components")}</h3>
+      <SemanticList
+        empty={message("common.noRecords")}
+        getId={(component) => component.componentRef}
+        items={snapshot.payload.components}
+        label={message("operations.components")}
+        renderItem={(component) => (
+          <code>{`${component.componentRef}: ${component.status}${component.reasonCode ? ` / ${component.reasonCode}` : ""}`}</code>
+        )}
+      />
+      <h3>{message("operations.checkpoints")}</h3>
+      <SemanticList
+        empty={message("common.noRecords")}
+        getId={(checkpoint) => checkpoint.operationRef}
+        items={snapshot.payload.operationCheckpoints}
+        label={message("operations.checkpoints")}
+        renderItem={(checkpoint) => (
+          <code>{`${checkpoint.operationRef}: ${checkpoint.kind} / ${checkpoint.phase} / ${checkpoint.status} / ${message("operations.readback")}: ${checkpoint.readbackRef ?? "—"}`}</code>
+        )}
+      />
+    </>
+  );
+}
+
+function actionIdentity(action: OperationAction) {
+  const snapshot = action.snapshot;
+  const objectRef =
+    snapshot.type === "task.snapshot"
+      ? snapshot.payload.jobId
+      : snapshot.type === "memory.snapshot"
+        ? snapshot.payload.memoryId
+        : snapshot.payload.sessionId;
+  const revision =
+    snapshot.type === "session.snapshot"
+      ? snapshot.payload.sessionRevision
+      : snapshot.payload.revision;
+  return {
+    objectRef,
+    revision,
+    operationKey: `operation:${action.kind}:${objectRef}:${revision}`.slice(0, 128),
+    commandType:
+      snapshot.type === "task.snapshot"
+        ? "task.set_state"
+        : snapshot.type === "memory.snapshot"
+          ? "memory.mutate"
+          : "session.revoke",
+  };
+}
+
+function actionLabel(action: OperationAction): MessageId {
+  switch (action.kind) {
+    case "task.pause":
+      return "tasks.pause";
+    case "task.resume":
+      return "tasks.resume";
+    case "task.revoke":
+      return "tasks.cancel";
+    case "memory.correct":
+      return "memory.correct";
+    case "memory.archive":
+      return "memory.archive";
+    case "memory.delete":
+      return "memory.delete";
+    case "session.revoke":
+      return "sessions.revoke";
+  }
+}
+
+export function useOperationsControlCenter(input: UseOperationsControlCenterInput) {
+  const {
+    active,
+    client,
+    configuration,
+    connection,
+    message,
+    navigate,
+    onUnauthorized,
+    refreshSignal,
+    route,
+    storage,
+  } = input;
+  const surfaceId = route.surfaceId as OperationsSurfaceId;
+  const [listSnapshot, setListSnapshot] =
+    useState<Extract<GatewayV2Snapshot, { readonly type: "collection.snapshot" }>>();
+  const [detail, setDetail] = useState<DetailSnapshot>();
+  const [direct, setDirect] = useState<DirectSnapshot>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [mutationStatus, setMutationStatus] = useState<MutationStatus | null>(null);
+  const [conflict, setConflict] = useState(false);
+  const [action, setAction] = useState<OperationAction | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [correction, setCorrection] = useState("");
+
+  const selectedId = route.objectId ?? "";
+  const refresh = useCallback(async () => {
+    if (!active || !client || !configuration) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const lq = listQuery(configuration, route);
+      const dq = selectedId ? detailQuery(configuration, surfaceId, selectedId) : null;
+      const directQ = directQuery(configuration, surfaceId);
+      const [list, currentDetail, currentDirect] = await Promise.all([
+        lq ? client.query(lq) : Promise.resolve(null),
+        dq ? client.query(dq) : Promise.resolve(null),
+        directQ ? client.query(directQ) : Promise.resolve(null),
+      ]);
+      setListSnapshot(list?.type === "collection.snapshot" ? list : undefined);
+      setDetail(
+        currentDetail &&
+          [
+            "task.snapshot",
+            "inbox.snapshot",
+            "memory.snapshot",
+            "trace.snapshot",
+            "session.snapshot",
+          ].includes(currentDetail.type)
+          ? (currentDetail as DetailSnapshot)
+          : undefined,
+      );
+      setDirect(
+        currentDirect &&
+          ["digest.snapshot", "settings.snapshot", "health.snapshot"].includes(currentDirect.type)
+          ? (currentDirect as DirectSnapshot)
+          : undefined,
+      );
+      setConflict(false);
+    } catch (caught) {
+      if (errorStatus(caught) === 401) {
+        setListSnapshot(undefined);
+        setDetail(undefined);
+        setDirect(undefined);
+        setError("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
+        onUnauthorized();
+      } else setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
+    } finally {
+      setLoading(false);
+    }
+  }, [active, client, configuration, onUnauthorized, route, selectedId, surfaceId]);
+
+  useEffect(() => {
+    void refreshSignal;
+    void refresh();
+  }, [refresh, refreshSignal]);
+
+  useEffect(() => {
+    if (!active) return;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key?.includes("Mutation.")) void refresh();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [active, refresh]);
+
+  const actions = useMemo<readonly OperationAction[]>(() => {
+    if (!detail) return [];
+    if (detail.type === "task.snapshot") {
+      if (detail.payload.status === "revoked") return [];
+      return [
+        {
+          kind: detail.payload.status === "paused" ? "task.resume" : "task.pause",
+          snapshot: detail,
+        },
+        { kind: "task.revoke", snapshot: detail },
+      ];
+    }
+    if (detail.type === "memory.snapshot") {
+      if (detail.payload.status === "deleted_verified") return [];
+      return [
+        { kind: "memory.correct", snapshot: detail },
+        { kind: "memory.archive", snapshot: detail },
+        { kind: "memory.delete", snapshot: detail },
+      ];
+    }
+    if (detail.type === "session.snapshot" && detail.payload.status === "active") {
+      return [{ kind: "session.revoke", snapshot: detail }];
+    }
+    return [];
+  }, [detail]);
+
+  const executeAction = useCallback(async () => {
+    if (!action || !client || !configuration) return;
+    const identity = actionIdentity(action);
+    const existing = storage.readPendingGovernanceMutation(identity.operationKey);
+    const idempotencyKey = existing?.idempotencyKey ?? `operation:${crypto.randomUUID()}`;
+    storage.savePendingGovernanceMutation({
+      ...identity,
+      idempotencyKey,
+      expectedRevision: identity.revision,
+    });
+    setMutationStatus("pending");
+    try {
+      let payload: unknown;
+      let risk: "high" | "critical" = "high";
+      if (action.snapshot.type === "task.snapshot") {
+        payload = {
+          jobId: action.snapshot.payload.jobId,
+          expectedRevision: action.snapshot.payload.revision,
+          action: action.kind.replace("task.", ""),
+          reasonCode: "owner-requested",
+        };
+        if (action.kind === "task.revoke") risk = "critical";
+      } else if (action.snapshot.type === "memory.snapshot") {
+        const memoryAction = action.kind.replace("memory.", "");
+        const contentRef =
+          action.kind === "memory.correct"
+            ? await client.protectText(
+                correction,
+                action.snapshot.payload.dataClassification,
+                `payload:${idempotencyKey}`,
+              )
+            : null;
+        payload = {
+          memoryId: action.snapshot.payload.memoryId,
+          expectedRevision: action.snapshot.payload.revision,
+          action: memoryAction,
+          contentRef,
+        };
+        if (action.kind === "memory.delete") risk = "critical";
+      } else {
+        payload = {
+          sessionId: action.snapshot.payload.sessionId,
+          deviceId: action.snapshot.payload.deviceId,
+          expectedRevision: action.snapshot.payload.sessionRevision,
+          recentAuthenticationRef: configuration.recentAuthenticationRef,
+          reasonCode: "owner-requested",
+        };
+        risk = "critical";
+      }
+      const result = await client.mutate(
+        commandMessage(configuration, identity.commandType as GatewayV2Command["type"], payload, {
+          risk,
+          ...(configuration.authorizationRef
+            ? { authorizationRef: configuration.authorizationRef }
+            : {}),
+          idempotencyKey,
+        }),
+      );
+      setMutationStatus(result.status);
+      storage.clearPendingGovernanceMutation(identity.operationKey);
+      setAction(null);
+      setAcknowledged(false);
+      setCorrection("");
+      await refresh();
+    } catch (caught) {
+      if (errorStatus(caught) === 409) {
+        storage.clearPendingGovernanceMutation(identity.operationKey);
+        setConflict(true);
+        setAction(null);
+        await refresh();
+      } else if (errorStatus(caught) === 401) {
+        setListSnapshot(undefined);
+        setDetail(undefined);
+        setDirect(undefined);
+        setError("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
+        onUnauthorized();
+      } else setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
+    }
+  }, [action, client, configuration, correction, onUnauthorized, refresh, storage]);
+
+  const itemRefs =
+    listSnapshot?.payload.category === listCategory(surfaceId) ? listSnapshot.payload.itemRefs : [];
+  const list = (
+    <>
+      <p>{message("objects.count", { count: itemRefs.length })}</p>
+      <SemanticList
+        empty={loading ? message("state.loading") : message("common.noRecords")}
+        getId={(reference) => reference}
+        items={itemRefs}
+        label={message("common.currentRecords")}
+        renderItem={(reference) => (
+          <AppLink
+            current={reference === selectedId}
+            href={`#${encodeURIComponent(reference)}`}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate({ ...route, objectId: reference, view: "details" });
+            }}
+          >
+            <code>{reference}</code>
+          </AppLink>
+        )}
+      />
+    </>
+  );
+
+  const content = (
+    <>
+      <div className="panel-heading">
+        <p className="eyebrow">{message("operations.authoritativeState")}</p>
+        <ActionButton onClick={() => void refresh()} variant="secondary">
+          {message("common.refresh")}
+        </ActionButton>
+      </div>
+      {connection === "offline" ? (
+        <Banner title={message("state.offline")} tone="warning">
+          {message("operations.offlineNoMutation")}
+        </Banner>
+      ) : null}
+      {error ? (
+        <Banner title={message("error.currentUnavailable")} tone="danger">
+          <code>{error}</code>
+        </Banner>
+      ) : null}
+      {conflict ? (
+        <Banner title={message("operations.conflictTitle")} tone="warning">
+          {message("operations.conflictDescription")}
+        </Banner>
+      ) : null}
+      <StatusRegion>
+        {message("mutation.label")}:{" "}
+        {message(mutationStatus ? (`mutation.${mutationStatus}` as MessageId) : "mutation.none")}
+      </StatusRegion>
+      {direct ? <DirectRows message={message} snapshot={direct} /> : null}
+    </>
+  );
+
+  const details = detail ? (
+    <>
+      <DetailRows message={message} snapshot={detail} />
+      {detail.type === "memory.snapshot" ? (
+        <label>
+          <span>{message("memory.correction")}</span>
+          <textarea onChange={(event) => setCorrection(event.target.value)} value={correction} />
+        </label>
+      ) : null}
+      <fieldset className="actions">
+        <legend className="visually-hidden">{message("actions.label")}</legend>
+        {actions.map((candidate) => (
+          <ActionButton
+            key={candidate.kind}
+            disabled={
+              connection === "offline" ||
+              (candidate.kind === "memory.correct" && correction.length === 0)
+            }
+            onClick={() => {
+              setAcknowledged(false);
+              setAction(candidate);
+            }}
+            variant={
+              candidate.kind.endsWith("delete") || candidate.kind.endsWith("revoke")
+                ? "danger"
+                : "secondary"
+            }
+          >
+            {message(actionLabel(candidate))}
+          </ActionButton>
+        ))}
+      </fieldset>
+    </>
+  ) : (
+    <p>{message("operations.selectRecord")}</p>
+  );
+
+  const currentIdentity = action ? actionIdentity(action) : null;
+  const destructive = action?.kind.endsWith("delete") || action?.kind.endsWith("revoke") || false;
+  const needsRecentAuthentication = action?.kind === "session.revoke" || destructive;
+  return {
+    content: (
+      <>
+        {content}
+        <GovernedActionDialog
+          acknowledged={acknowledged}
+          acknowledgementLabel={message("governed.acknowledgement")}
+          blockerLabels={{
+            authorization_required: message("governed.authorizationRequired"),
+            recent_authentication_required: message("governed.recentAuthenticationRequired"),
+            revision_conflict: message("governed.revisionConflict"),
+            explicit_acknowledgement_required: message("governed.acknowledgementRequired"),
+          }}
+          cancelLabel={message("governed.cancel")}
+          closeLabel={message("common.close")}
+          currentRevision={currentIdentity?.revision ?? 1}
+          destructive={destructive}
+          expectedRevision={currentIdentity?.revision ?? 1}
+          authorizationRef={configuration?.authorizationRef ?? null}
+          recentAuthenticationRef={
+            !needsRecentAuthentication
+              ? "not-required"
+              : (configuration?.recentAuthenticationRef ?? null)
+          }
+          onAcknowledgementChange={setAcknowledged}
+          onCancel={() => setAction(null)}
+          onConfirm={() => void executeAction()}
+          open={action !== null}
+          risk={destructive ? "critical" : "high"}
+          riskLabel={message(destructive ? "risk.critical" : "risk.high")}
+          title={action ? message(actionLabel(action)) : message("actions.label")}
+          unavailableTitle={message("governed.unavailable")}
+          confirmLabel={message("governed.confirm")}
+        >
+          <code>{currentIdentity?.objectRef ?? "—"}</code>
+        </GovernedActionDialog>
+      </>
+    ),
+    details,
+    list,
+  };
+}

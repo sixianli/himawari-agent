@@ -21,6 +21,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "thread.checkpoint.request",
   "approval.respond",
   "task.set_state",
+  "settings.update",
   "github.monitor.set_state",
   "memory.mutate",
   "session.revoke",
@@ -34,10 +35,17 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "thread.timeline",
   "approval.list",
   "task.list",
+  "task.detail",
   "inbox.list",
+  "inbox.detail",
+  "inbox.digest",
   "memory.search",
+  "memory.detail",
   "trace.timeline",
+  "trace.detail",
+  "settings.read",
   "identity.sessions",
+  "identity.session_detail",
   "health.status",
   "approval.detail",
   "capability.list",
@@ -49,6 +57,13 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "approval.snapshot",
   "capability.snapshot",
   "grant.snapshot",
+  "task.snapshot",
+  "inbox.snapshot",
+  "digest.snapshot",
+  "memory.snapshot",
+  "trace.snapshot",
+  "settings.snapshot",
+  "session.snapshot",
   "stream.event",
 ] as const;
 
@@ -126,8 +141,19 @@ export const setTaskStateCommandSchema = object({
   ...commandEnvelope("task.set_state"),
   payload: object({
     jobId: machineString,
+    expectedRevision: integer(1),
     action: enumeration(["pause", "resume", "revoke"]),
     reasonCode: machineString,
+  }),
+});
+
+export const updateSettingsCommandSchema = object({
+  ...commandEnvelope("settings.update"),
+  payload: object({
+    expectedRevision: integer(1),
+    section: enumeration(["models", "budgets", "attention", "digest", "integration"]),
+    settingRef: machineString,
+    valueRef: machineString,
   }),
 });
 
@@ -230,6 +256,7 @@ export const revokeSessionCommandSchema = object({
   payload: object({
     sessionId: machineString,
     deviceId: machineString,
+    expectedRevision: integer(1),
     recentAuthenticationRef: machineString,
     reasonCode: machineString,
   }),
@@ -330,9 +357,24 @@ export const listTasksQuerySchema = object({
   }),
 });
 
+export const taskDetailQuerySchema = object({
+  ...envelope("query", "task.detail"),
+  payload: object({ jobId: machineString }),
+});
+
 export const listInboxQuerySchema = object({
   ...envelope("query", "inbox.list"),
   payload: object({ unreadOnly: booleanValue, ...pagePayload }),
+});
+
+export const inboxDetailQuerySchema = object({
+  ...envelope("query", "inbox.detail"),
+  payload: object({ inboxItemId: machineString }),
+});
+
+export const inboxDigestQuerySchema = object({
+  ...envelope("query", "inbox.digest"),
+  payload: object({ digestId: nullable(machineString) }),
 });
 
 export const searchMemoryQuerySchema = object({
@@ -342,6 +384,11 @@ export const searchMemoryQuerySchema = object({
     status: nullable(enumeration(["active", "archived", "trashed"])),
     limit: integer(1, 100),
   }),
+});
+
+export const memoryDetailQuerySchema = object({
+  ...envelope("query", "memory.detail"),
+  payload: object({ memoryId: machineString }),
 });
 
 export const traceTimelineV2QuerySchema = object({
@@ -354,9 +401,24 @@ export const traceTimelineV2QuerySchema = object({
   }),
 });
 
+export const traceDetailQuerySchema = object({
+  ...envelope("query", "trace.detail"),
+  payload: object({ traceEventId: machineString }),
+});
+
+export const settingsReadQuerySchema = object({
+  ...envelope("query", "settings.read"),
+  payload: object({ includeIntegrations: booleanValue }),
+});
+
 export const identitySessionsQuerySchema = object({
   ...envelope("query", "identity.sessions"),
   payload: object({ includeRevoked: booleanValue, ...pagePayload }),
+});
+
+export const identitySessionDetailQuerySchema = object({
+  ...envelope("query", "identity.session_detail"),
+  payload: object({ sessionId: machineString }),
 });
 
 export const healthStatusQuerySchema = object({
@@ -615,6 +677,165 @@ export const grantSnapshotSchema = object({
   }),
 });
 
+const attentionLevelSchema = enumeration(["SILENT", "INBOX", "DIGEST", "NOTIFY", "INTERRUPT"]);
+
+export const taskSnapshotSchema = object({
+  ...envelope("snapshot", "task.snapshot"),
+  payload: object({
+    jobId: machineString,
+    revision: integer(1),
+    status: enumeration(["active", "paused", "revoked"]),
+    triggerType: machineString,
+    timezone: boundedString(128),
+    nextRunAt: nullable(timestamp),
+    occurrenceRef: nullable(machineString),
+    occurrenceStatus: nullable(
+      enumeration([
+        "queued",
+        "running",
+        "budget_blocked",
+        "capacity_blocked",
+        "retry_wait",
+        "completed",
+        "failed",
+        "cancelled",
+        "missed",
+      ]),
+    ),
+    runRef: nullable(machineString),
+    resultRef: nullable(machineString),
+    blockedReasonCode: nullable(machineString),
+    maxCostMicros: integer(0),
+    spentCostMicros: integer(0),
+    requestedAttention: attentionLevelSchema,
+    safetyFloor: attentionLevelSchema,
+    effectiveAttention: attentionLevelSchema,
+    deliveryRefs: array(machineString),
+    generatedAt: timestamp,
+  }),
+});
+
+export const inboxSnapshotSchema = object({
+  ...envelope("snapshot", "inbox.snapshot"),
+  payload: object({
+    inboxItemId: machineString,
+    revision: integer(1),
+    unread: booleanValue,
+    priority: integer(0, 100),
+    attentionLevel: attentionLevelSchema,
+    resultRef: machineString,
+    sourceRefs: array(machineString),
+    duplicateKey: machineString,
+    createdAt: timestamp,
+    generatedAt: timestamp,
+  }),
+});
+
+export const digestSnapshotSchema = object({
+  ...envelope("snapshot", "digest.snapshot"),
+  payload: object({
+    digestId: machineString,
+    windowStart: timestamp,
+    windowEnd: timestamp,
+    itemRefs: array(machineString),
+    sourceResultRefs: array(machineString),
+    generatedAt: timestamp,
+  }),
+});
+
+export const memorySnapshotSchema = object({
+  ...envelope("snapshot", "memory.snapshot"),
+  payload: object({
+    memoryId: machineString,
+    revision: integer(1),
+    status: enumeration(["active", "archived", "trashed", "deletion_pending", "deleted_verified"]),
+    contentRef: nullable(machineString),
+    dataClassification: classificationSchema,
+    sourceThreadId: nullable(machineString),
+    sourceRefs: array(machineString),
+    inference: booleanValue,
+    confidencePermille: integer(0, 1000),
+    policyVersion: machineString,
+    sensitiveApprovalRef: nullable(machineString),
+    providerProjectionStatus: enumeration([
+      "not_required",
+      "pending",
+      "completed",
+      "retry_wait",
+      "failed_terminal",
+      "deleted",
+    ]),
+    lastUsedAt: nullable(timestamp),
+    updatedAt: timestamp,
+    generatedAt: timestamp,
+  }),
+});
+
+export const traceSnapshotSchema = object({
+  ...envelope("snapshot", "trace.snapshot"),
+  payload: object({
+    traceEventId: machineString,
+    sequence: integer(1),
+    eventType: machineString,
+    actorRef: machineString,
+    parentEventRef: nullable(machineString),
+    causationRef: nullable(machineString),
+    threadRef: nullable(machineString),
+    runRef: machineString,
+    modelRef: nullable(machineString),
+    providerRef: nullable(machineString),
+    authorizationRef: nullable(machineString),
+    capabilityRef: nullable(machineString),
+    costMicros: integer(0),
+    retryAttempt: integer(0),
+    resultRef: nullable(machineString),
+    payloadRef: nullable(machineString),
+    occurredAt: timestamp,
+    generatedAt: timestamp,
+  }),
+});
+
+const integrationHealthSchema = object({
+  integrationRef: machineString,
+  status: enumeration(["healthy", "degraded", "blocked_credentials", "not_configured"]),
+  secretRefs: array(machineString),
+  reasonCode: nullable(machineString),
+});
+
+export const settingsSnapshotSchema = object({
+  ...envelope("snapshot", "settings.snapshot"),
+  payload: object({
+    revision: integer(1),
+    primaryModelRef: nullable(machineString),
+    fallbackModelRef: nullable(machineString),
+    globalBudgetMicros: integer(0),
+    spentBudgetMicros: integer(0),
+    defaultAttention: attentionLevelSchema,
+    digestTimezone: boundedString(128),
+    digestScheduleRef: nullable(machineString),
+    integrations: array(integrationHealthSchema),
+    generatedAt: timestamp,
+  }),
+});
+
+export const sessionSnapshotSchema = object({
+  ...envelope("snapshot", "session.snapshot"),
+  payload: object({
+    sessionId: machineString,
+    sessionRevision: integer(1),
+    status: enumeration(["active", "revoked"]),
+    deviceId: machineString,
+    deviceLabel: boundedString(512),
+    deviceStatus: enumeration(["active", "revoked"]),
+    authenticationRef: machineString,
+    firstAuthenticatedAt: timestamp,
+    lastActiveAt: timestamp,
+    recentAuthenticatedAt: timestamp,
+    revokedAt: nullable(timestamp),
+    generatedAt: timestamp,
+  }),
+});
+
 export const healthSnapshotV2Schema = object({
   ...envelope("snapshot", "health.snapshot"),
   payload: object({
@@ -625,6 +846,23 @@ export const healthSnapshotV2Schema = object({
     ready: booleanValue,
     status: enumeration(["healthy", "degraded", "not_ready", "not_live"]),
     componentRefs: array(machineString),
+    components: array(
+      object({
+        componentRef: machineString,
+        status: enumeration(["healthy", "degraded", "blocked", "unavailable"]),
+        reasonCode: nullable(machineString),
+      }),
+    ),
+    operationCheckpoints: array(
+      object({
+        operationRef: machineString,
+        kind: enumeration(["deletion", "migration", "upgrade", "backup", "restore"]),
+        phase: machineString,
+        revision: integer(1),
+        status: enumeration(["pending", "running", "blocked", "completed", "failed"]),
+        readbackRef: nullable(machineString),
+      }),
+    ),
     generatedAt: timestamp,
   }),
 });
@@ -649,6 +887,7 @@ const schemasByType = {
   "thread.checkpoint.request": requestThreadCheckpointCommandSchema,
   "approval.respond": respondApprovalV2CommandSchema,
   "task.set_state": setTaskStateCommandSchema,
+  "settings.update": updateSettingsCommandSchema,
   "github.monitor.set_state": setGitHubMonitorStateCommandSchema,
   "memory.mutate": mutateMemoryCommandSchema,
   "session.revoke": revokeSessionCommandSchema,
@@ -662,10 +901,17 @@ const schemasByType = {
   "thread.timeline": threadTimelineQuerySchema,
   "approval.list": listApprovalsQuerySchema,
   "task.list": listTasksQuerySchema,
+  "task.detail": taskDetailQuerySchema,
   "inbox.list": listInboxQuerySchema,
+  "inbox.detail": inboxDetailQuerySchema,
+  "inbox.digest": inboxDigestQuerySchema,
   "memory.search": searchMemoryQuerySchema,
+  "memory.detail": memoryDetailQuerySchema,
   "trace.timeline": traceTimelineV2QuerySchema,
+  "trace.detail": traceDetailQuerySchema,
+  "settings.read": settingsReadQuerySchema,
   "identity.sessions": identitySessionsQuerySchema,
+  "identity.session_detail": identitySessionDetailQuerySchema,
   "health.status": healthStatusQuerySchema,
   "approval.detail": approvalDetailQuerySchema,
   "capability.list": capabilityListQuerySchema,
@@ -677,6 +923,13 @@ const schemasByType = {
   "approval.snapshot": approvalSnapshotSchema,
   "capability.snapshot": capabilitySnapshotSchema,
   "grant.snapshot": grantSnapshotSchema,
+  "task.snapshot": taskSnapshotSchema,
+  "inbox.snapshot": inboxSnapshotSchema,
+  "digest.snapshot": digestSnapshotSchema,
+  "memory.snapshot": memorySnapshotSchema,
+  "trace.snapshot": traceSnapshotSchema,
+  "settings.snapshot": settingsSnapshotSchema,
+  "session.snapshot": sessionSnapshotSchema,
   "stream.event": streamEventV2Schema,
 } as const satisfies Record<GatewayV2MessageType, Schema<unknown>>;
 

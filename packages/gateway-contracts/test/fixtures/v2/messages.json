@@ -71,7 +71,12 @@
     "authority": { "deploymentId": "deployment-01", "authorityEpoch": 8, "fencingToken": 3 },
     "actor": { "actorType": "owner", "actorId": "owner-01" },
     "idempotencyKey": "task-state-01",
-    "payload": { "jobId": "job-01", "action": "pause", "reasonCode": "owner-requested" }
+    "payload": {
+      "jobId": "job-01",
+      "expectedRevision": 2,
+      "action": "pause",
+      "reasonCode": "owner-requested"
+    }
   },
   {
     "schemaVersion": "gateway.v2",
@@ -139,6 +144,7 @@
     "payload": {
       "sessionId": "session-01",
       "deviceId": "device-01",
+      "expectedRevision": 2,
       "recentAuthenticationRef": "recent-auth-01",
       "reasonCode": "owner-requested"
     }
@@ -320,6 +326,15 @@
       "ready": true,
       "status": "degraded",
       "componentRefs": ["health-sqlite-01", "health-model-01"],
+      "components": [
+        { "componentRef": "health-sqlite-01", "status": "healthy", "reasonCode": null },
+        {
+          "componentRef": "health-model-01",
+          "status": "degraded",
+          "reasonCode": "MODEL_RATE_LIMITED"
+        }
+      ],
+      "operationCheckpoints": [],
       "generatedAt": "2026-08-26T00:00:01.000Z"
     }
   },

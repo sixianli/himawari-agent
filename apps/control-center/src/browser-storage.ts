@@ -58,6 +58,10 @@ export class ControlCenterBrowserStorage {
     this.storage.setItem(`${KEY_PREFIX}.lastCursor`, cursor);
   }
 
+  clearLastCursor(): void {
+    this.storage.removeItem(`${KEY_PREFIX}.lastCursor`);
+  }
+
   readThreadLastCursor(): string | null {
     const value = this.storage.getItem(THREAD_CURSOR_STORAGE_KEY);
     return value && CURSOR_PATTERN.test(value) ? value : null;

@@ -439,6 +439,99 @@ describe("browser storage and SSE recovery", () => {
     synchronizer.stop();
   });
 
+  it("deduplicates events and requests a snapshot for gaps or authority changes", () => {
+    const storage = new ControlCenterBrowserStorage(new MemoryStorage());
+    storage.saveLastCursor("cursor-01");
+    const sources: EventSourceLike[] = [];
+    const events: GatewayV2Event[] = [];
+    const snapshotReasons: string[] = [];
+    const synchronizer = new SseStateSynchronizer({
+      storage,
+      createEventSource() {
+        const source: EventSourceLike = { onmessage: null, onerror: null, close: vi.fn() };
+        sources.push(source);
+        return source;
+      },
+      onEvent: (event) => events.push(event),
+      onSnapshotRequired: (reason) => snapshotReasons.push(reason),
+      onConnectionState: vi.fn(),
+      log: vi.fn(),
+    });
+    synchronizer.start();
+
+    const first = streamEvent();
+    sources[0]?.onmessage?.({ data: JSON.stringify(first) } as MessageEvent<string>);
+    sources[0]?.onmessage?.({ data: JSON.stringify(first) } as MessageEvent<string>);
+    const outOfOrder = {
+      ...first,
+      messageId: "event-out-of-order",
+      payload: { ...first.payload, eventId: "event-out-of-order", sequence: 1 },
+    };
+    sources[0]?.onmessage?.({ data: JSON.stringify(outOfOrder) } as MessageEvent<string>);
+    const gap = {
+      ...first,
+      messageId: "event-gap",
+      payload: {
+        ...first.payload,
+        cursor: "cursor-04",
+        eventId: "event-gap",
+        sequence: 4,
+      },
+    };
+    sources[0]?.onmessage?.({ data: JSON.stringify(gap) } as MessageEvent<string>);
+
+    expect(events).toEqual([first]);
+    expect(snapshotReasons).toEqual(["event_sequence_gap"]);
+    expect(storage.readLastCursor()).toBeNull();
+
+    const afterGap = {
+      ...first,
+      messageId: "event-after-gap",
+      authority: { ...first.authority, authorityEpoch: 2 },
+      payload: {
+        ...first.payload,
+        cursor: "cursor-05",
+        eventId: "event-after-gap",
+        sequence: 5,
+      },
+    };
+    sources[0]?.onmessage?.({ data: JSON.stringify(afterGap) } as MessageEvent<string>);
+    expect(snapshotReasons).toEqual(["event_sequence_gap", "authority_scope_changed"]);
+    expect(events).toEqual([first]);
+    synchronizer.stop();
+  });
+
+  it("rejects a cursor that predates the retention window", () => {
+    const storage = new ControlCenterBrowserStorage(new MemoryStorage());
+    storage.saveLastCursor("cursor-02");
+    const sources: EventSourceLike[] = [];
+    const snapshotReasons: string[] = [];
+    const synchronizer = new SseStateSynchronizer({
+      storage,
+      createEventSource() {
+        const source: EventSourceLike = { onmessage: null, onerror: null, close: vi.fn() };
+        sources.push(source);
+        return source;
+      },
+      onEvent: vi.fn(),
+      onSnapshotRequired: (reason) => snapshotReasons.push(reason),
+      onConnectionState: vi.fn(),
+      log: vi.fn(),
+    });
+    synchronizer.start();
+    const retained = streamEvent();
+    sources[0]?.onmessage?.({
+      data: JSON.stringify({
+        ...retained,
+        payload: { ...retained.payload, retentionStartCursor: "cursor-03" },
+      }),
+    } as MessageEvent<string>);
+
+    expect(snapshotReasons).toEqual(["cursor_retention_gap"]);
+    expect(storage.readLastCursor()).toBeNull();
+    synchronizer.stop();
+  });
+
   it("resumes Thread events from a separate cursor and requests a snapshot on retention loss", () => {
     const storage = new ControlCenterBrowserStorage(new MemoryStorage());
     storage.saveThreadLastCursor("thread-cursor:01");

@@ -39,7 +39,9 @@ describe("control center information architecture inventory", () => {
     for (const surface of CONTROL_CENTER_SURFACE_INVENTORY) {
       expect(surface.requiredUiStates).toEqual(CONTROL_CENTER_REQUIRED_UI_STATES);
       expect(surface.stableObjects.length).toBeGreaterThan(0);
-      expect(surface.sourceSpec).toMatch(/^docs\/(?:execution\/specs|archive\/specs)\/.+-design\.md$/);
+      expect(surface.sourceSpec).toMatch(
+        /^docs\/(?:execution\/specs|archive\/specs)\/.+-design\.md$/,
+      );
     }
   });
 
@@ -60,8 +62,15 @@ describe("control center information architecture inventory", () => {
     expect(CONTROL_CENTER_INTEGRATION_READY_SURFACE_IDS).toEqual([
       "threads",
       "approvals",
+      "tasks",
+      "inbox-digest",
+      "memory",
       "capabilities-adapters",
       "authorizations-grants",
+      "trace",
+      "settings",
+      "sessions-devices",
+      "health-deployment",
     ]);
     for (const surface of CONTROL_CENTER_SURFACE_INVENTORY) {
       if (surface.integrationPolicy === "allowed") {

@@ -32,11 +32,11 @@ import {
   ControlCenterIntlProvider,
   useControlCenterIntl,
 } from "./i18n/runtime.js";
-import { queryMessage } from "./messages.js";
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
 import { useThreadControlCenter } from "./thread-control-center.js";
 import { ThreadSseSynchronizer } from "./thread-sse-synchronizer.js";
 import { useGovernanceControlCenter } from "./governance-control-center.js";
+import { useOperationsControlCenter } from "./operations-control-center.js";
 
 type SurfaceId = (typeof CONTROL_CENTER_SURFACE_INVENTORY)[number]["id"];
 type RuntimeConfiguration = Awaited<ReturnType<typeof loadRuntimeConfiguration>>;
@@ -74,8 +74,8 @@ function statusMessageId(status: MutationStatus | null): MessageId {
 
 function queryForSurface(
   surfaceId: SurfaceId,
-  configuration: RuntimeConfiguration,
-  route: ControlCenterRouteState,
+  _configuration: RuntimeConfiguration,
+  _route: ControlCenterRouteState,
 ): GatewayV2Query | null {
   switch (surfaceId) {
     case "threads":
@@ -83,40 +83,11 @@ function queryForSurface(
     case "approvals":
       return null;
     case "tasks":
-      return queryMessage(configuration, "task.list", {
-        status: ["active", "paused", "revoked"].includes(route.status ?? "") ? route.status : null,
-        afterCursor: route.afterCursor,
-        limit: 100,
-      });
     case "inbox-digest":
-      return queryMessage(configuration, "inbox.list", {
-        unreadOnly: route.status === "unread",
-        afterCursor: route.afterCursor,
-        limit: 100,
-      });
     case "memory":
-      return queryMessage(configuration, "memory.search", {
-        queryRef: "query:recent",
-        status: ["active", "archived", "trashed"].includes(route.status ?? "")
-          ? route.status
-          : null,
-        limit: 100,
-      });
     case "trace":
-      return queryMessage(configuration, "trace.timeline", {
-        threadId: null,
-        runId: null,
-        afterSequence: 0,
-        limit: 200,
-      });
     case "sessions-devices":
-      return queryMessage(configuration, "identity.sessions", {
-        includeRevoked: true,
-        afterCursor: route.afterCursor,
-        limit: 100,
-      });
     case "health-deployment":
-      return queryMessage(configuration, "health.status", { includeDependencies: true });
     case "capabilities-adapters":
     case "authorizations-grants":
     case "settings":
@@ -224,6 +195,7 @@ function LocalizedControlCenterApp({
       storage,
       createEventSource: (url) => new EventSource(url, { withCredentials: true }),
       onEvent: () => setGatewayRefreshSignal((current) => current + 1),
+      onSnapshotRequired: () => setGatewayRefreshSignal((current) => current + 1),
       onConnectionState: setConnection,
       log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
@@ -321,6 +293,19 @@ function LocalizedControlCenterApp({
   ].includes(route.surfaceId);
   const governanceModel = useGovernanceControlCenter({
     active: governanceSurface,
+    client,
+    configuration,
+    connection,
+    message,
+    navigate,
+    refreshSignal: gatewayRefreshSignal,
+    route,
+    storage,
+    onUnauthorized: clearPrivateViewState,
+  });
+  const operationsSurface = route.surfaceId !== "threads" && !governanceSurface;
+  const operationsModel = useOperationsControlCenter({
+    active: operationsSurface,
     client,
     configuration,
     connection,
@@ -530,21 +515,27 @@ function LocalizedControlCenterApp({
           ? threadModel.content
           : governanceSurface
             ? governanceModel.content
-            : genericContent
+            : operationsSurface
+              ? operationsModel.content
+              : genericContent
       }
       details={
         route.surfaceId === "threads"
           ? threadModel.details
           : governanceSurface
             ? governanceModel.details
-            : genericDetails
+            : operationsSurface
+              ? operationsModel.details
+              : genericDetails
       }
       list={
         route.surfaceId === "threads"
           ? threadModel.list
           : governanceSurface
             ? governanceModel.list
-            : genericList
+            : operationsSurface
+              ? operationsModel.list
+              : genericList
       }
       locale={locale}
       onLocaleChange={onLocaleChange}
