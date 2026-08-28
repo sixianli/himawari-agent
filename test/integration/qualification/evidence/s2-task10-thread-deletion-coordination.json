@@ -4,7 +4,7 @@
   "plan": "docs/execution/plans/2026-08-26-owner-thread-conversation-plan.md",
   "taskIds": ["S2-T10"],
   "status": "local_complete",
-  "candidateRevision": "80a1d78c1720bea7ad238a8871f3313e05885a6b",
+  "candidateRevision": "8c482253b420ec346dc4b33b2d70bea2090a3f60",
   "verified": [
     "Thread archive/restore only changes Thread visibility and leaves independent ScheduledJob, Approval and Grant records unchanged.",
     "Expired Approval retry with the same ActionIntent remains denied; a new stable ActionIntent creates a distinct pending Approval Request.",
@@ -39,5 +39,5 @@
   "externalEffects": [
     "No external account change, paid call, Hermes operation, deployment, destructive production deletion or remote push occurred."
   ],
-  "implementationCommit": null
+  "implementationCommit": "8c482253b420ec346dc4b33b2d70bea2090a3f60"
 }
