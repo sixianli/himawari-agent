@@ -60,6 +60,13 @@ export function webCapabilityConformance(
     it("freezes origin and page version before a single confirmed execution", async () => {
       await withPort(harness, async (fixture) => {
         const session = await fixture.createSession();
+        await expect(
+          fixture.service.sessionRead({
+            sessionId: session.id,
+            requestedUrl: `${fixture.origin}/account`,
+            authorized: true,
+          }),
+        ).resolves.toMatchObject({ sessionId: session.id, origin: fixture.origin });
         const action = await fixture.prepare(session);
         const handle = fixture.handle(action, "web-operation-success");
         const result = await fixture.service.executeAction({

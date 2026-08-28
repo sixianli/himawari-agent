@@ -78,6 +78,22 @@ class FixtureAuthenticatedAdapter implements AuthenticatedWebAdapterPort {
   readonly counts = new Map<string, number>();
   unknownOnce = false;
 
+  async read(input: { session: WebSessionRecord; requestedUrl: string }) {
+    return {
+      requestedUrl: input.requestedUrl,
+      canonicalUrl: input.requestedUrl,
+      redirectChain: [],
+      origin: new URL(input.requestedUrl).origin,
+      statusCode: 200,
+      contentType: "text/plain",
+      contentDigest: "sha256:authenticated-fixture",
+      sessionId: input.session.id,
+      protectedBodyRef: "payload:authenticated-fixture",
+      title: "Authenticated fixture",
+      selectedFragmentRefs: ["fragment:0:20"],
+      excludedReasonCodes: [],
+    };
+  }
   async prepare() {
     return { pageVersion: "page-version-1" };
   }

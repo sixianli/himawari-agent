@@ -148,6 +148,11 @@ export interface PublicWebAdapterPort {
 }
 
 export interface AuthenticatedWebAdapterPort {
+  read(input: {
+    readonly session: WebSessionRecord;
+    readonly requestedUrl: string;
+    readonly maximumBytes: number;
+  }): Promise<Omit<WebResourceRecord, "id" | "retrievedAt" | "dataClassification">>;
   prepare(input: {
     readonly session: WebSessionRecord;
     readonly finalUrl: string;

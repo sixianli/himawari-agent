@@ -152,6 +152,38 @@ export class WebCapabilityService {
     );
   }
 
+  async sessionRead(input: {
+    readonly sessionId: string;
+    readonly requestedUrl: string;
+    readonly authorized: boolean;
+  }): Promise<WebResourceRecord> {
+    if (!input.authorized) this.#reject("Authenticated Web read is not authorized");
+    const session = await this.#usableSession(input.sessionId);
+    const origin = exactOrigin(input.requestedUrl);
+    if (!session.allowedOrigins.includes(origin))
+      this.#reject("Authenticated Web read crossed origin scope");
+    const observed = await this.#authenticatedAdapter.read({
+      session,
+      requestedUrl: input.requestedUrl,
+      maximumBytes: MAX_PUBLIC_RESOURCE_BYTES,
+    });
+    if (
+      observed.origin !== origin ||
+      observed.sessionId !== session.id ||
+      !session.allowedOrigins.includes(exactOrigin(observed.canonicalUrl))
+    ) {
+      this.#reject("Authenticated Web adapter returned an out-of-scope resource");
+    }
+    return this.#state.saveResource(
+      Object.freeze({
+        ...observed,
+        id: this.#ids.next("web-resource"),
+        retrievedAt: this.#clock.now(),
+        dataClassification: session.dataClassification,
+      }),
+    );
+  }
+
   async setSessionState(input: {
     readonly sessionId: string;
     readonly expectedRevision: number;
