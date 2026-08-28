@@ -16,7 +16,7 @@ date: "2026-08-26"
 
 - [SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
 - [SOURCE: docs/execution/specs/2026-08-26-control-center-experience-design.md]
-- [SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md]
+- [SOURCE: docs/archive/specs/2026-08-26-authorization-capability-governance-design.md]
 
 **基础 Plan：** [SOURCE: docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md]
 

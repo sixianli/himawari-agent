@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourcePlan": "docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md",
+  "sourcePlan": "docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md",
   "scopeTask": "S4-T12",
   "journeys": [
     {
@@ -23,7 +23,8 @@
       ],
       "qualificationEvidence": [
         "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json",
-        "test/integration/qualification/evidence/s4-task11-governance-control-center.json"
+        "test/integration/qualification/evidence/s4-task11-governance-control-center.json",
+        "test/integration/qualification/evidence/s4-task12-security-recovery-closure.json"
       ],
       "remainingGlobalQualification": [
         "S0 仍需把 S1/S3 的真实 Task blocked、kill/restart 与生产身份 readback 接入同一 J04 旅程"
@@ -47,7 +48,8 @@
       ],
       "qualificationEvidence": [
         "test/integration/qualification/evidence/s4-tasks9-10-capability-runtime-update.json",
-        "test/integration/qualification/evidence/s4-task11-governance-control-center.json"
+        "test/integration/qualification/evidence/s4-task11-governance-control-center.json",
+        "test/integration/qualification/evidence/s4-task12-security-recovery-closure.json"
       ],
       "remainingGlobalQualification": [
         "S5 仍需提供公共 Web 来源、认证 session 与正式浏览器动作旅程"
@@ -69,7 +71,8 @@
         "test/integration/s4-security-recovery-matrix.test.ts"
       ],
       "qualificationEvidence": [
-        "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json"
+        "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json",
+        "test/integration/qualification/evidence/s4-task12-security-recovery-closure.json"
       ],
       "remainingGlobalQualification": [
         "S6 仍需提供 dirty workspace、diff、commit preview 与真实 host directory 旅程"
@@ -91,7 +94,8 @@
       ],
       "qualificationEvidence": [
         "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json",
-        "test/integration/qualification/evidence/s4-tasks9-10-capability-runtime-update.json"
+        "test/integration/qualification/evidence/s4-tasks9-10-capability-runtime-update.json",
+        "test/integration/qualification/evidence/s4-task12-security-recovery-closure.json"
       ],
       "remainingGlobalQualification": [
         "S7 仍需提供 Mac/Hermes Calendar conformance、时区和参与人通知负例"
@@ -113,7 +117,8 @@
         "test/integration/execution-worker-process.test.ts"
       ],
       "qualificationEvidence": [
-        "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json"
+        "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json",
+        "test/integration/qualification/evidence/s4-task12-security-recovery-closure.json"
       ],
       "remainingGlobalQualification": [
         "S8 仍需提供反思去重、每日额度、普通 Task 创建和主 Agent 交付旅程"
@@ -134,7 +139,8 @@
         "packages/platform-node/test/capability-isolation.unit.test.ts"
       ],
       "qualificationEvidence": [
-        "test/integration/qualification/evidence/s4-tasks9-10-capability-runtime-update.json"
+        "test/integration/qualification/evidence/s4-tasks9-10-capability-runtime-update.json",
+        "test/integration/qualification/evidence/s4-task12-security-recovery-closure.json"
       ],
       "remainingGlobalQualification": [
         "S8/S6/S9 仍需提供真实候选 workspace、diff/eval 与 release review 旅程"
@@ -155,7 +161,8 @@
         "test/integration/s4-security-recovery-matrix.test.ts"
       ],
       "qualificationEvidence": [
-        "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json"
+        "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json",
+        "test/integration/qualification/evidence/s4-task12-security-recovery-closure.json"
       ],
       "remainingGlobalQualification": [
         "S1/S3 仍需把 MODEL_BLOCKED、Result 与 Owner-facing 状态接成完整 J11"
@@ -179,7 +186,8 @@
       ],
       "qualificationEvidence": [
         "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json",
-        "test/integration/qualification/evidence/s4-task11-governance-control-center.json"
+        "test/integration/qualification/evidence/s4-task11-governance-control-center.json",
+        "test/integration/qualification/evidence/s4-task12-security-recovery-closure.json"
       ],
       "remainingGlobalQualification": [
         "S1/S3 仍需提供 DST、MISSED/no-catchup、容量、Attention 下限和浏览器离线旅程"

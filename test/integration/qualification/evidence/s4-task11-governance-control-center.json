@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "recordedAt": "2026-08-28T17:51:11+09:00",
-  "plan": "docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md",
+  "plan": "docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md",
   "taskIds": ["S4-T11"],
   "status": "local_complete",
   "candidateRevision": "d8c4cc08e4b14e05cc7950c185102bde85b085b6",

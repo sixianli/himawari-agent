@@ -16,7 +16,7 @@ date: "2026-08-26"
 
 - [SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
 - [SOURCE: docs/execution/specs/2026-08-26-owner-thread-conversation-design.md]
-- [SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md]
+- [SOURCE: docs/archive/specs/2026-08-26-authorization-capability-governance-design.md]
 - [SOURCE: docs/execution/specs/2026-08-26-web-research-browser-actions-design.md]
 - [SOURCE: docs/execution/specs/2026-08-26-host-files-code-workspaces-design.md]
 - [SOURCE: docs/execution/specs/2026-08-26-apple-calendar-integration-design.md]
@@ -27,7 +27,7 @@ date: "2026-08-26"
 
 - [SOURCE: docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md]
 - [SOURCE: docs/execution/plans/2026-08-26-owner-thread-conversation-plan.md]
-- [SOURCE: docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md]
+- [SOURCE: docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md]
 
 **目标：** 实现完整、响应式、三语且达到 WCAG 2.2 AA 验收边界的 Web 控制中心，使 Owner 在桌面和手机浏览器中管理对话、审批、任务、结果、Memory、能力、Grant、Trace、设置、设备和健康。
 

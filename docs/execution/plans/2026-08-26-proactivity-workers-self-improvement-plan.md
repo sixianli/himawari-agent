@@ -15,14 +15,14 @@ date: "2026-08-26"
 **协同 Source Specs：**
 
 - [SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
-- [SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md]
+- [SOURCE: docs/archive/specs/2026-08-26-authorization-capability-governance-design.md]
 - [SOURCE: docs/execution/specs/2026-08-26-host-files-code-workspaces-design.md]
 - [SOURCE: docs/execution/specs/2026-08-26-control-center-experience-design.md]
 
 **依赖 Plans：**
 
 - [SOURCE: docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md]
-- [SOURCE: docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md]
+- [SOURCE: docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md]
 - [SOURCE: docs/execution/plans/2026-08-26-host-files-code-workspaces-plan.md]
 - [SOURCE: docs/execution/plans/2026-08-26-control-center-experience-plan.md]
 

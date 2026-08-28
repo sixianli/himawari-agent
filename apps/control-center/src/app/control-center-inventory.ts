@@ -53,7 +53,7 @@ export interface ControlCenterSurfaceInventoryEntry {
 const CONTROL_CENTER_SPEC = "docs/execution/specs/2026-08-26-control-center-experience-design.md";
 const THREAD_SPEC = "docs/execution/specs/2026-08-26-owner-thread-conversation-design.md";
 const AUTHORIZATION_SPEC =
-  "docs/execution/specs/2026-08-26-authorization-capability-governance-design.md";
+  "docs/archive/specs/2026-08-26-authorization-capability-governance-design.md";
 const PROACTIVITY_SPEC =
   "docs/execution/specs/2026-08-26-proactivity-workers-self-improvement-design.md";
 const FOUNDATION_SPEC = "docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md";

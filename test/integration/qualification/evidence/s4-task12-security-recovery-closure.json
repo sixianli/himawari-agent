@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T18:08:43+09:00",
+  "plan": "docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md",
+  "taskIds": ["S4-T12"],
+  "status": "local_complete",
+  "candidateRevision": "ec23b12802333572d4ba8b68ed97bff4ce3eb197",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 15,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["temp.md"]
+  },
+  "verified": [
+    "A governed S4 security/recovery matrix binds authorization-store outage, manifest tamper, signature failure, source/permission expansion, stale Handle, Grant budget race, Worker crash, unknown result, Pi tool allowlist, Worker revalidation, program/MCP isolation, secret exclusion and Trace causality to executable assertions.",
+    "SQLite Grant consumption now persists a complete trace.v1 record whose parent and correlation continue the existing Run chain and whose causation is the frozen ActionIntent identity; authoritative Trace readback no longer encounters a row without record_json.",
+    "Two concurrent Grant usages starting from the same revision converge through CAS: exactly one consumes the final use/cost budget, the loser receives PORT_CONFLICT and replay of the winning usage remains idempotent.",
+    "Capability invalidation persists the disabled lifecycle, revokes active Handles and safely cancels dependent ScheduledJobs in one SQLite immediate transaction.",
+    "Pi exposes only descriptors bound to authorized Handle references and still runs product preflight; the Worker independently revalidates active version, Grant scope, budget, expiry and current authority fence before invocation.",
+    "Artifact digest/signature, executable/source/scope expansion, Linux/Mac isolation, official MCP identity/tool mapping, remote endpoint/secret/output bounds, Worker crash and unknown-result reconciliation all passed fresh tests at the same candidate revision.",
+    "The S4-to-S0 journey map records S4 common authorization invariants for J04-J09 and J11-J12 while keeping every global journey partial until its S1/S3/S5-S9 owners provide the remaining product and platform evidence.",
+    "Chromium and WebKit re-ran the authoritative Approval/Capability/Grant journeys at this candidate revision with no hidden unapproved execution route, no unsafe baseline mutation and no raw secret in browser-visible or persisted state."
+  ],
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, typecheck, 14-workspace boundaries, 79 requirements, 53 acceptance IDs, 152-source/25-package/20-route invariants and 501-file secret scan passed after final governed-document reconciliation"
+    },
+    {
+      "command": "targeted S4 unit/integration/Pi security and recovery matrix",
+      "exitStatus": 0,
+      "execution": "outside the restricted sandbox for child-process and Unix Domain Socket coverage",
+      "result": "3 unit files/13 tests, 10 integration files/79 tests and 2 Pi compatibility files/14 tests passed"
+    },
+    {
+      "command": "npm run test:unit && npm run test:contracts && npm run test:integration && npm run test:e2e",
+      "exitStatus": 0,
+      "execution": "outside the restricted sandbox for installed-service and Unix Domain Socket coverage",
+      "result": "43 unit files/284 tests, 13 contract files/147 tests, 40 integration files passed and 4 skipped/357 tests passed and 4 skipped, and 1 E2E file/3 tests passed"
+    },
+    {
+      "command": "npm run check:pi-compat && npm run test:journeys",
+      "exitStatus": 0,
+      "result": "2 Pi compatibility files/14 tests and 2 S2/S4-to-S0 journey mapping files/2 tests passed"
+    },
+    {
+      "command": "npm run test:browser && npm run build:browser",
+      "exitStatus": 0,
+      "result": "6 browser files/26 tests passed; production browser bundle was 114414 total gzip bytes with no source maps or inline assets"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chromium",
+      "exitStatus": 0,
+      "result": "Chromium 151 passed 18 Thread/governance journeys, all route/recovery/responsive states, 44 px targets and zero axe violations"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs webkit",
+      "exitStatus": 0,
+      "result": "WebKit 26.5 passed the same 18 Thread/governance journeys with zero axe violations"
+    },
+    {
+      "command": "python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict . and three runbook.py checks",
+      "exitStatus": 0,
+      "result": "strict document governance passed with zero warnings; authority-transfer, backup-restore and install-start-stop static contracts passed after explicit semantic reconciliation and reseal"
+    }
+  ],
+  "remaining": [
+    "S0 global journeys remain partial: S1/S3/S5-S9 still own the non-S4 product behavior, physical platform, production identity, provider and release evidence recorded in s4-journey-map.json.",
+    "The final production Agent Service still does not compose the HTTP/Gateway v2 governance adapters, and current Mac/Hermes local program/stdio MCP qualification remains blocked by the platform findings recorded under S4 Tasks 9-10.",
+    "No real capability artifact, trust root, provider credential, MCP/API endpoint or production Worker binding was installed or activated; no physical-device, external IdP or production service claim is made."
+  ],
+  "externalEffects": [
+    "All fault injection, runtime adapters and browser servers used local temporary fixtures. No real capability, secret, provider, account, paid call, production service, Hermes state or remote repository state changed."
+  ],
+  "implementationCommit": "ec23b12802333572d4ba8b68ed97bff4ce3eb197"
+}

@@ -44,7 +44,7 @@ describe("S4 Task 12 security and recovery matrix", () => {
     const matrix = JSON.parse(await readFile(matrixPath, "utf8")) as SecurityRecoveryMatrix;
     expect(matrix).toMatchObject({
       schemaVersion: 1,
-      sourcePlan: "docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md",
+      sourcePlan: "docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md",
       scopeTask: "S4-T12",
     });
     expect(matrix.cases.map(({ id }) => id)).toEqual(REQUIRED_CASE_IDS);

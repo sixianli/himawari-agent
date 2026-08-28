@@ -60,8 +60,8 @@ MCP 不应由 Himawari 重新实现协议。官方 TypeScript SDK `2.0.0` 已于
 
 ## Links
 
-- [SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md#统一能力类型]
-- [SOURCE: docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md#task-9资格验证并实现隔离与-runtime-adapters]
+- [SOURCE: docs/archive/specs/2026-08-26-authorization-capability-governance-design.md#统一能力类型]
+- [SOURCE: docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md#task-9资格验证并实现隔离与-runtime-adapters]
 - [Bubblewrap 官方仓库与安全边界](https://github.com/containers/bubblewrap)
 - [Bubblewrap 0.11.2 安全发布](https://github.com/containers/bubblewrap/releases/tag/v0.11.2)
 - [Apple App Sandbox](https://developer.apple.com/documentation/security/app-sandbox)

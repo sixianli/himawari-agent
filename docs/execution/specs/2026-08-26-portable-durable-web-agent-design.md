@@ -80,7 +80,7 @@ date: "2026-08-26"
 
 - Owner 可见 Thread 生命周期、Fork、压缩、回答语言和对话上下文：[SOURCE: docs/execution/specs/2026-08-26-owner-thread-conversation-design.md]
 - 完整 Web 控制面、中英日三语、响应式和 WCAG 2.2 AA：[SOURCE: docs/execution/specs/2026-08-26-control-center-experience-design.md]
-- ActionKind、风险、Grant 以及 Tools、Skills、MCP、本地程序、第三方 API 和 adapter 生命周期：[SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md]
+- ActionKind、风险、Grant 以及 Tools、Skills、MCP、本地程序、第三方 API 和 adapter 生命周期：[SOURCE: docs/archive/specs/2026-08-26-authorization-capability-governance-design.md]
 - 公共 Web 研究与受控认证 Web 操作：[SOURCE: docs/execution/specs/2026-08-26-web-research-browser-actions-design.md]
 - 主机文件、授权代码工作区、命令和本地 commit gate：[SOURCE: docs/execution/specs/2026-08-26-host-files-code-workspaces-design.md]
 - Apple/iCloud Calendar 读取、个人事件写入和参与人保护：[SOURCE: docs/execution/specs/2026-08-26-apple-calendar-integration-design.md]

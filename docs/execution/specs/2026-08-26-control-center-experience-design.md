@@ -25,7 +25,7 @@ date: "2026-08-26"
 - 公共身份网关：[SOURCE: docs/adr/0020-public-web-identity-gateway.md]
 - 持久基础设计：[SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
 - Thread 语义：[SOURCE: docs/execution/specs/2026-08-26-owner-thread-conversation-design.md]
-- 授权与能力治理：[SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md]
+- 授权与能力治理：[SOURCE: docs/archive/specs/2026-08-26-authorization-capability-governance-design.md]
 - 主动性与 Worker：[SOURCE: docs/execution/specs/2026-08-26-proactivity-workers-self-improvement-design.md]
 - v0.2 Spec 总纲：[SOURCE: docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md]
 

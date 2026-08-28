@@ -1,5 +1,5 @@
 ---
-status: active
+status: "archived"
 document_type: plan
 supersedes: ""
 superseded_by: ""
@@ -8,7 +8,7 @@ date: "2026-08-26"
 
 # Himawari Agent v0.2 行动授权与能力治理 Implementation Plan
 
-**来源 Spec：** [SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md]
+**来源 Spec：** [SOURCE: docs/archive/specs/2026-08-26-authorization-capability-governance-design.md]
 
 **v0.2 Spec 套件：** [SOURCE: docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md]
 
@@ -200,20 +200,22 @@ Gateway v2 现在提供 Agent-scoped Approval、Capability 与 Grant 权威 list
 
 ### Task 12：完成安全、恢复与文档收口
 
-- [ ] 注入 store outage、manifest tamper、signature failure、source/permission expansion、stale Handle、budget race、Worker crash 和 unknown result。
-- [ ] 运行 Pi tool allowlist、Worker registry、program/MCP isolation、secret scan 和完整 Trace causality。
-- [ ] 映射 S4-A01–S4-A04 到 fresh unit/contract/integration/security/browser/platform evidence。
-- [ ] 与 S0 的 J04–J09、J11–J12 和共同授权不变量对接。
-- [ ] 更新 Architecture/README 只描述已验证治理和 runtime 边界；完成后再归档。
+- [x] 注入 store outage、manifest tamper、signature failure、source/permission expansion、stale Handle、budget race、Worker crash 和 unknown result。
+- [x] 运行 Pi tool allowlist、Worker registry、program/MCP isolation、secret scan 和完整 Trace causality。
+- [x] 映射 S4-A01–S4-A04 到 fresh unit/contract/integration/security/browser/platform evidence。
+- [x] 与 S0 的 J04–J09、J11–J12 和共同授权不变量对接。
+- [x] 更新 Architecture/README 只描述已验证治理和 runtime 边界；完成后再归档。
+
+`s4-security-recovery-matrix.json` 固定 13 类故障/安全边界与可执行断言；SQLite Grant budget race 由 revision CAS 收敛，winning usage 重试幂等，完整 `trace.v1` record 继承 Run parent/correlation 并以冻结 ActionIntent 作为 causation。能力停用在同一 transaction 中撤销活动 Handle 并安全取消依赖 ScheduledJob。`s4-journey-map.json` 把 S4 共同授权不变量接入 J04–J09、J11–J12，同时把缺少 S1/S3/S5–S9 行为、真实平台和生产身份的全局 journey 明确保持为 `partial`。fresh evidence 位于 `test/integration/qualification/evidence/s4-task12-security-recovery-closure.json`；它不声称生产 Agent Service composition、真实 capability 安装或当前 Mac/Hermes 本地进程能力已获资格。
 
 ## 验收映射
 
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| S4-A01 | 行动分类与风险 | Tasks 2–3、12 | table-driven、negative contracts、Trace | Tasks 2–3 本地完成；待 Task 12 收口 |
-| S4-A02 | 授权结果与 Grant | Tasks 4–5、11–12 | hash/expiry/CAS/revoke/browser | Tasks 4–5、11 本地完成；待 Task 12 收口 |
-| S4-A03 | 能力生命周期 | Tasks 6–7、9–12 | lifecycle/update/Handle/platform recovery | Tasks 6–11 本地完成；待 Task 12 收口 |
-| S4-A04 | 统一能力类型 | Tasks 8–10、12 | Tool/Skill/MCP/program/API/adapter conformance | Tasks 8–10 本地完成；待 Task 12 收口 |
+| S4-A01 | 行动分类与风险 | Tasks 2–3、12 | table-driven、negative contracts、Trace | 本地完成；fresh fault/Trace evidence 已收口 |
+| S4-A02 | 授权结果与 Grant | Tasks 4–5、11–12 | hash/expiry/CAS/revoke/browser | 本地完成；fresh CAS/revoke/browser evidence 已收口 |
+| S4-A03 | 能力生命周期 | Tasks 6–7、9–12 | lifecycle/update/Handle/platform recovery | 本地完成；fresh lifecycle/platform/recovery evidence 已收口 |
+| S4-A04 | 统一能力类型 | Tasks 8–10、12 | Tool/Skill/MCP/program/API/adapter conformance | 本地完成；fresh conformance/isolation evidence 已收口 |
 
 ## 验证
 
@@ -231,10 +233,10 @@ Gateway v2 现在提供 Agent-scoped Approval、Capability 与 Grant 权威 list
 
 ## 收口清单
 
-- [ ] S4-A01–S4-A04 全部有 fresh 证据。
-- [ ] 所有 capability 类型共用同一授权、Grant、Handle、secret、预算、撤销和 Trace 语义。
-- [ ] 模型、Worker、外部内容和 capability 均不能自批或扩大权限。
-- [ ] 更新/回退与外部副作用/数据库恢复边界明确且实测。
-- [ ] S0 journeys、Architecture、README 和相关领域 Plans 已对账。
-- [ ] strict document validation、全仓检查与相关测试通过。
-- [ ] 本 Plan 与来源 Spec 只在工作真正关闭后归档。
+- [x] S4-A01–S4-A04 全部有 fresh 证据。
+- [x] 所有 capability 类型共用同一授权、Grant、Handle、secret、预算、撤销和 Trace 语义。
+- [x] 模型、Worker、外部内容和 capability 均不能自批或扩大权限。
+- [x] 更新/回退与外部副作用/数据库恢复边界明确且实测。
+- [x] S0 journeys、Architecture、README 和相关领域 Plans 已对账。
+- [x] strict document validation、全仓检查与相关测试通过。
+- [x] 本 Plan 与来源 Spec 只在工作真正关闭后归档。

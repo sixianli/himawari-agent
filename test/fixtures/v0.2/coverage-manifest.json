@@ -356,7 +356,7 @@
           "label": "J01–J04",
           "planTasks": "Task 4",
           "planEvidence": "process/browser/recovery journeys",
-          "planStatus": "部分验证：J01–J03 的 S2 主责 journey mapping 已完成；J04、真实 MFA/物理设备和 S0 全局跨切片恢复仍待实施",
+          "planStatus": "部分验证：J01–J03 的 S2 主责与 J04 的 S4 共同授权 journey mapping 已完成；真实 MFA/物理设备和 S0 全局 kill/restart 仍待实施",
           "verificationEntrypoints": [
             "npm run check:v0.2-coverage",
             "npm run test:journeys",
@@ -369,7 +369,7 @@
           "label": "J05–J07",
           "planTasks": "Task 5",
           "planEvidence": "capability/platform/side-effect journeys",
-          "planStatus": "待实施",
+          "planStatus": "部分验证：S4 共同授权、secret、Handle 与 unknown-result 边界已映射；S5–S7 正式能力旅程待实施",
           "verificationEntrypoints": ["npm run check:v0.2-coverage"]
         },
         {
@@ -377,7 +377,7 @@
           "label": "J08–J09",
           "planTasks": "Task 6",
           "planEvidence": "Worker/isolation/eval journeys",
-          "planStatus": "待实施",
+          "planStatus": "部分验证：S4 Worker 最小授权、Handle 失效与候选能力批准边界已映射；S6/S8/S9 正式旅程待实施",
           "verificationEntrypoints": ["npm run check:v0.2-coverage"]
         },
         {
@@ -385,7 +385,7 @@
           "label": "J10–J12",
           "planTasks": "Task 7",
           "planEvidence": "ingress/model/task/Attention journeys",
-          "planStatus": "待实施",
+          "planStatus": "部分验证：S4 已映射 J11–J12 的 disclosure、reconcile、预算 CAS、撤销和 Trace 边界；J10 与 S1/S3 完整旅程待实施",
           "verificationEntrypoints": ["npm run check:v0.2-coverage"]
         },
         {
@@ -671,15 +671,15 @@
     },
     {
       "code": "S4",
-      "spec": "docs/execution/specs/2026-08-26-authorization-capability-governance-design.md",
-      "plan": "docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md",
+      "spec": "docs/archive/specs/2026-08-26-authorization-capability-governance-design.md",
+      "plan": "docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md",
       "acceptances": [
         {
           "id": "S4-A01",
           "label": "行动分类与风险",
           "planTasks": "Tasks 2–3、12",
           "planEvidence": "table-driven、negative contracts、Trace",
-          "planStatus": "Tasks 2–3 本地完成；待 Task 12 收口",
+          "planStatus": "本地完成；fresh fault/Trace evidence 已收口",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -692,7 +692,7 @@
           "label": "授权结果与 Grant",
           "planTasks": "Tasks 4–5、11–12",
           "planEvidence": "hash/expiry/CAS/revoke/browser",
-          "planStatus": "Tasks 4–5、11 本地完成；待 Task 12 收口",
+          "planStatus": "本地完成；fresh CAS/revoke/browser evidence 已收口",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -705,7 +705,7 @@
           "label": "能力生命周期",
           "planTasks": "Tasks 6–7、9–12",
           "planEvidence": "lifecycle/update/Handle/platform recovery",
-          "planStatus": "Tasks 6–11 本地完成；待 Task 12 收口",
+          "planStatus": "本地完成；fresh lifecycle/platform/recovery evidence 已收口",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -718,7 +718,7 @@
           "label": "统一能力类型",
           "planTasks": "Tasks 8–10、12",
           "planEvidence": "Tool/Skill/MCP/program/API/adapter conformance",
-          "planStatus": "Tasks 8–10 本地完成；待 Task 12 收口",
+          "planStatus": "本地完成；fresh conformance/isolation evidence 已收口",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",

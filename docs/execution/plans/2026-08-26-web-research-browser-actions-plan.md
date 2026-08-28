@@ -15,13 +15,13 @@ date: "2026-08-26"
 **协同 Source Specs：**
 
 - [SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
-- [SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md]
+- [SOURCE: docs/archive/specs/2026-08-26-authorization-capability-governance-design.md]
 - [SOURCE: docs/execution/specs/2026-08-26-control-center-experience-design.md]
 
 **依赖 Plans：**
 
 - [SOURCE: docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md]
-- [SOURCE: docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md]
+- [SOURCE: docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md]
 - [SOURCE: docs/execution/plans/2026-08-26-control-center-experience-plan.md]
 
 **目标：** 实现可追溯的公共 Web 搜索/打开/多来源研究，以及按域、host-bound、可撤销的认证浏览器会话和 Prepare→Approve→Execute→Reconcile 外部行动。

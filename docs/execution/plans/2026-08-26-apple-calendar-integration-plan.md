@@ -15,14 +15,14 @@ date: "2026-08-26"
 **协同 Source Specs：**
 
 - [SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
-- [SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md]
+- [SOURCE: docs/archive/specs/2026-08-26-authorization-capability-governance-design.md]
 - [SOURCE: docs/execution/specs/2026-08-26-control-center-experience-design.md]
 - [SOURCE: docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md]
 
 **依赖 Plans：**
 
 - [SOURCE: docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md]
-- [SOURCE: docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md]
+- [SOURCE: docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md]
 - [SOURCE: docs/execution/plans/2026-08-26-control-center-experience-plan.md]
 
 **目标：** 在通过不可跳过的双平台 adapter qualification 后，实现统一 CalendarPort、Mac 与 Hermes conformance、Owner 个人事件的受控读写，以及参与人、通知、凭据、撤销和迁移的 fail-closed 边界。

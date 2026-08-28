@@ -27,7 +27,7 @@ date: "2026-08-26"
 - 权威迁移：[SOURCE: docs/adr/0019-offline-authority-transfer.md]
 - 持久基础设计：[SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
 - 控制中心体验：[SOURCE: docs/execution/specs/2026-08-26-control-center-experience-design.md]
-- 授权与能力治理：[SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md]
+- 授权与能力治理：[SOURCE: docs/archive/specs/2026-08-26-authorization-capability-governance-design.md]
 - v0.2 Spec 总纲：[SOURCE: docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md]
 - WCAG 2.2 规范：[EXTERNAL: https://www.w3.org/TR/WCAG22/]
 

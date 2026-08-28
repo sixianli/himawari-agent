@@ -2,7 +2,7 @@
 
 Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。Foundation Plan 的 Task 1 至 Task 20 已在确定性参考配置中完成；当前 portable durable web-agent Plan 已补齐模型路由、GitHub webhook/只读 monitor、持久 receipt 去重、浏览器 disclosure preview、真实进程恢复和规模资格的本地实现与证据。当前已按明确批准的边界完成 OpenRouter `qwen/qwen3-embedding-8b` 的 4096 维 Mem0 embedding live smoke，并完成 primary `deepseek/deepseek-v4-flash-0731` 与 fixed fallback `z-ai/glm-5.3-flash` 的有界 generation provider/model/token/cost 回读；GitHub/Cloudflare 账户、跨主机 transfer 和最终 production composition 仍按证据单独验收。
 
-当前交付是可安装、可运行的架构验证平台，不是 production-ready 服务。Node runtime 已有 Agent Service、Execution Worker 和 admin CLI 的 `main`、受保护 UDS、持久 SQLite、doctor/db status 及信号 drain；支持的 OpenRouter 配置现在会在 Agent Service 生命周期中创建 Model/Pi 与 Mem0 composition，并把 4096 维 embedding identity 写入 ready diagnostic。能力运行时已经实现 artifact/平台资格门禁、Linux bubblewrap/prlimit launch、官方 MCP v2 stdio client、program 与 HTTPS API/adapter 边界和原子版本回退，但当前 Mac 与 Hermes 均未通过本地 program/stdio MCP 的生产资格，且没有安装或启用真实 capability。最终公网 listener、生产 Vault/Memory projection worker/Model/GitHub 组合、真实远程 Worker 沙箱、地图/预订供应商和通知客户端仍未完成。默认 local composition 使用进程内参考适配器，退出后数据不会保留。完整边界和限制见 [Architecture v0.1](docs/architecture-v0.1.md)。
+当前交付是可安装、可运行的架构验证平台，不是 production-ready 服务。Node runtime 已有 Agent Service、Execution Worker 和 admin CLI 的 `main`、受保护 UDS、持久 SQLite、doctor/db status 及信号 drain；支持的 OpenRouter 配置现在会在 Agent Service 生命周期中创建 Model/Pi 与 Mem0 composition，并把 4096 维 embedding identity 写入 ready diagnostic。能力运行时已经实现 artifact/平台资格门禁、Linux bubblewrap/prlimit launch、官方 MCP v2 stdio client、program 与 HTTPS API/adapter 边界和原子版本回退；控制中心已接通 Approval、Capability 与 Grant 的权威 list/detail、recent-auth、revision/idempotency mutation、冲突刷新和多标签/离线边界。当前 Mac 与 Hermes 均未通过本地 program/stdio MCP 的生产资格，没有安装或启用真实 capability，治理 Gateway 也尚未组合进最终 production Agent Service。最终公网 listener、生产 Vault/Memory projection worker/Model/GitHub 组合、真实远程 Worker 沙箱、地图/预订供应商和通知客户端仍未完成。默认 local composition 使用进程内参考适配器，退出后数据不会保留。完整边界和限制见 [Architecture v0.1](docs/architecture-v0.1.md)。
 
 ## Toolchain
 
@@ -134,6 +134,8 @@ VS Code 可以用下列 launch 配置在 Vitest 中断进 sibling TypeScript sou
 ## Protocol contracts
 
 - `gateway.v1`：统一 Trigger admission，Thread 创建/关闭、Run 取消、审批响应，Thread/Run 快照与查询、Trace 查询、事件订阅和有序流事件。启动 Run 必须经过 Trigger admission。
+- `gateway.v2`：携带 deployment/authority fence 的 Approval、Capability、Grant、Task、Memory、Trace、Identity 与 health 信封；当前 Approval/Capability/Grant 使用严格 Agent-scoped list/detail snapshot 和 revision/idempotency mutation。
+- `gateway.thread.v3`：Thread message、search、checkpoint、Fork、lifecycle、answer locale 与删除协调的独立严格扩展。
 - `execution.v1`：Worker 执行、取消和外部结果对账请求，以及进度、结果、取消确认和对账事件。
 - 两类信封都显式携带 schema 版本、消息标识、correlation、causation、数据等级和产品 scope；改变状态的 Gateway 命令及全部 Worker 请求另带幂等键。
 - wire payload 只承载稳定机器值和受控引用。大型或敏感内容、执行输入/输出、能力句柄和秘密都用引用表示；协议不公开 Pi runtime 类型或凭证明文。
@@ -142,6 +144,8 @@ VS Code 可以用下列 launch 配置在 Vitest 中断进 sibling TypeScript sou
 ## Application ports
 
 `packages/application` 公开 State、Reliable Event、Product State Repository、Reliable Event Sink、Trace、Payload、Audit、Memory、Model、Agent Runtime、Runtime Projection/Tool、Capability、Secret、External Action Reconciliation、Scheduler、Attention、Gateway Access/Control Plane/Read Model、Authority Lease、Clock 和 ID Generator 端口。端口只依赖产品领域和契约类型，不公开数据库、供应商、传输或 Pi 对象。
+
+v0.2 治理路径固定 11 类 `ActionKind`、确定性风险下限、冻结 Approval snapshot/hash、一次性或有界长期 Grant、短期 fenced `capability-handle.v2` 和统一 `capability.v2` Manifest。SQLite 以 CAS 收敛并发预算、在停用时原子撤销 Handle 与依赖任务，并把 Grant usage 写成可由权威 Trace API 读回的完整因果事件。Tool/Skill/MCP/program/API/adapter 共享授权、secret reference、成本、隔离、health、更新与回退语义；未知外部结果只进入 reconcile，不盲目重试副作用。
 
 Task 5 新增的提交路径具有以下语义：
 

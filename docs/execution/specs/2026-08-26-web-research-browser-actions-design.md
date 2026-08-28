@@ -22,7 +22,7 @@ date: "2026-08-26"
 - 确定性授权：[SOURCE: docs/adr/0004-deterministic-authorization.md]
 - 能力注册表：[SOURCE: docs/adr/0008-governed-capability-registry.md]
 - 完整 Trace：[SOURCE: docs/adr/0010-complete-session-trace.md]
-- 授权与能力治理：[SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md]
+- 授权与能力治理：[SOURCE: docs/archive/specs/2026-08-26-authorization-capability-governance-design.md]
 - 持久基础设计：[SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
 - v0.2 Spec 总纲：[SOURCE: docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md]
 

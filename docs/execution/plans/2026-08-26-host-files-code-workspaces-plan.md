@@ -15,14 +15,14 @@ date: "2026-08-26"
 **协同 Source Specs：**
 
 - [SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
-- [SOURCE: docs/execution/specs/2026-08-26-authorization-capability-governance-design.md]
+- [SOURCE: docs/archive/specs/2026-08-26-authorization-capability-governance-design.md]
 - [SOURCE: docs/execution/specs/2026-08-26-control-center-experience-design.md]
 - [SOURCE: docs/execution/specs/2026-08-26-proactivity-workers-self-improvement-design.md]
 
 **依赖 Plans：**
 
 - [SOURCE: docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md]
-- [SOURCE: docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md]
+- [SOURCE: docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md]
 - [SOURCE: docs/execution/plans/2026-08-26-control-center-experience-plan.md]
 
 **目标：** 实现绑定具体主机与目录的安全文件能力、可恢复 Trash、代码工作区改动归属、受控 CommandProfile 和逐次批准的本地 Git commit gate，并在 Mac/Hermes 保持相同产品语义且完全不提供 push。
