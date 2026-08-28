@@ -14,6 +14,7 @@ export {
   type GovernedPiCodingToolOperations,
   type GovernedPiCodingToolsOptions,
 } from "./governed-coding-tools.js";
+export { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
 export {
   PiModelTransport,
   type PiModelPayloadBoundary,

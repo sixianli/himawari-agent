@@ -28,6 +28,7 @@ export type {
   PayloadUnprotectionRequest,
 } from "./ports/observability.js";
 export type { ClockPort } from "./ports/system.js";
+export type { GovernedCodingOperationsPort } from "./ports/host-files.js";
 export {
   assertMachineSecretFree,
   redactMachineSecrets,
