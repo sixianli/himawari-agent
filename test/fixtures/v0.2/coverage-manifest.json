@@ -356,8 +356,13 @@
           "label": "J01–J04",
           "planTasks": "Task 4",
           "planEvidence": "process/browser/recovery journeys",
-          "planStatus": "待实施",
-          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+          "planStatus": "部分验证：J01–J03 的 S2 主责 journey mapping 已完成；J04、真实 MFA/物理设备和 S0 全局跨切片恢复仍待实施",
+          "verificationEntrypoints": [
+            "npm run check:v0.2-coverage",
+            "npm run test:journeys",
+            "npm run test:integration",
+            "npm run test:e2e"
+          ]
         },
         {
           "id": "S0-A04",
@@ -388,8 +393,12 @@
           "label": "J13",
           "planTasks": "Task 8",
           "planEvidence": "deletion graph、kill/restart、no-resurrection",
-          "planStatus": "待实施",
-          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+          "planStatus": "部分验证：J13 的 S2 Thread/task/Memory/Trace 删除映射已完成；全部外部 provider/session/Worker 目标和全 checkpoint kill/restart 仍待实施",
+          "verificationEntrypoints": [
+            "npm run check:v0.2-coverage",
+            "npm run test:journeys",
+            "npm run test:integration"
+          ]
         },
         {
           "id": "S0-A08",
@@ -540,14 +549,15 @@
         {
           "id": "S2-A01",
           "label": "稳定身份与继续对话",
-          "planTasks": "Tasks 2–5、11",
+          "planTasks": "Tasks 2–5、11–12",
           "planEvidence": "domain/contract、重复接纳、process recovery",
-          "planStatus": "本地验证（Tasks 2–5、11）；Task 12 仍需正式多设备与最终证据映射",
+          "planStatus": "本地验证（Tasks 2–5、11–12）：双设备、Pi Session/服务重建与 S0 journey 映射通过；物理设备/OS 重启不在本地证据内",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
             "npm run test:integration",
-            "npm run test:e2e"
+            "npm run test:e2e",
+            "npm run test:journeys"
           ]
         },
         {
@@ -555,38 +565,44 @@
           "label": "生命周期与查找",
           "planTasks": "Tasks 4、6、10–12",
           "planEvidence": "query/search、multi-client、规模",
-          "planStatus": "部分验证（Tasks 4、6、10–11）；Task 12 的 1 万 Thread/20 万 Message 规模仍待实施",
+          "planStatus": "本地验证（Tasks 4、6、10–12）：混合生命周期 1 万 Thread/20 万 Message 的无遗漏分页、筛选和性能通过",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
             "npm run test:integration",
-            "npm run test:e2e"
+            "npm run test:e2e",
+            "npm run test:journeys",
+            "npm run qualify:thread-scale"
           ]
         },
         {
           "id": "S2-A03",
           "label": "Fork 与来源",
-          "planTasks": "Tasks 4、7、12",
+          "planTasks": "Tasks 4、7、10–12",
           "planEvidence": "lineage、delete、restart",
-          "planStatus": "部分验证（Tasks 4、7 与 Task 11 browser Fork）；Task 12 完整恢复矩阵仍待实施",
+          "planStatus": "本地验证（Tasks 4、7、10–12）：已提交 Turn Fork、删除后最小 lineage、重启和规模矩阵通过",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
             "npm run test:integration",
-            "npm run test:e2e"
+            "npm run test:e2e",
+            "npm run test:journeys",
+            "npm run qualify:thread-scale"
           ]
         },
         {
           "id": "S2-A04",
           "label": "回答语言与上下文",
-          "planTasks": "Tasks 8、11",
+          "planTasks": "Tasks 8、11–12",
           "planEvidence": "中英日组合、context/Trace、browser",
-          "planStatus": "本地验证（Tasks 8、11）；Task 12 仍需最终跨矩阵映射",
+          "planStatus": "本地验证（Tasks 8、11–12）：回答语言独立、context/Trace、双浏览器与 Pi 重建映射通过",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
             "npm run test:integration",
-            "npm run test:e2e"
+            "npm run test:e2e",
+            "npm run test:journeys",
+            "npm run check:pi-compat"
           ]
         },
         {
@@ -594,12 +610,14 @@
           "label": "压缩、审批与任务",
           "planTasks": "Tasks 9–12",
           "planEvidence": "checkpoint crash matrix、task/delete coordination",
-          "planStatus": "部分验证（Tasks 9–11）；Task 12 规模、恢复和 S0 收口仍待实施",
+          "planStatus": "本地验证（Tasks 9–12）：summary/checkpoint 恢复、task/delete coordination、projection rebuild 与 S0 映射通过",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
             "npm run test:integration",
-            "npm run test:e2e"
+            "npm run test:e2e",
+            "npm run test:journeys",
+            "npm run qualify:thread-scale"
           ]
         }
       ]

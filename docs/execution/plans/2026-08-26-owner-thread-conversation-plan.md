@@ -173,31 +173,37 @@ Thread 新契约使用独立 `gateway.thread.v3`，没有改写既有 `gateway.v
 
 - [x] 在 S3 组件契约中实现 Thread 列表、详情、搜索、筛选、pin、archive/restore、Fork、answer locale 和删除协调。
 - [x] 客户端使用 committed snapshot+events、durable cursor、revision 和 mutation idempotency key。
-- [x] 浏览器关闭、断线、多标签和正常主机重启后恢复同一 Thread、Run、Approval、Task 和 cursor。
+- [x] 浏览器关闭、断线、多标签和正常 Agent Service/SQLite 重启后恢复同一 Thread、Run、Approval、Task 和 cursor。
 - [x] 冲突展示最新 revision 和可理解重新应用，不做 silent last-write-wins。
 - [x] 不在浏览器持久存储私人历史、搜索正文或权威状态。
 
 `gateway.thread.v3` 现在补齐严格的 command/query/subscription 及 collection/detail/search/lineage/checkpoint/deletion-impact/result/conflict/event 响应。`AgentThreadGatewayService` 在分发前验证认证 Owner、actor 与设备授权；`ProductThreadGatewayAdapter` 只组合既有 Thread command/query/Fork/deletion 服务。每个成功 mutation 在同一 SQLite writer transaction 中原子写 semantic receipt、reliable outbox event 和带原 authority fence 的 `thread_gateway_events` durable cursor 记录；repository 关闭重开后可从 cursor 继续，丢失或跨 scope cursor 明确要求 snapshot refresh。
 
-控制中心的 Thread 三栏已接通列表、详情、HMAC opaque-token 搜索、消息接纳、Run 状态、独立 answer locale、rename、pin、archive/restore、checkpoint、删除影响与 task 协调、Fork 和 committed-event refresh。mutation key 在结果确定前只以无正文 identity 持久复用；revision conflict 显示 latest revision 并要求 Owner 明确重新应用。Chromium 151 与 WebKit 26.5 已覆盖多标签、离线、关闭重开、Thread/Run/Approval/Task readback、移动/桌面和 cursor 恢复；SQLite/service reopen 提供正常进程重启证据。浏览器持久存储不包含已提交历史、原始搜索或 authority state。物理主机重启、正式多设备和规模矩阵仍属于 Task 12，不能由本地 fixture 推断。实现与证据位于 `test/integration/thread-gateway-control-center.test.ts` 和 `test/integration/qualification/evidence/s2-task11-thread-control-center-recovery.json`。
+控制中心的 Thread 三栏已接通列表、详情、HMAC opaque-token 搜索、消息接纳、Run 状态、独立 answer locale、rename、pin、archive/restore、checkpoint、删除影响与 task 协调、Fork 和 committed-event refresh。mutation key 在结果确定前只以无正文 identity 持久复用；revision conflict 显示 latest revision 并要求 Owner 明确重新应用。Chromium 151 与 WebKit 26.5 已覆盖多标签、离线、关闭重开、Thread/Run/Approval/Task readback、移动/桌面和 cursor 恢复；SQLite/service reopen 提供正常进程重启证据。浏览器持久存储不包含已提交历史、原始搜索或 authority state。Task 12 已另行补齐确定性双设备、Pi Session/summary/projection rebuild 和规模矩阵；物理主机/设备与真实 IdP 仍明确保持在本地证据之外。实现与证据位于 `test/integration/thread-gateway-control-center.test.ts` 和 `test/integration/qualification/evidence/s2-task11-thread-control-center-recovery.json`。
 
 ### Task 12：完成规模、恢复和文档收口
 
-- [ ] 在 1 万 Thread、20 万 Message 和混合 active/archived/trashed 数据上测量列表、搜索、筛选、pin、Fork 和恢复。
-- [ ] 运行两个浏览器、多设备、Pi Session 重建、summary 与 projection rebuild 的 recovery matrix。
-- [ ] 映射 S2-A01–S2-A05 到 fresh unit/contract/integration/browser/performance evidence。
-- [ ] 更新 Architecture/README 只描述已验证 Thread 当前事实和限制。
-- [ ] 与 S0 的 J01–J03、J13 对接，领域或集成缺口全部关闭后再归档。
+- [x] 在 1 万 Thread、20 万 Message 和混合 active/archived/trashed 数据上测量列表、搜索、筛选、pin、Fork 和恢复。
+- [x] 运行两个浏览器、多设备、Pi Session 重建、summary 与 projection rebuild 的 recovery matrix。
+- [x] 映射 S2-A01–S2-A05 到 fresh unit/contract/integration/browser/performance evidence。
+- [x] 更新 Architecture/README 只描述已验证 Thread 当前事实和限制。
+- [x] 与 S0 的 J01–J03、J13 对接，领域或集成缺口全部关闭后再归档。
+
+Task 12 的本地 S2 责任已完成。确定性规模夹具在同一时间戳下生成 10,000 个 Thread 与 200,000 条初始 Message，其中 8,000 active、1,000 archived、1,000 trashed；完整 keyset 分页无重复或遗漏，active list/search/pin/Fork/projection rebuild 的 p95 分别为 2.811/8.835/3.215/1.262/0.646 ms，SQLite 正常关闭重开为 357.85 ms。100 个重建目标清除旧 projection version 后，10,000 条 current projection 保留且 stale 行为 0。
+
+恢复矩阵复用 Chromium 151 与 WebKit 26.5 的 Thread 旅程，并新增两个独立认证设备读取相同 committed snapshot/cursor、第三个未授权设备 fail closed 的集成证据。`packages/runtime-pi` 继续直接复用锁定的 Pi `0.84.2` `SessionManager.inMemory()` 与 `createAgentSession()`；同一 durable product context 重建两次时 Thread/Run/Session identity 和语义投影保持一致，没有新增 Himawari Session 协议。checkpoint claim lease 在 repository 重启后恢复原 generation，pre-compaction summary 原样发布；search projection rebuild 只清理旧版本，不扫描正文。
+
+S2-A01–S2-A05 及 S0 J01–J03/J13 的 S2 主责映射固定在 `test/fixtures/v0.2/s2-journey-map.json`，并由 `npm run test:journeys` 机械校验 source tests 与资格证据存在且成功。该映射只表示 S2 本地责任完成；S0 全局 journey、真实外部身份提供方 MFA、物理设备/OS 重启、最终生产 runtime composition 和正式平台资格仍由 S0/S3/S4/S9 各自主责验收，不能由本地 device profile 或 service reopen 推断。实现提交为 `2c3e4ff5c6e9de8b30b7889c0e280cc3a580ade5`；规模与完整收口证据分别位于 `test/integration/qualification/evidence/s2-task12-thread-scale-recovery.json` 和 `test/integration/qualification/evidence/s2-task12-thread-closure.json`。
 
 ## 验收映射
 
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| S2-A01 | 稳定身份与继续对话 | Tasks 2–5、11 | domain/contract、重复接纳、process recovery | 本地验证（Tasks 2–5、11）；Task 12 仍需正式多设备与最终证据映射 |
-| S2-A02 | 生命周期与查找 | Tasks 4、6、10–12 | query/search、multi-client、规模 | 部分验证（Tasks 4、6、10–11）；Task 12 的 1 万 Thread/20 万 Message 规模仍待实施 |
-| S2-A03 | Fork 与来源 | Tasks 4、7、12 | lineage、delete、restart | 部分验证（Tasks 4、7 与 Task 11 browser Fork）；Task 12 完整恢复矩阵仍待实施 |
-| S2-A04 | 回答语言与上下文 | Tasks 8、11 | 中英日组合、context/Trace、browser | 本地验证（Tasks 8、11）；Task 12 仍需最终跨矩阵映射 |
-| S2-A05 | 压缩、审批与任务 | Tasks 9–12 | checkpoint crash matrix、task/delete coordination | 部分验证（Tasks 9–11）；Task 12 规模、恢复和 S0 收口仍待实施 |
+| S2-A01 | 稳定身份与继续对话 | Tasks 2–5、11–12 | domain/contract、重复接纳、process recovery | 本地验证（Tasks 2–5、11–12）：双设备、Pi Session/服务重建与 S0 journey 映射通过；物理设备/OS 重启不在本地证据内 |
+| S2-A02 | 生命周期与查找 | Tasks 4、6、10–12 | query/search、multi-client、规模 | 本地验证（Tasks 4、6、10–12）：混合生命周期 1 万 Thread/20 万 Message 的无遗漏分页、筛选和性能通过 |
+| S2-A03 | Fork 与来源 | Tasks 4、7、10–12 | lineage、delete、restart | 本地验证（Tasks 4、7、10–12）：已提交 Turn Fork、删除后最小 lineage、重启和规模矩阵通过 |
+| S2-A04 | 回答语言与上下文 | Tasks 8、11–12 | 中英日组合、context/Trace、browser | 本地验证（Tasks 8、11–12）：回答语言独立、context/Trace、双浏览器与 Pi 重建映射通过 |
+| S2-A05 | 压缩、审批与任务 | Tasks 9–12 | checkpoint crash matrix、task/delete coordination | 本地验证（Tasks 9–12）：summary/checkpoint 恢复、task/delete coordination、projection rebuild 与 S0 映射通过 |
 
 ## 验证
 
@@ -207,6 +213,8 @@ Thread 新契约使用独立 `gateway.thread.v3`，没有改写既有 `gateway.v
 - npm run test:integration
 - npm run test:e2e
 - npm run check:pi-compat
+- npm run test:journeys
+- npm run qualify:thread-scale
 - 本 Plan 新增的 Thread browser、recovery、search 和 performance 入口
 - python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict .
 - git diff --check

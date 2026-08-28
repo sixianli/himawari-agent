@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T15:22:11+09:00",
+  "plan": "docs/execution/plans/2026-08-26-owner-thread-conversation-plan.md",
+  "taskIds": ["S2-T12"],
+  "status": "local_complete",
+  "candidateRevision": "2c3e4ff5c6e9de8b30b7889c0e280cc3a580ade5",
+  "acceptanceIds": ["S2-A01", "S2-A02", "S2-A03", "S2-A04", "S2-A05"],
+  "journeyIds": ["J01", "J02", "J03", "J13"],
+  "verified": [
+    "S2-A01: two independently authenticated device contexts read the same committed Thread snapshot and durable cursor sequence; an unauthorized third device fails closed. Repository/service restart and repeated Pi Session reconstruction preserve product Thread/Run/Session identities.",
+    "S2-A02: lifecycle, pin and opaque search filters execute in SQLite and use tie-safe Thread-ID keyset pagination. All 10000 equal-timestamp mixed-lifecycle Threads enumerate without duplicate or omission.",
+    "S2-A03: Fork accepts only a committed source Turn, freezes source Thread/Turn/watermark/summary/policy refs, survives repository restart and preserves only non-resolvable lineage after governed deletion.",
+    "S2-A04: zh-CN/en/ja answer locale remains independent from UI locale and input language; Context Formation records selected history, summary, Memory and policy references in Trace without exposing Pi types.",
+    "S2-A05: checkpoint summary generation survives injected failures and expired process lease restart with one stable generation; search projection rebuild removes stale versions; Thread deletion requires explicit active-task resolution and does not mutate independent Approval/Grant state.",
+    "The S2-owned portions of S0 J01-J03 and J13 are machine-mapped to executable domain/integration/E2E sources and successful qualification evidence by test/fixtures/v0.2/s2-journey-map.json and npm run test:journeys.",
+    "Chromium 151 and WebKit 26.5 Thread journeys already recorded under S2 Task 11/S3 Task 6 cover chat/search/locale/checkpoint/conflict/archive/delete-impact/Fork/multi-tab/offline/reopen with zero axe violations in the automated matrix."
+  ],
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, typecheck, 14 workspace boundaries, 79 requirements, 53 acceptance IDs, 146 production sources, 20 reviewed routes and 476-file secret scan passed"
+    },
+    {
+      "command": "npm run test:unit",
+      "exitStatus": 0,
+      "result": "40 files and 269 tests passed"
+    },
+    {
+      "command": "npm run test:contracts",
+      "exitStatus": 0,
+      "execution": "outside restricted sandbox because Unix Domain Socket listen is not permitted inside it",
+      "result": "13 files and 142 tests passed"
+    },
+    {
+      "command": "npm run test:integration",
+      "exitStatus": 0,
+      "execution": "outside restricted sandbox because Unix Domain Socket and installed-service process coverage require local socket access",
+      "result": "37 files passed and 4 skipped; 346 tests passed and 4 skipped"
+    },
+    {
+      "command": "npm run test:e2e",
+      "exitStatus": 0,
+      "result": "1 file and 3 tests passed"
+    },
+    {
+      "command": "npm run check:pi-compat",
+      "exitStatus": 0,
+      "result": "2 files and 14 tests passed against published Pi 0.84.2, including repeated Session projection reconstruction"
+    },
+    {
+      "command": "npm run test:journeys",
+      "exitStatus": 0,
+      "result": "S2-owned J01-J03 and J13 claims mapped to executable sources and successful qualification evidence"
+    },
+    {
+      "command": "npm run qualify:thread-scale",
+      "exitStatus": 0,
+      "result": "10000 Threads and 200000 initial Messages passed full pagination, search, filter, pin, Fork, projection rebuild and normal repository restart qualification"
+    }
+  ],
+  "evidenceRefs": [
+    "test/integration/qualification/evidence/s2-task12-thread-scale-recovery.json",
+    "test/integration/qualification/evidence/s2-task11-thread-control-center-recovery.json",
+    "test/integration/qualification/evidence/s3-task6-thread-conversation.json",
+    "test/integration/qualification/evidence/s2-task10-thread-deletion-coordination.json",
+    "test/integration/qualification/evidence/s1-task19-thread-distillation.json",
+    "test/integration/qualification/evidence/s1-task25-deletion-observability-security.json"
+  ],
+  "remaining": [
+    "A physical macOS reboot, real external identity-provider MFA and physical mobile-device readback were not performed; deterministic device profiles and service/repository restart are the bounded local evidence.",
+    "S0 global J01-J15 completion, final S3 accessibility/platform qualification, S4 production runtime composition and S9 production qualification remain owned by their active Plans.",
+    "No production capacity, cross-host recovery, public endpoint or long-duration soak claim is made from the temporary local scale fixture."
+  ],
+  "externalEffects": [
+    "No paid model call, network request, external account mutation, Hermes operation, production state change, remote Git push or physical host restart occurred."
+  ],
+  "implementationCommit": "2c3e4ff5c6e9de8b30b7889c0e280cc3a580ade5"
+}

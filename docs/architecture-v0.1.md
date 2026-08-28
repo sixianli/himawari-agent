@@ -168,6 +168,8 @@ Reliable Event 有 `pending → claimed → published` 生命周期。Publisher 
 
 Gateway Read Model 分开保存单调 revision 的 Thread/Run snapshot、全局持久 cursor sequence、scope 列和 retained stream event。查询必须同时匹配 Owner/Agent 及 Session/Thread/Run filter；subscription cursor 也必须属于相同 scope。进入 Trash 的 Thread 即使投影行尚在，也会由与权威 `threads.status` 的联表条件从 Thread/Run snapshot、Trace query 和 subscription 中隐藏。Thread snapshot 最多保存 1000 个 Session 和 1000 个 Run 引用，同 revision 不允许改写不同内容。Retention watermark 只能单调前移且不能越过最新 cursor，水位以下事件被删除，旧 cursor 返回明确错误而不是静默跳过。
 
+S2 Thread repository 的列表路径把 lifecycle 与 pin 过滤下推到 SQLite，并按“已置顶组、`pin_order`、`updated_at DESC`、`ThreadId`”做 keyset 分页；cursor 引用的 Thread 不存在时 fail closed，要求客户端重新取得 snapshot。opaque Message/title search projection 同样在 SQL 内完成 Owner/Agent、projection version、lifecycle、时间与 task status 过滤，再按 `ThreadId` 分页；查询端口不接收明文正文。Thread 专项资格在 10,000 个同时间戳 Thread、200,000 条初始 Message、8,000 active/1,000 archived/1,000 trashed 上完整枚举列表与搜索，无重复或遗漏；active list/search/pin/Fork/projection rebuild 的 p95 为 2.811/8.835/3.215/1.262/0.646 ms，repository 正常关闭重开为 357.85 ms。100 个 rebuild 目标删除旧 projection version 后保留 10,000 条 current 行且 stale 行为 0。数据只存在临时本地 SQLite，并不构成生产容量、跨主机或 soak 证明。
+
 Worker 在 `ready` 前执行冷启动恢复：过期 Outbox claim 回到 `pending`，中断的 `delivering` 以新 revision 回到 `pending` 并记录 `PROCESS_RESTARTED`；恢复报告枚举 pending event、未终结 Run/checkpoint、pending approval/delivery/deletion、到期 work lease、可安全重试 occurrence、可见 blocker、`MODEL_BLOCKED` 和未知外部结果。正式 Agent Service 已在 Worker handshake 前打开专用 SQLite execution context，并把这些脱敏计数写入启动诊断。恢复只重新暴露或 claim 可恢复工作，不回答 Owner 审批、不重放未知外部副作用，也不把旧 authority fence 变成当前权威。
 
 ### Session Trace, protected Payload and deletion propagation
@@ -227,6 +229,8 @@ primary、specialist、local 只选择对应 approved routing class；retryable 
 ### Pi Agent Runtime projection
 
 `packages/runtime-pi` 是唯一可以加载 `@earendil-works/pi-*` 包的 workspace。适配器内部直接使用固定版本的 `AgentSessionEvent`、`CreateAgentSessionOptions`、`ModelRuntime`、`Model`、`ToolDefinition` 和 `SessionManager` 类型；产品端口不暴露这些类型。published package compatibility test 验证 `0.84.2` 的导出和运行行为。每个 Run 都显式传入 product-selected model binding、结构化产品上下文和授权能力 Handle，并创建 `SessionManager.inMemory()`；Pi Session 只在该次执行中存在。
+
+每次 Pi Session 重建都从 durable product history 与已接受 checkpoint 重新填充 `SessionManager`，而不是持久化或恢复 Pi 自有 Session 文件。compatibility matrix 以相同 Thread/Run/Session request 连续重建两次，验证产品 identity 与投影后的消息/compaction 语义一致；Pi entry identity 仍是适配器内部实现细节，不能替代 ThreadId、MessageId、TurnId 或 RunId。
 
 `ConfiguredPiModelBindingPort` 只接受一组 canonical primary/fallback descriptor；同一个对象同时承载产品策略身份与 Pi provider model config，不再维护可能漂移的 `{ model, pi }` 双描述符。严格配置的生成字段经 `resolveConfiguredModelDescriptorSet()` 映射到该对象，而独立 embedding descriptor 仅交给产品 Memory 组合，永远不会伪装成 Pi generation model。它通过 `modelsPath: null`、Pi `InMemoryCredentialStore`、`allowModelNetwork: false` 和 `refreshOnCreate: false` 关闭磁盘模型发现与网络刷新，只注册闭合的两个 OpenRouter 模型。共享 provider secret 由 production-suitable host source 在首次 binding 时按需解析并只交给 Pi runtime；原值不进入 descriptor、runtime options、Trace 或诊断。fallback 的 `order: ["z-ai"]` 仅作用于 fallback descriptor，不把该上游顺序强加给 primary。
 
@@ -304,7 +308,7 @@ npm ci --ignore-scripts
   → drain new admission and await in-flight Run settlement on shutdown
 ```
 
-Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi compatibility、独立 workspace 项目、`npm run qualify:scale` 和严格文档验证。完整测试数量以最后一次 fresh 命令和对应 evidence 为准；规模资格测试单独记录目标行数、SQLite 版本、资源占用和核心路径 p50/p95/p99。SQLite contract/integration 使用临时真实文件和隔离子进程，安装后的 `himawari` CLI 已在临时 state root 完成损坏前恢复点与原子恢复演练，以及 stopped source 到 inactive/activated target 的 authority-transfer 演练；浏览器资格测试只监听 loopback。这些验证不访问付费模型、外部账户或生产凭据。
+Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi compatibility、独立 workspace 项目、`npm run test:journeys`、`npm run qualify:scale`、`npm run qualify:thread-scale` 和严格文档验证。完整测试数量以最后一次 fresh 命令和对应 evidence 为准；规模资格测试单独记录目标行数、SQLite 版本、资源占用和核心路径 p50/p95/p99。SQLite contract/integration 使用临时真实文件和隔离子进程，安装后的 `himawari` CLI 已在临时 state root 完成损坏前恢复点与原子恢复演练，以及 stopped source 到 inactive/activated target 的 authority-transfer 演练；浏览器资格测试只监听 loopback。这些验证不访问付费模型、外部账户或生产凭据。
 
 Task 20 的真实模型验证由两个显式 opt-in 集成测试组成。`HIMAWARI_LIVE_EMBEDDING_SMOKE=1` 从 macOS Keychain opaque provider-secret source 构造 Mem0 production composition，只发送公开合成文本，并在完成后删除临时状态；它确认 OpenRouter Qwen3 Embedding 8B 请求与返回均为 4096 维并返回 token usage。`HIMAWARI_LIVE_GENERATION_SMOKE=1` 通过同一份 canonical live configuration 先调用 primary，再在本地注入 retryable 503 触发真实 fixed fallback；fresh evidence 确认 `Makora` 执行 DeepSeek primary、`Z.AI` 执行 GLM fallback，两者均返回预期正文，总计 `0.000026 USD`。这两个有界测试不替代最终 Gateway/Memory/Worker 生产组合资格。
 
@@ -316,6 +320,7 @@ Task 20 的真实模型验证由两个显式 opt-in 集成测试组成。`HIMAWA
 - Pi adapter 已通过 published `0.84.2` 与 local-source compatibility，但牛肉餐厅 E2E 使用确定性 Model/Capability，不调用真实模型、地图或预订供应商。
 - Execution Worker 已具有真实 HTTP/JSON over UDS transport、boot-scoped authentication、严格 resource ceiling validation、deadline/progress limits 和 child-process crash/reconnect 证据，但尚无完整 sandbox、service-manager CPU/内存强制或不可信 MCP 隔离。
 - Session 删除的抽象 conformance 与 Thread/task/Memory/Payload 的真实 SQLite、ciphertext file 和受管 derived-artifact 删除路径均已验证；最终 Agent Service 组合仍需把所有正文生产者统一登记到这些受管路径，Memory provider cleanup 也仍依赖 durable projection worker 正常运行。
+- Thread 已通过 Chromium/WebKit、双确定性设备身份、服务/SQLite 重启、Pi Session 重建、summary/projection rebuild 和 1 万/20 万规模矩阵；这些本地证据未执行物理 macOS 重启、真实外部 IdP MFA 或实体移动设备 readback，不能据此声明正式平台或 production qualification。
 - Gateway v1/v2 已保证认证/授权/Control Plane 委派边界，HTTP/SSE 与 Identity adapters 也有 contract/security/browser 证据；默认 `InMemoryGatewayControlPlane` 不实现生产 Thread/Run/Approval command handler，真实 Cloudflare 公网路径和 Agent Service 最终组合仍未验证。
 - `gateway.v2`、`execution.v2` 和新增 application ports 是冻结的产品契约；Execution UDS、严格 configuration/state-root、health/metrics model、可安装服务、HTTP/SSE、身份断言、Control Center 基础旅程、产品 Memory/Mem0 projection、受治理删除、同机 recovery point 与停机 authority transfer 已实现，其余 GitHub 与 production adapter 组合尚未实现。
 - 生产 Secrets Vault、Provider material source、通知客户端、自动 timer loop 和远程 Worker 均未实现；network Gateway 只作为独立 adapter 验证，尚未在 public production readiness 中启用。本版本不应描述为可生产部署。

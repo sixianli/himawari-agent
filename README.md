@@ -32,7 +32,9 @@ npm ci --ignore-scripts
 npm run test:unit -- local-execution-worker local-composition-root
 npm run test:integration -- agent-gateway external-action-reconciliation
 npm run test:e2e -- beef-restaurant
+npm run test:journeys
 npm run qualify:scale
+npm run qualify:thread-scale
 npm run build
 ```
 
@@ -174,6 +176,14 @@ npm run qualify:scale
 
 这项命令会把生成数据和 snapshot 限制在临时目录并在结束时清理；当前结果见 [S1-T28 scale evidence](test/integration/qualification/evidence/s1-task28-scale.json)。Hermes 新隔离目录也已用同一源码/锁文件 runtime manifest 完成 Linux 构建和安装后服务资格测试，但 native 产物按平台分别构建；这些结果不代表 Mac/Hermes 双向 authority transfer、完整加密迁移、7 天 soak 或 production readiness。
 
+Thread 专项资格使用同样的临时 SQLite 边界，但运行真实 S2 Thread repository/application 路径：10,000 个同时间戳 Thread、200,000 条初始 Message、混合 active/archived/trashed、opaque search、pin、Fork、projection rebuild 和 repository restart。当前 Mac 证据中 active list/search/pin/Fork/projection rebuild 的 p95 分别为 2.811/8.835/3.215/1.262/0.646 ms，正常关闭重开为 357.85 ms；全部分页无重复或遗漏，旧 projection 行清零。重跑命令和证据为：
+
+```bash
+npm run qualify:thread-scale
+```
+
+S2 对 S0 J01–J03/J13 的责任映射由 `npm run test:journeys` 校验。该入口组合既有领域、集成、E2E 与浏览器证据，不复制第二套 Thread/Memory/删除行为；它只表示 S2 本地责任完成，不代表真实外部身份提供方 MFA、实体设备、物理 OS 重启或 S0 全局 journey 已完成。
+
 ## Validation
 
 ```bash
@@ -182,8 +192,10 @@ npm run test:unit
 npm run test:contracts
 npm run test:integration
 npm run test:e2e
+npm run test:journeys
 npm run check:pi-compat
 npm run qualify:scale
+npm run qualify:thread-scale
 ```
 
 测试按文件名和目录分组：
@@ -191,6 +203,7 @@ npm run qualify:scale
 - unit：`apps/**/*.unit.test.ts`、`packages/**/*.unit.test.ts`
 - contracts：`apps/**/*.contract.test.ts`、`packages/**/*.contract.test.ts`
 - integration：`test/integration/**/*.test.ts`
+- journeys：`test/integration/journeys/**/*.test.ts`，验证 S2 与 S0 canonical journey/evidence 映射
 - e2e：`test/e2e/**/*.test.ts`
 - Pi compatibility：`packages/runtime-pi/**/*.compat.test.ts`
 
