@@ -29,12 +29,21 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.delete_permanently",
   "thread.task.resolve",
   "thread.deletion_impact",
+  "thread.events",
   "thread.list",
   "thread.detail",
   "thread.search",
   "thread.lineage",
   "thread.checkpoint",
   "thread.snapshot",
+  "thread.collection_snapshot",
+  "thread.detail_snapshot",
+  "thread.search_snapshot",
+  "thread.lineage_snapshot",
+  "thread.checkpoint_snapshot",
+  "thread.deletion_impact_snapshot",
+  "thread.command_result",
+  "thread.conflict",
   "thread.event",
 ] as const;
 export type ThreadGatewayMessageType = (typeof THREAD_GATEWAY_MESSAGE_TYPES)[number];
@@ -57,6 +66,30 @@ const threadStatusSchema = enumeration([
   "trashed",
   "deletion_pending",
   "deleted_verified",
+]);
+const threadCommandTypeSchema = enumeration([
+  "thread.create",
+  "thread.message.submit",
+  "thread.message.commit_assistant",
+  "thread.rename",
+  "thread.pin",
+  "thread.archive",
+  "thread.restore",
+  "thread.fork",
+  "thread.set_answer_locale",
+  "thread.trash",
+  "thread.delete_permanently",
+  "thread.task.resolve",
+]);
+const runStatusSchema = enumeration([
+  "accepted",
+  "building_context",
+  "running",
+  "awaiting_approval",
+  "reconciling_external_result",
+  "completed",
+  "failed",
+  "cancelled",
 ]);
 
 function envelope<const TKind extends string, const TType extends string>(
@@ -257,6 +290,10 @@ export const threadDeletionImpactV3QuerySchema = object({
   ...envelope("query", "thread.deletion_impact"),
   payload: object({ threadId: machineString }),
 });
+export const threadEventsV3SubscriptionSchema = object({
+  ...envelope("subscription", "thread.events"),
+  payload: object({ afterCursor: nullable(machineString) }),
+});
 
 export const threadSnapshotV3Schema = object({
   ...envelope("snapshot", "thread.snapshot"),
@@ -271,6 +308,161 @@ export const threadSnapshotV3Schema = object({
     messageWatermark: integer(0),
     lineageRef: nullable(machineString),
     snapshotRef: machineString,
+    generatedAt: timestamp,
+  }),
+});
+
+export const threadSummaryV3Schema = object({
+  threadId: machineString,
+  revision: integer(1),
+  status: threadStatusSchema,
+  titleRef: nullable(machineString),
+  titleSource: nullable(enumeration(["automatic", "owner"])),
+  titleRevision: integer(0),
+  pinOrder: nullable(integer(0)),
+  answerLocale: answerLocaleSchema,
+  messageWatermark: integer(0),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
+export const threadMessageSummaryV3Schema = object({
+  messageId: machineString,
+  sequence: integer(1),
+  role: enumeration(["owner", "agent", "system"]),
+  contentRef: machineString,
+  dataClassification: classificationSchema,
+  status: enumeration(["committed", "partial", "failed"]),
+  turnId: nullable(machineString),
+  runId: nullable(machineString),
+  committedAt: timestamp,
+});
+
+export const threadRunSummaryV3Schema = object({
+  runId: machineString,
+  revision: integer(1),
+  status: runStatusSchema,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
+export const threadCollectionSnapshotV3Schema = object({
+  ...envelope("snapshot", "thread.collection_snapshot"),
+  payload: object({
+    threads: array(threadSummaryV3Schema),
+    nextCursor: nullable(machineString),
+    snapshotRef: machineString,
+    generatedAt: timestamp,
+  }),
+});
+
+export const threadDetailSnapshotV3Schema = object({
+  ...envelope("snapshot", "thread.detail_snapshot"),
+  payload: object({
+    thread: threadSummaryV3Schema,
+    messages: array(threadMessageSummaryV3Schema),
+    runs: array(threadRunSummaryV3Schema),
+    nextSequence: nullable(integer(1)),
+    snapshotRef: machineString,
+    generatedAt: timestamp,
+  }),
+});
+
+export const threadSearchSnapshotV3Schema = object({
+  ...envelope("snapshot", "thread.search_snapshot"),
+  payload: object({
+    queryRef: machineString,
+    projectionVersion: machineString,
+    threads: array(threadSummaryV3Schema),
+    nextCursor: nullable(machineString),
+    degraded: booleanValue,
+    reasonCode: nullable(machineString),
+    snapshotRef: machineString,
+    generatedAt: timestamp,
+  }),
+});
+
+export const threadLineageSnapshotV3Schema = object({
+  ...envelope("snapshot", "thread.lineage_snapshot"),
+  payload: object({
+    threadId: machineString,
+    sourceThreadId: nullable(machineString),
+    sourceTurnId: nullable(machineString),
+    sourceWatermark: nullable(integer(1)),
+    summaryRefs: array(machineString),
+    policyRefs: array(machineString),
+    sourceContentAvailable: booleanValue,
+    forkedAt: nullable(timestamp),
+    snapshotRef: machineString,
+    generatedAt: timestamp,
+  }),
+});
+
+export const threadCheckpointSnapshotV3Schema = object({
+  ...envelope("snapshot", "thread.checkpoint_snapshot"),
+  payload: object({
+    threadId: machineString,
+    jobId: nullable(machineString),
+    generationId: nullable(machineString),
+    sourceWatermark: nullable(integer(1)),
+    policyVersion: nullable(machineString),
+    modelDescriptorRef: nullable(machineString),
+    trigger: nullable(
+      enumeration(["owner_explicit", "controlled_idle", "pre_compaction", "source_threshold"]),
+    ),
+    summaryRef: nullable(machineString),
+    status: nullable(
+      enumeration(["pending", "running", "completed", "retry_wait", "failed_terminal"]),
+    ),
+    revision: nullable(integer(1)),
+    attemptCount: nullable(integer(0)),
+    nextRetryAt: nullable(timestamp),
+    errorCode: nullable(machineString),
+    snapshotRef: machineString,
+    generatedAt: timestamp,
+  }),
+});
+
+const threadTaskBindingV3Schema = object({
+  taskId: machineString,
+  revision: integer(0),
+  threadId: machineString,
+  status: enumeration(["active", "paused", "cancelled"]),
+});
+
+export const threadDeletionImpactSnapshotV3Schema = object({
+  ...envelope("snapshot", "thread.deletion_impact_snapshot"),
+  payload: object({
+    threadId: machineString,
+    threadRevision: integer(1),
+    associatedTasks: array(threadTaskBindingV3Schema),
+    activeTaskIds: array(machineString),
+    deletionAllowed: booleanValue,
+    snapshotRef: machineString,
+    generatedAt: timestamp,
+  }),
+});
+
+export const threadCommandResultV3Schema = object({
+  ...envelope("result", "thread.command_result"),
+  payload: object({
+    commandType: threadCommandTypeSchema,
+    commandId: machineString,
+    threadId: machineString,
+    threadRevision: integer(1),
+    resultRef: machineString,
+    replayed: booleanValue,
+    committedAt: timestamp,
+  }),
+});
+
+export const threadConflictV3Schema = object({
+  ...envelope("conflict", "thread.conflict"),
+  payload: object({
+    commandType: threadCommandTypeSchema,
+    threadId: machineString,
+    reasonCode: machineString,
+    latest: nullable(threadSummaryV3Schema),
     generatedAt: timestamp,
   }),
 });
@@ -303,12 +495,21 @@ const schemasByType = {
   "thread.delete_permanently": deleteThreadPermanentlyV3CommandSchema,
   "thread.task.resolve": resolveThreadTaskV3CommandSchema,
   "thread.deletion_impact": threadDeletionImpactV3QuerySchema,
+  "thread.events": threadEventsV3SubscriptionSchema,
   "thread.list": listThreadsV3QuerySchema,
   "thread.detail": threadDetailV3QuerySchema,
   "thread.search": searchThreadsV3QuerySchema,
   "thread.lineage": threadLineageV3QuerySchema,
   "thread.checkpoint": threadCheckpointV3QuerySchema,
   "thread.snapshot": threadSnapshotV3Schema,
+  "thread.collection_snapshot": threadCollectionSnapshotV3Schema,
+  "thread.detail_snapshot": threadDetailSnapshotV3Schema,
+  "thread.search_snapshot": threadSearchSnapshotV3Schema,
+  "thread.lineage_snapshot": threadLineageSnapshotV3Schema,
+  "thread.checkpoint_snapshot": threadCheckpointSnapshotV3Schema,
+  "thread.deletion_impact_snapshot": threadDeletionImpactSnapshotV3Schema,
+  "thread.command_result": threadCommandResultV3Schema,
+  "thread.conflict": threadConflictV3Schema,
   "thread.event": threadEventV3Schema,
 } as const satisfies Record<ThreadGatewayMessageType, Schema<unknown>>;
 
@@ -316,6 +517,13 @@ type SchemaByType = typeof schemasByType;
 export type ThreadGatewayMessage = InferSchema<SchemaByType[keyof SchemaByType]>;
 export type ThreadGatewayCommand = Extract<ThreadGatewayMessage, { kind: "command" }>;
 export type ThreadGatewayQuery = Extract<ThreadGatewayMessage, { kind: "query" }>;
+export type ThreadGatewaySubscription = Extract<ThreadGatewayMessage, { kind: "subscription" }>;
+export type ThreadGatewaySnapshot = Extract<ThreadGatewayMessage, { kind: "snapshot" }>;
+export type ThreadGatewayEvent = Extract<ThreadGatewayMessage, { kind: "event" }>;
+export type ThreadGatewayRequestResult = Extract<
+  ThreadGatewayMessage,
+  { kind: "snapshot" | "result" | "conflict" }
+>;
 
 function readType(input: unknown): ThreadGatewayMessageType {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {

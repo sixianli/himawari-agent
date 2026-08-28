@@ -3,8 +3,13 @@ import {
   type GatewayV2Command,
   type GatewayV2Query,
   type GatewayV2Snapshot,
+  type ThreadGatewayCommand,
+  type ThreadGatewayRequestResult,
+  type ThreadGatewayQuery,
+  type ThreadGatewaySnapshot,
   gatewayV2MessageSchema,
   gatewayMessageSchema,
+  threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 
 export type MutationStatus = "pending" | "accepted" | "rejected" | "expired" | "replayed";
@@ -151,6 +156,14 @@ function mutationResult(value: unknown): GatewayClientMutationResult {
   });
 }
 
+function threadResponse(value: unknown): ThreadGatewayRequestResult {
+  const parsed = threadGatewayMessageSchema.parse(value);
+  if (!["snapshot", "result", "conflict"].includes(parsed.kind)) {
+    throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+  }
+  return parsed as ThreadGatewayRequestResult;
+}
+
 async function json(response: Response): Promise<unknown> {
   const body = await response.json().catch(() => null);
   if (!response.ok) {
@@ -216,9 +229,40 @@ export class GatewayClient {
     return mutationResult(await json(response));
   }
 
+  async queryThread(message: ThreadGatewayQuery): Promise<ThreadGatewaySnapshot> {
+    const parsed = threadGatewayMessageSchema.parse(message);
+    if (parsed.kind !== "query") throw new Error("CONTROL_CENTER_THREAD_QUERY_INVALID");
+    const response = await this.options.fetch("/api/gateway/thread/v3/queries", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: threadGatewayMessageSchema.serialize(parsed),
+    });
+    const result = threadResponse(await json(response));
+    if (result.kind !== "snapshot") throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+    return result;
+  }
+
+  async mutateThread(message: ThreadGatewayCommand): Promise<ThreadGatewayRequestResult> {
+    const parsed = threadGatewayMessageSchema.parse(message);
+    if (parsed.kind !== "command") throw new Error("CONTROL_CENTER_THREAD_COMMAND_INVALID");
+    const response = await this.options.fetch("/api/gateway/thread/v3/commands", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": parsed.idempotencyKey,
+        "x-csrf-token": this.options.csrfToken(),
+      },
+      body: threadGatewayMessageSchema.serialize(parsed),
+    });
+    return threadResponse(await json(response));
+  }
+
   async protectText(
     content: string,
     dataClassification: "public" | "private" | "sensitive" | "restricted" = "private",
+    idempotencyKey = `payload:${crypto.randomUUID()}`,
   ): Promise<string> {
     if (content.length === 0 || content.length > 64 * 1024) {
       throw new Error("CONTROL_CENTER_PAYLOAD_INVALID");
@@ -228,6 +272,7 @@ export class GatewayClient {
       credentials: "same-origin",
       headers: {
         "content-type": "application/json",
+        "idempotency-key": idempotencyKey,
         "x-csrf-token": this.options.csrfToken(),
       },
       body: JSON.stringify({ content, dataClassification }),
@@ -242,6 +287,86 @@ export class GatewayClient {
       throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
     }
     return (body as { payloadRef: string }).payloadRef;
+  }
+
+  async readText(payloadRef: string): Promise<{
+    readonly content: string;
+    readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
+  }> {
+    const response = await this.options.fetch("/api/payload/v1/text/read", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json",
+        "x-csrf-token": this.options.csrfToken(),
+      },
+      body: JSON.stringify({ payloadRef }),
+    });
+    const body = await json(response);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+    }
+    const value = body as {
+      readonly content?: unknown;
+      readonly dataClassification?: unknown;
+      readonly contentType?: unknown;
+    };
+    if (
+      typeof value.content !== "string" ||
+      !["public", "private", "sensitive", "restricted"].includes(
+        value.dataClassification as string,
+      ) ||
+      value.contentType !== "text/plain"
+    ) {
+      throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+    }
+    return Object.freeze({
+      content: value.content,
+      dataClassification: value.dataClassification as
+        | "public"
+        | "private"
+        | "sensitive"
+        | "restricted",
+    });
+  }
+
+  async prepareThreadSearch(query: string): Promise<{
+    readonly queryRef: string;
+    readonly tokenRefs: readonly string[];
+    readonly projectionVersion: string;
+  }> {
+    const response = await this.options.fetch("/api/thread-search/v1/prepare", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json",
+        "x-csrf-token": this.options.csrfToken(),
+      },
+      body: JSON.stringify({ query }),
+    });
+    const body = await json(response);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+    }
+    const value = body as {
+      readonly queryRef?: unknown;
+      readonly tokenRefs?: unknown;
+      readonly projectionVersion?: unknown;
+    };
+    if (
+      typeof value.queryRef !== "string" ||
+      !Array.isArray(value.tokenRefs) ||
+      value.tokenRefs.length === 0 ||
+      value.tokenRefs.some((token) => typeof token !== "string") ||
+      typeof value.projectionVersion !== "string"
+    ) {
+      throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+    }
+    return Object.freeze({
+      queryRef: value.queryRef,
+      tokenRefs: Object.freeze(value.tokenRefs as string[]),
+      projectionVersion: value.projectionVersion,
+    });
   }
 }
 

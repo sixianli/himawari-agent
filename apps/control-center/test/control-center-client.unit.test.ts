@@ -1,9 +1,15 @@
-import type { GatewayV2Event } from "@himawari-agent/gateway-contracts";
+import type { GatewayV2Event, ThreadGatewayEvent } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it, vi } from "vitest";
 import { ControlCenterBrowserStorage } from "../src/browser-storage.js";
 import { GatewayClient, safeBrowserLog } from "../src/gateway-client.js";
-import { commandMessage, queryMessage } from "../src/messages.js";
+import {
+  commandMessage,
+  queryMessage,
+  threadCommandMessage,
+  threadQueryMessage,
+} from "../src/messages.js";
 import { type EventSourceLike, SseStateSynchronizer } from "../src/sse-synchronizer.js";
+import { ThreadSseSynchronizer } from "../src/thread-sse-synchronizer.js";
 
 const configuration = {
   ownerId: "owner-01",
@@ -95,6 +101,30 @@ function streamEvent(): GatewayV2Event {
   };
 }
 
+function threadEvent(): ThreadGatewayEvent {
+  return {
+    schemaVersion: "gateway.thread.v3",
+    kind: "event",
+    type: "thread.event",
+    messageId: "thread-event-01",
+    correlationId: "correlation-01",
+    causationId: "thread-command-01",
+    scope: { ownerId: "owner-01", agentId: "agent-01" },
+    authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+    actor: { actorType: "system", actorId: "thread-gateway" },
+    payload: {
+      eventId: "thread-event-01",
+      threadId: "thread-01",
+      revision: 2,
+      cursor: "thread-cursor:02",
+      causationCommandId: "thread-command-01",
+      eventType: "thread.message.submit",
+      payloadRef: "payload-result-01",
+      occurredAt: "2026-08-27T00:00:00.000Z",
+    },
+  };
+}
+
 describe("typed browser Gateway client", () => {
   it("strictly serializes commands, keeps one idempotency key and reports replay", async () => {
     const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
@@ -170,6 +200,95 @@ describe("typed browser Gateway client", () => {
     expect(bodies[0]).toContain("私人正文");
     expect(bodies[1]).not.toContain("私人正文");
   });
+
+  it("uses strict Thread v3 endpoints and preserves a caller-supplied idempotency key", async () => {
+    const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+    const client = new GatewayClient({
+      csrfToken: () => "csrf-01",
+      fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+        calls.push({ url: String(url), init: init ?? {} });
+        const request = JSON.parse(String(init?.body)) as { type: string; messageId: string };
+        if (request.type === "thread.list") {
+          return new Response(
+            JSON.stringify({
+              schemaVersion: "gateway.thread.v3",
+              kind: "snapshot",
+              type: "thread.collection_snapshot",
+              messageId: "snapshot-thread-01",
+              correlationId: "correlation-01",
+              causationId: request.messageId,
+              scope: { ownerId: "owner-01", agentId: "agent-01" },
+              authority: {
+                deploymentId: "deployment-01",
+                authorityEpoch: 1,
+                fencingToken: 1,
+              },
+              actor: { actorType: "system", actorId: "thread-gateway" },
+              payload: {
+                threads: [],
+                nextCursor: null,
+                snapshotRef: "snapshot-ref-01",
+                generatedAt: "2026-08-27T00:00:00.000Z",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            schemaVersion: "gateway.thread.v3",
+            kind: "result",
+            type: "thread.command_result",
+            messageId: "result-thread-01",
+            correlationId: "correlation-01",
+            causationId: request.messageId,
+            scope: { ownerId: "owner-01", agentId: "agent-01" },
+            authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+            actor: { actorType: "system", actorId: "thread-gateway" },
+            payload: {
+              commandType: "thread.pin",
+              commandId: request.messageId,
+              threadId: "thread-01",
+              threadRevision: 2,
+              resultRef: "payload-result-01",
+              replayed: false,
+              committedAt: "2026-08-27T00:00:00.000Z",
+            },
+          }),
+          { status: 200 },
+        );
+      }) as typeof fetch,
+    });
+    await client.queryThread(
+      threadQueryMessage(configuration, "thread.list", {
+        statuses: ["active"],
+        pinnedOnly: false,
+        afterCursor: null,
+        limit: 10,
+      }),
+    );
+    await client.mutateThread(
+      threadCommandMessage(
+        configuration,
+        "thread.pin",
+        {
+          threadId: "thread-01",
+          expectedRevision: 1,
+          pinOrder: 0,
+          resultRef: "payload-result-01",
+        },
+        "idempotency-thread-01",
+      ),
+    );
+
+    expect(calls.map(({ url }) => url)).toEqual([
+      "/api/gateway/thread/v3/queries",
+      "/api/gateway/thread/v3/commands",
+    ]);
+    expect(new Headers(calls[1]?.init.headers).get("idempotency-key")).toBe(
+      "idempotency-thread-01",
+    );
+  });
 });
 
 describe("browser storage and SSE recovery", () => {
@@ -178,6 +297,13 @@ describe("browser storage and SSE recovery", () => {
     const storage = new ControlCenterBrowserStorage(raw);
     storage.saveDraft("thread-01", "未发送草稿");
     storage.saveLastCursor("cursor-01");
+    storage.saveThreadLastCursor("thread-cursor:01");
+    storage.savePendingThreadMutation({
+      operationKey: "op:pin:1:thread-01",
+      idempotencyKey: "idempotency-thread-01",
+      commandType: "thread.pin",
+      threadId: "thread-01",
+    });
     storage.savePreferences({
       density: "compact",
       detailPanePercent: 22,
@@ -189,8 +315,13 @@ describe("browser storage and SSE recovery", () => {
       expect.arrayContaining([
         "himawari.control-center.v1.draft.thread-01",
         "himawari.control-center.v1.lastCursor",
+        "himawari.control-center.v1.threadLastCursor",
+        "himawari.control-center.v1.mutation.op:pin:1:thread-01",
         "himawari.control-center.v1.preferences",
       ]),
+    );
+    expect(raw.getItem("himawari.control-center.v1.mutation.op:pin:1:thread-01")).not.toContain(
+      "未发送草稿",
     );
     const log = safeBrowserLog("EVENT", {
       type: "stream.event",
@@ -238,6 +369,59 @@ describe("browser storage and SSE recovery", () => {
       "/api/gateway/v2/events?afterCursor=cursor-01",
       "/api/gateway/v2/events?afterCursor=cursor-02",
     ]);
+    synchronizer.stop();
+  });
+
+  it("resumes Thread events from a separate cursor and requests a snapshot on retention loss", () => {
+    const storage = new ControlCenterBrowserStorage(new MemoryStorage());
+    storage.saveThreadLastCursor("thread-cursor:01");
+    const urls: string[] = [];
+    const sources: Array<
+      EventSourceLike & { listeners: Map<string, (event: MessageEvent<string>) => void> }
+    > = [];
+    const callbacks: string[] = [];
+    const synchronizer = new ThreadSseSynchronizer({
+      configuration,
+      storage,
+      createEventSource(url) {
+        urls.push(url);
+        const listeners = new Map<string, (event: MessageEvent<string>) => void>();
+        const source = {
+          listeners,
+          onopen: null,
+          onmessage: null,
+          onerror: null,
+          addEventListener(type: string, listener: (event: MessageEvent<string>) => void) {
+            listeners.set(type, listener);
+          },
+          close: vi.fn(),
+        } satisfies EventSourceLike & {
+          listeners: Map<string, (event: MessageEvent<string>) => void>;
+        };
+        sources.push(source);
+        return source;
+      },
+      onCommittedEvent: () => callbacks.push("event"),
+      onSnapshotRequired: () => callbacks.push("snapshot"),
+      log: vi.fn(),
+    });
+    synchronizer.start();
+    sources[0]?.onmessage?.({ data: JSON.stringify(threadEvent()) } as MessageEvent<string>);
+    sources[0]?.listeners.get("thread.snapshot_required")?.(
+      new MessageEvent("thread.snapshot_required", { data: "{}" }),
+    );
+
+    const encoded = new URL(`https://fixture.test${urls[0]}`).searchParams.get("subscription");
+    const normalized = (encoded ?? "").replaceAll("-", "+").replaceAll("_", "/");
+    const subscription = JSON.parse(
+      atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=")),
+    );
+    expect(subscription).toMatchObject({
+      type: "thread.events",
+      payload: { afterCursor: "thread-cursor:01" },
+    });
+    expect(callbacks).toEqual(["event", "snapshot"]);
+    expect(storage.readThreadLastCursor()).toBeNull();
     synchronizer.stop();
   });
 });

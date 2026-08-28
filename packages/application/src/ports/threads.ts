@@ -7,6 +7,7 @@ import type {
   ProductThread,
   ProductThreadMessage,
   RunId,
+  RunStatus,
   SessionId,
   ThreadId,
   TurnId,
@@ -154,6 +155,29 @@ export interface ThreadDeletionImpact {
   readonly activeTaskIds: readonly string[];
 }
 
+export interface ThreadRunSummaryRecord {
+  readonly runId: RunId;
+  readonly revision: number;
+  readonly status: RunStatus;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface ThreadGatewayEventRecord {
+  readonly cursorSequence: number;
+  readonly cursor: string;
+  readonly eventId: string;
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly authority: ProductAuthorityFence;
+  readonly threadId: ThreadId;
+  readonly revision: number;
+  readonly causationCommandId: string;
+  readonly eventType: string;
+  readonly payloadRef: PayloadRef | null;
+  readonly occurredAt: string;
+}
+
 export type ThreadTaskResolution =
   | { readonly action: "pause" }
   | { readonly action: "cancel" }
@@ -222,6 +246,17 @@ export interface ThreadRepositoryPort {
     afterSequence: number,
     limit: number,
   ): Promise<readonly ProductThreadMessage[]>;
+  listRuns(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    threadId: ThreadId,
+  ): Promise<readonly ThreadRunSummaryRecord[]>;
+  listGatewayEvents(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    afterCursor: string | null,
+    limit: number,
+  ): Promise<readonly ThreadGatewayEventRecord[]>;
   hasCommittedTurn(
     ownerId: OwnerId,
     agentId: AgentId,

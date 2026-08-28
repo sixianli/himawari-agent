@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import {
   type AgentGatewayPort,
   type AgentGatewayV2Port,
+  type AgentThreadGatewayPort,
   ApplicationPortError,
   type GatewayAuthenticationContext,
   PORT_ERROR_CODES,
@@ -17,8 +18,13 @@ import {
   type GatewayV2Command,
   type GatewayV2Event,
   type GatewayV2Query,
+  type ThreadGatewayCommand,
+  type ThreadGatewayEvent,
+  type ThreadGatewayQuery,
+  type ThreadGatewaySubscription,
   gatewayMessageSchema,
   gatewayV2MessageSchema,
+  threadGatewayMessageSchema,
   type StreamEvent,
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
@@ -73,7 +79,10 @@ export interface HttpGatewayMetricsPort {
 export interface HttpGatewayServerOptions {
   readonly gateway: AgentGatewayPort;
   readonly gatewayV2?: AgentGatewayV2Port;
+  readonly threadGateway?: AgentThreadGatewayPort;
   readonly payloadAdmission?: HttpGatewayPayloadAdmissionPort;
+  readonly payloadRead?: HttpGatewayPayloadReadPort;
+  readonly threadSearch?: HttpGatewayThreadSearchPort;
   readonly authentication: HttpGatewayAuthenticationPort;
   readonly csrf: HttpGatewayCsrfPort;
   readonly publicOrigin: string;
@@ -108,10 +117,35 @@ export interface HttpGatewayServerOptions {
 export interface HttpGatewayPayloadAdmissionPort {
   protect(input: {
     readonly authentication: GatewayAuthenticationContext;
+    readonly idempotencyKey: string;
     readonly content: string;
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
     readonly contentType: "text/plain";
   }): Promise<{ readonly payloadRef: string }>;
+}
+
+export interface HttpGatewayPayloadReadPort {
+  read(input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly agentId: string;
+    readonly payloadRef: string;
+  }): Promise<{
+    readonly content: string;
+    readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
+    readonly contentType: "text/plain";
+  }>;
+}
+
+export interface HttpGatewayThreadSearchPort {
+  prepare(input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly agentId: string;
+    readonly query: string;
+  }): Promise<{
+    readonly queryRef: string;
+    readonly tokenRefs: readonly string[];
+    readonly projectionVersion: string;
+  }>;
 }
 
 const JSON_CONTENT_TYPE = "application/json";
@@ -213,6 +247,33 @@ function parseV2BusinessMessage(input: unknown, expectedKind: "query"): GatewayV
 function parseV2BusinessMessage(input: unknown, expectedKind: "command" | "query") {
   const parsed = gatewayV2MessageSchema.parse(input);
   if (parsed.kind !== expectedKind) {
+    throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.METHOD_INVALID, 400);
+  }
+  return parsed;
+}
+
+function parseThreadBusinessMessage(input: unknown, expectedKind: "command"): ThreadGatewayCommand;
+function parseThreadBusinessMessage(input: unknown, expectedKind: "query"): ThreadGatewayQuery;
+function parseThreadBusinessMessage(input: unknown, expectedKind: "command" | "query") {
+  const parsed = threadGatewayMessageSchema.parse(input);
+  if (parsed.kind !== expectedKind) {
+    throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.METHOD_INVALID, 400);
+  }
+  return parsed;
+}
+
+function parseThreadSubscription(encoded: unknown): ThreadGatewaySubscription {
+  if (typeof encoded !== "string" || encoded.length === 0 || encoded.length > 8192) {
+    throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.REQUEST_INVALID, 400);
+  }
+  let decoded: string;
+  try {
+    decoded = Buffer.from(encoded, "base64url").toString("utf8");
+  } catch {
+    throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.REQUEST_INVALID, 400);
+  }
+  const parsed = threadGatewayMessageSchema.parseJson(decoded);
+  if (parsed.kind !== "subscription") {
     throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.METHOD_INVALID, 400);
   }
   return parsed;
@@ -343,6 +404,58 @@ async function* streamGatewayV2Events(input: {
     } catch (error) {
       if (error instanceof ApplicationPortError) {
         yield serializeSse({ event: "gateway.stream_error", data: { code: error.code } });
+        return;
+      }
+      throw error;
+    }
+    if (timer) clearTimeout(timer);
+    if (result.kind === "heartbeat") {
+      yield ": heartbeat\n\n";
+      continue;
+    }
+    if (result.value.done) return;
+    const event = result.value.value;
+    pending = iterator.next();
+    yield serializeSse({ event: "message", id: event.payload.cursor, data: event });
+  }
+}
+
+async function* streamThreadGatewayEvents(input: {
+  readonly gateway: AgentThreadGatewayPort;
+  readonly authentication: GatewayAuthenticationContext;
+  readonly subscription: ThreadGatewaySubscription;
+  readonly heartbeatMilliseconds: number;
+}): AsyncGenerator<string> {
+  const iterator = input.gateway
+    .subscribe(input.authentication, input.subscription)
+    [Symbol.asyncIterator]();
+  let pending = iterator.next();
+  while (true) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let result:
+      | { readonly kind: "item"; readonly value: IteratorResult<ThreadGatewayEvent> }
+      | { readonly kind: "heartbeat" };
+    try {
+      result = await Promise.race([
+        pending.then((value) => ({ kind: "item" as const, value })),
+        new Promise<{ readonly kind: "heartbeat" }>((resolve) => {
+          timer = setTimeout(() => resolve({ kind: "heartbeat" }), input.heartbeatMilliseconds);
+        }),
+      ]);
+    } catch (error) {
+      if (error instanceof ApplicationPortError) {
+        yield serializeSse({
+          event:
+            error.code === PORT_ERROR_CODES.NOT_FOUND
+              ? "thread.snapshot_required"
+              : "gateway.stream_error",
+          data: {
+            code: error.code,
+            ...(error.code === PORT_ERROR_CODES.NOT_FOUND
+              ? { reasonCode: "CURSOR_OUTSIDE_RETENTION" }
+              : {}),
+          },
+        });
         return;
       }
       throw error;
@@ -654,6 +767,59 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     );
   }
 
+  if (options.threadGateway) {
+    const threadGateway = options.threadGateway;
+    app.post("/api/gateway/thread/v3/commands", async (request, reply) => {
+      assertMutationBoundary(request, publicOrigin);
+      const authentication = await authenticate(request, options);
+      const csrfAccepted = await options.csrf.verify({
+        authentication,
+        token: header(request, "x-csrf-token"),
+        method: request.method,
+        path: requestPath(request),
+      });
+      if (!csrfAccepted) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
+      }
+      const command = parseThreadBusinessMessage(request.body, "command");
+      if (header(request, "idempotency-key") !== command.idempotencyKey) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.IDEMPOTENCY_MISMATCH, 400);
+      }
+      return sendJson(reply, 200, await threadGateway.request(authentication, command));
+    });
+
+    app.post("/api/gateway/thread/v3/queries", async (request, reply) => {
+      assertMutationBoundary(request, publicOrigin);
+      const authentication = await authenticate(request, options);
+      const query = parseThreadBusinessMessage(request.body, "query");
+      return sendJson(reply, 200, await threadGateway.request(authentication, query));
+    });
+
+    app.get<{ Querystring: { readonly subscription?: string } }>(
+      "/api/gateway/thread/v3/events",
+      async (request, reply) => {
+        assertPublicHost(request, publicOrigin);
+        const authentication = await authenticate(request, options);
+        const subscription = parseThreadSubscription(request.query.subscription);
+        const stream = Readable.from(
+          streamThreadGatewayEvents({
+            gateway: threadGateway,
+            authentication,
+            subscription,
+            heartbeatMilliseconds,
+          }),
+        );
+        setSecurityHeaders(reply);
+        reply
+          .header("cache-control", "no-cache, no-store")
+          .header("connection", "keep-alive")
+          .header("x-accel-buffering", "no")
+          .type(SSE_CONTENT_TYPE);
+        return reply.send(stream);
+      },
+    );
+  }
+
   if (options.payloadAdmission) {
     const payloadAdmission = options.payloadAdmission;
     app.post("/api/payload/v1/text", async (request, reply) => {
@@ -667,6 +833,14 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       });
       if (!csrfAccepted) {
         throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
+      }
+      const idempotencyKey = header(request, "idempotency-key");
+      if (
+        !idempotencyKey ||
+        idempotencyKey.length > 128 ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(idempotencyKey)
+      ) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.IDEMPOTENCY_MISMATCH, 400);
       }
       if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)) {
         throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
@@ -691,6 +865,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         201,
         await payloadAdmission.protect({
           authentication,
+          idempotencyKey,
           content: body.content,
           dataClassification: body.dataClassification as
             | "public"
@@ -699,6 +874,86 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             | "restricted",
           contentType: "text/plain",
         }),
+      );
+    });
+  }
+
+  if (options.payloadRead) {
+    const payloadRead = options.payloadRead;
+    app.post("/api/payload/v1/text/read", async (request, reply) => {
+      assertMutationBoundary(request, publicOrigin);
+      const authentication = await authenticate(request, options);
+      const csrfAccepted = await options.csrf.verify({
+        authentication,
+        token: header(request, "x-csrf-token"),
+        method: request.method,
+        path: requestPath(request),
+      });
+      if (!csrfAccepted) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
+      }
+      if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
+      }
+      const body = request.body as { readonly payloadRef?: unknown };
+      if (
+        Object.keys(body).some((key) => key !== "payloadRef") ||
+        typeof body.payloadRef !== "string" ||
+        body.payloadRef.length > 128 ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(body.payloadRef)
+      ) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
+      }
+      const agentId = options.browserConfiguration?.agentId;
+      if (!agentId) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.SCOPE_REJECTED, 403);
+      }
+      return sendJson(
+        reply,
+        200,
+        await payloadRead.read({
+          authentication,
+          agentId,
+          payloadRef: body.payloadRef,
+        }),
+      );
+    });
+  }
+
+  if (options.threadSearch) {
+    const threadSearch = options.threadSearch;
+    app.post("/api/thread-search/v1/prepare", async (request, reply) => {
+      assertMutationBoundary(request, publicOrigin);
+      const authentication = await authenticate(request, options);
+      const csrfAccepted = await options.csrf.verify({
+        authentication,
+        token: header(request, "x-csrf-token"),
+        method: request.method,
+        path: requestPath(request),
+      });
+      if (!csrfAccepted) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
+      }
+      const agentId = options.browserConfiguration?.agentId;
+      if (!agentId) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.SCOPE_REJECTED, 403);
+      }
+      if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
+      }
+      const body = request.body as { readonly query?: unknown };
+      if (
+        Object.keys(body).some((key) => key !== "query") ||
+        typeof body.query !== "string" ||
+        body.query.trim().length === 0 ||
+        body.query.length > 2048
+      ) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
+      }
+      return sendJson(
+        reply,
+        200,
+        await threadSearch.prepare({ authentication, agentId, query: body.query }),
       );
     });
   }

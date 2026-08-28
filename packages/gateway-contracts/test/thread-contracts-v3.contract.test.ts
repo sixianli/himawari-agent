@@ -8,6 +8,10 @@ import {
   searchThreadsV3QuerySchema,
   setThreadAnswerLocaleV3CommandSchema,
   submitThreadMessageV3CommandSchema,
+  threadCollectionSnapshotV3Schema,
+  threadDetailSnapshotV3Schema,
+  threadEventsV3SubscriptionSchema,
+  threadConflictV3Schema,
 } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
 
@@ -166,6 +170,95 @@ describe("Thread Gateway v3 contracts", () => {
         },
       }),
     ).toMatchObject({ type: "thread.delete_permanently" });
+  });
+
+  it("freezes collection, detail, conflict and durable event subscription responses", () => {
+    const thread = {
+      threadId: "thread-s2",
+      revision: 4,
+      status: "active",
+      titleRef: "payload:title-s2",
+      titleSource: "owner",
+      titleRevision: 1,
+      pinOrder: 0,
+      answerLocale: "ja",
+      messageWatermark: 2,
+      createdAt: "2026-08-28T00:00:00.000Z",
+      updatedAt: "2026-08-28T00:01:00.000Z",
+    } as const;
+    expect(
+      threadCollectionSnapshotV3Schema.parse({
+        ...envelope,
+        kind: "snapshot",
+        type: "thread.collection_snapshot",
+        actor: { actorType: "system", actorId: "thread-gateway" },
+        payload: {
+          threads: [thread],
+          nextCursor: "2026-08-28T00:01:00.000Z",
+          snapshotRef: "snapshot:collection-s2",
+          generatedAt: "2026-08-28T00:02:00.000Z",
+        },
+      }),
+    ).toMatchObject({ payload: { threads: [{ revision: 4 }] } });
+    expect(
+      threadDetailSnapshotV3Schema.parse({
+        ...envelope,
+        kind: "snapshot",
+        type: "thread.detail_snapshot",
+        actor: { actorType: "system", actorId: "thread-gateway" },
+        payload: {
+          thread,
+          messages: [
+            {
+              messageId: "message-s2",
+              sequence: 1,
+              role: "owner",
+              contentRef: "payload:message-s2",
+              dataClassification: "private",
+              status: "committed",
+              turnId: "turn-s2",
+              runId: "run-s2",
+              committedAt: "2026-08-28T00:00:30.000Z",
+            },
+          ],
+          runs: [
+            {
+              runId: "run-s2",
+              revision: 2,
+              status: "running",
+              createdAt: "2026-08-28T00:00:30.000Z",
+              updatedAt: "2026-08-28T00:01:00.000Z",
+            },
+          ],
+          nextSequence: null,
+          snapshotRef: "snapshot:detail-s2",
+          generatedAt: "2026-08-28T00:02:00.000Z",
+        },
+      }),
+    ).toMatchObject({ payload: { messages: [{ contentRef: "payload:message-s2" }] } });
+    expect(
+      threadConflictV3Schema.parse({
+        ...envelope,
+        kind: "conflict",
+        type: "thread.conflict",
+        actor: { actorType: "system", actorId: "thread-gateway" },
+        payload: {
+          commandType: "thread.pin",
+          threadId: "thread-s2",
+          reasonCode: "PORT_CONFLICT",
+          latest: thread,
+          generatedAt: "2026-08-28T00:02:00.000Z",
+        },
+      }),
+    ).toMatchObject({ payload: { latest: { revision: 4 } } });
+    expect(
+      threadEventsV3SubscriptionSchema.parse({
+        ...envelope,
+        kind: "subscription",
+        type: "thread.events",
+        payload: { afterCursor: "thread-cursor:42" },
+      }),
+    ).toMatchObject({ payload: { afterCursor: "thread-cursor:42" } });
   });
 
   it.each([

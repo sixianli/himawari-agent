@@ -13,6 +13,11 @@ import type {
   GatewayV2Event,
   GatewayV2Query,
   GatewayV2Snapshot,
+  ThreadGatewayCommand,
+  ThreadGatewayEvent,
+  ThreadGatewayQuery,
+  ThreadGatewayRequestResult,
+  ThreadGatewaySubscription,
 } from "@himawari-agent/gateway-contracts";
 
 export interface GatewayAuthenticationContext {
@@ -107,4 +112,43 @@ export interface AgentGatewayV2Port {
     authentication: GatewayAuthenticationContext,
     afterCursor: string | null,
   ): AsyncIterable<GatewayV2Event>;
+}
+
+export type ThreadGatewayRequestMessage = ThreadGatewayCommand | ThreadGatewayQuery;
+export type ThreadGatewayInboundMessage = ThreadGatewayRequestMessage | ThreadGatewaySubscription;
+
+export interface ThreadGatewayAccessPolicyPort {
+  authorize(input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly message: ThreadGatewayInboundMessage;
+  }): Promise<GatewayAccessDecision>;
+}
+
+export interface ThreadGatewayControlPlanePort {
+  execute(input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly command: ThreadGatewayCommand;
+  }): Promise<ThreadGatewayRequestResult>;
+}
+
+export interface ThreadGatewayReadModelPort {
+  query(input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly query: ThreadGatewayQuery;
+  }): Promise<ThreadGatewayRequestResult>;
+  subscribe(input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly subscription: ThreadGatewaySubscription;
+  }): AsyncIterable<ThreadGatewayEvent>;
+}
+
+export interface AgentThreadGatewayPort {
+  request(
+    authentication: GatewayAuthenticationContext,
+    message: ThreadGatewayRequestMessage,
+  ): Promise<ThreadGatewayRequestResult>;
+  subscribe(
+    authentication: GatewayAuthenticationContext,
+    subscription: ThreadGatewaySubscription,
+  ): AsyncIterable<ThreadGatewayEvent>;
 }

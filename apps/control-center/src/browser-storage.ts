@@ -11,6 +11,15 @@ export type ControlCenterUiLocale = (typeof CONTROL_CENTER_UI_LOCALES)[number];
 const KEY_PREFIX = "himawari.control-center.v1";
 const CURSOR_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
+export interface PendingThreadMutation {
+  readonly operationKey: string;
+  readonly idempotencyKey: string;
+  readonly commandType: string;
+  readonly threadId: string;
+}
+
+export const THREAD_CURSOR_STORAGE_KEY = `${KEY_PREFIX}.threadLastCursor`;
+
 export class ControlCenterBrowserStorage {
   private readonly storage: Storage;
 
@@ -38,6 +47,60 @@ export class ControlCenterBrowserStorage {
   saveLastCursor(cursor: string): void {
     if (!CURSOR_PATTERN.test(cursor)) throw new Error("CONTROL_CENTER_CURSOR_INVALID");
     this.storage.setItem(`${KEY_PREFIX}.lastCursor`, cursor);
+  }
+
+  readThreadLastCursor(): string | null {
+    const value = this.storage.getItem(THREAD_CURSOR_STORAGE_KEY);
+    return value && CURSOR_PATTERN.test(value) ? value : null;
+  }
+
+  saveThreadLastCursor(cursor: string): void {
+    if (!CURSOR_PATTERN.test(cursor)) throw new Error("CONTROL_CENTER_CURSOR_INVALID");
+    this.storage.setItem(THREAD_CURSOR_STORAGE_KEY, cursor);
+  }
+
+  clearThreadLastCursor(): void {
+    this.storage.removeItem(THREAD_CURSOR_STORAGE_KEY);
+  }
+
+  readPendingThreadMutation(operationKey: string): PendingThreadMutation | null {
+    if (!CURSOR_PATTERN.test(operationKey)) return null;
+    const raw = this.storage.getItem(`${KEY_PREFIX}.mutation.${operationKey}`);
+    if (!raw) return null;
+    try {
+      const value = JSON.parse(raw) as Partial<PendingThreadMutation>;
+      if (
+        value.operationKey !== operationKey ||
+        !CURSOR_PATTERN.test(value.idempotencyKey ?? "") ||
+        !CURSOR_PATTERN.test(value.commandType ?? "") ||
+        !CURSOR_PATTERN.test(value.threadId ?? "")
+      ) {
+        return null;
+      }
+      return value as PendingThreadMutation;
+    } catch {
+      return null;
+    }
+  }
+
+  savePendingThreadMutation(mutation: PendingThreadMutation): void {
+    if (
+      !CURSOR_PATTERN.test(mutation.operationKey) ||
+      !CURSOR_PATTERN.test(mutation.idempotencyKey) ||
+      !CURSOR_PATTERN.test(mutation.commandType) ||
+      !CURSOR_PATTERN.test(mutation.threadId)
+    ) {
+      throw new Error("CONTROL_CENTER_MUTATION_IDENTITY_INVALID");
+    }
+    this.storage.setItem(
+      `${KEY_PREFIX}.mutation.${mutation.operationKey}`,
+      JSON.stringify(mutation),
+    );
+  }
+
+  clearPendingThreadMutation(operationKey: string): void {
+    if (!CURSOR_PATTERN.test(operationKey)) return;
+    this.storage.removeItem(`${KEY_PREFIX}.mutation.${operationKey}`);
   }
 
   readPreferences(): ControlCenterPreferences {

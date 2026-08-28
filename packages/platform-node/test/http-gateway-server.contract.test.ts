@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   AgentGatewayService,
   type AgentGatewayV2Port,
+  type AgentThreadGatewayPort,
   ApplicationPortError,
   type GatewayAccessPolicyPort,
   type GatewayAuthenticationContext,
@@ -12,22 +13,26 @@ import {
   type GatewayReadModelPort,
   PORT_ERROR_CODES,
 } from "@himawari-agent/application";
-import type {
-  EventSubscription,
-  GatewayCommand,
-  GatewayV2Event,
-  GetRunSnapshotQuery,
-  GetThreadSnapshotQuery,
-  RunSnapshot,
-  StreamEvent,
-  ThreadSnapshot,
-  TraceQuery,
+import {
+  type EventSubscription,
+  type GatewayCommand,
+  type GatewayV2Event,
+  type GetRunSnapshotQuery,
+  type GetThreadSnapshotQuery,
+  type RunSnapshot,
+  type StreamEvent,
+  type ThreadSnapshot,
+  type ThreadGatewayEvent,
+  type ThreadGatewayRequestResult,
+  type TraceQuery,
+  threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   buildHttpGatewayServer,
   HTTP_GATEWAY_ERROR_CODES,
   type HttpGatewayAuthenticationPort,
+  type HttpGatewayServerOptions,
 } from "../src/http-gateway-server.js";
 import { RuntimeHealthModel } from "../src/runtime-health.js";
 import { RuntimeMetricsRegistry } from "../src/runtime-observability.js";
@@ -239,7 +244,14 @@ function omitHeader(headers: ReturnType<typeof requestHeaders>, name: keyof type
   return result;
 }
 
-function createFixture(gatewayV2?: AgentGatewayV2Port) {
+function createFixture(
+  gatewayV2?: AgentGatewayV2Port,
+  threadGateway?: AgentThreadGatewayPort,
+  extensions: Pick<
+    HttpGatewayServerOptions,
+    "browserConfiguration" | "payloadAdmission" | "payloadRead" | "threadSearch"
+  > = {},
+) {
   const access = new AccessPolicy();
   const controlPlane = new ControlPlane();
   const reads = new ReadModel();
@@ -248,6 +260,8 @@ function createFixture(gatewayV2?: AgentGatewayV2Port) {
   const app = buildHttpGatewayServer({
     gateway,
     ...(gatewayV2 ? { gatewayV2 } : {}),
+    ...(threadGateway ? { threadGateway } : {}),
+    ...extensions,
     authentication: auth,
     csrf: {
       async verify(input) {
@@ -687,5 +701,214 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(stream.body).toContain("id: cursor-v2-02");
     expect(requests).toEqual(["thread.list", "thread.message.submit"]);
     expect(cursors).toEqual(["cursor-v2-01"]);
+  });
+
+  it("routes strict Thread v3 commands, queries and durable cursor events", async () => {
+    const requests: string[] = [];
+    const subscriptions: Array<string | null> = [];
+    const threadGateway: AgentThreadGatewayPort = {
+      async request(_authentication, message) {
+        requests.push(message.type);
+        const response =
+          message.kind === "command"
+            ? {
+                schemaVersion: message.schemaVersion,
+                messageId: "result:thread.create",
+                correlationId: message.correlationId,
+                causationId: message.messageId,
+                scope: message.scope,
+                authority: message.authority,
+                actor: { actorType: "system", actorId: "thread-gateway" },
+                kind: "result",
+                type: "thread.command_result",
+                payload: {
+                  commandType: message.type,
+                  commandId: message.messageId,
+                  threadId: "thread-01",
+                  threadRevision: 1,
+                  resultRef: "payload:thread-created",
+                  replayed: false,
+                  committedAt: NOW,
+                },
+              }
+            : {
+                ...message,
+                kind: "snapshot",
+                type: "thread.collection_snapshot",
+                messageId: "snapshot:thread-list",
+                causationId: message.messageId,
+                payload: {
+                  threads: [],
+                  nextCursor: null,
+                  snapshotRef: "snapshot-ref-01",
+                  generatedAt: NOW,
+                },
+              };
+        return threadGatewayMessageSchema.parse(response) as ThreadGatewayRequestResult;
+      },
+      async *subscribe(_authentication, subscription) {
+        subscriptions.push(subscription.payload.afterCursor);
+        yield threadGatewayMessageSchema.parse({
+          ...subscription,
+          kind: "event",
+          type: "thread.event",
+          messageId: "event:thread-02",
+          causationId: "message:thread.create",
+          payload: {
+            eventId: "event:thread-02",
+            threadId: "thread-01",
+            revision: 1,
+            cursor: "thread-cursor:02",
+            causationCommandId: "message:thread.create",
+            eventType: "thread.created",
+            payloadRef: "payload:thread-created",
+            occurredAt: NOW,
+          },
+        }) as ThreadGatewayEvent;
+      },
+    };
+    const { app } = createFixture(undefined, threadGateway);
+    const base = {
+      schemaVersion: "gateway.thread.v3",
+      messageId: "message:thread-v3",
+      correlationId: "correlation-01",
+      causationId: null,
+      scope: { ownerId: "owner-01", agentId: "agent-01" },
+      authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+      actor: { actorType: "owner", actorId: "owner-01" },
+    } as const;
+    const query = await app.inject({
+      method: "POST",
+      url: "/api/gateway/thread/v3/queries",
+      headers: requestHeaders(),
+      payload: {
+        ...base,
+        kind: "query",
+        type: "thread.list",
+        payload: { statuses: ["active"], pinnedOnly: false, afterCursor: null, limit: 10 },
+      },
+    });
+    const commandResponse = await app.inject({
+      method: "POST",
+      url: "/api/gateway/thread/v3/commands",
+      headers: requestHeaders("idempotency-thread-v3"),
+      payload: {
+        ...base,
+        kind: "command",
+        type: "thread.create",
+        idempotencyKey: "idempotency-thread-v3",
+        payload: {
+          threadId: "thread-01",
+          answerLocale: "zh-CN",
+          resultRef: "payload:thread-created",
+        },
+      },
+    });
+    const encodedSubscription = Buffer.from(
+      JSON.stringify({
+        ...base,
+        kind: "subscription",
+        type: "thread.events",
+        payload: { afterCursor: "thread-cursor:01" },
+      }),
+    ).toString("base64url");
+    const stream = await app.inject({
+      method: "GET",
+      url: `/api/gateway/thread/v3/events?subscription=${encodedSubscription}`,
+      headers: { host: "agent.example.test", "cf-access-jwt-assertion": "assertion-01" },
+    });
+
+    expect(query.json()).toMatchObject({ type: "thread.collection_snapshot" });
+    expect(commandResponse.json()).toMatchObject({
+      type: "thread.command_result",
+      payload: { threadId: "thread-01", threadRevision: 1 },
+    });
+    expect(stream.body).toContain("id: thread-cursor:02");
+    expect(requests).toEqual(["thread.list", "thread.create"]);
+    expect(subscriptions).toEqual(["thread-cursor:01"]);
+  });
+
+  it("keeps browser plaintext behind authenticated scoped Payload and search boundaries", async () => {
+    const calls: string[] = [];
+    const { app } = createFixture(undefined, undefined, {
+      browserConfiguration: {
+        agentId: "agent-01",
+        deploymentId: "deployment-01",
+        authorityEpoch: 1,
+        fencingToken: 1,
+      },
+      payloadAdmission: {
+        async protect(input) {
+          calls.push(`protect:${input.idempotencyKey}:${input.content}`);
+          return { payloadRef: "payload-private-01" };
+        },
+      },
+      payloadRead: {
+        async read(input) {
+          calls.push(`read:${input.agentId}:${input.payloadRef}`);
+          return {
+            content: "私人正文",
+            dataClassification: "private",
+            contentType: "text/plain",
+          };
+        },
+      },
+      threadSearch: {
+        async prepare(input) {
+          calls.push(`search:${input.agentId}:${input.query}`);
+          return {
+            queryRef: "payload-search-01",
+            tokenRefs: ["search-token-01"],
+            projectionVersion: "thread-search-v1",
+          };
+        },
+      },
+    });
+    const protectedPayload = await app.inject({
+      method: "POST",
+      url: "/api/payload/v1/text",
+      headers: requestHeaders("payload-idempotency-01"),
+      payload: { content: "私人正文", dataClassification: "private" },
+    });
+    const missingIdempotency = await app.inject({
+      method: "POST",
+      url: "/api/payload/v1/text",
+      headers: omitHeader(requestHeaders(), "idempotency-key"),
+      payload: { content: "私人正文", dataClassification: "private" },
+    });
+    const read = await app.inject({
+      method: "POST",
+      url: "/api/payload/v1/text/read",
+      headers: requestHeaders(),
+      payload: { payloadRef: "payload-private-01" },
+    });
+    const search = await app.inject({
+      method: "POST",
+      url: "/api/thread-search/v1/prepare",
+      headers: requestHeaders(),
+      payload: { query: "私人搜索" },
+    });
+
+    expect(protectedPayload).toMatchObject({ statusCode: 201 });
+    expect(missingIdempotency).toMatchObject({ statusCode: 400 });
+    expect(missingIdempotency.json()).toEqual({
+      error: { code: HTTP_GATEWAY_ERROR_CODES.IDEMPOTENCY_MISMATCH },
+    });
+    expect(read.json()).toEqual({
+      content: "私人正文",
+      dataClassification: "private",
+      contentType: "text/plain",
+    });
+    expect(read.headers["cache-control"]).toBe("no-store");
+    expect(search.json()).toEqual({
+      queryRef: "payload-search-01",
+      tokenRefs: ["search-token-01"],
+      projectionVersion: "thread-search-v1",
+    });
+    expect(calls).toEqual([
+      "protect:payload-idempotency-01:私人正文",
+      "read:agent-01:payload-private-01",
+      "search:agent-01:私人搜索",
+    ]);
   });
 });

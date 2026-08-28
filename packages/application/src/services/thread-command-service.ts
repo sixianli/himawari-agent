@@ -179,13 +179,14 @@ export class ThreadCommandService {
     readonly threadId: ThreadId;
     readonly expectedRevision: number;
     readonly status: "active" | "archived";
+    readonly reasonCode?: string;
     readonly idempotencyKey: string;
     readonly resultRef: PayloadRef;
   }) {
     return this.update(
       input,
       input.status === "active" ? "thread.restore" : "thread.archive",
-      { status: input.status },
+      { status: input.status, reasonCode: input.reasonCode ?? "unspecified" },
       (thread) => transitionProductThread(thread, input.status, this.dependencies.clock.now()),
     );
   }
@@ -204,8 +205,9 @@ export class ThreadCommandService {
     readonly messageId?: MessageId;
     readonly turnId?: TurnId;
     readonly runId?: RunId;
+    readonly occurredAt?: string;
   }) {
-    const occurredAt = this.dependencies.clock.now();
+    const occurredAt = input.occurredAt ?? this.dependencies.clock.now();
     const idempotencyKey = createIdempotencyKey(input.idempotencyKey);
     const identity = fingerprintSuffix({
       type: "thread.message.submit",
@@ -249,6 +251,7 @@ export class ThreadCommandService {
     readonly dataClassification: DataClassification;
     readonly resultRef: PayloadRef;
     readonly messageId?: MessageId;
+    readonly committedAt?: string;
   }) {
     const idempotencyKey = createIdempotencyKey(input.idempotencyKey);
     const identity = fingerprintSuffix({
@@ -273,7 +276,7 @@ export class ThreadCommandService {
         messageId,
         contentRef: input.contentRef,
       }),
-      committedAt: this.dependencies.clock.now(),
+      committedAt: input.committedAt ?? this.dependencies.clock.now(),
       authority: this.dependencies.authority(),
     });
   }

@@ -716,6 +716,96 @@ footer {
   font-weight: 750;
 }
 
+.thread-list-controls,
+.thread-content,
+.thread-details,
+.thread-search,
+.thread-heading,
+.thread-message,
+.thread-message header,
+.message-actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.thread-list-controls .semantic-list .app-link {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.thread-list-controls small,
+.thread-message time {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.filter-group,
+.action-grid,
+.message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+fieldset.filter-group {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.filter-group legend {
+  width: 100%;
+  margin-bottom: 0.4rem;
+  font-weight: 700;
+}
+
+.thread-heading {
+  grid-template-columns: minmax(0, 1fr) minmax(11rem, 16rem);
+  align-items: end;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1rem;
+}
+
+.thread-heading h2 {
+  overflow-wrap: anywhere;
+}
+
+.thread-message {
+  border: 1px solid var(--border);
+  border-inline-start: 4px solid var(--primary);
+  border-radius: 0.5rem;
+  padding: 0.8rem;
+  background: var(--surface);
+}
+
+.thread-message-agent {
+  border-inline-start-color: var(--success);
+}
+
+.thread-message header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+}
+
+.thread-message-content {
+  max-width: 100%;
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+
+.thread-details dl {
+  margin: 0;
+}
+
+.thread-details dd {
+  margin-inline: 0;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 900px) {
   .layout-controls {
     display: none;
@@ -768,7 +858,9 @@ footer {
   }
 
   .locale-control,
-  .health-grid {
+  .health-grid,
+  .thread-heading,
+  .thread-message header {
     grid-template-columns: 1fr;
   }
 

@@ -174,6 +174,12 @@ export interface ThreadDistillationStatePort {
   }): Promise<ThreadDistillationWork>;
   readOutput(generationId: MemoryGenerationId): Promise<ThreadDistillationOutput | undefined>;
   latestSummary(threadId: ThreadId): Promise<ThreadSummaryRecord | undefined>;
+  latestCheckpoint(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly threadId: ThreadId;
+    readonly sourceWatermark: number | null;
+  }): Promise<ThreadDistillationWork | undefined>;
 }
 
 export interface ThreadDistillationModelCandidate {

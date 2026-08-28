@@ -1,4 +1,6 @@
 export * from "./ciphertext-file-store.js";
+export * from "./browser-text-payload-reader.js";
+export * from "./browser-thread-search.js";
 export * from "./execution-uds-transport.js";
 export * from "./ephemeral-secret-port.js";
 export * from "./host-secret-source.js";

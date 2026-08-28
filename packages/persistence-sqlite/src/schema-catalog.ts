@@ -119,6 +119,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with governed Thread deletion",
   ),
   entry(
+    "thread_gateway_events",
+    "ThreadRepositoryPort",
+    "immutable cursor-ordered committed Thread event",
+    "payload_reference",
+    "cascade with governed Thread deletion and require snapshot refresh after cursor loss",
+  ),
+  entry(
     "thread_search_projection",
     "ThreadRepositoryPort",
     "rebuildable opaque-token projection",

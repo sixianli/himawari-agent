@@ -9,14 +9,27 @@ export class ThreadQueryService {
     this.repository = repository;
   }
 
-  async detail(ownerId: OwnerId, agentId: AgentId, threadId: ThreadId) {
+  async detail(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    threadId: ThreadId,
+    afterSequence = 0,
+    limit = 1000,
+  ) {
     const thread = await this.repository.read(ownerId, agentId, threadId);
     if (!thread || thread.status === "deleted_verified") {
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, `Thread ${threadId} not found`);
     }
     return Object.freeze({
       thread,
-      messages: await this.repository.listMessages(ownerId, agentId, threadId, 0, 1000),
+      messages: await this.repository.listMessages(
+        ownerId,
+        agentId,
+        threadId,
+        afterSequence,
+        limit,
+      ),
+      runs: await this.repository.listRuns(ownerId, agentId, threadId),
     });
   }
 

@@ -182,6 +182,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0015_thread_lifecycle_and_search.sql",
   },
+  {
+    sequence: 16,
+    name: "thread_gateway_events",
+    changeSet: "thread-gateway-events",
+    phase: "expand" as const,
+    file: "0016_thread_gateway_events.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

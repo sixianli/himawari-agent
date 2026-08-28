@@ -3,8 +3,10 @@ import type { ControlCenterBrowserStorage } from "./browser-storage.js";
 import { safeBrowserLog, type SafeBrowserLogEntry } from "./gateway-client.js";
 
 export interface EventSourceLike {
+  onopen?: ((event: Event) => void) | null;
   onmessage: ((event: MessageEvent<string>) => void) | null;
   onerror: ((event: Event) => void) | null;
+  addEventListener?(type: string, listener: (event: MessageEvent<string>) => void): void;
   close(): void;
 }
 
@@ -59,6 +61,10 @@ export class SseStateSynchronizer {
       : "/api/gateway/v2/events";
     const source = this.options.createEventSource(url);
     this.source = source;
+    source.onopen = () => {
+      this.reconnectAttempt = 0;
+      this.options.onConnectionState("connected");
+    };
     source.onmessage = (message) => {
       try {
         const parsed = gatewayV2MessageSchema.parseJson(message.data);

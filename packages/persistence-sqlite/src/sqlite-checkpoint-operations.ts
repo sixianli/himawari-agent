@@ -146,6 +146,8 @@ export class SqliteCheckpointOperations {
         return this.readOutput((payload as { generationId: MemoryGenerationId }).generationId);
       case "threadDistillation.latestSummary":
         return this.latestSummary((payload as { threadId: ThreadId }).threadId);
+      case "threadDistillation.latestCheckpoint":
+        return this.latestCheckpoint(payload as Parameters<typeof this.latestCheckpoint>[0]);
       default:
         return this.fail(
           "PORT_INVALID_OPERATION",
@@ -213,6 +215,30 @@ export class SqliteCheckpointOperations {
           AND checkpoint.policy_version = ?`,
       )
       .get(input.threadId, input.sourceWatermark, input.policyVersion) as WorkRow | undefined;
+    return row ? this.workFromRow(row) : undefined;
+  }
+
+  private latestCheckpoint(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly threadId: ThreadId;
+    readonly sourceWatermark: number | null;
+  }): ThreadDistillationWork | undefined {
+    const row = this.database
+      .prepare(
+        `${workSelect} WHERE checkpoint.owner_id = ? AND checkpoint.agent_id = ?
+          AND checkpoint.thread_id = ?
+          AND (? IS NULL OR checkpoint.source_watermark = ?)
+          ORDER BY checkpoint.source_watermark DESC, checkpoint.requested_at DESC,
+            checkpoint.id DESC LIMIT 1`,
+      )
+      .get(
+        input.ownerId,
+        input.agentId,
+        input.threadId,
+        input.sourceWatermark,
+        input.sourceWatermark,
+      ) as WorkRow | undefined;
     return row ? this.workFromRow(row) : undefined;
   }
 

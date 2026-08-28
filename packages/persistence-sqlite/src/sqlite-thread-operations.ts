@@ -8,7 +8,9 @@ import type {
   ThreadCreateInput,
   ThreadDeletionImpact,
   ThreadListQuery,
+  ThreadGatewayEventRecord,
   ThreadMutationReceipt,
+  ThreadRunSummaryRecord,
   ThreadSearchProjectionInput,
   ThreadSearchQuery,
   ThreadTaskBinding,
@@ -19,6 +21,7 @@ import type {
   AgentId,
   MessageId,
   OwnerId,
+  ProductAuthorityFence,
   ProductThread,
   ProductThreadMessage,
   RunId,
@@ -92,6 +95,31 @@ interface TaskBindingRow {
   readonly recordJson: string | null;
 }
 
+interface RunSummaryRow {
+  readonly runId: string;
+  readonly revision: number;
+  readonly status: ThreadRunSummaryRecord["status"];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+interface ThreadGatewayEventRow {
+  readonly cursorSequence: number;
+  readonly cursor: string;
+  readonly eventId: string;
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly deploymentId: string;
+  readonly authorityEpoch: number;
+  readonly fencingToken: number;
+  readonly threadId: string;
+  readonly revision: number;
+  readonly causationCommandId: string;
+  readonly eventType: string;
+  readonly payloadRef: string | null;
+  readonly occurredAt: string;
+}
+
 const THREAD_SELECT = `SELECT id, owner_id AS ownerId, agent_id AS agentId, revision, status,
   title_ref AS titleRef, title_source AS titleSource, title_revision AS titleRevision,
   pin_order AS pinOrder, answer_locale AS answerLocale,
@@ -161,6 +189,19 @@ export class SqliteThreadOperations {
           input.afterSequence,
           input.limit,
         );
+      }
+      case "thread.listRuns": {
+        const input = payload as { ownerId: OwnerId; agentId: AgentId; threadId: ThreadId };
+        return this.listRuns(input.ownerId, input.agentId, input.threadId);
+      }
+      case "thread.listGatewayEvents": {
+        const input = payload as {
+          ownerId: OwnerId;
+          agentId: AgentId;
+          afterCursor: string | null;
+          limit: number;
+        };
+        return this.listGatewayEvents(input.ownerId, input.agentId, input.afterCursor, input.limit);
       }
       case "thread.hasCommittedTurn": {
         const input = payload as {
@@ -355,6 +396,7 @@ export class SqliteThreadOperations {
     threadRevision: number;
     resultRef: string;
     committedAt: string;
+    authority: ThreadCreateInput["authority"];
   }): ThreadMutationReceipt {
     const commandId = `thread-command:${input.idempotencyKey}`;
     this.database
@@ -388,6 +430,37 @@ export class SqliteThreadOperations {
         input.ownerId,
         input.agentId,
         input.idempotencyKey,
+        input.resultRef,
+        input.committedAt,
+      );
+    const cursorSequence =
+      Number(
+        this.database
+          .prepare("SELECT COALESCE(MAX(cursor_sequence), 0) FROM thread_gateway_events")
+          .pluck()
+          .get(),
+      ) + 1;
+    this.database
+      .prepare(
+        `INSERT INTO thread_gateway_events (
+          cursor_sequence, cursor, event_id, owner_id, agent_id, deployment_id,
+          authority_epoch, fencing_token, thread_id,
+          thread_revision, causation_command_id, event_type, payload_ref, occurred_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        cursorSequence,
+        `thread-cursor:${cursorSequence}`,
+        `thread-event:${input.idempotencyKey}`,
+        input.ownerId,
+        input.agentId,
+        input.authority.deploymentId,
+        input.authority.authorityEpoch,
+        input.authority.fencingToken,
+        input.threadId,
+        input.threadRevision,
+        commandId,
+        input.commandType,
         input.resultRef,
         input.committedAt,
       );
@@ -459,6 +532,7 @@ export class SqliteThreadOperations {
         threadRevision: input.thread.revision,
         resultRef: input.resultRef,
         committedAt: input.thread.createdAt,
+        authority: input.authority,
       });
       return { thread: input.thread, receipt };
     });
@@ -519,6 +593,7 @@ export class SqliteThreadOperations {
         threadRevision: input.thread.revision,
         resultRef: input.resultRef,
         committedAt: input.thread.updatedAt,
+        authority: input.authority,
       });
       return { thread: input.thread, receipt };
     });
@@ -669,6 +744,7 @@ export class SqliteThreadOperations {
         threadRevision: source.revision,
         resultRef: input.resultRef,
         committedAt: input.resolvedAt,
+        authority: input.authority,
       });
       const stored = this.taskRow(input.taskId);
       if (!stored || stored.threadId === null) {
@@ -775,6 +851,7 @@ export class SqliteThreadOperations {
         threadRevision: thread.revision,
         resultRef: input.resultRef,
         committedAt: input.requestedAt,
+        authority: input.authority,
       });
       return {
         thread,
@@ -927,6 +1004,7 @@ export class SqliteThreadOperations {
         threadRevision: nextRevision,
         resultRef: input.resultRef,
         committedAt: input.occurredAt,
+        authority: input.authority,
       });
       const thread = this.read(input.ownerId, input.agentId, input.threadId);
       const message = this.readMessage(
@@ -1030,6 +1108,7 @@ export class SqliteThreadOperations {
         threadRevision: nextRevision,
         resultRef: input.resultRef,
         committedAt: input.committedAt,
+        authority: input.authority,
       });
       const thread = this.read(input.ownerId, input.agentId, input.threadId);
       const message = this.readMessage(
@@ -1112,6 +1191,7 @@ export class SqliteThreadOperations {
         threadRevision: input.targetThread.revision,
         resultRef: input.resultRef,
         committedAt: input.targetThread.createdAt,
+        authority: input.authority,
       });
       const thread = this.read(input.ownerId, input.agentId, input.targetThread.id);
       if (!thread) this.fail("PORT_NOT_FOUND", "Fork target state is missing");
@@ -1173,6 +1253,72 @@ export class SqliteThreadOperations {
         )
         .all(ownerId, agentId, threadId, afterSequence, limit) as MessageRow[]
     ).map((row) => this.messageFromRow(row));
+  }
+
+  private listRuns(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    threadId: ThreadId,
+  ): readonly ThreadRunSummaryRecord[] {
+    const rows = this.database
+      .prepare(
+        `SELECT id AS runId, revision, status, created_at AS createdAt, updated_at AS updatedAt
+        FROM runs WHERE owner_id = ? AND agent_id = ? AND thread_id = ?
+        ORDER BY created_at, id`,
+      )
+      .all(ownerId, agentId, threadId) as RunSummaryRow[];
+    return rows.map((row) => Object.freeze({ ...row, runId: row.runId as RunId }));
+  }
+
+  private listGatewayEvents(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    afterCursor: string | null,
+    limit: number,
+  ): readonly ThreadGatewayEventRecord[] {
+    this.assertLimit(limit);
+    let afterSequence = 0;
+    if (afterCursor !== null) {
+      const sequence = this.database
+        .prepare(
+          `SELECT cursor_sequence FROM thread_gateway_events
+          WHERE owner_id = ? AND agent_id = ? AND cursor = ?`,
+        )
+        .pluck()
+        .get(ownerId, agentId, afterCursor) as number | undefined;
+      if (sequence === undefined) {
+        this.fail("PORT_NOT_FOUND", `Thread Gateway cursor ${afterCursor} is unavailable`, {
+          cursor: afterCursor,
+        });
+      }
+      afterSequence = sequence;
+    }
+    const rows = this.database
+      .prepare(
+        `SELECT cursor_sequence AS cursorSequence, cursor, event_id AS eventId,
+          owner_id AS ownerId, agent_id AS agentId, deployment_id AS deploymentId,
+          authority_epoch AS authorityEpoch, fencing_token AS fencingToken,
+          thread_id AS threadId,
+          thread_revision AS revision, causation_command_id AS causationCommandId,
+          event_type AS eventType, payload_ref AS payloadRef, occurred_at AS occurredAt
+        FROM thread_gateway_events
+        WHERE owner_id = ? AND agent_id = ? AND cursor_sequence > ?
+        ORDER BY cursor_sequence LIMIT ?`,
+      )
+      .all(ownerId, agentId, afterSequence, limit) as ThreadGatewayEventRow[];
+    return rows.map((row) =>
+      Object.freeze({
+        ...row,
+        ownerId: row.ownerId as OwnerId,
+        agentId: row.agentId as AgentId,
+        authority: {
+          deploymentId: row.deploymentId as ProductAuthorityFence["deploymentId"],
+          authorityEpoch: row.authorityEpoch,
+          fencingToken: row.fencingToken,
+        },
+        threadId: row.threadId as ThreadId,
+      }),
+    );
   }
 
   private hasCommittedTurn(

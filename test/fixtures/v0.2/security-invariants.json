@@ -8,6 +8,7 @@
     "GET /api/control-center/v1/config",
     "GET /api/gateway/v1/events",
     "GET /api/gateway/v2/events",
+    "GET /api/gateway/thread/v3/events",
     "GET /api/health/v1/dependencies",
     "GET /api/metrics/v1",
     "GET /assets/*",
@@ -17,7 +18,11 @@
     "POST /api/gateway/v1/queries",
     "POST /api/gateway/v2/commands",
     "POST /api/gateway/v2/queries",
-    "POST /api/payload/v1/text"
+    "POST /api/gateway/thread/v3/commands",
+    "POST /api/gateway/thread/v3/queries",
+    "POST /api/payload/v1/text",
+    "POST /api/payload/v1/text/read",
+    "POST /api/thread-search/v1/prepare"
   ],
   "forbiddenCapabilityLiterals": [
     "core.upgrade.auto",

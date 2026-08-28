@@ -358,6 +358,7 @@ export class SqliteDurableAdapters {
         this.context.read("threadDistillation.readOutput", { generationId }),
       latestSummary: (threadId) =>
         this.context.read("threadDistillation.latestSummary", { threadId }),
+      latestCheckpoint: (input) => this.context.read("threadDistillation.latestCheckpoint", input),
     });
   }
 
@@ -380,6 +381,15 @@ export class SqliteDurableAdapters {
           agentId,
           threadId,
           afterSequence,
+          limit,
+        }),
+      listRuns: (ownerId, agentId, threadId) =>
+        this.context.read("thread.listRuns", { ownerId, agentId, threadId }),
+      listGatewayEvents: (ownerId, agentId, afterCursor, limit) =>
+        this.context.read("thread.listGatewayEvents", {
+          ownerId,
+          agentId,
+          afterCursor,
           limit,
         }),
       hasCommittedTurn: (ownerId, agentId, threadId, turnId, atOrBeforeWatermark) =>

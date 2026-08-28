@@ -192,10 +192,58 @@ try {
   if ((await page.getByLabel("消息草稿").inputValue()) !== "") {
     throw new Error("CONTROL_CENTER_DRAFT_NOT_CLEARED");
   }
-  await page.goto("http://127.0.0.1:4173/threads/run-01?view=content");
-  await waitForConnected(page);
-  await page.getByRole("button", { name: "取消指定 Run", exact: true }).click();
+  await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
+
+  await page.getByLabel("回答语言").selectOption("en");
   await waitForAccepted(page);
+  if ((await page.locator("html").getAttribute("lang")) !== "zh-CN") {
+    throw new Error("CONTROL_CENTER_ANSWER_LOCALE_CHANGED_UI_LOCALE");
+  }
+  await page.getByRole("button", { name: "稳定检查点", exact: true }).click();
+  await page.getByText("completed", { exact: true }).waitFor();
+  await page.getByLabel("搜索对话").fill("计划");
+  await page.getByRole("button", { name: "搜索对话", exact: true }).click();
+  await page.getByRole("link").filter({ hasText: "主对话" }).first().waitFor();
+
+  await page.getByLabel("重命名").fill("多客户端冲突后的标题");
+  await page.evaluate(() =>
+    fetch("/__fixture/conflict", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ threadId: "thread-main" }),
+    }),
+  );
+  await page.getByRole("button", { name: "重命名", exact: true }).click();
+  await page.getByText("其他客户端已更新此对话", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "在最新修订上重新应用", exact: true }).click();
+  await waitForAccepted(page);
+  await page.getByRole("heading", { name: "多客户端冲突后的标题", exact: true }).waitFor();
+
+  const peer = await context.newPage();
+  peer.on("pageerror", (error) => browserErrors.push(error.message));
+  await peer.goto("http://127.0.0.1:4173/threads/thread-main?view=details");
+  await waitForConnected(peer);
+  await peer.getByRole("button", { name: "取消置顶", exact: true }).click();
+  await waitForAccepted(peer);
+  await page.getByRole("button", { name: "置顶", exact: true }).waitFor();
+  await peer.close();
+
+  await page.getByRole("button", { name: "归档", exact: true }).click();
+  await waitForAccepted(page);
+  await page.getByRole("button", { name: "恢复", exact: true }).click();
+  await waitForAccepted(page);
+  await page.getByRole("button", { name: "检查删除影响", exact: true }).click();
+  await page.getByText("可以进入删除确认", { exact: true }).waitFor();
+  if (await page.getByRole("button", { name: "移入回收站", exact: true }).isDisabled()) {
+    throw new Error("CONTROL_CENTER_DELETION_IMPACT_NOT_APPLIED");
+  }
+
+  await page.getByRole("button", { name: "从此轮 Fork", exact: true }).first().click();
+  await waitForAccepted(page);
+  await page.waitForURL(/\/threads\/thread-fork%3A|\/threads\/thread-fork:/);
+  await page.getByText("thread-fork:", { exact: false }).first().waitFor();
+  await page.goto("http://127.0.0.1:4173/threads/thread-main?view=content");
+  await waitForConnected(page);
 
   const primaryNavigation = page.getByRole("navigation", { name: "控制中心功能" });
   for (const surface of surfaces) {
@@ -244,6 +292,8 @@ try {
   }
   const japaneseNavigation = page.getByRole("navigation", { name: "コントロールセンター機能" });
   await japaneseNavigation.getByRole("link", { name: "会話", exact: true }).click();
+  await page.goto("http://127.0.0.1:4173/threads/thread-main?view=content");
+  await waitForConnected(page, "リアルタイム接続");
   const japaneseDraft = "日本語の長文入力とレイアウトを確認するための未送信メッセージです。";
   await page.getByLabel("メッセージ下書き").fill(japaneseDraft);
   if ((await page.getByLabel("メッセージ下書き").inputValue()) !== japaneseDraft) {
@@ -324,9 +374,11 @@ try {
   await assertAxeClean(page, "desktop-zh-CN");
 
   const cursorBeforeOffline = await page.evaluate(() =>
-    localStorage.getItem("himawari.control-center.v1.lastCursor"),
+    localStorage.getItem("himawari.control-center.v1.threadLastCursor"),
   );
   await primaryNavigation.getByRole("link", { name: "对话", exact: true }).click();
+  await page.goto("http://127.0.0.1:4173/threads/thread-main?view=content");
+  await waitForConnected(page);
   await page.getByLabel("消息草稿").fill("离线草稿");
   await context.setOffline(true);
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
@@ -391,7 +443,7 @@ try {
     ),
   );
   const allowedStorageKey =
-    /^himawari\.control-center\.v1\.(?:draft\.[A-Za-z0-9._:-]+|lastCursor|locale|preferences)$/;
+    /^himawari\.control-center\.v1\.(?:draft\.[A-Za-z0-9._:-]+|lastCursor|threadLastCursor|locale|preferences)$/;
   const unexpectedStorageKeys = Object.keys(storageSnapshot).filter(
     (key) => !allowedStorageKey.test(key),
   );
@@ -405,17 +457,32 @@ try {
   await page.goto("http://127.0.0.1:4173/threads?view=content");
   await waitForConnected(page);
   const cursorAfterReopen = await page.evaluate(() =>
-    localStorage.getItem("himawari.control-center.v1.lastCursor"),
+    localStorage.getItem("himawari.control-center.v1.threadLastCursor"),
   );
-  if (!cursorAfterReopen || cursorAfterReopen === cursorBeforeOffline) {
+  if (!cursorAfterReopen || cursorAfterReopen !== cursorBeforeOffline) {
     throw new Error("CONTROL_CENTER_CURSOR_NOT_RECOVERED");
   }
   if ((await page.locator("html").getAttribute("lang")) !== "zh-CN") {
     throw new Error("CONTROL_CENTER_REOPEN_LOCALE_NOT_RECOVERED");
   }
+  await page.goto("http://127.0.0.1:4173/threads/thread-main?view=content");
+  await waitForConnected(page);
+  await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
+  await page.getByText("run-01", { exact: true }).waitFor();
+  const reopenedNavigation = page.getByRole("navigation", { name: "控制中心功能" });
+  await reopenedNavigation.getByRole("link", { name: "审批", exact: true }).click();
+  await page.getByText("approval-01", { exact: true }).waitFor();
+  await reopenedNavigation.getByRole("link", { name: "后台任务", exact: true }).click();
+  await page.getByText("job-repository-monitor", { exact: true }).waitFor();
+  const expectedOfflineBrowserError = (error) =>
+    error.includes("access control checks") &&
+    [
+      "/api/gateway/v2/events",
+      "/api/gateway/thread/v3/events",
+      "/api/gateway/thread/v3/queries",
+    ].some((path) => error.includes(path));
   const unexpectedBrowserErrors = browserErrors.filter(
-    (error) =>
-      !error.includes("/api/gateway/v2/events") || !error.includes("access control checks"),
+    (error) => !expectedOfflineBrowserError(error),
   );
   if (unexpectedBrowserErrors.length > 0) {
     throw new Error(`CONTROL_CENTER_PAGE_ERRORS:${unexpectedBrowserErrors.join("|")}`);
@@ -431,7 +498,18 @@ try {
       platform: `${process.platform}-${process.arch}`,
       emulation: profile.emulation ?? null,
       surfaces: surfaces.map(({ label, policy }) => ({ label, policy })),
-      journeys: ["thread-chat", "run-cancel", "read-only-task-disclosure"],
+      journeys: [
+        "thread-chat",
+        "thread-answer-locale",
+        "thread-search",
+        "thread-checkpoint",
+        "thread-revision-conflict-reapply",
+        "thread-archive-restore",
+        "thread-deletion-impact",
+        "thread-fork",
+        "thread-multi-tab",
+        "read-only-task-disclosure",
+      ],
       routeStates: [
         "deep-link",
         "focus-management",
@@ -444,7 +522,7 @@ try {
       ],
       locales: ["zh-CN", "en", "ja"],
       keyboard: ["visible-focus", "settings-tabs-roving"],
-      sse: ["offline-reconnect", "background-tab", "close-reopen"],
+      sse: ["durable-thread-cursor", "offline-reconnect", "multi-tab", "close-reopen"],
       responsive: ["desktop-three-pane", "mobile-single-pane", "320px-reflow"],
       minimumTargetHeight,
       axeViolations: 0,

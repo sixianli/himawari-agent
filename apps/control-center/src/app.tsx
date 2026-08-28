@@ -1,8 +1,4 @@
-import type {
-  GatewayV2Event,
-  GatewayV2Query,
-  GatewayV2Snapshot,
-} from "@himawari-agent/gateway-contracts";
+import type { GatewayV2Query, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ControlCenterShell } from "./app/app-shell.js";
 import {
@@ -16,6 +12,7 @@ import {
 } from "./app/router.js";
 import {
   ControlCenterBrowserStorage,
+  THREAD_CURSOR_STORAGE_KEY,
   type ControlCenterPreferences,
   type ControlCenterUiLocale,
 } from "./browser-storage.js";
@@ -23,7 +20,6 @@ import {
   ActionButton,
   AppLink,
   Banner,
-  Field,
   RiskIndicator,
   SemanticList,
   StatusRegion,
@@ -36,8 +32,10 @@ import {
   ControlCenterIntlProvider,
   useControlCenterIntl,
 } from "./i18n/runtime.js";
-import { commandMessage, queryMessage } from "./messages.js";
+import { queryMessage } from "./messages.js";
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
+import { useThreadControlCenter } from "./thread-control-center.js";
+import { ThreadSseSynchronizer } from "./thread-sse-synchronizer.js";
 
 type SurfaceId = (typeof CONTROL_CENTER_SURFACE_INVENTORY)[number]["id"];
 type RuntimeConfiguration = Awaited<ReturnType<typeof loadRuntimeConfiguration>>;
@@ -80,10 +78,7 @@ function queryForSurface(
 ): GatewayV2Query | null {
   switch (surfaceId) {
     case "threads":
-      return queryMessage(configuration, "thread.list", {
-        afterCursor: route.afterCursor,
-        limit: 100,
-      });
+      return null;
     case "approvals":
       return queryMessage(configuration, "approval.list", {
         status: ["pending", "approved", "denied", "expired"].includes(route.status ?? "")
@@ -192,7 +187,8 @@ function LocalizedControlCenterApp({
   const [configuration, setConfiguration] = useState<RuntimeConfiguration>();
   const [client, setClient] = useState<GatewayClient>();
   const [snapshot, setSnapshot] = useState<GatewayV2Snapshot>();
-  const [events, setEvents] = useState<readonly GatewayV2Event[]>([]);
+  const [gatewayRefreshSignal, setGatewayRefreshSignal] = useState(0);
+  const [threadRefreshSignal, setThreadRefreshSignal] = useState(0);
   const [connection, setConnection] = useState<"connecting" | "connected" | "offline">(
     "connecting",
   );
@@ -200,10 +196,6 @@ function LocalizedControlCenterApp({
   const [requestError, setRequestError] = useState<string | null>(null);
   const [mutationStatus, setMutationStatus] = useState<MutationStatus | null>(null);
   const [selectedRef, setSelectedRef] = useState(route.objectId ?? "");
-  const initialThreadId =
-    route.surfaceId === "threads" && route.objectId ? route.objectId : "thread-main";
-  const [threadId, setThreadId] = useState(initialThreadId);
-  const [draft, setDraft] = useState(() => storage.readDraft(initialThreadId));
   const [settingsTab, setSettingsTab] = useState("language");
 
   useEffect(() => {
@@ -236,7 +228,7 @@ function LocalizedControlCenterApp({
     const synchronizer = new SseStateSynchronizer({
       storage,
       createEventSource: (url) => new EventSource(url, { withCredentials: true }),
-      onEvent: (event) => setEvents((current) => [...current.slice(-199), event]),
+      onEvent: () => setGatewayRefreshSignal((current) => current + 1),
       onConnectionState: setConnection,
       log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
@@ -250,6 +242,41 @@ function LocalizedControlCenterApp({
       synchronizer.stop();
     };
   }, [configuration, storage]);
+
+  useEffect(() => {
+    if (!configuration) return;
+    const synchronizer = new ThreadSseSynchronizer({
+      configuration,
+      storage,
+      createEventSource: (url) => new EventSource(url, { withCredentials: true }),
+      onCommittedEvent: () => setThreadRefreshSignal((current) => current + 1),
+      onSnapshotRequired: () => setThreadRefreshSignal((current) => current + 1),
+      log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
+    });
+    synchronizer.start();
+    const reconnect = () => synchronizer.reconnectNow();
+    const synchronizeTab = (event: StorageEvent) => {
+      if (event.key === THREAD_CURSOR_STORAGE_KEY) {
+        setThreadRefreshSignal((current) => current + 1);
+      }
+    };
+    window.addEventListener("online", reconnect);
+    window.addEventListener("storage", synchronizeTab);
+    document.addEventListener("visibilitychange", reconnect);
+    return () => {
+      window.removeEventListener("online", reconnect);
+      window.removeEventListener("storage", synchronizeTab);
+      document.removeEventListener("visibilitychange", reconnect);
+      synchronizer.stop();
+    };
+  }, [configuration, storage]);
+
+  const clearPrivateViewState = useCallback(() => {
+    setSnapshot(undefined);
+    setSelectedRef("");
+    setMutationStatus(null);
+    setRequestError("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!client || !configuration) return;
@@ -266,81 +293,32 @@ function LocalizedControlCenterApp({
           ? (error as { readonly status?: unknown }).status
           : null;
       if (status === 401) {
-        setEvents([]);
-        setSelectedRef("");
-        setMutationStatus(null);
-        setRequestError("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
+        clearPrivateViewState();
       } else {
         setRequestError(error instanceof Error ? error.message : "CONTROL_CENTER_REQUEST_REJECTED");
       }
     } finally {
       setLoading(false);
     }
-  }, [client, configuration, route]);
+  }, [clearPrivateViewState, client, configuration, route]);
 
   useEffect(() => {
+    void gatewayRefreshSignal;
     void refresh();
-  }, [refresh]);
+  }, [gatewayRefreshSignal, refresh]);
 
-  const runMutation = useCallback(
-    async (operation: () => Promise<{ readonly status: MutationStatus }>) => {
-      if (connection !== "connected") {
-        setMutationStatus("rejected");
-        setRequestError("CONTROL_CENTER_OFFLINE_COMMAND_REJECTED");
-        return;
-      }
-      setMutationStatus("pending");
-      setRequestError(null);
-      try {
-        const result = await operation();
-        setMutationStatus(result.status);
-        await refresh();
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "CONTROL_CENTER_REQUEST_REJECTED";
-        setMutationStatus(errorMessage.includes("EXPIRED") ? "expired" : "rejected");
-        setRequestError(errorMessage);
-      }
-    },
-    [connection, refresh],
-  );
-
-  const submitDraft = async () => {
-    if (!client || !configuration || !draft.trim()) return;
-    await runMutation(async () => {
-      const contentRef = await client.protectText(draft, "private");
-      const result = await client.mutate(
-        commandMessage(configuration, "thread.message.submit", {
-          threadId,
-          messageId: `client:${crypto.randomUUID()}`,
-          contentRef,
-          clientCreatedAt: new Date().toISOString(),
-        }),
-      );
-      storage.saveDraft(threadId, "");
-      setDraft("");
-      return result;
-    });
-  };
-
-  const cancelRun = async () => {
-    if (!client || !configuration || !selectedRef) return;
-    await runMutation(() =>
-      client.mutateV1({
-        schemaVersion: "gateway.v1",
-        kind: "command",
-        type: "run.cancel",
-        messageId: `message:${crypto.randomUUID()}`,
-        correlationId: `correlation:${crypto.randomUUID()}`,
-        causationId: null,
-        dataClassification: "private",
-        scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
-        actor: { actorType: "owner", actorId: configuration.actorId },
-        idempotencyKey: `idempotency:${crypto.randomUUID()}`,
-        payload: { runId: selectedRef, reasonCode: "owner_cancelled" },
-      }),
-    );
-  };
+  const threadModel = useThreadControlCenter({
+    active: route.surfaceId === "threads",
+    client,
+    configuration,
+    connection,
+    message,
+    navigate,
+    refreshSignal: threadRefreshSignal,
+    route,
+    storage,
+    onUnauthorized: clearPrivateViewState,
+  });
 
   const itemRefs =
     snapshot?.kind === "snapshot" && snapshot.type === "collection.snapshot"
@@ -352,7 +330,7 @@ function LocalizedControlCenterApp({
     navigate({ ...route, objectId: reference, view: "details" });
   };
 
-  const list = (
+  const genericList = (
     <>
       <p>{message("objects.count", { count: itemRefs.length })}</p>
       <SemanticList
@@ -376,7 +354,7 @@ function LocalizedControlCenterApp({
     </>
   );
 
-  const details = (
+  const genericDetails = (
     <div className="object-details">
       <dl>
         <div>
@@ -416,7 +394,7 @@ function LocalizedControlCenterApp({
       </Banner>
     );
 
-  const content = (
+  const genericContent = (
     <>
       <div className="panel-heading">
         <p className="eyebrow">{message("common.status")}</p>
@@ -443,70 +421,6 @@ function LocalizedControlCenterApp({
       <StatusRegion className="mutation-status">
         {message("mutation.label")}: {message(statusMessageId(mutationStatus))}
       </StatusRegion>
-
-      {route.surfaceId === "threads" ? (
-        <section className="thread-workspace">
-          <form
-            className="composer"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitDraft();
-            }}
-          >
-            <Field hint={message("threads.idHint")} label={message("threads.id")}>
-              <input
-                value={threadId}
-                onChange={(event) => {
-                  storage.saveDraft(threadId, draft);
-                  setThreadId(event.target.value);
-                  setDraft(storage.readDraft(event.target.value));
-                }}
-              />
-            </Field>
-            <Field label={message("threads.draft")}>
-              <textarea
-                rows={7}
-                value={draft}
-                onChange={(event) => {
-                  setDraft(event.target.value);
-                  storage.saveDraft(threadId, event.target.value);
-                }}
-              />
-            </Field>
-            <div className="actions">
-              <ActionButton
-                disabled={!draft.trim() || connection !== "connected"}
-                pending={mutationStatus === "pending"}
-                type="submit"
-              >
-                {message("threads.send")}
-              </ActionButton>
-              <ActionButton
-                disabled={!selectedRef || connection !== "connected"}
-                onClick={() => void cancelRun()}
-                variant="secondary"
-              >
-                {message("threads.cancelRun")}
-              </ActionButton>
-            </div>
-          </form>
-          <section aria-labelledby="run-events-title">
-            <h3 id="run-events-title">{message("threads.events")}</h3>
-            <SemanticList
-              empty={message("threads.eventsEmpty")}
-              getId={(event) => event.payload.cursor}
-              items={events.slice(-10)}
-              label={message("threads.events")}
-              renderItem={(event) => (
-                <span className="event-row">
-                  <strong>{event.payload.eventType}</strong>
-                  <code>{event.payload.cursor}</code>
-                </span>
-              )}
-            />
-          </section>
-        </section>
-      ) : null}
 
       {route.surfaceId === "tasks" ? (
         <section aria-labelledby="github-disclosure-title" className="disclosure-preview">
@@ -599,9 +513,9 @@ function LocalizedControlCenterApp({
   return (
     <ControlCenterShell
       connection={connection}
-      content={content}
-      details={details}
-      list={list}
+      content={route.surfaceId === "threads" ? threadModel.content : genericContent}
+      details={route.surfaceId === "threads" ? threadModel.details : genericDetails}
+      list={route.surfaceId === "threads" ? threadModel.list : genericList}
       locale={locale}
       onLocaleChange={onLocaleChange}
       onNavigate={navigate}
