@@ -4,7 +4,7 @@
   "plan": "docs/execution/plans/2026-08-26-control-center-experience-plan.md",
   "taskIds": ["S3-T04"],
   "status": "local_complete",
-  "candidateRevision": "acc03619c8ce4eae692376e8a4336ec685413be2",
+  "candidateRevision": "932c06041d95972b6a645b9c5b6cf437e7d37151",
   "locales": ["zh-CN", "en", "ja"],
   "messageKeyCountPerLocale": 144,
   "runtime": {
@@ -42,5 +42,5 @@
     "Thread answer locale control and answer-language behavior remain S3 Task 6/S2 integration work；UI locale completion does not claim them。",
     "Six-browser latest-two-major formal matrix and representative device screenshots remain Task 13。"
   ],
-  "implementationCommit": null
+  "implementationCommit": "932c06041d95972b6a645b9c5b6cf437e7d37151"
 }

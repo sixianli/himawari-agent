@@ -4,7 +4,7 @@
   "plan": "docs/execution/plans/2026-08-26-control-center-experience-plan.md",
   "taskIds": ["S3-T05"],
   "status": "local_complete",
-  "candidateRevision": "acc03619c8ce4eae692376e8a4336ec685413be2",
+  "candidateRevision": "932c06041d95972b6a645b9c5b6cf437e7d37151",
   "surfaces": {
     "count": 11,
     "allowed": ["threads"],
@@ -69,5 +69,5 @@
     "Authoritative event reducer, multi-tab revision conflict and complete offline privacy/cache scan remain Tasks 10–11。",
     "Formal six-browser/device support matrix remains Task 13。"
   ],
-  "implementationCommit": null
+  "implementationCommit": "932c06041d95972b6a645b9c5b6cf437e7d37151"
 }
