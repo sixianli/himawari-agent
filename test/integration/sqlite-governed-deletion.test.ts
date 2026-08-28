@@ -259,6 +259,17 @@ describe("SQLite governed deletion", () => {
   it("moves a Thread to seven-day Trash and restores it without deleting source content", async () => {
     const resource = await fixture();
 
+    await expect(resource.adapter.trashThread("thread-delete")).rejects.toMatchObject({
+      name: GovernedDeletionError.name,
+      code: GOVERNED_DELETION_ERROR_CODES.CONFLICT,
+      details: { activeTaskIds: "task-delete" },
+    });
+    const taskDatabase = openQualifiedDatabase(resource.databasePath);
+    taskDatabase
+      .prepare("UPDATE scheduled_jobs SET status = 'paused', revision = revision + 1 WHERE id = ?")
+      .run("task-delete");
+    taskDatabase.close();
+
     const trashed = await resource.adapter.trashThread("thread-delete");
     expect(trashed).toMatchObject({
       lifecycle: "trashed",
@@ -269,7 +280,7 @@ describe("SQLite governed deletion", () => {
         payload: { status: "retained" },
       },
       associatedTaskIds: ["task-delete"],
-      pausedTaskIds: ["task-delete"],
+      pausedTaskIds: [],
     });
     expect(
       scalar(resource.databasePath, "SELECT status FROM threads WHERE id = ?", "thread-delete"),
@@ -287,7 +298,7 @@ describe("SQLite governed deletion", () => {
     expect(resource.adapter.inspect("thread", "thread-delete")).toBeUndefined();
     expect(
       scalar(resource.databasePath, "SELECT status FROM scheduled_jobs WHERE id = 'task-delete'"),
-    ).toBe("active");
+    ).toBe("paused");
   });
 
   it("uses real inactive states for task and Memory Trash and restores prior visibility", async () => {
@@ -325,6 +336,11 @@ describe("SQLite governed deletion", () => {
   it("purges a real Thread graph and converges after a managed-target failure", async () => {
     const resource = await fixture();
     resource.failTarget("archive");
+    const taskDatabase = openQualifiedDatabase(resource.databasePath);
+    taskDatabase
+      .prepare("UPDATE scheduled_jobs SET status = 'paused', revision = revision + 1 WHERE id = ?")
+      .run("task-delete");
+    taskDatabase.close();
 
     const incomplete = await resource.adapter.deleteImmediately({
       objectType: "thread",
@@ -337,7 +353,13 @@ describe("SQLite governed deletion", () => {
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM runs")).toBe(0);
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM trace_events")).toBe(0);
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM inbox_deliveries")).toBe(0);
-    expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM scheduled_jobs")).toBe(0);
+    expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM scheduled_jobs")).toBe(1);
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT thread_id FROM scheduled_jobs WHERE id = 'task-delete'",
+      ),
+    ).toBeNull();
     expect(scalar(resource.databasePath, "SELECT source_deleted FROM memory_provenance")).toBe(1);
     expect(scalar(resource.databasePath, "SELECT source_thread_id FROM memory_records")).toBeNull();
     expect(
@@ -438,6 +460,11 @@ describe("SQLite governed deletion", () => {
 
   it("purges Trash only after its retention deadline", async () => {
     const resource = await fixture();
+    const taskDatabase = openQualifiedDatabase(resource.databasePath);
+    taskDatabase
+      .prepare("UPDATE scheduled_jobs SET status = 'paused', revision = revision + 1 WHERE id = ?")
+      .run("task-delete");
+    taskDatabase.close();
     await resource.adapter.trashThread("thread-delete");
 
     expect(await resource.adapter.purgeExpiredTrash(T0)).toEqual([]);

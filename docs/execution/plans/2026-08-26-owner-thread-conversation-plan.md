@@ -161,11 +161,13 @@ Thread 新契约使用独立 `gateway.thread.v3`，没有改写既有 `gateway.v
 
 ### Task 10：协调审批、Task、归档与删除
 
-- [ ] Thread archive 不修改已批准 Task、Approval 或 Grant。
-- [ ] Approval 只按自身 expiry 失效；过期后必须形成新 ActionIntent，不复用旧批准。
-- [ ] trash/delete 前查询 stable active task refs，并要求 cancel、pause 或 rebind 独立命令全部收敛。
-- [ ] 未解决关联时保持 deletion_pending，不删除 Thread；跨 Thread/Memory 引用在永久删除后失去正文解析。
-- [ ] 验证恢复、重复命令、部分失败和 authority fence 失效。
+- [x] Thread archive 不修改已批准 Task、Approval 或 Grant。
+- [x] Approval 只按自身 expiry 失效；过期后必须形成新 ActionIntent，不复用旧批准。
+- [x] trash/delete 前查询 stable active task refs，并要求 cancel、pause 或 rebind 独立命令全部收敛。
+- [x] 未解决关联时保持 deletion_pending，不删除 Thread；跨 Thread/Memory 引用在永久删除后失去正文解析。
+- [x] 验证恢复、重复命令、部分失败和 authority fence 失效。
+
+`ThreadDeletionCoordinationService` 现在通过同一 SQLite 权威 writer 提供删除影响查询、独立 task pause/cancel/rebind 和 Trash/永久删除请求。每个 mutation 都绑定 Owner/Agent、revision、authority fence、幂等 receipt 与结果引用；active task 未收敛时删除原子拒绝，永久删除还要求逐次 authorization 与 recent-auth。离线物理删除不再替 Owner 自动暂停 task，已暂停、取消或重新绑定的 task 保留自身状态，删除来源 Thread 时只移除失效绑定。归档、恢复和审批过期测试证明 Task、Approval、Grant 只由各自生命周期命令改变。实现与证据位于 `test/integration/thread-deletion-coordination.test.ts` 和 `test/integration/qualification/evidence/s2-task10-thread-deletion-coordination.json`。
 
 ### Task 11：接通控制中心与多客户端恢复
 
@@ -188,10 +190,10 @@ Thread 新契约使用独立 `gateway.thread.v3`，没有改写既有 `gateway.v
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
 | S2-A01 | 稳定身份与继续对话 | Tasks 2–5、11 | domain/contract、重复接纳、process recovery | 部分验证（Tasks 2–5；控制中心 Task 11 未实施） |
-| S2-A02 | 生命周期与查找 | Tasks 4、6、10–12 | query/search、multi-client、规模 | 部分验证（Tasks 4、6；删除协调、浏览器与规模未实施） |
+| S2-A02 | 生命周期与查找 | Tasks 4、6、10–12 | query/search、multi-client、规模 | 部分验证（Tasks 4、6、10；控制中心、浏览器与规模未实施） |
 | S2-A03 | Fork 与来源 | Tasks 4、7、12 | lineage、delete、restart | 部分验证（Tasks 4、7；完整恢复矩阵与规模未实施） |
 | S2-A04 | 回答语言与上下文 | Tasks 8、11 | 中英日组合、context/Trace、browser | 部分验证（Task 8；控制中心与浏览器未实施） |
-| S2-A05 | 压缩、审批与任务 | Tasks 9–12 | checkpoint crash matrix、task/delete coordination | 部分验证（Task 9；任务删除协调、控制中心与规模未实施） |
+| S2-A05 | 压缩、审批与任务 | Tasks 9–12 | checkpoint crash matrix、task/delete coordination | 部分验证（Tasks 9–10；控制中心与规模未实施） |
 
 ## 验证
 

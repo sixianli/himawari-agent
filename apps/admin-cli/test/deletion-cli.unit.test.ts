@@ -173,6 +173,12 @@ describe("governed-deletion admin CLI", () => {
     expect(unconfirmed.value()).toContain('"activeTaskIds":["task-cli"]');
     expect(unconfirmedError.value()).toContain("ADMIN_CONFIRMATION_REQUIRED");
 
+    const taskDatabase = openQualifiedDatabase(path.join(root, "data", "product.sqlite"));
+    taskDatabase
+      .prepare("UPDATE scheduled_jobs SET status = 'paused', revision = revision + 1 WHERE id = ?")
+      .run("task-cli");
+    taskDatabase.close();
+
     const trashed = sink();
     expect(
       await runAdminCli(

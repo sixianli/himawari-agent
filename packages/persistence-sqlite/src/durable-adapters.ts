@@ -400,6 +400,10 @@ export class SqliteDurableAdapters {
           threadId,
           projectionVersion,
         }),
+      inspectDeletionImpact: (ownerId, agentId, threadId) =>
+        this.context.read("thread.inspectDeletionImpact", { ownerId, agentId, threadId }),
+      resolveDeletionTask: (input) => this.context.write("thread.resolveDeletionTask", { input }),
+      requestDeletion: (input) => this.context.write("thread.requestDeletion", { input }),
     });
   }
 

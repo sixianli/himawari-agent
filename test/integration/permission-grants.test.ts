@@ -311,6 +311,20 @@ describe("Task 7 deterministic Permission and Grants", () => {
         approvalExpiresAt: "2026-08-25T00:00:03.000Z",
       }),
     ).resolves.toMatchObject({ decision: "DENY", reasonCode: "approval_expired" });
+    const replacement = intent({
+      id: "expires-no-ui-replacement",
+      requestedAt: T1,
+    });
+    const replacementDecision = await service.evaluate(replacement, {
+      uiAvailable: false,
+      approvalExpiresAt: "2026-08-25T00:00:03.000Z",
+    });
+    expect(replacementDecision).toMatchObject({
+      decision: "ASK",
+      approvalRequest: { intentId: replacement.id, status: "pending" },
+    });
+    if (replacementDecision.decision !== "ASK") throw new Error("Expected replacement ASK");
+    expect(replacementDecision.approvalRequest.id).not.toBe(ask.approvalRequest.id);
   });
 
   it("fails closed when authorization state cannot be read", async () => {

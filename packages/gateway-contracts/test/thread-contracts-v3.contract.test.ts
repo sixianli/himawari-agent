@@ -2,7 +2,9 @@ import {
   ContractValidationError,
   THREAD_GATEWAY_SCHEMA_VERSION,
   archiveThreadV3CommandSchema,
+  deleteThreadPermanentlyV3CommandSchema,
   forkThreadV3CommandSchema,
+  resolveThreadTaskV3CommandSchema,
   searchThreadsV3QuerySchema,
   setThreadAnswerLocaleV3CommandSchema,
   submitThreadMessageV3CommandSchema,
@@ -111,6 +113,59 @@ describe("Thread Gateway v3 contracts", () => {
         },
       }),
     ).toMatchObject({ payload: { tokenRefs: ["search-token:001"] } });
+  });
+
+  it("requires explicit task resolution and one-time permanent-delete authorization", () => {
+    expect(
+      resolveThreadTaskV3CommandSchema.parse({
+        ...envelope,
+        kind: "command",
+        type: "thread.task.resolve",
+        idempotencyKey: "resolve-task-s2",
+        payload: {
+          threadId: "thread-s2",
+          taskId: "task-s2",
+          expectedTaskRevision: 4,
+          action: "rebind",
+          targetThreadId: "thread-target-s2",
+          reasonCode: "owner_selected_rebind",
+          resultRef: "payload:task-resolution-result",
+        },
+      }),
+    ).toMatchObject({ payload: { action: "rebind", targetThreadId: "thread-target-s2" } });
+    expect(() =>
+      resolveThreadTaskV3CommandSchema.parse({
+        ...envelope,
+        kind: "command",
+        type: "thread.task.resolve",
+        idempotencyKey: "resolve-task-invalid-s2",
+        payload: {
+          threadId: "thread-s2",
+          taskId: "task-s2",
+          expectedTaskRevision: 4,
+          action: "pause",
+          targetThreadId: "thread-target-s2",
+          reasonCode: "invalid_extra_target",
+          resultRef: "payload:task-resolution-result",
+        },
+      }),
+    ).toThrow(ContractValidationError);
+    expect(
+      deleteThreadPermanentlyV3CommandSchema.parse({
+        ...envelope,
+        kind: "command",
+        type: "thread.delete_permanently",
+        idempotencyKey: "delete-permanently-s2",
+        payload: {
+          threadId: "thread-s2",
+          expectedRevision: 5,
+          reasonCode: "owner_requested",
+          authorizationRef: "approval:delete-s2",
+          recentAuthenticationRef: "recent-auth:owner-s2",
+          resultRef: "payload:delete-result",
+        },
+      }),
+    ).toMatchObject({ type: "thread.delete_permanently" });
   });
 
   it.each([

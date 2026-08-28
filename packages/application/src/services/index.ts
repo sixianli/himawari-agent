@@ -25,5 +25,6 @@ export * from "./trace-redaction.js";
 export * from "./machine-secret-exclusion.js";
 export * from "./unified-trigger-ingestion-service.js";
 export * from "./thread-command-service.js";
+export * from "./thread-deletion-coordination-service.js";
 export * from "./thread-query-service.js";
 export * from "./thread-fork-service.js";

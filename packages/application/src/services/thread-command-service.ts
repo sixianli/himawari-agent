@@ -178,12 +178,15 @@ export class ThreadCommandService {
     readonly agentId: AgentId;
     readonly threadId: ThreadId;
     readonly expectedRevision: number;
-    readonly status: "active" | "archived" | "trashed";
+    readonly status: "active" | "archived";
     readonly idempotencyKey: string;
     readonly resultRef: PayloadRef;
   }) {
-    return this.update(input, `thread.${input.status}`, { status: input.status }, (thread) =>
-      transitionProductThread(thread, input.status, this.dependencies.clock.now()),
+    return this.update(
+      input,
+      input.status === "active" ? "thread.restore" : "thread.archive",
+      { status: input.status },
+      (thread) => transitionProductThread(thread, input.status, this.dependencies.clock.now()),
     );
   }
 

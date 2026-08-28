@@ -27,6 +27,8 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.set_answer_locale",
   "thread.trash",
   "thread.delete_permanently",
+  "thread.task.resolve",
+  "thread.deletion_impact",
   "thread.list",
   "thread.detail",
   "thread.search",
@@ -140,13 +142,9 @@ export const pinThreadV3CommandSchema = object({
   }),
 });
 
-function lifecycleCommand<
-  const TType extends
-    | "thread.archive"
-    | "thread.restore"
-    | "thread.trash"
-    | "thread.delete_permanently",
->(type: TType) {
+function lifecycleCommand<const TType extends "thread.archive" | "thread.restore" | "thread.trash">(
+  type: TType,
+) {
   return object({
     ...commandEnvelope(type),
     payload: object({
@@ -161,7 +159,46 @@ function lifecycleCommand<
 export const archiveThreadV3CommandSchema = lifecycleCommand("thread.archive");
 export const restoreThreadV3CommandSchema = lifecycleCommand("thread.restore");
 export const trashThreadV3CommandSchema = lifecycleCommand("thread.trash");
-export const deleteThreadPermanentlyV3CommandSchema = lifecycleCommand("thread.delete_permanently");
+export const deleteThreadPermanentlyV3CommandSchema = object({
+  ...commandEnvelope("thread.delete_permanently"),
+  payload: object({
+    threadId: machineString,
+    expectedRevision: integer(1),
+    reasonCode: machineString,
+    authorizationRef: machineString,
+    recentAuthenticationRef: machineString,
+    resultRef: machineString,
+  }),
+});
+
+const resolveThreadTaskPayloadSchema = object({
+  threadId: machineString,
+  taskId: machineString,
+  expectedTaskRevision: integer(0),
+  action: enumeration(["pause", "cancel", "rebind"]),
+  targetThreadId: nullable(machineString),
+  reasonCode: machineString,
+  resultRef: machineString,
+});
+
+export const resolveThreadTaskV3CommandSchema = object({
+  ...commandEnvelope("thread.task.resolve"),
+  payload: {
+    parse(input, path = "$.payload") {
+      const payload = resolveThreadTaskPayloadSchema.parse(input, path);
+      if ((payload.action === "rebind") !== (payload.targetThreadId !== null)) {
+        throw new ContractValidationError(
+          `${path}.targetThreadId`,
+          "must be present only for a rebind resolution",
+        );
+      }
+      if (payload.targetThreadId === payload.threadId) {
+        throw new ContractValidationError(`${path}.targetThreadId`, "must differ from threadId");
+      }
+      return payload;
+    },
+  },
+});
 
 export const forkThreadV3CommandSchema = object({
   ...commandEnvelope("thread.fork"),
@@ -216,6 +253,10 @@ export const threadCheckpointV3QuerySchema = object({
   ...envelope("query", "thread.checkpoint"),
   payload: object({ threadId: machineString, sourceWatermark: nullable(integer(1)) }),
 });
+export const threadDeletionImpactV3QuerySchema = object({
+  ...envelope("query", "thread.deletion_impact"),
+  payload: object({ threadId: machineString }),
+});
 
 export const threadSnapshotV3Schema = object({
   ...envelope("snapshot", "thread.snapshot"),
@@ -260,6 +301,8 @@ const schemasByType = {
   "thread.set_answer_locale": setThreadAnswerLocaleV3CommandSchema,
   "thread.trash": trashThreadV3CommandSchema,
   "thread.delete_permanently": deleteThreadPermanentlyV3CommandSchema,
+  "thread.task.resolve": resolveThreadTaskV3CommandSchema,
+  "thread.deletion_impact": threadDeletionImpactV3QuerySchema,
   "thread.list": listThreadsV3QuerySchema,
   "thread.detail": threadDetailV3QuerySchema,
   "thread.search": searchThreadsV3QuerySchema,

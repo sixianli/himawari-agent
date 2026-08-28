@@ -301,7 +301,7 @@ export class SqliteGovernedDeletionAdapter {
                     [objectId],
                   )
                 : [];
-            const pausedTaskIds =
+            const activeTaskIds =
               input.objectType === "thread"
                 ? this.#values(
                     database,
@@ -310,12 +310,14 @@ export class SqliteGovernedDeletionAdapter {
                     [objectId],
                   )
                 : [];
+            if (activeTaskIds.length > 0) {
+              throw new GovernedDeletionError(
+                GOVERNED_DELETION_ERROR_CODES.CONFLICT,
+                "Active tasks must be resolved before a Thread enters Trash",
+                { objectId, activeTaskIds: activeTaskIds.join(",") },
+              );
+            }
             if (input.objectType === "thread") {
-              database
-                .prepare(
-                  "UPDATE scheduled_jobs SET status = 'paused', revision = revision + 1 WHERE thread_id = ? AND status = 'active'",
-                )
-                .run(objectId);
               database
                 .prepare(
                   "UPDATE threads SET status = 'trashed', revision = revision + 1 WHERE id = ? AND status = 'open'",
@@ -346,7 +348,7 @@ export class SqliteGovernedDeletionAdapter {
               pendingPayloadFiles: Object.freeze([]),
               externalEffectTombstoneCount: 0,
               associatedTaskIds: previous?.associatedTaskIds ?? associatedTaskIds,
-              pausedTaskIds: previous?.pausedTaskIds ?? pausedTaskIds,
+              pausedTaskIds: Object.freeze([]),
               priorProductStatus: previous?.priorProductStatus ?? row.status,
               updatedAt: now,
             });
@@ -412,14 +414,6 @@ export class SqliteGovernedDeletionAdapter {
               database
                 .prepare("UPDATE threads SET status = 'open', revision = revision + 1 WHERE id = ?")
                 .run(objectId);
-              if (current.pausedTaskIds.length > 0) {
-                database
-                  .prepare(
-                    `UPDATE scheduled_jobs SET status = 'active', revision = revision + 1
-                    WHERE id IN (${placeholders(current.pausedTaskIds)}) AND status = 'paused'`,
-                  )
-                  .run(...current.pausedTaskIds);
-              }
             } else if (input.objectType === "task") {
               const status = current.priorProductStatus === "active" ? "active" : "paused";
               database
@@ -470,6 +464,20 @@ export class SqliteGovernedDeletionAdapter {
       try {
         const now = this.#now();
         const previous = this.#storedRecord(database, input.objectType, objectId);
+        if (input.objectType === "thread") {
+          const activeTaskIds = this.#values(
+            database,
+            `SELECT id FROM scheduled_jobs WHERE thread_id = ? AND status = 'active' ORDER BY id`,
+            [objectId],
+          );
+          if (activeTaskIds.length > 0) {
+            throw new GovernedDeletionError(
+              GOVERNED_DELETION_ERROR_CODES.CONFLICT,
+              "Active tasks must be resolved before permanent Thread deletion",
+              { objectId, activeTaskIds: activeTaskIds.join(",") },
+            );
+          }
+        }
         const base: StoredDeletionRecord = previous
           ? Object.freeze({ ...previous, lifecycle: "deletion_pending", updatedAt: now })
           : Object.freeze({
@@ -740,18 +748,13 @@ export class SqliteGovernedDeletionAdapter {
           ...this.#values(database, `SELECT trigger_id FROM runs WHERE thread_id = ?`, [objectId]),
           ...this.#values(database, `SELECT id FROM triggers WHERE thread_id = ?`, [objectId]),
         ]);
-        const jobIds = this.#values(database, "SELECT id FROM scheduled_jobs WHERE thread_id = ?", [
-          objectId,
-        ]);
         const messageIds = this.#values(
           database,
           "SELECT id FROM thread_messages WHERE thread_id = ?",
           [objectId],
         );
-        objectRefs = unique([objectId, ...runIds, ...jobIds, ...messageIds]);
-        payloadRefs.push(
-          ...this.#threadPayloadRefs(database, objectId, runIds, triggerIds, jobIds),
-        );
+        objectRefs = unique([objectId, ...runIds, ...messageIds]);
+        payloadRefs.push(...this.#threadPayloadRefs(database, objectId, runIds, triggerIds));
         const provenanceRefs = unique([objectId, ...runIds, ...messageIds]);
         if (provenanceRefs.length > 0) {
           database
@@ -764,7 +767,7 @@ export class SqliteGovernedDeletionAdapter {
         database
           .prepare("UPDATE memory_records SET source_thread_id = NULL WHERE source_thread_id = ?")
           .run(objectId);
-        database.prepare("DELETE FROM scheduled_jobs WHERE thread_id = ?").run(objectId);
+        this.#detachThreadTasks(database, objectId);
         database.prepare("DELETE FROM runs WHERE thread_id = ?").run(objectId);
         if (triggerIds.length > 0) {
           database
@@ -884,7 +887,6 @@ export class SqliteGovernedDeletionAdapter {
     threadId: string,
     runIds: readonly string[],
     triggerIds: readonly string[],
-    jobIds: readonly string[],
   ): readonly string[] {
     const refs = [
       ...this.#values(
@@ -919,17 +921,30 @@ export class SqliteGovernedDeletionAdapter {
         [threadId],
       ),
     ];
-    if (jobIds.length > 0) {
-      refs.push(
-        ...this.#values(
-          database,
-          `SELECT definition_ref FROM scheduled_jobs WHERE id IN (${placeholders(jobIds)})`,
-          jobIds,
-        ),
-      );
-    }
     refs.push(...this.#runPayloadRefs(database, runIds, triggerIds));
     return unique(refs);
+  }
+
+  #detachThreadTasks(database: InstanceType<typeof BetterSqlite3>, threadId: string): void {
+    const rows = database
+      .prepare(
+        `SELECT id, revision, record_json AS recordJson FROM scheduled_jobs
+        WHERE thread_id = ? ORDER BY id`,
+      )
+      .all(threadId) as Array<{ id: string; revision: number; recordJson: string | null }>;
+    const update = database.prepare(
+      `UPDATE scheduled_jobs SET thread_id = NULL, revision = ?, record_json = ? WHERE id = ?`,
+    );
+    for (const row of rows) {
+      const record = row.recordJson
+        ? ({
+            ...(JSON.parse(row.recordJson) as Record<string, unknown>),
+            revision: row.revision + 1,
+            threadId: null,
+          } as Record<string, unknown>)
+        : null;
+      update.run(row.revision + 1, record ? JSON.stringify(record) : null, row.id);
+    }
   }
 
   #runPayloadRefs(

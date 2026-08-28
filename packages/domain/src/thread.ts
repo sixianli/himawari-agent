@@ -41,8 +41,8 @@ export interface ProductThread {
 }
 
 const TRANSITIONS = Object.freeze({
-  active: ["archived", "trashed"],
-  archived: ["active", "trashed"],
+  active: ["archived", "trashed", "deletion_pending"],
+  archived: ["active", "trashed", "deletion_pending"],
   trashed: ["active", "archived", "deletion_pending"],
   deletion_pending: ["trashed", "deleted_verified"],
   deleted_verified: [],

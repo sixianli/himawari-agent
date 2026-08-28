@@ -2,11 +2,16 @@ import type {
   AdmitOwnerMessageInput,
   CommitAssistantMessageInput,
   ForkThreadInput,
+  RequestThreadDeletionInput,
+  ResolveThreadTaskInput,
+  ScheduledJob,
   ThreadCreateInput,
+  ThreadDeletionImpact,
   ThreadListQuery,
   ThreadMutationReceipt,
   ThreadSearchProjectionInput,
   ThreadSearchQuery,
+  ThreadTaskBinding,
   ThreadTitleSearchProjectionInput,
   ThreadUpdateInput,
 } from "@himawari-agent/application";
@@ -77,6 +82,14 @@ interface MessageRow {
   readonly dataClassification: ProductThreadMessage["dataClassification"];
   readonly status: ProductThreadMessage["status"];
   readonly committedAt: string;
+}
+
+interface TaskBindingRow {
+  readonly id: string;
+  readonly revision: number;
+  readonly threadId: string | null;
+  readonly status: "active" | "paused" | "revoked";
+  readonly recordJson: string | null;
 }
 
 const THREAD_SELECT = `SELECT id, owner_id AS ownerId, agent_id AS agentId, revision, status,
@@ -187,6 +200,14 @@ export class SqliteThreadOperations {
           input.projectionVersion,
         );
       }
+      case "thread.inspectDeletionImpact": {
+        const input = payload as { ownerId: OwnerId; agentId: AgentId; threadId: ThreadId };
+        return this.inspectDeletionImpact(input.ownerId, input.agentId, input.threadId);
+      }
+      case "thread.resolveDeletionTask":
+        return this.resolveDeletionTask((payload as { input: ResolveThreadTaskInput }).input);
+      case "thread.requestDeletion":
+        return this.requestDeletion((payload as { input: RequestThreadDeletionInput }).input);
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown Thread operation ${operation}`);
     }
@@ -500,6 +521,266 @@ export class SqliteThreadOperations {
         committedAt: input.thread.updatedAt,
       });
       return { thread: input.thread, receipt };
+    });
+    return transaction.immediate();
+  }
+
+  private taskBindingFromRow(row: TaskBindingRow): ThreadTaskBinding {
+    if (row.threadId === null) {
+      this.fail("PORT_INVALID_OPERATION", `Task ${row.id} is not bound to a Thread`);
+    }
+    return Object.freeze({
+      taskId: row.id,
+      revision: row.revision,
+      threadId: row.threadId as ThreadId,
+      status: row.status === "revoked" ? "cancelled" : row.status,
+    });
+  }
+
+  private taskRow(taskId: string): TaskBindingRow | undefined {
+    return this.database
+      .prepare(
+        `SELECT id, revision, thread_id AS threadId, status,
+          record_json AS recordJson FROM scheduled_jobs WHERE id = ?`,
+      )
+      .get(taskId) as TaskBindingRow | undefined;
+  }
+
+  private inspectDeletionImpact(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    threadId: ThreadId,
+  ): ThreadDeletionImpact {
+    const thread = this.read(ownerId, agentId, threadId);
+    if (!thread) this.fail("PORT_NOT_FOUND", `Thread ${threadId} not found`);
+    const rows = this.database
+      .prepare(
+        `SELECT id, revision, thread_id AS threadId, status,
+          record_json AS recordJson FROM scheduled_jobs
+        WHERE owner_id = ? AND agent_id = ? AND thread_id = ? ORDER BY id`,
+      )
+      .all(ownerId, agentId, threadId) as TaskBindingRow[];
+    const associatedTasks = Object.freeze(rows.map((row) => this.taskBindingFromRow(row)));
+    return Object.freeze({
+      threadId,
+      threadRevision: thread.revision,
+      associatedTasks,
+      activeTaskIds: Object.freeze(
+        associatedTasks.filter((task) => task.status === "active").map((task) => task.taskId),
+      ),
+    });
+  }
+
+  private resolveDeletionTask(input: ResolveThreadTaskInput) {
+    this.assertDiskHeadroom();
+    const transaction = this.database.transaction(() => {
+      const replay = this.replay(
+        input.ownerId,
+        input.agentId,
+        input.idempotencyKey,
+        "thread.task.resolve",
+        input.semanticFingerprint,
+      );
+      if (replay) {
+        const replayedTask = this.taskRow(input.taskId);
+        if (!replayedTask || replayedTask.threadId === null) {
+          this.fail("PORT_NOT_FOUND", "Replayed Thread task resolution state is missing");
+        }
+        return {
+          impact: this.inspectDeletionImpact(input.ownerId, input.agentId, input.threadId),
+          task: this.taskBindingFromRow(replayedTask),
+          receipt: replay,
+        };
+      }
+      this.assertAuthority(input.ownerId, input.agentId, input.authority);
+      this.assertPayload(input.ownerId, input.agentId, input.resultRef);
+      if (!this.read(input.ownerId, input.agentId, input.threadId)) {
+        this.fail("PORT_NOT_FOUND", `Thread ${input.threadId} not found`);
+      }
+      const current = this.taskRow(input.taskId);
+      if (!current || current.threadId !== input.threadId) {
+        this.fail("PORT_INVALID_OPERATION", `Task ${input.taskId} is outside the Thread scope`);
+      }
+      if (current.revision !== input.expectedTaskRevision) {
+        this.fail("PORT_CONFLICT", `Task ${input.taskId} revision conflict`);
+      }
+      if (current.recordJson === null) {
+        this.fail("PORT_INVALID_OPERATION", `Task ${input.taskId} has no durable product record`);
+      }
+      const record = JSON.parse(current.recordJson) as ScheduledJob;
+      let threadId: ThreadId | null = input.threadId;
+      let status: ScheduledJob["status"] = record.status;
+      let physicalStatus: TaskBindingRow["status"] = current.status;
+      if (input.resolution.action === "pause") {
+        if (current.status !== "active") {
+          this.fail("PORT_CONFLICT", `Task ${input.taskId} is not active`);
+        }
+        status = "paused";
+        physicalStatus = "paused";
+      } else if (input.resolution.action === "cancel") {
+        if (current.status === "revoked") {
+          this.fail("PORT_CONFLICT", `Task ${input.taskId} is already cancelled`);
+        }
+        status = "cancelled";
+        physicalStatus = "revoked";
+      } else {
+        if (input.resolution.targetThreadId === input.threadId) {
+          this.fail(
+            "PORT_INVALID_OPERATION",
+            "Task rebind target must differ from its source Thread",
+          );
+        }
+        const target = this.read(input.ownerId, input.agentId, input.resolution.targetThreadId);
+        if (!target || (target.status !== "active" && target.status !== "archived")) {
+          this.fail("PORT_INVALID_OPERATION", "Task rebind target is unavailable");
+        }
+        threadId = input.resolution.targetThreadId;
+      }
+      const next: ScheduledJob = Object.freeze({
+        ...record,
+        revision: current.revision + 1,
+        threadId,
+        status,
+      });
+      this.database
+        .prepare(
+          `UPDATE scheduled_jobs SET revision = ?, thread_id = ?, status = ?, record_json = ?
+          WHERE id = ? AND owner_id = ? AND agent_id = ? AND revision = ?`,
+        )
+        .run(
+          next.revision,
+          next.threadId,
+          physicalStatus,
+          JSON.stringify(next),
+          input.taskId,
+          input.ownerId,
+          input.agentId,
+          input.expectedTaskRevision,
+        );
+      const source = this.read(input.ownerId, input.agentId, input.threadId);
+      if (!source) this.fail("PORT_NOT_FOUND", `Thread ${input.threadId} not found`);
+      const receipt = this.writeReceipt({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        idempotencyKey: input.idempotencyKey,
+        commandType: "thread.task.resolve",
+        semanticFingerprint: input.semanticFingerprint,
+        threadId: input.threadId,
+        threadRevision: source.revision,
+        resultRef: input.resultRef,
+        committedAt: input.resolvedAt,
+      });
+      const stored = this.taskRow(input.taskId);
+      if (!stored || stored.threadId === null) {
+        this.fail("PORT_NOT_FOUND", "Resolved Thread task state is missing");
+      }
+      return {
+        impact: this.inspectDeletionImpact(input.ownerId, input.agentId, input.threadId),
+        task: this.taskBindingFromRow(stored),
+        receipt,
+      };
+    });
+    return transaction.immediate();
+  }
+
+  private requestDeletion(input: RequestThreadDeletionInput) {
+    this.assertDiskHeadroom();
+    const commandType = input.mode === "trash" ? "thread.trash" : "thread.delete_permanently";
+    const transaction = this.database.transaction(() => {
+      const replay = this.replay(
+        input.ownerId,
+        input.agentId,
+        input.idempotencyKey,
+        commandType,
+        input.semanticFingerprint,
+      );
+      if (replay) {
+        const thread = this.read(input.ownerId, input.agentId, input.threadId);
+        if (!thread) this.fail("PORT_NOT_FOUND", "Replayed Thread deletion state is missing");
+        return {
+          thread,
+          impact: this.inspectDeletionImpact(input.ownerId, input.agentId, input.threadId),
+          receipt: replay,
+        };
+      }
+      this.assertAuthority(input.ownerId, input.agentId, input.authority);
+      this.assertPayload(input.ownerId, input.agentId, input.resultRef);
+      if (
+        input.mode === "permanent" &&
+        (!input.authorizationRef || !input.recentAuthenticationRef)
+      ) {
+        this.fail(
+          "PORT_INVALID_OPERATION",
+          "Permanent Thread deletion requires authorization and recent authentication",
+        );
+      }
+      const current = this.read(input.ownerId, input.agentId, input.threadId);
+      if (!current) this.fail("PORT_NOT_FOUND", `Thread ${input.threadId} not found`);
+      if (current.revision !== input.expectedThreadRevision) {
+        this.fail("PORT_CONFLICT", "Thread revision conflict");
+      }
+      const impact = this.inspectDeletionImpact(input.ownerId, input.agentId, input.threadId);
+      if (impact.activeTaskIds.length > 0) {
+        this.fail("PORT_CONFLICT", "Active tasks must be resolved before deleting a Thread", {
+          threadId: input.threadId,
+          activeTaskIds: impact.activeTaskIds.join(","),
+        });
+      }
+      const target = input.mode === "trash" ? "trashed" : "deletion_pending";
+      const allowed =
+        input.mode === "trash"
+          ? current.status === "active" || current.status === "archived"
+          : current.status === "active" ||
+            current.status === "archived" ||
+            current.status === "trashed";
+      if (!allowed) {
+        this.fail("PORT_INVALID_OPERATION", `Thread cannot enter ${target} from ${current.status}`);
+      }
+      const thread: ProductThread = Object.freeze({
+        ...current,
+        revision: current.revision + 1,
+        status: target,
+        updatedAt: input.requestedAt,
+      });
+      const result = this.database
+        .prepare(
+          `UPDATE threads SET revision = ?, status = ?, archived_at = NULL,
+            trashed_at = ?, updated_at = ?
+          WHERE id = ? AND owner_id = ? AND agent_id = ? AND revision = ?`,
+        )
+        .run(
+          thread.revision,
+          target,
+          target === "trashed" ? input.requestedAt : null,
+          input.requestedAt,
+          input.threadId,
+          input.ownerId,
+          input.agentId,
+          input.expectedThreadRevision,
+        );
+      if (result.changes !== 1) this.fail("PORT_CONFLICT", "Thread revision conflict");
+      this.database
+        .prepare("DELETE FROM thread_search_projection WHERE thread_id = ?")
+        .run(input.threadId);
+      this.database
+        .prepare("DELETE FROM thread_title_search_projection WHERE thread_id = ?")
+        .run(input.threadId);
+      const receipt = this.writeReceipt({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        idempotencyKey: input.idempotencyKey,
+        commandType,
+        semanticFingerprint: input.semanticFingerprint,
+        threadId: input.threadId,
+        threadRevision: thread.revision,
+        resultRef: input.resultRef,
+        committedAt: input.requestedAt,
+      });
+      return {
+        thread,
+        impact: this.inspectDeletionImpact(input.ownerId, input.agentId, input.threadId),
+        receipt,
+      };
     });
     return transaction.immediate();
   }

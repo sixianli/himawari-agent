@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T12:30:22+09:00",
+  "plan": "docs/execution/plans/2026-08-26-owner-thread-conversation-plan.md",
+  "taskIds": ["S2-T10"],
+  "status": "local_complete",
+  "candidateRevision": "80a1d78c1720bea7ad238a8871f3313e05885a6b",
+  "verified": [
+    "Thread archive/restore only changes Thread visibility and leaves independent ScheduledJob, Approval and Grant records unchanged.",
+    "Expired Approval retry with the same ActionIntent remains denied; a new stable ActionIntent creates a distinct pending Approval Request.",
+    "Thread deletion impact returns stable task IDs and revisions; Trash/permanent deletion rejects active tasks until independent pause, cancel or rebind commands converge.",
+    "Task resolution and deletion requests share the SQLite authority writer, validate current deployment fence and expected revisions, and persist semantic idempotency receipts.",
+    "Permanent deletion requires a one-time authorization reference plus recent authentication, enters deletion_pending before physical convergence, and hides Thread content.",
+    "Physical Thread deletion preserves paused/cancelled/rebound tasks, detaches only invalid source bindings, deletes Thread-owned Approval/Run/content, and retains Grants as independently governed authorization state.",
+    "Managed-target failure remains durable deletion_pending and retry converges without restoring deleted source content."
+  ],
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, typecheck, 14-workspace boundaries, 79 requirements, 53 acceptance IDs, 133-source invariant scan and 433-file secret scan passed"
+    },
+    {
+      "command": "npm test",
+      "exitStatus": 0,
+      "execution": "outside restricted sandbox for Unix Domain Socket coverage",
+      "result": "33 unit files/243 tests, 13 contract files/138 tests, 35 integration files passed and 3 skipped/341 tests passed and 3 skipped, 1 E2E file/3 tests passed"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/thread-deletion-coordination.test.ts test/integration/sqlite-governed-deletion.test.ts test/integration/permission-grants.test.ts",
+      "exitStatus": 0,
+      "result": "3 files and 16 focused integration tests passed"
+    }
+  ],
+  "remaining": [
+    "S2 Task 11 must expose the same committed impact and task-resolution semantics through the authenticated Control Center with multi-client recovery.",
+    "S2 Task 12 must complete browser/device recovery, scale evidence, S0 journey mapping and final Plan closure."
+  ],
+  "externalEffects": [
+    "No external account change, paid call, Hermes operation, deployment, destructive production deletion or remote push occurred."
+  ],
+  "implementationCommit": null
+}

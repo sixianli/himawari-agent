@@ -140,6 +140,56 @@ export interface ThreadTitleSearchProjectionInput {
   readonly projectionVersion: string;
 }
 
+export interface ThreadTaskBinding {
+  readonly taskId: string;
+  readonly revision: number;
+  readonly threadId: ThreadId;
+  readonly status: "active" | "paused" | "cancelled";
+}
+
+export interface ThreadDeletionImpact {
+  readonly threadId: ThreadId;
+  readonly threadRevision: number;
+  readonly associatedTasks: readonly ThreadTaskBinding[];
+  readonly activeTaskIds: readonly string[];
+}
+
+export type ThreadTaskResolution =
+  | { readonly action: "pause" }
+  | { readonly action: "cancel" }
+  | { readonly action: "rebind"; readonly targetThreadId: ThreadId };
+
+export interface ResolveThreadTaskInput {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly taskId: string;
+  readonly expectedTaskRevision: number;
+  readonly resolution: ThreadTaskResolution;
+  readonly reasonCode: string;
+  readonly idempotencyKey: IdempotencyKey;
+  readonly semanticFingerprint: string;
+  readonly resultRef: PayloadRef;
+  readonly resolvedAt: string;
+  readonly authority: ProductAuthorityFence;
+}
+
+export interface RequestThreadDeletionInput {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly expectedThreadRevision: number;
+  readonly mode: "trash" | "permanent";
+  readonly reasonCode: string;
+  readonly authorizationRef: string | null;
+  readonly recentAuthenticationRef: string | null;
+  readonly idempotencyKey: IdempotencyKey;
+  readonly semanticFingerprint: string;
+  readonly resultRef: PayloadRef;
+  readonly requestedAt: string;
+  readonly authority: ProductAuthorityFence;
+}
+
 export interface ThreadRepositoryPort {
   create(
     input: ThreadCreateInput,
@@ -188,4 +238,19 @@ export interface ThreadRepositoryPort {
     threadId: ThreadId,
     projectionVersion: string,
   ): Promise<number>;
+  inspectDeletionImpact(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    threadId: ThreadId,
+  ): Promise<ThreadDeletionImpact>;
+  resolveDeletionTask(input: ResolveThreadTaskInput): Promise<{
+    impact: ThreadDeletionImpact;
+    task: ThreadTaskBinding;
+    receipt: ThreadMutationReceipt;
+  }>;
+  requestDeletion(input: RequestThreadDeletionInput): Promise<{
+    thread: ProductThread;
+    impact: ThreadDeletionImpact;
+    receipt: ThreadMutationReceipt;
+  }>;
 }
