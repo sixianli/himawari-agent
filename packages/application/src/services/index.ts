@@ -31,3 +31,5 @@ export * from "./thread-command-service.js";
 export * from "./thread-deletion-coordination-service.js";
 export * from "./thread-query-service.js";
 export * from "./thread-fork-service.js";
+export * from "./web-capability-service.js";
+export * from "./durable-web-state-adapter.js";

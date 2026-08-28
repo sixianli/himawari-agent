@@ -34,6 +34,16 @@ export const allowedInternalDependencies = new Map([
     ]),
   ],
   [
+    "@himawari-agent/integration-web",
+    new Set([
+      "@himawari-agent/application",
+      "@himawari-agent/domain",
+      "@himawari-agent/gateway-contracts",
+      "@himawari-agent/execution-contracts",
+      "@himawari-agent/testing",
+    ]),
+  ],
+  [
     "@himawari-agent/platform-node",
     new Set([
       "@himawari-agent/application",
@@ -62,6 +72,7 @@ export const allowedInternalDependencies = new Map([
       "@himawari-agent/persistence-sqlite",
       "@himawari-agent/memory-mem0",
       "@himawari-agent/integration-github",
+      "@himawari-agent/integration-web",
       "@himawari-agent/testing",
     ]),
   ],
@@ -71,6 +82,7 @@ export const allowedInternalDependencies = new Map([
       "@himawari-agent/application",
       "@himawari-agent/execution-contracts",
       "@himawari-agent/platform-node",
+      "@himawari-agent/integration-web",
       "@himawari-agent/testing",
     ]),
   ],
@@ -90,6 +102,7 @@ export const nodeImportAllowedPackages = new Set([
   "@himawari-agent/persistence-sqlite",
   "@himawari-agent/memory-mem0",
   "@himawari-agent/integration-github",
+  "@himawari-agent/integration-web",
   "@himawari-agent/platform-node",
   "@himawari-agent/testing",
   "@himawari-agent/agent-service",

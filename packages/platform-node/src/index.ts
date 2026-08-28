@@ -15,3 +15,4 @@ export * from "./startup-coordinator.js";
 export * from "./state-root-layout.js";
 export * from "./strict-configuration.js";
 export * from "./trusted-model-provider.js";
+export * from "./web-host-boundary.js";

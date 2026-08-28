@@ -1,0 +1,19 @@
+{
+  "name": "@himawari-agent/integration-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@himawari-agent/application": "0.0.0",
+    "@himawari-agent/domain": "0.0.0",
+    "@himawari-agent/execution-contracts": "0.0.0",
+    "@himawari-agent/gateway-contracts": "0.0.0"
+  },
+  "devDependencies": {
+    "@himawari-agent/testing": "0.0.0",
+    "vitest": "4.1.9"
+  }
+}
