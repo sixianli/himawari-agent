@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T12:41:46+09:00",
+  "plan": "docs/execution/plans/2026-08-26-control-center-experience-plan.md",
+  "taskIds": ["S3-T01"],
+  "status": "local_complete",
+  "candidateRevision": "f8e374b090dbcc407b889dd50f700f8f9ba91ada",
+  "environment": {
+    "node": "v22.22.3",
+    "npm": "10.9.8",
+    "platform": "darwin-arm64",
+    "externalAccountCalls": 0
+  },
+  "inventory": {
+    "source": "apps/control-center/src/app/control-center-inventory.ts",
+    "surfaceCount": 11,
+    "frozen": ["threads"],
+    "baselineOnly": [
+      "approvals",
+      "tasks",
+      "inbox-digest",
+      "memory",
+      "trace",
+      "sessions-devices",
+      "health-deployment"
+    ],
+    "blocked": ["capabilities-adapters", "authorizations-grants", "settings"],
+    "requiredUiStates": ["empty", "loading", "error", "degraded", "offline"],
+    "acceptanceIds": ["S3-A01", "S3-A02", "S3-A03", "S3-A04", "S3-A05"]
+  },
+  "commands": [
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project unit apps/control-center/test/control-center-inventory.unit.test.ts apps/control-center/test/control-center-client.unit.test.ts apps/control-center/test/workspace-boundary.unit.test.ts",
+      "exitStatus": 0,
+      "result": "3 files and 9 control-center unit tests passed"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project contracts packages/platform-node/test/http-gateway-server.contract.test.ts",
+      "exitStatus": 0,
+      "result": "17 HTTP Gateway, SSE, CSP and origin security contract tests passed"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project unit packages/application/test/agent-gateway-v2-service.unit.test.ts packages/platform-node/test/identity-gateway.unit.test.ts",
+      "exitStatus": 0,
+      "result": "2 files and 14 Gateway v2 and identity unit tests passed"
+    },
+    {
+      "command": "npm run build:browser",
+      "exitStatus": 0,
+      "result": "Vite 8.2.2 production browser build passed with a 225.57 kB JavaScript asset before gzip"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chromium",
+      "exitStatus": 0,
+      "result": "Chromium 151.0.7922.34 completed 9 legacy baseline journeys, SSE recovery, 390x844 viewport, 44.78125px minimum target and zero axe violations"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs webkit",
+      "exitStatus": 0,
+      "result": "WebKit 26.5 completed the same legacy baseline with a 44px minimum target and zero axe violations"
+    }
+  ],
+  "verificationSummary": [
+    "The inventory covers every required information-architecture surface and maps all S3 acceptance IDs to the source Specs, stable objects, Gateway operations, concurrency controls, authorization requirements and five mandatory UI states.",
+    "Every declared query and mutation is checked against an implemented gateway.v1, gateway.v2 or gateway.thread.v3 message type.",
+    "Only Thread is integration-ready. Partial legacy baselines cannot be counted as frozen, and surfaces without domain contracts remain blocked instead of acquiring frontend-owned business semantics.",
+    "Fresh browser, Gateway, identity and security checks preserve the pre-S3 baseline without claiming complete trilingual, WCAG 2.2 AA or six-browser support."
+  ],
+  "unverified": [
+    "The legacy browser fixture is deterministic and local; it is not final production composition, public identity or a complete domain read model.",
+    "The complete six-browser latest-two-major-version matrix, manual assistive-technology evidence and full trilingual UX remain later S3 tasks.",
+    "No blocked surface may be counted as implemented until its owning domain Gateway contracts are frozen and the inventory is updated with matching tests."
+  ],
+  "externalEffects": [
+    "Browser qualification used only a temporary 127.0.0.1 fixture and local headless browser processes.",
+    "No external account, public endpoint, paid service, production state, dependency manifest or remote repository was changed."
+  ],
+  "implementationCommit": null
+}

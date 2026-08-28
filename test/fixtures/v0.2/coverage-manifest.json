@@ -612,41 +612,41 @@
         {
           "id": "S3-A01",
           "label": "完整操作面",
-          "planTasks": "Tasks 5–9、13",
-          "planEvidence": "全导航 browser E2E、状态/安全 readback",
-          "planStatus": "待实施",
+          "planTasks": "Task 1；Tasks 5–9、13",
+          "planEvidence": "inventory；全导航 browser E2E、状态/安全 readback",
+          "planStatus": "Task 1 inventory 已完成；其余任务待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         },
         {
           "id": "S3-A02",
           "label": "三语与回答语言",
-          "planTasks": "Tasks 4、6、13",
-          "planEvidence": "key checks、伪本地化、三语/answer locale 组合",
-          "planStatus": "待实施",
+          "planTasks": "Task 1；Tasks 4、6、13",
+          "planEvidence": "inventory；key checks、伪本地化、三语/answer locale 组合",
+          "planStatus": "Task 1 inventory 已完成；其余任务待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         },
         {
           "id": "S3-A03",
           "label": "响应式与实时状态",
-          "planTasks": "Tasks 5、10–11、13",
-          "planEvidence": "桌面/移动、SSE、多标签、offline",
-          "planStatus": "待实施",
+          "planTasks": "Task 1；Tasks 5、10–11、13",
+          "planEvidence": "inventory/baseline；桌面/移动、SSE、多标签、offline",
+          "planStatus": "Task 1 inventory 与基线已完成；其余任务待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         },
         {
           "id": "S3-A04",
           "label": "Attention、Inbox 与 Digest",
-          "planTasks": "Tasks 8、10、13",
-          "planEvidence": "五级呈现、离线恢复、来源",
-          "planStatus": "待实施",
+          "planTasks": "Task 1；Tasks 8、10、13",
+          "planEvidence": "inventory；五级呈现、离线恢复、来源",
+          "planStatus": "Task 1 inventory 已完成；其余任务待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         },
         {
           "id": "S3-A05",
           "label": "WCAG 2.2 AA 与浏览器",
-          "planTasks": "Tasks 3、12–14",
-          "planEvidence": "自动、人工、辅助技术、六类浏览器矩阵",
-          "planStatus": "待实施",
+          "planTasks": "Task 1；Tasks 3、12–14",
+          "planEvidence": "inventory/baseline；自动、人工、辅助技术、六类浏览器矩阵",
+          "planStatus": "Task 1 inventory 与基线已完成；其余任务待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         }
       ]

@@ -82,10 +82,12 @@ date: "2026-08-26"
 
 ### Task 1：冻结信息架构、API inventory 与 S3 acceptance 映射
 
-- [ ] 将 S3-A01 完整操作面、S3-A02 三语/回答语言、S3-A03 响应式实时、S3-A04 Attention、S3-A05 WCAG/浏览器绑定 tasks 和 evidence。
-- [ ] 逐页列出主责 Spec、稳定对象、查询、mutation、revision、授权/re-auth、empty/loading/error/degraded/offline 状态。
-- [ ] 标记尚未冻结的领域 contract 并阻止页面接入，不用前端自建临时业务语义。
-- [ ] 保存当前浏览器 app、Gateway 和安全测试基线。
+- [x] 将 S3-A01 完整操作面、S3-A02 三语/回答语言、S3-A03 响应式实时、S3-A04 Attention、S3-A05 WCAG/浏览器绑定 tasks 和 evidence。
+- [x] 逐页列出主责 Spec、稳定对象、查询、mutation、revision、授权/re-auth、empty/loading/error/degraded/offline 状态。
+- [x] 标记尚未冻结的领域 contract 并阻止页面接入，不用前端自建临时业务语义。
+- [x] 保存当前浏览器 app、Gateway 和安全测试基线。
+
+Task 1 的机器可校验 inventory 位于 `apps/control-center/src/app/control-center-inventory.ts`。当前仅 Thread 的 `gateway.thread.v3` 达到可继续页面集成的冻结边界；已有 `gateway.v2` 页面骨架明确归类为 `baseline_only`，Capabilities/Adapters、Authorizations/Grants 与 Settings 因缺少领域 Gateway contract 保持 `blocked`。此分类只保留既有基线，不把引用列表、fixture 或临时前端语义计入 S3 完成度。fresh 基线与停止点记录在 `test/integration/qualification/evidence/s3-task1-information-architecture.json`。
 
 ### Task 2：完成前端栈与构建兼容性 preflight
 
@@ -192,11 +194,11 @@ date: "2026-08-26"
 
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| S3-A01 | 完整操作面 | Tasks 5–9、13 | 全导航 browser E2E、状态/安全 readback | 待实施 |
-| S3-A02 | 三语与回答语言 | Tasks 4、6、13 | key checks、伪本地化、三语/answer locale 组合 | 待实施 |
-| S3-A03 | 响应式与实时状态 | Tasks 5、10–11、13 | 桌面/移动、SSE、多标签、offline | 待实施 |
-| S3-A04 | Attention、Inbox 与 Digest | Tasks 8、10、13 | 五级呈现、离线恢复、来源 | 待实施 |
-| S3-A05 | WCAG 2.2 AA 与浏览器 | Tasks 3、12–14 | 自动、人工、辅助技术、六类浏览器矩阵 | 待实施 |
+| S3-A01 | 完整操作面 | Task 1；Tasks 5–9、13 | inventory；全导航 browser E2E、状态/安全 readback | Task 1 inventory 已完成；其余任务待实施 |
+| S3-A02 | 三语与回答语言 | Task 1；Tasks 4、6、13 | inventory；key checks、伪本地化、三语/answer locale 组合 | Task 1 inventory 已完成；其余任务待实施 |
+| S3-A03 | 响应式与实时状态 | Task 1；Tasks 5、10–11、13 | inventory/baseline；桌面/移动、SSE、多标签、offline | Task 1 inventory 与基线已完成；其余任务待实施 |
+| S3-A04 | Attention、Inbox 与 Digest | Task 1；Tasks 8、10、13 | inventory；五级呈现、离线恢复、来源 | Task 1 inventory 已完成；其余任务待实施 |
+| S3-A05 | WCAG 2.2 AA 与浏览器 | Task 1；Tasks 3、12–14 | inventory/baseline；自动、人工、辅助技术、六类浏览器矩阵 | Task 1 inventory 与基线已完成；其余任务待实施 |
 
 ## 验证
 
