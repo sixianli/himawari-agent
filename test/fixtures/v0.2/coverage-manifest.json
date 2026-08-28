@@ -614,7 +614,7 @@
           "label": "完整操作面",
           "planTasks": "Task 1；Tasks 5–9、13",
           "planEvidence": "inventory；全导航 browser E2E、状态/安全 readback",
-          "planStatus": "Task 1 inventory 已完成；其余任务待实施",
+          "planStatus": "Tasks 1、5 全入口与安全阻塞已完成；领域集成 Tasks 6–9 和正式矩阵 Task 13 待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         },
         {
@@ -622,7 +622,7 @@
           "label": "三语与回答语言",
           "planTasks": "Task 1；Tasks 4、6、13",
           "planEvidence": "inventory；key checks、伪本地化、三语/answer locale 组合",
-          "planStatus": "Task 1 inventory 已完成；其余任务待实施",
+          "planStatus": "Tasks 1、4 UI 三语已完成；answer locale Task 6 与正式矩阵 Task 13 待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         },
         {
@@ -630,7 +630,7 @@
           "label": "响应式与实时状态",
           "planTasks": "Task 1；Tasks 5、10–11、13",
           "planEvidence": "inventory/baseline；桌面/移动、SSE、多标签、offline",
-          "planStatus": "Task 1 inventory 与基线已完成；其余任务待实施",
+          "planStatus": "Tasks 1、5 与既有 SSE/offline 基线已完成；权威 reducer/隐私 Tasks 10–11 和正式矩阵 Task 13 待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         },
         {
@@ -646,7 +646,7 @@
           "label": "WCAG 2.2 AA 与浏览器",
           "planTasks": "Task 1；Tasks 3、12–14",
           "planEvidence": "inventory/baseline；自动、人工、辅助技术、六类浏览器矩阵",
-          "planStatus": "Task 1 inventory 与基线已完成；其余任务待实施",
+          "planStatus": "Tasks 1、3 自动化基础已完成；人工/辅助技术/正式浏览器与文档收口 Tasks 12–14 待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         }
       ]

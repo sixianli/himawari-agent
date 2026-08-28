@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ControlCenterBrowserStorage } from "../src/browser-storage.js";
 import { GatewayClient, safeBrowserLog } from "../src/gateway-client.js";
 import { commandMessage, queryMessage } from "../src/messages.js";
-import { SseStateSynchronizer, type EventSourceLike } from "../src/sse-synchronizer.js";
+import { type EventSourceLike, SseStateSynchronizer } from "../src/sse-synchronizer.js";
 
 const configuration = {
   ownerId: "owner-01",
@@ -178,7 +178,12 @@ describe("browser storage and SSE recovery", () => {
     const storage = new ControlCenterBrowserStorage(raw);
     storage.saveDraft("thread-01", "未发送草稿");
     storage.saveLastCursor("cursor-01");
-    storage.savePreferences({ density: "compact", theme: "dark" });
+    storage.savePreferences({
+      density: "compact",
+      detailPanePercent: 22,
+      listPanePercent: 28,
+      theme: "dark",
+    });
 
     expect([...Array(raw.length)].map((_, index) => raw.key(index))).toEqual(
       expect.arrayContaining([

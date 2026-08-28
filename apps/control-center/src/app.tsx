@@ -1,74 +1,115 @@
-import type { GatewayV2Event, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import type {
+  GatewayV2Event,
+  GatewayV2Query,
+  GatewayV2Snapshot,
+} from "@himawari-agent/gateway-contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ControlCenterBrowserStorage } from "./browser-storage.js";
+import { ControlCenterShell } from "./app/app-shell.js";
 import {
-  GatewayClient,
-  type MutationStatus,
-  loadRuntimeConfiguration,
-  safeBrowserLog,
-} from "./gateway-client.js";
+  CONTROL_CENTER_SURFACE_INVENTORY,
+  type ControlCenterSurfaceInventoryEntry,
+} from "./app/control-center-inventory.js";
+import {
+  type ControlCenterRouteState,
+  routeForSurface,
+  useControlCenterRouter,
+} from "./app/router.js";
+import {
+  ControlCenterBrowserStorage,
+  type ControlCenterPreferences,
+  type ControlCenterUiLocale,
+} from "./browser-storage.js";
+import {
+  ActionButton,
+  AppLink,
+  Banner,
+  Field,
+  RiskIndicator,
+  SemanticList,
+  StatusRegion,
+  Tabs,
+} from "./components/index.js";
+import { GatewayClient, loadRuntimeConfiguration, type MutationStatus } from "./gateway-client.js";
+import type { MessageId } from "./i18n/message-ids.js";
+import {
+  bootstrapLoadingLabel,
+  ControlCenterIntlProvider,
+  useControlCenterIntl,
+} from "./i18n/runtime.js";
 import { commandMessage, queryMessage } from "./messages.js";
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
 
-const pages = [
-  ["threads", "对话"],
-  ["approvals", "审批"],
-  ["tasks", "后台任务"],
-  ["inbox", "收件箱"],
-  ["memory", "记忆"],
-  ["trace", "追踪"],
-  ["identity", "会话与设备"],
-  ["health", "健康状态"],
-] as const;
+type SurfaceId = (typeof CONTROL_CENTER_SURFACE_INVENTORY)[number]["id"];
+type RuntimeConfiguration = Awaited<ReturnType<typeof loadRuntimeConfiguration>>;
 
-type Page = (typeof pages)[number][0];
+const titleIds: Readonly<Record<SurfaceId, MessageId>> = {
+  approvals: "approvals.title",
+  "authorizations-grants": "authorizations.title",
+  "capabilities-adapters": "capabilities.title",
+  "health-deployment": "health.title",
+  "inbox-digest": "inbox.title",
+  memory: "memory.title",
+  "sessions-devices": "sessions.title",
+  settings: "settings.title",
+  tasks: "tasks.title",
+  threads: "threads.title",
+  trace: "trace.title",
+};
 
-function statusText(status: MutationStatus | null): string {
+function statusMessageId(status: MutationStatus | null): MessageId {
   switch (status) {
     case "pending":
-      return "正在提交，尚未接纳";
+      return "mutation.pending";
     case "accepted":
-      return "已接纳";
+      return "mutation.accepted";
     case "replayed":
-      return "已接纳（幂等重放）";
+      return "mutation.replayed";
     case "rejected":
-      return "已拒绝";
+      return "mutation.rejected";
     case "expired":
-      return "已过期";
+      return "mutation.expired";
     default:
-      return "尚无变更";
+      return "mutation.none";
   }
 }
 
-function queryForPage(
-  page: Page,
-  configuration: Awaited<ReturnType<typeof loadRuntimeConfiguration>>,
-) {
-  switch (page) {
+function queryForSurface(
+  surfaceId: SurfaceId,
+  configuration: RuntimeConfiguration,
+  route: ControlCenterRouteState,
+): GatewayV2Query | null {
+  switch (surfaceId) {
     case "threads":
-      return queryMessage(configuration, "thread.list", { afterCursor: null, limit: 100 });
+      return queryMessage(configuration, "thread.list", {
+        afterCursor: route.afterCursor,
+        limit: 100,
+      });
     case "approvals":
       return queryMessage(configuration, "approval.list", {
-        status: "pending",
-        afterCursor: null,
+        status: ["pending", "approved", "denied", "expired"].includes(route.status ?? "")
+          ? route.status
+          : "pending",
+        afterCursor: route.afterCursor,
         limit: 100,
       });
     case "tasks":
       return queryMessage(configuration, "task.list", {
-        status: null,
-        afterCursor: null,
+        status: ["active", "paused", "revoked"].includes(route.status ?? "") ? route.status : null,
+        afterCursor: route.afterCursor,
         limit: 100,
       });
-    case "inbox":
+    case "inbox-digest":
       return queryMessage(configuration, "inbox.list", {
-        unreadOnly: false,
-        afterCursor: null,
+        unreadOnly: route.status === "unread",
+        afterCursor: route.afterCursor,
         limit: 100,
       });
     case "memory":
       return queryMessage(configuration, "memory.search", {
         queryRef: "query:recent",
-        status: null,
+        status: ["active", "archived", "trashed"].includes(route.status ?? "")
+          ? route.status
+          : null,
         limit: 100,
       });
     case "trace":
@@ -78,39 +119,96 @@ function queryForPage(
         afterSequence: 0,
         limit: 200,
       });
-    case "identity":
+    case "sessions-devices":
       return queryMessage(configuration, "identity.sessions", {
         includeRevoked: true,
-        afterCursor: null,
+        afterCursor: route.afterCursor,
         limit: 100,
       });
-    case "health":
+    case "health-deployment":
       return queryMessage(configuration, "health.status", { includeDependencies: true });
+    case "capabilities-adapters":
+    case "authorizations-grants":
+    case "settings":
+      return null;
   }
+}
+
+function surfaceInventory(surfaceId: SurfaceId): ControlCenterSurfaceInventoryEntry {
+  const surface = CONTROL_CENTER_SURFACE_INVENTORY.find((candidate) => candidate.id === surfaceId);
+  if (!surface) throw new Error("CONTROL_CENTER_SURFACE_INVALID");
+  return surface;
 }
 
 export function ControlCenterApp() {
   const storage = useMemo(() => new ControlCenterBrowserStorage(window.localStorage), []);
-  const [configuration, setConfiguration] = useState<
-    Awaited<ReturnType<typeof loadRuntimeConfiguration>> | undefined
-  >();
-  const [client, setClient] = useState<GatewayClient | undefined>();
-  const [page, setPage] = useState<Page>("threads");
-  const [snapshot, setSnapshot] = useState<GatewayV2Snapshot | undefined>();
+  const [locale, setLocale] = useState<ControlCenterUiLocale>(() =>
+    storage.readLocale(navigator.languages),
+  );
+  const [preferences, setPreferences] = useState<ControlCenterPreferences>(() =>
+    storage.readPreferences(),
+  );
+  const updateLocale = (next: ControlCenterUiLocale) => {
+    storage.saveLocale(next);
+    setLocale(next);
+  };
+  const updatePreferences = (next: ControlCenterPreferences) => {
+    storage.savePreferences(next);
+    setPreferences(next);
+  };
+  return (
+    <ControlCenterIntlProvider loadingLabel={bootstrapLoadingLabel(locale)} locale={locale}>
+      <LocalizedControlCenterApp
+        locale={locale}
+        onLocaleChange={updateLocale}
+        onPreferencesChange={updatePreferences}
+        preferences={preferences}
+        storage={storage}
+      />
+    </ControlCenterIntlProvider>
+  );
+}
+
+interface LocalizedControlCenterAppProps {
+  readonly locale: ControlCenterUiLocale;
+  readonly onLocaleChange: (locale: ControlCenterUiLocale) => void;
+  readonly onPreferencesChange: (preferences: ControlCenterPreferences) => void;
+  readonly preferences: ControlCenterPreferences;
+  readonly storage: ControlCenterBrowserStorage;
+}
+
+function LocalizedControlCenterApp({
+  locale,
+  onLocaleChange,
+  onPreferencesChange,
+  preferences,
+  storage,
+}: LocalizedControlCenterAppProps) {
+  const { message } = useControlCenterIntl();
+  const { match, navigate } = useControlCenterRouter();
+  const route =
+    match.kind === "matched" ? match.state : routeForSurface("threads", { view: "content" });
+  const surface = surfaceInventory(route.surfaceId);
+  const [configuration, setConfiguration] = useState<RuntimeConfiguration>();
+  const [client, setClient] = useState<GatewayClient>();
+  const [snapshot, setSnapshot] = useState<GatewayV2Snapshot>();
   const [events, setEvents] = useState<readonly GatewayV2Event[]>([]);
   const [connection, setConnection] = useState<"connecting" | "connected" | "offline">(
     "connecting",
   );
+  const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [mutationStatus, setMutationStatus] = useState<MutationStatus | null>(null);
-  const [threadId, setThreadId] = useState("thread-main");
-  const [draft, setDraft] = useState(() => storage.readDraft("thread-main"));
-  const [targetRef, setTargetRef] = useState("");
-  const [memoryCorrection, setMemoryCorrection] = useState("");
-  const [githubDisclosureConfirmed, setGithubDisclosureConfirmed] = useState(false);
-  const [githubRepositoryRef, setGithubRepositoryRef] = useState("");
-  const [githubMonitorRevision, setGithubMonitorRevision] = useState("0");
-  const [githubHistoryPolicy, setGithubHistoryPolicy] = useState<"retain" | "delete">("retain");
+  const [selectedRef, setSelectedRef] = useState(route.objectId ?? "");
+  const initialThreadId =
+    route.surfaceId === "threads" && route.objectId ? route.objectId : "thread-main";
+  const [threadId, setThreadId] = useState(initialThreadId);
+  const [draft, setDraft] = useState(() => storage.readDraft(initialThreadId));
+  const [settingsTab, setSettingsTab] = useState("language");
+
+  useEffect(() => {
+    setSelectedRef(route.objectId ?? "");
+  }, [route]);
 
   useEffect(() => {
     let active = true;
@@ -118,7 +216,6 @@ export function ControlCenterApp() {
       .then((loaded) => {
         if (!active) return;
         setConfiguration(loaded);
-        setGithubRepositoryRef((current) => current || loaded.repositoryAllowlistRefs?.[0] || "");
         setClient(
           new GatewayClient({
             fetch: window.fetch.bind(window),
@@ -141,9 +238,7 @@ export function ControlCenterApp() {
       createEventSource: (url) => new EventSource(url, { withCredentials: true }),
       onEvent: (event) => setEvents((current) => [...current.slice(-199), event]),
       onConnectionState: setConnection,
-      log: (entry) => {
-        window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry }));
-      },
+      log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
     const reconnect = () => synchronizer.reconnectNow();
@@ -158,14 +253,30 @@ export function ControlCenterApp() {
 
   const refresh = useCallback(async () => {
     if (!client || !configuration) return;
+    const query = queryForSurface(route.surfaceId, configuration, route);
     setRequestError(null);
+    setSnapshot(undefined);
+    if (!query) return;
+    setLoading(true);
     try {
-      setSnapshot(await client.query(queryForPage(page, configuration)));
+      setSnapshot(await client.query(query));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "CONTROL_CENTER_REQUEST_REJECTED";
-      setRequestError(message);
+      const status =
+        error && typeof error === "object" && "status" in error
+          ? (error as { readonly status?: unknown }).status
+          : null;
+      if (status === 401) {
+        setEvents([]);
+        setSelectedRef("");
+        setMutationStatus(null);
+        setRequestError("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
+      } else {
+        setRequestError(error instanceof Error ? error.message : "CONTROL_CENTER_REQUEST_REJECTED");
+      }
+    } finally {
+      setLoading(false);
     }
-  }, [client, configuration, page]);
+  }, [client, configuration, route]);
 
   useEffect(() => {
     void refresh();
@@ -173,6 +284,11 @@ export function ControlCenterApp() {
 
   const runMutation = useCallback(
     async (operation: () => Promise<{ readonly status: MutationStatus }>) => {
+      if (connection !== "connected") {
+        setMutationStatus("rejected");
+        setRequestError("CONTROL_CENTER_OFFLINE_COMMAND_REJECTED");
+        return;
+      }
       setMutationStatus("pending");
       setRequestError(null);
       try {
@@ -180,12 +296,13 @@ export function ControlCenterApp() {
         setMutationStatus(result.status);
         await refresh();
       } catch (error) {
-        const message = error instanceof Error ? error.message : "CONTROL_CENTER_REQUEST_REJECTED";
-        setMutationStatus(message.includes("EXPIRED") ? "expired" : "rejected");
-        setRequestError(message);
+        const errorMessage =
+          error instanceof Error ? error.message : "CONTROL_CENTER_REQUEST_REJECTED";
+        setMutationStatus(errorMessage.includes("EXPIRED") ? "expired" : "rejected");
+        setRequestError(errorMessage);
       }
     },
-    [refresh],
+    [connection, refresh],
   );
 
   const submitDraft = async () => {
@@ -206,147 +323,8 @@ export function ControlCenterApp() {
     });
   };
 
-  const performAction = async (
-    action:
-      | "approve"
-      | "deny"
-      | "pause"
-      | "resume"
-      | "correct"
-      | "archive"
-      | "delete"
-      | "revoke"
-      | "enable-github-monitor"
-      | "pause-github-monitor"
-      | "revoke-github-monitor",
-  ) => {
-    if (!client || !configuration || !targetRef) return;
-    if (action === "correct" && !memoryCorrection.trim()) return;
-    if (
-      action === "enable-github-monitor" &&
-      (!githubDisclosureConfirmed ||
-        !githubRepositoryRef ||
-        !configuration.primaryModelRef ||
-        !Number.isSafeInteger(Number(githubMonitorRevision)) ||
-        Number(githubMonitorRevision) < 0)
-    ) {
-      return;
-    }
-    await runMutation(async () => {
-      switch (action) {
-        case "approve":
-        case "deny":
-          return client.mutate(
-            commandMessage(
-              configuration,
-              "approval.respond",
-              {
-                approvalRequestId: targetRef,
-                decision: action === "approve" ? "approved" : "denied",
-                semanticSnapshotHash: "sha256:confirmed",
-                editedPayloadRef: null,
-              },
-              { risk: "high", authorizationRef: "authorization:recent-owner" },
-            ),
-          );
-        case "pause":
-        case "resume":
-          return client.mutate(
-            commandMessage(configuration, "task.set_state", {
-              jobId: targetRef,
-              action,
-              reasonCode: "owner_control_center",
-            }),
-          );
-        case "enable-github-monitor":
-          return client.mutate(
-            commandMessage(
-              configuration,
-              "github.monitor.set_state",
-              {
-                monitorId: targetRef,
-                action: "enable",
-                expectedRevision: Number(githubMonitorRevision),
-                historyPolicy: null,
-                disclosure: {
-                  confirmationRef: `github-confirmation:${crypto.randomUUID()}`,
-                  primaryModelRef: configuration.primaryModelRef,
-                  repositoryRef: githubRepositoryRef,
-                  disclosedDataClassifications: configuration.disclosedDataClassifications ?? [
-                    "private",
-                  ],
-                  machineSecretsExcluded: true,
-                },
-              },
-              { risk: "high", authorizationRef: "authorization:recent-owner" },
-            ),
-          );
-        case "pause-github-monitor":
-          return client.mutate(
-            commandMessage(
-              configuration,
-              "github.monitor.set_state",
-              {
-                monitorId: targetRef,
-                action: "pause",
-                expectedRevision: Number(githubMonitorRevision),
-                historyPolicy: null,
-                disclosure: null,
-              },
-              { risk: "high", authorizationRef: "authorization:recent-owner" },
-            ),
-          );
-        case "revoke-github-monitor":
-          return client.mutate(
-            commandMessage(
-              configuration,
-              "github.monitor.set_state",
-              {
-                monitorId: targetRef,
-                action: "revoke",
-                expectedRevision: Number(githubMonitorRevision),
-                historyPolicy: githubHistoryPolicy,
-                disclosure: null,
-              },
-              { risk: "high", authorizationRef: "authorization:recent-owner" },
-            ),
-          );
-        case "correct":
-        case "archive":
-        case "delete": {
-          const contentRef =
-            action === "correct" ? await client.protectText(memoryCorrection, "private") : null;
-          const result = await client.mutate(
-            commandMessage(configuration, "memory.mutate", {
-              memoryId: targetRef,
-              action,
-              expectedRevision: 0,
-              contentRef,
-            }),
-          );
-          if (action === "correct") setMemoryCorrection("");
-          return result;
-        }
-        case "revoke":
-          return client.mutate(
-            commandMessage(
-              configuration,
-              "session.revoke",
-              {
-                sessionId: targetRef,
-                deviceId: "device:selected",
-                recentAuthenticationRef: "recent:required",
-                reasonCode: "owner_revoked",
-              },
-              { risk: "high", authorizationRef: "authorization:recent-owner" },
-            ),
-          );
-      }
-    });
-  };
-
   const cancelRun = async () => {
-    if (!client || !configuration || !targetRef) return;
+    if (!client || !configuration || !selectedRef) return;
     await runMutation(() =>
       client.mutateV1({
         schemaVersion: "gateway.v1",
@@ -359,7 +337,7 @@ export function ControlCenterApp() {
         scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
         actor: { actorType: "owner", actorId: configuration.actorId },
         idempotencyKey: `idempotency:${crypto.randomUUID()}`,
-        payload: { runId: targetRef, reasonCode: "owner_cancelled" },
+        payload: { runId: selectedRef, reasonCode: "owner_cancelled" },
       }),
     );
   };
@@ -369,314 +347,268 @@ export function ControlCenterApp() {
       ? snapshot.payload.itemRefs
       : [];
 
-  return (
-    <div className="app-shell" data-density={storage.readPreferences().density}>
-      <a className="skip-link" href="#main-content">
-        跳到主要内容
-      </a>
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">HIMAWARI AGENT</p>
-          <h1>控制中心</h1>
-        </div>
-        <output className={`connection connection-${connection}`} aria-live="polite">
-          <span aria-hidden="true">●</span>{" "}
-          {connection === "connected"
-            ? "实时连接"
-            : connection === "connecting"
-              ? "连接中"
-              : "离线，正在恢复"}
-        </output>
-      </header>
-      <nav aria-label="控制中心功能" className="primary-nav">
-        {pages.map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            aria-current={page === value ? "page" : undefined}
-            onClick={() => setPage(value)}
+  const selectReference = (reference: string) => {
+    setSelectedRef(reference);
+    navigate({ ...route, objectId: reference, view: "details" });
+  };
+
+  const list = (
+    <>
+      <p>{message("objects.count", { count: itemRefs.length })}</p>
+      <SemanticList
+        empty={loading ? message("state.loading") : message("common.noRecords")}
+        getId={(reference) => reference}
+        items={itemRefs}
+        label={message("common.currentRecords")}
+        renderItem={(reference) => (
+          <AppLink
+            current={reference === selectedRef}
+            href={`#${encodeURIComponent(reference)}`}
+            onClick={(event) => {
+              event.preventDefault();
+              selectReference(reference);
+            }}
           >
-            {label}
-          </button>
-        ))}
-      </nav>
-      <main id="main-content" tabIndex={-1}>
-        <section className="panel" aria-labelledby="page-title">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">持久产品状态</p>
-              <h2 id="page-title">{pages.find(([value]) => value === page)?.[1]}</h2>
-            </div>
-            <button type="button" onClick={() => void refresh()}>
-              刷新
-            </button>
-          </div>
+            <code>{reference}</code>
+          </AppLink>
+        )}
+      />
+    </>
+  );
 
-          {requestError ? (
-            <div className="notice notice-error" role="alert">
-              <strong>当前不可用</strong>
-              <span>{requestError}</span>
-            </div>
-          ) : null}
-
-          <p className="mutation-status" aria-live="polite">
-            命令状态：{statusText(mutationStatus)}
-          </p>
-
-          {page === "threads" ? (
-            <div className="journey-grid">
-              <form
-                className="composer"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void submitDraft();
-                }}
-              >
-                <label htmlFor="thread-id">Thread ID</label>
-                <input
-                  id="thread-id"
-                  value={threadId}
-                  onChange={(event) => {
-                    storage.saveDraft(threadId, draft);
-                    setThreadId(event.target.value);
-                    setDraft(storage.readDraft(event.target.value));
-                  }}
-                />
-                <label htmlFor="message-draft">消息草稿</label>
-                <textarea
-                  id="message-draft"
-                  rows={6}
-                  value={draft}
-                  onChange={(event) => {
-                    setDraft(event.target.value);
-                    storage.saveDraft(threadId, event.target.value);
-                  }}
-                />
-                <div className="actions">
-                  <button type="submit" disabled={!draft.trim()}>
-                    发送并启动 Run
-                  </button>
-                  <button type="button" className="secondary" onClick={() => void cancelRun()}>
-                    取消指定 Run
-                  </button>
-                </div>
-              </form>
-              <div>
-                <h3>实时 Run 事件</h3>
-                <ol className="event-list" aria-live="polite">
-                  {events.slice(-10).map((event) => (
-                    <li key={event.payload.cursor}>
-                      <strong>{event.payload.eventType}</strong>
-                      <span>{event.payload.cursor}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            </div>
-          ) : null}
-
-          {page === "tasks" ? (
-            <section className="notice" aria-labelledby="github-disclosure-title">
-              <strong id="github-disclosure-title">Repository monitor 与披露范围</strong>
-              <span>Repository 变更通过持久后台任务进入同一列表与授权管线。</span>
-              <dl className="health-grid" aria-label="GitHub 披露预览">
-                <div>
-                  <dt>Primary provider</dt>
-                  <dd>{configuration?.primaryModel?.provider ?? "未配置"}</dd>
-                </div>
-                <div>
-                  <dt>Primary model/version</dt>
-                  <dd>
-                    {configuration?.primaryModel
-                      ? `${configuration.primaryModel.model} / ${configuration.primaryModel.version}`
-                      : "未配置"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Primary model ref</dt>
-                  <dd>{configuration?.primaryModelRef ?? "未配置"}</dd>
-                </div>
-                <div>
-                  <dt>仓库范围</dt>
-                  <dd>{configuration?.repositoryAllowlistRefs?.join(", ") || "未选择"}</dd>
-                </div>
-                <div>
-                  <dt>可披露分类</dt>
-                  <dd>{configuration?.disclosedDataClassifications?.join(", ") || "未配置"}</dd>
-                </div>
-              </dl>
-              <label htmlFor="github-disclosure-confirmed">
-                <input
-                  id="github-disclosure-confirmed"
-                  type="checkbox"
-                  checked={githubDisclosureConfirmed}
-                  onChange={(event) => setGithubDisclosureConfirmed(event.target.checked)}
-                />
-                我确认仅向所选仓库披露上述分类；机器秘密、App 私钥、安装令牌和 Git 凭据永不披露。
-              </label>
-              <label htmlFor="github-repository-ref">GitHub repository ref</label>
-              <select
-                id="github-repository-ref"
-                value={githubRepositoryRef}
-                onChange={(event) => setGithubRepositoryRef(event.target.value)}
-              >
-                <option value="">请选择允许列表中的仓库</option>
-                {configuration?.repositoryAllowlistRefs?.map((repositoryRef) => (
-                  <option key={repositoryRef} value={repositoryRef}>
-                    {repositoryRef}
-                  </option>
-                ))}
-              </select>
-              <label htmlFor="github-monitor-revision">GitHub monitor revision</label>
-              <input
-                id="github-monitor-revision"
-                type="number"
-                min="0"
-                value={githubMonitorRevision}
-                onChange={(event) => setGithubMonitorRevision(event.target.value)}
-              />
-              <label htmlFor="github-history-policy">撤销后的历史处理</label>
-              <select
-                id="github-history-policy"
-                value={githubHistoryPolicy}
-                onChange={(event) =>
-                  setGithubHistoryPolicy(event.target.value as "retain" | "delete")
-                }
-              >
-                <option value="retain">保留历史摘要、Trace 与任务记录</option>
-                <option value="delete">删除历史摘要、Trace 与任务记录</option>
-              </select>
-              <output aria-live="polite">
-                {githubDisclosureConfirmed
-                  ? "披露确认待随启用命令提交至服务端；服务端会再次校验模型、仓库和分类。"
-                  : "启用仓库监控前必须明确确认披露范围。"}
-              </output>
-            </section>
-          ) : null}
-
-          <label htmlFor="target-ref">所选记录引用</label>
-          <input
-            id="target-ref"
-            value={targetRef}
-            onChange={(event) => setTargetRef(event.target.value)}
-            placeholder="从下方复制一个引用"
-          />
-
-          <ul className="reference-list" aria-label="当前记录">
-            {itemRefs.length > 0 ? (
-              itemRefs.map((reference) => (
-                <li key={reference}>
-                  <code>{reference}</code>
-                </li>
-              ))
-            ) : (
-              <li>暂无记录</li>
-            )}
-          </ul>
-
-          <div className="actions page-actions">
-            {page === "approvals" ? (
-              <>
-                <button type="button" onClick={() => void performAction("approve")}>
-                  批准
-                </button>
-                <button type="button" className="danger" onClick={() => void performAction("deny")}>
-                  拒绝
-                </button>
-              </>
-            ) : null}
-            {page === "tasks" ? (
-              <>
-                <button type="button" onClick={() => void performAction("pause")}>
-                  暂停
-                </button>
-                <button type="button" onClick={() => void performAction("resume")}>
-                  恢复
-                </button>
-                <button
-                  type="button"
-                  disabled={
-                    !githubDisclosureConfirmed ||
-                    !githubRepositoryRef ||
-                    !configuration?.primaryModelRef
-                  }
-                  onClick={() => void performAction("enable-github-monitor")}
-                >
-                  启用 GitHub 监控
-                </button>
-                <button type="button" onClick={() => void performAction("pause-github-monitor")}>
-                  暂停 GitHub 监控
-                </button>
-                <button
-                  type="button"
-                  className="danger"
-                  onClick={() => void performAction("revoke-github-monitor")}
-                >
-                  撤销 GitHub 监控
-                </button>
-              </>
-            ) : null}
-            {page === "memory" ? (
-              <>
-                <label htmlFor="memory-correction">更正后的记忆内容</label>
-                <textarea
-                  id="memory-correction"
-                  rows={4}
-                  value={memoryCorrection}
-                  onChange={(event) => setMemoryCorrection(event.target.value)}
-                />
-                <button
-                  type="button"
-                  disabled={!memoryCorrection.trim()}
-                  onClick={() => void performAction("correct")}
-                >
-                  更正
-                </button>
-                <button type="button" onClick={() => void performAction("archive")}>
-                  归档
-                </button>
-                <button
-                  type="button"
-                  className="danger"
-                  onClick={() => void performAction("delete")}
-                >
-                  删除
-                </button>
-              </>
-            ) : null}
-            {page === "identity" ? (
-              <button type="button" className="danger" onClick={() => void performAction("revoke")}>
-                撤销会话
-              </button>
-            ) : null}
-          </div>
-
-          {snapshot?.type === "health.snapshot" ? (
-            <dl className="health-grid">
-              <div>
-                <dt>服务</dt>
-                <dd>{snapshot.payload.live ? "存活" : "不可用"}</dd>
-              </div>
-              <div>
-                <dt>接纳</dt>
-                <dd>{snapshot.payload.ready ? "就绪" : "停止接纳"}</dd>
-              </div>
-              <div>
-                <dt>状态</dt>
-                <dd>{snapshot.payload.status}</dd>
-              </div>
-              <div>
-                <dt>主机</dt>
-                <dd>{snapshot.payload.activeHost}</dd>
-              </div>
-            </dl>
-          ) : null}
-        </section>
-      </main>
-      <footer>
-        <span>浏览器只保存草稿、界面偏好与最后 cursor。</span>
-        <span>{safeBrowserLog("CONTROL_CENTER_RENDERED").code}</span>
-      </footer>
+  const details = (
+    <div className="object-details">
+      <dl>
+        <div>
+          <dt>{message("common.selectedRecord")}</dt>
+          <dd>
+            <code>{selectedRef || "—"}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>{message("common.status")}</dt>
+          <dd>{surface.contractStatus}</dd>
+        </div>
+        <div>
+          <dt>{message("common.source")}</dt>
+          <dd>
+            <code>{surface.sourceSpec}</code>
+          </dd>
+        </div>
+      </dl>
+      {surface.blockers.length > 0 ? (
+        <ul>
+          {surface.blockers.map((blocker) => (
+            <li key={blocker}>
+              <code>{blocker}</code>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
+  );
+
+  const blockedNotice =
+    surface.integrationPolicy === "allowed" ? null : (
+      <Banner title={message("surface.blocked.title")} tone="warning">
+        <p>{message("surface.blocked.description", { count: surface.blockers.length })}</p>
+        <RiskIndicator label={message("common.blocked")} level="medium" />
+      </Banner>
+    );
+
+  const content = (
+    <>
+      <div className="panel-heading">
+        <p className="eyebrow">{message("common.status")}</p>
+        <ActionButton onClick={() => void refresh()} variant="secondary">
+          {message("common.refresh")}
+        </ActionButton>
+      </div>
+      {match.kind === "not_found" ? (
+        <Banner title={message("state.error")} tone="danger">
+          <code>CONTROL_CENTER_ROUTE_NOT_FOUND:{match.pathname}</code>
+        </Banner>
+      ) : null}
+      {requestError ? (
+        <Banner title={message("error.currentUnavailable")} tone="danger">
+          <code>{requestError}</code>
+        </Banner>
+      ) : null}
+      {connection === "offline" ? (
+        <Banner title={message("state.offline")} tone="warning">
+          <code>CONTROL_CENTER_OFFLINE</code>
+        </Banner>
+      ) : null}
+      {blockedNotice}
+      <StatusRegion className="mutation-status">
+        {message("mutation.label")}: {message(statusMessageId(mutationStatus))}
+      </StatusRegion>
+
+      {route.surfaceId === "threads" ? (
+        <section className="thread-workspace">
+          <form
+            className="composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitDraft();
+            }}
+          >
+            <Field hint={message("threads.idHint")} label={message("threads.id")}>
+              <input
+                value={threadId}
+                onChange={(event) => {
+                  storage.saveDraft(threadId, draft);
+                  setThreadId(event.target.value);
+                  setDraft(storage.readDraft(event.target.value));
+                }}
+              />
+            </Field>
+            <Field label={message("threads.draft")}>
+              <textarea
+                rows={7}
+                value={draft}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  storage.saveDraft(threadId, event.target.value);
+                }}
+              />
+            </Field>
+            <div className="actions">
+              <ActionButton
+                disabled={!draft.trim() || connection !== "connected"}
+                pending={mutationStatus === "pending"}
+                type="submit"
+              >
+                {message("threads.send")}
+              </ActionButton>
+              <ActionButton
+                disabled={!selectedRef || connection !== "connected"}
+                onClick={() => void cancelRun()}
+                variant="secondary"
+              >
+                {message("threads.cancelRun")}
+              </ActionButton>
+            </div>
+          </form>
+          <section aria-labelledby="run-events-title">
+            <h3 id="run-events-title">{message("threads.events")}</h3>
+            <SemanticList
+              empty={message("threads.eventsEmpty")}
+              getId={(event) => event.payload.cursor}
+              items={events.slice(-10)}
+              label={message("threads.events")}
+              renderItem={(event) => (
+                <span className="event-row">
+                  <strong>{event.payload.eventType}</strong>
+                  <code>{event.payload.cursor}</code>
+                </span>
+              )}
+            />
+          </section>
+        </section>
+      ) : null}
+
+      {route.surfaceId === "tasks" ? (
+        <section aria-labelledby="github-disclosure-title" className="disclosure-preview">
+          <h3 id="github-disclosure-title">{message("tasks.disclosureTitle")}</h3>
+          <p>{message("tasks.disclosureDescription")}</p>
+          <dl className="health-grid">
+            <div>
+              <dt>{message("tasks.primaryProvider")}</dt>
+              <dd>{configuration?.primaryModel?.provider ?? message("common.notConfigured")}</dd>
+            </div>
+            <div>
+              <dt>{message("tasks.primaryModelVersion")}</dt>
+              <dd>
+                {configuration?.primaryModel
+                  ? `${configuration.primaryModel.model} / ${configuration.primaryModel.version}`
+                  : message("common.notConfigured")}
+              </dd>
+            </div>
+            <div>
+              <dt>{message("tasks.repositoryScope")}</dt>
+              <dd>
+                {configuration?.repositoryAllowlistRefs?.join(", ") ||
+                  message("common.notConfigured")}
+              </dd>
+            </div>
+            <div>
+              <dt>{message("tasks.classifications")}</dt>
+              <dd>
+                {configuration?.disclosedDataClassifications?.join(", ") ||
+                  message("common.notConfigured")}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
+
+      {route.surfaceId === "settings" ? (
+        <Tabs
+          activeId={settingsTab}
+          label={message("settings.tabsLabel")}
+          onChange={setSettingsTab}
+          tabs={[
+            {
+              id: "language",
+              label: message("settings.language"),
+              panel: <p>{message("settings.languageHelp")}</p>,
+            },
+            {
+              id: "models",
+              label: message("settings.modelsBudgets"),
+              panel: <p>{message("settings.contractPending")}</p>,
+            },
+            {
+              id: "attention",
+              label: message("settings.attentionDigest"),
+              panel: <p>{message("settings.contractPending")}</p>,
+            },
+            {
+              id: "integrations",
+              label: message("settings.integrations"),
+              panel: <p>{message("settings.contractPending")}</p>,
+            },
+          ]}
+        />
+      ) : null}
+
+      {snapshot?.type === "health.snapshot" ? (
+        <dl className="health-grid">
+          <div>
+            <dt>{message("health.service")}</dt>
+            <dd>{message(snapshot.payload.live ? "health.live" : "health.unavailable")}</dd>
+          </div>
+          <div>
+            <dt>{message("health.admission")}</dt>
+            <dd>{message(snapshot.payload.ready ? "health.ready" : "health.notReady")}</dd>
+          </div>
+          <div>
+            <dt>{message("health.state")}</dt>
+            <dd>{snapshot.payload.status}</dd>
+          </div>
+          <div>
+            <dt>{message("health.host")}</dt>
+            <dd>{snapshot.payload.activeHost}</dd>
+          </div>
+        </dl>
+      ) : null}
+    </>
+  );
+
+  return (
+    <ControlCenterShell
+      connection={connection}
+      content={content}
+      details={details}
+      list={list}
+      locale={locale}
+      onLocaleChange={onLocaleChange}
+      onNavigate={navigate}
+      onPreferencesChange={onPreferencesChange}
+      pageTitle={message(titleIds[route.surfaceId])}
+      preferences={preferences}
+      route={route}
+    />
   );
 }

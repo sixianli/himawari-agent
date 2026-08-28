@@ -2,11 +2,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import {
-  ApplicationPortError,
-  PORT_ERROR_CODES,
   type AgentGatewayPort,
   type AgentGatewayV2Port,
+  ApplicationPortError,
   type GatewayAuthenticationContext,
+  PORT_ERROR_CODES,
 } from "@himawari-agent/application";
 import type { DeploymentHealthSnapshot } from "@himawari-agent/domain";
 import {
@@ -17,9 +17,9 @@ import {
   type GatewayV2Command,
   type GatewayV2Event,
   type GatewayV2Query,
-  type StreamEvent,
   gatewayMessageSchema,
   gatewayV2MessageSchema,
+  type StreamEvent,
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
@@ -724,6 +724,27 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       .header("cache-control", "public, max-age=31536000, immutable")
       .type(staticContentType(target))
       .send(content);
+  });
+
+  app.get<{ Params: { readonly "*": string } }>("/*", async (request, reply) => {
+    assertPublicHost(request, publicOrigin);
+    const requestedPath = requestPath(request);
+    const accept = header(request, "accept") ?? "";
+    if (
+      requestedPath === "/api" ||
+      requestedPath.startsWith("/api/") ||
+      requestedPath === "/assets" ||
+      requestedPath.startsWith("/assets/") ||
+      !accept.split(",").some((value) => value.trim().startsWith("text/html"))
+    ) {
+      throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.STATIC_NOT_FOUND, 404);
+    }
+    const target = safeAssetPath(options.staticRoot, "/");
+    const content = await readFile(target).catch(() => null);
+    if (!content || content.byteLength > (options.maximumStaticAssetBytes ?? DEFAULT_ASSET_LIMIT)) {
+      throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.STATIC_NOT_FOUND, 404);
+    }
+    return reply.header("cache-control", "no-cache").type(staticContentType(target)).send(content);
   });
 
   return app;

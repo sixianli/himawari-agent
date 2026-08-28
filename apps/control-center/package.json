@@ -12,7 +12,8 @@
   "dependencies": {
     "@himawari-agent/gateway-contracts": "0.0.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "react-intl": "10.1.23"
   },
   "devDependencies": {
     "@types/react": "19.2.18",

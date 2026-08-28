@@ -1,16 +1,16 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  ApplicationPortError,
-  PORT_ERROR_CODES,
   AgentGatewayService,
   type AgentGatewayV2Port,
+  ApplicationPortError,
   type GatewayAccessPolicyPort,
   type GatewayAuthenticationContext,
   type GatewayCommandExecution,
   type GatewayControlPlanePort,
   type GatewayReadModelPort,
+  PORT_ERROR_CODES,
 } from "@himawari-agent/application";
 import type {
   EventSubscription,
@@ -25,8 +25,8 @@ import type {
 } from "@himawari-agent/gateway-contracts";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
-  HTTP_GATEWAY_ERROR_CODES,
   buildHttpGatewayServer,
+  HTTP_GATEWAY_ERROR_CODES,
   type HttpGatewayAuthenticationPort,
 } from "../src/http-gateway-server.js";
 import { RuntimeHealthModel } from "../src/runtime-health.js";
@@ -293,6 +293,33 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(page.headers["x-content-type-options"]).toBe("nosniff");
     expect(page.headers["cache-control"]).toBe("no-cache");
     expect(asset.headers["cache-control"]).toContain("immutable");
+  });
+
+  it("serves the SPA shell for HTML deep links without masking API or asset failures", async () => {
+    const { app } = fixture();
+    const deepLink = await app.inject({
+      method: "GET",
+      url: "/threads/thread-01?cursor=cursor-01",
+      headers: { accept: "text/html", host: "agent.example.test" },
+    });
+    const unknownApi = await app.inject({
+      method: "GET",
+      url: "/api/not-defined",
+      headers: { accept: "text/html", host: "agent.example.test" },
+    });
+    const nonHtmlDeepLink = await app.inject({
+      method: "GET",
+      url: "/threads/thread-01",
+      headers: { accept: "application/json", host: "agent.example.test" },
+    });
+
+    expect(deepLink.statusCode).toBe(200);
+    expect(deepLink.headers["content-type"]).toContain("text/html");
+    expect(deepLink.headers["cache-control"]).toBe("no-cache");
+    expect(deepLink.body).toContain("<title>Himawari</title>");
+    expect(unknownApi.statusCode).toBe(404);
+    expect(unknownApi.headers["content-type"]).toContain("application/json");
+    expect(nonHtmlDeepLink.statusCode).toBe(404);
   });
 
   it("parses, authenticates, authorizes and replays idempotent commands", async () => {

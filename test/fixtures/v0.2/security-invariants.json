@@ -4,6 +4,7 @@
   "excludedSourceSegments": ["/test/", "/testing/", "/node_modules/", "/dist/"],
   "allowedHttpRoutes": [
     "GET /",
+    "GET /*",
     "GET /api/control-center/v1/config",
     "GET /api/gateway/v1/events",
     "GET /api/gateway/v2/events",

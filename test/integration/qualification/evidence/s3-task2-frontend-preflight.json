@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T13:34:57+09:00",
+  "plan": "docs/execution/plans/2026-08-26-control-center-experience-plan.md",
+  "taskIds": ["S3-T02"],
+  "status": "local_complete",
+  "candidateRevision": "acc03619c8ce4eae692376e8a4336ec685413be2",
+  "environment": {
+    "node": "v22.22.3",
+    "npm": "10.9.8",
+    "platform": "darwin-arm64",
+    "externalAccountCalls": 0
+  },
+  "decisions": {
+    "ui": "保留 React 19.2.8 与 Vite 8.2.2",
+    "routing": "不加入 router 依赖；使用 native History API 与 typed route parser/generator",
+    "i18n": "新增 Owner 已授权的 react-intl 10.1.23",
+    "schemaClient": "继续使用 @himawari-agent/gateway-contracts 的运行时 schema",
+    "browserAndAccessibility": "继续使用 Playwright 1.62.1 与 @axe-core/playwright 4.13.0",
+    "rendering": "同源 SPA；私人状态只通过受认证 Gateway/SSE 读取"
+  },
+  "dependencyQualification": {
+    "direct": [
+      {
+        "name": "react-intl",
+        "version": "10.1.23",
+        "license": "BSD-3-Clause",
+        "unpackedBytes": 180098,
+        "installScripts": false
+      }
+    ],
+    "lockedTransitive": [
+      { "name": "@formatjs/intl", "version": "4.1.19", "license": "MIT" },
+      {
+        "name": "intl-messageformat",
+        "version": "11.2.14",
+        "license": "BSD-3-Clause"
+      },
+      {
+        "name": "@formatjs/icu-messageformat-parser",
+        "version": "3.5.17",
+        "license": "MIT"
+      },
+      {
+        "name": "@formatjs/icu-skeleton-parser",
+        "version": "2.1.11",
+        "license": "MIT"
+      },
+      {
+        "name": "@formatjs/fast-memoize",
+        "version": "3.1.7",
+        "license": "MIT"
+      }
+    ],
+    "advisoryQuery": {
+      "source": "GitHub public Advisory REST API",
+      "result": "精确 affects 查询对 direct 与五个 locked transitive 版本均返回空数组",
+      "fullWorkspaceAudit": "未执行；完整 npm audit 会向外部服务披露私有 lock tree，定向查询不等价于全树审计"
+    }
+  },
+  "officialSources": [
+    "https://formatjs.github.io/docs/react-intl/api/",
+    "https://formatjs.github.io/docs/guides/runtime-requirements/",
+    "https://reactrouter.com/changelog",
+    "https://github.com/remix-run/react-router/security/advisories",
+    "https://vite.dev/guide/",
+    "https://playwright.dev/docs/browsers",
+    "https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/fix-reported-vulnerabilities/browse-advisory-database"
+  ],
+  "productionBuild": {
+    "entryBytes": 295416,
+    "entryGzipBytes": 89486,
+    "totalGzipBytes": 97996,
+    "localeChunks": ["en", "ja"],
+    "sourceMaps": 0,
+    "inlineScripts": 0,
+    "inlineStyles": 0,
+    "dynamicCodeEvaluation": 0,
+    "csp": "现有 restrictive same-origin CSP 不需要 unsafe-inline 或 unsafe-eval"
+  },
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format、lint、typecheck、14-workspace boundary、79 requirements、53 acceptance IDs、141-source/15-manifest/15-route invariants 与 458-file secret scan passed"
+    },
+    {
+      "command": "npm view react-intl@10.1.23 version license engines dependencies dist.unpackedSize --json",
+      "exitStatus": 0,
+      "result": "registry 精确版本、BSD-3-Clause、三项 direct transitive 与 180098 unpacked bytes 已核验"
+    },
+    {
+      "command": "npm run build:browser",
+      "exitStatus": 0,
+      "result": "Vite production build 与机械 artifact/CSP/bundle gate passed"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project contracts packages/platform-node/test/http-gateway-server.contract.test.ts",
+      "exitStatus": 0,
+      "result": "18 个 HTTP Gateway、SSE、CSP、origin 与 SPA deep-link contract tests passed"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chromium && node scripts/qualify-control-center-browser.mjs webkit",
+      "exitStatus": 0,
+      "result": "Chromium 151.0.7922.34 与 WebKit 26.5 完成同源 Gateway/SSE、deep link、locale chunks 和响应式行为资格测试"
+    }
+  ],
+  "unverified": [
+    "这不是 Safari、Chrome、Edge、Firefox、iOS Safari 与 Android Chrome 最新两个稳定大版本的正式支持矩阵；该矩阵仍由 Tasks 12–13 与 S9 RC 冻结。",
+    "未使用公共 URL、Cloudflare identity、浏览器云、真机设备实验室或付费服务。",
+    "未执行会披露完整私有依赖树的外部 npm audit。"
+  ],
+  "implementationCommit": null
+}

@@ -14,7 +14,7 @@
   "scripts": {
     "build": "npm run build:node && npm run build:browser && npm run build:artifacts",
     "build:artifacts": "node scripts/generate-artifact-manifest.mjs",
-    "build:browser": "npm run build --workspace @himawari-agent/control-center",
+    "build:browser": "npm run build --workspace @himawari-agent/control-center && node scripts/check-control-center-build.mjs",
     "build:cli": "npm run build:node",
     "build:contracts": "tsc -p packages/gateway-contracts/tsconfig.build.json && tsc -p packages/execution-contracts/tsconfig.build.json",
     "build:node": "tsc -p tsconfig.node-build.json && node scripts/package-node-runtime.mjs",

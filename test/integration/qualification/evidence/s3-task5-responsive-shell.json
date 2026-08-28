@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T13:34:57+09:00",
+  "plan": "docs/execution/plans/2026-08-26-control-center-experience-plan.md",
+  "taskIds": ["S3-T05"],
+  "status": "local_complete",
+  "candidateRevision": "acc03619c8ce4eae692376e8a4336ec685413be2",
+  "surfaces": {
+    "count": 11,
+    "allowed": ["threads"],
+    "baselineOnly": [
+      "approvals",
+      "tasks",
+      "inbox-digest",
+      "memory",
+      "trace",
+      "sessions-devices",
+      "health-deployment"
+    ],
+    "blocked": ["capabilities-adapters", "authorizations-grants", "settings"]
+  },
+  "routing": {
+    "implementation": "native History API with typed parser/generator",
+    "recoverable": ["surface", "objectId", "status", "cursor", "mobile view"],
+    "malformedInput": "dropped or returns stable not-found state before Gateway query",
+    "deepLink": "same-origin SPA fallback excludes API/assets and requires Accept text/html"
+  },
+  "layout": {
+    "desktop": "adjustable list/content/details panes with 18–40 percent bounded local preferences",
+    "mobile": "single selected list/content/details pane with aria-pressed switcher",
+    "minimumWidth": 320,
+    "criticalMobileAction": "Thread send remains reachable in content view",
+    "sessionRevocation": "401 clears snapshots, events, mutation state and selected reference, then requires reauthentication while preserving unsent draft"
+  },
+  "commands": [
+    {
+      "command": "npm test",
+      "exitStatus": 0,
+      "result": "37 unit files/259 tests、13 contract files/139 tests、35 integration files passed and 3 skipped/342 tests passed and 3 skipped、1 E2E file/3 tests passed"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project unit apps/control-center/test/router.unit.test.ts",
+      "exitStatus": 0,
+      "result": "3 typed route round-trip, root/deep-link and malformed query tests passed"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project contracts packages/platform-node/test/http-gateway-server.contract.test.ts",
+      "exitStatus": 0,
+      "result": "SPA object deep link returned shell while unknown API and non-HTML deep link remained 404"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chromium",
+      "exitStatus": 0,
+      "result": "11 surfaces, deep-link/focus, loading/empty/error/degraded/offline/session-revoked, desktop/mobile/reflow and unsafe mutation absence passed"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs webkit",
+      "exitStatus": 0,
+      "result": "same responsive shell and route-state matrix passed in WebKit 26.5"
+    }
+  ],
+  "verified": [
+    "Blocked and baseline-only surfaces display stable contract blocker codes and expose none of the removed approval/task/memory/session mutation buttons.",
+    "Private data queries remain behind existing authenticated Gateway scope policy even though the public SPA shell supports deep links.",
+    "Browser storage remained limited to locale, bounded layout preferences, unsent Thread draft and last cursor."
+  ],
+  "unverified": [
+    "Task 5 completes Shell/navigation only；domain detail/mutation contracts remain Tasks 6–9 and cannot be inferred from reference lists。",
+    "Authoritative event reducer, multi-tab revision conflict and complete offline privacy/cache scan remain Tasks 10–11。",
+    "Formal six-browser/device support matrix remains Task 13。"
+  ],
+  "implementationCommit": null
+}

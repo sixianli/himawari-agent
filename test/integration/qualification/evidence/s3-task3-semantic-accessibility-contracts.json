@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T13:34:57+09:00",
+  "plan": "docs/execution/plans/2026-08-26-control-center-experience-plan.md",
+  "taskIds": ["S3-T03"],
+  "status": "local_complete",
+  "candidateRevision": "acc03619c8ce4eae692376e8a4336ec685413be2",
+  "components": [
+    "ActionButton",
+    "AppLink",
+    "Field",
+    "ModalDialog",
+    "ActionMenu",
+    "Tabs",
+    "DataTable",
+    "SemanticList",
+    "VirtualizedList",
+    "StatusRegion",
+    "ThrottledStatusRegion",
+    "ToastRegion",
+    "Banner",
+    "RiskIndicator",
+    "DiffView",
+    "GovernedActionDialog"
+  ],
+  "governedActionGate": {
+    "authorization": "high 与 critical risk 必须有 authorizationRef",
+    "recentAuthentication": "critical risk 或 destructive action 必须有 recentAuthenticationRef",
+    "revision": "expectedRevision 必须等于 currentRevision",
+    "confirmation": "destructive action 必须逐次 acknowledged",
+    "enforcement": "同一 pure gate 同时驱动 disabled state 与 onConfirm 前最终复核"
+  },
+  "automatedEvidence": {
+    "componentTests": 5,
+    "browserEngines": ["Chromium 151.0.7922.34", "WebKit 26.5"],
+    "axeViolations": 0,
+    "minimumTargetHeight": 44,
+    "reflowWidth": 320,
+    "keyboard": ["visible focus", "route focus", "tabs roving", "menu/list pure roving"],
+    "nonColor": ["connection text", "risk symbol and text", "border and text banners"],
+    "cssPreferences": ["prefers-reduced-motion", "prefers-contrast", "forced-colors"]
+  },
+  "commands": [
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project unit apps/control-center/test/semantic-components.unit.test.ts",
+      "exitStatus": 0,
+      "result": "5 semantic component and governed action gate tests passed"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chromium",
+      "exitStatus": 0,
+      "result": "visible focus, landmarks, tabs keyboard, desktop/mobile/reflow, 44px targets and axe zero passed"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs webkit",
+      "exitStatus": 0,
+      "result": "same semantic/accessibility smoke passed in WebKit 26.5"
+    }
+  ],
+  "unverified": [
+    "VoiceOver、非 Apple screen reader、人工 keyboard-only、触摸和认知可理解性证据属于 Task 12，未由自动语义树或 axe 替代。",
+    "完整 WCAG 2.2 A/AA success criteria matrix、live-region 实际朗读节流与 screenshot regression 仍由 Task 12 收口。"
+  ],
+  "implementationCommit": null
+}

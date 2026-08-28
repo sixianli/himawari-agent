@@ -104,6 +104,7 @@ export const browserExternalPackages = new Set([
   "@vitejs/plugin-react",
   "react",
   "react-dom",
+  "react-intl",
   "vite",
   "vitest",
 ]);

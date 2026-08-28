@@ -91,32 +91,40 @@ Task 1 的机器可校验 inventory 位于 `apps/control-center/src/app/control-
 
 ### Task 2：完成前端栈与构建兼容性 preflight
 
-- [ ] 从官方 release/registry 证据评估 UI、router、ICU i18n、schema client、browser test、axe 类检查和必要构建依赖。
-- [ ] 核验 Safari/Chrome/Edge/Firefox/iOS Safari/Android Chrome 支持、Node.js engine、CSP、bundle、许可证和安全公告。
-- [ ] 建立最小 spike 验证 SSR/SPA 选择的实际 Gateway/SSE、deep link、code splitting、source map 和 production CSP 行为。
-- [ ] 展示精确依赖与 lockfile diff，获批后才写入 manifests；失败时停止并修订实施选择，不缩减浏览器或 WCAG 范围。
+- [x] 从官方 release/registry 证据评估 UI、router、ICU i18n、schema client、browser test、axe 类检查和必要构建依赖。
+- [x] 核验 Safari/Chrome/Edge/Firefox/iOS Safari/Android Chrome 支持、Node.js engine、CSP、bundle、许可证和安全公告。
+- [x] 建立最小 spike 验证 SSR/SPA 选择的实际 Gateway/SSE、deep link、code splitting、source map 和 production CSP 行为。
+- [x] 展示精确依赖与 lockfile diff，获批后才写入 manifests；失败时停止并修订实施选择，不缩减浏览器或 WCAG 范围。
+
+Task 2 保留现有 React/Vite、Gateway schema client、Playwright 与 axe 工具链，只新增 Owner 已明确授权的 `react-intl@10.1.23`；五个 FormatJS 传递包由 lockfile 固定，许可证为 MIT 或 BSD-3-Clause，定向 GitHub Advisory API 查询未返回影响这些精确版本的公告。React Router 当前版要求高于项目契约的 Node.js 下限，旧版又存在已公开安全公告，因此不引入 router 依赖，改用浏览器 History API 的 typed route 层。production build 现在机械拒绝 source map、inline script/style、动态代码求值、locale chunk 缺失和 bundle 超限；Fastify 同源入口只对非 API、非 asset 且显式接受 HTML 的路径返回 SPA shell。完整 workspace `npm audit` 因会向外部服务披露私有 lock tree 未执行，不把定向公共公告查询误报成全依赖树审计。fresh 证据位于 `test/integration/qualification/evidence/s3-task2-frontend-preflight.json`。
 
 ### Task 3：建立语义组件与无障碍工程契约
 
-- [ ] 为按钮、链接、表单、dialog、menu、tabs、table/list、status、toast/banner、risk、diff 和 virtualized list 固定语义与键盘行为。
-- [ ] 固定焦点进入/恢复、错误关联、live-region 节流、reduced-motion、触摸目标、非颜色状态和高对比 token。
-- [ ] 为高风险审批、recent re-auth、revision conflict 和 destructive confirmation 建立不可绕过的组件 contract。
-- [ ] 用组件级 keyboard、name/role/state、contrast、zoom/reflow 和 screen-reader smoke tests 固定基础。
+- [x] 为按钮、链接、表单、dialog、menu、tabs、table/list、status、toast/banner、risk、diff 和 virtualized list 固定语义与键盘行为。
+- [x] 固定焦点进入/恢复、错误关联、live-region 节流、reduced-motion、触摸目标、非颜色状态和高对比 token。
+- [x] 为高风险审批、recent re-auth、revision conflict 和 destructive confirmation 建立不可绕过的组件 contract。
+- [x] 用组件级 keyboard、name/role/state、contrast、zoom/reflow 和 screen-reader smoke tests 固定基础。
+
+Task 3 在 `apps/control-center/src/components/` 建立 native-first 语义组件，并用单一 `evaluateGovernedActionGate()` 同时约束渲染禁用态与最终确认回调；高/关键风险授权、关键/破坏性 recent-auth、revision 相等和逐次确认缺一不可。组件级测试固定名称、role、state、错误关联、表格/列表/差异/虚拟位置和 roving keyboard；Chromium/WebKit 的真实语义树、可见焦点、tabs keyboard、对比度、44px 目标、320px 回流、reduced-motion/high-contrast CSS 与 axe 检查形成自动化 smoke。它不替代 Task 12 要求的 VoiceOver、非 Apple screen reader 和人工认知检查。fresh 证据位于 `test/integration/qualification/evidence/s3-task3-semantic-accessibility-contracts.json`。
 
 ### Task 4：实现完整三语资源与 locale runtime
 
-- [ ] 建立稳定 ICU 风格 message keys，覆盖导航、状态、错误、帮助、空状态、表单和安全说明。
-- [ ] 完成 zh-CN、en、ja 同键集合、参数、plural/select 分支和专业字面量策略。
-- [ ] UI locale 只保存在当前浏览器 profile；首次可从浏览器首选语言初始化，不跨设备同步。
-- [ ] 日期、时间、数字、费用和大小按 UI locale 格式化；IANA timezone、UTC、model/version 和原始代码不转换。
-- [ ] production build 对缺 key、变量不一致和未翻译 fallback 失败；运行伪本地化、长文本和日文输入布局检查。
+- [x] 建立稳定 ICU 风格 message keys，覆盖导航、状态、错误、帮助、空状态、表单和安全说明。
+- [x] 完成 zh-CN、en、ja 同键集合、参数、plural/select 分支和专业字面量策略。
+- [x] UI locale 只保存在当前浏览器 profile；首次可从浏览器首选语言初始化，不跨设备同步。
+- [x] 日期、时间、数字、费用和大小按 UI locale 格式化；IANA timezone、UTC、model/version 和原始代码不转换。
+- [x] production build 对缺 key、变量不一致和未翻译 fallback 失败；运行伪本地化、长文本和日文输入布局检查。
+
+Task 4 以稳定 `MessageId` 联合类型和三份完整 `MessageCatalog` 固定同键资源；unit test 对每个 locale 格式化全部 ICU message，因此缺 key、缺变量、非法 plural 或 fallback 会失败。`react-intl` runtime 按 `zh-CN/en/ja` 提供日期、数字与 ICU 格式化，en/ja 独立动态 chunk；locale 只写当前 browser profile，首次按浏览器语言协商。Chromium/WebKit 已执行三语切换、`lang`、重开恢复、日文长输入与布局检查；Thread answer locale 仍由 Task 6 的独立领域 contract 实现，UI locale 不调用该接口。fresh 证据位于 `test/integration/qualification/evidence/s3-task4-trilingual-runtime.json`。
 
 ### Task 5：实现响应式全局 Shell 与导航
 
-- [ ] 实现 Threads、Approvals、Tasks、Inbox/Digest、Memory、Capabilities/Adapters、Authorizations/Grants、Trace、Settings、Sessions/Devices、Health/Deployment 全入口。
-- [ ] 桌面提供可调整列表/内容/详情，移动保持同功能的单列导航和可返回详情。
-- [ ] 每个深链接在身份、recent-auth 和 scope 检查后加载；撤销 session 时清空内存私人 view state。
-- [ ] 列表查询状态、筛选、分页/cursor 和对象 ID 可恢复，关键操作不限定桌面。
+- [x] 实现 Threads、Approvals、Tasks、Inbox/Digest、Memory、Capabilities/Adapters、Authorizations/Grants、Trace、Settings、Sessions/Devices、Health/Deployment 全入口。
+- [x] 桌面提供可调整列表/内容/详情，移动保持同功能的单列导航和可返回详情。
+- [x] 每个深链接在身份、recent-auth 和 scope 检查后加载；撤销 session 时清空内存私人 view state。
+- [x] 列表查询状态、筛选、分页/cursor 和对象 ID 可恢复，关键操作不限定桌面。
+
+Task 5 用 typed native History route 固定 11 个入口、稳定对象 ID、status、cursor 和 list/content/details view；Fastify SPA fallback 允许直接打开安全深链接，但所有私人 query 仍经过既有 Gateway 身份与 scope 边界。401 会清空 snapshot、事件和选择引用并要求重新认证，未发送草稿按本地隐私契约保留。桌面三栏宽度可调整并持久，`<=900px` 只显示 Owner 选择的单栏；Thread 操作在移动内容栏仍可到达。非 Thread 页面严格遵守 Task 1 inventory：`baseline_only` 只显示已有 read model，`blocked` 只显示稳定 blocker，不用 Shell 完成冒充 Tasks 6–9 的领域集成。fresh 证据位于 `test/integration/qualification/evidence/s3-task5-responsive-shell.json`。
 
 ### Task 6：接通 Thread/对话与回答语言
 
@@ -194,11 +202,11 @@ Task 1 的机器可校验 inventory 位于 `apps/control-center/src/app/control-
 
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| S3-A01 | 完整操作面 | Task 1；Tasks 5–9、13 | inventory；全导航 browser E2E、状态/安全 readback | Task 1 inventory 已完成；其余任务待实施 |
-| S3-A02 | 三语与回答语言 | Task 1；Tasks 4、6、13 | inventory；key checks、伪本地化、三语/answer locale 组合 | Task 1 inventory 已完成；其余任务待实施 |
-| S3-A03 | 响应式与实时状态 | Task 1；Tasks 5、10–11、13 | inventory/baseline；桌面/移动、SSE、多标签、offline | Task 1 inventory 与基线已完成；其余任务待实施 |
+| S3-A01 | 完整操作面 | Task 1；Tasks 5–9、13 | inventory；全导航 browser E2E、状态/安全 readback | Tasks 1、5 全入口与安全阻塞已完成；领域集成 Tasks 6–9 和正式矩阵 Task 13 待实施 |
+| S3-A02 | 三语与回答语言 | Task 1；Tasks 4、6、13 | inventory；key checks、伪本地化、三语/answer locale 组合 | Tasks 1、4 UI 三语已完成；answer locale Task 6 与正式矩阵 Task 13 待实施 |
+| S3-A03 | 响应式与实时状态 | Task 1；Tasks 5、10–11、13 | inventory/baseline；桌面/移动、SSE、多标签、offline | Tasks 1、5 与既有 SSE/offline 基线已完成；权威 reducer/隐私 Tasks 10–11 和正式矩阵 Task 13 待实施 |
 | S3-A04 | Attention、Inbox 与 Digest | Task 1；Tasks 8、10、13 | inventory；五级呈现、离线恢复、来源 | Task 1 inventory 已完成；其余任务待实施 |
-| S3-A05 | WCAG 2.2 AA 与浏览器 | Task 1；Tasks 3、12–14 | inventory/baseline；自动、人工、辅助技术、六类浏览器矩阵 | Task 1 inventory 与基线已完成；其余任务待实施 |
+| S3-A05 | WCAG 2.2 AA 与浏览器 | Task 1；Tasks 3、12–14 | inventory/baseline；自动、人工、辅助技术、六类浏览器矩阵 | Tasks 1、3 自动化基础已完成；人工/辅助技术/正式浏览器与文档收口 Tasks 12–14 待实施 |
 
 ## 验证
 

@@ -71,7 +71,7 @@ function contentType(filePath) {
   }
 }
 
-const server = createServer(async (request, response) => {
+async function handleRequest(request, response) {
   const url = new URL(request.url ?? "/", `http://127.0.0.1:${port}`);
   if (request.method === "GET" && url.pathname === "/api/control-center/v1/config") {
     json(response, 200, {
@@ -194,6 +194,22 @@ const server = createServer(async (request, response) => {
   }
   response.writeHead(200, { "content-type": contentType(target) });
   createReadStream(target).pipe(response);
+}
+
+const server = createServer((request, response) => {
+  request.on("error", () => undefined);
+  void handleRequest(request, response).catch((error) => {
+    const code = error && typeof error === "object" && "code" in error ? error.code : null;
+    if (request.aborted || code === "ECONNRESET" || code === "ABORT_ERR") {
+      if (!response.destroyed) response.destroy();
+      return;
+    }
+    process.stderr.write(
+      `CONTROL_CENTER_FIXTURE_REQUEST_FAILED:${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    if (!response.headersSent) json(response, 500, { error: { code: "FIXTURE_REQUEST_FAILED" } });
+    else if (!response.destroyed) response.destroy();
+  });
 });
 
 server.listen(port, "127.0.0.1", () => {

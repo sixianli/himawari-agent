@@ -49,7 +49,7 @@ describe("runtime-specific import negative probes", () => {
     },
   );
 
-  it.each(["react", "react-dom/client", "@himawari-agent/gateway-contracts"])(
+  it.each(["react", "react-dom/client", "react-intl", "@himawari-agent/gateway-contracts"])(
     "allows %s in the browser-only workspace",
     (specifier) => {
       expect(
