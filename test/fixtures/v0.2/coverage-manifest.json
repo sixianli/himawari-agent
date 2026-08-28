@@ -632,7 +632,7 @@
           "label": "完整操作面",
           "planTasks": "Task 1；Tasks 5–9、13",
           "planEvidence": "inventory；全导航 browser E2E、状态/安全 readback",
-          "planStatus": "Tasks 1、5–6 已完成；领域集成 Tasks 7–9 和正式矩阵 Task 13 待实施",
+          "planStatus": "Tasks 1、5–7 已完成；领域集成 Tasks 8–9 和正式矩阵 Task 13 待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         },
         {

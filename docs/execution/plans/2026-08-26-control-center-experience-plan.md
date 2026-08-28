@@ -140,11 +140,13 @@ Chromium 151 与 WebKit 26.5 的受控资格测试覆盖 zh-CN/en/ja、answer lo
 
 ### Task 7：接通审批、能力与 Grant 管理
 
-- [ ] 审批卡显示冻结 ActionIntent、risk floor、模型建议、最终风险、目标、scope、披露、费用、收件人、可逆性和 expiry。
-- [ ] 只允许批准、拒绝或受支持的缩小范围；扩大形成新提案。
-- [ ] CRITICAL、凭据、生产、永久删除、公开发布、资金、法律和人身安全操作逐次 recent re-auth，禁用批量批准。
-- [ ] 能力详情显示来源、精确版本、完整性、permissions、secret refs、健康、更新差异、依赖任务和回退。
-- [ ] Grant 撤销后刷新受影响任务和 Handle 状态，不把模型解释显示为授权结果。
+- [x] 审批卡显示冻结 ActionIntent、risk floor、模型建议、最终风险、目标、scope、披露、费用、收件人、可逆性和 expiry。
+- [x] 只允许批准、拒绝或受支持的缩小范围；扩大形成新提案。
+- [x] CRITICAL、凭据、生产、永久删除、公开发布、资金、法律和人身安全操作逐次 recent re-auth，禁用批量批准。
+- [x] 能力详情显示来源、精确版本、完整性、permissions、secret refs、健康、更新差异、依赖任务和回退。
+- [x] Grant 撤销后刷新受影响任务和 Handle 状态，不把模型解释显示为授权结果。
+
+Task 7 复用已关闭 S4 的单一治理实现，不在 S3 复制第二套授权状态机。`gateway.v2` 的 Agent-scoped list/detail snapshot 显示冻结 ActionIntent、确定性风险事实、model reason code、scope、披露、费用、收件人、可逆性、expiry、能力精确来源/版本/完整性/权限/protected secret refs/健康/更新评估/依赖任务/回退，以及 Grant scope/usage/budget/受影响 Task；浏览器只提供 contract 支持的批准、拒绝与治理操作，没有批量批准或任意扩大 scope 的入口。高风险操作由统一 governed-action gate 同时要求授权、逐次 recent-auth、revision 相等和明确确认；mutation 使用持久化的无正文幂等 identity，409/撤销/多标签变化后重新读取权威 snapshot，离线不发送。实现 revision 为 `d8c4cc08e4b14e05cc7950c185102bde85b085b6`，S4 最终恢复/因果证据已在 `ec23b12` 与 `208acf4` 收口；S3 对账证据位于 `test/integration/qualification/evidence/s3-task7-governance-surfaces.json`。
 
 ### Task 8：接通 Tasks、Inbox、Digest 与 Attention
 
@@ -206,7 +208,7 @@ Chromium 151 与 WebKit 26.5 的受控资格测试覆盖 zh-CN/en/ja、answer lo
 
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| S3-A01 | 完整操作面 | Task 1；Tasks 5–9、13 | inventory；全导航 browser E2E、状态/安全 readback | Tasks 1、5–6 已完成；领域集成 Tasks 7–9 和正式矩阵 Task 13 待实施 |
+| S3-A01 | 完整操作面 | Task 1；Tasks 5–9、13 | inventory；全导航 browser E2E、状态/安全 readback | Tasks 1、5–7 已完成；领域集成 Tasks 8–9 和正式矩阵 Task 13 待实施 |
 | S3-A02 | 三语与回答语言 | Task 1；Tasks 4、6、13 | inventory；key checks、伪本地化、三语/answer locale 组合 | Tasks 1、4、6 本地完成；正式浏览器/设备矩阵 Task 13 待实施 |
 | S3-A03 | 响应式与实时状态 | Task 1；Tasks 5、10–11、13 | inventory/baseline；桌面/移动、SSE、多标签、offline | Tasks 1、5–6 的 Thread 实时/多标签/offline 已完成；跨 surface reducer、隐私 Tasks 10–11 和正式矩阵 Task 13 待实施 |
 | S3-A04 | Attention、Inbox 与 Digest | Task 1；Tasks 8、10、13 | inventory；五级呈现、离线恢复、来源 | Task 1 inventory 已完成；其余任务待实施 |

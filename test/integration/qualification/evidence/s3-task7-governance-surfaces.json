@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T19:40:00+09:00",
+  "plan": "docs/execution/plans/2026-08-26-control-center-experience-plan.md",
+  "taskIds": ["S3-T7"],
+  "status": "local_complete",
+  "implementationRevision": "d8c4cc08e4b14e05cc7950c185102bde85b085b6",
+  "closureRevisions": ["ec23b12", "208acf4"],
+  "verified": [
+    "S3 reuses the single S4 gateway.v2 Approval, Capability and Grant implementation instead of creating a second authorization state machine.",
+    "The Owner sees frozen intent facts, deterministic and model risk inputs, target, scope, disclosure, cost, recipients, reversibility, expiry, exact capability identity and permissions, protected secret references, health, update assessment, dependencies, rollback and affected tasks.",
+    "The UI exposes only contract-supported approval and governance actions, has no bulk approval or arbitrary scope-expansion route, and requires authorization, per-action recent authentication, matching revision and explicit acknowledgement at the shared governed-action gate.",
+    "Mutation identity is persisted without private bodies, 409 and cross-tab changes force authoritative refresh, offline actions are not sent, and Grant revocation refreshes affected task and Handle state through the durable read model.",
+    "The S4 Chromium and WebKit browser journeys and final recovery matrix already cover approve and deny, missing recent authentication, capability review and lifecycle, rollback and disable, Grant conflict and revoke, offline behavior, secret exclusion and causal readback."
+  ],
+  "evidence": [
+    "test/integration/qualification/evidence/s4-task11-governance-control-center.json",
+    "test/integration/qualification/evidence/s4-task12-security-recovery-closure.json",
+    "test/integration/governance-control-center.test.ts",
+    "apps/control-center/src/governance-control-center.tsx"
+  ],
+  "remaining": [
+    "S3 Tasks 8-14 still own the remaining operations surfaces, cross-surface state, privacy, accessibility, formal browser and closure evidence.",
+    "No production identity provider, public route, real capability, credential or external side effect is claimed by this reconciliation."
+  ],
+  "externalEffects": [
+    "This reconciliation changes repository documentation and evidence only; it performs no external or production mutation."
+  ]
+}
