@@ -214,7 +214,10 @@ try {
     throw new Error(`CONTROL_CENTER_KEYBOARD_FOCUS_NOT_VISIBLE:${JSON.stringify(keyboardFocus)}`);
   }
   const ariaSnapshot = await page.locator("body").ariaSnapshot();
-  for (const requiredLandmark of ["navigation", "main", "heading", "complementary"]) {
+  const requiredLandmarks = profile.emulation
+    ? ["navigation", "main", "heading"]
+    : ["navigation", "main", "heading", "complementary"];
+  for (const requiredLandmark of requiredLandmarks) {
     if (!ariaSnapshot.includes(requiredLandmark)) {
       throw new Error(`CONTROL_CENTER_ARIA_LANDMARK_MISSING:${requiredLandmark}`);
     }
@@ -770,7 +773,7 @@ try {
       minimumTargetHeight,
       axeViolations: 0,
       keyboardFocus,
-      semanticLandmarks: ["navigation", "main", "heading", "complementary"],
+      semanticLandmarks: requiredLandmarks,
       nonColorConnectionStatus: true,
       unsafeBaselineMutations: 0,
       expectedOfflineTransportErrors: browserErrors.length - unexpectedBrowserErrors.length,

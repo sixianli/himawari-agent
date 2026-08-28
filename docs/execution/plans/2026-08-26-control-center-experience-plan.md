@@ -150,40 +150,48 @@ Task 7 复用已关闭 S4 的单一治理实现，不在 S3 复制第二套授�
 
 ### Task 8：接通 Tasks、Inbox、Digest 与 Attention
 
-- [ ] 实现 Task 列表/详情、触发、预算、时区、Run、blocked reason、pause/cancel 和结果关联。
-- [ ] SILENT、INBOX、DIGEST、NOTIFY、INTERRUPT 使用确定性呈现，离线结果持久且不发送站外消息。
-- [ ] Digest 只聚合既有 Result，展示每项来源，不重新执行 Task。
-- [ ] 普通期望提醒可降低，但显示不可降低的安全下限与原因。
-- [ ] 在离线、预算阻塞、重复事件和恢复后验证未读/优先级稳定。
+- [x] 实现 Task 列表/详情、触发、预算、时区、Run、blocked reason、pause/cancel 和结果关联。
+- [x] SILENT、INBOX、DIGEST、NOTIFY、INTERRUPT 使用确定性呈现，离线结果持久且不发送站外消息。
+- [x] Digest 只聚合既有 Result，展示每项来源，不重新执行 Task。
+- [x] 普通期望提醒可降低，但显示不可降低的安全下限与原因。
+- [x] 在离线、预算阻塞、重复事件和恢复后验证未读/优先级稳定。
+
+Task 8 使用 `gateway.v2` 的 Task、Inbox 与 Digest 权威 snapshot，不在浏览器派生业务状态。Task 详情展示触发、时区、Occurrence/Run/Result、预算阻塞、请求/安全下限/最终 Attention 与 delivery；pause/resume/cancel 使用 revision 和幂等 identity。五级 Attention 由共享 contract 枚举机械约束，Digest 只显示既有 `sourceResultRefs`。离线操作不发送，duplicate/out-of-order event 由 Task 10 reducer 去重。实现 revision 为 `315f54b2dbe3ece5dcfbc2cffae6e2501034dd8b`，fresh 证据位于 `test/integration/qualification/evidence/s3-tasks8-13-operations-recovery-qualification.json`。
 
 ### Task 9：接通 Memory、Trace、设置、设备与健康
 
-- [ ] Memory 页面支持来源、版本、分类、敏感审批、纠正、archive/delete 和不可恢复状态，不展示 machine secret。
-- [ ] Trace 页面显示可观察因果链、实际 model/provider、授权、能力、费用、重试和结果，不伪造 hidden reasoning。
-- [ ] Settings 接通 models/budgets、attention/digest 和 integrations；secret 只显示 ref/status。
-- [ ] Sessions/Devices 支持查看、撤销和 recent-auth；Health/Deployment 显示脱敏稳定错误、影响能力和下一步。
-- [ ] 删除、迁移、升级等长操作显示实际 checkpoint 和 readback，不能用 optimistic success 代替。
+- [x] Memory 页面支持来源、版本、分类、敏感审批、纠正、archive/delete 和不可恢复状态，不展示 machine secret。
+- [x] Trace 页面显示可观察因果链、实际 model/provider、授权、能力、费用、重试和结果，不伪造 hidden reasoning。
+- [x] Settings 接通 models/budgets、attention/digest 和 integrations；secret 只显示 ref/status。
+- [x] Sessions/Devices 支持查看、撤销和 recent-auth；Health/Deployment 显示脱敏稳定错误、影响能力和下一步。
+- [x] 删除、迁移、升级等长操作显示实际 checkpoint 和 readback，不能用 optimistic success 代替。
+
+Task 9 的各页面只消费领域 snapshot：Memory 更正正文先写 protected Payload，浏览器持久层只保留无正文 mutation identity；Trace 只显示可观察事件和引用；Settings 的模型、预算、Attention、Digest 与 integration 状态来自权威读模型，secret 只显示 ref/status；session revoke 要求 recent-auth 和 revision；Health 显示 component reason code 与长操作 checkpoint/readback。不存在浏览器 optimistic success。实现与证据同 Task 8。
 
 ### Task 10：实现权威客户端状态、SSE 与多标签冲突
 
-- [ ] reducer 以 snapshot、durable cursor、event ID、object revision 和 Run sequence 去重。
-- [ ] cursor gap/expiry、scope change 或序列冲突时停止局部应用，执行 bounded snapshot refresh。
-- [ ] mutation idempotency key 在结果确定前持久复用；刷新或网络重试不创建新动作。
-- [ ] 多标签 mutation 冲突展示最新 revision 和差异，要求 Owner 明确重新应用。
-- [ ] 对 duplicate/out-of-order event、session revoke、authority degradation 和 normal restart 运行 browser recovery tests。
+- [x] reducer 以 snapshot、durable cursor、event ID、object revision 和 Run sequence 去重。
+- [x] cursor gap/expiry、scope change 或序列冲突时停止局部应用，执行 bounded snapshot refresh。
+- [x] mutation idempotency key 在结果确定前持久复用；刷新或网络重试不创建新动作。
+- [x] 多标签 mutation 冲突展示最新 revision 和差异，要求 Owner 明确重新应用。
+- [x] 对 duplicate/out-of-order event、session revoke、authority degradation 和 normal restart 运行 browser recovery tests。
+
+Task 10 的 `SseStateSynchronizer` 对 event ID、scope sequence、cursor retention 和 authority scope 做有界归约；duplicate/out-of-order event 被忽略，gap 或 authority change 清除旧 cursor、停止应用并要求权威 snapshot refresh。mutation 在确定结果前复用只含 identity/revision 的本地记录，409 先读取最新 revision 并显示冲突，不静默重放。unit 与 browser recovery 证据位于同一 fresh 证据文件。
 
 ### Task 11：实现离线与浏览器隐私边界
 
-- [ ] 浏览器只持久 UI locale、主题/布局、未发送草稿和 last cursor。
-- [ ] Service Worker 只缓存受版本/CSP 控制的静态资源，不缓存私人 API、Memory、Trace 或审批正文。
-- [ ] 离线时所有命令、审批、任务和撤销保持未发送，不在本地生效或排队伪装 accepted。
-- [ ] 重连后保留草稿，明确区分未发送、已接纳未完成和已完成。
-- [ ] 自动扫描 IndexedDB、local/session storage、Cache API 和日志，证明无私人正文、secret、Cookie 副本和离线命令队列。
+- [x] 浏览器只持久 UI locale、主题/布局、未发送草稿和 last cursor。
+- [x] Service Worker 只缓存受版本/CSP 控制的静态资源，不缓存私人 API、Memory、Trace 或审批正文。
+- [x] 离线时所有命令、审批、任务和撤销保持未发送，不在本地生效或排队伪装 accepted。
+- [x] 重连后保留草稿，明确区分未发送、已接纳未完成和已完成。
+- [x] 自动扫描 IndexedDB、local/session storage、Cache API 和日志，证明无私人正文、secret、Cookie 副本和离线命令队列。
+
+Task 11 当前不注册 Service Worker，因此比“只缓存静态资源”更严格：Cache API、IndexedDB、sessionStorage 和 Service Worker registration 实测均为空。localStorage 只含 locale、布局、未发送 Thread 草稿和两个 durable cursor；确定完成后 pending mutation identity 被删除，离线命令不排队。safe log 扫描不含私人正文、认证引用或 secret。
 
 ### Task 12：建立 WCAG 2.2 AA 证据
 
-- [ ] 生成适用 success criteria 矩阵，逐项标记自动、人工、辅助技术或有理由不适用。
-- [ ] 自动运行 lint、axe 类规则、keyboard path、focus、contrast、zoom/reflow、touch target、reduced-motion 和 screenshot regression。
+- [x] 生成适用 success criteria 矩阵，逐项标记自动、人工、辅助技术或有理由不适用。
+- [x] 自动运行 lint、axe 类规则、keyboard path、focus、contrast、zoom/reflow、touch target、reduced-motion 和 screenshot regression。
 - [ ] 人工运行 keyboard-only、VoiceOver、至少一个非 Apple screen reader、触摸和认知可理解性检查。
 - [ ] 动态消息、审批、任务和通知验证 live-region 节流、暂停与不重复朗读。
 - [ ] 任一关键流程辅助技术失败保持 release blocker，不用自动化通过覆盖。
@@ -208,11 +216,11 @@ Task 7 复用已关闭 S4 的单一治理实现，不在 S3 复制第二套授�
 
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| S3-A01 | 完整操作面 | Task 1；Tasks 5–9、13 | inventory；全导航 browser E2E、状态/安全 readback | Tasks 1、5–7 已完成；领域集成 Tasks 8–9 和正式矩阵 Task 13 待实施 |
-| S3-A02 | 三语与回答语言 | Task 1；Tasks 4、6、13 | inventory；key checks、伪本地化、三语/answer locale 组合 | Tasks 1、4、6 本地完成；正式浏览器/设备矩阵 Task 13 待实施 |
-| S3-A03 | 响应式与实时状态 | Task 1；Tasks 5、10–11、13 | inventory/baseline；桌面/移动、SSE、多标签、offline | Tasks 1、5–6 的 Thread 实时/多标签/offline 已完成；跨 surface reducer、隐私 Tasks 10–11 和正式矩阵 Task 13 待实施 |
-| S3-A04 | Attention、Inbox 与 Digest | Task 1；Tasks 8、10、13 | inventory；五级呈现、离线恢复、来源 | Task 1 inventory 已完成；其余任务待实施 |
-| S3-A05 | WCAG 2.2 AA 与浏览器 | Task 1；Tasks 3、12–14 | inventory/baseline；自动、人工、辅助技术、六类浏览器矩阵 | Tasks 1、3 自动化基础已完成；人工/辅助技术/正式浏览器与文档收口 Tasks 12–14 待实施 |
+| S3-A01 | 完整操作面 | Task 1；Tasks 5–9、13 | inventory；全导航 browser E2E、状态/安全 readback | Tasks 1、5–9 本地完成；正式矩阵 Task 13 待 S9 RC |
+| S3-A02 | 三语与回答语言 | Task 1；Tasks 4、6、13 | inventory；key checks、伪本地化、三语/answer locale 组合 | Tasks 1、4、6 本地完成；正式浏览器/设备矩阵 Task 13 待 S9 RC |
+| S3-A03 | 响应式与实时状态 | Task 1；Tasks 5、10–11、13 | inventory/baseline；桌面/移动、SSE、多标签、offline | Tasks 1、5–6、10–11 本地完成；正式矩阵 Task 13 待 S9 RC |
+| S3-A04 | Attention、Inbox 与 Digest | Task 1；Tasks 8、10、13 | inventory；五级呈现、离线恢复、来源 | Tasks 1、8、10 本地完成；正式矩阵 Task 13 待 S9 RC |
+| S3-A05 | WCAG 2.2 AA 与浏览器 | Task 1；Tasks 3、12–14 | inventory/baseline；自动、人工、辅助技术、六类浏览器矩阵 | 自动化矩阵本地完成；VoiceOver、非 Apple screen reader、正式六类双版本与最终文档收口仍是 S9 release blocker |
 
 ## 验证
 

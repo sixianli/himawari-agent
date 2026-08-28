@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T20:08:57+09:00",
+  "plan": "docs/execution/plans/2026-08-26-control-center-experience-plan.md",
+  "taskIds": ["S3-T8", "S3-T9", "S3-T10", "S3-T11", "S3-T12", "S3-T13"],
+  "status": "implementation_complete_formal_qualification_deferred_to_s9",
+  "implementationRevision": "315f54b2dbe3ece5dcfbc2cffae6e2501034dd8b",
+  "verified": [
+    "Tasks、Inbox、Digest、Memory、Trace、Settings、Sessions/Devices 与 Health/Deployment 均使用 gateway.v2 权威 detail/list snapshot，未在浏览器新建领域事实。",
+    "Task pause/resume/cancel、Memory correct/archive/delete 与 session revoke 共享 revision、幂等 identity、recent-auth、明确确认、409 权威刷新和离线禁用边界。",
+    "SSE reducer 对 event ID、scope sequence、cursor retention 和 authority scope 做有界归约；duplicate/out-of-order 被忽略，gap 与 scope change 触发 snapshot refresh。",
+    "Chromium 151、安装版 Chrome 151 与 WebKit 26.5 通过全导航、三语、操作面、断线恢复、320/390 px 回流、44 px target、键盘焦点和 axe 自动化检查。",
+    "浏览器隐私扫描确认 IndexedDB、Cache API、sessionStorage 与 Service Worker registration 均为空；localStorage 仅含允许的 UI 状态、草稿和 cursor，safe log 不含私人正文或 secret。",
+    "ego-browser 独立语义读取确认本地 Task 页面在真实 Chromium UI 中加载权威 revision、预算阻塞、Attention 安全下限与 pause/cancel 操作，页面无水平溢出。"
+  ],
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format、lint、typecheck、boundary、coverage、invariant 与 secret scan 全部通过"
+    },
+    {
+      "command": "npm run test:browser",
+      "exitStatus": 0,
+      "result": "6 files、28 tests 通过"
+    },
+    {
+      "command": "npm run test:contracts",
+      "exitStatus": 0,
+      "result": "13 files、147 tests 通过"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/governance-control-center.test.ts",
+      "exitStatus": 0,
+      "result": "1 file、3 tests 通过"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/thread-gateway-control-center.test.ts",
+      "exitStatus": 0,
+      "result": "1 file、2 tests 通过"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chromium",
+      "exitStatus": 0,
+      "result": "Playwright Chromium 151.0.7922.34 通过"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chrome",
+      "exitStatus": 0,
+      "result": "安装版 Google Chrome 151.0.7922.174 通过"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs webkit",
+      "exitStatus": 0,
+      "result": "Playwright WebKit 26.5 通过"
+    }
+  ],
+  "wcag22AaEvidence": {
+    "automated": [
+      "语义 landmark、accessible name/role/state",
+      "键盘可见焦点与 settings tabs roving keyboard",
+      "axe 自动规则与颜色对比",
+      "320 px 回流、390 px 触摸布局与 44 px 最小目标",
+      "reduced-motion 与 high-contrast CSS 契约",
+      "三语和日文长输入布局"
+    ],
+    "manualOrAssistiveTechnologyPending": [
+      "VoiceOver 完整关键流程",
+      "至少一个非 Apple screen reader 完整关键流程",
+      "触摸与认知可理解性人工检查",
+      "动态消息重复朗读和节流人工确认"
+    ]
+  },
+  "formalQualificationPending": [
+    "Firefox profile 在当前 macOS 主机因 Playwright Firefox plugin-container sandbox_extension Operation not permitted，随后 graphics compositor 启动超时；未形成产品失败结论。",
+    "iPhone 15 WebKit 模拟 profile 通过初始移动 landmark 后，在现有全旅程脚本的桌面详情操作路径处中止；320/390 px WebKit 响应式路径已在主 WebKit profile 通过，但不冒充完整 iOS 设备资格。",
+    "Edge、Android Chrome、六类浏览器最新两个稳定大版本、真实设备和辅助技术矩阵必须由 S9 在 RC revision/artifact 冻结后执行。"
+  ],
+  "releaseDecision": "S3 实现可交给 S5/S6 继续集成；S3 Plan 保持 active，正式支持声明与归档由 S9 fresh qualification 解锁。",
+  "externalEffects": [
+    "所有浏览器操作只针对本机确定性 fixture；未访问公共 URL、浏览器云、付费服务、真实账号或生产环境。"
+  ]
+}
