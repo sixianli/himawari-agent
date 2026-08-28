@@ -97,19 +97,6 @@ function parseResult(value: unknown): ThreadGatewayRequestResult {
   return parsed as ThreadGatewayRequestResult;
 }
 
-function canonicalCursorTime(value: string | null): string | null {
-  if (value === null) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.valueOf()) || parsed.toISOString() !== value) {
-    throw new ApplicationPortError(
-      PORT_ERROR_CODES.INVALID_OPERATION,
-      "Thread collection cursor is invalid",
-      { cursor: value },
-    );
-  }
-  return value;
-}
-
 function commandThreadId(command: ThreadGatewayCommand): string {
   if (command.type === "thread.create") return command.payload.threadId;
   if (command.type === "thread.fork") return command.payload.targetThreadId;
@@ -186,7 +173,8 @@ export class ProductThreadGatewayAdapter
           agentId,
           statuses: query.payload.statuses,
           pinnedOnly: query.payload.pinnedOnly,
-          afterUpdatedAt: canonicalCursorTime(query.payload.afterCursor),
+          afterThreadId:
+            query.payload.afterCursor === null ? null : createThreadId(query.payload.afterCursor),
           limit: query.payload.limit,
         });
         return parseResult({
@@ -194,7 +182,7 @@ export class ProductThreadGatewayAdapter
           payload: {
             threads: threads.map(threadSummary),
             nextCursor:
-              threads.length === query.payload.limit ? (threads.at(-1)?.updatedAt ?? null) : null,
+              threads.length === query.payload.limit ? (threads.at(-1)?.id ?? null) : null,
             snapshotRef,
             generatedAt,
           },
@@ -237,13 +225,6 @@ export class ProductThreadGatewayAdapter
         });
       }
       case "thread.search": {
-        const cursor = canonicalCursorTime(query.payload.afterCursor);
-        const updatedBefore =
-          cursor === null
-            ? query.payload.updatedBefore
-            : query.payload.updatedBefore === null || cursor < query.payload.updatedBefore
-              ? cursor
-              : query.payload.updatedBefore;
         const threads = await this.#dependencies.queries.search({
           ownerId,
           agentId,
@@ -252,7 +233,9 @@ export class ProductThreadGatewayAdapter
           statuses: query.payload.statuses,
           jobStatuses: query.payload.jobStatuses,
           updatedAfter: query.payload.updatedAfter,
-          updatedBefore,
+          updatedBefore: query.payload.updatedBefore,
+          afterThreadId:
+            query.payload.afterCursor === null ? null : createThreadId(query.payload.afterCursor),
           limit: query.payload.limit,
         });
         return parseResult({
@@ -262,7 +245,7 @@ export class ProductThreadGatewayAdapter
             projectionVersion: query.payload.projectionVersion,
             threads: threads.map(threadSummary),
             nextCursor:
-              threads.length === query.payload.limit ? (threads.at(-1)?.updatedAt ?? null) : null,
+              threads.length === query.payload.limit ? (threads.at(-1)?.id ?? null) : null,
             degraded: false,
             reasonCode: null,
             snapshotRef,

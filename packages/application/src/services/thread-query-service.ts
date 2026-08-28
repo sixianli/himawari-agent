@@ -38,7 +38,7 @@ export class ThreadQueryService {
     readonly agentId: AgentId;
     readonly statuses?: readonly ProductThread["status"][];
     readonly pinnedOnly?: boolean;
-    readonly afterUpdatedAt?: string | null;
+    readonly afterThreadId?: ThreadId | null;
     readonly limit: number;
   }) {
     return this.repository.list({
@@ -46,7 +46,7 @@ export class ThreadQueryService {
       agentId: input.agentId,
       statuses: input.statuses ?? ["active", "archived"],
       pinnedOnly: input.pinnedOnly ?? false,
-      afterUpdatedAt: input.afterUpdatedAt ?? null,
+      afterThreadId: input.afterThreadId ?? null,
       limit: input.limit,
     });
   }
@@ -60,6 +60,7 @@ export class ThreadQueryService {
     readonly jobStatuses?: readonly ("active" | "paused" | "revoked")[];
     readonly updatedAfter?: string | null;
     readonly updatedBefore?: string | null;
+    readonly afterThreadId?: ThreadId | null;
     readonly limit: number;
   }) {
     if (input.tokenRefs.length === 0) {
@@ -77,6 +78,7 @@ export class ThreadQueryService {
       jobStatuses: input.jobStatuses ?? [],
       updatedAfter: input.updatedAfter ?? null,
       updatedBefore: input.updatedBefore ?? null,
+      afterThreadId: input.afterThreadId ?? null,
       limit: input.limit,
     });
   }

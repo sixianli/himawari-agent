@@ -1206,29 +1206,78 @@ export class SqliteThreadOperations {
     }
   }
 
+  private lifecyclePredicate(
+    statuses: readonly ProductThread["status"][],
+    tableAlias = "",
+  ): string {
+    if (statuses.length === 0 || new Set(statuses).size !== statuses.length) {
+      this.fail("PORT_INVALID_OPERATION", "Thread lifecycle filter must be non-empty and unique");
+    }
+    const column = (name: string) => `${tableAlias ? `${tableAlias}.` : ""}${name}`;
+    return `(${statuses
+      .map((status) => {
+        switch (status) {
+          case "active":
+            return `(${column("status")} = 'open' AND ${column("archived_at")} IS NULL)`;
+          case "archived":
+            return `(${column("status")} = 'open' AND ${column("archived_at")} IS NOT NULL)`;
+          case "trashed":
+          case "deletion_pending":
+          case "deleted_verified":
+            return `${column("status")} = '${status}'`;
+          default:
+            return this.fail("PORT_INVALID_OPERATION", "Thread lifecycle filter is invalid");
+        }
+      })
+      .join(" OR ")})`;
+  }
+
   private list(query: ThreadListQuery): readonly ProductThread[] {
     this.assertLimit(query.limit);
+    const lifecycle = this.lifecyclePredicate(query.statuses);
+    const cursor =
+      query.afterThreadId === null
+        ? undefined
+        : this.read(query.ownerId, query.agentId, query.afterThreadId);
+    if (query.afterThreadId !== null && !cursor) {
+      this.fail("PORT_NOT_FOUND", `Thread list cursor ${query.afterThreadId} is unavailable`, {
+        cursor: query.afterThreadId,
+      });
+    }
+    const conditions = ["owner_id = ?", "agent_id = ?", lifecycle];
+    const parameters: unknown[] = [query.ownerId, query.agentId];
+    if (query.pinnedOnly) conditions.push("pin_order IS NOT NULL");
+    if (cursor?.pinOrder !== null && cursor?.pinOrder !== undefined) {
+      conditions.push(
+        `((pin_order IS NOT NULL AND (
+          pin_order > ? OR (pin_order = ? AND (
+            updated_at < ? OR (updated_at = ? AND id > ?)
+          ))
+        ))${query.pinnedOnly ? "" : " OR pin_order IS NULL"})`,
+      );
+      parameters.push(
+        cursor.pinOrder,
+        cursor.pinOrder,
+        cursor.updatedAt,
+        cursor.updatedAt,
+        cursor.id,
+      );
+    } else if (cursor) {
+      conditions.push(
+        `pin_order IS NULL AND (
+          updated_at < ? OR (updated_at = ? AND id > ?)
+        )`,
+      );
+      parameters.push(cursor.updatedAt, cursor.updatedAt, cursor.id);
+    }
     const rows = this.database
       .prepare(
-        `${THREAD_SELECT} WHERE owner_id = ? AND agent_id = ?
-          AND (? IS NULL OR updated_at < ?) ORDER BY
+        `${THREAD_SELECT} WHERE ${conditions.join(" AND ")} ORDER BY
           CASE WHEN pin_order IS NULL THEN 1 ELSE 0 END, pin_order, updated_at DESC, id
           LIMIT ?`,
       )
-      .all(
-        query.ownerId,
-        query.agentId,
-        query.afterUpdatedAt,
-        query.afterUpdatedAt,
-        Math.min(query.limit * 4, 1000),
-      ) as ThreadRow[];
-    return rows
-      .map((row) => this.fromThreadRow(row))
-      .filter(
-        (thread) =>
-          query.statuses.includes(thread.status) && (!query.pinnedOnly || thread.pinOrder !== null),
-      )
-      .slice(0, query.limit);
+      .all(...parameters, query.limit) as ThreadRow[];
+    return rows.map((row) => this.fromThreadRow(row));
   }
 
   private listMessages(
@@ -1467,61 +1516,67 @@ export class SqliteThreadOperations {
     ) {
       this.fail("PORT_INVALID_OPERATION", "Thread search requires unique opaque token refs");
     }
+    const lifecycle = this.lifecyclePredicate(query.statuses, "current_thread");
     const placeholders = query.tokenRefs.map(() => "?").join(", ");
+    const conditions = [
+      "tokens.owner_id = ?",
+      "tokens.agent_id = ?",
+      "tokens.projection_version = ?",
+      `tokens.token_ref IN (${placeholders})`,
+      lifecycle,
+    ];
+    const parameters: unknown[] = [
+      query.ownerId,
+      query.agentId,
+      query.projectionVersion,
+      ...query.tokenRefs,
+    ];
+    if (query.afterThreadId !== null) {
+      conditions.push("tokens.thread_id > ?");
+      parameters.push(query.afterThreadId);
+    }
+    if (query.updatedAfter !== null) {
+      conditions.push("current_thread.updated_at > ?");
+      parameters.push(query.updatedAfter);
+    }
+    if (query.updatedBefore !== null) {
+      conditions.push("current_thread.updated_at < ?");
+      parameters.push(query.updatedBefore);
+    }
+    if (query.jobStatuses.length > 0) {
+      const jobPlaceholders = query.jobStatuses.map(() => "?").join(", ");
+      conditions.push(
+        `EXISTS (
+          SELECT 1 FROM scheduled_jobs AS job
+          WHERE job.owner_id = tokens.owner_id AND job.agent_id = tokens.agent_id
+            AND job.thread_id = tokens.thread_id AND job.status IN (${jobPlaceholders})
+        )`,
+      );
+      parameters.push(...query.jobStatuses);
+    }
     const ids = this.database
       .prepare(
-        `SELECT thread_id AS threadId FROM (
+        `SELECT tokens.thread_id AS threadId FROM (
           SELECT owner_id, agent_id, thread_id, token_ref, projection_version
             FROM thread_search_projection
           UNION ALL
-          SELECT projection.owner_id, projection.agent_id, projection.thread_id,
-            projection.token_ref, projection.projection_version
-            FROM thread_title_search_projection AS projection
-            JOIN threads AS current_thread
-              ON current_thread.id = projection.thread_id
-              AND current_thread.title_revision = projection.title_revision
-        ) WHERE owner_id = ? AND agent_id = ? AND projection_version = ?
-          AND token_ref IN (${placeholders})
-          GROUP BY thread_id HAVING COUNT(DISTINCT token_ref) = ?
-          ORDER BY thread_id LIMIT ?`,
+          SELECT title_projection.owner_id, title_projection.agent_id,
+            title_projection.thread_id, title_projection.token_ref,
+            title_projection.projection_version
+            FROM thread_title_search_projection AS title_projection
+            JOIN threads AS title_thread
+              ON title_thread.id = title_projection.thread_id
+              AND title_thread.title_revision = title_projection.title_revision
+        ) AS tokens
+        JOIN threads AS current_thread ON current_thread.id = tokens.thread_id
+        WHERE ${conditions.join(" AND ")}
+        GROUP BY tokens.thread_id HAVING COUNT(DISTINCT tokens.token_ref) = ?
+        ORDER BY tokens.thread_id LIMIT ?`,
       )
-      .all(
-        query.ownerId,
-        query.agentId,
-        query.projectionVersion,
-        ...query.tokenRefs,
-        query.tokenRefs.length,
-        query.limit * 2,
-      ) as Array<{ threadId: string }>;
+      .all(...parameters, query.tokenRefs.length, query.limit) as Array<{ threadId: string }>;
     return ids
       .map(({ threadId }) => this.read(query.ownerId, query.agentId, threadId as ThreadId))
-      .filter(
-        (thread): thread is ProductThread =>
-          thread !== undefined &&
-          query.statuses.includes(thread.status) &&
-          (query.updatedAfter === null || thread.updatedAt > query.updatedAfter) &&
-          (query.updatedBefore === null || thread.updatedAt < query.updatedBefore) &&
-          (query.jobStatuses.length === 0 ||
-            this.hasJobStatus(query.ownerId, query.agentId, thread.id, query.jobStatuses)),
-      )
-      .slice(0, query.limit);
-  }
-
-  private hasJobStatus(
-    ownerId: OwnerId,
-    agentId: AgentId,
-    threadId: ThreadId,
-    statuses: ThreadSearchQuery["jobStatuses"],
-  ): boolean {
-    const placeholders = statuses.map(() => "?").join(", ");
-    return Boolean(
-      this.database
-        .prepare(
-          `SELECT 1 FROM scheduled_jobs WHERE owner_id = ? AND agent_id = ?
-            AND thread_id = ? AND status IN (${placeholders}) LIMIT 1`,
-        )
-        .get(ownerId, agentId, threadId, ...statuses),
-    );
+      .filter((thread): thread is ProductThread => thread !== undefined);
   }
 
   private rebuildSearch(

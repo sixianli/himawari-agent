@@ -103,7 +103,7 @@ export interface ThreadListQuery {
   readonly agentId: AgentId;
   readonly statuses: readonly ProductThread["status"][];
   readonly pinnedOnly: boolean;
-  readonly afterUpdatedAt: string | null;
+  readonly afterThreadId: ThreadId | null;
   readonly limit: number;
 }
 
@@ -117,6 +117,7 @@ export interface ThreadSearchQuery {
   readonly jobStatuses: readonly ("active" | "paused" | "revoked")[];
   readonly updatedAfter: string | null;
   readonly updatedBefore: string | null;
+  readonly afterThreadId: ThreadId | null;
   readonly limit: number;
 }
 

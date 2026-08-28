@@ -11,6 +11,7 @@ import {
   createDeploymentId,
   createOwnerId,
   createSessionId,
+  createThreadId,
   type ProductAuthorityFence,
 } from "@himawari-agent/domain";
 import {
@@ -463,5 +464,145 @@ describe("Thread product lifecycle", () => {
       thread: { id: forked.thread.id, lineage: { sourceContentAvailable: false } },
     });
     await repository.close();
+  });
+
+  it("paginates equal-timestamp lifecycle and search results without omission", async () => {
+    const paths = await seedState();
+    const clock = new ManualClock("2026-08-28T00:00:00.000Z");
+    const repository = await SqliteProductStateRepository.open({
+      ...paths,
+      minimumFreeBytes: 0,
+      now: () => clock.now(),
+    });
+    try {
+      const threads = repository.threadRepository();
+      const commands = new ThreadCommandService({
+        repository: threads,
+        clock,
+        authority: () => authority,
+      });
+      const threadIds = Array.from({ length: 6 }, (_, index) =>
+        createThreadId(`thread-pagination-${index.toString().padStart(2, "0")}`),
+      );
+      for (const [index, threadId] of threadIds.entries()) {
+        await commands.create({
+          ownerId,
+          agentId,
+          threadId,
+          idempotencyKey: `thread-pagination-create-${index}`,
+          resultRef: "payload-result-create",
+        });
+        const admitted = await commands.admitOwnerMessage({
+          ownerId,
+          agentId,
+          threadId,
+          expectedThreadRevision: 1,
+          sessionId,
+          idempotencyKey: `thread-pagination-admit-${index}`,
+          contentRef: "payload-owner-message",
+          sourceProofRef: `proof:thread-pagination-${index}`,
+          dataClassification: "private",
+          resultRef: "payload-result-admit",
+        });
+        if (!admitted.message.turnId || !admitted.message.runId) {
+          throw new Error("Thread pagination fixture requires Turn and Run identities");
+        }
+        const committed = await commands.commitAssistantMessage({
+          ownerId,
+          agentId,
+          threadId,
+          expectedThreadRevision: admitted.thread.revision,
+          turnId: admitted.message.turnId,
+          runId: admitted.message.runId,
+          idempotencyKey: `thread-pagination-commit-${index}`,
+          contentRef: "payload-agent-message",
+          dataClassification: "private",
+          resultRef: "payload-result-commit",
+        });
+        await threads.projectSearch({
+          ownerId,
+          agentId,
+          threadId,
+          messageId: committed.message.id,
+          sequence: committed.message.sequence,
+          dataClassification: "private",
+          tokenRefs: ["search-token:pagination"],
+          projectionVersion: "projection-pagination-v1",
+        });
+      }
+      for (const [pinOrder, threadId] of [threadIds[4], threadIds[1]].entries()) {
+        if (!threadId) throw new Error("Thread pagination pin fixture is incomplete");
+        await commands.pin({
+          ownerId,
+          agentId,
+          threadId,
+          expectedRevision: 3,
+          pinOrder,
+          idempotencyKey: `thread-pagination-pin-${pinOrder}`,
+          resultRef: "payload-result-pin",
+        });
+      }
+      const archivedId = threadIds[3];
+      if (!archivedId) throw new Error("Thread pagination archive fixture is incomplete");
+      await commands.setLifecycle({
+        ownerId,
+        agentId,
+        threadId: archivedId,
+        expectedRevision: 3,
+        status: "archived",
+        idempotencyKey: "thread-pagination-archive",
+        resultRef: "payload-result-archive",
+      });
+
+      const query = new ThreadQueryService(threads);
+      const listedIds = [];
+      let listCursor = null;
+      do {
+        const page = await query.list({
+          ownerId,
+          agentId,
+          statuses: ["active", "archived"],
+          afterThreadId: listCursor,
+          limit: 2,
+        });
+        listedIds.push(...page.map(({ id }) => id));
+        listCursor = page.length === 2 ? (page.at(-1)?.id ?? null) : null;
+      } while (listCursor !== null);
+      expect(listedIds).toEqual([
+        threadIds[4],
+        threadIds[1],
+        threadIds[0],
+        threadIds[2],
+        threadIds[3],
+        threadIds[5],
+      ]);
+
+      const searchedIds = [];
+      let searchCursor = null;
+      do {
+        const page = await query.search({
+          ownerId,
+          agentId,
+          tokenRefs: ["search-token:pagination"],
+          projectionVersion: "projection-pagination-v1",
+          statuses: ["active", "archived"],
+          afterThreadId: searchCursor,
+          limit: 2,
+        });
+        searchedIds.push(...page.map(({ id }) => id));
+        searchCursor = page.length === 2 ? (page.at(-1)?.id ?? null) : null;
+      } while (searchCursor !== null);
+      expect(searchedIds).toEqual(threadIds);
+      await expect(
+        query.list({
+          ownerId,
+          agentId,
+          afterThreadId: createThreadId("thread-pagination-missing"),
+          limit: 2,
+        }),
+      ).rejects.toThrow(/cursor.*unavailable/i);
+    } finally {
+      await repository.close();
+    }
   });
 });

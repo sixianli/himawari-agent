@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  AgentThreadGatewayService,
   ProductThreadGatewayAdapter,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
@@ -264,5 +265,103 @@ describe("Thread Gateway control-center adapter", () => {
     expect((await restartedIterator.next()).value?.payload.cursor).toBe("thread-cursor:2");
     await restartedIterator.return?.();
     await repository.close();
+  });
+
+  it("recovers one authoritative Thread state and cursor stream across two authorized devices", async () => {
+    const paths = await seedState();
+    const clock = new ManualClock("2026-08-28T00:00:00.000Z");
+    const repository = await SqliteProductStateRepository.open({
+      ...paths,
+      minimumFreeBytes: 0,
+      now: () => clock.now(),
+    });
+    try {
+      const product = adapter(repository, clock);
+      const allowedDevices = new Set(["device-thread-a", "device-thread-b"]);
+      const gateway = new AgentThreadGatewayService({
+        access: {
+          async authorize({ authentication: context }) {
+            const allowed = allowedDevices.has(context.deviceId);
+            return {
+              allowed,
+              reasonCode: allowed ? "OWNER_DEVICE_AUTHORIZED" : "DEVICE_NOT_AUTHORIZED",
+            };
+          },
+        },
+        controlPlane: product,
+        reads: product,
+      });
+      const deviceA = { ...authentication, deviceId: "device-thread-a" };
+      const deviceB = {
+        ...authentication,
+        deviceId: "device-thread-b",
+        authenticationRef: "session-thread-gateway-b",
+      };
+      const unauthorizedDevice = {
+        ...authentication,
+        deviceId: "device-thread-c",
+        authenticationRef: "session-thread-gateway-c",
+      };
+
+      await expect(
+        gateway.request(
+          deviceA,
+          command("thread.create", {
+            threadId: "thread-gateway-01",
+            answerLocale: "zh-CN",
+            resultRef: "payload:create",
+          }),
+        ),
+      ).resolves.toMatchObject({ payload: { threadRevision: 1 } });
+      await expect(
+        gateway.request(
+          deviceB,
+          command("thread.pin", {
+            threadId: "thread-gateway-01",
+            expectedRevision: 1,
+            pinOrder: 0,
+            resultRef: "payload:pin",
+          }),
+        ),
+      ).resolves.toMatchObject({ payload: { threadRevision: 2 } });
+
+      const listQuery = query("thread.list", {
+        statuses: ["active"],
+        pinnedOnly: false,
+        afterCursor: null,
+        limit: 10,
+      });
+      const [snapshotA, snapshotB] = await Promise.all([
+        gateway.request(deviceA, listQuery),
+        gateway.request(deviceB, listQuery),
+      ]);
+      expect(snapshotA).toEqual(snapshotB);
+      expect(snapshotA).toMatchObject({
+        payload: { threads: [{ threadId: "thread-gateway-01", revision: 2, pinOrder: 0 }] },
+      });
+      await expect(gateway.request(unauthorizedDevice, listQuery)).rejects.toThrow(
+        /device is not authorized/i,
+      );
+
+      async function firstTwoCursors(context: GatewayAuthenticationContext) {
+        const iterator = gateway.subscribe(context, subscription(null))[Symbol.asyncIterator]();
+        try {
+          return [
+            (await iterator.next()).value?.payload.cursor,
+            (await iterator.next()).value?.payload.cursor,
+          ];
+        } finally {
+          await iterator.return?.();
+        }
+      }
+      const [cursorsA, cursorsB] = await Promise.all([
+        firstTwoCursors(deviceA),
+        firstTwoCursors(deviceB),
+      ]);
+      expect(cursorsA).toEqual(["thread-cursor:1", "thread-cursor:2"]);
+      expect(cursorsB).toEqual(cursorsA);
+    } finally {
+      await repository.close();
+    }
   });
 });

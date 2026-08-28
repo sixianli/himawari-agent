@@ -336,6 +336,54 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     );
   });
 
+  it("rebuilds Pi Session projections without changing durable product identities", async () => {
+    const projection = new RecordingProjection({
+      ...DEFAULT_CONTEXT,
+      compaction: {
+        summary: "The earlier request was answered.",
+        firstKeptMessageId: "message-history-assistant-task-11",
+        tokensBefore: 91,
+      },
+    });
+    const observedOptions: FakeSessionOptions[] = [];
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => emit({ type: "agent_settled" }), observedOptions),
+    );
+
+    const firstEvents = await collect(adapter.run(request));
+    const secondEvents = await collect(adapter.run(request));
+    expect(firstEvents.at(-1)).toMatchObject({ type: "runtime.completed", runId: request.runId });
+    expect(secondEvents.at(-1)).toEqual(firstEvents.at(-1));
+    expect(observedOptions).toHaveLength(2);
+    expect(observedOptions.map(({ sessionManager }) => sessionManager?.getSessionId?.())).toEqual([
+      request.sessionId,
+      request.sessionId,
+    ]);
+
+    const durableSemantics = (options: FakeSessionOptions) =>
+      options.sessionManager?.getEntries?.().map((rawEntry) => {
+        const entry = rawEntry as {
+          readonly type: string;
+          readonly message?: { readonly role?: string; readonly content?: unknown };
+          readonly summary?: string;
+          readonly tokensBefore?: number;
+        };
+        return entry.type === "message"
+          ? { type: entry.type, role: entry.message?.role, content: entry.message?.content }
+          : { type: entry.type, summary: entry.summary, tokensBefore: entry.tokensBefore };
+      });
+    expect(durableSemantics(observedOptions[1] ?? {})).toEqual(
+      durableSemantics(observedOptions[0] ?? {}),
+    );
+    expect(request).toMatchObject({
+      threadId: "thread-task-11",
+      runId: "run-task-11",
+      sessionId: "session-task-11",
+    });
+  });
+
   it("rejects tool calls projected as user content instead of silently dropping them", async () => {
     const projection = new RecordingProjection({
       ...DEFAULT_CONTEXT,

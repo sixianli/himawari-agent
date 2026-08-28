@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "sourcePlan": "docs/execution/plans/2026-08-26-owner-thread-conversation-plan.md",
+  "scopeTask": "S2-T12",
+  "journeys": [
+    {
+      "id": "J01",
+      "acceptanceIds": ["S2-A01"],
+      "status": "s2_local_complete",
+      "globalStatus": "partial",
+      "claims": [
+        "owner_identity_and_mfa_assertion",
+        "conversation_identity",
+        "sse_cursor_resume",
+        "normal_restart_readback",
+        "trace_and_inbox_causality"
+      ],
+      "testSources": [
+        "test/integration/identity-persistence.test.ts",
+        "test/integration/thread-gateway-control-center.test.ts",
+        "test/integration/session-trace.test.ts",
+        "test/e2e/beef-restaurant.test.ts"
+      ],
+      "qualificationEvidence": [
+        "test/integration/qualification/evidence/s2-task11-thread-control-center-recovery.json",
+        "test/integration/qualification/evidence/s3-task6-thread-conversation.json"
+      ],
+      "remainingGlobalQualification": [
+        "真实外部身份提供方 MFA 和物理设备 readback 属于 S1/S3/S9，不由 S2 本地 fixture 代替"
+      ]
+    },
+    {
+      "id": "J02",
+      "acceptanceIds": ["S2-A02", "S2-A03", "S2-A04", "S2-A05"],
+      "status": "s2_local_complete",
+      "globalStatus": "partial",
+      "claims": [
+        "ui_and_answer_locale_independence",
+        "search_and_fork_snapshot",
+        "compaction_provenance_and_watermark",
+        "source_and_task_retention",
+        "pi_session_rebuild"
+      ],
+      "testSources": [
+        "test/integration/thread-lifecycle.test.ts",
+        "test/integration/thread-checkpoint-distillation.test.ts",
+        "test/integration/context-formation.test.ts",
+        "packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts"
+      ],
+      "qualificationEvidence": [
+        "test/integration/qualification/evidence/s2-task11-thread-control-center-recovery.json",
+        "test/integration/qualification/evidence/s3-task6-thread-conversation.json"
+      ],
+      "remainingGlobalQualification": ["最终生产 runtime composition 与物理设备矩阵仍由 S4/S9 验收"]
+    },
+    {
+      "id": "J03",
+      "acceptanceIds": ["S2-A04", "S2-A05"],
+      "status": "s2_local_complete",
+      "globalStatus": "partial",
+      "claims": [
+        "automatic_and_sensitive_memory",
+        "per_item_approval",
+        "cross_thread_minimal_retrieval",
+        "correction_delete_no_resurrection"
+      ],
+      "testSources": [
+        "test/integration/automatic-memory-golden.test.ts",
+        "test/integration/durable-memory-projection.test.ts",
+        "test/integration/context-formation.test.ts",
+        "test/e2e/beef-restaurant.test.ts"
+      ],
+      "qualificationEvidence": [
+        "test/integration/qualification/evidence/s1-task15-control-center.json",
+        "test/integration/qualification/evidence/s1-task18-automatic-memory.json"
+      ],
+      "remainingGlobalQualification": ["S0 只在所有跨切片和目标平台 journey 都通过后关闭 J03"]
+    },
+    {
+      "id": "J13",
+      "acceptanceIds": ["S2-A03", "S2-A05"],
+      "status": "s2_local_complete",
+      "globalStatus": "partial",
+      "claims": [
+        "active_task_resolution",
+        "trash_immediate_invisibility",
+        "cascade_and_minimal_tombstone",
+        "restart_no_resurrection",
+        "retention_deadline_purge"
+      ],
+      "testSources": [
+        "test/integration/thread-deletion-coordination.test.ts",
+        "test/integration/sqlite-governed-deletion.test.ts",
+        "test/integration/durable-memory-projection.test.ts",
+        "test/integration/session-trace.test.ts"
+      ],
+      "qualificationEvidence": [
+        "test/integration/qualification/evidence/s2-task10-thread-deletion-coordination.json",
+        "test/integration/qualification/evidence/s2-task11-thread-control-center-recovery.json",
+        "test/integration/qualification/evidence/s1-task25-deletion-observability-security.json"
+      ],
+      "remainingGlobalQualification": [
+        "J13 的全部外部 provider/session/Worker 目标与迁移包验证仍由各主责切片和 S0 汇总"
+      ]
+    }
+  ]
+}
