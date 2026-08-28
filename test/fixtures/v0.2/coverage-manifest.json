@@ -657,7 +657,7 @@
           "label": "行动分类与风险",
           "planTasks": "Tasks 2–3、12",
           "planEvidence": "table-driven、negative contracts、Trace",
-          "planStatus": "待实施",
+          "planStatus": "Tasks 2–3 本地完成；待 Task 12 收口",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -670,7 +670,7 @@
           "label": "授权结果与 Grant",
           "planTasks": "Tasks 4–5、11–12",
           "planEvidence": "hash/expiry/CAS/revoke/browser",
-          "planStatus": "待实施",
+          "planStatus": "Tasks 4–5 本地完成；待 UI/Task 12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -683,7 +683,7 @@
           "label": "能力生命周期",
           "planTasks": "Tasks 6–7、9–12",
           "planEvidence": "lifecycle/update/Handle/platform recovery",
-          "planStatus": "待实施",
+          "planStatus": "Tasks 6–7 本地完成；待 runtime/update/收口",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -696,7 +696,7 @@
           "label": "统一能力类型",
           "planTasks": "Tasks 8–10、12",
           "planEvidence": "Tool/Skill/MCP/program/API/adapter conformance",
-          "planStatus": "待实施",
+          "planStatus": "Task 8 contract 完成；待 Tasks 9–10、12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",

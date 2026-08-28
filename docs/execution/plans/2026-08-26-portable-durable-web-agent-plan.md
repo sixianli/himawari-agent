@@ -418,10 +418,13 @@ GitHub App integration 现在只暴露 read-oriented permission manifest、host 
 - [x] 服务离线时不 polling、不 reconciliation、不 history scan；恢复只记录 coverage gap 起止和可能遗漏说明。
 - [x] 在线已接纳事件在预算不足时进入有界 `BUDGET_BLOCKED`；普通完成结果进入持久 Web inbox，并保留仓库、事件、模型、授权和 Trace 来源。
 - [x] 服务端 `github.monitor.set_state` 命令以 CAS 更新 monitor，并在撤销时先停止读取、取消对应 scheduler job、删除 mirror/cache，再调用 Owner 选择的历史策略端口；命令只携带 references，不携带 GitHub secret。
-- [ ] 将撤销后的历史摘要、Trace、任务和其他持久记录接入真实删除/保留适配器，并在最终生产组合中完成策略端口的 durable retry/readback。
+- [x] 将撤销后的历史摘要、Trace、任务和其他持久记录接入真实 SQLite 删除/保留适配器，并完成策略端口的 durable retry/readback。
+- [ ] 在 Tasks 27–30 的最终 Agent Service/Gateway 总组合中实例化 monitor control、mirror 与 SQLite history policy adapter；该总组合门不属于本次本地 adapter 收口。
 - [x] 断言初始能力无法 push、comment、merge、dispatch workflow、创建 deployment 或访问 Git credential。
 
-只读 mirror 使用 bounded、content-addressed、owner-only、symlink-safe cache；事件完整进入 model relevance 与 Attention，离线只形成 coverage gap，预算不足形成 `BUDGET_BLOCKED`，正常结果沿用 Web inbox。控制中心现在展示 primary model/ref、仓库范围、分类和机器秘密排除确认，并通过 `gateway.v2` 的 `github.monitor.set_state` 命令提交 enable/pause/revoke；服务端按 Owner/Agent scope、安装状态、CAS revision、primary model、repository 和允许分类再次校验，撤销先把 monitor 置为 revoked，再同步 scheduler、清理 mirror 并调用显式 retain/delete history policy port。当前仍未完成真实生产 Gateway 组合、历史摘要/Trace/task 的 durable policy adapter、GitHub App 权限 readback、外部 webhook、线上模型和真实账号授权；证据位于 `test/integration/qualification/evidence/s1-task22-github-read-only-monitor.json`。
+只读 mirror 使用 bounded、content-addressed、owner-only、symlink-safe cache；事件完整进入 model relevance 与 Attention，离线只形成 coverage gap，预算不足形成 `BUDGET_BLOCKED`，正常结果沿用 Web inbox。控制中心现在展示 primary model/ref、仓库范围、分类和机器秘密排除确认，并通过 `gateway.v2` 的 `github.monitor.set_state` 命令提交 enable/pause/revoke；服务端按 Owner/Agent scope、安装状态、CAS revision、primary model、repository 和允许分类再次校验，撤销先把 monitor 置为 revoked，再同步 scheduler、清理 mirror 并调用显式 retain/delete history policy port。
+
+SQLite 现新增 monitor-scoped retain/delete 状态机：每次操作保存不可变 policy、monitor revision、Owner subject、attempt、稳定终态和错误码；进程中断把 `running` 恢复为 `retry_wait`。delete 在事务内删除 monitor webhook receipt、coverage gap、scheduler task、关联 Run/Trace/Inbox/Approval、引用这些 Run 的 distillation summary/candidate、projection/outbox 正文和未再引用的 Payload；外部 ciphertext file 在受限根内单独安全删除，失败保持可重试，成功再写 completed readback。`SqliteProductStateRepository.githubMonitorHistoryPolicy()` 提供生产适配器组合点，retain 不删除历史。当前仍未完成 Tasks 27–30 的最终 Agent Service/Gateway 总组合、GitHub App 权限 readback、外部 webhook、线上模型和真实账号授权；证据位于 `test/integration/qualification/evidence/s1-task22-github-read-only-monitor.json`。
 
 ### Task 23：实现同机 snapshot、验证与恢复 CLI
 

@@ -30,6 +30,7 @@ import type {
   SensitiveMemoryApprovalStatePort,
   ThreadDistillationStatePort,
   GitHubIntegrationStatePort,
+  DurableGitHubMonitorHistoryPolicyPort,
 } from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
@@ -59,6 +60,7 @@ import {
 } from "./sqlite-execution-context.js";
 import { SQLITE_PERSISTENCE_ERROR_CODES, SqlitePersistenceError } from "./state-root-lock.js";
 import { acquireStateRootLock, type StateRootLock } from "./state-root-lock.js";
+import { SqliteGitHubMonitorHistoryPolicyAdapter } from "./sqlite-github-history-policy.js";
 
 export interface SqliteProductStateRepositoryOptions {
   readonly stateRoot: string;
@@ -116,6 +118,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
   private readonly lock: StateRootLock;
   private readonly now: () => string;
   private readonly durable: SqliteDurableAdapters;
+  private readonly githubHistory: DurableGitHubMonitorHistoryPolicyPort;
   private closed = false;
   private queuedWriters = 0;
   private maxObservedQueuedWriters = 0;
@@ -135,6 +138,13 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     this.durable = new SqliteDurableAdapters({
       read: (operation, payload) => this.context.request(operation, payload),
       write: (operation, payload) => this.writeRequest(operation, payload),
+    });
+    this.githubHistory = new SqliteGitHubMonitorHistoryPolicyAdapter({
+      stateRoot: this.stateRoot,
+      context: {
+        read: (operation, payload) => this.context.request(operation, payload),
+        write: (operation, payload) => this.writeRequest(operation, payload),
+      },
     });
   }
 
@@ -339,6 +349,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   githubIntegrationState(): GitHubIntegrationStatePort {
     return this.durable.githubIntegrationState();
+  }
+
+  githubMonitorHistoryPolicy(): DurableGitHubMonitorHistoryPolicyPort {
+    return this.githubHistory;
   }
 
   gatewayReadModel(): SqliteGatewayReadModel {

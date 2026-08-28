@@ -42,6 +42,7 @@ function fnv1a(value: string): string {
 }
 
 export function actionIntentFingerprint(intent: ActionIntent): string {
+  const governed = intent as Partial<import("../ports/authorization.js").GovernedActionIntent>;
   return fnv1a(
     JSON.stringify({
       id: intent.id,
@@ -58,6 +59,23 @@ export function actionIntentFingerprint(intent: ActionIntent): string {
       idempotencyKey: intent.idempotencyKey,
       reversible: intent.reversible,
       requestedAt: intent.requestedAt,
+      ...(governed.contractVersion === "authorization.v2"
+        ? {
+            contractVersion: governed.contractVersion,
+            threadId: governed.threadId,
+            actionKind: governed.actionKind,
+            capabilityVersion: governed.capabilityVersion,
+            targets: governed.targets,
+            resourceRefs: governed.resourceRefs,
+            disclosure: governed.disclosure,
+            recipients: governed.recipients,
+            credentialOrAccessChange: governed.credentialOrAccessChange,
+            expiresAt: governed.expiresAt,
+            modelClassification: governed.modelClassification,
+            deterministicFacts: governed.deterministicFacts,
+            finalRisk: governed.finalRisk,
+          }
+        : {}),
     }),
   );
 }

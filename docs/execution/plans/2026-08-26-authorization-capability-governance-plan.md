@@ -89,68 +89,84 @@ date: "2026-08-26"
 
 ### Task 1：盘点 Foundation 差距与建立 S4 acceptance 映射
 
-- [ ] 逐项读取现有 ActionIntent、PermissionPolicyRule、GrantRecord、CapabilityDescriptor、Handle 和相关 tests，记录 confirmed/partial/missing。
-- [ ] 将 S4-A01 行动分类风险、S4-A02 授权/Grant、S4-A03 能力生命周期、S4-A04 统一能力类型绑定本 Plan tasks/evidence。
-- [ ] 保存现有 permission-grants、capability-execution、failure-recovery 和 Trace 基线。
-- [ ] 明确兼容升级与需要新 contract version 的边界，不把已有类型名称当作 v0.2 已完成证据。
+- [x] 逐项读取现有 ActionIntent、PermissionPolicyRule、GrantRecord、CapabilityDescriptor、Handle 和相关 tests，记录 confirmed/partial/missing。
+- [x] 将 S4-A01 行动分类风险、S4-A02 授权/Grant、S4-A03 能力生命周期、S4-A04 统一能力类型绑定本 Plan tasks/evidence。
+- [x] 保存现有 permission-grants、capability-execution、failure-recovery 和 Trace 基线。
+- [x] 明确兼容升级与需要新 contract version 的边界，不把已有类型名称当作 v0.2 已完成证据。
+
+Foundation 盘点确认 `ActionIntent`、`PermissionService`、Grant、Capability Registry/Handle 和 SQLite stores 可作为 `execution.v1` 兼容层；v0.2 使用显式 `authorization.v2`、`capability.v2` 与 `capability-handle.v2`，避免把旧类型名称当作完整实现。基线的 permission-grants、capability-execution、failure-recovery 与 SQLite conformance 均保留并重跑。
 
 ### Task 2：冻结固定 ActionKind 与 ActionIntent
 
-- [ ] 为 READ、CREATE_OR_UPDATE、DELETE、COMMUNICATE、PURCHASE_OR_FUNDS、CREDENTIAL_OR_ACCESS、PRODUCTION_OR_RECOVERY、PUBLICATION、LEGAL_COMMITMENT、PHYSICAL_SAFETY、INSTALL_OR_EXECUTE_CODE 建立严格枚举和 fixtures。
-- [ ] 扩展不可变 ActionIntent，覆盖 operation、targets/resources、classification/disclosure、side effects、recipients、cost/frequency、credential/access、reversibility 和 idempotency。
-- [ ] 保存 model classification、deterministic policy facts 和 final risk；final risk 取最高值。
-- [ ] 未知 kind、缺字段、自由参数注入、跨 scope 和 canonical hash 不稳定必须不可执行。
-- [ ] 对现有 gateway/execution compatibility 做 versioned contract tests。
+- [x] 为 READ、CREATE_OR_UPDATE、DELETE、COMMUNICATE、PURCHASE_OR_FUNDS、CREDENTIAL_OR_ACCESS、PRODUCTION_OR_RECOVERY、PUBLICATION、LEGAL_COMMITMENT、PHYSICAL_SAFETY、INSTALL_OR_EXECUTE_CODE 建立严格枚举和 fixtures。
+- [x] 扩展不可变 ActionIntent，覆盖 operation、targets/resources、classification/disclosure、side effects、recipients、cost/frequency、credential/access、reversibility 和 idempotency。
+- [x] 保存 model classification、deterministic policy facts 和 final risk；final risk 取最高值。
+- [x] 未知 kind、缺字段、自由参数注入、跨 scope 和 canonical hash 不稳定必须不可执行。
+- [x] 对现有 gateway/execution compatibility 做 versioned contract tests。
+
+新增固定 11 类 `ActionKind`、四级风险、严格字段/未知参数校验、不可变快照与包含 v0.2 全部语义的 canonical fingerprint。`assessActionIntentCompleteness()` 在目标、资源、能力、频率、费用、披露或收件人不足时返回同步 clarification 字段，不签发可执行语义。
 
 ### Task 3：实现 deterministic risk 与 ALLOW/ASK/DENY
 
-- [ ] 先建立 ActionKind baseline、CRITICAL facts、risk raising 和模型不得降低的 table-driven suite。
-- [ ] 按 capability active/healthy、operation、resource/data/secret scope、deterministic deny、risk floor、Grant/预算顺序实现 policy。
-- [ ] 只有范围有界、只读、无新披露/收件人/敏感数据/凭据变化且费用在限额内的 READ 可长期自动允许。
-- [ ] 任何 store、clock、secret/handle、scope 或 policy error fail closed，并保留外部真实结果。
-- [ ] Trace 记录输入 facts、规则版本、模型建议、最终风险和结果，不记录 secret 原值。
+- [x] 先建立 ActionKind baseline、CRITICAL facts、risk raising 和模型不得降低的 table-driven suite。
+- [x] 按 capability active/healthy、operation、resource/data/secret scope、deterministic deny、risk floor、Grant/预算顺序实现 policy。
+- [x] 只有范围有界、只读、无新披露/收件人/敏感数据/凭据变化且费用在限额内的 READ 可长期自动允许。
+- [x] 任何 store、clock、secret/handle、scope 或 policy error fail closed，并保留外部真实结果。
+- [x] Trace 记录输入 facts、规则版本、模型建议、最终风险和结果，不记录 secret 原值。
+
+`ActionPolicyService` 按 active/healthy、version/operation/data scope、deterministic DENY、risk floor、Grant、有限只读 policy ALLOW 顺序决策；异常统一 fail closed。Trace 端口只记录规则版本、fact code、模型建议风险、最终风险和决定，不接收 secret 原值。
 
 ### Task 4：实现自然语言授权与冻结 Approval
 
-- [ ] 为目标、范围、能力、频率、费用、披露和收件人中适用字段定义 completeness contract。
-- [ ] 缺必要字段时形成同步 clarification，不生成可执行 Handle。
-- [ ] Approval Request 保存 ActionIntent canonical hash、expiry、risk、snapshot 和 recent-auth 要求。
-- [ ] Owner 只可批准、拒绝或在允许时缩小范围；语义扩大创建新 Intent/Approval。
-- [ ] 重复响应、hash mismatch、expired/rejected 和无 UI ASK 不得变成 ALLOW。
+- [x] 为目标、范围、能力、频率、费用、披露和收件人中适用字段定义 completeness contract。
+- [x] 缺必要字段时形成同步 clarification，不生成可执行 Handle。
+- [x] Approval Request 保存 ActionIntent canonical hash、expiry、risk、snapshot 和 recent-auth 要求。
+- [x] Owner 只可批准、拒绝或在允许时缩小范围；语义扩大创建新 Intent/Approval。
+- [x] 重复响应、hash mismatch、expired/rejected 和无 UI ASK 不得变成 ALLOW。
+
+`ApprovalService` 校验冻结 hash、revision、expiry、范围不扩张和 CRITICAL recent-auth；无 UI 继续保存 `queued_no_ui` ASK。recent-auth reference 随最终审批记录持久化，重复、过期、拒绝和 hash 不匹配均不能形成 ALLOW。
 
 ### Task 5：实现持久 Grant 与原子消耗
 
-- [ ] 实现一次性 intent-hash Grant 和有界长期 Grant schema。
-- [ ] 保存 capability/version、operations、resource identities/prefixes、classification/disclosure、side effects、recipients、费用、频率、次数、expiry、Approval 和 revision。
-- [ ] 使用 SQLite transaction/CAS 原子消耗次数和预算，与授权结果、Run/Trace/outbox 保持因果一致。
-- [ ] 缩小范围匹配、扩大重新 ASK、过期、撤销、并发消耗和重启全部可恢复。
-- [ ] 禁止 whole home、所有账户/收件人、未知未来 operation 等无界通配。
+- [x] 实现一次性 intent-hash Grant 和有界长期 Grant schema。
+- [x] 保存 capability/version、operations、resource identities/prefixes、classification/disclosure、side effects、recipients、费用、频率、次数、expiry、Approval 和 revision。
+- [x] 使用 SQLite transaction/CAS 原子消耗次数和预算，与授权结果、Run/Trace/outbox 保持因果一致。
+- [x] 缩小范围匹配、扩大重新 ASK、过期、撤销、并发消耗和重启全部可恢复。
+- [x] 禁止 whole home、所有账户/收件人、未知未来 operation 等无界通配。
+
+`GrantService` 生成一次性 intent-hash Grant 和只允许有界安全 READ 的长期 Grant，拒绝 whole-home、全账户、全收件人和未知 operation 通配。SQLite 在同一事务内以 revision CAS 消耗 Grant、写入稳定 `authorization_usage`，同一 usage identity 重试只记一次。
 
 ### Task 6：实现 Capability Manifest 与持久生命周期
 
-- [ ] 规范化 stable ID、type、source、artifact digest/signature、version、operations、permissions、data/network/file/secret scopes、isolation、cost、health 和 approval history。
-- [ ] 实现 discovered→review_required→installation_proposed→installation_approved→active→disabled/uninstalled/revoked。
-- [ ] 未审查/未批准能力不能进入 active、Pi tool list、Worker registry、Web execution control 或后台 Task。
-- [ ] active/disabled/revoked transition 与 dependent task/Handle invalidation 原子可观察。
-- [ ] 外部 manifest、Skill 指令或 MCP declaration 只作为不可信输入，不能自证来源或修改 trust root。
+- [x] 规范化 stable ID、type、source、artifact digest/signature、version、operations、permissions、data/network/file/secret scopes、isolation、cost、health 和 approval history。
+- [x] 实现 discovered→review_required→installation_proposed→installation_approved→active→disabled/uninstalled/revoked。
+- [x] 未审查/未批准能力不能进入 active、Pi tool list、Worker registry、Web execution control 或后台 Task。
+- [x] active/disabled/revoked transition 与 dependent task/Handle invalidation 原子可观察。
+- [x] 外部 manifest、Skill 指令或 MCP declaration 只作为不可信输入，不能自证来源或修改 trust root。
+
+`CapabilityLifecycleService` 引入来源审查门和完整 manifest；未审查、未批准或不健康能力不能 active。SQLite 的 `invalidateCapabilityAuthority` 在同一事务内保存 disabled/revoked/uninstalled、撤销活动 Handle，并撤销引用该 capability 的持久任务。
 
 ### Task 7：实现短期 CapabilityExecutionHandle
 
-- [ ] Handle 绑定 Owner/Agent/Run、当前 authority fence、capability/version、operation、input/context/secret refs、classification、deadline 和 authorization。
-- [ ] Worker 每次调用前重新验证 active version、Grant、expiry、scope、budget 和 fence。
-- [ ] Handle 单次/有界使用，撤销、停用、版本切换、deadline 或 Worker 结束立即失效。
-- [ ] 结果 unknown 进入 reconcile；有副作用 operation 不盲目重试。
-- [ ] 对 stale/replayed/forged Handle、duplicate result 和 authority transfer 运行 contract/recovery tests。
+- [x] Handle 绑定 Owner/Agent/Run、当前 authority fence、capability/version、operation、input/context/secret refs、classification、deadline 和 authorization。
+- [x] Worker 每次调用前重新验证 active version、Grant、expiry、scope、budget 和 fence。
+- [x] Handle 单次/有界使用，撤销、停用、版本切换、deadline 或 Worker 结束立即失效。
+- [x] 结果 unknown 进入 reconcile；有副作用 operation 不盲目重试。
+- [x] 对 stale/replayed/forged Handle、duplicate result 和 authority transfer 运行 contract/recovery tests。
+
+`CapabilityHandleService` 签发绑定 Owner/Agent/Run、authority fence、version、operation、protected refs、classification、authorization、deadline、次数和费用的短期 Handle；内存与 SQLite store 都提供 revision/fence/幂等原子消耗。`ExecutionWorkerService` 对 v0.2 Handle 重新读取 active version 和 Grant，并在调用 adapter 前拒绝 stale fence、过期、撤销或越界请求；未知外部结果继续沿用既有 reconcile 语义。
 
 ### Task 8：建立统一 capability conformance
 
-- [ ] 为 Tool、Skill、MCP、本地 program、第三方 API 和 adapter 建立相同 manifest、authorization、secret、budget、revoke、health、Trace 和 result suite。
-- [ ] Skill/网页/外部资源指令不能修改 policy、Grant、manifest 或 trust root。
-- [ ] runtime 只通过 `DefaultResourceLoader` additional paths 加载已授权资源；不得复制 Pi discovery/resource protocol。
-- [ ] MCP 只暴露 manifest 映射且批准的 tools/resources/prompts，server identity/transport/scope 变化按 update 处理。
-- [ ] 本地 program 强制 argv/env/workdir/stdin/stdout/network/filesystem contract，未声明子进程/联网/path/secret fail closed。
-- [ ] API/adapter 只接收最小 Handle 与 protected refs，不接收产品 store 写权限。
-- [ ] 文件与命令类能力复用 Pi read/bash/edit/write/grep/find/ls ToolDefinition，并以受治理 Operations 通过同一 conformance。
+- [x] 为 Tool、Skill、MCP、本地 program、第三方 API 和 adapter 建立相同 manifest、authorization、secret、budget、revoke、health、Trace 和 result suite。
+- [x] Skill/网页/外部资源指令不能修改 policy、Grant、manifest 或 trust root。
+- [x] runtime 只通过 `DefaultResourceLoader` additional paths 加载已授权资源；不得复制 Pi discovery/resource protocol。
+- [x] MCP 只暴露 manifest 映射且批准的 tools/resources/prompts，server identity/transport/scope 变化按 update 处理。
+- [x] 本地 program 强制 argv/env/workdir/stdin/stdout/network/filesystem contract，未声明子进程/联网/path/secret fail closed。
+- [x] API/adapter 只接收最小 Handle 与 protected refs，不接收产品 store 写权限。
+- [x] 文件与命令类能力复用 Pi read/bash/edit/write/grep/find/ls ToolDefinition，并以受治理 Operations 通过同一 conformance。
+
+Tool、Skill、MCP、program、remote API 与 adapter 现在共用 `CapabilityManifest`、source identity、artifact/signature、scope、cost、health、review 和 isolation contract。program 强制声明 argv/env/workdir/stdin/stdout/subprocess/network/filesystem；MCP 强制 identity/transport/mapped resources；API/adapter 只接收 protected references。Pi 文件/命令 Tool 继续复用现有 `createRead/Bash/Edit/Write/Grep/Find/LsToolDefinition`，Extension/Skill/prompt 继续只通过 `DefaultResourceLoader` additional paths 投影；没有复制 Pi discovery 或工具协议。实际 sandbox/MCP/program runtime adapter 仍属于 Task 9，未在本任务中安装或启用。
 
 ### Task 9：资格验证并实现隔离与 runtime adapters
 
@@ -188,10 +204,10 @@ date: "2026-08-26"
 
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| S4-A01 | 行动分类与风险 | Tasks 2–3、12 | table-driven、negative contracts、Trace | 待实施 |
-| S4-A02 | 授权结果与 Grant | Tasks 4–5、11–12 | hash/expiry/CAS/revoke/browser | 待实施 |
-| S4-A03 | 能力生命周期 | Tasks 6–7、9–12 | lifecycle/update/Handle/platform recovery | 待实施 |
-| S4-A04 | 统一能力类型 | Tasks 8–10、12 | Tool/Skill/MCP/program/API/adapter conformance | 待实施 |
+| S4-A01 | 行动分类与风险 | Tasks 2–3、12 | table-driven、negative contracts、Trace | Tasks 2–3 本地完成；待 Task 12 收口 |
+| S4-A02 | 授权结果与 Grant | Tasks 4–5、11–12 | hash/expiry/CAS/revoke/browser | Tasks 4–5 本地完成；待 UI/Task 12 |
+| S4-A03 | 能力生命周期 | Tasks 6–7、9–12 | lifecycle/update/Handle/platform recovery | Tasks 6–7 本地完成；待 runtime/update/收口 |
+| S4-A04 | 统一能力类型 | Tasks 8–10、12 | Tool/Skill/MCP/program/API/adapter conformance | Task 8 contract 完成；待 Tasks 9–10、12 |
 
 ## 验证
 

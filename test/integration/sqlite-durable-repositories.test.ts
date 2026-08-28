@@ -4,6 +4,8 @@ import path from "node:path";
 import type {
   CapabilityExecutionHandleStorePort,
   CapabilityRegistryStorePort,
+  GovernedCapabilityExecutionHandle,
+  GovernedGrantRecord,
   ReliableEventRecord,
   ReliableEventSinkPort,
   SessionDeletionRecord,
@@ -205,6 +207,211 @@ attentionStatePortConformance({
 });
 
 describe("SQLite durable repository adapters", () => {
+  it("atomically persists idempotent Grant and fenced Handle consumption", async () => {
+    const resource = await openRepository();
+    const authorization = resource.repository.authorizationStore();
+    const action = {
+      id: "intent-governed-sqlite",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      capabilityRef: "capability-governed-sqlite",
+      operation: "read",
+      resourceRef: "repo:approved/project",
+      dataClassification: "private" as const,
+      sideEffect: "none" as const,
+      estimatedCostMicros: 10,
+      frequency: { count: 1, intervalMs: null },
+      idempotencyKey: createIdempotencyKey("intent-governed-sqlite"),
+      reversible: true,
+      requestedAt: T0,
+    };
+    await authorization.createApproval({
+      id: "approval-governed-sqlite",
+      revision: 1,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      intentId: action.id,
+      intentSnapshot: action,
+      semanticSnapshotHash: "hash-governed-sqlite",
+      status: "pending",
+      deliveryState: "deliverable",
+      requestedAt: T0,
+      expiresAt: T2,
+      decidedAt: null,
+      grantId: null,
+    });
+    const grant: GovernedGrantRecord = {
+      id: "grant-governed-sqlite",
+      revision: 1,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      kind: "one_time",
+      scope: {
+        capabilityRef: action.capabilityRef,
+        capabilityVersion: "1.0.0",
+        operations: [action.operation],
+        exactResourceRef: action.resourceRef,
+        resourceIdentities: [action.resourceRef],
+        resourcePrefixes: [],
+        maxDataClassification: "private",
+        disclosure: "none",
+        sideEffects: ["none"],
+        recipients: [],
+        credentialOrAccessChange: false,
+        maxCostMicrosPerUse: 10,
+        maxFrequency: action.frequency,
+      },
+      intentFingerprint: "fingerprint-governed-sqlite",
+      sourceApprovalRequestId: "approval-governed-sqlite",
+      validFrom: T0,
+      expiresAt: T2,
+      maxUses: 1,
+      uses: 0,
+      maxTotalCostMicros: 10,
+      spentCostMicros: 0,
+      revokedAt: null,
+      revocationReasonCode: null,
+    };
+    await authorization.resolveApproval({
+      approvalRequestId: "approval-governed-sqlite",
+      expectedRevision: 1,
+      semanticSnapshotHash: "hash-governed-sqlite",
+      resolution: "approved",
+      decidedAt: T1,
+      grant,
+    });
+    const usage = {
+      grantId: grant.id,
+      expectedRevision: 1,
+      costMicros: 10,
+      consumedAt: T1,
+      usageId: "authorization-usage:intent-governed-sqlite",
+      runId: RUN_ID,
+      operation: action.operation,
+    };
+    await expect(authorization.consumeGrant(usage)).resolves.toMatchObject({
+      uses: 1,
+      revision: 2,
+    });
+    await expect(authorization.consumeGrant(usage)).resolves.toMatchObject({
+      uses: 1,
+      revision: 2,
+    });
+
+    const capabilities = resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
+    await capabilities.create({
+      ref: action.capabilityRef,
+      revision: 1,
+      lifecycle: "active",
+      declaration: {
+        ref: action.capabilityRef,
+        displayName: "Governed SQLite capability",
+        version: "1.0.0",
+        source: { type: "builtin", locator: "builtin:governed-sqlite" },
+        integrity: `sha256:${"a".repeat(64)}`,
+        operations: [action.operation],
+        permissionRefs: [],
+        isolation: "worker",
+      },
+      pendingDeclaration: null,
+      permissionExpansion: false,
+      approvalRefs: ["approval-governed-sqlite"],
+      discoveredAt: T0,
+      updatedAt: T1,
+    });
+    const handle: GovernedCapabilityExecutionHandle = {
+      ref: "handle-governed-sqlite",
+      handleVersion: "capability-handle.v2",
+      revision: 1,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      authorityFence: 1,
+      capabilityRef: action.capabilityRef,
+      capabilityVersion: "1.0.0",
+      authorization: { type: "grant", ref: grant.id },
+      authorizationRef: grant.id,
+      operations: [action.operation],
+      operation: action.operation,
+      inputRefs: ["payload-input-governed"],
+      delegatedContextRefs: [],
+      secretRefs: [],
+      maxDataClassification: "private",
+      maxUses: 2,
+      uses: 0,
+      maxTotalCostMicros: 20,
+      spentCostMicros: 0,
+      idempotencyKeys: [],
+      issuedAt: T0,
+      expiresAt: T2,
+      revokedAt: null,
+      workerEndedAt: null,
+    };
+    await capabilities.createExecutionHandle(handle);
+    const consumeHandle = capabilities.consumeExecutionHandle;
+    const revokeHandles = capabilities.revokeCapabilityHandles;
+    const endRunHandles = capabilities.endRunExecutionHandles;
+    if (!consumeHandle || !revokeHandles || !endRunHandles)
+      throw new Error("governed capability store is incomplete");
+    const handleUse = {
+      handleRef: handle.ref,
+      expectedRevision: 1,
+      authorityFence: 1,
+      operation: action.operation,
+      inputRef: "payload-input-governed",
+      delegatedContextRefs: [],
+      secretRefs: [],
+      dataClassification: "private" as const,
+      costMicros: 10,
+      idempotencyKey: "handle-use-governed-sqlite",
+      consumedAt: T1,
+    };
+    await expect(consumeHandle(handleUse)).resolves.toMatchObject({
+      uses: 1,
+      revision: 2,
+    });
+    await expect(consumeHandle(handleUse)).resolves.toMatchObject({
+      uses: 1,
+      revision: 2,
+    });
+    await expect(endRunHandles(RUN_ID, T2)).resolves.toBe(1);
+    await expect(capabilities.getExecutionHandle(handle.ref)).resolves.toMatchObject({
+      revision: 3,
+      workerEndedAt: T2,
+    });
+    await expect(revokeHandles(action.capabilityRef, T2)).resolves.toBe(0);
+
+    await resource.repository.close();
+    const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+    expect(database.prepare("SELECT COUNT(*) FROM authorization_usage").pluck().get()).toBe(1);
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) FROM reliable_events WHERE topic = 'authorization.grant_consumed'",
+        )
+        .pluck()
+        .get(),
+    ).toBe(1);
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) FROM trace_events WHERE event_type = 'authorization.grant_consumed'",
+        )
+        .pluck()
+        .get(),
+    ).toBe(1);
+    expect(
+      database
+        .prepare("SELECT COUNT(*) FROM audit_records WHERE action = 'authorization.grant_consumed'")
+        .pluck()
+        .get(),
+    ).toBe(1);
+    database.close();
+    await rm(resource.stateRoot, { recursive: true });
+  });
+
   it("persists deletion state across a repository restart", async () => {
     const resource = await openRepository();
     const record: SessionDeletionRecord = {

@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T10:45:11+09:00",
+  "plan": "docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md",
+  "taskIds": ["S4-T1", "S4-T2", "S4-T3", "S4-T4", "S4-T5", "S4-T6", "S4-T7", "S4-T8"],
+  "status": "local_complete",
+  "candidateRevision": "39481f8c77f414fd1d64cf73779f00e932e61230",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 32,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["temp.md"]
+  },
+  "verified": [
+    "authorization.v2 freezes 11 ActionKinds, strict complete ActionIntent semantics, deterministic risk floors and fail-closed ALLOW/ASK/DENY ordering while preserving the Foundation contract as an explicit compatibility boundary.",
+    "Approval requests bind immutable semantic hashes, revisions, expiry and recent-auth evidence; Owner decisions cannot expand scope and an unavailable UI cannot silently convert ASK to ALLOW.",
+    "One-time and bounded long-term Grants reject broad wildcards and use durable idempotent SQLite CAS consumption with authorization usage, protected metadata, reliable Outbox, Trace and audit writes in one transaction.",
+    "Capability manifests cover Tool, Skill, MCP, program, remote API and adapter source/artifact/runtime/scope/cost/health/review contracts; unreviewed, unapproved, unhealthy or integrity-invalid inputs fail closed.",
+    "Capability handles bind Owner/Agent/Run, authority fence, capability version, operation, protected references, classification, authorization, deadline, use and cost budgets; disable/revoke/version/fence/replay/expiry and Run end invalidate authority.",
+    "ExecutionWorkerService revalidates current capability version, active Grant and authority fence, then atomically consumes a governed Handle before adapter invocation.",
+    "Pi file and command tools remain reused from pi-coding-agent ToolDefinitions and resource projection remains based on DefaultResourceLoader additional paths; no Pi discovery, tool or resource protocol was duplicated."
+  ],
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, typecheck, 14-workspace dependency boundaries, 79-requirement v0.2 coverage and 411-file machine-secret scan passed"
+    },
+    {
+      "command": "npm run test:unit",
+      "exitStatus": 0,
+      "result": "30 files and 229 tests passed"
+    },
+    {
+      "command": "npm run test:contracts",
+      "exitStatus": 0,
+      "execution": "outside sandbox for real Unix Domain Socket coverage",
+      "result": "12 files and 132 tests passed"
+    },
+    {
+      "command": "npm run test:integration",
+      "exitStatus": 0,
+      "execution": "outside sandbox for real Unix Domain Socket and installable service coverage",
+      "result": "33 files passed and 3 skipped; 338 tests passed and 3 skipped"
+    },
+    {
+      "command": "npm run test:e2e",
+      "exitStatus": 0,
+      "execution": "outside sandbox for Worker/Gateway transport coverage",
+      "result": "1 file and 3 tests passed"
+    },
+    {
+      "command": "npm run check:pi-compat",
+      "exitStatus": 0,
+      "result": "2 files and 13 tests passed"
+    },
+    {
+      "command": "python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict .",
+      "exitStatus": 0,
+      "result": "strict governed-document validation passed with zero warnings after semantic Runbook reseal"
+    }
+  ],
+  "remaining": [
+    "S4 Tasks 9-10 still own production sandbox/MCP/program/API runtime adapters, installation/update/rollback and fault-injection qualification.",
+    "S4 Task 11 still owns the Control Center authorization and capability management UI.",
+    "S4 Task 12 still owns complete acceptance closure, browser evidence and remaining recovery/security matrices."
+  ],
+  "externalEffects": [
+    "No capability was installed or enabled, no paid model/provider was called, and no GitHub, Cloudflare, production or Hermes state changed."
+  ],
+  "implementationCommit": null
+}

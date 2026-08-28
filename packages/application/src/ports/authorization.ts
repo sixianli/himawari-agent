@@ -3,6 +3,34 @@ import type { DataClassification } from "./common.js";
 
 export type PermissionDecisionKind = "ALLOW" | "ASK" | "DENY";
 export type ActionSideEffect = "none" | "reversible" | "irreversible";
+export const ACTION_KINDS = Object.freeze([
+  "READ",
+  "CREATE_OR_UPDATE",
+  "DELETE",
+  "COMMUNICATE",
+  "PURCHASE_OR_FUNDS",
+  "CREDENTIAL_OR_ACCESS",
+  "PRODUCTION_OR_RECOVERY",
+  "PUBLICATION",
+  "LEGAL_COMMITMENT",
+  "PHYSICAL_SAFETY",
+  "INSTALL_OR_EXECUTE_CODE",
+] as const);
+export type ActionKind = (typeof ACTION_KINDS)[number];
+export const ACTION_RISK_LEVELS = Object.freeze(["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const);
+export type ActionRiskLevel = (typeof ACTION_RISK_LEVELS)[number];
+export type DisclosureMode = "none" | "same_owner" | "named_recipients" | "public";
+
+export interface ActionTarget {
+  readonly type: string;
+  readonly ref: string;
+}
+
+export interface DeterministicPolicyFact {
+  readonly code: string;
+  readonly minimumRisk: ActionRiskLevel;
+  readonly source: "product" | "manifest" | "runtime";
+}
 
 export interface ActionFrequency {
   readonly count: number;
@@ -24,6 +52,27 @@ export interface ActionIntent {
   readonly idempotencyKey: IdempotencyKey;
   readonly reversible: boolean;
   readonly requestedAt: string;
+}
+
+/** Strict v0.2 action contract. Foundation ActionIntent remains execution.v1 compatible. */
+export interface GovernedActionIntent extends ActionIntent {
+  readonly contractVersion: "authorization.v2";
+  readonly threadId: string;
+  readonly actionKind: ActionKind;
+  readonly capabilityVersion: string;
+  readonly targets: readonly ActionTarget[];
+  readonly resourceRefs: readonly string[];
+  readonly disclosure: DisclosureMode;
+  readonly recipients: readonly string[];
+  readonly credentialOrAccessChange: boolean;
+  readonly expiresAt: string;
+  readonly modelClassification: {
+    readonly actionKind: ActionKind;
+    readonly suggestedRisk: ActionRiskLevel;
+    readonly reasonCode: string;
+  };
+  readonly deterministicFacts: readonly DeterministicPolicyFact[];
+  readonly finalRisk: ActionRiskLevel;
 }
 
 export interface PermissionPolicyRule {
@@ -103,6 +152,13 @@ export interface ApprovalRequest {
   readonly grantId: string | null;
 }
 
+export interface GovernedApprovalRequest extends ApprovalRequest {
+  readonly intentSnapshot: GovernedActionIntent;
+  readonly finalRisk: ActionRiskLevel;
+  readonly recentAuthenticationRequired: boolean;
+  readonly recentAuthenticationRef: string | null;
+}
+
 export interface ResolveApprovalInput {
   readonly approvalRequestId: string;
   readonly expectedRevision: number;
@@ -110,6 +166,7 @@ export interface ResolveApprovalInput {
   readonly resolution: "approved" | "denied" | "expired";
   readonly decidedAt: string;
   readonly grant: GrantRecord | null;
+  readonly recentAuthenticationRef?: string | null;
 }
 
 export interface ConsumeGrantInput {
@@ -117,6 +174,23 @@ export interface ConsumeGrantInput {
   readonly expectedRevision: number;
   readonly costMicros: number;
   readonly consumedAt: string;
+  /** Stable per-intent usage identity. Stores use it to make retries idempotent. */
+  readonly usageId?: string;
+  readonly runId?: RunId;
+  readonly operation?: string;
+}
+
+export interface GovernedGrantScope extends GrantScope {
+  readonly capabilityVersion: string;
+  readonly resourceIdentities: readonly string[];
+  readonly disclosure: DisclosureMode;
+  readonly recipients: readonly string[];
+  readonly credentialOrAccessChange: false;
+}
+
+export interface GovernedGrantRecord extends GrantRecord {
+  readonly scope: GovernedGrantScope;
+  readonly intentFingerprint: string | null;
 }
 
 export interface AuthorizationStorePort {

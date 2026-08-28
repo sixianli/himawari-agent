@@ -66,7 +66,15 @@ export interface CapabilityPort {
   cancel(invocationId: string, reasonCode: string): Promise<void>;
 }
 
-export type CapabilitySourceType = "builtin" | "package" | "mcp" | "remote_api";
+export type CapabilitySourceType =
+  | "builtin"
+  | "tool"
+  | "skill"
+  | "package"
+  | "mcp"
+  | "program"
+  | "remote_api"
+  | "adapter";
 
 export interface CapabilityDeclaration {
   readonly ref: string;
@@ -79,14 +87,79 @@ export interface CapabilityDeclaration {
   readonly isolation: CapabilityDescriptor["isolation"];
 }
 
+export interface CapabilityScopeManifest {
+  readonly dataClassifications: readonly DataClassification[];
+  readonly network: readonly string[];
+  readonly filesystem: readonly string[];
+  readonly secrets: readonly string[];
+}
+
+export interface CapabilityManifest extends CapabilityDeclaration {
+  readonly manifestVersion: "capability.v2";
+  readonly sourceIdentity: string;
+  readonly artifact: {
+    readonly digest: string;
+    readonly signatureStatus: "verified" | "not_applicable" | "invalid" | "unknown";
+    readonly signerRef: string | null;
+    readonly rollbackArtifactRef: string | null;
+  };
+  readonly scopes: CapabilityScopeManifest;
+  readonly cost: {
+    readonly currency: string;
+    readonly maxMicrosPerInvocation: number;
+  };
+  readonly health: {
+    readonly status: "healthy" | "degraded" | "unhealthy" | "unknown";
+    readonly checkedAt: string | null;
+  };
+  readonly reviewedBy: string | null;
+  readonly reviewedAt: string | null;
+  readonly contractCompatibility: readonly string[];
+  readonly runtime: CapabilityRuntimeContract;
+}
+
+export type CapabilityRuntimeContract =
+  | {
+      readonly kind: "pi_tool";
+      readonly piBuiltinDefinition: "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls";
+    }
+  | {
+      readonly kind: "pi_resource";
+      readonly additionalResourcePaths: readonly string[];
+    }
+  | {
+      readonly kind: "mcp";
+      readonly serverIdentity: string;
+      readonly transport: string;
+      readonly mappedResources: readonly string[];
+    }
+  | {
+      readonly kind: "program";
+      readonly argv: readonly string[];
+      readonly environmentKeys: readonly string[];
+      readonly workdirRef: string;
+      readonly stdin: "none" | "protected_payload";
+      readonly stdout: "none" | "protected_payload";
+      readonly subprocesses: readonly string[];
+      readonly network: readonly string[];
+      readonly filesystem: readonly string[];
+    }
+  | {
+      readonly kind: "remote_api" | "adapter";
+      readonly endpointIdentity: string;
+      readonly protectedReferenceOnly: true;
+    };
+
 export type CapabilityRegistryLifecycle =
   | "discovered"
+  | "review_required"
   | "installation_proposed"
   | "installation_approved"
   | "active"
   | "update_proposed"
   | "update_approved"
   | "disabled"
+  | "revoked"
   | "uninstalled";
 
 export interface CapabilityRegistryRecord {
@@ -108,6 +181,12 @@ export interface CapabilityRegistryStorePort {
   save(
     record: CapabilityRegistryRecord,
     expectedRevision: number,
+  ): Promise<CapabilityRegistryRecord>;
+  /** Atomically persists a disabling lifecycle and invalidates dependent runtime authority. */
+  invalidateCapabilityAuthority?(
+    record: CapabilityRegistryRecord,
+    expectedRevision: number,
+    revokedAt: string,
   ): Promise<CapabilityRegistryRecord>;
 }
 
@@ -135,10 +214,43 @@ export interface CapabilityExecutionHandle {
   readonly revokedAt: string | null;
 }
 
+export interface GovernedCapabilityExecutionHandle extends CapabilityExecutionHandle {
+  readonly handleVersion: "capability-handle.v2";
+  readonly revision: number;
+  readonly authorityFence: number;
+  readonly operation: string;
+  readonly authorizationRef: string;
+  readonly maxUses: number;
+  readonly uses: number;
+  readonly maxTotalCostMicros: number;
+  readonly spentCostMicros: number;
+  readonly idempotencyKeys: readonly string[];
+  readonly workerEndedAt: string | null;
+}
+
+export interface ConsumeCapabilityExecutionHandleInput {
+  readonly handleRef: string;
+  readonly expectedRevision: number;
+  readonly authorityFence: number;
+  readonly operation: string;
+  readonly inputRef: PayloadRef;
+  readonly delegatedContextRefs: readonly PayloadRef[];
+  readonly secretRefs: readonly string[];
+  readonly dataClassification: DataClassification;
+  readonly costMicros: number;
+  readonly idempotencyKey: string;
+  readonly consumedAt: string;
+}
+
 export interface CapabilityExecutionHandleStorePort {
   createExecutionHandle(handle: CapabilityExecutionHandle): Promise<CapabilityExecutionHandle>;
   getExecutionHandle(handleRef: string): Promise<CapabilityExecutionHandle | undefined>;
   revokeExecutionHandle(handleRef: string, revokedAt: string): Promise<CapabilityExecutionHandle>;
+  consumeExecutionHandle?(
+    input: ConsumeCapabilityExecutionHandleInput,
+  ): Promise<GovernedCapabilityExecutionHandle>;
+  revokeCapabilityHandles?(capabilityRef: string, revokedAt: string): Promise<number>;
+  endRunExecutionHandles?(runId: RunId, endedAt: string): Promise<number>;
 }
 
 export interface IssueCapabilityExecutionHandleInput {

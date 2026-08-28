@@ -9,12 +9,15 @@ import type {
   BackgroundOccurrenceClaim,
   BackgroundOccurrenceSettlement,
   CapabilityExecutionHandle,
+  ConsumeCapabilityExecutionHandleInput,
+  GovernedCapabilityExecutionHandle,
   CapabilityRegistryRecord,
   ConsumeGrantInput,
   DeliveryClaim,
   DeliveryRequest,
   DeliverySettlement,
   GitHubCoverageGapRecord,
+  GitHubMonitorHistoryPolicyOperation,
   GitHubInstallationRecord,
   GitHubRepositoryMonitor,
   GitHubWebhookReceiptRecord,
@@ -86,6 +89,28 @@ export interface SqliteStartupRecovery {
 export interface GatewayProjectionMetadata {
   readonly retentionWatermark: number;
   readonly latestCursorSequence: number;
+}
+
+export interface SqliteGitHubHistoryApplyResult {
+  readonly operation: GitHubMonitorHistoryPolicyOperation;
+  readonly pendingPayloadFiles: readonly string[];
+}
+
+interface GitHubHistoryRow {
+  readonly monitorId: string;
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly monitorRevision: number;
+  readonly policy: "retain" | "delete";
+  readonly status: "running" | "retry_wait" | "completed";
+  readonly attemptCount: number;
+  readonly requestedBy: string;
+  readonly requestedAt: string;
+  readonly updatedAt: string;
+  readonly completedAt: string | null;
+  readonly lastErrorCode: string | null;
+  readonly pendingPayloadFilesJson: string;
+  readonly monitorJson: string;
 }
 
 interface JsonRow {
@@ -188,6 +213,15 @@ function assertLimit(limit: number, fail: SqliteApplicationFailure): void {
   }
 }
 
+function placeholders(values: readonly unknown[]): string {
+  if (values.length === 0) throw new RangeError("SQL placeholder list cannot be empty");
+  return values.map(() => "?").join(", ");
+}
+
+function quoteIdentifier(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
 function grantStatus(record: GrantRecord): "active" | "revoked" | "expired" | "consumed" {
   if (record.revokedAt !== null) return "revoked";
   if (record.uses >= record.maxUses || record.spentCostMicros >= record.maxTotalCostMicros) {
@@ -207,6 +241,8 @@ function capabilityStatus(
   | "uninstalled" {
   if (lifecycle === "update_proposed") return "installation_proposed";
   if (lifecycle === "update_approved") return "installation_approved";
+  if (lifecycle === "review_required") return "discovered";
+  if (lifecycle === "revoked") return "disabled";
   return lifecycle;
 }
 
@@ -353,6 +389,16 @@ export class SqliteDurableOperations {
             expectedRevision: number;
           },
         );
+      case "capability.invalidateAuthority":
+        return this.invalidateCapabilityAuthority(
+          payload as {
+            ownerId: string;
+            agentId: string;
+            record: CapabilityRegistryRecord;
+            expectedRevision: number;
+            revokedAt: string;
+          },
+        );
       case "capability.createHandle":
         return this.createCapabilityHandle(
           (payload as { handle: CapabilityExecutionHandle }).handle,
@@ -364,6 +410,18 @@ export class SqliteDurableOperations {
       case "capability.revokeHandle":
         return this.revokeCapabilityHandle(
           payload as { ownerId: string; agentId: string; handleRef: string; revokedAt: string },
+        );
+      case "capability.consumeHandle":
+        return this.consumeCapabilityHandle(
+          (payload as { input: ConsumeCapabilityExecutionHandleInput }).input,
+        );
+      case "capability.revokeHandles":
+        return this.revokeCapabilityHandles(
+          payload as { ownerId: string; agentId: string; capabilityRef: string; revokedAt: string },
+        );
+      case "capability.endRunHandles":
+        return this.endRunCapabilityHandles(
+          payload as { ownerId: string; agentId: string; runId: string; endedAt: string },
         );
       case "scheduler.read":
         return this.readJob((payload as { jobId: string }).jobId);
@@ -436,6 +494,29 @@ export class SqliteDurableOperations {
         return this.saveGitHubCoverageGap((payload as { gap: GitHubCoverageGapRecord }).gap);
       case "github.coverage.list":
         return this.listGitHubCoverageGaps((payload as { monitorId: JobId }).monitorId);
+      case "github.history.apply":
+        return this.applyGitHubHistoryPolicy(
+          payload as {
+            monitor: GitHubRepositoryMonitor;
+            policy: "retain" | "delete";
+            requestedBy: string;
+            occurredAt: string;
+          },
+        );
+      case "github.history.inspect":
+        return this.readGitHubHistoryOperation((payload as { monitorId: JobId }).monitorId);
+      case "github.history.listRetryable":
+        return this.listRetryableGitHubHistoryOperations((payload as { limit: number }).limit);
+      case "github.history.retry":
+        return this.retryGitHubHistoryPolicy(payload as { monitorId: JobId; occurredAt: string });
+      case "github.history.finalize":
+        return this.finalizeGitHubHistoryPolicy(
+          payload as { monitorId: JobId; occurredAt: string },
+        );
+      case "github.history.fail":
+        return this.failGitHubHistoryPolicy(
+          payload as { monitorId: JobId; occurredAt: string; errorCode: string },
+        );
       case "attention.readPolicy":
         return this.readAttentionPolicy(payload as { ownerId: string; agentId: string });
       case "attention.commitDecision":
@@ -531,6 +612,13 @@ export class SqliteDurableOperations {
 
   recoverStartup(now: string): SqliteStartupRecovery {
     const transaction = this.database.transaction(() => {
+      this.database
+        .prepare(
+          `UPDATE github_history_policy_operations
+          SET status = 'retry_wait', last_error_code = 'history_process_interrupted', updated_at = ?
+          WHERE status = 'running'`,
+        )
+        .run(now);
       const expiredClaims = this.database
         .prepare(
           `SELECT id FROM reliable_events
@@ -1245,7 +1333,7 @@ export class SqliteDurableOperations {
         `INSERT INTO approval_requests (
           id, owner_id, agent_id, run_id, revision, status, risk, intent_ref,
           semantic_snapshot_hash, requested_at, decided_at, record_json
-        ) VALUES (?, ?, ?, ?, ?, ?, 'low', ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         request.id,
@@ -1254,6 +1342,9 @@ export class SqliteDurableOperations {
         request.runId,
         request.revision,
         request.status,
+        "finalRisk" in request && typeof request.finalRisk === "string"
+          ? request.finalRisk.toLowerCase()
+          : "low",
         intentRef,
         request.semanticSnapshotHash,
         request.requestedAt,
@@ -1324,6 +1415,9 @@ export class SqliteDurableOperations {
         status: input.resolution,
         decidedAt: input.decidedAt,
         grantId: input.grant?.id ?? null,
+        ...(input.recentAuthenticationRef !== undefined
+          ? { recentAuthenticationRef: input.recentAuthenticationRef }
+          : {}),
       };
       if (input.grant) this.insertGrant(input.grant);
       this.database
@@ -1363,28 +1457,128 @@ export class SqliteDurableOperations {
 
   private consumeGrant(input: ConsumeGrantInput): GrantRecord {
     this.assertDiskHeadroom();
-    const current = this.grantRow(input.grantId);
-    if (!current) this.fail("PORT_NOT_FOUND", `Grant ${input.grantId} not found`);
-    if (current.revision !== input.expectedRevision) {
-      this.fail("PORT_CONFLICT", `Grant ${current.id} has a stale revision`);
-    }
-    if (
-      current.revokedAt !== null ||
-      input.consumedAt < current.validFrom ||
-      input.consumedAt >= current.expiresAt ||
-      current.uses >= current.maxUses ||
-      current.spentCostMicros + input.costMicros > current.maxTotalCostMicros
-    ) {
-      this.fail("PORT_INVALID_OPERATION", `Grant ${current.id} is not consumable`);
-    }
-    const consumed: GrantRecord = {
-      ...current,
-      revision: current.revision + 1,
-      uses: current.uses + 1,
-      spentCostMicros: current.spentCostMicros + input.costMicros,
-    };
-    this.updateGrant(consumed);
-    return consumed;
+    const transaction = this.database.transaction(() => {
+      if (input.usageId) {
+        const replay = this.database
+          .prepare("SELECT 1 FROM authorization_usage WHERE id = ? AND grant_id = ?")
+          .get(input.usageId, input.grantId);
+        if (replay) {
+          const record = this.grantRow(input.grantId);
+          if (!record) this.fail("PORT_NOT_FOUND", `Grant ${input.grantId} not found`);
+          return record;
+        }
+      }
+      const current = this.grantRow(input.grantId);
+      if (!current) this.fail("PORT_NOT_FOUND", `Grant ${input.grantId} not found`);
+      if (current.revision !== input.expectedRevision) {
+        this.fail("PORT_CONFLICT", `Grant ${current.id} has a stale revision`);
+      }
+      if (
+        current.revokedAt !== null ||
+        input.consumedAt < current.validFrom ||
+        input.consumedAt >= current.expiresAt ||
+        current.uses >= current.maxUses ||
+        current.spentCostMicros + input.costMicros > current.maxTotalCostMicros
+      )
+        this.fail("PORT_INVALID_OPERATION", `Grant ${current.id} is not consumable`);
+      const consumed: GrantRecord = {
+        ...current,
+        revision: current.revision + 1,
+        uses: current.uses + 1,
+        spentCostMicros: current.spentCostMicros + input.costMicros,
+      };
+      this.updateGrant(consumed);
+      if (input.usageId && input.operation) {
+        this.database
+          .prepare(
+            `INSERT INTO authorization_usage (id, grant_id, run_id, operation, cost_micros, used_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            input.usageId,
+            input.grantId,
+            input.runId ?? null,
+            input.operation,
+            input.costMicros,
+            input.consumedAt,
+          );
+        const usagePayloadRef = `metadata:${input.usageId}`;
+        this.ensureMetadataPayload(
+          current.ownerId,
+          current.agentId,
+          usagePayloadRef,
+          input.consumedAt,
+        );
+        this.database
+          .prepare(
+            `INSERT INTO reliable_events (
+              id, owner_id, agent_id, idempotency_key, topic, payload_ref,
+              publication_state, occurred_at
+            ) VALUES (?, ?, ?, ?, 'authorization.grant_consumed', ?, 'pending', ?)`,
+          )
+          .run(
+            `event:${input.usageId}`,
+            current.ownerId,
+            current.agentId,
+            input.usageId,
+            usagePayloadRef,
+            input.consumedAt,
+          );
+        this.database
+          .prepare(
+            `INSERT INTO audit_records (
+              id, owner_id, agent_id, action, target_ref, outcome, detail_ref, occurred_at
+            ) VALUES (?, ?, ?, 'authorization.grant_consumed', ?, 'completed', NULL, ?)`,
+          )
+          .run(
+            `audit:${input.usageId}`,
+            current.ownerId,
+            current.agentId,
+            current.id,
+            input.consumedAt,
+          );
+        if (input.runId) {
+          const run = this.database
+            .prepare(
+              `SELECT session_id AS sessionId, thread_id AS threadId
+              FROM runs WHERE id = ? AND owner_id = ? AND agent_id = ?`,
+            )
+            .get(input.runId, current.ownerId, current.agentId) as
+            | { sessionId: string; threadId: string | null }
+            | undefined;
+          if (!run)
+            this.fail("PORT_INVALID_OPERATION", `Run ${input.runId} is outside Grant scope`);
+          const sequence = Number(
+            this.database
+              .prepare("SELECT COALESCE(MAX(sequence), 0) + 1 FROM trace_events WHERE run_id = ?")
+              .pluck()
+              .get(input.runId),
+          );
+          this.database
+            .prepare(
+              `INSERT INTO trace_events (
+                id, owner_id, agent_id, session_id, thread_id, run_id, turn_id,
+                sequence, event_type, classification, payload_ref, occurred_at, recorded_at
+              ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 'authorization.grant_consumed',
+                'private', ?, ?, ?)`,
+            )
+            .run(
+              `trace:${input.usageId}`,
+              current.ownerId,
+              current.agentId,
+              run.sessionId,
+              run.threadId,
+              input.runId,
+              sequence,
+              usagePayloadRef,
+              input.consumedAt,
+              input.consumedAt,
+            );
+        }
+      }
+      return consumed;
+    });
+    return transaction.immediate();
   }
 
   private revokeGrant(input: {
@@ -1556,6 +1750,56 @@ export class SqliteDurableOperations {
     return handle;
   }
 
+  private invalidateCapabilityAuthority(input: {
+    ownerId: string;
+    agentId: string;
+    record: CapabilityRegistryRecord;
+    expectedRevision: number;
+    revokedAt: string;
+  }): CapabilityRegistryRecord {
+    const transaction = this.database.transaction(() => {
+      const saved = this.saveCapability(input);
+      this.revokeCapabilityHandlesCore({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        capabilityRef: input.record.ref,
+        revokedAt: input.revokedAt,
+      });
+      const jobs = this.database
+        .prepare(
+          `SELECT id, revision, record_json AS recordJson FROM scheduled_jobs
+          WHERE owner_id = ? AND agent_id = ? AND status != 'revoked'
+            AND json_extract(record_json, '$.capabilityRef') = ?`,
+        )
+        .all(input.ownerId, input.agentId, input.record.ref) as Array<{
+        id: string;
+        revision: number;
+        recordJson: string;
+      }>;
+      for (const job of jobs) {
+        const record = JSON.parse(job.recordJson) as Record<string, unknown>;
+        this.database
+          .prepare(
+            `UPDATE scheduled_jobs SET status = 'revoked', revision = revision + 1,
+              next_occurrence_at = NULL, record_json = ? WHERE id = ? AND revision = ?`,
+          )
+          .run(
+            JSON.stringify({
+              ...record,
+              revision: job.revision + 1,
+              status: "cancelled",
+              revokedAt: input.revokedAt,
+              nextRunAt: null,
+            }),
+            job.id,
+            job.revision,
+          );
+      }
+      return saved;
+    });
+    return transaction.immediate();
+  }
+
   private getCapabilityHandle(input: {
     ownerId: string;
     agentId: string;
@@ -1591,6 +1835,121 @@ export class SqliteDurableOperations {
       )
       .run(input.revokedAt, JSON.stringify(revoked), input.handleRef);
     return revoked;
+  }
+
+  private consumeCapabilityHandle(
+    input: ConsumeCapabilityExecutionHandleInput,
+  ): GovernedCapabilityExecutionHandle {
+    this.assertDiskHeadroom();
+    const transaction = this.database.transaction(() => {
+      const row = this.database
+        .prepare("SELECT record_json AS recordJson FROM capability_handles WHERE id = ?")
+        .get(input.handleRef) as JsonRow | undefined;
+      const current = parseRecord<GovernedCapabilityExecutionHandle>(row);
+      if (!current || current.handleVersion !== "capability-handle.v2") {
+        this.fail("PORT_NOT_FOUND", `Capability handle ${input.handleRef} not found`);
+      }
+      if (current.idempotencyKeys.includes(input.idempotencyKey)) return current;
+      if (
+        current.revision !== input.expectedRevision ||
+        current.revokedAt !== null ||
+        current.workerEndedAt !== null ||
+        input.consumedAt >= current.expiresAt ||
+        current.authorityFence !== input.authorityFence ||
+        current.uses >= current.maxUses ||
+        current.spentCostMicros + input.costMicros > current.maxTotalCostMicros
+      )
+        this.fail("PORT_CONFLICT", `Capability handle ${input.handleRef} is not consumable`);
+      const consumed: GovernedCapabilityExecutionHandle = {
+        ...current,
+        revision: current.revision + 1,
+        uses: current.uses + 1,
+        spentCostMicros: current.spentCostMicros + input.costMicros,
+        idempotencyKeys: [...current.idempotencyKeys, input.idempotencyKey],
+      };
+      this.database
+        .prepare("UPDATE capability_handles SET status = ?, record_json = ? WHERE id = ?")
+        .run(
+          consumed.uses >= consumed.maxUses ? "consumed" : "active",
+          JSON.stringify(consumed),
+          consumed.ref,
+        );
+      return consumed;
+    });
+    return transaction.immediate();
+  }
+
+  private revokeCapabilityHandles(input: {
+    ownerId: string;
+    agentId: string;
+    capabilityRef: string;
+    revokedAt: string;
+  }): number {
+    this.assertDiskHeadroom();
+    const transaction = this.database.transaction(() => this.revokeCapabilityHandlesCore(input));
+    return transaction.immediate();
+  }
+
+  private endRunCapabilityHandles(input: {
+    ownerId: string;
+    agentId: string;
+    runId: string;
+    endedAt: string;
+  }): number {
+    this.assertDiskHeadroom();
+    const transaction = this.database.transaction(() => {
+      const rows = this.database
+        .prepare(
+          `SELECT capability_handles.record_json AS recordJson
+          FROM capability_handles JOIN capability_declarations
+            ON capability_declarations.id = capability_handles.capability_id
+          WHERE capability_handles.run_id = ? AND capability_declarations.owner_id = ?
+            AND capability_declarations.agent_id = ? AND capability_handles.status = 'active'`,
+        )
+        .all(input.runId, input.ownerId, input.agentId) as JsonRow[];
+      for (const row of rows) {
+        const current = parseRecord<GovernedCapabilityExecutionHandle>(row);
+        if (!current || current.workerEndedAt !== null) continue;
+        const ended: GovernedCapabilityExecutionHandle = {
+          ...current,
+          revision: current.revision + 1,
+          workerEndedAt: input.endedAt,
+        };
+        this.database
+          .prepare("UPDATE capability_handles SET status = 'revoked', record_json = ? WHERE id = ?")
+          .run(JSON.stringify(ended), current.ref);
+      }
+      return rows.length;
+    });
+    return transaction.immediate();
+  }
+
+  private revokeCapabilityHandlesCore(input: {
+    ownerId: string;
+    agentId: string;
+    capabilityRef: string;
+    revokedAt: string;
+  }): number {
+    const rows = this.database
+      .prepare(
+        `SELECT capability_handles.record_json AS recordJson
+       FROM capability_handles JOIN capability_declarations
+       ON capability_declarations.id = capability_handles.capability_id
+       WHERE capability_handles.capability_id = ? AND capability_declarations.owner_id = ?
+       AND capability_declarations.agent_id = ? AND capability_handles.status = 'active'`,
+      )
+      .all(input.capabilityRef, input.ownerId, input.agentId) as JsonRow[];
+    for (const row of rows) {
+      const current = parseRecord<CapabilityExecutionHandle>(row);
+      if (!current || current.revokedAt !== null) continue;
+      const revoked = { ...current, revokedAt: input.revokedAt };
+      this.database
+        .prepare(
+          "UPDATE capability_handles SET status = 'revoked', revoked_at = ?, record_json = ? WHERE id = ?",
+        )
+        .run(input.revokedAt, JSON.stringify(revoked), current.ref);
+    }
+    return rows.length;
   }
 
   private readJob(jobId: string): ScheduledJob | undefined {
@@ -2138,6 +2497,399 @@ export class SqliteDurableOperations {
         FROM github_coverage_gaps WHERE monitor_id = ? ORDER BY started_at, id`,
       )
       .all(monitorId) as GitHubCoverageGapRecord[];
+  }
+
+  private githubHistoryRow(monitorId: JobId): GitHubHistoryRow | undefined {
+    return this.database
+      .prepare(
+        `SELECT monitor_id AS monitorId, owner_id AS ownerId, agent_id AS agentId,
+          monitor_revision AS monitorRevision, policy, status, attempt_count AS attemptCount,
+          requested_by AS requestedBy, requested_at AS requestedAt, updated_at AS updatedAt,
+          completed_at AS completedAt, last_error_code AS lastErrorCode,
+          pending_payload_files_json AS pendingPayloadFilesJson, monitor_json AS monitorJson
+        FROM github_history_policy_operations WHERE monitor_id = ?`,
+      )
+      .get(monitorId) as GitHubHistoryRow | undefined;
+  }
+
+  private publicGitHubHistoryOperation(row: GitHubHistoryRow): GitHubMonitorHistoryPolicyOperation {
+    return Object.freeze({
+      monitorId: row.monitorId as JobId,
+      ownerId: row.ownerId as OwnerId,
+      agentId: row.agentId as import("@himawari-agent/domain").AgentId,
+      monitorRevision: row.monitorRevision,
+      policy: row.policy,
+      status: row.status,
+      attemptCount: row.attemptCount,
+      requestedBy: row.requestedBy,
+      requestedAt: row.requestedAt,
+      updatedAt: row.updatedAt,
+      completedAt: row.completedAt,
+      lastErrorCode: row.lastErrorCode,
+    });
+  }
+
+  private readGitHubHistoryOperation(
+    monitorId: JobId,
+  ): GitHubMonitorHistoryPolicyOperation | undefined {
+    const row = this.githubHistoryRow(monitorId);
+    return row ? this.publicGitHubHistoryOperation(row) : undefined;
+  }
+
+  private listRetryableGitHubHistoryOperations(
+    limit: number,
+  ): readonly GitHubMonitorHistoryPolicyOperation[] {
+    assertLimit(limit, this.fail);
+    return (
+      this.database
+        .prepare(
+          `SELECT monitor_id AS monitorId, owner_id AS ownerId, agent_id AS agentId,
+            monitor_revision AS monitorRevision, policy, status, attempt_count AS attemptCount,
+            requested_by AS requestedBy, requested_at AS requestedAt, updated_at AS updatedAt,
+            completed_at AS completedAt, last_error_code AS lastErrorCode,
+            pending_payload_files_json AS pendingPayloadFilesJson, monitor_json AS monitorJson
+          FROM github_history_policy_operations WHERE status = 'retry_wait'
+          ORDER BY updated_at, monitor_id LIMIT ?`,
+        )
+        .all(limit) as GitHubHistoryRow[]
+    ).map((row) => this.publicGitHubHistoryOperation(row));
+  }
+
+  private applyGitHubHistoryPolicy(input: {
+    monitor: GitHubRepositoryMonitor;
+    policy: "retain" | "delete";
+    requestedBy: string;
+    occurredAt: string;
+  }): SqliteGitHubHistoryApplyResult {
+    this.assertDiskHeadroom();
+    if (input.monitor.status !== "revoked" || input.requestedBy.length === 0) {
+      this.fail(
+        "PORT_NOT_AUTHORITATIVE",
+        "GitHub history policy requires a revoked monitor and Owner identity",
+      );
+    }
+    const durableMonitor = this.githubMonitorRow(input.monitor.id);
+    if (
+      !durableMonitor ||
+      durableMonitor.ownerId !== input.monitor.ownerId ||
+      durableMonitor.agentId !== input.monitor.agentId ||
+      durableMonitor.status !== "revoked" ||
+      durableMonitor.revision !== input.monitor.revision
+    ) {
+      this.fail("PORT_CONFLICT", `GitHub monitor ${input.monitor.id} durable revision changed`);
+    }
+    const existing = this.githubHistoryRow(input.monitor.id);
+    if (
+      existing &&
+      (existing.policy !== input.policy || existing.monitorRevision !== input.monitor.revision)
+    ) {
+      this.fail("PORT_CONFLICT", `GitHub monitor ${input.monitor.id} history policy is immutable`);
+    }
+    if (existing?.status === "completed") {
+      return Object.freeze({
+        operation: this.publicGitHubHistoryOperation(existing),
+        pendingPayloadFiles: Object.freeze([]),
+      });
+    }
+
+    const attempt = (existing?.attemptCount ?? 0) + 1;
+    this.database
+      .prepare(
+        `INSERT INTO github_history_policy_operations (
+          monitor_id, owner_id, agent_id, monitor_revision, policy, status, attempt_count,
+          requested_by, requested_at, updated_at, completed_at, last_error_code,
+          pending_payload_files_json, monitor_json
+        ) VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, NULL, NULL, '[]', ?)
+        ON CONFLICT(monitor_id) DO UPDATE SET status = 'running',
+          attempt_count = excluded.attempt_count, updated_at = excluded.updated_at,
+          last_error_code = NULL`,
+      )
+      .run(
+        input.monitor.id,
+        input.monitor.ownerId,
+        input.monitor.agentId,
+        input.monitor.revision,
+        input.policy,
+        attempt,
+        input.requestedBy,
+        existing?.requestedAt ?? input.occurredAt,
+        input.occurredAt,
+        JSON.stringify(input.monitor),
+      );
+
+    const oldPending = existing ? (JSON.parse(existing.pendingPayloadFilesJson) as string[]) : [];
+    if (oldPending.length > 0) {
+      this.database
+        .prepare(
+          `UPDATE github_history_policy_operations SET status = 'retry_wait',
+            last_error_code = 'payload_files_pending', pending_payload_files_json = ?, updated_at = ?
+          WHERE monitor_id = ?`,
+        )
+        .run(JSON.stringify(oldPending), input.occurredAt, input.monitor.id);
+      return Object.freeze({
+        operation: this.readGitHubHistoryOperation(
+          input.monitor.id,
+        ) as GitHubMonitorHistoryPolicyOperation,
+        pendingPayloadFiles: Object.freeze(oldPending),
+      });
+    }
+
+    try {
+      const transaction = this.database.transaction(() =>
+        input.policy === "delete" ? this.deleteGitHubMonitorHistory(input.monitor) : [],
+      );
+      const pendingPayloadFiles = transaction.immediate();
+      const status = pendingPayloadFiles.length > 0 ? "retry_wait" : "completed";
+      this.database
+        .prepare(
+          `UPDATE github_history_policy_operations SET status = ?, updated_at = ?, completed_at = ?,
+            last_error_code = ?, pending_payload_files_json = ? WHERE monitor_id = ?`,
+        )
+        .run(
+          status,
+          input.occurredAt,
+          status === "completed" ? input.occurredAt : null,
+          status === "completed" ? null : "payload_files_pending",
+          JSON.stringify(pendingPayloadFiles),
+          input.monitor.id,
+        );
+      return Object.freeze({
+        operation: this.readGitHubHistoryOperation(
+          input.monitor.id,
+        ) as GitHubMonitorHistoryPolicyOperation,
+        pendingPayloadFiles: Object.freeze([...pendingPayloadFiles]),
+      });
+    } catch (error) {
+      this.database
+        .prepare(
+          `UPDATE github_history_policy_operations SET status = 'retry_wait', updated_at = ?,
+            last_error_code = 'history_apply_failed' WHERE monitor_id = ?`,
+        )
+        .run(input.occurredAt, input.monitor.id);
+      throw error;
+    }
+  }
+
+  private finalizeGitHubHistoryPolicy(input: {
+    monitorId: JobId;
+    occurredAt: string;
+  }): GitHubMonitorHistoryPolicyOperation {
+    if (!this.githubHistoryRow(input.monitorId)) {
+      this.fail("PORT_NOT_FOUND", `GitHub history operation ${input.monitorId} not found`);
+    }
+    this.database
+      .prepare(
+        `UPDATE github_history_policy_operations SET status = 'completed', updated_at = ?,
+          completed_at = ?, last_error_code = NULL, pending_payload_files_json = '[]'
+        WHERE monitor_id = ?`,
+      )
+      .run(input.occurredAt, input.occurredAt, input.monitorId);
+    return this.readGitHubHistoryOperation(input.monitorId) as GitHubMonitorHistoryPolicyOperation;
+  }
+
+  private retryGitHubHistoryPolicy(input: {
+    monitorId: JobId;
+    occurredAt: string;
+  }): SqliteGitHubHistoryApplyResult {
+    const row = this.githubHistoryRow(input.monitorId);
+    if (!row) this.fail("PORT_NOT_FOUND", `GitHub history operation ${input.monitorId} not found`);
+    if (row.status === "completed") {
+      return Object.freeze({
+        operation: this.publicGitHubHistoryOperation(row),
+        pendingPayloadFiles: Object.freeze([]),
+      });
+    }
+    return this.applyGitHubHistoryPolicy({
+      monitor: JSON.parse(row.monitorJson) as GitHubRepositoryMonitor,
+      policy: row.policy,
+      requestedBy: row.requestedBy,
+      occurredAt: input.occurredAt,
+    });
+  }
+
+  private failGitHubHistoryPolicy(input: {
+    monitorId: JobId;
+    occurredAt: string;
+    errorCode: string;
+  }): GitHubMonitorHistoryPolicyOperation {
+    if (!this.githubHistoryRow(input.monitorId)) {
+      this.fail("PORT_NOT_FOUND", `GitHub history operation ${input.monitorId} not found`);
+    }
+    this.database
+      .prepare(
+        `UPDATE github_history_policy_operations SET status = 'retry_wait', updated_at = ?,
+          completed_at = NULL, last_error_code = ? WHERE monitor_id = ?`,
+      )
+      .run(input.occurredAt, input.errorCode, input.monitorId);
+    return this.readGitHubHistoryOperation(input.monitorId) as GitHubMonitorHistoryPolicyOperation;
+  }
+
+  private deleteGitHubMonitorHistory(monitor: GitHubRepositoryMonitor): readonly string[] {
+    const job = this.database
+      .prepare("SELECT definition_ref AS definitionRef FROM scheduled_jobs WHERE id = ?")
+      .get(monitor.id) as { definitionRef: string } | undefined;
+    const runIds = this.sqlValues(
+      "SELECT run_id AS value FROM job_occurrences WHERE job_id = ? AND run_id IS NOT NULL",
+      [monitor.id],
+    );
+    const triggerIds =
+      runIds.length === 0
+        ? []
+        : this.sqlValues(
+            `SELECT trigger_id AS value FROM runs WHERE id IN (${placeholders(runIds)})`,
+            runIds,
+          );
+    const payloadRefs: string[] = job ? [job.definitionRef] : [];
+    payloadRefs.push(
+      ...this.sqlValues(
+        "SELECT payload_ref AS value FROM github_webhook_receipts WHERE repository_monitor_id = ?",
+        [monitor.id],
+      ),
+    );
+    if (triggerIds.length > 0) {
+      payloadRefs.push(
+        ...this.sqlValues(
+          `SELECT payload_ref AS value FROM triggers WHERE id IN (${placeholders(triggerIds)})`,
+          triggerIds,
+        ),
+      );
+    }
+    if (runIds.length > 0) {
+      for (const [table, column] of [
+        ["run_checkpoints", "checkpoint_ref"],
+        ["approval_requests", "intent_ref"],
+        ["trace_events", "payload_ref"],
+        ["attention_decisions", "decision_ref"],
+        ["inbox_deliveries", "result_ref"],
+      ] as const) {
+        payloadRefs.push(
+          ...this.sqlValues(
+            `SELECT ${quoteIdentifier(column)} AS value FROM ${quoteIdentifier(table)}
+            WHERE run_id IN (${placeholders(runIds)})
+              AND ${quoteIdentifier(column)} IS NOT NULL`,
+            runIds,
+          ),
+        );
+      }
+      const checkpointIds = this.sqlValues(
+        `SELECT DISTINCT checkpoint_job_id AS value FROM thread_checkpoint_sources
+        WHERE source_ref IN (${placeholders(runIds)})`,
+        runIds,
+      );
+      if (checkpointIds.length > 0) {
+        payloadRefs.push(
+          ...this.sqlValues(
+            `SELECT summary_ref AS value FROM thread_checkpoint_jobs
+            WHERE id IN (${placeholders(checkpointIds)}) AND summary_ref IS NOT NULL`,
+            checkpointIds,
+          ),
+          ...this.sqlValues(
+            `SELECT content_ref AS value FROM thread_summaries WHERE generation_id IN
+            (SELECT id FROM memory_generations WHERE checkpoint_job_id IN (${placeholders(checkpointIds)}))`,
+            checkpointIds,
+          ),
+          ...this.sqlValues(
+            `SELECT content_ref AS value FROM thread_derivative_candidates WHERE generation_id IN
+            (SELECT id FROM memory_generations WHERE checkpoint_job_id IN (${placeholders(checkpointIds)}))
+            AND content_ref IS NOT NULL`,
+            checkpointIds,
+          ),
+        );
+        this.database
+          .prepare(
+            `DELETE FROM thread_checkpoint_jobs WHERE id IN (${placeholders(checkpointIds)})`,
+          )
+          .run(...checkpointIds);
+      }
+      this.database
+        .prepare(
+          `UPDATE memory_provenance SET source_deleted = 1
+          WHERE source_id IN (${placeholders(runIds)})`,
+        )
+        .run(...runIds);
+    }
+
+    this.database
+      .prepare("DELETE FROM github_webhook_receipts WHERE repository_monitor_id = ?")
+      .run(monitor.id);
+    this.database.prepare("DELETE FROM github_coverage_gaps WHERE monitor_id = ?").run(monitor.id);
+    this.database.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(monitor.id);
+    if (runIds.length > 0) {
+      this.database
+        .prepare(`DELETE FROM runs WHERE id IN (${placeholders(runIds)})`)
+        .run(...runIds);
+    }
+    if (triggerIds.length > 0) {
+      this.database
+        .prepare(`DELETE FROM triggers WHERE id IN (${placeholders(triggerIds)})`)
+        .run(...triggerIds);
+    }
+    for (const ref of [monitor.id, ...runIds]) {
+      const escaped = ref.replaceAll("%", "\\%").replaceAll("_", "\\_");
+      this.database
+        .prepare("DELETE FROM product_state_records WHERE key = ? OR key LIKE ? ESCAPE '\\'")
+        .run(ref, `${escaped}:%`);
+      this.database
+        .prepare("DELETE FROM command_results WHERE state_key = ? OR state_key LIKE ? ESCAPE '\\'")
+        .run(ref, `${escaped}:%`);
+    }
+    const uniqueRefs = [...new Set(payloadRefs)];
+    if (uniqueRefs.length > 0) {
+      this.database
+        .prepare(`DELETE FROM reliable_events WHERE payload_ref IN (${placeholders(uniqueRefs)})`)
+        .run(...uniqueRefs);
+    }
+    const files: string[] = [];
+    for (const ref of uniqueRefs) {
+      if (this.isPayloadReferenced(ref)) continue;
+      const payload = this.database
+        .prepare(
+          `SELECT storage_kind AS storageKind, ciphertext_path AS ciphertextPath
+          FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?`,
+        )
+        .get(ref, monitor.ownerId, monitor.agentId) as
+        | { storageKind: string; ciphertextPath: string | null }
+        | undefined;
+      if (!payload) continue;
+      this.database.prepare("DELETE FROM payloads WHERE ref = ?").run(ref);
+      if (payload.storageKind === "ciphertext_file" && payload.ciphertextPath) {
+        files.push(payload.ciphertextPath);
+      }
+    }
+    return Object.freeze([...new Set(files)]);
+  }
+
+  private sqlValues(sql: string, parameters: readonly unknown[]): string[] {
+    return (this.database.prepare(sql).all(...parameters) as Array<{ value: string }>).map(
+      ({ value }) => value,
+    );
+  }
+
+  private isPayloadReferenced(ref: string): boolean {
+    const tables = this.database
+      .prepare(
+        "SELECT name FROM pragma_table_list WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+      )
+      .all() as Array<{ name: string }>;
+    for (const { name } of tables) {
+      const foreignKeys = this.database
+        .prepare(`PRAGMA foreign_key_list(${quoteIdentifier(name)})`)
+        .all() as Array<{ table: string; from: string }>;
+      for (const foreignKey of foreignKeys) {
+        if (foreignKey.table !== "payloads") continue;
+        const count = Number(
+          this.database
+            .prepare(
+              `SELECT COUNT(*) FROM ${quoteIdentifier(name)}
+              WHERE ${quoteIdentifier(foreignKey.from)} = ?`,
+            )
+            .pluck()
+            .get(ref),
+        );
+        if (count > 0) return true;
+      }
+    }
+    return false;
   }
 
   private occurrenceSelect(): string {

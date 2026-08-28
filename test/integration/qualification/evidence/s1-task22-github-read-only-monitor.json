@@ -1,17 +1,18 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-27T14:28:53+09:00",
+  "recordedAt": "2026-08-28T10:45:11+09:00",
   "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
   "taskId": "S1-T22",
   "status": "partial",
-  "candidateRevision": "92ae9fec5d2aaf15bfa1425d96a0088478d7364d",
+  "localAdapterStatus": "complete",
+  "candidateRevision": "39481f8c77f414fd1d64cf73779f00e932e61230",
   "worktree": {
-    "branch": "HEAD (detached)",
+    "branch": "main",
     "upstream": "origin/main",
-    "ahead": 9,
+    "ahead": 32,
     "behind": 0,
     "status": "dirty",
-    "intentionallyExcluded": []
+    "intentionallyExcluded": ["temp.md"]
   },
   "verified": [
     "Control Center displays the configured primary provider/model/version/ref, repository allowlist and data classifications, and requires an explicit confirmation that excludes machine secrets, App keys, installation tokens and Git credentials before submitting the enable command.",
@@ -22,7 +23,10 @@
     "Mirror storage is bounded, content-addressed, owner-only and symlink-safe; repository revocation removes the monitor cache.",
     "Every admitted event is passed to model relevance and the shared Attention decision; no deterministic semantic pre-filter bypasses model judgment.",
     "Offline mode records an open/closed coverage gap and has no polling, reconciliation or history scan path.",
-    "Budget exhaustion records BUDGET_BLOCKED; normal non-silent decisions persist a Web inbox delivery with event/run/result references."
+    "Budget exhaustion records BUDGET_BLOCKED; normal non-silent decisions persist a Web inbox delivery with event/run/result references.",
+    "SqliteGitHubHistoryPolicyAdapter now implements retain/delete through an immutable versioned operation record, bounded owner/agent scope, startup recovery from running to retry_wait and explicit inspect/list/retry readback.",
+    "Delete removes the revoked monitor's receipt, gap, scheduler, Run/Trigger/checkpoint, Approval, Trace, inbox, projection, Outbox and unreferenced Payload rows in one SQLite transaction, then removes only normalized ciphertext files below the state root.",
+    "Filesystem cleanup failure is durable and observable as retry_wait; retry resumes from the persisted pending file list and reaches completed only after post-cleanup readback succeeds."
   ],
   "commands": [
     {
@@ -44,7 +48,8 @@
     {
       "command": "npm run test:integration",
       "exitStatus": 0,
-      "result": "32 files passed, 1 skipped; 322 tests passed, 1 skipped, including SQLite GitHub state and process recovery"
+      "execution": "outside sandbox for real Unix Domain Socket coverage",
+      "result": "33 files passed and 3 skipped; 338 tests passed and 3 skipped, including durable GitHub retain/delete/failure/retry/readback"
     },
     {
       "command": "npm run check",
@@ -54,11 +59,10 @@
   ],
   "remaining": [
     "The lifecycle handler is not yet wired into the final production Agent Gateway composition or durable command-result/idempotency path.",
-    "The history policy remains an application port; a concrete SQLite delete/retain adapter, durable retry record and post-cleanup readback are still required before Task 22 can close.",
     "Real GitHub App permission readback, external webhook delivery, online event relevance/inbox delivery and two-second acceptance/rejection must be measured only with an authorized external App and model/provider."
   ],
   "externalEffects": [
     "Only temporary local mirror directories and loopback/browser fixture processes were used; no GitHub, model, Cloudflare or production state changed."
   ],
-  "implementationCommit": "92ae9fec5d2aaf15bfa1425d96a0088478d7364d"
+  "implementationCommit": null
 }

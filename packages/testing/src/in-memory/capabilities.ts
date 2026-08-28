@@ -2,6 +2,8 @@ import type {
   CapabilityDescriptor,
   CapabilityExecutionHandle,
   CapabilityExecutionHandleStorePort,
+  ConsumeCapabilityExecutionHandleInput,
+  GovernedCapabilityExecutionHandle,
   CapabilityInvocationEvent,
   CapabilityInvocationRequest,
   CapabilityPort,
@@ -16,6 +18,7 @@ import type {
   SecretPort,
 } from "@himawari-agent/application";
 import { PORT_ERROR_CODES, ApplicationPortError } from "@himawari-agent/application";
+import type { RunId } from "@himawari-agent/domain";
 import { type FailureScheduler, NO_FAILURES } from "../deterministic.js";
 import { frozenCopy } from "./helpers.js";
 
@@ -107,6 +110,16 @@ export class InMemoryCapabilityRegistryStore
     return frozenCopy(record);
   }
 
+  async invalidateCapabilityAuthority(
+    record: CapabilityRegistryRecord,
+    expectedRevision: number,
+    revokedAt: string,
+  ): Promise<CapabilityRegistryRecord> {
+    const saved = await this.save(record, expectedRevision);
+    await this.revokeCapabilityHandles(record.ref, revokedAt);
+    return saved;
+  }
+
   async createExecutionHandle(
     handle: CapabilityExecutionHandle,
   ): Promise<CapabilityExecutionHandle> {
@@ -144,6 +157,76 @@ export class InMemoryCapabilityRegistryStore
     const revoked = frozenCopy({ ...current, revokedAt });
     this.handles.set(handleRef, revoked);
     return frozenCopy(revoked);
+  }
+
+  async consumeExecutionHandle(
+    input: ConsumeCapabilityExecutionHandleInput,
+  ): Promise<GovernedCapabilityExecutionHandle> {
+    this.failures.checkpoint("capabilityHandle.consume");
+    const current = this.handles.get(input.handleRef) as
+      | GovernedCapabilityExecutionHandle
+      | undefined;
+    if (!current || current.handleVersion !== "capability-handle.v2") {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_FOUND,
+        `Capability handle ${input.handleRef} not found`,
+      );
+    }
+    if (current.idempotencyKeys.includes(input.idempotencyKey)) return frozenCopy(current);
+    if (
+      current.revision !== input.expectedRevision ||
+      current.revokedAt !== null ||
+      current.workerEndedAt !== null ||
+      input.consumedAt >= current.expiresAt ||
+      current.authorityFence !== input.authorityFence ||
+      current.uses >= current.maxUses ||
+      current.spentCostMicros + input.costMicros > current.maxTotalCostMicros
+    ) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        `Capability handle ${input.handleRef} is not consumable`,
+      );
+    }
+    const consumed: GovernedCapabilityExecutionHandle = frozenCopy({
+      ...current,
+      revision: current.revision + 1,
+      uses: current.uses + 1,
+      spentCostMicros: current.spentCostMicros + input.costMicros,
+      idempotencyKeys: [...current.idempotencyKeys, input.idempotencyKey],
+    });
+    this.handles.set(current.ref, consumed);
+    return frozenCopy(consumed);
+  }
+
+  async revokeCapabilityHandles(capabilityRef: string, revokedAt: string): Promise<number> {
+    let count = 0;
+    for (const [ref, handle] of this.handles) {
+      if (handle.capabilityRef !== capabilityRef || handle.revokedAt !== null) continue;
+      this.handles.set(ref, frozenCopy({ ...handle, revokedAt }));
+      count += 1;
+    }
+    return count;
+  }
+
+  async endRunExecutionHandles(runId: RunId, endedAt: string): Promise<number> {
+    let count = 0;
+    for (const [ref, handle] of this.handles) {
+      const governed = handle as Partial<GovernedCapabilityExecutionHandle>;
+      if (
+        handle.runId !== runId ||
+        governed.handleVersion !== "capability-handle.v2" ||
+        governed.workerEndedAt !== null
+      )
+        continue;
+      const ended: GovernedCapabilityExecutionHandle = {
+        ...(handle as GovernedCapabilityExecutionHandle),
+        revision: (governed.revision ?? 0) + 1,
+        workerEndedAt: endedAt,
+      };
+      this.handles.set(ref, frozenCopy(ended));
+      count += 1;
+    }
+    return count;
   }
 }
 

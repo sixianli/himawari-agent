@@ -190,6 +190,14 @@ export class SqliteDurableAdapters {
           record,
           expectedRevision,
         }),
+      invalidateCapabilityAuthority: (record, expectedRevision, revokedAt) =>
+        this.context.write("capability.invalidateAuthority", {
+          ownerId,
+          agentId,
+          record,
+          expectedRevision,
+          revokedAt,
+        }),
       createExecutionHandle: (handle) => this.context.write("capability.createHandle", { handle }),
       getExecutionHandle: (handleRef) =>
         this.context.read("capability.getHandle", { ownerId, agentId, handleRef }),
@@ -199,6 +207,21 @@ export class SqliteDurableAdapters {
           agentId,
           handleRef,
           revokedAt,
+        }),
+      consumeExecutionHandle: (input) => this.context.write("capability.consumeHandle", { input }),
+      revokeCapabilityHandles: (capabilityRef, revokedAt) =>
+        this.context.write("capability.revokeHandles", {
+          ownerId,
+          agentId,
+          capabilityRef,
+          revokedAt,
+        }),
+      endRunExecutionHandles: (runId, endedAt) =>
+        this.context.write("capability.endRunHandles", {
+          ownerId,
+          agentId,
+          runId,
+          endedAt,
         }),
     });
   }

@@ -13,6 +13,7 @@ import { frozenCopy } from "./helpers.js";
 export class InMemoryAuthorizationStore implements AuthorizationStorePort {
   private readonly approvals = new Map<string, ApprovalRequest>();
   private readonly grants = new Map<string, GrantRecord>();
+  private readonly usage = new Map<string, GrantRecord>();
   private readonly failures: FailureScheduler;
 
   constructor(failures: FailureScheduler = NO_FAILURES) {
@@ -92,6 +93,9 @@ export class InMemoryAuthorizationStore implements AuthorizationStorePort {
       status: input.resolution,
       decidedAt: input.decidedAt,
       grantId: input.grant?.id ?? null,
+      ...(input.recentAuthenticationRef !== undefined
+        ? { recentAuthenticationRef: input.recentAuthenticationRef }
+        : {}),
     });
     if (input.grant) this.grants.set(input.grant.id, frozenCopy(input.grant));
     this.approvals.set(current.id, resolved);
@@ -107,6 +111,10 @@ export class InMemoryAuthorizationStore implements AuthorizationStorePort {
 
   async consumeGrant(input: ConsumeGrantInput): Promise<GrantRecord> {
     this.failures.checkpoint("authorization.consumeGrant");
+    if (input.usageId) {
+      const replay = this.usage.get(input.usageId);
+      if (replay) return frozenCopy(replay);
+    }
     const current = this.grants.get(input.grantId);
     if (!current) {
       throw new ApplicationPortError(
@@ -142,6 +150,7 @@ export class InMemoryAuthorizationStore implements AuthorizationStorePort {
       spentCostMicros: current.spentCostMicros + input.costMicros,
     });
     this.grants.set(current.id, consumed);
+    if (input.usageId) this.usage.set(input.usageId, consumed);
     return frozenCopy(consumed);
   }
 

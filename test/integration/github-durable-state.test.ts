@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { GitHubWebhookReceiptRecord } from "@himawari-agent/application";
@@ -63,6 +63,17 @@ async function openFixture() {
         'sha256:github-events', 'fixture', 'fixture-key', 'active', ?, 'application/json')`,
     )
     .run(OWNER_ID, AGENT_ID, T0);
+  database
+    .prepare(
+      `INSERT INTO payloads (
+        ref, owner_id, agent_id, classification, storage_kind, ciphertext_path,
+        content_digest, encryption_algorithm, key_ref, lifecycle_state, created_at,
+        content_type
+      ) VALUES ('payload:github-delivery', ?, ?, 'private', 'ciphertext_file',
+        'sha256/aa/delivery.bin', 'sha256:github-delivery', 'fixture', 'fixture-key',
+        'active', ?, 'application/json')`,
+    )
+    .run(OWNER_ID, AGENT_ID, T0);
   database.close();
   const repository = await SqliteProductStateRepository.open({
     stateRoot,
@@ -120,7 +131,7 @@ async function openFixture() {
     },
     null,
   );
-  return { repository, state };
+  return { repository, state, stateRoot };
 }
 
 function occurrence(deliveryId: string): BackgroundOccurrence {
@@ -152,6 +163,7 @@ function occurrence(deliveryId: string): BackgroundOccurrence {
 function receipt(
   deliveryId: string,
   occurrenceId: BackgroundOccurrence["id"] | null = null,
+  payloadRef = "payload:github-events",
 ): GitHubWebhookReceiptRecord {
   return {
     id: `github-receipt:${deliveryId}` as GitHubWebhookReceiptRecord["id"],
@@ -162,7 +174,7 @@ function receipt(
     repositoryRef: REPOSITORY_REF,
     eventName: "push",
     action: null,
-    payloadRef: "payload:github-events",
+    payloadRef,
     status: occurrenceId ? "normalized" : "received",
     occurrenceId,
     receivedAt: T0,
@@ -241,6 +253,107 @@ describe("SQLite GitHub integration state", () => {
     expect(await fixture.state.listCoverageGaps(MONITOR_ID)).toMatchObject([
       { status: "closed", reasonCode: "worker_unavailable", endedAt: T1 },
     ]);
+    await fixture.repository.close();
+  });
+
+  it("durably retries delete policy and exposes completed readback", async () => {
+    const fixture = await openFixture();
+    const admitted = occurrence("delivery-history-delete");
+    await fixture.state.admitWebhook({
+      receipt: receipt("delivery-history-delete", null, "payload:github-delivery"),
+      occurrence: admitted,
+    });
+    await fixture.state.saveCoverageGap({
+      id: "github-gap-history-delete" as never,
+      monitorId: MONITOR_ID,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      status: "closed",
+      reasonCode: "offline",
+      startedAt: T0,
+      endedAt: T1,
+    });
+    const current = await fixture.state.readMonitor(MONITOR_ID);
+    if (!current) throw new Error("monitor fixture disappeared");
+    const revoked = await fixture.state.saveMonitor(
+      {
+        ...current,
+        revision: 2,
+        status: "revoked",
+      },
+      1,
+    );
+    const payloadTarget = path.join(
+      fixture.stateRoot,
+      "data",
+      "payload-ciphertext",
+      "sha256",
+      "aa",
+      "delivery.bin",
+    );
+    await mkdir(payloadTarget, { recursive: true });
+    const history = fixture.repository.githubMonitorHistoryPolicy();
+    await expect(
+      history.apply({
+        monitor: revoked,
+        policy: "delete",
+        requestedBy: "owner-subject",
+        occurredAt: T1,
+      }),
+    ).rejects.toMatchObject({ code: "PORT_PROVIDER_FAILURE" });
+    await expect(history.inspect(MONITOR_ID)).resolves.toMatchObject({
+      status: "retry_wait",
+      policy: "delete",
+      attemptCount: 1,
+      lastErrorCode: "payload_file_delete_failed",
+    });
+    await expect(history.listRetryable(10)).resolves.toHaveLength(1);
+
+    await rm(payloadTarget, { recursive: true, force: true });
+    await history.retry(MONITOR_ID, "2026-08-27T00:00:02.000Z");
+    await expect(history.inspect(MONITOR_ID)).resolves.toMatchObject({
+      status: "completed",
+      attemptCount: 2,
+      completedAt: "2026-08-27T00:00:02.000Z",
+      lastErrorCode: null,
+    });
+    await expect(fixture.repository.scheduler().read(MONITOR_ID)).resolves.toBeUndefined();
+    await expect(fixture.state.findReceipt("delivery-history-delete")).resolves.toBeUndefined();
+    await expect(fixture.state.listCoverageGaps(MONITOR_ID)).resolves.toEqual([]);
+    await fixture.repository.close();
+  });
+
+  it("completes retain policy without deleting monitor history", async () => {
+    const fixture = await openFixture();
+    const admitted = occurrence("delivery-history-retain");
+    await fixture.state.admitWebhook({
+      receipt: receipt("delivery-history-retain"),
+      occurrence: admitted,
+    });
+    const current = await fixture.state.readMonitor(MONITOR_ID);
+    if (!current) throw new Error("monitor fixture disappeared");
+    const revoked = await fixture.state.saveMonitor(
+      {
+        ...current,
+        revision: 2,
+        status: "revoked",
+      },
+      1,
+    );
+    const history = fixture.repository.githubMonitorHistoryPolicy();
+    await history.apply({
+      monitor: revoked,
+      policy: "retain",
+      requestedBy: "owner-subject",
+      occurredAt: T1,
+    });
+    await expect(history.inspect(MONITOR_ID)).resolves.toMatchObject({
+      status: "completed",
+      policy: "retain",
+      attemptCount: 1,
+    });
+    await expect(fixture.repository.scheduler().read(MONITOR_ID)).resolves.toBeDefined();
+    await expect(fixture.state.findReceipt("delivery-history-retain")).resolves.toBeDefined();
     await fixture.repository.close();
   });
 });

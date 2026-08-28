@@ -335,7 +335,7 @@ describe("installable Node services and admin CLI", () => {
     expect(JSON.parse(dbStatus.stdout)).toMatchObject({
       command: "db.status",
       managed: true,
-      schemaSequence: 13,
+      schemaSequence: 14,
       quickCheck: "ok",
     });
 
@@ -484,7 +484,7 @@ describe("installable Node services and admin CLI", () => {
       "--confirm",
       "RESTORE_backup-installed-drill",
     ]);
-    expect(restored.status).toBe(0);
+    expect(restored.status, restored.stderr).toBe(0);
     expect(restored.stdout).toContain('"command":"backup.restore"');
     const restoredDatabase = openQualifiedDatabase(databasePath);
     try {
@@ -556,7 +556,7 @@ describe("installable Node services and admin CLI", () => {
       "--confirm",
       "EXPORT_transfer-installed-drill",
     ]);
-    expect(exported.status).toBe(0);
+    expect(exported.status, exported.stderr).toBe(0);
     const packageRef = lastJson(exported.stdout).packageRef as string;
     expect(packageRef).toBe(path.join(packageRoot, "transfer-installed-drill"));
 

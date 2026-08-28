@@ -17,7 +17,9 @@ import type {
   CapabilitySecretReference,
   ExternalActionReconciliationPort,
   SecretPort,
+  GovernedCapabilityExecutionHandle,
 } from "../ports/capabilities.js";
+import type { AuthorizationStorePort } from "../ports/authorization.js";
 import { PORT_ERROR_CODES, ApplicationPortError } from "../ports/common.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 
@@ -36,6 +38,8 @@ export interface ExecutionWorkerServiceDependencies {
   readonly reconciliation?: ExternalActionReconciliationPort;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
+  readonly authorityFence?: () => number;
+  readonly authorization?: AuthorizationStorePort;
 }
 
 function sameSecret(left: CapabilitySecretReference, right: CapabilitySecretReference): boolean {
@@ -67,6 +71,7 @@ export class ExecutionWorkerService {
 
     const handle = await this.requireHandle(request.payload.capabilityHandleRef);
     this.assertDelegation(request, handle);
+    await this.consumeGovernedHandle(request, handle);
     const issuedSecretHandles: string[] = [];
     try {
       for (const secret of request.payload.secretRefs) {
@@ -247,6 +252,62 @@ export class ExecutionWorkerService {
         { requestId: request.messageId, handleRef: handle.ref },
       );
     }
+  }
+
+  private async consumeGovernedHandle(
+    request: ExecuteWorkRequest,
+    handle: CapabilityExecutionHandle,
+  ): Promise<void> {
+    const governed = handle as Partial<GovernedCapabilityExecutionHandle>;
+    if (governed.handleVersion !== "capability-handle.v2") return;
+    if (
+      governed.authorityFence === undefined ||
+      !this.dependencies.authorityFence ||
+      governed.authorityFence !== this.dependencies.authorityFence()
+    ) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.HANDLE_REVOKED,
+        `Capability Handle ${handle.ref} has a stale authority fence`,
+      );
+    }
+    if (
+      !this.dependencies.handles.consumeExecutionHandle ||
+      !this.dependencies.authorization ||
+      governed.revision === undefined ||
+      governed.authorizationRef === undefined
+    ) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        `Execution request ${request.messageId} cannot revalidate its governed Handle`,
+      );
+    }
+    if (handle.authorization.type === "grant") {
+      const grants = await this.dependencies.authorization.listGrants(
+        handle.ownerId,
+        handle.agentId,
+      );
+      const grant = grants.find(({ id }) => id === handle.authorization.ref);
+      const now = this.dependencies.clock.now();
+      if (!grant || grant.revokedAt !== null || now < grant.validFrom || now >= grant.expiresAt) {
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.HANDLE_REVOKED,
+          `Grant for Capability Handle ${handle.ref} is no longer active`,
+        );
+      }
+    }
+    await this.dependencies.handles.consumeExecutionHandle({
+      handleRef: handle.ref,
+      expectedRevision: governed.revision,
+      authorityFence: governed.authorityFence,
+      operation: request.payload.operation,
+      inputRef: request.payload.inputRef,
+      delegatedContextRefs: request.payload.delegatedContextRefs,
+      secretRefs: request.payload.secretRefs.map(({ secretRef }) => secretRef),
+      dataClassification: request.dataClassification,
+      costMicros: 0,
+      idempotencyKey: request.idempotencyKey,
+      consumedAt: this.dependencies.clock.now(),
+    });
   }
 
   private eventEnvelope<

@@ -350,6 +350,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "retain visible gap history",
   ),
   entry(
+    "github_history_policy_operations",
+    "DurableGitHubMonitorHistoryPolicyPort",
+    "running to retry_wait or completed",
+    "metadata_only",
+    "retain non-content deletion or retention proof with monitor tombstone",
+  ),
+  entry(
     "recovery_points",
     "RecoveryPointPort",
     "creating to terminal",

@@ -41,6 +41,27 @@ export interface GitHubMonitorHistoryPolicyPort {
   }): Promise<void>;
 }
 
+export interface GitHubMonitorHistoryPolicyOperation {
+  readonly monitorId: JobId;
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly monitorRevision: number;
+  readonly policy: GitHubMonitorHistoryPolicy;
+  readonly status: "running" | "retry_wait" | "completed";
+  readonly attemptCount: number;
+  readonly requestedBy: string;
+  readonly requestedAt: string;
+  readonly updatedAt: string;
+  readonly completedAt: string | null;
+  readonly lastErrorCode: string | null;
+}
+
+export interface DurableGitHubMonitorHistoryPolicyPort extends GitHubMonitorHistoryPolicyPort {
+  inspect(monitorId: JobId): Promise<GitHubMonitorHistoryPolicyOperation | undefined>;
+  retry(monitorId: JobId, occurredAt: string): Promise<void>;
+  listRetryable(limit: number): Promise<readonly GitHubMonitorHistoryPolicyOperation[]>;
+}
+
 export interface GitHubMonitorMirrorPort {
   revokeMonitor(monitorId: JobId): Promise<void>;
 }
