@@ -2,6 +2,7 @@ export * from "./capability-registry-service.js";
 export * from "./action-policy-service.js";
 export * from "./approval-service.js";
 export * from "./grant-service.js";
+export * from "./governance-gateway-adapter.js";
 export * from "./capability-lifecycle-service.js";
 export * from "./capability-handle-service.js";
 export * from "./attention-policy-service.js";

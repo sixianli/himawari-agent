@@ -30,6 +30,7 @@ import type {
   SensitiveMemoryApprovalStatePort,
   ThreadDistillationStatePort,
   GitHubIntegrationStatePort,
+  GovernanceMutationReceiptStorePort,
   DurableGitHubMonitorHistoryPolicyPort,
   ThreadRepositoryPort,
 } from "@himawari-agent/application";
@@ -299,6 +300,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   authorizationStore(): AuthorizationStorePort {
     return this.durable.authorizationStore();
+  }
+
+  governanceMutationReceiptStore(): GovernanceMutationReceiptStorePort {
+    return this.durable.governanceMutationReceiptStore();
   }
 
   capabilityStore(

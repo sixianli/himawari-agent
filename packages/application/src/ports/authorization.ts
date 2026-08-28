@@ -197,10 +197,16 @@ export interface AuthorizationStorePort {
   createApproval(request: ApprovalRequest): Promise<ApprovalRequest>;
   findApprovalByIntent(intentId: string): Promise<ApprovalRequest | undefined>;
   getApproval(approvalRequestId: string): Promise<ApprovalRequest | undefined>;
+  listApprovals(ownerId: OwnerId, agentId: AgentId): Promise<readonly ApprovalRequest[]>;
   resolveApproval(input: ResolveApprovalInput): Promise<ApprovalRequest>;
   listGrants(ownerId: OwnerId, agentId: AgentId): Promise<readonly GrantRecord[]>;
   consumeGrant(input: ConsumeGrantInput): Promise<GrantRecord>;
-  revokeGrant(grantId: string, revokedAt: string, reasonCode: string): Promise<GrantRecord>;
+  revokeGrant(
+    grantId: string,
+    revokedAt: string,
+    reasonCode: string,
+    expectedRevision?: number,
+  ): Promise<GrantRecord>;
 }
 
 export interface PermissionAllowDecision {

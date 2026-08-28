@@ -1,7 +1,7 @@
 import type { GatewayV2Event, ThreadGatewayEvent } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it, vi } from "vitest";
 import { ControlCenterBrowserStorage } from "../src/browser-storage.js";
-import { GatewayClient, safeBrowserLog } from "../src/gateway-client.js";
+import { GatewayClient, loadRuntimeConfiguration, safeBrowserLog } from "../src/gateway-client.js";
 import {
   commandMessage,
   queryMessage,
@@ -126,6 +126,27 @@ function threadEvent(): ThreadGatewayEvent {
 }
 
 describe("typed browser Gateway client", () => {
+  it("loads scoped governance authentication references without exposing credentials", async () => {
+    const loaded = await loadRuntimeConfiguration(
+      (async () =>
+        new Response(
+          JSON.stringify({
+            ...configuration,
+            authorizationRef: "authentication:owner-session-01",
+            recentAuthenticationRef: "authentication:owner-session-01",
+          }),
+          { status: 200 },
+        )) as typeof fetch,
+    );
+
+    expect(loaded).toMatchObject({
+      authorizationRef: "authentication:owner-session-01",
+      recentAuthenticationRef: "authentication:owner-session-01",
+    });
+    expect(JSON.stringify(loaded)).not.toContain("password");
+    expect(JSON.stringify(loaded)).not.toContain("accessToken");
+  });
+
   it("strictly serializes commands, keeps one idempotency key and reports replay", async () => {
     const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
     const client = new GatewayClient({
@@ -178,6 +199,38 @@ describe("typed browser Gateway client", () => {
       payload: { action: "enable", disclosure: { machineSecretsExcluded: true } },
     });
     expect(JSON.stringify(message)).not.toContain("accessToken");
+  });
+
+  it("builds revision-bound governance commands with a caller-owned idempotency key", () => {
+    const message = commandMessage(
+      configuration,
+      "approval.respond",
+      {
+        approvalRequestId: "approval-01",
+        expectedRevision: 3,
+        decision: "approved",
+        semanticSnapshotHash: "sha256:approval-snapshot-01",
+        editedPayloadRef: null,
+        recentAuthenticationRef: "authentication:owner-session-01",
+      },
+      {
+        risk: "critical",
+        authorizationRef: "authentication:owner-session-01",
+        idempotencyKey: "governance:approval-01:revision-3",
+      },
+    );
+
+    expect(message).toMatchObject({
+      type: "approval.respond",
+      risk: "critical",
+      authorizationRef: "authentication:owner-session-01",
+      idempotencyKey: "governance:approval-01:revision-3",
+      payload: {
+        approvalRequestId: "approval-01",
+        expectedRevision: 3,
+        semanticSnapshotHash: "sha256:approval-snapshot-01",
+      },
+    });
   });
 
   it("accepts only strict snapshots and protects plaintext through a separate endpoint", async () => {
@@ -304,6 +357,13 @@ describe("browser storage and SSE recovery", () => {
       commandType: "thread.pin",
       threadId: "thread-01",
     });
+    storage.savePendingGovernanceMutation({
+      operationKey: "approval.approve:approval-01:3",
+      idempotencyKey: "governance:approval-01:revision-3",
+      commandType: "approval.respond",
+      objectRef: "approval-01",
+      expectedRevision: 3,
+    });
     storage.savePreferences({
       density: "compact",
       detailPanePercent: 22,
@@ -317,12 +377,19 @@ describe("browser storage and SSE recovery", () => {
         "himawari.control-center.v1.lastCursor",
         "himawari.control-center.v1.threadLastCursor",
         "himawari.control-center.v1.mutation.op:pin:1:thread-01",
+        "himawari.control-center.v1.governanceMutation.approval.approve:approval-01:3",
         "himawari.control-center.v1.preferences",
       ]),
     );
     expect(raw.getItem("himawari.control-center.v1.mutation.op:pin:1:thread-01")).not.toContain(
       "未发送草稿",
     );
+    const governanceIdentity = raw.getItem(
+      "himawari.control-center.v1.governanceMutation.approval.approve:approval-01:3",
+    );
+    expect(governanceIdentity).toContain("governance:approval-01:revision-3");
+    expect(governanceIdentity).not.toContain("semanticSnapshotHash");
+    expect(governanceIdentity).not.toContain("authentication:owner-session-01");
     const log = safeBrowserLog("EVENT", {
       type: "stream.event",
       messageId: "event-01",

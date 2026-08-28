@@ -8,6 +8,7 @@ export * from "./conversation.js";
 export * from "./coordination.js";
 export * from "./durability.js";
 export * from "./gateway.js";
+export * from "./governance.js";
 export * from "./github.js";
 export * from "./health.js";
 export * from "./identity.js";

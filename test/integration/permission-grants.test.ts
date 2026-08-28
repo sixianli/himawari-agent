@@ -338,6 +338,9 @@ describe("Task 7 deterministic Permission and Grants", () => {
       getApproval: async () => {
         throw new Error("unavailable");
       },
+      listApprovals: async () => {
+        throw new Error("unavailable");
+      },
       resolveApproval: async () => {
         throw new Error("unavailable");
       },

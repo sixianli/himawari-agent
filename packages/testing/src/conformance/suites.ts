@@ -509,6 +509,7 @@ export function authorizationStorePortConformance(
       await withPort(harness, async (port) => {
         await port.createApproval(approval);
         expect(await port.findApprovalByIntent(approval.intentId)).toEqual(approval);
+        expect(await port.listApprovals(OWNER_ID, AGENT_ID)).toEqual([approval]);
 
         const resolved = await port.resolveApproval({
           approvalRequestId: approval.id,
@@ -556,6 +557,29 @@ export function authorizationStorePortConformance(
             }),
           PORT_ERROR_CODES.CONFLICT,
         );
+      });
+    });
+
+    it("uses revision CAS when revoking a Grant", async () => {
+      await withPort(harness, async (port) => {
+        await port.createApproval(approval);
+        await port.resolveApproval({
+          approvalRequestId: approval.id,
+          expectedRevision: 1,
+          semanticSnapshotHash: approval.semanticSnapshotHash,
+          resolution: "approved",
+          decidedAt: T1,
+          grant,
+        });
+        await expectPortError(
+          () => port.revokeGrant(grant.id, T1, "owner_revoked", 2),
+          PORT_ERROR_CODES.CONFLICT,
+        );
+        await expect(port.revokeGrant(grant.id, T1, "owner_revoked", 1)).resolves.toMatchObject({
+          revision: 2,
+          revokedAt: T1,
+          revocationReasonCode: "owner_revoked",
+        });
       });
     });
   });

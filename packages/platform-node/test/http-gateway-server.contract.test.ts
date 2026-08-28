@@ -264,6 +264,10 @@ function createFixture(
     ...extensions,
     authentication: auth,
     csrf: {
+      async issue(input) {
+        if (input !== authentication) throw new Error("CSRF_ISSUE_REJECTED");
+        return "csrf-issued-01";
+      },
       async verify(input) {
         return input.token === "csrf-01" && input.authentication === authentication;
       },
@@ -910,5 +914,36 @@ describe("HTTP Gateway contract and security boundary", () => {
       "read:agent-01:payload-private-01",
       "search:agent-01:私人搜索",
     ]);
+  });
+
+  it("exposes only scoped authentication references in the authenticated browser configuration", async () => {
+    const { app } = createFixture(undefined, undefined, {
+      browserConfiguration: {
+        agentId: "agent-01",
+        deploymentId: "deployment-01",
+        authorityEpoch: 1,
+        fencingToken: 1,
+      },
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/control-center/v1/config",
+      headers: {
+        host: "agent.example.test",
+        "cf-access-jwt-assertion": "assertion-01",
+        cookie: "himawari_session=session-token-01",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      ownerId: "owner-01",
+      agentId: "agent-01",
+      csrfToken: "csrf-issued-01",
+      authorizationRef: authentication.authenticationRef,
+      recentAuthenticationRef: authentication.authenticationRef,
+    });
+    expect(response.body).not.toContain("session-token-01");
+    expect(response.body).not.toContain("assertion-01");
   });
 });

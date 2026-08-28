@@ -11,6 +11,12 @@ const port = Number(process.env.HIMAWARI_BROWSER_FIXTURE_PORT ?? "4173");
 const now = "2026-08-27T00:00:00.000Z";
 const accepted = new Set();
 const acceptedThreadCommands = new Map();
+const acceptedGovernanceCommands = new Map();
+const governanceAuthorizationRef = "authentication:owner-session-01";
+const capabilitySecretMaterials = new Map([
+  ["secret-ref-provider-token", "fixture-machine-secret-value"],
+]);
+let recentAuthenticationAvailable = true;
 const payloads = new Map([
   ["payload:title-main", { content: "主对话", dataClassification: "private" }],
   ["payload:title-research", { content: "研究记录", dataClassification: "private" }],
@@ -77,6 +83,188 @@ const threads = new Map([
       updatedAt: now,
       messages: [],
       runs: [],
+    },
+  ],
+]);
+const approvalIntent = {
+  intentId: "intent-publish-01",
+  threadId: "thread-main",
+  runId: "run-01",
+  actionKind: "COMMUNICATE",
+  capabilityRef: "capability-update-approve",
+  capabilityVersion: "1.0.0",
+  operation: "publish",
+  targetRefs: ["target-reviewer-01"],
+  resourceRefs: ["resource:article-01"],
+  dataClassification: "private",
+  disclosure: "named_recipients",
+  recipientRefs: ["recipient:reviewer-01"],
+  sideEffect: "irreversible",
+  estimatedCostMicros: 1_000,
+  frequency: { count: 1, intervalMs: null },
+  credentialOrAccessChange: false,
+  reversible: false,
+  idempotencyKey: "intent-publish-01",
+  deterministicFactCodes: ["EXTERNAL_COMMUNICATION"],
+  modelReasonCode: "MODEL_COMMUNICATION",
+  requestedAt: now,
+  expiresAt: "2026-08-28T00:00:00.000Z",
+};
+const approvals = new Map(
+  ["approval-approve", "approval-deny", "approval-recent-auth"].map((approvalRequestId) => [
+    approvalRequestId,
+    {
+      approvalRequestId,
+      revision: 1,
+      status: "pending",
+      deliveryState: "deliverable",
+      semanticSnapshotHash: `sha256:${approvalRequestId}`,
+      finalRisk: "critical",
+      recentAuthenticationRequired: true,
+      recentAuthenticationRef: null,
+      requestedAt: now,
+      expiresAt: "2026-08-28T00:00:00.000Z",
+      decidedAt: null,
+      grantId: null,
+      intent: { ...approvalIntent, intentId: `intent:${approvalRequestId}` },
+      trueResultRef: null,
+      generatedAt: now,
+    },
+  ]),
+);
+
+function capabilityRecord(capabilityRef, lifecycle, overrides = {}) {
+  return {
+    capabilityRef,
+    revision: 1,
+    lifecycle,
+    displayName: `Fixture ${capabilityRef}`,
+    sourceType: "adapter",
+    sourceLocator: `adapter:fixture:${capabilityRef}:1.0.0`,
+    sourceIdentity: "publisher:fixture-reviewed",
+    version: "1.0.0",
+    integrity: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    signatureStatus: "verified",
+    signerRef: "signer-fixture",
+    operations: ["publish"],
+    permissionRefs: ["permission-publish"],
+    dataClassifications: ["private"],
+    networkScopes: ["api.example.test:443"],
+    filesystemScopes: [],
+    secretRefs: ["secret-ref-provider-token"],
+    isolation: "remote",
+    currency: "USD",
+    maxMicrosPerInvocation: 1_000,
+    healthStatus: "healthy",
+    healthCheckedAt: now,
+    reviewedBy: lifecycle === "review_required" ? null : "owner-01",
+    reviewedAt: lifecycle === "review_required" ? null : now,
+    approvalRefs: lifecycle === "active" ? ["approval-install-fixture"] : [],
+    dependencyTaskRefs: ["task-dependent-01"],
+    runtimeQualification:
+      lifecycle === "active"
+        ? {
+            platform: "linux",
+            runtimeIdentity: `adapter-runtime:${capabilityRef}`,
+            productionSuitable: true,
+            reasonCodes: [],
+            checkedAt: now,
+          }
+        : null,
+    pendingVersion: null,
+    updateAssessment: null,
+    rollbackVersion: lifecycle === "active" ? "0.9.0" : null,
+    rollbackAvailable: lifecycle === "active",
+    lastTransition:
+      lifecycle === "active"
+        ? {
+            fromVersion: "0.9.0",
+            toVersion: "1.0.0",
+            outcome: "activated",
+            occurredAt: now,
+            externalEffectsRolledBack: false,
+            productStateRolledBack: false,
+          }
+        : null,
+    generatedAt: now,
+    ...overrides,
+  };
+}
+
+const capabilityUpdateAssessment = {
+  fromVersion: "1.0.0",
+  toVersion: "2.0.0",
+  disposition: "approval_required",
+  risk: "critical",
+  sourceIdentityChanged: false,
+  integrityChanged: true,
+  semanticMajorChanged: true,
+  runtimeKindChanged: false,
+  executableIdentityChanged: false,
+  executableCodeChanged: true,
+  expansions: ["permission:publish-public"],
+  contractions: [],
+  compatibilityPreserved: true,
+  reasonCodes: ["CAPABILITY_UPDATE_EXECUTABLE_CHANGED"],
+};
+const capabilities = new Map([
+  [
+    "capability-review",
+    capabilityRecord("capability-review", "review_required", { healthStatus: "unknown" }),
+  ],
+  [
+    "capability-update-approve",
+    capabilityRecord("capability-update-approve", "update_proposed", {
+      revision: 5,
+      pendingVersion: "2.0.0",
+      updateAssessment: capabilityUpdateAssessment,
+      rollbackVersion: "0.9.0",
+      rollbackAvailable: true,
+    }),
+  ],
+  [
+    "capability-update-deny",
+    capabilityRecord("capability-update-deny", "update_proposed", {
+      revision: 5,
+      pendingVersion: "2.0.0",
+      updateAssessment: capabilityUpdateAssessment,
+      rollbackVersion: "0.9.0",
+      rollbackAvailable: true,
+    }),
+  ],
+  ["capability-active", capabilityRecord("capability-active", "active", { revision: 7 })],
+]);
+const grants = new Map([
+  [
+    "grant-active",
+    {
+      grantId: "grant-active",
+      revision: 2,
+      kind: "one_time",
+      status: "active",
+      capabilityRef: "capability-update-approve",
+      capabilityVersion: "1.0.0",
+      operations: ["publish"],
+      exactResourceRef: "resource:article-01",
+      resourceIdentities: ["resource:article-01"],
+      resourcePrefixes: [],
+      maxDataClassification: "private",
+      disclosure: "named_recipients",
+      sideEffects: ["irreversible"],
+      recipientRefs: ["recipient:reviewer-01"],
+      maxCostMicrosPerUse: 1_000,
+      maxFrequency: { count: 1, intervalMs: null },
+      validFrom: now,
+      expiresAt: "2026-08-28T00:00:00.000Z",
+      uses: 0,
+      maxUses: 1,
+      spentCostMicros: 0,
+      maxTotalCostMicros: 1_000,
+      sourceApprovalRequestId: "approval-approve",
+      revokedAt: null,
+      revocationReasonCode: null,
+      affectedTaskRefs: ["task-dependent-01"],
+      generatedAt: now,
     },
   ],
 ]);
@@ -202,6 +390,235 @@ function collectionCategory(type) {
     "trace.timeline": ["trace", ["trace-01", "trace-02"]],
     "identity.sessions": ["sessions", ["session-01", "device-01"]],
   }[type];
+}
+
+function governanceSnapshot(type, payload, risk = "medium") {
+  return {
+    ...envelope("snapshot", type),
+    risk,
+    messageId: `snapshot:${type}:${payload.revision ?? cursorSequence}`,
+    payload: { ...payload, generatedAt: now },
+  };
+}
+
+function governanceCollection(category, itemRefs) {
+  return {
+    ...envelope("snapshot", "collection.snapshot"),
+    payload: {
+      category,
+      itemRefs,
+      nextCursor: null,
+      snapshotRef: `snapshot:${category}:${cursorSequence}`,
+      generatedAt: now,
+    },
+  };
+}
+
+function handleGovernanceQuery(message) {
+  switch (message.type) {
+    case "approval.list":
+      return governanceCollection(
+        "approvals",
+        [...approvals.values()]
+          .filter(
+            ({ status }) => message.payload.status === null || message.payload.status === status,
+          )
+          .map(({ approvalRequestId }) => approvalRequestId),
+      );
+    case "approval.detail": {
+      const approval = approvals.get(message.payload.approvalRequestId);
+      return approval
+        ? governanceSnapshot("approval.snapshot", approval, approval.finalRisk)
+        : null;
+    }
+    case "capability.list":
+      return governanceCollection(
+        "capabilities",
+        [...capabilities.values()]
+          .filter(
+            ({ lifecycle }) =>
+              message.payload.lifecycle === null || message.payload.lifecycle === lifecycle,
+          )
+          .map(({ capabilityRef }) => capabilityRef),
+      );
+    case "capability.detail": {
+      const capability = capabilities.get(message.payload.capabilityRef);
+      return capability
+        ? governanceSnapshot(
+            "capability.snapshot",
+            capability,
+            capability.updateAssessment?.risk ?? "medium",
+          )
+        : null;
+    }
+    case "grant.list":
+      return governanceCollection(
+        "grants",
+        [...grants.values()]
+          .filter(({ status }) => message.payload.includeRevoked || status !== "revoked")
+          .map(({ grantId }) => grantId),
+      );
+    case "grant.detail": {
+      const grant = grants.get(message.payload.grantId);
+      return grant ? governanceSnapshot("grant.snapshot", grant) : null;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function governanceTarget(message) {
+  switch (message.type) {
+    case "approval.respond":
+      return approvals.get(message.payload.approvalRequestId);
+    case "grant.revoke":
+      return grants.get(message.payload.grantId);
+    case "capability.review":
+    case "capability.install.approve":
+    case "capability.update.respond":
+    case "capability.disable":
+    case "capability.rollback":
+      return capabilities.get(message.payload.capabilityRef);
+    default:
+      return undefined;
+  }
+}
+
+function handleGovernanceCommand(message) {
+  if (
+    ![
+      "approval.respond",
+      "grant.revoke",
+      "capability.review",
+      "capability.install.approve",
+      "capability.update.respond",
+      "capability.disable",
+      "capability.rollback",
+    ].includes(message.type)
+  ) {
+    return null;
+  }
+  const fingerprint = JSON.stringify({ type: message.type, payload: message.payload });
+  const acceptedCommand = acceptedGovernanceCommands.get(message.idempotencyKey);
+  if (acceptedCommand) {
+    if (acceptedCommand.fingerprint !== fingerprint) {
+      return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
+    }
+    return { status: 200, body: { ...acceptedCommand.result, replayed: true } };
+  }
+  if (message.authorizationRef !== governanceAuthorizationRef) {
+    return { status: 403, body: { error: { code: "PORT_NOT_AUTHORITATIVE" } } };
+  }
+  const target = governanceTarget(message);
+  if (!target) return { status: 404, body: { error: { code: "PORT_NOT_FOUND" } } };
+  if (message.payload.expectedRevision !== target.revision) {
+    return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
+  }
+  switch (message.type) {
+    case "approval.respond":
+      if (
+        message.payload.semanticSnapshotHash !== target.semanticSnapshotHash ||
+        (message.payload.decision === "approved" &&
+          message.payload.recentAuthenticationRef !== governanceAuthorizationRef)
+      ) {
+        return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
+      }
+      target.revision += 1;
+      target.status = message.payload.decision;
+      target.decidedAt = now;
+      target.recentAuthenticationRef =
+        message.payload.decision === "approved" ? governanceAuthorizationRef : null;
+      target.grantId = message.payload.decision === "approved" ? "grant-active" : null;
+      target.trueResultRef = `result:${target.approvalRequestId}:${target.status}`;
+      break;
+    case "grant.revoke":
+      target.revision += 1;
+      target.status = "revoked";
+      target.revokedAt = now;
+      target.revocationReasonCode = message.payload.reasonCode;
+      break;
+    case "capability.review":
+      if (target.lifecycle !== "review_required") {
+        return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
+      }
+      target.revision += 1;
+      target.lifecycle = "installation_proposed";
+      target.reviewedBy = "owner-01";
+      target.reviewedAt = now;
+      break;
+    case "capability.install.approve":
+      if (target.lifecycle !== "installation_proposed") {
+        return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
+      }
+      if (!target.secretRefs.every((secretRef) => capabilitySecretMaterials.has(secretRef))) {
+        return { status: 503, body: { error: { code: "SECRET_REFERENCE_UNAVAILABLE" } } };
+      }
+      target.revision += 2;
+      target.lifecycle = "active";
+      target.approvalRefs = [message.payload.approvalRef];
+      target.runtimeQualification = {
+        platform: "linux",
+        runtimeIdentity: `adapter-runtime:${target.capabilityRef}`,
+        productionSuitable: true,
+        reasonCodes: [],
+        checkedAt: now,
+      };
+      target.healthStatus = "healthy";
+      break;
+    case "capability.update.respond": {
+      if (target.lifecycle !== "update_proposed") {
+        return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
+      }
+      const fromVersion = target.version;
+      const toVersion = target.pendingVersion;
+      target.revision += message.payload.decision === "approved" ? 2 : 1;
+      if (message.payload.decision === "approved") {
+        target.version = toVersion;
+        target.rollbackVersion = fromVersion;
+        target.rollbackAvailable = true;
+        target.approvalRefs = [...target.approvalRefs, message.payload.approvalRef];
+      }
+      target.lifecycle = "active";
+      target.lastTransition = {
+        fromVersion,
+        toVersion,
+        outcome: message.payload.decision === "approved" ? "activated" : "rejected",
+        occurredAt: now,
+        externalEffectsRolledBack: false,
+        productStateRolledBack: false,
+      };
+      target.pendingVersion = null;
+      target.updateAssessment = null;
+      break;
+    }
+    case "capability.disable":
+      target.revision += 1;
+      target.lifecycle = "disabled";
+      target.healthStatus = "unknown";
+      break;
+    case "capability.rollback": {
+      if (target.lifecycle !== "active" || !target.rollbackVersion) {
+        return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
+      }
+      const fromVersion = target.version;
+      target.version = target.rollbackVersion;
+      target.rollbackVersion = fromVersion;
+      target.revision += 1;
+      target.lastTransition = {
+        fromVersion,
+        toVersion: target.version,
+        outcome: "rolled_back",
+        occurredAt: now,
+        externalEffectsRolledBack: false,
+        productStateRolledBack: false,
+      };
+      break;
+    }
+  }
+  cursorSequence += 1;
+  const result = { resultRef: `governance:${message.type}:${target.revision}`, replayed: false };
+  acceptedGovernanceCommands.set(message.idempotencyKey, { fingerprint, result });
+  return { status: 200, body: result };
 }
 
 function contentType(filePath) {
@@ -465,6 +882,8 @@ async function handleRequest(request, response) {
       fencingToken: 1,
       actorId: "owner-01",
       csrfToken: "csrf-fixture",
+      authorizationRef: governanceAuthorizationRef,
+      recentAuthenticationRef: recentAuthenticationAvailable ? governanceAuthorizationRef : null,
       primaryModel: { provider: "fixture-provider", model: "fixture-primary", version: "v1" },
       primaryModelRef: "model:fixture-primary:v1",
       repositoryAllowlistRefs: ["fixture-owner/fixture-repository"],
@@ -475,6 +894,12 @@ async function handleRequest(request, response) {
   if (request.method === "POST" && url.pathname === "/__fixture/degrade") {
     healthDegraded = true;
     json(response, 200, { degraded: true });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/__fixture/recent-auth") {
+    const message = await body(request);
+    recentAuthenticationAvailable = message.available === true;
+    json(response, 200, { available: recentAuthenticationAvailable });
     return;
   }
   if (request.method === "POST" && url.pathname === "/__fixture/conflict") {
@@ -489,8 +914,39 @@ async function handleRequest(request, response) {
     json(response, 200, { threadId: thread.threadId, revision: thread.revision });
     return;
   }
+  if (request.method === "POST" && url.pathname === "/__fixture/governance-conflict") {
+    const message = await body(request);
+    const target =
+      grants.get(message.objectRef) ??
+      capabilities.get(message.objectRef) ??
+      approvals.get(message.objectRef);
+    if (!target) {
+      json(response, 404, { error: { code: "PORT_NOT_FOUND" } });
+      return;
+    }
+    target.revision += 1;
+    cursorSequence += 1;
+    json(response, 200, { objectRef: message.objectRef, revision: target.revision });
+    return;
+  }
+  if (
+    request.method === "POST" &&
+    /^\/api\/capabilities\/[^/]+\/(?:execute|invoke|run)$/.test(url.pathname)
+  ) {
+    json(response, 404, { error: { code: "PORT_NOT_FOUND" } });
+    return;
+  }
   if (request.method === "POST" && url.pathname === "/api/gateway/v2/queries") {
     const message = await body(request);
+    const governance = handleGovernanceQuery(message);
+    if (governance !== undefined) {
+      if (governance === null) {
+        json(response, 404, { error: { code: "PORT_NOT_FOUND" } });
+        return;
+      }
+      json(response, 200, governance);
+      return;
+    }
     if (message.type === "health.status") {
       json(response, 200, {
         ...envelope("snapshot", "health.snapshot"),
@@ -573,6 +1029,13 @@ async function handleRequest(request, response) {
     (url.pathname === "/api/gateway/v2/commands" || url.pathname === "/api/gateway/v1/commands")
   ) {
     const message = await body(request);
+    if (url.pathname === "/api/gateway/v2/commands") {
+      const governance = handleGovernanceCommand(message);
+      if (governance) {
+        json(response, governance.status, governance.body);
+        return;
+      }
+    }
     const replayed = accepted.has(message.idempotencyKey);
     accepted.add(message.idempotencyKey);
     json(response, 200, { resultRef: `accepted:${message.type}`, replayed });

@@ -57,7 +57,12 @@ describe("control center information architecture inventory", () => {
   });
 
   it("allows integration only for a frozen contract and blocks incomplete semantics", () => {
-    expect(CONTROL_CENTER_INTEGRATION_READY_SURFACE_IDS).toEqual(["threads"]);
+    expect(CONTROL_CENTER_INTEGRATION_READY_SURFACE_IDS).toEqual([
+      "threads",
+      "approvals",
+      "capabilities-adapters",
+      "authorizations-grants",
+    ]);
     for (const surface of CONTROL_CENTER_SURFACE_INVENTORY) {
       if (surface.integrationPolicy === "allowed") {
         expect(surface.contractStatus).toBe("frozen");

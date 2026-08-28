@@ -372,8 +372,9 @@ export class CapabilityLifecycleService {
   async recordSourceReview(
     capabilityRef: string,
     input: { readonly reviewer: string; readonly reviewedAt: string },
+    expectedRevision?: number,
   ): Promise<CapabilityRegistryRecord> {
-    const current = await this.require(capabilityRef);
+    const current = await this.require(capabilityRef, expectedRevision);
     if (current.lifecycle !== "review_required" || !input.reviewer || !input.reviewedAt) {
       return this.invalid(current, "installation_proposed");
     }
@@ -391,6 +392,7 @@ export class CapabilityLifecycleService {
   approveInstallation(
     capabilityRef: string,
     approvalRef: string,
+    expectedRevision?: number,
   ): Promise<CapabilityRegistryRecord> {
     if (!approvalRef)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "Approval ref required");
@@ -399,11 +401,15 @@ export class CapabilityLifecycleService {
       ["installation_proposed"],
       "installation_approved",
       approvalRef,
+      expectedRevision,
     );
   }
 
-  async activate(capabilityRef: string): Promise<CapabilityRegistryRecord> {
-    const current = await this.require(capabilityRef);
+  async activate(
+    capabilityRef: string,
+    expectedRevision?: number,
+  ): Promise<CapabilityRegistryRecord> {
+    const current = await this.require(capabilityRef, expectedRevision);
     const manifest = manifestFrom(current.declaration);
     if (
       current.lifecycle !== "installation_approved" ||
@@ -465,10 +471,11 @@ export class CapabilityLifecycleService {
   async approveUpdate(
     capabilityRef: string,
     approvalRef: string,
+    expectedRevision?: number,
   ): Promise<CapabilityRegistryRecord> {
     if (!approvalRef)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "Approval ref required");
-    const current = await this.require(capabilityRef);
+    const current = await this.require(capabilityRef, expectedRevision);
     if (
       current.lifecycle !== "update_proposed" ||
       current.pendingUpdateAssessment?.disposition !== "approval_required"
@@ -481,8 +488,11 @@ export class CapabilityLifecycleService {
     });
   }
 
-  async rejectUpdate(capabilityRef: string): Promise<CapabilityRegistryRecord> {
-    const current = await this.require(capabilityRef);
+  async rejectUpdate(
+    capabilityRef: string,
+    expectedRevision?: number,
+  ): Promise<CapabilityRegistryRecord> {
+    const current = await this.require(capabilityRef, expectedRevision);
     if (current.lifecycle !== "update_proposed" || !current.pendingDeclaration) {
       return this.invalid(current, "active");
     }
@@ -504,8 +514,11 @@ export class CapabilityLifecycleService {
     });
   }
 
-  async activateUpdate(capabilityRef: string): Promise<CapabilityRegistryRecord> {
-    const current = await this.require(capabilityRef);
+  async activateUpdate(
+    capabilityRef: string,
+    expectedRevision?: number,
+  ): Promise<CapabilityRegistryRecord> {
+    const current = await this.require(capabilityRef, expectedRevision);
     if (
       current.lifecycle !== "update_approved" ||
       !current.pendingDeclaration ||
@@ -559,8 +572,11 @@ export class CapabilityLifecycleService {
     );
   }
 
-  async rollback(capabilityRef: string): Promise<CapabilityRegistryRecord> {
-    const current = await this.require(capabilityRef);
+  async rollback(
+    capabilityRef: string,
+    expectedRevision?: number,
+  ): Promise<CapabilityRegistryRecord> {
+    const current = await this.require(capabilityRef, expectedRevision);
     if (
       current.lifecycle !== "active" ||
       !current.rollbackDeclaration ||
@@ -602,8 +618,8 @@ export class CapabilityLifecycleService {
     );
   }
 
-  disable(capabilityRef: string): Promise<CapabilityRegistryRecord> {
-    return this.invalidate(capabilityRef, "disabled", ["active"]);
+  disable(capabilityRef: string, expectedRevision?: number): Promise<CapabilityRegistryRecord> {
+    return this.invalidate(capabilityRef, "disabled", ["active"], expectedRevision);
   }
 
   revoke(capabilityRef: string): Promise<CapabilityRegistryRecord> {
@@ -663,8 +679,9 @@ export class CapabilityLifecycleService {
     capabilityRef: string,
     lifecycle: "disabled" | "revoked" | "uninstalled",
     allowed: readonly CapabilityRegistryRecord["lifecycle"][],
+    expectedRevision?: number,
   ): Promise<CapabilityRegistryRecord> {
-    const current = await this.require(capabilityRef);
+    const current = await this.require(capabilityRef, expectedRevision);
     if (!allowed.includes(current.lifecycle)) return this.invalid(current, lifecycle);
     if (!this.dependencies.store.invalidateCapabilityAuthority) {
       throw new ApplicationPortError(
@@ -685,8 +702,9 @@ export class CapabilityLifecycleService {
     allowed: readonly CapabilityRegistryRecord["lifecycle"][],
     lifecycle: CapabilityRegistryRecord["lifecycle"],
     approvalRef?: string,
+    expectedRevision?: number,
   ): Promise<CapabilityRegistryRecord> {
-    const current = await this.require(capabilityRef);
+    const current = await this.require(capabilityRef, expectedRevision);
     if (!allowed.includes(current.lifecycle)) return this.invalid(current, lifecycle);
     return this.save(current, {
       lifecycle,
@@ -706,13 +724,27 @@ export class CapabilityLifecycleService {
     );
   }
 
-  private async require(capabilityRef: string): Promise<CapabilityRegistryRecord> {
+  private async require(
+    capabilityRef: string,
+    expectedRevision?: number,
+  ): Promise<CapabilityRegistryRecord> {
     const current = await this.dependencies.store.get(capabilityRef);
     if (!current)
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_FOUND,
         `Capability ${capabilityRef} not found`,
       );
+    if (expectedRevision !== undefined && current.revision !== expectedRevision) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        `Capability ${capabilityRef} has a stale revision`,
+        {
+          capabilityRef,
+          expectedRevision: String(expectedRevision),
+          currentRevision: String(current.revision),
+        },
+      );
+    }
     return current;
   }
 

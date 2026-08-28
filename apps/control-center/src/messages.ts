@@ -49,7 +49,12 @@ export function queryMessage(
     | "memory.search"
     | "trace.timeline"
     | "identity.sessions"
-    | "health.status",
+    | "health.status"
+    | "approval.detail"
+    | "capability.list"
+    | "capability.detail"
+    | "grant.list"
+    | "grant.detail",
   payload: unknown,
 ): GatewayV2Query {
   const parsed = gatewayV2MessageSchema.parse({
@@ -69,15 +74,25 @@ export function commandMessage(
     | "task.set_state"
     | "github.monitor.set_state"
     | "memory.mutate"
-    | "session.revoke",
+    | "session.revoke"
+    | "grant.revoke"
+    | "capability.review"
+    | "capability.install.approve"
+    | "capability.update.respond"
+    | "capability.disable"
+    | "capability.rollback",
   payload: unknown,
-  options: { readonly risk?: "low" | "medium" | "high"; readonly authorizationRef?: string } = {},
+  options: {
+    readonly risk?: "low" | "medium" | "high" | "critical";
+    readonly authorizationRef?: string;
+    readonly idempotencyKey?: string;
+  } = {},
 ): GatewayV2Command {
   const parsed = gatewayV2MessageSchema.parse({
     ...base(configuration, "command", type),
     risk: options.risk ?? "low",
     authorizationRef: options.authorizationRef ?? null,
-    idempotencyKey: id("idempotency"),
+    idempotencyKey: options.idempotencyKey ?? id("idempotency"),
     payload,
   });
   if (parsed.kind !== "command") throw new Error("CONTROL_CENTER_COMMAND_INVALID");

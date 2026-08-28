@@ -21,6 +21,7 @@ import type {
   GitHubInstallationRecord,
   GitHubRepositoryMonitor,
   GitHubWebhookReceiptRecord,
+  GovernanceMutationReceipt,
   GrantRecord,
   PayloadRecord,
   ProductDeviceRecord,
@@ -118,6 +119,19 @@ interface JsonRow {
   readonly recordJson: string;
 }
 
+interface GovernanceMutationReceiptRow {
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly idempotencyKey: string;
+  readonly revision: number;
+  readonly commandType: string;
+  readonly semanticFingerprint: string;
+  readonly phase: GovernanceMutationReceipt["phase"];
+  readonly resultRef: string | null;
+  readonly startedAt: string;
+  readonly committedAt: string | null;
+}
+
 interface EventRow {
   readonly id: string;
   readonly idempotencyKey: string;
@@ -193,6 +207,10 @@ function parseRecord<TRecord>(row: JsonRow | undefined): TRecord | undefined {
 
 function parseRecords<TRecord>(rows: readonly JsonRow[]): readonly TRecord[] {
   return rows.map((row) => JSON.parse(row.recordJson) as TRecord);
+}
+
+function governanceReceiptFromRow(row: GovernanceMutationReceiptRow): GovernanceMutationReceipt {
+  return row as GovernanceMutationReceipt;
 }
 
 function eventFromRow(row: EventRow): ReliableEventRecord {
@@ -366,6 +384,8 @@ export class SqliteDurableOperations {
         return this.findApprovalByIntent((payload as { intentId: string }).intentId);
       case "authorization.getApproval":
         return this.getApproval((payload as { approvalRequestId: string }).approvalRequestId);
+      case "authorization.listApprovals":
+        return this.listApprovals(payload as { ownerId: string; agentId: string });
       case "authorization.resolveApproval":
         return this.resolveApproval((payload as { input: ResolveApprovalInput }).input);
       case "authorization.listGrants":
@@ -374,7 +394,24 @@ export class SqliteDurableOperations {
         return this.consumeGrant((payload as { input: ConsumeGrantInput }).input);
       case "authorization.revokeGrant":
         return this.revokeGrant(
-          payload as { grantId: string; revokedAt: string; reasonCode: string },
+          payload as {
+            grantId: string;
+            revokedAt: string;
+            reasonCode: string;
+            expectedRevision?: number;
+          },
+        );
+      case "governance.receipt.get":
+        return this.getGovernanceMutationReceipt(
+          payload as { ownerId: string; agentId: string; idempotencyKey: string },
+        );
+      case "governance.receipt.create":
+        return this.createGovernanceMutationReceipt(
+          (payload as { receipt: GovernanceMutationReceipt }).receipt,
+        );
+      case "governance.receipt.complete":
+        return this.completeGovernanceMutationReceipt(
+          payload as { receipt: GovernanceMutationReceipt; expectedRevision: number },
         );
       case "capability.create":
         return this.createCapability(
@@ -1383,6 +1420,17 @@ export class SqliteDurableOperations {
     return this.approvalRow(approvalRequestId);
   }
 
+  private listApprovals(input: { ownerId: string; agentId: string }): readonly ApprovalRequest[] {
+    return parseRecords<ApprovalRequest>(
+      this.database
+        .prepare(
+          `SELECT record_json AS recordJson FROM approval_requests
+          WHERE owner_id = ? AND agent_id = ? ORDER BY requested_at, id`,
+        )
+        .all(input.ownerId, input.agentId) as JsonRow[],
+    );
+  }
+
   private insertGrant(grant: GrantRecord): void {
     this.database
       .prepare(
@@ -1601,10 +1649,14 @@ export class SqliteDurableOperations {
     grantId: string;
     revokedAt: string;
     reasonCode: string;
+    expectedRevision?: number;
   }): GrantRecord {
     this.assertDiskHeadroom();
     const current = this.grantRow(input.grantId);
     if (!current) this.fail("PORT_NOT_FOUND", `Grant ${input.grantId} not found`);
+    if (input.expectedRevision !== undefined && current.revision !== input.expectedRevision) {
+      this.fail("PORT_CONFLICT", `Grant ${current.id} has a stale revision`);
+    }
     if (current.revokedAt !== null) return current;
     const revoked: GrantRecord = {
       ...current,
@@ -1614,6 +1666,125 @@ export class SqliteDurableOperations {
     };
     this.updateGrant(revoked);
     return revoked;
+  }
+
+  private getGovernanceMutationReceipt(input: {
+    ownerId: string;
+    agentId: string;
+    idempotencyKey: string;
+  }): GovernanceMutationReceipt | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT owner_id AS ownerId, agent_id AS agentId, idempotency_key AS idempotencyKey,
+          revision, command_type AS commandType, semantic_fingerprint AS semanticFingerprint,
+          phase, result_ref AS resultRef, started_at AS startedAt, committed_at AS committedAt
+        FROM governance_mutation_receipts
+        WHERE owner_id = ? AND agent_id = ? AND idempotency_key = ?`,
+      )
+      .get(input.ownerId, input.agentId, input.idempotencyKey) as
+      | GovernanceMutationReceiptRow
+      | undefined;
+    return row ? governanceReceiptFromRow(row) : undefined;
+  }
+
+  private createGovernanceMutationReceipt(
+    receipt: GovernanceMutationReceipt,
+  ): GovernanceMutationReceipt {
+    this.assertDiskHeadroom();
+    if (
+      receipt.revision !== 1 ||
+      receipt.phase !== "executing" ||
+      receipt.resultRef !== null ||
+      receipt.committedAt !== null ||
+      !receipt.commandType ||
+      !receipt.semanticFingerprint
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "Governance receipt must begin in executing phase");
+    }
+    try {
+      this.database
+        .prepare(
+          `INSERT INTO governance_mutation_receipts (
+            owner_id, agent_id, idempotency_key, revision, command_type,
+            semantic_fingerprint, phase, result_ref, started_at, committed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          receipt.ownerId,
+          receipt.agentId,
+          receipt.idempotencyKey,
+          receipt.revision,
+          receipt.commandType,
+          receipt.semanticFingerprint,
+          receipt.phase,
+          receipt.resultRef,
+          receipt.startedAt,
+          receipt.committedAt,
+        );
+    } catch (error) {
+      if (String((error as { readonly code?: unknown }).code).startsWith("SQLITE_CONSTRAINT")) {
+        this.fail("PORT_DUPLICATE", `Governance receipt ${receipt.idempotencyKey} exists`, {
+          idempotencyKey: receipt.idempotencyKey,
+        });
+      }
+      throw error;
+    }
+    return receipt;
+  }
+
+  private completeGovernanceMutationReceipt(input: {
+    receipt: GovernanceMutationReceipt;
+    expectedRevision: number;
+  }): GovernanceMutationReceipt {
+    this.assertDiskHeadroom();
+    const current = this.getGovernanceMutationReceipt(input.receipt);
+    if (!current) this.fail("PORT_NOT_FOUND", "Governance receipt not found");
+    if (current.phase === "completed") {
+      if (
+        current.commandType === input.receipt.commandType &&
+        current.semanticFingerprint === input.receipt.semanticFingerprint &&
+        current.resultRef === input.receipt.resultRef
+      ) {
+        return current;
+      }
+      this.fail("PORT_CONFLICT", "Governance receipt was completed with a different result");
+    }
+    if (
+      current.revision !== input.expectedRevision ||
+      input.receipt.revision !== current.revision + 1 ||
+      input.receipt.phase !== "completed" ||
+      input.receipt.resultRef === null ||
+      input.receipt.committedAt === null ||
+      current.commandType !== input.receipt.commandType ||
+      current.semanticFingerprint !== input.receipt.semanticFingerprint ||
+      current.startedAt !== input.receipt.startedAt
+    ) {
+      this.fail("PORT_CONFLICT", "Governance receipt completion is stale or changed", {
+        idempotencyKey: input.receipt.idempotencyKey,
+      });
+    }
+    const result = this.database
+      .prepare(
+        `UPDATE governance_mutation_receipts
+        SET revision = ?, phase = 'completed', result_ref = ?, committed_at = ?
+        WHERE owner_id = ? AND agent_id = ? AND idempotency_key = ?
+          AND revision = ? AND phase = 'executing'`,
+      )
+      .run(
+        input.receipt.revision,
+        input.receipt.resultRef,
+        input.receipt.committedAt,
+        input.receipt.ownerId,
+        input.receipt.agentId,
+        input.receipt.idempotencyKey,
+        input.expectedRevision,
+      );
+    if (result.changes !== 1) {
+      this.fail("PORT_CONFLICT", "Governance receipt completion lost its revision race", {
+        idempotencyKey: input.receipt.idempotencyKey,
+      });
+    }
+    return input.receipt;
   }
 
   private updateGrant(record: GrantRecord): void {

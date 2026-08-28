@@ -189,6 +189,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0016_thread_gateway_events.sql",
   },
+  {
+    sequence: 17,
+    name: "governance_mutation_receipts",
+    changeSet: "governance-mutation-receipts",
+    phase: "expand" as const,
+    file: "0017_governance_mutation_receipts.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

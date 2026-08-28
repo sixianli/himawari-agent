@@ -59,6 +59,25 @@ export const machineString: Schema<string> = {
   },
 };
 
+export function boundedString(maximum = 2048): Schema<string> {
+  return {
+    parse(input, path = "$") {
+      if (
+        typeof input !== "string" ||
+        input.length === 0 ||
+        input.length > maximum ||
+        [...input].some((character) => {
+          const code = character.charCodeAt(0);
+          return code < 0x20 || code === 0x7f;
+        })
+      ) {
+        fail(path, `expected a 1-${maximum} character string without control characters`);
+      }
+      return input;
+    },
+  };
+}
+
 export const booleanValue: Schema<boolean> = {
   parse(input, path = "$") {
     if (typeof input !== "boolean") fail(path, "expected a boolean");

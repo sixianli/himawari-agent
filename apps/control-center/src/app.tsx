@@ -36,6 +36,7 @@ import { queryMessage } from "./messages.js";
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
 import { useThreadControlCenter } from "./thread-control-center.js";
 import { ThreadSseSynchronizer } from "./thread-sse-synchronizer.js";
+import { useGovernanceControlCenter } from "./governance-control-center.js";
 
 type SurfaceId = (typeof CONTROL_CENTER_SURFACE_INVENTORY)[number]["id"];
 type RuntimeConfiguration = Awaited<ReturnType<typeof loadRuntimeConfiguration>>;
@@ -80,13 +81,7 @@ function queryForSurface(
     case "threads":
       return null;
     case "approvals":
-      return queryMessage(configuration, "approval.list", {
-        status: ["pending", "approved", "denied", "expired"].includes(route.status ?? "")
-          ? route.status
-          : "pending",
-        afterCursor: route.afterCursor,
-        limit: 100,
-      });
+      return null;
     case "tasks":
       return queryMessage(configuration, "task.list", {
         status: ["active", "paused", "revoked"].includes(route.status ?? "") ? route.status : null,
@@ -319,6 +314,23 @@ function LocalizedControlCenterApp({
     storage,
     onUnauthorized: clearPrivateViewState,
   });
+  const governanceSurface = [
+    "approvals",
+    "capabilities-adapters",
+    "authorizations-grants",
+  ].includes(route.surfaceId);
+  const governanceModel = useGovernanceControlCenter({
+    active: governanceSurface,
+    client,
+    configuration,
+    connection,
+    message,
+    navigate,
+    refreshSignal: gatewayRefreshSignal,
+    route,
+    storage,
+    onUnauthorized: clearPrivateViewState,
+  });
 
   const itemRefs =
     snapshot?.kind === "snapshot" && snapshot.type === "collection.snapshot"
@@ -513,9 +525,27 @@ function LocalizedControlCenterApp({
   return (
     <ControlCenterShell
       connection={connection}
-      content={route.surfaceId === "threads" ? threadModel.content : genericContent}
-      details={route.surfaceId === "threads" ? threadModel.details : genericDetails}
-      list={route.surfaceId === "threads" ? threadModel.list : genericList}
+      content={
+        route.surfaceId === "threads"
+          ? threadModel.content
+          : governanceSurface
+            ? governanceModel.content
+            : genericContent
+      }
+      details={
+        route.surfaceId === "threads"
+          ? threadModel.details
+          : governanceSurface
+            ? governanceModel.details
+            : genericDetails
+      }
+      list={
+        route.surfaceId === "threads"
+          ? threadModel.list
+          : governanceSurface
+            ? governanceModel.list
+            : genericList
+      }
       locale={locale}
       onLocaleChange={onLocaleChange}
       onNavigate={navigate}

@@ -18,7 +18,16 @@ export interface PendingThreadMutation {
   readonly threadId: string;
 }
 
+export interface PendingGovernanceMutation {
+  readonly operationKey: string;
+  readonly idempotencyKey: string;
+  readonly commandType: string;
+  readonly objectRef: string;
+  readonly expectedRevision: number;
+}
+
 export const THREAD_CURSOR_STORAGE_KEY = `${KEY_PREFIX}.threadLastCursor`;
+export const GOVERNANCE_MUTATION_STORAGE_PREFIX = `${KEY_PREFIX}.governanceMutation.`;
 
 export class ControlCenterBrowserStorage {
   private readonly storage: Storage;
@@ -101,6 +110,50 @@ export class ControlCenterBrowserStorage {
   clearPendingThreadMutation(operationKey: string): void {
     if (!CURSOR_PATTERN.test(operationKey)) return;
     this.storage.removeItem(`${KEY_PREFIX}.mutation.${operationKey}`);
+  }
+
+  readPendingGovernanceMutation(operationKey: string): PendingGovernanceMutation | null {
+    if (!CURSOR_PATTERN.test(operationKey)) return null;
+    const raw = this.storage.getItem(`${GOVERNANCE_MUTATION_STORAGE_PREFIX}${operationKey}`);
+    if (!raw) return null;
+    try {
+      const value = JSON.parse(raw) as Partial<PendingGovernanceMutation>;
+      if (
+        value.operationKey !== operationKey ||
+        !CURSOR_PATTERN.test(value.idempotencyKey ?? "") ||
+        !CURSOR_PATTERN.test(value.commandType ?? "") ||
+        !CURSOR_PATTERN.test(value.objectRef ?? "") ||
+        !Number.isSafeInteger(value.expectedRevision) ||
+        (value.expectedRevision as number) < 1
+      ) {
+        return null;
+      }
+      return value as PendingGovernanceMutation;
+    } catch {
+      return null;
+    }
+  }
+
+  savePendingGovernanceMutation(mutation: PendingGovernanceMutation): void {
+    if (
+      !CURSOR_PATTERN.test(mutation.operationKey) ||
+      !CURSOR_PATTERN.test(mutation.idempotencyKey) ||
+      !CURSOR_PATTERN.test(mutation.commandType) ||
+      !CURSOR_PATTERN.test(mutation.objectRef) ||
+      !Number.isSafeInteger(mutation.expectedRevision) ||
+      mutation.expectedRevision < 1
+    ) {
+      throw new Error("CONTROL_CENTER_MUTATION_IDENTITY_INVALID");
+    }
+    this.storage.setItem(
+      `${GOVERNANCE_MUTATION_STORAGE_PREFIX}${mutation.operationKey}`,
+      JSON.stringify(mutation),
+    );
+  }
+
+  clearPendingGovernanceMutation(operationKey: string): void {
+    if (!CURSOR_PATTERN.test(operationKey)) return;
+    this.storage.removeItem(`${GOVERNANCE_MUTATION_STORAGE_PREFIX}${operationKey}`);
   }
 
   readPreferences(): ControlCenterPreferences {

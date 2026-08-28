@@ -203,6 +203,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Grant physical purge",
   ),
   entry(
+    "governance_mutation_receipts",
+    "GovernanceMutationReceiptStorePort",
+    "executing to completed revision-checked receipt",
+    "metadata_only",
+    "cascade with Agent teardown",
+  ),
+  entry(
     "capability_declarations",
     "CapabilityRegistryPort",
     "governed installation lifecycle",

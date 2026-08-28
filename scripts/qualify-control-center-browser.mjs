@@ -82,6 +82,20 @@ async function waitForAccepted(page) {
   }
 }
 
+async function performGovernanceAction(page, actionLabel) {
+  await page.getByRole("button", { name: actionLabel, exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "确认治理操作" });
+  await dialog.getByLabel("我已核对当前权威快照和操作影响。").check();
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" && response.url().endsWith("/api/gateway/v2/commands"),
+  );
+  await dialog.getByRole("button", { name: actionLabel, exact: true }).click();
+  const response = await responsePromise;
+  await waitForAccepted(page);
+  return response;
+}
+
 async function assertAxeClean(page, checkpoint) {
   const violations = (await new AxeBuilder({ page }).analyze()).violations;
   if (violations.length > 0) {
@@ -104,12 +118,12 @@ async function assertNoDocumentOverflow(page, checkpoint) {
 
 const surfaces = [
   { label: "对话", title: "对话", policy: "allowed" },
-  { label: "审批", title: "审批", policy: "baseline_only" },
+  { label: "审批", title: "审批", policy: "allowed" },
   { label: "后台任务", title: "后台任务", policy: "baseline_only" },
   { label: "收件箱与摘要", title: "收件箱与摘要", policy: "baseline_only" },
   { label: "记忆", title: "记忆", policy: "baseline_only" },
-  { label: "能力与适配器", title: "能力与适配器", policy: "blocked" },
-  { label: "授权与 Grant", title: "授权与 Grant", policy: "blocked" },
+  { label: "能力与适配器", title: "能力与适配器", policy: "allowed" },
+  { label: "授权与 Grant", title: "授权与 Grant", policy: "allowed" },
   { label: "追踪", title: "追踪", policy: "baseline_only" },
   { label: "设置", title: "设置", policy: "blocked" },
   { label: "会话与设备", title: "会话与设备", policy: "baseline_only" },
@@ -311,10 +325,10 @@ try {
     throw new Error("CONTROL_CENTER_LOCALE_NOT_PERSISTED");
   }
 
-  await page.goto("http://127.0.0.1:4173/capabilities/capability-01?view=details");
+  await page.goto("http://127.0.0.1:4173/capabilities/capability-review?view=details");
   await waitForConnected(page);
   await page.getByRole("heading", { name: "能力与适配器", exact: true }).waitFor();
-  await page.getByText("capability-01", { exact: true }).waitFor();
+  await page.getByText("capability-review", { exact: true }).first().waitFor();
 
   let releaseLoading;
   let markLoadingComplete;
@@ -331,11 +345,136 @@ try {
   };
   await page.route("**/api/gateway/v2/queries", loadingHandler);
   await primaryNavigation.getByRole("link", { name: "审批", exact: true }).click();
-  await page.getByText("正在加载权威状态", { exact: true }).waitFor();
+  await page.getByText("正在加载权威状态", { exact: true }).first().waitFor();
   releaseLoading?.();
   await loadingComplete;
   await page.unroute("**/api/gateway/v2/queries", loadingHandler);
-  await waitForText(page.getByRole("main"), "approval-01");
+  await waitForText(page.getByRole("main"), "approval-approve");
+
+  const hiddenExecutionStatus = await page.evaluate(() =>
+    fetch("/api/capabilities/capability-review/execute", { method: "POST" }).then(
+      (response) => response.status,
+    ),
+  );
+  if (hiddenExecutionStatus !== 404) {
+    throw new Error(`CONTROL_CENTER_UNAPPROVED_CAPABILITY_ROUTE_PRESENT:${hiddenExecutionStatus}`);
+  }
+
+  await page.goto("http://127.0.0.1:4173/approvals/approval-approve?view=details");
+  await waitForConnected(page);
+  await waitForText(page.getByRole("main"), "sha256:approval-approve");
+  await waitForText(page.getByRole("main"), "named_recipients");
+  await waitForText(page.getByRole("main"), "1000");
+  await performGovernanceAction(page, "批准");
+  await page.getByText("approved", { exact: true }).waitFor();
+  await waitForText(page.getByRole("main"), "result:approval-approve:approved");
+
+  await page.goto("http://127.0.0.1:4173/approvals/approval-deny?view=details");
+  await waitForConnected(page);
+  await performGovernanceAction(page, "拒绝");
+  await page.getByText("denied", { exact: true }).waitFor();
+
+  await page.evaluate(() =>
+    fetch("/__fixture/recent-auth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ available: false }),
+    }),
+  );
+  const reauthenticationContext = await browser.newContext({
+    locale: "zh-CN",
+    viewport: { width: 1280, height: 800 },
+    ...profile.contextOptions,
+  });
+  const reauthenticationPage = await reauthenticationContext.newPage();
+  reauthenticationPage.on("pageerror", (error) => browserErrors.push(error.message));
+  await reauthenticationPage.goto(
+    "http://127.0.0.1:4173/approvals/approval-recent-auth?view=details",
+  );
+  await waitForConnected(reauthenticationPage);
+  await reauthenticationPage.getByRole("button", { name: "批准", exact: true }).click();
+  const reauthenticationDialog = reauthenticationPage.getByRole("dialog", {
+    name: "确认治理操作",
+  });
+  await reauthenticationDialog.getByLabel("我已核对当前权威快照和操作影响。").check();
+  await reauthenticationDialog.getByText("此操作需要近期重新认证。", { exact: true }).waitFor();
+  if (!(await reauthenticationDialog.getByRole("button", { name: "批准" }).isDisabled())) {
+    throw new Error("CONTROL_CENTER_RECENT_AUTHENTICATION_GATE_BYPASSED");
+  }
+  await reauthenticationContext.close();
+  await page.evaluate(() =>
+    fetch("/__fixture/recent-auth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ available: true }),
+    }),
+  );
+
+  await page.goto("http://127.0.0.1:4173/capabilities/capability-review?view=details");
+  await waitForConnected(page);
+  await waitForText(page.getByRole("main"), "publisher:fixture-reviewed");
+  await waitForText(page.getByRole("main"), "secret-ref-provider-token");
+  if ((await page.getByRole("main").innerText()).includes("fixture-machine-secret-value")) {
+    throw new Error("CONTROL_CENTER_RAW_MACHINE_SECRET_EXPOSED");
+  }
+  await performGovernanceAction(page, "完成来源审查");
+  await page.getByText("installation_proposed", { exact: true }).waitFor();
+  await performGovernanceAction(page, "批准并激活安装");
+  await page.getByText("active", { exact: true }).first().waitFor();
+
+  await page.goto("http://127.0.0.1:4173/capabilities/capability-update-approve?view=details");
+  await waitForConnected(page);
+  await waitForText(page.getByRole("main"), "1.0.0 → 2.0.0");
+  await performGovernanceAction(page, "批准并激活更新");
+  await waitForText(page.getByRole("main"), "2.0.0");
+  await performGovernanceAction(page, "回退能力版本");
+  await waitForText(page.getByRole("main"), "rolled_back");
+  await performGovernanceAction(page, "停用能力");
+  await page.getByText("disabled", { exact: true }).waitFor();
+
+  await page.goto("http://127.0.0.1:4173/capabilities/capability-update-deny?view=details");
+  await waitForConnected(page);
+  await performGovernanceAction(page, "拒绝更新");
+  await page.getByText("active", { exact: true }).first().waitFor();
+
+  await page.goto("http://127.0.0.1:4173/authorizations/grant-active?view=details");
+  await waitForConnected(page);
+  await waitForText(page.getByRole("main"), "task-dependent-01");
+  await page.getByRole("button", { name: "撤销 Grant", exact: true }).click();
+  await page.evaluate(() =>
+    fetch("/__fixture/governance-conflict", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectRef: "grant-active" }),
+    }),
+  );
+  const conflictDialog = page.getByRole("dialog", { name: "确认治理操作" });
+  await conflictDialog.getByLabel("我已核对当前权威快照和操作影响。").check();
+  const conflictResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/api/gateway/v2/commands"),
+  );
+  await conflictDialog.getByRole("button", { name: "撤销 Grant", exact: true }).click();
+  if ((await conflictResponsePromise).status() !== 409) {
+    throw new Error("CONTROL_CENTER_GOVERNANCE_CONFLICT_NOT_REJECTED");
+  }
+  await page.getByText("其他客户端已更新此治理对象", { exact: true }).waitFor();
+  await performGovernanceAction(page, "撤销 Grant");
+  await page.getByText("revoked", { exact: true }).waitFor();
+
+  await page.goto("http://127.0.0.1:4173/capabilities/capability-active?view=details");
+  await waitForConnected(page);
+  await page.getByRole("button", { name: "停用能力", exact: true }).click();
+  await context.setOffline(true);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await waitForText(page.locator(".connection"), "离线");
+  const offlineGovernanceDialog = page.getByRole("dialog", { name: "确认治理操作" });
+  await offlineGovernanceDialog.getByLabel("我已核对当前权威快照和操作影响。").check();
+  if (!(await offlineGovernanceDialog.getByRole("button", { name: "停用能力" }).isDisabled())) {
+    throw new Error("CONTROL_CENTER_OFFLINE_GOVERNANCE_MUTATION_ENABLED");
+  }
+  await context.setOffline(false);
+  await waitForConnected(page);
+  await offlineGovernanceDialog.getByRole("button", { name: "关闭", exact: true }).last().click();
 
   const errorHandler = async (route) => {
     await route.fulfill({
@@ -365,7 +504,7 @@ try {
   await page.unroute("**/api/gateway/v2/queries", revokedSessionHandler);
 
   await primaryNavigation.getByRole("link", { name: "能力与适配器", exact: true }).click();
-  await page.getByText("暂无记录", { exact: true }).waitFor();
+  await page.getByText("capability-review", { exact: true }).first().waitFor();
 
   await page.evaluate(() => fetch("/__fixture/degrade", { method: "POST" }));
   await primaryNavigation.getByRole("link", { name: "健康与部署", exact: true }).click();
@@ -471,7 +610,7 @@ try {
   await page.getByText("run-01", { exact: true }).waitFor();
   const reopenedNavigation = page.getByRole("navigation", { name: "控制中心功能" });
   await reopenedNavigation.getByRole("link", { name: "审批", exact: true }).click();
-  await page.getByText("approval-01", { exact: true }).waitFor();
+  await page.getByText("approval-approve", { exact: true }).waitFor();
   await reopenedNavigation.getByRole("link", { name: "后台任务", exact: true }).click();
   await page.getByText("job-repository-monitor", { exact: true }).waitFor();
   const expectedOfflineBrowserError = (error) =>
@@ -508,6 +647,14 @@ try {
         "thread-deletion-impact",
         "thread-fork",
         "thread-multi-tab",
+        "approval-approve-deny",
+        "approval-recent-authentication-gate",
+        "capability-review-install",
+        "capability-update-approve-deny",
+        "capability-rollback-disable",
+        "grant-revision-conflict-revoke",
+        "governance-offline-no-mutation",
+        "unapproved-capability-hidden-route-absent",
         "read-only-task-disclosure",
       ],
       routeStates: [

@@ -125,11 +125,16 @@ export class GrantService {
     }) as Promise<GovernedGrantRecord>;
   }
 
-  revoke(grantId: string, reasonCode: string): Promise<GovernedGrantRecord> {
+  revoke(
+    grantId: string,
+    reasonCode: string,
+    expectedRevision?: number,
+  ): Promise<GovernedGrantRecord> {
     return this.dependencies.store.revokeGrant(
       grantId,
       this.dependencies.clock.now(),
       reasonCode,
+      expectedRevision,
     ) as Promise<GovernedGrantRecord>;
   }
 

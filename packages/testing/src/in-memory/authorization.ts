@@ -48,6 +48,17 @@ export class InMemoryAuthorizationStore implements AuthorizationStorePort {
     return approval ? frozenCopy(approval) : undefined;
   }
 
+  async listApprovals(ownerId: OwnerId, agentId: AgentId): Promise<readonly ApprovalRequest[]> {
+    this.failures.checkpoint("authorization.listApprovals");
+    return [...this.approvals.values()]
+      .filter((approval) => approval.ownerId === ownerId && approval.agentId === agentId)
+      .sort(
+        (left, right) =>
+          left.requestedAt.localeCompare(right.requestedAt) || left.id.localeCompare(right.id),
+      )
+      .map(frozenCopy);
+  }
+
   async resolveApproval(input: ResolveApprovalInput): Promise<ApprovalRequest> {
     this.failures.checkpoint("authorization.resolveApproval");
     const current = this.approvals.get(input.approvalRequestId);
@@ -154,13 +165,25 @@ export class InMemoryAuthorizationStore implements AuthorizationStorePort {
     return frozenCopy(consumed);
   }
 
-  async revokeGrant(grantId: string, revokedAt: string, reasonCode: string): Promise<GrantRecord> {
+  async revokeGrant(
+    grantId: string,
+    revokedAt: string,
+    reasonCode: string,
+    expectedRevision?: number,
+  ): Promise<GrantRecord> {
     this.failures.checkpoint("authorization.revokeGrant");
     const current = this.grants.get(grantId);
     if (!current) {
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, `Grant ${grantId} not found`, {
         grantId,
       });
+    }
+    if (expectedRevision !== undefined && current.revision !== expectedRevision) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        `Grant ${current.id} has a stale revision`,
+        { grantId: current.id },
+      );
     }
     if (current.revokedAt !== null) return frozenCopy(current);
     const revoked = frozenCopy({

@@ -5,6 +5,7 @@ import type {
   CapabilityExecutionHandleStorePort,
   CapabilityRegistryStorePort,
   GatewayReadModelPort,
+  GovernanceMutationReceiptStorePort,
   GitHubIntegrationStatePort,
   PayloadStorePort,
   ReliableEventPort,
@@ -166,12 +167,29 @@ export class SqliteDurableAdapters {
         this.context.read("authorization.findApprovalByIntent", { intentId }),
       getApproval: (approvalRequestId) =>
         this.context.read("authorization.getApproval", { approvalRequestId }),
+      listApprovals: (ownerId, agentId) =>
+        this.context.read("authorization.listApprovals", { ownerId, agentId }),
       resolveApproval: (input) => this.context.write("authorization.resolveApproval", { input }),
       listGrants: (ownerId, agentId) =>
         this.context.read("authorization.listGrants", { ownerId, agentId }),
       consumeGrant: (input) => this.context.write("authorization.consumeGrant", { input }),
-      revokeGrant: (grantId, revokedAt, reasonCode) =>
-        this.context.write("authorization.revokeGrant", { grantId, revokedAt, reasonCode }),
+      revokeGrant: (grantId, revokedAt, reasonCode, expectedRevision) =>
+        this.context.write("authorization.revokeGrant", {
+          grantId,
+          revokedAt,
+          reasonCode,
+          expectedRevision,
+        }),
+    });
+  }
+
+  governanceMutationReceiptStore(): GovernanceMutationReceiptStorePort {
+    return Object.freeze<GovernanceMutationReceiptStorePort>({
+      get: (ownerId, agentId, idempotencyKey) =>
+        this.context.read("governance.receipt.get", { ownerId, agentId, idempotencyKey }),
+      create: (receipt) => this.context.write("governance.receipt.create", { receipt }),
+      complete: (receipt, expectedRevision) =>
+        this.context.write("governance.receipt.complete", { receipt, expectedRevision }),
     });
   }
 

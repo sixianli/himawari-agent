@@ -33,6 +33,8 @@ export interface ControlCenterRuntimeConfiguration {
   readonly fencingToken: number;
   readonly actorId: string;
   readonly csrfToken: string;
+  readonly authorizationRef?: string | null;
+  readonly recentAuthenticationRef?: string | null;
   readonly primaryModel?: {
     readonly provider: string;
     readonly model: string;
@@ -68,6 +70,8 @@ export async function loadRuntimeConfiguration(
     readonly fencingToken?: unknown;
     readonly actorId?: unknown;
     readonly csrfToken?: unknown;
+    readonly authorizationRef?: unknown;
+    readonly recentAuthenticationRef?: unknown;
     readonly primaryModel?: unknown;
     readonly primaryModelRef?: unknown;
     readonly repositoryAllowlistRefs?: unknown;
@@ -120,6 +124,14 @@ export async function loadRuntimeConfiguration(
     typeof value.primaryModelRef === "string" && value.primaryModelRef.length > 0
       ? value.primaryModelRef
       : null;
+  const authorizationRef =
+    typeof value.authorizationRef === "string" && value.authorizationRef.length > 0
+      ? value.authorizationRef
+      : null;
+  const recentAuthenticationRef =
+    typeof value.recentAuthenticationRef === "string" && value.recentAuthenticationRef.length > 0
+      ? value.recentAuthenticationRef
+      : null;
   return Object.freeze({
     ...(value as unknown as Omit<
       ControlCenterRuntimeConfiguration,
@@ -127,7 +139,11 @@ export async function loadRuntimeConfiguration(
       | "primaryModelRef"
       | "repositoryAllowlistRefs"
       | "disclosedDataClassifications"
+      | "authorizationRef"
+      | "recentAuthenticationRef"
     >),
+    authorizationRef,
+    recentAuthenticationRef,
     primaryModel: normalizedPrimary,
     primaryModelRef,
     repositoryAllowlistRefs: Object.freeze(repositoryAllowlistRefs),

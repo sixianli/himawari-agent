@@ -6,10 +6,12 @@ import type {
   CapabilityRegistryStorePort,
   GovernedCapabilityExecutionHandle,
   GovernedGrantRecord,
+  GovernanceMutationReceipt,
   ReliableEventRecord,
   ReliableEventSinkPort,
   SessionDeletionRecord,
 } from "@himawari-agent/application";
+import { PORT_ERROR_CODES } from "@himawari-agent/application";
 import {
   createAgentId,
   createIdempotencyKey,
@@ -207,6 +209,48 @@ attentionStatePortConformance({
 });
 
 describe("SQLite durable repository adapters", () => {
+  it("persists executing governance receipts and completes them after restart", async () => {
+    const resource = await openRepository();
+    const receipt: GovernanceMutationReceipt = {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      idempotencyKey: "governance-idempotency-sqlite",
+      revision: 1,
+      commandType: "capability.install.approve",
+      semanticFingerprint: '{"capabilityRef":"capability-governed-sqlite"}',
+      phase: "executing",
+      resultRef: null,
+      startedAt: T0,
+      committedAt: null,
+    };
+    await expect(
+      resource.repository.governanceMutationReceiptStore().create(receipt),
+    ).resolves.toEqual(receipt);
+    await resource.repository.close();
+
+    const reopened = await SqliteProductStateRepository.open({
+      stateRoot: resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    const store = reopened.governanceMutationReceiptStore();
+    await expect(store.get(OWNER_ID, AGENT_ID, receipt.idempotencyKey)).resolves.toEqual(receipt);
+    const completed: GovernanceMutationReceipt = {
+      ...receipt,
+      revision: 2,
+      phase: "completed",
+      resultRef: "capability:capability-governed-sqlite:revision-5",
+      committedAt: T1,
+    };
+    await expect(store.complete(completed, 1)).resolves.toEqual(completed);
+    await expect(store.complete(completed, 1)).resolves.toEqual(completed);
+    await expect(
+      store.create({ ...receipt, commandType: "capability.disable" }),
+    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.DUPLICATE });
+    await reopened.close();
+    await rm(resource.stateRoot, { recursive: true });
+  });
+
   it("atomically persists idempotent Grant and fenced Handle consumption", async () => {
     const resource = await openRepository();
     const authorization = resource.repository.authorizationStore();

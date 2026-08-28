@@ -3,6 +3,7 @@ import {
   type InferSchema,
   type Schema,
   array,
+  boundedString,
   booleanValue,
   enumeration,
   integer,
@@ -23,6 +24,12 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "github.monitor.set_state",
   "memory.mutate",
   "session.revoke",
+  "grant.revoke",
+  "capability.review",
+  "capability.install.approve",
+  "capability.update.respond",
+  "capability.disable",
+  "capability.rollback",
   "thread.list",
   "thread.timeline",
   "approval.list",
@@ -32,8 +39,16 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "trace.timeline",
   "identity.sessions",
   "health.status",
+  "approval.detail",
+  "capability.list",
+  "capability.detail",
+  "grant.list",
+  "grant.detail",
   "collection.snapshot",
   "health.snapshot",
+  "approval.snapshot",
+  "capability.snapshot",
+  "grant.snapshot",
   "stream.event",
 ] as const;
 
@@ -99,9 +114,11 @@ export const respondApprovalV2CommandSchema = object({
   ...commandEnvelope("approval.respond"),
   payload: object({
     approvalRequestId: machineString,
+    expectedRevision: integer(1),
     decision: enumeration(["approved", "denied"]),
     semanticSnapshotHash: machineString,
     editedPayloadRef: nullable(machineString),
+    recentAuthenticationRef: nullable(machineString),
   }),
 });
 
@@ -218,6 +235,70 @@ export const revokeSessionCommandSchema = object({
   }),
 });
 
+export const revokeGrantCommandSchema = object({
+  ...commandEnvelope("grant.revoke"),
+  payload: object({
+    grantId: machineString,
+    expectedRevision: integer(1),
+    reasonCode: machineString,
+  }),
+});
+
+export const reviewCapabilityCommandSchema = object({
+  ...commandEnvelope("capability.review"),
+  payload: object({ capabilityRef: machineString, expectedRevision: integer(1) }),
+});
+
+export const approveCapabilityInstallationCommandSchema = object({
+  ...commandEnvelope("capability.install.approve"),
+  payload: object({
+    capabilityRef: machineString,
+    expectedRevision: integer(1),
+    approvalRef: machineString,
+  }),
+});
+
+const capabilityUpdateResponsePayloadSchema = object({
+  capabilityRef: machineString,
+  expectedRevision: integer(1),
+  decision: enumeration(["approved", "denied"]),
+  approvalRef: nullable(machineString),
+});
+
+export const respondCapabilityUpdateCommandSchema = object({
+  ...commandEnvelope("capability.update.respond"),
+  payload: {
+    parse(input, path = "$.payload") {
+      const payload = capabilityUpdateResponsePayloadSchema.parse(input, path);
+      if ((payload.decision === "approved") !== (payload.approvalRef !== null)) {
+        throw new ContractValidationError(
+          `${path}.approvalRef`,
+          "must be present exactly when the update is approved",
+        );
+      }
+      return payload;
+    },
+  },
+});
+
+export const disableCapabilityCommandSchema = object({
+  ...commandEnvelope("capability.disable"),
+  payload: object({
+    capabilityRef: machineString,
+    expectedRevision: integer(1),
+    reasonCode: machineString,
+  }),
+});
+
+export const rollbackCapabilityCommandSchema = object({
+  ...commandEnvelope("capability.rollback"),
+  payload: object({
+    capabilityRef: machineString,
+    expectedRevision: integer(1),
+    reasonCode: machineString,
+  }),
+});
+
 const pagePayload = {
   afterCursor: nullable(machineString),
   limit: integer(1, 500),
@@ -283,6 +364,47 @@ export const healthStatusQuerySchema = object({
   payload: object({ includeDependencies: booleanValue }),
 });
 
+export const approvalDetailQuerySchema = object({
+  ...envelope("query", "approval.detail"),
+  payload: object({ approvalRequestId: machineString }),
+});
+
+export const capabilityListQuerySchema = object({
+  ...envelope("query", "capability.list"),
+  payload: object({
+    lifecycle: nullable(
+      enumeration([
+        "discovered",
+        "review_required",
+        "installation_proposed",
+        "installation_approved",
+        "active",
+        "update_proposed",
+        "update_approved",
+        "disabled",
+        "revoked",
+        "uninstalled",
+      ]),
+    ),
+    ...pagePayload,
+  }),
+});
+
+export const capabilityDetailQuerySchema = object({
+  ...envelope("query", "capability.detail"),
+  payload: object({ capabilityRef: machineString }),
+});
+
+export const grantListQuerySchema = object({
+  ...envelope("query", "grant.list"),
+  payload: object({ includeRevoked: booleanValue, ...pagePayload }),
+});
+
+export const grantDetailQuerySchema = object({
+  ...envelope("query", "grant.detail"),
+  payload: object({ grantId: machineString }),
+});
+
 export const collectionSnapshotSchema = object({
   ...envelope("snapshot", "collection.snapshot"),
   payload: object({
@@ -296,10 +418,199 @@ export const collectionSnapshotSchema = object({
       "trace",
       "sessions",
       "devices",
+      "capabilities",
+      "grants",
     ]),
     itemRefs: array(machineString),
     nextCursor: nullable(machineString),
     snapshotRef: machineString,
+    generatedAt: timestamp,
+  }),
+});
+
+const frequencySnapshotSchema = object({
+  count: integer(1),
+  intervalMs: nullable(integer(1)),
+});
+
+export const approvalSnapshotSchema = object({
+  ...envelope("snapshot", "approval.snapshot"),
+  payload: object({
+    approvalRequestId: machineString,
+    revision: integer(1),
+    status: enumeration(["pending", "approved", "denied", "expired"]),
+    deliveryState: enumeration(["deliverable", "queued_no_ui"]),
+    semanticSnapshotHash: machineString,
+    finalRisk: riskSchema,
+    recentAuthenticationRequired: booleanValue,
+    recentAuthenticationRef: nullable(machineString),
+    requestedAt: timestamp,
+    expiresAt: timestamp,
+    decidedAt: nullable(timestamp),
+    grantId: nullable(machineString),
+    intent: object({
+      intentId: machineString,
+      threadId: machineString,
+      runId: machineString,
+      actionKind: enumeration([
+        "READ",
+        "CREATE_OR_UPDATE",
+        "DELETE",
+        "COMMUNICATE",
+        "PURCHASE_OR_FUNDS",
+        "CREDENTIAL_OR_ACCESS",
+        "PRODUCTION_OR_RECOVERY",
+        "PUBLICATION",
+        "LEGAL_COMMITMENT",
+        "PHYSICAL_SAFETY",
+        "INSTALL_OR_EXECUTE_CODE",
+      ]),
+      capabilityRef: machineString,
+      capabilityVersion: machineString,
+      operation: machineString,
+      targetRefs: array(machineString),
+      resourceRefs: array(boundedString()),
+      dataClassification: classificationSchema,
+      disclosure: enumeration(["none", "same_owner", "named_recipients", "public"]),
+      recipientRefs: array(boundedString(512)),
+      sideEffect: enumeration(["none", "reversible", "irreversible"]),
+      estimatedCostMicros: integer(0),
+      frequency: frequencySnapshotSchema,
+      credentialOrAccessChange: booleanValue,
+      reversible: booleanValue,
+      idempotencyKey: machineString,
+      deterministicFactCodes: array(machineString),
+      modelReasonCode: machineString,
+      requestedAt: timestamp,
+      expiresAt: timestamp,
+    }),
+    trueResultRef: nullable(machineString),
+    generatedAt: timestamp,
+  }),
+});
+
+const runtimeQualificationSnapshotSchema = object({
+  platform: enumeration(["darwin", "linux", "other"]),
+  runtimeIdentity: boundedString(512),
+  productionSuitable: booleanValue,
+  reasonCodes: array(machineString),
+  checkedAt: timestamp,
+});
+
+const updateAssessmentSnapshotSchema = object({
+  fromVersion: machineString,
+  toVersion: machineString,
+  disposition: enumeration(["automatic", "approval_required"]),
+  risk: riskSchema,
+  sourceIdentityChanged: booleanValue,
+  integrityChanged: booleanValue,
+  semanticMajorChanged: booleanValue,
+  runtimeKindChanged: booleanValue,
+  executableIdentityChanged: booleanValue,
+  executableCodeChanged: booleanValue,
+  expansions: array(boundedString(512)),
+  contractions: array(boundedString(512)),
+  compatibilityPreserved: booleanValue,
+  reasonCodes: array(machineString),
+});
+
+export const capabilitySnapshotSchema = object({
+  ...envelope("snapshot", "capability.snapshot"),
+  payload: object({
+    capabilityRef: machineString,
+    revision: integer(1),
+    lifecycle: enumeration([
+      "discovered",
+      "review_required",
+      "installation_proposed",
+      "installation_approved",
+      "active",
+      "update_proposed",
+      "update_approved",
+      "disabled",
+      "revoked",
+      "uninstalled",
+    ]),
+    displayName: boundedString(512),
+    sourceType: enumeration([
+      "builtin",
+      "tool",
+      "skill",
+      "package",
+      "mcp",
+      "program",
+      "remote_api",
+      "adapter",
+    ]),
+    sourceLocator: boundedString(),
+    sourceIdentity: boundedString(512),
+    version: machineString,
+    integrity: machineString,
+    signatureStatus: enumeration(["verified", "not_applicable", "invalid", "unknown"]),
+    signerRef: nullable(machineString),
+    operations: array(machineString),
+    permissionRefs: array(machineString),
+    dataClassifications: array(classificationSchema),
+    networkScopes: array(boundedString(512)),
+    filesystemScopes: array(boundedString(2048)),
+    secretRefs: array(machineString),
+    isolation: enumeration(["trusted_process", "worker", "sandbox", "remote"]),
+    currency: boundedString(16),
+    maxMicrosPerInvocation: integer(0),
+    healthStatus: enumeration(["healthy", "degraded", "unhealthy", "unknown"]),
+    healthCheckedAt: nullable(timestamp),
+    reviewedBy: nullable(machineString),
+    reviewedAt: nullable(timestamp),
+    approvalRefs: array(machineString),
+    dependencyTaskRefs: array(machineString),
+    runtimeQualification: nullable(runtimeQualificationSnapshotSchema),
+    pendingVersion: nullable(machineString),
+    updateAssessment: nullable(updateAssessmentSnapshotSchema),
+    rollbackVersion: nullable(machineString),
+    rollbackAvailable: booleanValue,
+    lastTransition: nullable(
+      object({
+        fromVersion: machineString,
+        toVersion: machineString,
+        outcome: enumeration(["activated", "rolled_back", "rejected"]),
+        occurredAt: timestamp,
+        externalEffectsRolledBack: literal(false),
+        productStateRolledBack: literal(false),
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+
+export const grantSnapshotSchema = object({
+  ...envelope("snapshot", "grant.snapshot"),
+  payload: object({
+    grantId: machineString,
+    revision: integer(1),
+    kind: enumeration(["one_time", "long_term"]),
+    status: enumeration(["active", "exhausted", "expired", "revoked"]),
+    capabilityRef: machineString,
+    capabilityVersion: machineString,
+    operations: array(machineString),
+    exactResourceRef: nullable(boundedString()),
+    resourceIdentities: array(boundedString()),
+    resourcePrefixes: array(boundedString()),
+    maxDataClassification: classificationSchema,
+    disclosure: enumeration(["none", "same_owner", "named_recipients", "public"]),
+    sideEffects: array(enumeration(["none", "reversible", "irreversible"])),
+    recipientRefs: array(boundedString(512)),
+    maxCostMicrosPerUse: integer(0),
+    maxFrequency: frequencySnapshotSchema,
+    validFrom: timestamp,
+    expiresAt: timestamp,
+    uses: integer(0),
+    maxUses: integer(1),
+    spentCostMicros: integer(0),
+    maxTotalCostMicros: integer(0),
+    sourceApprovalRequestId: machineString,
+    revokedAt: nullable(timestamp),
+    revocationReasonCode: nullable(machineString),
+    affectedTaskRefs: array(machineString),
     generatedAt: timestamp,
   }),
 });
@@ -341,6 +652,12 @@ const schemasByType = {
   "github.monitor.set_state": setGitHubMonitorStateCommandSchema,
   "memory.mutate": mutateMemoryCommandSchema,
   "session.revoke": revokeSessionCommandSchema,
+  "grant.revoke": revokeGrantCommandSchema,
+  "capability.review": reviewCapabilityCommandSchema,
+  "capability.install.approve": approveCapabilityInstallationCommandSchema,
+  "capability.update.respond": respondCapabilityUpdateCommandSchema,
+  "capability.disable": disableCapabilityCommandSchema,
+  "capability.rollback": rollbackCapabilityCommandSchema,
   "thread.list": listThreadsQuerySchema,
   "thread.timeline": threadTimelineQuerySchema,
   "approval.list": listApprovalsQuerySchema,
@@ -350,8 +667,16 @@ const schemasByType = {
   "trace.timeline": traceTimelineV2QuerySchema,
   "identity.sessions": identitySessionsQuerySchema,
   "health.status": healthStatusQuerySchema,
+  "approval.detail": approvalDetailQuerySchema,
+  "capability.list": capabilityListQuerySchema,
+  "capability.detail": capabilityDetailQuerySchema,
+  "grant.list": grantListQuerySchema,
+  "grant.detail": grantDetailQuerySchema,
   "collection.snapshot": collectionSnapshotSchema,
   "health.snapshot": healthSnapshotV2Schema,
+  "approval.snapshot": approvalSnapshotSchema,
+  "capability.snapshot": capabilitySnapshotSchema,
+  "grant.snapshot": grantSnapshotSchema,
   "stream.event": streamEventV2Schema,
 } as const satisfies Record<GatewayV2MessageType, Schema<unknown>>;
 
