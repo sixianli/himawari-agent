@@ -781,7 +781,7 @@
           "label": "目录与文件访问",
           "planTasks": "Tasks 2–4、12",
           "planEvidence": "APFS/Hermes、path attacks、Grant/revoke",
-          "planStatus": "待实施",
+          "planStatus": "contract/Pi bridge/path attack 本地完成；Gateway wire 与双平台 qualification 待 Tasks 2–4、12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -793,7 +793,7 @@
           "label": "覆盖与删除",
           "planTasks": "Tasks 5–6、12",
           "planEvidence": "digest/atomicity、Trash/recovery、disk pressure",
-          "planStatus": "待实施",
+          "planStatus": "create/update/Trash/restore 本地完成；永久删除与 disk-pressure matrix 待 Tasks 6、12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -805,7 +805,7 @@
           "label": "代码工作区",
           "planTasks": "Tasks 7–8、12",
           "planEvidence": "dirty matrix、ownership/conflict、restart",
-          "planStatus": "待实施",
+          "planStatus": "snapshot/path ownership/isolated commit fixture 本地完成；完整 hunk/formatter/matrix 待 Tasks 8、12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -817,7 +817,7 @@
           "label": "命令与本地 commit",
           "planTasks": "Tasks 9–12",
           "planEvidence": "CommandProfile、frozen preview、reconcile、no push",
-          "planStatus": "待实施",
+          "planStatus": "profile/preview/one-shot commit/no-push 核心完成；process sandbox、wire/UI 与双平台待 Tasks 9–12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
