@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T14:43:29+09:00",
+  "plan": "docs/execution/plans/2026-08-26-control-center-experience-plan.md",
+  "taskIds": ["S3-T06"],
+  "status": "local_complete",
+  "candidateRevision": "9744bd3058a878a04184a445c64043fa020386b7",
+  "surfaces": {
+    "integrated": ["threads"],
+    "threadQueries": [
+      "thread.list",
+      "thread.detail",
+      "thread.search",
+      "thread.checkpoint",
+      "thread.deletion_impact"
+    ],
+    "threadMutations": [
+      "thread.create",
+      "thread.message.submit",
+      "thread.rename",
+      "thread.pin",
+      "thread.archive",
+      "thread.restore",
+      "thread.fork",
+      "thread.set_answer_locale",
+      "thread.trash",
+      "thread.task.resolve"
+    ]
+  },
+  "verified": [
+    "Thread list/content/details panes use gateway.thread.v3 authoritative snapshots and committed events instead of the previous generic v2 reference list and unsafe local Thread mutations.",
+    "UI locale and Thread answer locale have separate controls and browser qualification proves changing answer locale leaves the zh-CN UI unchanged while UI locale switches independently across zh-CN/en/ja.",
+    "The UI presents unsent draft, mutation pending/accepted/replayed/rejected, all strict Run lifecycle statuses, committed message sequence, connection state and bounded snapshot refresh loading state.",
+    "Code/log/citation/command-like message content remains raw in preformatted blocks; no automatic translation occurs and the unavailable translation action is explicit and disabled.",
+    "Desktop and mobile layouts, multi-tab convergence, offline disable/reconnect, close/reopen, durable cursor, revision conflict with explicit reapply, search, checkpoint, archive/restore, deletion impact and Fork passed in Chromium and WebKit.",
+    "Axe found zero violations in desktop Japanese, desktop Chinese and mobile Chinese checkpoints; minimum visible action target height was 44 px and 320 px reflow had no document overflow.",
+    "Browser storage inspection found only locale, preferences, unsent Thread draft and v2/Thread cursors after all committed mutations; pending mutation identity contains no body and is cleared after definitive results."
+  ],
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "all repository static, boundary, coverage, invariant and secret checks passed"
+    },
+    {
+      "command": "npm test plus clean npm run test:integration rerun",
+      "exitStatus": 0,
+      "result": "269 unit, 142 contract, 343 integration and 3 E2E tests passed; 3 integration tests remained intentionally skipped"
+    },
+    {
+      "command": "npm run build:browser",
+      "exitStatus": 0,
+      "result": "105145 total gzip bytes and all static artifact safety budgets passed"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chromium",
+      "exitStatus": 0,
+      "result": "Chromium 151 Thread journey and responsive/accessibility matrix passed"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs webkit",
+      "exitStatus": 0,
+      "result": "WebKit 26.5 Thread journey and responsive/accessibility matrix passed"
+    }
+  ],
+  "unverified": [
+    "S3 Task 6 completes the Thread surface only; approval/capability/Grant, Tasks/Attention, Memory/Trace/settings/device/health domain integrations remain Tasks 7-9.",
+    "Cross-surface authoritative reducer hardening and a full IndexedDB/sessionStorage/Cache API/Service Worker privacy scan remain S3 Tasks 10-11.",
+    "Manual assistive technology and the formal six-browser/device support matrix remain S3 Tasks 12-13.",
+    "The production Agent Service does not yet compose the new HTTP Thread/Payload/search adapters; that remains S4 Tasks 9-10."
+  ],
+  "externalEffects": [
+    "No external identity, deployment, account, paid model, remote repository or production state was changed."
+  ],
+  "implementationCommit": "9744bd3058a878a04184a445c64043fa020386b7"
+}

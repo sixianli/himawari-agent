@@ -115,7 +115,7 @@ Task 3 在 `apps/control-center/src/components/` 建立 native-first 语义组�
 - [x] 日期、时间、数字、费用和大小按 UI locale 格式化；IANA timezone、UTC、model/version 和原始代码不转换。
 - [x] production build 对缺 key、变量不一致和未翻译 fallback 失败；运行伪本地化、长文本和日文输入布局检查。
 
-Task 4 以稳定 `MessageId` 联合类型和三份完整 `MessageCatalog` 固定同键资源；unit test 对每个 locale 格式化全部 ICU message，因此缺 key、缺变量、非法 plural 或 fallback 会失败。`react-intl` runtime 按 `zh-CN/en/ja` 提供日期、数字与 ICU 格式化，en/ja 独立动态 chunk；locale 只写当前 browser profile，首次按浏览器语言协商。Chromium/WebKit 已执行三语切换、`lang`、重开恢复、日文长输入与布局检查；Thread answer locale 仍由 Task 6 的独立领域 contract 实现，UI locale 不调用该接口。fresh 证据位于 `test/integration/qualification/evidence/s3-task4-trilingual-runtime.json`。
+Task 4 以稳定 `MessageId` 联合类型和三份完整 `MessageCatalog` 固定同键资源；unit test 对每个 locale 格式化全部 ICU message，因此缺 key、缺变量、非法 plural 或 fallback 会失败。`react-intl` runtime 按 `zh-CN/en/ja` 提供日期、数字与 ICU 格式化，en/ja 独立动态 chunk；locale 只写当前 browser profile，首次按浏览器语言协商。Chromium/WebKit 已执行三语切换、`lang`、重开恢复、日文长输入与布局检查；Task 6 现已通过独立 `gateway.thread.v3` mutation 接通 Thread answer locale，浏览器组合测试证明 answer locale 不改变 UI locale。fresh 证据位于 `test/integration/qualification/evidence/s3-task4-trilingual-runtime.json` 和 `test/integration/qualification/evidence/s3-task6-thread-conversation.json`。
 
 ### Task 5：实现响应式全局 Shell 与导航
 
@@ -128,11 +128,15 @@ Task 5 用 typed native History route 固定 11 个入口、稳定对象 ID、st
 
 ### Task 6：接通 Thread/对话与回答语言
 
-- [ ] 消费 S2 的 Thread list/detail/search/fork/archive/checkpoint 和 committed message stream。
-- [ ] 显示独立 UI locale 与 answer locale 控件；切换任一方不调用另一方接口。
-- [ ] 展示未发送、accepted/running/blocked/completed、stream sequence、reconnect 和 snapshot refresh 状态。
-- [ ] 原始代码、日志、引用和命令保持原文，翻译是显式动作。
-- [ ] 覆盖桌面/移动、多标签、断线、重启和 revision conflict。
+- [x] 消费 S2 的 Thread list/detail/search/fork/archive/checkpoint 和 committed message stream。
+- [x] 显示独立 UI locale 与 answer locale 控件；切换任一方不调用另一方接口。
+- [x] 展示未发送、accepted/running/blocked/completed、stream sequence、reconnect 和 snapshot refresh 状态。
+- [x] 原始代码、日志、引用和命令保持原文，翻译是显式动作。
+- [x] 覆盖桌面/移动、多标签、断线、重启和 revision conflict。
+
+Thread 页面已从 legacy `gateway.v2` 引用列表切换到严格 `gateway.thread.v3`：列表/筛选/搜索、详情、已提交 Message sequence、Run lifecycle、checkpoint、删除影响和 committed event 都来自权威 snapshot/SQLite cursor；create、send、rename、pin、archive/restore、Fork、answer locale、Trash 与 task resolution 使用稳定 mutation identity 和 revision。UI locale 与 answer locale 独立，原始内容使用预格式化区域显示，不做隐式翻译；当前翻译入口在领域翻译 contract 缺失时明确 disabled。
+
+Chromium 151 与 WebKit 26.5 的受控资格测试覆盖 zh-CN/en/ja、answer locale 独立性、搜索、checkpoint、conflict/reapply、archive/restore、删除影响、Fork、多标签、离线、关闭重开、桌面/移动、320 px reflow、44 px target 和 axe，未发现 axe 违规。该证据完成 Thread surface，不扩张到 Tasks 7–9；跨 surface reducer、完整 Cache/IndexedDB/Service Worker 隐私扫描、人工辅助技术和正式六浏览器矩阵仍分别属于 Tasks 10–13。实现与证据位于 `test/integration/qualification/evidence/s3-task6-thread-conversation.json`。
 
 ### Task 7：接通审批、能力与 Grant 管理
 
@@ -202,9 +206,9 @@ Task 5 用 typed native History route 固定 11 个入口、稳定对象 ID、st
 
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| S3-A01 | 完整操作面 | Task 1；Tasks 5–9、13 | inventory；全导航 browser E2E、状态/安全 readback | Tasks 1、5 全入口与安全阻塞已完成；领域集成 Tasks 6–9 和正式矩阵 Task 13 待实施 |
-| S3-A02 | 三语与回答语言 | Task 1；Tasks 4、6、13 | inventory；key checks、伪本地化、三语/answer locale 组合 | Tasks 1、4 UI 三语已完成；answer locale Task 6 与正式矩阵 Task 13 待实施 |
-| S3-A03 | 响应式与实时状态 | Task 1；Tasks 5、10–11、13 | inventory/baseline；桌面/移动、SSE、多标签、offline | Tasks 1、5 与既有 SSE/offline 基线已完成；权威 reducer/隐私 Tasks 10–11 和正式矩阵 Task 13 待实施 |
+| S3-A01 | 完整操作面 | Task 1；Tasks 5–9、13 | inventory；全导航 browser E2E、状态/安全 readback | Tasks 1、5–6 已完成；领域集成 Tasks 7–9 和正式矩阵 Task 13 待实施 |
+| S3-A02 | 三语与回答语言 | Task 1；Tasks 4、6、13 | inventory；key checks、伪本地化、三语/answer locale 组合 | Tasks 1、4、6 本地完成；正式浏览器/设备矩阵 Task 13 待实施 |
+| S3-A03 | 响应式与实时状态 | Task 1；Tasks 5、10–11、13 | inventory/baseline；桌面/移动、SSE、多标签、offline | Tasks 1、5–6 的 Thread 实时/多标签/offline 已完成；跨 surface reducer、隐私 Tasks 10–11 和正式矩阵 Task 13 待实施 |
 | S3-A04 | Attention、Inbox 与 Digest | Task 1；Tasks 8、10、13 | inventory；五级呈现、离线恢复、来源 | Task 1 inventory 已完成；其余任务待实施 |
 | S3-A05 | WCAG 2.2 AA 与浏览器 | Task 1；Tasks 3、12–14 | inventory/baseline；自动、人工、辅助技术、六类浏览器矩阵 | Tasks 1、3 自动化基础已完成；人工/辅助技术/正式浏览器与文档收口 Tasks 12–14 待实施 |
 

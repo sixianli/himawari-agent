@@ -542,7 +542,7 @@
           "label": "稳定身份与继续对话",
           "planTasks": "Tasks 2–5、11",
           "planEvidence": "domain/contract、重复接纳、process recovery",
-          "planStatus": "部分验证（Tasks 2–5；控制中心 Task 11 未实施）",
+          "planStatus": "本地验证（Tasks 2–5、11）；Task 12 仍需正式多设备与最终证据映射",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
@@ -555,7 +555,7 @@
           "label": "生命周期与查找",
           "planTasks": "Tasks 4、6、10–12",
           "planEvidence": "query/search、multi-client、规模",
-          "planStatus": "部分验证（Tasks 4、6、10；控制中心、浏览器与规模未实施）",
+          "planStatus": "部分验证（Tasks 4、6、10–11）；Task 12 的 1 万 Thread/20 万 Message 规模仍待实施",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
@@ -568,7 +568,7 @@
           "label": "Fork 与来源",
           "planTasks": "Tasks 4、7、12",
           "planEvidence": "lineage、delete、restart",
-          "planStatus": "部分验证（Tasks 4、7；完整恢复矩阵与规模未实施）",
+          "planStatus": "部分验证（Tasks 4、7 与 Task 11 browser Fork）；Task 12 完整恢复矩阵仍待实施",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
@@ -581,7 +581,7 @@
           "label": "回答语言与上下文",
           "planTasks": "Tasks 8、11",
           "planEvidence": "中英日组合、context/Trace、browser",
-          "planStatus": "部分验证（Task 8；控制中心与浏览器未实施）",
+          "planStatus": "本地验证（Tasks 8、11）；Task 12 仍需最终跨矩阵映射",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
@@ -594,7 +594,7 @@
           "label": "压缩、审批与任务",
           "planTasks": "Tasks 9–12",
           "planEvidence": "checkpoint crash matrix、task/delete coordination",
-          "planStatus": "部分验证（Tasks 9–10；控制中心与规模未实施）",
+          "planStatus": "部分验证（Tasks 9–11）；Task 12 规模、恢复和 S0 收口仍待实施",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
@@ -614,7 +614,7 @@
           "label": "完整操作面",
           "planTasks": "Task 1；Tasks 5–9、13",
           "planEvidence": "inventory；全导航 browser E2E、状态/安全 readback",
-          "planStatus": "Tasks 1、5 全入口与安全阻塞已完成；领域集成 Tasks 6–9 和正式矩阵 Task 13 待实施",
+          "planStatus": "Tasks 1、5–6 已完成；领域集成 Tasks 7–9 和正式矩阵 Task 13 待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         },
         {
@@ -622,7 +622,7 @@
           "label": "三语与回答语言",
           "planTasks": "Task 1；Tasks 4、6、13",
           "planEvidence": "inventory；key checks、伪本地化、三语/answer locale 组合",
-          "planStatus": "Tasks 1、4 UI 三语已完成；answer locale Task 6 与正式矩阵 Task 13 待实施",
+          "planStatus": "Tasks 1、4、6 本地完成；正式浏览器/设备矩阵 Task 13 待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         },
         {
@@ -630,7 +630,7 @@
           "label": "响应式与实时状态",
           "planTasks": "Task 1；Tasks 5、10–11、13",
           "planEvidence": "inventory/baseline；桌面/移动、SSE、多标签、offline",
-          "planStatus": "Tasks 1、5 与既有 SSE/offline 基线已完成；权威 reducer/隐私 Tasks 10–11 和正式矩阵 Task 13 待实施",
+          "planStatus": "Tasks 1、5–6 的 Thread 实时/多标签/offline 已完成；跨 surface reducer、隐私 Tasks 10–11 和正式矩阵 Task 13 待实施",
           "verificationEntrypoints": ["npm run test:unit", "npm run test:e2e"]
         },
         {

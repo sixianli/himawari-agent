@@ -171,11 +171,15 @@ Thread 新契约使用独立 `gateway.thread.v3`，没有改写既有 `gateway.v
 
 ### Task 11：接通控制中心与多客户端恢复
 
-- [ ] 在 S3 组件契约中实现 Thread 列表、详情、搜索、筛选、pin、archive/restore、Fork、answer locale 和删除协调。
-- [ ] 客户端使用 committed snapshot+events、durable cursor、revision 和 mutation idempotency key。
-- [ ] 浏览器关闭、断线、多标签和正常主机重启后恢复同一 Thread、Run、Approval、Task 和 cursor。
-- [ ] 冲突展示最新 revision 和可理解重新应用，不做 silent last-write-wins。
-- [ ] 不在浏览器持久存储私人历史、搜索正文或权威状态。
+- [x] 在 S3 组件契约中实现 Thread 列表、详情、搜索、筛选、pin、archive/restore、Fork、answer locale 和删除协调。
+- [x] 客户端使用 committed snapshot+events、durable cursor、revision 和 mutation idempotency key。
+- [x] 浏览器关闭、断线、多标签和正常主机重启后恢复同一 Thread、Run、Approval、Task 和 cursor。
+- [x] 冲突展示最新 revision 和可理解重新应用，不做 silent last-write-wins。
+- [x] 不在浏览器持久存储私人历史、搜索正文或权威状态。
+
+`gateway.thread.v3` 现在补齐严格的 command/query/subscription 及 collection/detail/search/lineage/checkpoint/deletion-impact/result/conflict/event 响应。`AgentThreadGatewayService` 在分发前验证认证 Owner、actor 与设备授权；`ProductThreadGatewayAdapter` 只组合既有 Thread command/query/Fork/deletion 服务。每个成功 mutation 在同一 SQLite writer transaction 中原子写 semantic receipt、reliable outbox event 和带原 authority fence 的 `thread_gateway_events` durable cursor 记录；repository 关闭重开后可从 cursor 继续，丢失或跨 scope cursor 明确要求 snapshot refresh。
+
+控制中心的 Thread 三栏已接通列表、详情、HMAC opaque-token 搜索、消息接纳、Run 状态、独立 answer locale、rename、pin、archive/restore、checkpoint、删除影响与 task 协调、Fork 和 committed-event refresh。mutation key 在结果确定前只以无正文 identity 持久复用；revision conflict 显示 latest revision 并要求 Owner 明确重新应用。Chromium 151 与 WebKit 26.5 已覆盖多标签、离线、关闭重开、Thread/Run/Approval/Task readback、移动/桌面和 cursor 恢复；SQLite/service reopen 提供正常进程重启证据。浏览器持久存储不包含已提交历史、原始搜索或 authority state。物理主机重启、正式多设备和规模矩阵仍属于 Task 12，不能由本地 fixture 推断。实现与证据位于 `test/integration/thread-gateway-control-center.test.ts` 和 `test/integration/qualification/evidence/s2-task11-thread-control-center-recovery.json`。
 
 ### Task 12：完成规模、恢复和文档收口
 
@@ -189,11 +193,11 @@ Thread 新契约使用独立 `gateway.thread.v3`，没有改写既有 `gateway.v
 
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| S2-A01 | 稳定身份与继续对话 | Tasks 2–5、11 | domain/contract、重复接纳、process recovery | 部分验证（Tasks 2–5；控制中心 Task 11 未实施） |
-| S2-A02 | 生命周期与查找 | Tasks 4、6、10–12 | query/search、multi-client、规模 | 部分验证（Tasks 4、6、10；控制中心、浏览器与规模未实施） |
-| S2-A03 | Fork 与来源 | Tasks 4、7、12 | lineage、delete、restart | 部分验证（Tasks 4、7；完整恢复矩阵与规模未实施） |
-| S2-A04 | 回答语言与上下文 | Tasks 8、11 | 中英日组合、context/Trace、browser | 部分验证（Task 8；控制中心与浏览器未实施） |
-| S2-A05 | 压缩、审批与任务 | Tasks 9–12 | checkpoint crash matrix、task/delete coordination | 部分验证（Tasks 9–10；控制中心与规模未实施） |
+| S2-A01 | 稳定身份与继续对话 | Tasks 2–5、11 | domain/contract、重复接纳、process recovery | 本地验证（Tasks 2–5、11）；Task 12 仍需正式多设备与最终证据映射 |
+| S2-A02 | 生命周期与查找 | Tasks 4、6、10–12 | query/search、multi-client、规模 | 部分验证（Tasks 4、6、10–11）；Task 12 的 1 万 Thread/20 万 Message 规模仍待实施 |
+| S2-A03 | Fork 与来源 | Tasks 4、7、12 | lineage、delete、restart | 部分验证（Tasks 4、7 与 Task 11 browser Fork）；Task 12 完整恢复矩阵仍待实施 |
+| S2-A04 | 回答语言与上下文 | Tasks 8、11 | 中英日组合、context/Trace、browser | 本地验证（Tasks 8、11）；Task 12 仍需最终跨矩阵映射 |
+| S2-A05 | 压缩、审批与任务 | Tasks 9–12 | checkpoint crash matrix、task/delete coordination | 部分验证（Tasks 9–11）；Task 12 规模、恢复和 S0 收口仍待实施 |
 
 ## 验证
 

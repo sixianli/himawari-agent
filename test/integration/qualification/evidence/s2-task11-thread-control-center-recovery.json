@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T14:43:29+09:00",
+  "plan": "docs/execution/plans/2026-08-26-owner-thread-conversation-plan.md",
+  "taskIds": ["S2-T11"],
+  "status": "local_complete",
+  "candidateRevision": "9744bd3058a878a04184a445c64043fa020386b7",
+  "verified": [
+    "gateway.thread.v3 now has strict command, query, subscription, snapshot, result, conflict and committed event messages for Thread list/detail/search/lineage/checkpoint/deletion impact and mutations.",
+    "Authenticated AgentThreadGatewayService verifies Owner/actor scope and deterministic access policy before dispatch; HTTP commands additionally require same-origin, CSRF and exact header/body idempotency-key agreement.",
+    "Every successful Thread mutation atomically commits the semantic receipt, reliable outbox event and cursor-ordered thread_gateway_events record in the same SQLite writer transaction under the original deployment authority fence.",
+    "SQLite close/reopen resumes from the persisted Thread cursor without replay loss, and an unavailable scoped cursor fails closed so HTTP SSE can require a bounded snapshot refresh.",
+    "The Control Center consumes authoritative list/detail/search/checkpoint/deletion snapshots, committed Thread events and revision conflicts for create, message admission, answer locale, rename, pin, archive/restore, Fork and deletion coordination.",
+    "Chromium and WebKit journeys cover stable Thread/Run/Approval/Task readback after browser close/reopen, durable cursor resume, offline reconnect, multi-tab mutation, explicit latest-revision reapply, search, archive/restore, deletion impact, checkpoint and Fork.",
+    "Browser persistence is limited to UI locale, bounded layout preferences, unsent per-Thread draft, v2/Thread cursors and body-free pending mutation identity; private committed history, raw search query and authority state are not persisted.",
+    "Raw search query admission protects the query as a private Payload and returns Agent-scoped HMAC token references from a shared projection tokenizer; browser-visible search results contain no raw query body."
+  ],
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, typecheck, 14-workspace boundaries, 79 requirements, 53 acceptance IDs, 146-source/20-route invariants and 469-file secret scan passed"
+    },
+    {
+      "command": "npm test plus clean npm run test:integration rerun",
+      "exitStatus": 0,
+      "execution": "outside restricted sandbox for Unix Domain Socket and installed-service process coverage",
+      "result": "40 unit files/269 tests, 13 contract files/142 tests, 36 integration files passed and 3 skipped/343 tests passed and 3 skipped, 1 E2E file/3 tests passed"
+    },
+    {
+      "command": "npm run build:browser",
+      "exitStatus": 0,
+      "result": "browser build passed with 105145 total gzip bytes, locale chunks, no source maps, no inline scripts and no inline styles"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chromium",
+      "exitStatus": 0,
+      "result": "Chromium 151 passed Thread chat/search/locale/checkpoint/conflict/archive/delete-impact/Fork/multi-tab/offline/reopen, 320 px reflow, 44 px targets and zero axe violations"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs webkit",
+      "exitStatus": 0,
+      "result": "WebKit 26.5 passed the same Thread and recovery matrix; three offline access-control transport errors were explicitly classified as expected"
+    }
+  ],
+  "remaining": [
+    "S2 Task 12 must qualify tie-safe pagination and latency on 10000 Threads/200000 Messages, projection rebuild, multi-device/Pi Session recovery and the complete S0 journey mapping.",
+    "The final production Agent Service still needs the S4 Tasks 9-10 runtime adapter composition before this browser path can be claimed as a deployed public service.",
+    "A physical host reboot and formal multi-device matrix remain Task 12; current restart evidence is durable SQLite/service reopen plus browser close/reopen."
+  ],
+  "externalEffects": [
+    "No external account change, paid call, Hermes operation, deployment, destructive production deletion, remote push or physical host restart occurred."
+  ],
+  "implementationCommit": "9744bd3058a878a04184a445c64043fa020386b7"
+}
