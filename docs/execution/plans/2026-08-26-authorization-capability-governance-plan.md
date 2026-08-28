@@ -166,23 +166,27 @@ Foundation 盘点确认 `ActionIntent`、`PermissionService`、Grant、Capabilit
 - [x] API/adapter 只接收最小 Handle 与 protected refs，不接收产品 store 写权限。
 - [x] 文件与命令类能力复用 Pi read/bash/edit/write/grep/find/ls ToolDefinition，并以受治理 Operations 通过同一 conformance。
 
-Tool、Skill、MCP、program、remote API 与 adapter 现在共用 `CapabilityManifest`、source identity、artifact/signature、scope、cost、health、review 和 isolation contract。program 强制声明 argv/env/workdir/stdin/stdout/subprocess/network/filesystem；MCP 强制 identity/transport/mapped resources；API/adapter 只接收 protected references。Pi 文件/命令 Tool 继续复用现有 `createRead/Bash/Edit/Write/Grep/Find/LsToolDefinition`，Extension/Skill/prompt 继续只通过 `DefaultResourceLoader` additional paths 投影；没有复制 Pi discovery 或工具协议。实际 sandbox/MCP/program runtime adapter 仍属于 Task 9，未在本任务中安装或启用。
+Tool、Skill、MCP、program、remote API 与 adapter 现在共用 `CapabilityManifest`、source identity、artifact/signature、scope、cost、health、review 和 isolation contract。program 强制声明 argv/env/workdir/stdin/stdout/subprocess/network/filesystem；MCP 强制 identity/transport/mapped resources；API/adapter 只接收 protected references。Pi 文件/命令 Tool 继续复用现有 `createRead/Bash/Edit/Write/Grep/Find/LsToolDefinition`，Extension/Skill/prompt 继续只通过 `DefaultResourceLoader` additional paths 投影；没有复制 Pi discovery 或工具协议。实际 sandbox/MCP/program runtime adapter 由 Task 9 实现并通过非生产 fixture；当前实测 Mac 与 Hermes 均不满足本地进程能力的生产资格，因此没有安装或启用真实能力。
 
 ### Task 9：资格验证并实现隔离与 runtime adapters
 
-- [ ] 对 Mac/Hermes 候选 isolation、artifact verification、MCP transport 和 program runner 做官方/版本匹配研究与隔离 spike。
-- [ ] 记录精确依赖、许可证、维护、安全、Node/platform 支持、资源限制和逃逸边界，Owner 批准后再安装。
-- [ ] 用非生产 fixture 验证 filesystem/network/process/secret/resource ceilings 和 termination。
-- [ ] 任一平台无法满足 manifest contract 时阻止对应能力 active，不以 testing adapter 替代。
-- [ ] durable 选择需要时先创建/接受 ADR，再完成 production composition。
+- [x] 对 Mac/Hermes 候选 isolation、artifact verification、MCP transport 和 program runner 做官方/版本匹配研究与隔离 spike。
+- [x] 记录精确依赖、许可证、维护、安全、Node/platform 支持、资源限制和逃逸边界，Owner 批准后再安装。
+- [x] 用非生产 fixture 验证 filesystem/network/process/secret/resource ceilings 和 termination。
+- [x] 任一平台无法满足 manifest contract 时阻止对应能力 active，不以 testing adapter 替代。
+- [x] durable 选择需要时先创建/接受 ADR，再完成 production composition。
+
+已接受 ADR 0021 固定平台资格门禁。Node 运行时精确锁定官方 `@modelcontextprotocol/client@2.0.0`；测试 server 同样使用官方 `@modelcontextprotocol/server@2.0.0`，二者均为 MIT、要求 Node `>=20`，项目 Node `>=22.19.0` 满足。Linux 后端要求非 setuid `bubblewrap >=0.11.2`、可用非特权 user namespace、`util-linux prlimit >=2.38`、不得 group/other writable 的受管 runtime root、沙箱内只读 root、精确 executable/filesystem binding、无网络和无本地 secret scope；低于一秒而无法由 `RLIMIT_CPU` 精确表达的 CPU ceiling 会直接拒绝，Worker 继续约束 wall/output/progress 并监督进程组终止。Mac `sandbox-exec` 非生产 spike 实测文件 allow/deny、网络 deny 和终止，但因其不是稳定公开产品边界且当前没有签名 App Sandbox/XPC helper，资格固定为 false。Hermes 只读实测为 Linux `5.15.0-185-generic x86_64`，缺少 `bwrap` 且 `prlimit 2.37.2` 低于门禁，因此也不能激活本地 program/stdio MCP；没有修改主机。远程 API/adapter 只允许精确 HTTPS 或明确 loopback qualification、同源路径、禁止 redirect、短期 Secret Handle、deadline 和响应字节上限；有副作用请求在断连、非成功响应、响应超限或结果持久化失败后只产生 `result_unknown`。实现与 fresh 证据位于 `packages/platform-node/src/capabilities/`、`scripts/qualify-macos-capability-spike.mjs` 和 `test/integration/qualification/evidence/s4-tasks9-10-capability-runtime-update.json`。
 
 ### Task 10：实现更新、回退与兼容门禁
 
-- [ ] 比较 source identity、major、integrity、operations、permission/data/network/file/secret scopes、isolation 和 compatibility。
-- [ ] 只有同可信来源、完整性有效、兼容且无任何扩张的更新可按 Owner policy 自动应用并可观察。
-- [ ] source/major/integrity 不明、新执行代码或 scope 扩张形成 HIGH/CRITICAL Approval；拒绝后旧 active version 保持。
-- [ ] 新 artifact 通过 conformance/readiness 后原子切换，保留可验证 rollback artifact。
-- [ ] 回退只恢复 capability version，不伪装回滚已产生副作用、数据库或外部配置。
+- [x] 比较 source identity、major、integrity、operations、permission/data/network/file/secret scopes、isolation 和 compatibility。
+- [x] 只有同可信来源、完整性有效、兼容且无任何扩张的更新可按 Owner policy 自动应用并可观察。
+- [x] source/major/integrity 不明、新执行代码或 scope 扩张形成 HIGH/CRITICAL Approval；拒绝后旧 active version 保持。
+- [x] 新 artifact 通过 conformance/readiness 后原子切换，保留可验证 rollback artifact。
+- [x] 回退只恢复 capability version，不伪装回滚已产生副作用、数据库或外部配置。
+
+`CapabilityLifecycleService` 保存结构化 update assessment；可执行 package/MCP/program 的 digest 变化机械归类为新执行代码并要求 CRITICAL Approval，scope 扩张、source/major/runtime/executable/signer/compatibility 变化不能自动通过。更新提议和等待批准期间，当前已资格版本继续保持执行权；拒绝只清除 candidate。激活前同时验证当前 rollback artifact 与 candidate artifact/runtime，SQLite 在同一 transaction 内切换版本并撤销旧 Handle。回退重新验证旧 artifact/runtime 后执行相同原子切换，并把 `externalEffectsRolledBack` 与 `productStateRolledBack` 固定为 false。Foundation `CapabilityRegistryService` 拒绝接收 `capability.v2`，不存在绕过资格门禁的旧入口。
 
 ### Task 11：接通控制中心和 read model
 
@@ -206,8 +210,8 @@ Tool、Skill、MCP、program、remote API 与 adapter 现在共用 `CapabilityMa
 | --- | --- | --- | --- | --- |
 | S4-A01 | 行动分类与风险 | Tasks 2–3、12 | table-driven、negative contracts、Trace | Tasks 2–3 本地完成；待 Task 12 收口 |
 | S4-A02 | 授权结果与 Grant | Tasks 4–5、11–12 | hash/expiry/CAS/revoke/browser | Tasks 4–5 本地完成；待 UI/Task 12 |
-| S4-A03 | 能力生命周期 | Tasks 6–7、9–12 | lifecycle/update/Handle/platform recovery | Tasks 6–7 本地完成；待 runtime/update/收口 |
-| S4-A04 | 统一能力类型 | Tasks 8–10、12 | Tool/Skill/MCP/program/API/adapter conformance | Task 8 contract 完成；待 Tasks 9–10、12 |
+| S4-A03 | 能力生命周期 | Tasks 6–7、9–12 | lifecycle/update/Handle/platform recovery | Tasks 6–10 本地完成；待 UI/Task 12 收口 |
+| S4-A04 | 统一能力类型 | Tasks 8–10、12 | Tool/Skill/MCP/program/API/adapter conformance | Tasks 8–10 本地完成；待 Task 12 收口 |
 
 ## 验证
 

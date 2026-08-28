@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T16:32:26+09:00",
+  "plan": "docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md",
+  "taskIds": ["S4-T09", "S4-T10"],
+  "status": "local_complete",
+  "candidateRevision": "f18c25152820447772d9254f2060f982c09ef040",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 11,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["temp.md"]
+  },
+  "environment": {
+    "macOS": "27.0 arm64",
+    "node": "v22.22.3",
+    "npm": "10.9.8",
+    "mcpProtocol": "2026-07-28",
+    "hermes": "Linux 5.15.0-185-generic x86_64",
+    "externalCapabilityInvocations": 0
+  },
+  "dependencies": [
+    {
+      "name": "@modelcontextprotocol/client",
+      "version": "2.0.0",
+      "license": "MIT",
+      "nodeEngine": ">=20",
+      "integrity": "sha512-8f1OghQ2rjzIOfqgUCP+8GiUWqRs89njoWLNqAe8kWmDePv3s1fZXseej+QXemssEuuOvLLmLO/kqM3IQHtISw==",
+      "scope": "production stdio MCP client"
+    },
+    {
+      "name": "@modelcontextprotocol/server",
+      "version": "2.0.0",
+      "license": "MIT",
+      "nodeEngine": ">=20",
+      "integrity": "sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==",
+      "scope": "test-only official MCP fixture"
+    },
+    {
+      "name": "zod",
+      "version": "4.4.3",
+      "license": "MIT",
+      "nodeEngine": null,
+      "integrity": "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==",
+      "scope": "test-only MCP tool schema"
+    }
+  ],
+  "platformQualification": {
+    "mac": {
+      "backend": "/usr/bin/sandbox-exec",
+      "filesystemAllowEnforced": true,
+      "filesystemDenyEnforced": true,
+      "networkDenyEnforced": true,
+      "terminationEnforced": true,
+      "productionSuitable": false,
+      "reasonCodes": [
+        "PRIVATE_UNSTABLE_INTERFACE_NOT_PRODUCTION_BOUNDARY",
+        "SIGNED_APP_SANDBOX_XPC_HELPER_REQUIRED"
+      ]
+    },
+    "hermes": {
+      "bubblewrap": "missing",
+      "prlimit": "2.37.2",
+      "unprivilegedUserNamespaces": true,
+      "productionSuitable": false,
+      "reasonCodes": [
+        "CAPABILITY_ISOLATION_BACKEND_MISSING",
+        "CAPABILITY_ISOLATION_BACKEND_VERSION_UNSUPPORTED"
+      ]
+    }
+  },
+  "verified": [
+    "FileCapabilityArtifactVerifier hashes an owner/root-owned regular file through O_NOFOLLOW, rejects symlink or group/other-writable metadata, checks the declared digest and verifies an Ed25519 signature from the bound trust root.",
+    "LinuxBubblewrapIsolationBackend accepts only non-setuid bubblewrap 0.11.2 or newer, util-linux prlimit 2.38 or newer, available unprivileged user namespaces, exact artifact/process/filesystem/MCP bindings, no network, no local secret scope and resource ceilings that can be enforced conservatively.",
+    "The launch descriptor clears the environment, read-only binds the runtime root, creates isolated namespaces, supplies only declared filesystem binds and executables, applies CPU/address-space/process/file-size limits and supervises the process group for output, wall deadline and termination.",
+    "The official MCP v2 client and server completed a real modern stdio discover/initialize/listTools/callTool/close journey with exact server name/version, manifest tool mapping, JSON input and protected output; the direct-process launcher is explicitly test-only and never receives production qualification.",
+    "Remote API and adapter execution re-check exact endpoint identity and digest, allow only HTTPS or explicitly qualified loopback, reject redirects and cross-origin paths, inject secret material only through invocation-bound declared headers, bound response bytes and return result_unknown after uncertain side-effecting network failure.",
+    "Capability updates compare source, semantic major, integrity, runtime/executable identity, signer, operations, permissions, classifications, network, filesystem, secrets, cost, isolation and compatibility. New executable code and scope expansions require approval; rejected or pre-switch failed candidates leave the current qualified version authoritative.",
+    "Candidate activation first verifies the rollback artifact and candidate artifact/runtime, then SQLite atomically switches the version and revokes old Handles. Rollback requalifies the prior version and records that external effects and product state were not rolled back.",
+    "The relocatable runtime packager derives external roots from production workspace manifests, includes @modelcontextprotocol/client and its closure, excludes @himawari-agent/testing, and passes installed CLI/service/recovery/authority-transfer tests."
+  ],
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, typecheck, 14-workspace boundaries, 79-requirement coverage, 150-source/25-package invariant scan and 487-file secret scan passed"
+    },
+    {
+      "command": "npm test",
+      "exitStatus": 0,
+      "execution": "outside sandbox for Unix Domain Socket and real child-process coverage",
+      "result": "282 unit, 143 contract, 350 integration and 3 E2E tests passed; 4 integration tests remained intentionally skipped"
+    },
+    {
+      "command": "npm run check:pi-compat && npm run test:journeys",
+      "exitStatus": 0,
+      "result": "14 Pi compatibility tests and the mapped cross-slice journey test passed"
+    },
+    {
+      "command": "npm run build:node && npx vitest run --config vitest.workspace.ts --project integration test/integration/installable-node-services.test.ts",
+      "exitStatus": 0,
+      "execution": "outside sandbox for installed Unix Domain Socket services",
+      "result": "relocatable runtime built and all 4 installed CLI, service, recovery and authority-transfer tests passed"
+    },
+    {
+      "command": "node scripts/qualify-macos-capability-spike.mjs",
+      "exitStatus": 0,
+      "execution": "outside sandbox for loopback socket and sandbox-exec",
+      "result": "filesystem allow/deny, network deny and termination probes passed; productionSuitable remained false by design"
+    },
+    {
+      "command": "ssh -o BatchMode=yes -o ConnectTimeout=8 hermes-tailscale-breakglass <read-only qualification probe>",
+      "exitStatus": 0,
+      "result": "Hermes reported Linux x86_64, no bwrap, prlimit 2.37.2 and enabled unprivileged user namespaces; no remote state changed"
+    },
+    {
+      "command": "python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict . && git diff --check",
+      "exitStatus": 0,
+      "result": "strict governed-document validation and whitespace checks passed"
+    }
+  ],
+  "remaining": [
+    "Mac local program and stdio MCP remain blocked until a signed App Sandbox/XPC helper is implemented and qualified.",
+    "Hermes local program and stdio MCP remain blocked until a separately authorized installation supplies a qualified non-setuid bubblewrap and prlimit 2.38 or newer, followed by the same fresh probes.",
+    "No real capability artifact, trust root, API/MCP endpoint, provider credential or Execution Worker adapter registry was installed or enabled; Task 11 still owns Owner-facing capability/update/rollback read models and controls, and Task 12 owns final S4 acceptance closure."
+  ],
+  "externalEffects": [
+    "The npm lockfile and local workspace dependencies changed; the relocatable runtime and all capability artifacts used by tests were local temporary fixtures.",
+    "Hermes was accessed only through read-only commands. No package, configuration, service, file or capability was changed there.",
+    "No real capability was installed or activated, no third-party MCP/API was contacted, no secret material was exposed, no paid provider was called and no production or remote repository state changed."
+  ],
+  "implementationCommit": "f18c25152820447772d9254f2060f982c09ef040"
+}
