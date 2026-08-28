@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "sourcePlan": "docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md",
+  "scopeTask": "S4-T12",
+  "journeys": [
+    {
+      "id": "J04",
+      "acceptanceIds": ["S4-A02", "S4-A03"],
+      "status": "s4_common_contract_complete",
+      "globalStatus": "partial",
+      "claims": [
+        "capability_review_and_permission_visibility",
+        "grant_scope_usage_budget_visibility",
+        "scope_expansion_requires_new_approval",
+        "grant_revocation_uses_revision_cas",
+        "revocation_invalidates_handles_and_dependent_tasks",
+        "browser_state_follows_authoritative_readback"
+      ],
+      "testSources": [
+        "test/integration/authorization-capability-governance.test.ts",
+        "test/integration/governance-control-center.test.ts",
+        "test/integration/sqlite-durable-repositories.test.ts"
+      ],
+      "qualificationEvidence": [
+        "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json",
+        "test/integration/qualification/evidence/s4-task11-governance-control-center.json"
+      ],
+      "remainingGlobalQualification": [
+        "S0 仍需把 S1/S3 的真实 Task blocked、kill/restart 与生产身份 readback 接入同一 J04 旅程"
+      ]
+    },
+    {
+      "id": "J05",
+      "acceptanceIds": ["S4-A01", "S4-A02", "S4-A03", "S4-A04"],
+      "status": "s4_common_contract_complete",
+      "globalStatus": "partial",
+      "claims": [
+        "authenticated_secret_material_remains_reference_only",
+        "final_external_action_uses_frozen_intent",
+        "unknown_side_effect_result_requires_reconciliation",
+        "stable_identity_prevents_duplicate_side_effect"
+      ],
+      "testSources": [
+        "packages/platform-node/test/node-capability-runtime.unit.test.ts",
+        "test/integration/failure-recovery-matrix.test.ts",
+        "test/integration/permission-grants.test.ts"
+      ],
+      "qualificationEvidence": [
+        "test/integration/qualification/evidence/s4-tasks9-10-capability-runtime-update.json",
+        "test/integration/qualification/evidence/s4-task11-governance-control-center.json"
+      ],
+      "remainingGlobalQualification": [
+        "S5 仍需提供公共 Web 来源、认证 session 与正式浏览器动作旅程"
+      ]
+    },
+    {
+      "id": "J06",
+      "acceptanceIds": ["S4-A01", "S4-A02", "S4-A04"],
+      "status": "s4_common_contract_complete",
+      "globalStatus": "partial",
+      "claims": [
+        "host_resource_scope_is_explicit",
+        "new_operation_or_scope_reasks",
+        "commit_and_command_actions_use_frozen_intent",
+        "no_push_capability_is_registered"
+      ],
+      "testSources": [
+        "test/integration/authorization-capability-governance.test.ts",
+        "test/integration/s4-security-recovery-matrix.test.ts"
+      ],
+      "qualificationEvidence": [
+        "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json"
+      ],
+      "remainingGlobalQualification": [
+        "S6 仍需提供 dirty workspace、diff、commit preview 与真实 host directory 旅程"
+      ]
+    },
+    {
+      "id": "J07",
+      "acceptanceIds": ["S4-A01", "S4-A02", "S4-A03", "S4-A04"],
+      "status": "s4_common_contract_complete",
+      "globalStatus": "partial",
+      "claims": [
+        "credential_material_is_reference_only",
+        "recipient_or_notification_expansion_reasks",
+        "revoked_or_host_bound_authority_blocks_execution"
+      ],
+      "testSources": [
+        "test/integration/authorization-capability-governance.test.ts",
+        "packages/platform-node/test/node-capability-runtime.unit.test.ts"
+      ],
+      "qualificationEvidence": [
+        "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json",
+        "test/integration/qualification/evidence/s4-tasks9-10-capability-runtime-update.json"
+      ],
+      "remainingGlobalQualification": [
+        "S7 仍需提供 Mac/Hermes Calendar conformance、时区和参与人通知负例"
+      ]
+    },
+    {
+      "id": "J08",
+      "acceptanceIds": ["S4-A02", "S4-A03"],
+      "status": "s4_common_contract_complete",
+      "globalStatus": "partial",
+      "claims": [
+        "worker_receives_minimal_bounded_handle",
+        "worker_cannot_expand_grant_or_context",
+        "run_end_revokes_worker_authority",
+        "owner_approval_precedes_new_task_authority"
+      ],
+      "testSources": [
+        "test/integration/authorization-capability-governance.test.ts",
+        "test/integration/execution-worker-process.test.ts"
+      ],
+      "qualificationEvidence": [
+        "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json"
+      ],
+      "remainingGlobalQualification": [
+        "S8 仍需提供反思去重、每日额度、普通 Task 创建和主 Agent 交付旅程"
+      ]
+    },
+    {
+      "id": "J09",
+      "acceptanceIds": ["S4-A01", "S4-A03", "S4-A04"],
+      "status": "s4_common_contract_complete",
+      "globalStatus": "partial",
+      "claims": [
+        "new_executable_code_requires_owner_approval",
+        "candidate_isolation_excludes_production_secrets",
+        "unreviewed_candidate_cannot_self_activate"
+      ],
+      "testSources": [
+        "test/integration/authorization-capability-governance.test.ts",
+        "packages/platform-node/test/capability-isolation.unit.test.ts"
+      ],
+      "qualificationEvidence": [
+        "test/integration/qualification/evidence/s4-tasks9-10-capability-runtime-update.json"
+      ],
+      "remainingGlobalQualification": [
+        "S8/S6/S9 仍需提供真实候选 workspace、diff/eval 与 release review 旅程"
+      ]
+    },
+    {
+      "id": "J11",
+      "acceptanceIds": ["S4-A01", "S4-A02", "S4-A03"],
+      "status": "s4_common_contract_complete",
+      "globalStatus": "partial",
+      "claims": [
+        "fallback_cannot_expand_disclosure_or_budget",
+        "unknown_external_side_effect_reconciles_before_retry",
+        "no_third_model_or_hidden_capability_authority"
+      ],
+      "testSources": [
+        "test/integration/failure-recovery-matrix.test.ts",
+        "test/integration/s4-security-recovery-matrix.test.ts"
+      ],
+      "qualificationEvidence": [
+        "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json"
+      ],
+      "remainingGlobalQualification": [
+        "S1/S3 仍需把 MODEL_BLOCKED、Result 与 Owner-facing 状态接成完整 J11"
+      ]
+    },
+    {
+      "id": "J12",
+      "acceptanceIds": ["S4-A01", "S4-A02", "S4-A03"],
+      "status": "s4_common_contract_complete",
+      "globalStatus": "partial",
+      "claims": [
+        "grant_budget_race_converges_by_cas",
+        "cancel_expiry_and_revoke_end_authority",
+        "dependent_task_cannot_continue_after_capability_disable",
+        "authorization_and_result_keep_run_trace_causality"
+      ],
+      "testSources": [
+        "test/integration/sqlite-durable-repositories.test.ts",
+        "test/integration/capability-execution.test.ts",
+        "test/integration/session-trace.test.ts"
+      ],
+      "qualificationEvidence": [
+        "test/integration/qualification/evidence/s4-tasks1-8-authorization-capability-governance.json",
+        "test/integration/qualification/evidence/s4-task11-governance-control-center.json"
+      ],
+      "remainingGlobalQualification": [
+        "S1/S3 仍需提供 DST、MISSED/no-catchup、容量、Attention 下限和浏览器离线旅程"
+      ]
+    }
+  ]
+}

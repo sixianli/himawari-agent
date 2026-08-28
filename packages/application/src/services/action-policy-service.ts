@@ -287,6 +287,7 @@ export class ActionPolicyService {
           costMicros: intent.estimatedCostMicros,
           consumedAt: now,
           usageId: `authorization-usage:${intent.id}`,
+          intentId: intent.id,
           runId: intent.runId,
           operation: intent.operation,
         });

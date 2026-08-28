@@ -176,6 +176,8 @@ export interface ConsumeGrantInput {
   readonly consumedAt: string;
   /** Stable per-intent usage identity. Stores use it to make retries idempotent. */
   readonly usageId?: string;
+  /** Frozen ActionIntent identity used as the durable Trace causation. */
+  readonly intentId?: string;
   readonly runId?: RunId;
   readonly operation?: string;
 }

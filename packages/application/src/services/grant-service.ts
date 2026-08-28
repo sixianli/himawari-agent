@@ -120,6 +120,7 @@ export class GrantService {
       costMicros: input.intent.estimatedCostMicros,
       consumedAt: this.dependencies.clock.now(),
       usageId: `authorization-usage:${input.intent.id}`,
+      intentId: input.intent.id,
       runId: input.intent.runId,
       operation: input.intent.operation,
     }) as Promise<GovernedGrantRecord>;

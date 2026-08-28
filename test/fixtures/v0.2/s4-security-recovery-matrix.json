@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "sourcePlan": "docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md",
+  "scopeTask": "S4-T12",
+  "cases": [
+    {
+      "id": "authorization_store_outage",
+      "assertions": [
+        {
+          "source": "test/integration/permission-grants.test.ts",
+          "selector": "fails closed when authorization state cannot be read"
+        }
+      ]
+    },
+    {
+      "id": "manifest_tamper",
+      "assertions": [
+        {
+          "source": "packages/platform-node/test/capability-artifact-verifier.unit.test.ts",
+          "selector": "fails closed after artifact tamper and never trusts the declared digest"
+        }
+      ]
+    },
+    {
+      "id": "signature_failure",
+      "assertions": [
+        {
+          "source": "test/integration/authorization-capability-governance.test.ts",
+          "selector": "rejects undeclared program network scope and untrusted manifest integrity"
+        }
+      ]
+    },
+    {
+      "id": "source_permission_expansion",
+      "assertions": [
+        {
+          "source": "test/integration/authorization-capability-governance.test.ts",
+          "selector": "requires explicit approval for scope expansion or new executable code and rejection preserves the active version"
+        }
+      ]
+    },
+    {
+      "id": "stale_handle",
+      "assertions": [
+        {
+          "source": "test/integration/authorization-capability-governance.test.ts",
+          "selector": "enforces reviewed capability lifecycle and bounded fenced Handle consumption"
+        }
+      ]
+    },
+    {
+      "id": "grant_budget_race",
+      "assertions": [
+        {
+          "source": "test/integration/sqlite-durable-repositories.test.ts",
+          "selector": "atomically resolves a Grant budget race, preserves idempotency, and fences Handle consumption"
+        }
+      ]
+    },
+    {
+      "id": "worker_crash",
+      "assertions": [
+        {
+          "source": "test/integration/failure-recovery-matrix.test.ts",
+          "selector": "recovers Worker crashes before and after an external side effect without duplication"
+        }
+      ]
+    },
+    {
+      "id": "unknown_result",
+      "assertions": [
+        {
+          "source": "test/integration/failure-recovery-matrix.test.ts",
+          "selector": "keeps an unknown external action pending until explicit reconciliation"
+        },
+        {
+          "source": "packages/platform-node/test/node-capability-runtime.unit.test.ts",
+          "selector": "binds a remote adapter to one same-origin endpoint and reports uncertain side effects"
+        }
+      ]
+    },
+    {
+      "id": "pi_tool_allowlist",
+      "assertions": [
+        {
+          "source": "packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts",
+          "selector": "exposes only authorized custom tools and maps Pi lifecycle events after settlement"
+        },
+        {
+          "source": "packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts",
+          "selector": "uses product preflight as the final enforcement point"
+        }
+      ]
+    },
+    {
+      "id": "worker_registry_revalidation",
+      "assertions": [
+        {
+          "source": "test/integration/authorization-capability-governance.test.ts",
+          "selector": "makes the Worker revalidate active Grant, scope and current authority fence before invocation"
+        }
+      ]
+    },
+    {
+      "id": "program_mcp_isolation",
+      "assertions": [
+        {
+          "source": "packages/platform-node/test/capability-isolation.unit.test.ts",
+          "selector": "qualifies a pinned non-setuid Linux backend and builds a no-network launch"
+        },
+        {
+          "source": "packages/platform-node/test/node-capability-runtime.unit.test.ts",
+          "selector": "uses the official MCP v2 stdio SDK, enforces exact server/tool identity, and protects output"
+        }
+      ]
+    },
+    {
+      "id": "secret_exclusion",
+      "assertions": [
+        {
+          "source": "test/integration/session-trace.test.ts",
+          "selector": "redacts structured secrets, headers, URLs, errors, and nested tool results before protection"
+        },
+        {
+          "source": "scripts/scan-machine-secrets.mjs",
+          "selector": "authorization-bearer"
+        }
+      ]
+    },
+    {
+      "id": "trace_causality",
+      "assertions": [
+        {
+          "source": "test/integration/session-trace.test.ts",
+          "selector": "records ordered model, tool, and approval payload references with causal relationships"
+        },
+        {
+          "source": "test/integration/sqlite-durable-repositories.test.ts",
+          "selector": "atomically resolves a Grant budget race, preserves idempotency, and fences Handle consumption"
+        }
+      ]
+    }
+  ]
+}

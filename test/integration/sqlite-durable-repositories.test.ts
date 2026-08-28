@@ -18,6 +18,7 @@ import {
   createOwnerId,
   createRunId,
   createSessionId,
+  createThreadId,
 } from "@himawari-agent/domain";
 import type { StreamEvent } from "@himawari-agent/gateway-contracts";
 import {
@@ -251,7 +252,7 @@ describe("SQLite durable repository adapters", () => {
     await rm(resource.stateRoot, { recursive: true });
   });
 
-  it("atomically persists idempotent Grant and fenced Handle consumption", async () => {
+  it("atomically resolves a Grant budget race, preserves idempotency, and fences Handle consumption", async () => {
     const resource = await openRepository();
     const authorization = resource.repository.authorizationStore();
     const action = {
@@ -326,23 +327,83 @@ describe("SQLite durable repository adapters", () => {
       decidedAt: T1,
       grant,
     });
+    const trace = resource.repository.traceStore();
+    await trace.append({
+      id: "trace:approval-governed-sqlite",
+      schemaVersion: "trace.v1",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      threadId: createThreadId("thread-conformance"),
+      runId: RUN_ID,
+      turnId: null,
+      parentEventId: null,
+      causationId: action.id,
+      correlationId: "correlation-governed-sqlite",
+      sequence: 1,
+      occurredAt: T0,
+      recordedAt: T0,
+      actorId: "authorization-control-plane",
+      dataClassification: "private",
+      eventType: "authorization.approval_resolved",
+      payloadRef: null,
+    });
     const usage = {
       grantId: grant.id,
       expectedRevision: 1,
       costMicros: 10,
       consumedAt: T1,
       usageId: "authorization-usage:intent-governed-sqlite",
+      intentId: action.id,
       runId: RUN_ID,
       operation: action.operation,
     };
-    await expect(authorization.consumeGrant(usage)).resolves.toMatchObject({
+    const competingUsage = {
+      ...usage,
+      usageId: "authorization-usage:intent-governed-sqlite-competing",
+    };
+    const race = await Promise.allSettled([
+      authorization.consumeGrant(usage),
+      authorization.consumeGrant(competingUsage),
+    ]);
+    expect(race.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+    expect(race.filter(({ status }) => status === "rejected")).toHaveLength(1);
+    const rejected = race.find(({ status }) => status === "rejected");
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      reason: { code: PORT_ERROR_CODES.CONFLICT },
+    });
+    const winningUsage = race[0]?.status === "fulfilled" ? usage : competingUsage;
+    await expect(authorization.consumeGrant(winningUsage)).resolves.toMatchObject({
       uses: 1,
       revision: 2,
     });
-    await expect(authorization.consumeGrant(usage)).resolves.toMatchObject({
-      uses: 1,
-      revision: 2,
-    });
+    await expect(trace.readRun(RUN_ID, 0, 10)).resolves.toEqual([
+      expect.objectContaining({
+        id: "trace:approval-governed-sqlite",
+        schemaVersion: "trace.v1",
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        parentEventId: null,
+        causationId: action.id,
+        correlationId: "correlation-governed-sqlite",
+        actorId: "authorization-control-plane",
+        eventType: "authorization.approval_resolved",
+      }),
+      expect.objectContaining({
+        id: `trace:${winningUsage.usageId}`,
+        schemaVersion: "trace.v1",
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        parentEventId: "trace:approval-governed-sqlite",
+        causationId: action.id,
+        correlationId: "correlation-governed-sqlite",
+        actorId: "authorization-control-plane",
+        eventType: "authorization.grant_consumed",
+      }),
+    ]);
 
     const capabilities = resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
     await capabilities.create({
@@ -425,11 +486,61 @@ describe("SQLite durable repository adapters", () => {
       uses: 1,
       revision: 2,
     });
-    await expect(endRunHandles(RUN_ID, T2)).resolves.toBe(1);
+    const scheduler = resource.repository.scheduler();
+    await scheduler.upsert(
+      {
+        id: "job-capability-governed-sqlite",
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId: null,
+        payloadRef: "payload-schedule-01",
+        sourceProofRef: "source-proof-governed-sqlite",
+        dataClassification: "private",
+        authorizationRef: grant.id,
+        taskScopeRef: "task-scope-governed-sqlite",
+        capabilityRef: action.capabilityRef,
+        operation: action.operation,
+        resourceRef: action.resourceRef,
+        sideEffect: "none",
+        estimatedCostMicros: 10,
+        intervalMs: 60_000,
+        minimumIntervalMs: 60_000,
+        expiresAt: T2,
+        revokedAt: null,
+        nextRunAt: T1,
+        occurrence: 0,
+        status: "active",
+      },
+      null,
+    );
+    const currentCapability = await capabilities.get(action.capabilityRef);
+    if (!currentCapability) throw new Error("expected governed capability");
+    const invalidateAuthority = capabilities.invalidateCapabilityAuthority;
+    if (!invalidateAuthority) throw new Error("capability invalidation must be atomic");
+    await expect(
+      invalidateAuthority(
+        {
+          ...currentCapability,
+          revision: 2,
+          lifecycle: "disabled",
+          updatedAt: T2,
+        },
+        1,
+        T2,
+      ),
+    ).resolves.toMatchObject({ revision: 2, lifecycle: "disabled" });
     await expect(capabilities.getExecutionHandle(handle.ref)).resolves.toMatchObject({
-      revision: 3,
-      workerEndedAt: T2,
+      revision: 2,
+      revokedAt: T2,
+      workerEndedAt: null,
     });
+    await expect(scheduler.read("job-capability-governed-sqlite")).resolves.toMatchObject({
+      revision: 2,
+      status: "cancelled",
+      revokedAt: T2,
+      nextRunAt: null,
+    });
+    await expect(endRunHandles(RUN_ID, T2)).resolves.toBe(0);
     await expect(revokeHandles(action.capabilityRef, T2)).resolves.toBe(0);
 
     await resource.repository.close();

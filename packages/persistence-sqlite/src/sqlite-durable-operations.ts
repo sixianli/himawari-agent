@@ -1618,16 +1618,46 @@ export class SqliteDurableOperations {
               .pluck()
               .get(input.runId),
           );
+          const previous = parseRecord<TraceEvent>(
+            this.database
+              .prepare(
+                `SELECT record_json AS recordJson FROM trace_events
+                WHERE run_id = ? AND record_json IS NOT NULL
+                ORDER BY sequence DESC LIMIT 1`,
+              )
+              .get(input.runId) as JsonRow | undefined,
+          );
+          const traceEvent: TraceEvent = {
+            id: `trace:${input.usageId}`,
+            schemaVersion: "trace.v1",
+            ownerId: current.ownerId,
+            agentId: current.agentId,
+            sessionId: run.sessionId as SessionId,
+            threadId: run.threadId as TraceEvent["threadId"],
+            runId: input.runId,
+            turnId: null,
+            parentEventId: previous?.id ?? null,
+            causationId: input.intentId ?? input.usageId,
+            correlationId: previous?.correlationId ?? `run:${input.runId}`,
+            sequence,
+            occurredAt: input.consumedAt,
+            recordedAt: input.consumedAt,
+            actorId: "authorization-control-plane",
+            dataClassification: "private",
+            eventType: "authorization.grant_consumed",
+            payloadRef: usagePayloadRef,
+          };
           this.database
             .prepare(
               `INSERT INTO trace_events (
                 id, owner_id, agent_id, session_id, thread_id, run_id, turn_id,
-                sequence, event_type, classification, payload_ref, occurred_at, recorded_at
+                sequence, event_type, classification, payload_ref, occurred_at, recorded_at,
+                record_json
               ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 'authorization.grant_consumed',
-                'private', ?, ?, ?)`,
+                'private', ?, ?, ?, ?)`,
             )
             .run(
-              `trace:${input.usageId}`,
+              traceEvent.id,
               current.ownerId,
               current.agentId,
               run.sessionId,
@@ -1637,6 +1667,7 @@ export class SqliteDurableOperations {
               usagePayloadRef,
               input.consumedAt,
               input.consumedAt,
+              JSON.stringify(traceEvent),
             );
         }
       }
