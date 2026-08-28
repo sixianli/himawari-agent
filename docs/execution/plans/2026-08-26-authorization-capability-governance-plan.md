@@ -190,11 +190,13 @@ Tool、Skill、MCP、program、remote API 与 adapter 现在共用 `CapabilityMa
 
 ### Task 11：接通控制中心和 read model
 
-- [ ] Approval UI 显示冻结 intent、hash、risk、scope、披露、费用、expiry、recent-auth 和真实结果。
-- [ ] Capability UI 显示来源、精确版本、完整性、权限、secret refs、isolation、health、依赖、更新 diff 和 rollback。
-- [ ] Grant UI 支持查看、撤销、expiry/usage/budget 和受影响 Task，不显示 secret 原值。
-- [ ] 所有 mutation 使用 idempotency/revision，multi-tab conflict 不静默覆盖。
-- [ ] 验证未批准能力没有隐藏执行 route。
+- [x] Approval UI 显示冻结 intent、hash、risk、scope、披露、费用、expiry、recent-auth 和真实结果。
+- [x] Capability UI 显示来源、精确版本、完整性、权限、secret refs、isolation、health、依赖、更新 diff 和 rollback。
+- [x] Grant UI 支持查看、撤销、expiry/usage/budget 和受影响 Task，不显示 secret 原值。
+- [x] 所有 mutation 使用 idempotency/revision，multi-tab conflict 不静默覆盖。
+- [x] 验证未批准能力没有隐藏执行 route。
+
+Gateway v2 现在提供 Agent-scoped Approval、Capability 与 Grant 权威 list/detail snapshot 和严格治理命令；SQLite schema 0017 保存 `executing/completed` mutation receipt，并用不含 command body 的语义指纹、`expectedRevision` 和调用方持久化 `idempotencyKey` 保证重试与恢复。控制中心三类 surface 只从权威 readback 更新状态，409 强制刷新，离线不 mutation，storage event 协调多 tab，401 清除旧身份状态，高风险操作要求 recent-auth。Chromium 151 与 WebKit 26.5 已覆盖批准/拒绝、review/install、更新批准/拒绝、rollback/disable、Grant 冲突/撤销、离线与隐藏执行 route 负例；fixture 只向浏览器投影 protected secret reference。生产 Agent Service composition、真实身份提供方与真实 capability 资格不在此本地证据内，由 Task 12 和后续 S0/S9 生产资格收口。
 
 ### Task 12：完成安全、恢复与文档收口
 
@@ -209,8 +211,8 @@ Tool、Skill、MCP、program、remote API 与 adapter 现在共用 `CapabilityMa
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
 | S4-A01 | 行动分类与风险 | Tasks 2–3、12 | table-driven、negative contracts、Trace | Tasks 2–3 本地完成；待 Task 12 收口 |
-| S4-A02 | 授权结果与 Grant | Tasks 4–5、11–12 | hash/expiry/CAS/revoke/browser | Tasks 4–5 本地完成；待 UI/Task 12 |
-| S4-A03 | 能力生命周期 | Tasks 6–7、9–12 | lifecycle/update/Handle/platform recovery | Tasks 6–10 本地完成；待 UI/Task 12 收口 |
+| S4-A02 | 授权结果与 Grant | Tasks 4–5、11–12 | hash/expiry/CAS/revoke/browser | Tasks 4–5、11 本地完成；待 Task 12 收口 |
+| S4-A03 | 能力生命周期 | Tasks 6–7、9–12 | lifecycle/update/Handle/platform recovery | Tasks 6–11 本地完成；待 Task 12 收口 |
 | S4-A04 | 统一能力类型 | Tasks 8–10、12 | Tool/Skill/MCP/program/API/adapter conformance | Tasks 8–10 本地完成；待 Task 12 收口 |
 
 ## 验证

@@ -122,7 +122,10 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     contractStatus: "frozen",
     integrationPolicy: "allowed",
     blockers: [],
-    baselineEvidence: ["test/integration/qualification/evidence/s1-task15-control-center.json"],
+    baselineEvidence: [
+      "test/integration/qualification/evidence/s1-task15-control-center.json",
+      "test/integration/qualification/evidence/s4-task11-governance-control-center.json",
+    ],
   },
   {
     id: "tasks",
@@ -207,7 +210,10 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     contractStatus: "frozen",
     integrationPolicy: "allowed",
     blockers: [],
-    baselineEvidence: ["test/integration/governance-control-center.test.ts"],
+    baselineEvidence: [
+      "test/integration/governance-control-center.test.ts",
+      "test/integration/qualification/evidence/s4-task11-governance-control-center.json",
+    ],
   },
   {
     id: "authorizations-grants",
@@ -226,7 +232,10 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
     contractStatus: "frozen",
     integrationPolicy: "allowed",
     blockers: [],
-    baselineEvidence: ["test/integration/governance-control-center.test.ts"],
+    baselineEvidence: [
+      "test/integration/governance-control-center.test.ts",
+      "test/integration/qualification/evidence/s4-task11-governance-control-center.json",
+    ],
   },
   {
     id: "trace",

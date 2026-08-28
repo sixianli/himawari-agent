@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T17:51:11+09:00",
+  "plan": "docs/execution/plans/2026-08-26-authorization-capability-governance-plan.md",
+  "taskIds": ["S4-T11"],
+  "status": "local_complete",
+  "candidateRevision": "d8c4cc08e4b14e05cc7950c185102bde85b085b6",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 13,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["temp.md"]
+  },
+  "verified": [
+    "gateway.thread.v2 exposes strict Agent-scoped Approval, Capability and Grant list/detail snapshots plus revisioned governance commands; unrecognized or unauthorized routes fail closed.",
+    "GovernanceGatewayControlPlane persists executing/completed mutation receipts in SQLite schema 0017, derives a body-free semantic fingerprint, enforces expectedRevision and recovers retries without repeating completed effects.",
+    "The Approval surface displays frozen intent, semantic hash, risk, scope, disclosure, cost, expiry, recent-auth requirement and committed result; approve and deny never become local truth before authoritative readback.",
+    "The Capability surface displays exact source/version/integrity/signature, permissions, protected secret references, isolation, cost, health, dependencies, structured update assessment and truthful rollback boundaries.",
+    "The Grant surface displays exact scope, expiry, usage, budget and affected task references and revokes through revision and idempotency guards without exposing secret material.",
+    "The browser stores only bounded UI preferences plus body-free mutation identity, clears stale governance data across surface and identity changes, refreshes on 409, blocks offline mutation and observes storage events for multi-tab reconciliation.",
+    "Chromium and WebKit journeys exercised approve/deny, missing recent authentication, review/install, update approve/deny, rollback/disable, grant conflict/revoke, offline behavior and the absence of an unapproved hidden execution route.",
+    "The fixture kept raw provider material in server-private storage and exposed only a protected reference; browser snapshots, persisted storage and rendered UI contained no raw secret."
+  ],
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format, lint, typecheck, 14-workspace boundaries, 79 requirements, 53 acceptance IDs, 152-source/25-package/20-route invariants and 493-file secret scan passed"
+    },
+    {
+      "command": "npm run test:unit && npm run test:contracts && npm run test:integration && npm run test:e2e",
+      "exitStatus": 0,
+      "execution": "integration suite ran outside the restricted sandbox for Unix Domain Socket and installed-service process coverage",
+      "result": "43 unit files/284 tests, 13 contract files/147 tests, 38 integration files passed and 4 skipped/355 tests passed and 4 skipped, and 1 E2E file/3 tests passed"
+    },
+    {
+      "command": "npm run check:pi-compat && npm run test:journeys",
+      "exitStatus": 0,
+      "result": "2 Pi compatibility files/14 tests and the mapped cross-slice journey passed"
+    },
+    {
+      "command": "npm run test:browser-unit && npm run build:browser",
+      "exitStatus": 0,
+      "result": "6 browser unit files/26 tests passed; the production browser bundle was 114355 total gzip bytes with no source maps or inline assets"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs chromium",
+      "exitStatus": 0,
+      "result": "Chromium 151 passed all Thread and governance journeys with zero axe violations, 44 px target compliance and only approved bounded browser storage"
+    },
+    {
+      "command": "node scripts/qualify-control-center-browser.mjs webkit",
+      "exitStatus": 0,
+      "result": "WebKit 26.5 passed the same governance and recovery matrix with zero axe violations"
+    }
+  ],
+  "remaining": [
+    "S4 Task 12 still owns outage, tamper, stale Handle, budget race, Worker crash, unknown-result and complete Trace-causality qualification plus final S0 and governed-document reconciliation.",
+    "The production Agent Service does not yet compose the HTTP/Gateway v2 governance adapters; final production composition remains part of the later S0/S9 production qualification and is not implied by the local fixture.",
+    "No real capability artifact, trust root, provider, credential, MCP/API endpoint or production runtime was installed or activated; browser fixtures do not substitute for physical-device or production identity-provider qualification."
+  ],
+  "externalEffects": [
+    "No real capability was installed or activated, no external MCP/API/provider was contacted, no credential or raw secret was exposed, no paid call occurred, and no production or remote repository state changed."
+  ],
+  "implementationCommit": "d8c4cc08e4b14e05cc7950c185102bde85b085b6"
+}
