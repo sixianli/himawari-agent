@@ -1,22 +1,22 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-28T01:25:21+09:00",
+  "recordedAt": "2026-08-28T09:06:30+09:00",
   "plan": "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
   "taskId": "S1-T20",
-  "status": "partial",
-  "candidateRevision": "91868de4053f8f05db53c0ab1159db6d5d9e97b1",
+  "status": "complete",
+  "candidateRevision": "7f3931699b4a3566eb7fa92c6f266156249bc6ea",
   "worktree": {
     "branch": "main",
     "upstream": "origin/main",
-    "ahead": 29,
+    "ahead": 31,
     "behind": 0,
     "status": "dirty",
     "intentionallyExcluded": ["temp.md"]
   },
   "deterministicQualification": {
     "provider": "ScriptedModelPort, TrustedModelProviderAdapter, PiModelTransport and OpenRouter response fixture",
-    "liveCall": false,
-    "reason": "Owner 已选择 OpenRouter deepseek/deepseek-v4-flash-0731 作为 primary、z-ai/glm-5.3-flash 作为 fallback，批准 1.00 USD 上限并将 fallback 限制为 private。确定性实现现已冻结独立 embedding descriptor，把 strict configuration 映射到 canonical Pi generation binding，并接入 Agent Service 启动；本记录另行记录了 Qwen embedding live smoke，generation live identity、费用和质量回读仍保持关闭",
+    "liveCall": true,
+    "reason": "Owner 已选择 OpenRouter deepseek/deepseek-v4-flash-0731 作为 primary、z-ai/glm-5.3-flash 作为 fixed fallback，批准 1.00 USD 上限并将 fallback 限制为 private。确定性实现冻结 canonical Pi generation binding 与独立 embedding descriptor；有界 live qualification 已完成 embedding、primary generation 和本地注入 retryable 503 后的真实 fixed fallback 回读",
     "hiddenRoutes": false,
     "dynamicMarketplaceRoute": false,
     "implicitEmbedding": false
@@ -28,9 +28,9 @@
     "approvedAt": "2026-08-27T15:58:22+09:00"
   },
   "liveScope": {
-    "realFallbackEnabled": false,
+    "realFallbackEnabled": true,
     "realFallbackApproved": true,
-    "activationStatus": "embedding_live_verified_generation_live_pending",
+    "activationStatus": "embedding_and_generation_live_verified",
     "fallbackModel": "z-ai/glm-5.3-flash",
     "fallbackAllowedDataClassifications": ["private"],
     "providerRouting": {
@@ -46,9 +46,9 @@
       "utf8Bytes": 73,
       "secretValueLogged": false
     },
-    "primaryRetryableFailure": "will be exercised only after the binding and secret source are verified",
+    "primaryRetryableFailure": "a local synthetic 503 was injected before the primary HTTP request; ModelRouterService then selected and executed the configured live fallback",
     "reason": "Owner 已确认启用真实 fallback；fallback 与 primary 共用 OpenRouter key，凭据计划放入 macOS Keychain，且 fallback 仅允许接收 private 数据",
-    "runtimeCaveat": "当前 ModelRouterService 在 retryable primary failure 下按已配置 descriptor 自动寻找 fallback；Keychain readback、closed Pi binding、严格配置映射、独立 embedding descriptor 和 Agent Service model-path lifecycle 已通过。deterministic profile 只报告 descriptor，不创建 Pi 或隐藏模型；本轮只激活并验证 embedding smoke，realFallbackEnabled 仍为 false，不能把 Owner approval、secret readback 或 embedding 成功误写成 generation runtime activation",
+    "runtimeCaveat": "当前 ModelRouterService 在 retryable primary failure 下按已配置 descriptor 自动寻找 fixed fallback；Keychain readback、closed Pi binding、严格配置映射、独立 embedding descriptor、Agent Service model-path lifecycle 与有界 primary/fallback live readback 已通过。deterministic profile 仍只报告 descriptor，不创建 Pi 或隐藏模型；本 Task 的 provider qualification 不等于最终 Gateway/Memory/Worker 生产组合资格",
     "embeddingSmoke": {
       "status": "passed",
       "command": "HIMAWARI_LIVE_EMBEDDING_SMOKE=1 HIMAWARI_LIVE_EMBEDDING_PRINT_EVIDENCE=1 npx vitest run --config vitest.workspace.ts --project integration test/integration/openrouter-embedding-live.test.ts --reporter=verbose",
@@ -69,11 +69,50 @@
       "secretValueLogged": false,
       "cleanup": "temporary Mem0 state root removed after the test",
       "mem0Behavior": "mem0ai/oss@3.1.7: one embedding for upsert and two for search query/entity boost"
+    },
+    "generationSmoke": {
+      "status": "passed",
+      "command": "HIMAWARI_LIVE_GENERATION_SMOKE=1 HIMAWARI_LIVE_GENERATION_PRINT_EVIDENCE=1 npx vitest run --config vitest.workspace.ts --project integration test/integration/openrouter-generation-live.test.ts --reporter=verbose",
+      "fixtureClassification": "public for primary and synthetic private for fallback",
+      "qualityMarker": "HIMAWARI",
+      "primary": {
+        "requestedModel": "deepseek/deepseek-v4-flash-0731",
+        "responseModel": "deepseek/deepseek-v4-flash-0731",
+        "provider": "Makora",
+        "generationId": "gen-1787873345-N8P0LYI5am5GONNBIYeJ",
+        "inputTokens": 17,
+        "outputTokens": 71,
+        "costMicros": 15,
+        "latencyMs": 1367,
+        "qualityMarkerPresent": true
+      },
+      "fallback": {
+        "trigger": "local synthetic retryable HTTP 503 before the primary provider request",
+        "requestedModel": "z-ai/glm-5.3-flash",
+        "responseModel": "z-ai/glm-5.3-flash",
+        "provider": "Z.AI",
+        "generationId": "gen-1787873346-Bgi7V9ZOths2ci3aoSJW",
+        "inputTokens": 24,
+        "outputTokens": 38,
+        "costMicros": 11,
+        "latencyMs": 1581,
+        "qualityMarkerPresent": true,
+        "providerRouting": {
+          "order": ["z-ai"],
+          "allow_fallbacks": false,
+          "require_parameters": true,
+          "data_collection": "deny"
+        }
+      },
+      "finalObservedCostMicros": 26,
+      "finalObservedCostUsd": 0.000026,
+      "budgetLimitUsd": 1.0,
+      "secretValueLogged": false
     }
   },
   "modelDescriptorSnapshot": {
-    "snapshotId": "task20-openrouter-catalog-2026-08-27",
-    "status": "recorded_and_bound_in_code",
+    "snapshotId": "task20-openrouter-catalog-2026-08-28",
+    "status": "revalidated_bound_and_live_verified",
     "immutableUpstreamVersionExposed": false,
     "routingPolicyScope": "fallback-only; primary does not force z-ai because the selected primary page does not list that provider",
     "primary": {
@@ -81,7 +120,7 @@
       "provider": "openrouter",
       "model": "deepseek/deepseek-v4-flash-0731",
       "role": "primary",
-      "version": "catalog-2026-08-27",
+      "version": "catalog-2026-08-28",
       "capabilities": ["text", "tool_calling", "structured_outputs"],
       "disclosure": "external_remote",
       "allowedDataClassifications": ["public", "private"],
@@ -101,7 +140,7 @@
       "provider": "openrouter",
       "model": "z-ai/glm-5.3-flash",
       "role": "fallback",
-      "version": "catalog-2026-08-27",
+      "version": "catalog-2026-08-28",
       "capabilities": ["text", "tool_calling", "structured_outputs"],
       "disclosure": "external_remote",
       "allowedDataClassifications": ["private"],
@@ -120,7 +159,7 @@
         "cacheRead": 0.015
       },
       "contextWindowTokens": 1310720,
-      "maxCompletionTokens": 48000
+      "maxCompletionTokens": 131072
     },
     "embedding": {
       "status": "Owner 已确认并完成 live smoke",
@@ -169,20 +208,20 @@
       "require_parameters": true,
       "data_collection": "deny"
     },
-    "status": "catalog_snapshot_and_binding_verified",
+    "status": "catalog_snapshot_binding_and_live_fallback_verified",
     "pending": [
-      "upstream immutable version is not exposed; preserve and revalidate the dated local catalog snapshot before live"
+      "upstream immutable version is not exposed; preserve and revalidate the dated local catalog snapshot before any future live qualification or activation"
     ]
   },
   "providerCatalogObservation": {
     "source": "https://openrouter.ai/z-ai/glm-5.3-flash",
-    "observedAt": "2026-08-27T17:10:52+09:00",
+    "observedAt": "2026-08-28T08:00:00+09:00",
     "provider": "openrouter",
     "model": "z-ai/glm-5.3-flash",
     "released": "2026-08-26",
     "immutableVersionExposed": false,
     "contextWindowTokens": 1310720,
-    "maxCompletionTokens": 48000,
+    "maxCompletionTokens": 131072,
     "inputModalities": ["text", "image", "video"],
     "outputModalities": ["text"],
     "providerAdvertisedCapabilities": ["tool_calling", "structured_outputs"],
@@ -191,7 +230,7 @@
       "output": 0.25,
       "cacheRead": 0.015
     },
-    "listedProviderCount": 12,
+    "listedProviderCount": 13,
     "routingNote": "OpenRouter 页面显示该模型默认由多个上游 provider 路由并支持自动切换；Owner 已将本项目 policy 冻结为 order=[z-ai]、allow_fallbacks=false、require_parameters=true、data_collection=deny"
   },
   "verified": [
@@ -201,7 +240,7 @@
     "Trusted provider receives raw credentials only inside the adapter; traces contain identity, purpose, refs, usage, cost and latency but no secret value.",
     "Opaque provider-secret sources are separate from fixed-size encryption-key sources and return credentials only across the trusted adapter boundary.",
     "OpenRouter transport posts only the protected input reference's validated text, consumes SSE output, records provider/model/generation metadata and actual token/cost usage, and redacts machine-secret-shaped output before protected persistence.",
-    "OpenRouter retryable HTTP/network failures and non-retryable authentication, payment, input, tool-call and output-persistence failures map to stable terminal events without response-body logging.",
+    "OpenRouter retryable HTTP/network failures and non-retryable authentication, payment, input, tool-call and output-persistence failures map to stable terminal events without response-body logging; token truncation and zero-output success can no longer be reported as completed.",
     "Model Router preserves provider observation in the terminal protected Trace payload.",
     "Pi/product boundary remains product-owned; no Pi model selection, Session persistence, Skills discovery or built-in tools were added.",
     "Strict configuration accepts provider-specific routing fields and rejects unknown, duplicate or invalid routing values.",
@@ -212,6 +251,8 @@
     "Agent Service validates the embedding descriptor at startup, creates the supported production Model/Pi composition from strict configuration, reports descriptor-only diagnostics for deterministic profiles, and closes the composition before the durable repository.",
     "Production Memory composition passes the strict embedding descriptor and its dimensions-matched Mem0 storage boundary, resolves the shared provider secret through the production-suitable host source, and maps OpenRouter to Mem0's existing OpenAI-compatible provider without adding a second embedding HTTP client.",
     "The selected OpenRouter Qwen3 Embedding 8B live smoke returned 4096-dimensional vectors for all three Mem0 embedding requests; request model/dimensions, response model, token usage and catalog-estimated cost were read back without logging the credential or fixture body.",
+    "The bounded generation qualification observed the selected DeepSeek primary through Makora and the fixed GLM fallback through Z.AI after a local retryable 503 injection; both returned the public quality marker and exposed generation/model/provider/token/cost metadata.",
+    "The final observed generation qualification cost 26 micros, stayed within the approved 1.00 USD cap, and retained the fallback provider routing order=[z-ai], allow_fallbacks=false, require_parameters=true and data_collection=deny.",
     "Repeated streamed output sequences and repeated terminal provider events produce one output reference and one terminal Trace result."
   ],
   "commands": [
@@ -253,7 +294,7 @@
     {
       "command": "npm run test:unit -- --reporter=dot",
       "exitStatus": 0,
-      "result": "strict descriptor 与 Agent Service entrypoint 改造后，30 个 unit test files、226 个 tests 通过"
+      "result": "Task 20 终态修复后，30 个 unit test files、229 个 tests 通过"
     },
     {
       "command": "npx vitest run --config vitest.workspace.ts --project unit apps/agent-service/test/production-model-composition.unit.test.ts packages/platform-node/test/startup-configuration.unit.test.ts",
@@ -263,7 +304,7 @@
     {
       "command": "npm run test:contracts -- --reporter=dot",
       "exitStatus": 0,
-      "result": "12 个 contract test files、131 个 tests 通过，包含 execution.v2 UDS 权限、认证、握手、超时和 socket 生命周期边界"
+      "result": "12 个 contract test files、132 个 tests 通过，包含 execution.v2 UDS 权限、认证、握手、超时和 socket 生命周期边界"
     },
     {
       "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/installable-node-services.test.ts --reporter=dot",
@@ -276,17 +317,32 @@
       "result": "1 个有界 live embedding smoke test 通过；OpenRouter qwen/qwen3-embedding-8b 请求与返回均为 4096 维，3 次请求共 21 tokens，按 catalog 价格估算 0.00000021 USD，响应模型 Qwen/Qwen3-Embedding-8B 与选定 slug 大小写归一化一致"
     },
     {
+      "command": "HIMAWARI_LIVE_GENERATION_SMOKE=1 HIMAWARI_LIVE_GENERATION_PRINT_EVIDENCE=1 npx vitest run --config vitest.workspace.ts --project integration test/integration/openrouter-generation-live.test.ts --reporter=verbose",
+      "exitStatus": 0,
+      "result": "1 个有界 generation qualification 通过；DeepSeek primary 由 Makora 执行，GLM fixed fallback 在本地 retryable 503 后由 Z.AI 执行，两者均返回质量标记，最终回读 41 input tokens、109 output tokens 和 26 cost micros"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project unit packages/runtime-pi/test/pi-model-transport.unit.test.ts apps/agent-service/test/production-model-composition.unit.test.ts --reporter=dot && npx vitest run --config vitest.workspace.ts --project integration test/integration/model-router.test.ts test/integration/failure-recovery-matrix.test.ts --reporter=dot && npx vitest run --config vitest.workspace.ts --project pi-compat packages/runtime-pi/test/configured-model-binding.compat.test.ts packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts --reporter=dot",
+      "exitStatus": 0,
+      "result": "16 unit、17 integration 和 13 Pi compatibility tests 通过，覆盖空响应/截断、fallback、disclosure、secret redaction、重复终态、恢复与 cancellation"
+    },
+    {
+      "command": "npm test",
+      "exitStatus": 0,
+      "result": "沙箱外完整测试通过：229 unit、132 contract、323 integration passed/3 skipped、3 E2E"
+    },
+    {
       "command": "python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict .",
       "exitStatus": 0,
-      "result": "受治理文档严格校验通过，0 warnings；三份受影响 active Runbook 已重新 seal/check"
+      "result": "受治理文档严格校验通过，0 warnings；三份 active Runbook 静态合同检查继续通过且 selected sources 未变化，因此无需 reseal"
     }
   ],
   "remaining": [
-    "Generation live smoke/eval remains pending: before the first generation call, revalidate the primary/fixed-fallback catalog snapshots and record the exact provider identity, token/cost accounting, cancellation, fallback, tool-call, disclosure rejection and redaction evidence; the upstream generation pages expose no immutable model version.",
-    "The embedding smoke verifies the Mem0 projection and provider response, but it does not qualify the final Gateway/Memory/Worker production composition or generation model quality."
+    "OpenRouter does not expose immutable upstream versions for the selected generation models; the dated catalog snapshot must be revalidated before future qualification or activation.",
+    "The bounded embedding and generation smoke tests verify the selected provider paths, but they do not qualify the final Gateway/Memory/Worker production composition or domain-specific summary and extraction quality."
   ],
   "externalEffects": [
-    "A bounded OpenRouter embedding smoke used only the public synthetic fixture and the existing macOS Keychain opaque provider-secret reference; successful runs stayed within the approved 1.00 USD cap, the final observed run used 21 tokens with a catalog-estimated 0.00000021 USD, and temporary Mem0 state was removed. No GitHub, Cloudflare or production service was changed."
+    "Bounded OpenRouter embedding and generation qualification used only synthetic fixture text and the existing macOS Keychain opaque provider-secret reference. The successful generation run cost 0.000026 USD; preceding diagnostic requests were also bounded by the same 1.00 USD cap but were not used as passing evidence. No GitHub, Cloudflare or production service was changed."
   ],
-  "implementationCommit": "91868de4053f8f05db53c0ab1159db6d5d9e97b1"
+  "implementationCommit": "7f3931699b4a3566eb7fa92c6f266156249bc6ea"
 }

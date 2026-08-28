@@ -1,6 +1,6 @@
 # Himawari Agent
 
-Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。Foundation Plan 的 Task 1 至 Task 20 已在确定性参考配置中完成；当前 portable durable web-agent Plan 已补齐模型路由、GitHub webhook/只读 monitor、持久 receipt 去重、浏览器 disclosure preview、真实进程恢复和规模资格的本地实现与证据。当前已按明确批准的边界完成 OpenRouter `qwen/qwen3-embedding-8b` 的 4096 维 Mem0 embedding live smoke；generation paid model、GitHub/Cloudflare 账户、跨主机 transfer 和最终 production composition 仍按证据单独验收。
+Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。Foundation Plan 的 Task 1 至 Task 20 已在确定性参考配置中完成；当前 portable durable web-agent Plan 已补齐模型路由、GitHub webhook/只读 monitor、持久 receipt 去重、浏览器 disclosure preview、真实进程恢复和规模资格的本地实现与证据。当前已按明确批准的边界完成 OpenRouter `qwen/qwen3-embedding-8b` 的 4096 维 Mem0 embedding live smoke，并完成 primary `deepseek/deepseek-v4-flash-0731` 与 fixed fallback `z-ai/glm-5.3-flash` 的有界 generation provider/model/token/cost 回读；GitHub/Cloudflare 账户、跨主机 transfer 和最终 production composition 仍按证据单独验收。
 
 当前交付是可安装、可运行的架构验证平台，不是 production-ready 服务。Node runtime 已有 Agent Service、Execution Worker 和 admin CLI 的 `main`、受保护 UDS、持久 SQLite、doctor/db status 及信号 drain；支持的 OpenRouter 配置现在会在 Agent Service 生命周期中创建 Model/Pi 与 Mem0 composition，并把 4096 维 embedding identity 写入 ready diagnostic；最终公网 listener、生产 Vault/Memory projection worker/Model/GitHub 组合、真实远程 Worker 沙箱、地图/预订供应商和通知客户端仍未完成。默认 local composition 使用进程内参考适配器，退出后数据不会保留。完整边界和限制见 [Architecture v0.1](docs/architecture-v0.1.md)。
 
@@ -194,7 +194,7 @@ npm run qualify:scale
 - e2e：`test/e2e/**/*.test.ts`
 - Pi compatibility：`packages/runtime-pi/**/*.compat.test.ts`
 
-普通 Vitest project 会跳过需要显式开关的规模资格测试；最终 fresh 测试数量、构建产物 checksum、SQLite 版本和外部 readback 以本轮命令及对应 qualification evidence 为准。E2E 覆盖完整牛肉餐厅参考旅程；integration 包含恢复矩阵、GitHub durable state、模型重复结果和安装后服务路径。默认自动化测试不访问网络、付费模型、外部账户或生产凭据；Task 20 的 embedding smoke 只有在显式设置 `HIMAWARI_LIVE_EMBEDDING_SMOKE=1` 时才会使用公开合成文本和已批准的 Keychain provider-secret，并且其费用上限和结果记录在对应 evidence 中。
+普通 Vitest project 会跳过需要显式开关的规模资格测试；最终 fresh 测试数量、构建产物 checksum、SQLite 版本和外部 readback 以本轮命令及对应 qualification evidence 为准。E2E 覆盖完整牛肉餐厅参考旅程；integration 包含恢复矩阵、GitHub durable state、模型重复结果和安装后服务路径。默认自动化测试不访问网络、付费模型、外部账户或生产凭据；Task 20 的 embedding 与 generation smoke 只有在分别显式设置 `HIMAWARI_LIVE_EMBEDDING_SMOKE=1` 或 `HIMAWARI_LIVE_GENERATION_SMOKE=1` 时才会使用公开合成文本和已批准的 Keychain provider-secret，并且共同受 `1.00 USD` 上限约束，结果记录在对应 evidence 中。
 
 ## Project documents
 
