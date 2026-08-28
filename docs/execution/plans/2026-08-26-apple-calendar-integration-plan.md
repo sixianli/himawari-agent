@@ -25,11 +25,11 @@ date: "2026-08-26"
 - [SOURCE: docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md]
 - [SOURCE: docs/execution/plans/2026-08-26-control-center-experience-plan.md]
 
-**目标：** 在通过不可跳过的双平台 adapter qualification 后，实现统一 CalendarPort、Mac 与 Hermes conformance、Owner 个人事件的受控读写，以及参与人、通知、凭据、撤销和迁移的 fail-closed 边界。
+**目标：** 在通过 Calendar 自身不可跳过的双平台 adapter qualification 后，实现统一 CalendarPort、Mac 与 Hermes conformance、Owner 个人事件的受控读写，以及参与人、通知、凭据、撤销和迁移的 fail-closed 边界。Calendar 是可选能力，其未配置或未完成不阻塞 v0.2 核心生产组合。
 
 **架构：** application 只依赖产品自有 Calendar 类型与 Port；平台 adapters 分别封装当时经官方支持和实测证明可行的 Mac 与 Hermes 接入；SQLite 保存产品 identity、prepared mutation、sync/cursor metadata 和结果，不保存凭据；host-bound secret store 与短期 Handle 隔离 EventKit/provider authorization。
 
-本 Plan 的存在只记录 qualification 与后续实施顺序，不表示 qualification 已通过。Task 1–2 是硬门禁；在 Mac/Hermes 均有可重复证据、风险得到 Owner 确认且实现选择未与 Spec 冲突前，Task 3 以后保持阻塞。
+本 Plan 的存在只记录 qualification 与后续实施顺序，不表示 qualification 已通过。Task 1–2 是 Calendar 自身硬门禁；在 Mac/Hermes 均有可重复证据、风险得到 Owner 确认且实现选择未与 Spec 冲突前，Task 3 以后保持阻塞，但 S5、S6、S8、S1 和不含 Calendar 的核心生产资格可以继续。
 
 ---
 
@@ -37,7 +37,7 @@ date: "2026-08-26"
 
 - Task 1 必须使用执行时最新的 Apple 官方文档、目标 OS/API 版本和实际 adapter spike；历史链接、第三方文章或“存在 app-specific password”不能证明 Hermes Calendar adapter 合格。
 - 建立真实 Apple/iCloud 账户连接、请求 EventKit 权限、创建 app-specific password、读取/写入真实日历均是外部/凭据动作，必须先展示账户范围、权限、风险、费用、目标和撤销方式并取得 Owner 授权。
-- 若 Hermes 没有 Apple 当前支持、可自动化、可撤销、最小权限、可观察且可阻止通知副作用的路径，记录 BLOCKED_CALENDAR_COMPATIBILITY，停止 Task 3 以后和 v0.2 资格签署；不得降级为 Mac-only 后宣称完成。
+- 若 Hermes 没有 Apple 当前支持、可自动化、可撤销、最小权限、可观察且可阻止通知副作用的路径，记录 `BLOCKED_CALENDAR_COMPATIBILITY`，停止 Calendar Task 3 以后并保持该能力未激活；不得降级为 Mac-only 后宣称 Calendar 完成，也不得阻塞其他领域实现和核心生产资格。
 - 任何 adapter 无法可靠判定 Owner、organizer、attendee 或 notification risk 时，对应事件只读；不得用模型猜测。
 - S1/S4 必须先提供 credential refs、capability/Grant/Handle、SQLite、Worker、Trace/Result、migration blocked 和 authority fence。
 
@@ -100,7 +100,7 @@ date: "2026-08-26"
 
 ## 实施任务
 
-### Task 1：执行双平台 adapter qualification 硬门禁
+### Task 1：执行 Calendar 双平台 adapter qualification 门禁
 
 - [ ] 记录目标 Mac/Hermes OS、CPU、Node、Apple API/服务版本和测试时间，避免把旧资料当当前事实。
 - [ ] 从 Apple 官方资料确认 Mac 正式 API 的授权、撤销、读取、个人事件写入和通知边界。
@@ -114,7 +114,7 @@ date: "2026-08-26"
 - [ ] 比较两个 adapter 的 feature matrix：list/get/create/update/delete/reconcile、pagination、水位、timezone、all-day、recurrence、alarm、idempotency 和 notification control。
 - [ ] 若 Hermes 使用 app-specific password 或同类账户级凭据，展示可访问范围、撤销粒度、host-bound 存储和泄漏影响，取得 Owner 对高风险路径的明确确认。
 - [ ] 核验候选 SDK/bridge 的精确版本、许可证、维护、安全、Node/OS 支持、原生构建和 lockfile。
-- [ ] 确认两平台可以通过同一 product conformance；无法满足时记录 BLOCKED_CALENDAR_COMPATIBILITY 并停止。
+- [ ] 确认两平台可以通过同一 product conformance；无法满足时记录 `BLOCKED_CALENDAR_COMPATIBILITY`，停止 Calendar 后续实施但不阻塞其他领域。
 - [ ] durable adapter/bridge 决策需要时先治理 ADR；Owner 批准精确依赖后才修改 manifests。
 
 ### Task 3：建立 S7 acceptance 映射与冻结 CalendarPort
@@ -207,7 +207,7 @@ date: "2026-08-26"
 
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| S7-GATE | 双平台 adapter qualification | Tasks 1–2 | current official evidence、双平台 spike、Owner 风险确认 | 待实施，阻塞后续 |
+| S7-GATE | 双平台 adapter qualification | Tasks 1–2 | current official evidence、双平台 spike、Owner 风险确认 | 待实施，仅阻塞 Calendar 自身后续与激活 |
 | S7-A01 | 读取与身份 | Tasks 3–6、10–13 | identity/pagination/timezone、双平台 conformance | 待实施 |
 | S7-A02 | 可写个人事件 | Tasks 7–13 | frozen prepare、version guard、readback/reconcile | 待实施 |
 | S7-A03 | 参与人和通知保护 | Tasks 7–13 | deterministic deny/read-only matrix | 待实施 |
@@ -224,11 +224,11 @@ date: "2026-08-26"
 - python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict .
 - git diff --check
 
-真实 Apple/iCloud 账户与专用测试 calendar 验证必须在独立授权、最小 scope 和可撤销凭据下运行；本 Plan 当前不声称任何 adapter 已 qualification。
+真实 Apple/iCloud 账户与专用测试 calendar 验证必须在独立授权、最小 scope 和可撤销凭据下运行；本 Plan 当前不声称任何 adapter 已 qualification，也不要求为推进其他领域提供个人 Apple Account 凭据。
 
 ## 收口清单
 
-- [ ] S7-GATE 与 S7-A01–S7-A04 全部有 fresh Mac/Hermes evidence。
+- [ ] 恢复 Calendar 实施时，S7-GATE 与 S7-A01–S7-A04 全部有 fresh Mac/Hermes evidence；在此之前 Calendar 保持未配置且不进入核心生产 required manifest。
 - [ ] 两平台使用同一产品 contract，任何 unsupported/unknown 语义都 fail closed。
 - [ ] 只有无参与人、无通知风险且 Owner 个人事件可写；schema 无邀请/通知后门。
 - [ ] 凭据只在 host secret store，迁移后重新授权前 blocked。

@@ -10,7 +10,7 @@ date: "2026-08-26"
 
 ## 目标
 
-定义 Mac 与 Hermes 上行为一致的 Apple/iCloud Calendar 正式适配器：读取 Owner 可见日程，并在明确授权内创建、修改或删除 Owner 的个人事件；任何包含其他参与人、可能发出邀请或通知、身份不清或 adapter 无法证明安全的事件均保持只读。
+定义 Mac 与 Hermes 上行为一致的可选 Apple/iCloud Calendar 正式适配器：读取 Owner 可见日程，并在明确授权内创建、修改或删除 Owner 的个人事件；任何包含其他参与人、可能发出邀请或通知、身份不清或 adapter 无法证明安全的事件均保持只读。Calendar 未连接或未通过自身资格验证时保持不可用，但不阻塞 v0.2 核心生产组合。
 
 ## 来源上下文
 
@@ -52,16 +52,16 @@ date: "2026-08-26"
 - 把 Calendar 当作 v0.2 的外部事件触发 provider 或持续监控源；本适配器由 Owner 操作或已授权 Task 按需查询。
 - 主机离线时错过的 Calendar 查询 Task 补跑；它遵守统一 Task 的 `MISSED`/跳过规则。
 
-## 前置兼容性门禁
+## 启用兼容性门禁
 
-本 Spec 完整定义产品行为，但不把尚未被官方资料证实的 Hermes 接入方式写成既定事实。实施 Plan 前必须完成一个可重复的 adapter qualification：
+本 Spec 完整定义产品行为，但不把尚未被官方资料证实的 Hermes 接入方式写成既定事实。任何 Calendar adapter 激活前必须完成一个可重复的 qualification：
 
 1. Mac candidate 必须使用 Apple 正式支持的 EventKit 或当时等价正式 API，验证 Calendar 权限授权、撤销、读写和通知边界。
 2. Hermes candidate 必须证明 Apple 当前支持该第三方 iCloud Calendar 访问方式，并提供可自动化、可撤销、最小权限、可观测且符合服务条款的实现接口。
 3. 若 Hermes 只能依赖 app-specific password，必须明确展示其账户级风险、可访问范围和撤销方式，并由 Owner 将该路径作为高风险能力单独确认；不能把存在密码机制等同于已经验证 Calendar adapter。
-4. 两个 adapter 必须通过同一 conformance。Hermes 无合规路径、语义不一致或无法限制通知副作用时，v0.2 生产资格为 `BLOCKED_CALENDAR_COMPATIBILITY`；不得降级为 Mac-only 后仍声称完成 v0.2。
+4. 两个 adapter 必须通过同一 conformance。Hermes 无合规路径、语义不一致或无法限制通知副作用时，Calendar 能力为 `BLOCKED_CALENDAR_COMPATIBILITY`，不得激活或降级为 Mac-only 后声称 Calendar 已完成；该状态不阻塞不含 Calendar 的 v0.2 核心生产资格。
 
-此门禁是实施前必须关闭的技术不确定性，不缩减 PRD 中 Mac 与 Hermes 同等支持的产品承诺。
+此门禁只约束 Calendar 自身的实施和激活，不约束 S5、S6、S8、S1 或不含 Calendar 的核心生产组合。Calendar 一旦进入正式启用范围，Mac 与 Hermes 仍必须满足同等产品语义和证据，不得使用单平台豁免。
 
 ## 验收标准
 
@@ -133,7 +133,7 @@ adapter 只在 Owner 操作或已授权 Task 发起时读取。分页 cursor、s
 
 | 失败 | 必需行为 |
 | --- | --- |
-| adapter qualification 未通过 | 阻止 v0.2 Calendar Plan/生产签署，显示平台和证据缺口 |
+| adapter qualification 未通过 | Calendar 保持未配置或 `BLOCKED_CALENDAR_COMPATIBILITY`，阻止自身激活并显示平台和证据缺口；不阻塞核心生产签署 |
 | Calendar permission/credential 撤销 | 连接 blocked，暂停任务，不尝试其他账户 |
 | 无法判定 Owner/organizer/attendee | 事件只读，不生成 mutation Handle |
 | provider 自动通知无法禁止或证明 | `DENY` update/delete |
@@ -146,7 +146,7 @@ adapter 只在 Owner 操作或已授权 Task 发起时读取。分页 cursor、s
 
 ## 验证策略
 
-- 先保存 Mac 与 Hermes adapter qualification evidence：官方支持链接/版本、认证方式、权限、撤销、条款、API 行为和失败结论。
+- 在启用 Calendar 前保存 Mac 与 Hermes adapter qualification evidence：官方支持链接/版本、认证方式、权限、撤销、条款、API 行为和失败结论。
 - 建立 provider-neutral contract suite，两个平台覆盖 list/get/create/update/delete/reconcile、pagination、水位、时区、全天和 recurrence。
 - 使用 Owner-only、含参与人、共享 calendar、非 Owner organizer、未知 attendee、只读 calendar 和自动通知场景验证 deterministic guard。
 - 对 create/update/delete 在请求前、发送后、响应前和 readback 前后 kill process，验证不重复副作用。
@@ -159,5 +159,8 @@ adapter 只在 Owner 操作或已授权 Task 发起时读取。分页 cursor、s
 
 - 确认人：Owner
 - 确认日期：2026-08-26
-- 确认范围：统一 CalendarPort、个人事件可写边界、参与人/通知 fail-closed 规则，以及 Hermes adapter qualification 作为生产硬门禁。
+- 原确认范围：统一 CalendarPort、个人事件可写边界、参与人/通知 fail-closed 规则，以及 Hermes adapter qualification 作为 Calendar 生产硬门禁。
 - 授权边界：允许从本 Spec 派生 Implementation Plan；本次确认不授权创建 Plan、连接 Apple/iCloud 账户、配置凭据、读写真实日历或修改产品实现。
+- 范围调整确认人：Owner
+- 范围调整确认日期：2026-08-28
+- 范围调整：Calendar 改为不阻塞 v0.2 核心生产组合的可选能力；其双平台 qualification 仍是 Calendar 自身激活的硬门禁，不再阻塞 S5、S6、S8、S1 或核心生产签署。

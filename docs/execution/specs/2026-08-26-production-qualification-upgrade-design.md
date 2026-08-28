@@ -35,7 +35,7 @@ date: "2026-08-26"
 
 ### 本 Spec 包含
 
-- v0.2 全能力完成、跨 Spec 集成和无未关闭阻塞项的版本资格门禁。
+- v0.2 必需能力完成、跨 Spec 集成和无未关闭核心阻塞项的版本资格门禁；未连接的可选 Calendar 不构成阻塞项。
 - Mac 与 Hermes 分别执行的相同生产 conformance 与长期运行验收。
 - 发布时正式浏览器矩阵最新两个稳定大版本的发现、冻结和证据。
 - 桌面/移动关键流程的 WCAG 2.2 AA 自动检查和人工辅助技术验证。
@@ -57,8 +57,8 @@ date: "2026-08-26"
 
 ### 版本资格
 
-- v0.2 PRD 中所有“本版本包含”能力、安全规则、数据保护、兼容性目标和关键验收路径必须由一个 active Spec 负责，并有已确认的 Spec、完成的 Plan、实现 revision 和通过证据。
-- 所有跨切片不变量和完整用户旅程必须通过；任一必需 adapter、平台或浏览器被标记 unsupported、waived 或 untested 都阻止 v0.2 生产签署。
+- v0.2 PRD 中所有必需能力、安全规则、数据保护、兼容性目标和关键验收路径必须由一个 active Spec 负责，并有已确认的 Spec、完成的 Plan、实现 revision 和通过证据；可选 Calendar 未连接时必须明确记录为未配置。
+- 所有跨切片不变量和核心用户旅程必须通过；任一必需 adapter、平台或浏览器被标记 unsupported、waived 或 untested 都阻止 v0.2 生产签署。候选启用 Calendar 时，S7 与 J07 自动成为该候选的必需证据，失败不能被忽略。
 - Mac 与 Hermes 使用同一产品版本、schema、行为 contract 和 conformance，分别产生独立报告；一个平台的通过不能替代另一个。
 - release candidate 必须由不可变 source revision、lockfile、构建输入、artifact digest、migration set、配置 schema 和测试/evidence digest 唯一确定。
 
@@ -178,5 +178,8 @@ Upgrade lock、authority epoch 和 ingress fence 共同阻止旧/新版本同时
 
 - 确认人：Owner
 - 确认日期：2026-08-26
-- 确认范围：“完整能力才可标记 v0.2”、双平台、浏览器、WCAG、规模、连续 7 天运行硬门禁，以及手动升级与回退边界。
+- 原确认范围：“完整能力才可标记 v0.2”、双平台、浏览器、WCAG、规模、连续 7 天运行硬门禁，以及手动升级与回退边界。
+- 范围调整确认人：Owner
+- 范围调整确认日期：2026-08-28
+- 范围调整：生产门禁要求全部核心必需能力和候选中已启用的可选能力；未连接 Calendar 不阻塞签署，但启用后必须完整通过 S7/J07 双平台证据。
 - 授权边界：允许从本 Spec 派生 Implementation Plan；本次确认不授权创建 Plan/Runbook、执行资格测试、升级、回退、部署或其他生产操作。

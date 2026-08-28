@@ -39,13 +39,13 @@ date: "2026-08-26"
 
 **架构：** qualification tooling 聚合 PRD→Spec→Plan→implementation→evidence，不重新定义领域行为。UpgradeOperation 使用 S1 的权威、SQLite、恢复点、drain、migration 和 fencing，在明确状态机中执行；release artifact、evidence manifest 和签署都绑定同一 candidate revision/digests。
 
-本 Plan 可以先实现 evidence/qualification/upgrade harness，但正式 RC、真实平台、7 天 soak、升级、回退、生产标识和签署必须等待 S0–S8 全部完成并取得逐项授权。创建本 Plan 不授权生产或外部变更。
+本 Plan 可以先实现 evidence/qualification/upgrade harness，但正式 RC、真实平台、7 天 soak、升级、回退、生产标识和签署必须等待 S0–S6、S8 的必需范围全部完成并取得逐项授权；S7 仅在候选启用 Calendar 时成为必需。创建本 Plan 不授权生产或外部变更。
 
 ---
 
 ## 执行依赖与停止点
 
-- 任一 PRD 条款无 active/closed Spec、Plan、实现或 fresh evidence，任一领域 Plan 未完成，或 S0 J01–J15 有失败，都阻止 candidate_ready。
+- 任一必需 PRD 条款无 active/closed Spec、Plan、实现或 fresh evidence，任一必需领域 Plan 未完成，或任一核心 journey 有失败，都阻止 candidate_ready。S7 未启用时记录为可选未配置；启用时其 Plan 和 J07 必须完整通过。
 - Mac/Hermes 必须运行同一 product version/schema/contracts 并分别通过；不得 waiver、unsupported 或用单平台替代。
 - 浏览器 major 在每个 RC 通过官方发布渠道 fresh 发现并冻结；不可在 Plan 中写死会过期版本。
 - WCAG 自动检查不能替代人工与辅助技术；规模/性能平均值不能替代样本、p50/p95/p99/max 和失败项。
@@ -160,7 +160,7 @@ date: "2026-08-26"
 ### Task 8：编排双平台 production conformance
 
 - [ ] Mac 与 Hermes 使用同一 immutable artifact、schema、config contract 和 test manifest 独立安装。
-- [ ] 分别执行功能、安全、migration、deletion、Calendar、browser、Task、Memory、Web/file/code 和 authority transfer suites。
+- [ ] 分别执行功能、安全、migration、deletion、browser、Task、Memory、Web/file/code 和 authority transfer suites；候选启用 Calendar 时，两平台再执行完整 Calendar suite。
 - [ ] 记录 actual sqlite version、adapter/model identities、host resources、service manager、secret refs status 和 health。
 - [ ] 一个平台失败使整体 blocked；不得复制另一平台 evidence 或标为 not applicable。
 - [ ] 将 host-specific credential/permission reconfiguration 与 product data migration 分开证明。
@@ -225,7 +225,7 @@ date: "2026-08-26"
 
 - [ ] 只有 UpgradeOperation 实现、故障测试和真实 staging rehearsal 后，读取 document-governance Runbook 工作流并从模板创建升级 Runbook。
 - [ ] 写入 static contract、fresh target preflight、effective risk、授权、evidence、stop、mutation 和 rollback boundaries，semantic reconciliation 后显式 seal/check。
-- [ ] 执行完整 PRD→Spec→Plan→evidence、S0 J01–J15、双平台、browser/WCAG、scale/performance、fault、7 天 soak 和 upgrade checks。
+- [ ] 执行完整必需 PRD→Spec→Plan→evidence、全部核心 journey、双平台、browser/WCAG、scale/performance、fault、7 天 soak 和 upgrade checks；候选启用 Calendar 时加入 S7/J07。
 - [ ] 对真实外部服务、平台和生产目标做完成后 readback，区分命令成功与目标事实。
 - [ ] 所有 required evidence fresh 且无 blocker 后进入 Owner review；未获签署前不写 production label。
 
@@ -233,7 +233,7 @@ date: "2026-08-26"
 
 - [ ] 更新 Architecture 只描述实际 release artifact、schema/process/adapters、qualification/upgrade 状态与已知限制。
 - [ ] 更新 README 的 verified install/doctor/qualification/upgrade 入口，不写 secret、临时 URL 或本机配置。
-- [ ] 对账所有 active/closed Specs/Plans、Backlog 和 Runbooks；不得用 waiver、Backlog 或 docs/TODO.md 推迟 v0.2 硬范围。
+- [ ] 对账所有 active/closed Specs/Plans、Backlog 和 Runbooks；不得用 waiver、Backlog 或 docs/TODO.md 推迟 v0.2 必需范围。S7 只可按 PRD 记录为可选未配置，不能在已启用后规避证据。
 - [ ] 映射 S9-A01–S9-A05 与 S0 manifest，记录 verified/partial/unverified 和 blocker。
 - [ ] 只有真实关闭后归档本 Plan 与来源 Spec；保留 release/evidence history 的治理位置与不可变引用。
 
@@ -264,7 +264,7 @@ date: "2026-08-26"
 ## 收口清单
 
 - [ ] S9-A01–S9-A05 全部绑定同一 immutable candidate 的 fresh evidence。
-- [ ] S0–S8 全部完成，J01–J15 和所有排除/安全不变量通过。
+- [ ] S0–S6、S8 必需范围全部完成，全部核心 journey 和所有排除/安全不变量通过；候选启用 Calendar 时 S7/J07 也全部完成。
 - [ ] Mac/Hermes、六类浏览器、三语、WCAG、规模/性能、恢复和两次 7 天 soak 无 blocker。
 - [ ] UpgradeOperation、recovery decision 和独立 rollback boundaries 已故障注入与真实演练。
 - [ ] Owner 已审阅完整 manifest 并显式签署；生产标识绑定同一 hash。

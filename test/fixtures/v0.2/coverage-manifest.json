@@ -3,7 +3,7 @@
   "generatedFrom": "owner-reviewed S0 coverage matrix and active Plan acceptance tables",
   "prd": {
     "path": "docs/prd-v0.2.md",
-    "sha256": "54b45f51a4edc7e61e00e138f856209db2fc593f4cf5db60b32cf6139efff206",
+    "sha256": "cc2f63b6bab7ff13e0cc81be7d6d946d48148a98f10c9d81dc97fc5eba8ea9e4",
     "markdownListClauseCount": 256
   },
   "coverageSource": "docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md",
@@ -369,7 +369,7 @@
           "label": "J05–J07",
           "planTasks": "Task 5",
           "planEvidence": "capability/platform/side-effect journeys",
-          "planStatus": "部分验证：S4 共同授权、secret、Handle 与 unknown-result 边界已映射；S5–S7 正式能力旅程待实施",
+          "planStatus": "部分验证：S4 共同授权、secret、Handle 与 unknown-result 边界已映射；S5–S6 为核心待实施，S7/J07 仅在 Calendar 启用时要求",
           "verificationEntrypoints": ["npm run check:v0.2-coverage"]
         },
         {
@@ -836,7 +836,7 @@
           "label": "双平台 adapter qualification",
           "planTasks": "Tasks 1–2",
           "planEvidence": "current official evidence、双平台 spike、Owner 风险确认",
-          "planStatus": "待实施，阻塞后续",
+          "planStatus": "待实施，仅阻塞 Calendar 自身后续与激活",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
