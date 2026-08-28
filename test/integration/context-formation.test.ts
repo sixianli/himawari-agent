@@ -105,6 +105,89 @@ function request(sourceType: "user_message" | "schedule" | "external_event") {
 }
 
 describe("Task 9 Memory and context formation", () => {
+  it("selects permitted history deterministically and injects the protected answer locale policy", async () => {
+    const { adapters, service } = createService();
+    const formed = await service.form({
+      ...request("user_message"),
+      historyCandidates: [
+        {
+          id: "message-low",
+          role: "user",
+          payloadRef: "payload-history-low",
+          sourceRef: "thread:context:message:low",
+          occurredAt: "2026-08-25T00:00:01.000Z",
+          dataClassification: "private",
+          relevanceScore: 0.2,
+        },
+        {
+          id: "message-restricted",
+          role: "assistant",
+          payloadRef: "payload-history-restricted",
+          sourceRef: "thread:context:message:restricted",
+          occurredAt: "2026-08-25T00:00:02.000Z",
+          dataClassification: "restricted",
+          relevanceScore: 1,
+        },
+        {
+          id: "message-high-newer",
+          role: "assistant",
+          payloadRef: "payload-history-high-newer",
+          sourceRef: "thread:context:message:high-newer",
+          occurredAt: "2026-08-25T00:00:04.000Z",
+          dataClassification: "private",
+          relevanceScore: 0.9,
+        },
+        {
+          id: "message-high-older",
+          role: "user",
+          payloadRef: "payload-history-high-older",
+          sourceRef: "thread:context:message:high-older",
+          occurredAt: "2026-08-25T00:00:03.000Z",
+          dataClassification: "private",
+          relevanceScore: 0.8,
+        },
+      ],
+      maxThreadMessages: 2,
+      answerLocalePolicy: {
+        ref: "policy-answer-locale-ja",
+        payloadRef: "payload-policy-answer-locale-ja",
+        locale: "ja",
+      },
+    });
+
+    expect(formed.answerLocale).toBe("ja");
+    expect(formed.injectedContentRefs.slice(0, 4)).toEqual([
+      "payload-history-high-older",
+      "payload-history-high-newer",
+      "payload-trigger-user_message",
+      "payload-policy-owner-01",
+    ]);
+    expect(formed.injectedContentRefs).toContain("payload-policy-answer-locale-ja");
+
+    const events = await adapters.trace.readRun(RUN_ID, 0, 10);
+    const finalPayload = await adapters.payload.get(events.at(-1)?.payloadRef ?? "missing");
+    if (!finalPayload) throw new Error("Expected protected context payload");
+    await expect(adapters.payloadProtector.revealForTest(finalPayload)).resolves.toMatchObject({
+      answerLocalePolicy: { locale: "ja", ref: "policy-answer-locale-ja" },
+      threadHistory: {
+        selected: [
+          { id: "message-high-older", sourceRef: "thread:context:message:high-older" },
+          { id: "message-high-newer", sourceRef: "thread:context:message:high-newer" },
+        ],
+        excluded: expect.arrayContaining([
+          expect.objectContaining({
+            id: "message-low",
+            reasonCode: "history_selection_limit_reached",
+          }),
+          expect.objectContaining({
+            id: "message-restricted",
+            reasonCode: "classification_exceeds_context",
+          }),
+        ]),
+      },
+    });
+  });
+
   it("adds an eligible durable Thread summary without replacing transcript messages", async () => {
     const { service } = createService({
       async latestSummary(threadId) {

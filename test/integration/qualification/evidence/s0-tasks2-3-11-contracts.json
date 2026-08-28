@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T11:55:25+09:00",
+  "plan": "docs/execution/plans/2026-08-26-v0.2-spec-suite-integration-plan.md",
+  "taskIds": ["S0-T2", "S0-T3", "S0-T11"],
+  "status": "local_complete",
+  "candidateRevision": "3a3448d0301fcaba223ab15c15a168666bd1119c",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 33,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["temp.md"]
+  },
+  "verified": [
+    "canonical contract assertions enforce one product-owned Owner/Agent/Thread/Run/Trace scope and one current deployment authority fence across Message、Memory、Task、Approval、Grant、Result、Inbox、browser、Calendar、Worker 和 adapter records。",
+    "negative fixtures reject stale/foreign fence、second authority writer、provider/browser local identity substitution、semantic duplicate event reuse、raw secret disclosure、unknown external-result blind retry、resolvable deleted content 和 host-bound credential migration。",
+    "deterministic v0.2 fixture includes Thread、Memory、Task、Approval、Grant、GitHub、Web、file、Calendar、Worker 和 migration refs，以及 Mac/Hermes、Chromium/WebKit、Asia/Tokyo、primary/fallback、budget、disk pressure 与 fault points。",
+    "evidence harness requires exact candidate revision、artifact/configuration/evidence SHA-256、platform、command exit status、time interval 与 log/screenshot refs，并 rejects cross-candidate/schema/artifact/configuration/platform merge。",
+    "v0.2 invariant scan reviewed 132 production source files、15 package manifests 和 14 HTTP routes；required model/secret/authorization/reconciliation/single-active-deployment guards 存在，未发现排除 capability、隐藏 route、禁止 dependency 或非精确 dependency version。",
+    "全仓 machine-secret scanner 检查 429 个 tracked/untracked files，无新增未基线化 secret material。"
+  ],
+  "commands": [
+    {
+      "command": "npm run check:v0.2-invariants",
+      "exitStatus": 0,
+      "result": "132 production sources、15 manifests、14 reviewed routes passed"
+    },
+    {
+      "command": "npm run check:secrets",
+      "exitStatus": 0,
+      "result": "429 files scanned with no unapproved machine-secret findings"
+    },
+    {
+      "command": "npm run test:unit",
+      "exitStatus": 0,
+      "result": "33 files and 243 tests passed, including canonical/evidence negative fixtures"
+    },
+    {
+      "command": "npm run check:v0.2-coverage",
+      "exitStatus": 0,
+      "result": "79 requirements、53 acceptance IDs 与 10 Spec/Plan pairs remained consistent"
+    }
+  ],
+  "remaining": [
+    "S0 J01–J15 journeys and Tasks 4–10 remain owned by their active Plan sequence and are not counted as complete by these fixtures.",
+    "S0 Task 12 final manifest and qualification closure remains blocked on the remaining domain, browser, platform, migration, external-provider and S9 evidence."
+  ],
+  "externalEffects": [
+    "No external account, provider, browser session, Hermes host, production state, remote Git, or deployment was changed."
+  ],
+  "implementationCommit": null
+}

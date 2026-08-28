@@ -20,6 +20,7 @@ import type {
   ProductMemoryStatePort,
   SensitiveMemoryApprovalStatePort,
   ThreadDistillationStatePort,
+  ThreadRepositoryPort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
 import type {
@@ -357,6 +358,48 @@ export class SqliteDurableAdapters {
         this.context.read("threadDistillation.readOutput", { generationId }),
       latestSummary: (threadId) =>
         this.context.read("threadDistillation.latestSummary", { threadId }),
+    });
+  }
+
+  threadRepository(): ThreadRepositoryPort {
+    return Object.freeze<ThreadRepositoryPort>({
+      create: (input) => this.context.write("thread.create", { input }),
+      read: (ownerId, agentId, threadId) =>
+        this.context.read("thread.read", { ownerId, agentId, threadId }),
+      update: (input) => this.context.write("thread.update", { input }),
+      findReceipt: (ownerId, agentId, idempotencyKey) =>
+        this.context.read("thread.findReceipt", { ownerId, agentId, idempotencyKey }),
+      admitOwnerMessage: (input) => this.context.write("thread.admitOwnerMessage", { input }),
+      commitAssistantMessage: (input) =>
+        this.context.write("thread.commitAssistantMessage", { input }),
+      fork: (input) => this.context.write("thread.fork", { input }),
+      list: (query) => this.context.read("thread.list", { query }),
+      listMessages: (ownerId, agentId, threadId, afterSequence, limit) =>
+        this.context.read("thread.listMessages", {
+          ownerId,
+          agentId,
+          threadId,
+          afterSequence,
+          limit,
+        }),
+      hasCommittedTurn: (ownerId, agentId, threadId, turnId, atOrBeforeWatermark) =>
+        this.context.read("thread.hasCommittedTurn", {
+          ownerId,
+          agentId,
+          threadId,
+          turnId,
+          atOrBeforeWatermark,
+        }),
+      projectSearch: (input) => this.context.write("thread.projectSearch", { input }),
+      projectTitleSearch: (input) => this.context.write("thread.projectTitleSearch", { input }),
+      search: (query) => this.context.read("thread.search", { query }),
+      rebuildSearch: (ownerId, agentId, threadId, projectionVersion) =>
+        this.context.write("thread.rebuildSearch", {
+          ownerId,
+          agentId,
+          threadId,
+          projectionVersion,
+        }),
     });
   }
 

@@ -58,6 +58,7 @@ import type {
 import type Database from "better-sqlite3";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
+import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
 
 export type SqliteApplicationFailure = (
   code: string,
@@ -252,6 +253,7 @@ export class SqliteDurableOperations {
   private readonly assertDiskHeadroom: () => void;
   private readonly checkpoint: SqliteCheckpointOperations;
   private readonly memory: SqliteMemoryOperations;
+  private readonly thread: SqliteThreadOperations;
 
   constructor(
     database: Database.Database,
@@ -263,9 +265,13 @@ export class SqliteDurableOperations {
     this.assertDiskHeadroom = assertDiskHeadroom;
     this.checkpoint = new SqliteCheckpointOperations(database, fail, assertDiskHeadroom);
     this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
+    this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
   }
 
   execute(operation: string, payload: unknown): unknown {
+    if (operation.startsWith("thread.")) {
+      return this.thread.execute(operation, payload);
+    }
     if (operation.startsWith("threadDistillation.")) {
       return this.checkpoint.execute(operation, payload);
     }

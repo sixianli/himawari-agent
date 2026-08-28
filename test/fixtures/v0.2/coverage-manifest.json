@@ -344,8 +344,12 @@
           "label": "canonical identity/authority/authorization",
           "planTasks": "Tasks 2–3、11",
           "planEvidence": "schema fixtures、negative contracts、secret scan",
-          "planStatus": "待实施",
-          "verificationEntrypoints": ["npm run check:v0.2-coverage"]
+          "planStatus": "本地 contract fixture、evidence harness、negative assertions 与排除扫描已验证",
+          "verificationEntrypoints": [
+            "npm run test:unit",
+            "npm run check:v0.2-invariants",
+            "npm run check:secrets"
+          ]
         },
         {
           "id": "S0-A03",
@@ -538,7 +542,7 @@
           "label": "稳定身份与继续对话",
           "planTasks": "Tasks 2–5、11",
           "planEvidence": "domain/contract、重复接纳、process recovery",
-          "planStatus": "待实施",
+          "planStatus": "部分验证（Tasks 2–5；控制中心 Task 11 未实施）",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
@@ -551,7 +555,7 @@
           "label": "生命周期与查找",
           "planTasks": "Tasks 4、6、10–12",
           "planEvidence": "query/search、multi-client、规模",
-          "planStatus": "待实施",
+          "planStatus": "部分验证（Tasks 4、6；删除协调、浏览器与规模未实施）",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
@@ -564,7 +568,7 @@
           "label": "Fork 与来源",
           "planTasks": "Tasks 4、7、12",
           "planEvidence": "lineage、delete、restart",
-          "planStatus": "待实施",
+          "planStatus": "部分验证（Tasks 4、7；完整恢复矩阵与规模未实施）",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
@@ -577,7 +581,7 @@
           "label": "回答语言与上下文",
           "planTasks": "Tasks 8、11",
           "planEvidence": "中英日组合、context/Trace、browser",
-          "planStatus": "待实施",
+          "planStatus": "部分验证（Task 8；控制中心与浏览器未实施）",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",
@@ -590,7 +594,7 @@
           "label": "压缩、审批与任务",
           "planTasks": "Tasks 9–12",
           "planEvidence": "checkpoint crash matrix、task/delete coordination",
-          "planStatus": "待实施",
+          "planStatus": "部分验证（Task 9；任务删除协调、控制中心与规模未实施）",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:contracts",

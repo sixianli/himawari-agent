@@ -175,6 +175,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0014_governed_authorization_and_github_history.sql",
   },
+  {
+    sequence: 15,
+    name: "thread_lifecycle_and_search",
+    changeSet: "thread-lifecycle-and-search",
+    phase: "expand" as const,
+    file: "0015_thread_lifecycle_and_search.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

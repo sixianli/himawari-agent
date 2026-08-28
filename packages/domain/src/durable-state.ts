@@ -18,6 +18,7 @@ import type {
   SessionId,
   ThreadId,
   TransferId,
+  TurnId,
 } from "./identifiers.js";
 
 export type ProductDataClassification = "public" | "private" | "sensitive" | "restricted";
@@ -126,10 +127,13 @@ export interface ProductThreadMessage {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly threadId: ThreadId;
+  readonly turnId: TurnId | null;
+  readonly runId: RunId | null;
   readonly sequence: number;
   readonly role: "owner" | "agent" | "system";
   readonly contentRef: string;
   readonly dataClassification: ProductDataClassification;
+  readonly status: "committed" | "partial" | "failed";
   readonly committedAt: string;
 }
 

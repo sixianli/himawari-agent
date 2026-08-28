@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "productionRoots": ["apps", "packages"],
+  "excludedSourceSegments": ["/test/", "/testing/", "/node_modules/", "/dist/"],
+  "allowedHttpRoutes": [
+    "GET /",
+    "GET /api/control-center/v1/config",
+    "GET /api/gateway/v1/events",
+    "GET /api/gateway/v2/events",
+    "GET /api/health/v1/dependencies",
+    "GET /api/metrics/v1",
+    "GET /assets/*",
+    "GET /health/live",
+    "GET /health/ready",
+    "POST /api/gateway/v1/commands",
+    "POST /api/gateway/v1/queries",
+    "POST /api/gateway/v2/commands",
+    "POST /api/gateway/v2/queries",
+    "POST /api/payload/v1/text"
+  ],
+  "forbiddenCapabilityLiterals": [
+    "core.upgrade.auto",
+    "github.comment.create",
+    "github.merge",
+    "github.push",
+    "notification.external",
+    "owner.register.public"
+  ],
+  "forbiddenRouteFragments": [
+    "/api/register",
+    "/api/signup",
+    "/api/github/write",
+    "/api/notifications/external",
+    "/api/core/auto-upgrade"
+  ],
+  "forbiddenDependencies": ["@octokit/rest", "@slack/web-api", "nodemailer", "twilio"],
+  "requiredGuards": [
+    {
+      "path": "packages/platform-node/src/strict-configuration.ts",
+      "all": ["[\"primary\", \"fallback\", \"embedding\"]", "must contain exactly one ${role}"]
+    },
+    {
+      "path": "apps/agent-service/src/production-model-composition.ts",
+      "all": [
+        "descriptors: descriptors.generation",
+        "piGenerationDescriptor(configuration, primary)",
+        "piGenerationDescriptor(configuration, fallback)"
+      ]
+    },
+    {
+      "path": "packages/application/src/services/machine-secret-exclusion.ts",
+      "all": [
+        "assertMachineSecretFree",
+        "MACHINE_SECRET_EXCLUDED",
+        "openai-api-key",
+        "github-token"
+      ]
+    },
+    {
+      "path": "packages/application/src/services/action-policy-service.ts",
+      "all": ["validateGovernedActionIntent", "freezeGovernedActionIntent"]
+    },
+    {
+      "path": "packages/application/src/services/execution-worker-service.ts",
+      "all": ["authorizationRef", "result_unknown", "reconciliation.reconcile", "work.reconciled"]
+    },
+    {
+      "path": "packages/persistence-sqlite/src/migrations/0001_initial_product_schema.sql",
+      "all": ["CREATE UNIQUE INDEX deployments_one_active_agent", "WHERE status = 'active'"]
+    }
+  ]
+}

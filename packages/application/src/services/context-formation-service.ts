@@ -1,4 +1,11 @@
-import type { AgentId, OwnerId, RunId, SessionId, ThreadId } from "@himawari-agent/domain";
+import type {
+  AgentId,
+  AnswerLocale,
+  OwnerId,
+  RunId,
+  SessionId,
+  ThreadId,
+} from "@himawari-agent/domain";
 import type { MemoryCandidate, MemoryPort } from "../ports/intelligence.js";
 import type { ThreadDistillationStatePort } from "../ports/conversation.js";
 import type {
@@ -18,6 +25,9 @@ export interface ContextThreadMessage {
   readonly role: "user" | "assistant" | "system" | "tool";
   readonly payloadRef: PayloadRef;
   readonly occurredAt: string;
+  readonly sourceRef?: string;
+  readonly dataClassification?: DataClassification;
+  readonly relevanceScore?: number;
 }
 
 export interface ContextPolicySummary {
@@ -45,6 +55,9 @@ export interface ContextFormationRequest {
   };
   readonly threadMessages: readonly ContextThreadMessage[];
   readonly policies: readonly ContextPolicySummary[];
+  readonly answerLocalePolicy?: ContextPolicySummary & { readonly locale: AnswerLocale };
+  readonly historyCandidates?: readonly ContextThreadMessage[];
+  readonly maxThreadMessages?: number;
   readonly memoryQueryRef: PayloadRef;
   readonly memoryQueryTerms: readonly string[];
   readonly memoryLimit: number;
@@ -69,6 +82,7 @@ export interface FormedContext {
   readonly injectedContentRefs: readonly PayloadRef[];
   readonly finalContextRef: PayloadRef;
   readonly traceEventIds: readonly TraceEventId[];
+  readonly answerLocale: AnswerLocale | null;
 }
 
 export interface ContextFormationServiceDependencies {
@@ -99,6 +113,24 @@ export class ContextFormationService implements ContextFormationPort {
         CLASSIFICATION_RANK[request.maxMemoryClassification]
         ? latestSummary
         : undefined;
+    const historyCandidates = request.historyCandidates ?? request.threadMessages;
+    const selectedHistory = [...historyCandidates]
+      .filter(
+        ({ dataClassification = request.dataClassification }) =>
+          CLASSIFICATION_RANK[dataClassification] <=
+          CLASSIFICATION_RANK[request.maxMemoryClassification],
+      )
+      .sort(
+        (left, right) =>
+          (right.relevanceScore ?? 0) - (left.relevanceScore ?? 0) ||
+          left.occurredAt.localeCompare(right.occurredAt) ||
+          left.id.localeCompare(right.id),
+      )
+      .slice(0, request.maxThreadMessages ?? historyCandidates.length)
+      .sort(
+        (left, right) =>
+          left.occurredAt.localeCompare(right.occurredAt) || left.id.localeCompare(right.id),
+      );
     const query = await this.dependencies.trace.record({
       ...this.traceScope(request),
       parentEventId: request.parentEventId,
@@ -180,9 +212,10 @@ export class ContextFormationService implements ContextFormationPort {
 
     const injectedContentRefs = Object.freeze([
       ...(allowedSummary ? [allowedSummary.contentRef] : []),
-      ...request.threadMessages.map(({ payloadRef }) => payloadRef),
+      ...selectedHistory.map(({ payloadRef }) => payloadRef),
       request.trigger.payloadRef,
       ...request.policies.map(({ payloadRef }) => payloadRef),
+      ...(request.answerLocalePolicy ? [request.answerLocalePolicy.payloadRef] : []),
       ...selected.map(({ contentRef }) => contentRef),
       ...request.capabilities.map(({ summaryRef }) => summaryRef),
     ]);
@@ -203,9 +236,33 @@ export class ContextFormationService implements ContextFormationPort {
               modelDescriptorRef: allowedSummary.modelDescriptorRef,
             }
           : null,
-        threadMessages: request.threadMessages,
+        threadHistory: {
+          candidates: historyCandidates.map(({ id, payloadRef, sourceRef, relevanceScore }) => ({
+            id,
+            payloadRef,
+            sourceRef: sourceRef ?? id,
+            relevanceScore: relevanceScore ?? 0,
+          })),
+          selected: selectedHistory.map(({ id, payloadRef, sourceRef }) => ({
+            id,
+            payloadRef,
+            sourceRef: sourceRef ?? id,
+          })),
+          excluded: historyCandidates
+            .filter((candidate) => !selectedHistory.some(({ id }) => id === candidate.id))
+            .map(({ id, sourceRef, dataClassification = request.dataClassification }) => ({
+              id,
+              sourceRef: sourceRef ?? id,
+              reasonCode:
+                CLASSIFICATION_RANK[dataClassification] >
+                CLASSIFICATION_RANK[request.maxMemoryClassification]
+                  ? "classification_exceeds_context"
+                  : "history_selection_limit_reached",
+            })),
+        },
         trigger: request.trigger,
         policies: request.policies,
+        answerLocalePolicy: request.answerLocalePolicy ?? null,
         selectedMemories: selected.map(({ id, contentRef, sourceRef }) => ({
           id,
           contentRef,
@@ -231,6 +288,7 @@ export class ContextFormationService implements ContextFormationPort {
         selectionTrace.event.id,
         finalTrace.event.id,
       ]),
+      answerLocale: request.answerLocalePolicy?.locale ?? null,
     });
   }
 

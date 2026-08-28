@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T11:55:25+09:00",
+  "plan": "docs/execution/plans/2026-08-26-owner-thread-conversation-plan.md",
+  "taskIds": ["S2-T1", "S2-T2", "S2-T3", "S2-T4", "S2-T5", "S2-T6", "S2-T7", "S2-T8", "S2-T9"],
+  "status": "local_complete",
+  "candidateRevision": "3a3448d0301fcaba223ab15c15a168666bd1119c",
+  "worktree": {
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead": 33,
+    "behind": 0,
+    "status": "dirty",
+    "intentionallyExcluded": ["temp.md"]
+  },
+  "verified": [
+    "产品 Thread 聚合固定 lifecycle、title revision/source、pin、answer locale、message watermark、Fork lineage 与稳定 Message/Turn/Run identity；Pi Session、浏览器和 SQLite row ID 不成为产品身份。",
+    "gateway.thread.v3 以严格 command/query/snapshot/event schema 扩展 Thread 行为，同时保留 gateway.v1 与 gateway.v2。",
+    "SQLite migration 15 增加 Thread 生命周期、消息关联、幂等 receipt、Fork lineage、正文与标题 opaque-token projection；命令、权威 mutation、receipt 与 reliable event 在同一 fenced transaction 提交。",
+    "重复 Owner message 只产生一个 Message、Trigger、Run 和 Turn；最终 assistant commit 后才进入 Thread 历史，重启保持同一身份和 revision。",
+    "查询支持生命周期、pin、标题/授权正文 token、projection version、时间与关联任务状态；分类降级、跨 scope、stale revision、迟到自动标题和 stale fence 均 fail closed。",
+    "Fork 只接受已提交 Turn/watermark，不复制任务、审批、Grant、长期 Memory 或消息；重复 Fork 和重启返回同一结果，来源删除后只保留不可解析 marker。",
+    "回答语言显式支持 zh-CN、en、ja；自然语言仅在明确设置意图时改变字段，answer-locale policy 与按分类/相关性选择的历史一起进入受保护 Context，候选/选择/排除均进入 Trace。",
+    "四类 Thread checkpoint trigger、Pi pre-compaction summary 原引用复用、迟到水位保护、故障注入、重启和 exactly-once 继续通过既有恢复矩阵。"
+  ],
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "format、lint、typecheck、14-workspace boundary、79-requirement/53-acceptance coverage、v0.2 invariants 与 429-file secret scan passed"
+    },
+    {
+      "command": "npm test",
+      "exitStatus": 0,
+      "execution": "outside sandbox for Unix Domain Socket and installable service coverage",
+      "result": "33 unit files/243 tests、13 contract files/137 tests、34 integration files passed and 3 skipped/340 tests passed and 3 skipped、1 E2E file/3 tests passed"
+    },
+    {
+      "command": "npm run check:pi-compat",
+      "exitStatus": 0,
+      "result": "2 files and 13 Pi compatibility tests passed against pinned @earendil-works/pi-coding-agent 0.84.2"
+    },
+    {
+      "command": "python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict .",
+      "exitStatus": 0,
+      "result": "strict governed-document validation passed with zero warnings"
+    }
+  ],
+  "remaining": [
+    "S2 Task 10 仍负责 Thread 与 Approval、Task、Grant、归档和永久删除的完整协调。",
+    "S2 Task 11 仍负责控制中心接线、多标签与多客户端恢复。",
+    "S2 Task 12 仍负责 1 万 Thread/20 万 Message 规模、完整浏览器/设备恢复矩阵和最终收口。",
+    "本轮确定性语言 policy 证明设置、上下文和 Trace 语义，不替代真实模型三语回答质量资格。"
+  ],
+  "externalEffects": [
+    "No paid model/provider call, GitHub or Cloudflare mutation, Hermes operation, production state change, push, or deployment occurred."
+  ],
+  "implementationCommit": null
+}

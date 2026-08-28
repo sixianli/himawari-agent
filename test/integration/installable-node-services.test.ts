@@ -335,7 +335,7 @@ describe("installable Node services and admin CLI", () => {
     expect(JSON.parse(dbStatus.stdout)).toMatchObject({
       command: "db.status",
       managed: true,
-      schemaSequence: 14,
+      schemaSequence: 15,
       quickCheck: "ok",
     });
 

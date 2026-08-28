@@ -84,76 +84,80 @@ date: "2026-08-26"
 
 ### Task 1：记录基线与建立 S2 acceptance 映射
 
-- [ ] 记录 Git、workspace、S1 contracts/migrations、Architecture limitations 和现有测试基线。
-- [ ] 将 S2-A01 稳定身份、S2-A02 生命周期查找、S2-A03 Fork、S2-A04 回答语言上下文、S2-A05 压缩审批任务分别绑定本 Plan tasks 和 evidence。
-- [ ] 标出 S1/S3/Task/Memory 依赖的输入输出，不把尚未实现的 supporting behavior 计为 S2 完成。
-- [ ] 运行现有 check、tests 和 strict document validation，保存 fresh baseline。
+- [x] 记录 Git、workspace、S1 contracts/migrations、Architecture limitations 和现有测试基线。
+- [x] 将 S2-A01 稳定身份、S2-A02 生命周期查找、S2-A03 Fork、S2-A04 回答语言上下文、S2-A05 压缩审批任务分别绑定本 Plan tasks 和 evidence。
+- [x] 标出 S1/S3/Task/Memory 依赖的输入输出，不把尚未实现的 supporting behavior 计为 S2 完成。
+- [x] 运行现有 check、tests 和 strict document validation，保存 fresh baseline。
+
+Task 1 的本次基线与 Tasks 2–9 实施证据记录在 `test/integration/qualification/evidence/s2-tasks1-9-owner-thread.json`；控制中心、任务删除协调、完整浏览器和规模资格仍属于 Tasks 10–12，不计入本轮完成。
 
 ### Task 2：扩展 Thread、Message、Turn 产品模型
 
-- [ ] 先为 Thread status、title source/revision、pin order、answer locale、fork lineage、watermark 和 revision 编写 domain tests。
-- [ ] 保留 Foundation 的 ThreadId/RunId 身份，增加 Message/Turn 等稳定 ID；不得使用 SQLite row、Pi Session 或浏览器 ID 代替。
-- [ ] 实现 active、archived、trashed、deletion_pending、deleted_verified 合法 transition 和 expected revision。
-- [ ] 让正文、summary 和模型输出只保存 protected refs；任务、审批、Grant 和 Memory 只保存稳定关联。
-- [ ] 对非法 locale、跨 Owner/Agent 引用、已删来源和 stale revision fail closed。
+- [x] 先为 Thread status、title source/revision、pin order、answer locale、fork lineage、watermark 和 revision 编写 domain tests。
+- [x] 保留 Foundation 的 ThreadId/RunId 身份，增加 Message/Turn 等稳定 ID；不得使用 SQLite row、Pi Session 或浏览器 ID 代替。
+- [x] 实现 active、archived、trashed、deletion_pending、deleted_verified 合法 transition 和 expected revision。
+- [x] 让正文、summary 和模型输出只保存 protected refs；任务、审批、Grant 和 Memory 只保存稳定关联。
+- [x] 对非法 locale、跨 Owner/Agent 引用、已删来源和 stale revision fail closed。
 
 ### Task 3：冻结 Thread gateway contracts 与 read model
 
-- [ ] 为 create、rename、pin、archive、restore、fork、set_answer_locale、trash 和 delete_permanently 定义严格命令 schema。
-- [ ] 为列表、详情、搜索、筛选、关联 Task、lineage、checkpoint 和 answer locale 定义 scope-safe 查询。
-- [ ] 命令携带 idempotency key 与 expected revision；事件携带稳定 ID、revision、cursor 和因果链。
-- [ ] 增加 unknown field/version、重复命令、跨 scope、cursor expiry 和 revision conflict fixtures。
-- [ ] 若 v1 无法兼容，新增明确版本并保留旧 fixture。
+- [x] 为 create、rename、pin、archive、restore、fork、set_answer_locale、trash 和 delete_permanently 定义严格命令 schema。
+- [x] 为列表、详情、搜索、筛选、关联 Task、lineage、checkpoint 和 answer locale 定义 scope-safe 查询。
+- [x] 命令携带 idempotency key 与 expected revision；事件携带稳定 ID、revision、cursor 和因果链。
+- [x] 增加 unknown field/version、重复命令、跨 scope、cursor expiry 和 revision conflict fixtures。
+- [x] 若 v1 无法兼容，新增明确版本并保留旧 fixture。
+
+Thread 新契约使用独立 `gateway.thread.v3`，没有改写既有 `gateway.v1`/`gateway.v2`；跨 scope、cursor 和旧版本行为继续复用既有 Gateway contract suites，Thread v3 增加严格字段与 revision fixtures。
 
 ### Task 4：实现 SQLite Thread/Message 权威存储
 
-- [ ] 在 S1 migration 机制内增加 Thread、Message、Turn、lineage、checkpoint 和 search projection schema。
-- [ ] 把 Thread mutation、idempotent result 和 outbox event 放进同一 fenced transaction。
-- [ ] 正文与摘要只引用受保护 Payload；search projection 遵守 classification、scope、Trash 和永久删除过滤。
-- [ ] 实现 projection rebuild、水位和版本；projection 丢失不能损坏权威历史或扩大披露。
-- [ ] 运行 fresh create、upgrade、duplicate、concurrent revision、kill/restart 和 deletion propagation tests。
+- [x] 在 S1 migration 机制内增加 Thread、Message、Turn、lineage、checkpoint 和 search projection schema。
+- [x] 把 Thread mutation、idempotent result 和 outbox event 放进同一 fenced transaction。
+- [x] 正文与摘要只引用受保护 Payload；search projection 遵守 classification、scope、Trash 和永久删除过滤。
+- [x] 实现 projection rebuild、水位和版本；projection 丢失不能损坏权威历史或扩大披露。
+- [x] 运行 fresh create、upgrade、duplicate、concurrent revision、kill/restart 和 deletion propagation tests。
 
 ### Task 5：实现消息接纳与最终 assistant commit
 
-- [ ] 让带幂等键的用户消息只创建一个 Message、Trigger 和 Run。
-- [ ] 模型流式片段属于 Run，只有产品 commit 后的最终 assistant message 才进入 Thread 历史。
-- [ ] 失败或取消保留真实片段引用、终态和 Trace，不伪造完整回答。
-- [ ] Pi Session 重建、compaction 或 Run 终止不得改变 Thread/Message/Turn/Run identity。
-- [ ] 在接纳、Run 创建、stream、最终提交各边界注入重复和进程终止。
+- [x] 让带幂等键的用户消息只创建一个 Message、Trigger 和 Run。
+- [x] 模型流式片段属于 Run，只有产品 commit 后的最终 assistant message 才进入 Thread 历史。
+- [x] 失败或取消保留真实片段引用、终态和 Trace，不伪造完整回答。
+- [x] Pi Session 重建、compaction 或 Run 终止不得改变 Thread/Message/Turn/Run identity。
+- [x] 在接纳、Run 创建、stream、最终提交各边界注入重复和进程终止。
 
 ### Task 6：实现生命周期、标题、置顶与查询
 
-- [ ] 实现新 Thread 默认 active、未置顶和 zh-CN answer locale。
-- [ ] 自动标题使用稳定派生任务和 revision guard；Owner 手动命名后拒绝迟到结果。
-- [ ] 实现重命名、稳定置顶排序、归档/恢复和 multi-client revision conflict。
-- [ ] 实现按标题/授权正文、时间、归档和任务状态搜索筛选；Trash/删除/不可解密内容不返回。
-- [ ] 搜索 UI 查询不自动进入模型 context；被模型采用的跨 Thread 引用进入 Trace。
+- [x] 实现新 Thread 默认 active、未置顶和 zh-CN answer locale。
+- [x] 自动标题使用稳定派生任务和 revision guard；Owner 手动命名后拒绝迟到结果。
+- [x] 实现重命名、稳定置顶排序、归档/恢复和 multi-client revision conflict。
+- [x] 实现按标题/授权正文、时间、归档和任务状态搜索筛选；Trash/删除/不可解密内容不返回。
+- [x] 搜索 UI 查询不自动进入模型 context；被模型采用的跨 Thread 引用进入 Trace。
 
 ### Task 7：实现 Fork 快照与 lineage 删除边界
 
-- [ ] Fork transaction 只接受已提交来源 Turn，冻结来源 Thread/Turn/watermark、summary refs 和当时 policy refs。
-- [ ] 新 Thread 不复制任务、审批、Grant、长期 Memory 或未提交输入。
-- [ ] 原 Thread 后续变化不得改写 Fork snapshot；长期 Memory 由新 Thread 普通检索获得。
-- [ ] 来源永久删除后保留非正文 lineage marker，并使来源正文不可解析。
-- [ ] 覆盖来源未提交、已删、并发变化、重复 Fork 和 kill/restart。
+- [x] Fork transaction 只接受已提交来源 Turn，冻结来源 Thread/Turn/watermark、summary refs 和当时 policy refs。
+- [x] 新 Thread 不复制任务、审批、Grant、长期 Memory 或未提交输入。
+- [x] 原 Thread 后续变化不得改写 Fork snapshot；长期 Memory 由新 Thread 普通检索获得。
+- [x] 来源永久删除后保留非正文 lineage marker，并使来源正文不可解析。
+- [x] 覆盖来源未提交、已删、并发变化、重复 Fork 和 kill/restart。
 
 ### Task 8：实现回答语言与最小 Context Formation
 
-- [ ] 支持 zh-CN、en、ja 显式 Thread setting，并持久到多设备和重启。
-- [ ] 自然语言修改解析为显式设置意图并在回复前提交；输入语言检测和 UI locale 不修改字段。
-- [ ] 将 answer locale 作为 policy ref 注入 context；回答/摘要遵守该语言，代码、日志、引用和专名保持原文。
-- [ ] Context Formation 只选择当前必要历史、相关摘要/片段、Owner Profile、Memory 和有效 policy refs。
-- [ ] 记录候选、采用、排除、披露和 source refs；用中英日组合验证三个语言来源独立。
+- [x] 支持 zh-CN、en、ja 显式 Thread setting，并持久到多设备和重启。
+- [x] 自然语言修改解析为显式设置意图并在回复前提交；输入语言检测和 UI locale 不修改字段。
+- [x] 将 answer locale 作为 policy ref 注入 context；回答/摘要遵守该语言，代码、日志、引用和专名保持原文。
+- [x] Context Formation 只选择当前必要历史、相关摘要/片段、Owner Profile、Memory 和有效 policy refs。
+- [x] 记录候选、采用、排除、披露和 source refs；用中英日组合验证三个语言来源独立。
 
 ### Task 9：实现可恢复 checkpoint 与摘要
 
-- [ ] 使用 ThreadId、source watermark 和 policy version 形成稳定 generation identity。
-- [ ] 支持 explicit、controlled idle、pre-compaction 和 source-size threshold 四类触发。
-- [ ] 原子提交 covered range、retained start、source refs、model/policy version、classification、Trace 和 protected summary ref。
-- [ ] pre-compaction 直接提交 Pi 已保护的同一 summary ref，派生模型只提取候选；禁止第二次摘要生成。其他 trigger 仍走显式 summary model。
-- [ ] 迟到结果只在 watermark 仍匹配时成为 current summary；失败保留 transcript 和旧 summary。
-- [ ] 原始消息不因压缩删除；context 使用 summary 后仍可按相关性回取更早片段。
-- [ ] 对每个 generation checkpoint 运行 kill/restart 和 exactly-once tests。
+- [x] 使用 ThreadId、source watermark 和 policy version 形成稳定 generation identity。
+- [x] 支持 explicit、controlled idle、pre-compaction 和 source-size threshold 四类触发。
+- [x] 原子提交 covered range、retained start、source refs、model/policy version、classification、Trace 和 protected summary ref。
+- [x] pre-compaction 直接提交 Pi 已保护的同一 summary ref，派生模型只提取候选；禁止第二次摘要生成。其他 trigger 仍走显式 summary model。
+- [x] 迟到结果只在 watermark 仍匹配时成为 current summary；失败保留 transcript 和旧 summary。
+- [x] 原始消息不因压缩删除；context 使用 summary 后仍可按相关性回取更早片段。
+- [x] 对每个 generation checkpoint 运行 kill/restart 和 exactly-once tests。
 
 ### Task 10：协调审批、Task、归档与删除
 
@@ -183,11 +187,11 @@ date: "2026-08-26"
 
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| S2-A01 | 稳定身份与继续对话 | Tasks 2–5、11 | domain/contract、重复接纳、process recovery | 待实施 |
-| S2-A02 | 生命周期与查找 | Tasks 4、6、10–12 | query/search、multi-client、规模 | 待实施 |
-| S2-A03 | Fork 与来源 | Tasks 4、7、12 | lineage、delete、restart | 待实施 |
-| S2-A04 | 回答语言与上下文 | Tasks 8、11 | 中英日组合、context/Trace、browser | 待实施 |
-| S2-A05 | 压缩、审批与任务 | Tasks 9–12 | checkpoint crash matrix、task/delete coordination | 待实施 |
+| S2-A01 | 稳定身份与继续对话 | Tasks 2–5、11 | domain/contract、重复接纳、process recovery | 部分验证（Tasks 2–5；控制中心 Task 11 未实施） |
+| S2-A02 | 生命周期与查找 | Tasks 4、6、10–12 | query/search、multi-client、规模 | 部分验证（Tasks 4、6；删除协调、浏览器与规模未实施） |
+| S2-A03 | Fork 与来源 | Tasks 4、7、12 | lineage、delete、restart | 部分验证（Tasks 4、7；完整恢复矩阵与规模未实施） |
+| S2-A04 | 回答语言与上下文 | Tasks 8、11 | 中英日组合、context/Trace、browser | 部分验证（Task 8；控制中心与浏览器未实施） |
+| S2-A05 | 压缩、审批与任务 | Tasks 9–12 | checkpoint crash matrix、task/delete coordination | 部分验证（Task 9；任务删除协调、控制中心与规模未实施） |
 
 ## 验证
 

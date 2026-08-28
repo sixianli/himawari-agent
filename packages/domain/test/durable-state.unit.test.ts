@@ -118,10 +118,13 @@ describe("Thread checkpoint generation", () => {
         ownerId,
         agentId,
         threadId: createThreadId("thread-01"),
+        turnId: null,
+        runId: null,
         sequence: 1,
         role: "owner",
         contentRef: "payload-message-01",
         dataClassification: "private",
+        status: "committed",
         committedAt: "2026-08-26T00:00:00.000Z",
       }),
     ).toMatchObject({ id: "message-01", contentRef: "payload-message-01", sequence: 1 });
