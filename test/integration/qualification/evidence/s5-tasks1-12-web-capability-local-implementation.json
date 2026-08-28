@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-28T20:24:00+09:00",
+  "plan": "docs/execution/plans/2026-08-26-web-research-browser-actions-plan.md",
+  "status": "local_core_complete_platform_driver_and_ui_pending",
+  "implementationRevisions": ["4470b98", "b9be4bc"],
+  "piReuseMap": {
+    "reused": [
+      "@earendil-works/pi-agent-core Agent Loop 的 tool call 参数校验、执行、事件与终止语义",
+      "packages/runtime-pi 作为唯一 Pi import boundary"
+    ],
+    "himawariOwned": [
+      "WebResource/WebSession/PreparedWebAction/WebOperation 产品 contract",
+      "Grant、ActionIntent、recent-auth、一次性 Handle、host secret、protected Payload、幂等、unknown 与 reconcile",
+      "public fetch 安全策略、不可信内容边界、隔离下载与 durable read model"
+    ],
+    "duplication": "未复制 Pi Agent Loop、tool protocol、provider 或 session runtime；integration-web 只实现 Pi 不拥有的产品治理语义。"
+  },
+  "verified": [
+    "公共 open 使用无凭据 manual redirect、HTTP(S) URL、DNS/private-address SSRF、五次重定向、MIME、UTF-8 与 2 MiB 上限。",
+    "HTML 执行元素和 machine secret 被移除，页面提示注入只记录为 untrusted observation；研究 citation 必须绑定已打开 resource digest 与 fragment ref。",
+    "认证 Web session 精确绑定 host、origin、purpose、identity label、secret refs、partition、expiry/revoke/health；authority transfer 后 blocked_credentials。",
+    "Cookie/token 原值由 host key 加密保存，文件 0600，一次性短期 Handle 只消费一次；产品状态仅保存 secret ref。",
+    "下载进入 0700 隔离目录，文件 0600，记录 digest、declared/sniffed MIME、大小、classification、expiry；可执行内容保持隔离并支持到期删除。",
+    "prepare snapshot 冻结 page version、URL/origin、fields/uploads/recipients、price/account、side effects、success marker 与 canonical hash。",
+    "execute 在 dispatch 前持久 operation identity，页面/session/hash/fence 任一漂移即拒绝；dispatch 中断形成 unknown，duplicate 不重发，reconcile 通过 receipt/result readback 收口。"
+  ],
+  "commands": [
+    {
+      "command": "npm run check",
+      "exitStatus": 0,
+      "result": "15 workspace boundary、typecheck、coverage、invariant 与 secret scan 通过"
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project unit packages/integration-web/test/web-capability.unit.test.ts packages/platform-node/test/web-host-boundary.unit.test.ts",
+      "exitStatus": 0,
+      "result": "2 files、7 tests 通过"
+    }
+  ],
+  "threatMatrix": [
+    "prompt_injection_observed_but_not_executed",
+    "machine_secret_removed_before_payload",
+    "private_network_ssrf_blocked",
+    "redirect_origin_revalidated",
+    "unknown_mime_and_executable_download_isolated",
+    "upload_refs_frozen_in_prepared_hash",
+    "session_material_host_bound_and_encrypted",
+    "post_dispatch_interruption_never_auto_retried",
+    "stale_page_session_fence_or_handle_rejected"
+  ],
+  "remainingGates": [
+    "Task 2 必须在选择具体 production browser driver 前展示精确依赖、lockfile、许可证、CSP/资源和 Mac/Hermes spike，由 Owner 明确批准。",
+    "Task 11 必须在 Gateway Web snapshot/mutation contract 与 Agent Service/Worker composition 冻结后接通控制中心，不用 fixture route 冒充。",
+    "Task 12 必须在 Mac/Hermes 对同一 candidate、真实 browser process 和受控站点运行完整 conformance；按用户顺序留到 S7 前的双平台资格阶段。"
+  ],
+  "externalEffects": [
+    "未登录任何真实网站、未上传文件、未发送消息、未购买、未修改账户、未安装新的生产浏览器依赖。"
+  ]
+}

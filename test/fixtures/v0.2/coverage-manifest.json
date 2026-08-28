@@ -738,7 +738,7 @@
           "label": "公共研究",
           "planTasks": "Tasks 3–5、11–12",
           "planEvidence": "来源/digest、prompt injection、双平台 research",
-          "planStatus": "待实施",
+          "planStatus": "核心实现与本地 conformance 完成；Gateway/UI 与双平台正式 adapter 待 Tasks 2、11–12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -750,7 +750,7 @@
           "label": "认证会话",
           "planTasks": "Tasks 6–8、11–12",
           "planEvidence": "host secret、partition/revoke/migration、browser",
-          "planStatus": "待实施",
+          "planStatus": "host-bound store、scope/revoke/transfer 本地完成；正式 browser driver 与 UI 待 Tasks 2、11–12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -762,7 +762,7 @@
           "label": "外部副作用",
           "planTasks": "Tasks 8–12",
           "planEvidence": "prepare/hash/approval、kill/reconcile、readback",
-          "planStatus": "待实施",
+          "planStatus": "prepare/Handle/unknown/reconcile 本地完成；正式 browser readback 与 UI 待 Tasks 2、11–12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",

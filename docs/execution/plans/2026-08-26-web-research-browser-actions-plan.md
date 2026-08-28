@@ -93,10 +93,12 @@ date: "2026-08-26"
 
 ### Task 1：建立 S5 acceptance 映射与安全基线
 
-- [ ] 将 S5-A01 公共研究、S5-A02 认证会话、S5-A03 外部副作用绑定 tasks/evidence。
-- [ ] 盘点 S1/S4 的 Payload、secret、capability、Worker、Trace、Result、deletion 和 migration contracts。
-- [ ] 建立提示注入、跨域、下载、上传、unknown side effect 和 secret exfiltration threat matrix。
-- [ ] 运行现有 check/tests/strict validation 并保存 baseline。
+- [x] 将 S5-A01 公共研究、S5-A02 认证会话、S5-A03 外部副作用绑定 tasks/evidence。
+- [x] 盘点 S1/S4 的 Payload、secret、capability、Worker、Trace、Result、deletion 和 migration contracts。
+- [x] 建立提示注入、跨域、下载、上传、unknown side effect 和 secret exfiltration threat matrix。
+- [x] 运行现有 check/tests/strict validation 并保存 baseline。
+
+Task 1 的 fresh baseline、threat matrix 与 Pi reuse map 位于 `test/integration/qualification/evidence/s5-tasks1-12-web-capability-local-implementation.json`。Pi 继续拥有 Agent Loop、tool 参数校验与 tool execution；Himawari 只实现 Web 领域 contract、授权、host-bound session、protected body、外部动作幂等和 reconcile，不复制 Pi runtime。
 
 ### Task 2：完成 Web adapter qualification
 
@@ -108,67 +110,69 @@ date: "2026-08-26"
 
 ### Task 3：冻结 Web contracts 与稳定身份
 
-- [ ] 定义 WebResourceRef、WebSession、PreparedWebAction、WebOperation 和 confirmed_succeeded/confirmed_failed/unknown。
-- [ ] WebResourceRef 保存 requested/canonical URL、redirect chain、origin、time、status/type、digest、classification、session ref 和 protected body ref。
-- [ ] WebSession 保存 allowed origins、purpose、identity label、secret refs、partition、expiry/revoke/health，不保存 Cookie/token 原值。
-- [ ] prepared action 保存 final URL/origin、method、fields/uploads/recipients、price/account、side effect、reversibility、success marker 和 canonical hash。
-- [ ] 增加 unknown fields/version、cross-scope、stale fence、expired Handle 和 duplicate operation fixtures。
+- [x] 定义 WebResourceRef、WebSession、PreparedWebAction、WebOperation 和 confirmed_succeeded/confirmed_failed/unknown。
+- [x] WebResourceRef 保存 requested/canonical URL、redirect chain、origin、time、status/type、digest、classification、session ref 和 protected body ref。
+- [x] WebSession 保存 allowed origins、purpose、identity label、secret refs、partition、expiry/revoke/health，不保存 Cookie/token 原值。
+- [x] prepared action 保存 final URL/origin、method、fields/uploads/recipients、price/account、side effect、reversibility、success marker 和 canonical hash。
+- [x] 增加 unknown fields/version、cross-scope、stale fence、expired Handle 和 duplicate operation fixtures。
 
 ### Task 4：实现公共搜索、打开与来源快照
 
 - [ ] 分离 web.search_public、web.open_public 和 web.research operations 与 manifests。
-- [ ] 只有公开、只读、有界、无登录/新披露/费用且匹配有效 Grant 的读取可自动执行。
-- [ ] 搜索摘要与实际打开页面分开标记；结论只能引用实际取得的 resource digest/片段。
-- [ ] 保存 URL、title、retrieved_at、引用关系和派生摘要 Trace；页面变化后历史仍可重现原 snapshot。
+- [x] 只有公开、只读、有界、无登录/新披露/费用且匹配有效 Grant 的读取可自动执行。
+- [x] 搜索摘要与实际打开页面分开标记；结论只能引用实际取得的 resource digest/片段。
+- [x] 保存 URL、title、retrieved_at、引用关系和派生摘要 Trace；页面变化后历史仍可重现原 snapshot。
 - [ ] robots、条款、rate limit 和访问错误有界处理，不伪造身份或无限重试。
 
 ### Task 5：实现不可信内容提取与最小披露
 
-- [ ] 把 DOM、文本、脚本、附件和搜索结果标记为 untrusted data，不能进入 system policy。
-- [ ] 去除执行性元素和 machine secret，再按任务选择最小片段与 classification。
-- [ ] 页面要求运行命令、上传密钥、忽略授权或安装能力只进入 Trace，不形成调用。
+- [x] 把 DOM、文本、脚本、附件和搜索结果标记为 untrusted data，不能进入 system policy。
+- [x] 去除执行性元素和 machine secret，再按任务选择最小片段与 classification。
+- [x] 页面要求运行命令、上传密钥、忽略授权或安装能力只进入 Trace，不形成调用。
 - [ ] 记录候选/采用/排除片段、披露范围和模型 identity/cost。
-- [ ] 构造提示注入、伪登录、secret pattern、超大正文、未知 content type 和编码攻击。
+- [x] 构造提示注入、伪登录、secret pattern、超大正文、未知 content type 和编码攻击。
 
 ### Task 6：实现下载与上传边界
 
-- [ ] 下载进入隔离 temporary area，记录 source URL、digest、MIME sniffing、size、classification 和 expiry。
-- [ ] 可执行或未知内容保持隔离；写入 Owner 目录或执行必须经过 S6/S4 独立授权。
+- [x] 下载进入隔离 temporary area，记录 source URL、digest、MIME sniffing、size、classification 和 expiry。
+- [x] 可执行或未知内容保持隔离；写入 Owner 目录或执行必须经过 S6/S4 独立授权。
 - [ ] 上传只引用 Owner 已授权文件，冻结目标 origin、字段、分类、大小和披露。
 - [ ] redirect/cross-origin 后不得携带未授权 secret 或 upload Handle。
-- [ ] deletion/migration 清理 temporary/cache/session 副本，不延长 Owner 数据保留。
+- [x] deletion/migration 清理 temporary/cache/session 副本，不延长 Owner 数据保留。
 
 ### Task 7：实现 host-bound 认证 Session
 
-- [ ] 在平台 secret/session store 加密保存 Cookie/token/browser keys，通过一次性 Handle 给 Worker。
-- [ ] 建立 domain/origin 精确 partition；子域、redirect、SSO popup 和 iframe 各自验证 scope。
-- [ ] 支持建立、查看、暂停、撤销、expiry/health 与 recent use，不在 Trace/UI 显示 secret。
-- [ ] session revoke/credential expiry 立即 blocked，不尝试其他身份或凭据。
-- [ ] authority transfer 后全部 session 为 blocked_credentials，目标主机重新建立前不可用。
+- [x] 在平台 secret/session store 加密保存 Cookie/token/browser keys，通过一次性 Handle 给 Worker。
+- [x] 建立 domain/origin 精确 partition；子域、redirect、SSO popup 和 iframe 各自验证 scope。
+- [x] 支持建立、查看、暂停、撤销、expiry/health 与 recent use，不在 Trace/UI 显示 secret。
+- [x] session revoke/credential expiry 立即 blocked，不尝试其他身份或凭据。
+- [x] authority transfer 后全部 session 为 blocked_credentials，目标主机重新建立前不可用。
 
 ### Task 8：实现只读 session 与 prepare_action
 
-- [ ] web.session_read 只在 allowed origins、purpose、classification 和 Grant 内导航/读取。
-- [ ] prepare_action 可以填充但不提交，冻结最终页面状态、fields、uploads、recipients、price/account 和 side-effect facts。
-- [ ] secret field 只显示类型/ref；页面按钮/脚本不能把 prepare 变 execute。
-- [ ] 跨域、价格/字段/收件人变化、身份/权限变化使 prepared snapshot 失效。
-- [ ] 对多标签/页面刷新/重启验证 snapshot identity 和不产生副作用。
+- [x] web.session_read 只在 allowed origins、purpose、classification 和 Grant 内导航/读取。
+- [x] prepare_action 可以填充但不提交，冻结最终页面状态、fields、uploads、recipients、price/account 和 side-effect facts。
+- [x] secret field 只显示类型/ref；页面按钮/脚本不能把 prepare 变 execute。
+- [x] 跨域、价格/字段/收件人变化、身份/权限变化使 prepared snapshot 失效。
+- [x] 对多标签/页面刷新/重启验证 snapshot identity 和不产生副作用。
 
 ### Task 9：接通 Approval 与单次 execute Handle
 
 - [ ] 由 S4 将 prepared hash 转为 ActionIntent，按 COMMUNICATE、PURCHASE、CREDENTIAL、PUBLICATION、LEGAL 等 facts 提高风险。
 - [ ] 登录状态不降低风险；资金、权限、公开发布和法律承诺保持 CRITICAL/recent re-auth。
-- [ ] 批准只签发一次匹配 operation/origin/payload/expiry 的 execution Handle。
-- [ ] 发送前再次读取页面和 session version；任何差异停止并生成新预览。
-- [ ] 执行请求记录稳定 operation identity，不在重试层重复提交。
+- [x] 批准只签发一次匹配 operation/origin/payload/expiry 的 execution Handle。
+- [x] 发送前再次读取页面和 session version；任何差异停止并生成新预览。
+- [x] 执行请求记录稳定 operation identity，不在重试层重复提交。
 
 ### Task 10：实现 bounded readback 与 reconcile
 
-- [ ] confirmed_succeeded 必须由稳定 receipt/order/message/account state 或等价 readback 证明。
-- [ ] 明确错误形成 confirmed_failed；按钮消失或单一 HTTP response 不足以确认。
-- [ ] 网络发送后中断标记 unknown，保存 observation 与下一对账方法，禁止自动重发。
-- [ ] web.reconcile 按 operation/idempotency identity 有界查询并提交最终 Result。
+- [x] confirmed_succeeded 必须由稳定 receipt/order/message/account state 或等价 readback 证明。
+- [x] 明确错误形成 confirmed_failed；按钮消失或单一 HTTP response 不足以确认。
+- [x] 网络发送后中断标记 unknown，保存 observation 与下一对账方法，禁止自动重发。
+- [x] web.reconcile 按 operation/idempotency identity 有界查询并提交最终 Result。
 - [ ] 在发送前、发送后、响应前、readback 前后 kill process，证明不重复副作用。
+
+Tasks 3–10 的本地实现 revision 为 `4470b98` 与 `b9be4bc`。公共 fetch adapter、domain/authenticated driver Port、host-bound AES-GCM session store、隔离下载区、durable Web state adapter、冻结 prepare/execute/reconcile 服务和故障注入 conformance 已完成。具体 headful/headless browser driver 不在未授权情况下引入新的生产依赖；Task 2 的双平台 driver qualification、Task 11 的 Gateway/UI composition 与 Task 12 的 Mac/Hermes 正式 suite 保持为后续门禁，不能把 deterministic driver fixture 当成正式 adapter。
 
 ### Task 11：接通控制中心
 
@@ -190,9 +194,9 @@ date: "2026-08-26"
 
 | Acceptance ID | Spec 验收组 | 主要任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| S5-A01 | 公共研究 | Tasks 3–5、11–12 | 来源/digest、prompt injection、双平台 research | 待实施 |
-| S5-A02 | 认证会话 | Tasks 6–8、11–12 | host secret、partition/revoke/migration、browser | 待实施 |
-| S5-A03 | 外部副作用 | Tasks 8–12 | prepare/hash/approval、kill/reconcile、readback | 待实施 |
+| S5-A01 | 公共研究 | Tasks 3–5、11–12 | 来源/digest、prompt injection、双平台 research | 核心实现与本地 conformance 完成；Gateway/UI 与双平台正式 adapter 待 Tasks 2、11–12 |
+| S5-A02 | 认证会话 | Tasks 6–8、11–12 | host secret、partition/revoke/migration、browser | host-bound store、scope/revoke/transfer 本地完成；正式 browser driver 与 UI 待 Tasks 2、11–12 |
+| S5-A03 | 外部副作用 | Tasks 8–12 | prepare/hash/approval、kill/reconcile、readback | prepare/Handle/unknown/reconcile 本地完成；正式 browser readback 与 UI 待 Tasks 2、11–12 |
 
 ## 验证
 
