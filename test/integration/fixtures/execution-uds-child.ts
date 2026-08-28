@@ -61,6 +61,14 @@ class ChildWorkerTransport implements ExecutionTransportPort {
     if (this.handled.has(message.idempotencyKey)) return null;
     this.handled.add(message.idempotencyKey);
 
+    if (message.type === "work.delegate") {
+      return this.response(message, "work.delegate.accepted", {
+        handleRef: message.payload.handle.ref,
+        workerBootId: `worker-boot-${String(process.pid)}`,
+        acceptedAt: new Date().toISOString(),
+      });
+    }
+
     if (message.type === "work.execute") {
       if (message.payload.capabilityHandleRef === "capability-handle-stale") {
         this.result(message, "failed", null, "PORT_HANDLE_REVOKED", null);
@@ -161,8 +169,16 @@ class ChildWorkerTransport implements ExecutionTransportPort {
     this.storedEvents.push(parsed);
   }
 
-  private response<TType extends "worker.handshake.accepted" | "worker.readiness.snapshot">(
-    request: Extract<ExecutionV2Request, { type: "worker.handshake" | "worker.readiness.query" }>,
+  private response<
+    TType extends
+      | "worker.handshake.accepted"
+      | "worker.readiness.snapshot"
+      | "work.delegate.accepted",
+  >(
+    request: Extract<
+      ExecutionV2Request,
+      { type: "worker.handshake" | "worker.readiness.query" | "work.delegate" }
+    >,
     type: TType,
     payload: unknown,
   ): Extract<ExecutionV2Response, { type: TType }> {

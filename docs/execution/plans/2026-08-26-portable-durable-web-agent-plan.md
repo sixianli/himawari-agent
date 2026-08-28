@@ -263,6 +263,8 @@ Task 4 已确认严格 v1 parser 不能兼容 handshake、authority fence、reso
 
 Agent Service 的 production client 必须先完成 schema/instance/boot-token handshake；Worker 不可用时返回 `EXECUTION_WORKER_UNAVAILABLE` 并撤销 client readiness，不存在进程内 fallback。Production Worker 只依赖注入的 `ExecutionWorkerService`、已注册 adapter 清单和短期 handle，不依赖 SQLite persistence 或授权签发服务；它验证当前 deployment epoch/fence、adapter version/operation 和配置上限，并对 wall deadline、progress 上限、重复 identity、stale handle、取消、cursor replay 与未知外部结果执行 fail-closed 处理。5 项 UDS contract tests、6 项 Worker unit tests 和 3 项真实进程 integration tests 分别覆盖 Worker `SIGKILL` 后安全 socket 恢复、Agent client 子进程崩溃后的单一结果、重复结果去重和重连；实现与验证证据位于 `test/integration/qualification/evidence/s1-task10-execution-uds.json`。
 
+后续 S5/S6 接线补充了 `work.delegate → work.delegate.accepted`：Agent Service 在 durable Handle 上完成版本、Grant、scope、classification、epoch/fence 与一次性消费，再把权限衰减为本次 operation/input/context/secret refs、deadline 和单次使用；Worker 使用 boot-scoped 易失 delegation store 二次消费，仍不打开 `product.sqlite`。定向 contract/unit tests 同时证明缺少委派会 fail closed，且授权校验失败不会提前占用 work.execute 的幂等 identity。生产 adapter registry、Payload broker、Gateway/UI 和双平台 suite 仍由 S5/S6 后续任务收口。
+
 ### Task 11：建立可安装的 Agent Service、Worker 与 admin CLI 入口
 
 - [x] 为两个服务添加真正的 `main`、start/build scripts、信号处理、退出码、结构化启动诊断和不依赖源码 checkout 的产物布局。

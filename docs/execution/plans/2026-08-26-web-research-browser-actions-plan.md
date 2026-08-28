@@ -174,6 +174,8 @@ Task 1 的 fresh baseline、threat matrix 与 Pi reuse map 位于 `test/integrat
 
 Tasks 3–10 的本地实现 revision 为 `4470b98` 与 `b9be4bc`。公共 fetch adapter、domain/authenticated driver Port、host-bound AES-GCM session store、隔离下载区、durable Web state adapter、冻结 prepare/execute/reconcile 服务和故障注入 conformance 已完成。具体 headful/headless browser driver 不在未授权情况下引入新的生产依赖；Task 2 的双平台 driver qualification、Task 11 的 Gateway/UI composition 与 Task 12 的 Mac/Hermes 正式 suite 保持为后续门禁，不能把 deterministic driver fixture 当成正式 adapter。
 
+S5/S6 收口阶段已补齐跨进程 `work.delegate` 委派协议与 Agent Service/Worker 两侧的 durable-consume、权限衰减、boot-scoped 易失存储和二次校验。该底座不会把 Cookie、token、password、文件正文或 durable SQLite 权威复制到 Worker；公共 Web adapter 注册、Payload broker、Gateway/UI 和双平台资格证据仍未完成，不能据此把 Task 11–12 或 S5 acceptance 标为完成。
+
 ### Task 11：接通控制中心
 
 - [ ] 公共研究显示来源、获取时间、引用和披露；未打开搜索摘要有明确标记。

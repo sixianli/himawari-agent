@@ -181,6 +181,8 @@ Task 1 的 fresh baseline、threat matrix 与 Pi reuse map 位于 `test/integrat
 
 Tasks 3–11 的本地核心实现 revision 为 `ca5942a`。`createGovernedPiCodingTools()` 继续复用 pinned Pi ToolDefinition，新增 bridge 只把已授权 product Operations 注入 Pi；HostDirectoryGrant、descriptor-equivalent path walk、exclusive create、原子替换/恢复副本、controlled Trash、WorkspaceSnapshot、ownership、CommandProfile、CommitPreview/Handle、Git readback 和 no-push 均由 Himawari 拥有。尚未完成的 gateway/execution wire contract、完整 hunk staging、process sandbox/分段日志、永久删除、控制中心和 Mac/Hermes 正式 conformance 保持后续门禁，不用本地 fixture 冒充。
 
+S5/S6 收口阶段已补齐跨进程 `work.delegate` 委派协议：Agent Service 先在 SQLite 原子消费 durable Handle，再把权限衰减为本次 operation/input/context/secret refs、classification、deadline 和一次使用；Worker 只保存 boot-scoped 易失副本并二次消费，不直接打开 `product.sqlite`。文件 Payload broker、真实 adapter registry、command process sandbox、Gateway/UI 与双平台 qualification 仍未完成，因此 Tasks 3、9、11–12 和 S6 acceptance 保持未完成。
+
 ### Task 12：完成恢复、双平台与 UI 验证
 
 - [ ] 在 prepare/stage/approval/hook/commit write/readback 各边界 kill/restart，验证 Owner 改动不丢失且无重复 commit。

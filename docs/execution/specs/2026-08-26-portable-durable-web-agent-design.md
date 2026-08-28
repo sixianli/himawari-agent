@@ -416,6 +416,7 @@ Worker 是活动主机上的独立进程。首个 transport 把 execution.v1 env
 
 代表操作包括：
 
+- 在 work.execute 前提交 work.delegate，把 Agent Service 已在产品状态中原子消费的 Handle 衰减为本次 operation、输入引用、分类、deadline 和一次使用范围；
 - 提交 work.execute 并取得稳定 Worker Run identity；
 - 提交 work.cancel；
 - 对已经在线接纳、结果未知的工作提交 work.reconcile；
@@ -423,6 +424,8 @@ Worker 是活动主机上的独立进程。首个 transport 把 execution.v1 env
 - 查询最小 readiness 和支持的 schema version。
 
 请求与响应有大小限制、严格解析和版本。大输入与结果只传 Payload reference。handshake 验证 execution.v1 compatibility、worker instance identity 与当前 boot token。Agent Service 持久化 parent checkpoints/events；Worker local state 不能成为 Agent 权威。
+
+Worker 不直接打开 product.sqlite，也不签发或扩大权限。Agent Service 重新验证 Capability 生命周期、版本、Grant、epoch/fence、输入/上下文/secret refs 和分类后，先在 SQLite 原子消费 durable Handle，再通过受认证 UDS 发送 work.delegate。Worker 只保存当前 boot 生命周期内的易失、一次性委派副本，并在 work.execute 时再次验证 adapter/version/operation、资源上限、deadline 和委派引用；拒绝的请求在通过授权与 adapter 校验前不得占用幂等 identity。
 
 首个 Worker 只执行产品拥有且已经注册的 adapters，例如有界 work directory 中的 GitHub read operations。MCP/package 的完整治理和隔离由行动授权与能力治理 Spec 定义；本切片提供真实 process boundary、deadline、cancellation、resource ceilings 和 handle validation。
 

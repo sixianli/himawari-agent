@@ -20,6 +20,8 @@ export const EXECUTION_V2_MESSAGE_TYPES = [
   "worker.handshake.accepted",
   "worker.readiness.query",
   "worker.readiness.snapshot",
+  "work.delegate",
+  "work.delegate.accepted",
   "work.execute",
   "work.cancel",
   "work.events.replay",
@@ -108,6 +110,52 @@ const secretReferenceSchema = object({
   secretRef: machineString,
   secretVersion: machineString,
   purpose: machineString,
+});
+
+const delegatedCapabilityHandleSchema = object({
+  handleVersion: literal("capability-handle.v2"),
+  ref: machineString,
+  revision: integer(1),
+  authorityFence: integer(1),
+  ownerId: machineString,
+  agentId: machineString,
+  runId: machineString,
+  capabilityRef: machineString,
+  capabilityVersion: machineString,
+  authorizationType: enumeration(["policy", "grant"]),
+  authorizationRef: machineString,
+  operations: array(machineString),
+  inputRefs: array(machineString),
+  delegatedContextRefs: array(machineString),
+  secretRefs: array(secretReferenceSchema),
+  maxDataClassification: classificationSchema,
+  issuedAt: timestamp,
+  expiresAt: timestamp,
+  revokedAt: nullable(timestamp),
+  operation: machineString,
+  maxUses: integer(1),
+  uses: integer(0),
+  maxTotalCostMicros: integer(0),
+  spentCostMicros: integer(0),
+  idempotencyKeys: array(machineString),
+  workerEndedAt: nullable(timestamp),
+});
+
+export const delegateWorkRequestSchema = object({
+  ...requestEnvelope("work.delegate"),
+  payload: object({
+    handle: delegatedCapabilityHandleSchema,
+    requestedAt: timestamp,
+  }),
+});
+
+export const delegateWorkAcceptedSchema = object({
+  ...envelope("response", "work.delegate.accepted"),
+  payload: object({
+    handleRef: machineString,
+    workerBootId: machineString,
+    acceptedAt: timestamp,
+  }),
 });
 
 const resourceCeilingSchema = object({
@@ -279,6 +327,8 @@ const schemasByType = {
   "worker.handshake.accepted": workerHandshakeAcceptedSchema,
   "worker.readiness.query": workerReadinessQuerySchema,
   "worker.readiness.snapshot": workerReadinessSnapshotSchema,
+  "work.delegate": delegateWorkRequestSchema,
+  "work.delegate.accepted": delegateWorkAcceptedSchema,
   "work.execute": executeWorkV2RequestSchema,
   "work.cancel": cancelWorkV2RequestSchema,
   "work.events.replay": replayWorkEventsRequestSchema,
@@ -292,6 +342,7 @@ const schemasByType = {
 type SchemaByType = typeof schemasByType;
 
 export type SecretReferenceV2 = InferSchema<typeof secretReferenceSchema>;
+export type DelegatedCapabilityHandleV2 = InferSchema<typeof delegatedCapabilityHandleSchema>;
 export type ResourceCeiling = InferSchema<typeof resourceCeilingSchema>;
 export type ExecutionV2Message = InferSchema<SchemaByType[keyof SchemaByType]>;
 export type ExecutionV2Request = Extract<ExecutionV2Message, { kind: "request" }>;

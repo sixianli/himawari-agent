@@ -14,6 +14,7 @@ export * from "./context-formation-service.js";
 export * from "./durable-background-work-service.js";
 export * from "./durable-memory-service.js";
 export * from "./execution-worker-service.js";
+export * from "./worker-delegation-service.js";
 export * from "./model-router-service.js";
 export * from "./permission-service.js";
 export * from "./product-thread-gateway-adapter.js";

@@ -11,7 +11,11 @@ import {
   ScriptedExternalActionReconciliationPort,
 } from "@himawari-agent/testing";
 import { describe, expect, it } from "vitest";
-import { PRODUCTION_WORKER_ERROR_CODES, ProductionExecutionWorker } from "../src/index.js";
+import {
+  PRODUCTION_WORKER_ERROR_CODES,
+  ProductionExecutionWorker,
+  WorkerDelegationStore,
+} from "../src/index.js";
 
 const fixture = createBeefRestaurantFixture();
 const deploymentId = "deployment-worker-unit";
@@ -92,6 +96,44 @@ function execute(
       deadlineAt: fixture.times.deadline,
     },
   }) as Extract<ExecutionV2Request, { type: "work.execute" }>;
+}
+
+function delegation() {
+  return executionV2MessageSchema.parse({
+    ...requestEnvelope("work.delegate"),
+    authorizationRef: "allow-readonly-worker-unit",
+    payload: {
+      handle: {
+        handleVersion: "capability-handle.v2",
+        ref: "capability-handle-worker-unit",
+        revision: 1,
+        authorityFence: 3,
+        ownerId: fixture.owner.id,
+        agentId: fixture.agent.id,
+        runId: fixture.runs.monitoring.id,
+        capabilityRef: "restaurant-search",
+        capabilityVersion: "1.0.0",
+        authorizationType: "policy",
+        authorizationRef: "allow-readonly-worker-unit",
+        operations: ["search"],
+        inputRefs: [fixture.payloads.restaurantSearchInput],
+        delegatedContextRefs: [],
+        secretRefs: [],
+        maxDataClassification: "private",
+        issuedAt: fixture.times.start,
+        expiresAt: fixture.times.deadline,
+        revokedAt: null,
+        operation: "search",
+        maxUses: 1,
+        uses: 0,
+        maxTotalCostMicros: 0,
+        spentCostMicros: 0,
+        idempotencyKeys: [],
+        workerEndedAt: null,
+      },
+      requestedAt: fixture.times.start,
+    },
+  }) as Extract<ExecutionV2Request, { type: "work.delegate" }>;
 }
 
 async function workerFixture(options: { readonly unknownResult?: boolean } = {}) {
@@ -222,6 +264,89 @@ async function readEvents(worker: ProductionExecutionWorker, afterCursor: string
 }
 
 describe("production execution Worker", () => {
+  it("admits a boot-scoped one-use delegation without opening durable state", async () => {
+    const adapters = createReferenceAdapterSet({
+      capability: {
+        descriptors: [
+          {
+            ref: "restaurant-search",
+            version: "1.0.0",
+            integrity: `sha256:${"a".repeat(64)}`,
+            lifecycle: "active",
+            permissionRefs: [],
+            isolation: "worker",
+          },
+        ],
+        events: [
+          {
+            type: "capability.completed",
+            invocationId: "message-work-execute-3",
+            resultRef: "payload-worker-result-unit",
+            occurredAt: fixture.times.providerCompleted,
+          },
+        ],
+      },
+    });
+    const registered = [
+      {
+        capabilityId: "restaurant-search",
+        capabilityVersion: "1.0.0",
+        operations: ["search"],
+      },
+    ];
+    const delegations = new WorkerDelegationStore({
+      authorityFence: 3,
+      adapters: registered,
+      now: () => adapters.clock.now(),
+    });
+    const service = new ExecutionWorkerService({
+      handles: delegations,
+      capability: adapters.capability,
+      secrets: adapters.secret,
+      clock: adapters.clock,
+      ids: adapters.ids,
+      authorityFence: () => 3,
+      authorization: adapters.authorization,
+    });
+    const worker = new ProductionExecutionWorker({
+      service,
+      workerInstanceId: "execution-worker-unit",
+      workerBootId: "worker-boot-unit",
+      bootTokenRef,
+      deploymentId,
+      authorityEpoch: 2,
+      fencingToken: 3,
+      maximumResourceCeiling: {
+        maxWallTimeMs: 30_000,
+        maxCpuTimeMs: 10_000,
+        maxMemoryBytes: 67_108_864,
+        maxOutputBytes: 4_096,
+        maxProgressEvents: 100,
+      },
+      adapters: registered,
+      delegations,
+      now: () => adapters.clock.now(),
+      nextId: (type) => adapters.ids.next(type),
+    });
+
+    await worker.request(handshake());
+    await expect(worker.request(execute())).rejects.toMatchObject({
+      code: PRODUCTION_WORKER_ERROR_CODES.DELEGATION_REQUIRED,
+    });
+    await expect(worker.request(delegation())).resolves.toMatchObject({
+      type: "work.delegate.accepted",
+      payload: { handleRef: "capability-handle-worker-unit" },
+    });
+    await expect(worker.request(execute())).resolves.toBeNull();
+    await worker.waitForIdle();
+    await expect(readEvents(worker)).resolves.toContainEqual(
+      expect.objectContaining({
+        type: "work.result",
+        payload: expect.objectContaining({ outcome: "succeeded" }),
+      }),
+    );
+  });
+
   it("requires a compatible boot-scoped handshake and reports minimal readiness", async () => {
     const { worker } = await workerFixture();
     await expect(worker.request(execute())).rejects.toMatchObject({

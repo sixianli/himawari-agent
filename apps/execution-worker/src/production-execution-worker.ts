@@ -6,6 +6,7 @@ import type {
 import {
   EXECUTION_SCHEMA_VERSION,
   EXECUTION_V2_SCHEMA_VERSION,
+  type DelegatedCapabilityHandleV2,
   type ExecutionV2Event,
   type ExecutionV2Request,
   type ExecutionV2Response,
@@ -22,6 +23,8 @@ export const PRODUCTION_WORKER_ERROR_CODES = Object.freeze({
   RESOURCE_CEILING_EXCEEDED: "WORKER_RESOURCE_CEILING_EXCEEDED",
   SCHEMA_UNSUPPORTED: "WORKER_SCHEMA_UNSUPPORTED",
   STALE_FENCE: "WORKER_STALE_FENCE",
+  DELEGATION_INVALID: "WORKER_DELEGATION_INVALID",
+  DELEGATION_REQUIRED: "WORKER_DELEGATION_REQUIRED",
 } as const);
 
 type ProductionWorkerErrorCode =
@@ -53,12 +56,18 @@ export interface ProductionExecutionWorkerOptions {
   readonly fencingToken: number;
   readonly maximumResourceCeiling: ResourceCeiling;
   readonly adapters: readonly RegisteredWorkerAdapter[];
+  readonly delegations?: {
+    accept(handle: DelegatedCapabilityHandleV2): unknown;
+    getExecutionHandle(handleRef: string): Promise<unknown>;
+    clear(): void;
+  };
   readonly now: () => string;
   readonly nextId: (scope: string) => string;
 }
 
 type HandshakeRequest = Extract<ExecutionV2Request, { type: "worker.handshake" }>;
 type ReadinessRequest = Extract<ExecutionV2Request, { type: "worker.readiness.query" }>;
+type DelegateRequest = Extract<ExecutionV2Request, { type: "work.delegate" }>;
 type ExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
 type CancelRequest = Extract<ExecutionV2Request, { type: "work.cancel" }>;
 type ReconcileRequest = Extract<ExecutionV2Request, { type: "work.reconcile" }>;
@@ -110,12 +119,14 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     if (parsed.type === "worker.readiness.query") return this.readiness(parsed);
     this.assertReadyAndAuthoritative(parsed);
     if (parsed.type === "work.events.replay") return null;
-    if (this.isReplay(parsed)) return null;
     if (parsed.type === "work.execute") {
-      this.assertExecutable(parsed);
+      await this.assertExecutable(parsed);
+      if (this.isReplay(parsed)) return null;
       this.track(this.execute(parsed));
       return null;
     }
+    if (this.isReplay(parsed)) return null;
+    if (parsed.type === "work.delegate") return this.delegate(parsed);
     if (parsed.type === "work.cancel") {
       this.track(this.cancel(parsed));
       return null;
@@ -143,6 +154,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   async shutdown(): Promise<void> {
     this.ready = false;
     await this.waitForIdle();
+    this.options.delegations?.clear();
     this.handshakeAgentInstanceId = null;
   }
 
@@ -207,7 +219,35 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     }
   }
 
-  private assertExecutable(request: ExecuteRequest): void {
+  private delegate(
+    request: DelegateRequest,
+  ): Extract<ExecutionV2Response, { type: "work.delegate.accepted" }> {
+    const handle = request.payload.handle;
+    if (
+      handle.authorityFence !== request.scope.fencingToken ||
+      handle.ownerId !== request.scope.ownerId ||
+      handle.agentId !== request.scope.agentId ||
+      handle.runId !== request.scope.runId ||
+      handle.authorizationRef !== request.authorizationRef ||
+      handle.maxDataClassification !== request.dataClassification
+    ) {
+      throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.DELEGATION_INVALID);
+    }
+    if (!this.options.delegations) {
+      throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.DELEGATION_REQUIRED);
+    }
+    this.options.delegations.accept(handle);
+    return executionV2MessageSchema.parse({
+      ...this.responseEnvelope(request, "work.delegate.accepted"),
+      payload: {
+        handleRef: handle.ref,
+        workerBootId: this.options.workerBootId,
+        acceptedAt: this.options.now(),
+      },
+    }) as Extract<ExecutionV2Response, { type: "work.delegate.accepted" }>;
+  }
+
+  private async assertExecutable(request: ExecuteRequest): Promise<void> {
     if (!withinCeiling(request.payload.resourceCeiling, this.options.maximumResourceCeiling)) {
       throw new ProductionExecutionWorkerError(
         PRODUCTION_WORKER_ERROR_CODES.RESOURCE_CEILING_EXCEEDED,
@@ -223,6 +263,12 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
       throw new ProductionExecutionWorkerError(
         PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED,
       );
+    }
+    if (
+      this.options.delegations &&
+      !(await this.options.delegations.getExecutionHandle(request.payload.capabilityHandleRef))
+    ) {
+      throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.DELEGATION_REQUIRED);
     }
   }
 
@@ -490,8 +536,8 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   }
 
   private responseEnvelope(
-    request: HandshakeRequest | ReadinessRequest,
-    type: "worker.handshake.accepted" | "worker.readiness.snapshot",
+    request: HandshakeRequest | ReadinessRequest | DelegateRequest,
+    type: "worker.handshake.accepted" | "worker.readiness.snapshot" | "work.delegate.accepted",
   ) {
     return {
       schemaVersion: EXECUTION_V2_SCHEMA_VERSION,

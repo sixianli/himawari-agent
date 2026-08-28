@@ -7,6 +7,9 @@ import {
 } from "../src/index.ts";
 import messages from "./fixtures/v2/messages.json" with { type: "json" };
 
+const executeMessage = messages.find(({ type }) => type === "work.execute");
+if (!executeMessage) throw new TypeError("work.execute fixture is missing");
+
 const forbiddenKeys = new Set([
   "apiKey",
   "accessToken",
@@ -47,35 +50,41 @@ describe("Execution v2 compatibility fixtures", () => {
 describe("Execution v2 fail-closed validation", () => {
   it.each([
     ["unsupported schema", { ...messages[0], schemaVersion: "execution.v3" }],
-    ["invalid classification", { ...messages[4], dataClassification: "secret" }],
-    ["missing high-risk authorization", { ...messages[4], authorizationRef: null }],
-    ["stale zero epoch", { ...messages[4], scope: { ...messages[4]?.scope, authorityEpoch: 0 } }],
-    ["stale zero fence", { ...messages[4], scope: { ...messages[4]?.scope, fencingToken: 0 } }],
-    ["missing Run scope", { ...messages[4], scope: { ...messages[4]?.scope, runId: null } }],
+    ["invalid classification", { ...executeMessage, dataClassification: "secret" }],
+    ["missing high-risk authorization", { ...executeMessage, authorizationRef: null }],
+    [
+      "stale zero epoch",
+      { ...executeMessage, scope: { ...executeMessage.scope, authorityEpoch: 0 } },
+    ],
+    [
+      "stale zero fence",
+      { ...executeMessage, scope: { ...executeMessage.scope, fencingToken: 0 } },
+    ],
+    ["missing Run scope", { ...executeMessage, scope: { ...executeMessage.scope, runId: null } }],
     [
       "unbounded memory",
       {
-        ...messages[4],
+        ...executeMessage,
         payload: {
-          ...messages[4]?.payload,
-          resourceCeiling: { ...messages[4]?.payload?.resourceCeiling, maxMemoryBytes: 0 },
+          ...executeMessage.payload,
+          resourceCeiling: { ...executeMessage.payload.resourceCeiling, maxMemoryBytes: 0 },
         },
       },
     ],
     [
       "deadline before request",
       {
-        ...messages[4],
-        payload: { ...messages[4]?.payload, deadlineAt: "2026-08-25T00:00:00.000Z" },
+        ...executeMessage,
+        payload: { ...executeMessage.payload, deadlineAt: "2026-08-25T00:00:00.000Z" },
       },
     ],
-    ["raw secret", { ...messages[4], secretValue: "not-allowed" }],
+    ["raw secret", { ...executeMessage, secretValue: "not-allowed" }],
     [
       "nested raw secret",
       {
-        ...messages[4],
+        ...executeMessage,
         payload: {
-          ...messages[4]?.payload,
+          ...executeMessage.payload,
           secretRefs: [
             {
               secretRef: "secret-ref-01",
