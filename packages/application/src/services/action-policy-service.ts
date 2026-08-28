@@ -10,7 +10,11 @@ import type {
   PermissionPolicy,
 } from "../ports/authorization.js";
 import { ACTION_KINDS, ACTION_RISK_LEVELS } from "../ports/authorization.js";
-import type { CapabilityManifest, CapabilityRegistryLifecycle } from "../ports/capabilities.js";
+import {
+  capabilityLifecycleHasActiveAuthority,
+  type CapabilityManifest,
+  type CapabilityRegistryLifecycle,
+} from "../ports/capabilities.js";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import { actionIntentFingerprint, grantCoversIntent } from "./permission-service.js";
@@ -361,7 +365,7 @@ export class ActionPolicyService {
     intent: GovernedActionIntent,
   ): string | null {
     if (!facts) return "capability_not_registered";
-    if (facts.lifecycle !== "active") return "capability_not_active";
+    if (!capabilityLifecycleHasActiveAuthority(facts.lifecycle)) return "capability_not_active";
     if (facts.manifest.health.status !== "healthy") return "capability_not_healthy";
     if (facts.manifest.version !== intent.capabilityVersion) return "capability_version_mismatch";
     if (!facts.manifest.operations.includes(intent.operation)) return "operation_not_declared";

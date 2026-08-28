@@ -17,6 +17,13 @@ function uniqueNonEmpty(values: readonly string[]): boolean {
 }
 
 function validateDeclaration(declaration: CapabilityDeclaration): void {
+  if ("manifestVersion" in declaration) {
+    throw new ApplicationPortError(
+      PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      `Capability ${declaration.ref || "<missing>"} v2 manifests require governed lifecycle qualification`,
+      { capabilityRef: declaration.ref || "<missing>" },
+    );
+  }
   if (
     !declaration.ref ||
     !declaration.displayName ||
@@ -64,6 +71,11 @@ export class CapabilityRegistryService {
       declaration,
       pendingDeclaration: null,
       permissionExpansion: false,
+      runtimeQualification: null,
+      pendingUpdateAssessment: null,
+      rollbackDeclaration: null,
+      rollbackQualification: null,
+      lastVersionTransition: null,
       approvalRefs: [],
       discoveredAt: now,
       updatedAt: now,
@@ -129,6 +141,16 @@ export class CapabilityRegistryService {
         declaration: current.pendingDeclaration,
         pendingDeclaration: null,
         permissionExpansion: false,
+        rollbackDeclaration: current.declaration,
+        lastVersionTransition: {
+          fromVersion: current.declaration.version,
+          toVersion: current.pendingDeclaration.version,
+          outcome: "activated",
+          occurredAt: this.dependencies.clock.now(),
+          qualification: null,
+          externalEffectsRolledBack: false,
+          productStateRolledBack: false,
+        },
       });
     }
     return this.invalidTransition(current, "active");

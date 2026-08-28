@@ -23,6 +23,15 @@ export interface CapabilityInvocationRequest {
   readonly delegatedContextRefs: readonly PayloadRef[];
   readonly secretHandleRefs: readonly string[];
   readonly dataClassification: DataClassification;
+  readonly resourceCeiling: CapabilityResourceCeiling | null;
+}
+
+export interface CapabilityResourceCeiling {
+  readonly maxWallTimeMs: number;
+  readonly maxCpuTimeMs: number;
+  readonly maxMemoryBytes: number;
+  readonly maxOutputBytes: number;
+  readonly maxProgressEvents: number;
 }
 
 export type CapabilityInvocationEvent =
@@ -118,6 +127,72 @@ export interface CapabilityManifest extends CapabilityDeclaration {
   readonly runtime: CapabilityRuntimeContract;
 }
 
+export interface CapabilityArtifactVerification {
+  readonly verificationVersion: "capability-artifact-verification.v1";
+  readonly artifactDigest: string;
+  readonly signatureStatus: CapabilityManifest["artifact"]["signatureStatus"];
+  readonly signerRef: string | null;
+  readonly verified: boolean;
+  readonly reasonCodes: readonly string[];
+  readonly verifiedAt: string;
+}
+
+export interface CapabilityRuntimeQualification {
+  readonly qualificationVersion: "capability-runtime-qualification.v1";
+  readonly platform: "darwin" | "linux" | "other";
+  readonly runtimeIdentity: string;
+  readonly productionSuitable: boolean;
+  readonly artifactDigest: string;
+  readonly enforcement: {
+    readonly filesystem: boolean;
+    readonly network: boolean;
+    readonly processes: boolean;
+    readonly secrets: boolean;
+    readonly resourceCeilings: boolean;
+    readonly termination: boolean;
+  };
+  readonly reasonCodes: readonly string[];
+  readonly checkedAt: string;
+}
+
+export interface CapabilityArtifactVerifierPort {
+  verify(manifest: CapabilityManifest): Promise<CapabilityArtifactVerification>;
+}
+
+export interface CapabilityRuntimeQualifierPort {
+  qualify(manifest: CapabilityManifest): Promise<CapabilityRuntimeQualification>;
+}
+
+export type CapabilityUpdateDisposition = "automatic" | "approval_required";
+
+export interface CapabilityUpdateAssessment {
+  readonly assessmentVersion: "capability-update-assessment.v1";
+  readonly fromVersion: string;
+  readonly toVersion: string;
+  readonly disposition: CapabilityUpdateDisposition;
+  readonly risk: "LOW" | "HIGH" | "CRITICAL";
+  readonly sourceIdentityChanged: boolean;
+  readonly integrityChanged: boolean;
+  readonly semanticMajorChanged: boolean;
+  readonly runtimeKindChanged: boolean;
+  readonly executableIdentityChanged: boolean;
+  readonly executableCodeChanged: boolean;
+  readonly expansions: readonly string[];
+  readonly contractions: readonly string[];
+  readonly compatibilityPreserved: boolean;
+  readonly reasonCodes: readonly string[];
+}
+
+export interface CapabilityVersionTransition {
+  readonly fromVersion: string;
+  readonly toVersion: string;
+  readonly outcome: "activated" | "rolled_back" | "rejected";
+  readonly occurredAt: string;
+  readonly qualification: CapabilityRuntimeQualification | null;
+  readonly externalEffectsRolledBack: false;
+  readonly productStateRolledBack: false;
+}
+
 export type CapabilityRuntimeContract =
   | {
       readonly kind: "pi_tool";
@@ -162,6 +237,14 @@ export type CapabilityRegistryLifecycle =
   | "revoked"
   | "uninstalled";
 
+export function capabilityLifecycleHasActiveAuthority(
+  lifecycle: CapabilityRegistryLifecycle,
+): boolean {
+  return (
+    lifecycle === "active" || lifecycle === "update_proposed" || lifecycle === "update_approved"
+  );
+}
+
 export interface CapabilityRegistryRecord {
   readonly ref: string;
   readonly revision: number;
@@ -169,6 +252,11 @@ export interface CapabilityRegistryRecord {
   readonly declaration: CapabilityDeclaration;
   readonly pendingDeclaration: CapabilityDeclaration | null;
   readonly permissionExpansion: boolean;
+  readonly runtimeQualification: CapabilityRuntimeQualification | null;
+  readonly pendingUpdateAssessment: CapabilityUpdateAssessment | null;
+  readonly rollbackDeclaration: CapabilityDeclaration | null;
+  readonly rollbackQualification: CapabilityRuntimeQualification | null;
+  readonly lastVersionTransition: CapabilityVersionTransition | null;
   readonly approvalRefs: readonly string[];
   readonly discoveredAt: string;
   readonly updatedAt: string;
@@ -187,6 +275,12 @@ export interface CapabilityRegistryStorePort {
     record: CapabilityRegistryRecord,
     expectedRevision: number,
     revokedAt: string,
+  ): Promise<CapabilityRegistryRecord>;
+  /** Atomically switches a capability version and revokes Handles bound to the previous version. */
+  switchCapabilityVersion?(
+    record: CapabilityRegistryRecord,
+    expectedRevision: number,
+    switchedAt: string,
   ): Promise<CapabilityRegistryRecord>;
 }
 

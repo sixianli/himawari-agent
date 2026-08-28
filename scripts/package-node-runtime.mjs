@@ -23,6 +23,24 @@ const internalRoots = [
   "packages/runtime-pi",
 ];
 
+async function externalRuntimeRoots() {
+  const manifests = await Promise.all(
+    internalRoots.map(async (relativeRoot) =>
+      JSON.parse(await readFile(path.join(repositoryRoot, relativeRoot, "package.json"), "utf8")),
+    ),
+  );
+  const internalNames = new Set(manifests.map(({ name }) => name));
+  return [
+    ...new Set(
+      manifests.flatMap(({ dependencies = {} }) =>
+        Object.keys(dependencies).filter(
+          (name) => !internalNames.has(name) && !name.startsWith("@himawari-agent/"),
+        ),
+      ),
+    ),
+  ].sort();
+}
+
 function runtimeManifest(manifest, relativeRoot) {
   const convert = (target) =>
     typeof target === "string"
@@ -151,20 +169,7 @@ async function copyExternalClosure(rootNames) {
 await rm(runtimeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 await mkdir(runtimeNodeModules, { recursive: true });
 for (const relativeRoot of internalRoots.sort()) await copyInternalPackage(relativeRoot);
-const external = await copyExternalClosure([
-  "@earendil-works/pi-ai",
-  "@earendil-works/pi-coding-agent",
-  "@fastify/cookie",
-  "@fastify/csrf-protection",
-  "@fastify/helmet",
-  "@fastify/rate-limit",
-  "@fastify/static",
-  "@octokit/app",
-  "better-sqlite3",
-  "fastify",
-  "jose",
-  "mem0ai",
-]);
+const external = await copyExternalClosure(await externalRuntimeRoots());
 const rootExternal = new Map(
   [...external.entries()]
     .filter(([location, { name }]) => location === path.join(...name.split("/")))

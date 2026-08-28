@@ -15,10 +15,12 @@ import type {
   CapabilityPort,
   CapabilityRegistryStorePort,
   CapabilitySecretReference,
+  CapabilityResourceCeiling,
   ExternalActionReconciliationPort,
   SecretPort,
   GovernedCapabilityExecutionHandle,
 } from "../ports/capabilities.js";
+import { capabilityLifecycleHasActiveAuthority } from "../ports/capabilities.js";
 import type { AuthorizationStorePort } from "../ports/authorization.js";
 import { PORT_ERROR_CODES, ApplicationPortError } from "../ports/common.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
@@ -58,7 +60,10 @@ export class ExecutionWorkerService {
     this.dependencies = dependencies;
   }
 
-  async *execute(request: ExecuteWorkRequest): AsyncIterable<ExecutionWorkerEvent> {
+  async *execute(
+    request: ExecuteWorkRequest,
+    resourceCeiling: CapabilityResourceCeiling | null = null,
+  ): AsyncIterable<ExecutionWorkerEvent> {
     const cancellation = this.cancellations.get(request.messageId);
     if (cancellation) {
       yield this.cancelledEvent(request, request.messageId, cancellation);
@@ -101,6 +106,7 @@ export class ExecutionWorkerService {
         delegatedContextRefs: request.payload.delegatedContextRefs,
         secretHandleRefs: issuedSecretHandles,
         dataClassification: request.dataClassification,
+        resourceCeiling,
       })) {
         if (event.occurredAt >= request.payload.deadlineAt) {
           await this.dependencies.capability.cancel(request.messageId, "deadline_exceeded");
@@ -216,7 +222,7 @@ export class ExecutionWorkerService {
       handle.revokedAt !== null ||
       this.dependencies.clock.now() >= handle.expiresAt ||
       !record ||
-      record.lifecycle !== "active" ||
+      !capabilityLifecycleHasActiveAuthority(record.lifecycle) ||
       record.declaration.version !== handle.capabilityVersion
     ) {
       throw new ApplicationPortError(

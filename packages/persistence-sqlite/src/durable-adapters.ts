@@ -199,6 +199,14 @@ export class SqliteDurableAdapters {
           expectedRevision,
           revokedAt,
         }),
+      switchCapabilityVersion: (record, expectedRevision, switchedAt) =>
+        this.context.write("capability.switchVersion", {
+          ownerId,
+          agentId,
+          record,
+          expectedRevision,
+          switchedAt,
+        }),
       createExecutionHandle: (handle) => this.context.write("capability.createHandle", { handle }),
       getExecutionHandle: (handleRef) =>
         this.context.read("capability.getHandle", { ownerId, agentId, handleRef }),

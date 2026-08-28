@@ -920,6 +920,7 @@ export function capabilityPortConformance(
             delegatedContextRefs: ["payload-capability-context-01"],
             secretHandleRefs: ["secret-handle-01"],
             dataClassification: "private",
+            resourceCeiling: null,
           }),
         );
         expect(observed).toEqual(events);
@@ -952,6 +953,11 @@ export function capabilityRegistryStorePortConformance(
       declaration,
       pendingDeclaration: null,
       permissionExpansion: false,
+      runtimeQualification: null,
+      pendingUpdateAssessment: null,
+      rollbackDeclaration: null,
+      rollbackQualification: null,
+      lastVersionTransition: null,
       approvalRefs: [],
       discoveredAt: T0,
       updatedAt: T0,
@@ -992,6 +998,40 @@ export function capabilityRegistryStorePortConformance(
         await port.createExecutionHandle(handle);
         expect(await port.getExecutionHandle(handle.ref)).toEqual(handle);
         expect(await port.revokeExecutionHandle(handle.ref, T1)).toMatchObject({ revokedAt: T1 });
+      });
+    });
+
+    it("atomically switches version authority and revokes handles bound to the previous version", async () => {
+      await withPort(harness, async (port) => {
+        const active = { ...record, lifecycle: "active" as const };
+        await port.create(active);
+        const handle = {
+          ref: "capability-handle-version-switch-01",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          capabilityRef: declaration.ref,
+          capabilityVersion: declaration.version,
+          authorization: { type: "grant" as const, ref: "grant-version-switch-01" },
+          operations: ["search"],
+          inputRefs: ["payload-input-01"],
+          delegatedContextRefs: [],
+          secretRefs: [],
+          maxDataClassification: "private" as const,
+          issuedAt: T0,
+          expiresAt: T2,
+          revokedAt: null,
+        };
+        await port.createExecutionHandle(handle);
+        expect(port.switchCapabilityVersion).toBeTypeOf("function");
+        const switched = {
+          ...active,
+          revision: 2,
+          declaration: { ...declaration, version: "1.1.0", integrity: `sha256:${"b".repeat(64)}` },
+          updatedAt: T1,
+        };
+        await expect(port.switchCapabilityVersion?.(switched, 1, T1)).resolves.toEqual(switched);
+        await expect(port.getExecutionHandle(handle.ref)).resolves.toMatchObject({ revokedAt: T1 });
       });
     });
   });

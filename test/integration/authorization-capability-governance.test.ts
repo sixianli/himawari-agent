@@ -15,6 +15,7 @@ import {
   validateGovernedActionIntent,
   type ActionKind,
   type ActionRiskLevel,
+  type CapabilityArtifactVerifierPort,
   type CapabilityManifest,
   type GovernedActionIntent,
   type GovernedGrantScope,
@@ -186,10 +187,43 @@ function intent(input: {
   return base;
 }
 
-async function activeCapability() {
+async function activeCapability(artifacts?: CapabilityArtifactVerifierPort) {
   const clock = new ManualClock(T0);
   const store = new InMemoryCapabilityRegistryStore();
-  const lifecycle = new CapabilityLifecycleService({ store, clock });
+  const lifecycle = new CapabilityLifecycleService({
+    store,
+    clock,
+    artifacts: artifacts ?? {
+      verify: async (candidate) => ({
+        verificationVersion: "capability-artifact-verification.v1",
+        artifactDigest: candidate.integrity,
+        signatureStatus: candidate.artifact.signatureStatus,
+        signerRef: candidate.artifact.signerRef,
+        verified: true,
+        reasonCodes: [],
+        verifiedAt: clock.now(),
+      }),
+    },
+    runtime: {
+      qualify: async (candidate) => ({
+        qualificationVersion: "capability-runtime-qualification.v1",
+        platform: "darwin",
+        runtimeIdentity: "deterministic-governance-fixture",
+        productionSuitable: true,
+        artifactDigest: candidate.integrity,
+        enforcement: {
+          filesystem: true,
+          network: true,
+          processes: true,
+          secrets: true,
+          resourceCeilings: true,
+          termination: true,
+        },
+        reasonCodes: [],
+        checkedAt: clock.now(),
+      }),
+    },
+  });
   await lifecycle.discover(manifest());
   await lifecycle.reviewRequired("governed-tool");
   await lifecycle.recordSourceReview("governed-tool", { reviewer: "owner-review", reviewedAt: T0 });
@@ -670,5 +704,225 @@ describe("S4 authorization and capability governance", () => {
         artifact: { ...manifest("mcp").artifact, signatureStatus: "invalid" },
       }),
     ).toThrowError(expect.objectContaining({ code: PORT_ERROR_CODES.INVALID_OPERATION }));
+  });
+
+  it("keeps current authority live during a compatible automatic update, switches atomically, and rolls back only the version", async () => {
+    const capability = await activeCapability();
+    const current = manifest();
+    const candidate: CapabilityManifest = {
+      ...current,
+      version: "1.1.0",
+      source: { ...current.source, locator: "tool:governed-tool:1.1.0" },
+      integrity: `sha256:${"b".repeat(64)}`,
+      artifact: { ...current.artifact, digest: `sha256:${"b".repeat(64)}` },
+      health: { status: "unknown", checkedAt: null },
+      reviewedBy: null,
+      reviewedAt: null,
+    };
+    const handle = await capability.store.createExecutionHandle({
+      ref: "capability-handle-before-update",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      capabilityRef: current.ref,
+      capabilityVersion: current.version,
+      authorization: { type: "policy", ref: "policy-compatible-update" },
+      operations: ["read"],
+      inputRefs: ["payload:update-input"],
+      delegatedContextRefs: [],
+      secretRefs: [],
+      maxDataClassification: "private",
+      issuedAt: T0,
+      expiresAt: T2,
+      revokedAt: null,
+    });
+
+    const proposed = await capability.lifecycle.proposeUpdate(current.ref, candidate, {
+      policyRef: "owner-policy-compatible-update",
+      allowAutomaticCompatibleUpdates: true,
+    });
+    expect(proposed).toMatchObject({
+      lifecycle: "update_approved",
+      declaration: { version: "1.0.0" },
+      pendingUpdateAssessment: {
+        disposition: "automatic",
+        risk: "LOW",
+        integrityChanged: true,
+        executableCodeChanged: false,
+        expansions: [],
+      },
+    });
+    await expect(capability.lifecycle.authorizedManifests()).resolves.toMatchObject([
+      { version: "1.0.0" },
+    ]);
+    await expect(capability.store.getExecutionHandle(handle.ref)).resolves.toMatchObject({
+      revokedAt: null,
+    });
+
+    const activated = await capability.lifecycle.activateUpdate(current.ref);
+    expect(activated).toMatchObject({
+      lifecycle: "active",
+      declaration: { version: "1.1.0", health: { status: "healthy" } },
+      rollbackDeclaration: { version: "1.0.0" },
+      lastVersionTransition: {
+        outcome: "activated",
+        externalEffectsRolledBack: false,
+        productStateRolledBack: false,
+      },
+    });
+    await expect(capability.store.getExecutionHandle(handle.ref)).resolves.toMatchObject({
+      revokedAt: T0,
+    });
+
+    const rolledBack = await capability.lifecycle.rollback(current.ref);
+    expect(rolledBack).toMatchObject({
+      lifecycle: "active",
+      declaration: { version: "1.0.0" },
+      rollbackDeclaration: null,
+      lastVersionTransition: {
+        fromVersion: "1.1.0",
+        toVersion: "1.0.0",
+        outcome: "rolled_back",
+        externalEffectsRolledBack: false,
+        productStateRolledBack: false,
+      },
+    });
+  });
+
+  it("requires explicit approval for scope expansion or new executable code and rejection preserves the active version", async () => {
+    const capability = await activeCapability();
+    const current = manifest();
+    const expanded: CapabilityManifest = {
+      ...current,
+      version: "1.1.0",
+      integrity: `sha256:${"b".repeat(64)}`,
+      artifact: { ...current.artifact, digest: `sha256:${"b".repeat(64)}` },
+      operations: [...current.operations, "write"],
+    };
+    const proposed = await capability.lifecycle.proposeUpdate(current.ref, expanded, {
+      policyRef: "owner-policy-compatible-update",
+      allowAutomaticCompatibleUpdates: true,
+    });
+    expect(proposed).toMatchObject({
+      lifecycle: "update_proposed",
+      declaration: { version: "1.0.0" },
+      pendingUpdateAssessment: {
+        disposition: "approval_required",
+        risk: "HIGH",
+        expansions: ["operation:write"],
+      },
+    });
+    const rejected = await capability.lifecycle.rejectUpdate(current.ref);
+    expect(rejected).toMatchObject({
+      lifecycle: "active",
+      declaration: { version: "1.0.0" },
+      pendingDeclaration: null,
+      lastVersionTransition: { outcome: "rejected" },
+    });
+
+    const executable = manifest("mcp", "executable-update");
+    const store = new InMemoryCapabilityRegistryStore();
+    const clock = new ManualClock(T0);
+    const lifecycle = new CapabilityLifecycleService({
+      store,
+      clock,
+      artifacts: {
+        verify: async (value) => ({
+          verificationVersion: "capability-artifact-verification.v1",
+          artifactDigest: value.integrity,
+          signatureStatus: value.artifact.signatureStatus,
+          signerRef: value.artifact.signerRef,
+          verified: true,
+          reasonCodes: [],
+          verifiedAt: clock.now(),
+        }),
+      },
+      runtime: {
+        qualify: async (value) => ({
+          qualificationVersion: "capability-runtime-qualification.v1",
+          platform: "linux",
+          runtimeIdentity: "mcp-fixture",
+          productionSuitable: true,
+          artifactDigest: value.integrity,
+          enforcement: {
+            filesystem: true,
+            network: true,
+            processes: true,
+            secrets: true,
+            resourceCeilings: true,
+            termination: true,
+          },
+          reasonCodes: [],
+          checkedAt: clock.now(),
+        }),
+      },
+    });
+    await lifecycle.discover(executable);
+    await lifecycle.reviewRequired(executable.ref);
+    await lifecycle.recordSourceReview(executable.ref, { reviewer: "owner", reviewedAt: T0 });
+    await lifecycle.approveInstallation(executable.ref, "approval:install-mcp");
+    await lifecycle.activate(executable.ref);
+    const executableCandidate: CapabilityManifest = {
+      ...executable,
+      version: "1.0.1",
+      integrity: `sha256:${"c".repeat(64)}`,
+      artifact: { ...executable.artifact, digest: `sha256:${"c".repeat(64)}` },
+    };
+    await expect(
+      lifecycle.proposeUpdate(executable.ref, executableCandidate, {
+        policyRef: "owner-policy-compatible-update",
+        allowAutomaticCompatibleUpdates: true,
+      }),
+    ).resolves.toMatchObject({
+      lifecycle: "update_proposed",
+      pendingUpdateAssessment: {
+        disposition: "approval_required",
+        risk: "CRITICAL",
+        integrityChanged: true,
+        executableCodeChanged: true,
+        reasonCodes: ["CAPABILITY_UPDATE_EXECUTABLE_CODE_CHANGED"],
+      },
+    });
+  });
+
+  it("fails closed before a version switch when the rollback artifact is no longer verifiable", async () => {
+    let rejectRollbackArtifact = false;
+    const capability = await activeCapability({
+      verify: async (candidate) => ({
+        verificationVersion: "capability-artifact-verification.v1",
+        artifactDigest: candidate.integrity,
+        signatureStatus: candidate.artifact.signatureStatus,
+        signerRef: candidate.artifact.signerRef,
+        verified: !(rejectRollbackArtifact && candidate.version === "1.0.0"),
+        reasonCodes:
+          rejectRollbackArtifact && candidate.version === "1.0.0"
+            ? ["CAPABILITY_ARTIFACT_DIGEST_MISMATCH"]
+            : [],
+        verifiedAt: T0,
+      }),
+    });
+    const current = manifest();
+    const candidate: CapabilityManifest = {
+      ...current,
+      version: "1.1.0",
+      integrity: `sha256:${"b".repeat(64)}`,
+      artifact: { ...current.artifact, digest: `sha256:${"b".repeat(64)}` },
+    };
+    await capability.lifecycle.proposeUpdate(current.ref, candidate, {
+      policyRef: "owner-policy-compatible-update",
+      allowAutomaticCompatibleUpdates: true,
+    });
+    rejectRollbackArtifact = true;
+    await expect(capability.lifecycle.activateUpdate(current.ref)).rejects.toMatchObject({
+      code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+    });
+    await expect(capability.store.get(current.ref)).resolves.toMatchObject({
+      lifecycle: "update_approved",
+      declaration: { version: "1.0.0" },
+      pendingDeclaration: { version: "1.1.0" },
+    });
+    await expect(capability.lifecycle.authorizedManifests()).resolves.toMatchObject([
+      { version: "1.0.0" },
+    ]);
   });
 });

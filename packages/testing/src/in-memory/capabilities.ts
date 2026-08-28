@@ -120,6 +120,16 @@ export class InMemoryCapabilityRegistryStore
     return saved;
   }
 
+  async switchCapabilityVersion(
+    record: CapabilityRegistryRecord,
+    expectedRevision: number,
+    switchedAt: string,
+  ): Promise<CapabilityRegistryRecord> {
+    const saved = await this.save(record, expectedRevision);
+    await this.revokeCapabilityHandles(record.ref, switchedAt);
+    return saved;
+  }
+
   async createExecutionHandle(
     handle: CapabilityExecutionHandle,
   ): Promise<CapabilityExecutionHandle> {

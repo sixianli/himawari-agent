@@ -283,7 +283,9 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
       },
     };
     let progressEvents = 0;
-    const iterator = this.options.service.execute(v1Request)[Symbol.asyncIterator]();
+    const iterator = this.options.service
+      .execute(v1Request, request.payload.resourceCeiling)
+      [Symbol.asyncIterator]();
     let timer: NodeJS.Timeout | undefined;
     const deadline = new Promise<"timeout">((resolve) => {
       timer = setTimeout(() => resolve("timeout"), request.payload.resourceCeiling.maxWallTimeMs);

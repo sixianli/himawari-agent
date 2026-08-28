@@ -5,6 +5,7 @@ import type {
   ConsumeCapabilityExecutionHandleInput,
   GovernedCapabilityExecutionHandle,
 } from "../ports/capabilities.js";
+import { capabilityLifecycleHasActiveAuthority } from "../ports/capabilities.js";
 import type { PayloadRef } from "../ports/common.js";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
@@ -57,7 +58,7 @@ export class CapabilityHandleService {
     const now = this.dependencies.clock.now();
     if (
       !record ||
-      record.lifecycle !== "active" ||
+      !capabilityLifecycleHasActiveAuthority(record.lifecycle) ||
       !manifest ||
       manifest.manifestVersion !== "capability.v2" ||
       manifest.health.status !== "healthy" ||
@@ -118,7 +119,7 @@ export class CapabilityHandleService {
       !current ||
       current.handleVersion !== "capability-handle.v2" ||
       !record ||
-      record.lifecycle !== "active" ||
+      !capabilityLifecycleHasActiveAuthority(record.lifecycle) ||
       record.declaration.version !== current.capabilityVersion ||
       current.revokedAt !== null ||
       current.workerEndedAt !== null ||

@@ -304,6 +304,7 @@ describe("installable Node services and admin CLI", () => {
       externalDependencies: {
         "@earendil-works/pi-ai": "0.84.2",
         "@earendil-works/pi-coding-agent": "0.84.2",
+        "@modelcontextprotocol/client": "2.0.0",
       },
     });
     await expect(

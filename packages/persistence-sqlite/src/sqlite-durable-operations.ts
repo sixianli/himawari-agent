@@ -405,6 +405,16 @@ export class SqliteDurableOperations {
             revokedAt: string;
           },
         );
+      case "capability.switchVersion":
+        return this.switchCapabilityVersion(
+          payload as {
+            ownerId: string;
+            agentId: string;
+            record: CapabilityRegistryRecord;
+            expectedRevision: number;
+            switchedAt: string;
+          },
+        );
       case "capability.createHandle":
         return this.createCapabilityHandle(
           (payload as { handle: CapabilityExecutionHandle }).handle,
@@ -1801,6 +1811,26 @@ export class SqliteDurableOperations {
             job.revision,
           );
       }
+      return saved;
+    });
+    return transaction.immediate();
+  }
+
+  private switchCapabilityVersion(input: {
+    ownerId: string;
+    agentId: string;
+    record: CapabilityRegistryRecord;
+    expectedRevision: number;
+    switchedAt: string;
+  }): CapabilityRegistryRecord {
+    const transaction = this.database.transaction(() => {
+      const saved = this.saveCapability(input);
+      this.revokeCapabilityHandlesCore({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        capabilityRef: input.record.ref,
+        revokedAt: input.switchedAt,
+      });
       return saved;
     });
     return transaction.immediate();
