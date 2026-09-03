@@ -1,4 +1,10 @@
 import type { DataClassification } from "@himawari-agent/gateway-contracts";
+import type { AgentId, OwnerId } from "@himawari-agent/domain";
+
+export interface AutonomyScope {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+}
 
 export type { DataClassification };
 

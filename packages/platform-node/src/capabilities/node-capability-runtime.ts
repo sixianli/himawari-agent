@@ -135,37 +135,41 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
   }
 
   async *invoke(request: CapabilityInvocationRequest): AsyncIterable<CapabilityInvocationEvent> {
-    const manifest = (await this.#options.manifests.listActive()).find(
-      ({ ref }) => ref === request.capabilityRef,
-    );
-    if (!manifest || manifest.health.status !== "healthy") {
-      yield failed(
-        request,
-        NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_NOT_ACTIVE,
-        this.#options.clock.now(),
-      );
-      return;
-    }
-    if (!manifest.operations.includes(request.operation)) {
-      yield failed(
-        request,
-        NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_OPERATION_UNSUPPORTED,
-        this.#options.clock.now(),
-      );
-      return;
-    }
-    if (!request.resourceCeiling) {
-      yield failed(
-        request,
-        NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_RESOURCE_CEILING_MISSING,
-        this.#options.clock.now(),
-      );
-      return;
-    }
     const abort = new AbortController();
+    if (this.#cancellations.has(request.invocationId))
+      throw new Error("CAPABILITY_INVOCATION_ALREADY_RUNNING");
     this.#cancellations.set(request.invocationId, abort);
     try {
+      const manifest = (await this.#options.manifests.listActive()).find(
+        ({ ref }) => ref === request.capabilityRef,
+      );
+      if (!manifest || manifest.health.status !== "healthy") {
+        yield failed(
+          request,
+          NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_NOT_ACTIVE,
+          this.#options.clock.now(),
+        );
+        return;
+      }
+      if (!manifest.operations.includes(request.operation)) {
+        yield failed(
+          request,
+          NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_OPERATION_UNSUPPORTED,
+          this.#options.clock.now(),
+        );
+        return;
+      }
+      if (!request.resourceCeiling) {
+        yield failed(
+          request,
+          NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_RESOURCE_CEILING_MISSING,
+          this.#options.clock.now(),
+        );
+        return;
+      }
+      abort.signal.throwIfAborted();
       const input = await this.readInput(request);
+      abort.signal.throwIfAborted();
       if (manifest.runtime.kind === "program") {
         yield* this.invokeProgram(manifest, request, input, abort.signal);
       } else if (manifest.runtime.kind === "mcp") {
@@ -180,11 +184,19 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
         );
       }
     } catch {
-      yield failed(
-        request,
-        NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_INPUT_INVALID,
-        this.#options.clock.now(),
-      );
+      if (abort.signal.aborted)
+        yield {
+          type: "capability.cancelled",
+          invocationId: request.invocationId,
+          reasonCode: "CANCELLED",
+          occurredAt: this.#options.clock.now(),
+        };
+      else
+        yield failed(
+          request,
+          NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_INPUT_INVALID,
+          this.#options.clock.now(),
+        );
     } finally {
       this.#cancellations.delete(request.invocationId);
     }
@@ -324,6 +336,7 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
       );
       return;
     }
+    signal.throwIfAborted();
     const transport = new StdioClientTransport({
       command: launch.command,
       args: [...launch.args],
@@ -500,6 +513,7 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
       );
       return;
     }
+    signal.throwIfAborted();
     const timeout = AbortSignal.timeout(request.resourceCeiling.maxWallTimeMs);
     const combined = AbortSignal.any([signal, timeout]);
     let response: Response;

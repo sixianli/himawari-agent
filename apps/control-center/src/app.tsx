@@ -46,13 +46,18 @@ const titleIds: Readonly<Record<SurfaceId, MessageId>> = {
   "authorizations-grants": "authorizations.title",
   "capabilities-adapters": "capabilities.title",
   "health-deployment": "health.title",
+  "host-workspaces": "hostWorkspaces.title",
+  improvements: "improvements.title",
   "inbox-digest": "inbox.title",
   memory: "memory.title",
+  reflection: "reflection.title",
   "sessions-devices": "sessions.title",
   settings: "settings.title",
   tasks: "tasks.title",
   threads: "threads.title",
   trace: "trace.title",
+  suggestions: "suggestions.title",
+  workers: "workers.title",
 };
 
 function statusMessageId(status: MutationStatus | null): MessageId {
@@ -88,6 +93,11 @@ function queryForSurface(
     case "trace":
     case "sessions-devices":
     case "health-deployment":
+    case "host-workspaces":
+    case "suggestions":
+    case "reflection":
+    case "workers":
+    case "improvements":
     case "capabilities-adapters":
     case "authorizations-grants":
     case "settings":

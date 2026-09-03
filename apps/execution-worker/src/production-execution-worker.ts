@@ -2,6 +2,7 @@ import type {
   ExecutionTransportPort,
   ExecutionWorkerEvent,
   ExecutionWorkerService,
+  CapabilityExecutionHandle,
 } from "@himawari-agent/application";
 import {
   EXECUTION_SCHEMA_VERSION,
@@ -25,6 +26,8 @@ export const PRODUCTION_WORKER_ERROR_CODES = Object.freeze({
   STALE_FENCE: "WORKER_STALE_FENCE",
   DELEGATION_INVALID: "WORKER_DELEGATION_INVALID",
   DELEGATION_REQUIRED: "WORKER_DELEGATION_REQUIRED",
+  DEADLINE_EXPIRED: "WORKER_DEADLINE_EXPIRED",
+  SUBTASK_NOT_ACTIVE: "WORKER_SUBTASK_NOT_ACTIVE",
 } as const);
 
 type ProductionWorkerErrorCode =
@@ -56,9 +59,11 @@ export interface ProductionExecutionWorkerOptions {
   readonly fencingToken: number;
   readonly maximumResourceCeiling: ResourceCeiling;
   readonly adapters: readonly RegisteredWorkerAdapter[];
+  readonly hostOperations?: RegisteredHostOperationAdapter;
+  readonly subtasks?: RegisteredWorkerSubtaskAdapter;
   readonly delegations?: {
     accept(handle: DelegatedCapabilityHandleV2): unknown;
-    getExecutionHandle(handleRef: string): Promise<unknown>;
+    getExecutionHandle(handleRef: string): Promise<CapabilityExecutionHandle | undefined>;
     clear(): void;
   };
   readonly now: () => string;
@@ -71,6 +76,47 @@ type DelegateRequest = Extract<ExecutionV2Request, { type: "work.delegate" }>;
 type ExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
 type CancelRequest = Extract<ExecutionV2Request, { type: "work.cancel" }>;
 type ReconcileRequest = Extract<ExecutionV2Request, { type: "work.reconcile" }>;
+type HostOperationRequest = Extract<ExecutionV2Request, { type: "host.operation.execute" }>;
+type WorkerSubtaskRequest = Extract<ExecutionV2Request, { type: "worker.subtask.execute" }>;
+
+export interface RegisteredHostOperationAdapter {
+  readonly operations: readonly HostOperationRequest["payload"]["operation"][];
+  execute(request: HostOperationRequest): Promise<{
+    readonly outcome: "succeeded" | "failed" | "result_unknown";
+    readonly outputRef: string | null;
+    readonly errorCode: string | null;
+    readonly fileObservationRefs: readonly string[];
+    readonly networkObservationRefs: readonly string[];
+  }>;
+}
+
+export interface RegisteredWorkerSubtaskAdapter {
+  readonly allowedModelRefs: readonly string[];
+  readonly maximumCostMicros: number;
+  readonly maximumDurationMs: number;
+  execute(
+    request: WorkerSubtaskRequest,
+    context: WorkerSubtaskExecutionContext,
+  ): Promise<{
+    readonly workerResultRef: string;
+    readonly actualModelRef: string;
+    readonly actualCostMicros: number;
+    readonly durationMs: number;
+  }>;
+}
+
+export interface WorkerSubtaskExecutionContext {
+  readonly signal: AbortSignal;
+  executeCapability(input: {
+    readonly invocationId: string;
+    readonly capabilityId: string;
+    readonly capabilityVersion: string;
+    readonly operation: string;
+    readonly inputRef: string;
+    readonly capabilityHandleRef: string;
+    readonly delegatedContextRefs: readonly string[];
+  }): AsyncIterable<ExecutionWorkerEvent>;
+}
 
 function withinCeiling(requested: ResourceCeiling, maximum: ResourceCeiling): boolean {
   return (
@@ -105,6 +151,10 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   private handshakeAgentInstanceId: string | null = null;
   private ready = true;
   private cursorSequence = 0;
+  private readonly activeSubtasks = new Map<
+    string,
+    { readonly request: WorkerSubtaskRequest; readonly controller: AbortController }
+  >();
 
   constructor(options: ProductionExecutionWorkerOptions) {
     this.options = options;
@@ -125,11 +175,48 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
       this.track(this.execute(parsed));
       return null;
     }
+    if (parsed.type === "host.operation.execute") {
+      if (this.isReplay(parsed, false)) return null;
+      this.assertDeadline(parsed.payload.deadlineAt);
+      if (
+        !this.options.hostOperations ||
+        !this.options.hostOperations.operations.includes(parsed.payload.operation)
+      ) {
+        throw new ProductionExecutionWorkerError(
+          PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED,
+        );
+      }
+      if (this.isReplay(parsed)) return null;
+      this.track(this.executeHostOperation(parsed));
+      return null;
+    }
+    if (parsed.type === "worker.subtask.execute") {
+      if (this.isReplay(parsed, false)) return null;
+      try {
+        await this.assertSubtaskExecutable(parsed);
+      } catch (error) {
+        this.assertReadyAndAuthoritative(parsed);
+        if (this.isReplay(parsed, false)) return null;
+        throw error;
+      }
+      this.assertReadyAndAuthoritative(parsed);
+      if (this.isReplay(parsed, false)) return null;
+      if (this.activeSubtasks.has(parsed.scope.workerRunId as string))
+        throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.DUPLICATE_CONFLICT);
+      if (this.isReplay(parsed)) return null;
+      this.track(this.executeSubtask(parsed));
+      return null;
+    }
     if (this.isReplay(parsed)) return null;
     if (parsed.type === "work.delegate") return this.delegate(parsed);
     if (parsed.type === "work.cancel") {
       this.track(this.cancel(parsed));
       return null;
+    }
+    if (parsed.type !== "work.reconcile") {
+      throw new ProductionExecutionWorkerError(
+        PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED,
+      );
     }
     this.track(this.reconcile(parsed));
     return null;
@@ -153,6 +240,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
 
   async shutdown(): Promise<void> {
     this.ready = false;
+    for (const { controller } of this.activeSubtasks.values()) controller.abort();
     await this.waitForIdle();
     this.options.delegations?.clear();
     this.handshakeAgentInstanceId = null;
@@ -272,6 +360,44 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     }
   }
 
+  private async assertSubtaskExecutable(request: WorkerSubtaskRequest): Promise<void> {
+    this.assertDeadline(request.payload.deadlineAt);
+    const adapter = this.options.subtasks;
+    if (
+      !adapter ||
+      !adapter.allowedModelRefs.includes(request.payload.selectedModelRef) ||
+      !request.payload.allowedModelRefs.every((model) =>
+        adapter.allowedModelRefs.includes(model),
+      ) ||
+      request.payload.maximumCostMicros > adapter.maximumCostMicros ||
+      request.payload.maximumDurationMs > adapter.maximumDurationMs ||
+      request.payload.maximumDurationMs > this.options.maximumResourceCeiling.maxWallTimeMs ||
+      request.payload.maximumProgressEvents > this.options.maximumResourceCeiling.maxProgressEvents
+    )
+      throw new ProductionExecutionWorkerError(
+        PRODUCTION_WORKER_ERROR_CODES.RESOURCE_CEILING_EXCEEDED,
+      );
+    if (!this.options.delegations)
+      throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.DELEGATION_REQUIRED);
+    await this.options.service.assertSubtaskDelegation({
+      scope: {
+        ownerId: request.scope.ownerId as string,
+        agentId: request.scope.agentId as string,
+        runId: request.scope.runId as string,
+        workerRunId: request.scope.workerRunId as string,
+      },
+      dataClassification: request.dataClassification,
+      capabilityHandleRefs: request.payload.capabilityHandleRefs,
+      deadlineAt: request.payload.deadlineAt,
+      authorityFence: request.scope.fencingToken,
+    });
+  }
+
+  private assertDeadline(deadlineAt: string): void {
+    if (this.options.now() >= deadlineAt)
+      throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.DEADLINE_EXPIRED);
+  }
+
   private isReplay(
     request: Exclude<
       ExecutionV2Request,
@@ -279,6 +405,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
       | ReadinessRequest
       | Extract<ExecutionV2Request, { type: "work.events.replay" }>
     >,
+    record = true,
   ): boolean {
     const fingerprint = executionV2MessageSchema.serialize(request);
     const byMessage = this.requestFingerprints.get(request.messageId);
@@ -290,8 +417,10 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
       throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.DUPLICATE_CONFLICT);
     }
     if (byMessage !== undefined || byIdempotency !== undefined) return true;
-    this.requestFingerprints.set(request.messageId, fingerprint);
-    this.idempotencyFingerprints.set(request.idempotencyKey, fingerprint);
+    if (record) {
+      this.requestFingerprints.set(request.messageId, fingerprint);
+      this.idempotencyFingerprints.set(request.idempotencyKey, fingerprint);
+    }
     return false;
   }
 
@@ -386,6 +515,18 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
 
   private async cancel(request: CancelRequest): Promise<void> {
     try {
+      const active = this.activeSubtasks.get(request.scope.workerRunId as string);
+      if (active && active.request.messageId === request.payload.targetRequestId) {
+        if (
+          active.request.scope.ownerId !== request.scope.ownerId ||
+          active.request.scope.agentId !== request.scope.agentId ||
+          active.request.scope.runId !== request.scope.runId
+        )
+          throw new ProductionExecutionWorkerError(
+            PRODUCTION_WORKER_ERROR_CODES.DELEGATION_INVALID,
+          );
+        active.controller.abort("WORKER_SUBTASK_CANCELLED");
+      }
       const event = await this.options.service.cancel({
         schemaVersion: EXECUTION_SCHEMA_VERSION,
         kind: "request",
@@ -407,6 +548,286 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     } catch (error) {
       this.appendFailure(request, errorCode(error));
     }
+  }
+
+  private async executeHostOperation(request: HostOperationRequest): Promise<void> {
+    try {
+      this.assertDeadline(request.payload.deadlineAt);
+      const adapter = this.options.hostOperations;
+      if (!adapter) throw new Error(PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED);
+      const result = await adapter.execute(request);
+      const event = executionV2MessageSchema.parse({
+        schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+        kind: "event",
+        type: "host.operation.result",
+        messageId: this.options.nextId("host-operation-result"),
+        correlationId: request.correlationId,
+        causationId: request.messageId,
+        dataClassification: request.dataClassification,
+        risk: request.risk,
+        authorizationRef: request.authorizationRef,
+        scope: request.scope,
+        payload: {
+          requestId: request.messageId,
+          operation: request.payload.operation,
+          cursor: this.nextCursor(),
+          sequence: this.nextSequence(request.messageId),
+          ...result,
+          completedAt: this.options.now(),
+        },
+      });
+      if (event.kind !== "event") throw new TypeError("Worker produced a non-event message");
+      this.eventsByCursor.push(event);
+    } catch (error) {
+      const event = executionV2MessageSchema.parse({
+        schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+        kind: "event",
+        type: "host.operation.result",
+        messageId: this.options.nextId("host-operation-result"),
+        correlationId: request.correlationId,
+        causationId: request.messageId,
+        dataClassification: request.dataClassification,
+        risk: request.risk,
+        authorizationRef: request.authorizationRef,
+        scope: request.scope,
+        payload: {
+          requestId: request.messageId,
+          operation: request.payload.operation,
+          cursor: this.nextCursor(),
+          sequence: this.nextSequence(request.messageId),
+          outcome: "failed",
+          outputRef: null,
+          errorCode: errorCode(error),
+          fileObservationRefs: [],
+          networkObservationRefs: [],
+          completedAt: this.options.now(),
+        },
+      });
+      if (event.kind !== "event") throw new TypeError("Worker produced a non-event message");
+      this.eventsByCursor.push(event);
+    }
+  }
+
+  private async executeSubtask(request: WorkerSubtaskRequest): Promise<void> {
+    const controller = new AbortController();
+    const workerRunId = request.scope.workerRunId as string;
+    this.activeSubtasks.set(workerRunId, { request, controller });
+    const remainingMs = Math.min(
+      request.payload.maximumDurationMs,
+      Date.parse(request.payload.deadlineAt) - Date.parse(this.options.now()),
+    );
+    const timer = setTimeout(() => controller.abort(), Math.max(0, remainingMs));
+    timer.unref();
+    try {
+      const adapter = this.options.subtasks;
+      if (!adapter) throw new Error(PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED);
+      this.assertReadyAndAuthoritative(request);
+      this.assertDeadline(request.payload.deadlineAt);
+      const cancelled = new Promise<never>((_resolve, reject) => {
+        controller.signal.addEventListener(
+          "abort",
+          () =>
+            reject(
+              new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.DEADLINE_EXPIRED),
+            ),
+          { once: true },
+        );
+      });
+      const result = await Promise.race([
+        adapter.execute(request, this.subtaskContext(request, controller)),
+        cancelled,
+      ]);
+      if (controller.signal.aborted)
+        throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.DEADLINE_EXPIRED);
+      this.assertDeadline(request.payload.deadlineAt);
+      if (
+        result.actualModelRef !== request.payload.selectedModelRef ||
+        result.actualCostMicros > request.payload.maximumCostMicros ||
+        result.durationMs > request.payload.maximumDurationMs
+      )
+        throw new Error(PRODUCTION_WORKER_ERROR_CODES.RESOURCE_CEILING_EXCEEDED);
+      this.appendSubtaskResult(request, {
+        outcome: "succeeded",
+        workerResultRef: result.workerResultRef,
+        errorCode: null,
+        actualModelRef: result.actualModelRef,
+        actualCostMicros: result.actualCostMicros,
+        durationMs: result.durationMs,
+      });
+    } catch (error) {
+      this.appendSubtaskResult(request, {
+        outcome: controller.signal.reason === "WORKER_SUBTASK_CANCELLED" ? "cancelled" : "failed",
+        workerResultRef: null,
+        errorCode:
+          controller.signal.reason === "WORKER_SUBTASK_CANCELLED"
+            ? "WORKER_SUBTASK_CANCELLED"
+            : errorCode(error),
+        actualModelRef: null,
+        actualCostMicros: 0,
+        durationMs: 0,
+      });
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+      if (this.activeSubtasks.get(workerRunId)?.controller === controller)
+        this.activeSubtasks.delete(workerRunId);
+    }
+  }
+
+  private subtaskContext(
+    request: WorkerSubtaskRequest,
+    controller: AbortController,
+  ): WorkerSubtaskExecutionContext {
+    const worker = this;
+    let progressEvents = 0;
+    const invocations = new Set<string>();
+    return Object.freeze({
+      signal: controller.signal,
+      async *executeCapability(
+        input: Parameters<WorkerSubtaskExecutionContext["executeCapability"]>[0],
+      ) {
+        const assertActive = () => {
+          worker.assertReadyAndAuthoritative(request);
+          worker.assertDeadline(request.payload.deadlineAt);
+          if (
+            controller.signal.aborted ||
+            worker.activeSubtasks.get(request.scope.workerRunId as string)?.controller !==
+              controller
+          )
+            throw new ProductionExecutionWorkerError(
+              PRODUCTION_WORKER_ERROR_CODES.SUBTASK_NOT_ACTIVE,
+            );
+          if (
+            !request.payload.capabilityHandleRefs.includes(input.capabilityHandleRef) ||
+            !input.delegatedContextRefs.every((ref) =>
+              request.payload.delegatedContextRefs.includes(ref),
+            )
+          )
+            throw new ProductionExecutionWorkerError(
+              PRODUCTION_WORKER_ERROR_CODES.DELEGATION_INVALID,
+            );
+        };
+        assertActive();
+        if (invocations.has(input.invocationId))
+          throw new ProductionExecutionWorkerError(
+            PRODUCTION_WORKER_ERROR_CODES.DUPLICATE_CONFLICT,
+          );
+        invocations.add(input.invocationId);
+        const invocationId = `${request.messageId}:tool:${input.invocationId}`;
+        const cancel = () => {
+          void worker.options.service
+            .cancel({
+              schemaVersion: EXECUTION_SCHEMA_VERSION,
+              kind: "request",
+              type: "work.cancel",
+              messageId: `${invocationId}:cancel`,
+              correlationId: request.correlationId,
+              causationId: request.messageId,
+              dataClassification: request.dataClassification,
+              scope: {
+                ownerId: request.scope.ownerId as string,
+                agentId: request.scope.agentId as string,
+                runId: request.scope.runId as string,
+                workerRunId: request.scope.workerRunId as string,
+              },
+              idempotencyKey: `${request.idempotencyKey}:tool:${input.invocationId}:cancel`,
+              payload: {
+                targetRequestId: invocationId,
+                reasonCode: "SUBTASK_ENDED",
+                requestedAt: worker.options.now(),
+              },
+            })
+            .catch(() => undefined);
+        };
+        controller.signal.addEventListener("abort", cancel, { once: true });
+        try {
+          for await (const event of worker.options.service.execute(
+            {
+              schemaVersion: EXECUTION_SCHEMA_VERSION,
+              kind: "request",
+              type: "work.execute",
+              messageId: invocationId,
+              correlationId: request.correlationId,
+              causationId: request.messageId,
+              dataClassification: request.dataClassification,
+              scope: {
+                ownerId: request.scope.ownerId as string,
+                agentId: request.scope.agentId as string,
+                runId: request.scope.runId as string,
+                workerRunId: request.scope.workerRunId as string,
+              },
+              idempotencyKey: `${request.idempotencyKey}:tool:${input.invocationId}`,
+              payload: {
+                capabilityId: input.capabilityId,
+                capabilityVersion: input.capabilityVersion,
+                operation: input.operation,
+                inputRef: input.inputRef,
+                capabilityHandleRef: input.capabilityHandleRef,
+                delegatedContextRefs: input.delegatedContextRefs,
+                secretRefs: [],
+                requestedAt: worker.options.now(),
+                deadlineAt: request.payload.deadlineAt,
+              },
+            },
+            {
+              ...worker.options.maximumResourceCeiling,
+              maxWallTimeMs: request.payload.maximumDurationMs,
+              maxProgressEvents: request.payload.maximumProgressEvents,
+            },
+            assertActive,
+          )) {
+            assertActive();
+            if (
+              event.type === "work.progress" &&
+              ++progressEvents > request.payload.maximumProgressEvents
+            ) {
+              controller.abort();
+              throw new ProductionExecutionWorkerError(
+                PRODUCTION_WORKER_ERROR_CODES.RESOURCE_CEILING_EXCEEDED,
+              );
+            }
+            yield event;
+          }
+        } finally {
+          controller.signal.removeEventListener("abort", cancel);
+        }
+      },
+    });
+  }
+
+  private appendSubtaskResult(
+    request: WorkerSubtaskRequest,
+    result: {
+      readonly outcome: "succeeded" | "failed" | "cancelled";
+      readonly workerResultRef: string | null;
+      readonly errorCode: string | null;
+      readonly actualModelRef: string | null;
+      readonly actualCostMicros: number;
+      readonly durationMs: number;
+    },
+  ): void {
+    const event = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "event",
+      type: "worker.subtask.result",
+      messageId: this.options.nextId("worker-subtask-result"),
+      correlationId: request.correlationId,
+      causationId: request.messageId,
+      dataClassification: request.dataClassification,
+      risk: request.risk,
+      authorizationRef: request.authorizationRef,
+      scope: request.scope,
+      payload: {
+        requestId: request.messageId,
+        delegationId: request.payload.delegationId,
+        cursor: this.nextCursor(),
+        sequence: this.nextSequence(request.messageId),
+        ...result,
+        completedAt: this.options.now(),
+      },
+    });
+    if (event.kind !== "event") throw new TypeError("Worker produced a non-event message");
+    this.eventsByCursor.push(event);
   }
 
   private async reconcile(request: ReconcileRequest): Promise<void> {

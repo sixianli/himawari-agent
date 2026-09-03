@@ -63,6 +63,7 @@ export class ExecutionWorkerService {
   async *execute(
     request: ExecuteWorkRequest,
     resourceCeiling: CapabilityResourceCeiling | null = null,
+    assertCurrentAuthority?: () => void,
   ): AsyncIterable<ExecutionWorkerEvent> {
     const cancellation = this.cancellations.get(request.messageId);
     if (cancellation) {
@@ -74,12 +75,15 @@ export class ExecutionWorkerService {
       return;
     }
 
+    assertCurrentAuthority?.();
     const handle = await this.requireHandle(request.payload.capabilityHandleRef);
     this.assertDelegation(request, handle);
+    assertCurrentAuthority?.();
     await this.consumeGovernedHandle(request, handle);
     const issuedSecretHandles: string[] = [];
     try {
       for (const secret of request.payload.secretRefs) {
+        assertCurrentAuthority?.();
         const issued = await this.dependencies.secrets.issueHandle({
           ownerId: createOwnerId(request.scope.ownerId),
           agentId: createAgentId(request.scope.agentId),
@@ -94,6 +98,7 @@ export class ExecutionWorkerService {
       }
 
       let terminal = false;
+      assertCurrentAuthority?.();
       for await (const event of this.dependencies.capability.invoke({
         invocationId: request.messageId,
         ownerId: createOwnerId(request.scope.ownerId),
@@ -148,6 +153,50 @@ export class ExecutionWorkerService {
       for (const handleRef of issuedSecretHandles) {
         await this.dependencies.secrets.revokeHandle(handleRef, this.dependencies.clock.now());
       }
+    }
+  }
+
+  async assertSubtaskDelegation(input: {
+    readonly scope: ExecuteWorkRequest["scope"];
+    readonly dataClassification: ExecuteWorkRequest["dataClassification"];
+    readonly capabilityHandleRefs: readonly string[];
+    readonly deadlineAt: string;
+    readonly authorityFence: number;
+  }): Promise<void> {
+    if (this.dependencies.clock.now() >= input.deadlineAt)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Worker subtask deadline expired",
+      );
+    if (
+      !this.dependencies.authorityFence ||
+      this.dependencies.authorityFence() !== input.authorityFence
+    )
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Worker subtask authority changed",
+      );
+    for (const ref of input.capabilityHandleRefs) {
+      const handle = await this.requireHandle(ref);
+      const governed = handle as Partial<GovernedCapabilityExecutionHandle>;
+      if (
+        handle.ownerId !== input.scope.ownerId ||
+        handle.agentId !== input.scope.agentId ||
+        handle.runId !== input.scope.runId ||
+        CLASSIFICATION_RANK[input.dataClassification] >
+          CLASSIFICATION_RANK[handle.maxDataClassification] ||
+        governed.handleVersion !== "capability-handle.v2" ||
+        governed.authorityFence !== input.authorityFence ||
+        governed.workerEndedAt !== null ||
+        governed.uses === undefined ||
+        governed.maxUses === undefined ||
+        governed.uses >= governed.maxUses
+      )
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "Worker subtask exceeds delegated authority",
+        );
+      await this.assertGovernedAuthorization(handle);
     }
   }
 
@@ -287,20 +336,7 @@ export class ExecutionWorkerService {
         `Execution request ${request.messageId} cannot revalidate its governed Handle`,
       );
     }
-    if (handle.authorization.type === "grant") {
-      const grants = await this.dependencies.authorization.listGrants(
-        handle.ownerId,
-        handle.agentId,
-      );
-      const grant = grants.find(({ id }) => id === handle.authorization.ref);
-      const now = this.dependencies.clock.now();
-      if (!grant || grant.revokedAt !== null || now < grant.validFrom || now >= grant.expiresAt) {
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.HANDLE_REVOKED,
-          `Grant for Capability Handle ${handle.ref} is no longer active`,
-        );
-      }
-    }
+    await this.assertGovernedAuthorization(handle);
     await this.dependencies.handles.consumeExecutionHandle({
       handleRef: handle.ref,
       expectedRevision: governed.revision,
@@ -314,6 +350,28 @@ export class ExecutionWorkerService {
       idempotencyKey: request.idempotencyKey,
       consumedAt: this.dependencies.clock.now(),
     });
+  }
+
+  private async assertGovernedAuthorization(handle: CapabilityExecutionHandle): Promise<void> {
+    if (handle.authorization.type === "grant") {
+      if (!this.dependencies.authorization)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "Worker cannot revalidate delegated Grant",
+        );
+      const grants = await this.dependencies.authorization.listGrants(
+        handle.ownerId,
+        handle.agentId,
+      );
+      const grant = grants.find(({ id }) => id === handle.authorization.ref);
+      const now = this.dependencies.clock.now();
+      if (!grant || grant.revokedAt !== null || now < grant.validFrom || now >= grant.expiresAt) {
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.HANDLE_REVOKED,
+          `Grant for Capability Handle ${handle.ref} is no longer active`,
+        );
+      }
+    }
   }
 
   private eventEnvelope<

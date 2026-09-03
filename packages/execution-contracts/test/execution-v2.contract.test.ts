@@ -9,6 +9,8 @@ import messages from "./fixtures/v2/messages.json" with { type: "json" };
 
 const executeMessage = messages.find(({ type }) => type === "work.execute");
 if (!executeMessage) throw new TypeError("work.execute fixture is missing");
+const hostOperationMessage = messages.find(({ type }) => type === "host.operation.execute");
+if (!hostOperationMessage) throw new TypeError("host.operation.execute fixture is missing");
 
 const forbiddenKeys = new Set([
   "apiKey",
@@ -96,6 +98,21 @@ describe("Execution v2 fail-closed validation", () => {
         },
       },
     ],
+    [
+      "permanent deletion without recent authentication",
+      {
+        ...hostOperationMessage,
+        payload: { ...hostOperationMessage.payload, recentAuthenticationRef: null },
+      },
+    ],
+    [
+      "host operation stale fence",
+      {
+        ...hostOperationMessage,
+        scope: { ...hostOperationMessage.scope, fencingToken: 0 },
+      },
+    ],
+    ["push host operation is absent", { ...hostOperationMessage, type: "host.workspace.push" }],
     ["unknown message type", { ...messages[0], type: "worker.execute_provider_sdk" }],
   ])("rejects %s", (_case, input) => {
     expect(() => executionV2MessageSchema.parse(input)).toThrow(ContractValidationError);

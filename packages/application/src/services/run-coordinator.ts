@@ -547,6 +547,7 @@ export class RunCoordinator {
       worker.capabilityHandleRefs.every((ref) => allowedHandles.has(ref)) &&
       worker.delegatedContextRefs.every((ref) => allowedContext.has(ref)) &&
       worker.secretRefs.length === 0 &&
+      worker.allowedModelRefs.includes(worker.selectedModelRef) &&
       validBudget &&
       !Number.isNaN(Date.parse(worker.deadlineAt));
     if (!valid) {

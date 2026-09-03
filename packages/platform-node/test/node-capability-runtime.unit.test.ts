@@ -129,6 +129,7 @@ async function runtimeFixture(
   bindings: CapabilityRuntimeBindingPort,
   isolation: SandboxedProcessIsolationBackend,
   fetch?: typeof globalThis.fetch,
+  listActive?: () => Promise<readonly CapabilityManifest[]>,
 ) {
   const clock = { now: () => NOW };
   const payloadStore = new FixturePayloadStore();
@@ -137,7 +138,7 @@ async function runtimeFixture(
     ids: { next: (namespace) => `${namespace}:fixture` },
   });
   const port = new NodeCapabilityRuntimePort({
-    manifests: { listActive: async () => active },
+    manifests: { listActive: listActive ?? (async () => active) },
     bindings,
     isolation,
     payloads: {
@@ -173,6 +174,49 @@ async function collect(port: NodeCapabilityRuntimePort, input: CapabilityInvocat
 }
 
 describe("NodeCapabilityRuntimePort", () => {
+  it("keeps cancellation while manifest admission is pending and never dispatches afterwards", async () => {
+    let release = () => {};
+    let started = () => {};
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const admitted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const capability = manifest(
+      { kind: "adapter", endpointIdentity: "adapter:cancel", protectedReferenceOnly: true },
+      "adapter",
+      { ref: "cancelled-admission", isolation: "remote" },
+    );
+    const resolveEndpoint = vi.fn(async () => undefined);
+    const f = await runtimeFixture(
+      [capability],
+      { resolveEndpoint, resolveProcess: async () => undefined },
+      {
+        qualify: async () => {
+          throw new Error("not reached");
+        },
+        createLaunch: async () => {
+          throw new Error("not reached");
+        },
+      },
+      undefined,
+      async () => {
+        started();
+        await pending;
+        return [capability];
+      },
+    );
+    const invocation = request(capability.ref);
+    await f.putInput(invocation, {});
+    const running = collect(f.port, invocation);
+    await admitted;
+    await f.port.cancel(invocation.invocationId, "owner_cancelled");
+    release();
+    expect(await running).toMatchObject([{ type: "capability.cancelled" }]);
+    expect(resolveEndpoint).not.toHaveBeenCalled();
+  });
+
   it("uses the official MCP v2 stdio SDK, enforces exact server/tool identity, and protects output", async () => {
     const capability = manifest(
       {

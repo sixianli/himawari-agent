@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: ""
-superseded_by: ""
+superseded_by: docs/adr/0022-mac-tiered-command-sandbox.md
 date: "2026-08-28"
 ---
 

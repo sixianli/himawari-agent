@@ -13,7 +13,7 @@ import type {
   ExecutionV2Request,
   ExecutionV2Response,
 } from "@himawari-agent/execution-contracts";
-import type { DataClassification, PayloadRef } from "./common.js";
+import type { DataClassification, JsonObject, PayloadRef } from "./common.js";
 
 export interface WorkerRunBudget {
   readonly maxDurationMs: number;
@@ -28,6 +28,9 @@ export interface WorkerRunRequest {
   readonly agentId: AgentId;
   readonly parentRunId: RunId;
   readonly taskRef: PayloadRef;
+  readonly selectedModelRef: string;
+  readonly allowedModelRefs: readonly string[];
+  readonly outputSchema: JsonObject;
   readonly delegatedContextRefs: readonly PayloadRef[];
   readonly capabilityHandleRefs: readonly string[];
   readonly secretRefs: readonly string[];
@@ -72,6 +75,7 @@ export type WorkerRunEvent =
     };
 
 export interface WorkerRunPort {
+  /** Resume the same logical Worker operation for a stable idempotencyKey. */
   run(request: WorkerRunRequest): AsyncIterable<WorkerRunEvent>;
   cancel(workerRunId: string, reasonCode: string): Promise<void>;
 }

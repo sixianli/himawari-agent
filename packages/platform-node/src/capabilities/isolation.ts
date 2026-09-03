@@ -662,6 +662,7 @@ export async function runSandboxedProcess(
   stdin: Uint8Array | null,
   signal?: AbortSignal,
 ): Promise<SandboxedProcessResult> {
+  signal?.throwIfAborted();
   const child = spawn(launch.command, [...launch.args], {
     cwd: launch.cwd,
     env: { ...launch.environment },

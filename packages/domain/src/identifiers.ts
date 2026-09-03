@@ -29,6 +29,11 @@ export type CoverageGapId = Identifier<"CoverageGapId">;
 export type BackupId = Identifier<"BackupId">;
 export type TransferId = Identifier<"TransferId">;
 export type HealthSnapshotId = Identifier<"HealthSnapshotId">;
+export type SuggestionId = Identifier<"SuggestionId">;
+export type ReflectionId = Identifier<"ReflectionId">;
+export type DelegationId = Identifier<"DelegationId">;
+export type WorkerRunId = Identifier<"WorkerRunId">;
+export type ImprovementId = Identifier<"ImprovementId">;
 
 const MACHINE_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -134,4 +139,24 @@ export function createTransferId(value: string): TransferId {
 
 export function createHealthSnapshotId(value: string): HealthSnapshotId {
   return createIdentifier(value, "HealthSnapshotId");
+}
+
+export function createSuggestionId(value: string): SuggestionId {
+  return createIdentifier(value, "SuggestionId");
+}
+
+export function createReflectionId(value: string): ReflectionId {
+  return createIdentifier(value, "ReflectionId");
+}
+
+export function createDelegationId(value: string): DelegationId {
+  return createIdentifier(value, "DelegationId");
+}
+
+export function createWorkerRunId(value: string): WorkerRunId {
+  return createIdentifier(value, "WorkerRunId");
+}
+
+export function createImprovementId(value: string): ImprovementId {
+  return createIdentifier(value, "ImprovementId");
 }

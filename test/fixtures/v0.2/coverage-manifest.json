@@ -781,7 +781,7 @@
           "label": "目录与文件访问",
           "planTasks": "Tasks 2–4、12",
           "planEvidence": "APFS/Hermes、path attacks、Grant/revoke",
-          "planStatus": "contract/Pi bridge/path attack 本地完成；Gateway wire 与双平台 qualification 待 Tasks 2–4、12",
+          "planStatus": "contract/Pi bridge/Gateway/read model/path/link/revoke/recovery 本地完成；descriptor-relative 等价边界与双平台 qualification 待 Tasks 2、4、12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -793,7 +793,7 @@
           "label": "覆盖与删除",
           "planTasks": "Tasks 5–6、12",
           "planEvidence": "digest/atomicity、Trash/recovery、disk pressure",
-          "planStatus": "create/update/Trash/restore 本地完成；永久删除与 disk-pressure matrix 待 Tasks 6、12",
+          "planStatus": "create/update/move/Trash/restore/permanent delete、disk reserve 与 crash recovery 本地完成；双平台 conformance 待 Task 12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -805,7 +805,7 @@
           "label": "代码工作区",
           "planTasks": "Tasks 7–8、12",
           "planEvidence": "dirty matrix、ownership/conflict、restart",
-          "planStatus": "snapshot/path ownership/isolated commit fixture 本地完成；完整 hunk/formatter/matrix 待 Tasks 8、12",
+          "planStatus": "snapshot/ownership/formatter expansion/nested repo/alternate index/commit recovery 本地完成；双平台 conformance 待 Task 12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -817,7 +817,7 @@
           "label": "命令与本地 commit",
           "planTasks": "Tasks 9–12",
           "planEvidence": "CommandProfile、frozen preview、reconcile、no push",
-          "planStatus": "profile/preview/one-shot commit/no-push 核心完成；process sandbox、wire/UI 与双平台待 Tasks 9–12",
+          "planStatus": "sandbox providers、secret/output、preview/one-shot commit/no-push、Worker/Gateway/UI 本地完成；真实 runtime 与双平台待 Tasks 2、12",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -903,7 +903,7 @@
           "label": "主动建议与反思",
           "planTasks": "Tasks 2–5、11–12",
           "planEvidence": "history set、quota CAS、DST/offline、browser",
-          "planStatus": "待实施",
+          "planStatus": "本地实现与恢复/browser 证据通过；最终 S0/S9 对账待 Task 12",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:integration",
@@ -915,7 +915,7 @@
           "label": "内部 Worker",
           "planTasks": "Tasks 2、6–7、11–12",
           "planEvidence": "context/Handle canary、crash recovery、Trace",
-          "planStatus": "待实施",
+          "planStatus": "本地最小授权、持久 progress/cancel/recovery 与 Handle 撤销通过；双平台待 Task 12",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:integration",
@@ -927,7 +927,7 @@
           "label": "自我改进候选",
           "planTasks": "Tasks 2、8–12",
           "planEvidence": "isolation、diff/eval reproducibility、no activation",
-          "planStatus": "待实施",
+          "planStatus": "候选、protected-root、validation/compare/artifact/no-activation 本地通过；S6 双平台 sandbox qualification 阻塞 active",
           "verificationEntrypoints": [
             "npm run test:unit",
             "npm run test:integration",

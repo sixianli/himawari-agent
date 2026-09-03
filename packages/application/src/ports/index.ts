@@ -20,4 +20,8 @@ export * from "./system.js";
 export * from "./threads.js";
 export * from "./web.js";
 export * from "./host-files.js";
+export * from "./host-workspace-gateway.js";
 export * from "./workspaces.js";
+export * from "./proactivity.js";
+export * from "./delegation.js";
+export * from "./improvement.js";

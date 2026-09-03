@@ -5,3 +5,4 @@ export * from "./production-execution-client.js";
 export * from "./production-memory-composition.js";
 export * from "./production-model-composition.js";
 export * from "./service-main.js";
+export * from "./v2-composition-root.js";

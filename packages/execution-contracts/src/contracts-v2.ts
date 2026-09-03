@@ -30,6 +30,10 @@ export const EXECUTION_V2_MESSAGE_TYPES = [
   "work.result",
   "work.cancelled",
   "work.reconciled",
+  "host.operation.execute",
+  "host.operation.result",
+  "worker.subtask.execute",
+  "worker.subtask.result",
 ] as const;
 
 export type ExecutionV2MessageType = (typeof EXECUTION_V2_MESSAGE_TYPES)[number];
@@ -322,6 +326,88 @@ export const workReconciledV2EventSchema = object({
   },
 });
 
+const hostOperationSchema = enumeration([
+  "file.read",
+  "file.create",
+  "file.update",
+  "file.move",
+  "file.trash",
+  "file.restore",
+  "file.permanent_delete",
+  "workspace.snapshot",
+  "command.execute",
+  "workspace.stage",
+  "workspace.commit",
+]);
+
+export const executeHostOperationRequestSchema = object({
+  ...requestEnvelope("host.operation.execute"),
+  payload: object({
+    operation: hostOperationSchema,
+    hostId: machineString,
+    grantRef: nullable(machineString),
+    workspaceRef: nullable(machineString),
+    frozenPlanRef: machineString,
+    expectedRevision: integer(1),
+    canonicalHash: machineString,
+    inputPayloadRefs: array(machineString),
+    secretRefs: array(secretReferenceSchema),
+    recentAuthenticationRef: nullable(machineString),
+    requestedAt: timestamp,
+    deadlineAt: timestamp,
+  }),
+});
+
+export const hostOperationResultEventSchema = object({
+  ...envelope("event", "host.operation.result"),
+  payload: object({
+    requestId: machineString,
+    operation: hostOperationSchema,
+    ...eventCursor,
+    outcome: enumeration(["succeeded", "failed", "result_unknown"]),
+    outputRef: nullable(machineString),
+    errorCode: nullable(machineString),
+    fileObservationRefs: array(machineString),
+    networkObservationRefs: array(machineString),
+    completedAt: timestamp,
+  }),
+});
+
+export const executeWorkerSubtaskRequestSchema = object({
+  ...requestEnvelope("worker.subtask.execute"),
+  payload: object({
+    delegationId: machineString,
+    subtaskRef: machineString,
+    outputSchemaRef: machineString,
+    delegatedContextRefs: array(machineString),
+    capabilityHandleRefs: array(machineString),
+    allowedModelRefs: array(machineString),
+    selectedModelRef: machineString,
+    maximumCostMicros: integer(0),
+    maximumDurationMs: integer(1),
+    maximumProgressEvents: integer(1),
+    depth: integer(1, 1),
+    requestedAt: timestamp,
+    deadlineAt: timestamp,
+  }),
+});
+
+export const workerSubtaskResultEventSchema = object({
+  ...envelope("event", "worker.subtask.result"),
+  payload: object({
+    requestId: machineString,
+    delegationId: machineString,
+    ...eventCursor,
+    outcome: enumeration(["succeeded", "failed", "cancelled"]),
+    workerResultRef: nullable(machineString),
+    errorCode: nullable(machineString),
+    actualModelRef: nullable(machineString),
+    actualCostMicros: integer(0),
+    durationMs: integer(0),
+    completedAt: timestamp,
+  }),
+});
+
 const schemasByType = {
   "worker.handshake": workerHandshakeRequestSchema,
   "worker.handshake.accepted": workerHandshakeAcceptedSchema,
@@ -337,6 +423,10 @@ const schemasByType = {
   "work.result": workResultV2EventSchema,
   "work.cancelled": workCancelledV2EventSchema,
   "work.reconciled": workReconciledV2EventSchema,
+  "host.operation.execute": executeHostOperationRequestSchema,
+  "host.operation.result": hostOperationResultEventSchema,
+  "worker.subtask.execute": executeWorkerSubtaskRequestSchema,
+  "worker.subtask.result": workerSubtaskResultEventSchema,
 } as const satisfies Record<ExecutionV2MessageType, Schema<unknown>>;
 
 type SchemaByType = typeof schemasByType;
@@ -379,6 +469,82 @@ function parseExecutionV2Message(input: unknown): ExecutionV2Message {
         "work messages require owner, agent, Run and Worker Run scope",
       );
     }
+  }
+  if (parsed.type.startsWith("host.")) {
+    const { ownerId, agentId, runId, workerRunId } = parsed.scope;
+    if ([ownerId, agentId, runId, workerRunId].some((value) => value === null)) {
+      throw new ContractValidationError(
+        "$.scope",
+        "host operation messages require owner, agent, Run and Worker Run scope",
+      );
+    }
+  }
+  if (parsed.type.startsWith("worker.subtask.")) {
+    const { ownerId, agentId, runId, workerRunId } = parsed.scope;
+    if ([ownerId, agentId, runId, workerRunId].some((value) => value === null)) {
+      throw new ContractValidationError(
+        "$.scope",
+        "Worker subtask messages require owner, agent, Run and Worker Run scope",
+      );
+    }
+  }
+  if (
+    parsed.type === "host.operation.execute" &&
+    parsed.payload.operation === "file.permanent_delete" &&
+    parsed.payload.recentAuthenticationRef === null
+  ) {
+    throw new ContractValidationError(
+      "$.payload.recentAuthenticationRef",
+      "permanent deletion requires recent authentication",
+    );
+  }
+  if (
+    parsed.type === "host.operation.execute" &&
+    parsed.payload.deadlineAt <= parsed.payload.requestedAt
+  ) {
+    throw new ContractValidationError("$.payload.deadlineAt", "must be later than requestedAt");
+  }
+  if (parsed.type === "host.operation.result") {
+    const valid =
+      (parsed.payload.outcome === "succeeded" &&
+        parsed.payload.outputRef !== null &&
+        parsed.payload.errorCode === null) ||
+      (parsed.payload.outcome === "failed" &&
+        parsed.payload.outputRef === null &&
+        parsed.payload.errorCode !== null) ||
+      (parsed.payload.outcome === "result_unknown" &&
+        parsed.payload.outputRef === null &&
+        parsed.payload.errorCode === null);
+    if (!valid)
+      throw new ContractValidationError(
+        "$.payload",
+        "host result references do not match the declared outcome",
+      );
+  }
+  if (parsed.type === "worker.subtask.execute") {
+    if (
+      parsed.payload.deadlineAt <= parsed.payload.requestedAt ||
+      !parsed.payload.allowedModelRefs.includes(parsed.payload.selectedModelRef)
+    )
+      throw new ContractValidationError(
+        "$.payload",
+        "Worker subtask deadline and selected model must remain inside the frozen delegation",
+      );
+  }
+  if (parsed.type === "worker.subtask.result") {
+    const valid =
+      (parsed.payload.outcome === "succeeded" &&
+        parsed.payload.workerResultRef !== null &&
+        parsed.payload.errorCode === null &&
+        parsed.payload.actualModelRef !== null) ||
+      (parsed.payload.outcome !== "succeeded" &&
+        parsed.payload.workerResultRef === null &&
+        parsed.payload.errorCode !== null);
+    if (!valid)
+      throw new ContractValidationError(
+        "$.payload",
+        "Worker subtask result references do not match the declared outcome",
+      );
   }
   return parsed;
 }

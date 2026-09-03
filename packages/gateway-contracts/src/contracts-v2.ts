@@ -31,6 +31,13 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "capability.update.respond",
   "capability.disable",
   "capability.rollback",
+  "host.file.prepare",
+  "host.file.execute",
+  "workspace.stage",
+  "workspace.commit",
+  "suggestion.respond",
+  "reflection.configure",
+  "improvement.review",
   "thread.list",
   "thread.timeline",
   "approval.list",
@@ -52,11 +59,27 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "capability.detail",
   "grant.list",
   "grant.detail",
+  "host.directory.detail",
+  "workspace.detail",
+  "workspace.list",
+  "suggestion.list",
+  "suggestion.detail",
+  "reflection.detail",
+  "delegation.detail",
+  "delegation.list",
+  "improvement.list",
+  "improvement.detail",
   "collection.snapshot",
   "health.snapshot",
   "approval.snapshot",
   "capability.snapshot",
   "grant.snapshot",
+  "host.directory.snapshot",
+  "workspace.snapshot",
+  "suggestion.snapshot",
+  "reflection.snapshot",
+  "delegation.snapshot",
+  "improvement.snapshot",
   "task.snapshot",
   "inbox.snapshot",
   "digest.snapshot",
@@ -326,6 +349,98 @@ export const rollbackCapabilityCommandSchema = object({
   }),
 });
 
+const hostFileOperationSchema = enumeration([
+  "read",
+  "create",
+  "update",
+  "move",
+  "trash",
+  "restore",
+  "permanent_delete",
+]);
+
+export const prepareHostFileCommandSchema = object({
+  ...commandEnvelope("host.file.prepare"),
+  payload: object({
+    grantId: machineString,
+    expectedGrantRevision: integer(1),
+    operation: hostFileOperationSchema,
+    relativePathRef: machineString,
+    destinationPathRef: nullable(machineString),
+    candidatePayloadRef: nullable(machineString),
+    redactedDiffRef: nullable(machineString),
+    irreversibleScopeRef: nullable(machineString),
+    expiresAt: timestamp,
+  }),
+});
+
+export const executeHostFileCommandSchema = object({
+  ...commandEnvelope("host.file.execute"),
+  payload: object({
+    operationPlanRef: machineString,
+    expectedRevision: integer(1),
+    operation: hostFileOperationSchema,
+    canonicalHash: machineString,
+    recentAuthenticationRef: nullable(machineString),
+  }),
+});
+
+export const stageWorkspaceCommandSchema = object({
+  ...commandEnvelope("workspace.stage"),
+  payload: object({
+    workspaceSnapshotId: machineString,
+    expectedTaskChangeSetRevision: integer(1),
+    taskPathRefs: array(machineString),
+    validationResultRefs: array(machineString),
+    commitMessageRef: machineString,
+    expiresAt: timestamp,
+  }),
+});
+
+export const commitWorkspaceCommandSchema = object({
+  ...commandEnvelope("workspace.commit"),
+  payload: object({
+    commitPreviewId: machineString,
+    expectedRevision: integer(1),
+    semanticSnapshotHash: machineString,
+    recentAuthenticationRef: machineString,
+  }),
+});
+
+export const respondSuggestionCommandSchema = object({
+  ...commandEnvelope("suggestion.respond"),
+  payload: object({
+    suggestionId: machineString,
+    expectedRevision: integer(1),
+    decision: enumeration(["approve", "reject"]),
+  }),
+});
+
+export const configureReflectionCommandSchema = object({
+  ...commandEnvelope("reflection.configure"),
+  payload: object({
+    expectedRevision: integer(0),
+    schedule: boundedString(256),
+    timezone: boundedString(128),
+    dailySuggestionQuota: integer(1, 20),
+    maximumContextItems: integer(1, 1000),
+    maximumCostMicros: integer(0),
+    timeoutMs: integer(1),
+    maximumCandidates: integer(1, 20),
+    enabled: booleanValue,
+  }),
+});
+
+export const reviewImprovementCommandSchema = object({
+  ...commandEnvelope("improvement.review"),
+  payload: object({
+    candidateId: machineString,
+    expectedRevision: integer(1),
+    decision: enumeration(["reject", "request_revision"]),
+    reviewEvidenceRef: machineString,
+  }),
+});
+
 const pagePayload = {
   afterCursor: nullable(machineString),
   limit: integer(1, 500),
@@ -467,6 +582,80 @@ export const grantDetailQuerySchema = object({
   payload: object({ grantId: machineString }),
 });
 
+export const hostDirectoryDetailQuerySchema = object({
+  ...envelope("query", "host.directory.detail"),
+  payload: object({ grantId: machineString }),
+});
+
+export const workspaceDetailQuerySchema = object({
+  ...envelope("query", "workspace.detail"),
+  payload: object({ workspaceId: machineString }),
+});
+
+export const workspaceListQuerySchema = object({
+  ...envelope("query", "workspace.list"),
+  payload: object({ ...pagePayload }),
+});
+
+export const suggestionListQuerySchema = object({
+  ...envelope("query", "suggestion.list"),
+  payload: object({
+    status: nullable(
+      enumeration(["candidate", "delivered", "approved", "rejected", "expired", "superseded"]),
+    ),
+    ...pagePayload,
+  }),
+});
+
+export const suggestionDetailQuerySchema = object({
+  ...envelope("query", "suggestion.detail"),
+  payload: object({ suggestionId: machineString }),
+});
+
+export const reflectionDetailQuerySchema = object({
+  ...envelope("query", "reflection.detail"),
+  payload: object({ includeCheckpoints: booleanValue }),
+});
+
+export const delegationDetailQuerySchema = object({
+  ...envelope("query", "delegation.detail"),
+  payload: object({ delegationId: machineString }),
+});
+
+export const delegationListQuerySchema = object({
+  ...envelope("query", "delegation.list"),
+  payload: object({
+    status: nullable(
+      enumeration(["created", "running", "validating", "completed", "failed", "cancelled"]),
+    ),
+    ...pagePayload,
+  }),
+});
+
+export const improvementListQuerySchema = object({
+  ...envelope("query", "improvement.list"),
+  payload: object({
+    status: nullable(
+      enumeration([
+        "proposed",
+        "patching",
+        "validating",
+        "rejected_by_validation",
+        "security_failure",
+        "review_required",
+        "rejected",
+        "revision_requested",
+      ]),
+    ),
+    ...pagePayload,
+  }),
+});
+
+export const improvementDetailQuerySchema = object({
+  ...envelope("query", "improvement.detail"),
+  payload: object({ candidateId: machineString }),
+});
+
 export const collectionSnapshotSchema = object({
   ...envelope("snapshot", "collection.snapshot"),
   payload: object({
@@ -482,6 +671,10 @@ export const collectionSnapshotSchema = object({
       "devices",
       "capabilities",
       "grants",
+      "workspaces",
+      "suggestions",
+      "improvements",
+      "delegations",
     ]),
     itemRefs: array(machineString),
     nextCursor: nullable(machineString),
@@ -673,6 +866,169 @@ export const grantSnapshotSchema = object({
     revokedAt: nullable(timestamp),
     revocationReasonCode: nullable(machineString),
     affectedTaskRefs: array(machineString),
+    generatedAt: timestamp,
+  }),
+});
+
+export const hostDirectorySnapshotSchema = object({
+  ...envelope("snapshot", "host.directory.snapshot"),
+  payload: object({
+    grantId: machineString,
+    revision: integer(1),
+    hostId: machineString,
+    displayPath: boundedString(4096),
+    operations: array(hostFileOperationSchema),
+    pathPolicy: literal("same_filesystem_no_links"),
+    mountPolicy: literal("fixed_device"),
+    disclosure: enumeration(["none", "model", "worker", "external_approved"]),
+    expiresAt: timestamp,
+    revokedAt: nullable(timestamp),
+    preparedOperationRefs: array(machineString),
+    trashRecordRefs: array(machineString),
+    recoveryRefs: array(machineString),
+    generatedAt: timestamp,
+  }),
+});
+
+export const workspaceSnapshotV2Schema = object({
+  ...envelope("snapshot", "workspace.snapshot"),
+  payload: object({
+    workspaceId: machineString,
+    snapshotId: machineString,
+    revision: integer(1),
+    hostId: machineString,
+    repositoryKind: enumeration(["git", "non_git"]),
+    branch: nullable(boundedString(512)),
+    head: nullable(machineString),
+    upstreamObservation: nullable(boundedString(1024)),
+    detached: booleanValue,
+    unborn: booleanValue,
+    taskChangeSetRevision: integer(1),
+    ownerPathRefs: array(machineString),
+    taskPathRefs: array(machineString),
+    concurrentPathRefs: array(machineString),
+    commandProfileRefs: array(machineString),
+    commandObservationRefs: array(machineString),
+    commitPreviewRef: nullable(machineString),
+    recoveryRefs: array(machineString),
+    directoryGrantRefs: array(machineString),
+    generatedAt: timestamp,
+  }),
+});
+
+export const suggestionSnapshotSchema = object({
+  ...envelope("snapshot", "suggestion.snapshot"),
+  payload: object({
+    suggestionId: machineString,
+    revision: integer(1),
+    status: enumeration([
+      "candidate",
+      "delivered",
+      "approved",
+      "rejected",
+      "expired",
+      "superseded",
+    ]),
+    kind: machineString,
+    titleRef: machineString,
+    bodyRef: machineString,
+    evidenceRefs: array(machineString),
+    sourceWatermark: machineString,
+    goalRef: nullable(machineString),
+    commitmentRef: nullable(machineString),
+    confidencePermille: integer(0, 1000),
+    noveltyPermille: integer(0, 1000),
+    semanticKey: machineString,
+    estimatedCapabilityRefs: array(machineString),
+    estimatedDataClassifications: array(classificationSchema),
+    estimatedCostMicros: integer(0),
+    deliveryRef: nullable(machineString),
+    taskRef: nullable(machineString),
+    createdAt: timestamp,
+    expiresAt: timestamp,
+    generatedAt: timestamp,
+  }),
+});
+
+export const reflectionSnapshotSchema = object({
+  ...envelope("snapshot", "reflection.snapshot"),
+  payload: object({
+    revision: integer(1),
+    schedule: boundedString(256),
+    timezone: boundedString(128),
+    dailySuggestionQuota: integer(1, 20),
+    maximumContextItems: integer(1),
+    maximumCostMicros: integer(0),
+    timeoutMs: integer(1),
+    maximumCandidates: integer(1, 20),
+    enabled: booleanValue,
+    latestInputWatermark: nullable(machineString),
+    latestOutcome: nullable(
+      enumeration(["running", "no_change", "candidates", "missed", "failed"]),
+    ),
+    latestErrorCode: nullable(machineString),
+    generatedAt: timestamp,
+  }),
+});
+
+export const delegationSnapshotSchema = object({
+  ...envelope("snapshot", "delegation.snapshot"),
+  payload: object({
+    delegationId: machineString,
+    revision: integer(1),
+    parentRunId: machineString,
+    workerRunId: machineString,
+    traceRef: machineString,
+    subtaskRef: machineString,
+    outputSchemaRef: machineString,
+    contextRefs: array(machineString),
+    capabilityHandleRefs: array(machineString),
+    allowedModelRefs: array(machineString),
+    dataClassification: classificationSchema,
+    maximumDurationMs: integer(1),
+    maximumCostMicros: integer(0),
+    maximumProgressEvents: integer(1),
+    status: enumeration(["created", "running", "validating", "completed", "failed", "cancelled"]),
+    resultRef: nullable(machineString),
+    failureReasonCode: nullable(machineString),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    generatedAt: timestamp,
+  }),
+});
+
+export const improvementSnapshotSchema = object({
+  ...envelope("snapshot", "improvement.snapshot"),
+  payload: object({
+    candidateId: machineString,
+    revision: integer(1),
+    baseRevision: machineString,
+    baseDigest: machineString,
+    observableProblemRef: machineString,
+    goalRef: machineString,
+    invariantRefs: array(machineString),
+    allowedPathRefs: array(machineString),
+    patchRef: nullable(machineString),
+    patchDigest: nullable(machineString),
+    validationRefs: array(machineString),
+    comparisonRef: nullable(machineString),
+    artifactRef: nullable(machineString),
+    artifactDigest: nullable(machineString),
+    risk: riskSchema,
+    protectedRootFacts: array(machineString),
+    status: enumeration([
+      "proposed",
+      "patching",
+      "validating",
+      "rejected_by_validation",
+      "security_failure",
+      "review_required",
+      "rejected",
+      "revision_requested",
+      "expired",
+    ]),
+    reviewRequired: literal(true),
+    expiresAt: timestamp,
     generatedAt: timestamp,
   }),
 });
@@ -897,6 +1253,13 @@ const schemasByType = {
   "capability.update.respond": respondCapabilityUpdateCommandSchema,
   "capability.disable": disableCapabilityCommandSchema,
   "capability.rollback": rollbackCapabilityCommandSchema,
+  "host.file.prepare": prepareHostFileCommandSchema,
+  "host.file.execute": executeHostFileCommandSchema,
+  "workspace.stage": stageWorkspaceCommandSchema,
+  "workspace.commit": commitWorkspaceCommandSchema,
+  "suggestion.respond": respondSuggestionCommandSchema,
+  "reflection.configure": configureReflectionCommandSchema,
+  "improvement.review": reviewImprovementCommandSchema,
   "thread.list": listThreadsQuerySchema,
   "thread.timeline": threadTimelineQuerySchema,
   "approval.list": listApprovalsQuerySchema,
@@ -918,11 +1281,27 @@ const schemasByType = {
   "capability.detail": capabilityDetailQuerySchema,
   "grant.list": grantListQuerySchema,
   "grant.detail": grantDetailQuerySchema,
+  "host.directory.detail": hostDirectoryDetailQuerySchema,
+  "workspace.detail": workspaceDetailQuerySchema,
+  "workspace.list": workspaceListQuerySchema,
+  "suggestion.list": suggestionListQuerySchema,
+  "suggestion.detail": suggestionDetailQuerySchema,
+  "reflection.detail": reflectionDetailQuerySchema,
+  "delegation.detail": delegationDetailQuerySchema,
+  "delegation.list": delegationListQuerySchema,
+  "improvement.list": improvementListQuerySchema,
+  "improvement.detail": improvementDetailQuerySchema,
   "collection.snapshot": collectionSnapshotSchema,
   "health.snapshot": healthSnapshotV2Schema,
   "approval.snapshot": approvalSnapshotSchema,
   "capability.snapshot": capabilitySnapshotSchema,
   "grant.snapshot": grantSnapshotSchema,
+  "host.directory.snapshot": hostDirectorySnapshotSchema,
+  "workspace.snapshot": workspaceSnapshotV2Schema,
+  "suggestion.snapshot": suggestionSnapshotSchema,
+  "reflection.snapshot": reflectionSnapshotSchema,
+  "delegation.snapshot": delegationSnapshotSchema,
+  "improvement.snapshot": improvementSnapshotSchema,
   "task.snapshot": taskSnapshotSchema,
   "inbox.snapshot": inboxSnapshotSchema,
   "digest.snapshot": digestSnapshotSchema,
@@ -961,6 +1340,42 @@ function parseGatewayV2Message(input: unknown): GatewayV2Message {
     throw new ContractValidationError(
       "$.authorizationRef",
       "high and critical risk commands require an authorization reference",
+    );
+  }
+  if (
+    parsed.type === "host.file.prepare" &&
+    (parsed.payload.operation === "permanent_delete") !==
+      (parsed.payload.irreversibleScopeRef !== null)
+  ) {
+    throw new ContractValidationError(
+      "$.payload.irreversibleScopeRef",
+      "only permanent deletion requires an irreversible scope reference",
+    );
+  }
+  if (
+    parsed.type === "host.file.prepare" &&
+    ["create", "update"].includes(parsed.payload.operation) !==
+      (parsed.payload.candidatePayloadRef !== null)
+  ) {
+    throw new ContractValidationError(
+      "$.payload.candidatePayloadRef",
+      "only create and update require a candidate payload",
+    );
+  }
+  if (
+    parsed.type === "host.file.execute" &&
+    parsed.payload.operation === "permanent_delete" &&
+    parsed.payload.recentAuthenticationRef === null
+  ) {
+    throw new ContractValidationError(
+      "$.payload.recentAuthenticationRef",
+      "permanent deletion requires recent authentication",
+    );
+  }
+  if (parsed.type === "workspace.stage" && parsed.payload.taskPathRefs.length === 0) {
+    throw new ContractValidationError(
+      "$.payload.taskPathRefs",
+      "workspace staging requires at least one task-owned path reference",
     );
   }
   return parsed;

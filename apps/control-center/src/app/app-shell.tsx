@@ -14,13 +14,18 @@ const navMessageIds: Readonly<
   "authorizations-grants": "nav.authorizationsGrants",
   "capabilities-adapters": "nav.capabilitiesAdapters",
   "health-deployment": "nav.healthDeployment",
+  "host-workspaces": "nav.hostWorkspaces",
+  improvements: "nav.improvements",
   "inbox-digest": "nav.inboxDigest",
   memory: "nav.memory",
+  reflection: "nav.reflection",
   "sessions-devices": "nav.sessionsDevices",
   settings: "nav.settings",
   tasks: "nav.tasks",
   threads: "nav.threads",
   trace: "nav.trace",
+  suggestions: "nav.suggestions",
+  workers: "nav.workers",
 };
 
 export interface ControlCenterShellProps {

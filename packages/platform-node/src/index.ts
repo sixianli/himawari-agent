@@ -18,3 +18,4 @@ export * from "./trusted-model-provider.js";
 export * from "./web-host-boundary.js";
 export * from "./files/index.js";
 export * from "./workspaces/index.js";
+export * from "./candidate-workspace/index.js";

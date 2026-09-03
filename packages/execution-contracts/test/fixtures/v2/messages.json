@@ -425,5 +425,141 @@
       "resultRef": "payload-reconciled-result-01",
       "errorCode": null
     }
+  },
+  {
+    "schemaVersion": "execution.v2",
+    "kind": "request",
+    "type": "host.operation.execute",
+    "messageId": "execution-v2-host-operation-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "execution-v2-request-01",
+    "dataClassification": "private",
+    "risk": "critical",
+    "authorizationRef": "authorization-host-operation-01",
+    "scope": {
+      "deploymentId": "deployment-01",
+      "authorityEpoch": 8,
+      "fencingToken": 3,
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "worker-run-01"
+    },
+    "idempotencyKey": "idempotency-host-operation-01",
+    "payload": {
+      "operation": "file.permanent_delete",
+      "hostId": "host-mac",
+      "grantRef": "directory-grant-01",
+      "workspaceRef": null,
+      "frozenPlanRef": "permanent-deletion-01",
+      "expectedRevision": 1,
+      "canonicalHash": "sha256-permanent-deletion-01",
+      "inputPayloadRefs": [],
+      "secretRefs": [],
+      "recentAuthenticationRef": "authentication-recent-01",
+      "requestedAt": "2026-08-26T00:00:00.000Z",
+      "deadlineAt": "2026-08-26T00:01:00.000Z"
+    }
+  },
+  {
+    "schemaVersion": "execution.v2",
+    "kind": "event",
+    "type": "host.operation.result",
+    "messageId": "execution-v2-host-result-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "execution-v2-host-operation-01",
+    "dataClassification": "private",
+    "risk": "critical",
+    "authorizationRef": "authorization-host-operation-01",
+    "scope": {
+      "deploymentId": "deployment-01",
+      "authorityEpoch": 8,
+      "fencingToken": 3,
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "worker-run-01"
+    },
+    "payload": {
+      "requestId": "execution-v2-host-operation-01",
+      "operation": "file.permanent_delete",
+      "cursor": "worker-cursor-45",
+      "sequence": 1,
+      "outcome": "succeeded",
+      "outputRef": "payload-host-result-01",
+      "errorCode": null,
+      "fileObservationRefs": ["file-observation-01"],
+      "networkObservationRefs": ["network-observation-none-01"],
+      "completedAt": "2026-08-26T00:00:02.000Z"
+    }
+  },
+  {
+    "schemaVersion": "execution.v2",
+    "kind": "request",
+    "type": "worker.subtask.execute",
+    "messageId": "execution-v2-subtask-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "event-delegation-created-01",
+    "dataClassification": "private",
+    "risk": "low",
+    "authorizationRef": "authorization-delegation-01",
+    "scope": {
+      "deploymentId": "deployment-01",
+      "authorityEpoch": 8,
+      "fencingToken": 3,
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "worker-run-subtask-01"
+    },
+    "idempotencyKey": "delegation-01",
+    "payload": {
+      "delegationId": "delegation-01",
+      "subtaskRef": "payload-subtask-01",
+      "outputSchemaRef": "payload-output-schema-01",
+      "delegatedContextRefs": ["payload-context-minimum-01"],
+      "capabilityHandleRefs": ["capability-handle-01"],
+      "allowedModelRefs": ["model-worker-01"],
+      "selectedModelRef": "model-worker-01",
+      "maximumCostMicros": 1000,
+      "maximumDurationMs": 30000,
+      "maximumProgressEvents": 10,
+      "depth": 1,
+      "requestedAt": "2026-08-26T00:00:02.000Z",
+      "deadlineAt": "2026-08-26T00:00:32.000Z"
+    }
+  },
+  {
+    "schemaVersion": "execution.v2",
+    "kind": "event",
+    "type": "worker.subtask.result",
+    "messageId": "execution-v2-subtask-result-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "execution-v2-subtask-01",
+    "dataClassification": "private",
+    "risk": "low",
+    "authorizationRef": "authorization-delegation-01",
+    "scope": {
+      "deploymentId": "deployment-01",
+      "authorityEpoch": 8,
+      "fencingToken": 3,
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "worker-run-subtask-01"
+    },
+    "payload": {
+      "requestId": "execution-v2-subtask-01",
+      "delegationId": "delegation-01",
+      "cursor": "worker-cursor-46",
+      "sequence": 1,
+      "outcome": "succeeded",
+      "workerResultRef": "payload-worker-result-01",
+      "errorCode": null,
+      "actualModelRef": "model-worker-01",
+      "actualCostMicros": 120,
+      "durationMs": 2400,
+      "completedAt": "2026-08-26T00:00:04.400Z"
+    }
   }
 ]

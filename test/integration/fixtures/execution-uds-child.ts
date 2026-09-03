@@ -89,6 +89,37 @@ class ChildWorkerTransport implements ExecutionTransportPort {
       });
       return null;
     }
+    if (message.type === "host.operation.execute") {
+      this.append(message, "host.operation.result", {
+        requestId: message.messageId,
+        operation: message.payload.operation,
+        cursor: this.nextCursor(),
+        sequence: this.nextSequence(message.messageId),
+        outcome: "failed",
+        outputRef: null,
+        errorCode: "WORKER_ADAPTER_NOT_REGISTERED",
+        fileObservationRefs: [],
+        networkObservationRefs: [],
+        completedAt: new Date().toISOString(),
+      });
+      return null;
+    }
+    if (message.type === "worker.subtask.execute") {
+      this.append(message, "worker.subtask.result", {
+        requestId: message.messageId,
+        delegationId: message.payload.delegationId,
+        cursor: this.nextCursor(),
+        sequence: this.nextSequence(message.messageId),
+        outcome: "failed",
+        workerResultRef: null,
+        errorCode: "WORKER_SUBTASK_ADAPTER_NOT_REGISTERED",
+        actualModelRef: null,
+        actualCostMicros: 0,
+        durationMs: 0,
+        completedAt: new Date().toISOString(),
+      });
+      return null;
+    }
     this.append(message, "work.reconciled", {
       requestId: message.payload.targetRequestId,
       externalActionId: message.payload.externalActionId,
@@ -148,7 +179,12 @@ class ChildWorkerTransport implements ExecutionTransportPort {
       ExecutionV2Request,
       Extract<ExecutionV2Request, { type: "worker.handshake" | "worker.readiness.query" }>
     >,
-    type: "work.result" | "work.cancelled" | "work.reconciled",
+    type:
+      | "work.result"
+      | "work.cancelled"
+      | "work.reconciled"
+      | "host.operation.result"
+      | "worker.subtask.result",
     payload: unknown,
   ): void {
     nextMessageId += 1;

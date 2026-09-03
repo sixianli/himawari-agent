@@ -30,12 +30,16 @@ export class CommitGateService {
 
   async prepare(input: {
     readonly workspaceId: string;
+    readonly stagingRef: string;
     readonly taskChangeSetRevision: number;
     readonly validationResultRefs: readonly string[];
     readonly message: string;
     readonly expiresAt: string;
   }): Promise<CommitPreview> {
-    const state = await this.#dependencies.platform.inspectCommitState(input.workspaceId);
+    const state = await this.#dependencies.platform.inspectCommitState(
+      input.workspaceId,
+      input.stagingRef,
+    );
     if (
       !state.head ||
       state.stagedFiles.length === 0 ||
@@ -49,6 +53,7 @@ export class CommitGateService {
     const basis = {
       ...state,
       workspaceId: input.workspaceId,
+      stagingRef: input.stagingRef,
       taskChangeSetRevision: input.taskChangeSetRevision,
       validationResultRefs: [...input.validationResultRefs],
       message: input.message.trim(),
@@ -73,24 +78,56 @@ export class CommitGateService {
     readonly remainingDirtyRefs: readonly string[];
   }> {
     const existing = await this.#dependencies.state.readCommitOperation(input.handle.operationId);
-    if (existing?.resultRef) return parseResult(existing.resultRef);
     const preview = await this.#dependencies.state.readCommitPreview(input.handle.previewId);
     if (
       !preview ||
-      preview.status !== "prepared" ||
+      (existing && existing.previewId !== preview.id) ||
       preview.canonicalHash !== input.handle.previewHash ||
       input.handle.maxUses !== 1 ||
       input.handle.authorityFence !== input.authorityFence ||
-      input.handle.expiresAt <= this.#dependencies.clock.now()
+      !input.handle.recentAuthenticationRef.trim()
     )
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
         "Commit Handle is stale or out of scope",
       );
-    const current = await this.#dependencies.platform.inspectCommitState(preview.workspaceId);
+    if (existing?.resultRef) return parseResult(existing.resultRef);
+    if (existing && ["committing", "unknown"].includes(preview.status)) {
+      const recovered = await this.#dependencies.platform.reconcileCommit({
+        workspaceId: preview.workspaceId,
+        stagingRef: preview.stagingRef,
+        expectedParent: preview.head,
+        operationId: input.handle.operationId,
+      });
+      if (recovered.commit && recovered.parent === preview.head)
+        return this.#recordResult(preview.id, input.handle.operationId, {
+          commit: recovered.commit,
+          parent: recovered.parent,
+          remainingDirtyRefs: recovered.remainingDirtyRefs,
+        });
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.PROVIDER_FAILURE,
+        "Commit result is unknown; automatic retry is forbidden",
+      );
+    }
+    if (
+      preview.status !== "prepared" ||
+      input.handle.expiresAt <= this.#dependencies.clock.now() ||
+      preview.expiresAt <= this.#dependencies.clock.now()
+    )
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Commit Handle is stale or out of scope",
+      );
+    const current = await this.#dependencies.platform.inspectCommitState(
+      preview.workspaceId,
+      preview.stagingRef,
+    );
     if (
       current.head !== preview.head ||
       current.indexTree !== preview.indexTree ||
+      current.ownerIndexDigest !== preview.ownerIndexDigest ||
+      current.branch !== preview.branch ||
       current.stagedDiffDigest !== preview.stagedDiffDigest ||
       current.hooksDigest !== preview.hooksDigest ||
       current.configurationDigest !== preview.configurationDigest
@@ -116,48 +153,59 @@ export class CommitGateService {
     try {
       const result = await this.#dependencies.platform.commit({
         workspaceId: preview.workspaceId,
+        stagingRef: preview.stagingRef,
         message: preview.message,
         operationId: input.handle.operationId,
+        expectedHead: preview.head,
+        expectedBranch: preview.branch,
+        expectedIndexTree: preview.indexTree,
+        expectedOwnerIndexDigest: preview.ownerIndexDigest,
+        expectedHooksDigest: preview.hooksDigest,
+        expectedConfigurationDigest: preview.configurationDigest,
       });
-      const resultRef = JSON.stringify(result);
-      await this.#dependencies.state.finishCommitOperation({
-        operationId: input.handle.operationId,
-        resultRef,
-      });
-      const currentPreview = await this.#dependencies.state.readCommitPreview(preview.id);
-      if (currentPreview)
-        await this.#dependencies.state.saveCommitPreview(
-          Object.freeze({
-            ...currentPreview,
-            revision: currentPreview.revision + 1,
-            status: "confirmed_succeeded",
-          }),
-          currentPreview.revision,
-        );
-      return result;
+      return await this.#recordResult(preview.id, input.handle.operationId, result);
     } catch {
       const reconciled = await this.#dependencies.platform.reconcileCommit({
         workspaceId: preview.workspaceId,
         expectedParent: preview.head,
         operationId: input.handle.operationId,
+        stagingRef: preview.stagingRef,
       });
       if (reconciled.commit && reconciled.parent === preview.head) {
         const result = {
           commit: reconciled.commit,
           parent: reconciled.parent,
-          remainingDirtyRefs: preview.remainingDirtyRefs,
+          remainingDirtyRefs: reconciled.remainingDirtyRefs,
         };
-        await this.#dependencies.state.finishCommitOperation({
-          operationId: input.handle.operationId,
-          resultRef: JSON.stringify(result),
-        });
-        return result;
+        return this.#recordResult(preview.id, input.handle.operationId, result);
       }
       throw new ApplicationPortError(
         PORT_ERROR_CODES.PROVIDER_FAILURE,
         "Commit result is unknown; automatic retry is forbidden",
       );
     }
+  }
+
+  async #recordResult(
+    previewId: string,
+    operationId: string,
+    result: Awaited<ReturnType<WorkspacePlatformPort["commit"]>>,
+  ) {
+    await this.#dependencies.state.finishCommitOperation({
+      operationId,
+      resultRef: JSON.stringify(result),
+    });
+    const current = await this.#dependencies.state.readCommitPreview(previewId);
+    if (current && current.status !== "confirmed_succeeded")
+      await this.#dependencies.state.saveCommitPreview(
+        Object.freeze({
+          ...current,
+          revision: current.revision + 1,
+          status: "confirmed_succeeded",
+        }),
+        current.revision,
+      );
+    return result;
   }
 }
 

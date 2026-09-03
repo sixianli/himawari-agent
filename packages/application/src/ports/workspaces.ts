@@ -7,6 +7,14 @@ export interface WorkspaceFileObservation {
   readonly state: "clean" | "staged" | "unstaged" | "staged_and_unstaged" | "untracked";
   readonly owner: "owner" | "task" | "concurrent_unowned";
   readonly hunkFingerprints: readonly string[];
+  readonly taskWrite?: WorkspaceControlledWrite & { readonly beforeSnapshotId: string };
+}
+
+/** Evidence from the controlled writer, not merely its declared path scope. */
+export interface WorkspaceControlledWrite {
+  readonly path: string;
+  readonly beforeDigest: string | null;
+  readonly afterDigest: string | null;
 }
 
 export interface WorkspaceSnapshot {
@@ -40,6 +48,14 @@ export interface CommandProfile {
   readonly network: "none" | "declared";
   readonly timeoutMs: number;
   readonly maxOutputBytes: number;
+  readonly resources: {
+    readonly maxCpuTimeMs: number;
+    readonly maxMemoryBytes: number;
+    readonly maxProcesses: number;
+  };
+  /** Frozen isolation lane selected before execution. */
+  readonly sandboxTier: "native-low-risk" | "isolated-high-risk";
+  readonly sandboxRuntimeIdentity: string;
   readonly scriptDigest: string | null;
   readonly scriptSource: string | null;
   readonly authorizationRef: string;
@@ -55,6 +71,53 @@ export interface CommandObservation {
   readonly stderrRef: PayloadRef;
   readonly fileObservationRefs: readonly string[];
   readonly networkObservationRefs: readonly string[];
+  readonly resourceObservation: {
+    readonly wallTimeMs: number;
+    readonly outputBytes: number;
+    readonly outputLimitExceeded: boolean;
+    readonly sandboxRuntimeIdentity: string;
+    readonly resourceCeilingEnforced: true;
+    readonly maximumCpuTimeMs: number;
+    readonly maximumMemoryBytes: number;
+    readonly maximumProcesses: number;
+  };
+  readonly cancellationReconciled: boolean;
+}
+
+export interface CommandSecretBinding {
+  readonly environmentName: string;
+  readonly handleRef: string;
+}
+
+export interface CommandSandboxPort {
+  execute(input: {
+    readonly profile: CommandProfile;
+    readonly argv: readonly string[];
+    readonly secretBindings: readonly CommandSecretBinding[];
+    readonly signal?: AbortSignal;
+  }): Promise<{
+    readonly exitCode: number | null;
+    readonly signal: string | null;
+    readonly timedOut: boolean;
+    readonly stdout: Uint8Array;
+    readonly stderr: Uint8Array;
+    readonly outputLimitExceeded: boolean;
+    readonly wallTimeMs: number;
+    readonly fileObservationRefs: readonly string[];
+    readonly networkObservationRefs: readonly string[];
+    readonly redactionApplied: true;
+    readonly cancellationReconciled: boolean;
+    readonly sandboxRuntimeIdentity: string;
+    readonly resourceCeilingEnforced: true;
+  }>;
+}
+
+export interface CommandOutputPort {
+  protect(input: {
+    readonly commandProfileId: string;
+    readonly stream: "stdout" | "stderr";
+    readonly bytes: Uint8Array;
+  }): Promise<PayloadRef>;
 }
 
 export interface CommitPreview {
@@ -65,6 +128,8 @@ export interface CommitPreview {
   readonly branch: string | null;
   readonly head: string;
   readonly indexTree: string;
+  readonly ownerIndexDigest: string;
+  readonly stagingRef: string;
   readonly stagedDiffRef: PayloadRef;
   readonly stagedDiffDigest: string;
   readonly stagedFiles: readonly string[];
@@ -95,10 +160,23 @@ export interface WorkspacePlatformPort {
     readonly hostId: string;
     readonly root: string;
   }): Promise<Omit<WorkspaceSnapshot, "id" | "revision" | "taskChangeSetRevision" | "capturedAt">>;
-  inspectCommitState(workspaceId: string): Promise<{
+  stageTaskChanges(input: {
+    readonly workspaceId: string;
+    readonly expectedHead: string;
+    readonly files: readonly WorkspaceFileObservation[];
+  }): Promise<{
+    readonly stagingRef: string;
+    readonly indexTree: string;
+    readonly stagedFiles: readonly string[];
+  }>;
+  inspectCommitState(
+    workspaceId: string,
+    stagingRef: string,
+  ): Promise<{
     readonly branch: string | null;
     readonly head: string;
     readonly indexTree: string;
+    readonly ownerIndexDigest: string;
     readonly stagedDiffRef: PayloadRef;
     readonly stagedDiffDigest: string;
     readonly stagedFiles: readonly string[];
@@ -108,8 +186,15 @@ export interface WorkspacePlatformPort {
   }>;
   commit(input: {
     readonly workspaceId: string;
+    readonly stagingRef: string;
     readonly message: string;
     readonly operationId: string;
+    readonly expectedHead: string;
+    readonly expectedBranch: string | null;
+    readonly expectedIndexTree: string;
+    readonly expectedOwnerIndexDigest: string;
+    readonly expectedHooksDigest: string;
+    readonly expectedConfigurationDigest: string;
   }): Promise<{
     readonly commit: string;
     readonly parent: string;
@@ -119,7 +204,12 @@ export interface WorkspacePlatformPort {
     readonly workspaceId: string;
     readonly expectedParent: string;
     readonly operationId: string;
-  }): Promise<{ readonly commit: string | null; readonly parent: string | null }>;
+    readonly stagingRef: string;
+  }): Promise<{
+    readonly commit: string | null;
+    readonly parent: string | null;
+    readonly remainingDirtyRefs: readonly string[];
+  }>;
 }
 
 export interface WorkspaceStatePort {

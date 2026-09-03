@@ -38,4 +38,30 @@ describe("native control-center router", () => {
       state: routeForSurface("tasks"),
     });
   });
+
+  it("deep-links to a governed host workspace without accepting raw filesystem paths", () => {
+    expect(parseControlCenterUrl("/workspaces/workspace%3Aprimary")).toEqual({
+      kind: "matched",
+      state: { ...routeForSurface("host-workspaces"), objectId: "workspace:primary" },
+    });
+    expect(parseControlCenterUrl("/workspaces/%2FUsers%2Fowner")).toEqual({
+      kind: "not_found",
+      pathname: "/workspaces/%2FUsers%2Fowner",
+    });
+  });
+
+  it("deep-links to suggestions, workers and improvement candidates by stable id", () => {
+    expect(parseControlCenterUrl("/suggestions/suggestion%3A1")).toEqual({
+      kind: "matched",
+      state: { ...routeForSurface("suggestions"), objectId: "suggestion:1" },
+    });
+    expect(parseControlCenterUrl("/workers/delegation%3A1")).toEqual({
+      kind: "matched",
+      state: { ...routeForSurface("workers"), objectId: "delegation:1" },
+    });
+    expect(parseControlCenterUrl("/improvements/candidate%3A1")).toEqual({
+      kind: "matched",
+      state: { ...routeForSurface("improvements"), objectId: "candidate:1" },
+    });
+  });
 });

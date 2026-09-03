@@ -10,11 +10,12 @@ import {
   createReferenceAdapterSet,
   ScriptedExternalActionReconciliationPort,
 } from "@himawari-agent/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   PRODUCTION_WORKER_ERROR_CODES,
   ProductionExecutionWorker,
   WorkerDelegationStore,
+  type WorkerSubtaskExecutionContext,
 } from "../src/index.js";
 
 const fixture = createBeefRestaurantFixture();
@@ -136,7 +137,15 @@ function delegation() {
   }) as Extract<ExecutionV2Request, { type: "work.delegate" }>;
 }
 
-async function workerFixture(options: { readonly unknownResult?: boolean } = {}) {
+async function workerFixture(
+  options: {
+    readonly unknownResult?: boolean;
+    readonly now?: () => string;
+    readonly hostOperations?: ConstructorParameters<
+      typeof ProductionExecutionWorker
+    >[0]["hostOperations"];
+  } = {},
+) {
   const events = options.unknownResult
     ? [
         {
@@ -251,7 +260,8 @@ async function workerFixture(options: { readonly unknownResult?: boolean } = {})
           operations: ["search"],
         },
       ],
-      now: () => adapters.clock.now(),
+      ...(options.hostOperations ? { hostOperations: options.hostOperations } : {}),
+      now: options.now ?? (() => adapters.clock.now()),
       nextId: (type) => adapters.ids.next(type),
     }),
   };
@@ -261,6 +271,20 @@ async function readEvents(worker: ProductionExecutionWorker, afterCursor: string
   const events: ExecutionV2Event[] = [];
   for await (const event of worker.events(afterCursor)) events.push(event);
   return events;
+}
+
+async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {
+  const values: T[] = [];
+  for await (const event of events) values.push(event);
+  return values;
+}
+
+function deferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
 }
 
 describe("production execution Worker", () => {
@@ -484,5 +508,397 @@ describe("production execution Worker", () => {
         execute({ messageId: "duplicate-worker-unit", idempotencyKey: "different-key" }),
       ),
     ).rejects.toMatchObject({ code: PRODUCTION_WORKER_ERROR_CODES.DUPLICATE_CONFLICT });
+  });
+
+  it("routes registered host operations and fails closed when no host adapter exists", async () => {
+    const absent = await workerFixture();
+    await absent.worker.request(handshake());
+    const request = executionV2MessageSchema.parse({
+      ...requestEnvelope("host.operation.execute"),
+      messageId: "host-operation-unit",
+      idempotencyKey: "host-operation-unit",
+      risk: "high",
+      authorizationRef: "authorization-host-unit",
+      payload: {
+        operation: "workspace.snapshot",
+        hostId: "host-unit",
+        grantRef: null,
+        workspaceRef: "workspace-unit",
+        frozenPlanRef: "workspace-plan-unit",
+        expectedRevision: 1,
+        canonicalHash: `sha256:${"a".repeat(64)}`,
+        inputPayloadRefs: [],
+        secretRefs: [],
+        recentAuthenticationRef: null,
+        requestedAt: fixture.times.start,
+        deadlineAt: fixture.times.deadline,
+      },
+    });
+    if (request.kind !== "request" || request.type !== "host.operation.execute")
+      throw new TypeError("host request fixture is invalid");
+    await expect(absent.worker.request(request)).rejects.toMatchObject({
+      code: PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED,
+    });
+
+    const registered = await workerFixture({
+      hostOperations: {
+        operations: ["workspace.snapshot"],
+        execute: async () => ({
+          outcome: "succeeded",
+          outputRef: "payload-host-snapshot-unit",
+          errorCode: null,
+          fileObservationRefs: ["file-observation-unit"],
+          networkObservationRefs: [],
+        }),
+      },
+    });
+    await registered.worker.request(handshake());
+    await registered.worker.request(request);
+    await registered.worker.waitForIdle();
+    expect(await readEvents(registered.worker)).toContainEqual(
+      expect.objectContaining({
+        type: "host.operation.result",
+        payload: expect.objectContaining({ outcome: "succeeded" }),
+      }),
+    );
+    let expiredCalls = 0;
+    const expired = await workerFixture({
+      now: () => fixture.times.deadline,
+      hostOperations: {
+        operations: ["workspace.snapshot"],
+        execute: async () => {
+          expiredCalls += 1;
+          return {
+            outcome: "succeeded",
+            outputRef: "payload-expired-operation",
+            errorCode: null,
+            fileObservationRefs: [],
+            networkObservationRefs: [],
+          };
+        },
+      },
+    });
+    await expired.worker.request(handshake());
+    await expect(expired.worker.request(request)).rejects.toMatchObject({
+      code: "WORKER_DEADLINE_EXPIRED",
+    });
+    expect(expiredCalls).toBe(0);
+  });
+
+  it("runs a frozen Worker subtask with only delegated Handles and rejects model expansion", async () => {
+    const adapters = createReferenceAdapterSet({
+      capability: {
+        descriptors: [
+          {
+            ref: "restaurant-search",
+            version: "1.0.0",
+            integrity: `sha256:${"a".repeat(64)}`,
+            lifecycle: "active",
+            permissionRefs: [],
+            isolation: "worker",
+          },
+        ],
+        events: [],
+      },
+    });
+    let now = adapters.clock.now();
+    let capabilityCalls = 0;
+    let adapterCalls = 0;
+    const registered = [
+      { capabilityId: "restaurant-search", capabilityVersion: "1.0.0", operations: ["search"] },
+    ];
+    const delegations = new WorkerDelegationStore({
+      authorityFence: 3,
+      adapters: registered,
+      now: () => now,
+    });
+    const service = new ExecutionWorkerService({
+      handles: delegations,
+      capability: {
+        list: () => adapters.capability.list(),
+        cancel: (id, reason) => adapters.capability.cancel(id, reason),
+        async *invoke(input) {
+          capabilityCalls += 1;
+          yield* adapters.capability.invoke(input);
+        },
+      },
+      secrets: adapters.secret,
+      clock: { now: () => now },
+      ids: adapters.ids,
+      authorityFence: () => 3,
+      authorization: adapters.authorization,
+    });
+    let completedContext: WorkerSubtaskExecutionContext | undefined;
+    let waitForCancellation = false;
+    let cancelledContext: WorkerSubtaskExecutionContext | undefined;
+    const cancellationStarted = deferred();
+    const tool = {
+      invocationId: "search-once",
+      capabilityId: "restaurant-search",
+      capabilityVersion: "1.0.0",
+      operation: "search",
+      inputRef: fixture.payloads.restaurantSearchInput,
+      capabilityHandleRef: "capability-handle-worker-unit",
+      delegatedContextRefs: [],
+    };
+    const worker = new ProductionExecutionWorker({
+      service,
+      workerInstanceId: "execution-worker-subtask-unit",
+      workerBootId: "worker-boot-subtask-unit",
+      bootTokenRef,
+      deploymentId,
+      authorityEpoch: 2,
+      fencingToken: 3,
+      maximumResourceCeiling: {
+        maxWallTimeMs: 30_000,
+        maxCpuTimeMs: 10_000,
+        maxMemoryBytes: 67_108_864,
+        maxOutputBytes: 4_096,
+        maxProgressEvents: 100,
+      },
+      adapters: registered,
+      delegations,
+      subtasks: {
+        allowedModelRefs: ["model-worker-unit"],
+        maximumCostMicros: 1000,
+        maximumDurationMs: 30_000,
+        execute: async (_request, context) => {
+          adapterCalls += 1;
+          if (waitForCancellation) {
+            cancelledContext = context;
+            cancellationStarted.resolve();
+            await new Promise<void>((resolve) =>
+              context.signal.addEventListener("abort", () => resolve(), { once: true }),
+            );
+            return {
+              workerResultRef: "payload:cancelled-result",
+              actualModelRef: "model-worker-unit",
+              actualCostMicros: 0,
+              durationMs: 0,
+            };
+          }
+          expect(await delegations.getExecutionHandle(tool.capabilityHandleRef)).toMatchObject({
+            uses: 0,
+          });
+          await expect(
+            collect(
+              context.executeCapability({
+                ...tool,
+                invocationId: "invalid-operation",
+                operation: "outside-operation",
+              }),
+            ),
+          ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+          const concurrent = await Promise.allSettled([
+            collect(context.executeCapability(tool)),
+            collect(context.executeCapability(tool)),
+          ]);
+          expect(concurrent.map(({ status }) => status)).toEqual(["fulfilled", "rejected"]);
+          await expect(
+            collect(context.executeCapability({ ...tool, inputRef: "payload:changed" })),
+          ).rejects.toMatchObject({ code: "WORKER_DUPLICATE_CONFLICT" });
+          expect(capabilityCalls).toBe(1);
+          expect(await delegations.getExecutionHandle(tool.capabilityHandleRef)).toMatchObject({
+            uses: 1,
+          });
+          completedContext = context;
+          return {
+            workerResultRef: "payload-worker-subtask-result-unit",
+            actualModelRef: "model-worker-unit",
+            actualCostMicros: 100,
+            durationMs: 500,
+          };
+        },
+      },
+      now: () => now,
+      nextId: (type) => adapters.ids.next(type),
+    });
+    await worker.request(handshake());
+    await worker.request(delegation());
+    const subtask = executionV2MessageSchema.parse({
+      ...requestEnvelope("worker.subtask.execute"),
+      messageId: "worker-subtask-unit",
+      idempotencyKey: "delegation-unit",
+      payload: {
+        delegationId: "delegation-unit",
+        subtaskRef: "payload-subtask-unit",
+        outputSchemaRef: "payload-output-schema-unit",
+        delegatedContextRefs: [],
+        capabilityHandleRefs: ["capability-handle-worker-unit"],
+        allowedModelRefs: ["model-worker-unit"],
+        selectedModelRef: "model-worker-unit",
+        maximumCostMicros: 1000,
+        maximumDurationMs: 30_000,
+        maximumProgressEvents: 10,
+        depth: 1,
+        requestedAt: fixture.times.start,
+        deadlineAt: fixture.times.deadline,
+      },
+    });
+    if (subtask.kind !== "request" || subtask.type !== "worker.subtask.execute")
+      throw new TypeError("subtask fixture is invalid");
+    await expect(
+      worker.request({
+        ...subtask,
+        messageId: "wrong-agent-subtask",
+        idempotencyKey: "wrong-agent-subtask",
+        scope: { ...subtask.scope, agentId: "other-agent-unit" },
+      }),
+    ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+    const replayReadStarted = deferred();
+    const releaseReplayRead = deferred();
+    const getHandle = delegations.getExecutionHandle.bind(delegations);
+    let admissionReads = 0;
+    const replayRead = vi
+      .spyOn(delegations, "getExecutionHandle")
+      .mockImplementation(async (ref) => {
+        admissionReads += 1;
+        if (admissionReads === 2) {
+          replayReadStarted.resolve();
+          await releaseReplayRead.promise;
+        }
+        return getHandle(ref);
+      });
+    const originalRequest = worker.request(subtask);
+    const concurrentReplay = worker.request(subtask);
+    await replayReadStarted.promise;
+    await originalRequest;
+    await worker.waitForIdle();
+    releaseReplayRead.resolve();
+    await expect(concurrentReplay).resolves.toBeNull();
+    replayRead.mockRestore();
+    expect(adapterCalls).toBe(1);
+    expect(await readEvents(worker)).toContainEqual(
+      expect.objectContaining({
+        type: "worker.subtask.result",
+        payload: expect.objectContaining({
+          outcome: "succeeded",
+          actualModelRef: "model-worker-unit",
+        }),
+      }),
+    );
+    if (!completedContext) throw new Error("Subtask context was not exposed to the adapter");
+    await expect(collect(completedContext.executeCapability(tool))).rejects.toMatchObject({
+      code: "WORKER_SUBTASK_NOT_ACTIVE",
+    });
+    await expect(worker.request(subtask)).resolves.toBeNull();
+    await expect(
+      worker.request({
+        ...subtask,
+        messageId: "consumed-subtask",
+        idempotencyKey: "consumed-subtask",
+      }),
+    ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+    for (const invalidState of ["revoked", "expired"] as const) {
+      const source = delegation();
+      const handleRef = `handle-${invalidState}-subtask`;
+      await worker.request({
+        ...source,
+        messageId: `delegate-${invalidState}`,
+        idempotencyKey: `delegate-${invalidState}`,
+        payload: {
+          ...source.payload,
+          handle: {
+            ...source.payload.handle,
+            ref: handleRef,
+            expiresAt:
+              invalidState === "expired"
+                ? new Date(Date.parse(now) + 1_000).toISOString()
+                : fixture.times.deadline,
+          },
+        },
+      });
+      if (invalidState === "revoked") await delegations.revokeExecutionHandle(handleRef, now);
+      else now = new Date(Date.parse(now) + 1_000).toISOString();
+      await expect(
+        worker.request({
+          ...subtask,
+          messageId: `subtask-${invalidState}`,
+          idempotencyKey: `subtask-${invalidState}`,
+          payload: { ...subtask.payload, capabilityHandleRefs: [handleRef] },
+        }),
+      ).rejects.toMatchObject({ code: "PORT_HANDLE_REVOKED" });
+    }
+    const expanded = {
+      ...subtask,
+      messageId: "worker-subtask-expanded-unit",
+      idempotencyKey: "delegation-expanded-unit",
+      payload: {
+        ...subtask.payload,
+        allowedModelRefs: ["model-worker-unit", "model-expensive-unit"],
+        selectedModelRef: "model-expensive-unit",
+      },
+    };
+    expect(() => executionV2MessageSchema.parse(expanded)).not.toThrow();
+    await expect(
+      worker.request(
+        executionV2MessageSchema.parse(expanded) as Extract<
+          ExecutionV2Request,
+          { type: "worker.subtask.execute" }
+        >,
+      ),
+    ).rejects.toMatchObject({ code: PRODUCTION_WORKER_ERROR_CODES.RESOURCE_CEILING_EXCEEDED });
+    waitForCancellation = true;
+    const source = delegation();
+    const handleRef = "handle-cancellable-subtask";
+    await worker.request({
+      ...source,
+      messageId: "delegate-cancellable",
+      idempotencyKey: "delegate-cancellable",
+      payload: { ...source.payload, handle: { ...source.payload.handle, ref: handleRef } },
+    });
+    const cancellable = {
+      ...subtask,
+      messageId: "cancellable-subtask",
+      idempotencyKey: "cancellable-subtask",
+      payload: { ...subtask.payload, capabilityHandleRefs: [handleRef] },
+    };
+    await worker.request(cancellable);
+    await cancellationStarted.promise;
+    await worker.request(
+      executionV2MessageSchema.parse({
+        ...requestEnvelope("work.cancel"),
+        messageId: "cancel-subtask",
+        idempotencyKey: "cancel-subtask",
+        payload: {
+          targetRequestId: cancellable.messageId,
+          reasonCode: "OWNER_CANCELLED",
+          requestedAt: now,
+        },
+      }) as Extract<ExecutionV2Request, { type: "work.cancel" }>,
+    );
+    await worker.waitForIdle();
+    if (!cancelledContext) throw new Error("No cancellable context");
+    await expect(
+      collect(cancelledContext.executeCapability({ ...tool, capabilityHandleRef: handleRef })),
+    ).rejects.toMatchObject({ code: "WORKER_SUBTASK_NOT_ACTIVE" });
+    expect(
+      (await readEvents(worker)).filter(
+        (event) =>
+          event.type === "worker.subtask.result" &&
+          event.payload.requestId === cancellable.messageId,
+      ),
+    ).toMatchObject([{ payload: { outcome: "cancelled" } }]);
+    expect(capabilityCalls).toBe(1);
+    const admissionStarted = deferred();
+    const releaseAdmission = deferred();
+    const validate = service.assertSubtaskDelegation.bind(service);
+    vi.spyOn(service, "assertSubtaskDelegation").mockImplementation(async (input) => {
+      admissionStarted.resolve();
+      await releaseAdmission.promise;
+      return validate(input);
+    });
+    const pendingRequest = worker.request({
+      ...subtask,
+      messageId: "shutdown-subtask",
+      idempotencyKey: "shutdown-subtask",
+      payload: { ...subtask.payload, capabilityHandleRefs: [] },
+    });
+    await admissionStarted.promise;
+    const callsBeforeShutdown = adapterCalls;
+    await worker.shutdown();
+    releaseAdmission.resolve();
+    await expect(pendingRequest).rejects.toMatchObject({ code: "WORKER_NOT_READY" });
+    expect(adapterCalls).toBe(callsBeforeShutdown);
   });
 });

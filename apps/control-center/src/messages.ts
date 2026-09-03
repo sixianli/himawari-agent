@@ -40,28 +40,7 @@ function base(
 
 export function queryMessage(
   configuration: ControlCenterRuntimeConfiguration,
-  type:
-    | "thread.list"
-    | "thread.timeline"
-    | "approval.list"
-    | "task.list"
-    | "task.detail"
-    | "inbox.list"
-    | "inbox.detail"
-    | "inbox.digest"
-    | "memory.search"
-    | "memory.detail"
-    | "trace.timeline"
-    | "trace.detail"
-    | "settings.read"
-    | "identity.sessions"
-    | "identity.session_detail"
-    | "health.status"
-    | "approval.detail"
-    | "capability.list"
-    | "capability.detail"
-    | "grant.list"
-    | "grant.detail",
+  type: GatewayV2Query["type"],
   payload: unknown,
 ): GatewayV2Query {
   const parsed = gatewayV2MessageSchema.parse({
@@ -74,21 +53,7 @@ export function queryMessage(
 
 export function commandMessage(
   configuration: ControlCenterRuntimeConfiguration,
-  type:
-    | "thread.message.submit"
-    | "thread.checkpoint.request"
-    | "approval.respond"
-    | "task.set_state"
-    | "settings.update"
-    | "github.monitor.set_state"
-    | "memory.mutate"
-    | "session.revoke"
-    | "grant.revoke"
-    | "capability.review"
-    | "capability.install.approve"
-    | "capability.update.respond"
-    | "capability.disable"
-    | "capability.rollback",
+  type: GatewayV2Command["type"],
   payload: unknown,
   options: {
     readonly risk?: "low" | "medium" | "high" | "critical";
