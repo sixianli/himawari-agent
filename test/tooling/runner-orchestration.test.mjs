@@ -1,5 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,7 +20,26 @@ const state = vi.hoisted(() => ({
   failSecurity: false,
   empty: false,
   pipelineExitCode: 0,
+  writtenCandidateFailure: false,
+  failCleanup: false,
+  cleanupPaths: [],
+  candidateFault: "",
 }));
+vi.mock("node:fs", async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    rmSync: (target, options) => {
+      if (state.failCleanup && path.basename(String(target)).startsWith("hci-")) {
+        state.cleanupPaths.push(target);
+        const error = new Error("synthetic temporary cleanup failure");
+        error.code = "EPERM";
+        throw error;
+      }
+      return actual.rmSync(target, options);
+    },
+  };
+});
 const write = (filename, value) => {
   mkdirSync(path.dirname(filename), { recursive: true });
   writeFileSync(filename, typeof value === "string" ? value : JSON.stringify(value));
@@ -70,6 +98,22 @@ vi.mock("../../scripts/ci/execute.mjs", async (original) => ({
     }
     if (["coverage-snapshot", "coverage-policy"].includes(name))
       write(args[args.indexOf("--output") + 1], { status: "passed" });
+    if (
+      name === "coverage-policy" &&
+      args.includes("--baseline-output") &&
+      state.candidateFault !== "missing"
+    ) {
+      const candidate = JSON.parse(
+        readFileSync(path.join(state.root, "ci/coverage-policy.json"), "utf8"),
+      );
+      if (state.candidateFault === "unmeasured") candidate.baseline = null;
+      write(
+        args[args.indexOf("--baseline-output") + 1],
+        state.candidateFault === "malformed" ? "{malformed" : candidate,
+      );
+    }
+    if (name === "coverage-policy" && state.writtenCandidateFailure)
+      return { exitCode: 7, durationMs: 1 };
     return { exitCode: 0, durationMs: 1 };
   },
 }));
@@ -133,17 +177,21 @@ vi.mock("../../scripts/ci/check-security.mjs", () => ({
 }));
 
 import { createContext } from "../../scripts/ci/context.mjs";
-import { repositoryRoot } from "../../scripts/ci/contracts.mjs";
+import { repositoryRoot, sha256 } from "../../scripts/ci/contracts.mjs";
 import { runCheck } from "../../scripts/ci/run.mjs";
 
 let context;
 beforeEach(() => {
-  state.root = mkdtempSync(path.join(os.tmpdir(), "himawari-orchestration-"));
+  state.root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "himawari-orchestration-")));
   state.calls = [];
   state.fail = "";
   state.failSecurity = false;
   state.empty = false;
   state.pipelineExitCode = 0;
+  state.writtenCandidateFailure = false;
+  state.failCleanup = false;
+  state.cleanupPaths = [];
+  state.candidateFault = "";
   const git = (...args) => execFileSync("git", args, { cwd: state.root, stdio: "pipe" });
   git("init", "-q");
   git("config", "user.name", "Fixture");
@@ -157,7 +205,11 @@ beforeEach(() => {
   write(path.join(state.root, "npm.mjs"), "process.stdout.write('11.8.0')");
   context = createContext({ root: state.root });
 });
-afterEach(() => rmSync(state.root, { recursive: true, force: true }));
+afterEach(() => {
+  state.failCleanup = false;
+  for (const directory of state.cleanupPaths) rmSync(directory, { recursive: true, force: true });
+  rmSync(state.root, { recursive: true, force: true });
+});
 const run = (checkId, extra = {}) =>
   runCheck({
     root: state.root,
@@ -241,6 +293,143 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(args).toContain("--tests");
     expect(state.calls[0].args).toContain("working-tree");
     expect(result.reports.some((entry) => entry.kind === "lcov")).toBe(true);
+    expect(args).not.toContain("--mode");
+    expect(result.reports.some((entry) => entry.path === "initial-coverage-baseline.json")).toBe(
+      false,
+    );
+  });
+  it("initial-only仅在合法初始化中用同份报告生成并登记候选", async () => {
+    const baseline = readFileSync(path.join(state.root, "ci/coverage-policy.json"));
+    const result = await run("coverage", { baselineCandidate: "initial-only" });
+    expect(result).toMatchObject({ status: "passed", initialization: true });
+    expect(state.calls.map(({ name }) => name)).toEqual([
+      "coverage-snapshot",
+      "coverage",
+      "coverage-policy",
+    ]);
+    const [snapshot, collection, evaluation] = state.calls;
+    const arg = (args, name) => args[args.indexOf(name) + 1];
+    expect(arg(evaluation.args, "--mode")).toBe("measure");
+    expect(arg(evaluation.args, "--snapshot")).toBe(arg(snapshot.args, "--output"));
+    expect(arg(evaluation.args, "--tests")).toBe(
+      collection.args
+        .find((value) => value.startsWith("--outputFile="))
+        .slice("--outputFile=".length),
+    );
+    expect(arg(evaluation.args, "--report")).toBe(
+      path.join(arg(collection.args, "--coverage.reportsDirectory"), "coverage-final.json"),
+    );
+    expect(arg(evaluation.args, "--lcov")).toBe(
+      path.join(arg(collection.args, "--coverage.reportsDirectory"), "lcov.info"),
+    );
+    const candidatePath = arg(evaluation.args, "--baseline-output");
+    expect(candidatePath).toBe(
+      path.join(state.root, ".ci-output/coverage/initial-coverage-baseline.json"),
+    );
+    const bytes = readFileSync(candidatePath);
+    expect(result.reports.find((entry) => entry.path === "initial-coverage-baseline.json")).toEqual(
+      {
+        path: "initial-coverage-baseline.json",
+        kind: "json",
+        bytes: bytes.length,
+        sha256: sha256(bytes),
+      },
+    );
+    expect(readFileSync(path.join(state.root, "ci/coverage-policy.json"))).toEqual(baseline);
+  });
+  it("已接受基线时initial-only继续常规检查且不生成候选或改写基线", async () => {
+    const git = (...args) => execFileSync("git", args, { cwd: state.root, stdio: "pipe" });
+    git("add", "ci");
+    git("commit", "-qm", "accept policy");
+    context = createContext({ root: state.root });
+    const baseline = readFileSync(path.join(state.root, "ci/coverage-policy.json"));
+    const result = await run("coverage", { baselineCandidate: "initial-only" });
+    expect(result).toMatchObject({ status: "passed", initialization: false });
+    expect(state.calls.map(({ name }) => name)).toEqual([
+      "coverage-snapshot",
+      "coverage",
+      "coverage-policy",
+    ]);
+    expect(state.calls[2].args).not.toContain("--mode");
+    expect(state.calls[2].args).not.toContain("--baseline-output");
+    expect(
+      existsSync(path.join(state.root, ".ci-output/coverage/initial-coverage-baseline.json")),
+    ).toBe(false);
+    expect(result.reports.some((entry) => entry.path === "initial-coverage-baseline.json")).toBe(
+      false,
+    );
+    expect(readFileSync(path.join(state.root, "ci/coverage-policy.json"))).toEqual(baseline);
+  });
+  it("覆盖率判定失败保留非零退出码但不登记不存在的候选", async () => {
+    state.fail = "coverage-policy";
+    const result = await run("coverage", { baselineCandidate: "initial-only" });
+    expect(result).toMatchObject({ status: "failed", exitCode: 7 });
+    expect(result.reports.some((entry) => entry.path === "coverage-policy.log")).toBe(true);
+    expect(result.reports.some((entry) => entry.path === "initial-coverage-baseline.json")).toBe(
+      false,
+    );
+    expect(
+      existsSync(path.join(state.root, ".ci-output/coverage/initial-coverage-baseline.json")),
+    ).toBe(false);
+  });
+  it.each([
+    ["候选写完后子进程非零", "writtenCandidateFailure", "failed", 7],
+    ["后续临时目录清理失败", "failCleanup", "infrastructure_failed", 1],
+  ])("%s时不公开已写入候选，并保留其他诊断", async (_name, failure, status, exitCode) => {
+    state[failure] = true;
+    const result = await run("coverage", { baselineCandidate: "initial-only" });
+    expect(result).toMatchObject({ status, exitCode });
+    const candidate = path.join(state.root, ".ci-output/coverage/initial-coverage-baseline.json");
+    expect(JSON.parse(readFileSync(candidate, "utf8")).baseline).not.toBeNull();
+    expect(result.reports.some((entry) => entry.path === "initial-coverage-baseline.json")).toBe(
+      false,
+    );
+    expect(result.reports.map((entry) => entry.path)).toEqual(
+      expect.arrayContaining([
+        "tests.json",
+        "source-snapshot.json",
+        "coverage-check.json",
+        "coverage/coverage-final.json",
+        "coverage/lcov.info",
+        "coverage-policy.log",
+        "details.json",
+      ]),
+    );
+    if (failure === "failCleanup") {
+      const details = JSON.parse(
+        readFileSync(path.join(state.root, ".ci-output/coverage/details.json"), "utf8"),
+      );
+      expect(details.failures).toContain("CI_TEMP_CLEANUP_FAILED:EPERM");
+    }
+  });
+  it.each(["missing", "malformed", "unmeasured"])(
+    "候选输出%s时，即使子进程exit0也必须失败",
+    async (fault) => {
+      state.candidateFault = fault;
+      const result = await run("coverage", { baselineCandidate: "initial-only" });
+      expect(result.status).not.toBe("passed");
+      expect(result.exitCode).not.toBe(0);
+      expect(result.reports.some((entry) => entry.path === "initial-coverage-baseline.json")).toBe(
+        false,
+      );
+      expect(result.reports.some((entry) => entry.path === "coverage-check.json")).toBe(true);
+      const details = JSON.parse(
+        readFileSync(path.join(state.root, ".ci-output/coverage/details.json"), "utf8"),
+      );
+      expect(details.commands.find((entry) => entry.name === "coverage-policy").exitCode).toBe(0);
+      expect(details.failures).toHaveLength(1);
+    },
+  );
+  it.each([
+    ["coverage", "always"],
+    ["coverage", true],
+    ["policy", "initial-only"],
+  ])("拒绝%s的非法候选模式%s，不启动命令", async (checkId, baselineCandidate) => {
+    await expect(run(checkId, { baselineCandidate })).rejects.toThrow(
+      "CI_INITIAL_BASELINE_CANDIDATE_OPTION_INVALID",
+    );
+    expect(state.calls).toEqual([]);
+    expect(existsSync(path.join(state.root, ".ci-output", checkId))).toBe(false);
   });
   it("子执行器报告用例通过但进程非零时仍失败并保留报告", async () => {
     state.pipelineExitCode = 7;

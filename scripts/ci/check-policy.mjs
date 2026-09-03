@@ -313,6 +313,16 @@ export function validateWorkflow(policy, source, toolchain) {
           );
       }
     }
+    if (check.id === "coverage") {
+      const executions = job.steps.filter((step) => step.run?.includes("scripts/ci/run.mjs"));
+      assert(
+        executions.length === 1 &&
+          executions[0].if === undefined &&
+          executions[0].run ===
+            '.ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only',
+        "Coverage must use the shared runner with the initial-only baseline candidate option",
+      );
+    }
   }
   assert(!JSON.stringify(workflow).includes("secrets."), "Required CI cannot reference secrets");
   return {

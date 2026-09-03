@@ -396,7 +396,7 @@ jobs:
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
       - name: 执行共享检查
-        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
+        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only
       - name: 核验公开输出白名单
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
         if: always()

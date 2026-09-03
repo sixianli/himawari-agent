@@ -25,7 +25,31 @@ import { assertPublicArtifacts, redactText } from "./security-redaction.mjs";
 
 export function redactReport(text, kind, sentinels) {
   if (kind !== "json") return redactText(text, { sentinels });
-  return `${JSON.stringify(JSON.parse(text), (_key, value) => (typeof value === "string" ? redactText(value, { sentinels }) : value), 2)}\n`;
+  const parsed = JSON.parse(text);
+  const canonical = JSON.stringify(parsed);
+  // JSON.parse validated the grammar; preserve string tokens while removing only external whitespace.
+  const compact = text.replace(/"(?:[^"\\]|\\.)*"|[ \t\r\n]+/gu, (token) =>
+    token.startsWith('"') ? token : "",
+  );
+  let changed = false;
+  const redacted = JSON.stringify(
+    parsed,
+    (_key, value) => {
+      if (typeof value !== "string") return value;
+      const output = redactText(value, { sentinels });
+      if (output !== value) changed = true;
+      return output;
+    },
+    2,
+  );
+  if (
+    !changed &&
+    compact === canonical &&
+    redactText(text, { sentinels }) === text &&
+    redactText(canonical, { sentinels }) === canonical
+  )
+    return text;
+  return `${redacted}\n`;
 }
 
 async function stagedPublication(output, root, prepare) {

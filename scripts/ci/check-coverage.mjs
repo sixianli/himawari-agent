@@ -572,7 +572,7 @@ export function main(argv = process.argv.slice(2)) {
   // Recheck all sources after parsing the report; concurrent edits invalidate the measurement.
   verifySnapshot(current, createSnapshot({ root, context, policy, sourceState }));
   writeOutput(root, args["--output"], result);
-  if (mode === "measure") {
+  if (mode === "measure" && result.status === "passed") {
     assert(args["--baseline-output"], "explicit measurement needs a baseline output");
     const measured = {
       ...policy,

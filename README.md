@@ -50,11 +50,13 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/.ci-output/browsers" .ci-output/tools/bin/node no
 
 覆盖率采集 unit/contracts/tooling，包含未被导入的生产 TS/TSX 和自有 CI 执行脚本。变更行至少 90%，变更函数的可定位分支至少 85%；各 workspace 四类指标使用目标分支接受的基线。首次引入仅免去不存在的历史基线比较，不放宽增量阈值。安全检查使用原有机器密钥扫描、固定 Gitleaks/Semgrep 和完整锁文件 advisory；缺报告、扫描不可用、到期例外或未豁免 High/Critical 均失败。
 
+Ubuntu coverage 作业显式传入 `--baseline-candidate initial-only`，仅在合法初始化且本轮校验通过时，使用同一份 snapshot、测试、JSON 和 LCOV 生成 `initial-coverage-baseline.json` 报告。维护者核对该 run/attempt、artifact 摘要与测量结果后，显式审阅提交候选；CI 不修改仓库基线。初始化结束后该选项继续执行通常的基线比较，不再生成初始候选。
+
 公开仓库也可使用 GitHub 的 [CodeQL/code scanning](https://docs.github.com/en/code-security/concepts/code-scanning/code-scanning)、[Dependency Review](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-review) 和 [SARIF 展示](https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support)。它们分别提供额外代码分析、PR 依赖差异审阅及扫描结果展示；本期门禁使用上面的固定工具与完整锁文件检查，尚未启用这些附加服务。后续接入须先更新 Spec/Plan 并明确新增权限，当前 workflow 不为展示报告添加写权限。
 
 `.github/workflows/quality.yml` 提供默认分支的手动规模、品牌浏览器、依赖复扫和额外 Node 观察；schedule 保持停用，拟定时间记录在 `ci/quality-policy.json`。检测结果与历史 qualification evidence 分离。`export-evidence.mjs` 只接受完整默认分支 CI、同一平台产物和 24 小时内的安全报告；导出格式不代表 S9 资格、Owner 签署或持久证据转存已完成。
 
-当前工作流仍待 push 后真实 Actions 验证，fork 审批策略与 Ruleset 尚未配置。本地平台结果不能代替完整托管矩阵或服务端拒绝合并证据。当前验证、初始化基线和未完成项见 [CI 实施 Plan](docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md)。
+正常草稿 PR 已进入真实 Actions 验证，完整托管验收仍在进行；目标 fork 审批策略与 Ruleset 尚未配置。本地平台结果不能代替完整托管矩阵或服务端拒绝合并证据。当前验证、初始化基线和未完成项见 [CI 实施 Plan](docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md)。
 
 ## Local reference composition
 

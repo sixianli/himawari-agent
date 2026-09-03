@@ -16,7 +16,7 @@ import { artifactOutput } from "../../scripts/ci/artifact-output.mjs";
 import { createContext } from "../../scripts/ci/context.mjs";
 import { fileSha256, repositoryRoot, validateRecord } from "../../scripts/ci/contracts.mjs";
 import { execute, sumCounts, vitestCounts } from "../../scripts/ci/execute.mjs";
-import { publish, publishQuality } from "../../scripts/ci/publish.mjs";
+import { publish, publishQuality, redactReport } from "../../scripts/ci/publish.mjs";
 import { validateQualityPolicy } from "../../scripts/ci/quality.mjs";
 import { required } from "../../scripts/ci/required.mjs";
 import { reportEntry, runCheck, selectCheck } from "../../scripts/ci/run.mjs";
@@ -54,6 +54,94 @@ const fixture = () => {
 };
 afterEach(() => {
   for (const root of directories.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+describe("JSON公开报告的原始字节与脱敏", () => {
+  it.each([
+    '{"files":1,"groups":{}}',
+    ' \n{ "files" : 1,\t"groups": {} }\n\n',
+    JSON.stringify({ text: 'line one\nline two\t"quoted" \\ path', nested: [1, true] }),
+    JSON.stringify({ text: 'line one\nline two\t"quoted" \\ path', nested: [1, true] }, null, 2),
+  ])("无需脱敏时保留紧凑或空白JSON的原始字节：%s", (text) => {
+    expect(redactReport(text, "json", [])).toBe(text);
+  });
+  it.each([
+    ["token", false],
+    ["token", true],
+    ["sentinel", false],
+    ["sentinel", true],
+  ])("不保留被重复key覆盖的编码%s，重复key编码=%s", (kind, encodedKey) => {
+    const sentinel = "HIMAWARI_PRIVATE_SENTINEL";
+    const value = kind === "token" ? `ghp_${"C2d3".repeat(9)}` : sentinel;
+    const encodedValue = `\\u${value.charCodeAt(0).toString(16).padStart(4, "0")}${value.slice(1)}`;
+    const key = encodedKey ? "\\u0069gnored" : "ignored";
+    const text = `{"ignored":"${encodedValue}","${key}":"clean"}`;
+    expect(JSON.parse(text)).toEqual({ ignored: "clean" });
+    expect(redactReport(text, "json", [sentinel])).toBe('{\n  "ignored": "clean"\n}\n');
+  });
+  it("解码后逐个脱敏Unicode转义的值，原始与转义哨兵均不保留", () => {
+    const token = `ghp_${"A0b1".repeat(9)}`;
+    const encoded = JSON.stringify({ nested: { value: token } }).replace("g", "\\u0067");
+    expect(JSON.parse(redactReport(encoded, "json", [])).nested.value).toBe("[REDACTED]");
+    const sentinel = "HIMAWARI_PRIVATE_SENTINEL";
+    for (const text of [
+      JSON.stringify({ value: sentinel }),
+      JSON.stringify({ value: sentinel }).replace("H", "\\u0048"),
+    ]) {
+      expect(JSON.parse(redactReport(text, "json", [sentinel])).value).toBe("[REDACTED]");
+    }
+    const duplicate = `{"ignored":"${sentinel}","ignored":"clean"}`;
+    expect(redactReport(duplicate, "json", [sentinel])).not.toContain(sentinel);
+    expect(() => redactReport("{malformed", "json", [])).toThrow();
+  });
+  it("Unicode转义的敏感key不能因保留原始字节绕过公开检查", async () => {
+    const token = `ghp_${"B1c2".repeat(9)}`;
+    for (const text of [
+      JSON.stringify({ [token]: 1 }).replace("g", "\\u0067"),
+      JSON.stringify(
+        Object.fromEntries([["password", ["synthetic", "credential", "value"].join("_")]]),
+      ).replace("p", "\\u0070"),
+    ]) {
+      const root = directory(),
+        input = path.join(root, ".ci-output/input");
+      write(path.join(input, "quality.json"), text);
+      expect(redactReport(text, "json", [])).not.toBe(text);
+      await expect(publishQuality({ root, input, output: ".ci-output/public" })).rejects.toThrow(
+        "PUBLIC_ARTIFACT_CONTAINS_SECRET",
+      );
+      expect(existsSync(path.join(root, ".ci-output/public"))).toBe(false);
+    }
+  });
+  it("候选中的原报告摘要可直接核验发布后的覆盖率JSON字节", async () => {
+    const { root, context } = fixture(),
+      input = path.join(root, ".ci-output/input");
+    // The installation-failure record supplies only a schema-valid transport fixture, not a measurement.
+    const result = await runCheck({
+      root,
+      context,
+      checkId: "coverage",
+      output: input,
+      toolsDirectory: path.join(root, "missing"),
+    });
+    const report = path.join(input, "coverage/coverage-final.json");
+    const candidate = path.join(input, "initial-coverage-baseline.json");
+    const bytes = '{"syntheticCoverage":{"s":{"0":1},"f":{},"b":{}}}';
+    write(report, bytes);
+    write(candidate, { baseline: { reportSha256: fileSha256(report) } });
+    result.reports.push(reportEntry(report, "json", input), reportEntry(candidate, "json", input));
+    write(path.join(input, "result.json"), result);
+    const published = await publish({ root, input, output: ".ci-output/public" });
+    const publishedDirectory = path.join(root, ".ci-output/public/reports");
+    expect(
+      readFileSync(path.join(publishedDirectory, "coverage/coverage-final.json"), "utf8"),
+    ).toBe(bytes);
+    const bound = read(path.join(publishedDirectory, "initial-coverage-baseline.json")).baseline
+      .reportSha256;
+    expect(bound).toBe(fileSha256(path.join(publishedDirectory, "coverage/coverage-final.json")));
+    expect(
+      published.reports.find((entry) => entry.path === "coverage/coverage-final.json").sha256,
+    ).toBe(bound);
+  });
 });
 
 describe("受控子进程与真实报告", () => {

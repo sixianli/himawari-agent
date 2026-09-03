@@ -69,7 +69,12 @@ function workflow() {
             : {}),
           steps: [
             { uses: `actions/checkout@${checkout.sha}`, with: { "persist-credentials": false } },
-            { run: "node scripts/ci/run.mjs" },
+            {
+              run:
+                check.id === "coverage"
+                  ? '.ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only'
+                  : "node scripts/ci/run.mjs",
+            },
           ],
         },
       ]),
@@ -416,6 +421,27 @@ describe("CI policy contract", () => {
     const value = workflow();
     mutate(value);
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
+  });
+  it.each([
+    "missing option",
+    "always measure",
+    "conditional runner",
+    "duplicate runner",
+    "direct baseline write",
+  ])("rejects coverage candidate workflow drift: %s", (change) => {
+    const value = workflow();
+    const steps = value.jobs.coverage.steps;
+    if (change === "missing option")
+      steps[1].run = steps[1].run.replace(" --baseline-candidate initial-only", "");
+    if (change === "always measure") steps[1].run = steps[1].run.replace("initial-only", "always");
+    if (change === "conditional runner") steps[1].if = "false";
+    if (change === "duplicate runner") steps.push({ ...steps[1] });
+    if (change === "direct baseline write")
+      steps[1].run =
+        "node scripts/ci/check-coverage.mjs --mode measure --baseline-output ci/coverage-policy.json";
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      "initial-only baseline candidate",
+    );
   });
   it.each([
     "import { test } from 'vitest'; const { only } = test; test('normal', () => {}); only('focused', () => {});",

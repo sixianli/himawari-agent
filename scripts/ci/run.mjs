@@ -25,6 +25,7 @@ import {
   repositoryRoot,
   validateRecord,
 } from "./contracts.mjs";
+import { validateCoveragePolicy } from "./coverage-model.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
 import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
 import { observeResources } from "./resources.mjs";
@@ -69,8 +70,14 @@ export async function runCheck({
   toolsDirectory,
   context,
   artifact,
+  baselineCandidate,
   hosted = process.env.GITHUB_ACTIONS === "true",
 }) {
+  if (
+    baselineCandidate !== undefined &&
+    (checkId !== "coverage" || baselineCandidate !== "initial-only")
+  )
+    throw new Error("CI_INITIAL_BASELINE_CANDIDATE_OPTION_INVALID");
   const directory = outputPath(output, root);
   const source = resolvePolicySource({ root, base: context.baseSha });
   const { check, member } = selectCheck(source.policy, checkId, matrixKey);
@@ -109,6 +116,7 @@ export async function runCheck({
     scope: hosted ? "hosted-policy-member" : "local-platform-evidence",
   };
   const files = [];
+  let baselineCandidatePath;
   const temporaryDirectory = mkdtempSync("/tmp/hci-");
   const stopResources = await observeResources({ root, toolsDirectory, temporaryDirectory });
   try {
@@ -246,6 +254,11 @@ export async function runCheck({
       const filename = path.join(directory, "tests.json");
       const snapshot = path.join(directory, "source-snapshot.json");
       const coverageReport = path.join(directory, "coverage-check.json");
+      const candidate =
+        baselineCandidate === "initial-only" && source.initialization
+          ? path.join(directory, "initial-coverage-baseline.json")
+          : undefined;
+      baselineCandidatePath = candidate;
       files.push(
         { path: filename, kind: "json" },
         { path: snapshot, kind: "json" },
@@ -294,6 +307,7 @@ export async function runCheck({
       result.counts = sumCounts(result.projects);
       await command("coverage-policy", tools.node, [
         "scripts/ci/check-coverage.mjs",
+        ...(candidate ? ["--mode", "measure", "--baseline-output", candidate] : []),
         "--context",
         path.join(directory, "context.json"),
         "--snapshot",
@@ -307,6 +321,12 @@ export async function runCheck({
         "--output",
         coverageReport,
       ]);
+      if (candidate) {
+        const measured = validateCoveragePolicy(
+          readJson(existingInside(directory, path.basename(candidate))),
+        );
+        if (!measured.baseline) throw new Error("CI_INITIAL_BASELINE_CANDIDATE_UNMEASURED");
+      }
     } else {
       const previous = process.env;
       process.env = env;
@@ -388,6 +408,8 @@ export async function runCheck({
   const detailsPath = path.join(directory, "details.json");
   json(detailsPath, details);
   files.push({ path: detailsPath, kind: "json" });
+  if (result.status === "passed" && baselineCandidatePath)
+    files.push({ path: baselineCandidatePath, kind: "json" });
   for (const file of files)
     if (existsSync(file.path)) result.reports.push(reportEntry(file.path, file.kind, directory));
   result.durationMs = Math.round(performance.now() - started);
@@ -406,6 +428,7 @@ export async function main(argv = process.argv.slice(2)) {
     "--tools",
     "--artifact",
     "--input",
+    "--baseline-candidate",
   ]);
   for (const key of ["--check", "--output", "--tools"])
     if (!args[key]) throw new Error(`Missing argument: ${key}`);
@@ -437,6 +460,7 @@ export async function main(argv = process.argv.slice(2)) {
     toolsDirectory: path.resolve(args["--tools"]),
     context,
     artifact,
+    baselineCandidate: args["--baseline-candidate"],
   });
   process.stdout.write(
     `${result.checkId}/${result.matrixKey}: ${result.status} (${result.counts.passed} passed, ${result.counts.failed} failed)\n`,

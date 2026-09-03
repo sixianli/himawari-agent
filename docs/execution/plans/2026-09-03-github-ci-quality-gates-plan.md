@@ -21,7 +21,7 @@ date: "2026-09-03"
 
 **架构：** 仓库政策定义检查集合，Node 工具执行并校验结果，GitHub workflow 调度隔离 job，`ci/required` 汇总。安装测试消费构建步骤生成的归档。S9 继续拥有候选资格和签署，CI 只输出证据。
 
-**编制与执行状态：** 用户于 2026-09-03 明确要求使用 `poteto-mode` 实施本 Plan，并确认允许在本公开仓库复制和分发原始文档治理校验器。Tasks 1–12 的本地实施与 Task 16 的事实同步已获授权；Tasks 13–15 的远端操作仍按下述独立边界执行。`status: active` 表示实施仍在进行，不能据此推导 CI 已通过或强制门禁已生效。
+**编制与执行状态：** 用户于 2026-09-03 明确要求使用 `poteto-mode` 实施本 Plan，并确认允许在本公开仓库复制和分发原始文档治理校验器。Tasks 1–12 的本地实施与 Task 16 的事实同步已获授权；Task 13 的正常草稿 PR、隔离负例与标准 Actions 验证随后获明确授权，合并及 Tasks 14–15 的远端操作仍按下述独立边界执行。`status: active` 表示实施仍在进行，不能据此推导 CI 已通过或强制门禁已生效。
 
 **公开仓库前提：** Owner 已将仓库改为公开；2026-09-03 API 回读确认 `visibility: public`，Rulesets 返回空列表、`main` 返回 `Branch not protected`、workflow 数量为 0。fork 运行审批当前为 `first_time_contributors`，目标为来源 Spec 规定的 `all_external_contributors`。原私有仓库的 Pro 升级前提已解除，规则配置、审批策略变更与真实门禁验收仍待实施；本轮再次只读确认 `main` 未保护（HTTP 404）；规则启用仍待独立授权。
 
@@ -285,6 +285,14 @@ python3 -E -s -B tools/document-governance/scripts/validate_docs.py . --strict
 实际 runner 为 Ubuntu 24.04，镜像 `20260831.293.1`；日志确认 token 只有 `contents: read` 和 `metadata: read`。已下载 policy artifact `9897918408` 与 gate artifact `9898005121`，分别核对 GitHub 提供的 ZIP SHA256 `ceb4d55daff430fcaeeefd1ea329653bf76a5f47756c1d879ae4b1a4b215345e` 和 `c81c970734012e1ee1580a9423fbd5c226f56001f9480e33457d69bb42dab03a`。完整记录位于本地忽略目录 `.ci-output/github-task13-20260903/`。
 
 当前只读回读的 fork 审批策略为 `first_time_contributors`。仓库没有 fork，唯一 PR 来自 Owner；没有适用的 fork 或 Dependabot 实测入口，两项继续标记未验证。审批策略修改仍属于 Task 15 的单独授权范围。
+
+环境隔离修复提交 `c4ea56962d2ee1a69ed585d67f79468ab54f7a1b` 的 [run 33816516553](https://github.com/sixianli/himawari-agent/actions/runs/33816516553) 使用 attempt 1，实际 merge SHA 为 `94dabbdc586eada647542e4a347498887cae57fc`，base 保持不变。policy、static、security、Linux/macOS 构建、macOS 五项目和三引擎浏览器通过；macOS 为 916/916，Chromium、Firefox、WebKit 各 58/58。Linux 五项目及最低 Node 均为 914/916，coverage 为 997/999；失败均来自两个测试硬编码 `/private/...`，Ubuntu 报 `EACCES`。对应 integration 379/379、e2e 3/3 和 pi-compat 15/15 均通过。该 run 仍是失败证据，不是绿色对照。
+
+跨平台修复仅将这两个文件的状态目录改为 `mkdtemp(tmpdir())`，每例独立创建并清理，同时保留越界反例的语义。生产代码、provider 和 fake loader 未改；本机两文件 10/10 通过，专属临时父目录无剩余 fixture。Ubuntu 实际修复结果以随后完整 run 为准。
+
+为完成 Ubuntu 初始基线复核，coverage 共享入口增加显式 `--baseline-candidate initial-only`。合法初始化时调用原测量器，使用同一次 snapshot/tests/JSON/LCOV 生成候选；非初始化继续通常比较。未达标、候选缺失或损坏、子进程写后失败及清理失败均不能形成可公开候选，仓库基线不会自动改写。公开 JSON 只有在去除字符串外空白后与标准序列化一致、原始和解码表示均通过脱敏检查时才保留原始字节，确保候选的报告摘要可直接核验下载材料。编码后的重复字段敏感值已有失败复现及修复回归，不能借原始字节保留绕过公开检查。
+
+候选接线及输出保护的完整 tooling 验证为 508/508；随后补充编码重复字段保护，最终相关 runner/publisher/gate 55/55 通过。两轮证明范围分别保留，最终工具数量由下一轮完整报告重新计算。原始 GitHub ZIP、API 元数据、结果与诊断位于 `.ci-output/github-task13-20260903/run-33816516553/`，下载时逐一核对 GitHub 摘要与报告文件摘要。
 
 ### 干净提交验证
 

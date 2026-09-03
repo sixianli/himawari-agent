@@ -336,7 +336,9 @@ Task 20 的真实模型验证由两个显式 opt-in 集成测试组成。`HIMAWA
 
 覆盖率只合并 unit/contracts/tooling 的进程内证据，完整包含未导入生产文件与自有 CI 工具。新代码的可执行行和可定位分支分别受 90%/85% 阈值约束，workspace 四类指标由接受的目标分支基线控制。安全扫描组合原有机器密钥检查、Gitleaks 当前内容与提交历史、固定 Semgrep CE 规则和完整依赖 advisory；例外须有精确范围、来源与 UTC 到期日，首次合成夹具提案与已接受例外分别标识。
 
-`ci.yml` 描述托管完整矩阵，`quality.yml` 描述默认分支手动检测，schedule 仍停用。实际 GitHub run、外部 fork 审批和 Ruleset 强制效果尚待独立授权与验证；本地静态检查不代表它们已生效。公开报告与诊断分别按 30/7 天保留，上传通过显式白名单和脱敏检查。S9 交接格式验证默认分支 CI、平台产物、未完成项及 24 小时安全新鲜度，保留生产资格、Owner 签署和持久转存责任。实现与验收进度由 CI Plan 记录，S0/S9 产品验收归属不变。[SOURCE: docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md]
+Ubuntu coverage 作业通过显式 `initial-only` 选项，在合法初始化且现有校验器通过后，从同一次 snapshot/tests/JSON/LCOV 生成初始基线候选并登记为报告。候选仍须按真实 artifact 身份核验、审阅和提交，执行器不改写仓库基线；初始化结束后只执行原有比较，不再输出初始候选。tooling 项目隔离继承的 GitHub 环境变量，合成仓库测试与显式 hosted 身份测试保持各自输入边界。
+
+`ci.yml` 描述托管完整矩阵，`quality.yml` 描述默认分支手动检测，schedule 仍停用。正常草稿 PR 已获授权并进入真实 GitHub 验证，完整托管验收仍在进行；目标 fork 审批策略和 Ruleset 强制效果尚待独立授权与验证。公开报告与诊断分别按 30/7 天保留，上传通过显式白名单和脱敏检查。S9 交接格式验证默认分支 CI、平台产物、未完成项及 24 小时安全新鲜度，保留生产资格、Owner 签署和持久转存责任。实现与验收进度由 CI Plan 记录，S0/S9 产品验收归属不变。[SOURCE: docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md]
 
 ## Known Limitations
 

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -791,6 +792,69 @@ describe("coverage evidence and Git boundaries", { timeout: 60000 }, () => {
       main([...f.args, "--baseline-output", path.join(f.root, "ci/coverage-policy.json")]),
     ).toThrow("only explicit");
   });
+  it("measures an initial candidate from the same bound reports without rewriting policy or evidence", () => {
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const f = fixture();
+    const retained = [
+      "ci/coverage-policy.json",
+      ...Object.values(f.manifest).filter((name) => name.startsWith(".ci-output/")),
+    ];
+    const before = retained.map((name) => readFileSync(path.join(f.root, name)));
+    const candidate = path.join(f.root, ".ci-output/initial-coverage-baseline.json");
+    const result = main([...f.args, "--mode", "measure", "--baseline-output", candidate]);
+    expect(result).toMatchObject({ status: "passed", initialization: true, sourceState: "commit" });
+    expect(readJson(candidate).baseline).toMatchObject({
+      sourceSha: f.context.testedSha,
+      sourceState: "commit",
+      sourceTreeSha256: result.sourceTreeSha256,
+      reportSha256: sha256(readFileSync(path.join(f.root, f.manifest.report))),
+      lcovSha256: sha256(readFileSync(path.join(f.root, f.manifest.lcov))),
+      groups: result.groups,
+    });
+    expect(retained.map((name) => readFileSync(path.join(f.root, name)))).toEqual(before);
+  });
+  it("retains a failed incremental measurement without creating a candidate or changing the existing baseline", () => {
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const f = fixture();
+    const policyBefore = readFileSync(path.join(f.root, "ci/coverage-policy.json"));
+    const uncovered = { [filename]: record(filename, 0) };
+    put(f.root, f.manifest.report, uncovered);
+    put(f.root, f.manifest.lcov, lcov(uncovered));
+    put(f.root, f.manifest.tests, { ...f.testRun, coverageMap: uncovered });
+    const candidate = path.join(f.root, ".ci-output/initial-coverage-baseline.json");
+    expect(main([...f.args, "--mode", "measure", "--baseline-output", candidate]).status).toBe(
+      "failed",
+    );
+    expect(readJson(path.join(f.root, ".ci-output/result.json"))).toMatchObject({
+      status: "failed",
+      initialization: true,
+    });
+    expect(existsSync(candidate)).toBe(false);
+    expect(readFileSync(path.join(f.root, "ci/coverage-policy.json"))).toEqual(policyBefore);
+  });
+  it.each(["source", "snapshot", "tests", "JSON", "LCOV"])(
+    "refuses a baseline candidate when its bound %s evidence changes",
+    (changedEvidence) => {
+      const f = fixture();
+      const candidate = path.join(f.root, ".ci-output/initial-coverage-baseline.json");
+      if (changedEvidence === "source") put(f.root, filename, `${source}\n`);
+      if (changedEvidence === "snapshot") {
+        const snapshot = readJson(path.join(f.root, f.manifest.snapshot));
+        snapshot.files[filename] = "0".repeat(64);
+        put(f.root, f.manifest.snapshot, snapshot);
+      }
+      if (changedEvidence === "tests")
+        put(f.root, f.manifest.tests, { ...f.testRun, success: false });
+      if (changedEvidence === "JSON")
+        put(f.root, f.manifest.report, { [filename]: record(filename, 0) });
+      if (changedEvidence === "LCOV")
+        put(f.root, f.manifest.lcov, lcov(f.coverage).replace("DA:2,1", "DA:2,0"));
+      expect(() =>
+        main([...f.args, "--mode", "measure", "--baseline-output", candidate]),
+      ).toThrow();
+      expect(existsSync(candidate)).toBe(false);
+    },
+  );
   it("refuses a stale/failed report, context mismatch, missing reports and unsafe output", () => {
     const f = fixture();
     put(f.root, f.manifest.tests, { ...f.testRun, success: false });
