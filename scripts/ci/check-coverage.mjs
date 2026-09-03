@@ -198,9 +198,12 @@ export function verifyReportProvenance(report, coverage, snapshot) {
 }
 
 export function parseDiffHunks(text) {
-  assert(!text.includes("Binary files "), "binary production source cannot be mapped");
   const hunks = [];
   for (const line of text.split("\n")) {
+    assert(
+      !/^Binary files .+ and .+ differ$/u.test(line) && line !== "GIT binary patch",
+      "binary production source cannot be mapped",
+    );
     if (!line.startsWith("@@")) continue;
     const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:.*)$/u.exec(line);
     assert(match, "malformed git hunk");

@@ -666,6 +666,53 @@ describe("coverage evidence and Git boundaries", { timeout: 60000 }, () => {
     expect(() => parseDiffHunks("@@ broken")).toThrow("malformed");
     expect(() => parseDiffHunks("Binary files a and b differ")).toThrow("binary");
   });
+  it("maps committed text containing binary marker literals without treating source as Git metadata", () => {
+    const f = fixture(),
+      baseSha = f.context.headSha;
+    put(
+      f.root,
+      filename,
+      'export const prefix = "Binary files ";\nexport const summary = "Binary files a and b differ";\nexport const patch = "GIT binary patch";\n',
+    );
+    git(f.root, "add", filename);
+    git(f.root, "commit", "-qm", "add textual binary markers");
+    const testedSha = git(f.root, "rev-parse", "HEAD");
+    const diff = resolveCoverageDiff({
+      root: f.root,
+      context: { ...f.context, baseSha, headSha: testedSha, testedSha },
+      sources: collectSources(f.root, policy()),
+    });
+    expect(diff.changed[filename]).toEqual(
+      [1, 2, 3].map((line) => ({ start: line, end: line, kind: "added" })),
+    );
+    expect(
+      parseDiffHunks(
+        "@@ -1,3 +1,3 @@ Binary files a and b differ\n Binary files a and b differ\n-GIT binary patch\n+GIT binary patch\n",
+      ),
+    ).toEqual([{ oldStart: 1, oldCount: 3, newStart: 1, newCount: 3 }]);
+  });
+  it("rejects actual Git binary additions and changes in summary and binary-patch formats", () => {
+    const f = fixture();
+    put(f.root, filename, `${source}\0`);
+    git(f.root, "add", filename);
+    git(f.root, "commit", "-qm", "add binary production bytes");
+    const testedSha = git(f.root, "rev-parse", "HEAD");
+    for (const baseSha of [f.context.baseSha, f.context.headSha]) {
+      const summary = git(f.root, "diff", baseSha, testedSha, "--", filename);
+      expect(summary).toMatch(/^Binary files .+ and .+ differ$/mu);
+      expect(() => parseDiffHunks(summary)).toThrow("binary production source cannot be mapped");
+      const patch = git(f.root, "diff", "--binary", baseSha, testedSha, "--", filename);
+      expect(patch).toMatch(/^GIT binary patch$/mu);
+      expect(() => parseDiffHunks(patch)).toThrow("binary production source cannot be mapped");
+      expect(() =>
+        resolveCoverageDiff({
+          root: f.root,
+          context: { ...f.context, baseSha, headSha: testedSha, testedSha },
+          sources: collectSources(f.root, policy()),
+        }),
+      ).toThrow("binary production source cannot be mapped");
+    }
+  });
   it("uses remaining-function deletion boundaries and preserves deleted source identities", () => {
     const f = fixture(false),
       baseSha = f.context.headSha;
