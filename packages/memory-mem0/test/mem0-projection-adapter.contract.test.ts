@@ -1,3 +1,5 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
   ConfiguredEmbeddingModelDescriptor,
@@ -12,18 +14,28 @@ import {
   createOwnerId,
   createThreadId,
 } from "@himawari-agent/domain";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createOpenRouterMem0ProjectionAdapter,
   MEM0_OPENROUTER_BASE_URL,
   Mem0ProjectionAdapter,
+  type Mem0ProjectionConfiguration,
   QWEN3_EMBEDDING_8B_DIMENSIONS,
   QWEN3_EMBEDDING_8B_MODEL,
-  type Mem0ProjectionConfiguration,
 } from "../src/index.ts";
 
 const OWNER_ID = createOwnerId("owner-mem0-contract");
 const AGENT_ID = createAgentId("agent-mem0-contract");
+let temporaryDirectory: string;
+
+beforeEach(async () => {
+  temporaryDirectory = await mkdtemp(path.join(tmpdir(), "himawari-mem0-contract-"));
+});
+
+afterEach(async () => {
+  FakeMem0Memory.latest = null;
+  await rm(temporaryDirectory, { recursive: true, force: true });
+});
 
 interface FakeRecord {
   readonly id: string;
@@ -90,7 +102,7 @@ class FakeMem0Memory {
 }
 
 function configuration(
-  stateRoot = "/private/tmp/himawari-mem0-adapter",
+  stateRoot = path.join(temporaryDirectory, "state"),
 ): Mem0ProjectionConfiguration {
   return {
     stateRoot,
@@ -224,7 +236,10 @@ describe("Mem0 product projection adapter", () => {
           ...invalid,
           vectorStore: {
             ...invalid.vectorStore,
-            config: { ...invalid.vectorStore.config, dbPath: "/tmp/outside.sqlite" },
+            config: {
+              ...invalid.vectorStore.config,
+              dbPath: path.join(temporaryDirectory, "outside.sqlite"),
+            },
           },
         },
         load: async () => ({ Memory: FakeMem0Memory }),
@@ -233,7 +248,7 @@ describe("Mem0 product projection adapter", () => {
   });
 
   it("maps the selected OpenRouter Qwen embedding identity through Mem0's OpenAI provider", async () => {
-    const stateRoot = "/private/tmp/himawari-qwen-embedding-adapter";
+    const stateRoot = path.join(temporaryDirectory, "qwen");
     const primary: ConfiguredGenerationModelDescriptor = {
       ref: "model-primary",
       role: "primary",
