@@ -19,13 +19,13 @@
     "changedFunctionBranches": 85
   },
   "baseline": {
-    "sourceSha": "3f865d2860301d86f33978e6534cfbba02c37a89",
+    "sourceSha": "43d3969fd851cf7c03d09b926f66babec6571a52",
     "sourceState": "working-tree",
-    "sourceTreeSha256": "27d423dbcd2f0ff66c68d921e757577cf15a1dbada223001747e6010018844d1",
-    "reportSha256": "9df95858e4045c83b3fa2dee70249e9fb7bde161b8a9c8ad1d808e73c78696dc",
-    "lcovSha256": "de88381fecf497b8144d2f9935fff40de51c57d66e803d47fdd98ce27edd63a2",
+    "sourceTreeSha256": "8428bab523719d8ea57bbae74f079de9a5a81abf66f5a76f51847f0d982ea7f6",
+    "reportSha256": "2b0f5a1114333138c57855acb734b6394b705960ba8977949a67f029af3fc190",
+    "lcovSha256": "846e88269433439af166abd286a8c906afb20239a9c57006d300ebc347a687a6",
     "strategySha256": "dda8233be8aa1356bcb41e47aaea42a82fec8879a795eb0cbc0e2ff85590935a",
-    "measuredAt": "2026-09-03T13:32:05.881Z",
+    "measuredAt": "2026-09-03T14:10:22.376Z",
     "groups": {
       "apps/admin-cli": {
         "lines": {
@@ -342,9 +342,9 @@
           "pct": 94.331585
         },
         "branches": {
-          "total": 2396,
-          "covered": 2156,
-          "pct": 89.983305
+          "total": 2398,
+          "covered": 2157,
+          "pct": 89.949958
         },
         "functions": {
           "total": 472,
