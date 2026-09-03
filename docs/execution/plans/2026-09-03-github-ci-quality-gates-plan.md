@@ -23,6 +23,8 @@ date: "2026-09-03"
 
 **编制与执行状态：** 用户已明确要求同时编制 Spec 和 Plan，因此本文件与来源 Spec 一同交付。`status: active` 表示开放执行工作，不表示实施已获授权或验收完成。所有实施任务初始未完成。执行者须先确认来源 Spec 的合同和本轮实施授权，再开始 Task 1。
 
+**公开仓库前提：** Owner 已将仓库改为公开；2026-09-03 API 回读确认 `visibility: public`，Rulesets 返回空列表、`main` 返回 `Branch not protected`、workflow 数量为 0。fork 运行审批当前为 `first_time_contributors`，目标为来源 Spec 规定的 `all_external_contributors`。原私有仓库的 Pro 升级前提已解除，规则配置、审批策略变更与真实门禁验收仍待实施；本次文档修订不勾选实施任务。
+
 ## 使用方法与证据边界
 
 本文件供后续 AI Agent 或维护者逐项执行。先读来源 Spec，再核对当前 Git、工具链和 GitHub 状态。不得把本次设计基线、历史测试数量、曾经通过的命令或 Plan checkbox 当作新 revision 的证据。
@@ -34,9 +36,9 @@ date: "2026-09-03"
 ## 执行依赖与授权停止点
 
 - Tasks 1–12 是本地实施与验证。开始这些任务需要新的实施授权，本次文档请求不执行它们。
-- Task 13 涉及 push、样例 PR、正常 CI 变更的合并和真实 Actions，Task 14 涉及启用 schedule，Task 15 涉及账户条件和分支规则。这些动作分别取得明确授权，不由本地通过结果推导。
-- 账户升级、公开仓库、迁移组织、购买额度、安装生产主机依赖和真实 provider 调用不在本 Plan 执行范围。
-- 保留私有仓库。Rulesets 或保护接口拒绝时，Task 15 保持未完成。不得改成“本地 hook 已满足”。
+- Task 13 涉及 push、样例 PR、正常 CI 变更的合并和真实 Actions，Task 14 涉及启用 schedule，Task 15 涉及 fork 审批设置和分支规则。这些动作分别取得明确授权，不由本地通过结果推导。
+- 账户升级、再次更改仓库可见性、迁移组织、购买额度、安装生产主机依赖和真实 provider 调用不在本 Plan 执行范围。
+- 按公开仓库实施分支 Rulesets，不要求先升级 Pro。规则尚未配置、权限拒绝与检查尚未运行分别记录；Task 15 必须有规则回读与拒绝合并实测才能完成，不得改成“本地 hook 已满足”。
 - 不触碰真实 Mac/Hermes 服务、用户数据库、Keychain 或生产 Secret，不运行 S9 soak 和部署。
 - 当前仓库代码与来源 Spec 有冲突时，先判断是设计缺口还是实现缺口。新增设计决定先回写 Spec，不能只在 Plan 增加要求。
 - 任何规则、平台或覆盖率无法满足时，保留具体失败；不得通过减少必需集合来勾选任务。
@@ -91,7 +93,7 @@ date: "2026-09-03"
 | U2 | Tasks 4–6，产物、测试和浏览器 | U1 | 本机产物安装/浏览器证据与可在另一平台运行的入口，完整托管矩阵由 Task 13 验收 |
 | U3 | Tasks 7–8，覆盖率与安全 | U1，Task 7 还依赖 Task 5 | 可比覆盖率基线、安全扫描和例外负向证据 |
 | U4 | Tasks 9–12，汇总、workflow、周期证据与负向矩阵 | U2、U3；Task 9 可在 Task 3 后先实现纯逻辑 | 本地完整政策验证与负向 fixture，GitHub 场景留至 Tasks 13/15 |
-| U5 | Tasks 13–15，GitHub 验证与强制门禁 | U4，各项外部授权及账户前提 | run URLs、拒绝合并证据、规则回读 |
+| U5 | Tasks 13–15，GitHub 验证与强制门禁 | U4，各项外部授权及仓库管理权限 | run URLs、fork 审批与拒绝合并证据、规则回读 |
 | U6 | Task 16，文档和交接 | 已完成单元的事实 | 验收映射、未关闭事项与准确交付状态 |
 
 Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、Vitest 配置和政策文件由一个协调者顺序合并。每个平台输出独立目录。验证完成后按单元做本地提交；分支、push、PR 和合并仍单独授权。
@@ -105,7 +107,7 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 - [ ] 读取来源 Spec、项目 AGENTS、现有 package/test/build 脚本及 S0/S9 边界，记录确认和实施授权范围。
 - [ ] 记录 HEAD、dirty 文件、工具版本和锁文件摘要。保护用户已有修改，只在隔离临时目录运行破坏性样例。
 - [ ] 实跑现有 `npm run check`、文档严格校验和五个主测试项目，逐项记录实际基线及 opt-in suite，不从历史计数推算。
-- [ ] 只读复核 GitHub 仓库类型、默认分支、Actions、可写协作者及规则能力。保存脱敏结果和查询时间，区分 403 权限限制与空规则。
+- [ ] 只读复核 GitHub 可见性、默认分支、Actions、fork 审批策略、可写协作者及规则能力。保存脱敏结果和查询时间，区分公开可用、空规则、分支未保护与权限失败，不沿用已失效的私有仓库 403。
 - [ ] 在基线目录记录当前安装/构建耗时、磁盘峰值、工具依赖和未通过项。基线失败先定位，不先放宽门禁。
 
 ### Task 2：固定工具链与治理校验器
@@ -161,10 +163,12 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 ### Task 8：实现安全扫描与窄范围例外
 
 - [ ] 复用当前 machine-secret scan，接入固定 Gitleaks 的当前内容与提交范围扫描。fixture 使用合成凭据，输出脱敏。
+- [ ] 记录公开仓库可用的 CodeQL/code scanning、Dependency Review 和 SARIF 与首期必需工具的区别；不自动启用附加功能或为报告展示扩大 token 权限，后续接入先同步来源 Spec 与 Plan。
 - [ ] 固定 Semgrep CE 及许可明确的规则，启用阻断命中和工具错误失败；验证规则实际加载和生产文件覆盖。
 - [ ] 根据完整锁文件扫描生产/开发及传递依赖，保留 advisory 响应摘要、时间和 High/Critical 判定。
 - [ ] 实现精确 `ExceptionRecord` 校验，读取受审阅基线，拒绝到期、重复、扩大范围或自动生成的例外。
 - [ ] 验证历史泄漏后删除、真实泄漏不可豁免、到期例外、advisory 不可用、规则解析失败、空扫描和报告缺失均失败。
+- [ ] 按公开可读要求实现日志脱敏和 artifact 上传白名单；用合成敏感哨兵验证正常及失败输出、截图/trace 和归档，不上传完整工作区、环境转储或真实 S9 主机证据。
 
 ### Task 9：实现拒绝不完整成功的汇总器
 
@@ -178,7 +182,7 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 ### Task 10：实现 PR 与默认分支工作流
 
 - [ ] 编写 `.github/workflows/ci.yml`，完整实现 Spec 第 5 节的 job/矩阵和依赖；稳定显示名为 `ci/required`。
-- [ ] 配置 Spec 第 9 节的事件、正确 checkout 身份、并发取消、超时、`fail-fast: false` 和最小权限，不设置 workflow paths 过滤。
+- [ ] 配置 Spec 第 9 节的事件、正确 checkout 身份、并发取消、超时、`fail-fast: false` 和最小权限，不设置 workflow paths 过滤；fork 待批准时不生成成功替代状态。
 - [ ] 配置本次 artifact ID 的传递与重新校验，防止按 latest/分支名读旧归档。各 job 不共享可写 checkout 或原生依赖缓存。
 - [ ] 令 `required` 使用 `always()`，上传报告保留失败语义；取消整个 workflow 时保持未成功，而非额外写成功状态。
 - [ ] 使用 actionlint、政策结构检查和本地组合入口验证 YAML、依赖、矩阵数量、Action SHA 与参数处理。此任务不 push 或触发远端运行。
@@ -189,7 +193,7 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 - [ ] 修改 scale/thread-scale 入口，数据和报告输出到本次临时目录，禁止 CI 写回历史 qualification evidence。
 - [ ] 实现品牌浏览器版本记录、依赖复扫和额外受支持 Node 版本的观察，声明它们的证明范围与不可比条件。
 - [ ] 用 `export-evidence.mjs` 输出 S9 可消费的 CI 证据包，绑定默认分支真实 SHA、平台产物和未完成项，不写产品 qualification 状态。
-- [ ] 校验 retention、新鲜度、脱敏及持久交接前提。过期、混合 SHA、错平台和未完成必需检查均不能形成可交接成功结果。
+- [ ] 校验 retention、新鲜度、公开输出和持久交接前提；需要保密的 S9 证据不上传公开 Actions。过期、混合 SHA、错平台和未完成必需检查均不能形成可交接成功结果。
 
 ### Task 12：完成本地负向矩阵与资源基线
 
@@ -204,9 +208,10 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 - [ ] 展示拟 push 的分支/提交、样例 PR、预期 Actions 资源和负向操作，取得对应授权。缺授权时保持本任务未完成。
 - [ ] 在真实 Actions 上运行完整绿色对照，确认 Linux/macOS、最低 Node、三个浏览器和所有报告均属于本次 run/attempt。
 - [ ] 在授权样例 PR 验证红色测试、上游失败、矩阵缺失、取消运行及 PR 更新导致旧 SHA 失效，不合并故意失败代码。
-- [ ] 验证 fork/Dependabot 权限语义和无生产 Secret 路径。若真实入口当前不可用，记录未验证，不能以同仓库普通 PR 冒充。
+- [ ] 在当前审批设置下验证 fork 等待批准、Owner 审阅当前代码后批准运行、完整矩阵执行与只读 token；Dependabot 单独验证。若真实入口当前不可用，记录未验证，不能以同仓库普通 PR 冒充，Task 15 再验收目标审批设置。
+- [ ] 检查真实公开 run 的日志、摘要、截图/trace 和可下载 artifact，确认只含允许输出且无合成敏感哨兵原文，不用真实 Secret 做泄漏样例。
 - [ ] 在完整绿色正常 CI PR 经 Owner 审阅并明确授权合并后，将正常变更合入默认分支并验证 push 运行。样例失败 PR 不合并；schedule 在 Task 14 授权前不得随该变更意外启用。
-- [ ] 保存 run/check URLs、tested SHA、实际权限、artifact IDs、报告摘要、失败结论和计费资源观测。清理远端样例需在已有授权内或另获授权。
+- [ ] 保存 run/check URLs、tested SHA、实际权限、artifact IDs、报告摘要、失败结论和资源观测。核对使用的是公开仓库免费标准 runner，保留并发/超时/存储限制；更大规格或付费服务另行授权。清理远端样例需在已有授权内或另获授权。
 
 ### Task 14：在授权后启用周期检测
 
@@ -217,8 +222,9 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 
 ### Task 15：在授权后启用服务端强制门禁
 
-- [ ] 重新核查账户与仓库资格、当前规则及可写协作者。403 或权限不满足时记录 `enforcement_unavailable`，不请求公开仓库来绕过限制。
-- [ ] 在 Owner 完成必要账户选择后展示准确 Ruleset 差异、required check 来源和回退方案，取得访问控制修改授权。
+- [ ] 重新核查公开可见性、管理权限、当前规则、fork 审批策略及可写协作者。空规则记为 `enforcement_not_configured`；接口拒绝或管理权限不足记为 `enforcement_unavailable`，不把待批准/未运行检查误判为规则不可用。
+- [ ] 展示准确 Ruleset 差异、fork 审批设置差异、required check 来源和回退方案，取得对应访问控制修改授权，无需先完成 Pro 升级。
+- [ ] 在授权后将 fork 审批设置为 `all_external_contributors` 并回读。用适用的首次及重复外部贡献者样例证明待批准时不成功、批准运行后执行完整检查；该批准不代替合并审阅。
 - [ ] 确认完整 `ci/required` 已实际出现且有效，再配置 Spec 第 10 节的主分支规则，避免锁死仓库。
 - [ ] 验证首次初始化已结束，说明正常政策更新和经单独授权的规则维护路径；不得保留自动初始化或长期绕过入口。
 - [ ] 回读并比较每项规则，核对最新组合、required check 来源、禁止强推/删除、讨论解决及无长期 bypass。
@@ -242,11 +248,11 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 | N04 | 整次 workflow 取消、旧 SHA 或旧 attempt | required 不成功 | Task 9 fixture 和 Task 13 检查状态 |
 | N05 | 矩阵缺项/重复/错平台但父 job 显示成功 | 集合校验失败 | Task 9 的正反结果集合 |
 | N06 | 归档篡改、缺迁移、错 ABI、安装时重新构建 | 产物或安装检查失败 | Task 4/5 的 digest 与安装日志 |
-| N07 | 历史合成 Secret 提交后删除、未批准例外 | 扫描失败 | Task 8 的临时 Git 历史和脱敏结果 |
+| N07 | 历史合成 Secret 提交后删除、未批准例外、公开输出中的合成敏感哨兵 | 扫描失败，日志与上传材料不暴露哨兵原文 | Task 8 的临时 Git 历史、脱敏正反样例及 Task 13 的真实输出检查 |
 | N08 | Advisory 网络失败、空扫描、规则未加载 | infrastructure/工具失败 | Task 8 的故障注入报告 |
 | N09 | 新增未导入代码、删测、降低同 PR baseline | coverage 失败 | Task 7 的分母、差异和基线报告 |
 | N10 | 页面异常、关键按钮失效、缺翻译/无障碍阻断 | browser 失败 | Task 6 的引擎结果与脱敏诊断 |
-| N11 | fork/Dependabot、恶意标题/分支参数 | 无越权、无 shell 注入，普通检查可运行 | Task 10 参数测试与 Task 13 权限证据 |
+| N11 | fork 待批准/批准后运行、重复外部贡献者、Dependabot、恶意标题/分支参数 | 待批准不成功，批准后完整运行，无越权、无 shell 注入 | Task 10 参数测试、Task 13 权限证据与 Task 15 目标审批设置实测 |
 | N12 | 红色/绿色对照 PR、规则漂移 | 红色不可合并，绿色符合规则，漂移被回读发现 | Task 15 的规则与 mergeability 证据 |
 
 ## 验证入口
@@ -284,8 +290,8 @@ python3 -B tools/document-governance/scripts/validate_docs.py --strict .
 | CI-A07 | Tasks 7、12 | 可比基线、增量报告和 N09 | 待实施 |
 | CI-A08 | Tasks 8、12、13 | 三类安全扫描、例外与 N07/N08 | 待实施 |
 | CI-A09 | Tasks 9、10、12、13 | needs+成员报告的严格判定和 N03–N05 | 待实施 |
-| CI-A10 | Tasks 10、13 | 实际事件/SHA/权限和 N11 | 待实施 |
-| CI-A11 | Tasks 13、15 | 有效账户资格、规则回读与 N12 | 待实施，存在外部前提 |
+| CI-A10 | Tasks 8、10、13、15 | 实际事件/SHA/权限、公开输出检查与 N11 | 待实施 |
+| CI-A11 | Tasks 13、15 | 公开仓库管理权限、规则回读与 N12 | 待配置与实测，无 Pro 升级前提 |
 | CI-A12 | Tasks 11、14 | 周期 run、独立输出和 S9 交接格式验证 | 待实施，启用需授权 |
 | CI-A13 | Tasks 12、13、15 | N01–N12 全部正反对照及实际门禁拒绝 | 待实施 |
 | CI-A14 | Tasks 1、12、16 | 资源基线、复现入口、文档与完整交付记录 | 待实施 |
@@ -293,7 +299,7 @@ python3 -B tools/document-governance/scripts/validate_docs.py --strict .
 ## 关闭检查清单
 
 - [ ] CI-A01–CI-A14 均有对应当前实现证据，没有缺失矩阵或未授权动作被标成通过。
-- [ ] 本地工具、GitHub workflow 与 GitHub 强制门禁分别验收。账户或权限仍阻塞时，不把本 Plan 标记全部完成。
+- [ ] 本地工具、GitHub workflow、fork 审批设置与 GitHub 强制门禁分别验收。规则未配置、权限受限或实际检查未完成时，不把本 Plan 标记全部完成。
 - [ ] 所有负向验证场景被正确拒绝，正常对照通过，真实 GitHub 结果与汇总逻辑一致。
 - [ ] README、Architecture 与已采用的操作文档只描述已实现事实；不存在未验证的 Runbook seal。
 - [ ] S0 验收归属、S9 待完成事项、历史 evidence、Pi 边界和用户数据保持正确。

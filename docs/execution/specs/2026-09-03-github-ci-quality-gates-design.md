@@ -32,13 +32,14 @@ date: "2026-09-03"
 
 ### 设计依据及证据限制
 
-以下为 2026-09-03 的设计输入，实施前重新核查。
+以下为 2026-09-03 的设计输入，实施前重新核查。Owner 已将仓库改为公开，本次通过 GitHub API 重新核验可见性、Actions 和规则；原私有仓库的 Pro/403 前提不再适用。
 
 | 已观察事实 | 设计影响 |
 | --- | --- |
 | 本地基线为 `6f18b051f70ed596c86ffc4dd5af9f65aa599d42`，工作树起始干净；本地和 GitHub 均无工作流 | 新建 CI，不宣称已有检查被保护 |
-| `sixianli/himawari-agent` 为个人私有仓库；Rulesets API 返回要求 Pro 或公开仓库的 403；此前同会话分支保护 API 返回相同限制 | 保留私有。升级并复核权限之前只能提供检测，强制门禁尚未成立 |
-| 同会话只读查询显示一名可写协作者 | 初始规则不要求另一名用户批准自建 PR；Owner 手动合并，独立审批仍是能力缺口 |
+| 仓库 API 返回 `sixianli/himawari-agent`、`visibility: public`、`private: false`、Owner 类型 `User`、默认分支 `main` | 按个人公开仓库设计；分支 Rulesets 不再以升级 Pro 为前提 |
+| Rulesets API 成功返回 `[]`；`main` 保护 API 返回 `404 Branch not protected`；Actions workflow 数量为 0 | 规则能力已可访问，但工作流和强制门禁尚未启用；空规则与接口权限失败分别处理 |
+| fork PR 审批 API 返回 `first_time_contributors`；协作者查询只有 Owner 一名 `admin` | 当前仅首次贡献者需批准运行；目标改为所有外部贡献者需批准运行，设置变更单独授权。Owner 自建 PR 不要求另一名用户批准，独立审批仍是能力缺口 |
 | `npm run check` 与文档严格校验在同会话通过 | 复用现有检查，不重写现有政策 |
 | `npm test` 未包含 `pi-compat`；其他四个命名 project 是主 project 的子集 | 使用五个主 project，避免遗漏及重复计算 |
 | `test:browser` 实际运行 Node 测试；真实浏览器脚本使用构建产物和 fixture 服务 | 单列真实浏览器检查，明确 fixture 证明范围 |
@@ -64,7 +65,7 @@ date: "2026-09-03"
 
 - 更改产品功能、PRD 范围、现有授权语义或 Pi 协议。
 - 在本次文档交付中实现工作流、启动定期任务或修改 GitHub 设置。
-- GitHub 账户升级、仓库公开或迁移组织、CodeQL 付费能力、merge queue、自动合并。
+- GitHub 账户升级、再次更改仓库可见性或迁移组织、付费安全服务、merge queue、自动合并。
 - 生产部署、Secret 分发、Hermes 常驻 PR runner、真实 provider 或外部账户调用。
 - 代替 S9 实现发布状态机、七天 soak、平台资格、签名和升级操作。
 - 将同仓库可修改的 CI 视为抵御恶意仓库管理员的安全边界。
@@ -82,8 +83,8 @@ date: "2026-09-03"
 | CI-A07 | 新增可执行代码、删测或覆盖率报告缺失 | 按固定分母执行增量和基线策略；未导入生产文件仍被统计 |
 | CI-A08 | 出现未豁免严重漏洞、密钥泄漏、阻断规则命中或扫描不可用 | 安全检查失败，结果脱敏，不能通过自动更新例外转绿 |
 | CI-A09 | 上游失败、取消、跳过、少一个矩阵成员、旧报告或空报告 | `ci/required` 不成功，且报告具体原因 |
-| CI-A10 | PR、fork、Dependabot、默认分支 push 或手动运行 | 以正确 revision 和最小权限执行；不向 PR 提供生产凭据或主机入口 |
-| CI-A11 | 账户条件满足且 Owner 授权启用强制门禁 | GitHub 只接受最新组合的必需检查；失败 PR 无法合并；只读回读与实测一致 |
+| CI-A10 | PR、fork、Dependabot、默认分支 push 或手动运行 | 以正确 revision 和最小权限执行；需批准的 fork 运行在批准前不成功；不向 PR 提供生产凭据或主机入口，输出符合公开可读要求 |
+| CI-A11 | 公开仓库具备规则管理权限且 Owner 授权启用强制门禁 | GitHub 只接受最新组合的必需检查；失败 PR 无法合并；只读回读与实测一致，不以账户升级为前置任务 |
 | CI-A12 | 周期质量检测运行或向 S9 提交 CI 证据 | 输出独立 artifact，绑定来源和平台，不写产品资格状态，不修改历史 evidence |
 | CI-A13 | 对门禁运行受控负向样例 | 每项不合格样例均被拒绝；正向对照通过；失败退出码不能被吞掉 |
 | CI-A14 | 工具升级、检查失败、交付或恢复执行 | 有版本、复现命令、证据、耗时和未关闭项；当前事实文档与实际启用状态一致 |
@@ -200,7 +201,9 @@ PR 的增量范围取目标分支与 head 的 merge-base 到 head。默认分支
 
 例外必须包含精确 advisory/规则、依赖版本或路径、理由、Owner、审阅依据和到期日。运行时使用 UTC 判断到期；重复、未知、无效或扩大范围的例外失败。新例外与基线变更单独审阅，不由失败 job 自动生成。真实 Secret、缺失测试、缺失平台和伪造产物没有通用豁免入口。
 
-不依赖当前仓库不可用的私有 CodeQL、GitHub Dependency Review 或 SARIF 接收能力。普通 JSON、JUnit、LCOV 和脱敏日志作为私有 Actions artifacts 即可交付。账户升级到 Pro 也不意味着私有 CodeQL 自动可用。
+公开仓库可使用 GitHub CodeQL/code scanning、Dependency Review 和 SARIF 接收能力，不再标记为私有仓库能力受限。功能可用不等于已配置。首期必需门禁仍采用上述 Gitleaks、Semgrep CE 和完整锁文件 advisory 扫描，以保留本地复现与统一例外判定；GitHub 原生能力可作为后续补充，接入前需明确检查身份、启用配置、权限、失败语义与正反验证，并同步本 Spec 和 Plan。Dependency Review 的增量检查不能替代完整依赖复扫，上传 SARIF 成功也不能代替安全判定。
+
+JSON、JUnit、LCOV、日志、截图和 trace 均按公开可读材料准备。公开仓库的 Actions artifacts 可由登录且有仓库读取权限的用户下载，不是私密证据存储。上传只允许明确列出的合成测试输出、构建产物与脱敏报告，禁止打包整个工作区、环境变量转储、真实状态目录、数据库、Secret 或用户正文。脱敏覆盖日志输出和失败路径，不能只在最终归档阶段处理；需要保密的 S9 主机证据保留在另行批准的受限位置。
 
 ### 8. 汇总器必须拒绝不完整成功
 
@@ -218,6 +221,8 @@ PR 的增量范围取目标分支与 head 的 merge-base 到 head。默认分支
 
 PR 使用 `pull_request`，在 opened、synchronize、reopened、ready_for_review 及影响目标分支的 edited 事件重新验证。初期 draft PR 也完整运行。默认分支使用 `push` 复验。`workflow_dispatch` 只验证明确 ref/SHA，不自动发布。禁用工作流级路径过滤和以 skip 标记跳过必需检查的交付方式。
 
+公开 fork PR 作为正常贡献入口。目标 Actions 设置为所有外部贡献者需批准运行（`all_external_contributors`）；Owner 先审阅当前提交，特别是 workflow、安装脚本、政策和汇总器变更，再批准相应运行。等待批准属于尚未执行，不能计作成功或自动豁免；批准运行不等于批准合并，之后仍执行完整矩阵。首次贡献者、重复外部贡献者及 Dependabot 的实际审批和只读 token 行为分别验收，不通过改用 `pull_request_target` 或提供写权限来消除等待。
+
 PR 记录 head SHA、base SHA 和实际 tested merge SHA，不擅自将 checkout 改为 PR head 来回避组合测试。`push` 结果绑定真正的默认分支提交。PR 的临时合并 SHA 产物不能冒充后来不同 SHA 的发布产物。
 
 同一 PR 的更新可取消较旧 CI。concurrency key 包含 workflow、event 和 PR/ref，避免不同 workflow 相互取消。默认分支交付记录使用唯一 run key，不取消前一个已开始的构建验证。矩阵 `fail-fast: false` 保留完整诊断，不降低总体失败条件。
@@ -228,17 +233,17 @@ PR 记录 head SHA、base SHA 和实际 tested merge SHA，不擅自将 checkout
 
 PR 运行在 GitHub 托管临时 runner，不进入个人 Mac 或 Hermes。下载阶段可以访问审核过的软件源；测试只需要 loopback 和合成状态。缺少真实凭据不应导致普通测试偷偷读取主机 Secret。此合同不将测试 mock 或 Node 网络 stub 宣称为对恶意代码的 OS 网络隔离。
 
-同仓库 writer 能修改 workflow、政策和汇总器，绑定 GitHub Actions 来源也不能防御这种行为。当前采用可信 Owner 审阅这一边界；有第二名审阅者后可增加 CODEOWNERS/非作者审批。需要独立可信 CI 控制面时另立设计，不能在本方案中假称已实现。
+同仓库 writer 及外部 PR 都能提议修改 workflow、政策和汇总器，绑定 GitHub Actions 来源不能证明执行逻辑未被修改。当前采用可信 Owner 审阅这一边界，批准外部运行前和合并前均需核对这些改动；有第二名审阅者后可增加 CODEOWNERS/非作者审批。需要独立可信 CI 控制面时另立设计，不能在本方案中假称已实现。
 
 ### 10. GitHub 强制门禁的独立启用
 
-保留私有仓库。Owner 完成必要账户选择并授权后，读取当前权限和规则，先让完整 `ci/required` 在目标仓库真实运行，再启用规则。不能预先要求一个从未产生的状态导致仓库锁死。
+当前仓库已公开，GitHub Free 的公开仓库支持分支 Rulesets，无需先升级 Pro。Owner 授权后，读取当前管理权限、Actions fork 审批设置和规则，展示目标配置差异；先让完整 `ci/required` 在目标仓库真实运行，再启用主分支规则。不能预先要求一个从未产生的状态导致仓库锁死。公开状态、接口可读、规则已配置和规则实测生效是四种不同事实。
 
 目标规则要求通过 PR 修改 `main`、最新组合上的 `ci/required`、预期 GitHub Actions 来源、分支保持最新、讨论已解决，并禁止强推和删除。初始不要求一名非作者审批，也不设长期日常 bypass。任何紧急绕过必须单独授权并留下记录。
 
-实际规则以 GitHub 回读和失败 PR 的不可合并状态为证据。API 拒绝、额度耗尽、检查未运行或权限不足时记录 `enforcement_unavailable`。不得回退为本地 hook 后宣称服务端强制完成。
+实际规则以 GitHub 回读和失败 PR 的不可合并状态为证据。规则尚未配置时记录 `enforcement_not_configured`；规则接口拒绝或管理权限不足时记录 `enforcement_unavailable`。已启用规则下的 fork 待批准、检查未运行或资源限制属于检查未完成，必须继续阻止合并，不能误报规则不存在。不得回退为本地 hook 后宣称服务端强制完成。
 
-不将 merge queue 作为个人私有仓库前提。将来仓库具备并选择该能力时，新增 `merge_group` 事件和临时组合 SHA 验证，并重新执行门禁负向矩阵。
+当前个人公开仓库方案不包含 merge queue。将来仓库具备并选择该能力时，新增 `merge_group` 事件和临时组合 SHA 验证，并重新执行门禁负向矩阵。
 
 ### 11. 周期检测与 S9 交接
 
@@ -247,6 +252,8 @@ PR 运行在 GitHub 托管临时 runner，不进入个人 Mac 或 Hermes。下�
 scale 使用固定数据形状、seed 和受控临时目录，输出本次 run 的报告，不写入 `test/integration/qualification/evidence`。比较性能时记录硬件、runner image、样本数和 p50/p95/p99/max；跨硬件变化只报告不可比，不能伪造退化结论。产品绝对目标沿用 S9，不重新定义。
 
 记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘、缓存冷热和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟、scale 60 分钟、汇总 5 分钟。超时是资源上限，不是实测性能承诺。完整报告的常规保留期为 30 天，诊断 screenshot/trace 为 7 天；缺少保留能力要明确报告。
+
+公开仓库使用标准 GitHub 托管 runner 的 Actions 运行免费；仍需遵守并发、执行时间、存储和保留限制，不据此移除超时或扩大资源。更大规格 runner、付费服务或外部 provider 不因仓库公开而获得授权。
 
 周期失败在 GitHub 原生结果中可见，本方案不创建外部通知或自动 issue。发布时 S9 必须检查候选相关的未解决周期失败，不能拿另一 SHA 的绿色 nightly 替代。对会随时间变化的安全扫描，在候选签署前 24 小时内基于同一产物重跑；这一新鲜度不等于软件无漏洞保证。
 
@@ -300,7 +307,7 @@ Plan 必须按 CI-A01 至 CI-A14 建立双向映射。机械验证与真实 GitH
 5. 合成 Secret 的历史提交后删除、到期例外、安全规则未加载和 advisory 网络失败。
 6. 新增未导入生产文件、删测降低覆盖率、同 PR 降低 baseline 和空分母伪造成功。
 7. fixture 页面交互破坏、JS 异常和自动无障碍阻断项。
-8. fork/Dependabot 无生产 Secret 仍能完成普通检查，PR head/base 变化使旧结果失效。
+8. fork 等待批准时无成功结果，批准后与 Dependabot 分别以受限权限完成普通检查；PR head/base 变化使旧结果失效，公开日志和 artifact 无合成敏感哨兵原文。
 9. 真正绿色对照可满足规则，故意红色 PR 在 GitHub 无法合并；测试不实际合并或部署。
 
 仓库内正反样例在临时 fixture repo 中运行，不污染真实分支历史。涉及 GitHub 的样例 PR、push、取消运行和设置变更必须先获授权。CI 自身不可用时保留失败状态，不能以人工勾选代替负向验收。
@@ -314,6 +321,11 @@ Plan 必须按 CI-A01 至 CI-A14 建立双向映射。机械验证与真实 GitH
 - [GitHub 托管 runner 标签与架构](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)。
 - [Actions 权限与不可信代码边界](https://docs.github.com/en/actions/reference/security/secure-use)。
 - [merge queue 可用范围与事件](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)。
-- [私有仓库 CodeQL 条件](https://docs.github.com/en/code-security/reference/code-scanning/troubleshoot-analysis-errors/private-repository-enablement)。
+- [公开仓库 code scanning 与 SARIF](https://docs.github.com/en/code-security/concepts/code-scanning/code-scanning)。
+- [Dependency Review 可用范围](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-review)。
+- [公开 fork 工作流审批](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/approve-runs-from-forks)。
+- [fork 审批策略 API](https://docs.github.com/en/rest/actions/permissions#set-fork-pr-contributor-approval-permissions-for-a-repository)。
+- [Actions artifact 下载权限](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)。
+- [公开仓库标准 runner 计费与使用限制](https://docs.github.com/en/actions/concepts/billing-and-usage)。
 - [Vitest coverage 配置](https://vitest.dev/config/coverage.html)。
 - [Gitleaks](https://github.com/gitleaks/gitleaks)、[Semgrep CE](https://docs.semgrep.dev/deployment/oss-deployment)、[actionlint](https://github.com/rhysd/actionlint)、[npm audit](https://docs.npmjs.com/cli/v11/commands/npm-audit/)。
