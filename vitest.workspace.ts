@@ -1,44 +1,35 @@
 import { defineConfig } from "vitest/config";
+import coveragePolicy from "./ci/coverage-policy.json" with { type: "json" };
+import policy from "./ci/policy.json" with { type: "json" };
 
 export default defineConfig({
   test: {
+    allowOnly: false,
+    passWithNoTests: false,
+    retry: 0,
+    coverage: {
+      provider: "v8",
+      include: coveragePolicy.include,
+      exclude: coveragePolicy.exclude,
+      reporter: ["json", "lcov", "text-summary"],
+      reportsDirectory: ".ci-output/coverage",
+      reportOnFailure: true,
+    },
     projects: [
-      {
-        test: {
-          environment: "node",
-          include: ["apps/**/*.unit.test.ts", "packages/**/*.unit.test.ts"],
-          name: "unit",
-        },
-      },
-      {
-        test: {
-          environment: "node",
-          include: ["apps/**/*.contract.test.ts", "packages/**/*.contract.test.ts"],
-          name: "contracts",
-        },
-      },
-      {
-        test: {
-          environment: "node",
-          include: ["test/integration/**/*.test.ts"],
-          fileParallelism: false,
-          name: "integration",
-        },
-      },
-      {
-        test: {
-          environment: "node",
-          include: ["test/e2e/**/*.test.ts"],
-          name: "e2e",
-        },
-      },
-      {
-        test: {
-          environment: "node",
-          include: ["packages/runtime-pi/**/*.compat.test.ts"],
-          name: "pi-compat",
-        },
-      },
+      ...policy.testProjects.map(({ id, include, exclude, fileParallelism }) => ({
+        test: { name: id, environment: "node", include, exclude, fileParallelism, retry: 0 },
+      })),
+      ...policy.registeredTests
+        .filter(({ kind }) => kind === "qualification")
+        .map(({ path, project }) => ({
+          test: {
+            name: project,
+            environment: "node",
+            include: [path],
+            fileParallelism: false,
+            retry: 0,
+          },
+        })),
       {
         test: {
           environment: "node",

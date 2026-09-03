@@ -1,0 +1,4 @@
+title = "Himawari fixed Gitleaks defaults"
+
+[extend]
+useDefault = true

@@ -1,0 +1,106 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CoveragePolicy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "provider",
+    "projects",
+    "include",
+    "exclude",
+    "thresholds",
+    "baseline"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "version", "mapping"],
+      "properties": {
+        "package": { "const": "@vitest/coverage-v8" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "mapping": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 3,
+      "uniqueItems": true
+    },
+    "include": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "exclude": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changedLines", "changedFunctionBranches"],
+      "properties": {
+        "changedLines": { "type": "number", "minimum": 90, "maximum": 100 },
+        "changedFunctionBranches": { "type": "number", "minimum": 85, "maximum": 100 }
+      }
+    },
+    "baseline": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sourceSha", "sourceTreeSha256", "reportSha256", "groups"],
+          "properties": {
+            "sourceSha": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+            "sourceTreeSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "reportSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "lcovSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "strategySha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "measuredAt": { "type": "string", "minLength": 1 },
+            "sourceState": { "enum": ["commit", "working-tree"] },
+            "groups": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": false,
+              "patternProperties": {
+                "^(?:(?:apps|packages)/[A-Za-z0-9._-]+|scripts/ci)$": {
+                  "$ref": "#/definitions/metrics"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "definitions": {
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "covered", "pct"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "covered": { "type": "integer", "minimum": 0 },
+        "pct": { "type": "number", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lines", "branches", "functions", "statements"],
+      "properties": {
+        "lines": { "$ref": "#/definitions/metric" },
+        "branches": { "$ref": "#/definitions/metric" },
+        "functions": { "$ref": "#/definitions/metric" },
+        "statements": { "$ref": "#/definitions/metric" }
+      }
+    }
+  }
+}

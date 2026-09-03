@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:874081d3c7e782241854d2ebbd3f10ff7f89f9345f558c737a2310641ace53c4"
+contract_sha256: "sha256:e28530136b7343a71d43dc5a080037ee88f48b62b72622058edeaccc604a1513"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -13,6 +13,21 @@ date: "2026-08-27"
 <!-- runbook-contract:
 - scripts/package-node-runtime.mjs
 - scripts/install-node-runtime.mjs
+- scripts/generate-artifact-manifest.mjs
+- scripts/ci/install-tools.mjs
+- scripts/ci/install-dependencies.mjs
+- scripts/ci/resources.mjs
+- scripts/ci/artifact-files.mjs
+- scripts/ci/artifact-archive.py
+- scripts/ci/contracts.mjs
+- scripts/ci/source-inputs.mjs
+- scripts/ci/verify-artifact.mjs
+- ci/toolchain-lock.json
+- ci/policy.schema.json
+- ci/result.schema.json
+- ci/coverage.schema.json
+- package.json
+- package-lock.json
 - apps/admin-cli/src
 - apps/agent-service/src/service-main.ts
 - apps/agent-service/src/production-model-composition.ts
@@ -39,6 +54,8 @@ date: "2026-08-27"
 - 服务启动、authority/SQLite 检查、UDS client/server、信号 drain 和稳定错误码：`apps/agent-service/src/service-main.ts`、`apps/execution-worker/src/service-main.ts`、`packages/platform-node/src/execution-uds-transport.ts`。
 - 可重定位 artifact、内部 workspace 包和外部依赖闭包：`scripts/package-node-runtime.mjs`。
 - 绝对前缀安装和三个入口：`scripts/install-node-runtime.mjs`。
+- 固定工具、禁用未知安装脚本和 SQLite 原生构建探针：`ci/toolchain-lock.json`、`scripts/ci/install-tools.mjs`、`scripts/ci/install-dependencies.mjs`。
+- 文件模式、内容摘要和归档校验：`scripts/ci/artifact-files.mjs`、`scripts/ci/verify-artifact.mjs`。CI 归档安装还绑定同一次运行的 context；它与下述本机目录安装入口有不同的输入参数。
 - state root、SQLite migration、Worker recovery 与身份边界：`packages/platform-node/src/state-root-layout.ts`、`packages/persistence-sqlite/src/product-state-repository.ts`。
 - 本 Runbook contract selector 中列出的源文件和 portable durable web-agent Spec。
 
@@ -75,7 +92,7 @@ ps -axo pid,command
 ## Procedure
 
 1. 对本 Runbook 执行静态 contract check，建立新的受限 evidence 目录，冻结本次构建 commit、prefix、state root、deployment、Owner/Agent 和运行 ID。
-2. 在干净或已审阅的工作树上执行 `npm ci --ignore-scripts` 和 `npm run build`。
+2. 在干净或已审阅的工作树上按 README 安装固定工具链，再执行 `npm run ci:install`；该入口先运行 `npm ci --ignore-scripts`，只构建清单中已审阅的 SQLite 原生依赖并实际验证内存读写。将本次工具目录的 `bin` 放到 PATH 后执行 `npm run build`。工具目录和安装证据目录必须是本次新目录，已有目录使用显式参数另选路径，不覆盖旧证据。不能把未校验的旧 node_modules 或单独 `npm ci --ignore-scripts` 当作完成原生依赖安装。
 3. 核对两个 artifact manifest 的提交输入、package-lock SHA、workspace checksum、Node 平台/架构、schema/migration sequence 和依赖版本。确认 runtime 外部依赖根与列入打包的生产 workspace manifests 完全对应，`@modelcontextprotocol/client` 等新生产依赖和传递闭包存在，`@himawari-agent/testing` 不存在；若核对失败，删除本次临时产物并停止。
 4. 创建本次明确的绝对安装前缀并安装：
 

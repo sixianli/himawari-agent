@@ -1,0 +1,267 @@
+# schedule 尚未授权；预定 UTC 时间记录于 ci/quality-policy.json。
+name: Quality
+on:
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: 明确的比较基线 commit SHA
+        type: string
+        required: true
+      ci_run_id:
+        description: 可选：导出此默认分支完整 CI run 的交接格式
+        type: string
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+env:
+  CI_BASE: ${{ inputs.base_sha }}
+  PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+jobs:
+  scale:
+    runs-on: ubuntu-24.04
+    if: ${{ github.ref == 'refs/heads/main' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools
+      - name: 隔离依赖与原生探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 执行独立质量检测
+        run: .ci-output/tools/bin/node scripts/ci/quality.mjs --check scale --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/quality
+      - name: 核验公开材料
+        if: always()
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools
+        id: publish
+      - name: 保存本次检测结果
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-${{ github.run_id }}-${{ github.run_attempt }}-scale
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保存失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-scale
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+  thread-scale:
+    runs-on: ubuntu-24.04
+    if: ${{ github.ref == 'refs/heads/main' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools
+      - name: 隔离依赖与原生探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 执行独立质量检测
+        run: .ci-output/tools/bin/node scripts/ci/quality.mjs --check thread-scale --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/quality
+      - name: 核验公开材料
+        if: always()
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools
+        id: publish
+      - name: 保存本次检测结果
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-${{ github.run_id }}-${{ github.run_attempt }}-thread-scale
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保存失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-thread-scale
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+  brands:
+    runs-on: ubuntu-24.04
+    if: ${{ github.ref == 'refs/heads/main' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools
+      - name: 隔离依赖与原生探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 记录本次默认分支身份
+        run: .ci-output/tools/bin/node scripts/ci/context.mjs --base "$CI_BASE" --output .ci-output/context.json
+      - name: 构建本次品牌观察产物
+        run: .ci-output/tools/bin/node scripts/ci/build.mjs --context .ci-output/context.json --output .ci-output/build
+      - name: 安装品牌浏览器
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --with-deps chrome msedge
+      - name: 执行独立质量检测
+        run: .ci-output/tools/bin/node scripts/ci/quality.mjs --check brands --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/quality --artifact-directory .ci-output/build
+      - name: 核验公开材料
+        if: always()
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools
+        id: publish
+      - name: 保存本次检测结果
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-${{ github.run_id }}-${{ github.run_attempt }}-brands
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保存失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-brands
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+  dependencies:
+    runs-on: ubuntu-24.04
+    if: ${{ github.ref == 'refs/heads/main' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools
+      - name: 隔离依赖与原生探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 执行独立质量检测
+        run: .ci-output/tools/bin/node scripts/ci/quality.mjs --check dependencies --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/quality
+      - name: 核验公开材料
+        if: always()
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools
+        id: publish
+      - name: 保存本次检测结果
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-${{ github.run_id }}-${{ github.run_attempt }}-dependencies
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保存失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-dependencies
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+  node-observation:
+    runs-on: ubuntu-24.04
+    if: ${{ github.ref == 'refs/heads/main' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools
+      - name: 隔离依赖与原生探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 执行独立质量检测
+        run: .ci-output/tools/bin/node scripts/ci/quality.mjs --check node-observation --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/quality
+      - name: 核验公开材料
+        if: always()
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools
+        id: publish
+      - name: 保存本次检测结果
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-${{ github.run_id }}-${{ github.run_attempt }}-node-observation
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保存失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-node-observation
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+  handoff:
+    runs-on: ubuntu-24.04
+    if: ${{ github.ref == 'refs/heads/main' && inputs.ci_run_id != '' }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    env:
+      CI_RUN_ID: ${{ inputs.ci_run_id }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools
+      - name: 隔离依赖与原生探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 读取指定 CI run 元数据
+        id: metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: .ci-output/tools/bin/node scripts/ci/export-evidence.mjs --mode metadata --run-id "$CI_RUN_ID" --output .ci-output/run-metadata.json
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.ci_run_id }}
+          pattern: report-${{ inputs.ci_run_id }}-${{ steps.metadata.outputs.attempt }}-*
+          path: .ci-output/reports
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.ci_run_id }}
+          name: gate-${{ inputs.ci_run_id }}-${{ steps.metadata.outputs.attempt }}
+          path: .ci-output/gate
+      - name: 复验并导出 CI 交接格式
+        run: .ci-output/tools/bin/node scripts/ci/export-evidence.mjs --metadata .ci-output/run-metadata.json --reports .ci-output/reports --gate .ci-output/gate --output .ci-output/handoff/evidence.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: handoff-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci-output/handoff/evidence.json
+          if-no-files-found: error
+          retention-days: 30

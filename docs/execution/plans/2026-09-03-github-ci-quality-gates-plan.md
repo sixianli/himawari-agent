@@ -21,21 +21,21 @@ date: "2026-09-03"
 
 **架构：** 仓库政策定义检查集合，Node 工具执行并校验结果，GitHub workflow 调度隔离 job，`ci/required` 汇总。安装测试消费构建步骤生成的归档。S9 继续拥有候选资格和签署，CI 只输出证据。
 
-**编制与执行状态：** 用户已明确要求同时编制 Spec 和 Plan，因此本文件与来源 Spec 一同交付。`status: active` 表示开放执行工作，不表示实施已获授权或验收完成。所有实施任务初始未完成。执行者须先确认来源 Spec 的合同和本轮实施授权，再开始 Task 1。
+**编制与执行状态：** 用户于 2026-09-03 明确要求使用 `poteto-mode` 实施本 Plan，并确认允许在本公开仓库复制和分发原始文档治理校验器。Tasks 1–12 的本地实施与 Task 16 的事实同步已获授权；Tasks 13–15 的远端操作仍按下述独立边界执行。`status: active` 表示实施仍在进行，不能据此推导 CI 已通过或强制门禁已生效。
 
-**公开仓库前提：** Owner 已将仓库改为公开；2026-09-03 API 回读确认 `visibility: public`，Rulesets 返回空列表、`main` 返回 `Branch not protected`、workflow 数量为 0。fork 运行审批当前为 `first_time_contributors`，目标为来源 Spec 规定的 `all_external_contributors`。原私有仓库的 Pro 升级前提已解除，规则配置、审批策略变更与真实门禁验收仍待实施；本次文档修订不勾选实施任务。
+**公开仓库前提：** Owner 已将仓库改为公开；2026-09-03 API 回读确认 `visibility: public`，Rulesets 返回空列表、`main` 返回 `Branch not protected`、workflow 数量为 0。fork 运行审批当前为 `first_time_contributors`，目标为来源 Spec 规定的 `all_external_contributors`。原私有仓库的 Pro 升级前提已解除，规则配置、审批策略变更与真实门禁验收仍待实施；本轮再次只读确认 `main` 未保护（HTTP 404）；规则启用仍待独立授权。
 
 ## 使用方法与证据边界
 
 本文件供后续 AI Agent 或维护者逐项执行。先读来源 Spec，再核对当前 Git、工具链和 GitHub 状态。不得把本次设计基线、历史测试数量、曾经通过的命令或 Plan checkbox 当作新 revision 的证据。
 
-每个 checkbox 只有在指定文件、测试输出或远端回读存在后才能勾选。记录完整命令、退出码、tested SHA、工具版本、证据位置和未验证项。方案中的新命令在本文件创建时尚不存在，须由对应任务实现后才能使用。
+每个 checkbox 只有在指定文件、测试输出或远端回读存在后才能勾选。一个步骤已有证据不表示所在验收项全部完成；尤其要区分执行失败的记录和通过证据。记录完整命令、退出码、tested SHA、工具版本、证据位置和未验证项。方案中的新命令在本文件创建时尚不存在，须由对应任务实现后才能使用。
 
 采用 document-governance 的 Plan 模板和来源关系。这里不创建 PStack 常驻协调程序，不自动创建 Goal、分支、PR、定时任务或发布流程。需要子任务时按主机可用并发执行，只有不重叠的文件边界可以并行写入。
 
 ## 执行依赖与授权停止点
 
-- Tasks 1–12 是本地实施与验证。开始这些任务需要新的实施授权，本次文档请求不执行它们。
+- Tasks 1–12 是本地实施与验证，当前实施请求已经授权。当前工作树起点干净，基线提交为 `3f865d2860301d86f33978e6534cfbba02c37a89`；仅修改本任务文件，尚未进行远端写入。
 - Task 13 涉及 push、样例 PR、正常 CI 变更的合并和真实 Actions，Task 14 涉及启用 schedule，Task 15 涉及 fork 审批设置和分支规则。这些动作分别取得明确授权，不由本地通过结果推导。
 - 账户升级、再次更改仓库可见性、迁移组织、购买额度、安装生产主机依赖和真实 provider 调用不在本 Plan 执行范围。
 - 按公开仓库实施分支 Rulesets，不要求先升级 Pro。规则尚未配置、权限拒绝与检查尚未运行分别记录；Task 15 必须有规则回读与拒绝合并实测才能完成，不得改成“本地 hook 已满足”。
@@ -73,6 +73,7 @@ date: "2026-09-03"
 - `package.json`、`package-lock.json`、`vitest.workspace.ts`。固定所需测试依赖，统一主测试入口，注册 tooling 和专用资格 project。
 - `scripts/package-node-runtime.mjs`、`scripts/generate-artifact-manifest.mjs`、`scripts/install-node-runtime.mjs`。使输出显式可定位，补齐内容身份和安全安装验证。
 - `test/integration/installable-node-services.test.ts` 及实际消费该构建的测试 fixture。移除内部构建，统一消费本次产物。
+- 真实 Git 子进程测试和 Execution Worker/安装服务集成测试。仅调整与串行启动阶段相容的 suite 外层预算，并确保失败或超时后回收本例子进程；内部产品期限和业务断言不变。
 - `scripts/qualify-control-center-browser.mjs` 及其 fixture server。接收产物和报告目录，补充实际缺失的三语与失败证据断言。
 - 两个 scale 测试与对应 npm 入口。将数据和证据位置作为显式输入，CI 不回写历史 evidence。
 - `.gitignore`、必要的 formatter/lint 配置。仅增加明确生成输出的排除，不能为通过检查排除生产代码。
@@ -104,96 +105,96 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 
 ### Task 1：确认合同并记录当前基线
 
-- [ ] 读取来源 Spec、项目 AGENTS、现有 package/test/build 脚本及 S0/S9 边界，记录确认和实施授权范围。
-- [ ] 记录 HEAD、dirty 文件、工具版本和锁文件摘要。保护用户已有修改，只在隔离临时目录运行破坏性样例。
-- [ ] 实跑现有 `npm run check`、文档严格校验和五个主测试项目，逐项记录实际基线及 opt-in suite，不从历史计数推算。
-- [ ] 只读复核 GitHub 可见性、默认分支、Actions、fork 审批策略、可写协作者及规则能力。保存脱敏结果和查询时间，区分公开可用、空规则、分支未保护与权限失败，不沿用已失效的私有仓库 403。
+- [x] 读取来源 Spec、项目 AGENTS、现有 package/test/build 脚本及 S0/S9 边界，记录确认和实施授权范围。
+- [x] 记录 HEAD、dirty 文件、工具版本和锁文件摘要。保护用户已有修改，只在隔离临时目录运行破坏性样例。
+- [x] 实跑现有 `npm run check`、文档严格校验和五个主测试项目，逐项记录实际基线及 opt-in suite，不从历史计数推算。
+- [x] 只读复核 GitHub 可见性、默认分支、Actions、fork 审批策略、可写协作者及规则能力。保存脱敏结果和查询时间，区分公开可用、空规则、分支未保护与权限失败，不沿用已失效的私有仓库 403。
 - [ ] 在基线目录记录当前安装/构建耗时、磁盘峰值、工具依赖和未通过项。基线失败先定位，不先放宽门禁。
 
 ### Task 2：固定工具链与治理校验器
 
-- [ ] 按 Spec 第 2 节建立 `ci/toolchain-lock.json`，选定 Python、Action、scanner 和规则的精确版本与下载摘要，记录许可来源。
-- [ ] 用 `sync-governance.mjs` 固定 validator 的实际运行依赖闭包和原始内容摘要。保留来源证据；不得手写替代 validator。
-- [ ] 实现工具安装入口，使用锁文件和审核过的原生构建清单；未知包脚本、digest 错误或工具缺失立即失败。
-- [ ] 在无缓存、无个人 Skill 目录、无 sibling Pi 的临时环境运行安装、SQLite 内存读写和 strict docs validation。
-- [ ] 用损坏工具摘要、缺失治理模块、错误 Pi 版本和非法外部 symlink 验证拒绝路径。保留允许的 workspace 内部链接正向对照。
+- [x] 按 Spec 第 2 节建立 `ci/toolchain-lock.json`，选定 Python、Action、scanner 和规则的精确版本与下载摘要，记录许可来源。
+- [x] 用 `sync-governance.mjs` 固定 validator 的实际运行依赖闭包和原始内容摘要。保留来源证据；不得手写替代 validator。
+- [x] 实现工具安装入口，使用锁文件和审核过的原生构建清单；未知包脚本、digest 错误或工具缺失立即失败。
+- [x] 在无缓存、无个人 Skill 目录、无 sibling Pi 的临时环境运行安装、SQLite 内存读写和 strict docs validation。
+- [x] 用损坏工具摘要、缺失治理模块、错误 Pi 版本和非法外部 symlink 验证拒绝路径。保留允许的 workspace 内部链接正向对照。
 
 ### Task 3：实现政策、结果 schema 与测试归属
 
-- [ ] 建立 Spec 第 1 节的最小 JSON 记录和 schema，拒绝未知字段、重复身份、非法终态和缺失来源。
-- [ ] 实现 `check-policy.mjs`，核对 workflow job/矩阵与唯一政策、完整测试文件归属及固定工具身份。
-- [ ] 建立 `test/tooling` project，复用当前 Vitest；登记主测试、专用资格测试和辅助 child fixture，拒绝未知文件与 `.only`/未登记 skip。
-- [ ] 实现来源 Spec 的首次初始化与后续政策更新边界。旧政策缺失或损坏不能被当作首次引入，功能变更不能自行使用新例外。
-- [ ] 用空 project、漏掉一个矩阵成员、重复测试归属和新增未登记测试验证政策检查会失败。
-- [ ] 定义 `run.mjs` 的受控参数与输出目录，拒绝仓库外任意写入、无效 artifact 路径和不支持的 check ID。调用不接受报告中的任意 shell。
+- [x] 建立 Spec 第 1 节的最小 JSON 记录和 schema，拒绝未知字段、重复身份、非法终态和缺失来源。
+- [x] 实现 `check-policy.mjs`，核对 workflow job/矩阵与唯一政策、完整测试文件归属及固定工具身份。
+- [x] 建立 `test/tooling` project，复用当前 Vitest；登记主测试、专用资格测试和辅助 child fixture，拒绝未知文件与 `.only`/未登记 skip。
+- [x] 实现来源 Spec 的首次初始化与后续政策更新边界。旧政策缺失或损坏不能被当作首次引入，功能变更不能自行使用新例外。
+- [x] 用空 project、漏掉一个矩阵成员、重复测试归属和新增未登记测试验证政策检查会失败。
+- [x] 定义 `run.mjs` 的受控参数与输出目录，拒绝仓库外任意写入、无效 artifact 路径和不支持的 check ID。调用不接受报告中的任意 shell。
 
 ### Task 4：构建可核验的单次产物
 
-- [ ] 调整现有 build/package 入口，输出到明确的本次运行目录；移除依赖共享 `dist` 的隐式并发假设。
-- [ ] 在现有 manifest 上补齐 Node 文件清单、模式、依赖闭包、migration、OS/arch/ABI、输入与内容摘要，不另建第二份产品候选状态。
-- [ ] 将构建内容归档，校验归档路径安全、完整性和平台身份；生成时间只用于运行记录，不参与内容等价比较。
+- [x] 调整现有 build/package 入口，输出到明确的本次运行目录；移除依赖共享 `dist` 的隐式并发假设。
+- [x] 在现有 manifest 上补齐 Node 文件清单、模式、依赖闭包、migration、OS/arch/ABI、输入与内容摘要，不另建第二份产品候选状态。
+- [x] 将构建内容归档，校验归档路径安全、完整性和平台身份；生成时间只用于运行记录，不参与内容等价比较。
 - [ ] 准备 Linux x64 与 macOS arm64 的独立构建入口，在本机可用平台完成干净构建与原生探测。尚不可用平台的实际运行明确留给 Task 13。
-- [ ] 注入单字节修改、缺失迁移文件、错误 ABI、错误来源 SHA 和路径穿越归档，确认 `verify-artifact.mjs` 全部拒绝。
+- [x] 注入单字节修改、缺失迁移文件、错误 ABI、错误来源 SHA 和路径穿越归档，确认 `verify-artifact.mjs` 全部拒绝。
 
 ### Task 5：统一五个主 project 并验证安装产物
 
-- [ ] 将四类 opt-in suite 分配给专用资格 project，从普通 integration 集合明确排除；保留其具体路径与理由。
-- [ ] 使 `npm test` 与 CI 共用主测试执行入口。入口显式准备/接收产物，五个 project 均非空，不使用 `passWithNoTests`。
-- [ ] 移除安装测试的内部 `build:node`。测试从本次归档安装到临时 prefix，在非源码 cwd 下运行三个 binary，禁止开发依赖搜索路径补漏。
-- [ ] 保持 integration 文件串行。完成现有启动、doctor、SQLite、锁冲突、drain/restart、恢复与迁移模拟场景，核验安装前后归档摘要不变。
-- [ ] 测试失败、主 project 清空、产物被替换、缺少依赖和测试内部重新构建均产生非零结果。保留 source-independent 安装成功对照。
+- [x] 将四类 opt-in suite 分配给专用资格 project，从普通 integration 集合明确排除；保留其具体路径与理由。
+- [x] 使 `npm test` 与 CI 共用主测试执行入口。入口显式准备/接收产物，五个 project 均非空，不使用 `passWithNoTests`。
+- [x] 移除安装测试的内部 `build:node`。测试从本次归档安装到临时 prefix，在非源码 cwd 下运行三个 binary，禁止开发依赖搜索路径补漏。
+- [x] 保持 integration 文件串行。完成现有启动、doctor、SQLite、锁冲突、drain/restart、恢复与迁移模拟场景，核验安装前后归档摘要不变。
+- [x] 测试失败、主 project 清空、产物被替换、缺少依赖和测试内部重新构建均产生非零结果。保留 source-independent 安装成功对照。
 
 ### Task 6：把真实浏览器纳入必需矩阵
 
-- [ ] 让现有 Playwright 脚本和 fixture server 消费构建产物路径，报告目录与端口显式可控，启动失败和清理失败不吞掉错误。
-- [ ] 保留现有治理交互，补齐实际缺失的 `zh-CN`、`en`、`ja`、键盘、可见焦点、JS 异常和自动无障碍断言。
+- [x] 让现有 Playwright 脚本和 fixture server 消费构建产物路径，报告目录与端口显式可控，启动失败和清理失败不吞掉错误。
+- [x] 保留现有治理交互，补齐实际缺失的 `zh-CN`、`en`、`ja`、键盘、可见焦点、JS 异常和自动无障碍断言。
 - [ ] 在独立环境执行 Chromium、Firefox、WebKit，保存引擎版本、场景结果及脱敏失败诊断。
-- [ ] 注入破坏按钮、页面异常、缺翻译与无障碍阻断样例，确认对应检查失败，fixture-only 和设备模拟身份保持明确。
-- [ ] 实跑前端预算检查，确认其现有限制未因测试接入被放宽。记录真实浏览器耗时，不把首次结果当性能承诺。
+- [x] 注入破坏按钮、页面异常、缺翻译与无障碍阻断样例，确认对应检查失败，fixture-only 和设备模拟身份保持明确。
+- [x] 实跑前端预算检查，确认其现有限制未因测试接入被放宽。记录真实浏览器耗时，不把首次结果当性能承诺。
 
 ### Task 7：建立可比较的代码覆盖率门禁
 
-- [ ] 精确添加匹配 Vitest 的 coverage provider，固定 Spec 第 6 节的 include/exclude 和 unit/contracts/tooling 采集范围，覆盖自有 CI 执行代码。
-- [ ] 输出 LCOV/JSON 和 source-map 还原位置；未导入生产文件仍在分母。跨进程、浏览器和上游 Pi 不冒充已合并覆盖。
+- [x] 精确添加匹配 Vitest 的 coverage provider，固定 Spec 第 6 节的 include/exclude 和 unit/contracts/tooling 采集范围，覆盖自有 CI 执行代码。
+- [x] 输出 LCOV/JSON 和 source-map 还原位置；未导入生产文件仍在分母。跨进程、浏览器和上游 Pi 不冒充已合并覆盖。
 - [ ] 实测初始各生产 workspace 与自有 CI 工具的四类指标并记录基线。按 Spec 实现新增行 90%、变更函数分支 85% 和整体不退化规则。
-- [ ] 基线从目标分支固定版本读取，给出精确的无新增行/无分支原因；同 PR 降低基线不得将自身失败转绿。
-- [ ] 实现 PR、push 和手动检查的 diff 基线解析；before/base 缺失不得退化为空 diff，并验证首次基线初始化路径。
-- [ ] 用新增未导入文件、删测、缺报告、错误 source map、伪造空分母和更换工具版本验证拒绝或不可比结果。保留可比政策迁移的正向样例。
+- [x] 基线从目标分支固定版本读取，给出精确的无新增行/无分支原因；同 PR 降低基线不得将自身失败转绿。
+- [x] 实现 PR、push 和手动检查的 diff 基线解析；before/base 缺失不得退化为空 diff，并验证首次基线初始化路径。
+- [x] 用新增未导入文件、删测、缺报告、错误 source map、伪造空分母和更换工具版本验证拒绝或不可比结果。保留可比政策迁移的正向样例。
 
 ### Task 8：实现安全扫描与窄范围例外
 
-- [ ] 复用当前 machine-secret scan，接入固定 Gitleaks 的当前内容与提交范围扫描。fixture 使用合成凭据，输出脱敏。
-- [ ] 记录公开仓库可用的 CodeQL/code scanning、Dependency Review 和 SARIF 与首期必需工具的区别；不自动启用附加功能或为报告展示扩大 token 权限，后续接入先同步来源 Spec 与 Plan。
-- [ ] 固定 Semgrep CE 及许可明确的规则，启用阻断命中和工具错误失败；验证规则实际加载和生产文件覆盖。
-- [ ] 根据完整锁文件扫描生产/开发及传递依赖，保留 advisory 响应摘要、时间和 High/Critical 判定。
-- [ ] 实现精确 `ExceptionRecord` 校验，读取受审阅基线，拒绝到期、重复、扩大范围或自动生成的例外。
-- [ ] 验证历史泄漏后删除、真实泄漏不可豁免、到期例外、advisory 不可用、规则解析失败、空扫描和报告缺失均失败。
+- [x] 复用当前 machine-secret scan，接入固定 Gitleaks 的当前内容与提交范围扫描。fixture 使用合成凭据，输出脱敏。
+- [x] 记录公开仓库可用的 CodeQL/code scanning、Dependency Review 和 SARIF 与首期必需工具的区别；不自动启用附加功能或为报告展示扩大 token 权限，后续接入先同步来源 Spec 与 Plan。
+- [x] 固定 Semgrep CE 及许可明确的规则，启用阻断命中和工具错误失败；验证规则实际加载和生产文件覆盖。
+- [x] 根据完整锁文件扫描生产/开发及传递依赖，保留 advisory 响应摘要、时间和 High/Critical 判定。
+- [x] 实现精确 `ExceptionRecord` 校验，读取受审阅基线，拒绝到期、重复、扩大范围或自动生成的例外。
+- [x] 验证历史泄漏后删除、真实泄漏不可豁免、到期例外、advisory 不可用、规则解析失败、空扫描和报告缺失均失败。
 - [ ] 按公开可读要求实现日志脱敏和 artifact 上传白名单；用合成敏感哨兵验证正常及失败输出、截图/trace 和归档，不上传完整工作区、环境转储或真实 S9 主机证据。
 
 ### Task 9：实现拒绝不完整成功的汇总器
 
-- [ ] 实现 `aggregate.mjs` 的纯判定逻辑。先验证 `needs` 全部成功，再核对所有报告、矩阵和身份。
-- [ ] 对 tested SHA、head/base、event、run ID/attempt、政策摘要、工具链、退出码、计数和 artifact 摘要做完整校验。
-- [ ] 以真实正向格式生成 `GateSummary`，每个失败原因可定位到 check ID、矩阵键和原始报告。
-- [ ] 测试 `failure`、`cancelled`、`skipped`、`neutral`、缺失 job、矩阵 aggregate success 但成员缺失、空报告和旧 attempt 均不能通过。
-- [ ] 验证完整 workflow 重跑产生可接受的新 attempt，仅重跑失败 job 的混合结果按 Spec 拒绝并提示完整重跑。
-- [ ] 验证诊断或上传步骤失败不抹去原始失败，未知输入不得默认为 success。总体通过需要完整正向对照。
+- [x] 实现 `aggregate.mjs` 的纯判定逻辑。先验证 `needs` 全部成功，再核对所有报告、矩阵和身份。
+- [x] 对 tested SHA、head/base、event、run ID/attempt、政策摘要、工具链、退出码、计数和 artifact 摘要做完整校验。
+- [x] 以真实正向格式生成 `GateSummary`，每个失败原因可定位到 check ID、矩阵键和原始报告。
+- [x] 测试 `failure`、`cancelled`、`skipped`、`neutral`、缺失 job、矩阵 aggregate success 但成员缺失、空报告和旧 attempt 均不能通过。
+- [x] 验证完整 workflow 重跑产生可接受的新 attempt，仅重跑失败 job 的混合结果按 Spec 拒绝并提示完整重跑。
+- [x] 验证诊断或上传步骤失败不抹去原始失败，未知输入不得默认为 success。总体通过需要完整正向对照。
 
 ### Task 10：实现 PR 与默认分支工作流
 
-- [ ] 编写 `.github/workflows/ci.yml`，完整实现 Spec 第 5 节的 job/矩阵和依赖；稳定显示名为 `ci/required`。
-- [ ] 配置 Spec 第 9 节的事件、正确 checkout 身份、并发取消、超时、`fail-fast: false` 和最小权限，不设置 workflow paths 过滤；fork 待批准时不生成成功替代状态。
-- [ ] 配置本次 artifact ID 的传递与重新校验，防止按 latest/分支名读旧归档。各 job 不共享可写 checkout 或原生依赖缓存。
-- [ ] 令 `required` 使用 `always()`，上传报告保留失败语义；取消整个 workflow 时保持未成功，而非额外写成功状态。
+- [x] 编写 `.github/workflows/ci.yml`，完整实现 Spec 第 5 节的 job/矩阵和依赖；稳定显示名为 `ci/required`。
+- [x] 配置 Spec 第 9 节的事件、正确 checkout 身份、并发取消、超时、`fail-fast: false` 和最小权限，不设置 workflow paths 过滤；fork 待批准时不生成成功替代状态。
+- [x] 配置本次 artifact ID 的传递与重新校验，防止按 latest/分支名读旧归档。各 job 不共享可写 checkout 或原生依赖缓存。
+- [x] 令 `required` 使用 `always()`，上传报告保留失败语义；取消整个 workflow 时保持未成功，而非额外写成功状态。
 - [ ] 使用 actionlint、政策结构检查和本地组合入口验证 YAML、依赖、矩阵数量、Action SHA 与参数处理。此任务不 push 或触发远端运行。
 
 ### Task 11：实现周期检测与 CI 证据交接
 
-- [ ] 编写 `.github/workflows/quality.yml` 的手动和待授权周期配置，固定默认分支执行、时间、检查集合与同类任务互斥规则。
-- [ ] 修改 scale/thread-scale 入口，数据和报告输出到本次临时目录，禁止 CI 写回历史 qualification evidence。
-- [ ] 实现品牌浏览器版本记录、依赖复扫和额外受支持 Node 版本的观察，声明它们的证明范围与不可比条件。
-- [ ] 用 `export-evidence.mjs` 输出 S9 可消费的 CI 证据包，绑定默认分支真实 SHA、平台产物和未完成项，不写产品 qualification 状态。
-- [ ] 校验 retention、新鲜度、公开输出和持久交接前提；需要保密的 S9 证据不上传公开 Actions。过期、混合 SHA、错平台和未完成必需检查均不能形成可交接成功结果。
+- [x] 编写 `.github/workflows/quality.yml` 的手动和待授权周期配置，固定默认分支执行、时间、检查集合与同类任务互斥规则。
+- [x] 修改 scale/thread-scale 入口，数据和报告输出到本次临时目录，禁止 CI 写回历史 qualification evidence。
+- [x] 实现品牌浏览器版本记录、依赖复扫和额外受支持 Node 版本的观察，声明它们的证明范围与不可比条件。
+- [x] 用 `export-evidence.mjs` 输出 S9 可消费的 CI 证据包，绑定默认分支真实 SHA、平台产物和未完成项，不写产品 qualification 状态。
+- [x] 校验 retention、新鲜度、公开输出和持久交接前提；需要保密的 S9 证据不上传公开 Actions。过期、混合 SHA、错平台和未完成必需检查均不能形成可交接成功结果。
 
 ### Task 12：完成本地负向矩阵与资源基线
 
@@ -232,10 +233,10 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 
 ### Task 16：同步当前事实并交接未关闭项
 
-- [ ] 按已实现行为更新 README 的安装/检查入口与 Architecture 的 CI 责任边界。若形成新的持久决策，在实施时按一事一 ADR 记录，不改写旧 ADR。
+- [x] 按已实现行为更新 README 的安装/检查入口与 Architecture 的 CI 责任边界。若形成新的持久决策，在实施时按一事一 ADR 记录，不改写旧 ADR。
 - [ ] 完成下方 CI-A01–CI-A14 映射，引用确切 SHA、命令、报告和远端证据。任务数或测试数变化时从当前结果重新计算。
-- [ ] 明确交付是本地工具完成、工作流已运行还是 GitHub 强制门禁已生效，不把其中一个状态代替另外两个。
-- [ ] 将真正独立且未关闭的未来工作按 document-governance 写入 Backlog；本 Plan 仍负责的未完成项留在本 Plan，不创建重复任务索引。
+- [x] 明确交付是本地工具完成、工作流已运行还是 GitHub 强制门禁已生效，不把其中一个状态代替另外两个。
+- [x] 将真正独立且未关闭的未来工作按 document-governance 写入 Backlog；本 Plan 仍负责的未完成项留在本 Plan，不创建重复任务索引。
 - [ ] 仅在下面的关闭条件成立后归档 Spec/Plan。S9 的生产资格任务保留原状态，本工程 Plan 的完成不代表产品可发布。
 
 ## 负向验证矩阵
@@ -257,44 +258,66 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 
 ## 验证入口
 
-本次文档交付可以执行以下现有入口。
-
-```sh
-python3 -B /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict .
-npm run check:v0.2-coverage
-git diff --check
-```
-
-该绝对路径只记录本机文档验证入口。Task 2 完成后，项目和 CI 的规范入口必须使用仓库固定副本。以下为待实现接口，实施时保持语义一致并写入 README。
+先按 README 使用固定工具链安装依赖。以下入口已经实现，不依赖个人 Skill 路径。
 
 ```sh
 npm run check
 npm run check:ci-policy
 npm run test:tooling
-npm run ci:verify
-python3 -B tools/document-governance/scripts/validate_docs.py --strict .
+npm test
+npm run ci:local
+python3 -E -s -B tools/document-governance/scripts/validate_docs.py . --strict
 ```
 
-`check:ci-policy` 对应政策和结构检查，`test:tooling` 对应门禁自身的正反样例，`ci:verify` 在当前受支持平台执行本地完整入口并报告其他平台尚待执行。单机命令不能伪造 Linux/macOS 全矩阵通过，跨平台完成由真实报告集合证明。
+`test:tooling` 和 `ci:local` 默认读取 `.ci-output/tools`；使用其他已验证工具目录时显式传入 `--tools`。`python3` 必须来自同一固定工具目录。`ci:local` 在当前受支持平台执行共享入口；浏览器执行前按 README 安装锁定 Playwright 对应的引擎。它不会将本机结果替换为托管矩阵，也不会配置 Rulesets。
+
+## 本轮实施证据
+
+以下均为 2026-09-03 的本地观测。提交身份是起点 HEAD，工作树内容另外由报告中的输入摘要绑定；这些中间结果不能冒充最终提交或真实 GitHub run。`.ci-output` 是忽略目录，报告暂留在当前工作区，尚未上传或持久交接。
+
+| 证据 | 实际结果与范围 | 本地记录 |
+| --- | --- | --- |
+| 原始检查 | 原始 `npm run check`、严格文档校验通过；完整测试曾有资源和安装测试失败，保留原始输出 | `.ci-output/baseline/check.log`、`docs.log`、`isolated-projects.json` |
+| 无缓存安装 | Node 22.22.3、npm 11.8.0、Python 3.12.10；33.861 秒；643 包、15 workspaces；SQLite 内存读写通过；无个人 Skill、sibling Pi 或旧 node_modules | `.ci-output/baseline/toolchain/cold-installation.json` |
+| 当前工作区锁文件重装 | 同一固定工具、643 包、15 workspaces；冷缓存 120.588 秒、热缓存 77.893 秒，SQLite 探针通过；保留包的版本无变化。冷轮一条磁盘样本失败，资源记录明确为 incomplete，不能冒充完整峰值 | `.ci-output/final-install/{cold,warm}/installation-result.json` |
+| YAML 补丁 | 本期新增直接依赖 YAML 从既有传递版本 2.8.1 固定到 2.8.3，解决已确认的 `GHSA-48c2-rrv3-qjmp`；其余包版本、数量不变。再次锁文件安装与 SQLite 探针通过，64.713 秒，磁盘采样无错误；锁文件 SHA256 为 `0dd237e60a4394393b39741aab157aaa3867d1c71e491a5149d39fabb00a8a9e` | `.ci-output/final-install/yaml-patched/installation-result.json`；[上游补丁](https://github.com/eemeli/yaml/releases/tag/v2.8.3) |
+| 干净依赖构建 | Mac 归档含 32,075 文件、57,637,921 字节，构建检查通过；归档 SHA256 为 `e48e4d902b63875b330238e46c4438eccfe8bcb9a4c0e259e5f9d2abf9205f5b`。后续源码和覆盖率基线仍将触发最终重建 | `.ci-output/final-build/result.json` |
+| 单一归档安装与测试 | Mac 构建和安装测试成功；111 文件、916 用例通过，零跳过。使用的旧 node_modules 后续发现额外重复文件，此证据不代表干净依赖安装，固定锁文件重装后必须重建 | `.ci-output/u2-20260903/tests-result-2.json` |
+| 干净依赖五项目首轮 | 916 用例中 911 通过、5 个外层超时；保留失败。Git suite 默认 5 秒、两组进程 suite 默认 5/15/30 秒短于允许的多阶段执行，限定调整 suite 预算，未改内部业务期限。Git 17/17、两组集成 7/7 的独立复核通过，归档摘要不变；尚待最终完整运行 | `.ci-output/final-tests/result.json`、`.ci-output/git-harness-budget-1/tests.json`、`.ci-output/integration-suite-budgets-1/outcome.json` |
+| 浏览器 | Chromium 58/58；WebKit 首轮请求错误，诊断轮 58/58，不将诊断重跑覆盖为首轮通过；Firefox 启动权限/渲染错误在同一 binary 独立启动复现 | `.ci-output/u2-20260903/` 的各引擎原始报告 |
+| 浏览器负例 | 页面异常、按钮损坏、缺翻译、自动无障碍阻断四类真实故障注入均拒绝 | `.ci-output/u2-20260903/` 的故障注入报告 |
+| 工具负例 | 政策、归档、依赖安装、扫描、汇总、执行退出码、公开输出和证据交接已有正反样例；最终 tooling 全量与覆盖率仍待冻结采集 | `test/tooling/`、`.ci-output/baseline/root-regressions.log` |
+| 真实静态负例 | 格式、类型、Pi 依赖方向、SOURCE 和需求映射的 12 次正反工具执行均得到预期退出码 | `.ci-output/n01/results.json` |
+| 禁止测试内重建 | 临时副本的原测试正向 8/8、exit 0；注入旧内部 `build:node` 片段后只有对应守卫失败，7/8、exit 1；未执行内部构建，当前仓库输入摘要未变 | `.ci-output/n06-rebuild-guard/results.json` |
+| 合成规模 | scale 与 Thread 专项均通过各 1 个实际用例，分别为 67.582/5.995 秒；生成行数符合原有目标，报告和数据使用本次独立目录。scale 产品资格仍为 partial，CI 检查通过不消除既有 S9 未完成项 | `.ci-output/final-quality-scale/quality.json`、`.ci-output/final-quality-thread-scale/quality.json` |
+| 额外 Node 观察 | 固定 Node 24.11.1 的两套类型检查与 4 文件、158 个纯工具用例通过；不扩大产品支持范围，不证明该 ABI 的 SQLite 绑定 | `.ci-output/final-quality-node-observation/quality.json` |
+| 安全扫描 | 当前内容及 118 个历史提交实际扫描；28 处合成样例对应 13 条精确初始化提案；依赖无 High/Critical，1 项 Moderate。提案仍需 Owner 合入审阅 | `.ci-output/security-task8-final/qualified-scan/security-report.json` |
+| 覆盖率初始测量 | unit/contracts/tooling 共 86 文件、995 用例通过，236 个源码文件覆盖 15 组；新增行 2879/3052（94.33%），变更函数可定位分支 1627/1800（90.39%），严格映射与 LCOV 校验通过，初始基线已写入。随后两份合成安全测试仅调整源码拼接、保留运行字节；最终基线仍须由干净提交副本重新采集 | `.ci-output/coverage-baseline-20260903-final-2/`、`ci/coverage-policy.json` |
+| 提交前项目检查 | 最终合成安全 fixture 调整后 `npm run check` 通过，现有机器密钥扫描通过 642 文件；固定 actionlint 校验两个 workflow 通过 | `.ci-output/baseline/check-final-2.log`、`actionlint-final.log` |
+| 公开输出 | 干净归档 39 个命中文件全部核验官方 npm SHA512 → tar 成员 SHA256 → 构建文件一致性，165 处命中、48 个字面量已核实为文档、占位和合成测试用途。正式 publish 已通过，10 份报告全部摘要核对，新增 `public-review.json` 保留初始化提案及待 Owner 审阅状态；旧包成员准入不替代后续源码变更后的重新构建 | `.ci-output/security-task8-final/published-source-proof.json`、`published-admission-result.json` |
+| 文档治理 | 安装 Runbook 已按工具安装、归档与真实临时服务测试校对，并按原治理脚本重新 seal；严格校验 0 warning。该静态 seal 不表示已对真实主机执行 Live-State Preflight 或启停 | `.ci-output/baseline/docs-final-source.log`、`docs/runbooks/install-start-stop-runbook.md` |
+| GitHub 状态 | 只读证据显示公开仓库、main 无保护；没有新建分支、push、PR、Actions run、schedule 或规则修改 | `.ci-output/baseline/branch-protection.json` |
+
+原始磁盘记录为时点样本，不能追记为峰值。新入口记录工作区及工具的分配磁盘采样峰值，并明确它是采样下界；最终冷/热安装比较、规模检查和干净 checkout 完整验证仍属于 Task 12。当前不得勾选 U3/U4 的完整验收或向 S9 声明生产资格。
 
 ## 验收映射
 
-| Acceptance ID | 负责任务 | 必需证据 | 初始状态 |
+| Acceptance ID | 负责任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- |
-| CI-A01 | Tasks 3、9、10 | 政策/schema、DAG/矩阵/测试归属正反测试 | 待实施 |
-| CI-A02 | Tasks 1、2、4、13 | 干净 runner、原生读写、工具与 Pi 身份 | 待实施 |
-| CI-A03 | Tasks 3、5、12、13 | 五个主 project 和 N02/N03 | 待实施 |
-| CI-A04 | Tasks 4、5、12、13 | 同一归档安装、平台清单和 N06 | 待实施 |
-| CI-A05 | Tasks 6、12、13 | 三引擎报告、三语/键盘/自动无障碍和 N10 | 待实施 |
-| CI-A06 | Tasks 2、3、10、12 | 现有 checks、固定治理 validator 和 N01 | 待实施 |
-| CI-A07 | Tasks 7、12 | 可比基线、增量报告和 N09 | 待实施 |
-| CI-A08 | Tasks 8、12、13 | 三类安全扫描、例外与 N07/N08 | 待实施 |
-| CI-A09 | Tasks 9、10、12、13 | needs+成员报告的严格判定和 N03–N05 | 待实施 |
-| CI-A10 | Tasks 8、10、13、15 | 实际事件/SHA/权限、公开输出检查与 N11 | 待实施 |
-| CI-A11 | Tasks 13、15 | 公开仓库管理权限、规则回读与 N12 | 待配置与实测，无 Pro 升级前提 |
-| CI-A12 | Tasks 11、14 | 周期 run、独立输出和 S9 交接格式验证 | 待实施，启用需授权 |
-| CI-A13 | Tasks 12、13、15 | N01–N12 全部正反对照及实际门禁拒绝 | 待实施 |
-| CI-A14 | Tasks 1、12、16 | 资源基线、复现入口、文档与完整交付记录 | 待实施 |
+| CI-A01 | Tasks 3、9、10 | 政策/schema、DAG/矩阵/测试归属正反测试 | 本地合同与正反测试已实现，最终全量复核中 |
+| CI-A02 | Tasks 1、2、4、13 | 干净 runner、原生读写、工具与 Pi 身份 | Mac 无缓存安装通过；托管两平台与 Node floor 待 Task 13 |
+| CI-A03 | Tasks 3、5、12、13 | 五个主 project 和 N02/N03 | 干净依赖首轮 911/916；5 个外层超时已修正且相关复核通过，最终完整运行待完成；旧 916 全通过证据不替代本轮 |
+| CI-A04 | Tasks 4、5、12、13 | 同一归档安装、平台清单和 N06 | 归档与安装正反验证已有证据；最终源码闭包重建待完成 |
+| CI-A05 | Tasks 6、12、13 | 三引擎报告、三语/键盘/自动无障碍和 N10 | Chromium 通过；WebKit 有失败记录；Firefox 本机启动受限；托管验收待完成 |
+| CI-A06 | Tasks 2、3、10、12 | 现有 checks、固定治理 validator 和 N01 | 固定工具与现有检查已接入；最终严格校验与 N01 复核中 |
+| CI-A07 | Tasks 7、12 | 可比基线、增量报告和 N09 | 算法及负例已实现；真实基线与增量达标未完成 |
+| CI-A08 | Tasks 8、12、13 | 三类安全扫描、例外与 N07/N08 | 本地扫描与负例通过；真实归档公开输出审查中；远端未验证 |
+| CI-A09 | Tasks 9、10、12、13 | needs+成员报告的严格判定和 N03–N05 | 纯汇总与失败传播已实现；真实 run 待 Task 13 |
+| CI-A10 | Tasks 8、10、13、15 | 实际事件/SHA/权限、公开输出检查与 N11 | 最小权限与输出发布控制已实现；真实公开 run/fork 待验证 |
+| CI-A11 | Tasks 13、15 | 公开仓库管理权限、规则回读与 N12 | enforcement_not_configured；无 Pro 升级前提 |
+| CI-A12 | Tasks 11、14 | 周期 run、独立输出和 S9 交接格式验证 | 手动质量任务和导出器已实现；schedule 未启用，真实交接未验收 |
+| CI-A13 | Tasks 12、13、15 | N01–N12 全部正反对照及实际门禁拒绝 | 本地负例复核中；N11/N12 远端部分未执行 |
+| CI-A14 | Tasks 1、12、16 | 资源基线、复现入口、文档与完整交付记录 | 本地实现与文档同步中；最终资源及提交交付待完成 |
 
 ## 关闭检查清单
 

@@ -10,19 +10,51 @@ Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私�
 
 - Node.js 要求：`>=22.19.0`
 - npm 锁定工具版本：`11.8.0`
-- 2026-08-27 Mac 验证基线：Node.js `v25.6.0`、npm `11.8.0`
+- CI 基线：Node.js `22.22.3`；最低兼容矩阵：`22.19.0`；Python：`3.12.10`
 - TypeScript：`5.9.3`
 - Biome：`2.3.5`
 - Vitest：`4.1.9`
 - `@earendil-works/pi-coding-agent`、`@earendil-works/pi-ai`：`0.84.2`
 
-安装锁文件中的依赖：
+安装固定工具、锁文件依赖及审核过的 SQLite 原生绑定：
 
 ```bash
-npm ci --ignore-scripts
+node scripts/ci/install-tools.mjs --directory .ci-output/tools
+.ci-output/tools/bin/node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+export PATH="$PWD/.ci-output/tools/bin:$PATH"
 ```
 
 正式依赖始终来自 npm 发布物。仓库不提交指向相邻 `../pi-mono` 的 `file:` 依赖；本地 Pi 源码学习只通过下面的 developer-local link 模式选择。
+
+## CI 与质量门禁
+
+`ci/policy.json` 定义必需检查、矩阵和测试归属；`scripts/ci/run.mjs` 执行检查并记录身份、退出码、计数与文件摘要；`aggregate.mjs` 核对同一 run/attempt 的完整报告。GitHub 配置保存在 `.github/workflows/ci.yml`，完整集合是 policy、static、双平台 build/test、最低 Node、三个浏览器、coverage、security 和 `ci/required`。
+
+在固定工具环境下，本地入口为：
+
+```bash
+CI_BASE="$(git rev-parse HEAD)"
+npm run check
+npm run test:tooling -- --base "$CI_BASE"
+npm test -- --base "$CI_BASE"
+npm run ci:local -- --base "$CI_BASE"
+```
+
+工具目录可用 `--tools` 指定；输出写入独立 `.ci-output` 目录。工具安装目录和依赖安装的证据目录须为空，已有结果不会被静默覆盖。依赖安装默认使用独立空缓存；需要测量热缓存时可显式传入 `--cache .ci-output/npm-cache`，仍执行完整锁文件安装和原生探测。执行报告记录硬件、耗时与分配磁盘采样峰值；峰值是观测下界，不代表未采到的瞬间峰值。浏览器引擎使用锁定 Playwright 配套版本，安装到独立位置：
+
+```bash
+PLAYWRIGHT_BROWSERS_PATH="$PWD/.ci-output/browsers" .ci-output/tools/bin/node node_modules/playwright/cli.js install chromium firefox webkit
+```
+
+`npm test` 准备一份当前平台归档，再依次执行 unit、contracts、integration、e2e、pi-compat。安装测试从归档安装到临时前缀，在源码目录外验证三个 binary；测试自身不构建。已有归档必须同时传入其 `--context`，来源、平台、ABI、依赖、迁移和内容摘要均重新核验。四类 scale/live 测试有独立资格 project，普通 integration 明确排除它们。
+
+覆盖率采集 unit/contracts/tooling，包含未被导入的生产 TS/TSX 和自有 CI 执行脚本。变更行至少 90%，变更函数的可定位分支至少 85%；各 workspace 四类指标使用目标分支接受的基线。首次引入仅免去不存在的历史基线比较，不放宽增量阈值。安全检查使用原有机器密钥扫描、固定 Gitleaks/Semgrep 和完整锁文件 advisory；缺报告、扫描不可用、到期例外或未豁免 High/Critical 均失败。
+
+公开仓库也可使用 GitHub 的 [CodeQL/code scanning](https://docs.github.com/en/code-security/concepts/code-scanning/code-scanning)、[Dependency Review](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-review) 和 [SARIF 展示](https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support)。它们分别提供额外代码分析、PR 依赖差异审阅及扫描结果展示；本期门禁使用上面的固定工具与完整锁文件检查，尚未启用这些附加服务。后续接入须先更新 Spec/Plan 并明确新增权限，当前 workflow 不为展示报告添加写权限。
+
+`.github/workflows/quality.yml` 提供默认分支的手动规模、品牌浏览器、依赖复扫和额外 Node 观察；schedule 保持停用，拟定时间记录在 `ci/quality-policy.json`。检测结果与历史 qualification evidence 分离。`export-evidence.mjs` 只接受完整默认分支 CI、同一平台产物和 24 小时内的安全报告；导出格式不代表 S9 资格、Owner 签署或持久证据转存已完成。
+
+当前工作流仍待 push 后真实 Actions 验证，fork 审批策略与 Ruleset 尚未配置。本地平台结果不能代替完整托管矩阵或服务端拒绝合并证据。当前验证、初始化基线和未完成项见 [CI 实施 Plan](docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md)。
 
 ## Local reference composition
 
@@ -35,8 +67,8 @@ npm run test:unit -- local-execution-worker local-composition-root
 npm run test:integration -- agent-gateway external-action-reconciliation
 npm run test:e2e -- beef-restaurant
 npm run test:journeys
-npm run qualify:scale
-npm run qualify:thread-scale
+npm run qualify:scale -- --output .ci-output/scale-run
+npm run qualify:thread-scale -- --output .ci-output/thread-scale-run
 npm run build
 ```
 
@@ -177,15 +209,15 @@ Task 5 新增的提交路径具有以下语义：
 规模切片可以用确定性临时 SQLite 重跑，精确生成 200,000 条消息、10,000 个 Thread、500,000 个 Run、100 个 active jobs 和 50 个仓库 monitor，并记录 query/search/approval/Memory/Trace/delete 与 snapshot transfer 的 p50/p95/p99：
 
 ```bash
-npm run qualify:scale
+npm run qualify:scale -- --output .ci-output/scale-run
 ```
 
-这项命令会把生成数据和 snapshot 限制在临时目录并在结束时清理；当前结果见 [S1-T28 scale evidence](test/integration/qualification/evidence/s1-task28-scale.json)。Hermes 新隔离目录也已用同一源码/锁文件 runtime manifest 完成 Linux 构建和安装后服务资格测试，但 native 产物按平台分别构建；这些结果不代表 Mac/Hermes 双向 authority transfer、完整加密迁移、7 天 soak 或 production readiness。
+这项命令会把生成数据和 snapshot 限制在临时目录并在结束时清理；本次报告写入指定的新目录，历史结果见 [S1-T28 scale evidence](test/integration/qualification/evidence/s1-task28-scale.json)。Hermes 新隔离目录也已用同一源码/锁文件 runtime manifest 完成 Linux 构建和安装后服务资格测试，但 native 产物按平台分别构建；这些结果不代表 Mac/Hermes 双向 authority transfer、完整加密迁移、7 天 soak 或 production readiness。
 
 Thread 专项资格使用同样的临时 SQLite 边界，但运行真实 S2 Thread repository/application 路径：10,000 个同时间戳 Thread、200,000 条初始 Message、混合 active/archived/trashed、opaque search、pin、Fork、projection rebuild 和 repository restart。当前 Mac 证据中 active list/search/pin/Fork/projection rebuild 的 p95 分别为 2.811/8.835/3.215/1.262/0.646 ms，正常关闭重开为 357.85 ms；全部分页无重复或遗漏，旧 projection 行清零。重跑命令和证据为：
 
 ```bash
-npm run qualify:thread-scale
+npm run qualify:thread-scale -- --output .ci-output/thread-scale-run
 ```
 
 S2 对 S0 J01–J03/J13 的责任映射由 `npm run test:journeys` 校验。该入口组合既有领域、集成、E2E 与浏览器证据，不复制第二套 Thread/Memory/删除行为；它只表示 S2 本地责任完成，不代表真实外部身份提供方 MFA、实体设备、物理 OS 重启或 S0 全局 journey 已完成。
@@ -194,14 +226,11 @@ S2 对 S0 J01–J03/J13 的责任映射由 `npm run test:journeys` 校验。该�
 
 ```bash
 npm run check
-npm run test:unit
-npm run test:contracts
-npm run test:integration
-npm run test:e2e
+npm test
+npm run test:tooling
 npm run test:journeys
-npm run check:pi-compat
-npm run qualify:scale
-npm run qualify:thread-scale
+npm run qualify:scale -- --output .ci-output/scale-run
+npm run qualify:thread-scale -- --output .ci-output/thread-scale-run
 ```
 
 测试按文件名和目录分组：
@@ -213,7 +242,7 @@ npm run qualify:thread-scale
 - e2e：`test/e2e/**/*.test.ts`
 - Pi compatibility：`packages/runtime-pi/**/*.compat.test.ts`
 
-普通 Vitest project 会跳过需要显式开关的规模资格测试；最终 fresh 测试数量、构建产物 checksum、SQLite 版本和外部 readback 以本轮命令及对应 qualification evidence 为准。E2E 覆盖完整牛肉餐厅参考旅程；integration 包含恢复矩阵、GitHub durable state、模型重复结果和安装后服务路径。默认自动化测试不访问网络、付费模型、外部账户或生产凭据；Task 20 的 embedding 与 generation smoke 只有在分别显式设置 `HIMAWARI_LIVE_EMBEDDING_SMOKE=1` 或 `HIMAWARI_LIVE_GENERATION_SMOKE=1` 时才会使用公开合成文本和已批准的 Keychain provider-secret，并且共同受 `1.00 USD` 上限约束，结果记录在对应 evidence 中。
+普通 integration 明确排除四类 scale/live suite，它们各自登记为独立资格 project；最终 fresh 测试数量、构建产物 checksum、SQLite 版本和外部 readback 以本轮命令及对应 qualification evidence 为准。E2E 覆盖完整牛肉餐厅参考旅程；integration 包含恢复矩阵、GitHub durable state、模型重复结果和安装后服务路径。默认自动化测试不访问网络、付费模型、外部账户或生产凭据；Task 20 的 embedding 与 generation smoke 只有在分别显式设置 `HIMAWARI_LIVE_EMBEDDING_SMOKE=1` 或 `HIMAWARI_LIVE_GENERATION_SMOKE=1` 时才会使用公开合成文本和已批准的 Keychain provider-secret，并且共同受 `1.00 USD` 上限约束，结果记录在对应 evidence 中。
 
 ## Project documents
 

@@ -227,7 +227,8 @@ async function events(
   return result;
 }
 
-describe("Execution Worker real process boundary", () => {
+// Restart/crash cases have two serial 15-second readiness phases plus UDS operations.
+describe("Execution Worker real process boundary", { timeout: 60_000 }, () => {
   it("runs work, cancellation, cursor reconnect and unknown-result reconciliation across UDS", async () => {
     const runtime = await newRuntime();
     const worker = await startWorker(runtime);
@@ -373,5 +374,5 @@ describe("Execution Worker real process boundary", () => {
     await reconnected.request(duplicate);
     expect(await events(reconnected)).toHaveLength(1);
     await stopWorker(worker, "SIGTERM", runtime);
-  }, 30_000);
+  });
 });

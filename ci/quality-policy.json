@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "defaultBranch": "main",
+  "schedule": { "enabled": false, "cron": "23 3 * * *", "timezone": "UTC" },
+  "checks": ["scale", "thread-scale", "brands", "dependencies", "node-observation"],
+  "brands": ["chrome", "edge"],
+  "timeoutsMinutes": {
+    "scale": 60,
+    "thread-scale": 60,
+    "brands": 30,
+    "dependencies": 15,
+    "node-observation": 15
+  },
+  "retentionDays": { "reports": 30, "diagnostics": 7 },
+  "securityFreshnessHours": 24,
+  "nodeObservation": {
+    "version": "24.11.1",
+    "scope": "两个 TypeScript 配置与政策、上下文、汇总、覆盖率工具的兼容性观察，不扩大产品支持范围，不验证该 ABI 的生产 SQLite 绑定",
+    "testFiles": [
+      "test/tooling/context.test.mjs",
+      "test/tooling/policy.test.mjs",
+      "test/tooling/aggregate.test.mjs",
+      "test/tooling/coverage.test.mjs"
+    ],
+    "artifacts": {
+      "linux-x64": {
+        "filename": "node-v24.11.1-linux-x64.tar.gz",
+        "url": "https://nodejs.org/download/release/v24.11.1/node-v24.11.1-linux-x64.tar.gz",
+        "sha256": "58a5ff5cc8f2200e458bea22e329d5c1994aa1b111d499ca46ec2411d58239ca"
+      },
+      "darwin-arm64": {
+        "filename": "node-v24.11.1-darwin-arm64.tar.gz",
+        "url": "https://nodejs.org/download/release/v24.11.1/node-v24.11.1-darwin-arm64.tar.gz",
+        "sha256": "b05aa3a66efe680023f930bd5af3fdbbd542794da5644ca2ad711d68cbd4dc35"
+      }
+    }
+  }
+}

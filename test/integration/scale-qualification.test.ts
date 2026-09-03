@@ -106,10 +106,11 @@ async function freeBytes(directory: string): Promise<number> {
 
 async function maybeWriteEvidence(evidence: Readonly<Record<string, unknown>>): Promise<void> {
   if (readEnvironment("HIMAWARI_SCALE_WRITE_EVIDENCE") !== "1") return;
-  const outputPath = path.resolve(
-    readEnvironment("HIMAWARI_SCALE_EVIDENCE_PATH") ??
-      path.join(ROOT, "test/integration/qualification/evidence/s1-task28-scale.json"),
-  );
+  const requestedPath = readEnvironment("HIMAWARI_SCALE_EVIDENCE_PATH");
+  if (!requestedPath) throw new Error("SCALE_EVIDENCE_PATH_REQUIRED");
+  const outputPath = path.resolve(requestedPath);
+  if (outputPath.startsWith(path.join(ROOT, "test/integration/qualification/evidence")))
+    throw new Error("SCALE_HISTORICAL_EVIDENCE_IMMUTABLE");
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
 }

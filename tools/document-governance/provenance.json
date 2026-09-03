@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/sixianli/agent-skills",
+  "revision": "70dce9fbf5dd3bd1f44db3327dcf0571fe4f2655",
+  "directory": "document-governance",
+  "entrypoint": "scripts/validate_docs.py",
+  "pythonMinimum": "3.10.0",
+  "authorization": {
+    "status": "owner_authorized",
+    "date": "2026-09-03",
+    "scope": "在 himawari-agent 中复制和公开分发该校验器",
+    "path": "PERMISSION.md",
+    "sha256": "69d22bf4b8dd53e0825bf1e40ecfafaaa5776f05ff92d2fd1679fa3ad01f5811"
+  },
+  "files": [
+    {
+      "path": "SKILL.md",
+      "source": "https://github.com/sixianli/agent-skills/blob/70dce9fbf5dd3bd1f44db3327dcf0571fe4f2655/document-governance/SKILL.md",
+      "sha256": "b42c1e8d2ecf401e1bf9e3b774a6a8309e744fb24f0e53910b8f23c651c3d2b7"
+    },
+    {
+      "path": "references/validation-rules.md",
+      "source": "https://github.com/sixianli/agent-skills/blob/70dce9fbf5dd3bd1f44db3327dcf0571fe4f2655/document-governance/references/validation-rules.md",
+      "sha256": "60193c47ef0ba48b3ef64321edc80c2f26b6a3d34f76200c368a113a3d56b95d"
+    },
+    {
+      "path": "scripts/idea_backlog.py",
+      "source": "https://github.com/sixianli/agent-skills/blob/70dce9fbf5dd3bd1f44db3327dcf0571fe4f2655/document-governance/scripts/idea_backlog.py",
+      "sha256": "19826d2dce01369fc70d48ba0c1ece6063b3222847189b55bf9b7b87bcbc96f4"
+    },
+    {
+      "path": "scripts/runbook.py",
+      "source": "https://github.com/sixianli/agent-skills/blob/70dce9fbf5dd3bd1f44db3327dcf0571fe4f2655/document-governance/scripts/runbook.py",
+      "sha256": "d8e36d4bfea2826b70b5054c7cd337043ac41feae84db2b5659aab9a55defc49"
+    },
+    {
+      "path": "scripts/validate_docs.py",
+      "source": "https://github.com/sixianli/agent-skills/blob/70dce9fbf5dd3bd1f44db3327dcf0571fe4f2655/document-governance/scripts/validate_docs.py",
+      "sha256": "da7b69f12039981104a7c31858c09b32d035fbfa1caa7388a1c7d5556aa50f94"
+    }
+  ],
+  "localImports": {
+    "scripts/idea_backlog.py": [],
+    "scripts/runbook.py": [],
+    "scripts/validate_docs.py": ["idea_backlog", "runbook"]
+  }
+}

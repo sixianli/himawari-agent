@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+import { collectArtifactFiles } from "./ci/artifact-files.mjs";
+
 const excludedEntries = new Set([".DS_Store", "coverage", "dist", "node_modules", "test"]);
 
 function sha256(content) {
@@ -44,7 +47,7 @@ async function checksumFiles(directory, relativeFiles) {
   };
 }
 
-async function readWorkspacePackages() {
+async function readWorkspacePackages(repositoryRoot) {
   const packages = [];
   for (const group of ["apps", "packages"]) {
     const groupDirectory = path.join(repositoryRoot, group);
@@ -65,8 +68,7 @@ async function readWorkspacePackages() {
   return packages.sort((left, right) => left.name.localeCompare(right.name));
 }
 
-async function collectBrowserArtifacts() {
-  const outputRoot = path.join(repositoryRoot, "apps/control-center/dist");
+async function collectBrowserArtifacts(outputRoot) {
   try {
     const relativeFiles = await collectFiles(outputRoot);
     return relativeFiles.map(async (relativeFile) => {
@@ -85,29 +87,56 @@ async function collectBrowserArtifacts() {
   }
 }
 
-function outputPathFromArguments() {
-  const outputIndex = process.argv.indexOf("--output");
-  if (outputIndex < 0) return path.join(repositoryRoot, "dist/build-artifact-manifest.json");
-  const output = process.argv[outputIndex + 1];
-  if (!output) throw new Error("--output requires a path");
-  return path.resolve(process.cwd(), output);
+export async function generateArtifactManifest({
+  root = repositoryRoot,
+  output = path.join(root, "dist/build-artifact-manifest.json"),
+  nodeRoot = path.join(root, "dist/node-runtime"),
+  browserRoot = path.join(root, "apps/control-center/dist"),
+  requireBuiltArtifacts = false,
+} = {}) {
+  const rootManifest = await readFile(path.join(root, "package.json"));
+  const lockfile = await readFile(path.join(root, "package-lock.json"));
+  let nodeArtifacts = [];
+  let runtime = null;
+  try {
+    runtime = JSON.parse(await readFile(path.join(nodeRoot, "runtime-manifest.json"), "utf8"));
+    nodeArtifacts = await collectArtifactFiles(nodeRoot);
+  } catch (error) {
+    if (requireBuiltArtifacts || error.code !== "ENOENT") throw error;
+  }
+  const browserArtifacts = await Promise.all(await collectBrowserArtifacts(browserRoot));
+  if (requireBuiltArtifacts && (nodeArtifacts.length === 0 || browserArtifacts.length === 0))
+    throw new Error("BUILD_ARTIFACTS_MISSING");
+  const artifactManifest = {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    node: process.version,
+    inputs: { packageJsonSha256: sha256(rootManifest), packageLockSha256: sha256(lockfile) },
+    packages: await readWorkspacePackages(root),
+    artifacts: browserArtifacts,
+    nodeArtifacts,
+    runtime,
+    platform: { os: process.platform, arch: process.arch, abi: process.versions.modules },
+  };
+  await mkdir(path.dirname(output), { recursive: true });
+  await writeFile(output, `${JSON.stringify(artifactManifest, null, 2)}\n`);
+  return artifactManifest;
 }
 
-const rootManifest = await readFile(path.join(repositoryRoot, "package.json"));
-const lockfile = await readFile(path.join(repositoryRoot, "package-lock.json"));
-const outputPath = outputPathFromArguments();
-const artifactManifest = {
-  schemaVersion: 1,
-  generatedAt: new Date().toISOString(),
-  node: process.version,
-  inputs: {
-    packageJsonSha256: sha256(rootManifest),
-    packageLockSha256: sha256(lockfile),
-  },
-  packages: await readWorkspacePackages(),
-  artifacts: await Promise.all(await collectBrowserArtifacts()),
-};
-
-await mkdir(path.dirname(outputPath), { recursive: true });
-await writeFile(outputPath, `${JSON.stringify(artifactManifest, null, 2)}\n`);
-console.log(`Build artifact manifest written to ${path.relative(repositoryRoot, outputPath)}`);
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  const options = {};
+  for (let i = 2; i < process.argv.length; i += 2) {
+    const key = {
+      "--output": "output",
+      "--node-root": "nodeRoot",
+      "--browser-root": "browserRoot",
+    }[process.argv[i]];
+    if (!key || !process.argv[i + 1] || options[key])
+      throw new Error(`Invalid manifest argument: ${process.argv[i]}`);
+    options[key] = path.resolve(process.argv[i + 1]);
+  }
+  await generateArtifactManifest(options);
+  console.log(
+    `Build artifact manifest written to ${options.output ?? "dist/build-artifact-manifest.json"}`,
+  );
+}

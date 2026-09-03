@@ -5,7 +5,13 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const distributionRoot = path.join(repositoryRoot, "apps/control-center/dist");
+const outputIndex = process.argv.indexOf("--output-root");
+if (process.argv.length > 2 && (outputIndex !== 2 || process.argv.length !== 4))
+  throw new Error("Invalid browser budget arguments");
+const distributionRoot =
+  outputIndex < 0
+    ? path.join(repositoryRoot, "apps/control-center/dist")
+    : path.resolve(process.argv[outputIndex + 1]);
 const assetsRoot = path.join(distributionRoot, "assets");
 const maximumEntryGzipBytes = 150 * 1024;
 const maximumTotalGzipBytes = 180 * 1024;
