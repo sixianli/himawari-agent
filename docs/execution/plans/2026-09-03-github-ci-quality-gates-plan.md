@@ -206,7 +206,7 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 
 ### Task 13：在授权后验证真实 GitHub 行为
 
-- [ ] 展示拟 push 的分支/提交、样例 PR、预期 Actions 资源和负向操作，取得对应授权。缺授权时保持本任务未完成。
+- [x] 展示拟 push 的分支/提交、样例 PR、预期 Actions 资源和负向操作，取得对应授权。Owner 已明确回复“授权”；范围为正常草稿 PR、隔离负例 PR 和标准 Actions 验证，不含合并、周期启用、审批设置、Rulesets 或远端清理。
 - [ ] 在真实 Actions 上运行完整绿色对照，确认 Linux/macOS、最低 Node、三个浏览器和所有报告均属于本次 run/attempt。
 - [ ] 在首次接受基线前，用 Ubuntu coverage job 对冻结源码的实际 snapshot、tests、JSON 和 LCOV 显式重新测量并提交初始基线，再复核同一报告。当前 Mac 测量仅是本地初始化候选；初始化的绿色检查只证明增量达标，不证明所提议的 Mac 数字适用于 Ubuntu。不得在基线合入后选择旧 base 重新进入初始化以绕过不退化规则。
 - [ ] 在授权样例 PR 验证红色测试、上游失败、矩阵缺失、取消运行及 PR 更新导致旧 SHA 失效，不合并故意失败代码。
@@ -273,6 +273,18 @@ python3 -E -s -B tools/document-governance/scripts/validate_docs.py . --strict
 `test:tooling` 和 `ci:local` 默认读取 `.ci-output/tools`；使用其他已验证工具目录时显式传入 `--tools`。`python3` 必须来自同一固定工具目录。`ci:local` 在当前受支持平台执行共享入口；浏览器执行前按 README 安装锁定 Playwright 对应的引擎。它不会将本机结果替换为托管矩阵，也不会配置 Rulesets。
 
 ## 本轮实施证据
+
+### GitHub 托管验证
+
+正常草稿 [PR #1](https://github.com/sixianli/himawari-agent/pull/1) 已创建，分支为 `codex/github-ci-quality-gates`。首轮 [run 33766675738](https://github.com/sixianli/himawari-agent/actions/runs/33766675738) 的 attempt 为 1，head 为 `7950d3e91cbfad997b9af74bb79c425fd555ac2c`，实际测试的 PR merge SHA 为 `ab468266c37199eed27e992eac8f3f5267d6d604`，base 为 `3f865d2860301d86f33978e6534cfbba02c37a89`。
+
+首轮固定工具安装、锁文件安装和 SQLite 探针通过。tooling 测试共 478 项，其中 54 项因临时 Git 仓库继承真实 GitHub 环境变量而触发 `CI_CHECKOUT_SHA_MISMATCH`，policy 失败。其余检查按依赖跳过；`ci/required` 明确失败，报告只有 1/12，未将跳过或报告缺失视为成功。该失败保留为原始证据，不能改写为绿色对照。
+
+修复仅在 Vitest 的 tooling 项目隔离继承的 `GITHUB_*`，正式 runner 的身份校验与其他测试项目保持原样；显式 hosted 测试继续覆盖真实校验分支。污染环境下用 `--maxWorkers=2` 完整执行 21 文件、480/480，零跳过；项目检查与严格文档校验通过。默认本机并发的两轮验证分别有 2/5 项既有 5 秒超时，已保留原始失败，未修改提交中的并发、重试或超时政策。远端修复后的完整运行另行记录。
+
+实际 runner 为 Ubuntu 24.04，镜像 `20260831.293.1`；日志确认 token 只有 `contents: read` 和 `metadata: read`。已下载 policy artifact `9897918408` 与 gate artifact `9898005121`，分别核对 GitHub 提供的 ZIP SHA256 `ceb4d55daff430fcaeeefd1ea329653bf76a5f47756c1d879ae4b1a4b215345e` 和 `c81c970734012e1ee1580a9423fbd5c226f56001f9480e33457d69bb42dab03a`。完整记录位于本地忽略目录 `.ci-output/github-task13-20260903/`。
+
+当前只读回读的 fork 审批策略为 `first_time_contributors`。仓库没有 fork，唯一 PR 来自 Owner；没有适用的 fork 或 Dependabot 实测入口，两项继续标记未验证。审批策略修改仍属于 Task 15 的单独授权范围。
 
 ### 干净提交验证
 

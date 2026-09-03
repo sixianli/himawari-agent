@@ -2,6 +2,16 @@ import { defineConfig } from "vitest/config";
 import coveragePolicy from "./ci/coverage-policy.json" with { type: "json" };
 import policy from "./ci/policy.json" with { type: "json" };
 
+// Tooling owns synthetic Git repositories; hosted cases supply their own GitHub identity.
+const toolingEnvironment = {
+  ...Object.fromEntries(
+    Object.keys(process.env)
+      .filter((name) => name.startsWith("GITHUB_"))
+      .map((name) => [name, ""]),
+  ),
+  GITHUB_ACTIONS: "false",
+};
+
 export default defineConfig({
   test: {
     allowOnly: false,
@@ -17,7 +27,15 @@ export default defineConfig({
     },
     projects: [
       ...policy.testProjects.map(({ id, include, exclude, fileParallelism }) => ({
-        test: { name: id, environment: "node", include, exclude, fileParallelism, retry: 0 },
+        test: {
+          name: id,
+          environment: "node",
+          include,
+          exclude,
+          fileParallelism,
+          retry: 0,
+          ...(id === "tooling" ? { env: toolingEnvironment } : {}),
+        },
       })),
       ...policy.registeredTests
         .filter(({ kind }) => kind === "qualification")
