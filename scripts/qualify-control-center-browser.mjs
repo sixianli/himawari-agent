@@ -463,7 +463,9 @@ export async function qualifyBrowser({
     }
     const japaneseNavigation = page.getByRole("navigation", { name: "コントロールセンター機能" });
     await japaneseNavigation.getByRole("link", { name: "会話", exact: true }).click();
-    await page.goto(`${baseUrl}/threads/thread-main?view=content`);
+    await page.locator('.list-pane a[href="#thread-main"]').click();
+    await page.getByRole("heading", { name: "多客户端冲突后的标题", exact: true }).waitFor();
+    await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
     await waitForConnected(page, "リアルタイム接続");
     const japaneseDraft = "日本語の長文入力とレイアウトを確認するための未送信メッセージです。";
     await page.getByLabel("メッセージ下書き").fill(japaneseDraft);
@@ -675,7 +677,9 @@ export async function qualifyBrowser({
       localStorage.getItem("himawari.control-center.v1.threadLastCursor"),
     );
     await primaryNavigation.getByRole("link", { name: "对话", exact: true }).click();
-    await page.goto(`${baseUrl}/threads/thread-main?view=content`);
+    await page.locator('.list-pane a[href="#thread-main"]').click();
+    await page.getByRole("heading", { name: "多客户端冲突后的标题", exact: true }).waitFor();
+    await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
     await waitForConnected(page);
     await page.getByLabel("消息草稿").fill("离线草稿");
     phase = "offline";
