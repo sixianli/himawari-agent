@@ -30,6 +30,7 @@ const countsProblems = (counts) => {
 export function aggregate({ policy, context, needs, reports, toolchainLock }) {
   validatePolicy(policy);
   validateRecord("Context", context);
+  if (!policy.events.includes(context.event)) throw new Error("CI_EVENT_UNSUPPORTED");
   if (!toolchainLock?.node?.baseline || !toolchainLock?.npm?.version)
     throw new Error("Missing expected toolchain identity");
   const expected = expectedMembers(policy);

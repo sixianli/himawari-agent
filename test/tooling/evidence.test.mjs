@@ -149,6 +149,18 @@ afterEach(() => {
 });
 
 describe("S9 CI证据交接边界", () => {
+  it("启用周期配置不阻断显式 push 交接，但周期结果不能冒充 push", () => {
+    const input = fixture();
+    const filename = path.join(input.root, "ci/quality-policy.json");
+    const policy = readJson(filename);
+    policy.schedule.enabled = true;
+    write(filename, policy);
+    expect(exportEvidence(input).status).toBe("ci_verified");
+    write(path.join(input.gate, "context.json"), { ...input.context, event: "schedule" });
+    expect(() =>
+      exportEvidence({ ...input, output: ".ci-output/scheduled-evidence.json" }),
+    ).toThrow("PUSH_EVIDENCE");
+  });
   it("完整默认分支对照可导出，但只声明CI证据，仍明确生产资格与持久转存待办", () => {
     const input = fixture();
     const evidence = exportEvidence(input);

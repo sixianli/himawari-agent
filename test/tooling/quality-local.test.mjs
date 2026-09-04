@@ -24,6 +24,7 @@ const state = vi.hoisted(() => ({
   browserError: false,
   browserOutcome: {},
   rejectRun: false,
+  event: "workflow_dispatch",
 }));
 const originalRoot = path.resolve(import.meta.dirname, "../..");
 const write = (name, value) => {
@@ -32,7 +33,7 @@ const write = (name, value) => {
 };
 const identity = () => ({
   repository: "example/fixture",
-  event: "workflow_dispatch",
+  event: state.event,
   runId: "1",
   attempt: 1,
   testedSha: "a".repeat(40),
@@ -143,8 +144,10 @@ vi.mock("../../scripts/ci/run.mjs", () => ({
   },
 }));
 
+import { fileSha256 } from "../../scripts/ci/contracts.mjs";
 import { local, main as localMain } from "../../scripts/ci/local.mjs";
-import { quality, main as qualityMain, validateQualityPolicy } from "../../scripts/ci/quality.mjs";
+import { quality, main as qualityMain } from "../../scripts/ci/quality.mjs";
+import { validateQualityPolicy } from "../../scripts/ci/quality-policy.mjs";
 
 beforeEach(() => {
   state.root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "himawari-quality-local-")));
@@ -157,6 +160,7 @@ beforeEach(() => {
   state.browserError = false;
   state.browserOutcome = {};
   state.rejectRun = false;
+  state.event = "workflow_dispatch";
   mkdirSync(path.join(state.root, "ci"));
   copyFileSync(
     path.join(originalRoot, "ci/quality-policy.json"),
@@ -199,12 +203,50 @@ const runLocal = (extra = {}) =>
   });
 
 describe("periodic quality policy and evidence", () => {
+  it("keeps enabled manual observation usable and preserves scheduled identity across brand isolation", async () => {
+    const filename = path.join(state.root, "ci/quality-policy.json");
+    const policy = JSON.parse(readFileSync(filename));
+    policy.schedule.enabled = true;
+    write(filename, policy);
+    expect((await runQuality("scale")).status).toBe("passed");
+    state.event = "schedule";
+    const env = {
+      GITHUB_ACTIONS: "true",
+      GITHUB_EVENT_NAME: "schedule",
+      GITHUB_REF: "refs/heads/main",
+      GITHUB_SHA: identity().testedSha,
+      GITHUB_RUN_ID: "123",
+      GITHUB_RUN_ATTEMPT: "1",
+      GITHUB_EVENT_PATH: "/fixture/event.json",
+    };
+    const result = await runQuality("brands", {
+      artifact: "/fixture/runtime.tar.gz",
+      env,
+      base: identity().testedSha,
+    });
+    expect(result.status).toBe("passed");
+    expect(result.context.event).toBe("schedule");
+    expect(result.qualityPolicySha256).toBe(fileSha256(filename));
+    const persisted = JSON.parse(
+      readFileSync(path.join(state.root, ".ci-output/brands/quality.json")),
+    );
+    expect(persisted.context).toEqual(result.context);
+    expect(persisted.qualityPolicySha256).toBe(result.qualityPolicySha256);
+    for (const call of state.calls.filter((entry) => entry.name === "browser")) {
+      expect(call.context.event).toBe("schedule");
+      expect(call.env).toMatchObject(env);
+      expect(call.env).not.toHaveProperty("OPENAI_API_KEY");
+    }
+    expect(
+      readFileSync(path.join(state.root, "docs/execution/evidence/historical.json"), "utf8"),
+    ).toBe("immutable historical evidence\n");
+  });
   it("requires the exact authorized schedule, check sets and retention", () => {
     const policy = JSON.parse(readFileSync(path.join(state.root, "ci/quality-policy.json")));
     expect(validateQualityPolicy(policy)).toBe(policy);
     for (const mutate of [
       (p) => {
-        p.schedule.enabled = true;
+        p.schedule.enabled = "true";
       },
       (p) => {
         p.defaultBranch = "next";
@@ -322,6 +364,7 @@ describe("periodic quality policy and evidence", () => {
       calls.every((entry) => entry.artifact === "/fixture/runtime.tar.gz" && entry.port === 0),
     ).toBe(true);
     expect(calls[0].env.GITHUB_RUN_ID).toBe("123");
+    expect(calls[0].env.GITHUB_REF).toBe("refs/heads/main");
     expect(calls[0].env).not.toHaveProperty("OPENAI_API_KEY");
     expect(process.env).toBe(original);
     state.browserError = true;

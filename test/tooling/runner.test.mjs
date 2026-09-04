@@ -17,7 +17,7 @@ import { createContext } from "../../scripts/ci/context.mjs";
 import { fileSha256, repositoryRoot, validateRecord } from "../../scripts/ci/contracts.mjs";
 import { execute, sumCounts, vitestCounts } from "../../scripts/ci/execute.mjs";
 import { publish, publishQuality, redactReport } from "../../scripts/ci/publish.mjs";
-import { validateQualityPolicy } from "../../scripts/ci/quality.mjs";
+import { validateQualityPolicy } from "../../scripts/ci/quality-policy.mjs";
 import { required } from "../../scripts/ci/required.mjs";
 import { reportEntry, runCheck, selectCheck } from "../../scripts/ci/run.mjs";
 
@@ -347,10 +347,11 @@ describe("required 失败证据和平台 artifact ID", () => {
   it("计划中的schedule保持停用，保留期限和观察集合不能暗改", () => {
     const policy = read(path.join(repositoryRoot, "ci/quality-policy.json"));
     expect(validateQualityPolicy(policy)).toBe(policy);
+    expect(policy.schedule.enabled).toBe(false);
     for (const value of [
       { ...policy, schemaVersion: 2 },
       { ...policy, defaultBranch: "other" },
-      { ...policy, schedule: { ...policy.schedule, enabled: true } },
+      { ...policy, schedule: { ...policy.schedule, enabled: "true" } },
       { ...policy, checks: [] },
       { ...policy, brands: [] },
       { ...policy, retentionDays: { reports: 31, diagnostics: 7 } },

@@ -230,6 +230,13 @@ const run = (checkId, extra = {}) =>
   });
 
 describe("共享runner的调度、来源和失败传播", () => {
+  it("rejects scheduled quality before creating or executing a required CI check", async () => {
+    await expect(run("policy", { context: { ...context, event: "schedule" } })).rejects.toThrow(
+      "CI_EVENT_UNSUPPORTED",
+    );
+    expect(state.calls).toEqual([]);
+    expect(existsSync(path.join(state.root, ".ci-output/policy"))).toBe(false);
+  });
   it("policy先校验固定合同，再运行tooling；子进程不继承凭据", async () => {
     const result = await run("policy");
     expect(result.status).toBe("passed");

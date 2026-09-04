@@ -417,7 +417,7 @@
           "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
         },
         "event": {
-          "enum": ["pull_request", "push", "workflow_dispatch"]
+          "enum": ["pull_request", "push", "workflow_dispatch", "schedule"]
         },
         "runId": {
           "type": "string",

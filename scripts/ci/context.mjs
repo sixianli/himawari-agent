@@ -10,7 +10,14 @@ import {
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolvePolicySource } from "./check-policy.mjs";
-import { fileSha256, parseArguments, repositoryRoot, validateRecord } from "./contracts.mjs";
+import {
+  fileSha256,
+  parseArguments,
+  repositoryRoot,
+  sha256,
+  validateRecord,
+} from "./contracts.mjs";
+import { validateQualityPolicy } from "./quality-policy.mjs";
 
 export function outputPath(value, root = repositoryRoot) {
   const canonicalRoot = realpathSync(root);
@@ -68,7 +75,7 @@ export function createContext({
   const testedSha = git(["rev-parse", "HEAD"]);
   const hosted = env.GITHUB_ACTIONS === "true";
   const event = hosted ? env.GITHUB_EVENT_NAME : "workflow_dispatch";
-  if (!["pull_request", "push", "workflow_dispatch"].includes(event))
+  if (!["pull_request", "push", "workflow_dispatch", "schedule"].includes(event))
     throw new Error("CI_EVENT_UNSUPPORTED");
   const payload = hosted ? JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, "utf8")) : {};
   let headSha = testedSha;
@@ -84,10 +91,27 @@ export function createContext({
   } else if (event === "push") {
     if (payload.after !== testedSha) throw new Error("CI_PUSH_AFTER_MISMATCH");
     baseSha = commit(/^0{40}$/u.test(payload.before ?? "") ? base : payload.before);
+  } else if (event === "schedule") {
+    const policyPath = "ci/quality-policy.json";
+    const bytes = execFileSync("git", ["show", `${testedSha}:${policyPath}`], {
+      cwd: root,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const policy = validateQualityPolicy(JSON.parse(bytes));
+    if (!policy.schedule.enabled) throw new Error("CI_QUALITY_SCHEDULE_DISABLED");
+    if (env.GITHUB_REF !== `refs/heads/${policy.defaultBranch}`)
+      throw new Error("CI_QUALITY_DEFAULT_BRANCH_REQUIRED");
+    if (payload.schedule !== policy.schedule.cron) throw new Error("CI_QUALITY_SCHEDULE_MISMATCH");
+    if (fileSha256(path.join(root, policyPath)) !== sha256(bytes))
+      throw new Error("CI_QUALITY_POLICY_CHECKOUT_MISMATCH");
+    if (base !== undefined && base !== testedSha) throw new Error("CI_SCHEDULE_BASE_MISMATCH");
+    baseSha = testedSha;
   } else {
     baseSha = commit(base ?? payload.inputs?.base_sha ?? (hosted ? undefined : testedSha));
   }
   const source = resolvePolicySource({ root, base: baseSha });
+  if (event === "schedule" && source.initialization)
+    throw new Error("CI_SCHEDULE_ACCEPTED_POLICY_REQUIRED");
   const repository = hosted ? env.GITHUB_REPOSITORY : "sixianli/himawari-agent";
   const context = {
     repository,

@@ -14,42 +14,9 @@ import {
   isolatedEnvironment,
   verifyInstalledTools,
 } from "./install-tools.mjs";
+import { validateQualityPolicy } from "./quality-policy.mjs";
 import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
-
-export function validateQualityPolicy(policy) {
-  if (
-    policy.schemaVersion !== 1 ||
-    policy.defaultBranch !== "main" ||
-    policy.schedule.enabled !== false ||
-    policy.schedule.cron !== "23 3 * * *" ||
-    policy.schedule.timezone !== "UTC"
-  )
-    throw new Error("CI_QUALITY_SCHEDULE_NOT_AUTHORIZED");
-  const expected = ["scale", "thread-scale", "brands", "dependencies", "node-observation"];
-  if (
-    JSON.stringify(policy.checks) !== JSON.stringify(expected) ||
-    JSON.stringify(policy.brands) !== '["chrome","edge"]'
-  )
-    throw new Error("CI_QUALITY_SET_MISMATCH");
-  if (
-    policy.retentionDays.reports !== 30 ||
-    policy.retentionDays.diagnostics !== 7 ||
-    policy.securityFreshnessHours !== 24
-  )
-    throw new Error("CI_QUALITY_RETENTION_MISMATCH");
-  if (
-    JSON.stringify(policy.nodeObservation.testFiles) !==
-    JSON.stringify([
-      "test/tooling/context.test.mjs",
-      "test/tooling/policy.test.mjs",
-      "test/tooling/aggregate.test.mjs",
-      "test/tooling/coverage.test.mjs",
-    ])
-  )
-    throw new Error("CI_OBSERVATION_TEST_SET_MISMATCH");
-  return policy;
-}
 
 export async function quality({
   check,
@@ -75,6 +42,7 @@ export async function quality({
     schemaVersion: 1,
     check,
     context,
+    qualityPolicySha256: fileSha256(path.join(root, "ci/quality-policy.json")),
     startedAt: new Date(started).toISOString(),
     completedAt: null,
     status: "failed",
@@ -107,6 +75,7 @@ export async function quality({
           "GITHUB_EVENT_NAME",
           "GITHUB_EVENT_PATH",
           "GITHUB_SHA",
+          "GITHUB_REF",
           "GITHUB_REPOSITORY",
           "GITHUB_RUN_ID",
           "GITHUB_RUN_ATTEMPT",
