@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:5ef4cb76cd2fe11feb06b483791a65bc8caba397d4f45a8e74c798154d467d35"
+contract_sha256: "sha256:a781a945e6e6299c0c70c776e8458a7830df04b9f7a21f90387d090fc4c9fb1b"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -21,10 +21,14 @@ date: "2026-08-27"
 - scripts/ci/artifact-files.mjs
 - scripts/ci/artifact-archive.py
 - scripts/ci/contracts.mjs
+- scripts/ci/context.mjs
+- scripts/ci/check-policy.mjs
+- scripts/ci/quality-policy.mjs
 - scripts/ci/source-inputs.mjs
 - scripts/ci/verify-artifact.mjs
 - ci/toolchain-lock.json
 - ci/policy.schema.json
+- ci/quality-policy.json
 - ci/result.schema.json
 - ci/coverage.schema.json
 - package.json
@@ -57,7 +61,7 @@ date: "2026-08-27"
 - 绝对前缀安装和三个入口：`scripts/install-node-runtime.mjs`。
 - 固定工具、禁用未知安装脚本和 SQLite 原生构建探针：`ci/toolchain-lock.json`、`scripts/ci/install-tools.mjs`、`scripts/ci/install-dependencies.mjs`。
 - 安装期间的磁盘采样与错误脱敏：`scripts/ci/resources.mjs`、`scripts/ci/redact-text.mjs`；采样只提供观测峰值下界，出现采样错误时须保留不完整状态和有界诊断，不能从安装成功推导采样完整。协调暂停单独记录原因、耗时和操作结果，不抹去暂停前的失败。
-- 文件模式、内容摘要和归档校验：`scripts/ci/artifact-files.mjs`、`scripts/ci/verify-artifact.mjs`。CI 归档安装还绑定同一次运行的 context；它与下述本机目录安装入口有不同的输入参数。
+- 文件模式、内容摘要和归档校验：`scripts/ci/artifact-files.mjs`、`scripts/ci/verify-artifact.mjs`。CI 归档安装还绑定同一次运行的 context；它与下述本机目录安装入口有不同的输入参数。 Context 的来源由 `scripts/ci/context.mjs` 核验；周期质量归档还核对已提交的启用状态、默认分支、cron 与同次 SHA，不能通过临时修改工作树取得周期身份。共享 Context 支持周期事件不启用任何安装或周期操作。
 - state root、SQLite migration、Worker recovery 与身份边界：`packages/platform-node/src/state-root-layout.ts`、`packages/persistence-sqlite/src/product-state-repository.ts`。
 - 本 Runbook contract selector 中列出的源文件和 portable durable web-agent Spec。
 
