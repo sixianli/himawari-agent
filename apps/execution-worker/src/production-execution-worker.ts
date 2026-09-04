@@ -69,6 +69,12 @@ export interface ProductionExecutionWorkerOptions {
   };
   readonly now: () => string;
   readonly nextId: (scope: string) => string;
+  /** Host composition gate; an unready dependency must never be reported ready. */
+  readonly readiness?: () => {
+    readonly live: boolean;
+    readonly ready: boolean;
+    readonly reasonCodes: readonly string[];
+  };
 }
 
 type HandshakeRequest = Extract<ExecutionV2Request, { type: "worker.handshake" }>;
@@ -257,6 +263,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     request: HandshakeRequest,
   ): Extract<ExecutionV2Response, { type: "worker.handshake.accepted" }> {
     this.assertAuthority(request);
+    const gate = this.readinessGate();
     if (request.payload.bootTokenRef !== this.options.bootTokenRef) {
       throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.BOOT_TOKEN_REJECTED);
     }
@@ -270,7 +277,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
         workerInstanceId: this.options.workerInstanceId,
         workerBootId: this.options.workerBootId,
         selectedSchemaVersion: EXECUTION_V2_SCHEMA_VERSION,
-        ready: this.ready,
+        ready: this.ready && gate.ready,
         acceptedAt: this.options.now(),
       },
     }) as Extract<ExecutionV2Response, { type: "worker.handshake.accepted" }>;
@@ -280,22 +287,26 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     request: ReadinessRequest,
   ): Extract<ExecutionV2Response, { type: "worker.readiness.snapshot" }> {
     this.assertAuthority(request);
+    const gate = this.readinessGate();
     return executionV2MessageSchema.parse({
       ...this.responseEnvelope(request, "worker.readiness.snapshot"),
       payload: {
         workerInstanceId: this.options.workerInstanceId,
-        live: true,
-        ready: this.ready && this.handshakeAgentInstanceId !== null,
+        live: this.ready && gate.live,
+        ready: this.ready && this.handshakeAgentInstanceId !== null && gate.ready,
         supportedSchemaVersions: [EXECUTION_V2_SCHEMA_VERSION],
-        reasonCodes:
-          this.ready && this.handshakeAgentInstanceId !== null ? [] : ["WORKER_HANDSHAKE_REQUIRED"],
+        reasonCodes: [
+          ...gate.reasonCodes,
+          ...(this.handshakeAgentInstanceId === null ? ["WORKER_HANDSHAKE_REQUIRED"] : []),
+        ],
         observedAt: this.options.now(),
       },
     }) as Extract<ExecutionV2Response, { type: "worker.readiness.snapshot" }>;
   }
 
   private assertReadyAndAuthoritative(request: ExecutionV2Request): void {
-    if (!this.ready) {
+    const gate = this.readinessGate();
+    if (!this.ready || !gate.ready) {
       throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.NOT_READY);
     }
     if (this.handshakeAgentInstanceId === null) {
@@ -312,6 +323,14 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     ) {
       throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.STALE_FENCE);
     }
+  }
+
+  private readinessGate(): {
+    readonly live: boolean;
+    readonly ready: boolean;
+    readonly reasonCodes: readonly string[];
+  } {
+    return this.options.readiness?.() ?? { live: true, ready: true, reasonCodes: [] };
   }
 
   private delegate(

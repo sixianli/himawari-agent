@@ -49,6 +49,21 @@ export interface CapabilityResourceLimitExecutableBinding {
   readonly sha256: string;
 }
 
+/**
+ * Host-side helper identity is part of the deployment snapshot.  The
+ * executable is never discovered through PATH or an environment variable.
+ */
+export interface CapabilityHostExecutableBinding {
+  readonly hostPath: string;
+  readonly sha256: string;
+}
+
+export interface CapabilityHostIsolationBinding {
+  readonly kind: "linux-bwrap-prlimit.v1";
+  readonly bwrap: CapabilityHostExecutableBinding;
+  readonly prlimit: CapabilityHostExecutableBinding;
+}
+
 export interface CapabilityProcessBinding {
   readonly capabilityRef: string;
   readonly capabilityVersion: string;
@@ -157,6 +172,42 @@ function validSha256(value: string): boolean {
   return /^sha256:[a-f0-9]{64}$/.test(value);
 }
 
+async function verifiedHostExecutable(
+  executable: CapabilityHostExecutableBinding,
+): Promise<boolean> {
+  if (
+    !path.isAbsolute(executable.hostPath) ||
+    path.normalize(executable.hostPath) !== executable.hostPath ||
+    !validSha256(executable.sha256)
+  ) {
+    return false;
+  }
+  try {
+    const descriptor = await open(
+      executable.hostPath,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+    );
+    try {
+      const info = await descriptor.stat();
+      if (
+        !info.isFile() ||
+        !safeOwnedMode(info) ||
+        (Number(info.mode) & 0o100) === 0 ||
+        Number(info.size) === 0 ||
+        Number(info.size) > MAX_RESOURCE_LIMIT_EXECUTABLE_BYTES
+      ) {
+        return false;
+      }
+      const bytes = await descriptor.readFile();
+      return `sha256:${createHash("sha256").update(bytes).digest("hex")}` === executable.sha256;
+    } finally {
+      await descriptor.close();
+    }
+  } catch {
+    return false;
+  }
+}
+
 async function verifiedRuntimeExecutable(
   runtimeRoot: string,
   executable: CapabilityResourceLimitExecutableBinding,
@@ -255,22 +306,25 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
   readonly #bindings: CapabilityRuntimeBindingPort;
   readonly #clock: ClockPort;
   readonly #platform: NodeJS.Platform;
-  readonly #bwrapPath: string;
-  readonly #prlimitPath: string;
+  readonly #bwrapPath: string | undefined;
+  readonly #prlimitPath: string | undefined;
+  readonly #hostBinding: CapabilityHostIsolationBinding | undefined;
   #probePromise: Promise<IsolationProbe> | undefined;
 
   constructor(options: {
     readonly bindings: CapabilityRuntimeBindingPort;
     readonly clock: ClockPort;
     readonly platform?: NodeJS.Platform;
+    readonly hostBinding?: CapabilityHostIsolationBinding;
     readonly bwrapPath?: string;
     readonly prlimitPath?: string;
   }) {
     this.#bindings = options.bindings;
     this.#clock = options.clock;
     this.#platform = options.platform ?? process.platform;
-    this.#bwrapPath = options.bwrapPath ?? "/usr/bin/bwrap";
-    this.#prlimitPath = options.prlimitPath ?? "/usr/bin/prlimit";
+    this.#hostBinding = options.hostBinding;
+    this.#bwrapPath = options.hostBinding?.bwrap.hostPath ?? options.bwrapPath;
+    this.#prlimitPath = options.hostBinding?.prlimit.hostPath ?? options.prlimitPath;
   }
 
   async qualify(manifest: CapabilityManifest): Promise<CapabilityRuntimeQualification> {
@@ -326,8 +380,19 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
   ): Promise<SandboxedProcessLaunch> {
     const result = await this.qualify(manifest);
     if (!result.productionSuitable) throw new Error(result.reasonCodes[0] ?? "isolation-not-ready");
+    if (this.#hostBinding && !(await verifiedHostExecutable(this.#hostBinding.bwrap))) {
+      throw new Error(CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_UNSAFE);
+    }
+    if (this.#hostBinding && !(await verifiedHostExecutable(this.#hostBinding.prlimit))) {
+      throw new Error(CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_UNSAFE);
+    }
     const binding = await this.#bindings.resolveProcess(manifest);
     if (!binding) throw new Error(CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISSING);
+    const bwrapPath = this.#bwrapPath;
+    const prlimitPath = this.#prlimitPath;
+    if (!bwrapPath || !prlimitPath) {
+      throw new Error(CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_MISSING);
+    }
     if (
       !validCeiling(ceiling) ||
       ceiling.maxWallTimeMs > binding.maximumResourceCeiling.maxWallTimeMs ||
@@ -386,13 +451,13 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
     );
     if (runtime.kind === "program") bwrapArgs.push(...runtime.argv.slice(1));
     return Object.freeze({
-      command: this.#prlimitPath,
+      command: prlimitPath,
       args: Object.freeze([
         `--cpu=${String(cpuSeconds)}`,
         `--as=${String(ceiling.maxMemoryBytes)}`,
         `--fsize=${String(ceiling.maxOutputBytes)}`,
         "--",
-        this.#bwrapPath,
+        bwrapPath,
         ...bwrapArgs,
       ]),
       cwd: "/",
@@ -415,6 +480,13 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
         reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.PLATFORM_UNSUPPORTED],
       });
     }
+    if (!this.#bwrapPath || !this.#prlimitPath) {
+      return Object.freeze({
+        ready: false,
+        identity,
+        reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_MISSING],
+      });
+    }
     try {
       const [bwrapInfo, prlimitInfo] = await Promise.all([
         lstat(this.#bwrapPath),
@@ -428,6 +500,17 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
           reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_UNSAFE],
         });
       }
+      if (
+        this.#hostBinding &&
+        (!(await verifiedHostExecutable(this.#hostBinding.bwrap)) ||
+          !(await verifiedHostExecutable(this.#hostBinding.prlimit)))
+      ) {
+        return Object.freeze({
+          ready: false,
+          identity,
+          reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_UNSAFE],
+        });
+      }
       if ((bwrapInfo.mode & 0o4000) !== 0) {
         return Object.freeze({
           ready: false,
@@ -435,9 +518,11 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
           reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_SETUID_FORBIDDEN],
         });
       }
+      const bwrapPath = this.#bwrapPath;
+      const prlimitPath = this.#prlimitPath;
       const [bwrapVersion, prlimitVersion] = await Promise.all([
-        execFile(this.#bwrapPath, ["--version"], { timeout: 2_000 }),
-        execFile(this.#prlimitPath, ["--version"], { timeout: 2_000 }),
+        execFile(bwrapPath, ["--version"], { timeout: 2_000 }),
+        execFile(prlimitPath, ["--version"], { timeout: 2_000 }),
       ]);
       const bubblewrap = versionTuple(`${bwrapVersion.stdout} ${bwrapVersion.stderr}`);
       const utilLinux = versionTuple(`${prlimitVersion.stdout} ${prlimitVersion.stderr}`);
@@ -454,7 +539,7 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
         });
       }
       await execFile(
-        this.#bwrapPath,
+        bwrapPath,
         [
           "--unshare-all",
           "--unshare-user",
@@ -639,7 +724,7 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
   }
 }
 
-export class MacSignedHelperIsolationBackend implements CapabilityRuntimeQualifierPort {
+export class MacSignedHelperIsolationBackend implements SandboxedProcessIsolationBackend {
   readonly #clock: ClockPort;
   readonly #platform: NodeJS.Platform;
 
@@ -654,6 +739,13 @@ export class MacSignedHelperIsolationBackend implements CapabilityRuntimeQualifi
       ready: false,
       reasons: [CAPABILITY_ISOLATION_ERROR_CODES.MACOS_SIGNED_HELPER_REQUIRED],
     });
+  }
+
+  async createLaunch(
+    _manifest: CapabilityManifest,
+    _ceiling: CapabilityResourceCeiling,
+  ): Promise<SandboxedProcessLaunch> {
+    throw new Error(CAPABILITY_ISOLATION_ERROR_CODES.MACOS_SIGNED_HELPER_REQUIRED);
   }
 }
 

@@ -16,6 +16,7 @@ import type {
   CapabilityRuntimeBindingPort,
   CapabilityEndpointBinding as RuntimeEndpointBinding,
   CapabilityEndpointOperationBinding as RuntimeEndpointOperationBinding,
+  CapabilityHostIsolationBinding,
   CapabilityProcessBinding as RuntimeProcessBinding,
 } from "./isolation.js";
 
@@ -80,6 +81,8 @@ export interface CapabilityDeploymentEntry {
 export interface CapabilityDeploymentSnapshot {
   readonly schemaVersion: typeof CAPABILITY_DEPLOYMENT_SCHEMA_VERSION;
   readonly capabilities: readonly CapabilityDeploymentEntry[];
+  /** Required by the production composition for Linux process runtimes. */
+  readonly hostIsolation?: CapabilityHostIsolationBinding;
 }
 
 export interface CapabilityDeploymentAdapter {
@@ -99,6 +102,7 @@ export interface LoadedCapabilityDeployment {
   readonly records: readonly CapabilityRegistryRecord[];
   readonly adapters: readonly CapabilityDeploymentAdapter[];
   readonly bindings: CapabilityRuntimeBindingPort;
+  readonly hostIsolation?: CapabilityHostIsolationBinding;
 }
 
 export interface CapabilityDeploymentSnapshotLoaderOptions
@@ -812,6 +816,32 @@ function parseEndpointBinding(value: unknown, field: string): RuntimeEndpointBin
   });
 }
 
+function parseHostExecutable(value: unknown, field: string) {
+  const input = record(value, field);
+  rejectUnknown(input, ["hostPath", "sha256"], field);
+  return Object.freeze({
+    hostPath: normalizedAbsolutePath(input["hostPath"], `${field}.hostPath`),
+    sha256: sha256(input["sha256"], `${field}.sha256`),
+  });
+}
+
+function parseHostIsolation(value: unknown, field: string): CapabilityHostIsolationBinding {
+  const input = record(value, field);
+  rejectUnknown(input, ["kind", "bwrap", "prlimit"], field);
+  if (input["kind"] !== "linux-bwrap-prlimit.v1") {
+    throw failure(
+      CAPABILITY_DEPLOYMENT_ERROR_CODES.INVALID_VALUE,
+      `${field}.kind`,
+      "is unsupported",
+    );
+  }
+  return deepFreeze({
+    kind: "linux-bwrap-prlimit.v1" as const,
+    bwrap: parseHostExecutable(input["bwrap"], `${field}.bwrap`),
+    prlimit: parseHostExecutable(input["prlimit"], `${field}.prlimit`),
+  });
+}
+
 function parseBinding(
   value: unknown,
   manifest: CapabilityManifest,
@@ -1017,7 +1047,7 @@ function parseSnapshot(
   maximumQualificationAgeMs: number,
 ): CapabilityDeploymentSnapshot {
   const input = record(value, "snapshot");
-  rejectUnknown(input, ["schemaVersion", "capabilities"], "snapshot");
+  rejectUnknown(input, ["schemaVersion", "capabilities", "hostIsolation"], "snapshot");
   if (input["schemaVersion"] !== CAPABILITY_DEPLOYMENT_SCHEMA_VERSION) {
     throw failure(
       CAPABILITY_DEPLOYMENT_ERROR_CODES.INVALID_VALUE,
@@ -1046,7 +1076,15 @@ function parseSnapshot(
       "must not contain duplicate identities",
     );
   }
-  return deepFreeze({ schemaVersion: CAPABILITY_DEPLOYMENT_SCHEMA_VERSION, capabilities });
+  const hostIsolation =
+    input["hostIsolation"] === undefined
+      ? undefined
+      : parseHostIsolation(input["hostIsolation"], "snapshot.hostIsolation");
+  return deepFreeze({
+    schemaVersion: CAPABILITY_DEPLOYMENT_SCHEMA_VERSION,
+    capabilities,
+    ...(hostIsolation === undefined ? {} : { hostIsolation }),
+  });
 }
 
 function registryRecord(
@@ -1288,6 +1326,7 @@ export class CapabilityDeploymentSnapshotLoader {
       records,
       adapters,
       bindings,
+      ...(snapshot.hostIsolation === undefined ? {} : { hostIsolation: snapshot.hostIsolation }),
     });
   }
 }
