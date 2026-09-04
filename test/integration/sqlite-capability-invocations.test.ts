@@ -1,27 +1,21 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
   ApprovalRequest,
-  CapabilityRegistryRecord,
   CapabilityInvocationAuthority,
+  CapabilityRegistryRecord,
   ExecutionTransportPort,
-  GrantRecord,
   GovernedCapabilityExecutionHandle,
+  GrantRecord,
+  PayloadRecord,
 } from "@himawari-agent/application";
 import {
   ApplicationPortError,
   PORT_ERROR_CODES,
-  WorkerDelegationService,
   type PortErrorCode,
+  WorkerDelegationService,
 } from "@himawari-agent/application";
-import {
-  EXECUTION_V2_SCHEMA_VERSION,
-  type ExecutionV2Event,
-  type ExecutionV2Request,
-  type ExecutionV2Response,
-  executionV2MessageSchema,
-} from "@himawari-agent/execution-contracts";
 import {
   createAgentId,
   createAuthorityLeaseId,
@@ -31,11 +25,20 @@ import {
   createRunId,
 } from "@himawari-agent/domain";
 import {
+  EXECUTION_V2_SCHEMA_VERSION,
+  type ExecutionV2Event,
+  type ExecutionV2Request,
+  type ExecutionV2Response,
+  executionV2MessageSchema,
+} from "@himawari-agent/execution-contracts";
+import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteCapabilityInvocationOperations,
+  SqliteGovernedDeletionAdapter,
   SqliteProductStateRepository,
+  SqliteRunPayloadArtifactOperations,
 } from "@himawari-agent/persistence-sqlite";
 import { describe, expect, it } from "vitest";
 
@@ -414,16 +417,57 @@ function readInvocation(overrides: Record<string, unknown> = {}): Record<string,
   };
 }
 
+function outputPayload(
+  ref = "payload-capability-invocation-output",
+  contentDigest = "sha256:capability-invocation-output",
+  ciphertext = new Uint8Array([0x21, 0x22]),
+): PayloadRecord {
+  return {
+    ref,
+    dataClassification: "private",
+    contentType: "text/plain",
+    ciphertext,
+    encryption: { algorithm: "fixture", keyRef: "fixture-key" },
+    contentDigest,
+    createdAt: T1,
+  };
+}
+
+function outputObservation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    handleRef: "handle-capability-invocation",
+    invocationId: "invocation-capability-invocation",
+    authority: {
+      product: {
+        deploymentId: "deployment-capability-invocation",
+        authorityEpoch: 1,
+        fencingToken: 1,
+      },
+      lease: { leaseId: "lease-capability-invocation", fencingToken: 1 },
+      agentServiceInstanceId: "agent-service-instance-capability-invocation",
+      agentServiceBootId: "agent-service-boot-capability-invocation",
+      workerInstanceId: "worker-instance-capability-invocation",
+      workerBootId: "worker-boot-capability-invocation",
+    },
+    now: T1,
+    payload: outputPayload(),
+    plaintextByteLength: 2,
+    ...overrides,
+  };
+}
+
 function operationsForDatabase(
   database: ReturnType<typeof openQualifiedDatabase>,
 ): SqliteCapabilityInvocationOperations {
-  return new SqliteCapabilityInvocationOperations(
-    database,
-    (code: string, message: string, details?: Readonly<Record<string, string>>): never => {
-      throw new ApplicationPortError(code as PortErrorCode, message, details);
-    },
-    () => undefined,
-  );
+  const fail = (
+    code: string,
+    message: string,
+    details?: Readonly<Record<string, string>>,
+  ): never => {
+    throw new ApplicationPortError(code as PortErrorCode, message, details);
+  };
+  const artifacts = new SqliteRunPayloadArtifactOperations(database, fail, () => undefined);
+  return new SqliteCapabilityInvocationOperations(database, fail, () => undefined, artifacts);
 }
 
 async function openOperations(resource: {
@@ -994,6 +1038,472 @@ describe("SQLite capability invocation authority", () => {
         )
         .run(JSON.stringify(versionDrift), "capability-invocation");
       await expect(read()).rejects.toMatchObject({ code: PORT_ERROR_CODES.HANDLE_REVOKED });
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("records a late output observation after the Run becomes terminal", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      database
+        .prepare(
+          "UPDATE runs SET status = 'completed', revision = revision + 1, updated_at = ? WHERE id = ?",
+        )
+        .run(T1, RUN_ID);
+
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation(),
+        }),
+      ).resolves.toMatchObject({
+        replayed: false,
+        artifact: {
+          runId: RUN_ID,
+          purpose: "worker_result",
+          operationKey: "capability-output:invocation-capability-invocation",
+        },
+      });
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM run_payload_artifacts WHERE run_id = ? AND purpose = 'worker_result'",
+          )
+          .pluck()
+          .get(RUN_ID),
+      ).toBe(1);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("replays equivalent output bytes and rejects a conflicting observation", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+
+      const first = await callOperation(
+        opened.operations,
+        "capabilityInvocationResult.observeOutput",
+        {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation(),
+        },
+      );
+      expect(first).toMatchObject({
+        replayed: false,
+        ref: "payload-capability-invocation-output",
+      });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            now: T2,
+            payload: outputPayload(
+              "payload-capability-invocation-output-retry",
+              "sha256:capability-invocation-output",
+              new Uint8Array([0x31, 0x32]),
+            ),
+          }),
+        }),
+      ).resolves.toMatchObject({
+        replayed: true,
+        ref: "payload-capability-invocation-output",
+      });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            payload: outputPayload(
+              "payload-capability-invocation-output-conflict",
+              "sha256:capability-invocation-output-conflict",
+            ),
+          }),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.lookupFrozen", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: readInvocation({ now: T2 }),
+        }),
+      ).resolves.toMatchObject({ invocationId: "invocation-capability-invocation" });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.lookupOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: readInvocation({ now: T2 }),
+        }),
+      ).resolves.toMatchObject({
+        payloadRef: "payload-capability-invocation-output",
+        operationKey: "capability-output:invocation-capability-invocation",
+      });
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM payloads WHERE ref LIKE 'payload-capability-invocation-output%'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(1);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("rejects old attempt identities and a legal rotated lease without writing output", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            authority: {
+              ...SERVICE_AUTHORITY,
+              workerBootId: "worker-boot-capability-invocation-old",
+            },
+          }),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+
+      database
+        .prepare(
+          "UPDATE deployments SET revision = 1, authority_epoch = 2, fencing_token = 2 WHERE id = ?",
+        )
+        .run("deployment-capability-invocation");
+      database
+        .prepare("UPDATE authority_leases SET released_at = ? WHERE id = ?")
+        .run(T1, "lease-capability-invocation");
+      database
+        .prepare(
+          `INSERT INTO authority_leases (
+            id, owner_id, agent_id, deployment_id, holder_id, authority_epoch,
+            fencing_token, acquired_at, expires_at
+          ) VALUES ('lease-capability-invocation-rotated-result', ?, ?,
+            'deployment-capability-invocation', 'holder-capability-invocation-rotated-result',
+            2, 2, ?, '2999-12-31T23:59:59.999Z')`,
+        )
+        .run(OWNER_ID, AGENT_ID, T1);
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            authority: {
+              ...SERVICE_AUTHORITY,
+              product: {
+                ...SERVICE_AUTHORITY.product,
+                authorityEpoch: 2,
+                fencingToken: 2,
+              },
+              lease: {
+                leaseId: "lease-capability-invocation-rotated-result",
+                fencingToken: 2,
+              },
+            },
+          }),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+      expect(
+        database
+          .prepare("SELECT COUNT(*) FROM run_payload_artifacts WHERE purpose = 'worker_result'")
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM payloads WHERE ref = 'payload-capability-invocation-output'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(0);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("rolls back a protected output when the artifact receipt insert fails", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      database.exec(`
+        CREATE TRIGGER test_capability_invocation_observation_abort
+        BEFORE INSERT ON run_payload_artifacts
+        BEGIN SELECT RAISE(ABORT, 'test observation receipt failure'); END;
+      `);
+
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation(),
+        }),
+      ).rejects.toThrow("test observation receipt failure");
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM payloads WHERE ref = 'payload-capability-invocation-output'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        database
+          .prepare("SELECT COUNT(*) FROM run_payload_artifacts WHERE purpose = 'worker_result'")
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        database
+          .prepare(
+            "SELECT json_extract(record_json, '$.uses') FROM capability_handles WHERE id = ?",
+          )
+          .pluck()
+          .get("handle-capability-invocation"),
+      ).toBe(1);
+      expect(database.prepare("SELECT status FROM runs WHERE id = ?").pluck().get(RUN_ID)).toBe(
+        "running",
+      );
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("rejects output observations outside the frozen classification, media, or byte ceiling", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            payload: { ...outputPayload(), dataClassification: "public" },
+          }),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            payload: { ...outputPayload(), contentType: "not-a-media-type" },
+          }),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({ plaintextByteLength: 4097 }),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+      expect(
+        database
+          .prepare("SELECT COUNT(*) FROM run_payload_artifacts WHERE purpose = 'worker_result'")
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM payloads WHERE ref = 'payload-capability-invocation-output'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(0);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("requires the invocation observation writer to run inside a transaction", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      const opened = await openOperations(resource);
+      database = opened.database;
+      const writer = new SqliteRunPayloadArtifactOperations(
+        database,
+        (code: string, message: string, details?: Readonly<Record<string, string>>): never => {
+          throw new ApplicationPortError(code as PortErrorCode, message, details);
+        },
+        () => undefined,
+      );
+      let error: unknown;
+      try {
+        writer.commitInvocationObservationWithinTransaction({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          invocationId: "invocation-capability-invocation",
+          authority: {
+            product: SERVICE_AUTHORITY.product,
+            lease: SERVICE_AUTHORITY.lease,
+          },
+          now: T1,
+          payload: outputPayload(),
+        });
+      } catch (candidate) {
+        error = candidate;
+      }
+      expect(error).toMatchObject({ code: "PORT_INVALID_OPERATION" });
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("removes the receipt, observation, and protected output when the Run is deleted", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      database.close();
+      database = undefined;
+      await resource.repository.close();
+      await mkdir(path.join(resource.stateRoot, "data"), { recursive: true });
+      await rename(
+        path.join(resource.stateRoot, "product.sqlite"),
+        path.join(resource.stateRoot, "data", "product.sqlite"),
+      );
+      const deletion = new SqliteGovernedDeletionAdapter({
+        stateRoot: resource.stateRoot,
+        databasePath: path.join(resource.stateRoot, "data", "product.sqlite"),
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        now: () => T1,
+      });
+      await deletion.deleteImmediately({ objectType: "run", objectId: RUN_ID });
+      const after = openQualifiedDatabase(path.join(resource.stateRoot, "data", "product.sqlite"));
+      try {
+        expect(
+          after
+            .prepare("SELECT COUNT(*) FROM capability_invocation_receipts WHERE run_id = ?")
+            .pluck()
+            .get(RUN_ID),
+        ).toBe(0);
+        expect(
+          after
+            .prepare("SELECT COUNT(*) FROM run_payload_artifacts WHERE run_id = ?")
+            .pluck()
+            .get(RUN_ID),
+        ).toBe(0);
+        expect(
+          after
+            .prepare(
+              "SELECT COUNT(*) FROM payloads WHERE ref = 'payload-capability-invocation-output'",
+            )
+            .pluck()
+            .get(),
+        ).toBe(0);
+        const afterOperations = operationsForDatabase(after);
+        await expect(
+          callOperation(afterOperations, "capabilityInvocationResult.lookupFrozen", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: readInvocation(),
+          }),
+        ).resolves.toBeUndefined();
+        await expect(
+          callOperation(afterOperations, "capabilityInvocationResult.observeOutput", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: outputObservation(),
+          }),
+        ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
+      } finally {
+        after.close();
+      }
     } finally {
       database?.close();
       await resource.repository.close();

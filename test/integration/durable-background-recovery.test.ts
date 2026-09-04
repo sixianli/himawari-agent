@@ -2,20 +2,24 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  claimFromRunExecutionLease,
   DurableBackgroundWorkService,
   UnifiedTriggerIngestionService,
   type BackgroundAdmissionLimits,
   type BackgroundOccurrenceSettlement,
+  type RunExecutionLeaseClaim,
   type TriggerAdmissionPort,
 } from "@himawari-agent/application";
 import {
   createAgentId,
+  createAuthorityLeaseId,
   createDeploymentId,
   createIdempotencyKey,
   createJobId,
   createOccurrenceId,
   createOwnerId,
   createRunId,
+  createRunExecutionLeaseId,
   createSessionId,
   type BackgroundOccurrence,
   type ProductAuthorityFence,
@@ -33,6 +37,9 @@ const AGENT_ID = createAgentId("agent-background");
 const DEPLOYMENT_ID = createDeploymentId("deployment-background");
 const RUN_ID = createRunId("run-background");
 const SESSION_ID = createSessionId("session-background");
+const AUTHORITY_LEASE_ID = createAuthorityLeaseId("lease-background");
+const EXECUTION_LEASE_ID = createRunExecutionLeaseId("execution-background");
+const DISPATCH_CONSUMER_ID = "background-recovery";
 const T0 = "2026-08-27T00:00:00.000Z";
 const T1 = "2026-08-27T00:00:01.000Z";
 const T2 = "2026-08-27T00:00:02.000Z";
@@ -58,7 +65,10 @@ const LIMITS: BackgroundAdmissionLimits = {
   perCategory: { monitor: 3, foreground: 2 },
 };
 
-async function seed(databasePath: string): Promise<void> {
+async function seed(
+  databasePath: string,
+  runStatus: "accepted" | "awaiting_approval" = "awaiting_approval",
+): Promise<void> {
   const database = openQualifiedDatabase(databasePath);
   applyMigrations(database, await loadBundledMigrations());
   database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
@@ -72,6 +82,22 @@ async function seed(databasePath: string): Promise<void> {
       ) VALUES (?, ?, ?, 0, 'active', 1, 1)`,
     )
     .run(DEPLOYMENT_ID, OWNER_ID, AGENT_ID);
+  database
+    .prepare(
+      `INSERT INTO authority_leases (
+        id, owner_id, agent_id, deployment_id, holder_id, authority_epoch,
+        fencing_token, acquired_at, expires_at
+      ) VALUES (?, ?, ?, ?, ?, 1, 1, ?, ?)`,
+    )
+    .run(
+      AUTHORITY_LEASE_ID,
+      OWNER_ID,
+      AGENT_ID,
+      DEPLOYMENT_ID,
+      DISPATCH_CONSUMER_ID,
+      T0,
+      FAR_FUTURE,
+    );
   database
     .prepare(
       `INSERT INTO payloads (
@@ -103,17 +129,16 @@ async function seed(databasePath: string): Promise<void> {
       `INSERT INTO runs (
         id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
         status, created_at, updated_at
-      ) VALUES (?, ?, ?, 'thread-background', ?, 'trigger-background', 1,
-        'awaiting_approval', ?, ?)`,
+      ) VALUES (?, ?, ?, 'thread-background', ?, 'trigger-background', 1, ?, ?, ?)`,
     )
-    .run(RUN_ID, OWNER_ID, AGENT_ID, SESSION_ID, T0, T0);
+    .run(RUN_ID, OWNER_ID, AGENT_ID, SESSION_ID, runStatus, T0, T0);
   database.close();
 }
 
-async function setup(now = T0) {
+async function setup(now = T0, runStatus: "accepted" | "awaiting_approval" = "awaiting_approval") {
   const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-background-"));
   const databasePath = path.join(stateRoot, "product.sqlite");
-  await seed(databasePath);
+  await seed(databasePath, runStatus);
   const repository = await SqliteProductStateRepository.open({
     stateRoot,
     databasePath,
@@ -121,6 +146,28 @@ async function setup(now = T0) {
     now: () => now,
   });
   return { stateRoot, databasePath, repository };
+}
+
+async function claimCheckpointExecutionLease(
+  repository: SqliteProductStateRepository,
+): Promise<RunExecutionLeaseClaim> {
+  const claimed = await repository
+    .runDispatch(
+      OWNER_ID,
+      AGENT_ID,
+      AUTHORITY,
+      { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+      DISPATCH_CONSUMER_ID,
+    )
+    .claim({
+      runId: RUN_ID,
+      expectedRunRevision: 1,
+      expectedLeaseRevision: 0,
+      executionLeaseId: EXECUTION_LEASE_ID,
+      claimedAt: T0,
+      expiresAt: FAR_FUTURE,
+    });
+  return claimFromRunExecutionLease(claimed);
 }
 
 async function addJob(repository: SqliteProductStateRepository, id: string, category = "monitor") {
@@ -405,12 +452,14 @@ describe("Task 12 durable background recovery", () => {
   });
 
   it("restores checkpoints, blockers, unknown results, expired work, approval, and Delivery without browser state", async () => {
-    const resource = await setup();
+    const resource = await setup(T0, "accepted");
     const state = resource.repository.backgroundWorkState();
     const service = new DurableBackgroundWorkService({ state, triggers: triggerService([]) });
+    const executionLease = await claimCheckpointExecutionLease(resource.repository);
     await resource.repository.runCheckpointStore(OWNER_ID, AGENT_ID, AUTHORITY).compareAndSet({
       runId: RUN_ID,
       expectedRevision: null,
+      executionLease,
       checkpoint: {
         phase: "runtime_running",
         contextRef: "payload-background",
@@ -621,10 +670,12 @@ describe("Task 12 durable background recovery", () => {
   });
 
   it("uses the canonical Run status when enumerating checkpoint recovery", async () => {
-    const resource = await setup();
+    const resource = await setup(T0, "accepted");
+    const executionLease = await claimCheckpointExecutionLease(resource.repository);
     await resource.repository.runCheckpointStore(OWNER_ID, AGENT_ID, AUTHORITY).compareAndSet({
       runId: RUN_ID,
       expectedRevision: null,
+      executionLease,
       checkpoint: {
         phase: "runtime_running",
         contextRef: "payload-background",

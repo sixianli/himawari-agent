@@ -3,18 +3,18 @@ import {
   AttentionPolicyService,
   CapabilityRegistryService,
   ContextFormationService,
-  ModelRouterService,
-  PermissionService,
-  ReliableEventPublisher,
-  RunCoordinator,
-  RunStateCommitCoordinator,
-  SessionTraceRecorder,
   type GatewayAccessPolicyPort,
   type GatewayAuthenticationContext,
   type GatewayControlPlanePort,
   type GatewayReadModelPort,
   type GatewayRequestResult,
+  ModelRouterService,
+  PermissionService,
+  ReliableEventPublisher,
+  RunCoordinator,
+  RunStateCommitCoordinator,
   type SecretPort,
+  SessionTraceRecorder,
 } from "@himawari-agent/application";
 import type {
   EXECUTION_SCHEMA_VERSION,
@@ -23,12 +23,15 @@ import type {
 } from "@himawari-agent/execution-contracts";
 import { GATEWAY_SCHEMA_VERSION, type StreamEvent } from "@himawari-agent/gateway-contracts";
 import {
+  createReferenceAdapterSet,
   InMemoryGatewayControlPlane,
   InMemoryGatewayReadModel,
   type ReferenceAdapterSet,
-  createReferenceAdapterSet,
 } from "@himawari-agent/testing";
-import { type GatewayAuthenticatorPort, InProcessGatewayTransport } from "./in-process-gateway.js";
+import {
+  type GatewayAuthenticatorPort,
+  InProcessGatewayTransport,
+} from "../../src/in-process-gateway.js";
 
 export interface ExecutionWorkerClientBoundary {
   readonly adapterIdentity: string;
@@ -36,7 +39,6 @@ export interface ExecutionWorkerClientBoundary {
   isReady(): boolean;
   dispatch(request: ExecutionRequest): AsyncIterable<ExecutionEvent>;
 }
-
 export interface LocalServiceDiagnostic {
   readonly component: "agent-service" | "execution-worker-client";
   readonly adapterIdentity: string;

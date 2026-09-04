@@ -8,9 +8,14 @@ import {
   type ConfiguredGenerationModelDescriptor,
   type ConfiguredModelDescriptor,
   type DataClassification,
+  type HttpConfiguration,
+  type IdentityBootstrapConfiguration,
+  type IdentityConfiguration,
+  type IdentityCsrfConfiguration,
   type ModelCostDescriptor,
   type ModelProviderRouting,
   type ProductConfiguration,
+  type RecentAuthenticationConfiguration,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 
@@ -333,6 +338,263 @@ function parseNumberMap(value: unknown, field: string): Readonly<Record<string, 
   return Object.freeze(result);
 }
 
+function httpsOrigin(value: unknown, field: string): string {
+  const candidate = string(value, field);
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw invalid(field, "must be an absolute HTTPS origin");
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.origin !== candidate ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw invalid(field, "must be an absolute HTTPS origin");
+  }
+  return candidate;
+}
+
+function httpsFixedUrl(value: unknown, field: string, pathname: string): string {
+  const candidate = string(value, field);
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw invalid(field, "must be an absolute HTTPS URL");
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash ||
+    parsed.pathname !== pathname ||
+    parsed.href !== candidate
+  ) {
+    throw invalid(field, "must be the fixed HTTPS endpoint");
+  }
+  return candidate;
+}
+
+function timestamp(value: unknown, field: string): string {
+  const candidate = string(value, field);
+  if (!Number.isFinite(Date.parse(candidate))) throw invalid(field, "must be a valid timestamp");
+  return candidate;
+}
+
+function parseHttpConfiguration(value: unknown): HttpConfiguration {
+  const input = record(value, "configuration.http");
+  rejectUnknown(
+    input,
+    [
+      "listenHost",
+      "listenPort",
+      "staticRoot",
+      "sessionCookieName",
+      "maximumBodyBytes",
+      "maximumStaticAssetBytes",
+      "heartbeatMilliseconds",
+    ],
+    "configuration.http",
+  );
+  const listenHost = string(input["listenHost"], "configuration.http.listenHost");
+  if (listenHost !== "127.0.0.1" && listenHost !== "::1") {
+    throw invalid("configuration.http.listenHost", "must be a loopback address");
+  }
+  const sessionCookieName = string(
+    input["sessionCookieName"],
+    "configuration.http.sessionCookieName",
+  );
+  if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(sessionCookieName)) {
+    throw invalid("configuration.http.sessionCookieName", "must be a safe HTTP cookie name");
+  }
+  return Object.freeze({
+    listenHost,
+    listenPort: integer(input["listenPort"], "configuration.http.listenPort", 1, 65_535),
+    staticRoot: absolutePath(input["staticRoot"], "configuration.http.staticRoot"),
+    sessionCookieName,
+    maximumBodyBytes: integer(
+      input["maximumBodyBytes"],
+      "configuration.http.maximumBodyBytes",
+      1,
+      16 * 1024 * 1024,
+    ),
+    maximumStaticAssetBytes: integer(
+      input["maximumStaticAssetBytes"],
+      "configuration.http.maximumStaticAssetBytes",
+      1,
+      64 * 1024 * 1024,
+    ),
+    heartbeatMilliseconds: integer(
+      input["heartbeatMilliseconds"],
+      "configuration.http.heartbeatMilliseconds",
+      10,
+      300_000,
+    ),
+  });
+}
+
+function parseRecentAuthenticationConfiguration(value: unknown): RecentAuthenticationConfiguration {
+  const input = record(value, "configuration.identity.recentAuthentication");
+  rejectUnknown(
+    input,
+    ["maximumAgeMilliseconds", "clockSkewMilliseconds"],
+    "configuration.identity.recentAuthentication",
+  );
+  return Object.freeze({
+    maximumAgeMilliseconds: integer(
+      input["maximumAgeMilliseconds"],
+      "configuration.identity.recentAuthentication.maximumAgeMilliseconds",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    ),
+    clockSkewMilliseconds: integer(
+      input["clockSkewMilliseconds"],
+      "configuration.identity.recentAuthentication.clockSkewMilliseconds",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    ),
+  });
+}
+
+function parseIdentityBootstrapConfiguration(value: unknown): IdentityBootstrapConfiguration {
+  const input = record(value, "configuration.identity.bootstrap");
+  rejectUnknown(
+    input,
+    ["enabled", "expiresAt", "tokenSecretRef"],
+    "configuration.identity.bootstrap",
+  );
+  const enabled = boolean(input["enabled"], "configuration.identity.bootstrap.enabled");
+  const tokenSecretRefValue = input["tokenSecretRef"];
+  const tokenSecretRef =
+    tokenSecretRefValue === null
+      ? null
+      : safeReference(tokenSecretRefValue, "configuration.identity.bootstrap.tokenSecretRef");
+  if (enabled && tokenSecretRef === null) {
+    throw invalid(
+      "configuration.identity.bootstrap.tokenSecretRef",
+      "is required when bootstrap is enabled",
+    );
+  }
+  return Object.freeze({
+    enabled,
+    expiresAt: timestamp(input["expiresAt"], "configuration.identity.bootstrap.expiresAt"),
+    tokenSecretRef,
+  });
+}
+
+function parseIdentityCsrfConfiguration(value: unknown): IdentityCsrfConfiguration {
+  const input = record(value, "configuration.identity.csrf");
+  rejectUnknown(input, ["keySecretRef", "ttlMilliseconds"], "configuration.identity.csrf");
+  return Object.freeze({
+    keySecretRef: safeReference(input["keySecretRef"], "configuration.identity.csrf.keySecretRef"),
+    ttlMilliseconds: integer(
+      input["ttlMilliseconds"],
+      "configuration.identity.csrf.ttlMilliseconds",
+      60_000,
+      24 * 60 * 60_000,
+    ),
+  });
+}
+
+function parseIdentityConfiguration(value: unknown): IdentityConfiguration {
+  const input = record(value, "configuration.identity");
+  rejectUnknown(
+    input,
+    [
+      "issuer",
+      "audience",
+      "jwksUrl",
+      "jwksCacheMilliseconds",
+      "jwksTimeoutMilliseconds",
+      "jwksMaximumBodyBytes",
+      "clockToleranceSeconds",
+      "identityLookupTimeoutMilliseconds",
+      "identityLookupMaximumBodyBytes",
+      "recentAuthentication",
+      "bootstrap",
+      "csrf",
+    ],
+    "configuration.identity",
+  );
+  const issuer = httpsOrigin(input["issuer"], "configuration.identity.issuer");
+  const jwksUrl = httpsFixedUrl(
+    input["jwksUrl"],
+    "configuration.identity.jwksUrl",
+    "/cdn-cgi/access/certs",
+  );
+  const expectedJwksUrl = new URL("/cdn-cgi/access/certs", issuer).href;
+  if (jwksUrl !== expectedJwksUrl) {
+    throw invalid("configuration.identity.jwksUrl", "must be the fixed issuer JWKS endpoint");
+  }
+  return Object.freeze({
+    issuer,
+    audience: safeReference(input["audience"], "configuration.identity.audience"),
+    jwksUrl,
+    jwksCacheMilliseconds: integer(
+      input["jwksCacheMilliseconds"],
+      "configuration.identity.jwksCacheMilliseconds",
+      1_000,
+      3_600_000,
+    ),
+    jwksTimeoutMilliseconds: integer(
+      input["jwksTimeoutMilliseconds"],
+      "configuration.identity.jwksTimeoutMilliseconds",
+      1,
+      10_000,
+    ),
+    jwksMaximumBodyBytes: integer(
+      input["jwksMaximumBodyBytes"],
+      "configuration.identity.jwksMaximumBodyBytes",
+      1,
+      1024 * 1024,
+    ),
+    clockToleranceSeconds: integer(
+      input["clockToleranceSeconds"],
+      "configuration.identity.clockToleranceSeconds",
+      0,
+      120,
+    ),
+    identityLookupTimeoutMilliseconds: integer(
+      input["identityLookupTimeoutMilliseconds"],
+      "configuration.identity.identityLookupTimeoutMilliseconds",
+      1,
+      10_000,
+    ),
+    identityLookupMaximumBodyBytes: integer(
+      input["identityLookupMaximumBodyBytes"],
+      "configuration.identity.identityLookupMaximumBodyBytes",
+      1,
+      1024 * 1024,
+    ),
+    recentAuthentication: parseRecentAuthenticationConfiguration(input["recentAuthentication"]),
+    bootstrap: parseIdentityBootstrapConfiguration(input["bootstrap"]),
+    csrf: parseIdentityCsrfConfiguration(input["csrf"]),
+  });
+}
+
+function assertIdentitySecretReference(
+  secretReferences: readonly {
+    readonly ref: string;
+    readonly version: string;
+    readonly purpose: string;
+  }[],
+  ref: string | null,
+  purpose: string,
+  field: string,
+): void {
+  if (ref === null) return;
+  const matches = secretReferences.filter((entry) => entry.ref === ref);
+  if (matches.length !== 1 || matches[0]?.purpose !== purpose) {
+    throw invalid(field, `must reference exactly one ${purpose} secret`);
+  }
+}
+
 export function parseProductConfiguration(value: unknown, loadedAt: string): ProductConfiguration {
   const input = record(value, "configuration");
   rejectUnknown(
@@ -347,6 +609,8 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "cacheDirectory",
       "publicOrigin",
       "publicMode",
+      "http",
+      "identity",
       "modelDescriptors",
       "memory",
       "repositoryAllowlistRefs",
@@ -398,6 +662,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     origin.protocol === "https:" || (!publicMode && origin.protocol === "http:" && loopback);
   if (!transportAllowed) {
     throw invalid("configuration.publicOrigin", "does not meet transport security policy");
+  }
+
+  const http = input["http"] === undefined ? undefined : parseHttpConfiguration(input["http"]);
+  const identity =
+    input["identity"] === undefined ? undefined : parseIdentityConfiguration(input["identity"]);
+  if ((http === undefined) !== (identity === undefined)) {
+    throw invalid("configuration", "http and identity must be configured together");
   }
 
   if (!Array.isArray(input["modelDescriptors"])) {
@@ -465,6 +736,20 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   ) {
     throw invalid("configuration.secretReferences", "must not contain duplicate ref/version pairs");
   }
+  if (identity) {
+    assertIdentitySecretReference(
+      secretReferences,
+      identity.bootstrap.tokenSecretRef,
+      "identity-bootstrap",
+      "configuration.identity.bootstrap.tokenSecretRef",
+    );
+    assertIdentitySecretReference(
+      secretReferences,
+      identity.csrf.keySecretRef,
+      "identity-csrf",
+      "configuration.identity.csrf.keySecretRef",
+    );
+  }
   const secretReferenceNames = new Set(secretReferences.map(({ ref }) => ref));
   for (const descriptor of modelDescriptors) {
     if (descriptor.secretRef !== null && !secretReferenceNames.has(descriptor.secretRef)) {
@@ -527,6 +812,8 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     cacheDirectory,
     publicOrigin,
     publicMode,
+    ...(http === undefined ? {} : { http }),
+    ...(identity === undefined ? {} : { identity }),
     modelDescriptors,
     memory: Object.freeze({
       adapter: "mem0-oss" as const,

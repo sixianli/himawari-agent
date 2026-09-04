@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:705e81f970e4d266991e2772082a485918cbb47bc3c46281f54055cc00b981c9"
+contract_sha256: "sha256:d86ccb618ce5ffa51bd41369b8a3257aaec927a80921165117609a424ca867fa"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -13,6 +13,10 @@ date: "2026-08-27"
 <!-- runbook-contract:
 - apps/admin-cli/src
 - packages/persistence-sqlite/src/sqlite-recovery-point.ts
+- packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts
+- packages/persistence-sqlite/src/sqlite-run-lifecycle-operations.ts
+- packages/persistence-sqlite/src/sqlite-run-checkpoint-operations.ts
+- packages/persistence-sqlite/src/migrations/0021_run_execution_leases.sql
 - packages/persistence-sqlite/src/state-root-lock.ts
 - packages/platform-node/src/host-secret-source.ts
 - packages/platform-node/src/payload-protector.ts
@@ -98,6 +102,7 @@ himawari backup restore --config <absolute-config-path> --secret-dir <absolute-s
 - 用恢复点创建前已记录的只读业务引用验证数据水位线已回到预期；不要只依据 exit code 或文件存在判断成功。
 - 对本次包含运行正文的恢复点，核对正文、所属 Run、用途和操作身份回执一并恢复，正文摘要、分类与媒体类型一致；不能只验证正文可解密。已保存但尚未发布的正文仍保持未发布，恢复操作不能把它补发为 Assistant 消息。
 - 若恢复点含 Capability 调用回执，核对原幂等键、冻结任务语义及 Agent/Worker 执行身份一并恢复。旧回执只证明过去已经接纳调用，不能作为重新派发依据；正文访问仍须验证当前权威、租约、Run、能力与 Grant。未知外部结果保持待核对，不因恢复成功自动重试。
+- 若包含 Run 执行租约，核对其 Run 归属、唯一执行身份、revision、权威关联和释放状态一起恢复。旧 consumer 或旧权威不能继续写 Run 和检查点；已取消 Run 的检查点、失效租约和命令回执必须一致。恢复后先区分安全提交的结果与待核对的中断执行，不手工重置租约或自动重新执行未知动作。
 - `runtime/`、`cache/`、secret source、authority file 和 public ingress 未被恢复包覆盖；不存在 `.restore-*` 临时目录或 plaintext SQLite 临时文件。
 - 对恢复期间已经发生的外部副作用逐项保持原状态或显式进入 reconciliation；不得假定数据库恢复自动撤销外部动作。
 

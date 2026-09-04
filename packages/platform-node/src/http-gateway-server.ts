@@ -7,8 +7,8 @@ import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
   type GatewayAuthenticationContext,
-  type RecentAuthenticationGuardPort,
   PORT_ERROR_CODES,
+  type RecentAuthenticationGuardPort,
 } from "@himawari-agent/application";
 import type { DeploymentHealthSnapshot } from "@himawari-agent/domain";
 import {
@@ -19,14 +19,14 @@ import {
   type GatewayV2Command,
   type GatewayV2Event,
   type GatewayV2Query,
+  gatewayMessageSchema,
+  gatewayV2MessageSchema,
+  type StreamEvent,
   type ThreadGatewayCommand,
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
   type ThreadGatewaySubscription,
-  gatewayMessageSchema,
-  gatewayV2MessageSchema,
   threadGatewayMessageSchema,
-  type StreamEvent,
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
@@ -78,7 +78,8 @@ export interface HttpGatewayMetricsPort {
 }
 
 export interface HttpGatewayServerOptions {
-  readonly gateway: AgentGatewayPort;
+  /** Optional legacy v1 gateway; absent routes are intentionally not registered. */
+  readonly gateway?: AgentGatewayPort;
   readonly gatewayV2?: AgentGatewayV2Port;
   readonly threadGateway?: AgentThreadGatewayPort;
   readonly payloadAdmission?: HttpGatewayPayloadAdmissionPort;
@@ -648,87 +649,93 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     });
   }
 
-  app.post("/api/gateway/v1/commands", async (request, reply) => {
-    assertMutationBoundary(request, publicOrigin);
-    const authentication = await authenticate(request, options);
-    const csrfAccepted = await options.csrf.verify({
-      authentication,
-      token: header(request, "x-csrf-token"),
-      method: request.method,
-      path: requestPath(request),
-    });
-    if (!csrfAccepted) {
-      throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
-    }
-    const command = parseBusinessMessage(request.body, "command");
-    if (header(request, "idempotency-key") !== command.idempotencyKey) {
-      throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.IDEMPOTENCY_MISMATCH, 400);
-    }
-    return sendJson(reply, 200, await options.gateway.request(authentication, command));
-  });
-
-  app.post("/api/gateway/v1/queries", async (request, reply) => {
-    assertMutationBoundary(request, publicOrigin);
-    const authentication = await authenticate(request, options);
-    const query = parseBusinessMessage(request.body, "query");
-    return sendJson(reply, 200, await options.gateway.request(authentication, query));
-  });
-
-  app.get<{ Querystring: { readonly subscription?: string } }>(
-    "/api/gateway/v1/events",
-    async (request, reply) => {
-      assertPublicHost(request, publicOrigin);
+  if (options.gateway) {
+    const gateway = options.gateway;
+    app.post("/api/gateway/v1/commands", async (request, reply) => {
+      assertMutationBoundary(request, publicOrigin);
       const authentication = await authenticate(request, options);
-      const subscription = parseSubscription(request.query.subscription);
-      let stream: Readable;
-      try {
-        const source = streamGatewayEvents({
-          gateway: options.gateway,
-          authentication,
-          subscription,
-          heartbeatMilliseconds,
-        });
-        const first = await source.next();
-        stream = Readable.from(
-          (async function* () {
-            if (!first.done) yield first.value;
-            yield* source;
-          })(),
-        );
-      } catch (error) {
-        if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.NOT_FOUND) {
-          throw error;
-        }
-        const snapshots = [];
-        for (const query of refreshQueries(subscription).slice(0, 2)) {
-          snapshots.push(await options.gateway.request(authentication, query));
-        }
-        stream = Readable.from(
-          snapshots.length > 0
-            ? snapshots.map((snapshot, index) =>
-                serializeSse({
-                  event: "gateway.snapshot",
-                  id: `snapshot:${index + 1}`,
-                  data: snapshot,
-                }),
-              )
-            : [
-                serializeSse({
-                  event: "gateway.snapshot_required",
-                  data: { reasonCode: "CURSOR_OUTSIDE_RETENTION" },
-                }),
-              ],
-        );
+      const csrfAccepted = await options.csrf.verify({
+        authentication,
+        token: header(request, "x-csrf-token"),
+        method: request.method,
+        path: requestPath(request),
+      });
+      if (!csrfAccepted) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
       }
-      setSecurityHeaders(reply);
-      reply
-        .header("cache-control", "no-cache, no-store")
-        .header("connection", "keep-alive")
-        .header("x-accel-buffering", "no")
-        .type(SSE_CONTENT_TYPE);
-      return reply.send(stream);
-    },
-  );
+      const command = parseBusinessMessage(request.body, "command");
+      if (header(request, "idempotency-key") !== command.idempotencyKey) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.IDEMPOTENCY_MISMATCH, 400);
+      }
+      return sendJson(reply, 200, await gateway.request(authentication, command));
+    });
+
+    app.post("/api/gateway/v1/queries", async (request, reply) => {
+      assertMutationBoundary(request, publicOrigin);
+      const authentication = await authenticate(request, options);
+      const query = parseBusinessMessage(request.body, "query");
+      return sendJson(reply, 200, await gateway.request(authentication, query));
+    });
+
+    app.get<{ Querystring: { readonly subscription?: string } }>(
+      "/api/gateway/v1/events",
+      async (request, reply) => {
+        assertPublicHost(request, publicOrigin);
+        const authentication = await authenticate(request, options);
+        const subscription = parseSubscription(request.query.subscription);
+        let stream: Readable;
+        try {
+          const source = streamGatewayEvents({
+            gateway,
+            authentication,
+            subscription,
+            heartbeatMilliseconds,
+          });
+          const first = await source.next();
+          stream = Readable.from(
+            (async function* () {
+              if (!first.done) yield first.value;
+              yield* source;
+            })(),
+          );
+        } catch (error) {
+          if (
+            !(error instanceof ApplicationPortError) ||
+            error.code !== PORT_ERROR_CODES.NOT_FOUND
+          ) {
+            throw error;
+          }
+          const snapshots = [];
+          for (const query of refreshQueries(subscription).slice(0, 2)) {
+            snapshots.push(await gateway.request(authentication, query));
+          }
+          stream = Readable.from(
+            snapshots.length > 0
+              ? snapshots.map((snapshot, index) =>
+                  serializeSse({
+                    event: "gateway.snapshot",
+                    id: `snapshot:${index + 1}`,
+                    data: snapshot,
+                  }),
+                )
+              : [
+                  serializeSse({
+                    event: "gateway.snapshot_required",
+                    data: { reasonCode: "CURSOR_OUTSIDE_RETENTION" },
+                  }),
+                ],
+          );
+        }
+        setSecurityHeaders(reply);
+        reply
+          .header("cache-control", "no-cache, no-store")
+          .header("connection", "keep-alive")
+          .header("x-accel-buffering", "no")
+          .type(SSE_CONTENT_TYPE);
+        return reply.send(stream);
+      },
+    );
+  }
 
   if (options.gatewayV2) {
     const gatewayV2 = options.gatewayV2;

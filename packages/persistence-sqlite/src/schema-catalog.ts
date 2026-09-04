@@ -203,6 +203,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Run deletion and preserve Payloads referenced by survivors",
   ),
   entry(
+    "run_execution_leases",
+    "RunDispatchPort",
+    "revision-checked execution claim with retained release history",
+    "metadata_only",
+    "cascade with Run deletion and retain no Payload ciphertext",
+  ),
+  entry(
     "approval_requests",
     "AuthorizationStorePort",
     "pending to terminal",

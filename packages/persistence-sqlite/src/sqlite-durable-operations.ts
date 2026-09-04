@@ -31,6 +31,8 @@ import type {
   ResolveApprovalInput,
   RunPayloadArtifact,
   RunPayloadArtifactCommitResult,
+  RunExecutionLeaseTransactionGuard,
+  RunDispatchScope,
   ScheduledJob,
   ScheduledJobWrite,
   SessionDeletionRecord,
@@ -62,6 +64,7 @@ import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
 import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
 import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
 import { SqliteRunPayloadArtifactOperations } from "./sqlite-run-payload-artifact-operations.ts";
+import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
 
 export type SqliteApplicationFailure = (
@@ -244,6 +247,33 @@ function quoteIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
+function runDispatchRpc(value: unknown): {
+  readonly scope: RunDispatchScope;
+  readonly input: unknown;
+} {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("Run dispatch RPC payload must be an object");
+  }
+  const payload = value as {
+    readonly ownerId?: unknown;
+    readonly agentId?: unknown;
+    readonly authority?: unknown;
+    readonly authorityLease?: unknown;
+    readonly consumerId?: unknown;
+    readonly input?: unknown;
+  };
+  return {
+    scope: {
+      ownerId: payload.ownerId as RunDispatchScope["ownerId"],
+      agentId: payload.agentId as RunDispatchScope["agentId"],
+      authority: payload.authority as RunDispatchScope["authority"],
+      authorityLease: payload.authorityLease as RunDispatchScope["authorityLease"],
+      consumerId: payload.consumerId as RunDispatchScope["consumerId"],
+    },
+    input: payload.input,
+  };
+}
+
 function grantStatus(record: GrantRecord): "active" | "revoked" | "expired" | "consumed" {
   if (record.revokedAt !== null) return "revoked";
   if (record.uses >= record.maxUses || record.spentCostMicros >= record.maxTotalCostMicros) {
@@ -289,28 +319,64 @@ export class SqliteDurableOperations {
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
     this.checkpoint = new SqliteCheckpointOperations(database, fail, assertDiskHeadroom);
-    this.capabilityInvocations = new SqliteCapabilityInvocationOperations(
-      database,
-      fail,
-      assertDiskHeadroom,
-    );
-    this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
-    this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
-    this.runs = new SqliteRunLifecycleOperations(database, fail, assertDiskHeadroom, this.thread);
-    this.runCheckpoints = new SqliteRunCheckpointOperations(
-      database,
-      fail,
-      assertDiskHeadroom,
-      (ownerId, agentId, authority) => this.assertBackgroundFence(ownerId, agentId, authority),
-    );
     this.runPayloadArtifacts = new SqliteRunPayloadArtifactOperations(
       database,
       fail,
       assertDiskHeadroom,
     );
+    this.capabilityInvocations = new SqliteCapabilityInvocationOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+      this.runPayloadArtifacts,
+    );
+    this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
+    this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
+    const executionLease = (input: {
+      readonly ownerId: string;
+      readonly agentId: string;
+      readonly authority: ProductAuthorityFence;
+      readonly authorityLeaseId: string;
+      readonly authorityFencingToken: number;
+      readonly consumerId: string;
+    }): Pick<
+      RunExecutionLeaseTransactionGuard,
+      "assertHeldInTransaction" | "invalidateForOwnerCancellationInTransaction"
+    > =>
+      new SqliteRunDispatchOperations(
+        database,
+        {
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          authority: input.authority,
+          authorityLease: {
+            leaseId: input.authorityLeaseId,
+            fencingToken: input.authorityFencingToken,
+          },
+          consumerId: input.consumerId,
+        },
+        fail,
+      );
+    this.runs = new SqliteRunLifecycleOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+      this.thread,
+      executionLease,
+    );
+    this.runCheckpoints = new SqliteRunCheckpointOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+      (ownerId, agentId, authority) => this.assertBackgroundFence(ownerId, agentId, authority),
+      executionLease,
+    );
   }
 
   execute(operation: string, payload: unknown): unknown {
+    if (operation.startsWith("runDispatch.")) {
+      return this.executeRunDispatch(operation, payload);
+    }
     if (operation.startsWith("runLifecycle.")) return this.runs.execute(operation, payload);
     if (operation.startsWith("runCheckpoint.")) {
       return this.runCheckpoints.execute(operation, payload);
@@ -682,6 +748,12 @@ export class SqliteDurableOperations {
       default:
         throw new Error(`Unknown durable SQLite operation ${operation}`);
     }
+  }
+
+  private executeRunDispatch(operation: string, payload: unknown): unknown {
+    const rpc = runDispatchRpc(payload);
+    const dispatch = new SqliteRunDispatchOperations(this.database, rpc.scope, this.fail);
+    return dispatch.execute(operation, rpc.input);
   }
 
   recoverStartup(now: string): SqliteStartupRecovery {

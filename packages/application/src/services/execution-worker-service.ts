@@ -1,6 +1,7 @@
+import { createAgentId, createOwnerId, createRunId } from "@himawari-agent/domain";
 import {
-  EXECUTION_SCHEMA_VERSION,
   type CancelWorkRequest,
+  EXECUTION_SCHEMA_VERSION,
   type ExecuteWorkRequest,
   type ReconcileWorkRequest,
   type WorkCancelledEvent,
@@ -8,21 +9,20 @@ import {
   type WorkReconciledEvent,
   type WorkResultEvent,
 } from "@himawari-agent/execution-contracts";
-import { createAgentId, createOwnerId, createRunId } from "@himawari-agent/domain";
+import type { AuthorizationStorePort } from "../ports/authorization.js";
 import type {
   CapabilityExecutionHandle,
   CapabilityExecutionHandleStorePort,
   CapabilityPort,
   CapabilityRegistryStorePort,
-  CapabilitySecretReference,
   CapabilityResourceCeiling,
+  CapabilitySecretReference,
   ExternalActionReconciliationPort,
-  SecretPort,
   GovernedCapabilityExecutionHandle,
+  SecretPort,
 } from "../ports/capabilities.js";
 import { capabilityLifecycleHasActiveAuthority } from "../ports/capabilities.js";
-import type { AuthorizationStorePort } from "../ports/authorization.js";
-import { PORT_ERROR_CODES, ApplicationPortError } from "../ports/common.js";
+import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
@@ -113,7 +113,27 @@ export class ExecutionWorkerService {
         dataClassification: request.dataClassification,
         resourceCeiling,
       })) {
-        if (event.occurredAt >= request.payload.deadlineAt) {
+        // A result_unknown is an observation that an external side effect may
+        // already exist. Preserve that fact even when the event arrives after
+        // cancellation or the deadline; replacing it with cancellation or a
+        // timeout would make reconciliation impossible.
+        if (event.type === "capability.result_unknown") {
+          yield this.resultEvent(request, "result_unknown", null, null, event.externalActionId);
+          terminal = true;
+          break;
+        }
+
+        const cancellationReason = this.cancellations.get(request.messageId);
+        if (cancellationReason) {
+          yield this.cancelledEvent(request, request.messageId, cancellationReason);
+          terminal = true;
+          break;
+        }
+
+        if (
+          this.dependencies.clock.now() >= request.payload.deadlineAt ||
+          event.occurredAt >= request.payload.deadlineAt
+        ) {
           await this.dependencies.capability.cancel(request.messageId, "deadline_exceeded");
           yield this.resultEvent(request, "failed", null, "EXECUTION_TIMEOUT", null);
           terminal = true;
@@ -136,9 +156,6 @@ export class ExecutionWorkerService {
           terminal = true;
         } else if (event.type === "capability.failed") {
           yield this.resultEvent(request, "failed", null, event.errorCode, null);
-          terminal = true;
-        } else if (event.type === "capability.result_unknown") {
-          yield this.resultEvent(request, "result_unknown", null, null, event.externalActionId);
           terminal = true;
         } else {
           yield this.cancelledEvent(request, request.messageId, event.reasonCode);

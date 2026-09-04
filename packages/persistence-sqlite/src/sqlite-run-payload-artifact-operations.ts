@@ -1,10 +1,11 @@
 import type {
   PayloadRecord,
   RunPayloadArtifact,
+  RunPayloadArtifactAuthority,
   RunPayloadArtifactCommitResult,
   RunPayloadArtifactPurpose,
 } from "@himawari-agent/application";
-import type { ProductAuthorityFence, RunId } from "@himawari-agent/domain";
+import type { AgentId, OwnerId, ProductAuthorityFence, RunId } from "@himawari-agent/domain";
 import { createAuthorityLeaseId, createDeploymentId, createRunId } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
@@ -40,6 +41,25 @@ interface OperationInput {
 
 interface CommitInput extends OperationInput {
   readonly payload: PayloadRecord;
+}
+
+/**
+ * Internal transaction input for a result observation. The capability
+ * invocation operation supplies the already-bound Run and attempt identity;
+ * this writer must never derive them from an untrusted Worker envelope.
+ */
+export interface SqliteCapabilityInvocationObservationInput {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly runId: RunId;
+  readonly invocationId: string;
+  readonly authority: RunPayloadArtifactAuthority;
+  readonly now: string;
+  readonly payload: PayloadRecord;
+}
+
+export function capabilityInvocationOutputOperationKey(invocationId: string): string {
+  return `capability-output:${invocationId}`;
 }
 
 const RUN_PAYLOAD_ARTIFACT_PURPOSES: readonly RunPayloadArtifactPurpose[] = [
@@ -106,7 +126,7 @@ function classification(value: unknown): RunPayloadArtifact["dataClassification"
   return value;
 }
 
-function payload(value: unknown): PayloadRecord {
+export function parseRunPayloadArtifactPayload(value: unknown): PayloadRecord {
   const input = record(value, "payload");
   const storage = input["storage"];
   if (
@@ -210,7 +230,7 @@ export class SqliteRunPayloadArtifactOperations {
     if (operation === "runPayloadArtifact.commit") {
       let protectedPayload: PayloadRecord;
       try {
-        protectedPayload = payload(input["payload"]);
+        protectedPayload = parseRunPayloadArtifactPayload(input["payload"]);
       } catch (error) {
         return this.fail(
           "PORT_INVALID_OPERATION",
@@ -287,40 +307,98 @@ export class SqliteRunPayloadArtifactOperations {
 
         this.assertRun(input, true);
         this.insertOrValidatePayload(input, protectedPayload);
-        const artifact = Object.freeze({
-          ownerId: input.ownerId as RunPayloadArtifact["ownerId"],
-          agentId: input.agentId as RunPayloadArtifact["agentId"],
-          runId: input.runId,
-          purpose: input.purpose,
-          operationKey: input.operationKey,
-          payloadRef: protectedPayload.ref,
-          contentDigest: protectedPayload.contentDigest,
-          contentType: protectedPayload.contentType,
-          dataClassification: protectedPayload.dataClassification,
-          createdAt: protectedPayload.createdAt,
-        });
-        this.database
-          .prepare(
-            `INSERT INTO run_payload_artifacts (
-              owner_id, agent_id, run_id, purpose, operation_key, payload_ref,
-              content_digest, content_type, classification, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          )
-          .run(
-            input.ownerId,
-            input.agentId,
-            input.runId,
-            input.purpose,
-            input.operationKey,
-            protectedPayload.ref,
-            protectedPayload.contentDigest,
-            protectedPayload.contentType,
-            protectedPayload.dataClassification,
-            protectedPayload.createdAt,
-          );
-        return { ref: protectedPayload.ref, replayed: false, artifact };
+        return this.insertArtifact(input, protectedPayload);
       })
       .immediate();
+  }
+
+  /**
+   * Persists a protected result fact inside the caller's active transaction.
+   * This is intentionally a semantic method rather than a generic terminal
+   * write override: only the capability invocation owner can supply the
+   * frozen Run/attempt identity, and the method fails when called outside a
+   * transaction so a receipt and its artifact cannot be split across commits.
+   */
+  commitInvocationObservationWithinTransaction(
+    input: SqliteCapabilityInvocationObservationInput,
+  ): RunPayloadArtifactCommitResult {
+    if (!this.database.inTransaction) {
+      return this.fail(
+        "PORT_INVALID_OPERATION",
+        "Capability invocation observations require an active SQLite transaction",
+      );
+    }
+    const operationInput: OperationInput = {
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      runId: input.runId,
+      purpose: "worker_result",
+      operationKey: capabilityInvocationOutputOperationKey(input.invocationId),
+      authority: {
+        product: input.authority.product,
+        leaseId: input.authority.lease.leaseId,
+        leaseFencingToken: input.authority.lease.fencingToken,
+      },
+      now: input.now,
+    };
+    this.assertAuthority(operationInput);
+    this.assertRun(operationInput, false);
+    const existing = this.readArtifact(operationInput);
+    if (existing) {
+      this.assertArtifactPayload(operationInput, existing);
+      if (!this.sameIdentity(existing, input.payload)) {
+        return this.fail(
+          "PORT_CONFLICT",
+          "Capability invocation output identity conflicts with its existing observation",
+          { runId: input.runId, invocationId: input.invocationId },
+        );
+      }
+      return {
+        ref: existing.payloadRef,
+        replayed: true,
+        artifact: artifactFromRow(existing),
+      };
+    }
+    this.insertOrValidatePayload(operationInput, input.payload);
+    return this.insertArtifact(operationInput, input.payload);
+  }
+
+  private insertArtifact(
+    input: OperationInput,
+    protectedPayload: PayloadRecord,
+  ): RunPayloadArtifactCommitResult {
+    const artifact = Object.freeze({
+      ownerId: input.ownerId as RunPayloadArtifact["ownerId"],
+      agentId: input.agentId as RunPayloadArtifact["agentId"],
+      runId: input.runId,
+      purpose: input.purpose,
+      operationKey: input.operationKey,
+      payloadRef: protectedPayload.ref,
+      contentDigest: protectedPayload.contentDigest,
+      contentType: protectedPayload.contentType,
+      dataClassification: protectedPayload.dataClassification,
+      createdAt: protectedPayload.createdAt,
+    });
+    this.database
+      .prepare(
+        `INSERT INTO run_payload_artifacts (
+          owner_id, agent_id, run_id, purpose, operation_key, payload_ref,
+          content_digest, content_type, classification, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.ownerId,
+        input.agentId,
+        input.runId,
+        input.purpose,
+        input.operationKey,
+        protectedPayload.ref,
+        protectedPayload.contentDigest,
+        protectedPayload.contentType,
+        protectedPayload.dataClassification,
+        protectedPayload.createdAt,
+      );
+    return { ref: protectedPayload.ref, replayed: false, artifact };
   }
 
   private assertAuthority(input: OperationInput): void {

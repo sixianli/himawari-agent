@@ -14,23 +14,25 @@ import {
   type OwnerId,
   type SessionId,
 } from "@himawari-agent/domain";
-import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JSONWebKeySet } from "jose";
 import Fastify from "fastify";
+import { type CryptoKey, exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   BreakGlassService,
   CloudflareAccessIdentityClient,
   CloudflareAccessJwtVerifier,
+  digestIdentityCredential,
   IDENTITY_GATEWAY_ERROR_CODES,
   OwnerBootstrapService,
   ProductSessionAuthenticationService,
-  SessionBoundCsrfService,
-  digestIdentityCredential,
+  registerIdentityAuthenticationRoutes,
   registerIdentityGatewayRoutes,
+  SessionBoundCsrfService,
 } from "../src/identity-gateway.js";
 
 const NOW = new Date("2026-08-27T00:00:00.000Z");
 const ISSUER = "https://team.cloudflareaccess.com";
+const ORIGIN = "https://agent.example.test";
 const AUDIENCE = "access-audience-01";
 const OWNER_ID = createOwnerId("owner-01");
 
@@ -992,6 +994,53 @@ describe("break-glass boundary", () => {
     });
     expect(recovered.statusCode).toBe(204);
     expect(publicDisabled).toBe(true);
+    await app.close();
+  });
+
+  it("allows production composition to register authentication without break-glass", async () => {
+    const app = Fastify({ logger: false });
+    const signed = await token({});
+    const identity = new IdentityState();
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          return firstJwks;
+        },
+      },
+      now: () => NOW,
+    });
+    const bootstrap = new OwnerBootstrapService({
+      enabled: false,
+      expiresAt: new Date(NOW.valueOf() + 60_000).toISOString(),
+      tokenDigest: digestIdentityCredential("unused"),
+      identityState: identity,
+      now: () => NOW,
+    });
+    const sessions = new ProductSessionAuthenticationService({
+      verifier,
+      identityState: identity,
+      sessionState: new SessionState(),
+      now: () => NOW,
+      createDeviceId: () => createDeviceId("device-auth-routes"),
+      createSessionId: () => createSessionId("session-auth-routes"),
+    });
+    registerIdentityAuthenticationRoutes(app, {
+      publicOrigin: ORIGIN,
+      verifier,
+      bootstrap,
+      sessions,
+    });
+    const breakGlass = await app.inject({ method: "POST", url: "/break-glass", payload: {} });
+    expect(breakGlass.statusCode).toBe(404);
+    const disabledBootstrap = await app.inject({
+      method: "POST",
+      url: "/bootstrap",
+      payload: { token: "unused", ownerId: OWNER_ID, assertionToken: signed },
+    });
+    expect(disabledBootstrap.statusCode).toBe(404);
     await app.close();
   });
 });

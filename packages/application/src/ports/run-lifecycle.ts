@@ -9,6 +9,7 @@ import type {
 import type { DataClassification, PayloadRef } from "./common.js";
 import type { RuntimeSuccessfulOutput } from "./intelligence.js";
 import type { AuthorityFence, CommandResultRecord } from "./persistence.js";
+import type { RunExecutionLeaseClaim } from "./run-dispatch.js";
 
 export interface RunCommandContext {
   readonly ownerId: OwnerId;
@@ -17,12 +18,19 @@ export interface RunCommandContext {
   readonly commandFingerprint: string;
   readonly authority: AuthorityFence;
   readonly payloadRef: PayloadRef;
+  /** Required for execution-owned writes; omitted only for explicit Owner cancellation. */
+  readonly executionLease?: RunExecutionLeaseClaim;
 }
 
 export interface TransitionRunStateInput extends RunCommandContext {
   readonly runId: RunId;
   readonly expectedRevision: number;
   readonly nextStatus: RunStatus;
+}
+
+export interface RunCancellationInput extends Omit<RunCommandContext, "executionLease"> {
+  readonly runId: RunId;
+  readonly expectedRevision: number;
 }
 
 export interface StoredRun {
@@ -45,5 +53,6 @@ export interface RunTransitionReceipt {
 export interface RunLifecyclePort {
   readRun(runId: RunId): Promise<StoredRun | undefined>;
   transitionRun(input: TransitionRunStateInput): Promise<RunTransitionReceipt>;
+  cancelRun(input: RunCancellationInput): Promise<RunTransitionReceipt>;
   completeRun(input: RunCompletionInput): Promise<RunTransitionReceipt>;
 }

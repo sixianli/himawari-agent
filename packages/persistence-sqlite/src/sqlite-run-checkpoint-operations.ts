@@ -1,9 +1,16 @@
 import type {
   RunCheckpoint,
   RunCheckpointPhase,
+  RunExecutionLeaseClaim,
+  RunExecutionLeaseTransactionGuard,
   StoredRunCheckpoint,
 } from "@himawari-agent/application";
-import { createDeploymentId, createRunId } from "@himawari-agent/domain";
+import {
+  createAuthorityLeaseId,
+  createDeploymentId,
+  createRunExecutionLeaseId,
+  createRunId,
+} from "@himawari-agent/domain";
 import type { ProductAuthorityFence } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
@@ -36,6 +43,31 @@ const phases: readonly RunCheckpointPhase[] = [
   "failed",
   "cancelled",
 ];
+
+type ExecutionLeaseGuard = Pick<RunExecutionLeaseTransactionGuard, "assertHeldInTransaction">;
+type ExecutionLeaseGuardFactory = (input: {
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly authority: ProductAuthorityFence;
+  readonly authorityLeaseId: string;
+  readonly authorityFencingToken: number;
+  readonly consumerId: string;
+}) => ExecutionLeaseGuard;
+
+function executionLeaseFromInput(value: unknown): RunExecutionLeaseClaim | undefined {
+  if (value === undefined) return undefined;
+  const input = record(value);
+  return {
+    executionLeaseId: createRunExecutionLeaseId(text(input["executionLeaseId"])),
+    expectedLeaseRevision: integer(input["expectedLeaseRevision"]),
+    authorityLeaseId: createAuthorityLeaseId(text(input["authorityLeaseId"])),
+    authorityFencingToken: integer(input["authorityFencingToken"]),
+    deploymentId: createDeploymentId(text(input["deploymentId"])),
+    authorityEpoch: integer(input["authorityEpoch"]),
+    fencingToken: integer(input["fencingToken"]),
+    consumerId: text(input["consumerId"]),
+  };
+}
 
 function checkpoint(value: unknown): RunCheckpoint {
   const input = record(value);
@@ -82,17 +114,20 @@ export class SqliteRunCheckpointOperations {
     agentId: string,
     fence: ProductAuthorityFence,
   ) => void;
+  private readonly executionLease: ExecutionLeaseGuardFactory;
 
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
     assertAuthority: (ownerId: string, agentId: string, fence: ProductAuthorityFence) => void,
+    executionLease: ExecutionLeaseGuardFactory,
   ) {
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
     this.assertAuthority = assertAuthority;
+    this.executionLease = executionLease;
   }
 
   execute(operation: string, value: unknown): StoredRunCheckpoint | undefined {
@@ -117,6 +152,7 @@ export class SqliteRunCheckpointOperations {
     let expectedRevision: number | null;
     let authority: ProductAuthorityFence;
     let updatedAt: string;
+    let executionLease: RunExecutionLeaseClaim | undefined;
     try {
       expectedRevision =
         input["expectedRevision"] === null ? null : integer(input["expectedRevision"]);
@@ -128,6 +164,7 @@ export class SqliteRunCheckpointOperations {
       };
       updatedAt = text(input["updatedAt"]);
       if (!Number.isFinite(Date.parse(updatedAt))) throw new TypeError("Invalid checkpoint time");
+      executionLease = executionLeaseFromInput(input["executionLease"]);
     } catch (error) {
       return this.fail(
         "PORT_INVALID_OPERATION",
@@ -162,6 +199,35 @@ export class SqliteRunCheckpointOperations {
         const current = this.read(ownerId, agentId, runId);
         if ((current?.revision ?? null) !== expectedRevision)
           return this.fail("PORT_CONFLICT", "Run checkpoint revision conflict", { runId });
+        if (!executionLease)
+          return this.fail(
+            "PORT_NOT_AUTHORITATIVE",
+            "Execution-owned checkpoint write requires an execution lease",
+            { runId },
+          );
+        if (
+          executionLease.deploymentId !== authority.deploymentId ||
+          executionLease.authorityEpoch !== authority.authorityEpoch ||
+          executionLease.fencingToken !== authority.fencingToken
+        )
+          return this.fail(
+            "PORT_NOT_AUTHORITATIVE",
+            "Execution lease claim does not match checkpoint authority",
+            { runId },
+          );
+        this.executionLease({
+          ownerId,
+          agentId,
+          authority,
+          authorityLeaseId: executionLease.authorityLeaseId,
+          authorityFencingToken: executionLease.authorityFencingToken,
+          consumerId: executionLease.consumerId,
+        }).assertHeldInTransaction({
+          runId,
+          expectedLeaseRevision: executionLease.expectedLeaseRevision,
+          executionLeaseId: executionLease.executionLeaseId,
+          at: updatedAt,
+        });
         const refs = [
           next.contextRef,
           ...Object.values(next.workerResults),

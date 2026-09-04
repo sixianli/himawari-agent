@@ -7,6 +7,7 @@ export * from "./capability-lifecycle-service.js";
 export * from "./capability-handle-service.js";
 export * from "./attention-policy-service.js";
 export * from "./automatic-memory-service.js";
+export * from "./application-service-identity-factory.js";
 export * from "./agent-gateway-service.js";
 export * from "./agent-gateway-v2-service.js";
 export * from "./agent-thread-gateway-service.js";

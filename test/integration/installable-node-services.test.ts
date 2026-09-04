@@ -10,7 +10,7 @@ import {
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 let testRoot = "";
@@ -21,6 +21,7 @@ let publicConfigurationPath = "";
 let tokenPath = "";
 let secretDirectory = "";
 const children = new Set<ChildProcessWithoutNullStreams>();
+const childExitTimeoutMilliseconds = 10_000;
 
 function configuration(publicMode = false) {
   return {
@@ -214,11 +215,17 @@ beforeAll(async () => {
   await chmod(publicConfigurationPath, 0o600);
 }, 120_000);
 
+afterEach(async () => {
+  await cleanupChildren();
+}, 30_000);
+
 afterAll(async () => {
-  for (const child of children) child.kill("SIGKILL");
+  await cleanupChildren();
+  if (children.size !== 0)
+    throw new Error("INSTALL_TEST_CHILDREN_STILL_RUNNING: refusing to remove state roots");
   await rm(testRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   await rm(stateRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-});
+}, 30_000);
 
 function executable(name: string): string {
   return path.join(prefix, "bin", name);
@@ -283,12 +290,67 @@ async function waitForOutput(
   });
 }
 
+type ChildExit = Readonly<{ code: number | null; signal: NodeJS.Signals | null }>;
+
+function exited(child: ChildProcessWithoutNullStreams): ChildExit | undefined {
+  if (child.exitCode === null && child.signalCode === null) return undefined;
+  return { code: child.exitCode, signal: child.signalCode };
+}
+
+async function waitForExit(
+  child: ChildProcessWithoutNullStreams,
+  timeoutMilliseconds: number,
+): Promise<ChildExit | undefined> {
+  const alreadyExited = exited(child);
+  if (alreadyExited) return alreadyExited;
+  return new Promise((resolve) => {
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.off("exit", onExit);
+      resolve(undefined);
+    }, timeoutMilliseconds);
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve({ code, signal });
+    };
+    child.once("exit", onExit);
+  });
+}
+
 async function stopService(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals) {
-  const exit = new Promise<number | null>((resolve) => child.once("exit", resolve));
+  if (!children.has(child)) return exited(child)?.code ?? null;
+  const alreadyExited = exited(child);
+  if (alreadyExited) {
+    children.delete(child);
+    return alreadyExited.code;
+  }
   child.kill(signal);
-  const code = await exit;
+  let result = await waitForExit(child, childExitTimeoutMilliseconds);
+  if (!result && signal !== "SIGKILL") {
+    child.kill("SIGKILL");
+    result = await waitForExit(child, childExitTimeoutMilliseconds);
+  }
+  if (!result) throw new Error("INSTALL_TEST_CHILD_DID_NOT_EXIT");
   children.delete(child);
-  return code;
+  return result.code;
+}
+
+async function cleanupChildren(): Promise<void> {
+  const failures: unknown[] = [];
+  for (const child of [...children].reverse()) {
+    try {
+      await stopService(child, "SIGTERM");
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "INSTALL_TEST_CHILD_CLEANUP_FAILED");
+  }
 }
 
 function runInstalled(name: string, arguments_: readonly string[]) {
@@ -350,7 +412,7 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
     expect(JSON.parse(dbStatus.stdout)).toMatchObject({
       command: "db.status",
       managed: true,
-      schemaSequence: 17,
+      schemaSequence: 21,
       quickCheck: "ok",
     });
 

@@ -26,6 +26,7 @@ import type {
   ReliableEventPort,
   ReliableEventRecord,
   RunCheckpointStore,
+  RunDispatchPort,
   RunLifecyclePort,
   RunPayloadArtifactAuthority,
   RunPayloadArtifactPort,
@@ -284,6 +285,16 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     authority: ProductAuthorityFence,
   ): RunCheckpointStore {
     return this.durable.runCheckpointStore(ownerId, agentId, authority, this.now);
+  }
+
+  runDispatch(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    authorityLease: { readonly leaseId: AuthorityLeaseId; readonly fencingToken: number },
+    consumerId: string,
+  ): RunDispatchPort {
+    return this.durable.runDispatch(ownerId, agentId, authority, authorityLease, consumerId);
   }
 
   reliableEventOutbox(): SqliteReliableEventOutbox {

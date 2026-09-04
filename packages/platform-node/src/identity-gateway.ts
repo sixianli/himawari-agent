@@ -1,6 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { open, unlink } from "node:fs/promises";
-import { recentAuthenticationEvidence as createRecentAuthenticationEvidence } from "@himawari-agent/application";
 import type {
   GatewayAuthenticationContext,
   OwnerIdentityStatePort,
@@ -10,6 +9,7 @@ import type {
   SessionDeviceStatePort,
   VerifiedIdentityAssertion,
 } from "@himawari-agent/application";
+import { recentAuthenticationEvidence as createRecentAuthenticationEvidence } from "@himawari-agent/application";
 import {
   createDeviceId,
   createOwnerId,
@@ -19,7 +19,7 @@ import {
   type SessionId,
 } from "@himawari-agent/domain";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { createLocalJWKSet, errors, jwtVerify, type JSONWebKeySet } from "jose";
+import { createLocalJWKSet, errors, type JSONWebKeySet, jwtVerify } from "jose";
 import type {
   HttpGatewayAuthenticationInput,
   HttpGatewayAuthenticationPort,
@@ -373,7 +373,6 @@ export class CloudflareAccessIdentityClient implements RecentAuthenticationEvide
       issuer.protocol !== "https:" ||
       issuer.username ||
       issuer.password ||
-      issuer.port ||
       issuer.search ||
       issuer.hash ||
       (issuer.pathname !== "" && issuer.pathname !== "/") ||
@@ -540,8 +539,10 @@ export interface ProductSessionAuthenticationServiceOptions {
   readonly sessionState: SessionDeviceStatePort;
   readonly recentAuthenticationProvider?: RecentAuthenticationEvidenceProvider;
   readonly now?: () => Date;
-  readonly createSessionId: () => SessionId;
-  readonly createDeviceId: () => DeviceId;
+  /** Injectable only for deterministic tests; production defaults stay platform-owned. */
+  readonly createSessionId?: () => SessionId;
+  /** Injectable only for deterministic tests; production defaults stay platform-owned. */
+  readonly createDeviceId?: () => DeviceId;
   readonly createToken?: () => string;
 }
 
@@ -552,10 +553,21 @@ export interface CreatedProductSession {
 }
 
 export class ProductSessionAuthenticationService implements HttpGatewayAuthenticationPort {
-  private readonly options: ProductSessionAuthenticationServiceOptions;
+  private readonly options: ProductSessionAuthenticationServiceOptions & {
+    readonly createSessionId: () => SessionId;
+    readonly createDeviceId: () => DeviceId;
+  };
 
   constructor(options: ProductSessionAuthenticationServiceOptions) {
-    this.options = options;
+    this.options = {
+      ...options,
+      createSessionId:
+        options.createSessionId ??
+        (() => createSessionId(`session:${randomBytes(16).toString("hex")}`)),
+      createDeviceId:
+        options.createDeviceId ??
+        (() => createDeviceId(`device:${randomBytes(16).toString("hex")}`)),
+    };
   }
 
   async create(input: {
@@ -872,6 +884,13 @@ export interface IdentityGatewayRouteOptions {
   readonly sessionCookieName?: string;
 }
 
+export type IdentityGatewayAuthenticationRouteOptions = Omit<
+  IdentityGatewayRouteOptions,
+  "breakGlass"
+>;
+
+export type IdentityGatewayBreakGlassRouteOptions = Pick<IdentityGatewayRouteOptions, "breakGlass">;
+
 function strictRecord<const Field extends string>(
   value: unknown,
   allowedFields: readonly Field[],
@@ -966,9 +985,9 @@ function respondWithIdentityError(reply: FastifyReply, error: unknown): FastifyR
     .send({ error: { code } });
 }
 
-export function registerIdentityGatewayRoutes(
+export function registerIdentityAuthenticationRoutes(
   app: FastifyInstance,
-  options: IdentityGatewayRouteOptions,
+  options: IdentityGatewayAuthenticationRouteOptions,
 ): void {
   const publicOrigin = new URL(options.publicOrigin);
 
@@ -1014,7 +1033,12 @@ export function registerIdentityGatewayRoutes(
       return respondWithIdentityError(reply, error);
     }
   });
+}
 
+export function registerBreakGlassRoute(
+  app: FastifyInstance,
+  options: IdentityGatewayBreakGlassRouteOptions,
+): void {
   app.post("/break-glass", async (request, reply) => {
     try {
       const body = strictRecord(request.body, ["credential", "action"]);
@@ -1028,4 +1052,12 @@ export function registerIdentityGatewayRoutes(
       return respondWithIdentityError(reply, error);
     }
   });
+}
+
+export function registerIdentityGatewayRoutes(
+  app: FastifyInstance,
+  options: IdentityGatewayRouteOptions,
+): void {
+  registerIdentityAuthenticationRoutes(app, options);
+  registerBreakGlassRoute(app, options);
 }

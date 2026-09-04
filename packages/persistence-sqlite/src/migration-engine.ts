@@ -217,6 +217,13 @@ const bundledMigrationFiles = [
     phase: "contract" as const,
     file: "0020_capability_invocation_receipts.sql",
   },
+  {
+    sequence: 21,
+    name: "run_execution_leases",
+    changeSet: "run-execution-leases",
+    phase: "contract" as const,
+    file: "0021_run_execution_leases.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

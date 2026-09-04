@@ -1,4 +1,5 @@
 export * from "./authenticated-uds-transport.js";
+export * from "./bounded-jwks-fetcher.js";
 export * from "./browser-text-payload-reader.js";
 export * from "./browser-thread-search.js";
 export * from "./candidate-workspace/index.js";

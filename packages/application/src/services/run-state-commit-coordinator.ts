@@ -29,6 +29,7 @@ import {
   type StoredRun,
   type TransitionRunStateInput,
   type RunCompletionInput,
+  type RunCancellationInput,
   type RunTransitionReceipt,
 } from "../ports/index.js";
 
@@ -201,6 +202,10 @@ export class RunStateCommitCoordinator implements RunLifecyclePort {
         input.dataClassification,
       ]),
     });
+  }
+
+  async cancelRun(input: RunCancellationInput): Promise<RunTransitionReceipt> {
+    return this.transitionRun({ ...input, nextStatus: "cancelled" });
   }
 
   private async replay(

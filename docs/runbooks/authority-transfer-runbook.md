@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:2af5d23d161ea42faed6df918e086d2a5355fb809014360bb21d233a9da00150"
+contract_sha256: "sha256:1e633fc4ab9eacd557332d0f54fa3c432e1312e7d2a0df2d9b3aa44db697903d"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -15,6 +15,10 @@ date: "2026-08-27"
 - apps/agent-service/src/service-main.ts
 - packages/domain/src/durable-state.ts
 - packages/persistence-sqlite/src/sqlite-authority-transfer.ts
+- packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts
+- packages/persistence-sqlite/src/sqlite-run-lifecycle-operations.ts
+- packages/persistence-sqlite/src/sqlite-run-checkpoint-operations.ts
+- packages/persistence-sqlite/src/migrations/0021_run_execution_leases.sql
 - packages/persistence-sqlite/src/state-root-lock.ts
 - packages/platform-node/src/host-secret-source.ts
 - packages/platform-node/src/payload-protector.ts
@@ -127,6 +131,7 @@ himawari transfer abandon --config <absolute-target-config-path> --secret-dir <a
 - target Payload 能以目标 KEK 完成 authentication/decryption；Memory projection、Owner/Agent/Thread/Run identity、checkpoint、水位线、jobs 和外部 integration state 以本次范围的只读 fixture 对比一致。
 - 对本次包含运行正文的迁移，核对正文与 Run 的归属、用途、操作身份回执、摘要、分类和媒体类型完整迁移；换 KEK 不改变这些语义身份。尚未发布的正文不得因迁移变成已发布消息，旧部署的租约不得用于新增正文。
 - 若迁移包含 Capability 调用回执，保留原任务语义、幂等键与首次执行的 deployment/lease/Agent/Worker 身份。目标的新 epoch/fence/lease 不能把源执行回执变成可继续执行或读取正文的权限；重复接纳只回读既有结果，未知外部结果须显式核对，不自动派发新执行。
+- 若迁移包含 Run 执行租约，保留来源、执行身份、revision 和释放状态供核对，但目标不能把源 consumer 或源执行租约当作当前执行权限。取消状态、检查点、失效租约和回执须保持一致；新权威只能按当前领取规则处理可恢复任务，未知执行不得因迁移重新派发。
 - manifest allowlist 只含 SQLite、数据库引用的 Payload ciphertext 与 Memory 文件；包不含 secret、cache、log、runtime、lock 或 socket，证据不含 plaintext。
 - package `retainUntil` 为创建后 7 天；到期清除是独立删除 mutation。未到期不得提前删除唯一加密迁移副本。
 

@@ -5,14 +5,21 @@ import path from "node:path";
 import {
   type AgentRuntimePort,
   ContextFormationService,
+  claimFromRunExecutionLease,
   type ExecuteCoordinatedRunInput,
+  PORT_ERROR_CODES,
   type RunCompletionInput,
   RunCoordinator,
+  type RunDispatchPort,
+  type RunExecutionLease,
   type RunLifecyclePort,
   RunStateCommitCoordinator,
+  type RuntimeEvent,
   SessionTraceRecorder,
   ThreadCommandService,
   type TransitionRunStateInput,
+  type WorkerRunEvent,
+  type WorkerRunPort,
 } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -20,6 +27,7 @@ import {
   createDeploymentId,
   createIdempotencyKey,
   createOwnerId,
+  createRunExecutionLeaseId,
   createRunId,
   createSessionId,
   type ProductAuthorityFence,
@@ -43,6 +51,7 @@ import {
   ScriptedWorkerRunPort,
 } from "@himawari-agent/testing";
 import { afterEach, expect, it, vi } from "vitest";
+import { ProductionRunDispatcher } from "../../apps/agent-service/src/production-run-dispatcher.js";
 
 const ownerId = createOwnerId("owner-run-lifecycle");
 const agentId = createAgentId("agent-run-lifecycle");
@@ -58,7 +67,11 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function fixture() {
+interface FixtureOptions {
+  readonly executionLeaseExpiresAt?: string;
+}
+
+async function fixture(options: FixtureOptions = {}) {
   const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-thread-run-"));
   roots.push(stateRoot);
   await mkdir(path.join(stateRoot, "data"));
@@ -119,11 +132,32 @@ async function fixture() {
   });
   const runId = admitted.message.runId;
   if (!runId) throw new Error("Thread admission did not create a Run");
+  await repository.runDispatch(ownerId, agentId, authority, lease, "thread-run-lifecycle").claim({
+    runId,
+    expectedRunRevision: 1,
+    expectedLeaseRevision: 0,
+    executionLeaseId: createRunExecutionLeaseId(`execution-${runId}`),
+    claimedAt: clock.now(),
+    expiresAt: options.executionLeaseExpiresAt ?? "2026-09-05T00:00:00.000Z",
+  });
   return { repository, commands, admitted, runId, stateRoot, databasePath };
 }
 
-async function executionFixture() {
-  const setup = await fixture();
+function executionLease(runId: RunId) {
+  return {
+    executionLeaseId: createRunExecutionLeaseId(`execution-${runId}`),
+    expectedLeaseRevision: 1,
+    authorityLeaseId: lease.leaseId,
+    authorityFencingToken: lease.fencingToken,
+    deploymentId,
+    authorityEpoch: authority.authorityEpoch,
+    fencingToken: authority.fencingToken,
+    consumerId: "thread-run-lifecycle",
+  } as const;
+}
+
+async function executionFixture(options: FixtureOptions = {}) {
+  const setup = await fixture(options);
   const adapters = createReferenceAdapterSet({ clock });
   const protector = new EnvelopePayloadProtector({
     keys: new InMemoryDevelopmentSecretSource({ "completion-key@v1": new Uint8Array(32).fill(17) }),
@@ -165,6 +199,7 @@ async function executionFixture() {
     agentId,
     runId: setup.runId,
     authority: lease,
+    executionLease: executionLease(setup.runId),
     context: {
       ownerId,
       agentId,
@@ -263,6 +298,550 @@ async function executionFixture() {
   };
 }
 
+it("keeps the real lifecycle writer valid after renewing beyond the original lease TTL", async () => {
+  const initialTime = clock.now();
+  const setup = await executionFixture({
+    executionLeaseExpiresAt: "2026-09-04T00:00:01.000Z",
+  });
+  try {
+    const dispatch = setup.repository.runDispatch(
+      ownerId,
+      agentId,
+      authority,
+      lease,
+      "thread-run-lifecycle",
+    );
+    const claim = executionLease(setup.runId);
+    const renewed = await dispatch.renew({
+      runId: setup.runId,
+      expectedLeaseRevision: claim.expectedLeaseRevision,
+      executionLeaseId: claim.executionLeaseId,
+      renewedAt: clock.now(),
+      expiresAt: "2026-09-04T00:00:02.000Z",
+    });
+    expect(renewed).toMatchObject({
+      executionLeaseId: claim.executionLeaseId,
+      revision: claim.expectedLeaseRevision,
+      expiresAt: "2026-09-04T00:00:02.000Z",
+      replayed: false,
+    });
+
+    clock.set("2026-09-04T00:00:01.500Z");
+    await expect(setup.coordinator.execute(setup.input)).resolves.toMatchObject({
+      run: { run: { status: "completed" } },
+    });
+    expect(setup.attempts()).toBe(1);
+    await expect(setup.runs.readRun(setup.runId)).resolves.toMatchObject({
+      run: { status: "completed" },
+    });
+    await expect(setup.checkpoints.read(setup.runId)).resolves.toMatchObject({
+      checkpoint: {
+        phase: "completed",
+        terminalStatus: "completed",
+        output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+      },
+    });
+    const messages = await setup.repository
+      .threadRepository()
+      .listMessages(ownerId, agentId, setup.admitted.thread.id, 0, 10);
+    expect(messages.filter((message) => message.role === "agent")).toHaveLength(1);
+  } finally {
+    clock.set(initialTime);
+  }
+});
+
+it("executes only once when two real SQLite dispatch pumps claim concurrently", async () => {
+  const setup = await executionFixture();
+  const initialDispatch = setup.repository.runDispatch(
+    ownerId,
+    agentId,
+    authority,
+    lease,
+    "thread-run-lifecycle",
+  );
+  const initialClaim = executionLease(setup.runId);
+  await initialDispatch.release({
+    runId: setup.runId,
+    expectedLeaseRevision: initialClaim.expectedLeaseRevision,
+    executionLeaseId: initialClaim.executionLeaseId,
+    releasedAt: clock.now(),
+  });
+
+  let listed = 0;
+  let releaseLists!: () => void;
+  const listsReady = new Promise<void>((resolve) => {
+    releaseLists = resolve;
+  });
+  const wrapDispatch = (dispatch: RunDispatchPort): RunDispatchPort => ({
+    listClaimable: async (input) => {
+      const candidates = await dispatch.listClaimable(input);
+      listed += 1;
+      if (listed === 2) releaseLists();
+      await listsReady;
+      return candidates;
+    },
+    listReconciliationRequired: (input) => dispatch.listReconciliationRequired(input),
+    claim: (input) => dispatch.claim(input),
+    renew: (input) => dispatch.renew(input),
+    release: (input) => dispatch.release(input),
+    assertHeld: (input) => dispatch.assertHeld(input),
+  });
+  const input = async ({
+    candidate,
+    lease: claimed,
+  }: {
+    readonly candidate: Awaited<ReturnType<RunDispatchPort["listClaimable"]>>[number];
+    readonly lease: RunExecutionLease;
+  }) => ({
+    ...setup.input,
+    ownerId: claimed.ownerId,
+    agentId: claimed.agentId,
+    runId: candidate.runId,
+    authority: {
+      leaseId: claimed.authorityLeaseId,
+      fencingToken: claimed.fencingToken,
+    },
+    executionLease: claimFromRunExecutionLease(claimed),
+  });
+  const coordinator = {
+    execute: (value: typeof setup.input) => setup.coordinator.execute(value),
+    interruptExecution: (value: Parameters<typeof setup.coordinator.interruptExecution>[0]) =>
+      setup.coordinator.interruptExecution(value),
+  };
+  const authorityPort = {
+    assertActive: async () => {
+      await setup.repository.deploymentAuthorityPort().assertCurrent(authority);
+    },
+    isAccepting: () => true,
+  };
+  const createDispatcher = (consumerId: string, instanceId: string) =>
+    new ProductionRunDispatcher({
+      authority: authorityPort,
+      dispatch: wrapDispatch(
+        setup.repository.runDispatch(ownerId, agentId, authority, lease, consumerId),
+      ),
+      coordinator,
+      input,
+      reconcile: async () => undefined,
+      clock,
+      executionLeaseDurationMs: 60_000,
+      maximumRunsPerPump: 1,
+      instanceId,
+    });
+  const first = createDispatcher("dispatch-consumer-one", "dispatch-pump-one");
+  const second = createDispatcher("dispatch-consumer-two", "dispatch-pump-two");
+
+  const [firstResult, secondResult] = await Promise.all([first.pump(), second.pump()]);
+  expect(firstResult.claimed + secondResult.claimed).toBe(1);
+  expect(firstResult.settled + secondResult.settled).toBe(1);
+  expect(firstResult.conflicts + secondResult.conflicts).toBe(1);
+  expect(setup.attempts()).toBe(1);
+});
+
+it("does not dispatch an external action after an attempt is interrupted at context", async () => {
+  const setup = await executionFixture();
+  let contextStarted!: () => void;
+  const contextReady = new Promise<void>((resolve) => {
+    contextStarted = resolve;
+  });
+  let releaseContext!: () => void;
+  const contextReleased = new Promise<void>((resolve) => {
+    releaseContext = resolve;
+  });
+  const context = {
+    async form(request: Parameters<typeof setup.context.form>[0]) {
+      contextStarted();
+      await contextReleased;
+      return setup.context.form(request);
+    },
+  };
+  let runtimeRuns = 0;
+  const runtime: AgentRuntimePort = {
+    async *run() {
+      runtimeRuns += 1;
+      yield {
+        type: "runtime.completed" as const,
+        runId: setup.runId,
+        occurredAt: clock.now(),
+        output: { kind: "assistant-answer" as const, contentRef: "payload-final-answer" },
+      };
+    },
+    async cancel() {},
+  };
+  const coordinator = new RunCoordinator({
+    runs: setup.runs,
+    checkpoints: setup.checkpoints,
+    context,
+    runtime,
+    workers: new ScriptedWorkerRunPort(),
+    trace: setup.trace,
+  });
+  const executionLease = setup.input.executionLease;
+  if (!executionLease) throw new Error("Missing execution lease claim");
+  const execution = coordinator.execute(setup.input);
+  await contextReady;
+  let interruptError: unknown;
+  try {
+    await coordinator.interruptExecution({
+      runId: setup.runId,
+      executionLeaseId: executionLease.executionLeaseId,
+      reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+    });
+  } catch (error) {
+    interruptError = error;
+  } finally {
+    releaseContext();
+  }
+  let executionError: unknown;
+  try {
+    await execution;
+  } catch (error) {
+    executionError = error;
+  }
+  expect(interruptError).toBeUndefined();
+  expect(executionError).toMatchObject({
+    reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+  });
+  expect(runtimeRuns).toBe(0);
+});
+
+it("cancels a started runtime once for its exact execution attempt", async () => {
+  const setup = await executionFixture();
+  let runtimeStarted!: () => void;
+  const runtimeReady = new Promise<void>((resolve) => {
+    runtimeStarted = resolve;
+  });
+  let releaseRuntime!: () => void;
+  const runtimeReleased = new Promise<void>((resolve) => {
+    releaseRuntime = resolve;
+  });
+  let runtimeRuns = 0;
+  let runtimeCancellations = 0;
+  let cancelled = false;
+  const runtime: AgentRuntimePort = {
+    async *run() {
+      runtimeRuns += 1;
+      runtimeStarted();
+      await runtimeReleased;
+      if (cancelled) {
+        yield {
+          type: "runtime.cancelled" as const,
+          runId: setup.runId,
+          reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+          occurredAt: clock.now(),
+        };
+      }
+    },
+    async cancel() {
+      runtimeCancellations += 1;
+      cancelled = true;
+      releaseRuntime();
+    },
+  };
+  const coordinator = new RunCoordinator({
+    runs: setup.runs,
+    checkpoints: setup.checkpoints,
+    context: setup.context,
+    runtime,
+    workers: new ScriptedWorkerRunPort(),
+    trace: setup.trace,
+  });
+  const executionLease = setup.input.executionLease;
+  if (!executionLease) throw new Error("Missing execution lease claim");
+  const execution = coordinator.execute(setup.input);
+  await runtimeReady;
+  let interruptError: unknown;
+  try {
+    await coordinator.interruptExecution({
+      runId: setup.runId,
+      executionLeaseId: executionLease.executionLeaseId,
+      reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+    });
+    await coordinator.interruptExecution({
+      runId: setup.runId,
+      executionLeaseId: executionLease.executionLeaseId,
+      reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+    });
+  } catch (error) {
+    interruptError = error;
+  } finally {
+    releaseRuntime();
+  }
+  let executionError: unknown;
+  try {
+    await execution;
+  } catch (error) {
+    executionError = error;
+  }
+  expect(interruptError).toBeUndefined();
+  expect(executionError).toMatchObject({
+    reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+  });
+  expect(runtimeRuns).toBe(1);
+  expect(runtimeCancellations).toBe(1);
+});
+
+it("keeps the Run attempt occupied until deferred cancellation finishes", async () => {
+  const setup = await executionFixture();
+  let runtimeStarted!: () => void;
+  const runtimeReady = new Promise<void>((resolve) => {
+    runtimeStarted = resolve;
+  });
+  let releaseRuntime!: () => void;
+  const runtimeReleased = new Promise<void>((resolve) => {
+    releaseRuntime = resolve;
+  });
+  let cancellationStarted!: () => void;
+  const cancellationReady = new Promise<void>((resolve) => {
+    cancellationStarted = resolve;
+  });
+  let releaseCancellation!: () => void;
+  const cancellationReleased = new Promise<void>((resolve) => {
+    releaseCancellation = resolve;
+  });
+  let runtimeIteratorFinished!: () => void;
+  const runtimeIteratorFinishedReady = new Promise<void>((resolve) => {
+    runtimeIteratorFinished = resolve;
+  });
+  const runtime: AgentRuntimePort = {
+    run(): AsyncIterable<RuntimeEvent> {
+      let done = false;
+      const iterator: AsyncIterator<RuntimeEvent> & AsyncIterable<RuntimeEvent> = {
+        [Symbol.asyncIterator]() {
+          return this;
+        },
+        async next(): Promise<IteratorResult<RuntimeEvent>> {
+          if (done) return { done: true, value: undefined };
+          done = true;
+          runtimeStarted();
+          try {
+            await runtimeReleased;
+          } finally {
+            runtimeIteratorFinished();
+          }
+          return { done: true, value: undefined };
+        },
+      };
+      return iterator;
+    },
+    async cancel() {
+      cancellationStarted();
+      await cancellationReleased;
+      throw new Error("RUNTIME_CANCEL_FAILED");
+    },
+  };
+  const coordinator = new RunCoordinator({
+    runs: setup.runs,
+    checkpoints: setup.checkpoints,
+    context: setup.context,
+    runtime,
+    workers: new ScriptedWorkerRunPort(),
+    trace: setup.trace,
+  });
+  const executionLease = setup.input.executionLease;
+  if (!executionLease) throw new Error("Missing execution lease claim");
+
+  const execution = coordinator.execute(setup.input);
+  await runtimeReady;
+  const interruption = coordinator.interruptExecution({
+    runId: setup.runId,
+    executionLeaseId: executionLease.executionLeaseId,
+    reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+  });
+  await cancellationReady;
+  releaseRuntime();
+  await runtimeIteratorFinishedReady;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  await expect(coordinator.execute(setup.input)).rejects.toMatchObject({
+    code: PORT_ERROR_CODES.CONFLICT,
+  });
+
+  releaseCancellation();
+  await expect(interruption).resolves.toMatchObject({
+    runId: setup.runId,
+    executionLeaseId: executionLease.executionLeaseId,
+    failures: [{ target: "runtime", error: { message: "RUNTIME_CANCEL_FAILED" } }],
+  });
+  await expect(execution).rejects.toMatchObject({
+    reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+  });
+});
+
+it("rejects a second active attempt and isolates an ended lease from the next attempt", async () => {
+  const setup = await executionFixture();
+  await setup.coordinator.execute(setup.input);
+  const previousLease = setup.input.executionLease;
+  if (!previousLease) throw new Error("Missing execution lease claim");
+
+  let firstReadStarted!: () => void;
+  const firstReadReady = new Promise<void>((resolve) => {
+    firstReadStarted = resolve;
+  });
+  let releaseFirstRead!: () => void;
+  const firstReadReleased = new Promise<void>((resolve) => {
+    releaseFirstRead = resolve;
+  });
+  let secondReadStarted!: () => void;
+  const secondReadReady = new Promise<void>((resolve) => {
+    secondReadStarted = resolve;
+  });
+  let releaseSecondRead!: () => void;
+  const secondReadReleased = new Promise<void>((resolve) => {
+    releaseSecondRead = resolve;
+  });
+  let reads = 0;
+  const checkpoints = {
+    read: async (runId: Parameters<typeof setup.checkpoints.read>[0]) => {
+      reads += 1;
+      if (reads === 1) {
+        firstReadStarted();
+        await firstReadReleased;
+      } else if (reads === 2) {
+        secondReadStarted();
+        await secondReadReleased;
+      }
+      return setup.checkpoints.read(runId);
+    },
+    compareAndSet: async (input: Parameters<typeof setup.checkpoints.compareAndSet>[0]) =>
+      setup.checkpoints.compareAndSet(input),
+  };
+  const coordinator = new RunCoordinator({
+    runs: setup.runs,
+    checkpoints,
+    context: setup.context,
+    runtime: setup.runtime,
+    workers: new ScriptedWorkerRunPort(),
+    trace: setup.trace,
+  });
+
+  const first = coordinator.execute(setup.input);
+  await firstReadReady;
+  await expect(coordinator.execute(setup.input)).rejects.toMatchObject({
+    code: PORT_ERROR_CODES.CONFLICT,
+  });
+  await expect(
+    coordinator.interruptExecution({
+      runId: setup.runId,
+      executionLeaseId: previousLease.executionLeaseId,
+      reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+    }),
+  ).resolves.toMatchObject({
+    executionLeaseId: previousLease.executionLeaseId,
+  });
+  releaseFirstRead();
+  await expect(first).rejects.toMatchObject({
+    reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+  });
+
+  const nextLease = Object.freeze({
+    ...previousLease,
+    executionLeaseId: createRunExecutionLeaseId(`execution-next-${setup.runId}`),
+  });
+  const next = coordinator.execute({ ...setup.input, executionLease: nextLease });
+  await secondReadReady;
+  await expect(
+    coordinator.interruptExecution({
+      runId: setup.runId,
+      executionLeaseId: previousLease.executionLeaseId,
+      reasonCode: "STALE_EXECUTION_LEASE",
+    }),
+  ).resolves.toBeUndefined();
+  releaseSecondRead();
+  await expect(next).resolves.toMatchObject({
+    run: { run: { status: "completed" } },
+  });
+});
+
+it("attempts worker cancellation once and retains its failure diagnostic", async () => {
+  const setup = await executionFixture();
+  const workerRunId = "worker-interruption-failure";
+  const worker = {
+    workerRunId,
+    idempotencyKey: "worker-interruption-failure-command",
+    ownerId: setup.input.ownerId,
+    agentId: setup.input.agentId,
+    parentRunId: setup.runId,
+    taskRef: setup.input.context.trigger.payloadRef,
+    selectedModelRef: "model-worker-interruption",
+    allowedModelRefs: ["model-worker-interruption"],
+    outputSchema: { type: "object" },
+    delegatedContextRefs: [setup.input.context.trigger.payloadRef],
+    capabilityHandleRefs: [],
+    secretRefs: [],
+    dataClassification: "private" as const,
+    budget: { maxDurationMs: 1_000, maxCostMicros: 1_000, maxProgressEvents: 1 },
+    deadlineAt: "2026-09-04T00:01:00.000Z",
+  };
+  let workerStarted!: () => void;
+  const workerReady = new Promise<void>((resolve) => {
+    workerStarted = resolve;
+  });
+  let releaseWorker!: () => void;
+  const workerReleased = new Promise<void>((resolve) => {
+    releaseWorker = resolve;
+  });
+  let cancellations = 0;
+  const workers: WorkerRunPort = {
+    run(): AsyncIterable<WorkerRunEvent> {
+      let done = false;
+      const iterator: AsyncIterator<WorkerRunEvent> & AsyncIterable<WorkerRunEvent> = {
+        [Symbol.asyncIterator]() {
+          return this;
+        },
+        async next(): Promise<IteratorResult<WorkerRunEvent>> {
+          if (done) return { done: true, value: undefined };
+          done = true;
+          workerStarted();
+          await workerReleased;
+          return { done: true, value: undefined };
+        },
+      };
+      return iterator;
+    },
+    async cancel(cancelledWorkerRunId) {
+      expect(cancelledWorkerRunId).toBe(workerRunId);
+      cancellations += 1;
+      throw new Error("WORKER_CANCEL_FAILED");
+    },
+  };
+  const coordinator = new RunCoordinator({
+    runs: setup.runs,
+    checkpoints: setup.checkpoints,
+    context: setup.context,
+    runtime: setup.runtime,
+    workers,
+    trace: setup.trace,
+  });
+  const executionLease = setup.input.executionLease;
+  if (!executionLease) throw new Error("Missing execution lease claim");
+  const execution = coordinator.execute({ ...setup.input, workers: [{ request: worker }] });
+  await workerReady;
+  const interruption = coordinator.interruptExecution({
+    runId: setup.runId,
+    executionLeaseId: executionLease.executionLeaseId,
+    reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+  });
+  await expect(interruption).resolves.toMatchObject({
+    workerRunIds: [workerRunId],
+    failures: [{ target: "worker", workerRunId, error: { message: "WORKER_CANCEL_FAILED" } }],
+  });
+  await expect(
+    coordinator.interruptExecution({
+      runId: setup.runId,
+      executionLeaseId: executionLease.executionLeaseId,
+      reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+    }),
+  ).resolves.toMatchObject({
+    failures: [{ target: "worker", workerRunId, error: { message: "WORKER_CANCEL_FAILED" } }],
+  });
+  expect(cancellations).toBe(1);
+  releaseWorker();
+  await expect(execution).rejects.toMatchObject({
+    reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+  });
+});
+
 it("commits one protected final assistant through the coordinator and reads it after reopen", async () => {
   const setup = await executionFixture();
   await expect(setup.coordinator.execute(setup.input)).resolves.toMatchObject({
@@ -300,6 +879,7 @@ function completionInput(setup: Awaited<ReturnType<typeof executionFixture>>): R
     agentId,
     runId: setup.runId,
     authority: lease,
+    executionLease: executionLease(setup.runId),
     expectedRevision: 3,
     dataClassification: "private",
     output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
@@ -395,6 +975,7 @@ it("retains a Payload referenced only by a surviving completion checkpoint", asy
   await setup.checkpoints.compareAndSet({
     runId: setup.runId,
     expectedRevision: null,
+    executionLease: executionLease(setup.runId),
     checkpoint: {
       phase: "runtime_settled",
       contextRef: null,
@@ -482,6 +1063,63 @@ it("replays completion receipts after outbox cleanup and rejects changed complet
   await expect(
     setup.runs.completeRun({ ...input, output: { kind: "no-answer" } }),
   ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+});
+
+it("replays a pre-execution-lease completion receipt with its legacy fingerprint", async () => {
+  const setup = await runningFixture();
+  const input = completionInput(setup);
+  const legacyFingerprint = `run-transition:v1:${createHash("sha256")
+    .update(
+      JSON.stringify([
+        ownerId,
+        agentId,
+        setup.runId,
+        [input.output, input.dataClassification],
+        input.payloadRef,
+        input.commandFingerprint,
+      ]),
+    )
+    .digest("hex")}`;
+  const identity = createHash("sha256")
+    .update(JSON.stringify([ownerId, agentId, input.idempotencyKey]))
+    .digest("hex");
+  const database = openQualifiedDatabase(setup.databasePath);
+  database
+    .prepare(`INSERT INTO command_results
+      (id, owner_id, agent_id, idempotency_key, command_type, command_fingerprint,
+       deployment_id, authority_epoch, fencing_token, result_ref, state_key, state_revision,
+       committed_at)
+      VALUES (?, ?, ?, ?, 'run.complete', ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(
+      `legacy-run-command:${identity}`,
+      ownerId,
+      agentId,
+      input.idempotencyKey,
+      legacyFingerprint,
+      deploymentId,
+      authority.authorityEpoch,
+      authority.fencingToken,
+      setup.runId,
+      setup.runId,
+      input.expectedRevision + 1,
+      clock.now(),
+    );
+  database.close();
+
+  await expect(setup.runs.completeRun(input)).resolves.toEqual({
+    replayed: true,
+    commandResult: {
+      ownerId,
+      agentId,
+      idempotencyKey: input.idempotencyKey,
+      commandType: "run.complete",
+      commandFingerprint: legacyFingerprint,
+      stateKey: setup.runId,
+      stateRevision: input.expectedRevision + 1,
+      resultRef: setup.runId,
+      committedAt: clock.now(),
+    },
+  });
 });
 
 it("keeps completion atomic when its last reliable event insert fails", async () => {
@@ -583,6 +1221,7 @@ it("reconciles an old successful checkpoint without output without calling the m
   await setup.checkpoints.compareAndSet({
     runId: setup.runId,
     expectedRevision: null,
+    executionLease: executionLease(setup.runId),
     checkpoint: {
       phase: "runtime_settled",
       contextRef: "payload-run-lifecycle",
@@ -683,6 +1322,7 @@ it("enforces typed checkpoint CAS, active Payload scope, Trace scope, and deploy
   const saved = await setup.checkpoints.compareAndSet({
     runId: setup.runId,
     expectedRevision: null,
+    executionLease: executionLease(setup.runId),
     checkpoint,
   });
   expect(saved.revision).toBe(1);
@@ -692,6 +1332,7 @@ it("enforces typed checkpoint CAS, active Payload scope, Trace scope, and deploy
     setup.checkpoints.compareAndSet({
       runId: setup.runId,
       expectedRevision: null,
+      executionLease: executionLease(setup.runId),
       checkpoint,
     }),
   ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
@@ -704,6 +1345,7 @@ it("enforces typed checkpoint CAS, active Payload scope, Trace scope, and deploy
     setup.checkpoints.compareAndSet({
       runId: setup.runId,
       expectedRevision: 1,
+      executionLease: executionLease(setup.runId),
       checkpoint: { ...checkpoint, lastTraceEventId: "trace-outside-run" },
     }),
   ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
@@ -716,6 +1358,7 @@ it("enforces typed checkpoint CAS, active Payload scope, Trace scope, and deploy
     setup.checkpoints.compareAndSet({
       runId: setup.runId,
       expectedRevision: 1,
+      executionLease: executionLease(setup.runId),
       checkpoint: { ...checkpoint, runtimeEventCount: 1 },
     }),
   ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
@@ -731,6 +1374,7 @@ it("enforces typed checkpoint CAS, active Payload scope, Trace scope, and deploy
     setup.checkpoints.compareAndSet({
       runId: setup.runId,
       expectedRevision: 1,
+      executionLease: executionLease(setup.runId),
       checkpoint: { ...checkpoint, runtimeEventCount: 1 },
     }),
   ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
@@ -838,6 +1482,18 @@ it("retains observed output through cancellation until governed Run deletion", a
   });
   await setup.repository.payloadStore(ownerId, agentId).put(workerPayload);
 
+  const beforeCancellation = await setup.checkpoints.read(setup.runId);
+  if (!beforeCancellation) throw new Error("Missing pre-cancellation checkpoint");
+  await setup.checkpoints.compareAndSet({
+    runId: setup.runId,
+    expectedRevision: beforeCancellation.revision,
+    executionLease: executionLease(setup.runId),
+    checkpoint: {
+      ...beforeCancellation.checkpoint,
+      workerResults: Object.fromEntries([["__proto__", "payload-cancelled-worker-only"]]),
+    },
+  });
+
   const cancelled = await setup.coordinator.cancel({
     ownerId,
     agentId,
@@ -855,14 +1511,6 @@ it("retains observed output through cancellation until governed Run deletion", a
   });
   if (!cancelledCheckpoint) throw new Error("Missing cancelled checkpoint");
 
-  await setup.checkpoints.compareAndSet({
-    runId: setup.runId,
-    expectedRevision: cancelledCheckpoint.revision,
-    checkpoint: {
-      ...cancelledCheckpoint.checkpoint,
-      workerResults: Object.fromEntries([["__proto__", "payload-cancelled-worker-only"]]),
-    },
-  });
   expect(
     (
       await setup.repository
@@ -910,11 +1558,27 @@ it.each(["no-answer", "assistant-answer"] as const)(
       .prepare(`INSERT INTO runs (id, owner_id, agent_id, session_id, trigger_id, revision,
     status, created_at, updated_at) VALUES (?, ?, ?, 'background-session', ?, 3, 'running', ?, ?)`)
       .run(runId, ownerId, agentId, `trigger-${kind}`, clock.now(), clock.now());
+    database
+      .prepare(`INSERT INTO run_coordination_checkpoints
+        (run_id, owner_id, agent_id, revision, phase, runtime_event_count, updated_at)
+        VALUES (?, ?, ?, 1, 'accepted', 0, ?)`)
+      .run(runId, ownerId, agentId, clock.now());
     database.close();
+    await setup.repository
+      .runDispatch(ownerId, agentId, authority, lease, "thread-run-lifecycle")
+      .claim({
+        runId,
+        expectedRunRevision: 3,
+        expectedLeaseRevision: 0,
+        executionLeaseId: createRunExecutionLeaseId(`execution-${runId}`),
+        claimedAt: clock.now(),
+        expiresAt: "2026-09-05T00:00:00.000Z",
+      });
     await expect(
       setup.runs.completeRun({
         ...completionInput(setup),
         runId,
+        executionLease: executionLease(runId),
         output:
           kind === "no-answer"
             ? { kind: "no-answer" }
@@ -948,7 +1612,7 @@ function transition(
   runId: RunId,
   nextStatus: TransitionRunStateInput["nextStatus"],
   expectedRevision: number,
-  key = nextStatus,
+  key: string = nextStatus,
 ): TransitionRunStateInput {
   return {
     ownerId,
@@ -960,6 +1624,7 @@ function transition(
     commandFingerprint: `transition:${key}`,
     authority: lease,
     payloadRef: "payload-run-lifecycle",
+    executionLease: executionLease(runId),
   };
 }
 
@@ -1276,4 +1941,102 @@ it("lets the existing RunCoordinator cancel the admitted relational Run with a d
     checkpoint: { phase: "cancelled", terminalStatus: "cancelled" },
   });
   await expect(repository.read(`run:${runId}`)).resolves.toBeUndefined();
+});
+
+it("cancels the relational Run atomically with checkpoint, lease and receipt", async () => {
+  const setup = await fixture();
+  const runs = setup.repository.runLifecycle(ownerId, agentId, authority);
+  const command = transition(setup.runId, "cancelled", 1);
+  const cancellation = {
+    ownerId,
+    agentId,
+    runId: setup.runId,
+    authority: lease,
+    expectedRevision: 1,
+    idempotencyKey: command.idempotencyKey,
+    commandFingerprint: command.commandFingerprint,
+    payloadRef: command.payloadRef,
+  };
+  const result = await runs.cancelRun(cancellation);
+  expect(result).toMatchObject({
+    replayed: false,
+    commandResult: { commandType: "run.transition", stateRevision: 2 },
+  });
+  await expect(runs.cancelRun(cancellation)).resolves.toEqual({ ...result, replayed: true });
+  const database = openQualifiedDatabase(setup.databasePath);
+  expect(
+    database.prepare("SELECT status, revision FROM runs WHERE id = ?").get(setup.runId),
+  ).toEqual({
+    status: "cancelled",
+    revision: 2,
+  });
+  expect(
+    database
+      .prepare(
+        "SELECT phase, terminal_status, revision FROM run_coordination_checkpoints WHERE run_id = ?",
+      )
+      .get(setup.runId),
+  ).toEqual({ phase: "cancelled", terminal_status: "cancelled", revision: 1 });
+  expect(
+    database
+      .prepare("SELECT revision, released_at FROM run_execution_leases WHERE run_id = ?")
+      .get(setup.runId),
+  ).toEqual({ revision: 2, released_at: clock.now() });
+  expect(
+    database
+      .prepare("SELECT topic FROM reliable_events WHERE idempotency_key = ?")
+      .get(command.idempotencyKey),
+  ).toEqual({ topic: "run.cancelled" });
+  database.close();
+});
+
+it("rolls back cancellation state, checkpoint, lease and receipt when outbox insertion fails", async () => {
+  const setup = await fixture();
+  const command = transition(setup.runId, "cancelled", 1, "cancel-rollback");
+  const identity = createHash("sha256")
+    .update(JSON.stringify([ownerId, agentId, command.idempotencyKey]))
+    .digest("hex");
+  const database = openQualifiedDatabase(setup.databasePath);
+  database
+    .prepare(`INSERT INTO reliable_events
+      (id, owner_id, agent_id, idempotency_key, topic, payload_ref, publication_state, occurred_at)
+      VALUES (?, ?, ?, 'cancel-rollback-blocker', 'blocker', 'payload-run-lifecycle', 'pending', ?)`)
+    .run(`run-event:${identity}`, ownerId, agentId, clock.now());
+  database.close();
+  const cancellation = {
+    ownerId,
+    agentId,
+    runId: setup.runId,
+    authority: lease,
+    expectedRevision: 1,
+    idempotencyKey: command.idempotencyKey,
+    commandFingerprint: command.commandFingerprint,
+    payloadRef: command.payloadRef,
+  };
+  await expect(
+    setup.repository.runLifecycle(ownerId, agentId, authority).cancelRun(cancellation),
+  ).rejects.toThrow();
+  const reopened = openQualifiedDatabase(setup.databasePath);
+  expect(
+    reopened.prepare("SELECT status, revision FROM runs WHERE id = ?").get(setup.runId),
+  ).toEqual({
+    status: "accepted",
+    revision: 1,
+  });
+  expect(
+    reopened
+      .prepare("SELECT 1 FROM run_coordination_checkpoints WHERE run_id = ?")
+      .get(setup.runId),
+  ).toBeUndefined();
+  expect(
+    reopened
+      .prepare("SELECT revision, released_at FROM run_execution_leases WHERE run_id = ?")
+      .get(setup.runId),
+  ).toEqual({ revision: 1, released_at: null });
+  expect(
+    reopened
+      .prepare("SELECT 1 FROM command_results WHERE idempotency_key = ?")
+      .get(command.idempotencyKey),
+  ).toBeUndefined();
+  reopened.close();
 });

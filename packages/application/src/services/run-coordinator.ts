@@ -1,21 +1,29 @@
-import type { AgentId, IdempotencyKey, OwnerId, RunId, RunStatus } from "@himawari-agent/domain";
+import type {
+  AgentId,
+  IdempotencyKey,
+  OwnerId,
+  RunExecutionLeaseId,
+  RunId,
+  RunStatus,
+} from "@himawari-agent/domain";
 import type {
   AgentRuntimePort,
   AuthorityFence,
   PayloadRef,
+  RunCheckpoint,
+  RunCheckpointStore,
+  RunExecutionLeaseClaim,
+  RunLifecyclePort,
   RuntimeEvent,
   RuntimeRequest,
-  RunCheckpointStore,
-  RunCheckpoint,
+  StoredRun,
   StoredRunCheckpoint,
   TraceEventId,
   WorkerRunEvent,
   WorkerRunPort,
   WorkerRunRequest,
-  RunLifecyclePort,
-  StoredRun,
 } from "../ports/index.js";
-import { PORT_ERROR_CODES, ApplicationPortError } from "../ports/index.js";
+import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/index.js";
 import type { ContextFormationPort, ContextFormationRequest } from "./context-formation-service.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
 
@@ -44,6 +52,8 @@ export interface ExecuteCoordinatedRunInput {
   readonly agentId: AgentId;
   readonly runId: RunId;
   readonly authority: AuthorityFence;
+  /** Execution claim supplied by the canonical dispatch pump. */
+  readonly executionLease?: RunExecutionLeaseClaim;
   readonly context: ContextFormationRequest;
   readonly runtime: Omit<RuntimeRequest, "contextEnvelopeRef" | "workerResultRefs">;
   readonly workers: readonly WorkerDelegation[];
@@ -66,6 +76,41 @@ export interface CancelCoordinatedRunInput {
   readonly authority: AuthorityFence;
   readonly command: RunTransitionCommand;
   readonly reasonCode: string;
+}
+
+export interface InterruptCoordinatedRunInput {
+  readonly runId: RunId;
+  readonly executionLeaseId: RunExecutionLeaseId;
+  readonly reasonCode: string;
+}
+
+export interface ExecutionInterruptionFailure {
+  readonly target: "runtime" | "worker";
+  readonly workerRunId?: string;
+  readonly error: unknown;
+}
+
+export interface ExecutionInterruptionResult {
+  readonly runId: RunId;
+  readonly executionLeaseId: RunExecutionLeaseId;
+  readonly reasonCode: string;
+  readonly runtimeCancellationAttempted: boolean;
+  readonly workerRunIds: readonly string[];
+  readonly failures: readonly ExecutionInterruptionFailure[];
+}
+
+export class RunExecutionInterruptedError extends Error {
+  readonly runId: RunId;
+  readonly executionLeaseId: RunExecutionLeaseId;
+  readonly reasonCode: string;
+
+  constructor(input: InterruptCoordinatedRunInput) {
+    super(`Execution attempt for Run ${input.runId} was interrupted: ${input.reasonCode}`);
+    this.name = "RunExecutionInterruptedError";
+    this.runId = input.runId;
+    this.executionLeaseId = input.executionLeaseId;
+    this.reasonCode = input.reasonCode;
+  }
 }
 
 export interface RunCoordinatorDependencies {
@@ -94,10 +139,23 @@ function isTerminalStatus(status: RunStatus): boolean {
   return status === "completed" || status === "failed" || status === "cancelled";
 }
 
+interface ExecutionAttempt {
+  readonly runId: RunId;
+  readonly executionLeaseId: RunExecutionLeaseId;
+  readonly activeWorkerRunIds: Set<string>;
+  interrupted?: InterruptCoordinatedRunInput;
+  interruption?: Promise<void>;
+  interruptionResult?: ExecutionInterruptionResult;
+  runtimeActive: boolean;
+  runtimeCancellationIssued: boolean;
+  readonly cancelledWorkerRunIds: Set<string>;
+}
+
 export class RunCoordinator {
   private readonly dependencies: RunCoordinatorDependencies;
   private readonly activeWorkers = new Map<RunId, Set<string>>();
   private readonly cancelledRuns = new Set<RunId>();
+  private readonly executionAttempts = new Map<RunId, ExecutionAttempt>();
 
   constructor(dependencies: RunCoordinatorDependencies) {
     this.dependencies = dependencies;
@@ -105,7 +163,102 @@ export class RunCoordinator {
 
   async execute(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult> {
     this.assertScope(input);
+    const attempt = this.beginExecutionAttempt(input);
+    try {
+      return await this.executeAttempt(input, attempt);
+    } finally {
+      if (attempt?.interruption) await attempt.interruption;
+      this.endExecutionAttempt(attempt);
+    }
+  }
+
+  async interruptExecution(
+    input: InterruptCoordinatedRunInput,
+  ): Promise<ExecutionInterruptionResult | undefined> {
+    const attempt = this.executionAttempts.get(input.runId);
+    if (!attempt || attempt.executionLeaseId !== input.executionLeaseId) return undefined;
+    if (attempt.interruption) {
+      await attempt.interruption;
+      return attempt.interruptionResult;
+    }
+    attempt.interrupted = Object.freeze({ ...input });
+    const cancellations: Promise<void>[] = [];
+    const failures: ExecutionInterruptionFailure[] = [];
+    const workerRunIds = [...attempt.activeWorkerRunIds];
+    if (attempt.runtimeActive && !attempt.runtimeCancellationIssued) {
+      attempt.runtimeCancellationIssued = true;
+      cancellations.push(
+        Promise.resolve()
+          .then(() => this.dependencies.runtime.cancel(input.runId))
+          .catch((error: unknown) => {
+            failures.push({ target: "runtime", error });
+          }),
+      );
+    }
+    for (const workerRunId of workerRunIds) {
+      if (attempt.cancelledWorkerRunIds.has(workerRunId)) continue;
+      attempt.cancelledWorkerRunIds.add(workerRunId);
+      cancellations.push(
+        Promise.resolve()
+          .then(() => this.dependencies.workers.cancel(workerRunId, input.reasonCode))
+          .catch((error: unknown) => {
+            failures.push({ target: "worker", workerRunId, error });
+          }),
+      );
+    }
+    attempt.interruption = Promise.all(cancellations).then(() => {
+      attempt.interruptionResult = Object.freeze({
+        runId: input.runId,
+        executionLeaseId: input.executionLeaseId,
+        reasonCode: input.reasonCode,
+        runtimeCancellationAttempted: attempt.runtimeCancellationIssued,
+        workerRunIds: Object.freeze(workerRunIds),
+        failures: Object.freeze([...failures]),
+      });
+      return undefined;
+    });
+    await attempt.interruption;
+    return attempt.interruptionResult;
+  }
+
+  private beginExecutionAttempt(input: ExecuteCoordinatedRunInput): ExecutionAttempt | undefined {
+    const executionLease = input.executionLease;
+    if (!executionLease) return undefined;
+    if (this.executionAttempts.has(input.runId)) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        "An execution attempt is already active for this execution lease",
+        { runId: input.runId, executionLeaseId: executionLease.executionLeaseId },
+      );
+    }
+    const attempt: ExecutionAttempt = {
+      runId: input.runId,
+      executionLeaseId: executionLease.executionLeaseId,
+      activeWorkerRunIds: new Set(),
+      runtimeActive: false,
+      runtimeCancellationIssued: false,
+      cancelledWorkerRunIds: new Set(),
+    };
+    this.executionAttempts.set(input.runId, attempt);
+    return attempt;
+  }
+
+  private endExecutionAttempt(attempt: ExecutionAttempt | undefined): void {
+    if (!attempt) return;
+    if (this.executionAttempts.get(attempt.runId) === attempt)
+      this.executionAttempts.delete(attempt.runId);
+  }
+
+  private assertExecutionActive(attempt: ExecutionAttempt | undefined): void {
+    if (attempt?.interrupted) throw new RunExecutionInterruptedError(attempt.interrupted);
+  }
+
+  private async executeAttempt(
+    input: ExecuteCoordinatedRunInput,
+    attempt: ExecutionAttempt | undefined,
+  ): Promise<CoordinatedRunResult> {
     const initialCheckpoint = await this.readCheckpoint(input.runId);
+    this.assertExecutionActive(attempt);
     const resumed = initialCheckpoint !== undefined;
     let storedCheckpoint = initialCheckpoint ?? {
       runId: input.runId,
@@ -113,6 +266,7 @@ export class RunCoordinator {
       checkpoint: defaultCheckpoint(),
     };
     let storedRun = await this.requireRun(input.runId);
+    this.assertExecutionActive(attempt);
     if (
       storedRun.run.ownerId !== input.ownerId ||
       storedRun.run.agentId !== input.agentId ||
@@ -138,7 +292,8 @@ export class RunCoordinator {
       missingOutput ||
       storedCheckpoint.checkpoint.phase === "reconciling_external_result"
     ) {
-      storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
+      this.assertExecutionActive(attempt);
+      storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
         ...storedCheckpoint.checkpoint,
         phase: "reconciling_external_result",
         diagnosticCode: interrupted
@@ -147,41 +302,54 @@ export class RunCoordinator {
             ? "RUNTIME_COMPLETION_OUTPUT_MISSING"
             : storedCheckpoint.checkpoint.diagnosticCode,
       });
+      this.assertExecutionActive(attempt);
       storedRun = await this.transition(input, storedRun, "reconciling_external_result");
+      this.assertExecutionActive(attempt);
       return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
     }
     if (storedRun.run.status === "accepted") {
+      this.assertExecutionActive(attempt);
       storedRun = await this.transition(input, storedRun, "building_context");
+      this.assertExecutionActive(attempt);
     }
 
     if (storedCheckpoint.checkpoint.contextRef === null) {
       const formed = await this.dependencies.context.form(input.context);
-      storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
+      this.assertExecutionActive(attempt);
+      storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
         ...storedCheckpoint.checkpoint,
         phase: "context_formed",
         contextRef: formed.contextEnvelopeRef,
         lastTraceEventId: formed.traceEventIds.at(-1) ?? null,
       });
+      this.assertExecutionActive(attempt);
     }
 
     if (storedRun.run.status === "building_context") {
+      this.assertExecutionActive(attempt);
       storedRun = await this.transition(input, storedRun, "running");
+      this.assertExecutionActive(attempt);
     }
 
     if (this.cancelledRuns.has(input.runId)) {
+      this.assertExecutionActive(attempt);
       storedRun = await this.transition(input, storedRun, "cancelled");
-      storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
+      this.assertExecutionActive(attempt);
+      storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
         ...storedCheckpoint.checkpoint,
         phase: "cancelled",
         terminalStatus: "cancelled",
       });
+      this.assertExecutionActive(attempt);
       return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
     }
 
+    this.assertExecutionActive(attempt);
     const workerOutcome =
       storedCheckpoint.checkpoint.terminalStatus === null
-        ? await this.runWorkers(input, storedRun, storedCheckpoint)
+        ? await this.runWorkers(input, storedRun, storedCheckpoint, attempt)
         : { run: storedRun, checkpoint: storedCheckpoint };
+    this.assertExecutionActive(attempt);
     storedRun = workerOutcome.run;
     storedCheckpoint = workerOutcome.checkpoint;
     if (
@@ -192,11 +360,14 @@ export class RunCoordinator {
     }
 
     if (storedCheckpoint.checkpoint.terminalStatus === null) {
-      storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
+      this.assertExecutionActive(attempt);
+      storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
         ...storedCheckpoint.checkpoint,
         phase: "runtime_running",
       });
-      const terminal = await this.runRuntime(input, storedCheckpoint);
+      this.assertExecutionActive(attempt);
+      const terminal = await this.runRuntime(input, storedCheckpoint, attempt);
+      this.assertExecutionActive(attempt);
       storedCheckpoint = terminal.checkpoint;
     }
 
@@ -216,6 +387,7 @@ export class RunCoordinator {
           "Runtime completion output is missing",
         );
       const latest = await this.requireRun(input.runId);
+      this.assertExecutionActive(attempt);
       if (!isTerminalStatus(latest.run.status)) {
         const classifications = ["public", "private", "sensitive", "restricted"] as const;
         const dataClassification =
@@ -239,11 +411,18 @@ export class RunCoordinator {
           expectedRevision: latest.revision,
           output,
           dataClassification,
+          ...(input.executionLease ? { executionLease: input.executionLease } : {}),
         });
       }
+      this.assertExecutionActive(attempt);
       storedRun = await this.requireRun(input.runId);
-    } else storedRun = await this.transition(input, storedRun, terminalStatus);
-    storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
+    } else {
+      this.assertExecutionActive(attempt);
+      storedRun = await this.transition(input, storedRun, terminalStatus);
+      this.assertExecutionActive(attempt);
+    }
+    this.assertExecutionActive(attempt);
+    storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
       ...storedCheckpoint.checkpoint,
       phase:
         storedRun.run.status === "cancelled"
@@ -258,6 +437,7 @@ export class RunCoordinator {
             ? "failed"
             : terminalStatus,
     });
+    this.assertExecutionActive(attempt);
     return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
   }
 
@@ -269,30 +449,23 @@ export class RunCoordinator {
         "Cancellation scope does not match the canonical Run",
       );
     if (isTerminalStatus(existing.run.status)) return existing;
-    const storedRun = await this.transitionWithCommand(
-      input.ownerId,
-      input.agentId,
-      input.authority,
-      existing,
-      "cancelled",
-      input.command,
-    );
+    await this.dependencies.runs.cancelRun({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      runId: input.runId,
+      authority: input.authority,
+      expectedRevision: existing.revision,
+      idempotencyKey: input.command.idempotencyKey,
+      commandFingerprint: input.command.commandFingerprint,
+      payloadRef: input.command.payloadRef,
+    });
+    const storedRun = await this.requireRun(input.runId);
     if (storedRun.run.status !== "cancelled") return storedRun;
     this.cancelledRuns.add(input.runId);
     await this.dependencies.runtime.cancel(input.runId);
     for (const workerRunId of this.activeWorkers.get(input.runId) ?? []) {
       await this.dependencies.workers.cancel(workerRunId, input.reasonCode);
     }
-    const current = (await this.readCheckpoint(input.runId)) ?? {
-      runId: input.runId,
-      revision: 0,
-      checkpoint: defaultCheckpoint(),
-    };
-    await this.saveCheckpoint(input.runId, current, {
-      ...current.checkpoint,
-      phase: "cancelled",
-      terminalStatus: "cancelled",
-    });
     return storedRun;
   }
 
@@ -300,6 +473,7 @@ export class RunCoordinator {
     input: ExecuteCoordinatedRunInput,
     initialRun: StoredRun,
     initialCheckpoint: StoredRunCheckpoint,
+    attempt: ExecutionAttempt | undefined,
   ): Promise<{ readonly run: StoredRun; readonly checkpoint: StoredRunCheckpoint }> {
     let storedRun = initialRun;
     let storedCheckpoint = initialCheckpoint;
@@ -307,6 +481,7 @@ export class RunCoordinator {
     this.activeWorkers.set(input.runId, active);
 
     for (const delegation of input.workers) {
+      this.assertExecutionActive(attempt);
       const request = delegation.request;
       if (storedCheckpoint.checkpoint.workerResults[request.workerRunId]) continue;
       this.assertWorkerDelegation(input, request);
@@ -319,15 +494,21 @@ export class RunCoordinator {
         eventType: "worker.delegated",
         payload: request,
       });
-      storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
+      this.assertExecutionActive(attempt);
+      storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
         ...storedCheckpoint.checkpoint,
         phase: "workers_running",
         lastTraceEventId: delegated.event.id,
       });
+      this.assertExecutionActive(attempt);
       let progressCount = 0;
       let terminal: WorkerRunEvent | undefined;
       try {
+        this.assertExecutionActive(attempt);
+        attempt?.activeWorkerRunIds.add(request.workerRunId);
+        this.assertExecutionActive(attempt);
         for await (const event of this.dependencies.workers.run(request)) {
+          this.assertExecutionActive(attempt);
           if (event.workerRunId !== request.workerRunId) {
             throw new ApplicationPortError(
               PORT_ERROR_CODES.INVALID_OPERATION,
@@ -358,16 +539,20 @@ export class RunCoordinator {
             occurredAt: event.occurredAt,
             payload: event,
           });
-          storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
+          this.assertExecutionActive(attempt);
+          storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
             ...storedCheckpoint.checkpoint,
             lastTraceEventId: recorded.event.id,
           });
+          this.assertExecutionActive(attempt);
           if (terminal) break;
         }
       } finally {
+        attempt?.activeWorkerRunIds.delete(request.workerRunId);
         active.delete(request.workerRunId);
       }
 
+      this.assertExecutionActive(attempt);
       if (!terminal) {
         throw new ApplicationPortError(
           PORT_ERROR_CODES.INVALID_OPERATION,
@@ -391,6 +576,7 @@ export class RunCoordinator {
         (terminal.errorCode === "WORKER_PROGRESS_BUDGET_EXCEEDED" ||
           terminal.errorCode === "WORKER_BUDGET_EXCEEDED")
       ) {
+        this.assertExecutionActive(attempt);
         const recorded = await this.dependencies.trace.record({
           ...this.traceScope(input),
           parentEventId: storedCheckpoint.checkpoint.lastTraceEventId,
@@ -399,34 +585,44 @@ export class RunCoordinator {
           occurredAt: terminal.occurredAt,
           payload: terminal,
         });
-        storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
+        this.assertExecutionActive(attempt);
+        storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
           ...storedCheckpoint.checkpoint,
           lastTraceEventId: recorded.event.id,
         });
+        this.assertExecutionActive(attempt);
       }
       if (terminal.type === "worker.completed") {
-        storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
+        this.assertExecutionActive(attempt);
+        storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
           ...storedCheckpoint.checkpoint,
           workerResults: Object.freeze({
             ...storedCheckpoint.checkpoint.workerResults,
             [request.workerRunId]: terminal.resultRef,
           }),
         });
+        this.assertExecutionActive(attempt);
       } else if (terminal.type === "worker.result_unknown") {
+        this.assertExecutionActive(attempt);
         storedRun = await this.transition(input, storedRun, "reconciling_external_result");
-        storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
+        this.assertExecutionActive(attempt);
+        storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
           ...storedCheckpoint.checkpoint,
           phase: "reconciling_external_result",
         });
+        this.assertExecutionActive(attempt);
         return { run: storedRun, checkpoint: storedCheckpoint };
       } else {
         const nextStatus = terminal.type === "worker.cancelled" ? "cancelled" : "failed";
+        this.assertExecutionActive(attempt);
         storedRun = await this.transition(input, storedRun, nextStatus);
-        storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
+        this.assertExecutionActive(attempt);
+        storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
           ...storedCheckpoint.checkpoint,
           phase: nextStatus,
           terminalStatus: nextStatus,
         });
+        this.assertExecutionActive(attempt);
         return { run: storedRun, checkpoint: storedCheckpoint };
       }
     }
@@ -436,6 +632,7 @@ export class RunCoordinator {
   private async runRuntime(
     input: ExecuteCoordinatedRunInput,
     initialCheckpoint: StoredRunCheckpoint,
+    attempt: ExecutionAttempt | undefined,
   ): Promise<{ readonly checkpoint: StoredRunCheckpoint }> {
     let storedCheckpoint = initialCheckpoint;
     let observed = 0;
@@ -446,43 +643,53 @@ export class RunCoordinator {
         ([workerRunId, resultRef]) => ({ workerRunId, resultRef }),
       ),
     };
-    for await (const event of this.dependencies.runtime.run(runtimeRequest)) {
-      if (event.runId !== input.runId) {
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.INVALID_OPERATION,
-          `Runtime event scope does not match Run ${input.runId}`,
-          { eventRunId: event.runId, runId: input.runId },
-        );
+    this.assertExecutionActive(attempt);
+    if (attempt) attempt.runtimeActive = true;
+    try {
+      this.assertExecutionActive(attempt);
+      for await (const event of this.dependencies.runtime.run(runtimeRequest)) {
+        this.assertExecutionActive(attempt);
+        if (event.runId !== input.runId) {
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            `Runtime event scope does not match Run ${input.runId}`,
+            { eventRunId: event.runId, runId: input.runId },
+          );
+        }
+        observed += 1;
+        const recorded = await this.dependencies.trace.record({
+          ...this.traceScope(input),
+          parentEventId: storedCheckpoint.checkpoint.lastTraceEventId,
+          causationId: storedCheckpoint.checkpoint.lastTraceEventId,
+          eventType: event.type,
+          occurredAt: event.occurredAt,
+          payload: event,
+        });
+        this.assertExecutionActive(attempt);
+        const invalidOutput =
+          event.type === "runtime.completed" &&
+          (event.output.kind === "no-answer"
+            ? input.runtime.threadId !== null
+            : event.output.contentRef.trim().length === 0);
+        const terminalStatus = invalidOutput ? "failed" : this.runtimeTerminalStatus(event);
+        storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
+          ...storedCheckpoint.checkpoint,
+          phase: terminalStatus ? "runtime_settled" : "runtime_running",
+          runtimeEventCount: observed,
+          lastTraceEventId: recorded.event.id,
+          terminalStatus,
+          output: event.type === "runtime.completed" && !invalidOutput ? event.output : null,
+          diagnosticCode: invalidOutput
+            ? "RUNTIME_FINAL_ANSWER_INVALID"
+            : event.type === "runtime.failed"
+              ? event.errorCode
+              : null,
+        });
+        this.assertExecutionActive(attempt);
+        if (terminalStatus) break;
       }
-      observed += 1;
-      const recorded = await this.dependencies.trace.record({
-        ...this.traceScope(input),
-        parentEventId: storedCheckpoint.checkpoint.lastTraceEventId,
-        causationId: storedCheckpoint.checkpoint.lastTraceEventId,
-        eventType: event.type,
-        occurredAt: event.occurredAt,
-        payload: event,
-      });
-      const invalidOutput =
-        event.type === "runtime.completed" &&
-        (event.output.kind === "no-answer"
-          ? input.runtime.threadId !== null
-          : event.output.contentRef.trim().length === 0);
-      const terminalStatus = invalidOutput ? "failed" : this.runtimeTerminalStatus(event);
-      storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
-        ...storedCheckpoint.checkpoint,
-        phase: terminalStatus ? "runtime_settled" : "runtime_running",
-        runtimeEventCount: observed,
-        lastTraceEventId: recorded.event.id,
-        terminalStatus,
-        output: event.type === "runtime.completed" && !invalidOutput ? event.output : null,
-        diagnosticCode: invalidOutput
-          ? "RUNTIME_FINAL_ANSWER_INVALID"
-          : event.type === "runtime.failed"
-            ? event.errorCode
-            : null,
-      });
-      if (terminalStatus) break;
+    } finally {
+      if (attempt) attempt.runtimeActive = false;
     }
     return { checkpoint: storedCheckpoint };
   }
@@ -587,6 +794,7 @@ export class RunCoordinator {
       stored,
       nextStatus,
       command,
+      input.executionLease,
     );
   }
 
@@ -597,6 +805,7 @@ export class RunCoordinator {
     stored: StoredRun,
     nextStatus: Exclude<RunStatus, "accepted">,
     command: RunTransitionCommand,
+    executionLease?: RunExecutionLeaseClaim,
   ): Promise<StoredRun> {
     const latest = await this.requireRun(stored.run.id);
     if (latest.run.status === nextStatus) return latest;
@@ -611,6 +820,7 @@ export class RunCoordinator {
       commandFingerprint: command.commandFingerprint,
       authority,
       payloadRef: command.payloadRef,
+      ...(executionLease ? { executionLease } : {}),
     });
     return this.requireRun(latest.run.id);
   }
@@ -630,20 +840,21 @@ export class RunCoordinator {
   }
 
   private async saveCheckpoint(
-    runId: RunId,
+    input: ExecuteCoordinatedRunInput,
     current: StoredRunCheckpoint,
     checkpoint: RunCheckpoint,
   ): Promise<StoredRunCheckpoint> {
     try {
       const record = await this.dependencies.checkpoints.compareAndSet({
-        runId,
+        runId: input.runId,
         expectedRevision: current.revision === 0 ? null : current.revision,
         checkpoint,
+        ...(input.executionLease ? { executionLease: input.executionLease } : {}),
       });
       return record;
     } catch (error) {
       if (error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.CONFLICT) {
-        const latest = await this.readCheckpoint(runId);
+        const latest = await this.readCheckpoint(input.runId);
         if (latest && latest.checkpoint.terminalStatus !== null) return latest;
       }
       throw error;

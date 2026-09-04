@@ -17,6 +17,11 @@ import type {
   ReliableEventSinkPort,
   RunCheckpointStore,
   RunLifecyclePort,
+  RunDispatchCandidate,
+  RunDispatchPort,
+  RunExecutionLease,
+  RunExecutionLeaseReceipt,
+  RunReconciliationCandidate,
   RunPayloadArtifactAuthority,
   RunPayloadArtifactPort,
   SchedulerPort,
@@ -28,6 +33,7 @@ import type {
   TraceStorePort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
+import type { AuthorityFence } from "@himawari-agent/application";
 import type {
   EventSubscription,
   RunSnapshot,
@@ -103,6 +109,14 @@ export class SqliteDurableAdapters {
           input,
           now: now(),
         }),
+      cancelRun: (input) =>
+        this.context.write("runLifecycle.cancel", {
+          ownerId,
+          agentId,
+          authority,
+          input,
+          now: now(),
+        }),
       completeRun: (input) =>
         this.context.write("runLifecycle.complete", {
           ownerId,
@@ -148,6 +162,48 @@ export class SqliteDurableAdapters {
           authority,
           ...input,
           updatedAt: now(),
+        }),
+    });
+  }
+
+  runDispatch(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    authorityLease: AuthorityFence,
+    consumerId: string,
+  ): RunDispatchPort {
+    const scope = { ownerId, agentId, authority, authorityLease, consumerId };
+    return Object.freeze<RunDispatchPort>({
+      listClaimable: (input) =>
+        this.context.read<readonly RunDispatchCandidate[]>("runDispatch.listClaimable", {
+          ...scope,
+          input,
+        }),
+      listReconciliationRequired: (input) =>
+        this.context.read<readonly RunReconciliationCandidate[]>(
+          "runDispatch.listReconciliationRequired",
+          { ...scope, input },
+        ),
+      claim: (input) =>
+        this.context.write<RunExecutionLeaseReceipt>("runDispatch.claim", {
+          ...scope,
+          input,
+        }),
+      renew: (input) =>
+        this.context.write<RunExecutionLeaseReceipt>("runDispatch.renew", {
+          ...scope,
+          input,
+        }),
+      release: (input) =>
+        this.context.write<RunExecutionLeaseReceipt>("runDispatch.release", {
+          ...scope,
+          input,
+        }),
+      assertHeld: (input) =>
+        this.context.read<RunExecutionLease>("runDispatch.assertHeld", {
+          ...scope,
+          input,
         }),
     });
   }

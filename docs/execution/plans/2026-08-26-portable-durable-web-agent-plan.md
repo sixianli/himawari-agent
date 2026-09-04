@@ -303,6 +303,10 @@ schedule evaluator 覆盖 interval、one-shot 和 IANA daily schedule；periodic
 
 运行正文归属单元新增 `RunPayloadArtifactPort` 与第十九项 migration。保护后的正文和 Run 归属、用途、语义操作回执在同一 SQLite 事务提交；当前部署与有效租约、作用域、语义冲突、终态新增和删除后迟到写入均在持久边界检查。已有非审计正文在 Run 结束后仍可同义重放，不能把重放当作新的执行授权。Trace 已迁移到该端口；追加 Trace 失败后留下的是可随 Run 回收的有主正文，而非孤儿。加密备份恢复包含非空归属记录，直接治理删除与 GitHub history 删除均验证 artifact-only 独占正文回收和存活共享引用保护。主代理先完成九个集成文件的 110 项回归；最后收紧终态和删除证据后，两个聚焦文件的 11 项测试通过，另有十八项迁移合同与十项 transfer/治理删除回归通过，冻结后的全仓检查通过。Context、final answer、Worker result 的生产生成方尚未接入新端口，三个生产缺口仍保持未完成。
 
+2026-09-04 的执行领取单元增加第二十一项 migration 和 `RunDispatchPort`，不复制 Run 业务状态。关系表生命周期和协调检查点 writer 在同一事务内验证执行凭证，规范取消原子更新 Run、检查点、租约、回执与可靠事件。真实 SQLite fixture 经正式领取端口取得执行身份。主代理独立完成领取与调用回执两个集成文件的 27 项回归；2026-09-05 又完整运行协调器与 Thread 生命周期两个文件，47 项全部通过，包含取消原子成功、失败回滚和旧 fingerprint 回放。升级合同夹具修正旧版本断言后，18 项迁移合同通过；恢复点、权威迁移与治理删除的 20 项回归通过。这些运行分别记录，不相加为一次全量结果。该批次全仓类型检查曾通过，后续在途接线仍须重新检查。生产领取循环、启动权威续期、安装后 HTTP/Runtime 接线和双机真实隔离仍未完成，不能关闭对应生产验收。
+
+结果观察单元增加 `CapabilityInvocationResultPort` 和 Agent 侧可信正文 handler，复用唯一 Run 正文 writer，并明确终态后保存已发生事实不等于成功发布。真实 SQLite 回归覆盖晚到正文、同义重放、身份与正文冲突、当前权威、治理删除和事务回滚；handler 覆盖输入分类上限、输出分类和媒体类型校验。Worker 子任务的取消与超时路径已保留未知结果供其适配器观察，主代理完整运行该 Worker 文件 11 项通过；最终进入 Agent 持久核对流程的通道仍未完成，不能把局部观察算成生产闭环。
+
 ### Task 13：实现受认证 HTTP Gateway 与可恢复 SSE
 
 - [x] 先为 HTTP adapter 写 contract/security tests，证明每个命令、查询和事件请求都经过版本 parser、`GatewayAuthenticationContext`、scope policy、Control Plane 或 Read Model。

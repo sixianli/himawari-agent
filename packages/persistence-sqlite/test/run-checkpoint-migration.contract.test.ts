@@ -19,6 +19,7 @@ const AGENT_ID = "agent-checkpoint-migration";
 const RUN_ID = "run-checkpoint-migration";
 const THREAD_ID = "thread-checkpoint-migration";
 const TRACE_ID = "trace-checkpoint-migration";
+const CURRENT_SCHEMA_SEQUENCE = 21;
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
@@ -160,8 +161,8 @@ describe("Run coordination checkpoint migration", () => {
     expect(
       applyMigrations(fixture.database, fixture.bundled, { snapshot: fixture.snapshot }),
     ).toEqual({
-      appliedSequences: [18, 19, 20],
-      currentSequence: 20,
+      appliedSequences: [18, 19, 20, 21],
+      currentSequence: CURRENT_SCHEMA_SEQUENCE,
     });
     expect(
       fixture.database

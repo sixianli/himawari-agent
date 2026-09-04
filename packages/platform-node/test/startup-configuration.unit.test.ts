@@ -271,6 +271,193 @@ describe("strict product configuration", () => {
     ).toThrowError();
   });
 
+  it("parses bounded public HTTP and identity configuration without defaults", () => {
+    const stateRoot = path.join(tmpdir(), "himawari-config-public");
+    const input = config(stateRoot);
+    input["http"] = {
+      listenHost: "127.0.0.1",
+      listenPort: 8787,
+      staticRoot: path.join(stateRoot, "browser"),
+      sessionCookieName: "himawari_session",
+      maximumBodyBytes: 262_144,
+      maximumStaticAssetBytes: 8 * 1024 * 1024,
+      heartbeatMilliseconds: 15_000,
+    };
+    input["identity"] = {
+      issuer: "https://team.cloudflareaccess.com",
+      audience: "access-audience-v1",
+      jwksUrl: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+      jwksCacheMilliseconds: 300_000,
+      jwksTimeoutMilliseconds: 2_000,
+      jwksMaximumBodyBytes: 65_536,
+      clockToleranceSeconds: 30,
+      identityLookupTimeoutMilliseconds: 2_000,
+      identityLookupMaximumBodyBytes: 65_536,
+      recentAuthentication: {
+        maximumAgeMilliseconds: 900_000,
+        clockSkewMilliseconds: 30_000,
+      },
+      bootstrap: {
+        enabled: true,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        tokenSecretRef: "identity-bootstrap",
+      },
+      csrf: {
+        keySecretRef: "identity-csrf",
+        ttlMilliseconds: 1_800_000,
+      },
+    };
+    (input["secretReferences"] as unknown[]).push(
+      { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
+      { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
+    );
+    const parsed = parseProductConfiguration(input, "2026-08-27T00:00:00.000Z");
+    expect(parsed.http).toEqual(input["http"]);
+    expect(parsed.identity).toMatchObject({
+      issuer: "https://team.cloudflareaccess.com",
+      jwksUrl: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+      recentAuthentication: {
+        maximumAgeMilliseconds: 900_000,
+        clockSkewMilliseconds: 30_000,
+      },
+    });
+  });
+
+  it("accepts an explicit HTTPS origin port only when the fixed endpoint matches it", () => {
+    const stateRoot = path.join(tmpdir(), "himawari-config-explicit-port");
+    const input = config(stateRoot);
+    input["http"] = {
+      listenHost: "127.0.0.1",
+      listenPort: 8787,
+      staticRoot: path.join(stateRoot, "browser"),
+      sessionCookieName: "himawari_session",
+      maximumBodyBytes: 262_144,
+      maximumStaticAssetBytes: 8 * 1024 * 1024,
+      heartbeatMilliseconds: 15_000,
+    };
+    input["identity"] = {
+      issuer: "https://team.cloudflareaccess.com:8443",
+      audience: "access-audience-v1",
+      jwksUrl: "https://team.cloudflareaccess.com:8443/cdn-cgi/access/certs",
+      jwksCacheMilliseconds: 300_000,
+      jwksTimeoutMilliseconds: 2_000,
+      jwksMaximumBodyBytes: 65_536,
+      clockToleranceSeconds: 30,
+      identityLookupTimeoutMilliseconds: 2_000,
+      identityLookupMaximumBodyBytes: 65_536,
+      recentAuthentication: {
+        maximumAgeMilliseconds: 900_000,
+        clockSkewMilliseconds: 30_000,
+      },
+      bootstrap: {
+        enabled: true,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        tokenSecretRef: "identity-bootstrap",
+      },
+      csrf: {
+        keySecretRef: "identity-csrf",
+        ttlMilliseconds: 1_800_000,
+      },
+    };
+    (input["secretReferences"] as unknown[]).push(
+      { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
+      { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
+    );
+
+    const parsed = parseProductConfiguration(input, "2026-08-27T00:00:00.000Z");
+    expect(parsed.identity?.issuer).toBe("https://team.cloudflareaccess.com:8443");
+    expect(parsed.identity?.jwksUrl).toBe(
+      "https://team.cloudflareaccess.com:8443/cdn-cgi/access/certs",
+    );
+
+    const crossPort = structuredClone(input) as Record<string, unknown>;
+    crossPort["identity"] = {
+      ...(crossPort["identity"] as Record<string, unknown>),
+      jwksUrl: "https://team.cloudflareaccess.com:9443/cdn-cgi/access/certs",
+    };
+    expect(() => parseProductConfiguration(crossPort, "2026-08-27T00:00:00.000Z")).toThrowError(
+      expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
+    );
+
+    const crossHost = structuredClone(input) as Record<string, unknown>;
+    crossHost["identity"] = {
+      ...(crossHost["identity"] as Record<string, unknown>),
+      jwksUrl: "https://other.example:8443/cdn-cgi/access/certs",
+    };
+    expect(() => parseProductConfiguration(crossHost, "2026-08-27T00:00:00.000Z")).toThrowError(
+      expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
+    );
+  });
+
+  it.each([
+    ["configuration.http.listenHost", { http: { listenHost: "0.0.0.0" } }],
+    ["configuration.identity.issuer", { identity: { issuer: "http://team.cloudflareaccess.com" } }],
+    ["configuration.identity.jwksUrl", { identity: { jwksUrl: "https://other.example/certs" } }],
+    [
+      "configuration.identity.recentAuthentication.maximumAgeMilliseconds",
+      { identity: { recentAuthentication: { maximumAgeMilliseconds: undefined } } },
+    ],
+  ])("rejects unsafe or incomplete public field %s", (_field, override) => {
+    const stateRoot = path.join(tmpdir(), "himawari-config-public-invalid");
+    const input = config(stateRoot);
+    const complete = {
+      http: {
+        listenHost: "127.0.0.1",
+        listenPort: 8787,
+        staticRoot: path.join(stateRoot, "browser"),
+        sessionCookieName: "himawari_session",
+        maximumBodyBytes: 262_144,
+        maximumStaticAssetBytes: 8 * 1024 * 1024,
+        heartbeatMilliseconds: 15_000,
+      },
+      identity: {
+        issuer: "https://team.cloudflareaccess.com",
+        audience: "access-audience-v1",
+        jwksUrl: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+        jwksCacheMilliseconds: 300_000,
+        jwksTimeoutMilliseconds: 2_000,
+        jwksMaximumBodyBytes: 65_536,
+        clockToleranceSeconds: 30,
+        identityLookupTimeoutMilliseconds: 2_000,
+        identityLookupMaximumBodyBytes: 65_536,
+        recentAuthentication: {
+          maximumAgeMilliseconds: 900_000,
+          clockSkewMilliseconds: 30_000,
+        },
+        bootstrap: {
+          enabled: true,
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          tokenSecretRef: "identity-bootstrap",
+        },
+        csrf: { keySecretRef: "identity-csrf", ttlMilliseconds: 1_800_000 },
+      },
+    };
+    input["http"] = { ...complete.http, ...((override as { http?: object }).http ?? {}) };
+    input["identity"] = {
+      ...complete.identity,
+      ...((override as { identity?: object }).identity ?? {}),
+    };
+    if (
+      (override as { identity?: { recentAuthentication?: object } }).identity?.recentAuthentication
+    ) {
+      input["identity"] = {
+        ...(input["identity"] as object),
+        recentAuthentication: {
+          ...complete.identity.recentAuthentication,
+          ...((override as { identity?: { recentAuthentication?: object } }).identity
+            ?.recentAuthentication ?? {}),
+        },
+      };
+    }
+    (input["secretReferences"] as unknown[]).push(
+      { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
+      { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
+    );
+    expect(() => parseProductConfiguration(input, new Date().toISOString())).toThrowError(
+      expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
+    );
+  });
+
   it("reads only a regular non-writable-by-others JSON file", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "himawari-config-file-"));
     roots.push(root);

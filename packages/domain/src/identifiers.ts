@@ -34,6 +34,7 @@ export type ReflectionId = Identifier<"ReflectionId">;
 export type DelegationId = Identifier<"DelegationId">;
 export type WorkerRunId = Identifier<"WorkerRunId">;
 export type ImprovementId = Identifier<"ImprovementId">;
+export type RunExecutionLeaseId = Identifier<"RunExecutionLeaseId">;
 
 const MACHINE_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -159,4 +160,8 @@ export function createWorkerRunId(value: string): WorkerRunId {
 
 export function createImprovementId(value: string): ImprovementId {
   return createIdentifier(value, "ImprovementId");
+}
+
+export function createRunExecutionLeaseId(value: string): RunExecutionLeaseId {
+  return createIdentifier(value, "RunExecutionLeaseId");
 }

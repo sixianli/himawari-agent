@@ -21,9 +21,9 @@ import {
   type GetThreadSnapshotQuery,
   type RunSnapshot,
   type StreamEvent,
-  type ThreadSnapshot,
   type ThreadGatewayEvent,
   type ThreadGatewayRequestResult,
+  type ThreadSnapshot,
   type TraceQuery,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
@@ -311,6 +311,32 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(page.headers["x-content-type-options"]).toBe("nosniff");
     expect(page.headers["cache-control"]).toBe("no-cache");
     expect(asset.headers["cache-control"]).toContain("immutable");
+  });
+
+  it("does not expose legacy v1 routes when no legacy gateway is composed", async () => {
+    const auth = new Authentication();
+    const app = buildHttpGatewayServer({
+      authentication: auth,
+      csrf: {
+        async verify() {
+          return true;
+        },
+      },
+      publicOrigin: ORIGIN,
+      staticRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/gateway/v1/commands",
+        headers: requestHeaders(),
+        payload: command(),
+      });
+      expect(response.statusCode).toBe(404);
+      expect(auth.observed).toHaveLength(0);
+    } finally {
+      await app.close();
+    }
   });
 
   it("serves the SPA shell for HTML deep links without masking API or asset failures", async () => {

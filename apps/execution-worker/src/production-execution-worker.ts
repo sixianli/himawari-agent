@@ -1,13 +1,13 @@
 import type {
+  CapabilityExecutionHandle,
   ExecutionTransportPort,
   ExecutionWorkerEvent,
   ExecutionWorkerService,
-  CapabilityExecutionHandle,
 } from "@himawari-agent/application";
 import {
+  type DelegatedCapabilityHandleV2,
   EXECUTION_SCHEMA_VERSION,
   EXECUTION_V2_SCHEMA_VERSION,
-  type DelegatedCapabilityHandleV2,
   type ExecutionV2Event,
   type ExecutionV2Request,
   type ExecutionV2Response,
@@ -22,6 +22,7 @@ export const PRODUCTION_WORKER_ERROR_CODES = Object.freeze({
   HANDSHAKE_REQUIRED: "WORKER_HANDSHAKE_REQUIRED",
   NOT_READY: "WORKER_NOT_READY",
   RESOURCE_CEILING_EXCEEDED: "WORKER_RESOURCE_CEILING_EXCEEDED",
+  RESULT_UNKNOWN_OBSERVED: "WORKER_RESULT_UNKNOWN_OBSERVED",
   SCHEMA_UNSUPPORTED: "WORKER_SCHEMA_UNSUPPORTED",
   STALE_FENCE: "WORKER_STALE_FENCE",
   DELEGATION_INVALID: "WORKER_DELEGATION_INVALID",
@@ -78,6 +79,12 @@ type CancelRequest = Extract<ExecutionV2Request, { type: "work.cancel" }>;
 type ReconcileRequest = Extract<ExecutionV2Request, { type: "work.reconcile" }>;
 type HostOperationRequest = Extract<ExecutionV2Request, { type: "host.operation.execute" }>;
 type WorkerSubtaskRequest = Extract<ExecutionV2Request, { type: "worker.subtask.execute" }>;
+
+type SubtaskCapabilityInput = Parameters<WorkerSubtaskExecutionContext["executeCapability"]>[0];
+
+interface SubtaskExecutionObservation {
+  readonly unknownExternalActionIds: Set<string>;
+}
 
 export interface RegisteredHostOperationAdapter {
   readonly operations: readonly HostOperationRequest["payload"]["operation"][];
@@ -610,6 +617,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
 
   private async executeSubtask(request: WorkerSubtaskRequest): Promise<void> {
     const controller = new AbortController();
+    const observation: SubtaskExecutionObservation = { unknownExternalActionIds: new Set() };
     const workerRunId = request.scope.workerRunId as string;
     this.activeSubtasks.set(workerRunId, { request, controller });
     const remainingMs = Math.min(
@@ -634,12 +642,16 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
         );
       });
       const result = await Promise.race([
-        adapter.execute(request, this.subtaskContext(request, controller)),
+        adapter.execute(request, this.subtaskContext(request, controller, observation)),
         cancelled,
       ]);
       if (controller.signal.aborted)
         throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.DEADLINE_EXPIRED);
       this.assertDeadline(request.payload.deadlineAt);
+      if (observation.unknownExternalActionIds.size > 0)
+        throw new ProductionExecutionWorkerError(
+          PRODUCTION_WORKER_ERROR_CODES.RESULT_UNKNOWN_OBSERVED,
+        );
       if (
         result.actualModelRef !== request.payload.selectedModelRef ||
         result.actualCostMicros > request.payload.maximumCostMicros ||
@@ -677,15 +689,25 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   private subtaskContext(
     request: WorkerSubtaskRequest,
     controller: AbortController,
+    observation: SubtaskExecutionObservation,
   ): WorkerSubtaskExecutionContext {
     const worker = this;
     let progressEvents = 0;
     const invocations = new Set<string>();
     return Object.freeze({
       signal: controller.signal,
-      async *executeCapability(
-        input: Parameters<WorkerSubtaskExecutionContext["executeCapability"]>[0],
-      ) {
+      async *executeCapability(input: SubtaskCapabilityInput) {
+        const assertDelegation = () => {
+          if (
+            !request.payload.capabilityHandleRefs.includes(input.capabilityHandleRef) ||
+            !input.delegatedContextRefs.every((ref) =>
+              request.payload.delegatedContextRefs.includes(ref),
+            )
+          )
+            throw new ProductionExecutionWorkerError(
+              PRODUCTION_WORKER_ERROR_CODES.DELEGATION_INVALID,
+            );
+        };
         const assertActive = () => {
           worker.assertReadyAndAuthoritative(request);
           worker.assertDeadline(request.payload.deadlineAt);
@@ -697,23 +719,20 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
             throw new ProductionExecutionWorkerError(
               PRODUCTION_WORKER_ERROR_CODES.SUBTASK_NOT_ACTIVE,
             );
-          if (
-            !request.payload.capabilityHandleRefs.includes(input.capabilityHandleRef) ||
-            !input.delegatedContextRefs.every((ref) =>
-              request.payload.delegatedContextRefs.includes(ref),
-            )
-          )
-            throw new ProductionExecutionWorkerError(
-              PRODUCTION_WORKER_ERROR_CODES.DELEGATION_INVALID,
-            );
+          assertDelegation();
+        };
+        const assertObservationActive = () => {
+          worker.assertReadyAndAuthoritative(request);
+          assertDelegation();
         };
         assertActive();
-        if (invocations.has(input.invocationId))
+        const invocationRequest = worker.subtaskCapabilityRequest(request, input);
+        if (invocations.has(invocationRequest.messageId))
           throw new ProductionExecutionWorkerError(
             PRODUCTION_WORKER_ERROR_CODES.DUPLICATE_CONFLICT,
           );
-        invocations.add(input.invocationId);
-        const invocationId = `${request.messageId}:tool:${input.invocationId}`;
+        invocations.add(invocationRequest.messageId);
+        const invocationId = invocationRequest.messageId;
         const cancel = () => {
           void worker.options.service
             .cancel({
@@ -756,7 +775,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
                 runId: request.scope.runId as string,
                 workerRunId: request.scope.workerRunId as string,
               },
-              idempotencyKey: `${request.idempotencyKey}:tool:${input.invocationId}`,
+              idempotencyKey: invocationRequest.idempotencyKey,
               payload: {
                 capabilityId: input.capabilityId,
                 capabilityVersion: input.capabilityVersion,
@@ -776,7 +795,16 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
             },
             assertActive,
           )) {
-            assertActive();
+            if (event.type === "work.result" && event.payload.outcome === "result_unknown") {
+              assertObservationActive();
+              if (event.payload.externalActionId === null) {
+                observation.unknownExternalActionIds.add(event.payload.requestId);
+                throw new TypeError("Worker received an unknown result without an external ID");
+              }
+              observation.unknownExternalActionIds.add(event.payload.externalActionId);
+            } else {
+              assertActive();
+            }
             if (
               event.type === "work.progress" &&
               ++progressEvents > request.payload.maximumProgressEvents
@@ -786,6 +814,12 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
                 PRODUCTION_WORKER_ERROR_CODES.RESOURCE_CEILING_EXCEEDED,
               );
             }
+            worker.appendMappedEvent(
+              invocationRequest,
+              event,
+              invocationRequest.messageId,
+              request.messageId,
+            );
             yield event;
           }
         } finally {
@@ -793,6 +827,44 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
         }
       },
     });
+  }
+
+  private subtaskCapabilityRequest(
+    request: WorkerSubtaskRequest,
+    input: SubtaskCapabilityInput,
+  ): ExecuteRequest {
+    const parsed = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "request",
+      type: "work.execute",
+      messageId: `${request.messageId}:tool:${input.invocationId}`,
+      correlationId: request.correlationId,
+      causationId: request.messageId,
+      dataClassification: request.dataClassification,
+      risk: request.risk,
+      authorizationRef: request.authorizationRef,
+      scope: request.scope,
+      idempotencyKey: `${request.idempotencyKey}:tool:${input.invocationId}`,
+      payload: {
+        capabilityId: input.capabilityId,
+        capabilityVersion: input.capabilityVersion,
+        operation: input.operation,
+        inputRef: input.inputRef,
+        capabilityHandleRef: input.capabilityHandleRef,
+        delegatedContextRefs: input.delegatedContextRefs,
+        secretRefs: [],
+        resourceCeiling: {
+          ...this.options.maximumResourceCeiling,
+          maxWallTimeMs: request.payload.maximumDurationMs,
+          maxProgressEvents: request.payload.maximumProgressEvents,
+        },
+        requestedAt: request.payload.requestedAt,
+        deadlineAt: request.payload.deadlineAt,
+      },
+    });
+    if (parsed.kind !== "request" || parsed.type !== "work.execute")
+      throw new TypeError("Worker produced an invalid nested capability request");
+    return parsed;
   }
 
   private appendSubtaskResult(
@@ -863,6 +935,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     request: ExecuteRequest | CancelRequest | ReconcileRequest,
     event: ExecutionWorkerEvent,
     requestIdOverride?: string,
+    causationIdOverride?: string | null,
   ): void {
     const sequence = this.nextSequence(requestIdOverride ?? event.payload.requestId);
     const cursor = this.nextCursor();
@@ -872,7 +945,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
       type: event.type,
       messageId: event.messageId,
       correlationId: event.correlationId,
-      causationId: event.causationId,
+      causationId: causationIdOverride === undefined ? event.causationId : causationIdOverride,
       dataClassification: event.dataClassification,
       risk: request.risk,
       authorizationRef: request.authorizationRef,

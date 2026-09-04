@@ -9,18 +9,32 @@ import type {
   DataClassification,
   FrozenCapabilityInvocationReceipt,
   GovernedCapabilityExecutionHandle,
+  ObserveCapabilityInvocationOutputInput,
   ReadCapabilityInvocationInput,
+  RunPayloadArtifact,
+  RunPayloadArtifactCommitResult,
 } from "@himawari-agent/application";
 import { createAuthorityLeaseId, createDeploymentId } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import type {
+  SqliteCapabilityInvocationObservationInput,
+  SqliteRunPayloadArtifactOperations,
+} from "./sqlite-run-payload-artifact-operations.ts";
+import {
+  capabilityInvocationOutputOperationKey,
+  parseRunPayloadArtifactPayload,
+} from "./sqlite-run-payload-artifact-operations.ts";
 
 type ConsumeInput = ConsumeCapabilityInvocationInput;
 type ReadInput = ReadCapabilityInvocationInput;
+type ObserveInput = ObserveCapabilityInvocationOutputInput;
 type FrozenReceipt = FrozenCapabilityInvocationReceipt;
 type ConsumeResult = CapabilityInvocationConsumeResult;
 type AuthorityInput = CapabilityInvocationAuthority;
 type RequestScopeInput = ConsumeInput["requestScope"];
+type ResultArtifact = RunPayloadArtifact;
+type ResultArtifactCommit = RunPayloadArtifactCommitResult;
 
 interface ScopedOperationInput {
   readonly ownerId: string;
@@ -87,6 +101,8 @@ const ALLOWED_RESOURCE_KEYS = new Set([
   "maxProgressEvents",
 ]);
 const ALLOWED_SECRET_KEYS = new Set(["secretRef", "secretVersion", "purpose"]);
+const ALLOWED_RESULT_CONTENT_TYPE =
+  /^[A-Za-z0-9!#$%&'*+\-.^_`|~]+\/[A-Za-z0-9!#$%&'*+\-.^_`|~]+(?:;[ \t]*[A-Za-z0-9!#$%&'*+\-.^_`|~]+=[A-Za-z0-9!#$%&'*+\-.^_`|~]+)*$/;
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -129,6 +145,10 @@ function safeInteger(value: unknown, label: string, minimum = 1): number {
     throw new TypeError(`${label} must be a safe integer >= ${minimum}`);
   }
   return value;
+}
+
+function nonNegativeSafeInteger(value: unknown, label: string): number {
+  return safeInteger(value, label, 0);
 }
 
 function list(value: unknown, label: string): readonly unknown[] {
@@ -299,6 +319,26 @@ function parseRead(value: unknown): ReadInput {
   });
 }
 
+function parseObserve(value: unknown): ObserveInput {
+  const input = record(value, "Capability invocation output observation");
+  assertKeys(
+    input,
+    new Set(["handleRef", "invocationId", "authority", "now", "payload", "plaintextByteLength"]),
+    "output observation",
+  );
+  return Object.freeze({
+    handleRef: text(input["handleRef"], "handleRef"),
+    invocationId: text(input["invocationId"], "invocationId"),
+    authority: authority(input["authority"]),
+    now: dateText(input["now"], "now"),
+    payload: parseRunPayloadArtifactPayload(input["payload"]),
+    plaintextByteLength: nonNegativeSafeInteger(
+      input["plaintextByteLength"],
+      "plaintextByteLength",
+    ),
+  });
+}
+
 function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
@@ -374,6 +414,20 @@ function equalSecrets(
   );
 }
 
+function equalAuthority(left: AuthorityInput, right: AuthorityInput): boolean {
+  return (
+    left.product.deploymentId === right.product.deploymentId &&
+    left.product.authorityEpoch === right.product.authorityEpoch &&
+    left.product.fencingToken === right.product.fencingToken &&
+    left.lease.leaseId === right.lease.leaseId &&
+    left.lease.fencingToken === right.lease.fencingToken &&
+    left.agentServiceInstanceId === right.agentServiceInstanceId &&
+    left.agentServiceBootId === right.agentServiceBootId &&
+    left.workerInstanceId === right.workerInstanceId &&
+    left.workerBootId === right.workerBootId
+  );
+}
+
 function capabilityRecord(row: HandleRow): CapabilityRegistryRecord {
   try {
     return JSON.parse(row.capabilityJson) as CapabilityRegistryRecord;
@@ -403,18 +457,24 @@ export class SqliteCapabilityInvocationOperations {
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
+  private readonly runPayloadArtifacts: SqliteRunPayloadArtifactOperations | undefined;
 
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
+    runPayloadArtifacts?: SqliteRunPayloadArtifactOperations,
   ) {
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
+    this.runPayloadArtifacts = runPayloadArtifacts;
   }
 
-  execute(operation: string, value: unknown): ConsumeResult | FrozenReceipt | undefined {
+  execute(
+    operation: string,
+    value: unknown,
+  ): ConsumeResult | FrozenReceipt | ResultArtifact | ResultArtifactCommit | undefined {
     try {
       const scoped = this.scopedInput(value);
       if (operation === "capabilityInvocation.consume") {
@@ -422,6 +482,15 @@ export class SqliteCapabilityInvocationOperations {
       }
       if (operation === "capabilityInvocation.read") {
         return this.read(parseRead(scoped.input), scoped.ownerId, scoped.agentId);
+      }
+      if (operation === "capabilityInvocationResult.lookupFrozen") {
+        return this.lookupFrozen(parseRead(scoped.input), scoped.ownerId, scoped.agentId);
+      }
+      if (operation === "capabilityInvocationResult.lookupOutput") {
+        return this.lookupOutput(parseRead(scoped.input), scoped.ownerId, scoped.agentId);
+      }
+      if (operation === "capabilityInvocationResult.observeOutput") {
+        return this.observeOutput(parseObserve(scoped.input), scoped.ownerId, scoped.agentId);
       }
     } catch (error) {
       if (error instanceof TypeError) {
@@ -630,28 +699,7 @@ export class SqliteCapabilityInvocationOperations {
     );
     if (!row) return undefined;
     const receipt = receiptFromRow(row);
-    if (
-      receipt.authority.product.deploymentId !== input.authority.product.deploymentId ||
-      receipt.authority.product.authorityEpoch !== input.authority.product.authorityEpoch ||
-      receipt.authority.product.fencingToken !== input.authority.product.fencingToken ||
-      receipt.authority.lease.leaseId !== input.authority.lease.leaseId ||
-      receipt.authority.lease.fencingToken !== input.authority.lease.fencingToken ||
-      receipt.authority.agentServiceInstanceId !== input.authority.agentServiceInstanceId ||
-      receipt.authority.agentServiceBootId !== input.authority.agentServiceBootId ||
-      receipt.authority.workerInstanceId !== input.authority.workerInstanceId ||
-      receipt.authority.workerBootId !== input.authority.workerBootId
-    ) {
-      return this.fail(
-        "PORT_NOT_AUTHORITATIVE",
-        "Capability invocation belongs to another Agent or Worker attempt",
-      );
-    }
-    if (receipt.ownerId !== ownerId || receipt.agentId !== agentId) {
-      return this.fail(
-        "PORT_NOT_AUTHORITATIVE",
-        "Capability invocation is outside the adapter scope",
-      );
-    }
+    this.assertReceiptIdentity(receipt, input, ownerId, agentId);
     this.assertAuthority(input.authority, ownerId, agentId, input.now);
     if (
       timestamp(input.now, "now") >= timestamp(receipt.effectiveExpiresAt, "effectiveExpiresAt")
@@ -687,6 +735,162 @@ export class SqliteCapabilityInvocationOperations {
       consumedAt: input.now,
     });
     return receipt;
+  }
+
+  private lookupFrozen(
+    input: ReadInput,
+    ownerId: string,
+    agentId: string,
+  ): FrozenReceipt | undefined {
+    const row = this.readReceiptByInvocationScope(
+      ownerId,
+      agentId,
+      input.handleRef,
+      input.invocationId,
+    );
+    if (!row) return undefined;
+    const receipt = receiptFromRow(row);
+    this.assertReceiptIdentity(receipt, input, ownerId, agentId);
+    this.assertAuthority(input.authority, ownerId, agentId, input.now);
+    this.assertRunExists(receipt, ownerId, agentId);
+    return receipt;
+  }
+
+  private lookupOutput(
+    input: ReadInput,
+    ownerId: string,
+    agentId: string,
+  ): ResultArtifact | undefined {
+    const receipt = this.lookupFrozen(input, ownerId, agentId);
+    if (!receipt) return undefined;
+    const writer = this.requireRunPayloadArtifacts();
+    const result = writer.execute("runPayloadArtifact.lookup", {
+      ownerId,
+      agentId,
+      runId: receipt.runId,
+      purpose: "worker_result",
+      operationKey: capabilityInvocationOutputOperationKey(receipt.invocationId),
+      authority: {
+        product: input.authority.product,
+        leaseId: input.authority.lease.leaseId,
+        leaseFencingToken: input.authority.lease.fencingToken,
+      },
+      now: input.now,
+    });
+    return result as ResultArtifact | undefined;
+  }
+
+  private observeOutput(
+    input: ObserveInput,
+    ownerId: string,
+    agentId: string,
+  ): ResultArtifactCommit {
+    const writer = this.requireRunPayloadArtifacts();
+    this.assertDiskHeadroom();
+    return this.database
+      .transaction(() => {
+        const row = this.readReceiptByInvocationScope(
+          ownerId,
+          agentId,
+          input.handleRef,
+          input.invocationId,
+        );
+        if (!row) {
+          return this.fail(
+            "PORT_NOT_FOUND",
+            "Capability invocation receipt is not available for output observation",
+            { invocationId: input.invocationId },
+          );
+        }
+        const receipt = receiptFromRow(row);
+        this.assertReceiptIdentity(receipt, input, ownerId, agentId);
+        this.assertAuthority(input.authority, ownerId, agentId, input.now);
+        this.assertRunExists(receipt, ownerId, agentId);
+        this.assertOutputObservation(input, receipt);
+        const authority: SqliteCapabilityInvocationObservationInput["authority"] = {
+          product: input.authority.product,
+          lease: input.authority.lease,
+        };
+        return writer.commitInvocationObservationWithinTransaction({
+          ownerId: receipt.ownerId,
+          agentId: receipt.agentId,
+          runId: receipt.runId,
+          invocationId: receipt.invocationId,
+          authority,
+          now: input.now,
+          payload: input.payload,
+        });
+      })
+      .immediate();
+  }
+
+  private requireRunPayloadArtifacts(): SqliteRunPayloadArtifactOperations {
+    if (!this.runPayloadArtifacts) {
+      return this.fail(
+        "PORT_INVALID_OPERATION",
+        "Capability invocation result operations require the Run Payload artifact writer",
+      );
+    }
+    return this.runPayloadArtifacts;
+  }
+
+  private assertReceiptIdentity(
+    receipt: FrozenReceipt,
+    input: ReadInput,
+    ownerId: string,
+    agentId: string,
+  ): void {
+    if (receipt.ownerId !== ownerId || receipt.agentId !== agentId) {
+      this.fail("PORT_NOT_AUTHORITATIVE", "Capability invocation is outside the adapter scope");
+    }
+    if (
+      receipt.handleRef !== input.handleRef ||
+      receipt.invocationId !== input.invocationId ||
+      !equalAuthority(receipt.authority, input.authority)
+    ) {
+      this.fail(
+        "PORT_NOT_AUTHORITATIVE",
+        "Capability invocation belongs to another Agent or Worker attempt",
+      );
+    }
+  }
+
+  private assertRunExists(receipt: FrozenReceipt, ownerId: string, agentId: string): void {
+    const row = this.database
+      .prepare(
+        `SELECT 1 FROM runs
+         WHERE id = ? AND owner_id = ? AND agent_id = ?`,
+      )
+      .get(receipt.runId, ownerId, agentId);
+    if (!row) {
+      this.fail("PORT_INVALID_OPERATION", "Capability invocation Run is no longer available", {
+        runId: receipt.runId,
+      });
+    }
+  }
+
+  private assertOutputObservation(input: ObserveInput, receipt: FrozenReceipt): void {
+    if (input.payload.dataClassification !== receipt.dataClassification) {
+      this.fail(
+        "PORT_INVALID_OPERATION",
+        "Capability invocation output classification does not match its receipt",
+        { invocationId: receipt.invocationId },
+      );
+    }
+    if (!ALLOWED_RESULT_CONTENT_TYPE.test(input.payload.contentType)) {
+      this.fail(
+        "PORT_INVALID_OPERATION",
+        "Capability invocation output content type is not supported",
+        { invocationId: receipt.invocationId },
+      );
+    }
+    if (input.plaintextByteLength > receipt.resourceCeiling.maxOutputBytes) {
+      this.fail(
+        "PORT_INVALID_OPERATION",
+        "Capability invocation output exceeds its frozen resource ceiling",
+        { invocationId: receipt.invocationId },
+      );
+    }
   }
 
   private assertRequestScope(input: ConsumeInput, ownerId: string, agentId: string): void {

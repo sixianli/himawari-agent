@@ -4,8 +4,11 @@ import type {
   StoredRun,
   TransitionRunStateInput,
   RunCompletionInput,
+  RunCancellationInput,
   RuntimeSuccessfulOutput,
   DataClassification,
+  RunExecutionLeaseClaim,
+  RunExecutionLeaseTransactionGuard,
 } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -14,6 +17,7 @@ import {
   createIdempotencyKey,
   createOwnerId,
   createRunId,
+  createRunExecutionLeaseId,
   createSessionId,
   createThreadId,
   createTriggerId,
@@ -32,6 +36,19 @@ import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import type { SqliteThreadOperations } from "./sqlite-thread-operations.js";
 
 type RunMutationInput = TransitionRunStateInput | RunCompletionInput;
+type RunAuthorityInput = RunMutationInput | RunCancellationInput;
+type ExecutionLeaseGuard = Pick<
+  RunExecutionLeaseTransactionGuard,
+  "assertHeldInTransaction" | "invalidateForOwnerCancellationInTransaction"
+>;
+type ExecutionLeaseGuardFactory = (input: {
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly authority: ProductAuthorityFence;
+  readonly authorityLeaseId: string;
+  readonly authorityFencingToken: number;
+  readonly consumerId: string;
+}) => ExecutionLeaseGuard;
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
 
 function classification(value: unknown): DataClassification {
@@ -58,6 +75,21 @@ function integer(value: unknown): number {
   return value;
 }
 
+function optionalExecutionLease(value: unknown): RunExecutionLeaseClaim | undefined {
+  if (value === undefined) return undefined;
+  const input = record(value);
+  return {
+    executionLeaseId: createRunExecutionLeaseId(string(input["executionLeaseId"])),
+    expectedLeaseRevision: integer(input["expectedLeaseRevision"]),
+    authorityLeaseId: createAuthorityLeaseId(string(input["authorityLeaseId"])),
+    authorityFencingToken: integer(input["authorityFencingToken"]),
+    deploymentId: createDeploymentId(string(input["deploymentId"])),
+    authorityEpoch: integer(input["authorityEpoch"]),
+    fencingToken: integer(input["fencingToken"]),
+    consumerId: string(input["consumerId"]),
+  };
+}
+
 function status(value: unknown): StoredRun["run"]["status"] {
   const found = RUN_STATUSES.find((candidate) => candidate === value);
   if (!found) throw new TypeError("Run lifecycle status is invalid");
@@ -67,6 +99,7 @@ function status(value: unknown): StoredRun["run"]["status"] {
 function command(value: unknown): TransitionRunStateInput {
   const input = record(value);
   const fence = record(input["authority"]);
+  const executionLease = optionalExecutionLease(input["executionLease"]);
   return {
     ownerId: createOwnerId(string(input["ownerId"])),
     agentId: createAgentId(string(input["agentId"])),
@@ -80,7 +113,21 @@ function command(value: unknown): TransitionRunStateInput {
       leaseId: createAuthorityLeaseId(string(fence["leaseId"])),
       fencingToken: integer(fence["fencingToken"]),
     },
+    ...(executionLease ? { executionLease } : {}),
   };
+}
+
+function cancellation(value: unknown): RunCancellationInput {
+  const input = record(value);
+  if (input["executionLease"] !== undefined)
+    throw new TypeError("Owner cancellation cannot carry an execution lease");
+  const parsed = command({ ...input, nextStatus: "cancelled" });
+  const { nextStatus: _nextStatus, executionLease: _executionLease, ...base } = parsed;
+  return base;
+}
+
+function cancelledMutation(input: RunCancellationInput): TransitionRunStateInput {
+  return { ...input, nextStatus: "cancelled" };
 }
 
 function completion(value: unknown): RunCompletionInput {
@@ -119,17 +166,20 @@ export class SqliteRunLifecycleOperations {
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
   private readonly thread: Pick<SqliteThreadOperations, "commitAssistantMessage">;
+  private readonly executionLease: ExecutionLeaseGuardFactory;
 
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
     thread: Pick<SqliteThreadOperations, "commitAssistantMessage">,
+    executionLease: ExecutionLeaseGuardFactory,
   ) {
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
     this.thread = thread;
+    this.executionLease = executionLease;
   }
 
   execute(operation: string, payload: unknown): unknown {
@@ -138,7 +188,11 @@ export class SqliteRunLifecycleOperations {
     const agentId = createAgentId(string(parsed["agentId"]));
     if (operation === "runLifecycle.read")
       return this.read(ownerId, agentId, createRunId(string(parsed["runId"])));
-    if (operation !== "runLifecycle.transition" && operation !== "runLifecycle.complete")
+    if (
+      operation !== "runLifecycle.transition" &&
+      operation !== "runLifecycle.cancel" &&
+      operation !== "runLifecycle.complete"
+    )
       return this.fail("PORT_INVALID_OPERATION", "Unknown Run lifecycle operation");
     const fence = record(parsed["authority"]);
     const authority: ProductAuthorityFence = {
@@ -146,6 +200,14 @@ export class SqliteRunLifecycleOperations {
       authorityEpoch: integer(fence["authorityEpoch"]),
       fencingToken: integer(fence["fencingToken"]),
     };
+    if (operation === "runLifecycle.cancel") {
+      const input = cancellation(parsed["input"]);
+      if (input["ownerId"] !== ownerId || input["agentId"] !== agentId)
+        return this.fail("PORT_NOT_AUTHORITATIVE", "Run command is outside the bound scope");
+      const now = string(parsed["now"]);
+      if (!Number.isFinite(Date.parse(now))) throw new TypeError("Run lifecycle time is invalid");
+      return this.cancel(input, authority, now);
+    }
     const input =
       operation === "runLifecycle.complete"
         ? completion(parsed["input"])
@@ -250,6 +312,7 @@ export class SqliteRunLifecycleOperations {
         }
         this.assertTransition(stored, input.nextStatus);
         this.assertPayload(input);
+        this.assertExecutionLease(input, authority, now);
         const revision = stored.revision + 1;
         this.database
           .prepare(`UPDATE runs SET status = ?, revision = ?, updated_at = ?
@@ -269,7 +332,7 @@ export class SqliteRunLifecycleOperations {
   }
 
   private assertAuthority(
-    input: RunMutationInput,
+    input: RunAuthorityInput,
     authority: ProductAuthorityFence,
     now: string,
   ): void {
@@ -306,13 +369,141 @@ export class SqliteRunLifecycleOperations {
     }
   }
 
-  private assertPayload(input: RunMutationInput): void {
+  private assertPayload(input: RunAuthorityInput): void {
     const payload = this.database
       .prepare(`SELECT 1 FROM payloads WHERE ref = ?
         AND owner_id = ? AND agent_id = ? AND lifecycle_state = 'active'`)
       .get(input["payloadRef"], input["ownerId"], input["agentId"]);
     if (!payload)
       this.fail("PORT_INVALID_OPERATION", "Run event Payload is outside the active scope");
+  }
+
+  private assertExecutionLease(
+    input: RunMutationInput,
+    authority: ProductAuthorityFence,
+    now: string,
+  ): void {
+    const claim = input.executionLease;
+    if (!claim) {
+      this.fail(
+        "PORT_NOT_AUTHORITATIVE",
+        "Execution-owned Run mutation requires an execution lease",
+        { runId: input.runId },
+      );
+    }
+    if (
+      claim.authorityLeaseId !== input.authority.leaseId ||
+      claim.authorityFencingToken !== input.authority.fencingToken ||
+      claim.deploymentId !== authority.deploymentId ||
+      claim.authorityEpoch !== authority.authorityEpoch ||
+      claim.fencingToken !== authority.fencingToken
+    ) {
+      this.fail(
+        "PORT_NOT_AUTHORITATIVE",
+        "Execution lease claim does not match the command authority",
+        { runId: input.runId },
+      );
+    }
+    const guard = this.executionLease({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      authority,
+      authorityLeaseId: claim.authorityLeaseId,
+      authorityFencingToken: claim.authorityFencingToken,
+      consumerId: claim.consumerId,
+    });
+    guard.assertHeldInTransaction({
+      runId: input.runId,
+      expectedLeaseRevision: claim.expectedLeaseRevision,
+      executionLeaseId: claim.executionLeaseId,
+      at: now,
+    });
+  }
+
+  private cancel(
+    input: RunCancellationInput,
+    authority: ProductAuthorityFence,
+    now: string,
+  ): RunTransitionReceipt {
+    this.assertDiskHeadroom();
+    const mutation = cancelledMutation(input);
+    return this.database
+      .transaction(() => {
+        this.assertAuthority(input, authority, now);
+        const stored = this.read(input.ownerId, input.agentId, input.runId);
+        if (!stored)
+          return this.fail("PORT_NOT_FOUND", "Run is missing from the bound relational scope");
+        const replay = this.replay(mutation);
+        if (replay) return replay;
+        if (stored.revision !== input.expectedRevision)
+          return this.fail("PORT_CONFLICT", "Run cancellation revision conflict", {
+            runId: input.runId,
+          });
+        this.assertTransition(stored, "cancelled");
+        this.assertPayload(input);
+        const guard = this.executionLease({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          authority,
+          authorityLeaseId: input.authority.leaseId,
+          authorityFencingToken: input.authority.fencingToken,
+          consumerId: "owner-cancellation",
+        });
+        guard.invalidateForOwnerCancellationInTransaction({
+          runId: input.runId,
+          at: now,
+        });
+        const revision = stored.revision + 1;
+        const changed = this.database
+          .prepare(`UPDATE runs SET status = 'cancelled', revision = ?, updated_at = ?
+          WHERE id = ? AND owner_id = ? AND agent_id = ? AND revision = ?`)
+          .run(revision, now, input.runId, input.ownerId, input.agentId, stored.revision);
+        if (changed.changes !== 1)
+          return this.fail("PORT_CONFLICT", "Run cancellation revision conflict", {
+            runId: input.runId,
+          });
+        this.writeCancelledCheckpoint(input, now);
+        return this.writeReceipt(mutation, authority, now, revision);
+      })
+      .immediate();
+  }
+
+  /**
+   * Owner cancellation is the one lifecycle operation that changes the
+   * canonical Run and its coordination checkpoint together.  Existing
+   * observed output and worker/context references remain attached to the Run;
+   * only publication is prevented by the terminal Run status.
+   */
+  private writeCancelledCheckpoint(input: RunCancellationInput, now: string): void {
+    const existing = this.database
+      .prepare(`SELECT revision, context_ref, runtime_event_count, last_trace_event_id,
+        output_kind, final_answer_ref, diagnostic_code
+        FROM run_coordination_checkpoints
+        WHERE run_id = ? AND owner_id = ? AND agent_id = ?`)
+      .get(input.runId, input.ownerId, input.agentId);
+    if (!existing) {
+      this.database
+        .prepare(`INSERT INTO run_coordination_checkpoints
+          (run_id, owner_id, agent_id, revision, phase, context_ref, runtime_event_count,
+           last_trace_event_id, terminal_status, output_kind, final_answer_ref, diagnostic_code,
+           updated_at)
+          VALUES (?, ?, ?, 1, 'cancelled', NULL, 0, NULL, 'cancelled', NULL, NULL, NULL, ?)`)
+        .run(input.runId, input.ownerId, input.agentId, now);
+      return;
+    }
+    const row = record(existing);
+    this.database
+      .prepare(`UPDATE run_coordination_checkpoints
+        SET revision = ?, phase = 'cancelled', terminal_status = 'cancelled', updated_at = ?
+        WHERE run_id = ? AND owner_id = ? AND agent_id = ? AND revision = ?`)
+      .run(
+        integer(row["revision"]) + 1,
+        now,
+        input.runId,
+        input.ownerId,
+        input.agentId,
+        integer(row["revision"]),
+      );
   }
 
   private writeReceipt(
@@ -490,6 +681,7 @@ export class SqliteRunLifecycleOperations {
             )
             .run(now, input.runId);
         }
+        this.assertExecutionLease(input, authority, now);
         return this.writeReceipt(input, authority, now, stored.revision + 1);
       })
       .immediate();

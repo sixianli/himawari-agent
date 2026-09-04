@@ -6,14 +6,6 @@ import type {
   ExecutionTransportPort,
   FrozenCapabilityInvocationReceipt,
 } from "@himawari-agent/application";
-import { WorkerDelegationService } from "../src/index.ts";
-import {
-  EXECUTION_V2_SCHEMA_VERSION,
-  type ExecutionV2Event,
-  type ExecutionV2Request,
-  type ExecutionV2Response,
-  executionV2MessageSchema,
-} from "@himawari-agent/execution-contracts";
 import {
   createAgentId,
   createAuthorityLeaseId,
@@ -21,7 +13,15 @@ import {
   createOwnerId,
   createRunId,
 } from "@himawari-agent/domain";
+import {
+  EXECUTION_V2_SCHEMA_VERSION,
+  type ExecutionV2Event,
+  type ExecutionV2Request,
+  type ExecutionV2Response,
+  executionV2MessageSchema,
+} from "@himawari-agent/execution-contracts";
 import { describe, expect, it } from "vitest";
+import { WorkerDelegationAdmissionService, WorkerDelegationService } from "../src/index.ts";
 
 const START = "2026-08-25T00:00:00.000Z";
 const DEADLINE = "2026-08-25T00:05:00.000Z";
@@ -162,6 +162,27 @@ function executeRequest(): Extract<ExecutionV2Request, { type: "work.execute" }>
 }
 
 describe("WorkerDelegationService", () => {
+  it("returns an executable projection only for a newly consumed receipt", async () => {
+    const invocations = new RecordingInvocationPort();
+    const admission = new WorkerDelegationAdmissionService({
+      invocations,
+      invocationAuthority: () => invocationAuthority,
+      now: () => START,
+      nextId: (scope) => `${scope}-01`,
+    });
+
+    const consumed = await admission.admit(executeRequest());
+    expect(consumed.disposition).toBe("consumed");
+    if (consumed.disposition !== "consumed") throw new Error("expected a fresh receipt");
+    expect(consumed.projection.delegate.type).toBe("work.delegate");
+    expect(consumed.projection.execute.type).toBe("work.execute");
+    expect(consumed.projection.execute.messageId).toBe(consumed.receipt.invocationId);
+
+    const replayed = await admission.admit(executeRequest());
+    expect(replayed.disposition).toBe("replayed");
+    expect("projection" in replayed).toBe(false);
+  });
+
   it("consumes durable authority before sending one attenuated Worker Handle", async () => {
     const transport = new RecordingWorkerTransport();
     const invocations = new RecordingInvocationPort();

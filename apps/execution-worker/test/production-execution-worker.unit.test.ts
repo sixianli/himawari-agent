@@ -1,4 +1,8 @@
-import { ExecutionWorkerService } from "@himawari-agent/application";
+import {
+  type CapabilityPort,
+  type ExecutionWorkerEvent,
+  ExecutionWorkerService,
+} from "@himawari-agent/application";
 import {
   EXECUTION_V2_SCHEMA_VERSION,
   type ExecutionV2Event,
@@ -99,14 +103,14 @@ function execute(
   }) as Extract<ExecutionV2Request, { type: "work.execute" }>;
 }
 
-function delegation() {
+function delegation(handleRef = "capability-handle-worker-unit") {
   return executionV2MessageSchema.parse({
     ...requestEnvelope("work.delegate"),
     authorizationRef: "allow-readonly-worker-unit",
     payload: {
       handle: {
         handleVersion: "capability-handle.v2",
-        ref: "capability-handle-worker-unit",
+        ref: handleRef,
         revision: 1,
         authorityFence: 3,
         ownerId: fixture.owner.id,
@@ -141,9 +145,11 @@ async function workerFixture(
   options: {
     readonly unknownResult?: boolean;
     readonly now?: () => string;
+    readonly capability?: CapabilityPort;
     readonly hostOperations?: ConstructorParameters<
       typeof ProductionExecutionWorker
     >[0]["hostOperations"];
+    readonly subtasks?: ConstructorParameters<typeof ProductionExecutionWorker>[0]["subtasks"];
   } = {},
 ) {
   const events = options.unknownResult
@@ -224,7 +230,7 @@ async function workerFixture(
   });
   const service = new ExecutionWorkerService({
     handles: adapters.capabilityRegistry,
-    capability: adapters.capability,
+    capability: options.capability ?? adapters.capability,
     secrets: adapters.secret,
     reconciliation: new ScriptedExternalActionReconciliationPort({
       "external-worker-unit": {
@@ -261,6 +267,7 @@ async function workerFixture(
         },
       ],
       ...(options.hostOperations ? { hostOperations: options.hostOperations } : {}),
+      ...(options.subtasks ? { subtasks: options.subtasks } : {}),
       now: options.now ?? (() => adapters.clock.now()),
       nextId: (type) => adapters.ids.next(type),
     }),
@@ -482,6 +489,629 @@ describe("production execution Worker", () => {
       payload: { outcome: "confirmed_succeeded", resultRef: "payload-worker-reconciled-unit" },
     });
     expect(reconciled.filter(({ type }) => type === "work.result")).toHaveLength(1);
+  });
+
+  it("does not drop a late unknown result from a subtask after its deadline", async () => {
+    const adapters = createReferenceAdapterSet({
+      capability: {
+        descriptors: [
+          {
+            ref: "restaurant-search",
+            version: "1.0.0",
+            integrity: `sha256:${"a".repeat(64)}`,
+            lifecycle: "active",
+            permissionRefs: [],
+            isolation: "worker",
+          },
+        ],
+        events: [
+          {
+            type: "capability.result_unknown",
+            invocationId: "late-subtask-tool",
+            externalActionId: "external-late-subtask",
+            occurredAt: fixture.times.providerCompleted,
+          },
+        ],
+      },
+    });
+    const registered = [
+      { capabilityId: "restaurant-search", capabilityVersion: "1.0.0", operations: ["search"] },
+    ];
+    let now: string = fixture.times.start;
+    const delegations = new WorkerDelegationStore({
+      authorityFence: 3,
+      adapters: registered,
+      now: () => now,
+    });
+    const service = new ExecutionWorkerService({
+      handles: delegations,
+      capability: {
+        list: () => adapters.capability.list(),
+        cancel: (id, reason) => adapters.capability.cancel(id, reason),
+        async *invoke(input) {
+          now = fixture.times.deadline;
+          yield* adapters.capability.invoke(input);
+        },
+      },
+      secrets: adapters.secret,
+      clock: { now: () => now },
+      ids: adapters.ids,
+      authorityFence: () => 3,
+      authorization: adapters.authorization,
+    });
+    const observed: ExecutionWorkerEvent[] = [];
+    let adapterError: unknown;
+    const tool = {
+      invocationId: "late-subtask-tool",
+      capabilityId: "restaurant-search",
+      capabilityVersion: "1.0.0",
+      operation: "search",
+      inputRef: fixture.payloads.restaurantSearchInput,
+      capabilityHandleRef: "capability-handle-worker-unit",
+      delegatedContextRefs: [],
+    };
+    const worker = new ProductionExecutionWorker({
+      service,
+      workerInstanceId: "execution-worker-subtask-late-unit",
+      workerBootId: "worker-boot-subtask-late-unit",
+      bootTokenRef,
+      deploymentId,
+      authorityEpoch: 2,
+      fencingToken: 3,
+      maximumResourceCeiling: {
+        maxWallTimeMs: 30_000,
+        maxCpuTimeMs: 10_000,
+        maxMemoryBytes: 67_108_864,
+        maxOutputBytes: 4_096,
+        maxProgressEvents: 100,
+      },
+      adapters: registered,
+      delegations,
+      subtasks: {
+        allowedModelRefs: ["model-worker-unit"],
+        maximumCostMicros: 1000,
+        maximumDurationMs: 30_000,
+        execute: async (_request, context) => {
+          try {
+            for await (const event of context.executeCapability(tool)) observed.push(event);
+          } catch (error) {
+            adapterError = error;
+          }
+          return {
+            workerResultRef: "payload-late-subtask-result-unit",
+            actualModelRef: "model-worker-unit",
+            actualCostMicros: 0,
+            durationMs: 0,
+          };
+        },
+      },
+      now: () => now,
+      nextId: (type) => adapters.ids.next(type),
+    });
+    await worker.request(handshake());
+    await worker.request(delegation());
+    const subtask = executionV2MessageSchema.parse({
+      ...requestEnvelope("worker.subtask.execute"),
+      messageId: "late-result-unknown-subtask",
+      idempotencyKey: "late-result-unknown-subtask",
+      payload: {
+        delegationId: "delegation-unit",
+        subtaskRef: "payload-late-subtask-unit",
+        outputSchemaRef: "payload-output-schema-unit",
+        delegatedContextRefs: [],
+        capabilityHandleRefs: ["capability-handle-worker-unit"],
+        allowedModelRefs: ["model-worker-unit"],
+        selectedModelRef: "model-worker-unit",
+        maximumCostMicros: 1000,
+        maximumDurationMs: 30_000,
+        maximumProgressEvents: 10,
+        depth: 1,
+        requestedAt: fixture.times.start,
+        deadlineAt: fixture.times.deadline,
+      },
+    });
+    if (subtask.kind !== "request" || subtask.type !== "worker.subtask.execute")
+      throw new TypeError("subtask fixture is invalid");
+    await worker.request(subtask);
+    await worker.waitForIdle();
+    expect(adapterError).toBeUndefined();
+    expect(observed).toContainEqual(
+      expect.objectContaining({
+        type: "work.result",
+        payload: expect.objectContaining({
+          outcome: "result_unknown",
+          externalActionId: "external-late-subtask",
+        }),
+      }),
+    );
+    const events = await readEvents(worker);
+    const nestedUnknown = events.find(
+      (event) =>
+        event.type === "work.result" && event.payload.externalActionId === "external-late-subtask",
+    );
+    expect(nestedUnknown).toMatchObject({
+      type: "work.result",
+      correlationId: subtask.correlationId,
+      causationId: subtask.messageId,
+      scope: subtask.scope,
+      payload: {
+        requestId: `${subtask.messageId}:tool:${tool.invocationId}`,
+        outcome: "result_unknown",
+        externalActionId: "external-late-subtask",
+        sequence: 1,
+      },
+    });
+    if (!nestedUnknown || nestedUnknown.type !== "work.result")
+      throw new TypeError("nested unknown result was not published");
+    const nestedPayload = nestedUnknown.payload;
+    await expect(readEvents(worker, nestedPayload.cursor)).resolves.toContainEqual(
+      expect.objectContaining({
+        type: "worker.subtask.result",
+        payload: expect.objectContaining({ outcome: "failed" }),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "worker.subtask.result",
+        payload: expect.objectContaining({ outcome: "failed" }),
+      }),
+    );
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        type: "worker.subtask.result",
+        payload: expect.objectContaining({ outcome: "succeeded" }),
+      }),
+    );
+  });
+
+  it("does not drop a late unknown result from a cancelled subtask", async () => {
+    const adapters = createReferenceAdapterSet({
+      capability: {
+        descriptors: [
+          {
+            ref: "restaurant-search",
+            version: "1.0.0",
+            integrity: `sha256:${"a".repeat(64)}`,
+            lifecycle: "active",
+            permissionRefs: [],
+            isolation: "worker",
+          },
+        ],
+        events: [],
+      },
+    });
+    const registered = [
+      { capabilityId: "restaurant-search", capabilityVersion: "1.0.0", operations: ["search"] },
+    ];
+    const now = fixture.times.start;
+    const delegations = new WorkerDelegationStore({
+      authorityFence: 3,
+      adapters: registered,
+      now: () => now,
+    });
+    const invocationStarted = deferred();
+    const cancellationObserved = deferred();
+    const releaseInvocation = deferred();
+    const adapterFinished = deferred();
+    const service = new ExecutionWorkerService({
+      handles: delegations,
+      capability: {
+        list: () => adapters.capability.list(),
+        cancel: async () => {
+          cancellationObserved.resolve();
+        },
+        async *invoke(input) {
+          invocationStarted.resolve();
+          await releaseInvocation.promise;
+          yield {
+            type: "capability.result_unknown" as const,
+            invocationId: input.invocationId,
+            externalActionId: "external-cancelled-subtask",
+            occurredAt: fixture.times.providerCompleted,
+          };
+        },
+      },
+      secrets: adapters.secret,
+      clock: { now: () => now },
+      ids: adapters.ids,
+      authorityFence: () => 3,
+      authorization: adapters.authorization,
+    });
+    const observed: ExecutionWorkerEvent[] = [];
+    let adapterError: unknown;
+    const tool = {
+      invocationId: "cancelled-subtask-tool",
+      capabilityId: "restaurant-search",
+      capabilityVersion: "1.0.0",
+      operation: "search",
+      inputRef: fixture.payloads.restaurantSearchInput,
+      capabilityHandleRef: "capability-handle-worker-unit",
+      delegatedContextRefs: [],
+    };
+    const worker = new ProductionExecutionWorker({
+      service,
+      workerInstanceId: "execution-worker-subtask-cancelled-unit",
+      workerBootId: "worker-boot-subtask-cancelled-unit",
+      bootTokenRef,
+      deploymentId,
+      authorityEpoch: 2,
+      fencingToken: 3,
+      maximumResourceCeiling: {
+        maxWallTimeMs: 30_000,
+        maxCpuTimeMs: 10_000,
+        maxMemoryBytes: 67_108_864,
+        maxOutputBytes: 4_096,
+        maxProgressEvents: 100,
+      },
+      adapters: registered,
+      delegations,
+      subtasks: {
+        allowedModelRefs: ["model-worker-unit"],
+        maximumCostMicros: 1000,
+        maximumDurationMs: 30_000,
+        execute: async (_request, context) => {
+          try {
+            for await (const event of context.executeCapability(tool)) observed.push(event);
+          } catch (error) {
+            adapterError = error;
+          } finally {
+            adapterFinished.resolve();
+          }
+          return {
+            workerResultRef: "payload-cancelled-subtask-result-unit",
+            actualModelRef: "model-worker-unit",
+            actualCostMicros: 0,
+            durationMs: 0,
+          };
+        },
+      },
+      now: () => now,
+      nextId: (type) => adapters.ids.next(type),
+    });
+    await worker.request(handshake());
+    await worker.request(delegation());
+    const subtask = executionV2MessageSchema.parse({
+      ...requestEnvelope("worker.subtask.execute"),
+      messageId: "cancelled-result-unknown-subtask",
+      idempotencyKey: "cancelled-result-unknown-subtask",
+      payload: {
+        delegationId: "delegation-unit",
+        subtaskRef: "payload-cancelled-subtask-unit",
+        outputSchemaRef: "payload-output-schema-unit",
+        delegatedContextRefs: [],
+        capabilityHandleRefs: ["capability-handle-worker-unit"],
+        allowedModelRefs: ["model-worker-unit"],
+        selectedModelRef: "model-worker-unit",
+        maximumCostMicros: 1000,
+        maximumDurationMs: 30_000,
+        maximumProgressEvents: 10,
+        depth: 1,
+        requestedAt: fixture.times.start,
+        deadlineAt: fixture.times.deadline,
+      },
+    });
+    if (subtask.kind !== "request" || subtask.type !== "worker.subtask.execute")
+      throw new TypeError("subtask fixture is invalid");
+    await worker.request(subtask);
+    await invocationStarted.promise;
+    const cancel = executionV2MessageSchema.parse({
+      ...requestEnvelope("work.cancel"),
+      messageId: "cancel-cancelled-result-unknown-subtask",
+      idempotencyKey: "cancel-cancelled-result-unknown-subtask",
+      payload: {
+        targetRequestId: subtask.messageId,
+        reasonCode: "OWNER_CANCELLED",
+        requestedAt: fixture.times.start,
+      },
+    });
+    if (cancel.kind !== "request" || cancel.type !== "work.cancel")
+      throw new TypeError("cancel fixture is invalid");
+    await worker.request(cancel);
+    await cancellationObserved.promise;
+    releaseInvocation.resolve();
+    await adapterFinished.promise;
+    await worker.waitForIdle();
+    expect(adapterError).toBeUndefined();
+    const observedResult = observed.find(
+      (event) => event.type === "work.result" && event.payload.outcome === "result_unknown",
+    );
+    expect(observedResult).toMatchObject({
+      type: "work.result",
+      payload: { outcome: "result_unknown", externalActionId: "external-cancelled-subtask" },
+    });
+    const events = await readEvents(worker);
+    const nestedUnknown = events.find(
+      (event) =>
+        event.type === "work.result" &&
+        event.payload.externalActionId === "external-cancelled-subtask",
+    );
+    expect(nestedUnknown).toMatchObject({
+      type: "work.result",
+      correlationId: subtask.correlationId,
+      causationId: subtask.messageId,
+      scope: subtask.scope,
+      payload: {
+        requestId: `${subtask.messageId}:tool:${tool.invocationId}`,
+        outcome: "result_unknown",
+        externalActionId: "external-cancelled-subtask",
+        sequence: 1,
+      },
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "worker.subtask.result",
+        payload: expect.objectContaining({ outcome: "cancelled" }),
+      }),
+    );
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        type: "worker.subtask.result",
+        payload: expect.objectContaining({ outcome: "succeeded" }),
+      }),
+    );
+  });
+
+  it("publishes and replays independent nested capability results", async () => {
+    const adapters = createReferenceAdapterSet({
+      capability: {
+        descriptors: [
+          {
+            ref: "restaurant-search",
+            version: "1.0.0",
+            integrity: `sha256:${"a".repeat(64)}`,
+            lifecycle: "active",
+            permissionRefs: [],
+            isolation: "worker",
+          },
+        ],
+        events: [],
+      },
+    });
+    let capabilityCalls = 0;
+    const registered = [
+      { capabilityId: "restaurant-search", capabilityVersion: "1.0.0", operations: ["search"] },
+    ];
+    const delegations = new WorkerDelegationStore({
+      authorityFence: 3,
+      adapters: registered,
+      now: () => adapters.clock.now(),
+    });
+    const service = new ExecutionWorkerService({
+      handles: delegations,
+      capability: {
+        list: () => adapters.capability.list(),
+        cancel: (id, reason) => adapters.capability.cancel(id, reason),
+        async *invoke(input) {
+          capabilityCalls += 1;
+          if (input.invocationId.endsWith(":tool:normal-nested")) {
+            yield {
+              type: "capability.progress" as const,
+              invocationId: input.invocationId,
+              sequence: 1,
+              stage: "reading",
+              progressPermille: 500,
+              payloadRef: null,
+              occurredAt: fixture.times.start,
+            };
+            yield {
+              type: "capability.completed" as const,
+              invocationId: input.invocationId,
+              resultRef: "payload-normal-nested-result",
+              occurredAt: fixture.times.providerCompleted,
+            };
+            return;
+          }
+          if (input.invocationId.endsWith(":tool:unknown-one")) {
+            yield {
+              type: "capability.result_unknown" as const,
+              invocationId: input.invocationId,
+              externalActionId: "external-unknown-one",
+              occurredAt: fixture.times.providerCompleted,
+            };
+            return;
+          }
+          if (input.invocationId.endsWith(":tool:unknown-two")) {
+            yield {
+              type: "capability.result_unknown" as const,
+              invocationId: input.invocationId,
+              externalActionId: "external-unknown-two",
+              occurredAt: fixture.times.providerCompleted,
+            };
+            return;
+          }
+          throw new Error(`unexpected nested invocation ${input.invocationId}`);
+        },
+      },
+      secrets: adapters.secret,
+      clock: adapters.clock,
+      ids: adapters.ids,
+      authorityFence: () => 3,
+      authorization: adapters.authorization,
+    });
+    const tools = [
+      {
+        invocationId: "normal-nested",
+        capabilityId: "restaurant-search",
+        capabilityVersion: "1.0.0",
+        operation: "search",
+        inputRef: fixture.payloads.restaurantSearchInput,
+        capabilityHandleRef: "capability-handle-worker-normal-unit",
+        delegatedContextRefs: [],
+      },
+      {
+        invocationId: "unknown-one",
+        capabilityId: "restaurant-search",
+        capabilityVersion: "1.0.0",
+        operation: "search",
+        inputRef: fixture.payloads.restaurantSearchInput,
+        capabilityHandleRef: "capability-handle-worker-unknown-one-unit",
+        delegatedContextRefs: [],
+      },
+      {
+        invocationId: "unknown-two",
+        capabilityId: "restaurant-search",
+        capabilityVersion: "1.0.0",
+        operation: "search",
+        inputRef: fixture.payloads.restaurantSearchInput,
+        capabilityHandleRef: "capability-handle-worker-unknown-two-unit",
+        delegatedContextRefs: [],
+      },
+    ] as const;
+    const worker = new ProductionExecutionWorker({
+      service,
+      workerInstanceId: "execution-worker-nested-results-unit",
+      workerBootId: "worker-boot-nested-results-unit",
+      bootTokenRef,
+      deploymentId,
+      authorityEpoch: 2,
+      fencingToken: 3,
+      maximumResourceCeiling: {
+        maxWallTimeMs: 30_000,
+        maxCpuTimeMs: 10_000,
+        maxMemoryBytes: 67_108_864,
+        maxOutputBytes: 4_096,
+        maxProgressEvents: 100,
+      },
+      adapters: registered,
+      delegations,
+      subtasks: {
+        allowedModelRefs: ["model-worker-unit"],
+        maximumCostMicros: 1000,
+        maximumDurationMs: 30_000,
+        execute: async (_request, context) => {
+          for (const tool of tools) await collect(context.executeCapability(tool));
+          return {
+            workerResultRef: "payload-nested-results-subtask-result",
+            actualModelRef: "model-worker-unit",
+            actualCostMicros: 0,
+            durationMs: 0,
+          };
+        },
+      },
+      now: () => adapters.clock.now(),
+      nextId: (type) => adapters.ids.next(type),
+    });
+    await worker.request(handshake());
+    await worker.request(delegation("capability-handle-worker-normal-unit"));
+    await worker.request({
+      ...delegation("capability-handle-worker-unknown-one-unit"),
+      messageId: "delegate-unknown-one-unit",
+      idempotencyKey: "delegate-unknown-one-unit",
+    });
+    await worker.request({
+      ...delegation("capability-handle-worker-unknown-two-unit"),
+      messageId: "delegate-unknown-two-unit",
+      idempotencyKey: "delegate-unknown-two-unit",
+    });
+    const subtask = executionV2MessageSchema.parse({
+      ...requestEnvelope("worker.subtask.execute"),
+      messageId: "nested-results-subtask",
+      idempotencyKey: "nested-results-subtask",
+      payload: {
+        delegationId: "delegation-nested-results-unit",
+        subtaskRef: "payload-nested-results-unit",
+        outputSchemaRef: "payload-output-schema-unit",
+        delegatedContextRefs: [],
+        capabilityHandleRefs: tools.map(({ capabilityHandleRef }) => capabilityHandleRef),
+        allowedModelRefs: ["model-worker-unit"],
+        selectedModelRef: "model-worker-unit",
+        maximumCostMicros: 1000,
+        maximumDurationMs: 30_000,
+        maximumProgressEvents: 10,
+        depth: 1,
+        requestedAt: fixture.times.start,
+        deadlineAt: fixture.times.deadline,
+      },
+    });
+    if (subtask.kind !== "request" || subtask.type !== "worker.subtask.execute")
+      throw new TypeError("subtask fixture is invalid");
+    await worker.request(subtask);
+    await worker.waitForIdle();
+
+    expect(capabilityCalls).toBe(3);
+    const events = await readEvents(worker);
+    const nestedRequestPrefix = `${subtask.messageId}:tool:`;
+    const nestedResults = events.filter(
+      (event): event is Extract<ExecutionV2Event, { type: "work.result" }> =>
+        event.type === "work.result" && event.payload.requestId.startsWith(nestedRequestPrefix),
+    );
+    expect(nestedResults.map(({ payload }) => payload.requestId)).toEqual([
+      `${nestedRequestPrefix}normal-nested`,
+      `${nestedRequestPrefix}unknown-one`,
+      `${nestedRequestPrefix}unknown-two`,
+    ]);
+    expect(
+      nestedResults.map(({ correlationId, causationId, scope }) => ({
+        correlationId,
+        causationId,
+        scope,
+      })),
+    ).toEqual(
+      tools.map(() => ({
+        correlationId: subtask.correlationId,
+        causationId: subtask.messageId,
+        scope: subtask.scope,
+      })),
+    );
+    expect(nestedResults[0]).toMatchObject({
+      payload: {
+        outcome: "succeeded",
+        outputRef: "payload-normal-nested-result",
+        sequence: 2,
+      },
+    });
+    const unknownResults = nestedResults.slice(1);
+    expect(
+      unknownResults.map(({ payload }) => ({
+        requestId: payload.requestId,
+        externalActionId: payload.externalActionId,
+        sequence: payload.sequence,
+        cursor: payload.cursor,
+      })),
+    ).toEqual([
+      {
+        requestId: `${nestedRequestPrefix}unknown-one`,
+        externalActionId: "external-unknown-one",
+        sequence: 1,
+        cursor: unknownResults[0]?.payload.cursor,
+      },
+      {
+        requestId: `${nestedRequestPrefix}unknown-two`,
+        externalActionId: "external-unknown-two",
+        sequence: 1,
+        cursor: unknownResults[1]?.payload.cursor,
+      },
+    ]);
+    expect(unknownResults[0]?.payload.cursor).not.toBe(unknownResults[1]?.payload.cursor);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "worker.subtask.result",
+        payload: expect.objectContaining({ outcome: "failed" }),
+      }),
+    );
+
+    const normalProgress = events.find(
+      (event) =>
+        event.type === "work.progress" &&
+        event.payload.requestId === `${nestedRequestPrefix}normal-nested`,
+    );
+    if (!normalProgress || normalProgress.type !== "work.progress")
+      throw new TypeError("normal nested progress was not published");
+    await expect(readEvents(worker, normalProgress.payload.cursor)).resolves.toContainEqual(
+      expect.objectContaining({
+        type: "work.result",
+        payload: expect.objectContaining({
+          requestId: `${nestedRequestPrefix}normal-nested`,
+          outcome: "succeeded",
+          outputRef: "payload-normal-nested-result",
+        }),
+      }),
+    );
+
+    await worker.request(subtask);
+    await worker.waitForIdle();
+    expect(capabilityCalls).toBe(3);
+    await expect(readEvents(worker)).resolves.toHaveLength(events.length);
   });
 
   it("emits cancellation and rejects conflicting duplicate identities", async () => {

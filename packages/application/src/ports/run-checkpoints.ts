@@ -1,6 +1,7 @@
 import type { RunId } from "@himawari-agent/domain";
 import type { PayloadRef, TraceEventId } from "./common.js";
 import type { RuntimeSuccessfulOutput } from "./intelligence.js";
+import type { RunExecutionLeaseClaim } from "./run-dispatch.js";
 
 export type RunCheckpointPhase =
   | "accepted"
@@ -34,6 +35,8 @@ export interface CompareAndSetRunCheckpointInput {
   readonly runId: RunId;
   readonly expectedRevision: number | null;
   readonly checkpoint: RunCheckpoint;
+  /** Required for execution-owned checkpoint writes. */
+  readonly executionLease?: RunExecutionLeaseClaim;
 }
 
 export interface RunCheckpointStore {

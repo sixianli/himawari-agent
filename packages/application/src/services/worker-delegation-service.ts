@@ -11,7 +11,8 @@ import type {
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ExecutionTransportPort } from "../ports/coordination.js";
 
-type ExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
+export type WorkerExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
+export type WorkerDelegateRequest = Extract<ExecutionV2Request, { type: "work.delegate" }>;
 type CompleteExecutionScope = {
   readonly deploymentId: string;
   readonly authorityEpoch: number;
@@ -22,7 +23,7 @@ type CompleteExecutionScope = {
   readonly workerRunId: string;
 };
 
-function completeScope(scope: ExecuteRequest["scope"]): CompleteExecutionScope {
+function completeScope(scope: WorkerExecuteRequest["scope"]): CompleteExecutionScope {
   if (
     scope.ownerId === null ||
     scope.agentId === null ||
@@ -58,8 +59,8 @@ function receiptScope(receipt: FrozenCapabilityInvocationReceipt): CompleteExecu
 }
 
 function scopeMatches(
-  left: CompleteExecutionScope | ExecuteRequest["scope"],
-  right: CompleteExecutionScope | ExecuteRequest["scope"],
+  left: CompleteExecutionScope | WorkerExecuteRequest["scope"],
+  right: CompleteExecutionScope | WorkerExecuteRequest["scope"],
 ): boolean {
   return (
     left.deploymentId === right.deploymentId &&
@@ -72,28 +73,46 @@ function scopeMatches(
   );
 }
 
-export interface WorkerDelegationServiceOptions {
+export interface WorkerDelegationAdmissionServiceOptions {
   /** Agent-scoped atomic consume port backed by the durable authority owner. */
   readonly invocations: CapabilityInvocationReceiptPort;
   /** Trusted current Agent/Worker attempt and product lease identity. */
   readonly invocationAuthority: () => CapabilityInvocationAuthority;
-  readonly transport: ExecutionTransportPort;
   readonly now: () => string;
   readonly nextId: (scope: string) => string;
 }
 
-/**
- * Consumes durable Agent Service authority before projecting an attenuated,
- * one-use Handle into the isolated Worker process.
- */
-export class WorkerDelegationService {
-  readonly #options: WorkerDelegationServiceOptions;
+export interface WorkerDelegationProjection {
+  readonly delegate: WorkerDelegateRequest;
+  readonly execute: WorkerExecuteRequest;
+}
 
-  constructor(options: WorkerDelegationServiceOptions) {
+export type WorkerDelegationAdmissionResult =
+  | {
+      /** A new durable receipt was consumed and has not been sent to the Worker yet. */
+      readonly disposition: "consumed";
+      readonly receipt: FrozenCapabilityInvocationReceipt;
+      readonly projection: WorkerDelegationProjection;
+    }
+  | {
+      /** The durable receipt already existed; this does not prove delivery or execution. */
+      readonly disposition: "replayed";
+      readonly receipt: FrozenCapabilityInvocationReceipt;
+    };
+
+/**
+ * Performs durable capability-invocation admission without sending a Worker
+ * message. A replay only returns the existing receipt, so callers cannot
+ * accidentally turn uncertain delivery into a second executable projection.
+ */
+export class WorkerDelegationAdmissionService {
+  readonly #options: WorkerDelegationAdmissionServiceOptions;
+
+  constructor(options: WorkerDelegationAdmissionServiceOptions) {
     this.#options = options;
   }
 
-  async dispatch(request: ExecuteRequest): Promise<void> {
+  async admit(request: WorkerExecuteRequest): Promise<WorkerDelegationAdmissionResult> {
     const parsed = executionV2MessageSchema.parse(request);
     if (parsed.kind !== "request" || parsed.type !== "work.execute") {
       throw new TypeError("Worker delegation accepts work.execute requests only");
@@ -101,18 +120,32 @@ export class WorkerDelegationService {
     const scope = completeScope(parsed.scope);
     const authority = this.#options.invocationAuthority();
     const consumed = await this.#consume(parsed, scope, authority, this.#options.now());
-    if (consumed.replayed) return;
+    if (consumed.replayed) {
+      return {
+        disposition: "replayed",
+        receipt: consumed.receipt,
+      };
+    }
+    return {
+      disposition: "consumed",
+      receipt: consumed.receipt,
+      projection: this.#project(parsed, consumed.receipt),
+    };
+  }
 
-    const receipt = consumed.receipt;
+  #project(
+    request: WorkerExecuteRequest,
+    receipt: FrozenCapabilityInvocationReceipt,
+  ): WorkerDelegationProjection {
     const delegate = executionV2MessageSchema.parse({
       schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
       kind: "request",
       type: "work.delegate",
       messageId: this.#options.nextId("worker-delegation"),
-      correlationId: parsed.correlationId,
-      causationId: parsed.messageId,
+      correlationId: request.correlationId,
+      causationId: request.messageId,
       dataClassification: receipt.dataClassification,
-      risk: parsed.risk,
+      risk: request.risk,
       authorizationRef: receipt.authorizationRef,
       scope: receiptScope(receipt),
       idempotencyKey: `${receipt.idempotencyKey}:delegate`,
@@ -151,30 +184,15 @@ export class WorkerDelegationService {
     if (delegate.kind !== "request" || delegate.type !== "work.delegate") {
       throw new TypeError("Worker delegation message is invalid");
     }
-    const accepted = await this.#options.transport.request(delegate);
-    if (
-      accepted?.kind !== "response" ||
-      accepted?.type !== "work.delegate.accepted" ||
-      accepted.payload.handleRef !== receipt.handleRef ||
-      accepted.payload.workerBootId !== receipt.authority.workerBootId ||
-      accepted.correlationId !== delegate.correlationId ||
-      accepted.causationId !== delegate.messageId ||
-      !scopeMatches(accepted.scope, receiptScope(receipt))
-    ) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.PROVIDER_FAILURE,
-        "Worker did not accept the attenuated Capability Handle",
-      );
-    }
     const execute = executionV2MessageSchema.parse({
       schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
       kind: "request",
       type: "work.execute",
       messageId: receipt.invocationId,
-      correlationId: parsed.correlationId,
-      causationId: parsed.causationId,
+      correlationId: request.correlationId,
+      causationId: request.causationId,
       dataClassification: receipt.dataClassification,
-      risk: parsed.risk,
+      risk: request.risk,
       authorizationRef: receipt.authorizationRef,
       scope: receiptScope(receipt),
       idempotencyKey: receipt.idempotencyKey,
@@ -194,17 +212,11 @@ export class WorkerDelegationService {
     if (execute.kind !== "request" || execute.type !== "work.execute") {
       throw new TypeError("Worker execution message is invalid");
     }
-    const response = await this.#options.transport.request(execute);
-    if (response !== null) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.PROVIDER_FAILURE,
-        "Worker returned an unexpected synchronous work response",
-      );
-    }
+    return { delegate, execute };
   }
 
   async #consume(
-    request: ExecuteRequest,
+    request: WorkerExecuteRequest,
     scope: CompleteExecutionScope,
     authority: CapabilityInvocationAuthority,
     consumedAt: string,
@@ -229,5 +241,52 @@ export class WorkerDelegationService {
       authority,
       consumedAt,
     });
+  }
+}
+
+export interface WorkerDelegationServiceOptions extends WorkerDelegationAdmissionServiceOptions {
+  readonly transport: ExecutionTransportPort;
+}
+
+/**
+ * Consumes durable Agent Service authority before projecting an attenuated,
+ * one-use Handle into the isolated Worker process.
+ */
+export class WorkerDelegationService {
+  readonly #options: WorkerDelegationServiceOptions;
+  readonly #admission: WorkerDelegationAdmissionService;
+
+  constructor(options: WorkerDelegationServiceOptions) {
+    this.#options = options;
+    this.#admission = new WorkerDelegationAdmissionService(options);
+  }
+
+  async dispatch(request: WorkerExecuteRequest): Promise<void> {
+    const admission = await this.#admission.admit(request);
+    if (admission.disposition === "replayed") return;
+
+    const { receipt, projection } = admission;
+    const accepted = await this.#options.transport.request(projection.delegate);
+    if (
+      accepted?.kind !== "response" ||
+      accepted?.type !== "work.delegate.accepted" ||
+      accepted.payload.handleRef !== receipt.handleRef ||
+      accepted.payload.workerBootId !== receipt.authority.workerBootId ||
+      accepted.correlationId !== projection.delegate.correlationId ||
+      accepted.causationId !== projection.delegate.messageId ||
+      !scopeMatches(accepted.scope, receiptScope(receipt))
+    ) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.PROVIDER_FAILURE,
+        "Worker did not accept the attenuated Capability Handle",
+      );
+    }
+    const response = await this.#options.transport.request(projection.execute);
+    if (response !== null) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.PROVIDER_FAILURE,
+        "Worker returned an unexpected synchronous work response",
+      );
+    }
   }
 }
