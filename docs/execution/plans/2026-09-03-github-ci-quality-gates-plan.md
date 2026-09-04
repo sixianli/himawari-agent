@@ -148,7 +148,7 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 
 - [x] 让现有 Playwright 脚本和 fixture server 消费构建产物路径，报告目录与端口显式可控，启动失败和清理失败不吞掉错误。
 - [x] 保留现有治理交互，补齐实际缺失的 `zh-CN`、`en`、`ja`、键盘、可见焦点、JS 异常和自动无障碍断言。
-- [ ] 在独立环境执行 Chromium、Firefox、WebKit，保存引擎版本、场景结果及脱敏失败诊断。
+- [x] 在独立环境执行 Chromium、Firefox、WebKit，保存引擎版本、场景结果及脱敏失败诊断。托管 run `33816516553` 三个独立 job 各 58/58；本机 Firefox 的既有启动失败另行保留。
 - [x] 注入破坏按钮、页面异常、缺翻译与无障碍阻断样例，确认对应检查失败，fixture-only 和设备模拟身份保持明确。
 - [x] 实跑前端预算检查，确认其现有限制未因测试接入被放宽。记录真实浏览器耗时，不把首次结果当性能承诺。
 
@@ -156,7 +156,7 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 
 - [x] 精确添加匹配 Vitest 的 coverage provider，固定 Spec 第 6 节的 include/exclude 和 unit/contracts/tooling 采集范围，覆盖自有 CI 执行代码。
 - [x] 输出 LCOV/JSON 和 source-map 还原位置；未导入生产文件仍在分母。跨进程、浏览器和上游 Pi 不冒充已合并覆盖。
-- [x] 实测初始各生产 workspace 与自有 CI 工具的四类指标并记录基线。按 Spec 实现新增行 90%、变更函数分支 85% 和整体不退化规则；Mac 初始化候选已测量，Ubuntu 接受前复核属于 Task 13。
+- [x] 实测初始各生产 workspace 与自有 CI 工具的四类指标并记录基线。按 Spec 实现新增行 90%、变更函数分支 85% 和整体不退化规则；原 Mac 候选已由 Task 13 的冻结 Ubuntu 测量替换，合入与最终源码验证继续由 Task 13 负责。
 - [x] 基线从目标分支固定版本读取，给出精确的无新增行/无分支原因；同 PR 降低基线不得将自身失败转绿。
 - [x] 实现 PR、push 和手动检查的 diff 基线解析；before/base 缺失不得退化为空 diff，并验证首次基线初始化路径。
 - [x] 用新增未导入文件、删测、缺报告、错误 source map、伪造空分母和更换工具版本验证拒绝或不可比结果。保留可比政策迁移的正向样例。
@@ -208,7 +208,7 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 
 - [x] 展示拟 push 的分支/提交、样例 PR、预期 Actions 资源和负向操作，取得对应授权。Owner 已明确回复“授权”；范围为正常草稿 PR、隔离负例 PR 和标准 Actions 验证，不含合并、周期启用、审批设置、Rulesets 或远端清理。
 - [ ] 在真实 Actions 上运行完整绿色对照，确认 Linux/macOS、最低 Node、三个浏览器和所有报告均属于本次 run/attempt。
-- [ ] 在首次接受基线前，用 Ubuntu coverage job 对冻结源码的实际 snapshot、tests、JSON 和 LCOV 显式重新测量并提交初始基线，再复核同一报告。当前 Mac 测量仅是本地初始化候选；初始化的绿色检查只证明增量达标，不证明所提议的 Mac 数字适用于 Ubuntu。不得在基线合入后选择旧 base 重新进入初始化以绕过不退化规则。
+- [x] 在首次接受基线前，用 Ubuntu coverage job 对冻结源码的实际 snapshot、tests、JSON 和 LCOV 显式重新测量并提交初始基线，再复核同一报告。run `33818215500` 的候选经独立重算后替换 Mac 数值，随本次修改提交；最终源码与合入仍分别验收。不得在基线合入后选择旧 base 重新进入初始化以绕过不退化规则。
 - [ ] 在授权样例 PR 验证红色测试、上游失败、矩阵缺失、取消运行及 PR 更新导致旧 SHA 失效，不合并故意失败代码。
 - [ ] 在当前审批设置下验证 fork 等待批准、Owner 审阅当前代码后批准运行、完整矩阵执行与只读 token；Dependabot 单独验证。若真实入口当前不可用，记录未验证，不能以同仓库普通 PR 冒充，Task 15 再验收目标审批设置。
 - [ ] 检查真实公开 run 的日志、摘要、截图/trace 和可下载 artifact，确认只含允许输出且无合成敏感哨兵原文，不用真实 Secret 做泄漏样例。
@@ -294,6 +294,24 @@ python3 -E -s -B tools/document-governance/scripts/validate_docs.py . --strict
 
 候选接线及输出保护的完整 tooling 验证为 508/508；随后补充编码重复字段保护，最终相关 runner/publisher/gate 55/55 通过。两轮证明范围分别保留，最终工具数量由下一轮完整报告重新计算。原始 GitHub ZIP、API 元数据、结果与诊断位于 `.ci-output/github-task13-20260903/run-33816516553/`，下载时逐一核对 GitHub 摘要与报告文件摘要。
 
+第二轮的 16 个 artifact 已全部下载并核对原始 ZIP 摘要，107 份成员报告的文件大小和 SHA256 均相符；本地重放汇总与原始失败结论完全一致，实收 12/12、无缺项。316 份 JSON、日志、JUnit、LCOV 与 trace ZIP 通过公开输出检查；三个 trace 均没有截图或视频帧，因此没有可执行的截图视觉复核。7 份归档绑定对应两种实际内容摘要，两者均通过归档公开检查，已核验的合成 fixture 例外仍待 Owner 合入审阅。
+
+第二轮 13 份依赖安装资源记录完整，12 份检查记录中 10 份完整，两个 build 各有 `workspace:1`。旧实现没有保留 `du` 的 stderr，无法从退出码确定根因；历史失败继续标为 `incomplete`。磁盘峰值是观测样本下界，不是内存峰值；标准 runner 的 CPU 型号也不完全相同，不能据此声明性能无回归。
+
+第三轮 [run 33818215500](https://github.com/sixianli/himawari-agent/actions/runs/33818215500) 的 head 为 `b1baf8e43f7d7dc138acc6ff488ad2c4a414ea40`，attempt 1，实际 merge SHA 为 `c9723c9054f1552b3c2356f26e86ddc9efca61ad`。Ubuntu coverage 通过 1033/1033，生成 15 组初始化候选，新增行 2905/3076（94.440832%）、变更函数分支 1657/1830（90.546448%）。候选 artifact `9917438868` 的 ZIP SHA256 为 `b4045031c165d5e1cfbd0c58e51142c94ef5450ccc6fc240c0f1cb65d032fd2c`；独立核验全部 ZIP 成员、236 份生产源、91 项 snapshot 输入及原始 JSON/LCOV/tests 后，本地纯重算的完整结果与 Ubuntu 原报告一致。
+
+该候选已显式替换 `ci/coverage-policy.json` 中的 Mac 数值，只有格式化空白变化，策略、阈值与原候选语义保持一致。来源 SHA 仍是实际测量的 `c9723c9`，不能改写成后续提交；本次显式提交初始候选，不表示 Owner 已批准合入。审计位于 `.ci-output/github-task13-20260903/early-33818215500/independent-audit/`；资源诊断等后续源码仍须重新验证。
+
+第三轮最终为 `failure`：其余 11 个成员检查通过，Linux/macOS/最低 Node 五项目各 916/916，三浏览器各 58/58。安全检查的 machine-secret、Gitleaks、Semgrep 通过；npm advisory 请求 60 秒后报 `ADVISORY_NETWORK_UNAVAILABLE`，检查明确为 `infrastructure_failed`。汇总实收 12/12、无缺项，并因安全检查失败而失败。保留原始网络失败，不放宽安全门禁；下一次完整运行另行记录。
+
+第三轮 16 个 artifact 原始 ZIP 和 110 份报告摘要均已核验；321 份非归档文件通过公开内容检查，7 份归档绑定对应的两种平台内容也通过独立扫描，汇总本地重放与原始失败完全一致。检查资源记录 11/12 完整，只有 macOS build 保留 `workspace:1`；13 份安装资源记录均完整。三个 trace 仍无截图或视频内容，不宣称视觉验收。证据位于 `.ci-output/github-task13-20260903/run-33818215500/` 和 `public-audit-33818215500/`。
+
+资源诊断修订后，在本机真实 build 复现一次目录消失：采样于 23:50:02.186 UTC 开始，构建报告于 23:50:02.558 写成，8.534 秒后 `du` 报本次 `build/work/payload` 内目录不存在；随后最终采样成功。本次失败可定位到构建工作目录清理与遍历重叠，不能追改历史未保留 stderr 的失败原因。原始 187.229 秒构建及不完整资源记录保留在 `.ci-output/resource-diagnostic-20260904/`；该工作树含本机重复依赖文件，仅用于诊断，不是干净交付或可比性能基线。
+
+修复通过同一资源观察器协调清理：先暂停新的遍历并等待当前采样，构建清理自己的工作目录后恢复计时。暂停和失败均有有界记录，清理错误与原构建错误分别保留。6 文件、171 项定向测试通过，无依赖冷导入与实际采样通过；真实本机构建 188.027 秒通过，三个资源范围均 6/6 样本、零失败，清理暂停 10.414 秒且工作目录已删除。该结果只证明本机修复，托管资源完整性继续等待新 run。
+
+最终检查又将构建与清理的错误汇总改为明确顺序，避免 `finally` 中的显式抛出覆盖控制流；合成敏感反例的输入值保持不变，改为运行时构造。此后的项目检查与完整 tooling 524/524 通过，已有 188.027 秒构建不冒充这些最后修改的完整运行。资源修复单独提交为 `11a8092`。安装 Runbook 已重新核对语义和冷安装依赖闭包并 seal，严格文档校验 0 warning；所有原始失败和修复后记录均保留。
+
 ### 干净提交验证
 
 实现提交为 `f2ce494fa8d7ee1e7f67bbe4093befabe4f2cbcb`。从本地提交建立 `/tmp/himawari-ci-clean-f2ce494`，无缓存锁文件安装、SQLite 探针和三个专属 Playwright 引擎安装均通过；测试没有修改受跟踪文件。完整 `ci:local` 比较基线固定为 `3f865d2860301d86f33978e6534cfbba02c37a89`。
@@ -313,7 +331,7 @@ python3 -E -s -B tools/document-governance/scripts/validate_docs.py . --strict
 
 覆盖率解析修复单独提交为 `43d3969fd851cf7c03d09b926f66babec6571a52`：只将拒绝条件改为 Git 独立标记行，保留真正二进制差异的拒绝。22/22 回归及项目检查通过；修复后的完整采集使用新的 snapshot，不复用首轮报告。构建、主测试和浏览器证据仍绑定上述 `f2ce494`，不冒充新提交的整次运行。
 
-干净 `43d3969` 的静态检查和新覆盖率采集均通过：86 文件、997/997（unit 365、contracts 154、tooling 478）；236 个源码文件、15 组基线，新增行 2879/3052（94.331585%）、变更函数分支 1628/1802（90.344062%）。使用该轮原始 snapshot/tests/JSON/LCOV 显式测量后再次检查通过；`ci/coverage-policy.json` 的来源 SHA 保持 `43d3969`，没有改写为后续基线与文档提交。该基线是 Mac 初始化候选，首次接受前的 Ubuntu 复核仍待 Task 13。
+干净 `43d3969` 的静态检查和新覆盖率采集均通过：86 文件、997/997（unit 365、contracts 154、tooling 478）；236 个源码文件、15 组基线，新增行 2879/3052（94.331585%）、变更函数分支 1628/1802（90.344062%）。使用该轮原始 snapshot/tests/JSON/LCOV 显式测量后再次检查通过；当时 Mac 候选的来源 SHA 保持 `43d3969`，没有改写为后续基线与文档提交。该历史候选现已由上文 Task 13 的 Ubuntu 测量替换。
 
 修复后的报告位于 `.ci-output/final-delivery/publication-43d3969/`，原始测量与输入摘要位于 `measurement-43d3969/`。本地负例索引为 `.ci-output/final-negative-inventory-clean.json`，逐项区分本次断言、实施中历史故障注入及尚未执行的 GitHub 验收。构建输入、测试源码和事实文档的不同验证边界均保留；没有合并成伪造的完整成功 run。
 
@@ -344,26 +362,26 @@ python3 -E -s -B tools/document-governance/scripts/validate_docs.py . --strict
 | 文档治理 | 安装 Runbook 已按工具安装、归档与真实临时服务测试校对，并按原治理脚本重新 seal；严格校验 0 warning。该静态 seal 不表示已对真实主机执行 Live-State Preflight 或启停 | `.ci-output/baseline/docs-final-source.log`、`docs/runbooks/install-start-stop-runbook.md` |
 | GitHub 状态 | 只读证据显示公开仓库、main 无保护；没有新建分支、push、PR、Actions run、schedule 或规则修改 | `.ci-output/baseline/branch-protection.json` |
 
-原始磁盘记录为时点样本，不能追记为峰值。最终冷/热安装、规模检查和干净 checkout 已实际执行，结果见上节；两项资源采样仍不完整，Firefox 仍未通过。所有未关闭的托管验证、周期任务和强制规则继续由 Tasks 13–15 负责，S9 状态保持不变。
+原始磁盘记录为时点样本，不能追记为峰值。上述本地冷/热安装、规模检查和干净 checkout 已实际执行；本地资源采样错误与 Firefox 启动失败仍保留，后续托管浏览器通过另见上文。所有未关闭的托管验证、周期任务和强制规则继续由 Tasks 13–15 负责，S9 状态保持不变。
 
 ## 验收映射
 
 | Acceptance ID | 负责任务 | 必需证据 | 当前状态 |
 | --- | --- | --- | --- |
-| CI-A01 | Tasks 3、9、10 | 政策/schema、DAG/矩阵/测试归属正反测试 | 本地政策与正反测试通过；最新 coverage 含 478 个 tooling 用例 |
-| CI-A02 | Tasks 1、2、4、13 | 干净 runner、原生读写、工具与 Pi 身份 | Mac 无缓存安装通过；托管两平台与 Node floor 待 Task 13 |
-| CI-A03 | Tasks 3、5、12、13 | 五个主 project 和 N02/N03 | 干净 f2ce494 五项目 916/916、零跳过；托管矩阵待 Task 13 |
-| CI-A04 | Tasks 4、5、12、13 | 同一归档安装、平台清单和 N06 | f2ce494 同一 Mac 归档构建、安装、消费摘要及负例通过；Linux 待 Task 13 |
-| CI-A05 | Tasks 6、12、13 | 三引擎报告、三语/键盘/自动无障碍和 N10 | f2ce494 Chromium/WebKit 各 58/58；Firefox 新安装仍启动失败，完整浏览器门禁未通过 |
+| CI-A01 | Tasks 3、9、10 | 政策/schema、DAG/矩阵/测试归属正反测试 | 本地与第三轮托管 policy 通过；最终源码仍须重新执行 |
+| CI-A02 | Tasks 1、2、4、13 | 干净 runner、原生读写、工具与 Pi 身份 | 第三轮 Linux/macOS 及最低 Node 的固定安装、SQLite 探针通过 |
+| CI-A03 | Tasks 3、5、12、13 | 五个主 project 和 N02/N03 | 第三轮 Linux/macOS/最低 Node 各 916/916、零跳过；故意红色测试 PR 待执行 |
+| CI-A04 | Tasks 4、5、12、13 | 同一归档安装、平台清单和 N06 | 两个平台构建与消费检查均已托管通过；第二轮全部归档下载摘要与公开检查通过 |
+| CI-A05 | Tasks 6、12、13 | 三引擎报告、三语/键盘/自动无障碍和 N10 | 第二、三轮托管三引擎各 58/58；本机 Firefox 旧失败保留，不冒充品牌或真机资格 |
 | CI-A06 | Tasks 2、3、10、12 | 现有 checks、固定治理 validator 和 N01 | 干净 f2ce494 与修复后的 43d3969 静态检查均通过；N01 的 12 次真实正反工具执行有效 |
-| CI-A07 | Tasks 7、12 | 可比基线、增量报告和 N09 | 43d3969 新采集 997/997，增量 94.33%/90.34%；15 组 Mac 基线候选，Ubuntu 接受前重测待 Task 13 |
-| CI-A08 | Tasks 8、12、13 | 三类安全扫描、例外与 N07/N08 | f2ce494 四项安全扫描、精确例外负例及九组公开输出准备通过；例外仍待 Owner 合入审阅，远端未验证 |
-| CI-A09 | Tasks 9、10、12、13 | needs+成员报告的严格判定和 N03–N05 | 纯汇总与失败传播已实现；真实 run 待 Task 13 |
-| CI-A10 | Tasks 8、10、13、15 | 实际事件/SHA/权限、公开输出检查与 N11 | 最小权限与输出发布控制已实现；真实公开 run/fork 待验证 |
+| CI-A07 | Tasks 7、12 | 可比基线、增量报告和 N09 | 第三轮 Ubuntu 1033/1033，增量 94.440832%/90.546448%；冻结源码候选与原报告独立重算一致，最终源码仍须验证 |
+| CI-A08 | Tasks 8、12、13 | 三类安全扫描、例外与 N07/N08 | 第二轮四项安全检查通过；第三轮 advisory 网络超时按失败处理；精确例外仍待 Owner 合入审阅 |
+| CI-A09 | Tasks 9、10、12、13 | needs+成员报告的严格判定和 N03–N05 | 三次真实 run 正确保留成员失败；第三轮实收 12/12 并拒绝安全失败，正常全绿及隔离负例待执行 |
+| CI-A10 | Tasks 8、10、13、15 | 实际事件/SHA/权限、公开输出检查与 N11 | 同仓库草稿 PR 的只读 token 与第二轮公开材料已验证；fork/Dependabot 无适用入口，仍未验证 |
 | CI-A11 | Tasks 13、15 | 公开仓库管理权限、规则回读与 N12 | enforcement_not_configured；无 Pro 升级前提 |
 | CI-A12 | Tasks 11、14 | 周期 run、独立输出和 S9 交接格式验证 | 手动质量任务和导出器已实现；schedule 未启用，真实交接未验收 |
 | CI-A13 | Tasks 12、13、15 | N01–N12 全部正反对照及实际门禁拒绝 | 本地负例索引逐断言复核；真实取消、fork/Dependabot 与 N12 的拒绝合并仍未执行 |
-| CI-A14 | Tasks 1、12、16 | 资源基线、复现入口、文档与完整交付记录 | 本地提交、冷/热安装与资源报告、README/Architecture/Plan 已同步；两项磁盘采样 incomplete，Firefox 与远端事项保留 |
+| CI-A14 | Tasks 1、12、16 | 资源基线、复现入口、文档与完整交付记录 | 本地冷/热安装与托管资源报告已保存；build 采样竞态已定位并完成本地修复复核，托管最终观测待完成 |
 
 ## 关闭检查清单
 
