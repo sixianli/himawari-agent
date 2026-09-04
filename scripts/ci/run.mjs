@@ -80,6 +80,7 @@ export async function runCheck({
     throw new Error("CI_INITIAL_BASELINE_CANDIDATE_OPTION_INVALID");
   const directory = outputPath(output, root);
   const source = resolvePolicySource({ root, base: context.baseSha });
+  if (!source.policy.events.includes(context.event)) throw new Error("CI_EVENT_UNSUPPORTED");
   const { check, member } = selectCheck(source.policy, checkId, matrixKey);
   if (existsSync(directory)) throw new Error("CI_OUTPUT_ALREADY_EXISTS");
   if (artifact && (!existsSync(artifact) || !statSync(artifact).isFile()))

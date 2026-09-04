@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createContext, outputPath, verifyContext } from "../../scripts/ci/context.mjs";
+import { fileSha256, readJson, validateRecord } from "../../scripts/ci/contracts.mjs";
 
 const roots = [];
 const tempRoot = () => {
@@ -143,5 +144,116 @@ describe("CI revision identity", () => {
     payload.pull_request.head.sha = base;
     writeFileSync(env.GITHUB_EVENT_PATH, JSON.stringify(payload));
     expect(() => createContext({ root, env })).toThrow("PR_MERGE_IDENTITY_MISMATCH");
+  });
+});
+
+function scheduledFixture({ enabled = true, accepted = true } = {}) {
+  const fixtureValue = fixture();
+  const { root, git } = fixtureValue;
+  const policy = readJson("ci/quality-policy.json");
+  policy.schedule.enabled = enabled;
+  writeFileSync(path.join(root, "ci/quality-policy.json"), JSON.stringify(policy));
+  if (accepted) {
+    copyFileSync("ci/coverage-policy.json", path.join(root, "ci/coverage-policy.json"));
+    git(["add", "ci"]);
+  } else {
+    git(["add", "ci/quality-policy.json"]);
+  }
+  git(["commit", "-m", "fixture accepted schedule"]);
+  const sha = git(["rev-parse", "HEAD"]);
+  const env = {
+    ...hosted(root, sha, "schedule", { schedule: policy.schedule.cron }),
+    GITHUB_REF: "refs/heads/main",
+  };
+  return { ...fixtureValue, sha, env };
+}
+
+describe("scheduled quality identity", () => {
+  it("pins policy and base to the actual default-branch commit and re-verifies that identity", () => {
+    const { root, sha, env } = scheduledFixture();
+    const context = createContext({ root, env });
+    expect(context).toMatchObject({
+      event: "schedule",
+      testedSha: sha,
+      headSha: sha,
+      baseSha: sha,
+      initialization: false,
+      policySha256: fileSha256(path.join(root, "ci/policy.json")),
+    });
+    expect(createContext({ root, env, base: sha })).toEqual(context);
+    expect(verifyContext(context, { root, env })).toEqual(context);
+    expect(validateRecord("Context", context)).toBe(context);
+    expect(() => verifyContext({ ...context, event: "push" }, { root, env })).toThrow("event");
+  });
+  it.each([
+    [
+      "non-default ref",
+      (value) => {
+        value.env.GITHUB_REF = "refs/heads/feature";
+      },
+      "DEFAULT_BRANCH",
+    ],
+    [
+      "absent ref",
+      (value) => {
+        delete value.env.GITHUB_REF;
+      },
+      "DEFAULT_BRANCH",
+    ],
+    [
+      "substituted checkout",
+      (value) => {
+        value.env.GITHUB_SHA = value.base;
+      },
+      "CHECKOUT_SHA",
+    ],
+    [
+      "other cron",
+      (value) => {
+        writeFileSync(value.env.GITHUB_EVENT_PATH, '{"schedule":"0 * * * *"}');
+      },
+      "SCHEDULE_MISMATCH",
+    ],
+    [
+      "missing cron",
+      (value) => {
+        writeFileSync(value.env.GITHUB_EVENT_PATH, "{}");
+      },
+      "SCHEDULE_MISMATCH",
+    ],
+    [
+      "working-tree policy",
+      (value) => {
+        writeFileSync(path.join(value.root, "ci/quality-policy.json"), "{}\n");
+      },
+      "POLICY_CHECKOUT_MISMATCH",
+    ],
+  ])("rejects %s", (_label, mutate, message) => {
+    const value = scheduledFixture();
+    mutate(value);
+    expect(() => createContext(value)).toThrow(message);
+  });
+  it("rejects another, empty or unresolvable explicit base instead of silently selecting a diff", () => {
+    const { root, env, base } = scheduledFixture();
+    for (const value of [base, "", "main", "a".repeat(40)])
+      expect(() => createContext({ root, env, base: value })).toThrow("SCHEDULE_BASE_MISMATCH");
+  });
+  it("cannot enable a disabled committed schedule by changing only the working tree", () => {
+    const { root, env } = scheduledFixture({ enabled: false });
+    expect(() => createContext({ root, env })).toThrow("SCHEDULE_DISABLED");
+    const policy = readJson(path.join(root, "ci/quality-policy.json"));
+    policy.schedule.enabled = true;
+    writeFileSync(path.join(root, "ci/quality-policy.json"), JSON.stringify(policy));
+    expect(() => createContext({ root, env })).toThrow("SCHEDULE_DISABLED");
+  });
+  it("requires already accepted CI and coverage policies, and a committed quality policy", () => {
+    const { root, env } = scheduledFixture({ accepted: false });
+    expect(() => createContext({ root, env })).toThrow("ACCEPTED_POLICY_REQUIRED");
+    const other = fixture();
+    const missing = {
+      ...hosted(other.root, other.base, "schedule", { schedule: "23 3 * * *" }),
+      GITHUB_REF: "refs/heads/main",
+    };
+    expect(() => createContext({ root: other.root, env: missing })).toThrow();
   });
 });

@@ -13,7 +13,7 @@ import {
   repositoryRoot,
   validateRecord,
 } from "./contracts.mjs";
-import { validateQualityPolicy } from "./quality.mjs";
+import { validateQualityPolicy } from "./quality-policy.mjs";
 
 export function validateRunMetadata(metadata, context, defaultBranch) {
   if (

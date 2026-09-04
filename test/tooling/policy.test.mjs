@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { stringify } from "yaml";
+import { parse, stringify } from "yaml";
 import {
   inspectTestSource,
+  main as policyMain,
   resolvePolicySource,
   validatePolicy,
   validateTestInventory,
@@ -31,6 +32,32 @@ const lock = { actions: [checkout] };
 const fixtures = [];
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) rmSync(fixture, { recursive: true, force: true });
+});
+
+it("policy入口在测试发现前拒绝质量工作流漏项", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "himawari-quality-policy-entry-"));
+  fixtures.push(root);
+  const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "pipe" });
+  git("init", "-q");
+  git("config", "user.name", "Fixture");
+  git("config", "user.email", "fixture@example.invalid");
+  git("commit", "--allow-empty", "-qm", "quality policy fixture");
+  for (const filename of [
+    "ci/policy.json",
+    "ci/toolchain-lock.json",
+    "ci/quality-policy.json",
+    "package.json",
+    ".github/workflows/ci.yml",
+  ]) {
+    mkdirSync(path.dirname(path.join(root, filename)), { recursive: true });
+    copyFileSync(path.join(repositoryRoot, filename), path.join(root, filename));
+  }
+  const document = parse(
+    readFileSync(path.join(repositoryRoot, ".github/workflows/quality.yml"), "utf8"),
+  );
+  delete document.jobs.dependencies;
+  writeFileSync(path.join(root, ".github/workflows/quality.yml"), stringify(document));
+  await expect(policyMain(["--root", root])).rejects.toThrow("CI_QUALITY_WORKFLOW_MISMATCH:jobs");
 });
 
 function workflow() {

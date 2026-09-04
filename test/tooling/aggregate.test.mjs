@@ -114,6 +114,13 @@ const selected = (input, id = "test", key = "linux-x64") =>
   input.reports.find((entry) => entry.result.checkId === id && entry.result.matrixKey === key);
 
 describe("complete-attempt gate", () => {
+  it("rejects a scheduled quality context even when all required results claim success", () => {
+    expect(() =>
+      run((input) => {
+        input.context.event = "schedule";
+      }),
+    ).toThrow("CI_EVENT_UNSUPPORTED");
+  });
   it("accepts the complete positive control and emits a closed GateSummary", () => {
     const result = aggregate(positive());
     expect(result.status).toBe("passed");

@@ -14,6 +14,7 @@ import {
   sha256,
   validateRecord,
 } from "./contracts.mjs";
+import { validateQualityWorkflow } from "./quality-policy.mjs";
 
 const sorted = (values) => [...values].sort();
 const sameSet = (left, right) => JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
@@ -656,6 +657,11 @@ export async function main(argv = process.argv.slice(2)) {
   validateWorkflow(proposed, readFileSync(workflow, "utf8"), lock);
   // The accepted contract also has to hold: proposed changes cannot excuse their own failures.
   validateWorkflow(source.policy, readFileSync(workflow, "utf8"), lock);
+  validateQualityWorkflow(
+    readJson(path.join(root, "ci/quality-policy.json")),
+    readFileSync(path.join(root, ".github/workflows/quality.yml"), "utf8"),
+    lock,
+  );
   const vitest = await import(pathToFileURL(path.join(root, "vitest.workspace.ts")).href);
   validateVitestProjects(proposed, vitest.default);
   validateVitestProjects(source.policy, vitest.default);

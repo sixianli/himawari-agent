@@ -20,7 +20,7 @@ defaults:
   run:
     shell: bash
 env:
-  CI_BASE: ${{ inputs.base_sha }}
+  CI_BASE: ${{ github.event_name == 'schedule' && github.sha || inputs.base_sha }}
   PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
 jobs:
   scale:
