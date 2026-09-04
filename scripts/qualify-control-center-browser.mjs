@@ -8,6 +8,7 @@ import { chromium, devices, firefox, webkit } from "@playwright/test";
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 import { parseArguments } from "./ci/contracts.mjs";
+import { createBrowserObservation } from "./ci/browser-observation.mjs";
 import { redactText } from "./ci/security-redaction.mjs";
 
 const profiles = {
@@ -71,8 +72,12 @@ export async function qualifyBrowser({
   const requestErrors = [];
   const browserErrors = [];
   const pageErrorDetails = [];
+  const observation = createBrowserObservation({
+    redact: (text) => redactText(text, { sentinels }),
+  });
   let phase = "initialization";
   function observePageErrors(page) {
+    observation.watchPage(page);
     page.on("pageerror", (error) => {
       browserErrors.push(error.message);
       pageErrorDetails.push({
@@ -938,6 +943,16 @@ export async function qualifyBrowser({
     }
   } finally {
     const cleanupErrors = [];
+    if (reportDirectory) {
+      try {
+        await writeFile(
+          path.join(reportDirectory, "browser-observation.json"),
+          `${JSON.stringify({ ...observation.snapshot(), profile: profileName, browserVersion: browser?.version() ?? null, platform: `${process.platform}-${process.arch}` }, null, 2)}\n`,
+        );
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
     if (reportDirectory && tracedContext) {
       try {
         await tracedContext.tracing.stop({ path: path.join(reportDirectory, "trace.zip") });

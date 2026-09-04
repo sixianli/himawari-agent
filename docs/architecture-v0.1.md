@@ -330,7 +330,7 @@ Task 20 的真实模型验证由两个显式 opt-in 集成测试组成。`HIMAWA
 
 仓库以 `ci/policy.json` 为必需检查集合的唯一声明，`check-policy.mjs` 核对固定 DAG、字面矩阵、Vitest 配置、所有测试文件归属与工具身份。主矩阵采用 Node `22.22.3`，最低 Node 为 `22.19.0`，npm `11.8.0`，Python `3.12.10`。固定工具校验下载摘要，依赖先禁用 lifecycle scripts，再执行审核过的 SQLite 源码构建与内存读写探针；Pi 保持 published `0.84.2`，不读取相邻源码或个人 Skill。[SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md]
 
-`build.mjs` 生成当前平台独立 Node runtime、前端资源和归档。清单绑定来源、构建输入、OS/arch/ABI、文件模式和摘要、外部依赖闭包及 migration；安装、五项目测试和浏览器重新核验这份归档。安装测试从临时 prefix 和非源码 cwd 运行，取消内部构建和开发依赖补漏。浏览器仍使用合成 Gateway fixture；三语、键盘、可见焦点与自动无障碍检查不等同于最终 Gateway 组合、Safari 品牌或真实移动设备资格。
+`build.mjs` 生成当前平台独立 Node runtime、前端资源和归档。清单绑定来源、构建输入、OS/arch/ABI、文件模式和摘要、外部依赖闭包及 migration；安装、五项目测试和浏览器重新核验这份归档。安装测试从临时 prefix 和非源码 cwd 运行，取消内部构建和开发依赖补漏。浏览器仍使用合成 Gateway fixture；三语、键盘、可见焦点与自动无障碍检查不等同于最终 Gateway 组合、Safari 品牌或真实移动设备资格。资格脚本同时输出有界请求、响应、失败与主页面导航时间线，保留请求发起时的页面及主 frame 导航序号。URL 字段只含 origin 和 path，不采集请求头或正文；超限数量显式记录，页面异常另有保留上限。这些诊断不改变门禁错误分类。
 
 `run.mjs` 是本地和 Actions 共用执行边界。每个检查只写自己的 `CheckResult`，输出保留退出码、实际计数和内容摘要。`aggregate.mjs` 先核对全部 `needs` 成功，再要求完整 12 份成员报告属于同一 repository、event、tested/head/base SHA、run/attempt、政策与工具链，并交叉核对构建和消费者归档摘要。部分重跑、旧报告、空执行、缺矩阵和篡改都不能得到 `passed`。
 
