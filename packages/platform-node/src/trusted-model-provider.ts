@@ -5,6 +5,7 @@ import {
   type ModelDescriptor,
   type ModelInvocationAdmissionResolver,
   type ModelInvocationEvent,
+  type ModelInvocationPermit,
   type ModelInvocationPricing,
   type ModelInvocationRequest,
   type ModelInvocationUsage,
@@ -119,29 +120,68 @@ export class TrustedModelProviderAdapter implements ModelPort {
     }
 
     const admissionCost = this.dependencies.admissionCost(descriptor);
-    const permit = await gate.begin({
-      modelRef: descriptor.ref,
-      provider: descriptor.provider,
-      model: descriptor.model,
-      modelVersion: descriptor.version,
-      dataClassification: request.dataClassification,
-      operationKey: request.invocationId,
-      source: "model-port",
-      ordinal: 1,
-      estimatedCostMicros: admissionCost.estimatedCostMicros,
-      pricing: admissionCost.pricing,
-    });
-    await permit.assertActive();
-
-    const secretValues = await this.resolveSecrets(descriptor, request);
-    await permit.assertActive();
-    await permit.markStarted();
+    let permit: ModelInvocationPermit | undefined;
+    let started = false;
+    let releaseAttempted = false;
+    let reservationReleased = false;
+    const releaseBeforeStart = async (): Promise<boolean> => {
+      if (started || permit === undefined) return true;
+      if (releaseAttempted) return reservationReleased;
+      releaseAttempted = true;
+      try {
+        await permit.releaseReserved();
+        reservationReleased = true;
+      } catch {
+        // A rejected release can mean markStarted crossed the durable boundary.
+        // Preserve that uncertainty rather than presenting the reservation as
+        // safely cancelled.
+        await permit.markUnknown("transport_unresolved").catch(() => undefined);
+      }
+      return reservationReleased;
+    };
+    let secretValues: readonly string[];
+    try {
+      permit = await gate.begin({
+        modelRef: descriptor.ref,
+        provider: descriptor.provider,
+        model: descriptor.model,
+        modelVersion: descriptor.version,
+        dataClassification: request.dataClassification,
+        operationKey: request.invocationId,
+        source: "model-port",
+        ordinal: 1,
+        estimatedCostMicros: admissionCost.estimatedCostMicros,
+        pricing: admissionCost.pricing,
+      });
+      await permit.assertActive();
+      secretValues = await this.resolveSecrets(descriptor, request);
+      await permit.assertActive();
+      await permit.markStarted();
+      started = true;
+    } catch (error) {
+      if (!(await releaseBeforeStart())) {
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "Model invocation reservation accounting failed",
+          { invocationId: request.invocationId, modelRef: request.modelRef },
+        );
+      }
+      throw error;
+    }
+    const activePermit = permit;
+    if (activePermit === undefined) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Model invocation admission returned no permit",
+        { invocationId: request.invocationId, modelRef: request.modelRef },
+      );
+    }
     let settled = false;
     const markUnknown = async (
       reasonCode: "provider_unresolved" | "transport_unresolved" | "cancel_unresolved",
     ): Promise<void> => {
       if (settled) return;
-      await permit.markUnknown(reasonCode);
+      await activePermit.markUnknown(reasonCode);
       settled = true;
     };
     try {
@@ -162,8 +202,26 @@ export class TrustedModelProviderAdapter implements ModelPort {
           const usage = modelUsage(event);
           if (usage === undefined) {
             await markUnknown("provider_unresolved");
+            yield Object.freeze({
+              type: "model.failed" as const,
+              invocationId: request.invocationId,
+              errorCode: "MODEL_PROVIDER_USAGE_UNAVAILABLE",
+              retryable: false,
+              latencyMs: event.latencyMs,
+              occurredAt: event.occurredAt,
+            });
+            break;
           } else {
-            await permit.settle(usage);
+            try {
+              await activePermit.settle(usage);
+            } catch {
+              await markUnknown("transport_unresolved").catch(() => undefined);
+              throw new ApplicationPortError(
+                PORT_ERROR_CODES.INVALID_OPERATION,
+                "Model budget settlement failed",
+                { invocationId: request.invocationId, modelRef: request.modelRef },
+              );
+            }
             settled = true;
           }
         } else if (event.type === "model.failed") {

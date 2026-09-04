@@ -2,8 +2,8 @@ import type {
   AgentId,
   OccurrenceId,
   OwnerId,
-  ProductDataClassification,
   ProductAuthorityFence,
+  ProductDataClassification,
   RunId,
 } from "@himawari-agent/domain";
 import type { DataClassification } from "./common.js";
@@ -72,6 +72,17 @@ export interface ModelBudgetUnknownInput extends ModelBudgetAllocationIdentity {
   readonly reasonCode: "provider_unresolved" | "transport_unresolved" | "cancel_unresolved";
 }
 
+/**
+ * Releases a reservation that never entered the provider stream.
+ *
+ * This operation is deliberately separate from unknown/settled accounting:
+ * once a provider may have started, the allocation must remain started or
+ * unknown so that an external side effect cannot be hidden as a cancellation.
+ */
+export interface ModelBudgetReleaseReservedInput extends ModelBudgetAllocationIdentity {
+  readonly releasedAt: string;
+}
+
 export interface ModelBudgetFinalizeInput {
   readonly parent: Extract<ModelBudgetAccountParent, { readonly kind: "run" }>;
   readonly finalizedAt: string;
@@ -138,5 +149,6 @@ export interface ModelBudgetPort {
   markStarted(input: ModelBudgetMarkStartedInput): Promise<ModelBudgetOperationResult>;
   settle(input: ModelBudgetSettlementInput): Promise<ModelBudgetOperationResult>;
   markUnknown(input: ModelBudgetUnknownInput): Promise<ModelBudgetOperationResult>;
+  releaseReserved(input: ModelBudgetReleaseReservedInput): Promise<ModelBudgetOperationResult>;
   finalize(input: ModelBudgetFinalizeInput): Promise<ModelBudgetAccount>;
 }

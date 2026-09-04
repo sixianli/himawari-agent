@@ -55,6 +55,12 @@ export interface ModelInvocationPermit {
   assertActive(): Promise<void>;
   /** Mark the allocation started immediately before entering the Pi stream. */
   markStarted(): Promise<void>;
+  /**
+   * Release a reservation when the provider stream has not started.
+   * Implementations must make started/unknown/settled allocations fail closed
+   * without changing their execution history.
+   */
+  releaseReserved(): Promise<void>;
   /** Settle from verified usage and the frozen descriptor price captured at begin. */
   settle(usage: ModelInvocationUsage): Promise<void>;
   /** Preserve uncertainty when a started stream has no trusted terminal usage. */

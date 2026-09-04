@@ -392,9 +392,12 @@ function relayAdmittedPiStream(
           if (usage === undefined) {
             const accountedUnknown = await markUnknown("provider_unresolved");
             output.push(
-              accountedUnknown
-                ? event
-                : piErrorEvent(model, "Model budget accounting is unavailable"),
+              piErrorEvent(
+                model,
+                accountedUnknown
+                  ? "Model provider usage is unavailable"
+                  : "Model budget accounting is unavailable",
+              ),
             );
           } else {
             try {
@@ -402,7 +405,15 @@ function relayAdmittedPiStream(
               accounted = true;
               output.push(event);
             } catch {
-              output.push(piErrorEvent(model, "Model budget settlement failed"));
+              const accountedUnknown = await markUnknown("transport_unresolved");
+              output.push(
+                piErrorEvent(
+                  model,
+                  accountedUnknown
+                    ? "Model budget settlement failed"
+                    : "Model budget accounting is unavailable",
+                ),
+              );
             }
           }
           return;
@@ -460,6 +471,22 @@ async function admitPiStream(
 ): Promise<AssistantMessageEventStream> {
   let permit: ModelInvocationPermit | undefined;
   let started = false;
+  let releaseAttempted = false;
+  let reservationReleased = false;
+  const releaseBeforeStart = async (): Promise<boolean> => {
+    if (started || permit === undefined) return true;
+    if (releaseAttempted) return reservationReleased;
+    releaseAttempted = true;
+    try {
+      await permit.releaseReserved();
+      reservationReleased = true;
+    } catch {
+      // A rejected release can mean markStarted crossed the durable boundary.
+      // Preserve uncertainty rather than presenting the reservation as cancelled.
+      await permit.markUnknown("transport_unresolved").catch(() => undefined);
+    }
+    return reservationReleased;
+  };
   try {
     const gate = await resolver?.({
       ownerId: request.ownerId,
@@ -497,12 +524,24 @@ async function admitPiStream(
       pricing: binding.admissionCost.pricing,
     });
     await permit.assertActive();
-    if (options?.signal?.aborted) return failedPiStream(model, "Model invocation was cancelled");
-    const { apiKey: _ambientApiKey, ...withoutAmbientApiKey } = options ?? {};
-    void _ambientApiKey;
+    if (options?.signal?.aborted) {
+      const released = await releaseBeforeStart();
+      return failedPiStream(
+        model,
+        released ? "Model invocation was cancelled" : "Model budget accounting is unavailable",
+      );
+    }
+    const withoutAmbientApiKey: SimpleStreamOptions = { ...options };
+    delete withoutAmbientApiKey.apiKey;
     const secret = binding.resolveSecret ? await binding.resolveSecret() : undefined;
     await permit.assertActive();
-    if (options?.signal?.aborted) return failedPiStream(model, "Model invocation was cancelled");
+    if (options?.signal?.aborted) {
+      const released = await releaseBeforeStart();
+      return failedPiStream(
+        model,
+        released ? "Model invocation was cancelled" : "Model budget accounting is unavailable",
+      );
+    }
     await permit.markStarted();
     started = true;
     if (options?.signal?.aborted) {
@@ -518,6 +557,9 @@ async function admitPiStream(
   } catch {
     if (started && permit !== undefined) {
       await permit.markUnknown("transport_unresolved").catch(() => undefined);
+    } else {
+      const released = await releaseBeforeStart();
+      if (!released) return failedPiStream(model, "Model budget accounting is unavailable");
     }
     return failedPiStream(model, "Model invocation admission failed");
   }

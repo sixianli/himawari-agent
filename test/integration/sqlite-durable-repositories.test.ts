@@ -30,6 +30,7 @@ import {
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
+  type SqliteRecoveryAuthorityScope,
   SqliteReliableEventPublisher,
 } from "@himawari-agent/persistence-sqlite";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
@@ -60,6 +61,12 @@ const AUTHORITY: ProductAuthorityFence = {
 const LEASE = {
   leaseId: createAuthorityLeaseId("lease-conformance"),
   fencingToken: 1,
+};
+const RECOVERY_SCOPE: SqliteRecoveryAuthorityScope = {
+  ownerId: OWNER_ID,
+  agentId: AGENT_ID,
+  authority: AUTHORITY,
+  authorityLease: LEASE,
 };
 const INVOCATION_AUTHORITY: CapabilityInvocationAuthority = {
   product: AUTHORITY,
@@ -725,7 +732,9 @@ describe("SQLite durable repository adapters", () => {
       now: () => T1,
     });
     expect(await reopened.sessionDeletionState().get(record.id)).toEqual(record);
-    expect((await reopened.startupRecovery()).pendingDeletionIds).toEqual([record.id]);
+    expect((await reopened.startupRecovery(RECOVERY_SCOPE)).pendingDeletionIds).toEqual([
+      record.id,
+    ]);
     await reopened.close();
     await rm(resource.stateRoot, { recursive: true });
   });
@@ -756,9 +765,17 @@ describe("SQLite durable repository adapters", () => {
       minimumFreeBytes: 0,
       now: () => T2,
     });
-    expect((await reopened.startupRecovery()).recoveredExpiredClaimIds).toEqual([
-      "event-replay-01",
-    ]);
+    expect((await reopened.recoverySnapshot()).recoveredExpiredClaimIds).toEqual([]);
+    const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+    expect(
+      database
+        .prepare("SELECT publication_state, claim_id FROM reliable_events WHERE id = ?")
+        .get("event-replay-01"),
+    ).toEqual({ publication_state: "claimed", claim_id: "claim-before-crash" });
+    database.close();
+    const recovery = await reopened.startupRecovery(RECOVERY_SCOPE);
+    expect(recovery.recoveredExpiredClaimIds).toEqual(["event-replay-01"]);
+    expect((await reopened.startupRecovery(RECOVERY_SCOPE)).recoveredExpiredClaimIds).toEqual([]);
     const sink: ReliableEventSinkPort = {
       publish: async (event: ReliableEventRecord) => {
         observed.push(event.id);
@@ -791,6 +808,87 @@ describe("SQLite durable repository adapters", () => {
       }),
     ).toBe(false);
     await reopened.close();
+    await rm(resource.stateRoot, { recursive: true });
+  });
+
+  it("rejects startup recovery without a current scoped authority lease", async () => {
+    const resource = await openRepository(T0);
+    const eventPort = resource.repository.reliableEventPort(OWNER_ID, AGENT_ID);
+    await eventPort.append({
+      id: "event-authority-recovery-01",
+      idempotencyKey: createIdempotencyKey("event-authority-recovery-01"),
+      topic: "run.changed",
+      payloadRef: "payload-event-01",
+      occurredAt: T0,
+    });
+    await resource.repository.reliableEventOutbox().claim({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      claimId: "claim-authority-recovery",
+      claimedAt: T0,
+      expiresAt: T1,
+      limit: 10,
+    });
+    await resource.repository.close();
+
+    const reopened = await SqliteProductStateRepository.open({
+      stateRoot: resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T2,
+    });
+    await expect(
+      reopened.startupRecovery({
+        ...RECOVERY_SCOPE,
+        authorityLease: {
+          leaseId: createAuthorityLeaseId("lease-missing"),
+          fencingToken: 1,
+        },
+      }),
+    ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+    await expect(
+      reopened.startupRecovery({
+        ...RECOVERY_SCOPE,
+        ownerId: createOwnerId("owner-other"),
+      }),
+    ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+    await expect(
+      reopened.startupRecovery({
+        ...RECOVERY_SCOPE,
+        authority: {
+          ...AUTHORITY,
+          fencingToken: 2,
+        },
+        authorityLease: {
+          ...LEASE,
+          fencingToken: 2,
+        },
+      }),
+    ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+    await reopened.close();
+
+    const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+    database
+      .prepare("UPDATE authority_leases SET expires_at = ? WHERE id = ?")
+      .run(T1, LEASE.leaseId);
+    database.close();
+
+    const expired = await SqliteProductStateRepository.open({
+      stateRoot: resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T2,
+    });
+    await expect(expired.startupRecovery(RECOVERY_SCOPE)).rejects.toMatchObject({
+      code: "PORT_NOT_AUTHORITATIVE",
+    });
+    await expired.close();
+
+    const unchanged = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+    expect(
+      unchanged
+        .prepare("SELECT publication_state, claim_id FROM reliable_events WHERE id = ?")
+        .get("event-authority-recovery-01"),
+    ).toEqual({ publication_state: "claimed", claim_id: "claim-authority-recovery" });
+    unchanged.close();
     await rm(resource.stateRoot, { recursive: true });
   });
 
@@ -914,7 +1012,7 @@ describe("SQLite durable repository adapters", () => {
       minimumFreeBytes: 0,
       now: () => T2,
     });
-    const recovery = await reopened.startupRecovery();
+    const recovery = await reopened.startupRecovery(RECOVERY_SCOPE);
     expect(recovery.unfinishedRunKeys).toContain(RUN_ID);
     expect(recovery.pendingApprovalRequestIds).toEqual(["approval-recovery-01"]);
     expect(recovery.recoveredDeliveryRequestIds).toEqual([delivery.id]);

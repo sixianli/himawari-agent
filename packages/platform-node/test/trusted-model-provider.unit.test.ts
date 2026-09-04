@@ -136,6 +136,7 @@ function provider(options: {
   readonly transport: TrustedModelTransport;
   readonly admission?: TrustedModelProviderAdapterDependencies["admission"];
   readonly events?: string[];
+  readonly resolveSecret?: () => Promise<string>;
 }) {
   const events = options.events ?? [];
   return new TrustedModelProviderAdapter({
@@ -146,7 +147,7 @@ function provider(options: {
     secretSource: {
       resolve: async () => {
         events.push("secret");
-        return "scoped-secret-value";
+        return options.resolveSecret ? await options.resolveSecret() : "scoped-secret-value";
       },
     },
     transport: {
@@ -179,6 +180,9 @@ describe("TrustedModelProviderAdapter invocation admission", () => {
           },
           markStarted: async () => {
             order.push("started");
+          },
+          releaseReserved: async () => {
+            order.push("released");
           },
           settle: async (usage: ModelInvocationUsage) => {
             order.push("settle");
@@ -270,6 +274,7 @@ describe("TrustedModelProviderAdapter invocation admission", () => {
       begin: async () => ({
         assertActive: async () => undefined,
         markStarted: async () => undefined,
+        releaseReserved: async () => undefined,
         settle: async () => {
           throw new Error("settle must not run");
         },
@@ -287,6 +292,92 @@ describe("TrustedModelProviderAdapter invocation admission", () => {
     for await (const event of model.invoke(invocation())) events.push(event);
 
     expect(unknown).toEqual(["provider_unresolved"]);
-    expect(events.at(-1)?.type).toBe("model.completed");
+    expect(events).not.toContainEqual(expect.objectContaining({ type: "model.completed" }));
+    expect(events.at(-1)).toMatchObject({
+      type: "model.failed",
+      errorCode: "MODEL_PROVIDER_USAGE_UNAVAILABLE",
+    });
+  });
+
+  it("does not expose provider success when durable settlement fails", async () => {
+    const unknown: string[] = [];
+    const gate = {
+      context: executionContext(),
+      begin: async () => ({
+        assertActive: async () => undefined,
+        markStarted: async () => undefined,
+        releaseReserved: async () => undefined,
+        settle: async () => {
+          throw new Error("durable settlement failed");
+        },
+        markUnknown: async (reasonCode: string) => {
+          unknown.push(reasonCode);
+        },
+      }),
+    };
+    const model = provider({
+      transport: new RecordingTransport(
+        providerEvents({
+          inputTokens: 100,
+          outputTokens: 10,
+          cacheReadTokens: 20,
+          cacheWriteTokens: 5,
+        }),
+      ),
+      admission: async () => gate,
+    });
+
+    await expect(async () => {
+      for await (const _event of model.invoke(invocation())) {
+        // Drain the generator so settlement is observed.
+      }
+    }).rejects.toMatchObject({
+      code: "PORT_INVALID_OPERATION",
+      message: "Model budget settlement failed",
+    });
+    expect(unknown).toEqual(["transport_unresolved"]);
+  });
+
+  it("releases a reservation when secret resolution fails before the provider stream", async () => {
+    const released: string[] = [];
+    let transportCalls = 0;
+    const gate = {
+      context: executionContext(),
+      begin: async () => ({
+        assertActive: async () => undefined,
+        markStarted: async () => {
+          throw new Error("markStarted must not run");
+        },
+        releaseReserved: async () => {
+          released.push("released");
+        },
+        settle: async () => {
+          throw new Error("settle must not run");
+        },
+        markUnknown: async () => {
+          throw new Error("unknown must not run");
+        },
+      }),
+    };
+    const model = provider({
+      transport: {
+        invoke: async function* () {
+          transportCalls += 1;
+          yield* [] as readonly ModelInvocationEvent[];
+        },
+      },
+      admission: async () => gate,
+      resolveSecret: async () => {
+        throw new Error("secret source unavailable");
+      },
+    });
+
+    await expect(async () => {
+      for await (const _event of model.invoke(invocation())) {
+        // Drain the generator so the pre-start failure is observed.
+      }
+    }).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
+    expect(released).toEqual(["released"]);
+    expect(transportCalls).toBe(0);
   });
 });

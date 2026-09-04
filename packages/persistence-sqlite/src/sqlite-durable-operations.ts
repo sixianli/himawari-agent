@@ -4,6 +4,7 @@ import type {
   AttentionDecisionCommitResult,
   AttentionPolicyState,
   AuditRecord,
+  AuthorityFence,
   BackgroundAdmissionReservation,
   BackgroundAdmissionResult,
   BackgroundOccurrenceClaim,
@@ -39,6 +40,7 @@ import type {
   TraceEvent,
 } from "@himawari-agent/application";
 import type {
+  AgentId,
   BackgroundJobState,
   BackgroundOccurrence,
   DeviceId,
@@ -93,6 +95,13 @@ export interface SqliteStartupRecovery {
   readonly blockedOccurrenceIds: readonly string[];
   readonly modelBlockedOccurrenceIds: readonly string[];
   readonly unknownExternalResultOccurrenceIds: readonly string[];
+}
+
+export interface SqliteRecoveryAuthorityScope {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly authority: ProductAuthorityFence;
+  readonly authorityLease: AuthorityFence;
 }
 
 export interface GatewayProjectionMetadata {
@@ -758,68 +767,163 @@ export class SqliteDurableOperations {
     return dispatch.execute(operation, rpc.input);
   }
 
-  recoverStartup(now: string): SqliteStartupRecovery {
+  recoverStartupWithAuthority(
+    scope: SqliteRecoveryAuthorityScope,
+    now: string,
+  ): SqliteStartupRecovery {
     const transaction = this.database.transaction(() => {
-      this.database
-        .prepare(
-          `UPDATE github_history_policy_operations
+      this.assertCurrentRecoveryAuthority(scope, now);
+      this.assertDiskHeadroom();
+      return this.recoverStartupInTransaction(now);
+    });
+    return transaction.immediate();
+  }
+
+  private assertCurrentRecoveryAuthority(scope: SqliteRecoveryAuthorityScope, now: string): void {
+    if (scope.authority.fencingToken !== scope.authorityLease.fencingToken) {
+      this.fail("PORT_NOT_AUTHORITATIVE", "Startup recovery authority fences do not match", {
+        deploymentId: scope.authority.deploymentId,
+        authorityFencingToken: String(scope.authority.fencingToken),
+        leaseFencingToken: String(scope.authorityLease.fencingToken),
+      });
+    }
+    const current = this.database
+      .prepare(
+        `SELECT deployments.owner_id AS ownerId, deployments.agent_id AS agentId,
+          deployments.status AS deploymentStatus,
+          deployments.authority_epoch AS deploymentAuthorityEpoch,
+          deployments.fencing_token AS deploymentFencingToken,
+          authority_leases.owner_id AS leaseOwnerId,
+          authority_leases.agent_id AS leaseAgentId,
+          authority_leases.deployment_id AS leaseDeploymentId,
+          authority_leases.authority_epoch AS leaseAuthorityEpoch,
+          authority_leases.fencing_token AS leaseFencingToken,
+          authority_leases.expires_at AS leaseExpiresAt,
+          authority_leases.released_at AS leaseReleasedAt
+        FROM deployments
+        JOIN authority_leases ON authority_leases.deployment_id = deployments.id
+        WHERE deployments.id = ? AND authority_leases.id = ?`,
+      )
+      .get(scope.authority.deploymentId, scope.authorityLease.leaseId) as
+      | {
+          readonly ownerId: string;
+          readonly agentId: string;
+          readonly deploymentStatus: string;
+          readonly deploymentAuthorityEpoch: number;
+          readonly deploymentFencingToken: number;
+          readonly leaseOwnerId: string;
+          readonly leaseAgentId: string;
+          readonly leaseDeploymentId: string;
+          readonly leaseAuthorityEpoch: number;
+          readonly leaseFencingToken: number;
+          readonly leaseExpiresAt: string;
+          readonly leaseReleasedAt: string | null;
+        }
+      | undefined;
+    if (
+      !current ||
+      current.ownerId !== scope.ownerId ||
+      current.agentId !== scope.agentId ||
+      current.leaseOwnerId !== scope.ownerId ||
+      current.leaseAgentId !== scope.agentId ||
+      current.deploymentStatus !== "active" ||
+      current.deploymentAuthorityEpoch !== scope.authority.authorityEpoch ||
+      current.deploymentFencingToken !== scope.authority.fencingToken ||
+      current.leaseDeploymentId !== scope.authority.deploymentId ||
+      current.leaseAuthorityEpoch !== scope.authority.authorityEpoch ||
+      current.leaseFencingToken !== scope.authorityLease.fencingToken ||
+      current.leaseReleasedAt !== null ||
+      current.leaseExpiresAt <= now
+    ) {
+      this.fail("PORT_NOT_AUTHORITATIVE", "Startup recovery authority is not current", {
+        deploymentId: scope.authority.deploymentId,
+        leaseId: scope.authorityLease.leaseId,
+        ownerId: scope.ownerId,
+        agentId: scope.agentId,
+      });
+    }
+  }
+
+  private recoverStartupInTransaction(now: string): SqliteStartupRecovery {
+    this.database
+      .prepare(
+        `UPDATE github_history_policy_operations
           SET status = 'retry_wait', last_error_code = 'history_process_interrupted', updated_at = ?
           WHERE status = 'running'`,
-        )
-        .run(now);
-      const expiredClaims = this.database
-        .prepare(
-          `SELECT id FROM reliable_events
+      )
+      .run(now);
+    const expiredClaims = this.database
+      .prepare(
+        `SELECT id FROM reliable_events
           WHERE publication_state = 'claimed' AND claim_expires_at <= ? ORDER BY id`,
-        )
-        .all(now) as Array<{ readonly id: string }>;
-      this.database
-        .prepare(
-          `UPDATE reliable_events SET publication_state = 'pending', claim_id = NULL,
+      )
+      .all(now) as Array<{ readonly id: string }>;
+    this.database
+      .prepare(
+        `UPDATE reliable_events SET publication_state = 'pending', claim_id = NULL,
             claim_expires_at = NULL
           WHERE publication_state = 'claimed' AND claim_expires_at <= ?`,
-        )
-        .run(now);
-      const recoveredDeliveries = this.database
-        .prepare("SELECT id FROM inbox_deliveries WHERE status = 'delivering' ORDER BY id")
-        .all() as Array<{ readonly id: string }>;
-      for (const { id } of recoveredDeliveries) {
-        const current = this.readDelivery(id);
-        if (!current) continue;
-        const recovered: DeliveryRequest = {
-          ...current,
-          revision: current.revision + 1,
-          status: "pending",
-          assignedClientId: null,
-          lastErrorCode: "PROCESS_RESTARTED",
-          updatedAt: now,
-        };
-        this.database
-          .prepare(
-            `UPDATE inbox_deliveries SET revision = ?, status = 'pending', updated_at = ?,
+      )
+      .run(now);
+    const recoveredDeliveries = this.database
+      .prepare("SELECT id FROM inbox_deliveries WHERE status = 'delivering' ORDER BY id")
+      .all() as Array<{ readonly id: string }>;
+    for (const { id } of recoveredDeliveries) {
+      const current = this.readDelivery(id);
+      if (!current) continue;
+      const recovered: DeliveryRequest = {
+        ...current,
+        revision: current.revision + 1,
+        status: "pending",
+        assignedClientId: null,
+        lastErrorCode: "PROCESS_RESTARTED",
+        updatedAt: now,
+      };
+      this.database
+        .prepare(
+          `UPDATE inbox_deliveries SET revision = ?, status = 'pending', updated_at = ?,
               record_json = ? WHERE id = ?`,
-          )
-          .run(recovered.revision, now, JSON.stringify(recovered), id);
-      }
-      return {
-        pendingEventIds: this.idList(
-          "SELECT id FROM reliable_events WHERE published_at IS NULL ORDER BY occurred_at, id",
-        ),
-        recoveredExpiredClaimIds: expiredClaims.map(({ id }) => id),
-        unfinishedRunKeys: this.unfinishedRunKeys(),
-        pendingApprovalRequestIds: this.idList(
-          "SELECT id FROM approval_requests WHERE status = 'pending' ORDER BY requested_at, id",
-        ),
-        recoveredDeliveryRequestIds: recoveredDeliveries.map(({ id }) => id),
-        pendingDeliveryRequestIds: this.idList(
-          "SELECT id FROM inbox_deliveries WHERE status = 'pending' ORDER BY created_at, id",
-        ),
-        pendingDeletionIds: this.idList(
-          "SELECT id FROM deletion_tombstones WHERE status IN ('pending', 'incomplete') ORDER BY requested_at, id",
-        ),
-        retryableJobOccurrenceIds: this.idListWith(
-          `SELECT id FROM job_occurrences
-           WHERE NOT EXISTS (
+        )
+        .run(recovered.revision, now, JSON.stringify(recovered), id);
+    }
+    return {
+      pendingEventIds: this.idList(
+        "SELECT id FROM reliable_events WHERE published_at IS NULL ORDER BY occurred_at, id",
+      ),
+      recoveredExpiredClaimIds: expiredClaims.map(({ id }) => id),
+      unfinishedRunKeys: this.unfinishedRunKeys(),
+      pendingApprovalRequestIds: this.idList(
+        "SELECT id FROM approval_requests WHERE status = 'pending' ORDER BY requested_at, id",
+      ),
+      recoveredDeliveryRequestIds: recoveredDeliveries.map(({ id }) => id),
+      pendingDeliveryRequestIds: this.idList(
+        "SELECT id FROM inbox_deliveries WHERE status = 'pending' ORDER BY created_at, id",
+      ),
+      pendingDeletionIds: this.idList(
+        "SELECT id FROM deletion_tombstones WHERE status IN ('pending', 'incomplete') ORDER BY requested_at, id",
+      ),
+      retryableJobOccurrenceIds: this.idListWith(
+        `SELECT id FROM job_occurrences
+         WHERE NOT EXISTS (
+           SELECT 1 FROM model_budget_accounts budget
+           WHERE budget.owner_id = job_occurrences.owner_id
+             AND budget.agent_id = job_occurrences.agent_id
+             AND budget.occurrence_id = job_occurrences.id
+             AND budget.status = 'reconcile_required'
+         )
+         AND (last_error_code IS NULL OR last_error_code <> 'EXTERNAL_RESULT_UNKNOWN')
+         AND (
+           status IN ('queued', 'admitted')
+           OR (status = 'retry_wait' AND (next_retry_at IS NULL OR next_retry_at <= ?))
+           OR (status = 'running' AND work_lease_expires_at <= ?)
+         ) ORDER BY id`,
+        now,
+        now,
+      ),
+      expiredWorkLeaseOccurrenceIds: this.idListWith(
+        `SELECT id FROM job_occurrences
+         WHERE status = 'running' AND work_lease_expires_at <= ?
+           AND NOT EXISTS (
              SELECT 1 FROM model_budget_accounts budget
              WHERE budget.owner_id = job_occurrences.owner_id
                AND budget.agent_id = job_occurrences.agent_id
@@ -827,51 +931,30 @@ export class SqliteDurableOperations {
                AND budget.status = 'reconcile_required'
            )
            AND (last_error_code IS NULL OR last_error_code <> 'EXTERNAL_RESULT_UNKNOWN')
-           AND (
-             status IN ('queued', 'admitted')
-             OR (status = 'retry_wait' AND (next_retry_at IS NULL OR next_retry_at <= ?))
-             OR (status = 'running' AND work_lease_expires_at <= ?)
+           ORDER BY id`,
+        now,
+      ),
+      blockedOccurrenceIds: this.idList(
+        `SELECT id FROM job_occurrences WHERE status IN (
+          'blocked_credentials', 'blocked_approval', 'budget_blocked', 'capacity_blocked'
+        ) ORDER BY id`,
+      ),
+      modelBlockedOccurrenceIds: this.idList(
+        `SELECT id FROM job_occurrences WHERE status = 'blocked_approval'
+          AND last_error_code = 'MODEL_BLOCKED' ORDER BY id`,
+      ),
+      unknownExternalResultOccurrenceIds: this.idList(
+        `SELECT id FROM job_occurrences
+         WHERE (status = 'retry_wait' AND last_error_code = 'EXTERNAL_RESULT_UNKNOWN')
+           OR EXISTS (
+             SELECT 1 FROM model_budget_accounts budget
+             WHERE budget.owner_id = job_occurrences.owner_id
+               AND budget.agent_id = job_occurrences.agent_id
+               AND budget.occurrence_id = job_occurrences.id
+               AND budget.status = 'reconcile_required'
            ) ORDER BY id`,
-          now,
-          now,
-        ),
-        expiredWorkLeaseOccurrenceIds: this.idListWith(
-          `SELECT id FROM job_occurrences
-           WHERE status = 'running' AND work_lease_expires_at <= ?
-             AND NOT EXISTS (
-               SELECT 1 FROM model_budget_accounts budget
-               WHERE budget.owner_id = job_occurrences.owner_id
-                 AND budget.agent_id = job_occurrences.agent_id
-                 AND budget.occurrence_id = job_occurrences.id
-                 AND budget.status = 'reconcile_required'
-             )
-             AND (last_error_code IS NULL OR last_error_code <> 'EXTERNAL_RESULT_UNKNOWN')
-             ORDER BY id`,
-          now,
-        ),
-        blockedOccurrenceIds: this.idList(
-          `SELECT id FROM job_occurrences WHERE status IN (
-            'blocked_credentials', 'blocked_approval', 'budget_blocked', 'capacity_blocked'
-          ) ORDER BY id`,
-        ),
-        modelBlockedOccurrenceIds: this.idList(
-          `SELECT id FROM job_occurrences WHERE status = 'blocked_approval'
-            AND last_error_code = 'MODEL_BLOCKED' ORDER BY id`,
-        ),
-        unknownExternalResultOccurrenceIds: this.idList(
-          `SELECT id FROM job_occurrences
-           WHERE (status = 'retry_wait' AND last_error_code = 'EXTERNAL_RESULT_UNKNOWN')
-             OR EXISTS (
-               SELECT 1 FROM model_budget_accounts budget
-               WHERE budget.owner_id = job_occurrences.owner_id
-                 AND budget.agent_id = job_occurrences.agent_id
-                 AND budget.occurrence_id = job_occurrences.id
-                 AND budget.status = 'reconcile_required'
-             ) ORDER BY id`,
-        ),
-      } satisfies SqliteStartupRecovery;
-    });
-    return transaction.immediate();
+      ),
+    } satisfies SqliteStartupRecovery;
   }
 
   private idList(sql: string): readonly string[] {

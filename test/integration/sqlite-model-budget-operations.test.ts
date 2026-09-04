@@ -6,7 +6,11 @@ import type {
   BackgroundOccurrenceSettlement,
   ScheduledJobWrite,
 } from "@himawari-agent/application";
-import { claimFromRunExecutionLease } from "@himawari-agent/application";
+import {
+  claimFromRunExecutionLease,
+  type ModelInvocationAdmissionDescriptor,
+  ModelInvocationAdmissionService,
+} from "@himawari-agent/application";
 import {
   type BackgroundOccurrence,
   createAgentId,
@@ -25,6 +29,7 @@ import {
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
+  type SqliteRecoveryAuthorityScope,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -43,6 +48,15 @@ const AUTHORITY: ProductAuthorityFence = {
   deploymentId: DEPLOYMENT_ID,
   authorityEpoch: 1,
   fencingToken: 1,
+};
+const RECOVERY_SCOPE: SqliteRecoveryAuthorityScope = {
+  ownerId: OWNER_ID,
+  agentId: AGENT_ID,
+  authority: AUTHORITY,
+  authorityLease: {
+    leaseId: AUTHORITY_LEASE_ID,
+    fencingToken: AUTHORITY.fencingToken,
+  },
 };
 const LIMITS: BackgroundAdmissionLimits = {
   globalCostMicros: 10_000,
@@ -266,7 +280,7 @@ describe("SQLite model budget migration red tests", () => {
         minimumFreeBytes: 0,
         now: () => NOW,
       });
-      const recovery = await restarted.startupRecovery();
+      const recovery = await restarted.startupRecovery(RECOVERY_SCOPE);
       expect(recovery.unknownExternalResultOccurrenceIds).toContain(created.id);
       expect(recovery.retryableJobOccurrenceIds).not.toContain(created.id);
       await restarted.close();
@@ -359,7 +373,7 @@ describe("SQLite model budget migration red tests", () => {
         now: () => LATER,
       });
       try {
-        const recovery = await restarted.startupRecovery();
+        const recovery = await restarted.startupRecovery(RECOVERY_SCOPE);
         expect(recovery.unknownExternalResultOccurrenceIds).toContain(claimed.id);
         const recoverable = await restarted
           .backgroundWorkState()
@@ -448,7 +462,7 @@ describe("SQLite model budget migration red tests", () => {
         now: () => LATER,
       });
       try {
-        const recovery = await retryRepository.startupRecovery();
+        const recovery = await retryRepository.startupRecovery(RECOVERY_SCOPE);
         expect(recovery.retryableJobOccurrenceIds).not.toContain(created.id);
         expect(recovery.unknownExternalResultOccurrenceIds).toContain(created.id);
         const recoverable = await retryRepository
@@ -508,7 +522,7 @@ describe("SQLite model budget migration red tests", () => {
         now: () => LATER,
       });
       try {
-        const recovery = await expiredRepository.startupRecovery();
+        const recovery = await expiredRepository.startupRecovery(RECOVERY_SCOPE);
         expect(recovery.expiredWorkLeaseOccurrenceIds).not.toContain(created.id);
         const recoverable = await expiredRepository
           .backgroundWorkState()
@@ -1369,6 +1383,94 @@ describe("SQLite model budget migration red tests", () => {
       } finally {
         await restarted.close();
       }
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("composes model admission with the real authority, execution lease, and budget writer", async () => {
+    const resource = await fixture();
+    try {
+      const dispatch = resource.repository.runDispatch(
+        OWNER_ID,
+        AGENT_ID,
+        AUTHORITY,
+        { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        "model-admission-integration",
+      );
+      const claimed = await dispatch.claim({
+        runId: RUN_ID,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: EXECUTION_LEASE_ID,
+        claimedAt: NOW,
+        expiresAt: FAR_FUTURE,
+      });
+      const budget = resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      const descriptor: ModelInvocationAdmissionDescriptor = {
+        ref: "approved-model-v1",
+        provider: "fixture-provider",
+        model: "fixture-model",
+        version: "2026-09-05",
+        routingClass: "primary",
+        priority: 1,
+        disclosure: "trusted_remote",
+        capabilities: ["chat"],
+        allowedDataClassifications: ["private"],
+        secretRequirement: null,
+        pricing: { input: 1, output: 2, cacheRead: 0.5, cacheWrite: 0.25 },
+        estimatedCostMicros: 100,
+      };
+      const admission = new ModelInvocationAdmissionService({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        executionLease: claimFromRunExecutionLease(claimed),
+        dispatch,
+        budget,
+        clock: { now: () => NOW },
+        limits: MODEL_LIMITS,
+        registry: [descriptor],
+      });
+
+      const permit = await admission.begin({
+        modelRef: descriptor.ref,
+        provider: descriptor.provider,
+        model: descriptor.model,
+        modelVersion: descriptor.version,
+        dataClassification: "private",
+        operationKey: "model-admission-integration-call",
+        source: "model-port",
+        ordinal: 1,
+        estimatedCostMicros: descriptor.estimatedCostMicros,
+        pricing: descriptor.pricing,
+      });
+      await permit.markStarted();
+      await permit.settle({
+        inputTokens: 12,
+        outputTokens: 4,
+        cacheReadTokens: 2,
+        cacheWriteTokens: 3,
+      });
+
+      const snapshot = await budget.read({ parent: { kind: "run", runId: RUN_ID }, limit: 10 });
+      expect(snapshot?.account).toMatchObject({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        parent: { kind: "run", runId: RUN_ID },
+        spentCostMicros: 17,
+      });
+      expect(snapshot?.allocations).toEqual([
+        expect.objectContaining({
+          operationKey: "model-admission-integration-call",
+          modelRef: descriptor.ref,
+          status: "settled",
+          actualCostMicros: 17,
+        }),
+      ]);
     } finally {
       await resource.repository.close();
     }

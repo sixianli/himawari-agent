@@ -1,6 +1,7 @@
 import type {
   AttentionStatePort,
   AuditLedgerPort,
+  AuthorityFence,
   AuthorizationStorePort,
   BackgroundWorkStatePort,
   CapabilityExecutionHandleStorePort,
@@ -17,14 +18,14 @@ import type {
   ReliableEventPort,
   ReliableEventSinkPort,
   RunCheckpointStore,
-  RunLifecyclePort,
   RunDispatchCandidate,
   RunDispatchPort,
   RunExecutionLease,
   RunExecutionLeaseReceipt,
-  RunReconciliationCandidate,
+  RunLifecyclePort,
   RunPayloadArtifactAuthority,
   RunPayloadArtifactPort,
+  RunReconciliationCandidate,
   SchedulerPort,
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
@@ -34,7 +35,6 @@ import type {
   TraceStorePort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
-import type { AuthorityFence } from "@himawari-agent/application";
 import type {
   EventSubscription,
   RunSnapshot,
@@ -44,10 +44,16 @@ import type {
 import type {
   GatewayProjectionMetadata,
   ReliableEventClaim,
+  SqliteRecoveryAuthorityScope,
   SqliteStartupRecovery,
 } from "./sqlite-durable-operations.js";
 
-export type { GatewayProjectionMetadata, ReliableEventClaim, SqliteStartupRecovery };
+export type {
+  GatewayProjectionMetadata,
+  ReliableEventClaim,
+  SqliteRecoveryAuthorityScope,
+  SqliteStartupRecovery,
+};
 
 export interface SqliteDurableAdapterContext {
   read<TResult>(operation: string, payload: unknown): Promise<TResult>;
@@ -399,6 +405,8 @@ export class SqliteDurableAdapters {
       markStarted: (input) => this.context.write("modelBudget.markStarted", { scope, input }),
       settle: (input) => this.context.write("modelBudget.settle", { scope, input }),
       markUnknown: (input) => this.context.write("modelBudget.markUnknown", { scope, input }),
+      releaseReserved: (input) =>
+        this.context.write("modelBudget.releaseReserved", { scope, input }),
       finalize: (input) => this.context.write("modelBudget.finalize", { scope, input }),
     });
   }
@@ -634,8 +642,15 @@ export class SqliteDurableAdapters {
     });
   }
 
-  startupRecovery(): Promise<SqliteStartupRecovery> {
+  recoverySnapshot(): Promise<SqliteStartupRecovery> {
     return this.context.read("recovery.inspect", {});
+  }
+
+  startupRecovery(
+    scope: SqliteRecoveryAuthorityScope,
+    now: string,
+  ): Promise<SqliteStartupRecovery> {
+    return this.context.write("recovery.run", { scope, now });
   }
 }
 

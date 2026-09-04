@@ -2,15 +2,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  claimFromRunExecutionLease,
-  DurableBackgroundWorkService,
-  UnifiedTriggerIngestionService,
   type BackgroundAdmissionLimits,
   type BackgroundOccurrenceSettlement,
+  claimFromRunExecutionLease,
+  DurableBackgroundWorkService,
   type RunExecutionLeaseClaim,
   type TriggerAdmissionPort,
+  UnifiedTriggerIngestionService,
 } from "@himawari-agent/application";
 import {
+  type BackgroundOccurrence,
   createAgentId,
   createAuthorityLeaseId,
   createDeploymentId,
@@ -18,17 +19,17 @@ import {
   createJobId,
   createOccurrenceId,
   createOwnerId,
-  createRunId,
   createRunExecutionLeaseId,
+  createRunId,
   createSessionId,
-  type BackgroundOccurrence,
   type ProductAuthorityFence,
 } from "@himawari-agent/domain";
 import {
-  SqliteProductStateRepository,
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  SqliteProductStateRepository,
+  type SqliteRecoveryAuthorityScope,
 } from "@himawari-agent/persistence-sqlite";
 import { describe, expect, it } from "vitest";
 
@@ -50,6 +51,22 @@ const AUTHORITY: ProductAuthorityFence = {
   authorityEpoch: 1,
   fencingToken: 1,
 };
+const CURRENT_AUTHORITY: ProductAuthorityFence = {
+  ...AUTHORITY,
+  fencingToken: 2,
+};
+
+function recoveryScope(authority: ProductAuthorityFence = AUTHORITY): SqliteRecoveryAuthorityScope {
+  return {
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    authority,
+    authorityLease: {
+      leaseId: AUTHORITY_LEASE_ID,
+      fencingToken: authority.fencingToken,
+    },
+  };
+}
 
 const LIMITS: BackgroundAdmissionLimits = {
   globalCostMicros: 10_000,
@@ -611,6 +628,9 @@ describe("Task 12 durable background recovery", () => {
     authorityDatabase
       .prepare("UPDATE deployments SET revision = 1, fencing_token = 2 WHERE id = ?")
       .run(DEPLOYMENT_ID);
+    authorityDatabase
+      .prepare("UPDATE authority_leases SET fencing_token = 2 WHERE id = ?")
+      .run(AUTHORITY_LEASE_ID);
     authorityDatabase.close();
 
     const reopened = await SqliteProductStateRepository.open({
@@ -619,7 +639,7 @@ describe("Task 12 durable background recovery", () => {
       minimumFreeBytes: 0,
       now: () => T2,
     });
-    const recovery = await reopened.startupRecovery();
+    const recovery = await reopened.startupRecovery(recoveryScope(CURRENT_AUTHORITY));
     expect(recovery.unfinishedRunKeys).toEqual(expect.arrayContaining([RUN_ID]));
     expect(recovery.pendingApprovalRequestIds).toEqual(["approval-background"]);
     expect(recovery.expiredWorkLeaseOccurrenceIds).toEqual(["occurrence-running"]);
@@ -699,7 +719,9 @@ describe("Task 12 durable background recovery", () => {
       minimumFreeBytes: 0,
       now: () => T1,
     });
-    expect((await reopened.startupRecovery()).unfinishedRunKeys).not.toContain(RUN_ID);
+    expect((await reopened.startupRecovery(recoveryScope())).unfinishedRunKeys).not.toContain(
+      RUN_ID,
+    );
     await reopened.close();
     await rm(resource.stateRoot, { recursive: true });
   });

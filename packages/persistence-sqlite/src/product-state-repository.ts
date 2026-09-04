@@ -52,6 +52,7 @@ import type {
 import {
   SqliteDurableAdapters,
   type SqliteGatewayReadModel,
+  type SqliteRecoveryAuthorityScope,
   type SqliteReliableEventConsumerDeduplicator,
   type SqliteReliableEventOutbox,
   type SqliteStartupRecovery,
@@ -192,7 +193,6 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
         busyTimeoutMs,
         minimumFreeBytes,
         warningFreeBytes,
-        startupNow: (options.now ?? (() => new Date().toISOString()))(),
         ...(options.qualification ? { qualification: options.qualification } : {}),
       });
       return new SqliteProductStateRepository({
@@ -421,9 +421,14 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.gatewayReadModel();
   }
 
-  startupRecovery(): Promise<SqliteStartupRecovery> {
+  recoverySnapshot(): Promise<SqliteStartupRecovery> {
     this.assertOpen();
-    return Promise.resolve(this.context.initialRecovery<SqliteStartupRecovery>());
+    return this.durable.recoverySnapshot();
+  }
+
+  startupRecovery(scope: SqliteRecoveryAuthorityScope): Promise<SqliteStartupRecovery> {
+    this.assertOpen();
+    return this.durable.startupRecovery(scope, this.now());
   }
 
   checkpoint(mode: "passive" | "truncate" = "passive"): Promise<SqliteCheckpointResult> {

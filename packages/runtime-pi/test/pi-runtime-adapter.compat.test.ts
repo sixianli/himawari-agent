@@ -58,6 +58,7 @@ function allowAdmission(scope: {
     begin: async () => ({
       assertActive: async () => undefined,
       markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
       settle: async () => undefined,
       markUnknown: async () => undefined,
     }),
@@ -114,6 +115,7 @@ function streamingSessionFactory(
   original: (model: Model<Api>, context: unknown, options?: unknown) => AssistantMessageEventStream,
   observedTerminals: string[],
   streamModel: Model<Api> = ADMISSION_MODEL,
+  streamOptions: unknown = {},
 ) {
   return async () => {
     let listener: (event: FakePiEvent) => void = () => undefined;
@@ -127,7 +129,7 @@ function streamingSessionFactory(
         };
       },
       async prompt() {
-        const response = await agent.streamFunction(streamModel, { messages: [] }, {});
+        const response = await agent.streamFunction(streamModel, { messages: [] }, streamOptions);
         for await (const event of response) {
           if (event.type === "done") {
             observedTerminals.push("done");
@@ -356,8 +358,15 @@ function createAdmissionAdapter(
   original: (model: Model<Api>, context: unknown, options?: unknown) => AssistantMessageEventStream,
   observedTerminals: string[],
   streamModel: Model<Api> = ADMISSION_MODEL,
+  streamOptions: unknown = {},
+  resolveSecret?: () => Promise<string>,
 ) {
-  const createSession = streamingSessionFactory(original, observedTerminals, streamModel);
+  const createSession = streamingSessionFactory(
+    original,
+    observedTerminals,
+    streamModel,
+    streamOptions,
+  );
   return new PiAgentRuntimeAdapter({
     projection: new RecordingProjection(),
     tools: new RecordingRuntimeTools(),
@@ -365,11 +374,22 @@ function createAdmissionAdapter(
       resolve: async () => ({
         model: ADMISSION_MODEL,
         modelRuntime: {} as PiModelBinding["modelRuntime"],
-        descriptor: ADMISSION_DESCRIPTOR,
+        descriptor:
+          resolveSecret === undefined
+            ? ADMISSION_DESCRIPTOR
+            : {
+                ...ADMISSION_DESCRIPTOR,
+                secretRequirement: {
+                  secretRef: "admission-fixture-secret",
+                  secretVersion: "v1",
+                  purpose: "model-provider-auth",
+                },
+              },
         admissionCost: {
           pricing: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 },
           estimatedCostMicros: 10,
         },
+        ...(resolveSecret === undefined ? {} : { resolveSecret }),
       }),
     },
     cwd: process.cwd(),
@@ -394,6 +414,18 @@ function successfulOriginal(): AssistantMessageEventStream {
   return stream;
 }
 
+function invalidUsageOriginal(): AssistantMessageEventStream {
+  const stream = createAssistantMessageEventStream();
+  const message = assistantAnswer();
+  const invalidMessage: AssistantMessage = {
+    ...message,
+    usage: { ...message.usage, cacheRead: -1 },
+  };
+  stream.push({ type: "start", partial: invalidMessage });
+  stream.push({ type: "done", reason: "stop", message: invalidMessage });
+  return stream;
+}
+
 describe("Pi stream admission accounting", () => {
   it("rejects a same-provider and same-model clone before the provider stream", async () => {
     const observedTerminals: string[] = [];
@@ -401,6 +433,7 @@ describe("Pi stream admission accounting", () => {
     const permit: ModelInvocationPermit = {
       assertActive: async () => undefined,
       markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
       settle: async () => undefined,
       markUnknown: async () => undefined,
     };
@@ -434,6 +467,7 @@ describe("Pi stream admission accounting", () => {
     const permit: ModelInvocationPermit = {
       assertActive: async () => undefined,
       markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
       settle: async () => {
         settlementEntered();
         await settlementReleased;
@@ -453,20 +487,173 @@ describe("Pi stream admission accounting", () => {
 
   it("does not expose provider success when settlement fails", async () => {
     const observedTerminals: string[] = [];
+    const unknown: string[] = [];
     const permit: ModelInvocationPermit = {
       assertActive: async () => undefined,
       markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
       settle: async () => {
         throw new Error("durable settlement failed");
       },
-      markUnknown: async () => undefined,
+      markUnknown: async (reasonCode) => {
+        unknown.push(reasonCode);
+      },
     };
     const adapter = createAdmissionAdapter(permit, successfulOriginal, observedTerminals);
 
     const events = await collect(adapter.run(request));
     expect(observedTerminals).toEqual(["error"]);
+    expect(unknown).toEqual(["transport_unresolved"]);
     expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
     expect(events.some(({ type }) => type === "runtime.completed")).toBe(false);
+  });
+
+  it("does not expose done or runtime success when terminal usage is invalid", async () => {
+    const observedTerminals: string[] = [];
+    let providerCalls = 0;
+    const unknown: string[] = [];
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
+      settle: async () => {
+        throw new Error("settle must not run for invalid usage");
+      },
+      markUnknown: async (reasonCode) => {
+        unknown.push(reasonCode);
+      },
+    };
+    const adapter = createAdmissionAdapter(
+      permit,
+      () => {
+        providerCalls += 1;
+        return invalidUsageOriginal();
+      },
+      observedTerminals,
+    );
+
+    const events = await collect(adapter.run(request));
+    expect(providerCalls).toBe(1);
+    expect(unknown).toEqual(["provider_unresolved"]);
+    expect(observedTerminals).toEqual(["error"]);
+    expect(events.some(({ type }) => type === "runtime.completed")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+
+  it("releases a reservation when the lease fails before the provider stream", async () => {
+    const observedTerminals: string[] = [];
+    let providerCalls = 0;
+    let releases = 0;
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => {
+        throw new Error("execution lease expired");
+      },
+      markStarted: async () => {
+        throw new Error("markStarted must not run");
+      },
+      releaseReserved: async () => {
+        releases += 1;
+      },
+      settle: async () => {
+        throw new Error("settle must not run");
+      },
+      markUnknown: async () => {
+        throw new Error("unknown must not run while reservation is released");
+      },
+    };
+    const adapter = createAdmissionAdapter(
+      permit,
+      () => {
+        providerCalls += 1;
+        return successfulOriginal();
+      },
+      observedTerminals,
+    );
+
+    const events = await collect(adapter.run(request));
+    expect(releases).toBe(1);
+    expect(providerCalls).toBe(0);
+    expect(observedTerminals).toEqual(["error"]);
+    expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+
+  it("releases a reservation when the Pi stream is already aborted before start", async () => {
+    const observedTerminals: string[] = [];
+    const controller = new AbortController();
+    controller.abort();
+    let providerCalls = 0;
+    let releases = 0;
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => {
+        throw new Error("markStarted must not run");
+      },
+      releaseReserved: async () => {
+        releases += 1;
+      },
+      settle: async () => {
+        throw new Error("settle must not run");
+      },
+      markUnknown: async () => {
+        throw new Error("unknown must not run while reservation is released");
+      },
+    };
+    const adapter = createAdmissionAdapter(
+      permit,
+      () => {
+        providerCalls += 1;
+        return successfulOriginal();
+      },
+      observedTerminals,
+      ADMISSION_MODEL,
+      { signal: controller.signal },
+    );
+
+    const events = await collect(adapter.run(request));
+    expect(releases).toBe(1);
+    expect(providerCalls).toBe(0);
+    expect(observedTerminals).toEqual(["error"]);
+    expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+
+  it("releases a reservation when deferred secret resolution fails", async () => {
+    const observedTerminals: string[] = [];
+    let providerCalls = 0;
+    let releases = 0;
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => {
+        throw new Error("markStarted must not run");
+      },
+      releaseReserved: async () => {
+        releases += 1;
+      },
+      settle: async () => {
+        throw new Error("settle must not run");
+      },
+      markUnknown: async () => {
+        throw new Error("unknown must not run while reservation is released");
+      },
+    };
+    const adapter = createAdmissionAdapter(
+      permit,
+      () => {
+        providerCalls += 1;
+        return successfulOriginal();
+      },
+      observedTerminals,
+      ADMISSION_MODEL,
+      {},
+      async () => {
+        throw new Error("secret source unavailable");
+      },
+    );
+
+    const events = await collect(adapter.run(request));
+    expect(releases).toBe(1);
+    expect(providerCalls).toBe(0);
+    expect(observedTerminals).toEqual(["error"]);
+    expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
   });
 
   it("surfaces an error when unknown accounting cannot be persisted", async () => {
@@ -474,6 +661,7 @@ describe("Pi stream admission accounting", () => {
     const permit: ModelInvocationPermit = {
       assertActive: async () => undefined,
       markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
       settle: async () => undefined,
       markUnknown: async () => {
         throw new Error("durable unknown write failed");

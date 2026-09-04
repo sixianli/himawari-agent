@@ -10,6 +10,7 @@ import type {
   ModelBudgetMarkStartedInput,
   ModelBudgetOperationResult,
   ModelBudgetReadInput,
+  ModelBudgetReleaseReservedInput,
   ModelBudgetReserveInput,
   ModelBudgetSettlementInput,
   ModelBudgetSnapshot,
@@ -197,6 +198,8 @@ export class SqliteModelBudgetOperations {
           return this.settleSync(envelope);
         case "modelBudget.markUnknown":
           return this.markUnknownSync(envelope);
+        case "modelBudget.releaseReserved":
+          return this.releaseReservedSync(envelope);
         case "modelBudget.finalize":
           return this.finalizeSync(envelope);
         default:
@@ -820,6 +823,59 @@ export class SqliteModelBudgetOperations {
     return transaction.immediate();
   }
 
+  private releaseReservedSync(envelope: ParsedEnvelope): ModelBudgetOperationResult {
+    const input = this.parseReleaseReserved(envelope.input);
+    this.assertDiskHeadroom();
+    const transaction = this.database.transaction(() => {
+      this.assertCurrentAuthority(envelope.scope, input.releasedAt);
+      const id = accountId(input.parent);
+      const account = this.readAccount(envelope.scope.ownerId, envelope.scope.agentId, id);
+      const allocation = this.readAllocation(
+        envelope.scope.ownerId,
+        envelope.scope.agentId,
+        id,
+        input.operationKey,
+      );
+      if (!account || !allocation)
+        return this.fail("PORT_NOT_FOUND", "Model budget allocation was not found");
+      this.assertAccountParent(account, input.parent);
+      if (allocation.status === "released") return this.result(account, allocation, true);
+      if (allocation.status !== "reserved")
+        return this.fail("PORT_CONFLICT", "Only reserved model budget allocations can be released");
+      this.assertAccountParentScope(envelope.scope, input.parent);
+      const reserved = subtractCost(
+        account.reservedCostMicros,
+        allocation.estimatedCostMicros,
+        "Reserved budget",
+        this.fail,
+      );
+      const updatedAccount = this.updateAccount(
+        account,
+        reserved,
+        account.spentCostMicros,
+        account.status,
+      );
+      this.database
+        .prepare(
+          `UPDATE model_budget_allocations
+           SET status = 'released', reason_code = NULL
+           WHERE owner_id = ? AND agent_id = ? AND account_id = ? AND operation_key = ?
+             AND status = 'reserved'`,
+        )
+        .run(envelope.scope.ownerId, envelope.scope.agentId, id, input.operationKey);
+      const updated = this.readAllocation(
+        envelope.scope.ownerId,
+        envelope.scope.agentId,
+        id,
+        input.operationKey,
+      );
+      if (!updated)
+        return this.fail("PORT_INVALID_OPERATION", "Released budget allocation could not be read");
+      return this.result(updatedAccount, updated, false);
+    });
+    return transaction.immediate();
+  }
+
   private finalizeSync(envelope: ParsedEnvelope): ModelBudgetAccount {
     const input = this.parseFinalize(envelope.input);
     this.assertDiskHeadroom();
@@ -1027,6 +1083,16 @@ export class SqliteModelBudgetOperations {
       operationKey: text(input["operationKey"], "operationKey"),
       observedAt: instant(input["observedAt"], "observedAt"),
       reasonCode: reasonCode as ModelBudgetUnknownInput["reasonCode"],
+    };
+  }
+
+  private parseReleaseReserved(
+    input: Record<string, unknown>,
+  ): ModelBudgetReleaseReservedInput & { parent: AccountParent } {
+    return {
+      parent: this.parseAccountParent(input["parent"]),
+      operationKey: text(input["operationKey"], "operationKey"),
+      releasedAt: instant(input["releasedAt"], "releasedAt"),
     };
   }
 

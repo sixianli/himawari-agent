@@ -18,21 +18,21 @@ import {
   readAuthorityFile,
   readRestrictedExecutionTokenFile,
   SERVICE_RUNTIME_ERROR_CODES,
-  stableErrorCode,
   SystemdCredentialSecretSource,
   SystemdProviderSecretSource,
+  stableErrorCode,
   waitForTerminationSignal,
   writeServiceDiagnostic,
 } from "@himawari-agent/platform-node";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import {
-  createProductionModelCompositionFromConfiguration,
-  type ProductionConfiguredModelComposition,
-} from "./production-model-composition.js";
-import {
   createProductionMemoryCompositionFromConfiguration,
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
+import {
+  createProductionModelCompositionFromConfiguration,
+  type ProductionConfiguredModelComposition,
+} from "./production-model-composition.js";
 
 export const AGENT_SERVICE_ERROR_CODES = Object.freeze({
   AUTHORITY_INACTIVE: "AGENT_AUTHORITY_INACTIVE",
@@ -224,7 +224,29 @@ export async function runAgentService(
       stateRoot: configuration.stateRoot,
       databasePath: path.join(layout.data, "product.sqlite"),
     });
-    const recovery = await repository.startupRecovery();
+    const authorityLease = await repository
+      .authorityLeasePort(productionClock())
+      .current(configuration.agentId);
+    if (
+      !authorityLease ||
+      authorityLease.lease.ownerId !== configuration.ownerId ||
+      authorityLease.lease.agentId !== configuration.agentId
+    ) {
+      throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH);
+    }
+    const recovery = await repository.startupRecovery({
+      ownerId: configuration.ownerId,
+      agentId: configuration.agentId,
+      authority: {
+        deploymentId: authority.id,
+        authorityEpoch: authority.authorityEpoch,
+        fencingToken: authority.fencingToken,
+      },
+      authorityLease: {
+        leaseId: authorityLease.lease.id,
+        fencingToken: authorityLease.fencingToken,
+      },
+    });
     const embedding = configuredEmbedding(configuration);
     if (!isDeterministicOnly(configuration)) {
       const factory = dependencies.modelCompositionFactory ?? createDefaultModelComposition;

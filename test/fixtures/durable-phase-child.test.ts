@@ -1,9 +1,17 @@
 import path from "node:path";
 import {
+  createAgentId,
+  createAuthorityLeaseId,
+  createDeploymentId,
+  createOwnerId,
+  type ProductAuthorityFence,
+} from "@himawari-agent/domain";
+import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
+  type SqliteRecoveryAuthorityScope,
 } from "@himawari-agent/persistence-sqlite";
 import { describe, expect, it } from "vitest";
 
@@ -19,14 +27,29 @@ const PHASES = [
 ] as const;
 type Phase = (typeof PHASES)[number];
 
-const OWNER_ID = "owner-phase-process";
-const AGENT_ID = "agent-phase-process";
-const DEPLOYMENT_ID = "deployment-phase-process";
+const OWNER_ID = createOwnerId("owner-phase-process");
+const AGENT_ID = createAgentId("agent-phase-process");
+const DEPLOYMENT_ID = createDeploymentId("deployment-phase-process");
+const AUTHORITY_LEASE_ID = createAuthorityLeaseId("lease-phase-process");
 const THREAD_ID = "thread-phase-process";
 const RUN_ID = "run-phase-process";
 const PAYLOAD_REF = "payload-phase-process";
 const T0 = "2026-08-27T00:00:00.000Z";
 const T1 = "2026-08-27T00:01:00.000Z";
+const AUTHORITY: ProductAuthorityFence = {
+  deploymentId: DEPLOYMENT_ID,
+  authorityEpoch: 1,
+  fencingToken: 1,
+};
+const RECOVERY_SCOPE: SqliteRecoveryAuthorityScope = {
+  ownerId: OWNER_ID,
+  agentId: AGENT_ID,
+  authority: AUTHORITY,
+  authorityLease: {
+    leaseId: AUTHORITY_LEASE_ID,
+    fencingToken: 1,
+  },
+};
 
 function environment() {
   // biome-ignore lint/complexity/useLiteralKeys: ProcessEnv is an index signature under strict TS.
@@ -60,6 +83,14 @@ async function initialize(databasePath: string): Promise<void> {
       ) VALUES (?, ?, ?, 0, 'active', 1, 1)`,
     )
     .run(DEPLOYMENT_ID, OWNER_ID, AGENT_ID);
+  database
+    .prepare(
+      `INSERT INTO authority_leases (
+        id, owner_id, agent_id, deployment_id, holder_id, authority_epoch,
+        fencing_token, acquired_at, expires_at
+      ) VALUES (?, ?, ?, ?, 'phase-process', 1, 1, ?, '2999-12-31T23:59:59.999Z')`,
+    )
+    .run(AUTHORITY_LEASE_ID, OWNER_ID, AGENT_ID, DEPLOYMENT_ID, T0);
   database
     .prepare(
       `INSERT INTO payloads (
@@ -267,7 +298,7 @@ describe("durable phase crash fixture", () => {
 
     const identity = `${phase}:stable-identity`;
     const marker = await repository.read(`phase:${phase}`);
-    const recovery = await repository.startupRecovery();
+    const recovery = await repository.startupRecovery(RECOVERY_SCOPE);
     const operational = await repository.operationalStatus();
     const evidence = {
       context_formation: recovery.unfinishedRunKeys.includes(`phase:${phase}`),
