@@ -342,6 +342,10 @@ Task 14 准备审查发现原代码永久拒绝启用状态、未识别周期事
 
 合并后的当前本地修订已完成单次 tooling 586/586、`npm run check` 和严格文档校验，全部通过。列表导航修订的 Mac WebKit 58/58 通过，观察到 1314 个事件、无截断或页面异常。安装 Runbook 因共享 Context schema 与源文件变化完成语义核对，补齐相关 contract selector 并 seal 为 `sha256:a781a945e6e6299c0c70c776e8458a7830df04b9f7a21f90387d090fc4c9fb1b`；没有执行安装、启停或部署操作。这些本地结果不替代下一次托管全量验证。
 
+最新无注入隔离 [run 33829889364](https://github.com/sixianli/himawari-agent/actions/runs/33829889364) 的 13 个 job 全部通过，head `60a000c`、merge `40584c8`。同源码树正常 [run 33829859902](https://github.com/sixianli/himawari-agent/actions/runs/33829859902) 的 head 为 `30e0aec`、merge 为 `252a28c`，仅 security 及其汇总失败，其他成员通过；两轮 Ubuntu WebKit 均通过。正常 advisory 的新诊断明确为请求尚未返回响应时，自有 60 秒期限触发 `TimeoutError`（code 23）；相同请求摘要在隔离运行耗时 9606 ms 成功。此证据不能判定 DNS、TLS 或服务端的具体根因。
+
+按来源 Spec 已允许的有界重试补齐窄范围恢复：相同请求在自身期限到期且尚无响应时最多再执行一次，每次 60 秒、间隔最多 1 秒。每次结果均保留，实际重试次数进入检查报告；其他失败与发现不重试。该修订的 149 项定向测试、变更覆盖率、项目检查及严格文档校验通过。最终托管状态以正常 PR 最新检查为准；隔离故障样例继续使用上述真实绿色提交作为固定对照，不混入新的正常分支修订。
+
 ### 干净提交验证
 
 实现提交为 `f2ce494fa8d7ee1e7f67bbe4093befabe4f2cbcb`。从本地提交建立 `/tmp/himawari-ci-clean-f2ce494`，无缓存锁文件安装、SQLite 探针和三个专属 Playwright 引擎安装均通过；测试没有修改受跟踪文件。完整 `ci:local` 比较基线固定为 `3f865d2860301d86f33978e6534cfbba02c37a89`。

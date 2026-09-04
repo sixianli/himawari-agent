@@ -214,6 +214,7 @@ function securityFixture() {
 }
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   boundary.run = undefined;
   boundary.stream = undefined;
@@ -222,6 +223,35 @@ afterEach(() => {
 });
 
 describe("安全runner的隔离外部边界", () => {
+  it.each([false, true])("重试记录与实际 retryCount 贯通落盘报告，耗尽=%s", async (exhausted) => {
+    const f = securityFixture();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] });
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("deadline", "TimeoutError")), ms);
+      return controller.signal;
+    });
+    const fetchImpl = vi.fn(async (_url, { signal }) => {
+      if (fetchImpl.mock.calls.length === 1 || exhausted)
+        return new Promise((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+        );
+      return new Response("{}");
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+    const pending = runSecurityChecks(f);
+    await vi.advanceTimersByTimeAsync(121000);
+    const result = await pending;
+    const report = JSON.parse(readFileSync(result.reportPath));
+    expect(result.status).toBe(exhausted ? "infrastructure_failed" : "passed");
+    expect(result.retryCount).toBe(1);
+    expect(report.retryCount).toBe(1);
+    expect(
+      report.checks.find((c) => c.id === "npm-advisories").requestAttempts.map((a) => a.status),
+    ).toEqual(["failed", exhausted ? "failed" : "passed"]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.reportSha256).toBe(sha(readFileSync(result.reportPath)));
+  });
   it.each(["fetch-response", "response-body"])(
     "%s 的脱敏诊断贯通 perform 与正式失败报告",
     async (phase) => {

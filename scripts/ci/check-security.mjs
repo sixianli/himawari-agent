@@ -108,6 +108,22 @@ class AdvisoryNetworkError extends Error {
       },
       errors,
     };
+    this.deadlineExpired =
+      phase === "fetch-response" &&
+      signal.aborted &&
+      error === signal.reason &&
+      signal.reason?.name === "TimeoutError" &&
+      signal.reason?.code === 23;
+  }
+}
+
+class AdvisoryRequestError extends Error {
+  constructor(error, requestAttempts) {
+    super(/^[A-Z_]+$/.test(error.message) ? error.message : "SECURITY_SCANNER_FAILED");
+    this.requestAttempts = requestAttempts;
+    this.retryCount = requestAttempts.length - 1;
+    this.requestBudgetMs = 121_000;
+    if (error instanceof AdvisoryNetworkError) this.diagnostic = error.diagnostic;
   }
 }
 
@@ -226,45 +242,73 @@ export async function fetchAdvisories({
         .map(([name, versions]) => [name, [...versions].sort()]),
     ),
   );
-  const signal = AbortSignal.timeout(60_000);
-  const started = performance.now();
-  let response;
-  try {
-    response = await fetchImpl(advisoryEndpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body,
-      signal,
-    });
-  } catch (error) {
-    throw new AdvisoryNetworkError(error, { phase: "fetch-response", signal, started, body });
+  const requestAttempts = [];
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const signal = AbortSignal.timeout(60_000);
+    const started = performance.now();
+    try {
+      const request = async () => {
+        let response;
+        try {
+          response = await fetchImpl(advisoryEndpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json", accept: "application/json" },
+            body,
+            signal,
+          });
+        } catch (error) {
+          throw new AdvisoryNetworkError(error, { phase: "fetch-response", signal, started, body });
+        }
+        assert(response.ok, "ADVISORY_HTTP_FAILURE");
+        let bytes;
+        try {
+          bytes = await response.text();
+        } catch (error) {
+          throw new AdvisoryNetworkError(error, { phase: "response-body", signal, started, body });
+        }
+        assert(
+          bytes.length > 0 && bytes.length < 16 * 1024 * 1024,
+          "ADVISORY_RESPONSE_EMPTY_OR_OVERSIZED",
+        );
+        let data;
+        try {
+          data = JSON.parse(bytes);
+        } catch {
+          throw new Error("ADVISORY_RESPONSE_NOT_JSON");
+        }
+        return {
+          scannedCount: dependencies.length,
+          packageNames: Object.keys(payload).length,
+          endpoint: advisoryEndpoint,
+          requestSha256: sha256(body),
+          responseSha256: sha256(bytes),
+          fetchedAt: new Date(now).toISOString(),
+          findings: evaluateAdvisories({ response: data, dependencies, satisfies, validRange }),
+        };
+      };
+      const result = await request();
+      requestAttempts.push({
+        attempt,
+        status: "passed",
+        requestSha256: result.requestSha256,
+        responseSha256: result.responseSha256,
+        durationMs: Math.round(performance.now() - started),
+      });
+      return { ...result, requestAttempts, retryCount: attempt - 1, requestBudgetMs: 121_000 };
+    } catch (error) {
+      requestAttempts.push({
+        attempt,
+        status: "failed",
+        requestSha256: sha256(body),
+        durationMs: Math.round(performance.now() - started),
+        error: /^[A-Z_]+$/.test(error.message) ? error.message : "SECURITY_SCANNER_FAILED",
+        ...(error instanceof AdvisoryNetworkError ? { diagnostic: error.diagnostic } : {}),
+      });
+      if (attempt === 2 || !(error instanceof AdvisoryNetworkError) || !error.deadlineExpired)
+        throw new AdvisoryRequestError(error, requestAttempts);
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
   }
-  assert(response.ok, "ADVISORY_HTTP_FAILURE");
-  let bytes;
-  try {
-    bytes = await response.text();
-  } catch (error) {
-    throw new AdvisoryNetworkError(error, { phase: "response-body", signal, started, body });
-  }
-  assert(
-    bytes.length > 0 && bytes.length < 16 * 1024 * 1024,
-    "ADVISORY_RESPONSE_EMPTY_OR_OVERSIZED",
-  );
-  let data;
-  try {
-    data = JSON.parse(bytes);
-  } catch {
-    throw new Error("ADVISORY_RESPONSE_NOT_JSON");
-  }
-  return {
-    scannedCount: dependencies.length,
-    packageNames: Object.keys(payload).length,
-    endpoint: advisoryEndpoint,
-    requestSha256: sha256(body),
-    responseSha256: sha256(bytes),
-    fetchedAt: new Date(now).toISOString(),
-    findings: evaluateAdvisories({ response: data, dependencies, satisfies, validRange }),
-  };
 }
 
 export function parseGitleaksReport({ bytes, exitCode, sourceRoot, scannedCount, scope }) {
@@ -782,7 +826,14 @@ export async function runSecurityChecks({
           scannedCount: 0,
           findings: [],
           error: /^[A-Z_]+$/.test(error.message) ? error.message : "SECURITY_SCANNER_FAILED",
-          ...(error instanceof AdvisoryNetworkError ? { diagnostic: error.diagnostic } : {}),
+          ...(error instanceof AdvisoryRequestError
+            ? {
+                diagnostic: error.diagnostic,
+                requestAttempts: error.requestAttempts,
+                retryCount: error.retryCount,
+                requestBudgetMs: error.requestBudgetMs,
+              }
+            : {}),
         });
       }
     };
@@ -886,6 +937,7 @@ export async function runSecurityChecks({
     status,
     scannedCount: checks.reduce((count, check) => count + check.scannedCount, 0),
     findingCount: findings.length,
+    retryCount: checks.reduce((count, check) => count + (check.retryCount ?? 0), 0),
     inputSha256: inputSha256 ?? null,
     context,
     exceptions: reviewed ? { ...reviewed, exceptions: undefined } : null,
@@ -913,6 +965,7 @@ export async function runSecurityChecks({
     scannedCount: report.scannedCount,
     findingCount: findings.length,
     reportPath,
+    retryCount: report.retryCount,
     reportSha256: sha256(text),
     checks: report.checks,
   };

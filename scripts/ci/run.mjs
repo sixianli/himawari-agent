@@ -239,6 +239,7 @@ export async function runCheck({
         context,
       });
       files.push({ path: security.reportPath, kind: "json" });
+      result.retryCount = security.retryCount;
       result.counts = {
         files: security.scannedCount,
         executed: security.checks.length,

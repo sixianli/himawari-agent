@@ -178,6 +178,7 @@ function zip(name, content) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   for (const directory of temporaryDirectories.splice(0))
     rmSync(directory, { recursive: true, force: true });
@@ -387,23 +388,29 @@ describe("完整锁文件与官方 advisory", () => {
     expect(JSON.stringify(error)).not.toMatch(/private|fourth/);
   });
 
-  it.each(["TimeoutError", "AbortError"])("记录 %s 的 signal，仍请求固定 60000ms", async (name) => {
-    const reason = new DOMException("private timeout detail", name);
-    const controller = new AbortController();
-    controller.abort(reason);
-    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
-    const error = await fetchAdvisories({
-      dependencies,
-      ...semver,
-      fetchImpl: async () => {
-        throw reason;
-      },
-    }).catch((e) => e);
-    expect(timeout).toHaveBeenCalledExactlyOnceWith(60000);
-    expect(error.diagnostic.signal).toEqual({ aborted: true, reason: { name, code: reason.code } });
-    expect(error.diagnostic.errors).toEqual([{ name, code: reason.code }]);
-    expect(JSON.stringify(error)).not.toContain("private timeout detail");
-  });
+  it.each(["TimeoutError", "AbortError"])(
+    "记录 %s 的 signal，但不同异常身份不触发重试",
+    async (name) => {
+      const reason = new DOMException("private timeout detail", name);
+      const controller = new AbortController();
+      controller.abort(reason);
+      const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+      const error = await fetchAdvisories({
+        dependencies,
+        ...semver,
+        fetchImpl: async () => {
+          throw new DOMException("independent error", name);
+        },
+      }).catch((e) => e);
+      expect(timeout).toHaveBeenCalledExactlyOnceWith(60000);
+      expect(error.diagnostic.signal).toEqual({
+        aborted: true,
+        reason: { name, code: reason.code },
+      });
+      expect(error.diagnostic.errors).toEqual([{ name, code: reason.code }]);
+      expect(JSON.stringify(error)).not.toContain("private timeout detail");
+    },
+  );
 
   it.each([null, { name: "untrusted-name", code: "untrusted-code", message: "untrusted-message" }])(
     "未知异常字段不能进入公开诊断 %#",
@@ -437,6 +444,105 @@ describe("完整锁文件与官方 advisory", () => {
     expect(error.diagnostic.errors).toEqual([{ name: "Error", code: "UND_ERR_BODY_TIMEOUT" }]);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(error)).not.toContain("private body");
+  });
+
+  it.each(["success", "timeout", "invalid-json", "high"])(
+    "自有期限后最多重试一次，保留首次失败和第二次 %s",
+    async (outcome) => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] });
+      const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(new DOMException("deadline", "TimeoutError")), ms);
+        return controller.signal;
+      });
+      const fetchImpl = vi.fn(async (_url, options) => {
+        if (fetchImpl.mock.calls.length === 1 || outcome === "timeout")
+          return new Promise((_resolve, reject) =>
+            options.signal.addEventListener("abort", () => reject(options.signal.reason), {
+              once: true,
+            }),
+          );
+        return new Response(
+          outcome === "invalid-json"
+            ? "{"
+            : JSON.stringify(outcome === "high" ? { example: [advisory()] } : {}),
+        );
+      });
+      const pending = fetchAdvisories({ dependencies, ...semver, fetchImpl }).catch(
+        (error) => error,
+      );
+      await vi.advanceTimersByTimeAsync(60999);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      if (outcome === "timeout") await vi.advanceTimersByTimeAsync(60000);
+      const result = await pending;
+      expect(timeout.mock.calls).toEqual([[60000], [60000]]);
+      expect(fetchImpl.mock.calls[0][1].body).toBe(fetchImpl.mock.calls[1][1].body);
+      expect(result.retryCount).toBe(1);
+      expect(result.requestBudgetMs).toBe(121000);
+      expect(result.requestAttempts).toHaveLength(2);
+      expect(result.requestAttempts.map((entry) => entry.requestSha256)).toEqual([
+        sha256(fetchImpl.mock.calls[0][1].body),
+        sha256(fetchImpl.mock.calls[1][1].body),
+      ]);
+      expect(result.requestAttempts[0]).toMatchObject({
+        attempt: 1,
+        status: "failed",
+        durationMs: 60000,
+        diagnostic: {
+          phase: "fetch-response",
+          signal: { aborted: true, reason: { name: "TimeoutError", code: 23 } },
+        },
+      });
+      expect(result.requestAttempts[1].attempt).toBe(2);
+      if (outcome === "timeout") {
+        expect(result.message).toBe("ADVISORY_NETWORK_UNAVAILABLE");
+        expect(result.requestAttempts[1]).toMatchObject({ status: "failed", durationMs: 60000 });
+      } else if (outcome === "invalid-json") {
+        expect(result.message).toBe("ADVISORY_RESPONSE_NOT_JSON");
+        expect(result.requestAttempts[1].status).toBe("failed");
+      } else {
+        expect(result.scannedCount).toBe(dependencies.length);
+        expect(result.requestAttempts[1].status).toBe("passed");
+        expect(result.requestAttempts[1].responseSha256).toBe(result.responseSha256);
+        expect(result.findings).toHaveLength(outcome === "high" ? 2 : 0);
+      }
+      await vi.advanceTimersByTimeAsync(200000);
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each(["tls", "http", "schema", "high", "body-deadline"])("%s 不扩大重试范围", async (kind) => {
+    const controller = new AbortController();
+    const timeout = new DOMException("deadline", "TimeoutError");
+    if (kind === "body-deadline") controller.abort(timeout);
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+    const fetchImpl = vi.fn(async () => {
+      if (kind === "tls")
+        throw Object.assign(new Error("private certificate detail"), { code: "CERT_HAS_EXPIRED" });
+      if (kind === "body-deadline")
+        return {
+          ok: true,
+          text: async () => {
+            throw timeout;
+          },
+        };
+      return new Response(
+        JSON.stringify(
+          kind === "schema" ? { unknown: [] } : kind === "high" ? { example: [advisory()] } : {},
+        ),
+        { status: kind === "http" ? 503 : 200 },
+      );
+    });
+    const result = await fetchAdvisories({ dependencies, ...semver, fetchImpl }).catch(
+      (error) => error,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.retryCount).toBe(0);
+    expect(result.requestAttempts).toHaveLength(1);
+    if (kind === "high") expect(result.findings.every((f) => f.blocking)).toBe(true);
+    else expect(result).toBeInstanceOf(Error);
   });
 
   it.each([

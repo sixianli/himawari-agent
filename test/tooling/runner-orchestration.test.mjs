@@ -177,6 +177,7 @@ vi.mock("../../scripts/ci/check-security.mjs", () => ({
     return {
       status: state.failSecurity ? "failed" : "passed",
       scannedCount: 42,
+      retryCount: 1,
       reportPath,
       checks: [{ status: state.failSecurity ? "failed" : "passed" }],
     };
@@ -474,9 +475,12 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(result.reports.some((entry) => entry.path === "build/build.json")).toBe(true);
   });
   it("安全发现和空执行不能变成通过", async () => {
-    expect((await run("security")).status).toBe("passed");
+    expect(await run("security")).toMatchObject({ status: "passed", retryCount: 1 });
     state.failSecurity = true;
-    expect((await run("security", { output: ".ci-output/security-fail" })).status).toBe("failed");
+    expect(await run("security", { output: ".ci-output/security-fail" })).toMatchObject({
+      status: "failed",
+      retryCount: 1,
+    });
     state.empty = true;
     expect(
       (
