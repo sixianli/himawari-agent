@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:d92cd1cd6521d6eafd96e3996cd563890fa9bca260dca9fe86feb2614ce6e38b"
+contract_sha256: "sha256:705e81f970e4d266991e2772082a485918cbb47bc3c46281f54055cc00b981c9"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -97,6 +97,7 @@ himawari backup restore --config <absolute-config-path> --secret-dir <absolute-s
 - 恢复后的 `himawari db status` 显示 managed schema、预期 sequence 与 `quickCheck: ok`；`doctor` 的 authority、schema、SQLite、Payload 与适用依赖符合目标 profile。
 - 用恢复点创建前已记录的只读业务引用验证数据水位线已回到预期；不要只依据 exit code 或文件存在判断成功。
 - 对本次包含运行正文的恢复点，核对正文、所属 Run、用途和操作身份回执一并恢复，正文摘要、分类与媒体类型一致；不能只验证正文可解密。已保存但尚未发布的正文仍保持未发布，恢复操作不能把它补发为 Assistant 消息。
+- 若恢复点含 Capability 调用回执，核对原幂等键、冻结任务语义及 Agent/Worker 执行身份一并恢复。旧回执只证明过去已经接纳调用，不能作为重新派发依据；正文访问仍须验证当前权威、租约、Run、能力与 Grant。未知外部结果保持待核对，不因恢复成功自动重试。
 - `runtime/`、`cache/`、secret source、authority file 和 public ingress 未被恢复包覆盖；不存在 `.restore-*` 临时目录或 plaintext SQLite 临时文件。
 - 对恢复期间已经发生的外部副作用逐项保持原状态或显式进入 reconciliation；不得假定数据库恢复自动撤销外部动作。
 

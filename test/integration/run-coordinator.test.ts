@@ -100,7 +100,15 @@ async function fixture(
     clock,
     ids: adapters.ids,
   });
-  const context = new ContextFormationService({ memory: adapters.memory, trace });
+  const context = new ContextFormationService({
+    memory: adapters.memory,
+    trace,
+    artifacts: adapters.runPayloadArtifacts,
+    payloads: adapters.payload,
+    protector: adapters.payloadProtector,
+    clock,
+    ids: adapters.ids,
+  });
   const coordinator = new RunCoordinator({
     runs,
     checkpoints: adapters.runCheckpoints,
@@ -124,6 +132,7 @@ async function fixture(
         id: trigger.id,
         sourceType: "user_message" as const,
         payloadRef: `payload-trigger-${suffix}`,
+        occurredAt: T0,
       },
       threadMessages: [
         {
@@ -133,6 +142,8 @@ async function fixture(
           occurredAt: T0,
         },
       ],
+      sourceWatermark: null,
+      policyVersion: "context-policy-v1",
       policies: [],
       memoryQueryRef: `payload-query-${suffix}`,
       memoryQueryTerms: ["dinner"],
@@ -243,9 +254,9 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
 
     expect(result.run.run.status).toBe("completed");
     expect(result.workerResultRefs).toEqual(["payload-worker-result"]);
-    expect(runtime.observedRequests()[0]?.messageRefs).toEqual([
-      result.checkpoint.contextRef,
-      "payload-worker-result",
+    expect(runtime.observedRequests()[0]?.contextEnvelopeRef).toBe(result.checkpoint.contextRef);
+    expect(runtime.observedRequests()[0]?.workerResultRefs).toEqual([
+      { workerRunId: "worker-run-restaurant", resultRef: "payload-worker-result" },
     ]);
     expect(workers.observedRequests()[0]).toMatchObject({
       parentRunId: setup.run.id,

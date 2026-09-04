@@ -12,9 +12,13 @@ export type {
   RuntimeProjectionCompaction,
   RuntimeProjectionContent,
   RuntimeProjectionContext,
+  RuntimeProjectionContextBlock,
   RuntimeProjectionMessage,
+  RuntimeProjection,
   RuntimeProjectionPort,
+  RuntimeProjectionRequest,
   RuntimeRequest,
+  RuntimeWorkerResultReference,
   RuntimeToolDescriptor,
   RuntimeToolExecutionResult,
   RuntimeToolInvocation,
@@ -22,6 +26,16 @@ export type {
   RuntimeToolPreflightDecision,
 } from "./ports/intelligence.js";
 export type { DataClassification, PayloadRef } from "./ports/common.js";
+export type {
+  ProductContextBlock,
+  ProductContextBlockKind,
+  ProductContextEnvelopeV1,
+  ProductContextHistoryItem,
+  ProductContextMessageRole,
+  ProductContextPrompt,
+  ProductContextSystemPolicyRef,
+  ProductContextTriggerSource,
+} from "./ports/context-projection.js";
 export type {
   PayloadProtectionRequest,
   PayloadProtectorPort,

@@ -170,7 +170,15 @@ export function createLocalAgentServiceComposition(options: LocalAgentServiceCom
     trace: traceRecorder,
     runState,
     events: new ReliableEventPublisher(adapters.productState, adapters.eventSink, adapters.clock),
-    context: new ContextFormationService({ memory: adapters.memory, trace: traceRecorder }),
+    context: new ContextFormationService({
+      memory: adapters.memory,
+      trace: traceRecorder,
+      artifacts: adapters.runPayloadArtifacts,
+      payloads: adapters.payload,
+      protector: adapters.payloadProtector,
+      clock: adapters.clock,
+      ids: adapters.ids,
+    }),
     models: new ModelRouterService({
       model: adapters.model,
       secrets: secret,
@@ -204,7 +212,15 @@ export function createLocalAgentServiceComposition(options: LocalAgentServiceCom
     coordinator: new RunCoordinator({
       runs: runState,
       checkpoints: adapters.runCheckpoints,
-      context: new ContextFormationService({ memory: adapters.memory, trace: traceRecorder }),
+      context: new ContextFormationService({
+        memory: adapters.memory,
+        trace: traceRecorder,
+        artifacts: adapters.runPayloadArtifacts,
+        payloads: adapters.payload,
+        protector: adapters.payloadProtector,
+        clock: adapters.clock,
+        ids: adapters.ids,
+      }),
       runtime: adapters.runtime,
       workers: adapters.workers,
       trace: traceRecorder,

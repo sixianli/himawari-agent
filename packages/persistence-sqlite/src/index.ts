@@ -8,6 +8,7 @@ export * from "./durable-adapters.js";
 export * from "./product-state-repository.js";
 export * from "./schema-catalog.js";
 export * from "./sqlite-authority-transfer.js";
+export * from "./sqlite-capability-invocation-operations.js";
 export * from "./sqlite-governed-deletion.js";
 export * from "./sqlite-github-history-policy.js";
 export * from "./sqlite-recovery-point.js";

@@ -19,6 +19,7 @@ import type {
   ThreadGatewayRequestResult,
   ThreadGatewaySubscription,
 } from "@himawari-agent/gateway-contracts";
+import type { RecentAuthenticationEvidence } from "./recent-authentication.js";
 
 export interface GatewayAuthenticationContext {
   readonly subjectId: string;
@@ -26,6 +27,8 @@ export interface GatewayAuthenticationContext {
   readonly deviceId: string;
   readonly authenticatedAt: string;
   readonly authenticationRef: string;
+  /** Optional provider evidence; ordinary authentication remains usable without it. */
+  readonly recentAuthenticationEvidence?: RecentAuthenticationEvidence;
 }
 
 export type GatewayInboundMessage = GatewayCommand | GatewayQuery | EventSubscription;

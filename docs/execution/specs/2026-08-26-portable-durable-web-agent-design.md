@@ -411,6 +411,10 @@ Browser → Cloudflare public hostname → Access + MFA
 
 产品 session 记录稳定 session ID、device label、首次与最近活动时间、authentication reference、撤销状态和 recent-auth 时间。Owner 可以逐个撤销；关键行动若 recent-auth 过期则重新认证。
 
+近期认证必须来自可验证的外部认证发生时间，并绑定当前 Owner、外部 subject、设备和产品 session。验证请求的时间、新建产品 session 的时间、应用 JWT 的签发时间，以及缺少来源的旧 session 时间戳，都不能替代这一证明。最大有效年龄与允许时钟偏差必须显式配置；非法时间、超出偏差的未来时间、过期证明、被撤销的 session 或失效 Owner 绑定不得授权敏感操作。普通已认证读取不要求近期证明；浏览器配置只有在证明当前有效时才返回近期认证引用。
+
+近期认证与一次性行动授权分别承担身份新鲜度和行动许可，不建立第二套逐操作授权消费状态。关键审批、Host 提交或永久删除、Thread 永久删除在新副作用前经过同一近期认证边界；已完成回执的只读回放仍检查当前身份与归属，但不重复执行或消费行动。Cloudflare `get-identity` 的登录时间可以作为明确标识来源的证据，不能冒称近期 MFA；真实 Access/MFA 策略仍须单独验证。不得自动退出跨应用会话或修改 Access 配置来制造新鲜时间。参见 [Cloudflare application token](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/) 与 [session management](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/)。
+
 break-glass 只在活动主机本地、独立恢复凭据与独占管理锁下可用，所有动作进入受保护审计。它可以撤销 sessions、修复 Owner mapping 或关闭公网入口，但不能绕过行动授权或读取普通秘密值。
 
 ### Execution Worker 与本机 transport
@@ -429,6 +433,10 @@ Worker 是活动主机上的独立进程。首个 transport 把 execution.v1 env
 请求与响应有大小限制、严格解析和版本。大输入与结果只传 Payload reference。handshake 验证 execution.v1 compatibility、worker instance identity 与当前 boot token。Agent Service 持久化 parent checkpoints/events；Worker local state 不能成为 Agent 权威。
 
 Worker 不直接打开 product.sqlite，也不签发或扩大权限。Agent Service 重新验证 Capability 生命周期、版本、Grant、epoch/fence、输入/上下文/secret refs 和分类后，先在 SQLite 原子消费 durable Handle，再通过受认证 UDS 发送 work.delegate。Worker 只保存当前 boot 生命周期内的易失、一次性委派副本，并在 work.execute 时再次验证 adapter/version/operation、资源上限、deadline 和委派引用；拒绝的请求在通过授权与 adapter 校验前不得占用幂等 identity。
+
+首次消费必须在同一 SQLite 事务内完成当前授权核查、Handle 消耗和不可变调用回执。回执绑定原请求幂等键、执行消息身份、Owner/Agent/Run/Worker Run、能力版本、授权引用、操作、输入和上下文、精确 secret 版本与用途、分类、资源上限、截止时间，以及首次 Agent/Worker 实例与启动身份。真正发送的任务由已核验的冻结记录投影，不能核验一份记录却发送另一份请求。同键不同语义或同调用身份换键必须拒绝，拒绝不得留下消耗或回执；原 Grant 在行动授权阶段已经计入的使用量不能再次计费。
+
+同语义重放只返回既有记录，不重新委派或执行；首次执行的时效门禁不能阻止已完成记录的只读核对。重启或通信超时不证明外部行动没有发生，不得自动换一个启动身份再执行。Agent 侧旧消费入口不得成为绕过规范回执的另一写入路径；Worker 内部的一次性内存句柄仍仅用于本次隔离进程中的权限收窄。
 
 首个 Worker 只执行产品拥有且已经注册的 adapters，例如有界 work directory 中的 GitHub read operations。MCP/package 的完整治理和隔离由行动授权与能力治理 Spec 定义；本切片提供真实 process boundary、deadline、cancellation、resource ceilings 和 handle validation。
 
@@ -511,6 +519,10 @@ Model Router 总是先选 primary。只有配置为 retryable 的 transport/prov
 Thread checkpoint、Mem0 extraction 和 embedding 都只能使用显式 descriptor；没有隐式 model。v0.2 不实现本地生成模型，也不静默安装或下载任何本地模型。`pre_compaction` 例外地直接采用 Pi 已生成且已保护的 compaction summary，后续提炼模型只提取派生候选，不得生成第二份摘要；其他 checkpoint trigger 仍使用显式 distillation descriptor。
 
 Pi adapter 只接收产品为单个 Run 选择的 canonical model descriptor、结构化 history/prompt/checkpoint projection 与 authorized capabilities。模型请求、provider transport、stream parsing、usage 和 Agent Loop 复用 Pi `ModelRuntime`/`AgentSession`；Himawari 只保留 routing policy、Secret Handle、Payload、分类披露、预算、Trace 和 Pi 未公开的 provider/cost observation。Ambient Skills/Extensions/prompts discovery 保持关闭，批准资源只能通过 Pi `DefaultResourceLoader` 的显式 additional paths 装载。Pi built-in coding tools 只能使用产品注入的受治理 Operations，缺失时不得回退到本机默认 I/O。Pi 自有 model selection 或 Session persistence 不能绕过产品 routing、authority 或 capability governance。
+
+Context Formation 是上下文的唯一选择者。它按触发消息的规范顺序确定历史上界，排除后续消息与超出上界的摘要，并把精确消息身份、角色、顺序、正文引用、单一触发 prompt、产品策略和非权威材料保存为归属该 Run 的受保护 `context.v1`。该记录提交后，即使 Trace 或检查点保存失败，重试也只回读同一选择，不能重新查询记忆后换一份上下文。Runtime Projection 只校验并读取这些已选对象；缺消息、正文、归属或角色不一致时拒绝，不从 Trace JSON 或 Pi session 文件重新推断产品事实。
+
+产品策略、规范对话、当前触发问题与补充材料分别投影。Memory、历史系统材料、Thread 摘要和 Worker 结果必须在模型实际收到的正文中保留来源及非指令标识；只保存运行库元数据不足以满足此约束。Worker 结果保留其执行身份，不静默丢弃，也不伪造不存在的工具调用。Pi 负责其已有的消息转换与 Agent Loop，产品只增加上述归属、选择和权限边界。
 
 ### GitHub 仓库在线监控
 

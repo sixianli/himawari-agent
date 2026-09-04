@@ -1,5 +1,8 @@
 import type { AgentId, OwnerId, RunId, SessionId, ThreadId, TurnId } from "@himawari-agent/domain";
 import type { CorrelationId, DataClassification, JsonObject, PayloadRef } from "./common.js";
+import type { ProductContextBlockKind } from "./context-projection.js";
+
+export type { ProductContextEnvelopeV1 } from "./context-projection.js";
 
 export interface MemoryRecord {
   readonly id: string;
@@ -147,11 +150,17 @@ export interface RuntimeRequest {
   readonly threadId: ThreadId | null;
   readonly modelRef: string;
   readonly systemInstructionRef: PayloadRef;
-  readonly messageRefs: readonly PayloadRef[];
+  readonly contextEnvelopeRef: PayloadRef;
+  readonly workerResultRefs: readonly RuntimeWorkerResultReference[];
   readonly capabilityHandleRefs: readonly string[];
   readonly budget: JsonObject;
   readonly correlationId: CorrelationId;
   readonly dataClassification: DataClassification;
+}
+
+export interface RuntimeWorkerResultReference {
+  readonly workerRunId: string;
+  readonly resultRef: PayloadRef;
 }
 
 export type RuntimeSuccessfulOutput =
@@ -303,8 +312,37 @@ export interface RuntimeProjectionContext {
     readonly content: string;
     readonly occurredAt: string;
   };
+  /** Non-authoritative summaries and capability context, never product truth. */
+  readonly contextBlocks: readonly RuntimeProjectionContextBlock[];
   /** Latest accepted product checkpoint, when the projected history was compacted. */
   readonly compaction?: RuntimeProjectionCompaction;
+}
+
+export interface RuntimeProjectionContextBlock {
+  readonly authority: "non-authoritative";
+  readonly kind: ProductContextBlockKind | "system-history" | "worker-result";
+  readonly ref: string;
+  readonly content: string;
+  readonly sourceRef?: string;
+  readonly dataClassification: DataClassification;
+  readonly productRole?: "system";
+}
+
+export type RuntimeProjectionRequest = Pick<
+  RuntimeRequest,
+  | "ownerId"
+  | "agentId"
+  | "runId"
+  | "sessionId"
+  | "threadId"
+  | "systemInstructionRef"
+  | "contextEnvelopeRef"
+  | "workerResultRefs"
+  | "dataClassification"
+>;
+
+export interface RuntimeProjection extends RuntimeProjectionContext {
+  readonly systemInstruction: string;
 }
 
 /**
@@ -313,11 +351,7 @@ export interface RuntimeProjectionContext {
  * as product Payload references. Pi Session data never implements this port.
  */
 export interface RuntimeProjectionPort {
-  resolveSystemInstruction(runId: RunId, payloadRef: PayloadRef): Promise<string>;
-  resolveContext(
-    runId: RunId,
-    messageRefs: readonly PayloadRef[],
-  ): Promise<RuntimeProjectionContext>;
+  resolveProjection(input: RuntimeProjectionRequest): Promise<RuntimeProjection>;
   capture(input: RuntimeProjectionCapture): Promise<PayloadRef>;
   captureFinalAnswer(input: {
     readonly runId: RunId;

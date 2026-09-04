@@ -43,8 +43,8 @@
       "id": "stale_handle",
       "assertions": [
         {
-          "source": "test/integration/authorization-capability-governance.test.ts",
-          "selector": "enforces reviewed capability lifecycle and bounded fenced Handle consumption"
+          "source": "test/integration/sqlite-capability-invocations.test.ts",
+          "selector": "rejects stale authority before consuming a new Capability Handle"
         }
       ]
     },

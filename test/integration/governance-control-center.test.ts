@@ -1,4 +1,5 @@
 import {
+  ApplicationPortError,
   ApprovalService,
   CapabilityLifecycleService,
   GovernanceGatewayV2ControlPlane,
@@ -13,12 +14,14 @@ import {
   type GovernedActionIntent,
   type GovernedApprovalRequest,
   type GovernanceDependencyReadPort,
+  type RecentAuthenticationGuardPort,
 } from "@himawari-agent/application";
 import {
   createAgentId,
   createIdempotencyKey,
   createOwnerId,
   createRunId,
+  createDeviceId,
 } from "@himawari-agent/domain";
 import {
   gatewayV2MessageSchema,
@@ -41,13 +44,38 @@ const RUN_ID = createRunId("run-governance-ui");
 const NOW = "2026-08-28T02:00:00.000Z";
 const EXPIRES_AT = "2026-08-28T03:00:00.000Z";
 const HASH = `sha256:${"b".repeat(64)}`;
+const AUTHENTICATION_DEVICE_ID = createDeviceId("device-governance-ui");
 
 const AUTHENTICATION: GatewayAuthenticationContext = {
   subjectId: "owner-subject",
   ownerId: OWNER_ID,
-  deviceId: "device-governance-ui",
+  deviceId: AUTHENTICATION_DEVICE_ID,
   authenticatedAt: NOW,
   authenticationRef: "recent-auth-governance-ui",
+};
+
+const RECENT_AUTHENTICATION: RecentAuthenticationGuardPort = {
+  async assertRecentAuthentication({ authentication, expectedAuthenticationRef }) {
+    if (
+      expectedAuthenticationRef !== authentication.authenticationRef ||
+      !Number.isFinite(Date.parse(authentication.authenticatedAt))
+    ) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Recent Owner authentication evidence is required",
+        { reasonCode: "RECENT_AUTH_REQUIRED" },
+      );
+    }
+    return {
+      source: "provider_step_up",
+      externalSubjectRef: "fixture:owner-subject",
+      ownerId: OWNER_ID,
+      deviceId: AUTHENTICATION_DEVICE_ID,
+      authenticationRef: authentication.authenticationRef,
+      authenticatedAt: authentication.authenticatedAt,
+      expiresAt: EXPIRES_AT,
+    };
+  },
 };
 
 const AUTHORITY = {
@@ -272,6 +300,7 @@ async function fixture() {
     clock,
     ownerId: OWNER_ID,
     agentId: AGENT_ID,
+    recentAuthentication: RECENT_AUTHENTICATION,
   });
   const reads = new GovernanceGatewayV2ReadModel({
     delegate: delegateReads,
@@ -476,6 +505,31 @@ describe("S4 Task 11 governance Control Center boundary", () => {
           recentAuthenticationRef: "recent-auth-other-session",
         }),
       }),
+    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+  });
+
+  it("does not authorize a critical approval from a matching ref without valid freshness evidence", async () => {
+    const setup = await fixture();
+    const invalidAuthentication: GatewayAuthenticationContext = {
+      ...AUTHENTICATION,
+      authenticatedAt: "not-a-date",
+    };
+    const approve = command(
+      "approval.respond",
+      "command-invalid-auth-time",
+      "idem-invalid-auth-time",
+      {
+        approvalRequestId: setup.approval.id,
+        expectedRevision: 1,
+        decision: "approved",
+        semanticSnapshotHash: setup.approval.semanticSnapshotHash,
+        editedPayloadRef: null,
+        recentAuthenticationRef: invalidAuthentication.authenticationRef,
+      },
+    );
+
+    await expect(
+      setup.control.execute({ authentication: invalidAuthentication, command: approve }),
     ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
   });
 });

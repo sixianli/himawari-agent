@@ -4,6 +4,7 @@ import type {
   AuthorizationStorePort,
   BackgroundWorkStatePort,
   CapabilityExecutionHandleStorePort,
+  CapabilityInvocationReceiptPort,
   CapabilityRegistryStorePort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
@@ -317,6 +318,17 @@ export class SqliteDurableAdapters {
     });
   }
 
+  capabilityInvocationReceiptPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+  ): CapabilityInvocationReceiptPort {
+    return Object.freeze<CapabilityInvocationReceiptPort>({
+      consume: (input) =>
+        this.context.write("capabilityInvocation.consume", { ownerId, agentId, input }),
+      read: (input) => this.context.read("capabilityInvocation.read", { ownerId, agentId, input }),
+    });
+  }
+
   scheduler(): SchedulerPort {
     return Object.freeze<SchedulerPort>({
       read: (jobId) => this.context.read("scheduler.read", { jobId }),
@@ -473,6 +485,9 @@ export class SqliteDurableAdapters {
           afterSequence,
           limit,
         }),
+      readContextSnapshot: (query) => this.context.read("thread.readContextSnapshot", { query }),
+      readCommittedMessagesByIds: (query) =>
+        this.context.read("thread.readCommittedMessagesByIds", { query }),
       listRuns: (ownerId, agentId, threadId) =>
         this.context.read("thread.listRuns", { ownerId, agentId, threadId }),
       listGatewayEvents: (ownerId, agentId, afterCursor, limit) =>

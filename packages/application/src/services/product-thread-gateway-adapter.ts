@@ -116,7 +116,7 @@ export class ProductThreadGatewayAdapter
     readonly authentication: GatewayAuthenticationContext;
     readonly command: ThreadGatewayCommand;
   }): Promise<ThreadGatewayRequestResult> {
-    const { command } = input;
+    const { authentication, command } = input;
     const ownerId = createOwnerId(command.scope.ownerId);
     const agentId = createAgentId(command.scope.agentId);
     const replay = await this.#dependencies.repository.findReceipt(
@@ -125,7 +125,7 @@ export class ProductThreadGatewayAdapter
       command.idempotencyKey as ThreadMutationReceipt["idempotencyKey"],
     );
     try {
-      const outcome = await this.#executeCommand(command, ownerId, agentId);
+      const outcome = await this.#executeCommand(command, ownerId, agentId, authentication);
       return parseResult({
         ...responseEnvelope(command, "result", "thread.command_result"),
         payload: {
@@ -385,6 +385,7 @@ export class ProductThreadGatewayAdapter
     command: ThreadGatewayCommand,
     ownerId: ReturnType<typeof createOwnerId>,
     agentId: ReturnType<typeof createAgentId>,
+    authentication: GatewayAuthenticationContext,
   ): Promise<ThreadCommandOutcome> {
     switch (command.type) {
       case "thread.create":
@@ -503,6 +504,7 @@ export class ProductThreadGatewayAdapter
           reasonCode: command.payload.reasonCode,
           authorizationRef: command.payload.authorizationRef,
           recentAuthenticationRef: command.payload.recentAuthenticationRef,
+          authentication,
           idempotencyKey: command.idempotencyKey,
           resultRef: command.payload.resultRef,
         });

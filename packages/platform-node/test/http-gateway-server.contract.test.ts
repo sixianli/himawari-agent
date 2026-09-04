@@ -916,7 +916,7 @@ describe("HTTP Gateway contract and security boundary", () => {
     ]);
   });
 
-  it("exposes only scoped authentication references in the authenticated browser configuration", async () => {
+  it("does not advertise a session reference as recent authentication proof", async () => {
     const { app } = createFixture(undefined, undefined, {
       browserConfiguration: {
         agentId: "agent-01",
@@ -941,7 +941,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       agentId: "agent-01",
       csrfToken: "csrf-issued-01",
       authorizationRef: authentication.authenticationRef,
-      recentAuthenticationRef: authentication.authenticationRef,
+      recentAuthenticationRef: null,
     });
     expect(response.body).not.toContain("session-token-01");
     expect(response.body).not.toContain("assertion-01");

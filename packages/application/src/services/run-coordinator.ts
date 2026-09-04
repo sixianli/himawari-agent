@@ -45,7 +45,7 @@ export interface ExecuteCoordinatedRunInput {
   readonly runId: RunId;
   readonly authority: AuthorityFence;
   readonly context: ContextFormationRequest;
-  readonly runtime: Omit<RuntimeRequest, "messageRefs">;
+  readonly runtime: Omit<RuntimeRequest, "contextEnvelopeRef" | "workerResultRefs">;
   readonly workers: readonly WorkerDelegation[];
   readonly delegableCapabilityHandleRefs: readonly string[];
   readonly delegableContextRefs: readonly PayloadRef[];
@@ -159,7 +159,7 @@ export class RunCoordinator {
       storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
         ...storedCheckpoint.checkpoint,
         phase: "context_formed",
-        contextRef: formed.finalContextRef,
+        contextRef: formed.contextEnvelopeRef,
         lastTraceEventId: formed.traceEventIds.at(-1) ?? null,
       });
     }
@@ -441,10 +441,10 @@ export class RunCoordinator {
     let observed = 0;
     const runtimeRequest: RuntimeRequest = {
       ...input.runtime,
-      messageRefs: [
-        storedCheckpoint.checkpoint.contextRef as PayloadRef,
-        ...Object.values(storedCheckpoint.checkpoint.workerResults),
-      ],
+      contextEnvelopeRef: storedCheckpoint.checkpoint.contextRef as PayloadRef,
+      workerResultRefs: Object.entries(storedCheckpoint.checkpoint.workerResults).map(
+        ([workerRunId, resultRef]) => ({ workerRunId, resultRef }),
+      ),
     };
     for await (const event of this.dependencies.runtime.run(runtimeRequest)) {
       if (event.runId !== input.runId) {

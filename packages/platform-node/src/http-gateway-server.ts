@@ -7,6 +7,7 @@ import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
   type GatewayAuthenticationContext,
+  type RecentAuthenticationGuardPort,
   PORT_ERROR_CODES,
 } from "@himawari-agent/application";
 import type { DeploymentHealthSnapshot } from "@himawari-agent/domain";
@@ -84,6 +85,8 @@ export interface HttpGatewayServerOptions {
   readonly payloadRead?: HttpGatewayPayloadReadPort;
   readonly threadSearch?: HttpGatewayThreadSearchPort;
   readonly authentication: HttpGatewayAuthenticationPort;
+  /** Optional low-risk configuration projection of a currently valid proof. */
+  readonly recentAuthentication?: RecentAuthenticationGuardPort;
   readonly csrf: HttpGatewayCsrfPort;
   readonly publicOrigin: string;
   readonly staticRoot: string;
@@ -609,6 +612,24 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     app.get("/api/control-center/v1/config", async (request, reply) => {
       assertPublicHost(request, publicOrigin);
       const authentication = await authenticate(request, options);
+      let recentAuthenticationRef: string | null = null;
+      if (options.recentAuthentication) {
+        try {
+          const evidence = await options.recentAuthentication.assertRecentAuthentication({
+            authentication,
+            expectedAuthenticationRef:
+              authentication.recentAuthenticationEvidence?.authenticationRef ?? null,
+          });
+          recentAuthenticationRef = evidence.authenticationRef;
+        } catch (error) {
+          if (
+            !(error instanceof ApplicationPortError) ||
+            error.code !== PORT_ERROR_CODES.NOT_AUTHORITATIVE
+          ) {
+            throw error;
+          }
+        }
+      }
       return sendJson(reply, 200, {
         ownerId: authentication.ownerId,
         agentId: configuration.agentId,
@@ -618,7 +639,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         actorId: authentication.subjectId,
         csrfToken: await issueCsrf(authentication),
         authorizationRef: authentication.authenticationRef,
-        recentAuthenticationRef: authentication.authenticationRef,
+        recentAuthenticationRef,
         primaryModel: configuration.primaryModel ?? null,
         primaryModelRef: configuration.primaryModelRef ?? null,
         repositoryAllowlistRefs: configuration.repositoryAllowlistRefs ?? [],

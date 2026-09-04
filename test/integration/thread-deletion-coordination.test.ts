@@ -2,16 +2,21 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  ApplicationPortError,
+  PORT_ERROR_CODES,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   type ActionIntent,
   type ApprovalRequest,
   type GrantRecord,
+  type GatewayAuthenticationContext,
+  type RecentAuthenticationGuardPort,
   type ScheduledJobWrite,
 } from "@himawari-agent/application";
 import {
   createAgentId,
   createDeploymentId,
+  createDeviceId,
   createIdempotencyKey,
   createOwnerId,
   createSessionId,
@@ -31,6 +36,37 @@ const ownerId = createOwnerId("owner-thread-delete-coordination");
 const agentId = createAgentId("agent-thread-delete-coordination");
 const deploymentId = createDeploymentId("deployment-thread-delete-coordination");
 const sessionId = createSessionId("session-thread-delete-coordination");
+const deviceId = createDeviceId("device-thread-delete-coordination");
+const authentication: GatewayAuthenticationContext = {
+  subjectId: ownerId,
+  ownerId,
+  deviceId,
+  authenticatedAt: "2026-08-28T01:00:00.000Z",
+  authenticationRef: "recent-auth:owner",
+};
+const recentAuthentication: RecentAuthenticationGuardPort = {
+  async assertRecentAuthentication({ authentication: current, expectedAuthenticationRef }) {
+    if (
+      expectedAuthenticationRef !== current.authenticationRef ||
+      !Number.isFinite(Date.parse(current.authenticatedAt))
+    ) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Recent Owner authentication evidence is required",
+        { reasonCode: "RECENT_AUTH_REQUIRED" },
+      );
+    }
+    return {
+      source: "provider_step_up",
+      externalSubjectRef: "fixture:owner",
+      ownerId,
+      deviceId,
+      authenticationRef: current.authenticationRef,
+      authenticatedAt: current.authenticatedAt,
+      expiresAt: "2026-08-29T01:00:00.000Z",
+    };
+  },
+};
 const authority: ProductAuthorityFence = {
   deploymentId,
   authorityEpoch: 5,
@@ -139,6 +175,7 @@ describe("Thread deletion coordination", () => {
       repository: threads,
       clock,
       authority: () => authority,
+      recentAuthentication,
     });
 
     const source = await commands.create({
@@ -343,6 +380,7 @@ describe("Thread deletion coordination", () => {
       repository: threads,
       clock,
       authority: () => ({ ...authority, fencingToken: authority.fencingToken - 1 }),
+      recentAuthentication,
     });
     await expect(
       staleCoordinator.deletePermanently({
@@ -353,6 +391,7 @@ describe("Thread deletion coordination", () => {
         reasonCode: "owner_requested_permanent_delete",
         authorizationRef: "approval:permanent-delete",
         recentAuthenticationRef: "recent-auth:owner",
+        authentication,
         idempotencyKey: "permanent-delete-with-stale-fence",
         resultRef: "payload-permanent-result",
       }),
@@ -366,12 +405,28 @@ describe("Thread deletion coordination", () => {
       reasonCode: "owner_requested_permanent_delete",
       authorizationRef: "approval:permanent-delete",
       recentAuthenticationRef: "recent-auth:owner",
+      authentication,
       idempotencyKey: "permanent-delete-source",
       resultRef: "payload-permanent-result",
     } as const;
+    const noGuardCoordinator = new ThreadDeletionCoordinationService({
+      repository: threads,
+      clock,
+      authority: () => authority,
+    });
+    const untrustedReplay = Object.assign(
+      { ...permanentInput, idempotencyKey: "permanent-delete-untrusted-replayed" },
+      { replayed: true },
+    );
+    await expect(noGuardCoordinator.deletePermanently(untrustedReplay)).rejects.toMatchObject({
+      code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      details: { reasonCode: "RECENT_AUTH_REQUIRED" },
+    });
+    expect((await threads.read(ownerId, agentId, source.thread.id))?.status).toBe("active");
     const pending = await coordinator.deletePermanently(permanentInput);
     expect(pending.thread.status).toBe("deletion_pending");
     await expect(coordinator.deletePermanently(permanentInput)).resolves.toEqual(pending);
+    await expect(noGuardCoordinator.deletePermanently(permanentInput)).resolves.toEqual(pending);
     await repository.close();
 
     const deletion = new SqliteGovernedDeletionAdapter({

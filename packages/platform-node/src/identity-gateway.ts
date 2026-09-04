@@ -1,10 +1,12 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { open, unlink } from "node:fs/promises";
+import { recentAuthenticationEvidence as createRecentAuthenticationEvidence } from "@himawari-agent/application";
 import type {
   GatewayAuthenticationContext,
   OwnerIdentityStatePort,
   ProductDeviceRecord,
   ProductSessionRecord,
+  RecentAuthenticationEvidenceProvider,
   SessionDeviceStatePort,
   VerifiedIdentityAssertion,
 } from "@himawari-agent/application";
@@ -31,6 +33,7 @@ export const IDENTITY_GATEWAY_ERROR_CODES = Object.freeze({
   BOOTSTRAP_NOT_LOOPBACK: "IDENTITY_BOOTSTRAP_NOT_LOOPBACK",
   BOOTSTRAP_TOKEN_INVALID: "IDENTITY_BOOTSTRAP_TOKEN_INVALID",
   BREAK_GLASS_REJECTED: "IDENTITY_BREAK_GLASS_REJECTED",
+  FRESHNESS_UNAVAILABLE: "IDENTITY_FRESHNESS_UNAVAILABLE",
   JWKS_INVALID: "IDENTITY_JWKS_INVALID",
   OWNER_NOT_BOUND: "IDENTITY_OWNER_NOT_BOUND",
   RECENT_AUTH_REQUIRED: "IDENTITY_RECENT_AUTH_REQUIRED",
@@ -59,6 +62,36 @@ export interface CloudflareAccessJwtVerifierOptions {
   readonly now?: () => Date;
   readonly cacheMilliseconds?: number;
   readonly clockToleranceSeconds?: number;
+}
+
+export interface CloudflareAccessIdentityFetcherInput {
+  readonly url: URL;
+  readonly assertionToken: string;
+  readonly signal: AbortSignal;
+  readonly maximumBodyBytes: number;
+}
+
+export interface CloudflareAccessIdentityFetcher {
+  fetch(input: CloudflareAccessIdentityFetcherInput): Promise<unknown>;
+}
+
+export interface CloudflareAccessIdentityClientOptions {
+  readonly issuer: string;
+  /** The binding is deliberately explicit until the provider contract is verified. */
+  readonly subjectBinding: "user_uuid_equals_sub";
+  readonly fetcher?: CloudflareAccessIdentityFetcher;
+  readonly now?: () => Date;
+  readonly timeoutMilliseconds?: number;
+  readonly maximumBodyBytes?: number;
+}
+
+interface ProviderIdentityResponse {
+  readonly userUuid: string;
+  readonly issuedAt: string;
+}
+
+interface ProviderVerifiedAssertion extends VerifiedIdentityAssertion {
+  readonly providerSubject: string;
 }
 
 function sha256(value: string): string {
@@ -117,6 +150,19 @@ export class CloudflareAccessJwtVerifier {
     token: string,
     observedAt = (this.options.now ?? (() => new Date()))(),
   ): Promise<VerifiedIdentityAssertion> {
+    const detailed = await this.verifyForIdentityLookup(token, observedAt);
+    const { providerSubject: _providerSubject, ...assertion } = detailed;
+    return Object.freeze(assertion);
+  }
+
+  /**
+   * Verifies the assertion and exposes the provider subject only to the
+   * transient get-identity adapter. The subject is never persisted.
+   */
+  async verifyForIdentityLookup(
+    token: string,
+    observedAt = (this.options.now ?? (() => new Date()))(),
+  ): Promise<ProviderVerifiedAssertion> {
     if (!token || token.length > 16_384) {
       throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.ASSERTION_INVALID);
     }
@@ -138,7 +184,7 @@ export class CloudflareAccessJwtVerifier {
     token: string,
     observedAt: Date,
     forceRefresh: boolean,
-  ): Promise<VerifiedIdentityAssertion> {
+  ): Promise<ProviderVerifiedAssertion> {
     const jwks = await this.getJwks(observedAt, forceRefresh);
     const { payload, protectedHeader } = await jwtVerify(token, createLocalJWKSet(jwks), {
       algorithms: ["RS256"],
@@ -163,6 +209,7 @@ export class CloudflareAccessJwtVerifier {
       audience: this.options.audience,
       authenticatedAt: observedAt.toISOString(),
       expiresAt: new Date(payload.exp * 1000).toISOString(),
+      providerSubject: payload.sub,
     });
   }
 
@@ -178,6 +225,255 @@ export class CloudflareAccessJwtVerifier {
       expiresAt: observedAt.valueOf() + (this.options.cacheMilliseconds ?? 300_000),
     };
     return fetched;
+  }
+}
+
+const DEFAULT_IDENTITY_TIMEOUT_MILLISECONDS = 2_000;
+const DEFAULT_IDENTITY_BODY_BYTES = 64 * 1024;
+
+function identityUnavailable(): never {
+  throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.FRESHNESS_UNAVAILABLE);
+}
+
+function parseProviderIdentityResponse(value: unknown): ProviderIdentityResponse {
+  if (value === null || typeof value !== "object") return identityUnavailable();
+  const record = value as { readonly user_uuid?: unknown; readonly iat?: unknown };
+  if (
+    typeof record.user_uuid !== "string" ||
+    record.user_uuid.length === 0 ||
+    record.user_uuid.length > 256 ||
+    typeof record.iat !== "number" ||
+    !Number.isSafeInteger(record.iat) ||
+    record.iat < 0 ||
+    record.iat > Math.floor(Number.MAX_SAFE_INTEGER / 1000)
+  ) {
+    return identityUnavailable();
+  }
+  const issuedAt = new Date(record.iat * 1000);
+  if (!Number.isFinite(issuedAt.valueOf())) return identityUnavailable();
+  return Object.freeze({ userUuid: record.user_uuid, issuedAt: issuedAt.toISOString() });
+}
+
+async function readBoundedResponseBody(
+  response: Response,
+  maximumBodyBytes: number,
+  signal: AbortSignal,
+): Promise<string> {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength !== null) {
+    const parsedLength = Number(contentLength);
+    if (
+      !Number.isSafeInteger(parsedLength) ||
+      parsedLength < 0 ||
+      parsedLength > maximumBodyBytes
+    ) {
+      await cancelIdentityBody(response.body);
+      identityUnavailable();
+    }
+  }
+  if (!response.body) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > maximumBodyBytes) identityUnavailable();
+    return text;
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const next = await readIdentityChunk(reader, signal);
+      if (next.done) break;
+      total += next.value.byteLength;
+      if (total > maximumBodyBytes) {
+        await reader.cancel().catch(() => undefined);
+        identityUnavailable();
+      }
+      chunks.push(next.value);
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // An aborted stream may still have a pending read; the fetch owns it.
+    }
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(result);
+}
+
+async function cancelIdentityBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
+  if (!body) return;
+  await body.cancel().catch(() => undefined);
+}
+
+function readIdentityChunk(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal,
+): ReturnType<ReadableStreamDefaultReader<Uint8Array>["read"]> {
+  if (signal.aborted) return Promise.reject(new Error("identity lookup aborted"));
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const onAbort = () => {
+      cleanup();
+      void reader.cancel().catch(() => undefined);
+      reject(new Error("identity lookup aborted"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    reader.read().then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error: unknown) => {
+        cleanup();
+        reject(error);
+      },
+    );
+  });
+}
+
+async function defaultIdentityFetch(input: CloudflareAccessIdentityFetcherInput): Promise<unknown> {
+  const response = await fetch(input.url, {
+    method: "GET",
+    headers: {
+      accept: "application/json",
+      Cookie: `CF_Authorization=${input.assertionToken}`,
+    },
+    redirect: "error",
+    signal: input.signal,
+  });
+  if (!response.ok) {
+    await cancelIdentityBody(response.body);
+    identityUnavailable();
+  }
+  const body = await readBoundedResponseBody(response, input.maximumBodyBytes, input.signal);
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    return identityUnavailable();
+  }
+}
+
+export class CloudflareAccessIdentityClient implements RecentAuthenticationEvidenceProvider {
+  private readonly issuer: string;
+  private readonly endpoint: URL;
+  private readonly fetcher: CloudflareAccessIdentityFetcher;
+  private readonly now: () => Date;
+  private readonly timeoutMilliseconds: number;
+  private readonly maximumBodyBytes: number;
+
+  constructor(options: CloudflareAccessIdentityClientOptions) {
+    const issuer = new URL(options.issuer);
+    if (
+      issuer.protocol !== "https:" ||
+      issuer.username ||
+      issuer.password ||
+      issuer.port ||
+      issuer.search ||
+      issuer.hash ||
+      (issuer.pathname !== "" && issuer.pathname !== "/") ||
+      options.subjectBinding !== "user_uuid_equals_sub"
+    ) {
+      throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.FRESHNESS_UNAVAILABLE);
+    }
+    const timeoutMilliseconds =
+      options.timeoutMilliseconds ?? DEFAULT_IDENTITY_TIMEOUT_MILLISECONDS;
+    const maximumBodyBytes = options.maximumBodyBytes ?? DEFAULT_IDENTITY_BODY_BYTES;
+    if (
+      !Number.isSafeInteger(timeoutMilliseconds) ||
+      timeoutMilliseconds < 1 ||
+      timeoutMilliseconds > 10_000 ||
+      !Number.isSafeInteger(maximumBodyBytes) ||
+      maximumBodyBytes < 1 ||
+      maximumBodyBytes > 1024 * 1024
+    ) {
+      throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.FRESHNESS_UNAVAILABLE);
+    }
+    this.issuer = issuer.origin;
+    this.endpoint = new URL("/cdn-cgi/access/get-identity", issuer.origin);
+    this.fetcher = options.fetcher ?? { fetch: defaultIdentityFetch };
+    this.now = options.now ?? (() => new Date());
+    this.timeoutMilliseconds = timeoutMilliseconds;
+    this.maximumBodyBytes = maximumBodyBytes;
+  }
+
+  async read(input: {
+    readonly assertionToken: string;
+    readonly assertion: VerifiedIdentityAssertion;
+    readonly providerSubject: string;
+  }): Promise<{
+    readonly source: "cloudflare_access_login_time";
+    readonly externalSubjectRef: string;
+    readonly authenticatedAt: string;
+    readonly expiresAt: string;
+  }> {
+    let assertionIssuer: URL;
+    try {
+      assertionIssuer = new URL(input.assertion.issuer);
+    } catch {
+      return identityUnavailable();
+    }
+    let observedAt: Date;
+    try {
+      observedAt = this.now();
+    } catch {
+      return identityUnavailable();
+    }
+    if (
+      !input.assertionToken ||
+      input.assertionToken.length > 16_384 ||
+      !input.providerSubject ||
+      assertionIssuer.origin !== this.issuer ||
+      (assertionIssuer.pathname !== "" && assertionIssuer.pathname !== "/") ||
+      assertionIssuer.search !== "" ||
+      assertionIssuer.hash !== "" ||
+      !Number.isFinite(observedAt.valueOf())
+    ) {
+      return identityUnavailable();
+    }
+    const controller = new AbortController();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => {
+        controller.abort();
+        reject(new Error("identity lookup timed out"));
+      }, this.timeoutMilliseconds);
+    });
+    try {
+      const response = await Promise.race([
+        this.fetcher.fetch({
+          url: this.endpoint,
+          assertionToken: input.assertionToken,
+          signal: controller.signal,
+          maximumBodyBytes: this.maximumBodyBytes,
+        }),
+        timeoutPromise,
+      ]);
+      const parsed = parseProviderIdentityResponse(response);
+      if (parsed.userUuid !== input.providerSubject) return identityUnavailable();
+      return Object.freeze({
+        source: "cloudflare_access_login_time",
+        externalSubjectRef: input.assertion.externalSubjectRef,
+        authenticatedAt: parsed.issuedAt,
+        expiresAt: input.assertion.expiresAt,
+      });
+    } catch (error) {
+      if (
+        error instanceof IdentityGatewayError &&
+        error.code === IDENTITY_GATEWAY_ERROR_CODES.FRESHNESS_UNAVAILABLE
+      ) {
+        throw error;
+      }
+      return identityUnavailable();
+    } finally {
+      controller.abort();
+      if (timeout) clearTimeout(timeout);
+    }
   }
 }
 
@@ -242,6 +538,7 @@ export interface ProductSessionAuthenticationServiceOptions {
   readonly verifier: CloudflareAccessJwtVerifier;
   readonly identityState: OwnerIdentityStatePort;
   readonly sessionState: SessionDeviceStatePort;
+  readonly recentAuthenticationProvider?: RecentAuthenticationEvidenceProvider;
   readonly now?: () => Date;
   readonly createSessionId: () => SessionId;
   readonly createDeviceId: () => DeviceId;
@@ -305,7 +602,10 @@ export class ProductSessionAuthenticationService implements HttpGatewayAuthentic
       throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.SESSION_INVALID);
     }
     const now = (this.options.now ?? (() => new Date()))();
-    const assertion = await this.options.verifier.verify(input.accessAssertion, now);
+    const assertion = await this.options.verifier.verifyForIdentityLookup(
+      input.accessAssertion,
+      now,
+    );
     const binding = await this.options.identityState.readBySubject(assertion.externalSubjectRef);
     const session = await this.options.sessionState.findSessionByAuthenticationRef(
       sha256(input.sessionToken),
@@ -323,27 +623,46 @@ export class ProductSessionAuthenticationService implements HttpGatewayAuthentic
       { ...session, lastActiveAt: now.toISOString() },
       session.revision,
     );
-    return Object.freeze({
+    let recentAuthenticationEvidence: GatewayAuthenticationContext["recentAuthenticationEvidence"];
+    if (this.options.recentAuthenticationProvider) {
+      try {
+        const providerEvidence = await this.options.recentAuthenticationProvider.read({
+          assertionToken: input.accessAssertion,
+          assertion,
+          providerSubject: assertion.providerSubject,
+        });
+        if (
+          providerEvidence.externalSubjectRef === assertion.externalSubjectRef &&
+          providerEvidence.expiresAt === assertion.expiresAt &&
+          Number.isFinite(Date.parse(providerEvidence.authenticatedAt))
+        ) {
+          recentAuthenticationEvidence = createRecentAuthenticationEvidence({
+            source: providerEvidence.source,
+            assertion: {
+              externalSubjectRef: providerEvidence.externalSubjectRef,
+              expiresAt: providerEvidence.expiresAt,
+            },
+            ownerId: binding.ownerId,
+            deviceId: session.deviceId,
+            authenticationRef: session.authenticationRef,
+            authenticatedAt: providerEvidence.authenticatedAt,
+          });
+        }
+      } catch {
+        // Provider freshness is an optional elevation. Normal JWT/session auth
+        // remains available when the bounded identity lookup is unavailable.
+      }
+    }
+    const context = {
       subjectId: binding.ownerId,
       ownerId: binding.ownerId,
       deviceId: session.deviceId,
       authenticatedAt: assertion.authenticatedAt,
       authenticationRef: session.authenticationRef,
-    });
-  }
-
-  async assertRecentAuthentication(authenticationRef: string, maximumAgeMilliseconds: number) {
-    const session =
-      await this.options.sessionState.findSessionByAuthenticationRef(authenticationRef);
-    const now = (this.options.now ?? (() => new Date()))().valueOf();
-    if (
-      !session ||
-      session.status !== "active" ||
-      now - new Date(session.recentAuthenticatedAt).valueOf() > maximumAgeMilliseconds
-    ) {
-      throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.RECENT_AUTH_REQUIRED);
-    }
-    return session;
+    };
+    return Object.freeze(
+      recentAuthenticationEvidence ? { ...context, recentAuthenticationEvidence } : context,
+    );
   }
 }
 

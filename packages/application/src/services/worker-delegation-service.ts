@@ -3,25 +3,81 @@ import {
   type ExecutionV2Request,
   executionV2MessageSchema,
 } from "@himawari-agent/execution-contracts";
-import type { AuthorizationStorePort } from "../ports/authorization.js";
-import {
-  capabilityLifecycleHasActiveAuthority,
-  type CapabilityExecutionHandleStorePort,
-  type CapabilityRegistryStorePort,
-  type GovernedCapabilityExecutionHandle,
-} from "../ports/capabilities.js";
+import type {
+  CapabilityInvocationAuthority,
+  CapabilityInvocationReceiptPort,
+  FrozenCapabilityInvocationReceipt,
+} from "../ports/capability-invocations.js";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ExecutionTransportPort } from "../ports/coordination.js";
 
-const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
-
 type ExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
+type CompleteExecutionScope = {
+  readonly deploymentId: string;
+  readonly authorityEpoch: number;
+  readonly fencingToken: number;
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly runId: string;
+  readonly workerRunId: string;
+};
+
+function completeScope(scope: ExecuteRequest["scope"]): CompleteExecutionScope {
+  if (
+    scope.ownerId === null ||
+    scope.agentId === null ||
+    scope.runId === null ||
+    scope.workerRunId === null
+  ) {
+    throw new ApplicationPortError(
+      PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      "work.execute must carry a complete owner, Agent, Run, and Worker scope",
+    );
+  }
+  return {
+    deploymentId: scope.deploymentId,
+    authorityEpoch: scope.authorityEpoch,
+    fencingToken: scope.fencingToken,
+    ownerId: scope.ownerId,
+    agentId: scope.agentId,
+    runId: scope.runId,
+    workerRunId: scope.workerRunId,
+  };
+}
+
+function receiptScope(receipt: FrozenCapabilityInvocationReceipt): CompleteExecutionScope {
+  return {
+    deploymentId: receipt.authority.product.deploymentId,
+    authorityEpoch: receipt.authority.product.authorityEpoch,
+    fencingToken: receipt.authority.product.fencingToken,
+    ownerId: receipt.ownerId,
+    agentId: receipt.agentId,
+    runId: receipt.runId,
+    workerRunId: receipt.workerRunId,
+  };
+}
+
+function scopeMatches(
+  left: CompleteExecutionScope | ExecuteRequest["scope"],
+  right: CompleteExecutionScope | ExecuteRequest["scope"],
+): boolean {
+  return (
+    left.deploymentId === right.deploymentId &&
+    left.authorityEpoch === right.authorityEpoch &&
+    left.fencingToken === right.fencingToken &&
+    left.ownerId === right.ownerId &&
+    left.agentId === right.agentId &&
+    left.runId === right.runId &&
+    left.workerRunId === right.workerRunId
+  );
+}
 
 export interface WorkerDelegationServiceOptions {
-  readonly handles: CapabilityRegistryStorePort & CapabilityExecutionHandleStorePort;
-  readonly authorization: AuthorizationStorePort;
+  /** Agent-scoped atomic consume port backed by the durable authority owner. */
+  readonly invocations: CapabilityInvocationReceiptPort;
+  /** Trusted current Agent/Worker attempt and product lease identity. */
+  readonly invocationAuthority: () => CapabilityInvocationAuthority;
   readonly transport: ExecutionTransportPort;
-  readonly authorityFence: () => number;
   readonly now: () => string;
   readonly nextId: (scope: string) => string;
 }
@@ -42,18 +98,12 @@ export class WorkerDelegationService {
     if (parsed.kind !== "request" || parsed.type !== "work.execute") {
       throw new TypeError("Worker delegation accepts work.execute requests only");
     }
-    if (this.#options.now() >= parsed.payload.deadlineAt) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.INVALID_OPERATION,
-        "Expired work cannot consume a durable Capability Handle",
-      );
-    }
-    const source = await this.#requiredGovernedHandle(parsed);
-    const consumed = await this.#consume(parsed, source);
-    const expiresAt =
-      consumed.expiresAt <= parsed.payload.deadlineAt
-        ? consumed.expiresAt
-        : parsed.payload.deadlineAt;
+    const scope = completeScope(parsed.scope);
+    const authority = this.#options.invocationAuthority();
+    const consumed = await this.#consume(parsed, scope, authority, this.#options.now());
+    if (consumed.replayed) return;
+
+    const receipt = consumed.receipt;
     const delegate = executionV2MessageSchema.parse({
       schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
       kind: "request",
@@ -61,33 +111,33 @@ export class WorkerDelegationService {
       messageId: this.#options.nextId("worker-delegation"),
       correlationId: parsed.correlationId,
       causationId: parsed.messageId,
-      dataClassification: parsed.dataClassification,
+      dataClassification: receipt.dataClassification,
       risk: parsed.risk,
-      authorizationRef: consumed.authorizationRef,
-      scope: parsed.scope,
-      idempotencyKey: `${parsed.idempotencyKey}:delegate`,
+      authorizationRef: receipt.authorizationRef,
+      scope: receiptScope(receipt),
+      idempotencyKey: `${receipt.idempotencyKey}:delegate`,
       payload: {
         handle: {
           handleVersion: "capability-handle.v2",
-          ref: consumed.ref,
-          revision: consumed.revision,
-          authorityFence: consumed.authorityFence,
-          ownerId: consumed.ownerId,
-          agentId: consumed.agentId,
-          runId: consumed.runId,
-          capabilityRef: consumed.capabilityRef,
-          capabilityVersion: consumed.capabilityVersion,
-          authorizationType: consumed.authorization.type,
-          authorizationRef: consumed.authorizationRef,
-          operations: [parsed.payload.operation],
-          inputRefs: [parsed.payload.inputRef],
-          delegatedContextRefs: parsed.payload.delegatedContextRefs,
-          secretRefs: parsed.payload.secretRefs,
-          maxDataClassification: parsed.dataClassification,
-          issuedAt: this.#options.now(),
-          expiresAt,
+          ref: receipt.handleRef,
+          revision: receipt.handleRevision,
+          authorityFence: receipt.authority.product.fencingToken,
+          ownerId: receipt.ownerId,
+          agentId: receipt.agentId,
+          runId: receipt.runId,
+          capabilityRef: receipt.capabilityRef,
+          capabilityVersion: receipt.capabilityVersion,
+          authorizationType: receipt.authorization.type,
+          authorizationRef: receipt.authorizationRef,
+          operations: [receipt.operation],
+          inputRefs: [receipt.inputRef],
+          delegatedContextRefs: receipt.delegatedContextRefs,
+          secretRefs: receipt.secretRefs,
+          maxDataClassification: receipt.dataClassification,
+          issuedAt: receipt.consumedAt,
+          expiresAt: receipt.effectiveExpiresAt,
           revokedAt: null,
-          operation: parsed.payload.operation,
+          operation: receipt.operation,
           maxUses: 1,
           uses: 0,
           maxTotalCostMicros: 0,
@@ -95,7 +145,7 @@ export class WorkerDelegationService {
           idempotencyKeys: [],
           workerEndedAt: null,
         },
-        requestedAt: this.#options.now(),
+        requestedAt: receipt.requestedAt,
       },
     });
     if (delegate.kind !== "request" || delegate.type !== "work.delegate") {
@@ -103,15 +153,48 @@ export class WorkerDelegationService {
     }
     const accepted = await this.#options.transport.request(delegate);
     if (
+      accepted?.kind !== "response" ||
       accepted?.type !== "work.delegate.accepted" ||
-      accepted.payload.handleRef !== consumed.ref
+      accepted.payload.handleRef !== receipt.handleRef ||
+      accepted.payload.workerBootId !== receipt.authority.workerBootId ||
+      accepted.correlationId !== delegate.correlationId ||
+      accepted.causationId !== delegate.messageId ||
+      !scopeMatches(accepted.scope, receiptScope(receipt))
     ) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.PROVIDER_FAILURE,
         "Worker did not accept the attenuated Capability Handle",
       );
     }
-    const response = await this.#options.transport.request(parsed);
+    const execute = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "request",
+      type: "work.execute",
+      messageId: receipt.invocationId,
+      correlationId: parsed.correlationId,
+      causationId: parsed.causationId,
+      dataClassification: receipt.dataClassification,
+      risk: parsed.risk,
+      authorizationRef: receipt.authorizationRef,
+      scope: receiptScope(receipt),
+      idempotencyKey: receipt.idempotencyKey,
+      payload: {
+        capabilityId: receipt.capabilityRef,
+        capabilityVersion: receipt.capabilityVersion,
+        operation: receipt.operation,
+        inputRef: receipt.inputRef,
+        capabilityHandleRef: receipt.handleRef,
+        delegatedContextRefs: receipt.delegatedContextRefs,
+        secretRefs: receipt.secretRefs,
+        resourceCeiling: receipt.resourceCeiling,
+        requestedAt: receipt.requestedAt,
+        deadlineAt: receipt.deadlineAt,
+      },
+    });
+    if (execute.kind !== "request" || execute.type !== "work.execute") {
+      throw new TypeError("Worker execution message is invalid");
+    }
+    const response = await this.#options.transport.request(execute);
     if (response !== null) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.PROVIDER_FAILURE,
@@ -120,81 +203,31 @@ export class WorkerDelegationService {
     }
   }
 
-  async #requiredGovernedHandle(request: ExecuteRequest) {
-    const handle = await this.#options.handles.getExecutionHandle(
-      request.payload.capabilityHandleRef,
-    );
-    const governed = handle as GovernedCapabilityExecutionHandle | undefined;
-    const capability = handle ? await this.#options.handles.get(handle.capabilityRef) : undefined;
-    const valid =
-      governed?.handleVersion === "capability-handle.v2" &&
-      governed.revokedAt === null &&
-      governed.workerEndedAt === null &&
-      this.#options.now() < governed.expiresAt &&
-      governed.authorityFence === this.#options.authorityFence() &&
-      capability !== undefined &&
-      capabilityLifecycleHasActiveAuthority(capability.lifecycle) &&
-      capability.declaration.version === governed.capabilityVersion &&
-      governed.ownerId === request.scope.ownerId &&
-      governed.agentId === request.scope.agentId &&
-      governed.runId === request.scope.runId &&
-      governed.capabilityRef === request.payload.capabilityId &&
-      governed.capabilityVersion === request.payload.capabilityVersion &&
-      governed.operations.includes(request.payload.operation) &&
-      governed.inputRefs.includes(request.payload.inputRef) &&
-      request.payload.delegatedContextRefs.every((ref) =>
-        governed.delegatedContextRefs.includes(ref),
-      ) &&
-      request.payload.secretRefs.every((secret) =>
-        governed.secretRefs.some(
-          (allowed) =>
-            allowed.secretRef === secret.secretRef &&
-            allowed.secretVersion === secret.secretVersion &&
-            allowed.purpose === secret.purpose,
-        ),
-      ) &&
-      CLASSIFICATION_RANK[request.dataClassification] <=
-        CLASSIFICATION_RANK[governed.maxDataClassification] &&
-      (request.authorizationRef === null || request.authorizationRef === governed.authorizationRef);
-    if (!valid) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
-        `Execution request ${request.messageId} exceeds its durable Capability Handle`,
-      );
-    }
-    return governed;
-  }
-
-  async #consume(request: ExecuteRequest, handle: GovernedCapabilityExecutionHandle) {
-    if (!this.#options.handles.consumeExecutionHandle) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
-        "Durable Capability Handle consumption is unavailable",
-      );
-    }
-    if (handle.authorization.type === "grant") {
-      const grants = await this.#options.authorization.listGrants(handle.ownerId, handle.agentId);
-      const grant = grants.find(({ id }) => id === handle.authorization.ref);
-      const now = this.#options.now();
-      if (!grant || grant.revokedAt !== null || now < grant.validFrom || now >= grant.expiresAt) {
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.HANDLE_REVOKED,
-          `Grant for Capability Handle ${handle.ref} is no longer active`,
-        );
-      }
-    }
-    return this.#options.handles.consumeExecutionHandle({
-      handleRef: handle.ref,
-      expectedRevision: handle.revision,
-      authorityFence: handle.authorityFence,
+  async #consume(
+    request: ExecuteRequest,
+    scope: CompleteExecutionScope,
+    authority: CapabilityInvocationAuthority,
+    consumedAt: string,
+  ) {
+    return this.#options.invocations.consume({
+      receiptRef: this.#options.nextId("capability-invocation-receipt"),
+      handleRef: request.payload.capabilityHandleRef,
+      invocationId: request.messageId,
+      requestScope: scope,
+      capabilityRef: request.payload.capabilityId,
+      capabilityVersion: request.payload.capabilityVersion,
+      authorizationRef: request.authorizationRef,
+      idempotencyKey: request.idempotencyKey,
       operation: request.payload.operation,
       inputRef: request.payload.inputRef,
       delegatedContextRefs: request.payload.delegatedContextRefs,
-      secretRefs: request.payload.secretRefs.map(({ secretRef }) => secretRef),
+      secretRefs: request.payload.secretRefs,
       dataClassification: request.dataClassification,
-      costMicros: 0,
-      idempotencyKey: request.idempotencyKey,
-      consumedAt: this.#options.now(),
+      resourceCeiling: request.payload.resourceCeiling,
+      requestedAt: request.payload.requestedAt,
+      deadlineAt: request.payload.deadlineAt,
+      authority,
+      consumedAt,
     });
   }
 }

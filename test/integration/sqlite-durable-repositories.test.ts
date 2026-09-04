@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
   CapabilityExecutionHandleStorePort,
+  CapabilityInvocationAuthority,
   CapabilityRegistryStorePort,
   GovernanceMutationReceipt,
   GovernedCapabilityExecutionHandle,
@@ -60,6 +61,14 @@ const LEASE = {
   leaseId: createAuthorityLeaseId("lease-conformance"),
   fencingToken: 1,
 };
+const INVOCATION_AUTHORITY: CapabilityInvocationAuthority = {
+  product: AUTHORITY,
+  lease: LEASE,
+  agentServiceInstanceId: "agent-service-instance-conformance",
+  agentServiceBootId: "agent-service-boot-conformance",
+  workerInstanceId: "worker-instance-conformance",
+  workerBootId: "worker-boot-conformance",
+};
 
 interface RepositoryResource {
   readonly repository: SqliteProductStateRepository;
@@ -68,7 +77,10 @@ interface RepositoryResource {
 
 const resources = new WeakMap<object, RepositoryResource>();
 
-async function seedRepository(databasePath: string): Promise<void> {
+async function seedRepository(
+  databasePath: string,
+  runStatus: "accepted" | "running" = "accepted",
+): Promise<void> {
   const database = openQualifiedDatabase(databasePath);
   applyMigrations(database, await loadBundledMigrations());
   database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
@@ -128,9 +140,9 @@ async function seedRepository(databasePath: string): Promise<void> {
         id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
         status, created_at, updated_at
       ) VALUES (?, ?, ?, 'thread-conformance', ?, 'trigger-conformance', 0,
-        'accepted', ?, ?)`,
+        ?, ?, ?)`,
     )
-    .run(RUN_ID, OWNER_ID, AGENT_ID, SESSION_ID, T0, T0);
+    .run(RUN_ID, OWNER_ID, AGENT_ID, SESSION_ID, runStatus, T0, T0);
   database
     .prepare(
       `INSERT INTO turns (
@@ -141,9 +153,12 @@ async function seedRepository(databasePath: string): Promise<void> {
   database.close();
 }
 
-async function openRepository(now = T0): Promise<RepositoryResource> {
+async function openRepository(
+  now = T0,
+  runStatus: "accepted" | "running" = "accepted",
+): Promise<RepositoryResource> {
   const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-sqlite-durable-"));
-  await seedRepository(path.join(stateRoot, "product.sqlite"));
+  await seedRepository(path.join(stateRoot, "product.sqlite"), runStatus);
   const repository = await SqliteProductStateRepository.open({
     stateRoot,
     minimumFreeBytes: 0,
@@ -337,7 +352,7 @@ describe("SQLite durable repository adapters", () => {
   });
 
   it("atomically resolves a Grant budget race, preserves idempotency, and fences Handle consumption", async () => {
-    const resource = await openRepository();
+    const resource = await openRepository(T0, "running");
     const authorization = resource.repository.authorizationStore();
     const action = {
       id: "intent-governed-sqlite",
@@ -544,31 +559,58 @@ describe("SQLite durable repository adapters", () => {
       workerEndedAt: null,
     };
     await capabilities.createExecutionHandle(handle);
-    const consumeHandle = capabilities.consumeExecutionHandle;
     const revokeHandles = capabilities.revokeCapabilityHandles;
     const endRunHandles = capabilities.endRunExecutionHandles;
-    if (!consumeHandle || !revokeHandles || !endRunHandles)
+    if (!revokeHandles || !endRunHandles)
       throw new Error("governed capability store is incomplete");
-    const handleUse = {
+    const invocation = {
+      receiptRef: "receipt-governed-sqlite",
       handleRef: handle.ref,
-      expectedRevision: 1,
-      authorityFence: 1,
+      invocationId: "invocation-governed-sqlite",
+      requestScope: {
+        deploymentId: AUTHORITY.deploymentId,
+        authorityEpoch: AUTHORITY.authorityEpoch,
+        fencingToken: AUTHORITY.fencingToken,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        workerRunId: "worker-run-governed-sqlite",
+      },
+      capabilityRef: action.capabilityRef,
+      capabilityVersion: "1.0.0",
+      authorizationRef: grant.id,
+      idempotencyKey: "handle-use-governed-sqlite",
       operation: action.operation,
       inputRef: "payload-input-governed",
       delegatedContextRefs: [],
       secretRefs: [],
       dataClassification: "private" as const,
-      costMicros: 10,
-      idempotencyKey: "handle-use-governed-sqlite",
+      resourceCeiling: {
+        maxWallTimeMs: 1_000,
+        maxCpuTimeMs: 1_000,
+        maxMemoryBytes: 1_000_000,
+        maxOutputBytes: 4_096,
+        maxProgressEvents: 10,
+      },
+      requestedAt: T0,
+      deadlineAt: T2,
+      authority: INVOCATION_AUTHORITY,
       consumedAt: T1,
     };
-    await expect(consumeHandle(handleUse)).resolves.toMatchObject({
-      uses: 1,
-      revision: 2,
+    const invocations = resource.repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID);
+    await expect(invocations.consume(invocation)).resolves.toMatchObject({
+      replayed: false,
+      receipt: {
+        invocationId: invocation.invocationId,
+        idempotencyKey: invocation.idempotencyKey,
+      },
     });
-    await expect(consumeHandle(handleUse)).resolves.toMatchObject({
-      uses: 1,
-      revision: 2,
+    await expect(invocations.consume(invocation)).resolves.toMatchObject({
+      replayed: true,
+      receipt: {
+        invocationId: invocation.invocationId,
+        idempotencyKey: invocation.idempotencyKey,
+      },
     });
     const scheduler = resource.repository.scheduler();
     await scheduler.upsert(

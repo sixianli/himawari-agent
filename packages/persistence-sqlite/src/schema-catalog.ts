@@ -245,6 +245,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with declaration or Run purge",
   ),
   entry(
+    "capability_invocation_receipts",
+    "CapabilityInvocationReceiptPort",
+    "immutable first-dispatch invocation receipt",
+    "metadata_only",
+    "cascade with Run deletion",
+  ),
+  entry(
     "command_results",
     "ProductStateRepositoryPort",
     "immutable idempotent result",

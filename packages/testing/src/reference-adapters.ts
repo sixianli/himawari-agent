@@ -36,7 +36,7 @@ import type {
   WorkerRunEvent,
   WorkerRunPort,
 } from "@himawari-agent/application";
-import { createAgentId, createOwnerId } from "@himawari-agent/domain";
+import { createAgentId, createOwnerId, type AgentId, type OwnerId } from "@himawari-agent/domain";
 import {
   DeterministicIdGenerator,
   type FailureScheduler,
@@ -71,6 +71,7 @@ import {
 } from "./in-memory/index.js";
 
 export interface ReferenceAdapterOptions {
+  readonly scope?: { readonly ownerId: OwnerId; readonly agentId: AgentId };
   readonly clock?: ClockPort;
   readonly ids?: IdGeneratorPort;
   readonly failures?: FailureScheduler;
@@ -144,8 +145,8 @@ export function createReferenceAdapterSet(
   const payloadProtector = new DeterministicPayloadProtector();
   const payload = new InMemoryPayloadStore(failures);
   const runPayloadArtifacts = new InMemoryRunPayloadArtifactStore(
-    createOwnerId("reference-owner"),
-    createAgentId("reference-agent"),
+    options.scope?.ownerId ?? createOwnerId("reference-owner"),
+    options.scope?.agentId ?? createAgentId("reference-agent"),
     payload,
     failures,
   );

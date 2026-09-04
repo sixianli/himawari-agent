@@ -503,7 +503,7 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 
 本机真实 Chrome `151.0.7922.172` 与 Edge `150.0.4078.50` 已通过 Thread/chat、Run cancel、approval、task、inbox、Memory、Trace、sessions、health degraded、SSE 断网/后台/关闭重开、键盘焦点、ARIA landmark、axe、触摸目标和非颜色连接状态资格测试。Playwright WebKit `26.5` 通过同一矩阵；iPhone 15 WebKit 与 Pixel 7 Chrome 仅为 macOS 上的设备模拟，不能当作 iOS/Android 真机证据。系统 Safari 为 `27.0`，但现有设置未启用 `Allow remote automation`，因此没有创建会话或修改该设置；Playwright Firefox `153.0` 在缓存路径和无 provenance 的临时副本中都被自身 macOS content sandbox 阻断。真实 Safari、Firefox、iOS/Android 真机、屏幕阅读器和 staging Cloudflare/MFA 仍是明确缺口。
 
-本地密码学和 HTTP 安全矩阵已覆盖本 Task 列出的全部拒绝路径；bootstrap、session/device、recent re-auth 的产品边界和持久重启已通过，但真实 MFA redirect 只能在授权后的 Cloudflare Access 路径验证。阶段性证据位于 `test/integration/qualification/evidence/s1-task27-browser-identity-public-path.json`；本 Task 保持未收口，且这些本机结果不代表 staging 或 production。
+历史本机矩阵覆盖了签名、bootstrap、session/device 和持久重启，阶段性证据位于 `test/integration/qualification/evidence/s1-task27-browser-identity-public-path.json`；它没有证明近期认证的可信时间来源与敏感入口已经闭环。2026-09-04 的新增回归由根代理独立复跑，实际复现五项失败：旧有效 assertion 新建 session 被当成近期认证、非法与未来时间被接受、HTTP config 将普通 session ref 冒充近期证明，以及 Governance 关键审批仅凭 ref 相等即完成。现已实现可信登录时间来源、显式年龄策略和统一敏感操作 guard；根代理独立验证了正常读取降级、身份与会话绑定、撤销、非法时间、回执重放和有界响应处理，并通过全仓静态检查。这里的 provider 与 HTTP 响应仍为受控夹具，未接入安装后的生产入口，也没有验证真实 Cloudflare 主体对应关系或 MFA redirect。真实 Access/MFA 仍须在获授权的目标环境验证。本 Task 保持未收口，本机证据不代表 staging 或 production。
 
 ### Task 28：完成 Mac/Hermes、规模与迁移验收
 

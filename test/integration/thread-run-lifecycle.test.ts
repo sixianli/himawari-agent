@@ -154,6 +154,10 @@ async function executionFixture() {
   });
   const runs = setup.repository.runLifecycle(ownerId, agentId, authority);
   const checkpoints = setup.repository.runCheckpointStore(ownerId, agentId, authority);
+  const artifacts = setup.repository.runPayloadArtifactPort(ownerId, agentId, {
+    product: authority,
+    lease,
+  });
   const stored = await runs.readRun(setup.runId);
   if (!stored) throw new Error("Missing admitted Run");
   const input: ExecuteCoordinatedRunInput = {
@@ -171,8 +175,11 @@ async function executionFixture() {
         id: stored.run.triggerId,
         sourceType: "user_message",
         payloadRef: "payload-run-lifecycle",
+        occurredAt: clock.now(),
       },
       threadMessages: [],
+      sourceWatermark: null,
+      policyVersion: "context-policy-v1",
       policies: [],
       memoryQueryRef: "payload-run-lifecycle",
       memoryQueryTerms: [],
@@ -224,7 +231,16 @@ async function executionFixture() {
     },
     async cancel() {},
   };
-  const context = new ContextFormationService({ memory: adapters.memory, trace });
+  const context = new ContextFormationService({
+    memory: adapters.memory,
+    trace,
+    artifacts,
+    payloads,
+    protector,
+    clock,
+    ids: adapters.ids,
+    threads: setup.repository.threadRepository(),
+  });
   const coordinator = new RunCoordinator({
     runs,
     checkpoints,
@@ -1232,7 +1248,15 @@ it("lets the existing RunCoordinator cancel the admitted relational Run with a d
   const coordinator = new RunCoordinator({
     runs,
     checkpoints,
-    context: new ContextFormationService({ memory: adapters.memory, trace }),
+    context: new ContextFormationService({
+      memory: adapters.memory,
+      trace,
+      artifacts: adapters.runPayloadArtifacts,
+      payloads: adapters.payload,
+      protector: adapters.payloadProtector,
+      clock: adapters.clock,
+      ids: adapters.ids,
+    }),
     runtime: new ScriptedAgentRuntime(() => clock.now(), []),
     workers: new ScriptedWorkerRunPort(),
     trace,

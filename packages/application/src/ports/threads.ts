@@ -132,6 +132,29 @@ export interface ThreadSearchProjectionInput {
   readonly projectionVersion: string;
 }
 
+export interface ThreadContextSnapshotQuery {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly runId: RunId;
+  readonly afterSequence: number;
+  readonly limit: number;
+}
+
+export interface ThreadContextSnapshot {
+  readonly thread: ProductThread;
+  readonly messages: readonly ProductThreadMessage[];
+  /** Highest canonical message sequence causally visible to this Run. */
+  readonly sourceWatermark: number | null;
+}
+
+export interface ThreadCommittedMessagesByIdsQuery {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly messageIds: readonly MessageId[];
+}
+
 export interface ThreadTitleSearchProjectionInput {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -246,6 +269,12 @@ export interface ThreadRepositoryPort {
     threadId: ThreadId,
     afterSequence: number,
     limit: number,
+  ): Promise<readonly ProductThreadMessage[]>;
+  readContextSnapshot(
+    query: ThreadContextSnapshotQuery,
+  ): Promise<ThreadContextSnapshot | undefined>;
+  readCommittedMessagesByIds(
+    query: ThreadCommittedMessagesByIdsQuery,
   ): Promise<readonly ProductThreadMessage[]>;
   listRuns(
     ownerId: OwnerId,

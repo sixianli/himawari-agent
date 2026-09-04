@@ -10,7 +10,6 @@ import type {
   BackgroundOccurrenceSettlement,
   CapabilityExecutionHandle,
   CapabilityRegistryRecord,
-  ConsumeCapabilityExecutionHandleInput,
   ConsumeGrantInput,
   DeliveryClaim,
   DeliveryRequest,
@@ -58,6 +57,7 @@ import type {
 } from "@himawari-agent/gateway-contracts";
 import type Database from "better-sqlite3";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
+import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
 import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
 import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
 import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
@@ -273,6 +273,7 @@ export class SqliteDurableOperations {
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
   private readonly checkpoint: SqliteCheckpointOperations;
+  private readonly capabilityInvocations: SqliteCapabilityInvocationOperations;
   private readonly memory: SqliteMemoryOperations;
   private readonly thread: SqliteThreadOperations;
   private readonly runs: SqliteRunLifecycleOperations;
@@ -288,6 +289,11 @@ export class SqliteDurableOperations {
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
     this.checkpoint = new SqliteCheckpointOperations(database, fail, assertDiskHeadroom);
+    this.capabilityInvocations = new SqliteCapabilityInvocationOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
     this.runs = new SqliteRunLifecycleOperations(database, fail, assertDiskHeadroom, this.thread);
@@ -317,6 +323,9 @@ export class SqliteDurableOperations {
     }
     if (operation.startsWith("thread.")) {
       return this.thread.execute(operation, payload);
+    }
+    if (operation.startsWith("capabilityInvocation.")) {
+      return this.capabilityInvocations.execute(operation, payload);
     }
     if (operation.startsWith("threadDistillation.")) {
       return this.checkpoint.execute(operation, payload);
@@ -479,9 +488,7 @@ export class SqliteDurableOperations {
           payload as { ownerId: string; agentId: string; handleRef: string; revokedAt: string },
         );
       case "capability.consumeHandle":
-        return this.consumeCapabilityHandle(
-          (payload as { input: ConsumeCapabilityExecutionHandleInput }).input,
-        );
+        return this.consumeCapabilityHandle(payload);
       case "capability.revokeHandles":
         return this.revokeCapabilityHandles(
           payload as { ownerId: string; agentId: string; capabilityRef: string; revokedAt: string },
@@ -2033,46 +2040,11 @@ export class SqliteDurableOperations {
     return revoked;
   }
 
-  private consumeCapabilityHandle(
-    input: ConsumeCapabilityExecutionHandleInput,
-  ): GovernedCapabilityExecutionHandle {
-    this.assertDiskHeadroom();
-    const transaction = this.database.transaction(() => {
-      const row = this.database
-        .prepare("SELECT record_json AS recordJson FROM capability_handles WHERE id = ?")
-        .get(input.handleRef) as JsonRow | undefined;
-      const current = parseRecord<GovernedCapabilityExecutionHandle>(row);
-      if (!current || current.handleVersion !== "capability-handle.v2") {
-        this.fail("PORT_NOT_FOUND", `Capability handle ${input.handleRef} not found`);
-      }
-      if (current.idempotencyKeys.includes(input.idempotencyKey)) return current;
-      if (
-        current.revision !== input.expectedRevision ||
-        current.revokedAt !== null ||
-        current.workerEndedAt !== null ||
-        input.consumedAt >= current.expiresAt ||
-        current.authorityFence !== input.authorityFence ||
-        current.uses >= current.maxUses ||
-        current.spentCostMicros + input.costMicros > current.maxTotalCostMicros
-      )
-        this.fail("PORT_CONFLICT", `Capability handle ${input.handleRef} is not consumable`);
-      const consumed: GovernedCapabilityExecutionHandle = {
-        ...current,
-        revision: current.revision + 1,
-        uses: current.uses + 1,
-        spentCostMicros: current.spentCostMicros + input.costMicros,
-        idempotencyKeys: [...current.idempotencyKeys, input.idempotencyKey],
-      };
-      this.database
-        .prepare("UPDATE capability_handles SET status = ?, record_json = ? WHERE id = ?")
-        .run(
-          consumed.uses >= consumed.maxUses ? "consumed" : "active",
-          JSON.stringify(consumed),
-          consumed.ref,
-        );
-      return consumed;
-    });
-    return transaction.immediate();
+  private consumeCapabilityHandle(_input: unknown): never {
+    return this.fail(
+      "PORT_NOT_AUTHORITATIVE",
+      "Direct Capability Handle consumption is retired; use the scoped invocation receipt port",
+    );
   }
 
   private revokeCapabilityHandles(input: {

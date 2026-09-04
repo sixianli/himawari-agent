@@ -17,6 +17,7 @@ import type {
   GatewayV2ControlPlanePort,
   GatewayV2ReadModelPort,
 } from "../ports/gateway.js";
+import type { RecentAuthenticationGuardPort } from "../ports/recent-authentication.js";
 import type {
   GovernanceDependencyReadPort,
   GovernanceMutationReceipt,
@@ -564,6 +565,7 @@ export interface GovernanceGatewayV2ControlPlaneDependencies {
   readonly clock: ClockPort;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
+  readonly recentAuthentication?: RecentAuthenticationGuardPort;
 }
 
 interface ReceiptAttempt {
@@ -615,16 +617,6 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
         "Governance mutations require the scoped authenticated Owner and authorization",
-      );
-    }
-    if (
-      command.type === "approval.respond" &&
-      command.payload.recentAuthenticationRef !== null &&
-      command.payload.recentAuthenticationRef !== authentication.authenticationRef
-    ) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
-        "Approval recent authentication does not match the authenticated session",
       );
     }
   }
@@ -752,14 +744,10 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     ) {
       return `approval:${current.id}:revision-${current.revision}`;
     }
-    if (
-      command.payload.decision === "approved" &&
-      current.recentAuthenticationRequired &&
-      command.payload.recentAuthenticationRef !== authentication.authenticationRef
-    ) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
-        "This Approval requires the current recent authentication reference",
+    if (command.payload.decision === "approved" && current.recentAuthenticationRequired) {
+      await this.#assertRecentAuthentication(
+        authentication,
+        command.payload.recentAuthenticationRef,
       );
     }
     const response =
@@ -1002,6 +990,23 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
         `${kind} is outside the configured Owner and Agent scope`,
       );
     }
+  }
+
+  async #assertRecentAuthentication(
+    authentication: GatewayAuthenticationContext,
+    ref: string | null,
+  ): Promise<void> {
+    if (!this.#dependencies.recentAuthentication) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Recent Owner authentication evidence is required",
+        { reasonCode: "RECENT_AUTH_REQUIRED" },
+      );
+    }
+    await this.#dependencies.recentAuthentication.assertRecentAuthentication({
+      authentication,
+      expectedAuthenticationRef: ref,
+    });
   }
 
   #capabilityResult(record: CapabilityRegistryRecord): string {

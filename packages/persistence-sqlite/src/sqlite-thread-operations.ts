@@ -6,6 +6,8 @@ import type {
   ResolveThreadTaskInput,
   ScheduledJob,
   ThreadCreateInput,
+  ThreadCommittedMessagesByIdsQuery,
+  ThreadContextSnapshotQuery,
   ThreadDeletionImpact,
   ThreadListQuery,
   ThreadGatewayEventRecord,
@@ -190,6 +192,12 @@ export class SqliteThreadOperations {
           input.limit,
         );
       }
+      case "thread.readContextSnapshot":
+        return this.readContextSnapshot((payload as { query: ThreadContextSnapshotQuery }).query);
+      case "thread.readCommittedMessagesByIds":
+        return this.readCommittedMessagesByIds(
+          (payload as { query: ThreadCommittedMessagesByIdsQuery }).query,
+        );
       case "thread.listRuns": {
         const input = payload as { ownerId: OwnerId; agentId: AgentId; threadId: ThreadId };
         return this.listRuns(input.ownerId, input.agentId, input.threadId);
@@ -1309,6 +1317,118 @@ export class SqliteThreadOperations {
         )
         .all(ownerId, agentId, threadId, afterSequence, limit) as MessageRow[]
     ).map((row) => this.messageFromRow(row));
+  }
+
+  private readContextSnapshot(
+    query: ThreadContextSnapshotQuery,
+  ):
+    | { readonly thread: ProductThread; readonly messages: readonly ProductThreadMessage[] }
+    | undefined {
+    this.assertLimit(query.limit);
+    if (!Number.isSafeInteger(query.afterSequence) || query.afterSequence < 0) {
+      this.fail("PORT_INVALID_OPERATION", "Thread context snapshot cursor is invalid");
+    }
+    const transaction = this.database.transaction(() => {
+      const thread = this.read(query.ownerId, query.agentId, query.threadId);
+      const run = this.database
+        .prepare(
+          `SELECT trigger_id AS triggerId FROM runs
+           WHERE id = ? AND owner_id = ? AND agent_id = ? AND thread_id = ?`,
+        )
+        .get(query.runId, query.ownerId, query.agentId, query.threadId) as
+        | { readonly triggerId: string }
+        | undefined;
+      if (!thread || thread.status !== "active" || !run) return undefined;
+      const trigger = this.database
+        .prepare(
+          `SELECT source_type AS sourceType, source_id AS sourceId, occurred_at AS occurredAt
+           FROM triggers
+           WHERE id = ? AND owner_id = ? AND agent_id = ? AND thread_id = ?`,
+        )
+        .get(run.triggerId, query.ownerId, query.agentId, query.threadId) as
+        | { readonly sourceType: string; readonly sourceId: string; readonly occurredAt: string }
+        | undefined;
+      if (!trigger) return undefined;
+      const sourceMessage =
+        trigger.sourceType === "user_message"
+          ? (this.database
+              .prepare(
+                `SELECT sequence FROM thread_messages
+                 WHERE id = ? AND owner_id = ? AND agent_id = ? AND thread_id = ?
+                   AND message_status = 'committed'`,
+              )
+              .get(trigger.sourceId, query.ownerId, query.agentId, query.threadId) as
+              | { readonly sequence: number }
+              | undefined)
+          : undefined;
+      if (trigger.sourceType === "user_message" && !sourceMessage) {
+        this.fail(
+          "PORT_INVALID_OPERATION",
+          "A user-message Run trigger must resolve to its committed Thread message",
+          { runId: query.runId, sourceId: trigger.sourceId },
+        );
+      }
+      const causalPredicate = sourceMessage ? "sequence < ?" : "committed_at < ?";
+      const causalValue = sourceMessage?.sequence ?? trigger.occurredAt;
+      const watermark = this.database
+        .prepare(
+          `SELECT COALESCE(MAX(sequence), 0) AS sourceWatermark FROM thread_messages
+           WHERE owner_id = ? AND agent_id = ? AND thread_id = ?
+             AND message_status = 'committed' AND ${causalPredicate}`,
+        )
+        .get(query.ownerId, query.agentId, query.threadId, causalValue) as
+        | { readonly sourceWatermark: number | null }
+        | undefined;
+      if (!watermark) return undefined;
+      const messages = this.database
+        .prepare(
+          `${MESSAGE_SELECT} WHERE owner_id = ? AND agent_id = ? AND thread_id = ?
+            AND sequence > ? AND message_status = 'committed' AND ${causalPredicate}
+            ORDER BY sequence DESC LIMIT ?`,
+        )
+        .all(
+          query.ownerId,
+          query.agentId,
+          query.threadId,
+          query.afterSequence,
+          causalValue,
+          query.limit,
+        )
+        .map((row) => this.messageFromRow(row as MessageRow))
+        .reverse();
+      return { thread, messages, sourceWatermark: watermark.sourceWatermark };
+    });
+    return transaction.immediate();
+  }
+
+  private readCommittedMessagesByIds(
+    query: ThreadCommittedMessagesByIdsQuery,
+  ): readonly ProductThreadMessage[] {
+    if (query.messageIds.length === 0 || query.messageIds.length > 1000) {
+      this.fail(
+        "PORT_INVALID_OPERATION",
+        "Thread message selection must contain between 1 and 1000 IDs",
+      );
+    }
+    if (new Set(query.messageIds).size !== query.messageIds.length) {
+      this.fail("PORT_INVALID_OPERATION", "Thread message selection contains duplicate IDs");
+    }
+    const transaction = this.database.transaction(() => {
+      const thread = this.read(query.ownerId, query.agentId, query.threadId);
+      if (!thread || thread.status !== "active") return [];
+      const rows = this.database
+        .prepare(
+          `${MESSAGE_SELECT} WHERE owner_id = ? AND agent_id = ? AND thread_id = ?
+            AND message_status = 'committed' AND id IN (${query.messageIds.map(() => "?").join(",")})`,
+        )
+        .all(query.ownerId, query.agentId, query.threadId, ...query.messageIds) as MessageRow[];
+      const byId = new Map(rows.map((row) => [row.id, this.messageFromRow(row)]));
+      return query.messageIds.flatMap((messageId) => {
+        const message = byId.get(messageId);
+        return message ? [message] : [];
+      });
+    });
+    return transaction.immediate();
   }
 
   private listRuns(

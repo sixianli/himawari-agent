@@ -160,8 +160,8 @@ describe("Run coordination checkpoint migration", () => {
     expect(
       applyMigrations(fixture.database, fixture.bundled, { snapshot: fixture.snapshot }),
     ).toEqual({
-      appliedSequences: [18, 19],
-      currentSequence: 19,
+      appliedSequences: [18, 19, 20],
+      currentSequence: 20,
     });
     expect(
       fixture.database
