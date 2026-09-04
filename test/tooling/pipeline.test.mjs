@@ -225,6 +225,32 @@ describe("build process contract", () => {
       expect(existsSync(path.join(options.root, options.output, "work"))).toBe(false);
     },
   );
+  it.each([false, true])(
+    "coordinates its own cleanup and preserves both failures: build failure=%s",
+    async (failBuild) => {
+      const options = await fixture();
+      if (failBuild) mocks.execute.mockRejectedValue(new Error("primary build failure"));
+      const work = path.join(options.root, options.output, "work");
+      const cleanupError = new Error("owned cleanup failure");
+      const cleanupCoordinator = vi.fn(async (reason, operation) => {
+        expect(reason).toBe("build-work-cleanup");
+        expect(existsSync(work)).toBe(true);
+        await operation();
+        expect(existsSync(work)).toBe(false);
+        throw cleanupError;
+      });
+      const error = await build({ ...options, cleanupCoordinator }).catch((failure) => failure);
+      expect(cleanupCoordinator).toHaveBeenCalledOnce();
+      if (failBuild) {
+        expect(error).toBeInstanceOf(AggregateError);
+        expect(error.message).toBe("CI_BUILD_AND_CLEANUP_FAILED");
+        expect(error.errors.map((cause) => cause.message)).toEqual([
+          "primary build failure",
+          "owned cleanup failure",
+        ]);
+      } else expect(error).toBe(cleanupError);
+    },
+  );
   it("rejects source changes before archive publication", async () => {
     const options = await fixture();
     mocks.source.mockResolvedValueOnce("f".repeat(64)).mockResolvedValueOnce("e".repeat(64));

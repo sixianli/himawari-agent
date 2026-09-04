@@ -24,6 +24,7 @@ const state = vi.hoisted(() => ({
   failCleanup: false,
   cleanupPaths: [],
   candidateFault: "",
+  failBuildAndCleanup: false,
 }));
 vi.mock("node:fs", async (original) => {
   const actual = await original();
@@ -118,7 +119,13 @@ vi.mock("../../scripts/ci/execute.mjs", async (original) => ({
   },
 }));
 vi.mock("../../scripts/ci/build.mjs", () => ({
-  build: async ({ output }) => {
+  build: async ({ output, cleanupCoordinator }) => {
+    await cleanupCoordinator("build-work-cleanup", async () => {});
+    if (state.failBuildAndCleanup)
+      throw new AggregateError(
+        [new Error("primary build failure"), new Error("cleanup Bearer " + "s".repeat(32))],
+        "CI_BUILD_AND_CLEANUP_FAILED",
+      );
     const archive = path.join(output, "runtime.tar.gz");
     write(archive, "artifact fixture");
     const report = path.join(output, "build.json");
@@ -182,6 +189,7 @@ import { runCheck } from "../../scripts/ci/run.mjs";
 
 let context;
 beforeEach(() => {
+  state.failBuildAndCleanup = false;
   state.root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "himawari-orchestration-")));
   state.calls = [];
   state.fail = "";
@@ -261,6 +269,24 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(readFileSync(path.join(state.root, ".ci-output/policy/details.json"), "utf8")).toContain(
       "CI_COMMAND_FAILED:toolchain",
     );
+  });
+  it("构建和清理双失败保留脱敏子原因与暂停报告", async () => {
+    state.failBuildAndCleanup = true;
+    const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";
+    const result = await run("build", { matrixKey: platform });
+    expect(result.status).toBe("infrastructure_failed");
+    const details = JSON.parse(
+      readFileSync(path.join(state.root, ".ci-output/build/details.json"), "utf8"),
+    );
+    expect(details.failures).toEqual([
+      "CI_BUILD_AND_CLEANUP_FAILED",
+      "primary build failure",
+      "cleanup [REDACTED]",
+    ]);
+    expect(details.resources.pauses.entries[0]).toMatchObject({
+      reason: "build-work-cleanup",
+      outcome: "passed",
+    });
   });
   it("同一归档的build、test、browser分别记录produced/consumed身份", async () => {
     const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";

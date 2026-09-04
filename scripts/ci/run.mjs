@@ -118,7 +118,7 @@ export async function runCheck({
   const files = [];
   let baselineCandidatePath;
   const temporaryDirectory = mkdtempSync("/tmp/hci-");
-  const stopResources = await observeResources({ root, toolsDirectory, temporaryDirectory });
+  const resourceObserver = await observeResources({ root, toolsDirectory, temporaryDirectory });
   try {
     if (hosted && (member.os !== process.platform || member.arch !== process.arch))
       throw new Error("CI_RUNNER_PLATFORM_MISMATCH");
@@ -333,7 +333,12 @@ export async function runCheck({
       try {
         let outcome;
         if (checkId === "build" || checkId === "node-floor") {
-          outcome = await build({ root, output: path.join(directory, "build"), context });
+          outcome = await build({
+            root,
+            output: path.join(directory, "build"),
+            context,
+            cleanupCoordinator: resourceObserver.withPausedSampling,
+          });
           if (checkId === "node-floor") {
             outcome = await runTests({
               root,
@@ -396,8 +401,10 @@ export async function runCheck({
     result.exitCode = 0;
   } catch (error) {
     details.failures.push(redactText(error.message));
+    if (error instanceof AggregateError)
+      for (const cause of error.errors) details.failures.push(redactText(cause.message));
   }
-  details.resources = await stopResources();
+  details.resources = await resourceObserver.stop();
   try {
     rmSync(temporaryDirectory, { recursive: true });
   } catch (error) {

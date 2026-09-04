@@ -70,7 +70,7 @@ export async function quality({
   mkdirSync(directory, { recursive: true });
   const started = Date.now();
   const temporaryDirectory = mkdtempSync("/tmp/hci-");
-  const stopResources = await observeResources({ root, toolsDirectory, temporaryDirectory });
+  const resourceObserver = await observeResources({ root, toolsDirectory, temporaryDirectory });
   const report = {
     schemaVersion: 1,
     check,
@@ -255,7 +255,7 @@ export async function quality({
     report.error = redactText(error.message);
   }
   report.completedAt = new Date().toISOString();
-  report.resources = await stopResources();
+  report.resources = await resourceObserver.stop();
   try {
     rmSync(temporaryDirectory, { recursive: true });
   } catch (error) {

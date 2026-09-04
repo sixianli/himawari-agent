@@ -7,6 +7,7 @@ import { collectArtifactFiles, contentDigest, digestFile } from "./artifact-file
 import { outputPath, verifyContext } from "./context.mjs";
 import { fileSha256, parseArguments, repositoryRoot } from "./contracts.mjs";
 import { execute } from "./execute.mjs";
+import { redactText } from "./redact-text.mjs";
 import {
   assertArtifactRecord,
   runArchiveTool,
@@ -14,7 +15,12 @@ import {
   verifyExtractedArtifact,
 } from "./verify-artifact.mjs";
 
-export async function build({ root = repositoryRoot, output, context } = {}) {
+export async function build({
+  root = repositoryRoot,
+  output,
+  context,
+  cleanupCoordinator = async (_reason, operation) => operation(),
+} = {}) {
   verifyContext(context, { root });
   const destination = outputPath(output, root);
   await mkdir(path.dirname(destination), { recursive: true });
@@ -34,6 +40,8 @@ export async function build({ root = repositoryRoot, output, context } = {}) {
     if (outcome.exitCode !== 0) throw new Error(`CI_COMMAND_FAILED:${name}:${outcome.exitCode}`);
     return log;
   };
+  let outcome;
+  const failures = [];
   try {
     const before = await sourceTreeDigest(root);
     await command("compile-node", [
@@ -135,7 +143,7 @@ export async function build({ root = repositoryRoot, output, context } = {}) {
       reportPath,
       `${JSON.stringify({ status: "passed", counts, checks, archiveSha256: sha256, archiveBytes: bytes, manifest: record }, null, 2)}\n`,
     );
-    return {
+    outcome = {
       counts,
       projects: [],
       reports: [
@@ -153,9 +161,19 @@ export async function build({ root = repositoryRoot, output, context } = {}) {
       platform,
       exitCode: 0,
     };
-  } finally {
-    await rm(work, { recursive: true, force: true });
+  } catch (error) {
+    failures.push(error);
   }
+  try {
+    await cleanupCoordinator("build-work-cleanup", () =>
+      rm(work, { recursive: true, force: true }),
+    );
+  } catch (error) {
+    failures.push(error);
+  }
+  if (failures.length > 1) throw new AggregateError(failures, "CI_BUILD_AND_CLEANUP_FAILED");
+  if (failures.length) throw failures[0];
+  return outcome;
 }
 
 export async function buildMain(
@@ -172,7 +190,9 @@ export async function buildMain(
     stdout.write(`${JSON.stringify(result)}\n`);
     return 0;
   } catch (error) {
-    stderr.write(`${error.message}\n`);
+    stderr.write(`${redactText(error.message)}\n`);
+    if (error instanceof AggregateError)
+      for (const cause of error.errors) stderr.write(`${redactText(cause.message)}\n`);
     return 1;
   }
 }

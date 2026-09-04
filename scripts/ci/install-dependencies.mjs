@@ -339,7 +339,7 @@ export async function installDependencies({
   auditManifestDependencies(root);
   const before = hash(readFileSync(join(root, "package-lock.json")));
   const started = performance.now();
-  const stopResources = await observeResources({ root, toolsDirectory });
+  const resourceObserver = await observeResources({ root, toolsDirectory });
   let resources;
   try {
     writeFileSync(
@@ -389,7 +389,7 @@ export async function installDependencies({
       sqlite,
       ...dependencies,
     };
-    resources = await stopResources();
+    resources = await resourceObserver.stop();
     report.resources = resources;
     writeFileSync(
       join(evidence, "installation-result.json"),
@@ -398,7 +398,7 @@ export async function installDependencies({
     return report;
   } finally {
     if (!resources) {
-      resources = await stopResources();
+      resources = await resourceObserver.stop();
       writeFileSync(
         join(evidence, "failed-installation-resources.json"),
         `${JSON.stringify(resources, null, 2)}\n`,

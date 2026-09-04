@@ -7,30 +7,14 @@ import { gunzipSync, inflateRawSync } from "node:zlib";
 import { safeRelativePath } from "./contracts.mjs";
 import { createPublishedFixtureReview } from "./security-published-fixtures.mjs";
 import { findBuildSecrets } from "./security-source.mjs";
+import { redactText } from "./redact-text.mjs";
 
-const patterns = [
-  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,
-  /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi,
-  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g,
-  /\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b/g,
-  /\b(?:gh[opsu]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g,
-  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
-  /\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|client[_-]?secret|webhook[_-]?secret)(?:\\?["'])?\s*[:=]\s*(?:\\?["'])?[A-Za-z0-9._~+/=-]{12,}(?:\\?["'])?/gi,
-];
+export { redactText } from "./redact-text.mjs";
+
 const maximumExpandedBytes = 256 * 1024 * 1024;
 
 function assert(condition, code) {
   if (!condition) throw new Error(code);
-}
-
-export function redactText(text, { sentinels = [] } = {}) {
-  let output = String(text);
-  for (const sentinel of sentinels) {
-    assert(typeof sentinel === "string" && sentinel.length > 0, "PUBLIC_SENTINEL_INVALID");
-    output = output.split(sentinel).join("[REDACTED]");
-  }
-  for (const pattern of patterns) output = output.replace(pattern, "[REDACTED]");
-  return output;
 }
 
 function assertClean(bytes, sentinels) {
