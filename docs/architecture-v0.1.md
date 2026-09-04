@@ -340,7 +340,7 @@ Task 20 的真实模型验证由两个显式 opt-in 集成测试组成。`HIMAWA
 
 Ubuntu coverage 作业通过显式 `initial-only` 选项，在合法初始化且现有校验器通过后，从同一次 snapshot/tests/JSON/LCOV 生成初始基线候选并登记为报告。候选仍须按真实 artifact 身份核验、审阅和提交，执行器不改写仓库基线；初始化结束后只执行原有比较，不再输出初始候选。tooling 项目隔离继承的 GitHub 环境变量，合成仓库测试与显式 hosted 身份测试保持各自输入边界。
 
-`ci.yml` 描述托管完整矩阵，`quality.yml` 描述默认分支手动检测及周期参数分流，schedule 仍停用。共享 Context 已支持核对冻结默认分支提交、启用状态和 cron，并将周期 base 固定为该次 SHA；质量报告独立绑定质量政策摘要。纯政策校验同时检查质量 workflow 的完整执行合同，普通 CI 汇总和 push 交接继续拒绝周期事件。正常草稿 PR 已获授权并进入真实 GitHub 验证，完整托管验收仍在进行；目标 fork 审批策略和 Ruleset 强制效果尚待独立授权与验证。公开报告与诊断分别按 30/7 天保留，上传通过显式白名单和脱敏检查。S9 交接格式验证默认分支 CI、平台产物、未完成项及 24 小时安全新鲜度，保留生产资格、Owner 签署和持久转存责任。实现与验收进度由 CI Plan 记录，S0/S9 产品验收归属不变。[SOURCE: docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md]
+`ci.yml` 描述托管完整矩阵，`quality.yml` 描述默认分支手动检测及周期参数分流，schedule 仍停用。共享 Context 已支持核对冻结默认分支提交、启用状态和 cron，并将周期 base 固定为该次 SHA；质量报告独立绑定质量政策摘要。纯政策校验同时检查质量 workflow 的完整执行合同，普通 CI 汇总和 push 交接继续拒绝周期事件。正常 PR 在 `718ef1b` 的 run `33844439408` 中 13 个 job 全部通过。Owner 于 2026-09-04 授权分支收尾，`main` 的 Ruleset `22256403` 已启用为 Active，要求 PR、来源为 GitHub Actions（App 15368）的 `ci/required`、分支保持最新及讨论解决，禁止强推和删除，无 bypass，审批人数为 0；规则 API 回读与目标配置一致。目标 fork 审批策略和专项红绿拒绝验收仍未全部完成。公开报告与诊断分别按 30/7 天保留，上传通过显式白名单和脱敏检查。S9 交接格式验证默认分支 CI、平台产物、未完成项及 24 小时安全新鲜度，保留生产资格、Owner 签署和持久转存责任。实现与验收进度由 CI Plan 记录，S0/S9 产品验收归属不变。[SOURCE: docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md]
 
 ## Known Limitations
 

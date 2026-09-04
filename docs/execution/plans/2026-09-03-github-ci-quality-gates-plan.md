@@ -27,6 +27,8 @@ date: "2026-09-03"
 
 **2026-09-04 范围修订：** 维护者明确要求从 CI 移除 npm 依赖漏洞查询。当前实现移除 advisory 请求、诊断及重试，保留机器密钥、Gitleaks、Semgrep 和安装完整性校验。下文既有 advisory 成功/失败记录均为修订前历史证据，不是当前门禁要求；远端旧运行不会因此改变结果。 本次本地验证：`vitest run --config vitest.workspace.ts --project tooling test/tooling/security.test.mjs test/tooling/security-process.test.mjs test/tooling/runner-orchestration.test.mjs` 113/113 通过，包含安全入口不调用网络查询和其余扫描器失败仍阻断；`npm run check` 退出码 0，严格文档校验 0 warning。
 
+**2026-09-04 分支收尾：** Owner 明确授权按已展示步骤启用主分支规则、普通 merge 合并 PR #1、同步本地 main、备份并关闭/删除验证分支及临时 worktree。`718ef1b` 的 [run 33844439408](https://github.com/sixianli/himawari-agent/actions/runs/33844439408) 13 个 job 全部通过；Ruleset `22256403` 已创建为 Active 且无 bypass，规则 API 确认 PR、GitHub Actions（15368）来源的 `ci/required`、strict up-to-date、讨论解决、禁止强推和删除。验证分支 `918fce4` 的完整历史已保存为仓库同级 `himawari-ci-negative-controls-20260904.bundle` 并通过 `git bundle verify`。PR #1 已转为正式 PR，最终合并以最新 CI 成功为前提。此授权不包括 schedule、fork 审批设置或未完成负例的额外运行；相关未完成项继续由本 Plan 承担。
+
 ## 使用方法与证据边界
 
 本文件供后续 AI Agent 或维护者逐项执行。先读来源 Spec，再核对当前 Git、工具链和 GitHub 状态。不得把本次设计基线、历史测试数量、曾经通过的命令或 Plan checkbox 当作新 revision 的证据。
@@ -253,7 +255,7 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 | N05 | 矩阵缺项/重复/错平台但父 job 显示成功 | 集合校验失败 | Task 9 的正反结果集合 |
 | N06 | 归档篡改、缺迁移、错 ABI、安装时重新构建 | 产物或安装检查失败 | Task 4/5 的 digest 与安装日志 |
 | N07 | 历史合成 Secret 提交后删除、未批准例外、公开输出中的合成敏感哨兵 | 扫描失败，日志与上传材料不暴露哨兵原文 | Task 8 的临时 Git 历史、脱敏正反样例及 Task 13 的真实输出检查 |
-| N08 | Advisory 网络失败、空扫描、规则未加载 | infrastructure/工具失败 | Task 8 的故障注入报告 |
+| N08 | 空扫描、规则未加载（advisory 查询已按 Owner 要求移除） | infrastructure/工具失败 | Task 8 的故障注入报告 |
 | N09 | 新增未导入代码、删测、降低同 PR baseline | coverage 失败 | Task 7 的分母、差异和基线报告 |
 | N10 | 页面异常、关键按钮失效、缺翻译/无障碍阻断 | browser 失败 | Task 6 的引擎结果与脱敏诊断 |
 | N11 | fork 待批准/批准后运行、重复外部贡献者、Dependabot、恶意标题/分支参数 | 待批准不成功，批准后完整运行，无越权、无 shell 注入 | Task 10 参数测试、Task 13 权限证据与 Task 15 目标审批设置实测 |

@@ -54,9 +54,9 @@ Ubuntu coverage 作业显式传入 `--baseline-candidate initial-only`，仅在�
 
 公开仓库也可使用 GitHub 的 [CodeQL/code scanning](https://docs.github.com/en/code-security/concepts/code-scanning/code-scanning)、[Dependency Review](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-review) 和 [SARIF 展示](https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support)。它们分别提供额外代码分析、PR 依赖差异审阅及扫描结果展示；本期门禁使用上面的固定工具与完整锁文件检查，尚未启用这些附加服务。后续接入须先更新 Spec/Plan 并明确新增权限，当前 workflow 不为展示报告添加写权限。
 
-`.github/workflows/quality.yml` 提供默认分支的手动规模、品牌浏览器、依赖复扫和额外 Node 观察；schedule 保持停用，拟定时间记录在 `ci/quality-policy.json`。检测结果与历史 qualification evidence 分离。`export-evidence.mjs` 只接受完整默认分支 CI、同一平台产物和 24 小时内的安全报告；导出格式不代表 S9 资格、Owner 签署或持久证据转存已完成。
+`.github/workflows/quality.yml` 提供默认分支的手动规模、品牌浏览器、安全复扫和额外 Node 观察；schedule 保持停用，拟定时间记录在 `ci/quality-policy.json`。检测结果与历史 qualification evidence 分离。`export-evidence.mjs` 只接受完整默认分支 CI、同一平台产物和 24 小时内的安全报告；导出格式不代表 S9 资格、Owner 签署或持久证据转存已完成。
 
-正常草稿 PR 已进入真实 Actions 验证，完整托管验收仍在进行；目标 fork 审批策略与 Ruleset 尚未配置。本地平台结果不能代替完整托管矩阵或服务端拒绝合并证据。当前验证、初始化基线和未完成项见 [CI 实施 Plan](docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md)。
+正常 PR 在 `718ef1b` 的真实 Actions 运行中 13 个 job 全部通过。Owner 于 2026-09-04 授权分支收尾，`main` 的 Active Ruleset `22256403` 已启用并回读确认：必须通过 PR、GitHub Actions 来源的 `ci/required`、分支保持最新、讨论解决，禁止强推和删除且无 bypass。目标 fork 审批策略及其专项实测仍未完成。本地平台结果不能代替完整托管矩阵或服务端拒绝合并证据。当前验证、初始化基线和未完成项见 [CI 实施 Plan](docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md)。
 
 ## Local reference composition
 
