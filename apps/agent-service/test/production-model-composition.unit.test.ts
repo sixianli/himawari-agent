@@ -1,5 +1,8 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
 
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import type {
   ConfiguredPiModelDescriptor,
@@ -7,12 +10,22 @@ import type {
   PiModelRuntimeFactory,
 } from "@himawari-agent/runtime-pi";
 import { createReferenceAdapterSet, type ReferenceAdapterSet } from "@himawari-agent/testing";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createProductionMemoryCompositionFromConfiguration,
   createProductionModelComposition,
   resolveConfiguredModelDescriptorSet,
 } from "../src/index.js";
+
+let temporaryDirectory: string;
+
+beforeEach(async () => {
+  temporaryDirectory = await mkdtemp(path.join(tmpdir(), "himawari-production-composition-"));
+});
+
+afterEach(async () => {
+  await rm(temporaryDirectory, { recursive: true, force: true });
+});
 
 const primaryModel: ConfiguredPiModelDescriptor = {
   ref: "model-openrouter-primary",
@@ -275,7 +288,7 @@ describe("production model composition", () => {
   });
 
   it("maps strict configuration into one Pi generation set and an independent embedding descriptor", () => {
-    const stateRoot = "/tmp/himawari-model-descriptor-test";
+    const stateRoot = temporaryDirectory;
     const configuration = parseProductConfiguration(
       {
         schemaVersion: "himawari.configuration.v1",
@@ -431,9 +444,7 @@ describe("production model composition", () => {
   });
 
   it("composes the selected 4096-dimensional Qwen embedding through Mem0", async () => {
-    const configuration = selectedEmbeddingConfiguration(
-      "/private/tmp/himawari-production-memory-composition",
-    );
+    const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
     const resolvedSecrets: string[] = [];
     const composition = await createProductionMemoryCompositionFromConfiguration({
       configuration,

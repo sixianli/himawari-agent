@@ -135,15 +135,23 @@ beforeAll(async () => {
   stateRoot = await mkdtemp("/tmp/hma-state-");
   configurationPath = path.join(testRoot, "configuration.json");
   publicConfigurationPath = path.join(testRoot, "configuration-public.json");
-  const build = spawnSync("npm", ["run", "build:node"], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-  });
-  if (build.status !== 0) throw new Error(`Node runtime build failed: ${build.stderr}`);
+  const { HIMAWARI_TEST_ARTIFACT: artifact, HIMAWARI_TEST_CONTEXT: contextFile } = process.env;
+  if (!artifact || !contextFile)
+    throw new Error(
+      "INSTALL_TEST_REQUIRES_PREBUILT_ARTIFACT: run npm test or provide HIMAWARI_TEST_ARTIFACT and HIMAWARI_TEST_CONTEXT",
+    );
   const install = spawnSync(
     process.execPath,
-    [path.join(repositoryRoot, "scripts/install-node-runtime.mjs"), "--prefix", prefix],
-    { cwd: testRoot, encoding: "utf8" },
+    [
+      path.join(repositoryRoot, "scripts/install-node-runtime.mjs"),
+      "--prefix",
+      prefix,
+      "--artifact",
+      artifact,
+      "--context",
+      contextFile,
+    ],
+    { cwd: testRoot, encoding: "utf8", env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" } },
   );
   if (install.status !== 0) throw new Error(`Node runtime install failed: ${install.stderr}`);
 
@@ -235,6 +243,7 @@ async function startService(
   const child = spawn(executable(name), serviceArguments(), {
     cwd: testRoot,
     stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
   });
   children.add(child);
   await waitForOutput(child, `"component":"${expectedComponent}"`, additionalExpected);
@@ -283,14 +292,19 @@ async function stopService(child: ChildProcessWithoutNullStreams, signal: NodeJS
 }
 
 function runInstalled(name: string, arguments_: readonly string[]) {
-  return spawnSync(executable(name), arguments_, { cwd: testRoot, encoding: "utf8" });
+  return spawnSync(executable(name), arguments_, {
+    cwd: testRoot,
+    encoding: "utf8",
+    env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
+  });
 }
 
 function lastJson(output: string): Record<string, unknown> & { readonly packageRef?: unknown } {
   return JSON.parse(output.trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
 }
 
-describe("installable Node services and admin CLI", () => {
+// Lifecycle cases include four readiness phases, CLI processes, shutdown and recovery.
+describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
   it("installs a source-independent production runtime without testing adapters", async () => {
     expect(
       JSON.parse(
@@ -425,7 +439,7 @@ describe("installable Node services and admin CLI", () => {
     ]);
     expect(recovered.status).toBe(0);
     expect(`${missingSecret.stderr}${publicMode.stderr}`).not.toContain("0123456789abcdef");
-  }, 15_000);
+  });
 
   it("executes a real recovery drill through the installed himawari CLI", () => {
     const created = runInstalled("himawari", [

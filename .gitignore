@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+.ci-output/
 .playwright-cli/
 output/playwright/
 *.tsbuildinfo

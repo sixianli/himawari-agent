@@ -6,8 +6,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const staticRoot = path.join(repositoryRoot, "apps/control-center/dist");
+const staticRoot = path.resolve(
+  process.env.HIMAWARI_BROWSER_STATIC_ROOT ?? path.join(repositoryRoot, "apps/control-center/dist"),
+);
+await readFile(path.join(staticRoot, "index.html"));
 const port = Number(process.env.HIMAWARI_BROWSER_FIXTURE_PORT ?? "4173");
+if (!Number.isInteger(port) || port < 0 || port > 65535)
+  throw new Error("CONTROL_CENTER_PORT_INVALID");
 const now = "2026-08-27T00:00:00.000Z";
 const accepted = new Set();
 const acceptedThreadCommands = new Map();
@@ -1457,9 +1462,12 @@ const server = createServer((request, response) => {
 });
 
 server.listen(port, "127.0.0.1", () => {
-  process.stdout.write(`CONTROL_CENTER_FIXTURE_READY http://127.0.0.1:${port}\n`);
+  process.stdout.write(`CONTROL_CENTER_FIXTURE_READY http://127.0.0.1:${server.address().port}\n`);
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => server.close(() => process.exit(0)));
+  process.on(signal, () => {
+    server.close(() => process.exit(0));
+    server.closeAllConnections();
+  });
 }

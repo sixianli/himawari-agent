@@ -1,0 +1,514 @@
+name: CI
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - edited
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: 明确的比较基线 commit SHA
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'push' && github.run_id || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+defaults:
+  run:
+    shell: bash
+jobs:
+  policy:
+    name: policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CI_NODE: 22.22.3
+      CI_MATRIX: default
+      CI_BASE: ${{ inputs.base_sha || '' }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装并核验固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: 隔离安装依赖及 SQLite 探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 执行共享检查
+        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check policy --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
+      - name: 核验公开输出白名单
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
+        if: always()
+        id: publish
+      - name: 保留本次完整报告
+        id: artifact
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: report-${{ github.run_id }}-${{ github.run_attempt }}-policy-${{ env.CI_MATRIX }}
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保留失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-policy-${{ env.CI_MATRIX }}
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+  static:
+    name: static
+    runs-on: ubuntu-24.04
+    needs:
+      - policy
+    timeout-minutes: 15
+    env:
+      CI_NODE: 22.22.3
+      CI_MATRIX: default
+      CI_BASE: ${{ inputs.base_sha || '' }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装并核验固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: 隔离安装依赖及 SQLite 探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 执行共享检查
+        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check static --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
+      - name: 核验公开输出白名单
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
+        if: always()
+        id: publish
+      - name: 保留本次完整报告
+        id: artifact
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: report-${{ github.run_id }}-${{ github.run_attempt }}-static-${{ env.CI_MATRIX }}
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保留失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-static-${{ env.CI_MATRIX }}
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+  build:
+    name: build / ${{ matrix.key }}
+    runs-on: ${{ matrix.runner }}
+    needs:
+      - policy
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - key: linux-x64
+            runner: ubuntu-24.04
+            os: linux
+            arch: x64
+            node: 22.22.3
+          - key: macos-arm64
+            runner: macos-15
+            os: darwin
+            arch: arm64
+            node: 22.22.3
+    env:
+      CI_NODE: ${{ matrix.node }}
+      CI_MATRIX: ${{ matrix.key }}
+      CI_BASE: ${{ inputs.base_sha || '' }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ matrix.node }}
+      - name: 安装并核验固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: 隔离安装依赖及 SQLite 探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 执行共享检查
+        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check build --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
+      - name: 核验公开输出白名单
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
+        if: always()
+        id: publish
+      - name: 保留本次完整报告
+        id: artifact
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: report-${{ github.run_id }}-${{ github.run_attempt }}-build-${{ env.CI_MATRIX }}
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保留失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-build-${{ env.CI_MATRIX }}
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: 按平台传递不可变 artifact ID
+        run: .ci-output/tools/bin/node scripts/ci/artifact-output.mjs
+        id: identity
+        env:
+          CI_ARTIFACT_ID: ${{ steps.artifact.outputs.artifact-id }}
+    outputs:
+      linux: ${{ steps.identity.outputs.linux }}
+      macos: ${{ steps.identity.outputs.macos }}
+  test:
+    name: test / ${{ matrix.key }}
+    runs-on: ${{ matrix.runner }}
+    needs:
+      - policy
+      - build
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - key: linux-x64
+            runner: ubuntu-24.04
+            os: linux
+            arch: x64
+            node: 22.22.3
+          - key: macos-arm64
+            runner: macos-15
+            os: darwin
+            arch: arm64
+            node: 22.22.3
+    env:
+      CI_NODE: ${{ matrix.node }}
+      CI_MATRIX: ${{ matrix.key }}
+      CI_BASE: ${{ inputs.base_sha || '' }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ matrix.node }}
+      - name: 安装并核验固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: 隔离安装依赖及 SQLite 探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 下载本次构建返回的归档 ID
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: ${{ matrix.key == 'linux-x64' && needs.build.outputs.linux || needs.build.outputs.macos }}
+          path: .ci-output/input
+          merge-multiple: true
+      - name: 执行共享检查
+        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check test --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --input .ci-output/input/result.json
+      - name: 核验公开输出白名单
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
+        if: always()
+        id: publish
+      - name: 保留本次完整报告
+        id: artifact
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: report-${{ github.run_id }}-${{ github.run_attempt }}-test-${{ env.CI_MATRIX }}
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保留失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-test-${{ env.CI_MATRIX }}
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+  node-floor:
+    name: node-floor
+    runs-on: ubuntu-24.04
+    needs:
+      - policy
+    timeout-minutes: 30
+    env:
+      CI_NODE: 22.19.0
+      CI_MATRIX: default
+      CI_BASE: ${{ inputs.base_sha || '' }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.19.0
+      - name: 安装并核验固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: 隔离安装依赖及 SQLite 探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 执行共享检查
+        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check node-floor --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
+      - name: 核验公开输出白名单
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
+        if: always()
+        id: publish
+      - name: 保留本次完整报告
+        id: artifact
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: report-${{ github.run_id }}-${{ github.run_attempt }}-node-floor-${{ env.CI_MATRIX }}
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保留失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-node-floor-${{ env.CI_MATRIX }}
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+  browser:
+    name: browser / ${{ matrix.key }}
+    runs-on: ${{ matrix.runner }}
+    needs:
+      - build
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - key: chromium
+            runner: ubuntu-24.04
+            os: linux
+            arch: x64
+            node: 22.22.3
+            browser: chromium
+          - key: firefox
+            runner: ubuntu-24.04
+            os: linux
+            arch: x64
+            node: 22.22.3
+            browser: firefox
+          - key: webkit
+            runner: ubuntu-24.04
+            os: linux
+            arch: x64
+            node: 22.22.3
+            browser: webkit
+    env:
+      CI_NODE: ${{ matrix.node }}
+      CI_MATRIX: ${{ matrix.key }}
+      CI_BASE: ${{ inputs.base_sha || '' }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ matrix.node }}
+      - name: 安装并核验固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: 隔离安装依赖及 SQLite 探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 下载本次构建返回的归档 ID
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: ${{ needs.build.outputs.linux }}
+          path: .ci-output/input
+          merge-multiple: true
+      - name: 安装锁定 Playwright 对应引擎
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --with-deps "$CI_MATRIX"
+      - name: 执行共享检查
+        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check browser --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --input .ci-output/input/result.json
+      - name: 核验公开输出白名单
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
+        if: always()
+        id: publish
+      - name: 保留本次完整报告
+        id: artifact
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: report-${{ github.run_id }}-${{ github.run_attempt }}-browser-${{ env.CI_MATRIX }}
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保留失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-browser-${{ env.CI_MATRIX }}
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+  coverage:
+    name: coverage
+    runs-on: ubuntu-24.04
+    needs:
+      - policy
+    timeout-minutes: 15
+    env:
+      CI_NODE: 22.22.3
+      CI_MATRIX: default
+      CI_BASE: ${{ inputs.base_sha || '' }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装并核验固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: 隔离安装依赖及 SQLite 探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 执行共享检查
+        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only
+      - name: 核验公开输出白名单
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
+        if: always()
+        id: publish
+      - name: 保留本次完整报告
+        id: artifact
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: report-${{ github.run_id }}-${{ github.run_attempt }}-coverage-${{ env.CI_MATRIX }}
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保留失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-coverage-${{ env.CI_MATRIX }}
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+  security:
+    name: security
+    runs-on: ubuntu-24.04
+    needs:
+      - policy
+    timeout-minutes: 15
+    env:
+      CI_NODE: 22.22.3
+      CI_MATRIX: default
+      CI_BASE: ${{ inputs.base_sha || '' }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装并核验固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: 隔离安装依赖及 SQLite 探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 执行共享检查
+        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check security --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
+      - name: 核验公开输出白名单
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
+        if: always()
+        id: publish
+      - name: 保留本次完整报告
+        id: artifact
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: report-${{ github.run_id }}-${{ github.run_attempt }}-security-${{ env.CI_MATRIX }}
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保留失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-security-${{ env.CI_MATRIX }}
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+  required:
+    name: ci/required
+    if: always()
+    runs-on: ubuntu-24.04
+    needs:
+      - policy
+      - static
+      - build
+      - test
+      - node-floor
+      - browser
+      - coverage
+      - security
+    timeout-minutes: 5
+    env:
+      CI_NODE: 22.22.3
+      CI_MATRIX: default
+      CI_BASE: ${{ inputs.base_sha || '' }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装并核验固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE" --without-scanners
+      - name: 隔离安装依赖及 SQLite 探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 下载当前 attempt 的完整报告
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: report-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: .ci-output/reports
+      - name: 核对全部 job 与报告
+        run: .ci-output/tools/bin/node scripts/ci/required.mjs --reports .ci-output/reports --output .ci-output/gate --base "$CI_BASE"
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+      - name: 保留汇总结论
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: gate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci-output/gate/
+          if-no-files-found: error
+          retention-days: 30

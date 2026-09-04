@@ -1,4 +1,4 @@
-import { execFile as execFileCallback, spawn } from "node:child_process";
+import { type ChildProcess, execFile as execFileCallback, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,8 +7,8 @@ import { promisify } from "node:util";
 import {
   CommandProfileService,
   CommitGateService,
-  WorkspaceService,
   type CommitPreview,
+  WorkspaceService,
   type WorkspaceSnapshot,
   type WorkspaceStatePort,
 } from "@himawari-agent/application";
@@ -18,8 +18,17 @@ import { GitIndexTransaction } from "../src/workspaces/git-index-transaction.js"
 
 const execFile = promisify(execFileCallback);
 const roots: string[] = [];
+const children = new Map<ChildProcess, Promise<NodeJS.Signals | null>>();
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  try {
+    for (const child of children.keys()) {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    }
+    await Promise.all(children.values());
+  } finally {
+    children.clear();
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  }
 });
 
 class MemoryWorkspaceState implements WorkspaceStatePort {
@@ -73,10 +82,11 @@ async function git(
   });
 }
 
-describe("GitWorkspaceAdapter", () => {
-  it.each(["inspect", "update-index", "commit-tree"])(
+// These cases execute real Git subprocesses and crash recovery under coverage.
+describe("GitWorkspaceAdapter", { timeout: 15_000 }, () => {
+  it.for(["inspect", "update-index", "commit-tree"])(
     "recovers its real Git lock after SIGKILL during %s",
-    async (boundary) => {
+    async (boundary, { signal }) => {
       const fixture = await preparedTransactionFixture();
       const ownerIndex = await readFile(path.join(fixture.root, ".git/index"));
       const script = path.join(fixture.root, ".git/kill-harness.mjs");
@@ -98,23 +108,53 @@ const tx = new GitIndexTransaction({
 await tx.commit(${JSON.stringify(fixture.commitInput)});
 `,
       );
+      signal.throwIfAborted();
       const child = spawn(process.execPath, [script], { stdio: ["ignore", "pipe", "pipe"] });
+      const closed = new Promise<NodeJS.Signals | null>((resolve) =>
+        child.once("close", (_code, exitSignal) => resolve(exitSignal)),
+      );
+      children.set(child, closed);
       let errors = "";
       child.stderr.on("data", (data) => {
         errors += data.toString();
       });
-      const exited = new Promise<string | null>((resolve) =>
-        child.once("exit", (_code, signal) => resolve(signal)),
-      );
+      child.on("error", (error) => {
+        errors += error.message;
+      });
       await new Promise<void>((resolve, reject) => {
-        child.stdout.on("data", (data) => {
-          if (data.toString().includes("READY")) resolve();
-        });
-        child.once("exit", () => reject(new Error(`Child exited before boundary: ${errors}`)));
-        child.once("error", reject);
+        let output = "";
+        const cleanup = () => {
+          clearTimeout(timer);
+          child.stdout.off("data", onData);
+          child.off("exit", onExit);
+          child.off("error", onError);
+          signal.removeEventListener("abort", onAbort);
+        };
+        const fail = (error: Error) => {
+          cleanup();
+          reject(error);
+        };
+        const onData = (data: Buffer) => {
+          output += data.toString();
+          if (output.includes("READY\n")) {
+            cleanup();
+            resolve();
+          }
+        };
+        const onExit = () => fail(new Error(`Child exited before ${boundary}: ${errors}`));
+        const onError = (error: Error) => fail(error);
+        const onAbort = () => fail(new Error(`Test cancelled before ${boundary}`));
+        const timer = setTimeout(
+          () => fail(new Error(`Child did not reach ${boundary} within 10000ms: ${errors}`)),
+          10_000,
+        );
+        child.stdout.on("data", onData);
+        child.once("exit", onExit);
+        child.once("error", onError);
+        signal.addEventListener("abort", onAbort, { once: true });
       });
       child.kill("SIGKILL");
-      expect(await exited).toBe("SIGKILL");
+      expect(await closed).toBe("SIGKILL");
       expect(
         await transactionFor(fixture).reconcile(
           fixture.commitInput.operationId,

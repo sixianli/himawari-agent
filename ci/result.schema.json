@@ -1,0 +1,464 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CI records",
+  "definitions": {
+    "CheckResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "checkId",
+        "matrixKey",
+        "repository",
+        "event",
+        "runId",
+        "attempt",
+        "testedSha",
+        "headSha",
+        "baseSha",
+        "policySha256",
+        "toolchainSha256",
+        "initialization",
+        "toolchain",
+        "status",
+        "exitCode",
+        "durationMs",
+        "retryCount",
+        "counts",
+        "projects",
+        "reports",
+        "artifacts"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "checkId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "matrixKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "event": {
+          "enum": ["pull_request", "push", "workflow_dispatch"]
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "testedSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "headSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "baseSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "policySha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "toolchainSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "initialization": {
+          "type": "boolean"
+        },
+        "toolchain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["node", "npm", "os", "arch", "abi", "runnerImage"],
+          "properties": {
+            "node": {
+              "type": "string",
+              "minLength": 1
+            },
+            "npm": {
+              "type": "string",
+              "minLength": 1
+            },
+            "os": {
+              "enum": ["linux", "darwin"]
+            },
+            "arch": {
+              "enum": ["x64", "arm64"]
+            },
+            "abi": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "runnerImage": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "status": {
+          "enum": ["passed", "failed", "infrastructure_failed"]
+        },
+        "exitCode": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retryCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["files", "executed", "passed", "failed", "skipped"],
+          "properties": {
+            "files": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "executed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "passed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "failed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "skipped": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "counts"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "counts": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["files", "executed", "passed", "failed", "skipped"],
+                "properties": {
+                  "files": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "executed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "passed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "failed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "skipped": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "minItems": 0
+        },
+        "reports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "bytes", "kind"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "kind": {
+                "enum": ["json", "junit", "lcov", "artifact", "diagnostic"]
+              }
+            }
+          },
+          "minItems": 1
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "platform", "path", "sha256"],
+            "properties": {
+              "role": {
+                "enum": ["produced", "consumed"]
+              },
+              "platform": {
+                "enum": ["linux-x64", "macos-arm64"]
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          "minItems": 0
+        }
+      }
+    },
+    "GateSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "repository",
+        "event",
+        "runId",
+        "attempt",
+        "testedSha",
+        "headSha",
+        "baseSha",
+        "policySha256",
+        "toolchainSha256",
+        "initialization",
+        "status",
+        "expected",
+        "observed",
+        "missing",
+        "failures",
+        "checks"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "event": {
+          "enum": ["pull_request", "push", "workflow_dispatch"]
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "testedSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "headSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "baseSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "policySha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "toolchainSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "initialization": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": ["passed", "failed"]
+        },
+        "expected": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0
+        },
+        "observed": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0
+        },
+        "failures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["checkId", "matrixKey", "source", "reason"],
+            "properties": {
+              "checkId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "matrixKey": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "minItems": 0
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["checkId", "matrixKey", "status", "reasons"],
+            "properties": {
+              "checkId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "matrixKey": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "enum": ["passed", "failed"]
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 0
+              }
+            }
+          },
+          "minItems": 0
+        }
+      }
+    },
+    "Context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "event",
+        "runId",
+        "attempt",
+        "testedSha",
+        "headSha",
+        "baseSha",
+        "policySha256",
+        "toolchainSha256",
+        "initialization"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "event": {
+          "enum": ["pull_request", "push", "workflow_dispatch", "schedule"]
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "testedSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "headSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "baseSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "policySha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "toolchainSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "initialization": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/definitions/CheckResult"
+    },
+    {
+      "$ref": "#/definitions/GateSummary"
+    }
+  ]
+}

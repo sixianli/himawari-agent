@@ -1,0 +1,25 @@
+rules:
+  - id: himawari.dynamic-code-evaluation
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 禁止直接执行动态 JavaScript 代码；使用明确的解析器或受控能力边界。
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+  - id: himawari.disabled-tls-verification
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 禁止关闭 TLS 证书校验。
+    pattern-either:
+      - pattern: "{ ..., rejectUnauthorized: false, ... }"
+      - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+  - id: himawari.dynamic-shell-command
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 禁止把动态值直接传给 shell；使用固定 executable 和参数数组。
+    patterns:
+      - pattern-either:
+          - pattern: child_process.exec($CMD, ...)
+          - pattern: child_process.execSync($CMD, ...)
+      - pattern-not: child_process.exec("...", ...)
+      - pattern-not: child_process.execSync("...", ...)

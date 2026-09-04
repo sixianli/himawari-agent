@@ -1,0 +1,319 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "exceptions"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "exceptions": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "id", "path", "reason", "owner", "reviewReference", "expiresAt"],
+            "properties": {
+              "kind": {
+                "enum": ["advisory", "semgrep", "synthetic-secret"]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "package": {
+                "type": "string",
+                "minLength": 1
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?$"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 10
+              },
+              "owner": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reviewReference": {
+                "type": "string",
+                "pattern": "^https://github\\.com/[^/]+/[^/]+/(?:pull|issues|commit)/[A-Za-z0-9]+(?:#.*)?$"
+              },
+              "expiresAt": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$"
+              },
+              "provenance": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["classification", "current", "history"],
+                "properties": {
+                  "classification": {
+                    "enum": [
+                      "idempotency-fixture",
+                      "synthetic-boot-token",
+                      "public-authentication-tag",
+                      "machine-baseline-fixture",
+                      "synthetic-marker"
+                    ]
+                  },
+                  "current": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["sourceCommit", "lines", "count"],
+                    "properties": {
+                      "sourceCommit": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      "lines": {
+                        "type": "array",
+                        "minItems": 1,
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    }
+                  },
+                  "history": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["sourceCommit", "lines", "count"],
+                      "properties": {
+                        "sourceCommit": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{40}$"
+                        },
+                        "lines": {
+                          "type": "array",
+                          "minItems": 1,
+                          "uniqueItems": true,
+                          "items": {
+                            "type": "integer",
+                            "minimum": 1
+                          }
+                        },
+                        "count": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "advisory"
+                    }
+                  },
+                  "required": ["kind"]
+                },
+                "then": {
+                  "properties": {
+                    "package": {},
+                    "version": {},
+                    "digest": false,
+                    "count": false
+                  },
+                  "required": ["package", "version"]
+                },
+                "else": {
+                  "properties": {
+                    "digest": {},
+                    "count": {},
+                    "package": false,
+                    "version": false
+                  },
+                  "required": ["digest", "count"]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "synthetic-secret"
+                    }
+                  },
+                  "required": ["kind"]
+                },
+                "then": {
+                  "required": ["provenance"],
+                  "properties": {
+                    "provenance": {}
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "provenance": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id",
+              "path",
+              "package",
+              "version",
+              "packageLockPath",
+              "integrity",
+              "sourceUrl",
+              "archiveMember",
+              "fileSha256",
+              "findings",
+              "reason",
+              "owner",
+              "reviewReference",
+              "expiresAt",
+              "sourceProofSha256",
+              "sourceReview"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "package": {
+                "type": "string",
+                "minLength": 1
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?$"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 10
+              },
+              "owner": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reviewReference": {
+                "type": "string",
+                "pattern": "^https://github\\.com/[^/]+/[^/]+/(?:pull|issues|commit)/[A-Za-z0-9]+(?:#.*)?$"
+              },
+              "expiresAt": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$"
+              },
+              "kind": {
+                "const": "published-synthetic-fixture"
+              },
+              "id": {
+                "const": "published-synthetic-fixture"
+              },
+              "packageLockPath": {
+                "type": "string",
+                "minLength": 1
+              },
+              "integrity": {
+                "type": "string",
+                "pattern": "^sha512-[A-Za-z0-9+/]{86}==$"
+              },
+              "sourceUrl": {
+                "type": "string",
+                "pattern": "^https://registry\\.npmjs\\.org/[^?#]+\\.tgz$"
+              },
+              "archiveMember": {
+                "type": "string",
+                "minLength": 1
+              },
+              "fileSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "sourceProofSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "sourceReview": {
+                "type": "string",
+                "minLength": 20
+              },
+              "findings": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["rule", "digest", "count"],
+                  "properties": {
+                    "rule": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "digest": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "proposedAt", "owner", "reviewEvidence"],
+      "properties": {
+        "status": {
+          "const": "proposed_owner_review_required"
+        },
+        "proposedAt": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$"
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewEvidence": {
+          "type": "string",
+          "minLength": 20
+        }
+      }
+    }
+  }
+}

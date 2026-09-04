@@ -1,0 +1,362 @@
+{
+  "schemaVersion": 1,
+  "provider": {
+    "package": "@vitest/coverage-v8",
+    "version": "4.1.9",
+    "mapping": "ast-v8-to-istanbul@1.0.5:original-locations-v1"
+  },
+  "projects": ["unit", "contracts", "tooling"],
+  "include": [
+    "apps/*/src/**/*.ts",
+    "apps/*/src/**/*.tsx",
+    "packages/*/src/**/*.ts",
+    "packages/*/src/**/*.tsx",
+    "scripts/ci/**/*.mjs"
+  ],
+  "exclude": ["**/*.d.ts", "packages/testing/**"],
+  "thresholds": {
+    "changedLines": 90,
+    "changedFunctionBranches": 85
+  },
+  "baseline": {
+    "sourceSha": "c9723c9054f1552b3c2356f26e86ddc9efca61ad",
+    "sourceState": "commit",
+    "sourceTreeSha256": "dd84544de09b5226bcb63e721bd2f25e620984e7a4f98523e2723166346b2a04",
+    "reportSha256": "6945c1ae4ef0ffa2bb9a60a654f79219d77dfbcb464a03e7f40bf94d3d899df9",
+    "lcovSha256": "1822245b46894fefed7ec3157907b56f0191dc3d8b69fb5bb3cadd7d82adff48",
+    "strategySha256": "dda8233be8aa1356bcb41e47aaea42a82fec8879a795eb0cbc0e2ff85590935a",
+    "measuredAt": "2026-09-03T23:41:09.816Z",
+    "groups": {
+      "apps/admin-cli": {
+        "lines": {
+          "total": 243,
+          "covered": 168,
+          "pct": 69.135802
+        },
+        "branches": {
+          "total": 318,
+          "covered": 233,
+          "pct": 73.27044
+        },
+        "functions": {
+          "total": 32,
+          "covered": 20,
+          "pct": 62.5
+        },
+        "statements": {
+          "total": 263,
+          "covered": 174,
+          "pct": 66.159695
+        }
+      },
+      "apps/agent-service": {
+        "lines": {
+          "total": 235,
+          "covered": 87,
+          "pct": 37.021276
+        },
+        "branches": {
+          "total": 151,
+          "covered": 52,
+          "pct": 34.437086
+        },
+        "functions": {
+          "total": 69,
+          "covered": 28,
+          "pct": 40.57971
+        },
+        "statements": {
+          "total": 262,
+          "covered": 94,
+          "pct": 35.877862
+        }
+      },
+      "apps/control-center": {
+        "lines": {
+          "total": 1331,
+          "covered": 363,
+          "pct": 27.272727
+        },
+        "branches": {
+          "total": 1413,
+          "covered": 274,
+          "pct": 19.391365
+        },
+        "functions": {
+          "total": 353,
+          "covered": 94,
+          "pct": 26.628895
+        },
+        "statements": {
+          "total": 1472,
+          "covered": 385,
+          "pct": 26.154891
+        }
+      },
+      "apps/execution-worker": {
+        "lines": {
+          "total": 387,
+          "covered": 280,
+          "pct": 72.351421
+        },
+        "branches": {
+          "total": 298,
+          "covered": 202,
+          "pct": 67.785234
+        },
+        "functions": {
+          "total": 74,
+          "covered": 52,
+          "pct": 70.27027
+        },
+        "statements": {
+          "total": 427,
+          "covered": 291,
+          "pct": 68.149882
+        }
+      },
+      "packages/application": {
+        "lines": {
+          "total": 3382,
+          "covered": 1313,
+          "pct": 38.823181
+        },
+        "branches": {
+          "total": 3523,
+          "covered": 1228,
+          "pct": 34.856656
+        },
+        "functions": {
+          "total": 757,
+          "covered": 297,
+          "pct": 39.233817
+        },
+        "statements": {
+          "total": 3628,
+          "covered": 1401,
+          "pct": 38.616317
+        }
+      },
+      "packages/domain": {
+        "lines": {
+          "total": 157,
+          "covered": 140,
+          "pct": 89.171974
+        },
+        "branches": {
+          "total": 144,
+          "covered": 115,
+          "pct": 79.861111
+        },
+        "functions": {
+          "total": 69,
+          "covered": 63,
+          "pct": 91.304347
+        },
+        "statements": {
+          "total": 164,
+          "covered": 145,
+          "pct": 88.414634
+        }
+      },
+      "packages/execution-contracts": {
+        "lines": {
+          "total": 184,
+          "covered": 172,
+          "pct": 93.47826
+        },
+        "branches": {
+          "total": 178,
+          "covered": 139,
+          "pct": 78.089887
+        },
+        "functions": {
+          "total": 42,
+          "covered": 42,
+          "pct": 100
+        },
+        "statements": {
+          "total": 195,
+          "covered": 178,
+          "pct": 91.282051
+        }
+      },
+      "packages/gateway-contracts": {
+        "lines": {
+          "total": 291,
+          "covered": 279,
+          "pct": 95.876288
+        },
+        "branches": {
+          "total": 143,
+          "covered": 127,
+          "pct": 88.811188
+        },
+        "functions": {
+          "total": 49,
+          "covered": 49,
+          "pct": 100
+        },
+        "statements": {
+          "total": 299,
+          "covered": 283,
+          "pct": 94.648829
+        }
+      },
+      "packages/integration-github": {
+        "lines": {
+          "total": 297,
+          "covered": 243,
+          "pct": 81.818181
+        },
+        "branches": {
+          "total": 243,
+          "covered": 178,
+          "pct": 73.251028
+        },
+        "functions": {
+          "total": 54,
+          "covered": 47,
+          "pct": 87.037037
+        },
+        "statements": {
+          "total": 315,
+          "covered": 251,
+          "pct": 79.682539
+        }
+      },
+      "packages/integration-web": {
+        "lines": {
+          "total": 68,
+          "covered": 59,
+          "pct": 86.764705
+        },
+        "branches": {
+          "total": 68,
+          "covered": 44,
+          "pct": 64.705882
+        },
+        "functions": {
+          "total": 10,
+          "covered": 9,
+          "pct": 90
+        },
+        "statements": {
+          "total": 81,
+          "covered": 66,
+          "pct": 81.481481
+        }
+      },
+      "packages/memory-mem0": {
+        "lines": {
+          "total": 107,
+          "covered": 89,
+          "pct": 83.17757
+        },
+        "branches": {
+          "total": 85,
+          "covered": 59,
+          "pct": 69.411764
+        },
+        "functions": {
+          "total": 20,
+          "covered": 18,
+          "pct": 90
+        },
+        "statements": {
+          "total": 116,
+          "covered": 90,
+          "pct": 77.586206
+        }
+      },
+      "packages/persistence-sqlite": {
+        "lines": {
+          "total": 3629,
+          "covered": 882,
+          "pct": 24.304216
+        },
+        "branches": {
+          "total": 2755,
+          "covered": 450,
+          "pct": 16.333938
+        },
+        "functions": {
+          "total": 840,
+          "covered": 173,
+          "pct": 20.595238
+        },
+        "statements": {
+          "total": 3876,
+          "covered": 908,
+          "pct": 23.426212
+        }
+      },
+      "packages/platform-node": {
+        "lines": {
+          "total": 3032,
+          "covered": 2444,
+          "pct": 80.60686
+        },
+        "branches": {
+          "total": 2365,
+          "covered": 1598,
+          "pct": 67.56871
+        },
+        "functions": {
+          "total": 575,
+          "covered": 473,
+          "pct": 82.260869
+        },
+        "statements": {
+          "total": 3275,
+          "covered": 2535,
+          "pct": 77.40458
+        }
+      },
+      "packages/runtime-pi": {
+        "lines": {
+          "total": 561,
+          "covered": 280,
+          "pct": 49.910873
+        },
+        "branches": {
+          "total": 457,
+          "covered": 229,
+          "pct": 50.109409
+        },
+        "functions": {
+          "total": 114,
+          "covered": 47,
+          "pct": 41.22807
+        },
+        "statements": {
+          "total": 626,
+          "covered": 298,
+          "pct": 47.603833
+        }
+      },
+      "scripts/ci": {
+        "lines": {
+          "total": 3076,
+          "covered": 2905,
+          "pct": 94.440832
+        },
+        "branches": {
+          "total": 2434,
+          "covered": 2195,
+          "pct": 90.180772
+        },
+        "functions": {
+          "total": 474,
+          "covered": 458,
+          "pct": 96.624472
+        },
+        "statements": {
+          "total": 3348,
+          "covered": 3136,
+          "pct": 93.667861
+        }
+      }
+    }
+  }
+}

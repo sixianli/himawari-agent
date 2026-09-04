@@ -1,0 +1,303 @@
+{
+  "schemaVersion": 1,
+  "events": ["pull_request", "push", "workflow_dispatch"],
+  "defaultBranch": "main",
+  "checks": [
+    {
+      "id": "policy",
+      "needs": [],
+      "timeoutMinutes": 15,
+      "members": [
+        {
+          "key": "default",
+          "runner": "ubuntu-24.04",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3"
+        }
+      ],
+      "projects": ["tooling"],
+      "outputs": ["json"]
+    },
+    {
+      "id": "static",
+      "needs": ["policy"],
+      "timeoutMinutes": 15,
+      "members": [
+        {
+          "key": "default",
+          "runner": "ubuntu-24.04",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3"
+        }
+      ],
+      "projects": [],
+      "outputs": ["json"]
+    },
+    {
+      "id": "build",
+      "needs": ["policy"],
+      "timeoutMinutes": 30,
+      "members": [
+        {
+          "key": "linux-x64",
+          "runner": "ubuntu-24.04",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3"
+        },
+        {
+          "key": "macos-arm64",
+          "runner": "macos-15",
+          "os": "darwin",
+          "arch": "arm64",
+          "node": "22.22.3"
+        }
+      ],
+      "projects": [],
+      "outputs": ["json", "artifact"]
+    },
+    {
+      "id": "test",
+      "needs": ["policy", "build"],
+      "timeoutMinutes": 30,
+      "members": [
+        {
+          "key": "linux-x64",
+          "runner": "ubuntu-24.04",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3"
+        },
+        {
+          "key": "macos-arm64",
+          "runner": "macos-15",
+          "os": "darwin",
+          "arch": "arm64",
+          "node": "22.22.3"
+        }
+      ],
+      "projects": ["unit", "contracts", "integration", "e2e", "pi-compat"],
+      "outputs": ["json", "junit", "artifact"]
+    },
+    {
+      "id": "node-floor",
+      "needs": ["policy"],
+      "timeoutMinutes": 30,
+      "members": [
+        {
+          "key": "default",
+          "runner": "ubuntu-24.04",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.19.0"
+        }
+      ],
+      "projects": ["unit", "contracts", "integration", "e2e", "pi-compat"],
+      "outputs": ["json", "junit"]
+    },
+    {
+      "id": "browser",
+      "needs": ["build"],
+      "timeoutMinutes": 30,
+      "members": [
+        {
+          "key": "chromium",
+          "runner": "ubuntu-24.04",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3",
+          "browser": "chromium"
+        },
+        {
+          "key": "firefox",
+          "runner": "ubuntu-24.04",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3",
+          "browser": "firefox"
+        },
+        {
+          "key": "webkit",
+          "runner": "ubuntu-24.04",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3",
+          "browser": "webkit"
+        }
+      ],
+      "projects": [],
+      "outputs": ["json", "artifact"]
+    },
+    {
+      "id": "coverage",
+      "needs": ["policy"],
+      "timeoutMinutes": 15,
+      "members": [
+        {
+          "key": "default",
+          "runner": "ubuntu-24.04",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3"
+        }
+      ],
+      "projects": ["unit", "contracts", "tooling"],
+      "outputs": ["json", "lcov"]
+    },
+    {
+      "id": "security",
+      "needs": ["policy"],
+      "timeoutMinutes": 15,
+      "members": [
+        {
+          "key": "default",
+          "runner": "ubuntu-24.04",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3"
+        }
+      ],
+      "projects": [],
+      "outputs": ["json"]
+    },
+    {
+      "id": "required",
+      "needs": [
+        "policy",
+        "static",
+        "build",
+        "test",
+        "node-floor",
+        "browser",
+        "coverage",
+        "security"
+      ],
+      "timeoutMinutes": 5,
+      "members": [
+        {
+          "key": "default",
+          "runner": "ubuntu-24.04",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3"
+        }
+      ],
+      "projects": [],
+      "outputs": []
+    }
+  ],
+  "testProjects": [
+    {
+      "id": "unit",
+      "include": ["apps/**/*.unit.test.ts", "packages/**/*.unit.test.ts"],
+      "exclude": [],
+      "fileParallelism": true
+    },
+    {
+      "id": "contracts",
+      "include": ["apps/**/*.contract.test.ts", "packages/**/*.contract.test.ts"],
+      "exclude": [],
+      "fileParallelism": true
+    },
+    {
+      "id": "integration",
+      "include": ["test/integration/**/*.test.ts"],
+      "exclude": [
+        "test/integration/scale-qualification.test.ts",
+        "test/integration/thread-scale-qualification.test.ts",
+        "test/integration/openrouter-generation-live.test.ts",
+        "test/integration/openrouter-embedding-live.test.ts"
+      ],
+      "fileParallelism": false
+    },
+    {
+      "id": "e2e",
+      "include": ["test/e2e/**/*.test.ts"],
+      "exclude": [],
+      "fileParallelism": true
+    },
+    {
+      "id": "pi-compat",
+      "include": ["packages/runtime-pi/**/*.compat.test.ts"],
+      "exclude": [],
+      "fileParallelism": true
+    },
+    {
+      "id": "tooling",
+      "include": ["test/tooling/**/*.test.ts", "test/tooling/**/*.test.mjs"],
+      "exclude": [],
+      "fileParallelism": true
+    }
+  ],
+  "registeredTests": [
+    {
+      "path": "test/integration/scale-qualification.test.ts",
+      "kind": "qualification",
+      "project": "qualification-scale",
+      "reason": "规模资格依赖显式 opt-in 与固定数据输出",
+      "allowedModifiers": ["skip"]
+    },
+    {
+      "path": "test/integration/thread-scale-qualification.test.ts",
+      "kind": "qualification",
+      "project": "qualification-thread-scale",
+      "reason": "线程规模资格依赖显式 opt-in 与固定数据输出",
+      "allowedModifiers": ["skip"]
+    },
+    {
+      "path": "test/integration/openrouter-generation-live.test.ts",
+      "kind": "qualification",
+      "project": "qualification-generation-live",
+      "reason": "真实生成 provider 需要单独凭据与授权",
+      "allowedModifiers": ["skipIf"]
+    },
+    {
+      "path": "test/integration/openrouter-embedding-live.test.ts",
+      "kind": "qualification",
+      "project": "qualification-embedding-live",
+      "reason": "真实向量 provider 需要单独凭据与授权",
+      "allowedModifiers": ["skipIf"]
+    },
+    {
+      "path": "test/fixtures/durable-phase-child.test.ts",
+      "kind": "child-fixture",
+      "project": "child-fixture",
+      "reason": "由 integration 父测试启动的隔离子进程夹具",
+      "allowedModifiers": []
+    },
+    {
+      "path": "test/fixtures/execution-uds-child.test.ts",
+      "kind": "child-fixture",
+      "project": "child-fixture",
+      "reason": "由 integration 父测试启动的隔离子进程夹具",
+      "allowedModifiers": []
+    },
+    {
+      "path": "test/fixtures/sqlite-transaction-child.test.ts",
+      "kind": "child-fixture",
+      "project": "child-fixture",
+      "reason": "由 integration 父测试启动的隔离子进程夹具",
+      "allowedModifiers": []
+    },
+    {
+      "path": "test/fixtures/execution-agent-child.test.ts",
+      "kind": "child-fixture",
+      "project": "child-fixture",
+      "reason": "由 integration 父测试启动的隔离子进程夹具",
+      "allowedModifiers": []
+    },
+    {
+      "path": "packages/domain/test/identifiers.type-test.ts",
+      "kind": "type-check",
+      "project": "typecheck",
+      "reason": "由 tsc 执行的类型拒绝断言，不属于 Vitest 运行测试",
+      "allowedModifiers": []
+    }
+  ],
+  "retentionDays": {
+    "reports": 30,
+    "diagnostics": 7
+  }
+}

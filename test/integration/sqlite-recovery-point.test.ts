@@ -424,8 +424,11 @@ describe("encrypted same-host SQLite recovery points", () => {
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
       authentication: { value: string };
     };
-    const authenticationSuffix = manifest.authentication.value.endsWith("A") ? "B" : "A";
-    manifest.authentication.value = `${manifest.authentication.value.slice(0, -1)}${authenticationSuffix}`;
+    const originalAuthentication = Buffer.from(manifest.authentication.value, "base64url");
+    const tamperedAuthentication = Buffer.from(originalAuthentication);
+    tamperedAuthentication.writeUInt8(tamperedAuthentication.readUInt8(0) ^ 0xff, 0);
+    expect(tamperedAuthentication.equals(originalAuthentication)).toBe(false);
+    manifest.authentication.value = tamperedAuthentication.toString("base64url");
     await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
     await expectRecoveryCode(
       manifestSource.adapter.verify(manifestBackup),

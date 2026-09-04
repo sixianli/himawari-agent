@@ -1,0 +1,186 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "events",
+    "defaultBranch",
+    "checks",
+    "testProjects",
+    "registeredTests",
+    "retentionDays"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "enum": ["pull_request", "push", "workflow_dispatch"]
+      },
+      "minItems": 3
+    },
+    "defaultBranch": {
+      "type": "string",
+      "minLength": 1
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "needs", "timeoutMinutes", "members", "projects", "outputs"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "needs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          },
+          "timeoutMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["key", "runner", "os", "arch", "node"],
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "runner": {
+                  "enum": ["ubuntu-24.04", "macos-15"]
+                },
+                "os": {
+                  "enum": ["linux", "darwin"]
+                },
+                "arch": {
+                  "enum": ["x64", "arm64"]
+                },
+                "node": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "browser": {
+                  "enum": ["chromium", "firefox", "webkit"]
+                }
+              }
+            },
+            "minItems": 1
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          }
+        }
+      },
+      "minItems": 9
+    },
+    "testProjects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "include", "exclude", "fileParallelism"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "include": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "exclude": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          },
+          "fileParallelism": {
+            "type": "boolean"
+          }
+        }
+      },
+      "minItems": 6
+    },
+    "registeredTests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "kind", "project", "reason", "allowedModifiers"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": ["qualification", "child-fixture", "type-check"]
+          },
+          "project": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "allowedModifiers": {
+            "type": "array",
+            "items": {
+              "enum": ["skip", "skipIf", "runIf", "todo"]
+            },
+            "minItems": 0
+          }
+        }
+      },
+      "minItems": 0
+    },
+    "retentionDays": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reports", "diagnostics"],
+      "properties": {
+        "reports": {
+          "const": 30
+        },
+        "diagnostics": {
+          "const": 7
+        }
+      }
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CheckPolicy"
+}

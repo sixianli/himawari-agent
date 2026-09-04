@@ -311,7 +311,7 @@ Identity Gateway 把 bootstrap、产品 session 和 break-glass 保持为独立�
 当前可执行入口包括可安装 Agent Service、Execution Worker、管理 CLI、程序化本地参考组合、GitHub/模型确定性边界测试、规模资格测试，以及独立 HTTP/Identity/Control Center 资格测试。最终 public HTTP 组合尚未进入 Agent Service `main`：
 
 ```text
-npm ci --ignore-scripts
+安装固定工具 → ci:install（锁文件安装 + 已审阅原生构建与探针）
   → build relocatable node-runtime and browser bundle
   → optionally run qualify:scale on a temporary qualified SQLite fixture
   → start production execution-worker over protected UDS
@@ -322,9 +322,25 @@ npm ci --ignore-scripts
   → drain new admission and await in-flight Run settlement on shutdown
 ```
 
-Fresh completion 验证执行 `npm run check`、四个主 Vitest project、Pi compatibility、独立 workspace 项目、`npm run test:journeys`、`npm run qualify:scale`、`npm run qualify:thread-scale` 和严格文档验证。完整测试数量以最后一次 fresh 命令和对应 evidence 为准；规模资格测试单独记录目标行数、SQLite 版本、资源占用和核心路径 p50/p95/p99。SQLite contract/integration 使用临时真实文件和隔离子进程，安装后的 `himawari` CLI 已在临时 state root 完成损坏前恢复点与原子恢复演练，以及 stopped source 到 inactive/activated target 的 authority-transfer 演练；浏览器资格测试只监听 loopback。这些验证不访问付费模型、外部账户或生产凭据。
+普通本地验证由 `npm test` 统一运行 unit、contracts、integration、e2e、pi-compat 五个主项目，`npm run test:tooling` 验证 CI 政策和门禁工具；静态检查使用 `npm run check` 及仓库固定治理副本。scale/thread-scale 和两类 live suite 使用独立资格 project，scale 报告必须显式指定本次输出目录，不能写回历史 evidence。完整测试数量以最后一次 fresh 命令和对应 evidence 为准；规模资格测试单独记录目标行数、SQLite 版本、资源占用和核心路径 p50/p95/p99。SQLite contract/integration 使用临时真实文件和隔离子进程，安装后的 `himawari` CLI 已在临时 state root 完成损坏前恢复点与原子恢复演练，以及 stopped source 到 inactive/activated target 的 authority-transfer 演练；浏览器资格测试只监听 loopback。这些验证不访问付费模型、外部账户或生产凭据。
 
 Task 20 的真实模型验证由两个显式 opt-in 集成测试组成。`HIMAWARI_LIVE_EMBEDDING_SMOKE=1` 从 macOS Keychain opaque provider-secret source 构造 Mem0 production composition，只发送公开合成文本，并在完成后删除临时状态；它确认 OpenRouter Qwen3 Embedding 8B 请求与返回均为 4096 维并返回 token usage。`HIMAWARI_LIVE_GENERATION_SMOKE=1` 通过同一份 canonical live configuration 先调用 primary，再在本地注入 retryable 503 触发真实 fixed fallback；fresh evidence 确认 `Makora` 执行 DeepSeek primary、`Z.AI` 执行 GLM fallback，两者均返回预期正文，总计 `0.000026 USD`。这两个有界测试不替代最终 Gateway/Memory/Worker 生产组合资格。
+
+## CI 政策与证据边界
+
+仓库以 `ci/policy.json` 为必需检查集合的唯一声明，`check-policy.mjs` 核对固定 DAG、字面矩阵、Vitest 配置、所有测试文件归属与工具身份。主矩阵采用 Node `22.22.3`，最低 Node 为 `22.19.0`，npm `11.8.0`，Python `3.12.10`。固定工具校验下载摘要，依赖先禁用 lifecycle scripts，再执行审核过的 SQLite 源码构建与内存读写探针；Pi 保持 published `0.84.2`，不读取相邻源码或个人 Skill。[SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md]
+
+`build.mjs` 生成当前平台独立 Node runtime、前端资源和归档。清单绑定来源、构建输入、OS/arch/ABI、文件模式和摘要、外部依赖闭包及 migration；安装、五项目测试和浏览器重新核验这份归档。安装测试从临时 prefix 和非源码 cwd 运行，取消内部构建和开发依赖补漏。浏览器仍使用合成 Gateway fixture；三语、键盘、可见焦点与自动无障碍检查不等同于最终 Gateway 组合、Safari 品牌或真实移动设备资格。资格脚本同时输出有界请求、响应、失败与主页面导航时间线，保留请求发起时的页面及主 frame 导航序号。URL 字段只含 origin 和 path，不采集请求头或正文；超限数量显式记录，页面异常另有保留上限。这些诊断不改变门禁错误分类。
+
+`run.mjs` 是本地和 Actions 共用执行边界。每个检查只写自己的 `CheckResult`，输出保留退出码、实际计数和内容摘要。`aggregate.mjs` 先核对全部 `needs` 成功，再要求完整 12 份成员报告属于同一 repository、event、tested/head/base SHA、run/attempt、政策与工具链，并交叉核对构建和消费者归档摘要。部分重跑、旧报告、空执行、缺矩阵和篡改都不能得到 `passed`。
+
+磁盘观察器记录分配空间的采样峰值下界、硬件、失败次数和有界脱敏诊断。构建仍负责清理自己的临时目录；共享执行器让清理先等待当前采样结束，暂停遍历后清理并恢复采样，避免目录删除与 `du` 遍历竞态。暂停原因、耗时和清理结果单独记录，已有采样失败不会被后续成功覆盖。纯文本脱敏不依赖第三方包，允许在依赖尚未安装时记录诊断。
+
+覆盖率只合并 unit/contracts/tooling 的进程内证据，完整包含未导入生产文件与自有 CI 工具。新代码的可执行行和可定位分支分别受 90%/85% 阈值约束，workspace 四类指标由接受的目标分支基线控制。安全扫描组合原有机器密钥检查、Gitleaks 当前内容与提交历史和固定 Semgrep CE 规则；例外须有精确范围、来源与 UTC 到期日，首次合成夹具提案与已接受例外分别标识。维护者于 2026-09-04 明确要求移除 npm 依赖漏洞查询，CI 和手动 quality 安全入口均不再请求 advisory 服务，不产生漏洞查询或重试记录。安全检查通过仅代表保留的三项检查通过，不代表依赖无已知漏洞。锁文件依赖身份和安装完整性校验继续执行。
+
+Ubuntu coverage 作业通过显式 `initial-only` 选项，在合法初始化且现有校验器通过后，从同一次 snapshot/tests/JSON/LCOV 生成初始基线候选并登记为报告。候选仍须按真实 artifact 身份核验、审阅和提交，执行器不改写仓库基线；初始化结束后只执行原有比较，不再输出初始候选。tooling 项目隔离继承的 GitHub 环境变量，合成仓库测试与显式 hosted 身份测试保持各自输入边界。
+
+`ci.yml` 描述托管完整矩阵，`quality.yml` 描述默认分支手动检测及周期参数分流，schedule 仍停用。共享 Context 已支持核对冻结默认分支提交、启用状态和 cron，并将周期 base 固定为该次 SHA；质量报告独立绑定质量政策摘要。纯政策校验同时检查质量 workflow 的完整执行合同，普通 CI 汇总和 push 交接继续拒绝周期事件。正常 PR 在 `718ef1b` 的 run `33844439408` 中 13 个 job 全部通过。Owner 于 2026-09-04 授权分支收尾，`main` 的 Ruleset `22256403` 已启用为 Active，要求 PR、来源为 GitHub Actions（App 15368）的 `ci/required`、分支保持最新及讨论解决，禁止强推和删除，无 bypass，审批人数为 0；规则 API 回读与目标配置一致。目标 fork 审批策略和专项红绿拒绝验收仍未全部完成。公开报告与诊断分别按 30/7 天保留，上传通过显式白名单和脱敏检查。S9 交接格式验证默认分支 CI、平台产物、未完成项及 24 小时安全新鲜度，保留生产资格、Owner 签署和持久转存责任。实现与验收进度由 CI Plan 记录，S0/S9 产品验收归属不变。[SOURCE: docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md]
 
 ## Known Limitations
 

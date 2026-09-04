@@ -1,7 +1,7 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.3.5/schema.json",
   "files": {
-    "includes": ["**", "!!**/dist"]
+    "includes": ["**", "!!**/dist", "!!.ci-output"]
   },
   "formatter": {
     "enabled": true,
@@ -15,6 +15,12 @@
       "trailingCommas": "all"
     }
   },
+  "overrides": [
+    {
+      "includes": ["ci/rules/fixtures/unsafe.fixture.ts"],
+      "linter": { "rules": { "security": { "noGlobalEval": "off" } } }
+    }
+  ],
   "linter": {
     "enabled": true,
     "rules": {
