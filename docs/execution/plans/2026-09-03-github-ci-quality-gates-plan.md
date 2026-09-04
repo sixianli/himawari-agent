@@ -346,6 +346,20 @@ Task 14 准备审查发现原代码永久拒绝启用状态、未识别周期事
 
 按来源 Spec 已允许的有界重试补齐窄范围恢复：相同请求在自身期限到期且尚无响应时最多再执行一次，每次 60 秒、间隔最多 1 秒。每次结果均保留，实际重试次数进入检查报告；其他失败与发现不重试。该修订的 149 项定向测试、变更覆盖率、项目检查及严格文档校验通过。最终托管状态以正常 PR 最新检查为准；隔离故障样例继续使用上述真实绿色提交作为固定对照，不混入新的正常分支修订。
 
+### 本轮收尾状态
+
+重试修订提交 `c62c4d6` 已推送至正常 PR。真实 [run 33832717445](https://github.com/sixianli/himawari-agent/actions/runs/33832717445) 的 tested merge 为 `d5c6f41`，实收 12/12 报告，无缺项；构建、双平台测试、最低 Node、三浏览器、政策、静态和覆盖率均通过，覆盖率采集测试 1116/1116。仅 security 的 advisory 查询失败，最终汇总正确阻断。两次请求分别耗时 60003/60000 ms，总耗时 121008 ms，均为自身期限到期且尚未收到响应；`requestAttempts` 和正式 `CheckResult.retryCount=1` 保留完整。其他三项扫描通过。本次未发现重试实现错误，也不能将网络超时解释为没有漏洞。
+
+本轮仅保存必要的官方 gate、安全及覆盖率 artifact，核验元数据、ZIP 摘要、报告绑定和运行身份；不重复下载和审计此前已覆盖的大型构建归档。正常 PR 的当前提交未取得完整绿色，不继续增加重试次数或修改安全门禁。默认分支合入、周期启用、fork/Dependabot 和 Ruleset 验收均保持未完成，Spec/Plan 不归档。
+
+隔离红测试 [run 33832549495](https://github.com/sixianli/himawari-agent/actions/runs/33832549495) 使用 head `fe8b448`、tested merge `d6fac02`。预设的 `schemaVersion` 断言实际报 `expected 1 to be 2`，双平台测试与最低 Node 失败；汇总实收 12/12 并明确拒绝这些失败成员。旧绿色 head `60a000c` 与当前失败 head 不同，API 中当前 `ci/required` 也为失败。该轮另有独立 advisory 超时，故不宣称为单一原因样例，不为排除此噪声重跑整轮。
+
+隔离安装失败 [run 33833572857](https://github.com/sixianli/himawari-agent/actions/runs/33833572857) 使用 head `32f3d59`、tested merge `c3573ef`。两平台在实际 `npm ci` 中均报 `EINTEGRITY`，build 失败，下游 test/browser 被跳过；汇总明确拒绝 build failure、下游 skipped 及七个缺失成员报告。该轮亦有独立 advisory 超时，保留多原因事实。拟取消前的即时回读显示运行已自然结束，因此没有把它记为取消证据。
+
+“全部上游成功后仅扣留一个 Firefox 报告”的独立远端样例本轮未执行；不能用上述安装失败造成的报告缺失替代。持续 advisory 超时尚未解决，后续恢复稳定绿色再补验，不降低门禁或继续增加重试次数。
+
+隔离分支恢复提交为 `918fce4`，源码树与绿色对照 `60a000c` 完全一致，两个注入目标均已还原。恢复推送触发 [run 33834326410](https://github.com/sixianli/himawari-agent/actions/runs/33834326410)，在仅 policy 启动、矩阵尚未运行时执行取消；policy 和其余上游均取消，`always()` 汇总继续执行后明确失败，整次 run 最终为 `cancelled`，没有成功替代状态。该观测不覆盖已有矩阵成功后再取消的更强场景，不据此关闭全部取消验收。
+
 ### 干净提交验证
 
 实现提交为 `f2ce494fa8d7ee1e7f67bbe4093befabe4f2cbcb`。从本地提交建立 `/tmp/himawari-ci-clean-f2ce494`，无缓存锁文件安装、SQLite 探针和三个专属 Playwright 引擎安装均通过；测试没有修改受跟踪文件。完整 `ci:local` 比较基线固定为 `3f865d2860301d86f33978e6534cfbba02c37a89`。
