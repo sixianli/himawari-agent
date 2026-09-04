@@ -910,6 +910,13 @@ export class SqliteThreadOperations {
       this.assertAuthority(input.ownerId, input.agentId, input.authority);
       this.assertPayload(input.ownerId, input.agentId, input.contentRef);
       this.assertPayload(input.ownerId, input.agentId, input.resultRef);
+      if (
+        this.database
+          .prepare("SELECT 1 FROM product_state_records WHERE key = ?")
+          .get(`run:${input.runId}`)
+      ) {
+        this.fail("PORT_CONFLICT", "Thread admission cannot duplicate a product-state Run");
+      }
       const current = this.read(input.ownerId, input.agentId, input.threadId);
       if (
         !current ||

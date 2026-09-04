@@ -33,6 +33,7 @@ import type {
   GovernanceMutationReceiptStorePort,
   DurableGitHubMonitorHistoryPolicyPort,
   ThreadRepositoryPort,
+  RunLifecyclePort,
 } from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
@@ -355,6 +356,14 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   threadRepository(): ThreadRepositoryPort {
     return this.durable.threadRepository();
+  }
+
+  runLifecycle(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+  ): RunLifecyclePort {
+    return this.durable.runLifecycle(ownerId, agentId, authority, this.now);
   }
 
   githubIntegrationState(): GitHubIntegrationStatePort {

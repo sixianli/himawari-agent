@@ -124,7 +124,11 @@ HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 
 ### Product state commit and reliable publication
 
-`RunStateCommitCoordinator` 是窄状态提交服务；`RunCoordinator` 组合它和其他产品端口，但不取代原有提交边界。状态提交服务读取产品 Run 状态、调用领域 `transitionRun()`，并把下一版状态、幂等命令结果和对应业务事件提交给 `ProductStateRepositoryPort`。Run 采用 `run:<RunId>` 状态键；业务事件采用由命令 idempotency key 派生的稳定事件 ID。
+`RunCoordinator` 通过 `RunLifecyclePort` 读取和推进 Run，不再依赖具体状态提交服务。参考组合中的 `RunStateCommitCoordinator` 仍使用 `ProductStateRepositoryPort`，以 `run:<RunId>` 状态键提交下一版状态、幂等命令结果和业务事件。这个参考存储不是 Thread 消息接纳创建的关系型 `runs` 表，不能在生产中为同一 Run 再建立一份状态。
+
+`SqliteProductStateRepository.runLifecycle(ownerId, agentId, authority)` 提供关系型实现，直接读取 Thread 接纳事务创建的 `runs`。状态转换在原有专用 SQLite execution context 中验证作用域、当前 deployment/lease/fence、revision 和领域状态机，并原子写入 Run、命令结果和可靠事件，不镜像写入 `product_state_records`。普通状态转换拒绝直接把 Thread Run 标为 `completed`，成功回复仍须由 assistant、Turn、Run 和 Thread receipt 的同一事务提交。当前这个端口不等于已完成生产入口接线；持久领取任务、最终回答提交与生产 HTTP/Pi 组合仍须继续验证。
+
+领域包的源码内部相对导入使用真实 `.ts` 扩展名，供 Node 原生类型擦除环境中的 SQLite Worker 复用同一个领域状态机；Node 构建通过 `rewriteRelativeImportExtensions` 转成 `.js`。不为 Worker 复制一套合法状态转换表，也不增加只为绕过源码加载错误的平行领域入口。
 
 参考 Product State Repository 在一个无 `await` 的 mutation 边界内同时写入 State revision、命令结果和 pending Reliable Event，提供内存 transaction/outbox 等价语义。提交前会完成以下检查：
 

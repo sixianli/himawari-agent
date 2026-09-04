@@ -16,6 +16,7 @@ export * from "./intelligence.js";
 export * from "./memory-projection.js";
 export * from "./observability.js";
 export * from "./persistence.js";
+export * from "./run-lifecycle.js";
 export * from "./system.js";
 export * from "./threads.js";
 export * from "./web.js";

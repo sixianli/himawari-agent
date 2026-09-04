@@ -11,10 +11,11 @@ import type {
   WorkerRunEvent,
   WorkerRunPort,
   WorkerRunRequest,
+  RunLifecyclePort,
+  StoredRun,
 } from "../ports/index.js";
 import { PORT_ERROR_CODES, ApplicationPortError } from "../ports/index.js";
 import type { ContextFormationPort, ContextFormationRequest } from "./context-formation-service.js";
-import type { RunStateCommitCoordinator, StoredRun } from "./run-state-commit-coordinator.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
 
 type CheckpointPhase =
@@ -92,7 +93,7 @@ export interface CancelCoordinatedRunInput {
 }
 
 export interface RunCoordinatorDependencies {
-  readonly runs: RunStateCommitCoordinator;
+  readonly runs: RunLifecyclePort;
   readonly checkpoints: StateStorePort;
   readonly context: ContextFormationPort;
   readonly runtime: AgentRuntimePort;

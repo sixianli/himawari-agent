@@ -1,6 +1,6 @@
-import { DOMAIN_ERROR_CODES, DomainError } from "./errors.js";
-import type { Session, Trigger } from "./entities.js";
-import type { AgentId, OwnerId, RunId, SessionId, ThreadId, TriggerId } from "./identifiers.js";
+import { DOMAIN_ERROR_CODES, DomainError } from "./errors.ts";
+import type { Session, Trigger } from "./entities.ts";
+import type { AgentId, OwnerId, RunId, SessionId, ThreadId, TriggerId } from "./identifiers.ts";
 
 export const RUN_STATUSES = [
   "accepted",

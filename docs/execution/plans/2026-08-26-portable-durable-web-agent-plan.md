@@ -291,6 +291,8 @@ Task 12 新增第九个不可变 migration，把 background occurrence revision�
 
 schedule evaluator 覆盖 interval、one-shot 和 IANA daily schedule；periodic misfire 跳过旧槽位，one-shot 超时标记 `MISSED`，DST 不存在时刻无候选、重复时刻按本地日期只执行一次。work lease 到期后才允许原 identity reclaim；transport/provider 仅按有界 exponential backoff 与稳定 jitter 重试，credential、authorization、policy 和 invalid input 不自动重试。真实 SQLite restart matrix 同时覆盖 awaiting approval、due retry、`MODEL_BLOCKED`、unknown external result、pending/interrupted Delivery、过期 running lease 与 authority fence 变化。正式 Agent Service 已打开 repository 并输出脱敏恢复计数；生产 timer loop 留到 Task 13 的 Trigger Control Plane 组合，不使用测试 sink 冒充公共 Gateway。实现与验证证据位于 `test/integration/qualification/evidence/s1-task12-durable-background.json`。
 
+2026-09-04 的生产接线修复补充了 `RunLifecyclePort` 和关系表适配器：Thread 接纳的 Run 由同一张 `runs` 表读取和迁移，不再要求在通用 `product_state_records` 中复制状态。迁移在一个事务中检查部署权威、租约、scope、revision 和领域状态机，并写入命令回执及可靠事件；Thread 接纳与通用 Run 写入入口互相拒绝重复状态。Thread 成功完成仍须助手消息、Turn、Run 的原子提交，通用状态迁移不能跳过该边界。此次实际运行 8 个集成文件、79 项测试，覆盖原生 Node 源入口和编译产物加载、关系表接纳/迁移、重启回执重放、越权拒绝、事件失败回滚与取消 checkpoint。最终回复归一化和提交接线、自动 claim/recovery、生产 HTTP/Pi 组合仍未完成；这些测试不构成已安装服务处理真实请求的证据。
+
 ### Task 13：实现受认证 HTTP Gateway 与可恢复 SSE
 
 - [x] 先为 HTTP adapter 写 contract/security tests，证明每个命令、查询和事件请求都经过版本 parser、`GatewayAuthenticationContext`、scope policy、Control Plane 或 Read Model。

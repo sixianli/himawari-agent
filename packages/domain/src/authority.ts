@@ -1,6 +1,6 @@
-import { DOMAIN_ERROR_CODES, DomainError } from "./errors.js";
-import type { Agent } from "./entities.js";
-import type { AgentId, AuthorityHolderId, AuthorityLeaseId, OwnerId } from "./identifiers.js";
+import { DOMAIN_ERROR_CODES, DomainError } from "./errors.ts";
+import type { Agent } from "./entities.ts";
+import type { AgentId, AuthorityHolderId, AuthorityLeaseId, OwnerId } from "./identifiers.ts";
 
 export interface AgentAuthorityLease {
   readonly id: AuthorityLeaseId;

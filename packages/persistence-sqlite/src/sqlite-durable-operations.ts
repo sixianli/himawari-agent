@@ -60,6 +60,7 @@ import type Database from "better-sqlite3";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
+import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
 
 export type SqliteApplicationFailure = (
   code: string,
@@ -272,6 +273,7 @@ export class SqliteDurableOperations {
   private readonly checkpoint: SqliteCheckpointOperations;
   private readonly memory: SqliteMemoryOperations;
   private readonly thread: SqliteThreadOperations;
+  private readonly runs: SqliteRunLifecycleOperations;
 
   constructor(
     database: Database.Database,
@@ -284,9 +286,11 @@ export class SqliteDurableOperations {
     this.checkpoint = new SqliteCheckpointOperations(database, fail, assertDiskHeadroom);
     this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
+    this.runs = new SqliteRunLifecycleOperations(database, fail, assertDiskHeadroom);
   }
 
   execute(operation: string, payload: unknown): unknown {
+    if (operation.startsWith("runLifecycle.")) return this.runs.execute(operation, payload);
     if (operation.startsWith("thread.")) {
       return this.thread.execute(operation, payload);
     }

@@ -22,6 +22,7 @@ import type {
   SensitiveMemoryApprovalStatePort,
   ThreadDistillationStatePort,
   ThreadRepositoryPort,
+  RunLifecyclePort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
 import type {
@@ -81,6 +82,25 @@ export class SqliteDurableAdapters {
 
   constructor(context: SqliteDurableAdapterContext) {
     this.context = context;
+  }
+
+  runLifecycle(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    now: () => string,
+  ): RunLifecyclePort {
+    return Object.freeze<RunLifecyclePort>({
+      readRun: (runId) => this.context.read("runLifecycle.read", { ownerId, agentId, runId }),
+      transitionRun: (input) =>
+        this.context.write("runLifecycle.transition", {
+          ownerId,
+          agentId,
+          authority,
+          input,
+          now: now(),
+        }),
+    });
   }
 
   reliableEventPort(ownerId: OwnerId, agentId: AgentId): ReliableEventPort {

@@ -615,6 +615,15 @@ function commitStateAndEvents(
     const concurrentReplay = replayExisting(input);
     if (concurrentReplay) return concurrentReplay;
     const authority = currentAuthority(input, now);
+    if (
+      input.state.key.startsWith("run:") &&
+      database.prepare("SELECT 1 FROM runs WHERE id = ?").get(input.state.key.slice(4))
+    ) {
+      applicationFailure(
+        "PORT_INVALID_OPERATION",
+        "A relational Run cannot also be stored as a product-state Run",
+      );
+    }
     const currentRow = database
       .prepare(
         "SELECT key, owner_id AS ownerId, agent_id AS agentId, revision, value_json AS valueJson FROM product_state_records WHERE key = ?",

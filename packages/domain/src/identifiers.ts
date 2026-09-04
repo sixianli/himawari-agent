@@ -1,4 +1,4 @@
-import { DOMAIN_ERROR_CODES, DomainError } from "./errors.js";
+import { DOMAIN_ERROR_CODES, DomainError } from "./errors.ts";
 
 declare const identifierBrand: unique symbol;
 
