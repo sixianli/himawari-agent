@@ -18,7 +18,7 @@ import {
   InMemoryDeletionTarget,
   createReferenceAdapterSet,
 } from "@himawari-agent/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const OWNER_ID = createOwnerId("owner-trace");
 const AGENT_ID = createAgentId("agent-trace");
@@ -58,6 +58,20 @@ function traceInput(eventType: string) {
 }
 
 describe("Task 6 Session Trace", () => {
+  it.each([0, Number.MAX_SAFE_INTEGER])(
+    "rejects a non-advancing or exhausted persisted sequence %i",
+    async (sequence) => {
+      const { adapters, recorder } = createRecorder();
+      const first = await recorder.record(traceInput("run.accepted"));
+      const append = vi.spyOn(adapters.trace, "append");
+      vi.spyOn(adapters.trace, "readRun").mockResolvedValue([{ ...first.event, sequence }]);
+      await expect(recorder.record(traceInput("runtime.message"))).rejects.toMatchObject({
+        code: PORT_ERROR_CODES.INVALID_OPERATION,
+      });
+      expect(append).not.toHaveBeenCalled();
+    },
+  );
+
   it("records ordered model, tool, and approval payload references with causal relationships", async () => {
     const { adapters, recorder } = createRecorder();
     const model = await recorder.record({

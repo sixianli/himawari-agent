@@ -33,8 +33,6 @@ import type {
   ScheduledJob,
   ScheduledJobWrite,
   SessionDeletionRecord,
-  StateRecord,
-  JsonObject,
   TraceEvent,
 } from "@himawari-agent/application";
 import type {
@@ -61,6 +59,7 @@ import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
 import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
+import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
 
 export type SqliteApplicationFailure = (
   code: string,
@@ -274,6 +273,7 @@ export class SqliteDurableOperations {
   private readonly memory: SqliteMemoryOperations;
   private readonly thread: SqliteThreadOperations;
   private readonly runs: SqliteRunLifecycleOperations;
+  private readonly runCheckpoints: SqliteRunCheckpointOperations;
 
   constructor(
     database: Database.Database,
@@ -286,11 +286,20 @@ export class SqliteDurableOperations {
     this.checkpoint = new SqliteCheckpointOperations(database, fail, assertDiskHeadroom);
     this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
-    this.runs = new SqliteRunLifecycleOperations(database, fail, assertDiskHeadroom);
+    this.runs = new SqliteRunLifecycleOperations(database, fail, assertDiskHeadroom, this.thread);
+    this.runCheckpoints = new SqliteRunCheckpointOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+      (ownerId, agentId, authority) => this.assertBackgroundFence(ownerId, agentId, authority),
+    );
   }
 
   execute(operation: string, payload: unknown): unknown {
     if (operation.startsWith("runLifecycle.")) return this.runs.execute(operation, payload);
+    if (operation.startsWith("runCheckpoint.")) {
+      return this.runCheckpoints.execute(operation, payload);
+    }
     if (operation.startsWith("thread.")) {
       return this.thread.execute(operation, payload);
     }
@@ -308,20 +317,6 @@ export class SqliteDurableOperations {
       case "event.append":
         return this.appendEvent(
           payload as { ownerId: string; agentId: string; event: ReliableEvent },
-        );
-      case "state.read":
-        return this.readScopedState(payload as { ownerId: string; agentId: string; key: string });
-      case "state.compareAndSet":
-        return this.compareAndSetState(
-          payload as {
-            ownerId: string;
-            agentId: string;
-            authority: ProductAuthorityFence;
-            key: string;
-            expectedRevision: number | null;
-            value: JsonObject;
-            updatedAt: string;
-          },
         );
       case "event.listPending":
         return this.listPendingEvents(
@@ -760,68 +755,6 @@ export class SqliteDurableOperations {
     return (this.database.prepare(sql).all() as Array<{ readonly id: string }>).map(({ id }) => id);
   }
 
-  private readScopedState(input: {
-    ownerId: string;
-    agentId: string;
-    key: string;
-  }): StateRecord | undefined {
-    if (!input.key.startsWith("run-checkpoint:")) {
-      this.fail("PORT_INVALID_OPERATION", "The durable checkpoint store only accepts Run keys");
-    }
-    const row = this.database
-      .prepare(
-        `SELECT key, revision, value_json AS valueJson FROM product_state_records
-        WHERE key = ? AND owner_id = ? AND agent_id = ?`,
-      )
-      .get(input.key, input.ownerId, input.agentId) as
-      | { readonly key: string; readonly revision: number; readonly valueJson: string }
-      | undefined;
-    return row
-      ? { key: row.key, revision: row.revision, value: JSON.parse(row.valueJson) as JsonObject }
-      : undefined;
-  }
-
-  private compareAndSetState(input: {
-    ownerId: string;
-    agentId: string;
-    authority: ProductAuthorityFence;
-    key: string;
-    expectedRevision: number | null;
-    value: JsonObject;
-    updatedAt: string;
-  }): StateRecord {
-    this.assertDiskHeadroom();
-    if (!input.key.startsWith("run-checkpoint:")) {
-      this.fail("PORT_INVALID_OPERATION", "The durable checkpoint store only accepts Run keys");
-    }
-    this.assertBackgroundFence(input.ownerId, input.agentId, input.authority);
-    const transaction = this.database.transaction(() => {
-      const current = this.readScopedState(input);
-      if ((current?.revision ?? null) !== input.expectedRevision) {
-        this.fail("PORT_CONFLICT", `State ${input.key} revision conflict`, { key: input.key });
-      }
-      const revision = (current?.revision ?? 0) + 1;
-      this.database
-        .prepare(
-          `INSERT INTO product_state_records (
-            key, owner_id, agent_id, revision, value_json, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET
-            revision = excluded.revision, value_json = excluded.value_json,
-            updated_at = excluded.updated_at`,
-        )
-        .run(
-          input.key,
-          input.ownerId,
-          input.agentId,
-          revision,
-          JSON.stringify(input.value),
-          input.updatedAt,
-        );
-      return { key: input.key, revision, value: input.value };
-    });
-    return transaction.immediate();
-  }
-
   private idListWith(sql: string, ...parameters: readonly unknown[]): readonly string[] {
     return (this.database.prepare(sql).all(...parameters) as Array<{ readonly id: string }>).map(
       ({ id }) => id,
@@ -854,23 +787,29 @@ export class SqliteDurableOperations {
     const terminal = new Set(["completed", "failed", "cancelled"]);
     const stateKeys = (
       this.database
-        .prepare("SELECT key, value_json AS valueJson FROM product_state_records ORDER BY key")
+        .prepare(
+          `SELECT key, value_json AS valueJson FROM product_state_records
+          WHERE substr(key, 1, 15) != 'run-checkpoint:' ORDER BY key`,
+        )
         .all() as Array<{ readonly key: string; readonly valueJson: string }>
     )
-      .filter(({ key, valueJson }) => {
-        const value = JSON.parse(valueJson) as {
-          readonly status?: unknown;
-          readonly terminalStatus?: unknown;
-        };
-        if (key.startsWith("run-checkpoint:")) return value.terminalStatus === null;
+      .filter(({ valueJson }) => {
+        const value = JSON.parse(valueJson) as { readonly status?: unknown };
         return typeof value.status === "string" && !terminal.has(value.status);
       })
       .map(({ key }) => key);
+    const checkpointRunIds = this.idList(
+      `SELECT checkpoint.run_id AS id FROM run_coordination_checkpoints checkpoint
+      JOIN runs run ON run.id = checkpoint.run_id
+        AND run.owner_id = checkpoint.owner_id AND run.agent_id = checkpoint.agent_id
+      WHERE checkpoint.terminal_status IS NULL
+        AND run.status NOT IN ('completed', 'failed', 'cancelled') ORDER BY checkpoint.run_id`,
+    );
     const runIds = this.idList(
       `SELECT id FROM runs
       WHERE status NOT IN ('completed', 'failed', 'cancelled') ORDER BY created_at, id`,
     );
-    return [...new Set([...stateKeys, ...runIds])].sort();
+    return [...new Set([...stateKeys, ...checkpointRunIds, ...runIds])].sort();
   }
 
   private recoverySnapshot(): SqliteStartupRecovery {
@@ -2999,6 +2938,9 @@ export class SqliteDurableOperations {
     if (runIds.length > 0) {
       for (const [table, column] of [
         ["run_checkpoints", "checkpoint_ref"],
+        ["run_coordination_checkpoints", "context_ref"],
+        ["run_coordination_checkpoints", "final_answer_ref"],
+        ["run_coordination_worker_results", "result_ref"],
         ["approval_requests", "intent_ref"],
         ["trace_events", "payload_ref"],
         ["attention_decisions", "decision_ref"],
@@ -3116,9 +3058,9 @@ export class SqliteDurableOperations {
     for (const { name } of tables) {
       const foreignKeys = this.database
         .prepare(`PRAGMA foreign_key_list(${quoteIdentifier(name)})`)
-        .all() as Array<{ table: string; from: string }>;
+        .all() as Array<{ table: string; from: string; to: string }>;
       for (const foreignKey of foreignKeys) {
-        if (foreignKey.table !== "payloads") continue;
+        if (foreignKey.table !== "payloads" || foreignKey.to !== "ref") continue;
         const count = Number(
           this.database
             .prepare(

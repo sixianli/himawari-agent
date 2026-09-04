@@ -2,11 +2,12 @@ import type { AgentId, IdempotencyKey, OwnerId, RunId, RunStatus } from "@himawa
 import type {
   AgentRuntimePort,
   AuthorityFence,
-  JsonObject,
   PayloadRef,
   RuntimeEvent,
   RuntimeRequest,
-  StateStorePort,
+  RunCheckpointStore,
+  RunCheckpoint,
+  StoredRunCheckpoint,
   TraceEventId,
   WorkerRunEvent,
   WorkerRunPort,
@@ -17,31 +18,6 @@ import type {
 import { PORT_ERROR_CODES, ApplicationPortError } from "../ports/index.js";
 import type { ContextFormationPort, ContextFormationRequest } from "./context-formation-service.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
-
-type CheckpointPhase =
-  | "accepted"
-  | "context_formed"
-  | "workers_running"
-  | "runtime_running"
-  | "runtime_settled"
-  | "reconciling_external_result"
-  | "completed"
-  | "failed"
-  | "cancelled";
-
-export interface RunCheckpoint {
-  readonly phase: CheckpointPhase;
-  readonly contextRef: PayloadRef | null;
-  readonly workerResults: Readonly<Record<string, PayloadRef>>;
-  readonly runtimeEventCount: number;
-  readonly lastTraceEventId: TraceEventId | null;
-  readonly terminalStatus: "completed" | "failed" | "cancelled" | null;
-}
-
-interface StoredCheckpoint {
-  readonly revision: number;
-  readonly checkpoint: RunCheckpoint;
-}
 
 export interface RunTransitionCommand {
   readonly idempotencyKey: IdempotencyKey;
@@ -94,15 +70,11 @@ export interface CancelCoordinatedRunInput {
 
 export interface RunCoordinatorDependencies {
   readonly runs: RunLifecyclePort;
-  readonly checkpoints: StateStorePort;
+  readonly checkpoints: RunCheckpointStore;
   readonly context: ContextFormationPort;
   readonly runtime: AgentRuntimePort;
   readonly workers: WorkerRunPort;
   readonly trace: SessionTraceRecorder;
-}
-
-function checkpointKey(runId: RunId): string {
-  return `run-checkpoint:${runId}`;
 }
 
 function defaultCheckpoint(): RunCheckpoint {
@@ -113,93 +85,8 @@ function defaultCheckpoint(): RunCheckpoint {
     runtimeEventCount: 0,
     lastTraceEventId: null,
     terminalStatus: null,
-  });
-}
-
-function checkpointValue(checkpoint: RunCheckpoint): JsonObject {
-  return {
-    phase: checkpoint.phase,
-    contextRef: checkpoint.contextRef,
-    workerResults: checkpoint.workerResults,
-    runtimeEventCount: checkpoint.runtimeEventCount,
-    lastTraceEventId: checkpoint.lastTraceEventId,
-    terminalStatus: checkpoint.terminalStatus,
-  };
-}
-
-function checkpointField(value: JsonObject, field: string): unknown {
-  return value[field];
-}
-
-function parseCheckpoint(value: JsonObject): RunCheckpoint {
-  const phase = checkpointField(value, "phase");
-  const contextRef = checkpointField(value, "contextRef");
-  const workerResults = checkpointField(value, "workerResults");
-  const runtimeEventCount = checkpointField(value, "runtimeEventCount");
-  const lastTraceEventId = checkpointField(value, "lastTraceEventId");
-  const terminalStatus = checkpointField(value, "terminalStatus");
-  if (
-    typeof phase !== "string" ||
-    (contextRef !== null && typeof contextRef !== "string") ||
-    workerResults === null ||
-    typeof workerResults !== "object" ||
-    Array.isArray(workerResults) ||
-    typeof runtimeEventCount !== "number" ||
-    !Number.isSafeInteger(runtimeEventCount) ||
-    runtimeEventCount < 0 ||
-    (lastTraceEventId !== null && typeof lastTraceEventId !== "string") ||
-    (terminalStatus !== null && typeof terminalStatus !== "string")
-  ) {
-    throw new ApplicationPortError(
-      PORT_ERROR_CODES.INVALID_OPERATION,
-      "Stored Run checkpoint is invalid",
-    );
-  }
-  const validPhases: readonly CheckpointPhase[] = [
-    "accepted",
-    "context_formed",
-    "workers_running",
-    "runtime_running",
-    "runtime_settled",
-    "reconciling_external_result",
-    "completed",
-    "failed",
-    "cancelled",
-  ];
-  if (!validPhases.includes(phase as CheckpointPhase)) {
-    throw new ApplicationPortError(
-      PORT_ERROR_CODES.INVALID_OPERATION,
-      `Stored Run checkpoint phase ${phase} is invalid`,
-    );
-  }
-  const validTerminalStatuses = ["completed", "failed", "cancelled"] as const;
-  if (
-    terminalStatus !== null &&
-    !validTerminalStatuses.includes(terminalStatus as (typeof validTerminalStatuses)[number])
-  ) {
-    throw new ApplicationPortError(
-      PORT_ERROR_CODES.INVALID_OPERATION,
-      `Stored Run checkpoint terminal status ${terminalStatus} is invalid`,
-    );
-  }
-  const parsedWorkerResults: Record<string, string> = {};
-  for (const [workerRunId, resultRef] of Object.entries(workerResults)) {
-    if (typeof resultRef !== "string") {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.INVALID_OPERATION,
-        "Stored worker result reference is invalid",
-        { workerRunId },
-      );
-    }
-    parsedWorkerResults[workerRunId] = resultRef;
-  }
-  return Object.freeze({
-    phase: phase as CheckpointPhase,
-    contextRef,
-    workerResults: Object.freeze(parsedWorkerResults),
-    runtimeEventCount,
-    lastTraceEventId,
-    terminalStatus: terminalStatus as RunCheckpoint["terminalStatus"],
+    output: null,
+    diagnosticCode: null,
   });
 }
 
@@ -220,10 +107,47 @@ export class RunCoordinator {
     this.assertScope(input);
     const initialCheckpoint = await this.readCheckpoint(input.runId);
     const resumed = initialCheckpoint !== undefined;
-    let storedCheckpoint = initialCheckpoint ?? { revision: 0, checkpoint: defaultCheckpoint() };
+    let storedCheckpoint = initialCheckpoint ?? {
+      runId: input.runId,
+      revision: 0,
+      checkpoint: defaultCheckpoint(),
+    };
     let storedRun = await this.requireRun(input.runId);
+    if (
+      storedRun.run.ownerId !== input.ownerId ||
+      storedRun.run.agentId !== input.agentId ||
+      storedRun.run.sessionId !== input.runtime.sessionId ||
+      (storedRun.run.threadId ?? null) !== input.runtime.threadId
+    )
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Runtime scope does not match the canonical Run",
+      );
 
     if (isTerminalStatus(storedRun.run.status)) {
+      return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
+    }
+    const interrupted =
+      storedCheckpoint.checkpoint.phase === "runtime_running" &&
+      storedCheckpoint.checkpoint.terminalStatus === null;
+    const missingOutput =
+      storedCheckpoint.checkpoint.terminalStatus === "completed" &&
+      storedCheckpoint.checkpoint.output === null;
+    if (
+      interrupted ||
+      missingOutput ||
+      storedCheckpoint.checkpoint.phase === "reconciling_external_result"
+    ) {
+      storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
+        ...storedCheckpoint.checkpoint,
+        phase: "reconciling_external_result",
+        diagnosticCode: interrupted
+          ? "RUNTIME_ATTEMPT_INTERRUPTED"
+          : missingOutput
+            ? "RUNTIME_COMPLETION_OUTPUT_MISSING"
+            : storedCheckpoint.checkpoint.diagnosticCode,
+      });
+      storedRun = await this.transition(input, storedRun, "reconciling_external_result");
       return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
     }
     if (storedRun.run.status === "accepted") {
@@ -254,7 +178,10 @@ export class RunCoordinator {
       return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
     }
 
-    const workerOutcome = await this.runWorkers(input, storedRun, storedCheckpoint);
+    const workerOutcome =
+      storedCheckpoint.checkpoint.terminalStatus === null
+        ? await this.runWorkers(input, storedRun, storedCheckpoint)
+        : { run: storedRun, checkpoint: storedCheckpoint };
     storedRun = workerOutcome.run;
     storedCheckpoint = workerOutcome.checkpoint;
     if (
@@ -281,32 +208,83 @@ export class RunCoordinator {
         { runId: input.runId },
       );
     }
-    storedRun = await this.transition(input, storedRun, terminalStatus);
+    if (terminalStatus === "completed") {
+      const output = storedCheckpoint.checkpoint.output;
+      if (!output)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "Runtime completion output is missing",
+        );
+      const latest = await this.requireRun(input.runId);
+      if (!isTerminalStatus(latest.run.status)) {
+        const classifications = ["public", "private", "sensitive", "restricted"] as const;
+        const dataClassification =
+          classifications[
+            Math.max(
+              classifications.indexOf(input.runtime.dataClassification),
+              classifications.indexOf(input.context.dataClassification),
+            )
+          ];
+        if (!dataClassification)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "Invalid completion classification",
+          );
+        await this.dependencies.runs.completeRun({
+          ...input.commands.completed,
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          runId: input.runId,
+          authority: input.authority,
+          expectedRevision: latest.revision,
+          output,
+          dataClassification,
+        });
+      }
+      storedRun = await this.requireRun(input.runId);
+    } else storedRun = await this.transition(input, storedRun, terminalStatus);
     storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
       ...storedCheckpoint.checkpoint,
-      phase: terminalStatus,
+      phase:
+        storedRun.run.status === "cancelled"
+          ? "cancelled"
+          : storedRun.run.status === "failed"
+            ? "failed"
+            : terminalStatus,
+      terminalStatus:
+        storedRun.run.status === "cancelled"
+          ? "cancelled"
+          : storedRun.run.status === "failed"
+            ? "failed"
+            : terminalStatus,
     });
     return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
   }
 
   async cancel(input: CancelCoordinatedRunInput): Promise<StoredRun> {
+    const existing = await this.requireRun(input.runId);
+    if (existing.run.ownerId !== input.ownerId || existing.run.agentId !== input.agentId)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Cancellation scope does not match the canonical Run",
+      );
+    if (isTerminalStatus(existing.run.status)) return existing;
+    const storedRun = await this.transitionWithCommand(
+      input.ownerId,
+      input.agentId,
+      input.authority,
+      existing,
+      "cancelled",
+      input.command,
+    );
+    if (storedRun.run.status !== "cancelled") return storedRun;
     this.cancelledRuns.add(input.runId);
     await this.dependencies.runtime.cancel(input.runId);
     for (const workerRunId of this.activeWorkers.get(input.runId) ?? []) {
       await this.dependencies.workers.cancel(workerRunId, input.reasonCode);
     }
-    let storedRun = await this.requireRun(input.runId);
-    if (!isTerminalStatus(storedRun.run.status)) {
-      storedRun = await this.transitionWithCommand(
-        input.ownerId,
-        input.agentId,
-        input.authority,
-        storedRun,
-        "cancelled",
-        input.command,
-      );
-    }
     const current = (await this.readCheckpoint(input.runId)) ?? {
+      runId: input.runId,
       revision: 0,
       checkpoint: defaultCheckpoint(),
     };
@@ -321,8 +299,8 @@ export class RunCoordinator {
   private async runWorkers(
     input: ExecuteCoordinatedRunInput,
     initialRun: StoredRun,
-    initialCheckpoint: StoredCheckpoint,
-  ): Promise<{ readonly run: StoredRun; readonly checkpoint: StoredCheckpoint }> {
+    initialCheckpoint: StoredRunCheckpoint,
+  ): Promise<{ readonly run: StoredRun; readonly checkpoint: StoredRunCheckpoint }> {
     let storedRun = initialRun;
     let storedCheckpoint = initialCheckpoint;
     const active = this.activeWorkers.get(input.runId) ?? new Set<string>();
@@ -457,8 +435,8 @@ export class RunCoordinator {
 
   private async runRuntime(
     input: ExecuteCoordinatedRunInput,
-    initialCheckpoint: StoredCheckpoint,
-  ): Promise<{ readonly checkpoint: StoredCheckpoint }> {
+    initialCheckpoint: StoredRunCheckpoint,
+  ): Promise<{ readonly checkpoint: StoredRunCheckpoint }> {
     let storedCheckpoint = initialCheckpoint;
     let observed = 0;
     const runtimeRequest: RuntimeRequest = {
@@ -477,7 +455,6 @@ export class RunCoordinator {
         );
       }
       observed += 1;
-      if (observed <= storedCheckpoint.checkpoint.runtimeEventCount) continue;
       const recorded = await this.dependencies.trace.record({
         ...this.traceScope(input),
         parentEventId: storedCheckpoint.checkpoint.lastTraceEventId,
@@ -486,13 +463,24 @@ export class RunCoordinator {
         occurredAt: event.occurredAt,
         payload: event,
       });
-      const terminalStatus = this.runtimeTerminalStatus(event);
+      const invalidOutput =
+        event.type === "runtime.completed" &&
+        (event.output.kind === "no-answer"
+          ? input.runtime.threadId !== null
+          : event.output.contentRef.trim().length === 0);
+      const terminalStatus = invalidOutput ? "failed" : this.runtimeTerminalStatus(event);
       storedCheckpoint = await this.saveCheckpoint(input.runId, storedCheckpoint, {
         ...storedCheckpoint.checkpoint,
         phase: terminalStatus ? "runtime_settled" : "runtime_running",
         runtimeEventCount: observed,
         lastTraceEventId: recorded.event.id,
         terminalStatus,
+        output: event.type === "runtime.completed" && !invalidOutput ? event.output : null,
+        diagnosticCode: invalidOutput
+          ? "RUNTIME_FINAL_ANSWER_INVALID"
+          : event.type === "runtime.failed"
+            ? event.errorCode
+            : null,
       });
       if (terminalStatus) break;
     }
@@ -637,24 +625,22 @@ export class RunCoordinator {
     return stored;
   }
 
-  private async readCheckpoint(runId: RunId): Promise<StoredCheckpoint | undefined> {
-    const record = await this.dependencies.checkpoints.read(checkpointKey(runId));
-    if (!record) return undefined;
-    return Object.freeze({ revision: record.revision, checkpoint: parseCheckpoint(record.value) });
+  private async readCheckpoint(runId: RunId): Promise<StoredRunCheckpoint | undefined> {
+    return this.dependencies.checkpoints.read(runId);
   }
 
   private async saveCheckpoint(
     runId: RunId,
-    current: StoredCheckpoint,
+    current: StoredRunCheckpoint,
     checkpoint: RunCheckpoint,
-  ): Promise<StoredCheckpoint> {
+  ): Promise<StoredRunCheckpoint> {
     try {
       const record = await this.dependencies.checkpoints.compareAndSet({
-        key: checkpointKey(runId),
+        runId,
         expectedRevision: current.revision === 0 ? null : current.revision,
-        value: checkpointValue(checkpoint),
+        checkpoint,
       });
-      return Object.freeze({ revision: record.revision, checkpoint });
+      return record;
     } catch (error) {
       if (error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.CONFLICT) {
         const latest = await this.readCheckpoint(runId);

@@ -182,6 +182,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Run deletion",
   ),
   entry(
+    "run_coordination_checkpoints",
+    "RunCheckpointStore",
+    "revision-checked current runtime checkpoint",
+    "payload_reference",
+    "cascade with Run deletion",
+  ),
+  entry(
+    "run_coordination_worker_results",
+    "RunCheckpointStore",
+    "replaceable worker result references",
+    "payload_reference",
+    "cascade with Run checkpoint deletion",
+  ),
+  entry(
     "approval_requests",
     "AuthorizationStorePort",
     "pending to terminal",

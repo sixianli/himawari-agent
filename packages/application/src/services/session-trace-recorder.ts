@@ -16,6 +16,7 @@ import type {
   TraceEventId,
 } from "../ports/common.js";
 import { redactTracePayload } from "./trace-redaction.js";
+import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 
 export interface SessionTraceRecorderDependencies {
   readonly trace: TraceStorePort;
@@ -98,7 +99,7 @@ export class SessionTraceRecorder {
       }
     }
 
-    const previous = await this.dependencies.trace.readRun(input.runId, 0, Number.MAX_SAFE_INTEGER);
+    const lastSequence = await this.lastSequence(input.runId);
     const now = this.dependencies.clock.now();
     const event: TraceEvent = Object.freeze({
       id: this.dependencies.ids.next("trace"),
@@ -112,7 +113,7 @@ export class SessionTraceRecorder {
       parentEventId: input.parentEventId,
       causationId: input.causationId,
       correlationId: input.correlationId,
-      sequence: previous.length + 1,
+      sequence: lastSequence + 1,
       occurredAt: input.occurredAt ?? now,
       recordedAt: now,
       actorId: input.actorId,
@@ -135,5 +136,29 @@ export class SessionTraceRecorder {
     }
 
     return Object.freeze({ event, payloadRef });
+  }
+
+  private async lastSequence(runId: RunId): Promise<number> {
+    const pageSize = 1000;
+    let afterSequence = 0;
+    while (true) {
+      const page = await this.dependencies.trace.readRun(runId, afterSequence, pageSize);
+      for (const event of page) {
+        if (!Number.isSafeInteger(event.sequence) || event.sequence <= afterSequence) {
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "Trace page does not advance its sequence",
+          );
+        }
+        afterSequence = event.sequence;
+      }
+      if (afterSequence === Number.MAX_SAFE_INTEGER) {
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "Trace sequence is exhausted",
+        );
+      }
+      if (page.length < pageSize) return afterSequence;
+    }
   }
 }

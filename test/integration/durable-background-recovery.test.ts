@@ -408,20 +408,20 @@ describe("Task 12 durable background recovery", () => {
     const resource = await setup();
     const state = resource.repository.backgroundWorkState();
     const service = new DurableBackgroundWorkService({ state, triggers: triggerService([]) });
-    await resource.repository
-      .authoritativeRunCheckpointStore(OWNER_ID, AGENT_ID, AUTHORITY)
-      .compareAndSet({
-        key: `run-checkpoint:${RUN_ID}`,
-        expectedRevision: null,
-        value: {
-          phase: "runtime",
-          contextRef: "payload-background",
-          workerResults: {},
-          runtimeEventCount: 1,
-          lastTraceEventId: null,
-          terminalStatus: null,
-        },
-      });
+    await resource.repository.runCheckpointStore(OWNER_ID, AGENT_ID, AUTHORITY).compareAndSet({
+      runId: RUN_ID,
+      expectedRevision: null,
+      checkpoint: {
+        phase: "runtime_running",
+        contextRef: "payload-background",
+        workerResults: {},
+        runtimeEventCount: 1,
+        lastTraceEventId: null,
+        terminalStatus: null,
+        output: null,
+        diagnosticCode: null,
+      },
+    });
     const states = ["running", "retry", "model", "unknown"] as const;
     for (const stateName of states) await addJob(resource.repository, `job-${stateName}`);
 
@@ -571,9 +571,7 @@ describe("Task 12 durable background recovery", () => {
       now: () => T2,
     });
     const recovery = await reopened.startupRecovery();
-    expect(recovery.unfinishedRunKeys).toEqual(
-      expect.arrayContaining([RUN_ID, `run-checkpoint:${RUN_ID}`]),
-    );
+    expect(recovery.unfinishedRunKeys).toEqual(expect.arrayContaining([RUN_ID]));
     expect(recovery.pendingApprovalRequestIds).toEqual(["approval-background"]);
     expect(recovery.expiredWorkLeaseOccurrenceIds).toEqual(["occurrence-running"]);
     expect(recovery.retryableJobOccurrenceIds).toEqual(
@@ -588,21 +586,21 @@ describe("Task 12 durable background recovery", () => {
       lastErrorCode: "PROCESS_RESTARTED",
     });
     expect(
-      await reopened
-        .authoritativeRunCheckpointStore(OWNER_ID, AGENT_ID, AUTHORITY)
-        .read(`run-checkpoint:${RUN_ID}`),
-    ).toMatchObject({ revision: 1, value: { phase: "runtime" } });
+      await reopened.runCheckpointStore(OWNER_ID, AGENT_ID, AUTHORITY).read(RUN_ID),
+    ).toMatchObject({ revision: 1, checkpoint: { phase: "runtime_running" } });
     await expect(
-      reopened.authoritativeRunCheckpointStore(OWNER_ID, AGENT_ID, AUTHORITY).compareAndSet({
-        key: `run-checkpoint:${RUN_ID}`,
+      reopened.runCheckpointStore(OWNER_ID, AGENT_ID, AUTHORITY).compareAndSet({
+        runId: RUN_ID,
         expectedRevision: 1,
-        value: {
-          phase: "runtime",
+        checkpoint: {
+          phase: "runtime_running",
           contextRef: "payload-background",
           workerResults: {},
           runtimeEventCount: 2,
           lastTraceEventId: null,
           terminalStatus: null,
+          output: null,
+          diagnosticCode: null,
         },
       }),
     ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
@@ -618,6 +616,39 @@ describe("Task 12 durable background recovery", () => {
       }),
     ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
 
+    await reopened.close();
+    await rm(resource.stateRoot, { recursive: true });
+  });
+
+  it("uses the canonical Run status when enumerating checkpoint recovery", async () => {
+    const resource = await setup();
+    await resource.repository.runCheckpointStore(OWNER_ID, AGENT_ID, AUTHORITY).compareAndSet({
+      runId: RUN_ID,
+      expectedRevision: null,
+      checkpoint: {
+        phase: "runtime_running",
+        contextRef: "payload-background",
+        workerResults: {},
+        runtimeEventCount: 1,
+        lastTraceEventId: null,
+        terminalStatus: null,
+        output: null,
+        diagnosticCode: null,
+      },
+    });
+    const database = openQualifiedDatabase(resource.databasePath);
+    database
+      .prepare("UPDATE runs SET status = 'completed', revision = revision + 1 WHERE id = ?")
+      .run(RUN_ID);
+    database.close();
+    await resource.repository.close();
+    const reopened = await SqliteProductStateRepository.open({
+      stateRoot: resource.stateRoot,
+      databasePath: resource.databasePath,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    expect((await reopened.startupRecovery()).unfinishedRunKeys).not.toContain(RUN_ID);
     await reopened.close();
     await rm(resource.stateRoot, { recursive: true });
   });

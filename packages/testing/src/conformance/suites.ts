@@ -782,7 +782,7 @@ export function agentRuntimePortConformance(
     it("streams only product runtime events", async () => {
       const events: readonly RuntimeEvent[] = [
         { type: "runtime.model_started", runId: RUN_ID, occurredAt: T0 },
-        { type: "runtime.completed", runId: RUN_ID, occurredAt: T1 },
+        { type: "runtime.completed", runId: RUN_ID, output: { kind: "no-answer" }, occurredAt: T1 },
       ];
       await withConfiguredPort(harness, { events }, async (port) => {
         const observed = await collect(port.run(request));

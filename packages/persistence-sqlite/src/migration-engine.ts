@@ -196,6 +196,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0017_governance_mutation_receipts.sql",
   },
+  {
+    sequence: 18,
+    name: "run_coordination_checkpoints",
+    changeSet: "run-coordination-checkpoints",
+    phase: "contract" as const,
+    file: "0018_run_coordination_checkpoints.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

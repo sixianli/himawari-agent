@@ -103,7 +103,7 @@ async function fixture(
   const context = new ContextFormationService({ memory: adapters.memory, trace });
   const coordinator = new RunCoordinator({
     runs,
-    checkpoints: adapters.state,
+    checkpoints: adapters.runCheckpoints,
     context,
     runtime,
     workers,
@@ -189,7 +189,12 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
           payloadRef: "payload-tool-result",
           occurredAt: T1,
         },
-        { type: "runtime.completed", runId, occurredAt: T2 },
+        {
+          type: "runtime.completed",
+          runId,
+          output: { kind: "assistant-answer", contentRef: "payload-answer" },
+          occurredAt: T2,
+        },
       ],
     );
     const workers = new ScriptedWorkerRunPort([
@@ -270,7 +275,17 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
     const runId = createRunId(`run-${suffix}`);
     const setup = await fixture(
       suffix,
-      new ScriptedAgentRuntime(() => T0, [{ type: "runtime.completed", runId, occurredAt: T1 }]),
+      new ScriptedAgentRuntime(
+        () => T0,
+        [
+          {
+            type: "runtime.completed",
+            runId,
+            output: { kind: "assistant-answer", contentRef: "payload-answer" },
+            occurredAt: T1,
+          },
+        ],
+      ),
       new ScriptedWorkerRunPort(),
     );
 
@@ -318,7 +333,17 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
     ]);
     const setup = await fixture(
       suffix,
-      new ScriptedAgentRuntime(() => T0, [{ type: "runtime.completed", runId, occurredAt: T2 }]),
+      new ScriptedAgentRuntime(
+        () => T0,
+        [
+          {
+            type: "runtime.completed",
+            runId,
+            output: { kind: "assistant-answer", contentRef: "payload-answer" },
+            occurredAt: T2,
+          },
+        ],
+      ),
       workers,
     );
     const result = await setup.coordinator.execute({
@@ -395,7 +420,12 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
           payloadRef: "payload-booking-result",
           occurredAt: T1,
         };
-        yield { type: "runtime.completed", runId, occurredAt: T2 };
+        yield {
+          type: "runtime.completed",
+          runId,
+          output: { kind: "assistant-answer", contentRef: "payload-answer" },
+          occurredAt: T2,
+        };
       },
       async cancel() {},
     };
@@ -404,7 +434,7 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
     await expect(setup.coordinator.execute(setup.input)).rejects.toThrow("simulated runtime crash");
     const restarted = new RunCoordinator({
       runs: setup.runs,
-      checkpoints: setup.adapters.state,
+      checkpoints: setup.adapters.runCheckpoints,
       context: setup.context,
       runtime: crashingRuntime,
       workers: new ScriptedWorkerRunPort(),
@@ -413,9 +443,10 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
     const result = await restarted.execute(setup.input);
 
     expect(result.resumed).toBe(true);
-    expect(result.run.run.status).toBe("completed");
+    expect(result.run.run.status).toBe("reconciling_external_result");
+    expect(result.checkpoint.diagnosticCode).toBe("RUNTIME_ATTEMPT_INTERRUPTED");
     expect(tools.underlyingExecutionCount()).toBe(1);
-    expect(attempts).toBe(2);
+    expect(attempts).toBe(1);
   });
 
   it("propagates cancellation to an active runtime and settles the Run as cancelled", async () => {

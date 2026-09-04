@@ -965,6 +965,9 @@ export class SqliteGovernedDeletionAdapter {
     if (runIds.length === 0) return unique(refs);
     const bindings = [
       ["run_checkpoints", "checkpoint_ref"],
+      ["run_coordination_checkpoints", "context_ref"],
+      ["run_coordination_checkpoints", "final_answer_ref"],
+      ["run_coordination_worker_results", "result_ref"],
       ["approval_requests", "intent_ref"],
       ["trace_events", "payload_ref"],
       ["attention_decisions", "decision_ref"],
@@ -1086,9 +1089,10 @@ export class SqliteGovernedDeletionAdapter {
         .all() as Array<{
         table: string;
         from: string;
+        to: string;
       }>;
       for (const foreignKey of foreignKeys) {
-        if (foreignKey.table !== "payloads") continue;
+        if (foreignKey.table !== "payloads" || foreignKey.to !== "ref") continue;
         const count = Number(
           database
             .prepare(

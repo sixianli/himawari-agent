@@ -1026,7 +1026,7 @@ export class SqliteThreadOperations {
     return transaction.immediate();
   }
 
-  private commitAssistantMessage(input: CommitAssistantMessageInput) {
+  commitAssistantMessage(input: CommitAssistantMessageInput) {
     this.assertDiskHeadroom();
     const transaction = this.database.transaction(() => {
       const replay = this.replay(

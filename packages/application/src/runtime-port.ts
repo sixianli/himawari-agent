@@ -6,6 +6,7 @@ export type {
   ModelProviderRouting,
   ModelSecretRequirement,
   RuntimeEvent,
+  RuntimeSuccessfulOutput,
   RuntimeCompactionProposal,
   RuntimeProjectionCapture,
   RuntimeProjectionCompaction,

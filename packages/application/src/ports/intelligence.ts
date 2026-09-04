@@ -154,11 +154,21 @@ export interface RuntimeRequest {
   readonly dataClassification: DataClassification;
 }
 
+export type RuntimeSuccessfulOutput =
+  | { readonly kind: "assistant-answer"; readonly contentRef: PayloadRef }
+  | { readonly kind: "no-answer" };
+
 export type RuntimeEvent =
   | {
-      readonly type: "runtime.model_started" | "runtime.completed";
+      readonly type: "runtime.model_started";
       readonly runId: RunId;
       readonly occurredAt: string;
+    }
+  | {
+      readonly type: "runtime.completed";
+      readonly runId: RunId;
+      readonly occurredAt: string;
+      readonly output: RuntimeSuccessfulOutput;
     }
   | {
       readonly type: "runtime.turn_started";
@@ -309,6 +319,11 @@ export interface RuntimeProjectionPort {
     messageRefs: readonly PayloadRef[],
   ): Promise<RuntimeProjectionContext>;
   capture(input: RuntimeProjectionCapture): Promise<PayloadRef>;
+  captureFinalAnswer(input: {
+    readonly runId: RunId;
+    readonly text: string;
+    readonly dataClassification: DataClassification;
+  }): Promise<PayloadRef>;
   proposeCompaction(input: RuntimeCompactionProposal): Promise<PayloadRef>;
 }
 

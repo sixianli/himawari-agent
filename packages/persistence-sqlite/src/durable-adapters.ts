@@ -15,7 +15,7 @@ import type {
   SessionDeletionStatePort,
   TraceStorePort,
   BackgroundWorkStatePort,
-  StateStorePort,
+  RunCheckpointStore,
   OwnerIdentityStatePort,
   MemoryProjectionJobStatePort,
   ProductMemoryStatePort,
@@ -100,6 +100,14 @@ export class SqliteDurableAdapters {
           input,
           now: now(),
         }),
+      completeRun: (input) =>
+        this.context.write("runLifecycle.complete", {
+          ownerId,
+          agentId,
+          authority,
+          input,
+          now: now(),
+        }),
     });
   }
 
@@ -122,16 +130,16 @@ export class SqliteDurableAdapters {
     });
   }
 
-  authoritativeRunCheckpointStore(
+  runCheckpointStore(
     ownerId: OwnerId,
     agentId: AgentId,
     authority: ProductAuthorityFence,
     now: () => string,
-  ): StateStorePort {
-    return Object.freeze<StateStorePort>({
-      read: (key) => this.context.read("state.read", { ownerId, agentId, key }),
+  ): RunCheckpointStore {
+    return Object.freeze<RunCheckpointStore>({
+      read: (runId) => this.context.read("runCheckpoint.read", { ownerId, agentId, runId }),
       compareAndSet: (input) =>
-        this.context.write("state.compareAndSet", {
+        this.context.write("runCheckpoint.compareAndSet", {
           ownerId,
           agentId,
           authority,

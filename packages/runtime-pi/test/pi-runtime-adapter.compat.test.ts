@@ -55,6 +55,7 @@ const request = {
 } as unknown as RuntimeRequest;
 
 class RecordingProjection implements RuntimeProjectionPort {
+  readonly finalAnswers: Parameters<RuntimeProjectionPort["captureFinalAnswer"]>[0][] = [];
   readonly captures: unknown[] = [];
   readonly compactions: unknown[] = [];
   readonly context: ProjectionContext;
@@ -75,6 +76,13 @@ class RecordingProjection implements RuntimeProjectionPort {
     await Promise.resolve();
     this.captures.push(input);
     return `captured-${this.captures.length}`;
+  }
+
+  async captureFinalAnswer(
+    input: Parameters<RuntimeProjectionPort["captureFinalAnswer"]>[0],
+  ): Promise<string> {
+    this.finalAnswers.push(input);
+    return `final-answer-${this.finalAnswers.length}`;
   }
 
   async proposeCompaction(
@@ -120,7 +128,7 @@ class RecordingRuntimeTools implements RuntimeToolPort {
 interface FakeSessionOptions {
   readonly customTools?: readonly {
     readonly name: string;
-    execute(toolCallId: string, input: unknown): Promise<unknown>;
+    execute(toolCallId: string, input: unknown, signal?: AbortSignal): Promise<unknown>;
   }[];
   readonly noTools?: string;
   readonly tools?: readonly string[];
@@ -211,6 +219,60 @@ function createAdapter(
 describe("Pi Agent Runtime adapter compatibility", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it.each([
+    { stopReason: "length", text: "truncated", code: "PI_FINAL_ANSWER_INCOMPLETE" },
+    { stopReason: "toolUse", text: "pending tool", code: "PI_FINAL_ANSWER_INCOMPLETE" },
+    { stopReason: "stop", text: "   ", code: "PI_FINAL_ANSWER_EMPTY" },
+  ])("fails incomplete final output: $stopReason $text", async ({ stopReason, text, code }) => {
+    const projection = new RecordingProjection();
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        emit({
+          type: "message_end",
+          message: { role: "assistant", stopReason, content: [{ type: "text", text }] },
+        });
+        emit({ type: "agent_settled" });
+      }),
+    );
+    expect((await collect(adapter.run(request))).at(-1)).toMatchObject({
+      type: "runtime.failed",
+      errorCode: code,
+    });
+    expect(projection.finalAnswers).toEqual([]);
+  });
+
+  it("captures final plain text separately and excludes machine secrets across text parts", async () => {
+    const projection = new RecordingProjection();
+    const secret = ["sk-", "a".repeat(40)];
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        emit({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            stopReason: "stop",
+            content: [
+              { type: "text", text: "回答。\n" + secret[0] },
+              { type: "text", text: secret[1] },
+            ],
+          },
+        });
+        emit({ type: "agent_settled" });
+      }),
+    );
+    expect((await collect(adapter.run(request))).at(-1)).toMatchObject({
+      type: "runtime.completed",
+      output: { kind: "assistant-answer", contentRef: "final-answer-1" },
+    });
+    expect(projection.finalAnswers[0]?.text).toContain("回答。\n");
+    expect(projection.finalAnswers[0]?.text).not.toContain(secret.join(""));
+    expect(projection.finalAnswers[0]?.text.startsWith('"')).toBe(false);
+  });
+
   it("exposes only authorized custom tools and maps Pi lifecycle events after settlement", async () => {
     const projection = new RecordingProjection();
     const tools = new RecordingRuntimeTools();
@@ -244,7 +306,11 @@ describe("Pi Agent Runtime adapter compatibility", () => {
         });
         emit({
           type: "message_end",
-          message: { role: "assistant", content: [{ type: "text", text: "Done" }] },
+          message: {
+            role: "assistant",
+            stopReason: "stop",
+            content: [{ type: "text", text: "Done" }],
+          },
         });
         emit({ type: "turn_end", message: { role: "assistant" }, toolResults: [] });
         emit({
@@ -352,8 +418,8 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       fakeSessionFactory((emit) => emit({ type: "agent_settled" }), observedOptions),
     );
 
-    const firstEvents = await collect(adapter.run(request));
-    const secondEvents = await collect(adapter.run(request));
+    const firstEvents = await collect(adapter.run({ ...request, threadId: null }));
+    const secondEvents = await collect(adapter.run({ ...request, threadId: null }));
     expect(firstEvents.at(-1)).toMatchObject({ type: "runtime.completed", runId: request.runId });
     expect(secondEvents.at(-1)).toEqual(firstEvents.at(-1));
     expect(observedOptions).toHaveLength(2);
@@ -457,6 +523,45 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(tools.execute).not.toHaveBeenCalled();
   });
 
+  it.each(["before", "during"] as const)(
+    "does not execute a tool aborted %s product preflight",
+    async (when) => {
+      const projection = new RecordingProjection();
+      const tools = new RecordingRuntimeTools();
+      const controller = new AbortController();
+      tools.preflight.mockImplementation(async () => {
+        if (when === "during") controller.abort();
+        return {
+          allowed: true,
+          permissionDecisionRef: "permission-abort",
+          reasonCode: "grant_allows",
+        };
+      });
+      let toolError: unknown;
+      const adapter = createAdapter(
+        projection,
+        tools,
+        fakeSessionFactory(async (emit, options) => {
+          if (when === "before") controller.abort();
+          try {
+            await options.customTools?.[0]?.execute(
+              "tool-call-aborted",
+              { query: "beef" },
+              controller.signal,
+            );
+          } catch (error) {
+            toolError = error;
+          }
+          emit({ type: "agent_settled" });
+        }),
+      );
+      await collect(adapter.run(request));
+      expect(toolError).toMatchObject({ name: "AbortError" });
+      expect(tools.preflight).toHaveBeenCalledTimes(when === "before" ? 0 : 1);
+      expect(tools.execute).not.toHaveBeenCalled();
+    },
+  );
+
   it("maps product cancellation to Pi abort and waits for settled listeners", async () => {
     const projection = new RecordingProjection();
     const tools = new RecordingRuntimeTools();
@@ -513,7 +618,12 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     releasePrompt?.();
     await expect(iterator.next()).resolves.toEqual({
       done: false,
-      value: { type: "runtime.completed", runId: request.runId, occurredAt: NOW },
+      value: {
+        type: "runtime.failed",
+        runId: request.runId,
+        errorCode: "PI_FINAL_ANSWER_EMPTY",
+        occurredAt: NOW,
+      },
     });
     await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
   });

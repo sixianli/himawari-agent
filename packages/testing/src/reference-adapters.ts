@@ -30,6 +30,7 @@ import type {
   SecretPort,
   SessionDeletionStatePort,
   StateStorePort,
+  RunCheckpointStore,
   TraceStorePort,
   WorkerRunEvent,
   WorkerRunPort,
@@ -56,6 +57,7 @@ import {
   InMemorySecretPort,
   InMemorySessionDeletionState,
   InMemoryTraceStore,
+  InMemoryRunCheckpointStore,
   IdempotentRuntimeToolPort,
   ScriptedAgentRuntime,
   ScriptedAttentionPort,
@@ -92,6 +94,7 @@ export interface ReferenceAdapterOptions {
 
 export interface ReferenceAdapterSet {
   readonly state: StateStorePort;
+  readonly runCheckpoints: RunCheckpointStore;
   readonly reliableEvents: ReliableEventPort;
   readonly productState: ProductStateRepositoryPort;
   readonly eventSink: ReliableEventSinkPort;
@@ -138,6 +141,7 @@ export function createReferenceAdapterSet(
 
   return Object.freeze({
     state: productState,
+    runCheckpoints: new InMemoryRunCheckpointStore(),
     reliableEvents: productState,
     productState,
     eventSink: new InMemoryReliableEventSink(failures),

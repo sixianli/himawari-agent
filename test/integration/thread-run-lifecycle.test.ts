@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -9,7 +9,15 @@ import {
   SessionTraceRecorder,
   ThreadCommandService,
   type TransitionRunStateInput,
+  type AgentRuntimePort,
+  type ExecuteCoordinatedRunInput,
+  type RunCompletionInput,
+  type RunLifecyclePort,
 } from "@himawari-agent/application";
+import {
+  EnvelopePayloadProtector,
+  InMemoryDevelopmentSecretSource,
+} from "@himawari-agent/platform-node";
 import {
   createAgentId,
   createAuthorityLeaseId,
@@ -26,6 +34,7 @@ import {
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
+  SqliteGovernedDeletionAdapter,
 } from "@himawari-agent/persistence-sqlite";
 import {
   ManualClock,
@@ -33,7 +42,7 @@ import {
   ScriptedAgentRuntime,
   ScriptedWorkerRunPort,
 } from "@himawari-agent/testing";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 const ownerId = createOwnerId("owner-run-lifecycle");
 const agentId = createAgentId("agent-run-lifecycle");
@@ -52,7 +61,8 @@ afterEach(async () => {
 async function fixture() {
   const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-thread-run-"));
   roots.push(stateRoot);
-  const databasePath = path.join(stateRoot, "product.sqlite");
+  await mkdir(path.join(stateRoot, "data"));
+  const databasePath = path.join(stateRoot, "data", "product.sqlite");
   const database = openQualifiedDatabase(databasePath);
   applyMigrations(database, await loadBundledMigrations());
   database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(ownerId);
@@ -111,6 +121,797 @@ async function fixture() {
   if (!runId) throw new Error("Thread admission did not create a Run");
   return { repository, commands, admitted, runId, stateRoot, databasePath };
 }
+
+async function executionFixture() {
+  const setup = await fixture();
+  const adapters = createReferenceAdapterSet({ clock });
+  const protector = new EnvelopePayloadProtector({
+    keys: new InMemoryDevelopmentSecretSource({ "completion-key@v1": new Uint8Array(32).fill(17) }),
+    activeKey: { keyRef: "completion-key", kekVersion: "v1", dekVersion: "v1" },
+  });
+  const payloads = setup.repository.payloadStore(ownerId, agentId);
+  await payloads.put(
+    await protector.protect({
+      ownerId,
+      agentId,
+      ref: "payload-final-answer",
+      dataClassification: "private",
+      contentType: "text/plain",
+      createdAt: clock.now(),
+      plaintext: new TextEncoder().encode("这是最终回答。\n无需 JSON 引号。"),
+    }),
+  );
+  const trace = new SessionTraceRecorder({
+    trace: setup.repository.traceStore(),
+    payloads,
+    protector,
+    audit: setup.repository.auditLedger(),
+    clock,
+    ids: adapters.ids,
+  });
+  const runs = setup.repository.runLifecycle(ownerId, agentId, authority);
+  const checkpoints = setup.repository.runCheckpointStore(ownerId, agentId, authority);
+  const stored = await runs.readRun(setup.runId);
+  if (!stored) throw new Error("Missing admitted Run");
+  const input: ExecuteCoordinatedRunInput = {
+    ownerId,
+    agentId,
+    runId: setup.runId,
+    authority: lease,
+    context: {
+      ownerId,
+      agentId,
+      runId: setup.runId,
+      sessionId: stored.run.sessionId,
+      threadId: setup.admitted.thread.id,
+      trigger: {
+        id: stored.run.triggerId,
+        sourceType: "user_message",
+        payloadRef: "payload-run-lifecycle",
+      },
+      threadMessages: [],
+      policies: [],
+      memoryQueryRef: "payload-run-lifecycle",
+      memoryQueryTerms: [],
+      memoryLimit: 1,
+      maxSelectedMemories: 0,
+      maxMemoryClassification: "private",
+      capabilities: [],
+      correlationId: "completion-correlation",
+      causationId: "completion-cause",
+      parentEventId: null,
+      actorId: "completion-test",
+      dataClassification: "private",
+    },
+    runtime: {
+      ownerId,
+      agentId,
+      runId: setup.runId,
+      sessionId: stored.run.sessionId,
+      threadId: setup.admitted.thread.id,
+      modelRef: "deterministic-completion",
+      systemInstructionRef: "payload-run-lifecycle",
+      capabilityHandleRefs: [],
+      budget: {},
+      correlationId: "completion-correlation",
+      dataClassification: "private",
+    },
+    workers: [],
+    delegableCapabilityHandleRefs: [],
+    delegableContextRefs: [],
+    commands: {
+      buildingContext: transition(setup.runId, "building_context", 1),
+      running: transition(setup.runId, "running", 2),
+      reconcilingExternalResult: transition(setup.runId, "reconciling_external_result", 3),
+      completed: transition(setup.runId, "completed", 3),
+      failed: transition(setup.runId, "failed", 3),
+      cancelled: transition(setup.runId, "cancelled", 3),
+    },
+  };
+  let attempts = 0;
+  const runtime: AgentRuntimePort = {
+    async *run() {
+      attempts += 1;
+      yield {
+        type: "runtime.completed" as const,
+        runId: setup.runId,
+        occurredAt: clock.now(),
+        output: { kind: "assistant-answer" as const, contentRef: "payload-final-answer" },
+      };
+    },
+    async cancel() {},
+  };
+  const context = new ContextFormationService({ memory: adapters.memory, trace });
+  const coordinator = new RunCoordinator({
+    runs,
+    checkpoints,
+    context,
+    runtime,
+    workers: new ScriptedWorkerRunPort(),
+    trace,
+  });
+  return {
+    ...setup,
+    runs,
+    checkpoints,
+    input,
+    runtime,
+    context,
+    trace,
+    coordinator,
+    protector,
+    attempts: () => attempts,
+  };
+}
+
+it("commits one protected final assistant through the coordinator and reads it after reopen", async () => {
+  const setup = await executionFixture();
+  await expect(setup.coordinator.execute(setup.input)).resolves.toMatchObject({
+    run: { run: { status: "completed" } },
+  });
+  await setup.coordinator.execute(setup.input);
+  expect(setup.attempts()).toBe(1);
+  await setup.repository.close();
+  const reopened = await SqliteProductStateRepository.open({
+    stateRoot: setup.stateRoot,
+    databasePath: setup.databasePath,
+    minimumFreeBytes: 0,
+    now: () => clock.now(),
+  });
+  repositories.push(reopened);
+  const messages = await reopened
+    .threadRepository()
+    .listMessages(ownerId, agentId, setup.admitted.thread.id, 0, 10);
+  expect(messages.filter((message) => message.role === "agent")).toHaveLength(1);
+  const answer = messages.find((message) => message.role === "agent");
+  if (!answer) throw new Error("Missing assistant answer");
+  const payload = await reopened.payloadStore(ownerId, agentId).get(answer.contentRef);
+  if (!payload) throw new Error("Missing protected answer");
+  expect(payload.contentType).toBe("text/plain");
+  expect(
+    new TextDecoder().decode(await setup.protector.unprotect({ ownerId, agentId, payload })),
+  ).toBe("这是最终回答。\n无需 JSON 引号。");
+  expect(answer.turnId).toBe(setup.admitted.message.turnId);
+});
+
+function completionInput(setup: Awaited<ReturnType<typeof executionFixture>>): RunCompletionInput {
+  return {
+    ...setup.input.commands.completed,
+    ownerId,
+    agentId,
+    runId: setup.runId,
+    authority: lease,
+    expectedRevision: 3,
+    dataClassification: "private",
+    output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+  };
+}
+
+it.each([
+  { objectType: "thread", shared: false },
+  { objectType: "run", shared: false },
+  { objectType: "thread", shared: true },
+  { objectType: "run", shared: true },
+] as const)(
+  "removes settled completion projections on $objectType deletion while shared=$shared",
+  async ({ objectType, shared }) => {
+    const setup = await executionFixture();
+    const crashing = new RunCoordinator({
+      runs: {
+        ...setup.runs,
+        completeRun: async () => {
+          throw new Error("crash-before-completion");
+        },
+      },
+      checkpoints: setup.checkpoints,
+      context: setup.context,
+      runtime: setup.runtime,
+      workers: new ScriptedWorkerRunPort(),
+      trace: setup.trace,
+    });
+    await expect(crashing.execute(setup.input)).rejects.toThrow("crash-before-completion");
+    expect((await setup.checkpoints.read(setup.runId))?.checkpoint).toMatchObject({
+      phase: "runtime_settled",
+      output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+    });
+    if (shared) {
+      const created = await setup.commands.create({
+        ownerId,
+        agentId,
+        idempotencyKey: "retained-thread",
+        resultRef: "payload-run-lifecycle",
+      });
+      await setup.commands.admitOwnerMessage({
+        ownerId,
+        agentId,
+        threadId: created.thread.id,
+        expectedThreadRevision: created.thread.revision,
+        sessionId: createSessionId("retained-session"),
+        idempotencyKey: "retained-answer",
+        contentRef: "payload-final-answer",
+        sourceProofRef: "proof:owner",
+        dataClassification: "private",
+        resultRef: "payload-run-lifecycle",
+      });
+    }
+    const deletion = new SqliteGovernedDeletionAdapter({
+      stateRoot: setup.stateRoot,
+      databasePath: setup.databasePath,
+      ownerId,
+      agentId,
+      now: () => clock.now(),
+    });
+    await setup.repository.close();
+    const result = await deletion.deleteImmediately({
+      objectType,
+      objectId: objectType === "thread" ? setup.admitted.thread.id : setup.runId,
+    });
+    expect(result.lifecycle).toBe("deleted_verified");
+    const database = openQualifiedDatabase(setup.databasePath);
+    expect
+      .soft(
+        database
+          .prepare("SELECT run_id FROM run_coordination_checkpoints WHERE run_id = ?")
+          .get(setup.runId),
+      )
+      .toBeUndefined();
+    const answer = database
+      .prepare("SELECT ref FROM payloads WHERE ref = 'payload-final-answer'")
+      .get();
+    if (shared) expect.soft(answer).toBeDefined();
+    else expect.soft(answer).toBeUndefined();
+    database.close();
+  },
+);
+
+async function runningFixture() {
+  const setup = await executionFixture();
+  await setup.runs.transitionRun(transition(setup.runId, "building_context", 1));
+  await setup.runs.transitionRun(transition(setup.runId, "running", 2));
+  return setup;
+}
+
+it("retains a Payload referenced only by a surviving completion checkpoint", async () => {
+  const setup = await executionFixture();
+  await setup.checkpoints.compareAndSet({
+    runId: setup.runId,
+    expectedRevision: null,
+    checkpoint: {
+      phase: "runtime_settled",
+      contextRef: null,
+      workerResults: {},
+      runtimeEventCount: 1,
+      lastTraceEventId: null,
+      terminalStatus: "completed",
+      output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+      diagnosticCode: null,
+    },
+  });
+  await setup.repository.close();
+  const deletion = new SqliteGovernedDeletionAdapter({
+    stateRoot: setup.stateRoot,
+    databasePath: setup.databasePath,
+    ownerId,
+    agentId,
+    now: () => clock.now(),
+  });
+  await expect(
+    deletion.deleteImmediately({ objectType: "payload", objectId: "payload-final-answer" }),
+  ).rejects.toThrow("referenced Payload");
+});
+
+it.each(["before", "after"] as const)(
+  "recovers a crash %s the assistant transaction without another model attempt",
+  async (boundary) => {
+    const setup = await executionFixture();
+    const runs: RunLifecyclePort = {
+      ...setup.runs,
+      completeRun: async (input) => {
+        if (boundary === "after") await setup.runs.completeRun(input);
+        throw new Error(`crash-${boundary}-completion`);
+      },
+    };
+    const crashing = new RunCoordinator({
+      runs,
+      checkpoints: setup.checkpoints,
+      context: setup.context,
+      runtime: setup.runtime,
+      workers: new ScriptedWorkerRunPort(),
+      trace: setup.trace,
+    });
+    await expect(crashing.execute(setup.input)).rejects.toThrow(`crash-${boundary}-completion`);
+    expect((await setup.checkpoints.read(setup.runId))?.checkpoint).toMatchObject({
+      phase: "runtime_settled",
+      output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+    });
+    await setup.repository.close();
+    const reopened = await SqliteProductStateRepository.open({
+      stateRoot: setup.stateRoot,
+      databasePath: setup.databasePath,
+      minimumFreeBytes: 0,
+      now: () => clock.now(),
+    });
+    repositories.push(reopened);
+    const resumed = new RunCoordinator({
+      runs: reopened.runLifecycle(ownerId, agentId, authority),
+      checkpoints: reopened.runCheckpointStore(ownerId, agentId, authority),
+      context: setup.context,
+      runtime: setup.runtime,
+      workers: new ScriptedWorkerRunPort(),
+      trace: setup.trace,
+    });
+    expect((await resumed.execute(setup.input)).run.run.status).toBe("completed");
+    expect(setup.attempts()).toBe(1);
+    expect(
+      (
+        await reopened
+          .threadRepository()
+          .listMessages(ownerId, agentId, setup.admitted.thread.id, 0, 10)
+      ).filter((message) => message.role === "agent"),
+    ).toHaveLength(1);
+  },
+);
+
+it("replays completion receipts after outbox cleanup and rejects changed completion semantics", async () => {
+  const setup = await runningFixture();
+  const input = completionInput(setup);
+  const receipt = await setup.runs.completeRun(input);
+  const database = openQualifiedDatabase(setup.databasePath);
+  database.prepare("DELETE FROM reliable_events WHERE topic = 'run.completed'").run();
+  database.close();
+  expect(await setup.runs.completeRun(input)).toEqual({ ...receipt, replayed: true });
+  await expect(
+    setup.runs.completeRun({ ...input, output: { kind: "no-answer" } }),
+  ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+});
+
+it("keeps completion atomic when its last reliable event insert fails", async () => {
+  const setup = await runningFixture();
+  const input = completionInput(setup);
+  const identity = createHash("sha256")
+    .update(JSON.stringify([ownerId, agentId, input.idempotencyKey]))
+    .digest("hex");
+  const database = openQualifiedDatabase(setup.databasePath);
+  database
+    .prepare(`INSERT INTO reliable_events (id, owner_id, agent_id, idempotency_key, topic,
+    payload_ref, publication_state, occurred_at) VALUES (?, ?, ?, 'collision', 'collision',
+    'payload-run-lifecycle', 'pending', ?)`)
+    .run(`run-event:${identity}`, ownerId, agentId, clock.now());
+  const beforeThread = database
+    .prepare("SELECT revision FROM threads WHERE id = ?")
+    .get(setup.admitted.thread.id);
+  await expect(setup.runs.completeRun(input)).rejects.toThrow();
+  expect(await setup.runs.readRun(setup.runId)).toMatchObject({
+    revision: 3,
+    run: { status: "running" },
+  });
+  expect(
+    database.prepare("SELECT revision FROM threads WHERE id = ?").get(setup.admitted.thread.id),
+  ).toEqual(beforeThread);
+  expect(
+    database.prepare("SELECT committed_at FROM turns WHERE run_id = ?").get(setup.runId),
+  ).toEqual({ committed_at: null });
+  expect(
+    database
+      .prepare("SELECT id FROM thread_messages WHERE run_id = ? AND role = 'agent'")
+      .all(setup.runId),
+  ).toEqual([]);
+  expect(
+    database.prepare("SELECT id FROM command_results WHERE idempotency_key IN (?, ?)").all(
+      input.idempotencyKey,
+      `runtime-assistant:${createHash("sha256")
+        .update(
+          JSON.stringify([
+            "runtime-assistant",
+            ownerId,
+            agentId,
+            setup.runId,
+            input.idempotencyKey,
+          ]),
+        )
+        .digest("hex")}`,
+    ),
+  ).toEqual([]);
+  database.close();
+});
+
+it("allows a concurrent rename but refuses completion after Trash", async () => {
+  const setup = await runningFixture();
+  await setup.commands.rename({
+    ownerId,
+    agentId,
+    threadId: setup.admitted.thread.id,
+    expectedRevision: setup.admitted.thread.revision,
+    titleRef: "payload-run-lifecycle",
+    source: "owner",
+    idempotencyKey: "completion-rename",
+    resultRef: "payload-run-lifecycle",
+  });
+  await expect(setup.runs.completeRun(completionInput(setup))).resolves.toMatchObject({
+    replayed: false,
+  });
+  const trashed = await runningFixture();
+  const database = openQualifiedDatabase(trashed.databasePath);
+  database
+    .prepare("UPDATE threads SET status = 'trashed' WHERE id = ?")
+    .run(trashed.admitted.thread.id);
+  database.close();
+  await expect(trashed.runs.completeRun(completionInput(trashed))).rejects.toThrow();
+  expect((await trashed.runs.readRun(trashed.runId))?.run.status).toBe("running");
+});
+
+it("does not overwrite a completed checkpoint when cancellation arrives later", async () => {
+  const setup = await executionFixture();
+  await setup.coordinator.execute(setup.input);
+  const checkpoint = await setup.checkpoints.read(setup.runId);
+  expect(
+    (
+      await setup.coordinator.cancel({
+        ownerId,
+        agentId,
+        runId: setup.runId,
+        authority: lease,
+        command: setup.input.commands.cancelled,
+        reasonCode: "LATE_CANCEL",
+      })
+    ).run.status,
+  ).toBe("completed");
+  expect(await setup.checkpoints.read(setup.runId)).toEqual(checkpoint);
+});
+
+it("reconciles an old successful checkpoint without output without calling the model", async () => {
+  const setup = await runningFixture();
+  await setup.checkpoints.compareAndSet({
+    runId: setup.runId,
+    expectedRevision: null,
+    checkpoint: {
+      phase: "runtime_settled",
+      contextRef: "payload-run-lifecycle",
+      workerResults: {},
+      runtimeEventCount: 1,
+      lastTraceEventId: null,
+      terminalStatus: "completed",
+      output: null,
+      diagnosticCode: null,
+    },
+  });
+  const result = await setup.coordinator.execute(setup.input);
+  expect(result.run.run.status).toBe("reconciling_external_result");
+  expect(result.checkpoint.diagnosticCode).toBe("RUNTIME_COMPLETION_OUTPUT_MISSING");
+  expect(setup.attempts()).toBe(0);
+});
+
+it.each(["no-answer", "empty-ref"] as const)(
+  "fails a Thread runtime with invalid successful output: %s",
+  async (kind) => {
+    const setup = await executionFixture();
+    const runtime = new ScriptedAgentRuntime(
+      () => clock.now(),
+      [
+        {
+          type: "runtime.completed",
+          runId: setup.runId,
+          occurredAt: clock.now(),
+          output:
+            kind === "no-answer"
+              ? { kind: "no-answer" }
+              : { kind: "assistant-answer", contentRef: "" },
+        },
+      ],
+    );
+    const coordinator = new RunCoordinator({
+      runs: setup.runs,
+      checkpoints: setup.checkpoints,
+      context: setup.context,
+      runtime,
+      workers: new ScriptedWorkerRunPort(),
+      trace: setup.trace,
+    });
+    const result = await coordinator.execute(setup.input);
+    expect(result.run.run.status).toBe("failed");
+    expect(result.checkpoint.diagnosticCode).toBe("RUNTIME_FINAL_ANSWER_INVALID");
+  },
+);
+
+it("rejects completion scope, stale fences, stale CAS, and insufficient final Payload classification", async () => {
+  const setup = await runningFixture();
+  const input = completionInput(setup);
+  await expect(
+    setup.runs.completeRun({ ...input, ownerId: createOwnerId("other-owner") }),
+  ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+  await expect(
+    setup.runs.completeRun({ ...input, authority: { ...lease, fencingToken: 2 } }),
+  ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+  await expect(setup.runs.completeRun({ ...input, expectedRevision: 2 })).rejects.toMatchObject({
+    code: "PORT_CONFLICT",
+  });
+  await expect(
+    setup.runs.completeRun({ ...input, dataClassification: "sensitive" }),
+  ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+  await expect(
+    setup.runs.completeRun({
+      ...input,
+      output: { kind: "assistant-answer", contentRef: "missing-answer" },
+    }),
+  ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+  const database = openQualifiedDatabase(setup.databasePath);
+  database
+    .prepare("UPDATE payloads SET classification = 'public' WHERE ref = 'payload-final-answer'")
+    .run();
+  database.close();
+  await expect(setup.runs.completeRun(input)).rejects.toMatchObject({
+    code: "PORT_INVALID_OPERATION",
+  });
+  await setup.repository.authorityLeasePort(clock).release(lease.leaseId);
+  await expect(setup.runs.completeRun(input)).rejects.toMatchObject({
+    code: "PORT_NOT_AUTHORITATIVE",
+  });
+  expect((await setup.runs.readRun(setup.runId))?.run.status).toBe("running");
+});
+
+it("enforces typed checkpoint CAS, active Payload scope, Trace scope, and deployment fencing", async () => {
+  const setup = await runningFixture();
+  const checkpoint = {
+    phase: "runtime_running" as const,
+    contextRef: "payload-run-lifecycle",
+    workerResults: Object.fromEntries([["__proto__", "payload-run-lifecycle"]]),
+    runtimeEventCount: 0,
+    lastTraceEventId: null,
+    terminalStatus: null,
+    output: null,
+    diagnosticCode: null,
+  };
+  const saved = await setup.checkpoints.compareAndSet({
+    runId: setup.runId,
+    expectedRevision: null,
+    checkpoint,
+  });
+  expect(saved.revision).toBe(1);
+  expect(Object.hasOwn(saved.checkpoint.workerResults, "__proto__")).toBe(true);
+  expect(saved.checkpoint.workerResults["__proto__"]).toBe("payload-run-lifecycle");
+  await expect(
+    setup.checkpoints.compareAndSet({
+      runId: setup.runId,
+      expectedRevision: null,
+      checkpoint,
+    }),
+  ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+  await expect(
+    setup.repository
+      .runCheckpointStore(createOwnerId("owner-other"), agentId, authority)
+      .read(setup.runId),
+  ).resolves.toBeUndefined();
+  await expect(
+    setup.checkpoints.compareAndSet({
+      runId: setup.runId,
+      expectedRevision: 1,
+      checkpoint: { ...checkpoint, lastTraceEventId: "trace-outside-run" },
+    }),
+  ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+  const database = openQualifiedDatabase(setup.databasePath);
+  database
+    .prepare("UPDATE payloads SET lifecycle_state = 'trashed' WHERE ref = ?")
+    .run("payload-run-lifecycle");
+  database.close();
+  await expect(
+    setup.checkpoints.compareAndSet({
+      runId: setup.runId,
+      expectedRevision: 1,
+      checkpoint: { ...checkpoint, runtimeEventCount: 1 },
+    }),
+  ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+  const restoredDatabase = openQualifiedDatabase(setup.databasePath);
+  restoredDatabase
+    .prepare("UPDATE payloads SET lifecycle_state = 'active' WHERE ref = ?")
+    .run("payload-run-lifecycle");
+  restoredDatabase
+    .prepare("UPDATE deployments SET fencing_token = 2 WHERE id = ?")
+    .run(deploymentId);
+  restoredDatabase.close();
+  await expect(
+    setup.checkpoints.compareAndSet({
+      runId: setup.runId,
+      expectedRevision: 1,
+      checkpoint: { ...checkpoint, runtimeEventCount: 1 },
+    }),
+  ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+});
+
+it("preserves completion and its receipt for an authorized replay after lease release", async () => {
+  const setup = await runningFixture();
+  const input = completionInput(setup);
+  const receipt = await setup.runs.completeRun(input);
+  await setup.repository.authorityLeasePort(clock).release(lease.leaseId);
+  await expect(setup.runs.completeRun(input)).resolves.toEqual({ ...receipt, replayed: true });
+});
+
+it("rejects cross-scope cancellation before touching the runtime", async () => {
+  const setup = await executionFixture();
+  const cancel = vi.spyOn(setup.runtime, "cancel");
+  await expect(
+    setup.coordinator.cancel({
+      ownerId: createOwnerId("other-owner"),
+      agentId,
+      runId: setup.runId,
+      authority: lease,
+      command: setup.input.commands.cancelled,
+      reasonCode: "WRONG_SCOPE",
+    }),
+  ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+  expect(cancel).not.toHaveBeenCalled();
+  await expect(
+    setup.coordinator.cancel({
+      ownerId,
+      agentId,
+      runId: setup.runId,
+      authority: { ...lease, fencingToken: 2 },
+      command: setup.input.commands.cancelled,
+      reasonCode: "STALE_AUTHORITY",
+    }),
+  ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+  expect(cancel).not.toHaveBeenCalled();
+  expect((await setup.runs.readRun(setup.runId))?.run.status).toBe("accepted");
+});
+
+it("keeps cancellation authoritative when successful runtime output races with it", async () => {
+  const setup = await executionFixture();
+  const runtime: AgentRuntimePort = {
+    async *run() {
+      await setup.runs.transitionRun(transition(setup.runId, "cancelled", 3));
+      yield {
+        type: "runtime.completed",
+        runId: setup.runId,
+        occurredAt: clock.now(),
+        output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+      };
+    },
+    async cancel() {},
+  };
+  const coordinator = new RunCoordinator({
+    runs: setup.runs,
+    checkpoints: setup.checkpoints,
+    context: setup.context,
+    runtime,
+    workers: new ScriptedWorkerRunPort(),
+    trace: setup.trace,
+  });
+  const result = await coordinator.execute(setup.input);
+  expect(result.run.run.status).toBe("cancelled");
+  expect(result.checkpoint).toMatchObject({
+    phase: "cancelled",
+    terminalStatus: "cancelled",
+    output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+  });
+  expect(
+    (
+      await setup.repository
+        .threadRepository()
+        .listMessages(ownerId, agentId, setup.admitted.thread.id, 0, 10)
+    ).filter((message) => message.role === "agent"),
+  ).toHaveLength(0);
+});
+
+it("retains observed output through cancellation until governed Run deletion", async () => {
+  const setup = await executionFixture();
+  const crashing = new RunCoordinator({
+    runs: {
+      ...setup.runs,
+      completeRun: async () => {
+        throw new Error("crash-before-completion");
+      },
+    },
+    checkpoints: setup.checkpoints,
+    context: setup.context,
+    runtime: setup.runtime,
+    workers: new ScriptedWorkerRunPort(),
+    trace: setup.trace,
+  });
+  await expect(crashing.execute(setup.input)).rejects.toThrow("crash-before-completion");
+
+  const workerPayload = await setup.protector.protect({
+    ownerId,
+    agentId,
+    ref: "payload-cancelled-worker-only",
+    dataClassification: "private",
+    contentType: "text/plain",
+    createdAt: clock.now(),
+    plaintext: new TextEncoder().encode("worker result"),
+  });
+  await setup.repository.payloadStore(ownerId, agentId).put(workerPayload);
+
+  const cancelled = await setup.coordinator.cancel({
+    ownerId,
+    agentId,
+    runId: setup.runId,
+    authority: lease,
+    command: setup.input.commands.cancelled,
+    reasonCode: "OWNER_CANCELLED",
+  });
+  expect(cancelled.run.status).toBe("cancelled");
+  const cancelledCheckpoint = await setup.checkpoints.read(setup.runId);
+  expect(cancelledCheckpoint?.checkpoint).toMatchObject({
+    phase: "cancelled",
+    terminalStatus: "cancelled",
+    output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+  });
+  if (!cancelledCheckpoint) throw new Error("Missing cancelled checkpoint");
+
+  await setup.checkpoints.compareAndSet({
+    runId: setup.runId,
+    expectedRevision: cancelledCheckpoint.revision,
+    checkpoint: {
+      ...cancelledCheckpoint.checkpoint,
+      workerResults: Object.fromEntries([["__proto__", "payload-cancelled-worker-only"]]),
+    },
+  });
+  expect(
+    (
+      await setup.repository
+        .threadRepository()
+        .listMessages(ownerId, agentId, setup.admitted.thread.id, 0, 10)
+    ).filter((message) => message.role === "agent"),
+  ).toHaveLength(0);
+
+  const deletion = new SqliteGovernedDeletionAdapter({
+    stateRoot: setup.stateRoot,
+    databasePath: setup.databasePath,
+    ownerId,
+    agentId,
+    now: () => clock.now(),
+  });
+  await setup.repository.close();
+  const result = await deletion.deleteImmediately({ objectType: "run", objectId: setup.runId });
+  expect(result.lifecycle).toBe("deleted_verified");
+  const database = openQualifiedDatabase(setup.databasePath);
+  expect(
+    database
+      .prepare("SELECT run_id FROM run_coordination_checkpoints WHERE run_id = ?")
+      .get(setup.runId),
+  ).toBeUndefined();
+  expect(
+    database
+      .prepare("SELECT ref FROM payloads WHERE ref IN (?, ?)")
+      .all("payload-final-answer", "payload-cancelled-worker-only"),
+  ).toEqual([]);
+  database.close();
+});
+
+it.each(["no-answer", "assistant-answer"] as const)(
+  "completes a non-Thread Run with explicit %s output",
+  async (kind) => {
+    const setup = await executionFixture();
+    const runId = createRunId(`background-${kind}`);
+    const database = openQualifiedDatabase(setup.databasePath);
+    database
+      .prepare(`INSERT INTO triggers (id, owner_id, agent_id, idempotency_key, source_type,
+    source_id, payload_ref, source_proof_ref, occurred_at) VALUES (?, ?, ?, ?, 'schedule',
+    'schedule-test', 'payload-run-lifecycle', 'proof:schedule', ?)`)
+      .run(`trigger-${kind}`, ownerId, agentId, `trigger-${kind}`, clock.now());
+    database
+      .prepare(`INSERT INTO runs (id, owner_id, agent_id, session_id, trigger_id, revision,
+    status, created_at, updated_at) VALUES (?, ?, ?, 'background-session', ?, 3, 'running', ?, ?)`)
+      .run(runId, ownerId, agentId, `trigger-${kind}`, clock.now(), clock.now());
+    database.close();
+    await expect(
+      setup.runs.completeRun({
+        ...completionInput(setup),
+        runId,
+        output:
+          kind === "no-answer"
+            ? { kind: "no-answer" }
+            : { kind: "assistant-answer", contentRef: "payload-final-answer" },
+      }),
+    ).resolves.toMatchObject({ replayed: false });
+    expect((await setup.runs.readRun(runId))?.run.status).toBe("completed");
+    expect(
+      (
+        await setup.repository
+          .threadRepository()
+          .listMessages(ownerId, agentId, setup.admitted.thread.id, 0, 10)
+      ).filter((message) => message.role === "agent"),
+    ).toHaveLength(0);
+  },
+);
 
 it("makes an admitted Thread Run visible to the production Run lifecycle", async () => {
   const { repository, runId } = await fixture();
@@ -424,7 +1225,7 @@ it("lets the existing RunCoordinator cancel the admitted relational Run with a d
     ids: adapters.ids,
   });
   const runs = repository.runLifecycle(ownerId, agentId, authority);
-  const checkpoints = repository.authoritativeRunCheckpointStore(ownerId, agentId, authority);
+  const checkpoints = repository.runCheckpointStore(ownerId, agentId, authority);
   const coordinator = new RunCoordinator({
     runs,
     checkpoints,
@@ -444,8 +1245,8 @@ it("lets the existing RunCoordinator cancel the admitted relational Run with a d
       reasonCode: "OWNER_CANCELLED",
     }),
   ).resolves.toMatchObject({ run: { status: "cancelled" }, revision: 2 });
-  await expect(checkpoints.read(`run-checkpoint:${runId}`)).resolves.toMatchObject({
-    value: { phase: "cancelled", terminalStatus: "cancelled" },
+  await expect(checkpoints.read(runId)).resolves.toMatchObject({
+    checkpoint: { phase: "cancelled", terminalStatus: "cancelled" },
   });
   await expect(repository.read(`run:${runId}`)).resolves.toBeUndefined();
 });

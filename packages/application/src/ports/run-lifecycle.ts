@@ -6,7 +6,8 @@ import type {
   RunId,
   RunStatus,
 } from "@himawari-agent/domain";
-import type { PayloadRef } from "./common.js";
+import type { DataClassification, PayloadRef } from "./common.js";
+import type { RuntimeSuccessfulOutput } from "./intelligence.js";
 import type { AuthorityFence, CommandResultRecord } from "./persistence.js";
 
 export interface RunCommandContext {
@@ -29,6 +30,13 @@ export interface StoredRun {
   readonly revision: number;
 }
 
+export interface RunCompletionInput extends RunCommandContext {
+  readonly runId: RunId;
+  readonly expectedRevision: number;
+  readonly output: RuntimeSuccessfulOutput;
+  readonly dataClassification: DataClassification;
+}
+
 export interface RunTransitionReceipt {
   readonly commandResult: CommandResultRecord;
   readonly replayed: boolean;
@@ -37,4 +45,5 @@ export interface RunTransitionReceipt {
 export interface RunLifecyclePort {
   readRun(runId: RunId): Promise<StoredRun | undefined>;
   transitionRun(input: TransitionRunStateInput): Promise<RunTransitionReceipt>;
+  completeRun(input: RunCompletionInput): Promise<RunTransitionReceipt>;
 }

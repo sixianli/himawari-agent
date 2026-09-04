@@ -3,6 +3,9 @@ import type {
   RunTransitionReceipt,
   StoredRun,
   TransitionRunStateInput,
+  RunCompletionInput,
+  RuntimeSuccessfulOutput,
+  DataClassification,
 } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -14,6 +17,8 @@ import {
   createSessionId,
   createThreadId,
   createTriggerId,
+  createMessageId,
+  createTurnId,
   DomainError,
   RUN_STATUSES,
   transitionRun,
@@ -24,6 +29,16 @@ import {
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import type { SqliteThreadOperations } from "./sqlite-thread-operations.js";
+
+type RunMutationInput = TransitionRunStateInput | RunCompletionInput;
+const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
+
+function classification(value: unknown): DataClassification {
+  const found = CLASSIFICATIONS.find((candidate) => candidate === value);
+  if (!found) throw new TypeError("Run completion classification is invalid");
+  return found;
+}
 
 function record(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value))
@@ -68,14 +83,30 @@ function command(value: unknown): TransitionRunStateInput {
   };
 }
 
-function fingerprint(input: TransitionRunStateInput): string {
+function completion(value: unknown): RunCompletionInput {
+  const raw = record(value);
+  const { nextStatus: _status, ...base } = command({ ...raw, nextStatus: "completed" });
+  const output = record(raw["output"]);
+  let parsed: RuntimeSuccessfulOutput;
+  if (output["kind"] === "no-answer") parsed = { kind: "no-answer" };
+  else if (output["kind"] === "assistant-answer")
+    parsed = { kind: "assistant-answer", contentRef: string(output["contentRef"]) };
+  else throw new TypeError("Run completion output is invalid");
+  return { ...base, output: parsed, dataClassification: classification(raw["dataClassification"]) };
+}
+
+function commandType(input: RunMutationInput): "run.transition" | "run.complete" {
+  return "nextStatus" in input ? "run.transition" : "run.complete";
+}
+
+function fingerprint(input: RunMutationInput): string {
   return `run-transition:v1:${createHash("sha256")
     .update(
       JSON.stringify([
         input.ownerId,
         input.agentId,
         input.runId,
-        input.nextStatus,
+        "nextStatus" in input ? input.nextStatus : [input.output, input.dataClassification],
         input.payloadRef,
         input.commandFingerprint,
       ]),
@@ -87,15 +118,18 @@ export class SqliteRunLifecycleOperations {
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
+  private readonly thread: Pick<SqliteThreadOperations, "commitAssistantMessage">;
 
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
+    thread: Pick<SqliteThreadOperations, "commitAssistantMessage">,
   ) {
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
+    this.thread = thread;
   }
 
   execute(operation: string, payload: unknown): unknown {
@@ -104,7 +138,7 @@ export class SqliteRunLifecycleOperations {
     const agentId = createAgentId(string(parsed["agentId"]));
     if (operation === "runLifecycle.read")
       return this.read(ownerId, agentId, createRunId(string(parsed["runId"])));
-    if (operation !== "runLifecycle.transition")
+    if (operation !== "runLifecycle.transition" && operation !== "runLifecycle.complete")
       return this.fail("PORT_INVALID_OPERATION", "Unknown Run lifecycle operation");
     const fence = record(parsed["authority"]);
     const authority: ProductAuthorityFence = {
@@ -112,12 +146,17 @@ export class SqliteRunLifecycleOperations {
       authorityEpoch: integer(fence["authorityEpoch"]),
       fencingToken: integer(fence["fencingToken"]),
     };
-    const input = command(parsed["input"]);
+    const input =
+      operation === "runLifecycle.complete"
+        ? completion(parsed["input"])
+        : command(parsed["input"]);
     if (input["ownerId"] !== ownerId || input["agentId"] !== agentId)
       return this.fail("PORT_NOT_AUTHORITATIVE", "Run command is outside the bound scope");
     const now = string(parsed["now"]);
     if (!Number.isFinite(Date.parse(now))) throw new TypeError("Run lifecycle time is invalid");
-    return this.transition(input, authority, now);
+    return "nextStatus" in input
+      ? this.transition(input, authority, now)
+      : this.complete(input, authority, now);
   }
 
   private read(ownerId: OwnerId, agentId: AgentId, runId: RunId): StoredRun | undefined {
@@ -150,7 +189,7 @@ export class SqliteRunLifecycleOperations {
     };
   }
 
-  private replay(input: TransitionRunStateInput): RunTransitionReceipt | undefined {
+  private replay(input: RunMutationInput): RunTransitionReceipt | undefined {
     const value = this.database
       .prepare(`SELECT command_type, command_fingerprint, state_key,
       state_revision, result_ref, committed_at FROM command_results
@@ -159,7 +198,7 @@ export class SqliteRunLifecycleOperations {
     if (value === undefined) return undefined;
     const row = record(value);
     if (
-      row["command_type"] !== "run.transition" ||
+      row["command_type"] !== commandType(input) ||
       row["command_fingerprint"] !== fingerprint(input) ||
       row["state_key"] !== input["runId"]
     )
@@ -170,7 +209,7 @@ export class SqliteRunLifecycleOperations {
         ownerId: input["ownerId"],
         agentId: input["agentId"],
         idempotencyKey: input["idempotencyKey"],
-        commandType: "run.transition",
+        commandType: commandType(input),
         commandFingerprint: fingerprint(input),
         stateKey: string(row["state_key"]),
         stateRevision: integer(row["state_revision"]),
@@ -190,26 +229,7 @@ export class SqliteRunLifecycleOperations {
       .transaction(() => {
         const replay = this.replay(input);
         if (replay) return replay;
-        const lease = this.database
-          .prepare(`SELECT 1 FROM authority_leases l
-        JOIN deployments d ON d.id = l.deployment_id
-          AND d.owner_id = l.owner_id AND d.agent_id = l.agent_id
-        WHERE l.id = ? AND l.owner_id = ? AND l.agent_id = ? AND l.released_at IS NULL
-          AND l.expires_at > ? AND l.fencing_token = ? AND d.fencing_token = l.fencing_token
-          AND d.authority_epoch = l.authority_epoch AND d.status = 'active'
-          AND d.id = ? AND d.authority_epoch = ? AND d.fencing_token = ?`)
-          .get(
-            input["authority"].leaseId,
-            input["ownerId"],
-            input["agentId"],
-            now,
-            input["authority"].fencingToken,
-            authority.deploymentId,
-            authority.authorityEpoch,
-            authority.fencingToken,
-          );
-        if (!lease)
-          return this.fail("PORT_NOT_AUTHORITATIVE", "Run transition authority is not current");
+        this.assertAuthority(input, authority, now);
         const stored = this.read(input["ownerId"], input["agentId"], input["runId"]);
         if (!stored)
           return this.fail("PORT_NOT_FOUND", "Run is missing from the bound relational scope");
@@ -223,90 +243,254 @@ export class SqliteRunLifecycleOperations {
         if (stored.run.threadId && !["failed", "cancelled"].includes(input["nextStatus"])) {
           const active = this.database
             .prepare(`SELECT 1 FROM threads WHERE id = ?
-          AND owner_id = ? AND agent_id = ? AND status = 'open' AND archived_at IS NULL`)
+            AND owner_id = ? AND agent_id = ? AND status = 'open' AND archived_at IS NULL`)
             .get(stored.run.threadId, input["ownerId"], input["agentId"]);
           if (!active)
             return this.fail("PORT_INVALID_OPERATION", "Thread Run requires an active Thread");
         }
-        try {
-          transitionRun(stored.run, input["nextStatus"]);
-        } catch (error) {
-          if (error instanceof DomainError)
-            return this.fail("PORT_INVALID_OPERATION", error.message);
-          throw error;
-        }
-        const payload = this.database
-          .prepare(`SELECT 1 FROM payloads WHERE ref = ?
-        AND owner_id = ? AND agent_id = ? AND lifecycle_state = 'active'`)
-          .get(input["payloadRef"], input["ownerId"], input["agentId"]);
-        if (!payload)
-          return this.fail(
-            "PORT_INVALID_OPERATION",
-            "Run event Payload is outside the active scope",
-          );
+        this.assertTransition(stored, input.nextStatus);
+        this.assertPayload(input);
         const revision = stored.revision + 1;
         this.database
           .prepare(`UPDATE runs SET status = ?, revision = ?, updated_at = ?
-        WHERE id = ? AND owner_id = ? AND agent_id = ? AND revision = ?`)
+          WHERE id = ? AND owner_id = ? AND agent_id = ? AND revision = ?`)
           .run(
-            input["nextStatus"],
+            input.nextStatus,
             revision,
             now,
-            input["runId"],
-            input["ownerId"],
-            input["agentId"],
+            input.runId,
+            input.ownerId,
+            input.agentId,
             stored.revision,
           );
-        const identity = createHash("sha256")
-          .update(JSON.stringify([input["ownerId"], input["agentId"], input["idempotencyKey"]]))
-          .digest("hex");
-        const stateKey = input["runId"];
-        this.database
-          .prepare(`INSERT INTO command_results
+        return this.writeReceipt(input, authority, now, revision);
+      })
+      .immediate();
+  }
+
+  private assertAuthority(
+    input: RunMutationInput,
+    authority: ProductAuthorityFence,
+    now: string,
+  ): void {
+    const lease = this.database
+      .prepare(`SELECT 1 FROM authority_leases l
+        JOIN deployments d ON d.id = l.deployment_id
+          AND d.owner_id = l.owner_id AND d.agent_id = l.agent_id
+        WHERE l.id = ? AND l.owner_id = ? AND l.agent_id = ? AND l.released_at IS NULL
+          AND l.expires_at > ? AND l.fencing_token = ? AND d.fencing_token = l.fencing_token
+          AND d.authority_epoch = l.authority_epoch AND d.status = 'active'
+          AND d.id = ? AND d.authority_epoch = ? AND d.fencing_token = ?`)
+      .get(
+        input["authority"].leaseId,
+        input["ownerId"],
+        input["agentId"],
+        now,
+        input["authority"].fencingToken,
+        authority.deploymentId,
+        authority.authorityEpoch,
+        authority.fencingToken,
+      );
+    if (!lease) this.fail("PORT_NOT_AUTHORITATIVE", "Run transition authority is not current");
+  }
+
+  private assertTransition(
+    stored: StoredRun,
+    nextStatus: TransitionRunStateInput["nextStatus"],
+  ): void {
+    try {
+      transitionRun(stored.run, nextStatus);
+    } catch (error) {
+      if (error instanceof DomainError) this.fail("PORT_INVALID_OPERATION", error.message);
+      throw error;
+    }
+  }
+
+  private assertPayload(input: RunMutationInput): void {
+    const payload = this.database
+      .prepare(`SELECT 1 FROM payloads WHERE ref = ?
+        AND owner_id = ? AND agent_id = ? AND lifecycle_state = 'active'`)
+      .get(input["payloadRef"], input["ownerId"], input["agentId"]);
+    if (!payload)
+      this.fail("PORT_INVALID_OPERATION", "Run event Payload is outside the active scope");
+  }
+
+  private writeReceipt(
+    input: RunMutationInput,
+    authority: ProductAuthorityFence,
+    now: string,
+    revision: number,
+  ): RunTransitionReceipt {
+    const identity = createHash("sha256")
+      .update(JSON.stringify([input["ownerId"], input["agentId"], input["idempotencyKey"]]))
+      .digest("hex");
+    const stateKey = input["runId"];
+    this.database
+      .prepare(`INSERT INTO command_results
         (id, owner_id, agent_id, idempotency_key, command_type, command_fingerprint,
           deployment_id, authority_epoch, fencing_token, result_ref, state_key, state_revision, committed_at)
-        VALUES (?, ?, ?, ?, 'run.transition', ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(
-            `run-command:${identity}`,
-            input["ownerId"],
-            input["agentId"],
-            input["idempotencyKey"],
-            fingerprint(input),
-            authority.deploymentId,
-            authority.authorityEpoch,
-            authority.fencingToken,
-            stateKey,
-            stateKey,
-            revision,
-            now,
-          );
-        this.database
-          .prepare(`INSERT INTO reliable_events
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(
+        `run-command:${identity}`,
+        input["ownerId"],
+        input["agentId"],
+        input["idempotencyKey"],
+        commandType(input),
+        fingerprint(input),
+        authority.deploymentId,
+        authority.authorityEpoch,
+        authority.fencingToken,
+        stateKey,
+        stateKey,
+        revision,
+        now,
+      );
+    this.database
+      .prepare(`INSERT INTO reliable_events
         (id, owner_id, agent_id, idempotency_key, topic, payload_ref, publication_state, occurred_at)
         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`)
-          .run(
-            `run-event:${identity}`,
-            input["ownerId"],
-            input["agentId"],
-            input["idempotencyKey"],
-            `run.${input["nextStatus"]}`,
-            input["payloadRef"],
-            now,
-          );
-        return {
-          replayed: false,
-          commandResult: {
-            ownerId: input["ownerId"],
-            agentId: input["agentId"],
-            idempotencyKey: input["idempotencyKey"],
-            commandType: "run.transition",
-            commandFingerprint: fingerprint(input),
-            stateKey,
-            stateRevision: revision,
-            resultRef: stateKey,
+      .run(
+        `run-event:${identity}`,
+        input["ownerId"],
+        input["agentId"],
+        input["idempotencyKey"],
+        `run.${"nextStatus" in input ? input.nextStatus : "completed"}`,
+        input["payloadRef"],
+        now,
+      );
+    return {
+      replayed: false,
+      commandResult: {
+        ownerId: input["ownerId"],
+        agentId: input["agentId"],
+        idempotencyKey: input["idempotencyKey"],
+        commandType: commandType(input),
+        commandFingerprint: fingerprint(input),
+        stateKey,
+        stateRevision: revision,
+        resultRef: stateKey,
+        committedAt: now,
+      },
+    };
+  }
+
+  private complete(
+    input: RunCompletionInput,
+    authority: ProductAuthorityFence,
+    now: string,
+  ): RunTransitionReceipt {
+    this.assertDiskHeadroom();
+    return this.database
+      .transaction(() => {
+        const replay = this.replay(input);
+        if (replay) return replay;
+        this.assertAuthority(input, authority, now);
+        const stored = this.read(input.ownerId, input.agentId, input.runId);
+        if (!stored)
+          return this.fail("PORT_NOT_FOUND", "Run is missing from the bound relational scope");
+        if (stored.revision !== input.expectedRevision)
+          return this.fail("PORT_CONFLICT", "Run completion revision conflict");
+        this.assertTransition(stored, "completed");
+        this.assertPayload(input);
+        let dataClassification = input.dataClassification;
+        if (input.output.kind === "assistant-answer") {
+          const answerValue = this.database
+            .prepare(`SELECT classification, content_type FROM payloads
+          WHERE ref = ? AND owner_id = ? AND agent_id = ? AND lifecycle_state = 'active'`)
+            .get(input.output.contentRef, input.ownerId, input.agentId);
+          if (!answerValue)
+            return this.fail(
+              "PORT_INVALID_OPERATION",
+              "Final answer Payload is outside the active scope",
+            );
+          const answer = record(answerValue);
+          dataClassification = classification(answer["classification"]);
+          const triggerValue = this.database
+            .prepare(`SELECT p.classification FROM triggers t
+          JOIN payloads p ON p.ref = t.payload_ref AND p.owner_id = t.owner_id AND p.agent_id = t.agent_id
+          WHERE t.id = ? AND p.lifecycle_state = 'active'`)
+            .get(stored.run.triggerId);
+          if (!triggerValue)
+            return this.fail("PORT_INVALID_OPERATION", "Run input Payload is unavailable");
+          const inputClassification = classification(record(triggerValue)["classification"]);
+          if (
+            answer["content_type"] !== "text/plain" ||
+            CLASSIFICATIONS.indexOf(dataClassification) <
+              Math.max(
+                CLASSIFICATIONS.indexOf(inputClassification),
+                CLASSIFICATIONS.indexOf(input.dataClassification),
+              )
+          )
+            return this.fail(
+              "PORT_INVALID_OPERATION",
+              "Final answer Payload type or classification is invalid",
+            );
+        }
+        if (stored.run.threadId) {
+          if (input.output.kind !== "assistant-answer")
+            return this.fail(
+              "PORT_INVALID_OPERATION",
+              "Thread completion requires an assistant answer",
+            );
+          const turns = this.database
+            .prepare(`SELECT DISTINCT u.id FROM turns u JOIN thread_messages m
+          ON m.turn_id = u.id AND m.run_id = u.run_id AND m.thread_id = u.thread_id
+            AND m.owner_id = u.owner_id AND m.agent_id = u.agent_id
+          WHERE u.run_id = ? AND u.thread_id = ? AND u.owner_id = ? AND u.agent_id = ?
+            AND u.session_id = ? AND u.committed_at IS NULL AND m.role = 'owner'
+            AND m.message_status = 'committed'`)
+            .all(
+              input.runId,
+              stored.run.threadId,
+              input.ownerId,
+              input.agentId,
+              stored.run.sessionId,
+            );
+          if (turns.length !== 1)
+            return this.fail(
+              "PORT_INVALID_OPERATION",
+              "Run completion requires one admitted Owner Turn",
+            );
+          const turn = record(turns[0]);
+          const threadValue = this.database
+            .prepare("SELECT revision FROM threads WHERE id = ?")
+            .get(stored.run.threadId);
+          if (!threadValue) return this.fail("PORT_NOT_FOUND", "Completion Thread is missing");
+          const identity = createHash("sha256")
+            .update(
+              JSON.stringify([
+                "runtime-assistant",
+                input.ownerId,
+                input.agentId,
+                input.runId,
+                input.idempotencyKey,
+              ]),
+            )
+            .digest("hex");
+          this.thread.commitAssistantMessage({
+            ownerId: input.ownerId,
+            agentId: input.agentId,
+            threadId: stored.run.threadId,
+            runId: input.runId,
+            turnId: createTurnId(string(turn["id"])),
+            messageId: createMessageId(`assistant:${identity}`),
+            idempotencyKey: createIdempotencyKey(`runtime-assistant:${identity}`),
+            semanticFingerprint: fingerprint(input),
+            contentRef: input.output.contentRef,
+            dataClassification,
+            resultRef: input.payloadRef,
+            expectedThreadRevision: integer(record(threadValue)["revision"]),
             committedAt: now,
-          },
-        };
+            authority,
+          });
+        } else {
+          this.database
+            .prepare(
+              "UPDATE runs SET status = 'completed', revision = revision + 1, updated_at = ? WHERE id = ?",
+            )
+            .run(now, input.runId);
+        }
+        return this.writeReceipt(input, authority, now, stored.revision + 1);
       })
       .immediate();
   }

@@ -11,7 +11,8 @@ import type {
   ReliableEventSinkPort,
   SessionDeletionRecord,
 } from "@himawari-agent/application";
-import { PORT_ERROR_CODES } from "@himawari-agent/application";
+import { PORT_ERROR_CODES, SessionTraceRecorder } from "@himawari-agent/application";
+import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import {
   createAgentId,
   createIdempotencyKey,
@@ -158,6 +159,66 @@ traceStorePortConformance({
   },
   dispose,
 });
+
+it.each([0, 1000, 1001])(
+  "records into SQLite after %i events using bounded trace pages",
+  async (count) => {
+    const resource = await openRepository();
+    try {
+      const trace = resource.repository.traceStore();
+      const scope = {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+        threadId: createThreadId("thread-conformance"),
+        runId: RUN_ID,
+        turnId: null,
+        parentEventId: null,
+        causationId: null,
+        correlationId: "correlation-paged-trace",
+        actorId: "agent-service",
+        dataClassification: "private" as const,
+        eventType: "runtime.message",
+      };
+      for (let sequence = 1; sequence <= count; sequence += 1) {
+        await trace.append({
+          ...scope,
+          id: `existing-trace:${sequence}`,
+          schemaVersion: "trace.v1",
+          sequence,
+          occurredAt: T0,
+          recordedAt: T0,
+          payloadRef: null,
+        });
+      }
+      const adapters = createReferenceAdapterSet();
+      const recorder = new SessionTraceRecorder({
+        trace,
+        payloads: resource.repository.payloadStore(OWNER_ID, AGENT_ID),
+        protector: adapters.payloadProtector,
+        audit: resource.repository.auditLedger(),
+        clock: { now: () => T1 },
+        ids: adapters.ids,
+      });
+      const result = await recorder.record(scope);
+      expect(result.event.sequence).toBe(count + 1);
+      await resource.repository.close();
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T2,
+      });
+      try {
+        expect(await reopened.traceStore().readRun(RUN_ID, count, 1)).toEqual([result.event]);
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  },
+);
 
 payloadStorePortConformance({
   create: async () => {

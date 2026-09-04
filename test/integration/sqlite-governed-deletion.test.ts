@@ -136,10 +136,12 @@ async function fixture(): Promise<Fixture> {
     .run(OWNER_ID, AGENT_ID, T0, T0);
   database
     .prepare(
-      `INSERT INTO run_checkpoints (
-        id, owner_id, agent_id, run_id, revision, phase, checkpoint_ref, created_at
-      ) VALUES ('checkpoint-delete', ?, ?, 'run-delete', 0, 'fixture',
-        'payload-run-checkpoint', ?)`,
+      `INSERT INTO run_coordination_checkpoints (
+        run_id, owner_id, agent_id, revision, phase, context_ref,
+        runtime_event_count, last_trace_event_id, terminal_status,
+        output_kind, final_answer_ref, diagnostic_code, updated_at
+      ) VALUES ('run-delete', ?, ?, 1, 'runtime_settled',
+        'payload-run-checkpoint', 0, NULL, NULL, NULL, NULL, NULL, ?)`,
     )
     .run(OWNER_ID, AGENT_ID, T0);
   database

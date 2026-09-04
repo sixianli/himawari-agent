@@ -152,17 +152,14 @@ function seedPhase(databasePath: string, phase: Phase): string {
   } else if (phase === "thread_checkpoint") {
     database
       .prepare(
-        `INSERT INTO product_state_records (
-          key, owner_id, agent_id, revision, value_json, updated_at
-        ) VALUES (?, ?, ?, 1, ?, ?)`,
+        `INSERT INTO run_coordination_checkpoints (
+          run_id, owner_id, agent_id, revision, phase, context_ref,
+          runtime_event_count, last_trace_event_id, terminal_status,
+          output_kind, final_answer_ref, diagnostic_code, updated_at
+        ) VALUES (?, ?, ?, 1, 'runtime_running', ?, 0, NULL, NULL,
+          NULL, NULL, NULL, ?)`,
       )
-      .run(
-        `run-checkpoint:${identity}`,
-        OWNER_ID,
-        AGENT_ID,
-        JSON.stringify({ phase, identity, terminalStatus: null }),
-        T0,
-      );
+      .run(RUN_ID, OWNER_ID, AGENT_ID, PAYLOAD_REF, T0);
     database
       .prepare(
         `INSERT INTO thread_checkpoint_jobs (
@@ -278,7 +275,7 @@ describe("durable phase crash fixture", () => {
       approval_wait: recovery.pendingApprovalRequestIds.includes(identity),
       worker_result: recovery.unknownExternalResultOccurrenceIds.includes(identity),
       outbox: recovery.pendingEventIds.includes(identity),
-      thread_checkpoint: recovery.unfinishedRunKeys.includes(`run-checkpoint:${identity}`),
+      thread_checkpoint: recovery.unfinishedRunKeys.includes(RUN_ID),
       memory_projection: operational.memoryProjectionPending === 1,
       delivery:
         recovery.recoveredDeliveryRequestIds.includes(identity) &&

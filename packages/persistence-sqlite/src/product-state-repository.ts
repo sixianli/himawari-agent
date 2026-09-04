@@ -22,7 +22,7 @@ import type {
   SessionDeviceStatePort,
   SessionDeletionStatePort,
   StateRecord,
-  StateStorePort,
+  RunCheckpointStore,
   TraceStorePort,
   OwnerIdentityStatePort,
   MemoryProjectionJobStatePort,
@@ -271,12 +271,12 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.reliableEventPort(ownerId, agentId);
   }
 
-  authoritativeRunCheckpointStore(
+  runCheckpointStore(
     ownerId: OwnerId,
     agentId: AgentId,
     authority: ProductAuthorityFence,
-  ): StateStorePort {
-    return this.durable.authoritativeRunCheckpointStore(ownerId, agentId, authority, this.now);
+  ): RunCheckpointStore {
+    return this.durable.runCheckpointStore(ownerId, agentId, authority, this.now);
   }
 
   reliableEventOutbox(): SqliteReliableEventOutbox {

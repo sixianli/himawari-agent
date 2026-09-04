@@ -293,6 +293,10 @@ schedule evaluator 覆盖 interval、one-shot 和 IANA daily schedule；periodic
 
 2026-09-04 的生产接线修复补充了 `RunLifecyclePort` 和关系表适配器：Thread 接纳的 Run 由同一张 `runs` 表读取和迁移，不再要求在通用 `product_state_records` 中复制状态。迁移在一个事务中检查部署权威、租约、scope、revision 和领域状态机，并写入命令回执及可靠事件；Thread 接纳与通用 Run 写入入口互相拒绝重复状态。Thread 成功完成仍须助手消息、Turn、Run 的原子提交，通用状态迁移不能跳过该边界。此次实际运行 8 个集成文件、79 项测试，覆盖原生 Node 源入口和编译产物加载、关系表接纳/迁移、重启回执重放、越权拒绝、事件失败回滚与取消 checkpoint。最终回复归一化和提交接线、自动 claim/recovery、生产 HTTP/Pi 组合仍未完成；这些测试不构成已安装服务处理真实请求的证据。
 
+同日第二个接线单元实现了类型明确的最终输出、`completeRun` 原子助手提交和终结检查点恢复。真实临时 SQLite 与 envelope 加密路径已验证消息接纳、协调执行、单一助手正文及重启回读；助手事务前后两处故障不重复调用 Runtime，末尾事件写入失败会回滚完整业务事务。还覆盖重命名、Trash、回执重放、scope/fence/CAS/分类拒绝、旧检查点缺输出，以及取消先通过权威校验再触发执行副作用。真实组合额外暴露 Trace 查询上限不匹配，已改为 1,000 条有界分页并验证空历史、整页、跨页和序号耗尽。在新增协调检查点归属迁移之前，主代理独立运行 11 个集成文件、119 项测试及全仓检查通过；该结果不是后续修改后的整体验收。模型循环测试使用固定 Pi 和受控 provider，不能替代真实 provider、安装后服务、自动领取任务或生产 Context projection 的验证；后三项仍是后续接线范围。
+
+删除回归随后确认旧 JSON 协调检查点不属于 Run 的外键关系，导致独占答案残留、存活检查点引用的正文又可被单独删除。本单元改用 `RunCheckpointStore` 与第十八项 migration，保留另一张历史追加检查点表；同事务验证 scope、deployment fence、Payload 和 CAS，并将永久删除纳入真实引用关系。取消后的已生成正文仍保留归属，不代表助手消息已发布。主代理独立完成全仓 `npm run check`、14 个集成文件的 145 项测试、14 个合同文件的 166 项测试，以及三个 Pi 兼容文件的 21 项测试。合同检查中五项 UDS 测试因默认沙箱禁止创建 socket，经过针对临时本机 socket 的授权重跑后全部通过；未连接生产服务。独立只读复核未发现阻塞本单元提交的问题，三个受影响 Runbook 已语义核对并重新封存静态合同，严格文档检查无警告。该单元不包含安装后 HTTP 接线、生产上下文物化、持久执行领取、真实 Worker 通道或双平台隔离验收。
+
 ### Task 13：实现受认证 HTTP Gateway 与可恢复 SSE
 
 - [x] 先为 HTTP adapter 写 contract/security tests，证明每个命令、查询和事件请求都经过版本 parser、`GatewayAuthenticationContext`、scope policy、Control Plane 或 Read Model。

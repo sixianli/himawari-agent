@@ -203,7 +203,7 @@ export function createLocalAgentServiceComposition(options: LocalAgentServiceCom
     }),
     coordinator: new RunCoordinator({
       runs: runState,
-      checkpoints: adapters.state,
+      checkpoints: adapters.runCheckpoints,
       context: new ContextFormationService({ memory: adapters.memory, trace: traceRecorder }),
       runtime: adapters.runtime,
       workers: adapters.workers,

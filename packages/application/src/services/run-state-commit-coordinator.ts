@@ -28,6 +28,8 @@ import {
   type RunLifecyclePort,
   type StoredRun,
   type TransitionRunStateInput,
+  type RunCompletionInput,
+  type RunTransitionReceipt,
 } from "../ports/index.js";
 
 export type { StoredRun, TransitionRunStateInput } from "../ports/run-lifecycle.js";
@@ -173,6 +175,31 @@ export class RunStateCommitCoordinator implements RunLifecyclePort {
       },
       eventTopic: `run.${input.nextStatus}`,
       resultRef: runStateKey(input.runId),
+    });
+  }
+
+  async completeRun(input: RunCompletionInput): Promise<RunTransitionReceipt> {
+    const stored = await this.readRun(input.runId);
+    if (!stored) throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "Run not found");
+    if (stored.run.threadId && input.output.kind === "no-answer")
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Thread completion requires an assistant answer",
+      );
+    if (input.output.kind === "assistant-answer" && input.output.contentRef.trim().length === 0)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Final answer reference is empty",
+      );
+    return this.transitionRun({
+      ...input,
+      nextStatus: "completed",
+      commandFingerprint: JSON.stringify([
+        "run.complete",
+        input.commandFingerprint,
+        input.output,
+        input.dataClassification,
+      ]),
     });
   }
 

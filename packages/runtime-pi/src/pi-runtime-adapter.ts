@@ -328,6 +328,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     let aborted = false;
     let turnIndex = 0;
     let messageSequence = 0;
+    let finalAssistant: AssistantMessage | undefined;
     const enqueue = (operation: () => Promise<void> | void): Promise<void> => {
       eventChain = eventChain.then(operation);
       return eventChain;
@@ -452,6 +453,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
 
       const unsubscribe = session.subscribe((event) => {
         void enqueue(async () => {
+          if (event.type === "message_end" && event.message.role === "assistant")
+            finalAssistant = event.message;
           const mapped = await this.mapEvent(
             request,
             event,
@@ -488,7 +491,51 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           occurredAt: this.now(),
         });
       } else if (!failed && settled) {
-        emit({ type: "runtime.completed", runId: request.runId, occurredAt: this.now() });
+        if (
+          finalAssistant &&
+          (finalAssistant.stopReason !== "stop" ||
+            finalAssistant.content.some((part) => part.type === "toolCall"))
+        ) {
+          emit(runtimeFailure(request, this.now(), "PI_FINAL_ANSWER_INCOMPLETE"));
+          return;
+        }
+        const text =
+          finalAssistant?.content
+            .flatMap((part) => (part.type === "text" ? [part.text] : []))
+            .join("") ?? "";
+        if (!text.trim()) {
+          emit(
+            request.threadId !== null
+              ? runtimeFailure(request, this.now(), "PI_FINAL_ANSWER_EMPTY")
+              : {
+                  type: "runtime.completed",
+                  runId: request.runId,
+                  output: { kind: "no-answer" },
+                  occurredAt: this.now(),
+                },
+          );
+          return;
+        }
+        const contentRef = await this.#dependencies.projection.captureFinalAnswer({
+          runId: request.runId,
+          text: redactMachineSecrets(text),
+          dataClassification: request.dataClassification,
+        });
+        if (this.#cancelledRuns.has(request.runId)) {
+          emit({
+            type: "runtime.cancelled",
+            runId: request.runId,
+            reasonCode: "PI_ABORTED",
+            occurredAt: this.now(),
+          });
+          return;
+        }
+        emit({
+          type: "runtime.completed",
+          runId: request.runId,
+          output: { kind: "assistant-answer", contentRef },
+          occurredAt: this.now(),
+        });
       } else if (!failed) {
         emit(runtimeFailure(request, this.now(), "PI_RUNTIME_DID_NOT_SETTLE"));
       }
@@ -510,7 +557,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       description: descriptor.description,
       parameters: descriptor.parameters as ToolDefinition["parameters"],
       executionMode: "sequential",
-      execute: async (toolCallId, parameters) => {
+      execute: async (toolCallId, parameters, signal) => {
+        signal?.throwIfAborted();
         const invocation: RuntimeToolInvocation = {
           runId: request.runId,
           toolCallId,
@@ -520,6 +568,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           dataClassification: request.dataClassification,
         };
         const decision = await this.#dependencies.tools.preflight(invocation);
+        signal?.throwIfAborted();
         if (!decision.allowed) {
           return {
             content: [{ type: "text", text: `Blocked by product policy: ${decision.reasonCode}` }],
