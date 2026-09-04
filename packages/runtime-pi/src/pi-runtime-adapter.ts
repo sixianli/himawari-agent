@@ -1,9 +1,40 @@
 import type {
+  Api,
+  AssistantMessage,
+  AssistantMessageEvent,
+  AssistantMessageEventStream,
+  Context,
+  Message,
+  Model,
+  SimpleStreamOptions,
+  ToolResultMessage,
+  UserMessage,
+} from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import {
+  type AgentSession,
+  type AgentSessionEvent,
+  type CreateAgentSessionOptions,
+  type CreateAgentSessionResult,
+  createAgentSession,
+  DefaultResourceLoader,
+  type ExtensionAPI,
+  type ModelRuntime,
+  SessionManager,
+  SettingsManager,
+  type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
+import type {
   AgentRuntimePort,
+  ModelDescriptor,
+  ModelInvocationAdmissionResolver,
+  ModelInvocationPermit,
+  ModelInvocationPricing,
+  ModelInvocationUsage,
   RuntimeEvent,
+  RuntimeProjection,
   RuntimeProjectionContent,
   RuntimeProjectionMessage,
-  RuntimeProjection,
   RuntimeProjectionPort,
   RuntimeRequest,
   RuntimeToolDescriptor,
@@ -11,33 +42,24 @@ import type {
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
 import { redactMachineSecrets } from "@himawari-agent/application/runtime-port";
-import type {
-  Api,
-  AssistantMessage,
-  Message,
-  Model,
-  ToolResultMessage,
-  UserMessage,
-} from "@earendil-works/pi-ai";
-import {
-  createAgentSession,
-  DefaultResourceLoader,
-  SessionManager,
-  SettingsManager,
-  type AgentSession,
-  type AgentSessionEvent,
-  type CreateAgentSessionOptions,
-  type CreateAgentSessionResult,
-  type ExtensionAPI,
-  type ModelRuntime,
-  type ToolDefinition,
-} from "@earendil-works/pi-coding-agent";
 
 type RuntimeTurnId = Extract<RuntimeEvent, { readonly type: "runtime.turn_completed" }>["turnId"];
+type PiStreamFunction = (
+  model: Model<Api>,
+  context: Context,
+  options?: SimpleStreamOptions,
+) => AssistantMessageEventStream | Promise<AssistantMessageEventStream>;
 
 export interface PiModelBinding {
   readonly model: Model<Api>;
   readonly modelRuntime: ModelRuntime;
+  readonly descriptor?: ModelDescriptor;
+  readonly admissionCost?: {
+    readonly pricing: ModelInvocationPricing;
+    readonly estimatedCostMicros: number;
+  };
+  /** Deferred credential resolver; callers must invoke it only after admission. */
+  readonly resolveSecret?: () => Promise<string>;
 }
 
 export interface PiModelBindingPort {
@@ -69,6 +91,14 @@ export interface PiAgentRuntimeAdapterDependencies {
   readonly cwd: string;
   readonly agentDir?: string;
   readonly now?: () => string;
+  /** Resolves a gate already bound to the current Run execution lease. */
+  readonly admission?: ModelInvocationAdmissionResolver;
+  /**
+   * Returns a checkpoint-stable key for each physical stream. The callback is
+   * owned by Core because an in-memory ordinal cannot survive a process
+   * restart without colliding with a prior settled allocation.
+   */
+  readonly operationKey: (request: RuntimeRequest, ordinal: number) => string;
   readonly turnId?: (request: RuntimeRequest, turnIndex: number) => RuntimeTurnId;
   readonly createSession?: (
     options: CreateAgentSessionOptions,
@@ -277,6 +307,222 @@ function authorizedPaths(paths: readonly string[], field: string): string[] {
   return [...paths];
 }
 
+function safePiUsage(message: AssistantMessage): ModelInvocationUsage | undefined {
+  const usage = message.usage;
+  const inputTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+  const outputTokens = usage.output;
+  if (
+    !Number.isSafeInteger(inputTokens) ||
+    inputTokens < 0 ||
+    !Number.isSafeInteger(outputTokens) ||
+    outputTokens < 0 ||
+    !Number.isSafeInteger(usage.input) ||
+    usage.input < 0 ||
+    !Number.isSafeInteger(usage.cacheRead) ||
+    usage.cacheRead < 0 ||
+    !Number.isSafeInteger(usage.cacheWrite) ||
+    usage.cacheWrite < 0
+  ) {
+    return undefined;
+  }
+  return Object.freeze({
+    inputTokens,
+    outputTokens,
+    cacheReadTokens: usage.cacheRead,
+    cacheWriteTokens: usage.cacheWrite,
+  });
+}
+
+function piErrorEvent(
+  model: Model<Api>,
+  errorMessage: string,
+): Extract<AssistantMessageEvent, { readonly type: "error" }> {
+  const error: AssistantMessage = {
+    role: "assistant",
+    content: [],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "error",
+    errorMessage,
+    timestamp: Date.now(),
+  };
+  return { type: "error", reason: "error", error };
+}
+
+function failedPiStream(model: Model<Api>, errorMessage: string): AssistantMessageEventStream {
+  const stream = createAssistantMessageEventStream();
+  stream.push(piErrorEvent(model, errorMessage));
+  return stream;
+}
+
+function relayAdmittedPiStream(
+  stream: AssistantMessageEventStream,
+  permit: ModelInvocationPermit,
+  model: Model<Api>,
+  signal: AbortSignal | undefined,
+): AssistantMessageEventStream {
+  const output = createAssistantMessageEventStream();
+  let accounted = false;
+  const markUnknown = async (
+    reasonCode: "provider_unresolved" | "transport_unresolved" | "cancel_unresolved",
+  ): Promise<boolean> => {
+    if (accounted) return true;
+    try {
+      await permit.markUnknown(reasonCode);
+      accounted = true;
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  void (async () => {
+    try {
+      for await (const event of stream) {
+        if (event.type === "done") {
+          const usage = safePiUsage(event.message);
+          if (usage === undefined) {
+            const accountedUnknown = await markUnknown("provider_unresolved");
+            output.push(
+              accountedUnknown
+                ? event
+                : piErrorEvent(model, "Model budget accounting is unavailable"),
+            );
+          } else {
+            try {
+              await permit.settle(usage);
+              accounted = true;
+              output.push(event);
+            } catch {
+              output.push(piErrorEvent(model, "Model budget settlement failed"));
+            }
+          }
+          return;
+        }
+        if (event.type === "error") {
+          const accountedUnknown = await markUnknown(
+            signal?.aborted ? "cancel_unresolved" : "provider_unresolved",
+          );
+          output.push(
+            accountedUnknown
+              ? event
+              : piErrorEvent(model, "Model budget accounting is unavailable"),
+          );
+          return;
+        }
+        output.push(event);
+      }
+      const accountedUnknown = await markUnknown(
+        signal?.aborted ? "cancel_unresolved" : "transport_unresolved",
+      );
+      output.push(
+        piErrorEvent(
+          model,
+          accountedUnknown
+            ? "Model provider stream ended without a terminal event"
+            : "Model budget accounting is unavailable",
+        ),
+      );
+    } catch {
+      const accountedUnknown = await markUnknown(
+        signal?.aborted ? "cancel_unresolved" : "transport_unresolved",
+      );
+      output.push(
+        accountedUnknown
+          ? piErrorEvent(model, "Model provider stream failed")
+          : piErrorEvent(model, "Model budget accounting is unavailable"),
+      );
+    } finally {
+      output.end();
+    }
+  })();
+  return output;
+}
+
+async function admitPiStream(
+  request: RuntimeRequest,
+  binding: PiModelBinding,
+  resolver: ModelInvocationAdmissionResolver | undefined,
+  model: Model<Api>,
+  context: Context,
+  options: SimpleStreamOptions | undefined,
+  ordinal: number,
+  original: PiStreamFunction,
+  operationKeyFor: (request: RuntimeRequest, ordinal: number) => string,
+): Promise<AssistantMessageEventStream> {
+  let permit: ModelInvocationPermit | undefined;
+  let started = false;
+  try {
+    const gate = await resolver?.({
+      ownerId: request.ownerId,
+      agentId: request.agentId,
+      runId: request.runId,
+    });
+    if (
+      !gate ||
+      gate.context.ownerId !== request.ownerId ||
+      gate.context.agentId !== request.agentId ||
+      gate.context.runId !== request.runId ||
+      binding.descriptor === undefined ||
+      binding.admissionCost === undefined ||
+      (binding.descriptor.secretRequirement !== null && binding.resolveSecret === undefined)
+    ) {
+      return failedPiStream(model, "Model invocation admission is unavailable");
+    }
+    if (model !== binding.model) {
+      return failedPiStream(model, "Model invocation binding mismatch");
+    }
+    const operationKey = operationKeyFor(request, ordinal);
+    if (typeof operationKey !== "string" || operationKey.trim().length === 0) {
+      return failedPiStream(model, "Model invocation operation key is unavailable");
+    }
+    permit = await gate.begin({
+      modelRef: binding.descriptor.ref,
+      provider: binding.descriptor.provider,
+      model: binding.descriptor.model,
+      modelVersion: binding.descriptor.version,
+      dataClassification: request.dataClassification,
+      operationKey,
+      source: "agent-stream",
+      ordinal,
+      estimatedCostMicros: binding.admissionCost.estimatedCostMicros,
+      pricing: binding.admissionCost.pricing,
+    });
+    await permit.assertActive();
+    if (options?.signal?.aborted) return failedPiStream(model, "Model invocation was cancelled");
+    const { apiKey: _ambientApiKey, ...withoutAmbientApiKey } = options ?? {};
+    void _ambientApiKey;
+    const secret = binding.resolveSecret ? await binding.resolveSecret() : undefined;
+    await permit.assertActive();
+    if (options?.signal?.aborted) return failedPiStream(model, "Model invocation was cancelled");
+    await permit.markStarted();
+    started = true;
+    if (options?.signal?.aborted) {
+      await permit.markUnknown("cancel_unresolved");
+      return failedPiStream(model, "Model invocation was cancelled");
+    }
+    const stream = await original(model, context, {
+      ...withoutAmbientApiKey,
+      ...(secret === undefined ? {} : { apiKey: secret }),
+      maxRetries: 0,
+    });
+    return relayAdmittedPiStream(stream, permit, model, options?.signal);
+  } catch {
+    if (started && permit !== undefined) {
+      await permit.markUnknown("transport_unresolved").catch(() => undefined);
+    }
+    return failedPiStream(model, "Model invocation admission failed");
+  }
+}
+
 class RuntimeEventQueue implements AsyncIterable<RuntimeEvent> {
   readonly #values: RuntimeEvent[] = [];
   readonly #waiters: Array<(result: IteratorResult<RuntimeEvent>) => void> = [];
@@ -473,6 +719,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         settingsManager,
       });
       const session = created.session;
+      const originalStreamFunction = session.agent.streamFunction;
+      let streamOrdinal = 0;
+      session.agent.streamFunction = (model, context, options) =>
+        admitPiStream(
+          request,
+          binding,
+          this.#dependencies.admission,
+          model,
+          context,
+          options,
+          ++streamOrdinal,
+          originalStreamFunction,
+          this.#dependencies.operationKey,
+        );
       this.#activeSessions.set(request.runId, session);
 
       const unsubscribe = session.subscribe((event) => {

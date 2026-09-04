@@ -123,6 +123,9 @@ export type ModelInvocationEvent =
       readonly invocationId: string;
       readonly inputTokens: number;
       readonly outputTokens: number;
+      /** Provider-reported cache token counts, when the transport exposes them. */
+      readonly cacheReadTokens?: number;
+      readonly cacheWriteTokens?: number;
       readonly costMicros: number;
       readonly latencyMs: number;
       readonly providerObservation?: ModelProviderObservation;

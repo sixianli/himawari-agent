@@ -249,13 +249,16 @@ describe("production model composition", () => {
     expect(prepared.resolve).not.toHaveBeenCalled();
     const binding = await composition.piModels.resolve(primaryModel.ref);
     expect(binding.model).toBe(runtime.models.get("openrouter:deepseek/deepseek-v4-flash-0731"));
+    expect(prepared.resolve).not.toHaveBeenCalled();
+    if (!binding.resolveSecret) throw new Error("Expected deferred provider secret resolver");
+    await expect(binding.resolveSecret()).resolves.toBe("fixture-provider-value");
     expect(prepared.resolve).toHaveBeenCalledWith("openrouter-api-key", "v1");
     expect(prepared.resolve).toHaveBeenCalledTimes(1);
     expect(composition.transport).toBeDefined();
     expect(composition.payloadBoundary).toBeDefined();
 
     await composition.close();
-    expect(runtime.removedProviders).toEqual(["openrouter"]);
+    expect(runtime.removedProviders).toEqual([]);
   });
 
   it("rejects unsafe secret sources and conflicting canonical descriptors", () => {

@@ -1,14 +1,18 @@
 import {
-  PORT_ERROR_CODES,
   ApplicationPortError,
   assertMachineSecretFree,
   type ClockPort,
   type ModelDescriptor,
+  type ModelInvocationAdmissionResolver,
   type ModelInvocationEvent,
+  type ModelInvocationPricing,
   type ModelInvocationRequest,
+  type ModelInvocationUsage,
   type ModelPort,
+  PORT_ERROR_CODES,
   type SecretPort,
 } from "@himawari-agent/application";
+import type { AgentId, OwnerId } from "@himawari-agent/domain";
 
 export interface SecretMaterialSource {
   resolve(secretRef: string, secretVersion: string): Promise<string>;
@@ -25,11 +29,20 @@ export interface TrustedModelTransport {
 }
 
 export interface TrustedModelProviderAdapterDependencies {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
   readonly descriptors: readonly ModelDescriptor[];
   readonly handles: SecretPort;
   readonly secretSource: SecretMaterialSource;
   readonly transport: TrustedModelTransport;
   readonly clock: ClockPort;
+  /** Resolves a gate already bound to the current Run execution lease. */
+  readonly admission?: ModelInvocationAdmissionResolver;
+  /** Supplies frozen descriptor pricing and a conservative reservation estimate. */
+  readonly admissionCost: (descriptor: ModelDescriptor) => {
+    readonly pricing: ModelInvocationPricing;
+    readonly estimatedCostMicros: number;
+  };
 }
 
 export interface SecretResolutionRecord {
@@ -37,6 +50,31 @@ export interface SecretResolutionRecord {
   readonly secretRef: string;
   readonly secretVersion: string;
   readonly purpose: string;
+}
+
+function modelUsage(
+  event: Extract<ModelInvocationEvent, { readonly type: "model.completed" }>,
+): ModelInvocationUsage | undefined {
+  const inputTokens = event.inputTokens;
+  const outputTokens = event.outputTokens;
+  const cacheReadTokens = event.cacheReadTokens;
+  const cacheWriteTokens = event.cacheWriteTokens;
+  if (cacheReadTokens === undefined || cacheWriteTokens === undefined) return undefined;
+  if (
+    !Number.isSafeInteger(inputTokens) ||
+    inputTokens < 0 ||
+    !Number.isSafeInteger(outputTokens) ||
+    outputTokens < 0 ||
+    !Number.isSafeInteger(cacheReadTokens) ||
+    cacheReadTokens < 0 ||
+    !Number.isSafeInteger(cacheWriteTokens) ||
+    cacheWriteTokens < 0 ||
+    cacheReadTokens > inputTokens ||
+    cacheWriteTokens > inputTokens - cacheReadTokens
+  ) {
+    return undefined;
+  }
+  return Object.freeze({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens });
 }
 
 export class TrustedModelProviderAdapter implements ModelPort {
@@ -62,22 +100,88 @@ export class TrustedModelProviderAdapter implements ModelPort {
       );
     }
 
+    const gate = await this.dependencies.admission?.({
+      ownerId: this.dependencies.ownerId,
+      agentId: this.dependencies.agentId,
+      runId: request.runId,
+    });
+    if (
+      !gate ||
+      gate.context.ownerId !== this.dependencies.ownerId ||
+      gate.context.agentId !== this.dependencies.agentId ||
+      gate.context.runId !== request.runId
+    ) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Model invocation admission is unavailable",
+        { invocationId: request.invocationId, modelRef: request.modelRef },
+      );
+    }
+
+    const admissionCost = this.dependencies.admissionCost(descriptor);
+    const permit = await gate.begin({
+      modelRef: descriptor.ref,
+      provider: descriptor.provider,
+      model: descriptor.model,
+      modelVersion: descriptor.version,
+      dataClassification: request.dataClassification,
+      operationKey: request.invocationId,
+      source: "model-port",
+      ordinal: 1,
+      estimatedCostMicros: admissionCost.estimatedCostMicros,
+      pricing: admissionCost.pricing,
+    });
+    await permit.assertActive();
+
     const secretValues = await this.resolveSecrets(descriptor, request);
+    await permit.assertActive();
+    await permit.markStarted();
+    let settled = false;
+    const markUnknown = async (
+      reasonCode: "provider_unresolved" | "transport_unresolved" | "cancel_unresolved",
+    ): Promise<void> => {
+      if (settled) return;
+      await permit.markUnknown(reasonCode);
+      settled = true;
+    };
     try {
       for await (const event of this.dependencies.transport.invoke({
         descriptor,
         request,
         secretValues,
       })) {
+        if (event.invocationId !== request.invocationId) {
+          await markUnknown("provider_unresolved");
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "Trusted model transport returned a mismatched invocation",
+            { invocationId: request.invocationId, modelRef: request.modelRef },
+          );
+        }
+        if (event.type === "model.completed") {
+          const usage = modelUsage(event);
+          if (usage === undefined) {
+            await markUnknown("provider_unresolved");
+          } else {
+            await permit.settle(usage);
+            settled = true;
+          }
+        } else if (event.type === "model.failed") {
+          await markUnknown("provider_unresolved");
+        }
         yield Object.freeze({ ...event, invocationId: request.invocationId });
         if (event.type === "model.completed" || event.type === "model.failed") break;
       }
-    } catch {
+    } catch (error) {
+      await markUnknown("transport_unresolved").catch(() => undefined);
+      if (error instanceof ApplicationPortError) throw error;
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
         "Trusted model transport failed",
         { invocationId: request.invocationId, modelRef: request.modelRef },
       );
+    } finally {
+      await markUnknown("transport_unresolved").catch(() => undefined);
     }
   }
 

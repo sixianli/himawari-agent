@@ -1,7 +1,8 @@
 export {
-  type ConfiguredPiModelDescriptor,
+  admissionCostForConfiguredPiModel,
   ConfiguredPiModelBindingPort,
   type ConfiguredPiModelBindingPortOptions,
+  type ConfiguredPiModelDescriptor,
   type PiModelCost,
   type PiModelRuntime,
   type PiModelRuntimeFactory,
@@ -16,8 +17,8 @@ export {
 } from "./governed-coding-tools.js";
 export { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
 export {
-  PiModelTransport,
   type PiModelPayloadBoundary,
+  PiModelTransport,
   type PiModelTransportInput,
   type PiModelTransportObservation,
   type PiModelTransportOptions,

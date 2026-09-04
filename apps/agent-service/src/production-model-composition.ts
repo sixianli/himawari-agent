@@ -3,8 +3,10 @@ import type {
   ConfiguredEmbeddingModelDescriptor,
   ConfiguredGenerationModelDescriptor,
   IdGeneratorPort,
-  ModelPort,
   ModelCostDescriptor,
+  ModelDescriptor,
+  ModelInvocationAdmissionResolver,
+  ModelPort,
   ModelSecretRequirement,
   PayloadProtectionRequest,
   PayloadProtectorPort,
@@ -18,11 +20,12 @@ import {
   TrustedModelProviderAdapter,
 } from "@himawari-agent/platform-node";
 import {
-  type ConfiguredPiModelDescriptor,
+  admissionCostForConfiguredPiModel,
   ConfiguredPiModelBindingPort,
-  PiModelTransport,
+  type ConfiguredPiModelDescriptor,
   type PiModelBindingPort,
   type PiModelRuntimeFactory,
+  PiModelTransport,
   ProtectedPiModelPayloadBoundary,
 } from "@himawari-agent/runtime-pi";
 
@@ -70,6 +73,8 @@ export interface ProductionModelCompositionOptions {
   readonly temperature?: number;
   readonly siteUrl?: string;
   readonly appName?: string;
+  /** Resolves a gate bound to the current Run lease; omitted means fail closed. */
+  readonly admission?: ModelInvocationAdmissionResolver;
 }
 
 export interface ProductionModelComposition {
@@ -229,12 +234,30 @@ export function createProductionModelComposition(
     ...(options.siteUrl === undefined ? {} : { siteUrl: options.siteUrl }),
     ...(options.appName === undefined ? {} : { appName: options.appName }),
   });
+  const configuredByRef = new Map(
+    options.descriptors.map((descriptor) => [descriptor.ref, descriptor]),
+  );
   const model = new TrustedModelProviderAdapter({
+    ownerId: options.ownerId,
+    agentId: options.agentId,
     descriptors: options.descriptors,
     handles: options.handles,
     secretSource: options.secretSource,
     transport,
     clock: options.clock,
+    ...(options.admission === undefined ? {} : { admission: options.admission }),
+    admissionCost: (descriptor: ModelDescriptor) => {
+      const configured = configuredByRef.get(descriptor.ref);
+      if (
+        configured === undefined ||
+        configured.provider !== descriptor.provider ||
+        configured.model !== descriptor.model ||
+        configured.version !== descriptor.version
+      ) {
+        throw new Error("MODEL_DESCRIPTOR_BINDING_MISMATCH");
+      }
+      return admissionCostForConfiguredPiModel(configured);
+    },
   });
   return Object.freeze({
     model,

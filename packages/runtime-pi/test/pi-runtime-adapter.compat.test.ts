@@ -1,7 +1,17 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  type Api,
+  type AssistantMessage,
+  type AssistantMessageEventStream,
+  createAssistantMessageEventStream,
+  type Model,
+} from "@earendil-works/pi-ai";
 import type {
+  ModelDescriptor,
+  ModelInvocationExecutionContext,
+  ModelInvocationPermit,
   RuntimeEvent,
   RuntimeProjection,
   RuntimeProjectionPort,
@@ -17,6 +27,125 @@ import {
 
 const NOW = "2026-08-25T10:00:00.000Z";
 type ProjectionContext = RuntimeProjection;
+
+function fixtureIdentifier<T extends string>(value: string): T {
+  return value as T;
+}
+
+function fixtureExecutionLease(): ModelInvocationExecutionContext["executionLease"] {
+  return {
+    executionLeaseId: fixtureIdentifier("execution-pi-runtime-test"),
+    expectedLeaseRevision: 1,
+    authorityLeaseId: fixtureIdentifier("authority-pi-runtime-test"),
+    authorityFencingToken: 1,
+    deploymentId: fixtureIdentifier("deployment-pi-runtime-test"),
+    authorityEpoch: 1,
+    fencingToken: 1,
+    consumerId: "pi-runtime-test",
+  };
+}
+
+function allowAdmission(scope: {
+  readonly ownerId: RuntimeRequest["ownerId"];
+  readonly agentId: RuntimeRequest["agentId"];
+  readonly runId: RuntimeRequest["runId"];
+}) {
+  return {
+    context: {
+      ...scope,
+      executionLease: fixtureExecutionLease(),
+    },
+    begin: async () => ({
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      settle: async () => undefined,
+      markUnknown: async () => undefined,
+    }),
+  };
+}
+
+const ADMISSION_MODEL: Model<Api> = {
+  id: "admission-fixture-model",
+  name: "Admission fixture model",
+  api: "faux",
+  provider: "admission-fixture-provider",
+  baseUrl: "http://127.0.0.1:1",
+  reasoning: false,
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 1024,
+  maxTokens: 128,
+};
+
+const ADMISSION_DESCRIPTOR: ModelDescriptor = {
+  ref: "model-faux-task-11",
+  provider: ADMISSION_MODEL.provider,
+  model: ADMISSION_MODEL.id,
+  version: "admission-fixture-1",
+  routingClass: "local",
+  priority: 1,
+  disclosure: "local_only",
+  capabilities: ["text"],
+  allowedDataClassifications: ["private"],
+  secretRequirement: null,
+};
+
+function assistantAnswer(): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [{ type: "text", text: "admitted answer" }],
+    api: ADMISSION_MODEL.api,
+    provider: ADMISSION_MODEL.provider,
+    model: ADMISSION_MODEL.id,
+    usage: {
+      input: 4,
+      output: 2,
+      cacheRead: 1,
+      cacheWrite: 0,
+      totalTokens: 7,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  };
+}
+
+function streamingSessionFactory(
+  original: (model: Model<Api>, context: unknown, options?: unknown) => AssistantMessageEventStream,
+  observedTerminals: string[],
+  streamModel: Model<Api> = ADMISSION_MODEL,
+) {
+  return async () => {
+    let listener: (event: FakePiEvent) => void = () => undefined;
+    const agent = { streamFunction: original };
+    const session = {
+      agent,
+      subscribe(next: (event: FakePiEvent) => void) {
+        listener = next;
+        return () => {
+          listener = () => undefined;
+        };
+      },
+      async prompt() {
+        const response = await agent.streamFunction(streamModel, { messages: [] }, {});
+        for await (const event of response) {
+          if (event.type === "done") {
+            observedTerminals.push("done");
+            listener({ type: "message_end", message: event.message });
+          } else if (event.type === "error") {
+            observedTerminals.push("error");
+            listener({ type: "message_end", message: event.error });
+          }
+        }
+        listener({ type: "agent_settled" });
+      },
+      async waitForIdle() {},
+      async abort() {},
+      dispose() {},
+    };
+    return { session };
+  };
+}
 
 const DEFAULT_CONTEXT: ProjectionContext = {
   systemInstruction: "You are a controlled restaurant assistant.",
@@ -151,6 +280,11 @@ function fakeSessionFactory(
     let idle = Promise.resolve();
     return {
       session: {
+        agent: {
+          streamFunction: async () => {
+            throw new Error("fake stream function was not configured");
+          },
+        },
         subscribe(next: (event: FakePiEvent) => void) {
           listener = next;
           return () => {
@@ -209,12 +343,154 @@ function createAdapter(
     },
     cwd: process.cwd(),
     now: () => NOW,
+    operationKey: (request, ordinal) => `${request.runId}:compat:${ordinal}`,
     turnId: (_request, turnIndex) => `turn-task-11-${turnIndex}` as never,
     createSession: createSession as unknown as NonNullable<
       PiAgentRuntimeAdapterDependencies["createSession"]
     >,
   });
 }
+
+function createAdmissionAdapter(
+  permit: ModelInvocationPermit,
+  original: (model: Model<Api>, context: unknown, options?: unknown) => AssistantMessageEventStream,
+  observedTerminals: string[],
+  streamModel: Model<Api> = ADMISSION_MODEL,
+) {
+  const createSession = streamingSessionFactory(original, observedTerminals, streamModel);
+  return new PiAgentRuntimeAdapter({
+    projection: new RecordingProjection(),
+    tools: new RecordingRuntimeTools(),
+    models: {
+      resolve: async () => ({
+        model: ADMISSION_MODEL,
+        modelRuntime: {} as PiModelBinding["modelRuntime"],
+        descriptor: ADMISSION_DESCRIPTOR,
+        admissionCost: {
+          pricing: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 },
+          estimatedCostMicros: 10,
+        },
+      }),
+    },
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => ({
+      context: allowAdmission(scope).context,
+      begin: async () => permit,
+    }),
+    operationKey: (runtimeRequest, ordinal) =>
+      `${runtimeRequest.runId}:admission-fixture:${ordinal}`,
+    createSession: createSession as unknown as NonNullable<
+      PiAgentRuntimeAdapterDependencies["createSession"]
+    >,
+  });
+}
+
+function successfulOriginal(): AssistantMessageEventStream {
+  const stream = createAssistantMessageEventStream();
+  const message = assistantAnswer();
+  stream.push({ type: "start", partial: message });
+  stream.push({ type: "done", reason: "stop", message });
+  return stream;
+}
+
+describe("Pi stream admission accounting", () => {
+  it("rejects a same-provider and same-model clone before the provider stream", async () => {
+    const observedTerminals: string[] = [];
+    let providerCalls = 0;
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      settle: async () => undefined,
+      markUnknown: async () => undefined,
+    };
+    const sameIdentityClone = { ...ADMISSION_MODEL };
+    const adapter = createAdmissionAdapter(
+      permit,
+      () => {
+        providerCalls += 1;
+        return successfulOriginal();
+      },
+      observedTerminals,
+      sameIdentityClone,
+    );
+
+    const events = await collect(adapter.run(request));
+    expect(providerCalls).toBe(0);
+    expect(observedTerminals).toEqual(["error"]);
+    expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+
+  it("does not expose done until durable settlement resolves", async () => {
+    let releaseSettlement!: () => void;
+    const settlementReleased = new Promise<void>((resolve) => {
+      releaseSettlement = resolve;
+    });
+    let settlementEntered!: () => void;
+    const settlementStarted = new Promise<void>((resolve) => {
+      settlementEntered = resolve;
+    });
+    const observedTerminals: string[] = [];
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      settle: async () => {
+        settlementEntered();
+        await settlementReleased;
+      },
+      markUnknown: async () => undefined,
+    };
+    const adapter = createAdmissionAdapter(permit, successfulOriginal, observedTerminals);
+    const run = collect(adapter.run(request));
+
+    await settlementStarted;
+    expect(observedTerminals).toEqual([]);
+    releaseSettlement();
+    const events = await run;
+    expect(observedTerminals).toEqual(["done"]);
+    expect(events.at(-1)?.type).toBe("runtime.completed");
+  });
+
+  it("does not expose provider success when settlement fails", async () => {
+    const observedTerminals: string[] = [];
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      settle: async () => {
+        throw new Error("durable settlement failed");
+      },
+      markUnknown: async () => undefined,
+    };
+    const adapter = createAdmissionAdapter(permit, successfulOriginal, observedTerminals);
+
+    const events = await collect(adapter.run(request));
+    expect(observedTerminals).toEqual(["error"]);
+    expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+    expect(events.some(({ type }) => type === "runtime.completed")).toBe(false);
+  });
+
+  it("surfaces an error when unknown accounting cannot be persisted", async () => {
+    const observedTerminals: string[] = [];
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      settle: async () => undefined,
+      markUnknown: async () => {
+        throw new Error("durable unknown write failed");
+      },
+    };
+    const noTerminalOriginal = () => {
+      const stream = createAssistantMessageEventStream();
+      stream.end();
+      return stream;
+    };
+    const adapter = createAdmissionAdapter(permit, noTerminalOriginal, observedTerminals);
+
+    const events = await collect(adapter.run(request));
+    expect(observedTerminals).toEqual(["error"]);
+    expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+});
 
 describe("Pi Agent Runtime adapter compatibility", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -256,7 +532,7 @@ describe("Pi Agent Runtime adapter compatibility", () => {
             role: "assistant",
             stopReason: "stop",
             content: [
-              { type: "text", text: "回答。\n" + secret[0] },
+              { type: "text", text: `回答。\n${secret[0]}` },
               { type: "text", text: secret[1] },
             ],
           },
@@ -716,7 +992,6 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       readonly ModelRuntime: {
         create(options: unknown): Promise<{
           registerNativeProvider(provider: unknown): void;
-          setRuntimeApiKey(provider: string, value: string): Promise<void>;
         }>;
       };
     };
@@ -750,7 +1025,18 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       modelsPath: null,
     });
     runtime.registerNativeProvider(faux.provider);
-    await runtime.setRuntimeApiKey("faux", "deterministic-test-key");
+    const fauxDescriptor: ModelDescriptor = {
+      ref: request.modelRef,
+      provider: "faux",
+      model: "faux-1",
+      version: "0.84.2-test",
+      routingClass: "local",
+      priority: 1,
+      disclosure: "local_only",
+      capabilities: ["text", "tool_calling"],
+      allowedDataClassifications: ["private"],
+      secretRequirement: null,
+    };
     const projection = new RecordingProjection({
       ...DEFAULT_CONTEXT,
       contextBlocks: [
@@ -774,10 +1060,20 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       tools,
       models: {
         resolve: async () =>
-          ({ model: faux.getModel(), modelRuntime: runtime }) as unknown as PiModelBinding,
+          ({
+            model: faux.getModel(),
+            modelRuntime: runtime,
+            descriptor: fauxDescriptor,
+            admissionCost: {
+              pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              estimatedCostMicros: 0,
+            },
+          }) as unknown as PiModelBinding,
       },
       cwd: process.cwd(),
       now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      operationKey: (runtimeRequest, ordinal) => `${runtimeRequest.runId}:faux-stream:${ordinal}`,
       turnId: (_runtimeRequest, turnIndex) => `turn-faux-${turnIndex}` as never,
     });
 

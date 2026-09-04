@@ -94,7 +94,7 @@ class RecordingRuntime {
 describe("ConfiguredPiModelBindingPort", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("lazily resolves the shared secret and registers exactly the closed model set", async () => {
+  it("registers exactly the closed model set and defers the shared secret", async () => {
     const runtime = new RecordingRuntime();
     const runtimeOptions: Parameters<PiModelRuntimeFactory["create"]>[0][] = [];
     const create: PiModelRuntimeFactory["create"] = vi.fn(async (options) => {
@@ -120,6 +120,9 @@ describe("ConfiguredPiModelBindingPort", () => {
     expect(primary.model).toBe(runtime.models.get("openrouter:deepseek/deepseek-v4-flash-0731"));
     expect(await binding.resolve(FALLBACK_REF)).toMatchObject({ modelRuntime: runtime });
     expect(create).toHaveBeenCalledTimes(1);
+    expect(resolveSecret).not.toHaveBeenCalled();
+    if (!primary.resolveSecret) throw new Error("Expected deferred secret resolver");
+    await expect(primary.resolveSecret()).resolves.toBe(SECRET);
     expect(resolveSecret).toHaveBeenCalledTimes(1);
     expect(resolveSecret).toHaveBeenCalledWith("openrouter-api-key", "v1");
     expect(runtimeOptions[0]).toMatchObject({
@@ -141,10 +144,10 @@ describe("ConfiguredPiModelBindingPort", () => {
     ).toMatchObject({ openRouterRouting: FALLBACK_ROUTING });
     expect(JSON.stringify(binding.configuredDescriptors())).not.toContain(SECRET);
     expect(JSON.stringify(runtime.registered)).not.toContain(SECRET);
-    expect(runtime.apiKeys).toEqual([{ providerId: "openrouter", value: SECRET }]);
+    expect(runtime.apiKeys).toEqual([]);
 
     await binding.close();
-    expect(runtime.removedProviders).toEqual(["openrouter"]);
+    expect(runtime.removedProviders).toEqual([]);
   });
 
   it("rejects development secret sources and fallback disclosure expansion", () => {
