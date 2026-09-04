@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   EXECUTION_ADMISSION_V1_SCHEMA_VERSION,
+  EXECUTION_V2_SCHEMA_VERSION,
   type ExecutionAdmissionPeerBinding,
   type ExecutionAdmissionProjection,
   type ExecutionAdmissionReceiptIdentity,
@@ -13,9 +14,6 @@ import {
   executionV2MessageSchema,
 } from "@himawari-agent/execution-contracts";
 import { afterEach, describe, expect, it } from "vitest";
-import messages from "../../execution-contracts/test/fixtures/v2/messages.json" with {
-  type: "json",
-};
 import {
   EXECUTION_ADMISSION_UDS_ERROR_CODES,
   type ExecutionAdmissionCredential,
@@ -41,21 +39,117 @@ const peer: ExecutionAdmissionPeerBinding = Object.freeze({
 });
 const maximumBodyBytes = 16_384;
 
-const fixtureDelegate = messages.find(({ type }) => type === "work.delegate");
-const fixtureExecute = messages.find(({ type }) => type === "work.execute");
-if (!fixtureDelegate || !fixtureExecute) {
-  throw new TypeError("execution.v2 admission fixtures are missing");
+const parsedFixtureExecute = executionV2MessageSchema.parse({
+  schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+  kind: "request",
+  type: "work.execute",
+  messageId: "execution-v2-request-01",
+  correlationId: "correlation-run-01",
+  causationId: "event-worker-delegated-01",
+  dataClassification: "sensitive",
+  risk: "high",
+  authorizationRef: "authorization-work-01",
+  scope: {
+    deploymentId: "deployment-01",
+    authorityEpoch: 8,
+    fencingToken: 3,
+    ownerId: "owner-01",
+    agentId: "agent-01",
+    runId: "run-01",
+    workerRunId: "worker-run-01",
+  },
+  idempotencyKey: "work-execute-01",
+  payload: {
+    capabilityId: "github-read",
+    capabilityVersion: "1.0.0",
+    operation: "read-repository",
+    inputRef: "payload-work-input-01",
+    capabilityHandleRef: "capability-handle-01",
+    delegatedContextRefs: ["payload-context-01"],
+    secretRefs: [
+      {
+        secretRef: "secret-ref-github-app-01",
+        secretVersion: "version-01",
+        purpose: "github-installation-token",
+      },
+    ],
+    resourceCeiling: {
+      maxWallTimeMs: 30_000,
+      maxCpuTimeMs: 10_000,
+      maxMemoryBytes: 268_435_456,
+      maxOutputBytes: 1_048_576,
+      maxProgressEvents: 100,
+    },
+    requestedAt: "2026-08-26T00:00:02.000Z",
+    deadlineAt: "2026-08-26T00:00:32.000Z",
+  },
+});
+if (parsedFixtureExecute.kind !== "request" || parsedFixtureExecute.type !== "work.execute") {
+  throw new TypeError("execution.v2 execute admission fixture has an unexpected type");
 }
-const parsedFixtureExecute = executionV2MessageSchema.parse(fixtureExecute);
-const parsedFixtureDelegate = executionV2MessageSchema.parse(fixtureDelegate);
-const execute: Extract<
-  ReturnType<typeof executionV2MessageSchema.parse>,
-  { type: "work.execute" }
-> = parsedFixtureExecute.kind === "request" && parsedFixtureExecute.type === "work.execute"
-  ? parsedFixtureExecute
-  : (() => {
-      throw new TypeError("execution.v2 execute admission fixture has an unexpected type");
-    })();
+const execute = parsedFixtureExecute;
+
+const parsedFixtureDelegate = executionV2MessageSchema.parse({
+  schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+  kind: "request",
+  type: "work.delegate",
+  messageId: "execution-v2-delegate-01",
+  correlationId: "correlation-run-01",
+  causationId: "event-worker-delegated-01",
+  dataClassification: "sensitive",
+  risk: "high",
+  authorizationRef: "authorization-work-01",
+  scope: {
+    deploymentId: "deployment-01",
+    authorityEpoch: 8,
+    fencingToken: 3,
+    ownerId: "owner-01",
+    agentId: "agent-01",
+    runId: "run-01",
+    workerRunId: "worker-run-01",
+  },
+  idempotencyKey: "work-delegate-01",
+  payload: {
+    handle: {
+      handleVersion: "capability-handle.v2",
+      ref: "capability-handle-01",
+      revision: 3,
+      authorityFence: 3,
+      ownerId: "owner-01",
+      agentId: "agent-01",
+      runId: "run-01",
+      capabilityRef: "github-read",
+      capabilityVersion: "1.0.0",
+      authorizationType: "grant",
+      authorizationRef: "authorization-work-01",
+      operations: ["read-repository"],
+      inputRefs: ["payload-work-input-01"],
+      delegatedContextRefs: ["payload-context-01"],
+      secretRefs: [
+        {
+          secretRef: "secret-ref-github-app-01",
+          secretVersion: "version-01",
+          purpose: "github-installation-token",
+        },
+      ],
+      maxDataClassification: "sensitive",
+      issuedAt: "2026-08-26T00:00:01.000Z",
+      expiresAt: "2026-08-26T00:00:32.000Z",
+      revokedAt: null,
+      operation: "read-repository",
+      maxUses: 1,
+      uses: 0,
+      maxTotalCostMicros: 0,
+      spentCostMicros: 0,
+      idempotencyKeys: [],
+      workerEndedAt: null,
+    },
+    requestedAt: "2026-08-26T00:00:01.500Z",
+  },
+});
+if (parsedFixtureDelegate.kind !== "request" || parsedFixtureDelegate.type !== "work.delegate") {
+  throw new TypeError("execution.v2 delegate admission fixture has an unexpected type");
+}
 const nullAuthorizationExecute: typeof execute = (() => {
   const parsed = executionV2MessageSchema.parse({
     ...execute,
