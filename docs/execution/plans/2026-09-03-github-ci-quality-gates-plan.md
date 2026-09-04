@@ -25,6 +25,8 @@ date: "2026-09-03"
 
 **公开仓库前提：** Owner 已将仓库改为公开；2026-09-03 API 回读确认 `visibility: public`，Rulesets 返回空列表、`main` 返回 `Branch not protected`、workflow 数量为 0。fork 运行审批当前为 `first_time_contributors`，目标为来源 Spec 规定的 `all_external_contributors`。原私有仓库的 Pro 升级前提已解除，规则配置、审批策略变更与真实门禁验收仍待实施；本轮再次只读确认 `main` 未保护（HTTP 404）；规则启用仍待独立授权。
 
+**2026-09-04 范围修订：** 维护者明确要求从 CI 移除 npm 依赖漏洞查询。当前实现移除 advisory 请求、诊断及重试，保留机器密钥、Gitleaks、Semgrep 和安装完整性校验。下文既有 advisory 成功/失败记录均为修订前历史证据，不是当前门禁要求；远端旧运行不会因此改变结果。 本次本地验证：`vitest run --config vitest.workspace.ts --project tooling test/tooling/security.test.mjs test/tooling/security-process.test.mjs test/tooling/runner-orchestration.test.mjs` 113/113 通过，包含安全入口不调用网络查询和其余扫描器失败仍阻断；`npm run check` 退出码 0，严格文档校验 0 warning。
+
 ## 使用方法与证据边界
 
 本文件供后续 AI Agent 或维护者逐项执行。先读来源 Spec，再核对当前 Git、工具链和 GitHub 状态。不得把本次设计基线、历史测试数量、曾经通过的命令或 Plan checkbox 当作新 revision 的证据。
@@ -166,9 +168,9 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 - [x] 复用当前 machine-secret scan，接入固定 Gitleaks 的当前内容与提交范围扫描。fixture 使用合成凭据，输出脱敏。
 - [x] 记录公开仓库可用的 CodeQL/code scanning、Dependency Review 和 SARIF 与首期必需工具的区别；不自动启用附加功能或为报告展示扩大 token 权限，后续接入先同步来源 Spec 与 Plan。
 - [x] 固定 Semgrep CE 及许可明确的规则，启用阻断命中和工具错误失败；验证规则实际加载和生产文件覆盖。
-- [x] 根据完整锁文件扫描生产/开发及传递依赖，保留 advisory 响应摘要、时间和 High/Critical 判定。
+- [x] 原完整锁文件 advisory 扫描已实施并留存历史证据；2026-09-04 按维护者要求移除，不再作为门禁。
 - [x] 实现精确 `ExceptionRecord` 校验，读取受审阅基线，拒绝到期、重复、扩大范围或自动生成的例外。
-- [x] 验证历史泄漏后删除、真实泄漏不可豁免、到期例外、advisory 不可用、规则解析失败、空扫描和报告缺失均失败。
+- [x] 验证历史泄漏后删除、真实泄漏不可豁免、到期例外、规则解析失败、空扫描和报告缺失均失败。
 - [x] 按公开可读要求实现日志脱敏和 artifact 上传白名单；用合成敏感哨兵验证正常及失败输出、截图/trace 和归档，不上传完整工作区、环境转储或真实 S9 主机证据。
 
 ### Task 9：实现拒绝不完整成功的汇总器

@@ -12,7 +12,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,95 +36,7 @@ import { assertPublicArtifacts, redactText } from "./security-redaction.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
-const advisoryEndpoint = "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk";
-const severities = ["info", "low", "moderate", "high", "critical"];
 const syntheticMarker = "HIMAWARISYNTHETICONLY";
-const networkErrorNames = new Set([
-  "Error",
-  "TypeError",
-  "AbortError",
-  "TimeoutError",
-  "AggregateError",
-  "ConnectTimeoutError",
-  "HeadersTimeoutError",
-  "BodyTimeoutError",
-  "SocketError",
-]);
-const networkErrorCodes = new Set([
-  "ABORT_ERR",
-  "UND_ERR_ABORTED",
-  "UND_ERR_CONNECT_TIMEOUT",
-  "UND_ERR_HEADERS_TIMEOUT",
-  "UND_ERR_BODY_TIMEOUT",
-  "UND_ERR_SOCKET",
-  "ENOTFOUND",
-  "EAI_AGAIN",
-  "ECONNRESET",
-  "ECONNREFUSED",
-  "ETIMEDOUT",
-  "ENETUNREACH",
-  "EHOSTUNREACH",
-  "EPIPE",
-  "CERT_HAS_EXPIRED",
-  "CERT_NOT_YET_VALID",
-  "DEPTH_ZERO_SELF_SIGNED_CERT",
-  "SELF_SIGNED_CERT_IN_CHAIN",
-  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
-  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
-  "ERR_TLS_CERT_ALTNAME_INVALID",
-  20,
-  23,
-]);
-
-function networkErrorIdentity(error) {
-  return {
-    name: networkErrorNames.has(error?.name) ? error.name : "unknown",
-    code: networkErrorCodes.has(error?.code) ? error.code : "unknown",
-  };
-}
-
-class AdvisoryNetworkError extends Error {
-  constructor(error, { phase, signal, started, body }) {
-    super(
-      phase === "fetch-response"
-        ? "ADVISORY_NETWORK_UNAVAILABLE"
-        : "ADVISORY_RESPONSE_BODY_UNAVAILABLE",
-    );
-    const errors = [];
-    for (let current = error; errors.length < 3; current = current?.cause) {
-      errors.push(networkErrorIdentity(current));
-      if (current?.cause == null) break;
-    }
-    this.diagnostic = {
-      endpoint: advisoryEndpoint,
-      requestSha256: sha256(body),
-      timeoutMs: 60_000,
-      elapsedMs: Math.round(performance.now() - started),
-      phase,
-      signal: {
-        aborted: signal.aborted,
-        reason: signal.aborted ? networkErrorIdentity(signal.reason) : null,
-      },
-      errors,
-    };
-    this.deadlineExpired =
-      phase === "fetch-response" &&
-      signal.aborted &&
-      error === signal.reason &&
-      signal.reason?.name === "TimeoutError" &&
-      signal.reason?.code === 23;
-  }
-}
-
-class AdvisoryRequestError extends Error {
-  constructor(error, requestAttempts) {
-    super(/^[A-Z_]+$/.test(error.message) ? error.message : "SECURITY_SCANNER_FAILED");
-    this.requestAttempts = requestAttempts;
-    this.retryCount = requestAttempts.length - 1;
-    this.requestBudgetMs = 121_000;
-    if (error instanceof AdvisoryNetworkError) this.diagnostic = error.diagnostic;
-  }
-}
 
 function exactPath(path) {
   return safeRelativePath(path) && !/[*?[\]{}]/.test(path);
@@ -163,152 +74,6 @@ function git(root, args) {
   });
   assert(result.exitCode === 0, "SECURITY_GIT_COMMAND_FAILED");
   return result.stdout;
-}
-
-export function evaluateAdvisories({ response, dependencies, satisfies, validRange }) {
-  assert(
-    response && typeof response === "object" && !Array.isArray(response),
-    "ADVISORY_RESPONSE_INVALID",
-  );
-  const names = new Set(dependencies.map((entry) => entry.name));
-  const findings = [];
-  const seen = new Set();
-  for (const [name, advisories] of Object.entries(response)) {
-    assert(names.has(name) && Array.isArray(advisories), "ADVISORY_RESPONSE_UNKNOWN_PACKAGE");
-    for (const advisory of advisories) {
-      assert(
-        advisory &&
-          Number.isSafeInteger(advisory.id) &&
-          typeof advisory.url === "string" &&
-          typeof advisory.title === "string" &&
-          severities.includes(advisory.severity) &&
-          (advisory.name === undefined || advisory.name === name) &&
-          typeof advisory.vulnerable_versions === "string" &&
-          validRange(advisory.vulnerable_versions),
-        "ADVISORY_RECORD_INCOMPLETE",
-      );
-      const url = new URL(advisory.url);
-      assert(
-        url.protocol === "https:" &&
-          ["github.com", "www.npmjs.com", "npmjs.com"].includes(url.hostname) &&
-          !url.username &&
-          !url.password,
-        "ADVISORY_URL_INVALID",
-      );
-      const ghsa = url.pathname.match(/GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}/)?.[0];
-      const id = ghsa ?? `npm:${advisory.id}`;
-      for (const dependency of dependencies.filter(
-        (entry) =>
-          entry.name === name &&
-          satisfies(entry.version, advisory.vulnerable_versions, { includePrerelease: true }),
-      )) {
-        const identity = `${id}\0${dependency.path}`;
-        assert(!seen.has(identity), "ADVISORY_RESPONSE_DUPLICATE");
-        seen.add(identity);
-        findings.push({
-          kind: "advisory",
-          id,
-          path: dependency.path,
-          package: name,
-          version: dependency.version,
-          severity: advisory.severity,
-          title: redactText(advisory.title),
-          url: advisory.url,
-          blocking: ["high", "critical"].includes(advisory.severity),
-        });
-      }
-    }
-  }
-  return findings;
-}
-
-export async function fetchAdvisories({
-  dependencies,
-  satisfies,
-  validRange,
-  fetchImpl = fetch,
-  now = new Date(),
-}) {
-  assert(dependencies.length > 0, "ADVISORY_EMPTY_REQUEST");
-  const payload = {};
-  for (const dependency of dependencies) {
-    payload[dependency.name] ??= new Set();
-    payload[dependency.name].add(dependency.version);
-  }
-  const body = JSON.stringify(
-    Object.fromEntries(
-      Object.entries(payload)
-        .sort()
-        .map(([name, versions]) => [name, [...versions].sort()]),
-    ),
-  );
-  const requestAttempts = [];
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    const signal = AbortSignal.timeout(60_000);
-    const started = performance.now();
-    try {
-      const request = async () => {
-        let response;
-        try {
-          response = await fetchImpl(advisoryEndpoint, {
-            method: "POST",
-            headers: { "content-type": "application/json", accept: "application/json" },
-            body,
-            signal,
-          });
-        } catch (error) {
-          throw new AdvisoryNetworkError(error, { phase: "fetch-response", signal, started, body });
-        }
-        assert(response.ok, "ADVISORY_HTTP_FAILURE");
-        let bytes;
-        try {
-          bytes = await response.text();
-        } catch (error) {
-          throw new AdvisoryNetworkError(error, { phase: "response-body", signal, started, body });
-        }
-        assert(
-          bytes.length > 0 && bytes.length < 16 * 1024 * 1024,
-          "ADVISORY_RESPONSE_EMPTY_OR_OVERSIZED",
-        );
-        let data;
-        try {
-          data = JSON.parse(bytes);
-        } catch {
-          throw new Error("ADVISORY_RESPONSE_NOT_JSON");
-        }
-        return {
-          scannedCount: dependencies.length,
-          packageNames: Object.keys(payload).length,
-          endpoint: advisoryEndpoint,
-          requestSha256: sha256(body),
-          responseSha256: sha256(bytes),
-          fetchedAt: new Date(now).toISOString(),
-          findings: evaluateAdvisories({ response: data, dependencies, satisfies, validRange }),
-        };
-      };
-      const result = await request();
-      requestAttempts.push({
-        attempt,
-        status: "passed",
-        requestSha256: result.requestSha256,
-        responseSha256: result.responseSha256,
-        durationMs: Math.round(performance.now() - started),
-      });
-      return { ...result, requestAttempts, retryCount: attempt - 1, requestBudgetMs: 121_000 };
-    } catch (error) {
-      requestAttempts.push({
-        attempt,
-        status: "failed",
-        requestSha256: sha256(body),
-        durationMs: Math.round(performance.now() - started),
-        error: /^[A-Z_]+$/.test(error.message) ? error.message : "SECURITY_SCANNER_FAILED",
-        ...(error instanceof AdvisoryNetworkError ? { diagnostic: error.diagnostic } : {}),
-      });
-      if (attempt === 2 || !(error instanceof AdvisoryNetworkError) || !error.deadlineExpired)
-        throw new AdvisoryRequestError(error, requestAttempts);
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
-    }
-  }
 }
 
 export function parseGitleaksReport({ bytes, exitCode, sourceRoot, scannedCount, scope }) {
@@ -826,14 +591,6 @@ export async function runSecurityChecks({
           scannedCount: 0,
           findings: [],
           error: /^[A-Z_]+$/.test(error.message) ? error.message : "SECURITY_SCANNER_FAILED",
-          ...(error instanceof AdvisoryRequestError
-            ? {
-                diagnostic: error.diagnostic,
-                requestAttempts: error.requestAttempts,
-                retryCount: error.retryCount,
-                requestBudgetMs: error.requestBudgetMs,
-              }
-            : {}),
         });
       }
     };
@@ -859,15 +616,6 @@ export async function runSecurityChecks({
         files,
         ruleIds,
         config: join(root, "ci/rules/semgrep.yml"),
-      }),
-    );
-    const semver = createRequire(verification.executables.npmCli)("semver");
-    await perform("npm-advisories", () =>
-      fetchAdvisories({
-        dependencies,
-        satisfies: semver.satisfies,
-        validRange: semver.validRange,
-        now,
       }),
     );
   } catch (error) {
@@ -937,7 +685,7 @@ export async function runSecurityChecks({
     status,
     scannedCount: checks.reduce((count, check) => count + check.scannedCount, 0),
     findingCount: findings.length,
-    retryCount: checks.reduce((count, check) => count + (check.retryCount ?? 0), 0),
+    retryCount: 0,
     inputSha256: inputSha256 ?? null,
     context,
     exceptions: reviewed ? { ...reviewed, exceptions: undefined } : null,

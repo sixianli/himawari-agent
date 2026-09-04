@@ -48,7 +48,7 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/.ci-output/browsers" .ci-output/tools/bin/node no
 
 `npm test` 准备一份当前平台归档，再依次执行 unit、contracts、integration、e2e、pi-compat。安装测试从归档安装到临时前缀，在源码目录外验证三个 binary；测试自身不构建。已有归档必须同时传入其 `--context`，来源、平台、ABI、依赖、迁移和内容摘要均重新核验。四类 scale/live 测试有独立资格 project，普通 integration 明确排除它们。
 
-覆盖率采集 unit/contracts/tooling，包含未被导入的生产 TS/TSX 和自有 CI 执行脚本。变更行至少 90%，变更函数的可定位分支至少 85%；各 workspace 四类指标使用目标分支接受的基线。首次引入仅免去不存在的历史基线比较，不放宽增量阈值。安全检查使用原有机器密钥扫描、固定 Gitleaks/Semgrep 和完整锁文件 advisory；缺报告、扫描不可用、到期例外或未豁免 High/Critical 均失败。
+覆盖率采集 unit/contracts/tooling，包含未被导入的生产 TS/TSX 和自有 CI 执行脚本。变更行至少 90%，变更函数的可定位分支至少 85%；各 workspace 四类指标使用目标分支接受的基线。首次引入仅免去不存在的历史基线比较，不放宽增量阈值。安全检查使用原有机器密钥扫描和固定 Gitleaks/Semgrep；缺报告、扫描不可用、到期例外或未豁免阻断发现均失败。按维护者要求，CI 不执行 npm 依赖漏洞查询；安全检查通过不代表依赖无已知漏洞。
 
 Ubuntu coverage 作业显式传入 `--baseline-candidate initial-only`，仅在合法初始化且本轮校验通过时，使用同一份 snapshot、测试、JSON 和 LCOV 生成 `initial-coverage-baseline.json` 报告。维护者核对该 run/attempt、artifact 摘要与测量结果后，显式审阅提交候选；CI 不修改仓库基线。初始化结束后该选项继续执行通常的基线比较，不再生成初始候选。
 

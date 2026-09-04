@@ -188,26 +188,8 @@ function securityFixture() {
   };
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => {
-      if (state.mode === "advisory-network") throw new Error("synthetic offline");
-      return new Response(
-        JSON.stringify(
-          state.mode === "advisory-high"
-            ? {
-                example: [
-                  {
-                    id: 1,
-                    url: "https://github.com/advisories/GHSA-aaaa-bbbb-cccc",
-                    title: "Synthetic high advisory",
-                    severity: "high",
-                    vulnerable_versions: "<2.0.0",
-                  },
-                ],
-              }
-            : {},
-        ),
-        { status: 200 },
-      );
+    vi.fn(() => {
+      throw new Error("CI_MUST_NOT_QUERY_NPM_ADVISORIES");
     }),
   );
   return state;
@@ -223,91 +205,15 @@ afterEach(() => {
 });
 
 describe("安全runner的隔离外部边界", () => {
-  it.each([false, true])("重试记录与实际 retryCount 贯通落盘报告，耗尽=%s", async (exhausted) => {
-    const f = securityFixture();
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] });
-    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
-      const controller = new AbortController();
-      setTimeout(() => controller.abort(new DOMException("deadline", "TimeoutError")), ms);
-      return controller.signal;
-    });
-    const fetchImpl = vi.fn(async (_url, { signal }) => {
-      if (fetchImpl.mock.calls.length === 1 || exhausted)
-        return new Promise((_resolve, reject) =>
-          signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
-        );
-      return new Response("{}");
-    });
-    vi.stubGlobal("fetch", fetchImpl);
-    const pending = runSecurityChecks(f);
-    await vi.advanceTimersByTimeAsync(121000);
-    const result = await pending;
-    const report = JSON.parse(readFileSync(result.reportPath));
-    expect(result.status).toBe(exhausted ? "infrastructure_failed" : "passed");
-    expect(result.retryCount).toBe(1);
-    expect(report.retryCount).toBe(1);
-    expect(
-      report.checks.find((c) => c.id === "npm-advisories").requestAttempts.map((a) => a.status),
-    ).toEqual(["failed", exhausted ? "failed" : "passed"]);
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(result.reportSha256).toBe(sha(readFileSync(result.reportPath)));
-  });
-  it.each(["fetch-response", "response-body"])(
-    "%s 的脱敏诊断贯通 perform 与正式失败报告",
-    async (phase) => {
-      const f = securityFixture();
-      const external = Object.assign(new TypeError("private transport message"), {
-        cause: Object.assign(new Error("private cause message"), { code: "ECONNRESET" }),
-      });
-      const fetchImpl = vi.fn(async () => {
-        if (phase === "fetch-response") throw external;
-        return {
-          ok: true,
-          text: async () => {
-            throw external;
-          },
-        };
-      });
-      vi.stubGlobal("fetch", fetchImpl);
-      const result = await runSecurityChecks(f);
-      const report = JSON.parse(readFileSync(result.reportPath));
-      expect(result.status).toBe("infrastructure_failed");
-      expect(report.status).toBe("infrastructure_failed");
-      const check = report.checks.find((c) => c.id === "npm-advisories");
-      expect(check.error).toBe(
-        phase === "fetch-response"
-          ? "ADVISORY_NETWORK_UNAVAILABLE"
-          : "ADVISORY_RESPONSE_BODY_UNAVAILABLE",
-      );
-      expect(check.diagnostic).toEqual({
-        endpoint: "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk",
-        requestSha256: sha(fetchImpl.mock.calls[0][1].body),
-        timeoutMs: 60000,
-        elapsedMs: expect.any(Number),
-        phase,
-        signal: { aborted: false, reason: null },
-        errors: [
-          { name: "TypeError", code: "unknown" },
-          { name: "Error", code: "ECONNRESET" },
-        ],
-      });
-      expect(fetchImpl).toHaveBeenCalledTimes(1);
-      expect(report.checks.filter((c) => c.status === "passed")).toHaveLength(3);
-      expect(JSON.stringify(report)).not.toMatch(/private transport|private cause/);
-      expect(result.reportSha256).toBe(sha(readFileSync(result.reportPath)));
-    },
-  );
-  it("四个扫描器成功产生新鲜、完整、脱敏且绑定context的报告", async () => {
+  it("三个扫描器无需漏洞查询即可成功产生新鲜、完整、脱敏且绑定context的报告", async () => {
     const f = securityFixture();
     const result = await runSecurityChecks(f);
     expect(result.status).toBe("passed");
-    expect(result.checks.map((c) => c.id)).toEqual([
-      "machine-secrets",
-      "gitleaks",
-      "semgrep",
-      "npm-advisories",
-    ]);
+    expect(result.checks.map((c) => c.id)).toEqual(["machine-secrets", "gitleaks", "semgrep"]);
     const report = JSON.parse(readFileSync(result.reportPath));
+    expect(fetch).not.toHaveBeenCalled();
+    expect(result.retryCount).toBe(0);
+    expect(report.retryCount).toBe(0);
     expect(report.context).toEqual(f.context);
     expect(report.scannedAt).toMatch(/Z$/);
     expect(Date.parse(report.completedAt)).toBeGreaterThanOrEqual(Date.parse(report.scannedAt));
@@ -315,7 +221,7 @@ describe("安全runner的隔离外部边界", () => {
     expect(result.reportSha256).toBe(sha(readFileSync(result.reportPath)));
     await expect(runSecurityChecks(f)).rejects.toThrow("SECURITY_REPORT_ALREADY_EXISTS");
   });
-  it.each(["machine-finding", "gitleaks-finding", "semgrep-finding", "advisory-high"])(
+  it.each(["machine-finding", "gitleaks-finding", "semgrep-finding"])(
     "%s必须阻断而不泄露原始匹配内容",
     async (mode) => {
       const f = securityFixture();
@@ -335,13 +241,12 @@ describe("安全runner的隔离外部边界", () => {
     "gitleaks-missing",
     "semgrep-invalid",
     "semgrep-process",
-    "advisory-network",
   ])("%s失败仍执行其他扫描器且不能写成功状态", async (mode) => {
     const f = securityFixture();
     f.mode = mode;
     const result = await runSecurityChecks(f);
     expect(result.status).toBe("infrastructure_failed");
-    expect(result.checks).toHaveLength(4);
+    expect(result.checks).toHaveLength(3);
     expect(result.checks.some((c) => c.status === "passed")).toBe(true);
   });
   it("缺固定扫描器时明确preflight失败", async () => {

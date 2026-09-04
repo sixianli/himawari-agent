@@ -9,7 +9,6 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,8 +17,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applySecurityExceptions,
   enumerateLockDependencies,
-  evaluateAdvisories,
-  fetchAdvisories,
   loadReviewedExceptions,
   parseGitleaksReport,
   parseSemgrepReport,
@@ -31,7 +28,6 @@ import { assertPublicArtifacts, redactText } from "../../scripts/ci/security-red
 import { findBuildSecrets } from "../../scripts/ci/security-source.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const semver = createRequire(import.meta.url)("semver");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const temporaryDirectories = [];
 const now = new Date("2026-09-03T12:00:00Z");
@@ -70,16 +66,6 @@ function exception(overrides = {}) {
     reviewReference: "https://github.com/example/repository/pull/1",
     expiresAt: "2026-10-01T00:00:00Z",
     ...overrides,
-  };
-}
-
-function advisory(severity = "high") {
-  return {
-    id: 1234567,
-    url: "https://github.com/advisories/GHSA-aaaa-bbbb-cccc",
-    title: "Synthetic vulnerability fixture",
-    severity,
-    vulnerable_versions: "<2.0.0",
   };
 }
 
@@ -285,7 +271,7 @@ describe("构建包源码与日志有各自的检测语义", () => {
   });
 });
 
-describe("完整锁文件与官方 advisory", () => {
+describe("锁文件依赖身份", () => {
   it("枚举所有生产、开发、传递与其他平台依赖", () => {
     const lock = JSON.parse(readFileSync(join(root, "package-lock.json")));
     const actual = enumerateLockDependencies(lock);
@@ -298,265 +284,10 @@ describe("完整锁文件与官方 advisory", () => {
     expect(actual.some((entry) => entry.path.includes("pi-coding-agent/node_modules/"))).toBe(true);
   });
 
-  it("空锁文件不能当作零漏洞", () => {
+  it("空锁文件不能用于依赖身份校验", () => {
     expect(() => enumerateLockDependencies({ lockfileVersion: 3, packages: {} })).toThrow(
       "ADVISORY_EMPTY_LOCK",
     );
-  });
-
-  it.each(["info", "low", "moderate", "high", "critical"])(
-    "逐实际版本判定 %s advisory，保留开发依赖",
-    (severity) => {
-      const findings = evaluateAdvisories({
-        response: { example: [advisory(severity)] },
-        dependencies,
-        ...semver,
-      });
-      expect(findings).toHaveLength(2);
-      expect(
-        findings.every((finding) => finding.blocking === ["high", "critical"].includes(severity)),
-      ).toBe(true);
-      expect(findings.map((finding) => finding.version)).toEqual(["1.2.0", "1.3.0"]);
-    },
-  );
-
-  it.each([
-    ["未知package", { unknown: [advisory()] }],
-    ["缺字段", { example: [{ id: 1 }] }],
-    ["非法severity", { example: [advisory("none")] }],
-    ["非法范围", { example: [{ ...advisory(), vulnerable_versions: "invalid" }] }],
-    ["重复finding", { example: [advisory(), advisory()] }],
-  ])("拒绝%s响应", (_, response) => {
-    expect(() => evaluateAdvisories({ response, dependencies, ...semver })).toThrow();
-  });
-
-  it("零漏洞响应仍记录完整请求数量、UTC和请求响应摘要", async () => {
-    let request;
-    const result = await fetchAdvisories({
-      dependencies,
-      ...semver,
-      now,
-      fetchImpl: async (url, options) => {
-        request = { url, options };
-        return new Response("{}", { status: 200 });
-      },
-    });
-    expect(result.scannedCount).toBe(3);
-    expect(result.fetchedAt).toBe(now.toISOString());
-    expect(result.responseSha256).toBe(sha256("{}"));
-    expect(request.url).toBe("https://registry.npmjs.org/-/npm/v1/security/advisories/bulk");
-    expect(request.options.method).toBe("POST");
-    expect(request.options.headers).toEqual({
-      "content-type": "application/json",
-      accept: "application/json",
-    });
-    expect(request.options.signal).toBeInstanceOf(AbortSignal);
-    expect(JSON.parse(request.options.body)).toEqual({ example: ["1.2.0", "1.3.0", "2.0.0"] });
-    expect(result.findings).toEqual([]);
-  });
-
-  it("单次 fetch 失败只保留三层已知网络身份与请求摘要", async () => {
-    const fetchImpl = vi.fn(async () => {
-      throw new TypeError("private message", {
-        cause: Object.assign(new Error("private nested"), {
-          code: "EAI_AGAIN",
-          cause: Object.assign(new Error("third"), {
-            code: "ECONNRESET",
-            cause: new Error("fourth must not appear"),
-          }),
-        }),
-      });
-    });
-    const error = await fetchAdvisories({ dependencies, ...semver, fetchImpl }).catch((e) => e);
-    expect(error.message).toBe("ADVISORY_NETWORK_UNAVAILABLE");
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [endpoint, options] = fetchImpl.mock.calls[0];
-    expect(error.diagnostic).toEqual({
-      endpoint,
-      requestSha256: sha256(options.body),
-      timeoutMs: 60000,
-      elapsedMs: expect.any(Number),
-      phase: "fetch-response",
-      signal: { aborted: false, reason: null },
-      errors: [
-        { name: "TypeError", code: "unknown" },
-        { name: "Error", code: "EAI_AGAIN" },
-        { name: "Error", code: "ECONNRESET" },
-      ],
-    });
-    expect(error.diagnostic.elapsedMs).toBeGreaterThanOrEqual(0);
-    expect(JSON.stringify(error)).not.toMatch(/private|fourth/);
-  });
-
-  it.each(["TimeoutError", "AbortError"])(
-    "记录 %s 的 signal，但不同异常身份不触发重试",
-    async (name) => {
-      const reason = new DOMException("private timeout detail", name);
-      const controller = new AbortController();
-      controller.abort(reason);
-      const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
-      const error = await fetchAdvisories({
-        dependencies,
-        ...semver,
-        fetchImpl: async () => {
-          throw new DOMException("independent error", name);
-        },
-      }).catch((e) => e);
-      expect(timeout).toHaveBeenCalledExactlyOnceWith(60000);
-      expect(error.diagnostic.signal).toEqual({
-        aborted: true,
-        reason: { name, code: reason.code },
-      });
-      expect(error.diagnostic.errors).toEqual([{ name, code: reason.code }]);
-      expect(JSON.stringify(error)).not.toContain("private timeout detail");
-    },
-  );
-
-  it.each([null, { name: "untrusted-name", code: "untrusted-code", message: "untrusted-message" }])(
-    "未知异常字段不能进入公开诊断 %#",
-    async (thrown) => {
-      const controller = new AbortController();
-      controller.abort(thrown);
-      vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
-      const error = await fetchAdvisories({
-        dependencies,
-        ...semver,
-        fetchImpl: async () => {
-          throw thrown;
-        },
-      }).catch((e) => e);
-      expect(error.diagnostic.errors).toEqual([{ name: "unknown", code: "unknown" }]);
-      expect(error.diagnostic.signal.reason).toEqual({ name: "unknown", code: "unknown" });
-      expect(JSON.stringify(error)).not.toContain("untrusted");
-    },
-  );
-
-  it("读取响应体失败保留独立阶段并继续失败，不重发请求", async () => {
-    const fetchImpl = vi.fn(async () => ({
-      ok: true,
-      text: async () => {
-        throw Object.assign(new Error("private body"), { code: "UND_ERR_BODY_TIMEOUT" });
-      },
-    }));
-    const error = await fetchAdvisories({ dependencies, ...semver, fetchImpl }).catch((e) => e);
-    expect(error.message).toBe("ADVISORY_RESPONSE_BODY_UNAVAILABLE");
-    expect(error.diagnostic.phase).toBe("response-body");
-    expect(error.diagnostic.errors).toEqual([{ name: "Error", code: "UND_ERR_BODY_TIMEOUT" }]);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(error)).not.toContain("private body");
-  });
-
-  it.each(["success", "timeout", "invalid-json", "high"])(
-    "自有期限后最多重试一次，保留首次失败和第二次 %s",
-    async (outcome) => {
-      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] });
-      const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
-        const controller = new AbortController();
-        setTimeout(() => controller.abort(new DOMException("deadline", "TimeoutError")), ms);
-        return controller.signal;
-      });
-      const fetchImpl = vi.fn(async (_url, options) => {
-        if (fetchImpl.mock.calls.length === 1 || outcome === "timeout")
-          return new Promise((_resolve, reject) =>
-            options.signal.addEventListener("abort", () => reject(options.signal.reason), {
-              once: true,
-            }),
-          );
-        return new Response(
-          outcome === "invalid-json"
-            ? "{"
-            : JSON.stringify(outcome === "high" ? { example: [advisory()] } : {}),
-        );
-      });
-      const pending = fetchAdvisories({ dependencies, ...semver, fetchImpl }).catch(
-        (error) => error,
-      );
-      await vi.advanceTimersByTimeAsync(60999);
-      expect(fetchImpl).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(1);
-      expect(fetchImpl).toHaveBeenCalledTimes(2);
-      if (outcome === "timeout") await vi.advanceTimersByTimeAsync(60000);
-      const result = await pending;
-      expect(timeout.mock.calls).toEqual([[60000], [60000]]);
-      expect(fetchImpl.mock.calls[0][1].body).toBe(fetchImpl.mock.calls[1][1].body);
-      expect(result.retryCount).toBe(1);
-      expect(result.requestBudgetMs).toBe(121000);
-      expect(result.requestAttempts).toHaveLength(2);
-      expect(result.requestAttempts.map((entry) => entry.requestSha256)).toEqual([
-        sha256(fetchImpl.mock.calls[0][1].body),
-        sha256(fetchImpl.mock.calls[1][1].body),
-      ]);
-      expect(result.requestAttempts[0]).toMatchObject({
-        attempt: 1,
-        status: "failed",
-        durationMs: 60000,
-        diagnostic: {
-          phase: "fetch-response",
-          signal: { aborted: true, reason: { name: "TimeoutError", code: 23 } },
-        },
-      });
-      expect(result.requestAttempts[1].attempt).toBe(2);
-      if (outcome === "timeout") {
-        expect(result.message).toBe("ADVISORY_NETWORK_UNAVAILABLE");
-        expect(result.requestAttempts[1]).toMatchObject({ status: "failed", durationMs: 60000 });
-      } else if (outcome === "invalid-json") {
-        expect(result.message).toBe("ADVISORY_RESPONSE_NOT_JSON");
-        expect(result.requestAttempts[1].status).toBe("failed");
-      } else {
-        expect(result.scannedCount).toBe(dependencies.length);
-        expect(result.requestAttempts[1].status).toBe("passed");
-        expect(result.requestAttempts[1].responseSha256).toBe(result.responseSha256);
-        expect(result.findings).toHaveLength(outcome === "high" ? 2 : 0);
-      }
-      await vi.advanceTimersByTimeAsync(200000);
-      expect(fetchImpl).toHaveBeenCalledTimes(2);
-    },
-  );
-
-  it.each(["tls", "http", "schema", "high", "body-deadline"])("%s 不扩大重试范围", async (kind) => {
-    const controller = new AbortController();
-    const timeout = new DOMException("deadline", "TimeoutError");
-    if (kind === "body-deadline") controller.abort(timeout);
-    vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
-    const fetchImpl = vi.fn(async () => {
-      if (kind === "tls")
-        throw Object.assign(new Error("private certificate detail"), { code: "CERT_HAS_EXPIRED" });
-      if (kind === "body-deadline")
-        return {
-          ok: true,
-          text: async () => {
-            throw timeout;
-          },
-        };
-      return new Response(
-        JSON.stringify(
-          kind === "schema" ? { unknown: [] } : kind === "high" ? { example: [advisory()] } : {},
-        ),
-        { status: kind === "http" ? 503 : 200 },
-      );
-    });
-    const result = await fetchAdvisories({ dependencies, ...semver, fetchImpl }).catch(
-      (error) => error,
-    );
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(result.retryCount).toBe(0);
-    expect(result.requestAttempts).toHaveLength(1);
-    if (kind === "high") expect(result.findings.every((f) => f.blocking)).toBe(true);
-    else expect(result).toBeInstanceOf(Error);
-  });
-
-  it.each([
-    [
-      "网络失败",
-      async () => {
-        throw new Error("offline");
-      },
-    ],
-    ["限流", async () => new Response("{}", { status: 429 })],
-    ["空响应", async () => new Response("", { status: 200 })],
-    ["截断响应", async () => new Response('{"example":', { status: 200 })],
-  ])("%s必须失败", async (_, fetchImpl) => {
-    await expect(fetchAdvisories({ dependencies, ...semver, fetchImpl })).rejects.toThrow();
   });
 });
 
