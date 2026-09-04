@@ -10,7 +10,10 @@ import {
 } from "@earendil-works/pi-ai";
 import type {
   ModelDescriptor,
+  ModelInvocationAdmissionInput,
+  ModelInvocationAdmissionPort,
   ModelInvocationExecutionContext,
+  ModelInvocationIdentity,
   ModelInvocationPermit,
   RuntimeEvent,
   RuntimeProjection,
@@ -33,7 +36,7 @@ function fixtureIdentifier<T extends string>(value: string): T {
 }
 
 function fixtureExecutionLease(): ModelInvocationExecutionContext["executionLease"] {
-  return {
+  const claim: ModelInvocationExecutionContext["executionLease"] = {
     executionLeaseId: fixtureIdentifier("execution-pi-runtime-test"),
     expectedLeaseRevision: 1,
     authorityLeaseId: fixtureIdentifier("authority-pi-runtime-test"),
@@ -43,24 +46,86 @@ function fixtureExecutionLease(): ModelInvocationExecutionContext["executionLeas
     fencingToken: 1,
     consumerId: "pi-runtime-test",
   };
+  return Object.freeze(claim);
 }
 
-function allowAdmission(scope: {
-  readonly ownerId: RuntimeRequest["ownerId"];
-  readonly agentId: RuntimeRequest["agentId"];
-  readonly runId: RuntimeRequest["runId"];
-}) {
+function fixtureAdmissionIdentity(
+  scope: {
+    readonly ownerId: RuntimeRequest["ownerId"];
+    readonly agentId: RuntimeRequest["agentId"];
+    readonly runId: RuntimeRequest["runId"];
+  },
+  input: ModelInvocationAdmissionInput,
+  executionLease: ModelInvocationExecutionContext["executionLease"],
+): ModelInvocationIdentity {
+  return Object.freeze({
+    ownerId: scope.ownerId,
+    agentId: scope.agentId,
+    runId: scope.runId,
+    logicalSlot: input.logicalSlot,
+    sequence: 1,
+    invocationId: "invocation-pi-runtime-test",
+    modelRef: input.modelRef,
+    provider: input.provider,
+    model: input.model,
+    modelVersion: input.modelVersion,
+    dataClassification: input.dataClassification,
+    source: input.source,
+    ordinal: input.ordinal,
+    pricing: Object.freeze({ ...input.pricing }),
+    pricingFingerprint: "fixture-pricing",
+    estimatedCostMicros: input.estimatedCostMicros,
+    budgetAccountId: "account-pi-runtime-test",
+    budgetOperationKey: input.logicalSlot,
+    authority: Object.freeze({
+      deploymentId: executionLease.deploymentId,
+      authorityEpoch: executionLease.authorityEpoch,
+      fencingToken: executionLease.fencingToken,
+    }),
+    authorityLease: Object.freeze({
+      leaseId: executionLease.authorityLeaseId,
+      fencingToken: executionLease.authorityFencingToken,
+    }),
+    executionLease,
+    status: "reserved",
+    reservedAt: NOW,
+    startedAt: null,
+    observedAt: null,
+    settledAt: null,
+    releasedAt: null,
+    actualCostMicros: null,
+    reasonCode: null,
+  });
+}
+
+function allowAdmission(
+  scope: {
+    readonly ownerId: RuntimeRequest["ownerId"];
+    readonly agentId: RuntimeRequest["agentId"];
+    readonly runId: RuntimeRequest["runId"];
+    readonly executionLease?: ModelInvocationExecutionContext["executionLease"];
+  },
+  executionLease = scope.executionLease,
+  permit: ModelInvocationPermit = {
+    assertActive: async () => undefined,
+    markStarted: async () => undefined,
+    releaseReserved: async () => undefined,
+    settle: async () => undefined,
+    markUnknown: async () => undefined,
+  },
+): ModelInvocationAdmissionPort {
+  if (!executionLease) throw new Error("Missing runtime execution lease claim");
   return {
     context: {
-      ...scope,
-      executionLease: fixtureExecutionLease(),
+      ownerId: scope.ownerId,
+      agentId: scope.agentId,
+      runId: scope.runId,
+      executionLease,
     },
-    begin: async () => ({
-      assertActive: async () => undefined,
-      markStarted: async () => undefined,
-      releaseReserved: async () => undefined,
-      settle: async () => undefined,
-      markUnknown: async () => undefined,
+    begin: async (input) => ({
+      disposition: "fresh",
+      identity: fixtureAdmissionIdentity(scope, input, executionLease),
+      permit,
     }),
   };
 }
@@ -177,6 +242,7 @@ const request = {
   ownerId: "owner-task-11",
   agentId: "agent-task-11",
   runId: "run-task-11",
+  executionLease: fixtureExecutionLease(),
   sessionId: "session-task-11",
   threadId: "thread-task-11",
   modelRef: "model-faux-task-11",
@@ -345,7 +411,7 @@ function createAdapter(
     },
     cwd: process.cwd(),
     now: () => NOW,
-    operationKey: (request, ordinal) => `${request.runId}:compat:${ordinal}`,
+    logicalSlot: (request, ordinal) => `${request.runId}:compat:${ordinal}`,
     turnId: (_request, turnIndex) => `turn-task-11-${turnIndex}` as never,
     createSession: createSession as unknown as NonNullable<
       PiAgentRuntimeAdapterDependencies["createSession"]
@@ -360,6 +426,7 @@ function createAdmissionAdapter(
   streamModel: Model<Api> = ADMISSION_MODEL,
   streamOptions: unknown = {},
   resolveSecret?: () => Promise<string>,
+  admissionExecutionLease?: ModelInvocationExecutionContext["executionLease"],
 ) {
   const createSession = streamingSessionFactory(
     original,
@@ -394,11 +461,8 @@ function createAdmissionAdapter(
     },
     cwd: process.cwd(),
     now: () => NOW,
-    admission: async (scope) => ({
-      context: allowAdmission(scope).context,
-      begin: async () => permit,
-    }),
-    operationKey: (runtimeRequest, ordinal) =>
+    admission: async (scope) => allowAdmission(scope, admissionExecutionLease, permit),
+    logicalSlot: (runtimeRequest, ordinal) =>
       `${runtimeRequest.runId}:admission-fixture:${ordinal}`,
     createSession: createSession as unknown as NonNullable<
       PiAgentRuntimeAdapterDependencies["createSession"]
@@ -446,6 +510,39 @@ describe("Pi stream admission accounting", () => {
       },
       observedTerminals,
       sameIdentityClone,
+    );
+
+    const events = await collect(adapter.run(request));
+    expect(providerCalls).toBe(0);
+    expect(observedTerminals).toEqual(["error"]);
+    expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+
+  it("rejects an admission gate bound to a different execution lease", async () => {
+    const observedTerminals: string[] = [];
+    let providerCalls = 0;
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
+      settle: async () => undefined,
+      markUnknown: async () => undefined,
+    };
+    const mismatchedClaim: ModelInvocationExecutionContext["executionLease"] = {
+      ...request.executionLease,
+      executionLeaseId: fixtureIdentifier("execution-pi-runtime-other"),
+    };
+    const adapter = createAdmissionAdapter(
+      permit,
+      () => {
+        providerCalls += 1;
+        return successfulOriginal();
+      },
+      observedTerminals,
+      ADMISSION_MODEL,
+      {},
+      undefined,
+      Object.freeze(mismatchedClaim),
     );
 
     const events = await collect(adapter.run(request));
@@ -1261,7 +1358,7 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       cwd: process.cwd(),
       now: () => NOW,
       admission: async (scope) => allowAdmission(scope),
-      operationKey: (runtimeRequest, ordinal) => `${runtimeRequest.runId}:faux-stream:${ordinal}`,
+      logicalSlot: (runtimeRequest, ordinal) => `${runtimeRequest.runId}:faux-stream:${ordinal}`,
       turnId: (_runtimeRequest, turnIndex) => `turn-faux-${turnIndex}` as never,
     });
 

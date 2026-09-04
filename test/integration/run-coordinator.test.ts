@@ -1,13 +1,14 @@
 import {
+  type AgentRuntimePort,
   ContextFormationService,
   PORT_ERROR_CODES,
   RunCoordinator,
+  type RunExecutionLeaseClaim,
   RunStateCommitCoordinator,
-  SessionTraceRecorder,
-  type AgentRuntimePort,
   type RuntimeEvent,
   type RuntimeRequest,
   type RuntimeToolInvocation,
+  SessionTraceRecorder,
 } from "@himawari-agent/application";
 import {
   createAgent,
@@ -15,10 +16,12 @@ import {
   createAgentId,
   createAuthorityHolderId,
   createAuthorityLeaseId,
+  createDeploymentId,
   createIdempotencyKey,
   createOwner,
   createOwnerId,
   createRun,
+  createRunExecutionLeaseId,
   createRunId,
   createSession,
   createSessionId,
@@ -28,11 +31,11 @@ import {
   createTriggerId,
 } from "@himawari-agent/domain";
 import {
+  createReferenceAdapterSet,
   IdempotentRuntimeToolPort,
   ManualClock,
   ScriptedAgentRuntime,
   ScriptedWorkerRunPort,
-  createReferenceAdapterSet,
 } from "@himawari-agent/testing";
 import { describe, expect, it } from "vitest";
 
@@ -84,6 +87,16 @@ async function fixture(
     leaseId: lease.id,
     fencingToken: authorityRecord.fencingToken,
   };
+  const executionLease = Object.freeze({
+    executionLeaseId: createRunExecutionLeaseId(`execution-${suffix}`),
+    expectedLeaseRevision: 1,
+    authorityLeaseId: lease.id,
+    authorityFencingToken: authorityRecord.fencingToken,
+    deploymentId: createDeploymentId(`deployment-${suffix}`),
+    authorityEpoch: 1,
+    fencingToken: authorityRecord.fencingToken,
+    consumerId: `coordinator-${suffix}`,
+  }) satisfies RunExecutionLeaseClaim;
   const runs = new RunStateCommitCoordinator(adapters.productState, clock);
   await runs.admitRun({
     run,
@@ -122,6 +135,7 @@ async function fixture(
     agentId: agent.id,
     runId: run.id,
     authority,
+    executionLease,
     context: {
       ownerId: owner.id,
       agentId: agent.id,
@@ -179,6 +193,58 @@ async function fixture(
 }
 
 describe("Task 13 Run Coordinator and worker orchestration", () => {
+  it("passes the frozen dispatch lease claim unchanged to the runtime", async () => {
+    const suffix = "task-13-runtime-lease";
+    const runId = createRunId(`run-${suffix}`);
+    let observed: RuntimeRequest | undefined;
+    const runtime: AgentRuntimePort = {
+      async *run(request: RuntimeRequest): AsyncIterable<RuntimeEvent> {
+        observed = request;
+        yield {
+          type: "runtime.completed",
+          runId,
+          output: { kind: "assistant-answer", contentRef: "payload-answer" },
+          occurredAt: T1,
+        };
+      },
+      async cancel() {},
+    };
+    const setup = await fixture(suffix, runtime);
+
+    await setup.coordinator.execute(setup.input);
+
+    expect(observed?.executionLease).toBe(setup.input.executionLease);
+    expect(Object.isFrozen(observed?.executionLease)).toBe(true);
+  });
+
+  it("rejects a lease claim that does not match the active authority fence", async () => {
+    const suffix = "task-13-runtime-lease-mismatch";
+    const runtime = new ScriptedAgentRuntime(() => T0, []);
+    const setup = await fixture(suffix, runtime);
+    const mismatchedClaim = Object.freeze({
+      ...setup.input.executionLease,
+      authorityFencingToken: setup.authority.fencingToken + 1,
+      fencingToken: setup.authority.fencingToken + 1,
+    });
+
+    await expect(
+      setup.coordinator.execute({ ...setup.input, executionLease: mismatchedClaim }),
+    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+    expect(runtime.observedRequests()).toHaveLength(0);
+  });
+
+  it("rejects an unfrozen lease claim before runtime admission", async () => {
+    const suffix = "task-13-runtime-lease-unfrozen";
+    const runtime = new ScriptedAgentRuntime(() => T0, []);
+    const setup = await fixture(suffix, runtime);
+    const mutableClaim = { ...setup.input.executionLease };
+
+    await expect(
+      setup.coordinator.execute({ ...setup.input, executionLease: mutableClaim }),
+    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+    expect(runtime.observedRequests()).toHaveLength(0);
+  });
+
   it("coordinates context, an explicitly delegated worker, runtime events and terminal Run state", async () => {
     const suffix = "task-13-complete";
     const runId = createRunId(`run-${suffix}`);

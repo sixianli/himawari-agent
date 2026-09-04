@@ -53,9 +53,12 @@ export interface ExecuteCoordinatedRunInput {
   readonly runId: RunId;
   readonly authority: AuthorityFence;
   /** Execution claim supplied by the canonical dispatch pump. */
-  readonly executionLease?: RunExecutionLeaseClaim;
+  readonly executionLease: RunExecutionLeaseClaim;
   readonly context: ContextFormationRequest;
-  readonly runtime: Omit<RuntimeRequest, "contextEnvelopeRef" | "workerResultRefs">;
+  readonly runtime: Omit<
+    RuntimeRequest,
+    "contextEnvelopeRef" | "workerResultRefs" | "executionLease"
+  >;
   readonly workers: readonly WorkerDelegation[];
   readonly delegableCapabilityHandleRefs: readonly string[];
   readonly delegableContextRefs: readonly PayloadRef[];
@@ -167,7 +170,7 @@ export class RunCoordinator {
     try {
       return await this.executeAttempt(input, attempt);
     } finally {
-      if (attempt?.interruption) await attempt.interruption;
+      if (attempt.interruption) await attempt.interruption;
       this.endExecutionAttempt(attempt);
     }
   }
@@ -221,9 +224,8 @@ export class RunCoordinator {
     return attempt.interruptionResult;
   }
 
-  private beginExecutionAttempt(input: ExecuteCoordinatedRunInput): ExecutionAttempt | undefined {
+  private beginExecutionAttempt(input: ExecuteCoordinatedRunInput): ExecutionAttempt {
     const executionLease = input.executionLease;
-    if (!executionLease) return undefined;
     if (this.executionAttempts.has(input.runId)) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.CONFLICT,
@@ -243,19 +245,18 @@ export class RunCoordinator {
     return attempt;
   }
 
-  private endExecutionAttempt(attempt: ExecutionAttempt | undefined): void {
-    if (!attempt) return;
+  private endExecutionAttempt(attempt: ExecutionAttempt): void {
     if (this.executionAttempts.get(attempt.runId) === attempt)
       this.executionAttempts.delete(attempt.runId);
   }
 
-  private assertExecutionActive(attempt: ExecutionAttempt | undefined): void {
-    if (attempt?.interrupted) throw new RunExecutionInterruptedError(attempt.interrupted);
+  private assertExecutionActive(attempt: ExecutionAttempt): void {
+    if (attempt.interrupted) throw new RunExecutionInterruptedError(attempt.interrupted);
   }
 
   private async executeAttempt(
     input: ExecuteCoordinatedRunInput,
-    attempt: ExecutionAttempt | undefined,
+    attempt: ExecutionAttempt,
   ): Promise<CoordinatedRunResult> {
     const initialCheckpoint = await this.readCheckpoint(input.runId);
     this.assertExecutionActive(attempt);
@@ -411,7 +412,7 @@ export class RunCoordinator {
           expectedRevision: latest.revision,
           output,
           dataClassification,
-          ...(input.executionLease ? { executionLease: input.executionLease } : {}),
+          executionLease: input.executionLease,
         });
       }
       this.assertExecutionActive(attempt);
@@ -473,7 +474,7 @@ export class RunCoordinator {
     input: ExecuteCoordinatedRunInput,
     initialRun: StoredRun,
     initialCheckpoint: StoredRunCheckpoint,
-    attempt: ExecutionAttempt | undefined,
+    attempt: ExecutionAttempt,
   ): Promise<{ readonly run: StoredRun; readonly checkpoint: StoredRunCheckpoint }> {
     let storedRun = initialRun;
     let storedCheckpoint = initialCheckpoint;
@@ -505,7 +506,7 @@ export class RunCoordinator {
       let terminal: WorkerRunEvent | undefined;
       try {
         this.assertExecutionActive(attempt);
-        attempt?.activeWorkerRunIds.add(request.workerRunId);
+        attempt.activeWorkerRunIds.add(request.workerRunId);
         this.assertExecutionActive(attempt);
         for await (const event of this.dependencies.workers.run(request)) {
           this.assertExecutionActive(attempt);
@@ -548,7 +549,7 @@ export class RunCoordinator {
           if (terminal) break;
         }
       } finally {
-        attempt?.activeWorkerRunIds.delete(request.workerRunId);
+        attempt.activeWorkerRunIds.delete(request.workerRunId);
         active.delete(request.workerRunId);
       }
 
@@ -632,19 +633,20 @@ export class RunCoordinator {
   private async runRuntime(
     input: ExecuteCoordinatedRunInput,
     initialCheckpoint: StoredRunCheckpoint,
-    attempt: ExecutionAttempt | undefined,
+    attempt: ExecutionAttempt,
   ): Promise<{ readonly checkpoint: StoredRunCheckpoint }> {
     let storedCheckpoint = initialCheckpoint;
     let observed = 0;
     const runtimeRequest: RuntimeRequest = {
       ...input.runtime,
+      executionLease: input.executionLease,
       contextEnvelopeRef: storedCheckpoint.checkpoint.contextRef as PayloadRef,
       workerResultRefs: Object.entries(storedCheckpoint.checkpoint.workerResults).map(
         ([workerRunId, resultRef]) => ({ workerRunId, resultRef }),
       ),
     };
     this.assertExecutionActive(attempt);
-    if (attempt) attempt.runtimeActive = true;
+    attempt.runtimeActive = true;
     try {
       this.assertExecutionActive(attempt);
       for await (const event of this.dependencies.runtime.run(runtimeRequest)) {
@@ -689,7 +691,7 @@ export class RunCoordinator {
         if (terminalStatus) break;
       }
     } finally {
-      if (attempt) attempt.runtimeActive = false;
+      attempt.runtimeActive = false;
     }
     return { checkpoint: storedCheckpoint };
   }
@@ -702,6 +704,18 @@ export class RunCoordinator {
   }
 
   private assertScope(input: ExecuteCoordinatedRunInput): void {
+    const executionLeaseMatchesAuthority =
+      Object.isFrozen(input.executionLease) &&
+      input.executionLease.authorityLeaseId === input.authority.leaseId &&
+      input.executionLease.authorityFencingToken === input.authority.fencingToken &&
+      input.executionLease.fencingToken === input.authority.fencingToken;
+    if (!executionLeaseMatchesAuthority) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Execution lease claim does not match the active authority fence",
+        { runId: input.runId },
+      );
+    }
     const matches =
       input.context.ownerId === input.ownerId &&
       input.context.agentId === input.agentId &&
@@ -805,7 +819,7 @@ export class RunCoordinator {
     stored: StoredRun,
     nextStatus: Exclude<RunStatus, "accepted">,
     command: RunTransitionCommand,
-    executionLease?: RunExecutionLeaseClaim,
+    executionLease: RunExecutionLeaseClaim,
   ): Promise<StoredRun> {
     const latest = await this.requireRun(stored.run.id);
     if (latest.run.status === nextStatus) return latest;
@@ -820,7 +834,7 @@ export class RunCoordinator {
       commandFingerprint: command.commandFingerprint,
       authority,
       payloadRef: command.payloadRef,
-      ...(executionLease ? { executionLease } : {}),
+      executionLease,
     });
     return this.requireRun(latest.run.id);
   }
@@ -849,7 +863,7 @@ export class RunCoordinator {
         runId: input.runId,
         expectedRevision: current.revision === 0 ? null : current.revision,
         checkpoint,
-        ...(input.executionLease ? { executionLease: input.executionLease } : {}),
+        executionLease: input.executionLease,
       });
       return record;
     } catch (error) {

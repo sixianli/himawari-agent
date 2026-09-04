@@ -98,7 +98,7 @@ export interface PiAgentRuntimeAdapterDependencies {
    * owned by Core because an in-memory ordinal cannot survive a process
    * restart without colliding with a prior settled allocation.
    */
-  readonly operationKey: (request: RuntimeRequest, ordinal: number) => string;
+  readonly logicalSlot: (request: RuntimeRequest, ordinal: number) => string;
   readonly turnId?: (request: RuntimeRequest, turnIndex: number) => RuntimeTurnId;
   readonly createSession?: (
     options: CreateAgentSessionOptions,
@@ -130,6 +130,22 @@ const EMPTY_RESOURCES: AuthorizedPiResources = Object.freeze({
 function safeArguments(value: unknown): RuntimeToolInvocation["arguments"] {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
   return value as RuntimeToolInvocation["arguments"];
+}
+
+function sameExecutionLeaseClaim(
+  left: RuntimeRequest["executionLease"],
+  right: RuntimeRequest["executionLease"],
+): boolean {
+  return (
+    left.executionLeaseId === right.executionLeaseId &&
+    left.expectedLeaseRevision === right.expectedLeaseRevision &&
+    left.authorityLeaseId === right.authorityLeaseId &&
+    left.authorityFencingToken === right.authorityFencingToken &&
+    left.deploymentId === right.deploymentId &&
+    left.authorityEpoch === right.authorityEpoch &&
+    left.fencingToken === right.fencingToken &&
+    left.consumerId === right.consumerId
+  );
 }
 
 function redactObservation(value: unknown, seen = new WeakSet<object>()): unknown {
@@ -467,7 +483,7 @@ async function admitPiStream(
   options: SimpleStreamOptions | undefined,
   ordinal: number,
   original: PiStreamFunction,
-  operationKeyFor: (request: RuntimeRequest, ordinal: number) => string,
+  logicalSlotFor: (request: RuntimeRequest, ordinal: number) => string,
 ): Promise<AssistantMessageEventStream> {
   let permit: ModelInvocationPermit | undefined;
   let started = false;
@@ -492,12 +508,16 @@ async function admitPiStream(
       ownerId: request.ownerId,
       agentId: request.agentId,
       runId: request.runId,
+      executionLease: request.executionLease,
     });
     if (
       !gate ||
       gate.context.ownerId !== request.ownerId ||
       gate.context.agentId !== request.agentId ||
       gate.context.runId !== request.runId ||
+      !Object.isFrozen(request.executionLease) ||
+      !Object.isFrozen(gate.context.executionLease) ||
+      !sameExecutionLeaseClaim(gate.context.executionLease, request.executionLease) ||
       binding.descriptor === undefined ||
       binding.admissionCost === undefined ||
       (binding.descriptor.secretRequirement !== null && binding.resolveSecret === undefined)
@@ -507,22 +527,31 @@ async function admitPiStream(
     if (model !== binding.model) {
       return failedPiStream(model, "Model invocation binding mismatch");
     }
-    const operationKey = operationKeyFor(request, ordinal);
-    if (typeof operationKey !== "string" || operationKey.trim().length === 0) {
-      return failedPiStream(model, "Model invocation operation key is unavailable");
+    const logicalSlot = logicalSlotFor(request, ordinal);
+    if (typeof logicalSlot !== "string" || logicalSlot.trim().length === 0) {
+      return failedPiStream(model, "Model invocation logical slot is unavailable");
     }
-    permit = await gate.begin({
+    const admission = await gate.begin({
       modelRef: binding.descriptor.ref,
       provider: binding.descriptor.provider,
       model: binding.descriptor.model,
       modelVersion: binding.descriptor.version,
       dataClassification: request.dataClassification,
-      operationKey,
+      logicalSlot,
       source: "agent-stream",
       ordinal,
       estimatedCostMicros: binding.admissionCost.estimatedCostMicros,
       pricing: binding.admissionCost.pricing,
     });
+    if (admission.disposition !== "fresh") {
+      return failedPiStream(
+        model,
+        admission.disposition === "replay"
+          ? "Model invocation reconciliation is required"
+          : "Model invocation admission was blocked",
+      );
+    }
+    permit = admission.permit;
     await permit.assertActive();
     if (options?.signal?.aborted) {
       const released = await releaseBeforeStart();
@@ -773,7 +802,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           options,
           ++streamOrdinal,
           originalStreamFunction,
-          this.#dependencies.operationKey,
+          this.#dependencies.logicalSlot,
         );
       this.#activeSessions.set(request.runId, session);
 

@@ -3,14 +3,14 @@ import {
   ApplicationPortError,
   type ClockPort,
   type DataClassification,
-  type ModelBudgetActiveParent,
   type ModelBudgetLimits,
-  type ModelBudgetOperationResult,
-  type ModelBudgetPort,
   type ModelDescriptor,
   type ModelInvocationAdmissionInput,
   type ModelInvocationAdmissionPort,
+  type ModelInvocationAdmissionResult,
   type ModelInvocationExecutionContext,
+  type ModelInvocationIdentity,
+  type ModelInvocationIdentityPort,
   type ModelInvocationPermit,
   type ModelInvocationPricing,
   type ModelInvocationSource,
@@ -38,7 +38,7 @@ export interface ModelInvocationAdmissionServiceDependencies {
   readonly runId: RunId;
   readonly executionLease: RunExecutionLeaseClaim;
   readonly dispatch: RunDispatchPort;
-  readonly budget: ModelBudgetPort;
+  readonly invocations: ModelInvocationIdentityPort;
   readonly clock: ClockPort;
   readonly limits: ModelBudgetLimits;
   readonly registry: readonly ModelInvocationAdmissionDescriptor[];
@@ -378,40 +378,26 @@ function sameLease(
   );
 }
 
-function assertReservationScope(
-  result: ModelBudgetOperationResult,
-  context: ModelInvocationExecutionContext,
-  operationKey: string,
-  modelRef: string,
-  dataClassification: DataClassification,
-  estimatedCostMicros: number,
-): void {
-  const { account, allocation } = result;
-  if (
-    account.ownerId !== context.ownerId ||
-    account.agentId !== context.agentId ||
-    account.parent.kind !== "run" ||
-    account.parent.runId !== context.runId ||
-    account.dataClassification !== dataClassification ||
-    allocation.ownerId !== context.ownerId ||
-    allocation.agentId !== context.agentId ||
-    allocation.accountId !== account.accountId ||
-    allocation.operationKey !== operationKey ||
-    allocation.modelRef !== modelRef ||
-    allocation.dataClassification !== dataClassification ||
-    allocation.estimatedCostMicros !== estimatedCostMicros
-  ) {
-    throw notAuthoritative("Model budget returned an allocation outside the bound Run scope", {
-      runId: String(context.runId),
-      operationKey,
-    });
-  }
+function sameExecutionLeaseClaim(
+  left: RunExecutionLeaseClaim,
+  right: RunExecutionLeaseClaim,
+): boolean {
+  return (
+    left.executionLeaseId === right.executionLeaseId &&
+    left.expectedLeaseRevision === right.expectedLeaseRevision &&
+    left.authorityLeaseId === right.authorityLeaseId &&
+    left.authorityFencingToken === right.authorityFencingToken &&
+    left.deploymentId === right.deploymentId &&
+    left.authorityEpoch === right.authorityEpoch &&
+    left.fencingToken === right.fencingToken &&
+    left.consumerId === right.consumerId
+  );
 }
 
 export class ModelInvocationAdmissionService implements ModelInvocationAdmissionPort {
   readonly #context: ModelInvocationExecutionContext;
   readonly #dispatch: RunDispatchPort;
-  readonly #budget: ModelBudgetPort;
+  readonly #invocations: ModelInvocationIdentityPort;
   readonly #clock: ClockPort;
   readonly #limits: ModelBudgetLimits;
   readonly #registry: readonly BoundDescriptor[];
@@ -425,7 +411,7 @@ export class ModelInvocationAdmissionService implements ModelInvocationAdmission
       executionLease,
     });
     this.#dispatch = dependencies.dispatch;
-    this.#budget = dependencies.budget;
+    this.#invocations = dependencies.invocations;
     this.#clock = dependencies.clock;
     this.#limits = freezeLimits(dependencies.limits);
     const registry = dependencies.registry.map(freezeDescriptor);
@@ -439,74 +425,64 @@ export class ModelInvocationAdmissionService implements ModelInvocationAdmission
     return this.#context;
   }
 
-  async begin(input: ModelInvocationAdmissionInput): Promise<ModelInvocationPermit> {
+  async begin(input: ModelInvocationAdmissionInput): Promise<ModelInvocationAdmissionResult> {
     const descriptor = this.#descriptor(input.modelRef);
     this.#validateInput(input, descriptor);
     await this.#assertActive();
-    const operationKey = nonEmptyText(input.operationKey, "operationKey");
     const reservedAt = canonicalTimestamp(this.#clock.now(), "reservedAt");
-    const result = await this.#budget.reserve({
-      parent: this.#activeParent(),
-      operationKey,
+    const result = await this.#invocations.begin({
+      runId: this.#context.runId,
       modelRef: descriptor.descriptor.ref,
+      provider: descriptor.descriptor.provider,
+      model: descriptor.descriptor.model,
+      modelVersion: descriptor.descriptor.version,
       dataClassification: input.dataClassification,
+      logicalSlot: nonEmptyText(input.logicalSlot, "logicalSlot"),
+      source: input.source,
+      ordinal: input.ordinal,
       estimatedCostMicros: descriptor.estimatedCostMicros,
       limits: this.#limits,
+      pricing: descriptor.pricing,
       reservedAt,
+      executionLease: this.#context.executionLease,
+      authority: {
+        deploymentId: this.#context.executionLease.deploymentId,
+        authorityEpoch: this.#context.executionLease.authorityEpoch,
+        fencingToken: this.#context.executionLease.fencingToken,
+      },
+      authorityLease: {
+        leaseId: this.#context.executionLease.authorityLeaseId,
+        fencingToken: this.#context.executionLease.authorityFencingToken,
+      },
     });
-    assertReservationScope(
-      result,
-      this.#context,
-      operationKey,
-      descriptor.descriptor.ref,
-      input.dataClassification,
-      descriptor.estimatedCostMicros,
-    );
-
-    const parent = this.#activeParent();
-    const accountParent = Object.freeze({ kind: "run" as const, runId: this.#context.runId });
-    const frozenPricing = descriptor.pricing;
+    if (result.disposition !== "fresh") return result;
+    const identity = result.identity;
+    if (
+      identity.ownerId !== this.#context.ownerId ||
+      identity.agentId !== this.#context.agentId ||
+      identity.runId !== this.#context.runId ||
+      !sameExecutionLeaseClaim(identity.executionLease, this.#context.executionLease) ||
+      identity.modelRef !== descriptor.descriptor.ref ||
+      identity.provider !== descriptor.descriptor.provider ||
+      identity.model !== descriptor.descriptor.model ||
+      identity.modelVersion !== descriptor.descriptor.version ||
+      identity.dataClassification !== input.dataClassification ||
+      identity.logicalSlot !== input.logicalSlot ||
+      identity.source !== input.source ||
+      identity.ordinal !== input.ordinal ||
+      identity.estimatedCostMicros !== descriptor.estimatedCostMicros ||
+      !samePricing(identity.pricing, descriptor.pricing) ||
+      identity.status !== "reserved"
+    ) {
+      throw notAuthoritative("Model invocation identity escaped its bound execution scope", {
+        runId: String(this.#context.runId),
+        modelRef: descriptor.descriptor.ref,
+      });
+    }
     return Object.freeze({
-      assertActive: async () => this.#assertActive(),
-      markStarted: async () => {
-        await this.#assertActive();
-        await this.#budget.markStarted({
-          parent,
-          operationKey,
-          startedAt: canonicalTimestamp(this.#clock.now(), "startedAt"),
-        });
-      },
-      releaseReserved: async () => {
-        await this.#budget.releaseReserved({
-          parent: accountParent,
-          operationKey,
-          releasedAt: canonicalTimestamp(this.#clock.now(), "releasedAt"),
-        });
-      },
-      settle: async (usage: ModelInvocationUsage) => {
-        const actualCostMicros = actualCost(usage, frozenPricing);
-        await this.#budget.settle({
-          parent: accountParent,
-          operationKey,
-          actualCostMicros,
-          settledAt: canonicalTimestamp(this.#clock.now(), "settledAt"),
-        });
-      },
-      markUnknown: async (reasonCode: Parameters<ModelInvocationPermit["markUnknown"]>[0]) => {
-        if (
-          reasonCode !== "provider_unresolved" &&
-          reasonCode !== "transport_unresolved" &&
-          reasonCode !== "cancel_unresolved"
-        ) {
-          throw invalid("Model invocation unknown reason is invalid");
-        }
-        await this.#budget.markUnknown({
-          parent: accountParent,
-          operationKey,
-          observedAt: canonicalTimestamp(this.#clock.now(), "observedAt"),
-          reasonCode,
-        });
-      },
+      disposition: "fresh" as const,
+      identity,
+      permit: this.#permit(identity),
     });
   }
 
@@ -544,7 +520,7 @@ export class ModelInvocationAdmissionService implements ModelInvocationAdmission
         dataClassification,
       });
     }
-    nonEmptyText(input.operationKey, "operationKey");
+    nonEmptyText(input.logicalSlot, "logicalSlot");
     source(input.source);
     positiveSafeInteger(input.ordinal, "ordinal");
     const estimatedCostMicros = safeNonNegativeInteger(
@@ -580,12 +556,58 @@ export class ModelInvocationAdmissionService implements ModelInvocationAdmission
     }
   }
 
-  #activeParent(): ModelBudgetActiveParent {
-    return {
-      kind: "run",
-      runId: this.#context.runId,
-      executionLease: this.#context.executionLease,
-    };
+  #permit(identity: ModelInvocationIdentity): ModelInvocationPermit {
+    const frozenPricing = identity.pricing;
+    return Object.freeze({
+      assertActive: async () => this.#assertActive(),
+      markStarted: async () => {
+        await this.#assertActive();
+        await this.#invocations.markStarted({
+          runId: identity.runId,
+          invocationId: identity.invocationId,
+          budgetOperationKey: identity.budgetOperationKey,
+          executionLease: identity.executionLease,
+          at: canonicalTimestamp(this.#clock.now(), "startedAt"),
+        });
+      },
+      releaseReserved: async () => {
+        await this.#invocations.releaseReserved({
+          runId: identity.runId,
+          invocationId: identity.invocationId,
+          budgetOperationKey: identity.budgetOperationKey,
+          executionLease: identity.executionLease,
+          at: canonicalTimestamp(this.#clock.now(), "releasedAt"),
+        });
+      },
+      settle: async (usage: ModelInvocationUsage) => {
+        const actualCostMicros = actualCost(usage, frozenPricing);
+        await this.#invocations.settle({
+          runId: identity.runId,
+          invocationId: identity.invocationId,
+          budgetOperationKey: identity.budgetOperationKey,
+          executionLease: identity.executionLease,
+          actualCostMicros,
+          at: canonicalTimestamp(this.#clock.now(), "settledAt"),
+        });
+      },
+      markUnknown: async (reasonCode: Parameters<ModelInvocationPermit["markUnknown"]>[0]) => {
+        if (
+          reasonCode !== "provider_unresolved" &&
+          reasonCode !== "transport_unresolved" &&
+          reasonCode !== "cancel_unresolved"
+        ) {
+          throw invalid("Model invocation unknown reason is invalid");
+        }
+        await this.#invocations.markUnknown({
+          runId: identity.runId,
+          invocationId: identity.invocationId,
+          budgetOperationKey: identity.budgetOperationKey,
+          executionLease: identity.executionLease,
+          at: canonicalTimestamp(this.#clock.now(), "observedAt"),
+          reasonCode,
+        });
+      },
+    });
   }
 }
 

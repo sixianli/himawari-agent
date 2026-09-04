@@ -64,6 +64,7 @@ import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invoca
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
+import { SqliteModelInvocationOperations } from "./sqlite-model-invocation-operations.ts";
 import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
 import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
 import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
@@ -320,6 +321,7 @@ export class SqliteDurableOperations {
   private readonly runCheckpoints: SqliteRunCheckpointOperations;
   private readonly runPayloadArtifacts: SqliteRunPayloadArtifactOperations;
   private readonly modelBudget: SqliteModelBudgetOperations;
+  private readonly modelInvocations: SqliteModelInvocationOperations;
 
   constructor(
     database: Database.Database,
@@ -342,6 +344,12 @@ export class SqliteDurableOperations {
       this.runPayloadArtifacts,
     );
     this.modelBudget = new SqliteModelBudgetOperations(database, fail, assertDiskHeadroom);
+    this.modelInvocations = new SqliteModelInvocationOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+      this.modelBudget,
+    );
     this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
     const executionLease = (input: {
@@ -407,6 +415,9 @@ export class SqliteDurableOperations {
     }
     if (operation.startsWith("modelBudget.")) {
       return this.modelBudget.execute(operation, payload);
+    }
+    if (operation.startsWith("modelInvocation.")) {
+      return this.modelInvocations.execute(operation, payload);
     }
     if (operation.startsWith("threadDistillation.")) {
       return this.checkpoint.execute(operation, payload);

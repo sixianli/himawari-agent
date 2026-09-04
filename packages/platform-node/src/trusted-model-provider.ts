@@ -141,18 +141,28 @@ export class TrustedModelProviderAdapter implements ModelPort {
     };
     let secretValues: readonly string[];
     try {
-      permit = await gate.begin({
+      const admission = await gate.begin({
         modelRef: descriptor.ref,
         provider: descriptor.provider,
         model: descriptor.model,
         modelVersion: descriptor.version,
         dataClassification: request.dataClassification,
-        operationKey: request.invocationId,
+        logicalSlot: request.invocationId,
         source: "model-port",
         ordinal: 1,
         estimatedCostMicros: admissionCost.estimatedCostMicros,
         pricing: admissionCost.pricing,
       });
+      if (admission.disposition !== "fresh") {
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.CONFLICT,
+          admission.disposition === "replay"
+            ? "Model invocation requires reconciliation"
+            : "Model invocation admission was blocked",
+          { invocationId: request.invocationId, modelRef: request.modelRef },
+        );
+      }
+      permit = admission.permit;
       await permit.assertActive();
       secretValues = await this.resolveSecrets(descriptor, request);
       await permit.assertActive();

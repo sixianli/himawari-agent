@@ -18,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const temporaryDirectories: string[] = [];
-const CURRENT_SCHEMA_SEQUENCE = 22;
+const CURRENT_SCHEMA_SEQUENCE = 23;
 
 afterEach(async () => {
   await Promise.all(

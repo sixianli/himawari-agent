@@ -1,6 +1,10 @@
 import type {
   ModelDescriptor,
+  ModelInvocationAdmissionResult,
   ModelInvocationEvent,
+  ModelInvocationIdentity,
+  ModelInvocationPermit,
+  ModelInvocationUnknownReason,
   ModelInvocationUsage,
   SecretHandle,
   SecretPort,
@@ -83,6 +87,52 @@ function executionContext() {
       fencingToken: 1,
       consumerId: "trusted-model-test",
     },
+  };
+}
+
+function freshAdmission(permit: ModelInvocationPermit): ModelInvocationAdmissionResult {
+  const context = executionContext();
+  return {
+    disposition: "fresh",
+    identity: Object.freeze({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      logicalSlot: HANDLE.scopeRef,
+      sequence: 1,
+      invocationId: HANDLE.scopeRef,
+      modelRef: DESCRIPTOR.ref,
+      provider: DESCRIPTOR.provider,
+      model: DESCRIPTOR.model,
+      modelVersion: DESCRIPTOR.version,
+      dataClassification: "private",
+      source: "model-port",
+      ordinal: 1,
+      pricing: Object.freeze({ ...admissionCost.pricing }),
+      pricingFingerprint: "sha256:trusted-model-fixture",
+      estimatedCostMicros: admissionCost.estimatedCostMicros,
+      budgetAccountId: "run-account-trusted-model-test",
+      budgetOperationKey: "model-invocation:trusted-model-test",
+      authority: Object.freeze({
+        deploymentId: context.executionLease.deploymentId,
+        authorityEpoch: context.executionLease.authorityEpoch,
+        fencingToken: context.executionLease.fencingToken,
+      }),
+      authorityLease: Object.freeze({
+        leaseId: context.executionLease.authorityLeaseId,
+        fencingToken: context.executionLease.authorityFencingToken,
+      }),
+      executionLease: context.executionLease,
+      status: "reserved",
+      reservedAt: NOW,
+      startedAt: null,
+      observedAt: null,
+      settledAt: null,
+      releasedAt: null,
+      actualCostMicros: null,
+      reasonCode: null,
+    } satisfies ModelInvocationIdentity),
+    permit,
   };
 }
 
@@ -174,7 +224,7 @@ describe("TrustedModelProviderAdapter invocation admission", () => {
       context: executionContext(),
       begin: async () => {
         order.push("begin");
-        return {
+        return freshAdmission({
           assertActive: async () => {
             order.push("assert");
           },
@@ -191,7 +241,7 @@ describe("TrustedModelProviderAdapter invocation admission", () => {
           markUnknown: async () => {
             order.push("unknown");
           },
-        };
+        });
       },
     };
     const transport = new RecordingTransport(
@@ -271,17 +321,18 @@ describe("TrustedModelProviderAdapter invocation admission", () => {
     const unknown: string[] = [];
     const gate = {
       context: executionContext(),
-      begin: async () => ({
-        assertActive: async () => undefined,
-        markStarted: async () => undefined,
-        releaseReserved: async () => undefined,
-        settle: async () => {
-          throw new Error("settle must not run");
-        },
-        markUnknown: async (reasonCode: string) => {
-          unknown.push(reasonCode);
-        },
-      }),
+      begin: async () =>
+        freshAdmission({
+          assertActive: async () => undefined,
+          markStarted: async () => undefined,
+          releaseReserved: async () => undefined,
+          settle: async () => {
+            throw new Error("settle must not run");
+          },
+          markUnknown: async (reasonCode: ModelInvocationUnknownReason) => {
+            unknown.push(reasonCode);
+          },
+        }),
     };
     const model = provider({
       transport: new RecordingTransport(providerEvents({ inputTokens: 100, outputTokens: 10 })),
@@ -303,17 +354,18 @@ describe("TrustedModelProviderAdapter invocation admission", () => {
     const unknown: string[] = [];
     const gate = {
       context: executionContext(),
-      begin: async () => ({
-        assertActive: async () => undefined,
-        markStarted: async () => undefined,
-        releaseReserved: async () => undefined,
-        settle: async () => {
-          throw new Error("durable settlement failed");
-        },
-        markUnknown: async (reasonCode: string) => {
-          unknown.push(reasonCode);
-        },
-      }),
+      begin: async () =>
+        freshAdmission({
+          assertActive: async () => undefined,
+          markStarted: async () => undefined,
+          releaseReserved: async () => undefined,
+          settle: async () => {
+            throw new Error("durable settlement failed");
+          },
+          markUnknown: async (reasonCode: ModelInvocationUnknownReason) => {
+            unknown.push(reasonCode);
+          },
+        }),
     };
     const model = provider({
       transport: new RecordingTransport(
@@ -343,21 +395,22 @@ describe("TrustedModelProviderAdapter invocation admission", () => {
     let transportCalls = 0;
     const gate = {
       context: executionContext(),
-      begin: async () => ({
-        assertActive: async () => undefined,
-        markStarted: async () => {
-          throw new Error("markStarted must not run");
-        },
-        releaseReserved: async () => {
-          released.push("released");
-        },
-        settle: async () => {
-          throw new Error("settle must not run");
-        },
-        markUnknown: async () => {
-          throw new Error("unknown must not run");
-        },
-      }),
+      begin: async () =>
+        freshAdmission({
+          assertActive: async () => undefined,
+          markStarted: async () => {
+            throw new Error("markStarted must not run");
+          },
+          releaseReserved: async () => {
+            released.push("released");
+          },
+          settle: async () => {
+            throw new Error("settle must not run");
+          },
+          markUnknown: async () => {
+            throw new Error("unknown must not run");
+          },
+        }),
     };
     const model = provider({
       transport: {

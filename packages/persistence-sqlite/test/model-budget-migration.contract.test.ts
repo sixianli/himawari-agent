@@ -90,8 +90,8 @@ describe("model budget migration", () => {
       resource.snapshotPath,
     );
     expect(applyMigrations(resource.database, resource.migrations, { snapshot })).toMatchObject({
-      appliedSequences: [22],
-      currentSequence: 22,
+      appliedSequences: [22, 23],
+      currentSequence: 23,
     });
     expect(
       resource.database
@@ -111,7 +111,7 @@ describe("model budget migration", () => {
       spentCostMicros: 60,
       status: "active",
     });
-    expect(readMigrationLedger(resource.database)).toHaveLength(22);
+    expect(readMigrationLedger(resource.database)).toHaveLength(23);
     resource.database.close();
   });
 

@@ -36,7 +36,7 @@ const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as cons
 type ModelClassification = (typeof CLASSIFICATIONS)[number];
 type Failure = (code: string, message: string, details?: Readonly<Record<string, string>>) => never;
 
-interface Scope {
+export interface SqliteModelBudgetScope {
   readonly ownerId: ReturnType<typeof createOwnerId>;
   readonly agentId: ReturnType<typeof createAgentId>;
   readonly authority: ProductAuthorityFence;
@@ -45,6 +45,8 @@ interface Scope {
     readonly fencingToken: number;
   };
 }
+
+type Scope = SqliteModelBudgetScope;
 
 interface AccountRow {
   readonly ownerId: string;
@@ -182,6 +184,11 @@ export class SqliteModelBudgetOperations {
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
+  }
+
+  runImmediateTransaction<TResult>(operation: () => TResult): TResult {
+    this.assertDiskHeadroom();
+    return this.database.transaction(operation).immediate();
   }
 
   execute(operation: string, payload: unknown): unknown {
@@ -497,383 +504,353 @@ export class SqliteModelBudgetOperations {
 
   private reserveSync(envelope: ParsedEnvelope): ModelBudgetOperationResult {
     const input = this.parseReserve(envelope.input);
-    this.assertDiskHeadroom();
-    const transaction = this.database.transaction(() => {
-      this.assertCurrentAuthority(envelope.scope, input.reservedAt);
-      const id = accountId(input.parent);
-      const existingAccount = this.readAccount(envelope.scope.ownerId, envelope.scope.agentId, id);
-      const existing = this.readAllocation(
-        envelope.scope.ownerId,
-        envelope.scope.agentId,
-        id,
-        input.operationKey,
-      );
-      if (existing) {
-        if (
-          existing.modelRef !== input.modelRef ||
-          existing.dataClassification !== input.dataClassification ||
-          existing.estimatedCostMicros !== input.estimatedCostMicros
-        ) {
-          return this.fail(
-            "PORT_CONFLICT",
-            "Model budget operation identity has conflicting semantics",
-          );
-        }
-        if (!existingAccount)
-          return this.fail("PORT_INVALID_OPERATION", "Budget allocation has no parent account");
-        this.assertAccountParent(existingAccount, input.parent);
-        return this.result(existingAccount, existing, true);
-      }
-      this.assertParent(envelope.scope, input.parent, input.reservedAt, true);
-      if (input.parent.kind === "run") {
-        this.assertNoBackgroundOccurrenceParentWithinTransaction({
-          ownerId: envelope.scope.ownerId,
-          agentId: envelope.scope.agentId,
-          runId: input.parent.runId,
-        });
-        this.assertRunClassification(envelope.scope, input.parent.runId, input.dataClassification);
-      }
-      if (!existingAccount && input.parent.kind === "occurrence") {
+    return this.runImmediateTransaction(() => this.reserveWithinTransaction(envelope.scope, input));
+  }
+
+  reserveWithinTransaction(
+    scope: SqliteModelBudgetScope,
+    input: ModelBudgetReserveInput,
+  ): ModelBudgetOperationResult {
+    this.requireTransaction("Model budget reservation");
+    this.assertCurrentAuthority(scope, input.reservedAt);
+    const id = accountId(input.parent);
+    const existingAccount = this.readAccount(scope.ownerId, scope.agentId, id);
+    const existing = this.readAllocation(scope.ownerId, scope.agentId, id, input.operationKey);
+    if (existing) {
+      if (
+        existing.modelRef !== input.modelRef ||
+        existing.dataClassification !== input.dataClassification ||
+        existing.estimatedCostMicros !== input.estimatedCostMicros
+      ) {
         return this.fail(
-          "PORT_NOT_FOUND",
-          "Occurrence budget account must be admitted before model allocation",
+          "PORT_CONFLICT",
+          "Model budget operation identity has conflicting semantics",
         );
       }
-      const account =
-        existingAccount ??
-        this.insertAccount(
-          envelope.scope.ownerId,
-          envelope.scope.agentId,
-          input.parent,
-          input.dataClassification,
-        );
-      this.assertAccountClassification(account, input.dataClassification);
-      if (account.status !== "active") {
-        return this.fail("PORT_CONFLICT", "Budget account is not available for a new allocation");
-      }
-      const limits = input.limits;
-      const accountTotal = addCost(
+      if (!existingAccount)
+        return this.fail("PORT_INVALID_OPERATION", "Budget allocation has no parent account");
+      this.assertAccountParent(existingAccount, input.parent);
+      return this.result(existingAccount, existing, true);
+    }
+    this.assertParent(scope, input.parent, input.reservedAt, true);
+    if (input.parent.kind === "run") {
+      this.assertNoBackgroundOccurrenceParentWithinTransaction({
+        ownerId: scope.ownerId,
+        agentId: scope.agentId,
+        runId: input.parent.runId,
+      });
+      this.assertRunClassification(scope, input.parent.runId, input.dataClassification);
+    }
+    if (!existingAccount && input.parent.kind === "occurrence") {
+      return this.fail(
+        "PORT_NOT_FOUND",
+        "Occurrence budget account must be admitted before model allocation",
+      );
+    }
+    const account =
+      existingAccount ??
+      this.insertAccount(scope.ownerId, scope.agentId, input.parent, input.dataClassification);
+    this.assertAccountClassification(account, input.dataClassification);
+    if (account.status !== "active") {
+      return this.fail("PORT_CONFLICT", "Budget account is not available for a new allocation");
+    }
+    const limits = input.limits;
+    const accountTotal = addCost(
+      account.reservedCostMicros,
+      account.spentCostMicros,
+      "Account budget",
+      this.fail,
+    );
+    let nextReserved: number;
+    if (input.parent.kind === "occurrence") {
+      const outstanding = this.outstandingChildReservation(
+        scope.ownerId,
+        scope.agentId,
+        account.accountId,
+      );
+      const available = subtractCost(
         account.reservedCostMicros,
-        account.spentCostMicros,
-        "Account budget",
+        outstanding,
+        "Occurrence budget",
         this.fail,
       );
-      let nextReserved: number;
-      if (input.parent.kind === "occurrence") {
-        const outstanding = this.outstandingChildReservation(
-          envelope.scope.ownerId,
-          envelope.scope.agentId,
-          account.accountId,
-        );
-        const available = subtractCost(
-          account.reservedCostMicros,
-          outstanding,
-          "Occurrence budget",
-          this.fail,
-        );
-        if (input.estimatedCostMicros > available) {
-          return this.fail("PORT_CONFLICT", "Occurrence budget reservation is exhausted");
-        }
-        nextReserved = account.reservedCostMicros;
-      } else {
-        if (
-          addCost(accountTotal, input.estimatedCostMicros, "Account budget", this.fail) >
-          limits.accountCostMicros
-        ) {
-          return this.fail("PORT_CONFLICT", "Run budget limit is exhausted");
-        }
-        const usage = this.readUsage(envelope.scope.ownerId, envelope.scope.agentId);
-        if (
-          addCost(usage.global, input.estimatedCostMicros, "Global budget", this.fail) >
-          limits.globalCostMicros
-        ) {
-          return this.fail("PORT_CONFLICT", "Global model budget is exhausted");
-        }
-        if (
-          addCost(
-            usage.byClassification[input.dataClassification],
-            input.estimatedCostMicros,
-            "Classification budget",
-            this.fail,
-          ) > limits.perClassificationCostMicros[input.dataClassification]
-        ) {
-          return this.fail("PORT_CONFLICT", "Classification model budget is exhausted");
-        }
-        nextReserved = addCost(
-          account.reservedCostMicros,
-          input.estimatedCostMicros,
-          "Reserved budget",
-          this.fail,
-        );
+      if (input.estimatedCostMicros > available) {
+        return this.fail("PORT_CONFLICT", "Occurrence budget reservation is exhausted");
       }
-      this.database
-        .prepare(
-          `INSERT INTO model_budget_allocations (
+      nextReserved = account.reservedCostMicros;
+    } else {
+      if (
+        addCost(accountTotal, input.estimatedCostMicros, "Account budget", this.fail) >
+        limits.accountCostMicros
+      ) {
+        return this.fail("PORT_CONFLICT", "Run budget limit is exhausted");
+      }
+      const usage = this.readUsage(scope.ownerId, scope.agentId);
+      if (
+        addCost(usage.global, input.estimatedCostMicros, "Global budget", this.fail) >
+        limits.globalCostMicros
+      ) {
+        return this.fail("PORT_CONFLICT", "Global model budget is exhausted");
+      }
+      if (
+        addCost(
+          usage.byClassification[input.dataClassification],
+          input.estimatedCostMicros,
+          "Classification budget",
+          this.fail,
+        ) > limits.perClassificationCostMicros[input.dataClassification]
+      ) {
+        return this.fail("PORT_CONFLICT", "Classification model budget is exhausted");
+      }
+      nextReserved = addCost(
+        account.reservedCostMicros,
+        input.estimatedCostMicros,
+        "Reserved budget",
+        this.fail,
+      );
+    }
+    this.database
+      .prepare(
+        `INSERT INTO model_budget_allocations (
             owner_id, agent_id, account_id, operation_key, model_ref,
             data_classification, estimated_cost_micros, actual_cost_micros,
             status, reserved_at, started_at, observed_at, settled_at, reason_code
           ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'reserved', ?, NULL, NULL, NULL, NULL)`,
-        )
-        .run(
-          envelope.scope.ownerId,
-          envelope.scope.agentId,
-          account.accountId,
-          input.operationKey,
-          input.modelRef,
-          input.dataClassification,
-          input.estimatedCostMicros,
-          input.reservedAt,
-        );
-      const updated = this.updateAccount(account, nextReserved, account.spentCostMicros, "active");
-      const allocation = this.readAllocation(
-        envelope.scope.ownerId,
-        envelope.scope.agentId,
+      )
+      .run(
+        scope.ownerId,
+        scope.agentId,
         account.accountId,
         input.operationKey,
+        input.modelRef,
+        input.dataClassification,
+        input.estimatedCostMicros,
+        input.reservedAt,
       );
-      if (!allocation)
-        return this.fail("PORT_INVALID_OPERATION", "Budget allocation could not be read");
-      return this.result(updated, allocation, false);
-    });
-    return transaction.immediate();
+    const updated = this.updateAccount(account, nextReserved, account.spentCostMicros, "active");
+    const allocation = this.readAllocation(
+      scope.ownerId,
+      scope.agentId,
+      account.accountId,
+      input.operationKey,
+    );
+    if (!allocation)
+      return this.fail("PORT_INVALID_OPERATION", "Budget allocation could not be read");
+    return this.result(updated, allocation, false);
   }
 
   private markStartedSync(envelope: ParsedEnvelope): ModelBudgetOperationResult {
     const input = this.parseMarkStarted(envelope.input);
-    this.assertDiskHeadroom();
-    const transaction = this.database.transaction(() => {
-      this.assertCurrentAuthority(envelope.scope, input.startedAt);
-      const parent = input.parent;
-      const id = accountId(parent);
-      const account = this.readAccount(envelope.scope.ownerId, envelope.scope.agentId, id);
-      const allocation = this.readAllocation(
-        envelope.scope.ownerId,
-        envelope.scope.agentId,
-        id,
-        input.operationKey,
-      );
-      if (!account || !allocation)
-        return this.fail("PORT_NOT_FOUND", "Model budget allocation was not found");
-      this.assertAccountParent(account, parent);
-      if (allocation.status === "started") return this.result(account, allocation, true);
-      if (allocation.status !== "reserved") {
-        return this.fail("PORT_CONFLICT", "Model budget allocation cannot be started");
-      }
-      this.assertParent(envelope.scope, parent, input.startedAt, true);
-      if (account.status !== "active")
-        return this.fail("PORT_CONFLICT", "Budget account is not active");
-      this.database
-        .prepare(
-          `UPDATE model_budget_allocations SET status = 'started', started_at = ?
+    return this.runImmediateTransaction(() =>
+      this.markStartedWithinTransaction(envelope.scope, input),
+    );
+  }
+
+  markStartedWithinTransaction(
+    scope: SqliteModelBudgetScope,
+    input: ModelBudgetMarkStartedInput,
+  ): ModelBudgetOperationResult {
+    this.requireTransaction("Model budget start");
+    this.assertCurrentAuthority(scope, input.startedAt);
+    const parent = input.parent;
+    const id = accountId(parent);
+    const account = this.readAccount(scope.ownerId, scope.agentId, id);
+    const allocation = this.readAllocation(scope.ownerId, scope.agentId, id, input.operationKey);
+    if (!account || !allocation)
+      return this.fail("PORT_NOT_FOUND", "Model budget allocation was not found");
+    this.assertAccountParent(account, parent);
+    if (allocation.status === "started") return this.result(account, allocation, true);
+    if (allocation.status !== "reserved") {
+      return this.fail("PORT_CONFLICT", "Model budget allocation cannot be started");
+    }
+    this.assertParent(scope, parent, input.startedAt, true);
+    if (account.status !== "active")
+      return this.fail("PORT_CONFLICT", "Budget account is not active");
+    this.database
+      .prepare(
+        `UPDATE model_budget_allocations SET status = 'started', started_at = ?
            WHERE owner_id = ? AND agent_id = ? AND account_id = ? AND operation_key = ?
              AND status = 'reserved'`,
-        )
-        .run(
-          input.startedAt,
-          envelope.scope.ownerId,
-          envelope.scope.agentId,
-          id,
-          input.operationKey,
-        );
-      const updated = this.readAllocation(
-        envelope.scope.ownerId,
-        envelope.scope.agentId,
-        id,
-        input.operationKey,
-      );
-      if (!updated)
-        return this.fail("PORT_INVALID_OPERATION", "Started budget allocation could not be read");
-      return this.result(account, updated, false);
-    });
-    return transaction.immediate();
+      )
+      .run(input.startedAt, scope.ownerId, scope.agentId, id, input.operationKey);
+    const updated = this.readAllocation(scope.ownerId, scope.agentId, id, input.operationKey);
+    if (!updated)
+      return this.fail("PORT_INVALID_OPERATION", "Started budget allocation could not be read");
+    return this.result(account, updated, false);
   }
 
   private settleSync(envelope: ParsedEnvelope): ModelBudgetOperationResult {
     const input = this.parseSettlement(envelope.input);
-    this.assertDiskHeadroom();
-    const transaction = this.database.transaction(() => {
-      this.assertCurrentAuthority(envelope.scope, input.settledAt);
-      const id = accountId(input.parent);
-      const account = this.readAccount(envelope.scope.ownerId, envelope.scope.agentId, id);
-      const allocation = this.readAllocation(
-        envelope.scope.ownerId,
-        envelope.scope.agentId,
-        id,
-        input.operationKey,
-      );
-      if (!account || !allocation)
-        return this.fail("PORT_NOT_FOUND", "Model budget allocation was not found");
-      this.assertAccountParent(account, input.parent);
-      if (allocation.status === "settled") {
-        if (allocation.actualCostMicros !== input.actualCostMicros) {
-          return this.fail("PORT_CONFLICT", "Settled model budget cost is immutable");
-        }
-        return this.result(account, allocation, true);
+    return this.runImmediateTransaction(() => this.settleWithinTransaction(envelope.scope, input));
+  }
+
+  settleWithinTransaction(
+    scope: SqliteModelBudgetScope,
+    input: ModelBudgetSettlementInput,
+  ): ModelBudgetOperationResult {
+    this.requireTransaction("Model budget settlement");
+    this.assertCurrentAuthority(scope, input.settledAt);
+    const id = accountId(input.parent);
+    const account = this.readAccount(scope.ownerId, scope.agentId, id);
+    const allocation = this.readAllocation(scope.ownerId, scope.agentId, id, input.operationKey);
+    if (!account || !allocation)
+      return this.fail("PORT_NOT_FOUND", "Model budget allocation was not found");
+    this.assertAccountParent(account, input.parent);
+    if (allocation.status === "settled") {
+      if (allocation.actualCostMicros !== input.actualCostMicros) {
+        return this.fail("PORT_CONFLICT", "Settled model budget cost is immutable");
       }
-      if (allocation.status !== "started" && allocation.status !== "unknown") {
-        return this.fail("PORT_CONFLICT", "Only started or unknown allocations can be settled");
-      }
-      this.assertAccountParentScope(envelope.scope, input.parent);
-      const reserved = subtractCost(
-        account.reservedCostMicros,
-        allocation.estimatedCostMicros,
-        "Reserved budget",
-        this.fail,
-      );
-      const spent = addCost(
-        account.spentCostMicros,
-        input.actualCostMicros,
-        "Spent budget",
-        this.fail,
-      );
-      const status =
-        account.status === "over_budget"
+      return this.result(account, allocation, true);
+    }
+    if (allocation.status !== "started" && allocation.status !== "unknown") {
+      return this.fail("PORT_CONFLICT", "Only started or unknown allocations can be settled");
+    }
+    this.assertAccountParentScope(scope, input.parent);
+    const reserved = subtractCost(
+      account.reservedCostMicros,
+      allocation.estimatedCostMicros,
+      "Reserved budget",
+      this.fail,
+    );
+    const spent = addCost(
+      account.spentCostMicros,
+      input.actualCostMicros,
+      "Spent budget",
+      this.fail,
+    );
+    const status =
+      account.status === "over_budget"
+        ? "over_budget"
+        : input.actualCostMicros > allocation.estimatedCostMicros
           ? "over_budget"
-          : input.actualCostMicros > allocation.estimatedCostMicros
-            ? "over_budget"
-            : this.remainingUnknown(id, envelope.scope, input.operationKey)
-              ? "reconcile_required"
-              : "active";
-      const updatedAccount = this.updateAccount(account, reserved, spent, status);
-      this.database
-        .prepare(
-          `UPDATE model_budget_allocations
+          : this.remainingUnknown(id, scope, input.operationKey)
+            ? "reconcile_required"
+            : "active";
+    const updatedAccount = this.updateAccount(account, reserved, spent, status);
+    this.database
+      .prepare(
+        `UPDATE model_budget_allocations
            SET status = 'settled', actual_cost_micros = ?, settled_at = ?, reason_code = NULL
            WHERE owner_id = ? AND agent_id = ? AND account_id = ? AND operation_key = ?
              AND status IN ('reserved', 'started', 'unknown')`,
-        )
-        .run(
-          input.actualCostMicros,
-          input.settledAt,
-          envelope.scope.ownerId,
-          envelope.scope.agentId,
-          id,
-          input.operationKey,
-        );
-      const updated = this.readAllocation(
-        envelope.scope.ownerId,
-        envelope.scope.agentId,
+      )
+      .run(
+        input.actualCostMicros,
+        input.settledAt,
+        scope.ownerId,
+        scope.agentId,
         id,
         input.operationKey,
       );
-      if (!updated)
-        return this.fail("PORT_INVALID_OPERATION", "Settled budget allocation could not be read");
-      return this.result(updatedAccount, updated, false);
-    });
-    return transaction.immediate();
+    const updated = this.readAllocation(scope.ownerId, scope.agentId, id, input.operationKey);
+    if (!updated)
+      return this.fail("PORT_INVALID_OPERATION", "Settled budget allocation could not be read");
+    return this.result(updatedAccount, updated, false);
   }
 
   private markUnknownSync(envelope: ParsedEnvelope): ModelBudgetOperationResult {
     const input = this.parseUnknown(envelope.input);
-    this.assertDiskHeadroom();
-    const transaction = this.database.transaction(() => {
-      this.assertCurrentAuthority(envelope.scope, input.observedAt);
-      const id = accountId(input.parent);
-      const account = this.readAccount(envelope.scope.ownerId, envelope.scope.agentId, id);
-      const allocation = this.readAllocation(
-        envelope.scope.ownerId,
-        envelope.scope.agentId,
-        id,
-        input.operationKey,
-      );
-      if (!account || !allocation)
-        return this.fail("PORT_NOT_FOUND", "Model budget allocation was not found");
-      this.assertAccountParent(account, input.parent);
-      if (allocation.status === "unknown") {
-        if (allocation.reasonCode !== input.reasonCode) {
-          return this.fail("PORT_CONFLICT", "Unknown model budget reason is immutable");
-        }
-        return this.result(account, allocation, true);
+    return this.runImmediateTransaction(() =>
+      this.markUnknownWithinTransaction(envelope.scope, input),
+    );
+  }
+
+  markUnknownWithinTransaction(
+    scope: SqliteModelBudgetScope,
+    input: ModelBudgetUnknownInput,
+  ): ModelBudgetOperationResult {
+    this.requireTransaction("Model budget unknown observation");
+    this.assertCurrentAuthority(scope, input.observedAt);
+    const id = accountId(input.parent);
+    const account = this.readAccount(scope.ownerId, scope.agentId, id);
+    const allocation = this.readAllocation(scope.ownerId, scope.agentId, id, input.operationKey);
+    if (!account || !allocation)
+      return this.fail("PORT_NOT_FOUND", "Model budget allocation was not found");
+    this.assertAccountParent(account, input.parent);
+    if (allocation.status === "unknown") {
+      if (allocation.reasonCode !== input.reasonCode) {
+        return this.fail("PORT_CONFLICT", "Unknown model budget reason is immutable");
       }
-      if (allocation.status !== "started") {
-        return this.fail("PORT_CONFLICT", "Only started allocations can become unknown");
-      }
-      this.assertAccountParentScope(envelope.scope, input.parent);
-      const updatedAccount = this.updateAccount(
-        account,
-        account.reservedCostMicros,
-        account.spentCostMicros,
-        account.status === "over_budget" ? "over_budget" : "reconcile_required",
-      );
-      this.database
-        .prepare(
-          `UPDATE model_budget_allocations
+      return this.result(account, allocation, true);
+    }
+    if (allocation.status !== "started") {
+      return this.fail("PORT_CONFLICT", "Only started allocations can become unknown");
+    }
+    this.assertAccountParentScope(scope, input.parent);
+    const updatedAccount = this.updateAccount(
+      account,
+      account.reservedCostMicros,
+      account.spentCostMicros,
+      account.status === "over_budget" ? "over_budget" : "reconcile_required",
+    );
+    this.database
+      .prepare(
+        `UPDATE model_budget_allocations
            SET status = 'unknown', observed_at = ?, reason_code = ?
            WHERE owner_id = ? AND agent_id = ? AND account_id = ? AND operation_key = ?
              AND status = 'started'`,
-        )
-        .run(
-          input.observedAt,
-          input.reasonCode,
-          envelope.scope.ownerId,
-          envelope.scope.agentId,
-          id,
-          input.operationKey,
-        );
-      const updated = this.readAllocation(
-        envelope.scope.ownerId,
-        envelope.scope.agentId,
+      )
+      .run(
+        input.observedAt,
+        input.reasonCode,
+        scope.ownerId,
+        scope.agentId,
         id,
         input.operationKey,
       );
-      if (!updated)
-        return this.fail("PORT_INVALID_OPERATION", "Unknown budget allocation could not be read");
-      return this.result(updatedAccount, updated, false);
-    });
-    return transaction.immediate();
+    const updated = this.readAllocation(scope.ownerId, scope.agentId, id, input.operationKey);
+    if (!updated)
+      return this.fail("PORT_INVALID_OPERATION", "Unknown budget allocation could not be read");
+    return this.result(updatedAccount, updated, false);
   }
 
   private releaseReservedSync(envelope: ParsedEnvelope): ModelBudgetOperationResult {
     const input = this.parseReleaseReserved(envelope.input);
-    this.assertDiskHeadroom();
-    const transaction = this.database.transaction(() => {
-      this.assertCurrentAuthority(envelope.scope, input.releasedAt);
-      const id = accountId(input.parent);
-      const account = this.readAccount(envelope.scope.ownerId, envelope.scope.agentId, id);
-      const allocation = this.readAllocation(
-        envelope.scope.ownerId,
-        envelope.scope.agentId,
-        id,
-        input.operationKey,
-      );
-      if (!account || !allocation)
-        return this.fail("PORT_NOT_FOUND", "Model budget allocation was not found");
-      this.assertAccountParent(account, input.parent);
-      if (allocation.status === "released") return this.result(account, allocation, true);
-      if (allocation.status !== "reserved")
-        return this.fail("PORT_CONFLICT", "Only reserved model budget allocations can be released");
-      this.assertAccountParentScope(envelope.scope, input.parent);
-      const reserved = subtractCost(
-        account.reservedCostMicros,
-        allocation.estimatedCostMicros,
-        "Reserved budget",
-        this.fail,
-      );
-      const updatedAccount = this.updateAccount(
-        account,
-        reserved,
-        account.spentCostMicros,
-        account.status,
-      );
-      this.database
-        .prepare(
-          `UPDATE model_budget_allocations
+    return this.runImmediateTransaction(() =>
+      this.releaseReservedWithinTransaction(envelope.scope, input),
+    );
+  }
+
+  releaseReservedWithinTransaction(
+    scope: SqliteModelBudgetScope,
+    input: ModelBudgetReleaseReservedInput,
+  ): ModelBudgetOperationResult {
+    this.requireTransaction("Model budget reservation release");
+    this.assertCurrentAuthority(scope, input.releasedAt);
+    const id = accountId(input.parent);
+    const account = this.readAccount(scope.ownerId, scope.agentId, id);
+    const allocation = this.readAllocation(scope.ownerId, scope.agentId, id, input.operationKey);
+    if (!account || !allocation)
+      return this.fail("PORT_NOT_FOUND", "Model budget allocation was not found");
+    this.assertAccountParent(account, input.parent);
+    if (allocation.status === "released") return this.result(account, allocation, true);
+    if (allocation.status !== "reserved")
+      return this.fail("PORT_CONFLICT", "Only reserved model budget allocations can be released");
+    this.assertAccountParentScope(scope, input.parent);
+    const reserved = subtractCost(
+      account.reservedCostMicros,
+      allocation.estimatedCostMicros,
+      "Reserved budget",
+      this.fail,
+    );
+    const updatedAccount = this.updateAccount(
+      account,
+      reserved,
+      account.spentCostMicros,
+      account.status,
+    );
+    this.database
+      .prepare(
+        `UPDATE model_budget_allocations
            SET status = 'released', reason_code = NULL
            WHERE owner_id = ? AND agent_id = ? AND account_id = ? AND operation_key = ?
              AND status = 'reserved'`,
-        )
-        .run(envelope.scope.ownerId, envelope.scope.agentId, id, input.operationKey);
-      const updated = this.readAllocation(
-        envelope.scope.ownerId,
-        envelope.scope.agentId,
-        id,
-        input.operationKey,
-      );
-      if (!updated)
-        return this.fail("PORT_INVALID_OPERATION", "Released budget allocation could not be read");
-      return this.result(updatedAccount, updated, false);
-    });
-    return transaction.immediate();
+      )
+      .run(scope.ownerId, scope.agentId, id, input.operationKey);
+    const updated = this.readAllocation(scope.ownerId, scope.agentId, id, input.operationKey);
+    if (!updated)
+      return this.fail("PORT_INVALID_OPERATION", "Released budget allocation could not be read");
+    return this.result(updatedAccount, updated, false);
   }
 
   private finalizeSync(envelope: ParsedEnvelope): ModelBudgetAccount {

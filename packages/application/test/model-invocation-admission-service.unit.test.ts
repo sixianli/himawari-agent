@@ -1,12 +1,13 @@
 import {
   ApplicationPortError,
-  type ModelBudgetAccount,
-  type ModelBudgetAllocation,
-  type ModelBudgetOperationResult,
-  type ModelBudgetPort,
   type ModelInvocationAdmissionDescriptor,
   type ModelInvocationAdmissionInput,
+  type ModelInvocationAdmissionResult,
   ModelInvocationAdmissionService,
+  type ModelInvocationIdentity,
+  type ModelInvocationIdentityBeginResult,
+  type ModelInvocationIdentityPort,
+  type ModelInvocationPermit,
   type ModelInvocationPricing,
   PORT_ERROR_CODES,
   type RunDispatchPort,
@@ -98,50 +99,53 @@ const INVALID_INPUTS = [
   ["model", { model: "another-model" }],
   ["version", { modelVersion: "v2" }],
   ["classification", { dataClassification: "restricted" }],
-  ["operation key", { operationKey: "" }],
+  ["logical slot", { logicalSlot: "" }],
   ["ordinal", { ordinal: 0 }],
   ["estimate", { estimatedCostMicros: 101 }],
   ["pricing", { pricing: { ...PRICING, output: 9 } }],
 ] as const satisfies readonly (readonly [string, Partial<ModelInvocationAdmissionInput>])[];
 
-const ACCOUNT: ModelBudgetAccount = {
+const IDENTITY: ModelInvocationIdentity = Object.freeze({
   ownerId: OWNER_ID,
   agentId: AGENT_ID,
-  accountId: "run-account-model-admission",
-  parent: { kind: "run", runId: RUN_ID },
-  dataClassification: "private",
-  reservedCostMicros: 100,
-  spentCostMicros: 0,
-  status: "active",
-  revision: 1,
-};
-
-const ALLOCATION: ModelBudgetAllocation = {
-  ownerId: OWNER_ID,
-  agentId: AGENT_ID,
-  accountId: ACCOUNT.accountId,
-  operationKey: "run:model-admission:1",
+  runId: RUN_ID,
+  logicalSlot: "run:model-admission:1",
+  sequence: 1,
+  invocationId: "model-invocation:run-model-admission:slot:1",
   modelRef: DESCRIPTOR.ref,
+  provider: DESCRIPTOR.provider,
+  model: DESCRIPTOR.model,
+  modelVersion: DESCRIPTOR.version,
   dataClassification: "private",
+  source: "model-port",
+  ordinal: 1,
+  pricing: Object.freeze({ ...PRICING }),
+  pricingFingerprint: "sha256:model-admission-pricing",
   estimatedCostMicros: DESCRIPTOR.estimatedCostMicros,
-  actualCostMicros: null,
+  budgetAccountId: "run-account-model-admission",
+  budgetOperationKey: "model-invocation:model-admission",
+  authority: Object.freeze({
+    deploymentId: DEPLOYMENT_ID,
+    authorityEpoch: CLAIM.authorityEpoch,
+    fencingToken: CLAIM.fencingToken,
+  }),
+  authorityLease: Object.freeze({
+    leaseId: AUTHORITY_LEASE_ID,
+    fencingToken: CLAIM.authorityFencingToken,
+  }),
+  executionLease: CLAIM,
   status: "reserved",
   reservedAt: NOW,
   startedAt: null,
   observedAt: null,
   settledAt: null,
+  releasedAt: null,
+  actualCostMicros: null,
   reasonCode: null,
-};
+});
 
-function operationResult(
-  overrides: Partial<ModelBudgetAllocation> = {},
-  replayed = false,
-): ModelBudgetOperationResult {
-  return {
-    account: ACCOUNT,
-    allocation: { ...ALLOCATION, ...overrides },
-    replayed,
-  };
+function identityWith(overrides: Partial<ModelInvocationIdentity>): ModelInvocationIdentity {
+  return Object.freeze({ ...IDENTITY, ...overrides });
 }
 
 class DispatchStub implements RunDispatchPort {
@@ -188,71 +192,71 @@ class DispatchStub implements RunDispatchPort {
   }
 }
 
-class BudgetStub implements ModelBudgetPort {
-  readonly reserveCalls: Parameters<ModelBudgetPort["reserve"]>[0][] = [];
-  readonly markStartedCalls: Parameters<ModelBudgetPort["markStarted"]>[0][] = [];
-  readonly releaseReservedCalls: Parameters<ModelBudgetPort["releaseReserved"]>[0][] = [];
-  readonly settleCalls: Parameters<ModelBudgetPort["settle"]>[0][] = [];
-  readonly unknownCalls: Parameters<ModelBudgetPort["markUnknown"]>[0][] = [];
-  reserveResult = operationResult();
-  reserveError: Error | undefined;
+class IdentityStub implements ModelInvocationIdentityPort {
+  readonly beginCalls: Parameters<ModelInvocationIdentityPort["begin"]>[0][] = [];
+  readonly markStartedCalls: Parameters<ModelInvocationIdentityPort["markStarted"]>[0][] = [];
+  readonly releaseReservedCalls: Parameters<ModelInvocationIdentityPort["releaseReserved"]>[0][] =
+    [];
+  readonly settleCalls: Parameters<ModelInvocationIdentityPort["settle"]>[0][] = [];
+  readonly unknownCalls: Parameters<ModelInvocationIdentityPort["markUnknown"]>[0][] = [];
+  beginResult: ModelInvocationIdentityBeginResult = {
+    disposition: "fresh",
+    identity: IDENTITY,
+  };
+  beginError: Error | undefined;
   settleError: Error | undefined;
 
-  async read(_input: Parameters<ModelBudgetPort["read"]>[0]): ReturnType<ModelBudgetPort["read"]> {
-    throw new Error("read was not expected");
-  }
-
-  async reserve(
-    input: Parameters<ModelBudgetPort["reserve"]>[0],
-  ): Promise<ModelBudgetOperationResult> {
-    this.reserveCalls.push(input);
-    if (this.reserveError !== undefined) throw this.reserveError;
-    return this.reserveResult;
+  async begin(
+    input: Parameters<ModelInvocationIdentityPort["begin"]>[0],
+  ): Promise<ModelInvocationIdentityBeginResult> {
+    this.beginCalls.push(input);
+    if (this.beginError !== undefined) throw this.beginError;
+    return this.beginResult;
   }
 
   async markStarted(
-    input: Parameters<ModelBudgetPort["markStarted"]>[0],
-  ): Promise<ModelBudgetOperationResult> {
+    input: Parameters<ModelInvocationIdentityPort["markStarted"]>[0],
+  ): Promise<ModelInvocationIdentity> {
     this.markStartedCalls.push(input);
-    return operationResult({ status: "started", startedAt: input.startedAt });
-  }
-
-  async settle(
-    input: Parameters<ModelBudgetPort["settle"]>[0],
-  ): Promise<ModelBudgetOperationResult> {
-    this.settleCalls.push(input);
-    if (this.settleError !== undefined) throw this.settleError;
-    return operationResult({ status: "settled", actualCostMicros: input.actualCostMicros });
+    return identityWith({ status: "started", startedAt: input.at });
   }
 
   async releaseReserved(
-    input: Parameters<ModelBudgetPort["releaseReserved"]>[0],
-  ): Promise<ModelBudgetOperationResult> {
+    input: Parameters<ModelInvocationIdentityPort["releaseReserved"]>[0],
+  ): Promise<ModelInvocationIdentity> {
     this.releaseReservedCalls.push(input);
-    return operationResult({ status: "released" });
+    return identityWith({ status: "released", releasedAt: input.at });
   }
 
-  async markUnknown(
-    input: Parameters<ModelBudgetPort["markUnknown"]>[0],
-  ): Promise<ModelBudgetOperationResult> {
-    this.unknownCalls.push(input);
-    return operationResult({
-      status: "unknown",
-      observedAt: input.observedAt,
-      reasonCode: input.reasonCode,
+  async settle(
+    input: Parameters<ModelInvocationIdentityPort["settle"]>[0],
+  ): Promise<ModelInvocationIdentity> {
+    this.settleCalls.push(input);
+    if (this.settleError !== undefined) throw this.settleError;
+    return identityWith({
+      status: "settled",
+      actualCostMicros: input.actualCostMicros,
+      settledAt: input.at,
     });
   }
 
-  async finalize(
-    _input: Parameters<ModelBudgetPort["finalize"]>[0],
-  ): ReturnType<ModelBudgetPort["finalize"]> {
-    throw new Error("finalize was not expected");
+  async markUnknown(
+    input: Parameters<ModelInvocationIdentityPort["markUnknown"]>[0],
+  ): Promise<ModelInvocationIdentity> {
+    this.unknownCalls.push(input);
+    return identityWith({ status: "unknown", observedAt: input.at, reasonCode: input.reasonCode });
+  }
+
+  async read(
+    _input: Parameters<ModelInvocationIdentityPort["read"]>[0],
+  ): ReturnType<ModelInvocationIdentityPort["read"]> {
+    throw new Error("read was not expected");
   }
 }
 
 function serviceFixture() {
   const dispatch = new DispatchStub();
-  const budget = new BudgetStub();
+  const invocations = new IdentityStub();
   let currentTime = NOW;
   const service = new ModelInvocationAdmissionService({
     ownerId: OWNER_ID,
@@ -260,7 +264,7 @@ function serviceFixture() {
     runId: RUN_ID,
     executionLease: CLAIM,
     dispatch,
-    budget,
+    invocations,
     clock: { now: () => currentTime },
     limits: LIMITS,
     registry: [DESCRIPTOR],
@@ -268,7 +272,7 @@ function serviceFixture() {
   return {
     service,
     dispatch,
-    budget,
+    invocations,
     setTime: (value: string) => {
       currentTime = value;
     },
@@ -284,7 +288,7 @@ function input(
     model: DESCRIPTOR.model,
     modelVersion: DESCRIPTOR.version,
     dataClassification: "private",
-    operationKey: ALLOCATION.operationKey,
+    logicalSlot: IDENTITY.logicalSlot,
     source: "model-port",
     ordinal: 1,
     estimatedCostMicros: DESCRIPTOR.estimatedCostMicros,
@@ -293,20 +297,28 @@ function input(
   };
 }
 
+function freshPermit(result: ModelInvocationAdmissionResult): ModelInvocationPermit {
+  if (result.disposition !== "fresh") {
+    throw new Error(`Expected a fresh model invocation, received ${result.disposition}`);
+  }
+  return result.permit;
+}
+
 describe("ModelInvocationAdmissionService", () => {
-  it("freezes the gate context and settles cache-aware usage through the budget port", async () => {
+  it("freezes the gate context and settles cache-aware usage through the identity port", async () => {
     const fixture = serviceFixture();
-    const permit = await fixture.service.begin(input());
+    const permit = freshPermit(await fixture.service.begin(input()));
 
     expect(Object.isFrozen(fixture.service.context)).toBe(true);
     expect(Object.isFrozen(fixture.service.context.executionLease)).toBe(true);
     expect(Reflect.set(fixture.service.context, "runId", createRunId("other-run"))).toBe(false);
     expect(fixture.service.context.runId).toBe(RUN_ID);
-    expect(fixture.budget.reserveCalls[0]).toMatchObject({
-      operationKey: ALLOCATION.operationKey,
+    expect(fixture.invocations.beginCalls[0]).toMatchObject({
+      logicalSlot: IDENTITY.logicalSlot,
       modelRef: DESCRIPTOR.ref,
       estimatedCostMicros: DESCRIPTOR.estimatedCostMicros,
-      parent: { kind: "run", runId: RUN_ID, executionLease: CLAIM },
+      runId: RUN_ID,
+      executionLease: CLAIM,
     });
 
     await permit.assertActive();
@@ -319,24 +331,28 @@ describe("ModelInvocationAdmissionService", () => {
     });
 
     expect(fixture.dispatch.assertHeldCalls).toHaveLength(3);
-    expect(fixture.budget.markStartedCalls).toHaveLength(1);
-    expect(fixture.budget.settleCalls[0]).toMatchObject({
-      parent: { kind: "run", runId: RUN_ID },
+    expect(fixture.invocations.markStartedCalls).toHaveLength(1);
+    expect(fixture.invocations.settleCalls[0]).toMatchObject({
+      runId: RUN_ID,
+      invocationId: IDENTITY.invocationId,
+      budgetOperationKey: IDENTITY.budgetOperationKey,
       actualCostMicros: 18,
     });
-    expect(fixture.budget.settleCalls[0]?.actualCostMicros).not.toBe(0);
+    expect(fixture.invocations.settleCalls[0]?.actualCostMicros).not.toBe(0);
   });
 
-  it("releases a pre-start reservation through the durable budget port", async () => {
+  it("releases a pre-start reservation through the durable identity port", async () => {
     const fixture = serviceFixture();
-    const permit = await fixture.service.begin(input());
+    const permit = freshPermit(await fixture.service.begin(input()));
     await permit.releaseReserved();
 
-    expect(fixture.budget.releaseReservedCalls).toEqual([
+    expect(fixture.invocations.releaseReservedCalls).toEqual([
       {
-        parent: { kind: "run", runId: RUN_ID },
-        operationKey: ALLOCATION.operationKey,
-        releasedAt: NOW,
+        runId: RUN_ID,
+        invocationId: IDENTITY.invocationId,
+        budgetOperationKey: IDENTITY.budgetOperationKey,
+        executionLease: CLAIM,
+        at: NOW,
       },
     ]);
   });
@@ -350,7 +366,7 @@ describe("ModelInvocationAdmissionService", () => {
         code: PORT_ERROR_CODES.INVALID_OPERATION,
       });
       expect(fixture.dispatch.assertHeldCalls).toHaveLength(0);
-      expect(fixture.budget.reserveCalls).toHaveLength(0);
+      expect(fixture.invocations.beginCalls).toHaveLength(0);
     },
   );
 
@@ -370,7 +386,7 @@ describe("ModelInvocationAdmissionService", () => {
           runId: RUN_ID,
           executionLease: CLAIM,
           dispatch: fixture.dispatch,
-          budget: fixture.budget,
+          invocations: fixture.invocations,
           clock: { now: () => NOW },
           limits: LIMITS,
           registry: [{ ...DESCRIPTOR, pricing: { ...PRICING, input: Number.NaN } }],
@@ -393,22 +409,25 @@ describe("ModelInvocationAdmissionService", () => {
     await expect(fixture.service.begin(input())).rejects.toMatchObject({
       code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
     });
-    expect(fixture.budget.reserveCalls).toHaveLength(0);
+    expect(fixture.invocations.beginCalls).toHaveLength(0);
 
     fixture.dispatch.error = undefined;
-    const permit = await fixture.service.begin(input());
+    const permit = freshPermit(await fixture.service.begin(input()));
     fixture.dispatch.error = new ApplicationPortError(
       PORT_ERROR_CODES.CONFLICT,
       "run became terminal",
     );
     await expect(permit.assertActive()).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
     await expect(permit.markStarted()).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
-    expect(fixture.budget.markStartedCalls).toHaveLength(0);
+    expect(fixture.invocations.markStartedCalls).toHaveLength(0);
   });
 
-  it("rejects a budget result that escapes the bound Run scope", async () => {
+  it("rejects an identity result that escapes the bound Run scope", async () => {
     const fixture = serviceFixture();
-    fixture.budget.reserveResult = operationResult({ ownerId: createOwnerId("other-owner") });
+    fixture.invocations.beginResult = {
+      disposition: "fresh",
+      identity: identityWith({ ownerId: createOwnerId("other-owner") }),
+    };
 
     await expect(fixture.service.begin(input())).rejects.toMatchObject({
       code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
@@ -417,7 +436,7 @@ describe("ModelInvocationAdmissionService", () => {
 
   it("allows late settlement and unknown observation without reviving an expired lease", async () => {
     const fixture = serviceFixture();
-    const permit = await fixture.service.begin(input());
+    const permit = freshPermit(await fixture.service.begin(input()));
     await permit.markStarted();
     fixture.dispatch.error = new ApplicationPortError(
       PORT_ERROR_CODES.NOT_AUTHORITATIVE,
@@ -434,10 +453,11 @@ describe("ModelInvocationAdmissionService", () => {
     await permit.markUnknown("cancel_unresolved");
 
     expect(fixture.dispatch.assertHeldCalls).toHaveLength(2);
-    expect(fixture.budget.settleCalls[0]?.actualCostMicros).toBe(4);
-    expect(fixture.budget.unknownCalls[0]).toMatchObject({
-      parent: { kind: "run", runId: RUN_ID },
-      operationKey: ALLOCATION.operationKey,
+    expect(fixture.invocations.settleCalls[0]?.actualCostMicros).toBe(4);
+    expect(fixture.invocations.unknownCalls[0]).toMatchObject({
+      runId: RUN_ID,
+      invocationId: IDENTITY.invocationId,
+      budgetOperationKey: IDENTITY.budgetOperationKey,
       reasonCode: "cancel_unresolved",
     });
   });
@@ -471,27 +491,31 @@ describe("ModelInvocationAdmissionService", () => {
     ],
   ])("rejects %s before writing a settlement", async (_name, usage) => {
     const fixture = serviceFixture();
-    const permit = await fixture.service.begin(input());
+    const permit = freshPermit(await fixture.service.begin(input()));
 
     await expect(permit.settle(usage)).rejects.toMatchObject({
       code: PORT_ERROR_CODES.INVALID_OPERATION,
     });
-    expect(fixture.budget.settleCalls).toHaveLength(0);
+    expect(fixture.invocations.settleCalls).toHaveLength(0);
   });
 
   it("preserves underlying replay and conflict semantics instead of owning durable state", async () => {
     const fixture = serviceFixture();
-    fixture.budget.reserveResult = operationResult({}, true);
+    fixture.invocations.beginResult = {
+      disposition: "replay",
+      identity: IDENTITY,
+      reasonCode: "MODEL_INVOCATION_RECONCILIATION_REQUIRED",
+    };
     const replayed = await fixture.service.begin(input());
-    expect(fixture.budget.reserveResult.replayed).toBe(true);
-    await replayed.markUnknown("provider_unresolved");
+    expect(replayed.disposition).toBe("replay");
+    expect(fixture.invocations.unknownCalls).toHaveLength(0);
 
-    fixture.budget.reserveError = new ApplicationPortError(
+    fixture.invocations.beginError = new ApplicationPortError(
       PORT_ERROR_CODES.CONFLICT,
       "operation key has different semantics",
     );
     await expect(
-      fixture.service.begin(input({ operationKey: "run:model-admission:conflict" })),
+      fixture.service.begin(input({ logicalSlot: "run:model-admission:conflict" })),
     ).rejects.toMatchObject({
       code: PORT_ERROR_CODES.CONFLICT,
     });

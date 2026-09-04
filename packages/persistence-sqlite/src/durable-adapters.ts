@@ -12,6 +12,7 @@ import type {
   GovernanceMutationReceiptStorePort,
   MemoryProjectionJobStatePort,
   ModelBudgetPort,
+  ModelInvocationIdentityPort,
   OwnerIdentityStatePort,
   PayloadStorePort,
   ProductMemoryStatePort,
@@ -408,6 +409,24 @@ export class SqliteDurableAdapters {
       releaseReserved: (input) =>
         this.context.write("modelBudget.releaseReserved", { scope, input }),
       finalize: (input) => this.context.write("modelBudget.finalize", { scope, input }),
+    });
+  }
+
+  modelInvocationIdentityPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    authorityLease: AuthorityFence,
+  ): ModelInvocationIdentityPort {
+    const scope = { ownerId, agentId, authority, authorityLease };
+    return Object.freeze<ModelInvocationIdentityPort>({
+      begin: (input) => this.context.write("modelInvocation.begin", { scope, input }),
+      markStarted: (input) => this.context.write("modelInvocation.markStarted", { scope, input }),
+      releaseReserved: (input) =>
+        this.context.write("modelInvocation.releaseReserved", { scope, input }),
+      settle: (input) => this.context.write("modelInvocation.settle", { scope, input }),
+      markUnknown: (input) => this.context.write("modelInvocation.markUnknown", { scope, input }),
+      read: (input) => this.context.read("modelInvocation.read", { scope, input }),
     });
   }
 

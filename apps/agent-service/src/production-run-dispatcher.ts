@@ -481,14 +481,14 @@ export class ProductionRunDispatcher {
       );
     }
     if (
-      input.executionLease &&
-      (input.executionLease.executionLeaseId !== claim.executionLeaseId ||
-        input.executionLease.expectedLeaseRevision !== claim.expectedLeaseRevision ||
-        input.executionLease.authorityLeaseId !== claim.authorityLeaseId ||
-        input.executionLease.deploymentId !== claim.deploymentId ||
-        input.executionLease.authorityEpoch !== claim.authorityEpoch ||
-        input.executionLease.fencingToken !== claim.fencingToken ||
-        input.executionLease.consumerId !== claim.consumerId)
+      input.executionLease.executionLeaseId !== claim.executionLeaseId ||
+      input.executionLease.expectedLeaseRevision !== claim.expectedLeaseRevision ||
+      input.executionLease.authorityLeaseId !== claim.authorityLeaseId ||
+      input.executionLease.authorityFencingToken !== claim.authorityFencingToken ||
+      input.executionLease.deploymentId !== claim.deploymentId ||
+      input.executionLease.authorityEpoch !== claim.authorityEpoch ||
+      input.executionLease.fencingToken !== claim.fencingToken ||
+      input.executionLease.consumerId !== claim.consumerId
     ) {
       throw new ProductionRunDispatchError(
         PRODUCTION_RUN_DISPATCH_ERROR_CODES.INPUT_SCOPE_MISMATCH,

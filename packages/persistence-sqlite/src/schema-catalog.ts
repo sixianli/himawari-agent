@@ -224,6 +224,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with parent budget account deletion",
   ),
   entry(
+    "model_invocation_identities",
+    "ModelInvocationIdentityPort",
+    "durable physical model-attempt identity and fail-closed lifecycle",
+    "metadata_only",
+    "cascade with governed Run deletion and retain no provider Payload",
+  ),
+  entry(
     "approval_requests",
     "AuthorizationStorePort",
     "pending to terminal",

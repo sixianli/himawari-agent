@@ -15,4 +15,5 @@ export * from "./sqlite-recovery-point.js";
 export * from "./sqlite-run-payload-artifact-operations.js";
 export * from "./sqlite-run-dispatch-operations.js";
 export * from "./sqlite-model-budget-operations.js";
+export * from "./sqlite-model-invocation-operations.js";
 export * from "./state-root-lock.js";

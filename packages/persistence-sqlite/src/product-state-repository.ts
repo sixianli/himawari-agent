@@ -20,6 +20,7 @@ import type {
   GovernanceMutationReceiptStorePort,
   MemoryProjectionJobStatePort,
   ModelBudgetPort,
+  ModelInvocationIdentityPort,
   OwnerIdentityStatePort,
   PayloadStorePort,
   ProductMemoryStatePort,
@@ -305,6 +306,15 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     authorityLease: { readonly leaseId: AuthorityLeaseId; readonly fencingToken: number },
   ): ModelBudgetPort {
     return this.durable.modelBudgetPort(ownerId, agentId, authority, authorityLease);
+  }
+
+  modelInvocationIdentityPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    authorityLease: { readonly leaseId: AuthorityLeaseId; readonly fencingToken: number },
+  ): ModelInvocationIdentityPort {
+    return this.durable.modelInvocationIdentityPort(ownerId, agentId, authority, authorityLease);
   }
 
   reliableEventOutbox(): SqliteReliableEventOutbox {

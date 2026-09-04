@@ -144,7 +144,7 @@ async function fixture(options: FixtureOptions = {}) {
 }
 
 function executionLease(runId: RunId) {
-  return {
+  return Object.freeze({
     executionLeaseId: createRunExecutionLeaseId(`execution-${runId}`),
     expectedLeaseRevision: 1,
     authorityLeaseId: lease.leaseId,
@@ -153,7 +153,7 @@ function executionLease(runId: RunId) {
     authorityEpoch: authority.authorityEpoch,
     fencingToken: authority.fencingToken,
     consumerId: "thread-run-lifecycle",
-  } as const;
+  } as const);
 }
 
 async function executionFixture(options: FixtureOptions = {}) {

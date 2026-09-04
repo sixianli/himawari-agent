@@ -1,6 +1,7 @@
 import type { AgentId, OwnerId, RunId, SessionId, ThreadId, TurnId } from "@himawari-agent/domain";
 import type { CorrelationId, DataClassification, JsonObject, PayloadRef } from "./common.js";
 import type { ProductContextBlockKind } from "./context-projection.js";
+import type { RunExecutionLeaseClaim } from "./run-dispatch.js";
 
 export type { ProductContextEnvelopeV1 } from "./context-projection.js";
 
@@ -149,6 +150,8 @@ export interface RuntimeRequest {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly runId: RunId;
+  /** Frozen claim supplied by the canonical Run dispatch boundary. */
+  readonly executionLease: RunExecutionLeaseClaim;
   readonly sessionId: SessionId;
   readonly threadId: ThreadId | null;
   readonly modelRef: string;

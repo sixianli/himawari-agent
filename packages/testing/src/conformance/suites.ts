@@ -5,8 +5,8 @@ import type {
   AttentionPort,
   AttentionStatePort,
   AuditLedgerPort,
-  AuthorizationStorePort,
   AuthorityLeasePort,
+  AuthorizationStorePort,
   CapabilityDescriptor,
   CapabilityExecutionHandleStorePort,
   CapabilityInvocationEvent,
@@ -15,9 +15,9 @@ import type {
   ClockPort,
   DeliveryAttemptResult,
   DeliveryPort,
+  GrantRecord,
   IdGeneratorPort,
   JsonObject,
-  GrantRecord,
   MemoryPort,
   ModelDescriptor,
   ModelInvocationEvent,
@@ -38,16 +38,18 @@ import type {
   WorkerRunEvent,
   WorkerRunPort,
 } from "@himawari-agent/application";
-import { PORT_ERROR_CODES, ApplicationPortError } from "@himawari-agent/application";
+import { ApplicationPortError, PORT_ERROR_CODES } from "@himawari-agent/application";
 import {
   createAgent,
   createAgentAuthorityLease,
   createAgentId,
   createAuthorityHolderId,
   createAuthorityLeaseId,
+  createDeploymentId,
   createIdempotencyKey,
   createOwner,
   createOwnerId,
+  createRunExecutionLeaseId,
   createRunId,
   createSessionId,
   createThreadId,
@@ -70,6 +72,16 @@ const TURN_ID = createTurnId("turn-conformance");
 const T0 = "2026-08-25T00:00:00.000Z";
 const T1 = "2026-08-25T00:00:01.000Z";
 const T2 = "2026-08-25T00:00:02.000Z";
+const EXECUTION_LEASE = Object.freeze({
+  executionLeaseId: createRunExecutionLeaseId("execution-conformance"),
+  expectedLeaseRevision: 1,
+  authorityLeaseId: createAuthorityLeaseId("authority-conformance"),
+  authorityFencingToken: 1,
+  deploymentId: createDeploymentId("deployment-conformance"),
+  authorityEpoch: 1,
+  fencingToken: 1,
+  consumerId: "conformance-runtime",
+});
 
 async function collect<TValue>(values: AsyncIterable<TValue>): Promise<readonly TValue[]> {
   const collected: TValue[] = [];
@@ -768,6 +780,7 @@ export function agentRuntimePortConformance(
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
       runId: RUN_ID,
+      executionLease: EXECUTION_LEASE,
       sessionId: SESSION_ID,
       threadId: null,
       modelRef: "model-primary",

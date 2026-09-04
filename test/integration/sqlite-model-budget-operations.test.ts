@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
   BackgroundAdmissionLimits,
   BackgroundOccurrenceSettlement,
+  ModelInvocationIdentityBeginInput,
   ScheduledJobWrite,
 } from "@himawari-agent/application";
 import {
@@ -41,6 +43,7 @@ const OCCURRENCE_ID = createOccurrenceId("occurrence-model-budget");
 const RUN_ID = createRunId("run-model-budget");
 const NOW = "2026-09-05T00:00:00.000Z";
 const LATER = "2026-09-05T00:00:01.000Z";
+const EXPIRED_LEASE_AT = "2026-09-05T00:00:00.500Z";
 const FAR_FUTURE = "2999-12-31T23:59:59.999Z";
 const AUTHORITY_LEASE_ID = createAuthorityLeaseId("lease-model-budget");
 const EXECUTION_LEASE_ID = createRunExecutionLeaseId("execution-model-budget");
@@ -1410,6 +1413,12 @@ describe("SQLite model budget migration red tests", () => {
         leaseId: AUTHORITY_LEASE_ID,
         fencingToken: 1,
       });
+      const invocations = resource.repository.modelInvocationIdentityPort(
+        OWNER_ID,
+        AGENT_ID,
+        AUTHORITY,
+        { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+      );
       const descriptor: ModelInvocationAdmissionDescriptor = {
         ref: "approved-model-v1",
         provider: "fixture-provider",
@@ -1430,24 +1439,27 @@ describe("SQLite model budget migration red tests", () => {
         runId: RUN_ID,
         executionLease: claimFromRunExecutionLease(claimed),
         dispatch,
-        budget,
+        invocations,
         clock: { now: () => NOW },
         limits: MODEL_LIMITS,
         registry: [descriptor],
       });
 
-      const permit = await admission.begin({
+      const admitted = await admission.begin({
         modelRef: descriptor.ref,
         provider: descriptor.provider,
         model: descriptor.model,
         modelVersion: descriptor.version,
         dataClassification: "private",
-        operationKey: "model-admission-integration-call",
+        logicalSlot: "model-admission-integration-call",
         source: "model-port",
         ordinal: 1,
         estimatedCostMicros: descriptor.estimatedCostMicros,
         pricing: descriptor.pricing,
       });
+      expect(admitted.disposition).toBe("fresh");
+      if (admitted.disposition !== "fresh") throw new Error("Expected fresh model admission");
+      const permit = admitted.permit;
       await permit.markStarted();
       await permit.settle({
         inputTokens: 12,
@@ -1465,7 +1477,7 @@ describe("SQLite model budget migration red tests", () => {
       });
       expect(snapshot?.allocations).toEqual([
         expect.objectContaining({
-          operationKey: "model-admission-integration-call",
+          operationKey: admitted.identity.budgetOperationKey,
           modelRef: descriptor.ref,
           status: "settled",
           actualCostMicros: 17,
@@ -1473,6 +1485,540 @@ describe("SQLite model budget migration red tests", () => {
       ]);
     } finally {
       await resource.repository.close();
+    }
+  });
+});
+
+const INVOCATION_PRICING = Object.freeze({
+  input: 1,
+  output: 2,
+  cacheRead: 0.5,
+  cacheWrite: 0.25,
+});
+
+function identityInput(
+  executionLease: ReturnType<typeof claimFromRunExecutionLease>,
+  overrides: Partial<ModelInvocationIdentityBeginInput> = {},
+): ModelInvocationIdentityBeginInput {
+  return {
+    runId: RUN_ID,
+    modelRef: "identity-model-v1",
+    provider: "fixture-provider",
+    model: "fixture-model",
+    modelVersion: "v1",
+    dataClassification: "private",
+    logicalSlot: "identity-slot-1",
+    source: "agent-stream",
+    ordinal: 1,
+    estimatedCostMicros: 100,
+    pricing: INVOCATION_PRICING,
+    executionLease,
+    authority: AUTHORITY,
+    authorityLease: { leaseId: AUTHORITY_LEASE_ID, fencingToken: AUTHORITY.fencingToken },
+    limits: MODEL_LIMITS,
+    reservedAt: NOW,
+    ...overrides,
+  };
+}
+
+async function identityFixture() {
+  const resource = await fixture();
+  const dispatch = resource.repository.runDispatch(
+    OWNER_ID,
+    AGENT_ID,
+    AUTHORITY,
+    { leaseId: AUTHORITY_LEASE_ID, fencingToken: AUTHORITY.fencingToken },
+    "model-identity-consumer",
+  );
+  const claimed = await dispatch.claim({
+    runId: RUN_ID,
+    expectedRunRevision: 1,
+    expectedLeaseRevision: 0,
+    executionLeaseId: EXECUTION_LEASE_ID,
+    claimedAt: NOW,
+    expiresAt: FAR_FUTURE,
+  });
+  return {
+    resource,
+    dispatch,
+    claim: claimFromRunExecutionLease(claimed),
+    identity: resource.repository.modelInvocationIdentityPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+      leaseId: AUTHORITY_LEASE_ID,
+      fencingToken: AUTHORITY.fencingToken,
+    }),
+    budget: resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+      leaseId: AUTHORITY_LEASE_ID,
+      fencingToken: AUTHORITY.fencingToken,
+    }),
+  };
+}
+
+describe("SQLite durable model invocation identities", () => {
+  it("revalidates current authority before replaying an identity", async () => {
+    const fixtureState = await identityFixture();
+    try {
+      const first = await fixtureState.identity.begin(identityInput(fixtureState.claim));
+      if (first.disposition !== "fresh") throw new Error("Expected a fresh identity");
+
+      await fixtureState.resource.repository.close();
+      const database = openQualifiedDatabase(fixtureState.resource.databasePath);
+      database.prepare("UPDATE deployments SET fencing_token = 2 WHERE id = ?").run(DEPLOYMENT_ID);
+      database.close();
+
+      const restarted = await SqliteProductStateRepository.open({
+        stateRoot: path.dirname(fixtureState.resource.databasePath),
+        databasePath: fixtureState.resource.databasePath,
+        minimumFreeBytes: 0,
+        now: () => NOW,
+      });
+      try {
+        const staleIdentity = restarted.modelInvocationIdentityPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+          leaseId: AUTHORITY_LEASE_ID,
+          fencingToken: AUTHORITY.fencingToken,
+        });
+        await expect(staleIdentity.begin(identityInput(fixtureState.claim))).rejects.toMatchObject({
+          code: "PORT_NOT_AUTHORITATIVE",
+        });
+        await expect(
+          staleIdentity.releaseReserved({
+            runId: RUN_ID,
+            invocationId: first.identity.invocationId,
+            budgetOperationKey: first.identity.budgetOperationKey,
+            executionLease: fixtureState.claim,
+            at: NOW,
+          }),
+        ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+      } finally {
+        await restarted.close();
+      }
+    } finally {
+      await fixtureState.resource.repository.close();
+    }
+  });
+
+  it("requires a held execution lease before begin replay or idempotent start", async () => {
+    const fixtureState = await identityFixture();
+    try {
+      const first = await fixtureState.identity.begin(identityInput(fixtureState.claim));
+      if (first.disposition !== "fresh") throw new Error("Expected a fresh identity");
+      await fixtureState.identity.markStarted({
+        runId: RUN_ID,
+        invocationId: first.identity.invocationId,
+        budgetOperationKey: first.identity.budgetOperationKey,
+        executionLease: fixtureState.claim,
+        at: NOW,
+      });
+
+      await fixtureState.resource.repository.close();
+      const database = openQualifiedDatabase(fixtureState.resource.databasePath);
+      database
+        .prepare("UPDATE run_execution_leases SET expires_at = ? WHERE run_id = ?")
+        .run(EXPIRED_LEASE_AT, RUN_ID);
+      database.close();
+
+      const restarted = await SqliteProductStateRepository.open({
+        stateRoot: path.dirname(fixtureState.resource.databasePath),
+        databasePath: fixtureState.resource.databasePath,
+        minimumFreeBytes: 0,
+        now: () => NOW,
+      });
+      try {
+        const expiredIdentity = restarted.modelInvocationIdentityPort(
+          OWNER_ID,
+          AGENT_ID,
+          AUTHORITY,
+          { leaseId: AUTHORITY_LEASE_ID, fencingToken: AUTHORITY.fencingToken },
+        );
+        await expect(
+          expiredIdentity.begin(identityInput(fixtureState.claim, { reservedAt: LATER })),
+        ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+        await expect(
+          expiredIdentity.markStarted({
+            runId: RUN_ID,
+            invocationId: first.identity.invocationId,
+            budgetOperationKey: first.identity.budgetOperationKey,
+            executionLease: fixtureState.claim,
+            at: LATER,
+          }),
+        ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+        await expect(
+          expiredIdentity.settle({
+            runId: RUN_ID,
+            invocationId: first.identity.invocationId,
+            budgetOperationKey: first.identity.budgetOperationKey,
+            executionLease: fixtureState.claim,
+            actualCostMicros: 100,
+            at: LATER,
+          }),
+        ).resolves.toMatchObject({ status: "settled", actualCostMicros: 100 });
+      } finally {
+        await restarted.close();
+      }
+    } finally {
+      await fixtureState.resource.repository.close();
+    }
+  });
+
+  it("does not turn a replayed orphan budget allocation into a fresh identity", async () => {
+    const fixtureState = await identityFixture();
+    try {
+      const input = identityInput(fixtureState.claim);
+      const slotDigest = createHash("sha256").update(input.logicalSlot, "utf8").digest("hex");
+      const orphanInvocationId = `model-invocation:${RUN_ID}:${slotDigest.slice(0, 32)}:1`;
+      const orphanOperationKey = `model-invocation:${orphanInvocationId}`;
+      await fixtureState.budget.reserve({
+        parent: { kind: "run", runId: RUN_ID, executionLease: fixtureState.claim },
+        operationKey: orphanOperationKey,
+        modelRef: input.modelRef,
+        dataClassification: input.dataClassification,
+        estimatedCostMicros: input.estimatedCostMicros,
+        limits: input.limits,
+        reservedAt: input.reservedAt,
+      });
+
+      await expect(fixtureState.identity.begin(input)).resolves.toMatchObject({
+        disposition: "blocked",
+        reasonCode: "MODEL_INVOCATION_RECONCILIATION_REQUIRED",
+      });
+      expect(
+        await fixtureState.identity.read({ runId: RUN_ID, invocationId: orphanInvocationId }),
+      ).toBeUndefined();
+      const snapshot = await fixtureState.budget.read({
+        parent: { kind: "run", runId: RUN_ID },
+        limit: 10,
+      });
+      expect(snapshot?.allocations).toHaveLength(1);
+      expect(snapshot?.allocations[0]).toMatchObject({
+        operationKey: orphanOperationKey,
+        status: "reserved",
+      });
+    } finally {
+      await fixtureState.resource.repository.close();
+    }
+  });
+
+  it("allocates one physical identity per logical slot and replays it after reopen", async () => {
+    const fixtureState = await identityFixture();
+    try {
+      const first = await fixtureState.identity.begin(identityInput(fixtureState.claim));
+      expect(first.disposition).toBe("fresh");
+      if (first.disposition !== "fresh") throw new Error("Expected a fresh identity");
+
+      const replay = await fixtureState.identity.begin(identityInput(fixtureState.claim));
+      expect(replay).toMatchObject({
+        disposition: "replay",
+        identity: {
+          invocationId: first.identity.invocationId,
+          sequence: 1,
+          status: "reserved",
+        },
+        reasonCode: "MODEL_INVOCATION_RECONCILIATION_REQUIRED",
+      });
+      const snapshot = await fixtureState.budget.read({
+        parent: { kind: "run", runId: RUN_ID },
+        limit: 10,
+      });
+      expect(snapshot?.allocations).toHaveLength(1);
+
+      await fixtureState.resource.repository.close();
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: path.dirname(fixtureState.resource.databasePath),
+        databasePath: fixtureState.resource.databasePath,
+        minimumFreeBytes: 0,
+        now: () => NOW,
+      });
+      try {
+        const reopenedIdentity = reopened.modelInvocationIdentityPort(
+          OWNER_ID,
+          AGENT_ID,
+          AUTHORITY,
+          { leaseId: AUTHORITY_LEASE_ID, fencingToken: AUTHORITY.fencingToken },
+        );
+        await expect(
+          reopenedIdentity.begin(identityInput(fixtureState.claim)),
+        ).resolves.toMatchObject({
+          disposition: "replay",
+          identity: { invocationId: first.identity.invocationId, sequence: 1 },
+        });
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      await fixtureState.resource.repository.close();
+    }
+  });
+
+  it("creates a new sequence only after a reserved identity is durably released", async () => {
+    const fixtureState = await identityFixture();
+    try {
+      const first = await fixtureState.identity.begin(identityInput(fixtureState.claim));
+      if (first.disposition !== "fresh") throw new Error("Expected a fresh identity");
+      const released = await fixtureState.identity.releaseReserved({
+        runId: RUN_ID,
+        invocationId: first.identity.invocationId,
+        budgetOperationKey: first.identity.budgetOperationKey,
+        executionLease: fixtureState.claim,
+        at: NOW,
+      });
+      expect(released).toMatchObject({ status: "released", sequence: 1 });
+
+      const second = await fixtureState.identity.begin(identityInput(fixtureState.claim));
+      expect(second.disposition).toBe("fresh");
+      if (second.disposition !== "fresh") throw new Error("Expected a fresh second identity");
+      expect(second.identity.sequence).toBe(2);
+      expect(second.identity.invocationId).not.toBe(first.identity.invocationId);
+      expect(second.identity.budgetOperationKey).not.toBe(first.identity.budgetOperationKey);
+
+      const snapshot = await fixtureState.budget.read({
+        parent: { kind: "run", runId: RUN_ID },
+        limit: 10,
+      });
+      expect(
+        snapshot?.allocations.map(({ operationKey, status }) => ({ operationKey, status })),
+      ).toEqual([
+        { operationKey: first.identity.budgetOperationKey, status: "released" },
+        { operationKey: second.identity.budgetOperationKey, status: "reserved" },
+      ]);
+    } finally {
+      await fixtureState.resource.repository.close();
+    }
+  });
+
+  it("keeps a started identity in reconciliation across lease reclaim", async () => {
+    const fixtureState = await identityFixture();
+    try {
+      const first = await fixtureState.identity.begin(identityInput(fixtureState.claim));
+      if (first.disposition !== "fresh") throw new Error("Expected a fresh identity");
+      await fixtureState.identity.markStarted({
+        runId: RUN_ID,
+        invocationId: first.identity.invocationId,
+        budgetOperationKey: first.identity.budgetOperationKey,
+        executionLease: fixtureState.claim,
+        at: NOW,
+      });
+      await fixtureState.dispatch.release({
+        runId: RUN_ID,
+        expectedLeaseRevision: fixtureState.claim.expectedLeaseRevision,
+        executionLeaseId: fixtureState.claim.executionLeaseId,
+        releasedAt: LATER,
+      });
+      const reclaimedLease = await fixtureState.dispatch.claim({
+        runId: RUN_ID,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 2,
+        executionLeaseId: createRunExecutionLeaseId("execution-model-identity-reclaimed"),
+        claimedAt: LATER,
+        expiresAt: FAR_FUTURE,
+      });
+      const reclaimedIdentity = fixtureState.resource.repository.modelInvocationIdentityPort(
+        OWNER_ID,
+        AGENT_ID,
+        AUTHORITY,
+        { leaseId: AUTHORITY_LEASE_ID, fencingToken: AUTHORITY.fencingToken },
+      );
+      const replay = await reclaimedIdentity.begin(
+        identityInput(claimFromRunExecutionLease(reclaimedLease)),
+      );
+      expect(replay).toMatchObject({
+        disposition: "replay",
+        identity: { invocationId: first.identity.invocationId, status: "started" },
+        reasonCode: "MODEL_INVOCATION_RECONCILIATION_REQUIRED",
+      });
+      const snapshot = await fixtureState.budget.read({
+        parent: { kind: "run", runId: RUN_ID },
+        limit: 10,
+      });
+      expect(snapshot?.allocations).toHaveLength(1);
+      expect(snapshot?.allocations[0]?.status).toBe("started");
+    } finally {
+      await fixtureState.resource.repository.close();
+    }
+  });
+
+  it("rejects semantic conflicts and preserves settled identity facts", async () => {
+    const fixtureState = await identityFixture();
+    try {
+      const first = await fixtureState.identity.begin(identityInput(fixtureState.claim));
+      if (first.disposition !== "fresh") throw new Error("Expected a fresh identity");
+      await fixtureState.identity.markStarted({
+        runId: RUN_ID,
+        invocationId: first.identity.invocationId,
+        budgetOperationKey: first.identity.budgetOperationKey,
+        executionLease: fixtureState.claim,
+        at: NOW,
+      });
+      const settled = await fixtureState.identity.settle({
+        runId: RUN_ID,
+        invocationId: first.identity.invocationId,
+        budgetOperationKey: first.identity.budgetOperationKey,
+        executionLease: fixtureState.claim,
+        actualCostMicros: 17,
+        at: LATER,
+      });
+      expect(settled).toMatchObject({ status: "settled", actualCostMicros: 17 });
+
+      const replay = await fixtureState.identity.begin(identityInput(fixtureState.claim));
+      expect(replay).toMatchObject({ disposition: "replay", identity: { status: "settled" } });
+      const conflict = await fixtureState.identity.begin(
+        identityInput(fixtureState.claim, { model: "different-model" }),
+      );
+      expect(conflict).toMatchObject({
+        disposition: "blocked",
+        reasonCode: "MODEL_INVOCATION_IDENTITY_CONFLICT",
+      });
+      const unknownFirst = await fixtureState.identity.begin(
+        identityInput(fixtureState.claim, { logicalSlot: "identity-slot-unknown" }),
+      );
+      if (unknownFirst.disposition !== "fresh") throw new Error("Expected an unknown identity");
+      await fixtureState.identity.markStarted({
+        runId: RUN_ID,
+        invocationId: unknownFirst.identity.invocationId,
+        budgetOperationKey: unknownFirst.identity.budgetOperationKey,
+        executionLease: fixtureState.claim,
+        at: NOW,
+      });
+      await fixtureState.identity.markUnknown({
+        runId: RUN_ID,
+        invocationId: unknownFirst.identity.invocationId,
+        budgetOperationKey: unknownFirst.identity.budgetOperationKey,
+        executionLease: fixtureState.claim,
+        at: LATER,
+        reasonCode: "transport_unresolved",
+      });
+      await expect(
+        fixtureState.identity.begin(
+          identityInput(fixtureState.claim, { logicalSlot: "identity-slot-unknown" }),
+        ),
+      ).resolves.toMatchObject({
+        disposition: "replay",
+        identity: { status: "unknown", invocationId: unknownFirst.identity.invocationId },
+      });
+      const snapshot = await fixtureState.budget.read({
+        parent: { kind: "run", runId: RUN_ID },
+        limit: 10,
+      });
+      expect(snapshot?.allocations).toHaveLength(2);
+      expect(snapshot?.allocations[0]?.status).toBe("settled");
+    } finally {
+      await fixtureState.resource.repository.close();
+    }
+  });
+
+  it("supports independent physical streams while preserving per-slot replay", async () => {
+    const fixtureState = await identityFixture();
+    try {
+      const first = await fixtureState.identity.begin(identityInput(fixtureState.claim));
+      const second = await fixtureState.identity.begin(
+        identityInput(fixtureState.claim, { logicalSlot: "identity-slot-2", ordinal: 2 }),
+      );
+      expect(first.disposition).toBe("fresh");
+      expect(second.disposition).toBe("fresh");
+      if (first.disposition !== "fresh" || second.disposition !== "fresh") {
+        throw new Error("Expected independent fresh identities");
+      }
+      expect(first.identity.sequence).toBe(1);
+      expect(second.identity.sequence).toBe(1);
+      expect(first.identity.invocationId).not.toBe(second.identity.invocationId);
+      const replay = await fixtureState.identity.begin(identityInput(fixtureState.claim));
+      expect(replay).toMatchObject({
+        disposition: "replay",
+        identity: { invocationId: first.identity.invocationId },
+      });
+      const snapshot = await fixtureState.budget.read({
+        parent: { kind: "run", runId: RUN_ID },
+        limit: 10,
+      });
+      expect(snapshot?.allocations).toHaveLength(2);
+    } finally {
+      await fixtureState.resource.repository.close();
+    }
+  });
+
+  it("rolls back the budget reservation when identity insertion fails", async () => {
+    const fixtureState = await identityFixture();
+    try {
+      const database = openQualifiedDatabase(fixtureState.resource.databasePath);
+      database.exec(
+        `CREATE TRIGGER reject_model_identity_insert
+         BEFORE INSERT ON model_invocation_identities
+         WHEN NEW.logical_slot = 'identity-slot-rollback'
+         BEGIN
+           SELECT RAISE(ABORT, 'identity insert rejected by test');
+         END`,
+      );
+      database.close();
+
+      await expect(
+        fixtureState.identity.begin(
+          identityInput(fixtureState.claim, { logicalSlot: "identity-slot-rollback" }),
+        ),
+      ).rejects.toThrow("identity insert rejected by test");
+      expect(
+        await fixtureState.budget.read({ parent: { kind: "run", runId: RUN_ID }, limit: 10 }),
+      ).toBeUndefined();
+
+      const check = openQualifiedDatabase(fixtureState.resource.databasePath);
+      try {
+        expect(
+          check
+            .prepare(
+              "SELECT COUNT(*) AS count FROM model_invocation_identities WHERE logical_slot = ?",
+            )
+            .get("identity-slot-rollback"),
+        ).toEqual({ count: 0 });
+        expect(
+          check
+            .prepare(
+              "SELECT COUNT(*) AS count FROM model_budget_allocations WHERE operation_key LIKE 'model-invocation:%'",
+            )
+            .get(),
+        ).toEqual({ count: 0 });
+      } finally {
+        check.close();
+      }
+    } finally {
+      await fixtureState.resource.repository.close();
+    }
+  });
+
+  it("enforces the identity authority and lifecycle SQL checks", async () => {
+    const fixtureState = await identityFixture();
+    try {
+      const first = await fixtureState.identity.begin(identityInput(fixtureState.claim));
+      if (first.disposition !== "fresh") throw new Error("Expected a fresh identity");
+      await fixtureState.resource.repository.close();
+      const database = openQualifiedDatabase(fixtureState.resource.databasePath);
+      try {
+        database
+          .prepare(
+            `INSERT INTO authority_leases (
+              id, owner_id, agent_id, deployment_id, holder_id, authority_epoch,
+              fencing_token, acquired_at, expires_at, released_at
+            ) VALUES (?, ?, ?, ?, 'second-holder', 1, 2, ?, ?, NULL)`,
+          )
+          .run("lease-model-identity-other", OWNER_ID, AGENT_ID, DEPLOYMENT_ID, NOW, FAR_FUTURE);
+        expect(() =>
+          database
+            .prepare(
+              "UPDATE model_invocation_identities SET authority_lease_id = ? WHERE invocation_id = ?",
+            )
+            .run("lease-model-identity-other", first.identity.invocationId),
+        ).toThrow();
+        expect(() =>
+          database
+            .prepare(
+              `UPDATE model_invocation_identities
+               SET status = 'unknown', reason_code = 'provider_unresolved',
+                   observed_at = ?, started_at = NULL
+               WHERE invocation_id = ?`,
+            )
+            .run(LATER, first.identity.invocationId),
+        ).toThrow();
+      } finally {
+        database.close();
+      }
+    } finally {
+      await fixtureState.resource.repository.close();
     }
   });
 });

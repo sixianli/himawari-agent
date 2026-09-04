@@ -1,6 +1,10 @@
 import {
   type ModelDescriptor,
+  type ModelInvocationAdmissionInput,
+  type ModelInvocationAdmissionResult,
   type ModelInvocationEvent,
+  type ModelInvocationIdentity,
+  type ModelInvocationPermit,
   ModelRouterService,
   SessionTraceRecorder,
 } from "@himawari-agent/application";
@@ -44,6 +48,55 @@ const TEST_EXECUTION_LEASE = Object.freeze({
 });
 
 function allowModelAdmission() {
+  const permit: ModelInvocationPermit = {
+    assertActive: async () => undefined,
+    markStarted: async () => undefined,
+    releaseReserved: async () => undefined,
+    settle: async () => undefined,
+    markUnknown: async () => undefined,
+  };
+  const fresh = (input: ModelInvocationAdmissionInput): ModelInvocationAdmissionResult => ({
+    disposition: "fresh",
+    identity: Object.freeze({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      logicalSlot: input.logicalSlot,
+      sequence: 1,
+      invocationId: input.logicalSlot,
+      modelRef: input.modelRef,
+      provider: input.provider,
+      model: input.model,
+      modelVersion: input.modelVersion,
+      dataClassification: input.dataClassification,
+      source: input.source,
+      ordinal: input.ordinal,
+      pricing: Object.freeze({ ...input.pricing }),
+      pricingFingerprint: "sha256:model-router-fixture",
+      estimatedCostMicros: input.estimatedCostMicros,
+      budgetAccountId: "run-account-model-router",
+      budgetOperationKey: `model-invocation:${input.logicalSlot}`,
+      authority: Object.freeze({
+        deploymentId: TEST_EXECUTION_LEASE.deploymentId,
+        authorityEpoch: TEST_EXECUTION_LEASE.authorityEpoch,
+        fencingToken: TEST_EXECUTION_LEASE.fencingToken,
+      }),
+      authorityLease: Object.freeze({
+        leaseId: TEST_EXECUTION_LEASE.authorityLeaseId,
+        fencingToken: TEST_EXECUTION_LEASE.authorityFencingToken,
+      }),
+      executionLease: TEST_EXECUTION_LEASE,
+      status: "reserved",
+      reservedAt: T0,
+      startedAt: null,
+      observedAt: null,
+      settledAt: null,
+      releasedAt: null,
+      actualCostMicros: null,
+      reasonCode: null,
+    } satisfies ModelInvocationIdentity),
+    permit,
+  });
   return {
     context: {
       ownerId: OWNER_ID,
@@ -51,13 +104,7 @@ function allowModelAdmission() {
       runId: RUN_ID,
       executionLease: TEST_EXECUTION_LEASE,
     },
-    begin: async () => ({
-      assertActive: async () => undefined,
-      markStarted: async () => undefined,
-      releaseReserved: async () => undefined,
-      settle: async () => undefined,
-      markUnknown: async () => undefined,
-    }),
+    begin: async (input: ModelInvocationAdmissionInput) => fresh(input),
   };
 }
 

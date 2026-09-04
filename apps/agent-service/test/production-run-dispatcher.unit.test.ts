@@ -8,7 +8,10 @@ import type {
   RunExecutionLeaseReceipt,
   RunReconciliationCandidate,
 } from "@himawari-agent/application";
-import { createApplicationServiceIdentityFactory } from "@himawari-agent/application";
+import {
+  claimFromRunExecutionLease,
+  createApplicationServiceIdentityFactory,
+} from "@himawari-agent/application";
 import { createBeefRestaurantFixture, createV02Fixture } from "@himawari-agent/testing";
 import { describe, expect, it } from "vitest";
 import {
@@ -176,6 +179,7 @@ function inputFor(
       leaseId: currentLease.authorityLeaseId,
       fencingToken: currentLease.fencingToken,
     },
+    executionLease: claimFromRunExecutionLease(currentLease),
     context: {} as ExecuteCoordinatedRunInput["context"],
     runtime: {} as ExecuteCoordinatedRunInput["runtime"],
     workers: [],
