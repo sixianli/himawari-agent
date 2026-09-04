@@ -200,6 +200,8 @@ Grant 与 Capability 声明分离。一次性 Grant 精确绑定原 Intent 并�
 
 ### Capability Registry and execution boundary
 
+`NodeCapabilityRuntimePort` 的正文依赖仅有绑定完整 invocation 的 `readInput` 和 `writeOutput`，不再向执行侧暴露任意 Payload store、加解密器或结果引用生成器。Program、MCP 和 Endpoint 共用此边界；输入读取失败会在执行前拒绝，已发生外部动作但结果写入失败时返回结果不确定。当前八项单元测试验证调用合同和失败行为，其中正文保护使用测试替身，不构成真实密码学或进程隔离证明。生产 Agent 端受保护正文代理、实际委派认证、结果幂等归属与 Worker 总组合尚未接入。
+
 Capability Registry 分开保存不可变版本声明、安装生命周期和短期执行 Handle。声明固定来源 locator、exact version、SHA-256 integrity、operations、permission refs 与 isolation；记录在 `discovered → installation_proposed → installation_approved → active` 之后才能签发 Handle。更新固定新的 version/integrity，标记 operation 或 permission expansion，并再次经过 proposal/approval 才能激活；停用后的版本先 `disabled` 再 `uninstalled`。
 
 `capability.v2` Manifest 保存 source identity、artifact digest/signature、精确版本、operations、permission/data/network/file/secret scope、isolation、费用、health、review 和 runtime contract。只有 `discovered → review_required → installation_proposed → installation_approved → active` 的已审查健康能力可投影；disabled/revoked/uninstalled 在 SQLite 同一 transaction 内撤销活动 Handle 与依赖任务。更新提议与等待批准只改变 candidate 状态，当前已资格版本在原子切换前继续有权执行；同可信来源、完整性有效、兼容且无扩张的非执行代码变化才可按 Owner policy 自动批准，新执行代码、source/major/runtime/executable/signer/compatibility 变化或 scope 扩张必须显式批准。切换前重新验证 rollback 与 candidate artifact/runtime，切换 transaction 同时撤销旧版本 Handle；回退只切换版本，结构化记录明确不声称撤销外部副作用或产品数据库状态。Foundation `CapabilityRegistryService` 不接受 v2 Manifest。

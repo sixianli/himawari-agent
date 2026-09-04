@@ -297,6 +297,8 @@ schedule evaluator 覆盖 interval、one-shot 和 IANA daily schedule；periodic
 
 删除回归随后确认旧 JSON 协调检查点不属于 Run 的外键关系，导致独占答案残留、存活检查点引用的正文又可被单独删除。本单元改用 `RunCheckpointStore` 与第十八项 migration，保留另一张历史追加检查点表；同事务验证 scope、deployment fence、Payload 和 CAS，并将永久删除纳入真实引用关系。取消后的已生成正文仍保留归属，不代表助手消息已发布。主代理独立完成全仓 `npm run check`、14 个集成文件的 145 项测试、14 个合同文件的 166 项测试，以及三个 Pi 兼容文件的 21 项测试。合同检查中五项 UDS 测试因默认沙箱禁止创建 socket，经过针对临时本机 socket 的授权重跑后全部通过；未连接生产服务。独立只读复核未发现阻塞本单元提交的问题，三个受影响 Runbook 已语义核对并重新封存静态合同，严格文档检查无警告。该单元不包含安装后 HTTP 接线、生产上下文物化、持久执行领取、真实 Worker 通道或双平台隔离验收。
 
+2026-09-04 的 Worker 正文接口单元将 Program、MCP 和 Endpoint 的输入/输出集中到 invocation 级窄边界，移除执行侧的任意 Payload store 和加解密器依赖。主代理独立运行八项单元测试通过，覆盖完整请求传递、输入拒绝后不执行，以及外部动作成功但输出保存失败时只报告结果不确定。全仓检查通过。这些证据仅证明接口迁移；生产认证正文代理、结果幂等事务、真实 Worker 接线和双平台隔离仍待完成。
+
 ### Task 13：实现受认证 HTTP Gateway 与可恢复 SSE
 
 - [x] 先为 HTTP adapter 写 contract/security tests，证明每个命令、查询和事件请求都经过版本 parser、`GatewayAuthenticationContext`、scope policy、Control Plane 或 Read Model。

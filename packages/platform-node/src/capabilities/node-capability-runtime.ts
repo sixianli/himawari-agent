@@ -7,8 +7,7 @@ import type {
   CapabilityManifest,
   CapabilityPort,
   ClockPort,
-  PayloadProtectorPort,
-  PayloadStorePort,
+  PayloadRef,
   SecretPort,
 } from "@himawari-agent/application";
 import {
@@ -42,9 +41,12 @@ export interface ActiveCapabilityManifestPort {
 }
 
 export interface CapabilityPayloadBoundary {
-  store(ownerId: string, agentId: string): PayloadStorePort;
-  readonly protector: PayloadProtectorPort;
-  nextResultRef(request: CapabilityInvocationRequest): string;
+  readInput(request: CapabilityInvocationRequest): Promise<Uint8Array>;
+  writeOutput(
+    request: CapabilityInvocationRequest,
+    plaintext: Uint8Array,
+    contentType: string,
+  ): Promise<PayloadRef>;
 }
 
 export interface CapabilitySecretMaterialSource {
@@ -207,33 +209,15 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
   }
 
   private async readInput(request: CapabilityInvocationRequest): Promise<Uint8Array> {
-    const store = this.#options.payloads.store(request.ownerId, request.agentId);
-    const payload = await store.get(request.inputRef);
-    if (!payload) throw new Error(NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_INPUT_MISSING);
-    return this.#options.payloads.protector.unprotect({
-      ownerId: request.ownerId,
-      agentId: request.agentId,
-      payload,
-    });
+    return this.#options.payloads.readInput(request);
   }
 
   private async storeOutput(
     request: CapabilityInvocationRequest,
     plaintext: Uint8Array,
     contentType: string,
-  ): Promise<string> {
-    const ref = this.#options.payloads.nextResultRef(request);
-    const payload = await this.#options.payloads.protector.protect({
-      ownerId: request.ownerId,
-      agentId: request.agentId,
-      ref,
-      dataClassification: request.dataClassification,
-      contentType,
-      plaintext,
-      createdAt: this.#options.clock.now(),
-    });
-    await this.#options.payloads.store(request.ownerId, request.agentId).put(payload);
-    return ref;
+  ): Promise<PayloadRef> {
+    return this.#options.payloads.writeOutput(request, plaintext, contentType);
   }
 
   private async *invokeProgram(
