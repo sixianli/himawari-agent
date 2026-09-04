@@ -501,9 +501,9 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 - [ ] 证明迁移包不含 machine secrets，target readiness 精确列出需重配 secret/directory permission，source 在 target 激活后不能普通启动。
 - [ ] 在 20 万 messages、1 万 Threads、50 万 Runs、100 active jobs 和 50 repositories 的生成数据上验证核心 query、search、approval、Memory、Trace、delete 和 transfer；记录 p50/p95/p99、资源与瓶颈。
 - [ ] 验证 Web/GitHub 在 2 秒内持久接纳或拒绝、正常重启后 2 分钟内可查询、任务 5 分钟内恢复或显示阻塞；普通在线 GitHub 分析目标 10 分钟只在模型和外部服务可用的授权环境中测量。
-- [ ] 7 天连续运行属于完整 v0.2 上线门槛；如果其他 Specs 尚未完成，本 Plan 只记录基础切片 soak，不宣称 v0.2 production-ready。
+- [ ] 验证基础切片关键运行路径和故障恢复；按 2026-09-04 Owner 决定，长期连续运行观察不再是上线前置门槛。如果其他必需 Specs 尚未完成，不宣称 v0.2 production-ready。
 
-本轮已在 Mac 临时 qualified SQLite 上完成基础规模切片：20 万 messages、1 万 Threads、50 万 Runs、100 active jobs 和 50 个 GitHub repository monitors，记录 query/search/approval/Memory/Trace/delete 的 p50/p95/p99 以及三次 SQLite snapshot transfer；证据位于 `test/integration/qualification/evidence/s1-task28-scale.json`。可重定位 Node artifact 现包含 GitHub、Mem0 与 Pi runtime 包，并通过 Mac 临时前缀安装及真实 Agent/Worker child-process 启停测试。按已授权边界，源码已同步到 Hermes 新隔离目录 `/data/hermes/himawari-agent`，在 Linux x86_64、Node 26 上完成锁定依赖安装、Node runtime 构建及 4 项安装后服务/恢复/authority-transfer 测试；runtime manifest 摘要与本地一致，既有 `/data/hermes` Agent state 未触碰。由于 native 依赖仍需按平台分别构建，Mac/Hermes 双向 authority transfer、完整加密 transfer、公网 2 秒门槛和 7 天 soak 仍未验证，不能据此关闭本 Task。
+本轮已在 Mac 临时 qualified SQLite 上完成基础规模切片：20 万 messages、1 万 Threads、50 万 Runs、100 active jobs 和 50 个 GitHub repository monitors，记录 query/search/approval/Memory/Trace/delete 的 p50/p95/p99 以及三次 SQLite snapshot transfer；证据位于 `test/integration/qualification/evidence/s1-task28-scale.json`。可重定位 Node artifact 现包含 GitHub、Mem0 与 Pi runtime 包，并通过 Mac 临时前缀安装及真实 Agent/Worker child-process 启停测试。按已授权边界，源码已同步到 Hermes 新隔离目录 `/data/hermes/himawari-agent`，在 Linux x86_64、Node 26 上完成锁定依赖安装、Node runtime 构建及 4 项安装后服务/恢复/authority-transfer 测试；runtime manifest 摘要与本地一致，既有 `/data/hermes` Agent state 未触碰。由于 native 依赖仍需按平台分别构建，Mac/Hermes 双向 authority transfer、完整加密 transfer 和公网 2 秒门槛仍未验证，不能据此关闭本 Task。该轮未执行长期连续运行观察；按 2026-09-04 Owner 决定，此项不再阻塞上线。
 
 ### Task 29：创建已验证 Runbooks 并对账当前事实文档
 
@@ -537,7 +537,7 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 | 模型路由 | Task 20 | 精确 descriptors、Owner 费用授权、deterministic 与有界 live evidence；证据：Task 20 model-routing evidence | 基础切片已验证：canonical generation/embedding descriptors、primary/fixed fallback、Pi ModelRuntime transport、严格配置、secret redaction、空响应/截断终态、cancellation/tool-call/disclosure/fallback 确定性矩阵，以及 embedding 和 generation 的有界 live provider/model/token/cost readback 均通过；官方仍无 immutable model version，最终 Gateway/Memory/Worker 生产组合由 Tasks 27–30 验收 |
 | GitHub 在线只读监控 | Tasks 21–22、27 | 权限 manifest、签名/去重、在线事件、coverage gap、无 write surface；证据：Tasks 21–22 GitHub evidence | 部分验证：read-only boundary、raw-byte HMAC、durable receipt、mirror、coverage gap、Attention/BUDGET_BLOCKED 和本地 server-side lifecycle command 通过；真实生产 Gateway 组合、历史策略 durable adapter、App 权限 readback、外部 webhook 和线上模型未完成 |
 | 同机恢复点与跨主机迁移 | Tasks 23–24、28 | 真实 restore、双向 transfer、failure injection、source retired；证据：Tasks 23–24 evidence、Task 28 scale evidence | 同机与临时安装 transfer 已验证；Mac↔Hermes 双向非空状态、完整加密 transfer 和激活后 source readback 未完成 |
-| 删除与存储压力 | Tasks 23、25–26、28 | Trash/restore、删除传播、snapshot 清除、disk pressure 与恢复；证据：Tasks 23、25–26、28 evidence | 本地删除/恢复/压力路径和规模 p50/p95/p99 已验证；跨主机恢复副本、真实 retention 回读和 7 天 soak 未完成 |
+| 删除与存储压力 | Tasks 23、25–26、28 | Trash/restore、删除传播、snapshot 清除、disk pressure 与恢复；证据：Tasks 23、25–26、28 evidence | 本地删除/恢复/压力路径和规模 p50/p95/p99 已验证；跨主机恢复副本、真实 retention 回读未完成 |
 | 本 Spec 收口 | Tasks 25–30 | 安全/规模/平台、Runbooks、Architecture、immutable release evidence | 未收口：当前文档与 Runbook 已对账，外部 readback、完整 acceptance mapping、双向迁移、live adapters、完整矩阵和 sibling Specs 仍有缺口 |
 
 ## 验证
@@ -562,7 +562,7 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 - Browser E2E、identity/security、SSE reconnect 与 accessibility checks。
 - Mem0 compatibility、Memory golden dataset、projection/rebuild/delete。
 - GitHub App permission、webhook、read-only monitor 和 coverage gap。
-- Mac/Hermes packaging、transfer drill、规模与 soak。
+- Mac/Hermes packaging、transfer drill、规模与关键运行路径及故障恢复；长期观察不设上线前置时长。
 
 真实 provider、Cloudflare、GitHub、Mac/Hermes service-manager、迁移和生产类验证必须在对应授权与适用 Runbook/preflight 下单独运行。一次 live success、HTTP 200、测试替身通过或 Compose/配置解析均不能单独证明生产完成。
 
@@ -580,4 +580,4 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 - [ ] 本 Plan 与来源 Spec 仅在工作真正关闭后移动到 `docs/archive/plans/` 与 `docs/archive/specs/`。
 - [ ] 即使本 Plan 关闭，也没有在其余 v0.2 Specs 和完整 PRD 验收完成前宣称 v0.2 production-ready。
 
-本轮 fresh evidence 已覆盖模型确定性边界、4096 维 Qwen embedding 的 Mem0 production projection、primary/fixed fallback generation 的有界 live readback、GitHub 确定性边界、重复结果恢复、浏览器 disclosure preview、本机规模切片和安装后服务；仍缺少真实 GitHub/Cloudflare、Safari/Firefox/真实移动设备、Mac↔Hermes transfer、immutable clean-install 的双平台 readback、各验收项的外部 readback 证据、完整跨平台矩阵和 7 天 soak。因此 Task 30 与本 Plan 收口清单保持未完成，不把 Task 20 provider qualification 推断为完整生产验收。
+本轮 fresh evidence 已覆盖模型确定性边界、4096 维 Qwen embedding 的 Mem0 production projection、primary/fixed fallback generation 的有界 live readback、GitHub 确定性边界、重复结果恢复、浏览器 disclosure preview、本机规模切片和安装后服务；仍缺少真实 GitHub/Cloudflare、Safari/Firefox/真实移动设备、Mac↔Hermes transfer、immutable clean-install 的双平台 readback、各验收项的外部 readback 证据和完整跨平台矩阵。因此 Task 30 与本 Plan 收口清单保持未完成，不把 Task 20 provider qualification 推断为完整生产验收。长期连续运行观察未完成不再是收口阻塞项。

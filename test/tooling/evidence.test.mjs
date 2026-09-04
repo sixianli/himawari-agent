@@ -148,7 +148,7 @@ afterEach(() => {
   for (const root of directories.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-describe("S9 CI证据交接边界", () => {
+describe("生产验收 CI 证据交接边界", () => {
   it("启用周期配置不阻断显式 push 交接，但周期结果不能冒充 push", () => {
     const input = fixture();
     const filename = path.join(input.root, "ci/quality-policy.json");
@@ -169,6 +169,9 @@ describe("S9 CI证据交接边界", () => {
     expect(evidence.platforms).toHaveLength(2);
     expect(evidence.checks).toHaveLength(12);
     expect(evidence.pending).toHaveLength(5);
+    expect(evidence.pending).toContain("双平台运行、故障恢复与核心升级验证");
+    expect(evidence.pending).toContain("Mac/Hermes 平台执行隔离验证");
+    expect(evidence.pending.join(" ")).not.toMatch(/七天|7\s*天|7\s*[×x]\s*24|soak|S9/);
     expect(evidence.persistence).toBe("transfer_required_before_expiry");
     expect(readJson(path.join(input.root, input.output))).toEqual(evidence);
   });

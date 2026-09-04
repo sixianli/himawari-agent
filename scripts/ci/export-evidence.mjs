@@ -175,9 +175,9 @@ export function exportEvidence({
       reportSha256: fileSha256(path.join(reports, entry.source)),
     })),
     pending: [
-      "S9 Mac/Hermes 平台 conformance",
-      "S9 正式浏览器和人工 WCAG",
-      "S9 两次七天 soak 与升级恢复",
+      "Mac/Hermes 平台执行隔离验证",
+      "正式浏览器和人工 WCAG 验证",
+      "双平台运行、故障恢复与核心升级验证",
       "Owner 签署",
       "转存到另行批准的持久证据位置并重新核验",
     ],

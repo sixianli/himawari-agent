@@ -41,7 +41,7 @@ date: "2026-08-26"
 - 桌面/移动关键流程的 WCAG 2.2 AA 自动检查和人工辅助技术验证。
 - 5 年设计规模、20 万消息、1 万 Thread、50 万 Run、100 启用任务和 50 GitHub 仓库的数据/负载验证。
 - 2 秒命令/GitHub 接纳、10 分钟 GitHub 分析投递、重启后 2 分钟 Web/消息和 5 分钟任务恢复目标。
-- 连续 7 天 soak、模型故障、外部服务故障、正常重启、覆盖缺口、预算和存储压力路径。
+- 双平台关键运行路径与故障恢复验收，覆盖模型故障、外部服务故障、正常重启、覆盖缺口、预算和存储压力；长期连续运行观察不设上线前置时长。
 - 手动核心升级的 preflight、恢复点、drain、install/migrate、validate、activate 和明确 rollback boundary。
 - 不可变 release artifact、evidence manifest、签署、失败阻塞和生产标识。
 
@@ -77,10 +77,10 @@ date: "2026-08-26"
 - 正常重启从进程/主机可用开始，2 分钟内 Web 查询和新消息可接纳，5 分钟内任务恢复执行或显示明确 blocked 原因。
 - 性能报告必须给出样本量、数据形状、硬件/OS、浏览器、模型/provider 条件、p50/p95/p99、最大值和未满足项；不能只报告平均值。
 
-### 连续运行
+### 运行与故障恢复
 
-- Mac 和 Hermes 各完成一次连续 7×24 小时 soak；候选 revision、schema 和关键配置在窗口中固定，必要修复会使该平台窗口重新开始。
-- soak 必须包含持续对话、计划任务、外部事件、模型主备故障、adapter/credential 失败、正常服务/主机重启、浏览器断线重连、预算/容量阻塞和受控存储压力。
+- Mac 和 Hermes 分别通过同一候选的关键运行路径与故障恢复验收。每份证据绑定 revision、schema 和关键配置；必要修复后重跑受影响验收，不重新计时。
+- 验收必须包含对话、计划任务、外部事件、模型主备故障、adapter/credential 失败、正常服务/主机重启、浏览器断线重连、预算/容量阻塞和受控存储压力。连续运行观察可在上线后持续进行，不设置固定天数门槛。
 - 所有已接受工作可追踪到终态或明确 blocked，不能出现静默丢失、重复副作用、双权威、secret 泄漏或不可解释数据差异。
 - 产品展示自动重启、当前健康、停机记录、coverage gaps 和具体 blocked reason；不以该证据宣称 SLA。
 
@@ -100,7 +100,7 @@ date: "2026-08-26"
 qualification_id、product_version、candidate revision/artifacts
 Spec/Plan/implementation coverage manifest
 Mac report、Hermes report、browser matrix、accessibility report
-scale/performance report、7-day soak reports
+scale/performance report、双平台运行与故障恢复报告
 security/secret/deletion/migration/upgrade evidence
 open blockers、approved_by、signed_at、status
 ~~~
@@ -119,7 +119,7 @@ open blockers、approved_by、signed_at、status
 
 ### 规模和负载模型
 
-数据集包含长/短 Thread、归档/Trash、不同 Message/Run/Trace 大小、活跃/暂停/阻塞 Task、Memory 版本/墓碑、Repository mirror metadata 和跨对象引用。生成器保存 seed、schema version 和 digest；删除/迁移测试使用独立副本，不污染 soak 权威。
+数据集包含长/短 Thread、归档/Trash、不同 Message/Run/Trace 大小、活跃/暂停/阻塞 Task、Memory 版本/墓碑、Repository mirror metadata 和跨对象引用。生成器保存 seed、schema version 和 digest；删除/迁移测试使用独立副本，不污染运行验收权威。
 
 负载同时包含前台交互、搜索、审批、background scheduling、GitHub ingress 和 Trace 读取，验证前台保留容量。模型延迟与费用通过可控 stub 建立确定性基线，再用已批准真实模型做有限端到端确认并单独标注外部波动。
 
@@ -156,7 +156,7 @@ Upgrade lock、authority epoch 和 ingress fence 共同阻止旧/新版本同时
 | 浏览器版本或证据过期 | 重新冻结矩阵并重跑受影响组合 |
 | WCAG 自动通过但人工关键流失败 | 以失败为准并修复；不能 waiver 为 AA |
 | 性能目标不满足 | 保留真实测量，阻止签署或修改 PRD 后重新确认 |
-| soak 中修改 candidate | 当前平台 7 天窗口失效并重新开始 |
+| 运行验收中修改 candidate | 旧证据保留原候选标识，新候选重跑受影响检查，不设置连续运行计时门槛 |
 | 已接受工作无终态/blocked reason | 视为数据可靠性 blocker |
 | upgrade preflight 失败 | 不 drain、不安装，保持当前 active version |
 | migration/validation 失败 | 保持 ingress fenced，进入人工 recovery decision |
@@ -170,7 +170,7 @@ Upgrade lock、authority epoch 和 ingress fence 共同阻止旧/新版本同时
 - 每个 RC 从官方发布渠道解析浏览器 majors，执行矩阵化 Browser E2E、三语视觉/交互回归与人工辅助技术检查。
 - 用固定 seed 数据集运行规模、混合负载、查询计划、存储增长、删除和迁移验证；保存 p50/p95/p99 与硬件条件。
 - 使用可控 fault injection 覆盖模型/adapter/数据库/磁盘/网络失败、重启、kill points、预算和容量阻塞。
-- 在两个平台各运行连续 7 天 soak，并自动检查孤儿 accepted work、重复 side effect、authority conflict、secret scan 和 coverage gap。
+- 在两个平台分别执行关键运行路径与故障恢复检查，自动检查孤儿 accepted work、重复 side effect、authority conflict、secret scan 和 coverage gap；不以连续运行时长作为通过条件。
 - 对升级每个状态边界执行 kill/restart、artifact tamper、schema mismatch、恢复点损坏、不可逆 migration 和 rollback-scope 负面测试。
 - 最终运行全仓 `npm run check`、全部测试、构建、依赖/secret/security scan、`git diff --check` 和 strict document validation。
 
@@ -179,6 +179,7 @@ Upgrade lock、authority epoch 和 ingress fence 共同阻止旧/新版本同时
 - 确认人：Owner
 - 确认日期：2026-08-26
 - 原确认范围：“完整能力才可标记 v0.2”、双平台、浏览器、WCAG、规模、连续 7 天运行硬门禁，以及手动升级与回退边界。
+- 2026-09-04 Owner 调整：产品仅供唯一所有者使用，取消上述连续 7 天运行硬门禁。双平台真实运行、安全隔离、故障恢复和关键流程仍须通过；长期运行观察不阻塞上线。Trash 和迁移源副本的 7 天保留规则不变。
 - 范围调整确认人：Owner
 - 范围调整确认日期：2026-08-28
 - 范围调整：生产门禁要求全部核心必需能力和候选中已启用的可选能力；未连接 Calendar 不阻塞签署，但启用后必须完整通过 S7/J07 双平台证据。

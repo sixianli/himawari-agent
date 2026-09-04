@@ -84,7 +84,7 @@ export async function local({
       "真实 GitHub Linux/macOS 完整矩阵",
       "Linux Node floor",
       "真实取消、fork 审批与 Ruleset 拒绝合并",
-      "S9 生产资格与签署",
+      "生产上线验收与 Owner 签署",
     ],
   };
   writeFileSync(

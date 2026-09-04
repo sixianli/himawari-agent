@@ -307,7 +307,8 @@ describe("periodic quality policy and evidence", () => {
       expect(report.observations[0].measurementSha256).toMatch(/^[a-f0-9]{64}$/);
       expect(report.productQualification).toBe("not_assessed");
       expect(report.performanceComparison).toContain("not_comparable");
-      expect(report.pending.join(" ")).toContain("S9");
+      expect(report.pending.join(" ")).toContain("运行与故障恢复");
+      expect(report.pending.join(" ")).not.toMatch(/七天|7\s*天|7\s*[×x]\s*24|soak|S9/);
       expect(existsSync(path.join(state.root, ".ci-output", check, "quality.json"))).toBe(true);
     }
     expect(
@@ -499,7 +500,7 @@ describe("local shared-runner boundary", () => {
       Object.defineProperty(process, "arch", arch);
     }
   });
-  it("runs the full local graph with one build artifact and explicit hosted/S9 limitations", async () => {
+  it("runs the full local graph with one build artifact and explicit hosted/production limitations", async () => {
     const summary = await runLocal();
     const calls = state.calls.filter((entry) => entry.name === "check");
     expect(calls.map((entry) => entry.checkId)).toEqual([
@@ -526,7 +527,7 @@ describe("local shared-runner boundary", () => {
       hostedGate: "not_executed",
       enforcement: "not_configured",
     });
-    expect(summary.pending.join(" ")).toContain("S9");
+    expect(summary.pending.join(" ")).toContain("生产上线验收与 Owner 签署");
     expect(summary.pending.join(" ")).toContain("Linux Node floor");
     expect(existsSync(path.join(state.root, ".ci-output/local/local-summary.json"))).toBe(true);
   });
