@@ -443,6 +443,8 @@ Worker 不直接打开 product.sqlite，也不签发或扩大权限。Agent Serv
 
 同语义重放只返回既有记录，不重新委派或执行；首次执行的时效门禁不能阻止已完成记录的只读核对。重启或通信超时不证明外部行动没有发生，不得自动换一个启动身份再执行。Agent 侧旧消费入口不得成为绕过规范回执的另一写入路径；Worker 内部的一次性内存句柄仍仅用于本次隔离进程中的权限收窄。
 
+Worker 子任务内部发起的动态工具调用也必须经过上述持久准入。它通过独立受认证本机通道提交完整 `work.execute`，Agent 核对从正向握手取得的双方实例、启动身份与当前权威，以及原父委派的作用域、消息关联、Handle/上下文子集、分类、资源上限和截止时间。父委派只能由 Agent 在首次可能投递前登记，不能由 Worker 自报创建，也不能等发送成功返回后才登记。只有首次消费返回可执行投影；重放不再次返回投影。消费后响应丢失或父任务失效要保留已消费事实，不伪造未消费或自动重投。通信层复用现有受认证 UDS 基础，不扩充正文通道的职责；完成该通道不等于生产 Worker 主入口已经接线。
+
 首个 Worker 只执行产品拥有且已经注册的 adapters，例如有界 work directory 中的 GitHub read operations。MCP/package 的完整治理和隔离由行动授权与能力治理 Spec 定义；本切片提供真实 process boundary、deadline、cancellation、resource ceilings 和 handle validation。
 
 ### Thread 稳定检查点与自动 Memory
@@ -522,6 +524,16 @@ Model Router 总是先选 primary。只有配置为 retryable 的 transport/prov
 非 GitHub 自动 fallback 还必须同时满足：fallback 已批准、能力足够、费用在预算内、披露不扩大。GitHub content 每次发送 fallback 都创建独立 ASK。模型变化按 PRD 的 whitelist、provider、披露和费用规则执行。
 
 Thread checkpoint、Mem0 extraction 和 embedding 都只能使用显式 descriptor；没有隐式 model。v0.2 不实现本地生成模型，也不静默安装或下载任何本地模型。`pre_compaction` 例外地直接采用 Pi 已生成且已保护的 compaction summary，后续提炼模型只提取派生候选，不得生成第二份摘要；其他 checkpoint trigger 仍使用显式 distillation descriptor。
+
+前台 Run 与后台 occurrence 共用一个持久预算写入端口。预算账户必须唯一归属其中一者，逐次模型调用作为账户内的子分配；全局和分类额度只累计账户的预留与已发生费用，不再次累计子分配。后台已有历史费用和预留必须完整迁移，不重置额度，不以独立前台账本绕过现有总额。旧后台准入和结算入口也必须经同一事务写入责任，普通 occurrence 元数据更新不得改写预算事实。
+
+预算账户跟随既有治理删除归属。Trash 不释放账目；永久删除对应 Run 或任务时按其关系处理，不留下孤儿，也不借恢复旧副本重新创建已删除的业务记录。既有后台使用量按仍存在的 occurrence 汇总，删除记录会减少该汇总；本次迁移不隐式新增永久费用墓碑、账期重置或新的保留策略。
+
+每次调用在实际 provider 请求前完成额度预留与开始记录。事务内验证作用域、当前部署权威和有效执行身份；同一语义操作可以重放，冲突内容必须拒绝。费用采用非负安全整数微单位，单值及求和都检查溢出。子调用结算把已发生费用从账户预留转为支出，未用额度回到账户可用分配，不提前释放整个账户。开始后取消、失联或缺少可信终态费用时保留预留并进入待核对状态，不能按零费用释放或自动重试。实际费用超过预估时仍记录事实并停止新增调用，不能伪造低于上限的支出。迟到结算不恢复 Run 的执行资格。
+
+父任务终结后由同一预算端口幂等收尾，释放可证明未使用的预留，保留已发生支出；仍有已开始或费用未知的子调用时，收尾不能清除其占用。前台和后台都必须有此路径，不能让正常完成的 Run 永久占用未使用的估算额度。后台结束状态和逐调用费用分别提交其事实，不能把已由子调用结算的模型费用再加一次。
+
+产品模型调用门禁复用 Pi 的原始 stream 函数，并覆盖工具循环、压缩、分支摘要和每次重试，而非仅首次 prompt。每次调用分别检查精确模型身份、分类披露、预算和凭证；缺少可靠价格或额度不能假定为免费。上述预算合同不更换已批准的 provider、model 或费用策略，也不授予真实付费调用权限。
 
 Pi adapter 只接收产品为单个 Run 选择的 canonical model descriptor、结构化 history/prompt/checkpoint projection 与 authorized capabilities。模型请求、provider transport、stream parsing、usage 和 Agent Loop 复用 Pi `ModelRuntime`/`AgentSession`；Himawari 只保留 routing policy、Secret Handle、Payload、分类披露、预算、Trace 和 Pi 未公开的 provider/cost observation。Ambient Skills/Extensions/prompts discovery 保持关闭，批准资源只能通过 Pi `DefaultResourceLoader` 的显式 additional paths 装载。Pi built-in coding tools 只能使用产品注入的受治理 Operations，缺失时不得回退到本机默认 I/O。Pi 自有 model selection 或 Session persistence 不能绕过产品 routing、authority 或 capability governance。
 

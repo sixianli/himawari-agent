@@ -10,6 +10,7 @@ import type {
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
   MemoryProjectionJobStatePort,
+  ModelBudgetPort,
   OwnerIdentityStatePort,
   PayloadStorePort,
   ProductMemoryStatePort,
@@ -385,6 +386,23 @@ export class SqliteDurableAdapters {
     });
   }
 
+  modelBudgetPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    authorityLease: AuthorityFence,
+  ): ModelBudgetPort {
+    const scope = { ownerId, agentId, authority, authorityLease };
+    return Object.freeze<ModelBudgetPort>({
+      read: (input) => this.context.read("modelBudget.read", { scope, input }),
+      reserve: (input) => this.context.write("modelBudget.reserve", { scope, input }),
+      markStarted: (input) => this.context.write("modelBudget.markStarted", { scope, input }),
+      settle: (input) => this.context.write("modelBudget.settle", { scope, input }),
+      markUnknown: (input) => this.context.write("modelBudget.markUnknown", { scope, input }),
+      finalize: (input) => this.context.write("modelBudget.finalize", { scope, input }),
+    });
+  }
+
   scheduler(): SchedulerPort {
     return Object.freeze<SchedulerPort>({
       read: (jobId) => this.context.read("scheduler.read", { jobId }),
@@ -405,8 +423,6 @@ export class SqliteDurableAdapters {
         this.context.read("background.readOccurrence", { occurrenceId }),
       createOccurrence: (occurrence) =>
         this.context.write("background.createOccurrence", { occurrence }),
-      saveOccurrence: (occurrence, expectedRevision) =>
-        this.context.write("background.saveOccurrence", { occurrence, expectedRevision }),
       reserveAdmission: (input) => this.context.write("background.reserveAdmission", { input }),
       claimOccurrence: (input) => this.context.write("background.claimOccurrence", { input }),
       settleOccurrence: (input) => this.context.write("background.settleOccurrence", { input }),

@@ -624,7 +624,7 @@ describe("Task 12 durable background recovery", () => {
     expect(recovery.pendingApprovalRequestIds).toEqual(["approval-background"]);
     expect(recovery.expiredWorkLeaseOccurrenceIds).toEqual(["occurrence-running"]);
     expect(recovery.retryableJobOccurrenceIds).toEqual(
-      expect.arrayContaining(["occurrence-running", "occurrence-retry", "occurrence-unknown"]),
+      expect.arrayContaining(["occurrence-running", "occurrence-retry"]),
     );
     expect(recovery.modelBlockedOccurrenceIds).toEqual(["occurrence-model"]);
     expect(recovery.unknownExternalResultOccurrenceIds).toEqual(["occurrence-unknown"]);

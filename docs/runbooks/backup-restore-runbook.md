@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:d86ccb618ce5ffa51bd41369b8a3257aaec927a80921165117609a424ca867fa"
+contract_sha256: "sha256:a41fd81d50c0dcb207d4dd1ea512b859fcbbde5e123125412394f0a878d09e96"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -17,6 +17,7 @@ date: "2026-08-27"
 - packages/persistence-sqlite/src/sqlite-run-lifecycle-operations.ts
 - packages/persistence-sqlite/src/sqlite-run-checkpoint-operations.ts
 - packages/persistence-sqlite/src/migrations/0021_run_execution_leases.sql
+- packages/persistence-sqlite/src/migrations/0022_model_budget_ledger.sql
 - packages/persistence-sqlite/src/state-root-lock.ts
 - packages/platform-node/src/host-secret-source.ts
 - packages/platform-node/src/payload-protector.ts

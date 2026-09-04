@@ -22,6 +22,7 @@ export * from "./identity.js";
 export * from "./improvement.js";
 export * from "./intelligence.js";
 export * from "./memory-projection.js";
+export * from "./model-budget.js";
 export * from "./observability.js";
 export * from "./persistence.js";
 export * from "./proactivity.js";

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:ec129c63d3f0d46cafa81d631b1971de7f97d43601588fc96407fe5587bc86e1"
+contract_sha256: "sha256:adb59e6a805387da3f5f2c9e969e6946f629b66e0549ea7b1a7c2a6b5c02bf46"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -52,6 +52,7 @@ date: "2026-08-27"
 - packages/persistence-sqlite/src/sqlite-run-lifecycle-operations.ts
 - packages/persistence-sqlite/src/sqlite-run-checkpoint-operations.ts
 - packages/persistence-sqlite/src/migrations/0021_run_execution_leases.sql
+- packages/persistence-sqlite/src/migrations/0022_model_budget_ledger.sql
 - docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md
 -->
 

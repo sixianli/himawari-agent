@@ -218,6 +218,13 @@ export class SqliteRunDispatchOperations {
            )
            AND (l.run_id IS NULL OR l.released_at IS NOT NULL OR l.expires_at <= ?)
            AND NOT EXISTS (
+             SELECT 1 FROM model_budget_accounts budget
+             WHERE budget.owner_id = r.owner_id
+               AND budget.agent_id = r.agent_id
+               AND budget.run_id = r.id
+               AND budget.status = 'reconcile_required'
+           )
+           AND NOT EXISTS (
              SELECT 1
              FROM turns earlier_turn
              JOIN runs earlier_run ON earlier_run.id = earlier_turn.run_id
@@ -268,6 +275,13 @@ export class SqliteRunDispatchOperations {
            AND (
              c.phase IN ('workers_running', 'runtime_running', 'reconciling_external_result')
              OR (c.phase IS NULL AND r.status IN ('building_context', 'running'))
+             OR EXISTS (
+               SELECT 1 FROM model_budget_accounts budget
+               WHERE budget.owner_id = r.owner_id
+                 AND budget.agent_id = r.agent_id
+                 AND budget.run_id = r.id
+                 AND budget.status = 'reconcile_required'
+             )
            )
            AND (l.run_id IS NULL OR l.released_at IS NOT NULL OR l.expires_at <= ?)
          ORDER BY r.created_at, r.id
@@ -340,6 +354,7 @@ export class SqliteRunDispatchOperations {
       } else if (expectedLeaseRevision !== 0) {
         return this.fail("PORT_CONFLICT", "Run execution lease revision conflict", { runId });
       }
+      this.assertRunBudgetDispatchable(runId);
       const existingIdentity = this.readLeaseByExecutionId(executionLeaseId);
       if (
         existingIdentity &&
@@ -713,6 +728,19 @@ export class SqliteRunDispatchOperations {
       leaseRevision: numberValue(row, "lease_revision"),
       turnIndex: row["turn_index"] === null ? null : numberValue(row, "turn_index"),
     };
+  }
+
+  private assertRunBudgetDispatchable(runId: string): void {
+    const row = this.database
+      .prepare(
+        `SELECT 1 FROM model_budget_accounts
+         WHERE owner_id = ? AND agent_id = ? AND run_id = ?
+           AND status = 'reconcile_required' LIMIT 1`,
+      )
+      .get(this.scope.ownerId, this.scope.agentId, runId);
+    if (row !== undefined) {
+      this.fail("PORT_CONFLICT", "Run model budget requires reconciliation", { runId });
+    }
   }
 
   private readLease(runId: string): LeaseRow | undefined {

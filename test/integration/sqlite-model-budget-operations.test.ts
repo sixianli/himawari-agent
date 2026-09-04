@@ -1,0 +1,1376 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type {
+  BackgroundAdmissionLimits,
+  BackgroundOccurrenceSettlement,
+  ScheduledJobWrite,
+} from "@himawari-agent/application";
+import { claimFromRunExecutionLease } from "@himawari-agent/application";
+import {
+  type BackgroundOccurrence,
+  createAgentId,
+  createAuthorityLeaseId,
+  createDeploymentId,
+  createIdempotencyKey,
+  createJobId,
+  createOccurrenceId,
+  createOwnerId,
+  createRunExecutionLeaseId,
+  createRunId,
+  type ProductAuthorityFence,
+} from "@himawari-agent/domain";
+import {
+  applyMigrations,
+  loadBundledMigrations,
+  openQualifiedDatabase,
+  SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
+import { afterEach, describe, expect, it } from "vitest";
+
+const OWNER_ID = createOwnerId("owner-model-budget");
+const AGENT_ID = createAgentId("agent-model-budget");
+const DEPLOYMENT_ID = createDeploymentId("deployment-model-budget");
+const JOB_ID = createJobId("job-model-budget");
+const OCCURRENCE_ID = createOccurrenceId("occurrence-model-budget");
+const RUN_ID = createRunId("run-model-budget");
+const NOW = "2026-09-05T00:00:00.000Z";
+const LATER = "2026-09-05T00:00:01.000Z";
+const FAR_FUTURE = "2999-12-31T23:59:59.999Z";
+const AUTHORITY_LEASE_ID = createAuthorityLeaseId("lease-model-budget");
+const EXECUTION_LEASE_ID = createRunExecutionLeaseId("execution-model-budget");
+const AUTHORITY: ProductAuthorityFence = {
+  deploymentId: DEPLOYMENT_ID,
+  authorityEpoch: 1,
+  fencingToken: 1,
+};
+const LIMITS: BackgroundAdmissionLimits = {
+  globalCostMicros: 10_000,
+  perRunCostMicros: 1_000,
+  perClassificationCostMicros: {
+    public: 10_000,
+    private: 10_000,
+    sensitive: 10_000,
+    restricted: 10_000,
+  },
+  totalRuns: 4,
+  foregroundReserved: 0,
+  perCategory: { monitor: 4 },
+};
+const MODEL_LIMITS = {
+  accountCostMicros: 1_000,
+  globalCostMicros: 10_000,
+  perClassificationCostMicros: {
+    public: 10_000,
+    private: 10_000,
+    sensitive: 10_000,
+    restricted: 10_000,
+  },
+} as const;
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  );
+});
+
+function job(): ScheduledJobWrite {
+  return {
+    id: JOB_ID,
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    threadId: null,
+    payloadRef: "payload-model-budget",
+    sourceProofRef: "proof-model-budget",
+    dataClassification: "private",
+    authorizationRef: "authorization-model-budget",
+    taskScopeRef: "scope-model-budget",
+    capabilityRef: "capability-model-budget",
+    operation: "run",
+    resourceRef: "resource-model-budget",
+    sideEffect: "none",
+    estimatedCostMicros: 100,
+    intervalMs: 60_000,
+    minimumIntervalMs: 60_000,
+    expiresAt: FAR_FUTURE,
+    revokedAt: null,
+    nextRunAt: NOW,
+    occurrence: 0,
+    status: "active",
+  };
+}
+
+function occurrence(): BackgroundOccurrence {
+  return {
+    id: OCCURRENCE_ID,
+    jobId: JOB_ID,
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    revision: 1,
+    stableKey: "model-budget-occurrence",
+    status: "queued",
+    authority: AUTHORITY,
+    category: "monitor",
+    dataClassification: "private",
+    foreground: false,
+    parallelSafe: false,
+    estimatedCostMicros: 100,
+    reservedCostMicros: 0,
+    spentCostMicros: 0,
+    attemptCount: 0,
+    nextRetryAt: null,
+    deadlineAt: FAR_FUTURE,
+    runId: null,
+    workLease: null,
+    lastErrorCode: null,
+  };
+}
+
+function unknownSettlement(current: BackgroundOccurrence): BackgroundOccurrenceSettlement {
+  if (!current.workLease) throw new Error("Expected a claimed occurrence");
+  return {
+    occurrenceId: current.id,
+    expectedRevision: current.revision,
+    authority: AUTHORITY,
+    leaseId: current.workLease.id,
+    settledAt: LATER,
+    outcome: "external_result_unknown",
+    spentCostMicros: 0,
+    errorCode: "UNRELATED_ERROR_CODE",
+    failureClass: null,
+    retry: {
+      maxAttempts: 3,
+      baseDelayMs: 1_000,
+      maxDelayMs: 8_000,
+      jitterSeed: 0,
+    },
+  };
+}
+
+async function fixture() {
+  const directory = await mkdtemp(path.join(tmpdir(), "himawari-model-budget-"));
+  temporaryDirectories.push(directory);
+  const databasePath = path.join(directory, "product.sqlite");
+  const database = openQualifiedDatabase(databasePath);
+  applyMigrations(database, await loadBundledMigrations());
+  database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
+  database
+    .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+    .run(AGENT_ID, OWNER_ID);
+  database
+    .prepare(
+      `INSERT INTO deployments (
+        id, owner_id, agent_id, revision, status, authority_epoch, fencing_token
+      ) VALUES (?, ?, ?, 0, 'active', 1, 1)`,
+    )
+    .run(DEPLOYMENT_ID, OWNER_ID, AGENT_ID);
+  database
+    .prepare(
+      `INSERT INTO authority_leases (
+        id, owner_id, agent_id, deployment_id, holder_id, authority_epoch,
+        fencing_token, acquired_at, expires_at, released_at
+      ) VALUES (?, ?, ?, ?, 'holder-model-budget', 1, 1, ?, ?, NULL)`,
+    )
+    .run(AUTHORITY_LEASE_ID, OWNER_ID, AGENT_ID, DEPLOYMENT_ID, NOW, FAR_FUTURE);
+  database
+    .prepare(
+      `INSERT INTO payloads (
+        ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+        content_digest, lifecycle_state, created_at, content_type
+      ) VALUES ('payload-model-budget', ?, ?, 'private', 'sqlite_blob', X'00',
+        'sha256:model-budget', 'active', ?, 'application/octet-stream')`,
+    )
+    .run(OWNER_ID, AGENT_ID, NOW);
+  database
+    .prepare(
+      `INSERT INTO triggers (
+        id, owner_id, agent_id, thread_id, idempotency_key, source_type,
+        source_id, payload_ref, source_proof_ref, occurred_at
+      ) VALUES ('trigger-model-budget', ?, ?, NULL, 'trigger-model-budget',
+        'schedule', 'model-budget', 'payload-model-budget', 'proof-model-budget', ?)`,
+    )
+    .run(OWNER_ID, AGENT_ID, NOW);
+  database
+    .prepare(
+      `INSERT INTO runs (
+        id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
+        status, created_at, updated_at
+      ) VALUES (?, ?, ?, NULL, 'session-model-budget', 'trigger-model-budget',
+        1, 'accepted', ?, ?)`,
+    )
+    .run(RUN_ID, OWNER_ID, AGENT_ID, NOW, NOW);
+  database.close();
+  const repository = await SqliteProductStateRepository.open({
+    stateRoot: directory,
+    databasePath,
+    minimumFreeBytes: 0,
+    now: () => NOW,
+  });
+  await repository.scheduler().upsert(job(), null);
+  return { databasePath, repository };
+}
+
+describe("SQLite model budget migration red tests", () => {
+  it("does not expose a generic occurrence writer for budget facts", async () => {
+    const resource = await fixture();
+    try {
+      const state = resource.repository.backgroundWorkState();
+      expect("saveOccurrence" in state).toBe(false);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("keeps an unknown external result reservation for reconciliation", async () => {
+    const resource = await fixture();
+    try {
+      const state = resource.repository.backgroundWorkState();
+      const created = await state.createOccurrence(occurrence());
+      const admitted = await state.reserveAdmission({
+        occurrenceId: created.id,
+        expectedRevision: created.revision,
+        runId: RUN_ID,
+        authority: AUTHORITY,
+        limits: LIMITS,
+        admittedAt: NOW,
+      });
+      const claimed = await state.claimOccurrence({
+        occurrenceId: admitted.occurrence.id,
+        expectedRevision: admitted.occurrence.revision,
+        authority: AUTHORITY,
+        leaseId: "work-lease-model-budget",
+        holderId: "worker-model-budget",
+        claimedAt: NOW,
+        expiresAt: LATER,
+      });
+      const unknown = await state.settleOccurrence(unknownSettlement(claimed));
+      expect(unknown.reservedCostMicros).toBe(created.estimatedCostMicros);
+      expect(unknown.spentCostMicros).toBe(0);
+      const admissionRetry = await state.reserveAdmission({
+        occurrenceId: unknown.id,
+        expectedRevision: unknown.revision,
+        runId: RUN_ID,
+        authority: AUTHORITY,
+        limits: LIMITS,
+        admittedAt: LATER,
+      });
+      expect(admissionRetry.outcome).toBe("reconcile_required");
+      expect(admissionRetry.reasonCode).toBe("EXTERNAL_RESULT_RECONCILIATION_REQUIRED");
+      await resource.repository.close();
+      const restarted = await SqliteProductStateRepository.open({
+        stateRoot: path.dirname(resource.databasePath),
+        databasePath: resource.databasePath,
+        minimumFreeBytes: 0,
+        now: () => NOW,
+      });
+      const recovery = await restarted.startupRecovery();
+      expect(recovery.unknownExternalResultOccurrenceIds).toContain(created.id);
+      expect(recovery.retryableJobOccurrenceIds).not.toContain(created.id);
+      await restarted.close();
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("routes an unknown child on an expired occurrence lease only to reconciliation", async () => {
+    const resource = await fixture();
+    try {
+      const state = resource.repository.backgroundWorkState();
+      const created = await state.createOccurrence(occurrence());
+      const admitted = await state.reserveAdmission({
+        occurrenceId: created.id,
+        expectedRevision: created.revision,
+        runId: RUN_ID,
+        authority: AUTHORITY,
+        limits: LIMITS,
+        admittedAt: NOW,
+      });
+      const claimed = await state.claimOccurrence({
+        occurrenceId: admitted.occurrence.id,
+        expectedRevision: admitted.occurrence.revision,
+        authority: AUTHORITY,
+        leaseId: "work-lease-unknown-recovery",
+        holderId: "worker-unknown-recovery",
+        claimedAt: NOW,
+        expiresAt: FAR_FUTURE,
+      });
+      if (!claimed.workLease) throw new Error("Expected a claimed occurrence");
+      const budget = resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      const activeParent = {
+        kind: "occurrence" as const,
+        occurrenceId: claimed.id,
+        expectedRevision: claimed.revision,
+        workLeaseId: claimed.workLease.id,
+        workLeaseHolderId: claimed.workLease.holderId,
+      };
+      const allocation = await budget.reserve({
+        parent: activeParent,
+        operationKey: "unknown-recovery-child",
+        modelRef: "approved-model-v1",
+        dataClassification: "private",
+        estimatedCostMicros: 25,
+        limits: MODEL_LIMITS,
+        reservedAt: NOW,
+      });
+      await budget.markStarted({
+        parent: activeParent,
+        operationKey: allocation.allocation.operationKey,
+        startedAt: NOW,
+      });
+      await budget.markUnknown({
+        parent: { kind: "occurrence", occurrenceId: claimed.id },
+        operationKey: allocation.allocation.operationKey,
+        observedAt: LATER,
+        reasonCode: "provider_unresolved",
+      });
+
+      await resource.repository.close();
+      const database = openQualifiedDatabase(resource.databasePath);
+      try {
+        const row = database
+          .prepare("SELECT record_json AS recordJson FROM job_occurrences WHERE id = ?")
+          .get(claimed.id) as { readonly recordJson: string };
+        const record = JSON.parse(row.recordJson) as BackgroundOccurrence;
+        if (!record.workLease) throw new Error("Expected persisted work lease");
+        const expiredAt = "2026-09-05T00:00:00.500Z";
+        const expiredRecord = {
+          ...record,
+          workLease: { ...record.workLease, expiresAt: expiredAt },
+        };
+        database
+          .prepare(
+            "UPDATE job_occurrences SET work_lease_expires_at = ?, record_json = ? WHERE id = ?",
+          )
+          .run(expiredAt, JSON.stringify(expiredRecord), claimed.id);
+      } finally {
+        database.close();
+      }
+
+      const restarted = await SqliteProductStateRepository.open({
+        stateRoot: path.dirname(resource.databasePath),
+        databasePath: resource.databasePath,
+        minimumFreeBytes: 0,
+        now: () => LATER,
+      });
+      try {
+        const recovery = await restarted.startupRecovery();
+        expect(recovery.unknownExternalResultOccurrenceIds).toContain(claimed.id);
+        const recoverable = await restarted
+          .backgroundWorkState()
+          .listRecoverable(OWNER_ID, AGENT_ID, LATER, 10);
+        expect(recoverable.map(({ id }) => id)).not.toContain(claimed.id);
+        expect(recovery.retryableJobOccurrenceIds).not.toContain(claimed.id);
+        expect(recovery.expiredWorkLeaseOccurrenceIds).not.toContain(claimed.id);
+        await expect(
+          restarted.backgroundWorkState().claimOccurrence({
+            occurrenceId: claimed.id,
+            expectedRevision: claimed.revision,
+            authority: AUTHORITY,
+            leaseId: "work-lease-unknown-recovery-retry",
+            holderId: "worker-unknown-recovery-retry",
+            claimedAt: LATER,
+            expiresAt: FAR_FUTURE,
+          }),
+        ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+        await expect(
+          restarted.backgroundWorkState().reserveAdmission({
+            occurrenceId: claimed.id,
+            expectedRevision: claimed.revision,
+            runId: RUN_ID,
+            authority: AUTHORITY,
+            limits: LIMITS,
+            admittedAt: LATER,
+          }),
+        ).resolves.toMatchObject({
+          outcome: "reconcile_required",
+          reasonCode: "EXTERNAL_RESULT_RECONCILIATION_REQUIRED",
+        });
+      } finally {
+        await restarted.close();
+      }
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("keeps legacy unknown occurrences out of retryable and recoverable lists", async () => {
+    const resource = await fixture();
+    try {
+      const state = resource.repository.backgroundWorkState();
+      const created = await state.createOccurrence(occurrence());
+      await state.reserveAdmission({
+        occurrenceId: created.id,
+        expectedRevision: created.revision,
+        runId: RUN_ID,
+        authority: AUTHORITY,
+        limits: LIMITS,
+        admittedAt: NOW,
+      });
+
+      await resource.repository.close();
+      const database = openQualifiedDatabase(resource.databasePath);
+      try {
+        const row = database
+          .prepare("SELECT record_json AS recordJson FROM job_occurrences WHERE id = ?")
+          .get(created.id) as { readonly recordJson: string };
+        const record = JSON.parse(row.recordJson) as BackgroundOccurrence;
+        const legacyRetryWait: BackgroundOccurrence = {
+          ...record,
+          status: "retry_wait",
+          nextRetryAt: NOW,
+          workLease: null,
+          lastErrorCode: "EXTERNAL_RESULT_UNKNOWN",
+        };
+        database
+          .prepare(
+            `UPDATE job_occurrences
+             SET status = 'retry_wait', next_retry_at = ?,
+                 work_lease_id = NULL, work_lease_holder_id = NULL,
+                 work_lease_acquired_at = NULL, work_lease_expires_at = NULL,
+                 last_error_code = ?, record_json = ?
+             WHERE id = ?`,
+          )
+          .run(NOW, "EXTERNAL_RESULT_UNKNOWN", JSON.stringify(legacyRetryWait), created.id);
+      } finally {
+        database.close();
+      }
+
+      const retryRepository = await SqliteProductStateRepository.open({
+        stateRoot: path.dirname(resource.databasePath),
+        databasePath: resource.databasePath,
+        minimumFreeBytes: 0,
+        now: () => LATER,
+      });
+      try {
+        const recovery = await retryRepository.startupRecovery();
+        expect(recovery.retryableJobOccurrenceIds).not.toContain(created.id);
+        expect(recovery.unknownExternalResultOccurrenceIds).toContain(created.id);
+        const recoverable = await retryRepository
+          .backgroundWorkState()
+          .listRecoverable(OWNER_ID, AGENT_ID, LATER, 10);
+        expect(recoverable.map(({ id }) => id)).not.toContain(created.id);
+      } finally {
+        await retryRepository.close();
+      }
+
+      const runningDatabase = openQualifiedDatabase(resource.databasePath);
+      try {
+        const row = runningDatabase
+          .prepare("SELECT record_json AS recordJson FROM job_occurrences WHERE id = ?")
+          .get(created.id) as { readonly recordJson: string };
+        const record = JSON.parse(row.recordJson) as BackgroundOccurrence;
+        const expiredAt = "2026-09-05T00:00:00.500Z";
+        const legacyRunningWorkLease = {
+          id: "legacy-unknown-work-lease",
+          holderId: "legacy-unknown-worker",
+          acquiredAt: NOW,
+          expiresAt: expiredAt,
+        } as const;
+        const legacyRunning: BackgroundOccurrence = {
+          ...record,
+          status: "running",
+          nextRetryAt: null,
+          workLease: legacyRunningWorkLease,
+          lastErrorCode: "EXTERNAL_RESULT_UNKNOWN",
+        };
+        runningDatabase
+          .prepare(
+            `UPDATE job_occurrences
+             SET status = 'running', next_retry_at = NULL,
+                 work_lease_id = ?, work_lease_holder_id = ?,
+                 work_lease_acquired_at = ?, work_lease_expires_at = ?,
+                 last_error_code = ?, record_json = ?
+             WHERE id = ?`,
+          )
+          .run(
+            legacyRunningWorkLease.id,
+            legacyRunningWorkLease.holderId,
+            legacyRunningWorkLease.acquiredAt,
+            legacyRunningWorkLease.expiresAt,
+            legacyRunning.lastErrorCode,
+            JSON.stringify(legacyRunning),
+            created.id,
+          );
+      } finally {
+        runningDatabase.close();
+      }
+
+      const expiredRepository = await SqliteProductStateRepository.open({
+        stateRoot: path.dirname(resource.databasePath),
+        databasePath: resource.databasePath,
+        minimumFreeBytes: 0,
+        now: () => LATER,
+      });
+      try {
+        const recovery = await expiredRepository.startupRecovery();
+        expect(recovery.expiredWorkLeaseOccurrenceIds).not.toContain(created.id);
+        const recoverable = await expiredRepository
+          .backgroundWorkState()
+          .listRecoverable(OWNER_ID, AGENT_ID, LATER, 10);
+        expect(recoverable.map(({ id }) => id)).not.toContain(created.id);
+      } finally {
+        await expiredRepository.close();
+      }
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("draws child allocations from an admitted occurrence without double counting", async () => {
+    const resource = await fixture();
+    try {
+      const state = resource.repository.backgroundWorkState();
+      const created = await state.createOccurrence(occurrence());
+      const admitted = await state.reserveAdmission({
+        occurrenceId: created.id,
+        expectedRevision: created.revision,
+        runId: RUN_ID,
+        authority: AUTHORITY,
+        limits: LIMITS,
+        admittedAt: NOW,
+      });
+      const claimed = await state.claimOccurrence({
+        occurrenceId: admitted.occurrence.id,
+        expectedRevision: admitted.occurrence.revision,
+        authority: AUTHORITY,
+        leaseId: "work-lease-child-budget",
+        holderId: "worker-child-budget",
+        claimedAt: NOW,
+        expiresAt: FAR_FUTURE,
+      });
+      if (!claimed.workLease) throw new Error("Expected a claimed occurrence");
+      const budget = resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      const activeParent = {
+        kind: "occurrence" as const,
+        occurrenceId: claimed.id,
+        expectedRevision: claimed.revision,
+        workLeaseId: claimed.workLease.id,
+        workLeaseHolderId: claimed.workLease.holderId,
+      };
+      const limits = {
+        accountCostMicros: 1_000,
+        globalCostMicros: 10_000,
+        perClassificationCostMicros: {
+          public: 10_000,
+          private: 10_000,
+          sensitive: 10_000,
+          restricted: 10_000,
+        },
+      } as const;
+      const first = await budget.reserve({
+        parent: activeParent,
+        operationKey: "child-budget-1",
+        modelRef: "approved-model-v1",
+        dataClassification: "private",
+        estimatedCostMicros: 40,
+        limits,
+        reservedAt: NOW,
+      });
+      const second = await budget.reserve({
+        parent: activeParent,
+        operationKey: "child-budget-2",
+        modelRef: "approved-model-v1",
+        dataClassification: "private",
+        estimatedCostMicros: 60,
+        limits,
+        reservedAt: NOW,
+      });
+      expect(first.account.reservedCostMicros).toBe(created.estimatedCostMicros);
+      expect(second.account.reservedCostMicros).toBe(created.estimatedCostMicros);
+      await expect(
+        budget.reserve({
+          parent: activeParent,
+          operationKey: "child-budget-over-cap",
+          modelRef: "approved-model-v1",
+          dataClassification: "private",
+          estimatedCostMicros: 1,
+          limits,
+          reservedAt: NOW,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+
+      await budget.markStarted({
+        parent: activeParent,
+        operationKey: first.allocation.operationKey,
+        startedAt: NOW,
+      });
+      const firstSettled = await budget.settle({
+        parent: { kind: "occurrence", occurrenceId: claimed.id },
+        operationKey: first.allocation.operationKey,
+        actualCostMicros: 30,
+        settledAt: LATER,
+      });
+      expect(firstSettled.account.reservedCostMicros).toBe(60);
+      expect(firstSettled.account.spentCostMicros).toBe(30);
+      await budget.markStarted({
+        parent: activeParent,
+        operationKey: second.allocation.operationKey,
+        startedAt: NOW,
+      });
+      const unknown = await budget.markUnknown({
+        parent: { kind: "occurrence", occurrenceId: claimed.id },
+        operationKey: second.allocation.operationKey,
+        observedAt: LATER,
+        reasonCode: "provider_unresolved",
+      });
+      expect(unknown.account.reservedCostMicros).toBe(60);
+      expect(unknown.account.status).toBe("reconcile_required");
+      const reconciled = await budget.settle({
+        parent: { kind: "occurrence", occurrenceId: claimed.id },
+        operationKey: second.allocation.operationKey,
+        actualCostMicros: 70,
+        settledAt: LATER,
+      });
+      expect(reconciled.account.reservedCostMicros).toBe(0);
+      expect(reconciled.account.spentCostMicros).toBe(100);
+      expect(reconciled.account.status).toBe("over_budget");
+
+      const closed = await state.settleOccurrence({
+        occurrenceId: claimed.id,
+        expectedRevision: claimed.revision,
+        authority: AUTHORITY,
+        leaseId: claimed.workLease.id,
+        settledAt: LATER,
+        outcome: "completed",
+        spentCostMicros: 0,
+        errorCode: null,
+        failureClass: null,
+        retry: { maxAttempts: 3, baseDelayMs: 1_000, maxDelayMs: 8_000, jitterSeed: 0 },
+      });
+      expect(closed.reservedCostMicros).toBe(0);
+      expect(closed.spentCostMicros).toBe(100);
+      const finalized = await budget.read({
+        parent: { kind: "occurrence", occurrenceId: claimed.id },
+        limit: 10,
+      });
+      expect(finalized?.account.status).toBe("over_budget");
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("applies one global and classification budget across background and foreground parents", async () => {
+    const resource = await fixture();
+    try {
+      const state = resource.repository.backgroundWorkState();
+      const created = await state.createOccurrence(occurrence());
+      await state.reserveAdmission({
+        occurrenceId: created.id,
+        expectedRevision: created.revision,
+        runId: RUN_ID,
+        authority: AUTHORITY,
+        limits: {
+          ...LIMITS,
+          globalCostMicros: 100,
+          perRunCostMicros: 100,
+          perClassificationCostMicros: {
+            ...LIMITS.perClassificationCostMicros,
+            private: 100,
+          },
+        },
+        admittedAt: NOW,
+      });
+      const dispatch = resource.repository.runDispatch(
+        OWNER_ID,
+        AGENT_ID,
+        AUTHORITY,
+        { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        "model-budget-global-consumer",
+      );
+      const claimed = await dispatch.claim({
+        runId: RUN_ID,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: createRunExecutionLeaseId("execution-model-budget-global"),
+        claimedAt: NOW,
+        expiresAt: FAR_FUTURE,
+      });
+      const budget = resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      await expect(
+        budget.reserve({
+          parent: {
+            kind: "run",
+            runId: RUN_ID,
+            executionLease: claimFromRunExecutionLease(claimed),
+          },
+          operationKey: "foreground-over-background-budget",
+          modelRef: "approved-model-v1",
+          dataClassification: "private",
+          estimatedCostMicros: 1,
+          limits: {
+            accountCostMicros: 100,
+            globalCostMicros: 100,
+            perClassificationCostMicros: {
+              public: 10_000,
+              private: 100,
+              sensitive: 10_000,
+              restricted: 10_000,
+            },
+          },
+          reservedAt: NOW,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("rejects a Run budget parent when the Run is already owned by an occurrence", async () => {
+    const resource = await fixture();
+    try {
+      const state = resource.repository.backgroundWorkState();
+      const created = await state.createOccurrence(occurrence());
+      const admitted = await state.reserveAdmission({
+        occurrenceId: created.id,
+        expectedRevision: created.revision,
+        runId: RUN_ID,
+        authority: AUTHORITY,
+        limits: LIMITS,
+        admittedAt: NOW,
+      });
+      const dispatch = resource.repository.runDispatch(
+        OWNER_ID,
+        AGENT_ID,
+        AUTHORITY,
+        { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        "model-budget-ownership-consumer",
+      );
+      const claimed = await dispatch.claim({
+        runId: RUN_ID,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: createRunExecutionLeaseId("execution-model-budget-ownership"),
+        claimedAt: NOW,
+        expiresAt: FAR_FUTURE,
+      });
+      const budget = resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      await expect(
+        budget.reserve({
+          parent: {
+            kind: "run",
+            runId: RUN_ID,
+            executionLease: claimFromRunExecutionLease(claimed),
+          },
+          operationKey: "run-parent-after-occurrence",
+          modelRef: "approved-model-v1",
+          dataClassification: "private",
+          estimatedCostMicros: 1,
+          limits: MODEL_LIMITS,
+          reservedAt: NOW,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      expect(admitted.occurrence.runId).toBe(RUN_ID);
+      expect(
+        await budget.read({
+          parent: { kind: "run", runId: RUN_ID },
+          limit: 10,
+        }),
+      ).toBeUndefined();
+      const runs = resource.repository.runLifecycle(OWNER_ID, AGENT_ID, AUTHORITY);
+      const executionLease = claimFromRunExecutionLease(claimed);
+      await runs.transitionRun({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        expectedRevision: 1,
+        nextStatus: "building_context",
+        idempotencyKey: createIdempotencyKey("budget-ownership-finalize-building"),
+        commandFingerprint: "budget-ownership-finalize-building",
+        payloadRef: "payload-model-budget",
+        authority: { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        executionLease,
+      });
+      await runs.transitionRun({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        expectedRevision: 2,
+        nextStatus: "failed",
+        idempotencyKey: createIdempotencyKey("budget-ownership-finalize-failed"),
+        commandFingerprint: "budget-ownership-finalize-failed",
+        payloadRef: "payload-model-budget",
+        authority: { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        executionLease,
+      });
+      await expect(
+        budget.finalize({
+          parent: { kind: "run", runId: RUN_ID },
+          finalizedAt: LATER,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      expect(
+        await budget.read({
+          parent: { kind: "run", runId: RUN_ID },
+          limit: 10,
+        }),
+      ).toBeUndefined();
+    } finally {
+      await resource.repository.close();
+    }
+
+    const reverse = await fixture();
+    try {
+      const dispatch = reverse.repository.runDispatch(
+        OWNER_ID,
+        AGENT_ID,
+        AUTHORITY,
+        { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        "model-budget-ownership-reverse",
+      );
+      const claimed = await dispatch.claim({
+        runId: RUN_ID,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: createRunExecutionLeaseId("execution-model-budget-ownership-reverse"),
+        claimedAt: NOW,
+        expiresAt: FAR_FUTURE,
+      });
+      const budget = reverse.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      await budget.reserve({
+        parent: {
+          kind: "run",
+          runId: RUN_ID,
+          executionLease: claimFromRunExecutionLease(claimed),
+        },
+        operationKey: "run-parent-before-occurrence",
+        modelRef: "approved-model-v1",
+        dataClassification: "private",
+        estimatedCostMicros: 1,
+        limits: MODEL_LIMITS,
+        reservedAt: NOW,
+      });
+      const created = await reverse.repository.backgroundWorkState().createOccurrence(occurrence());
+      await expect(
+        reverse.repository.backgroundWorkState().reserveAdmission({
+          occurrenceId: created.id,
+          expectedRevision: created.revision,
+          runId: RUN_ID,
+          authority: AUTHORITY,
+          limits: LIMITS,
+          admittedAt: NOW,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+    } finally {
+      await reverse.repository.close();
+    }
+  });
+
+  it("keeps an over-budget account sticky after later allocations settle", async () => {
+    const resource = await fixture();
+    try {
+      const dispatch = resource.repository.runDispatch(
+        OWNER_ID,
+        AGENT_ID,
+        AUTHORITY,
+        { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        "model-budget-overrun-consumer",
+      );
+      const claimed = await dispatch.claim({
+        runId: RUN_ID,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: createRunExecutionLeaseId("execution-model-budget-overrun"),
+        claimedAt: NOW,
+        expiresAt: FAR_FUTURE,
+      });
+      const executionLease = claimFromRunExecutionLease(claimed);
+      const budget = resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      const parent = { kind: "run" as const, runId: RUN_ID, executionLease };
+      const limits = {
+        accountCostMicros: 1_000,
+        globalCostMicros: 10_000,
+        perClassificationCostMicros: {
+          public: 10_000,
+          private: 10_000,
+          sensitive: 10_000,
+          restricted: 10_000,
+        },
+      } as const;
+      const first = await budget.reserve({
+        parent,
+        operationKey: "overrun-first",
+        modelRef: "approved-model-v1",
+        dataClassification: "private",
+        estimatedCostMicros: 10,
+        limits,
+        reservedAt: NOW,
+      });
+      const second = await budget.reserve({
+        parent,
+        operationKey: "overrun-second",
+        modelRef: "approved-model-v1",
+        dataClassification: "private",
+        estimatedCostMicros: 10,
+        limits,
+        reservedAt: NOW,
+      });
+      await budget.markStarted({
+        parent,
+        operationKey: first.allocation.operationKey,
+        startedAt: NOW,
+      });
+      await budget.markStarted({
+        parent,
+        operationKey: second.allocation.operationKey,
+        startedAt: NOW,
+      });
+
+      const overrun = await budget.settle({
+        parent: { kind: "run", runId: RUN_ID },
+        operationKey: first.allocation.operationKey,
+        actualCostMicros: 20,
+        settledAt: LATER,
+      });
+      expect(overrun.account.status).toBe("over_budget");
+      const later = await budget.settle({
+        parent: { kind: "run", runId: RUN_ID },
+        operationKey: second.allocation.operationKey,
+        actualCostMicros: 5,
+        settledAt: LATER,
+      });
+      expect(later.account.status).toBe("over_budget");
+      expect(later.account.reservedCostMicros).toBe(0);
+      expect(later.account.spentCostMicros).toBe(25);
+      await expect(
+        budget.reserve({
+          parent,
+          operationKey: "overrun-after-settlement",
+          modelRef: "approved-model-v1",
+          dataClassification: "private",
+          estimatedCostMicros: 1,
+          limits,
+          reservedAt: LATER,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("rejects a stale deployment fence before creating a foreground allocation", async () => {
+    const resource = await fixture();
+    await resource.repository.close();
+    const database = openQualifiedDatabase(resource.databasePath);
+    database.prepare("UPDATE deployments SET fencing_token = 2 WHERE id = ?").run(DEPLOYMENT_ID);
+    database.close();
+    const restarted = await SqliteProductStateRepository.open({
+      stateRoot: path.dirname(resource.databasePath),
+      databasePath: resource.databasePath,
+      minimumFreeBytes: 0,
+      now: () => NOW,
+    });
+    try {
+      const budget = restarted.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      await expect(
+        budget.reserve({
+          parent: {
+            kind: "run",
+            runId: RUN_ID,
+            executionLease: {
+              executionLeaseId: EXECUTION_LEASE_ID,
+              expectedLeaseRevision: 0,
+              authorityLeaseId: AUTHORITY_LEASE_ID,
+              authorityFencingToken: 1,
+              deploymentId: DEPLOYMENT_ID,
+              authorityEpoch: 1,
+              fencingToken: 1,
+              consumerId: "stale-authority-consumer",
+            },
+          },
+          operationKey: "stale-authority-call",
+          modelRef: "approved-model-v1",
+          dataClassification: "private",
+          estimatedCostMicros: 1,
+          limits: {
+            accountCostMicros: 1_000,
+            globalCostMicros: 10_000,
+            perClassificationCostMicros: {
+              public: 10_000,
+              private: 10_000,
+              sensitive: 10_000,
+              restricted: 10_000,
+            },
+          },
+          reservedAt: NOW,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+    } finally {
+      await restarted.close();
+    }
+  });
+
+  it("rejects a foreground allocation after its execution lease expires", async () => {
+    const resource = await fixture();
+    try {
+      const dispatch = resource.repository.runDispatch(
+        OWNER_ID,
+        AGENT_ID,
+        AUTHORITY,
+        { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        "model-budget-expiry-consumer",
+      );
+      const claimed = await dispatch.claim({
+        runId: RUN_ID,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: createRunExecutionLeaseId("execution-model-budget-expiry"),
+        claimedAt: NOW,
+        expiresAt: LATER,
+      });
+      const budget = resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      await expect(
+        budget.reserve({
+          parent: {
+            kind: "run",
+            runId: RUN_ID,
+            executionLease: claimFromRunExecutionLease(claimed),
+          },
+          operationKey: "expired-execution-call",
+          modelRef: "approved-model-v1",
+          dataClassification: "private",
+          estimatedCostMicros: 1,
+          limits: {
+            accountCostMicros: 1_000,
+            globalCostMicros: 10_000,
+            perClassificationCostMicros: {
+              public: 10_000,
+              private: 10_000,
+              sensitive: 10_000,
+              restricted: 10_000,
+            },
+          },
+          reservedAt: LATER,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("finalizes only unallocated Run budget after the canonical Run becomes terminal", async () => {
+    const resource = await fixture();
+    try {
+      const dispatch = resource.repository.runDispatch(
+        OWNER_ID,
+        AGENT_ID,
+        AUTHORITY,
+        { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        "model-budget-finalize-consumer",
+      );
+      const claimed = await dispatch.claim({
+        runId: RUN_ID,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: createRunExecutionLeaseId("execution-model-budget-finalize"),
+        claimedAt: NOW,
+        expiresAt: FAR_FUTURE,
+      });
+      const executionLease = claimFromRunExecutionLease(claimed);
+      const budget = resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      await budget.reserve({
+        parent: { kind: "run", runId: RUN_ID, executionLease },
+        operationKey: "finalize-open-call",
+        modelRef: "approved-model-v1",
+        dataClassification: "private",
+        estimatedCostMicros: 50,
+        limits: {
+          accountCostMicros: 1_000,
+          globalCostMicros: 10_000,
+          perClassificationCostMicros: {
+            public: 10_000,
+            private: 10_000,
+            sensitive: 10_000,
+            restricted: 10_000,
+          },
+        },
+        reservedAt: NOW,
+      });
+      const startedAllocation = await budget.reserve({
+        parent: { kind: "run", runId: RUN_ID, executionLease },
+        operationKey: "finalize-started-call",
+        modelRef: "approved-model-v1",
+        dataClassification: "private",
+        estimatedCostMicros: 30,
+        limits: {
+          accountCostMicros: 1_000,
+          globalCostMicros: 10_000,
+          perClassificationCostMicros: {
+            public: 10_000,
+            private: 10_000,
+            sensitive: 10_000,
+            restricted: 10_000,
+          },
+        },
+        reservedAt: NOW,
+      });
+      await budget.markStarted({
+        parent: { kind: "run", runId: RUN_ID, executionLease },
+        operationKey: startedAllocation.allocation.operationKey,
+        startedAt: NOW,
+      });
+      const runs = resource.repository.runLifecycle(OWNER_ID, AGENT_ID, AUTHORITY);
+      await runs.transitionRun({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        expectedRevision: 1,
+        nextStatus: "building_context",
+        idempotencyKey: createIdempotencyKey("budget-finalize-building"),
+        commandFingerprint: "budget-finalize-building",
+        payloadRef: "payload-model-budget",
+        authority: { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        executionLease,
+      });
+      await runs.transitionRun({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        expectedRevision: 2,
+        nextStatus: "failed",
+        idempotencyKey: createIdempotencyKey("budget-finalize-failed"),
+        commandFingerprint: "budget-finalize-failed",
+        payloadRef: "payload-model-budget",
+        authority: { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        executionLease,
+      });
+      const openFinalized = await budget.finalize({
+        parent: { kind: "run", runId: RUN_ID },
+        finalizedAt: LATER,
+      });
+      expect(openFinalized.reservedCostMicros).toBe(30);
+      expect(openFinalized.status).toBe("reconcile_required");
+      const finalizedSnapshot = await budget.read({
+        parent: { kind: "run", runId: RUN_ID },
+        limit: 10,
+      });
+      expect(
+        finalizedSnapshot?.allocations.map(({ operationKey, status }) => ({
+          operationKey,
+          status,
+        })),
+      ).toEqual([
+        { operationKey: "finalize-open-call", status: "released" },
+        { operationKey: "finalize-started-call", status: "started" },
+      ]);
+      const settled = await budget.settle({
+        parent: { kind: "run", runId: RUN_ID },
+        operationKey: startedAllocation.allocation.operationKey,
+        actualCostMicros: 20,
+        settledAt: LATER,
+      });
+      expect(settled.account.reservedCostMicros).toBe(0);
+      expect(settled.account.spentCostMicros).toBe(20);
+      const finalized = await budget.finalize({
+        parent: { kind: "run", runId: RUN_ID },
+        finalizedAt: LATER,
+      });
+      expect(finalized.reservedCostMicros).toBe(0);
+      expect(finalized.spentCostMicros).toBe(20);
+      expect(finalized.status).toBe("active");
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("accounts a foreground Run through its real execution claim", async () => {
+    const resource = await fixture();
+    try {
+      const dispatch = resource.repository.runDispatch(
+        OWNER_ID,
+        AGENT_ID,
+        AUTHORITY,
+        { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        "model-budget-consumer",
+      );
+      const claimed = await dispatch.claim({
+        runId: RUN_ID,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: EXECUTION_LEASE_ID,
+        claimedAt: NOW,
+        expiresAt: FAR_FUTURE,
+      });
+      const budget = resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      const activeParent = {
+        kind: "run" as const,
+        runId: RUN_ID,
+        executionLease: claimFromRunExecutionLease(claimed),
+      };
+      const reserveInput = {
+        parent: activeParent,
+        operationKey: "model-call-1",
+        modelRef: "approved-model-v1",
+        dataClassification: "private" as const,
+        estimatedCostMicros: 100,
+        limits: {
+          accountCostMicros: 1_000,
+          globalCostMicros: 10_000,
+          perClassificationCostMicros: {
+            public: 10_000,
+            private: 10_000,
+            sensitive: 10_000,
+            restricted: 10_000,
+          },
+        },
+        reservedAt: NOW,
+      };
+      const reserved = await budget.reserve(reserveInput);
+      const replayed = await budget.reserve(reserveInput);
+      expect(replayed.replayed).toBe(true);
+      expect(replayed.allocation.operationKey).toBe(reserved.allocation.operationKey);
+      await expect(
+        budget.reserve({ ...reserveInput, estimatedCostMicros: 101 }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      await expect(
+        budget.reserve({
+          ...reserveInput,
+          operationKey: "model-call-lower-classification",
+          dataClassification: "public",
+          estimatedCostMicros: 1,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+      await expect(
+        budget.reserve({
+          ...reserveInput,
+          operationKey: "model-call-higher-classification",
+          dataClassification: "sensitive",
+          estimatedCostMicros: 1,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      await expect(
+        budget.settle({
+          parent: { kind: "run", runId: RUN_ID },
+          operationKey: reserveInput.operationKey,
+          actualCostMicros: 80,
+          settledAt: LATER,
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      await expect(
+        budget.markUnknown({
+          parent: { kind: "run", runId: RUN_ID },
+          operationKey: reserveInput.operationKey,
+          observedAt: LATER,
+          reasonCode: "provider_unresolved",
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      await budget.markStarted({
+        parent: activeParent,
+        operationKey: reserveInput.operationKey,
+        startedAt: NOW,
+      });
+      const settled = await budget.settle({
+        parent: { kind: "run", runId: RUN_ID },
+        operationKey: reserveInput.operationKey,
+        actualCostMicros: 80,
+        settledAt: LATER,
+      });
+      expect(settled.account.reservedCostMicros).toBe(0);
+      expect(settled.account.spentCostMicros).toBe(80);
+      const settledReplay = await budget.settle({
+        parent: { kind: "run", runId: RUN_ID },
+        operationKey: reserveInput.operationKey,
+        actualCostMicros: 80,
+        settledAt: LATER,
+      });
+      expect(settledReplay.replayed).toBe(true);
+
+      const lateReserve = await budget.reserve({
+        ...reserveInput,
+        operationKey: "model-call-after-settle",
+        estimatedCostMicros: 40,
+      });
+      await budget.markStarted({
+        parent: activeParent,
+        operationKey: lateReserve.allocation.operationKey,
+        startedAt: NOW,
+      });
+      await dispatch.release({
+        runId: RUN_ID,
+        expectedLeaseRevision: claimed.revision,
+        executionLeaseId: EXECUTION_LEASE_ID,
+        releasedAt: LATER,
+      });
+      const lateSettled = await budget.settle({
+        parent: { kind: "run", runId: RUN_ID },
+        operationKey: lateReserve.allocation.operationKey,
+        actualCostMicros: 20,
+        settledAt: LATER,
+      });
+      expect(lateSettled.account.spentCostMicros).toBe(100);
+      const firstPage = await budget.read({ parent: { kind: "run", runId: RUN_ID }, limit: 1 });
+      expect(firstPage?.allocations.map(({ operationKey }) => operationKey)).toEqual([
+        "model-call-1",
+      ]);
+      expect(firstPage?.nextOperationKey).toBe("model-call-1");
+      expect(firstPage?.account.spentCostMicros).toBe(100);
+      const secondPage = await budget.read({
+        parent: { kind: "run", runId: RUN_ID },
+        limit: 1,
+        afterOperationKey: firstPage?.nextOperationKey ?? null,
+      });
+      expect(secondPage?.allocations.map(({ operationKey }) => operationKey)).toEqual([
+        "model-call-after-settle",
+      ]);
+      expect(secondPage?.nextOperationKey).toBeNull();
+      await resource.repository.close();
+      const restarted = await SqliteProductStateRepository.open({
+        stateRoot: path.dirname(resource.databasePath),
+        databasePath: resource.databasePath,
+        minimumFreeBytes: 0,
+        now: () => NOW,
+      });
+      try {
+        const restartedBudget = restarted.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+          leaseId: AUTHORITY_LEASE_ID,
+          fencingToken: 1,
+        });
+        const restored = await restartedBudget.read({
+          parent: { kind: "run", runId: RUN_ID },
+          limit: 10,
+        });
+        expect(restored?.account.spentCostMicros).toBe(100);
+        expect(restored?.allocations.map(({ operationKey }) => operationKey)).toEqual([
+          "model-call-1",
+          "model-call-after-settle",
+        ]);
+      } finally {
+        await restarted.close();
+      }
+    } finally {
+      await resource.repository.close();
+    }
+  });
+});

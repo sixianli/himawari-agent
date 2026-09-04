@@ -210,6 +210,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Run deletion and retain no Payload ciphertext",
   ),
   entry(
+    "model_budget_accounts",
+    "ModelBudgetPort",
+    "Run or occurrence parent reservation and spend ledger",
+    "metadata_only",
+    "cascade with governed Run or task deletion",
+  ),
+  entry(
+    "model_budget_allocations",
+    "ModelBudgetPort",
+    "idempotent child model-call allocation",
+    "metadata_only",
+    "cascade with parent budget account deletion",
+  ),
+  entry(
     "approval_requests",
     "AuthorizationStorePort",
     "pending to terminal",

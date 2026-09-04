@@ -19,6 +19,7 @@ import type {
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
   MemoryProjectionJobStatePort,
+  ModelBudgetPort,
   OwnerIdentityStatePort,
   PayloadStorePort,
   ProductMemoryStatePort,
@@ -295,6 +296,15 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     consumerId: string,
   ): RunDispatchPort {
     return this.durable.runDispatch(ownerId, agentId, authority, authorityLease, consumerId);
+  }
+
+  modelBudgetPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    authorityLease: { readonly leaseId: AuthorityLeaseId; readonly fencingToken: number },
+  ): ModelBudgetPort {
+    return this.durable.modelBudgetPort(ownerId, agentId, authority, authorityLease);
   }
 
   reliableEventOutbox(): SqliteReliableEventOutbox {

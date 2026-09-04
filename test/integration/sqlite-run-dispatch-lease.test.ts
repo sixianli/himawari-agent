@@ -1,7 +1,11 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ApplicationPortError, type PortErrorCode } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  claimFromRunExecutionLease,
+  type PortErrorCode,
+} from "@himawari-agent/application";
 import {
   createAgentId,
   createAuthorityLeaseId,
@@ -17,6 +21,7 @@ import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type {
@@ -820,6 +825,133 @@ describe("SQLite Run dispatch execution leases", () => {
       acceptedDatabase.close();
       formedDatabase.close();
       runningDatabase.close();
+    }
+  });
+
+  it("blocks a Run with a reconcile-required budget until its late result settles", async () => {
+    const resource = await fixture();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: path.dirname(resource.databasePath),
+      databasePath: resource.databasePath,
+      minimumFreeBytes: 0,
+      now: () => NOW,
+    });
+    try {
+      const runDispatch = repository.runDispatch(
+        OWNER_ID,
+        AGENT_ID,
+        AUTHORITY.product,
+        { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
+        "budget-reconcile-consumer",
+      );
+      const claimed = await runDispatch.claim({
+        runId: resource.runId,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: leaseId("execution-budget-reconcile"),
+        claimedAt: NOW,
+        expiresAt: "2026-09-04T00:05:00.000Z",
+      });
+      const budget = repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY.product, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      const parent = {
+        kind: "run" as const,
+        runId: resource.runId,
+        executionLease: claimFromRunExecutionLease(claimed),
+      };
+      const limits = {
+        accountCostMicros: 1_000,
+        globalCostMicros: 10_000,
+        perClassificationCostMicros: {
+          public: 10_000,
+          private: 10_000,
+          sensitive: 10_000,
+          restricted: 10_000,
+        },
+      } as const;
+      const reserved = await budget.reserve({
+        parent,
+        operationKey: "budget-reconcile-call",
+        modelRef: "approved-model-v1",
+        dataClassification: "private",
+        estimatedCostMicros: 10,
+        limits,
+        reservedAt: NOW,
+      });
+      await budget.markStarted({
+        parent,
+        operationKey: reserved.allocation.operationKey,
+        startedAt: NOW,
+      });
+      await budget.markUnknown({
+        parent: { kind: "run", runId: resource.runId },
+        operationKey: reserved.allocation.operationKey,
+        observedAt: "2026-09-04T00:00:01.000Z",
+        reasonCode: "provider_unresolved",
+      });
+    } finally {
+      await repository.close();
+    }
+
+    const database = openQualifiedDatabase(resource.databasePath);
+    try {
+      const guarded = dispatch(database, scope("budget-reconcile-consumer"));
+      expect(await guarded.listClaimable({ now: LATER, limit: 10 })).toEqual([]);
+      await expect(
+        guarded.claim({
+          runId: resource.runId,
+          expectedRunRevision: 1,
+          expectedLeaseRevision: 1,
+          executionLeaseId: leaseId("execution-budget-reconcile-retry"),
+          claimedAt: LATER,
+          expiresAt: "2026-09-04T00:20:00.000Z",
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+    } finally {
+      database.close();
+    }
+
+    const reopened = await SqliteProductStateRepository.open({
+      stateRoot: path.dirname(resource.databasePath),
+      databasePath: resource.databasePath,
+      minimumFreeBytes: 0,
+      now: () => LATER,
+    });
+    try {
+      const budget = reopened.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY.product, {
+        leaseId: AUTHORITY_LEASE_ID,
+        fencingToken: 1,
+      });
+      await budget.settle({
+        parent: { kind: "run", runId: resource.runId },
+        operationKey: "budget-reconcile-call",
+        actualCostMicros: 7,
+        settledAt: LATER,
+      });
+    } finally {
+      await reopened.close();
+    }
+
+    const settledDatabase = openQualifiedDatabase(resource.databasePath);
+    try {
+      const guarded = dispatch(settledDatabase, scope("budget-reconcile-consumer"));
+      await expect(guarded.listClaimable({ now: LATER, limit: 10 })).resolves.toEqual([
+        expect.objectContaining({ runId: resource.runId }),
+      ]);
+      await expect(
+        guarded.claim({
+          runId: resource.runId,
+          expectedRunRevision: 1,
+          expectedLeaseRevision: 1,
+          executionLeaseId: leaseId("execution-budget-reconcile-reclaimed"),
+          claimedAt: LATER,
+          expiresAt: "2026-09-04T00:20:00.000Z",
+        }),
+      ).resolves.toMatchObject({ replayed: false, revision: 2 });
+    } finally {
+      settledDatabase.close();
     }
   });
 

@@ -258,6 +258,7 @@ startup coordinator 固定 11 个有序阶段，从 configuration 到 HTTP readi
 - [x] 实现 work.execute、work.cancel、work.reconcile、event subscription 和 readiness；大输入/结果只使用 Payload/secret/capability handles。
 - [x] 对重复请求、重复结果、stale handle、stale fence、Worker crash、Agent crash、socket replacement 和未知外部结果运行真实 child-process tests。
 - [x] 证明 Agent Service 不会在 Worker unavailable 时静默降级为进程内执行。
+- [ ] 补齐 Worker 动态子调用返回 Agent 的持久准入通道，验证可信父委派、双方启动身份、作用域与资源限制、重放无可执行投影及消费后响应未知；随后由生产 Worker Run 适配器在首次投递前登记父委派并接入主服务。
 
 Task 4 已确认严格 v1 parser 不能兼容 handshake、authority fence、resource ceiling 与 cursor 字段，因此本 Task 标题和来源 Spec 中的“execution.v1 over UDS”作为 Worker protocol 的历史名称保留，实际 wire transport 使用已经冻结的 `execution.v2`，原有 `execution.v1` fixture 与接受集合没有变化。`ExecutionUdsServer` 在权限为 `0700` 的 runtime directory 上绑定 HTTP/JSON Unix socket 并设为 `0600`，同时验证 Owner-only boot token、Agent Service instance、bounded body、content type 和 request deadline；活动 socket、普通文件替换与 inode race 均 fail closed，只有同一账户拥有且确认无人监听的 crash residue 才能在 inode 复核后移除。
 
@@ -284,6 +285,8 @@ Agent Service 只接受显式 `--profile production`，验证 strict configurati
 - [x] 保证同一 job 默认只有一个活动 Run；重复人工、timer 或 external occurrence 使用稳定 key 合并，只有显式安全配置才能并行。
 - [x] 实现 IANA timezone、DST 跳过/单次、periodic missed skip、one-shot `MISSED`、有界退避和凭据/授权/策略错误不重试。
 - [x] 实现全局、分类和单 Run 硬预算与前台保留容量；在线已接纳工作在预算或容量不足时进入可见的 `BUDGET_BLOCKED` 或 `CAPACITY_BLOCKED`。
+- [x] 补齐前台 Run 与后台 occurrence 共用的预算账户和逐调用子分配，迁移历史预留及支出，关闭普通元数据更新改写费用的入口，并验证并发、幂等、未知费用、权威失效与重启恢复。该账本已经完成，但不代表生产模型逐调用门禁已接入。
+- [ ] 在统一账本通过验证后接入 Pi 逐调用门禁，覆盖工具循环、压缩、摘要及重试的模型身份、披露、凭证与预算检查；实际付费模型验证另行取得精确授权。
 - [x] Attention 只产生固定五级结果并应用确定性最低等级；Web Delivery 持久化、可重放、可去重，浏览器关闭不影响后台任务。
 - [x] 重启测试覆盖 running、awaiting approval、retry_wait、MODEL_BLOCKED、unknown external result、pending Delivery 和 authority loss。
 

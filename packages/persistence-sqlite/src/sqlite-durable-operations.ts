@@ -29,10 +29,10 @@ import type {
   ReliableEvent,
   ReliableEventRecord,
   ResolveApprovalInput,
+  RunDispatchScope,
+  RunExecutionLeaseTransactionGuard,
   RunPayloadArtifact,
   RunPayloadArtifactCommitResult,
-  RunExecutionLeaseTransactionGuard,
-  RunDispatchScope,
   ScheduledJob,
   ScheduledJobWrite,
   SessionDeletionRecord,
@@ -58,13 +58,14 @@ import type {
   TraceQuery,
 } from "@himawari-agent/gateway-contracts";
 import type Database from "better-sqlite3";
-import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
+import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
+import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
 import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
+import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
 import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
 import { SqliteRunPayloadArtifactOperations } from "./sqlite-run-payload-artifact-operations.ts";
-import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
 
 export type SqliteApplicationFailure = (
@@ -309,6 +310,7 @@ export class SqliteDurableOperations {
   private readonly runs: SqliteRunLifecycleOperations;
   private readonly runCheckpoints: SqliteRunCheckpointOperations;
   private readonly runPayloadArtifacts: SqliteRunPayloadArtifactOperations;
+  private readonly modelBudget: SqliteModelBudgetOperations;
 
   constructor(
     database: Database.Database,
@@ -330,6 +332,7 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
       this.runPayloadArtifacts,
     );
+    this.modelBudget = new SqliteModelBudgetOperations(database, fail, assertDiskHeadroom);
     this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
     const executionLease = (input: {
@@ -392,6 +395,9 @@ export class SqliteDurableOperations {
     }
     if (operation.startsWith("capabilityInvocation.")) {
       return this.capabilityInvocations.execute(operation, payload);
+    }
+    if (operation.startsWith("modelBudget.")) {
+      return this.modelBudget.execute(operation, payload);
     }
     if (operation.startsWith("threadDistillation.")) {
       return this.checkpoint.execute(operation, payload);
@@ -583,10 +589,6 @@ export class SqliteDurableOperations {
         return this.readOccurrence((payload as { occurrenceId: OccurrenceId }).occurrenceId);
       case "background.createOccurrence":
         return this.createOccurrence((payload as { occurrence: BackgroundOccurrence }).occurrence);
-      case "background.saveOccurrence":
-        return this.saveOccurrence(
-          payload as { occurrence: BackgroundOccurrence; expectedRevision: number },
-        );
       case "background.reserveAdmission":
         return this.reserveBackgroundAdmission(
           (payload as { input: BackgroundAdmissionReservation }).input,
@@ -816,15 +818,35 @@ export class SqliteDurableOperations {
           "SELECT id FROM deletion_tombstones WHERE status IN ('pending', 'incomplete') ORDER BY requested_at, id",
         ),
         retryableJobOccurrenceIds: this.idListWith(
-          `SELECT id FROM job_occurrences WHERE status IN ('queued', 'admitted')
-            OR (status = 'retry_wait' AND (next_retry_at IS NULL OR next_retry_at <= ?))
-            OR (status = 'running' AND work_lease_expires_at <= ?) ORDER BY id`,
+          `SELECT id FROM job_occurrences
+           WHERE NOT EXISTS (
+             SELECT 1 FROM model_budget_accounts budget
+             WHERE budget.owner_id = job_occurrences.owner_id
+               AND budget.agent_id = job_occurrences.agent_id
+               AND budget.occurrence_id = job_occurrences.id
+               AND budget.status = 'reconcile_required'
+           )
+           AND (last_error_code IS NULL OR last_error_code <> 'EXTERNAL_RESULT_UNKNOWN')
+           AND (
+             status IN ('queued', 'admitted')
+             OR (status = 'retry_wait' AND (next_retry_at IS NULL OR next_retry_at <= ?))
+             OR (status = 'running' AND work_lease_expires_at <= ?)
+           ) ORDER BY id`,
           now,
           now,
         ),
         expiredWorkLeaseOccurrenceIds: this.idListWith(
-          `SELECT id FROM job_occurrences WHERE status = 'running'
-            AND work_lease_expires_at <= ? ORDER BY id`,
+          `SELECT id FROM job_occurrences
+           WHERE status = 'running' AND work_lease_expires_at <= ?
+             AND NOT EXISTS (
+               SELECT 1 FROM model_budget_accounts budget
+               WHERE budget.owner_id = job_occurrences.owner_id
+                 AND budget.agent_id = job_occurrences.agent_id
+                 AND budget.occurrence_id = job_occurrences.id
+                 AND budget.status = 'reconcile_required'
+             )
+             AND (last_error_code IS NULL OR last_error_code <> 'EXTERNAL_RESULT_UNKNOWN')
+             ORDER BY id`,
           now,
         ),
         blockedOccurrenceIds: this.idList(
@@ -837,8 +859,15 @@ export class SqliteDurableOperations {
             AND last_error_code = 'MODEL_BLOCKED' ORDER BY id`,
         ),
         unknownExternalResultOccurrenceIds: this.idList(
-          `SELECT id FROM job_occurrences WHERE status = 'retry_wait'
-            AND last_error_code = 'EXTERNAL_RESULT_UNKNOWN' ORDER BY id`,
+          `SELECT id FROM job_occurrences
+           WHERE (status = 'retry_wait' AND last_error_code = 'EXTERNAL_RESULT_UNKNOWN')
+             OR EXISTS (
+               SELECT 1 FROM model_budget_accounts budget
+               WHERE budget.owner_id = job_occurrences.owner_id
+                 AND budget.agent_id = job_occurrences.agent_id
+                 AND budget.occurrence_id = job_occurrences.id
+                 AND budget.status = 'reconcile_required'
+             ) ORDER BY id`,
         ),
       } satisfies SqliteStartupRecovery;
     });
@@ -924,7 +953,16 @@ export class SqliteDurableOperations {
         "SELECT id FROM deletion_tombstones WHERE status IN ('pending', 'incomplete') ORDER BY requested_at, id",
       ),
       retryableJobOccurrenceIds: this.idList(
-        "SELECT id FROM job_occurrences WHERE status IN ('queued', 'retry_wait') ORDER BY id",
+        `SELECT id FROM job_occurrences
+         WHERE NOT EXISTS (
+           SELECT 1 FROM model_budget_accounts budget
+           WHERE budget.owner_id = job_occurrences.owner_id
+             AND budget.agent_id = job_occurrences.agent_id
+             AND budget.occurrence_id = job_occurrences.id
+             AND budget.status = 'reconcile_required'
+         )
+         AND (last_error_code IS NULL OR last_error_code <> 'EXTERNAL_RESULT_UNKNOWN')
+         AND (status = 'queued' OR status = 'retry_wait') ORDER BY id`,
       ),
       expiredWorkLeaseOccurrenceIds: [],
       blockedOccurrenceIds: this.idList(
@@ -937,8 +975,15 @@ export class SqliteDurableOperations {
           AND last_error_code = 'MODEL_BLOCKED' ORDER BY id`,
       ),
       unknownExternalResultOccurrenceIds: this.idList(
-        `SELECT id FROM job_occurrences WHERE status = 'retry_wait'
-          AND last_error_code = 'EXTERNAL_RESULT_UNKNOWN' ORDER BY id`,
+        `SELECT id FROM job_occurrences
+         WHERE (status = 'retry_wait' AND last_error_code = 'EXTERNAL_RESULT_UNKNOWN')
+           OR EXISTS (
+             SELECT 1 FROM model_budget_accounts budget
+             WHERE budget.owner_id = job_occurrences.owner_id
+               AND budget.agent_id = job_occurrences.agent_id
+               AND budget.occurrence_id = job_occurrences.id
+               AND budget.status = 'reconcile_required'
+           ) ORDER BY id`,
       ),
     };
   }
@@ -3264,7 +3309,23 @@ export class SqliteDurableOperations {
     this.assertOccurrenceShape(occurrence);
     this.assertBackgroundFence(occurrence.ownerId, occurrence.agentId, occurrence.authority);
     const duplicate = this.readOccurrenceByStableKey(occurrence.jobId, occurrence.stableKey);
-    if (duplicate) return duplicate;
+    if (duplicate) {
+      if (
+        duplicate.ownerId !== occurrence.ownerId ||
+        duplicate.agentId !== occurrence.agentId ||
+        duplicate.category !== occurrence.category ||
+        duplicate.dataClassification !== occurrence.dataClassification ||
+        duplicate.estimatedCostMicros !== occurrence.estimatedCostMicros ||
+        duplicate.foreground !== occurrence.foreground ||
+        duplicate.parallelSafe !== occurrence.parallelSafe
+      ) {
+        this.fail(
+          "PORT_CONFLICT",
+          "Background occurrence stable identity has conflicting semantics",
+        );
+      }
+      return duplicate;
+    }
     if (this.readOccurrence(occurrence.id)) {
       this.fail("PORT_CONFLICT", `Background occurrence ${occurrence.id} already exists`);
     }
@@ -3363,33 +3424,6 @@ export class SqliteDurableOperations {
       );
   }
 
-  private saveOccurrence(input: {
-    occurrence: BackgroundOccurrence;
-    expectedRevision: number;
-  }): BackgroundOccurrence {
-    this.assertDiskHeadroom();
-    this.assertOccurrenceShape(input.occurrence);
-    const current = this.readOccurrence(input.occurrence.id);
-    if (!current) this.fail("PORT_NOT_FOUND", `Occurrence ${input.occurrence.id} not found`);
-    if (
-      current.revision !== input.expectedRevision ||
-      input.occurrence.revision !== input.expectedRevision + 1 ||
-      current.jobId !== input.occurrence.jobId ||
-      current.ownerId !== input.occurrence.ownerId ||
-      current.agentId !== input.occurrence.agentId ||
-      current.stableKey !== input.occurrence.stableKey
-    ) {
-      this.fail("PORT_CONFLICT", `Occurrence ${input.occurrence.id} has a stale revision or scope`);
-    }
-    this.assertBackgroundFence(
-      input.occurrence.ownerId,
-      input.occurrence.agentId,
-      input.occurrence.authority,
-    );
-    this.writeOccurrence(input.occurrence);
-    return input.occurrence;
-  }
-
   private reserveBackgroundAdmission(
     input: BackgroundAdmissionReservation,
   ): BackgroundAdmissionResult {
@@ -3398,6 +3432,35 @@ export class SqliteDurableOperations {
       const current = this.readOccurrence(input.occurrenceId);
       if (!current) this.fail("PORT_NOT_FOUND", `Occurrence ${input.occurrenceId} not found`);
       this.assertBackgroundFence(current.ownerId, current.agentId, input.authority);
+      const runScope = this.database
+        .prepare("SELECT owner_id AS ownerId, agent_id AS agentId FROM runs WHERE id = ?")
+        .get(input.runId) as { readonly ownerId: string; readonly agentId: string } | undefined;
+      if (
+        !runScope ||
+        runScope.ownerId !== current.ownerId ||
+        runScope.agentId !== current.agentId
+      ) {
+        this.fail("PORT_INVALID_OPERATION", `Run ${input.runId} is outside occurrence scope`);
+      }
+      this.modelBudget.assertNoRunBudgetAccountWithinTransaction({
+        ownerId: current.ownerId,
+        agentId: current.agentId,
+        runId: input.runId,
+      });
+      const requiresReconciliation =
+        current.lastErrorCode === "EXTERNAL_RESULT_UNKNOWN" ||
+        this.modelBudget.occurrenceRequiresReconciliationWithinTransaction({
+          ownerId: current.ownerId,
+          agentId: current.agentId,
+          occurrenceId: current.id,
+        });
+      if (requiresReconciliation) {
+        return {
+          occurrence: current,
+          outcome: "reconcile_required" as const,
+          reasonCode: "EXTERNAL_RESULT_RECONCILIATION_REQUIRED" as const,
+        };
+      }
       if (
         current.status === "completed" ||
         current.status === "failed_terminal" ||
@@ -3413,13 +3476,6 @@ export class SqliteDurableOperations {
       }
       if (current.revision !== input.expectedRevision) {
         this.fail("PORT_CONFLICT", `Occurrence ${input.occurrenceId} revision conflict`);
-      }
-      if (current.status === "retry_wait" && current.lastErrorCode === "EXTERNAL_RESULT_UNKNOWN") {
-        return {
-          occurrence: current,
-          outcome: "reconcile_required" as const,
-          reasonCode: "EXTERNAL_RESULT_RECONCILIATION_REQUIRED" as const,
-        };
       }
       if (current.status === "blocked_credentials") {
         return {
@@ -3558,37 +3614,17 @@ export class SqliteDurableOperations {
         }
       }
 
-      const usage = this.database
-        .prepare(
-          `SELECT COALESCE(SUM(reserved_cost_micros + spent_cost_micros), 0) AS globalUsed,
-            COALESCE(SUM(CASE WHEN data_classification = ?
-              THEN reserved_cost_micros + spent_cost_micros ELSE 0 END), 0) AS classificationUsed
-          FROM job_occurrences WHERE owner_id = ? AND agent_id = ? AND id <> ?`,
-        )
-        .get(current.dataClassification, current.ownerId, current.agentId, current.id) as {
-        readonly globalUsed: number;
-        readonly classificationUsed: number;
-      };
-      if (
-        !reasonCode &&
-        current.spentCostMicros + current.estimatedCostMicros > limits.perRunCostMicros
-      ) {
-        reasonCode = "RUN_BUDGET_EXCEEDED";
-      }
-      if (
-        !reasonCode &&
-        usage.globalUsed + current.spentCostMicros + current.estimatedCostMicros >
-          limits.globalCostMicros
-      ) {
-        reasonCode = "GLOBAL_BUDGET_EXHAUSTED";
-      }
-      if (
-        !reasonCode &&
-        usage.classificationUsed + current.spentCostMicros + current.estimatedCostMicros >
-          limits.perClassificationCostMicros[current.dataClassification]
-      ) {
-        reasonCode = "CLASSIFICATION_BUDGET_EXHAUSTED";
-      }
+      const budget = reasonCode
+        ? {
+            reservedCostMicros: current.reservedCostMicros,
+            spentCostMicros: current.spentCostMicros,
+            reasonCode: null,
+          }
+        : this.modelBudget.reserveOccurrenceWithinTransaction({
+            occurrence: current,
+            limits,
+          });
+      reasonCode = reasonCode ?? budget.reasonCode;
 
       const blockedByBudget =
         reasonCode === "RUN_BUDGET_EXCEEDED" ||
@@ -3600,7 +3636,8 @@ export class SqliteDurableOperations {
         status: reasonCode ? (blockedByBudget ? "budget_blocked" : "capacity_blocked") : "admitted",
         authority: input.authority,
         runId: input.runId,
-        reservedCostMicros: reasonCode ? 0 : current.estimatedCostMicros,
+        reservedCostMicros: budget.reservedCostMicros,
+        spentCostMicros: budget.spentCostMicros,
         nextRetryAt: null,
         lastErrorCode: reasonCode,
       };
@@ -3627,6 +3664,19 @@ export class SqliteDurableOperations {
       this.assertBackgroundFence(current.ownerId, current.agentId, input.authority);
       if (current.revision !== input.expectedRevision) {
         this.fail("PORT_CONFLICT", `Occurrence ${input.occurrenceId} revision conflict`);
+      }
+      if (
+        current.lastErrorCode === "EXTERNAL_RESULT_UNKNOWN" ||
+        this.modelBudget.occurrenceRequiresReconciliationWithinTransaction({
+          ownerId: current.ownerId,
+          agentId: current.agentId,
+          occurrenceId: current.id,
+        })
+      ) {
+        this.fail(
+          "PORT_CONFLICT",
+          `Occurrence ${input.occurrenceId} requires reconciliation before it can be claimed`,
+        );
       }
       const claimedAt = new Date(input.claimedAt);
       const expiresAt = new Date(input.expiresAt);
@@ -3738,13 +3788,17 @@ export class SqliteDurableOperations {
       } else {
         status = "failed_terminal";
       }
+      const budget = this.modelBudget.settleOccurrenceWithinTransaction({
+        occurrence: current,
+        settlement: input,
+      });
       const settled: BackgroundOccurrence = {
         ...current,
         revision: current.revision + 1,
         status,
         authority: input.authority,
-        reservedCostMicros: 0,
-        spentCostMicros: current.spentCostMicros + input.spentCostMicros,
+        reservedCostMicros: budget.reservedCostMicros,
+        spentCostMicros: budget.spentCostMicros,
         nextRetryAt,
         workLease: null,
         lastErrorCode: errorCode,
@@ -3777,7 +3831,16 @@ export class SqliteDurableOperations {
     return (
       this.database
         .prepare(
-          `${this.occurrenceSelect()} WHERE owner_id = ? AND agent_id = ? AND (
+          `${this.occurrenceSelect()} WHERE owner_id = ? AND agent_id = ?
+            AND NOT EXISTS (
+              SELECT 1 FROM model_budget_accounts AS budget
+              WHERE budget.owner_id = job_occurrences.owner_id
+                AND budget.agent_id = job_occurrences.agent_id
+                AND budget.occurrence_id = job_occurrences.id
+                AND budget.status = 'reconcile_required'
+            )
+            AND (last_error_code IS NULL OR last_error_code <> 'EXTERNAL_RESULT_UNKNOWN')
+            AND (
             status IN ('queued', 'admitted', 'blocked_credentials', 'blocked_approval',
               'budget_blocked', 'capacity_blocked')
             OR (status = 'retry_wait' AND (next_retry_at IS NULL OR next_retry_at <= ?))

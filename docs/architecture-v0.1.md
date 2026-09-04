@@ -314,6 +314,8 @@ Runtime 成功事件与输出引用在同一次 checkpoint CAS 中保存；重�
 
 预算与容量在同一 `BEGIN IMMEDIATE` transaction 内检查并保留：全局、数据分类和单 Run 费用都是硬上限；总并发、category 并发和前台保留槽位共同决定接纳。已在线持久化但资源不足的 occurrence 保持可查询的 `budget_blocked` 或 `capacity_blocked`，不会因浏览器离线丢失。Worker claim 保存 lease ID、holder、取得/到期时间；重启只重新暴露已到期 lease，completed occurrence 不会回退。transport/provider failure 使用 attempt 有界、最大延迟有界且由稳定 seed 决定 jitter 的 exponential backoff；credential、authorization、policy 与 invalid input 没有自动 retry 时间。`MODEL_BLOCKED` 与未知外部结果保留原 occurrence/Run identity，后者必须先走 reconcile。
 
+`ModelBudgetPort` 是前台 Run 和后台 occurrence 的统一预算写入边界。migration `0022_model_budget_ledger` 把既有 occurrence 的预留、支出和未知结果迁入父账户，并以 Run 或 occurrence 二选一的外键归属约束账户；同一后台工作不能再创建第二个 Run 父账户。逐次模型调用使用稳定 operation key 保存 `reserved → started → settled | unknown` 子分配，只有未开始的预留可以在父 Run 终结时释放。所有金额和聚合使用非负安全整数，额度预留、执行身份、当前 authority、后台 admission/settlement 与恢复门禁都在同一 SQLite 即时事务内核对。费用未知会把账户置为 `reconcile_required`，阻止 Run dispatch、occurrence 恢复枚举和 claim；迟到结算只更新费用事实，全部未知调用结清后才重新允许领取。实际费用超过估算会保留真实支出并维持 `over_budget`，父任务的零成本收尾不能清除此状态。账户及子分配随治理删除的 Run 或 occurrence 级联删除，同机加密恢复点包含两张表及完整性核对。当前该账本尚未接入 Pi 的每次真实 provider stream，因此只证明预算持久化与恢复合同，不能证明生产模型调用已受门禁。
+
 `evaluateDurableSchedule()` 支持固定 interval、one-shot 和 IANA timezone daily schedule。周期 misfire 直接合并并跳过旧 occurrence，one-shot 超过 grace 后成为 `MISSED`；IANA 日历通过运行时 timezone database 解析，不存在的 DST wall time没有候选，重复 wall time按本地日期只采用第一次。当前生产服务已执行持久恢复并持有这些 adapters；HTTP Trigger Control Plane 边界已经实现，但自动 timer loop 与真实 command handler 要等最终 Agent Service 组合，不能把测试用 admission sink 当作公共 Gateway。
 
 ### Central attention and delivery

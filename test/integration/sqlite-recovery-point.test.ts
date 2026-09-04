@@ -321,6 +321,26 @@ async function seedRuntimeCheckpoint(
       protectedWorker.contentDigest,
       CREATED_AT,
     );
+  database
+    .prepare(
+      `INSERT INTO model_budget_accounts (
+        owner_id, agent_id, account_id, parent_kind, run_id, occurrence_id,
+        data_classification, reserved_cost_micros, spent_cost_micros,
+        status, revision
+      ) VALUES (?, ?, 'run:run-recovery-checkpoint', 'run',
+        'run-recovery-checkpoint', NULL, 'private', 0, 12, 'active', 2)`,
+    )
+    .run(OWNER_ID, AGENT_ID);
+  database
+    .prepare(
+      `INSERT INTO model_budget_allocations (
+        owner_id, agent_id, account_id, operation_key, model_ref,
+        data_classification, estimated_cost_micros, actual_cost_micros,
+        status, reserved_at, started_at, observed_at, settled_at, reason_code
+      ) VALUES (?, ?, 'run:run-recovery-checkpoint', 'model-call-recovery',
+        'approved-model-v1', 'private', 12, 12, 'settled', ?, ?, NULL, ?, NULL)`,
+    )
+    .run(OWNER_ID, AGENT_ID, CREATED_AT, CREATED_AT, CREATED_AT);
   database.close();
 }
 
@@ -453,6 +473,16 @@ describe("encrypted same-host SQLite recovery points", () => {
         .run();
       mutated
         .prepare(
+          "DELETE FROM model_budget_allocations WHERE account_id = 'run:run-recovery-checkpoint'",
+        )
+        .run();
+      mutated
+        .prepare(
+          "DELETE FROM model_budget_accounts WHERE account_id = 'run:run-recovery-checkpoint'",
+        )
+        .run();
+      mutated
+        .prepare(
           "DELETE FROM payloads WHERE ref IN ('payload-recovery-answer', 'payload-recovery-worker')",
         )
         .run();
@@ -512,6 +542,35 @@ describe("encrypted same-host SQLite recovery points", () => {
           payload_ref: "payload-recovery-worker",
         },
       ]);
+      expect(
+        database
+          .prepare(
+            `SELECT account_id, reserved_cost_micros, spent_cost_micros, status, revision
+             FROM model_budget_accounts WHERE account_id = 'run:run-recovery-checkpoint'`,
+          )
+          .get(),
+      ).toEqual({
+        account_id: "run:run-recovery-checkpoint",
+        reserved_cost_micros: 0,
+        spent_cost_micros: 12,
+        status: "active",
+        revision: 2,
+      });
+      expect(
+        database
+          .prepare(
+            `SELECT operation_key, model_ref, estimated_cost_micros, actual_cost_micros, status
+             FROM model_budget_allocations
+             WHERE account_id = 'run:run-recovery-checkpoint'`,
+          )
+          .get(),
+      ).toEqual({
+        operation_key: "model-call-recovery",
+        model_ref: "approved-model-v1",
+        estimated_cost_micros: 12,
+        actual_cost_micros: 12,
+        status: "settled",
+      });
       expect(database.pragma("foreign_key_check")).toEqual([]);
     } finally {
       database.close();
