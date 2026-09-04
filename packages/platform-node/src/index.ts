@@ -6,6 +6,7 @@ export * from "./candidate-workspace/index.js";
 export * from "./capabilities/index.js";
 export * from "./ciphertext-file-store.js";
 export * from "./ephemeral-secret-port.js";
+export * from "./execution-admission-uds-transport.js";
 export * from "./execution-uds-transport.js";
 export * from "./files/index.js";
 export * from "./host-secret-source.js";
