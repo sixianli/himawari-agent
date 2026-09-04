@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateRawSync, gzipSync } from "node:zlib";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applySecurityExceptions,
   enumerateLockDependencies,
@@ -178,6 +178,7 @@ function zip(name, content) {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const directory of temporaryDirectories.splice(0))
     rmSync(directory, { recursive: true, force: true });
 });
@@ -342,8 +343,100 @@ describe("完整锁文件与官方 advisory", () => {
     expect(result.scannedCount).toBe(3);
     expect(result.fetchedAt).toBe(now.toISOString());
     expect(result.responseSha256).toBe(sha256("{}"));
+    expect(request.url).toBe("https://registry.npmjs.org/-/npm/v1/security/advisories/bulk");
+    expect(request.options.method).toBe("POST");
+    expect(request.options.headers).toEqual({
+      "content-type": "application/json",
+      accept: "application/json",
+    });
+    expect(request.options.signal).toBeInstanceOf(AbortSignal);
     expect(JSON.parse(request.options.body)).toEqual({ example: ["1.2.0", "1.3.0", "2.0.0"] });
     expect(result.findings).toEqual([]);
+  });
+
+  it("单次 fetch 失败只保留三层已知网络身份与请求摘要", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("private message", {
+        cause: Object.assign(new Error("private nested"), {
+          code: "EAI_AGAIN",
+          cause: Object.assign(new Error("third"), {
+            code: "ECONNRESET",
+            cause: new Error("fourth must not appear"),
+          }),
+        }),
+      });
+    });
+    const error = await fetchAdvisories({ dependencies, ...semver, fetchImpl }).catch((e) => e);
+    expect(error.message).toBe("ADVISORY_NETWORK_UNAVAILABLE");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [endpoint, options] = fetchImpl.mock.calls[0];
+    expect(error.diagnostic).toEqual({
+      endpoint,
+      requestSha256: sha256(options.body),
+      timeoutMs: 60000,
+      elapsedMs: expect.any(Number),
+      phase: "fetch-response",
+      signal: { aborted: false, reason: null },
+      errors: [
+        { name: "TypeError", code: "unknown" },
+        { name: "Error", code: "EAI_AGAIN" },
+        { name: "Error", code: "ECONNRESET" },
+      ],
+    });
+    expect(error.diagnostic.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(error)).not.toMatch(/private|fourth/);
+  });
+
+  it.each(["TimeoutError", "AbortError"])("记录 %s 的 signal，仍请求固定 60000ms", async (name) => {
+    const reason = new DOMException("private timeout detail", name);
+    const controller = new AbortController();
+    controller.abort(reason);
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+    const error = await fetchAdvisories({
+      dependencies,
+      ...semver,
+      fetchImpl: async () => {
+        throw reason;
+      },
+    }).catch((e) => e);
+    expect(timeout).toHaveBeenCalledExactlyOnceWith(60000);
+    expect(error.diagnostic.signal).toEqual({ aborted: true, reason: { name, code: reason.code } });
+    expect(error.diagnostic.errors).toEqual([{ name, code: reason.code }]);
+    expect(JSON.stringify(error)).not.toContain("private timeout detail");
+  });
+
+  it.each([null, { name: "untrusted-name", code: "untrusted-code", message: "untrusted-message" }])(
+    "未知异常字段不能进入公开诊断 %#",
+    async (thrown) => {
+      const controller = new AbortController();
+      controller.abort(thrown);
+      vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+      const error = await fetchAdvisories({
+        dependencies,
+        ...semver,
+        fetchImpl: async () => {
+          throw thrown;
+        },
+      }).catch((e) => e);
+      expect(error.diagnostic.errors).toEqual([{ name: "unknown", code: "unknown" }]);
+      expect(error.diagnostic.signal.reason).toEqual({ name: "unknown", code: "unknown" });
+      expect(JSON.stringify(error)).not.toContain("untrusted");
+    },
+  );
+
+  it("读取响应体失败保留独立阶段并继续失败，不重发请求", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      text: async () => {
+        throw Object.assign(new Error("private body"), { code: "UND_ERR_BODY_TIMEOUT" });
+      },
+    }));
+    const error = await fetchAdvisories({ dependencies, ...semver, fetchImpl }).catch((e) => e);
+    expect(error.message).toBe("ADVISORY_RESPONSE_BODY_UNAVAILABLE");
+    expect(error.diagnostic.phase).toBe("response-body");
+    expect(error.diagnostic.errors).toEqual([{ name: "Error", code: "UND_ERR_BODY_TIMEOUT" }]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(error)).not.toContain("private body");
   });
 
   it.each([

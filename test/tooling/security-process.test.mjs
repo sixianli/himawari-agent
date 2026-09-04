@@ -222,6 +222,51 @@ afterEach(() => {
 });
 
 describe("安全runner的隔离外部边界", () => {
+  it.each(["fetch-response", "response-body"])(
+    "%s 的脱敏诊断贯通 perform 与正式失败报告",
+    async (phase) => {
+      const f = securityFixture();
+      const external = Object.assign(new TypeError("private transport message"), {
+        cause: Object.assign(new Error("private cause message"), { code: "ECONNRESET" }),
+      });
+      const fetchImpl = vi.fn(async () => {
+        if (phase === "fetch-response") throw external;
+        return {
+          ok: true,
+          text: async () => {
+            throw external;
+          },
+        };
+      });
+      vi.stubGlobal("fetch", fetchImpl);
+      const result = await runSecurityChecks(f);
+      const report = JSON.parse(readFileSync(result.reportPath));
+      expect(result.status).toBe("infrastructure_failed");
+      expect(report.status).toBe("infrastructure_failed");
+      const check = report.checks.find((c) => c.id === "npm-advisories");
+      expect(check.error).toBe(
+        phase === "fetch-response"
+          ? "ADVISORY_NETWORK_UNAVAILABLE"
+          : "ADVISORY_RESPONSE_BODY_UNAVAILABLE",
+      );
+      expect(check.diagnostic).toEqual({
+        endpoint: "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk",
+        requestSha256: sha(fetchImpl.mock.calls[0][1].body),
+        timeoutMs: 60000,
+        elapsedMs: expect.any(Number),
+        phase,
+        signal: { aborted: false, reason: null },
+        errors: [
+          { name: "TypeError", code: "unknown" },
+          { name: "Error", code: "ECONNRESET" },
+        ],
+      });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(report.checks.filter((c) => c.status === "passed")).toHaveLength(3);
+      expect(JSON.stringify(report)).not.toMatch(/private transport|private cause/);
+      expect(result.reportSha256).toBe(sha(readFileSync(result.reportPath)));
+    },
+  );
   it("四个扫描器成功产生新鲜、完整、脱敏且绑定context的报告", async () => {
     const f = securityFixture();
     const result = await runSecurityChecks(f);

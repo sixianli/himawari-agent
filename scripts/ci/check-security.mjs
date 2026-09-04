@@ -40,6 +40,76 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const advisoryEndpoint = "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk";
 const severities = ["info", "low", "moderate", "high", "critical"];
 const syntheticMarker = "HIMAWARISYNTHETICONLY";
+const networkErrorNames = new Set([
+  "Error",
+  "TypeError",
+  "AbortError",
+  "TimeoutError",
+  "AggregateError",
+  "ConnectTimeoutError",
+  "HeadersTimeoutError",
+  "BodyTimeoutError",
+  "SocketError",
+]);
+const networkErrorCodes = new Set([
+  "ABORT_ERR",
+  "UND_ERR_ABORTED",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "EPIPE",
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  20,
+  23,
+]);
+
+function networkErrorIdentity(error) {
+  return {
+    name: networkErrorNames.has(error?.name) ? error.name : "unknown",
+    code: networkErrorCodes.has(error?.code) ? error.code : "unknown",
+  };
+}
+
+class AdvisoryNetworkError extends Error {
+  constructor(error, { phase, signal, started, body }) {
+    super(
+      phase === "fetch-response"
+        ? "ADVISORY_NETWORK_UNAVAILABLE"
+        : "ADVISORY_RESPONSE_BODY_UNAVAILABLE",
+    );
+    const errors = [];
+    for (let current = error; errors.length < 3; current = current?.cause) {
+      errors.push(networkErrorIdentity(current));
+      if (current?.cause == null) break;
+    }
+    this.diagnostic = {
+      endpoint: advisoryEndpoint,
+      requestSha256: sha256(body),
+      timeoutMs: 60_000,
+      elapsedMs: Math.round(performance.now() - started),
+      phase,
+      signal: {
+        aborted: signal.aborted,
+        reason: signal.aborted ? networkErrorIdentity(signal.reason) : null,
+      },
+      errors,
+    };
+  }
+}
 
 function exactPath(path) {
   return safeRelativePath(path) && !/[*?[\]{}]/.test(path);
@@ -156,19 +226,26 @@ export async function fetchAdvisories({
         .map(([name, versions]) => [name, [...versions].sort()]),
     ),
   );
+  const signal = AbortSignal.timeout(60_000);
+  const started = performance.now();
   let response;
   try {
     response = await fetchImpl(advisoryEndpoint, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body,
-      signal: AbortSignal.timeout(60_000),
+      signal,
     });
-  } catch {
-    throw new Error("ADVISORY_NETWORK_UNAVAILABLE");
+  } catch (error) {
+    throw new AdvisoryNetworkError(error, { phase: "fetch-response", signal, started, body });
   }
   assert(response.ok, "ADVISORY_HTTP_FAILURE");
-  const bytes = await response.text();
+  let bytes;
+  try {
+    bytes = await response.text();
+  } catch (error) {
+    throw new AdvisoryNetworkError(error, { phase: "response-body", signal, started, body });
+  }
   assert(
     bytes.length > 0 && bytes.length < 16 * 1024 * 1024,
     "ADVISORY_RESPONSE_EMPTY_OR_OVERSIZED",
@@ -705,6 +782,7 @@ export async function runSecurityChecks({
           scannedCount: 0,
           findings: [],
           error: /^[A-Z_]+$/.test(error.message) ? error.message : "SECURITY_SCANNER_FAILED",
+          ...(error instanceof AdvisoryNetworkError ? { diagnostic: error.diagnostic } : {}),
         });
       }
     };
