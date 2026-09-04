@@ -4,17 +4,19 @@ import path from "node:path";
 import type {
   CapabilityExecutionHandleStorePort,
   CapabilityRegistryStorePort,
+  GovernanceMutationReceipt,
   GovernedCapabilityExecutionHandle,
   GovernedGrantRecord,
-  GovernanceMutationReceipt,
   ReliableEventRecord,
   ReliableEventSinkPort,
   SessionDeletionRecord,
 } from "@himawari-agent/application";
 import { PORT_ERROR_CODES, SessionTraceRecorder } from "@himawari-agent/application";
-import { createReferenceAdapterSet } from "@himawari-agent/testing";
+import type { ProductAuthorityFence } from "@himawari-agent/domain";
 import {
   createAgentId,
+  createAuthorityLeaseId,
+  createDeploymentId,
   createIdempotencyKey,
   createOwnerId,
   createRunId,
@@ -23,12 +25,13 @@ import {
 } from "@himawari-agent/domain";
 import type { StreamEvent } from "@himawari-agent/gateway-contracts";
 import {
-  SqliteProductStateRepository,
-  SqliteReliableEventPublisher,
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  SqliteProductStateRepository,
+  SqliteReliableEventPublisher,
 } from "@himawari-agent/persistence-sqlite";
+import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import {
   attentionStatePortConformance,
   auditLedgerPortConformance,
@@ -48,6 +51,15 @@ const SESSION_ID = createSessionId("session-conformance");
 const T0 = "2026-08-25T00:00:00.000Z";
 const T1 = "2026-08-25T00:00:01.000Z";
 const T2 = "2026-08-25T00:00:02.000Z";
+const AUTHORITY: ProductAuthorityFence = {
+  deploymentId: createDeploymentId("deployment-conformance"),
+  authorityEpoch: 1,
+  fencingToken: 1,
+};
+const LEASE = {
+  leaseId: createAuthorityLeaseId("lease-conformance"),
+  fencingToken: 1,
+};
 
 interface RepositoryResource {
   readonly repository: SqliteProductStateRepository;
@@ -70,6 +82,14 @@ async function seedRepository(databasePath: string): Promise<void> {
       ) VALUES ('deployment-conformance', ?, ?, 0, 'active', 1, 1)`,
     )
     .run(OWNER_ID, AGENT_ID);
+  database
+    .prepare(
+      `INSERT INTO authority_leases (
+        id, owner_id, agent_id, deployment_id, holder_id, authority_epoch,
+        fencing_token, acquired_at, expires_at
+      ) VALUES (?, ?, ?, 'deployment-conformance', 'holder-conformance', 1, 1, ?, '2999-12-31T23:59:59.999Z')`,
+    )
+    .run(LEASE.leaseId, OWNER_ID, AGENT_ID, T0);
   const insertPayload = database.prepare(
     `INSERT INTO payloads (
       ref, owner_id, agent_id, classification, storage_kind, ciphertext,
@@ -194,7 +214,10 @@ it.each([0, 1000, 1001])(
       const adapters = createReferenceAdapterSet();
       const recorder = new SessionTraceRecorder({
         trace,
-        payloads: resource.repository.payloadStore(OWNER_ID, AGENT_ID),
+        artifacts: resource.repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, {
+          product: AUTHORITY,
+          lease: LEASE,
+        }),
         protector: adapters.payloadProtector,
         audit: resource.repository.auditLedger(),
         clock: { now: () => T1 },

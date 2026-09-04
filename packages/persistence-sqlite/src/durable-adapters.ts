@@ -2,27 +2,29 @@ import type {
   AttentionStatePort,
   AuditLedgerPort,
   AuthorizationStorePort,
+  BackgroundWorkStatePort,
   CapabilityExecutionHandleStorePort,
   CapabilityRegistryStorePort,
   GatewayReadModelPort,
-  GovernanceMutationReceiptStorePort,
   GitHubIntegrationStatePort,
+  GovernanceMutationReceiptStorePort,
+  MemoryProjectionJobStatePort,
+  OwnerIdentityStatePort,
   PayloadStorePort,
+  ProductMemoryStatePort,
   ReliableEventPort,
   ReliableEventSinkPort,
-  SchedulerPort,
-  SessionDeviceStatePort,
-  SessionDeletionStatePort,
-  TraceStorePort,
-  BackgroundWorkStatePort,
   RunCheckpointStore,
-  OwnerIdentityStatePort,
-  MemoryProjectionJobStatePort,
-  ProductMemoryStatePort,
+  RunLifecyclePort,
+  RunPayloadArtifactAuthority,
+  RunPayloadArtifactPort,
+  SchedulerPort,
   SensitiveMemoryApprovalStatePort,
+  SessionDeletionStatePort,
+  SessionDeviceStatePort,
   ThreadDistillationStatePort,
   ThreadRepositoryPort,
-  RunLifecyclePort,
+  TraceStorePort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
 import type {
@@ -177,6 +179,40 @@ export class SqliteDurableAdapters {
       put: (payload) => this.context.write("payload.put", { ownerId, agentId, payload }),
       get: (ref) => this.context.read("payload.get", { ownerId, agentId, ref }),
       delete: (ref) => this.context.write("payload.delete", { ownerId, agentId, ref }),
+    });
+  }
+
+  runPayloadArtifactPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: RunPayloadArtifactAuthority,
+    now: () => string,
+  ): RunPayloadArtifactPort {
+    return Object.freeze<RunPayloadArtifactPort>({
+      lookup: (input) =>
+        this.context.read("runPayloadArtifact.lookup", {
+          ownerId,
+          agentId,
+          ...input,
+          authority: {
+            product: authority.product,
+            leaseId: authority.lease.leaseId,
+            leaseFencingToken: authority.lease.fencingToken,
+          },
+          now: now(),
+        }),
+      commit: (input) =>
+        this.context.write("runPayloadArtifact.commit", {
+          ownerId,
+          agentId,
+          ...input,
+          authority: {
+            product: authority.product,
+            leaseId: authority.lease.leaseId,
+            leaseFencingToken: authority.lease.fencingToken,
+          },
+          now: now(),
+        }),
     });
   }
 

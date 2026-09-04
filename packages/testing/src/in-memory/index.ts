@@ -7,3 +7,4 @@ export * from "./intelligence.js";
 export * from "./observability.js";
 export * from "./persistence.js";
 export * from "./run-checkpoints.js";
+export * from "./run-payload-artifacts.js";

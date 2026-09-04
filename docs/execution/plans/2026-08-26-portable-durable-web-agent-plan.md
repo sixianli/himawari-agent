@@ -299,6 +299,10 @@ schedule evaluator 覆盖 interval、one-shot 和 IANA daily schedule；periodic
 
 2026-09-04 的 Worker 正文接口单元将 Program、MCP 和 Endpoint 的输入/输出集中到 invocation 级窄边界，移除执行侧的任意 Payload store 和加解密器依赖。主代理独立运行八项单元测试通过，覆盖完整请求传递、输入拒绝后不执行，以及外部动作成功但输出保存失败时只报告结果不确定。全仓检查通过。这些证据仅证明接口迁移；生产认证正文代理、结果幂等事务、真实 Worker 接线和双平台隔离仍待完成。
 
+后续正文通道单元新增独立 `payload-broker.v1`、认证本机 Unix socket server/client 与 Worker 窄客户端，并复用旧执行通道的传输基础。主代理独立运行八项协议合同和十八项真实本机通信、旧执行通道及 Worker 客户端测试通过；后者在默认沙箱遇到 `listen EPERM`，取得精确的临时本机 socket 授权后同命令通过，没有连接外网或修改生产服务。测试覆盖启动身份和响应关联、严格字段/编码/大小、错误脱敏、缓慢正文与响应的绝对截止时限、晚完成提交与重试边界。持久委派核验、结果归属、真实能力 registry 和最终服务接线不在本单元完成范围，不能据此关闭生产 Worker 验收。
+
+运行正文归属单元新增 `RunPayloadArtifactPort` 与第十九项 migration。保护后的正文和 Run 归属、用途、语义操作回执在同一 SQLite 事务提交；当前部署与有效租约、作用域、语义冲突、终态新增和删除后迟到写入均在持久边界检查。已有非审计正文在 Run 结束后仍可同义重放，不能把重放当作新的执行授权。Trace 已迁移到该端口；追加 Trace 失败后留下的是可随 Run 回收的有主正文，而非孤儿。加密备份恢复包含非空归属记录，直接治理删除与 GitHub history 删除均验证 artifact-only 独占正文回收和存活共享引用保护。主代理先完成九个集成文件的 110 项回归；最后收紧终态和删除证据后，两个聚焦文件的 11 项测试通过，另有十八项迁移合同与十项 transfer/治理删除回归通过，冻结后的全仓检查通过。Context、final answer、Worker result 的生产生成方尚未接入新端口，三个生产缺口仍保持未完成。
+
 ### Task 13：实现受认证 HTTP Gateway 与可恢复 SSE
 
 - [x] 先为 HTTP adapter 写 contract/security tests，证明每个命令、查询和事件请求都经过版本 parser、`GatewayAuthenticationContext`、scope policy、Control Plane 或 Read Model。

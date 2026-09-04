@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -8,14 +8,14 @@ import {
   createOwnerId,
 } from "@himawari-agent/domain";
 import {
-  RECOVERY_POINT_ERROR_CODES,
-  RecoveryPointError,
-  SqliteRecoveryPointAdapter,
   acquireStateRootLock,
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  RECOVERY_POINT_ERROR_CODES,
+  RecoveryPointError,
   type RecoveryPointFaultStage,
+  SqliteRecoveryPointAdapter,
 } from "@himawari-agent/persistence-sqlite";
 import {
   ContentAddressedCiphertextStore,
@@ -182,6 +182,15 @@ async function seedRuntimeCheckpoint(
   databasePath: string,
   protector: EnvelopePayloadProtector,
 ): Promise<void> {
+  const protectedContext = await protector.protect({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    ref: "payload-recovery-point",
+    dataClassification: "restricted",
+    contentType: "text/plain",
+    plaintext: PLAINTEXT,
+    createdAt: CREATED_AT,
+  });
   const protectedAnswer = await protector.protect({
     ownerId: OWNER_ID,
     agentId: AGENT_ID,
@@ -285,6 +294,33 @@ async function seedRuntimeCheckpoint(
       ) VALUES ('run-recovery-checkpoint', ?, ?, '__proto__', ?)`,
     )
     .run(OWNER_ID, AGENT_ID, "payload-recovery-worker");
+  database
+    .prepare(
+      `INSERT INTO run_payload_artifacts (
+        owner_id, agent_id, run_id, purpose, operation_key, payload_ref,
+        content_digest, content_type, classification, created_at
+      ) VALUES
+        (?, ?, 'run-recovery-checkpoint', 'context', 'context-recovery',
+          'payload-recovery-point', ?, 'text/plain', 'restricted', ?),
+        (?, ?, 'run-recovery-checkpoint', 'final_answer', 'answer-recovery',
+          'payload-recovery-answer', ?, 'text/plain', 'private', ?),
+        (?, ?, 'run-recovery-checkpoint', 'worker_result', '__proto__',
+          'payload-recovery-worker', ?, 'text/plain', 'private', ?)`,
+    )
+    .run(
+      OWNER_ID,
+      AGENT_ID,
+      protectedContext.contentDigest,
+      CREATED_AT,
+      OWNER_ID,
+      AGENT_ID,
+      protectedAnswer.contentDigest,
+      CREATED_AT,
+      OWNER_ID,
+      AGENT_ID,
+      protectedWorker.contentDigest,
+      CREATED_AT,
+    );
   database.close();
 }
 
@@ -413,6 +449,9 @@ describe("encrypted same-host SQLite recovery points", () => {
         )
         .run();
       mutated
+        .prepare("DELETE FROM run_payload_artifacts WHERE run_id = 'run-recovery-checkpoint'")
+        .run();
+      mutated
         .prepare(
           "DELETE FROM payloads WHERE ref IN ('payload-recovery-answer', 'payload-recovery-worker')",
         )
@@ -449,6 +488,30 @@ describe("encrypted same-host SQLite recovery points", () => {
           )
           .get(),
       ).toEqual({ worker_run_id: "__proto__", result_ref: "payload-recovery-worker" });
+      expect(
+        database
+          .prepare(
+            `SELECT purpose, operation_key, payload_ref FROM run_payload_artifacts
+            WHERE run_id = 'run-recovery-checkpoint' ORDER BY purpose`,
+          )
+          .all(),
+      ).toEqual([
+        {
+          purpose: "context",
+          operation_key: "context-recovery",
+          payload_ref: "payload-recovery-point",
+        },
+        {
+          purpose: "final_answer",
+          operation_key: "answer-recovery",
+          payload_ref: "payload-recovery-answer",
+        },
+        {
+          purpose: "worker_result",
+          operation_key: "__proto__",
+          payload_ref: "payload-recovery-worker",
+        },
+      ]);
       expect(database.pragma("foreign_key_check")).toEqual([]);
     } finally {
       database.close();

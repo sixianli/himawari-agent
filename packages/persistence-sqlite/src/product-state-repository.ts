@@ -2,38 +2,40 @@ import path from "node:path";
 import type {
   AttentionStatePort,
   AuditLedgerPort,
-  BackgroundWorkStatePort,
   AuthorityLeasePort,
   AuthorityLeaseRecord,
+  AuthorizationStorePort,
+  BackgroundWorkStatePort,
+  CapabilityExecutionHandleStorePort,
+  CapabilityRegistryStorePort,
   ClockPort,
   CommandResultLookup,
   CommandResultRecord,
   CommitStateAndEventsInput,
   CommitStateAndEventsResult,
   DeploymentAuthorityStatePort,
-  AuthorizationStorePort,
-  CapabilityExecutionHandleStorePort,
-  CapabilityRegistryStorePort,
+  DurableGitHubMonitorHistoryPolicyPort,
+  GitHubIntegrationStatePort,
+  GovernanceMutationReceiptStorePort,
+  MemoryProjectionJobStatePort,
+  OwnerIdentityStatePort,
   PayloadStorePort,
+  ProductMemoryStatePort,
   ProductStateRepositoryPort,
   ReliableEventPort,
   ReliableEventRecord,
-  SchedulerPort,
-  SessionDeviceStatePort,
-  SessionDeletionStatePort,
-  StateRecord,
   RunCheckpointStore,
-  TraceStorePort,
-  OwnerIdentityStatePort,
-  MemoryProjectionJobStatePort,
-  ProductMemoryStatePort,
-  SensitiveMemoryApprovalStatePort,
-  ThreadDistillationStatePort,
-  GitHubIntegrationStatePort,
-  GovernanceMutationReceiptStorePort,
-  DurableGitHubMonitorHistoryPolicyPort,
-  ThreadRepositoryPort,
   RunLifecyclePort,
+  RunPayloadArtifactAuthority,
+  RunPayloadArtifactPort,
+  SchedulerPort,
+  SensitiveMemoryApprovalStatePort,
+  SessionDeletionStatePort,
+  SessionDeviceStatePort,
+  StateRecord,
+  ThreadDistillationStatePort,
+  ThreadRepositoryPort,
+  TraceStorePort,
 } from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
@@ -41,15 +43,15 @@ import type {
   AuthorityLeaseId,
   DeploymentAuthorityState,
   DeploymentId,
-  ProductAuthorityFence,
   OwnerId,
+  ProductAuthorityFence,
 } from "@himawari-agent/domain";
 import {
+  SqliteDurableAdapters,
   type SqliteGatewayReadModel,
   type SqliteReliableEventConsumerDeduplicator,
   type SqliteReliableEventOutbox,
   type SqliteStartupRecovery,
-  SqliteDurableAdapters,
 } from "./durable-adapters.js";
 import type { VerifiedMigrationSnapshot } from "./migration-engine.js";
 import {
@@ -58,12 +60,16 @@ import {
   openQualifiedDatabase,
 } from "./migration-engine.js";
 import {
-  type SqliteWorkerConfiguration,
   SqliteExecutionContext,
+  type SqliteWorkerConfiguration,
 } from "./sqlite-execution-context.js";
-import { SQLITE_PERSISTENCE_ERROR_CODES, SqlitePersistenceError } from "./state-root-lock.js";
-import { acquireStateRootLock, type StateRootLock } from "./state-root-lock.js";
 import { SqliteGitHubMonitorHistoryPolicyAdapter } from "./sqlite-github-history-policy.js";
+import {
+  acquireStateRootLock,
+  SQLITE_PERSISTENCE_ERROR_CODES,
+  SqlitePersistenceError,
+  type StateRootLock,
+} from "./state-root-lock.js";
 
 export interface SqliteProductStateRepositoryOptions {
   readonly stateRoot: string;
@@ -293,6 +299,14 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   payloadStore(ownerId: OwnerId, agentId: AgentId): PayloadStorePort {
     return this.durable.payloadStore(ownerId, agentId);
+  }
+
+  runPayloadArtifactPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: RunPayloadArtifactAuthority,
+  ): RunPayloadArtifactPort {
+    return this.durable.runPayloadArtifactPort(ownerId, agentId, authority, this.now);
   }
 
   auditLedger(): AuditLedgerPort {

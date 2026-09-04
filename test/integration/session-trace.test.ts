@@ -1,6 +1,6 @@
 import {
-  PORT_ERROR_CODES,
   ApplicationPortError,
+  PORT_ERROR_CODES,
   SessionDeletionCoordinator,
   SessionTraceRecorder,
   type TraceEvent,
@@ -14,9 +14,9 @@ import {
   createTurnId,
 } from "@himawari-agent/domain";
 import {
+  createReferenceAdapterSet,
   DeterministicFailureScheduler,
   InMemoryDeletionTarget,
-  createReferenceAdapterSet,
 } from "@himawari-agent/testing";
 import { describe, expect, it, vi } from "vitest";
 
@@ -31,7 +31,7 @@ function createRecorder() {
   const adapters = createReferenceAdapterSet();
   const recorder = new SessionTraceRecorder({
     trace: adapters.trace,
-    payloads: adapters.payload,
+    artifacts: adapters.runPayloadArtifacts,
     protector: adapters.payloadProtector,
     audit: adapters.audit,
     clock: adapters.clock,

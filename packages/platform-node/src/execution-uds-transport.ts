@@ -1,8 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
-import { chmod, lstat, mkdir, readFile, unlink } from "node:fs/promises";
-import http, { type IncomingMessage, type ServerResponse } from "node:http";
-import net from "node:net";
-import path from "node:path";
+import { lstat, readFile } from "node:fs/promises";
 import process from "node:process";
 import type { ExecutionTransportPort } from "@himawari-agent/application";
 import {
@@ -12,6 +8,12 @@ import {
   type ExecutionV2Response,
   executionV2MessageSchema,
 } from "@himawari-agent/execution-contracts";
+import {
+  AuthenticatedUdsClient,
+  type AuthenticatedUdsCredential,
+  AuthenticatedUdsServer,
+  AuthenticatedUdsTransportError,
+} from "./authenticated-uds-transport.js";
 
 const MESSAGE_PATH = "/execution/v2/messages";
 const EVENTS_PATH = "/execution/v2/events";
@@ -35,22 +37,16 @@ export const EXECUTION_UDS_ERROR_CODES = Object.freeze({
 type ExecutionUdsErrorCode =
   (typeof EXECUTION_UDS_ERROR_CODES)[keyof typeof EXECUTION_UDS_ERROR_CODES];
 
-export class ExecutionUdsError extends Error {
-  readonly code: ExecutionUdsErrorCode;
-  readonly statusCode: number;
+export class ExecutionUdsError extends AuthenticatedUdsTransportError {
+  declare readonly code: ExecutionUdsErrorCode;
 
   constructor(code: ExecutionUdsErrorCode, statusCode: number, cause?: unknown) {
-    super(code, cause === undefined ? undefined : { cause });
+    super(code, statusCode, cause);
     this.name = "ExecutionUdsError";
-    this.code = code;
-    this.statusCode = statusCode;
   }
 }
 
-export interface ExecutionUdsCredential {
-  readonly tokenRef: string;
-  readonly tokenValue: string;
-}
+export interface ExecutionUdsCredential extends AuthenticatedUdsCredential {}
 
 export interface ExecutionUdsServerOptions {
   readonly runtimeDirectory: string;
@@ -68,62 +64,6 @@ export interface ExecutionUdsClientOptions {
   readonly agentServiceInstanceId: string;
   readonly maximumBodyBytes: number;
   readonly requestTimeoutMs: number;
-}
-
-interface SocketIdentity {
-  readonly dev: number;
-  readonly ino: number;
-}
-
-async function socketAcceptsConnections(socketPath: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = net.createConnection(socketPath);
-    const finish = (active: boolean) => {
-      socket.removeAllListeners();
-      socket.destroy();
-      resolve(active);
-    };
-    socket.setTimeout(100, () => finish(true));
-    socket.once("connect", () => finish(true));
-    socket.once("error", (error: NodeJS.ErrnoException) => {
-      finish(error.code !== "ECONNREFUSED" && error.code !== "ENOENT");
-    });
-  });
-}
-
-function stableEqual(left: string, right: string): boolean {
-  const leftBytes = Buffer.from(left);
-  const rightBytes = Buffer.from(right);
-  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
-}
-
-function bearerToken(request: IncomingMessage): string | null {
-  const value = request.headers.authorization;
-  if (!value?.startsWith("Bearer ")) return null;
-  return value.slice("Bearer ".length);
-}
-
-function responseError(response: ServerResponse, error: ExecutionUdsError): void {
-  response.writeHead(error.statusCode, {
-    "cache-control": "no-store",
-    "content-type": JSON_CONTENT_TYPE,
-    "x-content-type-options": "nosniff",
-  });
-  response.end(JSON.stringify({ error: { code: error.code } }));
-}
-
-async function readBoundedBody(request: IncomingMessage, limit: number): Promise<string> {
-  const chunks: Buffer[] = [];
-  let length = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    length += buffer.length;
-    if (length > limit) {
-      throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.BODY_TOO_LARGE, 413);
-    }
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks).toString("utf8");
 }
 
 async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
@@ -199,116 +139,67 @@ export async function readRestrictedExecutionTokenFile(
 export class ExecutionUdsServer {
   readonly socketPath: string;
   private readonly options: ExecutionUdsServerOptions;
-  private server: http.Server | null = null;
-  private socketIdentity: SocketIdentity | null = null;
+  private readonly uds: AuthenticatedUdsServer;
 
   constructor(options: ExecutionUdsServerOptions) {
-    if (!path.isAbsolute(options.runtimeDirectory)) {
-      throw new TypeError("Execution UDS runtime directory must be absolute");
-    }
-    if (!Number.isSafeInteger(options.maximumBodyBytes) || options.maximumBodyBytes < 1) {
-      throw new TypeError("Execution UDS maximum body bytes must be a positive integer");
-    }
-    if (!Number.isSafeInteger(options.requestTimeoutMs) || options.requestTimeoutMs < 1) {
-      throw new TypeError("Execution UDS timeout must be a positive integer");
-    }
     this.options = options;
-    this.socketPath = path.join(options.runtimeDirectory, options.socketName ?? "execution.sock");
+    this.uds = new AuthenticatedUdsServer({
+      runtimeDirectory: options.runtimeDirectory,
+      socketName: options.socketName ?? "execution.sock",
+      credential: options.credential,
+      allowedPeerInstanceIds: options.allowedAgentServiceInstanceIds,
+      peerInstanceHeader: "x-himawari-agent-service-instance",
+      maximumBodyBytes: options.maximumBodyBytes,
+      requestTimeoutMs: options.requestTimeoutMs,
+      errorCodes: {
+        AUTHENTICATION_FAILED: EXECUTION_UDS_ERROR_CODES.AUTHENTICATION_FAILED,
+        BODY_TOO_LARGE: EXECUTION_UDS_ERROR_CODES.BODY_TOO_LARGE,
+        DEADLINE_EXCEEDED: EXECUTION_UDS_ERROR_CODES.DEADLINE_EXCEEDED,
+        INSTANCE_REJECTED: EXECUTION_UDS_ERROR_CODES.INSTANCE_REJECTED,
+        REQUEST_FAILED: EXECUTION_UDS_ERROR_CODES.REQUEST_FAILED,
+        SOCKET_EXISTS: EXECUTION_UDS_ERROR_CODES.SOCKET_EXISTS,
+        SOCKET_REPLACED: EXECUTION_UDS_ERROR_CODES.SOCKET_REPLACED,
+        TRANSPORT_UNAVAILABLE: EXECUTION_UDS_ERROR_CODES.TRANSPORT_UNAVAILABLE,
+      },
+      onRequest: (request, response, body) => this.handle(request, response, body),
+    });
+    this.socketPath = this.uds.socketPath;
   }
 
   async start(): Promise<void> {
-    if (this.server) return;
-    await mkdir(this.options.runtimeDirectory, { recursive: true, mode: 0o700 });
-    await chmod(this.options.runtimeDirectory, 0o700);
     try {
-      const existing = await lstat(this.socketPath);
-      if (
-        !existing.isSocket() ||
-        (typeof process.getuid === "function" && existing.uid !== process.getuid()) ||
-        (await socketAcceptsConnections(this.socketPath))
-      ) {
-        throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.SOCKET_EXISTS, 500);
-      }
-      const unchanged = await lstat(this.socketPath);
-      if (unchanged.dev !== existing.dev || unchanged.ino !== existing.ino) {
-        throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.SOCKET_REPLACED, 500);
-      }
-      await unlink(this.socketPath);
+      await this.uds.start();
     } catch (error) {
-      if (error instanceof ExecutionUdsError) throw error;
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      if (error instanceof AuthenticatedUdsTransportError) {
+        throw new ExecutionUdsError(error.code as ExecutionUdsErrorCode, error.statusCode, error);
+      }
+      throw error;
     }
-
-    const server = http.createServer((request, response) => {
-      void this.handle(request, response);
-    });
-    server.requestTimeout = this.options.requestTimeoutMs;
-    server.headersTimeout = this.options.requestTimeoutMs;
-    await new Promise<void>((resolve, reject) => {
-      const onError = (error: Error) => {
-        server.off("listening", onListening);
-        reject(error);
-      };
-      const onListening = () => {
-        server.off("error", onError);
-        resolve();
-      };
-      server.once("error", onError);
-      server.once("listening", onListening);
-      server.listen(this.socketPath);
-    });
-    await chmod(this.socketPath, 0o600);
-    const stats = await lstat(this.socketPath);
-    this.socketIdentity = { dev: stats.dev, ino: stats.ino };
-    this.server = server;
   }
 
   async stop(): Promise<void> {
-    const server = this.server;
-    if (!server) return;
-    const current = await lstat(this.socketPath);
-    const expected = this.socketIdentity;
-    if (!expected || current.dev !== expected.dev || current.ino !== expected.ino) {
-      throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.SOCKET_REPLACED, 500);
-    }
-    this.server = null;
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
-      server.closeAllConnections();
-    });
     try {
-      await unlink(this.socketPath);
+      await this.uds.stop();
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    } finally {
-      this.socketIdentity = null;
+      if (error instanceof AuthenticatedUdsTransportError) {
+        throw new ExecutionUdsError(error.code as ExecutionUdsErrorCode, error.statusCode, error);
+      }
+      throw error;
     }
   }
 
-  private authenticate(request: IncomingMessage): void {
-    const token = bearerToken(request);
-    if (token === null || !stableEqual(token, this.options.credential.tokenValue)) {
-      throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.AUTHENTICATION_FAILED, 401);
-    }
-    const instanceId = request.headers["x-himawari-agent-service-instance"];
-    if (
-      typeof instanceId !== "string" ||
-      !this.options.allowedAgentServiceInstanceIds.includes(instanceId)
-    ) {
-      throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.INSTANCE_REJECTED, 403);
-    }
-  }
-
-  private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  private async handle(
+    request: import("node:http").IncomingMessage,
+    response: import("node:http").ServerResponse,
+    body: Buffer,
+  ): Promise<void> {
     try {
-      this.authenticate(request);
       const url = new URL(request.url ?? "/", "http://execution.local");
       if (request.method === "POST" && url.pathname === MESSAGE_PATH) {
         if (request.headers["content-type"]?.split(";", 1)[0] !== JSON_CONTENT_TYPE) {
           throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.CONTENT_TYPE_UNSUPPORTED, 415);
         }
-        const body = await readBoundedBody(request, this.options.maximumBodyBytes);
-        const message = assertRequestMessage(JSON.parse(body) as unknown);
+        const message = assertRequestMessage(JSON.parse(body.toString("utf8")) as unknown);
         if (
           message.type === "worker.handshake" &&
           message.payload.bootTokenRef !== this.options.credential.tokenRef
@@ -345,15 +236,12 @@ export class ExecutionUdsServer {
       response.end();
     } catch (error) {
       if (response.headersSent) {
-        response.destroy(error instanceof Error ? error : undefined);
+        response.destroy();
         return;
       }
-      responseError(
-        response,
-        error instanceof ExecutionUdsError
-          ? error
-          : new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.REQUEST_FAILED, 400, error),
-      );
+      throw error instanceof ExecutionUdsError
+        ? error
+        : new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.REQUEST_FAILED, 400, error);
     }
   }
 }
@@ -368,10 +256,24 @@ export class ExecutionUdsClient implements ExecutionTransportPort {
   readonly adapterIdentity = "execution-v2-http-json-over-uds";
   readonly schemaVersion = EXECUTION_V2_SCHEMA_VERSION;
   private readonly options: ExecutionUdsClientOptions;
+  private readonly uds: AuthenticatedUdsClient;
   private connected = false;
 
   constructor(options: ExecutionUdsClientOptions) {
     this.options = options;
+    this.uds = new AuthenticatedUdsClient({
+      socketPath: options.socketPath,
+      credential: options.credential,
+      peerInstanceId: options.agentServiceInstanceId,
+      peerInstanceHeader: "x-himawari-agent-service-instance",
+      maximumBodyBytes: options.maximumBodyBytes,
+      requestTimeoutMs: options.requestTimeoutMs,
+      errorCodes: {
+        BODY_TOO_LARGE: EXECUTION_UDS_ERROR_CODES.BODY_TOO_LARGE,
+        DEADLINE_EXCEEDED: EXECUTION_UDS_ERROR_CODES.DEADLINE_EXCEEDED,
+        TRANSPORT_UNAVAILABLE: EXECUTION_UDS_ERROR_CODES.TRANSPORT_UNAVAILABLE,
+      },
+    });
   }
 
   isReady(): boolean {
@@ -437,56 +339,31 @@ export class ExecutionUdsClient implements ExecutionTransportPort {
     this.connected = false;
   }
 
-  private send(input: {
+  private async send(input: {
     readonly method: "GET" | "POST";
     readonly path: string;
     readonly body?: string;
   }): Promise<RawHttpResponse> {
-    return new Promise((resolve, reject) => {
-      const request = http.request(
-        {
-          socketPath: this.options.socketPath,
-          path: input.path,
-          method: input.method,
-          headers: {
-            authorization: `Bearer ${this.options.credential.tokenValue}`,
-            "content-type": JSON_CONTENT_TYPE,
-            "x-himawari-agent-service-instance": this.options.agentServiceInstanceId,
-            ...(input.body === undefined
-              ? {}
-              : { "content-length": String(Buffer.byteLength(input.body)) }),
-          },
-          timeout: this.options.requestTimeoutMs,
-        },
-        (response) => {
-          void (async () => {
-            try {
-              const body = await readBoundedBody(response, this.options.maximumBodyBytes);
-              resolve({
-                statusCode: response.statusCode ?? 0,
-                contentType: response.headers["content-type"],
-                body,
-              });
-            } catch (error) {
-              reject(error);
-            }
-          })();
-        },
-      );
-      request.once("timeout", () => {
-        request.destroy(new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.DEADLINE_EXCEEDED, 504));
-      });
-      request.once("error", (error) => {
-        this.connected = false;
-        reject(
-          error instanceof ExecutionUdsError
-            ? error
-            : new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.TRANSPORT_UNAVAILABLE, 503, error),
-        );
-      });
-      if (input.body !== undefined) request.write(input.body);
-      request.end();
-    });
+    try {
+      const inputRequest = {
+        method: input.method,
+        path: input.path,
+        contentType: JSON_CONTENT_TYPE,
+        ...(input.body === undefined ? {} : { body: Buffer.from(input.body) }),
+      } as const;
+      const response = await this.uds.request(inputRequest);
+      return {
+        statusCode: response.statusCode,
+        contentType: response.contentType,
+        body: response.body.toString("utf8"),
+      };
+    } catch (error) {
+      this.connected = false;
+      if (error instanceof AuthenticatedUdsTransportError) {
+        throw new ExecutionUdsError(error.code as ExecutionUdsErrorCode, error.statusCode, error);
+      }
+      throw error;
+    }
   }
 
   private throwRemote(response: RawHttpResponse): never {

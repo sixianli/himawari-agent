@@ -4,8 +4,8 @@ import type {
   AttentionPort,
   AttentionStatePort,
   AuditLedgerPort,
-  AuthorizationStorePort,
   AuthorityLeasePort,
+  AuthorizationStorePort,
   CapabilityDescriptor,
   CapabilityInvocationEvent,
   CapabilityPort,
@@ -22,6 +22,8 @@ import type {
   ProductStateRepositoryPort,
   ReliableEventPort,
   ReliableEventSinkPort,
+  RunCheckpointStore,
+  RunPayloadArtifactPort,
   RuntimeEvent,
   RuntimeToolDescriptor,
   RuntimeToolExecutionResult,
@@ -30,11 +32,11 @@ import type {
   SecretPort,
   SessionDeletionStatePort,
   StateStorePort,
-  RunCheckpointStore,
   TraceStorePort,
   WorkerRunEvent,
   WorkerRunPort,
 } from "@himawari-agent/application";
+import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
   DeterministicIdGenerator,
   type FailureScheduler,
@@ -42,23 +44,24 @@ import {
   NO_FAILURES,
 } from "./deterministic.js";
 import {
-  DeterministicPayloadProtector,
   DeterministicDeliveryPort,
-  InMemoryAuditLedger,
-  InMemoryAuthorizationStore,
+  DeterministicPayloadProtector,
+  IdempotentRuntimeToolPort,
   InMemoryAttentionStatePort,
+  InMemoryAuditLedger,
   InMemoryAuthorityLeasePort,
+  InMemoryAuthorizationStore,
   InMemoryCapabilityRegistryStore,
   InMemoryMemoryPort,
   InMemoryPayloadStore,
   InMemoryProductStateRepository,
   InMemoryReliableEventSink,
+  InMemoryRunCheckpointStore,
+  InMemoryRunPayloadArtifactStore,
   InMemoryScheduler,
   InMemorySecretPort,
   InMemorySessionDeletionState,
   InMemoryTraceStore,
-  InMemoryRunCheckpointStore,
-  IdempotentRuntimeToolPort,
   ScriptedAgentRuntime,
   ScriptedAttentionPort,
   ScriptedCapabilityPort,
@@ -95,6 +98,8 @@ export interface ReferenceAdapterOptions {
 export interface ReferenceAdapterSet {
   readonly state: StateStorePort;
   readonly runCheckpoints: RunCheckpointStore;
+  /** 仅作为无权威 reference 替身；生产归属、租约和 Run 状态由 SQLite 端口校验。 */
+  readonly runPayloadArtifacts: RunPayloadArtifactPort;
   readonly reliableEvents: ReliableEventPort;
   readonly productState: ProductStateRepositoryPort;
   readonly eventSink: ReliableEventSinkPort;
@@ -137,6 +142,13 @@ export function createReferenceAdapterSet(
   const authority = new InMemoryAuthorityLeasePort(clock, failures);
   const productState = new InMemoryProductStateRepository(authority, failures);
   const payloadProtector = new DeterministicPayloadProtector();
+  const payload = new InMemoryPayloadStore(failures);
+  const runPayloadArtifacts = new InMemoryRunPayloadArtifactStore(
+    createOwnerId("reference-owner"),
+    createAgentId("reference-agent"),
+    payload,
+    failures,
+  );
   const capabilityRegistry = new InMemoryCapabilityRegistryStore(failures);
 
   return Object.freeze({
@@ -146,7 +158,8 @@ export function createReferenceAdapterSet(
     productState,
     eventSink: new InMemoryReliableEventSink(failures),
     trace: new InMemoryTraceStore(failures),
-    payload: new InMemoryPayloadStore(failures),
+    payload,
+    runPayloadArtifacts,
     payloadProtector,
     audit: new InMemoryAuditLedger(failures),
     authorization: new InMemoryAuthorizationStore(failures),

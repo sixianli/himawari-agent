@@ -11,4 +11,5 @@ export * from "./sqlite-authority-transfer.js";
 export * from "./sqlite-governed-deletion.js";
 export * from "./sqlite-github-history-policy.js";
 export * from "./sqlite-recovery-point.js";
+export * from "./sqlite-run-payload-artifact-operations.js";
 export * from "./state-root-lock.js";

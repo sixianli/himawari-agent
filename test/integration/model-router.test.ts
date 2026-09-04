@@ -78,7 +78,7 @@ function createRouter(
   const adapters = createReferenceAdapterSet({ clock });
   const trace = new SessionTraceRecorder({
     trace: adapters.trace,
-    payloads: adapters.payload,
+    artifacts: adapters.runPayloadArtifacts,
     protector: adapters.payloadProtector,
     audit: adapters.audit,
     clock,
@@ -318,7 +318,7 @@ describe("Task 10 Model Router and trusted Provider secrets", () => {
     });
     const trace = new SessionTraceRecorder({
       trace: adapters.trace,
-      payloads: adapters.payload,
+      artifacts: adapters.runPayloadArtifacts,
       protector: adapters.payloadProtector,
       audit: adapters.audit,
       clock,

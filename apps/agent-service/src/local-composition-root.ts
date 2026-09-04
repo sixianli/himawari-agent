@@ -154,7 +154,7 @@ export function createLocalAgentServiceComposition(options: LocalAgentServiceCom
   const reads = options.reads ?? new InMemoryGatewayReadModel();
   const traceRecorder = new SessionTraceRecorder({
     trace: adapters.trace,
-    payloads: adapters.payload,
+    artifacts: adapters.runPayloadArtifacts,
     protector: adapters.payloadProtector,
     audit: adapters.audit,
     clock: adapters.clock,

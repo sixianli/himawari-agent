@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:8c2295dd7e7948ffbc042158b9bfc9d86278e6e6b6b02ce1e7ced59efb7da27a"
+contract_sha256: "sha256:8bb5ed34eaedb6cd69d6efa0ce6a726443c28c3bfdf8e9b0339b1531c01ff852"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -39,6 +39,7 @@ date: "2026-08-27"
 - apps/agent-service/src/production-memory-composition.ts
 - apps/execution-worker/src/service-main.ts
 - packages/application/src/ports/configuration.ts
+- packages/platform-node/src/authenticated-uds-transport.ts
 - packages/platform-node/src/execution-uds-transport.ts
 - packages/platform-node/src/ephemeral-secret-port.ts
 - packages/platform-node/src/strict-configuration.ts
@@ -56,7 +57,7 @@ date: "2026-08-27"
 
 ## Authoritative Sources
 
-- 服务启动、authority/SQLite 检查、UDS client/server、信号 drain 和稳定错误码：`apps/agent-service/src/service-main.ts`、`apps/execution-worker/src/service-main.ts`、`packages/platform-node/src/execution-uds-transport.ts`。
+- 服务启动、authority/SQLite 检查、UDS client/server、信号 drain 和稳定错误码：`apps/agent-service/src/service-main.ts`、`apps/execution-worker/src/service-main.ts`、`packages/platform-node/src/execution-uds-transport.ts`；共享认证、socket 权限和绝对截止时限由 `packages/platform-node/src/authenticated-uds-transport.ts` 管理。
 - 可重定位 artifact、内部 workspace 包和外部依赖闭包：`scripts/package-node-runtime.mjs`。
 - 绝对前缀安装和三个入口：`scripts/install-node-runtime.mjs`。
 - 固定工具、禁用未知安装脚本和 SQLite 原生构建探针：`ci/toolchain-lock.json`、`scripts/ci/install-tools.mjs`、`scripts/ci/install-dependencies.mjs`。
@@ -71,7 +72,7 @@ date: "2026-08-27"
 - 安装前记录 Git HEAD/worktree、package-lock digest、Node/npm、目标前缀和 state root、磁盘可用空间及现有进程。目标前缀必须由本次运行创建，或已取得清理其 `lib/himawari-agent` 的明确授权。
 - 配置必须是 strict production profile，authority.json 的 deployment/Owner/Agent/status/epoch/fence 必须与 SQLite 一致；Worker token 只能从 `0600` 文件读取，secret source 不得进入 argv、日志或证据。
 - Agent Service 必须先有同一 deployment 的 Worker；Agent Service 不会在 Worker 不可用时降级到进程内执行。两个服务必须使用同一 state root 的 runtime 目录和 boot-scoped token。
-- 启停与诊断证据只写入 `test/integration/qualification/evidence/operations/install-start-stop/<unique-run-id>/`，目录 `0700)、文件 `0600)；不记录配置全文、token、secret value 或私人 Payload。
+- 启停与诊断证据只写入 `test/integration/qualification/evidence/operations/install-start-stop/<unique-run-id>/`，目录 `0700`、文件 `0600`；不记录配置全文、token、secret value 或私人 Payload。
 
 ## Live-State Preflight
 
@@ -110,7 +111,7 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 5. 在启动前运行 `himawari db status` 与 `himawari doctor`，确认 SQLite quick check、schema、authority、Payload、Worker 和 identity 的脱敏状态；只读命令失败时不启动普通服务。
 6. 以独立子进程先启动 Worker，再启动 Agent Service；记录 `service.ready` 的 component、schema、identity 和 recovery counters。
 7. 运行只读 doctor、db status 和适用业务查询；确认 Agent Service 通过 UDS handshake、`service.ready` 记录 model path、memory path 与 embedding descriptor identity、没有 testing adapter、没有 repository checkout 路径，也没有秘密或私人正文输出。deterministic profile 必须显示 descriptor-only；支持的 Pi/Mem0 profile 只能显示配置中的 primary/fallback/embedding reference、version 和 dimensions，不能显示 secret value。
-8. 正常停止时先向 Agent Service 发送 `SIGTERM)，等待 `service.draining` 与 `service.stopped`，再向 Worker 发送 `SIGTERM)，等待其停止并确认 socket 已删除。超出有界等待后才记录 forced stop，并把后续启动视为 recovery drill。
+8. 正常停止时先向 Agent Service 发送 `SIGTERM`，等待 `service.draining` 与 `service.stopped`，再向 Worker 发送 `SIGTERM`，等待其停止并确认 socket 已删除。超出有界等待后才记录 forced stop，并把后续启动视为 recovery drill。
 9. 重启或 forced stop 后重新取得 state-root lock，确认同一 deployment/Owner/Agent/Run identity、SQLite schema/quick check、pending recovery counters 和 UDS handshake；不得将普通一次重启写成完整 crash matrix。
 10. 完成验证后保存脱敏命令输出、artifact identity、进程退出码、socket/lock 回读和 rollback 状态；临时 prefix、临时 state root 与证据目录按本次授权的保留策略清理。
 

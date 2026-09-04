@@ -1,23 +1,19 @@
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createHash } from "node:crypto";
 import {
+  type AgentRuntimePort,
   ContextFormationService,
+  type ExecuteCoordinatedRunInput,
+  type RunCompletionInput,
   RunCoordinator,
+  type RunLifecyclePort,
   RunStateCommitCoordinator,
   SessionTraceRecorder,
   ThreadCommandService,
   type TransitionRunStateInput,
-  type AgentRuntimePort,
-  type ExecuteCoordinatedRunInput,
-  type RunCompletionInput,
-  type RunLifecyclePort,
 } from "@himawari-agent/application";
-import {
-  EnvelopePayloadProtector,
-  InMemoryDevelopmentSecretSource,
-} from "@himawari-agent/platform-node";
 import {
   createAgentId,
   createAuthorityLeaseId,
@@ -33,12 +29,16 @@ import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
-  SqliteProductStateRepository,
   SqliteGovernedDeletionAdapter,
+  SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
-  ManualClock,
+  EnvelopePayloadProtector,
+  InMemoryDevelopmentSecretSource,
+} from "@himawari-agent/platform-node";
+import {
   createReferenceAdapterSet,
+  ManualClock,
   ScriptedAgentRuntime,
   ScriptedWorkerRunPort,
 } from "@himawari-agent/testing";
@@ -143,7 +143,10 @@ async function executionFixture() {
   );
   const trace = new SessionTraceRecorder({
     trace: setup.repository.traceStore(),
-    payloads,
+    artifacts: setup.repository.runPayloadArtifactPort(ownerId, agentId, {
+      product: authority,
+      lease,
+    }),
     protector,
     audit: setup.repository.auditLedger(),
     clock,
@@ -1218,7 +1221,7 @@ it("lets the existing RunCoordinator cancel the admitted relational Run with a d
   const adapters = createReferenceAdapterSet({ clock });
   const trace = new SessionTraceRecorder({
     trace: adapters.trace,
-    payloads: adapters.payload,
+    artifacts: adapters.runPayloadArtifacts,
     protector: adapters.payloadProtector,
     audit: adapters.audit,
     clock,

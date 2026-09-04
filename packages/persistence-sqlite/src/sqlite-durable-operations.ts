@@ -9,27 +9,29 @@ import type {
   BackgroundOccurrenceClaim,
   BackgroundOccurrenceSettlement,
   CapabilityExecutionHandle,
-  ConsumeCapabilityExecutionHandleInput,
-  GovernedCapabilityExecutionHandle,
   CapabilityRegistryRecord,
+  ConsumeCapabilityExecutionHandleInput,
   ConsumeGrantInput,
   DeliveryClaim,
   DeliveryRequest,
   DeliverySettlement,
   GitHubCoverageGapRecord,
-  GitHubMonitorHistoryPolicyOperation,
   GitHubInstallationRecord,
+  GitHubMonitorHistoryPolicyOperation,
   GitHubRepositoryMonitor,
   GitHubWebhookReceiptRecord,
   GovernanceMutationReceipt,
+  GovernedCapabilityExecutionHandle,
   GrantRecord,
+  OwnerIdentityBindingRecord,
   PayloadRecord,
   ProductDeviceRecord,
   ProductSessionRecord,
-  OwnerIdentityBindingRecord,
   ReliableEvent,
   ReliableEventRecord,
   ResolveApprovalInput,
+  RunPayloadArtifact,
+  RunPayloadArtifactCommitResult,
   ScheduledJob,
   ScheduledJobWrite,
   SessionDeletionRecord,
@@ -57,9 +59,10 @@ import type {
 import type Database from "better-sqlite3";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
-import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
-import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
 import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
+import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
+import { SqliteRunPayloadArtifactOperations } from "./sqlite-run-payload-artifact-operations.ts";
+import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
 
 export type SqliteApplicationFailure = (
   code: string,
@@ -274,6 +277,7 @@ export class SqliteDurableOperations {
   private readonly thread: SqliteThreadOperations;
   private readonly runs: SqliteRunLifecycleOperations;
   private readonly runCheckpoints: SqliteRunCheckpointOperations;
+  private readonly runPayloadArtifacts: SqliteRunPayloadArtifactOperations;
 
   constructor(
     database: Database.Database,
@@ -293,12 +297,23 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
       (ownerId, agentId, authority) => this.assertBackgroundFence(ownerId, agentId, authority),
     );
+    this.runPayloadArtifacts = new SqliteRunPayloadArtifactOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
   }
 
   execute(operation: string, payload: unknown): unknown {
     if (operation.startsWith("runLifecycle.")) return this.runs.execute(operation, payload);
     if (operation.startsWith("runCheckpoint.")) {
       return this.runCheckpoints.execute(operation, payload);
+    }
+    if (operation.startsWith("runPayloadArtifact.")) {
+      return this.runPayloadArtifacts.execute(operation, payload) as
+        | RunPayloadArtifact
+        | RunPayloadArtifactCommitResult
+        | undefined;
     }
     if (operation.startsWith("thread.")) {
       return this.thread.execute(operation, payload);
@@ -2941,6 +2956,7 @@ export class SqliteDurableOperations {
         ["run_coordination_checkpoints", "context_ref"],
         ["run_coordination_checkpoints", "final_answer_ref"],
         ["run_coordination_worker_results", "result_ref"],
+        ["run_payload_artifacts", "payload_ref"],
         ["approval_requests", "intent_ref"],
         ["trace_events", "payload_ref"],
         ["attention_decisions", "decision_ref"],

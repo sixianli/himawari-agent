@@ -1,5 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -160,8 +160,8 @@ describe("Run coordination checkpoint migration", () => {
     expect(
       applyMigrations(fixture.database, fixture.bundled, { snapshot: fixture.snapshot }),
     ).toEqual({
-      appliedSequences: [18],
-      currentSequence: 18,
+      appliedSequences: [18, 19],
+      currentSequence: 19,
     });
     expect(
       fixture.database

@@ -3,17 +3,17 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { GitHubWebhookReceiptRecord } from "@himawari-agent/application";
 import {
+  type BackgroundOccurrence,
   createAgentId,
   createJobId,
   createOccurrenceId,
   createOwnerId,
-  type BackgroundOccurrence,
 } from "@himawari-agent/domain";
 import {
-  SqliteProductStateRepository,
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -72,6 +72,28 @@ async function openFixture() {
       ) VALUES ('payload:github-delivery', ?, ?, 'private', 'ciphertext_file',
         'sha256/aa/delivery.bin', 'sha256:github-delivery', 'fixture', 'fixture-key',
         'active', ?, 'application/json')`,
+    )
+    .run(OWNER_ID, AGENT_ID, T0);
+  database
+    .prepare(
+      `INSERT INTO payloads (
+        ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+        content_digest, encryption_algorithm, key_ref, lifecycle_state, created_at,
+        content_type
+      ) VALUES ('payload:github-artifact-only', ?, ?, 'private', 'sqlite_blob', X'01',
+        'sha256:github-artifact-only', 'fixture', 'fixture-key', 'active', ?,
+        'application/json')`,
+    )
+    .run(OWNER_ID, AGENT_ID, T0);
+  database
+    .prepare(
+      `INSERT INTO payloads (
+        ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+        content_digest, encryption_algorithm, key_ref, lifecycle_state, created_at,
+        content_type
+      ) VALUES ('payload:github-artifact-shared', ?, ?, 'private', 'sqlite_blob', X'02',
+        'sha256:github-artifact-shared', 'fixture', 'fixture-key', 'active', ?,
+        'application/json')`,
     )
     .run(OWNER_ID, AGENT_ID, T0);
   database.close();
@@ -263,6 +285,82 @@ describe("SQLite GitHub integration state", () => {
       receipt: receipt("delivery-history-delete", null, "payload:github-delivery"),
       occurrence: admitted,
     });
+    const database = openQualifiedDatabase(path.join(fixture.stateRoot, "product.sqlite"));
+    database
+      .prepare(
+        `INSERT INTO triggers (
+          id, owner_id, agent_id, thread_id, idempotency_key, source_type,
+          source_id, payload_ref, source_proof_ref, occurred_at
+        ) VALUES ('trigger-github-history-delete', ?, ?, NULL,
+          'trigger-github-history-delete', 'external_event', 'history-delete',
+          'payload:github-events', 'proof:github-history-delete', ?)`,
+      )
+      .run(OWNER_ID, AGENT_ID, T0);
+    database
+      .prepare(
+        `INSERT INTO runs (
+          id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
+          status, created_at, updated_at
+        ) VALUES ('run-github-history-delete', ?, ?, NULL, 'session-github-history-delete',
+          'trigger-github-history-delete', 1, 'completed', ?, ?)`,
+      )
+      .run(OWNER_ID, AGENT_ID, T0, T0);
+    database
+      .prepare(
+        `INSERT INTO triggers (
+          id, owner_id, agent_id, thread_id, idempotency_key, source_type,
+          source_id, payload_ref, source_proof_ref, occurred_at
+        ) VALUES ('trigger-github-history-survivor', ?, ?, NULL,
+          'trigger-github-history-survivor', 'external_event', 'history-survivor',
+          'payload:github-events', 'proof:github-history-survivor', ?)`,
+      )
+      .run(OWNER_ID, AGENT_ID, T0);
+    database
+      .prepare(
+        `INSERT INTO runs (
+          id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
+          status, created_at, updated_at
+        ) VALUES ('run-github-history-survivor', ?, ?, NULL, 'session-github-history-survivor',
+          'trigger-github-history-survivor', 1, 'completed', ?, ?)`,
+      )
+      .run(OWNER_ID, AGENT_ID, T0, T0);
+    const artifact = database.prepare(
+      `INSERT INTO run_payload_artifacts (
+        owner_id, agent_id, run_id, purpose, operation_key, payload_ref,
+        content_digest, content_type, classification, created_at
+      ) VALUES (?, ?, ?, 'worker_result', ?, ?, ?, 'application/json', 'private', ?)`,
+    );
+    artifact.run(
+      OWNER_ID,
+      AGENT_ID,
+      "run-github-history-delete",
+      "history-delete",
+      "payload:github-artifact-only",
+      "sha256:github-artifact-only",
+      T0,
+    );
+    artifact.run(
+      OWNER_ID,
+      AGENT_ID,
+      "run-github-history-delete",
+      "history-shared",
+      "payload:github-artifact-shared",
+      "sha256:github-artifact-shared",
+      T0,
+    );
+    artifact.run(
+      OWNER_ID,
+      AGENT_ID,
+      "run-github-history-survivor",
+      "history-survivor",
+      "payload:github-artifact-shared",
+      "sha256:github-artifact-shared",
+      T0,
+    );
+    database
+      .prepare("UPDATE job_occurrences SET run_id = ? WHERE id = ?")
+      .run("run-github-history-delete", admitted.id);
+    database.close();
     await fixture.state.saveCoverageGap({
       id: "github-gap-history-delete" as never,
       monitorId: MONITOR_ID,
@@ -307,6 +405,29 @@ describe("SQLite GitHub integration state", () => {
       attemptCount: 1,
       lastErrorCode: "payload_file_delete_failed",
     });
+    const afterFailedDelete = openQualifiedDatabase(path.join(fixture.stateRoot, "product.sqlite"));
+    try {
+      expect(
+        afterFailedDelete
+          .prepare("SELECT COUNT(*) FROM run_payload_artifacts WHERE run_id = ?")
+          .pluck()
+          .get("run-github-history-delete"),
+      ).toBe(0);
+      expect(
+        afterFailedDelete
+          .prepare("SELECT COUNT(*) FROM run_payload_artifacts WHERE run_id = ?")
+          .pluck()
+          .get("run-github-history-survivor"),
+      ).toBe(1);
+      expect(
+        afterFailedDelete
+          .prepare("SELECT COUNT(*) FROM payloads WHERE ref = 'payload:github-events'")
+          .pluck()
+          .get(),
+      ).toBe(1);
+    } finally {
+      afterFailedDelete.close();
+    }
     await expect(history.listRetryable(10)).resolves.toHaveLength(1);
 
     await rm(payloadTarget, { recursive: true, force: true });
@@ -320,6 +441,37 @@ describe("SQLite GitHub integration state", () => {
     await expect(fixture.repository.scheduler().read(MONITOR_ID)).resolves.toBeUndefined();
     await expect(fixture.state.findReceipt("delivery-history-delete")).resolves.toBeUndefined();
     await expect(fixture.state.listCoverageGaps(MONITOR_ID)).resolves.toEqual([]);
+    const afterSuccessfulDelete = openQualifiedDatabase(
+      path.join(fixture.stateRoot, "product.sqlite"),
+    );
+    try {
+      expect(
+        afterSuccessfulDelete
+          .prepare("SELECT COUNT(*) FROM payloads WHERE ref = 'payload:github-artifact-only'")
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        afterSuccessfulDelete
+          .prepare("SELECT COUNT(*) FROM payloads WHERE ref = 'payload:github-artifact-shared'")
+          .pluck()
+          .get(),
+      ).toBe(1);
+      expect(
+        afterSuccessfulDelete
+          .prepare("SELECT COUNT(*) FROM payloads WHERE ref = 'payload:github-events'")
+          .pluck()
+          .get(),
+      ).toBe(1);
+      expect(
+        afterSuccessfulDelete
+          .prepare("SELECT COUNT(*) FROM run_payload_artifacts WHERE run_id = ?")
+          .pluck()
+          .get("run-github-history-survivor"),
+      ).toBe(1);
+    } finally {
+      afterSuccessfulDelete.close();
+    }
     await fixture.repository.close();
   });
 

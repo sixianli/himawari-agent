@@ -196,6 +196,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Run checkpoint deletion",
   ),
   entry(
+    "run_payload_artifacts",
+    "RunPayloadArtifactPort",
+    "immutable Run-owned semantic Payload receipt",
+    "payload_reference",
+    "cascade with Run deletion and preserve Payloads referenced by survivors",
+  ),
+  entry(
     "approval_requests",
     "AuthorizationStorePort",
     "pending to terminal",

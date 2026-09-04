@@ -142,7 +142,7 @@ describe.skipIf(!LIVE_ENABLED)("OpenRouter generation live qualification", () =>
     });
     const trace = new SessionTraceRecorder({
       trace: adapters.trace,
-      payloads: adapters.payload,
+      artifacts: adapters.runPayloadArtifacts,
       protector: adapters.payloadProtector,
       audit: adapters.audit,
       clock: CLOCK,

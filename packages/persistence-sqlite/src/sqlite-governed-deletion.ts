@@ -968,6 +968,7 @@ export class SqliteGovernedDeletionAdapter {
       ["run_coordination_checkpoints", "context_ref"],
       ["run_coordination_checkpoints", "final_answer_ref"],
       ["run_coordination_worker_results", "result_ref"],
+      ["run_payload_artifacts", "payload_ref"],
       ["approval_requests", "intent_ref"],
       ["trace_events", "payload_ref"],
       ["attention_decisions", "decision_ref"],
