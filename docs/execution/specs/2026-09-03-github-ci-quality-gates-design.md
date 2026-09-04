@@ -251,6 +251,8 @@ PR 运行在 GitHub 托管临时 runner，不进入个人 Mac 或 Hermes。下�
 
 周期 workflow 只运行默认分支受审阅源码，建议每天一次并避开整点，UTC 时间写入版本化配置。是否真正启用 schedule 是后续明确授权的外部动作。周期内容包括 scale/thread-scale、品牌浏览器 smoke、已发布依赖风险变化和额外受支持 Node 大版本的兼容性观察。未获资格的新大版本不扩张当前产品支持声明。
 
+周期身份保留真实 `schedule` 事件，`headSha`、`testedSha` 和 `baseSha` 均固定为该次默认分支的 `GITHUB_SHA`。执行时核对默认分支 ref、冻结提交中的启用状态、cron 和实际 checkout；工作树临时修改不能开启周期任务。这里的 base 用于选择该次提交中已接受的政策和例外，不是增量覆盖率或性能比较基线。手动运行继续要求明确 base；普通 CI 和 S9 的 push 交接不因共享 Context 支持周期事件而扩张事件集合。质量政策与 workflow 的启用状态、cron、检查集合、资源限额和只读权限必须一致。
+
 scale 使用固定数据形状、seed 和受控临时目录，输出本次 run 的报告，不写入 `test/integration/qualification/evidence`。比较性能时记录硬件、runner image、样本数和 p50/p95/p99/max；跨硬件变化只报告不可比，不能伪造退化结论。产品绝对目标沿用 S9，不重新定义。
 
 记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘、缓存冷热和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟、scale 60 分钟、汇总 5 分钟。超时是资源上限，不是实测性能承诺。完整报告的常规保留期为 30 天，诊断 screenshot/trace 为 7 天；缺少保留能力要明确报告。
