@@ -8,17 +8,17 @@ import type {
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId, createRunId } from "@himawari-agent/domain";
 import { describe, expect, it, vi } from "vitest";
-import {
-  NODE_CAPABILITY_RUNTIME_ERROR_CODES,
-  NodeCapabilityRuntimePort,
-} from "../src/capabilities/node-capability-runtime.js";
-import type { CapabilityPayloadBoundary } from "../src/capabilities/node-capability-runtime.js";
 import type {
   CapabilityEndpointBinding,
   CapabilityProcessBinding,
   CapabilityRuntimeBindingPort,
   SandboxedProcessIsolationBackend,
 } from "../src/capabilities/isolation.js";
+import type { CapabilityPayloadBoundary } from "../src/capabilities/node-capability-runtime.js";
+import {
+  NODE_CAPABILITY_RUNTIME_ERROR_CODES,
+  NodeCapabilityRuntimePort,
+} from "../src/capabilities/node-capability-runtime.js";
 import { EphemeralSecretPort } from "../src/ephemeral-secret-port.js";
 
 const NOW = "2026-08-28T08:20:00.000Z";
@@ -343,6 +343,7 @@ describe("NodeCapabilityRuntimePort", () => {
       sandboxWorkdir: "/",
       environment: {},
       availableExecutables: [process.execPath],
+      resourceLimitExecutable: { sandboxPath: "/bin/prlimit", sha256: DIGEST },
       filesystem: [],
       maximumResourceCeiling: CEILING,
       mcpServerIdentity: "himawari-qualified-echo@1.0.0",
