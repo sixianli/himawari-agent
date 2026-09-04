@@ -98,6 +98,11 @@ export async function sourceTreeDigest(root) {
   )
     .split("\0")
     .filter(Boolean);
+  const deleted = new Set(
+    execFileSync("git", ["ls-files", "--deleted", "-z"], { cwd: root, encoding: "utf8" })
+      .split("\0")
+      .filter(Boolean),
+  );
   const imports = await relativeModuleClosure(root, [
     "scripts/ci/build.mjs",
     "scripts/package-node-runtime.mjs",
@@ -110,9 +115,11 @@ export async function sourceTreeDigest(root) {
       "scripts/ci/artifact-archive.py",
       ...files.filter(
         (filename) =>
+          !deleted.has(filename) &&
           /^(?:apps\/|packages\/|tsconfig[^/]*\.json$|package(?:-lock)?\.json$|ci\/(?:toolchain-lock|policy|coverage-policy|policy\.schema|result\.schema|coverage\.schema)\.json$)/u.test(
             filename,
-          ) && !/(?:^|\/)(?:dist|node_modules|test)(?:\/|$)|\.test\./u.test(filename),
+          ) &&
+          !/(?:^|\/)(?:dist|node_modules|test)(?:\/|$)|\.test\./u.test(filename),
       ),
     ]),
   ].sort();
