@@ -3,6 +3,7 @@ import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assertMachineSecretFree,
+  type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
   type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredGenerationModelDescriptor,
@@ -115,6 +116,24 @@ function absolutePath(value: unknown, field: string): string {
     throw invalid(field, "must be a normalized absolute path");
   }
   return candidate;
+}
+
+function sha256Reference(value: unknown, field: string): string {
+  const candidate = string(value, field);
+  if (!/^sha256:[a-f0-9]{64}$/.test(candidate) || /^sha256:0{64}$/.test(candidate)) {
+    throw invalid(field, "must be a lowercase sha256 reference");
+  }
+  return candidate;
+}
+
+function parseCapabilityDeploymentConfiguration(value: unknown): CapabilityDeploymentConfiguration {
+  const field = "configuration.capabilityDeployment";
+  const input = record(value, field);
+  rejectUnknown(input, ["snapshotPath", "sha256"], field);
+  return Object.freeze({
+    snapshotPath: absolutePath(input["snapshotPath"], `${field}.snapshotPath`),
+    sha256: sha256Reference(input["sha256"], `${field}.sha256`),
+  });
 }
 
 function stringArray(value: unknown, field: string): readonly string[] {
@@ -609,6 +628,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "cacheDirectory",
       "publicOrigin",
       "publicMode",
+      "capabilityDeployment",
       "http",
       "identity",
       "modelDescriptors",
@@ -667,6 +687,10 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const http = input["http"] === undefined ? undefined : parseHttpConfiguration(input["http"]);
   const identity =
     input["identity"] === undefined ? undefined : parseIdentityConfiguration(input["identity"]);
+  const capabilityDeployment =
+    input["capabilityDeployment"] === undefined
+      ? undefined
+      : parseCapabilityDeploymentConfiguration(input["capabilityDeployment"]);
   if ((http === undefined) !== (identity === undefined)) {
     throw invalid("configuration", "http and identity must be configured together");
   }
@@ -812,6 +836,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     cacheDirectory,
     publicOrigin,
     publicMode,
+    ...(capabilityDeployment === undefined ? {} : { capabilityDeployment }),
     ...(http === undefined ? {} : { http }),
     ...(identity === undefined ? {} : { identity }),
     modelDescriptors,

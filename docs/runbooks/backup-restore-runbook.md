@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a41fd81d50c0dcb207d4dd1ea512b859fcbbde5e123125412394f0a878d09e96"
+contract_sha256: "sha256:96ed367dae20609a0830edba11a8b552a7bce01e2fb5813c4c786fb412243aa4"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -30,7 +30,7 @@ date: "2026-08-27"
 
 本 Runbook 只管理当前活动部署在同一主机、同一存储边界内的加密恢复点：创建、独立验证，以及把一个已验证恢复点恢复到它原属的明确 state root。恢复点不改变 authority epoch，不创建第二个可启动权威，也不是异地主机损毁后的灾难恢复介质。
 
-恢复包只包含 SQLite backup API 产生的 `data/product.sqlite` 一致性副本，以及该副本实际引用的 `data/payload-ciphertext/` 文件。`runtime/`、`cache/`、lock、socket、日志和 secret 明确排除。当前 CLI 通过权限受限的 secret 目录解析 `backup-encryption` 与 `payload-encryption` 引用；不得把密钥值写入参数、日志或证据。
+恢复包只包含 SQLite backup API 产生的 `data/product.sqlite` 一致性副本，以及该副本实际引用的 `data/payload-ciphertext/` 文件。`runtime/`、`cache/`、lock、socket、日志、secret、能力部署快照及其 runtime root 明确排除；恢复后仍须由安装流程独立提供并验证与 active Capability Registry 一致的不可变快照，不能从数据库记录重新生成可执行绑定。当前 CLI 通过权限受限的 secret 目录解析 `backup-encryption` 与 `payload-encryption` 引用；不得把密钥值写入参数、日志或证据。
 
 ## Authoritative Sources
 
@@ -44,6 +44,7 @@ date: "2026-08-27"
 - 有效恢复点必须通过 manifest HMAC、每文件 AES-256-GCM authentication、ciphertext/plaintext digest、schema sequence、SQLite quick/full integrity、foreign key、全表行数、Payload authentication 和 Outbox continuity 检查。
 - `backup create` 会向活动 SQLite 写入恢复点与操作 marker，并在 state root 的 `recovery-points/` 下新增加密文件；这是第一次目标 mutation。执行前必须报告主机、deployment、state root、backup ID、预计磁盘增量和 30 天保留上限，并取得覆盖该目标与动作的明确授权。
 - 配置必须通过当前 strict schema，包含一个显式 primary、private-only fallback 和独立 embedding descriptor；embedding dimensions 必须与 Mem0 vector dimension 相等。恢复点流程不改写这些模型身份，也不推断或下载隐式 embedding。
+- 若配置声明能力部署快照，restore 前后只核对其引用、SHA-256 与 active Capability Registry 一致性；恢复包不携带、改写或激活该快照。快照或本平台资格不满足时，数据库恢复可以完成，但普通 Worker 必须保持 not ready。
 - `backup restore` 是 critical 恢复 mutation。服务必须已经停止，state-root 管理锁必须可独占取得，目标必须与配置中的 state root 完全相同，且确认词必须精确为 `RESTORE_<backup-id>`。运行前必须再次报告将替换的 `data/`、恢复点 identity、数据回退范围和外部副作用不回滚边界，并取得逐次授权。
 - secret 目录及文件必须由当前服务账号拥有，目录权限为 `0700`、文件权限为 `0600`，且配置中各恰好有一个 `backup-encryption` 和 `payload-encryption` secret reference。
 - 恢复只回退产品 data partition；不回退 public ingress、外部账户、已完成的外部副作用、host secret、authority 或应用版本。
@@ -127,6 +128,7 @@ himawari backup restore --config <absolute-config-path> --secret-dir <absolute-s
 - 配置/secret 路径权限不安全，secret reference 缺失/重复，或需要显示 secret value 才能继续。
 - 可用空间不足以容纳临时 snapshot、加密恢复点和安全余量；不得自动清理 Owner 内容。
 - manifest authentication、文件 digest、schema、quick/full integrity、foreign key、行数、Payload authentication 或 Outbox continuity 任一失败。
+- 恢复被误认为能够携带、重建或自动激活能力部署快照/runtime root，或快照与恢复后的 active Capability Registry 不一致却要求 Worker ready。
 - restore 目标服务未确认停止、state-root lock 不可独占、目标不是配置中的同一 state root，或确认词不精确。
 - 要求把同机恢复点当作 off-host disaster recovery、改变 authority、回滚外部副作用、绕过验证、扩大目标或删除其他恢复点。
 

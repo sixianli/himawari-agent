@@ -121,6 +121,11 @@ export interface IdentityConfiguration {
   readonly csrf: IdentityCsrfConfiguration;
 }
 
+export interface CapabilityDeploymentConfiguration {
+  readonly snapshotPath: string;
+  readonly sha256: string;
+}
+
 export interface ProductConfiguration {
   readonly schemaVersion: string;
   readonly deploymentId: DeploymentId;
@@ -131,6 +136,8 @@ export interface ProductConfiguration {
   readonly cacheDirectory: string;
   readonly publicOrigin: string;
   readonly publicMode: boolean;
+  /** Present only when a verified capability deployment snapshot is configured. */
+  readonly capabilityDeployment?: CapabilityDeploymentConfiguration;
   /** Present only for a configured public HTTP composition. */
   readonly http?: HttpConfiguration;
   /** Present only for a configured public identity composition. */

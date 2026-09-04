@@ -169,6 +169,38 @@ describe("strict product configuration", () => {
       dimensions: 1536,
     });
     expect(parsed.stateRoot).not.toBe(process.cwd());
+    expect(parsed.capabilityDeployment).toBeUndefined();
+  });
+
+  it("accepts an optional capability deployment snapshot reference with strict fields", () => {
+    const stateRoot = path.join(tmpdir(), "himawari-capability-deployment-config");
+    const input = config(stateRoot);
+    input["capabilityDeployment"] = {
+      snapshotPath: path.join(stateRoot, "runtime", "capability-deployment.json"),
+      sha256: `sha256:${"a".repeat(64)}`,
+    };
+    expect(
+      parseProductConfiguration(input, "2026-08-27T00:00:00.000Z").capabilityDeployment,
+    ).toEqual(input["capabilityDeployment"]);
+
+    const unknown = config(stateRoot);
+    unknown["capabilityDeployment"] = {
+      snapshotPath: path.join(stateRoot, "runtime", "capability-deployment.json"),
+      sha256: `sha256:${"a".repeat(64)}`,
+      unexpected: true,
+    };
+    expect(() => parseProductConfiguration(unknown, "2026-08-27T00:00:00.000Z")).toThrowError(
+      expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.UNKNOWN_FIELD }),
+    );
+
+    const invalidDigest = config(stateRoot);
+    invalidDigest["capabilityDeployment"] = {
+      snapshotPath: path.join(stateRoot, "runtime", "capability-deployment.json"),
+      sha256: "not-a-digest",
+    };
+    expect(() => parseProductConfiguration(invalidDigest, "2026-08-27T00:00:00.000Z")).toThrowError(
+      expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
+    );
   });
 
   it("rejects unknown fields recursively and raw machine-secret material", () => {

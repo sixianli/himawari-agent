@@ -258,7 +258,9 @@ startup coordinator 固定 11 个有序阶段，从 configuration 到 HTTP readi
 - [x] 实现 work.execute、work.cancel、work.reconcile、event subscription 和 readiness；大输入/结果只使用 Payload/secret/capability handles。
 - [x] 对重复请求、重复结果、stale handle、stale fence、Worker crash、Agent crash、socket replacement 和未知外部结果运行真实 child-process tests。
 - [x] 证明 Agent Service 不会在 Worker unavailable 时静默降级为进程内执行。
-- [ ] 补齐 Worker 动态子调用返回 Agent 的持久准入通道，验证可信父委派、双方启动身份、作用域与资源限制、重放无可执行投影及消费后响应未知；随后由生产 Worker Run 适配器在首次投递前登记父委派并接入主服务。
+- [x] 补齐 Worker 动态子调用返回 Agent 的持久准入通道，验证可信父委派、双方启动身份、作用域与资源限制、重放无可执行投影及消费后响应未知；生产发送路径已在首次投递前登记不可变父委派。
+- [ ] 实现 Owner 独占、大小有界、SHA-256 锁定的能力部署快照及严格配置引用；Worker 只从已验证 Manifest、运行绑定和平台资格建立 boot-scoped 只读投影，缺失、篡改、空注册表或不合格时 readiness 为 false。
+- [ ] 以该投影组合 `NodeCapabilityRuntimePort`、正文代理、短期 Handle store、`ExecutionWorkerService` 与 `ProductionExecutionWorker`，并让生产 Worker Run 适配器接入主服务；不得使用测试 adapter、全零 digest、任意 shell 或 Worker 侧 SQLite 读取冒充生产能力。
 
 Task 4 已确认严格 v1 parser 不能兼容 handshake、authority fence、resource ceiling 与 cursor 字段，因此本 Task 标题和来源 Spec 中的“execution.v1 over UDS”作为 Worker protocol 的历史名称保留，实际 wire transport 使用已经冻结的 `execution.v2`，原有 `execution.v1` fixture 与接受集合没有变化。`ExecutionUdsServer` 在权限为 `0700` 的 runtime directory 上绑定 HTTP/JSON Unix socket 并设为 `0600`，同时验证 Owner-only boot token、Agent Service instance、bounded body、content type 和 request deadline；活动 socket、普通文件替换与 inode race 均 fail closed，只有同一账户拥有且确认无人监听的 crash residue 才能在 inode 复核后移除。
 

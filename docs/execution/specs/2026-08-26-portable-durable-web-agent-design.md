@@ -302,6 +302,10 @@ product.sqlite 始终是权威。即使大 Payload 使用 content-addressed ciph
 
 非秘密配置使用严格、版本化文件，记录 IDs、bind paths、public origin、Memory/model descriptors、repository allowlist 和 secret references，不嵌入 secret values。cache 与临时 work directories 单独设上限，并且可重建。
 
+生产 Worker 还必须由同一份严格配置引用一份不可变的能力部署快照。配置只保存快照的规范绝对路径与预期 SHA-256，不内嵌命令、凭证或可变能力定义。快照必须是 Owner 独占、非符号链接、有明确字节上限、版本化且拒绝未知字段的普通文件；内容按 `capabilityRef + capabilityVersion` 唯一列出完整 Manifest、平台运行绑定和已通过的运行资格。进程程序只能引用冻结 runtime root 内经 digest 验证的可执行文件，远程端点必须固定 HTTPS identity、方法与路径，secret 仍只使用受保护引用。
+
+Agent Service 与 Execution Worker 必须验证同一组快照字节和 digest。Agent Service 还要把快照逐项与 SQLite 中当前 active Capability Registry、artifact verification 和本机 qualification 对照；Worker 只从通过验证的快照建立 boot-scoped 只读投影，不打开 `product.sqlite`，也不能创建、启用或扩大能力。缺少快照、digest 不符、版本/operation 冲突、资格过期或不适用于当前平台、artifact/runtime binding 不一致、注册表为空时，Worker 可以保持 live，但 readiness 必须为 false，且不能接收业务执行。能力升级先在 Agent Service 完成治理与资格，再原子切换到新路径和 digest；不得原地改写正在使用的快照。
+
 ### SQLite schema 与事务边界
 
 | 分组 | 代表记录 |
