@@ -46,7 +46,7 @@ describe("build artifact manifest", () => {
     const first = await generateManifest("first");
     const second = await generateManifest("second");
 
-    expect(first.schemaVersion).toBe(2);
+    expect(first.schemaVersion).toBe(1);
     expect(first.packages).toHaveLength(15);
     expect(first.packages).toEqual(second.packages);
     expect(first.inputs).toEqual(second.inputs);

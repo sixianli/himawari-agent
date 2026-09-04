@@ -44,30 +44,6 @@ jobs:
           node-version: 22.22.3
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
-      - name: NEGATIVE CONTROL — red-test — draft PR 2 only
-        run: |-
-          .ci-output/tools/bin/node --input-type=module <<'HIMAWARI_NEGATIVE_CONTROL'
-          import assert from "node:assert/strict";
-          import { createHash } from "node:crypto";
-          import * as fs from "node:fs";
-          import path from "node:path";
-          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
-          assert.equal(process.env.GITHUB_REPOSITORY, "sixianli/himawari-agent");
-          assert.equal(process.env.GITHUB_EVENT_NAME, "pull_request");
-          assert.equal(event.number, 2);
-          assert.equal(event.pull_request?.number, 2);
-          assert.equal(event.pull_request?.draft, true);
-          assert.equal(event.pull_request?.head?.ref, "codex/ci-negative-controls");
-          assert.equal(event.pull_request?.head?.repo?.full_name, "sixianli/himawari-agent");
-          assert.equal(event.pull_request?.base?.repo?.full_name, "sixianli/himawari-agent");
-          assert.match(process.env.GITHUB_RUN_ID ?? "", /^[1-9][0-9]*$/);
-          assert.match(process.env.GITHUB_RUN_ATTEMPT ?? "", /^[1-9][0-9]*$/);
-          assert.match(process.env.GITHUB_SHA ?? "", /^[a-f0-9]{40}$/);
-          assert.equal(fs.realpathSync(process.cwd()), fs.realpathSync(process.env.GITHUB_WORKSPACE));
-          const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
-          const identity = { case: "red-test", repository: process.env.GITHUB_REPOSITORY, pr: event.number, headSha: event.pull_request.head.sha, testedSha: process.env.GITHUB_SHA, runId: process.env.GITHUB_RUN_ID, attempt: Number(process.env.GITHUB_RUN_ATTEMPT) };
-          console.log(JSON.stringify({ negativeControl: "authorized-draft-only", ...identity }));
-          HIMAWARI_NEGATIVE_CONTROL
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
       - name: 执行共享检查
@@ -174,6 +150,44 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: NEGATIVE CONTROL — upstream-install — draft PR 2 only
+        run: |-
+          .ci-output/tools/bin/node --input-type=module <<'HIMAWARI_NEGATIVE_CONTROL'
+          import assert from "node:assert/strict";
+          import { createHash } from "node:crypto";
+          import * as fs from "node:fs";
+          import path from "node:path";
+          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+          assert.equal(process.env.GITHUB_REPOSITORY, "sixianli/himawari-agent");
+          assert.equal(process.env.GITHUB_EVENT_NAME, "pull_request");
+          assert.equal(event.number, 2);
+          assert.equal(event.pull_request?.number, 2);
+          assert.equal(event.pull_request?.draft, true);
+          assert.equal(event.pull_request?.head?.ref, "codex/ci-negative-controls");
+          assert.equal(event.pull_request?.head?.repo?.full_name, "sixianli/himawari-agent");
+          assert.equal(event.pull_request?.base?.repo?.full_name, "sixianli/himawari-agent");
+          assert.match(process.env.GITHUB_RUN_ID ?? "", /^[1-9][0-9]*$/);
+          assert.match(process.env.GITHUB_RUN_ATTEMPT ?? "", /^[1-9][0-9]*$/);
+          assert.match(process.env.GITHUB_SHA ?? "", /^[a-f0-9]{40}$/);
+          assert.equal(fs.realpathSync(process.cwd()), fs.realpathSync(process.env.GITHUB_WORKSPACE));
+          const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
+          const identity = { case: "upstream-install", repository: process.env.GITHUB_REPOSITORY, pr: event.number, headSha: event.pull_request.head.sha, testedSha: process.env.GITHUB_SHA, runId: process.env.GITHUB_RUN_ID, attempt: Number(process.env.GITHUB_RUN_ATTEMPT) };
+          console.log(JSON.stringify({ negativeControl: "authorized-draft-only", ...identity }));
+          assert.ok(["linux-x64", "macos-arm64"].includes(process.env.CI_MATRIX));
+          const filename = "package-lock.json";
+          assert.equal(fs.lstatSync(filename).isSymbolicLink(), false);
+          const before = fs.readFileSync(filename);
+          const lock = JSON.parse(before);
+          assert.equal(lock.lockfileVersion, 3);
+          const entry = lock.packages["node_modules/ajv"];
+          assert.ok(entry && !entry.optional && !entry.link);
+          assert.match(entry.integrity, /^sha512-[A-Za-z0-9+/]+=*$/);
+          const wrong = "sha512-" + Buffer.alloc(64).toString("base64");
+          assert.notEqual(entry.integrity, wrong);
+          entry.integrity = wrong;
+          fs.writeFileSync(filename, JSON.stringify(lock, null, 2) + "\n");
+          console.log(JSON.stringify({ ...identity, injection: "runner-only-ajv-integrity", beforeSha256: sha256(before), afterSha256: sha256(fs.readFileSync(filename)), expectedNextStep: "real-npm-ci-integrity-failure" }));
+          HIMAWARI_NEGATIVE_CONTROL
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
       - name: 执行共享检查
