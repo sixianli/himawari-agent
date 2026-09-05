@@ -8,7 +8,7 @@ This repository explicitly adopts the `document-governance` skill for all govern
 - Current implemented system truth belongs in Architecture.
 - Durable technical decisions belong in one-decision ADRs.
 - Confirmed change design belongs in Specs.
-- Implementation sequencing begins only after the source Spec is confirmed.
+- Require a confirmed Spec before planning implementation for new features or material changes to product scope, architectural decisions, or public/data contracts. Reuse an existing confirmed Spec for changes within its scope. Routine fixes that restore an existing approved contract do not require a new Spec solely because code changes are needed.
 - Operational procedures belong in active Runbooks.
 - Persistent future work belongs in Backlog; do not create `docs/TODO.md`.
 - Use the skill templates and validation scripts for creation, reconciliation, closure, supersession, and archival.
@@ -21,9 +21,7 @@ This repository explicitly adopts the `document-governance` skill for all govern
 
 ## Development Effort and Time
 
-- This project is developed end-to-end by AI Coding Agents. Treat developer workload, labor cost, and implementation time as non-material constraints when making design decisions.
-- Optimize for long-term system quality. Prefer robust, comprehensive, maintainable, and extensible designs over temporary workarounds, shortcuts, or minimum implementations.
-- When a stronger long-term design requires broader foundational work, prefer it when the added complexity is technically justified.
+- This project is developed end-to-end by AI Coding Agents. Treat developer workload, labor cost, and implementation time as non-material design constraints. Prioritize robust, maintainable, and extensible long-term solutions, including broader foundational work when technically justified.
 
 ## Repository Boundary
 
@@ -35,10 +33,11 @@ This repository explicitly adopts the `document-governance` skill for all govern
 ## Pi-First Development Principle
 
 - Himawari is built on Pi Coding Agent and the other reusable modules in `pi-mono`. Before designing or implementing any capability related to model connections, providers, routing, streaming, model runtime, Agent Loop, tools, sessions, or extensions, inspect the current `pi-mono` source and the pinned `@earendil-works/pi-*` API first.
+- Scope Pi inspection to the modules, interfaces, and callers relevant to the current change. Expand the inspection when dependencies or unresolved evidence require it.
 - Reuse, compose, configure, or minimally adapt an existing Pi capability whenever it already satisfies the requirement. Do not reimplement a Pi module or protocol in Himawari merely to create a product-local version.
 - Himawari-owned code should add product-specific concerns that Pi does not own, such as authority and approval, data classification and disclosure, secret handles and host secret sources, protected Payloads, durable state and audit, product-level model selection/fallback policy, budget enforcement, and Gateway/Worker/Memory integration.
 - Before keeping a duplicate implementation, record the exact Pi capability that is missing, verify that a thin adapter or an upstream-compatible extension cannot satisfy the requirement, and explain why the duplicate is necessary. Prefer a Pi adapter or a small upstream extension over a second protocol implementation.
-- Every design or code review for a Pi-related capability must include a reuse map: which Pi module is reused, which boundary Himawari owns, and why any remaining Himawari code is not duplicating Pi behavior.
+- For Pi-related design or code review, explain which Pi capability is reused, which responsibility Himawari owns, and why any additional implementation is necessary. Keep this reuse explanation proportional to the change; a small adaptation may need only a short paragraph.
 
 ## Workspace Contract
 
@@ -52,4 +51,4 @@ This repository explicitly adopts the `document-governance` skill for all govern
 
 ## others
 
-+ Hermes is a Linux host on the user's home network and can be accessed directly with the `ssh Hermes` command. It is trusted and secure, so there is no need to worry about its security.
+- Access the user's Hermes Linux server with `ssh hermes`. Follow the global Hermes storage rules and the authorization requirements for the specific operation.
