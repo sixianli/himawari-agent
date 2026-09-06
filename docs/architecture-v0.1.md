@@ -286,6 +286,8 @@ Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请�
 
 `ProductionRuntimeTools` 把当前 Run 的已授权 Handle 投影为 Pi custom tool，参数只能选择 Handle 已列出的 `inputRef`，不能扩大输入、Context 或 Secret 范围。它先原子保存受保护的调用意图，再复用 `WorkerDelegationService` 消费持久权限和 `ProductionWorkerForwardTransport` 登记父请求；并发竞争失败者及恢复执行器均不重发。只有作用域匹配的 Worker 终态、持久输出观察和当前有效的 invocation receipt 同时成立，才向模型返回正文；恢复读取成功结果时也重新检查撤权。传输挂起、输出未确认和超时保留未知结果，取消记为失败。此适配器已通过独立单元测试及 SQLite 调用消费与结果重读测试，但尚未接入安装后的 `service-main`；它也不负责为任意模型参数新建 Payload 或签发 Handle。
 
+生产 Run 输入将配置中的 `deadlines.runMs` 转为首次执行开始时间和绝对截止时间，随受保护快照保存。恢复可采用更短的当前配置限制，但不能超过首次冻结的截止时间；缺少截止时间的旧快照拒绝执行，不能通过重新生成快照获取新预算。协调器在截止时请求 Pi/Worker 停止，并拒绝迟到的完成事件；运行中断仍进入既有待核实恢复流程。截止时间也传入 Pi 工具调用，Worker 请求取父 Run 截止、Handle 到期和工具资源上限三者中的最早时间。运行正常结束会清除计时器。取消完成仍依赖适配器遵守取消协议及自身 I/O 截止限制，这不是对任意挂死进程的强制终止保证。
+
 ### Run coordination and scoped worker delegation
 
 `RunCoordinator` 只依赖产品拥有的 `ContextFormationPort`、`WorkerRunPort`、`AgentRuntimePort`、`RunLifecyclePort`、`RunCheckpointStore` 和 Session Trace。它按 `accepted → building_context → running → terminal/reconciliation` 驱动 Run，并把 Owner 取消同时传播给当前 Runtime 与活跃 Worker。Runtime、Worker 和 Pi Session 都不能自行写产品 Run 终态。Pi custom tool 返回未知结果或执行阶段抛错时，适配器复用 Pi `Agent.abort()` 停止当前循环，禁止后续工具和模型请求，并产出 `runtime.result_unknown`。协调器先持久保存待核实 checkpoint，再把 Run 转入 `reconciling_external_result`；即使随后收到最终回答也不能发布成功，恢复也不重跑该执行。执行异常只记录稳定代码，不把原始错误文本传给模型。

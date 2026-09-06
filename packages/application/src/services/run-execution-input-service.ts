@@ -36,15 +36,19 @@ export interface RunExecutionPolicy {
 }
 
 interface FrozenRunInput {
-  readonly version: "run-execution-input.v1";
+  readonly version: "run-execution-input.v2";
+  readonly startedAt: string;
+  readonly deadlineAt: string;
   readonly source: RunExecutionSource;
   readonly policy: RunExecutionPolicy;
 }
 
+// Keep the durable operation identity: a version change must not issue a fresh budget.
 const OPERATION_KEY = "run-execution-input:v1";
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
 
 export interface RunExecutionInputServiceOptions {
+  readonly maximumRunDurationMs: number;
   readonly source: RunExecutionSourcePort;
   readonly artifacts: RunPayloadArtifactPort;
   readonly payloads: Pick<PayloadStorePort, "get">;
@@ -90,6 +94,12 @@ export class RunExecutionInputService {
   readonly #options: RunExecutionInputServiceOptions;
 
   constructor(options: RunExecutionInputServiceOptions) {
+    if (
+      !Number.isSafeInteger(options.maximumRunDurationMs) ||
+      options.maximumRunDurationMs < 1 ||
+      options.maximumRunDurationMs > 86_400_000
+    )
+      invalid("Run duration must be between 1 and 86400000 milliseconds");
     this.#options = options;
   }
 
@@ -156,6 +166,13 @@ export class RunExecutionInputService {
       ...scope,
       authority,
       executionLease: claimFromRunExecutionLease(lease),
+      // Configuration may shorten a persisted budget, but never extend it on restart.
+      executionDeadlineAt: new Date(
+        Math.min(
+          Date.parse(frozen.deadlineAt),
+          Date.parse(frozen.startedAt) + this.#options.maximumRunDurationMs,
+        ),
+      ).toISOString(),
       context: {
         ...scope,
         trigger: {
@@ -213,7 +230,11 @@ export class RunExecutionInputService {
         new TextDecoder("utf-8", { fatal: true }).decode(plaintext),
       ) as FrozenRunInput;
       if (
-        frozen.version !== "run-execution-input.v1" ||
+        frozen.version !== "run-execution-input.v2" ||
+        !Number.isFinite(Date.parse(frozen.startedAt)) ||
+        !Number.isFinite(Date.parse(frozen.deadlineAt)) ||
+        Date.parse(frozen.deadlineAt) <= Date.parse(frozen.startedAt) ||
+        Date.parse(frozen.deadlineAt) - Date.parse(frozen.startedAt) > 86_400_000 ||
         threadCommandFingerprint(frozen.source) !== threadCommandFingerprint(source)
       ) {
         invalid("Run execution snapshot source changed");
@@ -221,9 +242,20 @@ export class RunExecutionInputService {
       assertPolicy(frozen.policy);
       return frozen;
     }
+    const startedAt = this.#options.clock.now();
+    if (!Number.isFinite(Date.parse(startedAt))) invalid("Run clock is invalid");
+    const deadlineAt = new Date(
+      Date.parse(startedAt) + this.#options.maximumRunDurationMs,
+    ).toISOString();
     const policy = await this.#options.policy(source);
     assertPolicy(policy);
-    const frozen: FrozenRunInput = { version: "run-execution-input.v1", source, policy };
+    const frozen: FrozenRunInput = {
+      version: "run-execution-input.v2",
+      startedAt,
+      deadlineAt,
+      source,
+      policy,
+    };
     const payload = await this.#options.protector.protect({
       ownerId: source.ownerId,
       agentId: source.agentId,

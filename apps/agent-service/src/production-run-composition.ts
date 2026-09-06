@@ -1,38 +1,38 @@
 import {
+  type ClockPort,
   ContextFormationService,
   ContextProjectionService,
-  ModelInvocationAdmissionService,
-  RunCoordinator,
-  RunExecutionInputService,
-  SessionTraceRecorder,
-  type ClockPort,
   type IdGeneratorPort,
   type MemoryPort,
-  type ModelInvocationAdmissionResolver,
   type ModelInvocationAdmissionDescriptor,
+  type ModelInvocationAdmissionResolver,
+  ModelInvocationAdmissionService,
   type PayloadProtectorPort,
   type ProductConfiguration,
+  RunCoordinator,
+  RunExecutionInputService,
   type RunExecutionPolicy,
   type RunExecutionSource,
   type RuntimeToolPort,
+  SessionTraceRecorder,
   type WorkerRunPort,
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PiAgentRuntimeAdapter, type PiModelBindingPort } from "@himawari-agent/runtime-pi";
 import type { ProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import {
-  ProductionRunDispatcher,
-  type ProductionRunReconciler,
-} from "./production-run-dispatcher.js";
-import {
   ProductionRunDispatchLoop,
   type ProductionRunDispatchLoopFailure,
 } from "./production-run-dispatch-loop.js";
+import {
+  ProductionRunDispatcher,
+  type ProductionRunReconciler,
+} from "./production-run-dispatcher.js";
 
 export interface ProductionRunCompositionOptions {
   readonly configuration: Pick<
     ProductConfiguration,
-    "ownerId" | "agentId" | "budgets" | "concurrency"
+    "ownerId" | "agentId" | "budgets" | "concurrency" | "deadlines"
   >;
   readonly repository: SqliteProductStateRepository;
   readonly authority: Pick<
@@ -128,6 +128,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     logicalSlot: (_request, ordinal) => `agent-stream:${ordinal}`,
   });
   const coordinator = new RunCoordinator({
+    clock,
     runs: repository.runLifecycle(ownerId, agentId, fence),
     checkpoints,
     context,
@@ -136,6 +137,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     trace,
   });
   const input = new RunExecutionInputService({
+    maximumRunDurationMs: configuration.deadlines.runMs,
     source: repository.runExecutionSource(ownerId, agentId),
     artifacts,
     payloads,

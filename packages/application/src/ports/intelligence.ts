@@ -147,6 +147,8 @@ export interface ModelPort {
 }
 
 export interface RuntimeRequest {
+  /** Absolute product deadline; tools must not extend this execution window. */
+  readonly executionDeadlineAt?: string;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly runId: RunId;
@@ -384,6 +386,7 @@ export interface RuntimeToolDescriptor {
 }
 
 export interface RuntimeToolInvocation {
+  readonly executionDeadlineAt?: string;
   readonly runId: RunId;
   readonly toolCallId: string;
   readonly capabilityRef: string;

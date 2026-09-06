@@ -295,6 +295,19 @@ async function exposed(f: ReturnType<typeof fixture>) {
 }
 
 describe("ProductionRuntimeTools", () => {
+  it("caps Worker execution at the parent Run deadline and rejects expired calls", async () => {
+    const f = fixture();
+    const tool = await exposed(f);
+    await expect(tool.execute({ ...invocation, executionDeadlineAt: now })).rejects.toThrow();
+    expect(f.request).not.toHaveBeenCalled();
+    const deadline = new Date(Date.parse(now) + 500).toISOString();
+    expect((await tool.execute({ ...invocation, executionDeadlineAt: deadline })).outcome).toBe(
+      "succeeded",
+    );
+    const execute = f.request.mock.calls.find(([message]) => message.type === "work.execute")?.[0];
+    expect(execute).toMatchObject({ type: "work.execute", payload: { deadlineAt: deadline } });
+  });
+
   it("uses the delegated Worker and reads only an observed result; restart replays without dispatch", async () => {
     const f = fixture();
     const tool = await exposed(f);

@@ -37,7 +37,7 @@ import {
   ScriptedAgentRuntime,
   ScriptedWorkerRunPort,
 } from "@himawari-agent/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const T0 = "2026-08-25T00:00:00.000Z";
 const T1 = "2026-08-25T00:00:01.000Z";
@@ -123,6 +123,7 @@ async function fixture(
     ids: adapters.ids,
   });
   const coordinator = new RunCoordinator({
+    clock,
     runs,
     checkpoints: adapters.runCheckpoints,
     context,
@@ -189,10 +190,117 @@ async function fixture(
     delegableContextRefs: [] as readonly string[],
     commands: runCommands(suffix),
   };
-  return { adapters, coordinator, input, run, runs, trace, context, authority };
+  return { adapters, coordinator, input, run, runs, trace, context, authority, clock };
 }
 
 describe("Task 13 Run Coordinator and worker orchestration", () => {
+  it("interrupts the runtime at its deadline without accepting a late successful answer", async () => {
+    const suffix = "runtime-deadline";
+    const runId = createRunId(`run-${suffix}`);
+    let release = () => {};
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = () => {};
+    const running = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const cancel = vi.fn(async () => {
+      release();
+    });
+    const runtime: AgentRuntimePort = {
+      async *run() {
+        started();
+        await pending;
+        yield {
+          type: "runtime.completed" as const,
+          runId,
+          output: { kind: "assistant-answer" as const, contentRef: "late-answer" },
+          occurredAt: T1,
+        };
+      },
+      cancel,
+    };
+    const setup = await fixture(suffix, runtime);
+    vi.useFakeTimers();
+    try {
+      const execution = setup.coordinator.execute({
+        ...setup.input,
+        executionDeadlineAt: new Date(Date.parse(T0) + 1000).toISOString(),
+      });
+      const rejected = expect(execution).rejects.toMatchObject({
+        reasonCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+      });
+      await running;
+      await vi.advanceTimersByTimeAsync(1000);
+      await rejected;
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect((await setup.runs.readRun(runId))?.run.status).toBe("running");
+      expect((await setup.adapters.runCheckpoints.read(runId))?.checkpoint).toMatchObject({
+        phase: "runtime_running",
+        terminalStatus: null,
+        output: null,
+      });
+      expect(vi.getTimerCount()).toBe(0);
+      const restarted = new RunCoordinator({
+        runs: setup.runs,
+        checkpoints: setup.adapters.runCheckpoints,
+        context: setup.context,
+        runtime,
+        workers: new ScriptedWorkerRunPort(),
+        trace: setup.trace,
+        clock: setup.clock,
+      });
+      expect((await restarted.execute(setup.input)).run.run.status).toBe(
+        "reconciling_external_result",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears its deadline timer when execution finishes early", async () => {
+    const suffix = "early-deadline-completion";
+    const runId = createRunId(`run-${suffix}`);
+    const runtime: AgentRuntimePort = {
+      async *run() {
+        yield {
+          type: "runtime.completed",
+          runId,
+          output: { kind: "assistant-answer", contentRef: "answer" },
+          occurredAt: T0,
+        };
+      },
+      cancel: vi.fn(async () => {}),
+    };
+    const setup = await fixture(suffix, runtime);
+    vi.useFakeTimers();
+    try {
+      expect(
+        (await setup.coordinator.execute({ ...setup.input, executionDeadlineAt: T1 })).run.run
+          .status,
+      ).toBe("completed");
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(runtime.cancel).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects an expired or malformed execution deadline before context or model work", async () => {
+    const runtime = new ScriptedAgentRuntime(() => T0, []);
+    const setup = await fixture("expired-deadline", runtime);
+    await expect(
+      setup.coordinator.execute({ ...setup.input, executionDeadlineAt: T0 }),
+    ).rejects.toMatchObject({ reasonCode: "RUN_EXECUTION_DEADLINE_EXCEEDED" });
+    await expect(
+      setup.coordinator.execute({ ...setup.input, executionDeadlineAt: "invalid" }),
+    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.INVALID_OPERATION });
+    expect(runtime.observedRequests()).toHaveLength(0);
+    expect(await setup.adapters.trace.readRun(setup.run.id, 0, 20)).toHaveLength(0);
+  });
+
   it("persists runtime tool uncertainty and never accepts a following completion or reruns it", async () => {
     const suffix = "runtime-tool-unknown";
     const runId = createRunId(`run-${suffix}`);

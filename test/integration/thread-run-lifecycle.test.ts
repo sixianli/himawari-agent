@@ -279,6 +279,7 @@ async function executionFixture(options: FixtureOptions = {}) {
     threads: setup.repository.threadRepository(),
   });
   const coordinator = new RunCoordinator({
+    clock,
     runs,
     checkpoints,
     context,
@@ -471,6 +472,7 @@ it("does not dispatch an external action after an attempt is interrupted at cont
     async cancel() {},
   };
   const coordinator = new RunCoordinator({
+    clock,
     runs: setup.runs,
     checkpoints: setup.checkpoints,
     context,
@@ -541,6 +543,7 @@ it("cancels a started runtime once for its exact execution attempt", async () =>
     },
   };
   const coordinator = new RunCoordinator({
+    clock,
     runs: setup.runs,
     checkpoints: setup.checkpoints,
     context: setup.context,
@@ -633,6 +636,7 @@ it("keeps the Run attempt occupied until deferred cancellation finishes", async 
     },
   };
   const coordinator = new RunCoordinator({
+    clock,
     runs: setup.runs,
     checkpoints: setup.checkpoints,
     context: setup.context,
@@ -709,6 +713,7 @@ it("rejects a second active attempt and isolates an ended lease from the next at
       setup.checkpoints.compareAndSet(input),
   };
   const coordinator = new RunCoordinator({
+    clock,
     runs: setup.runs,
     checkpoints,
     context: setup.context,
@@ -808,6 +813,7 @@ it("attempts worker cancellation once and retains its failure diagnostic", async
     },
   };
   const coordinator = new RunCoordinator({
+    clock,
     runs: setup.runs,
     checkpoints: setup.checkpoints,
     context: setup.context,
@@ -898,6 +904,7 @@ it.each([
   async ({ objectType, shared }) => {
     const setup = await executionFixture();
     const crashing = new RunCoordinator({
+      clock,
       runs: {
         ...setup.runs,
         completeRun: async () => {
@@ -1014,6 +1021,7 @@ it.each(["before", "after"] as const)(
       },
     };
     const crashing = new RunCoordinator({
+      clock,
       runs,
       checkpoints: setup.checkpoints,
       context: setup.context,
@@ -1035,6 +1043,7 @@ it.each(["before", "after"] as const)(
     });
     repositories.push(reopened);
     const resumed = new RunCoordinator({
+      clock,
       runs: reopened.runLifecycle(ownerId, agentId, authority),
       checkpoints: reopened.runCheckpointStore(ownerId, agentId, authority),
       context: setup.context,
@@ -1260,6 +1269,7 @@ it.each(["no-answer", "empty-ref"] as const)(
       ],
     );
     const coordinator = new RunCoordinator({
+      clock,
       runs: setup.runs,
       checkpoints: setup.checkpoints,
       context: setup.context,
@@ -1433,6 +1443,7 @@ it("keeps cancellation authoritative when successful runtime output races with i
     async cancel() {},
   };
   const coordinator = new RunCoordinator({
+    clock,
     runs: setup.runs,
     checkpoints: setup.checkpoints,
     context: setup.context,
@@ -1459,6 +1470,7 @@ it("keeps cancellation authoritative when successful runtime output races with i
 it("retains observed output through cancellation until governed Run deletion", async () => {
   const setup = await executionFixture();
   const crashing = new RunCoordinator({
+    clock,
     runs: {
       ...setup.runs,
       completeRun: async () => {
@@ -1913,6 +1925,7 @@ it("lets the existing RunCoordinator cancel the admitted relational Run with a d
   const runs = repository.runLifecycle(ownerId, agentId, authority);
   const checkpoints = repository.runCheckpointStore(ownerId, agentId, authority);
   const coordinator = new RunCoordinator({
+    clock,
     runs,
     checkpoints,
     context: new ContextFormationService({
@@ -2113,6 +2126,7 @@ it("freezes execution policy across factory recreation and rejects a different c
     maxSelectedMemories: 5,
   }));
   const options = {
+    maximumRunDurationMs: 60_000,
     source: setup.repository.runExecutionSource(ownerId, agentId),
     artifacts: setup.repository.runPayloadArtifactPort(ownerId, agentId, {
       product: authority,
@@ -2138,6 +2152,37 @@ it("freezes execution policy across factory recreation and rejects a different c
     { candidate, lease: held },
   );
   expect(restored).toEqual(original);
+  const laterClock = { now: () => new Date(Date.parse(clock.now()) + 1000).toISOString() };
+  const larger = await new RunExecutionInputService({
+    ...options,
+    clock: laterClock,
+    maximumRunDurationMs: 120_000,
+  }).create({ candidate, lease: held });
+  expect(larger.executionDeadlineAt).toBe(original.executionDeadlineAt);
+  const tighter = await new RunExecutionInputService({
+    ...options,
+    maximumRunDurationMs: 30_000,
+  }).create({ candidate, lease: held });
+  expect(tighter.executionDeadlineAt).toBe(
+    new Date(Date.parse(clock.now()) + 30_000).toISOString(),
+  );
+  const legacyProtector = {
+    ...setup.protector,
+    protect: setup.protector.protect.bind(setup.protector),
+    rewrap: setup.protector.rewrap.bind(setup.protector),
+    unprotect: async (input: Parameters<typeof setup.protector.unprotect>[0]) => {
+      const current = JSON.parse(new TextDecoder().decode(await setup.protector.unprotect(input)));
+      delete current.deadlineAt;
+      return new TextEncoder().encode(JSON.stringify(current));
+    },
+  };
+  await expect(
+    new RunExecutionInputService({ ...options, protector: legacyProtector }).create({
+      candidate,
+      lease: held,
+    }),
+  ).rejects.toMatchObject({ code: PORT_ERROR_CODES.INVALID_OPERATION });
+
   expect(policy).toHaveBeenCalledTimes(1);
   expect(changedPolicy).not.toHaveBeenCalled();
   await expect(
@@ -2226,6 +2271,7 @@ it.each([
         ownerId,
         agentId,
         concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
+        deadlines: { runMs: 60_000, workerRequestMs: 10_000, providerRequestMs: 10_000 },
         budgets: {
           globalCostMicros: budget,
           perRunCostMicros: budget,

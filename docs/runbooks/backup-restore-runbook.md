@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:2b5bbd0e578a1f693147d8221163817e358a925475c74551fb3e62323dd98086"
+contract_sha256: "sha256:8f2fe74fecdf1b4ff8a71be96bb6c72acd16c08305e0cbc4cabee66422dea5ee"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,8 @@ date: "2026-08-27"
 # 同机备份与恢复 Runbook
 
 <!-- runbook-contract:
+- packages/application/src/services/run-execution-input-service.ts
+- packages/application/src/services/run-coordinator.ts
 - apps/admin-cli/src
 - packages/persistence-sqlite/src/sqlite-recovery-point.ts
 - packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts
@@ -98,6 +100,8 @@ himawari backup restore --config <absolute-config-path> --secret-dir <absolute-s
 7. 按本次已验证的服务启动程序重新启动 Worker 与 Agent Service；重新运行 `db status`、`doctor` 和业务只读查询。未完成对应 install/start/stop Runbook 前，不在此处猜测 launchd/systemd 命令。
 
 ## Verification
+
+- 若数据包含 Run 执行输入快照，保留首次执行开始时间与绝对截止时间；恢复或迁移不重新发放运行时长。缺少截止时间的旧快照须停止并核实历史执行，不能自动删除快照后重建。目标时钟须可信，不能以导入或重启时间替换原截止时间。
 
 - create/verify/restore 输出的 backup ID、Owner/Agent/deployment、authority epoch、schema sequence 与目标完全一致。
 - `quickIntegrityCheck` 与 `fullIntegrityCheck` 均为 `ok`，Payload 数量、Outbox 数量、文件数量和 manifest digest 在独立 verify 中不变。

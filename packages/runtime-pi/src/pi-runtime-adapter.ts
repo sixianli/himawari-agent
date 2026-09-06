@@ -958,6 +958,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         const invocation: RuntimeToolInvocation = {
           runId: request.runId,
           toolCallId,
+          ...(request.executionDeadlineAt === undefined
+            ? {}
+            : { executionDeadlineAt: request.executionDeadlineAt }),
           capabilityRef: descriptor.capabilityRef,
           capabilityHandleRef: descriptor.capabilityHandleRef,
           arguments: safeArguments(parameters),

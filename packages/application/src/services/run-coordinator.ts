@@ -9,6 +9,7 @@ import type {
 import type {
   AgentRuntimePort,
   AuthorityFence,
+  ClockPort,
   PayloadRef,
   RunCheckpoint,
   RunCheckpointStore,
@@ -54,10 +55,12 @@ export interface ExecuteCoordinatedRunInput {
   readonly authority: AuthorityFence;
   /** Execution claim supplied by the canonical dispatch pump. */
   readonly executionLease: RunExecutionLeaseClaim;
+  /** Absolute deadline frozen by the production input service, across retries. */
+  readonly executionDeadlineAt?: string;
   readonly context: ContextFormationRequest;
   readonly runtime: Omit<
     RuntimeRequest,
-    "contextEnvelopeRef" | "workerResultRefs" | "executionLease"
+    "contextEnvelopeRef" | "workerResultRefs" | "executionLease" | "executionDeadlineAt"
   >;
   readonly workers: readonly WorkerDelegation[];
   readonly delegableCapabilityHandleRefs: readonly string[];
@@ -117,6 +120,7 @@ export class RunExecutionInterruptedError extends Error {
 }
 
 export interface RunCoordinatorDependencies {
+  readonly clock?: ClockPort;
   readonly runs: RunLifecyclePort;
   readonly checkpoints: RunCheckpointStore;
   readonly context: ContextFormationPort;
@@ -146,6 +150,8 @@ interface ExecutionAttempt {
   readonly runId: RunId;
   readonly executionLeaseId: RunExecutionLeaseId;
   readonly activeWorkerRunIds: Set<string>;
+  readonly deadlineAt?: number;
+  deadlineTimer?: ReturnType<typeof setTimeout>;
   interrupted?: InterruptCoordinatedRunInput;
   interruption?: Promise<void>;
   interruptionResult?: ExecutionInterruptionResult;
@@ -170,6 +176,7 @@ export class RunCoordinator {
     try {
       return await this.executeAttempt(input, attempt);
     } finally {
+      clearTimeout(attempt.deadlineTimer);
       if (attempt.interruption) await attempt.interruption;
       this.endExecutionAttempt(attempt);
     }
@@ -233,15 +240,34 @@ export class RunCoordinator {
         { runId: input.runId, executionLeaseId: executionLease.executionLeaseId },
       );
     }
+    const deadlineAt =
+      input.executionDeadlineAt === undefined ? undefined : Date.parse(input.executionDeadlineAt);
+    if (deadlineAt !== undefined && !Number.isFinite(deadlineAt))
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Run execution deadline is invalid",
+      );
+    const remaining =
+      deadlineAt === undefined ? undefined : Math.max(0, deadlineAt - this.executionNow());
+    if (remaining !== undefined && remaining > 86_400_000)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Run execution deadline exceeds one day",
+      );
     const attempt: ExecutionAttempt = {
       runId: input.runId,
       executionLeaseId: executionLease.executionLeaseId,
       activeWorkerRunIds: new Set(),
+      ...(deadlineAt === undefined ? {} : { deadlineAt }),
       runtimeActive: false,
       runtimeCancellationIssued: false,
       cancelledWorkerRunIds: new Set(),
     };
     this.executionAttempts.set(input.runId, attempt);
+    if (remaining !== undefined) {
+      attempt.deadlineTimer = setTimeout(() => this.interruptForDeadline(attempt), remaining);
+      attempt.deadlineTimer.unref?.();
+    }
     return attempt;
   }
 
@@ -250,7 +276,28 @@ export class RunCoordinator {
       this.executionAttempts.delete(attempt.runId);
   }
 
+  private executionNow(): number {
+    const now = this.dependencies.clock ? Date.parse(this.dependencies.clock.now()) : Date.now();
+    if (!Number.isFinite(now))
+      throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "Run clock is invalid");
+    return now;
+  }
+
+  private interruptForDeadline(attempt: ExecutionAttempt): void {
+    void this.interruptExecution({
+      runId: attempt.runId,
+      executionLeaseId: attempt.executionLeaseId,
+      reasonCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+    }).catch(() => undefined);
+  }
+
   private assertExecutionActive(attempt: ExecutionAttempt): void {
+    if (
+      attempt.deadlineAt !== undefined &&
+      this.executionNow() >= attempt.deadlineAt &&
+      !attempt.interrupted
+    )
+      this.interruptForDeadline(attempt);
     if (attempt.interrupted) throw new RunExecutionInterruptedError(attempt.interrupted);
   }
 
@@ -645,6 +692,9 @@ export class RunCoordinator {
     const runtimeRequest: RuntimeRequest = {
       ...input.runtime,
       executionLease: input.executionLease,
+      ...(input.executionDeadlineAt === undefined
+        ? {}
+        : { executionDeadlineAt: input.executionDeadlineAt }),
       contextEnvelopeRef: storedCheckpoint.checkpoint.contextRef as PayloadRef,
       workerResultRefs: Object.entries(storedCheckpoint.checkpoint.workerResults).map(
         ([workerRunId, resultRef]) => ({ workerRunId, resultRef }),

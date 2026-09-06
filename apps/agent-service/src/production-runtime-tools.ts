@@ -222,6 +222,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     await this.#options.assertRunActive(invocation.runId);
     if (!this.#exposed.get(invocation.runId)?.has(invocation.capabilityHandleRef)) reject();
     const handle = await this.#handle(invocation.runId, invocation.capabilityHandleRef);
+    if (
+      invocation.executionDeadlineAt !== undefined &&
+      (!Number.isFinite(Date.parse(invocation.executionDeadlineAt)) ||
+        Date.parse(invocation.executionDeadlineAt) <= Date.parse(this.#options.clock.now()))
+    )
+      reject();
     const keys = Object.keys(invocation.arguments);
     if (
       handle.capabilityRef !== invocation.capabilityRef ||
@@ -273,7 +279,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
     const now = this.#options.clock.now();
     const deadlineAt = new Date(
-      Math.min(Date.parse(handle.expiresAt), Date.parse(now) + this.#options.ceiling.maxWallTimeMs),
+      Math.min(
+        Date.parse(handle.expiresAt),
+        Date.parse(now) + this.#options.ceiling.maxWallTimeMs,
+        invocation.executionDeadlineAt === undefined
+          ? Number.POSITIVE_INFINITY
+          : Date.parse(invocation.executionDeadlineAt),
+      ),
     ).toISOString();
     const authority = this.#options.authority();
     const scope = {

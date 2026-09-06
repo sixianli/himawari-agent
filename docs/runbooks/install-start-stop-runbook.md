@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:7fe8808f1d340b38cfaff69aa831b8a35308f3391f1865d9cc9c57f34914111f"
+contract_sha256: "sha256:7a58f9256e3f43b4babcc987e389588867fa7ffc80a9b9ba911592392d0c15f6"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,9 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- packages/runtime-pi/src/pi-runtime-adapter.ts
+- packages/application/src/services/run-execution-input-service.ts
+- packages/application/src/services/run-coordinator.ts
 - scripts/package-node-runtime.mjs
 - scripts/install-node-runtime.mjs
 - scripts/generate-artifact-manifest.mjs
@@ -133,6 +136,7 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 - Worker 重启产生新 boot identity 后，旧 Agent 启动绑定必须失效；只重启 Worker 不得沿用旧 Agent/Worker 配对。当前 authority 或任一 peer identity 不匹配时，权限与 Payload 请求不得通过。
 - 配置了生产 Memory 时，ready 前已执行消费者启动与当前 authority 检查；每次新任务领取前再次检查权威。只构造 Mem0 对象不算消费者就绪。该消费者证据不代表其他尚未接入的后台任务已经运行。
 - 当安装产物启用持久执行领取时，验证领取使用当前实际权威和新进程身份，旧执行不能续租或写 Run/检查点；恢复必须区分安全续跑与未知结果待核对。停止服务不得伪造 Owner 取消，也不能仅凭启动日志或表中存在租约就认定领取循环已接入。
+- 启用持久 Run 组合时，核对 `deadlines.runMs` 已冻结为受保护输入中的绝对截止时间；恢复不得超过首次冻结的截止时间。缺少截止时间的旧执行快照不能自动重建或继续执行，应保留现场并核实旧执行状态。超时必须请求停止当前执行并拒绝迟到成功，Worker 请求的截止不能超过父 Run。
 - 目标前缀、state root、authority file、SQLite、Payload、runtime/cache 和证据权限符合当前配置；诊断输出不含 token、配置全文或私人正文。
 - 该 Runbook 的成功只证明本机安装/启停边界，不证明 Mac/Hermes 双向迁移、真实 provider/GitHub/Cloudflare、systemd/launchd 或 production readiness。
 

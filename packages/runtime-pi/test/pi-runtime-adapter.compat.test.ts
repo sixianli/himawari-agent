@@ -939,7 +939,8 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       }, observedOptions),
     );
 
-    const events = await collect(adapter.run(request));
+    const deadline = new Date(Date.parse(NOW) + 60000).toISOString();
+    const events = await collect(adapter.run({ ...request, executionDeadlineAt: deadline }));
 
     expect(observedOptions[0]).toMatchObject({
       noTools: "all",
@@ -960,6 +961,7 @@ describe("Pi Agent Runtime adapter compatibility", () => {
         runId: request.runId,
         toolCallId: "tool-call-task-11",
         capabilityHandleRef: "handle-restaurant-task-11",
+        executionDeadlineAt: deadline,
       }),
     );
     expect(tools.execute).toHaveBeenCalledTimes(1);

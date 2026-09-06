@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:99728d22a855d6bbc431b6daebbbf30af430a696636b08afc813fa1cb2f9d1cf"
+contract_sha256: "sha256:956bf40af9000b60e284bb13a76832560c87913533d38c9d0a967117bc6d8943"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,8 @@ date: "2026-08-27"
 # 停机加密 Authority Transfer Runbook
 
 <!-- runbook-contract:
+- packages/application/src/services/run-execution-input-service.ts
+- packages/application/src/services/run-coordinator.ts
 - apps/admin-cli/src
 - apps/agent-service/src/service-main.ts
 - apps/agent-service/src/production-service-lifecycle.ts
@@ -132,6 +134,8 @@ himawari transfer abandon --config <absolute-target-config-path> --secret-dir <a
 ~~~
 
 ## Verification
+
+- 若数据包含 Run 执行输入快照，保留首次执行开始时间与绝对截止时间；恢复或迁移不重新发放运行时长。缺少截止时间的旧快照须停止并核实历史执行，不能自动删除快照后重建。目标时钟须可信，不能以导入或重启时间替换原截止时间。
 
 - authenticated manifest 与 import/activate 输出中的 transfer、Owner/Agent、source/target deployment、product/schema/adapter/Memory versions 完全一致。
 - target activation epoch 与 fencing token 各为源值加一；目标权威 SQLite 与 `authority.json` 状态、epoch、fence 和 transfer ID 一致，且最多一条 deployment 为 `active`。
