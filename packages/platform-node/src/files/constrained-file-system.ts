@@ -83,12 +83,18 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     relativePath: string,
     expected: HostFileIdentity,
     bytes: Uint8Array,
+    previousBytes: Uint8Array,
   ) {
     const target = await this.#resolve(grant, relativePath, true);
     const parentChain = await this.#captureParentChain(grant, relativePath);
     const before = await this.#requiredSafeIdentity(grant, relativePath);
     if (identityKey(before) !== identityKey(expected))
       throw new Error("HOST_FILE_IDENTITY_CHANGED");
+    const assertContentUnchanged = async () => {
+      const current = await this.read(grant, relativePath, previousBytes.byteLength);
+      if (!Buffer.from(current).equals(previousBytes)) throw new Error("HOST_FILE_CONTENT_CHANGED");
+    };
+    await assertContentUnchanged();
     const recoveryRoot = await this.#ensureControlledDirectory(grant, ".himawari-recovery");
     const recovery = path.join(
       recoveryRoot,
@@ -115,6 +121,8 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
       if (identityKey(immediatelyBeforeRename) !== identityKey(expected))
         throw new Error("HOST_FILE_IDENTITY_CHANGED");
       await this.#assertParentChain(grant, relativePath, parentChain);
+      // External writers must be isolated for a strict compare-and-replace guarantee.
+      await assertContentUnchanged();
       await rename(temporary, target);
       temporaryCreated = false;
     } finally {

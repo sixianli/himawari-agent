@@ -126,7 +126,11 @@ export class FileOperationService {
       );
     }
     const current = await this.#platform.inspect(grant, operation.relativePath);
-    if (operation.status === "executing" && current && operation.candidateDigest) {
+    if (
+      operation.status === "executing" &&
+      current?.sizeBytes === operation.sizeBytes &&
+      operation.candidateDigest
+    ) {
       const currentDigest = this.#digest.digest(
         await this.#platform.read(grant, operation.relativePath, operation.sizeBytes + 1),
       );
@@ -144,6 +148,16 @@ export class FileOperationService {
       await this.#invalidate(operation);
       this.#conflict("File identity changed after prepare");
     }
+    const previousBytes = operation.targetIdentity
+      ? await this.#platform.read(grant, operation.relativePath, 16 * 1024 * 1024)
+      : new Uint8Array();
+    if (
+      operation.targetIdentity &&
+      this.#digest.digest(previousBytes) !== operation.previousDigest
+    ) {
+      await this.#invalidate(operation);
+      this.#conflict("File content changed after prepare");
+    }
     if (operation.status === "prepared") {
       operation = await this.#state.savePrepared(
         Object.freeze({ ...operation, revision: operation.revision + 1, status: "executing" }),
@@ -156,6 +170,7 @@ export class FileOperationService {
           operation.relativePath,
           operation.targetIdentity,
           input.candidateBytes,
+          previousBytes,
         )
       : await this.#platform.createExclusive(grant, operation.relativePath, input.candidateBytes);
     const verified = await this.#platform.read(

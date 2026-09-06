@@ -132,6 +132,84 @@ class CrashAfterEffectPlatform extends ConstrainedHostFileSystem {
 }
 
 describe("ConstrainedHostFileSystem", () => {
+  it("preserves same-inode edits made after write preview", async () => {
+    const { root, service, grant, state } = await fixture();
+    await writeFile(path.join(root, "note.txt"), "original");
+    const candidateBytes = new TextEncoder().encode("new");
+    const prepared = await service.prepareWrite({
+      grantId: grant.id,
+      operation: "update",
+      relativePath: "note.txt",
+      candidatePayloadRef: "payload:candidate",
+      candidateBytes,
+      redactedDiffRef: null,
+      expiresAt: "2026-08-28T20:30:00.000Z",
+    });
+    await writeFile(path.join(root, "note.txt"), "owner edit");
+    await expect(
+      service.executeWrite({
+        operationId: prepared.id,
+        expectedHash: prepared.canonicalHash,
+        candidateBytes,
+      }),
+    ).rejects.toThrow("content changed");
+    expect(await readFile(path.join(root, "note.txt"), "utf8")).toBe("owner edit");
+    expect((await state.readPrepared(prepared.id))?.status).toBe("invalidated");
+  });
+
+  it("checks content again at the platform replacement boundary", async () => {
+    const { root, platform, grant } = await fixture();
+    await writeFile(path.join(root, "note.txt"), "original");
+    const expected = await platform.inspect(grant, "note.txt");
+    if (!expected) throw new Error("Missing fixture file");
+    await writeFile(path.join(root, "note.txt"), "modified");
+    await expect(
+      platform.replaceAtomic(
+        grant,
+        "note.txt",
+        expected,
+        new TextEncoder().encode("new"),
+        new TextEncoder().encode("original"),
+      ),
+    ).rejects.toThrow("HOST_FILE_CONTENT_CHANGED");
+    expect(await readFile(path.join(root, "note.txt"), "utf8")).toBe("modified");
+  });
+
+  it("retries an interrupted update whose original content is longer than its replacement", async () => {
+    class InterruptedPlatform extends ConstrainedHostFileSystem {
+      fail = true;
+      override async replaceAtomic(
+        ...input: Parameters<ConstrainedHostFileSystem["replaceAtomic"]>
+      ) {
+        if (this.fail) {
+          this.fail = false;
+          throw new Error("before replacement");
+        }
+        return super.replaceAtomic(...input);
+      }
+    }
+    const { root, service, grant } = await fixture(new InterruptedPlatform());
+    await writeFile(path.join(root, "note.txt"), "long original content");
+    const candidateBytes = new TextEncoder().encode("new");
+    const prepared = await service.prepareWrite({
+      grantId: grant.id,
+      operation: "update",
+      relativePath: "note.txt",
+      candidatePayloadRef: "payload:candidate",
+      candidateBytes,
+      redactedDiffRef: null,
+      expiresAt: "2026-08-28T20:30:00.000Z",
+    });
+    const input = {
+      operationId: prepared.id,
+      expectedHash: prepared.canonicalHash,
+      candidateBytes,
+    };
+    await expect(service.executeWrite(input)).rejects.toThrow("before replacement");
+    expect((await service.executeWrite(input)).status).toBe("verified");
+    expect(await readFile(path.join(root, "note.txt"), "utf8")).toBe("new");
+  });
+
   it("rejects same-inode content changes before deleting any approved target", async () => {
     const { root, service, grant, platform } = await fixture();
     await mkdir(path.join(root, "remove"));

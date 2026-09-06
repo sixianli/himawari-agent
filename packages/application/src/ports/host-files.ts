@@ -116,6 +116,7 @@ export interface HostFilePlatformPort {
     relativePath: string,
     expected: HostFileIdentity,
     bytes: Uint8Array,
+    previousBytes: Uint8Array,
   ): Promise<HostFileIdentity>;
   move(
     grant: HostDirectoryGrant,
