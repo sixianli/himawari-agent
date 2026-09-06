@@ -1,3 +1,6 @@
+import { DurableMemoryService } from "@himawari-agent/application";
+import { ProductionMemoryWorker } from "./production-memory-worker.js";
+import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
@@ -317,6 +320,7 @@ export async function runAgentService(
   errorOutput: NodeJS.WritableStream = process.stderr,
   dependencies: AgentServiceDependencies = {},
 ): Promise<number> {
+  const lifecycle = new ProductionServiceLifecycle();
   let repository: SqliteProductStateRepository | undefined;
   let authorityLifecycle: ReturnType<typeof createProductionAuthorityLifecycle> | undefined;
   let worker: AgentServiceExecutionClient | undefined;
@@ -324,6 +328,7 @@ export async function runAgentService(
   let payloadServer: PayloadUdsServer | undefined;
   let modelComposition: ProductionConfiguredModelComposition | undefined;
   let memoryComposition: ProductionMemoryComposition | undefined;
+  let memoryWorker: ProductionMemoryWorker | undefined;
   let authorityLost = false;
   let authorityLossError: unknown;
   let resolveAuthorityLoss: (() => void) | undefined;
@@ -345,6 +350,21 @@ export async function runAgentService(
     })();
     return reverseStop;
   };
+  lifecycle.register({ name: "repository", close: () => repository?.close() });
+  lifecycle.register({ name: "authority", close: () => authorityLifecycle?.stop() });
+  lifecycle.register({ name: "model", close: () => modelComposition?.composition.close() });
+  lifecycle.register({ name: "memory", close: () => memoryComposition?.close() });
+  lifecycle.register({
+    name: "memory-worker",
+    stopAccepting: () => memoryWorker?.stopAccepting(),
+    drain: () => memoryWorker?.drain(),
+    close: () => memoryWorker?.drain(),
+  });
+  lifecycle.register({
+    name: "worker-channels",
+    stopAccepting: stopReverseServices,
+    close: stopReverseServices,
+  });
   try {
     const args = parseServiceArguments(arguments_);
     const configuration = await new JsonFileConfigurationPort(args.configurationPath).load();
@@ -579,6 +599,45 @@ export async function runAgentService(
     if (authorityLost || !authorityLifecycle.isAccepting()) {
       throw authorityLossError ?? new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
     }
+    if (memoryComposition) {
+      const payloads = repository.payloadStore(configuration.ownerId, configuration.agentId);
+      const protector = configuredPayloadProtector(configuration);
+      const memory = new DurableMemoryService({
+        state: repository.productMemoryState(),
+        jobs: repository.memoryProjectionJobs(),
+        provider: memoryComposition.projection,
+        content: {
+          readText: async (ref) => {
+            const payload = await payloads.get(ref);
+            if (!payload) throw new Error("MEMORY_PAYLOAD_MISSING");
+            return new TextDecoder("utf-8", { fatal: true }).decode(
+              await protector.unprotect({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                payload,
+              }),
+            );
+          },
+        },
+        workerId: `${agentServiceBootId}:memory`,
+        now: () => clock.now(),
+      });
+      memoryWorker = new ProductionMemoryWorker({
+        service: memory,
+        assertActive: async () => {
+          if (!authorityLifecycle) throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
+          await authorityLifecycle.assertActive();
+          if (authorityLost) throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
+        },
+        onFailure: (error) => {
+          authorityLost = true;
+          authorityLossError = error;
+          resolveAuthorityLoss?.();
+        },
+      });
+      await memoryWorker.start();
+    }
+    lifecycle.ready();
     writeServiceDiagnostic(output, {
       component: "agent-service",
       event: "service.ready",
@@ -622,23 +681,11 @@ export async function runAgentService(
       event: "service.draining",
       signal,
     });
-    await stopReverseServices();
-    await memoryComposition?.close();
-    memoryComposition = undefined;
-    await modelComposition?.composition.close();
-    modelComposition = undefined;
-    await authorityLifecycle?.stop();
-    authorityLifecycle = undefined;
-    await repository.close();
-    repository = undefined;
+    await lifecycle.shutdown();
     writeServiceDiagnostic(output, { component: "agent-service", event: "service.stopped" });
     return termination.kind === "signal" ? 0 : 1;
   } catch (error) {
-    await stopReverseServices().catch(() => undefined);
-    await memoryComposition?.close().catch(() => undefined);
-    await modelComposition?.composition.close().catch(() => undefined);
-    await authorityLifecycle?.stop().catch(() => undefined);
-    await repository?.close().catch(() => undefined);
+    await lifecycle.shutdown().catch(() => undefined);
     writeServiceDiagnostic(errorOutput, {
       component: "agent-service",
       event: "service.failed",
