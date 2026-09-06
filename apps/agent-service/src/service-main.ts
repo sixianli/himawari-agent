@@ -571,6 +571,8 @@ export async function runAgentService(
       throw authorityLossError ?? new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
     }
     await writeAgentServiceBootBinding(layout, {
+      workerInstanceId: peerBinding.workerInstanceId,
+      workerBootId: peerBinding.workerBootId,
       agentServiceInstanceId,
       agentServiceBootId,
       authorityLeaseId: authorityLease.leaseId,

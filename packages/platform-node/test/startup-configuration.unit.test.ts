@@ -553,6 +553,8 @@ describe("state-root lifecycle", () => {
       transferId: null,
     });
     const first = await writeAgentServiceBootBinding(layout, {
+      workerInstanceId: "worker:fixture",
+      workerBootId: "worker-boot:old",
       agentServiceInstanceId: "agent-service:deployment-boot-binding",
       agentServiceBootId: "agent-service-boot:first",
       authorityLeaseId: "authority:agent-boot-binding:first",
@@ -562,6 +564,8 @@ describe("state-root lifecycle", () => {
     await expect(readAgentServiceBootBinding(layout)).resolves.toEqual(first);
 
     const second = await writeAgentServiceBootBinding(layout, {
+      workerInstanceId: "worker:fixture",
+      workerBootId: "worker-boot:old",
       agentServiceInstanceId: first.agentServiceInstanceId,
       agentServiceBootId: "agent-service-boot:second",
       authorityLeaseId: "authority:agent-boot-binding:second",

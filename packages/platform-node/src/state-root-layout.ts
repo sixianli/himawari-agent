@@ -58,9 +58,11 @@ export interface StateRootLayout {
 }
 
 export interface AgentServiceBootBinding {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly agentServiceInstanceId: string;
   readonly agentServiceBootId: string;
+  readonly workerInstanceId: string;
+  readonly workerBootId: string;
   readonly authorityLeaseId: AuthorityLeaseId;
   readonly deploymentId: DeploymentId;
   readonly ownerId: OwnerId;
@@ -185,6 +187,8 @@ const BOOT_BINDING_FIELDS = Object.freeze([
   "schemaVersion",
   "agentServiceInstanceId",
   "agentServiceBootId",
+  "workerInstanceId",
+  "workerBootId",
   "authorityLeaseId",
   "deploymentId",
   "ownerId",
@@ -213,6 +217,8 @@ export async function writeAgentServiceBootBinding(
   input: {
     readonly agentServiceInstanceId: string;
     readonly agentServiceBootId: string;
+    readonly workerInstanceId: string;
+    readonly workerBootId: string;
     readonly authorityLeaseId: string;
     readonly authority: DeploymentAuthorityState;
   },
@@ -224,12 +230,14 @@ export async function writeAgentServiceBootBinding(
     );
   }
   const binding = Object.freeze({
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     agentServiceInstanceId: assertBootBindingText(
       input.agentServiceInstanceId,
       "agentServiceInstanceId",
     ),
     agentServiceBootId: assertBootBindingText(input.agentServiceBootId, "agentServiceBootId"),
+    workerInstanceId: assertBootBindingText(input.workerInstanceId, "workerInstanceId"),
+    workerBootId: assertBootBindingText(input.workerBootId, "workerBootId"),
     authorityLeaseId: createAuthorityLeaseId(
       assertBootBindingText(input.authorityLeaseId, "authorityLeaseId"),
     ),
@@ -303,7 +311,7 @@ export async function readAgentServiceBootBinding(
   }
   const input = value as Record<string, unknown>;
   if (
-    input["schemaVersion"] !== 1 ||
+    input["schemaVersion"] !== 2 ||
     Object.keys(input).some((field) => !BOOT_BINDING_FIELDS.includes(field))
   ) {
     throw new StateRootLifecycleError(
@@ -312,12 +320,14 @@ export async function readAgentServiceBootBinding(
     );
   }
   const binding = Object.freeze({
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     agentServiceInstanceId: assertBootBindingText(
       input["agentServiceInstanceId"],
       "agentServiceInstanceId",
     ),
     agentServiceBootId: assertBootBindingText(input["agentServiceBootId"], "agentServiceBootId"),
+    workerInstanceId: assertBootBindingText(input["workerInstanceId"], "workerInstanceId"),
+    workerBootId: assertBootBindingText(input["workerBootId"], "workerBootId"),
     authorityLeaseId: createAuthorityLeaseId(
       assertBootBindingText(input["authorityLeaseId"], "authorityLeaseId"),
     ),

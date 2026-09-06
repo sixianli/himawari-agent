@@ -181,29 +181,35 @@ describe("execution Worker service main", () => {
     });
   }, 5_000);
 
-  it("rejects a boot binding from an earlier authority generation", async () => {
-    const { configurationPath, layout, currentAuthority } = await fixture();
-    await writeAgentServiceBootBinding(layout, {
-      agentServiceInstanceId: `agent-service:${FIXTURE_SCOPE.authority.deploymentId}`,
-      agentServiceBootId: "agent-service-boot:old",
-      authorityLeaseId: "authority:worker-service-main:old",
-      authority: currentAuthority,
-    });
-    await writeAuthorityFile(layout, authority(2, 2));
-    const diagnostics = capture();
+  it.each([true, false])(
+    "rejects a stale worker boot binding (authority advanced: %s)",
+    async (advanceAuthority) => {
+      const { configurationPath, layout, currentAuthority } = await fixture();
+      await writeAgentServiceBootBinding(layout, {
+        workerInstanceId: `execution-worker:${FIXTURE_SCOPE.authority.deploymentId}`,
+        workerBootId: "worker-boot:old",
+        agentServiceInstanceId: `agent-service:${FIXTURE_SCOPE.authority.deploymentId}`,
+        agentServiceBootId: "agent-service-boot:old",
+        authorityLeaseId: "authority:worker-service-main:old",
+        authority: currentAuthority,
+      });
+      if (advanceAuthority) await writeAuthorityFile(layout, authority(2, 2));
+      const diagnostics = capture();
 
-    await expect(
-      runExecutionWorkerService(
-        serviceArguments(configurationPath),
-        diagnostics.stream,
-        diagnostics.stream,
-        FAST_STARTUP_TIMING,
-      ),
-    ).resolves.toBe(1);
-    expect(JSON.parse(diagnostics.text())).toMatchObject({
-      component: "execution-worker",
-      event: "service.failed",
-      code: EXECUTION_WORKER_SERVICE_ERROR_CODES.STARTUP_TIMEOUT,
-    });
-  }, 5_000);
+      await expect(
+        runExecutionWorkerService(
+          serviceArguments(configurationPath),
+          diagnostics.stream,
+          diagnostics.stream,
+          FAST_STARTUP_TIMING,
+        ),
+      ).resolves.toBe(1);
+      expect(JSON.parse(diagnostics.text())).toMatchObject({
+        component: "execution-worker",
+        event: "service.failed",
+        code: EXECUTION_WORKER_SERVICE_ERROR_CODES.STARTUP_TIMEOUT,
+      });
+    },
+    5_000,
+  );
 });

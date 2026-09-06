@@ -103,6 +103,8 @@ async function waitForAgentBinding(input: {
     const agentBinding = await readAgentServiceBootBinding(input.layout).catch(() => undefined);
     if (
       agentBinding &&
+      agentBinding.workerInstanceId === input.workerInstanceId &&
+      agentBinding.workerBootId === input.workerBootId &&
       agentBinding.agentServiceInstanceId === `agent-service:${input.configuration.deploymentId}` &&
       agentBinding.deploymentId === input.configuration.deploymentId &&
       agentBinding.ownerId === input.configuration.ownerId &&
