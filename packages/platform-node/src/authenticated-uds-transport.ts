@@ -215,6 +215,11 @@ export class AuthenticatedUdsServer {
     }
     this.options = options;
     this.socketPath = path.join(options.runtimeDirectory, socketName);
+    // macOS sun_path has 104 bytes including NUL; Linux has 108. Node
+    // can silently truncate an oversized address, so reject before binding.
+    const maximumSocketPathBytes = process.platform === "darwin" ? 103 : 107;
+    if (Buffer.byteLength(this.socketPath, "utf8") > maximumSocketPathBytes)
+      throw new TypeError(`Authenticated UDS socket path exceeds ${maximumSocketPathBytes} bytes`);
   }
 
   async start(): Promise<void> {

@@ -362,6 +362,16 @@ describe("payload-broker.v1 authenticated UDS transport", () => {
     ).toThrow();
   });
 
+  it("rejects oversized UTF-8 socket paths before the OS can truncate them", () => {
+    const handler: PayloadBrokerTrustedHandler = {
+      readInput: async () => new Uint8Array(),
+      writeOutput: async () => ({ outputRef: "payload:unused", replayed: false }),
+    };
+    expect(() => new PayloadUdsServer(serverOptions(`/tmp/${"界".repeat(40)}`, handler))).toThrow(
+      "socket path exceeds",
+    );
+  });
+
   it("rejects authentication, boot, schema, encoding, content and size failures before dispatch", async () => {
     let readCalls = 0;
     let writeCalls = 0;
