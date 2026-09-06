@@ -1,10 +1,12 @@
-import { DurableMemoryService } from "@himawari-agent/application";
-import { ProductionMemoryWorker } from "./production-memory-worker.js";
-import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import type {
+  ModelInvocationAdmissionResolver,
+  PayloadProtectorPort,
+} from "@himawari-agent/application";
 import {
   type ClockPort,
+  DurableMemoryService,
   type IdGeneratorPort,
   type ProductConfiguration,
   WorkerDelegationAdmissionService,
@@ -29,6 +31,7 @@ import {
   MacOsKeychainSecretSource,
   PayloadUdsServer,
   parseServiceArguments,
+  RuntimeHealthModel,
   readAuthorityFile,
   readRestrictedExecutionTokenFile,
   readWorkerServiceBootBinding,
@@ -40,18 +43,33 @@ import {
   writeAuthorityFile,
   writeServiceDiagnostic,
 } from "@himawari-agent/platform-node";
+import { admissionCostForConfiguredPiModel } from "@himawari-agent/runtime-pi";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import {
+  createProductionHttpComposition,
+  type ProductionHttpComposition,
+  type ProductionHttpCompositionOptions,
+} from "./production-http-composition.js";
+import {
   createProductionMemoryCompositionFromConfiguration,
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
+import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
   createProductionModelCompositionFromConfiguration,
   type ProductionConfiguredModelComposition,
 } from "./production-model-composition.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
+import { createProductionRunComposition } from "./production-run-composition.js";
+import {
+  createProductionRunMemory,
+  embeddingAdmissionDescriptor,
+} from "./production-run-memory.js";
+import { createProductionRunPolicy } from "./production-run-policy.js";
+import { ProductionRuntimeTools } from "./production-runtime-tools.js";
+import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 
 export const AGENT_SERVICE_ERROR_CODES = Object.freeze({
@@ -75,6 +93,7 @@ const MAXIMUM_PAYLOAD_BYTES = 48 * 1024;
 export interface AgentServiceModelCompositionContext {
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
+  readonly sources?: ReturnType<typeof hostModelSources>;
 }
 
 export type AgentServiceModelCompositionFactory = (
@@ -84,6 +103,7 @@ export type AgentServiceModelCompositionFactory = (
 export interface AgentServiceMemoryCompositionContext {
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
+  readonly sources?: ReturnType<typeof hostModelSources>;
 }
 
 export type AgentServiceMemoryCompositionFactory = (
@@ -91,6 +111,8 @@ export type AgentServiceMemoryCompositionFactory = (
 ) => Promise<ProductionMemoryComposition>;
 
 export interface AgentServiceDependencies {
+  readonly secretSources?: ReturnType<typeof hostModelSources>;
+  readonly httpOptions?: Pick<ProductionHttpCompositionOptions, "jwksFetcher" | "identityFetcher">;
   readonly modelCompositionFactory?: AgentServiceModelCompositionFactory;
   readonly memoryCompositionFactory?: AgentServiceMemoryCompositionFactory;
 }
@@ -137,7 +159,10 @@ function hostModelSources(configuration: ProductConfiguration) {
   });
 }
 
-function configuredPayloadProtector(configuration: ProductConfiguration): EnvelopePayloadProtector {
+function configuredPayloadProtector(
+  configuration: ProductConfiguration,
+  sources = hostModelSources(configuration),
+): EnvelopePayloadProtector {
   const payloadKeys = configuration.secretReferences.filter(
     ({ purpose }) => purpose === "payload-encryption",
   );
@@ -145,7 +170,6 @@ function configuredPayloadProtector(configuration: ProductConfiguration): Envelo
     throw new Error(AGENT_SERVICE_ERROR_CODES.PAYLOAD_KEY_REFERENCE_INVALID);
   }
   const payloadKey = payloadKeys[0];
-  const sources = hostModelSources(configuration);
   assertProductionSecretSource(sources.keys);
   return new EnvelopePayloadProtector({
     keys: sources.keys,
@@ -161,11 +185,11 @@ async function createDefaultModelComposition(
   context: AgentServiceModelCompositionContext,
 ): Promise<ProductionConfiguredModelComposition> {
   const { configuration, repository } = context;
-  const sources = hostModelSources(configuration);
+  const sources = context.sources ?? hostModelSources(configuration);
   const clock = productionClock();
   const ids = productionIds();
   const handles = new EphemeralSecretPort({ ids, clock });
-  const protector = configuredPayloadProtector(configuration);
+  const protector = configuredPayloadProtector(configuration, sources);
   try {
     const created = await createProductionModelCompositionFromConfiguration({
       configuration,
@@ -203,7 +227,7 @@ async function createDefaultModelComposition(
 async function createDefaultMemoryComposition(
   context: AgentServiceMemoryCompositionContext,
 ): Promise<ProductionMemoryComposition> {
-  const sources = hostModelSources(context.configuration);
+  const sources = context.sources ?? hostModelSources(context.configuration);
   return createProductionMemoryCompositionFromConfiguration({
     configuration: context.configuration,
     secretSource: sources.provider,
@@ -329,6 +353,15 @@ export async function runAgentService(
   let modelComposition: ProductionConfiguredModelComposition | undefined;
   let memoryComposition: ProductionMemoryComposition | undefined;
   let memoryWorker: ProductionMemoryWorker | undefined;
+  let http: ProductionHttpComposition | undefined;
+  let runs: ReturnType<typeof createProductionRunComposition> | undefined;
+  let health: RuntimeHealthModel | undefined;
+  let runStopTimeoutMs = 30_000;
+  let runInterruption: Promise<void> | undefined;
+  let httpClosing: Promise<void> | undefined;
+  let governedMemory: ReturnType<typeof createProductionRunMemory> | undefined;
+  let durableMemory: DurableMemoryService | undefined;
+  let protector: PayloadProtectorPort | undefined;
   let authorityLost = false;
   let authorityLossError: unknown;
   let resolveAuthorityLoss: (() => void) | undefined;
@@ -362,15 +395,50 @@ export async function runAgentService(
   });
   lifecycle.register({
     name: "worker-channels",
-    stopAccepting: stopReverseServices,
     close: stopReverseServices,
+  });
+  lifecycle.register({
+    name: "runs",
+    stopAccepting: () => {
+      health?.setAuthorityActive(false);
+      runs?.dispatcher.stopAccepting();
+      runInterruption = runs?.coordinator.interruptAllExecutions("SERVICE_STOPPING");
+    },
+    drain: async () => {
+      if (!runs) return;
+      await runInterruption;
+      const drained = await runs.loop.stop(runStopTimeoutMs);
+      if (!drained.drained) throw new Error("RUN_DRAIN_DEADLINE_EXCEEDED");
+    },
+    close: async () => {
+      await runs?.loop.stop(runStopTimeoutMs);
+    },
+  });
+  lifecycle.register({
+    name: "http",
+    stopAccepting: async () => {
+      health?.setAuthorityActive(false);
+      httpClosing = http?.close();
+      void httpClosing?.catch(() => undefined);
+    },
+    close: async () => {
+      await (httpClosing ?? http?.close());
+    },
   });
   try {
     const args = parseServiceArguments(arguments_);
     const configuration = await new JsonFileConfigurationPort(args.configurationPath).load();
-    if (configuration.publicMode) {
+    if (
+      configuration.publicMode &&
+      (!configuration.runPolicy ||
+        !configuration.http ||
+        !configuration.identity ||
+        isDeterministicOnly(configuration))
+    )
       throw new Error(SERVICE_RUNTIME_ERROR_CODES.PUBLIC_MODE_INCOMPLETE);
-    }
+    runStopTimeoutMs = configuration.deadlines.providerRequestMs + 30_000;
+    const sources = dependencies.secretSources ?? hostModelSources(configuration);
+    protector = configuredPayloadProtector(configuration, sources);
     const layout = await initializeStateRoot(configuration.stateRoot);
     const authorityFile = await readAuthorityFile(layout);
     if (authorityFile.status !== "active") {
@@ -419,6 +487,7 @@ export async function runAgentService(
         write: (deployment) => writeAuthorityFile(layout, deployment),
       },
       onLost: (error) => {
+        health?.setAuthorityActive(false);
         authorityLost = true;
         authorityLossError = error;
         resolveAuthorityLoss?.();
@@ -455,9 +524,9 @@ export async function runAgentService(
     const embedding = configuredEmbedding(configuration);
     if (!isDeterministicOnly(configuration)) {
       const factory = dependencies.modelCompositionFactory ?? createDefaultModelComposition;
-      modelComposition = await factory({ configuration, repository });
+      modelComposition = await factory({ configuration, repository, sources });
       const memoryFactory = dependencies.memoryCompositionFactory ?? createDefaultMemoryComposition;
-      memoryComposition = await memoryFactory({ configuration, repository });
+      memoryComposition = await memoryFactory({ configuration, repository, sources });
     }
     const credential = await readRestrictedExecutionTokenFile(args.workerTokenPath);
     const workerBinding = await waitForWorkerBootBinding({
@@ -511,7 +580,7 @@ export async function runAgentService(
         configuration.agentId,
       ),
       payloadsFor: (ownerId, agentId) => activeRepository.payloadStore(ownerId, agentId),
-      protector: configuredPayloadProtector(configuration),
+      protector,
       currentAuthority: () => ({
         product: authorityLifecycle?.authorityFence() ?? authority,
         lease: authorityLifecycle?.authorityLease() ?? authorityLease,
@@ -603,17 +672,25 @@ export async function runAgentService(
     }
     if (memoryComposition) {
       const payloads = repository.payloadStore(configuration.ownerId, configuration.agentId);
-      const protector = configuredPayloadProtector(configuration);
+      const activeProtector = protector;
       const memory = new DurableMemoryService({
         state: repository.productMemoryState(),
         jobs: repository.memoryProjectionJobs(),
         provider: memoryComposition.projection,
+        ...(configuration.publicMode
+          ? ({
+              project: (job, memory, operation) => {
+                if (!governedMemory) throw new Error("MEMORY_ADMISSION_NOT_READY");
+                return governedMemory.project(job, memory, operation);
+              },
+            } satisfies Partial<ConstructorParameters<typeof DurableMemoryService>[0]>)
+          : {}),
         content: {
           readText: async (ref) => {
             const payload = await payloads.get(ref);
             if (!payload) throw new Error("MEMORY_PAYLOAD_MISSING");
             return new TextDecoder("utf-8", { fatal: true }).decode(
-              await protector.unprotect({
+              await activeProtector.unprotect({
                 ownerId: configuration.ownerId,
                 agentId: configuration.agentId,
                 payload,
@@ -621,9 +698,11 @@ export async function runAgentService(
             );
           },
         },
+        projectionLeaseMs: configuration.deadlines.providerRequestMs + 30_000,
         workerId: `${agentServiceBootId}:memory`,
         now: () => clock.now(),
       });
+      durableMemory = memory;
       memoryWorker = new ProductionMemoryWorker({
         service: memory,
         assertActive: async () => {
@@ -632,12 +711,208 @@ export async function runAgentService(
           if (authorityLost) throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
         },
         onFailure: (error) => {
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "memory-consumer.failed",
+            code: stableErrorCode(error),
+          });
+          health?.setAuthorityActive(false);
           authorityLost = true;
           authorityLossError = error;
           resolveAuthorityLoss?.();
         },
       });
-      await memoryWorker.start();
+      if (!configuration.publicMode) await memoryWorker.start();
+    }
+    if (configuration.publicMode) {
+      if (!modelComposition || !memoryComposition || !durableMemory || !protector || !worker)
+        throw new Error("PUBLIC_RUNTIME_DEPENDENCY_MISSING");
+      const activeAuthority = authorityLifecycle;
+      const payloads = repository.payloadStore(configuration.ownerId, configuration.agentId);
+      const artifacts = repository.runPayloadArtifactPort(
+        configuration.ownerId,
+        configuration.agentId,
+        { product: authority, lease: authorityLease },
+      );
+      const capabilities = repository.capabilityStore(configuration.ownerId, configuration.agentId);
+      health = new RuntimeHealthModel({
+        publicMode: true,
+        additionalRequired: ["run-dispatch", "memory-consumer"],
+      });
+      const failRuntime = (error: unknown) => {
+        writeServiceDiagnostic(errorOutput, {
+          component: "agent-service",
+          event: "runtime.failed",
+          code: stableErrorCode(error),
+        });
+        health?.setAuthorityActive(false);
+        authorityLost = true;
+        authorityLossError = error;
+        resolveAuthorityLoss?.();
+      };
+      const tools = new ProductionRuntimeTools({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        capabilities,
+        invocations: repository.capabilityInvocationReceiptPort(
+          configuration.ownerId,
+          configuration.agentId,
+        ),
+        transport: worker,
+        parents: parentBindings.writer,
+        peer: () => peerBinding,
+        authority: invocationAuthority,
+        assertRunActive: async (runId) => {
+          await activeAuthority.assertActive();
+          const run = await activeRepository
+            .runLifecycle(configuration.ownerId, configuration.agentId, authority)
+            .readRun(runId);
+          if (!run || !["accepted", "building_context", "running"].includes(run.run.status))
+            throw new Error("RUN_NOT_ACTIVE");
+        },
+        results: repository.capabilityInvocationResultPort(
+          configuration.ownerId,
+          configuration.agentId,
+        ),
+        artifacts,
+        payloads,
+        protector,
+        ceiling: {
+          maxWallTimeMs: configuration.deadlines.workerRequestMs,
+          maxCpuTimeMs: configuration.deadlines.workerRequestMs,
+          maxMemoryBytes: 256 * 1024 * 1024,
+          maxOutputBytes: MAXIMUM_PAYLOAD_BYTES,
+          maxProgressEvents: 100,
+        },
+        clock,
+        ids,
+      });
+      const admission: ModelInvocationAdmissionResolver = (scope) => runs?.admission(scope);
+      const memory = createProductionRunMemory({
+        configuration,
+        memory: durableMemory,
+        projection: memoryComposition.projection,
+        budget: repository.modelBudgetPort(
+          configuration.ownerId,
+          configuration.agentId,
+          authority,
+          authorityLease,
+        ),
+        assertActive: () => activeAuthority.assertActive(),
+        now: () => clock.now(),
+        payloads,
+        admission,
+      });
+      governedMemory = memory;
+      runs = createProductionRunComposition({
+        configuration,
+        repository,
+        authority: activeAuthority,
+        models: modelComposition.composition.piModels,
+        modelRegistry: [
+          ...modelComposition.descriptors.generation.map((descriptor) => ({
+            ...descriptor,
+            ...admissionCostForConfiguredPiModel(descriptor),
+          })),
+          embeddingAdmissionDescriptor(configuration),
+        ],
+        protector,
+        memory,
+        tools,
+        policy: createProductionRunPolicy({
+          configuration,
+          artifacts,
+          protector,
+          handles: capabilities,
+          clock,
+          ids,
+        }),
+        clock,
+        ids,
+        instanceId: agentServiceBootId,
+        cwd: configuration.stateRoot,
+        agentDir: path.join(configuration.cacheDirectory, "pi-agent"),
+        onFailure: ({ error }) => failRuntime(error),
+      });
+      http = await createProductionHttpComposition({
+        configuration,
+        repository,
+        authority: () => activeAuthority.authorityFence(),
+        secretSources: sources,
+        ...dependencies.httpOptions,
+        health,
+      });
+      http.app.addHook("onRequest", async (request, reply) => {
+        if (request.url.split("?", 1)[0] === "/health/ready") {
+          try {
+            await activeAuthority.assertActive();
+            if (!(await worker?.checkReadiness())) throw new Error("WORKER_NOT_READY");
+            health?.observe({
+              name: "worker",
+              required: true,
+              status: "healthy",
+              reasonCode: null,
+            });
+          } catch {
+            health?.observe({
+              name: "worker",
+              required: true,
+              status: "unavailable",
+              reasonCode: "WORKER_OR_AUTHORITY_UNAVAILABLE",
+            });
+          }
+          return;
+        }
+        if (request.url.startsWith("/health/")) return;
+        if (
+          lifecycle.state !== "ready" ||
+          !activeAuthority.isAccepting() ||
+          !worker?.isReady() ||
+          runs?.loop.state !== "running"
+        )
+          return reply.code(503).send({ error: "SERVICE_NOT_READY" });
+        try {
+          await activeAuthority.assertActive();
+        } catch {
+          return reply.code(503).send({ error: "AUTHORITY_UNAVAILABLE" });
+        }
+      });
+      await http.verifier.assertReady();
+      const probe = await protector.protect({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        ref: ids.next("startup-key-probe"),
+        plaintext: new TextEncoder().encode("payload-key-probe"),
+        dataClassification: "private",
+        contentType: "text/plain",
+        createdAt: clock.now(),
+      });
+      const restoredProbe = await protector.unprotect({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        payload: probe,
+      });
+      if (new TextDecoder().decode(restoredProbe) !== "payload-key-probe")
+        throw new Error("PAYLOAD_KEY_PROBE_FAILED");
+      await memoryWorker?.start();
+      await runs.loop.start();
+      if (authorityLost) throw authorityLossError;
+      await http.listen();
+      health.setLive(true);
+      for (const name of [
+        "authority",
+        "schema",
+        "sqlite",
+        "payload-keyring",
+        "worker",
+        "memory-persistence",
+        "recovery",
+        "identity-trust",
+        "run-dispatch",
+        "memory-consumer",
+      ])
+        health.observe({ name, required: true, status: "healthy", reasonCode: null });
+      health.setAuthorityActive(true);
     }
     lifecycle.ready();
     writeServiceDiagnostic(output, {
@@ -648,7 +923,7 @@ export async function runAgentService(
       fencingToken: authority.fencingToken,
       sqliteVersion: sqlite.sqliteVersion,
       workerSchemaVersion: handshake.payload.selectedSchemaVersion,
-      publicMode: false,
+      publicMode: configuration.publicMode,
       unfinishedRuns: recovery.unfinishedRunKeys.length,
       pendingApprovals: recovery.pendingApprovalRequestIds.length,
       recoverableOccurrences: recovery.retryableJobOccurrenceIds.length,

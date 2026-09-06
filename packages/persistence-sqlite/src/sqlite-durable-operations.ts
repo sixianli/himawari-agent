@@ -571,6 +571,10 @@ export class SqliteDurableOperations {
         return this.createCapabilityHandle(
           (payload as { handle: CapabilityExecutionHandle }).handle,
         );
+      case "capability.listRunHandles":
+        return this.listRunCapabilityHandles(
+          payload as { ownerId: string; agentId: string; runId: string; at: string },
+        );
       case "capability.getHandle":
         return this.getCapabilityHandle(
           payload as { ownerId: string; agentId: string; handleRef: string },
@@ -2212,6 +2216,56 @@ export class SqliteDurableOperations {
       return saved;
     });
     return transaction.immediate();
+  }
+
+  private listRunCapabilityHandles(input: {
+    ownerId: string;
+    agentId: string;
+    runId: string;
+    at: string;
+  }): readonly CapabilityExecutionHandle[] {
+    this.assertRunScope(input.runId, input.ownerId, input.agentId);
+    if (!Number.isFinite(Date.parse(input.at)))
+      return this.fail("PORT_INVALID_OPERATION", "Invalid handle lookup time");
+    const deployment = this.database
+      .prepare(`SELECT fencing_token AS fencingToken FROM deployments
+      WHERE owner_id = ? AND agent_id = ? AND status = 'active'`)
+      .get(input.ownerId, input.agentId) as { fencingToken: number } | undefined;
+    if (!deployment) return [];
+    const rows = this.database
+      .prepare(`SELECT h.id FROM capability_handles h
+      JOIN capability_declarations c ON c.id = h.capability_id
+      WHERE c.owner_id = ? AND c.agent_id = ? AND h.run_id = ?
+      AND json_extract(c.record_json, '$.lifecycle') IN ('active', 'update_proposed', 'update_approved')
+      ORDER BY h.id`)
+      .all(input.ownerId, input.agentId, input.runId) as { id: string }[];
+    return rows.flatMap(({ id }) => {
+      const handle = this.getCapabilityHandle({ ...input, handleRef: id });
+      if (
+        !handle ||
+        handle.ownerId !== input.ownerId ||
+        handle.agentId !== input.agentId ||
+        handle.runId !== input.runId ||
+        handle.revokedAt !== null ||
+        !("handleVersion" in handle) ||
+        handle.handleVersion !== "capability-handle.v2" ||
+        !Number.isFinite(Date.parse(handle.expiresAt)) ||
+        !Number.isFinite(Date.parse(handle.issuedAt)) ||
+        Date.parse(handle.issuedAt) > Date.parse(input.at) ||
+        Date.parse(handle.expiresAt) <= Date.parse(input.at)
+      )
+        return [];
+      const governed = handle as GovernedCapabilityExecutionHandle;
+      const capability = this.getCapability({ ...input, capabilityRef: handle.capabilityRef });
+      if (
+        governed.workerEndedAt !== null ||
+        governed.authorityFence !== deployment.fencingToken ||
+        !capability ||
+        capability.declaration.version !== handle.capabilityVersion
+      )
+        return [];
+      return [handle];
+    });
   }
 
   private getCapabilityHandle(input: {

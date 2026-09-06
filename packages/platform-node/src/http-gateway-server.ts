@@ -545,6 +545,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     bodyLimit: options.maximumBodyBytes ?? DEFAULT_BODY_LIMIT,
     logger: false,
     trustProxy: false,
+    forceCloseConnections: true,
   });
 
   app.addHook("onSend", async (_request, reply) => {

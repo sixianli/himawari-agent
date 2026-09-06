@@ -27,10 +27,21 @@ export class RuntimeHealthModel {
   #authorityActive = false;
   #sequence = 0;
 
-  constructor(options: { readonly publicMode: boolean; readonly now?: () => string }) {
+  constructor(options: {
+    readonly publicMode: boolean;
+    readonly now?: () => string;
+    readonly additionalRequired?: readonly string[];
+  }) {
     this.#publicMode = options.publicMode;
     this.#now = options.now ?? (() => new Date().toISOString());
     for (const name of REQUIRED_HEALTH_DEPENDENCIES) {
+      this.#dependencies.set(
+        name,
+        Object.freeze({ name, required: true, status: "unavailable", reasonCode: "NOT_STARTED" }),
+      );
+    }
+    for (const name of options.additionalRequired ?? []) {
+      if (this.#dependencies.has(name)) throw new TypeError("Duplicate health dependency");
       this.#dependencies.set(
         name,
         Object.freeze({ name, required: true, status: "unavailable", reasonCode: "NOT_STARTED" }),

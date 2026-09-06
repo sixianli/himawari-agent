@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:21d761f4f21d8b6d5c7e27b97f542c095dd26cc5e3aa6013217a48aad376cd17"
+contract_sha256: "sha256:14500cd4d4d94933886b105fb86eef2c8b269ef8c3eea5e3eafbf140375ad6ab"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -137,6 +137,8 @@ himawari transfer abandon --config <absolute-target-config-path> --secret-dir <a
 ~~~
 
 ## Verification
+
+恢复或迁移后的候选必须支持 migration 0024/0025：embedding 调用身份和 Memory projection 预算账户随产品 SQLite 一起验证，不能丢弃 started/unknown 费用记录来触发重试。公开入口还需要当前主机的 `http`、`identity`、`runPolicy` 与模型配置；被冻结的 Run 输入继续使用原有快照。重新启动后检查 Run dispatch、Memory consumer、Worker 与权威就绪状态，并回读原 Thread/Run 和受保护回答正文。此检查不替代真实公共身份入口或目标平台资格。
 
 - 中断执行交给生产恢复组件后，Run 与 checkpoint 必须同时显示 `reconciling_external_result`，旧执行租约失效，已有结果引用保留；恢复不能重新调用模型或工具。此检查当前有本地 SQLite 证据，完整安装入口验证仍待完成。已经待核实的记录不重复占用初始扫描批次，不代表外部结果已经确认。
 

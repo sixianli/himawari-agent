@@ -1,4 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { request as requestHttp } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
@@ -6,12 +7,13 @@ import { createServer as createNetServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
-import { initializeStateRoot } from "@himawari-agent/platform-node";
+import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -31,9 +33,9 @@ const bootstrapToken = "bootstrap-token-production-process";
 const cookieName = "himawari_session";
 const csrfSecret = "11".repeat(32);
 const payloadKey = "22".repeat(32);
-const PROCESS_SETUP_TIMEOUT_MS = 120_000;
+const PROCESS_SETUP_TIMEOUT_MS = 240_000;
 const PROCESS_CLEANUP_TIMEOUT_MS = 30_000;
-const NODE_RUNTIME_INSTALL_TIMEOUT_MS = 90_000;
+const NODE_RUNTIME_INSTALL_TIMEOUT_MS = 180_000;
 const CHILD_EXIT_TIMEOUT_MS = 5_000;
 const PROCESS_REQUEST_TIMEOUT_MS = 10_000;
 const PROCESS_RESPONSE_BODY_MAX_BYTES = 1_048_576;
@@ -174,6 +176,56 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
     if (!providerAvailable) {
       response.writeHead(503, { connection: "close" });
       response.end();
+      return;
+    }
+    if (requestPath === "/v1/embeddings") {
+      let body = "";
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        const input = JSON.parse(body);
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            object: "list",
+            model: input.model,
+            data: [{ object: "embedding", index: 0, embedding: Array(input.dimensions).fill(0.1) }],
+            usage: { prompt_tokens: 8, total_tokens: 8 },
+          }),
+        );
+      });
+      return;
+    }
+    if (requestPath === "/v1/chat/completions") {
+      request.resume();
+      request.on("end", () => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(
+          `data: ${JSON.stringify({
+            id: "completion-installed",
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: "installed-primary",
+            choices: [
+              {
+                index: 0,
+                delta: { role: "assistant", content: "安装后的持久回答" },
+                finish_reason: null,
+              },
+            ],
+          })}\n\n`,
+        );
+        response.write(
+          `data: ${JSON.stringify({
+            id: "completion-installed",
+            object: "chat.completion.chunk",
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          })}\n\n`,
+        );
+        response.end("data: [DONE]\n\n");
+      });
       return;
     }
     if (requestPath === "/cdn-cgi/access/certs") {
@@ -409,8 +461,15 @@ async function httpRequest(
       callback();
     };
     const fail = (error: unknown): void => {
-      request?.destroy(error instanceof Error ? error : new Error(String(error)));
-      finish(() => reject(error));
+      if (settled) return;
+      request?.destroy();
+      finish(() =>
+        reject(
+          new Error(
+            `${init.method ?? "GET"} ${requestPath}: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        ),
+      );
     };
 
     timeout = setTimeout(() => {
@@ -601,6 +660,24 @@ async function stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {
   children.delete(child);
 }
 
+async function initializeTestDatabase(): Promise<void> {
+  databasePath = path.join((await initializeStateRoot(stateRoot)).data, "product.sqlite");
+  const database = openQualifiedDatabase(databasePath);
+  applyMigrations(database, await loadBundledMigrations());
+  database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(ownerId);
+  database
+    .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+    .run(agentId, ownerId);
+  database
+    .prepare(
+      `INSERT INTO deployments (
+        id, owner_id, agent_id, revision, status, authority_epoch, fencing_token
+      ) VALUES (?, ?, ?, 0, 'active', ?, ?)`,
+    )
+    .run(deploymentId, ownerId, agentId, authority.authorityEpoch, authority.fencingToken);
+  database.close();
+}
+
 beforeAll(async () => {
   const { HIMAWARI_TEST_ARTIFACT: artifact, HIMAWARI_TEST_CONTEXT: contextFile } = process.env;
   if (!artifact || !contextFile) {
@@ -611,7 +688,8 @@ beforeAll(async () => {
   testRoot = await mkdtemp(path.join(os.tmpdir(), "himawari-production-http-process-"));
   cleanupRoots.push(testRoot);
   runtimePrefix = path.join(testRoot, "prefix");
-  stateRoot = path.join(testRoot, "state");
+  stateRoot = await mkdtemp("/tmp/hma-http-state-");
+  cleanupRoots.push(stateRoot);
   staticRoot = path.join(testRoot, "browser");
   secretDirectory = path.join(testRoot, "secrets");
   configurationPath = path.join(testRoot, "configuration.json");
@@ -637,21 +715,7 @@ beforeAll(async () => {
   };
   await listenProvider(tls.certificatePath, tls.keyPath);
   appPort = await reservePort();
-  databasePath = path.join((await initializeStateRoot(stateRoot)).data, "product.sqlite");
-  const database = openQualifiedDatabase(databasePath);
-  applyMigrations(database, await loadBundledMigrations());
-  database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(ownerId);
-  database
-    .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
-    .run(agentId, ownerId);
-  database
-    .prepare(
-      `INSERT INTO deployments (
-        id, owner_id, agent_id, revision, status, authority_epoch, fencing_token
-      ) VALUES (?, ?, ?, 0, 'active', ?, ?)`,
-    )
-    .run(deploymentId, ownerId, agentId, authority.authorityEpoch, authority.fencingToken);
-  database.close();
+  await initializeTestDatabase();
   await writeFile(configurationPath, JSON.stringify(rawConfiguration()), { mode: 0o600 });
   await chmod(configurationPath, 0o600);
   const installStartedAt = Date.now();
@@ -981,3 +1045,363 @@ describe("production HTTP composition over a real installed process", { timeout:
     }
   });
 });
+
+async function writeServiceCapabilitySnapshot() {
+  const capabilityDeploymentPath = path.join(stateRoot, "runtime", "capability-deployment.json");
+  const checkedAt = new Date().toISOString();
+  const artifactDigest = `sha256:${"a".repeat(64)}`;
+  const snapshot = {
+    schemaVersion: "capability-deployment.v1",
+    capabilities: [
+      {
+        manifest: {
+          manifestVersion: "capability.v2",
+          ref: "installed-endpoint",
+          displayName: "Installed endpoint",
+          version: "1.0.0",
+          source: { type: "remote_api", locator: "endpoint:installed" },
+          sourceIdentity: "publisher:installed",
+          integrity: artifactDigest,
+          artifact: {
+            digest: artifactDigest,
+            signatureStatus: "not_applicable",
+            signerRef: null,
+            rollbackArtifactRef: null,
+          },
+          operations: ["invoke"],
+          permissionRefs: [],
+          isolation: "remote",
+          scopes: {
+            dataClassifications: ["public", "private"],
+            network: [],
+            filesystem: [],
+            secrets: [],
+          },
+          cost: { currency: "USD", maxMicrosPerInvocation: 100 },
+          health: { status: "healthy", checkedAt },
+          reviewedBy: null,
+          reviewedAt: null,
+          contractCompatibility: ["capability-conformance.v1"],
+          runtime: {
+            kind: "remote_api",
+            endpointIdentity: "endpoint:installed",
+            protectedReferenceOnly: true,
+          },
+        },
+        qualification: {
+          qualificationVersion: "capability-runtime-qualification.v1",
+          platform: process.platform === "darwin" ? "darwin" : "linux",
+          runtimeIdentity: "node-fetch:endpoint:installed",
+          productionSuitable: true,
+          artifactDigest,
+          enforcement: {
+            filesystem: true,
+            network: true,
+            processes: true,
+            secrets: true,
+            resourceCeilings: true,
+            termination: true,
+          },
+          reasonCodes: [],
+          checkedAt,
+        },
+        binding: {
+          kind: "endpoint",
+          value: {
+            endpointIdentity: "endpoint:installed",
+            artifactDigest,
+            url: "https://capability.example.test",
+            allowedMethods: ["POST"],
+            operations: { invoke: { method: "POST", path: "/invoke", secretHeaders: {} } },
+            productionSuitable: true,
+            allowLoopbackQualification: false,
+          },
+        },
+      },
+    ],
+  };
+  const bytes = Buffer.from(JSON.stringify(snapshot), "utf8");
+  const capabilityDeploymentSha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  await writeFile(capabilityDeploymentPath, bytes, { mode: 0o600 });
+  return { snapshotPath: capabilityDeploymentPath, sha256: capabilityDeploymentSha256 };
+}
+
+it("executes authenticated HTTP requests through installed service-main and reads results after restart", async () => {
+  stateRoot = await mkdtemp("/tmp/hma-main-state-");
+  cleanupRoots.push(stateRoot);
+  await initializeTestDatabase();
+  providerAvailable = true;
+  providerSubject = subject;
+  const raw = rawConfiguration();
+  const models = raw["modelDescriptors"] as Array<Record<string, unknown>>;
+  raw["modelDescriptors"] = models.map((model) => ({
+    ...model,
+    provider: "openrouter",
+    model: model["role"] === "embedding" ? "installed-embedding" : `installed-${model["role"]}`,
+    disclosure: "trusted_remote",
+    secretRef: "openrouter-api-key",
+  }));
+  raw["runPolicy"] = {
+    version: "installed-policy-v1",
+    systemInstruction: "请用中文回答。",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+    maxMemoryClassification: "private",
+  };
+  raw["capabilityDeployment"] = await writeServiceCapabilitySnapshot();
+  raw["secretReferences"] = [
+    ...(raw["secretReferences"] as object[]),
+    { ref: "openrouter-api-key", version: "v1", purpose: "model-provider-auth", scope: "agent" },
+    { ref: "worker-process-token", version: "v1", purpose: "worker-auth", scope: "local-services" },
+  ];
+  await writeFile(path.join(secretDirectory, "openrouter-api-key.v1"), "local-provider-fixture", {
+    mode: 0o600,
+  });
+  await writeFile(configurationPath, JSON.stringify(raw), { mode: 0o600 });
+  const layout = await initializeStateRoot(stateRoot);
+  await writeAuthorityFile(layout, {
+    ownerId: createOwnerId(ownerId),
+    agentId: createAgentId(agentId),
+    id: createDeploymentId(deploymentId),
+    revision: 0,
+    status: "active",
+    authorityEpoch: authority.authorityEpoch,
+    fencingToken: authority.fencingToken,
+    transferId: null,
+  });
+  const tokenPath = path.join(layout.runtime, "worker-token.json");
+  await writeFile(
+    tokenPath,
+    JSON.stringify({
+      tokenRef: "worker-process-token",
+      tokenValue: "0123456789abcdef0123456789abcdef",
+    }),
+    { mode: 0o600 },
+  );
+  const args = [
+    "--config",
+    configurationPath,
+    "--worker-token-file",
+    tokenPath,
+    "--profile",
+    "production",
+  ];
+  const start = async () => {
+    const env = {
+      ...process.env,
+      NODE_PATH: "",
+      NODE_OPTIONS: "",
+      NODE_EXTRA_CA_CERTS: caCertificatePath,
+      HIMAWARI_TEST_RUNTIME_ROOT: path.join(runtimePrefix, "lib/himawari-agent"),
+      HIMAWARI_TEST_CONFIGURATION: configurationPath,
+      HIMAWARI_TEST_SECRET_DIRECTORY: secretDirectory,
+      HIMAWARI_TEST_MODEL_URL: `https://127.0.0.1:${providerPort}/v1`,
+    };
+    const main = spawn(
+      process.execPath,
+      [
+        "--no-global-search-paths",
+        path.join(repositoryRoot, "test/fixtures/production-service-main-child.mjs"),
+        ...args,
+      ],
+      { cwd: testRoot, stdio: ["pipe", "pipe", "pipe"], env },
+    );
+    children.add(main);
+    main.stdout.on("data", (chunk: Buffer) =>
+      process.stderr.write(`[installed-main] ${chunk.toString("utf8")}`),
+    );
+    main.stderr.on("data", (chunk: Buffer) =>
+      process.stderr.write(`[installed-main-error] ${chunk.toString("utf8")}`),
+    );
+    const worker = spawn(path.join(runtimePrefix, "bin/himawari-execution-worker"), args, {
+      cwd: testRoot,
+      stdio: ["pipe", "pipe", "pipe"],
+      env,
+    });
+    children.add(worker);
+    let workerDiagnostic = "";
+    worker.stderr.on("data", (chunk: Buffer) => {
+      workerDiagnostic += chunk.toString("utf8");
+    });
+    const ready = await waitForChildReady(main).catch((error: unknown) => {
+      throw new Error(
+        `${error instanceof Error ? error.message : "SERVICE_START_FAILED"}; Worker: ${workerDiagnostic}`,
+      );
+    });
+    return { main, worker, address: ready.address };
+  };
+  let running = await start();
+  const token = await signToken();
+  let session = await httpRequest(running.address, "/api/identity/v1/sessions", {
+    ...jsonRequestBody({ deviceLabel: "installed execution" }),
+    headers: requestHeaders(token),
+  });
+  if (session.status === 401 || session.status === 403) {
+    const bootstrap = await httpRequest(
+      running.address,
+      "/bootstrap",
+      jsonRequestBody({ token: bootstrapToken, ownerId, assertionToken: token }),
+    );
+    expect(bootstrap.status).toBe(201);
+    session = await httpRequest(running.address, "/api/identity/v1/sessions", {
+      ...jsonRequestBody({ deviceLabel: "installed execution" }),
+      headers: requestHeaders(token),
+    });
+  }
+  expect(session.status).toBe(201);
+  const cookie = session.headers.get("set-cookie")?.split(";", 1)[0];
+  if (!cookie) throw new Error("SESSION_COOKIE_MISSING");
+  const browser = await httpRequest(running.address, "/api/control-center/v1/config", {
+    headers: requestHeaders(token, cookie),
+  });
+  const browserConfig = browser.body as {
+    deploymentId: string;
+    authorityEpoch: number;
+    fencingToken: number;
+    csrfToken: string;
+  };
+  const currentAuthority = {
+    deploymentId: browserConfig.deploymentId,
+    authorityEpoch: browserConfig.authorityEpoch,
+    fencingToken: browserConfig.fencingToken,
+  };
+  const upload = async (name: string, content: string) => {
+    const response = await httpRequest(running.address, "/api/payload/v1/text", {
+      ...jsonRequestBody({ content, dataClassification: "private" }),
+      headers: requestHeaders(token, cookie, browserConfig.csrfToken, name),
+    });
+    expect(response.status).toBe(201);
+    return (response.body as { payloadRef: string }).payloadRef;
+  };
+  const command = async (type: string, key: string, payload: object) => {
+    const result = await httpRequest(running.address, "/api/gateway/thread/v3/commands", {
+      ...jsonRequestBody({
+        ...envelope("command", type),
+        authority: currentAuthority,
+        idempotencyKey: key,
+        payload,
+      }),
+      headers: requestHeaders(token, cookie, browserConfig.csrfToken, key),
+    });
+    expect(result.status).toBe(200);
+  };
+  await command("thread.create", "installed-main-create", {
+    threadId: "thread-production-main",
+    answerLocale: "zh-CN",
+    resultRef: await upload("installed-main-create-payload", "create"),
+  });
+  const sessionId = (session.body as { session: { id: string } }).session.id;
+  await command("thread.message.submit", "installed-main-submit", {
+    threadId: "thread-production-main",
+    expectedRevision: 1,
+    messageId: "message:installed-main",
+    turnId: "turn:installed-main",
+    runId: "run:installed-main",
+    sessionId,
+    contentRef: await upload("installed-main-content", "你好"),
+    sourceProofRef: "proof:installed-main",
+    dataClassification: "private",
+    occurredAt: new Date().toISOString(),
+    resultRef: await upload("installed-main-submit-payload", "submit"),
+  });
+  const detail = async () => {
+    const config = await httpRequest(running.address, "/api/control-center/v1/config", {
+      headers: requestHeaders(token, cookie),
+    });
+    expect(config.status).toBe(200);
+    const current = config.body as {
+      deploymentId: string;
+      authorityEpoch: number;
+      fencingToken: number;
+    };
+    return httpRequest(running.address, "/api/gateway/thread/v3/queries", {
+      ...jsonRequestBody({
+        ...envelope("query", "thread.detail"),
+        authority: {
+          deploymentId: current.deploymentId,
+          authorityEpoch: current.authorityEpoch,
+          fencingToken: current.fencingToken,
+        },
+        payload: { threadId: "thread-production-main", afterSequence: 0, limit: 100 },
+      }),
+      headers: requestHeaders(token, cookie),
+    });
+  };
+  const readAnswer = async (detail: HttpResult) => {
+    const payload = detail.body as {
+      payload: { messages: Array<{ role: string; contentRef: string }> };
+    };
+    const answer = payload.payload.messages.find(({ role }) => role === "agent");
+    if (!answer) throw new Error("PERSISTENT_ANSWER_MISSING");
+    const browser = await httpRequest(running.address, "/api/control-center/v1/config", {
+      headers: requestHeaders(token, cookie),
+    });
+    expect(browser.status).toBe(200);
+    const csrfToken = (browser.body as { csrfToken: string }).csrfToken;
+    const read = await httpRequest(running.address, "/api/payload/v1/text/read", {
+      ...jsonRequestBody({ payloadRef: answer.contentRef }),
+      headers: requestHeaders(token, cookie, csrfToken),
+    });
+    expect(read.status).toBe(200);
+    expect(read.body).toMatchObject({ content: "安装后的持久回答" });
+  };
+
+  try {
+    let result = await detail();
+    const deadline = Date.now() + 20_000;
+    while (
+      !/"status":"(?:completed|failed|cancelled)"/u.test(JSON.stringify(result.body)) &&
+      Date.now() < deadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      result = await detail();
+    }
+    expect(result.status).toBe(200);
+    if (!JSON.stringify(result.body).includes('"status":"completed"')) {
+      const diagnostic = openQualifiedDatabase(databasePath);
+      try {
+        process.stderr.write(
+          `[installed-run-diagnostic] ${JSON.stringify({
+            checkpoints: diagnostic
+              .prepare("SELECT phase, diagnostic_code FROM run_coordination_checkpoints")
+              .all(),
+            invocations: diagnostic
+              .prepare("SELECT source, status FROM model_invocation_identities")
+              .all(),
+            providerPaths: providerRequests
+              .map(({ path }) => path)
+              .filter((route) => route.startsWith("/v1/")),
+          })}\n`,
+        );
+      } finally {
+        diagnostic.close();
+      }
+    }
+    expect(result.body).toMatchObject({ payload: { runs: [{ status: "completed" }] } });
+    await readAnswer(result);
+    const ready = await httpRequest(running.address, "/health/ready");
+    expect(ready.status).toBe(200);
+    expect(ready.body).toMatchObject({ status: "ready" });
+    expect(providerRequests.some(({ path: route }) => route === "/v1/embeddings")).toBe(true);
+    expect(providerRequests.some(({ path: route }) => route === "/v1/chat/completions")).toBe(true);
+    const requestsBeforeRestart = providerRequests.filter(({ path: route }) =>
+      route.startsWith("/v1/"),
+    ).length;
+    await stopChild(running.main);
+    await stopChild(running.worker);
+    running = await start();
+    const restored = await detail();
+    expect(restored.body).toMatchObject({ payload: { runs: [{ status: "completed" }] } });
+    await readAnswer(restored);
+    expect(providerRequests.filter(({ path: route }) => route.startsWith("/v1/")).length).toBe(
+      requestsBeforeRestart,
+    );
+    await stopChild(running.worker);
+    const unavailable = await httpRequest(running.address, "/health/ready");
+    expect(unavailable.status).toBe(503);
+    expect(unavailable.body).not.toMatchObject({ status: "ready" });
+  } finally {
+    await stopChild(running.main);
+    await stopChild(running.worker);
+  }
+}, 90_000);

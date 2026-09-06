@@ -247,3 +247,22 @@ describe("ProductionRunDispatchLoop", () => {
     expect(loop.state).toBe("stopped");
   });
 });
+
+it("makes the service ready after recovery without waiting for a queued Run to finish", async () => {
+  const recovery = deferred<number>();
+  const execution = deferred<ProductionRunDispatchPumpResult>();
+  const pump = vi.fn(() => execution.promise);
+  const loop = new ProductionRunDispatchLoop({
+    dispatcher: { recover: () => recovery.promise, pump, drain: async () => DRAINED_RESULT },
+    fallbackScanIntervalMs: 1_000,
+  });
+  const start = loop.start();
+  expect(loop.state).toBe("starting");
+  expect(pump).not.toHaveBeenCalled();
+  recovery.resolve(0);
+  await start;
+  expect(loop.state).toBe("running");
+  expect(pump).toHaveBeenCalledTimes(1);
+  execution.resolve(PUMP_RESULT);
+  await loop.stop(100);
+});

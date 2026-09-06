@@ -21,6 +21,11 @@ export interface MemoryCandidate extends MemoryRecord {
 }
 
 export interface MemorySearchRequest {
+  readonly signal?: AbortSignal;
+  readonly deadlineAt?: string;
+  readonly runId?: RunId;
+  readonly executionLease?: RunExecutionLeaseClaim;
+  readonly dataClassification?: DataClassification;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly queryRef: PayloadRef;

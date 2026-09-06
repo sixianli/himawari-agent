@@ -81,6 +81,24 @@ export async function build({
       { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
     );
     checks.push("packaged-sqlite-read-write");
+    await command(
+      "provider-imports",
+      [
+        "--no-global-search-paths",
+        "--input-type=module",
+        "-e",
+        "await import('mem0ai/oss'); await import('@earendil-works/pi-coding-agent');",
+      ],
+      runtimeRoot,
+      {
+        ...process.env,
+        NODE_PATH: "",
+        NODE_OPTIONS: "",
+        MEM0_TELEMETRY: "false",
+        MEM0_TELEMETRY_SAMPLE_RATE: "0",
+      },
+    );
+    checks.push("packaged-provider-imports");
     await collectArtifactFiles(payload, { normalizeModes: true });
     const manifestPath = path.join(destination, "build-manifest.json");
     const buildManifest = await generateArtifactManifest({

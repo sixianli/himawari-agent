@@ -694,3 +694,28 @@ describe("startup and drain coordinator", () => {
     },
   );
 });
+
+it("validates the versioned Run policy and rejects inconsistent Memory bounds", () => {
+  const raw = config("/tmp/himawari-policy-config");
+  raw["runPolicy"] = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+    maxMemoryClassification: "private",
+  };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.version).toBe(
+    "policy-v1",
+  );
+  raw["runPolicy"] = { ...(raw["runPolicy"] as object), maxSelectedMemories: 11 };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  raw["runPolicy"] = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+    maxMemoryClassification: "private",
+    allowUntrustedTools: true,
+  };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+});

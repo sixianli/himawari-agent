@@ -1,17 +1,17 @@
 import path from "node:path";
-import BetterSqlite3 from "better-sqlite3";
 import {
   ApplicationPortError,
-  PORT_ERROR_CODES,
   type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredGenerationModelDescriptor,
   type ConfiguredMemoryDescriptor,
   type MemoryProviderHit,
   type MemoryProviderProjectionPort,
   type ModelSecretRequirement,
+  PORT_ERROR_CODES,
   type ProductMemoryRecord,
 } from "@himawari-agent/application";
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
+import BetterSqlite3 from "better-sqlite3";
 
 /**
  * Mem0's OpenAI embedder already supports an OpenAI-compatible base URL and
@@ -79,6 +79,23 @@ interface Mem0Result {
     readonly [key: string]: unknown;
   }>;
 }
+
+export interface Mem0EmbeddingRequest {
+  readonly model: string;
+  readonly input: string | readonly string[];
+  readonly dimensions?: number;
+}
+export interface Mem0EmbeddingResponse {
+  readonly data: readonly { readonly embedding: readonly number[]; readonly index: number }[];
+  readonly usage: { readonly prompt_tokens: number; readonly total_tokens: number };
+}
+export type Mem0EmbeddingBoundary = (
+  request: Mem0EmbeddingRequest,
+  send: (options?: {
+    readonly timeoutMs?: number;
+    readonly signal?: AbortSignal;
+  }) => Promise<Mem0EmbeddingResponse>,
+) => Promise<Mem0EmbeddingResponse>;
 
 interface Mem0MemoryLike {
   add(
@@ -253,6 +270,40 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
       new module.Memory(configuration),
       options.configuration.historyStore.config.historyDbPath,
     );
+  }
+
+  /** Thin, pinned Mem0 3.1.7 adaptation: retain its SDK protocol and observe real usage. */
+  bindEmbeddingBoundary(boundary: Mem0EmbeddingBoundary, timeoutMs: number): void {
+    const memory = this.memory as unknown as {
+      embedder?: {
+        openai?: {
+          maxRetries: number;
+          timeout: number;
+          embeddings?: {
+            create: (
+              request: Mem0EmbeddingRequest,
+              options?: { timeout?: number; signal?: AbortSignal },
+            ) => Promise<Mem0EmbeddingResponse>;
+          };
+        };
+      };
+    };
+    const client = memory.embedder?.openai;
+    const embeddings = client?.embeddings;
+    if (!client || !embeddings || typeof embeddings.create !== "function")
+      fail("Pinned Mem0 OpenAI embedder boundary is unavailable");
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) fail("Invalid embedding timeout");
+    // Each physical request consumes one admission; SDK retries must not bypass it.
+    client.maxRetries = 0;
+    client.timeout = timeoutMs;
+    const send = embeddings.create.bind(embeddings);
+    embeddings.create = (request) =>
+      boundary(request, (options) =>
+        send(request, {
+          ...(options?.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
+          ...(options?.signal === undefined ? {} : { signal: options.signal }),
+        }),
+      );
   }
 
   async close(): Promise<void> {

@@ -12,9 +12,16 @@ import type { RunExecutionLeaseClaim } from "./run-dispatch.js";
 
 export type ModelBudgetAccountParent =
   | { readonly kind: "run"; readonly runId: RunId }
-  | { readonly kind: "occurrence"; readonly occurrenceId: OccurrenceId };
+  | { readonly kind: "occurrence"; readonly occurrenceId: OccurrenceId }
+  | { readonly kind: "memory-projection"; readonly jobId: string };
 
 export type ModelBudgetActiveParent =
+  | {
+      readonly kind: "memory-projection";
+      readonly jobId: string;
+      readonly claimedBy: string;
+      readonly attemptCount: number;
+    }
   | {
       readonly kind: "run";
       readonly runId: RunId;

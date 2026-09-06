@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:af600cf053c6dae1ed0ae8d0a0d20245c149c78efbd64d153270328e67ec1ebe"
+contract_sha256: "sha256:e7ec88f52502af7d126ab2bdb3c9209b3e7478ef36129143edf0048ad59e2bfb"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -17,6 +17,7 @@ date: "2026-08-27"
 - packages/application/src/ports/run-dispatch.ts
 - packages/domain/src/run-state.ts
 - apps/agent-service/src/production-run-reconciler.ts
+- scripts/ci/build.mjs
 - scripts/package-node-runtime.mjs
 - scripts/install-node-runtime.mjs
 - scripts/generate-artifact-manifest.mjs
@@ -62,7 +63,7 @@ date: "2026-08-27"
 
 本 Runbook 只覆盖当前仓库已经验证的本地 Node runtime：从锁定依赖构建可重定位 artifact，安装到明确的绝对前缀，使用受保护的 Execution Worker UDS 启动 Agent Service，执行只读 doctor/db status，并以有界信号完成正常停止或故障重启。它不负责安装 systemd/launchd unit、不修改公网入口、不切换 authority、不配置真实 provider、不部署到 Hermes，也不替代 authority transfer Runbook。
 
-当前公开服务主入口仍会以 `SERVICE_PUBLIC_MODE_INCOMPLETE` 拒绝未完成的生产组合。安装包中的 HTTP 组合函数可单独接受进程测试，但不等于正式入口已经连接模型调用、任务领取和真实 Worker。不得凭库导入成功、组合函数测试或 `service.ready` 解除这个边界。
+公开服务主入口已连接 HTTP、持久 Run、Pi、已授权 Worker 工具和 Mem0。缺少 `runPolicy`、HTTP、身份配置或实际模型配置时，仍以 `SERVICE_PUBLIC_MODE_INCOMPLETE` 拒绝启动。启用前必须验证同一安装候选的完整请求、持久结果和重启回读；库导入成功或 `service.ready` 不能替代这些证据，也不能替代实际目标环境资格。
 
 安装产物包含 Agent Service、Execution Worker、admin CLI 及产品运行时包；它不包含 `packages/testing` 的生产 adapter。打包器从列入 runtime 的生产 workspace manifests 自动推导全部直接外部依赖根，再递归复制其依赖闭包；因此 `platform-node` 声明的官方 MCP client 也必须出现在安装产物，新增生产依赖不能依赖手工清单。Agent Service 启动时只从 strict configuration 读取一个 primary、一个 private-only fallback 和一个独立 embedding descriptor；支持的 OpenRouter 配置创建 production Model/Pi 与 Mem0 composition，Mem0 使用配置声明的 embedding provider/model/version 和 dimensions，deterministic 配置只报告 descriptor，不创建隐藏模型或调用 provider。每个构建记录提交身份、实际源码与 package-lock 摘要、workspace checksum、Node 平台/架构和外部依赖闭包；已审阅的未提交改动不能被省略为只有提交身份。由于 `better-sqlite3` 等 native 依赖，Mac 与 Linux 必须分别构建和验收，不能把一个平台的二进制包当作另一个平台的 immutable artifact。
 
@@ -86,6 +87,20 @@ date: "2026-08-27"
 - 启用真实 Worker 能力时，配置必须引用 Owner 独占、非符号链接、大小有界且 SHA-256 匹配的不可变能力部署快照。快照中的 Manifest、平台资格和 runtime binding 必须与当前 build、平台及 Agent Service 的 active Capability Registry 一致；空、缺失、被改写或不合格的快照必须使 Worker 保持 not ready。
 - Agent Service 必须先有同一 deployment 的 Worker；Agent Service 不会在 Worker 不可用时降级到进程内执行。两个服务必须使用同一 state root 的 runtime 目录和 boot-scoped token。
 - 启停与诊断证据只写入 `test/integration/qualification/evidence/operations/install-start-stop/<unique-run-id>/`，目录 `0700`、文件 `0600`；不记录配置全文、token、secret value 或私人 Payload。
+
+公开模式的 `runPolicy` 必须显式配置，例如：
+
+~~~json
+{
+  "version": "owner-policy-v1",
+  "systemInstruction": "按用户请求执行已授权任务。",
+  "memoryLimit": 20,
+  "maxSelectedMemories": 5,
+  "maxMemoryClassification": "private"
+}
+~~~
+
+系统指令不得包含凭据。Memory 选取数不得超过检索数，实际注入分类同时受当前 Run 分类约束。模型描述符和费用上限仍由原配置字段提供。修改配置只影响尚未冻结输入的 Run；运行中的已冻结请求不会改用新指令。已有数据库需按同机 snapshot 和迁移合同升级到当前 schema，不能跳过备份直接启动旧库。
 
 ## Live-State Preflight
 
@@ -170,6 +185,8 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 - 要求把本地安装通过等同 Mac/Hermes transfer、真实外部账户、public URL、paid model 或 v0.2 production-ready。
 
 ## Troubleshooting
+
+Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最多 107 字节（不含终止 NUL）。启动在绑定前拒绝超长路径；应选择更短的独立 state root，不能依靠系统截断后的文件名或手工改 socket 名称继续运行。
 
 | 症状 | 安全诊断 | 停止或有界修复 |
 | --- | --- | --- |

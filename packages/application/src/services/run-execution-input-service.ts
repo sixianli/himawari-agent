@@ -175,6 +175,7 @@ export class RunExecutionInputService {
       ).toISOString(),
       context: {
         ...scope,
+        executionLease: claimFromRunExecutionLease(lease),
         trigger: {
           id: source.triggerId,
           sourceType: source.sourceType,

@@ -126,6 +126,15 @@ export interface CapabilityDeploymentConfiguration {
   readonly sha256: string;
 }
 
+/** Host-owned, versioned instructions; never supplied by a browser message. */
+export interface RunPolicyConfiguration {
+  readonly version: string;
+  readonly systemInstruction: string;
+  readonly memoryLimit: number;
+  readonly maxSelectedMemories: number;
+  readonly maxMemoryClassification: DataClassification;
+}
+
 export interface ProductConfiguration {
   readonly schemaVersion: string;
   readonly deploymentId: DeploymentId;
@@ -136,6 +145,7 @@ export interface ProductConfiguration {
   readonly cacheDirectory: string;
   readonly publicOrigin: string;
   readonly publicMode: boolean;
+  readonly runPolicy?: RunPolicyConfiguration;
   /** Present only when a verified capability deployment snapshot is configured. */
   readonly capabilityDeployment?: CapabilityDeploymentConfiguration;
   /** Present only for a configured public HTTP composition. */

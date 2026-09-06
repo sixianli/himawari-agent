@@ -31,7 +31,7 @@ import type {
 import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
 
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
-const SOURCES = ["model-port", "agent-stream"] as const;
+const SOURCES = ["model-port", "agent-stream", "embedding"] as const;
 const STATUSES = ["reserved", "started", "unknown", "settled", "released"] as const;
 const UNKNOWN_REASONS = [
   "provider_unresolved",

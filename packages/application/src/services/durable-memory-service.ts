@@ -22,6 +22,11 @@ export interface DurableMemoryServiceOptions {
   readonly now: () => string;
   readonly maximumProjectionAttempts?: number;
   readonly projectionLeaseMs?: number;
+  readonly project?: (
+    job: MemoryProjectionJob,
+    memory: ProductMemoryRecord,
+    operation: () => Promise<string>,
+  ) => Promise<string>;
 }
 
 export interface MemorySearchPolicy {
@@ -353,7 +358,10 @@ export class DurableMemoryService {
         current.revision === job.memoryRevision
       ) {
         const content = await this.options.content.readText(current.contentRef);
-        providerRecordId = await this.options.provider.upsert({ memory: current, content });
+        const operation = () => this.options.provider.upsert({ memory: current, content });
+        providerRecordId = this.options.project
+          ? await this.options.project(job, current, operation)
+          : await operation();
       } else if (job.operation === "delete" && current.providerRecordId) {
         await this.options.provider.delete(current.providerRecordId);
       }

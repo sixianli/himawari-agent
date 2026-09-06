@@ -337,6 +337,8 @@ export interface ConsumeCapabilityExecutionHandleInput {
 }
 
 export interface CapabilityExecutionHandleStorePort {
+  /** Enumerate only persisted handles belonging to this Run; consumers revalidate before use. */
+  listRunExecutionHandles?(runId: RunId, at: string): Promise<readonly CapabilityExecutionHandle[]>;
   createExecutionHandle(handle: CapabilityExecutionHandle): Promise<CapabilityExecutionHandle>;
   getExecutionHandle(handleRef: string): Promise<CapabilityExecutionHandle | undefined>;
   revokeExecutionHandle(handleRef: string, revokedAt: string): Promise<CapabilityExecutionHandle>;

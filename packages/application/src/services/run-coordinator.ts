@@ -125,7 +125,7 @@ export interface RunCoordinatorDependencies {
   readonly checkpoints: RunCheckpointStore;
   readonly context: ContextFormationPort;
   readonly runtime: AgentRuntimePort;
-  readonly workers: WorkerRunPort;
+  readonly workers?: WorkerRunPort;
   readonly trace: SessionTraceRecorder;
 }
 
@@ -147,6 +147,7 @@ function isTerminalStatus(status: RunStatus): boolean {
 }
 
 interface ExecutionAttempt {
+  readonly cancellation: AbortController;
   readonly runId: RunId;
   readonly executionLeaseId: RunExecutionLeaseId;
   readonly activeWorkerRunIds: Set<string>;
@@ -182,6 +183,14 @@ export class RunCoordinator {
     }
   }
 
+  async interruptAllExecutions(reasonCode: string): Promise<void> {
+    await Promise.all(
+      [...this.executionAttempts.values()].map(({ runId, executionLeaseId }) =>
+        this.interruptExecution({ runId, executionLeaseId, reasonCode }),
+      ),
+    );
+  }
+
   async interruptExecution(
     input: InterruptCoordinatedRunInput,
   ): Promise<ExecutionInterruptionResult | undefined> {
@@ -192,6 +201,7 @@ export class RunCoordinator {
       return attempt.interruptionResult;
     }
     attempt.interrupted = Object.freeze({ ...input });
+    attempt.cancellation.abort();
     const cancellations: Promise<void>[] = [];
     const failures: ExecutionInterruptionFailure[] = [];
     const workerRunIds = [...attempt.activeWorkerRunIds];
@@ -210,7 +220,7 @@ export class RunCoordinator {
       attempt.cancelledWorkerRunIds.add(workerRunId);
       cancellations.push(
         Promise.resolve()
-          .then(() => this.dependencies.workers.cancel(workerRunId, input.reasonCode))
+          .then(() => this.requireWorkers().cancel(workerRunId, input.reasonCode))
           .catch((error: unknown) => {
             failures.push({ target: "worker", workerRunId, error });
           }),
@@ -255,6 +265,7 @@ export class RunCoordinator {
         "Run execution deadline exceeds one day",
       );
     const attempt: ExecutionAttempt = {
+      cancellation: new AbortController(),
       runId: input.runId,
       executionLeaseId: executionLease.executionLeaseId,
       activeWorkerRunIds: new Set(),
@@ -274,6 +285,15 @@ export class RunCoordinator {
   private endExecutionAttempt(attempt: ExecutionAttempt): void {
     if (this.executionAttempts.get(attempt.runId) === attempt)
       this.executionAttempts.delete(attempt.runId);
+  }
+
+  private requireWorkers(): WorkerRunPort {
+    if (!this.dependencies.workers)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "WORKER_SUBTASK_ADAPTER_UNAVAILABLE",
+      );
+    return this.dependencies.workers;
   }
 
   private executionNow(): number {
@@ -362,7 +382,13 @@ export class RunCoordinator {
     }
 
     if (storedCheckpoint.checkpoint.contextRef === null) {
-      const formed = await this.dependencies.context.form(input.context);
+      const formed = await this.dependencies.context.form({
+        ...input.context,
+        signal: attempt.cancellation.signal,
+        ...(input.executionDeadlineAt === undefined
+          ? {}
+          : { deadlineAt: input.executionDeadlineAt }),
+      });
       this.assertExecutionActive(attempt);
       storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
         ...storedCheckpoint.checkpoint,
@@ -515,9 +541,10 @@ export class RunCoordinator {
     const storedRun = await this.requireRun(input.runId);
     if (storedRun.run.status !== "cancelled") return storedRun;
     this.cancelledRuns.add(input.runId);
+    this.executionAttempts.get(input.runId)?.cancellation.abort();
     await this.dependencies.runtime.cancel(input.runId);
     for (const workerRunId of this.activeWorkers.get(input.runId) ?? []) {
-      await this.dependencies.workers.cancel(workerRunId, input.reasonCode);
+      await this.requireWorkers().cancel(workerRunId, input.reasonCode);
     }
     return storedRun;
   }
@@ -560,7 +587,7 @@ export class RunCoordinator {
         this.assertExecutionActive(attempt);
         attempt.activeWorkerRunIds.add(request.workerRunId);
         this.assertExecutionActive(attempt);
-        for await (const event of this.dependencies.workers.run(request)) {
+        for await (const event of this.requireWorkers().run(request)) {
           this.assertExecutionActive(attempt);
           if (event.workerRunId !== request.workerRunId) {
             throw new ApplicationPortError(
@@ -572,7 +599,7 @@ export class RunCoordinator {
           if (event.type === "worker.progress") {
             progressCount += 1;
             if (progressCount > request.budget.maxProgressEvents) {
-              await this.dependencies.workers.cancel(request.workerRunId, "WORKER_PROGRESS_BUDGET");
+              await this.requireWorkers().cancel(request.workerRunId, "WORKER_PROGRESS_BUDGET");
               terminal = {
                 type: "worker.failed",
                 workerRunId: request.workerRunId,

@@ -1,4 +1,3 @@
-import { createMessageId } from "@himawari-agent/domain";
 import type {
   AgentId,
   AnswerLocale,
@@ -9,24 +8,25 @@ import type {
   SessionId,
   ThreadId,
 } from "@himawari-agent/domain";
-import type { MemoryCandidate, MemoryPort } from "../ports/intelligence.js";
-import type { ThreadDistillationStatePort, ThreadSummaryRecord } from "../ports/conversation.js";
-import type { ThreadContextSnapshot, ThreadRepositoryPort } from "../ports/threads.js";
+import { createMessageId } from "@himawari-agent/domain";
 import type {
   CorrelationId,
   DataClassification,
   PayloadRef,
   TraceEventId,
 } from "../ports/common.js";
-import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
-import type { RunPayloadArtifactPort } from "../ports/run-payload-artifacts.js";
-import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import {
   contextArtifactOperationKey,
   type ProductContextBlock,
   type ProductContextEnvelopeV1,
   type ProductContextMessageRole,
 } from "../ports/context-projection.js";
+import type { ThreadDistillationStatePort, ThreadSummaryRecord } from "../ports/conversation.js";
+import type { MemoryCandidate, MemoryPort } from "../ports/intelligence.js";
+import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
+import type { RunPayloadArtifactPort } from "../ports/run-payload-artifacts.js";
+import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
+import type { ThreadContextSnapshot, ThreadRepositoryPort } from "../ports/threads.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
@@ -57,6 +57,9 @@ export interface ContextCapabilitySummary {
 }
 
 export interface ContextFormationRequest {
+  readonly signal?: AbortSignal;
+  readonly deadlineAt?: string;
+  readonly executionLease?: import("../ports/run-dispatch.js").RunExecutionLeaseClaim;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly sessionId: SessionId;
@@ -202,6 +205,11 @@ export class ContextFormationService implements ContextFormationPort {
 
     const candidates = [
       ...(await this.dependencies.memory.search({
+        runId: request.runId,
+        ...(request.executionLease ? { executionLease: request.executionLease } : {}),
+        ...(request.signal ? { signal: request.signal } : {}),
+        ...(request.deadlineAt ? { deadlineAt: request.deadlineAt } : {}),
+        dataClassification: request.dataClassification,
         ownerId: request.ownerId,
         agentId: request.agentId,
         queryRef: request.memoryQueryRef,
@@ -230,7 +238,9 @@ export class ContextFormationService implements ContextFormationPort {
     const allowed = candidates.filter(
       (candidate) =>
         CLASSIFICATION_RANK[candidate.dataClassification] <=
-        CLASSIFICATION_RANK[request.maxMemoryClassification],
+          CLASSIFICATION_RANK[request.maxMemoryClassification] &&
+        CLASSIFICATION_RANK[candidate.dataClassification] <=
+          CLASSIFICATION_RANK[request.dataClassification],
     );
     const selected: readonly SelectedMemory[] = allowed
       .slice(0, request.maxSelectedMemories)
@@ -258,7 +268,10 @@ export class ContextFormationService implements ContextFormationPort {
             id: candidate.id,
             reasonCode:
               CLASSIFICATION_RANK[candidate.dataClassification] >
-              CLASSIFICATION_RANK[request.maxMemoryClassification]
+              Math.min(
+                CLASSIFICATION_RANK[request.maxMemoryClassification],
+                CLASSIFICATION_RANK[request.dataClassification],
+              )
                 ? "classification_exceeds_context"
                 : "selection_limit_reached",
           })),

@@ -146,6 +146,10 @@ export class CloudflareAccessJwtVerifier {
     this.options = { ...options, cacheMilliseconds, clockToleranceSeconds };
   }
 
+  async assertReady(): Promise<void> {
+    await this.getJwks((this.options.now ?? (() => new Date()))(), true);
+  }
+
   async verify(
     token: string,
     observedAt = (this.options.now ?? (() => new Date()))(),

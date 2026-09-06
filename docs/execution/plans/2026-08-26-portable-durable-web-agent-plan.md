@@ -514,6 +514,29 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 
 历史本机矩阵覆盖了签名、bootstrap、session/device 和持久重启，阶段性证据位于 `test/integration/qualification/evidence/s1-task27-browser-identity-public-path.json`；它没有证明近期认证的可信时间来源与敏感入口已经闭环。2026-09-04 的新增回归由根代理独立复跑，实际复现五项失败：旧有效 assertion 新建 session 被当成近期认证、非法与未来时间被接受、HTTP config 将普通 session ref 冒充近期证明，以及 Governance 关键审批仅凭 ref 相等即完成。现已实现可信登录时间来源、显式年龄策略和统一敏感操作 guard；根代理独立验证了正常读取降级、身份与会话绑定、撤销、非法时间、回执重放和有界响应处理，并通过全仓静态检查。这里的 provider 与 HTTP 响应仍为受控夹具，未接入安装后的生产入口，也没有验证真实 Cloudflare 主体对应关系或 MFA redirect。真实 Access/MFA 仍须在获授权的目标环境验证。本 Task 保持未收口，本机证据不代表 staging 或 production。
 
+### 2026-09-07：生产主入口接入进度
+
+本次对应先前待办第二组第 4、5、6、3、7 项及第 2、10 项的共同生命周期。已实现可信 Run policy、持久输入/执行领取、Pi 与授权 Worker 工具、Mem0 embedding 的逐请求预算，以及公开 HTTP/身份、持久回答读取、统一停止与实时 Worker readiness。源码实现与本机受控安装进程验证已完成；真实平台资格仍分别记录，不能以本地测试替代上线验收。
+
+- [x] 第二组第 2 项：主入口统一管理 HTTP、Run dispatch、Memory consumer 与 Worker 通道的启动、停止接纳、排空和关闭。
+- [x] 第二组第 3 项：正式 `service-main` 接入公开 HTTP 与持久身份，启动验证 JWKS 和 Payload keyring。
+- [x] 第二组第 4 项：从主机可信配置和持久授权解析 Run policy，冻结输入并接入持久领取与中断恢复。
+- [x] 第二组第 5 项：Pi 生成与 Mem0 embedding 经过分类、Secret source 和统一预算，后台 projection 使用真实任务领取作为预算父项。
+- [x] 第二组第 6 项的能力工具接入范围：`work.delegate/work.execute` 接入已授权 Handle、生产 Worker 通道和持久结果；结构化 subtask 不属于这项完成声明。
+- [x] 第二组第 7 项：回答持久保存，安装后经 HTTP 读取，重启后读取同一结果且不重复调用模型；ego Lite 另行验证受控网页的提交与刷新。
+- [x] 第二组第 10 项：readiness 检查实际 Worker/authority 和运行消费者，Worker 停止后返回 503。
+
+- 生成复用 Pi 0.84.2 的 ModelRuntime/AgentSession；embedding 复用 Mem0 3.1.7 的 OpenAI SDK。产品负责权限、分类、Secret source、预算、持久状态与生命周期。实际安装测试发现并修复 Mem0 静态依赖 `pg` 未打包、embedding descriptor 优先级非法、HTTP opaque Session ID 不被 Pi 接受、Pi 凭据预检不识别产品请求级 Secret source，以及 macOS UDS 超长路径被系统截断的问题。
+- Migration 0024 允许 embedding 调用身份；0025 把真实 Memory projection job 纳入同一预算账本，保留既有 Run/occurrence 账户、分配与调用身份。领取过期、分类越界、未知调用重试和完整迁移数据保留均有集成回归。
+- 已发送但缺少可靠用量的请求保留未知费用；只有证明未发送的 released reservation 才能进入下一稳定调用槽。已结算但结果没有持久化的 embedding 不会自动重发，需核对结果。
+- `work.delegate/work.execute` 的已授权能力工具接入主入口；结构化 `worker.subtask.execute` 仍是独立待完成能力，不把工具调用伪装成该适配器。
+- 本机安装测试使用隔离身份和本机 HTTPS Provider，不产生付费请求；真实 Cloudflare/MFA、Mac/Hermes 服务管理器、平台隔离和双向迁移不因此完成。
+
+
+本次安装验证使用 macOS ARM64 候选，SHA-256 为 `65f5ab320b57bf394d5b1e7451456c5f00d2f20e10a450b069889f45954cc273`。`test/integration/production-http-composition-process.test.ts` 两项测试通过：从安装包启动正式入口和独立 Worker，以本机 TLS 身份/模型服务完成认证、embedding、Pi 生成、SQLite 回答提交与受保护正文读取；停止并重启两个进程后回读同一回答，Provider 调用数不增加；停止 Worker 后 `/health/ready` 返回 503。测试没有替换 Pi/Mem0 SDK，也没有使用真实付费 Provider。浏览器验证按用户指定使用 ego Lite，后端为控制中心 fixture；它证明页面提交与刷新行为，不单独证明安装后的 SQLite 链路。
+
+相关回归包括 `npm run check`、35 项 Pi 兼容测试、33 项预算/Memory 集成测试、18 项 Capability SQLite 测试、38 项 Run/Context/lease 集成测试、10 项 recovery point 和 4 项 authority transfer 测试。恢复测试曾在并行构建时超过 5 秒，单独重跑 10 项均通过；安装测试的文件复制上限调整为 180 秒，业务请求和停止的既有限时保持不变。
+
 ### Task 28：完成 Mac/Hermes、规模与迁移验收
 
 - [ ] 在 Mac 与 Hermes 使用同一 immutable build、schema、adapter versions 和配置契约分别完成 install/start/stop、重启、恢复与健康验证。

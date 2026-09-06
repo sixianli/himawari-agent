@@ -10,16 +10,18 @@ import type {
 import { DurableMemoryService } from "@himawari-agent/application";
 import {
   createAgentId,
+  createAuthorityLeaseId,
+  createDeploymentId,
   createMemoryGenerationId,
   createMemoryId,
   createOwnerId,
   createThreadId,
 } from "@himawari-agent/domain";
 import {
-  SqliteProductStateRepository,
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -437,5 +439,121 @@ describe("durable product Memory projection", () => {
     expect(provider.records.size).toBe(0);
 
     await reopened.close();
+  });
+});
+
+describe("Memory projection unified model budget", () => {
+  it("requires the current projection claim and preserves unknown spend across retries", async () => {
+    const { stateRoot, repository } = await createRepository();
+    try {
+      const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+      database
+        .prepare(`INSERT INTO deployments (id, owner_id, agent_id, revision, status, authority_epoch, fencing_token)
+        VALUES ('memory-deployment', ?, ?, 1, 'active', 1, 1)`)
+        .run(OWNER_ID, AGENT_ID);
+      database
+        .prepare(`INSERT INTO authority_leases (id, owner_id, agent_id, deployment_id, holder_id,
+        authority_epoch, fencing_token, acquired_at, expires_at)
+        VALUES ('memory-authority', ?, ?, 'memory-deployment', 'memory-host', 1, 1, ?, '2999-01-01T00:00:00.000Z')`)
+        .run(OWNER_ID, AGENT_ID, T0);
+      database.close();
+      const provider = new DeterministicProjectionProvider();
+      const content = new MapMemoryContent();
+      const memory = service({ repository, provider, content, now: () => T0 });
+      await memory.applyProposal(createProposal(), GENERATION_ID);
+      const jobs = repository.memoryProjectionJobs();
+      const pending = await jobs.listPending(T0, 10);
+      const job = pending[0];
+      expect(job).toBeDefined();
+      if (!job) throw new Error("PROJECTION_MISSING");
+      const claimed = await jobs.claim({
+        jobId: job.id,
+        claimedBy: "budget-worker",
+        claimedAt: T0,
+        expiresAt: "2026-08-27T00:00:10.000Z",
+      });
+      if (!claimed) throw new Error("CLAIM_MISSING");
+      const budget = repository.modelBudgetPort(
+        OWNER_ID,
+        AGENT_ID,
+        {
+          deploymentId: createDeploymentId("memory-deployment"),
+          authorityEpoch: 1,
+          fencingToken: 1,
+        },
+        { leaseId: createAuthorityLeaseId("memory-authority"), fencingToken: 1 },
+      );
+      const parent = {
+        kind: "memory-projection" as const,
+        jobId: claimed.id,
+        claimedBy: "budget-worker",
+        attemptCount: claimed.attemptCount,
+      };
+      const input = {
+        parent,
+        operationKey: "embedding:one",
+        modelRef: "embedding",
+        dataClassification: "private" as const,
+        estimatedCostMicros: 60,
+        reservedAt: T0,
+        limits: {
+          accountCostMicros: 100,
+          globalCostMicros: 100,
+          perClassificationCostMicros: {
+            public: 100,
+            private: 100,
+            sensitive: 100,
+            restricted: 100,
+          },
+        },
+      };
+      await expect(
+        budget.reserve({ ...input, parent: { ...parent, claimedBy: "stale-worker" } }),
+      ).rejects.toThrow("lease is not held");
+      await expect(budget.reserve({ ...input, dataClassification: "public" })).rejects.toThrow(
+        "classification mismatch",
+      );
+      expect((await budget.reserve(input)).replayed).toBe(false);
+      await expect(budget.reserve({ ...input, operationKey: "embedding:two" })).rejects.toThrow(
+        "budget limit",
+      );
+      await expect(
+        budget.markStarted({
+          parent: { ...parent, attemptCount: parent.attemptCount + 1 },
+          operationKey: input.operationKey,
+          startedAt: T0,
+        }),
+      ).rejects.toThrow("lease is not held");
+      await budget.markStarted({ parent, operationKey: input.operationKey, startedAt: T0 });
+      await budget.markUnknown({
+        parent,
+        operationKey: input.operationKey,
+        observedAt: T0,
+        reasonCode: "transport_unresolved",
+      });
+      expect((await budget.reserve(input)).allocation.status).toBe("unknown");
+      await expect(budget.reserve({ ...input, operationKey: "embedding:retry" })).rejects.toThrow(
+        "not available",
+      );
+      const snapshot = await budget.read({ parent, limit: 10 });
+      expect(snapshot?.account).toMatchObject({
+        reservedCostMicros: 60,
+        spentCostMicros: 0,
+        status: "reconcile_required",
+      });
+      await budget.settle({
+        parent,
+        operationKey: input.operationKey,
+        actualCostMicros: 20,
+        settledAt: T0,
+      });
+      expect((await budget.read({ parent, limit: 10 }))?.account).toMatchObject({
+        reservedCostMicros: 0,
+        spentCostMicros: 20,
+        status: "active",
+      });
+    } finally {
+      await repository.close();
+    }
   });
 });

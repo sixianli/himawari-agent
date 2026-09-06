@@ -17,6 +17,7 @@ import {
   type ModelProviderRouting,
   type ProductConfiguration,
   type RecentAuthenticationConfiguration,
+  type RunPolicyConfiguration,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 
@@ -614,6 +615,43 @@ function assertIdentitySecretReference(
   }
 }
 
+function parseRunPolicy(value: unknown): RunPolicyConfiguration {
+  const input = record(value, "configuration.runPolicy");
+  rejectUnknown(
+    input,
+    [
+      "version",
+      "systemInstruction",
+      "memoryLimit",
+      "maxSelectedMemories",
+      "maxMemoryClassification",
+    ],
+    "configuration.runPolicy",
+  );
+  const instruction = string(
+    input["systemInstruction"],
+    "configuration.runPolicy.systemInstruction",
+  );
+  if (Buffer.byteLength(instruction, "utf8") > 16384)
+    throw invalid("configuration.runPolicy.systemInstruction", "must not exceed 16384 bytes");
+  const memoryLimit = integer(input["memoryLimit"], "configuration.runPolicy.memoryLimit", 1, 1000);
+  return Object.freeze({
+    version: safeReference(input["version"], "configuration.runPolicy.version"),
+    systemInstruction: instruction,
+    memoryLimit,
+    maxSelectedMemories: integer(
+      input["maxSelectedMemories"],
+      "configuration.runPolicy.maxSelectedMemories",
+      0,
+      memoryLimit,
+    ),
+    maxMemoryClassification: classifications(
+      [input["maxMemoryClassification"]],
+      "configuration.runPolicy.maxMemoryClassification",
+    )[0] as DataClassification,
+  });
+}
+
 export function parseProductConfiguration(value: unknown, loadedAt: string): ProductConfiguration {
   const input = record(value, "configuration");
   rejectUnknown(
@@ -628,6 +666,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "cacheDirectory",
       "publicOrigin",
       "publicMode",
+      "runPolicy",
       "capabilityDeployment",
       "http",
       "identity",
@@ -836,6 +875,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     cacheDirectory,
     publicOrigin,
     publicMode,
+    ...(input["runPolicy"] === undefined ? {} : { runPolicy: parseRunPolicy(input["runPolicy"]) }),
     ...(capabilityDeployment === undefined ? {} : { capabilityDeployment }),
     ...(http === undefined ? {} : { http }),
     ...(identity === undefined ? {} : { identity }),

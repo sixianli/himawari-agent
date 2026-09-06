@@ -505,6 +505,30 @@ async function seed(
 }
 
 describe("SQLite capability invocation authority", () => {
+  it("lists only current Run handles with active capability authority", async () => {
+    const resource = await openRepository();
+    try {
+      const value = await seed(resource.repository);
+      const store = resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
+      if (!store.listRunExecutionHandles) throw new Error("HANDLE_LIST_UNAVAILABLE");
+      expect(await store.listRunExecutionHandles(RUN_ID, T1)).toEqual([value]);
+      expect(await store.listRunExecutionHandles(RUN_ID, T2)).toEqual([]);
+      let record = capability();
+      for (const lifecycle of ["update_proposed", "update_approved", "disabled"] as const) {
+        record = await store.save(
+          { ...record, revision: record.revision + 1, lifecycle },
+          record.revision,
+        );
+        expect(await store.listRunExecutionHandles(RUN_ID, T1)).toEqual(
+          lifecycle === "disabled" ? [] : [value],
+        );
+      }
+    } finally {
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
   it("persists runtime tool intent and failed Worker result without redispatch on restart", async () => {
     const resource = await openRepository();
     try {

@@ -4,8 +4,8 @@ import type { ModelBudgetLimits } from "./model-budget.js";
 import type { AuthorityFence } from "./persistence.js";
 import type { RunExecutionLeaseClaim } from "./run-dispatch.js";
 
-/** The two product paths that can cause a physical Pi provider stream. */
-export type ModelInvocationSource = "model-port" | "agent-stream";
+/** Product paths that can cause a physical provider request. */
+export type ModelInvocationSource = "model-port" | "agent-stream" | "embedding";
 
 /**
  * Execution identity captured by Core when it creates an admission gate.

@@ -212,6 +212,10 @@ export class ProductionRunDispatcher {
     }
   }
 
+  stopAccepting(): void {
+    this.#accepting = false;
+  }
+
   isAccepting(): boolean {
     return this.#accepting && this.#options.authority.isAccepting();
   }
@@ -227,6 +231,27 @@ export class ProductionRunDispatcher {
     };
     void operation.then(clear, clear);
     return operation;
+  }
+
+  async recover(limit = this.#options.maximumRunsPerPump): Promise<number> {
+    positiveInteger(limit, "limit");
+    if (!this.isAccepting()) return 0;
+    await this.#options.authority.assertActive();
+    let reconciled = 0;
+    const reconciliation = await this.#options.dispatch.listReconciliationRequired({
+      now: this.#options.clock.now(),
+      limit,
+    });
+    for (const candidate of reconciliation) {
+      if (!this.isAccepting()) break;
+      await this.#options.reconcile({
+        candidate,
+        reasonCode: "PERSISTED_EXECUTION_RECONCILIATION_REQUIRED",
+      });
+      reconciled += 1;
+    }
+
+    return reconciled;
   }
 
   async drain(timeoutMs: number): Promise<ProductionRunDispatchDrainResult> {
@@ -260,19 +285,7 @@ export class ProductionRunDispatcher {
     }
     await this.#options.authority.assertActive();
 
-    let reconciled = 0;
-    const reconciliation = await this.#options.dispatch.listReconciliationRequired({
-      now: this.#options.clock.now(),
-      limit,
-    });
-    for (const candidate of reconciliation) {
-      if (!this.isAccepting()) break;
-      await this.#options.reconcile({
-        candidate,
-        reasonCode: "PERSISTED_EXECUTION_RECONCILIATION_REQUIRED",
-      });
-      reconciled += 1;
-    }
+    const reconciled = await this.recover(limit);
 
     if (!this.isAccepting()) {
       return Object.freeze({
@@ -347,6 +360,10 @@ export class ProductionRunDispatcher {
       };
       try {
         const input = await this.#options.input({ candidate, lease });
+        if (!this.isAccepting()) {
+          await reconcileLeaseFailure("SERVICE_STOPPING");
+          continue;
+        }
         if (renewal.failure()) {
           await reconcileLeaseFailure();
           continue;

@@ -86,6 +86,7 @@ export interface ProductionHttpCompositionSecretSources {
 }
 
 export interface ProductionHttpCompositionOptions {
+  readonly health?: RuntimeHealthModel;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
   /** Core owns the authority lifecycle and supplies the current product fence. */
@@ -621,7 +622,7 @@ export async function createProductionHttpComposition(
     payloads: () => repository.payloadStore(ownerId, agentId),
     protector: payloadProtector,
   });
-  const health = new RuntimeHealthModel({ publicMode: true, now: clock });
+  const health = options.health ?? new RuntimeHealthModel({ publicMode: true, now: clock });
   const metrics = new RuntimeMetricsRegistry({ now: clock });
   const app = buildHttpGatewayServer(
     routeOptions(

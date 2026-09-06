@@ -36,7 +36,8 @@ export type ProductionRunDispatchLoopState =
   | "failed";
 
 export interface ProductionRunDispatchLoopOptions {
-  readonly dispatcher: Pick<ProductionRunDispatcher, "pump" | "drain">;
+  readonly dispatcher: Pick<ProductionRunDispatcher, "pump" | "drain"> &
+    Partial<Pick<ProductionRunDispatcher, "recover">>;
   /** The bounded fallback scan interval. It is always unref'ed. */
   readonly fallbackScanIntervalMs: number;
   /** Called once for the first pump or drain failure. It must not restart the loop. */
@@ -144,11 +145,20 @@ export class ProductionRunDispatchLoop {
 
     this.#accepting = true;
     this.#state = "starting";
-    const initialPump = this.#schedulePump("startup");
+    const recoveryOnly = this.#dispatcher.recover !== undefined;
+    const initialPump = recoveryOnly
+      ? Promise.resolve()
+          .then(() => this.#dispatcher.recover?.())
+          .catch((error: unknown) => {
+            this.#failClosed({ phase: "startup", error });
+            throw error;
+          })
+      : this.#schedulePump("startup");
     const startup = initialPump.then(() => {
       if (this.#state === "starting") {
         this.#state = "running";
         this.#startTimer();
+        if (recoveryOnly) void this.#schedulePump("wakeup").catch(() => undefined);
       }
     });
     this.#startPromise = startup;

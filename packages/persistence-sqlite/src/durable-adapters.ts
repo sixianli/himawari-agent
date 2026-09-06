@@ -370,6 +370,8 @@ export class SqliteDurableAdapters {
           switchedAt,
         }),
       createExecutionHandle: (handle) => this.context.write("capability.createHandle", { handle }),
+      listRunExecutionHandles: (runId, at) =>
+        this.context.read("capability.listRunHandles", { ownerId, agentId, runId, at }),
       getExecutionHandle: (handleRef) =>
         this.context.read("capability.getHandle", { ownerId, agentId, handleRef }),
       revokeExecutionHandle: (handleRef, revokedAt) =>

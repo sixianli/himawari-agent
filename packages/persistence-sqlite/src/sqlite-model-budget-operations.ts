@@ -52,7 +52,8 @@ interface AccountRow {
   readonly ownerId: string;
   readonly agentId: string;
   readonly accountId: string;
-  readonly parentKind: "run" | "occurrence";
+  readonly parentKind: "run" | "occurrence" | "memory-projection";
+  readonly projectionJobId: string | null;
   readonly runId: string | null;
   readonly occurrenceId: string | null;
   readonly dataClassification: ModelClassification;
@@ -98,10 +99,11 @@ interface ParsedOccurrenceParent {
   readonly workLeaseHolderId: string;
 }
 
-type ParsedParent = ParsedRunParent | ParsedOccurrenceParent;
-type AccountParent =
-  | { readonly kind: "run"; readonly runId: ReturnType<typeof createRunId> }
-  | { readonly kind: "occurrence"; readonly occurrenceId: ReturnType<typeof createOccurrenceId> };
+type ParsedParent =
+  | ParsedRunParent
+  | ParsedOccurrenceParent
+  | Extract<ModelBudgetActiveParent, { kind: "memory-projection" }>;
+type AccountParent = ModelBudgetAccountParent;
 
 function record(value: unknown, name: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -513,6 +515,8 @@ export class SqliteModelBudgetOperations {
   ): ModelBudgetOperationResult {
     this.requireTransaction("Model budget reservation");
     this.assertCurrentAuthority(scope, input.reservedAt);
+    if (input.parent.kind === "memory-projection")
+      this.assertParent(scope, input.parent, input.reservedAt, true);
     const id = accountId(input.parent);
     const existingAccount = this.readAccount(scope.ownerId, scope.agentId, id);
     const existing = this.readAllocation(scope.ownerId, scope.agentId, id, input.operationKey);
@@ -541,6 +545,11 @@ export class SqliteModelBudgetOperations {
       });
       this.assertRunClassification(scope, input.parent.runId, input.dataClassification);
     }
+    if (
+      input.parent.kind === "memory-projection" &&
+      this.projectionJob(scope, input.parent.jobId).dataClassification !== input.dataClassification
+    )
+      this.fail("PORT_NOT_AUTHORITATIVE", "Memory projection classification mismatch");
     if (!existingAccount && input.parent.kind === "occurrence") {
       return this.fail(
         "PORT_NOT_FOUND",
@@ -653,6 +662,8 @@ export class SqliteModelBudgetOperations {
     this.requireTransaction("Model budget start");
     this.assertCurrentAuthority(scope, input.startedAt);
     const parent = input.parent;
+    if (parent.kind === "memory-projection")
+      this.assertParent(scope, parent, input.startedAt, true);
     const id = accountId(parent);
     const account = this.readAccount(scope.ownerId, scope.agentId, id);
     const allocation = this.readAllocation(scope.ownerId, scope.agentId, id, input.operationKey);
@@ -947,6 +958,8 @@ export class SqliteModelBudgetOperations {
         occurrenceId: createOccurrenceId(machineText(row["occurrenceId"], "occurrenceId")),
       };
     }
+    if (row["kind"] === "memory-projection")
+      return { kind: "memory-projection", jobId: text(row["jobId"], "jobId") };
     throw new TypeError("parent kind is invalid");
   }
 
@@ -989,6 +1002,13 @@ export class SqliteModelBudgetOperations {
         workLeaseHolderId: machineText(row["workLeaseHolderId"], "workLeaseHolderId"),
       };
     }
+    if (row["kind"] === "memory-projection")
+      return {
+        kind: "memory-projection",
+        jobId: text(row["jobId"], "jobId"),
+        claimedBy: text(row["claimedBy"], "claimedBy"),
+        attemptCount: safeInteger(row["attemptCount"], "attemptCount", 1),
+      };
     throw new TypeError("parent kind is invalid");
   }
 
@@ -1139,6 +1159,21 @@ export class SqliteModelBudgetOperations {
       }
       return;
     }
+    if (parent.kind === "memory-projection") {
+      const job = this.projectionJob(scope, parent.jobId);
+      if (
+        requireActive &&
+        (job.status !== "claimed" ||
+          job.claimedBy !== parent.claimedBy ||
+          job.attemptCount !== parent.attemptCount ||
+          !job.claimExpiresAt ||
+          !isAfter(job.claimExpiresAt, at) ||
+          job.memoryStatus !== "active" ||
+          job.memoryRevision !== job.currentRevision)
+      )
+        this.fail("PORT_CONFLICT", "Memory projection execution lease is not held");
+      return;
+    }
     const occurrence = this.database
       .prepare(
         `SELECT revision, status, work_lease_id AS workLeaseId,
@@ -1169,7 +1204,36 @@ export class SqliteModelBudgetOperations {
     }
   }
 
+  private projectionJob(scope: Scope, jobId: string) {
+    const row = this.database
+      .prepare(`SELECT j.status, j.claimed_by AS claimedBy,
+      j.attempt_count AS attemptCount, j.claim_expires_at AS claimExpiresAt,
+      j.memory_revision AS memoryRevision, m.revision AS currentRevision,
+      m.status AS memoryStatus, m.classification AS dataClassification
+      FROM memory_projection_jobs j JOIN memory_records m ON m.id = j.memory_id
+      WHERE j.id = ? AND m.owner_id = ? AND m.agent_id = ?`)
+      .get(jobId, scope.ownerId, scope.agentId) as
+      | {
+          status: string;
+          claimedBy: string | null;
+          attemptCount: number;
+          claimExpiresAt: string | null;
+          memoryRevision: number;
+          currentRevision: number;
+          memoryStatus: string;
+          dataClassification: ModelClassification;
+        }
+      | undefined;
+    if (!row)
+      return this.fail("PORT_NOT_AUTHORITATIVE", "Memory projection is outside the budget scope");
+    return row;
+  }
+
   private assertAccountParentScope(scope: Scope, parent: AccountParent): void {
+    if (parent.kind === "memory-projection") {
+      this.projectionJob(scope, parent.jobId);
+      return;
+    }
     if (parent.kind === "run") {
       const row = this.database
         .prepare("SELECT 1 FROM runs WHERE id = ? AND owner_id = ? AND agent_id = ?")
@@ -1248,9 +1312,9 @@ export class SqliteModelBudgetOperations {
     this.database
       .prepare(
         `INSERT INTO model_budget_accounts (
-          owner_id, agent_id, account_id, parent_kind, run_id, occurrence_id,
+          owner_id, agent_id, account_id, parent_kind, run_id, occurrence_id, projection_job_id,
           data_classification, reserved_cost_micros, spent_cost_micros, status, revision
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 'active', 0)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'active', 0)`,
       )
       .run(
         ownerId,
@@ -1259,6 +1323,7 @@ export class SqliteModelBudgetOperations {
         parent.kind,
         parent.kind === "run" ? parent.runId : null,
         parent.kind === "occurrence" ? parent.occurrenceId : null,
+        parent.kind === "memory-projection" ? parent.jobId : null,
         dataClassification,
       );
     const account = this.readAccount(ownerId, agentId, id);
@@ -1304,7 +1369,7 @@ export class SqliteModelBudgetOperations {
     const value = this.database
       .prepare(
         `SELECT owner_id AS ownerId, agent_id AS agentId, account_id AS accountId,
-          parent_kind AS parentKind, run_id AS runId, occurrence_id AS occurrenceId,
+          parent_kind AS parentKind, run_id AS runId, occurrence_id AS occurrenceId, projection_job_id AS projectionJobId,
           data_classification AS dataClassification,
           reserved_cost_micros AS reservedCostMicros,
           spent_cost_micros AS spentCostMicros, status, revision
@@ -1313,8 +1378,8 @@ export class SqliteModelBudgetOperations {
       .get(ownerId, agentId, accountIdValue);
     if (value === undefined) return undefined;
     const row = record(value, "budget account row");
-    const parentKind = text(row["parentKind"], "parentKind", 16);
-    if (parentKind !== "run" && parentKind !== "occurrence") {
+    const parentKind = text(row["parentKind"], "parentKind", 32);
+    if (parentKind !== "run" && parentKind !== "occurrence" && parentKind !== "memory-projection") {
       return this.fail("PORT_INVALID_OPERATION", "Budget account parent kind is invalid");
     }
     const status = text(row["status"], "status", 32);
@@ -1328,6 +1393,7 @@ export class SqliteModelBudgetOperations {
       parentKind,
       runId: optionalText(row["runId"], "runId"),
       occurrenceId: optionalText(row["occurrenceId"], "occurrenceId"),
+      projectionJobId: optionalText(row["projectionJobId"], "projectionJobId"),
       dataClassification: classification(row["dataClassification"], "dataClassification"),
       reservedCostMicros: safeInteger(row["reservedCostMicros"], "reservedCostMicros"),
       spentCostMicros: safeInteger(row["spentCostMicros"], "spentCostMicros"),
@@ -1545,6 +1611,11 @@ export class SqliteModelBudgetOperations {
 
   private assertAccountParent(account: AccountRow, parent: AccountParent): void {
     if (
+      (parent.kind === "memory-projection" &&
+        (account.parentKind !== parent.kind ||
+          account.projectionJobId !== parent.jobId ||
+          account.runId !== null ||
+          account.occurrenceId !== null)) ||
       (parent.kind === "run" &&
         (account.parentKind !== "run" ||
           account.runId !== parent.runId ||
@@ -1585,14 +1656,19 @@ export class SqliteModelBudgetOperations {
       agentId: createAgentId(row.agentId),
       accountId: row.accountId,
       parent:
-        row.parentKind === "run"
-          ? { kind: "run", runId: createRunId(row.runId ?? this.invalidRow("run_id")) }
-          : {
-              kind: "occurrence",
-              occurrenceId: createOccurrenceId(
-                row.occurrenceId ?? this.invalidRow("occurrence_id"),
-              ),
-            },
+        row.parentKind === "memory-projection"
+          ? {
+              kind: "memory-projection",
+              jobId: row.projectionJobId ?? this.invalidRow("projection_job_id"),
+            }
+          : row.parentKind === "run"
+            ? { kind: "run", runId: createRunId(row.runId ?? this.invalidRow("run_id")) }
+            : {
+                kind: "occurrence",
+                occurrenceId: createOccurrenceId(
+                  row.occurrenceId ?? this.invalidRow("occurrence_id"),
+                ),
+              },
       dataClassification: row.dataClassification,
       reservedCostMicros: row.reservedCostMicros,
       spentCostMicros: row.spentCostMicros,
@@ -1632,7 +1708,11 @@ export class SqliteModelBudgetOperations {
 }
 
 function accountId(parent: ParsedParent | AccountParent): string {
-  return parent.kind === "run" ? `run:${parent.runId}` : `occurrence:${parent.occurrenceId}`;
+  return parent.kind === "memory-projection"
+    ? `memory-projection:${parent.jobId}`
+    : parent.kind === "run"
+      ? `run:${parent.runId}`
+      : `occurrence:${parent.occurrenceId}`;
 }
 
 function isAfter(value: string, boundary: string): boolean {

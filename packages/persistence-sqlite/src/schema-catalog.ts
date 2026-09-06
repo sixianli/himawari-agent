@@ -212,7 +212,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "model_budget_accounts",
     "ModelBudgetPort",
-    "Run or occurrence parent reservation and spend ledger",
+    "Run, occurrence or Memory projection reservation and spend ledger",
     "metadata_only",
     "cascade with governed Run or task deletion",
   ),

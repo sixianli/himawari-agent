@@ -2022,3 +2022,26 @@ describe("SQLite durable model invocation identities", () => {
     }
   });
 });
+
+it("preserves populated model identities and allocations when rebuilding budget parents", async () => {
+  const current = await identityFixture();
+  const admitted = await current.identity.begin(identityInput(current.claim));
+  if (admitted.disposition !== "fresh") throw new Error("IDENTITY_NOT_FRESH");
+  await current.resource.repository.close();
+  const database = openQualifiedDatabase(current.resource.databasePath);
+  try {
+    const tables = [
+      "model_budget_accounts",
+      "model_budget_allocations",
+      "model_invocation_identities",
+    ];
+    const before = tables.map((table) => database.prepare(`SELECT * FROM ${table}`).all());
+    const migration = (await loadBundledMigrations()).find(({ sequence }) => sequence === 25);
+    if (!migration) throw new Error("MIGRATION_MISSING");
+    database.transaction(() => database.exec(migration.sql))();
+    expect(tables.map((table) => database.prepare(`SELECT * FROM ${table}`).all())).toEqual(before);
+    expect(database.pragma("foreign_key_check")).toEqual([]);
+  } finally {
+    database.close();
+  }
+});

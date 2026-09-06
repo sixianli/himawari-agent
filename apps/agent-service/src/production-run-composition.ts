@@ -42,7 +42,7 @@ export interface ProductionRunCompositionOptions {
   readonly protector: PayloadProtectorPort;
   readonly memory: Pick<MemoryPort, "search">;
   readonly tools: RuntimeToolPort;
-  readonly workers: WorkerRunPort;
+  readonly workers?: WorkerRunPort;
   readonly policy: (source: RunExecutionSource) => Promise<RunExecutionPolicy>;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
@@ -130,7 +130,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     checkpoints,
     context,
     runtime,
-    workers: options.workers,
+    ...(options.workers ? { workers: options.workers } : {}),
     trace,
   });
   const input = new RunExecutionInputService({

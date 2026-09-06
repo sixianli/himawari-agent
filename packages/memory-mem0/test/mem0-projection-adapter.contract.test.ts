@@ -16,7 +16,7 @@ import {
   createOwnerId,
   createThreadId,
 } from "@himawari-agent/domain";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createOpenRouterMem0ProjectionAdapter,
   MEM0_OPENROUTER_BASE_URL,
@@ -421,4 +421,46 @@ describe("Mem0 product projection adapter", () => {
     });
     await projection.close();
   });
+});
+
+it("governs the pinned embedding SDK call without hidden retries and preserves provider usage", async () => {
+  const adapter = await Mem0ProjectionAdapter.create({
+    configuration: configuration(),
+    load: async () => ({ Memory: FakeMem0Memory }),
+  });
+  const memory = FakeMem0Memory.latest;
+  if (!memory) throw new Error("MEM0_MISSING");
+  const response = {
+    data: [{ index: 0, embedding: [0.1] }],
+    usage: { prompt_tokens: 7, total_tokens: 7 },
+  };
+  const send = vi.fn(async () => response);
+  const client = { maxRetries: 2, timeout: 60_000, embeddings: { create: send } };
+  Object.assign(memory, { embedder: { openai: client } });
+  let allowed = false;
+  adapter.bindEmbeddingBoundary(async (_request, operation) => {
+    if (!allowed) throw new Error("ADMISSION_DENIED");
+    return operation();
+  }, 500);
+  expect(client.maxRetries).toBe(0);
+  expect(client.timeout).toBe(500);
+  await expect(client.embeddings.create()).rejects.toThrow("ADMISSION_DENIED");
+  expect(send).not.toHaveBeenCalled();
+  allowed = true;
+  expect(await client.embeddings.create()).toEqual(response);
+  expect(send).toHaveBeenCalledTimes(1);
+  await adapter.close();
+});
+
+it("constructs the actual pinned Mem0 SDK and installs the embedding admission boundary", async () => {
+  const config = configuration();
+  mkdirSync(config.stateRoot, { recursive: true });
+  const adapter = await Mem0ProjectionAdapter.create({ configuration: config });
+  adapter.bindEmbeddingBoundary(async () => {
+    throw new Error("NO_PROVIDER_CALL_ALLOWED");
+  }, 500);
+  await expect(
+    adapter.search({ ownerId: OWNER_ID, agentId: AGENT_ID, query: "test", limit: 1 }),
+  ).rejects.toThrow("NO_PROVIDER_CALL_ALLOWED");
+  await adapter.close();
 });

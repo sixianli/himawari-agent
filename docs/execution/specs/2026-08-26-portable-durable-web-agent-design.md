@@ -363,7 +363,7 @@ Owner 取消必须通过独立、受权威校验的取消操作，在同一事�
 - 已持久化但尚未规范化的在线 webhook receipts；
 - lease 已过期的 Attention 与 Delivery claims。
 
-Pi Session 只从产品 messages、context references 和 checkpoints 重建为 runtime projection。它不是用户可见生命周期，也不是恢复权威。
+Pi Session 只从产品 messages、context references 和 checkpoints 重建为 runtime projection。它不是用户可见生命周期，也不是恢复权威。产品 Session ID 是 opaque identity，不受 Pi 文件名字符限制约束；适配层以版本化的 Owner/Agent/Session/Thread 元组派生稳定内部 ID，不能为适应 Pi 改写产品身份。
 
 ### Web Gateway 与浏览器协议
 
@@ -529,7 +529,7 @@ Model Router 总是先选 primary。只有配置为 retryable 的 transport/prov
 
 Thread checkpoint、Mem0 extraction 和 embedding 都只能使用显式 descriptor；没有隐式 model。v0.2 不实现本地生成模型，也不静默安装或下载任何本地模型。`pre_compaction` 例外地直接采用 Pi 已生成且已保护的 compaction summary，后续提炼模型只提取派生候选，不得生成第二份摘要；其他 checkpoint trigger 仍使用显式 distillation descriptor。
 
-前台 Run 与后台 occurrence 共用一个持久预算写入端口。预算账户必须唯一归属其中一者，逐次模型调用作为账户内的子分配；全局和分类额度只累计账户的预留与已发生费用，不再次累计子分配。后台已有历史费用和预留必须完整迁移，不重置额度，不以独立前台账本绕过现有总额。旧后台准入和结算入口也必须经同一事务写入责任，普通 occurrence 元数据更新不得改写预算事实。
+前台 Run、后台 occurrence 与 Memory projection job 共用一个持久预算写入端口。预算账户必须唯一归属其中一者，逐次模型调用作为账户内的子分配；全局和分类额度只累计账户的预留与已发生费用，不再次累计子分配。后台已有历史费用和预留必须完整迁移，不重置额度，不以独立前台账本绕过现有总额。旧后台准入和结算入口也必须经同一事务写入责任，普通 occurrence 元数据更新不得改写预算事实。 Memory 投影直接归属其产品任务，不为向量写入制造聊天 Run。预留和开始时必须核对当前领取者、attempt、租约到期时间、Memory revision、活动状态及分类；删除该任务时按既有治理关系删除账户。
 
 预算账户跟随既有治理删除归属。Trash 不释放账目；永久删除对应 Run 或任务时按其关系处理，不留下孤儿，也不借恢复旧副本重新创建已删除的业务记录。既有后台使用量按仍存在的 occurrence 汇总，删除记录会减少该汇总；本次迁移不隐式新增永久费用墓碑、账期重置或新的保留策略。
 

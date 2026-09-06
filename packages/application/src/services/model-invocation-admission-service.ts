@@ -22,7 +22,7 @@ import {
 } from "../ports/index.js";
 
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
-const SOURCES = ["model-port", "agent-stream"] as const;
+const SOURCES = ["model-port", "agent-stream", "embedding"] as const;
 const ROUTING_CLASSES = ["primary", "specialist", "local", "fallback"] as const;
 const DISCLOSURES = ["local_only", "trusted_remote", "external_remote"] as const;
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
