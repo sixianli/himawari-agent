@@ -2,6 +2,7 @@ import path from "node:path";
 import type {
   AttentionStatePort,
   AuditLedgerPort,
+  AuthorityFence,
   AuthorityLeasePort,
   AuthorityLeaseRecord,
   AuthorizationStorePort,
@@ -26,14 +27,15 @@ import type {
   PayloadStorePort,
   ProductMemoryStatePort,
   ProductStateRepositoryPort,
-  RunExecutionSourcePort,
   ReliableEventPort,
   ReliableEventRecord,
   RunCheckpointStore,
   RunDispatchPort,
+  RunExecutionSourcePort,
   RunLifecyclePort,
   RunPayloadArtifactAuthority,
   RunPayloadArtifactPort,
+  RunReconciliationPort,
   SchedulerPort,
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
@@ -289,6 +291,16 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     authority: ProductAuthorityFence,
   ): RunCheckpointStore {
     return this.durable.runCheckpointStore(ownerId, agentId, authority, this.now);
+  }
+
+  runReconciliation(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    authorityLease: AuthorityFence,
+    consumerId: string,
+  ): RunReconciliationPort {
+    return this.durable.runReconciliation(ownerId, agentId, authority, authorityLease, consumerId);
   }
 
   runDispatch(

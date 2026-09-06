@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:8f2fe74fecdf1b4ff8a71be96bb6c72acd16c08305e0cbc4cabee66422dea5ee"
+contract_sha256: "sha256:5fc2327785659ec7e61c70aa50d032d1244ac37782e927f063f7d5b091bc9fa5"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -13,6 +13,9 @@ date: "2026-08-27"
 <!-- runbook-contract:
 - packages/application/src/services/run-execution-input-service.ts
 - packages/application/src/services/run-coordinator.ts
+- packages/application/src/ports/run-dispatch.ts
+- packages/domain/src/run-state.ts
+- apps/agent-service/src/production-run-reconciler.ts
 - apps/admin-cli/src
 - packages/persistence-sqlite/src/sqlite-recovery-point.ts
 - packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts
@@ -100,6 +103,8 @@ himawari backup restore --config <absolute-config-path> --secret-dir <absolute-s
 7. 按本次已验证的服务启动程序重新启动 Worker 与 Agent Service；重新运行 `db status`、`doctor` 和业务只读查询。未完成对应 install/start/stop Runbook 前，不在此处猜测 launchd/systemd 命令。
 
 ## Verification
+
+- 中断执行交给生产恢复组件后，Run 与 checkpoint 必须同时显示 `reconciling_external_result`，旧执行租约失效，已有结果引用保留；恢复不能重新调用模型或工具。此检查当前有本地 SQLite 证据，完整安装入口验证仍待完成。已经待核实的记录不重复占用初始扫描批次，不代表外部结果已经确认。
 
 - 若数据包含 Run 执行输入快照，保留首次执行开始时间与绝对截止时间；恢复或迁移不重新发放运行时长。缺少截止时间的旧快照须停止并核实历史执行，不能自动删除快照后重建。目标时钟须可信，不能以导入或重启时间替换原截止时间。
 

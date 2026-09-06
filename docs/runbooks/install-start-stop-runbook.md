@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:7a58f9256e3f43b4babcc987e389588867fa7ffc80a9b9ba911592392d0c15f6"
+contract_sha256: "sha256:af600cf053c6dae1ed0ae8d0a0d20245c149c78efbd64d153270328e67ec1ebe"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -14,6 +14,9 @@ date: "2026-08-27"
 - packages/runtime-pi/src/pi-runtime-adapter.ts
 - packages/application/src/services/run-execution-input-service.ts
 - packages/application/src/services/run-coordinator.ts
+- packages/application/src/ports/run-dispatch.ts
+- packages/domain/src/run-state.ts
+- apps/agent-service/src/production-run-reconciler.ts
 - scripts/package-node-runtime.mjs
 - scripts/install-node-runtime.mjs
 - scripts/generate-artifact-manifest.mjs
@@ -126,6 +129,8 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 10. 完成验证后保存脱敏命令输出、artifact identity、进程退出码、socket/lock 回读和 rollback 状态；临时 prefix、临时 state root 与证据目录按本次授权的保留策略清理。
 
 ## Verification
+
+- 中断执行交给生产恢复组件后，Run 与 checkpoint 必须同时显示 `reconciling_external_result`，旧执行租约失效，已有结果引用保留；恢复不能重新调用模型或工具。此检查当前有本地 SQLite 证据，完整安装入口验证仍待完成。已经待核实的记录不重复占用初始扫描批次，不代表外部结果已经确认。
 
 - `runtime-manifest.json`、build artifact manifest、package-lock 和 `git rev-parse HEAD` 能互相对应；内部 package 版本和外部依赖版本均为精确值，生产 workspace manifest 的每个直接外部依赖根及其闭包都存在，且安装树不包含 `@himawari-agent/testing`。
 - `himawari doctor` 返回 ready，`himawari db status` 显示 managed schema、预期 migration sequence 和 `quickCheck: ok`。

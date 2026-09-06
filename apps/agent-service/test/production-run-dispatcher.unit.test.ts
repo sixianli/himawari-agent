@@ -325,6 +325,31 @@ describe("ProductionRunDispatcher", () => {
     expect(dispatch.releases).toHaveLength(1);
   });
 
+  it("quarantines an input failure before surfacing it instead of allowing a lease retry", async () => {
+    const dispatch = new DispatchFixture([candidate()]);
+    const calls: string[] = [];
+    const service = dispatcher(
+      dispatch,
+      {
+        execute: async () => {
+          calls.push("execute");
+          return result("completed");
+        },
+      },
+      async ({ reasonCode }) => {
+        calls.push(reasonCode);
+      },
+      {
+        input: async () => {
+          throw new Error("invalid persisted input");
+        },
+      },
+    );
+    await expect(service.pump()).rejects.toThrow("invalid persisted input");
+    expect(calls).toEqual(["RUN_EXECUTION_FAILED_WITHOUT_RESULT"]);
+    expect(dispatch.releases).toHaveLength(1);
+  });
+
   it("processes persisted reconciliation before claiming safe work", async () => {
     const dispatch = new DispatchFixture([]);
     dispatch.reconciliation.push({ ...candidate("resume"), action: "reconcile" });

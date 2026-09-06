@@ -2264,7 +2264,6 @@ it.each([
       dataClassification: "private",
       resultRef: "pi-prompt",
     });
-    const reconcile = vi.fn(async () => undefined);
     const failure = vi.fn();
     const composed = createProductionRunComposition({
       configuration: {
@@ -2335,7 +2334,6 @@ it.each([
         memoryLimit: 5,
         maxSelectedMemories: 0,
       }),
-      reconcile,
       clock,
       ids: adapters.ids,
       instanceId: "pi-composition-test",
@@ -2415,8 +2413,18 @@ it.each([
         run: { status: "failed" },
       });
     }
-    if (unknown) expect(reconcile).toHaveBeenCalled();
-    else expect(reconcile).not.toHaveBeenCalled();
+    if (unknown) {
+      const db = openQualifiedDatabase(setup.databasePath);
+      try {
+        expect(
+          db
+            .prepare("SELECT released_at FROM run_execution_leases WHERE run_id = ?")
+            .get(admitted.message.runId),
+        ).toMatchObject({ released_at: expect.any(String) });
+      } finally {
+        db.close();
+      }
+    }
     expect(failure).not.toHaveBeenCalled();
     await expect(composed.loop.stop(1000)).resolves.toMatchObject({ drained: true });
   },

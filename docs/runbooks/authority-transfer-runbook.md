@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:956bf40af9000b60e284bb13a76832560c87913533d38c9d0a967117bc6d8943"
+contract_sha256: "sha256:21d761f4f21d8b6d5c7e27b97f542c095dd26cc5e3aa6013217a48aad376cd17"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -13,6 +13,9 @@ date: "2026-08-27"
 <!-- runbook-contract:
 - packages/application/src/services/run-execution-input-service.ts
 - packages/application/src/services/run-coordinator.ts
+- packages/application/src/ports/run-dispatch.ts
+- packages/domain/src/run-state.ts
+- apps/agent-service/src/production-run-reconciler.ts
 - apps/admin-cli/src
 - apps/agent-service/src/service-main.ts
 - apps/agent-service/src/production-service-lifecycle.ts
@@ -134,6 +137,8 @@ himawari transfer abandon --config <absolute-target-config-path> --secret-dir <a
 ~~~
 
 ## Verification
+
+- 中断执行交给生产恢复组件后，Run 与 checkpoint 必须同时显示 `reconciling_external_result`，旧执行租约失效，已有结果引用保留；恢复不能重新调用模型或工具。此检查当前有本地 SQLite 证据，完整安装入口验证仍待完成。已经待核实的记录不重复占用初始扫描批次，不代表外部结果已经确认。
 
 - 若数据包含 Run 执行输入快照，保留首次执行开始时间与绝对截止时间；恢复或迁移不重新发放运行时长。缺少截止时间的旧快照须停止并核实历史执行，不能自动删除快照后重建。目标时钟须可信，不能以导入或重启时间替换原截止时间。
 

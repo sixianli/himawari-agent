@@ -66,6 +66,7 @@ export interface ProductionRunReconciliationInput {
   readonly candidate: RunReconciliationCandidate;
   readonly reasonCode: string;
   readonly executionInterruption?: ExecutionInterruptionResult;
+  readonly executionLease?: RunExecutionLease;
 }
 
 export type ProductionRunExecutionResult =
@@ -331,9 +332,16 @@ export class ProductionRunDispatcher {
           reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
         }),
       );
+      let reconciliationAttempted = false;
       const reconcileLeaseFailure = async (reasonCode = "EXECUTION_LEASE_RENEWAL_FAILED") => {
         await renewal.stop();
-        await this.reconcileUnknown(candidate, reasonCode, renewal.interruptionResult());
+        reconciliationAttempted = true;
+        await this.reconcileUnknown(
+          candidate,
+          reasonCode,
+          renewal.interruptionResult(),
+          renewal.currentLease(),
+        );
         await this.releaseBestEffort(renewal.currentLease());
         unknown += 1;
       };
@@ -362,7 +370,13 @@ export class ProductionRunDispatcher {
             continue;
           }
           if (error instanceof ProductionRunUnknownResultError) {
-            await this.reconcileUnknown(candidate, error.reasonCode);
+            reconciliationAttempted = true;
+            await this.reconcileUnknown(
+              candidate,
+              error.reasonCode,
+              undefined,
+              renewal.currentLease(),
+            );
             await this.releaseBestEffort(renewal.currentLease());
             unknown += 1;
             continue;
@@ -375,7 +389,13 @@ export class ProductionRunDispatcher {
           continue;
         }
         if (result.run.run.status === "reconciling_external_result") {
-          await this.reconcileUnknown(candidate, "COORDINATOR_RECONCILIATION_REQUIRED");
+          reconciliationAttempted = true;
+          await this.reconcileUnknown(
+            candidate,
+            "COORDINATOR_RECONCILIATION_REQUIRED",
+            undefined,
+            renewal.currentLease(),
+          );
           await this.releaseBestEffort(renewal.currentLease());
           unknown += 1;
           continue;
@@ -391,13 +411,20 @@ export class ProductionRunDispatcher {
         settled += 1;
       } catch (error) {
         await renewal.stop();
+        if (reconciliationAttempted) throw error;
         if (renewal.failure()) {
           await reconcileLeaseFailure();
           continue;
         }
-        // A thrown execution error deliberately leaves the lease to expire. It
-        // must not be turned into an immediate retry because the provider may
-        // already have observed the request.
+        // Persist uncertainty before surfacing the failure. Merely expiring the
+        // lease would redispatch accepted Runs whose input factory keeps failing.
+        await this.reconcileUnknown(
+          candidate,
+          "RUN_EXECUTION_FAILED_WITHOUT_RESULT",
+          undefined,
+          renewal.currentLease(),
+        );
+        await this.releaseBestEffort(renewal.currentLease());
         throw error;
       }
     }
@@ -503,11 +530,13 @@ export class ProductionRunDispatcher {
     candidate: RunDispatchCandidate,
     reasonCode: string,
     executionInterruption?: ExecutionInterruptionResult,
+    executionLease?: RunExecutionLease,
   ): Promise<void> {
     await this.#options.reconcile({
       candidate: { ...candidate, action: "reconcile" },
       reasonCode,
       ...(executionInterruption ? { executionInterruption } : {}),
+      ...(executionLease ? { executionLease } : {}),
     });
   }
 

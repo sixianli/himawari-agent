@@ -994,3 +994,250 @@ describe("SQLite Run dispatch execution leases", () => {
     }
   });
 });
+
+describe("durable Run reconciliation", () => {
+  it("preserves evidence, stops redispatch and survives reopening", async () => {
+    const resource = await fixture({ contextPhase: "runtime_running" });
+    const db = openQualifiedDatabase(resource.databasePath);
+    try {
+      db.prepare(
+        "UPDATE run_coordination_checkpoints SET context_ref = 'payload-run-dispatch', runtime_event_count = 7",
+      ).run();
+      const recovery = dispatch(db, scope("recovery"));
+      await recovery.quarantine({
+        runId: resource.runId,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        reasonCode: "RUNTIME_ATTEMPT_INTERRUPTED",
+        at: LATER,
+      });
+    } finally {
+      db.close();
+    }
+    const reopened = openQualifiedDatabase(resource.databasePath);
+    try {
+      const recovery = dispatch(reopened, scope("recovery-next"));
+      expect(
+        reopened.prepare("SELECT status, revision FROM runs WHERE id = ?").get(resource.runId),
+      ).toEqual({ status: "reconciling_external_result", revision: 2 });
+      expect(
+        reopened
+          .prepare(
+            "SELECT phase, context_ref, runtime_event_count, diagnostic_code FROM run_coordination_checkpoints WHERE run_id = ?",
+          )
+          .get(resource.runId),
+      ).toEqual({
+        phase: "reconciling_external_result",
+        context_ref: "payload-run-dispatch",
+        runtime_event_count: 7,
+        diagnostic_code: "RUNTIME_ATTEMPT_INTERRUPTED",
+      });
+      await expect(recovery.listClaimable({ now: LATER, limit: 1 })).resolves.toEqual([]);
+      await expect(recovery.listReconciliationRequired({ now: LATER, limit: 1 })).resolves.toEqual(
+        [],
+      );
+      await recovery.quarantine({
+        runId: resource.runId,
+        expectedRunRevision: 2,
+        expectedLeaseRevision: 0,
+        reasonCode: "LATER_SCAN",
+        at: LATER,
+      });
+      expect(
+        reopened.prepare("SELECT revision FROM runs WHERE id = ?").get(resource.runId),
+      ).toEqual({ revision: 2 });
+    } finally {
+      reopened.close();
+    }
+  });
+
+  it("rejects a competing live lease and atomically fences its own interrupted execution", async () => {
+    const resource = await fixture();
+    const db = openQualifiedDatabase(resource.databasePath);
+    try {
+      const owner = dispatch(db, scope("original"));
+      const lease = await owner.claim({
+        runId: resource.runId,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: leaseId("execution-recovery"),
+        claimedAt: NOW,
+        expiresAt: LATER,
+      });
+      const input = {
+        runId: resource.runId,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: lease.revision,
+        reasonCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+        at: NOW,
+      };
+      await expect(dispatch(db, scope("competing")).quarantine(input)).rejects.toBeInstanceOf(
+        ApplicationPortError,
+      );
+      await expect(owner.quarantine(input)).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      await owner.quarantine({ ...input, executionLeaseId: lease.executionLeaseId });
+      await expect(
+        owner.assertHeld({
+          runId: resource.runId,
+          expectedLeaseRevision: lease.revision,
+          executionLeaseId: lease.executionLeaseId,
+          at: NOW,
+        }),
+      ).rejects.toBeInstanceOf(ApplicationPortError);
+      expect(
+        db
+          .prepare("SELECT phase FROM run_coordination_checkpoints WHERE run_id = ?")
+          .get(resource.runId),
+      ).toEqual({ phase: "reconciling_external_result" });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("lets a new consumer quarantine an expired lease and reach later candidates", async () => {
+    const resource = await fixture();
+    const db = openQualifiedDatabase(resource.databasePath);
+    try {
+      const original = dispatch(db, scope("original"));
+      const lease = await original.claim({
+        runId: resource.runId,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: leaseId("execution-expired"),
+        claimedAt: NOW,
+        expiresAt: LATER,
+      });
+      db.prepare("UPDATE runs SET status = 'running' WHERE id = ?").run(resource.runId);
+      const recovery = dispatch(db, scope("after-restart"));
+      await recovery.quarantine({
+        runId: resource.runId,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: lease.revision,
+        reasonCode: "INTERRUPTED",
+        at: LATER,
+      });
+      addRun(db, {
+        runId: "run-later",
+        triggerId: "trigger-later",
+        sessionId: "session-later",
+        turnIndex: 1,
+        status: "accepted",
+      });
+      db.prepare("UPDATE runs SET status = 'running' WHERE id = 'run-later'").run();
+      await expect(recovery.listReconciliationRequired({ now: LATER, limit: 1 })).resolves.toEqual([
+        expect.objectContaining({ runId: "run-later" }),
+      ]);
+      await expect(
+        original.renew({
+          runId: resource.runId,
+          expectedLeaseRevision: lease.revision,
+          executionLeaseId: lease.executionLeaseId,
+          renewedAt: LATER,
+          expiresAt: "2026-09-04T00:20:00.000Z",
+        }),
+      ).rejects.toBeInstanceOf(ApplicationPortError);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rejects stale revisions and revoked authority", async () => {
+    const resource = await fixture({ contextPhase: "workers_running" });
+    const db = openQualifiedDatabase(resource.databasePath);
+    try {
+      const recovery = dispatch(db, scope("recovery"));
+      const input = {
+        runId: resource.runId,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        reasonCode: "INTERRUPTED",
+        at: LATER,
+      };
+      await expect(recovery.quarantine({ ...input, expectedRunRevision: 2 })).rejects.toMatchObject(
+        { code: "PORT_CONFLICT" },
+      );
+      await expect(
+        recovery.quarantine({ ...input, expectedLeaseRevision: 1 }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      db.prepare("UPDATE authority_leases SET expires_at = ?").run(NOW);
+      await expect(recovery.quarantine(input)).rejects.toMatchObject({
+        code: "PORT_NOT_AUTHORITATIVE",
+      });
+      expect(db.prepare("SELECT status FROM runs WHERE id = ?").get(resource.runId)).toEqual({
+        status: "running",
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rolls back Run and lease changes when checkpoint persistence fails", async () => {
+    const resource = await fixture();
+    const db = openQualifiedDatabase(resource.databasePath);
+    try {
+      const recovery = dispatch(db, scope("recovery"));
+      const lease = await recovery.claim({
+        runId: resource.runId,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: leaseId("execution-rollback"),
+        claimedAt: NOW,
+        expiresAt: LATER,
+      });
+      db.exec(
+        "CREATE TRIGGER fail_recovery BEFORE INSERT ON run_coordination_checkpoints BEGIN SELECT RAISE(ABORT, 'injected failure'); END",
+      );
+      await expect(
+        recovery.quarantine({
+          runId: resource.runId,
+          expectedRunRevision: 1,
+          expectedLeaseRevision: lease.revision,
+          executionLeaseId: lease.executionLeaseId,
+          reasonCode: "INTERRUPTED",
+          at: NOW,
+        }),
+      ).rejects.toThrow("injected failure");
+      expect(
+        db.prepare("SELECT status, revision FROM runs WHERE id = ?").get(resource.runId),
+      ).toEqual({ status: "accepted", revision: 1 });
+      await expect(
+        recovery.assertHeld({
+          runId: resource.runId,
+          expectedLeaseRevision: lease.revision,
+          executionLeaseId: lease.executionLeaseId,
+          at: NOW,
+        }),
+      ).resolves.toBeDefined();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("preserves Owner cancellation and terminal checkpoints", async () => {
+    const resource = await fixture({ contextPhase: "runtime_running" });
+    const db = openQualifiedDatabase(resource.databasePath);
+    try {
+      db.prepare("UPDATE runs SET status = 'cancelled'").run();
+      db.prepare(
+        "UPDATE run_coordination_checkpoints SET phase = 'cancelled', terminal_status = 'cancelled'",
+      ).run();
+      await dispatch(db, scope("recovery")).quarantine({
+        runId: resource.runId,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        reasonCode: "INTERRUPTED",
+        at: LATER,
+      });
+      expect(
+        db.prepare("SELECT status, revision FROM runs WHERE id = ?").get(resource.runId),
+      ).toEqual({ status: "cancelled", revision: 1 });
+      expect(
+        db
+          .prepare("SELECT phase FROM run_coordination_checkpoints WHERE run_id = ?")
+          .get(resource.runId),
+      ).toEqual({ phase: "cancelled" });
+    } finally {
+      db.close();
+    }
+  });
+});

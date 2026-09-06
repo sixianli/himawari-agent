@@ -28,6 +28,7 @@ import type {
   RunPayloadArtifactAuthority,
   RunPayloadArtifactPort,
   RunReconciliationCandidate,
+  RunReconciliationPort,
   SchedulerPort,
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
@@ -172,6 +173,19 @@ export class SqliteDurableAdapters {
           ...input,
           updatedAt: now(),
         }),
+    });
+  }
+
+  runReconciliation(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    authorityLease: AuthorityFence,
+    consumerId: string,
+  ): RunReconciliationPort {
+    const scope = { ownerId, agentId, authority, authorityLease, consumerId };
+    return Object.freeze<RunReconciliationPort>({
+      quarantine: (input) => this.context.write("runDispatch.quarantine", { ...scope, input }),
     });
   }
 

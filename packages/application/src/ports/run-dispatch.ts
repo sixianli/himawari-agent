@@ -1,9 +1,9 @@
 import type {
   AgentId,
   AuthorityLeaseId,
-  RunExecutionLeaseId,
   OwnerId,
   ProductAuthorityFence,
+  RunExecutionLeaseId,
   RunId,
   RunStatus,
   SessionId,
@@ -147,4 +147,16 @@ export interface RunDispatchPort {
     readonly executionLeaseId: RunExecutionLeaseId;
     readonly at: string;
   }): Promise<RunExecutionLease>;
+}
+
+/** Recovery can quarantine uncertain work, but cannot grant permission to execute it. */
+export interface RunReconciliationPort {
+  quarantine(input: {
+    readonly runId: RunId;
+    readonly expectedRunRevision: number;
+    readonly expectedLeaseRevision: number;
+    readonly executionLeaseId?: RunExecutionLeaseId;
+    readonly reasonCode: string;
+    readonly at: string;
+  }): Promise<void>;
 }

@@ -24,10 +24,8 @@ import {
   ProductionRunDispatchLoop,
   type ProductionRunDispatchLoopFailure,
 } from "./production-run-dispatch-loop.js";
-import {
-  ProductionRunDispatcher,
-  type ProductionRunReconciler,
-} from "./production-run-dispatcher.js";
+import { ProductionRunDispatcher } from "./production-run-dispatcher.js";
+import { createProductionRunReconciler } from "./production-run-reconciler.js";
 
 export interface ProductionRunCompositionOptions {
   readonly configuration: Pick<
@@ -46,7 +44,6 @@ export interface ProductionRunCompositionOptions {
   readonly tools: RuntimeToolPort;
   readonly workers: WorkerRunPort;
   readonly policy: (source: RunExecutionSource) => Promise<RunExecutionPolicy>;
-  readonly reconcile: ProductionRunReconciler;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
   readonly instanceId: string;
@@ -152,7 +149,13 @@ export function createProductionRunComposition(options: ProductionRunComposition
     dispatch,
     coordinator,
     input: (candidate) => input.create(candidate),
-    reconcile: options.reconcile,
+    reconcile: createProductionRunReconciler({
+      ownerId,
+      agentId,
+      runs: repository.runLifecycle(ownerId, agentId, fence),
+      recovery: repository.runReconciliation(ownerId, agentId, fence, lease, options.instanceId),
+      clock,
+    }),
     clock,
     executionLeaseDurationMs: 30_000,
     maximumRunsPerPump: configuration.concurrency.totalRuns,

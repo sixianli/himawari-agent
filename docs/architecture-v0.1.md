@@ -362,6 +362,10 @@ Identity Gateway 把 bootstrap、产品 session 和 break-glass 保持为独立�
 
 ## Main Flows
 
+生产 Run 组合内置 `createProductionRunReconciler()`，不再要求调用方注入恢复占位函数。它通过 `RunReconciliationPort.quarantine()` 在同一 SQLite 事务中核对当前 authority、Run revision 和执行租约 revision；有效租约只能由同一 consumer 持匹配执行身份主动结束，恢复扫描只能接管已释放或到期的执行。事务同时结束旧租约、把 Run 和 checkpoint 记为 `reconciling_external_result`，保留上下文、已观察输出及 Worker 结果引用；Owner 已取消或其他终态不被重新打开。输入快照加载等阶段抛错时也先持久记录不确定状态，再向服务报告错误，防止租约到期后反复领取同一无效输入。`accepted`、`building_context` 允许进入待核实状态，不能仅因尚未进入 Runtime 就假定上下文形成或模型预算没有外部影响。
+
+待核实状态不表示外部结果已查明，更不能发布成功回答。已经同时具有待核实 Run/checkpoint 的记录不再占用初始恢复扫描批次；结果证据的后续核对与人工处理入口仍待生产接入。此路径不调用 Pi、Worker 或 provider，不释放未知模型费用，也不重新授予执行租约。真实 SQLite 测试覆盖恢复后重建、活跃租约竞争、旧版本和失效 authority 拒绝、写入失败回滚及取消保留；安装后入口仍未接入完整 HTTP/Run 主链路。
+
 Run 执行输入从 SQLite 中该 Run 关联的 Trigger 和 Payload 读取，查询同时约束 Owner、Agent、Thread 和已提交来源消息，不使用线程最新消息推测执行目标。`RunExecutionInputService` 在检查当前执行租约后，把可信 Core 提供的模型、系统指令引用、策略和 Capability Handle 引用保存为加密的 Run 所属快照；恢复时复用快照，仅重新绑定当前租约。该服务已经过真实 SQLite 与 RunCoordinator 的集成验证，完整 HTTP/Pi/Worker 入口组合仍待接入。
 
 `createProductionRunComposition` 统一组合持久调度、输入快照、Context Formation/Projection、Pi Agent Runtime 和 RunCoordinator。每次 Pi stream 使用当前 Run 执行租约绑定的 `ModelInvocationAdmissionService`，由 SQLite 保存调用身份和预算记录；调用槽位在同一 Run 内保持稳定，未知结果不会作为新的物理调用自动重放。最终回答使用产品约定的 UTF-8 `text/plain` Payload，供 Run 完成事务和浏览器正文读取复用。集成测试已使用固定版本 Pi 的真实 Session 和本地确定性 provider 验证成功回答与零预算拒绝；这不代表真实远端 provider、HTTP 登录和 Worker 工具调用已完成安装后验证。

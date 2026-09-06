@@ -1,10 +1,10 @@
-import type { RunExecutionLease } from "@himawari-agent/application";
+import type { RunExecutionLease, RunReconciliationPort } from "@himawari-agent/application";
 import {
   createAgentId,
   createAuthorityLeaseId,
   createDeploymentId,
-  createRunExecutionLeaseId,
   createOwnerId,
+  createRunExecutionLeaseId,
   createRunId,
   type ProductAuthorityFence,
 } from "@himawari-agent/domain";
@@ -165,6 +165,8 @@ export class SqliteRunDispatchOperations {
               readonly limit: number;
             },
           );
+        case "runDispatch.quarantine":
+          return this.quarantineSync(value as Parameters<RunReconciliationPort["quarantine"]>[0]);
         case "runDispatch.claim":
           return this.claimSync(value as Parameters<SqliteRunDispatchOperations["claim"]>[0]);
         case "runDispatch.renew":
@@ -272,6 +274,8 @@ export class SqliteRunDispatchOperations {
              AND current_turn.agent_id = r.agent_id
          WHERE r.owner_id = ? AND r.agent_id = ?
            AND r.status IN ('accepted', 'building_context', 'running', 'reconciling_external_result')
+           AND NOT (r.status = 'reconciling_external_result'
+             AND COALESCE(c.phase, '') = 'reconciling_external_result')
            AND (
              c.phase IN ('workers_running', 'runtime_running', 'reconciling_external_result')
              OR (c.phase IS NULL AND r.status IN ('building_context', 'running'))
@@ -289,6 +293,65 @@ export class SqliteRunDispatchOperations {
       )
       .all(this.scope.ownerId, this.scope.agentId, now, limit);
     return rows.map((row) => this.candidate(record(row), true));
+  }
+
+  async quarantine(input: Parameters<RunReconciliationPort["quarantine"]>[0]): Promise<void> {
+    this.quarantineSync(input);
+  }
+
+  private quarantineSync(input: Parameters<RunReconciliationPort["quarantine"]>[0]): void {
+    const runId = createRunId(input.runId);
+    const at = instant(input.at, "at");
+    const revision = safeInteger(input.expectedRunRevision, "expectedRunRevision", 1);
+    const leaseRevision = safeInteger(input.expectedLeaseRevision, "expectedLeaseRevision");
+    const reasonCode = machineText(input.reasonCode, "reasonCode");
+    this.database
+      .transaction(() => {
+        this.assertCurrentAuthority(at);
+        const run = this.readRun(runId);
+        if (!run) return this.fail("PORT_NOT_AUTHORITATIVE", "Run is outside the bound scope");
+        if (run.revision !== revision || run.leaseRevision !== leaseRevision)
+          return this.fail("PORT_CONFLICT", "Run changed before reconciliation", { runId });
+        // Never reopen a completed or Owner-cancelled Run.
+        if (["completed", "failed", "cancelled"].includes(run.status)) return;
+        if (
+          !["accepted", "building_context", "running", "reconciling_external_result"].includes(
+            run.status,
+          )
+        )
+          return this.fail("PORT_CONFLICT", "Run is not eligible for reconciliation", { runId });
+        const lease = this.readLease(runId);
+        if (lease && lease.releasedAt === null && isAfter(lease.expiresAt, at)) {
+          this.assertLeaseScope(lease, true);
+          if (lease.executionLeaseId !== input.executionLeaseId)
+            return this.fail("PORT_CONFLICT", "Cannot interrupt another live execution", { runId });
+        }
+        if (lease && lease.releasedAt === null) {
+          this.database
+            .prepare(`UPDATE run_execution_leases SET revision = revision + 1, released_at = ?
+          WHERE run_id = ? AND owner_id = ? AND agent_id = ?`)
+            .run(at, runId, this.scope.ownerId, this.scope.agentId);
+        }
+        if (
+          run.status === "reconciling_external_result" &&
+          run.checkpointPhase === "reconciling_external_result"
+        )
+          return;
+        this.database
+          .prepare(`UPDATE runs SET status = 'reconciling_external_result',
+        revision = revision + 1, updated_at = ? WHERE id = ? AND owner_id = ? AND agent_id = ?`)
+          .run(at, runId, this.scope.ownerId, this.scope.agentId);
+        // Preserve every context, observed output and Worker result reference.
+        this.database
+          .prepare(`INSERT INTO run_coordination_checkpoints
+        (run_id, owner_id, agent_id, revision, phase, runtime_event_count, diagnostic_code, updated_at)
+        VALUES (?, ?, ?, 1, 'reconciling_external_result', 0, ?, ?)
+        ON CONFLICT(run_id) DO UPDATE SET revision = revision + 1,
+        phase = 'reconciling_external_result', diagnostic_code = excluded.diagnostic_code,
+        updated_at = excluded.updated_at`)
+          .run(runId, this.scope.ownerId, this.scope.agentId, reasonCode, at);
+      })
+      .immediate();
   }
 
   async claim(input: {

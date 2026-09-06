@@ -21,9 +21,11 @@ import {
 
 const legalTransitions: ReadonlyArray<readonly [RunStatus, RunStatus]> = [
   ["accepted", "building_context"],
+  ["accepted", "reconciling_external_result"],
   ["accepted", "failed"],
   ["accepted", "cancelled"],
   ["building_context", "running"],
+  ["building_context", "reconciling_external_result"],
   ["building_context", "failed"],
   ["building_context", "cancelled"],
   ["running", "awaiting_approval"],
