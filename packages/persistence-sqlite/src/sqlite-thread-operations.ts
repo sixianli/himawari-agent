@@ -4,6 +4,7 @@ import type {
   ForkThreadInput,
   RequestThreadDeletionInput,
   ResolveThreadTaskInput,
+  RunExecutionSource,
   ScheduledJob,
   ThreadCreateInput,
   ThreadCommittedMessagesByIdsQuery,
@@ -194,6 +195,10 @@ export class SqliteThreadOperations {
       }
       case "thread.readContextSnapshot":
         return this.readContextSnapshot((payload as { query: ThreadContextSnapshotQuery }).query);
+      case "thread.readRunExecutionSource": {
+        const input = payload as { ownerId: OwnerId; agentId: AgentId; runId: RunId };
+        return this.readRunExecutionSource(input);
+      }
       case "thread.readCommittedMessagesByIds":
         return this.readCommittedMessagesByIds(
           (payload as { query: ThreadCommittedMessagesByIdsQuery }).query,
@@ -1317,6 +1322,39 @@ export class SqliteThreadOperations {
         )
         .all(ownerId, agentId, threadId, afterSequence, limit) as MessageRow[]
     ).map((row) => this.messageFromRow(row));
+  }
+
+  private readRunExecutionSource(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly runId: RunId;
+  }): RunExecutionSource | undefined {
+    return this.database
+      .prepare(`
+      SELECT r.owner_id AS ownerId, r.agent_id AS agentId, r.id AS runId,
+        r.session_id AS sessionId, r.thread_id AS threadId, r.trigger_id AS triggerId,
+        t.source_type AS sourceType, t.source_id AS sourceId, t.payload_ref AS payloadRef,
+        p.classification AS dataClassification, t.occurred_at AS occurredAt
+      FROM runs r
+      JOIN triggers t ON t.id = r.trigger_id AND t.owner_id = r.owner_id
+        AND t.agent_id = r.agent_id AND t.thread_id IS r.thread_id
+      JOIN payloads p ON p.ref = t.payload_ref AND p.owner_id = r.owner_id
+        AND p.agent_id = r.agent_id AND p.lifecycle_state = 'active'
+      WHERE r.id = ? AND r.owner_id = ? AND r.agent_id = ?
+        AND (r.thread_id IS NULL OR EXISTS (
+          SELECT 1 FROM threads th WHERE th.id = r.thread_id
+            AND th.owner_id = r.owner_id AND th.agent_id = r.agent_id
+            AND th.status = 'open' AND th.archived_at IS NULL
+        ))
+        AND (t.source_type != 'user_message' OR EXISTS (
+          SELECT 1 FROM thread_messages m WHERE m.id = t.source_id
+            AND m.owner_id = r.owner_id AND m.agent_id = r.agent_id
+            AND m.thread_id = r.thread_id AND m.run_id = r.id
+            AND m.content_ref = t.payload_ref AND m.role = 'owner'
+            AND m.message_status = 'committed'
+        ))
+    `)
+      .get(input.runId, input.ownerId, input.agentId) as RunExecutionSource | undefined;
   }
 
   private readContextSnapshot(

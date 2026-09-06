@@ -26,6 +26,7 @@ import type {
   PayloadStorePort,
   ProductMemoryStatePort,
   ProductStateRepositoryPort,
+  RunExecutionSourcePort,
   ReliableEventPort,
   ReliableEventRecord,
   RunCheckpointStore,
@@ -417,6 +418,13 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   threadRepository(): ThreadRepositoryPort {
     return this.durable.threadRepository();
+  }
+
+  runExecutionSource(ownerId: OwnerId, agentId: AgentId): RunExecutionSourcePort {
+    return Object.freeze<RunExecutionSourcePort>({
+      read: (runId) =>
+        this.context.request("thread.readRunExecutionSource", { ownerId, agentId, runId }),
+    });
   }
 
   runLifecycle(

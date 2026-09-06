@@ -37,6 +37,7 @@ export * from "./recent-authentication-service.js";
 export * from "./reflection-service.js";
 export * from "./reliable-event-publisher.js";
 export * from "./run-coordinator.js";
+export * from "./run-execution-input-service.js";
 export * from "./run-state-commit-coordinator.js";
 export * from "./scheduler-service.js";
 export * from "./session-deletion-coordinator.js";

@@ -358,6 +358,8 @@ Identity Gateway 把 bootstrap、产品 session 和 break-glass 保持为独立�
 
 ## Main Flows
 
+Run 执行输入从 SQLite 中该 Run 关联的 Trigger 和 Payload 读取，查询同时约束 Owner、Agent、Thread 和已提交来源消息，不使用线程最新消息推测执行目标。`RunExecutionInputService` 在检查当前执行租约后，把可信 Core 提供的模型、系统指令引用、策略和 Capability Handle 引用保存为加密的 Run 所属快照；恢复时复用快照，仅重新绑定当前租约。该服务已经过真实 SQLite 与 RunCoordinator 的集成验证，完整 HTTP/Pi/Worker 入口组合仍待接入。
+
 Agent/Worker 启动绑定使用显式双向启动身份：Agent 发布的绑定包含目标 Worker 的 instance 与 boot identity，Worker 只有在两者均匹配本次启动时才连接反向通道；权限代次相同的旧 Agent 绑定也不能被新 Worker 复用。本地 macOS 归档的安装后集成测试已通过，包括启动、诊断、互斥锁、正常停止与强制重启；这不代表 HTTP/Run 链路或双平台发布验收完成。
 
 Agent Service 的退出清理由统一生命周期管理：先停止接收新工作，再等待已接任务结束，最后按依赖逆序关闭资源；某个资源清理失败不阻断其余资源清理。正常退出与启动失败共用同一条幂等清理路径。生产 Memory 组合启动后会创建实际投影消费者，每次领取一个持久任务，等待权限检查完成后执行；停止时先禁止领取新任务，再等待当前任务结束，最后关闭 Mem0 和 SQLite。这些行为已有本地单元测试，尚未替代安装后进程重启验收。HTTP、Run Dispatcher 与 Pi/Worker 的完整生产组合仍待接入。

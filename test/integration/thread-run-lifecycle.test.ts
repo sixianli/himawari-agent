@@ -10,6 +10,7 @@ import {
   PORT_ERROR_CODES,
   type RunCompletionInput,
   RunCoordinator,
+  RunExecutionInputService,
   type RunDispatchPort,
   type RunExecutionLease,
   type RunLifecyclePort,
@@ -2039,4 +2040,118 @@ it("rolls back cancellation state, checkpoint, lease and receipt when outbox ins
       .get(command.idempotencyKey),
   ).toBeUndefined();
   reopened.close();
+});
+
+it("resolves a claimed Run from its original trigger after a later Owner message", async () => {
+  const setup = await fixture();
+  const sourcePort = setup.repository.runExecutionSource(ownerId, agentId);
+  const first = await sourcePort.read(setup.runId);
+  expect(first).toMatchObject({
+    runId: setup.runId,
+    sourceId: setup.admitted.message.id,
+    sourceType: "user_message",
+    payloadRef: "payload-run-lifecycle",
+  });
+  const later = await setup.commands.admitOwnerMessage({
+    ownerId,
+    agentId,
+    threadId: setup.admitted.thread.id,
+    expectedThreadRevision: setup.admitted.thread.revision,
+    sessionId: createSessionId("session-run-lifecycle-later"),
+    idempotencyKey: "later-message",
+    contentRef: "payload-run-lifecycle",
+    sourceProofRef: "proof:later-owner",
+    dataClassification: "private",
+    resultRef: "payload-run-lifecycle",
+  });
+  expect(later.message.runId).not.toBe(setup.runId);
+  expect(await sourcePort.read(setup.runId)).toEqual(first);
+  await expect(
+    setup.repository.runExecutionSource(createOwnerId("other-owner"), agentId).read(setup.runId),
+  ).resolves.toBeUndefined();
+  await expect(
+    setup.repository.runExecutionSource(ownerId, createAgentId("other-agent")).read(setup.runId),
+  ).resolves.toBeUndefined();
+});
+
+it("freezes execution policy across factory recreation and rejects a different claimed source", async () => {
+  const setup = await executionFixture();
+  const source = await setup.repository.runExecutionSource(ownerId, agentId).read(setup.runId);
+  if (!source) throw new Error("Missing execution source");
+  const dispatch = setup.repository.runDispatch(
+    ownerId,
+    agentId,
+    authority,
+    lease,
+    "thread-run-lifecycle",
+  );
+  const held = await dispatch.assertHeld({
+    runId: setup.runId,
+    expectedLeaseRevision: 1,
+    executionLeaseId: executionLease(setup.runId).executionLeaseId,
+    at: clock.now(),
+  });
+  const candidate = {
+    ...source,
+    runRevision: 1,
+    runStatus: "accepted" as const,
+    checkpointPhase: null,
+    leaseRevision: 0,
+    action: "start" as const,
+  };
+  const adapters = createReferenceAdapterSet({ clock });
+  const policy = vi.fn(async () => ({
+    modelRef: "primary-frozen",
+    systemInstructionRef: "payload-final-answer",
+    policyVersion: "production-policy-v1",
+    policies: [],
+    capabilities: [],
+    capabilityHandleRefs: [],
+    maxMemoryClassification: "private" as const,
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+  }));
+  const options = {
+    source: setup.repository.runExecutionSource(ownerId, agentId),
+    artifacts: setup.repository.runPayloadArtifactPort(ownerId, agentId, {
+      product: authority,
+      lease,
+    }),
+    payloads: setup.repository.payloadStore(ownerId, agentId),
+    protector: setup.protector,
+    clock,
+    ids: adapters.ids,
+    dispatch,
+    policy,
+  };
+  const original = await new RunExecutionInputService(options).create({ candidate, lease: held });
+  expect(original.context.trigger).toMatchObject({
+    id: source.triggerId,
+    payloadRef: source.payloadRef,
+  });
+  expect(original.executionLease).toEqual(claimFromRunExecutionLease(held));
+  const changedPolicy = vi.fn(async () => {
+    throw new Error("Must not reselect policy");
+  });
+  const restored = await new RunExecutionInputService({ ...options, policy: changedPolicy }).create(
+    { candidate, lease: held },
+  );
+  expect(restored).toEqual(original);
+  expect(policy).toHaveBeenCalledTimes(1);
+  expect(changedPolicy).not.toHaveBeenCalled();
+  await expect(
+    new RunExecutionInputService(options).create({
+      candidate: { ...candidate, sessionId: createSessionId("other-session") },
+      lease: held,
+    }),
+  ).rejects.toMatchObject({ code: PORT_ERROR_CODES.INVALID_OPERATION });
+  await expect(setup.coordinator.execute(original)).resolves.toMatchObject({
+    run: { run: { status: "completed" } },
+  });
+  const messages = await setup.repository
+    .threadRepository()
+    .listMessages(ownerId, agentId, setup.admitted.thread.id, 0, 100);
+  expect(messages.filter((message) => message.role === "agent")).toMatchObject([
+    { runId: setup.runId, contentRef: "payload-final-answer", status: "committed" },
+  ]);
 });
