@@ -3,6 +3,7 @@ import {
   ApplicationPortError,
   PORT_ERROR_CODES,
   WebCapabilityService,
+  DurableWebStateAdapter,
   type AuthenticatedWebAdapterPort,
   type PreparedWebAction,
   type WebExecutionHandle,
@@ -15,7 +16,8 @@ import {
   type WebCapabilityConformanceFixture,
   webCapabilityConformance,
 } from "@himawari-agent/testing/conformance";
-import { describe, expect, it } from "vitest";
+import { InMemoryStateStore } from "@himawari-agent/testing";
+import { describe, expect, it, vi } from "vitest";
 import { BoundedPublicWebAdapter } from "../src/index.js";
 
 const NOW = "2026-08-28T20:00:00.000Z";
@@ -61,7 +63,12 @@ class MemoryWebState implements WebStatePort {
     this.operations.set(operation.id, operation);
     return { record: operation, replayed: false };
   }
-  async saveOperation(operation: WebOperationRecord) {
+  async saveOperation(operation: WebOperationRecord, expectedRevision: number) {
+    if (
+      this.operations.get(operation.id)?.revision !== expectedRevision ||
+      operation.revision !== expectedRevision + 1
+    )
+      conflict();
     this.operations.set(operation.id, operation);
     return operation;
   }
@@ -125,12 +132,19 @@ class FixtureAuthenticatedAdapter implements AuthenticatedWebAdapterPort {
   }
 }
 
-function fixtureHarness() {
+function fixtureHarness(
+  options: {
+    state?: WebStatePort;
+    now?: () => string;
+    authenticatedAdapter?: FixtureAuthenticatedAdapter;
+  } = {},
+) {
   return {
     async create(): Promise<WebCapabilityConformanceFixture> {
-      const state = new MemoryWebState();
+      const state = options.state ?? new MemoryWebState();
       const bodies = new Map<string, string>();
-      const authenticatedAdapter = new FixtureAuthenticatedAdapter();
+      const authenticatedAdapter =
+        options.authenticatedAdapter ?? new FixtureAuthenticatedAdapter();
       let sequence = 0;
       const digest = {
         digest(value: string) {
@@ -163,7 +177,7 @@ function fixtureHarness() {
         publicAdapter,
         authenticatedAdapter,
         digest,
-        clock: { now: () => NOW },
+        clock: { now: options.now ?? (() => NOW) },
         ids: { next: (prefix) => `${prefix}-${++sequence}` },
         hostId: "host-mac",
       });
@@ -243,5 +257,178 @@ describe("BoundedPublicWebAdapter security", () => {
     await expect(
       adapter.open({ requestedUrl: "http://localhost/private", maximumBytes: 1024 }),
     ).rejects.toMatchObject({ message: "WEB_SSRF_TARGET_BLOCKED" });
+  });
+});
+
+describe("Web execution lease recovery", () => {
+  it("renews a live execution lease and releases it when execution completes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW));
+    try {
+      const state = new DurableWebStateAdapter(new InMemoryStateStore());
+      let release = () => {};
+      let started = () => {};
+      const entered = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      class SlowAdapter extends FixtureAuthenticatedAdapter {
+        override async execute(input: { operationId: string }) {
+          const result = await super.execute(input);
+          started();
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          return result;
+        }
+      }
+      const fixture = await fixtureHarness({
+        state,
+        now: () => new Date().toISOString(),
+        authenticatedAdapter: new SlowAdapter(),
+      }).create();
+      const action = await fixture.prepare(await fixture.createSession());
+      const handle = fixture.handle(action, "web-renewal");
+      const pending = fixture.service.executeAction({
+        handle,
+        authorityFence: 1,
+        idempotencyKey: "renewal",
+      });
+      await entered;
+      await vi.advanceTimersByTimeAsync(45000);
+      await expect(fixture.service.reconcile(handle.operationId)).rejects.toThrow(
+        "active execution lease",
+      );
+      expect((await state.readOperation(handle.operationId))?.revision).toBeGreaterThan(2);
+      release();
+      expect(await pending).toMatchObject({
+        status: "confirmed_succeeded",
+        executionOwner: null,
+        leaseExpiresAt: null,
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("recovers a legacy running record using its durable store revision", async () => {
+    const backing = new InMemoryStateStore();
+    const state = new DurableWebStateAdapter(backing);
+    const fixture = await fixtureHarness({ state }).create();
+    const action = await fixture.prepare(await fixture.createSession());
+    const handle = fixture.handle(action, "web-legacy");
+    fixture.forceUnknownOnce();
+    const operation = await fixture.service.executeAction({
+      handle,
+      authorityFence: 1,
+      idempotencyKey: "legacy",
+    });
+    const legacy = JSON.parse(JSON.stringify(operation));
+    for (const field of ["revision", "executionOwner", "leaseExpiresAt", "authorityFence"])
+      delete legacy[field];
+    legacy.status = "running";
+    await backing.compareAndSet({
+      key: "web:operation:web-legacy",
+      expectedRevision: operation.revision,
+      value: legacy,
+    });
+    expect((await fixture.service.reconcile(handle.operationId)).status).toBe(
+      "confirmed_succeeded",
+    );
+    expect(fixture.executionCount(handle.operationId)).toBe(1);
+  });
+
+  it("captures an asynchronous result commit failure as unknown and reconciles once", async () => {
+    class FailingState extends DurableWebStateAdapter {
+      fail = true;
+      override async saveOperation(record: WebOperationRecord, revision: number) {
+        if (this.fail && record.status === "confirmed_succeeded") {
+          this.fail = false;
+          throw new Error("injected result commit failure");
+        }
+        return super.saveOperation(record, revision);
+      }
+    }
+    const fixture = await fixtureHarness({
+      state: new FailingState(new InMemoryStateStore()),
+    }).create();
+    const action = await fixture.prepare(await fixture.createSession());
+    const handle = fixture.handle(action, "web-commit-failure");
+    const operation = await fixture.service.executeAction({
+      handle,
+      authorityFence: 1,
+      idempotencyKey: "commit-failure",
+    });
+    expect(operation.status).toBe("unknown");
+    expect((await fixture.service.reconcile(operation.id)).status).toBe("confirmed_succeeded");
+    expect(fixture.executionCount(operation.id)).toBe(1);
+  });
+
+  it("takes over an expired lease after service recreation and rejects the old executor result", async () => {
+    const backing = new InMemoryStateStore();
+    const state = new DurableWebStateAdapter(backing);
+    let now = NOW;
+    let release = () => {};
+    let started = () => {};
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    class PausedAdapter extends FixtureAuthenticatedAdapter {
+      override async execute(input: { operationId: string }) {
+        const result = await super.execute(input);
+        started();
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return result;
+      }
+    }
+    const adapter = new PausedAdapter();
+    const first = await fixtureHarness({
+      state,
+      now: () => now,
+      authenticatedAdapter: adapter,
+    }).create();
+    const action = await first.prepare(await first.createSession());
+    const handle = first.handle(action, "web-expired-executor");
+    const pending = first.service.executeAction({
+      handle,
+      authorityFence: 1,
+      idempotencyKey: "expired",
+    });
+    const rejected = expect(pending).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+    await entered;
+    const second = await fixtureHarness({
+      state: new DurableWebStateAdapter(backing),
+      now: () => now,
+      authenticatedAdapter: adapter,
+    }).create();
+    await expect(second.service.reconcile(handle.operationId)).rejects.toThrow(
+      "active execution lease",
+    );
+    now = "2026-08-28T20:00:31.000Z";
+    const recovered = await second.service.reconcile(handle.operationId);
+    expect(recovered.status).toBe("confirmed_succeeded");
+    release();
+    await rejected;
+    expect(await state.readOperation(handle.operationId)).toEqual(recovered);
+    expect(first.executionCount(handle.operationId)).toBe(1);
+  });
+
+  it("allows only one recovery claimant for the same durable revision", async () => {
+    const state = new DurableWebStateAdapter(new InMemoryStateStore());
+    const first = await fixtureHarness({ state }).create();
+    const action = await first.prepare(await first.createSession());
+    first.forceUnknownOnce();
+    const handle = first.handle(action, "web-recovery-race");
+    await first.service.executeAction({ handle, authorityFence: 1, idempotencyKey: "race" });
+    const second = await fixtureHarness({ state }).create();
+    const results = await Promise.allSettled([
+      first.service.reconcile(handle.operationId),
+      second.service.reconcile(handle.operationId),
+    ]);
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+    expect(results.filter(({ status }) => status === "rejected")).toHaveLength(1);
+    expect((await state.readOperation(handle.operationId))?.status).toBe("confirmed_succeeded");
   });
 });

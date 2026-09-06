@@ -102,6 +102,11 @@ export interface WebExecutionHandle {
 }
 
 export interface WebOperationRecord {
+  readonly revision: number;
+  readonly executionOwner: string | null;
+  readonly leaseExpiresAt: string | null;
+  readonly authorityFence: number;
+
   readonly id: string;
   readonly kind: WebOperationKind;
   readonly preparedActionId: string | null;
@@ -132,7 +137,10 @@ export interface WebStatePort {
   createOperation(
     operation: WebOperationRecord,
   ): Promise<{ record: WebOperationRecord; replayed: boolean }>;
-  saveOperation(operation: WebOperationRecord): Promise<WebOperationRecord>;
+  saveOperation(
+    operation: WebOperationRecord,
+    expectedRevision: number,
+  ): Promise<WebOperationRecord>;
   readOperation(operationId: string): Promise<WebOperationRecord | undefined>;
 }
 
