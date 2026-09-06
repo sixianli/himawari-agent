@@ -489,7 +489,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       agentId: this.#dependencies.agentId,
       ref,
       dataClassification,
-      contentType: "text/plain; charset=utf-8",
+      contentType: "text/plain",
       plaintext: new TextEncoder().encode(text),
       createdAt: this.#dependencies.clock.now(),
     });

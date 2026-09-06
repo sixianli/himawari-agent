@@ -360,6 +360,8 @@ Identity Gateway 把 bootstrap、产品 session 和 break-glass 保持为独立�
 
 Run 执行输入从 SQLite 中该 Run 关联的 Trigger 和 Payload 读取，查询同时约束 Owner、Agent、Thread 和已提交来源消息，不使用线程最新消息推测执行目标。`RunExecutionInputService` 在检查当前执行租约后，把可信 Core 提供的模型、系统指令引用、策略和 Capability Handle 引用保存为加密的 Run 所属快照；恢复时复用快照，仅重新绑定当前租约。该服务已经过真实 SQLite 与 RunCoordinator 的集成验证，完整 HTTP/Pi/Worker 入口组合仍待接入。
 
+`createProductionRunComposition` 统一组合持久调度、输入快照、Context Formation/Projection、Pi Agent Runtime 和 RunCoordinator。每次 Pi stream 使用当前 Run 执行租约绑定的 `ModelInvocationAdmissionService`，由 SQLite 保存调用身份和预算记录；调用槽位在同一 Run 内保持稳定，未知结果不会作为新的物理调用自动重放。最终回答使用产品约定的 UTF-8 `text/plain` Payload，供 Run 完成事务和浏览器正文读取复用。集成测试已使用固定版本 Pi 的真实 Session 和本地确定性 provider 验证成功回答与零预算拒绝；这不代表真实远端 provider、HTTP 登录和 Worker 工具调用已完成安装后验证。
+
 Agent/Worker 启动绑定使用显式双向启动身份：Agent 发布的绑定包含目标 Worker 的 instance 与 boot identity，Worker 只有在两者均匹配本次启动时才连接反向通道；权限代次相同的旧 Agent 绑定也不能被新 Worker 复用。本地 macOS 归档的安装后集成测试已通过，包括启动、诊断、互斥锁、正常停止与强制重启；这不代表 HTTP/Run 链路或双平台发布验收完成。
 
 Agent Service 的退出清理由统一生命周期管理：先停止接收新工作，再等待已接任务结束，最后按依赖逆序关闭资源；某个资源清理失败不阻断其余资源清理。正常退出与启动失败共用同一条幂等清理路径。生产 Memory 组合启动后会创建实际投影消费者，每次领取一个持久任务，等待权限检查完成后执行；停止时先禁止领取新任务，再等待当前任务结束，最后关闭 Mem0 和 SQLite。这些行为已有本地单元测试，尚未替代安装后进程重启验收。HTTP、Run Dispatcher 与 Pi/Worker 的完整生产组合仍待接入。

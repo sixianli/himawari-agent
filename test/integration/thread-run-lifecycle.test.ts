@@ -43,6 +43,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import {
   EnvelopePayloadProtector,
+  BrowserTextPayloadReader,
   InMemoryDevelopmentSecretSource,
 } from "@himawari-agent/platform-node";
 import {
@@ -2155,3 +2156,173 @@ it("freezes execution policy across factory recreation and rejects a different c
     { runId: setup.runId, contentRef: "payload-final-answer", status: "committed" },
   ]);
 });
+
+it.each([100, 0])(
+  "executes persistent dispatch through the real Pi loop with budget %s",
+  async (budget) => {
+    const { createFauxModelFixture } = await import(
+      "../../packages/runtime-pi/test/faux-model-fixture.js"
+    );
+    const { createProductionRunComposition } = await import(
+      "../../apps/agent-service/src/production-run-composition.js"
+    );
+    const setup = await executionFixture();
+    const adapters = createReferenceAdapterSet({ clock });
+    const model = await createFauxModelFixture("这是 Pi 执行后持久保存的回答。");
+    const payloads = setup.repository.payloadStore(ownerId, agentId);
+    for (const [ref, text] of [
+      ["pi-prompt", "请回答本次请求。"],
+      ["pi-system", "你是助手。"],
+    ]) {
+      if (!ref || !text) throw new Error("Invalid test content");
+      await payloads.put(
+        await setup.protector.protect({
+          ownerId,
+          agentId,
+          ref,
+          dataClassification: "private",
+          contentType: "text/plain",
+          plaintext: new TextEncoder().encode(text),
+          createdAt: clock.now(),
+        }),
+      );
+    }
+    const thread = await setup.commands.create({
+      ownerId,
+      agentId,
+      idempotencyKey: "pi-thread",
+      resultRef: "pi-prompt",
+    });
+    const admitted = await setup.commands.admitOwnerMessage({
+      ownerId,
+      agentId,
+      threadId: thread.thread.id,
+      expectedThreadRevision: thread.thread.revision,
+      sessionId: createSessionId("pi-session"),
+      idempotencyKey: "pi-message",
+      contentRef: "pi-prompt",
+      sourceProofRef: "owner:pi-test",
+      dataClassification: "private",
+      resultRef: "pi-prompt",
+    });
+    const reconcile = vi.fn(async () => undefined);
+    const failure = vi.fn();
+    const composed = createProductionRunComposition({
+      configuration: {
+        ownerId,
+        agentId,
+        concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
+        budgets: {
+          globalCostMicros: budget,
+          perRunCostMicros: budget,
+          perClassificationCostMicros: {
+            public: budget,
+            private: budget,
+            sensitive: 0,
+            restricted: 0,
+          },
+        },
+      },
+      repository: setup.repository,
+      authority: {
+        authorityFence: () => authority,
+        authorityLease: () => lease,
+        assertActive: async () => undefined,
+        isAccepting: () => true,
+      },
+      models: model.models,
+      modelRegistry: [model.descriptor],
+      protector: setup.protector,
+      memory: adapters.memory,
+      tools: {
+        listAuthorized: async () => [],
+        preflight: async () => {
+          throw new Error("No tools are authorized in this test");
+        },
+        execute: async () => {
+          throw new Error("No tools are authorized in this test");
+        },
+      },
+      workers: new ScriptedWorkerRunPort(),
+      policy: async () => ({
+        modelRef: model.descriptor.ref,
+        systemInstructionRef: "pi-system",
+        policyVersion: "pi-test-policy",
+        policies: [],
+        capabilities: [],
+        capabilityHandleRefs: [],
+        maxMemoryClassification: "private",
+        memoryLimit: 5,
+        maxSelectedMemories: 0,
+      }),
+      reconcile,
+      clock,
+      ids: adapters.ids,
+      instanceId: "pi-composition-test",
+      cwd: setup.stateRoot,
+      agentDir: path.join(setup.stateRoot, "pi-agent"),
+      onFailure: failure,
+    });
+    const pumped = await composed.dispatcher.pump();
+    expect(pumped).toMatchObject({ claimed: 1, settled: 1, unknown: 0 });
+    const messages = await setup.repository
+      .threadRepository()
+      .listMessages(ownerId, agentId, thread.thread.id, 0, 100);
+    const answer = messages.find((message) => message.role === "agent");
+    if (budget > 0) {
+      expect(model.observed).toHaveLength(1);
+      expect(JSON.stringify(model.observed)).toContain("请回答本次请求。");
+      expect(answer?.runId).toBe(admitted.message.runId);
+      const payload = await payloads.get(answer?.contentRef ?? "missing");
+      if (!payload) throw new Error("Missing durable Pi answer");
+      const reader = new BrowserTextPayloadReader({
+        payloads: (requestedOwner, requestedAgent) =>
+          setup.repository.payloadStore(
+            createOwnerId(requestedOwner),
+            createAgentId(requestedAgent),
+          ),
+        protector: setup.protector,
+      });
+      await expect(
+        reader.read({
+          authentication: {
+            ownerId,
+            subjectId: "owner:pi-test",
+            deviceId: "device:pi-test",
+            authenticatedAt: clock.now(),
+            authenticationRef: "session:pi-test",
+          },
+          agentId,
+          payloadRef: payload.ref,
+        }),
+      ).resolves.toMatchObject({
+        content: "这是 Pi 执行后持久保存的回答。",
+        contentType: "text/plain",
+      });
+      expect(
+        new TextDecoder().decode(await setup.protector.unprotect({ ownerId, agentId, payload })),
+      ).toBe("这是 Pi 执行后持久保存的回答。");
+      const database = openQualifiedDatabase(setup.databasePath);
+      try {
+        expect(
+          database
+            .prepare("SELECT status FROM model_invocation_identities WHERE run_id = ?")
+            .all(admitted.message.runId),
+        ).toEqual([{ status: "settled" }]);
+      } finally {
+        database.close();
+      }
+    } else {
+      expect(model.observed).toHaveLength(0);
+      expect(answer).toBeUndefined();
+      if (!admitted.message.runId) throw new Error("Missing admitted Pi Run");
+      await expect(setup.runs.readRun(admitted.message.runId)).resolves.toMatchObject({
+        run: { status: "failed" },
+      });
+    }
+    expect(reconcile).not.toHaveBeenCalled();
+    expect(failure).not.toHaveBeenCalled();
+    await expect(composed.loop.stop(1000)).resolves.toMatchObject({ drained: true });
+  },
+  30_000,
+);
