@@ -99,7 +99,7 @@ class FakeMem0Memory {
   }
 
   async getAll() {
-    return { results: [...this.records.values()] };
+    return { results: [...this.records.values()].slice(0, 20) };
   }
 
   async search() {
@@ -187,6 +187,41 @@ async function adapter() {
 }
 
 describe("Mem0 product projection adapter", () => {
+  it("recreates a missing provider projection while retaining product identity", async () => {
+    const projection = await adapter();
+    const providerId = await projection.upsert({ memory: productMemory(), content: "original" });
+    const fake = FakeMem0Memory.latest as FakeMem0Memory;
+    fake.records.clear();
+    const rebuilt = await projection.upsert({
+      memory: productMemory(providerId),
+      content: "rebuilt",
+    });
+    expect(fake.records.get(rebuilt)).toMatchObject({
+      memory: "rebuilt",
+      metadata: { product_memory_id: productMemory().id },
+    });
+  });
+
+  it("clears every page of provider records and their history", async () => {
+    const projection = await adapter();
+    for (let index = 0; index < 25; index += 1) {
+      await projection.upsert({
+        memory: { ...productMemory(), id: createMemoryId(`memory-batch-${index}`) },
+        content: `content ${index}`,
+      });
+    }
+    const fake = FakeMem0Memory.latest as FakeMem0Memory;
+    expect(fake.records.size).toBe(25);
+    await projection.clearScope(OWNER_ID, AGENT_ID);
+    expect(fake.records.size).toBe(0);
+    const history = new BetterSqlite3(fake.configuration["historyDbPath"] as string);
+    try {
+      expect(history.prepare("SELECT * FROM memory_history").all()).toEqual([]);
+    } finally {
+      history.close();
+    }
+  });
+
   it("removes retained history and retries cleanup after the vector is already gone", async () => {
     const projection = await adapter();
     const providerId = await projection.upsert({

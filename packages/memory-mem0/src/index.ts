@@ -265,7 +265,15 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
   }): Promise<string> {
     requiredText(input.content, "content");
     const providerMetadata = metadata(input.memory);
-    if (input.memory.providerRecordId) {
+    const existing = input.memory.providerRecordId
+      ? await this.memory.get(input.memory.providerRecordId)
+      : null;
+    if (existing && productMemoryId(existing) !== input.memory.id) {
+      fail("Mem0 provider identity belongs to a different product Memory", {
+        memoryId: input.memory.id,
+      });
+    }
+    if (existing && input.memory.providerRecordId) {
       await this.memory.update(input.memory.providerRecordId, {
         text: input.content,
         metadata: providerMetadata,
@@ -357,8 +365,21 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
   }
 
   async clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void> {
-    const result = await this.memory.getAll({ filters: { user_id: ownerId, agent_id: agentId } });
-    for (const record of result.results) await this.delete(record.id);
+    const deleted = new Set<string>();
+    while (true) {
+      const result = await this.memory.getAll({
+        filters: { user_id: ownerId, agent_id: agentId },
+        topK: 100,
+        showExpired: true,
+      });
+      if (result.results.length === 0) return;
+      for (const record of result.results) {
+        if (deleted.has(record.id))
+          fail("Mem0 scope cleanup made no progress", { providerRecordId: record.id });
+        await this.delete(record.id);
+        deleted.add(record.id);
+      }
+    }
   }
 }
 
