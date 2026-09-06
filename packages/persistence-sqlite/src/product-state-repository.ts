@@ -8,6 +8,7 @@ import type {
   BackgroundWorkStatePort,
   CapabilityExecutionHandleStorePort,
   CapabilityInvocationReceiptPort,
+  CapabilityInvocationResultPort,
   CapabilityRegistryStorePort,
   ClockPort,
   CommandResultLookup,
@@ -365,6 +366,13 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     agentId: AgentId,
   ): CapabilityInvocationReceiptPort {
     return this.durable.capabilityInvocationReceiptPort(ownerId, agentId);
+  }
+
+  capabilityInvocationResultPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+  ): CapabilityInvocationResultPort {
+    return this.durable.capabilityInvocationResultPort(ownerId, agentId);
   }
 
   scheduler(): SchedulerPort {

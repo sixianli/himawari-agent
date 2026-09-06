@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import type { ClockPort, IdGeneratorPort, ProductConfiguration } from "@himawari-agent/application";
+import {
+  type ClockPort,
+  type IdGeneratorPort,
+  type ProductConfiguration,
+  WorkerDelegationAdmissionService,
+} from "@himawari-agent/application";
+import type { ExecutionAdmissionPeerBinding } from "@himawari-agent/execution-contracts";
 import {
   inspectDeploymentAuthorityReadOnly,
   openQualifiedDatabase,
@@ -8,22 +14,31 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  assertProductionSecretSource,
   EnvelopePayloadProtector,
   EphemeralSecretPort,
+  EXECUTION_UDS_ERROR_CODES,
+  ExecutionAdmissionUdsServer,
+  ExecutionUdsError,
   initializeStateRoot,
   JsonFileConfigurationPort,
   MacOsKeychainProviderSecretSource,
   MacOsKeychainSecretSource,
+  PayloadUdsServer,
   parseServiceArguments,
   readAuthorityFile,
   readRestrictedExecutionTokenFile,
+  readWorkerServiceBootBinding,
   SERVICE_RUNTIME_ERROR_CODES,
   SystemdCredentialSecretSource,
   SystemdProviderSecretSource,
   stableErrorCode,
-  waitForTerminationSignal,
+  writeAgentServiceBootBinding,
+  writeAuthorityFile,
   writeServiceDiagnostic,
 } from "@himawari-agent/platform-node";
+import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
+import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import {
   createProductionMemoryCompositionFromConfiguration,
@@ -33,14 +48,26 @@ import {
   createProductionModelCompositionFromConfiguration,
   type ProductionConfiguredModelComposition,
 } from "./production-model-composition.js";
+import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
+import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 
 export const AGENT_SERVICE_ERROR_CODES = Object.freeze({
   AUTHORITY_INACTIVE: "AGENT_AUTHORITY_INACTIVE",
   AUTHORITY_MISMATCH: "AGENT_AUTHORITY_MISMATCH",
+  AUTHORITY_LOST: "AGENT_AUTHORITY_LOST",
   SQLITE_UNQUALIFIED: "AGENT_SQLITE_UNQUALIFIED",
   MODEL_PATH_UNSUPPORTED: "AGENT_MODEL_PATH_UNSUPPORTED",
   PAYLOAD_KEY_REFERENCE_INVALID: "AGENT_PAYLOAD_KEY_REFERENCE_INVALID",
+  WORKER_BOOT_BINDING_INVALID: "AGENT_WORKER_BOOT_BINDING_INVALID",
+  WORKER_UNAVAILABLE: "AGENT_WORKER_UNAVAILABLE",
 } as const);
+
+const AUTHORITY_LEASE_DURATION_MS = 30_000;
+const AUTHORITY_RENEWAL_INTERVAL_MS = 10_000;
+const STARTUP_WAIT_TIMEOUT_MS = 30_000;
+const STARTUP_RETRY_DELAY_MS = 50;
+const MAXIMUM_BODY_BYTES = 65_536;
+const MAXIMUM_PAYLOAD_BYTES = 48 * 1024;
 
 export interface AgentServiceModelCompositionContext {
   readonly configuration: ProductConfiguration;
@@ -107,10 +134,7 @@ function hostModelSources(configuration: ProductConfiguration) {
   });
 }
 
-async function createDefaultModelComposition(
-  context: AgentServiceModelCompositionContext,
-): Promise<ProductionConfiguredModelComposition> {
-  const { configuration, repository } = context;
+function configuredPayloadProtector(configuration: ProductConfiguration): EnvelopePayloadProtector {
   const payloadKeys = configuration.secretReferences.filter(
     ({ purpose }) => purpose === "payload-encryption",
   );
@@ -119,10 +143,8 @@ async function createDefaultModelComposition(
   }
   const payloadKey = payloadKeys[0];
   const sources = hostModelSources(configuration);
-  const clock = productionClock();
-  const ids = productionIds();
-  const handles = new EphemeralSecretPort({ ids, clock });
-  const protector = new EnvelopePayloadProtector({
+  assertProductionSecretSource(sources.keys);
+  return new EnvelopePayloadProtector({
     keys: sources.keys,
     activeKey: {
       keyRef: payloadKey.ref,
@@ -130,6 +152,17 @@ async function createDefaultModelComposition(
       dekVersion: "dek-v1",
     },
   });
+}
+
+async function createDefaultModelComposition(
+  context: AgentServiceModelCompositionContext,
+): Promise<ProductionConfiguredModelComposition> {
+  const { configuration, repository } = context;
+  const sources = hostModelSources(configuration);
+  const clock = productionClock();
+  const ids = productionIds();
+  const handles = new EphemeralSecretPort({ ids, clock });
+  const protector = configuredPayloadProtector(configuration);
   try {
     const created = await createProductionModelCompositionFromConfiguration({
       configuration,
@@ -174,6 +207,110 @@ async function createDefaultMemoryComposition(
   });
 }
 
+type AgentAuthorityRecord = Awaited<ReturnType<typeof readAuthorityFile>>;
+
+function sameConfiguredAuthority(
+  authority: AgentAuthorityRecord,
+  configuration: ProductConfiguration,
+): boolean {
+  return (
+    authority.status === "active" &&
+    authority.id === configuration.deploymentId &&
+    authority.ownerId === configuration.ownerId &&
+    authority.agentId === configuration.agentId
+  );
+}
+
+async function waitForWorkerBootBinding(input: {
+  readonly layout: Awaited<ReturnType<typeof initializeStateRoot>>;
+  readonly configuration: ProductConfiguration;
+  readonly authority: AgentAuthorityRecord;
+  readonly isAuthorityActive?: () => boolean;
+}): Promise<Awaited<ReturnType<typeof readWorkerServiceBootBinding>>> {
+  const deadline = Date.now() + STARTUP_WAIT_TIMEOUT_MS;
+  for (;;) {
+    if (input.isAuthorityActive && !input.isAuthorityActive()) {
+      throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
+    }
+    const binding = await readWorkerServiceBootBinding(input.layout).catch(() => undefined);
+    if (
+      binding &&
+      binding.workerInstanceId === `execution-worker:${input.configuration.deploymentId}` &&
+      binding.deploymentId === input.configuration.deploymentId &&
+      binding.ownerId === input.configuration.ownerId &&
+      binding.agentId === input.configuration.agentId &&
+      binding.authorityEpoch === input.authority.authorityEpoch &&
+      binding.fencingToken === input.authority.fencingToken
+    ) {
+      return binding;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(AGENT_SERVICE_ERROR_CODES.WORKER_BOOT_BINDING_INVALID);
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, STARTUP_RETRY_DELAY_MS));
+  }
+}
+
+function retryableWorkerStartupError(error: unknown): boolean {
+  return (
+    error instanceof ExecutionUdsError &&
+    (error.code === EXECUTION_UDS_ERROR_CODES.TRANSPORT_UNAVAILABLE ||
+      error.code === EXECUTION_UDS_ERROR_CODES.DEADLINE_EXCEEDED ||
+      error.code === EXECUTION_UDS_ERROR_CODES.REQUEST_FAILED)
+  );
+}
+
+async function connectWorkerWithRetry(
+  client: AgentServiceExecutionClient,
+  isAuthorityActive?: () => boolean,
+): Promise<Awaited<ReturnType<AgentServiceExecutionClient["start"]>>> {
+  const deadline = Date.now() + STARTUP_WAIT_TIMEOUT_MS;
+  for (;;) {
+    if (isAuthorityActive && !isAuthorityActive()) {
+      throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
+    }
+    try {
+      const handshake = await client.start();
+      if (handshake.payload.ready) return handshake;
+      if (Date.now() >= deadline) {
+        throw new Error(AGENT_SERVICE_ERROR_CODES.WORKER_UNAVAILABLE);
+      }
+    } catch (error) {
+      if (!retryableWorkerStartupError(error) || Date.now() >= deadline) throw error;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, STARTUP_RETRY_DELAY_MS));
+  }
+}
+
+function waitForTerminationOrAuthorityLoss(
+  authorityLoss: Promise<void>,
+): Promise<
+  | { readonly kind: "signal"; readonly signal: "SIGINT" | "SIGTERM" }
+  | { readonly kind: "authority-loss" }
+> {
+  return new Promise((resolve) => {
+    const keepAlive = setInterval(() => undefined, 60_000);
+    let settled = false;
+    const settle = (
+      result:
+        | { readonly kind: "signal"; readonly signal: "SIGINT" | "SIGTERM" }
+        | { readonly kind: "authority-loss" },
+    ) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(keepAlive);
+      process.off("SIGINT", onInterrupt);
+      process.off("SIGTERM", onTerminate);
+      resolve(result);
+    };
+    const onInterrupt = () => settle({ kind: "signal", signal: "SIGINT" });
+    const onTerminate = () => settle({ kind: "signal", signal: "SIGTERM" });
+    process.once("SIGINT", onInterrupt);
+    process.once("SIGTERM", onTerminate);
+    void authorityLoss.then(() => settle({ kind: "authority-loss" }));
+  });
+}
+
 export async function runAgentService(
   arguments_: readonly string[],
   output: NodeJS.WritableStream = process.stdout,
@@ -181,9 +318,33 @@ export async function runAgentService(
   dependencies: AgentServiceDependencies = {},
 ): Promise<number> {
   let repository: SqliteProductStateRepository | undefined;
+  let authorityLifecycle: ReturnType<typeof createProductionAuthorityLifecycle> | undefined;
   let worker: AgentServiceExecutionClient | undefined;
+  let admissionServer: ExecutionAdmissionUdsServer | undefined;
+  let payloadServer: PayloadUdsServer | undefined;
   let modelComposition: ProductionConfiguredModelComposition | undefined;
   let memoryComposition: ProductionMemoryComposition | undefined;
+  let authorityLost = false;
+  let authorityLossError: unknown;
+  let resolveAuthorityLoss: (() => void) | undefined;
+  const authorityLoss = new Promise<void>((resolve) => {
+    resolveAuthorityLoss = resolve;
+  });
+  let reverseStop: Promise<void> | undefined;
+  const stopReverseServices = (): Promise<void> => {
+    if (reverseStop) return reverseStop;
+    reverseStop = (async () => {
+      await Promise.allSettled(
+        [admissionServer?.stop(), payloadServer?.stop()].filter(
+          (promise): promise is Promise<void> => promise !== undefined,
+        ),
+      );
+      admissionServer = undefined;
+      payloadServer = undefined;
+      worker?.stop();
+    })();
+    return reverseStop;
+  };
   try {
     const args = parseServiceArguments(arguments_);
     const configuration = await new JsonFileConfigurationPort(args.configurationPath).load();
@@ -191,14 +352,14 @@ export async function runAgentService(
       throw new Error(SERVICE_RUNTIME_ERROR_CODES.PUBLIC_MODE_INCOMPLETE);
     }
     const layout = await initializeStateRoot(configuration.stateRoot);
-    const authority = await readAuthorityFile(layout);
-    if (authority.status !== "active") {
+    const authorityFile = await readAuthorityFile(layout);
+    if (authorityFile.status !== "active") {
       throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_INACTIVE);
     }
     if (
-      authority.id !== configuration.deploymentId ||
-      authority.ownerId !== configuration.ownerId ||
-      authority.agentId !== configuration.agentId
+      authorityFile.id !== configuration.deploymentId ||
+      authorityFile.ownerId !== configuration.ownerId ||
+      authorityFile.agentId !== configuration.agentId
     ) {
       throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH);
     }
@@ -207,12 +368,10 @@ export async function runAgentService(
       configuration.deploymentId,
     );
     if (
-      persistedAuthority.ownerId !== authority.ownerId ||
-      persistedAuthority.agentId !== authority.agentId ||
-      persistedAuthority.status !== authority.status ||
-      persistedAuthority.authorityEpoch !== authority.authorityEpoch ||
-      persistedAuthority.fencingToken !== authority.fencingToken ||
-      persistedAuthority.transferId !== authority.transferId
+      persistedAuthority.ownerId !== authorityFile.ownerId ||
+      persistedAuthority.agentId !== authorityFile.agentId ||
+      persistedAuthority.status !== authorityFile.status ||
+      persistedAuthority.transferId !== authorityFile.transferId
     ) {
       throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH);
     }
@@ -224,26 +383,52 @@ export async function runAgentService(
       stateRoot: configuration.stateRoot,
       databasePath: path.join(layout.data, "product.sqlite"),
     });
-    const authorityLease = await repository
-      .authorityLeasePort(productionClock())
-      .current(configuration.agentId);
+    const activeRepository = repository;
+    const clock = productionClock();
+    const ids = productionIds();
+    authorityLifecycle = createProductionAuthorityLifecycle({
+      ownerId: configuration.ownerId,
+      agentId: configuration.agentId,
+      deploymentId: configuration.deploymentId,
+      deployment: repository.deploymentAuthorityPort(),
+      leases: repository.authorityLeasePort(clock),
+      clock,
+      leaseDurationMs: AUTHORITY_LEASE_DURATION_MS,
+      mirror: {
+        read: () => readAuthorityFile(layout),
+        write: (deployment) => writeAuthorityFile(layout, deployment),
+      },
+      onLost: (error) => {
+        authorityLost = true;
+        authorityLossError = error;
+        resolveAuthorityLoss?.();
+        void stopReverseServices();
+      },
+    });
+    await authorityLifecycle.start();
+    authorityLifecycle.startAutomaticRenewal(AUTHORITY_RENEWAL_INTERVAL_MS);
+    const claimedAuthority = await readAuthorityFile(layout);
+    const authority = authorityLifecycle.authorityFence();
+    const authorityLease = authorityLifecycle.authorityLease();
     if (
-      !authorityLease ||
-      authorityLease.lease.ownerId !== configuration.ownerId ||
-      authorityLease.lease.agentId !== configuration.agentId
+      !sameConfiguredAuthority(claimedAuthority, configuration) ||
+      claimedAuthority.authorityEpoch !== authority.authorityEpoch ||
+      claimedAuthority.fencingToken !== authority.fencingToken
     ) {
       throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH);
     }
+    const agentServiceInstanceId = `agent-service:${configuration.deploymentId}`;
+    const agentServiceBootId = `agent-service-boot:${randomUUID()}`;
     const recovery = await repository.startupRecovery({
       ownerId: configuration.ownerId,
       agentId: configuration.agentId,
       authority: {
-        deploymentId: authority.id,
+        deploymentId: configuration.deploymentId,
         authorityEpoch: authority.authorityEpoch,
         fencingToken: authority.fencingToken,
       },
       authorityLease: {
-        leaseId: authorityLease.lease.id,
+        leaseId: authorityLease.leaseId,
         fencingToken: authorityLease.fencingToken,
       },
     });
@@ -255,23 +440,145 @@ export async function runAgentService(
       memoryComposition = await memoryFactory({ configuration, repository });
     }
     const credential = await readRestrictedExecutionTokenFile(args.workerTokenPath);
+    const workerBinding = await waitForWorkerBootBinding({
+      layout,
+      configuration,
+      authority: claimedAuthority,
+      isAuthorityActive: () => authorityLifecycle?.isAccepting() === true && !authorityLost,
+    });
+    const peerBinding: ExecutionAdmissionPeerBinding = Object.freeze({
+      agentServiceInstanceId,
+      agentServiceBootId,
+      workerInstanceId: workerBinding.workerInstanceId,
+      workerBootId: workerBinding.workerBootId,
+      deploymentId: configuration.deploymentId,
+      authorityEpoch: authority.authorityEpoch,
+      fencingToken: authority.fencingToken,
+    });
+    const parentBindings = createProductionWorkerParentBindingRegistry({
+      trustedPeerBinding: () => peerBinding,
+    });
+    const invocationAuthority = () =>
+      Object.freeze({
+        product: authorityLifecycle?.authorityFence() ?? authority,
+        lease: authorityLifecycle?.authorityLease() ?? authorityLease,
+        agentServiceInstanceId,
+        agentServiceBootId,
+        workerInstanceId: peerBinding.workerInstanceId,
+        workerBootId: peerBinding.workerBootId,
+      });
+    const admission = new WorkerDelegationAdmissionService({
+      invocations: repository.capabilityInvocationReceiptPort(
+        configuration.ownerId,
+        configuration.agentId,
+      ),
+      invocationAuthority,
+      now: () => clock.now(),
+      nextId: (scope) => ids.next(scope),
+    });
+    const admissionHandler = new ProductionExecutionAdmissionHandler({
+      admission,
+      parentBindings: parentBindings.reader,
+      trustedPeerBinding: () => peerBinding,
+    });
+    const payloadHandler = new ProductionPayloadBrokerHandler({
+      receipts: repository.capabilityInvocationReceiptPort(
+        configuration.ownerId,
+        configuration.agentId,
+      ),
+      results: repository.capabilityInvocationResultPort(
+        configuration.ownerId,
+        configuration.agentId,
+      ),
+      payloadsFor: (ownerId, agentId) => activeRepository.payloadStore(ownerId, agentId),
+      protector: configuredPayloadProtector(configuration),
+      currentAuthority: () => ({
+        product: authorityLifecycle?.authorityFence() ?? authority,
+        lease: authorityLifecycle?.authorityLease() ?? authorityLease,
+      }),
+      clock,
+      ids,
+      agentServiceInstanceId,
+      agentServiceBootId,
+      maximumPayloadBytes: MAXIMUM_PAYLOAD_BYTES,
+      allowedContentTypes: [
+        "application/json",
+        "text/plain",
+        "text/markdown",
+        "application/octet-stream",
+      ],
+    });
+    admissionServer = new ExecutionAdmissionUdsServer({
+      runtimeDirectory: configuration.runtimeDirectory,
+      credential,
+      trustedPeerBinding: () => peerBinding,
+      maximumBodyBytes: MAXIMUM_BODY_BYTES,
+      requestTimeoutMs: configuration.deadlines.workerRequestMs,
+      now: () => clock.now(),
+      nextId: (scope) => ids.next(scope),
+      handler: admissionHandler,
+    });
+    payloadServer = new PayloadUdsServer({
+      runtimeDirectory: configuration.runtimeDirectory,
+      credential,
+      agentServiceInstanceId,
+      agentServiceBootId,
+      allowedWorkerIdentities: [
+        {
+          workerInstanceId: peerBinding.workerInstanceId,
+          workerBootId: peerBinding.workerBootId,
+        },
+      ],
+      authorityEpoch: authority.authorityEpoch,
+      fencingToken: authority.fencingToken,
+      maximumBodyBytes: MAXIMUM_BODY_BYTES,
+      maximumPayloadBytes: MAXIMUM_PAYLOAD_BYTES,
+      requestTimeoutMs: configuration.deadlines.workerRequestMs,
+      handler: payloadHandler,
+    });
+    if (authorityLost || !authorityLifecycle.isAccepting()) {
+      throw authorityLossError ?? new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
+    }
+    await admissionServer.start();
+    try {
+      await payloadServer.start();
+    } catch (error) {
+      await admissionServer.stop().catch(() => undefined);
+      admissionServer = undefined;
+      throw error;
+    }
+    if (authorityLost || !authorityLifecycle.isAccepting()) {
+      throw authorityLossError ?? new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
+    }
+    await writeAgentServiceBootBinding(layout, {
+      agentServiceInstanceId,
+      agentServiceBootId,
+      authorityLeaseId: authorityLease.leaseId,
+      authority: claimedAuthority,
+    });
     let idSequence = 0;
     worker = new AgentServiceExecutionClient({
       socketPath: path.join(configuration.runtimeDirectory, "execution.sock"),
       credential,
-      agentServiceInstanceId: `agent-service:${configuration.deploymentId}`,
-      maximumBodyBytes: 65_536,
+      agentServiceInstanceId,
+      maximumBodyBytes: MAXIMUM_BODY_BYTES,
       requestTimeoutMs: configuration.deadlines.workerRequestMs,
       deploymentId: configuration.deploymentId,
       authorityEpoch: authority.authorityEpoch,
       fencingToken: authority.fencingToken,
-      now: () => new Date().toISOString(),
+      now: () => clock.now(),
       nextId: (scope) => {
         idSequence += 1;
         return `${scope}:${idSequence}:${randomUUID()}`;
       },
     });
-    const handshake = await worker.start();
+    const handshake = await connectWorkerWithRetry(
+      worker,
+      () => authorityLifecycle?.isAccepting() === true && !authorityLost,
+    );
+    if (authorityLost || !authorityLifecycle.isAccepting()) {
+      throw authorityLossError ?? new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
+    }
     writeServiceDiagnostic(output, {
       component: "agent-service",
       event: "service.ready",
@@ -308,24 +615,29 @@ export async function runAgentService(
         modelComposition?.descriptors.embedding.dimensions ??
         embedding.dimensions,
     });
-    const signal = await waitForTerminationSignal();
+    const termination = await waitForTerminationOrAuthorityLoss(authorityLoss);
+    const signal = termination.kind === "signal" ? termination.signal : "AUTHORITY_LOST";
     writeServiceDiagnostic(output, {
       component: "agent-service",
       event: "service.draining",
       signal,
     });
-    worker.stop();
+    await stopReverseServices();
     await memoryComposition?.close();
     memoryComposition = undefined;
     await modelComposition?.composition.close();
     modelComposition = undefined;
+    await authorityLifecycle?.stop();
+    authorityLifecycle = undefined;
     await repository.close();
+    repository = undefined;
     writeServiceDiagnostic(output, { component: "agent-service", event: "service.stopped" });
-    return 0;
+    return termination.kind === "signal" ? 0 : 1;
   } catch (error) {
-    worker?.stop();
+    await stopReverseServices().catch(() => undefined);
     await memoryComposition?.close().catch(() => undefined);
     await modelComposition?.composition.close().catch(() => undefined);
+    await authorityLifecycle?.stop().catch(() => undefined);
     await repository?.close().catch(() => undefined);
     writeServiceDiagnostic(errorOutput, {
       component: "agent-service",

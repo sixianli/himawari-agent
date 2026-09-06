@@ -241,6 +241,7 @@ function stateLayout(stateRoot: string) {
     cache: path.join(stateRoot, "cache"),
     payloadCiphertext: path.join(stateRoot, "data", "payload-ciphertext"),
     authorityFile: path.join(stateRoot, "authority.json"),
+    agentServiceBootBindingFile: path.join(stateRoot, "runtime", "agent-service.boot.json"),
   });
 }
 

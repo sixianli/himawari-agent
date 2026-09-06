@@ -12,11 +12,13 @@ import {
   JsonFileConfigurationPort,
   parseProductConfiguration,
   RuntimeHealthModel,
+  readAgentServiceBootBinding,
   readAuthorityFile,
   ServiceLifecycleError,
   STARTUP_PHASES,
   STATE_ROOT_ERROR_CODES,
   StartupDrainCoordinator,
+  writeAgentServiceBootBinding,
   writeAuthorityFile,
 } from "../src/index.js";
 
@@ -534,6 +536,39 @@ describe("state-root lifecycle", () => {
     expect((await lstat(layout.authorityFile)).mode & 0o077).toBe(0);
     await expect(readAuthorityFile(layout)).resolves.toEqual(authority);
     expect(await readFile(layout.authorityFile, "utf8")).not.toContain(process.cwd());
+  });
+
+  it("atomically publishes and generation-checks the Agent Service boot binding", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "himawari-state-root-boot-"));
+    roots.push(root);
+    const layout = await initializeStateRoot(path.join(root, "state"));
+    const authority = Object.freeze({
+      id: createDeploymentId("deployment-boot-binding"),
+      ownerId: createOwnerId("owner-boot-binding"),
+      agentId: createAgentId("agent-boot-binding"),
+      revision: 1,
+      status: "active" as const,
+      authorityEpoch: 2,
+      fencingToken: 3,
+      transferId: null,
+    });
+    const first = await writeAgentServiceBootBinding(layout, {
+      agentServiceInstanceId: "agent-service:deployment-boot-binding",
+      agentServiceBootId: "agent-service-boot:first",
+      authorityLeaseId: "authority:agent-boot-binding:first",
+      authority,
+    });
+    expect((await lstat(layout.agentServiceBootBindingFile)).mode & 0o077).toBe(0);
+    await expect(readAgentServiceBootBinding(layout)).resolves.toEqual(first);
+
+    const second = await writeAgentServiceBootBinding(layout, {
+      agentServiceInstanceId: first.agentServiceInstanceId,
+      agentServiceBootId: "agent-service-boot:second",
+      authorityLeaseId: "authority:agent-boot-binding:second",
+      authority,
+    });
+    await expect(readAgentServiceBootBinding(layout)).resolves.toEqual(second);
+    expect((await lstat(layout.agentServiceBootBindingFile)).isFile()).toBe(true);
   });
 
   it("refuses an existing broadly accessible root and an unknown authority field", async () => {

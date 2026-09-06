@@ -2,10 +2,17 @@
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
-import type { DeploymentAuthorityState } from "@himawari-agent/domain";
+import type {
+  AgentId,
+  AuthorityLeaseId,
+  DeploymentAuthorityState,
+  DeploymentId,
+  OwnerId,
+} from "@himawari-agent/domain";
 import {
   activateDeployment,
   createAgentId,
+  createAuthorityLeaseId,
   createDeploymentId,
   createOwnerId,
   createTransferId,
@@ -17,6 +24,8 @@ export const STATE_ROOT_ERROR_CODES = Object.freeze({
   PERMISSIONS_UNSAFE: "STATE_ROOT_PERMISSIONS_UNSAFE",
   AUTHORITY_INVALID: "STATE_ROOT_AUTHORITY_INVALID",
   AUTHORITY_WRITE_FAILED: "STATE_ROOT_AUTHORITY_WRITE_FAILED",
+  BOOT_BINDING_INVALID: "STATE_ROOT_BOOT_BINDING_INVALID",
+  BOOT_BINDING_WRITE_FAILED: "STATE_ROOT_BOOT_BINDING_WRITE_FAILED",
 } as const);
 
 export type StateRootErrorCode =
@@ -45,6 +54,36 @@ export interface StateRootLayout {
   readonly cache: string;
   readonly payloadCiphertext: string;
   readonly authorityFile: string;
+  readonly agentServiceBootBindingFile: string;
+}
+
+export interface AgentServiceBootBinding {
+  readonly schemaVersion: 1;
+  readonly agentServiceInstanceId: string;
+  readonly agentServiceBootId: string;
+  readonly authorityLeaseId: AuthorityLeaseId;
+  readonly deploymentId: DeploymentId;
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly authorityEpoch: number;
+  readonly fencingToken: number;
+}
+
+/**
+ * A Worker publishes its own boot identity before it can authenticate to the
+ * Agent.  The binding is deliberately separate from the Agent binding: the
+ * Agent learns the exact Worker peer from this atomically replaced record and
+ * never admits an arbitrary instance or boot token.
+ */
+export interface WorkerServiceBootBinding {
+  readonly schemaVersion: 1;
+  readonly workerInstanceId: string;
+  readonly workerBootId: string;
+  readonly deploymentId: DeploymentId;
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly authorityEpoch: number;
+  readonly fencingToken: number;
 }
 
 const AUTHORITY_FIELDS = Object.freeze([
@@ -92,6 +131,7 @@ export async function initializeStateRoot(stateRoot: string): Promise<StateRootL
     cache: path.join(stateRoot, "cache"),
     payloadCiphertext: path.join(stateRoot, "data", "payload-ciphertext"),
     authorityFile: path.join(stateRoot, "authority.json"),
+    agentServiceBootBindingFile: path.join(stateRoot, "runtime", "agent-service.boot.json"),
   });
   await ensureRestrictedDirectory(layout.root, "state-root");
   await ensureRestrictedDirectory(layout.data, "data-partition");
@@ -124,6 +164,294 @@ function parseNonNegativeInteger(value: unknown, field: string): number {
     );
   }
   return value as number;
+}
+
+function parsePositiveInteger(value: unknown, field: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Agent Service boot binding is invalid",
+      { field },
+    );
+  }
+  return value as number;
+}
+
+function bootBindingPath(layout: StateRootLayout): string {
+  return layout.agentServiceBootBindingFile;
+}
+
+const BOOT_BINDING_FIELDS = Object.freeze([
+  "schemaVersion",
+  "agentServiceInstanceId",
+  "agentServiceBootId",
+  "authorityLeaseId",
+  "deploymentId",
+  "ownerId",
+  "agentId",
+  "authorityEpoch",
+  "fencingToken",
+]);
+
+function bootBindingJson(binding: AgentServiceBootBinding): string {
+  return `${JSON.stringify(binding)}\n`;
+}
+
+function assertBootBindingText(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Agent Service boot binding is invalid",
+      { field },
+    );
+  }
+  return value;
+}
+
+export async function writeAgentServiceBootBinding(
+  layout: StateRootLayout,
+  input: {
+    readonly agentServiceInstanceId: string;
+    readonly agentServiceBootId: string;
+    readonly authorityLeaseId: string;
+    readonly authority: DeploymentAuthorityState;
+  },
+): Promise<AgentServiceBootBinding> {
+  if (input.authority.status !== "active") {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Only active authority may publish an Agent Service boot binding",
+    );
+  }
+  const binding = Object.freeze({
+    schemaVersion: 1 as const,
+    agentServiceInstanceId: assertBootBindingText(
+      input.agentServiceInstanceId,
+      "agentServiceInstanceId",
+    ),
+    agentServiceBootId: assertBootBindingText(input.agentServiceBootId, "agentServiceBootId"),
+    authorityLeaseId: createAuthorityLeaseId(
+      assertBootBindingText(input.authorityLeaseId, "authorityLeaseId"),
+    ),
+    deploymentId: input.authority.id,
+    ownerId: input.authority.ownerId,
+    agentId: input.authority.agentId,
+    authorityEpoch: parsePositiveInteger(input.authority.authorityEpoch, "authorityEpoch"),
+    fencingToken: parsePositiveInteger(input.authority.fencingToken, "fencingToken"),
+  });
+  const temporary = path.join(
+    layout.runtime,
+    `.agent-service.boot-${process.pid}-${randomUUID()}.tmp`,
+  );
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(temporary, "wx", 0o600);
+    await handle.writeFile(bootBindingJson(binding));
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await rename(temporary, bootBindingPath(layout));
+    await chmod(bootBindingPath(layout), 0o600);
+    const directory = await open(layout.runtime, "r");
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
+  } catch {
+    await handle?.close().catch(() => undefined);
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_WRITE_FAILED,
+      "Agent Service boot binding could not be atomically committed",
+    );
+  }
+  return binding;
+}
+
+export async function readAgentServiceBootBinding(
+  layout: StateRootLayout,
+): Promise<AgentServiceBootBinding> {
+  const file = bootBindingPath(layout);
+  const info = await lstat(file).catch(() => undefined);
+  if (!info?.isFile() || info.isSymbolicLink() || (info.mode & 0o077) !== 0) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Agent Service boot binding is missing or unsafe",
+    );
+  }
+  if (typeof process.getuid === "function" && info.uid !== process.getuid()) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Agent Service boot binding is not owned by the service account",
+    );
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(await readFile(file, "utf8"));
+  } catch {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Agent Service boot binding is not valid JSON",
+    );
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Agent Service boot binding is invalid",
+    );
+  }
+  const input = value as Record<string, unknown>;
+  if (
+    input["schemaVersion"] !== 1 ||
+    Object.keys(input).some((field) => !BOOT_BINDING_FIELDS.includes(field))
+  ) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Agent Service boot binding fields are invalid",
+    );
+  }
+  const binding = Object.freeze({
+    schemaVersion: 1 as const,
+    agentServiceInstanceId: assertBootBindingText(
+      input["agentServiceInstanceId"],
+      "agentServiceInstanceId",
+    ),
+    agentServiceBootId: assertBootBindingText(input["agentServiceBootId"], "agentServiceBootId"),
+    authorityLeaseId: createAuthorityLeaseId(
+      assertBootBindingText(input["authorityLeaseId"], "authorityLeaseId"),
+    ),
+    deploymentId: createDeploymentId(assertBootBindingText(input["deploymentId"], "deploymentId")),
+    ownerId: createOwnerId(assertBootBindingText(input["ownerId"], "ownerId")),
+    agentId: createAgentId(assertBootBindingText(input["agentId"], "agentId")),
+    authorityEpoch: parsePositiveInteger(input["authorityEpoch"], "authorityEpoch"),
+    fencingToken: parsePositiveInteger(input["fencingToken"], "fencingToken"),
+  });
+  return binding;
+}
+
+function workerServiceBootBindingPath(layout: StateRootLayout): string {
+  return path.join(layout.runtime, "execution-worker.boot.json");
+}
+
+const WORKER_BOOT_BINDING_FIELDS = Object.freeze([
+  "schemaVersion",
+  "workerInstanceId",
+  "workerBootId",
+  "deploymentId",
+  "ownerId",
+  "agentId",
+  "authorityEpoch",
+  "fencingToken",
+]);
+
+export async function writeWorkerServiceBootBinding(
+  layout: StateRootLayout,
+  input: {
+    readonly workerInstanceId: string;
+    readonly workerBootId: string;
+    readonly authority: DeploymentAuthorityState;
+  },
+): Promise<WorkerServiceBootBinding> {
+  if (input.authority.status !== "active") {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Only active authority may publish a Worker Service boot binding",
+    );
+  }
+  const binding = Object.freeze({
+    schemaVersion: 1 as const,
+    workerInstanceId: assertBootBindingText(input.workerInstanceId, "workerInstanceId"),
+    workerBootId: assertBootBindingText(input.workerBootId, "workerBootId"),
+    deploymentId: input.authority.id,
+    ownerId: input.authority.ownerId,
+    agentId: input.authority.agentId,
+    authorityEpoch: parsePositiveInteger(input.authority.authorityEpoch, "authorityEpoch"),
+    fencingToken: parsePositiveInteger(input.authority.fencingToken, "fencingToken"),
+  });
+  const file = workerServiceBootBindingPath(layout);
+  const temporary = path.join(
+    layout.runtime,
+    `.execution-worker.boot-${process.pid}-${randomUUID()}.tmp`,
+  );
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(temporary, "wx", 0o600);
+    await handle.writeFile(`${JSON.stringify(binding)}\n`);
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await rename(temporary, file);
+    await chmod(file, 0o600);
+    const directory = await open(layout.runtime, "r");
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
+  } catch {
+    await handle?.close().catch(() => undefined);
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_WRITE_FAILED,
+      "Worker Service boot binding could not be atomically committed",
+    );
+  }
+  return binding;
+}
+
+export async function readWorkerServiceBootBinding(
+  layout: StateRootLayout,
+): Promise<WorkerServiceBootBinding> {
+  const file = workerServiceBootBindingPath(layout);
+  const info = await lstat(file).catch(() => undefined);
+  if (!info?.isFile() || info.isSymbolicLink() || (info.mode & 0o077) !== 0) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Worker Service boot binding is missing or unsafe",
+    );
+  }
+  if (typeof process.getuid === "function" && info.uid !== process.getuid()) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Worker Service boot binding is not owned by the service account",
+    );
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(await readFile(file, "utf8"));
+  } catch {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Worker Service boot binding is not valid JSON",
+    );
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Worker Service boot binding is invalid",
+    );
+  }
+  const input = value as Record<string, unknown>;
+  if (
+    input["schemaVersion"] !== 1 ||
+    Object.keys(input).some((field) => !WORKER_BOOT_BINDING_FIELDS.includes(field))
+  ) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      "Worker Service boot binding fields are invalid",
+    );
+  }
+  return Object.freeze({
+    schemaVersion: 1 as const,
+    workerInstanceId: assertBootBindingText(input["workerInstanceId"], "workerInstanceId"),
+    workerBootId: assertBootBindingText(input["workerBootId"], "workerBootId"),
+    deploymentId: createDeploymentId(assertBootBindingText(input["deploymentId"], "deploymentId")),
+    ownerId: createOwnerId(assertBootBindingText(input["ownerId"], "ownerId")),
+    agentId: createAgentId(assertBootBindingText(input["agentId"], "agentId")),
+    authorityEpoch: parsePositiveInteger(input["authorityEpoch"], "authorityEpoch"),
+    fencingToken: parsePositiveInteger(input["fencingToken"], "fencingToken"),
+  });
 }
 
 export async function writeAuthorityFile(

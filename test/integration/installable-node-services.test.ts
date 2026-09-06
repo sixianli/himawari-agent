@@ -1,4 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -20,8 +21,11 @@ let configurationPath = "";
 let publicConfigurationPath = "";
 let tokenPath = "";
 let secretDirectory = "";
+let capabilityDeploymentPath = "";
+let capabilityDeploymentSha256 = "";
 const children = new Set<ChildProcessWithoutNullStreams>();
 const childExitTimeoutMilliseconds = 10_000;
+const serviceReadyTimeoutMilliseconds = 35_000;
 
 function configuration(publicMode = false) {
   return {
@@ -127,7 +131,90 @@ function configuration(publicMode = false) {
     },
     concurrency: { totalRuns: 2, foregroundReserved: 1, perCategory: {} },
     deadlines: { runMs: 30_000, workerRequestMs: 2_000, providerRequestMs: 2_000 },
+    capabilityDeployment: {
+      snapshotPath: capabilityDeploymentPath,
+      sha256: capabilityDeploymentSha256,
+    },
   };
+}
+
+async function writeCapabilityDeploymentSnapshot(): Promise<void> {
+  capabilityDeploymentPath = path.join(stateRoot, "runtime", "capability-deployment.json");
+  const checkedAt = new Date().toISOString();
+  const artifactDigest = `sha256:${"a".repeat(64)}`;
+  const snapshot = {
+    schemaVersion: "capability-deployment.v1",
+    capabilities: [
+      {
+        manifest: {
+          manifestVersion: "capability.v2",
+          ref: "installed-endpoint",
+          displayName: "Installed endpoint",
+          version: "1.0.0",
+          source: { type: "remote_api", locator: "endpoint:installed" },
+          sourceIdentity: "publisher:installed",
+          integrity: artifactDigest,
+          artifact: {
+            digest: artifactDigest,
+            signatureStatus: "not_applicable",
+            signerRef: null,
+            rollbackArtifactRef: null,
+          },
+          operations: ["invoke"],
+          permissionRefs: [],
+          isolation: "remote",
+          scopes: {
+            dataClassifications: ["public", "private"],
+            network: [],
+            filesystem: [],
+            secrets: [],
+          },
+          cost: { currency: "USD", maxMicrosPerInvocation: 100 },
+          health: { status: "healthy", checkedAt },
+          reviewedBy: null,
+          reviewedAt: null,
+          contractCompatibility: ["capability-conformance.v1"],
+          runtime: {
+            kind: "remote_api",
+            endpointIdentity: "endpoint:installed",
+            protectedReferenceOnly: true,
+          },
+        },
+        qualification: {
+          qualificationVersion: "capability-runtime-qualification.v1",
+          platform: process.platform === "darwin" ? "darwin" : "linux",
+          runtimeIdentity: "node-fetch:endpoint:installed",
+          productionSuitable: true,
+          artifactDigest,
+          enforcement: {
+            filesystem: true,
+            network: true,
+            processes: true,
+            secrets: true,
+            resourceCeilings: true,
+            termination: true,
+          },
+          reasonCodes: [],
+          checkedAt,
+        },
+        binding: {
+          kind: "endpoint",
+          value: {
+            endpointIdentity: "endpoint:installed",
+            artifactDigest,
+            url: "https://capability.example.test",
+            allowedMethods: ["POST"],
+            operations: { invoke: { method: "POST", path: "/invoke", secretHeaders: {} } },
+            productionSuitable: true,
+            allowLoopbackQualification: false,
+          },
+        },
+      },
+    ],
+  };
+  const bytes = Buffer.from(JSON.stringify(snapshot), "utf8");
+  capabilityDeploymentSha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  await writeFile(capabilityDeploymentPath, bytes, { mode: 0o600 });
 }
 
 beforeAll(async () => {
@@ -158,6 +245,7 @@ beforeAll(async () => {
 
   const layout = await initializeStateRoot(stateRoot);
   await mkdir(path.join(layout.data, "memory"), { mode: 0o700 });
+  await writeCapabilityDeploymentSnapshot();
   await writeAuthorityFile(layout, {
     id: createDeploymentId("deployment-service-integration"),
     ownerId: createOwnerId("owner-service-integration"),
@@ -184,7 +272,7 @@ beforeAll(async () => {
         id, owner_id, agent_id, revision, status, authority_epoch, fencing_token
       ) VALUES (
         'deployment-service-integration', 'owner-service-integration',
-        'agent-service-integration', 0, 'active', 1, 1
+        'agent-service-integration', 1, 'active', 1, 1
       )`,
     )
     .run();
@@ -257,6 +345,19 @@ async function startService(
   return child;
 }
 
+async function startServices(): Promise<
+  readonly [ChildProcessWithoutNullStreams, ChildProcessWithoutNullStreams]
+> {
+  const agent = startService("himawari-agent-service", "agent-service", [
+    '"modelPath":"deterministic-descriptor-only"',
+    '"embeddingDescriptorRef":"model-embedding"',
+    '"embeddingDimensions":16',
+  ]);
+  const worker = startService("himawari-execution-worker", "execution-worker");
+  const [startedWorker, startedAgent] = await Promise.all([worker, agent]);
+  return [startedWorker, startedAgent];
+}
+
 async function waitForOutput(
   child: ChildProcessWithoutNullStreams,
   expected: string,
@@ -267,7 +368,7 @@ async function waitForOutput(
     let errors = "";
     const timeout = setTimeout(
       () => reject(new Error(`Service output timed out: ${errors}`)),
-      5_000,
+      serviceReadyTimeoutMilliseconds,
     );
     child.stdout.on("data", (chunk: Buffer) => {
       output += chunk.toString("utf8");
@@ -393,12 +494,7 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
   });
 
   it("starts, diagnoses, locks, drains, force-restarts and rejects unsafe profiles", async () => {
-    let worker = await startService("himawari-execution-worker", "execution-worker");
-    let agent = await startService("himawari-agent-service", "agent-service", [
-      '"modelPath":"deterministic-descriptor-only"',
-      '"embeddingDescriptorRef":"model-embedding"',
-      '"embeddingDimensions":16',
-    ]);
+    let [worker, agent] = await startServices();
 
     const doctor = runInstalled("himawari", ["doctor", "--config", configurationPath]);
     expect(doctor.status).toBe(0);
@@ -439,8 +535,7 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
 
     expect(await stopService(agent, "SIGTERM")).toBe(0);
     expect(await stopService(worker, "SIGKILL")).toBeNull();
-    worker = await startService("himawari-execution-worker", "execution-worker");
-    agent = await startService("himawari-agent-service", "agent-service");
+    [worker, agent] = await startServices();
     expect(await stopService(agent, "SIGTERM")).toBe(0);
     expect(await stopService(worker, "SIGTERM")).toBe(0);
 

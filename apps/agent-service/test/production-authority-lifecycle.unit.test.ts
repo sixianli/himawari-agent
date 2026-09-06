@@ -1,10 +1,8 @@
-import { describe, expect, it } from "vitest";
-
 import type {
   AgentAuthorityLease,
   AgentId,
-  AuthorityLeasePort,
   AuthorityLeaseId,
+  AuthorityLeasePort,
   AuthorityLeaseRecord,
   DeploymentAuthorityState,
   DeploymentAuthorityStatePort,
@@ -12,6 +10,7 @@ import type {
   ProductAuthorityFence,
 } from "@himawari-agent/application";
 import { createBeefRestaurantFixture, createV02Fixture } from "@himawari-agent/testing";
+import { describe, expect, it } from "vitest";
 import {
   PRODUCTION_AUTHORITY_LIFECYCLE_ERROR_CODES,
   ProductionAuthorityLifecycle,
@@ -139,6 +138,7 @@ function lifecycle(
   deploymentStore: DeploymentFixture,
   leases: LeaseFixture,
   mirror?: ProductionAuthorityMirror,
+  onLost?: (error: unknown) => void,
 ): ProductionAuthorityLifecycle {
   const options = {
     ownerId: OWNER_ID,
@@ -152,6 +152,7 @@ function lifecycle(
       leaseId: "authority-lease-production",
       holderId: "authority-holder-production",
     }),
+    ...(onLost === undefined ? {} : { onLost }),
   };
   return new ProductionAuthorityLifecycle(mirror ? { ...options, mirror } : options);
 }
@@ -248,7 +249,10 @@ describe("ProductionAuthorityLifecycle", () => {
   it("stops accepting and reports lost authority when the lease disappears", async () => {
     const deploymentStore = new DeploymentFixture();
     const leases = new LeaseFixture(deploymentStore);
-    const service = lifecycle(deploymentStore, leases);
+    let lossNotification: unknown;
+    const service = lifecycle(deploymentStore, leases, undefined, (error) => {
+      lossNotification = error;
+    });
     await service.start();
     leases.loseCurrentAuthority();
 
@@ -257,6 +261,9 @@ describe("ProductionAuthorityLifecycle", () => {
     });
     expect(service.state).toBe("lost");
     expect(service.isAccepting()).toBe(false);
+    expect(lossNotification).toMatchObject({
+      code: PRODUCTION_AUTHORITY_LIFECYCLE_ERROR_CODES.LOST,
+    });
     await service.stop();
     expect(leases.releasedLeaseIds).toEqual([]);
   });

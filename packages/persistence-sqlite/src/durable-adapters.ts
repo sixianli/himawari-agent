@@ -6,6 +6,7 @@ import type {
   BackgroundWorkStatePort,
   CapabilityExecutionHandleStorePort,
   CapabilityInvocationReceiptPort,
+  CapabilityInvocationResultPort,
   CapabilityRegistryStorePort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
@@ -390,6 +391,32 @@ export class SqliteDurableAdapters {
       consume: (input) =>
         this.context.write("capabilityInvocation.consume", { ownerId, agentId, input }),
       read: (input) => this.context.read("capabilityInvocation.read", { ownerId, agentId, input }),
+    });
+  }
+
+  capabilityInvocationResultPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+  ): CapabilityInvocationResultPort {
+    return Object.freeze<CapabilityInvocationResultPort>({
+      lookupFrozen: (input) =>
+        this.context.read("capabilityInvocationResult.lookupFrozen", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      observeOutput: (input) =>
+        this.context.write("capabilityInvocationResult.observeOutput", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      lookupOutput: (input) =>
+        this.context.read("capabilityInvocationResult.lookupOutput", {
+          ownerId,
+          agentId,
+          input,
+        }),
     });
   }
 

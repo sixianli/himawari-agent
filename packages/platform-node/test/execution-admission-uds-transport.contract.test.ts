@@ -490,6 +490,13 @@ describe("execution-admission.v1 authenticated UDS transport", () => {
       ).connect(),
     ).rejects.toMatchObject({ code: EXECUTION_ADMISSION_UDS_ERROR_CODES.INSTANCE_REJECTED });
     await expect(
+      new ExecutionAdmissionUdsClient(
+        clientOptions(server.socketPath, {
+          peerBinding: { ...peer, agentServiceBootId: "agent-boot:stale" },
+        }),
+      ).connect(),
+    ).rejects.toMatchObject({ code: EXECUTION_ADMISSION_UDS_ERROR_CODES.INSTANCE_REJECTED });
+    await expect(
       rawRequest(
         server.socketPath,
         "/admission/v1/work/execute",
