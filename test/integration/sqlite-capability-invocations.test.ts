@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -41,6 +42,8 @@ import {
   SqliteRunPayloadArtifactOperations,
 } from "@himawari-agent/persistence-sqlite";
 import { describe, expect, it } from "vitest";
+import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.js";
+import { createProductionWorkerParentBindingRegistry } from "../../apps/agent-service/src/production-worker-parent-binding-registry.js";
 
 const OWNER_ID = createOwnerId("owner-capability-invocation");
 const AGENT_ID = createAgentId("agent-capability-invocation");
@@ -502,6 +505,107 @@ async function seed(
 }
 
 describe("SQLite capability invocation authority", () => {
+  it("persists runtime tool intent and failed Worker result without redispatch on restart", async () => {
+    const resource = await openRepository();
+    try {
+      await seed(resource.repository);
+      const transport = new RecordingServiceTransport();
+      const peer = { ...SERVICE_AUTHORITY.product, ...SERVICE_AUTHORITY };
+      const parents = createProductionWorkerParentBindingRegistry({
+        trustedPeerBinding: () => peer,
+      });
+      const registry = resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
+      const artifacts = resource.repository.runPayloadArtifactPort(
+        OWNER_ID,
+        AGENT_ID,
+        SERVICE_AUTHORITY,
+      );
+      let sequence = 0;
+      const create = () =>
+        new ProductionRuntimeTools({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          capabilities: registry,
+          invocations: resource.repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+          results: resource.repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID),
+          authority: () => SERVICE_AUTHORITY,
+          peer: () => peer,
+          parents: parents.writer,
+          assertRunActive: async () => {},
+          artifacts,
+          payloads: resource.repository.payloadStore(OWNER_ID, AGENT_ID),
+          protector: {
+            protect: async (input) => ({
+              ...input,
+              ciphertext: input.plaintext,
+              encryption: { algorithm: "fixture", keyRef: "fixture-key" },
+              contentDigest: createHash("sha256").update(input.plaintext).digest("hex"),
+            }),
+            unprotect: async ({ payload }) => payload.ciphertext,
+          },
+          clock: { now: () => T1 },
+          ids: { next: (scope) => `${scope}:${++sequence}` },
+          ceiling: serviceRequest().payload.resourceCeiling,
+          transport: {
+            request: (message) => transport.request(message),
+            async *events() {
+              const request = transport.requests.find((message) => message.type === "work.execute");
+              if (!request) return;
+              yield {
+                ...request,
+                kind: "event" as const,
+                type: "work.result" as const,
+                messageId: "runtime-failed-result",
+                causationId: request.messageId,
+                payload: {
+                  requestId: request.messageId,
+                  cursor: "1",
+                  sequence: 1,
+                  completedAt: T1,
+                  outcome: "failed" as const,
+                  outputRef: null,
+                  errorCode: "TEST_FAILURE",
+                  externalActionId: null,
+                },
+              };
+            },
+          },
+        });
+      const call = {
+        runId: RUN_ID,
+        toolCallId: "runtime-call",
+        capabilityRef: handle().capabilityRef,
+        capabilityHandleRef: handle().ref,
+        arguments: { inputRef: handle().inputRefs[0] ?? "missing" },
+        dataClassification: "private" as const,
+      };
+      const first = create();
+      await first.listAuthorized(RUN_ID, [call.capabilityHandleRef]);
+      expect(await first.execute(call)).toMatchObject({
+        outcome: "failed",
+        errorCode: "TEST_FAILURE",
+      });
+      const restarted = create();
+      await restarted.listAuthorized(RUN_ID, [call.capabilityHandleRef]);
+      expect(await restarted.execute(call)).toMatchObject({
+        outcome: "failed",
+        errorCode: "TEST_FAILURE",
+      });
+      expect(transport.requests.map((message) => message.type)).toEqual([
+        "work.delegate",
+        "work.execute",
+      ]);
+      expect(
+        (await registry.getExecutionHandle(
+          call.capabilityHandleRef,
+        )) as GovernedCapabilityExecutionHandle,
+      ).toMatchObject({ uses: 1 });
+    } finally {
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
   it("replays an equivalent receipt and rejects same-key semantic changes", async () => {
     const resource = await openRepository();
     let database: ReturnType<typeof openQualifiedDatabase> | undefined;

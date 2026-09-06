@@ -8,5 +8,6 @@ export * from "./production-model-composition.js";
 export * from "./production-run-composition.js";
 export * from "./production-run-dispatch-loop.js";
 export * from "./production-run-dispatcher.js";
+export * from "./production-runtime-tools.js";
 export * from "./service-main.js";
 export * from "./v2-composition-root.js";

@@ -284,6 +284,8 @@ Pi 适配器复用 `SessionManager` 消息与 `appendCustomMessageEntry`，将�
 
 Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请求；它不能直接写 Thread、Memory 或产品消息。产品接受后把同一受保护 Payload 作为 `pre_compaction` Thread checkpoint 的 prepared summary，派生流程不得再次摘要。Runtime 工具端口以 `RunId + toolCallId` 作为外部动作幂等边界，使 Session 重建不会重新提交已完成动作。该边界落实产品状态高于 Pi 投影的决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md] [SOURCE: docs/adr/0015-product-state-over-pi-runtime-projection.md]
 
+`ProductionRuntimeTools` 把当前 Run 的已授权 Handle 投影为 Pi custom tool，参数只能选择 Handle 已列出的 `inputRef`，不能扩大输入、Context 或 Secret 范围。它先原子保存受保护的调用意图，再复用 `WorkerDelegationService` 消费持久权限和 `ProductionWorkerForwardTransport` 登记父请求；并发竞争失败者及恢复执行器均不重发。只有作用域匹配的 Worker 终态、持久输出观察和当前有效的 invocation receipt 同时成立，才向模型返回正文；恢复读取成功结果时也重新检查撤权。传输挂起、输出未确认和超时保留未知结果，取消记为失败。此适配器已通过独立单元测试及 SQLite 调用消费与结果重读测试，但尚未接入安装后的 `service-main`；它也不负责为任意模型参数新建 Payload 或签发 Handle。
+
 ### Run coordination and scoped worker delegation
 
 `RunCoordinator` 只依赖产品拥有的 `ContextFormationPort`、`WorkerRunPort`、`AgentRuntimePort`、`RunLifecyclePort`、`RunCheckpointStore` 和 Session Trace。它按 `accepted → building_context → running → terminal/reconciliation` 驱动 Run，并把 Owner 取消同时传播给当前 Runtime 与活跃 Worker。Runtime、Worker 和 Pi Session 都不能自行写产品 Run 终态。
