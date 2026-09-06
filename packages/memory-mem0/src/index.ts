@@ -1,4 +1,5 @@
 import path from "node:path";
+import BetterSqlite3 from "better-sqlite3";
 import {
   ApplicationPortError,
   PORT_ERROR_CODES,
@@ -221,9 +222,11 @@ function productMemoryId(result: Mem0Result): MemoryId | null {
 
 export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
   private readonly memory: Mem0MemoryLike;
+  private readonly historyDbPath: string;
 
-  private constructor(memory: Mem0MemoryLike) {
+  private constructor(memory: Mem0MemoryLike, historyDbPath: string) {
     this.memory = memory;
+    this.historyDbPath = historyDbPath;
   }
 
   static async create(options: Mem0ProjectionAdapterOptions): Promise<Mem0ProjectionAdapter> {
@@ -246,7 +249,10 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
       disableHistory: false,
       customInstructions: options.configuration.customInstructions,
     };
-    return new Mem0ProjectionAdapter(new module.Memory(configuration));
+    return new Mem0ProjectionAdapter(
+      new module.Memory(configuration),
+      options.configuration.historyStore.config.historyDbPath,
+    );
   }
 
   async close(): Promise<void> {
@@ -295,9 +301,30 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
 
   async delete(providerRecordId: string): Promise<void> {
     requiredText(providerRecordId, "providerRecordId");
-    await this.memory.delete(providerRecordId);
+    if ((await this.memory.get(providerRecordId)) !== null)
+      await this.memory.delete(providerRecordId);
     if ((await this.memory.get(providerRecordId)) !== null) {
       fail("Mem0 provider record remains after delete", { providerRecordId });
+    }
+    // Mem0 3.1.7 retains deleted text in its SQLite history. A missing vector
+    // alone is not deletion evidence; retry this cleanup even after a crash.
+    const history = new BetterSqlite3(this.historyDbPath, { fileMustExist: true });
+    try {
+      history.pragma("secure_delete = ON");
+      history
+        .transaction(() => {
+          history.prepare("DELETE FROM memory_history WHERE memory_id = ?").run(providerRecordId);
+          if (
+            history
+              .prepare("SELECT 1 FROM memory_history WHERE memory_id = ? LIMIT 1")
+              .get(providerRecordId)
+          ) {
+            fail("Mem0 history remains after delete", { providerRecordId });
+          }
+        })
+        .immediate();
+    } finally {
+      history.close();
     }
   }
 

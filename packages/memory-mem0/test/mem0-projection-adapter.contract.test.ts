@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import BetterSqlite3 from "better-sqlite3";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -56,6 +58,14 @@ class FakeMem0Memory {
 
   constructor(configuration: Readonly<Record<string, unknown>>) {
     this.configuration = configuration;
+    const historyPath = configuration["historyDbPath"] as string;
+    mkdirSync(path.dirname(historyPath), { recursive: true });
+    const database = new BetterSqlite3(historyPath);
+    database.exec(
+      "CREATE TABLE IF NOT EXISTS memory_history (memory_id TEXT, previous_value TEXT)",
+    );
+    database.close();
+
     FakeMem0Memory.latest = this;
   }
 
@@ -97,6 +107,13 @@ class FakeMem0Memory {
   }
 
   async delete(providerRecordId: string) {
+    const record = this.records.get(providerRecordId);
+    if (!record) throw new Error("missing provider record");
+    const database = new BetterSqlite3(this.configuration["historyDbPath"] as string);
+    database
+      .prepare("INSERT INTO memory_history VALUES (?, ?)")
+      .run(providerRecordId, record.memory);
+    database.close();
     this.records.delete(providerRecordId);
   }
 }
@@ -170,6 +187,38 @@ async function adapter() {
 }
 
 describe("Mem0 product projection adapter", () => {
+  it("removes retained history and retries cleanup after the vector is already gone", async () => {
+    const projection = await adapter();
+    const providerId = await projection.upsert({
+      memory: productMemory(),
+      content: "private text",
+    });
+    const fake = FakeMem0Memory.latest as FakeMem0Memory;
+    await fake.delete(providerId);
+    const history = new BetterSqlite3(fake.configuration["historyDbPath"] as string);
+    try {
+      expect(
+        history
+          .prepare("SELECT previous_value FROM memory_history WHERE memory_id = ?")
+          .get(providerId),
+      ).toEqual({ previous_value: "private text" });
+      history.prepare("INSERT INTO memory_history VALUES (?, ?)").run("unrelated", "keep");
+      await projection.delete(providerId);
+      await projection.delete(providerId);
+      expect(
+        history.prepare("SELECT * FROM memory_history WHERE memory_id = ?").all(providerId),
+      ).toEqual([]);
+      expect(
+        history
+          .prepare("SELECT previous_value FROM memory_history WHERE memory_id = 'unrelated'")
+          .get(),
+      ).toEqual({ previous_value: "keep" });
+    } finally {
+      history.close();
+      await projection.close();
+    }
+  });
+
   it("uses one non-inferred provider add and round-trips the product identity", async () => {
     const projection = await adapter();
     const providerId = await projection.upsert({
