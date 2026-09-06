@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e899649c1f8e12e664eee51f694c6372a1782e8168818bd8bc0ff836e33e14bf"
+contract_sha256: "sha256:7fe8808f1d340b38cfaff69aa831b8a35308f3391f1865d9cc9c57f34914111f"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -34,11 +34,7 @@ date: "2026-08-27"
 - package.json
 - package-lock.json
 - apps/admin-cli/src
-- apps/agent-service/src/service-main.ts
-- apps/agent-service/src/production-authority-lifecycle.ts
-- apps/agent-service/src/production-run-dispatcher.ts
-- apps/agent-service/src/production-model-composition.ts
-- apps/agent-service/src/production-memory-composition.ts
+- apps/agent-service/src
 - apps/execution-worker/src/service-main.ts
 - packages/application/src/ports/configuration.ts
 - packages/platform-node/src/authenticated-uds-transport.ts
@@ -51,8 +47,8 @@ date: "2026-08-27"
 - packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts
 - packages/persistence-sqlite/src/sqlite-run-lifecycle-operations.ts
 - packages/persistence-sqlite/src/sqlite-run-checkpoint-operations.ts
-- packages/persistence-sqlite/src/migrations/0021_run_execution_leases.sql
-- packages/persistence-sqlite/src/migrations/0022_model_budget_ledger.sql
+- packages/persistence-sqlite/src/migration-engine.ts
+- packages/persistence-sqlite/src/migrations
 - docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md
 -->
 
@@ -120,9 +116,9 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 ~~~
 
 5. 在启动前运行 `himawari db status` 与 `himawari doctor`，确认 SQLite quick check、schema、authority、Payload、Worker 和 identity 的脱敏状态；若配置声明能力部署快照，还要回读其规范路径、owner/mode、字节数、SHA-256、Manifest/运行绑定数量和本平台资格结论。只读命令失败时不启动普通服务。
-6. 以独立子进程先启动 Worker，再启动 Agent Service；记录 `service.ready` 的 component、schema、identity 和 recovery counters。
+6. 以独立子进程先启动 Worker，再启动 Agent Service。Worker 先公布本次 `workerInstanceId/workerBootId`；Agent 取得当前 authority lease 后启动反向权限与 Payload 服务，再发布同时绑定双方实例、boot 和当前 authority 的启动文件，最后完成 Worker handshake。记录双方 `service.ready` 的 component、schema、identity 和 recovery counters；只存在 socket 或旧启动文件不算完成握手。
 7. 运行只读 doctor、db status 和适用业务查询；确认 Agent Service 通过 UDS handshake、`service.ready` 记录 model path、memory path 与 embedding descriptor identity、没有 testing adapter、没有 repository checkout 路径，也没有秘密或私人正文输出。deterministic profile 必须显示 descriptor-only；支持的 Pi/Mem0 profile 只能显示配置中的 primary/fallback/embedding reference、version 和 dimensions，不能显示 secret value。
-8. 正常停止时先向 Agent Service 发送 `SIGTERM`，等待 `service.draining` 与 `service.stopped`，再向 Worker 发送 `SIGTERM`，等待其停止并确认 socket 已删除。超出有界等待后才记录 forced stop，并把后续启动视为 recovery drill。
+8. 正常停止时先向 Agent Service 发送 `SIGTERM`。Agent 按已登记资源先停止接纳、等待在途工作，再逆序关闭依赖；Memory 消费者停止领取新任务并等待当前批次完成后，才关闭 Memory、模型、authority 和 SQLite。等待 `service.draining` 与 `service.stopped`，再向 Worker 发送 `SIGTERM`，等待其停止并确认 socket 已删除。超出有界等待后才记录 forced stop，并把后续启动视为 recovery drill。
 9. 重启或 forced stop 后重新取得 state-root lock，确认同一 deployment/Owner/Agent/Run identity、SQLite schema/quick check、pending recovery counters 和 UDS handshake；不得将普通一次重启写成完整 crash matrix。
 10. 完成验证后保存脱敏命令输出、artifact identity、进程退出码、socket/lock 回读和 rollback 状态；临时 prefix、临时 state root 与证据目录按本次授权的保留策略清理。
 
@@ -134,6 +130,8 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 - Worker ready 必须来自非空且完整验证的能力部署快照；`capabilityRef + version + artifact digest + platform qualification + runtime binding` 任一不一致时，真实能力 adapter 不得注册或执行。
 - `service.ready` 的 model path、memory path 与 embedding descriptor 来自 strict configuration；deterministic profile 不初始化 Pi 或 Mem0，production Pi profile 只绑定显式 primary/fallback，embedding 不进入 Pi generation registry，而由 Mem0 projection 使用显式 dimensions（本次配置为 4096）。
 - 正常停止后无遗留 UDS socket、活跃 state-root lock 或未记录 child process；forced stop 后下次启动仍通过正式 recovery。
+- Worker 重启产生新 boot identity 后，旧 Agent 启动绑定必须失效；只重启 Worker 不得沿用旧 Agent/Worker 配对。当前 authority 或任一 peer identity 不匹配时，权限与 Payload 请求不得通过。
+- 配置了生产 Memory 时，ready 前已执行消费者启动与当前 authority 检查；每次新任务领取前再次检查权威。只构造 Mem0 对象不算消费者就绪。该消费者证据不代表其他尚未接入的后台任务已经运行。
 - 当安装产物启用持久执行领取时，验证领取使用当前实际权威和新进程身份，旧执行不能续租或写 Run/检查点；恢复必须区分安全续跑与未知结果待核对。停止服务不得伪造 Owner 取消，也不能仅凭启动日志或表中存在租约就认定领取循环已接入。
 - 目标前缀、state root、authority file、SQLite、Payload、runtime/cache 和证据权限符合当前配置；诊断输出不含 token、配置全文或私人正文。
 - 该 Runbook 的成功只证明本机安装/启停边界，不证明 Mac/Hermes 双向迁移、真实 provider/GitHub/Cloudflare、systemd/launchd 或 production readiness。

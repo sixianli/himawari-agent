@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:2a004a8fc3eebf3a363adae6ee3f91f65e6b04e47d91c845ba32a039c5fbf42b"
+contract_sha256: "sha256:99728d22a855d6bbc431b6daebbbf30af430a696636b08afc813fa1cb2f9d1cf"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -13,13 +13,18 @@ date: "2026-08-27"
 <!-- runbook-contract:
 - apps/admin-cli/src
 - apps/agent-service/src/service-main.ts
+- apps/agent-service/src/production-service-lifecycle.ts
+- apps/agent-service/src/production-memory-worker.ts
+- apps/agent-service/src/production-authority-lifecycle.ts
+- apps/agent-service/src/production-execution-client.ts
+- apps/execution-worker/src/service-main.ts
 - packages/domain/src/durable-state.ts
 - packages/persistence-sqlite/src/sqlite-authority-transfer.ts
 - packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts
 - packages/persistence-sqlite/src/sqlite-run-lifecycle-operations.ts
 - packages/persistence-sqlite/src/sqlite-run-checkpoint-operations.ts
-- packages/persistence-sqlite/src/migrations/0021_run_execution_leases.sql
-- packages/persistence-sqlite/src/migrations/0022_model_budget_ledger.sql
+- packages/persistence-sqlite/src/migration-engine.ts
+- packages/persistence-sqlite/src/migrations
 - packages/persistence-sqlite/src/state-root-lock.ts
 - packages/platform-node/src/host-secret-source.ts
 - packages/platform-node/src/payload-protector.ts
@@ -33,6 +38,8 @@ date: "2026-08-27"
 ## Scope
 
 本 Runbook 只用于把同一个 Owner/Agent 的单一逻辑权威在两个已准备好的 deployment 之间停机迁移。它覆盖源部署导出、迁移包认证检查、空目标导入、inactive-ready 验证、显式激活、未激活导入的放弃，以及加密迁移包的 7 天保留边界。
+
+目标服务必须建立自己的 Agent/Worker boot identity、authority lease 和反向权限/Payload 通道；源 `runtime/` 中的启动绑定不随迁移包转移，也不能在目标重用。
 
 迁移不是在线复制、自动故障切换、普通备份、主机损毁恢复或 active-active。导出一旦进入 `retired_pending_transfer`，源部署不能自动恢复为 active；回切必须由当时的 active target 发起新的 reverse transfer。当前实现把激活后的 source `retired` 状态写入目标侧的权威产品数据库；物理源 state root 保持 `retired_pending_transfer`，两种状态都拒绝普通启动。
 

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:96ed367dae20609a0830edba11a8b552a7bce01e2fb5813c4c786fb412243aa4"
+contract_sha256: "sha256:2b5bbd0e578a1f693147d8221163817e358a925475c74551fb3e62323dd98086"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -16,12 +16,13 @@ date: "2026-08-27"
 - packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts
 - packages/persistence-sqlite/src/sqlite-run-lifecycle-operations.ts
 - packages/persistence-sqlite/src/sqlite-run-checkpoint-operations.ts
-- packages/persistence-sqlite/src/migrations/0021_run_execution_leases.sql
-- packages/persistence-sqlite/src/migrations/0022_model_budget_ledger.sql
+- packages/persistence-sqlite/src/migration-engine.ts
+- packages/persistence-sqlite/src/migrations
 - packages/persistence-sqlite/src/state-root-lock.ts
 - packages/platform-node/src/host-secret-source.ts
 - packages/platform-node/src/payload-protector.ts
 - packages/platform-node/src/strict-configuration.ts
+- packages/platform-node/src/state-root-layout.ts
 - docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md
 - docs/adr/0018-sqlite-product-state-authority.md
 -->
@@ -30,7 +31,7 @@ date: "2026-08-27"
 
 本 Runbook 只管理当前活动部署在同一主机、同一存储边界内的加密恢复点：创建、独立验证，以及把一个已验证恢复点恢复到它原属的明确 state root。恢复点不改变 authority epoch，不创建第二个可启动权威，也不是异地主机损毁后的灾难恢复介质。
 
-恢复包只包含 SQLite backup API 产生的 `data/product.sqlite` 一致性副本，以及该副本实际引用的 `data/payload-ciphertext/` 文件。`runtime/`、`cache/`、lock、socket、日志、secret、能力部署快照及其 runtime root 明确排除；恢复后仍须由安装流程独立提供并验证与 active Capability Registry 一致的不可变快照，不能从数据库记录重新生成可执行绑定。当前 CLI 通过权限受限的 secret 目录解析 `backup-encryption` 与 `payload-encryption` 引用；不得把密钥值写入参数、日志或证据。
+恢复包只包含 SQLite backup API 产生的 `data/product.sqlite` 一致性副本，以及该副本实际引用的 `data/payload-ciphertext/` 文件。Agent/Worker 启动身份文件位于 `runtime/`，不属于恢复数据；恢复后的服务必须重新建立当前 boot、authority lease 和握手，不能把旧启动文件当作恢复后的执行权限。`runtime/`、`cache/`、lock、socket、日志、secret、能力部署快照及其 runtime root 明确排除；恢复后仍须由安装流程独立提供并验证与 active Capability Registry 一致的不可变快照，不能从数据库记录重新生成可执行绑定。当前 CLI 通过权限受限的 secret 目录解析 `backup-encryption` 与 `payload-encryption` 引用；不得把密钥值写入参数、日志或证据。
 
 ## Authoritative Sources
 
