@@ -90,7 +90,11 @@ export class DurableMemoryService {
           existing.confidencePermille === proposal.memory.confidencePermille &&
           existing.sourceRefs.length === proposal.memory.sourceRefs.length &&
           existing.sourceRefs.every((source) => proposal.memory.sourceRefs.includes(source));
-        if (sameProposal) return existing;
+        if (sameProposal) {
+          if (existing.status === "active")
+            await this.proposeProjection(existing, "upsert", generationId);
+          return existing;
+        }
         throw new ApplicationPortError(
           PORT_ERROR_CODES.CONFLICT,
           `Memory ${proposal.memory.id} already exists with different product content`,
@@ -105,8 +109,7 @@ export class DurableMemoryService {
         lastUsedAt: null,
         updatedAt,
       });
-      const saved = await this.options.state.save(record, null);
-      await this.proposeProjection(saved, "upsert", generationId);
+      const saved = await this.saveWithProjection(record, null, "upsert", generationId);
       return saved;
     }
     const current = requireRecord(
@@ -120,7 +123,7 @@ export class DurableMemoryService {
         { memoryId: current.id, status: current.status },
       );
     }
-    const saved = await this.options.state.save(
+    const saved = await this.saveWithProjection(
       nextRecord(
         current,
         {
@@ -134,8 +137,9 @@ export class DurableMemoryService {
         updatedAt,
       ),
       current.revision,
+      "upsert",
+      generationId,
     );
-    await this.proposeProjection(saved, "upsert", generationId);
     return saved;
   }
 
@@ -152,7 +156,7 @@ export class DurableMemoryService {
         `Memory ${current.id} cannot be corrected from ${current.status}`,
       );
     }
-    const saved = await this.options.state.save(
+    const saved = await this.saveWithProjection(
       nextRecord(
         current,
         {
@@ -164,8 +168,9 @@ export class DurableMemoryService {
         this.options.now(),
       ),
       current.revision,
+      "upsert",
+      input.generationId,
     );
-    await this.proposeProjection(saved, "upsert", input.generationId);
     return saved;
   }
 
@@ -271,6 +276,8 @@ export class DurableMemoryService {
   ): Promise<ProductMemoryRecord> {
     const current = requireRecord(await this.options.state.read(memoryId), memoryId);
     if (current.status === "deleted_verified" || current.status === "deletion_pending") {
+      if (current.status === "deletion_pending")
+        await this.proposeProjection(current, "delete", generationId);
       return current;
     }
     if (
@@ -283,11 +290,12 @@ export class DurableMemoryService {
         `Memory ${memoryId} cannot transition from ${current.status} to ${status}`,
       );
     }
-    const saved = await this.options.state.save(
+    const saved = await this.saveWithProjection(
       nextRecord(current, { status }, this.options.now()),
       current.revision,
+      "delete",
+      generationId,
     );
-    await this.proposeProjection(saved, "delete", generationId);
     return saved;
   }
 
@@ -297,7 +305,29 @@ export class DurableMemoryService {
     generationId: MemoryGenerationId,
     requeueCompleted = false,
   ): Promise<MemoryProjectionJob> {
-    const job: MemoryProjectionJob = Object.freeze({
+    const job = this.projectionJob(memory, operation, generationId);
+    return this.options.jobs.propose({ job, requeueCompleted });
+  }
+
+  private saveWithProjection(
+    memory: ProductMemoryRecord,
+    expectedRevision: number | null,
+    operation: "upsert" | "delete",
+    generationId: MemoryGenerationId,
+  ) {
+    return this.options.state.saveWithProjection({
+      memory,
+      expectedRevision,
+      job: this.projectionJob(memory, operation, generationId),
+    });
+  }
+
+  private projectionJob(
+    memory: ProductMemoryRecord,
+    operation: "upsert" | "delete",
+    generationId: MemoryGenerationId,
+  ): MemoryProjectionJob {
+    return Object.freeze({
       id: stableJobId(memory.id, memory.revision, operation),
       memoryId: memory.id,
       memoryRevision: memory.revision,
@@ -311,7 +341,6 @@ export class DurableMemoryService {
       claimedBy: null,
       claimExpiresAt: null,
     });
-    return this.options.jobs.propose({ job, requeueCompleted });
   }
 
   private async projectClaimed(job: MemoryProjectionJob): Promise<MemoryProjectionJob> {

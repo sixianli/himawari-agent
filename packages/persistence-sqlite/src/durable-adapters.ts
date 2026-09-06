@@ -517,6 +517,7 @@ export class SqliteDurableAdapters {
       searchActive: (input) => this.context.read("memory.searchActive", input),
       save: (memory, expectedRevision) =>
         this.context.write("memory.save", { memory, expectedRevision }),
+      saveWithProjection: (input) => this.context.write("memory.saveWithProjection", input),
       listActive: (ownerId, agentId) =>
         this.context.read("memory.listActive", { ownerId, agentId }),
       markUsed: (memoryIds, usedAt) => this.context.write("memory.markUsed", { memoryIds, usedAt }),

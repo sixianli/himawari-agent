@@ -198,6 +198,105 @@ function createProposal(memoryId = createMemoryId("memory-integration-01")) {
 }
 
 describe("durable product Memory projection", () => {
+  it.each(["create", "update", "correct", "archive", "delete"] as const)(
+    "rolls back %s when projection insertion fails and permits retry",
+    async (operation) => {
+      const resource = await createRepository();
+      const memory = service({
+        repository: resource.repository,
+        provider: new DeterministicProjectionProvider(),
+        content: new MapMemoryContent(),
+        now: () => T0,
+      });
+      const proposal = createProposal();
+      const before =
+        operation === "create" ? undefined : await memory.applyProposal(proposal, GENERATION_ID);
+      const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      try {
+        database.exec(`CREATE TRIGGER fail_projection BEFORE INSERT ON memory_projection_jobs
+          BEGIN SELECT RAISE(ABORT, 'fixture projection insertion failure'); END`);
+        const mutate = () => {
+          switch (operation) {
+            case "create":
+              return memory.applyProposal(proposal, GENERATION_ID);
+            case "update":
+              return memory.applyProposal(
+                {
+                  decision: "update",
+                  memoryId: proposal.memory.id,
+                  contentRef: "payload-memory-v2",
+                  sourceRefs: ["message-update"],
+                  dataClassification: "private",
+                  inference: false,
+                  confidencePermille: 1000,
+                  policyVersion: "memory-policy-v1",
+                },
+                GENERATION_ID,
+              );
+            case "correct":
+              return memory.correct({
+                memoryId: proposal.memory.id,
+                contentRef: "payload-memory-v2",
+                sourceRef: "message-correction",
+                generationId: GENERATION_ID,
+              });
+            case "archive":
+              return memory.archive(proposal.memory.id, GENERATION_ID);
+            case "delete":
+              return memory.delete(proposal.memory.id, GENERATION_ID);
+          }
+        };
+        await expect(mutate()).rejects.toThrow();
+        expect(await resource.repository.productMemoryState().read(proposal.memory.id)).toEqual(
+          before,
+        );
+        expect(
+          await resource.repository.memoryProjectionJobs().listByMemory(proposal.memory.id),
+        ).toHaveLength(before ? 1 : 0);
+        database.exec("DROP TRIGGER fail_projection");
+        const saved = await mutate();
+        expect(saved.revision).toBe(before ? 2 : 1);
+        expect(
+          await resource.repository.memoryProjectionJobs().listByMemory(saved.id),
+        ).toHaveLength(before ? 2 : 1);
+      } finally {
+        database.close();
+        await resource.repository.close();
+      }
+    },
+  );
+
+  it("repairs legacy missing create and deletion jobs on replay without changing revision", async () => {
+    const resource = await createRepository();
+    const provider = new DeterministicProjectionProvider();
+    const content = new MapMemoryContent();
+    content.set("payload-memory-v1", "memory fixture");
+    const memory = service({ repository: resource.repository, provider, content, now: () => T0 });
+    const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+    try {
+      const created = await memory.applyProposal(createProposal(), GENERATION_ID);
+      database.prepare("DELETE FROM memory_projection_jobs WHERE memory_id = ?").run(created.id);
+      expect(await memory.applyProposal(createProposal(), GENERATION_ID)).toEqual(created);
+      expect(
+        await resource.repository.memoryProjectionJobs().listByMemory(created.id),
+      ).toHaveLength(1);
+      await memory.runProjectionBatch(10);
+      const pending = await memory.delete(created.id, GENERATION_ID);
+      database
+        .prepare("DELETE FROM memory_projection_jobs WHERE memory_id = ? AND operation = 'delete'")
+        .run(created.id);
+      expect(await memory.delete(created.id, GENERATION_ID)).toEqual(pending);
+      await memory.runProjectionBatch(10);
+      expect((await resource.repository.productMemoryState().read(created.id))?.status).toBe(
+        "deleted_verified",
+      );
+      expect(provider.records.size).toBe(0);
+    } finally {
+      database.close();
+      await resource.repository.close();
+    }
+  });
+
   it("commits independently, deduplicates proposals and skips stale projection revisions", async () => {
     const resource = await createRepository();
     const provider = new DeterministicProjectionProvider();

@@ -54,6 +54,11 @@ export interface ProductMemoryStatePort {
     readonly limit: number;
   }): Promise<readonly ProductMemoryRecord[]>;
   save(memory: ProductMemoryRecord, expectedRevision: number | null): Promise<ProductMemoryRecord>;
+  saveWithProjection(input: {
+    readonly memory: ProductMemoryRecord;
+    readonly expectedRevision: number | null;
+    readonly job: MemoryProjectionJob;
+  }): Promise<ProductMemoryRecord>;
   listActive(ownerId: OwnerId, agentId: AgentId): Promise<readonly ProductMemoryRecord[]>;
   markUsed(memoryIds: readonly MemoryId[], usedAt: string): Promise<void>;
 }
