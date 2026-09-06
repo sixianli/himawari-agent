@@ -8,6 +8,18 @@ date: "2026-08-25"
 ---
 # Himawari Agent Architecture v0.1
 
+## 架构总览图
+
+下图记录 2026-09-07 的主要组件和接入状态，箭头表示主要调用方向，省略响应回传和部分共享依赖。绿色主线表示消息执行路径；紫色虚线表示尚未接通的路径；红色表示已授权执行通道。
+
+![Himawari Agent 项目架构总览](assets/architecture/system-overview.png)
+
+[打开交互式架构图](assets/architecture/system-overview.html) · [图表源文件（Archify JSON）](assets/architecture/system-overview.json)
+
+交互版为独立 HTML，下载后可在浏览器中打开，支持缩放、搜索、主题切换和导出。静态预览用于直接阅读文档；更新图表时应同步维护源文件、交互版和预览图。
+
+图中的 OpenRouter 表示已有接口接线，不表示真实模型读取 Mac 文件的完整场景已通过验收。当前安装进程验证使用本地模拟模型响应；动态工具请求到授权签发、Mac 文件能力及 GitHub 总组合仍有接入缺口。Pi 负责模型交互与工具循环，Himawari 负责产品权限、预算、持久状态和 Worker 集成。
+
 ## Current System
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e、Pi compatibility、browser、admin CLI、Node services 和 workspace scaffold 九个可独立选择的测试项目。
