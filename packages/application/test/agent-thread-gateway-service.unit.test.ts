@@ -6,7 +6,7 @@ import {
   type ThreadGatewaySubscription,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AgentThreadGatewayService,
   PORT_ERROR_CODES,
@@ -157,6 +157,8 @@ function fixture(events: readonly ThreadGatewayEvent[] = [event("thread-cursor:1
     },
   };
   return {
+    access,
+    reads,
     authorized,
     executions,
     gateway: new AgentThreadGatewayService({ access, controlPlane, reads }),
@@ -164,6 +166,40 @@ function fixture(events: readonly ThreadGatewayEvent[] = [event("thread-cursor:1
 }
 
 describe("AgentThreadGatewayService", () => {
+  it("rejects the next event after authorization is revoked", async () => {
+    const { gateway, access } = fixture([event("thread-cursor:1", 1), event("thread-cursor:2", 2)]);
+    const stream = gateway.subscribe(authentication, subscription())[Symbol.asyncIterator]();
+    expect((await stream.next()).done).toBe(false);
+    access.authorize = async () => ({ allowed: false, reasonCode: "REVOKED" });
+    await expect(stream.next()).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+  });
+
+  it("revokes an idle subscription and signals its source to stop", async () => {
+    vi.useFakeTimers();
+    try {
+      const { gateway, access, reads } = fixture();
+      let sourceSignal: AbortSignal | undefined;
+      reads.subscribe = async function* ({ signal }) {
+        sourceSignal = signal;
+        await new Promise<void>((resolve) =>
+          signal?.addEventListener("abort", () => resolve(), { once: true }),
+        );
+      };
+      const stream = gateway.subscribe(authentication, subscription())[Symbol.asyncIterator]();
+      const pending = stream.next();
+      const assertion = expect(pending).rejects.toMatchObject({
+        code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      access.authorize = async () => ({ allowed: false, reasonCode: "REVOKED" });
+      await vi.advanceTimersByTimeAsync(1000);
+      await assertion;
+      expect(sourceSignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("authorizes and routes commands, queries, and subscriptions", async () => {
     const { authorized, executions, gateway } = fixture();
     expect(await gateway.request(authentication, command())).toMatchObject({
@@ -176,7 +212,13 @@ describe("AgentThreadGatewayService", () => {
     for await (const item of gateway.subscribe(authentication, subscription())) streamed.push(item);
     expect(streamed).toHaveLength(1);
     expect(executions).toHaveLength(1);
-    expect(authorized).toEqual(["thread.pin", "thread.list", "thread.events"]);
+    expect(authorized).toEqual([
+      "thread.pin",
+      "thread.list",
+      "thread.events",
+      "thread.events",
+      "thread.events",
+    ]);
   });
 
   it("rejects cross-owner scope before dispatch", async () => {

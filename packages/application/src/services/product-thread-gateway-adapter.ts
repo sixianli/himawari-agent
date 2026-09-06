@@ -329,6 +329,7 @@ export class ProductThreadGatewayAdapter
   async *subscribe(input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly subscription: ThreadGatewaySubscription;
+    readonly signal?: AbortSignal;
   }): AsyncIterable<ThreadGatewayEvent> {
     const ownerId = createOwnerId(input.authentication.ownerId);
     const agentId = createAgentId(input.subscription.scope.agentId);
@@ -339,7 +340,7 @@ export class ProductThreadGatewayAdapter
         new Promise<void>((resolve) => {
           setTimeout(resolve, milliseconds);
         }));
-    while (true) {
+    while (!input.signal?.aborted) {
       const events = await this.#dependencies.repository.listGatewayEvents(
         ownerId,
         agentId,
@@ -347,6 +348,7 @@ export class ProductThreadGatewayAdapter
         1000,
       );
       for (const event of events) {
+        if (input.signal?.aborted) return;
         const parsed = threadGatewayMessageSchema.parse({
           schemaVersion: "gateway.thread.v3",
           kind: "event",

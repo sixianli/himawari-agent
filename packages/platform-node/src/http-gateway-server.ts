@@ -430,49 +430,56 @@ async function* streamThreadGatewayEvents(input: {
   readonly subscription: ThreadGatewaySubscription;
   readonly heartbeatMilliseconds: number;
 }): AsyncGenerator<string> {
+  const controller = new AbortController();
   const iterator = input.gateway
-    .subscribe(input.authentication, input.subscription)
+    .subscribe(input.authentication, input.subscription, controller.signal)
     [Symbol.asyncIterator]();
   let pending = iterator.next();
-  while (true) {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let result:
-      | { readonly kind: "item"; readonly value: IteratorResult<ThreadGatewayEvent> }
-      | { readonly kind: "heartbeat" };
-    try {
-      result = await Promise.race([
-        pending.then((value) => ({ kind: "item" as const, value })),
-        new Promise<{ readonly kind: "heartbeat" }>((resolve) => {
-          timer = setTimeout(() => resolve({ kind: "heartbeat" }), input.heartbeatMilliseconds);
-        }),
-      ]);
-    } catch (error) {
-      if (error instanceof ApplicationPortError) {
-        yield serializeSse({
-          event:
-            error.code === PORT_ERROR_CODES.NOT_FOUND
-              ? "thread.snapshot_required"
-              : "gateway.stream_error",
-          data: {
-            code: error.code,
-            ...(error.code === PORT_ERROR_CODES.NOT_FOUND
-              ? { reasonCode: "CURSOR_OUTSIDE_RETENTION" }
-              : {}),
-          },
-        });
-        return;
+  try {
+    while (true) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let result:
+        | { readonly kind: "item"; readonly value: IteratorResult<ThreadGatewayEvent> }
+        | { readonly kind: "heartbeat" };
+      try {
+        result = await Promise.race([
+          pending.then((value) => ({ kind: "item" as const, value })),
+          new Promise<{ readonly kind: "heartbeat" }>((resolve) => {
+            timer = setTimeout(() => resolve({ kind: "heartbeat" }), input.heartbeatMilliseconds);
+          }),
+        ]);
+      } catch (error) {
+        if (error instanceof ApplicationPortError) {
+          yield serializeSse({
+            event:
+              error.code === PORT_ERROR_CODES.NOT_FOUND
+                ? "thread.snapshot_required"
+                : "gateway.stream_error",
+            data: {
+              code: error.code,
+              ...(error.code === PORT_ERROR_CODES.NOT_FOUND
+                ? { reasonCode: "CURSOR_OUTSIDE_RETENTION" }
+                : {}),
+            },
+          });
+          return;
+        }
+        throw error;
       }
-      throw error;
+      if (timer) clearTimeout(timer);
+      if (result.kind === "heartbeat") {
+        yield ": heartbeat\n\n";
+        continue;
+      }
+      if (result.value.done) return;
+      const event = result.value.value;
+      yield serializeSse({ event: "message", id: event.payload.cursor, data: event });
+      pending = iterator.next();
     }
-    if (timer) clearTimeout(timer);
-    if (result.kind === "heartbeat") {
-      yield ": heartbeat\n\n";
-      continue;
-    }
-    if (result.value.done) return;
-    const event = result.value.value;
-    pending = iterator.next();
-    yield serializeSse({ event: "message", id: event.payload.cursor, data: event });
+  } finally {
+    controller.abort();
+    void pending.catch(() => undefined);
+    void iterator.return?.().catch(() => undefined);
   }
 }
 

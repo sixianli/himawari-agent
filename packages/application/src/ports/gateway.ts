@@ -142,6 +142,7 @@ export interface ThreadGatewayReadModelPort {
   subscribe(input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly subscription: ThreadGatewaySubscription;
+    readonly signal?: AbortSignal;
   }): AsyncIterable<ThreadGatewayEvent>;
 }
 
@@ -153,5 +154,6 @@ export interface AgentThreadGatewayPort {
   subscribe(
     authentication: GatewayAuthenticationContext,
     subscription: ThreadGatewaySubscription,
+    signal?: AbortSignal,
   ): AsyncIterable<ThreadGatewayEvent>;
 }
