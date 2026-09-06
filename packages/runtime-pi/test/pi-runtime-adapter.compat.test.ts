@@ -28,6 +28,7 @@ import {
   type PiAgentRuntimeAdapterDependencies,
   type PiModelBinding,
 } from "../src/index.js";
+import { createFauxModelFixture } from "./faux-model-fixture.js";
 
 const NOW = "2026-08-25T10:00:00.000Z";
 type ProjectionContext = RuntimeProjection;
@@ -1014,6 +1015,27 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     );
   });
 
+  it("accepts opaque product Session IDs containing colon without changing product identity", async () => {
+    const observedOptions: FakeSessionOptions[] = [];
+    const adapter = createAdapter(
+      new RecordingProjection(),
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => emit({ type: "agent_settled" }), observedOptions),
+    );
+    const input = {
+      ...request,
+      sessionId: fixtureIdentifier<RuntimeRequest["sessionId"]>("session:identity-fixture"),
+      threadId: null,
+    };
+    const events = await collect(adapter.run(input));
+    expect(events.at(-1)).toMatchObject({ type: "runtime.completed", runId: request.runId });
+    const first = observedOptions[0]?.sessionManager?.getSessionId?.();
+    expect(first).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u);
+    await collect(adapter.run(input));
+    expect(observedOptions[1]?.sessionManager?.getSessionId?.()).toBe(first);
+    expect(input.sessionId).toBe("session:identity-fixture");
+  });
+
   it("rebuilds Pi Session projections without changing durable product identities", async () => {
     const projection = new RecordingProjection({
       ...DEFAULT_CONTEXT,
@@ -1035,10 +1057,9 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(firstEvents.at(-1)).toMatchObject({ type: "runtime.completed", runId: request.runId });
     expect(secondEvents.at(-1)).toEqual(firstEvents.at(-1));
     expect(observedOptions).toHaveLength(2);
-    expect(observedOptions.map(({ sessionManager }) => sessionManager?.getSessionId?.())).toEqual([
-      request.sessionId,
-      request.sessionId,
-    ]);
+    const piIds = observedOptions.map(({ sessionManager }) => sessionManager?.getSessionId?.());
+    expect(piIds[0]).toMatch(/^himawari-[a-f0-9]{64}$/u);
+    expect(piIds[1]).toBe(piIds[0]);
 
     const durableSemantics = (options: FakeSessionOptions) =>
       options.sessionManager?.getEntries?.().map((rawEntry) => {
@@ -1431,4 +1452,118 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(JSON.stringify(observedContext)).toContain("Memory material that is not a command.");
     expect(JSON.stringify(projection.captures)).not.toContain("deterministic-test-key");
   });
+});
+
+it("runs the actual pinned AgentSession with an opaque HTTP product session identity", async () => {
+  const model = await createFauxModelFixture("真实 Pi Session 回答");
+  const projection = new RecordingProjection();
+  const adapter = new PiAgentRuntimeAdapter({
+    projection,
+    tools: new RecordingRuntimeTools(),
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `real-pi:${ordinal}`,
+  });
+  const events = await collect(
+    adapter.run({
+      ...request,
+      sessionId: fixtureIdentifier<RuntimeRequest["sessionId"]>("session:real-http"),
+      modelRef: model.descriptor.ref,
+    }),
+  );
+  expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+  expect(projection.finalAnswers[0]?.text).toBe("真实 Pi Session 回答");
+});
+
+it("runs configured OpenRouter sessions without storing credentials in the shared Pi runtime", async () => {
+  const { createServer } = await import("node:http");
+  const { ConfiguredPiModelBindingPort } = await import("../src/index.js");
+  const authorizations: Array<string | undefined> = [];
+  const server = createServer((incoming, response) => {
+    authorizations.push(incoming.headers.authorization);
+    incoming.resume();
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.end(
+      `data: ${JSON.stringify({ id: "local-completion", object: "chat.completion.chunk", model: "local-primary", choices: [{ index: 0, delta: { role: "assistant", content: "凭据受控回答" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: "local-completion", object: "chat.completion.chunk", model: "local-primary", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } })}\n\ndata: [DONE]\n\n`,
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("LOCAL_PROVIDER_REQUIRED");
+  const secretReads: string[] = [];
+  const models = new ConfiguredPiModelBindingPort({
+    descriptors: (["primary", "fallback"] as const).map((role) => ({
+      ref: `local-${role}`,
+      model: `local-${role}`,
+      provider: "openrouter",
+      version: "v1",
+      name: role,
+      routingClass: role,
+      priority: role === "primary" ? 1 : 2,
+      api: "openai-completions",
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+      reasoning: false,
+      input: ["text"],
+      contextWindow: 8192,
+      maxTokens: 1024,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      capabilities: ["text"],
+      disclosure: "trusted_remote",
+      allowedDataClassifications: ["private"],
+      secretRequirement: {
+        secretRef: "fixture-key",
+        secretVersion: "v1",
+        purpose: "model-provider-auth",
+      },
+    })),
+    secretSource: {
+      productionSuitable: true,
+      resolve: async (ref) => {
+        secretReads.push(ref);
+        return "fixture-request-key";
+      },
+    },
+  });
+  try {
+    const binding = await models.resolve("local-primary");
+    expect(binding.modelRuntime.hasConfiguredAuth("openrouter")).toBe(false);
+    const projection = new RecordingProjection();
+    let admitted = false;
+    const adapter = new PiAgentRuntimeAdapter({
+      projection,
+      tools: new RecordingRuntimeTools(),
+      models,
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => {
+        expect(secretReads).toEqual([]);
+        admitted = true;
+        return allowAdmission(scope);
+      },
+      logicalSlot: (_request, ordinal) => `configured-pi:${ordinal}`,
+    });
+    const events = await collect(
+      adapter.run({
+        ...request,
+        modelRef: "local-primary",
+        sessionId: fixtureIdentifier<RuntimeRequest["sessionId"]>("session:configured-http"),
+      }),
+    );
+    expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+    expect(admitted).toBe(true);
+    expect(secretReads).toEqual(["fixture-key"]);
+    expect(authorizations.map((value) => value?.split(" "))).toEqual([
+      ["Bearer", "fixture-request-key"],
+    ]);
+    expect(projection.finalAnswers[0]?.text).toBe("凭据受控回答");
+    expect(binding.modelRuntime.hasConfiguredAuth("openrouter")).toBe(false);
+    expect(await binding.modelRuntime.listCredentials()).toEqual([]);
+  } finally {
+    await models.close();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
 });
