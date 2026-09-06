@@ -10,8 +10,8 @@ import {
   PORT_ERROR_CODES,
   type RunCompletionInput,
   RunCoordinator,
-  RunExecutionInputService,
   type RunDispatchPort,
+  RunExecutionInputService,
   type RunExecutionLease,
   type RunLifecyclePort,
   RunStateCommitCoordinator,
@@ -42,8 +42,8 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
-  EnvelopePayloadProtector,
   BrowserTextPayloadReader,
+  EnvelopePayloadProtector,
   InMemoryDevelopmentSecretSource,
 } from "@himawari-agent/platform-node";
 import {
@@ -2157,9 +2157,13 @@ it("freezes execution policy across factory recreation and rejects a different c
   ]);
 });
 
-it.each([100, 0])(
-  "executes persistent dispatch through the real Pi loop with budget %s",
-  async (budget) => {
+it.each([
+  { budget: 100, unknown: false },
+  { budget: 0, unknown: false },
+  { budget: 100, unknown: true },
+])(
+  "executes persistent dispatch through the real Pi loop ($budget, unknown=$unknown)",
+  async ({ budget, unknown }) => {
     const { createFauxModelFixture } = await import(
       "../../packages/runtime-pi/test/faux-model-fixture.js"
     );
@@ -2168,7 +2172,17 @@ it.each([100, 0])(
     );
     const setup = await executionFixture();
     const adapters = createReferenceAdapterSet({ clock });
-    const model = await createFauxModelFixture("这是 Pi 执行后持久保存的回答。");
+    const model = await createFauxModelFixture(
+      "这是 Pi 执行后持久保存的回答。",
+      unknown
+        ? {
+            name: "uncertain_tool",
+            id: "real-pi-unknown-call",
+            arguments: {},
+          }
+        : undefined,
+    );
+    let toolCalls = 0;
     const payloads = setup.repository.payloadStore(ownerId, agentId);
     for (const [ref, text] of [
       ["pi-prompt", "请回答本次请求。"],
@@ -2235,12 +2249,32 @@ it.each([100, 0])(
       protector: setup.protector,
       memory: adapters.memory,
       tools: {
-        listAuthorized: async () => [],
+        listAuthorized: async () =>
+          unknown
+            ? [
+                {
+                  name: "uncertain_tool",
+                  capabilityRef: "test-tool",
+                  capabilityHandleRef: "test-handle",
+                  description: "test",
+                  parameters: { type: "object", properties: {} },
+                },
+              ]
+            : [],
         preflight: async () => {
-          throw new Error("No tools are authorized in this test");
+          if (!unknown) throw new Error("No tools are authorized in this test");
+          return { allowed: true, permissionDecisionRef: "test-policy", reasonCode: "test" };
         },
         execute: async () => {
-          throw new Error("No tools are authorized in this test");
+          if (!unknown) throw new Error("No tools are authorized in this test");
+          toolCalls += 1;
+          return {
+            outcome: "result_unknown" as const,
+            resultRef: null,
+            errorCode: null,
+            externalActionId: "test-external-action",
+            modelContent: "结果未知",
+          };
         },
       },
       workers: new ScriptedWorkerRunPort(),
@@ -2250,7 +2284,7 @@ it.each([100, 0])(
         policyVersion: "pi-test-policy",
         policies: [],
         capabilities: [],
-        capabilityHandleRefs: [],
+        capabilityHandleRefs: unknown ? ["test-handle"] : [],
         maxMemoryClassification: "private",
         memoryLimit: 5,
         maxSelectedMemories: 0,
@@ -2264,12 +2298,27 @@ it.each([100, 0])(
       onFailure: failure,
     });
     const pumped = await composed.dispatcher.pump();
-    expect(pumped).toMatchObject({ claimed: 1, settled: 1, unknown: 0 });
+    expect(pumped).toMatchObject({
+      claimed: 1,
+      settled: unknown ? 0 : 1,
+      unknown: unknown ? 1 : 0,
+    });
     const messages = await setup.repository
       .threadRepository()
       .listMessages(ownerId, agentId, thread.thread.id, 0, 100);
     const answer = messages.find((message) => message.role === "agent");
-    if (budget > 0) {
+    if (unknown) {
+      expect(model.observed).toHaveLength(1);
+      expect(toolCalls).toBe(1);
+      expect(answer).toBeUndefined();
+      if (!admitted.message.runId) throw new Error("Missing Run");
+      await expect(setup.runs.readRun(admitted.message.runId)).resolves.toMatchObject({
+        run: { status: "reconciling_external_result" },
+      });
+      await composed.dispatcher.pump();
+      expect(model.observed).toHaveLength(1);
+      expect(toolCalls).toBe(1);
+    } else if (budget > 0) {
       expect(model.observed).toHaveLength(1);
       expect(JSON.stringify(model.observed)).toContain("请回答本次请求。");
       expect(answer?.runId).toBe(admitted.message.runId);
@@ -2320,7 +2369,8 @@ it.each([100, 0])(
         run: { status: "failed" },
       });
     }
-    expect(reconcile).not.toHaveBeenCalled();
+    if (unknown) expect(reconcile).toHaveBeenCalled();
+    else expect(reconcile).not.toHaveBeenCalled();
     expect(failure).not.toHaveBeenCalled();
     await expect(composed.loop.stop(1000)).resolves.toMatchObject({ drained: true });
   },

@@ -175,6 +175,14 @@ export type RuntimeSuccessfulOutput =
 
 export type RuntimeEvent =
   | {
+      readonly type: "runtime.result_unknown";
+      readonly runId: RunId;
+      readonly toolCallId: string;
+      readonly capabilityRef: string;
+      readonly externalActionId: string | null;
+      readonly occurredAt: string;
+    }
+  | {
       readonly type: "runtime.model_started";
       readonly runId: RunId;
       readonly occurredAt: string;

@@ -19,6 +19,7 @@ import type {
   RuntimeProjection,
   RuntimeProjectionPort,
   RuntimeRequest,
+  RuntimeToolExecutionResult,
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -296,13 +297,15 @@ class RecordingRuntimeTools implements RuntimeToolPort {
     permissionDecisionRef: "permission-task-11",
     reasonCode: "grant_allows",
   }));
-  readonly execute = vi.fn(async () => ({
-    outcome: "succeeded" as const,
-    resultRef: "payload-tool-result-task-11",
-    errorCode: null,
-    externalActionId: null,
-    modelContent: "Found one governed result.",
-  }));
+  readonly execute = vi.fn(
+    async (): Promise<RuntimeToolExecutionResult> => ({
+      outcome: "succeeded" as const,
+      resultRef: "payload-tool-result-task-11",
+      errorCode: null,
+      externalActionId: null,
+      modelContent: "Found one governed result.",
+    }),
+  );
 
   async listAuthorized() {
     return [
@@ -349,6 +352,7 @@ function fakeSessionFactory(
     return {
       session: {
         agent: {
+          abort() {},
           streamFunction: async () => {
             throw new Error("fake stream function was not configured");
           },
@@ -778,6 +782,51 @@ describe("Pi stream admission accounting", () => {
 });
 
 describe("Pi Agent Runtime adapter compatibility", () => {
+  it.each(["unknown", "throw"] as const)(
+    "never completes a Run after unresolved tool execution (%s) even if Pi supplies a final answer",
+    async (mode) => {
+      const projection = new RecordingProjection();
+      const tools = new RecordingRuntimeTools();
+      tools.execute.mockResolvedValue({
+        outcome: "result_unknown",
+        resultRef: null,
+        errorCode: null,
+        externalActionId: "external:unknown",
+        modelContent: "Result unknown",
+      });
+      if (mode === "throw") tools.execute.mockRejectedValue(new Error("private transport error"));
+      const adapter = createAdapter(
+        projection,
+        tools,
+        fakeSessionFactory(async (emit, options) => {
+          await options.customTools?.[0]?.execute("unknown-call", { query: "beef" });
+          await expect(
+            options.customTools?.[0]?.execute("second-call", { query: "beef" }),
+          ).rejects.toThrow("RUNTIME_TOOL_RECONCILIATION_REQUIRED");
+          emit({
+            type: "message_end",
+            message: {
+              role: "assistant",
+              stopReason: "stop",
+              content: [{ type: "text", text: "Done" }],
+            },
+          });
+          emit({ type: "agent_settled" });
+        }),
+      );
+      const events = await collect(adapter.run(request));
+      expect(events.map((event) => event.type)).not.toContain("runtime.completed");
+      expect(events.at(-1)).toMatchObject({
+        type: "runtime.result_unknown",
+        toolCallId: "unknown-call",
+        externalActionId: mode === "unknown" ? "external:unknown" : null,
+      });
+      expect(projection.finalAnswers).toHaveLength(0);
+      expect(tools.execute).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(events)).not.toContain("private transport error");
+    },
+  );
+
   afterEach(() => vi.restoreAllMocks());
 
   it.each([

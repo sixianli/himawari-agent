@@ -3,7 +3,14 @@ import type { ModelDescriptor } from "@himawari-agent/application/runtime-port";
 import type { PiModelBinding, PiModelBindingPort } from "../src/pi-runtime-adapter.js";
 
 /** Real pinned Pi runtime with its local deterministic provider; no network or credentials. */
-export async function createFauxModelFixture(answer: string) {
+export async function createFauxModelFixture(
+  answer: string,
+  tool?: {
+    readonly name: string;
+    readonly id: string;
+    readonly arguments: Record<string, unknown>;
+  },
+) {
   const aiEntry = new URL(
     "../node_modules/@earendil-works/pi-ai/dist/index.js",
     import.meta.resolve("@earendil-works/pi-coding-agent"),
@@ -15,11 +22,22 @@ export async function createFauxModelFixture(answer: string) {
       getModel(): unknown;
       setResponses(responses: readonly unknown[]): void;
     };
-    fauxAssistantMessage(content: unknown): unknown;
+    fauxAssistantMessage(content: unknown, options?: { stopReason: string }): unknown;
   };
   const faux = ai.fauxProvider();
   const observed: unknown[] = [];
   faux.setResponses([
+    ...(tool
+      ? [
+          (context: unknown) => {
+            observed.push(context);
+            return ai.fauxAssistantMessage(
+              { type: "toolCall", ...tool },
+              { stopReason: "toolUse" },
+            );
+          },
+        ]
+      : []),
     (context: unknown) => {
       observed.push(context);
       return ai.fauxAssistantMessage(answer);

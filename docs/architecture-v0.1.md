@@ -288,7 +288,7 @@ Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请�
 
 ### Run coordination and scoped worker delegation
 
-`RunCoordinator` 只依赖产品拥有的 `ContextFormationPort`、`WorkerRunPort`、`AgentRuntimePort`、`RunLifecyclePort`、`RunCheckpointStore` 和 Session Trace。它按 `accepted → building_context → running → terminal/reconciliation` 驱动 Run，并把 Owner 取消同时传播给当前 Runtime 与活跃 Worker。Runtime、Worker 和 Pi Session 都不能自行写产品 Run 终态。
+`RunCoordinator` 只依赖产品拥有的 `ContextFormationPort`、`WorkerRunPort`、`AgentRuntimePort`、`RunLifecyclePort`、`RunCheckpointStore` 和 Session Trace。它按 `accepted → building_context → running → terminal/reconciliation` 驱动 Run，并把 Owner 取消同时传播给当前 Runtime 与活跃 Worker。Runtime、Worker 和 Pi Session 都不能自行写产品 Run 终态。Pi custom tool 返回未知结果或执行阶段抛错时，适配器复用 Pi `Agent.abort()` 停止当前循环，禁止后续工具和模型请求，并产出 `runtime.result_unknown`。协调器先持久保存待核实 checkpoint，再把 Run 转入 `reconciling_external_result`；即使随后收到最终回答也不能发布成功，恢复也不重跑该执行。执行异常只记录稳定代码，不把原始错误文本传给模型。
 
 每个 Worker request 显式绑定 parent Run、Owner、Agent、task reference、可委派 context references、短期 capability-handle references、数据等级、deadline 和 duration/cost/progress budgets。协调器要求这些引用是父 Run 授权集合的子集，并拒绝任何 secret reference；因此 Worker 不会继承父 Agent 未委派的 Grant 或秘密。Worker result reference 被聚合为 Runtime 输入，unknown external result 则把父 Run 转入 `reconciling_external_result`。
 

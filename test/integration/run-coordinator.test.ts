@@ -193,6 +193,59 @@ async function fixture(
 }
 
 describe("Task 13 Run Coordinator and worker orchestration", () => {
+  it("persists runtime tool uncertainty and never accepts a following completion or reruns it", async () => {
+    const suffix = "runtime-tool-unknown";
+    const runId = createRunId(`run-${suffix}`);
+    let attempts = 0;
+    let advancedAfterUnknown = false;
+    const runtime: AgentRuntimePort = {
+      async *run() {
+        attempts += 1;
+        yield {
+          type: "runtime.result_unknown" as const,
+          runId,
+          toolCallId: "uncertain-tool-call",
+          capabilityRef: "restaurant-search",
+          externalActionId: "external:unknown",
+          occurredAt: T1,
+        };
+        advancedAfterUnknown = true;
+        yield {
+          type: "runtime.completed" as const,
+          runId,
+          output: { kind: "assistant-answer" as const, contentRef: "must-not-commit" },
+          occurredAt: T2,
+        };
+      },
+      async cancel() {},
+    };
+    const setup = await fixture(suffix, runtime);
+    const result = await setup.coordinator.execute(setup.input);
+    expect(result.run.run.status).toBe("reconciling_external_result");
+    expect(result.checkpoint).toMatchObject({
+      phase: "reconciling_external_result",
+      terminalStatus: null,
+      output: null,
+      diagnosticCode: "RUNTIME_TOOL_RESULT_UNKNOWN",
+    });
+    expect(advancedAfterUnknown).toBe(false);
+    const restarted = new RunCoordinator({
+      runs: setup.runs,
+      checkpoints: setup.adapters.runCheckpoints,
+      context: setup.context,
+      runtime,
+      workers: new ScriptedWorkerRunPort(),
+      trace: setup.trace,
+    });
+    expect((await restarted.execute(setup.input)).run.run.status).toBe(
+      "reconciling_external_result",
+    );
+    expect(attempts).toBe(1);
+    expect(
+      (await setup.adapters.trace.readRun(runId, 0, 30)).map((event) => event.eventType),
+    ).toContain("runtime.result_unknown");
+  });
+
   it("passes the frozen dispatch lease claim unchanged to the runtime", async () => {
     const suffix = "task-13-runtime-lease";
     const runId = createRunId(`run-${suffix}`);

@@ -675,6 +675,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     let turnIndex = 0;
     let messageSequence = 0;
     let finalAssistant: AssistantMessage | undefined;
+    let unknownTool: Extract<RuntimeEvent, { type: "runtime.result_unknown" }> | undefined;
     const enqueue = (operation: () => Promise<void> | void): Promise<void> => {
       eventChain = eventChain.then(operation);
       return eventChain;
@@ -784,7 +785,25 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         thinkingLevel: "off",
         noTools: "all",
         tools: descriptors.map(({ name }) => name),
-        customTools: descriptors.map((descriptor) => this.createTool(request, descriptor)),
+        customTools: descriptors.map((descriptor) =>
+          this.createTool(request, descriptor, {
+            assertKnown: () => {
+              if (unknownTool) throw new Error("RUNTIME_TOOL_RECONCILIATION_REQUIRED");
+            },
+            unknown: (invocation, result) => {
+              unknownTool ??= {
+                type: "runtime.result_unknown",
+                runId: request.runId,
+                toolCallId: invocation.toolCallId,
+                capabilityRef: invocation.capabilityRef,
+                externalActionId: result.externalActionId,
+                occurredAt: this.now(),
+              };
+              // Pi owns loop cancellation. Do not await Session.abort() from its running tool.
+              this.#activeSessions.get(request.runId)?.agent.abort();
+            },
+          }),
+        ),
         resourceLoader,
         sessionManager,
         settingsManager,
@@ -793,17 +812,19 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       const originalStreamFunction = session.agent.streamFunction;
       let streamOrdinal = 0;
       session.agent.streamFunction = (model, context, options) =>
-        admitPiStream(
-          request,
-          binding,
-          this.#dependencies.admission,
-          model,
-          context,
-          options,
-          ++streamOrdinal,
-          originalStreamFunction,
-          this.#dependencies.logicalSlot,
-        );
+        unknownTool
+          ? failedPiStream(model, "Runtime tool reconciliation is required")
+          : admitPiStream(
+              request,
+              binding,
+              this.#dependencies.admission,
+              model,
+              context,
+              options,
+              ++streamOrdinal,
+              originalStreamFunction,
+              this.#dependencies.logicalSlot,
+            );
       this.#activeSessions.set(request.runId, session);
 
       const unsubscribe = session.subscribe((event) => {
@@ -818,7 +839,14 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             () => turnIndex,
             () => ++messageSequence,
           );
-          for (const mappedEvent of mapped.events) emit(mappedEvent);
+          for (const mappedEvent of mapped.events) {
+            if (
+              unknownTool &&
+              (mappedEvent.type === "runtime.failed" || mappedEvent.type === "runtime.cancelled")
+            )
+              continue;
+            emit(mappedEvent);
+          }
           settled ||= mapped.settled;
           failed ||= mapped.failed;
           aborted ||= mapped.aborted;
@@ -838,7 +866,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         this.#activeSessions.delete(request.runId);
       }
 
-      if (this.#cancelledRuns.has(request.runId) || aborted) {
+      if (unknownTool) {
+        emit(unknownTool);
+      } else if (this.#cancelledRuns.has(request.runId) || aborted) {
         emit({
           type: "runtime.cancelled",
           runId: request.runId,
@@ -900,12 +930,22 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         error instanceof Error && error.message.startsWith("PI_UNKNOWN_EVENT_TYPE:")
           ? "PI_UNKNOWN_EVENT_TYPE"
           : "PI_RUNTIME_ERROR";
-      emit(runtimeFailure(request, this.now(), code));
+      emit(unknownTool ?? runtimeFailure(request, this.now(), code));
       this.#activeSessions.delete(request.runId);
     }
   }
 
-  private createTool(request: RuntimeRequest, descriptor: RuntimeToolDescriptor): ToolDefinition {
+  private createTool(
+    request: RuntimeRequest,
+    descriptor: RuntimeToolDescriptor,
+    reconciliation: {
+      assertKnown(): void;
+      unknown(
+        invocation: RuntimeToolInvocation,
+        result: Awaited<ReturnType<RuntimeToolPort["execute"]>>,
+      ): void;
+    },
+  ): ToolDefinition {
     return {
       name: descriptor.name,
       label: descriptor.name,
@@ -914,6 +954,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       executionMode: "sequential",
       execute: async (toolCallId, parameters, signal) => {
         signal?.throwIfAborted();
+        reconciliation.assertKnown();
         const invocation: RuntimeToolInvocation = {
           runId: request.runId,
           toolCallId,
@@ -934,7 +975,22 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             isError: true,
           };
         }
-        const result = await this.#dependencies.tools.execute(invocation);
+        reconciliation.assertKnown();
+        let result: Awaited<ReturnType<RuntimeToolPort["execute"]>>;
+        try {
+          result = await this.#dependencies.tools.execute(invocation);
+        } catch {
+          // Once execution was entered, a thrown transport/storage error does not
+          // prove that an external effect was absent. Do not disclose raw errors to Pi.
+          result = {
+            outcome: "result_unknown",
+            resultRef: null,
+            errorCode: "RUNTIME_TOOL_EXECUTION_UNRESOLVED",
+            externalActionId: null,
+            modelContent: "Tool execution needs reconciliation before continuing.",
+          };
+        }
+        if (result.outcome === "result_unknown") reconciliation.unknown(invocation, result);
         return {
           content: [{ type: "text", text: result.modelContent }],
           details: {

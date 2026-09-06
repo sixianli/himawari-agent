@@ -372,6 +372,11 @@ export class RunCoordinator {
       storedCheckpoint = terminal.checkpoint;
     }
 
+    if (storedCheckpoint.checkpoint.phase === "reconciling_external_result") {
+      this.assertExecutionActive(attempt);
+      storedRun = await this.transition(input, storedRun, "reconciling_external_result");
+      return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
+    }
     const terminalStatus = storedCheckpoint.checkpoint.terminalStatus;
     if (!terminalStatus) {
       throw new ApplicationPortError(
@@ -668,6 +673,19 @@ export class RunCoordinator {
           payload: event,
         });
         this.assertExecutionActive(attempt);
+        if (event.type === "runtime.result_unknown") {
+          storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
+            ...storedCheckpoint.checkpoint,
+            phase: "reconciling_external_result",
+            runtimeEventCount: observed,
+            lastTraceEventId: recorded.event.id,
+            terminalStatus: null,
+            output: null,
+            diagnosticCode: "RUNTIME_TOOL_RESULT_UNKNOWN",
+          });
+          this.assertExecutionActive(attempt);
+          break;
+        }
         const invalidOutput =
           event.type === "runtime.completed" &&
           (event.output.kind === "no-answer"
