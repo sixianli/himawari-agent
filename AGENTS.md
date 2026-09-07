@@ -8,6 +8,10 @@ This repository explicitly adopts the `document-governance` skill for all govern
 
 - Write all project documentation content in Simplified Chinese.
 
+## Engineering Diagrams
+
+- Do not use the `archify` skill to generate any engineering diagrams for this project, including flowcharts, architecture diagrams, sequence diagrams, state diagrams, and data-flow diagrams, unless the user explicitly requests its use. A general request to create a diagram does not authorize using `archify`.
+
 ## Repository Boundary
 
 - Product code and product documentation belong in this repository.
