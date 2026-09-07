@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:ed0510d360a8efb530fc7515eb0d71345b1122a9fc936e0bd0f95a84912e24e9"
+contract_sha256: "sha256:0fa3f06880a3ba9d5dec7584fd78e44ddf29d98a05f6cd1f31a538827c55ab2f"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -65,7 +65,7 @@ date: "2026-08-27"
 
 公开服务主入口已连接 HTTP、持久 Run、Pi、已授权 Worker 工具和 Mem0。缺少 `runPolicy`、HTTP、身份配置或实际模型配置时，仍以 `SERVICE_PUBLIC_MODE_INCOMPLETE` 拒绝启动。启用前必须验证同一安装候选的完整请求、持久结果和重启回读；库导入成功或 `service.ready` 不能替代这些证据，也不能替代实际目标环境资格。
 
-文件读取请求 `request_file_read` 已可向 Pi 暴露，但其无 Handle 参数仅表示意图；当前返回 `FILE_READ_AUTHORIZATION_UNAVAILABLE`，没有读取或 Worker 派发。安装及服务启动成功不能证明动态文件读取可用，须另行完成路径解析、读取与披露授权、按次凭证及 Mac Worker 验收。已有 Handle 的工具继续使用受限 `inputRef`。
+文件读取工具已复用 Pi `read` 定义，但其无 Handle 调用仅表示意图；当前返回 `FILE_READ_AUTHORIZATION_UNAVAILABLE`，没有读取或 Worker 派发。安装及服务启动成功不能证明动态文件读取可用，须另行完成路径解析、读取与披露授权、按次凭证及 Mac Worker 验收。Agent Service 不执行 Pi 自带的本机路径解析或默认文件 I/O；真实读取须在后续绑定的目标 Worker 中组合受约束 Operations。已有 Handle 的工具继续使用受限 `inputRef`。
 
 安装产物包含 Agent Service、Execution Worker、admin CLI 及产品运行时包；它不包含 `packages/testing` 的生产 adapter。打包器从列入 runtime 的生产 workspace manifests 自动推导全部直接外部依赖根，再递归复制其依赖闭包；因此 `platform-node` 声明的官方 MCP client 也必须出现在安装产物，新增生产依赖不能依赖手工清单。Agent Service 启动时只从 strict configuration 读取一个 primary、一个 private-only fallback 和一个独立 embedding descriptor；支持的 OpenRouter 配置创建 production Model/Pi 与 Mem0 composition，Mem0 使用配置声明的 embedding provider/model/version 和 dimensions，deterministic 配置只报告 descriptor，不创建隐藏模型或调用 provider。每个构建记录提交身份、实际源码与 package-lock 摘要、workspace checksum、Node 平台/架构和外部依赖闭包；已审阅的未提交改动不能被省略为只有提交身份。由于 `better-sqlite3` 等 native 依赖，Mac 与 Linux 必须分别构建和验收，不能把一个平台的二进制包当作另一个平台的 immutable artifact。
 

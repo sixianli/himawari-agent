@@ -382,7 +382,18 @@ export interface RuntimeProjectionPort {
   proposeCompaction(input: RuntimeCompactionProposal): Promise<PayloadRef>;
 }
 
-export interface RuntimeToolDescriptor {
+export type RuntimeToolDescriptor = RuntimeCustomToolDescriptor | RuntimeBuiltinReadDescriptor;
+
+/** Product selects the built-in definition; runtime-pi owns its schema and metadata. */
+export interface RuntimeBuiltinReadDescriptor {
+  readonly definition: "builtin-read";
+  readonly name: "read";
+  readonly capabilityRef: string;
+  readonly capabilityHandleRef: null;
+}
+
+export interface RuntimeCustomToolDescriptor {
+  readonly definition?: never;
   readonly capabilityRef: string;
   /** null denotes an operation request, never an execution authority. */
   readonly capabilityHandleRef: string | null;

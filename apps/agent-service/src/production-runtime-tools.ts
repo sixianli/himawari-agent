@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
-  fileReadRequestDescriptor,
-  validateFileReadRequest,
   type CapabilityExecutionHandleStorePort,
   type CapabilityInvocationAuthority,
   type CapabilityInvocationReceiptPort,
@@ -133,7 +131,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   ): Promise<readonly RuntimeToolDescriptor[]> {
     await this.#options.assertRunActive(runId);
     if (new Set(refs).size !== refs.length) reject();
-    const descriptors: RuntimeToolDescriptor[] = [fileReadRequestDescriptor()];
+    const descriptors: RuntimeToolDescriptor[] = [
+      {
+        definition: "builtin-read",
+        name: "read",
+        capabilityRef: "host.file.read",
+        capabilityHandleRef: null,
+      },
+    ];
     for (const ref of refs) {
       const handle = await this.#handle(runId, ref);
       descriptors.push({
@@ -156,7 +161,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   async preflight(invocation: RuntimeToolInvocation) {
     if (invocation.capabilityHandleRef === null) {
       await this.#options.assertRunActive(invocation.runId);
-      const valid = this.#exposed.has(invocation.runId) && validateFileReadRequest(invocation);
+      const valid =
+        this.#exposed.has(invocation.runId) && invocation.capabilityRef === "host.file.read";
       return {
         allowed: false,
         permissionDecisionRef: `tool-denied:${digest([invocation.runId, invocation.toolCallId])}`,

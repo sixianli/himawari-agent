@@ -63,9 +63,9 @@ P0-01 至 P0-04 的交付是验收样本、接入设计、模型与 Memory 配�
 
 当前 runtime-pi 已设置 `noTools: "all"` 并只启用产品给出的工具；已有 `preflight → execute → modelContent` 转换和不确定结果取消机制，应保留。
 
-P0-06 已补充动态请求入口：生产工具现在同时提供无 Handle 的 `request_file_read` 和原有基于 Handle 的 `authorized_*` 工具。请求 schema 接受 `{hostRef, path, maximumBytes}`；生产 Run policy 仍不会从用户请求签发权限，后续需要将请求转为经过验证的动作、受保护输入和范围受限 Handle，再沿现有 Worker 执行路径返回结果。
+P0-06 按已确认的 Pi 复用方案提供无 Handle 的 `read`，并保留原有基于 Handle 的 `authorized_*` 工具。`read` 的名称、schema 和提示元数据来自 Pi 工具工厂，参数为 `path`、可选 `offset/limit`；生产 Run policy 仍不会从用户请求签发权限，后续需要将请求转为经过验证的动作、受保护输入和范围受限 Handle，再沿现有 Worker 执行路径返回结果。
 
-这是后续产品工具接口调整的设计依据，影响 application 的工具请求/授权接口、agent-service 的生产组合和 execution-worker 的文件处理接线；收益是让模型可选择文件工具，同时让授权和执行留在统一产品边界内。P0-06 仅完成无 Handle 请求的类型表达、工具暴露及参数验证，不开放 Pi 内置文件或 Shell 工具。
+这是后续产品工具接口调整的设计依据，影响 application 的工具请求/授权接口、agent-service 的生产组合和 execution-worker 的文件处理接线；收益是让模型可选择文件工具，同时让授权和执行留在统一产品边界内。P0-06 仅完成无 Handle 请求的类型表达、Pi 工具定义复用与产品检查接入；不启用 Pi 默认本机文件 I/O 或 Shell 工具。
 
 ### P0-03：真实 OpenRouter 配置准备
 
@@ -136,15 +136,25 @@ Owner 在 P0-01 至 P0-04 交付后明确要求继续完成 P0-05。本次沿用
 
 真实入口复用已有的 `qualification-generation-live` 项目，新增用例通过 `HIMAWARI_FILE_SUMMARY_LIVE=1` 显式启用；普通 CI 默认不调用真实服务。测试夹具支持 `HIMAWARI_FILE_SUMMARY_PHASE` 为 `all`、`generation` 或 `embedding`；分阶段成功只证明该阶段。`HIMAWARI_FILE_SUMMARY_PRIOR_RESERVATION_MICROS` 用于把本次此前尝试的预留带入下一次测试，不能清零后继续消费已耗用的授权预算。证据路径通过 `HIMAWARI_FILE_SUMMARY_EVIDENCE_PATH` 显式传入。新的付费执行仍须遵守对应具体授权范围，不能将历史通过结果当成持续授权。
 
-### P0-06：模型可见的文件读取请求
+### P0-06：复用 Pi 的文件读取工具
 
-- [x] 提供 `request_file_read`，即使当前 Run 没有 Capability Handle 也能注册到 Pi `customTools`。
-- [x] 定义主机标识 `hostRef`、目标主机绝对路径 `path` 和必填整数字节上限 `maximumBytes`；拒绝未知字段、相对路径、控制字符、空主机标识和越界大小。
-- [x] 明确支持授权目录中的单个 UTF-8 普通文本文件，最多 65,536 字节；不支持目录、递归、通配符、PDF、Office 或二进制文件。超过上限的合同是失败，不静默截断。实际内容类型、文件身份与字节数检查由后续 Worker 实施验证。
-- [x] `RuntimeToolDescriptor` 与 `RuntimeToolInvocation` 用 `capabilityHandleRef: null` 表达尚未授权的操作请求；原有字符串 Handle 仍走原有验证。模型参数不能提供 Handle、批准标记或 `inputRef`。
-- [x] 生产 preflight 再次验证参数和 Run 有效性。合法请求目前返回 `FILE_READ_AUTHORIZATION_UNAVAILABLE`，不表示真实权限记录已拒绝；非法或未向该 Run 暴露的请求返回 `FILE_READ_REQUEST_INVALID`。两者均不读取文件、不派发 Worker。直接绕过 preflight 调用 execute 也会拒绝。
-- [x] 复用 Pi 0.84.2 的工具注册、调用身份传递和错误结果；测试覆盖无 Handle 的参数传递、禁止执行、参数 schema 与产品验证，以及已有授权工具的恢复与重放行为。
+本节采用已确认的 Pi 复用路径，替换此前独立的 `request_file_read` 接口。工具参数和读取语义由 Pi 提供；授权、目标主机、Worker 调度和持久化由产品负责，不因需要这些约束就另建同用途工具。
 
-路径此时是未经解析的意图，不能据此判断真实主机、目录授权或符号链接安全；例如 `/allowed/../outside.txt` 可以通过语法检查，但绝不因此获得读取权。P0-07 必须解析并绑定确定对象，P0-08 分别检查读取与模型披露，P0-09 持久输入并签发按次凭证。没有新增真实模型调用，P0-05 证据保持原样；P0-06 的本地测试不能证明浏览器文件总结已经可用。
+- [x] 产品通过 `definition: "builtin-read"` 选择内置工具，名称为 `read`，`capabilityHandleRef: null` 表达未授权请求，不保存另一份描述和参数 schema。
+- [x] runtime-pi 使用 `createGovernedPiCodingTools()` 和 `createPiOperationsFromGovernedHostPort()` 构造工具定义，复用 Pi 0.84.2 的 `path`、可选 `offset/limit` 参数及提示元数据；原有自定义工具接口保持可用。
+- [x] 移除独立文件请求 schema、验证器及旧参数测试。schema 验证复用 Pi；模型生成的任何参数都不产生执行权限。
+- [x] Agent Service 只复用工具定义，并用产品 `preflight → execute` 替换执行入口，保留 Run、tool call、deadline、分类、撤销与不确定结果处理。底层 Operations 显式拒绝 Agent Service 本机 I/O，不回退到默认文件操作。
+- [x] 当前生产 preflight 对已向 Run 暴露的文件请求返回 `FILE_READ_AUTHORIZATION_UNAVAILABLE`；未暴露或能力类型不符返回 `FILE_READ_REQUEST_INVALID`。直接绕过 preflight 调用 execute 同样拒绝，无 Worker 派发。
+- [x] 兼容测试核对实际 schema 与 Pi 工厂一致，复用 Pi 参数验证，验证允许和拒绝分支均不触发 Agent Service 的文件访问；允许分支用受控产品结果验证原始参数与调用身份传递，不作为生产授权或文件读取证据。
 
-P0-06 验证：生产工具 24 项、Pi 兼容 36 项、请求合同与 testing 单测 44 项、SQLite 能力调用集成 18 项、参考 adapter 合同 43 项通过；类型、格式、依赖边界、v0.2 合同与不变量、秘密扫描和 CI policy 检查通过；安装 Runbook 已核对语义并重新封存，文档严格校验通过。全仓库 lint 仍报告原有 182 errors、977 warnings、712 infos，不能声称 `npm run check` 全部通过。
+#### 执行所在主机与读取限制
+
+已核对固定安装版本和只读 pi-mono 源码：Pi `read.execute()` 在调用 `ReadOperations.access/readFile` 前执行 `resolveReadPathAsync()`，其中会探测当前主机的路径存在性，并尝试 Unicode 路径变体。因此不能仅替换 Operations 就在 Agent Service 执行该函数。P0-06 的产品执行入口不调用它；后续真实读取须在已绑定的目标 Worker 上组合 Pi 工具与受约束 Operations，并将主机、原始路径和解析结果一并纳入授权检查。
+
+模型不再传 `hostRef` 或 `maximumBytes`。本次单 Mac 场景的目标主机与授权目录由受信任产品上下文绑定，无法确定时不得猜测；实际绑定属于 P0-07。文件读取上限由服务端策略和 Worker 强制执行，不由模型扩大。首个验收场景限定 UTF-8 普通文本，Pi 原生的图片支持不代表当前产品已批准图片披露。
+
+Pi 原生 `read` 支持按行 `offset/limit` 和带标识的输出截断，默认输出上限为 2000 行或 50 KiB；产品不再维护另一套“64 KiB 整文件读取”模型侧接口。实际文件读取上限与模型输出上限是两项不同约束：前者由后续授权和 Worker 执行策略实施，后者复用 Pi；部分读取必须保留范围和截断信息，不能声称是全文。TUI renderer 不用于产品浏览器，产品结果引用继续由自己的 UI 呈现。
+
+P0-07 的路径与主机绑定、P0-08 的读取和披露授权、P0-09 的凭证签发，以及后续 Worker 上的完整 Pi 读取执行仍未完成。P0-05 真实调用证据保持原样，本次不发起付费调用或浏览器验收。
+
+本次修正验证：Pi compatibility 37 项、生产工具 15 项、受治理工具单测 2 项、参考 adapter 合同 43 项、SQLite 能力调用集成 18 项通过。类型、格式、依赖边界、v0.2 合同与不变量、秘密扫描和 CI policy 检查通过。全仓库 lint 仍有既有的 182 errors、977 warnings、712 infos，不能声称 `npm run check` 全部通过。

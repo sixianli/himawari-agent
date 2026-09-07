@@ -44,6 +44,9 @@ import type {
 } from "@himawari-agent/application/runtime-port";
 import { redactMachineSecrets } from "@himawari-agent/application/runtime-port";
 
+import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
+import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
+
 type RuntimeTurnId = Extract<RuntimeEvent, { readonly type: "runtime.turn_completed" }>["turnId"];
 type PiStreamFunction = (
   model: Model<Api>,
@@ -977,11 +980,59 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       ): void;
     },
   ): ToolDefinition {
+    // Pi's read executor probes paths on its own host before calling Operations.
+    // Only reuse its definition here; product execution must route to the Worker.
+    // Even an accidental call to the underlying Operations cannot read locally.
+    const unavailable = async (): Promise<never> => {
+      throw new Error("PI_AGENT_SERVICE_FILE_IO_FORBIDDEN");
+    };
+    let definition: Pick<
+      ToolDefinition,
+      | "name"
+      | "label"
+      | "description"
+      | "parameters"
+      | "promptSnippet"
+      | "promptGuidelines"
+      | "constrainedSampling"
+    >;
+    if (descriptor.definition === "builtin-read") {
+      const [builtin] = createGovernedPiCodingTools({
+        cwd: this.#dependencies.cwd,
+        enabled: ["read"],
+        operations: createPiOperationsFromGovernedHostPort({
+          access: unavailable,
+          readFile: unavailable,
+          writeFile: unavailable,
+          makeDirectory: unavailable,
+          executeCommand: unavailable,
+        }),
+      });
+      if (!builtin) throw new Error("PI_READ_DEFINITION_MISSING");
+      // TUI renderers expect Pi-specific result details; the product UI owns rendering.
+      definition = {
+        name: builtin.name,
+        label: builtin.label,
+        description: `${builtin.description}\nHimawari 当前仅接入文本读取请求；目标主机和文件访问上限由产品策略绑定。读取及向模型披露须经产品授权，权限链路未接通时返回 FILE_READ_AUTHORIZATION_UNAVAILABLE，表示未读取。`,
+        parameters: builtin.parameters,
+        ...(builtin.promptSnippet === undefined ? {} : { promptSnippet: builtin.promptSnippet }),
+        ...(builtin.promptGuidelines === undefined
+          ? {}
+          : { promptGuidelines: builtin.promptGuidelines }),
+        ...(builtin.constrainedSampling === undefined
+          ? {}
+          : { constrainedSampling: builtin.constrainedSampling }),
+      };
+    } else {
+      definition = {
+        name: descriptor.name,
+        label: descriptor.name,
+        description: descriptor.description,
+        parameters: descriptor.parameters as ToolDefinition["parameters"],
+      };
+    }
     return {
-      name: descriptor.name,
-      label: descriptor.name,
-      description: descriptor.description,
-      parameters: descriptor.parameters as ToolDefinition["parameters"],
+      ...definition,
       executionMode: "sequential",
       execute: async (toolCallId, parameters, signal) => {
         signal?.throwIfAborted();

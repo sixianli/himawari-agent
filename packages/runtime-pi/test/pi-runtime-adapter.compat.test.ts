@@ -1,4 +1,6 @@
 import { existsSync } from "node:fs";
+import fsPromises from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -6,8 +8,10 @@ import {
   type AssistantMessage,
   type AssistantMessageEventStream,
   createAssistantMessageEventStream,
+  validateToolArguments,
   type Model,
 } from "@earendil-works/pi-ai";
+import { createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import type {
   ModelDescriptor,
   ModelInvocationAdmissionInput,
@@ -330,6 +334,8 @@ class RecordingRuntimeTools implements RuntimeToolPort {
 interface FakeSessionOptions {
   readonly customTools?: readonly {
     readonly name: string;
+    readonly description: string;
+    readonly parameters: ReturnType<typeof createReadToolDefinition>["parameters"];
     execute(toolCallId: string, input: unknown, signal?: AbortSignal): Promise<unknown>;
   }[];
   readonly noTools?: string;
@@ -1117,50 +1123,98 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     });
   });
 
-  it("passes a handle-free path request to product preflight without executing it", async () => {
-    const tools = new RecordingRuntimeTools();
-    vi.spyOn(tools, "listAuthorized").mockResolvedValue([
-      {
-        name: "request_file_read",
-        capabilityRef: "host.file.read",
-        capabilityHandleRef: null,
-        description: "Request a file read; this does not grant permission",
-        parameters: { type: "object" },
-      },
-    ]);
-    tools.preflight.mockResolvedValue({
-      allowed: false,
-      permissionDecisionRef: "file-read-unavailable",
-      reasonCode: "FILE_READ_AUTHORIZATION_UNAVAILABLE",
-    });
-    const args = { hostRef: "mac-book", path: "/test/中文.txt", maximumBytes: 4096 };
-    const adapter = createAdapter(
-      new RecordingProjection(),
-      tools,
-      fakeSessionFactory(async (emit, options) => {
-        expect(options.noTools).toBe("all");
-        expect(options.tools).toEqual(["request_file_read"]);
-        emit({ type: "agent_start" });
-        expect(await options.customTools?.[0]?.execute("file-call", args)).toMatchObject({
-          isError: true,
-          details: { reasonCode: "FILE_READ_AUTHORIZATION_UNAVAILABLE" },
-        });
-        emit({ type: "agent_end", messages: [] });
-        emit({ type: "agent_settled" });
-      }),
-    );
-    await collect(adapter.run({ ...request, capabilityHandleRefs: [] }));
-    expect(tools.preflight).toHaveBeenCalledWith(
-      expect.objectContaining({
-        runId: request.runId,
-        toolCallId: "file-call",
-        capabilityRef: "host.file.read",
-        capabilityHandleRef: null,
-        arguments: args,
-      }),
-    );
-    expect(tools.execute).not.toHaveBeenCalled();
-  });
+  it.each([false, true])(
+    "reuses Pi read definition and routes through product policy (allowed=%s)",
+    async (allowed) => {
+      const tools = new RecordingRuntimeTools();
+      vi.spyOn(tools, "listAuthorized").mockResolvedValue([
+        {
+          definition: "builtin-read",
+          name: "read",
+          capabilityRef: "host.file.read",
+          capabilityHandleRef: null,
+        },
+      ]);
+      tools.preflight.mockResolvedValue({
+        allowed,
+        permissionDecisionRef: "file-read-unavailable",
+        reasonCode: "FILE_READ_AUTHORIZATION_UNAVAILABLE",
+      });
+      const args = { path: "/test/中文.txt", offset: 2, limit: 3 };
+      const adapter = createAdapter(
+        new RecordingProjection(),
+        tools,
+        fakeSessionFactory(async (emit, options) => {
+          expect(options.noTools).toBe("all");
+          expect(options.tools).toEqual(["read"]);
+          const tool = options.customTools?.[0];
+          if (!tool) throw new Error("missing read tool");
+          const upstream = createReadToolDefinition("/workspace");
+          expect(tool.parameters).toEqual(upstream.parameters);
+          expect(tool.description).toContain(upstream.description);
+          expect(
+            validateToolArguments(tool, {
+              type: "toolCall",
+              id: "file-call",
+              name: "read",
+              arguments: args,
+            }),
+          ).toEqual(args);
+          expect(() =>
+            validateToolArguments(tool, {
+              type: "toolCall",
+              id: "invalid-call",
+              name: "read",
+              arguments: { limit: 3 },
+            }),
+          ).toThrow();
+          emit({ type: "agent_start" });
+          const access = vi.spyOn(fsPromises, "access");
+          const read = vi.spyOn(fsPromises, "readFile");
+          syncBuiltinESMExports();
+          try {
+            const result = await tool.execute("file-call", args);
+            expect(result).toMatchObject(
+              allowed
+                ? {
+                    isError: false,
+                    content: [{ type: "text", text: "Found one governed result." }],
+                  }
+                : { isError: true, details: { reasonCode: "FILE_READ_AUTHORIZATION_UNAVAILABLE" } },
+            );
+            expect(access).not.toHaveBeenCalled();
+            expect(read).not.toHaveBeenCalled();
+          } finally {
+            access.mockRestore();
+            read.mockRestore();
+            syncBuiltinESMExports();
+          }
+          emit({ type: "agent_end", messages: [] });
+          emit({ type: "agent_settled" });
+        }),
+      );
+      await collect(adapter.run({ ...request, capabilityHandleRefs: [] }));
+      expect(tools.preflight).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runId: request.runId,
+          toolCallId: "file-call",
+          capabilityRef: "host.file.read",
+          capabilityHandleRef: null,
+          arguments: args,
+        }),
+      );
+      expect(tools.execute).toHaveBeenCalledTimes(allowed ? 1 : 0);
+      if (allowed)
+        expect(tools.execute).toHaveBeenCalledWith(
+          expect.objectContaining({
+            runId: request.runId,
+            toolCallId: "file-call",
+            capabilityHandleRef: null,
+            arguments: args,
+          }),
+        );
+    },
+  );
 
   it("uses product preflight as the final enforcement point", async () => {
     const projection = new RecordingProjection();

@@ -300,12 +300,16 @@ describe("ProductionRuntimeTools", () => {
     const tool = f.tool();
     const descriptors = await tool.listAuthorized(invocation.runId, []);
     expect(descriptors).toHaveLength(1);
-    expect(descriptors[0]).toMatchObject({ name: "request_file_read", capabilityHandleRef: null });
+    expect(descriptors[0]).toMatchObject({
+      name: "read",
+      definition: "builtin-read",
+      capabilityHandleRef: null,
+    });
     const call: RuntimeToolInvocation = {
       ...invocation,
       capabilityRef: "host.file.read",
       capabilityHandleRef: null,
-      arguments: { hostRef: "mac-book", path: "/test/中文.txt", maximumBytes: 4096 },
+      arguments: { path: "/test/中文.txt", offset: 1, limit: 10 },
     };
     expect(await tool.preflight(call)).toMatchObject({
       allowed: false,
@@ -327,28 +331,24 @@ describe("ProductionRuntimeTools", () => {
     });
   });
 
-  it.each([
-    {},
-    { hostRef: "mac-book", path: "~/test.txt", maximumBytes: 100 },
-    { hostRef: "mac-book", path: "/test.txt", maximumBytes: 65537 },
-    { hostRef: "mac-book", path: "/test.txt", maximumBytes: 0 },
-    { hostRef: "mac-book", path: "/test.txt", maximumBytes: 1.5 },
-    { hostRef: "mac-book", path: "/test.txt", maximumBytes: "100" },
-    { hostRef: "mac-book", path: "/test.txt", maximumBytes: 100, approved: true },
-    { hostRef: "mac-book", path: "/test.txt", maximumBytes: 100, inputRef: "forged" },
-    { hostRef: "mac-book", path: "/test\u0000.txt", maximumBytes: 100 },
-    { hostRef: "", path: "/test.txt", maximumBytes: 100 },
-  ])("rejects malformed or authority-bearing request arguments %j", async (args) => {
+  it("does not mistake model-provided approval fields for execution authority", async () => {
     const f = fixture();
     const tool = await exposed(f);
-    expect(
-      await tool.preflight({
-        ...invocation,
-        capabilityRef: "host.file.read",
-        capabilityHandleRef: null,
-        arguments: args,
-      }),
-    ).toMatchObject({ allowed: false, reasonCode: "FILE_READ_REQUEST_INVALID" });
+    const call = {
+      ...invocation,
+      capabilityRef: "host.file.read",
+      capabilityHandleRef: null,
+      arguments: { path: "/test.txt", approved: true, capabilityHandleRef: "forged" },
+    };
+    expect(await tool.preflight(call)).toMatchObject({
+      allowed: false,
+      reasonCode: "FILE_READ_AUTHORIZATION_UNAVAILABLE",
+    });
+    await expect(tool.execute(call)).rejects.toThrow();
+    expect(await tool.preflight({ ...call, capabilityRef: "shell" })).toMatchObject({
+      allowed: false,
+      reasonCode: "FILE_READ_REQUEST_INVALID",
+    });
     expect(f.request).not.toHaveBeenCalled();
   });
 
