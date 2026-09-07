@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { link, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import * as fsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -13,6 +14,11 @@ import {
 } from "@himawari-agent/application";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConstrainedHostFileSystem } from "../src/index.js";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...original, open: vi.fn(original.open) };
+});
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -365,6 +371,45 @@ describe("ConstrainedHostFileSystem", () => {
         maximumBytes: 1_024,
       }),
     ).rejects.toThrow("machine-secret material");
+  });
+
+  it("reads every byte when the descriptor returns short reads", async () => {
+    const { root, grant, platform } = await fixture();
+    await writeFile(path.join(root, "short.txt"), "short reads must not produce zero padding");
+    const originalOpen = (
+      await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")
+    ).open;
+    const open = vi.spyOn(fsPromises, "open").mockImplementation(async (...args) => {
+      const handle = await originalOpen(...args);
+      return new Proxy(handle, {
+        get(target, property) {
+          if (property === "read")
+            return (buffer: Uint8Array, offset: number, length: number, position: number) =>
+              target.read(buffer, offset, Math.min(length, 2), position);
+          const value: unknown = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    });
+    try {
+      expect(new TextDecoder().decode(await platform.read(grant, "short.txt", 1024))).toBe(
+        "short reads must not produce zero padding",
+      );
+    } finally {
+      open.mockRestore();
+    }
+  });
+
+  it("checks the opened descriptor against the inspected file identity", async () => {
+    const { root, grant, platform } = await fixture();
+    await writeFile(path.join(root, "identity.txt"), "original");
+    const expected = await platform.inspect(grant, "identity.txt");
+    if (!expected) throw new Error("identity missing");
+    await rename(path.join(root, "identity.txt"), path.join(root, "original.txt"));
+    await writeFile(path.join(root, "identity.txt"), "replaced");
+    await expect(platform.read(grant, "identity.txt", 1024, expected)).rejects.toThrow(
+      "HOST_FILE_IDENTITY_CHANGED",
+    );
   });
 
   it("blocks capacity-increasing writes at the reserve floor while preserving reads", async () => {

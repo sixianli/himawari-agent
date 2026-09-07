@@ -121,7 +121,12 @@ export interface HostTrashRecord {
 export interface HostFilePlatformPort {
   inspectRoot(path: string): Promise<HostFileIdentity>;
   inspect(grant: HostDirectoryGrant, relativePath: string): Promise<HostFileIdentity | undefined>;
-  read(grant: HostDirectoryGrant, relativePath: string, maximumBytes: number): Promise<Uint8Array>;
+  read(
+    grant: HostDirectoryGrant,
+    relativePath: string,
+    maximumBytes: number,
+    expected?: HostFileIdentity,
+  ): Promise<Uint8Array>;
   createExclusive(
     grant: HostDirectoryGrant,
     relativePath: string,
