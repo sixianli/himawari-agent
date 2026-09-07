@@ -12,7 +12,7 @@ date: "2026-09-07"
 
 Owner 从 ego Lite 提交文件总结请求，由 OpenRouter 的真实 DeepSeek 模型选择工具，经产品授权后由 Mac Worker 读取文件；Pi 将工具结果加入模型上下文，再请求模型生成中文总结，最终结果持久保存并由浏览器回读。
 
-P0-01 至 P0-04 的交付是验收样本、接入设计、模型与 Memory 配置及本地配置验证。P0-05 已进一步完成真实模型工具协议与 embedding 兼容性验证，P0-06 已实现模型可见的文件读取请求与参数检查。完整流程仍需后续工具授权、Worker 文件适配和浏览器接线；这些行为不能由配置检查或本次协议测试证明。
+P0-01 至 P0-04 的交付是验收样本、接入设计、模型与 Memory 配置及本地配置验证。P0-05 已进一步完成真实模型工具协议与 embedding 兼容性验证，P0-06 已实现模型可见的文件读取请求与参数检查。P0-07 至 P0-09 的两阶段正式入口、目标解析、逐次授权与凭证签发已接通并经过本地组合及 SQLite 测试。完整流程仍需正式 Mac 安装资格、审批后恢复的产品交互和真实模型、浏览器验收，不能用这些本地测试代替。
 
 ## 来源上下文
 
@@ -23,7 +23,7 @@ P0-01 至 P0-04 的交付是验收样本、接入设计、模型与 Memory 配�
 
 ## 范围
 
-包含 P0-01 验收合同、P0-02 Pi 复用设计、P0-03 OpenRouter 配置准备、P0-04 embedding 配置依赖准备，以及 Owner 后续要求继续完成的 P0-05 真实兼容性调用。Owner 随后要求继续完成 P0-06，本次增加模型可见的文件读取请求合同与生产暴露；本轮继续增加 P0-07 的目标解析组件；正式工具请求到该组件的目标主机调用，以及后续授权与 Worker 执行接线仍待完成。
+包含 P0-01 验收合同、P0-02 Pi 复用设计、P0-03 OpenRouter 配置准备、P0-04 embedding 配置依赖准备，以及 Owner 后续要求继续完成的 P0-05 真实兼容性调用。Owner 随后要求继续完成 P0-06，本次增加模型可见的文件读取请求合同与生产暴露；Owner 已批准联动完成 P0-07 至 P0-09 的 inspect/read 两阶段方案；本轮完成正式工具入口、目标主机程序、逐次授权与凭证签发接线。
 
 配置和验收输入位于 `test/integration/fixtures/file-summary/`，由实际产品解析器和组合代码验证。配置是独立验收候选，不会自动安装或替换现有服务。`publicMode: false` 只适用于当前准备阶段；最终浏览器验收必须补齐正式认证 HTTP 配置，不能以本配置的非公开模式代替认证。
 
@@ -155,21 +155,21 @@ Owner 在 P0-01 至 P0-04 交付后明确要求继续完成 P0-05。本次沿用
 
 Pi 原生 `read` 支持按行 `offset/limit` 和带标识的输出截断，默认输出上限为 2000 行或 50 KiB；产品不再维护另一套“64 KiB 整文件读取”模型侧接口。实际文件读取上限与模型输出上限是两项不同约束：前者由后续授权和 Worker 执行策略实施，后者复用 Pi；部分读取必须保留范围和截断信息，不能声称是全文。TUI renderer 不用于产品浏览器，产品结果引用继续由自己的 UI 呈现。
 
-P0-07 已有下节所述的目标解析组件；正式请求的主机绑定与调用、P0-08 的读取和披露授权、P0-09 的凭证签发，以及后续 Worker 上的完整 Pi 读取执行仍未完成。P0-05 真实调用证据保持原样，本次不发起付费调用或浏览器验收。
+P0-07 至 P0-09 现已使用下节所述的两阶段流程：模型侧仍复用同一个 Pi read 定义，目标主机程序复用 Pi read 执行器及受约束 Operations。正式主机资格与浏览器验收继续单独保留为未完成项。P0-05 真实调用证据保持原样，本次不发起付费调用或浏览器验收。
 
-本次修正验证：Pi compatibility 37 项、生产工具 15 项、受治理工具单测 2 项、参考 adapter 合同 43 项、SQLite 能力调用集成 18 项通过。类型、格式、依赖边界、v0.2 合同与不变量、秘密扫描和 CI policy 检查通过。全仓库 lint 仍有既有的 182 errors、977 warnings、712 infos，不能声称 `npm run check` 全部通过。
+P0-06 修正阶段的验证：Pi compatibility 37 项、生产工具 15 项、受治理工具单测 2 项、参考 adapter 合同 43 项、SQLite 能力调用集成 18 项通过。类型、格式、依赖边界、v0.2 合同与不变量、秘密扫描和 CI policy 检查通过。全仓库 lint 仍有既有的 182 errors、977 warnings、712 infos，不能声称 `npm run check` 全部通过。
 
 
 ### P0-07：目标主机上的文件对象解析
 
-`HostFileReadService.resolveTarget()` 接受产品选定的 `hostId`、`grantId`、`maximumBytes` 和 Pi 原始 `path`，返回只读 `ResolvedHostFileReadTarget`。主机、目录授权和大小上限不能由模型自行提供或扩大；调用方必须在对应主机组合该服务和真实平台适配器。正式 read 请求的目标主机路由尚未接入，P0-07 整项保持未完成，以下仅为已完成的组件部分。
+`HostFileReadService.resolveTarget()` 接受产品选定的 `hostId`、`grantId`、`maximumBytes` 和 Pi 原始 `path`，返回只读 `ResolvedHostFileReadTarget`。主机、目录授权和大小上限不能由模型自行提供或扩大；调用方必须在对应主机组合该服务和真实平台适配器。正式 read 请求已通过现有 work.execute 路由到指定 Worker 的受隔离程序；以下组件检查和下节正式入口检查共同构成 P0-07 的代码完成证据。
 
 - [x] 请求主机必须匹配服务主机，目录 Grant 必须存在、身份一致、具有 read 操作、未撤销、未过期，并要求同文件系统且不允许链接的路径策略。
 - [x] 相对路径以选定目录为根；绝对路径必须以完整目录边界为前缀，不能将相邻同名前缀目录视为授权范围。复用 `normalizeRelativePath()` 拒绝空路径分量、`.` 和 `..`；不展开 `~`、`@`、反斜杠或控制字符。
 - [x] 复用 `ConstrainedHostFileSystem.inspect()` 检查目录身份和路径链、符号链接、硬链接及跨设备对象，随后检查普通文件类型和文件字节数。解析时不调用 `read()` 或披露端口。
 - [x] 结果记录主机、Grant ID/版本/授权引用、根目录身份、原始与相对路径、文件 device/inode/mode/size/mtime、大小上限及观察时间；记录和文件身份均冻结。
 - [x] 文件检查后重新读取 Grant，拒绝检查期间的撤销、过期、版本或根目录变更。
-- [ ] 将正式工具调用路由到正确主机的解析组件，并将结果交给逐次授权、凭证签发和目标 Worker。
+- [x] 将正式工具调用路由到指定 Worker 的解析程序，并将结果交给逐次授权及独立 read 凭证签发流程；实际平台安装资格仍单独验收。
 
 | 结果 | 稳定错误 |
 | --- | --- |
@@ -185,4 +185,79 @@ P0-07 已有下节所述的目标解析组件；正式请求的主机绑定与�
 
 此结果是解析时的元数据观察，不是权限凭证，也没有锁定文件。解析后文件、目录或授权仍可能变化，后续 Worker 必须在实际打开资源时重新核验身份与权限；本次测试不证明已消除打开时的所有竞态，也不替代目标平台隔离资格。Pi 工具定义和 Operations 适配路径保持 P0-06 的实现，不新增模型侧文件工具。
 
-组件验证：受约束文件系统与目标解析测试 30 项通过，覆盖真实临时目录、文件、符号链接、硬链接、授权变更和目录替换。类型、格式、修改文件 lint、依赖边界、v0.2 合同与不变量、秘密扫描、CI policy 和文档严格校验通过；全仓库 lint 仍为既有 182 errors、977 warnings、712 infos。
+P0-07 最初解析组件的验证：受约束文件系统与目标解析测试 30 项通过，覆盖真实临时目录、文件、符号链接、硬链接、授权变更和目录替换。类型、格式、修改文件 lint、依赖边界、v0.2 合同与不变量、秘密扫描、CI policy 和文档严格校验通过；全仓库 lint 仍为既有 182 errors、977 warnings、712 infos。
+
+### P0-07 至 P0-09：已确认并实施的两阶段接线
+
+#### 当前断点与选择
+
+实施前，`service-main.ts` 创建的 `ProductionRuntimeTools` 只有已有 Handle 的消费与派发接口，无 Handle 的 read 请求被固定拒绝。`ExecutionWorkerService.execute()` 在能力执行前必须获取、验证并消费 Handle，现有 Worker 通道不接受未授权的目标解析。`HostFileReadService.resolveTarget()` 又必须在目标主机执行，不能放到 Agent Service 旁路检查。
+
+若正文读取凭证需要绑定目标主机观察到的文件身份，就必须先安排受授权的目标解析。现按 Owner 已批准方案复用现有 `work.execute` 通道，将同一个模型 read 调用拆为内部 inspect 与 read 两阶段；不新增无需凭证的元数据 RPC，不增加模型侧工具。另一种单阶段方案是在目录范围授权后让 Worker 一次完成解析与读取，内部状态更少，但不能在签发正文读取凭证前让服务端检查本次目标身份；本提案选择前者以保持原清单要求的先解析、再授权和签发顺序。Owner 已明确批准这一重构范围；当前代码已按此方案接通。
+
+#### 完整调用过程
+
+1. Agent Service 从受信任产品状态选择目标主机与目录 Grant，检查当前 Owner/Agent/Thread/Run、Run 租约和目录范围。配置、模型参数、Pi cwd 或目录存在本身均不构成授权。
+2. 将原始 path、目录 Grant ID/版本、目标主机和检查上限保存为 Protected Payload；依据有效目录授权签发仅限此次 inputRef 的短期 inspect Handle。该操作只允许读取文件元数据，不能返回正文，也不把元数据直接披露给模型。没有相应目录范围授权时先拒绝或进入已有审批设施，不先探测文件。
+3. 目标 Worker 在现有执行准入边界后调用 resolveTarget；保存受保护的元数据结果与执行回执。Agent Service 从结果通道接收，并验证来源主机、输入身份、Grant 版本及当前权威状态。
+4. 服务端根据确定目标分别评估正文读取和向当前模型披露的权限。ALLOW 才继续；ASK 持久保存待批准请求；DENY、过期或撤销明确停止。不得用 inspect 凭证替代 read 权限。
+5. 将目标身份、目录 Grant 版本、原始路径、Pi offset/limit 和服务端读取上限保存为新的 Protected Payload，签发独立的单次 read Handle。即使底层 Capability 共用一个声明，两个操作和输入引用也必须严格分离。
+6. 目标 Worker 执行前再次核对 Grant、目录链与目标身份；同名替换、Grant 变化或不确定状态均不得自动扩大范围或改读其他文件。真实读取复用 Pi 工具及受约束 Operations，仍须满足平台隔离要求，不能伪造 Mac helper 或能力资格。
+7. 读取结果经过分类、秘密排除、保护存储及披露再检查后，作为原模型工具调用的结果返回 Pi。后续正文处理与真实平台验证分别属于 P0-11 至 P0-14。
+
+#### 影响范围和实施要求
+
+- application：动态文件调用的持久状态、目标解析输入/输出、权限决定与 Handle 签发组合；复用现有 Directory Grant、授权服务、Payload 和 Capability Handle。
+- agent-service：替换无 Handle read 的固定拒绝分支，接入受信任主机/目录选择、两阶段派发、权限判断和恢复；已有 authorized_* 路径保持原语义。
+- Worker 仍使用通用 program runtime、执行准入、Payload broker 和已合格隔离后端。文件程序组合入口位于 `apps/agent-service/src/capability-programs/host-file-read-main.ts`，由 Worker 启动独立受隔离子进程；Agent Service 的服务入口不导入或执行该程序。这样保留 execution-worker 不依赖 runtime-pi 的现有依赖边界，也不增加平台包对 Pi 的依赖。程序的 hostId 与 workerInstanceId 来自能力部署的固定 argv，必须与受保护输入相符。
+- 持久化：同一 Run/toolCallId 下的两个阶段分别有不可变 inputRef、调用幂等键和结果引用；进程重启读回已确认阶段，未确认的执行进入 reconciliation，不能重复消费或默默换文件。
+- 资源与取消：两个阶段共享 Run deadline 和预算，分别有更小的 Worker 限额；取消、租约丢失、授权撤销后不进入下一阶段。
+
+本地代码、组合及确定性集成测试已完成；正式安装候选与实际平台资格仍需后续验收。真实目录授权写入、生产运行变更及付费模型调用仍按各自具体授权边界执行。
+
+#### 必须提供的验证证据
+
+- 从 ProductionRuntimeTools 的真实 read 入口观察到 inspect/read 两个合法请求，保持一个原始 toolCallId；测试不能直接调用独立解析函数替代入口接线。
+- 无目录授权时 Worker 未收到 inspect；仅有 inspect 权限不能读正文；未获模型披露权限不把正文交给 Pi。
+- 目标主机、Grant 版本、文件身份、输入引用或操作不匹配时拒绝；metadata inspect 和 read 之间替换文件必须失败。
+- 中途取消、崩溃恢复、重复工具调用、审批过期和结果未知分别有可观察结果，已确认阶段不重复执行。
+- 本地受控测试与真实 Mac Worker 资格、OpenRouter 请求、ego Lite 验收分开记录，后者不因组合测试通过而勾选。
+
+
+#### 配置与持久化合同
+
+正式组合使用可选的 `runPolicy.fileRead` 选择路由。例如以下字段仅用于解释配置形状，不能直接作为生产授权：
+
+```json
+{
+  "hostId": "mac:acceptance",
+  "workerInstanceId": "execution-worker:acceptance",
+  "grantId": "directory:acceptance",
+  "capabilityRef": "host-file:acceptance",
+  "capabilityVersion": "1.0.0",
+  "maximumBytes": 4096
+}
+```
+
+`maximumBytes` 必须为 1–49152 的整数。缺少路由、目录记录、匹配的 Thread 来源、有效 Run 执行租约或配置中的模型，均不派发文件检查。目录 Grant 通过同时限定 Owner 和 Agent 的 `readScopedState()` 读取现有 `host-workspace:directory-grant:<id>` 状态键，不能通过全局键读到其他身份的目录记录；模型身份包含 provider、model、配置版本和路由摘要。配置解析不创建目录 Grant、动作授权、Capability Registry 或平台资格。
+
+能力 Manifest 必须声明 `inspect/read/disclose`；其中 disclose 只用于服务端授权，不派发为文件程序操作。program 的固定 argv 指向安装产物 `@himawari-agent/agent-service/dist/capability-programs/host-file-read-main.js`，并附带目标 hostId 和 workerInstanceId，stdin/stdout 使用受保护 Payload 通道。只有通过现有不可变部署快照、实际隔离与平台资格验证后，该程序才能由正式 Worker 启动。打包包含程序源码不等于已完成这些安装条件。
+
+同一 Run/toolCallId 的上下文、inspect/read 输入与 Handle 引用存于受保护 Run trace artifacts；每个阶段另有不可变执行 intent、单次调用回执和结果。读取结果保存在受保护存储中，普通日志不写正文。进程恢复必须保持原调用语义和有效权威；已确认阶段不再派发，缺少结果的已派发阶段返回 `result_unknown`。目录、模型、调用参数、租约上下文或 authority 改变时拒绝自动续接，不能通过重新签发凭证改读目标。ASK 复用持久审批记录，当前活跃 Run 内的批准重试不会重复 inspect；浏览器批准后恢复一个已结束 Run 的完整产品流程仍属于 P0-10。
+
+实际打开文件时，`ConstrainedHostFileSystem.read()` 对文件描述符的 device/inode、canonical path、mode、链接数、size 和 mtime 再核验，读取前后核对父目录链，循环处理短读，并在返回前确认对象和内容元数据未变化。文件程序在全文读取后验证 UTF-8、排除 NUL 和机器秘密，再交由 Pi 处理行范围与截断提示。此保护不宣称能防止具备主机管理权限的对手伪造全部文件元数据；真实隔离资格仍必须单独提供。
+
+#### 本轮完成情况与验证边界
+
+- [x] P0-07：正式 read → 目标 Worker 的 inspect → 确定文件身份；覆盖越界、链接、缺失、非普通文件、大小上限和目标替换。
+- [x] P0-08：当前 Owner/Agent/Thread/Run/toolCall、执行租约、文件身份与当前模型分别纳入读取和披露授权；ALLOW、ASK、DENY 有明确分支，配置或模型参数不提供权限。
+- [x] P0-09：从本次请求保存受保护输入，按阶段签发独立单次 Handle，复用正式 Worker 调用回执和结果持久化；验证数据库关闭重开后回读已确认结果且两个 Handle 各消费一次。
+- [ ] P0-10：正式浏览器审批、拒绝与恢复交互。
+- [ ] P0-11 至 P0-14：虽然目标文件程序和 Pi 读取适配组件已补入，实际 Mac 部署资格、真实模型续接总结及其完整结果验收仍未完成。
+
+组合测试使用真实临时文件、真实 ActionPolicyService/ApprovalService/CapabilityHandleService 和 Pi read；Worker 传输使用受控测试适配器。SQLite 集成另通过公开 Repository 接口验证两阶段输入、凭证、回执和结果的数据库重开。该测试发现并修复了 `capabilityInvocationResult.*` 未注册到 SQLite 分发器的缺陷；原来仅直接测试底层结果操作无法发现这一正式调用断点。
+
+本轮未运行付费模型请求、未写入真实目录或模型披露授权，也未进行 ego Lite 或正式 Mac helper 验收。这些结论不能因组件测试、类型检查或构建成功而更改。
+
+
+本轮验证结果：服务与 Pi compatibility 回归共 192 项通过，其中 P007–P009 组合专项为 32 项；SQLite 能力调用集成 21 项通过，受约束文件系统 32 项通过。`npm run typecheck`、`npm run build:node`、依赖边界、v0.2 覆盖与不变量、秘密扫描、CI policy 和修改文件 lint 通过。构建产物的独立子进程冒烟验证了 inspect、Pi 行范围、主机不匹配拒绝与检查后替换文件拒绝；这不是合格隔离后端中的正式 Worker 安装验收。全仓库 `npm run check` 仍因既有 182 errors、977 warnings 的 lint 基线失败，不能标为全部通过。

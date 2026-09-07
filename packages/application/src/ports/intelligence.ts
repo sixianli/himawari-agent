@@ -403,6 +403,8 @@ export interface RuntimeCustomToolDescriptor {
 }
 
 export interface RuntimeToolInvocation {
+  /** Captured by the runtime, never taken from model-generated tool arguments. */
+  readonly context?: Pick<RuntimeRequest, "threadId" | "modelRef" | "executionLease">;
   readonly executionDeadlineAt?: string;
   readonly runId: RunId;
   readonly toolCallId: string;

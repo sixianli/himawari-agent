@@ -243,3 +243,7 @@ function key(kind: string, id: string): string {
 function json(value: unknown): JsonObject {
   return JSON.parse(JSON.stringify(value)) as JsonObject;
 }
+
+export function hostDirectoryGrantStateKey(id: string): string {
+  return key("directory-grant", id);
+}

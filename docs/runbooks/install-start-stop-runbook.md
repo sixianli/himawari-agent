@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:0fa3f06880a3ba9d5dec7584fd78e44ddf29d98a05f6cd1f31a538827c55ab2f"
+contract_sha256: "sha256:4e10aa58246a8601a65bc22676c9074f5c4354d9d7b80639332253812e37f0dd"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -12,6 +12,11 @@ date: "2026-08-27"
 
 <!-- runbook-contract:
 - packages/runtime-pi/src/pi-runtime-adapter.ts
+- apps/agent-service/src/capability-programs
+- apps/agent-service/src/production-file-read-workflow.ts
+- apps/agent-service/src/production-file-read-services.ts
+- packages/runtime-pi/src/governed-read-executor.ts
+- packages/platform-node/src/files/constrained-file-system.ts
 - packages/application/src/services/run-execution-input-service.ts
 - packages/application/src/services/run-coordinator.ts
 - packages/application/src/ports/run-dispatch.ts
@@ -103,6 +108,8 @@ date: "2026-08-27"
 ~~~
 
 系统指令不得包含凭据。Memory 选取数不得超过检索数，实际注入分类同时受当前 Run 分类约束。模型描述符和费用上限仍由原配置字段提供。修改配置只影响尚未冻结输入的 Run；运行中的已冻结请求不会改用新指令。已有数据库需按同机 snapshot 和迁移合同升级到当前 schema，不能跳过备份直接启动旧库。
+
+启用文件读取时，`runPolicy.fileRead` 必须引用当前 Worker instance、目标 hostId、既有目录 Grant 和匹配的 Capability 版本。能力 program 的固定 argv 应指向安装树中 agent-service 包的 `dist/capability-programs/host-file-read-main.js` 并携带 hostId/workerInstanceId；该入口由 Worker 隔离后端启动，不能在 Agent Service 内执行。Manifest 声明 inspect/read/disclose，后者仅用于授权。配置、程序存在或打包成功均不创建动作授权，也不替代本机能力隔离资格。
 
 ## Live-State Preflight
 

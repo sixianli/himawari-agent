@@ -14,14 +14,14 @@ import { scanMachineSecrets } from "./machine-secret-exclusion.js";
 import { normalizeRelativePath } from "./file-operation-service.js";
 
 export class HostFileReadService {
-  readonly #state: HostFileStatePort;
+  readonly #state: Pick<HostFileStatePort, "readGrant">;
   readonly #platform: HostFilePlatformPort;
   readonly #disclosure: HostFileDisclosurePort;
   readonly #clock: ClockPort;
   readonly #hostId: string;
 
   constructor(input: {
-    readonly state: HostFileStatePort;
+    readonly state: Pick<HostFileStatePort, "readGrant">;
     readonly platform: HostFilePlatformPort;
     readonly disclosure: HostFileDisclosurePort;
     readonly clock: ClockPort;
@@ -55,32 +55,7 @@ export class HostFileReadService {
     }
     const grant = await this.#state.readGrant(input.grantId);
     this.#assertReadableGrant(grant, input.grantId);
-    // Do not normalize away traversal, expand ~, or consult another host's filesystem.
-    const root = grant.displayPath.replace(/\/+$/, "") || "/";
-    if (
-      !grant.displayPath.startsWith("/") ||
-      !input.path ||
-      input.path.includes("\\") ||
-      Array.from(input.path).some(
-        (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
-      ) ||
-      input.path.startsWith("~") ||
-      input.path.startsWith("@")
-    ) {
-      throw new Error(HOST_FILE_ERROR_CODES.PATH_UNSAFE);
-    }
-    const prefix = root === "/" ? "/" : `${root}/`;
-    if (input.path.startsWith("/") && !input.path.startsWith(prefix)) {
-      throw new Error(HOST_FILE_ERROR_CODES.PATH_ESCAPE_BLOCKED);
-    }
-    let relativePath: string;
-    try {
-      relativePath = normalizeRelativePath(
-        input.path.startsWith("/") ? input.path.slice(prefix.length) : input.path,
-      );
-    } catch {
-      throw new Error(HOST_FILE_ERROR_CODES.PATH_UNSAFE);
-    }
+    const relativePath = resolveHostFileReadPath(grant, input.path);
     const identity = await this.#platform.inspect(grant, relativePath);
     if (!identity) throw new Error(HOST_FILE_ERROR_CODES.TARGET_MISSING);
     if ((identity.mode & 0o170000) !== 0o100000)
@@ -190,4 +165,35 @@ export class HostFileReadService {
       bytes,
     });
   }
+}
+
+/** Pure scope check shared by the Service and the target Worker; no filesystem probes. */
+export function resolveHostFileReadPath(grant: HostDirectoryGrant, requestedPath: string): string {
+  // Do not normalize away traversal, expand ~, or consult another host's filesystem.
+  const root = grant.displayPath.replace(/\/+$/, "") || "/";
+  if (
+    !grant.displayPath.startsWith("/") ||
+    !requestedPath ||
+    requestedPath.includes("\\") ||
+    Array.from(requestedPath).some(
+      (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+    ) ||
+    requestedPath.startsWith("~") ||
+    requestedPath.startsWith("@")
+  ) {
+    throw new Error(HOST_FILE_ERROR_CODES.PATH_UNSAFE);
+  }
+  const prefix = root === "/" ? "/" : `${root}/`;
+  if (requestedPath.startsWith("/") && !requestedPath.startsWith(prefix)) {
+    throw new Error(HOST_FILE_ERROR_CODES.PATH_ESCAPE_BLOCKED);
+  }
+  let relativePath: string;
+  try {
+    relativePath = normalizeRelativePath(
+      requestedPath.startsWith("/") ? requestedPath.slice(prefix.length) : requestedPath,
+    );
+  } catch {
+    throw new Error(HOST_FILE_ERROR_CODES.PATH_UNSAFE);
+  }
+  return relativePath;
 }

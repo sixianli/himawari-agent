@@ -127,7 +127,18 @@ export interface CapabilityDeploymentConfiguration {
 }
 
 /** Host-owned, versioned instructions; never supplied by a browser message. */
+/** Routing selection only. Directory and action grants remain separate durable authority. */
+export interface FileReadRouteConfiguration {
+  readonly hostId: string;
+  readonly workerInstanceId: string;
+  readonly grantId: string;
+  readonly capabilityRef: string;
+  readonly capabilityVersion: string;
+  readonly maximumBytes: number;
+}
+
 export interface RunPolicyConfiguration {
+  readonly fileRead?: FileReadRouteConfiguration;
   readonly version: string;
   readonly systemInstruction: string;
   readonly memoryLimit: number;

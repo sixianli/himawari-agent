@@ -19,6 +19,30 @@ async function configuration() {
 }
 
 describe("file summary qualification configuration", () => {
+  it("accepts routing references without granting authority and rejects expanded route fields", async () => {
+    const raw = JSON.parse(await readFile(new URL("configuration.json", fixture), "utf8"));
+    const fileRead = {
+      hostId: "mac:test",
+      workerInstanceId: "worker:test",
+      grantId: "directory:test",
+      capabilityRef: "file:test",
+      capabilityVersion: "1.0.0",
+      maximumBytes: 4096,
+    };
+    raw.runPolicy.fileRead = fileRead;
+    expect(parseProductConfiguration(raw, "2026-09-07T00:00:00.000Z").runPolicy?.fileRead).toEqual(
+      fileRead,
+    );
+    for (const changed of [
+      { ...fileRead, approved: true },
+      { ...fileRead, maximumBytes: 49153 },
+      { ...fileRead, maximumBytes: 0 },
+    ]) {
+      raw.runPolicy.fileRead = changed;
+      expect(() => parseProductConfiguration(raw, "2026-09-07T00:00:00.000Z")).toThrow();
+    }
+  });
+
   it("registers the configured generation models in real Pi without resolving credentials", async () => {
     const config = await configuration();
     const descriptors = resolveConfiguredModelDescriptorSet(config);

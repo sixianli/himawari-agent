@@ -30,6 +30,10 @@ import {
   type ExecutionV2Request,
 } from "@himawari-agent/execution-contracts";
 import type { ProductionExecutionAdmissionParentBinding } from "./production-execution-admission-handler.js";
+import {
+  ProductionFileReadWorkflow,
+  type ProductionFileReadServices,
+} from "./production-file-read-workflow.js";
 import { ProductionWorkerForwardTransport } from "./production-worker-forward-transport.js";
 import type { ProductionWorkerParentBindingRegistryWriter } from "./production-worker-parent-binding-registry.js";
 
@@ -75,6 +79,7 @@ function reject(): never {
 }
 
 export interface ProductionRuntimeToolsOptions {
+  readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
   readonly agentId: RuntimeRequest["agentId"];
   readonly capabilities: Pick<CapabilityRegistryStorePort, "get"> &
@@ -164,9 +169,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       const valid =
         this.#exposed.has(invocation.runId) && invocation.capabilityRef === "host.file.read";
       return {
-        allowed: false,
-        permissionDecisionRef: `tool-denied:${digest([invocation.runId, invocation.toolCallId])}`,
-        reasonCode: valid ? "FILE_READ_AUTHORIZATION_UNAVAILABLE" : "FILE_READ_REQUEST_INVALID",
+        allowed: valid && this.#options.fileRead !== undefined,
+        permissionDecisionRef: `tool-workflow:${digest([invocation.runId, invocation.toolCallId])}`,
+        reasonCode: !valid
+          ? "FILE_READ_REQUEST_INVALID"
+          : this.#options.fileRead
+            ? "FILE_READ_WORKFLOW_REQUIRED"
+            : "FILE_READ_AUTHORIZATION_UNAVAILABLE",
       };
     }
     try {
@@ -201,10 +210,67 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         );
       return active.result;
     }
-    const result = this.#execute(invocation, key, fingerprint);
+    const result =
+      invocation.capabilityHandleRef === null && this.#options.fileRead
+        ? this.#executeFileRead(invocation, key)
+        : this.#execute(invocation, key, fingerprint);
     this.#inFlight.set(key, { fingerprint, result });
     void result.finally(() => this.#inFlight.delete(key)).catch(() => undefined);
     return result;
+  }
+
+  async #executeFileRead(invocation: RuntimeToolInvocation, key: string) {
+    if (!this.#exposed.has(invocation.runId) || !this.#options.fileRead) reject();
+    const workflow = new ProductionFileReadWorkflow(this.#options.fileRead);
+    const operationKey = (suffix: string) => `runtime-file-read:${key}:${suffix}`;
+    return workflow.execute(invocation, {
+      ownerId: this.#options.ownerId,
+      agentId: this.#options.agentId,
+      now: () => this.#options.clock.now(),
+      authorityFence: () => this.#options.authority().product.fencingToken,
+      workerInstanceId: () => this.#options.peer().workerInstanceId,
+      assertActive: () => this.#options.assertRunActive(invocation.runId),
+      load: async (suffix) => {
+        const record = await this.#options.artifacts.lookup({
+          runId: invocation.runId,
+          purpose: "trace",
+          operationKey: operationKey(suffix),
+        });
+        return record ? this.#readJson(record.payloadRef) : undefined;
+      },
+      save: async (suffix, value) => {
+        const saved = await this.#writeJson(invocation, operationKey(suffix), value);
+        return { ref: saved.ref, value: await this.#readJson(saved.ref) };
+      },
+      phase: async (handle, phase, inputRef) => {
+        const live = await this.#handle(invocation.runId, handle.ref);
+        if (
+          live.operation !== phase ||
+          live.capabilityVersion !== handle.capabilityVersion ||
+          live.maxUses !== 1 ||
+          live.inputRefs.length !== 1 ||
+          live.inputRefs[0] !== inputRef
+        )
+          reject();
+        if (
+          handle.operation !== phase ||
+          handle.inputRefs.length !== 1 ||
+          handle.inputRefs[0] !== inputRef ||
+          handle.maxUses !== 1 ||
+          handle.runId !== invocation.runId
+        )
+          reject();
+        const child: RuntimeToolInvocation = {
+          ...invocation,
+          toolCallId: `file-phase:${digest([key, phase])}`,
+          capabilityHandleRef: handle.ref,
+          capabilityRef: handle.capabilityRef,
+          arguments: { inputRef },
+        };
+        // Issued phase handles stay private to this workflow, never in model-visible tools.
+        return this.#execute(child, digest([child.runId, child.toolCallId]), digest(child), true);
+      },
+    });
   }
 
   async #handle(
@@ -235,10 +301,11 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     return governed;
   }
 
-  async #validate(invocation: RuntimeToolInvocation) {
+  async #validate(invocation: RuntimeToolInvocation, internal = false) {
     await this.#options.assertRunActive(invocation.runId);
     if (invocation.capabilityHandleRef === null) reject();
-    if (!this.#exposed.get(invocation.runId)?.has(invocation.capabilityHandleRef)) reject();
+    if (!internal && !this.#exposed.get(invocation.runId)?.has(invocation.capabilityHandleRef))
+      reject();
     const handle = await this.#handle(invocation.runId, invocation.capabilityHandleRef);
     if (
       invocation.executionDeadlineAt !== undefined &&
@@ -263,8 +330,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     invocation: RuntimeToolInvocation,
     key: string,
     fingerprint: string,
+    internal = false,
   ): Promise<RuntimeToolExecutionResult> {
-    const handle = await this.#validate(invocation);
+    const handle = await this.#validate(invocation, internal);
     const intentKey = {
       runId: invocation.runId,
       purpose: "trace" as const,
@@ -283,7 +351,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         ? ((await this.#readJson(result.payloadRef)) as RuntimeToolExecutionResult)
         : unknownResult();
       if (replay.outcome === "succeeded") {
-        await this.#assertDisclosure(invocation, key);
+        await this.#assertDisclosure(invocation, key, internal);
         const observed = await this.#options.results.lookupOutput({
           handleRef: handle.ref,
           invocationId: `runtime-tool:${key}`,
@@ -292,7 +360,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         });
         if (!observed || observed.payloadRef !== replay.resultRef) reject();
       }
-      await this.#validate(invocation);
+      await this.#validate(invocation, internal);
       return replay;
     }
     const now = this.#options.clock.now();
@@ -343,7 +411,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       request,
     });
     // A concurrent writer won the durable operation key. Never forward a second request.
-    if (committed.replayed) return this.#execute(invocation, key, fingerprint);
+    if (committed.replayed) return this.#execute(invocation, key, fingerprint, internal);
     const monotonicDeadline =
       performance.now() +
       Math.max(0, Date.parse(deadlineAt) - Date.parse(this.#options.clock.now()));
@@ -387,7 +455,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
               digest(event.scope) !== digest(scope)
             )
               continue;
-            await this.#validate(invocation);
+            await this.#validate(invocation, internal);
             if (event.type === "work.cancelled") {
               outcome = {
                 outcome: "failed",
@@ -398,7 +466,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
               };
             } else if (event.payload.outcome === "succeeded") {
               if (!event.payload.outputRef) throw new Error("WORKER_OUTPUT_MISSING");
-              await this.#assertDisclosure(invocation, key);
+              await this.#assertDisclosure(invocation, key, internal);
               const observed = await this.#options.results.lookupOutput({
                 handleRef: handle.ref,
                 invocationId: request.messageId,
@@ -437,9 +505,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 modelContent: "操作未确认成功。",
               };
             }
-            await this.#validate(invocation);
+            await this.#validate(invocation, internal);
             await this.#writeJson(invocation, `runtime-tool-result:${key}`, outcome);
-            await this.#assertDisclosure(invocation, key);
+            await this.#assertDisclosure(invocation, key, internal);
             return outcome;
           }
         } finally {
@@ -461,8 +529,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     return outcome;
   }
 
-  async #assertDisclosure(invocation: RuntimeToolInvocation, key: string): Promise<void> {
-    const handle = await this.#validate(invocation);
+  async #assertDisclosure(
+    invocation: RuntimeToolInvocation,
+    key: string,
+    internal = false,
+  ): Promise<void> {
+    const handle = await this.#validate(invocation, internal);
     // Output observation intentionally permits historical lookup. Disclosure additionally
     // requires the live receipt path, including grant revocation and Run authority checks.
     const receipt = await this.#options.invocations.read({

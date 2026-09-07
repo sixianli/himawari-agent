@@ -550,6 +550,20 @@ function readState(key: string): StateRecord | undefined {
   );
 }
 
+function readScopedState(input: {
+  ownerId: string;
+  agentId: string;
+  key: string;
+}): StateRecord | undefined {
+  return stateFromRow(
+    database
+      .prepare(
+        "SELECT key, owner_id AS ownerId, agent_id AS agentId, revision, value_json AS valueJson FROM product_state_records WHERE key = ? AND owner_id = ? AND agent_id = ?",
+      )
+      .get(input.key, input.ownerId, input.agentId) as StateRow | undefined,
+  );
+}
+
 function findCommandResult(lookup: CommandResultLookup): CommandResultRecord | undefined {
   const row = database
     .prepare(
@@ -974,6 +988,11 @@ channel.on("message", (request: WorkerRequest) => {
     switch (request.operation) {
       case "ready":
         value = { writerSequence: configuration.writerSequence };
+        break;
+      case "readScopedState":
+        value = readScopedState(
+          request.payload as { ownerId: string; agentId: string; key: string },
+        );
         break;
       case "read":
         value = readState((request.payload as { key: string }).key);

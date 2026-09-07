@@ -33,3 +33,4 @@ export {
   type PiModelBindingPort,
   type PiRuntimeResourcePort,
 } from "./pi-runtime-adapter.js";
+export { executeGovernedPiRead } from "./governed-read-executor.js";

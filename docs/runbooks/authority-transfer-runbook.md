@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:14500cd4d4d94933886b105fb86eef2c8b269ef8c3eea5e3eafbf140375ad6ab"
+contract_sha256: "sha256:ba93e67c6e53145595e9e3f34dc44a48c77a727dbca0351176f67017c1d09eb9"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -67,6 +67,8 @@ date: "2026-08-27"
 - `activate` 只接受权限受限、字段精确的 preflight JSON。CLI 会实际解析目标 Payload 和 recipient key；`doctorReady` 与 `publicIngressReady` 必须来自本次只读检查。文件中的布尔值不是替代证据，缺少原始回读时停止。
 - 迁移包 plaintext staging 只能位于 CLI 生成的受限临时目录。copy-on-write 与 SSD 删除不保证可靠擦除；主要保护来自包加密、受限权限、临时文件清理和后续 key disposal。
 - 任何公网入口切换、Hermes/Mac 服务操作、外部账户变更和旧包删除都保持各自授权边界。
+
+文件读取的 `runPolicy.fileRead` 属于主机路由选择，不能沿用源主机路径和 Worker instance 推断目标主机授权。迁移的 inspect/read 输入、Handle 和回执仅用于历史回读或核实未知结果；新 authority 下不得自动重签执行，须重新核实本地主机、目录 Grant、文件身份及模型披露权限。
 
 ## Live-State Preflight
 

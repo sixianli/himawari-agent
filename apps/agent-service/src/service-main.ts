@@ -68,6 +68,7 @@ import {
   embeddingAdmissionDescriptor,
 } from "./production-run-memory.js";
 import { createProductionRunPolicy } from "./production-run-policy.js";
+import { createProductionFileReadServices } from "./production-file-read-services.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
@@ -751,6 +752,13 @@ export async function runAgentService(
         resolveAuthorityLoss?.();
       };
       const tools = new ProductionRuntimeTools({
+        fileRead: createProductionFileReadServices({
+          configuration,
+          repository,
+          authority: invocationAuthority,
+          clock,
+          ids,
+        }),
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
         capabilities,

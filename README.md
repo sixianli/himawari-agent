@@ -155,6 +155,8 @@ VS Code 可以用下列 launch 配置在 Vitest 中断进 sibling TypeScript sou
 
 `npm run check:boundaries` 会检查根和 workspace 清单以及 TypeScript import，拒绝非精确的直接外部依赖、非法反向依赖、依赖环、未声明的内部依赖、逃出 workspace 根的相对 import、纯产品层的 `node:` import，以及 `packages/runtime-pi` 之外的直接 Pi import。
 
+文件总结的 P007–P009 已接入正式 `read` 的两阶段 Worker 路径：先用独立凭证检查文件身份，再分别授权读取和当前模型披露，保存新输入并签发单次读取凭证。可选 `runPolicy.fileRead` 只选择主机、Worker、目录 Grant 和能力版本；现有授权记录与平台资格仍须独立有效。文件程序由 Worker 的受隔离 program runtime 启动，复用 Pi read；Agent Service 不旁路读取。配置、完成证据与未完成的正式 Mac/ego Lite 验收见 [真实文件总结设计](docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md)。
+
 ## Domain foundation
 
 `packages/domain` 当前公开：

@@ -13,6 +13,9 @@ import type {
 } from "@himawari-agent/application";
 import {
   ApplicationPortError,
+  CapabilityHandleService,
+  type CapabilityManifest,
+  type RuntimeToolInvocation,
   PORT_ERROR_CODES,
   type PortErrorCode,
   WorkerDelegationService,
@@ -544,6 +547,305 @@ describe("SQLite capability invocation authority", () => {
       ).toMatchObject({ replayed: true });
     } finally {
       await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("scopes directory state reads to both Owner and Agent", async () => {
+    const resource = await openRepository();
+    try {
+      const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      try {
+        database
+          .prepare(
+            "INSERT INTO product_state_records (key, owner_id, agent_id, revision, value_json, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
+          )
+          .run(
+            "host-workspace:directory-grant:test",
+            OWNER_ID,
+            AGENT_ID,
+            JSON.stringify({ id: "test" }),
+            T1,
+          );
+      } finally {
+        database.close();
+      }
+      const key = "host-workspace:directory-grant:test";
+      expect(await resource.repository.readScopedState(OWNER_ID, AGENT_ID, key)).toMatchObject({
+        revision: 1,
+        value: { id: "test" },
+      });
+      expect(
+        await resource.repository.readScopedState(OTHER_OWNER_ID, AGENT_ID, key),
+      ).toBeUndefined();
+      expect(
+        await resource.repository.readScopedState(OWNER_ID, OTHER_AGENT_ID, key),
+      ).toBeUndefined();
+    } finally {
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("persists both dynamically issued file phases across a database reopen", async () => {
+    const resource = await openRepository();
+    let repository = resource.repository;
+    let sequence = 0;
+    const clock = { now: () => T1 };
+    const ids = { next: (scope: string) => `${scope}:${++sequence}` };
+    const manifest: CapabilityManifest = {
+      ...capability().declaration,
+      manifestVersion: "capability.v2",
+      operations: ["inspect", "read", "disclose"],
+      sourceIdentity: "test",
+      artifact: {
+        digest: "test",
+        signatureStatus: "not_applicable",
+        signerRef: null,
+        rollbackArtifactRef: null,
+      },
+      scopes: {
+        dataClassifications: ["private"],
+        network: [],
+        filesystem: ["/fixture"],
+        secrets: [],
+      },
+      cost: { currency: "USD", maxMicrosPerInvocation: 0 },
+      health: { status: "healthy", checkedAt: T0 },
+      reviewedBy: null,
+      reviewedAt: null,
+      contractCompatibility: ["host-file.v1"],
+      runtime: {
+        kind: "program",
+        argv: ["fixture"],
+        environmentKeys: [],
+        workdirRef: "fixture",
+        stdin: "protected_payload",
+        stdout: "protected_payload",
+        subprocesses: [],
+        network: [],
+        filesystem: ["/fixture"],
+      },
+    };
+    const peer = { ...SERVICE_AUTHORITY.product, ...SERVICE_AUTHORITY };
+    const parents = createProductionWorkerParentBindingRegistry({ trustedPeerBinding: () => peer });
+    const requests: Extract<ExecutionV2Request, { type: "work.execute" }>[] = [];
+    const grant = {
+      id: "directory:fixture",
+      revision: 1,
+      hostId: "host:fixture",
+      canonicalRootId: "1:2",
+      displayPath: "/fixture",
+      operations: ["read"] as const,
+      dataClassification: "private" as const,
+      disclosure: "model" as const,
+      pathPolicy: "same_filesystem_no_links" as const,
+      mountPolicy: "fixed_device" as const,
+      authorizationRef: "directory:approval",
+      expiresAt: T2,
+      revokedAt: null,
+    };
+    const target = {
+      hostId: grant.hostId,
+      grantId: grant.id,
+      grantRevision: 1,
+      canonicalRootId: grant.canonicalRootId,
+      authorizationRef: grant.authorizationRef,
+      requestedPath: "note.txt",
+      relativePath: "note.txt",
+      maximumBytes: 1000,
+      observedAt: T1,
+      identity: {
+        canonicalPath: "/fixture/note.txt",
+        device: "1",
+        inode: "3",
+        mode: 0o100600,
+        linkCount: 1,
+        sizeBytes: 7,
+        modifiedAtMillis: 0,
+      },
+    };
+    const call: RuntimeToolInvocation = {
+      runId: RUN_ID,
+      toolCallId: "dynamic-file",
+      capabilityRef: "host.file.read",
+      capabilityHandleRef: null,
+      arguments: { path: "note.txt" },
+      dataClassification: "private",
+      executionDeadlineAt: T2,
+      context: {
+        threadId: "thread-capability-invocation" as NonNullable<
+          NonNullable<RuntimeToolInvocation["context"]>["threadId"]
+        >,
+        modelRef: "model:test",
+        executionLease: {
+          executionLeaseId: "execution:fixture" as NonNullable<
+            RuntimeToolInvocation["context"]
+          >["executionLease"]["executionLeaseId"],
+          expectedLeaseRevision: 1,
+          authorityLeaseId: SERVICE_AUTHORITY.lease.leaseId,
+          authorityFencingToken: 1,
+          ...SERVICE_AUTHORITY.product,
+          consumerId: "consumer:fixture",
+        },
+      },
+    };
+    const create = () => {
+      const capabilities = repository.capabilityStore(OWNER_ID, AGENT_ID);
+      const handles = new CapabilityHandleService({ store: capabilities, clock, ids });
+      const results = repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID);
+      return new ProductionRuntimeTools({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        capabilities,
+        clock,
+        ids,
+        authority: () => SERVICE_AUTHORITY,
+        peer: () => peer,
+        parents: parents.writer,
+        assertRunActive: async () => {},
+        invocations: repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+        results,
+        payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
+        artifacts: repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
+        ceiling: serviceRequest().payload.resourceCeiling,
+        protector: {
+          protect: async (input) => ({
+            ...input,
+            ciphertext: input.plaintext,
+            encryption: { algorithm: "fixture", keyRef: "fixture-key" },
+            contentDigest: createHash("sha256").update(input.plaintext).digest("hex"),
+          }),
+          unprotect: async ({ payload }) => payload.ciphertext,
+        },
+        fileRead: {
+          binding: async () => ({
+            revision: 1,
+            hostId: grant.hostId,
+            workerInstanceId: peer.workerInstanceId,
+            grant,
+            capabilityRef: manifest.ref,
+            capabilityVersion: manifest.version,
+            maximumBytes: 1000,
+            threadId: "thread-capability-invocation",
+            modelRef: "model:test",
+            modelIdentity: "model:test:fixed",
+          }),
+          issue: (input) => handles.issue(input),
+          // This test isolates SQLite durability. Policy/approval semantics are tested with ActionPolicyService separately.
+          authorize: async (intent) => ({
+            decision: "ALLOW",
+            basis: { type: "policy", ref: "policy:fixture" },
+            executionScope: {
+              capabilityRef: manifest.ref,
+              operations: [intent.operation],
+              exactResourceRef: intent.resourceRef,
+              resourcePrefixes: [],
+              maxDataClassification: "private",
+              sideEffects: ["none"],
+              maxCostMicrosPerUse: 0,
+              maxFrequency: { count: 1, intervalMs: null },
+            },
+          }),
+        },
+        transport: {
+          request: async (message) => {
+            if (message.type === "work.delegate")
+              return {
+                ...message,
+                kind: "response",
+                type: "work.delegate.accepted",
+                messageId: ids.next("accepted"),
+                causationId: message.messageId,
+                payload: {
+                  handleRef: message.payload.handle.ref,
+                  workerBootId: peer.workerBootId,
+                  acceptedAt: T1,
+                },
+              };
+            if (message.type === "work.execute") requests.push(message);
+            return null;
+          },
+          async *events() {
+            const request = requests.at(-1);
+            if (!request) return;
+            const input = await repository
+              .payloadStore(OWNER_ID, AGENT_ID)
+              .get(request.payload.inputRef);
+            if (!input) throw new Error("test input missing");
+            expect(JSON.parse(new TextDecoder().decode(input.ciphertext))).toMatchObject({
+              phase: request.payload.operation,
+            });
+            const bytes = new TextEncoder().encode(
+              request.payload.operation === "inspect"
+                ? JSON.stringify(target)
+                : "fixture file result",
+            );
+            const payload = outputPayload(
+              ids.next("phase-output"),
+              createHash("sha256").update(bytes).digest("hex"),
+              bytes,
+            );
+            await results.observeOutput({
+              handleRef: request.payload.capabilityHandleRef,
+              invocationId: request.messageId,
+              authority: SERVICE_AUTHORITY,
+              now: T1,
+              payload,
+              plaintextByteLength: bytes.length,
+            });
+            yield {
+              ...request,
+              kind: "event" as const,
+              type: "work.result" as const,
+              messageId: ids.next("result"),
+              causationId: request.messageId,
+              payload: {
+                requestId: request.messageId,
+                cursor: String(requests.length),
+                sequence: requests.length,
+                completedAt: T1,
+                outcome: "succeeded" as const,
+                outputRef: payload.ref,
+                errorCode: null,
+                externalActionId: null,
+              },
+            };
+          },
+        },
+      });
+    };
+    try {
+      await repository
+        .capabilityStore(OWNER_ID, AGENT_ID)
+        .create({ ...capability(), declaration: manifest });
+      const first = create();
+      await first.listAuthorized(RUN_ID, []);
+      const result = await first.execute(call);
+      expect(result).toMatchObject({ outcome: "succeeded", modelContent: "fixture file result" });
+      await repository.close();
+      repository = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      const restarted = create();
+      await restarted.listAuthorized(RUN_ID, []);
+      expect(await restarted.execute(call)).toEqual(result);
+      expect(requests.map(({ payload }) => payload.operation)).toEqual(["inspect", "read"]);
+      for (const { payload } of requests)
+        expect(
+          await repository
+            .capabilityStore(OWNER_ID, AGENT_ID)
+            .getExecutionHandle(payload.capabilityHandleRef),
+        ).toMatchObject({
+          maxUses: 1,
+          uses: 1,
+          operation: payload.operation,
+          inputRefs: [payload.inputRef],
+        });
+    } finally {
+      await repository.close();
       await rm(resource.stateRoot, { recursive: true });
     }
   });

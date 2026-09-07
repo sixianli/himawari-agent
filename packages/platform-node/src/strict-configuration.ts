@@ -615,6 +615,24 @@ function assertIdentitySecretReference(
   }
 }
 
+function parseFileReadRoute(value: unknown): NonNullable<RunPolicyConfiguration["fileRead"]> {
+  const field = "configuration.runPolicy.fileRead";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["hostId", "workerInstanceId", "grantId", "capabilityRef", "capabilityVersion", "maximumBytes"],
+    field,
+  );
+  return Object.freeze({
+    hostId: safeReference(input["hostId"], `${field}.hostId`),
+    workerInstanceId: safeReference(input["workerInstanceId"], `${field}.workerInstanceId`),
+    grantId: safeReference(input["grantId"], `${field}.grantId`),
+    capabilityRef: safeReference(input["capabilityRef"], `${field}.capabilityRef`),
+    capabilityVersion: safeReference(input["capabilityVersion"], `${field}.capabilityVersion`),
+    maximumBytes: integer(input["maximumBytes"], `${field}.maximumBytes`, 1, 48 * 1024),
+  });
+}
+
 function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   const input = record(value, "configuration.runPolicy");
   rejectUnknown(
@@ -625,6 +643,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "memoryLimit",
       "maxSelectedMemories",
       "maxMemoryClassification",
+      "fileRead",
     ],
     "configuration.runPolicy",
   );
@@ -636,6 +655,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     throw invalid("configuration.runPolicy.systemInstruction", "must not exceed 16384 bytes");
   const memoryLimit = integer(input["memoryLimit"], "configuration.runPolicy.memoryLimit", 1, 1000);
   return Object.freeze({
+    ...(input["fileRead"] === undefined ? {} : { fileRead: parseFileReadRoute(input["fileRead"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
     memoryLimit,

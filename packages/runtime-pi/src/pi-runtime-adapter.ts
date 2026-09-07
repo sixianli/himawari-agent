@@ -1013,7 +1013,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       definition = {
         name: builtin.name,
         label: builtin.label,
-        description: `${builtin.description}\nHimawari 当前仅接入文本读取请求；目标主机和文件访问上限由产品策略绑定。读取及向模型披露须经产品授权，权限链路未接通时返回 FILE_READ_AUTHORIZATION_UNAVAILABLE，表示未读取。`,
+        description: `${builtin.description}\nHimawari 当前仅接入文本读取请求；目标主机和文件访问上限由产品策略绑定。读取及向当前模型披露分别经产品授权；目录、授权或执行条件不满足时明确返回未完成原因。`,
         parameters: builtin.parameters,
         ...(builtin.promptSnippet === undefined ? {} : { promptSnippet: builtin.promptSnippet }),
         ...(builtin.promptGuidelines === undefined
@@ -1039,6 +1039,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         reconciliation.assertKnown();
         const invocation: RuntimeToolInvocation = {
           runId: request.runId,
+          context: {
+            threadId: request.threadId,
+            modelRef: request.modelRef,
+            executionLease: request.executionLease,
+          },
           toolCallId,
           ...(request.executionDeadlineAt === undefined
             ? {}

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:9cf6d9452b3b5c7d35ee4b42fa42a55a842c639dafc71c36bf75c4d32c5956c2"
+contract_sha256: "sha256:769443d8cdc3a99c02c5cc3d34424a75d3f134448381ed9c15f66b65ffa7ee1f"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -55,6 +55,8 @@ date: "2026-08-27"
 - secret 目录及文件必须由当前服务账号拥有，目录权限为 `0700`、文件权限为 `0600`，且配置中各恰好有一个 `backup-encryption` 和 `payload-encryption` secret reference。
 - 恢复只回退产品 data partition；不回退 public ingress、外部账户、已完成的外部副作用、host secret、authority 或应用版本。
 - 证据只能写入下述项目批准的隔离目录，且不得包含配置全文、密钥、token、Cookie、私钥、Payload plaintext 或未脱敏环境输出。
+
+若备份包含文件读取工作流，其目录 Grant、按阶段的受保护输入、Handle、调用回执及结果随产品 SQLite/Payload 保存。恢复后不重签或重放未知调用，不把恢复出来的目录 Grant 当作新主机访问授权；开始新的读取前必须核实目标主机、Worker instance、目录身份、租约和当前模型披露权限。
 
 ## Live-State Preflight
 

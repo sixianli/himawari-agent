@@ -218,6 +218,16 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.context.request("read", { key });
   }
 
+  /** Read product state without crossing the configured Owner/Agent boundary. */
+  readScopedState(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    key: string,
+  ): Promise<StateRecord | undefined> {
+    this.assertOpen();
+    return this.context.request("readScopedState", { ownerId, agentId, key });
+  }
+
   listPending(limit: number): Promise<readonly ReliableEventRecord[]> {
     this.assertOpen();
     return this.context.request("listPending", { limit });
