@@ -13,8 +13,18 @@ import type {
   ReadCapabilityInvocationInput,
   RunPayloadArtifact,
   RunPayloadArtifactCommitResult,
+  SandboxJobRecord,
 } from "@himawari-agent/application";
 import { createAuthorityLeaseId, createDeploymentId } from "@himawari-agent/domain";
+import {
+  ContractValidationError,
+  type SandboxExecutionPlan,
+  type SandboxJobIdentity,
+  sandboxExecutionPlanSchema,
+  sandboxJobIdentitySchema,
+  sandboxJobReceiptSchema,
+  validateSandboxJobObservation,
+} from "@himawari-agent/execution-contracts";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import type {
@@ -474,9 +484,20 @@ export class SqliteCapabilityInvocationOperations {
   execute(
     operation: string,
     value: unknown,
-  ): ConsumeResult | FrozenReceipt | ResultArtifact | ResultArtifactCommit | undefined {
+  ):
+    | ConsumeResult
+    | FrozenReceipt
+    | ResultArtifact
+    | ResultArtifactCommit
+    | readonly SandboxJobRecord[]
+    | SandboxJobRecord
+    | { record: SandboxJobRecord; applied: boolean }
+    | undefined {
     try {
       const scoped = this.scopedInput(value);
+      if (operation.startsWith("capabilityInvocation.sandbox")) {
+        return this.sandboxOperation(operation, scoped.input, scoped.ownerId, scoped.agentId);
+      }
       if (operation === "capabilityInvocation.consume") {
         return this.consume(parseConsume(scoped.input), scoped.ownerId, scoped.agentId);
       }
@@ -493,12 +514,286 @@ export class SqliteCapabilityInvocationOperations {
         return this.observeOutput(parseObserve(scoped.input), scoped.ownerId, scoped.agentId);
       }
     } catch (error) {
-      if (error instanceof TypeError) {
+      if (error instanceof TypeError || error instanceof ContractValidationError) {
         return this.fail("PORT_INVALID_OPERATION", error.message);
       }
       throw error;
     }
     return this.fail("PORT_INVALID_OPERATION", "Unknown Capability invocation operation");
+  }
+
+  private sandboxRead(
+    identity: SandboxJobIdentity,
+    ownerId: string,
+    agentId: string,
+  ): SandboxJobRecord | undefined {
+    if (identity.ownerId !== ownerId || identity.agentId !== agentId) {
+      return this.fail("PORT_NOT_AUTHORITATIVE", "Sandbox job scope mismatch");
+    }
+    const row = this.database
+      .prepare(
+        "SELECT plan_json AS planJson, observation_json AS observationJson FROM sandbox_jobs WHERE job_id = ? AND owner_id = ? AND agent_id = ?",
+      )
+      .get(identity.jobId, ownerId, agentId) as
+      | { planJson: string; observationJson: string }
+      | undefined;
+    if (!row) return undefined;
+    const plan = sandboxExecutionPlanSchema.parse(JSON.parse(row.planJson));
+    if (JSON.stringify(plan.identity) !== JSON.stringify(identity)) {
+      return this.fail("PORT_CONFLICT", "Sandbox job identity was replaced");
+    }
+    return { plan, observation: sandboxJobReceiptSchema.parse(JSON.parse(row.observationJson)) };
+  }
+
+  private assertSandboxLive(
+    plan: SandboxExecutionPlan,
+    authority: AuthorityInput,
+    now: string,
+  ): void {
+    const receipt = this.read(
+      { handleRef: plan.handleRef, invocationId: plan.identity.invocationId, authority, now },
+      plan.identity.ownerId,
+      plan.identity.agentId,
+    );
+    if (
+      !receipt ||
+      receipt.receiptRef !== plan.identity.receiptRef ||
+      receipt.runId !== plan.identity.runId ||
+      receipt.inputRef !== plan.inputRef ||
+      receipt.operation !== plan.operation ||
+      receipt.capabilityRef !== plan.capabilityRef ||
+      receipt.capabilityVersion !== plan.capabilityVersion ||
+      receipt.semanticFingerprint !== plan.semanticFingerprint ||
+      receipt.authorizationRef !== plan.authorizationRef ||
+      timestamp(plan.requestedAt, "plan.requestedAt") <
+        timestamp(receipt.requestedAt, "receipt.requestedAt") ||
+      timestamp(plan.effectiveDeadlineAt, "plan.deadline") >
+        timestamp(receipt.deadlineAt, "receipt.deadline") ||
+      timestamp(plan.effectiveDeadlineAt, "plan.deadline") >
+        timestamp(receipt.effectiveExpiresAt, "receipt.expiresAt") ||
+      now >= plan.effectiveDeadlineAt ||
+      now < plan.requestedAt ||
+      Object.entries(plan.resourceCeiling).some(
+        ([key, value]) =>
+          value > receipt.resourceCeiling[key as keyof typeof receipt.resourceCeiling],
+      )
+    ) {
+      this.fail("PORT_NOT_AUTHORITATIVE", "Sandbox job exceeds its consumed invocation");
+    }
+    const lease = plan.executionLease;
+    if (
+      lease.authorityLeaseId !== authority.lease.leaseId ||
+      lease.authorityFencingToken !== authority.lease.fencingToken ||
+      lease.deploymentId !== authority.product.deploymentId ||
+      lease.authorityEpoch !== authority.product.authorityEpoch ||
+      lease.fencingToken !== authority.product.fencingToken
+    ) {
+      this.fail("PORT_NOT_AUTHORITATIVE", "Sandbox job authority mismatch");
+    }
+    const current = this.database
+      .prepare(`SELECT l.revision FROM run_execution_leases l
+      JOIN runs r ON r.id = l.run_id AND r.owner_id = l.owner_id AND r.agent_id = l.agent_id
+      WHERE l.owner_id = ? AND l.agent_id = ? AND l.run_id = ? AND l.execution_lease_id = ?
+      AND l.revision = ? AND l.authority_lease_id = ? AND l.deployment_id = ?
+      AND l.authority_epoch = ? AND l.fencing_token = ? AND l.consumer_id = ?
+      AND l.released_at IS NULL AND l.expires_at > ? AND l.claimed_at <= ? AND r.status = 'running' AND r.thread_id IS ?`)
+      .get(
+        plan.identity.ownerId,
+        plan.identity.agentId,
+        plan.identity.runId,
+        lease.executionLeaseId,
+        lease.expectedLeaseRevision,
+        lease.authorityLeaseId,
+        lease.deploymentId,
+        lease.authorityEpoch,
+        lease.fencingToken,
+        lease.consumerId,
+        now,
+        now,
+        plan.identity.threadId,
+      );
+    if (!current) this.fail("PORT_NOT_AUTHORITATIVE", "Sandbox Run lease is not current");
+  }
+
+  private sandboxOperation(
+    operation: string,
+    value: unknown,
+    ownerId: string,
+    agentId: string,
+  ):
+    | readonly SandboxJobRecord[]
+    | SandboxJobRecord
+    | { record: SandboxJobRecord; applied: boolean }
+    | undefined {
+    if (operation === "capabilityInvocation.sandboxListPending") {
+      const input = record(value, "sandbox pending query");
+      assertKeys(input, new Set(["afterJobId", "limit"]), "sandbox pending query");
+      const limit = safeInteger(input["limit"], "limit");
+      if (limit > 100)
+        return this.fail("PORT_INVALID_OPERATION", "Sandbox pending page exceeds 100 jobs");
+      const after = input["afterJobId"] === null ? "" : text(input["afterJobId"], "afterJobId");
+      const rows = this.database
+        .prepare(`SELECT plan_json AS planJson, observation_json AS observationJson
+        FROM sandbox_jobs WHERE owner_id = ? AND agent_id = ? AND job_id > ?
+        AND json_extract(observation_json, '$.state') NOT IN ('completed', 'failed') ORDER BY job_id LIMIT ?`)
+        .all(ownerId, agentId, after, limit) as { planJson: string; observationJson: string }[];
+      return rows.map((row) => ({
+        plan: sandboxExecutionPlanSchema.parse(JSON.parse(row.planJson)),
+        observation: sandboxJobReceiptSchema.parse(JSON.parse(row.observationJson)),
+      }));
+    }
+    if (operation === "capabilityInvocation.sandboxRead") {
+      return this.sandboxRead(sandboxJobIdentitySchema.parse(value), ownerId, agentId);
+    }
+    if (
+      operation !== "capabilityInvocation.sandboxPrepare" &&
+      operation !== "capabilityInvocation.sandboxAppend"
+    ) {
+      return this.fail("PORT_INVALID_OPERATION", "Unknown sandbox journal operation");
+    }
+    const input = record(value, "sandbox journal");
+    const preparing = operation === "capabilityInvocation.sandboxPrepare";
+    assertKeys(
+      input,
+      new Set(
+        preparing
+          ? ["plan", "observation", "authority", "now"]
+          : ["observation", "authority", "now"],
+      ),
+      "sandbox journal",
+    );
+    const observation = sandboxJobReceiptSchema.parse(input["observation"]);
+    const parsedAuthority = authority(input["authority"]);
+    const now = dateText(input["now"], "now");
+    if (new Date(now).toISOString() !== now || observation.occurredAt > now) {
+      return this.fail("PORT_INVALID_OPERATION", "Sandbox observation time is invalid");
+    }
+    const proposedPlan = preparing ? sandboxExecutionPlanSchema.parse(input["plan"]) : undefined;
+    this.assertDiskHeadroom();
+    return this.database
+      .transaction(() => {
+        this.assertAuthority(parsedAuthority, ownerId, agentId, now);
+        const previous = this.sandboxRead(observation.identity, ownerId, agentId);
+        const plan = proposedPlan ?? previous?.plan;
+        if (!plan) return this.fail("PORT_NOT_FOUND", "Sandbox job is not prepared");
+        if (observation.outputRef !== null) {
+          const output = this.database
+            .prepare(`SELECT a.payload_ref FROM run_payload_artifacts a
+            JOIN payloads p ON p.ref = a.payload_ref AND p.owner_id = a.owner_id AND p.agent_id = a.agent_id
+            WHERE a.owner_id = ? AND a.agent_id = ? AND a.run_id = ? AND a.purpose = 'worker_result'
+            AND a.operation_key = ? AND a.payload_ref = ? AND a.content_digest = ? AND p.lifecycle_state = 'active'`)
+            .get(
+              ownerId,
+              agentId,
+              plan.identity.runId,
+              capabilityInvocationOutputOperationKey(plan.identity.invocationId),
+              observation.outputRef,
+              `sha256:${observation.outputDigest}`,
+            );
+          if (!output)
+            return this.fail(
+              "PORT_CONFLICT",
+              "Sandbox output is not durably bound to this invocation",
+            );
+        }
+        if (preparing) {
+          validateSandboxJobObservation(plan, observation);
+          if (previous) {
+            if (JSON.stringify(previous.plan) !== JSON.stringify(plan))
+              return this.fail("PORT_CONFLICT", "Sandbox plan changed on replay");
+            const initial = this.database
+              .prepare(
+                "SELECT observation_json AS json FROM sandbox_job_observations WHERE job_id = ? AND sequence = 1",
+              )
+              .get(plan.identity.jobId) as { json: string };
+            if (initial.json !== JSON.stringify(observation))
+              return this.fail("PORT_CONFLICT", "Sandbox preparation changed on replay");
+            return { record: previous, applied: false };
+          }
+          this.assertSandboxLive(plan, parsedAuthority, now);
+          const historicalOutput = this.database
+            .prepare(
+              "SELECT 1 FROM run_payload_artifacts WHERE owner_id = ? AND agent_id = ? AND run_id = ? AND purpose = 'worker_result' AND operation_key = ?",
+            )
+            .get(
+              ownerId,
+              agentId,
+              plan.identity.runId,
+              capabilityInvocationOutputOperationKey(plan.identity.invocationId),
+            );
+          if (historicalOutput)
+            return this.fail("PORT_CONFLICT", "Invocation already has a durable output");
+          const collision = this.database
+            .prepare(
+              "SELECT job_id FROM sandbox_jobs WHERE job_id = ? OR receipt_ref = ? OR attempt_id = ? OR (owner_id = ? AND agent_id = ? AND run_id = ? AND invocation_id = ?)",
+            )
+            .get(
+              plan.identity.jobId,
+              plan.identity.receiptRef,
+              plan.identity.attemptId,
+              ownerId,
+              agentId,
+              plan.identity.runId,
+              plan.identity.invocationId,
+            );
+          if (collision)
+            return this.fail("PORT_CONFLICT", "Invocation already owns a sandbox attempt");
+          this.database
+            .prepare(
+              `INSERT INTO sandbox_jobs (job_id, attempt_id, receipt_ref, owner_id, agent_id, run_id, invocation_id, sequence, plan_json, observation_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              plan.identity.jobId,
+              plan.identity.attemptId,
+              plan.identity.receiptRef,
+              ownerId,
+              agentId,
+              plan.identity.runId,
+              plan.identity.invocationId,
+              observation.sequence,
+              JSON.stringify(plan),
+              JSON.stringify(observation),
+            );
+        } else {
+          if (!previous) return this.fail("PORT_NOT_FOUND", "Sandbox job is not prepared");
+          if (observation.sequence <= previous.observation.sequence) {
+            const old = this.database
+              .prepare(
+                "SELECT observation_json AS json FROM sandbox_job_observations WHERE job_id = ? AND sequence = ?",
+              )
+              .get(plan.identity.jobId, observation.sequence) as { json: string } | undefined;
+            if (old?.json !== JSON.stringify(observation))
+              return this.fail("PORT_CONFLICT", "Sandbox observation replay differs");
+            return { record: previous, applied: false };
+          }
+          validateSandboxJobObservation(plan, observation, previous.observation);
+          if (observation.state === "starting" && previous.observation.state !== "prepared") {
+            return this.fail("PORT_CONFLICT", "A sandbox attempt can record only one start intent");
+          }
+          if (["starting", "running"].includes(observation.state)) {
+            this.assertSandboxLive(plan, parsedAuthority, now);
+          }
+          const update = this.database
+            .prepare(
+              "UPDATE sandbox_jobs SET sequence = ?, observation_json = ? WHERE job_id = ? AND sequence = ?",
+            )
+            .run(
+              observation.sequence,
+              JSON.stringify(observation),
+              plan.identity.jobId,
+              previous.observation.sequence,
+            );
+          if (update.changes !== 1)
+            return this.fail("PORT_CONFLICT", "Sandbox observation sequence changed");
+        }
+        this.database
+          .prepare(
+            "INSERT INTO sandbox_job_observations (job_id, sequence, observation_json) VALUES (?, ?, ?)",
+          )
+          .run(plan.identity.jobId, observation.sequence, JSON.stringify(observation));
+        return { record: { plan, observation }, applied: true };
+      })
+      .immediate();
   }
 
   private scopedInput(value: unknown): ScopedOperationInput {

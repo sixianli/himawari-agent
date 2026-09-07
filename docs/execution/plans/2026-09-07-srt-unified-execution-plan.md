@@ -57,20 +57,23 @@ Task 2 不新增第二个权限库、Run 状态机或数据库。schema 校验�
 - [x] 增加候选策略编译：规范绝对路径、独立目录、全盘读取默认拒绝与显式例外、受保护路径、严格域名白名单及共享默认写目录拒绝。
 - [ ] 增加正式可安装的 Job Host 入口；在干净环境中固定一次初始化策略并接受 Worker 监督。
 - [ ] 定义权限 scope 的受保护内容与父子调用关系，验证 host/profile/runtime/runner/qualification 摘要绑定。
-- [ ] 实现 prepare/start/observe/cancel/reconcile，持久启动意图先于 spawn；拒绝无资格、非法策略或代理初始化失败。
+- [x] 增加 SQLite 作业账本与启动意图 CAS：同一 invocation 唯一 attempt，记录观察历史，支持重开读回与待核查作业分页。
+- [ ] 将账本接到正式 prepare/start/observe/cancel/reconcile；启动前还须验证新准入、受保护 scope、主机资格与代理初始化。
 - [ ] 使用真实 SRT 在 Mac 专用目录验证读写与命令、假秘密保护、越界与未授权联网、超时取消、进程树和继承管道清理。
 - [ ] 需要启用 Linux profile 时，在 Hermes 的隔离测试目录单独取得证据；先确认磁盘挂载与空间。
 
 当前证据（2026-09-08）：`packages/runtime-sandbox/test/policy.unit.test.ts` 覆盖策略非法字段、目录相交、权限例外、符号链接与异步输入改变。`npm run build:node` 后运行 `node packages/runtime-sandbox/scripts/qualify-policy.mjs`，在 Mac 自动创建的专用假数据目录验证读取、写入、假秘密拒绝、目录越界拒绝、符号链接越界拒绝与代理联网拒绝。网络断言核对 SRT 的 `blocked-by-allowlist` 响应头及拒绝正文，不能用任意 curl 失败冒充通过。探针退出码 0、stderr 为空；依赖探针 errors/warnings 均为空。
 
-此探针仅验证固定脚本下的策略，输出明确保持 `productionSuitable: false`；不是正式 Worker 接线、授权 scope 存储或平台资格签发。CPU/内存硬上限、任意任务进程树终止、Worker 崩溃清理和持久启动接纳仍缺实现与证据。SRT 0.0.75 的配置没有硬 CPU/内存限制；`cleanupAfterCommand()` 与 `reset()` 不负责证明任务后代全部退出。因此不能只用启动参数适配或 `kill(-pid)` 启用生产 profile。权限 scope 的原始授权、host/runtime/runner 摘要及 TOCTOU 复核仍必须在正式接纳与启动点完成，策略编译不能替代这些检查。
+此探针仅验证固定脚本下的策略，输出明确保持 `productionSuitable: false`；不是正式 Worker 接线、授权 scope 存储或平台资格签发。CPU/内存硬上限、任意任务进程树终止、Worker 崩溃清理和正式启动接纳仍缺实现与证据；新增账本仅提供持久化基础。SRT 0.0.75 的配置没有硬 CPU/内存限制；`cleanupAfterCommand()` 与 `reset()` 不负责证明任务后代全部退出。因此不能只用启动参数适配或 `kill(-pid)` 启用生产 profile。权限 scope 的原始授权、host/runtime/runner 摘要及 TOCTOU 复核仍必须在正式接纳与启动点完成，策略编译不能替代这些检查。
 
-Task 3 的持久启动意图依赖 Task 4 第一、二项的最小事务接线；实施时先完成该前置部分，不能创建内存日志或第二份文件权限库代替。当前尚未追加数据库迁移。下一步需要在保持上述保证的条件下完成主机监督实现与既有 invocation 权威的事务接纳，再建设正式 Job Host；当前默认 Worker 组合尚未切换到 SRT。
+Task 4 的前置账本部分已提前实施：追加迁移 `0027_sandbox_job_observations.sql`，通过 `SqliteProductStateRepository.sandboxJobJournal()` 提供准备、追加、读回与待核查分页。在同一个 `BEGIN IMMEDIATE` 事务内检查现有部署权威、Handle/Grant、Run 和执行租约，再保存启动序号；回放返回 `applied: false`，不能据此再次启动。过期后仍可在当前部署权威下追加停止/核查观察；完成必须引用本次调用已持久化的受保护输出。新准入与作业准备的正式通信接线尚未完成：重放凭证若没有账本，必须视为执行未知，不能补建后自动启动；已有旧结果时账本直接拒绝新准备。
+
+真实 SQLite 回执暴露并修复了原合同的摘要格式不匹配：`semanticFingerprint` 保留持久凭证的 `sha256:` 前缀，不改写旧凭证。execution-contracts 的内部相对导入改为项目既有的 `.ts` 源码写法，使 SQLite 源码 Worker 可以加载校验器；Node 构建仍将路径改写为 `.js`。相关回归覆盖旧 schema 26 升级、数据库重开、重复启动、租约改变、Handle 撤销、Run 取消、过期清理、事务回滚、输出持久化与终态禁止重启。正式 Worker/Job Host 仍未切换到这套账本，不能将这些测试计为主机执行资格。
 
 ### Task 4：持久作业观察与通用 HITL
 
-- [ ] 在既有 invocation/result 权威下设计追加迁移：job 唯一 attempt 关联、观察 sequence、政策摘要、清理/副作用状态；不改写旧 receipt 或旧 migration。
-- [ ] 将当前 fence/lease/Handle 校验与作业状态写入同一事务；确认结果重放走回读，未知结果走 reconcile。
+- [x] 在既有 invocation/result 权威下追加账本迁移：job 唯一 attempt 关联、观察 sequence、政策摘要、清理/副作用状态；不改写旧 receipt 或旧 migration。
+- [x] 账本层将当前 fence/lease/Handle 校验与启动状态写入同一事务；相同观察重放只读回，未知状态禁止重新进入执行。正式恢复协调器仍待接入。
 - [ ] 审批前不启动作业；批准后按新租约重验，保留原期限及模型；取消、拒绝、过期均有确定反馈。
 - [ ] 用真实文件读取与受控写入/删除两个场景验证活跃进程和重启恢复，覆盖并发批准、取消竞态、Worker/Job Host 崩溃及清理未知。
 
@@ -130,7 +133,7 @@ Task 3 的持久启动意图依赖 Task 4 第一、二项的最小事务接线�
 
 ## 数据迁移与回退约束
 
-旧 Run、审批、Payload、Capability receipt 和已确认结果保持可读，回读不启动旧或新执行器。Task 2 的合同文件是新增模块，不改变 `execution.v2`、`execution-admission.v1` 或旧数据库 schema。Task 4 才追加持久作业迁移，须覆盖版本升级、旧结果回读、CAS 冲突、失联作业和回退。
+旧 Run、审批、Payload、Capability receipt 和已确认结果保持可读，回读不启动旧或新执行器。Task 2 的合同文件是新增模块，不改变 `execution.v2`、`execution-admission.v1` 或旧数据库 schema。Task 4 的追加作业迁移已作为 Task 3 前置部分实施；正式失联作业核查与恢复接线仍待验收。
 
 同一主机切换先停止旧执行准入，核查在途作业并确认清理，再启用新资格。旧审批若不覆盖新权限语义则重新确认或拒绝；未知结果不得换主机/attempt 自动重做。不得回退到已知不满足当前要求的执行后端。
 

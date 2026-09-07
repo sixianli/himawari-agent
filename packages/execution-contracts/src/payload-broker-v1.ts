@@ -10,7 +10,7 @@ import {
   parseJson,
   type Schema,
   timestamp,
-} from "./validation.js";
+} from "./validation.ts";
 
 export const PAYLOAD_BROKER_V1_SCHEMA_VERSION = "payload-broker.v1" as const;
 

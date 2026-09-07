@@ -64,7 +64,7 @@ function fixture() {
     operation: "read",
     inputRef: "input",
     authorizationRef: "authorization",
-    semanticFingerprint: digest("frozen"),
+    semanticFingerprint: `sha256:${digest("frozen")}`,
     deadlineAt: "2026-09-07T00:02:00.000Z",
     effectiveExpiresAt: "2026-09-07T00:00:30.000Z",
     authority: {

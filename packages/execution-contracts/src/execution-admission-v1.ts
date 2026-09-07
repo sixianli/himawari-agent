@@ -1,4 +1,4 @@
-import { type ExecutionV2Request, executionV2MessageSchema } from "./contracts-v2.js";
+import { type ExecutionV2Request, executionV2MessageSchema } from "./contracts-v2.ts";
 import {
   booleanValue,
   ContractValidationError,
@@ -12,7 +12,7 @@ import {
   parseJson,
   type Schema,
   timestamp,
-} from "./validation.js";
+} from "./validation.ts";
 
 export const EXECUTION_ADMISSION_V1_SCHEMA_VERSION = "execution-admission.v1" as const;
 

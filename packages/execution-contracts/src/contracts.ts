@@ -1,17 +1,17 @@
 import {
-  ContractValidationError,
-  type InferSchema,
-  type Schema,
   array,
+  ContractValidationError,
   enumeration,
+  type InferSchema,
   integer,
   literal,
   machineString,
   nullable,
   object,
   parseJson,
+  type Schema,
   timestamp,
-} from "./validation.js";
+} from "./validation.ts";
 
 export const EXECUTION_SCHEMA_VERSION = "execution.v1" as const;
 export const DATA_CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;

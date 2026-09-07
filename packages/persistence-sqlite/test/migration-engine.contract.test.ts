@@ -18,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const temporaryDirectories: string[] = [];
-const CURRENT_SCHEMA_SEQUENCE = 23;
+const CURRENT_SCHEMA_SEQUENCE = 27;
 
 afterEach(async () => {
   await Promise.all(
@@ -103,6 +103,30 @@ describe("immutable SQLite migration engine", () => {
     expect(database.prepare("SELECT COUNT(*) FROM storage_health_samples").pluck().get()).toBe(0);
 
     database.close();
+  });
+
+  it("upgrades the previous schema by appending only the sandbox journal migration", async () => {
+    const { databasePath, snapshotPath } = await temporaryDatabase();
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      const migrations = await loadBundledMigrations();
+      applyMigrations(database, migrations.slice(0, 26));
+      database.prepare("INSERT INTO owners (id, revision) VALUES ('preserved-owner', 7)").run();
+      const before = readMigrationLedger(database);
+      const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+      expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+        appliedSequences: [27],
+        currentSequence: 27,
+      });
+      expect(readMigrationLedger(database).slice(0, 26)).toEqual(before);
+      expect(
+        database.prepare("SELECT revision FROM owners WHERE id = 'preserved-owner'").pluck().get(),
+      ).toBe(7);
+      expect(database.prepare("SELECT count(*) FROM sandbox_jobs").pluck().get()).toBe(0);
+      expect(database.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      database.close();
+    }
   });
 
   it("is idempotent after the schema is current", async () => {

@@ -154,7 +154,7 @@ sequenceDiagram
 
 ### 3. 一个应用入口，一个宿主执行端口
 
-在现有 `RuntimeToolPort`、动作授权、Capability 与 Worker 流程上统一调用，不在旁边建立第二套工具注册、审批或结果仓库。目标新增的 `SandboxExecutionPort` 是产品内部宿主执行端口，`packages/execution-contracts/src/sandbox-execution-v1.ts` 已定义严格的产品作业计划、身份、回执及观察校验；`packages/application/src/ports/sandbox-execution.ts` 已定义 prepare/start/observe/cancel/reconcile 端口。当前没有 SRT 实现或作业持久化适配。下表中未对应导出的概念仍属后续设计，不表示所有名称都已成为 API。
+在现有 `RuntimeToolPort`、动作授权、Capability 与 Worker 流程上统一调用，不在旁边建立第二套工具注册、审批或结果仓库。目标新增的 `SandboxExecutionPort` 是产品内部宿主执行端口，`packages/execution-contracts/src/sandbox-execution-v1.ts` 已定义严格的产品作业计划、身份、回执及观察校验；`packages/application/src/ports/sandbox-execution.ts` 已定义 prepare/start/observe/cancel/reconcile 端口。当前已有候选 SRT 策略编译及 SQLite 作业观察适配，但没有正式 Worker/SRT 执行接线。下表中未对应导出的概念仍属后续设计，不表示所有名称都已成为 API。
 
 | 合同 | 核心内容 |
 |---|---|
@@ -171,13 +171,13 @@ sequenceDiagram
 
 ### 已实现的合同与按次绑定基础
 
-`SandboxExecutionPlan` 从既有 `FrozenCapabilityInvocationReceipt`、`RuntimeRequest` 和已接纳的 `RuntimeToolInvocation` 投影。`createSandboxExecutionPlan()` 检查 Owner/Agent/Run、Thread/model、租约版本和 authority fence；复用现有 `runtime-tool:sha256([runId, toolCallId])` 标识核对 receipt 与 inputRef，拒绝跨调用替换；取 Run 原期限、Handle 有效期与调用期限的最小值，资源上限不能扩大。摘要实现由可信平台提供。该函数不签发权限，不用 TypeScript 对象代替 Worker 对当前权限与受保护输入的重新核验。
+`SandboxExecutionPlan` 从既有 `FrozenCapabilityInvocationReceipt`、`RuntimeRequest` 和已接纳的 `RuntimeToolInvocation` 投影。`createSandboxExecutionPlan()` 检查 Owner/Agent/Run、Thread/model、租约版本和 authority fence；复用现有 `runtime-tool:sha256([runId, toolCallId])` 标识核对 receipt 与 inputRef，拒绝跨调用替换；取 Run 原期限、Handle 有效期与调用期限的最小值，资源上限不能扩大。摘要实现由可信平台提供；`semanticFingerprint` 保留既有持久凭证的 `sha256:` 前缀。该函数不签发权限，不用 TypeScript 对象代替 Worker 对当前权限与受保护输入的重新核验。
 
 接纳后的 `toolCallId` 可以是现有文件工作流产生的 inspect/read 子调用 ID；它与原始 Pi 工具调用的父子关系继续由工作流及受保护 scope 保存。SRT 作业不得自行修改父子关系，也不能把一个子调用的 Handle 用于另一个阶段。Worker 的 job/attempt 与 Capability invocation 分开：同一次准入不能因为换 attemptId 再消费一次或自动启动第二次。
 
 Pi `createGovernedPiCodingTools()` 新增互斥的 `operationsForCall` 绑定方式：每次 `execute` 从 Pi 实参取得 toolCallId，在可信闭包内获取本次 Operations；不把模型参数传作身份或授权，不使用全局可变当前调用。保留已有 `operations` 方式供已按单次 Worker 调用构造的适配和工具定义复用；多调用生产工具应使用按次绑定。异步绑定前后检查取消。模型 schema 和工具执行仍由固定 Pi 工厂提供；复合 edit/write 的多次 I/O 共用本次绑定。正式 runner/生产工具的迁移在后续阶段完成。
 
-作业观察校验只约束现有持久账本将要保存的事实，不建立新 Agent 状态机。它拒绝身份/策略更换、序号重放、完成后再次启动及未知副作用自动重放；只有确认清理且副作用可核实的结果才能进入 completed/failed。隔离槽位可以进入 reconciling 后继续核查，不能直接恢复执行。重复读取已有同一回执是读操作，不应伪装成新 sequence。恢复、取消、费用与模型调用次数仍归 Run/Handle/现有模型账本管理；资源天花板由当前 Capability 回执投影。运行过程追加 job/attempt 回执的 SQLite CAS、权限同事务复核和真实清理证明属于下一阶段实施，当前合同测试不能替代它们。
+作业观察校验只约束现有持久账本将要保存的事实，不建立新 Agent 状态机。它拒绝身份/策略更换、序号重放、完成后再次启动及未知副作用自动重放；只有确认清理且副作用可核实的结果才能进入 completed/failed。隔离槽位可以进入 reconciling 后继续核查，不能直接恢复执行。重复读取已有同一回执是读操作，不应伪装成新 sequence。恢复、取消、费用与模型调用次数仍归 Run/Handle/现有模型账本管理；资源天花板由当前 Capability 回执投影。SQLite 作业账本已通过追加迁移实现序号 CAS、启动前权限同事务复核、观察重放及待核查分页；终态输出必须对应已持久化的 invocation 结果。它不签发主机资格，也不替代真实清理证明。正式监督器必须另外核实新准入：旧/重放凭证没有作业记录时属于执行未知，不得直接准备并启动。Worker 通信、Job Host 与真实恢复接线仍待实现。
 
 ### 4. 作业生命周期与 SRT SDK 接入
 

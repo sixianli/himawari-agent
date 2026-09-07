@@ -28,6 +28,20 @@ function entry(
 
 export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
+    "sandbox_jobs",
+    "SandboxJobJournalPort",
+    "single invocation attempt with current observation",
+    "payload_reference",
+    "cascade with invocation receipt and Run deletion",
+  ),
+  entry(
+    "sandbox_job_observations",
+    "SandboxJobJournalPort",
+    "immutable sequence of execution observations",
+    "payload_reference",
+    "cascade with sandbox job deletion",
+  ),
+  entry(
     "schema_migration_ledger",
     "PersistenceLifecyclePort",
     "immutable ledger",

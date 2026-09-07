@@ -14,7 +14,7 @@ date: "2026-08-25"
 
 Git 写能力的目标入口沿用 Pi `bash` 与现有 Operations，经通用授权/持久执行进入 Worker 的受控 Git 适配，再由标准 Git 客户端推送。专用 push 是内部产品动作，不默认新增模型工具；凭据端口不绑定 GitHub App。已通过本地 Git HTTP 兼容性实验，尚未实现正式 SRT/Worker 推送、真实凭据与 GitHub 验收。实验范围及限制见上述 SRT Spec 的“Pi/Git 本地兼容性证据与边界”；ADR 0024 的仓库、分支、OID 及专用凭据边界继续有效。
 
-统一执行基础已有 `sandbox-execution.v1` 产品合同、Capability 回执到执行计划的校验投影，以及 Pi 每次调用独立创建 Operations 的绑定入口。SRT SDK 0.0.75 已固定在独立 `runtime-sandbox` 包并纳入 Node 打包，候选策略编译与固定假数据的 Mac 文件/网络拒绝探针已加入；尚无作业数据库迁移或正式 Job Host 启动器，现有 Worker 执行路径仍待迁移。实施与验收安排见 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md]。
+统一执行基础已有 `sandbox-execution.v1` 产品合同、Capability 回执到执行计划的校验投影，以及 Pi 每次调用独立创建 Operations 的绑定入口。SRT SDK 0.0.75 已固定在独立 `runtime-sandbox` 包并纳入 Node 打包，候选策略编译与固定假数据的 Mac 文件/网络拒绝探针已加入；SQLite schema 27 已增加受 invocation 约束的作业观察账本与启动序号 CAS，尚无正式 Job Host 启动器，现有 Worker 执行路径仍待迁移。实施与验收安排见 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md]。
 
 ## 架构总览图
 

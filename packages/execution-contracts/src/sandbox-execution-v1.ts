@@ -10,7 +10,7 @@ import {
   object,
   type Schema,
   timestamp,
-} from "./validation.js";
+} from "./validation.ts";
 
 /** Product job contract; deliberately contains no SRT SDK types or raw credentials. */
 export const SANDBOX_EXECUTION_SCHEMA_VERSION = "sandbox-execution.v1" as const;
@@ -44,7 +44,17 @@ const planShape = object({
   operation: machineString,
   capabilityRef: machineString,
   capabilityVersion: machineString,
-  semanticFingerprint: digest,
+  semanticFingerprint: {
+    parse(value: unknown, path = "$"): string {
+      if (typeof value !== "string" || !value.startsWith("sha256:"))
+        throw new ContractValidationError(
+          path,
+          "expected a prefixed SHA-256 invocation fingerprint",
+        );
+      digest.parse(value.slice(7), path);
+      return value;
+    },
+  },
   authorizationRef: machineString,
   modelRef: machineString,
   executionLease: object({

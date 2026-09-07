@@ -7,17 +7,20 @@ import type {
   CapabilityInvocationAuthority,
   CapabilityRegistryRecord,
   ExecutionTransportPort,
+  FrozenCapabilityInvocationReceipt,
   GovernedCapabilityExecutionHandle,
   GrantRecord,
   PayloadRecord,
+  SandboxExecutionPlan,
+  SandboxJobReceipt,
 } from "@himawari-agent/application";
 import {
   ApplicationPortError,
   CapabilityHandleService,
   type CapabilityManifest,
-  type RuntimeToolInvocation,
   PORT_ERROR_CODES,
   type PortErrorCode,
+  type RuntimeToolInvocation,
   WorkerDelegationService,
 } from "@himawari-agent/application";
 import {
@@ -1981,6 +1984,326 @@ describe("SQLite capability invocation authority", () => {
       database?.close();
       await resource.repository.close();
       await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+});
+
+async function openSandboxJournal() {
+  const resource = await openRepository();
+  await seed(resource.repository);
+  const { database, operations } = await openOperations(resource);
+  const consumed = operations.execute("capabilityInvocation.consume", {
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    input: invocation(),
+  }) as { receipt: FrozenCapabilityInvocationReceipt };
+  database
+    .prepare(`INSERT INTO run_execution_leases (owner_id, agent_id, run_id, revision, authority_lease_id,
+    deployment_id, authority_epoch, fencing_token, consumer_id, execution_lease_id, claimed_at, initial_expires_at, expires_at)
+    VALUES (?, ?, ?, 1, ?, ?, 1, 1, 'sandbox-consumer', 'sandbox-lease', ?, ?, ?)`)
+    .run(
+      OWNER_ID,
+      AGENT_ID,
+      RUN_ID,
+      SERVICE_AUTHORITY.lease.leaseId,
+      SERVICE_AUTHORITY.product.deploymentId,
+      T0,
+      T2,
+      T2,
+    );
+  const receipt = consumed.receipt;
+  const plan: SandboxExecutionPlan = {
+    schemaVersion: "sandbox-execution.v1",
+    identity: {
+      jobId: "sandbox-job",
+      attemptId: "sandbox-attempt",
+      receiptRef: receipt.receiptRef,
+      invocationId: receipt.invocationId,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      threadId: "thread-capability-invocation",
+      hostId: "sandbox-host",
+      toolCallId: "sandbox-tool",
+    },
+    handleRef: receipt.handleRef,
+    inputRef: receipt.inputRef,
+    operation: receipt.operation,
+    capabilityRef: receipt.capabilityRef,
+    capabilityVersion: receipt.capabilityVersion,
+    semanticFingerprint: receipt.semanticFingerprint,
+    authorizationRef: receipt.authorizationRef,
+    modelRef: "model-fixture",
+    requestedAt: T1,
+    originalDeadlineAt: T2,
+    effectiveDeadlineAt: T2,
+    resourceCeiling: receipt.resourceCeiling,
+    executionLease: {
+      executionLeaseId: "sandbox-lease",
+      expectedLeaseRevision: 1,
+      authorityLeaseId: SERVICE_AUTHORITY.lease.leaseId,
+      authorityFencingToken: 1,
+      deploymentId: SERVICE_AUTHORITY.product.deploymentId,
+      authorityEpoch: 1,
+      fencingToken: 1,
+      consumerId: "sandbox-consumer",
+    },
+    binding: {
+      scopeRef: "scope-fixture",
+      scopeDigest: "a".repeat(64),
+      profileRef: "profile-fixture",
+      runtimeDigest: "b".repeat(64),
+      runnerDigest: "c".repeat(64),
+      qualificationRef: "qualification-fixture",
+      requiredGuarantees: ["filesystem"],
+    },
+  };
+  const prepared: SandboxJobReceipt = {
+    schemaVersion: "sandbox-execution.v1",
+    identity: plan.identity,
+    sequence: 1,
+    state: "prepared",
+    policyDigest: "d".repeat(64),
+    occurredAt: T1,
+    outcome: "pending",
+    cleanup: "pending",
+    effect: "not_started",
+    outputRef: null,
+    outputDigest: null,
+    reasonCode: null,
+  };
+  const call = (operation: string, input: unknown) =>
+    operations.execute(`capabilityInvocation.sandbox${operation}`, {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      input,
+    });
+  const append = (observation: SandboxJobReceipt, now = T1) =>
+    call("Append", { observation, authority: SERVICE_AUTHORITY, now });
+  const prepare = () =>
+    call("Prepare", { plan, observation: prepared, authority: SERVICE_AUTHORITY, now: T1 });
+  const close = async () => {
+    if (database.open) database.close();
+    await rm(resource.stateRoot, { recursive: true, force: true });
+  };
+  return { resource, database, plan, prepared, call, append, prepare, close };
+}
+
+describe("durable sandbox invocation journal", () => {
+  it("persists a single start intent across reopen and rejects another start", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      expect(fixture.prepare()).toMatchObject({ applied: true });
+      const starting = { ...fixture.prepared, sequence: 2, state: "starting" as const };
+      expect(fixture.append(starting)).toMatchObject({ applied: true });
+      expect(fixture.append(starting)).toMatchObject({ applied: false });
+      expect(() => fixture.append({ ...starting, sequence: 3 })).toThrow("only one start intent");
+      fixture.database.close();
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: fixture.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      try {
+        expect(
+          await reopened.sandboxJobJournal(OWNER_ID, AGENT_ID).read(fixture.plan.identity),
+        ).toMatchObject({ observation: { state: "starting", sequence: 2 } });
+        expect(
+          await reopened
+            .sandboxJobJournal(OWNER_ID, AGENT_ID)
+            .append({ observation: starting, authority: SERVICE_AUTHORITY, now: T1 }),
+        ).toMatchObject({ applied: false });
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it.each(["lease", "handle", "run"])(
+    "rejects start after %s authority changes without appending",
+    async (kind) => {
+      const fixture = await openSandboxJournal();
+      try {
+        fixture.prepare();
+        if (kind === "lease")
+          fixture.database.prepare("UPDATE run_execution_leases SET revision = revision + 1").run();
+        if (kind === "handle")
+          fixture.database
+            .prepare(
+              "UPDATE capability_handles SET record_json = json_set(record_json, '$.revokedAt', ?)",
+            )
+            .run(T1);
+        if (kind === "run") fixture.database.prepare("UPDATE runs SET status = 'cancelled'").run();
+        expect(() =>
+          fixture.append({ ...fixture.prepared, sequence: 2, state: "starting" }),
+        ).toThrow();
+        expect(fixture.call("Read", fixture.plan.identity)).toMatchObject({
+          observation: { sequence: 1 },
+        });
+        expect(
+          fixture.database.prepare("SELECT count(*) AS count FROM sandbox_job_observations").get(),
+        ).toEqual({ count: 1 });
+      } finally {
+        await fixture.close();
+      }
+    },
+  );
+
+  it("records cleanup after deadline while forbidding a new execution", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      fixture.prepare();
+      expect(() =>
+        fixture.append({ ...fixture.prepared, sequence: 2, state: "starting", occurredAt: T2 }, T2),
+      ).toThrow();
+      const stopping = {
+        ...fixture.prepared,
+        sequence: 2,
+        state: "stopping" as const,
+        occurredAt: T2,
+      };
+      expect(fixture.append(stopping, T2)).toMatchObject({ applied: true });
+      const unknown = {
+        ...stopping,
+        sequence: 3,
+        state: "reconciling" as const,
+        effect: "unknown" as const,
+        cleanup: "unknown" as const,
+        outcome: "unknown" as const,
+        reasonCode: "worker_lost",
+      };
+      expect(fixture.append(unknown, T2)).toMatchObject({ applied: true });
+      expect(() => fixture.append({ ...unknown, sequence: 4, state: "starting" }, T2)).toThrow();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("removes job metadata and history with its owning Run", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      fixture.prepare();
+      fixture.append({ ...fixture.prepared, sequence: 2, state: "starting" });
+      fixture.database.prepare("DELETE FROM runs WHERE id = ?").run(RUN_ID);
+      expect(fixture.database.prepare("SELECT count(*) AS count FROM sandbox_jobs").get()).toEqual({
+        count: 0,
+      });
+      expect(
+        fixture.database.prepare("SELECT count(*) AS count FROM sandbox_job_observations").get(),
+      ).toEqual({ count: 0 });
+      expect(fixture.database.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("does not prepare an invocation that already has a legacy durable result", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      operationsForDatabase(fixture.database).execute("capabilityInvocationResult.observeOutput", {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        input: outputObservation(),
+      });
+      expect(() => fixture.prepare()).toThrow("already has a durable output");
+      expect(fixture.call("Read", fixture.plan.identity)).toBeUndefined();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("rolls back the latest sequence if observation persistence fails", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      fixture.prepare();
+      fixture.database.exec(
+        "CREATE TEMP TRIGGER fail_sandbox_observation BEFORE INSERT ON sandbox_job_observations BEGIN SELECT RAISE(ABORT, 'synthetic journal failure'); END;",
+      );
+      expect(() => fixture.append({ ...fixture.prepared, sequence: 2, state: "starting" })).toThrow(
+        "synthetic journal failure",
+      );
+      expect(fixture.call("Read", fixture.plan.identity)).toMatchObject({
+        observation: { sequence: 1, state: "prepared" },
+      });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("requires protected output persistence before completion and forbids restarting a completed job", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      fixture.prepare();
+      fixture.append({ ...fixture.prepared, sequence: 2, state: "starting" });
+      fixture.append({ ...fixture.prepared, sequence: 3, state: "running" });
+      fixture.append({ ...fixture.prepared, sequence: 4, state: "stopping" });
+      const completed: SandboxJobReceipt = {
+        ...fixture.prepared,
+        sequence: 5,
+        state: "completed",
+        outcome: "succeeded",
+        effect: "confirmed",
+        cleanup: "confirmed",
+        outputRef: "payload-sandbox-output",
+        outputDigest: "f".repeat(64),
+      };
+      expect(() => fixture.append(completed)).toThrow("not durably bound");
+      operationsForDatabase(fixture.database).execute("capabilityInvocationResult.observeOutput", {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        input: outputObservation({
+          payload: outputPayload(completed.outputRef as string, `sha256:${completed.outputDigest}`),
+        }),
+      });
+      expect(fixture.call("ListPending", { afterJobId: null, limit: 10 })).toHaveLength(1);
+      expect(fixture.append(completed)).toMatchObject({ applied: true });
+      expect(fixture.call("ListPending", { afterJobId: null, limit: 10 })).toEqual([]);
+      expect(() => fixture.append({ ...completed, sequence: 6, state: "starting" })).toThrow();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("rejects plan replacement, a second attempt, policy replacement and foreign reads", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      fixture.prepare();
+      expect(() =>
+        fixture.call("Prepare", {
+          plan: { ...fixture.plan, inputRef: "replaced" },
+          observation: fixture.prepared,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+        }),
+      ).toThrow();
+      const identity = {
+        ...fixture.plan.identity,
+        jobId: "another-job",
+        attemptId: "another-attempt",
+      };
+      expect(() =>
+        fixture.call("Prepare", {
+          plan: { ...fixture.plan, identity },
+          observation: { ...fixture.prepared, identity },
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+        }),
+      ).toThrow("already owns");
+      expect(() =>
+        fixture.append({
+          ...fixture.prepared,
+          sequence: 2,
+          state: "starting",
+          policyDigest: "e".repeat(64),
+        }),
+      ).toThrow();
+      expect(() =>
+        fixture.call("Read", { ...fixture.plan.identity, ownerId: OTHER_OWNER_ID }),
+      ).toThrow();
+    } finally {
+      await fixture.close();
     }
   });
 });

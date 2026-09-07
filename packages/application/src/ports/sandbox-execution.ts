@@ -3,6 +3,36 @@ import type {
   SandboxJobIdentity,
   SandboxJobReceipt,
 } from "@himawari-agent/execution-contracts";
+import type { CapabilityInvocationAuthority } from "./capability-invocations.js";
+
+export interface SandboxJobRecord {
+  readonly plan: SandboxExecutionPlan;
+  readonly observation: SandboxJobReceipt;
+}
+
+/** The journal records facts under the existing invocation authority. It does not
+ * certify the protected scope or host qualification and is not permission to spawn.
+ * The supervisor must also prove fresh admission: an old/replayed receipt without
+ * a journal is an unknown execution, never a reason to create and launch a new job.
+ * Only a newly applied starting transition may be used by the qualified supervisor. */
+export interface SandboxJobJournalPort {
+  prepare(input: {
+    readonly plan: SandboxExecutionPlan;
+    readonly observation: SandboxJobReceipt;
+    readonly authority: CapabilityInvocationAuthority;
+    readonly now: string;
+  }): Promise<{ readonly record: SandboxJobRecord; readonly applied: boolean }>;
+  append(input: {
+    readonly observation: SandboxJobReceipt;
+    readonly authority: CapabilityInvocationAuthority;
+    readonly now: string;
+  }): Promise<{ readonly record: SandboxJobRecord; readonly applied: boolean }>;
+  read(identity: SandboxJobIdentity): Promise<SandboxJobRecord | undefined>;
+  listPending(input: {
+    readonly afterJobId: string | null;
+    readonly limit: number;
+  }): Promise<readonly SandboxJobRecord[]>;
+}
 
 export type {
   SandboxExecutionPlan,

@@ -1,18 +1,18 @@
 import {
-  ContractValidationError,
-  type InferSchema,
-  type Schema,
   array,
   booleanValue,
+  ContractValidationError,
   enumeration,
+  type InferSchema,
   integer,
   literal,
   machineString,
   nullable,
   object,
   parseJson,
+  type Schema,
   timestamp,
-} from "./validation.js";
+} from "./validation.ts";
 
 export const EXECUTION_V2_SCHEMA_VERSION = "execution.v2" as const;
 export const EXECUTION_V2_MESSAGE_TYPES = [
