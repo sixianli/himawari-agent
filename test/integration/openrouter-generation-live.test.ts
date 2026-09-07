@@ -14,6 +14,7 @@ import { MacOsKeychainProviderSecretSource } from "@himawari-agent/platform-node
 import { createReferenceAdapterSet, ManualClock } from "@himawari-agent/testing";
 import { describe, expect, it } from "vitest";
 import { createProductionModelCompositionFromConfiguration } from "../../apps/agent-service/src/production-model-composition.js";
+import { qualifyFileSummary } from "./fixtures/file-summary-live-probe.js";
 import {
   createOpenRouterLiveConfiguration,
   OPENROUTER_FALLBACK_MODEL,
@@ -23,6 +24,7 @@ import {
 } from "./fixtures/openrouter-live-configuration.js";
 
 interface LiveEnvironment {
+  readonly HIMAWARI_FILE_SUMMARY_LIVE?: string;
   readonly HIMAWARI_LIVE_GENERATION_PRINT_EVIDENCE?: string;
   readonly HIMAWARI_LIVE_GENERATION_SMOKE?: string;
 }
@@ -296,3 +298,9 @@ describe.skipIf(!LIVE_ENABLED)("OpenRouter generation live qualification", () =>
     }
   }, 300_000);
 });
+
+it.skipIf(environment.HIMAWARI_FILE_SUMMARY_LIVE !== "1")(
+  "qualifies real OpenRouter tool exchange and Mem0 embeddings",
+  qualifyFileSummary,
+  260_000,
+);

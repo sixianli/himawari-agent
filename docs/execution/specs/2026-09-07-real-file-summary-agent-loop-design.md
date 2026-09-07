@@ -12,7 +12,7 @@ date: "2026-09-07"
 
 Owner 从 ego Lite 提交文件总结请求，由 OpenRouter 的真实 DeepSeek 模型选择工具，经产品授权后由 Mac Worker 读取文件；Pi 将工具结果加入模型上下文，再请求模型生成中文总结，最终结果持久保存并由浏览器回读。
 
-本次 P0-01 至 P0-04 的交付是验收样本、接入设计、模型与 Memory 配置及本地配置验证。完整流程仍需后续工具授权、Worker 文件适配和浏览器接线；这些行为不能由本次配置检查证明。
+P0-01 至 P0-04 的交付是验收样本、接入设计、模型与 Memory 配置及本地配置验证。P0-05 已进一步完成真实模型工具协议与 embedding 兼容性验证。完整流程仍需后续工具授权、Worker 文件适配和浏览器接线；这些行为不能由配置检查或本次协议测试证明。
 
 ## 来源上下文
 
@@ -23,7 +23,7 @@ Owner 从 ego Lite 提交文件总结请求，由 OpenRouter 的真实 DeepSeek 
 
 ## 范围
 
-包含 P0-01 验收合同、P0-02 Pi 复用设计、P0-03 OpenRouter 配置准备、P0-04 embedding 配置依赖准备。P0-05 的真实兼容性调用及其后的产品实施不在本次范围内。
+包含 P0-01 验收合同、P0-02 Pi 复用设计、P0-03 OpenRouter 配置准备、P0-04 embedding 配置依赖准备，以及 Owner 后续要求继续完成的 P0-05 真实兼容性调用。P0-06 及其后的产品实施不在本次范围内。
 
 配置和验收输入位于 `test/integration/fixtures/file-summary/`，由实际产品解析器和组合代码验证。配置是独立验收候选，不会自动安装或替换现有服务。`publicMode: false` 只适用于当前准备阶段；最终浏览器验收必须补齐正式认证 HTTP 配置，不能以本配置的非公开模式代替认证。
 
@@ -107,4 +107,31 @@ Mem0 adapter 将模型映射到 `https://openrouter.ai/api/v1`、`qwen/qwen3-emb
 
 本次本地检查覆盖：严格产品配置解析、真实 Pi 模型离线注册且不解析凭据、生成与 embedding 共享凭据引用及预算容量、向量维数不一致拒绝、样本独特事实没有提前放入系统指令，以及生产 Mem0 配置转换。
 
-后续 P0-05 验证真实账户鉴权、工具参数兼容性、实际输出限制、provider 路由与 4096 维 embedding；后续完整验收必须满足上述浏览器、授权、Mac Worker、两轮模型、持久回读全部条件。当前架构图中的缺失连线保持不变，配置准备不代表这些功能已完成。
+P0-05 验证真实账户鉴权、工具参数兼容性、实际输出限制、provider 路由与 4096 维 embedding；后续完整验收必须满足上述浏览器、授权、Mac Worker、两轮模型、持久回读全部条件。当前架构图中的缺失连线保持不变，协议验证不代表这些产品功能已完成。
+
+### P0-05：2026-09-07 真实兼容性结果
+
+Owner 在 P0-01 至 P0-04 交付后明确要求继续完成 P0-05。本次沿用已列明的 Keychain 条目、公开合成文件、指定模型路由和最多 1 美元范围，没有修改账户权限或凭据。结果保存在 `test/integration/qualification/evidence/p005-file-summary-live.json`，包含候选配置摘要、测试源文件摘要、成功结果和此前失败记录。
+
+最后一轮完整测试通过，发出 5 次真实推理请求：
+
+| 验证对象 | 实际结果 | 本轮供应商返回的费用，美元 |
+| --- | --- | --- |
+| DeepSeek 工具请求 | DeepInfra 返回 `read_public_fixture`，参数为指定公开文件，终态为 `toolUse` | 0.00004530 |
+| DeepSeek 工具结果与总结 | 第二次请求包含相同 tool call ID 和完整工具正文，终态为 `stop`；总结正确保留代号、37/25/12、待办顺序和两条限制 | 0.00007038 |
+| GLM 固定候选 | Z.AI 返回预期文本；单独验证候选可调用，不代表 ModelRouter 自动切换已验收 | 0.00001060 |
+| Qwen embedding 写入 | 返回 4096 个有限数值，存入 Mem0 的独立测试数据库 | 0.00000134 |
+| Qwen embedding 搜索 | 返回 4096 个有限数值，并命中刚写入的公开样本 | 0.00000005 |
+
+生成请求均实际携带 2,048 token 输出上限和候选中限定的 provider 参数。Pi 的 `ModelRuntime.completeSimple` 负责 OpenRouter 请求、流解析、工具消息序列化与 usage；测试只进行两步固定协议交换，不新增产品 Agent loop。文件由测试夹具在模型返回工具调用之后读取，没有提前放入首轮提示词；本次不经过生产 Mac Worker、正式授权服务、持久 Run 或浏览器。
+
+本轮成功测试费用为 0.00012767 美元。包括此前已有计费结果的请求，本次全部已返回费用合计为 0.00017004 美元。共记录 10 次请求尝试，其中 8 次取得 HTTP 200；另有一次 429 和一次本地传输失败未取得计费记录。保留所有失败预留后的累计预算占用为 335,572 微美元，未超过 1 美元。预留不等于实际扣费。
+
+此前失败也保留在证据中：
+
+- 首次 DeepSeek 工具调用成功，但立即查询 generation 元数据返回 404；稍后对同一个 ID 查询成功。测试改为完成推理后读取元数据，仅对元数据的 404 做有限重试，不因此重发推理请求。元数据接口依据 [OpenRouter 官方接口说明](https://openrouter.ai/docs/api/api-reference/generations/get-generation)。
+- 第二次生成请求收到 HTTP 429，未进入工具执行；没有放宽 provider 或数据条件。
+- 首次 embedding 测试夹具混用了 fetch 实现，触发本地 `content-length` 校验错误；修正为保留 Mem0 OpenAI v4 自带的 Node fetch，并在外层检查请求和预算。
+- 随后的 embedding 已返回有效向量和检索结果，但旧断言错误地要求固定 3 次调用。已核对 Mem0 `3.1.7` 的实体检索分支：额外调用取决于查询实体。本次中文查询用 2 次；验收改为验证写入、搜索、维数和命中，同时保留最多 3 次上限。
+
+真实入口复用已有的 `qualification-generation-live` 项目，新增用例通过 `HIMAWARI_FILE_SUMMARY_LIVE=1` 显式启用；普通 CI 默认不调用真实服务。测试夹具支持 `HIMAWARI_FILE_SUMMARY_PHASE` 为 `all`、`generation` 或 `embedding`；分阶段成功只证明该阶段。`HIMAWARI_FILE_SUMMARY_PRIOR_RESERVATION_MICROS` 用于把本次此前尝试的预留带入下一次测试，不能清零后继续消费已耗用的授权预算。证据路径通过 `HIMAWARI_FILE_SUMMARY_EVIDENCE_PATH` 显式传入。新的付费执行仍须遵守对应具体授权范围，不能将历史通过结果当成持续授权。
