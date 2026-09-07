@@ -8,6 +8,14 @@ date: "2026-08-25"
 ---
 # Himawari Agent Architecture v0.1
 
+## 已采纳、待实施的执行架构变更
+
+2026-09-07，Owner 确认采用 SRT 统一宿主执行，首批包含文件和编码工具、受限 Shell、MCP、授权联网、Web Search 与 GitHub 已有 commit 推送，并默认直接操作已授权原项目。目标设计见 [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]，已采纳决定见 [SOURCE: docs/adr/0024-srt-unified-execution.md]。ADR 0024 替代原 Mac helper/container 分层决定，保留 Pi 工具与 Agent loop，以及 Himawari 的权限和持久状态；尚未实现 SRT 或取得平台资格。下文及既有图表继续描述现有系统，不代表新目标已经落地。
+
+Git 写能力的目标入口沿用 Pi `bash` 与现有 Operations，经通用授权/持久执行进入 Worker 的受控 Git 适配，再由标准 Git 客户端推送。专用 push 是内部产品动作，不默认新增模型工具；凭据端口不绑定 GitHub App。已通过本地 Git HTTP 兼容性实验，尚未实现正式 SRT/Worker 推送、真实凭据与 GitHub 验收。实验范围及限制见上述 SRT Spec 的“Pi/Git 本地兼容性证据与边界”；ADR 0024 的仓库、分支、OID 及专用凭据边界继续有效。
+
+统一执行基础已有 `sandbox-execution.v1` 产品合同、Capability 回执到执行计划的校验投影，以及 Pi 每次调用独立创建 Operations 的绑定入口。它们不包含 SRT SDK、作业数据库迁移或真实启动器；现有 Worker 执行路径仍待迁移。实施与验收安排见 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md]。
+
 ## 架构总览图
 
 下图记录 2026-09-07 的主要组件和接入状态，箭头表示主要调用方向，省略响应回传和部分共享依赖。绿色主线表示消息执行路径；紫色虚线表示尚未接通的路径；红色表示已授权执行通道。

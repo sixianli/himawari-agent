@@ -3,8 +3,8 @@
   "generatedFrom": "owner-reviewed S0 coverage matrix and active Plan acceptance tables",
   "prd": {
     "path": "docs/prd-v0.2.md",
-    "sha256": "62339359cb137c636ca1c1913e8bf7a120b9f1685940718361f040859430140f",
-    "markdownListClauseCount": 256
+    "sha256": "77bf923a19d79a5f22ac361aebc286f82a1e28f32c455756407d788cdef11346",
+    "markdownListClauseCount": 259
   },
   "coverageSource": "docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md",
   "requirements": [

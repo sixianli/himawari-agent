@@ -38,14 +38,14 @@ date: "2026-08-26"
 - 重要文件覆盖前的差异或恢复点，以及磁盘不足时的安全退化。
 - 代码工作区登记、脏状态盘点、用户改动保护、任务改动归属和冲突处理。
 - 已知命令、联网、安装依赖、系统级操作和不可信脚本的分类与授权。
-- 本地 Git commit 的冻结预览、逐次批准、执行和对账；明确禁止 Git push。
+- 本地 Git commit 的冻结预览、逐次批准、执行和对账。2026-09-07 已采纳的 SRT 扩展加入独立授权的已有 commit push；执行设计见 [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]，不将 commit 授权解释为 push 授权。
 - Mac 与 Hermes 的一致产品语义和迁移后的重新授权。
 
 ### 本 Spec 不包含
 
 - 对整个 home、根目录、所有挂载点或未来路径的隐式通配授权。
 - 任意远程 shell、主机管理、生产部署、系统升级或通用不可信代码执行平台。
-- GitHub 写操作、Git push、Pull Request、merge、release 或远端仓库管理。
+- 未授权 GitHub 写操作、自动 push、Pull Request、merge、release 或远端仓库管理。明确授权的已有 commit push 按 SRT 扩展设计实施。
 - 自动清理 Owner 文件、自动丢弃工作区改动或把本地 commit 视为可以自动执行的低风险操作。
 - 选择具体 sandbox、容器或 Trash 库；实现必须分别通过 Mac 与 Hermes conformance。
 
@@ -170,7 +170,7 @@ commit 流程只暂存当前 task change set 中 Owner 已审阅的路径/hunks�
 
 - 确认人：Owner
 - 确认日期：2026-08-26
-- 确认范围：主机目录 Grant、Trash/覆盖、工作区改动归属、CommandProfile、逐次 Commit Gate 和禁止 push 边界。
+- 确认范围：主机目录 Grant、Trash/覆盖、工作区改动归属、CommandProfile、逐次 Commit Gate 和 push 独立授权边界。
 - 授权边界：允许从本 Spec 派生 Implementation Plan；本次确认不授权创建 Plan、修改文件或代码、运行命令、安装依赖、创建 commit 或执行 push。
 
 

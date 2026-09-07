@@ -94,7 +94,7 @@ date: "2026-08-26"
 - active-active、多主写入、共享网络 SQLite、在线状态复制、自动跨机器 failover 和零停机迁移。
 - 多用户注册、团队授权、计费和面向公众的自助 API。
 - 原生应用、站外 IM 投递、语音客户端、移动 push 和离线接纳浏览器命令。
-- GitHub 写操作或通用仓库编码自动化。
+- 在线监控凭据执行 GitHub 写操作。2026-09-07 确认的已有 commit push 属于独立授权的 SRT 扩展，见 [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]；不扩张本 Spec 的只读监控权限。
 - v0.2 本地生成模型；只保留未来适配边界。
 - Memory backend federation、产品自建向量数据库、任意不可信包执行和公共能力市场。
 - 主机与其存储同时损毁后的异机灾难恢复、跨设备备份、RPO 和 RTO 保证。

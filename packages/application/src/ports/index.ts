@@ -33,6 +33,7 @@ export * from "./run-dispatch.js";
 export * from "./run-execution-source.js";
 export * from "./run-lifecycle.js";
 export * from "./run-payload-artifacts.js";
+export * from "./sandbox-execution.js";
 export * from "./system.js";
 export * from "./threads.js";
 export * from "./web.js";

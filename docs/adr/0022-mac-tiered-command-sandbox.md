@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
-supersedes: docs/adr/0021-platform-capability-runtime-isolation.md
-superseded_by: ""
+decision_status: superseded
+supersedes: ""
+superseded_by: docs/adr/0024-srt-unified-execution.md
 date: "2026-08-29"
 ---
 
@@ -50,6 +50,8 @@ Apple 的正式产品边界是签名并带 entitlement 的 App Sandbox；Seatbel
 - Implementation: `CommandProfile` 已冻结 `sandboxTier`，`CommandProfileService` 已机械限制 native 关闭集合，`MacCommandSandboxRouter` 已实现无回退路由。签名 App Sandbox/XPC helper、官方签名安装成功的 Apple container 和同一 revision 的 live probe 仍是 Task 2 的未完成资格项。
 
 ## Links
+
+- 历史前序决定：[SOURCE: docs/adr/0021-platform-capability-runtime-isolation.md]；本文曾替代该决定。当前有效替代决定：[SOURCE: docs/adr/0024-srt-unified-execution.md]。
 
 - [SOURCE: docs/execution/plans/2026-08-26-host-files-code-workspaces-plan.md#task-2完成-machermes-文件与执行-qualification]
 - [SOURCE: docs/architecture-v0.1.md#capability-registry-and-execution-boundary]

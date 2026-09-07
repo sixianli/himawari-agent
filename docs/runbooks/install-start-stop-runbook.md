@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:8674ae12eb168c46088782ca99907f835329de6c735d8841c2b619f8ad6a2631"
+contract_sha256: "sha256:dbfb8fefe8c5f7371d1d4fd2b9573a86577b5d6282a70390410b08d5759ce6a3"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -69,6 +69,8 @@ date: "2026-08-27"
 -->
 
 ## Scope
+
+2026-09-07 的 SRT 变更目前只交付产品作业合同、计划投影和 Pi 调用绑定基础，未增加 SRT 运行依赖、安装资格或数据库迁移。本文的实际安装、备份与权威迁移流程不因目标架构获采纳而改变；不能把恢复的旧 Capability 记录当成新 SRT profile 的主机资格。
 
 本 Runbook 只覆盖当前仓库已经验证的本地 Node runtime：从锁定依赖构建可重定位 artifact，安装到明确的绝对前缀，使用受保护的 Execution Worker UDS 启动 Agent Service，执行只读 doctor/db status，并以有界信号完成正常停止或故障重启。它不负责安装 systemd/launchd unit、不修改公网入口、不切换 authority、不配置真实 provider、不部署到 Hermes，也不替代 authority transfer Runbook。
 

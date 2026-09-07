@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: docs/adr/0022-mac-tiered-command-sandbox.md
+superseded_by: docs/adr/0024-srt-unified-execution.md
 date: "2026-08-28"
 ---
 
