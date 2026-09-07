@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:dc405b6b3ceb2dc4dae5155a7727a607fc8d9ccd3deb50ed91fd2e2e1e98e5d9"
+contract_sha256: "sha256:f4f1ad13cf9e54bca5798298ad9791f7cbd1d67b07fe194a41b96949bbcfee21"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -38,7 +38,7 @@ date: "2026-08-27"
 
 ## Scope
 
-2026-09-07 的 SRT 变更目前只交付产品作业合同、计划投影和 Pi 调用绑定基础，未增加 SRT 运行依赖、安装资格或数据库迁移。本文的实际安装、备份与权威迁移流程不因目标架构获采纳而改变；不能把恢复的旧 Capability 记录当成新 SRT profile 的主机资格。
+SRT 变更已包含产品作业合同、计划投影、Pi 调用绑定、固定版本运行依赖及候选策略编译。Node 打包包含 `runtime-sandbox` 和 SRT 0.0.75，但正式 Worker 尚未切换，未取得 SRT 主机安装资格，也没有新增作业数据库迁移。固定假数据策略探针通过不代表正式 Job Host、资源硬上限或崩溃恢复可用。本文的实际安装、备份与权威迁移流程不因目标架构获采纳而改变；不能把恢复的旧 Capability 记录当成新 SRT profile 的主机资格。
 
 本 Runbook 只管理当前活动部署在同一主机、同一存储边界内的加密恢复点：创建、独立验证，以及把一个已验证恢复点恢复到它原属的明确 state root。恢复点不改变 authority epoch，不创建第二个可启动权威，也不是异地主机损毁后的灾难恢复介质。
 

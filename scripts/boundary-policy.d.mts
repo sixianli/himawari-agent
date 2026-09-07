@@ -3,6 +3,7 @@ export const nodeImportAllowedPackages: ReadonlySet<string>;
 export const browserOnlyPackages: ReadonlySet<string>;
 export const browserExternalPackages: ReadonlySet<string>;
 export const piDependencyOwner: string;
+export const srtDependencyOwner: string;
 
 export function packageSpecifier(specifier: string): string;
 export function isExactExternalVersion(version: string): boolean;

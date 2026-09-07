@@ -162,6 +162,7 @@ describe("same-artifact verification", () => {
       "packages/persistence-sqlite",
       "packages/platform-node",
       "packages/runtime-pi",
+      "packages/runtime-sandbox",
     ];
     await writeFile(
       path.join(temporary, "package.json"),

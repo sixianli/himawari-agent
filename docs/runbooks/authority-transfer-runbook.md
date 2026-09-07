@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e774773242bd82ff61efcad69a2eaf55826e61505068235d5a24226eab7cc047"
+contract_sha256: "sha256:bfd53a48430863cf878eab8ce9871611ea5e680825545857982a35247f86ebb2"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -46,7 +46,7 @@ date: "2026-08-27"
 
 ## Scope
 
-2026-09-07 的 SRT 变更目前只交付产品作业合同、计划投影和 Pi 调用绑定基础，未增加 SRT 运行依赖、安装资格或数据库迁移。本文的实际安装、备份与权威迁移流程不因目标架构获采纳而改变；不能把恢复的旧 Capability 记录当成新 SRT profile 的主机资格。
+SRT 变更已包含产品作业合同、计划投影、Pi 调用绑定、固定版本运行依赖及候选策略编译。Node 打包包含 `runtime-sandbox` 和 SRT 0.0.75，但正式 Worker 尚未切换，未取得 SRT 主机安装资格，也没有新增作业数据库迁移。固定假数据策略探针通过不代表正式 Job Host、资源硬上限或崩溃恢复可用。本文的实际安装、备份与权威迁移流程不因目标架构获采纳而改变；不能把恢复的旧 Capability 记录当成新 SRT profile 的主机资格。
 
 本 Runbook 只用于把同一个 Owner/Agent 的单一逻辑权威在两个已准备好的 deployment 之间停机迁移。它覆盖源部署导出、迁移包认证检查、空目标导入、inactive-ready 验证、显式激活、未激活导入的放弃，以及加密迁移包的 7 天保留边界。
 

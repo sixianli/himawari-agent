@@ -10,11 +10,11 @@ date: "2026-08-25"
 
 ## 已采纳、待实施的执行架构变更
 
-2026-09-07，Owner 确认采用 SRT 统一宿主执行，首批包含文件和编码工具、受限 Shell、MCP、授权联网、Web Search 与 GitHub 已有 commit 推送，并默认直接操作已授权原项目。目标设计见 [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]，已采纳决定见 [SOURCE: docs/adr/0024-srt-unified-execution.md]。ADR 0024 替代原 Mac helper/container 分层决定，保留 Pi 工具与 Agent loop，以及 Himawari 的权限和持久状态；尚未实现 SRT 或取得平台资格。下文及既有图表继续描述现有系统，不代表新目标已经落地。
+2026-09-07，Owner 确认采用 SRT 统一宿主执行，首批包含文件和编码工具、受限 Shell、MCP、授权联网、Web Search 与 GitHub 已有 commit 推送，并默认直接操作已授权原项目。目标设计见 [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]，已采纳决定见 [SOURCE: docs/adr/0024-srt-unified-execution.md]。ADR 0024 替代原 Mac helper/container 分层决定，保留 Pi 工具与 Agent loop，以及 Himawari 的权限和持久状态；尚未完成正式 SRT 执行接线或取得平台资格。下文及既有图表继续描述现有系统，不代表新目标已经落地。
 
 Git 写能力的目标入口沿用 Pi `bash` 与现有 Operations，经通用授权/持久执行进入 Worker 的受控 Git 适配，再由标准 Git 客户端推送。专用 push 是内部产品动作，不默认新增模型工具；凭据端口不绑定 GitHub App。已通过本地 Git HTTP 兼容性实验，尚未实现正式 SRT/Worker 推送、真实凭据与 GitHub 验收。实验范围及限制见上述 SRT Spec 的“Pi/Git 本地兼容性证据与边界”；ADR 0024 的仓库、分支、OID 及专用凭据边界继续有效。
 
-统一执行基础已有 `sandbox-execution.v1` 产品合同、Capability 回执到执行计划的校验投影，以及 Pi 每次调用独立创建 Operations 的绑定入口。它们不包含 SRT SDK、作业数据库迁移或真实启动器；现有 Worker 执行路径仍待迁移。实施与验收安排见 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md]。
+统一执行基础已有 `sandbox-execution.v1` 产品合同、Capability 回执到执行计划的校验投影，以及 Pi 每次调用独立创建 Operations 的绑定入口。SRT SDK 0.0.75 已固定在独立 `runtime-sandbox` 包并纳入 Node 打包，候选策略编译与固定假数据的 Mac 文件/网络拒绝探针已加入；尚无作业数据库迁移或正式 Job Host 启动器，现有 Worker 执行路径仍待迁移。实施与验收安排见 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md]。
 
 ## 架构总览图
 
@@ -58,7 +58,7 @@ domain → no internal dependency
 testing → application + domain + product contracts
 ```
 
-`scripts/check-boundaries.mjs` 从根和各 workspace 的 `package.json` 及 TypeScript import 构建依赖图，检查非精确直接外部依赖、非法方向、循环、未声明依赖和逃出 workspace 根的相对 import。任何 `@earendil-works/pi-*` 依赖或 import 只能位于 `packages/runtime-pi`；domain、contracts、application 和 browser-only workspace 不能直接 import `node:` 模块，browser-only workspace 也只能声明或导入明确允许的浏览器依赖。控制中心当前逐项允许 React、React DOM、`react-intl`、Vite/Vitest 与类型/构建配套，不把 browser-only 放宽为任意 npm 包；`test/integration/workspace/workspace-boundaries.test.ts` 会为依赖图的每个非法 workspace 方向以及 Node、browser、Pi 和本地路径规则运行 negative probe。
+`scripts/check-boundaries.mjs` 从根和各 workspace 的 `package.json` 及 TypeScript import 构建依赖图，检查非精确直接外部依赖、非法方向、循环、未声明依赖和逃出 workspace 根的相对 import。任何 `@earendil-works/pi-*` 依赖或 import 只能位于 `packages/runtime-pi`；`@anthropic-ai/sandbox-runtime` 只由 `packages/runtime-sandbox` 直接依赖或导入；domain、contracts、application 和 browser-only workspace 不能直接 import `node:` 模块，browser-only workspace 也只能声明或导入明确允许的浏览器依赖。控制中心当前逐项允许 React、React DOM、`react-intl`、Vite/Vitest 与类型/构建配套，不把 browser-only 放宽为任意 npm 包；`test/integration/workspace/workspace-boundaries.test.ts` 会为依赖图的每个非法 workspace 方向以及 Node、browser、Pi 和本地路径规则运行 negative probe。
 
 根构建可以分别验证 Node 图、两类 contracts、两个服务、browser bundle 和 admin CLI。`build:browser` 在 Vite production build 后执行 `scripts/check-control-center-build.mjs`，机械验证外部 CSS/JS、en/ja locale code splitting、无 source map、无 inline script/style、无动态代码求值，以及 entry/总 gzip 预算；Fastify `GET /*` 只对非 `/api`、非 `/assets` 且 `Accept` 包含 `text/html` 的路径返回同源 SPA shell，未知 API 与非 HTML 请求仍为 404。`scripts/generate-artifact-manifest.mjs` 会在构建后生成 machine-readable manifest，固定根 manifest/lock SHA-256、每个 workspace 的内容 checksum，以及当次 browser artifacts 的路径、大小和 SHA-256；生成物位于忽略提交的 `dist/`，脚本和 checksum contract 才是当前受版本控制的稳定入口。
 

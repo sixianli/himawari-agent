@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ import {
   isNodeImportAllowed,
   packageSpecifier,
   piDependencyOwner,
+  srtDependencyOwner,
 } from "./boundary-policy.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -68,6 +69,9 @@ function checkExactExternalDependencies(manifest, manifestLabel, workspaceNames)
   const errors = [];
 
   for (const [dependency, version] of Object.entries(dependenciesOf(manifest))) {
+    if (dependency === "@anthropic-ai/sandbox-runtime" && manifest.name !== srtDependencyOwner) {
+      errors.push(`${manifestLabel}: SRT dependency is only allowed in ${srtDependencyOwner}`);
+    }
     if (!workspaceNames.has(dependency) && !isExactExternalVersion(version)) {
       errors.push(
         `${manifestLabel}: direct external dependency ${dependency} must use an exact version, found ${version}`,
@@ -162,6 +166,12 @@ for (const { directory, manifest, manifestPath } of workspacePackages) {
       }
 
       const importedPackage = packageSpecifier(specifier);
+      if (
+        importedPackage === "@anthropic-ai/sandbox-runtime" &&
+        packageName !== srtDependencyOwner
+      ) {
+        errors.push(`${fileLabel}: direct SRT import is outside packages/runtime-sandbox`);
+      }
       if (importedPackage.startsWith("@earendil-works/pi-") && packageName !== piDependencyOwner) {
         errors.push(`${fileLabel}: direct Pi import ${specifier} is outside packages/runtime-pi`);
       }

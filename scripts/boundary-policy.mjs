@@ -1,4 +1,5 @@
 export const allowedInternalDependencies = new Map([
+  ["@himawari-agent/runtime-sandbox", new Set()],
   ["@himawari-agent/domain", new Set()],
   ["@himawari-agent/gateway-contracts", new Set()],
   ["@himawari-agent/execution-contracts", new Set()],
@@ -98,6 +99,7 @@ export const allowedInternalDependencies = new Map([
 ]);
 
 export const nodeImportAllowedPackages = new Set([
+  "@himawari-agent/runtime-sandbox",
   "@himawari-agent/runtime-pi",
   "@himawari-agent/persistence-sqlite",
   "@himawari-agent/memory-mem0",
@@ -151,3 +153,5 @@ export function isBrowserImportAllowed(packageName, specifier, workspaceNames) {
   }
   return browserExternalPackages.has(dependency);
 }
+
+export const srtDependencyOwner = "@himawari-agent/runtime-sandbox";

@@ -14,7 +14,7 @@ date: "2026-09-07"
 
 **架构：** 应用层接纳动作并冻结授权输入，Execution Worker 监督每作业 Job Host，固定 SRT 适配管理受限执行。Web/远程 MCP 等外部服务通过狭窄产品适配接受相同治理。首批包含原目录文件与编码操作、Shell、MCP、授权联网、真实 Web Search 和已有 commit GitHub 推送；下列依赖顺序不改变首批范围。
 
-本计划覆盖整批交付。本轮授权完成 Task 1–2；Task 3 以后保留未完成标记。Task 1–2 的合同和本地测试通过不代表安装资格、真实模型或浏览器验收通过。
+本计划覆盖整批交付。Task 1–2 已完成，Task 3 已获继续实施授权，以下按已验证结果标记。Task 1–2 的合同和本地测试通过不代表安装资格、真实模型或浏览器验收通过。
 
 ## 文件与调用方边界
 
@@ -24,7 +24,7 @@ date: "2026-09-07"
 | 产品执行合同 | `packages/execution-contracts/src/sandbox-execution-v1.ts`、`packages/application/src/ports/sandbox-execution.ts` | 严格 schema、作业身份与回执；不暴露 SRT 类型，不替换 execution.v2 |
 | 授权计划投影 | `packages/application/src/services/sandbox-execution-plan.ts`、`apps/agent-service/src/production-runtime-tools.ts` | 复用现有 invocation key、Handle/inputRef 与租约；正式派发时复核当前权威 |
 | 审批与恢复 | `runtime-continuation-service.ts`、`production-file-read-workflow.ts`、Run checkpoint 与 Pi continuation | 沿 ADR 0023 恢复；保留原期限、模型和父子调用关系 |
-| SRT 基础设施 | 拟新增 `packages/runtime-sandbox` 与 Worker `sandbox-job-main` | 唯一直接依赖固定版本 SRT 的包，每作业独立 manager，干净环境与监督清理 |
+| SRT 基础设施 | `packages/runtime-sandbox` 与待实现的 Worker `sandbox-job-main` | 唯一直接依赖固定版本 SRT 的包，每作业独立 manager，干净环境与监督清理 |
 | Worker 与通信 | `apps/execution-worker/src/production-worker-composition.ts`、现有 execution admission 与 Payload broker | 原可信 UDS/Handle 通道继续使用；新增 Job Host 私有 IPC 不给任务进程 |
 | 作业持久观察 | `packages/persistence-sqlite` migration、Capability invocation/result 与 Run artifact 操作 | 在现有权威下追加 job/attempt/sequence 与清理记录；CAS 防重复，未知结果不重放 |
 | 文件与命令 | `capability-programs/host-file-read.ts`、`HostFileReadService`、`platform-node` workspaces/capabilities | 固定 runner 内复用；覆盖 program、命令、导入导出与 stdio MCP 的全部可达启动点 |
@@ -53,11 +53,19 @@ Task 2 不新增第二个权限库、Run 状态机或数据库。schema 校验�
 
 ### Task 3：正式 Worker/SRT 作业基础
 
-- [ ] 固定已审查的 SRT 版本与依赖归属，增加可安装的 Job Host 入口和产品策略编译。
+- [x] 固定 `@anthropic-ai/sandbox-runtime@0.0.75`，只由 `runtime-sandbox` 直接依赖；依赖边界检查和 Node 产物打包纳入此包。
+- [x] 增加候选策略编译：规范绝对路径、独立目录、全盘读取默认拒绝与显式例外、受保护路径、严格域名白名单及共享默认写目录拒绝。
+- [ ] 增加正式可安装的 Job Host 入口；在干净环境中固定一次初始化策略并接受 Worker 监督。
 - [ ] 定义权限 scope 的受保护内容与父子调用关系，验证 host/profile/runtime/runner/qualification 摘要绑定。
 - [ ] 实现 prepare/start/observe/cancel/reconcile，持久启动意图先于 spawn；拒绝无资格、非法策略或代理初始化失败。
 - [ ] 使用真实 SRT 在 Mac 专用目录验证读写与命令、假秘密保护、越界与未授权联网、超时取消、进程树和继承管道清理。
 - [ ] 需要启用 Linux profile 时，在 Hermes 的隔离测试目录单独取得证据；先确认磁盘挂载与空间。
+
+当前证据（2026-09-08）：`packages/runtime-sandbox/test/policy.unit.test.ts` 覆盖策略非法字段、目录相交、权限例外、符号链接与异步输入改变。`npm run build:node` 后运行 `node packages/runtime-sandbox/scripts/qualify-policy.mjs`，在 Mac 自动创建的专用假数据目录验证读取、写入、假秘密拒绝、目录越界拒绝、符号链接越界拒绝与代理联网拒绝。网络断言核对 SRT 的 `blocked-by-allowlist` 响应头及拒绝正文，不能用任意 curl 失败冒充通过。探针退出码 0、stderr 为空；依赖探针 errors/warnings 均为空。
+
+此探针仅验证固定脚本下的策略，输出明确保持 `productionSuitable: false`；不是正式 Worker 接线、授权 scope 存储或平台资格签发。CPU/内存硬上限、任意任务进程树终止、Worker 崩溃清理和持久启动接纳仍缺实现与证据。SRT 0.0.75 的配置没有硬 CPU/内存限制；`cleanupAfterCommand()` 与 `reset()` 不负责证明任务后代全部退出。因此不能只用启动参数适配或 `kill(-pid)` 启用生产 profile。权限 scope 的原始授权、host/runtime/runner 摘要及 TOCTOU 复核仍必须在正式接纳与启动点完成，策略编译不能替代这些检查。
+
+Task 3 的持久启动意图依赖 Task 4 第一、二项的最小事务接线；实施时先完成该前置部分，不能创建内存日志或第二份文件权限库代替。当前尚未追加数据库迁移。下一步需要在保持上述保证的条件下完成主机监督实现与既有 invocation 权威的事务接纳，再建设正式 Job Host；当前默认 Worker 组合尚未切换到 SRT。
 
 ### Task 4：持久作业观察与通用 HITL
 

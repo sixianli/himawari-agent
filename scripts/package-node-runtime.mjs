@@ -18,6 +18,7 @@ const internalRoots = [
   "packages/persistence-sqlite",
   "packages/platform-node",
   "packages/runtime-pi",
+  "packages/runtime-sandbox",
 ];
 
 export async function packageNodeRuntime({

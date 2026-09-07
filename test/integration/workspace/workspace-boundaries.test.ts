@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -9,6 +9,7 @@ import {
   isInternalDependencyAllowed,
   isNodeImportAllowed,
   piDependencyOwner,
+  srtDependencyOwner,
 } from "../../../scripts/boundary-policy.mjs";
 
 const workspaceNames = new Set(allowedInternalDependencies.keys());
@@ -57,6 +58,11 @@ describe("runtime-specific import negative probes", () => {
       ).toBe(true);
     },
   );
+
+  it("keeps SRT dependencies owned by runtime-sandbox", () => {
+    expect(srtDependencyOwner).toBe("@himawari-agent/runtime-sandbox");
+    expect([...workspaceNames].filter((name) => name === srtDependencyOwner)).toHaveLength(1);
+  });
 
   it("keeps Pi dependencies owned by runtime-pi", () => {
     expect(piDependencyOwner).toBe("@himawari-agent/runtime-pi");
