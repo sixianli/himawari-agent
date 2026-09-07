@@ -165,14 +165,20 @@ export class SqliteRunLifecycleOperations {
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
-  private readonly thread: Pick<SqliteThreadOperations, "commitAssistantMessage">;
+  private readonly thread: Pick<
+    SqliteThreadOperations,
+    "commitAssistantMessage" | "appendGatewayEventInTransaction"
+  >;
   private readonly executionLease: ExecutionLeaseGuardFactory;
 
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
-    thread: Pick<SqliteThreadOperations, "commitAssistantMessage">,
+    thread: Pick<
+      SqliteThreadOperations,
+      "commitAssistantMessage" | "appendGatewayEventInTransaction"
+    >,
     executionLease: ExecutionLeaseGuardFactory,
   ) {
     this.database = database;
@@ -549,6 +555,32 @@ export class SqliteRunLifecycleOperations {
         input["payloadRef"],
         now,
       );
+    // A Run status is part of the Thread view. Commit its revision and durable
+    // notification with the Run so a waiting approval is visible without polling.
+    if ("nextStatus" in input) {
+      const changedThread = this.database
+        .prepare(`UPDATE threads
+        SET revision = revision + 1, updated_at = ?
+        WHERE id = (SELECT thread_id FROM runs WHERE id = ? AND owner_id = ? AND agent_id = ?)
+          AND owner_id = ? AND agent_id = ?
+        RETURNING id, revision`)
+        .get(now, input.runId, input.ownerId, input.agentId, input.ownerId, input.agentId);
+      if (changedThread !== undefined) {
+        const row = record(changedThread);
+        this.thread.appendGatewayEventInTransaction({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          threadId: createThreadId(string(row["id"])),
+          threadRevision: integer(row["revision"]),
+          eventId: `run-event:${identity}`,
+          commandId: `run-command:${identity}`,
+          commandType: `run.${input.nextStatus}`,
+          resultRef: null,
+          committedAt: now,
+          authority,
+        });
+      }
+    }
     return {
       replayed: false,
       commandResult: {

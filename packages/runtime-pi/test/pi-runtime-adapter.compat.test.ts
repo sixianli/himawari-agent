@@ -1577,6 +1577,143 @@ it("runs the actual pinned AgentSession with an opaque HTTP product session iden
   expect(projection.finalAnswers[0]?.text).toBe("真实 Pi Session 回答");
 });
 
+it.each(["approved", "denied", "effect_without_receipt"] as const)(
+  "suspends and resumes a generic side-effect tool: %s",
+  async (resolution) => {
+    const model = await createFauxModelFixture("操作结果已说明", {
+      name: "controlled_action",
+      id: "controlled-call",
+      arguments: { recipient: "test-only" },
+    });
+    const projection = new RecordingProjection();
+    let decision: "pending" | typeof resolution = "pending";
+    let effects = 0;
+    const snapshots = new Map<string, string>();
+    const slots: number[] = [];
+    const tools: RuntimeToolPort = {
+      listAuthorized: async () => [
+        {
+          name: "controlled_action",
+          description: "Controlled side effect",
+          capabilityRef: "test.communicate",
+          capabilityHandleRef: null,
+          parameters: {
+            type: "object",
+            properties: { recipient: { type: "string" } },
+            required: ["recipient"],
+          },
+        },
+      ],
+      preflight: async () => ({
+        allowed: true,
+        permissionDecisionRef: "test",
+        reasonCode: "evaluate",
+      }),
+      execute: async (call) => {
+        expect(call.toolCallId).toBe("controlled-call");
+        if (decision === "pending")
+          return {
+            outcome: "awaiting_approval",
+            approval: {
+              approvalRequestId: "approval-generic",
+              semanticSnapshotHash: "frozen-action",
+              expiresAt: "2999-01-01T00:00:00.000Z",
+            },
+            resultRef: null,
+            errorCode: null,
+            externalActionId: null,
+            modelContent: "",
+          };
+        if (decision === "denied")
+          return {
+            outcome: "failed",
+            resultRef: null,
+            errorCode: "OWNER_DENIED",
+            externalActionId: null,
+            modelContent: "用户拒绝，未执行",
+          };
+        effects += 1;
+        if (decision === "effect_without_receipt")
+          return {
+            outcome: "result_unknown",
+            resultRef: null,
+            errorCode: "RECEIPT_LOST",
+            externalActionId: "test-effect",
+            modelContent: "结果待核查",
+          };
+        return {
+          outcome: "succeeded",
+          resultRef: "protected-result",
+          errorCode: null,
+          externalActionId: "test-effect",
+          modelContent: "测试操作已执行",
+        };
+      },
+    };
+    const create = () =>
+      new PiAgentRuntimeAdapter({
+        projection,
+        tools,
+        models: model.models,
+        cwd: process.cwd(),
+        now: () => NOW,
+        admission: async (scope) => allowAdmission(scope),
+        logicalSlot: (_request, ordinal) => {
+          slots.push(ordinal);
+          return `durable-test:${ordinal}`;
+        },
+        continuations: {
+          save: async (_request, value) => {
+            const ref = `continuation-${snapshots.size}`;
+            snapshots.set(ref, JSON.stringify(value));
+            return ref;
+          },
+          load: async (_request, ref) => JSON.parse(snapshots.get(ref) ?? "null"),
+        },
+      });
+    const input = { ...request, modelRef: model.descriptor.ref };
+    const before = await collect(create().run(input));
+    const suspended = before.at(-1);
+    expect(suspended).toMatchObject({
+      type: "runtime.suspended",
+      approval: { approvalRequestId: "approval-generic" },
+    });
+    expect(effects).toBe(0);
+    expect(model.observed).toHaveLength(1);
+    expect(projection.finalAnswers).toHaveLength(0);
+    if (suspended?.type !== "runtime.suspended") throw new Error("Expected suspension");
+    decision = resolution;
+    const resumed = await collect(
+      create().run({
+        ...input,
+        continuationRef: suspended.continuationRef,
+        executionLease: Object.freeze({
+          ...input.executionLease,
+          executionLeaseId:
+            fixtureIdentifier<RuntimeRequest["executionLease"]["executionLeaseId"]>(
+              "fresh-execution-lease",
+            ),
+          expectedLeaseRevision: 2,
+        }),
+      }),
+    );
+    expect(effects).toBe(resolution === "denied" ? 0 : 1);
+    if (resolution === "effect_without_receipt") {
+      expect(resumed.at(-1)).toMatchObject({ type: "runtime.result_unknown" });
+      expect(slots).toEqual([1]);
+      expect(projection.finalAnswers).toHaveLength(0);
+    } else {
+      expect(resumed.at(-1), JSON.stringify(resumed.at(-1))).toMatchObject({
+        type: "runtime.completed",
+      });
+      expect(slots).toEqual([1, 2]);
+      expect(JSON.stringify(model.observed.at(-1))).toContain(
+        resolution === "denied" ? "用户拒绝，未执行" : "测试操作已执行",
+      );
+    }
+  },
+);
+
 it("runs configured OpenRouter sessions without storing credentials in the shared Pi runtime", async () => {
   const { createServer } = await import("node:http");
   const { ConfiguredPiModelBindingPort } = await import("../src/index.js");

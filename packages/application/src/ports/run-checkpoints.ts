@@ -1,6 +1,6 @@
 import type { RunId } from "@himawari-agent/domain";
 import type { PayloadRef, TraceEventId } from "./common.js";
-import type { RuntimeSuccessfulOutput } from "./intelligence.js";
+import type { RuntimeApprovalWait, RuntimeSuccessfulOutput } from "./intelligence.js";
 import type { RunExecutionLeaseClaim } from "./run-dispatch.js";
 
 export type RunCheckpointPhase =
@@ -8,6 +8,7 @@ export type RunCheckpointPhase =
   | "context_formed"
   | "workers_running"
   | "runtime_running"
+  | "awaiting_approval"
   | "runtime_settled"
   | "reconciling_external_result"
   | "completed"
@@ -15,6 +16,12 @@ export type RunCheckpointPhase =
   | "cancelled";
 
 export interface RunCheckpoint {
+  readonly suspension?: {
+    readonly version: "runtime-suspension.v1";
+    readonly continuationRef: PayloadRef;
+    readonly approval: RuntimeApprovalWait;
+    readonly executionDeadlineAt?: string;
+  };
   readonly phase: RunCheckpointPhase;
   readonly contextRef: PayloadRef | null;
   readonly workerResults: Readonly<Record<string, PayloadRef>>;

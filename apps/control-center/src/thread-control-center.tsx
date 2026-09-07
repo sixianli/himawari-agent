@@ -19,6 +19,7 @@ import type {
   MutationStatus,
 } from "./gateway-client.js";
 import type { MessageId } from "./i18n/message-ids.js";
+import { findPendingRunApproval } from "./run-approval.js";
 import { threadCommandMessage, threadQueryMessage } from "./messages.js";
 
 type ThreadCollectionSnapshot = Extract<
@@ -560,6 +561,21 @@ export function useThreadControlCenter(
     }
   };
 
+  const openApproval = async (runId: string) => {
+    if (!client || !configuration) return;
+    try {
+      const objectId = await findPendingRunApproval(client, configuration, runId);
+      navigate({
+        surfaceId: "approvals",
+        objectId,
+        status: "pending",
+        afterCursor: null,
+        view: "details",
+      });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
+    }
+  };
   const threadItems = collection?.payload.threads ?? [];
   const selectedSummary =
     detail?.payload.thread ?? threadItems.find(({ threadId }) => threadId === selectedThreadId);
@@ -855,6 +871,11 @@ export function useThreadControlCenter(
               renderItem={(run) => (
                 <span>
                   <code>{run.runId}</code> {message(runStatusMessageId(run.status))}
+                  {run.status === "awaiting_approval" ? (
+                    <ActionButton variant="secondary" onClick={() => void openApproval(run.runId)}>
+                      {message("nav.approvals")}
+                    </ActionButton>
+                  ) : null}
                 </span>
               )}
             />

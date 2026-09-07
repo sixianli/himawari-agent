@@ -152,6 +152,8 @@ export interface ModelPort {
 }
 
 export interface RuntimeRequest {
+  /** Product checkpoint for resuming the same logical tool batch. */
+  readonly continuationRef?: PayloadRef;
   /** Absolute product deadline; tools must not extend this execution window. */
   readonly executionDeadlineAt?: string;
   readonly ownerId: OwnerId;
@@ -181,6 +183,13 @@ export type RuntimeSuccessfulOutput =
   | { readonly kind: "no-answer" };
 
 export type RuntimeEvent =
+  | {
+      readonly type: "runtime.suspended";
+      readonly runId: RunId;
+      readonly continuationRef: PayloadRef;
+      readonly approval: RuntimeApprovalWait;
+      readonly occurredAt: string;
+    }
   | {
       readonly type: "runtime.result_unknown";
       readonly runId: RunId;
@@ -404,7 +413,10 @@ export interface RuntimeCustomToolDescriptor {
 
 export interface RuntimeToolInvocation {
   /** Captured by the runtime, never taken from model-generated tool arguments. */
-  readonly context?: Pick<RuntimeRequest, "threadId" | "modelRef" | "executionLease">;
+  readonly context?: Pick<
+    RuntimeRequest,
+    "threadId" | "modelRef" | "executionLease" | "continuationRef"
+  >;
   readonly executionDeadlineAt?: string;
   readonly runId: RunId;
   readonly toolCallId: string;
@@ -421,13 +433,36 @@ export interface RuntimeToolPreflightDecision {
   readonly reasonCode: string;
 }
 
-export interface RuntimeToolExecutionResult {
+export interface RuntimeApprovalWait {
+  readonly approvalRequestId: string;
+  readonly semanticSnapshotHash: string;
+  readonly expiresAt: string;
+}
+
+/** Opaque runtime state is protected by Core, never sent through browser events. */
+export interface RuntimeContinuationPort {
+  save(request: RuntimeRequest, value: unknown): Promise<PayloadRef>;
+  load(request: RuntimeRequest, ref: PayloadRef): Promise<unknown>;
+}
+
+export interface RuntimeToolSettledResult {
   readonly outcome: "succeeded" | "failed" | "result_unknown";
   readonly resultRef: PayloadRef | null;
   readonly errorCode: string | null;
   readonly externalActionId: string | null;
   readonly modelContent: string;
 }
+
+export interface RuntimeToolSuspendedResult {
+  readonly outcome: "awaiting_approval";
+  readonly approval: RuntimeApprovalWait;
+  readonly resultRef: null;
+  readonly errorCode: null;
+  readonly externalActionId: null;
+  readonly modelContent: "";
+}
+
+export type RuntimeToolExecutionResult = RuntimeToolSettledResult | RuntimeToolSuspendedResult;
 
 /**
  * Final product enforcement boundary for tools exposed to an Agent Runtime.

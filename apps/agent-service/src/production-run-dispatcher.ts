@@ -417,7 +417,7 @@ export class ProductionRunDispatcher {
           unknown += 1;
           continue;
         }
-        if (!terminal(result.run.run.status)) {
+        if (!terminal(result.run.run.status) && result.run.run.status !== "awaiting_approval") {
           throw new ProductionRunDispatchError(
             PRODUCTION_RUN_DISPATCH_ERROR_CODES.NON_TERMINAL_RESULT,
             "Run Coordinator returned before reaching a terminal or reconciliation state",

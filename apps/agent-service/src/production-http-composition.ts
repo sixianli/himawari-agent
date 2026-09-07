@@ -11,6 +11,7 @@ import {
   ApplicationPortError,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
+  type GatewayV2InboundMessage,
   type OwnerIdentityStatePort,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -52,6 +53,7 @@ import {
   registerIdentityAuthenticationRoutes,
   SessionBoundCsrfService,
 } from "@himawari-agent/platform-node";
+import { createProductionApprovalGateway } from "./production-approval-gateway.js";
 import type { FastifyInstance } from "fastify";
 
 type OwnerId = PayloadProtectionRequest["ownerId"];
@@ -285,7 +287,7 @@ export class ProductionThreadGatewayAccessPolicy implements ThreadGatewayAccessP
 
   async authorize(input: {
     readonly authentication: GatewayAuthenticationContext;
-    readonly message: ThreadGatewayInboundMessage;
+    readonly message: ThreadGatewayInboundMessage | GatewayV2InboundMessage;
   }): Promise<GatewayAccessDecision> {
     if (
       input.message.scope.ownerId !== this.#ownerId ||
@@ -300,6 +302,7 @@ export class ProductionThreadGatewayAccessPolicy implements ThreadGatewayAccessP
     if (
       input.message.kind === "command" &&
       input.message.type === "thread.message.submit" &&
+      "sessionId" in input.message.payload &&
       input.message.payload.sessionId !== session.id
     ) {
       return { allowed: false, reasonCode: "SESSION_SCOPE_MISMATCH" };
@@ -624,8 +627,16 @@ export async function createProductionHttpComposition(
   });
   const health = options.health ?? new RuntimeHealthModel({ publicMode: true, now: clock });
   const metrics = new RuntimeMetricsRegistry({ now: clock });
-  const app = buildHttpGatewayServer(
-    routeOptions(
+  const gatewayV2 = createProductionApprovalGateway({
+    configuration,
+    repository,
+    access: threadAccess,
+    recentAuthentication,
+    clock: { now: clock },
+    authority: options.authority,
+  });
+  const app = buildHttpGatewayServer({
+    ...routeOptions(
       configuration,
       authentication,
       csrf,
@@ -637,7 +648,8 @@ export async function createProductionHttpComposition(
       metrics,
       authority,
     ),
-  );
+    gatewayV2,
+  });
   registerIdentityAuthenticationRoutes(app, {
     publicOrigin: configuration.publicOrigin,
     verifier,

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:769443d8cdc3a99c02c5cc3d34424a75d3f134448381ed9c15f66b65ffa7ee1f"
+contract_sha256: "sha256:775a63dc8487b0ec127a361a5648ffc27363c2465c3a2bd5782bc78b88752dce"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,10 @@ date: "2026-08-27"
 # 同机备份与恢复 Runbook
 
 <!-- runbook-contract:
+- packages/application/src/services/runtime-continuation-service.ts
+- packages/application/src/ports/run-checkpoints.ts
+- packages/runtime-pi/src/pi-tool-batch-continuation.ts
+- docs/adr/0023-durable-hitl-execution.md
 - packages/application/src/services/run-execution-input-service.ts
 - packages/application/src/services/run-coordinator.ts
 - packages/application/src/ports/run-dispatch.ts
@@ -119,6 +123,7 @@ himawari backup restore --config <absolute-config-path> --secret-dir <absolute-s
 - 对本次包含运行正文的恢复点，核对正文、所属 Run、用途和操作身份回执一并恢复，正文摘要、分类与媒体类型一致；不能只验证正文可解密。已保存但尚未发布的正文仍保持未发布，恢复操作不能把它补发为 Assistant 消息。
 - 若恢复点含 Capability 调用回执，核对原幂等键、冻结任务语义及 Agent/Worker 执行身份一并恢复。旧回执只证明过去已经接纳调用，不能作为重新派发依据；正文访问仍须验证当前权威、租约、Run、能力与 Grant。未知外部结果保持待核对，不因恢复成功自动重试。
 - 若包含 Run 执行租约，核对其 Run 归属、唯一执行身份、revision、权威关联和释放状态一起恢复。旧 consumer 或旧权威不能继续写 Run 和检查点；已取消 Run 的检查点、失效租约和命令回执必须一致。恢复后先区分安全提交的结果与待核对的中断执行，不手工重置租约或自动重新执行未知动作。
+- 若包含审批暂停点，候选须支持 migration 0026，并共同回读 checkpoint、受保护的 Pi 恢复正文、审批身份与动作摘要、工具执行回执、模型调用序号和原 Run 绝对截止时间。完整等待状态可在当前权限校验后恢复；不完整的运行中状态保持待核查。审批记录不能单独作为重新执行已确认或未知副作用的依据。
 - `runtime/`、`cache/`、secret source、authority file 和 public ingress 未被恢复包覆盖；不存在 `.restore-*` 临时目录或 plaintext SQLite 临时文件。
 - 对恢复期间已经发生的外部副作用逐项保持原状态或显式进入 reconciliation；不得假定数据库恢复自动撤销外部动作。
 

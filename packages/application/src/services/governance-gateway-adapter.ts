@@ -102,6 +102,13 @@ function lowerRisk(value: string): "low" | "medium" | "high" | "critical" {
   throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, `Unknown risk ${value}`);
 }
 
+function effectiveApprovalStatus(
+  approval: ApprovalRequest,
+  now: string,
+): ApprovalRequest["status"] {
+  return approval.status === "pending" && now >= approval.expiresAt ? "expired" : approval.status;
+}
+
 function governedApproval(value: ApprovalRequest): value is GovernedApprovalRequest {
   const candidate = value as Partial<GovernedApprovalRequest>;
   const intent = value.intentSnapshot as Partial<GovernedApprovalRequest["intentSnapshot"]>;
@@ -213,7 +220,9 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
         ).filter(
           (approval) =>
             governedApproval(approval) &&
-            (query.payload.status === null || approval.status === query.payload.status),
+            (query.payload.status === null ||
+              effectiveApprovalStatus(approval, this.#dependencies.clock.now()) ===
+                query.payload.status),
         );
         return this.#collection(
           query,
@@ -358,7 +367,7 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
       payload: {
         approvalRequestId: approval.id,
         revision: approval.revision,
-        status: approval.status,
+        status: effectiveApprovalStatus(approval, generatedAt),
         deliveryState: approval.deliveryState,
         semanticSnapshotHash: approval.semanticSnapshotHash,
         finalRisk: lowerRisk(approval.finalRisk),
@@ -560,7 +569,7 @@ export interface GovernanceGatewayV2ControlPlaneDependencies {
   readonly capabilities: CapabilityRegistryStorePort;
   readonly approvalService: ApprovalService;
   readonly grantService: GrantService;
-  readonly capabilityLifecycle: CapabilityLifecycleService;
+  readonly capabilityLifecycle?: CapabilityLifecycleService;
   readonly audit: AuditLedgerPort;
   readonly clock: ClockPort;
   readonly ownerId: OwnerId;
@@ -718,6 +727,16 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     }
   }
 
+  #capabilityLifecycle(): CapabilityLifecycleService {
+    const lifecycle = this.#dependencies.capabilityLifecycle;
+    if (!lifecycle)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Capability lifecycle is not available on this gateway",
+      );
+    return lifecycle;
+  }
+
   async #respondApproval(
     authentication: GatewayAuthenticationContext,
     command: Extract<GovernanceCommand, { readonly type: "approval.respond" }>,
@@ -837,7 +856,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     ) {
       return this.#capabilityResult(current);
     }
-    const reviewed = await this.#dependencies.capabilityLifecycle.recordSourceReview(
+    const reviewed = await this.#capabilityLifecycle().recordSourceReview(
       current.ref,
       { reviewer: authentication.subjectId, reviewedAt: this.#dependencies.clock.now() },
       command.payload.expectedRevision,
@@ -864,18 +883,15 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       current.lifecycle === "installation_approved" &&
       current.approvalRefs.includes(command.payload.approvalRef)
     ) {
-      current = await this.#dependencies.capabilityLifecycle.activate(
-        current.ref,
-        current.revision,
-      );
+      current = await this.#capabilityLifecycle().activate(current.ref, current.revision);
       return this.#capabilityResult(current);
     }
-    current = await this.#dependencies.capabilityLifecycle.approveInstallation(
+    current = await this.#capabilityLifecycle().approveInstallation(
       current.ref,
       command.payload.approvalRef,
       command.payload.expectedRevision,
     );
-    current = await this.#dependencies.capabilityLifecycle.activate(current.ref, current.revision);
+    current = await this.#capabilityLifecycle().activate(current.ref, current.revision);
     return this.#capabilityResult(current);
   }
 
@@ -893,7 +909,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       ) {
         return this.#capabilityResult(current);
       }
-      current = await this.#dependencies.capabilityLifecycle.rejectUpdate(
+      current = await this.#capabilityLifecycle().rejectUpdate(
         current.ref,
         command.payload.expectedRevision,
       );
@@ -918,21 +934,15 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       current.lifecycle === "update_approved" &&
       current.approvalRefs.includes(approvalRef)
     ) {
-      current = await this.#dependencies.capabilityLifecycle.activateUpdate(
-        current.ref,
-        current.revision,
-      );
+      current = await this.#capabilityLifecycle().activateUpdate(current.ref, current.revision);
       return this.#capabilityResult(current);
     }
-    current = await this.#dependencies.capabilityLifecycle.approveUpdate(
+    current = await this.#capabilityLifecycle().approveUpdate(
       current.ref,
       approvalRef,
       command.payload.expectedRevision,
     );
-    current = await this.#dependencies.capabilityLifecycle.activateUpdate(
-      current.ref,
-      current.revision,
-    );
+    current = await this.#capabilityLifecycle().activateUpdate(current.ref, current.revision);
     return this.#capabilityResult(current);
   }
 
@@ -948,7 +958,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     ) {
       return this.#capabilityResult(current);
     }
-    const disabled = await this.#dependencies.capabilityLifecycle.disable(
+    const disabled = await this.#capabilityLifecycle().disable(
       current.ref,
       command.payload.expectedRevision,
     );
@@ -968,7 +978,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     ) {
       return this.#capabilityResult(current);
     }
-    const rolledBack = await this.#dependencies.capabilityLifecycle.rollback(
+    const rolledBack = await this.#capabilityLifecycle().rollback(
       current.ref,
       command.payload.expectedRevision,
     );

@@ -399,6 +399,52 @@ export class SqliteThreadOperations {
     return status === "active" || status === "archived" ? "open" : status;
   }
 
+  /** The caller owns the transaction containing the corresponding state mutation. */
+  appendGatewayEventInTransaction(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    threadId: ThreadId;
+    threadRevision: number;
+    eventId: string;
+    commandId: string;
+    commandType: string;
+    resultRef: string | null;
+    committedAt: string;
+    authority: ThreadCreateInput["authority"];
+  }): void {
+    const cursorSequence =
+      Number(
+        this.database
+          .prepare("SELECT COALESCE(MAX(cursor_sequence), 0) FROM thread_gateway_events")
+          .pluck()
+          .get(),
+      ) + 1;
+    this.database
+      .prepare(
+        `INSERT INTO thread_gateway_events (
+          cursor_sequence, cursor, event_id, owner_id, agent_id, deployment_id,
+          authority_epoch, fencing_token, thread_id,
+          thread_revision, causation_command_id, event_type, payload_ref, occurred_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        cursorSequence,
+        `thread-cursor:${cursorSequence}`,
+        input.eventId,
+        input.ownerId,
+        input.agentId,
+        input.authority.deploymentId,
+        input.authority.authorityEpoch,
+        input.authority.fencingToken,
+        input.threadId,
+        input.threadRevision,
+        input.commandId,
+        input.commandType,
+        input.resultRef,
+        input.committedAt,
+      );
+  }
+
   private writeReceipt(input: {
     ownerId: OwnerId;
     agentId: AgentId;
@@ -446,37 +492,11 @@ export class SqliteThreadOperations {
         input.resultRef,
         input.committedAt,
       );
-    const cursorSequence =
-      Number(
-        this.database
-          .prepare("SELECT COALESCE(MAX(cursor_sequence), 0) FROM thread_gateway_events")
-          .pluck()
-          .get(),
-      ) + 1;
-    this.database
-      .prepare(
-        `INSERT INTO thread_gateway_events (
-          cursor_sequence, cursor, event_id, owner_id, agent_id, deployment_id,
-          authority_epoch, fencing_token, thread_id,
-          thread_revision, causation_command_id, event_type, payload_ref, occurred_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        cursorSequence,
-        `thread-cursor:${cursorSequence}`,
-        `thread-event:${input.idempotencyKey}`,
-        input.ownerId,
-        input.agentId,
-        input.authority.deploymentId,
-        input.authority.authorityEpoch,
-        input.authority.fencingToken,
-        input.threadId,
-        input.threadRevision,
-        commandId,
-        input.commandType,
-        input.resultRef,
-        input.committedAt,
-      );
+    this.appendGatewayEventInTransaction({
+      ...input,
+      eventId: `thread-event:${input.idempotencyKey}`,
+      commandId,
+    });
     return {
       commandId,
       idempotencyKey: input.idempotencyKey,

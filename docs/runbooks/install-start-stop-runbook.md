@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:4e10aa58246a8601a65bc22676c9074f5c4354d9d7b80639332253812e37f0dd"
+contract_sha256: "sha256:8674ae12eb168c46088782ca99907f835329de6c735d8841c2b619f8ad6a2631"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,10 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- packages/application/src/services/runtime-continuation-service.ts
+- packages/application/src/ports/run-checkpoints.ts
+- packages/runtime-pi/src/pi-tool-batch-continuation.ts
+- docs/adr/0023-durable-hitl-execution.md
 - packages/runtime-pi/src/pi-runtime-adapter.ts
 - apps/agent-service/src/capability-programs
 - apps/agent-service/src/production-file-read-workflow.ts
@@ -111,6 +115,8 @@ date: "2026-08-27"
 
 启用文件读取时，`runPolicy.fileRead` 必须引用当前 Worker instance、目标 hostId、既有目录 Grant 和匹配的 Capability 版本。能力 program 的固定 argv 应指向安装树中 agent-service 包的 `dist/capability-programs/host-file-read-main.js` 并携带 hostId/workerInstanceId；该入口由 Worker 隔离后端启动，不能在 Agent Service 内执行。Manifest 声明 inspect/read/disclose，后者仅用于授权。配置、程序存在或打包成功均不创建动作授权，也不替代本机能力隔离资格。
 
+通用 HITL 需要 migration 0026、受保护恢复 Payload、审批存储和执行租约一同可用。公开入口使用已有身份与 CSRF 校验提供 `approval.list/detail/respond`，Thread 的等待、恢复和取消状态通过持久事件通知页面。等待审批不占用执行槽位；批准、拒绝、审批过期或原 Run 总期限到达后才重新领取。恢复仍使用原始截止时间，不能重新分配时长。其他治理操作未因审批入口接入而自动启用。
+
 ## Live-State Preflight
 
 在安装或启动前执行以下只读检查，并保存脱敏结果：
@@ -154,7 +160,7 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 
 ## Verification
 
-- 中断执行交给生产恢复组件后，Run 与 checkpoint 必须同时显示 `reconciling_external_result`，旧执行租约失效，已有结果引用保留；恢复不能重新调用模型或工具。此检查当前有本地 SQLite 证据，完整安装入口验证仍待完成。已经待核实的记录不重复占用初始扫描批次，不代表外部结果已经确认。
+- 未保存完整审批暂停点的中断执行交给生产恢复组件后，Run 与 checkpoint 必须同时显示 `reconciling_external_result`，旧执行租约失效，已有结果引用保留；恢复不能重新调用模型或工具。此检查当前有本地 SQLite 证据，完整安装入口验证仍待完成。已经待核实的记录不重复占用初始扫描批次，不代表外部结果已经确认。
 
 - `runtime-manifest.json`、build artifact manifest、package-lock 和 `git rev-parse HEAD` 能互相对应；内部 package 版本和外部依赖版本均为精确值，生产 workspace manifest 的每个直接外部依赖根及其闭包都存在，且安装树不包含 `@himawari-agent/testing`。
 - `himawari doctor` 返回 ready，`himawari db status` 显示 managed schema、预期 migration sequence 和 `quickCheck: ok`。
@@ -168,6 +174,8 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 - 启用持久 Run 组合时，核对 `deadlines.runMs` 已冻结为受保护输入中的绝对截止时间；恢复不得超过首次冻结的截止时间。缺少截止时间的旧执行快照不能自动重建或继续执行，应保留现场并核实旧执行状态。超时必须请求停止当前执行并拒绝迟到成功，Worker 请求的截止不能超过父 Run。
 - 目标前缀、state root、authority file、SQLite、Payload、runtime/cache 和证据权限符合当前配置；诊断输出不含 token、配置全文或私人正文。
 - 该 Runbook 的成功只证明本机安装/启停边界，不证明 Mac/Hermes 双向迁移、真实 provider/GitHub/Cloudflare、systemd/launchd 或 production readiness。
+
+- 对保存了完整 `awaiting_approval` checkpoint 的 Run，核对对应审批、恢复正文、原工具调用和模型调用序号均可回读；待决时无新执行租约，作出决定后使用新租约。重启后的已确认工具阶段不得重复执行，未知阶段继续核查。原 Run 已取消或超过总期限时不得继续读取或调用模型。
 
 ## Evidence
 

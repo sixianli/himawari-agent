@@ -19,6 +19,8 @@ export type {
   ModelSecretRequirement,
   RuntimeCompactionProposal,
   RuntimeEvent,
+  RuntimeApprovalWait,
+  RuntimeContinuationPort,
   RuntimeProjection,
   RuntimeProjectionCapture,
   RuntimeProjectionCompaction,

@@ -1,6 +1,11 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import {
+  actionIntentFingerprint,
+  type GovernedActionIntent,
+  type GovernedApprovalRequest,
+} from "@himawari-agent/application";
 import type { ProductConfiguration, ThreadCreateInput } from "@himawari-agent/application";
 import {
   applyMigrations,
@@ -441,6 +446,156 @@ describe("production HTTP composition", () => {
         type: "thread.command_result",
         payload: { threadRevision: 2, replayed: false },
       });
+
+      const action: GovernedActionIntent = {
+        contractVersion: "authorization.v2",
+        id: "action-http-approval",
+        ownerId: config.ownerId,
+        agentId: config.agentId,
+        threadId: submitCommand.payload.threadId,
+        runId: submitCommand.payload.runId as GovernedActionIntent["runId"],
+        capabilityRef: "test.communicate",
+        capabilityVersion: "1",
+        operation: "send",
+        resourceRef: "recipient:test-only",
+        resourceRefs: ["recipient:test-only"],
+        targets: [{ type: "recipient", ref: "test-only" }],
+        dataClassification: "private",
+        sideEffect: "irreversible",
+        estimatedCostMicros: 0,
+        frequency: { count: 1, intervalMs: null },
+        idempotencyKey: "http-approval-action" as GovernedActionIntent["idempotencyKey"],
+        reversible: false,
+        requestedAt: NOW.toISOString(),
+        expiresAt: "2026-09-04T01:00:00.000Z",
+        actionKind: "COMMUNICATE",
+        disclosure: "named_recipients",
+        recipients: ["recipient:test-only"],
+        credentialOrAccessChange: false,
+        modelClassification: {
+          actionKind: "COMMUNICATE",
+          suggestedRisk: "HIGH",
+          reasonCode: "test",
+        },
+        deterministicFacts: [],
+        finalRisk: "HIGH",
+      };
+      const approvalId = "approval-production-http";
+      const snapshotHash = actionIntentFingerprint(action);
+      const approval: GovernedApprovalRequest = {
+        id: approvalId,
+        revision: 1,
+        ownerId: config.ownerId,
+        agentId: config.agentId,
+        runId: action.runId,
+        intentId: action.id,
+        intentSnapshot: action,
+        semanticSnapshotHash: snapshotHash,
+        status: "pending",
+        deliveryState: "deliverable",
+        requestedAt: action.requestedAt,
+        expiresAt: action.expiresAt,
+        decidedAt: null,
+        grantId: null,
+        finalRisk: "HIGH",
+        recentAuthenticationRequired: false,
+        recentAuthenticationRef: null,
+      };
+      await repository.authorizationStore().createApproval(approval);
+      const approvalEnvelope = {
+        schemaVersion: "gateway.v2",
+        scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        authority: configAuthority,
+        actor: { actorType: "owner", actorId: OWNER_ID },
+        dataClassification: "private",
+        risk: "high",
+        authorizationRef: sessionBody.session.authenticationRef,
+        correlationId: "correlation-approval-http",
+        causationId: null,
+      };
+      const approvalQuery = {
+        ...approvalEnvelope,
+        kind: "query",
+        type: "approval.detail",
+        messageId: "approval-query-http",
+        payload: { approvalRequestId: approvalId },
+      };
+      const pendingApproval = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, cookie),
+        payload: approvalQuery,
+      });
+      expect(pendingApproval.statusCode).toBe(200);
+      expect(pendingApproval.json()).toMatchObject({
+        type: "approval.snapshot",
+        payload: { status: "pending", intent: { actionKind: "COMMUNICATE" } },
+      });
+      const approvalCommand = {
+        ...approvalEnvelope,
+        kind: "command",
+        type: "approval.respond",
+        messageId: "approval-command-http",
+        idempotencyKey: "approval-command-http",
+        payload: {
+          approvalRequestId: approvalId,
+          expectedRevision: 1,
+          semanticSnapshotHash: snapshotHash,
+          decision: "approved",
+          editedPayloadRef: null,
+          recentAuthenticationRef: null,
+        },
+      };
+      const approvalWithoutCsrf = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: {
+          ...requestHeaders(token, cookie),
+          "idempotency-key": approvalCommand.idempotencyKey,
+        },
+        payload: approvalCommand,
+      });
+      expect(approvalWithoutCsrf.statusCode).toBe(403);
+      const badAuthority = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": approvalCommand.idempotencyKey,
+        },
+        payload: {
+          ...approvalCommand,
+          authority: { ...configAuthority, fencingToken: configAuthority.fencingToken + 1 },
+        },
+      });
+      expect(badAuthority.statusCode).toBe(403);
+      const approved = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": approvalCommand.idempotencyKey,
+        },
+        payload: approvalCommand,
+      });
+      expect(approved.statusCode).toBe(200);
+      expect((await repository.authorizationStore().getApproval(approvalId))?.status).toBe(
+        "approved",
+      );
+      const replayedApproval = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": approvalCommand.idempotencyKey,
+        },
+        payload: approvalCommand,
+      });
+      expect(replayedApproval.statusCode).toBe(200);
+      expect(replayedApproval.json()).toMatchObject({ replayed: true });
+      expect(
+        await repository.authorizationStore().listGrants(config.ownerId, config.agentId),
+      ).toHaveLength(1);
 
       const detail = await composition.app.inject({
         method: "POST",

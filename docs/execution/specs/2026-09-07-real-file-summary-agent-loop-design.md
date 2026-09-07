@@ -243,16 +243,56 @@ P0-07 最初解析组件的验证：受约束文件系统与目标解析测试 3
 
 能力 Manifest 必须声明 `inspect/read/disclose`；其中 disclose 只用于服务端授权，不派发为文件程序操作。program 的固定 argv 指向安装产物 `@himawari-agent/agent-service/dist/capability-programs/host-file-read-main.js`，并附带目标 hostId 和 workerInstanceId，stdin/stdout 使用受保护 Payload 通道。只有通过现有不可变部署快照、实际隔离与平台资格验证后，该程序才能由正式 Worker 启动。打包包含程序源码不等于已完成这些安装条件。
 
-同一 Run/toolCallId 的上下文、inspect/read 输入与 Handle 引用存于受保护 Run trace artifacts；每个阶段另有不可变执行 intent、单次调用回执和结果。读取结果保存在受保护存储中，普通日志不写正文。进程恢复必须保持原调用语义和有效权威；已确认阶段不再派发，缺少结果的已派发阶段返回 `result_unknown`。目录、模型、调用参数、租约上下文或 authority 改变时拒绝自动续接，不能通过重新签发凭证改读目标。ASK 复用持久审批记录，当前活跃 Run 内的批准重试不会重复 inspect；浏览器批准后恢复一个已结束 Run 的完整产品流程仍属于 P0-10。
+同一 Run/toolCallId 的上下文、inspect/read 输入与 Handle 引用存于受保护 Run trace artifacts；每个阶段另有不可变执行 intent、单次调用回执和结果。读取结果保存在受保护存储中，普通日志不写正文。进程恢复必须保持原调用语义和有效权威；已确认阶段不再派发，缺少结果的已派发阶段返回 `result_unknown`。目录、模型、调用参数或 authority 改变时拒绝自动续接；P0-10 的受保护恢复允许更换当前执行租约，不能通过重新签发凭证改读目标。ASK 复用持久审批记录，已确认 inspect 阶段不会因批准重试而重复派发；P0-10 将 ASK 接为非终态暂停，正式浏览器验收仍单独记录。
 
 实际打开文件时，`ConstrainedHostFileSystem.read()` 对文件描述符的 device/inode、canonical path、mode、链接数、size 和 mtime 再核验，读取前后核对父目录链，循环处理短读，并在返回前确认对象和内容元数据未变化。文件程序在全文读取后验证 UTF-8、排除 NUL 和机器秘密，再交由 Pi 处理行范围与截断提示。此保护不宣称能防止具备主机管理权限的对手伪造全部文件元数据；真实隔离资格仍必须单独提供。
+
+Run 状态转换与 Thread 版本及持久事件在同一事务提交，使浏览器可及时刷新等待、恢复和取消状态。审批等待也受原 Run 总期限限制；到达总期限时调度器领取并终止请求，不等待更晚的审批过期时间。
+
+### P0-10：通用 HITL 持久执行与恢复
+
+Owner 已确认通用 durable agent execution / suspend-resume 状态机为本次目标并授权实施。文件读取是首个生产接入场景，后续删除、Shell、邮件和高风险 MCP 应只补动作定义、授权策略与执行/核查适配，不各自创建暂停和恢复流程。[SOURCE: docs/adr/0023-durable-hitl-execution.md]
+
+#### 状态与职责
+
+| 层次 | 权威记录与行为 |
+| --- | --- |
+| 动作授权 | `GovernedActionIntent`、`ApprovalRequest` 与 Grant；ASK 通过 `runtimeToolAuthorizationResult()` 转为通用等待结果，批准前没有模型可见的最终工具结果 |
+| Runtime 暂停 | `RuntimeContinuationService` 保存受保护记录，`runtime.suspended` 事件只携带引用及审批 ID、语义摘要、失效时间 |
+| Run 状态 | `running → awaiting_approval → running`；拒绝或过期在条件允许时作为工具失败结果返回 Pi，Run 可以继续说明情况；取消 Run 后不再执行 |
+| 恢复调度 | 持久审批决定或失效时间使请求可调度；竞争新租约后恢复，重复通知不直接派发动作，等待不占用运行槽位 |
+| 工具执行 | 复用既有执行意图、单次 Handle、Worker 回执及受保护结果；已确认阶段回读，已派发但无法确认结果的阶段进入核查 |
+
+通用机制不含路径、目录或 read 专用状态。文件工作流在自己的适配层验证主机、目录版本、文件身份、读取与模型披露；这些校验不会因恢复而跳过。
+
+#### Pi 恢复适配
+
+复用固定版本 `pi-coding-agent@0.84.2` 的 AgentSession、工具定义与 Agent loop。暂停时保存完整的原 assistant 工具批次、此前消息、受信任系统提示、待审批调用 ID，以及模型调用、消息和轮次序号。随后结束本次内存执行并释放执行租约；保留同一逻辑工具调用，不要求保留同一个 Promise 或 Session 实例。
+
+恢复时，新 Session 载入保存的上下文，通过本地历史回放把原 assistant 消息交给 Pi 的工具执行器，再由 `agent.continue()` 完成原批次和后续 Agent loop。已确认阶段由产品账本回读；暂停时的本地 abort/error 不进入下一次模型请求。回放不触发 Provider、预算准入或计费，下一次真实请求从保存的 ordinal 后继续。恢复事件以 `agent_end` 确认已等待完成的原生 Agent continuation，不依赖只在 `AgentSession.prompt()` 路径产生的 `agent_settled`。
+
+#### 不变量、期限与迁移
+
+- 恢复记录只能从当前 Owner/Agent/Run 的活跃受保护 artifact 读取，并受当前执行租约及 Run 状态检查。产品身份、Thread、模型、上下文、预算、总期限与部署权威不能改变；只允许新的执行尝试身份和租约。
+- Pi 模型描述、工具定义、授权资源、系统配置或运行目录变化时拒绝自动恢复。文件适配额外要求原目录、目标和 Worker 绑定不变，当前授权仍有效。
+- `deadlines.runMs` 是任务总墙钟期限，等待审批不延长它；`providerRequestMs`、`workerRequestMs` 分别限制实际请求，审批另有 `expiresAt`。总期限耗尽后不得为解释失败而继续付费调用模型。等待本身不占 Worker，也不新增模型调用费用。
+- 审批批准只使恢复成为可能，不代替执行前授权。拒绝、撤销和过期仍由原策略服务判断。页面将过期的 pending 请求显示为 expired，保留 `decidedAt: null`，不伪造 Owner 决定。
+- `awaiting_approval` checkpoint 带版本化 suspension；SQLite migration 0026 保留原 checkpoint 与 Worker 结果。没有完整暂停记录的旧状态不推断为可恢复，已终结 Run 不复活，中断的 `runtime_running` 继续核查。
+- `runtime-tool-intent/result` 仍防止已派发阶段被盲目重做；文件工具恢复只放开经过保护记录验证的执行租约更新，不放开动作语义更新。旧格式执行指纹不相符时明确拒绝，不静默重派。
+- 同一 Thread 已有“等待审批不阻塞后续独立 Run”的调度合同保持不变；原 Run 使用自己冻结的上下文恢复，不把后续消息误当作其新指令。
+
+#### 正式入口与验收边界
+
+生产 HTTP 组合已接入已有治理服务中的 `approval.list/detail/respond`，复用认证会话、CSRF、Owner/Agent 与权威版本校验、幂等命令回执和 ApprovalService。其他尚未组合的治理操作保持不可用，不构造假的平台资格。控制中心可从等待中的 Run 查找并打开其对应 pending 审批，继续复用现有审批详情与决定操作。
+
+本次本地验证已覆盖文件读取以及受控副作用工具的批准、拒绝、结果未知，多工具批次与重复阶段结果回读，重复暂停、终态不重跑、取消、受保护记录作用域、SQLite 重开、新租约竞争、迁移保留数据，以及正式认证 HTTP 的 CSRF、权威与重复批准。受控模型、传输及本地数据库测试分别记录，不据此声明真实 Mac Worker 隔离、OpenRouter 和 ego Lite 的完整验收已经完成。
 
 #### 本轮完成情况与验证边界
 
 - [x] P0-07：正式 read → 目标 Worker 的 inspect → 确定文件身份；覆盖越界、链接、缺失、非普通文件、大小上限和目标替换。
 - [x] P0-08：当前 Owner/Agent/Thread/Run/toolCall、执行租约、文件身份与当前模型分别纳入读取和披露授权；ALLOW、ASK、DENY 有明确分支，配置或模型参数不提供权限。
 - [x] P0-09：从本次请求保存受保护输入，按阶段签发独立单次 Handle，复用正式 Worker 调用回执和结果持久化；验证数据库关闭重开后回读已确认结果且两个 Handle 各消费一次。
-- [ ] P0-10：正式浏览器审批、拒绝与恢复交互。
+- [ ] P0-10：通用暂停恢复、正式审批 API 与 Thread 入口已接线；本地回归已通过，完成标记仍需正式浏览器验收证据。
 - [ ] P0-11 至 P0-14：虽然目标文件程序和 Pi 读取适配组件已补入，实际 Mac 部署资格、真实模型续接总结及其完整结果验收仍未完成。
 
 组合测试使用真实临时文件、真实 ActionPolicyService/ApprovalService/CapabilityHandleService 和 Pi read；Worker 传输使用受控测试适配器。SQLite 集成另通过公开 Repository 接口验证两阶段输入、凭证、回执和结果的数据库重开。该测试发现并修复了 `capabilityInvocationResult.*` 未注册到 SQLite 分发器的缺陷；原来仅直接测试底层结果操作无法发现这一正式调用断点。
@@ -260,4 +300,15 @@ P0-07 最初解析组件的验证：受约束文件系统与目标解析测试 3
 本轮未运行付费模型请求、未写入真实目录或模型披露授权，也未进行 ego Lite 或正式 Mac helper 验收。这些结论不能因组件测试、类型检查或构建成功而更改。
 
 
-本轮验证结果：服务与 Pi compatibility 回归共 192 项通过，其中 P007–P009 组合专项为 32 项；SQLite 能力调用集成 21 项通过，受约束文件系统 32 项通过。`npm run typecheck`、`npm run build:node`、依赖边界、v0.2 覆盖与不变量、秘密扫描、CI policy 和修改文件 lint 通过。构建产物的独立子进程冒烟验证了 inspect、Pi 行范围、主机不匹配拒绝与检查后替换文件拒绝；这不是合格隔离后端中的正式 Worker 安装验收。全仓库 `npm run check` 仍因既有 182 errors、977 warnings 的 lint 基线失败，不能标为全部通过。
+P007–P009 验证结果：服务与 Pi compatibility 回归共 192 项通过，其中 P007–P009 组合专项为 32 项；SQLite 能力调用集成 21 项通过，受约束文件系统 32 项通过。`npm run typecheck`、`npm run build:node`、依赖边界、v0.2 覆盖与不变量、秘密扫描、CI policy 和修改文件 lint 通过。构建产物的独立子进程冒烟验证了 inspect、Pi 行范围、主机不匹配拒绝与检查后替换文件拒绝；这不是合格隔离后端中的正式 Worker 安装验收。全仓库 `npm run check` 仍因既有 182 errors、977 warnings 的 lint 基线失败，不能标为全部通过。
+
+
+P010 通用 HITL 本地验证（2026-09-07）：
+
+- `vitest` 的 integration、node-services、browser 定向回归：14 个文件、176 项通过。覆盖受保护恢复记录、协调器重复暂停、取消与原截止时间终止、SQLite 重开与审批领取、正式认证 HTTP、两阶段文件读取、Thread 状态事件及控制中心客户端。
+- 完整 `pi-compat` 项目：4 个文件、41 项通过。新增受控副作用工具的批准、拒绝、结果未知与原批次恢复测试，使用固定版本真实 Pi AgentSession 和受控模型流；没有调用真实外部模型或发送邮件。
+- `npm run typecheck`、Node 与浏览器构建、修改文件格式及 lint、依赖边界、v0.2 覆盖与不变量、机器秘密扫描、CI policy 通过。
+- `npm run check` 的全仓库格式检查通过，随后仍在既有 lint 基线失败：182 errors、977 warnings；不将此总命令标记通过。
+- 安装、备份恢复、权威迁移三个 Runbook 已按新的暂停状态、总期限与权威绑定核对语义，再更新合同摘要。此项为静态文档核对，不是执行安装、恢复或迁移。
+
+最终差异复查又补充了执行尝试隔离：同一 Run/toolCall 的持久语义允许在新租约下恢复，但仍在运行的 Promise 不允许跨租约共享。新增并发回归与已有 ProductionRuntimeTools、文件工作流共 49 项通过；此数量与上述文件回归有重叠，不相加为独立测试总数。

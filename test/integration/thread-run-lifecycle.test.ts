@@ -1185,11 +1185,15 @@ it("keeps completion atomic when its last reliable event insert fails", async ()
 
 it("allows a concurrent rename but refuses completion after Trash", async () => {
   const setup = await runningFixture();
+  const currentThread = await setup.repository
+    .threadRepository()
+    .read(ownerId, agentId, setup.admitted.thread.id);
+  if (!currentThread) throw new Error("Thread missing");
   await setup.commands.rename({
     ownerId,
     agentId,
     threadId: setup.admitted.thread.id,
-    expectedRevision: setup.admitted.thread.revision,
+    expectedRevision: currentThread.revision,
     titleRef: "payload-run-lifecycle",
     source: "owner",
     idempotencyKey: "completion-rename",
@@ -1745,11 +1749,15 @@ it("reserves Thread completion for atomic assistant/Turn/Run commit", async () =
   });
   const turnId = admitted.message.turnId;
   if (!turnId) throw new Error("Missing admitted Turn");
+  const currentThread = await repository
+    .threadRepository()
+    .read(ownerId, agentId, admitted.thread.id);
+  if (!currentThread) throw new Error("Thread missing");
   const input = {
     ownerId,
     agentId,
     threadId: admitted.thread.id,
-    expectedThreadRevision: admitted.thread.revision,
+    expectedThreadRevision: currentThread.revision,
     turnId,
     runId,
     idempotencyKey: "assistant-commit",
@@ -2430,3 +2438,33 @@ it.each([
   },
   30_000,
 );
+
+it("publishes approval, resume and cancellation as durable Thread events without duplicate replay", async () => {
+  const setup = await runningFixture();
+  const waiting = transition(setup.runId, "awaiting_approval", 3, "await-hitl");
+  await setup.runs.transitionRun(waiting);
+  await setup.runs.transitionRun(waiting);
+  await setup.runs.transitionRun(transition(setup.runId, "running", 4, "resume-hitl"));
+  await setup.runs.transitionRun(transition(setup.runId, "cancelled", 5, "cancel-hitl"));
+  const database = openQualifiedDatabase(setup.databasePath);
+  try {
+    const events = database
+      .prepare(`SELECT event_type, thread_revision, payload_ref
+      FROM thread_gateway_events WHERE thread_id = ? AND event_type IN
+      ('run.awaiting_approval', 'run.running', 'run.cancelled') ORDER BY cursor_sequence`)
+      .all(setup.admitted.thread.id);
+    expect(events.map((event) => (event as { event_type: string }).event_type)).toEqual([
+      "run.running",
+      "run.awaiting_approval",
+      "run.running",
+      "run.cancelled",
+    ]);
+    expect(events).toEqual(events.map(() => expect.objectContaining({ payload_ref: null })));
+    const thread = await setup.repository
+      .threadRepository()
+      .read(ownerId, agentId, setup.admitted.thread.id);
+    expect(events.at(-1)).toMatchObject({ thread_revision: thread?.revision });
+  } finally {
+    database.close();
+  }
+});

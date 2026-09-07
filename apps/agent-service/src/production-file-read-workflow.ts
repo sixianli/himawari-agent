@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { resolveHostFileReadPath } from "@himawari-agent/application";
+import {
+  resolveHostFileReadPath,
+  runtimeToolAuthorizationResult,
+} from "@himawari-agent/application";
 import type {
   GovernedActionIntent,
   GovernedCapabilityExecutionHandle,
@@ -46,6 +49,21 @@ export interface FileReadExecutionContext {
     inputRef: string,
   ): Promise<RuntimeToolExecutionResult>;
 }
+function resumeIdentity(call: RuntimeToolInvocation) {
+  if (!call.context) return call;
+  const { executionLease, continuationRef: _continuation, ...context } = call.context;
+  return {
+    ...call,
+    context: {
+      ...context,
+      authority: {
+        deploymentId: executionLease.deploymentId,
+        authorityEpoch: executionLease.authorityEpoch,
+        fencingToken: executionLease.fencingToken,
+      },
+    },
+  };
+}
 function hash(value: unknown): string {
   return createHash("sha256")
     .update(
@@ -66,13 +84,7 @@ function failure(code: string): RuntimeToolExecutionResult {
     modelContent: `文件读取未完成：${code}`,
   };
 }
-function decisionFailure(decision: Exclude<PermissionDecision, { decision: "ALLOW" }>) {
-  return failure(
-    decision.decision === "ASK"
-      ? `FILE_READ_APPROVAL_REQUIRED:${decision.approvalRequest.id}`
-      : decision.reasonCode,
-  );
-}
+const decisionFailure = runtimeToolAuthorizationResult;
 
 /** One model call, two separately authorized Worker operations. Never reads local files. */
 export class ProductionFileReadWorkflow {
@@ -150,7 +162,9 @@ export class ProductionFileReadWorkflow {
     };
     const stored = (await ctx.save("context", snapshot)).value as typeof snapshot;
     if (
-      hash(stored.call) !== hash(call) ||
+      (call.context.continuationRef
+        ? hash(resumeIdentity(stored.call)) !== hash(resumeIdentity(call))
+        : hash(stored.call) !== hash(call)) ||
       hash(stored.binding) !== hash(binding) ||
       stored.authorityFence !== ctx.authorityFence()
     )

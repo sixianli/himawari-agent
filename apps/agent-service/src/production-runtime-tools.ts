@@ -57,6 +57,22 @@ function digest(value: unknown): string {
     )
     .digest("hex");
 }
+function executionIdentity(invocation: RuntimeToolInvocation) {
+  if (!invocation.context) return invocation;
+  const { executionLease, continuationRef: _continuation, ...context } = invocation.context;
+  return {
+    ...invocation,
+    context: {
+      ...context,
+      authority: {
+        deploymentId: executionLease.deploymentId,
+        authorityEpoch: executionLease.authorityEpoch,
+        fencingToken: executionLease.fencingToken,
+      },
+    },
+  };
+}
+
 async function beforeDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
   if (performance.now() >= deadline) throw new Error("WORKER_DEADLINE_EXCEEDED");
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -201,10 +217,11 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
 
   execute(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
     const key = digest([invocation.runId, invocation.toolCallId]);
-    const fingerprint = digest(invocation);
+    const fingerprint = digest(executionIdentity(invocation));
+    const attemptFingerprint = digest(invocation);
     const active = this.#inFlight.get(key);
     if (active) {
-      if (active.fingerprint !== fingerprint)
+      if (active.fingerprint !== attemptFingerprint)
         return Promise.reject(
           new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed"),
         );
@@ -214,7 +231,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       invocation.capabilityHandleRef === null && this.#options.fileRead
         ? this.#executeFileRead(invocation, key)
         : this.#execute(invocation, key, fingerprint);
-    this.#inFlight.set(key, { fingerprint, result });
+    this.#inFlight.set(key, { fingerprint: attemptFingerprint, result });
     void result.finally(() => this.#inFlight.delete(key)).catch(() => undefined);
     return result;
   }
@@ -268,7 +285,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           arguments: { inputRef },
         };
         // Issued phase handles stay private to this workflow, never in model-visible tools.
-        return this.#execute(child, digest([child.runId, child.toolCallId]), digest(child), true);
+        return this.#execute(
+          child,
+          digest([child.runId, child.toolCallId]),
+          digest(executionIdentity(child)),
+          true,
+        );
       },
     });
   }

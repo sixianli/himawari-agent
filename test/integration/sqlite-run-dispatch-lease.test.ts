@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { hostname } from "node:os";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,6 +9,7 @@ import {
   type PortErrorCode,
 } from "@himawari-agent/application";
 import {
+  createIdempotencyKey,
   createAgentId,
   createAuthorityLeaseId,
   createDeploymentId,
@@ -101,6 +104,7 @@ function dispatch(
 
 async function fixture(
   options: {
+    readonly migrationLimit?: number;
     readonly contextPhase?: "accepted" | "context_formed" | "workers_running" | "runtime_running";
     readonly status?: "accepted" | "building_context" | "running";
   } = {},
@@ -109,7 +113,7 @@ async function fixture(
   roots.push(root);
   const databasePath = path.join(root, "product.sqlite");
   const database = openQualifiedDatabase(databasePath);
-  applyMigrations(database, await loadBundledMigrations());
+  applyMigrations(database, (await loadBundledMigrations()).slice(0, options.migrationLimit));
   await applyDispatchMigration(database);
 
   database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
@@ -280,6 +284,227 @@ function addRun(
 }
 
 describe("SQLite Run dispatch execution leases", () => {
+  it("migrates existing checkpoints and Worker results without dropping their foreign-key data", async () => {
+    const resource = await fixture({
+      migrationLimit: 25,
+      contextPhase: "runtime_running",
+      status: "running",
+    });
+    const database = openQualifiedDatabase(resource.databasePath);
+    try {
+      database
+        .prepare(`INSERT INTO run_coordination_worker_results
+        (run_id, owner_id, agent_id, worker_run_id, result_ref) VALUES (?, ?, ?, 'existing-worker', 'payload-run-dispatch')`)
+        .run(resource.runId, OWNER_ID, AGENT_ID);
+      const snapshotPath = `${resource.databasePath}.before-hitl`;
+      await database.backup(snapshotPath);
+      const result = applyMigrations(database, await loadBundledMigrations(), {
+        snapshot: {
+          host: hostname(),
+          sourceDatabasePath: resource.databasePath,
+          snapshotPath,
+          schemaSequence: 25,
+          digest: createHash("sha256")
+            .update(await readFile(snapshotPath))
+            .digest("hex"),
+          verifiedAt: NOW,
+        },
+      });
+      expect(result.appliedSequences).toEqual([26]);
+      expect(
+        database
+          .prepare(
+            "SELECT phase, suspension_json FROM run_coordination_checkpoints WHERE run_id = ?",
+          )
+          .get(resource.runId),
+      ).toEqual({ phase: "runtime_running", suspension_json: null });
+      expect(
+        database
+          .prepare(
+            "SELECT worker_run_id, result_ref FROM run_coordination_worker_results WHERE run_id = ?",
+          )
+          .all(resource.runId),
+      ).toEqual([{ worker_run_id: "existing-worker", result_ref: "payload-run-dispatch" }]);
+      expect(database.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+  it.each(["approved", "denied", "expired", "deadline", "cancelled"] as const)(
+    "reopens a durable suspension and claims only after %s",
+    async (decision) => {
+      const resource = await fixture();
+      const db = openQualifiedDatabase(resource.databasePath);
+      db.prepare(`INSERT INTO approval_requests
+      (id, owner_id, agent_id, run_id, revision, status, risk, intent_ref, semantic_snapshot_hash, requested_at)
+      VALUES ('approval-suspension', ?, ?, ?, 1, 'pending', 'high', 'payload-run-dispatch', 'frozen-action', ?)`).run(
+        OWNER_ID,
+        AGENT_ID,
+        resource.runId,
+        NOW,
+      );
+      db.close();
+      const open = () =>
+        SqliteProductStateRepository.open({
+          stateRoot: path.dirname(resource.databasePath),
+          databasePath: resource.databasePath,
+          minimumFreeBytes: 0,
+          now: () => NOW,
+        });
+      let repository = await open();
+      const dispatchPort = (consumer: string) =>
+        repository.runDispatch(OWNER_ID, AGENT_ID, AUTHORITY.product, AUTHORITY.lease, consumer);
+      try {
+        const first = dispatchPort("first");
+        const claim = await first.claim({
+          runId: resource.runId,
+          expectedRunRevision: 1,
+          expectedLeaseRevision: 0,
+          executionLeaseId: leaseId("before-suspension"),
+          claimedAt: NOW,
+          expiresAt: LATER,
+        });
+        const checkpoints = repository.runCheckpointStore(OWNER_ID, AGENT_ID, AUTHORITY.product);
+        const checkpoint = {
+          phase: "awaiting_approval" as const,
+          contextRef: "payload-run-dispatch",
+          workerResults: {},
+          runtimeEventCount: 3,
+          lastTraceEventId: null,
+          terminalStatus: null,
+          output: null,
+          diagnosticCode: null,
+          suspension: {
+            version: "runtime-suspension.v1" as const,
+            continuationRef: "payload-run-dispatch",
+            ...(decision === "deadline" ? { executionDeadlineAt: NOW } : {}),
+            approval: {
+              approvalRequestId: "approval-suspension",
+              semanticSnapshotHash: "frozen-action",
+              expiresAt: LATER,
+            },
+          },
+        };
+        await expect(
+          checkpoints.compareAndSet({
+            runId: resource.runId,
+            expectedRevision: null,
+            executionLease: claimFromRunExecutionLease(claim),
+            checkpoint: {
+              ...checkpoint,
+              suspension: {
+                ...checkpoint.suspension,
+                approval: { ...checkpoint.suspension.approval, semanticSnapshotHash: "changed" },
+              },
+            },
+          }),
+        ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+        await checkpoints.compareAndSet({
+          runId: resource.runId,
+          expectedRevision: null,
+          executionLease: claimFromRunExecutionLease(claim),
+          checkpoint,
+        });
+        const released = await first.release({
+          runId: resource.runId,
+          expectedLeaseRevision: claim.revision,
+          executionLeaseId: claim.executionLeaseId,
+          releasedAt: NOW,
+        });
+        await repository.close();
+        const changed = openQualifiedDatabase(resource.databasePath);
+        changed
+          .prepare("UPDATE runs SET status = 'awaiting_approval', revision = 2 WHERE id = ?")
+          .run(resource.runId);
+        changed.close();
+        repository = await open();
+        expect(
+          (
+            await repository
+              .runCheckpointStore(OWNER_ID, AGENT_ID, AUTHORITY.product)
+              .read(resource.runId)
+          )?.checkpoint,
+        ).toEqual(checkpoint);
+        const second = dispatchPort("second");
+        if (decision !== "deadline")
+          expect(await second.listClaimable({ now: NOW, limit: 10 })).toEqual([]);
+        const currentLease = released;
+        if (decision !== "deadline")
+          await expect(
+            second.claim({
+              runId: resource.runId,
+              expectedRunRevision: 2,
+              expectedLeaseRevision: currentLease?.revision ?? 0,
+              executionLeaseId: leaseId("premature-resume"),
+              claimedAt: NOW,
+              expiresAt: LATER,
+            }),
+          ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+        if (decision === "cancelled") {
+          await repository.runLifecycle(OWNER_ID, AGENT_ID, AUTHORITY.product).cancelRun({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            runId: resource.runId,
+            expectedRevision: 2,
+            authority: AUTHORITY.lease,
+            idempotencyKey: createIdempotencyKey("cancel-suspension"),
+            commandFingerprint: "cancel-suspension",
+            payloadRef: "payload-run-dispatch",
+          });
+          const lateApproval = openQualifiedDatabase(resource.databasePath);
+          lateApproval
+            .prepare(
+              "UPDATE approval_requests SET status = 'approved', revision = 2 WHERE id = 'approval-suspension'",
+            )
+            .run();
+          lateApproval.close();
+          await repository.close();
+          repository = await open();
+          expect(
+            (
+              await repository
+                .runCheckpointStore(OWNER_ID, AGENT_ID, AUTHORITY.product)
+                .read(resource.runId)
+            )?.checkpoint,
+          ).toMatchObject({ phase: "cancelled", terminalStatus: "cancelled" });
+          expect(
+            await dispatchPort("late-approval").listClaimable({ now: NOW, limit: 10 }),
+          ).toEqual([]);
+          return;
+        }
+        if (decision === "approved" || decision === "denied") {
+          const approvalDb = openQualifiedDatabase(resource.databasePath);
+          approvalDb
+            .prepare(
+              "UPDATE approval_requests SET status = ?, revision = 2 WHERE id = 'approval-suspension'",
+            )
+            .run(decision);
+          approvalDb.close();
+        }
+        const now = decision === "expired" ? LATER : NOW;
+        const candidates = await second.listClaimable({ now, limit: 10 });
+        expect(candidates).toEqual([
+          expect.objectContaining({
+            runId: resource.runId,
+            action: "resume",
+            checkpointPhase: "awaiting_approval",
+          }),
+        ]);
+        const fresh = await second.claim({
+          runId: resource.runId,
+          expectedRunRevision: 2,
+          expectedLeaseRevision: currentLease?.revision ?? 0,
+          executionLeaseId: leaseId("approved-resume"),
+          claimedAt: now,
+          expiresAt: "2026-09-04T01:00:00.000Z",
+        });
+        expect(fresh.executionLeaseId).not.toBe(claim.executionLeaseId);
+        expect(await dispatchPort("competitor").listClaimable({ now, limit: 10 })).toEqual([]);
+      } finally {
+        await repository.close();
+      }
+    },
+  );
   it("permits one consumer to claim a Run and rejects a concurrent second consumer", async () => {
     const resource = await fixture();
     const firstDatabase = openQualifiedDatabase(resource.databasePath);

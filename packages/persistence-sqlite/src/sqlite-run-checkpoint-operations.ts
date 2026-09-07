@@ -37,6 +37,7 @@ const phases: readonly RunCheckpointPhase[] = [
   "context_formed",
   "workers_running",
   "runtime_running",
+  "awaiting_approval",
   "runtime_settled",
   "reconciling_external_result",
   "completed",
@@ -93,7 +94,37 @@ function checkpoint(value: unknown): RunCheckpoint {
       output = { kind: "no-answer" };
     else throw new TypeError("Invalid checkpoint output");
   }
+  let suspension: RunCheckpoint["suspension"];
+  if (input["suspension"] !== undefined) {
+    const raw = record(input["suspension"]);
+    const approval = record(raw["approval"]);
+    if (
+      raw["version"] !== "runtime-suspension.v1" ||
+      !Number.isFinite(Date.parse(text(approval["expiresAt"])))
+    )
+      throw new TypeError("Invalid suspension version or expiry");
+    if (
+      raw["executionDeadlineAt"] !== undefined &&
+      !Number.isFinite(Date.parse(text(raw["executionDeadlineAt"])))
+    )
+      throw new TypeError("Invalid suspension execution deadline");
+    suspension = {
+      ...(raw["executionDeadlineAt"] === undefined
+        ? {}
+        : { executionDeadlineAt: text(raw["executionDeadlineAt"]) }),
+      version: "runtime-suspension.v1",
+      continuationRef: text(raw["continuationRef"]),
+      approval: {
+        approvalRequestId: text(approval["approvalRequestId"]),
+        semanticSnapshotHash: text(approval["semanticSnapshotHash"]),
+        expiresAt: text(approval["expiresAt"]),
+      },
+    };
+  }
+  if (phase === "awaiting_approval" && (!suspension || terminalStatus !== null))
+    throw new TypeError("Waiting checkpoint requires a nonterminal suspension");
   return {
+    ...(suspension ? { suspension } : {}),
     phase,
     terminalStatus,
     output,
@@ -229,6 +260,7 @@ export class SqliteRunCheckpointOperations {
           at: updatedAt,
         });
         const refs = [
+          next.suspension?.continuationRef ?? null,
           next.contextRef,
           ...Object.values(next.workerResults),
           next.output?.kind === "assistant-answer" ? next.output.contentRef : null,
@@ -261,15 +293,30 @@ export class SqliteRunCheckpointOperations {
               traceEventId: next.lastTraceEventId,
             },
           );
+        if (next.phase === "awaiting_approval" && next.suspension) {
+          const approval = this.database
+            .prepare(`SELECT semantic_snapshot_hash FROM approval_requests
+            WHERE id = ? AND owner_id = ? AND agent_id = ? AND run_id = ?`)
+            .get(next.suspension.approval.approvalRequestId, ownerId, agentId, runId);
+          if (
+            !approval ||
+            record(approval)["semantic_snapshot_hash"] !==
+              next.suspension.approval.semanticSnapshotHash
+          )
+            return this.fail(
+              "PORT_NOT_AUTHORITATIVE",
+              "Suspension approval is outside the Run scope",
+            );
+        }
         const revision = (current?.revision ?? 0) + 1;
         this.database
           .prepare(`INSERT INTO run_coordination_checkpoints (run_id, owner_id, agent_id, revision,
-        phase, context_ref, runtime_event_count, last_trace_event_id, terminal_status, output_kind, final_answer_ref, diagnostic_code, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET
+        phase, context_ref, runtime_event_count, last_trace_event_id, terminal_status, output_kind, final_answer_ref, diagnostic_code, updated_at, suspension_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET
         revision = excluded.revision, phase = excluded.phase, context_ref = excluded.context_ref,
         runtime_event_count = excluded.runtime_event_count, last_trace_event_id = excluded.last_trace_event_id,
         terminal_status = excluded.terminal_status, output_kind = excluded.output_kind,
-        final_answer_ref = excluded.final_answer_ref, diagnostic_code = excluded.diagnostic_code, updated_at = excluded.updated_at`)
+        final_answer_ref = excluded.final_answer_ref, diagnostic_code = excluded.diagnostic_code, updated_at = excluded.updated_at, suspension_json = excluded.suspension_json`)
           .run(
             runId,
             ownerId,
@@ -284,6 +331,7 @@ export class SqliteRunCheckpointOperations {
             next.output?.kind === "assistant-answer" ? next.output.contentRef : null,
             next.diagnosticCode,
             updatedAt,
+            next.suspension ? JSON.stringify(next.suspension) : null,
           );
         this.database
           .prepare("DELETE FROM run_coordination_worker_results WHERE run_id = ?")
@@ -306,7 +354,7 @@ export class SqliteRunCheckpointOperations {
   ): StoredRunCheckpoint | undefined {
     const raw = this.database
       .prepare(`SELECT revision, phase, context_ref, runtime_event_count,
-      last_trace_event_id, terminal_status, output_kind, final_answer_ref, diagnostic_code
+      last_trace_event_id, terminal_status, output_kind, final_answer_ref, diagnostic_code, suspension_json
       FROM run_coordination_checkpoints WHERE run_id = ? AND owner_id = ? AND agent_id = ?`)
       .get(runId, ownerId, agentId);
     if (!raw) return undefined;
@@ -324,6 +372,7 @@ export class SqliteRunCheckpointOperations {
       runId,
       revision: integer(row["revision"]),
       checkpoint: checkpoint({
+        ...(row["suspension_json"] ? { suspension: JSON.parse(text(row["suspension_json"])) } : {}),
         phase: row["phase"],
         contextRef: row["context_ref"],
         runtimeEventCount: row["runtime_event_count"],

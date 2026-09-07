@@ -10,6 +10,7 @@ import {
   type PayloadProtectorPort,
   type ProductConfiguration,
   RunCoordinator,
+  RuntimeContinuationService,
   RunExecutionInputService,
   type RunExecutionPolicy,
   type RunExecutionSource,
@@ -112,7 +113,28 @@ export function createProductionRunComposition(options: ProductionRunComposition
     clock,
     ids,
   });
+  const continuations = new RuntimeContinuationService({
+    artifacts,
+    payloads,
+    protector,
+    clock,
+    ids,
+    assertActive: async (request) => {
+      if (request.ownerId !== ownerId || request.agentId !== agentId)
+        throw new Error("RUNTIME_SCOPE_INVALID");
+      await authority.assertActive();
+      await dispatch.assertHeld({
+        runId: request.runId,
+        executionLeaseId: request.executionLease.executionLeaseId,
+        expectedLeaseRevision: request.executionLease.expectedLeaseRevision,
+        at: clock.now(),
+      });
+      const current = await repository.runLifecycle(ownerId, agentId, fence).readRun(request.runId);
+      if (!current || current.run.status !== "running") throw new Error("RUNTIME_RUN_NOT_ACTIVE");
+    },
+  });
   const runtime = new PiAgentRuntimeAdapter({
+    continuations,
     projection,
     tools: options.tools,
     models: options.models,

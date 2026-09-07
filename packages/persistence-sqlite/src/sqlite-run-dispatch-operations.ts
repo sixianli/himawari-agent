@@ -54,8 +54,17 @@ interface LeaseRow {
   readonly releasedAt: string | null;
 }
 
-const RUN_DISPATCHABLE_STATUSES = ["accepted", "building_context", "running"] as const;
-const RESUMABLE_CHECKPOINT_PHASES = ["context_formed", "runtime_settled"] as const;
+const RUN_DISPATCHABLE_STATUSES = [
+  "accepted",
+  "building_context",
+  "running",
+  "awaiting_approval",
+] as const;
+const RESUMABLE_CHECKPOINT_PHASES = [
+  "context_formed",
+  "runtime_settled",
+  "awaiting_approval",
+] as const;
 const RECONCILIATION_CHECKPOINT_PHASES = [
   "workers_running",
   "runtime_running",
@@ -213,10 +222,17 @@ export class SqliteRunDispatchOperations {
            ON current_turn.run_id = r.id AND current_turn.owner_id = r.owner_id
              AND current_turn.agent_id = r.agent_id
          WHERE r.owner_id = ? AND r.agent_id = ?
-           AND r.status IN ('accepted', 'building_context', 'running')
+           AND r.status IN ('accepted', 'building_context', 'running', 'awaiting_approval')
            AND (
              (r.status = 'accepted' AND (c.phase IS NULL OR c.phase = 'accepted'))
              OR c.phase IN ('context_formed', 'runtime_settled')
+             OR (c.phase = 'awaiting_approval' AND EXISTS (
+               SELECT 1 FROM approval_requests approval
+               WHERE approval.id = json_extract(c.suspension_json, '$.approval.approvalRequestId')
+                 AND approval.owner_id = r.owner_id AND approval.agent_id = r.agent_id AND approval.run_id = r.id
+                 AND approval.semantic_snapshot_hash = json_extract(c.suspension_json, '$.approval.semanticSnapshotHash')
+                 AND (approval.status <> 'pending' OR MIN(json_extract(c.suspension_json, '$.approval.expiresAt'), COALESCE(json_extract(c.suspension_json, '$.executionDeadlineAt'), json_extract(c.suspension_json, '$.approval.expiresAt'))) <= ?)
+             ))
            )
            AND (l.run_id IS NULL OR l.released_at IS NOT NULL OR l.expires_at <= ?)
            AND NOT EXISTS (
@@ -242,7 +258,7 @@ export class SqliteRunDispatchOperations {
          ORDER BY r.created_at, r.id
          LIMIT ?`,
       )
-      .all(this.scope.ownerId, this.scope.agentId, now, limit);
+      .all(this.scope.ownerId, this.scope.agentId, now, now, limit);
     return rows.map((row) => this.candidate(record(row), false));
   }
 
@@ -430,7 +446,7 @@ export class SqliteRunDispatchOperations {
       if (run.revision !== expectedRunRevision) {
         return this.fail("PORT_CONFLICT", "Run revision conflict", { runId });
       }
-      this.assertDispatchable(run);
+      this.assertDispatchable(run, claimedAt);
       const revision = expectedLeaseRevision + 1;
       this.database
         .prepare(
@@ -872,7 +888,18 @@ export class SqliteRunDispatchOperations {
     } as const;
   }
 
-  private assertDispatchable(run: RunRow): void {
+  private assertDispatchable(run: RunRow, now: string): void {
+    if (run.checkpointPhase === "awaiting_approval") {
+      const ready = this.database
+        .prepare(`SELECT 1 FROM run_coordination_checkpoints c
+        JOIN approval_requests a ON a.id = json_extract(c.suspension_json, '$.approval.approvalRequestId')
+        AND a.owner_id = c.owner_id AND a.agent_id = c.agent_id AND a.run_id = c.run_id
+        AND a.semantic_snapshot_hash = json_extract(c.suspension_json, '$.approval.semanticSnapshotHash')
+        WHERE c.run_id = ? AND c.owner_id = ? AND c.agent_id = ?
+        AND (a.status <> 'pending' OR MIN(json_extract(c.suspension_json, '$.approval.expiresAt'), COALESCE(json_extract(c.suspension_json, '$.executionDeadlineAt'), json_extract(c.suspension_json, '$.approval.expiresAt'))) <= ?)`)
+        .get(run.id, this.scope.ownerId, this.scope.agentId, now);
+      if (!ready) this.fail("PORT_CONFLICT", "Run approval is still pending", { runId: run.id });
+    }
     if (
       !RUN_DISPATCHABLE_STATUSES.includes(run.status as (typeof RUN_DISPATCHABLE_STATUSES)[number])
     ) {

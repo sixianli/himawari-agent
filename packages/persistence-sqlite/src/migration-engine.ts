@@ -252,6 +252,13 @@ const bundledMigrationFiles = [
     phase: "contract" as const,
     file: "0025_memory_projection_budget.sql",
   },
+  {
+    sequence: 26,
+    name: "durable_runtime_suspension",
+    changeSet: "durable-runtime-suspension",
+    phase: "contract" as const,
+    file: "0026_durable_runtime_suspension.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

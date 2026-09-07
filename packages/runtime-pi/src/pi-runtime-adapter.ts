@@ -33,6 +33,8 @@ import type {
   ModelInvocationPricing,
   ModelInvocationUsage,
   RuntimeEvent,
+  RuntimeContinuationPort,
+  RuntimeApprovalWait,
   RuntimeProjection,
   RuntimeProjectionContent,
   RuntimeProjectionMessage,
@@ -43,6 +45,12 @@ import type {
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
 import { redactMachineSecrets } from "@himawari-agent/application/runtime-port";
+
+import {
+  capturePiToolBatch,
+  restorePiToolBatch,
+  type PiToolBatchContinuation,
+} from "./pi-tool-batch-continuation.js";
 
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
@@ -89,6 +97,7 @@ export interface PiRuntimeResourcePort {
 
 export interface PiAgentRuntimeAdapterDependencies {
   readonly projection: RuntimeProjectionPort;
+  readonly continuations?: RuntimeContinuationPort;
   readonly tools: RuntimeToolPort;
   readonly models: PiModelBindingPort;
   readonly resources?: PiRuntimeResourcePort;
@@ -709,6 +718,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     let turnIndex = 0;
     let messageSequence = 0;
     let finalAssistant: AssistantMessage | undefined;
+    let suspended: Extract<RuntimeEvent, { type: "runtime.suspended" }> | undefined;
     let unknownTool: Extract<RuntimeEvent, { type: "runtime.result_unknown" }> | undefined;
     const enqueue = (operation: () => Promise<void> | void): Promise<void> => {
       eventChain = eventChain.then(operation);
@@ -728,6 +738,42 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       if (projection.prompt.content.trim().length === 0) {
         throw new TypeError("RUNTIME_PROJECTION_EMPTY_PROMPT");
       }
+      const identity = createHash("sha256")
+        .update(
+          JSON.stringify({
+            model: binding.descriptor,
+            descriptors,
+            resources,
+            systemInstruction: projection.systemInstruction,
+            cwd: this.#dependencies.cwd,
+          }),
+        )
+        .digest("hex");
+      const continuation =
+        request.continuationRef === undefined
+          ? undefined
+          : ((await this.#dependencies.continuations?.load(request, request.continuationRef)) as
+              | {
+                  identity: string;
+                  batch: PiToolBatchContinuation;
+                  turnIndex: number;
+                  messageSequence: number;
+                }
+              | undefined);
+      if (request.continuationRef && (!continuation || continuation.identity !== identity))
+        throw new Error("RUNTIME_CONTINUATION_BINDING_CHANGED");
+      if (continuation) {
+        if (
+          !Number.isSafeInteger(continuation.turnIndex) ||
+          continuation.turnIndex < 1 ||
+          !Number.isSafeInteger(continuation.messageSequence) ||
+          continuation.messageSequence < 1
+        )
+          throw new Error("RUNTIME_CONTINUATION_COUNTERS_INVALID");
+        turnIndex = continuation.turnIndex;
+        messageSequence = continuation.messageSequence;
+      }
+      let streamOrdinal = continuation?.batch.completedStreamOrdinal ?? 0;
       const descriptorsByName = new Map(
         descriptors.map((descriptor) => [descriptor.name, descriptor]),
       );
@@ -822,7 +868,28 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         customTools: descriptors.map((descriptor) =>
           this.createTool(request, descriptor, {
             assertKnown: () => {
-              if (unknownTool) throw new Error("RUNTIME_TOOL_RECONCILIATION_REQUIRED");
+              if (suspended || unknownTool) throw new Error("RUNTIME_TOOL_EXECUTION_STOPPED");
+            },
+            suspend: async (invocation, approval) => {
+              const active = this.#activeSessions.get(request.runId);
+              if (!active || !this.#dependencies.continuations)
+                throw new Error("RUNTIME_CONTINUATION_STORAGE_UNAVAILABLE");
+              await eventChain;
+              const batch = capturePiToolBatch(active, invocation.toolCallId, streamOrdinal);
+              const continuationRef = await this.#dependencies.continuations.save(request, {
+                identity,
+                batch,
+                turnIndex,
+                messageSequence,
+              });
+              suspended = {
+                type: "runtime.suspended",
+                runId: request.runId,
+                continuationRef,
+                approval,
+                occurredAt: this.now(),
+              };
+              active.agent.abort();
             },
             unknown: (invocation, result) => {
               unknownTool ??= {
@@ -844,9 +911,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       });
       const session = created.session;
       const originalStreamFunction = session.agent.streamFunction;
-      let streamOrdinal = 0;
+      const restored = continuation ? restorePiToolBatch(session, continuation.batch) : undefined;
       session.agent.streamFunction = (model, context, options) =>
-        unknownTool
+        restored?.takeReplay() ??
+        (suspended || unknownTool
           ? failedPiStream(model, "Runtime tool reconciliation is required")
           : admitPiStream(
               request,
@@ -858,11 +926,14 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               ++streamOrdinal,
               originalStreamFunction,
               this.#dependencies.logicalSlot,
-            );
+            ));
       this.#activeSessions.set(request.runId, session);
 
       const unsubscribe = session.subscribe((event) => {
         void enqueue(async () => {
+          if (suspended) return;
+          // agent.continue() owns completion after restoring; prompt-only session events do not fire.
+          if (restored && event.type === "agent_end") settled = true;
           if (event.type === "message_end" && event.message.role === "assistant")
             finalAssistant = event.message;
           const mapped = await this.mapEvent(
@@ -888,10 +959,12 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       });
 
       try {
-        await session.prompt(projection.prompt.content, {
-          expandPromptTemplates: false,
-          source: "extension",
-        });
+        if (restored) await session.agent.continue();
+        else
+          await session.prompt(projection.prompt.content, {
+            expandPromptTemplates: false,
+            source: "extension",
+          });
         await session.waitForIdle();
         await eventChain;
       } finally {
@@ -900,7 +973,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         this.#activeSessions.delete(request.runId);
       }
 
-      if (unknownTool) {
+      if (suspended && !this.#cancelledRuns.has(request.runId)) {
+        emit(suspended);
+      } else if (unknownTool) {
         emit(unknownTool);
       } else if (this.#cancelledRuns.has(request.runId) || aborted) {
         emit({
@@ -974,6 +1049,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     descriptor: RuntimeToolDescriptor,
     reconciliation: {
       assertKnown(): void;
+      suspend(invocation: RuntimeToolInvocation, approval: RuntimeApprovalWait): Promise<void>;
       unknown(
         invocation: RuntimeToolInvocation,
         result: Awaited<ReturnType<RuntimeToolPort["execute"]>>,
@@ -1043,6 +1119,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             threadId: request.threadId,
             modelRef: request.modelRef,
             executionLease: request.executionLease,
+            ...(request.continuationRef ? { continuationRef: request.continuationRef } : {}),
           },
           toolCallId,
           ...(request.executionDeadlineAt === undefined
@@ -1079,6 +1156,15 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             externalActionId: null,
             modelContent: "Tool execution needs reconciliation before continuing.",
           };
+        }
+        if (result.outcome === "awaiting_approval") {
+          try {
+            await reconciliation.suspend(invocation, result.approval);
+          } catch {
+            reconciliation.unknown(invocation, result);
+          }
+          // Pi aborts the batch. This local unwind result is never captured or sent to a model.
+          throw new Error("RUNTIME_TOOL_SUSPENDED");
         }
         if (result.outcome === "result_unknown") reconciliation.unknown(invocation, result);
         return {

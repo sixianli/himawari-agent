@@ -194,6 +194,119 @@ async function fixture(
 }
 
 describe("Task 13 Run Coordinator and worker orchestration", () => {
+  it("persists repeated suspensions and resumes the same Run without restarting the user request", async () => {
+    const suffix = "generic-suspension";
+    const runId = createRunId(`run-${suffix}`);
+    const requests: RuntimeRequest[] = [];
+    const runtime: AgentRuntimePort = {
+      async *run(request) {
+        requests.push(request);
+        if (requests.length <= 2)
+          yield {
+            type: "runtime.suspended",
+            runId,
+            occurredAt: T1,
+            continuationRef: `continuation-${requests.length}`,
+            approval: {
+              approvalRequestId: `approval-${requests.length}`,
+              semanticSnapshotHash: "frozen",
+              expiresAt: T2,
+            },
+          };
+        else
+          yield {
+            type: "runtime.completed",
+            runId,
+            occurredAt: T2,
+            output: { kind: "assistant-answer", contentRef: "final-generic-answer" },
+          };
+      },
+      async cancel() {},
+    };
+    const setup = await fixture(suffix, runtime);
+    const first = await setup.coordinator.execute(setup.input);
+    expect(first.run.run.status).toBe("awaiting_approval");
+    expect(first.checkpoint.terminalStatus).toBeNull();
+    expect(first.checkpoint.suspension?.continuationRef).toBe("continuation-1");
+    const second = await setup.coordinator.execute(setup.input);
+    expect(second.run.run.status).toBe("awaiting_approval");
+    expect(requests[1]?.continuationRef).toBe("continuation-1");
+    const third = await setup.coordinator.execute(setup.input);
+    expect(third.run.run.status).toBe("completed");
+    expect(requests[2]?.continuationRef).toBe("continuation-2");
+    await setup.coordinator.execute(setup.input);
+    expect(requests).toHaveLength(3);
+  });
+  it("fails a durable approval wait at the original deadline without entering Pi again", async () => {
+    const suffix = "expired-suspension";
+    const runId = createRunId(`run-${suffix}`);
+    let attempts = 0;
+    const runtime: AgentRuntimePort = {
+      async *run() {
+        attempts += 1;
+        yield {
+          type: "runtime.suspended",
+          runId,
+          occurredAt: T1,
+          continuationRef: "expired-continuation",
+          approval: {
+            approvalRequestId: "pending",
+            semanticSnapshotHash: "frozen",
+            expiresAt: "2099-01-01T00:00:00.000Z",
+          },
+        };
+      },
+      async cancel() {},
+    };
+    const setup = await fixture(suffix, runtime);
+    const input = { ...setup.input, executionDeadlineAt: T2 };
+    await setup.coordinator.execute(input);
+    setup.clock.set(T2);
+    const result = await setup.coordinator.execute(input);
+    expect(result.run.run.status).toBe("failed");
+    expect(result.checkpoint).toMatchObject({
+      phase: "failed",
+      diagnosticCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+    });
+    expect(attempts).toBe(1);
+  });
+  it("does not resume a cancelled approval wait after a late decision", async () => {
+    const suffix = "cancel-suspension";
+    const runId = createRunId(`run-${suffix}`);
+    let attempts = 0;
+    const runtime: AgentRuntimePort = {
+      async *run() {
+        attempts += 1;
+        yield {
+          type: "runtime.suspended",
+          runId,
+          occurredAt: T1,
+          continuationRef: "cancelled-continuation",
+          approval: {
+            approvalRequestId: "cancelled-approval",
+            semanticSnapshotHash: "frozen",
+            expiresAt: T2,
+          },
+        };
+      },
+      async cancel() {},
+    };
+    const setup = await fixture(suffix, runtime);
+    await setup.coordinator.execute(setup.input);
+    await setup.coordinator.cancel({
+      ownerId: setup.input.ownerId,
+      agentId: setup.input.agentId,
+      runId,
+      authority: setup.input.authority,
+      command: setup.input.commands.cancelled,
+      reasonCode: "OWNER_CANCELLED",
+    });
+    const resumed = await setup.coordinator.execute(setup.input);
+    expect(resumed.run.run.status).toBe("cancelled");
+    // The reference Run adapter checks terminal dispatch here; SQLite tests below
+    // cover atomic cancellation of the checkpoint and lease.
+    expect(attempts).toBe(1);
+  });
   it("interrupts the runtime at its deadline without accepting a late successful answer", async () => {
     const suffix = "runtime-deadline";
     const runId = createRunId(`run-${suffix}`);

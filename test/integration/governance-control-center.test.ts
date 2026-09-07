@@ -312,6 +312,7 @@ async function fixture() {
     agentId: AGENT_ID,
   });
   return {
+    clock,
     approval,
     authorization,
     capabilities,
@@ -325,6 +326,34 @@ async function fixture() {
 }
 
 describe("S4 Task 11 governance Control Center boundary", () => {
+  it("shows elapsed pending approvals as expired without claiming an Owner decision", async () => {
+    const setup = await fixture();
+    setup.clock.set(EXPIRES_AT);
+    const detail = await setup.reads.query(
+      query("approval.detail", "expired-detail", { approvalRequestId: setup.approval.id }),
+    );
+    expect(detail).toMatchObject({
+      type: "approval.snapshot",
+      payload: { status: "expired", decidedAt: null },
+    });
+    const pending = await setup.reads.query(
+      query("approval.list", "pending-after-expiry", {
+        status: "pending",
+        afterCursor: null,
+        limit: 100,
+      }),
+    );
+    expect(pending).toMatchObject({ type: "collection.snapshot", payload: { itemRefs: [] } });
+    const expired = await setup.reads.query(
+      query("approval.list", "expired-list", { status: "expired", afterCursor: null, limit: 100 }),
+    );
+    expect(expired).toMatchObject({
+      type: "collection.snapshot",
+      payload: { itemRefs: [setup.approval.id] },
+    });
+    expect((await setup.authorization.getApproval(setup.approval.id))?.decidedAt).toBeNull();
+  });
+
   it("projects frozen Approval and Grant truth, then resolves and revokes with revision and idempotency", async () => {
     const setup = await fixture();
     const approvalBefore = await setup.reads.query(

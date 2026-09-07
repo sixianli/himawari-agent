@@ -1,3 +1,5 @@
+import { createIdempotencyKey } from "@himawari-agent/domain";
+import { threadCommandFingerprint } from "./thread-command-service.js";
 import type {
   AgentId,
   IdempotencyKey,
@@ -173,6 +175,8 @@ export class RunCoordinator {
 
   async execute(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult> {
     this.assertScope(input);
+    const expiredWait = await this.finishExpiredApprovalWait(input);
+    if (expiredWait) return expiredWait;
     const attempt = this.beginExecutionAttempt(input);
     try {
       return await this.executeAttempt(input, attempt);
@@ -181,6 +185,43 @@ export class RunCoordinator {
       if (attempt.interruption) await attempt.interruption;
       this.endExecutionAttempt(attempt);
     }
+  }
+
+  private async finishExpiredApprovalWait(
+    input: ExecuteCoordinatedRunInput,
+  ): Promise<CoordinatedRunResult | undefined> {
+    if (
+      input.executionDeadlineAt === undefined ||
+      !Number.isFinite(Date.parse(input.executionDeadlineAt)) ||
+      Date.parse(input.executionDeadlineAt) > this.executionNow()
+    )
+      return undefined;
+    const checkpoint = await this.readCheckpoint(input.runId);
+    if (checkpoint?.checkpoint.phase !== "awaiting_approval") return undefined;
+    const stored = await this.requireRun(input.runId);
+    if (
+      stored.run.ownerId !== input.ownerId ||
+      stored.run.agentId !== input.agentId ||
+      stored.run.sessionId !== input.runtime.sessionId ||
+      (stored.run.threadId ?? null) !== input.runtime.threadId
+    )
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Expired approval Run scope mismatch",
+      );
+    if (isTerminalStatus(stored.run.status))
+      return this.result(stored, checkpoint.checkpoint, true);
+    // A durable wait has no in-flight tool. Expiry can fail it without inventing
+    // an unknown external result or restarting Pi. Writes still require the lease.
+    const failed = await this.transition(input, stored, "failed");
+    const saved = await this.saveCheckpoint(input, checkpoint, {
+      ...checkpoint.checkpoint,
+      phase: "failed",
+      terminalStatus: "failed",
+      output: null,
+      diagnosticCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+    });
+    return this.result(failed, saved.checkpoint, true);
   }
 
   async interruptAllExecutions(reasonCode: string): Promise<void> {
@@ -399,6 +440,11 @@ export class RunCoordinator {
       this.assertExecutionActive(attempt);
     }
 
+    if (storedRun.run.status === "awaiting_approval") {
+      const suspension = storedCheckpoint.checkpoint.suspension;
+      if (!suspension) throw new Error("RUN_SUSPENSION_MISSING");
+      storedRun = await this.transition(input, storedRun, "running", suspension.continuationRef);
+    }
     if (storedRun.run.status === "building_context") {
       this.assertExecutionActive(attempt);
       storedRun = await this.transition(input, storedRun, "running");
@@ -445,6 +491,15 @@ export class RunCoordinator {
       storedCheckpoint = terminal.checkpoint;
     }
 
+    if (storedCheckpoint.checkpoint.phase === "awaiting_approval") {
+      storedRun = await this.transition(
+        input,
+        storedRun,
+        "awaiting_approval",
+        storedCheckpoint.checkpoint.suspension?.continuationRef,
+      );
+      return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
+    }
     if (storedCheckpoint.checkpoint.phase === "reconciling_external_result") {
       this.assertExecutionActive(attempt);
       storedRun = await this.transition(input, storedRun, "reconciling_external_result");
@@ -715,9 +770,12 @@ export class RunCoordinator {
     attempt: ExecutionAttempt,
   ): Promise<{ readonly checkpoint: StoredRunCheckpoint }> {
     let storedCheckpoint = initialCheckpoint;
-    let observed = 0;
+    let observed = initialCheckpoint.checkpoint.runtimeEventCount;
     const runtimeRequest: RuntimeRequest = {
       ...input.runtime,
+      ...(storedCheckpoint.checkpoint.suspension
+        ? { continuationRef: storedCheckpoint.checkpoint.suspension.continuationRef }
+        : {}),
       executionLease: input.executionLease,
       ...(input.executionDeadlineAt === undefined
         ? {}
@@ -750,6 +808,26 @@ export class RunCoordinator {
           payload: event,
         });
         this.assertExecutionActive(attempt);
+        if (event.type === "runtime.suspended") {
+          storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
+            ...storedCheckpoint.checkpoint,
+            phase: "awaiting_approval",
+            terminalStatus: null,
+            output: null,
+            runtimeEventCount: observed,
+            lastTraceEventId: recorded.event.id,
+            diagnosticCode: null,
+            suspension: {
+              version: "runtime-suspension.v1",
+              continuationRef: event.continuationRef,
+              approval: event.approval,
+              ...(input.executionDeadlineAt === undefined
+                ? {}
+                : { executionDeadlineAt: input.executionDeadlineAt }),
+            },
+          });
+          break;
+        }
         if (event.type === "runtime.result_unknown") {
           storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
             ...storedCheckpoint.checkpoint,
@@ -868,6 +946,7 @@ export class RunCoordinator {
     input: ExecuteCoordinatedRunInput,
     stored: StoredRun,
     nextStatus: Exclude<RunStatus, "accepted">,
+    continuationRef?: string,
   ): Promise<StoredRun> {
     if (stored.run.status === nextStatus) return stored;
     let command: RunTransitionCommand;
@@ -891,10 +970,21 @@ export class RunCoordinator {
         command = input.commands.cancelled;
         break;
       case "awaiting_approval":
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.INVALID_OPERATION,
-          "Run Coordinator does not enter awaiting_approval without an approval service",
-        );
+        if (!continuationRef) throw new Error("RUN_SUSPENSION_MISSING");
+        command = input.commands.running;
+        break;
+    }
+    if (continuationRef) {
+      const fingerprint = threadCommandFingerprint({
+        runId: input.runId,
+        continuationRef,
+        nextStatus,
+      });
+      command = {
+        ...command,
+        idempotencyKey: createIdempotencyKey(fingerprint),
+        commandFingerprint: fingerprint,
+      };
     }
     return this.transitionWithCommand(
       input.ownerId,

@@ -324,14 +324,39 @@ describe("production file read workflow through the Worker transport", () => {
     expect(f.assertHeld).toHaveBeenCalled();
   });
 
+  it("does not share an active execution promise with a different lease attempt", async () => {
+    const f = await fixture();
+    const tool = await f.open();
+    const context = f.call.context;
+    if (!context) throw new Error("Missing test context");
+    const first = tool.execute(f.call);
+    await expect(
+      tool.execute({
+        ...f.call,
+        context: {
+          ...context,
+          executionLease: {
+            ...context.executionLease,
+            expectedLeaseRevision: context.executionLease.expectedLeaseRevision + 1,
+          },
+        },
+      }),
+    ).rejects.toThrow("Tool call identity changed");
+    expect((await first).outcome).toBe("succeeded");
+    expect(f.read).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["inspect", "read", "disclose"])(
     "requires an independent %s permission",
     async (operation) => {
       const f = await fixture();
       f.permitted.delete(operation);
       expect(await (await f.open()).execute(f.call)).toMatchObject({
-        outcome: "failed",
-        errorCode: expect.stringContaining("FILE_READ_APPROVAL_REQUIRED"),
+        outcome: "awaiting_approval",
+        approval: {
+          approvalRequestId: expect.any(String),
+          semanticSnapshotHash: expect.any(String),
+        },
       });
       expect(f.read).not.toHaveBeenCalled();
       expect(f.executeRequests()).toHaveLength(operation === "inspect" ? 0 : 1);
@@ -560,6 +585,28 @@ describe("production file read workflow through the Worker transport", () => {
     expect(f.executeRequests()).toHaveLength(2);
   });
 
+  it("resumes an approved read under a fresh execution lease without repeating inspect", async () => {
+    const f = await fixture();
+    f.permitted.delete("read");
+    expect(await (await f.open()).execute(f.call)).toMatchObject({ outcome: "awaiting_approval" });
+    f.permitted.add("read");
+    if (!f.call.context) throw new Error("Expected trusted runtime context");
+    const resumed = {
+      ...f.call,
+      context: {
+        ...f.call.context,
+        continuationRef: "protected-resume",
+        executionLease: Object.freeze({
+          ...f.call.context.executionLease,
+          expectedLeaseRevision: f.call.context.executionLease.expectedLeaseRevision + 1,
+        }),
+      },
+    };
+    expect(await (await f.open()).execute(resumed)).toMatchObject({ outcome: "succeeded" });
+    expect(f.read).toHaveBeenCalledTimes(1);
+    expect(f.executeRequests()).toHaveLength(2);
+  });
+
   it("does not execute pending approval after the shared deadline", async () => {
     const f = await fixture();
     f.permitted.delete("read");
@@ -576,7 +623,7 @@ describe("production file read workflow through the Worker transport", () => {
     const f = await fixture();
     f.permitted.clear();
     expect(await (await f.open()).execute(f.call)).toMatchObject({
-      errorCode: expect.stringContaining("FILE_READ_APPROVAL_REQUIRED"),
+      outcome: "awaiting_approval",
     });
     expect(f.request).not.toHaveBeenCalled();
     expect(await f.capabilities.getExecutionHandle("model-supplied-handle")).toBeUndefined();
