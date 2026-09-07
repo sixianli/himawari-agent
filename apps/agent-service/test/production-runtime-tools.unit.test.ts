@@ -27,14 +27,14 @@ const leaseId = createApplicationServiceIdentityFactory().createAuthorityLease({
   holderId: "holder:tools",
 }).id;
 const now = "2026-09-06T00:00:00.000Z";
-const invocation: RuntimeToolInvocation = {
+const invocation = {
   runId: identities.runs.recommendation.id,
   toolCallId: "call:tools",
   capabilityRef: "capability:tools",
   capabilityHandleRef: "handle:tools",
   arguments: { inputRef: "input:tools" },
   dataClassification: "private",
-};
+} satisfies RuntimeToolInvocation;
 function fixture(wallTime = 1000) {
   let handle: GovernedCapabilityExecutionHandle = {
     handleVersion: "capability-handle.v2",
@@ -295,6 +295,63 @@ async function exposed(f: ReturnType<typeof fixture>) {
 }
 
 describe("ProductionRuntimeTools", () => {
+  it("offers a path request without a Handle and never dispatches it before authorization exists", async () => {
+    const f = fixture();
+    const tool = f.tool();
+    const descriptors = await tool.listAuthorized(invocation.runId, []);
+    expect(descriptors).toHaveLength(1);
+    expect(descriptors[0]).toMatchObject({ name: "request_file_read", capabilityHandleRef: null });
+    const call: RuntimeToolInvocation = {
+      ...invocation,
+      capabilityRef: "host.file.read",
+      capabilityHandleRef: null,
+      arguments: { hostRef: "mac-book", path: "/test/中文.txt", maximumBytes: 4096 },
+    };
+    expect(await tool.preflight(call)).toMatchObject({
+      allowed: false,
+      reasonCode: "FILE_READ_AUTHORIZATION_UNAVAILABLE",
+    });
+    // Calling execute directly must not bypass preflight.
+    await expect(tool.execute(call)).rejects.toThrow();
+    expect(f.request).not.toHaveBeenCalled();
+    expect(f.artifacts.size).toBe(0);
+    expect(await f.tool().preflight(call)).toMatchObject({
+      allowed: false,
+      reasonCode: "FILE_READ_REQUEST_INVALID",
+    });
+    expect(
+      await tool.preflight({ ...call, capabilityHandleRef: invocation.capabilityHandleRef }),
+    ).toMatchObject({
+      allowed: false,
+      reasonCode: "GOVERNED_HANDLE_INVALID",
+    });
+  });
+
+  it.each([
+    {},
+    { hostRef: "mac-book", path: "~/test.txt", maximumBytes: 100 },
+    { hostRef: "mac-book", path: "/test.txt", maximumBytes: 65537 },
+    { hostRef: "mac-book", path: "/test.txt", maximumBytes: 0 },
+    { hostRef: "mac-book", path: "/test.txt", maximumBytes: 1.5 },
+    { hostRef: "mac-book", path: "/test.txt", maximumBytes: "100" },
+    { hostRef: "mac-book", path: "/test.txt", maximumBytes: 100, approved: true },
+    { hostRef: "mac-book", path: "/test.txt", maximumBytes: 100, inputRef: "forged" },
+    { hostRef: "mac-book", path: "/test\u0000.txt", maximumBytes: 100 },
+    { hostRef: "", path: "/test.txt", maximumBytes: 100 },
+  ])("rejects malformed or authority-bearing request arguments %j", async (args) => {
+    const f = fixture();
+    const tool = await exposed(f);
+    expect(
+      await tool.preflight({
+        ...invocation,
+        capabilityRef: "host.file.read",
+        capabilityHandleRef: null,
+        arguments: args,
+      }),
+    ).toMatchObject({ allowed: false, reasonCode: "FILE_READ_REQUEST_INVALID" });
+    expect(f.request).not.toHaveBeenCalled();
+  });
+
   it("caps Worker execution at the parent Run deadline and rejects expired calls", async () => {
     const f = fixture();
     const tool = await exposed(f);

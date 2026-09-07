@@ -19,6 +19,7 @@ import type {
   RuntimeProjection,
   RuntimeProjectionPort,
   RuntimeRequest,
+  RuntimeToolDescriptor,
   RuntimeToolExecutionResult,
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
@@ -308,7 +309,7 @@ class RecordingRuntimeTools implements RuntimeToolPort {
     }),
   );
 
-  async listAuthorized() {
+  async listAuthorized(): Promise<readonly RuntimeToolDescriptor[]> {
     return [
       {
         capabilityRef: "restaurant-search",
@@ -1114,6 +1115,51 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       errorCode: "PI_RUNTIME_ERROR",
       occurredAt: NOW,
     });
+  });
+
+  it("passes a handle-free path request to product preflight without executing it", async () => {
+    const tools = new RecordingRuntimeTools();
+    vi.spyOn(tools, "listAuthorized").mockResolvedValue([
+      {
+        name: "request_file_read",
+        capabilityRef: "host.file.read",
+        capabilityHandleRef: null,
+        description: "Request a file read; this does not grant permission",
+        parameters: { type: "object" },
+      },
+    ]);
+    tools.preflight.mockResolvedValue({
+      allowed: false,
+      permissionDecisionRef: "file-read-unavailable",
+      reasonCode: "FILE_READ_AUTHORIZATION_UNAVAILABLE",
+    });
+    const args = { hostRef: "mac-book", path: "/test/中文.txt", maximumBytes: 4096 };
+    const adapter = createAdapter(
+      new RecordingProjection(),
+      tools,
+      fakeSessionFactory(async (emit, options) => {
+        expect(options.noTools).toBe("all");
+        expect(options.tools).toEqual(["request_file_read"]);
+        emit({ type: "agent_start" });
+        expect(await options.customTools?.[0]?.execute("file-call", args)).toMatchObject({
+          isError: true,
+          details: { reasonCode: "FILE_READ_AUTHORIZATION_UNAVAILABLE" },
+        });
+        emit({ type: "agent_end", messages: [] });
+        emit({ type: "agent_settled" });
+      }),
+    );
+    await collect(adapter.run({ ...request, capabilityHandleRefs: [] }));
+    expect(tools.preflight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: request.runId,
+        toolCallId: "file-call",
+        capabilityRef: "host.file.read",
+        capabilityHandleRef: null,
+        arguments: args,
+      }),
+    );
+    expect(tools.execute).not.toHaveBeenCalled();
   });
 
   it("uses product preflight as the final enforcement point", async () => {

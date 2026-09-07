@@ -384,7 +384,8 @@ export interface RuntimeProjectionPort {
 
 export interface RuntimeToolDescriptor {
   readonly capabilityRef: string;
-  readonly capabilityHandleRef: string;
+  /** null denotes an operation request, never an execution authority. */
+  readonly capabilityHandleRef: string | null;
   readonly name: string;
   readonly description: string;
   readonly parameters: JsonObject;
@@ -395,7 +396,8 @@ export interface RuntimeToolInvocation {
   readonly runId: RunId;
   readonly toolCallId: string;
   readonly capabilityRef: string;
-  readonly capabilityHandleRef: string;
+  /** null denotes an operation request, never an execution authority. */
+  readonly capabilityHandleRef: string | null;
   readonly arguments: JsonObject;
   readonly dataClassification: DataClassification;
 }
@@ -420,6 +422,7 @@ export interface RuntimeToolExecutionResult {
  * `runId + toolCallId`.
  */
 export interface RuntimeToolPort {
+  /** List tools permitted to be offered, including requests that still require authorization. */
   listAuthorized(
     runId: RunId,
     capabilityHandleRefs: readonly string[],

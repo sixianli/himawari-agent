@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
+  fileReadRequestDescriptor,
+  validateFileReadRequest,
   type CapabilityExecutionHandleStorePort,
   type CapabilityInvocationAuthority,
   type CapabilityInvocationReceiptPort,
@@ -94,7 +96,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly ids: IdGeneratorPort;
 }
 
-/** Tools select only previously authorized input references; they cannot expand a Handle. */
+/** Path requests carry no authority; executable tools select only authorized inputs. */
 export class ProductionRuntimeTools implements RuntimeToolPort {
   readonly #options: ProductionRuntimeToolsOptions;
   readonly #delegation: WorkerDelegationService;
@@ -131,7 +133,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   ): Promise<readonly RuntimeToolDescriptor[]> {
     await this.#options.assertRunActive(runId);
     if (new Set(refs).size !== refs.length) reject();
-    const descriptors: RuntimeToolDescriptor[] = [];
+    const descriptors: RuntimeToolDescriptor[] = [fileReadRequestDescriptor()];
     for (const ref of refs) {
       const handle = await this.#handle(runId, ref);
       descriptors.push({
@@ -152,6 +154,15 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
 
   async preflight(invocation: RuntimeToolInvocation) {
+    if (invocation.capabilityHandleRef === null) {
+      await this.#options.assertRunActive(invocation.runId);
+      const valid = this.#exposed.has(invocation.runId) && validateFileReadRequest(invocation);
+      return {
+        allowed: false,
+        permissionDecisionRef: `tool-denied:${digest([invocation.runId, invocation.toolCallId])}`,
+        reasonCode: valid ? "FILE_READ_AUTHORIZATION_UNAVAILABLE" : "FILE_READ_REQUEST_INVALID",
+      };
+    }
     try {
       const handle = await this.#validate(invocation);
       return {
@@ -220,6 +231,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
 
   async #validate(invocation: RuntimeToolInvocation) {
     await this.#options.assertRunActive(invocation.runId);
+    if (invocation.capabilityHandleRef === null) reject();
     if (!this.#exposed.get(invocation.runId)?.has(invocation.capabilityHandleRef)) reject();
     const handle = await this.#handle(invocation.runId, invocation.capabilityHandleRef);
     if (
@@ -444,11 +456,11 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
 
   async #assertDisclosure(invocation: RuntimeToolInvocation, key: string): Promise<void> {
-    await this.#validate(invocation);
+    const handle = await this.#validate(invocation);
     // Output observation intentionally permits historical lookup. Disclosure additionally
     // requires the live receipt path, including grant revocation and Run authority checks.
     const receipt = await this.#options.invocations.read({
-      handleRef: invocation.capabilityHandleRef,
+      handleRef: handle.ref,
       invocationId: `runtime-tool:${key}`,
       authority: this.#options.authority(),
       now: this.#options.clock.now(),

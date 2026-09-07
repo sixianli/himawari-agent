@@ -12,7 +12,7 @@ date: "2026-09-07"
 
 Owner 从 ego Lite 提交文件总结请求，由 OpenRouter 的真实 DeepSeek 模型选择工具，经产品授权后由 Mac Worker 读取文件；Pi 将工具结果加入模型上下文，再请求模型生成中文总结，最终结果持久保存并由浏览器回读。
 
-P0-01 至 P0-04 的交付是验收样本、接入设计、模型与 Memory 配置及本地配置验证。P0-05 已进一步完成真实模型工具协议与 embedding 兼容性验证。完整流程仍需后续工具授权、Worker 文件适配和浏览器接线；这些行为不能由配置检查或本次协议测试证明。
+P0-01 至 P0-04 的交付是验收样本、接入设计、模型与 Memory 配置及本地配置验证。P0-05 已进一步完成真实模型工具协议与 embedding 兼容性验证，P0-06 已实现模型可见的文件读取请求与参数检查。完整流程仍需后续工具授权、Worker 文件适配和浏览器接线；这些行为不能由配置检查或本次协议测试证明。
 
 ## 来源上下文
 
@@ -23,7 +23,7 @@ P0-01 至 P0-04 的交付是验收样本、接入设计、模型与 Memory 配�
 
 ## 范围
 
-包含 P0-01 验收合同、P0-02 Pi 复用设计、P0-03 OpenRouter 配置准备、P0-04 embedding 配置依赖准备，以及 Owner 后续要求继续完成的 P0-05 真实兼容性调用。P0-06 及其后的产品实施不在本次范围内。
+包含 P0-01 验收合同、P0-02 Pi 复用设计、P0-03 OpenRouter 配置准备、P0-04 embedding 配置依赖准备，以及 Owner 后续要求继续完成的 P0-05 真实兼容性调用。Owner 随后要求继续完成 P0-06，本次增加模型可见的文件读取请求合同与生产暴露；P0-07 及其后的路径解析、授权与 Worker 实施仍待后续完成。
 
 配置和验收输入位于 `test/integration/fixtures/file-summary/`，由实际产品解析器和组合代码验证。配置是独立验收候选，不会自动安装或替换现有服务。`publicMode: false` 只适用于当前准备阶段；最终浏览器验收必须补齐正式认证 HTTP 配置，不能以本配置的非公开模式代替认证。
 
@@ -63,9 +63,9 @@ P0-01 至 P0-04 的交付是验收样本、接入设计、模型与 Memory 配�
 
 当前 runtime-pi 已设置 `noTools: "all"` 并只启用产品给出的工具；已有 `preflight → execute → modelContent` 转换和不确定结果取消机制，应保留。
 
-真正缺失的是动态请求的产品入口：当前生产工具依赖预先存在的 handle，参数只能选择现有 inputRef；生产 Run policy 不会从用户请求签发权限。后续需要产品自有的文件读取请求 schema，将 `{hostRef, path}` 转为经过验证的动作、受保护输入和范围受限 handle，然后沿现有 Worker 执行路径返回结果。
+P0-06 已补充动态请求入口：生产工具现在同时提供无 Handle 的 `request_file_read` 和原有基于 Handle 的 `authorized_*` 工具。请求 schema 接受 `{hostRef, path, maximumBytes}`；生产 Run policy 仍不会从用户请求签发权限，后续需要将请求转为经过验证的动作、受保护输入和范围受限 Handle，再沿现有 Worker 执行路径返回结果。
 
-这是后续产品工具接口调整的设计依据，影响 application 的工具请求/授权接口、agent-service 的生产组合和 execution-worker 的文件处理接线；收益是让模型可选择文件工具，同时让授权和执行留在统一产品边界内。本次不实施该接口调整，不提前开放 Pi 内置文件或 Shell 工具。
+这是后续产品工具接口调整的设计依据，影响 application 的工具请求/授权接口、agent-service 的生产组合和 execution-worker 的文件处理接线；收益是让模型可选择文件工具，同时让授权和执行留在统一产品边界内。P0-06 仅完成无 Handle 请求的类型表达、工具暴露及参数验证，不开放 Pi 内置文件或 Shell 工具。
 
 ### P0-03：真实 OpenRouter 配置准备
 
@@ -135,3 +135,16 @@ Owner 在 P0-01 至 P0-04 交付后明确要求继续完成 P0-05。本次沿用
 - 随后的 embedding 已返回有效向量和检索结果，但旧断言错误地要求固定 3 次调用。已核对 Mem0 `3.1.7` 的实体检索分支：额外调用取决于查询实体。本次中文查询用 2 次；验收改为验证写入、搜索、维数和命中，同时保留最多 3 次上限。
 
 真实入口复用已有的 `qualification-generation-live` 项目，新增用例通过 `HIMAWARI_FILE_SUMMARY_LIVE=1` 显式启用；普通 CI 默认不调用真实服务。测试夹具支持 `HIMAWARI_FILE_SUMMARY_PHASE` 为 `all`、`generation` 或 `embedding`；分阶段成功只证明该阶段。`HIMAWARI_FILE_SUMMARY_PRIOR_RESERVATION_MICROS` 用于把本次此前尝试的预留带入下一次测试，不能清零后继续消费已耗用的授权预算。证据路径通过 `HIMAWARI_FILE_SUMMARY_EVIDENCE_PATH` 显式传入。新的付费执行仍须遵守对应具体授权范围，不能将历史通过结果当成持续授权。
+
+### P0-06：模型可见的文件读取请求
+
+- [x] 提供 `request_file_read`，即使当前 Run 没有 Capability Handle 也能注册到 Pi `customTools`。
+- [x] 定义主机标识 `hostRef`、目标主机绝对路径 `path` 和必填整数字节上限 `maximumBytes`；拒绝未知字段、相对路径、控制字符、空主机标识和越界大小。
+- [x] 明确支持授权目录中的单个 UTF-8 普通文本文件，最多 65,536 字节；不支持目录、递归、通配符、PDF、Office 或二进制文件。超过上限的合同是失败，不静默截断。实际内容类型、文件身份与字节数检查由后续 Worker 实施验证。
+- [x] `RuntimeToolDescriptor` 与 `RuntimeToolInvocation` 用 `capabilityHandleRef: null` 表达尚未授权的操作请求；原有字符串 Handle 仍走原有验证。模型参数不能提供 Handle、批准标记或 `inputRef`。
+- [x] 生产 preflight 再次验证参数和 Run 有效性。合法请求目前返回 `FILE_READ_AUTHORIZATION_UNAVAILABLE`，不表示真实权限记录已拒绝；非法或未向该 Run 暴露的请求返回 `FILE_READ_REQUEST_INVALID`。两者均不读取文件、不派发 Worker。直接绕过 preflight 调用 execute 也会拒绝。
+- [x] 复用 Pi 0.84.2 的工具注册、调用身份传递和错误结果；测试覆盖无 Handle 的参数传递、禁止执行、参数 schema 与产品验证，以及已有授权工具的恢复与重放行为。
+
+路径此时是未经解析的意图，不能据此判断真实主机、目录授权或符号链接安全；例如 `/allowed/../outside.txt` 可以通过语法检查，但绝不因此获得读取权。P0-07 必须解析并绑定确定对象，P0-08 分别检查读取与模型披露，P0-09 持久输入并签发按次凭证。没有新增真实模型调用，P0-05 证据保持原样；P0-06 的本地测试不能证明浏览器文件总结已经可用。
+
+P0-06 验证：生产工具 24 项、Pi 兼容 36 项、请求合同与 testing 单测 44 项、SQLite 能力调用集成 18 项、参考 adapter 合同 43 项通过；类型、格式、依赖边界、v0.2 合同与不变量、秘密扫描和 CI policy 检查通过；安装 Runbook 已核对语义并重新封存，文档严格校验通过。全仓库 lint 仍报告原有 182 errors、977 warnings、712 infos，不能声称 `npm run check` 全部通过。

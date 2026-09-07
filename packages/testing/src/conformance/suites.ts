@@ -886,13 +886,13 @@ export function runtimeToolPortConformance(
 ): void {
   describe("RuntimeToolPort conformance", () => {
     it("authorizes exact handles and deduplicates execution by Run and tool call", async () => {
-      const descriptor: RuntimeToolDescriptor = {
+      const descriptor = {
         capabilityRef: "restaurant-search",
         capabilityHandleRef: "capability-handle-01",
         name: "restaurant_search",
         description: "Search restaurants",
         parameters: { type: "object" },
-      };
+      } satisfies RuntimeToolDescriptor;
       const execution: RuntimeToolExecutionResult = {
         outcome: "succeeded",
         resultRef: "payload-tool-result-01",
