@@ -17,6 +17,8 @@ export const HOST_FILE_ERROR_CODES = Object.freeze({
   TARGET_IDENTITY_CHANGED: "HOST_FILE_IDENTITY_CHANGED",
   TARGET_EXISTS: "HOST_FILE_TARGET_EXISTS",
   TARGET_MISSING: "HOST_FILE_TARGET_MISSING",
+  TARGET_NOT_REGULAR: "HOST_FILE_NOT_REGULAR",
+  READ_LIMIT_EXCEEDED: "HOST_FILE_READ_LIMIT_EXCEEDED",
   STORAGE_RESERVE_REACHED: "HOST_STORAGE_RESERVE_REACHED",
   RECOVERY_REQUIRED: "HOST_RECOVERY_REQUIRED",
 } as const);
@@ -45,6 +47,20 @@ export interface HostFileIdentity {
   readonly linkCount: number;
   readonly sizeBytes: number;
   readonly modifiedAtMillis: number;
+}
+
+/** Metadata observation on the selected host, not a read or disclosure permission. */
+export interface ResolvedHostFileReadTarget {
+  readonly hostId: string;
+  readonly grantId: string;
+  readonly grantRevision: number;
+  readonly authorizationRef: string;
+  readonly canonicalRootId: string;
+  readonly requestedPath: string;
+  readonly relativePath: string;
+  readonly identity: HostFileIdentity;
+  readonly maximumBytes: number;
+  readonly observedAt: string;
 }
 
 export interface PreparedFileOperation {

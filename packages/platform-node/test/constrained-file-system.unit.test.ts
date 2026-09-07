@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -11,7 +11,7 @@ import {
   type PermanentDeletionPlan,
   type PreparedFileOperation,
 } from "@himawari-agent/application";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConstrainedHostFileSystem } from "../src/index.js";
 
 const roots: string[] = [];
@@ -505,5 +505,148 @@ describe("ConstrainedHostFileSystem", () => {
     ).toBe("verified");
     expect((await state.readDeletionPlan(deletion.id))?.status).toBe("verified");
     await expect(readFile(path.join(root, "recover/moved.txt"))).rejects.toThrow();
+  });
+});
+
+describe("host file read target resolution", () => {
+  function resolver(f: Awaited<ReturnType<typeof fixture>>) {
+    const protect = vi.fn(async () => "unexpected-payload");
+    const service = new HostFileReadService({
+      state: f.state,
+      platform: f.platform,
+      disclosure: { protect },
+      hostId: "host-mac",
+      clock: { now: () => "2026-08-28T20:00:00.000Z" },
+    });
+    const resolve = (filePath: string, maximumBytes = 64) =>
+      service.resolveTarget({
+        hostId: "host-mac",
+        grantId: f.grant.id,
+        path: filePath,
+        maximumBytes,
+      });
+    return { service, resolve, protect };
+  }
+
+  it("binds absolute and relative paths to the same host, grant revision and file identity without reading content", async () => {
+    const f = await fixture();
+    await writeFile(path.join(f.root, "中文.txt"), "sample");
+    const read = vi.spyOn(f.platform, "read");
+    const { resolve, protect } = resolver(f);
+    const absolute = await resolve(path.join(f.root, "中文.txt"));
+    const relative = await resolve("中文.txt");
+    expect(absolute).toMatchObject({
+      hostId: "host-mac",
+      grantId: f.grant.id,
+      grantRevision: f.grant.revision,
+      canonicalRootId: f.grant.canonicalRootId,
+      authorizationRef: f.grant.authorizationRef,
+      relativePath: "中文.txt",
+      maximumBytes: 64,
+      identity: { sizeBytes: 6 },
+    });
+    expect(absolute.identity).toEqual(relative.identity);
+    expect(Object.isFrozen(absolute)).toBe(true);
+    expect(Object.isFrozen(absolute.identity)).toBe(true);
+    expect(read).not.toHaveBeenCalled();
+    expect(protect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "../outside.txt",
+    "sub/../file.txt",
+    "/other/file.txt",
+    "~/file.txt",
+    "@file.txt",
+    "a\\b.txt",
+    "file\u0000.txt",
+    "",
+    "sub//file.txt",
+  ])("rejects unsafe path %j before filesystem inspection", async (filePath) => {
+    const f = await fixture();
+    const inspect = vi.spyOn(f.platform, "inspect");
+    await expect(resolver(f).resolve(filePath)).rejects.toThrow();
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it("rejects sibling prefixes, links, directories, missing files and files over the byte limit", async () => {
+    const f = await fixture();
+    const { resolve } = resolver(f);
+    await writeFile(path.join(f.root, "file.txt"), "12345");
+    await mkdir(path.join(f.root, "directory"));
+    await expect(resolve(`${f.root}-sibling/file.txt`)).rejects.toThrow("HOST_PATH_ESCAPE_BLOCKED");
+    await expect(resolve("file.txt", 4)).rejects.toThrow("HOST_FILE_READ_LIMIT_EXCEEDED");
+    expect((await resolve("file.txt", 5)).identity.sizeBytes).toBe(5);
+    await expect(resolve("directory")).rejects.toThrow("HOST_FILE_NOT_REGULAR");
+    await expect(resolve("missing.txt")).rejects.toThrow("HOST_FILE_TARGET_MISSING");
+    await expect(resolve("missing/file.txt")).rejects.toThrow("HOST_FILE_TARGET_MISSING");
+    await symlink(path.join(f.root, "file.txt"), path.join(f.root, "symbolic"));
+    await expect(resolve("symbolic")).rejects.toThrow("HOST_PATH_ESCAPE_BLOCKED");
+    await symlink(f.root, path.join(f.root, "linked-directory"));
+    await expect(resolve("linked-directory/file.txt")).rejects.toThrow("HOST_PATH_ESCAPE_BLOCKED");
+    await link(path.join(f.root, "file.txt"), path.join(f.root, "hard-link"));
+    await expect(resolve("hard-link")).rejects.toThrow("HOST_LINK_ESCAPE_BLOCKED");
+  });
+
+  it.each(["revoked", "expired", "wrong-host", "no-read", "invalid-expiry"])(
+    "rejects an unusable grant (%s) before filesystem inspection",
+    async (mode) => {
+      const f = await fixture();
+      const changes = {
+        revoked: { revokedAt: "2026-08-28T19:00:00.000Z" },
+        expired: { expiresAt: "2026-08-28T19:00:00.000Z" },
+        "wrong-host": { hostId: "host-hermes" },
+        "no-read": { operations: [] },
+        "invalid-expiry": { expiresAt: "invalid" },
+      };
+      f.state.grants.set(f.grant.id, { ...f.grant, ...changes[mode as keyof typeof changes] });
+      const inspect = vi.spyOn(f.platform, "inspect");
+      await expect(resolver(f).resolve("file.txt")).rejects.toThrow();
+      expect(inspect).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a request for another host and invalid size limits before inspection", async () => {
+    const f = await fixture();
+    const { service, resolve } = resolver(f);
+    const inspect = vi.spyOn(f.platform, "inspect");
+    await expect(
+      service.resolveTarget({
+        hostId: "host-hermes",
+        grantId: f.grant.id,
+        path: "file.txt",
+        maximumBytes: 64,
+      }),
+    ).rejects.toThrow();
+    for (const size of [0, -1, NaN, Infinity, 1.5])
+      await expect(resolve("file.txt", size)).rejects.toThrow();
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it.each(["revocation", "replacement"])("rejects %s during inspection", async (change) => {
+    const f = await fixture();
+    await writeFile(path.join(f.root, "file.txt"), "sample");
+    const original = f.platform.inspect.bind(f.platform);
+    vi.spyOn(f.platform, "inspect").mockImplementation(async (grant, relativePath) => {
+      const identity = await original(grant, relativePath);
+      f.state.grants.set(
+        grant.id,
+        change === "revocation"
+          ? { ...grant, revokedAt: "2026-08-28T20:00:00.000Z" }
+          : { ...grant, revision: grant.revision + 1 },
+      );
+      return identity;
+    });
+    await expect(resolver(f).resolve("file.txt")).rejects.toThrow();
+  });
+
+  it("rejects replacement of the granted root directory", async () => {
+    const f = await fixture();
+    const oldRoot = `${f.root}-old`;
+    await rename(f.root, oldRoot);
+    roots.push(oldRoot);
+    await mkdir(f.root);
+    await writeFile(path.join(f.root, "file.txt"), "sample");
+    await expect(resolver(f).resolve("file.txt")).rejects.toThrow("HOST_ROOT_IDENTITY_CHANGED");
   });
 });

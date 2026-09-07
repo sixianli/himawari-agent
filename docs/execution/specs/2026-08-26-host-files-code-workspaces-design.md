@@ -172,3 +172,8 @@ commit 流程只暂存当前 task change set 中 Owner 已审阅的路径/hunks�
 - 确认日期：2026-08-26
 - 确认范围：主机目录 Grant、Trash/覆盖、工作区改动归属、CommandProfile、逐次 Commit Gate 和禁止 push 边界。
 - 授权边界：允许从本 Spec 派生 Implementation Plan；本次确认不授权创建 Plan、修改文件或代码、运行命令、安装依赖、创建 commit 或执行 push。
+
+
+## 文件读取目标解析的实现边界
+
+`HostFileReadService.resolveTarget()` 已复用目录 Grant 和受约束平台 inspect，将产品指定主机、目录范围与模型路径绑定为冻结的文件身份观察；先后检查 Grant 有效性与版本，不读取正文或授予披露权限。真实 read 工具请求到目标主机的调用接线仍未完成；元数据观察不能替代执行时的资源打开、身份与授权再核验。[SOURCE: docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md]
