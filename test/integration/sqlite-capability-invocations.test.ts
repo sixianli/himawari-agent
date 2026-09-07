@@ -505,6 +505,49 @@ async function seed(
 }
 
 describe("SQLite capability invocation authority", () => {
+  it("routes capability result operations through the public Repository", async () => {
+    const resource = await openRepository();
+    try {
+      await seed(resource.repository);
+      const request = serviceRequest();
+      const service = new WorkerDelegationService({
+        invocations: resource.repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+        invocationAuthority: () => SERVICE_AUTHORITY,
+        now: () => T1,
+        nextId: (scope) => `${scope}:result-routing`,
+        transport: new RecordingServiceTransport(),
+      });
+      await service.dispatch(request);
+      const results = resource.repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID);
+      const lookup = {
+        handleRef: request.payload.capabilityHandleRef,
+        invocationId: request.messageId,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+      };
+      expect(await results.lookupFrozen(lookup)).toMatchObject({ invocationId: request.messageId });
+      expect(await results.lookupOutput(lookup)).toBeUndefined();
+      expect(
+        await results.observeOutput({
+          ...lookup,
+          payload: outputPayload(),
+          plaintextByteLength: 2,
+        }),
+      ).toMatchObject({ replayed: false });
+      expect(await results.lookupOutput(lookup)).toMatchObject({ payloadRef: outputPayload().ref });
+      expect(
+        await results.observeOutput({
+          ...lookup,
+          payload: outputPayload(),
+          plaintextByteLength: 2,
+        }),
+      ).toMatchObject({ replayed: true });
+    } finally {
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
   it("lists only current Run handles with active capability authority", async () => {
     const resource = await openRepository();
     try {

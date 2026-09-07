@@ -410,7 +410,10 @@ export class SqliteDurableOperations {
     if (operation.startsWith("thread.")) {
       return this.thread.execute(operation, payload);
     }
-    if (operation.startsWith("capabilityInvocation.")) {
+    if (
+      operation.startsWith("capabilityInvocation.") ||
+      operation.startsWith("capabilityInvocationResult.")
+    ) {
       return this.capabilityInvocations.execute(operation, payload);
     }
     if (operation.startsWith("modelBudget.")) {
