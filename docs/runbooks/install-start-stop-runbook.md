@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:674f389e7f70da26349ef1d2169925873d9119ee4110225e02250c706b591402"
+contract_sha256: "sha256:d00f7fb4c458d7ce90e19972e9a173416d80e937854f9f2fd6be9dd583242832"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,11 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- apps/execution-worker/src/production-worker-composition.ts
+- packages/application/src/services/sandbox-startup-recovery.ts
+- apps/execution-worker/src/production-execution-worker.ts
+- apps/execution-worker/src/production-sandbox-execution.ts
+- apps/execution-worker/src/broker-sandbox-execution.ts
 - packages/execution-contracts/src/payload-broker-v1.ts
 - packages/platform-node/src/payload-uds-transport.ts
 - apps/execution-worker/src/production-payload-broker-client.ts
@@ -77,7 +82,7 @@ date: "2026-08-27"
 
 ## Scope
 
-SRT 变更已包含产品作业合同、计划投影、Pi 调用绑定、固定版本运行依赖及候选策略编译。Node 打包包含 `runtime-sandbox` 和 SRT 0.0.75，但正式 Worker 尚未切换，未取得 SRT 主机安装资格。schema 27 已追加作业观察账本；升级必须遵循下述快照与迁移检查，不能在恢复后将无账本的旧凭证补建为可启动作业，也不能自动重放待核查作业。可安装 Job Host、生命周期协调器及 Worker 产品适配器已加入产物；认证 Payload UDS 已包含绑定冻结凭证和主机身份的作业读回/观察追加组件，正式服务和 Worker 启动组合尚未启用它们。跨进程回归使用测试 SQLite 和启动身份，不代表安装后的旧 Worker 身份恢复资格。首批原生 Mac 已接受资源观测而非 CPU/内存硬配额，以及尽力停止、清理未知时禁止自动重放并核查的语义；这些决定不将未知清理改成确认，也不替代正式恢复验收。固定假数据探针与组件测试通过不代表主机生产资格。本文的实际安装、备份与权威迁移流程不因目标架构获采纳而改变；不能把恢复的旧 Capability 记录当成新 SRT profile 的主机资格。
+SRT 变更已包含产品作业合同、计划投影、Pi 调用绑定、固定版本运行依赖及候选策略编译。Node 打包包含 `runtime-sandbox` 和 SRT 0.0.75，但正式 Worker 尚未切换，未取得 SRT 主机安装资格。schema 27 已追加作业观察账本；升级必须遵循下述快照与迁移检查，不能在恢复后将无账本的旧凭证补建为可启动作业，也不能自动重放待核查作业。可安装 Job Host、生命周期协调器及 Worker 产品适配器已加入产物；认证 Payload UDS 已包含绑定冻结凭证和主机身份的作业读回/观察追加组件，正式服务和 Worker 启动组合尚未启用它们。跨进程回归使用测试 SQLite 和启动身份。正式 Agent Service 现已在创建准入入口前分页核查旧作业，保存清理未知并隔离，不能把该状态理解为旧后代已退出。Worker 提供 SRT 分支及 broker 生命周期装配；关闭时先等待作业停止和观察持久化，再断开 Payload/准入通道；没有可信 scope/资格组合时仍拒绝 SRT 执行。这些代码和测试不代表实际主机执行资格。首批原生 Mac 已接受资源观测而非 CPU/内存硬配额，以及尽力停止、清理未知时禁止自动重放并核查的语义；这些决定不将未知清理改成确认，也不替代正式恢复验收。固定假数据探针与组件测试通过不代表主机生产资格。本文的实际安装、备份与权威迁移流程不因目标架构获采纳而改变；不能把恢复的旧 Capability 记录当成新 SRT profile 的主机资格。
 
 本 Runbook 只覆盖当前仓库已经验证的本地 Node runtime：从锁定依赖构建可重定位 artifact，安装到明确的绝对前缀，使用受保护的 Execution Worker UDS 启动 Agent Service，执行只读 doctor/db status，并以有界信号完成正常停止或故障重启。它不负责安装 systemd/launchd unit、不修改公网入口、不切换 authority、不配置真实 provider、不部署到 Hermes，也不替代 authority transfer Runbook。
 

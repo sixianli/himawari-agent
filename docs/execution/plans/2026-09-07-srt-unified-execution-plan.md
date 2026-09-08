@@ -62,9 +62,11 @@ Task 2 不新增第二个权限库、Run 状态机或数据库。schema 校验�
 - [x] 增加 SQLite 作业账本与启动意图 CAS：同一 invocation 唯一 attempt，记录观察历史，支持重开读回与待核查作业分页。
 - [x] 将 SRT 凭证消费与作业准备放入同一 SQLite 事务；消费后缺少账本的旧请求拒绝重新准入，首次观察写入失败回滚权限消费。
 - [x] 既有 Worker 准入服务支持显式 SRT 模式：使用原子建账返回的冻结凭证构造首次执行消息；重放、未知或 scope 准备失败不派发，不退回独立消费路径。
-- [x] 执行消息携带可信准入分配的 SRT job/attempt 身份，校验调用范围和回执绑定；当前 Worker 在转换为旧执行请求前拒绝 SRT 作业，防止误用旧后端。
+- [x] 执行消息携带可信准入分配的 SRT job/attempt 身份，校验调用范围和回执绑定；Worker 已提供专用 SRT 分支；未配置监督器时拒绝作业，禁止误用旧后端。
 - [x] 增加 `SandboxJobLifecycleService` 驱动既有账本：重复启动只读回，首次启动须取得事务 CAS；准备期间取消不启动，清理未知持久隔离，失联核查不重新执行。
 - [x] Worker 提供 Job Host 产品适配器，沿用原计划期限和输出额度，受保护输出存储成功后才返回引用；进程退出不伪装成清理确认。
+- [x] 正式 `ProductionExecutionWorker` 增加 SRT 执行、取消和核查分支，复用账本生命周期；broker 适配不持有数据库准入权限，失联结果返回未知，不退回旧执行器。安装组合的实际 scope/资格装配仍待完成。
+- [x] Agent Service 在开放准入与 HTTP 前分页核查旧作业；新进程仅用当前权限保存隔离观察，不复用旧 Worker 凭据，不启动旧任务，不声称旧后代已退出。
 - [ ] 在生产组合中提供真实 scope/资格解析并启用 SRT 模式，将原子准入与账本接到正式 prepare/start/observe/cancel/reconcile；启动前还须验证受保护 scope、主机资格与代理初始化。
 - [ ] 使用真实 SRT 在 Mac 专用目录验证读写与命令、假秘密保护、越界与未授权联网、超时取消、进程和继承管道观察，以及清理未知时的持久隔离、禁止自动重放和核查。
 - [ ] 需要启用 Linux profile 时，在 Hermes 的隔离测试目录单独取得证据；先确认磁盘挂载与空间。
@@ -77,13 +79,15 @@ Job Host 组件证据（2026-09-08）：新增 `runtime-sandbox/src/job-host-mai
 
 `packages/runtime-sandbox/scripts/qualify-job-host.mjs` 使用固定假数据，在真实 Mac SRT 验证显式启动、参数原样传递、假秘密拒绝、输出洪泛、取消、超时及策略摘要变化拒绝；`--installed` 验证打包入口。新增单元测试与已有策略测试共 18 项通过。实际 `setsid()` 负向用例已证明：主命令退出、stdio 关闭、SRT reset 成功后，脱离原进程组的子进程仍能写入专用测试文件。该测试子进程有界自退出，不留下常驻任务。因此当前控制器对已启动任务始终报告 `taskTreeCleanup: unknown`；源码探针和安装产物均不签发生产资格。2026-09-08 Owner 已接受首批原生 Mac 不以任意后代必定回收为硬性条件；上述负向证据保留为已知限制。正式启用仍须完成尽力停止、清理未知持久化、禁止自动重放及重启核查，不把组件探针计为这些接线的验收。
 
-Task 4 的前置账本部分已提前实施：追加迁移 `0027_sandbox_job_observations.sql`，通过 `SqliteProductStateRepository.sandboxJobJournal()` 提供原子准入、追加、读回与待核查分页。在同一个 `BEGIN IMMEDIATE` 事务内检查现有部署权威、Handle/Grant、Run 和执行租约，再保存启动序号；回放返回 `applied: false`，不能据此再次启动。过期后仍可在当前部署权威下追加停止/核查观察；完成必须引用本次调用已持久化的受保护输出。`admit()` 已将现有凭证消费与首条作业观察放入同一事务，直接的独立 `sandboxPrepare` 写入口已禁止。摘要由实际消费结果生成；重放凭证没有账本时直接拒绝，不能补建后自动启动。首次观察写入失败时凭证和 Handle 消费一起回滚。`WorkerDelegationAdmissionService` 已支持由可信组合显式选择的 SRT 模式，使用事务返回的冻结凭证构造既有 Worker 消息，避免二次消费或额外读回。真实 SQLite 测试验证首次单次派发、重放不派发、未知旧请求、scope 准备失败及准备期间权限过期拒绝执行。准入时间在异步准备完成后重新获取。生产 `service-main` 尚未配置此模式；作业身份已通过 `work.execute.payload.sandboxJob` 和现有认证 UDS 传递；调用方不能指定该身份。当前 Worker 返回 `SANDBOX_SUPERVISOR_UNAVAILABLE`，不会丢弃身份后使用旧后端执行。`SandboxScopeService` 已从现有 Payload 存储读取有界 JSON 正文，使用现有加密端口验证 Owner/Agent 与内容完整性，再验证 scope 摘要及计划绑定；错误仅返回 `SANDBOX_SCOPE_UNAVAILABLE`，不泄露正文。准入服务必须先通过此检查才能消费凭证。真实加密 Payload 与 SQLite 测试覆盖身份替换、过期、密文篡改和摘要替换。目录授权校验已通过既有状态端口接入，拒绝缺失、撤销、过期、版本/根/主机/授权变化及操作范围不足；scope 中的 `parentRequestId` 必须匹配准入请求的 causationId。测试使用真实加密 Payload/SQLite 与注入的目录状态端口，并非正式主机授权来源验收。正式目录状态来源、网络授权、父工具调用关系、主机资格解析与 Job Host 监督仍待接入。
+Task 4 的前置账本部分已提前实施：追加迁移 `0027_sandbox_job_observations.sql`，通过 `SqliteProductStateRepository.sandboxJobJournal()` 提供原子准入、追加、读回与待核查分页。在同一个 `BEGIN IMMEDIATE` 事务内检查现有部署权威、Handle/Grant、Run 和执行租约，再保存启动序号；回放返回 `applied: false`，不能据此再次启动。过期后仍可在当前部署权威下追加停止/核查观察；完成必须引用本次调用已持久化的受保护输出。`admit()` 已将现有凭证消费与首条作业观察放入同一事务，直接的独立 `sandboxPrepare` 写入口已禁止。摘要由实际消费结果生成；重放凭证没有账本时直接拒绝，不能补建后自动启动。首次观察写入失败时凭证和 Handle 消费一起回滚。`WorkerDelegationAdmissionService` 已支持由可信组合显式选择的 SRT 模式，使用事务返回的冻结凭证构造既有 Worker 消息，避免二次消费或额外读回。真实 SQLite 测试验证首次单次派发、重放不派发、未知旧请求、scope 准备失败及准备期间权限过期拒绝执行。准入时间在异步准备完成后重新获取。生产 `service-main` 尚未配置此模式；作业身份已通过 `work.execute.payload.sandboxJob` 和现有认证 UDS 传递；调用方不能指定该身份。Worker 未配置 SRT 监督器时返回 `SANDBOX_SUPERVISOR_UNAVAILABLE`；配置后走独立生命周期分支，不会丢弃身份后使用旧后端执行。`SandboxScopeService` 已从现有 Payload 存储读取有界 JSON 正文，使用现有加密端口验证 Owner/Agent 与内容完整性，再验证 scope 摘要及计划绑定；错误仅返回 `SANDBOX_SCOPE_UNAVAILABLE`，不泄露正文。准入服务必须先通过此检查才能消费凭证。真实加密 Payload 与 SQLite 测试覆盖身份替换、过期、密文篡改和摘要替换。目录授权校验已通过既有状态端口接入，拒绝缺失、撤销、过期、版本/根/主机/授权变化及操作范围不足；scope 中的 `parentRequestId` 必须匹配准入请求的 causationId。测试使用真实加密 Payload/SQLite 与注入的目录状态端口，并非正式主机授权来源验收。正式目录状态来源、网络授权、父工具调用关系、主机资格解析与 Job Host 监督仍待接入。
 
 生命周期协调器证据（2026-09-08）：`SandboxJobLifecycleService` 复用既有 `SandboxExecutionPort` 和 SQLite 账本，`prepareHost` 只准备基础设施，只有首次成功追加 `starting` 的协调器才能启动任务。两个协调器竞争时，未获得启动权的一方取消自己的 Job Host，但不得追加观察覆盖获胜作业。准备期间取消不启动；失联核查将已有启动意图转为 `reconciling/quarantined`，保留已存输出引用，不调用启动器。准备和启动前各复核一次当前 scope/资格；凭证、Run、租约的最终检查仍由同一 SQLite 启动事务执行。真实 SQLite 回归包含多协调器竞争、重复请求、准备期间取消、复核失败、清理未知与恢复不重放；注入的主机 session 不是正式主机资格。
 
-`apps/execution-worker/src/product-job-host.ts` 将既有 Job Host 接到产品 session 端口，固定采用原请求时间加墙钟额度与原截止时间两者中较早者，不因重新准备而延长执行时间。正文交给受保护输出存储回调；存储失败返回未知。适配位于 Worker 组合层，`runtime-sandbox` 继续只依赖 SRT，不反向依赖应用层。正式 `ProductionExecutionWorker`、主机 scope/资格解析及启动组合仍未启用这些组件，不能将组件交付等同正式 Worker 验收。
+`apps/execution-worker/src/product-job-host.ts` 将既有 Job Host 接到产品 session 端口，固定采用原请求时间加墙钟额度与原截止时间两者中较早者，不因重新准备而延长执行时间。正文交给受保护输出存储回调；存储失败返回未知。适配位于 Worker 组合层，`runtime-sandbox` 继续只依赖 SRT，不反向依赖应用层。正式 Worker 的执行分支和 broker 生命周期装配已经实现；主机 scope/资格解析及启动组合仍未启用这些组件，不能将组件交付等同正式 Worker 验收。
 
 跨进程账本组件（2026-09-08）：既有认证 Payload UDS 增加 `payload.sandbox.job` 读取/追加操作，继续校验 Worker 启动身份、Agent Service 启动身份、epoch/fence、消息上限和时限。Agent Service 从冻结调用凭证和当前部署权威校验作业/主机绑定，Worker 不能传入数据库 authority。该通道不开放准入或任意账本查询；没有可信主机配置时拒绝服务。真实 Unix socket 与 SQLite 回归覆盖未握手、主机/作业/Owner/Worker 身份替换、权威变化、重复追加、旧观察重放返回最新状态，以及隔离状态重连回读。跨进程端口组件已完成，正式服务组合仍未启用；Worker 重启后的旧启动身份恢复须走 Agent Service 核查，不能降低冻结凭证的身份校验。
+
+正式入口接线证据（2026-09-08）：`ProductionSandboxExecution` 验证 broker 返回的冻结计划与执行消息一致，再调用既有生命周期；取消可以早于异步绑定或发生在准备期间，停止服务也先请求停止作业。已记录启动意图的请求走核查，不能重新启动。`createBrokerSandboxExecution()` 将生命周期的读回/追加映射到已认证 Payload UDS，不向 Worker 开放 `admit/listPending`。启动 RPC 失联无法确认是否已提交时返回 `result_unknown`；清理未知不能映射成成功。`recoverSandboxJobsAtStartup()` 已由正式 Agent Service 调用，在准入入口创建前把旧 prepared/starting 作业转入隔离；核查没有启动能力，重复启动核查不追加伪造完成记录。真实 UDS/SQLite 测试覆盖执行后隔离、准备期间取消、已有启动记录恢复、重复请求及不同启动身份下的恢复；这些测试仍使用受控主机 session，不能计作实际 SRT 主机资格。
 
 真实 SQLite 回执暴露并修复了原合同的摘要格式不匹配：`semanticFingerprint` 保留持久凭证的 `sha256:` 前缀，不改写旧凭证。execution-contracts 的内部相对导入改为项目既有的 `.ts` 源码写法，使 SQLite 源码 Worker 可以加载校验器；Node 构建仍将路径改写为 `.js`。相关回归覆盖旧 schema 26 升级、数据库重开、重复启动、租约改变、Handle 撤销、Run 取消、过期清理、事务回滚、输出持久化与终态禁止重启。正式 Worker/Job Host 仍未切换到这套账本，不能将这些测试计为主机执行资格。
 

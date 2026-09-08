@@ -14,6 +14,11 @@ import {
   executionV2MessageSchema,
   type ResourceCeiling,
 } from "@himawari-agent/execution-contracts";
+import {
+  type ProductionSandboxExecution,
+  type SandboxWorkerResult,
+  sandboxExternalActionId,
+} from "./production-sandbox-execution.js";
 
 export const PRODUCTION_WORKER_ERROR_CODES = Object.freeze({
   SANDBOX_SUPERVISOR_UNAVAILABLE: "SANDBOX_SUPERVISOR_UNAVAILABLE",
@@ -53,6 +58,7 @@ export interface RegisteredWorkerAdapter {
 
 export interface ProductionExecutionWorkerOptions {
   readonly service: ExecutionWorkerService;
+  readonly sandbox?: ProductionSandboxExecution;
   readonly workerInstanceId: string;
   readonly workerBootId: string;
   readonly bootTokenRef: string;
@@ -184,10 +190,19 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     this.assertReadyAndAuthoritative(parsed);
     if (parsed.type === "work.events.replay") return null;
     if (parsed.type === "work.execute") {
-      if (parsed.payload.sandboxJob)
-        throw new ProductionExecutionWorkerError(
-          PRODUCTION_WORKER_ERROR_CODES.SANDBOX_SUPERVISOR_UNAVAILABLE,
-        );
+      if (parsed.payload.sandboxJob) {
+        if (!this.options.sandbox)
+          throw new ProductionExecutionWorkerError(
+            PRODUCTION_WORKER_ERROR_CODES.SANDBOX_SUPERVISOR_UNAVAILABLE,
+          );
+        if (!withinCeiling(parsed.payload.resourceCeiling, this.options.maximumResourceCeiling))
+          throw new ProductionExecutionWorkerError(
+            PRODUCTION_WORKER_ERROR_CODES.RESOURCE_CEILING_EXCEEDED,
+          );
+        if (this.isReplay(parsed)) return null;
+        this.track(this.executeSandbox(parsed));
+        return null;
+      }
       await this.assertExecutable(parsed);
       if (this.isReplay(parsed)) return null;
       this.track(this.execute(parsed));
@@ -259,6 +274,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   async shutdown(): Promise<void> {
     this.ready = false;
     for (const { controller } of this.activeSubtasks.values()) controller.abort();
+    await this.options.sandbox?.shutdown();
     await this.waitForIdle();
     this.options.delegations?.clear();
     this.handshakeAgentInstanceId = null;
@@ -457,7 +473,52 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
 
   private track(operation: Promise<void>): void {
     this.active.add(operation);
-    void operation.finally(() => this.active.delete(operation));
+    void operation.finally(() => this.active.delete(operation)).catch(() => {});
+  }
+
+  private async executeSandbox(request: ExecuteRequest): Promise<void> {
+    const identity = request.payload.sandboxJob;
+    if (!identity) throw new Error("SANDBOX_JOB_REQUIRED");
+    try {
+      if (!this.options.sandbox) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
+      const result = await this.options.sandbox.execute(request);
+      this.appendSandboxResult(request, result);
+    } catch {
+      this.appendSandboxResult(request, {
+        outcome: "result_unknown",
+        outputRef: null,
+        errorCode: null,
+        externalActionId: sandboxExternalActionId(identity),
+      });
+    }
+  }
+  private appendSandboxResult(
+    request: ExecuteRequest | ReconcileRequest,
+    result: SandboxWorkerResult,
+  ): void {
+    const requestId =
+      request.type === "work.execute" ? request.messageId : request.payload.targetRequestId;
+    const event = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "event",
+      type: "work.result",
+      messageId: this.options.nextId("sandbox-result"),
+      correlationId: request.correlationId,
+      causationId: request.messageId,
+      dataClassification: request.dataClassification,
+      risk: request.risk,
+      authorizationRef: request.authorizationRef,
+      scope: request.scope,
+      payload: {
+        ...result,
+        requestId,
+        cursor: this.nextCursor(),
+        sequence: this.nextSequence(requestId),
+        completedAt: this.options.now(),
+      },
+    });
+    if (event.kind !== "event") throw new Error("SANDBOX_EVENT_INVALID");
+    this.eventsByCursor.push(event);
   }
 
   private async execute(request: ExecuteRequest): Promise<void> {
@@ -546,6 +607,10 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
 
   private async cancel(request: CancelRequest): Promise<void> {
     try {
+      if (this.options.sandbox?.handles(request.payload.targetRequestId)) {
+        await this.options.sandbox.cancel(request);
+        return;
+      }
       const active = this.activeSubtasks.get(request.scope.workerRunId as string);
       if (active && active.request.messageId === request.payload.targetRequestId) {
         if (
@@ -927,6 +992,20 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   }
 
   private async reconcile(request: ReconcileRequest): Promise<void> {
+    if (request.payload.externalActionId.startsWith("sandbox-job:")) {
+      try {
+        if (!this.options.sandbox) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
+        this.appendSandboxResult(request, await this.options.sandbox.reconcile(request));
+      } catch {
+        this.appendSandboxResult(request, {
+          outcome: "result_unknown",
+          outputRef: null,
+          errorCode: null,
+          externalActionId: request.payload.externalActionId,
+        });
+      }
+      return;
+    }
     try {
       const event = await this.options.service.reconcile({
         schemaVersion: EXECUTION_SCHEMA_VERSION,

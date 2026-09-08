@@ -9,6 +9,7 @@ import {
   DurableMemoryService,
   type IdGeneratorPort,
   type ProductConfiguration,
+  recoverSandboxJobsAtStartup,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import type { ExecutionAdmissionPeerBinding } from "@himawari-agent/execution-contracts";
@@ -47,6 +48,7 @@ import { admissionCostForConfiguredPiModel } from "@himawari-agent/runtime-pi";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
+import { createProductionFileReadServices } from "./production-file-read-services.js";
 import {
   createProductionHttpComposition,
   type ProductionHttpComposition,
@@ -68,7 +70,6 @@ import {
   embeddingAdmissionDescriptor,
 } from "./production-run-memory.js";
 import { createProductionRunPolicy } from "./production-run-policy.js";
-import { createProductionFileReadServices } from "./production-file-read-services.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
@@ -557,6 +558,13 @@ export async function runAgentService(
         workerInstanceId: peerBinding.workerInstanceId,
         workerBootId: peerBinding.workerBootId,
       });
+    // No admission/HTTP consumer is running yet. The new process may record old
+    // attempts as unknown, but must not inherit their execution permission.
+    await recoverSandboxJobsAtStartup({
+      journal: repository.sandboxJobJournal(configuration.ownerId, configuration.agentId),
+      authority: invocationAuthority,
+      now: () => clock.now(),
+    });
     const admission = new WorkerDelegationAdmissionService({
       invocations: repository.capabilityInvocationReceiptPort(
         configuration.ownerId,

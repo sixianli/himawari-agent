@@ -18,6 +18,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   PRODUCTION_WORKER_ERROR_CODES,
   ProductionExecutionWorker,
+  ProductionSandboxExecution,
   WorkerDelegationStore,
   type WorkerSubtaskExecutionContext,
 } from "../src/index.js";
@@ -144,6 +145,7 @@ function delegation(handleRef = "capability-handle-worker-unit") {
 async function workerFixture(
   options: {
     readonly unknownResult?: boolean;
+    readonly sandbox?: ProductionSandboxExecution;
     readonly now?: () => string;
     readonly capability?: CapabilityPort;
     readonly hostOperations?: ConstructorParameters<
@@ -266,6 +268,7 @@ async function workerFixture(
           operations: ["search"],
         },
       ],
+      ...(options.sandbox ? { sandbox: options.sandbox } : {}),
       ...(options.hostOperations ? { hostOperations: options.hostOperations } : {}),
       ...(options.subtasks ? { subtasks: options.subtasks } : {}),
       now: options.now ?? (() => adapters.clock.now()),
@@ -295,6 +298,45 @@ function deferred() {
 }
 
 describe("production execution Worker", () => {
+  it("routes sandbox failures to unknown results without invoking the legacy executor", async () => {
+    const bind = vi.fn(async () => {
+      throw new Error("broker disconnected after start");
+    });
+    const sandbox = new ProductionSandboxExecution({ bind, now: () => fixture.times.start });
+    const { worker } = await workerFixture({ sandbox });
+    await worker.request(handshake());
+    const request = execute();
+    const job = {
+      jobId: "job",
+      attemptId: "attempt",
+      receiptRef: "receipt",
+      hostId: "host",
+      threadId: "thread",
+      toolCallId: "tool",
+      invocationId: request.messageId,
+      ownerId: fixture.owner.id,
+      agentId: fixture.agent.id,
+      runId: fixture.runs.monitoring.id,
+    };
+    const execution = { ...request, payload: { ...request.payload, sandboxJob: job } };
+    await worker.request(execution);
+    await worker.waitForIdle();
+    await worker.request(execution);
+    await worker.waitForIdle();
+    expect(bind).toHaveBeenCalledTimes(1);
+    expect(await readEvents(worker)).toMatchObject([
+      {
+        type: "work.result",
+        payload: {
+          outcome: "result_unknown",
+          outputRef: null,
+          externalActionId: expect.stringMatching(/^sandbox-job:[a-f0-9]{64}$/),
+        },
+      },
+    ]);
+    await worker.shutdown();
+  });
+
   it("rejects sandbox jobs before the legacy executor can launch them", async () => {
     const { worker } = await workerFixture();
     await worker.request(handshake());

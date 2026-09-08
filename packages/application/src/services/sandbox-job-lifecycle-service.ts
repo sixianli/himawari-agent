@@ -16,7 +16,7 @@ import type {
 } from "../ports/sandbox-execution.js";
 
 export interface SandboxJobLifecycleOptions {
-  readonly journal: SandboxJobJournalPort;
+  readonly journal: Pick<SandboxJobJournalPort, "read" | "append">;
   readonly authority: () => CapabilityInvocationAuthority;
   readonly now: () => string;
   /** Revalidate protected scope, current directory/network authority and host qualification. */

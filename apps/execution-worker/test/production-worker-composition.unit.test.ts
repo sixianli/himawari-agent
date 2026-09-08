@@ -9,7 +9,7 @@ import {
   type ExecutionUdsCredential,
 } from "@himawari-agent/platform-node";
 import { createV02Fixture } from "@himawari-agent/testing";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createProductionWorkerComposition,
   PRODUCTION_WORKER_COMPOSITION_ERROR_CODES,
@@ -260,7 +260,17 @@ describe("production Worker composition", () => {
       code: PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.AGENT_SERVICES_UNAVAILABLE,
     });
     expect(composition.readiness().ready).toBe(false);
+    const disconnectPayload = vi.spyOn(composition.payloads, "disconnect");
+    const disconnectAdmission = vi.spyOn(composition.admission, "disconnect");
+    const shutdown = composition.worker.shutdown.bind(composition.worker);
+    vi.spyOn(composition.worker, "shutdown").mockImplementation(async () => {
+      expect(disconnectPayload).not.toHaveBeenCalled();
+      expect(disconnectAdmission).not.toHaveBeenCalled();
+      await shutdown();
+    });
     await composition.close();
+    expect(disconnectPayload).toHaveBeenCalledOnce();
+    expect(disconnectAdmission).toHaveBeenCalledOnce();
     expect(composition.readiness()).toEqual({
       live: false,
       ready: false,

@@ -17,17 +17,17 @@ import {
   assertProductionSecretSource,
   CapabilityDeploymentSnapshotLoader,
   type CapabilityDeploymentSnapshotLoaderOptions,
+  EphemeralSecretPort,
   ExecutionAdmissionUdsClient,
   type ExecutionUdsCredential,
-  EphemeralSecretPort,
   LinuxBubblewrapIsolationBackend,
+  type LoadedCapabilityDeployment,
+  MacOsKeychainProviderSecretSource,
   MacSignedHelperIsolationBackend,
   NodeCapabilityRuntimePort,
   NodeCapabilityRuntimeQualifier,
   type SandboxedProcessIsolationBackend,
   SystemdProviderSecretSource,
-  MacOsKeychainProviderSecretSource,
-  type LoadedCapabilityDeployment,
 } from "@himawari-agent/platform-node";
 import { ProductionExecutionWorker } from "./production-execution-worker.js";
 import { ProductionPayloadBrokerClient } from "./production-payload-broker-client.js";
@@ -560,10 +560,14 @@ export async function createProductionWorkerComposition(
     if (stopped) return;
     stopped = true;
     agentServicesReady = false;
-    admission.disconnect();
-    payloads.disconnect();
-    await worker.shutdown();
-    secretHandles.clear();
+    try {
+      // Keep the broker available while jobs stop and persist their final observations.
+      await worker.shutdown();
+    } finally {
+      admission.disconnect();
+      payloads.disconnect();
+      secretHandles.clear();
+    }
   };
   return Object.freeze({
     worker,
