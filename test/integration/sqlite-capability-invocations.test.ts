@@ -23,9 +23,9 @@ import {
   PORT_ERROR_CODES,
   type PortErrorCode,
   type RuntimeToolInvocation,
-  SandboxScopeService,
-  SandboxJobLifecycleService,
   type SandboxHostObservation,
+  SandboxJobLifecycleService,
+  SandboxScopeService,
   WorkerDelegationService,
 } from "@himawari-agent/application";
 import {
@@ -55,8 +55,11 @@ import {
 import {
   EnvelopePayloadProtector,
   InMemoryDevelopmentSecretSource,
+  PayloadUdsClient,
+  PayloadUdsServer,
 } from "@himawari-agent/platform-node";
 import { describe, expect, it } from "vitest";
+import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.js";
 import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.js";
 import { createProductionWorkerParentBindingRegistry } from "../../apps/agent-service/src/production-worker-parent-binding-registry.js";
 
@@ -2185,6 +2188,147 @@ async function openSandboxJournal(legacy = false) {
 }
 
 describe("durable sandbox invocation journal", () => {
+  it("persists authenticated sandbox observations over UDS and rejects substituted jobs", async () => {
+    const fixture = await openSandboxJournal();
+    fixture.prepare();
+    fixture.database.close();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: fixture.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    const directory = await mkdtemp("/tmp/hj-");
+    const credential = { tokenRef: "test-boot", tokenValue: "0123456789abcdef0123456789abcdef" };
+    const { agentServiceInstanceId, agentServiceBootId, workerInstanceId, workerBootId } =
+      SERVICE_AUTHORITY;
+    const { authorityEpoch, fencingToken } = SERVICE_AUTHORITY.product;
+    const common = {
+      credential,
+      agentServiceInstanceId,
+      agentServiceBootId,
+      authorityEpoch,
+      fencingToken,
+      maximumBodyBytes: 131072,
+      maximumPayloadBytes: 4096,
+      requestTimeoutMs: 3000,
+    };
+    const journal = repository.sandboxJobJournal(OWNER_ID, AGENT_ID);
+    let currentAuthority = SERVICE_AUTHORITY;
+    const handler = new ProductionPayloadBrokerHandler({
+      receipts: repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+      results: repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID),
+      payloadsFor: (owner, agent) => repository.payloadStore(owner, agent),
+      protector: fixture.protector,
+      currentAuthority: () => currentAuthority,
+      clock: { now: () => T1 },
+      ids: { next: () => "test-payload" },
+      agentServiceInstanceId,
+      agentServiceBootId,
+      maximumPayloadBytes: 4096,
+      allowedContentTypes: ["application/json"],
+      sandboxJobs: { hostId: fixture.plan.identity.hostId, journal },
+    });
+    const server = new PayloadUdsServer({
+      ...common,
+      runtimeDirectory: directory,
+      allowedWorkerIdentities: [{ workerInstanceId, workerBootId }],
+      handler,
+    });
+    let sequence = 0;
+    const client = new PayloadUdsClient({
+      ...common,
+      socketPath: server.socketPath,
+      workerInstanceId,
+      workerBootId,
+      nextId: () => `rpc-${++sequence}`,
+    });
+    const identity = {
+      handleRef: fixture.plan.handleRef,
+      invocationId: fixture.plan.identity.invocationId,
+      workerInstanceId,
+      workerBootId,
+      authorityEpoch,
+      fencingToken,
+    };
+    try {
+      await server.start();
+      await expect(client.sandboxJob(identity, fixture.plan.identity)).rejects.toThrow();
+      await client.connect();
+      expect(await client.sandboxJob(identity, fixture.plan.identity)).toMatchObject({
+        applied: false,
+        record: { observation: { state: "prepared", sequence: 1 } },
+      });
+      for (const replacement of [
+        { hostId: "other-host" },
+        { jobId: "other-job" },
+        { ownerId: "other-owner" },
+      ]) {
+        await expect(
+          client.sandboxJob(identity, { ...fixture.plan.identity, ...replacement }),
+        ).rejects.toThrow();
+      }
+      await expect(
+        client.sandboxJob({ ...identity, workerBootId: "other-boot" }, fixture.plan.identity),
+      ).rejects.toThrow();
+      expect((await journal.read(fixture.plan.identity))?.observation.sequence).toBe(1);
+      const starting: SandboxJobReceipt = { ...fixture.prepared, sequence: 2, state: "starting" };
+      expect(await client.sandboxJob(identity, fixture.plan.identity, starting)).toMatchObject({
+        applied: true,
+      });
+      expect(await client.sandboxJob(identity, fixture.plan.identity, starting)).toMatchObject({
+        applied: false,
+      });
+      await expect(
+        client.sandboxJob(identity, fixture.plan.identity, {
+          ...starting,
+          identity: { ...starting.identity, jobId: "substituted" },
+        }),
+      ).rejects.toThrow();
+      const stopping: SandboxJobReceipt = {
+        ...starting,
+        sequence: 3,
+        state: "stopping",
+        effect: "unknown",
+      };
+      await client.sandboxJob(identity, fixture.plan.identity, stopping);
+      const quarantined: SandboxJobReceipt = {
+        ...stopping,
+        sequence: 4,
+        state: "quarantined",
+        outcome: "unknown",
+        cleanup: "unknown",
+        reasonCode: "WORKER_DISCONNECTED",
+      };
+      await client.sandboxJob(identity, fixture.plan.identity, quarantined);
+      // Replaying an older observation returns the latest durable record without a new write.
+      expect(await client.sandboxJob(identity, fixture.plan.identity, starting)).toMatchObject({
+        applied: false,
+        record: { observation: quarantined },
+      });
+      client.disconnect();
+      await client.connect();
+      expect(await client.sandboxJob(identity, fixture.plan.identity)).toMatchObject({
+        applied: false,
+        record: { observation: quarantined },
+      });
+      currentAuthority = {
+        ...SERVICE_AUTHORITY,
+        product: {
+          ...SERVICE_AUTHORITY.product,
+          fencingToken: SERVICE_AUTHORITY.product.fencingToken + 1,
+        },
+      };
+      await expect(client.sandboxJob(identity, fixture.plan.identity)).rejects.toThrow();
+      expect((await journal.read(fixture.plan.identity))?.observation).toEqual(quarantined);
+    } finally {
+      client.disconnect();
+      await server.stop();
+      await repository.close();
+      await fixture.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("ignores a late result from an abandoned preparation after retry", async () => {
     const fixture = await openSandboxJournal();
     fixture.prepare();

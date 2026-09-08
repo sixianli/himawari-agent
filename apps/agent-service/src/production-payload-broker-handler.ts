@@ -9,10 +9,14 @@ import type {
   PayloadProtectorPort,
   PayloadRecord,
   PayloadStorePort,
+  SandboxJobJournalPort,
 } from "@himawari-agent/application";
-import type {
-  PayloadBrokerInputReadRequest,
-  PayloadBrokerOutputWriteRequest,
+import {
+  type PayloadBrokerInputReadRequest,
+  type PayloadBrokerOutputWriteRequest,
+  type PayloadBrokerSandboxJobRequest,
+  type PayloadBrokerSandboxJobResult,
+  payloadSandboxJobRequestSchema,
 } from "@himawari-agent/execution-contracts";
 import type {
   PayloadBrokerOutputReceipt,
@@ -23,6 +27,7 @@ type OwnerId = PayloadProtectionRequest["ownerId"];
 type AgentId = PayloadProtectionRequest["agentId"];
 
 export const PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES = Object.freeze({
+  SANDBOX_JOB_REJECTED: "PAYLOAD_HANDLER_SANDBOX_JOB_REJECTED",
   AUTHORITY_REJECTED: "PAYLOAD_HANDLER_AUTHORITY_REJECTED",
   CONTENT_TYPE_MISMATCH: "PAYLOAD_HANDLER_CONTENT_TYPE_MISMATCH",
   CONTENT_TYPE_UNSUPPORTED: "PAYLOAD_HANDLER_CONTENT_TYPE_UNSUPPORTED",
@@ -58,6 +63,8 @@ export class ProductionPayloadBrokerHandlerError extends Error {
 }
 
 export interface ProductionPayloadBrokerHandlerOptions {
+  /** Host binding comes from trusted composition, never the request. */
+  readonly sandboxJobs?: { readonly hostId: string; readonly journal: SandboxJobJournalPort };
   /** Scoped to the trusted Agent owner; no Worker-provided scope is accepted. */
   readonly receipts: CapabilityInvocationReceiptPort;
   /** Scoped to the same trusted Agent owner as the receipt port. */
@@ -113,6 +120,59 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
     this.#options = options;
   }
 
+  async sandboxJob(
+    value: PayloadBrokerSandboxJobRequest,
+  ): Promise<Pick<PayloadBrokerSandboxJobResult["payload"], "record" | "applied">> {
+    try {
+      const request = payloadSandboxJobRequestSchema.parse(value);
+      const configured = this.#options.sandboxJobs;
+      if (!configured) throw new Error("unavailable");
+      const authority = this.authorityFor(request);
+      const lookup = {
+        handleRef: request.payload.handleRef,
+        invocationId: request.payload.invocationId,
+        authority,
+        now: this.#options.clock.now(),
+      };
+      const receipt = await this.#options.results.lookupFrozen(lookup);
+      if (!receipt) throw new Error("receipt missing");
+      this.assertReceiptAttempt(receipt, request, authority);
+      const record = await configured.journal.read(request.payload.identity);
+      if (
+        !record ||
+        record.plan.identity.hostId !== configured.hostId ||
+        record.plan.handleRef !== receipt.handleRef ||
+        record.plan.inputRef !== receipt.inputRef ||
+        record.plan.semanticFingerprint !== receipt.semanticFingerprint ||
+        record.plan.identity.receiptRef !== receipt.receiptRef ||
+        record.plan.identity.runId !== receipt.runId ||
+        record.plan.identity.ownerId !== receipt.ownerId ||
+        record.plan.identity.agentId !== receipt.agentId ||
+        record.plan.identity.invocationId !== receipt.invocationId
+      )
+        throw new Error("job binding mismatch");
+      if (request.payload.observation)
+        return await configured.journal.append({
+          observation: request.payload.observation,
+          authority,
+          now: this.#options.clock.now(),
+        });
+      // A read must not disclose a plan after authority changes during lookup.
+      const current = await this.#options.results.lookupFrozen({
+        ...lookup,
+        now: this.#options.clock.now(),
+        authority: this.authorityFor(request),
+      });
+      if (!current || !sameAuthority(current.authority, authority))
+        throw new Error("authority changed");
+      return { record, applied: false };
+    } catch {
+      throw new ProductionPayloadBrokerHandlerError(
+        PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES.SANDBOX_JOB_REJECTED,
+      );
+    }
+  }
+
   async readInput(request: PayloadBrokerInputReadRequest): Promise<Uint8Array> {
     try {
       return await this.readInputInternal(request);
@@ -140,7 +200,10 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
   }
 
   private authorityFor(
-    request: PayloadBrokerInputReadRequest | PayloadBrokerOutputWriteRequest,
+    request:
+      | PayloadBrokerInputReadRequest
+      | PayloadBrokerOutputWriteRequest
+      | PayloadBrokerSandboxJobRequest,
   ): CapabilityInvocationAuthority {
     const current = this.#options.currentAuthority();
     if (
@@ -169,7 +232,10 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       readonly invocationId: string;
       readonly authority: CapabilityInvocationAuthority;
     },
-    request: PayloadBrokerInputReadRequest | PayloadBrokerOutputWriteRequest,
+    request:
+      | PayloadBrokerInputReadRequest
+      | PayloadBrokerOutputWriteRequest
+      | PayloadBrokerSandboxJobRequest,
     authority: CapabilityInvocationAuthority,
   ): void {
     if (

@@ -8,6 +8,8 @@ import {
   type PayloadBrokerMessage,
   type PayloadBrokerOutputWriteAccepted,
   type PayloadBrokerOutputWriteRequest,
+  type PayloadBrokerSandboxJobRequest,
+  type PayloadBrokerSandboxJobResult,
   payloadBrokerV1MessageSchema,
 } from "@himawari-agent/execution-contracts";
 import {
@@ -17,6 +19,7 @@ import {
   AuthenticatedUdsTransportError,
 } from "./authenticated-uds-transport.js";
 
+const SANDBOX_JOB_PATH = "/payload/v1/sandbox/job";
 const HANDSHAKE_PATH = "/payload/v1/handshake";
 const INPUT_READ_PATH = "/payload/v1/input/read";
 const OUTPUT_WRITE_PATH = "/payload/v1/output/write";
@@ -82,6 +85,9 @@ export interface PayloadBrokerOutputReceipt {
 }
 
 export interface PayloadBrokerTrustedHandler {
+  sandboxJob?(
+    request: PayloadBrokerSandboxJobRequest,
+  ): Promise<Pick<PayloadBrokerSandboxJobResult["payload"], "record" | "applied">>;
   readInput(request: PayloadBrokerInputReadRequest): Promise<Uint8Array>;
   writeOutput(
     request: PayloadBrokerOutputWriteRequest,
@@ -123,6 +129,7 @@ export interface PayloadUdsClientOptions {
 function responseEnvelope(
   request: PayloadBrokerMessage,
   type:
+    | "payload.sandbox.job.result"
     | "payload.handshake.accepted"
     | "payload.input.read.result"
     | "payload.output.write.accepted",
@@ -138,7 +145,7 @@ function responseEnvelope(
 }
 
 function requestEnvelope(
-  type: "payload.handshake" | "payload.input.read" | "payload.output.write",
+  type: "payload.handshake" | "payload.input.read" | "payload.output.write" | "payload.sandbox.job",
   messageId: string,
 ) {
   return {
@@ -282,6 +289,27 @@ export class PayloadUdsServer {
         sendJson(response, this.handshakeResponse(message), this.options.maximumBodyBytes);
         return;
       }
+      if (url.pathname === SANDBOX_JOB_PATH && message.type === "payload.sandbox.job") {
+        this.assertOperationIdentity(message, request);
+        if (!this.options.handler.sandboxJob)
+          throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.HANDLER_FAILED, 503);
+        const result = await this.options.handler.sandboxJob(message);
+        if (response.headersSent || response.writableEnded || response.destroyed) return;
+        sendJson(
+          response,
+          payloadBrokerV1MessageSchema.parse({
+            ...responseEnvelope(message, "payload.sandbox.job.result"),
+            payload: {
+              ...payloadIdentity(message.payload),
+              agentServiceInstanceId: this.options.agentServiceInstanceId,
+              agentServiceBootId: this.options.agentServiceBootId,
+              ...result,
+            },
+          }),
+          this.options.maximumBodyBytes,
+        );
+        return;
+      }
       if (url.pathname === INPUT_READ_PATH && message.type === "payload.input.read") {
         this.assertOperationIdentity(message, request);
         const bytes = await this.readInput(message);
@@ -364,7 +392,10 @@ export class PayloadUdsServer {
   }
 
   private assertOperationIdentity(
-    request: PayloadBrokerInputReadRequest | PayloadBrokerOutputWriteRequest,
+    request:
+      | PayloadBrokerInputReadRequest
+      | PayloadBrokerOutputWriteRequest
+      | PayloadBrokerSandboxJobRequest,
     httpRequest: IncomingMessage,
   ): void {
     const worker = this.options.allowedWorkerIdentities.find(
@@ -529,6 +560,43 @@ export class PayloadUdsClient {
     return new Uint8Array(bytes);
   }
 
+  async sandboxJob(
+    identity: PayloadBrokerInvocationIdentity,
+    job: PayloadBrokerSandboxJobRequest["payload"]["identity"],
+    observation: PayloadBrokerSandboxJobRequest["payload"]["observation"] = null,
+  ): Promise<Pick<PayloadBrokerSandboxJobResult["payload"], "record" | "applied">> {
+    this.assertConnected();
+    this.assertClientIdentity(identity);
+    const request = payloadBrokerV1MessageSchema.parse({
+      ...requestEnvelope("payload.sandbox.job", this.options.nextId("sandbox-job")),
+      payload: { ...payloadIdentity(identity), identity: job, observation },
+    });
+    const response = await this.send(SANDBOX_JOB_PATH, request);
+    if (response.statusCode !== 200) this.throwRemote(response.body, response.statusCode);
+    const result = parseJsonResponse(response.body, response.contentType);
+    this.assertResponseEnvelope(result, request);
+    if (result.type !== "payload.sandbox.job.result")
+      throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.INVALID_RESPONSE, 502);
+    this.assertResponseIdentity(result, identity);
+    if (
+      request.type !== "payload.sandbox.job" ||
+      JSON.stringify(result.payload.record.plan.identity) !==
+        JSON.stringify(request.payload.identity)
+    )
+      throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.RESPONSE_IDENTITY_MISMATCH, 502);
+    const requested = request.payload.observation;
+    const returned = result.payload.record.observation;
+    if (
+      (!requested && result.payload.applied) ||
+      (requested &&
+        (returned.sequence < requested.sequence ||
+          ((result.payload.applied || returned.sequence === requested.sequence) &&
+            JSON.stringify(returned) !== JSON.stringify(requested))))
+    )
+      throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.INVALID_RESPONSE, 502);
+    return { record: result.payload.record, applied: result.payload.applied };
+  }
+
   async writeOutput(
     identity: PayloadBrokerInvocationIdentity,
     plaintext: Uint8Array,
@@ -614,7 +682,10 @@ export class PayloadUdsClient {
   }
 
   private assertResponseIdentity(
-    response: PayloadBrokerInputReadResult | PayloadBrokerOutputWriteAccepted,
+    response:
+      | PayloadBrokerInputReadResult
+      | PayloadBrokerOutputWriteAccepted
+      | PayloadBrokerSandboxJobResult,
     identity: PayloadBrokerInvocationIdentity,
   ): void {
     if (

@@ -1,4 +1,9 @@
-import type { CapabilityInvocationRequest, PayloadRef } from "@himawari-agent/application";
+import type {
+  CapabilityInvocationRequest,
+  PayloadRef,
+  SandboxJobIdentity,
+  SandboxJobReceipt,
+} from "@himawari-agent/application";
 import type { CapabilityPayloadBoundary } from "@himawari-agent/platform-node";
 import {
   type PayloadBrokerInvocationIdentity,
@@ -42,6 +47,13 @@ export class ProductionPayloadBrokerClient implements CapabilityPayloadBoundary 
   ): Promise<PayloadRef> {
     const receipt = await this.client.writeOutput(this.identity(request), plaintext, contentType);
     return receipt.outputRef;
+  }
+
+  async readSandboxJob(request: CapabilityInvocationRequest, identity: SandboxJobIdentity) {
+    return this.client.sandboxJob(this.identity(request), identity);
+  }
+  async appendSandboxJob(request: CapabilityInvocationRequest, observation: SandboxJobReceipt) {
+    return this.client.sandboxJob(this.identity(request), observation.identity, observation);
   }
 
   private identity(request: CapabilityInvocationRequest): PayloadBrokerInvocationIdentity {

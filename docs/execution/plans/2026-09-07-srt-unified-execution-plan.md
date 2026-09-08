@@ -81,7 +81,9 @@ Task 4 的前置账本部分已提前实施：追加迁移 `0027_sandbox_job_obs
 
 生命周期协调器证据（2026-09-08）：`SandboxJobLifecycleService` 复用既有 `SandboxExecutionPort` 和 SQLite 账本，`prepareHost` 只准备基础设施，只有首次成功追加 `starting` 的协调器才能启动任务。两个协调器竞争时，未获得启动权的一方取消自己的 Job Host，但不得追加观察覆盖获胜作业。准备期间取消不启动；失联核查将已有启动意图转为 `reconciling/quarantined`，保留已存输出引用，不调用启动器。准备和启动前各复核一次当前 scope/资格；凭证、Run、租约的最终检查仍由同一 SQLite 启动事务执行。真实 SQLite 回归包含多协调器竞争、重复请求、准备期间取消、复核失败、清理未知与恢复不重放；注入的主机 session 不是正式主机资格。
 
-`apps/execution-worker/src/product-job-host.ts` 将既有 Job Host 接到产品 session 端口，固定采用原请求时间加墙钟额度与原截止时间两者中较早者，不因重新准备而延长执行时间。正文交给受保护输出存储回调；存储失败返回未知。适配位于 Worker 组合层，`runtime-sandbox` 继续只依赖 SRT，不反向依赖应用层。正式 `ProductionExecutionWorker`、跨进程账本端口、主机 scope/资格解析及启动组合仍未启用这些组件，不能将组件交付等同正式 Worker 验收。
+`apps/execution-worker/src/product-job-host.ts` 将既有 Job Host 接到产品 session 端口，固定采用原请求时间加墙钟额度与原截止时间两者中较早者，不因重新准备而延长执行时间。正文交给受保护输出存储回调；存储失败返回未知。适配位于 Worker 组合层，`runtime-sandbox` 继续只依赖 SRT，不反向依赖应用层。正式 `ProductionExecutionWorker`、主机 scope/资格解析及启动组合仍未启用这些组件，不能将组件交付等同正式 Worker 验收。
+
+跨进程账本组件（2026-09-08）：既有认证 Payload UDS 增加 `payload.sandbox.job` 读取/追加操作，继续校验 Worker 启动身份、Agent Service 启动身份、epoch/fence、消息上限和时限。Agent Service 从冻结调用凭证和当前部署权威校验作业/主机绑定，Worker 不能传入数据库 authority。该通道不开放准入或任意账本查询；没有可信主机配置时拒绝服务。真实 Unix socket 与 SQLite 回归覆盖未握手、主机/作业/Owner/Worker 身份替换、权威变化、重复追加、旧观察重放返回最新状态，以及隔离状态重连回读。跨进程端口组件已完成，正式服务组合仍未启用；Worker 重启后的旧启动身份恢复须走 Agent Service 核查，不能降低冻结凭证的身份校验。
 
 真实 SQLite 回执暴露并修复了原合同的摘要格式不匹配：`semanticFingerprint` 保留持久凭证的 `sha256:` 前缀，不改写旧凭证。execution-contracts 的内部相对导入改为项目既有的 `.ts` 源码写法，使 SQLite 源码 Worker 可以加载校验器；Node 构建仍将路径改写为 `.js`。相关回归覆盖旧 schema 26 升级、数据库重开、重复启动、租约改变、Handle 撤销、Run 取消、过期清理、事务回滚、输出持久化与终态禁止重启。正式 Worker/Job Host 仍未切换到这套账本，不能将这些测试计为主机执行资格。
 

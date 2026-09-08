@@ -23,6 +23,34 @@ function envelope(kind: "request" | "response", type: string) {
 }
 
 describe("payload-broker.v1 contract", () => {
+  it("binds sandbox requests to one invocation and rejects caller-supplied authority", () => {
+    const job = {
+      jobId: "job:one",
+      attemptId: "attempt:one",
+      invocationId: identity.invocationId,
+      receiptRef: "receipt:one",
+      hostId: "host:one",
+      ownerId: "owner:one",
+      agentId: "agent:one",
+      threadId: null,
+      runId: "run:one",
+      toolCallId: "tool:one",
+    };
+    const request = {
+      ...envelope("request", "payload.sandbox.job"),
+      idempotencyKey: "job:read",
+      payload: { ...identity, identity: job, observation: null },
+    };
+    expect(payloadBrokerV1MessageSchema.parse(request)).toEqual(request);
+    for (const payload of [
+      { ...request.payload, authority: { fencingToken: 100 } },
+      { ...request.payload, identity: { ...job, invocationId: "other" } },
+      { ...request.payload, identity: { ...job, extra: true } },
+      { ...request.payload, observation: {} },
+    ])
+      expect(() => payloadBrokerV1MessageSchema.parse({ ...request, payload })).toThrow();
+  });
+
   it("round-trips the handshake and both bounded byte operations", () => {
     const messages = [
       {
