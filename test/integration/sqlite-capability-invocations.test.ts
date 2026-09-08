@@ -24,6 +24,8 @@ import {
   type PortErrorCode,
   type RuntimeToolInvocation,
   SandboxScopeService,
+  SandboxJobLifecycleService,
+  type SandboxHostObservation,
   WorkerDelegationService,
 } from "@himawari-agent/application";
 import {
@@ -2183,6 +2185,296 @@ async function openSandboxJournal(legacy = false) {
 }
 
 describe("durable sandbox invocation journal", () => {
+  it("ignores a late result from an abandoned preparation after retry", async () => {
+    const fixture = await openSandboxJournal();
+    fixture.prepare();
+    fixture.database.close();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: fixture.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    const journal = repository.sandboxJobJournal(OWNER_ID, AGENT_ID);
+    const outcomes: ((value: SandboxHostObservation) => void)[] = [];
+    let checks = 0;
+    let starts = 0;
+    const unknownResult: SandboxHostObservation = {
+      outcome: "unknown",
+      cleanup: "unknown",
+      effect: "unknown",
+      outputRef: null,
+      outputDigest: null,
+      reasonCode: "unknown",
+    };
+    const service = new SandboxJobLifecycleService({
+      journal,
+      authority: () => SERVICE_AUTHORITY,
+      now: () => T1,
+      verify: async () => {
+        if (++checks === 2) throw new Error("temporary verification failure");
+      },
+      prepareHost: async () => {
+        let resolveResult!: (value: SandboxHostObservation) => void;
+        const result = new Promise<SandboxHostObservation>((resolve) => {
+          resolveResult = resolve;
+        });
+        outcomes.push(resolveResult);
+        return {
+          policyDigest: fixture.prepared.policyDigest,
+          ready: Promise.resolve(),
+          result,
+          start: () => {
+            starts++;
+          },
+          cancel: () => {},
+        };
+      },
+    });
+    try {
+      await expect(service.start(fixture.plan.identity)).rejects.toThrow(
+        "temporary verification failure",
+      );
+      const abandoned = service.wait(fixture.plan.identity);
+      await service.start(fixture.plan.identity);
+      outcomes[0]?.(unknownResult);
+      await abandoned;
+      expect((await journal.read(fixture.plan.identity))?.observation.state).toBe("starting");
+      outcomes[1]?.(unknownResult);
+      await service.wait(fixture.plan.identity);
+      expect(starts).toBe(1);
+      expect((await journal.read(fixture.plan.identity))?.observation.state).toBe("quarantined");
+    } finally {
+      await repository.close();
+      await fixture.close();
+    }
+  });
+
+  it("lets only the durable CAS winner own job observations across coordinators", async () => {
+    const fixture = await openSandboxJournal();
+    fixture.prepare();
+    fixture.database.close();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: fixture.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const outcomes: ((result: SandboxHostObservation) => void)[] = [];
+    let starts = 0;
+    const unknownResult: SandboxHostObservation = {
+      outcome: "unknown",
+      cleanup: "unknown",
+      effect: "unknown",
+      outputRef: null,
+      outputDigest: null,
+      reasonCode: "unknown",
+    };
+    const journal = repository.sandboxJobJournal(OWNER_ID, AGENT_ID);
+    const options = {
+      journal,
+      authority: () => SERVICE_AUTHORITY,
+      now: () => T1,
+      verify: async () => {},
+      prepareHost: async () => {
+        let resolveResult!: (result: SandboxHostObservation) => void;
+        const result = new Promise<SandboxHostObservation>((resolve) => {
+          resolveResult = resolve;
+        });
+        outcomes.push(resolveResult);
+        if (outcomes.length === 2) release();
+        return {
+          policyDigest: fixture.prepared.policyDigest,
+          ready,
+          result,
+          start: () => {
+            starts++;
+          },
+          cancel: () => resolveResult(unknownResult),
+        };
+      },
+    };
+    try {
+      const first = new SandboxJobLifecycleService(options);
+      const second = new SandboxJobLifecycleService(options);
+      await Promise.all([first.start(fixture.plan.identity), second.start(fixture.plan.identity)]);
+      expect(starts).toBe(1);
+      // The cancelled losing host must not quarantine the winner's running job.
+      expect((await journal.read(fixture.plan.identity))?.observation.state).toBe("starting");
+      for (const resolve of outcomes) resolve(unknownResult);
+      await Promise.all([first.wait(fixture.plan.identity), second.wait(fixture.plan.identity)]);
+      expect((await journal.read(fixture.plan.identity))?.observation.state).toBe("quarantined");
+    } finally {
+      await repository.close();
+      await fixture.close();
+    }
+  });
+  it("cancels while a Job Host is preparing without sending start", async () => {
+    const fixture = await openSandboxJournal();
+    fixture.prepare();
+    fixture.database.close();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: fixture.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    let readyReject!: (error: Error) => void;
+    const ready = new Promise<void>((_, reject) => {
+      readyReject = reject;
+    });
+    let resolveResult!: (result: SandboxHostObservation) => void;
+    const result = new Promise<SandboxHostObservation>((resolve) => {
+      resolveResult = resolve;
+    });
+    let preparedResolve!: () => void;
+    const prepared = new Promise<void>((resolve) => {
+      preparedResolve = resolve;
+    });
+    let starts = 0;
+    const service = new SandboxJobLifecycleService({
+      journal: repository.sandboxJobJournal(OWNER_ID, AGENT_ID),
+      authority: () => SERVICE_AUTHORITY,
+      now: () => T1,
+      verify: async () => {},
+      prepareHost: async () => {
+        preparedResolve();
+        return {
+          policyDigest: fixture.prepared.policyDigest,
+          ready,
+          result,
+          start: () => {
+            starts++;
+          },
+          cancel: () => {
+            readyReject(new Error("cancelled"));
+            resolveResult({
+              outcome: "cancelled",
+              cleanup: "unknown",
+              effect: "not_started",
+              outputRef: null,
+              outputDigest: null,
+              reasonCode: "cancelled",
+            });
+          },
+        };
+      },
+    });
+    try {
+      const starting = service.start(fixture.plan.identity);
+      const rejected = expect(starting).rejects.toThrow(/cancelled|CANCELLED/);
+      await prepared;
+      await service.cancel(fixture.plan.identity, "owner_cancelled");
+      await rejected;
+      expect(starts).toBe(0);
+      expect(await service.wait(fixture.plan.identity)).toMatchObject({
+        state: "quarantined",
+        cleanup: "unknown",
+      });
+    } finally {
+      await repository.close();
+      await fixture.close();
+    }
+  });
+
+  it.each(["complete_unknown", "restart", "revoked_before_start", "concurrent"])(
+    "coordinates durable Job Host lifecycle without replay: %s",
+    async (mode) => {
+      const fixture = await openSandboxJournal();
+      fixture.prepare();
+      fixture.database.close();
+      const repository = await SqliteProductStateRepository.open({
+        stateRoot: fixture.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      let resolveResult!: (value: SandboxHostObservation) => void;
+      const result = new Promise<SandboxHostObservation>((resolve) => {
+        resolveResult = resolve;
+      });
+      let starts = 0;
+      let checks = 0;
+      const journal = repository.sandboxJobJournal(OWNER_ID, AGENT_ID);
+      const options = {
+        journal,
+        authority: () => SERVICE_AUTHORITY,
+        now: () => T1,
+        verify: async () => {
+          checks++;
+          if (mode === "revoked_before_start" && checks === 2) throw new Error("revoked");
+        },
+        prepareHost: async () => ({
+          policyDigest: fixture.prepared.policyDigest,
+          ready: Promise.resolve(),
+          result,
+          start: () => {
+            starts++;
+          },
+          cancel: () =>
+            resolveResult({
+              outcome: "unknown",
+              cleanup: "unknown",
+              effect: "unknown",
+              outputRef: null,
+              outputDigest: null,
+              reasonCode: "cancelled",
+            }),
+        }),
+      };
+      try {
+        const service = new SandboxJobLifecycleService(options);
+        if (mode === "revoked_before_start") {
+          await expect(service.start(fixture.plan.identity)).rejects.toThrow("revoked");
+          await service.wait(fixture.plan.identity);
+          expect(starts).toBe(0);
+          expect((await journal.read(fixture.plan.identity))?.observation.state).toBe("prepared");
+        } else {
+          if (mode === "concurrent")
+            await Promise.all([
+              service.start(fixture.plan.identity),
+              service.start(fixture.plan.identity),
+            ]);
+          else await service.start(fixture.plan.identity);
+          expect(starts).toBe(1);
+          expect((await journal.read(fixture.plan.identity))?.observation.state).toBe("starting");
+          if (mode === "restart") {
+            const recovery = new SandboxJobLifecycleService({
+              ...options,
+              prepareHost: async () => {
+                throw new Error("must not relaunch");
+              },
+            });
+            expect(await recovery.reconcile(fixture.plan.identity)).toMatchObject({
+              state: "quarantined",
+              cleanup: "unknown",
+            });
+            expect(await recovery.start(fixture.plan.identity)).toMatchObject({
+              state: "quarantined",
+            });
+          }
+          resolveResult({
+            outcome: "succeeded",
+            cleanup: "unknown",
+            effect: "unknown",
+            outputRef: null,
+            outputDigest: null,
+            reasonCode: "SANDBOX_CLEANUP_UNKNOWN",
+          });
+          expect(await service.wait(fixture.plan.identity)).toMatchObject({
+            state: "quarantined",
+            cleanup: "unknown",
+          });
+          await service.start(fixture.plan.identity);
+          expect(starts).toBe(1);
+        }
+      } finally {
+        await repository.close();
+        await fixture.close();
+      }
+    },
+  );
+
   it.each([
     ["revoked", { revokedAt: T1 }],
     ["expired", { expiresAt: T1 }],

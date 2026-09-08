@@ -80,6 +80,7 @@ export const allowedInternalDependencies = new Map([
   [
     "@himawari-agent/execution-worker",
     new Set([
+      "@himawari-agent/runtime-sandbox",
       "@himawari-agent/application",
       "@himawari-agent/execution-contracts",
       "@himawari-agent/platform-node",

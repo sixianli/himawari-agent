@@ -69,3 +69,17 @@ export interface SandboxExecutionPort {
   /** Reconcile observations; never relaunch an unresolved attempt. */
   reconcile(identity: SandboxJobIdentity): Promise<SandboxJobReceipt>;
 }
+
+/** Trusted host adapter returns protected output references, never raw task output.
+ * A settled process is not proof of cleanup or of known side effects. */
+export type SandboxHostObservation = Pick<
+  SandboxJobReceipt,
+  "outcome" | "cleanup" | "effect" | "outputRef" | "outputDigest" | "reasonCode"
+>;
+export interface SandboxHostSession {
+  readonly policyDigest: string;
+  readonly ready: Promise<void>;
+  readonly result: Promise<SandboxHostObservation>;
+  start(): void;
+  cancel(): void;
+}

@@ -42,6 +42,10 @@ export * from "./run-state-commit-coordinator.js";
 export * from "./runtime-continuation-service.js";
 export * from "./runtime-tool-authorization.js";
 export { createSandboxExecutionPlan } from "./sandbox-execution-plan.js";
+export {
+  type SandboxJobLifecycleOptions,
+  SandboxJobLifecycleService,
+} from "./sandbox-job-lifecycle-service.js";
 export * from "./sandbox-scope-service.js";
 export * from "./scheduler-service.js";
 export * from "./session-deletion-coordinator.js";
