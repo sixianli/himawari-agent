@@ -6,10 +6,12 @@ import {
 import type {
   CapabilityInvocationAuthority,
   CapabilityInvocationReceiptPort,
+  ConsumeCapabilityInvocationInput,
   FrozenCapabilityInvocationReceipt,
 } from "../ports/capability-invocations.js";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ExecutionTransportPort } from "../ports/coordination.js";
+import type { SandboxJobJournalPort } from "../ports/sandbox-execution.js";
 
 export type WorkerExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
 export type WorkerDelegateRequest = Extract<ExecutionV2Request, { type: "work.delegate" }>;
@@ -76,6 +78,15 @@ function scopeMatches(
 export interface WorkerDelegationAdmissionServiceOptions {
   /** Agent-scoped atomic consume port backed by the durable authority owner. */
   readonly invocations: CapabilityInvocationReceiptPort;
+  /** Trusted composition selects this mode only for SRT executions. Preparation
+   * resolves authorized scope/qualification; failure never falls back to consume.
+   * It must return a stable persisted job identity when handling a replay. */
+  readonly sandbox?: {
+    readonly journal: Pick<SandboxJobJournalPort, "admit">;
+    readonly prepare: (
+      invocation: ConsumeCapabilityInvocationInput,
+    ) => Promise<Omit<Parameters<SandboxJobJournalPort["admit"]>[0], "invocation">>;
+  };
   /** Trusted current Agent/Worker attempt and product lease identity. */
   readonly invocationAuthority: () => CapabilityInvocationAuthority;
   readonly now: () => string;
@@ -221,7 +232,7 @@ export class WorkerDelegationAdmissionService {
     authority: CapabilityInvocationAuthority,
     consumedAt: string,
   ) {
-    return this.#options.invocations.consume({
+    const input: ConsumeCapabilityInvocationInput = {
       receiptRef: this.#options.nextId("capability-invocation-receipt"),
       handleRef: request.payload.capabilityHandleRef,
       invocationId: request.messageId,
@@ -240,7 +251,16 @@ export class WorkerDelegationAdmissionService {
       deadlineAt: request.payload.deadlineAt,
       authority,
       consumedAt,
+    };
+    const sandbox = this.#options.sandbox;
+    if (!sandbox) return this.#options.invocations.consume(input);
+    // Keep the request used for admission separate from the async resolver's copy.
+    const prepared = await sandbox.prepare(structuredClone(input));
+    const admitted = await sandbox.journal.admit({
+      ...prepared,
+      invocation: { ...input, consumedAt: this.#options.now() },
     });
+    return { replayed: !admitted.applied, receipt: admitted.receipt };
   }
 }
 

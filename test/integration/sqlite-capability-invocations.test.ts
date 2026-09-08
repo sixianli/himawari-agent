@@ -2108,6 +2108,72 @@ async function openSandboxJournal(legacy = false) {
 }
 
 describe("durable sandbox invocation journal", () => {
+  it.each(["fresh", "legacy", "scope_failure", "expired_preparation"])(
+    "routes Worker admission through the journal: %s",
+    async (mode) => {
+      const fixture = await openSandboxJournal(mode === "legacy");
+      fixture.database.close();
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: fixture.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      try {
+        const { semanticFingerprint: _fingerprint, ...plan } = fixture.plan;
+        const transport = new RecordingServiceTransport();
+        let admissionNow = T1;
+        const service = new WorkerDelegationService({
+          invocations: {
+            consume: async () => {
+              throw new Error("must not consume separately");
+            },
+            read: async () => {
+              throw new Error("must not re-read to construct projection");
+            },
+          },
+          sandbox: {
+            journal: reopened.sandboxJobJournal(OWNER_ID, AGENT_ID),
+            prepare: async () => {
+              if (mode === "scope_failure") throw new Error("scope unavailable");
+              if (mode === "expired_preparation") admissionNow = T2;
+              return { plan, observation: fixture.prepared };
+            },
+          },
+          invocationAuthority: () => SERVICE_AUTHORITY,
+          transport,
+          now: () => admissionNow,
+          nextId: () => fixture.plan.identity.receiptRef,
+        });
+        const source = invocation() as unknown as ConsumeCapabilityInvocationInput;
+        const request = {
+          ...serviceRequest(),
+          messageId: source.invocationId,
+          idempotencyKey: source.idempotencyKey,
+        };
+        if (mode === "fresh") {
+          await service.dispatch(request);
+          await service.dispatch(request);
+          expect(transport.requests.map(({ type }) => type)).toEqual([
+            "work.delegate",
+            "work.execute",
+          ]);
+          expect(
+            await reopened.sandboxJobJournal(OWNER_ID, AGENT_ID).read(plan.identity),
+          ).toMatchObject({ observation: { state: "prepared" } });
+        } else {
+          await expect(service.dispatch(request)).rejects.toThrow();
+          expect(transport.requests).toEqual([]);
+          expect(
+            await reopened.sandboxJobJournal(OWNER_ID, AGENT_ID).read(plan.identity),
+          ).toBeUndefined();
+        }
+      } finally {
+        await reopened.close();
+        await fixture.close();
+      }
+    },
+  );
+
   it("admits through the SQLite worker and rejects the separate preparation entry", async () => {
     const fixture = await openSandboxJournal();
     try {

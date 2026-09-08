@@ -13,6 +13,7 @@ import type {
   ReadCapabilityInvocationInput,
   RunPayloadArtifact,
   RunPayloadArtifactCommitResult,
+  SandboxJobAdmissionResult,
   SandboxJobRecord,
 } from "@himawari-agent/application";
 import { createAuthorityLeaseId, createDeploymentId } from "@himawari-agent/domain";
@@ -489,6 +490,7 @@ export class SqliteCapabilityInvocationOperations {
     | FrozenReceipt
     | ResultArtifact
     | ResultArtifactCommit
+    | SandboxJobAdmissionResult
     | readonly SandboxJobRecord[]
     | SandboxJobRecord
     | { record: SandboxJobRecord; applied: boolean }
@@ -624,6 +626,7 @@ export class SqliteCapabilityInvocationOperations {
     ownerId: string,
     agentId: string,
   ):
+    | SandboxJobAdmissionResult
     | readonly SandboxJobRecord[]
     | SandboxJobRecord
     | { record: SandboxJobRecord; applied: boolean }
@@ -657,7 +660,7 @@ export class SqliteCapabilityInvocationOperations {
               "PORT_CONFLICT",
               "Consumed invocation has no sandbox journal; execution is unknown",
             );
-          return this.sandboxOperation(
+          const prepared = this.sandboxOperation(
             "capabilityInvocation.sandboxPrepare",
             {
               plan,
@@ -667,7 +670,8 @@ export class SqliteCapabilityInvocationOperations {
             },
             ownerId,
             agentId,
-          );
+          ) as { record: SandboxJobRecord; applied: boolean };
+          return { ...prepared, receipt: consumed.receipt };
         })
         .immediate();
     }

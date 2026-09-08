@@ -59,7 +59,8 @@ Task 2 不新增第二个权限库、Run 状态机或数据库。schema 校验�
 - [ ] 定义权限 scope 的受保护内容与父子调用关系，验证 host/profile/runtime/runner/qualification 摘要绑定。
 - [x] 增加 SQLite 作业账本与启动意图 CAS：同一 invocation 唯一 attempt，记录观察历史，支持重开读回与待核查作业分页。
 - [x] 将 SRT 凭证消费与作业准备放入同一 SQLite 事务；消费后缺少账本的旧请求拒绝重新准入，首次观察写入失败回滚权限消费。
-- [ ] 将原子准入与账本接到正式 prepare/start/observe/cancel/reconcile；启动前还须验证受保护 scope、主机资格与代理初始化。
+- [x] 既有 Worker 准入服务支持显式 SRT 模式：使用原子建账返回的冻结凭证构造首次执行消息；重放、未知或 scope 准备失败不派发，不退回独立消费路径。
+- [ ] 在生产组合中提供真实 scope/资格解析并启用 SRT 模式，将原子准入与账本接到正式 prepare/start/observe/cancel/reconcile；启动前还须验证受保护 scope、主机资格与代理初始化。
 - [ ] 使用真实 SRT 在 Mac 专用目录验证读写与命令、假秘密保护、越界与未授权联网、超时取消、进程树和继承管道清理。
 - [ ] 需要启用 Linux profile 时，在 Hermes 的隔离测试目录单独取得证据；先确认磁盘挂载与空间。
 
@@ -67,7 +68,7 @@ Task 2 不新增第二个权限库、Run 状态机或数据库。schema 校验�
 
 此探针仅验证固定脚本下的策略，输出明确保持 `productionSuitable: false`；不是正式 Worker 接线、授权 scope 存储或平台资格签发。CPU/内存硬上限、任意任务进程树终止、Worker 崩溃清理和正式启动接纳仍缺实现与证据；新增账本仅提供持久化基础。SRT 0.0.75 的配置没有硬 CPU/内存限制；`cleanupAfterCommand()` 与 `reset()` 不负责证明任务后代全部退出。因此不能只用启动参数适配或 `kill(-pid)` 启用生产 profile。权限 scope 的原始授权、host/runtime/runner 摘要及 TOCTOU 复核仍必须在正式接纳与启动点完成，策略编译不能替代这些检查。
 
-Task 4 的前置账本部分已提前实施：追加迁移 `0027_sandbox_job_observations.sql`，通过 `SqliteProductStateRepository.sandboxJobJournal()` 提供原子准入、追加、读回与待核查分页。在同一个 `BEGIN IMMEDIATE` 事务内检查现有部署权威、Handle/Grant、Run 和执行租约，再保存启动序号；回放返回 `applied: false`，不能据此再次启动。过期后仍可在当前部署权威下追加停止/核查观察；完成必须引用本次调用已持久化的受保护输出。`admit()` 已将现有凭证消费与首条作业观察放入同一事务，直接的独立 `sandboxPrepare` 写入口已禁止。摘要由实际消费结果生成；重放凭证没有账本时直接拒绝，不能补建后自动启动。首次观察写入失败时凭证和 Handle 消费一起回滚。正式通信接线尚未完成。
+Task 4 的前置账本部分已提前实施：追加迁移 `0027_sandbox_job_observations.sql`，通过 `SqliteProductStateRepository.sandboxJobJournal()` 提供原子准入、追加、读回与待核查分页。在同一个 `BEGIN IMMEDIATE` 事务内检查现有部署权威、Handle/Grant、Run 和执行租约，再保存启动序号；回放返回 `applied: false`，不能据此再次启动。过期后仍可在当前部署权威下追加停止/核查观察；完成必须引用本次调用已持久化的受保护输出。`admit()` 已将现有凭证消费与首条作业观察放入同一事务，直接的独立 `sandboxPrepare` 写入口已禁止。摘要由实际消费结果生成；重放凭证没有账本时直接拒绝，不能补建后自动启动。首次观察写入失败时凭证和 Handle 消费一起回滚。`WorkerDelegationAdmissionService` 已支持由可信组合显式选择的 SRT 模式，使用事务返回的冻结凭证构造既有 Worker 消息，避免二次消费或额外读回。真实 SQLite 测试验证首次单次派发、重放不派发、未知旧请求、scope 准备失败及准备期间权限过期拒绝执行。准入时间在异步准备完成后重新获取。生产 `service-main` 尚未配置此模式；scope/资格解析、作业身份通信与 Job Host 监督仍待接入。
 
 真实 SQLite 回执暴露并修复了原合同的摘要格式不匹配：`semanticFingerprint` 保留持久凭证的 `sha256:` 前缀，不改写旧凭证。execution-contracts 的内部相对导入改为项目既有的 `.ts` 源码写法，使 SQLite 源码 Worker 可以加载校验器；Node 构建仍将路径改写为 `.js`。相关回归覆盖旧 schema 26 升级、数据库重开、重复启动、租约改变、Handle 撤销、Run 取消、过期清理、事务回滚、输出持久化与终态禁止重启。正式 Worker/Job Host 仍未切换到这套账本，不能将这些测试计为主机执行资格。
 

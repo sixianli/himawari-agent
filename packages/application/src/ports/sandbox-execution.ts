@@ -6,11 +6,19 @@ import type {
 import type {
   CapabilityInvocationAuthority,
   ConsumeCapabilityInvocationInput,
+  FrozenCapabilityInvocationReceipt,
 } from "./capability-invocations.js";
 
 export interface SandboxJobRecord {
   readonly plan: SandboxExecutionPlan;
   readonly observation: SandboxJobReceipt;
+}
+
+export interface SandboxJobAdmissionResult {
+  readonly record: SandboxJobRecord;
+  readonly applied: boolean;
+  /** Frozen in the same transaction; callers must not consume again to project it. */
+  readonly receipt: FrozenCapabilityInvocationReceipt;
 }
 
 /** Durable admission and observation share the existing invocation authority.
@@ -24,7 +32,7 @@ export interface SandboxJobJournalPort {
     readonly invocation: ConsumeCapabilityInvocationInput;
     readonly plan: Omit<SandboxExecutionPlan, "semanticFingerprint">;
     readonly observation: SandboxJobReceipt;
-  }): Promise<{ readonly record: SandboxJobRecord; readonly applied: boolean }>;
+  }): Promise<SandboxJobAdmissionResult>;
   append(input: {
     readonly observation: SandboxJobReceipt;
     readonly authority: CapabilityInvocationAuthority;
