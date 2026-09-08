@@ -415,8 +415,8 @@ export class SqliteDurableAdapters {
     return Object.freeze<SandboxJobJournalPort>({
       listPending: (input) =>
         this.context.read("capabilityInvocation.sandboxListPending", { ownerId, agentId, input }),
-      prepare: (input) =>
-        this.context.write("capabilityInvocation.sandboxPrepare", { ownerId, agentId, input }),
+      admit: (input) =>
+        this.context.write("capabilityInvocation.sandboxAdmit", { ownerId, agentId, input }),
       append: (input) =>
         this.context.write("capabilityInvocation.sandboxAppend", { ownerId, agentId, input }),
       read: (input) =>

@@ -495,6 +495,9 @@ export class SqliteCapabilityInvocationOperations {
     | undefined {
     try {
       const scoped = this.scopedInput(value);
+      if (operation === "capabilityInvocation.sandboxPrepare") {
+        return this.fail("PORT_INVALID_OPERATION", "Sandbox preparation requires atomic admission");
+      }
       if (operation.startsWith("capabilityInvocation.sandbox")) {
         return this.sandboxOperation(operation, scoped.input, scoped.ownerId, scoped.agentId);
       }
@@ -625,6 +628,49 @@ export class SqliteCapabilityInvocationOperations {
     | SandboxJobRecord
     | { record: SandboxJobRecord; applied: boolean }
     | undefined {
+    if (operation === "capabilityInvocation.sandboxAdmit") {
+      const input = record(value, "sandbox admission");
+      assertKeys(input, new Set(["invocation", "plan", "observation"]), "sandbox admission");
+      const invocation = parseConsume(input["invocation"]);
+      const candidate = record(input["plan"], "sandbox plan candidate");
+      if ("semanticFingerprint" in candidate)
+        return this.fail(
+          "PORT_INVALID_OPERATION",
+          "Sandbox fingerprint must be derived from admission",
+        );
+      const observation = sandboxJobReceiptSchema.parse(input["observation"]);
+      return this.database
+        .transaction(() => {
+          const consumed = this.consume(invocation, ownerId, agentId);
+          const plan = sandboxExecutionPlanSchema.parse({
+            ...candidate,
+            semanticFingerprint: consumed.receipt.semanticFingerprint,
+          });
+          if (
+            plan.identity.receiptRef !== consumed.receipt.receiptRef ||
+            plan.identity.invocationId !== consumed.receipt.invocationId ||
+            plan.handleRef !== consumed.receipt.handleRef
+          )
+            return this.fail("PORT_CONFLICT", "Sandbox plan belongs to another invocation receipt");
+          if (consumed.replayed && !this.sandboxRead(plan.identity, ownerId, agentId))
+            return this.fail(
+              "PORT_CONFLICT",
+              "Consumed invocation has no sandbox journal; execution is unknown",
+            );
+          return this.sandboxOperation(
+            "capabilityInvocation.sandboxPrepare",
+            {
+              plan,
+              observation,
+              authority: invocation.authority,
+              now: invocation.consumedAt,
+            },
+            ownerId,
+            agentId,
+          );
+        })
+        .immediate();
+    }
     if (operation === "capabilityInvocation.sandboxListPending") {
       const input = record(value, "sandbox pending query");
       assertKeys(input, new Set(["afterJobId", "limit"]), "sandbox pending query");

@@ -3,24 +3,27 @@ import type {
   SandboxJobIdentity,
   SandboxJobReceipt,
 } from "@himawari-agent/execution-contracts";
-import type { CapabilityInvocationAuthority } from "./capability-invocations.js";
+import type {
+  CapabilityInvocationAuthority,
+  ConsumeCapabilityInvocationInput,
+} from "./capability-invocations.js";
 
 export interface SandboxJobRecord {
   readonly plan: SandboxExecutionPlan;
   readonly observation: SandboxJobReceipt;
 }
 
-/** The journal records facts under the existing invocation authority. It does not
- * certify the protected scope or host qualification and is not permission to spawn.
- * The supervisor must also prove fresh admission: an old/replayed receipt without
- * a journal is an unknown execution, never a reason to create and launch a new job.
- * Only a newly applied starting transition may be used by the qualified supervisor. */
+/** Durable admission and observation share the existing invocation authority.
+ * This does not certify protected scope or host qualification. Only a newly
+ * applied starting transition may be used by a qualified supervisor. */
 export interface SandboxJobJournalPort {
-  prepare(input: {
-    readonly plan: SandboxExecutionPlan;
+  /** Atomically consume the Handle and prepare the job. A consumed receipt with
+   * no job is unknown execution and must never be admitted again. The receipt
+   * fingerprint is derived by persistence, never supplied by the caller. */
+  admit(input: {
+    readonly invocation: ConsumeCapabilityInvocationInput;
+    readonly plan: Omit<SandboxExecutionPlan, "semanticFingerprint">;
     readonly observation: SandboxJobReceipt;
-    readonly authority: CapabilityInvocationAuthority;
-    readonly now: string;
   }): Promise<{ readonly record: SandboxJobRecord; readonly applied: boolean }>;
   append(input: {
     readonly observation: SandboxJobReceipt;

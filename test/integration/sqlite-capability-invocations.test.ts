@@ -6,6 +6,7 @@ import type {
   ApprovalRequest,
   CapabilityInvocationAuthority,
   CapabilityRegistryRecord,
+  ConsumeCapabilityInvocationInput,
   ExecutionTransportPort,
   FrozenCapabilityInvocationReceipt,
   GovernedCapabilityExecutionHandle,
@@ -1988,15 +1989,18 @@ describe("SQLite capability invocation authority", () => {
   });
 });
 
-async function openSandboxJournal() {
+async function openSandboxJournal(legacy = false) {
   const resource = await openRepository();
   await seed(resource.repository);
   const { database, operations } = await openOperations(resource);
+  database.exec("SAVEPOINT preview_receipt");
   const consumed = operations.execute("capabilityInvocation.consume", {
     ownerId: OWNER_ID,
     agentId: AGENT_ID,
     input: invocation(),
   }) as { receipt: FrozenCapabilityInvocationReceipt };
+  if (!legacy) database.exec("ROLLBACK TO preview_receipt");
+  database.exec("RELEASE preview_receipt");
   database
     .prepare(`INSERT INTO run_execution_leases (owner_id, agent_id, run_id, revision, authority_lease_id,
     deployment_id, authority_epoch, fencing_token, consumer_id, execution_lease_id, claimed_at, initial_expires_at, expires_at)
@@ -2072,12 +2076,26 @@ async function openSandboxJournal() {
     outputDigest: null,
     reasonCode: null,
   };
-  const call = (operation: string, input: unknown) =>
-    operations.execute(`capabilityInvocation.sandbox${operation}`, {
+  const call = (operation: string, input: unknown) => {
+    if (operation === "Prepare") {
+      const preparedInput = input as { plan: SandboxExecutionPlan; observation: SandboxJobReceipt };
+      const { semanticFingerprint: _fingerprint, ...candidate } = preparedInput.plan;
+      return operations.execute("capabilityInvocation.sandboxAdmit", {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        input: {
+          invocation: invocation(),
+          plan: candidate,
+          observation: preparedInput.observation,
+        },
+      });
+    }
+    return operations.execute(`capabilityInvocation.sandbox${operation}`, {
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
       input,
     });
+  };
   const append = (observation: SandboxJobReceipt, now = T1) =>
     call("Append", { observation, authority: SERVICE_AUTHORITY, now });
   const prepare = () =>
@@ -2090,6 +2108,80 @@ async function openSandboxJournal() {
 }
 
 describe("durable sandbox invocation journal", () => {
+  it("admits through the SQLite worker and rejects the separate preparation entry", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      expect(() =>
+        operationsForDatabase(fixture.database).execute("capabilityInvocation.sandboxPrepare", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: {
+            plan: fixture.plan,
+            observation: fixture.prepared,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+          },
+        }),
+      ).toThrow("requires atomic admission");
+      fixture.database.close();
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: fixture.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      try {
+        const { semanticFingerprint: _fingerprint, ...plan } = fixture.plan;
+        const input = {
+          invocation: invocation() as unknown as ConsumeCapabilityInvocationInput,
+          plan,
+          observation: fixture.prepared,
+        };
+        expect(await reopened.sandboxJobJournal(OWNER_ID, AGENT_ID).admit(input)).toMatchObject({
+          applied: true,
+          record: { plan: fixture.plan },
+        });
+        expect(await reopened.sandboxJobJournal(OWNER_ID, AGENT_ID).admit(input)).toMatchObject({
+          applied: false,
+        });
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("rejects a consumed receipt without a journal even when no output exists", async () => {
+    const fixture = await openSandboxJournal(true);
+    try {
+      expect(() => fixture.prepare()).toThrow("execution is unknown");
+      expect(fixture.call("Read", fixture.plan.identity)).toBeUndefined();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("rolls back Handle consumption when initial journal persistence fails", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      fixture.database.exec(
+        "CREATE TEMP TRIGGER fail_admission BEFORE INSERT ON sandbox_job_observations BEGIN SELECT RAISE(ABORT, 'synthetic admission failure'); END;",
+      );
+      expect(() => fixture.prepare()).toThrow("synthetic admission failure");
+      expect(
+        fixture.database
+          .prepare("SELECT count(*) AS count FROM capability_invocation_receipts")
+          .get(),
+      ).toEqual({ count: 0 });
+      expect(fixture.call("Read", fixture.plan.identity)).toBeUndefined();
+      fixture.database.exec("DROP TRIGGER fail_admission");
+      expect(fixture.prepare()).toMatchObject({ applied: true });
+      expect(fixture.prepare()).toMatchObject({ applied: false });
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("persists a single start intent across reopen and rejects another start", async () => {
     const fixture = await openSandboxJournal();
     try {
@@ -2200,14 +2292,14 @@ describe("durable sandbox invocation journal", () => {
   });
 
   it("does not prepare an invocation that already has a legacy durable result", async () => {
-    const fixture = await openSandboxJournal();
+    const fixture = await openSandboxJournal(true);
     try {
       operationsForDatabase(fixture.database).execute("capabilityInvocationResult.observeOutput", {
         ownerId: OWNER_ID,
         agentId: AGENT_ID,
         input: outputObservation(),
       });
-      expect(() => fixture.prepare()).toThrow("already has a durable output");
+      expect(() => fixture.prepare()).toThrow("execution is unknown");
       expect(fixture.call("Read", fixture.plan.identity)).toBeUndefined();
     } finally {
       await fixture.close();
@@ -2290,7 +2382,7 @@ describe("durable sandbox invocation journal", () => {
           authority: SERVICE_AUTHORITY,
           now: T1,
         }),
-      ).toThrow("already owns");
+      ).toThrow("execution is unknown");
       expect(() =>
         fixture.append({
           ...fixture.prepared,
