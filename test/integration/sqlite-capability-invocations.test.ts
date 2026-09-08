@@ -11,6 +11,7 @@ import type {
   FrozenCapabilityInvocationReceipt,
   GovernedCapabilityExecutionHandle,
   GrantRecord,
+  HostDirectoryGrant,
   PayloadRecord,
   SandboxExecutionPlan,
   SandboxJobReceipt,
@@ -2029,6 +2030,7 @@ async function openSandboxJournal(legacy = false) {
     runId: RUN_ID,
     toolCallId: "sandbox-tool",
     parentToolCallId: "parent-tool",
+    parentRequestId: "run-admitted-capability-invocation",
     hostId: "sandbox-host",
     handleRef: receipt.handleRef,
     inputRef: receipt.inputRef,
@@ -2036,10 +2038,32 @@ async function openSandboxJournal(legacy = false) {
     authorizationRef: receipt.authorizationRef,
     modelRef: "model-fixture",
     profileRef: "profile-fixture",
-    directoryGrant: { ref: "grant-fixture", revision: 1, canonicalRootId: "root-fixture" },
+    directoryGrant: {
+      ref: "grant-fixture",
+      revision: 1,
+      canonicalRootId: "root-fixture",
+      authorizationRef: "directory-authorization",
+      operations: ["read"],
+    },
     networkAuthorizationRef: null,
     expiresAt: T2,
   };
+  const directoryGrant: HostDirectoryGrant = {
+    id: "grant-fixture",
+    revision: 1,
+    hostId: "sandbox-host",
+    canonicalRootId: "root-fixture",
+    displayPath: "/synthetic-workspace",
+    operations: ["read"],
+    dataClassification: "private",
+    disclosure: "worker",
+    pathPolicy: "same_filesystem_no_links",
+    mountPolicy: "fixed_device",
+    authorizationRef: "directory-authorization",
+    expiresAt: T2,
+    revokedAt: null,
+  };
+  const files = { readGrant: async () => directoryGrant };
   const protector = new EnvelopePayloadProtector({
     keys: new InMemoryDevelopmentSecretSource({ "scope-test@v1": new Uint8Array(32).fill(42) }),
     activeKey: { keyRef: "scope-test", kekVersion: "v1", dekVersion: "dek-v1" },
@@ -2153,10 +2177,41 @@ async function openSandboxJournal(legacy = false) {
     scope,
     scopePayload,
     protector,
+    directoryGrant,
+    files,
   };
 }
 
 describe("durable sandbox invocation journal", () => {
+  it.each([
+    ["revoked", { revokedAt: T1 }],
+    ["expired", { expiresAt: T1 }],
+    ["revision", { revision: 2 }],
+    ["root", { canonicalRootId: "other-root" }],
+    ["host", { hostId: "other-host" }],
+    ["operations", { operations: [] }],
+    ["authorization", { authorizationRef: "other-authorization" }],
+    ["id", { id: "other-grant" }],
+  ] as const)("rejects changed current directory authority: %s", async (_name, replacement) => {
+    const fixture = await openSandboxJournal();
+    try {
+      const { semanticFingerprint: _fingerprint, ...candidate } = fixture.plan;
+      const reader = new SandboxScopeService({
+        files: { readGrant: async () => ({ ...fixture.directoryGrant, ...replacement }) },
+        hostId: "sandbox-host",
+        payloads: { get: async () => fixture.scopePayload },
+        protector: fixture.protector,
+        now: () => T1,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+      });
+      await expect(reader.read(candidate, fixture.scope.parentRequestId)).rejects.toThrow(
+        "SANDBOX_SCOPE_UNAVAILABLE",
+      );
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it.each([
     "hostId",
     "runId",
@@ -2166,6 +2221,7 @@ describe("durable sandbox invocation journal", () => {
     "modelRef",
     "profileRef",
     "parentToolCallId",
+    "parentRequestId",
     "expiresAt",
   ])("rejects an authentic scope with mismatched %s", async (field) => {
     const fixture = await openSandboxJournal();
@@ -2190,16 +2246,21 @@ describe("durable sandbox invocation journal", () => {
       });
       const { semanticFingerprint: _fingerprint, ...candidate } = fixture.plan;
       const reader = new SandboxScopeService({
+        files: fixture.files,
+        hostId: "sandbox-host",
         payloads: { get: async () => payload },
         protector: fixture.protector,
         now: () => T1,
         digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
       });
       await expect(
-        reader.read({
-          ...candidate,
-          binding: { ...candidate.binding, scopeDigest: payload.contentDigest.slice(7) },
-        }),
+        reader.read(
+          {
+            ...candidate,
+            binding: { ...candidate.binding, scopeDigest: payload.contentDigest.slice(7) },
+          },
+          fixture.scope.parentRequestId,
+        ),
       ).rejects.toThrow("SANDBOX_SCOPE_UNAVAILABLE");
     } finally {
       await fixture.close();
@@ -2211,25 +2272,32 @@ describe("durable sandbox invocation journal", () => {
     try {
       const { semanticFingerprint: _fingerprint, ...candidate } = fixture.plan;
       const reader = new SandboxScopeService({
+        files: fixture.files,
+        hostId: "sandbox-host",
         payloads: { get: async () => fixture.scopePayload },
         protector: fixture.protector,
         now: () => T1,
         digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
       });
       await expect(
-        reader.read({
-          ...candidate,
-          binding: { ...candidate.binding, scopeDigest: "0".repeat(64) },
-        }),
+        reader.read(
+          {
+            ...candidate,
+            binding: { ...candidate.binding, scopeDigest: "0".repeat(64) },
+          },
+          fixture.scope.parentRequestId,
+        ),
       ).rejects.toThrow("SANDBOX_SCOPE_UNAVAILABLE");
       fixture.scopePayload.ciphertext[0] = (fixture.scopePayload.ciphertext[0] ?? 0) ^ 1;
-      await expect(reader.read(candidate)).rejects.toThrow("SANDBOX_SCOPE_UNAVAILABLE");
+      await expect(reader.read(candidate, fixture.scope.parentRequestId)).rejects.toThrow(
+        "SANDBOX_SCOPE_UNAVAILABLE",
+      );
     } finally {
       await fixture.close();
     }
   });
 
-  it.each(["fresh", "legacy", "scope_failure", "expired_preparation"])(
+  it.each(["fresh", "legacy", "scope_failure", "expired_preparation", "revoked_directory"])(
     "routes Worker admission through the journal: %s",
     async (mode) => {
       const fixture = await openSandboxJournal(mode === "legacy");
@@ -2255,6 +2323,13 @@ describe("durable sandbox invocation journal", () => {
           },
           sandbox: {
             scopes: new SandboxScopeService({
+              files: {
+                readGrant: async () =>
+                  mode === "revoked_directory"
+                    ? { ...fixture.directoryGrant, revokedAt: T1 }
+                    : fixture.directoryGrant,
+              },
+              hostId: "sandbox-host",
               payloads: reopened.payloadStore(OWNER_ID, AGENT_ID),
               protector: fixture.protector,
               now: () => admissionNow,

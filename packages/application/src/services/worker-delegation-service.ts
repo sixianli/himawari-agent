@@ -272,7 +272,7 @@ export class WorkerDelegationAdmissionService {
     const prepared = await sandbox.prepare(structuredClone(input));
     const plan = sandboxExecutionPlanCandidateSchema.parse(prepared.plan);
     const observation = sandboxJobReceiptSchema.parse(prepared.observation);
-    await sandbox.scopes.read(plan);
+    await sandbox.scopes.read(plan, request.causationId);
     const admitted = await sandbox.journal.admit({
       plan,
       observation,

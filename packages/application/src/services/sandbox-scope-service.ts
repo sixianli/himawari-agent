@@ -5,27 +5,34 @@ import {
   sandboxExecutionPlanCandidateSchema,
   sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
+import type { HostFileStatePort } from "../ports/host-files.js";
 import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
 
 export interface SandboxScopeServiceOptions {
   /** Owner/Agent scoped store; the protector independently authenticates that scope. */
   readonly payloads: Pick<PayloadStorePort, "get">;
   readonly protector: Pick<PayloadProtectorPort, "unprotect">;
+  /** Current Owner/Agent scoped directory state for this trusted host. */
+  readonly files: Pick<HostFileStatePort, "readGrant">;
+  readonly hostId: string;
   readonly now: () => string;
   /** Trusted SHA-256 over exact bytes, returning lowercase hex. */
   readonly digest: (bytes: Uint8Array) => string;
 }
 
-/** Resolves protected scope integrity and call identity only. It does not grant
- * filesystem/network access or certify a host. Current grants, host identity,
- * qualification and TOCTOU checks remain mandatory at admission and start. */
+/** Resolves protected scope and current directory authority. It does not certify
+ * host isolation or network authority. Re-run at start; physical root identity,
+ * operation semantics, disclosure and TOCTOU checks remain mandatory. */
 export class SandboxScopeService {
   readonly #options: SandboxScopeServiceOptions;
   constructor(options: SandboxScopeServiceOptions) {
     this.#options = options;
   }
 
-  async read(input: SandboxExecutionPlanCandidate): Promise<SandboxScope> {
+  async read(
+    input: SandboxExecutionPlanCandidate,
+    parentRequestId: string | null,
+  ): Promise<SandboxScope> {
     // Parse before awaiting, retaining an immutable snapshot of caller input.
     const plan = sandboxExecutionPlanCandidateSchema.parse(input);
     try {
@@ -71,7 +78,28 @@ export class SandboxScopeService {
         "modelRef",
       ] as const)
         if (scope[key] !== plan[key]) throw new Error("plan mismatch");
+      if (scope.parentRequestId !== parentRequestId) throw new Error("parent request mismatch");
+      const current = await this.#options.files.readGrant(scope.directoryGrant.ref);
       const now = this.#options.now();
+      if (
+        !current ||
+        scope.hostId !== this.#options.hostId ||
+        current.hostId !== this.#options.hostId ||
+        current.id !== scope.directoryGrant.ref ||
+        current.revision !== scope.directoryGrant.revision ||
+        current.canonicalRootId !== scope.directoryGrant.canonicalRootId ||
+        current.authorizationRef !== scope.directoryGrant.authorizationRef ||
+        current.revokedAt !== null ||
+        current.pathPolicy !== "same_filesystem_no_links" ||
+        current.mountPolicy !== "fixed_device" ||
+        !Number.isFinite(Date.parse(current.expiresAt)) ||
+        Date.parse(current.expiresAt) <= Date.parse(now) ||
+        Date.parse(current.expiresAt) < Date.parse(plan.effectiveDeadlineAt) ||
+        scope.directoryGrant.operations.length === 0 ||
+        new Set(scope.directoryGrant.operations).size !== scope.directoryGrant.operations.length ||
+        scope.directoryGrant.operations.some((operation) => !current.operations.includes(operation))
+      )
+        throw new Error("directory authority changed");
       if (
         !Number.isFinite(Date.parse(now)) ||
         new Date(now).toISOString() !== now ||

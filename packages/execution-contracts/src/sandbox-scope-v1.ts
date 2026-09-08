@@ -1,4 +1,6 @@
 import {
+  array,
+  enumeration,
   type InferSchema,
   integer,
   literal,
@@ -18,6 +20,7 @@ export const sandboxScopeSchema = object({
   runId: machineString,
   toolCallId: machineString,
   parentToolCallId: nullable(machineString),
+  parentRequestId: machineString,
   hostId: machineString,
   handleRef: machineString,
   inputRef: machineString,
@@ -29,6 +32,10 @@ export const sandboxScopeSchema = object({
     ref: machineString,
     revision: integer(1),
     canonicalRootId: machineString,
+    authorizationRef: machineString,
+    operations: array(
+      enumeration(["read", "create", "update", "move", "trash", "restore", "permanent_delete"]),
+    ),
   }),
   networkAuthorizationRef: nullable(machineString),
   expiresAt: timestamp,
