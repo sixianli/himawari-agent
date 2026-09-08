@@ -1,18 +1,51 @@
 import {
   type SandboxExecutionPlan,
+  type SandboxExecutionPlanCandidate,
+  sandboxExecutionPlanCandidateSchema,
   sandboxExecutionPlanSchema,
 } from "@himawari-agent/execution-contracts";
-import type { FrozenCapabilityInvocationReceipt } from "../ports/capability-invocations.js";
+import type { GovernedCapabilityExecutionHandle } from "../ports/capabilities.js";
+import type {
+  ConsumeCapabilityInvocationInput,
+  FrozenCapabilityInvocationReceipt,
+} from "../ports/capability-invocations.js";
 import type { RuntimeRequest, RuntimeToolInvocation } from "../ports/intelligence.js";
 
 /** Pure projection of existing authority, not an authorization decision.
  * Worker must resolve the protected input/scope and revalidate live authority.
  * Invocation/Handle consumption and approval storage keep their existing owners.
  */
-export function createSandboxExecutionPlan(input: {
-  readonly request: RuntimeRequest;
+interface ProjectionInput {
+  readonly request: Pick<
+    RuntimeRequest,
+    | "ownerId"
+    | "agentId"
+    | "runId"
+    | "threadId"
+    | "modelRef"
+    | "executionLease"
+    | "executionDeadlineAt"
+  >;
   readonly invocation: RuntimeToolInvocation;
-  readonly receipt: FrozenCapabilityInvocationReceipt;
+  readonly receipt: Pick<
+    FrozenCapabilityInvocationReceipt,
+    | "receiptRef"
+    | "invocationId"
+    | "idempotencyKey"
+    | "ownerId"
+    | "agentId"
+    | "runId"
+    | "inputRef"
+    | "handleRef"
+    | "operation"
+    | "capabilityRef"
+    | "capabilityVersion"
+    | "authorizationRef"
+    | "authority"
+    | "deadlineAt"
+    | "effectiveExpiresAt"
+    | "resourceCeiling"
+  >;
   readonly jobId: string;
   readonly attemptId: string;
   readonly hostId: string;
@@ -20,7 +53,9 @@ export function createSandboxExecutionPlan(input: {
   readonly now: string;
   /** Trusted SHA-256 implementation, same canonical key as ProductionRuntimeTools. */
   readonly digest: (canonicalValue: string) => string;
-}): SandboxExecutionPlan {
+}
+
+function project(input: ProjectionInput): SandboxExecutionPlanCandidate {
   const { request, invocation, receipt } = input;
   const context = invocation.context;
   const lease = request.executionLease;
@@ -66,7 +101,7 @@ export function createSandboxExecutionPlan(input: {
   );
   if (!Number.isFinite(now) || !Number.isFinite(deadline) || now >= deadline)
     throw new Error("SANDBOX_EXECUTION_EXPIRED");
-  return sandboxExecutionPlanSchema.parse({
+  return sandboxExecutionPlanCandidateSchema.parse({
     schemaVersion: "sandbox-execution.v1",
     identity: {
       jobId: input.jobId,
@@ -85,7 +120,6 @@ export function createSandboxExecutionPlan(input: {
     operation: receipt.operation,
     capabilityRef: receipt.capabilityRef,
     capabilityVersion: receipt.capabilityVersion,
-    semanticFingerprint: receipt.semanticFingerprint,
     authorizationRef: receipt.authorizationRef,
     modelRef: request.modelRef,
     executionLease: lease,
@@ -97,5 +131,73 @@ export function createSandboxExecutionPlan(input: {
       maxWallTimeMs: Math.min(receipt.resourceCeiling.maxWallTimeMs, deadline - now),
     },
     binding: input.binding,
+  });
+}
+
+/** Project a consumed receipt when one already exists; this never consumes it. */
+export function createSandboxExecutionPlan(
+  input: Omit<ProjectionInput, "receipt"> & {
+    readonly receipt: FrozenCapabilityInvocationReceipt;
+  },
+): SandboxExecutionPlan {
+  return sandboxExecutionPlanSchema.parse({
+    ...project(input),
+    semanticFingerprint: input.receipt.semanticFingerprint,
+  });
+}
+
+/** Prepare before atomic journal admission. The existing SQLite transaction
+ * supplies the fingerprint and rechecks Handle/Grant/Run authority; no synthetic
+ * consumed receipt or second permission consumption is created here. */
+export function createSandboxExecutionPlanCandidate(
+  input: Omit<ProjectionInput, "receipt"> & {
+    readonly admission: ConsumeCapabilityInvocationInput;
+    readonly handle: GovernedCapabilityExecutionHandle;
+  },
+): SandboxExecutionPlanCandidate {
+  const { admission, handle } = input;
+  if (
+    handle.ref !== admission.handleRef ||
+    handle.ownerId !== admission.requestScope.ownerId ||
+    handle.agentId !== admission.requestScope.agentId ||
+    handle.runId !== admission.requestScope.runId ||
+    handle.capabilityRef !== admission.capabilityRef ||
+    handle.capabilityVersion !== admission.capabilityVersion ||
+    handle.operation !== admission.operation ||
+    !handle.operations.includes(admission.operation) ||
+    !handle.inputRefs.includes(admission.inputRef) ||
+    handle.revokedAt !== null ||
+    handle.workerEndedAt !== null ||
+    handle.authorityFence !== admission.authority.product.fencingToken ||
+    (admission.authorizationRef !== null &&
+      admission.authorizationRef !== handle.authorizationRef) ||
+    admission.requestScope.deploymentId !== admission.authority.product.deploymentId ||
+    admission.requestScope.authorityEpoch !== admission.authority.product.authorityEpoch ||
+    admission.requestScope.fencingToken !== admission.authority.product.fencingToken ||
+    !Number.isFinite(Date.parse(handle.issuedAt)) ||
+    Date.parse(handle.issuedAt) > Date.parse(input.now) ||
+    Date.parse(admission.requestedAt) > Date.parse(input.now)
+  )
+    throw new Error("SANDBOX_EXECUTION_HANDLE_MISMATCH");
+  return project({
+    ...input,
+    receipt: {
+      receiptRef: admission.receiptRef,
+      invocationId: admission.invocationId,
+      idempotencyKey: admission.idempotencyKey,
+      ownerId: handle.ownerId,
+      agentId: handle.agentId,
+      runId: handle.runId,
+      inputRef: admission.inputRef,
+      handleRef: handle.ref,
+      operation: admission.operation,
+      capabilityRef: handle.capabilityRef,
+      capabilityVersion: handle.capabilityVersion,
+      authorizationRef: handle.authorizationRef,
+      authority: admission.authority,
+      deadlineAt: admission.deadlineAt,
+      effectiveExpiresAt: handle.expiresAt,
+      resourceCeiling: admission.resourceCeiling,
+    },
   });
 }

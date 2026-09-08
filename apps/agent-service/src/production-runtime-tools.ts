@@ -8,6 +8,7 @@ import {
   type CapabilityRegistryStorePort,
   type CapabilityResourceCeiling,
   type ClockPort,
+  type ConsumeCapabilityInvocationInput,
   capabilityLifecycleHasActiveAuthority,
   type ExecutionTransportPort,
   type GovernedCapabilityExecutionHandle,
@@ -21,6 +22,7 @@ import {
   type RuntimeToolExecutionResult,
   type RuntimeToolInvocation,
   type RuntimeToolPort,
+  type WorkerDelegationAdmissionServiceOptions,
   WorkerDelegationService,
 } from "@himawari-agent/application";
 import {
@@ -31,8 +33,8 @@ import {
 } from "@himawari-agent/execution-contracts";
 import type { ProductionExecutionAdmissionParentBinding } from "./production-execution-admission-handler.js";
 import {
-  ProductionFileReadWorkflow,
   type ProductionFileReadServices,
+  ProductionFileReadWorkflow,
 } from "./production-file-read-workflow.js";
 import { ProductionWorkerForwardTransport } from "./production-worker-forward-transport.js";
 import type { ProductionWorkerParentBindingRegistryWriter } from "./production-worker-parent-binding-registry.js";
@@ -94,7 +96,17 @@ function reject(): never {
   throw new ApplicationPortError(PORT_ERROR_CODES.HANDLE_REVOKED, "Runtime tool is not authorized");
 }
 
+type SandboxAdmission = NonNullable<WorkerDelegationAdmissionServiceOptions["sandbox"]>;
+export type ProductionRuntimeSandbox = Omit<SandboxAdmission, "prepare"> & {
+  readonly prepare: (
+    admission: ConsumeCapabilityInvocationInput,
+    invocation: RuntimeToolInvocation,
+    parentCall?: RuntimeToolInvocation,
+  ) => ReturnType<SandboxAdmission["prepare"]>;
+};
+
 export interface ProductionRuntimeToolsOptions {
+  readonly sandbox?: ProductionRuntimeSandbox;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
   readonly agentId: RuntimeRequest["agentId"];
@@ -127,7 +139,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   >();
   constructor(options: ProductionRuntimeToolsOptions) {
     this.#options = options;
-    this.#delegation = new WorkerDelegationService({
+    this.#delegation = this.#createDelegation();
+  }
+
+  #createDelegation(sandbox?: SandboxAdmission) {
+    const options = this.#options;
+    return new WorkerDelegationService({
+      ...(sandbox ? { sandbox } : {}),
       invocations: options.invocations,
       invocationAuthority: options.authority,
       now: () => options.clock.now(),
@@ -290,6 +308,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           digest([child.runId, child.toolCallId]),
           digest(executionIdentity(child)),
           true,
+          invocation,
         );
       },
     });
@@ -353,6 +372,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     key: string,
     fingerprint: string,
     internal = false,
+    parentCall?: RuntimeToolInvocation,
   ): Promise<RuntimeToolExecutionResult> {
     const handle = await this.#validate(invocation, internal);
     const intentKey = {
@@ -433,7 +453,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       request,
     });
     // A concurrent writer won the durable operation key. Never forward a second request.
-    if (committed.replayed) return this.#execute(invocation, key, fingerprint, internal);
+    if (committed.replayed)
+      return this.#execute(invocation, key, fingerprint, internal, parentCall);
     const monotonicDeadline =
       performance.now() +
       Math.max(0, Date.parse(deadlineAt) - Date.parse(this.#options.clock.now()));
@@ -453,7 +474,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     let outcome = unknownResult();
     try {
       await this.#options.assertRunActive(invocation.runId);
-      await beforeDeadline(this.#delegation.dispatch(request), monotonicDeadline);
+      const sandbox = this.#options.sandbox;
+      const delegation = sandbox
+        ? this.#createDelegation({
+            ...sandbox,
+            prepare: (admission) => sandbox.prepare(admission, invocation, parentCall),
+          })
+        : this.#delegation;
+      await beforeDeadline(delegation.dispatch(request), monotonicDeadline);
       let cursor: string | null = null;
       while (
         performance.now() < monotonicDeadline &&

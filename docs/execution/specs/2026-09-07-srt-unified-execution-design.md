@@ -14,6 +14,8 @@ date: "2026-09-07"
 
 本文是 2026-09-07 已确认产品范围的目标设计，完整执行链路尚未实现，也未取得真实主机资格。Owner 已否决先建设签名 Mac 文件访问 helper 的路线，要求改用 SRT；本文不把原生 helper、security-scoped bookmark 或 Apple container 安装列为新路线的前置条件。首批必须包含文件和编码工具、受限 Shell、MCP、授权联网、Web Search 及 GitHub 已有 commit 推送，默认直接操作已授权原项目。工程细节由实施与验证落实；已有代码与历史验收状态不因本文而变成 SRT 实现。
 
+2026-09-09 已批准的接入细节：复用现有调用回执、文件工作流 context、作业账本及认证 Payload 通道。网络授权引用须指向本次操作的同一 Grant；审批快照 `targets` 的 `network-domain` 目标保存确切域名，Agent 检查当前 Grant、审批指纹和主机上界后把核验 scope 交给 Worker，启动前再次核对。此映射不再次消费授权。Worker 独占策略编译；`prepared` 可不带策略摘要，首笔原子 `starting` 固定摘要，此后的观察不可改变它。资源采样作为现有作业观察的可选字段持久保存，不修改原 stdout Payload 合同，也不增加 Run 状态机。
+
 ## 来源上下文
 
 - 用户提供的完整集成指南：[Anthropic SRT AI Agent Integration Guide](../../assets/others/Anthropic_SRT_AI_Agent_Integration_Guide_2026-09-07.md)。原文作为输入保留；其中测试清单是要求，不是已通过证据。
@@ -26,7 +28,7 @@ date: "2026-09-07"
 
 ### 已核对的上游边界
 
-审查基线为 `@anthropic-ai/sandbox-runtime@0.0.75`，发布标签提交 `40804af`。官方仍标记 Beta Research Preview。设计审查阶段核对了固定标签的 README、包元数据、manager、配置、schema 和 Mac/Linux 后端源码。2026-09-08 的实施已固定安装该版本、加入候选策略编译，并通过 Mac 固定假数据的文件/网络拒绝探针；可安装 Job Host 组件已实现并通过固定假数据探针；正式 Worker 接线、资源观测和恢复资格仍未完成，证据范围见配套 Plan。[发布记录](https://github.com/anthropics/sandbox-runtime/releases/tag/v0.0.75)、[README](https://github.com/anthropics/sandbox-runtime/blob/v0.0.75/README.md)
+审查基线为 `@anthropic-ai/sandbox-runtime@0.0.75`，发布标签提交 `40804af`。官方仍标记 Beta Research Preview。设计审查阶段核对了固定标签的 README、包元数据、manager、配置、schema 和 Mac/Linux 后端源码。2026-09-08 的实施已固定安装该版本、加入候选策略编译，并通过 Mac 固定假数据的文件/网络拒绝探针；可安装 Job Host 组件已实现并通过固定假数据探针；2026-09-09 已加入正式 Worker 组合、资源观测与受控组合探针，正式主机及恢复资格仍未完成，证据范围见配套 Plan。[发布记录](https://github.com/anthropics/sandbox-runtime/releases/tag/v0.0.75)、[README](https://github.com/anthropics/sandbox-runtime/blob/v0.0.75/README.md)
 
 `SandboxManager` 有模块级配置与代理状态；`wrapWithSandboxArgv()` 产出启动描述，在 Mac/Linux 上仍包含 shell 语义，返回的 `env` 来自调用进程。其 `cwd` 参数目前不影响这两个平台的规则生成。`cleanupAfterCommand()` 清理辅助挂载文件；`reset()` 回收 SRT 自身资源，不能替代 Himawari 对整个任务进程树的终止证明。[manager 源码](https://github.com/anthropics/sandbox-runtime/blob/v0.0.75/src/sandbox/sandbox-manager.ts)
 

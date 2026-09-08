@@ -1,3 +1,4 @@
+import { sandboxNetworkDomainSchema } from "./sandbox-host-binding-v1.ts";
 import {
   array,
   enumeration,
@@ -42,3 +43,10 @@ export const sandboxScopeSchema = object({
 });
 
 export type SandboxScope = InferSchema<typeof sandboxScopeSchema>;
+
+/** Resolved by Agent authority for this invocation; contains no host paths. */
+export const resolvedSandboxScopeSchema = object({
+  scope: sandboxScopeSchema,
+  allowedDomains: array(sandboxNetworkDomainSchema),
+});
+export type ResolvedSandboxScope = InferSchema<typeof resolvedSandboxScopeSchema>;

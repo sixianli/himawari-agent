@@ -9,7 +9,7 @@ import { prepareSandboxJobHost } from "@himawari-agent/runtime-sandbox";
 /** Resolved by trusted host inventory and protected scope, never model arguments. */
 export type ResolvedSandboxHostInput = Pick<
   JobHostRequest,
-  "policy" | "policyDigest" | "executable" | "args" | "cleanupTimeoutMs"
+  "policy" | "policyDigest" | "executable" | "args" | "cleanupTimeoutMs" | "stdinBase64"
 >;
 
 /** Bridge infrastructure observations into the product lifecycle without treating
@@ -33,6 +33,10 @@ export function createProductSandboxHostSession(
       ),
     ).toISOString(),
     maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
+    resourceLimits: {
+      maxCpuTimeMs: plan.resourceCeiling.maxCpuTimeMs,
+      maxMemoryBytes: plan.resourceCeiling.maxMemoryBytes,
+    },
   });
   const result: Promise<SandboxHostObservation> = host.result.then(async (observation) => {
     const outcome =
@@ -44,15 +48,16 @@ export function createProductSandboxHostSession(
             ? observation.exitCode === 0
               ? "succeeded"
               : "failed"
-            : observation.reason === "output_limit"
+            : observation.reason === "output_limit" || observation.reason === "resource_limit"
               ? "failed"
               : "unknown";
     let output: { outputRef: string; outputDigest: string } | undefined;
-    if (observation.stdout.byteLength || observation.stderr.byteLength) {
+    if (observation.stdout.byteLength || observation.stderr.byteLength || observation.resources) {
       try {
         output = await protectOutput(observation);
       } catch {
         return {
+          ...(observation.resources ? { resources: observation.resources } : {}),
           outcome: "unknown",
           cleanup: "unknown",
           effect: "unknown",
@@ -63,6 +68,7 @@ export function createProductSandboxHostSession(
       }
     }
     return {
+      ...(observation.resources ? { resources: observation.resources } : {}),
       outcome,
       // Current SRT adapter cannot certify all descendants/auxiliary processes.
       cleanup: "unknown",
@@ -71,7 +77,9 @@ export function createProductSandboxHostSession(
       outputDigest: output?.outputDigest ?? null,
       reasonCode:
         observation.reason === "exited"
-          ? "SANDBOX_CLEANUP_UNKNOWN"
+          ? observation.exitCode === 0
+            ? "SANDBOX_CLEANUP_UNKNOWN"
+            : `SANDBOX_EXIT_${observation.exitCode ?? "UNKNOWN"}`
           : `SANDBOX_${observation.reason.toUpperCase()}`,
     };
   });

@@ -2,13 +2,16 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  type JobHostRequest,
   parseJobHostRequest,
   quoteJobArgument,
-  type JobHostRequest,
 } from "../src/job-host-protocol.ts";
+
 const { fork } = vi.hoisted(() => ({ fork: vi.fn() }));
 vi.mock("node:child_process", () => ({ fork }));
+
 import { prepareSandboxJobHost } from "../src/job-host.ts";
+
 function request(): JobHostRequest {
   return {
     jobId: "job",
@@ -120,5 +123,61 @@ describe("Job Host admission and observation", () => {
     const result = await host.result;
     expect(result.stdout.byteLength).toBe(0);
     expect(result.taskTreeCleanup).toBe("unknown");
+  });
+});
+
+it("bounds stdin and keeps binary input out of argv and the host environment", async () => {
+  const bytes = Buffer.from([0, 255, 10, 39, 36]);
+  const input = { ...request(), stdinBase64: bytes.toString("base64") };
+  expect(parseJobHostRequest(input).stdinBase64).toBe(bytes.toString("base64"));
+  for (const stdinBase64 of [
+    "bad base64",
+    "Zg",
+    "Zh==",
+    Buffer.alloc(49153).toString("base64"),
+    undefined,
+  ]) {
+    expect(() => parseJobHostRequest({ ...input, stdinBase64 })).toThrow("STDIN_INVALID");
+  }
+  expect(
+    parseJobHostRequest({ ...input, stdinBase64: Buffer.alloc(49152).toString("base64") }),
+  ).toBeDefined();
+  const process = child();
+  const host = prepareSandboxJobHost(input);
+  const options = fork.mock.calls.at(-1)?.[2];
+  expect(JSON.stringify(options.env)).not.toContain(input.stdinBase64);
+  expect(fork.mock.calls.at(-1)?.[1]).toEqual([]);
+  expect(process.send.mock.calls[0]?.[0].request.stdinBase64).toBe(input.stdinBase64);
+  process.emit("close");
+  await host.result;
+});
+
+it("returns observed resource usage without converting it into cleanup confirmation", async () => {
+  const process = child();
+  const input = { ...request(), resourceLimits: { maxCpuTimeMs: 100, maxMemoryBytes: 1024 } };
+  const host = prepareSandboxJobHost(input);
+  process.emit("message", {
+    type: "ready",
+    jobId: "job",
+    attemptId: "attempt",
+    policyDigest: input.policyDigest,
+  });
+  await host.ready;
+  host.start();
+  const resources = { samples: 2, observedCpuTimeMs: 120, peakObservedMemoryBytes: 512 };
+  process.emit("message", {
+    type: "result",
+    reason: "resource_limit",
+    resources,
+    taskStarted: true,
+    taskProcessExited: true,
+    stdioClosed: true,
+    srtReset: true,
+  });
+  process.emit("close");
+  expect(await host.result).toMatchObject({
+    reason: "resource_limit",
+    resources,
+    taskTreeCleanup: "unknown",
   });
 });

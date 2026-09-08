@@ -71,7 +71,7 @@ Task 2 不新增第二个权限库、Run 状态机或数据库。schema 校验�
 - [ ] 使用真实 SRT 在 Mac 专用目录验证读写与命令、假秘密保护、越界与未授权联网、超时取消、进程和继承管道观察，以及清理未知时的持久隔离、禁止自动重放和核查。
 - [ ] 需要启用 Linux profile 时，在 Hermes 的隔离测试目录单独取得证据；先确认磁盘挂载与空间。
 
-当前证据（2026-09-08）：`packages/runtime-sandbox/test/policy.unit.test.ts` 覆盖策略非法字段、目录相交、权限例外、符号链接与异步输入改变。`npm run build:node` 后运行 `node packages/runtime-sandbox/scripts/qualify-policy.mjs`，在 Mac 自动创建的专用假数据目录验证读取、写入、假秘密拒绝、目录越界拒绝、符号链接越界拒绝与代理联网拒绝。网络断言核对 SRT 的 `blocked-by-allowlist` 响应头及拒绝正文，不能用任意 curl 失败冒充通过。探针退出码 0、stderr 为空；依赖探针 errors/warnings 均为空。
+当前证据（2026-09-08）：`packages/runtime-sandbox/test/policy.unit.test.ts` 覆盖策略非法字段、目录相交、权限例外、符号链接与异步输入改变。`npm run build:node` 后运行 `node packages/runtime-sandbox/scripts/qualify-policy.mjs`，在 Mac 自动创建的专用假数据目录验证读取、写入、假秘密拒绝、目录越界拒绝、符号链接越界拒绝与代理联网拒绝。该版本探针对网络的断言仅检查 curl 失败，不能单独证明代理拒绝；2026-09-09 已纠正，见下方正式接入核对。探针退出码 0、stderr 为空；依赖探针 errors/warnings 均为空。
 
 此探针仅验证固定脚本下的策略，输出明确保持 `productionSuitable: false`；不是正式 Worker 接线、授权 scope 存储或平台资格签发。资源观测与超限停止、未知清理的持久隔离与 Worker 崩溃核查、正式启动接纳仍缺完整实现与证据；新增账本仅提供持久化基础。2026-09-08 Owner 已取消 CPU/内存硬上限作为硬性验收要求，改用资源观测和超限停止；不得声称原生 SRT 提供硬配额。SRT 0.0.75 的配置没有硬 CPU/内存限制；`cleanupAfterCommand()` 与 `reset()` 不负责证明任务后代全部退出。因此不能只用启动参数适配或 `kill(-pid)` 启用生产 profile。权限 scope 的原始授权、host/runtime/runner 摘要及 TOCTOU 复核仍必须在正式接纳与启动点完成，策略编译不能替代这些检查。
 
@@ -91,7 +91,36 @@ Task 4 的前置账本部分已提前实施：追加迁移 `0027_sandbox_job_obs
 
 主机部署格式证据（2026-09-08）：新增 `sandbox-host-binding.v1` 与 `sandbox-runtime-qualification.v1`，将主机、profile、运行产物、runner 和证据摘要绑定到同一部署项。Mac 记录资源观测模式、尽力停止及脱离后代可能存活的限制；Linux 仍要求任务树终止和崩溃清理证据。部署加载器拒绝摘要或主机不匹配，也禁止用 SRT 资格放宽旧 process 后端的检查。主机清单只描述可用目录、工具链及网络上界，不提供目录或联网授权。合同与加载器测试使用合成记录，不能作为真实资格签发；正式启动组合、主机复核和安装验收仍未完成。
 
+主机产物复核组件（2026-09-08）：新增 `platform-node/src/capabilities/sandbox-host-verifier.ts`，复用既有安全文件摘要读取，按安装工具的路径、内容摘要、大小与权限格式复核整个运行产物目录；检查实际 OS/架构、主机/profile、runner、目录设备与 inode，以及计划所需保证和资源上界。每次调用重新读盘，拒绝符号链接、可被其他用户写入的文件、目录身份替换、辅助文件变更和额外注入文件。新增 14 项测试通过；现有产物验证 3 项、部署加载器 13 项回归通过。该组件尚未接到正式启动组合，不签发主机资格，也不能证明检查后到启动之间文件绝对不会变化；目录/网络授权、受保护调用上下文及启动点复核仍须由正式接线完成。
+
 真实 SQLite 回执暴露并修复了原合同的摘要格式不匹配：`semanticFingerprint` 保留持久凭证的 `sha256:` 前缀，不改写旧凭证。execution-contracts 的内部相对导入改为项目既有的 `.ts` 源码写法，使 SQLite 源码 Worker 可以加载校验器；Node 构建仍将路径改写为 `.js`。相关回归覆盖旧 schema 26 升级、数据库重开、重复启动、租约改变、Handle 撤销、Run 取消、过期清理、事务回滚、输出持久化与终态禁止重启。正式 Worker/Job Host 仍未切换到这套账本，不能将这些测试计为主机执行资格。
+
+### 正式接入核对（2026-09-09）
+
+已有调用回执、受保护工具结果、文件读取 `context` 与阶段记录，以及 `sandbox_jobs.plan_json` 继续作为数据来源。文件读取的完整 `call/binding` 已持久化，不能因单条 `runtime-tool-intent` 没有这些字段，就判断整个系统缺少调用身份存储。模型请求也仍由 `WorkerDelegationService` 派发给 Worker。
+
+| 接入点 | 当前实现与验证边界 |
+|---|---|
+| 候选计划 | `createSandboxExecutionPlanCandidate` 已连接现有 `WorkerDelegationService`；投影原有调用上下文与 Handle，不生成假指纹或提前消费授权 |
+| 目录与父调用 | `createProductionSandboxServices` 读取现有目录授权状态，从文件读取 context、阶段 ID 与输入记录产生受保护 scope；Worker 子调用查同一作业账本并收紧父范围 |
+| 网络授权 | Owner 已批准复用同一 Grant 和现有通道；解析器核对同一操作的审批快照 `targets` 中 `network-domain` 确切域名、Grant 状态、审批指纹和主机上界，不再次消费 Grant。缺少明确域名授权则拒绝联网 |
+| 启动复核 | 既有认证 `payload.sandbox.job` 增加 `resolveScope`/`resolvedScope`；Agent 在 scope 读取前后核对当前凭证，在新增启动观察前重新验证目录、网络、父调用与真实主机。旧观察重放、清理与读回不恢复执行权限 |
+| Worker 组合 | `createProductionSandboxWorker` 通过认证通道取得 scope 和原输入，在 Worker 编译策略并启动固定 runner；Agent 不依赖 SRT。`prepared.policyDigest` 可为空，第一笔原子 `starting` 写入 Worker 策略摘要，此后不能替换 |
+| runner 输入与结果 | 至多 48 KiB 输入经私有 IPC 后仅进入 stdin；stdout 原样保存为受保护 Payload，资源观察写入现有作业观察 JSON，保持原 runner 输出合同 |
+
+实际 root scope 产生器目前连接文件读取的 inspect/read 工作流；其他工具的授权范围产生器、通用 runner 合同仍属于后续工具迁移，不能因共享组件已接入而声称全部工具可用。未配置可信部署、scope 或主机资格时拒绝 SRT 执行。正式部署资格仍由主机安装来源负责，本次不签发资格。
+
+资源观测组件使用固定 `/bin/ps` 的有界查询，只读取 PID、父 PID、进程组、CPU、RSS 与启动时间；每次查询完成后间隔 100 ms 采样，不并发堆积查询。跟踪已观察的后代及同组进程，已退出进程的观察 CPU 保留，PID 复用按启动标记区分。超过计划 CPU/内存额度或观测失败时请求停止。采样可能漏掉短命或未观察到的后代，不证明硬配额或完整任务树回收；原生 Mac 清理仍可为 `unknown`，对应作业持久隔离并禁止重放。
+
+验证（2026-09-09）：相关 unit/contracts/integration/node-services 26 个文件、274 项回归通过，包含候选投影、网络授权拒绝、目录撤权、首笔启动摘要固定、资源观察持久化和既有文件审批恢复。类型、依赖边界、产品不变量、覆盖登记、秘密扫描和 CI 测试登记检查通过。全仓库 `npm run check` 在 lint 阶段失败，涉及大量既有文件；不能把这些分项通过称为整套检查通过。
+
+真实 Mac 受控组合验收通过：`HIMAWARI_LIVE_SANDBOX_PROBE=1 node packages/runtime-sandbox/scripts/qualify-production.mjs` 使用临时假数据、实际文件摘要和受控测试资格，经过实际 Agent scope 解析器、认证 Payload UDS、SQLite 账本与 Worker/Job Host 组合，验证允许读取、秘密与越界拒绝、只读目录写入拒绝、代理网络拒绝、受保护结果和资源观察保存，以及清理未知作业在重复投递和重新创建 Worker 后不重跑。输出 `productionSandboxProbePassed: true`，同时保持 `productionSuitable: false`。该脚本从已准备的测试调用开始，不能证明真实模型/HITL 准入端到端完成，也未模拟实际 Worker 进程崩溃或安装恢复。
+
+当前 Node 产物的 `qualify-policy.mjs` 与 `qualify-job-host.mjs` 均退出 0，验证二进制 stdin、固定参数、输出上限、取消、超时与 CPU/内存阈值停止；CPU 用例观察到 110 ms，内存用例使用 1 字节阈值避免内存压力。任务主进程退出、管道关闭和 SRT reset 可观察，任务树清理仍记录 `unknown`。两项脚本继续输出 `productionSuitable: false`。本次修改的 47 个 TypeScript/脚本文件 lint error 检查通过；全仓库 lint 失败仍单独保留。
+
+网络探针已纠正：此前固定脚本只把 curl 失败当作拒绝，重新运行发现 curl 可在读取系统 OpenSSL 配置时先失败，旧说法“已证明代理拒绝”证据不足。现在固定 CONNECT 探针使用 SRT 为任务生成的本地代理认证，要求实际 `X-Proxy-Error: blocked-by-allowlist` 响应，不放宽正式文件策略。
+
+Task 3 保持未完成：仍缺正式安装主机资格、完整模型/文件审批链路以及真实失联/重启恢复验收。SQLite 继续在同一事务中消费凭证、生成 `semanticFingerprint`、保存作业，并在启动事务复核 Handle/Grant/Run/租约；未增加权限库或 Run 状态机。
 
 ### Task 4：持久作业观察与通用 HITL
 

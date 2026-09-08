@@ -87,7 +87,9 @@ export interface PayloadBrokerOutputReceipt {
 export interface PayloadBrokerTrustedHandler {
   sandboxJob?(
     request: PayloadBrokerSandboxJobRequest,
-  ): Promise<Pick<PayloadBrokerSandboxJobResult["payload"], "record" | "applied">>;
+  ): Promise<
+    Pick<PayloadBrokerSandboxJobResult["payload"], "record" | "applied" | "resolvedScope">
+  >;
   readInput(request: PayloadBrokerInputReadRequest): Promise<Uint8Array>;
   writeOutput(
     request: PayloadBrokerOutputWriteRequest,
@@ -564,12 +566,15 @@ export class PayloadUdsClient {
     identity: PayloadBrokerInvocationIdentity,
     job: PayloadBrokerSandboxJobRequest["payload"]["identity"],
     observation: PayloadBrokerSandboxJobRequest["payload"]["observation"] = null,
-  ): Promise<Pick<PayloadBrokerSandboxJobResult["payload"], "record" | "applied">> {
+    resolveScope = false,
+  ): Promise<
+    Pick<PayloadBrokerSandboxJobResult["payload"], "record" | "applied" | "resolvedScope">
+  > {
     this.assertConnected();
     this.assertClientIdentity(identity);
     const request = payloadBrokerV1MessageSchema.parse({
       ...requestEnvelope("payload.sandbox.job", this.options.nextId("sandbox-job")),
-      payload: { ...payloadIdentity(identity), identity: job, observation },
+      payload: { ...payloadIdentity(identity), identity: job, observation, resolveScope },
     });
     const response = await this.send(SANDBOX_JOB_PATH, request);
     if (response.statusCode !== 200) this.throwRemote(response.body, response.statusCode);
@@ -587,6 +592,7 @@ export class PayloadUdsClient {
     const requested = request.payload.observation;
     const returned = result.payload.record.observation;
     if (
+      request.payload.resolveScope !== (result.payload.resolvedScope !== null) ||
       (!requested && result.payload.applied) ||
       (requested &&
         (returned.sequence < requested.sequence ||
@@ -594,7 +600,11 @@ export class PayloadUdsClient {
             JSON.stringify(returned) !== JSON.stringify(requested))))
     )
       throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.INVALID_RESPONSE, 502);
-    return { record: result.payload.record, applied: result.payload.applied };
+    return {
+      record: result.payload.record,
+      applied: result.payload.applied,
+      resolvedScope: result.payload.resolvedScope,
+    };
   }
 
   async writeOutput(

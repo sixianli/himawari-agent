@@ -3,9 +3,11 @@ import { realpath } from "node:fs/promises";
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
 import { type JobHostRequest, parseJobHostRequest, quoteJobArgument } from "./job-host-protocol.ts";
 import { compileSandboxPolicy } from "./policy.ts";
+import { observeTaskResources, readProcessSnapshot } from "./resource-observer.ts";
 
 // This entry is forked by the trusted Worker with a clean environment before any
 // SDK import. The task gets pipes only; it never inherits this IPC channel.
+let observer: ReturnType<typeof observeTaskResources> | undefined;
 let request: JobHostRequest | undefined;
 let task: ChildProcess | undefined;
 let phase: "waiting" | "preparing" | "ready" | "running" | "stopping" | "finished" = "waiting";
@@ -36,6 +38,7 @@ function killTask() {
 async function finish() {
   if (finishing) return;
   finishing = true;
+  observer?.stop();
   phase = "stopping";
   clearTimeout(deadline);
   killTask();
@@ -56,6 +59,7 @@ async function finish() {
   send({
     type: "result",
     reason,
+    resources: observer?.current() ?? null,
     exitCode: task?.exitCode ?? null,
     taskStarted: task?.pid !== undefined,
     taskProcessExited: exited,
@@ -92,6 +96,7 @@ async function prepare(value: unknown) {
   process.chdir(request.policy.workspace);
   const policy = await compileSandboxPolicy(request.policy);
   if (policy.policyDigest !== request.policyDigest) throw new Error("JOB_HOST_POLICY_CHANGED");
+  if (request.resourceLimits) await readProcessSnapshot();
   const dependencies = await SandboxManager.checkDependenciesAsync();
   if (
     !SandboxManager.isSupportedPlatform() ||
@@ -136,15 +141,22 @@ async function start() {
     env: launch.env,
     shell: false,
     detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
   });
   task.on("error", () => {
     reason = "host_failure";
     void finish();
   });
-  task.on("spawn", () => send({ type: "started", pid: task?.pid }));
+  task.stdin?.on("error", () => stop("host_failure"));
+  task.stdin?.end(Buffer.from(request.stdinBase64 ?? "", "base64"));
+  task.on("spawn", () => {
+    send({ type: "started", pid: task?.pid });
+    if (task?.pid && request?.resourceLimits && phase === "running")
+      observer = observeTaskResources(task.pid, request.resourceLimits, stop);
+  });
   task.on("exit", () => {
     exited = true;
+    observer?.stop();
     killTask();
     emergency ??= setTimeout(() => {
       void finish();

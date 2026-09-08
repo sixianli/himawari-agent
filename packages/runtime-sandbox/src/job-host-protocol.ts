@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { SandboxPolicyInput } from "./policy.ts";
+import type { ResourceLimits, ResourceObservation } from "./resource-observer.ts";
 
 /** Trusted Worker-to-Job-Host IPC; not a model tool or authority grant. */
 export interface JobHostRequest {
@@ -9,6 +10,9 @@ export interface JobHostRequest {
   readonly policyDigest: string;
   readonly executable: string;
   readonly args: readonly string[];
+  /** Authorized task bytes only, bounded and encoded for private Job Host IPC. */
+  readonly stdinBase64?: string;
+  readonly resourceLimits?: ResourceLimits;
   readonly deadlineAt: string;
   readonly maxOutputBytes: number;
   readonly cleanupTimeoutMs: number;
@@ -30,8 +34,10 @@ export function parseJobHostRequest(value: unknown): JobHostRequest {
     "cleanupTimeoutMs",
   ];
   if (
-    Object.keys(input).length !== keys.length ||
-    Object.keys(input).some((key) => !keys.includes(key))
+    keys.some((key) => !(key in input)) ||
+    Object.keys(input).some(
+      (key) => !keys.includes(key) && key !== "stdinBase64" && key !== "resourceLimits",
+    )
   )
     throw new Error("JOB_HOST_INPUT_INVALID");
   for (const key of ["jobId", "attemptId"])
@@ -50,6 +56,29 @@ export function parseJobHostRequest(value: unknown): JobHostRequest {
     input["args"].some((arg) => typeof arg !== "string" || arg.includes("\0"))
   )
     throw new Error("JOB_HOST_ARGS_INVALID");
+  const stdin = input["stdinBase64"];
+  if (
+    "stdinBase64" in input &&
+    (typeof stdin !== "string" ||
+      stdin.length > 65536 ||
+      Buffer.from(stdin, "base64").toString("base64") !== stdin ||
+      Buffer.from(stdin, "base64").byteLength > 49152)
+  )
+    throw new Error("JOB_HOST_STDIN_INVALID");
+  if ("resourceLimits" in input) {
+    const limits = input["resourceLimits"];
+    if (
+      !limits ||
+      typeof limits !== "object" ||
+      Array.isArray(limits) ||
+      Object.keys(limits).length !== 2 ||
+      !["maxCpuTimeMs", "maxMemoryBytes"].every((key) => {
+        const value = (limits as Record<string, unknown>)[key];
+        return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+      })
+    )
+      throw new Error("JOB_HOST_RESOURCE_LIMIT_INVALID");
+  }
   const policy = input["policy"];
   if (
     !policy ||
@@ -82,7 +111,8 @@ export function parseJobHostRequest(value: unknown): JobHostRequest {
       (input[key] as number) > max
     )
       throw new Error("JOB_HOST_LIMIT_INVALID");
-  if (Buffer.byteLength(JSON.stringify(value)) > 65536) throw new Error("JOB_HOST_INPUT_TOO_LARGE");
+  if (Buffer.byteLength(JSON.stringify(value)) > 131072)
+    throw new Error("JOB_HOST_INPUT_TOO_LARGE");
   return structuredClone(value) as JobHostRequest;
 }
 
@@ -95,7 +125,14 @@ export function quoteJobArgument(argument: string): string {
 export interface JobHostResult {
   readonly jobId: string;
   readonly attemptId: string;
-  readonly reason: "exited" | "cancelled" | "deadline" | "output_limit" | "host_failure";
+  readonly reason:
+    | "exited"
+    | "cancelled"
+    | "deadline"
+    | "output_limit"
+    | "resource_limit"
+    | "host_failure";
+  readonly resources: ResourceObservation | null;
   readonly exitCode: number | null;
   readonly stdout: Uint8Array;
   readonly stderr: Uint8Array;

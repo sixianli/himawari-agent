@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:d00f7fb4c458d7ce90e19972e9a173416d80e937854f9f2fd6be9dd583242832"
+contract_sha256: "sha256:397ef951db66f00facb1b750887ce0fb725171f2910b4b09b95ebd186b3eb29a"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -12,6 +12,10 @@ date: "2026-08-27"
 
 <!-- runbook-contract:
 - apps/execution-worker/src/production-worker-composition.ts
+- apps/execution-worker/src/production-sandbox-worker.ts
+- packages/platform-node/src/capabilities/sandbox-host-verifier.ts
+- packages/application/src/services/sandbox-scope-service.ts
+- packages/application/src/services/sandbox-network-authorization.ts
 - packages/application/src/services/sandbox-startup-recovery.ts
 - apps/execution-worker/src/production-execution-worker.ts
 - apps/execution-worker/src/production-sandbox-execution.ts
@@ -82,13 +86,17 @@ date: "2026-08-27"
 
 ## Scope
 
-SRT 变更已包含产品作业合同、计划投影、Pi 调用绑定、固定版本运行依赖及候选策略编译。Node 打包包含 `runtime-sandbox` 和 SRT 0.0.75，但正式 Worker 尚未切换，未取得 SRT 主机安装资格。schema 27 已追加作业观察账本；升级必须遵循下述快照与迁移检查，不能在恢复后将无账本的旧凭证补建为可启动作业，也不能自动重放待核查作业。可安装 Job Host、生命周期协调器及 Worker 产品适配器已加入产物；认证 Payload UDS 已包含绑定冻结凭证和主机身份的作业读回/观察追加组件，正式服务和 Worker 启动组合尚未启用它们。跨进程回归使用测试 SQLite 和启动身份。正式 Agent Service 现已在创建准入入口前分页核查旧作业，保存清理未知并隔离，不能把该状态理解为旧后代已退出。Worker 提供 SRT 分支及 broker 生命周期装配；关闭时先等待作业停止和观察持久化，再断开 Payload/准入通道；没有可信 scope/资格组合时仍拒绝 SRT 执行。这些代码和测试不代表实际主机执行资格。首批原生 Mac 已接受资源观测而非 CPU/内存硬配额，以及尽力停止、清理未知时禁止自动重放并核查的语义；这些决定不将未知清理改成确认，也不替代正式恢复验收。固定假数据探针与组件测试通过不代表主机生产资格。本文的实际安装、备份与权威迁移流程不因目标架构获采纳而改变；不能把恢复的旧 Capability 记录当成新 SRT profile 的主机资格。
+SRT 的 Agent Service 和 Worker 启动组合已连接现有准入、目录授权状态、受保护 scope、认证 Payload 通道与作业监督器；当前 root scope 来源只支持已接入的文件 inspect/read 工作流，不能据此启用所有工具。网络范围须来自本次操作同一 Grant 的审批快照确切域名目标，并与主机能力上界核对；不新增授权或再次消费 Grant。准入及启动前验证授权、父调用和真实 host/runtime/runner/qualification。缺少可信来源时拒绝。策略只由 Worker 编译，初始观察可无摘要，首次原子启动固定摘要后不可替换。
+
+schema 27 的作业账本继续作为持久依据；不能给无账本的旧凭证补建可启动作业，不能自动重放清理未知作业。旧作业读回、清理和重复观察不恢复执行权限。Job Host 接收至多 48 KiB 的私有 IPC 输入，仅送入任务 stdin；正文不进入 argv 或环境变量。stdout 保留原 runner 合同并保存为受保护 Payload；CPU/RSS 观察随作业观察持久保存。固定有界进程采样超限或失败时请求停止，采样不能证明硬配额、所有短命后代都被计入或整个进程树已退出。
+
+真实 Mac 假数据组合探针已验证实际 scope/UDS/SQLite/Worker/Job Host、保护规则、资源记录及隔离后不重放，但使用的是受控测试资格和已准备的测试调用；它不是正式主机资格签发，也没有验证真实模型/HITL 或实际进程崩溃后的安装恢复。正式安装与恢复验收仍待完成。启动时的旧作业核查、清理未知隔离，以及关闭时先保存观察再断开通道的顺序继续适用。安装、备份和权威迁移流程不因组件接入而改变，恢复的旧 Capability 记录不能充当新 SRT profile 的资格。
 
 本 Runbook 只覆盖当前仓库已经验证的本地 Node runtime：从锁定依赖构建可重定位 artifact，安装到明确的绝对前缀，使用受保护的 Execution Worker UDS 启动 Agent Service，执行只读 doctor/db status，并以有界信号完成正常停止或故障重启。它不负责安装 systemd/launchd unit、不修改公网入口、不切换 authority、不配置真实 provider、不部署到 Hermes，也不替代 authority transfer Runbook。
 
 公开服务主入口已连接 HTTP、持久 Run、Pi、已授权 Worker 工具和 Mem0。缺少 `runPolicy`、HTTP、身份配置或实际模型配置时，仍以 `SERVICE_PUBLIC_MODE_INCOMPLETE` 拒绝启动。启用前必须验证同一安装候选的完整请求、持久结果和重启回读；库导入成功或 `service.ready` 不能替代这些证据，也不能替代实际目标环境资格。
 
-文件读取工具已复用 Pi `read` 定义，但其无 Handle 调用仅表示意图；当前返回 `FILE_READ_AUTHORIZATION_UNAVAILABLE`，没有读取或 Worker 派发。安装及服务启动成功不能证明动态文件读取可用，须另行完成路径解析、读取与披露授权、按次凭证及 Mac Worker 验收。Agent Service 不执行 Pi 自带的本机路径解析或默认文件 I/O；真实读取须在后续绑定的目标 Worker 中组合受约束 Operations。已有 Handle 的工具继续使用受限 `inputRef`。
+文件读取工具已复用 Pi `read` 定义，无 Handle 调用表示读取意图。正式组合已提供 inspect/read 两阶段工作流，持久保存调用 context、阶段输入和 Handle，并通过 Worker 派发；读取与模型披露分别检查授权。缺少有效路由或目录授权时拒绝执行，需要审批时保存等待状态。安装及服务启动成功仍不能证明实际 Mac 文件读取可用，须完成目标 Worker 隔离资格及全流程验收。Agent Service 不执行 Pi 默认本机文件 I/O，既有可执行工具仍通过受限 `inputRef` 使用 Worker。
 
 安装产物包含 Agent Service、Execution Worker、admin CLI 及产品运行时包；它不包含 `packages/testing` 的生产 adapter。打包器从列入 runtime 的生产 workspace manifests 自动推导全部直接外部依赖根，再递归复制其依赖闭包；因此 `platform-node` 声明的官方 MCP client 也必须出现在安装产物，新增生产依赖不能依赖手工清单。Agent Service 启动时只从 strict configuration 读取一个 primary、一个 private-only fallback 和一个独立 embedding descriptor；支持的 OpenRouter 配置创建 production Model/Pi 与 Mem0 composition，Mem0 使用配置声明的 embedding provider/model/version 和 dimensions，deterministic 配置只报告 descriptor，不创建隐藏模型或调用 provider。每个构建记录提交身份、实际源码与 package-lock 摘要、workspace checksum、Node 平台/架构和外部依赖闭包；已审阅的未提交改动不能被省略为只有提交身份。由于 `better-sqlite3` 等 native 依赖，Mac 与 Linux 必须分别构建和验收，不能把一个平台的二进制包当作另一个平台的 immutable artifact。
 

@@ -3,6 +3,7 @@ import {
   sandboxJobIdentitySchema,
   sandboxJobReceiptSchema,
 } from "./sandbox-execution-v1.ts";
+import { resolvedSandboxScopeSchema } from "./sandbox-scope-v1.ts";
 import {
   booleanValue,
   ContractValidationError,
@@ -187,6 +188,7 @@ const sandboxJobRequestShape = object({
     ...payloadIdentitySchema,
     identity: sandboxJobIdentitySchema,
     observation: nullable(sandboxJobReceiptSchema),
+    resolveScope: booleanValue,
   }),
 });
 export type PayloadBrokerSandboxJobRequest = InferSchema<typeof sandboxJobRequestShape>;
@@ -195,6 +197,7 @@ export const payloadSandboxJobRequestSchema: Schema<PayloadBrokerSandboxJobReque
     const result = sandboxJobRequestShape.parse(value, path);
     const { payload } = result;
     if (
+      (payload.resolveScope && payload.observation !== null) ||
       payload.invocationId !== payload.identity.invocationId ||
       (payload.observation &&
         JSON.stringify(payload.observation.identity) !== JSON.stringify(payload.identity))
@@ -209,6 +212,7 @@ const sandboxJobResultShape = object({
     ...payloadResponseIdentitySchema,
     record: object({ plan: sandboxExecutionPlanSchema, observation: sandboxJobReceiptSchema }),
     applied: booleanValue,
+    resolvedScope: nullable(resolvedSandboxScopeSchema),
   }),
 });
 export type PayloadBrokerSandboxJobResult = InferSchema<typeof sandboxJobResultShape>;
@@ -217,6 +221,14 @@ export const payloadSandboxJobResultSchema: Schema<PayloadBrokerSandboxJobResult
     const result = sandboxJobResultShape.parse(value, path);
     const { payload } = result;
     if (
+      (payload.resolvedScope !== null &&
+        (payload.resolvedScope.scope.handleRef !== payload.record.plan.handleRef ||
+          payload.resolvedScope.scope.toolCallId !== payload.record.plan.identity.toolCallId ||
+          payload.resolvedScope.scope.inputRef !== payload.record.plan.inputRef ||
+          payload.resolvedScope.scope.ownerId !== payload.record.plan.identity.ownerId ||
+          payload.resolvedScope.scope.agentId !== payload.record.plan.identity.agentId ||
+          payload.resolvedScope.scope.runId !== payload.record.plan.identity.runId ||
+          payload.resolvedScope.scope.hostId !== payload.record.plan.identity.hostId)) ||
       payload.record.plan.identity.invocationId !== payload.invocationId ||
       payload.record.plan.handleRef !== payload.handleRef ||
       JSON.stringify(payload.record.plan.identity) !==

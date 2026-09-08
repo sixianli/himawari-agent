@@ -43,7 +43,7 @@ const artifactDigest: Schema<string> = {
     return value;
   },
 };
-const domain: Schema<string> = {
+export const sandboxNetworkDomainSchema: Schema<string> = {
   parse(value, path = "$") {
     if (
       typeof value !== "string" ||
@@ -77,7 +77,7 @@ const shape = object({
   ),
   readOnlyToolchainPaths: array(absolutePath),
   protectedPaths: array(absolutePath),
-  allowedDomains: array(domain),
+  allowedDomains: array(sandboxNetworkDomainSchema),
   maximumResourceCeiling: object({
     maxWallTimeMs: integer(1),
     maxCpuTimeMs: integer(1),

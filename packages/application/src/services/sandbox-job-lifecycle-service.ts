@@ -76,7 +76,7 @@ export class SandboxJobLifecycleService implements SandboxExecutionPort {
         ...fields,
         identity: record.plan.identity,
         sequence: record.observation.sequence + 1,
-        policyDigest: record.observation.policyDigest,
+        policyDigest: fields.policyDigest ?? record.observation.policyDigest,
         occurredAt: now,
       }),
       authority: this.options.authority(),
@@ -117,12 +117,18 @@ export class SandboxJobLifecycleService implements SandboxExecutionPort {
       try {
         if (this.cancellations.has(key)) host.cancel();
         await host.ready;
-        if (host.policyDigest !== record.observation.policyDigest)
+        if (
+          record.observation.policyDigest !== null &&
+          host.policyDigest !== record.observation.policyDigest
+        )
           throw new Error("SANDBOX_JOB_POLICY_CHANGED");
         if (this.cancellations.has(key)) throw new Error("SANDBOX_JOB_CANCELLED");
         await this.options.verify(record.plan);
         if (this.cancellations.has(key)) throw new Error("SANDBOX_JOB_CANCELLED");
-        const admitted = await this.append(record, { state: "starting" });
+        const admitted = await this.append(record, {
+          state: "starting",
+          policyDigest: host.policyDigest,
+        });
         if (!admitted.applied) {
           host.cancel();
           return admitted.record.observation;

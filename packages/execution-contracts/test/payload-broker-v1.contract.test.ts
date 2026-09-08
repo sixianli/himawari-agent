@@ -39,7 +39,7 @@ describe("payload-broker.v1 contract", () => {
     const request = {
       ...envelope("request", "payload.sandbox.job"),
       idempotencyKey: "job:read",
-      payload: { ...identity, identity: job, observation: null },
+      payload: { ...identity, identity: job, observation: null, resolveScope: false },
     };
     expect(payloadBrokerV1MessageSchema.parse(request)).toEqual(request);
     for (const payload of [

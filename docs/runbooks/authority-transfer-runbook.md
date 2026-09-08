@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:bd7cdeab502c8c65a8fe2ccc61a21bc241bf290238fceab99056a455481ff2be"
+contract_sha256: "sha256:61455f94784c2962d117023c507a0424eb373e88e5e5bec54afbb2e91765c84f"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -48,7 +48,7 @@ date: "2026-08-27"
 
 ## Scope
 
-SRT 变更已包含产品作业合同、计划投影、Pi 调用绑定、固定版本运行依赖及候选策略编译。Node 打包包含 `runtime-sandbox` 和 SRT 0.0.75，但正式 Worker 尚未切换，未取得 SRT 主机安装资格。schema 27 已追加作业观察账本；升级必须遵循下述快照与迁移检查，不能在恢复后将无账本的旧凭证补建为可启动作业，也不能自动重放待核查作业。固定假数据策略探针通过不代表正式 Job Host、资源观测或崩溃恢复可用。本文的实际安装、备份与权威迁移流程不因目标架构获采纳而改变；不能把恢复的旧 Capability 记录当成新 SRT profile 的主机资格。
+SRT 的 Agent Service/Worker 组合已接上现有授权来源、受保护 scope、认证 Payload 通道与作业监督器；Node 打包包含 SRT 0.0.75。当前文件 inspect/read scope 来源与受控 Mac 组合探针已经实现，但未签发正式安装主机资格，也未完成真实跨主机崩溃恢复验收。schema 27 继续保存计划和作业观察；初始观察允许无策略摘要，由首次原子启动固定 Worker 编译的摘要，此后不得更换。资源观察随作业记录迁移，仅为历史证据，不能成为目标主机资格。恢复后不能给无账本的旧凭证补建可启动作业，不能重放清理未知作业。本文的停机、备份与权威迁移流程保持不变；目标仍须独立验证主机资格、目录授权和本次操作的网络 Grant，不得沿用源主机路径或网络上界推断授权。
 
 本 Runbook 只用于把同一个 Owner/Agent 的单一逻辑权威在两个已准备好的 deployment 之间停机迁移。它覆盖源部署导出、迁移包认证检查、空目标导入、inactive-ready 验证、显式激活、未激活导入的放弃，以及加密迁移包的 7 天保留边界。
 

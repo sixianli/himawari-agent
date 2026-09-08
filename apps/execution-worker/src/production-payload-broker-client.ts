@@ -52,6 +52,11 @@ export class ProductionPayloadBrokerClient implements CapabilityPayloadBoundary 
   async readSandboxJob(request: CapabilityInvocationRequest, identity: SandboxJobIdentity) {
     return this.client.sandboxJob(this.identity(request), identity);
   }
+  async readSandboxScope(request: CapabilityInvocationRequest, identity: SandboxJobIdentity) {
+    const result = await this.client.sandboxJob(this.identity(request), identity, null, true);
+    if (!result.resolvedScope) throw new Error("SANDBOX_SCOPE_UNAVAILABLE");
+    return result.resolvedScope;
+  }
   async appendSandboxJob(request: CapabilityInvocationRequest, observation: SandboxJobReceipt) {
     return this.client.sandboxJob(this.identity(request), observation.identity, observation);
   }

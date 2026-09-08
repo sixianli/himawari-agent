@@ -1,10 +1,15 @@
 import { createHash } from "node:crypto";
 import type {
+  ConsumeCapabilityInvocationInput,
   FrozenCapabilityInvocationReceipt,
+  GovernedCapabilityExecutionHandle,
   RuntimeRequest,
   RuntimeToolInvocation,
 } from "@himawari-agent/application";
-import { createSandboxExecutionPlan } from "@himawari-agent/application";
+import {
+  createSandboxExecutionPlan,
+  createSandboxExecutionPlanCandidate,
+} from "@himawari-agent/application";
 import {
   type SandboxJobReceipt,
   sandboxExecutionPlanSchema,
@@ -310,4 +315,86 @@ describe("sandbox job observation invariants", () => {
       validateSandboxJobObservation(plan, { ...first, occurredAt: "2026-09-06T23:59:59.000Z" }),
     ).toThrow("predates");
   });
+});
+
+describe("sandbox pre-consumption projection", () => {
+  function candidateInput() {
+    const input = fixture();
+    const receipt = input.receipt;
+    const handle = {
+      handleVersion: "capability-handle.v2",
+      ref: receipt.handleRef,
+      revision: 1,
+      ownerId: receipt.ownerId,
+      agentId: receipt.agentId,
+      runId: receipt.runId,
+      capabilityRef: receipt.capabilityRef,
+      capabilityVersion: receipt.capabilityVersion,
+      authorization: { type: "grant", ref: receipt.authorizationRef },
+      authorizationRef: receipt.authorizationRef,
+      operations: [receipt.operation],
+      operation: receipt.operation,
+      inputRefs: [receipt.inputRef],
+      delegatedContextRefs: [],
+      secretRefs: [],
+      maxDataClassification: "private",
+      issuedAt: input.now,
+      expiresAt: receipt.effectiveExpiresAt,
+      revokedAt: null,
+      workerEndedAt: null,
+      authorityFence: 1,
+      maxUses: 1,
+      uses: 0,
+      maxTotalCostMicros: 0,
+      spentCostMicros: 0,
+      idempotencyKeys: [],
+    } satisfies GovernedCapabilityExecutionHandle;
+    const admission = {
+      receiptRef: receipt.receiptRef,
+      handleRef: handle.ref,
+      invocationId: receipt.invocationId,
+      requestScope: {
+        ...receipt.authority.product,
+        ownerId: receipt.ownerId,
+        agentId: receipt.agentId,
+        runId: receipt.runId,
+        workerRunId: receipt.workerRunId,
+      },
+      capabilityRef: receipt.capabilityRef,
+      capabilityVersion: receipt.capabilityVersion,
+      authorizationRef: receipt.authorizationRef,
+      idempotencyKey: receipt.idempotencyKey,
+      operation: receipt.operation,
+      inputRef: receipt.inputRef,
+      delegatedContextRefs: [],
+      secretRefs: [],
+      dataClassification: "private",
+      resourceCeiling: receipt.resourceCeiling,
+      requestedAt: input.now,
+      deadlineAt: receipt.deadlineAt,
+      authority: receipt.authority,
+      consumedAt: input.now,
+    } satisfies ConsumeCapabilityInvocationInput;
+    return { ...input, handle, admission };
+  }
+  it("projects the same plan before consumption without inventing a fingerprint or consuming the Handle", () => {
+    const input = candidateInput();
+    const { semanticFingerprint: _fingerprint, ...expected } = createSandboxExecutionPlan(input);
+    expect(createSandboxExecutionPlanCandidate(input)).toEqual(expected);
+    expect(input.handle.uses).toBe(0);
+    expect(createSandboxExecutionPlanCandidate(input)).not.toHaveProperty("semanticFingerprint");
+  });
+  it.each(["handle", "authorization", "input", "fence", "expired", "tool"])(
+    "rejects substituted pre-consumption %s",
+    (mode) => {
+      const input = candidateInput();
+      if (mode === "handle") input.admission.handleRef = "other";
+      if (mode === "authorization") input.admission.authorizationRef = "other";
+      if (mode === "input") input.admission.inputRef = "other";
+      if (mode === "fence") input.handle.authorityFence++;
+      if (mode === "expired") input.handle.expiresAt = input.now;
+      if (mode === "tool") input.invocation = { ...input.invocation, toolCallId: "other" };
+      expect(() => createSandboxExecutionPlanCandidate(input)).toThrow(/SANDBOX_EXECUTION/);
+    },
+  );
 });

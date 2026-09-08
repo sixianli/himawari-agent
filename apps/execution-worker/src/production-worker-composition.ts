@@ -28,9 +28,11 @@ import {
   NodeCapabilityRuntimeQualifier,
   type SandboxedProcessIsolationBackend,
   SystemdProviderSecretSource,
+  verifySandboxHost,
 } from "@himawari-agent/platform-node";
 import { ProductionExecutionWorker } from "./production-execution-worker.js";
 import { ProductionPayloadBrokerClient } from "./production-payload-broker-client.js";
+import { createProductionSandboxWorker } from "./production-sandbox-worker.js";
 import { WorkerDelegationStore } from "./worker-delegation-store.js";
 
 export const PRODUCTION_WORKER_COMPOSITION_ERROR_CODES = Object.freeze({
@@ -253,7 +255,7 @@ function maximumCeiling(
     maxProgressEvents: DEFAULT_MAXIMUM_PROGRESS_EVENTS,
   };
   for (const entry of deployment.snapshot.capabilities) {
-    if (entry.binding.kind !== "process") continue;
+    if (entry.binding.kind !== "process" && entry.binding.kind !== "sandbox") continue;
     result.maxWallTimeMs = Math.max(
       result.maxWallTimeMs,
       entry.binding.value.maximumResourceCeiling.maxWallTimeMs,
@@ -349,6 +351,15 @@ async function qualifyDeployment(
     platform,
   });
   for (const entry of deployment.snapshot.capabilities) {
+    if (entry.binding.kind === "sandbox") {
+      if (!entry.qualification.sandbox) throw new Error("SANDBOX_QUALIFICATION_UNAVAILABLE");
+      await verifySandboxHost({
+        binding: entry.binding.value,
+        qualification: entry.qualification.sandbox,
+        hostId: entry.binding.value.hostId,
+      });
+      continue;
+    }
     const actual = await qualifier.qualify(entry.manifest);
     if (!actual.productionSuitable || actual.reasonCodes.length > 0) {
       throw new ProductionWorkerCompositionError(
@@ -511,6 +522,16 @@ export async function createProductionWorkerComposition(
     });
   };
   const worker = new ProductionExecutionWorker({
+    ...(deployment.snapshot.capabilities.some((entry) => entry.binding.kind === "sandbox")
+      ? {
+          sandbox: createProductionSandboxWorker({
+            configuration,
+            peer: peerBinding,
+            payloads,
+            clock,
+          }),
+        }
+      : {}),
     service,
     workerInstanceId,
     workerBootId,

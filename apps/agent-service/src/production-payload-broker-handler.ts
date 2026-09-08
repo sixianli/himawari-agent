@@ -9,6 +9,7 @@ import type {
   PayloadProtectorPort,
   PayloadRecord,
   PayloadStorePort,
+  SandboxExecutionPlan,
   SandboxJobJournalPort,
 } from "@himawari-agent/application";
 import {
@@ -64,7 +65,16 @@ export class ProductionPayloadBrokerHandlerError extends Error {
 
 export interface ProductionPayloadBrokerHandlerOptions {
   /** Host binding comes from trusted composition, never the request. */
-  readonly sandboxJobs?: { readonly hostId: string; readonly journal: SandboxJobJournalPort };
+  readonly sandboxJobs?: {
+    readonly hostId: string;
+    readonly journal: SandboxJobJournalPort;
+    /** Agent-owned scope and qualification sources; called before a new start
+     * observation, never for cleanup or an exact replay of an old observation. */
+    readonly verifyStart: (plan: SandboxExecutionPlan) => Promise<void>;
+    readonly resolveScope: (
+      plan: SandboxExecutionPlan,
+    ) => Promise<NonNullable<PayloadBrokerSandboxJobResult["payload"]["resolvedScope"]>>;
+  };
   /** Scoped to the trusted Agent owner; no Worker-provided scope is accepted. */
   readonly receipts: CapabilityInvocationReceiptPort;
   /** Scoped to the same trusted Agent owner as the receipt port. */
@@ -122,7 +132,9 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
 
   async sandboxJob(
     value: PayloadBrokerSandboxJobRequest,
-  ): Promise<Pick<PayloadBrokerSandboxJobResult["payload"], "record" | "applied">> {
+  ): Promise<
+    Pick<PayloadBrokerSandboxJobResult["payload"], "record" | "applied" | "resolvedScope">
+  > {
     try {
       const request = payloadSandboxJobRequestSchema.parse(value);
       const configured = this.#options.sandboxJobs;
@@ -151,12 +163,37 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         record.plan.identity.invocationId !== receipt.invocationId
       )
         throw new Error("job binding mismatch");
-      if (request.payload.observation)
-        return await configured.journal.append({
+      if (request.payload.observation) {
+        const observation = request.payload.observation;
+        if (
+          observation.state === "starting" &&
+          observation.sequence > record.observation.sequence
+        ) {
+          await configured.verifyStart(record.plan);
+          if (!sameAuthority(authority, this.authorityFor(request)))
+            throw new Error("authority changed during start verification");
+        }
+        const appended = await configured.journal.append({
           observation: request.payload.observation,
           authority,
           now: this.#options.clock.now(),
         });
+        return { ...appended, resolvedScope: null };
+      }
+      if (request.payload.resolveScope && !(await this.#options.receipts.read(lookup)))
+        throw new Error("scope authority unavailable");
+      const resolvedScope = request.payload.resolveScope
+        ? await configured.resolveScope(record.plan)
+        : null;
+      if (
+        request.payload.resolveScope &&
+        !(await this.#options.receipts.read({
+          ...lookup,
+          now: this.#options.clock.now(),
+          authority: this.authorityFor(request),
+        }))
+      )
+        throw new Error("scope authority changed");
       // A read must not disclose a plan after authority changes during lookup.
       const current = await this.#options.results.lookupFrozen({
         ...lookup,
@@ -165,7 +202,7 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       });
       if (!current || !sameAuthority(current.authority, authority))
         throw new Error("authority changed");
-      return { record, applied: false };
+      return { record, applied: false, resolvedScope };
     } catch {
       throw new ProductionPayloadBrokerHandlerError(
         PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES.SANDBOX_JOB_REJECTED,

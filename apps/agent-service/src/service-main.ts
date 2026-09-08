@@ -71,6 +71,7 @@ import {
 } from "./production-run-memory.js";
 import { createProductionRunPolicy } from "./production-run-policy.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
+import { createProductionSandboxServices } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 
@@ -565,7 +566,24 @@ export async function runAgentService(
       authority: invocationAuthority,
       now: () => clock.now(),
     });
+    const fileReadServices = createProductionFileReadServices({
+      configuration,
+      repository,
+      authority: invocationAuthority,
+      clock,
+      ids,
+    });
+    const sandboxServices = await createProductionSandboxServices({
+      configuration,
+      repository,
+      protector,
+      authority: invocationAuthority,
+      fileRead: fileReadServices,
+      clock,
+      ids,
+    });
     const admission = new WorkerDelegationAdmissionService({
+      ...(sandboxServices ? { sandbox: sandboxServices.child } : {}),
       invocations: repository.capabilityInvocationReceiptPort(
         configuration.ownerId,
         configuration.agentId,
@@ -580,6 +598,7 @@ export async function runAgentService(
       trustedPeerBinding: () => peerBinding,
     });
     const payloadHandler = new ProductionPayloadBrokerHandler({
+      ...(sandboxServices ? { sandboxJobs: sandboxServices.broker } : {}),
       receipts: repository.capabilityInvocationReceiptPort(
         configuration.ownerId,
         configuration.agentId,
@@ -760,13 +779,8 @@ export async function runAgentService(
         resolveAuthorityLoss?.();
       };
       const tools = new ProductionRuntimeTools({
-        fileRead: createProductionFileReadServices({
-          configuration,
-          repository,
-          authority: invocationAuthority,
-          clock,
-          ids,
-        }),
+        fileRead: fileReadServices,
+        ...(sandboxServices ? { sandbox: sandboxServices.runtime } : {}),
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
         capabilities,

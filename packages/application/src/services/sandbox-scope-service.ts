@@ -1,12 +1,15 @@
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
+  type ResolvedSandboxScope,
   type SandboxExecutionPlanCandidate,
   type SandboxScope,
   sandboxExecutionPlanCandidateSchema,
   sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
+import type { AuthorizationStorePort } from "../ports/authorization.js";
 import type { HostFileStatePort } from "../ports/host-files.js";
 import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
+import { resolveSandboxNetworkAuthorization } from "./sandbox-network-authorization.js";
 
 export interface SandboxScopeServiceOptions {
   /** Owner/Agent scoped store; the protector independently authenticates that scope. */
@@ -15,13 +18,21 @@ export interface SandboxScopeServiceOptions {
   /** Current Owner/Agent scoped directory state for this trusted host. */
   readonly files: Pick<HostFileStatePort, "readGrant">;
   readonly hostId: string;
+  readonly network?: {
+    readonly authorizations: Pick<AuthorizationStorePort, "listGrants" | "getApproval">;
+    readonly maximumDomains: readonly string[];
+  };
+  readonly verifyParent?: (
+    scope: SandboxScope,
+    plan: SandboxExecutionPlanCandidate,
+  ) => Promise<void>;
   readonly now: () => string;
   /** Trusted SHA-256 over exact bytes, returning lowercase hex. */
   readonly digest: (bytes: Uint8Array) => string;
 }
 
-/** Resolves protected scope and current directory authority. It does not certify
- * host isolation or network authority. Re-run at start; physical root identity,
+/** Resolves protected scope and current directory/network authority. It does not
+ * certify host isolation. Re-run at start; physical root identity,
  * operation semantics, disclosure and TOCTOU checks remain mandatory. */
 export class SandboxScopeService {
   readonly #options: SandboxScopeServiceOptions;
@@ -33,6 +44,13 @@ export class SandboxScopeService {
     input: SandboxExecutionPlanCandidate,
     parentRequestId: string | null,
   ): Promise<SandboxScope> {
+    return (await this.resolve(input, parentRequestId)).scope;
+  }
+
+  async resolve(
+    input: SandboxExecutionPlanCandidate,
+    parentRequestId: string | null,
+  ): Promise<ResolvedSandboxScope> {
     // Parse before awaiting, retaining an immutable snapshot of caller input.
     const plan = sandboxExecutionPlanCandidateSchema.parse(input);
     try {
@@ -110,7 +128,19 @@ export class SandboxScopeService {
         plan.effectiveDeadlineAt > scope.expiresAt
       )
         throw new Error("invalid scope window or binding");
-      return scope;
+      if (this.#options.verifyParent) await this.#options.verifyParent(scope, plan);
+      if (scope.networkAuthorizationRef !== null && !this.#options.network)
+        throw new Error("network authority missing");
+      const allowedDomains = this.#options.network
+        ? await resolveSandboxNetworkAuthorization({
+            plan,
+            scope,
+            ...this.#options.network,
+            now: this.#options.now,
+          })
+        : [];
+      if (this.#options.now() >= plan.effectiveDeadlineAt) throw new Error("scope expired");
+      return { scope, allowedDomains };
     } catch {
       // Scope contents and protector errors may contain private host metadata.
       throw new Error("SANDBOX_SCOPE_UNAVAILABLE");

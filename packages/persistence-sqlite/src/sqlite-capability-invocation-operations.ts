@@ -692,6 +692,23 @@ export class SqliteCapabilityInvocationOperations {
         observation: sandboxJobReceiptSchema.parse(JSON.parse(row.observationJson)),
       }));
     }
+    if (operation === "capabilityInvocation.sandboxByInvocation") {
+      const input = record(value, "sandbox invocation query");
+      assertKeys(input, new Set(["runId", "invocationId"]), "sandbox invocation query");
+      const row = this.database
+        .prepare(
+          "SELECT plan_json AS planJson FROM sandbox_jobs WHERE owner_id = ? AND agent_id = ? AND run_id = ? AND invocation_id = ?",
+        )
+        .get(
+          ownerId,
+          agentId,
+          text(input["runId"], "runId"),
+          text(input["invocationId"], "invocationId"),
+        ) as { planJson: string } | undefined;
+      if (!row) return undefined;
+      const plan = sandboxExecutionPlanSchema.parse(JSON.parse(row.planJson));
+      return this.sandboxRead(plan.identity, ownerId, agentId);
+    }
     if (operation === "capabilityInvocation.sandboxRead") {
       return this.sandboxRead(sandboxJobIdentitySchema.parse(value), ownerId, agentId);
     }

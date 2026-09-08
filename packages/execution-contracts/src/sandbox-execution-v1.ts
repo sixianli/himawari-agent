@@ -136,7 +136,7 @@ const receiptShape = object({
   identity: sandboxJobIdentitySchema,
   sequence: integer(1),
   state: enumeration(SANDBOX_JOB_STATES),
-  policyDigest: digest,
+  policyDigest: nullable(digest),
   occurredAt: timestamp,
   outcome: enumeration(["pending", "succeeded", "failed", "cancelled", "timed_out", "unknown"]),
   cleanup: enumeration(["pending", "confirmed", "unknown"]),
@@ -145,10 +145,31 @@ const receiptShape = object({
   outputDigest: nullable(digest),
   reasonCode: nullable(machineString),
 });
-export type SandboxJobReceipt = InferSchema<typeof receiptShape>;
+const resourceObservationSchema = object({
+  samples: integer(0),
+  observedCpuTimeMs: integer(0),
+  peakObservedMemoryBytes: integer(0),
+});
+export type SandboxJobReceipt = InferSchema<typeof receiptShape> & {
+  /** Optional for observations written before resource sampling was introduced. */
+  readonly resources?: InferSchema<typeof resourceObservationSchema>;
+};
 export const sandboxJobReceiptSchema: Schema<SandboxJobReceipt> = {
   parse(value, path = "$") {
-    const receipt = receiptShape.parse(value, path);
+    let core = value;
+    let resources: SandboxJobReceipt["resources"];
+    if (value && typeof value === "object" && !Array.isArray(value) && "resources" in value) {
+      const { resources: observed, ...fields } = value;
+      core = fields;
+      resources = resourceObservationSchema.parse(observed, `${path}.resources`);
+    }
+    const parsed = receiptShape.parse(core, path);
+    const receipt: SandboxJobReceipt = resources ? { ...parsed, resources } : parsed;
+    if (
+      ["starting", "running", "completed", "failed"].includes(receipt.state) &&
+      receipt.policyDigest === null
+    )
+      throw new ContractValidationError(path, "started jobs require a compiled policy digest");
     if ((receipt.outputRef === null) !== (receipt.outputDigest === null))
       throw new ContractValidationError(path, "output reference and digest must be paired");
     if (
@@ -219,7 +240,10 @@ export function validateSandboxJobObservation(
         throw new ContractValidationError("$.identity", "previous job identity mismatch");
     if (
       next.sequence !== prior.sequence + 1 ||
-      next.policyDigest !== prior.policyDigest ||
+      (prior.policyDigest !== null
+        ? next.policyDigest !== prior.policyDigest
+        : next.policyDigest !== null &&
+          !(prior.state === "prepared" && next.state === "starting")) ||
       Date.parse(next.occurredAt) < Date.parse(prior.occurredAt) ||
       !transitions[prior.state].includes(next.state)
     )

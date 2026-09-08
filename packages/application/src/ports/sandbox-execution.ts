@@ -38,6 +38,11 @@ export interface SandboxJobJournalPort {
     readonly authority: CapabilityInvocationAuthority;
     readonly now: string;
   }): Promise<{ readonly record: SandboxJobRecord; readonly applied: boolean }>;
+  /** Agent-only lookup of an existing parent; does not admit or replay it. */
+  readByInvocation(input: {
+    readonly runId: string;
+    readonly invocationId: string;
+  }): Promise<SandboxJobRecord | undefined>;
   read(identity: SandboxJobIdentity): Promise<SandboxJobRecord | undefined>;
   listPending(input: {
     readonly afterJobId: string | null;
@@ -74,7 +79,7 @@ export interface SandboxExecutionPort {
  * A settled process is not proof of cleanup or of known side effects. */
 export type SandboxHostObservation = Pick<
   SandboxJobReceipt,
-  "outcome" | "cleanup" | "effect" | "outputRef" | "outputDigest" | "reasonCode"
+  "outcome" | "cleanup" | "effect" | "outputRef" | "outputDigest" | "reasonCode" | "resources"
 >;
 export interface SandboxHostSession {
   readonly policyDigest: string;

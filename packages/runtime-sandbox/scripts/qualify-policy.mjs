@@ -18,6 +18,7 @@ if (process.argv[2] !== "--child") {
       PATH: "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin",
       HOME: privateDirectory,
       TMPDIR: privateDirectory,
+      CLAUDE_CODE_TMPDIR: privateDirectory,
     },
     stdio: ["ignore", "inherit", "inherit"],
     timeout: 45_000,
@@ -80,7 +81,7 @@ if (process.argv[2] !== "--child") {
         "if cat ../outside.txt >/dev/null 2>&1; then echo outside-leaked; else echo outside-denied; fi",
         "if cat escape >/dev/null 2>&1; then echo symlink-leaked; else echo symlink-denied; fi",
         'printf synthetic-write > created.txt && test "$(cat created.txt)" = synthetic-write && echo write-ok',
-        "if /usr/bin/curl --silent --fail --connect-timeout 2 --max-time 3 https://example.com >/dev/null 2>&1; then echo network-open; else echo network-denied; fi",
+        `proxy_userinfo="\${HTTPS_PROXY%\@*}"; proxy_token="\${proxy_userinfo##*:}"; proxy_auth=$(printf 'srt:%s' "$proxy_token" | /usr/bin/base64); { printf 'CONNECT example.com:443 HTTP/1.1\\r\\nHost: example.com:443\\r\\nProxy-Authorization: Basic %s\\r\\n\\r\\n' "$proxy_auth"; /bin/sleep 0.5; } | /usr/bin/nc -n -w 2 127.0.0.1 "\${HTTPS_PROXY##*:}" > "$TMPDIR/network-headers"; if /usr/bin/grep -qi "X-Proxy-Error: blocked-by-allowlist" "$TMPDIR/network-headers"; then echo network-denied; else echo network-proof-missing; fi`,
       ].join("; ");
       const launch = await SandboxManager.wrapWithSandboxArgv(command, "/bin/bash");
       const result = await new Promise((resolve, reject) => {

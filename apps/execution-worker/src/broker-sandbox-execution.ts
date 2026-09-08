@@ -12,7 +12,7 @@ import { ProductionSandboxExecution } from "./production-sandbox-execution.js";
  * an admit-capable journal. Agent Service supplies authority for every append. */
 export function createBrokerSandboxExecution(options: {
   readonly payloads: Pick<ProductionPayloadBrokerClient, "readSandboxJob" | "appendSandboxJob">;
-  readonly authority: () => CapabilityInvocationAuthority;
+  readonly authority: (plan: SandboxExecutionPlan) => CapabilityInvocationAuthority;
   readonly now: () => string;
   readonly verify: (plan: SandboxExecutionPlan) => Promise<void>;
   readonly prepareHost: (
@@ -47,7 +47,7 @@ export function createBrokerSandboxExecution(options: {
           // Worker-provided authority and time are deliberately not serialized.
           append: (input) => options.payloads.appendSandboxJob(invocation, input.observation),
         },
-        authority: options.authority,
+        authority: () => options.authority(record.plan),
         now: options.now,
         verify: options.verify,
         prepareHost: (plan) => options.prepareHost(plan, invocation),

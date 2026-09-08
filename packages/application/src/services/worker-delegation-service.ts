@@ -86,10 +86,12 @@ export interface WorkerDelegationAdmissionServiceOptions {
    * resolves authorized scope/qualification; failure never falls back to consume.
    * It must return a stable persisted job identity when handling a replay. */
   readonly sandbox?: {
+    readonly appliesTo?: (invocation: ConsumeCapabilityInvocationInput) => boolean;
     readonly journal: Pick<SandboxJobJournalPort, "admit">;
     readonly scopes: Pick<SandboxScopeService, "read">;
     readonly prepare: (
       invocation: ConsumeCapabilityInvocationInput,
+      request: WorkerExecuteRequest,
     ) => Promise<Omit<Parameters<SandboxJobJournalPort["admit"]>[0], "invocation">>;
   };
   /** Trusted current Agent/Worker attempt and product lease identity. */
@@ -265,11 +267,11 @@ export class WorkerDelegationAdmissionService {
       consumedAt,
     };
     const sandbox = this.#options.sandbox;
-    if (!sandbox) {
+    if (!sandbox || sandbox.appliesTo?.(input) === false) {
       return { ...(await this.#options.invocations.consume(input)), sandboxJob: undefined };
     }
     // Keep the request used for admission separate from the async resolver's copy.
-    const prepared = await sandbox.prepare(structuredClone(input));
+    const prepared = await sandbox.prepare(structuredClone(input), structuredClone(request));
     const plan = sandboxExecutionPlanCandidateSchema.parse(prepared.plan);
     const observation = sandboxJobReceiptSchema.parse(prepared.observation);
     await sandbox.scopes.read(plan, request.causationId);

@@ -154,8 +154,19 @@ export function prepareSandboxJobHost(value: JobHostRequest): SandboxJobHost {
       "cancelled",
       "deadline",
       "output_limit",
+      "resource_limit",
       "host_failure",
     ].includes(reason as string);
+    const resourceValue = completion?.["resources"];
+    const resources =
+      resourceValue &&
+      typeof resourceValue === "object" &&
+      ["samples", "observedCpuTimeMs", "peakObservedMemoryBytes"].every((key) => {
+        const value = (resourceValue as Record<string, unknown>)[key];
+        return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+      })
+        ? (resourceValue as NonNullable<JobHostResult["resources"]>)
+        : null;
     const taskStarted =
       taskPid !== undefined || completion?.["taskStarted"] === true
         ? true
@@ -166,6 +177,7 @@ export function prepareSandboxJobHost(value: JobHostRequest): SandboxJobHost {
       jobId: request.jobId,
       attemptId: request.attemptId,
       reason: validReason ? (reason as JobHostResult["reason"]) : "host_failure",
+      resources,
       exitCode: typeof completion?.["exitCode"] === "number" ? completion["exitCode"] : null,
       stdout: Buffer.concat(stdout),
       stderr: Buffer.concat(stderr),

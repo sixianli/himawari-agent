@@ -35,6 +35,8 @@ try {
       maxOutputBytes = 8192,
       deadlineMs = 10000,
       digest = compiled.policyDigest,
+      stdinBase64,
+      resourceLimits,
     } = {},
   ) {
     const host = prepareSandboxJobHost({
@@ -44,6 +46,8 @@ try {
       policyDigest: digest,
       executable: "/bin/bash",
       args: ["-c", command],
+      ...(stdinBase64 === undefined ? {} : { stdinBase64 }),
+      ...(resourceLimits === undefined ? {} : { resourceLimits }),
       deadlineAt: new Date(Date.now() + deadlineMs).toISOString(),
       maxOutputBytes,
       cleanupTimeoutMs: 2000,
@@ -61,6 +65,7 @@ try {
     const result = await host.result;
     observations.push({
       reason: result.reason,
+      resources: result.resources,
       taskProcessExited: result.taskProcessExited,
       stdioClosed: result.stdioClosed,
       srtReset: result.srtReset,
@@ -68,6 +73,16 @@ try {
     });
     return result;
   }
+  const inputBytes = Buffer.from([0, 255, 10, 39, 36, 65]);
+  const inputResult = await run("/bin/cat", { stdinBase64: inputBytes.toString("base64") });
+  assert.equal(
+    inputResult.exitCode,
+    0,
+    `stdin probe failed: ${Buffer.from(inputResult.stderr).toString("utf8")}`,
+  );
+  assert.deepEqual(Buffer.from(inputResult.stdout), inputBytes);
+  assert.equal(inputResult.stderr.byteLength, 0);
+  assert.equal(inputResult.taskTreeCleanup, "unknown");
   // Readiness never executes the command, and argv contents keep their literal meaning.
   const marker = path.join(policy.workspace, "marker");
   const host = prepareSandboxJobHost({
@@ -116,6 +131,18 @@ try {
   const flood = await run("while :; do printf 0123456789; done", { maxOutputBytes: 256 });
   assert.equal(flood.reason, "output_limit");
   assert.equal(flood.stdout.byteLength + flood.stderr.byteLength, 256);
+  const cpuLimited = await run("while :; do :; done", {
+    resourceLimits: { maxCpuTimeMs: 50, maxMemoryBytes: 268435456 },
+  });
+  assert.equal(cpuLimited.reason, "resource_limit");
+  assert.ok(cpuLimited.resources?.observedCpuTimeMs > 50);
+  assert.equal(cpuLimited.taskTreeCleanup, "unknown");
+  const memoryLimited = await run("/bin/sleep 10", {
+    resourceLimits: { maxCpuTimeMs: 10000, maxMemoryBytes: 1 },
+  });
+  assert.equal(memoryLimited.reason, "resource_limit");
+  assert.ok(memoryLimited.resources?.peakObservedMemoryBytes > 1);
+  assert.equal(memoryLimited.taskTreeCleanup, "unknown");
   const cancelled = await run("/bin/sleep 10", { cancel: true });
   assert.equal(cancelled.reason, "cancelled");
   const deadline = await run("/bin/sleep 10", { deadlineMs: 2000 });

@@ -10,7 +10,12 @@ const plan = {
   identity: { jobId: "job", attemptId: "attempt" },
   requestedAt: "2026-09-08T00:00:00.000Z",
   effectiveDeadlineAt: "2026-09-08T00:01:00.000Z",
-  resourceCeiling: { maxOutputBytes: 42, maxWallTimeMs: 1000 },
+  resourceCeiling: {
+    maxOutputBytes: 42,
+    maxWallTimeMs: 1000,
+    maxCpuTimeMs: 100,
+    maxMemoryBytes: 1024,
+  },
 } as SandboxExecutionPlan;
 const resolved = {
   policy: {
@@ -38,6 +43,7 @@ const observation = {
   stdioClosed: true,
   srtReset: true,
   taskTreeCleanup: "unknown",
+  resources: null,
 };
 describe("product Job Host adapter", () => {
   it("keeps original limits and preserves output references without inventing cleanup", async () => {
@@ -60,6 +66,7 @@ describe("product Job Host adapter", () => {
       jobId: "job",
       attemptId: "attempt",
       maxOutputBytes: 42,
+      resourceLimits: { maxCpuTimeMs: 100, maxMemoryBytes: 1024 },
       deadlineAt: "2026-09-08T00:00:01.000Z",
     });
     expect(await session.result).toMatchObject({
@@ -100,4 +107,30 @@ describe("product Job Host adapter", () => {
       reasonCode: "SANDBOX_CANCELLED",
     });
   });
+});
+
+it("persists resource observations even when an over-limit task produced no output", async () => {
+  const result = {
+    ...observation,
+    reason: "resource_limit",
+    stdout: new Uint8Array(),
+    resources: { samples: 2, observedCpuTimeMs: 200, peakObservedMemoryBytes: 512 },
+  };
+  prepare.mockReturnValue({
+    ready: Promise.resolve(),
+    result: Promise.resolve(result),
+    start: vi.fn(),
+    cancel: vi.fn(),
+  });
+  const protect = vi.fn(async () => ({
+    outputRef: "resource-observation",
+    outputDigest: "b".repeat(64),
+  }));
+  expect(await createProductSandboxHostSession(plan, resolved, protect).result).toMatchObject({
+    outcome: "failed",
+    cleanup: "unknown",
+    reasonCode: "SANDBOX_RESOURCE_LIMIT",
+    outputRef: "resource-observation",
+  });
+  expect(protect).toHaveBeenCalledWith(result);
 });
