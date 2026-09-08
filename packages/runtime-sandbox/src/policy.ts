@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { getDefaultWritePaths, SandboxRuntimeConfigSchema } from "@anthropic-ai/sandbox-runtime";
 
@@ -159,7 +160,15 @@ export async function compileSandboxPolicy(
       denyWrite: [
         ...new Set([
           ...protectedPaths,
-          ...getDefaultWritePaths().filter((entry) => !entry.startsWith("/dev/")),
+          // SDK HOME defaults must refer to the Job Host's private HOME in both
+          // processes. Do not mutate the parent environment to compile a policy.
+          ...getDefaultWritePaths()
+            .filter((entry) => !entry.startsWith("/dev/"))
+            .map((entry) =>
+              contains(homedir(), entry)
+                ? path.join(privateDirectory, path.relative(homedir(), entry))
+                : entry,
+            ),
         ]),
       ].sort(),
       allowGitConfig: false,

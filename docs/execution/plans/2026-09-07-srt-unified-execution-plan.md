@@ -55,7 +55,7 @@ Task 2 不新增第二个权限库、Run 状态机或数据库。schema 校验�
 
 - [x] 固定 `@anthropic-ai/sandbox-runtime@0.0.75`，只由 `runtime-sandbox` 直接依赖；依赖边界检查和 Node 产物打包纳入此包。
 - [x] 增加候选策略编译：规范绝对路径、独立目录、全盘读取默认拒绝与显式例外、受保护路径、严格域名白名单及共享默认写目录拒绝。
-- [ ] 增加正式可安装的 Job Host 入口；在干净环境中固定一次初始化策略并接受 Worker 监督。
+- [x] 增加可安装的 Job Host 入口与父进程控制器；在干净环境中固定一次初始化策略，支持显式启动和有界取消。正式 Worker 与持久账本监督接线仍见后续未完成项。
 - [x] 定义受保护 `sandbox-scope.v1` 正文，携带目录授权版本与父调用引用；准入前复用 Payload 解密、验证摘要和调用/主机/输入/授权/模型/profile/有效期绑定。
 - [x] scope 校验复用 `HostFileStatePort.readGrant()` 检查当前目录授权的主机、版本、根身份、授权引用、有效期和操作范围；绑定准入请求的父请求 ID。
 - [ ] 将目录授权状态来源接到正式主机，补齐网络授权、父工具调用关系及 host/runtime/runner/qualification 验证，并在启动点重新核查。
@@ -70,6 +70,10 @@ Task 2 不新增第二个权限库、Run 状态机或数据库。schema 校验�
 当前证据（2026-09-08）：`packages/runtime-sandbox/test/policy.unit.test.ts` 覆盖策略非法字段、目录相交、权限例外、符号链接与异步输入改变。`npm run build:node` 后运行 `node packages/runtime-sandbox/scripts/qualify-policy.mjs`，在 Mac 自动创建的专用假数据目录验证读取、写入、假秘密拒绝、目录越界拒绝、符号链接越界拒绝与代理联网拒绝。网络断言核对 SRT 的 `blocked-by-allowlist` 响应头及拒绝正文，不能用任意 curl 失败冒充通过。探针退出码 0、stderr 为空；依赖探针 errors/warnings 均为空。
 
 此探针仅验证固定脚本下的策略，输出明确保持 `productionSuitable: false`；不是正式 Worker 接线、授权 scope 存储或平台资格签发。资源观测与超限停止、任意任务进程树终止、Worker 崩溃清理和正式启动接纳仍缺实现与证据；新增账本仅提供持久化基础。2026-09-08 Owner 已取消 CPU/内存硬上限作为硬性验收要求，改用资源观测和超限停止；不得声称原生 SRT 提供硬配额。SRT 0.0.75 的配置没有硬 CPU/内存限制；`cleanupAfterCommand()` 与 `reset()` 不负责证明任务后代全部退出。因此不能只用启动参数适配或 `kill(-pid)` 启用生产 profile。权限 scope 的原始授权、host/runtime/runner 摘要及 TOCTOU 复核仍必须在正式接纳与启动点完成，策略编译不能替代这些检查。
+
+Job Host 组件证据（2026-09-08）：新增 `runtime-sandbox/src/job-host-main.ts` 与父进程控制器，准备完成不自动启动，父进程必须显式提交 start；子进程不继承宿主秘密环境和 Worker IPC。策略编译将 SDK 的 HOME 默认路径绑定到作业私有 HOME，避免父子摘要不同。取消在 SDK 初始化或启动描述生成期间发生时，清理等待该阶段结束，并保留强制退出期限。收到启动意图后失联而没有启动观察，返回启动未知，不能标成未执行。
+
+`packages/runtime-sandbox/scripts/qualify-job-host.mjs` 使用固定假数据，在真实 Mac SRT 验证显式启动、参数原样传递、假秘密拒绝、输出洪泛、取消、超时及策略摘要变化拒绝；`--installed` 验证打包入口。新增单元测试与已有策略测试共 18 项通过。实际 `setsid()` 负向用例已证明：主命令退出、stdio 关闭、SRT reset 成功后，脱离原进程组的子进程仍能写入专用测试文件。该测试子进程有界自退出，不留下常驻任务。因此当前控制器对已启动任务始终报告 `taskTreeCleanup: unknown`；源码探针和安装产物均不签发生产资格。Mac 任意 Shell 的整个进程树回收要求尚不满足，不能仅凭这项组件交付启用正式 profile。
 
 Task 4 的前置账本部分已提前实施：追加迁移 `0027_sandbox_job_observations.sql`，通过 `SqliteProductStateRepository.sandboxJobJournal()` 提供原子准入、追加、读回与待核查分页。在同一个 `BEGIN IMMEDIATE` 事务内检查现有部署权威、Handle/Grant、Run 和执行租约，再保存启动序号；回放返回 `applied: false`，不能据此再次启动。过期后仍可在当前部署权威下追加停止/核查观察；完成必须引用本次调用已持久化的受保护输出。`admit()` 已将现有凭证消费与首条作业观察放入同一事务，直接的独立 `sandboxPrepare` 写入口已禁止。摘要由实际消费结果生成；重放凭证没有账本时直接拒绝，不能补建后自动启动。首次观察写入失败时凭证和 Handle 消费一起回滚。`WorkerDelegationAdmissionService` 已支持由可信组合显式选择的 SRT 模式，使用事务返回的冻结凭证构造既有 Worker 消息，避免二次消费或额外读回。真实 SQLite 测试验证首次单次派发、重放不派发、未知旧请求、scope 准备失败及准备期间权限过期拒绝执行。准入时间在异步准备完成后重新获取。生产 `service-main` 尚未配置此模式；作业身份已通过 `work.execute.payload.sandboxJob` 和现有认证 UDS 传递；调用方不能指定该身份。当前 Worker 返回 `SANDBOX_SUPERVISOR_UNAVAILABLE`，不会丢弃身份后使用旧后端执行。`SandboxScopeService` 已从现有 Payload 存储读取有界 JSON 正文，使用现有加密端口验证 Owner/Agent 与内容完整性，再验证 scope 摘要及计划绑定；错误仅返回 `SANDBOX_SCOPE_UNAVAILABLE`，不泄露正文。准入服务必须先通过此检查才能消费凭证。真实加密 Payload 与 SQLite 测试覆盖身份替换、过期、密文篡改和摘要替换。目录授权校验已通过既有状态端口接入，拒绝缺失、撤销、过期、版本/根/主机/授权变化及操作范围不足；scope 中的 `parentRequestId` 必须匹配准入请求的 causationId。测试使用真实加密 Payload/SQLite 与注入的目录状态端口，并非正式主机授权来源验收。正式目录状态来源、网络授权、父工具调用关系、主机资格解析与 Job Host 监督仍待接入。
 
