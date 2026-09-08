@@ -35,7 +35,7 @@ function safeFileMode(mode: number): boolean {
   return (mode & 0o022) === 0;
 }
 
-async function digestRegularFile(filePath: string): Promise<string> {
+export async function digestRegularFile(filePath: string): Promise<string> {
   if (!path.isAbsolute(filePath)) throw new Error("path-not-absolute");
   const before = await lstat(filePath);
   if (!before.isFile() || before.isSymbolicLink() || !safeFileMode(before.mode)) {
