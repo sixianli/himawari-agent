@@ -16,6 +16,7 @@ import {
 } from "@himawari-agent/execution-contracts";
 
 export const PRODUCTION_WORKER_ERROR_CODES = Object.freeze({
+  SANDBOX_SUPERVISOR_UNAVAILABLE: "SANDBOX_SUPERVISOR_UNAVAILABLE",
   ADAPTER_NOT_REGISTERED: "WORKER_ADAPTER_NOT_REGISTERED",
   BOOT_TOKEN_REJECTED: "WORKER_BOOT_TOKEN_REJECTED",
   DUPLICATE_CONFLICT: "WORKER_DUPLICATE_CONFLICT",
@@ -183,6 +184,10 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     this.assertReadyAndAuthoritative(parsed);
     if (parsed.type === "work.events.replay") return null;
     if (parsed.type === "work.execute") {
+      if (parsed.payload.sandboxJob)
+        throw new ProductionExecutionWorkerError(
+          PRODUCTION_WORKER_ERROR_CODES.SANDBOX_SUPERVISOR_UNAVAILABLE,
+        );
       await this.assertExecutable(parsed);
       if (this.isReplay(parsed)) return null;
       this.track(this.execute(parsed));

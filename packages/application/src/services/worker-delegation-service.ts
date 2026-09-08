@@ -2,6 +2,7 @@ import {
   EXECUTION_V2_SCHEMA_VERSION,
   type ExecutionV2Request,
   executionV2MessageSchema,
+  type SandboxJobIdentity,
 } from "@himawari-agent/execution-contracts";
 import type {
   CapabilityInvocationAuthority,
@@ -128,6 +129,11 @@ export class WorkerDelegationAdmissionService {
     if (parsed.kind !== "request" || parsed.type !== "work.execute") {
       throw new TypeError("Worker delegation accepts work.execute requests only");
     }
+    if (parsed.payload.sandboxJob)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Sandbox job identity is assigned by trusted admission",
+      );
     const scope = completeScope(parsed.scope);
     const authority = this.#options.invocationAuthority();
     const consumed = await this.#consume(parsed, scope, authority, this.#options.now());
@@ -140,13 +146,14 @@ export class WorkerDelegationAdmissionService {
     return {
       disposition: "consumed",
       receipt: consumed.receipt,
-      projection: this.#project(parsed, consumed.receipt),
+      projection: this.#project(parsed, consumed.receipt, consumed.sandboxJob),
     };
   }
 
   #project(
     request: WorkerExecuteRequest,
     receipt: FrozenCapabilityInvocationReceipt,
+    sandboxJob?: SandboxJobIdentity,
   ): WorkerDelegationProjection {
     const delegate = executionV2MessageSchema.parse({
       schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
@@ -208,6 +215,7 @@ export class WorkerDelegationAdmissionService {
       scope: receiptScope(receipt),
       idempotencyKey: receipt.idempotencyKey,
       payload: {
+        ...(sandboxJob ? { sandboxJob } : {}),
         capabilityId: receipt.capabilityRef,
         capabilityVersion: receipt.capabilityVersion,
         operation: receipt.operation,
@@ -253,14 +261,20 @@ export class WorkerDelegationAdmissionService {
       consumedAt,
     };
     const sandbox = this.#options.sandbox;
-    if (!sandbox) return this.#options.invocations.consume(input);
+    if (!sandbox) {
+      return { ...(await this.#options.invocations.consume(input)), sandboxJob: undefined };
+    }
     // Keep the request used for admission separate from the async resolver's copy.
     const prepared = await sandbox.prepare(structuredClone(input));
     const admitted = await sandbox.journal.admit({
       ...prepared,
       invocation: { ...input, consumedAt: this.#options.now() },
     });
-    return { replayed: !admitted.applied, receipt: admitted.receipt };
+    return {
+      replayed: !admitted.applied,
+      receipt: admitted.receipt,
+      sandboxJob: admitted.record.plan.identity,
+    };
   }
 }
 

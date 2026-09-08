@@ -298,6 +298,8 @@ function sameDelegateProjection(
   const runId = execute.scope.runId;
   if (ownerId === null || agentId === null || runId === null) return false;
   return (
+    (projectedExecute.payload.sandboxJob === undefined ||
+      projectedExecute.payload.sandboxJob.receiptRef === receipt.receiptRef) &&
     delegate.schemaVersion === execute.schemaVersion &&
     delegate.kind === "request" &&
     delegate.type === "work.delegate" &&

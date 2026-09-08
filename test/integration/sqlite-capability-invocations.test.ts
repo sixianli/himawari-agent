@@ -2157,6 +2157,9 @@ describe("durable sandbox invocation journal", () => {
             "work.delegate",
             "work.execute",
           ]);
+          expect(transport.requests.find(({ type }) => type === "work.execute")).toMatchObject({
+            payload: { sandboxJob: plan.identity },
+          });
           expect(
             await reopened.sandboxJobJournal(OWNER_ID, AGENT_ID).read(plan.identity),
           ).toMatchObject({ observation: { state: "prepared" } });

@@ -1,3 +1,4 @@
+import { type SandboxJobIdentity, sandboxJobIdentitySchema } from "./sandbox-execution-v1.ts";
 import {
   array,
   booleanValue,
@@ -183,18 +184,52 @@ const executePayloadSchema = object({
   deadlineAt: timestamp,
 });
 
-export const executeWorkV2RequestSchema = object({
+const executeWorkRequestShape = object({
   ...requestEnvelope("work.execute"),
   payload: {
-    parse(input, path = "$.payload") {
-      const payload = executePayloadSchema.parse(input, path);
+    parse(
+      input: unknown,
+      path = "$.payload",
+    ): InferSchema<typeof executePayloadSchema> & { readonly sandboxJob?: SandboxJobIdentity } {
+      let sandboxJob: SandboxJobIdentity | undefined;
+      let base = input;
+      if (
+        input !== null &&
+        typeof input === "object" &&
+        !Array.isArray(input) &&
+        "sandboxJob" in input
+      ) {
+        const { sandboxJob: identity, ...rest } = input;
+        sandboxJob = sandboxJobIdentitySchema.parse(identity, `${path}.sandboxJob`);
+        base = rest;
+      }
+      const payload = executePayloadSchema.parse(base, path);
       if (payload.deadlineAt <= payload.requestedAt) {
         throw new ContractValidationError(`${path}.deadlineAt`, "must be later than requestedAt");
       }
-      return payload;
+      return sandboxJob ? { ...payload, sandboxJob } : payload;
     },
   },
 });
+
+export const executeWorkV2RequestSchema: Schema<InferSchema<typeof executeWorkRequestShape>> = {
+  parse(input, path = "$") {
+    const request = executeWorkRequestShape.parse(input, path);
+    const job = request.payload.sandboxJob;
+    if (
+      job &&
+      (job.invocationId !== request.messageId ||
+        job.ownerId !== request.scope.ownerId ||
+        job.agentId !== request.scope.agentId ||
+        job.runId !== request.scope.runId)
+    )
+      throw new ContractValidationError(
+        `${path}.payload.sandboxJob`,
+        "job must belong to the execution request",
+      );
+    return request;
+  },
+};
 
 export const cancelWorkV2RequestSchema = object({
   ...requestEnvelope("work.cancel"),

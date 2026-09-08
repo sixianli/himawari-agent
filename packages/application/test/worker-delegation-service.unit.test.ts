@@ -162,6 +162,38 @@ function executeRequest(): Extract<ExecutionV2Request, { type: "work.execute" }>
 }
 
 describe("WorkerDelegationService", () => {
+  it("rejects caller-assigned sandbox identity before consuming authority", async () => {
+    const invocations = new RecordingInvocationPort();
+    const service = new WorkerDelegationAdmissionService({
+      invocations,
+      invocationAuthority: () => invocationAuthority,
+      now: () => START,
+      nextId: (scope) => `${scope}-01`,
+    });
+    const request = executeRequest();
+    await expect(
+      service.admit({
+        ...request,
+        payload: {
+          ...request.payload,
+          sandboxJob: {
+            jobId: "job",
+            attemptId: "attempt",
+            receiptRef: "receipt",
+            hostId: "host",
+            threadId: "thread",
+            toolCallId: "tool",
+            invocationId: request.messageId,
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            runId: RUN_ID,
+          },
+        },
+      }),
+    ).rejects.toThrow("assigned by trusted admission");
+    expect(invocations.consumes).toEqual([]);
+  });
+
   it("returns an executable projection only for a newly consumed receipt", async () => {
     const invocations = new RecordingInvocationPort();
     const admission = new WorkerDelegationAdmissionService({

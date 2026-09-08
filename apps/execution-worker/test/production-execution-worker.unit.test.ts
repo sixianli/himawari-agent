@@ -295,6 +295,29 @@ function deferred() {
 }
 
 describe("production execution Worker", () => {
+  it("rejects sandbox jobs before the legacy executor can launch them", async () => {
+    const { worker } = await workerFixture();
+    await worker.request(handshake());
+    const request = execute();
+    const job = {
+      jobId: "job",
+      attemptId: "attempt",
+      receiptRef: "receipt",
+      hostId: "host",
+      threadId: "thread",
+      toolCallId: "tool",
+      invocationId: request.messageId,
+      ownerId: request.scope.ownerId!,
+      agentId: request.scope.agentId!,
+      runId: request.scope.runId!,
+    };
+    await expect(
+      worker.request({ ...request, payload: { ...request.payload, sandboxJob: job } }),
+    ).rejects.toMatchObject({ code: "SANDBOX_SUPERVISOR_UNAVAILABLE" });
+    await worker.waitForIdle();
+    expect(await readEvents(worker)).toEqual([]);
+  });
+
   it("admits a boot-scoped one-use delegation without opening durable state", async () => {
     const adapters = createReferenceAdapterSet({
       capability: {

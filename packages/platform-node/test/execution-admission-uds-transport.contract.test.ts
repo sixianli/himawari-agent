@@ -387,6 +387,44 @@ async function closeCleanup(): Promise<void> {
 }
 
 describe("execution-admission.v1 authenticated UDS transport", () => {
+  it("preserves a trusted sandbox job identity over authenticated UDS", async () => {
+    const job = {
+      jobId: "job",
+      attemptId: "attempt",
+      receiptRef: receipt.receiptRef,
+      hostId: "host",
+      threadId: "thread",
+      toolCallId: "tool",
+      invocationId: execute.messageId,
+      ownerId: execute.scope.ownerId!,
+      agentId: execute.scope.agentId!,
+      runId: execute.scope.runId!,
+    };
+    const server = await startServer({
+      admit: async () => {
+        const result = consumedResult(execute);
+        if (result.disposition !== "consumed") throw new Error("expected consumed fixture");
+        return {
+          ...result,
+          projection: {
+            ...result.projection,
+            execute: {
+              ...result.projection.execute,
+              payload: { ...result.projection.execute.payload, sandboxJob: job },
+            },
+          },
+        };
+      },
+    });
+    const client = new ExecutionAdmissionUdsClient(clientOptions(server.socketPath));
+    await client.connect();
+    const result = await client.admit(execute);
+    expect(result).toMatchObject({
+      disposition: "consumed",
+      projection: { execute: { payload: { sandboxJob: job } } },
+    });
+  });
+
   it("binds the peer, returns one executable projection, and makes replay non-executable", async () => {
     const requests: ExecutionAdmissionWorkExecuteRequest[] = [];
     const server = await startServer({
@@ -537,6 +575,7 @@ describe("execution-admission.v1 authenticated UDS transport", () => {
   });
 
   it.each([
+    "sandboxReceipt",
     "capabilityId",
     "capabilityVersion",
     "operation",
@@ -575,6 +614,22 @@ describe("execution-admission.v1 authenticated UDS transport", () => {
       const projection = projectionFor(body.payload.execute);
       const changedExecutePayload = {
         ...projection.execute.payload,
+        ...(field === "sandboxReceipt"
+          ? {
+              sandboxJob: {
+                jobId: "job",
+                attemptId: "attempt",
+                receiptRef: "foreign-receipt",
+                hostId: "host",
+                threadId: "thread",
+                toolCallId: "tool",
+                invocationId: execute.messageId,
+                ownerId: execute.scope.ownerId!,
+                agentId: execute.scope.agentId!,
+                runId: execute.scope.runId!,
+              },
+            }
+          : {}),
         ...(field === "capabilityId" ? { capabilityId: "capability:changed" } : {}),
         ...(field === "capabilityVersion" ? { capabilityVersion: "9.9.9" } : {}),
         ...(field === "operation" ? { operation: "changed-operation" } : {}),
