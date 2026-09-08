@@ -24,8 +24,7 @@ export async function inspectSrtDependencies(): Promise<SrtDependencyReadiness> 
     warnings: Object.freeze([...dependencies.warnings]),
     productionSuitable: false,
     missingGuarantees: Object.freeze([
-      "hard_cpu_ceiling",
-      "hard_memory_ceiling",
+      "resource_observation",
       "task_tree_termination",
       "worker_crash_cleanup",
       "durable_start_admission",
