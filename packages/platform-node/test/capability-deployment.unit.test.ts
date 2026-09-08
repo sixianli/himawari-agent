@@ -142,6 +142,82 @@ function processEntry(
   };
 }
 
+function sandboxEntry(): JsonObject {
+  const entry = processEntry();
+  return {
+    ...entry,
+    qualification: {
+      ...(entry["qualification"] as JsonObject),
+      platform: "darwin",
+      runtimeIdentity: "srt:0.0.75",
+      enforcement: {
+        filesystem: true,
+        network: true,
+        processes: true,
+        secrets: true,
+        resourceCeilings: false,
+        termination: false,
+      },
+      sandbox: {
+        schemaVersion: "sandbox-runtime-qualification.v1",
+        qualificationRef: "qualification:fixture",
+        hostId: "host:fixture",
+        profileRef: "host-readonly.v1",
+        srtVersion: "0.0.75",
+        platform: "darwin",
+        architecture: "arm64",
+        osRelease: "27.0.0",
+        runtimeDigest: "d".repeat(64),
+        runnerDigest: "e".repeat(64),
+        evidenceDigest: "f".repeat(64),
+        resourceMode: "observe_and_stop",
+        terminationMode: "best_effort",
+        guarantees: [
+          "filesystem_default_deny",
+          "network_allowlist",
+          "clean_environment",
+          "bounded_output",
+          "wall_clock_stop",
+          "resource_observation",
+          "durable_start_admission",
+          "unknown_quarantine",
+          "restart_reconciliation",
+          "best_effort_stop",
+        ],
+        limitations: ["detached_descendants_may_survive_stop"],
+      },
+    },
+    binding: {
+      kind: "sandbox",
+      value: {
+        schemaVersion: "sandbox-host-binding.v1",
+        capabilityRef: "fixture-program",
+        capabilityVersion: "1.0.0",
+        artifactDigest: DIGEST,
+        hostId: "host:fixture",
+        profileRef: "host-readonly.v1",
+        runtimeRoot: "/opt/runtime",
+        runtimeDigest: "d".repeat(64),
+        executable: { path: "/usr/bin/node", sha256: "a".repeat(64) },
+        runner: { path: "/opt/runtime/runner.js", sha256: "e".repeat(64) },
+        privateRoot: "/var/private-jobs",
+        roots: [
+          {
+            canonicalRootId: "root:fixture",
+            canonicalPath: "/work/project",
+            device: "1",
+            inode: "2",
+          },
+        ],
+        readOnlyToolchainPaths: ["/usr/bin"],
+        protectedPaths: [],
+        allowedDomains: [],
+        maximumResourceCeiling: CEILING,
+      },
+    },
+  };
+}
+
 function endpointEntry(): JsonObject {
   return {
     manifest: {
@@ -291,6 +367,52 @@ describe("capability deployment snapshot loader", () => {
       endpointIdentity: "endpoint:fixture",
       artifactDigest: ENDPOINT_DIGEST,
     });
+  });
+
+  it("loads explicit Mac limitations without exposing a legacy process binding", async () => {
+    const value = await writeSnapshot(snapshot([sandboxEntry()]));
+    const loaded = await loader(value.snapshotPath, value.digest, { platform: "darwin" }).load();
+    expect(loaded.snapshot.capabilities[0]?.qualification).toMatchObject({
+      enforcement: { resourceCeilings: false, termination: false },
+      sandbox: { terminationMode: "best_effort" },
+    });
+    const manifest = loaded.manifests[0];
+    if (!manifest) throw new Error("missing fixture manifest");
+    await expect(loaded.bindings.resolveProcess(manifest)).resolves.toBeUndefined();
+  });
+
+  it.each(["hostId", "profileRef", "runtimeDigest", "runnerDigest"])(
+    "rejects qualification with mismatched %s",
+    async (field) => {
+      const entry = sandboxEntry();
+      const qualification = entry["qualification"] as JsonObject;
+      (qualification["sandbox"] as JsonObject)[field] = field.endsWith("Digest")
+        ? "0".repeat(64)
+        : "different";
+      const value = await writeSnapshot(snapshot([entry]));
+      await expectDeploymentError(
+        loader(value.snapshotPath, value.digest, { platform: "darwin" }).load(),
+        CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID,
+      );
+    },
+  );
+
+  it("does not use Mac sandbox evidence to relax legacy enforcement", async () => {
+    const entry = sandboxEntry();
+    entry["binding"] = processEntry()["binding"];
+    const value = await writeSnapshot(snapshot([entry]));
+    await expectDeploymentError(
+      loader(value.snapshotPath, value.digest, { platform: "darwin" }).load(),
+      CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID,
+    );
+    const legacy = processEntry();
+    const qualification = legacy["qualification"] as JsonObject;
+    (qualification["enforcement"] as JsonObject)["termination"] = false;
+    const legacyValue = await writeSnapshot(snapshot([legacy]));
+    await expectDeploymentError(
+      loader(legacyValue.snapshotPath, legacyValue.digest).load(),
+      CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID,
+    );
   });
 
   it("rejects tampered bytes and unsafe snapshot metadata", async () => {

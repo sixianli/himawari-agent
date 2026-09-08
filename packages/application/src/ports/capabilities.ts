@@ -1,4 +1,5 @@
 import type { AgentId, OwnerId, RunId } from "@himawari-agent/domain";
+import type { SandboxRuntimeQualification } from "@himawari-agent/execution-contracts";
 import type { PermissionAllowDecision } from "./authorization.js";
 import type { DataClassification, PayloadRef } from "./common.js";
 
@@ -138,6 +139,8 @@ export interface CapabilityArtifactVerification {
 }
 
 export interface CapabilityRuntimeQualification {
+  /** SRT evidence is explicit; legacy enforcement booleans must remain truthful. */
+  readonly sandbox?: SandboxRuntimeQualification;
   readonly qualificationVersion: "capability-runtime-qualification.v1";
   readonly platform: "darwin" | "linux" | "other";
   readonly runtimeIdentity: string;

@@ -89,6 +89,8 @@ Task 4 的前置账本部分已提前实施：追加迁移 `0027_sandbox_job_obs
 
 正式入口接线证据（2026-09-08）：`ProductionSandboxExecution` 验证 broker 返回的冻结计划与执行消息一致，再调用既有生命周期；取消可以早于异步绑定或发生在准备期间，停止服务也先请求停止作业。已记录启动意图的请求走核查，不能重新启动。`createBrokerSandboxExecution()` 将生命周期的读回/追加映射到已认证 Payload UDS，不向 Worker 开放 `admit/listPending`。启动 RPC 失联无法确认是否已提交时返回 `result_unknown`；清理未知不能映射成成功。`recoverSandboxJobsAtStartup()` 已由正式 Agent Service 调用，在准入入口创建前把旧 prepared/starting 作业转入隔离；核查没有启动能力，重复启动核查不追加伪造完成记录。真实 UDS/SQLite 测试覆盖执行后隔离、准备期间取消、已有启动记录恢复、重复请求及不同启动身份下的恢复；这些测试仍使用受控主机 session，不能计作实际 SRT 主机资格。
 
+主机部署格式证据（2026-09-08）：新增 `sandbox-host-binding.v1` 与 `sandbox-runtime-qualification.v1`，将主机、profile、运行产物、runner 和证据摘要绑定到同一部署项。Mac 记录资源观测模式、尽力停止及脱离后代可能存活的限制；Linux 仍要求任务树终止和崩溃清理证据。部署加载器拒绝摘要或主机不匹配，也禁止用 SRT 资格放宽旧 process 后端的检查。主机清单只描述可用目录、工具链及网络上界，不提供目录或联网授权。合同与加载器测试使用合成记录，不能作为真实资格签发；正式启动组合、主机复核和安装验收仍未完成。
+
 真实 SQLite 回执暴露并修复了原合同的摘要格式不匹配：`semanticFingerprint` 保留持久凭证的 `sha256:` 前缀，不改写旧凭证。execution-contracts 的内部相对导入改为项目既有的 `.ts` 源码写法，使 SQLite 源码 Worker 可以加载校验器；Node 构建仍将路径改写为 `.js`。相关回归覆盖旧 schema 26 升级、数据库重开、重复启动、租约改变、Handle 撤销、Run 取消、过期清理、事务回滚、输出持久化与终态禁止重启。正式 Worker/Job Host 仍未切换到这套账本，不能将这些测试计为主机执行资格。
 
 ### Task 4：持久作业观察与通用 HITL

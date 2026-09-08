@@ -12,11 +12,16 @@ import {
   type CapabilityRuntimeQualification,
   validateCapabilityManifest,
 } from "@himawari-agent/application";
+import {
+  type SandboxHostBinding,
+  sandboxHostBindingSchema,
+  sandboxRuntimeQualificationSchema,
+} from "@himawari-agent/execution-contracts";
 import type {
+  CapabilityHostIsolationBinding,
   CapabilityRuntimeBindingPort,
   CapabilityEndpointBinding as RuntimeEndpointBinding,
   CapabilityEndpointOperationBinding as RuntimeEndpointOperationBinding,
-  CapabilityHostIsolationBinding,
   CapabilityProcessBinding as RuntimeProcessBinding,
 } from "./isolation.js";
 
@@ -63,6 +68,7 @@ export class CapabilityDeploymentError extends Error {
 }
 
 export type CapabilityDeploymentBinding =
+  | { readonly kind: "sandbox"; readonly value: SandboxHostBinding }
   | {
       readonly kind: "process";
       readonly value: RuntimeProcessBinding;
@@ -508,6 +514,7 @@ function parseQualification(
     input,
     [
       "qualificationVersion",
+      "sandbox",
       "platform",
       "runtimeIdentity",
       "productionSuitable",
@@ -568,7 +575,32 @@ function parseQualification(
     ),
     termination: boolean(enforcement["termination"], `${field}.enforcement.termination`),
   };
-  if (Object.values(checkedEnforcement).some((value) => value !== true)) {
+  const sandbox =
+    input["sandbox"] === undefined
+      ? undefined
+      : sandboxRuntimeQualificationSchema.parse(input["sandbox"]);
+  if (
+    sandbox &&
+    (sandbox.platform !== qualificationPlatform ||
+      input["runtimeIdentity"] !== `srt:${sandbox.srtVersion}` ||
+      checkedEnforcement.resourceCeilings !== false ||
+      checkedEnforcement.termination !== (sandbox.platform === "linux"))
+  ) {
+    throw failure(
+      CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID,
+      field,
+      "sandbox evidence conflicts with enforcement claims",
+    );
+  }
+  const requiredControls = sandbox
+    ? [
+        checkedEnforcement.filesystem,
+        checkedEnforcement.network,
+        checkedEnforcement.processes,
+        checkedEnforcement.secrets,
+      ]
+    : Object.values(checkedEnforcement);
+  if (requiredControls.some((value) => value !== true)) {
     throw failure(
       CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID,
       `${field}.enforcement`,
@@ -593,6 +625,7 @@ function parseQualification(
   }
   const qualification: CapabilityRuntimeQualification = {
     qualificationVersion: "capability-runtime-qualification.v1",
+    ...(sandbox ? { sandbox } : {}),
     platform: qualificationPlatform,
     runtimeIdentity: text(input["runtimeIdentity"], `${field}.runtimeIdentity`),
     productionSuitable: true,
@@ -849,10 +882,11 @@ function parseBinding(
 ): CapabilityDeploymentBinding {
   const input = record(value, field);
   rejectUnknown(input, ["kind", "value"], field);
-  const kind = oneOf(input["kind"], ["process", "endpoint"], `${field}.kind`);
+  const kind = oneOf(input["kind"], ["process", "endpoint", "sandbox"], `${field}.kind`);
   if (
     (manifest.runtime.kind === "program" || manifest.runtime.kind === "mcp") &&
-    kind !== "process"
+    kind !== "process" &&
+    kind !== "sandbox"
   ) {
     throw failure(
       CAPABILITY_DEPLOYMENT_ERROR_CODES.BINDING_MISMATCH,
@@ -876,6 +910,21 @@ function parseBinding(
       "manifest.runtime.kind",
       "has no Node binding",
     );
+  }
+  if (kind === "sandbox") {
+    const binding = sandboxHostBindingSchema.parse(input["value"]);
+    if (
+      manifest.runtime.kind !== "program" ||
+      binding.capabilityRef !== manifest.ref ||
+      binding.capabilityVersion !== manifest.version ||
+      binding.artifactDigest !== manifest.integrity
+    )
+      throw failure(
+        CAPABILITY_DEPLOYMENT_ERROR_CODES.BINDING_MISMATCH,
+        field,
+        "sandbox binding must match a program manifest",
+      );
+    return deepFreeze({ kind, value: binding });
   }
   if (kind === "process") {
     const binding = parseProcessBinding(input["value"], `${field}.value`);
@@ -1037,6 +1086,27 @@ function parseEntry(
     `${field}.qualification`,
   );
   const binding = parseBinding(input["binding"], manifest, `${field}.binding`);
+  const sandbox = qualification.sandbox;
+  if (binding.kind === "sandbox") {
+    if (
+      !sandbox ||
+      sandbox.hostId !== binding.value.hostId ||
+      sandbox.profileRef !== binding.value.profileRef ||
+      sandbox.runtimeDigest !== binding.value.runtimeDigest ||
+      sandbox.runnerDigest !== binding.value.runner.sha256
+    )
+      throw failure(
+        CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID,
+        field,
+        "sandbox qualification must match the host binding",
+      );
+  } else if (sandbox) {
+    throw failure(
+      CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID,
+      field,
+      "sandbox evidence cannot qualify a legacy binding",
+    );
+  }
   return deepFreeze({ manifest, qualification, binding });
 }
 
