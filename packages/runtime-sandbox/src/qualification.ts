@@ -9,6 +9,8 @@ export interface SrtDependencyReadiness {
   /** SDK readiness is insufficient to issue a host qualification. */
   readonly productionSuitable: false;
   readonly missingGuarantees: readonly string[];
+  /** Accepted profile limitations remain visible; acceptance is not a cleanup observation. */
+  readonly limitations: readonly string[];
 }
 
 /** Read-only dependency probe. Does not initialize proxies or launch a user command.
@@ -25,9 +27,13 @@ export async function inspectSrtDependencies(): Promise<SrtDependencyReadiness> 
     productionSuitable: false,
     missingGuarantees: Object.freeze([
       "resource_observation",
-      "task_tree_termination",
-      "worker_crash_cleanup",
+      ...(process.platform === "darwin"
+        ? ["best_effort_stop_and_unknown_quarantine", "worker_crash_reconciliation"]
+        : ["task_tree_termination", "worker_crash_cleanup"]),
       "durable_start_admission",
     ]),
+    limitations: Object.freeze(
+      process.platform === "darwin" ? ["detached_descendants_may_survive_stop"] : [],
+    ),
   });
 }

@@ -193,8 +193,10 @@ Pi `createGovernedPiCodingTools()` 新增互斥的 `operationsForCall` 绑定方
 4. 严格产品 schema 拒绝未知键、占位符、相对路径和禁止开关，再经过 SRT schema。检查平台与依赖，关键 warnings 同 errors 一样阻止执行；初始化后、启动前确认代理与规则准备完成。
 5. 只调用一次 `initialize()` 配置该 manager，不传自动批准回调，不开放 `updateConfig()` 或每命令扩权覆盖。用 `wrapWithSandboxArgv()` 生成启动描述，监督器按返回 `argv/env` 及已验证 cwd 启动，外层 `shell:false`。
 6. SDK 接收的 command 仍有 shell 语义。固定 runner 使用经验证的参数编码或引用方案，结构化请求经有界 stdin 传入；通用 bash 才执行原批准 shell 文本。禁止 `args.join(' ')`。固定 PATH、shell 和 runtime 安装位置，禁止使用工作区内的可变执行文件作为可信启动器。
-7. 监督运行与输出、处理取消和期限，确认不可信进程树及其管道结束后，调用 `cleanupAfterCommand()`、`reset()` 并监督 Job Host 退出。
+7. 监督运行与输出、处理取消和期限，在有界窗口内尽力终止任务及已知后代、观察进程与管道状态，调用 `cleanupAfterCommand()`、`reset()` 并监督 Job Host 退出。不能为了等待无法确认的后代而无限推迟 SRT 清理。
 8. 持久保存输出和完成回执后回传。清理无法确认时隔离作业槽位并保留证据；不能删除目录掩盖存活进程，不能报告正常完成。
+
+2026-09-08 Owner 接受首批原生 Mac SRT 不再以“任意脱离后代必定被回收”为硬性验收要求。取消、超时及 Worker 失联后必须尽力终止；无法确认清理时持久记录 `cleanup: unknown`，进入 `quarantined` 或 `reconciling`，禁止自动重放并要求核查。取消后未回收的后代仍可能访问原先获准的文件范围；该限制必须在主机资格和用户反馈中可见。此决定允许按该限制验收 Mac profile，不把未知改为确认，不允许正常完成回执或自动复用未知作业槽位，也不放宽 Linux profile 或文件、网络权限。整体进程回收不再阻塞 Mac profile，但尽力停止、未知状态持久化和重启核查本身仍是必需验收项。
 
 准备、运行、清理各有独立上限，并受 Run 总期限约束。达到业务期限必须立即进入停止流程；清理使用单独有界应急窗口，不能为了“已经超时”而放弃回收，也不能恢复用户执行。`Promise.race`、只 kill 一个 PID、只杀进程组或只调用 SRT reset 都不能单独证明后台、重新建会话的后代已经终止。
 
@@ -410,4 +412,4 @@ ADR 0024 已 accepted，统一承接 ADR 0021 和 ADR 0022 的当前替代关系
 
 安装使用固定 `0.0.75` 候选及锁文件完整性；实施前再核对发布包与安全公告，不使用每次 `npx latest`。仓库 Node 基线继续遵守自身 `>=22.19.0`，不因 SRT 的较低最低版本而降低项目要求。运行时安装在工作区外不可被任务修改的位置；Hermes 的大量工作区、缓存、日志和证据放经确认的数据盘。
 
-目前仍需实际确定的实施条件包括：两平台进程树回收方案是否达到 profile 的硬要求、全部本机保护路径的覆盖、SRT 发布包辅助文件资格，以及正式 Mac/Linux 负向测试。若任一条件不成立，应明确标记对应 profile 不可用并调整设计，不能自动启用原 native helper、Apple container 或不受限执行。
+目前仍需实际确定的实施条件包括：各平台停止与核查方案是否达到所声明的 profile 要求（首批 Mac 采用上述已接受的尽力停止与未知隔离语义）、全部本机保护路径的覆盖、SRT 发布包辅助文件资格，以及正式 Mac/Linux 负向测试。若任一条件不成立，应明确标记对应 profile 不可用并调整设计，不能自动启用原 native helper、Apple container 或不受限执行。
