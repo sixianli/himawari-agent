@@ -3,6 +3,8 @@ import {
   type ExecutionV2Request,
   executionV2MessageSchema,
   type SandboxJobIdentity,
+  sandboxExecutionPlanCandidateSchema,
+  sandboxJobReceiptSchema,
 } from "@himawari-agent/execution-contracts";
 import type {
   CapabilityInvocationAuthority,
@@ -13,6 +15,7 @@ import type {
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ExecutionTransportPort } from "../ports/coordination.js";
 import type { SandboxJobJournalPort } from "../ports/sandbox-execution.js";
+import type { SandboxScopeService } from "./sandbox-scope-service.js";
 
 export type WorkerExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
 export type WorkerDelegateRequest = Extract<ExecutionV2Request, { type: "work.delegate" }>;
@@ -84,6 +87,7 @@ export interface WorkerDelegationAdmissionServiceOptions {
    * It must return a stable persisted job identity when handling a replay. */
   readonly sandbox?: {
     readonly journal: Pick<SandboxJobJournalPort, "admit">;
+    readonly scopes: Pick<SandboxScopeService, "read">;
     readonly prepare: (
       invocation: ConsumeCapabilityInvocationInput,
     ) => Promise<Omit<Parameters<SandboxJobJournalPort["admit"]>[0], "invocation">>;
@@ -266,8 +270,12 @@ export class WorkerDelegationAdmissionService {
     }
     // Keep the request used for admission separate from the async resolver's copy.
     const prepared = await sandbox.prepare(structuredClone(input));
+    const plan = sandboxExecutionPlanCandidateSchema.parse(prepared.plan);
+    const observation = sandboxJobReceiptSchema.parse(prepared.observation);
+    await sandbox.scopes.read(plan);
     const admitted = await sandbox.journal.admit({
-      ...prepared,
+      plan,
+      observation,
       invocation: { ...input, consumedAt: this.#options.now() },
     });
     return {

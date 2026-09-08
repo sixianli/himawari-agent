@@ -36,7 +36,7 @@ export const sandboxJobIdentitySchema = object({
   toolCallId: machineString,
 });
 
-const planShape = object({
+const planFields = {
   schemaVersion: literal(SANDBOX_EXECUTION_SCHEMA_VERSION),
   identity: sandboxJobIdentitySchema,
   handleRef: machineString,
@@ -88,24 +88,35 @@ const planShape = object({
     qualificationRef: machineString,
     requiredGuarantees: array(machineString),
   }),
-});
+};
+const planShape = object(planFields);
+const { semanticFingerprint: _fingerprintSchema, ...candidateFields } = planFields;
+const candidateShape = object(candidateFields);
 
+export type SandboxExecutionPlanCandidate = InferSchema<typeof candidateShape>;
 export type SandboxExecutionPlan = InferSchema<typeof planShape>;
 export type SandboxJobIdentity = InferSchema<typeof sandboxJobIdentitySchema>;
 
+function validatePlanWindow<T extends SandboxExecutionPlanCandidate>(plan: T, path: string): T {
+  if (
+    Date.parse(plan.requestedAt) >= Date.parse(plan.effectiveDeadlineAt) ||
+    Date.parse(plan.effectiveDeadlineAt) > Date.parse(plan.originalDeadlineAt)
+  )
+    throw new ContractValidationError(path, "invalid execution deadline window");
+  if (new Set(plan.binding.requiredGuarantees).size !== plan.binding.requiredGuarantees.length)
+    throw new ContractValidationError(path, "duplicate required guarantee");
+  if (plan.binding.requiredGuarantees.length === 0)
+    throw new ContractValidationError(path, "at least one required guarantee is necessary");
+  return plan;
+}
 export const sandboxExecutionPlanSchema: Schema<SandboxExecutionPlan> = {
   parse(value, path = "$") {
-    const plan = planShape.parse(value, path);
-    if (
-      Date.parse(plan.requestedAt) >= Date.parse(plan.effectiveDeadlineAt) ||
-      Date.parse(plan.effectiveDeadlineAt) > Date.parse(plan.originalDeadlineAt)
-    )
-      throw new ContractValidationError(path, "invalid execution deadline window");
-    if (new Set(plan.binding.requiredGuarantees).size !== plan.binding.requiredGuarantees.length)
-      throw new ContractValidationError(path, "duplicate required guarantee");
-    if (plan.binding.requiredGuarantees.length === 0)
-      throw new ContractValidationError(path, "at least one required guarantee is necessary");
-    return plan;
+    return validatePlanWindow(planShape.parse(value, path), path);
+  },
+};
+export const sandboxExecutionPlanCandidateSchema: Schema<SandboxExecutionPlanCandidate> = {
+  parse(value, path = "$") {
+    return validatePlanWindow(candidateShape.parse(value, path), path);
   },
 };
 

@@ -22,6 +22,7 @@ import {
   PORT_ERROR_CODES,
   type PortErrorCode,
   type RuntimeToolInvocation,
+  SandboxScopeService,
   WorkerDelegationService,
 } from "@himawari-agent/application";
 import {
@@ -48,6 +49,10 @@ import {
   SqliteProductStateRepository,
   SqliteRunPayloadArtifactOperations,
 } from "@himawari-agent/persistence-sqlite";
+import {
+  EnvelopePayloadProtector,
+  InMemoryDevelopmentSecretSource,
+} from "@himawari-agent/platform-node";
 import { describe, expect, it } from "vitest";
 import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.js";
 import { createProductionWorkerParentBindingRegistry } from "../../apps/agent-service/src/production-worker-parent-binding-registry.js";
@@ -2016,6 +2021,38 @@ async function openSandboxJournal(legacy = false) {
       T2,
     );
   const receipt = consumed.receipt;
+  const scope = {
+    schemaVersion: "sandbox-scope.v1",
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    threadId: "thread-capability-invocation",
+    runId: RUN_ID,
+    toolCallId: "sandbox-tool",
+    parentToolCallId: "parent-tool",
+    hostId: "sandbox-host",
+    handleRef: receipt.handleRef,
+    inputRef: receipt.inputRef,
+    operation: receipt.operation,
+    authorizationRef: receipt.authorizationRef,
+    modelRef: "model-fixture",
+    profileRef: "profile-fixture",
+    directoryGrant: { ref: "grant-fixture", revision: 1, canonicalRootId: "root-fixture" },
+    networkAuthorizationRef: null,
+    expiresAt: T2,
+  };
+  const protector = new EnvelopePayloadProtector({
+    keys: new InMemoryDevelopmentSecretSource({ "scope-test@v1": new Uint8Array(32).fill(42) }),
+    activeKey: { keyRef: "scope-test", kekVersion: "v1", dekVersion: "dek-v1" },
+  });
+  const scopePayload = await protector.protect({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    ref: "scope-fixture",
+    dataClassification: "private",
+    contentType: "application/json",
+    plaintext: new TextEncoder().encode(JSON.stringify(scope)),
+    createdAt: T1,
+  });
   const plan: SandboxExecutionPlan = {
     schemaVersion: "sandbox-execution.v1",
     identity: {
@@ -2054,7 +2091,7 @@ async function openSandboxJournal(legacy = false) {
     },
     binding: {
       scopeRef: "scope-fixture",
-      scopeDigest: "a".repeat(64),
+      scopeDigest: scopePayload.contentDigest.slice(7),
       profileRef: "profile-fixture",
       runtimeDigest: "b".repeat(64),
       runnerDigest: "c".repeat(64),
@@ -2104,10 +2141,94 @@ async function openSandboxJournal(legacy = false) {
     if (database.open) database.close();
     await rm(resource.stateRoot, { recursive: true, force: true });
   };
-  return { resource, database, plan, prepared, call, append, prepare, close };
+  return {
+    resource,
+    database,
+    plan,
+    prepared,
+    call,
+    append,
+    prepare,
+    close,
+    scope,
+    scopePayload,
+    protector,
+  };
 }
 
 describe("durable sandbox invocation journal", () => {
+  it.each([
+    "hostId",
+    "runId",
+    "toolCallId",
+    "inputRef",
+    "authorizationRef",
+    "modelRef",
+    "profileRef",
+    "parentToolCallId",
+    "expiresAt",
+  ])("rejects an authentic scope with mismatched %s", async (field) => {
+    const fixture = await openSandboxJournal();
+    try {
+      const changed = {
+        ...fixture.scope,
+        [field]:
+          field === "parentToolCallId"
+            ? fixture.scope.toolCallId
+            : field === "expiresAt"
+              ? T1
+              : "foreign",
+      };
+      const payload = await fixture.protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: fixture.scopePayload.ref,
+        dataClassification: "private",
+        contentType: "application/json",
+        plaintext: new TextEncoder().encode(JSON.stringify(changed)),
+        createdAt: T1,
+      });
+      const { semanticFingerprint: _fingerprint, ...candidate } = fixture.plan;
+      const reader = new SandboxScopeService({
+        payloads: { get: async () => payload },
+        protector: fixture.protector,
+        now: () => T1,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+      });
+      await expect(
+        reader.read({
+          ...candidate,
+          binding: { ...candidate.binding, scopeDigest: payload.contentDigest.slice(7) },
+        }),
+      ).rejects.toThrow("SANDBOX_SCOPE_UNAVAILABLE");
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("rejects scope ciphertext tampering and digest substitution", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      const { semanticFingerprint: _fingerprint, ...candidate } = fixture.plan;
+      const reader = new SandboxScopeService({
+        payloads: { get: async () => fixture.scopePayload },
+        protector: fixture.protector,
+        now: () => T1,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+      });
+      await expect(
+        reader.read({
+          ...candidate,
+          binding: { ...candidate.binding, scopeDigest: "0".repeat(64) },
+        }),
+      ).rejects.toThrow("SANDBOX_SCOPE_UNAVAILABLE");
+      fixture.scopePayload.ciphertext[0] = (fixture.scopePayload.ciphertext[0] ?? 0) ^ 1;
+      await expect(reader.read(candidate)).rejects.toThrow("SANDBOX_SCOPE_UNAVAILABLE");
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it.each(["fresh", "legacy", "scope_failure", "expired_preparation"])(
     "routes Worker admission through the journal: %s",
     async (mode) => {
@@ -2122,6 +2243,7 @@ describe("durable sandbox invocation journal", () => {
         const { semanticFingerprint: _fingerprint, ...plan } = fixture.plan;
         const transport = new RecordingServiceTransport();
         let admissionNow = T1;
+        await reopened.payloadStore(OWNER_ID, AGENT_ID).put(fixture.scopePayload);
         const service = new WorkerDelegationService({
           invocations: {
             consume: async () => {
@@ -2132,6 +2254,12 @@ describe("durable sandbox invocation journal", () => {
             },
           },
           sandbox: {
+            scopes: new SandboxScopeService({
+              payloads: reopened.payloadStore(OWNER_ID, AGENT_ID),
+              protector: fixture.protector,
+              now: () => admissionNow,
+              digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+            }),
             journal: reopened.sandboxJobJournal(OWNER_ID, AGENT_ID),
             prepare: async () => {
               if (mode === "scope_failure") throw new Error("scope unavailable");
