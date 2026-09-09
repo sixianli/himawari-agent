@@ -6,70 +6,259 @@ superseded_by: ""
 date: "2026-09-07"
 ---
 
-# SRT 统一执行实施计划
+# Pi 工具复用与 SRT 受管理执行实施计划
 
 **来源 Spec：** [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]
 
-**目标：** 按已确认的 SRT 架构交付正式 Worker 的统一执行能力，并保留 Pi 工具与 Agent loop、Himawari 的通用授权和持久状态。
+**已批准决定：** [SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]
 
-**架构：** 应用层接纳动作并冻结授权输入，Execution Worker 监督每作业 Job Host，固定 SRT 适配管理受限执行。Web/远程 MCP 等外部服务通过狭窄产品适配接受相同治理。首批包含原目录文件与编码操作、Shell、MCP、授权联网、真实 Web Search 和已有 commit GitHub 推送；下列依赖顺序不改变首批范围。
+**目标：** 在现有 Pi、Capability、Grant/Handle、Worker 和 SQLite 权威上实现通用工具执行；分别管理操作结果、副作用、后台任务/服务和环境释放，交付首批文件/编码、Shell、MCP、联网、Web Search 与 GitHub 已有 commit 推送。
 
-本计划覆盖整批交付。Task 1–2 已完成，Task 3 已获继续实施授权，以下按已验证结果标记。Task 1–2 的合同和本地测试通过不代表安装资格、真实模型或浏览器验收通过。
+2026-09-09 按 Owner 已批准方案重排实施任务。本文 R1–R12 是当前执行顺序，替代原 Task 3–10 未完成待办；不将历史 v1 组件测试勾选成 v2 完成。此次仅完成设计文档，不实施这些代码任务，也不执行真实外部动作。原 Task 1–2 设计和 v1 组件交付事实保留在历史验证段；原首批范围未延期或删除。
+
+## 当前基线与复用边界
+
+| 已有内容 | 当前证据与后续使用 |
+|---|---|
+| Pi 0.84.2 的工厂及按调用 Operations | 保留 `createGovernedPiCodingTools`、`createPiOperationsFromGovernedHostPort`、`executeGovernedPiRead`；补齐 runner 和模式，不再设计工具身份库 |
+| Capability invocation、授权、文件 context 和保护结果 | 是调用身份及授权来源；补其他能力 scope 投影，不能因单条 event 缺字段就重做存储 |
+| sandbox-execution.v1、原子准入/启动、SQLite 0027 | 保留历史读回及原意；v2 使用追加迁移，不改旧 migration 或伪造已消费凭证 |
+| SRT 0.0.75、Job Host、scope/host verifier、UDS 和 Worker 组合 | 组件已存在且 root scope 目前仅 inspect/read；v1 对已启动任务始终 cleanup/effect unknown，不是正常成功链路已完成 |
+| 恢复核查 | 已能保留隔离且不重放；仍须实现环境/目录占用与可消除风险的核查，不把重新创建 Worker 的测试当真正进程崩溃 |
+| Mac 受控探针 | 已有策略、资源阈值、取消及隔离不重放证据，仍为 productionSuitable:false；不自动转换为 v2 或安装资格 |
+| Pi SRT/SSH/Gondolin 示例 | 用作接口和风险依据；不直接安装或复制回退/默认权限；Gondolin 后端不在当前实施关键路径 |
+
+产品 PRD 首批范围不变。Runbook 仍对应现有二进制和旧运行合同，本次设计不更改其操作步骤或 seal。架构记录当前实现与目标差距，历史图保留并注明时间，目标图使用仓库内 Mermaid。
 
 ## 文件与调用方边界
 
-| 责任 | 当前入口及改动位置 | 迁移要求 |
+| 责任 | 实际入口/改动位置 | 迁移要求 |
 |---|---|---|
-| Pi 工具与调用身份 | `packages/runtime-pi/src/governed-coding-tools.ts`、`governed-host-operations.ts`、`pi-runtime-adapter.ts`、`governed-read-executor.ts` | 复用固定 Pi 工厂；每调用 Operations 绑定；Agent 侧只接纳意图，复合工具在 runner 中执行 |
-| 产品执行合同 | `packages/execution-contracts/src/sandbox-execution-v1.ts`、`packages/application/src/ports/sandbox-execution.ts` | 严格 schema、作业身份与回执；不暴露 SRT 类型，不替换 execution.v2 |
-| 授权计划投影 | `packages/application/src/services/sandbox-execution-plan.ts`、`apps/agent-service/src/production-runtime-tools.ts` | 复用现有 invocation key、Handle/inputRef 与租约；正式派发时复核当前权威 |
-| 审批与恢复 | `runtime-continuation-service.ts`、`production-file-read-workflow.ts`、Run checkpoint 与 Pi continuation | 沿 ADR 0023 恢复；保留原期限、模型和父子调用关系 |
-| SRT 基础设施 | `packages/runtime-sandbox` 与待实现的 Worker `sandbox-job-main` | 唯一直接依赖固定版本 SRT 的包，每作业独立 manager，干净环境与监督清理 |
-| Worker 与通信 | `apps/execution-worker/src/production-worker-composition.ts`、现有 execution admission 与 Payload broker | 原可信 UDS/Handle 通道继续使用；新增 Job Host 私有 IPC 不给任务进程 |
-| 作业持久观察 | `packages/persistence-sqlite` migration、Capability invocation/result 与 Run artifact 操作 | 在现有权威下追加 job/attempt/sequence 与清理记录；CAS 防重复，未知结果不重放 |
-| 文件与命令 | `capability-programs/host-file-read.ts`、`HostFileReadService`、`platform-node` workspaces/capabilities | 固定 runner 内复用；覆盖 program、命令、导入导出与 stdio MCP 的全部可达启动点 |
-| 外部能力 | `integration-web`、`integration-github`、MCP 客户端与生产工具组合 | 真实 provider；Git push 独立动作和凭据，监控仍只读；不重写协议 |
-| 安装与检查 | runtime 打包脚本、边界检查、主机资格和相关 Runbook | 固定依赖与产物摘要；逐平台验证；实际合同变化后语义核对再封存 |
+| Pi 定义和执行 | `packages/runtime-pi/src/governed-coding-tools.ts`、`governed-host-operations.ts`、`pi-runtime-adapter.ts`、`governed-read-executor.ts` | 只有 runtime-pi 导入 Pi；Agent 只接纳请求，实际工具算法进受限 runner |
+| 产品合同 | `packages/execution-contracts/src/sandbox-execution-v1.ts`、拟新增同目录 v2 合同及导出；`packages/application/src/ports/sandbox-execution.ts` | v1 只保留原解释；v2 结果/效果/资源严格区分，外层 execution.v2 不被混淆 |
+| 授权来源 | `apps/agent-service/src/production-runtime-tools.ts`、`production-file-read-workflow.ts`、`production-sandbox-services.ts`；既有 Worker 准入/委托服务 | 沿既有服务补能力投影、父范围和同 Grant 检查，不重建准入框架 |
+| 生命周期与恢复 | `packages/application/src/services/sandbox-job-lifecycle-service.ts`、现有 RuntimeContinuationService/RunCoordinator；生产恢复入口 | 独立判断结果/续接/资源释放；核查没有启动能力，Run 状态复用 |
+| SQLite 权威 | `packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts`、现有作业实现及下一条 migration | 原子身份关联、观察 CAS、资源占用和有界分页；不改 0020/0027 |
+| Worker/认证通道 | `apps/execution-worker/src/production-sandbox-execution.ts`、`production-sandbox-worker.ts`、`broker-sandbox-execution.ts`、`production-payload-broker-client.ts`；Agent `production-payload-broker-handler.ts` | 版本匹配、任务管理请求与保护输出；Worker 无数据库准入 authority |
+| SRT/Job Host | `packages/runtime-sandbox/src/job-host*.ts`、策略/资源观测模块；`apps/execution-worker/src/product-job-host.ts` | 每权限固定环境一 manager，完整观察与停止，不自动放宽 unknown |
+| 受限程序 | `apps/agent-service/src/capability-programs/host-file-read*.ts`、HostFileReadService；拟新增同安装体系的 coding runner | 复用真实 Pi；搜索器、临时文件、图片等隐含 I/O 都受限 |
+| MCP/工作区 | `packages/platform-node/src/capabilities/node-capability-runtime.ts`、`isolation.ts`、workspaces 与 candidate-workspace 模块 | 受监督 stdio 适配复用 SDK；审查 program/Git/archive/tar/import/export 的全部调用方 |
+| 外部工具 | `packages/integration-web`、WebCapabilityService、`packages/integration-github`、既有 host secret source | 真实 provider；专用 Git 传输与只读监控分开；远端效果独立核查 |
+| 展示/安装 | `apps/control-center` 的现有 Run/Trace/工具结果视图；`scripts/package-node-runtime.mjs`、主机资格加载器/验证器、边界/覆盖检查及现有 Runbook | UI 分别显示结果和资源异常；资格按 mode/主机；新实现后语义核对 Runbook |
+
+## 依赖顺序
+
+`R1 合同 → R2 持久化 → R3 准入与版本 → R4 监督与核查 → R5 前台工具 → R6 后台任务 → R7 MCP`。
+
+`R8 联网` 依赖 R3–R5，可与 R6/R7 的不冲突部分分别推进；R7 的联网验收依赖 R8。`R9 Web`、`R10 Git` 依赖 R5/R8 及各自现有适配；`R11 产品验收` 汇集 R5–R10；`R12 安装与交付` 汇集全部。顺序表示技术依赖，不自动创建并行任务或改变首批范围。
 
 ## 实施任务
 
-### Task 1：设计、覆盖与提交基线
+### R1：完成事实与模式合同（最高优先级）
 
-- [x] 将已确认范围、ADR 0024 与 SRT Spec 整理为本计划，明确调用方及依赖顺序。
-- [x] 原始指南补治理元数据，核对移除元数据后的正文 SHA-256 保持不变。
-- [x] PRD 覆盖表按原目录编码、授权联网、真实搜索、独立 push 语义重新核对；同步覆盖摘要及条款数。
-- [x] 修订 S1/S6 中与已确认范围冲突的排除说明，保留只读监控和 commit gate。
-- [x] 完成检查并按独立目的整理提交本轮及前轮已完成的相关改动；已有全仓 lint 另行记录，不批量改写无关代码。
+依据 Spec §2、§3.2–3.4、§4，验证 EX-01、EX-06–EX-10、EX-12。
 
-### Task 2：统一合同与每次调用绑定
+- [ ] 先以只读、写入、前台 Shell、后台启动、MCP 多请求及取消未知六种调用绘制合同测试输入/期望，明确结果发布、续接、环境复用、Run 完成的不同判定。
+- [ ] 新增 sandbox-execution.v2 严格 schema 与现有端口升级；保留 v1 parser 及旧读回，拒绝 mode/result/readiness 分支混用、任意句柄/输出、跨调用和策略摘要替换。
+- [ ] 定义操作 contract 描述与效果验证责任：固定读 not_applicable、普通正常命令 not_asserted、写入/push 必需 verified、中断或缺失必需证据 unknown；禁止用弱合同掩盖未决效果。
+- [ ] 在一个产品投影实现中落实 Spec §3.4 判断表；Worker/Run/UI 使用同一投影，不各自判断 cleanup===confirmed 即成功。
+- [ ] 从失败用例开始验证：result 已知/cleanup pending、已有结果后 lost、empty output、迟到结果、ready 与 started 差异、Run cancel 后禁止模型续接。
 
-- [x] 定义 `sandbox-execution.v1`、`SandboxExecutionPort` 和严格回执校验，覆盖 prepare/start/observe/cancel/reconcile 与清理结果。
-- [x] 执行计划从现有 Capability 回执与 Run 请求投影；核对调用 key、inputRef、Owner/Agent/Thread/Run、模型、租约与期限，避免扩大资源范围。
-- [x] Pi 工具工厂提供互斥的 `operationsForCall`；每次调用独立绑定，异步绑定前后检查取消，保留 Worker 单次固定 Operations 用途。
-- [x] 本地测试覆盖并发身份、恢复后重新绑定、撤权和取消；合同测试覆盖跨调用/租约替换、过期、非法字段、未知结果与终态重启拒绝。
-- [x] 完成最终类型、边界和相关回归，并记录证据。
+完成条件：合同/投影测试通过，v1 旧样本语义不变；新增枚举不能让缺少真实监督证据的适配器自动返回 controlled 或 released。
 
-Task 2 不新增第二个权限库、Run 状态机或数据库。schema 校验不能证明记录来自可信来源；Worker 持久接纳时仍需复核当前权限、受保护 scope 与主机资格。
+### R2：追加持久关联、占用与迁移
 
-### Task 3：正式 Worker/SRT 作业基础
+依赖 R1；依据 Spec §3.1、§3.2、§4.4、§10.2，验证 EX-02、EX-07、EX-09、EX-11、EX-12。
 
-- [x] 固定 `@anthropic-ai/sandbox-runtime@0.0.75`，只由 `runtime-sandbox` 直接依赖；依赖边界检查和 Node 产物打包纳入此包。
-- [x] 增加候选策略编译：规范绝对路径、独立目录、全盘读取默认拒绝与显式例外、受保护路径、严格域名白名单及共享默认写目录拒绝。
-- [x] 增加可安装的 Job Host 入口与父进程控制器；在干净环境中固定一次初始化策略，支持显式启动和有界取消。正式 Worker 与持久账本监督接线仍见后续未完成项。
-- [x] 定义受保护 `sandbox-scope.v1` 正文，携带目录授权版本与父调用引用；准入前复用 Payload 解密、验证摘要和调用/主机/输入/授权/模型/profile/有效期绑定。
-- [x] scope 校验复用 `HostFileStatePort.readGrant()` 检查当前目录授权的主机、版本、根身份、授权引用、有效期和操作范围；绑定准入请求的父请求 ID。
-- [ ] 将目录授权状态来源接到正式主机，补齐网络授权、父工具调用关系及 host/runtime/runner/qualification 验证，并在启动点重新核查。
-- [x] 增加 SQLite 作业账本与启动意图 CAS：同一 invocation 唯一 attempt，记录观察历史，支持重开读回与待核查作业分页。
-- [x] 将 SRT 凭证消费与作业准备放入同一 SQLite 事务；消费后缺少账本的旧请求拒绝重新准入，首次观察写入失败回滚权限消费。
-- [x] 既有 Worker 准入服务支持显式 SRT 模式：使用原子建账返回的冻结凭证构造首次执行消息；重放、未知或 scope 准备失败不派发，不退回独立消费路径。
-- [x] 执行消息携带可信准入分配的 SRT job/attempt 身份，校验调用范围和回执绑定；Worker 已提供专用 SRT 分支；未配置监督器时拒绝作业，禁止误用旧后端。
-- [x] 增加 `SandboxJobLifecycleService` 驱动既有账本：重复启动只读回，首次启动须取得事务 CAS；准备期间取消不启动，清理未知持久隔离，失联核查不重新执行。
-- [x] Worker 提供 Job Host 产品适配器，沿用原计划期限和输出额度，受保护输出存储成功后才返回引用；进程退出不伪装成清理确认。
-- [x] 正式 `ProductionExecutionWorker` 增加 SRT 执行、取消和核查分支，复用账本生命周期；broker 适配不持有数据库准入权限，失联结果返回未知，不退回旧执行器。安装组合的实际 scope/资格装配仍待完成。
-- [x] Agent Service 在开放准入与 HTTP 前分页核查旧作业；新进程仅用当前权限保存隔离观察，不复用旧 Worker 凭据，不启动旧任务，不声称旧后代已退出。
-- [ ] 在生产组合中提供真实 scope/资格解析并启用 SRT 模式，将原子准入与账本接到正式 prepare/start/observe/cancel/reconcile；启动前还须验证受保护 scope、主机资格与代理初始化。
-- [ ] 使用真实 SRT 在 Mac 专用目录验证读写与命令、假秘密保护、越界与未授权联网、超时取消、进程和继承管道观察，以及清理未知时的持久隔离、禁止自动重放和核查。
-- [ ] 需要启用 Linux profile 时，在 Hermes 的隔离测试目录单独取得证据；先确认磁盘挂载与空间。
+- [ ] 核对迁移最新编号，追加环境、后台 task/service 与 invocation 的关联及隔离占用；放在现有产品 SQLite，不新增授权库或调度 Task 状态机。
+- [ ] 原子准入保留 Handle 消费/语义指纹/作业初观察；后台创建关联同事务保存，失败整体回滚。首次 starting CAS 固定 policyDigest，争用失败方只能清理自己的预备资源。
+- [ ] OperationResult 保留原保护结果权威；资源观察独立 sequence/CAS 追加，可在结果产生后继续更新，不能替换已发布结果。继续意图与最新资源 sequence/Run/fence 同事务复核，派发前再检查；派发后发现故障保存在途不确定性。
+- [ ] 原目录写环境整个存活期保有范围占用；lost/unknown 保守阻止相交操作，跨进程重启后恢复占用。使用当前目录身份和范围算法，不使用字符串前缀锁。
+- [ ] v1 升级覆盖正常历史结果、未启动、启动意图丢失、quarantined 和缺少身份情况；不把默认迁移值当清理/效果证明。
+- [ ] 用真实 SQLite 证明重开、CAS 冲突、事务回滚、分页、取消后清理追加、结果保留、旧记录不得重新执行。
+
+完成条件：升级不会重消费或重跑；已知结果与未释放资源同时可读，未知目录在新进程准入前即受保护。
+
+### R3：正式 scope、调用模式与版本接入
+
+依赖 R2；依据 Spec §3.1、§3.3、§10.2–10.3，验证 EX-02、EX-03、EX-12。
+
+- [ ] 在现有 production-sandbox-services 中补 file/edit/write/search/bash/后台/MCP 的可信范围来源，复用各自已有授权输入/调用回执，保留文件 context 和父子调用检查。
+- [ ] 沿已经批准的同 Grant 网络 targets 映射；逐请求验证 Grant 状态/指纹、目录版本/根、模型披露、主机上界和原期限。查询/停止不重复消费原执行 Handle，新服务调用消费自己的 Handle 一次。
+- [ ] 扩展既有认证 Payload broker 的 v2 内部 binding、任务/服务控制请求、资源查询和输出 cursor；验证 boot/epoch/fence、消息长度与执行目标，禁止 Worker 指定数据库 authority。
+- [ ] Agent/Worker/runner/qualification 声明并匹配支持的 mode/schema；不支持 v2 的安装在消费/启动前拒绝，不把 v2 数据标为 v1。
+- [ ] 准备结束和首笔实际启动/服务派发前重核当前授权、产物与原期限；旧观察读回或过期停止不得恢复执行权。
+
+完成条件：真实 UDS+SQLite 测试覆盖撤权竞态、跨 Grant/主机/父调用、旧凭证、未知版本、重投递及单次消费；不依赖注入的 allow 布尔值证明正式授权。
+
+### R4：监管、停止与核查证据生产
+
+依赖 R3；依据 Spec §3.4、§4.1、§4.4–4.5，验证 EX-09–EX-13。
+
+- [ ] 升级 Job Host 私有 IPC，分别产出真实启动/退出、输出、监管和清理事实；使用已验证 boot/进程启动标记与监督窗口，不把 PID/心跳单独作为全树保证。
+- [ ] 保留一环境一 manager、干净环境、固定 initialize、代理 ready、显式 start、有界 stdin/输出；超时、取消、超限与观察失效均进入停止。
+- [ ] 增加 profile 对前台/后台/服务的监管证据校验；无法证明时按真实情况保持不可用或 lost，不能硬编码 controlled/confirmed。保留 Mac setsid 负向事实。
+- [ ] 实现核查的只读/限定停止端口及追加证据；隔离解除必须证明相交风险消除，没有 relaunch 分支，不复用旧 Worker 凭证。
+- [ ] 实际运行测试子进程并注入 Worker/Job Host 崩溃、ack 丢失、持有管道、setsid、进程身份替换、初始化失败与停止失败；每个测试有独立目录、总超时、清理与残留证据。
+- [ ] 验证已有结果后监管丢失会阻止后续模型续接和相交新任务，其他无关目录不被误解锁或无故占用。
+
+完成条件：真实后端能生成符合目标 profile 的观察；未达到保证的 mode 明确不可用。固定探针通过仍不签发生产资格；后端能力不足属于具体 blocker，不靠改状态让测试通过。
+
+### R5：完整前台 Pi 工具 runner
+
+依赖 R4；依据 Spec §2、§5、§8，验证 EX-01、EX-04–EX-06。
+
+- [ ] 复用已安装 runner 入口体系，执行真实 Pi read/write/edit/bash/find/grep/ls；Agent 只取定义，产品其他包不得直接导入 Pi。
+- [ ] 文件 inspect/read 保留元数据与正文双阶段、HostFileReadService 身份/大小/类型检查和模型披露；验证真实空文件与失败差异。
+- [ ] 覆盖 Pi Operations 外 I/O：read 路径探测、rg/fd、图片处理、长输出日志；全部在私有受限环境，必要二进制预装且摘要固定，不能自动联网下载。
+- [ ] 在受保护输出中保存结果及截断/来源，导出检查所有权和实际文件类型；不向 Agent 回传可被任意解释为宿主路径的 fullOutputPath。
+- [ ] 写入使用现有冲突检查/安全替换，原目录保留用户修改，删除/重要覆盖沿 HITL；一次复合工具不按每次 I/O 重复消费授权。
+- [ ] 盘点 program、Git/archive/tar、候选导入导出、扩展加载的实际调用方，按受限执行/狭窄可信动作/禁用登记；移除已无调用方旧执行路径，不扩大为无关重构。
+
+完成条件：真实 Pi 兼容及受限 runner 测试证明七工具功能和无旁路；测试既验证正常结果，也验证恶意路径、输出产物替换、秘密/控制目录及缺失搜索器失败拒绝。
+
+### R6：受管理后台任务
+
+依赖 R5；依据 Spec §4.2，验证 EX-07、EX-09–EX-11。
+
+- [ ] 通过 Pi 扩展注册任务 start/status/output/cancel 薄适配，保留原前台 Bash 合同；共用既有命令授权、后端和保护输出，不造新 shell 协议。
+- [ ] start 前持久句柄关联并获取资源占用；调用返回 started 与真正运行/结束结果分开，重投递只查询原关联。
+- [ ] 有界输出 cursor、重复查询和进程退出后读回不触发新执行；伪造/跨 Run 句柄、过期授权和 PID 复用均拒绝控制。
+- [ ] 资源寿命不得超过原 Run/Grant/执行期限；Run 结束停止资源，后台不自动转成长期 Task。写任务在整个存活期占用目录，冲突操作等待/拒绝。
+- [ ] 验证启动成功但返回丢失、取消与完成竞态、查询期间崩溃、输出洪泛、写占用、撤权、Run 结束与重启只核查。
+
+完成条件：至少一个有界长命令和一个声明 readiness 的测试服务可被可靠管理；返回句柄不声称工作完成，所有测试资源结束或留下明确的隔离证据。
+
+### R7：本地/远程 MCP 的连接与请求生命周期
+
+依赖 R6；联网部分依赖 R8；依据 Spec §4.3、§7，验证 EX-08、EX-10、EX-11、EX-14。
+
+- [ ] 检查固定 MCP SDK 的现有 transport/callers，复用协议逻辑，以薄适配让 stdio 管道由 Job Host 监督；删除被迁移路径的 SDK 自行 spawn。
+- [ ] server 身份/工具映射/握手决定 readiness；同 Run、同 Grant、同范围可复用，每请求独立 Handle/input/result；首批同 server 串行派发。
+- [ ] 两次请求复用一次 server 启动；单请求完成不关闭整个 server。停止 server 先禁派发，处理在途请求，再按有界关闭/TERM/KILL 协议停止。
+- [ ] 远程 MCP 的 HTTP 断连和取消保持效果未知；不支持的 task 模式不注册、不伪造业务成功。SDK 声明 readOnly 不成为授权依据。
+- [ ] 测试跨 Grant 拒绝、请求取消服务仍活、服务停止的在途效果、撤权及真正 server 崩溃恢复；后台写服务占用原目录规则与 R6 一致。
+
+完成条件：本地受限 server 与受控远端服务均有多请求、独立授权和停止证据，普通 MCP 无权取得专用 Git 凭据。
+
+### R8：授权联网与后端资格矩阵
+
+依赖 R3–R5；依据 Spec §4.5、§7，验证 EX-03、EX-13、EX-14。
+
+- [ ] 将原域名 Grant 到网络策略映射扩展到实际安装/下载/工具链请求；冻结实际 domain:port 与披露，不因重定向或镜像自动扩权。
+- [ ] 验证 HTTP/裸 TCP/SOCKS、删除代理变量、DNS、localhost/socket、SSRF/元数据、重定向和代理初始化失败；网络拒绝以实际拒绝证据判断，不能只看 curl 非零退出。
+- [ ] 资源 CPU/RSS 观测与阈值停止、授权撤销停止分别记录覆盖和局限，不宣称硬配额或即时撤回残留进程文件权。
+- [ ] 按 host/backend/profile/mode/schema/runtime/runner/保证绑定资格；Mac 与实际需启用的 Linux 分开取证，Hermes 先核实数据盘及测试目录。
+- [ ] 强隔离后端只列能力缺口及候选验证条件；不在本任务隐式安装 Gondolin/容器或恢复旧 fallback。
+
+完成条件：拟启用组合有真实目标主机证据；失败或未测的 mode 不注册。首批必要联网能力未通过仍报告整批未完成。
+
+### R9：真实 Web Search 与页面核实
+
+依赖 R5/R8；依据 Spec §7 的 Web Search，验证 EX-15。
+
+- [ ] 复用 WebCapabilityService/searchPublic/openPublic/buildResearchCitations 与现有 provider/HTTP 端口，确定实际 provider、秘密来源与预算。
+- [ ] Pi 薄适配经过通用准入和披露；保存查询时间、来源 URL、页面可获得的发布时间及实际片段，不把搜索摘要伪装成已读全文。
+- [ ] 覆盖失败/无结果/限额/撤权/重定向，真实 provider 验收按具体账号和费用授权执行；结果可回读不重复请求。
+
+完成条件：正式链路返回可核实引用，失败不编造；测试 provider 只能作回归，不作为真实搜索交付。
+
+### R10：受治理 GitHub 已有 commit 推送
+
+依赖 R5/R8；依据 Spec §7 的 GitHub push，验证 EX-16。
+
+- [ ] 将已验证的 Pi Bash/产品 Operations 路径接入正式持久 HITL；完整解析支持语法，冻结仓库/remote/ref/OID/对象范围，保留专用内部动作。
+- [ ] 无凭据受限作业导出已授权对象；私有 Git 数据目录的标准 Git 传输使用受限委托，拒绝源 hooks/config/helper、命令串联和隐式多 ref。
+- [ ] 复用合格 host secret source，不默认要求创建 GitHub App；真实凭据不进入普通 Shell/MCP/URL/日志。核对同用户进程与专用 IPC 可见性。
+- [ ] 对断连、超时、取消分别保存传输结果及远端效果；核查 ref/祖先关系，确认已应用不重推，不能因为 tip 不等于 OID 就认定未应用。
+- [ ] 在具体授权验收仓库推送已有 commit；验证非快进、保护分支、目标变化、过期凭据和重启核查；不顺带 commit/强推/合并/发布。
+
+完成条件：真实目标的权限、传输和 readback 证据齐全；本地 bare/HTTP 实验不能替代 GitHub 验收。
+
+### R11：正式模型、HITL、UI 与故障旅程
+
+依赖 R5–R10；依据 Spec §3.4、§6 与验收标准，验证 EX-04、EX-09、EX-10、EX-17。
+
+- [ ] 控制中心复用现有 Run/Trace/工具结果展示：操作结果、后台 started/ready、监管失联和清理未知分开；不是简单绿色 success。
+- [ ] 正式 Agent/Worker、身份/CSRF、实际模型配置和预算就绪后，ego Lite 发起文件总结，由模型调用工具、真实读取、同 Pi loop 续接并落库。
+- [ ] 从 UI 执行受控写入、后台 start/query/stop 和 MCP 多请求，覆盖审批批准/拒绝、并发批准、过期、取消和结果后清理失败。
+- [ ] 刷新和服务重启回读既有模型/工具结果；不新增模型调用，未完成资源进入核查，不复活取消 Run。
+- [ ] 独立确认真实搜索、联网和 Git 推送整批证据，按主机/模式显示能力不可用及具体原因。
+
+完成条件：从用户入口验证四组场景及实际故障；没有未核实资源时才正常完成 Run，不能用预准备调用或合成 session 代替。
+
+### R12：安装、文档与最终切换
+
+依赖全部任务；依据 Spec §10，验证 EX-12、EX-18。
+
+- [ ] 打包固定依赖与 runner，校验安装产物摘要/权限、schema/mode 协商、主机资格；真实安装后执行对应探针，不复制签名或静态模板当资格。
+- [ ] 完成全部模型可达调用方归属检查，移除已经迁移且无调用方的旧后端执行入口；保留旧数据只读，不维护隐含运行 fallback。
+- [ ] 执行停准入、在途核查、资源释放/隔离、版本切换和拒绝不兼容回退的安装测试；不逆写 migration、不 reset 用户变更。
+- [ ] 实现改变操作合同时，语义复核安装/备份/权威迁移 Runbook，运行相应静态检查和实际授权 preflight 后再封存；本设计阶段不预封存。
+- [ ] 更新架构当前事实、覆盖清单及必要运行文档；验证通过后分目的本地提交，远端 push/发布按具体指令执行。
+
+完成条件：EX-01–EX-18 全部映射到可信证据，必须能力无遗漏，历史/合成/真实主机证据明确区分。
+
+## 验收映射
+
+| Spec 编号 | 主任务 | 最小验证层 |
+|---|---|---|
+| EX-01 | R1、R5 | 固定 Pi 兼容 + 实际受限 runner 的隐含 I/O |
+| EX-02 | R2、R3 | SQLite 事务、并发/父调用、同 Grant 单次消费 |
+| EX-03 | R3、R8 | 实际 UDS/权威来源 + 启动竞态/联网拒绝 |
+| EX-04 | R5、R11 | 两阶段文件 + 正式模型/Pi/UI |
+| EX-05 | R5 | 原目录文件冲突/安全替换/搜索 |
+| EX-06 | R1、R5 | 前台真实退出/输出 + 效果合同 |
+| EX-07 | R2、R6 | 持久句柄 + 实际后台任务/ack 丢失 |
+| EX-08 | R7 | 同 server 多请求、独立授权与停止 |
+| EX-09 | R1、R4、R11 | 投影判断 + lost 后停止续接/相交准入 |
+| EX-10 | R4、R6、R7、R11 | 取消/超时/迟到结果与停止竞态 |
+| EX-11 | R2、R4、R6、R7 | 真正崩溃、PID 身份、重启核查及隔离解除证据 |
+| EX-12 | R1–R3、R12 | v1 历史读回、追加迁移、版本不匹配/回退拒绝 |
+| EX-13 | R4、R8 | 分主机和 mode 的实际资格 |
+| EX-14 | R7、R8 | MCP/联网/SSRF/秘密/资源阈值 |
+| EX-15 | R9 | 真实 Web provider 与页面引用 |
+| EX-16 | R10 | 受控 Git 本地回归 + 已授权 GitHub readback |
+| EX-17 | R11 | ego Lite 正式模型与刷新/重启回读 |
+| EX-18 | R12 | 安装产物与完整调用方归属/停止迁移 |
+
+## 原待办与新任务的对应
+
+| 原任务/待办 | 新归属及保留事实 |
+|---|---|
+| 原 Task 1–2 / P0-06 | 历史 v1 设计与按次 Pi 绑定已实现；R1/R5 验证新合同，不能重标历史测试为 v2 |
+| 原 Task 3–4 / P0-10–P0-11 / P1-01–P1-02 | R2–R4、R8，复用已接通的 scope/主机/账本，补真实监管核查及新版本 |
+| 原 Task 5 / P0-07–P0-09、P0-12–P0-14 | R5，保留文件身份、双授权、保护结果和 Pi 续接；后台能力另由 R6 验证 |
+| 原 Task 6 | R7/R8，连接生命周期与联网仍为首批 |
+| 原 Task 7–8 | R9/R10，真实 Web 和已有 commit push 不变 |
+| 原 Task 9 / P0-01–P0-05、P1-03–P1-05 | R11，原模型/身份与入口证据保留，完整新路径重新验收 |
+| 原 Task 10 / P2-01–P2-02 | R12，最终资格、运行文档及交付 |
+
+## 验证命令与证据规则
+
+每个任务先运行行为相关的最小检查，具体新增测试路径在实现时登记到现有 CI 项目；拟新增文件不是已存在可执行命令。已有入口如下：
+
+```sh
+npm run typecheck
+npm run check:boundaries
+npm run check:pi-compat
+node_modules/.bin/vitest run --config vitest.workspace.ts --project integration test/integration/sandbox-execution-contract.test.ts
+npm run check:v0.2-coverage
+npm run check:v0.2-invariants
+npm run check:secrets
+npm run check:ci-policy
+python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py . --strict
+```
+
+R2–R4 追加真实 SQLite/UDS 与进程故障测试；R5–R8 在源码和可安装产物各运行对应后端用例。现有 `qualify-policy.mjs`、`qualify-job-host.mjs`、`qualify-production.mjs` 在适配 v2 后继续作为有限探针，不更改 productionSuitable 以代替正式资格。每份实际主机证据记录安装/runtime/runner/profile/mode/schema 摘要、OS、场景、退出状态、效果/监管/清理事实及残留处置；合成 session、临时资格、真实安装明确分开。
+
+真实模型、收费 provider、安装变更或 GitHub push 在具体目标和影响明确后按现有授权执行；此 Plan 不授予所有未来外部操作权限。测试只用任务专用假数据，有界进程不能留下无主常驻资源；涉及 Hermes 大量数据先验证机械盘挂载。
+
+文档设计本身运行 strict 治理、SOURCE/ADR 链、覆盖/不变量及 diff 检查。它不要求重跑全部产品测试，也不得引用历史测试作为本次已运行结果。历史全仓 lint 问题仍在 [SOURCE: docs/backlog/BL-20260907-001-修-复-全-仓-既-有-lint-问.md]，不在本任务批量修复。
+
+## 历史 v1 验证记录（保留证据，不是当前待办）
+
+以下按当时记录保留。段落中的“尚未接入/仍待实现”描述各次验证时点；当前基线以上文为准，当前执行次序仅 R1–R12。旧 completed/failed 和 cleanup unknown 断言属于 v1，不可作为 v2 的验收条件。历史 274 项/62 项等数字不表示本次重新运行。
 
 当前证据（2026-09-08）：`packages/runtime-sandbox/test/policy.unit.test.ts` 覆盖策略非法字段、目录相交、权限例外、符号链接与异步输入改变。`npm run build:node` 后运行 `node packages/runtime-sandbox/scripts/qualify-policy.mjs`，在 Mac 自动创建的专用假数据目录验证读取、写入、假秘密拒绝、目录越界拒绝、符号链接越界拒绝与代理联网拒绝。该版本探针对网络的断言仅检查 curl 失败，不能单独证明代理拒绝；2026-09-09 已纠正，见下方正式接入核对。探针退出码 0、stderr 为空；依赖探针 errors/warnings 均为空。
 
@@ -122,91 +311,6 @@ Task 4 的前置账本部分已提前实施：追加迁移 `0027_sandbox_job_obs
 
 Task 3 保持未完成：仍缺正式安装主机资格、完整模型/文件审批链路以及真实失联/重启恢复验收。SQLite 继续在同一事务中消费凭证、生成 `semanticFingerprint`、保存作业，并在启动事务复核 Handle/Grant/Run/租约；未增加权限库或 Run 状态机。
 
-### Task 4：持久作业观察与通用 HITL
-
-- [x] 在既有 invocation/result 权威下追加账本迁移：job 唯一 attempt 关联、观察 sequence、政策摘要、清理/副作用状态；不改写旧 receipt 或旧 migration。
-- [x] 账本层将当前 fence/lease/Handle 校验与启动状态写入同一事务；相同观察重放只读回，未知状态禁止重新进入执行。正式恢复协调器仍待接入。
-- [ ] 审批前不启动作业；批准后按新租约重验，保留原期限及模型；取消、拒绝、过期均有确定反馈。
-- [ ] 用真实文件读取与受控写入/删除两个场景验证活跃进程和重启恢复，覆盖并发批准、取消竞态、Worker/Job Host 崩溃及清理未知。
-
-### Task 5：文件及编码工具迁移
-
-- [ ] inspect/read 两阶段迁入正式 SRT runner，保留路径、目录授权、inode/设备身份、大小、分类与模型披露检查。
-- [ ] 在同一作业内复用 Pi edit/write/bash；补齐 find/grep/ls Operations，避免默认本机 I/O。
-- [ ] 默认操作授权原目录；保留已有修改，写前检查冲突，删除与重要覆盖沿已有策略审批。
-- [ ] 枚举并迁移 program、Git/archive/tar、候选导入导出等模型可达启动点；切换后移除无调用方的旧后端。
-
-### Task 6：授权联网与 MCP
-
-- [ ] 为安装依赖、下载、本地 stdio MCP 和远程 MCP 明确授权与披露；复用当前 MCP SDK。
-- [ ] stdio 传输交给作业监督器持有；验证子进程树、网络重定向/SSRF/内网目标、撤权后连接终止。
-- [ ] 不把模型密钥、宿主环境、SSH agent、Docker socket 或通用凭据暴露给普通任务。
-
-### Task 7：真实 Web Search
-
-- [ ] 复用 `WebCapabilityService`、搜索 provider 及页面读取端口，落实真实 provider 配置、秘密来源与预算。
-- [ ] 注册 Pi 薄适配工具，核实结果、页面来源、查询时间与页面发布时间；失败不编造结果。
-
-### Task 8：受治理 GitHub push
-
-- [ ] 将已验证的 Pi bash 入口接入正式动作接纳与 durable HITL；完整解析受支持意图，固定仓库/ref/OID/输入对象与披露范围。
-- [ ] 无凭据作业安全导出对象，私有 Git 数据目录中的标准客户端执行传输；普通 Shell/MCP 无权复用凭据通道。
-- [ ] 核实可复用凭据来源和短期委托，分别验证源 hook/config、同用户进程可见性、目标替换、拒绝和非快进。
-- [ ] 在明确授权的 GitHub 仓库推送已知 commit，验证远端结果、断连未知与重启核查；不顺带创建 commit、强推、合并或发布。
-
-### Task 9：真实模型与浏览器验收
-
-- [ ] 正式 Agent Service/Worker、身份/CSRF、OpenRouter 配置、预算与 Memory 组合就绪。
-- [ ] ego Lite 发起读取文件并总结，由真实模型产生工具调用、Worker 读取、正文回到同一 Pi loop，再生成并保存回答。
-- [ ] 验证刷新、服务重启后回读不触发新模型调用，以及未授权/不存在文件的明确失败反馈。
-- [ ] 记录真实搜索、联网、MCP 和 Git 推送的本批验收；继续按主机/profile 报告未通过能力。
-
-### Task 10：安装资格、文档与交付
-
-- [ ] 核对产物身份、依赖归属、主机资格和启用策略；实际生效范围与公开健康检查一致。
-- [ ] 受影响 Runbook 语义复核、目标 preflight、合同检查与重新封存；不复制生产签名或伪造资格。
-- [ ] 更新架构图和实施状态，保留无密钥、无私人正文的可复核证据，完成本地提交。
-
-## 原待办迁移关系
-
-| 原待办 | 本计划归属与保留要求 |
-|---|---|
-| P0-01–P0-05 | 保留原验收、Pi/OpenRouter/embedding 和接口证据；Task 9 再验正式 SRT 全流程，不把协议测试算作文件验收 |
-| P0-06 | 已确认 Pi 工具复用路径；Task 2 固定按次绑定，Task 5 迁移 runner |
-| P0-07–P0-09 | 保留路径身份、读取/披露双授权和按次 Handle/input 持久化；Task 3–5 更换执行后端并回归，不自动继承旧平台资格 |
-| P0-10 | Task 4 沿通用 durable HITL 扩展作业观察，多工具验收 |
-| P0-11 | Task 3、5：正式 Worker/SRT 资格替代被否决的 Mac 原生 helper 路线 |
-| P0-12–P0-14 | Task 5、9：保护正文、原工具结果、模型续接和最终提交；旧实现状态与新路径验收分开 |
-| P1-01–P1-02 | Task 2–6、8：期限、取消、未知结果、重复调用与关键负向回归 |
-| P1-03–P1-05 | Task 9：正式入口、ego Lite、刷新/重启及失败反馈 |
-| P2-01–P2-02 | Task 1、10：语义一致文档、检查、证据、提交；全部完成后才关闭整批计划 |
-
-本映射没有重新勾选原完整流程待办。历史实现和测试继续保留，新资格必须重新取得。
-
-## 数据迁移与回退约束
-
-旧 Run、审批、Payload、Capability receipt 和已确认结果保持可读，回读不启动旧或新执行器。Task 2 的合同文件是新增模块，不改变 `execution.v2`、`execution-admission.v1` 或旧数据库 schema。Task 4 的追加作业迁移已作为 Task 3 前置部分实施；正式失联作业核查与恢复接线仍待验收。
-
-同一主机切换先停止旧执行准入，核查在途作业并确认清理，再启用新资格。旧审批若不覆盖新权限语义则重新确认或拒绝；未知结果不得换主机/attempt 自动重做。不得回退到已知不满足当前要求的执行后端。
-
-## 验证
-
-本轮 Task 1–2 的验证入口：
-
-```sh
-npm run typecheck
-npm run check:boundaries
-npm run check:v0.2-coverage
-npm run check:v0.2-invariants
-npm run check:secrets
-npm run check:ci-policy
-npm run check:pi-compat
-node_modules/.bin/vitest run --config vitest.workspace.ts --project integration test/integration/sandbox-execution-contract.test.ts
-node_modules/.bin/vitest run --config vitest.workspace.ts --project unit packages/runtime-pi/test/governed-coding-tools.unit.test.ts
-python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py . --strict
-```
-
-新增 schema/接口由本轮合同单元测试与 Pi 兼容性测试验证。已有授权/Capability/continuation 集成回归按实际影响运行。Task 3 起增加真实平台负向测试；禁止把本轮 fixture 标成主机安装资格。
 
 ## Task 1–2 验证记录
 
@@ -216,9 +320,15 @@ python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_d
 
 全仓 `npm run check` 仍在既有 lint 上失败：182 个错误、977 个警告；本次改动代码的定向 Biome 检查无错误或警告。后续处理记录在 [SOURCE: docs/backlog/BL-20260907-001-修-复-全-仓-既-有-lint-问.md]。这些结果是本地源码和测试证据，不是主机资格或上线验收。
 
+
+## 本次设计交付记录（2026-09-09）
+
+Owner 已批准 ADR 0025 的方案和文档重设计范围。此次交付更新 ADR 替代关系、架构当前/目标边界、Spec 的事实与资源合同、R1–R12 及 EX-01–EX-18 映射；产品代码、依赖、数据库和主机资格均未因设计修改。本次文档 strict 校验为 0 错误、0 警告；需求覆盖、产品不变量、依赖边界、秘密扫描和 CI 政策检查通过。另核对三份历史 ADR 正文逐字不变、18 项验收在 Spec/Plan 一一对应、12 个实施任务均未勾选完成。本次未运行产品功能测试、真实沙箱/模型或外部服务验收；新合同和验收任务保持未完成。
+
 ## 关闭检查
 
-- [ ] 全部 Task 的验收证据齐全，首批必需能力没有遗漏。
-- [ ] 产品行为、架构图、资格和 Runbook 与实际运行一致。
-- [ ] 遗留工作记录到对应 Backlog，未完成必需能力不以关闭计划隐藏。
-- [ ] 整批交付完成后按治理流程归档本 Plan。
+- [ ] R1–R12 及全部 EX 编号有对应真实证据，必需能力未遗漏。
+- [ ] 资源监管与清理义务有明确结论，未知未被默认成功或自动重放。
+- [ ] 安装行为、架构当前事实、UI 和 Runbook 与实际一致。
+- [ ] 未完成必要能力不以归档/Backlog 隐藏；其他后续事项按治理记录。
+- [ ] 整批实际交付完成后才归档本 Plan；本次设计完成不关闭实施计划。

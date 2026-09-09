@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
-supersedes: "docs/adr/0021-platform-capability-runtime-isolation.md, docs/adr/0022-mac-tiered-command-sandbox.md"
-superseded_by: ""
+decision_status: superseded
+supersedes: ""
+superseded_by: "docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md"
 date: "2026-09-07"
 ---
 

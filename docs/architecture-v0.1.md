@@ -8,17 +8,59 @@ date: "2026-08-25"
 ---
 # Himawari Agent Architecture v0.1
 
-## 已采纳、待实施的执行架构变更
+## 执行架构：当前实现与已采纳设计
 
-2026-09-07，Owner 确认采用 SRT 统一宿主执行，首批包含文件和编码工具、受限 Shell、MCP、授权联网、Web Search 与 GitHub 已有 commit 推送，并默认直接操作已授权原项目。目标设计见 [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]，已采纳决定见 [SOURCE: docs/adr/0024-srt-unified-execution.md]。ADR 0024 替代原 Mac helper/container 分层决定，保留 Pi 工具与 Agent loop，以及 Himawari 的权限和持久状态；尚未完成正式 SRT 执行接线或取得平台资格。下文及既有图表继续描述现有系统，不代表新目标已经落地。
+### 当前实现基线（2026-09-09）
 
-Git 写能力的目标入口沿用 Pi `bash` 与现有 Operations，经通用授权/持久执行进入 Worker 的受控 Git 适配，再由标准 Git 客户端推送。专用 push 是内部产品动作，不默认新增模型工具；凭据端口不绑定 GitHub App。已通过本地 Git HTTP 兼容性实验，尚未实现正式 SRT/Worker 推送、真实凭据与 GitHub 验收。实验范围及限制见上述 SRT Spec 的“Pi/Git 本地兼容性证据与边界”；ADR 0024 的仓库、分支、OID 及专用凭据边界继续有效。
+Pi `0.84.2` 管理模型与工具循环，模型侧工具执行委托现有 `RuntimeToolPort` 和 Worker。产品权威保存在调用回执、Grant/Handle、Run checkpoint、受保护 Payload 和 SQLite 作业观察中；没有独立的第二套工具身份或权限数据库。
 
-统一执行基础已有 `sandbox-execution.v1` 产品合同、Capability 回执到执行计划的校验投影，以及 Pi 每次调用独立创建 Operations 的绑定入口。SRT SDK 0.0.75 已固定在独立 `runtime-sandbox` 包并纳入 Node 打包，候选策略编译与固定假数据的 Mac 文件/网络拒绝探针已加入；SQLite schema 27 已增加受 invocation 约束的作业观察账本与启动序号 CAS，尚无正式 Job Host 启动器，现有 Worker 执行路径仍待迁移。实施与验收安排见 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md]。
+SRT `0.0.75` 已集中在 `packages/runtime-sandbox`。独立 Job Host、原子准入/启动 CAS、scope 解析、主机与运行产物复核、认证 Payload UDS、正式 Worker 组合以及启动恢复核查均有实现。root scope 目前只连接文件 inspect/read 工作流；通用 coding runner、后台任务和持续 MCP 的新生命周期尚未实现。
+
+现有 `sandbox-execution.v1` 把正常完成与清理/副作用确认绑定；正式 Job Host 适配对已启动任务仍报告 cleanup/effect unknown。因此受控 Mac 组合能保存输出并隔离未知作业，不能据此声称正式文件总结成功、环境已清理或全部工具可用。当前 `reconcile` 主要保留隔离且禁止重放，不是已有可解除隔离的完整核查器。已跑历史验证及具体限制归配套 Plan，不把合成资格当作安装主机资格。
+
+### 已采纳、待实施的职责划分
+
+2026-09-09 Owner 已批准 [SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]，替代 ADR 0024 的统一作业表达。保留 SRT 本地主机路线、原目录默认模式以及原首批能力；分离工具结果、受管理任务/服务与执行环境的生命周期。目标合同及验收见 [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]，执行次序见 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md]。下图是目标设计，不是已实现状态。
+
+```mermaid
+flowchart TB
+    PI[Pi AgentSession 与工具定义] --> A[现有动作授权与调用接纳]
+    A <--> DB[(调用回执 / Grant / Run / 保护结果)]
+    A --> W[按 hostId 派发到可信 Worker]
+    W <--> J[(作业观察 / 任务关联 / 核查证据)]
+    W --> H[权限固定的 Job Host]
+    H --> S[SRT 隔离环境]
+    S --> F[一次性 Pi 工具 runner]
+    S --> T[受管理后台任务或 MCP 服务]
+    F --> R[有界结果与操作后置条件]
+    T --> R
+    R --> DB
+    DB --> D[披露检查与原工具结果回传]
+    D --> PI
+    A --> X[狭窄外部服务适配]
+    X --> R
+    H --> O[监管 / 停止 / 清理观察]
+    O --> J
+    J --> G[继续执行 / 环境复用 / Run 完成判断]
+```
+
+| 责任 | 所有者与边界 |
+|---|---|
+| 工具定义与行为 | Pi 工厂、Agent loop、参数/结果语义；Himawari 通过 `runtime-pi` 薄适配复用 |
+| 执行权威 | 既有 Agent Service/Capability/SQLite；固定身份、输入、Grant 和期限，准入及启动复核 |
+| 实际工具 I/O | Worker 管理的受限 runner；Pi 路径探测、搜索器和临时输出也必须在边界内，Operations 不是唯一隔离层 |
+| 持续资源 | Worker 监督的任务/服务，以创建 invocation 和冻结 scope 为根；每个后续调用仍独立授权 |
+| 平台隔离 | SRT 后端与主机资格；一次性环境独占，持续环境只在同 Run/同授权范围内使用，不跨 Grant 累积权限 |
+| 输出和副作用 | 已有保护结果库及操作适配的核查证据；命令退出不等于远端业务效果确认 |
+| 清理与恢复 | 原作业账本扩展；监管丢失阻止依赖动作，未知不重放；逻辑隔离不宣称已终止 OS 进程 |
+
+工具结果落库、模型披露、后续动作准入、环境复用和 Run 完成分别判断。受管理任务可以在调用返回句柄后运行；首批以原 Run 和授权期限为上限，Run 结束要停止其资源，不默认跨 Run 续命。失联后的输出可作为带限制的事实展示，不能触发未经核实的后续副作用或伪造整体成功。详细判定只由 Spec 定义，避免架构文档维护另一套状态机。
+
+SRT 继续用于本机授权目录；Gondolin/容器/远端沙箱是有独立资格的可选后端方向，当前未启用且不构成自动 fallback。Git push 继续使用 Pi Bash 意图、产品内部专用动作和标准 Git，冻结仓库/ref/OID，凭据只由专用传输使用；本地兼容实验不等于真实 GitHub 验收。
 
 ## 架构总览图
 
-下图记录 2026-09-07 的主要组件和接入状态，箭头表示主要调用方向，省略响应回传和部分共享依赖。绿色主线表示消息执行路径；紫色虚线表示尚未接通的路径；红色表示已授权执行通道。
+下图是保留的 2026-09-07 组件快照，不描述上述新生命周期或最新 SRT 接线；当前执行边界以上文和配套 Spec 为准。图中记录当时的主要组件和接入状态，箭头表示主要调用方向，省略响应回传和部分共享依赖。绿色主线表示消息执行路径；紫色虚线表示尚未接通的路径；红色表示已授权执行通道。
 
 ![Himawari Agent 项目架构总览](assets/architecture/system-overview.png)
 
@@ -481,3 +523,4 @@ Pi 0.84.2 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适
 - Product state over Pi runtime projection：[SOURCE: docs/adr/0015-product-state-over-pi-runtime-projection.md]
 - TypeScript and Node.js runtime：[SOURCE: docs/adr/0016-typescript-node-runtime.md]
 - Workspace monorepo：[SOURCE: docs/adr/0017-workspace-monorepo.md]
+- Pi 工具与受管理执行生命周期：[SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]
