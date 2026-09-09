@@ -34,3 +34,4 @@ export {
   type PiRuntimeResourcePort,
 } from "./pi-runtime-adapter.js";
 export { executeGovernedPiRead } from "./governed-read-executor.js";
+export { executeSandboxedPiCodingTool } from "./sandboxed-coding-executor.js";

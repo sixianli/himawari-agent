@@ -199,7 +199,7 @@ sequenceDiagram
 | read | 复用文本/图片展示与 offset/limit；现有两阶段文件服务先检查主机、目标身份、类型、大小与披露；未接入图片的生产 profile 明确拒绝，不伪装支持 |
 | edit/write | 复用 Pi 编辑和写入语义；产品端口负责版本冲突、受控替换及原目录授权；Pi 进程内 mutation queue 不能代替跨进程/用户并发检查 |
 | bash | 原前台 schema、输出截断和秒单位 timeout；产品转换单位并过滤环境，命令执行在受限 runner。不能继承完整宿主 env |
-| find/ls | 在受限 runner 注入对应 Operations；find 的 glob 可替换，缺省 fd 路径也必须绑定已安装工具及 scope |
+| find/ls | 在受限 runner 复用对应工具及 Operations；本地 runner 沿用 Pi 的 ls 和 fd 实现，find 的 glob 可替换，缺省 fd 路径也必须绑定已安装工具及 scope |
 | grep | 复用原搜索实现并在受限 runner 运行真实 rg；不在 Agent 侧靠 GrepOperations 实现远端搜索。若未来后端不能执行原工具，先评估上游可兼容注入点，不复制搜索协议 |
 | 后台执行 | 通过 Pi ToolDefinition 扩展注册产品管理动作，复用 Worker 命令启动和输出机制；不改变前台 Bash 的 exitCode 合同，不另写 Agent loop |
 | Web | 复用当前 Web 端口，通过 Pi 注册薄适配；外部内容不是可信授权；MCP 工具注册不在本次范围 |
@@ -405,6 +405,16 @@ Worker 将正文、来源、实际读取范围、截断状态、内容摘要和�
 
 审计串联 `Run → toolCall → approval → Handle → invocation → attempt → job → policy/qualification → result`。公开诊断只显示安全错误码、范围摘要和计数；敏感路径、命令与正文按权限保护，秘密不能进入日志、截图或测试报告。真实模型用量沿原账本累计，重放历史工具消息不记作新外部请求。
 
+#### R5 实现说明（2026-09-09）
+
+安装 runner `pi-coding-main.js` 执行真实 Pi 七工具，Worker 对 `pi-coding-tool/1` 合同限定工具名及 fixed_read/command/verified_effect 类型，并以原认证 Payload 通道交付可信 scope 和冻结参数。只读宿主文件继续使用原 host-file.v1 双阶段入口；项目读取端口当前只接收文本，图片/二进制明确拒绝，不声称生产图片 profile 可用。
+
+预装工具位于 runtimeRoot 下的 `pi-tools/bin`，参与整体 runtimeDigest；runner 在导入 Pi 前固定 PI_OFFLINE、PI_CODING_AGENT_DIR 和 PATH，不从用户 HOME 或系统 PATH 寻找替代搜索器。Bash 关闭 Pi Session 环境导出，仅接收产品环境。完整 Pi 算法、路径探测、fd/rg 和临时输出均在 SRT 内。
+
+写入前固定已有文件身份与内容，复用约束文件平台的独占创建/安全替换和写后读取验证；不因 Pi mutation queue 省略外部修改核对。重要覆盖/删除继续由上游 Grant、HITL 与范围准入决定，只有部分文件写权限的 Shell 请求在执行前拒绝。runner 内的校验不签发或消费 Grant。
+
+pi-result.v1 保存内容、Pi details、原调用和目录来源、实际 Shell 退出码及 isError。长输出导出前检查私有目录、文件所有者、普通文件类型、链接数、尺寸和读取期间变化，正文检查机器秘密；完整字节及摘要放入同一受保护结果，不返回可再次访问的宿主 fullOutputPath。它是工具结果，不是可信副作用或资源释放证明；写入效果仍须经过已注册 verifier，Mac 清理未知不因工具测试成功而变成已释放。
+
 #### R3 实现说明（2026-09-09）
 
 通用 scope 沿已有审批快照的目录、主机、确切域名和模型披露对象取得范围；版本/模式、目录授权和父调用仍逐次复核。资源 output 请求只返回已有输出快照的受保护分页引用，不在该请求中重新执行命令。cursor 绑定原调用、资源、语义及输出摘要，并以既有 Run trace 持久保存；未签发或跨绑定 cursor 拒绝。页的 truncated 表示分页传输截断，原工具输出的来源与截断信息仍须随受保护正文保留。空快照与无输出可观察地区分；后台运行中的输出采集仍由 R6 实现。
@@ -434,7 +444,7 @@ Linux 依赖固定 SRT 的 PID namespace：用户代码启动前，私有握手�
 
 #### 10.1 实现现状与目标差距
 
-当前已有 v1 合同、每调用 Pi Operations、SQLite 原子准入/启动、真实目录/网络 scope 与主机复核、Payload broker、Worker/Job Host 组合及受控 Mac 探针。当前 root scope 仅 inspect/read；Job Host 对启动任务始终 taskTreeCleanup unknown，产品适配 effect 同为 unknown；v1 完成门禁因此无法提供普通真实成功回执。现有核查保留隔离且不重放，没有完整风险消除和解除隔离能力。这些事实决定迁移内容，不要求重建已持久保存的身份/授权/结果。历史测试证据归 Plan。
+重设计时已有 v1 合同、每调用 Pi Operations、SQLite 原子准入/启动、真实目录/网络 scope 与主机复核、Payload broker、Worker/Job Host 组合及受控 Mac 探针。该初始快照的 root scope 仅 inspect/read；Job Host 对启动任务始终 taskTreeCleanup unknown，产品适配 effect 同为 unknown；v1 完成门禁因此无法提供普通真实成功回执。现有核查保留隔离且不重放，没有完整风险消除和解除隔离能力。这些事实决定迁移内容，不要求重建已持久保存的身份/授权/结果。历史测试证据归 Plan。
 
 实施依次完成：v2 事实与门禁合同 → 现有账本追加迁移/核查 → 生产准入与 runner → 前台通用工具 → 后台资源 → 联网/Web 的真实验收 → 安装与产品 UI。各阶段的文件级动作和验证在 Plan；前置小场景通过不替代整批能力。
 

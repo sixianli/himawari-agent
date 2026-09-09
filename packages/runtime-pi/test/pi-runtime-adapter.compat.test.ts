@@ -8,8 +8,8 @@ import {
   type AssistantMessage,
   type AssistantMessageEventStream,
   createAssistantMessageEventStream,
-  validateToolArguments,
   type Model,
+  validateToolArguments,
 } from "@earendil-works/pi-ai";
 import { createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import type {
@@ -1122,6 +1122,50 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       occurredAt: NOW,
     });
   });
+
+  it.each(["read", "write", "edit", "bash", "find", "grep", "ls"] as const)(
+    "uses only the Pi %s definition in the Agent and dispatches through the product port",
+    async (name) => {
+      const tools = new RecordingRuntimeTools();
+      vi.spyOn(tools, "listAuthorized").mockResolvedValue([
+        {
+          definition: "builtin-coding",
+          name,
+          capabilityRef: `project.${name}`,
+          capabilityHandleRef: null,
+        },
+      ]);
+      const adapter = createAdapter(
+        new RecordingProjection(),
+        tools,
+        fakeSessionFactory(async (emit, options) => {
+          expect(options.noTools).toBe("all");
+          expect(options.tools).toEqual([name]);
+          const tool = options.customTools?.[0];
+          if (!tool) throw new Error("missing tool");
+          emit({ type: "agent_start" });
+          const read = vi.spyOn(fsPromises, "readFile");
+          const write = vi.spyOn(fsPromises, "writeFile");
+          syncBuiltinESMExports();
+          try {
+            await tool.execute("project-call", { synthetic: "frozen-input" });
+            expect(read).not.toHaveBeenCalled();
+            expect(write).not.toHaveBeenCalled();
+          } finally {
+            read.mockRestore();
+            write.mockRestore();
+            syncBuiltinESMExports();
+          }
+          emit({ type: "agent_end", messages: [] });
+          emit({ type: "agent_settled" });
+        }),
+      );
+      await collect(adapter.run({ ...request, capabilityHandleRefs: [] }));
+      expect(tools.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ toolCallId: "project-call", capabilityRef: `project.${name}` }),
+      );
+    },
+  );
 
   it.each([false, true])(
     "reuses Pi read definition and routes through product policy (allowed=%s)",

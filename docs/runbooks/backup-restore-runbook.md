@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:b3bc6d67e7620679bcc069d0b235ea66e6e17b99098e6ed9a9d5ffa240045c8c"
+contract_sha256: "sha256:e978ccdfabe89f82a725a0d510f23609c054f665095cfeebb3fcfe121ee6de63"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -51,7 +51,7 @@ schema 28 在原数据库追加 v2 资源关联、独立操作/资源观察、�
 
 当前 schema 29 追加执行准备阶段，保持 schema 28 的历史记录为 `legacy_bound`。新 `reserved` 记录没有实际运行摘要，`bound` 记录保存首次启动固定的摘要和监督身份；两者均须与原调用回执、目录占用及观察历史一同保留。恢复或迁移不能为未绑定记录补造启动资格，也不能把已绑定作业重新派发；源主机上的 PID、IPC session 和 boot 仅供核查，不成为目标的停止或执行句柄。
 
-这些 SQLite 机制已有独立测试数据库的升级、重开和事务验证；本次未升级运行中的 state root，也未执行真实安装、恢复或跨主机迁移。正式组合已具备显式 v2 foreground 路径、真实目录身份解析和限定风险核查；完整工具派发与安装资格仍待验收。恢复后继续适用当前主机/目录/权威检查，不能自动重放旧任务或未确认派发。
+这些 SQLite 机制已有独立测试数据库的升级、重开和事务验证；本次未升级运行中的 state root，也未执行真实安装、恢复或跨主机迁移。正式组合已具备显式 v2 foreground 路径、真实目录身份解析和限定风险核查；Pi 七工具前台 runner 已有假数据验收，目标安装资格仍须独立验证。恢复或迁移后的 Pi 工具链须与原 runtimeDigest 匹配，不能以同名系统工具替代缺失的 bash/rg/fd，也不能下载补齐后沿用旧资格。恢复后继续适用当前主机/目录/权威检查，不能自动重放旧任务或未确认派发。
 
 SRT 变更已包含产品作业合同、计划投影、Pi 调用绑定、固定版本运行依赖及候选策略编译。Node 打包包含 `runtime-sandbox` 和 SRT 0.0.75，正式 Worker 已分别组合 v1 与显式 v2 foreground，未取得 SRT 主机安装资格。schema 27 已追加作业观察账本；升级必须遵循下述快照与迁移检查，不能在恢复后将无账本的旧凭证补建为可启动作业，也不能自动重放待核查作业。固定假数据策略探针通过不代表正式 Job Host、资源硬上限或崩溃恢复可用。本文的实际安装、备份与权威迁移流程不因目标架构获采纳而改变；不能把恢复的旧 Capability 记录当成新 SRT profile 的主机资格。
 

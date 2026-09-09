@@ -14,11 +14,11 @@ date: "2026-08-25"
 
 Pi `0.84.2` 管理模型与工具循环，模型侧工具执行委托现有 `RuntimeToolPort` 和 Worker。产品权威保存在调用回执、Grant/Handle、Run checkpoint、受保护 Payload 和 SQLite 作业观察中；没有独立的第二套工具身份或权限数据库。
 
-SRT `0.0.75` 已集中在 `packages/runtime-sandbox`。独立 Job Host、原子准入/启动 CAS、scope 解析、主机与运行产物复核、认证 Payload UDS、正式 Worker 组合以及启动恢复核查均有实现。scope 已支持文件 inspect/read 工作流及从现有 Grant targets 取得通用工具范围；Pi 七工具 runner 和后台执行仍待后续阶段，MCP 不在本次交付范围。
+SRT `0.0.75` 已集中在 `packages/runtime-sandbox`。独立 Job Host、原子准入/启动 CAS、scope 解析、主机与运行产物复核、认证 Payload UDS、正式 Worker 组合以及启动恢复核查均有实现。scope 已支持文件 inspect/read 工作流及从现有 Grant targets 取得通用工具范围；Pi 七工具前台 runner 已接入显式合同，后台执行仍待后续阶段，MCP 不在本次交付范围。
 
 现有 `sandbox-execution.v1` 把正常完成与清理/副作用确认绑定；正式 Job Host 适配对已启动任务仍报告 cleanup/effect unknown。因此受控 Mac 组合能保存输出并隔离未知作业，不能据此声称正式文件总结成功、环境已清理或全部工具可用。v2 `reconcile` 已通过原 Job Host 的认证控制端口和受保护终态证据核查；Mac 已启动任务仍保持清理未知，Linux 只有原 PID namespace 消失且退出证据完整时才允许释放。已跑历史验证及具体限制归配套 Plan，不把合成资格当作安装主机资格。
 
-R1 已新增 `sandbox-execution.v2` 严格合同、`SandboxExecutionPortV2` 类型端口以及共享的 `projectSandboxExecution` / `projectSandboxRunCompletion` 纯判断函数。结果、效果和资源观察独立表达；结果已知时可以保留展示，监管丢失仍禁止续接和环境复用。判断需要由可信 Payload/资格/效果读者核验的证据，并检查调用、策略、sequence 与时效。生产组合已接入显式声明的 v2 foreground 固定读取/命令路径及真实证据读者；后台/服务、完整 Pi 工具派发与 UI 消费仍需后续工作。v1 与 v2 按原合同分别处理，不隐式降级。
+R1 已新增 `sandbox-execution.v2` 严格合同、`SandboxExecutionPortV2` 类型端口以及共享的 `projectSandboxExecution` / `projectSandboxRunCompletion` 纯判断函数。结果、效果和资源观察独立表达；结果已知时可以保留展示，监管丢失仍禁止续接和环境复用。判断需要由可信 Payload/资格/效果读者核验的证据，并检查调用、策略、sequence 与时效。生产组合已接入显式声明的 v2 foreground 固定读取/命令路径及真实证据读者；后台/服务与 UI 消费仍需后续工作。v1 与 v2 按原合同分别处理，不隐式降级。
 
 R2 已在现有产品 SQLite 追加 migration 0028，通过 `SandboxExecutionJournalPort` 保存 v2 创建调用、环境及 task/service 资源关联。准入复用原 Handle/Grant 消费事务，首次启动 CAS 固定策略摘要；资源 sequence 与操作结果 revision 分开追加。目录占用使用可信主机提供的 device/inode 祖先链，写环境存活期间排斥相交操作，监管丢失后也阻止相交读取。该链不是授权来源，R3 已增加真实根目录及 device/inode 祖先解析，通用范围的正式准入组合与真实 UDS/SQLite 授权验收已完成。经 Owner 批准的 migration 0029 进一步区分未准备的 `reserved` 与固定运行绑定的 `bound`，既有记录保留 `legacy_bound`；预留和目录占用同事务保存，Worker 准备后由首次 `bindAndStart` CAS 固定真实策略/监督身份，不以占位值提前冻结。当前 Agent 与 Worker 已组合 v2 foreground：准备后登记原监督器，首次绑定 CAS 赢家才可启动；后台/服务模式明确拒绝。目标主机仍需独立资格，不能仅凭新增合同启用。 Agent 开放准入前会用当前权威失效 v2 旧监督观察，保留已知结果、效果及目录占用，不按旧 PID 接管。Job Host 与 Worker 使用双向、带序号和时限的私有 IPC 心跳，单端卡住也触发停止；这些机制仍不构成完整任务树清理证明。
 
@@ -31,6 +31,10 @@ R4 核查使用既有受保护 Run trace 保存控制引用与签名观察。控
 Agent Service 仅允许导入 `@himawari-agent/runtime-sandbox/control` 的 Node 控制客户端，它不加载 SRT、不编译策略、没有启动 API；依赖检查拒绝根入口和其他深层导入。SRT 初始化与实际工具执行仍属于 Worker/Job Host。
 
 R3 的通用范围、版本匹配和启动前复核已完成验收。资源输出分页读取账本绑定的受保护快照；页和游标沿用 Run artifact，游标绑定原调用/资源/输出摘要，数据库重开继续读回不会重新执行。尚无已知输出返回 null，真实空输出返回零字节页；流式后台输出生产仍归 R6。Pi 工具的完整实现继续复用 runtime-pi 内的上游定义和 Operations，R3 不新增模型侧工具协议。
+
+R5 使用安装树中的 `pi-coding-main.js` 执行 Pi 七种前台工具。Worker 只为 `pi-coding-tool` 版本 `1` 的匹配操作构造 `pi-runner.v1` 输入；目录、主机、调用和期限来自既有 scope，模型参数仍是原冻结 Payload。`host-file-read-main.js` 保留文件元数据/正文双阶段。Pi 定义只在 runtime-pi 内提取，模型侧执行仍经过产品端口；新增 runner 不自动注册未授权工具。目标安装目录中的 `pi-tools/bin/{bash,rg,fd}` 是普通可执行文件，纳入原 runtimeDigest，禁止软链接、PATH 回退和 Pi 自动下载。
+
+编辑与写入复用 ConstrainedHostFileSystem 的独占创建、原内容核对、备份和安全替换；Shell 的部分写权限不能推断出删除等任意副作用权限。工具结果、来源、截断与完整输出保存到同一受保护结果中，输出文件须在本作业私有目录、属当前进程用户且为无链接普通文件，模型不会取得原 fullOutputPath。Shell 无退出码视为失败；非零退出及输出保留。Mac 任务树清理未知及正式主机资格限制继续生效。
 
 ### 已采纳、待实施的职责划分
 

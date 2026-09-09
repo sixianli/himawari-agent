@@ -12,6 +12,9 @@ import {
   type ExecutionV2Request,
   executionV2MessageSchema,
   type PayloadBrokerSandboxExecutionResult,
+  PI_RUNNER_CONTRACT,
+  piCodingToolNameSchema,
+  piRunnerInputSchema,
   type SandboxExecutionBrokerCommand,
   type SandboxExecutionPlanV2,
   sandboxExecutionFactsSchema,
@@ -138,7 +141,9 @@ export class ProductionSandboxExecutionV2 {
       plan.environmentId !== request.payload.sandboxExecution?.environmentId ||
       plan.mode !== request.payload.sandboxExecution?.mode ||
       plan.mode !== "foreground" ||
-      !["fixed_read", "command"].includes(plan.operationContract.kind) ||
+      !["fixed_read", "command", "verified_effect"].includes(plan.operationContract.kind) ||
+      (plan.operationContract.kind === "verified_effect" &&
+        plan.operationContract.ref !== PI_RUNNER_CONTRACT.ref) ||
       plan.executionLease.deploymentId !== request.scope.deploymentId ||
       plan.executionLease.authorityEpoch !== request.scope.authorityEpoch ||
       plan.executionLease.fencingToken !== request.scope.fencingToken ||
@@ -159,6 +164,21 @@ export class ProductionSandboxExecutionV2 {
       if (initial.phase !== "reserved") return this.unknown(entry);
       if (entry.cancelled || this.closed) return this.unknown(entry);
       const plan = initial.plan;
+      const piRunner = plan.operationContract.ref === PI_RUNNER_CONTRACT.ref;
+      if (piRunner) {
+        const tool = piCodingToolNameSchema.parse(plan.operation);
+        const kind =
+          tool === "bash"
+            ? "command"
+            : ["write", "edit"].includes(tool)
+              ? "verified_effect"
+              : "fixed_read";
+        if (
+          plan.operationContract.version !== PI_RUNNER_CONTRACT.version ||
+          plan.operationContract.kind !== kind
+        )
+          throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");
+      }
       const binding = await this.hostBinding(plan);
       const resolved = (await this.rpc(entry, { kind: "resolve" })).resolvedScope;
       if (
@@ -179,7 +199,17 @@ export class ProductionSandboxExecutionV2 {
           (operation) => operation !== "read",
         ),
         readOnlyToolchainPaths: [binding.runtimeRoot, ...binding.readOnlyToolchainPaths],
-        protectedPaths: binding.protectedPaths,
+        protectedPaths: piRunner
+          ? [
+              ...binding.protectedPaths,
+              ...[
+                ".env",
+                ".git",
+                ".himawari-trash",
+                ...(["write", "edit"].includes(plan.operation) ? [] : [".himawari-recovery"]),
+              ].map((name) => path.join(root.canonicalPath, name)),
+            ]
+          : binding.protectedPaths,
         allowedDomains: resolved.allowedDomains,
       });
       const controlDirectory = path.join(
@@ -190,6 +220,29 @@ export class ProductionSandboxExecutionV2 {
       await mkdir(controlDirectory, { mode: 0o700 });
       const input = await this.options.payloads.readInput(entry.invocation);
       if (input.byteLength > 49152) throw new Error("SANDBOX_INPUT_TOO_LARGE");
+      if (
+        piRunner &&
+        (plan.operationContract.version !== PI_RUNNER_CONTRACT.version ||
+          resolved.scope.profileRef !== "authorized-project.v1")
+      )
+        throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");
+      const runnerInput = piRunner
+        ? Buffer.from(
+            JSON.stringify(
+              piRunnerInputSchema.parse({
+                schemaVersion: "pi-runner.v1",
+                workerInstanceId: this.options.peer.workerInstanceId,
+                tool: piCodingToolNameSchema.parse(plan.operation),
+                scope: resolved.scope,
+                workspace: root.canonicalPath,
+                runtimeRoot: binding.runtimeRoot,
+                privateDirectory: policy.privateDirectory,
+                maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
+                parametersJson: new TextDecoder("utf-8", { fatal: true }).decode(input),
+              }),
+            ),
+          )
+        : input;
       const host = prepareSandboxJobHost(
         {
           jobId: plan.identity.jobId,
@@ -198,7 +251,7 @@ export class ProductionSandboxExecutionV2 {
           policyDigest: compiled.policyDigest,
           executable: binding.executable.path,
           args: [binding.runner.path, binding.hostId, this.options.peer.workerInstanceId],
-          stdinBase64: Buffer.from(input).toString("base64"),
+          stdinBase64: Buffer.from(runnerInput).toString("base64"),
           deadlineAt: plan.effectiveDeadlineAt,
           maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
           resourceLimits: {
@@ -350,7 +403,7 @@ export class ProductionSandboxExecutionV2 {
                 kind: "error",
                 output,
                 reasonCode: "SANDBOX_OPERATION_FAILED",
-                termination: { type: "exit", exitCode: result.exitCode },
+                termination: { type: "failure" },
               },
         resource: {
           ...resourceFields,

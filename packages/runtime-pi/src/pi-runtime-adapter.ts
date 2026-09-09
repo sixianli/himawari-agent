@@ -32,9 +32,9 @@ import type {
   ModelInvocationPermit,
   ModelInvocationPricing,
   ModelInvocationUsage,
-  RuntimeEvent,
-  RuntimeContinuationPort,
   RuntimeApprovalWait,
+  RuntimeContinuationPort,
+  RuntimeEvent,
   RuntimeProjection,
   RuntimeProjectionContent,
   RuntimeProjectionMessage,
@@ -45,15 +45,13 @@ import type {
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
 import { redactMachineSecrets } from "@himawari-agent/application/runtime-port";
-
-import {
-  capturePiToolBatch,
-  restorePiToolBatch,
-  type PiToolBatchContinuation,
-} from "./pi-tool-batch-continuation.js";
-
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
+import {
+  capturePiToolBatch,
+  type PiToolBatchContinuation,
+  restorePiToolBatch,
+} from "./pi-tool-batch-continuation.js";
 
 type RuntimeTurnId = Extract<RuntimeEvent, { readonly type: "runtime.turn_completed" }>["turnId"];
 type PiStreamFunction = (
@@ -1072,24 +1070,32 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       | "promptGuidelines"
       | "constrainedSampling"
     >;
-    if (descriptor.definition === "builtin-read") {
+    if (descriptor.definition === "builtin-read" || descriptor.definition === "builtin-coding") {
       const [builtin] = createGovernedPiCodingTools({
         cwd: this.#dependencies.cwd,
-        enabled: ["read"],
-        operations: createPiOperationsFromGovernedHostPort({
-          access: unavailable,
-          readFile: unavailable,
-          writeFile: unavailable,
-          makeDirectory: unavailable,
-          executeCommand: unavailable,
-        }),
+        enabled: [descriptor.name],
+        operations: {
+          ...createPiOperationsFromGovernedHostPort({
+            access: unavailable,
+            readFile: unavailable,
+            writeFile: unavailable,
+            makeDirectory: unavailable,
+            executeCommand: unavailable,
+          }),
+          find: { exists: unavailable, glob: unavailable },
+          grep: { isDirectory: unavailable, readFile: unavailable },
+          ls: { exists: unavailable, stat: unavailable, readdir: unavailable },
+        },
       });
       if (!builtin) throw new Error("PI_READ_DEFINITION_MISSING");
       // TUI renderers expect Pi-specific result details; the product UI owns rendering.
       definition = {
         name: builtin.name,
         label: builtin.label,
-        description: `${builtin.description}\nHimawari 当前仅接入文本读取请求；目标主机和文件访问上限由产品策略绑定。读取及向当前模型披露分别经产品授权；目录、授权或执行条件不满足时明确返回未完成原因。`,
+        description:
+          descriptor.definition === "builtin-read"
+            ? `${builtin.description}\nHimawari 当前仅接入文本读取请求；目标主机和文件访问上限由产品策略绑定。读取及向当前模型披露分别经产品授权；目录、授权或执行条件不满足时明确返回未完成原因。`
+            : `${builtin.description}\n目标主机、目录、执行权限和输出披露由 Himawari 授权绑定；通过受限 Worker 执行。`,
         parameters: builtin.parameters,
         ...(builtin.promptSnippet === undefined ? {} : { promptSnippet: builtin.promptSnippet }),
         ...(builtin.promptGuidelines === undefined

@@ -211,14 +211,40 @@ R4 所需的 R3 前台基础已接通：显式 v2 foreground 固定读取/命令
 
 依赖 R4；依据 Spec §2、§5、§8，验证 EX-01、EX-04–EX-06。
 
-- [ ] 复用已安装 runner 入口体系，执行真实 Pi read/write/edit/bash/find/grep/ls；Agent 只取定义，产品其他包不得直接导入 Pi。
-- [ ] 文件 inspect/read 保留元数据与正文双阶段、HostFileReadService 身份/大小/类型检查和模型披露；验证真实空文件与失败差异。
-- [ ] 覆盖 Pi Operations 外 I/O：read 路径探测、rg/fd、图片处理、长输出日志；全部在私有受限环境，必要二进制预装且摘要固定，不能自动联网下载。
-- [ ] 在受保护输出中保存结果及截断/来源，导出检查所有权和实际文件类型；不向 Agent 回传可被任意解释为宿主路径的 fullOutputPath。
-- [ ] 写入使用现有冲突检查/安全替换，原目录保留用户修改，删除/重要覆盖沿 HITL；一次复合工具不按每次 I/O 重复消费授权。
-- [ ] 盘点 program、Git/archive/tar、候选导入导出、扩展加载的实际调用方，按受限执行/狭窄可信动作/禁用登记；移除已无调用方旧执行路径，不扩大为无关重构。
+- [x] 复用已安装 runner 入口体系，执行真实 Pi read/write/edit/bash/find/grep/ls；Agent 只取定义，产品其他包不得直接导入 Pi。
+- [x] 文件 inspect/read 保留元数据与正文双阶段、HostFileReadService 身份/大小/类型检查和模型披露；验证真实空文件与失败差异。
+- [x] 覆盖 Pi Operations 外 I/O：read 路径探测、rg/fd、图片处理、长输出日志；全部在私有受限环境，必要二进制预装且摘要固定，不能自动联网下载。
+- [x] 在受保护输出中保存结果及截断/来源，导出检查所有权和实际文件类型；不向 Agent 回传可被任意解释为宿主路径的 fullOutputPath。
+- [x] 写入使用现有冲突检查/安全替换，原目录保留用户修改，删除/重要覆盖沿 HITL；一次复合工具不按每次 I/O 重复消费授权。
+- [x] 盘点 program、Git/archive/tar、候选导入导出、扩展加载的实际调用方，按受限执行/狭窄可信动作/禁用登记；移除已无调用方旧执行路径，不扩大为无关重构。
 
 完成条件：真实 Pi 兼容及受限 runner 测试证明七工具功能和无旁路；测试既验证正常结果，也验证恶意路径、输出产物替换、秘密/控制目录及缺失搜索器失败拒绝。
+
+R5 实现与验收记录（2026-09-09）：
+
+- 安装入口 `apps/agent-service/src/capability-programs/pi-coding-main.ts` 由 Worker 在 SRT 中启动；`pi-runner.v1` 包装来自原 scope 和冻结输入，不新增身份或授权库。只有 `pi-coding-tool/1` 匹配工具及合同才能走该入口。Pi 导入仍限 runtime-pi，Agent 的七种内置定义只转交 RuntimeToolPort。
+- 宿主文本读取继续使用原 host-file.v1 双阶段工作流；项目文件端口保留根/目标身份、无链接访问、读大小/文本限制，以及独占创建、旧内容冲突检查、备份和安全替换。空文件替换原本因 maximumBytes=0 失败，现以至少 1 字节的上限检查真实空内容。图片/二进制当前明确拒绝。
+- Pi 0.84.2 的 edit 使用 edits 数组，Bash 关闭 exposeSessionEnvironment；不能把独立 runner 当成模型 Session。实际搜索器位于安装树 pi-tools/bin 并纳入 runtimeDigest；PI_OFFLINE=1，无系统 PATH 回退。测试发现直接复制 macOS 平台 Bash 会被系统终止，假数据验收使用重新签名的测试副本，未改动系统 Bash；正式安装仍须验证目标工具链。
+- Shell 保留 stdout/stderr、真实非零退出与 Pi 截断信息，信号退出不能按 null 当作成功。长输出文件校验所有者、类型、链接数、尺寸与读取期间变化后，连同字节摘要和来源保存到同一受保护结果。原 fullOutputPath 不越过 runner；结果不作为可信副作用/任务树清理证据。
+
+实际执行调用方登记：
+
+| 调用方 | 分类与当前边界 |
+|---|---|
+| pi-coding-main → runtime-pi 工具/Operations、fd/rg、Shell 与输出累积器 | 受限执行；完整算法与 Operations 外 I/O 在 SRT 内，原 Grant/目录占用和启动复核继续生效 |
+| host-file-read-main → HostFileReadService | 固定类型化受限执行；仍承载 inspect/read，不能删除或替换为任意 Shell |
+| Production Worker 的 NodeCapabilityRuntime/program 与隔离启动器 | 已有按资格启动的 v1 路径仍有正式调用方；v2 不回退到它，不能以 R5 为由直接删除 |
+| QualifiedCandidateWorkspace 的 git archive/apply、tar 导入导出；GitWorkspaceAdapter | 当前只有适配器/测试调用，正式 Agent/Worker 组合未实例化；保持不注册。不得把其宿主进程调用宣称为已完成 SRT 接入，未来启用必须迁入受限执行 |
+| Pi DefaultResourceLoader 扩展/项目资源 | 正式组合不提供外部 resource port，默认空路径及 noExtensions/noContextFiles 等；仅产品固定 extensionFactory 为狭窄可信扩展，不加载用户仓库可执行扩展 |
+| 目录 Grant、受保护 Payload、SQLite、主机产物摘要及控制通道 | 狭窄可信动作；不执行模型代码、不从子进程输出取得 authority |
+
+未发现可安全移除且已无调用方的旧生产入口；保留仍使用的 v1、文件双阶段和端口测试，未进行无关清理。MCP 与 GitHub 推送仍不在本次范围。
+
+最终验证：15 个测试文件、222 项测试通过，覆盖 Pi 兼容/模型侧定义、文件双阶段、约束文件平台、runner 合同、scope 及 Worker 生命周期。`npm run check`、`npm run build:node`、`git diff --check` 与严格文档治理检查通过；三个活动 Runbook 已按实际变更核对并更新静态合同。
+
+真实 Mac 安装 runner 探针 `packages/runtime-pi/scripts/probe-foreground.mjs` 的 21 项场景通过：七工具正常执行、真实空文件与缺失文件差异、长输出导出、退出码 7、超时、直接路径/符号链接/秘密读取拒绝、Shell 越界与只读写入拒绝，以及缺少 fd/rg 拒绝。测试使用 Node v22.22.3、Pi 0.84.2、SRT 0.0.75 和专用假数据；探针输出包含实际工具 SHA-256，不从外部下载依赖。调用者须显式提供已准备的 `HIMAWARI_PROBE_BASH`、`HIMAWARI_PROBE_RG`、`HIMAWARI_PROBE_FD`，并设置 `HIMAWARI_LIVE_SANDBOX_PROBE=1`。
+
+R5 完成上述前台 runner 范围。本阶段没有签发安装资格或跑 R5 的 Linux 实机矩阵；Mac 已启动任务仍报告 taskTreeCleanup=unknown，写入结果不跳过效果 verifier。后台执行归 R6，目标部署资格及产品级验收仍按后续阶段推进。
 
 ### R6：受管理后台任务
 

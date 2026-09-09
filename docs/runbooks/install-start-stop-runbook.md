@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:88ce256c8cca85f196b44146f6c0ee4ccb511251ffd72023bc4eb7c28beabaef"
+contract_sha256: "sha256:3be21770b8bcd85de9e8dd34eb7742bf4f0d3f170fca005c6bc60c91deef063e"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,11 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/capability-programs/pi-coding-main.ts
+- packages/runtime-pi/src/sandboxed-coding-executor.ts
+- packages/platform-node/src/files/sandboxed-coding-operations.ts
+- packages/platform-node/src/files/pi-output-export.ts
+- packages/execution-contracts/src/pi-runner-v1.ts
 - apps/agent-service/src/production-sandbox-output.ts
 - apps/agent-service/src/production-sandbox-control.ts
 - packages/application/src/services/sandbox-execution-reconciliation.ts
@@ -103,7 +108,7 @@ date: "2026-08-27"
 
 schema 28 在原数据库追加 v2 资源关联、独立操作/资源观察、目录占用和派发回执。升级既有库仍须先取得已验证快照；0020/0027 不改写。恢复/迁移时必须保留占用和未确认派发；旧未结束作业缺少可信目录链时按主机保守阻止新准入，缺少主机身份时阻止所有主机的新准入。禁止通过删除 Run、清空占用或把旧记录改成 v2 来恢复执行。已确认清理的旧历史结果保持原解释，不由迁移补写新资格。
 
-这些 SQLite 机制已有独立测试数据库的升级、重开和事务验证；本次未升级运行中的 state root，也未执行真实安装、恢复或跨主机迁移。正式组合已具备显式 v2 foreground 固定读取/命令路径、目录身份和证据读取，完整工具派发与安装资格仍待验收。恢复后继续适用当前主机/目录/权威检查，不能自动重放旧任务或未确认派发。
+这些 SQLite 机制已有独立测试数据库的升级、重开和事务验证；本次未升级运行中的 state root，也未执行真实安装、恢复或跨主机迁移。正式组合已具备显式 v2 foreground 固定读取/命令路径、目录身份和证据读取，Pi 七工具前台 runner 已有假数据验收，目标安装资格仍须独立验证。恢复后继续适用当前主机/目录/权威检查，不能自动重放旧任务或未确认派发。
 
 SRT 的 Agent Service 和 Worker 启动组合已连接现有准入、目录授权状态、受保护 scope、认证 Payload 通道与作业监督器；scope 来源已支持文件 inspect/read 工作流及已批准 Grant targets 的通用工具范围；实际七工具 runner 与后台执行须完成对应后续验收。网络范围须来自本次操作同一 Grant 的审批快照确切域名目标，并与主机能力上界核对；不新增授权或再次消费 Grant。准入及启动前验证授权、父调用和真实 host/runtime/runner/qualification。缺少可信来源时拒绝。策略只由 Worker 编译，初始观察可无摘要，首次原子启动固定摘要后不可替换。
 
@@ -161,6 +166,10 @@ Agent 启动在开放准入前还会使用当前权威失效 v2 旧监督观察�
 系统指令不得包含凭据。Memory 选取数不得超过检索数，实际注入分类同时受当前 Run 分类约束。模型描述符和费用上限仍由原配置字段提供。修改配置只影响尚未冻结输入的 Run；运行中的已冻结请求不会改用新指令。已有数据库需按同机 snapshot 和迁移合同升级到当前 schema，不能跳过备份直接启动旧库。
 
 启用文件读取时，`runPolicy.fileRead` 必须引用当前 Worker instance、目标 hostId、既有目录 Grant 和匹配的 Capability 版本。能力 program 的固定 argv 应指向安装树中 agent-service 包的 `dist/capability-programs/host-file-read-main.js` 并携带 hostId/workerInstanceId；该入口由 Worker 隔离后端启动，不能在 Agent Service 内执行。Manifest 声明 inspect/read/disclose，后者仅用于授权。配置、程序存在或打包成功均不创建动作授权，也不替代本机能力隔离资格。
+
+项目七工具使用独立的 `dist/capability-programs/pi-coding-main.js`，固定 argv 仍是 hostId/workerInstanceId；安装 operationBindings 显式声明 `pi-coding-tool` 版本 `1`，只读工具采用 fixed_read，bash 采用 command，write/edit 采用带 verifier 的 verified_effect。scope 必须是 authorized-project.v1，仍复用 Grant targets 和原准入通道。该入口不能替代 host-readonly.v1 的 inspect/read 审批。工具目录不会因为文件存在而自动向模型开放能力。
+
+在计算 runtimeDigest 和主机资格之前准备 `runtimeRoot/pi-tools/bin/bash`、`rg`、`fd`：必须为适合目标 OS、可实际执行的普通文件，不接受符号链接。运行环境仅使用该目录作为 PATH，PI_OFFLINE=1；缺依赖明确失败。不要直接复制 macOS 平台签名的系统 Bash 并假定副本能运行；须验证实际安装文件及其签名/加载依赖。其他命令依赖同样须先安装在允许且固定的工具链内，不能以工具运行触发隐式下载。新增二进制会改变 runtimeDigest，须重新取得当前主机资格。
 
 通用 HITL 需要 migration 0026、受保护恢复 Payload、审批存储和执行租约一同可用。公开入口使用已有身份与 CSRF 校验提供 `approval.list/detail/respond`，Thread 的等待、恢复和取消状态通过持久事件通知页面。等待审批不占用执行槽位；批准、拒绝、审批过期或原 Run 总期限到达后才重新领取。恢复仍使用原始截止时间，不能重新分配时长。其他治理操作未因审批入口接入而自动启用。
 

@@ -391,7 +391,18 @@ export interface RuntimeProjectionPort {
   proposeCompaction(input: RuntimeCompactionProposal): Promise<PayloadRef>;
 }
 
-export type RuntimeToolDescriptor = RuntimeCustomToolDescriptor | RuntimeBuiltinReadDescriptor;
+export type RuntimeToolDescriptor =
+  | RuntimeCustomToolDescriptor
+  | RuntimeBuiltinReadDescriptor
+  | RuntimeBuiltinCodingDescriptor;
+
+/** Definition selection is product-owned; execution still uses RuntimeToolPort. */
+export interface RuntimeBuiltinCodingDescriptor {
+  readonly definition: "builtin-coding";
+  readonly name: "read" | "write" | "edit" | "bash" | "find" | "grep" | "ls";
+  readonly capabilityRef: string;
+  readonly capabilityHandleRef: string | null;
+}
 
 /** Product selects the built-in definition; runtime-pi owns its schema and metadata. */
 export interface RuntimeBuiltinReadDescriptor {

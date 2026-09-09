@@ -2,6 +2,7 @@ export * from "./contracts.ts";
 export * from "./contracts-v2.ts";
 export * from "./execution-admission-v1.ts";
 export * from "./payload-broker-v1.ts";
+export * from "./pi-runner-v1.ts";
 export * from "./sandbox-execution-support.ts";
 export * from "./sandbox-execution-v1.ts";
 export * from "./sandbox-execution-v2.ts";

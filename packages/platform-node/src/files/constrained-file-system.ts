@@ -117,7 +117,7 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     if (identityKey(before) !== identityKey(expected))
       throw new Error("HOST_FILE_IDENTITY_CHANGED");
     const assertContentUnchanged = async () => {
-      const current = await this.read(grant, relativePath, previousBytes.byteLength);
+      const current = await this.read(grant, relativePath, Math.max(1, previousBytes.byteLength));
       if (!Buffer.from(current).equals(previousBytes)) throw new Error("HOST_FILE_CONTENT_CHANGED");
     };
     await assertContentUnchanged();

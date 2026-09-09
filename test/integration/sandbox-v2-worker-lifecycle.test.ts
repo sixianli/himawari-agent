@@ -20,8 +20,8 @@ vi.mock("@himawari-agent/platform-node", async (original) => ({
   verifySandboxHost: mocks.verify,
 }));
 
-import { parseJobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
 import { ProductionSandboxExecutionV2 } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
+import { parseJobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   openSandboxJournal,
@@ -34,7 +34,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   vi.resetAllMocks();
 });
-it.each(["normal", "replay", "bind-ack-loss", "registration-revoked"] as const)(
+it.each(["normal", "pi", "replay", "bind-ack-loss", "registration-revoked"] as const)(
   "v2 lifecycle: %s",
   async (scenario) => {
     const f = await openSandboxJournal();
@@ -42,7 +42,13 @@ it.each(["normal", "replay", "bind-ack-loss", "registration-revoked"] as const)(
     const root = await mkdtemp("/tmp/r4-worker-v2-");
     cleanups.push(() => rm(root, { recursive: true, force: true }));
     const admitted = sandboxV2Call(f, "admit", sandboxV2Admission(f)).record;
-    const plan = admitted.plan;
+    const plan =
+      scenario === "pi"
+        ? {
+            ...admitted.plan,
+            operationContract: { kind: "fixed_read" as const, ref: "pi-coding-tool", version: "1" },
+          }
+        : admitted.plan;
     const calls: string[] = [];
     let bound = false;
     let facts = admitted.facts;
@@ -81,6 +87,20 @@ it.each(["normal", "replay", "bind-ack-loss", "registration-revoked"] as const)(
     };
     mocks.prepare.mockImplementation((request) => {
       parseJobHostRequest({ ...request, deadlineAt: new Date(Date.now() + 60000).toISOString() });
+      if (scenario === "pi") {
+        const input = JSON.parse(Buffer.from(request.stdinBase64, "base64").toString("utf8"));
+        expect(input).toMatchObject({
+          schemaVersion: "pi-runner.v1",
+          tool: plan.operation,
+          workspace: root,
+          scope: { authorizationRef: plan.authorizationRef, profileRef: "authorized-project.v1" },
+        });
+        expect(JSON.parse(input.parametersJson)).toEqual({
+          path: "file.txt",
+          workspace: "/untrusted",
+          authorizationRef: "forged",
+        });
+      }
       return host;
     });
     mocks.policy.mockResolvedValue({
@@ -125,7 +145,16 @@ it.each(["normal", "replay", "bind-ack-loss", "registration-revoked"] as const)(
       workspaceConflictRefs: admitted.workspaces.map((item) => item.ref),
     };
     const payloads = {
-      readInput: async () => new Uint8Array(),
+      readInput: async () =>
+        scenario === "pi"
+          ? Buffer.from(
+              JSON.stringify({
+                path: "file.txt",
+                workspace: "/untrusted",
+                authorizationRef: "forged",
+              }),
+            )
+          : new Uint8Array(),
       writeOutput: async () => "output",
       sandboxExecution: async (
         _invocation: unknown,
@@ -147,10 +176,19 @@ it.each(["normal", "replay", "bind-ack-loss", "registration-revoked"] as const)(
         }
         return {
           record: bound
-            ? { ...admitted, phase: "bound", facts }
+            ? { ...admitted, plan, phase: "bound", facts }
             : { phase: "reserved", plan, reservation, startedAt: null, operationRevision: 0 },
           applied: command.kind === "bind" && scenario !== "replay",
-          resolvedScope: command.kind === "resolve" ? { scope: f.scope, allowedDomains: [] } : null,
+          resolvedScope:
+            command.kind === "resolve"
+              ? {
+                  scope:
+                    scenario === "pi"
+                      ? { ...f.scope, profileRef: "authorized-project.v1" }
+                      : f.scope,
+                  allowedDomains: [],
+                }
+              : null,
           output: null,
         };
       },
@@ -192,8 +230,8 @@ it.each(["normal", "replay", "bind-ack-loss", "registration-revoked"] as const)(
     const outcome = await worker.execute(request);
     expect(outcome.outcome).toBe("result_unknown");
     expect(await worker.execute(request)).toEqual(outcome);
-    expect(host.start).toHaveBeenCalledTimes(scenario === "normal" ? 1 : 0);
-    if (scenario === "normal") {
+    expect(host.start).toHaveBeenCalledTimes(scenario === "normal" || scenario === "pi" ? 1 : 0);
+    if (scenario === "normal" || scenario === "pi") {
       expect(calls.indexOf("register_control")).toBeLessThan(calls.indexOf("bind"));
       expect(calls.indexOf("bind")).toBeLessThan(calls.indexOf("host-start"));
       expect(facts.result).toMatchObject({

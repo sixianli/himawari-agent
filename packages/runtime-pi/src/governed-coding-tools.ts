@@ -127,6 +127,7 @@ export function createGovernedPiCodingTools(
         case "bash":
           return createBashToolDefinition(options.cwd, {
             operations: operation("bash", options.operations),
+            exposeSessionEnvironment: false,
           });
         case "edit":
           return createEditToolDefinition(options.cwd, {
