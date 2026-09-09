@@ -42,6 +42,8 @@ import type { ProductionFileReadServices } from "./production-file-read-workflow
 import type { ProductionRuntimeSandbox } from "./production-runtime-tools.js";
 import { createProductionSandboxControl } from "./production-sandbox-control.js";
 
+import { createProductionSandboxOutput } from "./production-sandbox-output.js";
+
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const bytesHash = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 
@@ -973,6 +975,15 @@ export async function createProductionSandboxServices(options: {
     child,
     brokerV2: {
       evidence,
+      readOutput: createProductionSandboxOutput({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        payloads,
+        protector,
+        artifacts,
+        clock,
+        ids,
+      }),
       registerControl: control.register,
       observeControl: control.observe,
       verifyPreparation: control.verifyPreparation,

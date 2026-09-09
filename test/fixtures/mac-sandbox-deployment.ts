@@ -12,6 +12,7 @@ export async function macSandboxDeployment(
   plan: SandboxExecutionPlan,
   now: string,
   v2 = false,
+  platform: "darwin" | "linux" = "darwin",
 ) {
   const base = await realpath(root);
   const workspace = path.join(base, "live-workspace");
@@ -104,7 +105,9 @@ printf '{"probe":"passed"}'
       },
     ],
     readOnlyToolchainPaths: await Promise.all(
-      ["/bin", "/usr/bin", "/usr/lib", "/System", "/dev"].map((entry) => realpath(entry)),
+      ["/bin", "/usr/bin", "/usr/lib", ...(platform === "darwin" ? ["/System"] : []), "/dev"].map(
+        (entry) => realpath(entry),
+      ),
     ),
     protectedPaths: [path.join(workspace, ".env")],
     allowedDomains: [],
@@ -119,7 +122,7 @@ printf '{"probe":"passed"}'
     hostId: binding.hostId,
     profileRef: binding.profileRef,
     srtVersion: "0.0.75",
-    platform: "darwin",
+    platform,
     architecture: process.arch,
     osRelease: release(),
     runtimeDigest: binding.runtimeDigest,
@@ -128,7 +131,7 @@ printf '{"probe":"passed"}'
       .update("controlled-test-qualification-not-production")
       .digest("hex"),
     resourceMode: "observe_and_stop",
-    terminationMode: "best_effort",
+    terminationMode: platform === "darwin" ? "best_effort" : "verified_tree",
     guarantees: [
       "filesystem_default_deny",
       "network_allowlist",
@@ -139,9 +142,11 @@ printf '{"probe":"passed"}'
       "durable_start_admission",
       "unknown_quarantine",
       "restart_reconciliation",
-      "best_effort_stop",
+      ...(platform === "darwin"
+        ? ["best_effort_stop"]
+        : ["task_tree_termination", "worker_crash_cleanup"]),
     ],
-    limitations: ["detached_descendants_may_survive_stop"],
+    limitations: platform === "darwin" ? ["detached_descendants_may_survive_stop"] : [],
   };
   const manifest = {
     manifestVersion: "capability.v2",
@@ -191,7 +196,7 @@ printf '{"probe":"passed"}'
         binding: { kind: "sandbox", value: binding },
         qualification: {
           qualificationVersion: "capability-runtime-qualification.v1",
-          platform: "darwin",
+          platform,
           runtimeIdentity: "srt:0.0.75",
           productionSuitable: true,
           artifactDigest,

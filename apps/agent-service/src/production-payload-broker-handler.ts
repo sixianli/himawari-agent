@@ -18,6 +18,10 @@ import type {
   SandboxExecutionRecord,
   SandboxJobJournalPort,
 } from "@himawari-agent/application";
+import type {
+  SandboxResourceOutputPage,
+  SandboxResourceOutputQuery,
+} from "@himawari-agent/execution-contracts";
 import {
   type PayloadBrokerInputReadRequest,
   type PayloadBrokerOutputWriteRequest,
@@ -108,6 +112,10 @@ export interface ProductionPayloadBrokerHandlerOptions {
     readonly resolveScope: (
       plan: SandboxExecutionPlanV2,
     ) => Promise<NonNullable<PayloadBrokerSandboxExecutionResult["payload"]["resolvedScope"]>>;
+    readonly readOutput?: (
+      record: SandboxExecutionRecord,
+      query: SandboxResourceOutputQuery,
+    ) => Promise<SandboxResourceOutputPage | null>;
     readonly evidence?: SandboxExecutionEvidencePort;
     readonly reconciliation?: Pick<SandboxExecutionReconciliationService, "reconcile">;
   };
@@ -457,6 +465,17 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
             ? await configured.journal.append(input)
             : await configured.journal.recordOperation(input);
         return { ...mutation, record: wire(mutation.record), resolvedScope: null, output: null };
+      }
+      if (command.kind === "output") {
+        if (!bound || !configured.readOutput) throw new Error("output reader unavailable");
+        await current(false);
+        const output = await configured.readOutput(bound, {
+          resourceRef: command.resourceRef,
+          cursor: command.cursor,
+          limit: command.limit,
+        });
+        await current(false);
+        return { record, applied: false, resolvedScope: null, output };
       }
       if (command.kind === "read" || command.kind === "inspect") {
         await current(false);

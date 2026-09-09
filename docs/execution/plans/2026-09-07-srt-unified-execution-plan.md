@@ -123,27 +123,40 @@ R1 实现位于 `packages/execution-contracts/src/sandbox-execution-v2.ts`、现
 
 依赖 R2；依据 Spec §3.1、§3.3、§10.2–10.3，验证 EX-02、EX-03、EX-12。
 
-- [ ] 在现有 production-sandbox-services 中补 file/edit/write/search/bash/后台任务的可信范围来源，复用各自已有授权输入/调用回执，保留文件 context 和父子调用检查。
-- [ ] 沿已经批准的同 Grant 网络 targets 映射；逐请求验证 Grant 状态/指纹、目录版本/根、模型披露、主机上界和原期限。查询/停止不重复消费原执行 Handle，新执行动作消费自己的 Handle 一次；MCP 请求接入不在本任务。
-- [ ] 扩展既有认证 Payload broker 的 v2 内部 binding、任务/服务控制请求、资源查询和输出 cursor；验证 boot/epoch/fence、消息长度与执行目标，禁止 Worker 指定数据库 authority。
-- [ ] Agent/Worker/runner/qualification 声明并匹配支持的 mode/schema；不支持 v2 的安装在消费/启动前拒绝，不把 v2 数据标为 v1。
-- [ ] 准备结束和首笔实际启动前重核当前授权、产物与原期限；旧观察读回或过期停止不得恢复执行权。
+- [x] 在现有 production-sandbox-services 中补 file/edit/write/search/bash/后台任务的可信范围来源，复用各自已有授权输入/调用回执，保留文件 context 和父子调用检查。
+- [x] 沿已经批准的同 Grant 网络 targets 映射；逐请求验证 Grant 状态/指纹、目录版本/根、模型披露、主机上界和原期限。查询/停止不重复消费原执行 Handle，新执行动作消费自己的 Handle 一次；MCP 请求接入不在本任务。
+- [x] 扩展既有认证 Payload broker 的 v2 内部 binding、任务/服务控制请求、资源查询和输出 cursor；验证 boot/epoch/fence、消息长度与执行目标，禁止 Worker 指定数据库 authority。
+- [x] Agent/Worker/runner/qualification 声明并匹配支持的 mode/schema；不支持 v2 的安装在消费/启动前拒绝，不把 v2 数据标为 v1。
+- [x] 准备结束和首笔实际启动前重核当前授权、产物与原期限；旧观察读回或过期停止不得恢复执行权。
 
 完成条件：真实 UDS+SQLite 测试覆盖撤权竞态、跨 Grant/主机/父调用、旧凭证、未知版本、重投递及单次消费；不依赖注入的 allow 布尔值证明正式授权。
 
-#### R3 接入核实与已批准修正（2026-09-09）
+#### R3 阶段记录：接入核实与已批准修正（2026-09-09）
 
-R3/R4 尚未完成。当前已实现版本声明、真实目录祖先身份、v2 broker 合同/传输、预留与绑定 CAS；`service-main` 已组合 v2 观察处理器和 Worker 握手支持查询。Worker 当前仍只声明 v1 foreground，明确拒绝 v2 执行，不能经普通适配器或 v1 路径降级执行；完整 v2 启动及资源控制仍未启用。不得据此勾选上述完成条件。
+以下是 R4 接入前的历史状态，最新结论见本节完成证据。当时 R3/R4 尚未完成，已实现版本声明、真实目录祖先身份、v2 broker 合同/传输、预留与绑定 CAS；`service-main` 已组合 v2 观察处理器和 Worker 握手支持查询。Worker 当前仍只声明 v1 foreground，明确拒绝 v2 执行，不能经普通适配器或 v1 路径降级执行；完整 v2 启动及资源控制仍未启用。不得据此勾选上述完成条件。
 
 已确认一个跨 R1/R2 的准备顺序冲突：Spec 规定 Worker 在准备阶段编译策略，并在首笔原子启动时固定摘要；但 `sandboxEnvironmentSchema` 在准入 facts 中强制要求非空 `policyDigest`，SQLite v2 `start` 又只接受与已保存 environment 相同的摘要，且后续观察不能改变 environment。新增负向测试实际验证了空摘要被拒绝、启动时换成后来编译的摘要同样被拒绝、`startedAt` 保持空值。这说明现有 R1/R2 静态夹具预填摘要掩盖了正式准备顺序的问题，不是允许使用占位摘要的理由。
 
-**Owner 已批准，正在按此实施：** 将“已准入的执行预留”与“已取得实际运行绑定的环境”区分为明确阶段。准入事务继续消费同一个 Handle 一次、保留 invocation/job/environment 定位及目录占用，并冻结授权、scope、模式、资格和原期限；此时不虚构策略摘要、Job Host 实际 boot 或私有目录所有权。Worker 通过现有认证通道取得范围并完成真实准备，在首笔启动请求中提交实际准备绑定；Agent 重核当前授权、主机产物和期限，SQLite 用一次 CAS 固定该绑定并登记启动，只有赢家可以启动。固定后的绑定不可替换；重投递、ack 丢失和重启只能读取或核查原预留，不产生新的启动资格。
+**Owner 当时批准的修正，现已实施：** 将“已准入的执行预留”与“已取得实际运行绑定的环境”区分为明确阶段。准入事务继续消费同一个 Handle 一次、保留 invocation/job/environment 定位及目录占用，并冻结授权、scope、模式、资格和原期限；此时不虚构策略摘要、Job Host 实际 boot 或私有目录所有权。Worker 通过现有认证通道取得范围并完成真实准备，在首笔启动请求中提交实际准备绑定；Agent 重核当前授权、主机产物和期限，SQLite 用一次 CAS 固定该绑定并登记启动，只有赢家可以启动。固定后的绑定不可替换；重投递、ack 丢失和重启只能读取或核查原预留，不产生新的启动资格。
 
 影响范围是 R1 合同/投影、R2 journal/SQLite、R3 broker 与 R4 Worker/Job Host；仍沿用现有授权库、回执、Run 和通道。需要迁移时追加新 migration，不改 0027/0028；既有已绑定记录保留原文及含义，未绑定或来源不明的记录不自动补成可运行状态。准备失败或绑定提交后失联仍保留占用，直到可信核查证明风险消除。验证须补未准备准入、唯一绑定、绑定替换拒绝、绑定期间撤权、启动 ack 丢失及旧记录读回。
 
 Owner 已明确批准本项涉及 R1/R2 的结构调整，无须就同一范围重复请求批准。这里不改变已批准的 Worker 独占策略编译原则，也不把编译挪给 Agent 或将初始化字段硬填成假证据。
 
 追加 migration `0029_sandbox_execution_preparation`，在既有账本中区分 `reserved`、`bound` 和保留历史语义的 `legacy_bound`；不修改 0027/0028。预留阶段保存 `sandbox-preparation.v1`，不生成 policyDigest、supervisor 或 privateDirectory 的占位值；首笔绑定固定实际 facts，绑定替换与重放不产生启动权。真实 UDS+SQLite 已覆盖首次绑定并发、绑定中撤权、重复请求、单次消费；数据库重开测试覆盖未绑定预留和已固定绑定。通用工具目录/网络映射与输出证据读取仍需完成正式组合的完整验证，不能据这些局部测试勾选 R3。
+
+#### R3 完成证据（2026-09-09）
+
+逐项核对 R4 提交后，通用 `grant_targets` 来源、父子调用约束、版本匹配、准备后复核及限定控制已存在；本次复用这些实现，补足正式组合验收和遗漏的 `output` 分页处理，没有新增权限库、调用身份库、状态机或迁移。
+
+- `production-sandbox-scope.test.ts` 在真实 SQLite 中保存审批快照、已批准且已消费的 Grant、未消费 Handle、目录授权及受保护调用意图。Mac 上使用真实目录/runner 摘要检查和受控测试资格，经 production-sandbox-services 与真实认证 UDS 验证 read/edit/write/search/bash/后台模式范围。新执行只消费一次 Handle，scope 解析、重复准入和查询不会再次消费 Grant 或 Handle。
+- 负向验收分别覆盖跨 Grant、主机、网络上界、模型披露对象、Thread、操作及父调用；版本/模式不匹配在消费前拒绝。scope 解析期间撤权后，UDS 返回前的实时复核仍拒绝。准备后替换真实 runner 内容或目录 inode，启动复核拒绝并保持 reserved。已有 file inspect/read context、父子调用和网络 fingerprint 单元/集成回归继续运行。
+- broker 的资源 `output` 请求已连接 `createProductionSandboxOutput`。分页只读取账本已绑定的受保护输出快照；cursor 绑定原调用、语义摘要、资源和输出摘要，保存在既有受保护 Run trace。页正文仍是受保护 Payload；游标不能表示宿主路径或执行许可。重复查询返回原页，数据库重开可以继续游标；跨资源/调用、未签发游标和原输出缺失均拒绝。真实空输出与尚无已知输出分别返回零字节页与 null。
+- task/service 的资源查询与限定停止沿已有认证通道、原资源关联和当前 Agent 权威，不接收 Worker 提供的数据库 authority；旧 Worker 的执行/输出权限不因新 boot 核查而复活。固定消息上限、旧 boot、未知命令、错误目标、过期启动、绑定竞态、重投递和单次消费继续由真实 UDS/SQLite 测试覆盖。
+
+最终验证：16 个测试文件、276 项相关回归通过；测试夹具适配 Mac/Linux 后重跑新增及相关三组共 29 项通过。`npm run check`（含类型、依赖边界、CI policy）、`npm run build:node`、改动文件 Biome 与文档严格检查通过。正式 scope 组合本次实际在 Mac 运行；夹具已适配 Linux 路径，但本轮未做 Linux 实测，不以平台跳过测试隐藏缺口。
+
+R3 完成的是通用范围、版本、准备复核和资源控制/已保存输出的接口接入。后台模式的范围测试不启用后台执行；运行中输出采集与持续分页生产、任务/服务真正启动归 R6。Pi 七工具 runner 归 R5，目标平台联网及安装资格归 R8。MCP 与 GitHub 推送仍在本次范围之外。受控测试资格不签发生产资格，也没有调用模型或真实外部网络。
 
 ### R4：监管、停止与核查证据生产
 
@@ -192,7 +205,7 @@ R4 所需的 R3 前台基础已接通：显式 v2 foreground 固定读取/命令
 
 最终检查：367 项合同/迁移/集成/Worker 路由与边界测试、40 项 runtime-sandbox 单元测试通过；`npm run build:node`、`npm run check` 和改动文件 Biome 检查通过。早先整体 lint 失败的记录保留为历史；当前源码基线已包含独立的 `f37fa06` lint 修复提交，不再把旧失败当作现状。
 
-上述证据完成 R4 的监管、限定停止和风险核查要求。完整 Spec/Plan 保持进行中，R3 其余通用接入及后续阶段未因本项完成而勾选。
+上述证据完成 R4 的监管、限定停止和风险核查要求。完整 Spec/Plan 保持进行中，此处 R4 完成时尚未勾选 R3；R3 的后续验收见上节，其他阶段仍未完成。
 
 ### R5：完整前台 Pi 工具 runner
 

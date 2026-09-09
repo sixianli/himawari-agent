@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:c5eca1107fd04aa42f3106ac36038b91d892533cee503ce69008a9635199cf2e"
+contract_sha256: "sha256:85afbaa65665842fb848fbed08d00b1ca19e936bd2ca10918c767e28e538f19f"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,7 @@ date: "2026-08-27"
 # 停机加密 Authority Transfer Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/production-sandbox-output.ts
 - apps/agent-service/src/production-sandbox-control.ts
 - packages/application/src/services/sandbox-execution-reconciliation.ts
 - packages/runtime-sandbox/src/job-host-control-client.ts
@@ -232,3 +233,7 @@ himawari transfer abandon --config <absolute-target-config-path> --secret-dir <a
 恢复必须保留既有受保护 Run trace 中的控制引用、终态证据及其 Payload；不得仅备份 SQLite 中的 PID。当前 Agent 权威通过原环境认证控制端口 inspect/stop，或读取原 Job Host 的签名终态；身份、目录 inode、策略或宿主变化时继续隔离，不能在目标主机按旧 PID 停止或重启。Agent 仅加载不含 SRT 启动能力的控制客户端。
 
 Linux 前台清理证据要求原 PID namespace init 已消失及完整终态；Mac 已启动任务没有全树保证时继续 unknown。端口失联、证据不完整和超时均不能解除相交占用。真实假数据探针不签发安装资格；不得把测试临时 bubblewrap/socat 的 PATH 配置用于生产，生产依赖位置须单独验证。实际安装、备份恢复和跨主机迁移的既有步骤及审批边界保持适用。
+
+### 资源输出分页保留
+
+v2 已保存输出的分页引用和 cursor 归原 Run 的受保护 artifact；同机恢复须一同保留对应加密 Payload、artifact 关联及原作业账本。游标只定位原调用/资源的固定输出快照，不能改写为宿主路径，也不能用来重新执行任务。原输出缺失或摘要不符时拒绝，不能以空文件代替；权威迁移仍按原回执和当前身份拒绝旧 Worker 输出权限。该分页接口不启用后台任务或生产安装资格。

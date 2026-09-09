@@ -34,10 +34,33 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
 });
-async function fixture(reserve = false, newBoot = false) {
+async function fixture(reserve = false, newBoot = false, resource = false) {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
-  const input = sandboxV2Admission(f);
+  const baseInput = sandboxV2Admission(f);
+  const input = resource
+    ? {
+        ...baseInput,
+        plan: {
+          ...baseInput.plan,
+          mode: "background" as const,
+          operationContract: { ref: "task", version: "1", kind: "task_start" as const },
+        },
+        facts: sandboxExecutionFactsSchema.parse({
+          ...baseInput.facts,
+          environment: {
+            ...baseInput.facts.environment,
+            mode: "background",
+            resourceRef: "task-output",
+          },
+          resource: {
+            ...baseInput.facts.resource,
+            resourceRef: "task-output",
+            status: { kind: "task", state: "starting" },
+          },
+        }),
+      }
+    : baseInput;
   const operations = operationsForDatabase(f.database);
   const invoke = (operation: string, value: unknown) =>
     operations.execute(operation, { ownerId: OWNER_ID, agentId: AGENT_ID, input: value });
@@ -143,6 +166,14 @@ async function fixture(reserve = false, newBoot = false) {
     allowedContentTypes: ["application/json"],
     sandboxExecutions: {
       hostId: record.plan.identity.hostId,
+      readOutput: async (_record, query) => ({
+        resourceRef: query.resourceRef,
+        cursor: query.cursor,
+        nextCursor: null,
+        output: { ref: "protected-page", digest: "a".repeat(64), byteLength: 0 },
+        truncated: false,
+        end: true,
+      }),
       journal,
       registerControl: async () => {
         registrations++;
@@ -477,4 +508,26 @@ it("registers control only for a live reserved invocation without starting it", 
   f.revoke();
   await expect(f.request(command)).rejects.toThrow();
   expect(f.registrations()).toBe(1);
+});
+
+it("routes task output through authenticated UDS without consuming a new Handle", async () => {
+  const f = await fixture(false, false, true);
+  const command = {
+    kind: "output" as const,
+    resourceRef: "task-output",
+    cursor: null,
+    limit: 16,
+    expectedSequence: 1,
+  };
+  const first = await f.request(command);
+  expect(first.output).toMatchObject({
+    resourceRef: "task-output",
+    output: { ref: "protected-page" },
+    end: true,
+  });
+  expect(await f.request(command)).toEqual(first);
+  await expect(f.request({ ...command, resourceRef: "other-task" })).rejects.toThrow();
+  expect((await f.request({ kind: "read" })).record.operationRevision).toBe(0);
+  f.expire();
+  expect((await f.request(command)).output).toEqual(first.output);
 });
