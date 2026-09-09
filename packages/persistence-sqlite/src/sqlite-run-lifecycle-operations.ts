@@ -614,6 +614,15 @@ export class SqliteRunLifecycleOperations {
         if (stored.revision !== input.expectedRevision)
           return this.fail("PORT_CONFLICT", "Run completion revision conflict");
         this.assertTransition(stored, "completed");
+        const pendingResource = this.database
+          .prepare(
+            `SELECT 1 FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=?
+           AND json_extract(plan_json, '$.mode') IN ('background','service')
+           AND COALESCE(json_extract(facts_json, '$.resource.supervision'), 'initializing') != 'released' LIMIT 1`,
+          )
+          .get(input.ownerId, input.agentId, input.runId);
+        if (pendingResource)
+          return this.fail("PORT_CONFLICT", "Run still owns unreleased sandbox resources");
         this.assertPayload(input);
         let dataClassification = input.dataClassification;
         if (input.output.kind === "assistant-answer") {

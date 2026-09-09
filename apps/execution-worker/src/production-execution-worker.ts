@@ -324,7 +324,11 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
                   ? [{ schemaVersion: "sandbox-execution.v1", mode: "foreground" }]
                   : []),
                 ...(this.options.sandboxV2
-                  ? [{ schemaVersion: "sandbox-execution.v2", mode: "foreground" }]
+                  ? [
+                      { schemaVersion: "sandbox-execution.v2", mode: "foreground" },
+                      { schemaVersion: "sandbox-execution.v2", mode: "background" },
+                      { schemaVersion: "sandbox-execution.v2", mode: "service" },
+                    ]
                   : []),
               ],
             }

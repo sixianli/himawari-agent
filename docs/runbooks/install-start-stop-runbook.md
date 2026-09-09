@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:3be21770b8bcd85de9e8dd34eb7742bf4f0d3f170fca005c6bc60c91deef063e"
+contract_sha256: "sha256:f465aee7e4d2fecb4042c37b4ef0ca2f80246e25b8a45d59de4ac27225efc741"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,11 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/production-managed-tasks.ts
+- apps/agent-service/src/production-sandbox-stream.ts
+- apps/agent-service/src/production-sandbox-services.ts
+- apps/execution-worker/src/production-sandbox-execution-v2.ts
+- packages/execution-contracts/src/sandbox-readiness.ts
 - apps/agent-service/src/capability-programs/pi-coding-main.ts
 - packages/runtime-pi/src/sandboxed-coding-executor.ts
 - packages/platform-node/src/files/sandboxed-coding-operations.ts
@@ -110,11 +115,11 @@ schema 28 在原数据库追加 v2 资源关联、独立操作/资源观察、�
 
 这些 SQLite 机制已有独立测试数据库的升级、重开和事务验证；本次未升级运行中的 state root，也未执行真实安装、恢复或跨主机迁移。正式组合已具备显式 v2 foreground 固定读取/命令路径、目录身份和证据读取，Pi 七工具前台 runner 已有假数据验收，目标安装资格仍须独立验证。恢复后继续适用当前主机/目录/权威检查，不能自动重放旧任务或未确认派发。
 
-SRT 的 Agent Service 和 Worker 启动组合已连接现有准入、目录授权状态、受保护 scope、认证 Payload 通道与作业监督器；scope 来源已支持文件 inspect/read 工作流及已批准 Grant targets 的通用工具范围；实际七工具 runner 与后台执行须完成对应后续验收。网络范围须来自本次操作同一 Grant 的审批快照确切域名目标，并与主机能力上界核对；不新增授权或再次消费 Grant。准入及启动前验证授权、父调用和真实 host/runtime/runner/qualification。缺少可信来源时拒绝。策略只由 Worker 编译，初始观察可无摘要，首次原子启动固定摘要后不可替换。
+SRT 的 Agent Service 和 Worker 启动组合已连接现有准入、目录授权状态、受保护 scope、认证 Payload 通道与作业监督器；scope 来源已支持文件 inspect/read 工作流及已批准 Grant targets 的通用工具范围；七工具前台 runner 及后台执行已有专用假数据验收，目标安装资格仍须独立完成。网络范围须来自本次操作同一 Grant 的审批快照确切域名目标，并与主机能力上界核对；不新增授权或再次消费 Grant。准入及启动前验证授权、父调用和真实 host/runtime/runner/qualification。缺少可信来源时拒绝。策略只由 Worker 编译，初始观察可无摘要，首次原子启动固定摘要后不可替换。
 
 安装产物源码新增了 R1 的 v2 合同、类型端口和纯判断函数，以及 R2 的 SQLite 账本，正式组合按安装声明分别使用 v1 与 v2 foreground；声明不能代替目标平台资格。新增 `SandboxExecutionPortV2` 导出不代表 Job Host 取得新监督资格，也不会把旧 unknown 回执转换为已清理。后续接入 v2 正式适配器时，须重新核对本 Runbook 的迁移、恢复和安装验证。
 
-v2 broker 与 Worker foreground 已接入准备、登记、唯一绑定、观察和限定核查，并有真实 Mac UDS/SQLite/Worker 假数据验收；后台/服务仍拒绝。安装清单/资格中的 `supportedExecutions` 仅表示显式兼容声明，不提供授权、监管证明或 v2 启用开关；缺少声明不能推断支持 v2，显式排除 v1 的声明也不能通过旧路径运行。追加 migration 0029 已修正准备顺序：先保存不含运行摘要的执行预留及目录占用，Worker 准备后首次 CAS 固定真实绑定；旧记录保持 `legacy_bound`。迁移仍须通过现有同机备份和停机入口，不能直接对正在运行的产品库执行 SQL。R3 范围/控制接口验收已完成，完整 Pi 工具 runner 与安装资格仍待完成，不得用占位摘要或把 v2 数据标为 v1 进行安装验收。Job Host 私有 IPC 增加会话/boot/序号/监督窗口，但 PID、心跳、主进程退出及 reset 仍不构成任务树释放证明；真实长临时路径探针在 SRT 初始化出现过 `EADDRINUSE`，安装资格还须验证所选 privateRoot 的实际可用性。
+v2 broker 与 Worker foreground 已接入准备、登记、唯一绑定、观察和限定核查，并有真实 Mac UDS/SQLite/Worker 假数据验收；R6 已增加显式 background/service 路径，只有 Worker、安装声明与资格共同支持时才可准入。安装清单/资格中的 `supportedExecutions` 仅表示显式兼容声明，不提供授权、监管证明或 v2 启用开关；缺少声明不能推断支持 v2，显式排除 v1 的声明也不能通过旧路径运行。追加 migration 0029 已修正准备顺序：先保存不含运行摘要的执行预留及目录占用，Worker 准备后首次 CAS 固定真实绑定；旧记录保持 `legacy_bound`。迁移仍须通过现有同机备份和停机入口，不能直接对正在运行的产品库执行 SQL。R3 范围/控制接口验收已完成，Pi 工具 runner 已完成专用假数据验收，安装资格仍待完成，不得用占位摘要或把 v2 数据标为 v1 进行安装验收。Job Host 私有 IPC 增加会话/boot/序号/监督窗口，但 PID、心跳、主进程退出及 reset 仍不构成任务树释放证明；真实长临时路径探针在 SRT 初始化出现过 `EADDRINUSE`，安装资格还须验证所选 privateRoot 的实际可用性。
 
 schema 27 的作业账本继续作为持久依据；不能给无账本的旧凭证补建可启动作业，不能自动重放清理未知作业。旧作业读回、清理和重复观察不恢复执行权限。Job Host 接收至多 48 KiB 的私有 IPC 输入，仅送入任务 stdin；正文不进入 argv 或环境变量。stdout 保留原 runner 合同并保存为受保护 Payload；CPU/RSS 观察随作业观察持久保存。固定有界进程采样超限或失败时请求停止，采样不能证明硬配额、所有短命后代都被计入或整个进程树已退出。
 
@@ -279,4 +284,12 @@ Linux 前台清理证据要求原 PID namespace init 已消失及完整终态；
 
 ### 资源输出分页保留
 
-v2 已保存输出的分页引用和 cursor 归原 Run 的受保护 artifact；同机恢复须一同保留对应加密 Payload、artifact 关联及原作业账本。游标只定位原调用/资源的固定输出快照，不能改写为宿主路径，也不能用来重新执行任务。原输出缺失或摘要不符时拒绝，不能以空文件代替；权威迁移仍按原回执和当前身份拒绝旧 Worker 输出权限。该分页接口不启用后台任务或生产安装资格。
+v2 已保存输出的分页引用和 cursor 归原 Run 的受保护 artifact；同机恢复须一同保留对应加密 Payload、artifact 关联及原作业账本。游标只定位原调用/资源的固定输出快照，不能改写为宿主路径，也不能用来重新执行任务。原输出缺失或摘要不符时拒绝，不能以空文件代替；权威迁移仍按原回执和当前身份拒绝旧 Worker 输出权限。R6 追加了后台运行输出片段、结束标记和命令退出事实，均归原 Run；恢复时须同时保留这些 artifact，不补造丢失片段、不重启原命令。后台/服务的目标安装资格仍须独立验证。
+
+### 受管理后台资源的安装与恢复
+
+后台 Bash 继续使用安装的 Pi runner 和固定工具链；其运行模式由 Worker 从匹配的操作声明传入，不能从模型参数选择。前台 Bash 保留原结果格式；后台输出只在完整行检查后追加，末尾无换行内容在退出时检查，机器秘密命中即停止并拒绝输出。start 回执只表示资源已启动，命令退出码另存入连续输出的结束事实。资源句柄与管理调用不能重复消费 Grant。
+
+服务仅在安装声明含匹配的 `readinessProbes` 且具备该模式资格时启用。本批探针使用私有目录内唯一 Unix socket 的 HTTP GET、预期 2xx 状态和最多 30 秒期限；不开放通用本地 TCP 或其他 Unix socket，不以日志判断就绪。恢复后的声明、运行文件与资格必须重新匹配；不得凭旧 ready 回执连接新服务。
+
+Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释放资源的 Run。未知清理进入原核查流程并保留写目录占用。Mac 测试主进程退出仍不证明任意后代已全部退出，不能清除隔离以获得正常完成。这里没有新增迁移文件、安装资格签发或运行中数据库修改步骤。

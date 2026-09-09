@@ -15,6 +15,7 @@ export interface SandboxPolicyInput {
   readonly readOnlyToolchainPaths: readonly string[];
   readonly protectedPaths: readonly string[];
   readonly allowedDomains: readonly string[];
+  readonly allowedUnixSockets?: readonly string[];
 }
 
 export interface CompiledSandboxPolicy {
@@ -83,6 +84,7 @@ export async function compileSandboxPolicy(
     "readOnlyToolchainPaths",
     "protectedPaths",
     "allowedDomains",
+    "allowedUnixSockets",
   ];
   if (
     !input ||
@@ -103,6 +105,7 @@ export async function compileSandboxPolicy(
   const toolchainInput = [...input.readOnlyToolchainPaths];
   const protectedInput = [...input.protectedPaths];
   const domains = [...input.allowedDomains];
+  const sockets = [...(input.allowedUnixSockets ?? [])];
   const workspace = await canonicalPath(workspaceInput, true);
   const privateDirectory = await canonicalPath(privateInput, true);
   if (contains(workspace, privateDirectory) || contains(privateDirectory, workspace)) {
@@ -144,13 +147,22 @@ export async function compileSandboxPolicy(
       throw new Error("SRT_POLICY_DOMAIN_INVALID");
     }
   }
+  if (
+    sockets.length > 1 ||
+    sockets.some(
+      (socket) =>
+        !contains(privateDirectory, literalPath(socket)) ||
+        path.dirname(socket) !== privateDirectory,
+    )
+  )
+    throw new Error("SRT_POLICY_SOCKET_INVALID");
   const policy = SandboxRuntimeConfigSchema.parse({
     network: {
       allowedDomains: [...new Set(domains)].sort(),
       deniedDomains: [],
       strictAllowlist: true,
       allowAllUnixSockets: false,
-      allowUnixSockets: [],
+      allowUnixSockets: sockets,
       allowLocalBinding: false,
     },
     filesystem: {

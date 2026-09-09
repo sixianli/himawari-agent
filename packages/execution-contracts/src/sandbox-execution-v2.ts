@@ -496,23 +496,70 @@ export function validateSandboxExecutionFacts(
   return facts;
 }
 
+const sandboxTaskTerminationSchema = object({
+  exitCode: nullable(integer(0, 255)),
+  reasonCode: machineString,
+  taskProcessExited: booleanValue,
+});
+export type SandboxTaskTermination = InferSchema<typeof sandboxTaskTerminationSchema>;
+function withTaskTermination<T extends { end: boolean }>(
+  base: Schema<T>,
+): Schema<T & { readonly termination?: SandboxTaskTermination }> {
+  return {
+    parse(value, path = "$") {
+      if (!value || typeof value !== "object" || Array.isArray(value) || !("termination" in value))
+        return base.parse(value, path);
+      const { termination, ...rest } = value;
+      const parsed = base.parse(rest, path);
+      const terminal = sandboxTaskTerminationSchema.parse(termination, path);
+      if (!parsed.end || (!terminal.taskProcessExited && terminal.exitCode !== null))
+        throw new ContractValidationError(path, "termination requires a final output chunk");
+      return { ...parsed, termination: terminal };
+    },
+  };
+}
+
 /** Protected, bounded output pages; cursor is a locator, never execution authority. */
 export const sandboxResourceOutputQuerySchema = object({
   resourceRef: machineString,
   cursor: nullable(machineString),
   limit: integer(1, 1_048_576),
 });
-export const sandboxResourceOutputPageSchema = object({
-  resourceRef: machineString,
-  cursor: nullable(machineString),
-  nextCursor: nullable(machineString),
-  output: sandboxPayloadReferenceSchema,
-  truncated: booleanValue,
-  end: booleanValue,
-});
+export const sandboxResourceOutputPageSchema = withTaskTermination(
+  object({
+    resourceRef: machineString,
+    cursor: nullable(machineString),
+    nextCursor: nullable(machineString),
+    output: sandboxPayloadReferenceSchema,
+    truncated: booleanValue,
+    end: booleanValue,
+  }),
+);
 
 export type SandboxResourceOutputQuery = InferSchema<typeof sandboxResourceOutputQuerySchema>;
 export type SandboxResourceOutputPage = InferSchema<typeof sandboxResourceOutputPageSchema>;
+
+/** Append-only output captured by the original Worker; no host paths or executable input. */
+const outputBytes: Schema<string> = {
+  parse(value, path = "$") {
+    if (
+      typeof value !== "string" ||
+      value.length > 43_692 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)
+    )
+      throw new ContractValidationError(path, "expected bounded base64 output");
+    return value;
+  },
+};
+export const sandboxOutputChunkSchema = withTaskTermination(
+  object({
+    index: integer(0),
+    offset: integer(0),
+    bytesBase64: outputBytes,
+    end: booleanValue,
+  }),
+);
+export type SandboxOutputChunk = InferSchema<typeof sandboxOutputChunkSchema>;
 
 /** Resource-specific infrastructure credential, carried only by authenticated
  * private Payload IPC and stored as a restricted Run artifact. Never a tool argument. */
@@ -574,6 +621,12 @@ export const sandboxExecutionBrokerCommandSchema = variant("kind", {
     kind: literal("inspect"),
     resourceRef: machineString,
     expectedSequence: integer(1),
+  }),
+  append_output: object({
+    kind: literal("append_output"),
+    resourceRef: machineString,
+    expectedSequence: integer(1),
+    chunk: sandboxOutputChunkSchema,
   }),
   output: object({
     kind: literal("output"),

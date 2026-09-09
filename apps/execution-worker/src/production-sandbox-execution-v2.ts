@@ -15,6 +15,7 @@ import {
   PI_RUNNER_CONTRACT,
   piCodingToolNameSchema,
   piRunnerInputSchema,
+  type SandboxTaskTermination,
   type SandboxExecutionBrokerCommand,
   type SandboxExecutionPlanV2,
   sandboxExecutionFactsSchema,
@@ -46,6 +47,8 @@ interface Entry {
   host?: SandboxJobHost;
   record?: Record;
   completion?: Promise<SandboxWorkerResult>;
+  supervision?: Promise<void>;
+  acknowledge?: (result: SandboxWorkerResult) => void;
 }
 interface Options {
   configuration: Pick<ProductConfiguration, "capabilityDeployment">;
@@ -103,7 +106,10 @@ export class ProductionSandboxExecutionV2 {
       cancelled: false,
     };
     this.entries.set(request.messageId, entry);
-    entry.completion = this.run(entry);
+    entry.completion = new Promise((resolve) => {
+      entry.acknowledge = resolve;
+    });
+    entry.supervision = this.run(entry).then((result) => entry.acknowledge?.(result));
     return entry.completion;
   }
   private async hostBinding(plan: SandboxExecutionPlanV2) {
@@ -140,8 +146,12 @@ export class ProductionSandboxExecutionV2 {
       plan.operation !== request.payload.operation ||
       plan.environmentId !== request.payload.sandboxExecution?.environmentId ||
       plan.mode !== request.payload.sandboxExecution?.mode ||
-      plan.mode !== "foreground" ||
-      !["fixed_read", "command", "verified_effect"].includes(plan.operationContract.kind) ||
+      (plan.mode !== "foreground" &&
+        !(plan.mode === "background" && plan.operationContract.kind === "task_start") &&
+        !(plan.mode === "service" && plan.operationContract.kind === "service_start")) ||
+      !["fixed_read", "command", "verified_effect", "task_start", "service_start"].includes(
+        plan.operationContract.kind,
+      ) ||
       (plan.operationContract.kind === "verified_effect" &&
         plan.operationContract.ref !== PI_RUNNER_CONTRACT.ref) ||
       plan.executionLease.deploymentId !== request.scope.deploymentId ||
@@ -167,12 +177,18 @@ export class ProductionSandboxExecutionV2 {
       const piRunner = plan.operationContract.ref === PI_RUNNER_CONTRACT.ref;
       if (piRunner) {
         const tool = piCodingToolNameSchema.parse(plan.operation);
+        if (plan.mode !== "foreground" && tool !== "bash")
+          throw new Error("PI_RUNNER_MODE_UNSUPPORTED");
         const kind =
-          tool === "bash"
-            ? "command"
-            : ["write", "edit"].includes(tool)
-              ? "verified_effect"
-              : "fixed_read";
+          plan.mode === "background"
+            ? "task_start"
+            : plan.mode === "service"
+              ? "service_start"
+              : tool === "bash"
+                ? "command"
+                : ["write", "edit"].includes(tool)
+                  ? "verified_effect"
+                  : "fixed_read";
         if (
           plan.operationContract.version !== PI_RUNNER_CONTRACT.version ||
           plan.operationContract.kind !== kind
@@ -180,6 +196,12 @@ export class ProductionSandboxExecutionV2 {
           throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");
       }
       const binding = await this.hostBinding(plan);
+      const readinessRef =
+        plan.operationContract.kind === "service_start"
+          ? plan.operationContract.readinessProbeRef
+          : null;
+      const readiness = binding.readinessProbes?.find((probe) => probe.ref === readinessRef);
+      if (plan.mode === "service" && !readiness) throw new Error("SANDBOX_READINESS_UNAVAILABLE");
       const resolved = (await this.rpc(entry, { kind: "resolve" })).resolvedScope;
       if (
         !resolved ||
@@ -195,21 +217,23 @@ export class ProductionSandboxExecutionV2 {
         workspace: root.canonicalPath,
         privateRoot: binding.privateRoot,
         jobId: plan.identity.jobId,
+        ...(readiness ? { readinessSocketName: readiness.socketName } : {}),
         writable: resolved.scope.directoryGrant.operations.some(
           (operation) => operation !== "read",
         ),
         readOnlyToolchainPaths: [binding.runtimeRoot, ...binding.readOnlyToolchainPaths],
-        protectedPaths: piRunner
-          ? [
-              ...binding.protectedPaths,
-              ...[
-                ".env",
-                ".git",
-                ".himawari-trash",
-                ...(["write", "edit"].includes(plan.operation) ? [] : [".himawari-recovery"]),
-              ].map((name) => path.join(root.canonicalPath, name)),
-            ]
-          : binding.protectedPaths,
+        protectedPaths:
+          piRunner || plan.mode !== "foreground"
+            ? [
+                ...binding.protectedPaths,
+                ...[
+                  ".env",
+                  ".git",
+                  ".himawari-trash",
+                  ...(["write", "edit"].includes(plan.operation) ? [] : [".himawari-recovery"]),
+                ].map((name) => path.join(root.canonicalPath, name)),
+              ]
+            : binding.protectedPaths,
         allowedDomains: resolved.allowedDomains,
       });
       const controlDirectory = path.join(
@@ -233,6 +257,7 @@ export class ProductionSandboxExecutionV2 {
                 schemaVersion: "pi-runner.v1",
                 workerInstanceId: this.options.peer.workerInstanceId,
                 tool: piCodingToolNameSchema.parse(plan.operation),
+                executionMode: plan.mode,
                 scope: resolved.scope,
                 workspace: root.canonicalPath,
                 runtimeRoot: binding.runtimeRoot,
@@ -252,6 +277,7 @@ export class ProductionSandboxExecutionV2 {
           executable: binding.executable.path,
           args: [binding.runner.path, binding.hostId, this.options.peer.workerInstanceId],
           stdinBase64: Buffer.from(runnerInput).toString("base64"),
+          ...(readiness ? { readiness } : {}),
           deadlineAt: plan.effectiveDeadlineAt,
           maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
           resourceLimits: {
@@ -307,8 +333,13 @@ export class ProductionSandboxExecutionV2 {
           sequence: 2,
           occurredAt: this.options.clock.now(),
           supervisor,
-          resourceRef: null,
-          status: { kind: "foreground" },
+          resourceRef: plan.mode === "foreground" ? null : initial.reservation.resourceRef,
+          status:
+            plan.mode === "foreground"
+              ? { kind: "foreground" }
+              : plan.mode === "service"
+                ? { kind: "service", readiness: "starting" }
+                : { kind: "task", state: "starting" },
           metrics: null,
           supervision: "initializing",
           cleanup: "pending",
@@ -324,7 +355,14 @@ export class ProductionSandboxExecutionV2 {
         return this.unknown(entry);
       }
       // Agent revalidates scope and installed bytes in the bind CAS. Host start is single-use.
-      await this.hostBinding(plan);
+      const launchBinding = await this.hostBinding(plan);
+      if (
+        readiness &&
+        JSON.stringify(
+          launchBinding.readinessProbes?.find((probe) => probe.ref === readiness.ref),
+        ) !== JSON.stringify(readiness)
+      )
+        throw new Error("SANDBOX_READINESS_BINDING_CHANGED");
       if (entry.cancelled || this.closed) {
         host.cancel();
         return this.unknown(entry);
@@ -335,6 +373,115 @@ export class ProductionSandboxExecutionV2 {
         return this.unknown(entry);
       }
       host.start();
+      let streamIndex = 0;
+      let streamOffset = 0;
+      const flush = async (final: boolean, termination?: SandboxTaskTermination) => {
+        if (plan.mode === "foreground") return;
+        for (;;) {
+          const page = host.readOutput(streamOffset, 32768);
+          if (page.bytes.length === 0 && !final) return;
+          const record = entry.record;
+          if (!record || record.phase !== "bound" || !record.facts.environment.resourceRef)
+            throw new Error("SANDBOX_STREAM_BINDING_LOST");
+          await this.rpc(entry, {
+            kind: "append_output",
+            resourceRef: record.facts.environment.resourceRef,
+            expectedSequence: record.facts.resource.sequence,
+            chunk: {
+              index: streamIndex,
+              offset: streamOffset,
+              bytesBase64: Buffer.from(page.bytes).toString("base64"),
+              end: final && page.end,
+              ...(final && page.end && termination ? { termination } : {}),
+            },
+          });
+          streamIndex++;
+          streamOffset = page.nextOffset;
+          if (page.end || page.bytes.length === 0) return;
+        }
+      };
+      let acknowledged = false;
+      const acknowledge = async () => {
+        const record = entry.record;
+        if (
+          acknowledged ||
+          plan.mode === "foreground" ||
+          !record ||
+          record.phase !== "bound" ||
+          record.facts.resource.supervision !== "controlled" ||
+          !record.facts.environment.resourceRef
+        )
+          return;
+        if (
+          plan.mode === "service" &&
+          (record.facts.resource.status.kind !== "service" ||
+            record.facts.resource.status.readiness !== "ready")
+        )
+          return;
+        await host.started;
+        await this.rpc(entry, { kind: "resolve" });
+        const handle = {
+          ...(plan.mode === "service"
+            ? { kind: "service", readiness: "ready" }
+            : { kind: "task", state: "running" }),
+          ref: record.facts.environment.resourceRef,
+          environmentId: plan.environmentId,
+          creator: plan.identity,
+          backendRef: plan.backendRef,
+          authorizationRef: plan.authorizationRef,
+          scopeDigest: plan.binding.scopeDigest,
+          deadlineAt: plan.effectiveDeadlineAt,
+        };
+        const bytes = Buffer.from(
+          JSON.stringify({ schemaVersion: "sandbox-task-started.v1", status: "started", handle }),
+        );
+        const ref = await this.options.payloads.writeOutput(
+          entry.invocation,
+          bytes,
+          "application/json",
+        );
+        const facts = sandboxExecutionFactsSchema.parse({
+          ...record.facts,
+          effect: { kind: "not_asserted" },
+          result: {
+            schemaVersion: "sandbox-execution.v2",
+            kind: "started",
+            identity: plan.identity,
+            environmentId: plan.environmentId,
+            policyDigest: compiled.policyDigest,
+            contract: { ref: plan.operationContract.ref, version: plan.operationContract.version },
+            occurredAt: this.options.clock.now(),
+            output: {
+              ref,
+              digest: createHash("sha256").update(bytes).digest("hex"),
+              byteLength: bytes.length,
+            },
+            handle,
+            readinessEvidence:
+              plan.mode === "service"
+                ? {
+                    ref: record.facts.resource.evidence.ref,
+                    digest: record.facts.resource.evidence.digest,
+                  }
+                : null,
+          },
+        });
+        await this.rpc(entry, {
+          kind: "operation",
+          expectedSequence: record.facts.resource.sequence,
+          expectedOperationRevision: record.operationRevision,
+          facts,
+        });
+        if (entry.cancelled || this.closed || host.inspect()?.state !== "alive")
+          throw new Error("SANDBOX_START_LOST");
+        acknowledged = true;
+        entry.acknowledge?.({
+          outcome: "succeeded",
+          outputRef: ref,
+          errorCode: null,
+          externalActionId: sandboxExternalActionId(entry.identity),
+        });
+      };
       let finished = false;
       const completion = host.result.finally(() => {
         finished = true;
@@ -345,6 +492,8 @@ export class ProductionSandboxExecutionV2 {
         const current = entry.record;
         if (!current || current.phase !== "bound") throw new Error("SANDBOX_BINDING_LOST");
         try {
+          if (plan.mode !== "foreground") await this.rpc(entry, { kind: "resolve" });
+          await flush(false);
           const observed = await this.rpc(entry, {
             kind: "observe_control",
             expectedSequence: current.facts.resource.sequence,
@@ -354,19 +503,28 @@ export class ProductionSandboxExecutionV2 {
             observed.record.facts.resource.supervision !== "controlled"
           )
             host.cancel();
+          else await acknowledge();
         } catch {
           host.cancel();
           break;
         }
       }
       const result = await completion;
+      await flush(true, {
+        exitCode: result.taskProcessExited ? result.exitCode : null,
+        reasonCode: result.reason ?? "host_failure",
+        taskProcessExited: result.taskProcessExited,
+      });
       const latest = (await this.rpc(entry, { kind: "read" })).record;
       if (latest.phase !== "bound") throw new Error("SANDBOX_BINDING_LOST");
-      const ref = await this.options.payloads.writeOutput(
-        entry.invocation,
-        result.stdout,
-        "application/octet-stream",
-      );
+      const ref =
+        latest.facts.result?.kind === "started"
+          ? latest.facts.result.output.ref
+          : await this.options.payloads.writeOutput(
+              entry.invocation,
+              result.stdout,
+              "application/octet-stream",
+            );
       const knownExit =
         result.taskStarted === true && result.taskProcessExited && result.exitCode !== null;
       const resultFields = {
@@ -386,27 +544,33 @@ export class ProductionSandboxExecutionV2 {
         .resource as typeof latest.facts.resource & { evidence?: unknown };
       const observation = sandboxExecutionFactsSchema.parse({
         ...latest.facts,
-        result: !knownExit
-          ? { ...resultFields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" }
-          : plan.operationContract.kind === "command" || result.exitCode === 0
-            ? {
-                ...resultFields,
-                kind: "result",
-                output,
-                completion:
-                  plan.operationContract.kind === "command"
-                    ? { type: "exit", exitCode: result.exitCode }
-                    : { type: "value" },
-              }
-            : {
-                ...resultFields,
-                kind: "error",
-                output,
-                reasonCode: "SANDBOX_OPERATION_FAILED",
-                termination: { type: "failure" },
-              },
+        result:
+          latest.facts.result?.kind === "started"
+            ? latest.facts.result
+            : plan.mode !== "foreground" || !knownExit
+              ? { ...resultFields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" }
+              : plan.operationContract.kind === "command" || result.exitCode === 0
+                ? {
+                    ...resultFields,
+                    kind: "result",
+                    output,
+                    completion:
+                      plan.operationContract.kind === "command"
+                        ? { type: "exit", exitCode: result.exitCode }
+                        : { type: "value" },
+                  }
+                : {
+                    ...resultFields,
+                    kind: "error",
+                    output,
+                    reasonCode: "SANDBOX_OPERATION_FAILED",
+                    termination: { type: "failure" },
+                  },
         resource: {
           ...resourceFields,
+          ...(resourceFields.status.kind === "task" && result.taskProcessExited
+            ? { status: { kind: "task", state: "exited" } }
+            : {}),
           sequence: latest.facts.resource.sequence + 1,
           occurredAt: this.options.clock.now(),
           supervision: "lost",
@@ -472,6 +636,6 @@ export class ProductionSandboxExecutionV2 {
       entry.cancelled = true;
       entry.host?.cancel();
     }
-    await Promise.allSettled([...this.entries.values()].map((entry) => entry.completion));
+    await Promise.allSettled([...this.entries.values()].map((entry) => entry.supervision));
   }
 }

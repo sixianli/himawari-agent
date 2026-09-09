@@ -57,6 +57,26 @@ describe("SRT candidate policy compilation", () => {
     expect(policy.filesystem.allowWrite).toContain(input.workspace);
   });
 
+  it("permits only one declared private socket without granting local TCP or other Unix sockets", async () => {
+    const socket = `${input.privateDirectory}/ready.sock`;
+    const policy = JSON.parse(
+      (await compileSandboxPolicy({ ...input, allowedUnixSockets: [socket] })).policyJson,
+    );
+    expect(policy.network).toMatchObject({
+      allowUnixSockets: [socket],
+      allowLocalBinding: false,
+      allowAllUnixSockets: false,
+    });
+    await expect(
+      compileSandboxPolicy({ ...input, allowedUnixSockets: ["/tmp/foreign.sock"] }),
+    ).rejects.toThrow("SOCKET_INVALID");
+    await expect(
+      compileSandboxPolicy({
+        ...input,
+        allowedUnixSockets: [socket, `${input.privateDirectory}/other.sock`],
+      }),
+    ).rejects.toThrow("SOCKET_INVALID");
+  });
   it("rejects secret exceptions, shared private roots and workspace toolchains", async () => {
     await expect(
       compileSandboxPolicy({ ...input, protectedPaths: [input.workspace] }),

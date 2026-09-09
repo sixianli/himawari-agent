@@ -2,6 +2,39 @@ import path from "node:path";
 import type { SandboxPolicyInput } from "./policy.ts";
 import type { ResourceLimits, ResourceObservation } from "./resource-observer.ts";
 
+/** Infrastructure probe input; product inventory/Grant parsing stays outside this package. */
+export interface JobHostReadinessProbe {
+  readonly kind: "unix_http";
+  readonly ref: string;
+  readonly socketName: string;
+  readonly path: string;
+  readonly expectedStatus: number;
+  readonly timeoutMs: number;
+}
+function parseReadiness(value: unknown): JobHostReadinessProbe {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("JOB_HOST_READINESS_INVALID");
+  const probe = value as JobHostReadinessProbe;
+  if (
+    Object.keys(probe).length !== 6 ||
+    probe.kind !== "unix_http" ||
+    typeof probe.ref !== "string" ||
+    !/^[A-Za-z0-9_.:-]{1,200}$/.test(probe.ref) ||
+    typeof probe.socketName !== "string" ||
+    !/^[a-z][a-z0-9-]{0,20}\.sock$/.test(probe.socketName) ||
+    typeof probe.path !== "string" ||
+    !/^\/[a-zA-Z0-9/_-]{0,127}$/.test(probe.path) ||
+    !Number.isSafeInteger(probe.expectedStatus) ||
+    probe.expectedStatus < 200 ||
+    probe.expectedStatus > 299 ||
+    !Number.isSafeInteger(probe.timeoutMs) ||
+    probe.timeoutMs < 100 ||
+    probe.timeoutMs > 30000
+  )
+    throw new Error("JOB_HOST_READINESS_INVALID");
+  return probe;
+}
+
 /** Trusted Worker-to-Job-Host IPC; not a model tool or authority grant. */
 export interface JobHostRequest {
   readonly jobId: string;
@@ -13,6 +46,7 @@ export interface JobHostRequest {
   /** Authorized task bytes only, bounded and encoded for private Job Host IPC. */
   readonly stdinBase64?: string;
   readonly resourceLimits?: ResourceLimits;
+  readonly readiness?: JobHostReadinessProbe;
   readonly deadlineAt: string;
   readonly maxOutputBytes: number;
   readonly cleanupTimeoutMs: number;
@@ -36,7 +70,11 @@ export function parseJobHostRequest(value: unknown): JobHostRequest {
   if (
     keys.some((key) => !(key in input)) ||
     Object.keys(input).some(
-      (key) => !keys.includes(key) && key !== "stdinBase64" && key !== "resourceLimits",
+      (key) =>
+        !keys.includes(key) &&
+        key !== "stdinBase64" &&
+        key !== "resourceLimits" &&
+        key !== "readiness",
     )
   )
     throw new Error("JOB_HOST_INPUT_INVALID");
@@ -92,6 +130,15 @@ export function parseJobHostRequest(value: unknown): JobHostRequest {
     !path.isAbsolute(policy.privateDirectory)
   )
     throw new Error("JOB_HOST_POLICY_INVALID");
+  if ("readiness" in input) {
+    const readiness = parseReadiness(input["readiness"]);
+    const sockets = (policy as unknown as SandboxPolicyInput).allowedUnixSockets;
+    if (
+      sockets?.length !== 1 ||
+      sockets[0] !== path.join(policy.privateDirectory, readiness.socketName)
+    )
+      throw new Error("JOB_HOST_READINESS_SCOPE_INVALID");
+  }
   const deadline = input["deadlineAt"];
   if (
     typeof deadline !== "string" ||

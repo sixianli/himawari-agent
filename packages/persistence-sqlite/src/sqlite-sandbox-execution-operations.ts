@@ -74,6 +74,22 @@ export class SqliteSandboxExecutionOperations {
     const input = raw as Record<string, unknown>;
     if (!input || typeof input !== "object" || Array.isArray(input))
       return this.fail("PORT_INVALID_OPERATION", "Invalid sandbox journal request");
+    if (operation === "readAdmissionByResource") {
+      if (!id(input["runId"]) || !id(input["resourceRef"]))
+        return this.fail("PORT_INVALID_OPERATION", "Invalid resource locator");
+      const row = this.db
+        .prepare(
+          "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? AND resource_ref=?",
+        )
+        .get(owner, agent, input["runId"], input["resourceRef"]) as { plan: string } | undefined;
+      return row
+        ? this.readAdmission(
+            sandboxExecutionPlanV2Schema.parse(JSON.parse(row.plan)).identity,
+            owner,
+            agent,
+          )
+        : undefined;
+    }
     if (operation === "readAdmissionByInvocation") {
       if (!id(input["runId"]) || !id(input["invocationId"]))
         return this.fail("PORT_INVALID_OPERATION", "Invalid invocation locator");
@@ -99,11 +115,20 @@ export class SqliteSandboxExecutionOperations {
         Number(limit) > 100
       )
         return this.fail("PORT_INVALID_OPERATION", "Invalid bounded page");
+      if (input["runId"] !== undefined && !id(input["runId"]))
+        return this.fail("PORT_INVALID_OPERATION", "Invalid Run locator");
       const rows = this.db
         .prepare(
-          "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND job_id>? ORDER BY job_id LIMIT ?",
+          "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND (? IS NULL OR run_id=?) AND job_id>? ORDER BY job_id LIMIT ?",
         )
-        .all(owner, agent, afterJobId ?? "", limit) as { plan: string }[];
+        .all(
+          owner,
+          agent,
+          input["runId"] ?? null,
+          input["runId"] ?? null,
+          afterJobId ?? "",
+          limit,
+        ) as { plan: string }[];
       return rows.map((row) =>
         this.readAdmission(
           sandboxExecutionPlanV2Schema.parse(JSON.parse(row.plan)).identity,

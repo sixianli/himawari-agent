@@ -438,6 +438,12 @@ export class SqliteDurableAdapters {
           agentId,
           input,
         }),
+      readAdmissionByResource: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.readAdmissionByResource", {
+          ownerId,
+          agentId,
+          input,
+        }),
       listAdmissions: (input) =>
         this.context.read("capabilityInvocation.sandboxV2.listAdmissions", {
           ownerId,

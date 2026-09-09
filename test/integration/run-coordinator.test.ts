@@ -63,6 +63,7 @@ async function fixture(
   suffix: string,
   runtime: AgentRuntimePort,
   workers: ScriptedWorkerRunPort = new ScriptedWorkerRunPort(),
+  resources?: ConstructorParameters<typeof RunCoordinator>[0]["resources"],
 ) {
   const owner = createOwner(createOwnerId(`owner-${suffix}`));
   const agent = createAgent({ id: createAgentId(`agent-${suffix}`), owner });
@@ -123,6 +124,7 @@ async function fixture(
     ids: adapters.ids,
   });
   const coordinator = new RunCoordinator({
+    ...(resources ? { resources } : {}),
     clock,
     runs,
     checkpoints: adapters.runCheckpoints,
@@ -848,4 +850,24 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
     });
     expect(cancelled).toBe(true);
   });
+});
+
+it.each([true, false])("checks resource release before completing a Run: %s", async (released) => {
+  const suffix = `resources-${released}`;
+  const runtime: AgentRuntimePort = {
+    async *run() {
+      yield {
+        type: "runtime.completed",
+        runId: createRunId(`run-${suffix}`),
+        output: { kind: "assistant-answer", contentRef: "answer" },
+        occurredAt: T0,
+      };
+    },
+    cancel: async () => {},
+  };
+  const stopRun = vi.fn(async () => ({ released }));
+  const f = await fixture(suffix, runtime, undefined, { stopRun });
+  const result = await f.coordinator.execute(f.input);
+  expect(stopRun).toHaveBeenCalledWith(f.input.runId);
+  expect(result.run.run.status).toBe(released ? "completed" : "reconciling_external_result");
 });

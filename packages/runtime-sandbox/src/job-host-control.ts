@@ -33,6 +33,11 @@ export interface JobHostControlObservation {
   readonly policyDigest: string;
   readonly privateDirectoryRef: string;
   readonly linuxNamespace: LinuxNamespaceIdentity | null;
+  readonly readiness?: {
+    readonly ref: string;
+    readonly digest: string;
+    readonly readyAt: string | null;
+  };
   readonly taskStarted: boolean;
   readonly taskProcessExited: boolean;
   readonly stdioClosed: boolean;
@@ -105,6 +110,14 @@ function verify(binding: JobHostControlBinding, encoded: string): JobHostControl
           value.resources.observedCpuTimeMs,
           value.resources.peakObservedMemoryBytes,
         ].some((n) => !Number.isSafeInteger(n) || n < 0))) ||
+    (value.readiness !== undefined &&
+      (!value.readiness ||
+        typeof value.readiness.ref !== "string" ||
+        !/^[a-f0-9]{64}$/.test(value.readiness.digest) ||
+        (value.readiness.readyAt !== null &&
+          (typeof value.readiness.readyAt !== "string" ||
+            !Number.isFinite(Date.parse(value.readiness.readyAt)) ||
+            value.readiness.readyAt > value.observedAt)))) ||
     [value.taskStarted, value.taskProcessExited, value.stdioClosed, value.srtReset].some(
       (flag) => typeof flag !== "boolean",
     )

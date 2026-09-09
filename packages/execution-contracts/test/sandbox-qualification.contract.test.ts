@@ -160,3 +160,29 @@ describe("sandbox execution compatibility declarations", () => {
       expect(() => sandboxExecutionSupportSchema.parse(value)).toThrow();
   });
 });
+
+it("binds readiness to a bounded private Unix HTTP target, not an arbitrary endpoint", () => {
+  const probe = {
+    kind: "unix_http",
+    ref: "ready",
+    socketName: "ready.sock",
+    path: "/ready",
+    expectedStatus: 204,
+    timeoutMs: 1000,
+  };
+  expect(
+    sandboxHostBindingSchema.parse({ ...binding, readinessProbes: [probe] }).readinessProbes,
+  ).toEqual([probe]);
+  for (const invalid of [
+    { ...probe, socketName: "../secret.sock" },
+    { ...probe, path: "http://example.com" },
+    { ...probe, timeoutMs: 30001 },
+    { ...probe, expectedStatus: 500 },
+  ])
+    expect(() =>
+      sandboxHostBindingSchema.parse({ ...binding, readinessProbes: [invalid] }),
+    ).toThrow();
+  expect(() =>
+    sandboxHostBindingSchema.parse({ ...binding, readinessProbes: [probe, probe] }),
+  ).toThrow();
+});

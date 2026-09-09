@@ -93,7 +93,7 @@ export interface InterruptCoordinatedRunInput {
 }
 
 export interface ExecutionInterruptionFailure {
-  readonly target: "runtime" | "worker";
+  readonly target: "runtime" | "worker" | "resource";
   readonly workerRunId?: string;
   readonly error: unknown;
 }
@@ -122,6 +122,7 @@ export class RunExecutionInterruptedError extends Error {
 }
 
 export interface RunCoordinatorDependencies {
+  readonly resources?: { stopRun(runId: RunId): Promise<{ released: boolean }> };
   readonly clock?: ClockPort;
   readonly runs: RunLifecyclePort;
   readonly checkpoints: RunCheckpointStore;
@@ -267,6 +268,15 @@ export class RunCoordinator {
           }),
       );
     }
+    if (this.dependencies.resources)
+      cancellations.push(
+        this.dependencies.resources
+          .stopRun(input.runId)
+          .then(() => undefined)
+          .catch((error: unknown) => {
+            failures.push({ target: "resource", error });
+          }),
+      );
     attempt.interruption = Promise.all(cancellations).then(() => {
       attempt.interruptionResult = Object.freeze({
         runId: input.runId,
@@ -513,6 +523,17 @@ export class RunCoordinator {
         { runId: input.runId },
       );
     }
+    const resources = await this.dependencies.resources?.stopRun(input.runId);
+    if (terminalStatus === "completed" && resources?.released === false) {
+      storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
+        ...storedCheckpoint.checkpoint,
+        phase: "reconciling_external_result",
+        terminalStatus: null,
+        diagnosticCode: "RUN_RESOURCE_CLEANUP_UNCONFIRMED",
+      });
+      storedRun = await this.transition(input, storedRun, "reconciling_external_result");
+      return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
+    }
     if (terminalStatus === "completed") {
       const output = storedCheckpoint.checkpoint.output;
       if (!output)
@@ -598,6 +619,7 @@ export class RunCoordinator {
     this.cancelledRuns.add(input.runId);
     this.executionAttempts.get(input.runId)?.cancellation.abort();
     await this.dependencies.runtime.cancel(input.runId);
+    await this.dependencies.resources?.stopRun(input.runId);
     for (const workerRunId of this.activeWorkers.get(input.runId) ?? []) {
       await this.requireWorkers().cancel(workerRunId, input.reasonCode);
     }

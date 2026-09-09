@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e978ccdfabe89f82a725a0d510f23609c054f665095cfeebb3fcfe121ee6de63"
+contract_sha256: "sha256:f64c9f9c5ef9725ae4e99a144eac4b574b5e5b6e37500cbd6878c60fccdb2af8"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,11 @@ date: "2026-08-27"
 # 同机备份与恢复 Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/production-managed-tasks.ts
+- apps/agent-service/src/production-sandbox-stream.ts
+- apps/agent-service/src/production-sandbox-services.ts
+- apps/execution-worker/src/production-sandbox-execution-v2.ts
+- packages/execution-contracts/src/sandbox-readiness.ts
 - apps/agent-service/src/production-sandbox-output.ts
 - apps/agent-service/src/production-sandbox-control.ts
 - packages/application/src/services/sandbox-execution-reconciliation.ts
@@ -188,4 +193,12 @@ Linux 前台清理证据要求原 PID namespace init 已消失及完整终态；
 
 ### 资源输出分页保留
 
-v2 已保存输出的分页引用和 cursor 归原 Run 的受保护 artifact；同机恢复须一同保留对应加密 Payload、artifact 关联及原作业账本。游标只定位原调用/资源的固定输出快照，不能改写为宿主路径，也不能用来重新执行任务。原输出缺失或摘要不符时拒绝，不能以空文件代替；权威迁移仍按原回执和当前身份拒绝旧 Worker 输出权限。该分页接口不启用后台任务或生产安装资格。
+v2 已保存输出的分页引用和 cursor 归原 Run 的受保护 artifact；同机恢复须一同保留对应加密 Payload、artifact 关联及原作业账本。游标只定位原调用/资源的固定输出快照，不能改写为宿主路径，也不能用来重新执行任务。原输出缺失或摘要不符时拒绝，不能以空文件代替；权威迁移仍按原回执和当前身份拒绝旧 Worker 输出权限。R6 追加了后台运行输出片段、结束标记和命令退出事实，均归原 Run；恢复时须同时保留这些 artifact，不补造丢失片段、不重启原命令。后台/服务的目标安装资格仍须独立验证。
+
+### 受管理后台资源的安装与恢复
+
+后台 Bash 继续使用安装的 Pi runner 和固定工具链；其运行模式由 Worker 从匹配的操作声明传入，不能从模型参数选择。前台 Bash 保留原结果格式；后台输出只在完整行检查后追加，末尾无换行内容在退出时检查，机器秘密命中即停止并拒绝输出。start 回执只表示资源已启动，命令退出码另存入连续输出的结束事实。资源句柄与管理调用不能重复消费 Grant。
+
+服务仅在安装声明含匹配的 `readinessProbes` 且具备该模式资格时启用。本批探针使用私有目录内唯一 Unix socket 的 HTTP GET、预期 2xx 状态和最多 30 秒期限；不开放通用本地 TCP 或其他 Unix socket，不以日志判断就绪。恢复后的声明、运行文件与资格必须重新匹配；不得凭旧 ready 回执连接新服务。
+
+Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释放资源的 Run。未知清理进入原核查流程并保留写目录占用。Mac 测试主进程退出仍不证明任意后代已全部退出，不能清除隔离以获得正常完成。这里没有新增迁移文件、安装资格签发或运行中数据库修改步骤。

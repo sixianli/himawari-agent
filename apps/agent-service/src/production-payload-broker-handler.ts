@@ -19,6 +19,7 @@ import type {
   SandboxJobJournalPort,
 } from "@himawari-agent/application";
 import type {
+  SandboxOutputChunk,
   SandboxResourceOutputPage,
   SandboxResourceOutputQuery,
 } from "@himawari-agent/execution-contracts";
@@ -112,6 +113,10 @@ export interface ProductionPayloadBrokerHandlerOptions {
     readonly resolveScope: (
       plan: SandboxExecutionPlanV2,
     ) => Promise<NonNullable<PayloadBrokerSandboxExecutionResult["payload"]["resolvedScope"]>>;
+    readonly appendOutput?: (
+      record: SandboxExecutionRecord,
+      chunk: SandboxOutputChunk,
+    ) => Promise<void>;
     readonly readOutput?: (
       record: SandboxExecutionRecord,
       query: SandboxResourceOutputQuery,
@@ -465,6 +470,13 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
             ? await configured.journal.append(input)
             : await configured.journal.recordOperation(input);
         return { ...mutation, record: wire(mutation.record), resolvedScope: null, output: null };
+      }
+      if (command.kind === "append_output") {
+        if (!bound || !configured.appendOutput) throw new Error("output writer unavailable");
+        await current(false);
+        await configured.appendOutput(bound, command.chunk);
+        await current(false);
+        return { record, applied: true, resolvedScope: null, output: null };
       }
       if (command.kind === "output") {
         if (!bound || !configured.readOutput) throw new Error("output reader unavailable");

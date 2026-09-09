@@ -794,7 +794,13 @@ export async function runAgentService(
       };
       const tools = new ProductionRuntimeTools({
         fileRead: fileReadServices,
-        ...(sandboxServices ? { sandbox: sandboxServices.runtime } : {}),
+        ...(sandboxServices
+          ? {
+              sandbox: sandboxServices.runtime,
+              managedTasks: sandboxServices.managedTasks,
+              taskHandle: sandboxServices.taskHandle,
+            }
+          : {}),
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
         capabilities,
@@ -849,6 +855,7 @@ export async function runAgentService(
       });
       governedMemory = memory;
       runs = createProductionRunComposition({
+        ...(sandboxServices ? { resources: sandboxServices.resources } : {}),
         configuration,
         repository,
         authority: activeAuthority,

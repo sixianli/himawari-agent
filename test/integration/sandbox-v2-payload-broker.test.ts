@@ -77,6 +77,10 @@ async function fixture(reserve = false, newBoot = false, resource = false) {
       invoke("capabilityInvocation.sandboxV2.readAdmissionByInvocation", value) as Awaited<
         ReturnType<SandboxExecutionPreparationPort["readAdmissionByInvocation"]>
       >,
+    readAdmissionByResource: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.readAdmissionByResource", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["readAdmissionByResource"]>
+      >,
     listAdmissions: async (value) =>
       invoke("capabilityInvocation.sandboxV2.listAdmissions", value) as Awaited<
         ReturnType<SandboxExecutionPreparationPort["listAdmissions"]>
@@ -140,6 +144,7 @@ async function fixture(reserve = false, newBoot = false, resource = false) {
       >,
   };
   let registrations = 0;
+  let outputWrites = 0;
   let now = T1;
   let beforeVerify = async () => {};
   const scopeReader = new SandboxScopeService({
@@ -166,6 +171,9 @@ async function fixture(reserve = false, newBoot = false, resource = false) {
     allowedContentTypes: ["application/json"],
     sandboxExecutions: {
       hostId: record.plan.identity.hostId,
+      appendOutput: async () => {
+        outputWrites++;
+      },
       readOutput: async (_record, query) => ({
         resourceRef: query.resourceRef,
         cursor: query.cursor,
@@ -254,6 +262,8 @@ async function fixture(reserve = false, newBoot = false, resource = false) {
     request,
     revoke,
     registrations: () => registrations,
+    outputWrites: () => outputWrites,
+    preparations,
     setBeforeVerify: (hook: () => Promise<void>) => {
       beforeVerify = hook;
     },
@@ -530,4 +540,29 @@ it("routes task output through authenticated UDS without consuming a new Handle"
   expect((await f.request({ kind: "read" })).record.operationRevision).toBe(0);
   f.expire();
   expect((await f.request(command)).output).toEqual(first.output);
+});
+
+it("binds resource lookup and output append to the original Run and authenticated Worker", async () => {
+  const f = await fixture(false, false, true);
+  const found = await f.preparations.readAdmissionByResource({
+    runId: f.record.plan.identity.runId,
+    resourceRef: "task-output",
+  });
+  expect(found?.phase).toBe("bound");
+  expect(
+    await f.preparations.readAdmissionByResource({
+      runId: "other-run",
+      resourceRef: "task-output",
+    }),
+  ).toBeUndefined();
+  const command = {
+    kind: "append_output" as const,
+    resourceRef: "task-output",
+    expectedSequence: f.record.facts.resource.sequence,
+    chunk: { index: 0, offset: 0, bytesBase64: "dGVzdA==", end: false },
+  };
+  expect((await f.request(command)).applied).toBe(true);
+  expect(f.outputWrites()).toBe(1);
+  await expect(f.request({ ...command, resourceRef: "foreign-task" })).rejects.toThrow();
+  expect(f.outputWrites()).toBe(1);
 });

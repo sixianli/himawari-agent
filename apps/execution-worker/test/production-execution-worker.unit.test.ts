@@ -1633,7 +1633,11 @@ it("routes v2 only to its supervisor and advertises its explicit foreground supp
   const accepted = await worker.request(handshake());
   expect(accepted).toMatchObject({
     payload: {
-      supportedExecutions: [{ schemaVersion: "sandbox-execution.v2", mode: "foreground" }],
+      supportedExecutions: [
+        { schemaVersion: "sandbox-execution.v2", mode: "foreground" },
+        { schemaVersion: "sandbox-execution.v2", mode: "background" },
+        { schemaVersion: "sandbox-execution.v2", mode: "service" },
+      ],
     },
   });
   const base = execute();

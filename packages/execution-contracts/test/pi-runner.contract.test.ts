@@ -40,11 +40,14 @@ const input = {
 describe("Pi runner protected input", () => {
   it("keeps model parameters separate from trusted scope", () => {
     const parsed = piRunnerInputSchema.parse(input);
+    expect(parsed.executionMode).toBe("foreground");
     expect(parsed.scope.authorizationRef).toBe("trusted");
     expect(JSON.parse(parsed.parametersJson).authorizationRef).toBe("untrusted");
   });
   it.each([
     { tool: "exec" },
+    { executionMode: "background" },
+    { executionMode: "unmanaged" },
     { workspace: "/" },
     { workspace: "/project/../other" },
     { workspace: "/project\nother" },

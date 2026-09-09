@@ -12,7 +12,18 @@ import {
 export interface SandboxJobHost {
   readonly controlBinding?: JobHostControlBinding;
   readonly ready: Promise<void>;
+  /** Resolves only after the authenticated child reports the actual task identity. */
+  readonly started: Promise<NonNullable<JobHostSupervision["task"]>>;
   readonly result: Promise<JobHostResult>;
+  /** Bounded merged stdout/stderr in authenticated arrival order. Reading never starts work. */
+  readOutput(
+    offset: number,
+    limit: number,
+  ): {
+    bytes: Uint8Array;
+    nextOffset: number;
+    end: boolean;
+  };
   /** Observation only; an expired or replaced session never grants control. */
   inspect(): JobHostSupervision | null;
   /** Limited stop of this owned fork only; never adopts a PID from a receipt. */
@@ -64,6 +75,13 @@ export function prepareSandboxJobHost(
     rejectReady = reject;
   });
   void ready.catch(() => {}); // Result-only consumers still receive the failure.
+  let resolveStarted!: (task: NonNullable<JobHostSupervision["task"]>) => void;
+  let rejectStarted!: (error: Error) => void;
+  const taskStarted = new Promise<NonNullable<JobHostSupervision["task"]>>((resolve, reject) => {
+    resolveStarted = resolve;
+    rejectStarted = reject;
+  });
+  void taskStarted.catch(() => {});
   let resolveResult!: (result: JobHostResult) => void;
   const result = new Promise<JobHostResult>((resolve) => {
     resolveResult = resolve;
@@ -75,6 +93,7 @@ export function prepareSandboxJobHost(
   let childExited = false;
   let taskPid: number | undefined;
   let received = 0;
+  const output: Buffer[] = [];
   const stdout: Buffer[] = [];
   const stderr: Buffer[] = [];
   let completion: Record<string, unknown> | undefined;
@@ -235,6 +254,7 @@ export function prepareSandboxJobHost(
           startedAt: message["taskStartedAt"],
         },
       };
+      if (!cancelled && supervision.task) resolveStarted({ ...supervision.task });
     } else if (message["type"] === "output") {
       if (
         !started ||
@@ -255,6 +275,7 @@ export function prepareSandboxJobHost(
         return;
       }
       received += bytes.byteLength;
+      output.push(bytes);
       (message["channel"] === "stdout" ? stdout : stderr).push(bytes);
     } else if (message["type"] === "result") {
       if (completion !== undefined) {
@@ -276,6 +297,7 @@ export function prepareSandboxJobHost(
     clearTimeout(preparationTimer);
     clearTimeout(forceTimer);
     rejectReady(new Error("JOB_HOST_NOT_READY"));
+    rejectStarted(new Error("JOB_HOST_START_UNCONFIRMED"));
     const reason = completion?.["reason"];
     const validReason = [
       "exited",
@@ -321,7 +343,34 @@ export function prepareSandboxJobHost(
   return Object.freeze({
     ...(controlBinding ? { controlBinding } : {}),
     ready,
+    started: taskStarted,
     result,
+    readOutput(offset: number, limit: number) {
+      if (
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        offset > received ||
+        !Number.isSafeInteger(limit) ||
+        limit < 1 ||
+        limit > 1_048_576
+      )
+        throw new Error("JOB_HOST_OUTPUT_CURSOR_INVALID");
+      const bytes = Buffer.alloc(Math.min(limit, received - offset));
+      let position = 0;
+      let copied = 0;
+      for (const chunk of output) {
+        const from = Math.max(0, offset - position);
+        if (from < chunk.length && copied < bytes.length)
+          copied += chunk.copy(bytes, copied, from, from + bytes.length - copied);
+        position += chunk.length;
+        if (copied === bytes.length) break;
+      }
+      return {
+        bytes,
+        nextOffset: offset + bytes.length,
+        end: ended && offset + bytes.length === received,
+      };
+    },
     inspect,
     stop(expected: Pick<JobHostSupervision, "sessionId" | "bootId" | "processIdentityRef">) {
       if (

@@ -1,3 +1,4 @@
+import { ProductionRuntimeTools } from "../src/production-runtime-tools.js";
 import type { RuntimeToolInvocation } from "@himawari-agent/application";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -189,4 +190,43 @@ describe("ProductionRuntimeTools", () => {
     );
     expect(f.request).toHaveBeenCalledTimes(2);
   });
+});
+
+it("exposes management as Pi extension definitions and sends no Worker request for status", async () => {
+  const f = fixture();
+  const execute = vi.fn(async () => ({
+    outcome: "succeeded" as const,
+    resultRef: "saved",
+    errorCode: null,
+    externalActionId: null,
+    modelContent: "running",
+  }));
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    managedTasks: { execute },
+    taskHandle: async () => true,
+  });
+  const definitions = await tools.listAuthorized(invocation.runId, [
+    invocation.capabilityHandleRef,
+  ]);
+  expect(definitions.map((definition) => definition.name)).toEqual(
+    expect.arrayContaining([
+      "execution_task_start",
+      "execution_task_status",
+      "execution_task_output",
+      "execution_task_cancel",
+    ]),
+  );
+  const call = {
+    ...invocation,
+    capabilityRef: "execution.task.status",
+    capabilityHandleRef: null,
+    arguments: { resourceRef: "task" },
+  };
+  expect((await tools.preflight(call)).allowed).toBe(true);
+  expect((await tools.execute(call)).modelContent).toBe("running");
+  expect(execute).toHaveBeenCalledWith(call);
+  expect(f.request).not.toHaveBeenCalled();
+  await expect(tools.execute(invocation)).rejects.toThrow("identity changed");
+  expect(f.request).not.toHaveBeenCalled();
 });

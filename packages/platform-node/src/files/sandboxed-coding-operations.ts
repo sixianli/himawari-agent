@@ -146,7 +146,13 @@ export async function createSandboxedCodingOperations(input: {
         const data = (bytes: Buffer) => {
           count += bytes.length;
           if (count > input.maxOutputBytes) stop(new Error("PI_COMMAND_OUTPUT_LIMIT"));
-          else if (!failure) command.onData(bytes);
+          else if (!failure) {
+            try {
+              command.onData(bytes);
+            } catch {
+              stop(new Error("PI_COMMAND_OUTPUT_REJECTED"));
+            }
+          }
         };
         child.stdout.on("data", data);
         child.stderr.on("data", data);

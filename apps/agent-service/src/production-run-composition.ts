@@ -29,6 +29,11 @@ import { ProductionRunDispatcher } from "./production-run-dispatcher.js";
 import { createProductionRunReconciler } from "./production-run-reconciler.js";
 
 export interface ProductionRunCompositionOptions {
+  readonly resources?: {
+    stopRun(
+      runId: Parameters<RunCoordinator["cancel"]>[0]["runId"],
+    ): Promise<{ released: boolean }>;
+  };
   readonly configuration: Pick<
     ProductConfiguration,
     "ownerId" | "agentId" | "budgets" | "concurrency" | "deadlines"
@@ -147,6 +152,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     logicalSlot: (_request, ordinal) => `agent-stream:${ordinal}`,
   });
   const coordinator = new RunCoordinator({
+    ...(options.resources ? { resources: options.resources } : {}),
     clock,
     runs: repository.runLifecycle(ownerId, agentId, fence),
     checkpoints,

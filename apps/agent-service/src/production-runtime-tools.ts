@@ -31,6 +31,11 @@ import {
   type ExecutionV2Event,
   type ExecutionV2Request,
 } from "@himawari-agent/execution-contracts";
+import {
+  managedTaskDescriptors,
+  MANAGED_TASK_ACTIONS,
+  type ProductionManagedTasks,
+} from "./production-managed-tasks.js";
 import type { ProductionExecutionAdmissionParentBinding } from "./production-execution-admission-handler.js";
 import {
   type ProductionFileReadServices,
@@ -107,6 +112,8 @@ export type ProductionRuntimeSandbox = Omit<SandboxAdmission, "prepare"> & {
 
 export interface ProductionRuntimeToolsOptions {
   readonly sandbox?: ProductionRuntimeSandbox;
+  readonly managedTasks?: ProductionManagedTasks;
+  readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
   readonly agentId: RuntimeRequest["agentId"];
@@ -178,8 +185,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         capabilityHandleRef: null,
       },
     ];
+    const tasks: string[] = [];
     for (const ref of refs) {
       const handle = await this.#handle(runId, ref);
+      if (this.#options.taskHandle && (await this.#options.taskHandle(handle))) tasks.push(ref);
       descriptors.push({
         capabilityRef: handle.capabilityRef,
         capabilityHandleRef: ref,
@@ -193,11 +202,69 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         },
       });
     }
+    if (this.#options.managedTasks) {
+      descriptors.push(...managedTaskDescriptors());
+      if (tasks.length)
+        descriptors.push({
+          capabilityRef: "execution.task.start",
+          capabilityHandleRef: null,
+          name: "execution_task_start",
+          description:
+            "启动已授权的后台命令，选择既有 Handle 与冻结输入；返回 started 不表示命令已完成。",
+          parameters: {
+            type: "object",
+            properties: {
+              capabilityHandleRef: { type: "string", enum: tasks },
+              inputRef: { type: "string" },
+            },
+            required: ["capabilityHandleRef", "inputRef"],
+            additionalProperties: false,
+          },
+        });
+    }
     this.#exposed.set(runId, new Set(refs));
     return descriptors;
   }
 
-  async preflight(invocation: RuntimeToolInvocation) {
+  async #taskStart(invocation: RuntimeToolInvocation): Promise<RuntimeToolInvocation> {
+    if (
+      invocation.capabilityHandleRef !== null ||
+      invocation.capabilityRef !== "execution.task.start"
+    )
+      return invocation;
+    const args = invocation.arguments;
+    if (
+      typeof args["capabilityHandleRef"] !== "string" ||
+      typeof args["inputRef"] !== "string" ||
+      Object.keys(args).length !== 2 ||
+      !this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+    )
+      reject();
+    const handle = await this.#handle(invocation.runId, args["capabilityHandleRef"]);
+    if (!this.#options.taskHandle || !(await this.#options.taskHandle(handle))) reject();
+    return {
+      ...invocation,
+      capabilityRef: handle.capabilityRef,
+      capabilityHandleRef: handle.ref,
+      arguments: { inputRef: args["inputRef"] },
+    };
+  }
+  #isTaskManagement(invocation: RuntimeToolInvocation) {
+    return (
+      invocation.capabilityHandleRef === null &&
+      MANAGED_TASK_ACTIONS.some((action) => invocation.capabilityRef === `execution.task.${action}`)
+    );
+  }
+  async preflight(value: RuntimeToolInvocation) {
+    const invocation = await this.#taskStart(value);
+    if (this.#isTaskManagement(invocation)) {
+      await this.#options.assertRunActive(invocation.runId);
+      return {
+        allowed: this.#exposed.has(invocation.runId) && this.#options.managedTasks !== undefined,
+        permissionDecisionRef: `task-management:${digest([invocation.runId, invocation.toolCallId])}`,
+        reasonCode: "TASK_RESOURCE_AUTHORITY_REQUIRED",
+      };
+    }
     if (invocation.capabilityHandleRef === null) {
       await this.#options.assertRunActive(invocation.runId);
       const valid =
@@ -233,7 +300,28 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
   }
 
-  execute(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
+  async execute(value: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
+    const invocation = await this.#taskStart(value);
+    if (this.#isTaskManagement(invocation)) {
+      await this.#options.assertRunActive(invocation.runId);
+      if (!this.#exposed.has(invocation.runId) || !this.#options.managedTasks) reject();
+      const key = digest([invocation.runId, invocation.toolCallId]);
+      const fingerprint = digest(executionIdentity(invocation));
+      const claimed = await this.#writeJson(invocation, `runtime-tool-intent:${key}`, {
+        fingerprint,
+        management: true,
+      });
+      const intent = (await this.#readJson(claimed.ref)) as {
+        fingerprint?: string;
+        management?: boolean;
+      };
+      if (intent.fingerprint !== fingerprint || intent.management !== true)
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
+      return this.#options.managedTasks.execute(invocation);
+    }
+    return this.#executeCanonical(invocation);
+  }
+  #executeCanonical(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
     const key = digest([invocation.runId, invocation.toolCallId]);
     const fingerprint = digest(executionIdentity(invocation));
     const attemptFingerprint = digest(invocation);

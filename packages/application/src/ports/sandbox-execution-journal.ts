@@ -124,7 +124,12 @@ export interface SandboxExecutionPreparationPort {
     readonly runId: string;
     readonly invocationId: string;
   }): Promise<SandboxExecutionAdmissionRecord | undefined>;
+  readAdmissionByResource(input: {
+    readonly runId: string;
+    readonly resourceRef: string;
+  }): Promise<SandboxExecutionAdmissionRecord | undefined>;
   listAdmissions(input: {
+    readonly runId?: string;
     readonly afterJobId: string | null;
     readonly limit: number;
   }): Promise<readonly SandboxExecutionAdmissionRecord[]>;

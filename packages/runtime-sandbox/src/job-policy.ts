@@ -9,6 +9,7 @@ export async function prepareJobPolicy(
   value: Omit<SandboxPolicyInput, "privateDirectory"> & {
     readonly privateRoot: string;
     readonly jobId: string;
+    readonly readinessSocketName?: string;
   },
 ) {
   const input = structuredClone(value);
@@ -40,6 +41,9 @@ export async function prepareJobPolicy(
     readOnlyToolchainPaths: [...input.readOnlyToolchainPaths],
     protectedPaths: [...input.protectedPaths],
     allowedDomains: [...input.allowedDomains],
+    ...(input.readinessSocketName
+      ? { allowedUnixSockets: [path.join(privateDirectory, input.readinessSocketName)] }
+      : {}),
   };
   return { policy, compiled: await compileSandboxPolicy(policy) };
 }

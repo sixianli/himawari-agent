@@ -30,9 +30,12 @@ R4 核查使用既有受保护 Run trace 保存控制引用与签名观察。控
 
 Agent Service 仅允许导入 `@himawari-agent/runtime-sandbox/control` 的 Node 控制客户端，它不加载 SRT、不编译策略、没有启动 API；依赖检查拒绝根入口和其他深层导入。SRT 初始化与实际工具执行仍属于 Worker/Job Host。
 
-R3 的通用范围、版本匹配和启动前复核已完成验收。资源输出分页读取账本绑定的受保护快照；页和游标沿用 Run artifact，游标绑定原调用/资源/输出摘要，数据库重开继续读回不会重新执行。尚无已知输出返回 null，真实空输出返回零字节页；流式后台输出生产仍归 R6。Pi 工具的完整实现继续复用 runtime-pi 内的上游定义和 Operations，R3 不新增模型侧工具协议。
+R3 的通用范围、版本匹配和启动前复核已完成验收。资源输出分页读取账本绑定的受保护快照；页和游标沿用 Run artifact，游标绑定原调用/资源/输出摘要，数据库重开继续读回不会重新执行。尚无已知输出返回 null，真实空输出返回零字节页；流式后台输出由 R6 的连续受保护片段补充。Pi 工具的完整实现继续复用 runtime-pi 内的上游定义和 Operations，R3 不新增模型侧工具协议。
 
 R5 使用安装树中的 `pi-coding-main.js` 执行 Pi 七种前台工具。Worker 只为 `pi-coding-tool` 版本 `1` 的匹配操作构造 `pi-runner.v1` 输入；目录、主机、调用和期限来自既有 scope，模型参数仍是原冻结 Payload。`host-file-read-main.js` 保留文件元数据/正文双阶段。Pi 定义只在 runtime-pi 内提取，模型侧执行仍经过产品端口；新增 runner 不自动注册未授权工具。目标安装目录中的 `pi-tools/bin/{bash,rg,fd}` 是普通可执行文件，纳入原 runtimeDigest，禁止软链接、PATH 回退和 Pi 自动下载。
+
+R6 在同一 RuntimeToolPort 上注册四个管理扩展，start 沿用冻结命令授权，status/output/cancel 只定位本 Run 的资源。Job Host 区分准备、实际进程启动与结束；Worker 返回不可变 started 回执后继续监督。运行输出按连续编号保存为受保护 Run artifact，分页与恢复读取均不产生执行。服务就绪来自安装声明的 Unix HTTP 探针和受保护监督证据；探针与测试服务只能访问任务私有目录内指定的 socket，策略不开放通用本地 TCP 或其他 Unix socket。Run Coordinator 在正常结束前停止后台资源，未确认释放进入原核查状态，SQLite 完成事务再次阻止未释放资源遗漏。后台/服务须由 Worker、安装声明和对应资格共同声明，不由新增接口自动启用。
+
 
 编辑与写入复用 ConstrainedHostFileSystem 的独占创建、原内容核对、备份和安全替换；Shell 的部分写权限不能推断出删除等任意副作用权限。工具结果、来源、截断与完整输出保存到同一受保护结果中，输出文件须在本作业私有目录、属当前进程用户且为无链接普通文件，模型不会取得原 fullOutputPath。Shell 无退出码视为失败；非零退出及输出保留。Mac 任务树清理未知及正式主机资格限制继续生效。
 

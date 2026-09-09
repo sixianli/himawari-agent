@@ -250,13 +250,31 @@ R5 完成上述前台 runner 范围。本阶段没有签发安装资格或跑 R5
 
 依赖 R5；依据 Spec §4.2，验证 EX-07、EX-09–EX-11。
 
-- [ ] 通过 Pi 扩展注册任务 start/status/output/cancel 薄适配，保留原前台 Bash 合同；共用既有命令授权、后端和保护输出，不造新 shell 协议。
-- [ ] start 前持久句柄关联并获取资源占用；调用返回 started 与真正运行/结束结果分开，重投递只查询原关联。
-- [ ] 有界输出 cursor、重复查询和进程退出后读回不触发新执行；伪造/跨 Run 句柄、过期授权和 PID 复用均拒绝控制。
-- [ ] 资源寿命不得超过原 Run/Grant/执行期限；Run 结束停止资源，后台不自动转成长期 Task。写任务在整个存活期占用目录，冲突操作等待/拒绝。
-- [ ] 验证启动成功但返回丢失、取消与完成竞态、查询期间崩溃、输出洪泛、写占用、撤权、Run 结束与重启只核查。
+- [x] 通过 Pi 扩展注册任务 start/status/output/cancel 薄适配，保留原前台 Bash 合同；共用既有命令授权、后端和保护输出，不造新 shell 协议。
+- [x] start 前持久句柄关联并获取资源占用；调用返回 started 与真正运行/结束结果分开，重投递只查询原关联。
+- [x] 有界输出 cursor、重复查询和进程退出后读回不触发新执行；伪造/跨 Run 句柄、过期授权和 PID 复用均拒绝控制。
+- [x] 资源寿命不得超过原 Run/Grant/执行期限；Run 结束停止资源，后台不自动转成长期 Task。写任务在整个存活期占用目录，冲突操作等待/拒绝。
+- [x] 验证启动成功但返回丢失、取消与完成竞态、查询期间崩溃、输出洪泛、写占用、撤权、Run 结束与重启只核查。
 
 完成条件：至少一个有界长命令和一个声明 readiness 的测试服务可被可靠管理；返回句柄不声称工作完成，所有测试资源结束或留下明确的隔离证据。
+
+#### R6 实现与验证证据（2026-09-10）
+
+Pi 扩展通过原 RuntimeToolPort 注册 `execution_task_start/status/output/cancel`；start 使用已有 Handle 与冻结的命令输入，后台 Bash 继续调用 Pi 的工具工厂及 Operations。前台 `pi-result.v1` 保持原格式；后台仅在 Worker 选定模式后输出经过秘密检查的命令片段，返回真实退出码。受保护 started 回执与后续命令退出、服务 readiness、资源清理各自保存；丢失响应和重复调用不会再次启动。
+
+复用 SQLite 既有原子准入、资源关联、目录占用、调用回执和 Run artifact。输出片段连续且不可替换，cursor 绑定原资源，EOF 可携带实际退出事实；查询重放返回原结果，后续轮询使用新的工具调用身份。管理请求重核原 Grant、Run、模型、线程与 fence，不重新消费授权。Run 完成前停止后台资源，SQLite 同一完成事务另检查未释放资源，覆盖枚举与完成之间的竞争；未确认清理继续核查并保留占用。本阶段没有新增权限表、状态机或迁移文件。
+
+测试服务使用安装声明的私有 Unix HTTP readiness 探针：固定路径、预期状态、头部和总超时均有界；服务日志不构成就绪证据。首次真实就绪证据与后续状态分开持久保存。探针只获准访问当前任务声明的一个私有 socket，不开放通用 TCP bind 或其他 Unix socket。
+
+验证证据：
+
+- `npm run check`、`npm run build:node` 通过。
+- 最终相关回归共 20 个测试文件、326 个测试通过：Worker 生命周期、真实 SQLite 与认证 UDS、scope/Grant 撤销、运行时工具、输出分页、Run 生命周期、合同及 Job Host 单元测试，以及持久化/准备/恢复与占用测试。SQLite 测试直接调用完成端口，确认未释放 background/service 资源阻止 Run 完成；不只依赖应用层的枚举结果。
+- `packages/runtime-sandbox/scripts/probe-managed-tasks.mjs` 在安装产物上完成 5 个真实 Mac 场景：有界长命令、声明 readiness 服务、就绪超时、就绪期间取消、输出洪泛。验证运行中与结束后输出、重复读取、独立 readiness，以及未声明 Unix socket 和 TCP bind 拒绝。5 个场景均观察到主进程退出；已启动任务的树清理均如实记录为 `unknown`。
+- `packages/runtime-sandbox/scripts/probe-job-host-control.mjs` 的真实 Mac 5 项回归通过：认证停止、Worker 崩溃、未启动资源释放、观察到脱离进程组的后代、stdin。已启动场景清理均为 unknown，只有从未启动用户任务的场景确认释放；原进程身份和持久证据核查没有触发重放。探针的 artifact 存储和主机资格为 fixture，SQLite 持久化由上述集成测试单独验证。
+- `packages/runtime-pi/scripts/probe-foreground.mjs` 在安装产物上通过 24 个场景：原 R5 的 21 项回归，加后台 Bash 运行中输出及退出码 7、跨片段秘密输出拒绝、授权目录内后台写入。后台输出使用真实 Pi Bash 工具，未增加 Shell 协议。
+
+实机环境为 macOS Darwin 27.0.0 arm64、Node v22.22.3、Pi 0.84.2、SRT 0.0.75，使用专用假数据。R6 完成的是受管理任务实现与上述有界验收；没有据此签发生产安装资格，也没有运行 R6 的 Linux readiness 矩阵。Mac 的 `taskTreeCleanup=unknown` 仍保留隔离及目录占用；目标 host/backend/mode 的实际启用资格归 R8。
 
 ### R7：MCP 接入（移出本次范围）
 

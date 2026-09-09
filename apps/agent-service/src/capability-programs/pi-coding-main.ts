@@ -93,6 +93,22 @@ try {
   });
   const { executeSandboxedPiCodingTool } = await import("@himawari-agent/runtime-pi");
   let commandExitCode: number | null = null;
+  const commandOutput: Buffer[] = [];
+  let commandBytes = 0;
+  let emittedBytes = 0;
+  const streamOutput = (final: boolean) => {
+    if (input.executionMode === "foreground") return;
+    const all = Buffer.concat(commandOutput);
+    const text = all.toString("utf8");
+    if (
+      scanMachineSecrets(text).length ||
+      /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(text)
+    )
+      throw new Error("PI_RESULT_SECRET_REJECTED");
+    const end = final ? all.length : all.lastIndexOf(10) + 1;
+    if (end > emittedBytes) process.stdout.write(all.subarray(emittedBytes, end));
+    emittedBytes = Math.max(emittedBytes, end);
+  };
   const result = await executeSandboxedPiCodingTool({
     name: input.tool,
     toolCallId: input.scope.toolCallId,
@@ -101,48 +117,64 @@ try {
     operations: {
       ...operations,
       async executeCommand(command) {
-        const completed = await operations.executeCommand(command);
+        const completed = await operations.executeCommand({
+          ...command,
+          onData: (bytes) => {
+            command.onData(bytes);
+            if (input.executionMode !== "foreground") {
+              commandBytes += bytes.length;
+              if (commandBytes > input.maxOutputBytes) throw new Error("PI_RESULT_OUTPUT_LIMIT");
+              commandOutput.push(Buffer.from(bytes));
+              streamOutput(false);
+            }
+          },
+        });
         commandExitCode = completed.exitCode;
         return completed;
       },
     },
   });
-  const details =
-    result.details && typeof result.details === "object"
-      ? ({ ...result.details } as Record<string, unknown>)
-      : {};
-  const fullPath = details["fullOutputPath"];
-  delete details["fullOutputPath"];
-  const fullOutput =
-    typeof fullPath === "string"
-      ? await exportPiOutputFile(fullPath, input.privateDirectory, input.maxOutputBytes)
-      : null;
-  const content = result.content.map((part) =>
-    part.type === "text" && typeof fullPath === "string"
-      ? { ...part, text: part.text.replaceAll(fullPath, "本次受保护结果的 fullOutput 字段") }
-      : part,
-  );
-  const output = JSON.stringify({
-    schemaVersion: "pi-result.v1",
-    tool: input.tool,
-    content,
-    details,
-    fullOutput,
-    isError: result.isError,
-    commandExitCode,
-    source: {
-      toolCallId: input.scope.toolCallId,
-      directoryGrantRef: input.scope.directoryGrant.ref,
-      directoryGrantRevision: input.scope.directoryGrant.revision,
-      parameters,
-    },
-  });
-  if (scanMachineSecrets(output).length) throw new Error("PI_RESULT_SECRET_REJECTED");
-  if (Buffer.byteLength(output) > input.maxOutputBytes) throw new Error("PI_RESULT_OUTPUT_LIMIT");
-  process.stdout.write(output);
-  if (result.isError)
-    process.exitCode =
-      commandExitCode && commandExitCode > 0 && commandExitCode < 256 ? commandExitCode : 1;
+  if (input.executionMode !== "foreground") {
+    streamOutput(true);
+    process.exitCode = commandExitCode ?? (result.isError ? 1 : 0);
+  } else {
+    const details =
+      result.details && typeof result.details === "object"
+        ? ({ ...result.details } as Record<string, unknown>)
+        : {};
+    const fullPath = details["fullOutputPath"];
+    delete details["fullOutputPath"];
+    const fullOutput =
+      typeof fullPath === "string"
+        ? await exportPiOutputFile(fullPath, input.privateDirectory, input.maxOutputBytes)
+        : null;
+    const content = result.content.map((part) =>
+      part.type === "text" && typeof fullPath === "string"
+        ? { ...part, text: part.text.replaceAll(fullPath, "本次受保护结果的 fullOutput 字段") }
+        : part,
+    );
+    const output = JSON.stringify({
+      schemaVersion: "pi-result.v1",
+      tool: input.tool,
+      content,
+      details,
+      fullOutput,
+      isError: result.isError,
+      commandExitCode,
+      source: {
+        toolCallId: input.scope.toolCallId,
+        directoryGrantRef: input.scope.directoryGrant.ref,
+        directoryGrantRevision: input.scope.directoryGrant.revision,
+        parameters,
+      },
+    });
+    if (scanMachineSecrets(output).length) throw new Error("PI_RESULT_SECRET_REJECTED");
+    if (Buffer.byteLength(output) > input.maxOutputBytes) throw new Error("PI_RESULT_OUTPUT_LIMIT");
+    process.stdout.write(output);
+    if (result.isError)
+      process.exitCode =
+        commandExitCode && commandExitCode > 0 && commandExitCode < 256 ? commandExitCode : 1;
+  }
 } catch {
   process.stderr.write("PI_RUNNER_EXECUTION_FAILED\n");
   process.exitCode = 1;

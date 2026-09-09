@@ -1,10 +1,12 @@
 import path from "node:path";
 import {
+  type RunExecutionLeaseClaim,
   recoverSandboxExecutionsAtStartup,
   type SandboxExecutionProjectionContext,
   SandboxExecutionReconciliationService,
   type SandboxExecutionRecord,
 } from "@himawari-agent/application";
+import { createIdempotencyKey, createRunId } from "@himawari-agent/domain";
 import {
   type SandboxExecutionFacts,
   sandboxExecutionFactsSchema,
@@ -483,6 +485,41 @@ describe("R2 SQLite durable execution resources", () => {
           invocation_id: plan.identity.invocationId,
         });
         expect(call(f, "admit", { ...a, plan, facts }).applied).toBe(false);
+        // Exercise the SQLite completion transaction independently of RunCoordinator:
+        // a resource admitted after its last enumeration must still block completion.
+        f.database.prepare("UPDATE runs SET revision=1 WHERE id=?").run(plan.identity.runId);
+        const reopened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        try {
+          const runs = reopened.runLifecycle(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product);
+          await expect(
+            runs.completeRun({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              runId: createRunId(plan.identity.runId),
+              expectedRevision: 1,
+              idempotencyKey: createIdempotencyKey("r6-completion"),
+              commandFingerprint: "r6-completion",
+              authority: SERVICE_AUTHORITY.lease,
+              executionLease: plan.executionLease as RunExecutionLeaseClaim,
+              payloadRef: "payload-capability-invocation-trigger",
+              output: { kind: "no-answer" },
+              dataClassification: "private",
+            }),
+          ).rejects.toMatchObject({
+            code: "PORT_CONFLICT",
+            message: "Run still owns unreleased sandbox resources",
+          });
+          await expect(runs.readRun(createRunId(plan.identity.runId))).resolves.toMatchObject({
+            revision: 1,
+            run: { status: "running" },
+          });
+        } finally {
+          await reopened.close();
+        }
       } finally {
         await f.close();
       }

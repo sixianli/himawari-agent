@@ -42,6 +42,8 @@ import type { ProductionFileReadServices } from "./production-file-read-workflow
 import type { ProductionRuntimeSandbox } from "./production-runtime-tools.js";
 import { createProductionSandboxControl } from "./production-sandbox-control.js";
 
+import { createProductionManagedTasks } from "./production-managed-tasks.js";
+import { createProductionSandboxStream } from "./production-sandbox-stream.js";
 import { createProductionSandboxOutput } from "./production-sandbox-output.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -970,31 +972,216 @@ export async function createProductionSandboxServices(options: {
       };
     },
   };
+  const outputOptions = {
+    ownerId: configuration.ownerId,
+    agentId: configuration.agentId,
+    payloads,
+    protector,
+    artifacts,
+    clock,
+    ids,
+  };
+  const stream = createProductionSandboxStream(outputOptions);
+  const readForegroundOutput = createProductionSandboxOutput(outputOptions);
+  const reconciliation = new SandboxExecutionReconciliationService({
+    hostId,
+    journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
+    evidence,
+    backend: control.backend,
+    timeoutMs: 5000,
+    now: () => clock.now(),
+  });
+  const stopRecord = async (record: Parameters<typeof stream.output>[0]) => {
+    let current = record;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return (
+          await reconciliation.reconcile({
+            identity: current.plan.identity,
+            expectedSequence: current.facts.resource.sequence,
+            authority: options.authority(),
+            action: "stop",
+          })
+        ).record;
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          error.message !== "SANDBOX_RECONCILIATION_SEQUENCE_CHANGED"
+        )
+          throw error;
+        const latest = await repository
+          .sandboxExecutionJournal(configuration.ownerId, configuration.agentId)
+          .read(record.plan.identity);
+        if (!latest) throw error;
+        current = latest;
+      }
+    }
+    throw new Error("SANDBOX_STOP_OBSERVATION_CONFLICT");
+  };
+  const resolveTask = async (call: RuntimeToolInvocation, resourceRef: string) => {
+    const admission = await preparations.readAdmissionByResource({
+      runId: call.runId,
+      resourceRef,
+    });
+    if (
+      !admission ||
+      admission.phase !== "bound" ||
+      admission.record.plan.mode === "foreground" ||
+      !call.context
+    )
+      throw new Error("MANAGED_TASK_UNAVAILABLE");
+    const record = admission.record;
+    const resolved = await resolve(record.plan);
+    if (
+      resolved.scope.modelRef !== call.context.modelRef ||
+      resolved.scope.threadId !== call.context.threadId ||
+      record.plan.executionLease.deploymentId !== call.context.executionLease.deploymentId ||
+      record.plan.executionLease.authorityEpoch !== call.context.executionLease.authorityEpoch ||
+      record.plan.executionLease.fencingToken !== call.context.executionLease.fencingToken
+    )
+      throw new Error("MANAGED_TASK_CALLER_CHANGED");
+    const receipt = await repository
+      .capabilityInvocationReceiptPort(configuration.ownerId, configuration.agentId)
+      .read({
+        handleRef: record.plan.handleRef,
+        invocationId: record.plan.identity.invocationId,
+        authority: options.authority(),
+        now: clock.now(),
+      });
+    const rank = ["public", "private", "sensitive", "restricted"];
+    if (
+      !receipt ||
+      rank.indexOf(receipt.dataClassification) > rank.indexOf(call.dataClassification)
+    )
+      throw new Error("MANAGED_TASK_DISCLOSURE_DENIED");
+    return record;
+  };
+  const managedTasks = createProductionManagedTasks({
+    termination: stream.termination,
+    now: () => clock.now(),
+    resolve: resolveTask,
+    observe: async (record, stop) => {
+      if (!stop) return record;
+      return stopRecord(record);
+    },
+    output: (record, cursor, limit) =>
+      stream.output(record, {
+        resourceRef: record.facts.environment.resourceRef ?? "",
+        cursor,
+        limit,
+      }),
+    readOutput: async (call, record, ref) => {
+      await resolveTask(call, record.facts.environment.resourceRef ?? "");
+      const payload = await payloads.get(ref);
+      if (!payload || payload.ciphertext.byteLength > 65536)
+        throw new Error("MANAGED_TASK_OUTPUT_UNAVAILABLE");
+      const bytes = await protector.unprotect({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        payload,
+      });
+      if (bytes.byteLength > 32768) throw new Error("MANAGED_TASK_OUTPUT_LIMIT");
+      return Buffer.from(bytes).toString("base64");
+    },
+    load: async (call, key) => {
+      const stored = await artifacts().lookup({
+        runId: call.runId,
+        purpose: "trace",
+        operationKey: key,
+      });
+      return stored ? readJson(stored.payloadRef) : undefined;
+    },
+    save: async (call, key, value) => {
+      const plaintext = Buffer.from(JSON.stringify(value));
+      if (plaintext.length > 65536) throw new Error("MANAGED_TASK_RECORD_LIMIT");
+      const payload = await protector.protect({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        ref: ids.next("managed-task"),
+        dataClassification: call.dataClassification,
+        contentType: "application/json",
+        plaintext,
+        createdAt: clock.now(),
+      });
+      const saved = await artifacts().commit({
+        runId: call.runId,
+        purpose: "trace",
+        operationKey: key,
+        payload,
+      });
+      return { ref: saved.ref, value: await readJson(saved.ref) };
+    },
+  });
   return {
     runtime,
     child,
+    managedTasks,
+    resources: {
+      stopRun: async (runId: RuntimeToolInvocation["runId"]) => {
+        let afterJobId: string | null = null;
+        let released = true;
+        for (;;) {
+          const page = await preparations.listAdmissions({ runId, afterJobId, limit: 100 });
+          for (const admission of page) {
+            const plan = admission.phase === "bound" ? admission.record.plan : admission.plan;
+            if (plan.identity.runId !== runId || plan.mode === "foreground") continue;
+            if (admission.phase !== "bound") {
+              released = false;
+              continue;
+            }
+            try {
+              const result = { record: await stopRecord(admission.record) };
+              if (
+                result.record.facts.resource.supervision !== "released" ||
+                result.record.facts.result?.kind !== "started"
+              )
+                released = false;
+            } catch {
+              released = false;
+            }
+          }
+          if (page.length < 100) break;
+          const last = page.at(-1);
+          if (!last) break;
+          afterJobId =
+            last.phase === "bound" ? last.record.plan.identity.jobId : last.plan.identity.jobId;
+        }
+        return { released };
+      },
+    },
+    taskHandle: async (handle: GovernedCapabilityExecutionHandle) => {
+      if (
+        !sandboxEntries.some(
+          (entry) =>
+            entry.manifest.ref === handle.capabilityRef &&
+            entry.manifest.version === handle.capabilityVersion,
+        )
+      )
+        return false;
+      const { binding } = await entryFor(handle.capabilityRef, handle.capabilityVersion);
+      return (
+        binding.operationBindings?.some(
+          (item) =>
+            item.operation === handle.operation &&
+            ((item.mode === "background" && item.contract.kind === "task_start") ||
+              (item.mode === "service" && item.contract.kind === "service_start")),
+        ) === true
+      );
+    },
     brokerV2: {
       evidence,
-      readOutput: createProductionSandboxOutput({
-        ownerId: configuration.ownerId,
-        agentId: configuration.agentId,
-        payloads,
-        protector,
-        artifacts,
-        clock,
-        ids,
-      }),
+      appendOutput: stream.append,
+      readOutput: (
+        record: Parameters<typeof readForegroundOutput>[0],
+        query: Parameters<typeof readForegroundOutput>[1],
+      ) =>
+        record.plan.mode === "foreground"
+          ? readForegroundOutput(record, query)
+          : stream.output(record, query),
       registerControl: control.register,
       observeControl: control.observe,
       verifyPreparation: control.verifyPreparation,
-      reconciliation: new SandboxExecutionReconciliationService({
-        hostId,
-        journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
-        evidence,
-        backend: control.backend,
-        timeoutMs: 5000,
-        now: () => clock.now(),
-      }),
+      reconciliation,
       hostId,
       journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
       preparations,

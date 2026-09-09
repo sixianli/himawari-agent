@@ -1,6 +1,10 @@
 import { appendFile, mkdir, rename } from "node:fs/promises";
-import type { SandboxOperationBinding } from "@himawari-agent/execution-contracts";
+import {
+  sandboxExecutionFactsSchema,
+  type SandboxOperationBinding,
+} from "@himawari-agent/execution-contracts";
 import { afterEach, expect, it } from "vitest";
+import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
 import { AGENT_ID, OWNER_ID, T1, T2 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
@@ -158,4 +162,82 @@ it.each(["runtime", "directory"])("rechecks real %s identity before start", asyn
   expect(
     (await f.services.brokerV2.preparations.readAdmission(admitted.admission.plan.identity))?.phase,
   ).toBe("reserved");
+});
+
+it("manages the original task and live output through SQLite and authenticated UDS without consuming again", async () => {
+  const f = await productionSandboxScope(descriptor("background", true));
+  cleanups.push(f.close);
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("expected v2");
+  const admitted = await f.services.brokerV2.preparations.reserve({
+    ...prepared,
+    invocation: f.input,
+  });
+  if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
+  const { plan, reservation } = admitted.admission;
+  const base = sandboxV2Admission(f.f).facts;
+  const environment = {
+    ...base.environment,
+    creator: plan.identity,
+    environmentId: plan.environmentId,
+    mode: plan.mode,
+    resourceRef: reservation.resourceRef,
+    scopeDigest: plan.binding.scopeDigest,
+    authorizationRef: plan.authorizationRef,
+    backendRef: plan.backendRef,
+    deadlineAt: plan.effectiveDeadlineAt,
+    workspaceConflictRefs: reservation.workspaceConflictRefs,
+  };
+  const facts = sandboxExecutionFactsSchema.parse({
+    ...base,
+    environment,
+    resource: {
+      ...base.resource,
+      creator: plan.identity,
+      environmentId: plan.environmentId,
+      scopeDigest: plan.binding.scopeDigest,
+      resourceRef: reservation.resourceRef,
+      status: { kind: "task", state: "starting" },
+      sequence: 2,
+    },
+  });
+  const bound = await f.services.brokerV2.preparations.bindAndStart({
+    identity: plan.identity,
+    expectedSequence: 1,
+    facts,
+    authority: f.input.authority,
+    now: T1,
+  });
+  const resourceRef = reservation.resourceRef;
+  if (!resourceRef) throw new Error("resource missing");
+  const send = await f.connect(plan.identity);
+  await send({
+    kind: "append_output",
+    resourceRef,
+    expectedSequence: bound.record.facts.resource.sequence,
+    chunk: { index: 0, offset: 0, bytesBase64: "aGVsbG8=", end: false },
+  });
+  const call = {
+    ...f.call,
+    capabilityRef: "execution.task.output",
+    capabilityHandleRef: null,
+    toolCallId: "output-query",
+    arguments: { resourceRef, limit: 2 },
+  };
+  const result = await f.services.managedTasks.execute(call);
+  expect(JSON.parse(result.modelContent)).toMatchObject({ bytesBase64: "aGU=", end: false });
+  expect(await f.services.managedTasks.execute(call)).toEqual(result);
+  await expect(
+    f.services.managedTasks.execute({ ...call, arguments: { resourceRef: "foreign" } }),
+  ).rejects.toThrow();
+  if (!call.context) throw new Error("context missing");
+  await expect(
+    f.services.managedTasks.execute({
+      ...call,
+      context: { ...call.context, modelRef: "foreign-model" },
+    }),
+  ).rejects.toThrow();
+  expect((await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID))[0]?.uses).toBe(1);
+  await f.repository.authorizationStore().revokeGrant(f.input.authorizationRef ?? "", T1, "test");
+  await expect(f.services.managedTasks.execute(call)).rejects.toThrow();
 });

@@ -1,3 +1,4 @@
+import { startReadinessProbe } from "./readiness-probe.ts";
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { realpath } from "node:fs/promises";
@@ -20,6 +21,8 @@ let workerSequence = 0;
 let controlSequence = 0;
 let control: Awaited<ReturnType<typeof openJobHostControl>> | undefined;
 let managerReset = false;
+let readiness: ReturnType<typeof startReadinessProbe> | undefined;
+let readyAt: string | null = null;
 let lastWorkerTick = performance.now();
 let heartbeat: ReturnType<typeof setInterval> | undefined;
 let observer: ReturnType<typeof observeTaskResources> | undefined;
@@ -75,6 +78,8 @@ async function finish() {
   phase = "stopping";
   clearTimeout(deadline);
   killTask();
+  readiness?.cancel();
+  await readiness?.result.catch(() => false);
   let reset = false;
   clearTimeout(emergency);
   emergency = setTimeout(() => process.exit(1), request?.cleanupTimeoutMs ?? 5000);
@@ -177,6 +182,17 @@ async function prepare(value: unknown, controlValue?: unknown) {
         policyDigest: policy.policyDigest,
         linuxNamespace,
         privateDirectoryRef: `sandbox-private:${createHash("sha256").update(policyInput.privateDirectory).digest("hex")}`,
+        ...(request?.readiness
+          ? {
+              readiness: {
+                ref: request.readiness.ref,
+                digest: createHash("sha256")
+                  .update(JSON.stringify(request.readiness))
+                  .digest("hex"),
+                readyAt,
+              },
+            }
+          : {}),
         taskStarted: userTaskStarted,
         taskProcessExited: exited,
         stdioClosed: closed,
@@ -256,6 +272,21 @@ async function start() {
       taskIdentityRef: `sandbox-process:${randomUUID()}`,
       taskStartedAt: new Date().toISOString(),
     });
+    if (request?.readiness) {
+      readiness = startReadinessProbe({
+        probe: request.readiness,
+        privateDirectory: request.policy.privateDirectory,
+        deadlineAt: request.deadlineAt,
+        active: () => phase === "running" && !exited,
+        wrap: (command) => SandboxManager.wrapWithSandboxArgv(command, "/bin/bash"),
+      });
+      void readiness.result
+        .then((ready) => {
+          if (ready) readyAt = new Date().toISOString();
+          else if (phase === "running") stop("host_failure");
+        })
+        .catch(() => stop("host_failure"));
+    }
     if (request?.resourceLimits)
       observer = observeTaskResources(task.pid, request.resourceLimits, stop);
   };

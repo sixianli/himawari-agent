@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 // Opt-in installed-runner verification with disposable fake data. This does not
 // issue a deployment qualification or grant access to a user's project.
 import assert from "node:assert/strict";
@@ -86,7 +87,7 @@ const toolDigests = Object.fromEntries(
   ),
 );
 let sequence = 0;
-async function run(tool, parameters, writable = false) {
+async function run(tool, parameters, writable = false, executionMode = "foreground") {
   const jobId = `pi-probe-${++sequence}`;
   process.stderr.write(`${jobId} ${tool}\n`);
   const { policy, compiled } = await prepareJobPolicy({
@@ -116,6 +117,7 @@ async function run(tool, parameters, writable = false) {
   const expiresAt = new Date(Date.now() + 15000).toISOString();
   const input = {
     schemaVersion: "pi-runner.v1",
+    executionMode,
     tool,
     workerInstanceId: "worker-1",
     workspace,
@@ -164,6 +166,20 @@ async function run(tool, parameters, writable = false) {
   });
   await host.ready;
   host.start();
+  let liveObserved = false;
+  if (executionMode !== "foreground") {
+    let completed = false;
+    void host.result.then(() => {
+      completed = true;
+    });
+    while (!completed && Date.now() < Date.parse(expiresAt)) {
+      if (host.readOutput(0, 4096).bytes.length) {
+        liveObserved = !completed;
+        break;
+      }
+      await delay(50);
+    }
+  }
   const result = await host.result;
   if (!result.stdout.length)
     process.stderr.write(
@@ -176,10 +192,18 @@ async function run(tool, parameters, writable = false) {
     );
   assert.equal(result.taskStarted, true, "runner must actually start");
   const output = result.stdout.length
-    ? JSON.parse(Buffer.from(result.stdout).toString("utf8"))
+    ? executionMode === "foreground"
+      ? JSON.parse(Buffer.from(result.stdout).toString("utf8"))
+      : Buffer.from(result.stdout).toString("utf8")
     : null;
-  reports.push({ tool, exitCode: result.exitCode, cleanup: result.taskTreeCleanup });
-  return { result, output };
+  reports.push({
+    tool,
+    executionMode,
+    liveObserved,
+    exitCode: result.exitCode,
+    cleanup: result.taskTreeCleanup,
+  });
+  return { result, output, liveObserved };
 }
 const text = (output) =>
   output.content
@@ -241,6 +265,31 @@ try {
     assert.equal(JSON.stringify(denied.output).includes("synthetic-outside-marker"), false);
   }
   assert.equal(await readFile(path.join(workspace, "note.txt"), "utf8"), "first\nsecond\nthird\n");
+  const background = await run(
+    "bash",
+    { command: "printf 'before\\n'; /bin/sleep 1; printf 'after\\n'; exit 7" },
+    false,
+    "background",
+  );
+  assert.equal(background.liveObserved, true);
+  assert.equal(background.result.exitCode, 7);
+  assert.equal(background.output, "before\nafter\n");
+  const secret = await run(
+    "bash",
+    { command: "printf '%s' 'sk-'; /bin/sleep 0.1; printf '%s\\n' 'abcdefghijklmnopqrstuv'" },
+    false,
+    "background",
+  );
+  assert.notEqual(secret.result.exitCode, 0);
+  assert.equal(secret.result.stdout.length, 0);
+  const writeTask = await run(
+    "bash",
+    { command: "printf changed > note.txt; /bin/sleep 0.2; printf 'saved\\n'" },
+    true,
+    "background",
+  );
+  assert.equal(writeTask.result.exitCode, 0);
+  assert.equal(await readFile(path.join(workspace, "note.txt"), "utf8"), "changed");
   await rename(path.join(binaries, "fd"), path.join(binaries, "fd.unavailable"));
   assert.equal((await run("find", { pattern: "*.txt" })).result.exitCode, 1);
   await rename(path.join(binaries, "rg"), path.join(binaries, "rg.unavailable"));

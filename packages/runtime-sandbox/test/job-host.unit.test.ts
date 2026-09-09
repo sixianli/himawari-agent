@@ -64,6 +64,70 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("Job Host admission and observation", () => {
+  it("separates task acknowledgement from preparation and reads bounded output without restarting", async () => {
+    const process = child();
+    const input = request();
+    const host = prepareSandboxJobHost(input);
+    process.emitMessage({
+      type: "ready",
+      jobId: "job",
+      attemptId: "attempt",
+      policyDigest: input.policyDigest,
+    });
+    await host.ready;
+    let acknowledged = false;
+    void host.started.then(() => {
+      acknowledged = true;
+    });
+    await Promise.resolve();
+    expect(acknowledged).toBe(false);
+    host.start();
+    process.emitMessage({
+      type: "started",
+      pid: 4321,
+      taskIdentityRef: "sandbox-process:22222222-2222-2222-2222-222222222222",
+      taskStartedAt: new Date().toISOString(),
+    });
+    expect((await host.started).processId).toBe(4321);
+    process.emitMessage({
+      type: "output",
+      channel: "stdout",
+      bytes: Buffer.from("abc").toString("base64"),
+    });
+    process.emitMessage({
+      type: "output",
+      channel: "stderr",
+      bytes: Buffer.from("DEF").toString("base64"),
+    });
+    expect(Buffer.from(host.readOutput(2, 3).bytes).toString()).toBe("cDE");
+    const first = host.readOutput(0, 2);
+    first.bytes.fill(0);
+    expect(Buffer.from(host.readOutput(0, 2).bytes).toString()).toBe("ab");
+    expect(host.readOutput(6, 1)).toMatchObject({ nextOffset: 6, end: false });
+    expect(() => host.readOutput(7, 1)).toThrow("CURSOR_INVALID");
+    expect(() => host.readOutput(0, 1_048_577)).toThrow("CURSOR_INVALID");
+    process.emit("close");
+    await host.result;
+    expect(host.readOutput(2, 10)).toMatchObject({ nextOffset: 6, end: true });
+    expect(Buffer.from(host.readOutput(2, 10).bytes).toString()).toBe("cDEF");
+    expect(process.send.mock.calls.filter(([m]) => m.type === "start")).toHaveLength(1);
+  });
+  it("does not invent a task acknowledgement when the start reply is lost", async () => {
+    const process = child();
+    const host = prepareSandboxJobHost(request());
+    process.emitMessage({
+      type: "ready",
+      jobId: "job",
+      attemptId: "attempt",
+      policyDigest: "a".repeat(64),
+    });
+    await host.ready;
+    host.start();
+    process.emit("close");
+    await expect(host.started).rejects.toThrow("START_UNCONFIRMED");
+    expect((await host.result).taskStarted).toBeNull();
+    expect(host.readOutput(0, 1).end).toBe(true);
+  });
   it("freezes caller input and rejects malformed inputs before forking", () => {
     const input = request();
     const frozen = parseJobHostRequest(input);

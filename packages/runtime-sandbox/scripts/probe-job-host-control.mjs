@@ -185,6 +185,8 @@ if (process.argv.includes("--worker")) {
         };
         const plan = {
           identity,
+          mode: "foreground",
+          operationContract: { ref: "probe", version: "1", kind: "fixed_read" },
           semanticFingerprint: `sha256:${"a".repeat(64)}`,
           environmentId: "probe",
           effectiveDeadlineAt: request.deadlineAt,

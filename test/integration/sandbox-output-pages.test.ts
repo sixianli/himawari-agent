@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { SandboxExecutionRecord } from "@himawari-agent/application";
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { afterEach, expect, it } from "vitest";
+import { createProductionSandboxStream } from "../../apps/agent-service/src/production-sandbox-stream.ts";
 import { createProductionSandboxOutput } from "../../apps/agent-service/src/production-sandbox-output.ts";
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
@@ -62,16 +63,17 @@ async function fixture(text = "first\u0000second\nlast") {
     operationRevision: 1,
   };
   let next = 0;
-  const reader = () =>
-    createProductionSandboxOutput({
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      payloads,
-      protector: f.protector,
-      artifacts: () => repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
-      ids: { next: () => `page:${++next}` },
-      clock: { now: () => T1 },
-    });
+  const outputOptions = () => ({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    payloads,
+    protector: f.protector,
+    artifacts: () => repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
+    ids: { next: () => `page:${++next}` },
+    clock: { now: () => T1 },
+  });
+  const reader = () => createProductionSandboxOutput(outputOptions());
+  const stream = () => createProductionSandboxStream(outputOptions());
   const read = async (ref: string) => {
     const saved = await payloads.get(ref);
     if (!saved) throw new Error("missing output");
@@ -81,6 +83,7 @@ async function fixture(text = "first\u0000second\nlast") {
   };
   return {
     reader,
+    stream,
     record,
     read,
     bytes,
@@ -147,4 +150,75 @@ it("distinguishes empty confirmed output from unavailable output", async () => {
   expect(
     await f.reader()({ ...f.record, facts: { ...f.record.facts, result: null } }, query),
   ).toBeNull();
+});
+
+it("persists a live output stream, polls issued positions and reads after restart and exit", async () => {
+  const f = await fixture();
+  const record = { ...f.record, plan: { ...f.record.plan, mode: "background" as const } };
+  const query = { resourceRef: "task-fixture", cursor: null, limit: 2 };
+  const waiting = await f.stream().output(record, query);
+  expect(waiting).toMatchObject({ end: false, output: { byteLength: 0 } });
+  const chunk = {
+    index: 0,
+    offset: 0,
+    bytesBase64: Buffer.from("abCD").toString("base64"),
+    end: false,
+  };
+  await f.stream().append(record, chunk);
+  await f.stream().append(record, chunk);
+  await expect(
+    f.stream().append(record, { ...chunk, bytesBase64: Buffer.from("evil").toString("base64") }),
+  ).rejects.toThrow();
+  const first = await f.stream().output(record, { ...query, cursor: waiting.nextCursor });
+  expect((await f.read(first.output.ref)).toString()).toBe("ab");
+  expect(await f.stream().output(record, { ...query, cursor: waiting.nextCursor })).toEqual(first);
+  await f.reopen();
+  const second = await f.stream().output(record, { ...query, cursor: first.nextCursor });
+  expect((await f.read(second.output.ref)).toString()).toBe("CD");
+  const pending = await f.stream().output(record, { ...query, cursor: second.nextCursor });
+  expect(pending).toMatchObject({ end: false, output: { byteLength: 0 } });
+  const termination = { exitCode: 7, reasonCode: "exited", taskProcessExited: true };
+  await f.stream().append(record, { index: 1, offset: 4, bytesBase64: "", end: true, termination });
+  expect(await f.stream().termination(record)).toEqual(termination);
+  const final = await f.stream().output(record, { ...query, cursor: second.nextCursor });
+  expect(final).toMatchObject({
+    end: true,
+    nextCursor: null,
+    output: { byteLength: 0 },
+    termination,
+  });
+  await expect(
+    f.stream().append(record, { index: 2, offset: 4, bytesBase64: "eA==", end: false }),
+  ).rejects.toThrow();
+  await expect(
+    f.stream().output(record, { ...query, cursor: `sandbox-stream-cursor:${"0".repeat(64)}` }),
+  ).rejects.toThrow();
+  await expect(
+    f.stream().output(
+      {
+        ...record,
+        plan: { ...record.plan, identity: { ...record.plan.identity, runId: "other-run" } },
+      },
+      { ...query, cursor: first.nextCursor },
+    ),
+  ).rejects.toThrow();
+});
+it("rejects output holes, noncanonical encoding, empty nonterminal chunks and flood", async () => {
+  const f = await fixture();
+  const record = {
+    ...f.record,
+    plan: {
+      ...f.record.plan,
+      mode: "background" as const,
+      resourceCeiling: { ...f.record.plan.resourceCeiling, maxOutputBytes: 3 },
+    },
+  };
+  for (const chunk of [
+    { index: 1, offset: 0, bytesBase64: "eA==", end: false },
+    { index: 0, offset: 1, bytesBase64: "eA==", end: false },
+    { index: 0, offset: 0, bytesBase64: "eB==", end: false },
+    { index: 0, offset: 0, bytesBase64: "", end: false },
+    { index: 0, offset: 0, bytesBase64: "YWJjZA==", end: false },
+  ])
+    await expect(f.stream().append(record, chunk)).rejects.toThrow();
 });

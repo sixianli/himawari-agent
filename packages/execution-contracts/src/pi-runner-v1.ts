@@ -47,7 +47,7 @@ const text: Schema<string> = {
 };
 /** Constructed by the Worker from the resolved scope and frozen input. These
  * fields are never accepted as model parameters or a new authority source. */
-export const piRunnerInputSchema = object({
+const runnerInput = object({
   schemaVersion: literal("pi-runner.v1"),
   workerInstanceId: machineString,
   tool: piCodingToolNameSchema,
@@ -58,4 +58,22 @@ export const piRunnerInputSchema = object({
   maxOutputBytes: integer(1, 16777216),
   parametersJson: text,
 });
-export type PiRunnerInput = InferSchema<typeof piRunnerInputSchema>;
+type BaseInput = InferSchema<typeof runnerInput>;
+export type PiRunnerInput = BaseInput & {
+  readonly executionMode: "foreground" | "background" | "service";
+};
+export const piRunnerInputSchema: Schema<PiRunnerInput> = {
+  parse(value, location = "$") {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new ContractValidationError(location, "invalid Pi runner input");
+    const { executionMode = "foreground", ...rest } = value as Record<string, unknown>;
+    const mode = enumeration(["foreground", "background", "service"]).parse(
+      executionMode,
+      location,
+    );
+    const input = runnerInput.parse(rest, location);
+    if (mode !== "foreground" && input.tool !== "bash")
+      throw new ContractValidationError(location, "only Bash can own a background resource");
+    return { ...input, executionMode: mode };
+  },
+};

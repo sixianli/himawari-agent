@@ -186,6 +186,17 @@ export function createProductionSandboxControl(options: Options) {
     signal?: AbortSignal,
   ): Promise<SandboxResourceObservation> => {
     const raw = await inspect(record.plan, command, signal);
+    if (record.plan.operationContract.kind === "service_start") {
+      const { binding } = await options.host(record.plan);
+      const ref = record.plan.operationContract.readinessProbeRef;
+      const probe = binding.readinessProbes?.find((probe) => probe.ref === ref);
+      if (
+        !probe ||
+        raw.readiness?.ref !== ref ||
+        raw.readiness.digest !== createHash("sha256").update(JSON.stringify(probe)).digest("hex")
+      )
+        throw new Error("SANDBOX_READINESS_BINDING_CHANGED");
+    }
     const sequence = record.facts.resource.sequence + 1;
     const stored = await options.write(record.plan, observationKey(record.plan, sequence), {
       fingerprint: record.plan.semanticFingerprint,
@@ -193,6 +204,15 @@ export function createProductionSandboxControl(options: Options) {
       resourceSequence: sequence,
       observation: raw,
     } satisfies StoredObservation);
+    if (raw.readiness?.readyAt) {
+      const readinessKey = `sandbox-readiness:${record.plan.identity.jobId}`;
+      if (!(await options.read(record.plan, readinessKey)))
+        await options.write(record.plan, readinessKey, {
+          ref: stored.ref,
+          digest: stored.digest,
+          observation: raw,
+        });
+    }
     let state: "controlled" | "released" | "lost" = "lost";
     try {
       state = await classify(record, raw);
@@ -214,9 +234,16 @@ export function createProductionSandboxControl(options: Options) {
       resourceRef: old.resourceRef,
       status:
         state === "controlled"
-          ? old.status
+          ? old.status.kind === "task"
+            ? { kind: "task", state: "running" }
+            : old.status.kind === "service"
+              ? { kind: "service", readiness: raw.readiness?.readyAt ? "ready" : "starting" }
+              : old.status
           : old.status.kind === "task"
-            ? { kind: "task", state: state === "released" ? "exited" : "unknown" }
+            ? {
+                kind: "task",
+                state: raw.taskProcessExited || state === "released" ? "exited" : "unknown",
+              }
             : old.status.kind === "service"
               ? { kind: "service", readiness: "unavailable" }
               : old.status,
@@ -292,6 +319,19 @@ export function createProductionSandboxControl(options: Options) {
     async verifyPreparation(plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) {
       const stored = await readControl(plan);
       const observed = await inspect(plan, "inspect");
+      if (plan.operationContract.kind === "service_start") {
+        const { binding } = await options.host(plan);
+        const ref = plan.operationContract.readinessProbeRef;
+        const probe = binding.readinessProbes?.find((item) => item.ref === ref);
+        if (
+          !probe ||
+          observed.readiness?.ref !== ref ||
+          observed.readiness.digest !==
+            createHash("sha256").update(JSON.stringify(probe)).digest("hex") ||
+          observed.readiness.readyAt !== null
+        )
+          throw new Error("SANDBOX_READINESS_BINDING_CHANGED");
+      }
       if (
         observed.phase !== "ready" ||
         observed.taskStarted ||
@@ -338,7 +378,24 @@ export function createProductionSandboxControl(options: Options) {
         )) !== resource.supervision
       )
         throw new Error("SANDBOX_CONTROL_EVIDENCE_CHANGED");
-      return [{ ref: artifact.ref, digest: artifact.digest }];
+      const proofs = [{ ref: artifact.ref, digest: artifact.digest }];
+      if (facts.result?.kind === "started" && facts.result.handle.kind === "service") {
+        const saved = await options.read(plan, `sandbox-readiness:${plan.identity.jobId}`);
+        const first = saved?.value as
+          | { ref: string; digest: string; observation: JobHostControlObservation }
+          | undefined;
+        if (
+          !first ||
+          !first.observation.readiness?.readyAt ||
+          first.ref !== facts.result.readinessEvidence?.ref ||
+          first.digest !== facts.result.readinessEvidence.digest ||
+          first.observation.bootId !== control.bootId ||
+          first.observation.processIdentityRef !== control.processIdentityRef
+        )
+          throw new Error("SANDBOX_READINESS_EVIDENCE_CHANGED");
+        proofs.push({ ref: first.ref, digest: first.digest });
+      }
+      return proofs;
     },
   };
 }
