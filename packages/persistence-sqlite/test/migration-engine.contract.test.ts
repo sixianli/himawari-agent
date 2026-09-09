@@ -18,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const temporaryDirectories: string[] = [];
-const CURRENT_SCHEMA_SEQUENCE = 27;
+const CURRENT_SCHEMA_SEQUENCE = 28;
 
 afterEach(async () => {
   await Promise.all(
@@ -105,20 +105,20 @@ describe("immutable SQLite migration engine", () => {
     database.close();
   });
 
-  it("upgrades the previous schema by appending only the sandbox journal migration", async () => {
+  it("upgrades the previous schema by appending only the execution resource migration", async () => {
     const { databasePath, snapshotPath } = await temporaryDatabase();
     const database = openQualifiedDatabase(databasePath);
     try {
       const migrations = await loadBundledMigrations();
-      applyMigrations(database, migrations.slice(0, 26));
+      applyMigrations(database, migrations.slice(0, 27));
       database.prepare("INSERT INTO owners (id, revision) VALUES ('preserved-owner', 7)").run();
       const before = readMigrationLedger(database);
       const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-        appliedSequences: [27],
-        currentSequence: 27,
+        appliedSequences: [28],
+        currentSequence: 28,
       });
-      expect(readMigrationLedger(database).slice(0, 26)).toEqual(before);
+      expect(readMigrationLedger(database).slice(0, 27)).toEqual(before);
       expect(
         database.prepare("SELECT revision FROM owners WHERE id = 'preserved-owner'").pluck().get(),
       ).toBe(7);

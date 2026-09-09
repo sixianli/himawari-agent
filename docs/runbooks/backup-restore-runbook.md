@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:1aa3e06c279e7fac8a2b1ee25f8af4aa8235a673c42b115546c85d3115a939cf"
+contract_sha256: "sha256:d597bce4ad53fc74b6e239ec23a809a56c6f5fd3f22ba0e619f50fa47b692804"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,10 @@ date: "2026-08-27"
 # 同机备份与恢复 Runbook
 
 <!-- runbook-contract:
+- packages/application/src/ports/sandbox-execution-journal.ts
+- packages/application/src/services/sandbox-execution-projection.ts
+- packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts
+- packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts
 - packages/application/src/services/runtime-continuation-service.ts
 - packages/application/src/ports/run-checkpoints.ts
 - packages/runtime-pi/src/pi-tool-batch-continuation.ts
@@ -38,7 +42,11 @@ date: "2026-08-27"
 
 ## Scope
 
-SRT 变更已包含产品作业合同、计划投影、Pi 调用绑定、固定版本运行依赖及候选策略编译。Node 打包包含 `runtime-sandbox` 和 SRT 0.0.75，但正式 Worker 尚未切换，未取得 SRT 主机安装资格。schema 27 已追加作业观察账本；升级必须遵循下述快照与迁移检查，不能在恢复后将无账本的旧凭证补建为可启动作业，也不能自动重放待核查作业。固定假数据策略探针通过不代表正式 Job Host、资源硬上限或崩溃恢复可用。本文的实际安装、备份与权威迁移流程不因目标架构获采纳而改变；不能把恢复的旧 Capability 记录当成新 SRT profile 的主机资格。
+当前 schema 28 在原数据库追加 v2 资源关联、独立操作/资源观察、目录占用和派发回执。升级既有库仍须先取得已验证快照；0020/0027 不改写。恢复/迁移时必须保留占用和未确认派发；旧未结束作业缺少可信目录链时按主机保守阻止新准入，缺少主机身份时阻止所有主机的新准入。禁止通过删除 Run、清空占用或把旧记录改成 v2 来恢复执行。已确认清理的旧历史结果保持原解释，不由迁移补写新资格。
+
+这些 SQLite 机制已有独立测试数据库的升级、重开和事务验证；本次未升级运行中的 state root，也未执行真实安装、恢复或跨主机迁移。正式执行组合仍使用 v1，v2 证据读取、目录身份解析和派发接入尚待后续阶段完成。恢复后继续适用当前主机/目录/权威检查，不能自动重放旧任务或未确认派发。
+
+SRT 变更已包含产品作业合同、计划投影、Pi 调用绑定、固定版本运行依赖及候选策略编译。Node 打包包含 `runtime-sandbox` 和 SRT 0.0.75，正式 Worker 已有 v1 组合但未切换到 v2，未取得 SRT 主机安装资格。schema 27 已追加作业观察账本；升级必须遵循下述快照与迁移检查，不能在恢复后将无账本的旧凭证补建为可启动作业，也不能自动重放待核查作业。固定假数据策略探针通过不代表正式 Job Host、资源硬上限或崩溃恢复可用。本文的实际安装、备份与权威迁移流程不因目标架构获采纳而改变；不能把恢复的旧 Capability 记录当成新 SRT profile 的主机资格。
 
 本 Runbook 只管理当前活动部署在同一主机、同一存储边界内的加密恢复点：创建、独立验证，以及把一个已验证恢复点恢复到它原属的明确 state root。恢复点不改变 authority epoch，不创建第二个可启动权威，也不是异地主机损毁后的灾难恢复介质。
 

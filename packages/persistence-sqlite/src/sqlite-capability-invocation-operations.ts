@@ -37,6 +37,8 @@ import {
   parseRunPayloadArtifactPayload,
 } from "./sqlite-run-payload-artifact-operations.ts";
 
+import { SqliteSandboxExecutionOperations } from "./sqlite-sandbox-execution-operations.ts";
+
 type ConsumeInput = ConsumeCapabilityInvocationInput;
 type ReadInput = ReadCapabilityInvocationInput;
 type ObserveInput = ObserveCapabilityInvocationOutputInput;
@@ -465,6 +467,7 @@ function grantRecord(row: GrantRow): Record<string, unknown> {
 }
 
 export class SqliteCapabilityInvocationOperations {
+  private readonly sandboxExecutions: SqliteSandboxExecutionOperations;
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
@@ -480,23 +483,26 @@ export class SqliteCapabilityInvocationOperations {
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
     this.runPayloadArtifacts = runPayloadArtifacts;
+    this.sandboxExecutions = new SqliteSandboxExecutionOperations(database, fail, {
+      disk: assertDiskHeadroom,
+      consume: (value, owner, agent) => this.consume(parseConsume(value), owner, agent),
+      authority: (value, owner, agent, now) =>
+        this.assertAuthority(authority(value), owner, agent, now),
+      live: (plan, value, now) => this.assertSandboxLive(plan, authority(value), now),
+    });
   }
 
-  execute(
-    operation: string,
-    value: unknown,
-  ):
-    | ConsumeResult
-    | FrozenReceipt
-    | ResultArtifact
-    | ResultArtifactCommit
-    | SandboxJobAdmissionResult
-    | readonly SandboxJobRecord[]
-    | SandboxJobRecord
-    | { record: SandboxJobRecord; applied: boolean }
-    | undefined {
+  execute(operation: string, value: unknown): unknown {
     try {
       const scoped = this.scopedInput(value);
+      if (operation.startsWith("capabilityInvocation.sandboxV2.")) {
+        return this.sandboxExecutions.execute(
+          operation.slice("capabilityInvocation.sandboxV2.".length),
+          scoped.input,
+          scoped.ownerId,
+          scoped.agentId,
+        );
+      }
       if (operation === "capabilityInvocation.sandboxPrepare") {
         return this.fail("PORT_INVALID_OPERATION", "Sandbox preparation requires atomic admission");
       }
@@ -551,10 +557,19 @@ export class SqliteCapabilityInvocationOperations {
   }
 
   private assertSandboxLive(
-    plan: SandboxExecutionPlan,
+    plan:
+      | SandboxExecutionPlan
+      | import("@himawari-agent/execution-contracts").SandboxExecutionPlanV2,
     authority: AuthorityInput,
     now: string,
   ): void {
+    const other = this.database
+      .prepare(
+        `SELECT 1 FROM sandbox_workspace_occupancy WHERE host_id=? AND released_at IS NULL AND job_id != ? LIMIT 1`,
+      )
+      .get(plan.identity.hostId, plan.identity.jobId);
+    if (plan.schemaVersion === "sandbox-execution.v1" && other)
+      this.fail("PORT_CONFLICT", "Host has unresolved v2 workspace occupancy");
     const receipt = this.read(
       { handleRef: plan.handleRef, invocationId: plan.identity.invocationId, authority, now },
       plan.identity.ownerId,

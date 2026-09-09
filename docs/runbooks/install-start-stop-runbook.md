@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e184b4114edac54a30e55d7c90bab578b63a068c9d7ea0efa615604d37abdc19"
+contract_sha256: "sha256:4fa7d11b91d741a1e8e61b0212ec448d4b587b822a2c96a40df6b9960e990483"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,10 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- packages/application/src/ports/sandbox-execution-journal.ts
+- packages/application/src/services/sandbox-execution-projection.ts
+- packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts
+- packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts
 - apps/execution-worker/src/production-worker-composition.ts
 - apps/execution-worker/src/production-sandbox-worker.ts
 - packages/platform-node/src/capabilities/sandbox-host-verifier.ts
@@ -86,9 +90,13 @@ date: "2026-08-27"
 
 ## Scope
 
+当前 schema 28 在原数据库追加 v2 资源关联、独立操作/资源观察、目录占用和派发回执。升级既有库仍须先取得已验证快照；0020/0027 不改写。恢复/迁移时必须保留占用和未确认派发；旧未结束作业缺少可信目录链时按主机保守阻止新准入，缺少主机身份时阻止所有主机的新准入。禁止通过删除 Run、清空占用或把旧记录改成 v2 来恢复执行。已确认清理的旧历史结果保持原解释，不由迁移补写新资格。
+
+这些 SQLite 机制已有独立测试数据库的升级、重开和事务验证；本次未升级运行中的 state root，也未执行真实安装、恢复或跨主机迁移。正式执行组合仍使用 v1，v2 证据读取、目录身份解析和派发接入尚待后续阶段完成。恢复后继续适用当前主机/目录/权威检查，不能自动重放旧任务或未确认派发。
+
 SRT 的 Agent Service 和 Worker 启动组合已连接现有准入、目录授权状态、受保护 scope、认证 Payload 通道与作业监督器；当前 root scope 来源只支持已接入的文件 inspect/read 工作流，不能据此启用所有工具。网络范围须来自本次操作同一 Grant 的审批快照确切域名目标，并与主机能力上界核对；不新增授权或再次消费 Grant。准入及启动前验证授权、父调用和真实 host/runtime/runner/qualification。缺少可信来源时拒绝。策略只由 Worker 编译，初始观察可无摘要，首次原子启动固定摘要后不可替换。
 
-安装产物源码新增了 R1 的 v2 合同、类型端口和纯判断函数，正式组合仍使用 `SandboxExecutionPort` 与 v1 账本；没有可据此切换的 v2 配置开关。新增 `SandboxExecutionPortV2` 导出不代表 Job Host 取得新监督资格，也不会把旧 unknown 回执转换为已清理。后续接入 v2 持久化与适配器时，须重新核对本 Runbook 的迁移、恢复和安装验证。
+安装产物源码新增了 R1 的 v2 合同、类型端口和纯判断函数，以及 R2 的 SQLite 账本，正式组合仍使用 `SandboxExecutionPort` 与 v1 账本；没有可据此切换的 v2 配置开关。新增 `SandboxExecutionPortV2` 导出不代表 Job Host 取得新监督资格，也不会把旧 unknown 回执转换为已清理。后续接入 v2 正式适配器时，须重新核对本 Runbook 的迁移、恢复和安装验证。
 
 schema 27 的作业账本继续作为持久依据；不能给无账本的旧凭证补建可启动作业，不能自动重放清理未知作业。旧作业读回、清理和重复观察不恢复执行权限。Job Host 接收至多 48 KiB 的私有 IPC 输入，仅送入任务 stdin；正文不进入 argv 或环境变量。stdout 保留原 runner 合同并保存为受保护 Payload；CPU/RSS 观察随作业观察持久保存。固定有界进程采样超限或失败时请求停止，采样不能证明硬配额、所有短命后代都被计入或整个进程树已退出。
 

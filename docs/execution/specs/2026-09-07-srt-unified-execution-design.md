@@ -218,7 +218,7 @@ sequenceDiagram
 
 #### 3.2 版本化目标数据
 
-目标为产品内部 `sandbox-execution.v2`，不是重命名现有外层 `execution.v2`。下列字段已在 R1 实现严格 schema 和纯判断函数；持久化、真实证据读取和生产端口实现仍按后续任务推进。现有 v1 保留原解释和读回能力。所有身份、绑定、时间、引用和枚举采用严格 schema；未知字段、不同分支字段混用、非有限数及不匹配摘要都拒绝。
+目标为产品内部 `sandbox-execution.v2`，不是重命名现有外层 `execution.v2`。下列字段已在 R1 实现严格 schema 和纯判断函数，R2 已追加产品 SQLite 关联及观察账本；真实证据读取和生产执行端口接入仍按后续任务推进。现有 v1 保留原解释和读回能力。所有身份、绑定、时间、引用和枚举采用严格 schema；未知字段、不同分支字段混用、非有限数及不匹配摘要都拒绝。
 
 | 记录 | 必需内容及验证责任 |
 |---|---|
@@ -234,6 +234,12 @@ sequenceDiagram
 R1 的操作合同描述分为 `fixed_read`、`command`、`verified_effect`、`task_start`、`service_start`，均冻结 ref/version。专用写入和 push 使用 `verified_effect`，额外绑定 verifier/version/target；具体能力从可信目录解析描述后，与计划逐项核对，不能由调用者改选较弱合同。服务后续请求复用前三种操作语义，但 mode 保持 service，分别持有自己的调用身份。后台/服务的 started 回执只使用 not_asserted 表示已登记启动，不断言后台业务效果完成。
 
 环境关联冻结 resourceRef，回执和资源观察必须同时匹配它，不能通过同时替换两者来换用任意句柄。资源观察另带 task 状态或 service readiness，不能从不可变的初始 started 回执推导当前可用性。监督证据区分本地进程启动身份和远端 connectionRef，不为远端连接编造本地 PID。`validateSandboxExecutionFacts` 检查冻结环境/合同、调用和策略绑定以及观察次序；`SandboxExecutionEvidencePort` 的可信实现负责验证 Payload 内容/归属、效果核查与主机资格。schema 通过不代表真实性通过，缺少该证据读取结果时投影拒绝继续执行和释放义务。
+
+持久化使用两个单调编号：资源观察的 sequence 与操作结果/效果的 revision。迟到的操作证据可以独立保存，不必伪造一次资源状态变化；每次更新均核对当前编号、冻结绑定和已知结果不可变条件。受保护输出仍由既有调用结果/Run artifact 提供，账本只存引用与摘要。
+
+工作区占用记录主机、读/写模式及从文件系统根到授权目录的 device/inode 身份链。相同叶身份视为别名，任一叶身份位于另一条祖先链时视为范围相交；主机解析器必须依据当前授权和目录状态产生该链，模型参数不能直接提供。明确的活跃只读环境可以并存；写环境、未知清理/效果和未确认派发均保守阻止相交操作。
+
+继续意图冻结资源 sequence、操作 revision 和权威绑定。派发提交后，直到可信调用方保存确认回执都作为在途不确定状态；即使错误通知丢失或进程崩溃也不能重派。后续错误观察保留原文，确认回执与错误历史分开记录。派发回执只证明调用方确认接收，不证明工具业务效果或资源清理；解除占用仍需当前资源与效果证据。正式证据读者、主机目录解析器及传输调用方的接入分别由后续阶段完成。
 
 #### 3.3 端口与命令分派
 
@@ -426,9 +432,9 @@ Worker 将正文、来源、实际读取范围、截断状态、内容摘要和�
 
 新记录使用 sandbox-execution.v2，不原地改变 v1 的 completed/failed 语义。已有 execution.v2 外层消息只增加经明确版本协商的内部 binding，不能发送 v2 正文却标为 v1。Agent/Worker/runner/部署资格均声明支持版本；不匹配在消费/启动前拒绝。读回旧结果允许旧版本解析器，旧版本解析器没有新执行能力。
 
-通过下一条可用编号的追加 SQLite migration 增加环境/任务/服务关联、监管观察及隔离占用；复用原数据库、invocation 唯一性和事务/fence，不修改 0020/0027 或其他已发布 migration。新建账失败与凭证消费同事务回滚；首笔 starting 与策略摘要固定同事务完成。后台创建与其调用/环境关联同事务保存，后续任务事件按单调 sequence CAS 追加。结果引用必须属于同一调用的受保护结果，不能凭任意输出路径装配。
+R2 通过追加 SQLite migration 0028 增加环境/任务/服务关联、监管观察及隔离占用；复用原数据库、invocation 唯一性和事务/fence，不修改 0020/0027 或其他已发布 migration。新建账失败与凭证消费同事务回滚；首笔 starting 与策略摘要固定同事务完成。后台创建与其调用/环境关联同事务保存，后续任务事件按单调 sequence CAS 追加。结果引用必须属于同一调用的受保护结果，不能凭任意输出路径装配。
 
-旧 completed/failed 只展示为旧合同事实；旧 prepared/starting/running/stopping/reconciling/quarantined 先核查并建立保守占用。旧 unknown 无法补足环境身份时保持隔离，不允许“迁移默认值”标 controlled、verified 或 released。追加新证据也不得覆盖旧观察；无法验证的旧任务只允许安全核查/限定停止，不转换为可继续服务。旧服务没有持久句柄时不按 PID 自动接管。
+旧 completed/failed 只展示为旧合同事实；旧 prepared/starting/running/stopping/reconciling/quarantined 先核查并建立保守占用。旧记录没有可信目录祖先链时按主机保守占用，缺少主机身份时占用覆盖所有主机；原记录及历史 migration 不改写。未解决的占用阻止随 Run 级联删除。旧 unknown 无法补足环境身份时保持隔离，不允许“迁移默认值”标 controlled、verified 或 released。追加新证据也不得覆盖旧观察；无法验证的旧任务只允许安全核查/限定停止，不转换为可继续服务。旧服务没有持久句柄时不按 PID 自动接管。
 
 #### 10.3 切换与回退
 

@@ -92,14 +92,32 @@ R1 实现位于 `packages/execution-contracts/src/sandbox-execution-v2.ts`、现
 
 依赖 R1；依据 Spec §3.1、§3.2、§4.4、§10.2，验证 EX-02、EX-07、EX-09、EX-11、EX-12。
 
-- [ ] 核对迁移最新编号，追加环境、后台 task/service 与 invocation 的关联及隔离占用；放在现有产品 SQLite，不新增授权库或调度 Task 状态机。
-- [ ] 原子准入保留 Handle 消费/语义指纹/作业初观察；后台创建关联同事务保存，失败整体回滚。首次 starting CAS 固定 policyDigest，争用失败方只能清理自己的预备资源。
-- [ ] OperationResult 保留原保护结果权威；资源观察独立 sequence/CAS 追加，可在结果产生后继续更新，不能替换已发布结果。继续意图与最新资源 sequence/Run/fence 同事务复核，派发前再检查；派发后发现故障保存在途不确定性。
-- [ ] 原目录写环境整个存活期保有范围占用；lost/unknown 保守阻止相交操作，跨进程重启后恢复占用。使用当前目录身份和范围算法，不使用字符串前缀锁。
-- [ ] v1 升级覆盖正常历史结果、未启动、启动意图丢失、quarantined 和缺少身份情况；不把默认迁移值当清理/效果证明。
-- [ ] 用真实 SQLite 证明重开、CAS 冲突、事务回滚、分页、取消后清理追加、结果保留、旧记录不得重新执行。
+- [x] 核对迁移最新编号，追加环境、后台 task/service 与 invocation 的关联及隔离占用；放在现有产品 SQLite，不新增授权库或调度 Task 状态机。
+- [x] 原子准入保留 Handle 消费/语义指纹/作业初观察；后台创建关联同事务保存，失败整体回滚。首次 starting CAS 固定 policyDigest，争用失败方只能清理自己的预备资源。
+- [x] OperationResult 保留原保护结果权威；资源观察独立 sequence/CAS 追加，可在结果产生后继续更新，不能替换已发布结果。继续意图与最新资源 sequence/Run/fence 同事务复核，派发前再检查；派发后发现故障保存在途不确定性。
+- [x] 原目录写环境整个存活期保有范围占用；lost/unknown 保守阻止相交操作，跨进程重启后恢复占用。使用当前目录身份和范围算法，不使用字符串前缀锁。
+- [x] v1 升级覆盖正常历史结果、未启动、启动意图丢失、quarantined 和缺少身份情况；不把默认迁移值当清理/效果证明。
+- [x] 用真实 SQLite 证明重开、CAS 冲突、事务回滚、分页、取消后清理追加、结果保留、旧记录不得重新执行。
 
 完成条件：升级不会重消费或重跑；已知结果与未释放资源同时可读，未知目录在新进程准入前即受保护。
+
+#### R2 实施与验证（2026-09-09）
+
+实现使用 `SandboxExecutionJournalPort`、现有 `SqliteProductStateRepository.sandboxExecutionJournal()` 和 `sqlite-sandbox-execution-operations.ts`，追加 migration `0028_sandbox_execution_resources.sql`，不修改 0020/0027。环境和 task/service 创建引用与消费凭证一起提交；结果引用继续查验既有受保护 Run artifact，不建立第二套授权、结果存储或调度 Task。
+
+资源观察使用 sequence，操作结果/效果使用独立 revision；迟到结果可在资源释放后保存，已知结果不可改写；新的 verified 效果必须先通过绑定证据核验，不能只凭声明写成确认事实。继续意图冻结两个编号与权威，派发前重新检查 Run/租约/fence。派发后未收到确认回执即持久视为不确定，后续错误保留历史；单次派发重放不会再次获得启动权限。资源已释放仍有未知效果或在途派发时保留占用；后到的未知效果会重新保留占用。
+
+范围占用按主机与 device/inode 祖先链比较，覆盖同一目录的别名及父子目录；活跃只读范围可并存，写范围与未知资源阻止相交操作。主机身份链来自可信组合端口，正式目录解析、授权绑定与真实监督证据读取仍属 R3/R4；本阶段测试使用合成目录身份和监督证据，不宣称实际主机资格。v1 没有可信目录链时保守占用整个主机，主机身份缺失时阻止所有主机的新准入；原行、观察和迁移摘要不改写，不自动补造 v2 记录。未解决的占用不能随 Run 删除，旧 Worker 也不能绕过 v2 占用。
+
+验证：
+
+- 新增 `test/integration/sqlite-sandbox-execution-v2.test.ts` 的真实 SQLite 测试覆盖事务回滚、单次消费/启动、并发 CAS、独立结果历史、晚到未知效果、目录冲突、数据库重开/分页、取消与 fence 改变后的派发拒绝、清理后结果保留和在途派发回执。
+- schema 27 的 prepared、starting、quarantined、completed、failed、缺主机身份及缺状态七类数据分别通过已验证快照升级到 28；核对旧行与 1–27 迁移账本不变、无默认 v2 执行、保守占用和外键一致性。
+- 回归先失败：派发已提交但回执缺失，资源释放后待核查列表错误变为空（1 failed / 9 passed）。修复为持久等待确认，并在占用释放时检查在途派发；同一回归通过。
+- 现有 state-root 所有权锁继续拒绝第二个数据库所有者；并发验证通过唯一 SQLite Worker 发起竞争请求，没有绕过锁建立第二个产品权威。
+- 最终相关 integration/contracts 回归 9 个文件、185 项全部通过，其中新增 R2 测试 26 项；保留原有测试时限。全仓格式检查通过，lint 仍有既有的 182 errors / 988 warnings；本次修改的 TypeScript 文件分别执行 lint 均无 error/warning，未扩展修复全仓历史问题。
+- 类型检查、Node/合同构建、依赖边界、v0.2 覆盖/不变量、秘密扫描、CI policy、docs strict 和暂存差异检查通过；打包产物实际加载 SQLite 模块、v2 journal 导出和 schema 28 成功。三个受影响 Runbook 已完成内容核对并重新 seal，静态通过不代替目标机器 preflight。
+- 本次只使用专用测试数据库和假数据，未升级现有运行数据库。备份恢复和权威迁移测试属于同机测试夹具，不是实际安装或跨主机验收。正式 v2 组合、真实进程停止/核查、模型续接与 UI 仍待 R3–R6/R11。
 
 ### R3：正式 scope、调用模式与版本接入
 

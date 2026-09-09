@@ -27,6 +27,22 @@ function entry(
 }
 
 export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
+  ...[
+    "sandbox_execution_records",
+    "sandbox_operation_observations",
+    "sandbox_execution_observations",
+    "sandbox_workspace_occupancy",
+    "sandbox_execution_intents",
+    "sandbox_legacy_occupancy",
+  ].map((table) =>
+    entry(
+      table,
+      "SandboxExecutionJournalPort",
+      "durable execution, observations and conservative workspace occupancy",
+      "payload_reference",
+      "retain while resource or reconciliation obligations exist",
+    ),
+  ),
   entry(
     "sandbox_jobs",
     "SandboxJobJournalPort",

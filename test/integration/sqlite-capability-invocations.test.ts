@@ -2588,11 +2588,32 @@ describe("durable sandbox invocation journal", () => {
     }
   });
 
-  it("removes job metadata and history with its owning Run", async () => {
+  it("retains unresolved jobs and removes metadata only after confirmed cleanup", async () => {
     const fixture = await openSandboxJournal();
     try {
       fixture.prepare();
       fixture.append({ ...fixture.prepared, sequence: 2, state: "starting" });
+      expect(() => fixture.database.prepare("DELETE FROM runs WHERE id = ?").run(RUN_ID)).toThrow(
+        "Unresolved legacy",
+      );
+      fixture.append({ ...fixture.prepared, sequence: 3, state: "stopping" });
+      operationsForDatabase(fixture.database).execute("capabilityInvocationResult.observeOutput", {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        input: outputObservation({
+          payload: outputPayload("cleanup-output", `sha256:${"f".repeat(64)}`),
+        }),
+      });
+      fixture.append({
+        ...fixture.prepared,
+        sequence: 4,
+        state: "completed",
+        outcome: "succeeded",
+        effect: "confirmed",
+        cleanup: "confirmed",
+        outputRef: "cleanup-output",
+        outputDigest: "f".repeat(64),
+      });
       fixture.database.prepare("DELETE FROM runs WHERE id = ?").run(RUN_ID);
       expect(fixture.database.prepare("SELECT count(*) AS count FROM sandbox_jobs").get()).toEqual({
         count: 0,

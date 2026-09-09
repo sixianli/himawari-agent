@@ -37,6 +37,7 @@ export interface SandboxExecutionProjection {
   readonly operationSettled: boolean;
   readonly needsReconciliation: boolean;
   readonly resourcePending: boolean;
+  readonly supervisionControlled: boolean;
 }
 const sameIdentity = (a: SandboxJobIdentity, b: SandboxJobIdentity) =>
   (Object.keys(b) as (keyof SandboxJobIdentity)[]).every((key) => a[key] === b[key]);
@@ -155,6 +156,7 @@ export function projectSandboxExecution(
     operationSettled: settled,
     needsReconciliation,
     resourcePending: !released,
+    supervisionControlled: controlled,
   });
 }
 

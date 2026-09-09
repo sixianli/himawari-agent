@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:61455f94784c2962d117023c507a0424eb373e88e5e5bec54afbb2e91765c84f"
+contract_sha256: "sha256:534c91d802df86a945039f18ceed993bae682f48476c52540aedd21b270111c7"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,10 @@ date: "2026-08-27"
 # 停机加密 Authority Transfer Runbook
 
 <!-- runbook-contract:
+- packages/application/src/ports/sandbox-execution-journal.ts
+- packages/application/src/services/sandbox-execution-projection.ts
+- packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts
+- packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts
 - packages/application/src/services/sandbox-startup-recovery.ts
 - packages/application/src/services/sandbox-job-lifecycle-service.ts
 - packages/application/src/services/runtime-continuation-service.ts
@@ -47,6 +51,10 @@ date: "2026-08-27"
 -->
 
 ## Scope
+
+当前 schema 28 在原数据库追加 v2 资源关联、独立操作/资源观察、目录占用和派发回执。升级既有库仍须先取得已验证快照；0020/0027 不改写。恢复/迁移时必须保留占用和未确认派发；旧未结束作业缺少可信目录链时按主机保守阻止新准入，缺少主机身份时阻止所有主机的新准入。禁止通过删除 Run、清空占用或把旧记录改成 v2 来恢复执行。已确认清理的旧历史结果保持原解释，不由迁移补写新资格。
+
+这些 SQLite 机制已有独立测试数据库的升级、重开和事务验证；本次未升级运行中的 state root，也未执行真实安装、恢复或跨主机迁移。正式执行组合仍使用 v1，v2 证据读取、目录身份解析和派发接入尚待后续阶段完成。恢复后继续适用当前主机/目录/权威检查，不能自动重放旧任务或未确认派发。
 
 SRT 的 Agent Service/Worker 组合已接上现有授权来源、受保护 scope、认证 Payload 通道与作业监督器；Node 打包包含 SRT 0.0.75。当前文件 inspect/read scope 来源与受控 Mac 组合探针已经实现，但未签发正式安装主机资格，也未完成真实跨主机崩溃恢复验收。schema 27 继续保存计划和作业观察；初始观察允许无策略摘要，由首次原子启动固定 Worker 编译的摘要，此后不得更换。资源观察随作业记录迁移，仅为历史证据，不能成为目标主机资格。恢复后不能给无账本的旧凭证补建可启动作业，不能重放清理未知作业。本文的停机、备份与权威迁移流程保持不变；目标仍须独立验证主机资格、目录授权和本次操作的网络 Grant，不得沿用源主机路径或网络上界推断授权。
 

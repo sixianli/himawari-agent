@@ -30,6 +30,7 @@ import type {
   RunReconciliationCandidate,
   RunReconciliationPort,
   SandboxJobJournalPort,
+  SandboxExecutionJournalPort,
   SchedulerPort,
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
@@ -408,6 +409,55 @@ export class SqliteDurableAdapters {
       consume: (input) =>
         this.context.write("capabilityInvocation.consume", { ownerId, agentId, input }),
       read: (input) => this.context.read("capabilityInvocation.read", { ownerId, agentId, input }),
+    });
+  }
+
+  sandboxExecutionJournal(ownerId: OwnerId, agentId: AgentId): SandboxExecutionJournalPort {
+    return Object.freeze<SandboxExecutionJournalPort>({
+      admit: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.admit", { ownerId, agentId, input }),
+      read: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.read", { ownerId, agentId, input }),
+      listPending: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.listPending", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      start: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.start", { ownerId, agentId, input }),
+      append: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.append", { ownerId, agentId, input }),
+      recordOperation: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.recordOperation", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      prepareIntent: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.prepareIntent", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      dispatchIntent: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.dispatchIntent", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      acknowledgeIntent: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.acknowledgeIntent", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      observeIntent: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.observeIntent", {
+          ownerId,
+          agentId,
+          input,
+        }),
     });
   }
 

@@ -18,7 +18,11 @@ SRT `0.0.75` 已集中在 `packages/runtime-sandbox`。独立 Job Host、原子�
 
 现有 `sandbox-execution.v1` 把正常完成与清理/副作用确认绑定；正式 Job Host 适配对已启动任务仍报告 cleanup/effect unknown。因此受控 Mac 组合能保存输出并隔离未知作业，不能据此声称正式文件总结成功、环境已清理或全部工具可用。当前 `reconcile` 主要保留隔离且禁止重放，不是已有可解除隔离的完整核查器。已跑历史验证及具体限制归配套 Plan，不把合成资格当作安装主机资格。
 
-R1 已新增 `sandbox-execution.v2` 严格合同、`SandboxExecutionPortV2` 类型端口以及共享的 `projectSandboxExecution` / `projectSandboxRunCompletion` 纯判断函数。结果、效果和资源观察独立表达；结果已知时可以保留展示，监管丢失仍禁止续接和环境复用。判断需要由可信 Payload/资格/效果读者核验的证据，并检查调用、策略、sequence 与时效。当前生产适配器仍使用 v1；v2 持久关联、真实证据读者、正式派发与 UI 消费者尚未接入，不能从这些合同导出推断已具备新的运行能力。
+R1 已新增 `sandbox-execution.v2` 严格合同、`SandboxExecutionPortV2` 类型端口以及共享的 `projectSandboxExecution` / `projectSandboxRunCompletion` 纯判断函数。结果、效果和资源观察独立表达；结果已知时可以保留展示，监管丢失仍禁止续接和环境复用。判断需要由可信 Payload/资格/效果读者核验的证据，并检查调用、策略、sequence 与时效。当前生产适配器仍使用 v1；真实证据读者、正式 v2 派发与 UI 消费者尚未接入，不能从合同和账本导出推断已具备新的运行能力。
+
+R2 已在现有产品 SQLite 追加 migration 0028，通过 `SandboxExecutionJournalPort` 保存 v2 创建调用、环境及 task/service 资源关联。准入复用原 Handle/Grant 消费事务，首次启动 CAS 固定策略摘要；资源 sequence 与操作结果 revision 分开追加。目录占用使用可信主机提供的 device/inode 祖先链，写环境存活期间排斥相交操作，监管丢失后也阻止相交读取。该链不是授权来源，正式主机解析与 scope 绑定仍由 R3 接入。
+
+派发意图在事务中核对最新观察、Run 和执行 fence，派发前再次检查；未确认回执的派发跨重启保留为不确定，不能因资源已经清理而消失。结果、资源占用和派发回执一起决定是否解除占用。v1 记录保持原文；未结束或缺少清理事实的旧记录保留主机级占用，缺少主机身份时保守阻止所有主机的新准入。未解决占用不能随 Run 删除。SQLite 仍由现有 state-root 锁和单一 Worker 管理，不新增数据库权威或 Task 状态机。
 
 本次执行 Spec/Plan 的交付范围已按 Owner 指令移出本地/远程 MCP 接入和 GitHub 已有 commit 推送，相关产品需求与长期架构方向保留。下方目标图不表示两项属于本批验收；当前任务和验收集合以配套 Spec/Plan 为准，R1 的通用 service/remote 合同不回退。
 
