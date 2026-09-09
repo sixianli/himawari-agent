@@ -35,7 +35,7 @@ if /bin/cat ../outside.txt >/dev/null 2>&1; then exit 12; fi
 stage=write
 if (printf forbidden > forbidden.txt) 2>/dev/null; then exit 13; fi
 stage=network
-proxy_userinfo="\${HTTPS_PROXY%\@*}"; proxy_token="\${proxy_userinfo##*:}"; proxy_auth=$(printf 'srt:%s' "$proxy_token" | /usr/bin/base64); { printf 'CONNECT example.com:443 HTTP/1.1\\r\\nHost: example.com:443\\r\\nProxy-Authorization: Basic %s\\r\\n\\r\\n' "$proxy_auth"; /bin/sleep 0.5; } | /usr/bin/nc -n -w 2 127.0.0.1 "\${HTTPS_PROXY##*:}" > "$TMPDIR/network-headers"
+proxy_userinfo="\${HTTPS_PROXY%@*}"; proxy_token="\${proxy_userinfo##*:}"; proxy_auth=$(printf 'srt:%s' "$proxy_token" | /usr/bin/base64); { printf 'CONNECT example.com:443 HTTP/1.1\\r\\nHost: example.com:443\\r\\nProxy-Authorization: Basic %s\\r\\n\\r\\n' "$proxy_auth"; /bin/sleep 0.5; } | /usr/bin/nc -n -w 2 127.0.0.1 "\${HTTPS_PROXY##*:}" > "$TMPDIR/network-headers"
 stage=network-proof
 if ! /usr/bin/grep -qi 'X-Proxy-Error: blocked-by-allowlist' "$TMPDIR/network-headers"; then /bin/cat "$TMPDIR/network-headers"; exit 19; fi
 printf 'run\\n' >> "$TMPDIR/runs"

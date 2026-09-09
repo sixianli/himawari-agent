@@ -18,7 +18,19 @@
   "overrides": [
     {
       "includes": ["ci/rules/fixtures/unsafe.fixture.ts"],
-      "linter": { "rules": { "security": { "noGlobalEval": "off" } } }
+      "linter": {
+        "rules": {
+          "security": {
+            "noGlobalEval": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["docs/assets/architecture/system-overview.html"],
+      "linter": {
+        "enabled": false
+      }
     }
   ],
   "linter": {

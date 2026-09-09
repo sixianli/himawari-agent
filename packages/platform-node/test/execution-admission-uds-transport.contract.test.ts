@@ -88,6 +88,11 @@ if (parsedFixtureExecute.kind !== "request" || parsedFixtureExecute.type !== "wo
   throw new TypeError("execution.v2 execute admission fixture has an unexpected type");
 }
 const execute = parsedFixtureExecute;
+const { ownerId, agentId, runId } = execute.scope;
+if (ownerId === null || agentId === null || runId === null) {
+  throw new TypeError("execution admission fixture requires an owner, agent and Run");
+}
+const sandboxOwnerScope = { ownerId, agentId, runId };
 
 const parsedFixtureDelegate = executionV2MessageSchema.parse({
   schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
@@ -396,9 +401,7 @@ describe("execution-admission.v1 authenticated UDS transport", () => {
       threadId: "thread",
       toolCallId: "tool",
       invocationId: execute.messageId,
-      ownerId: execute.scope.ownerId!,
-      agentId: execute.scope.agentId!,
-      runId: execute.scope.runId!,
+      ...sandboxOwnerScope,
     };
     const server = await startServer({
       admit: async () => {
@@ -624,9 +627,7 @@ describe("execution-admission.v1 authenticated UDS transport", () => {
                 threadId: "thread",
                 toolCallId: "tool",
                 invocationId: execute.messageId,
-                ownerId: execute.scope.ownerId!,
-                agentId: execute.scope.agentId!,
-                runId: execute.scope.runId!,
+                ...sandboxOwnerScope,
               },
             }
           : {}),
