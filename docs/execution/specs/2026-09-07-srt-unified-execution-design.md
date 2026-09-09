@@ -10,9 +10,9 @@ date: "2026-09-07"
 
 ## 目标
 
-让 Himawari 的 Agent 通过统一的产品执行入口使用文件、Shell、程序和本地 MCP，不在 Agent loop 或工具业务代码中分辨 macOS 与 Linux。由 Anthropic Sandbox Runtime（下称 SRT）实现受限进程启动，Himawari 管理授权、执行生命周期、持久恢复和输出披露，Pi 继续管理模型交互及工具循环。
+让 Himawari 的 Agent 通过统一的产品执行入口使用文件、Shell 和程序，不在 Agent loop 或工具业务代码中分辨 macOS 与 Linux。由 Anthropic Sandbox Runtime（下称 SRT）实现受限进程启动，Himawari 管理授权、执行生命周期、持久恢复和输出披露，Pi 继续管理模型交互及工具循环。
 
-本文在保留 2026-09-07 已确认产品范围的前提下，于 2026-09-09 按 Owner 已批准方案重新设计工具、任务及环境生命周期；它是目标设计，完整执行链路尚未实现，也未取得真实主机资格。Owner 已否决先建设签名 Mac 文件访问 helper 的路线，要求改用 SRT；本文不把原生 helper、security-scoped bookmark 或 Apple container 安装列为新路线的前置条件。首批必须包含文件和编码工具、受限 Shell、MCP、授权联网、Web Search 及 GitHub 已有 commit 推送，默认直接操作已授权原项目。工程细节由实施与验证落实；已有代码与历史验收状态不因本文而变成 SRT 实现。
+本文于 2026-09-09 按 Owner 已批准方案重新设计工具、任务及环境生命周期，并按 Owner 后续指令将 MCP 接入与 GitHub 已有 commit 推送移出本次交付范围；它是目标设计，完整执行链路尚未实现，也未取得真实主机资格。Owner 已否决先建设签名 Mac 文件访问 helper 的路线，要求改用 SRT；本文不把原生 helper、security-scoped bookmark 或 Apple container 安装列为新路线的前置条件。本次必须包含文件和编码工具、受限 Shell、授权联网及 Web Search，默认直接操作已授权原项目。工程细节由实施与验证落实；已有代码与历史验收状态不因本文而变成 SRT 实现。
 
 2026-09-09 已批准的接入细节：复用现有调用回执、文件工作流 context、作业账本及认证 Payload 通道。网络授权引用须指向本次操作的同一 Grant；审批快照 `targets` 的 `network-domain` 目标保存确切域名，Agent 检查当前 Grant、审批指纹和主机上界后把核验 scope 交给 Worker，启动前再次核对。此映射不再次消费授权。Worker 独占策略编译；`prepared` 可不带策略摘要，首笔原子 `starting` 固定摘要，此后的观察不可改变它。资源采样作为现有作业观察的可选字段持久保存，不修改原 stdout Payload 合同，也不增加 Run 状态机。
 
@@ -64,13 +64,17 @@ Pi 核对使用指定只读 checkout `/Users/triggerjames/Documents/sxl_code_wor
 
 ## 范围
 
-包含整个产品的执行职责划分、Pi 接入、Worker 与 SRT 生命周期、文件/工作区、通用 HITL、Shell/MCP/外部 API、输出、资格、迁移及验收设计。首批包含文件读取、原项目内编辑/写入/搜索、受限 Shell、本地 stdio MCP 及受治理远程 MCP 接入、授权联网/依赖安装/下载、真实 Web Search 与 GitHub 已有 commit 推送。每类实际启用的适配器必须通过对应资格；受管理后台任务和持续服务是本次通用 Shell/MCP 生命周期设计的必需验收部分，不新增跨 Run 常驻服务或产品调度 Task。第一批必需能力缺失时报告交付未完成，不能将其静默移为后续任务。认证浏览器自动化未因公共搜索需求而自动成为本批要求。
+本次包含执行职责划分、Pi 接入、Worker 与 SRT 生命周期、文件/工作区、通用 HITL、Shell、Web Search、输出、资格、迁移及验收设计。交付包含文件读取、原项目内编辑/写入/搜索、受限 Shell、受管理后台任务、授权联网/依赖安装/下载及真实 Web Search。每类实际启用的适配器必须通过对应资格；后台任务及其受控测试服务的 readiness、停止和清理仍须验收，不新增跨 Run 常驻服务或产品调度 Task。
+
+**本次范围排除：本地 stdio MCP 及受治理远程 MCP 接入、GitHub 已有 commit 推送。** 两项仍是产品后续需求，不是取消或拒绝支持；其协议接入、专用凭据/推送通道、真实服务/仓库验收均不作为本 Spec 的交付条件，后续另行制定 Spec/Plan。EX-08、EX-16 保留编号但移出本次验收集合，不重排其余编号。Web Search、授权联网和后台任务不随这两项移出。
+
+R1 已实现的通用 service/remote 合同及相关回归保留，避免撤销已有兼容性；它们不要求本批完成 MCP transport、握手、工具映射或多请求接入。本文保留的上游调研、既有调用方安全约束和历史证据也不构成两项能力的本次交付承诺。当前范围内的必需能力缺失仍报告未完成；认证浏览器自动化未因公共搜索需求而成为本批要求。
 
 不重写 Pi AgentSession、Provider 协议或工具参数体系；不把 SRT 当作模型 SDK、远程 Worker 通信协议、权限数据库或系统安装器。本文不实施代码、不执行付费模型请求、不更改主机安全设置，也不声明已经能从浏览器完成真实文件总结。
 
 ## 验收标准
 
-验收编号供 Plan 唯一映射；均为目标，未因设计批准勾选通过。
+验收编号供 Plan 唯一映射；本次有效集合为 EX-01–EX-07、EX-09–EX-15、EX-17–EX-18，共 16 项。EX-08、EX-16 移出本次范围，保留编号不代表待完成或已通过。
 
 | 编号 | 场景与可观察结果 |
 |---|---|
@@ -81,7 +85,6 @@ Pi 核对使用指定只读 checkout `/Users/triggerjames/Documents/sxl_code_wor
 | EX-05 | edit/write/search 与原目录工作树行为保持；冲突不覆盖，删除沿通用 HITL；Pi 截断不取消产品输入上限 |
 | EX-06 | 前台 Shell 输出/退出/超时可区分，exit 0 不宣称 Git 或其他业务效果；工具结果与清理事件独立持久 |
 | EX-07 | 后台 start 先持久任务身份，返回句柄；status/output/cancel 均绑定调用与范围；重放 start 不启动第二任务，ready 与已创建不同 |
-| EX-08 | MCP 至少两次请求可使用同一受管理连接，每请求独立授权和结果；拒绝混入不同 Grant，关闭一条请求不误报 server 已退出 |
 | EX-09 | 已持久结果、结果可披露、可继续、环境可复用和 Run 正常完成分别判断；cleanup unknown 保留，依赖不安全时不续接 |
 | EX-10 | 取消、超时、超限与结果返回竞态保留实际事实；Run 取消后不续接模型，不将停止通知视为副作用撤销 |
 | EX-11 | Worker/Job Host 真正崩溃、PID 复用、启动 ack 丢失和持有管道/setsid 后代可核查；未知不重放，隔离锁阻止相关工作区新任务 |
@@ -89,7 +92,6 @@ Pi 核对使用指定只读 checkout `/Users/triggerjames/Documents/sxl_code_wor
 | EX-13 | Mac 与需启用的 Linux 分别验证文件、网络、资源采样、停止及监管保证；不把采样当硬配额，不用合成资格签发生产 profile |
 | EX-14 | 授权联网/依赖安装/下载、秘密拒绝、重定向与 SSRF、原始 socket 和代理失败拒绝按实际后端验证；撤权停止限制如实可见 |
 | EX-15 | 真实 Web provider 返回可核实来源与时间、查询披露/预算；失败无编造，远端动作不宣称受本机 SRT 完整隔离 |
-| EX-16 | 指定 GitHub 仓库/ref/已有 OID 经独立授权推送，工作树不被提交；拒绝强推/其他目标/源 hook；断连先 readback 不盲目重推 |
 | EX-17 | ego Lite 真实模型/审批/Worker/Pi 续接、刷新及重启回读；不增加模型调用或重跑工具，UI 同时呈现结果与资源异常 |
 | EX-18 | 安装版本、runner/profile/保证、迁移及停止合同与真实产物一致；所有模型可达启动点均有归属，旧路径无裸执行 fallback |
 
@@ -114,7 +116,7 @@ flowchart TB
     WORKER <--> JOURNAL[(Agent 权威下的作业与任务观察账本)]
     WORKER --> JOB[每权限固定环境的可信 Job Host]
     JOB --> SRT[SRT SDK / 固定策略 / 代理资源]
-    SRT --> CHILD[受限 Pi runner / 后台任务 / MCP 服务]
+    SRT --> CHILD[受限 Pi runner / 后台任务 / 测试服务]
     CHILD --> OUTPUT[Worker 校验 / 分类 / 有界结果]
     JOB --> OBS[监管与清理观察]
     OBS --> JOURNAL
@@ -122,7 +124,7 @@ flowchart TB
     OUTPUT --> DB
     OUTPUT --> TOOLS
     ADMIT --> EXT[受治理外部动作适配器 / 独立资格]
-    EXT --> REMOTE[远程 MCP / Web Search / GitHub push]
+    EXT --> REMOTE[Web Search / 页面核实]
     RC <--> MEM[受治理 Memory / embedding]
 ```
 
@@ -200,7 +202,7 @@ sequenceDiagram
 | find/ls | 在受限 runner 注入对应 Operations；find 的 glob 可替换，缺省 fd 路径也必须绑定已安装工具及 scope |
 | grep | 复用原搜索实现并在受限 runner 运行真实 rg；不在 Agent 侧靠 GrepOperations 实现远端搜索。若未来后端不能执行原工具，先评估上游可兼容注入点，不复制搜索协议 |
 | 后台执行 | 通过 Pi ToolDefinition 扩展注册产品管理动作，复用 Worker 命令启动和输出机制；不改变前台 Bash 的 exitCode 合同，不另写 Agent loop |
-| MCP/Web | 复用当前 MCP SDK 与 Web 端口，通过 Pi 注册薄适配；服务器元数据与 readOnly 等提示不是可信授权 |
+| Web | 复用当前 Web 端口，通过 Pi 注册薄适配；外部内容不是可信授权；MCP 工具注册不在本次范围 |
 
 工具目录和 runner 使用同一版本化描述，缺少 Operations/runner/profile 不启用。工作目录、私有 HOME/tmp/cache、PATH、搜索器/解释器路径均由可信安装/计划决定。Pi 的工具自动下载能力在正式执行中不作为隐式权限：依赖必须预装并验证；缺失则拒绝，或另走已批准安装动作。长输出只落入受管私有目录；面向模型返回受保护产物引用，不能直接暴露或信任任意 fullOutputPath。环境结束前由 Worker 在原授权范围内导出结果；无法导出不得伪造完整输出。
 
@@ -210,7 +212,7 @@ sequenceDiagram
 
 统一治理继续沿 RuntimeToolPort、Capability 接纳和 Worker 派发。SQLite invocation receipt 是凭证消费权威；Run checkpoint、工具结果及保护 Payload 保留原职责。现有作业账本追加资源关联和观察，不创建第二个权限库、Run 状态机或产品调度 Task。
 
-宿主执行关系固定为：`Run → toolCall → invocation → attempt/job → environment`。狭窄远端 API 仍使用原 invocation/result，不为一次 HTTP 请求虚构本地沙箱；远程 MCP 的 connection 记录绑定创建调用及远端身份，不能伪造本地 PID 或 SRT 清理证明。一次前台操作默认有独占 environment；后台 task/service 由其创建 invocation 关联 environment。同一服务可被多个后续 invocation 引用，但只允许同 Owner/Agent/Run/host、同创建 Grant 及同冻结 scope；每个请求都有自己的输入、Handle 和结果。资源句柄只是定位符，不是授权凭证。没有创建结果的操作不能凭裸 PID、URL 或模型提供的 session ID 取得控制权。
+宿主执行关系固定为：`Run → toolCall → invocation → attempt/job → environment`。狭窄远端 API 仍使用原 invocation/result，不为一次 HTTP 请求虚构本地沙箱；保留的远程连接合同绑定创建调用及远端身份，不能伪造本地 PID 或 SRT 清理证明。一次前台操作默认有独占 environment；后台 task/service 由其创建 invocation 关联 environment。同一服务可被多个后续 invocation 引用，但只允许同 Owner/Agent/Run/host、同创建 Grant 及同冻结 scope；每个请求都有自己的输入、Handle 和结果。资源句柄只是定位符，不是授权凭证。没有创建结果的操作不能凭裸 PID、URL 或模型提供的 session ID 取得控制权。
 
 目录、网络、父调用、模型和期限来自既有持久来源。`networkAuthorizationRef` 指向本操作同一 Grant，核对审批 snapshot targets 中的确切域名、审批指纹及主机上界；不二次消费该 Grant。子调用只能缩小父范围，不能把父引用当作所有后续操作的通行证。生命周期延长不在本批自动支持；有效期取原 Run/授权/调用期限及资源额度的最小值。
 
@@ -267,7 +269,7 @@ R1 的统一入口为 `projectSandboxExecution`，分别返回结果结论、用
 
 #### 4.1 共用监督机制
 
-Agent Service、长驻 Worker 和 Job Host 仍在可信侧，实际 runner/脚本/MCP server 受限。每个权限固定的 environment 对应一个独立可信 Node Job Host 与一次初始化的 SRT manager。前台默认每作业独占；后台任务或服务可让该环境持续至原期限，但不能使用共享全局 manager 或原地 updateConfig。新权限对应新批准动作及新环境；有相交未知资源时不得启动替代环境。
+Agent Service、长驻 Worker 和 Job Host 仍在可信侧，实际 runner/脚本/后台测试服务受限。每个权限固定的 environment 对应一个独立可信 Node Job Host 与一次初始化的 SRT manager。前台默认每作业独占；后台任务或服务可让该环境持续至原期限，但不能使用共享全局 manager 或原地 updateConfig。新权限对应新批准动作及新环境；有相交未知资源时不得启动替代环境。
 
 准备、运行和清理各有有界窗口，均记录原期限；执行期限到达停止用户执行，应急清理窗口只允许减小风险。Worker 和 Job Host 双向失联都触发停止；资源观测超阈值或失效亦请求停止。独立监督轮询、任务查询和输出查询不得重置 wall time 或无限延长任务。
 
@@ -285,13 +287,9 @@ Agent Service、长驻 Worker 和 Job Host 仍在可信侧，实际 runner/脚�
 
 首批原目录冲突采用保守排他：具有写能力的任务/服务整个存活期占用其授权工作区；后续相交文件读写、构建或新任务均等待或拒绝，避免后台 writer 与前台检查竞态。无写能力的服务可与无冲突操作共存。需要边运行边修改的开发流程使用单独批准的隔离目录或先停止服务，不能把采样未见写入当作只读证明。用户等外部进程不受本方锁控制，文件动作仍进行使用时版本检查。
 
-#### 4.3 MCP 服务与请求
+#### 4.3 MCP 接入范围边界
 
-复用现有固定 MCP SDK 的协议、初始化、工具列表和请求/响应；本地 stdio 生命周期由 Worker 监督器持有，SDK transport 适配只使用受监督管道，不再自行 spawn 第二个 server。服务 ready 要完成协议握手、固定 server/tool 版本检查和范围绑定。远程 MCP 复用受治理 HTTP 客户端，本地连接结束不代表远端任务停止或效果撤销。
-
-每个工具请求独立检查 tool identity、参数、当前 Grant/Handle、目录/网络/披露及有效期，保存 requestId 与 invocation 对应关系。复用连接不复用已消费的 Handle，不跨 Run 或不同 Grant 混用 server。首批同一有状态 server 串行派发，取消某请求不误杀其他已授权请求；若该请求是否仍在运行无法确认，则暂停该连接后续派发并核查，不能利用“连接仍活着”越过未知请求；停整个服务则先禁止派发、取消/核查在途请求，再关闭 stdio、等候、TERM/KILL，并保留未知效果。远程使用 SDK 已支持的取消机制；不以更换协议版本规避本项目合同。
-
-Run/授权结束时无论 MCP server 是否声称空闲都执行停止；其工作区占用与未决调用仍需处理。完成的请求可返回结果而 server 保持 controlled；任务型远端响应如当前 SDK 未支持，则该映射不启用，不能把 accepted 当成业务 completed。
+本地 stdio 与受治理远程 MCP 接入已移出本次范围。本批不要求实现 SDK transport 适配、协议握手、工具发现/映射、连接复用或 MCP 多请求验收。已有 service/remote 数据合同和测试保留；后台测试服务仍按第 4.2 节验证 readiness、资源所有权、停止与清理，无须使用 MCP 协议。MCP 后续接入应另行制定实施与验收合同，沿用已有调用身份和授权机制。
 
 #### 4.4 重启核查与逻辑隔离
 
@@ -308,7 +306,7 @@ Run/授权结束时无论 MCP server 是否声称空闲都执行停止；其工�
 | 本地主机 SRT | 首选，保留固定 0.0.75 及现有产品 profile；Mac/Linux 分别资格 | 文件/网络覆盖、干净环境、监管时效、停止/失联及残留观察、资源采样；不承诺内核硬 CPU/内存配额 |
 | 独立工作区 + SRT | 可选副本/worktree 模式，不等同 VM | 导入/导出、原目录基线与隔离目录权限；没有虚拟化强保证 |
 | Gondolin/容器/远端 sandbox | 后端候选，本轮文档不安装、不绑定依赖或启用 | 平台支持、挂载写回、凭据/网络、资源与回收、崩溃接管、产物完整性；不能从示例推断满足条件 |
-| 远端 API/MCP | 狭窄治理适配，复用已有协议 | 服务端权限、request identity、取消语义、幂等/readback；本地 SRT 不证明远端隔离 |
+| 远端 Web API | 本次仅接入搜索与页面核实的狭窄适配 | 服务端权限、request identity、取消语义、幂等/readback；本地 SRT 不证明远端隔离 |
 
 资格必须分别列出 mode 支持与可核验保证；foreground 通过不推出 background/service 可用。所需保证不满足则拒绝该组合，不静默切换后端或修改策略。Owner 已接受的 Mac 尽力停止、未知隔离与资源采样限制保持；本次批准允许分开报告操作事实，不允许把未知清理转为 confirmed。Linux 原有更强要求未被此次设计放宽。强保证需求若 SRT 不可满足，应报告具体缺口并评估候选后端，而非无限重试 kill 或伪造证据。
 
@@ -365,13 +363,11 @@ stateDiagram-v2
 
 保存原模型身份、参数、工具批次和总期限；恢复使用既有 continuation，不重新调用已经完成的模型轮次。已知结果回读不执行；未决外部结果沿现有 reconciling_external_result；已发布工具结果后出现资源故障则保存异常并阻止后续，不修改历史消息来掩盖事实。审批拒绝、取消或过期不能被迟到结果恢复成活跃 Run。
 
-### 7. 网络、MCP、浏览器与秘密
+### 7. 网络、Web Search、浏览器与秘密
 
 | 操作类别 | 目标执行路径 | 开放条件 |
 |---|---|---|
 | Pi 文件/代码搜索/解释器/依赖安装 | 统一动作入口 → Worker → SRT | 首批；profile 与实际工具链均通过资格；安装脚本按不可信代码处理 |
-| stdio MCP | 同一 Worker 监督的 SRT 进程，复用 MCP 协议客户端 | 首批；固定服务身份、映射工具、逐动作授权、输出和进程监督；可在同 Run/同 Grant/同冻结范围内复用连接；每请求独立授权，生命周期见第 4.3 节 |
-| 远程 MCP、GitHub push；其他云 API 按需接入 | 同一动作入口 → 受治理外部 adapter | MCP 与 push 首批；服务及动作白名单、披露/凭据/幂等/核查合同；SRT 不提供远端权限控制 |
 | Web Search、页面打开、下载 | 现有 Web 服务和狭窄 HTTP adapter；不可信下载工具走 SRT 授权联网 | 首批；真实搜索 provider、查询披露、SSRF、重定向和来源记录；可信 adapter 不能变成任意代理 |
 | 浏览器自动化 | 后续专用、隔离会话的执行适配 | 不开放宿主日常浏览器调试口、Cookie 和本机任意 socket；未验证前不注册 |
 | ego Lite 作为产品前端 | 正式 HTTPS/本机入口 → Gateway | 普通 UI/API 身份与 CSRF；不需要因 SRT 而迁移浏览器 |
@@ -379,9 +375,9 @@ stateDiagram-v2
 
 无授权时网络策略拒绝目标；首批必须提供可实际使用的授权联网，冻结 domain:port、数据披露及预算，已有有效授权直接继续。依赖安装可能包含重定向、镜像和安装脚本，授权应展示实际范围，新增目标不能自动扩大。禁止自动开放 localhost、Unix socket、Apple Events、SSH agent 或 Docker socket。HTTP 方法/路径限制不能只依赖 SRT HTTP filter，因为不同传输可能有不同覆盖；需要狭窄 API 语义时使用产品 adapter。DNS、内网地址、云元数据、重定向和连接撤销都属于首批相应网络路径的验收。
 
-普通 Job Host 和不可信子进程不给模型密钥、通用云凭据及原宿主环境。搜索凭据由可信 provider adapter 使用；GitHub push 仅向专用传输委托按仓库收窄的凭据，见下文。SRT 产生的代理环境要保留，但不得继承未批准的上游代理设置。首版不依赖通用凭据 mask、TLS 终止、外部代理替换和弱化选项来承诺保密；不能以“遮蔽通常有效”作为真实秘密可交给任意进程的依据。
+普通 Job Host 和不可信子进程不给模型密钥、通用云凭据及原宿主环境。搜索凭据由可信 provider adapter 使用；GitHub 推送专用凭据通道不在本次实施范围。SRT 产生的代理环境要保留，但不得继承未批准的上游代理设置。首版不依赖通用凭据 mask、TLS 终止、外部代理替换和弱化选项来承诺保密；不能以“遮蔽通常有效”作为真实秘密可交给任意进程的依据。
 
-现有 `QualifiedCommandSandbox` 可以把批准的 secret bindings 解析为子进程环境；这项行为不能无声迁入 SRT。普通命令的任意真实凭据注入不因本次 GitHub 推送需求而获准，必须由原授权记录识别受影响调用方；首批 GitHub 推送通过专用动作满足，不延期为“以后才支持凭据”。2026-09-08 Owner 明确取消 CPU／内存硬上限作为必需验收项。`maxCpuTimeMs`、`maxMemoryBytes` 在原生 SRT profile 中作为资源观测与超限停止阈值，不承诺内核级硬配额；时间、输出、授权范围和清理状态继续严格执行。资格必须分别报告资源观测与硬配额支持，不能将监控停止写成瞬时绝不越界。
+现有 `QualifiedCommandSandbox` 可以把批准的 secret bindings 解析为子进程环境；这项行为不能无声迁入 SRT。普通命令的任意真实凭据注入不因授权联网而获准，必须由原授权记录识别受影响调用方；本次不新增 GitHub 推送专用凭据通道。2026-09-08 Owner 明确取消 CPU／内存硬上限作为必需验收项。`maxCpuTimeMs`、`maxMemoryBytes` 在原生 SRT profile 中作为资源观测与超限停止阈值，不承诺内核级硬配额；时间、输出、授权范围和清理状态继续严格执行。资格必须分别报告资源观测与硬配额支持，不能将监控停止写成瞬时绝不越界。
 
 #### 首批 Web Search
 
@@ -389,42 +385,9 @@ stateDiagram-v2
 
 首批必须选择并配置一个真实 provider，核实费用、凭据来源、超时/取消与查询披露。搜索结果包含标题、URL、摘要、排序和查询时间；对支撑回答的页面按需打开，记录抓取时间、原文可获得的发布时间和片段来源，不把搜索摘要当作已读全文。提供方、凭据与测试预算是实施配置待办，不是将 Web Search 移出首批的理由。无结果、额度耗尽或搜索失败均据实反馈，不回退为模型编造结果。页面内容和工具返回按不可信数据处理。
 
-#### 首批 GitHub 已有 commit 推送
+#### GitHub 推送范围边界
 
-Owner 要求的是可完成 push 的产品效果，不要求向通用 Shell 暴露 token。采用 **Pi 原有 `bash` 入口的薄适配与服务端专用 push 动作**。这里的“专用动作”指产品内部的授权与执行语义，不要求新增模型可见的 `github_push` 工具。2026-09-07 的本地兼容性验证已证明原有工厂及 Operations 能承载这条调用路径；该结果支持入口选择，不表示正式执行链路已经实现。
-
-目标调用顺序为：`Pi bash → createPiOperationsFromGovernedHostPort → 绑定当前调用的产品执行端口 → 通用授权与 durable HITL → Worker 受控 Git 适配 → 标准 Git 客户端 → GitHub`。Pi 继续负责工具参数、工具结果和 Agent loop；Himawari 负责权限、凭据、执行与恢复。授权对象冻结 owner/repo、远端身份、目标 branch/ref、已有 commit OID、待发送对象范围、预期远端状态和披露权限。以 OID 而不是可变 HEAD 作为批准对象；不顺带暂存、创建或改写 commit。默认不强推、不删除远端分支、不 mirror、不顺带推送其他 refs，遇到分支保护或非快进拒绝明确反馈。
-
-首批支持明确的单条推送意图，例如 `git push origin <OID>:refs/heads/<branch>`。模型仍使用 Pi 的 `bash` 参数；产品在受信入口将受支持的完整命令解析为类型化意图，不能靠字符串前缀、PATH 中替换 `git` 或允许 Shell 执行剩余字符串来控制权限。`HEAD` 等可变引用如获支持，必须在授权前解析并冻结为 OID；暂不支持的语法明确拒绝，不回退到带凭据的 Shell。普通 Shell、依赖安装脚本与 MCP 内部执行的 `git push` 不因此取得传输凭据或调用可信凭据通道的权利。正式 SRT 资格必须证明这一点，不能以本地测试中的精确命令比较代替。
-
-当前 `GovernedCodingOperationsPort.executeCommand` 接收 command、cwd、signal、timeoutMs、environment 与 onData，不含 toolCallId。正式接入必须由现有工具调用分派层构造绑定 Owner/Agent/Thread/Run/toolCall 的执行上下文，或在产品端口上显式扩展并迁移调用方；不能从模型命令或环境变量推导身份，也不能复用一个可变的“当前调用”全局对象。审批暂停、恢复与未知结果使用 ADR 0023 的通用状态机，不在 Git 适配中另写持久状态机。
-
-保留 `packages/integration-github` 的在线监控只读规则，另建写动作授权与凭据作用域，不能修改只读权限常量来“顺便支持 push”。凭据端口不绑定单一认证供应方；先核实可复用的 host secret source 及其作用域，GitHub App 安装 token 是可按仓库收窄的实现选项，不把创建 App 设为用户推送的必经步骤。已有 `gh` 登录或其他来源能否复用，须验证其权限、有效期和专用传输委托方式，不能直接把宿主 token 交给普通 Shell。按 ADR 0025 承接的约束向专用传输提供最小权限、短期委托；现有来源不能满足时不可无声放宽。已有 App 如果只有 read 权限，创建更高权限的安装或更改账户设置需要针对具体对象授权，不从当前设计确认推导。GitHub 官方支持安装 token 用于基于 HTTP 的 Git，并允许签发时进一步限制仓库和权限；token 本身不表示产品已批准某个分支或 commit。[GitHub Git 权限](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app)、[安装 token](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app)
-
-源仓库解析和对象导出在无凭据的受限作业中完成，固定对象集合及摘要；专用传输使用私有受控 Git 数据目录和受监督的 Git 客户端，不加载源仓库 hook、配置、任意 credential helper 或可变工作区程序。只有该传输可通过可信凭据通道获得委托，普通任务不能复用该通道；凭据不放进 URL、参数、源仓库配置或持久日志。使用成熟 Git 客户端，不另写 Git 网络协议；Git 进程同样受 SRT 与 Worker 生命周期管理，具体凭据传输和进程隔离在实施中验证。
-
-执行前复核目标、权限、远端及已批准 OID，分支保护或需要附加权限时明确阻止而不绕过。结果不明先查询远端 ref 与祖先关系：已应用的对象不再重推，不能仅以当前 tip 不等于目标就认定失败；已确认未应用后才能按原意图和当前授权重试。远端并发变化引起语义冲突时重新核查，不自动升级为强推。实际仓库、分支、commit 和费用/凭据授权在真实验收前具体确定。
-
-##### Pi/Git 本地兼容性证据与边界
-
-可复跑测试：`packages/runtime-pi/test/governed-git-push.compat.test.ts`。测试使用固定依赖 Pi `0.84.2` 的真实 `bash` ToolDefinition、现有两层适配、系统 Git 客户端、临时 bare 仓库及本地 `git http-backend`。随机假凭据仅用于该 loopback 服务，不读取宿主登录或连接 GitHub。通过以下命令执行：
-
-```sh
-npm run check:pi-compat -- packages/runtime-pi/test/governed-git-push.compat.test.ts packages/runtime-pi/test/governed-host-operations.compat.test.ts
-```
-
-2026-09-07 本机验证采用 Node `22.22.3`、Git `2.47.1`，上述命令的 18 项测试通过，其中 Git 实验 16 项、产品端口回归 2 项。Pi compatibility 全组 58 项通过，类型检查、此次代码的 Biome 检查和依赖边界检查通过；不表示全仓其他文档与覆盖清单已通过检查。检查内容包括：
-
-- 实际 HTTP 认证、指定 OID 推送、远端文件正文与唯一目标 ref、保留本地未提交修改，以及安全文本返回原 Pi 工具调用。
-- 缺少执行或披露许可、调用前取消时，凭据使用与 HTTP 请求次数均为零。
-- 凭据读取命令、环境打印、其他仓库或分支、强推 refspec、mirror、命令串联及未支持的调用形式不进入专用传输。
-- 审批对象固定后修改 origin、推进 HEAD、设置源仓库 hook 和 URL 改写、传入恶意 Git 环境变量，仍只推送固定对象；其他仓库不变，源 hook 未运行。
-- 远端存在更新 commit 时，标准 Git 拒绝非快进，远端 tip 保留，不自动强推。
-- 修复现有适配器的超时单位错误：Pi 秒数转换为产品毫秒；非法值在调用产品端口前拒绝。原先 10 秒被传成 10 毫秒时成功路径失败，修复后通过。
-
-这是一项测试内的执行适配原型：授权与披露用布尔开关表达，源对象导出由测试准备，结果确认直接读取临时远端，尚未接入真实权限仓库、审批恢复、Worker、受保护 Payload 或远端查询适配。假凭据只交给专用 Git 子进程的环境，输出只返回确认摘要；没有证明同一用户的其他进程不能读取该环境。测试不启动通用 Shell，因此拒绝 `env`、`git credential fill` 证明的是这些请求没有进入凭据通道，不是任意沙箱程序都无法窃取凭据。
-
-正式交付仍须验证不可信仓库对象导出、SRT 文件和进程可见性、可信 IPC 访问限制、网络重定向和凭据来源、真实 GitHub 分支保护，以及断连、重启、并发和取消后的远端结果核查。本次未调用真实模型；Pi 工具可以调用该通道不等于模型会稳定选择受支持命令，也不替代 ego Lite 最终验收。当前选择薄适配；只有后续证据证明它不能满足这些要求时，才记录具体缺口并评估独立模型工具，不预先建设第二套工具体系。
+GitHub 已有 commit 推送已移出本次范围，其专用动作识别、凭据委托、Git 传输和真实仓库验收后续另行设计与实施。本批对 Git 元数据、hook/config、工作区导入导出的既有安全检查继续适用，但不构成推送功能交付，也不把普通 Shell 测试算作 GitHub 推送验收。
 
 Pi 扩展、插件或 MCP 服务发现不得从任务可写目录动态载入可信 Agent 进程。声明性资源仍复用 Pi loader，但其来源与披露由产品约束；可执行扩展只允许受信部署包，其他代码先走沙箱适配资格。否则仅隔离 bash 仍可绕过执行边界。
 
@@ -446,7 +409,7 @@ Worker 将正文、来源、实际读取范围、截断状态、内容摘要和�
 | Execution Worker | 派发验证、计划/策略、任务/服务管理、受保护结果与监督观察 | 组合 application、platform 与 runtime-sandbox；无数据库准入 authority |
 | runtime-sandbox / Job Host | 固定 SRT、干净环境、受限启动、输出/资源/停止事实 | 唯一直接依赖 SRT，不反向依赖应用或 UI |
 | platform-node / SQLite | 文件身份和安全访问、安装产物资格；事务消费、观察/占用与当前权威 | 不从模型/子进程输出签发权限，不把数据库状态冒充 OS 限制 |
-| MCP / Web / Git 适配 | 复用协议客户端、搜索/页面端口和标准 Git；操作特有授权、凭据与效果核查 | 归统一产品治理，本地 stdio 由 Worker 监督，远端效果不归 SRT |
+| Web 适配 | 复用搜索/页面端口；查询披露、凭据与结果核实 | 归统一产品治理，远端效果不归 SRT；MCP 与 GitHub 推送后续另行接入 |
 | 安装与 UI | 版本/模式资格和诚实状态展示；旧结果读回 | 使用产品投影与当前资格，不自行重判成功或自动启用后端 |
 
 调用方必须明确归为受限执行、狭窄可信动作或禁用。受信 Keychain、产品状态库 I/O 不因调用同名系统 API 就变成不可信执行；反之，导入导出、Git hook/config、压缩包、可执行扩展等只要受模型或任务数据影响就不能在可信控制侧裸执行。具体文件级迁移只由 Plan 维护，避免两份待办漂移。
@@ -457,7 +420,7 @@ Worker 将正文、来源、实际读取范围、截断状态、内容摘要和�
 
 当前已有 v1 合同、每调用 Pi Operations、SQLite 原子准入/启动、真实目录/网络 scope 与主机复核、Payload broker、Worker/Job Host 组合及受控 Mac 探针。当前 root scope 仅 inspect/read；Job Host 对启动任务始终 taskTreeCleanup unknown，产品适配 effect 同为 unknown；v1 完成门禁因此无法提供普通真实成功回执。现有核查保留隔离且不重放，没有完整风险消除和解除隔离能力。这些事实决定迁移内容，不要求重建已持久保存的身份/授权/结果。历史测试证据归 Plan。
 
-实施依次完成：v2 事实与门禁合同 → 现有账本追加迁移/核查 → 生产准入与 runner → 前台通用工具 → 后台资源与 MCP → 联网/Web/Git 的真实验收 → 安装与产品 UI。各阶段的文件级动作和验证在 Plan；前置小场景通过不替代整批能力。
+实施依次完成：v2 事实与门禁合同 → 现有账本追加迁移/核查 → 生产准入与 runner → 前台通用工具 → 后台资源 → 联网/Web 的真实验收 → 安装与产品 UI。各阶段的文件级动作和验证在 Plan；前置小场景通过不替代整批能力。
 
 #### 10.2 数据与协议迁移
 
@@ -503,17 +466,16 @@ ADR 0025 替代 ADR 0024；0024 及更早的 0021/0022 保留原决定与替代�
 | 指南 §13.3 的平台项 | macOS DNS、localhost/调试口/socket、Apple Events；Linux 继承描述符与 IPC；离线与授权联网路径均验证相关平台项 |
 | 指南 §13.3 的联网项 | 首批验证 domain:port、拒绝优先级、重定向、SSRF、真实依赖安装/下载工具链及撤权后连接终止 |
 | 指南 §13.4 的高级项 | 第一版不启用；以后启用 mask/TLS/外部代理等时再履行对应门槛，不能默认继承基础资格 |
-| 生命周期 EX-06–EX-12 | 前台退出与延后清理、后台 start ack 丢失、服务多请求、跨 Grant 拒绝、结果后监管丢失、原目录占用、取消竞态、真正进程崩溃、旧 v1 读回与 v2 升级/拒绝；核查无启动能力 |
+| 生命周期 EX-06–EX-07、EX-09–EX-12 | 前台退出与延后清理、后台 start ack 丢失、后台查询/停止、跨 Grant 拒绝、结果后监管丢失、原目录占用、取消竞态、真正进程崩溃、旧 v1 读回与 v2 升级/拒绝；核查无启动能力 |
 | 通用副作用与恢复 | 受控临时文件删除或写入、假外部服务动作；审批后继续、拒绝无副作用、启动前后故障注入、重启核查；不用真实邮件或用户数据做破坏性测试 |
 | 正式产品流程 | 正式 Worker 进程 + 真实模型工具调用 + 实际本机读取 + Pi 续接 + ego Lite 展示/刷新/重启回读；独有测试内容与用量证据 |
 | 原项目直接执行 | 真实修改已授权测试项目；已有用户修改保留、并发冲突识别、高风险删除审批、取消后如实报告残留修改；不自动 reset |
-| MCP 与 Web Search | 本地/远程 MCP 受治理调用；真实搜索 provider、页面核实、来源链接、超时取消和查询披露；无结果不编造 |
-| GitHub push | 经授权验收仓库的已知 commit 推送、远端 OID 核实、工作树不被提交；错误分支/仓库、过期凭据、保护分支、非快进、断连未知结果和重启核查 |
+| Web Search | 真实搜索 provider、页面核实、来源链接、超时取消和查询披露；无结果不编造 |
 
 每份 host qualification 绑定 OS/架构、Node/SRT/辅助文件版本和摘要、runner/profile/compiler、实际策略 hash、测试集合与结果。依赖错误、关键警告、runtime/profile 更新或保护目录变化都使相关资格需要重验。证据必须来自目标主机，fixture、复制签名或开发机 Linux 容器不能替代 Mac 证明。
 
 安装使用固定 `0.0.75` 候选及锁文件完整性；实施前再核对发布包与安全公告，不使用每次 `npx latest`。仓库 Node 基线继续遵守自身 `>=22.19.0`，不因 SRT 的较低最低版本而降低项目要求。运行时安装在工作区外不可被任务修改的位置；Hermes 的大量工作区、缓存、日志和证据放经确认的数据盘。
 
-新合同验证必须以第 3.4 节判断表和 EX-01–EX-18 为准；原指南测试保留隔离/停止证据用途，不能要求后台每请求销毁整个 server。只有 profile 的实际监管证据足以支持受控持续运行时才启用该模式。
+新合同验证必须以第 3.4 节判断表和本次有效的 16 项 EX 验收 为准；原指南测试保留隔离/停止证据用途，不能要求每次后台状态查询都销毁测试服务。只有 profile 的实际监管证据足以支持受控持续运行时才启用该模式。
 
 目前仍需实际确定的实施条件包括：各平台停止与核查方案是否达到所声明的 profile 要求（首批 Mac 采用上述已接受的尽力停止与未知隔离语义）、全部本机保护路径的覆盖、SRT 发布包辅助文件资格，以及正式 Mac/Linux 负向测试。若任一条件不成立，应明确标记对应 profile 不可用并调整设计，不能自动启用原 native helper、Apple container 或不受限执行。

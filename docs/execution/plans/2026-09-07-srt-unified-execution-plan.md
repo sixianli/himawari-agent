@@ -12,9 +12,9 @@ date: "2026-09-07"
 
 **已批准决定：** [SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]
 
-**目标：** 在现有 Pi、Capability、Grant/Handle、Worker 和 SQLite 权威上实现通用工具执行；分别管理操作结果、副作用、后台任务/服务和环境释放，交付首批文件/编码、Shell、MCP、联网、Web Search 与 GitHub 已有 commit 推送。
+**目标：** 在现有 Pi、Capability、Grant/Handle、Worker 和 SQLite 权威上实现通用工具执行；分别管理操作结果、副作用、后台任务/服务和环境释放，交付本次文件/编码、Shell、后台任务、联网与 Web Search。
 
-2026-09-09 按 Owner 已批准方案重排实施任务。本文 R1–R12 是当前执行顺序，替代原 Task 3–10 未完成待办；不将历史 v1 组件测试勾选成 v2 完成。设计重排提交仅修改文档；随后按 Owner 指令完成 R1 的合同、端口和纯判断函数。R2–R12 仍待实施，未执行真实外部动作。原 Task 1–2 设计和 v1 组件交付事实保留在历史验证段；原首批范围未延期或删除。
+2026-09-09 按 Owner 已批准方案重排实施任务。本文 R1–R12 是当前执行顺序，替代原 Task 3–10 未完成待办；不将历史 v1 组件测试勾选成 v2 完成。设计重排提交仅修改文档；随后按 Owner 指令完成 R1 的合同、端口和纯判断函数。当前范围内的后续任务仍待实施；R7、R10 已按 Owner 指令移出本次范围，未执行真实外部动作。原 Task 1–2 设计和 v1 组件交付事实保留在历史验证段；两项能力仍是后续产品需求，不计入本批完成条件。
 
 ## 当前基线与复用边界
 
@@ -28,7 +28,7 @@ date: "2026-09-07"
 | Mac 受控探针 | 已有策略、资源阈值、取消及隔离不重放证据，仍为 productionSuitable:false；不自动转换为 v2 或安装资格 |
 | Pi SRT/SSH/Gondolin 示例 | 用作接口和风险依据；不直接安装或复制回退/默认权限；Gondolin 后端不在当前实施关键路径 |
 
-产品 PRD 首批范围不变。Runbook 仍对应现有二进制和旧运行合同，R1 新增类型端口后已核对安装 Runbook 的 v1 运行边界，操作步骤不变；其选定源码变化需要重新计算静态 seal。架构记录当前实现与目标差距，历史图保留并注明时间，目标图使用仓库内 Mermaid。
+产品需求保留；本次实施范围按 Owner 指令排除 MCP 接入与 GitHub 已有 commit 推送。Runbook 仍对应现有二进制和旧运行合同，R1 新增类型端口后已核对安装 Runbook 的 v1 运行边界，操作步骤不变；其选定源码变化需要重新计算静态 seal。架构记录当前实现与目标差距，历史图保留并注明时间，目标图使用仓库内 Mermaid。
 
 ## 文件与调用方边界
 
@@ -42,15 +42,17 @@ date: "2026-09-07"
 | Worker/认证通道 | `apps/execution-worker/src/production-sandbox-execution.ts`、`production-sandbox-worker.ts`、`broker-sandbox-execution.ts`、`production-payload-broker-client.ts`；Agent `production-payload-broker-handler.ts` | 版本匹配、任务管理请求与保护输出；Worker 无数据库准入 authority |
 | SRT/Job Host | `packages/runtime-sandbox/src/job-host*.ts`、策略/资源观测模块；`apps/execution-worker/src/product-job-host.ts` | 每权限固定环境一 manager，完整观察与停止，不自动放宽 unknown |
 | 受限程序 | `apps/agent-service/src/capability-programs/host-file-read*.ts`、HostFileReadService；拟新增同安装体系的 coding runner | 复用真实 Pi；搜索器、临时文件、图片等隐含 I/O 都受限 |
-| MCP/工作区 | `packages/platform-node/src/capabilities/node-capability-runtime.ts`、`isolation.ts`、workspaces 与 candidate-workspace 模块 | 受监督 stdio 适配复用 SDK；审查 program/Git/archive/tar/import/export 的全部调用方 |
-| 外部工具 | `packages/integration-web`、WebCapabilityService、`packages/integration-github`、既有 host secret source | 真实 provider；专用 Git 传输与只读监控分开；远端效果独立核查 |
+| 工作区与既有入口 | `packages/platform-node/src/capabilities/node-capability-runtime.ts`、`isolation.ts`、workspaces 与 candidate-workspace 模块 | 审查 program/Git/archive/tar/import/export 的全部调用方；MCP 仅保留既有入口的安全归属，不实施接入 |
+| 外部工具 | `packages/integration-web`、WebCapabilityService、既有 host secret source | 真实搜索 provider、页面核实和披露；不增加专用 Git 传输 |
 | 展示/安装 | `apps/control-center` 的现有 Run/Trace/工具结果视图；`scripts/package-node-runtime.mjs`、主机资格加载器/验证器、边界/覆盖检查及现有 Runbook | UI 分别显示结果和资源异常；资格按 mode/主机；新实现后语义核对 Runbook |
 
 ## 依赖顺序
 
-`R1 合同 → R2 持久化 → R3 准入与版本 → R4 监督与核查 → R5 前台工具 → R6 后台任务 → R7 MCP`。
+`R1 合同 → R2 持久化 → R3 准入与版本 → R4 监督与核查 → R5 前台工具 → R6 后台任务`。
 
-`R8 联网` 依赖 R3–R5，可与 R6/R7 的不冲突部分分别推进；R7 的联网验收依赖 R8。`R9 Web`、`R10 Git` 依赖 R5/R8 及各自现有适配；`R11 产品验收` 汇集 R5–R10；`R12 安装与交付` 汇集全部。顺序表示技术依赖，不自动创建并行任务或改变首批范围。
+`R8 联网` 依赖 R3–R5，可与 R6 的不冲突部分分别推进；`R9 Web` 依赖 R5/R8 及已有适配；`R11 产品验收` 汇集 R5、R6、R8、R9；`R12 安装与交付` 汇集本次全部有效任务。顺序表示技术依赖，不自动创建并行任务。
+
+**R7（MCP 接入）与 R10（GitHub 已有 commit 推送）移出本次范围，保留编号，不取消产品需求。** 对应 EX-08、EX-16 不计入本批验收、依赖或关闭条件，其余编号不变。后续另行制定 Spec/Plan；本批不实现或验收 MCP 协议/工具接入和专用 GitHub 推送通道。R1 已有通用 service/remote 合同和测试保留；后台任务、非 MCP 测试服务、授权联网及 Web Search 仍须交付。
 
 ## 实施任务
 
@@ -103,11 +105,11 @@ R1 实现位于 `packages/execution-contracts/src/sandbox-execution-v2.ts`、现
 
 依赖 R2；依据 Spec §3.1、§3.3、§10.2–10.3，验证 EX-02、EX-03、EX-12。
 
-- [ ] 在现有 production-sandbox-services 中补 file/edit/write/search/bash/后台/MCP 的可信范围来源，复用各自已有授权输入/调用回执，保留文件 context 和父子调用检查。
-- [ ] 沿已经批准的同 Grant 网络 targets 映射；逐请求验证 Grant 状态/指纹、目录版本/根、模型披露、主机上界和原期限。查询/停止不重复消费原执行 Handle，新服务调用消费自己的 Handle 一次。
+- [ ] 在现有 production-sandbox-services 中补 file/edit/write/search/bash/后台任务的可信范围来源，复用各自已有授权输入/调用回执，保留文件 context 和父子调用检查。
+- [ ] 沿已经批准的同 Grant 网络 targets 映射；逐请求验证 Grant 状态/指纹、目录版本/根、模型披露、主机上界和原期限。查询/停止不重复消费原执行 Handle，新执行动作消费自己的 Handle 一次；MCP 请求接入不在本任务。
 - [ ] 扩展既有认证 Payload broker 的 v2 内部 binding、任务/服务控制请求、资源查询和输出 cursor；验证 boot/epoch/fence、消息长度与执行目标，禁止 Worker 指定数据库 authority。
 - [ ] Agent/Worker/runner/qualification 声明并匹配支持的 mode/schema；不支持 v2 的安装在消费/启动前拒绝，不把 v2 数据标为 v1。
-- [ ] 准备结束和首笔实际启动/服务派发前重核当前授权、产物与原期限；旧观察读回或过期停止不得恢复执行权。
+- [ ] 准备结束和首笔实际启动前重核当前授权、产物与原期限；旧观察读回或过期停止不得恢复执行权。
 
 完成条件：真实 UDS+SQLite 测试覆盖撤权竞态、跨 Grant/主机/父调用、旧凭证、未知版本、重投递及单次消费；不依赖注入的 allow 布尔值证明正式授权。
 
@@ -149,17 +151,9 @@ R1 实现位于 `packages/execution-contracts/src/sandbox-execution-v2.ts`、现
 
 完成条件：至少一个有界长命令和一个声明 readiness 的测试服务可被可靠管理；返回句柄不声称工作完成，所有测试资源结束或留下明确的隔离证据。
 
-### R7：本地/远程 MCP 的连接与请求生命周期
+### R7：MCP 接入（移出本次范围）
 
-依赖 R6；联网部分依赖 R8；依据 Spec §4.3、§7，验证 EX-08、EX-10、EX-11、EX-14。
-
-- [ ] 检查固定 MCP SDK 的现有 transport/callers，复用协议逻辑，以薄适配让 stdio 管道由 Job Host 监督；删除被迁移路径的 SDK 自行 spawn。
-- [ ] server 身份/工具映射/握手决定 readiness；同 Run、同 Grant、同范围可复用，每请求独立 Handle/input/result；首批同 server 串行派发。
-- [ ] 两次请求复用一次 server 启动；单请求完成不关闭整个 server。停止 server 先禁派发，处理在途请求，再按有界关闭/TERM/KILL 协议停止。
-- [ ] 远程 MCP 的 HTTP 断连和取消保持效果未知；不支持的 task 模式不注册、不伪造业务成功。SDK 声明 readOnly 不成为授权依据。
-- [ ] 测试跨 Grant 拒绝、请求取消服务仍活、服务停止的在途效果、撤权及真正 server 崩溃恢复；后台写服务占用原目录规则与 R6 一致。
-
-完成条件：本地受限 server 与受控远端服务均有多请求、独立授权和停止证据，普通 MCP 无权取得专用 Git 凭据。
+本地 stdio MCP 与受治理远程 MCP 的接入及真实多请求验收不属于本次实施任务，EX-08 同步移出。不标记完成，不阻塞 R8/R9/R11/R12；需求保留，后续另行安排。
 
 ### R8：授权联网与后端资格矩阵
 
@@ -183,33 +177,25 @@ R1 实现位于 `packages/execution-contracts/src/sandbox-execution-v2.ts`、现
 
 完成条件：正式链路返回可核实引用，失败不编造；测试 provider 只能作回归，不作为真实搜索交付。
 
-### R10：受治理 GitHub 已有 commit 推送
+### R10：GitHub 已有 commit 推送（移出本次范围）
 
-依赖 R5/R8；依据 Spec §7 的 GitHub push，验证 EX-16。
-
-- [ ] 将已验证的 Pi Bash/产品 Operations 路径接入正式持久 HITL；完整解析支持语法，冻结仓库/remote/ref/OID/对象范围，保留专用内部动作。
-- [ ] 无凭据受限作业导出已授权对象；私有 Git 数据目录的标准 Git 传输使用受限委托，拒绝源 hooks/config/helper、命令串联和隐式多 ref。
-- [ ] 复用合格 host secret source，不默认要求创建 GitHub App；真实凭据不进入普通 Shell/MCP/URL/日志。核对同用户进程与专用 IPC 可见性。
-- [ ] 对断连、超时、取消分别保存传输结果及远端效果；核查 ref/祖先关系，确认已应用不重推，不能因为 tip 不等于 OID 就认定未应用。
-- [ ] 在具体授权验收仓库推送已有 commit；验证非快进、保护分支、目标变化、过期凭据和重启核查；不顺带 commit/强推/合并/发布。
-
-完成条件：真实目标的权限、传输和 readback 证据齐全；本地 bare/HTTP 实验不能替代 GitHub 验收。
+专用推送动作、凭据委托、传输及真实 GitHub 仓库验收不属于本次实施任务，EX-16 同步移出。不标记完成，不阻塞 R11/R12；需求保留，后续另行安排。
 
 ### R11：正式模型、HITL、UI 与故障旅程
 
-依赖 R5–R10；依据 Spec §3.4、§6 与验收标准，验证 EX-04、EX-09、EX-10、EX-17。
+依赖 R5、R6、R8、R9；依据 Spec §3.4、§6 与验收标准，验证 EX-04、EX-09、EX-10、EX-17。
 
 - [ ] 控制中心复用现有 Run/Trace/工具结果展示：操作结果、后台 started/ready、监管失联和清理未知分开；不是简单绿色 success。
 - [ ] 正式 Agent/Worker、身份/CSRF、实际模型配置和预算就绪后，ego Lite 发起文件总结，由模型调用工具、真实读取、同 Pi loop 续接并落库。
-- [ ] 从 UI 执行受控写入、后台 start/query/stop 和 MCP 多请求，覆盖审批批准/拒绝、并发批准、过期、取消和结果后清理失败。
+- [ ] 从 UI 执行受控写入、后台 start/query/stop 和非 MCP 测试服务 readiness，覆盖审批批准/拒绝、并发批准、过期、取消和结果后清理失败。
 - [ ] 刷新和服务重启回读既有模型/工具结果；不新增模型调用，未完成资源进入核查，不复活取消 Run。
-- [ ] 独立确认真实搜索、联网和 Git 推送整批证据，按主机/模式显示能力不可用及具体原因。
+- [ ] 独立确认真实搜索、联网和后台任务整批证据，按主机/模式显示能力不可用及具体原因。
 
-完成条件：从用户入口验证四组场景及实际故障；没有未核实资源时才正常完成 Run，不能用预准备调用或合成 session 代替。
+完成条件：从用户入口验证文件读取/写入、后台任务、Web Search 及实际故障；没有未核实资源时才正常完成 Run，不能用预准备调用或合成 session 代替。
 
 ### R12：安装、文档与最终切换
 
-依赖全部任务；依据 Spec §10，验证 EX-12、EX-18。
+依赖本次有效任务（R1–R6、R8、R9、R11）；依据 Spec §10，验证 EX-12、EX-18。
 
 - [ ] 打包固定依赖与 runner，校验安装产物摘要/权限、schema/mode 协商、主机资格；真实安装后执行对应探针，不复制签名或静态模板当资格。
 - [ ] 完成全部模型可达调用方归属检查，移除已经迁移且无调用方的旧后端执行入口；保留旧数据只读，不维护隐含运行 fallback。
@@ -217,9 +203,11 @@ R1 实现位于 `packages/execution-contracts/src/sandbox-execution-v2.ts`、现
 - [ ] 实现改变操作合同时，语义复核安装/备份/权威迁移 Runbook，运行相应静态检查和实际授权 preflight 后再封存；本设计阶段不预封存。
 - [ ] 更新架构当前事实、覆盖清单及必要运行文档；验证通过后分目的本地提交，远端 push/发布按具体指令执行。
 
-完成条件：EX-01–EX-18 全部映射到可信证据，必须能力无遗漏，历史/合成/真实主机证据明确区分。
+完成条件：本次有效的 16 项 EX 验收全部映射到可信证据（不含 EX-08、EX-16），必须能力无遗漏，历史/合成/真实主机证据明确区分。
 
 ## 验收映射
+
+本表仅包含本次有效的 16 项验收；EX-08、EX-16 保留编号但不在表内。
 
 | Spec 编号 | 主任务 | 最小验证层 |
 |---|---|---|
@@ -230,15 +218,13 @@ R1 实现位于 `packages/execution-contracts/src/sandbox-execution-v2.ts`、现
 | EX-05 | R5 | 原目录文件冲突/安全替换/搜索 |
 | EX-06 | R1、R5 | 前台真实退出/输出 + 效果合同 |
 | EX-07 | R2、R6 | 持久句柄 + 实际后台任务/ack 丢失 |
-| EX-08 | R7 | 同 server 多请求、独立授权与停止 |
 | EX-09 | R1、R4、R11 | 投影判断 + lost 后停止续接/相交准入 |
-| EX-10 | R4、R6、R7、R11 | 取消/超时/迟到结果与停止竞态 |
-| EX-11 | R2、R4、R6、R7 | 真正崩溃、PID 身份、重启核查及隔离解除证据 |
+| EX-10 | R4、R6、R11 | 取消/超时/迟到结果与停止竞态 |
+| EX-11 | R2、R4、R6 | 真正崩溃、PID 身份、重启核查及隔离解除证据 |
 | EX-12 | R1–R3、R12 | v1 历史读回、追加迁移、版本不匹配/回退拒绝 |
 | EX-13 | R4、R8 | 分主机和 mode 的实际资格 |
-| EX-14 | R7、R8 | MCP/联网/SSRF/秘密/资源阈值 |
+| EX-14 | R8 | 联网/SSRF/秘密/资源阈值 |
 | EX-15 | R9 | 真实 Web provider 与页面引用 |
-| EX-16 | R10 | 受控 Git 本地回归 + 已授权 GitHub readback |
 | EX-17 | R11 | ego Lite 正式模型与刷新/重启回读 |
 | EX-18 | R12 | 安装产物与完整调用方归属/停止迁移 |
 
@@ -249,8 +235,8 @@ R1 实现位于 `packages/execution-contracts/src/sandbox-execution-v2.ts`、现
 | 原 Task 1–2 / P0-06 | 历史 v1 设计与按次 Pi 绑定已实现；R1/R5 验证新合同，不能重标历史测试为 v2 |
 | 原 Task 3–4 / P0-10–P0-11 / P1-01–P1-02 | R2–R4、R8，复用已接通的 scope/主机/账本，补真实监管核查及新版本 |
 | 原 Task 5 / P0-07–P0-09、P0-12–P0-14 | R5，保留文件身份、双授权、保护结果和 Pi 续接；后台能力另由 R6 验证 |
-| 原 Task 6 | R7/R8，连接生命周期与联网仍为首批 |
-| 原 Task 7–8 | R9/R10，真实 Web 和已有 commit push 不变 |
+| 原 Task 6 | MCP 接入移出本次 R7；授权联网仍由 R8 交付 |
+| 原 Task 7–8 | R9 交付真实 Web；GitHub 已有 commit 推送移出本次 R10 |
 | 原 Task 9 / P0-01–P0-05、P1-03–P1-05 | R11，原模型/身份与入口证据保留，完整新路径重新验收 |
 | 原 Task 10 / P2-01–P2-02 | R12，最终资格、运行文档及交付 |
 
@@ -270,9 +256,9 @@ npm run check:ci-policy
 python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py . --strict
 ```
 
-R2–R4 追加真实 SQLite/UDS 与进程故障测试；R5–R8 在源码和可安装产物各运行对应后端用例。现有 `qualify-policy.mjs`、`qualify-job-host.mjs`、`qualify-production.mjs` 在适配 v2 后继续作为有限探针，不更改 productionSuitable 以代替正式资格。每份实际主机证据记录安装/runtime/runner/profile/mode/schema 摘要、OS、场景、退出状态、效果/监管/清理事实及残留处置；合成 session、临时资格、真实安装明确分开。
+R2–R4 追加真实 SQLite/UDS 与进程故障测试；R5、R6、R8 在源码和可安装产物各运行对应后端用例。现有 `qualify-policy.mjs`、`qualify-job-host.mjs`、`qualify-production.mjs` 在适配 v2 后继续作为有限探针，不更改 productionSuitable 以代替正式资格。每份实际主机证据记录安装/runtime/runner/profile/mode/schema 摘要、OS、场景、退出状态、效果/监管/清理事实及残留处置；合成 session、临时资格、真实安装明确分开。
 
-真实模型、收费 provider、安装变更或 GitHub push 在具体目标和影响明确后按现有授权执行；此 Plan 不授予所有未来外部操作权限。测试只用任务专用假数据，有界进程不能留下无主常驻资源；涉及 Hermes 大量数据先验证机械盘挂载。
+真实模型、收费 provider、安装变更在具体目标和影响明确后按现有授权执行；此 Plan 不授予所有未来外部操作权限。测试只用任务专用假数据，有界进程不能留下无主常驻资源；涉及 Hermes 大量数据先验证机械盘挂载。
 
 文档设计本身运行 strict 治理、SOURCE/ADR 链、覆盖/不变量及 diff 检查。它不要求重跑全部产品测试，也不得引用历史测试作为本次已运行结果。历史全仓 lint 问题仍在 [SOURCE: docs/backlog/BL-20260907-001-修-复-全-仓-既-有-lint-问.md]，不在本任务批量修复。
 
@@ -345,9 +331,13 @@ Task 3 保持未完成：仍缺正式安装主机资格、完整模型/文件审
 
 Owner 已批准 ADR 0025 的方案和文档重设计范围。此次交付更新 ADR 替代关系、架构当前/目标边界、Spec 的事实与资源合同、R1–R12 及 EX-01–EX-18 映射；产品代码、依赖、数据库和主机资格均未因设计修改。本次文档 strict 校验为 0 错误、0 警告；需求覆盖、产品不变量、依赖边界、秘密扫描和 CI 政策检查通过。另核对三份历史 ADR 正文逐字不变、18 项验收在 Spec/Plan 一一对应、12 个实施任务均未勾选完成。本次未运行产品功能测试、真实沙箱/模型或外部服务验收；新合同和验收任务保持未完成。
 
+## 本次范围调整（2026-09-09）
+
+Owner 明确将 MCP 接入和 GitHub 已有 commit 推送移出本次 Spec/Plan，保留产品需求。已调整目标、依赖、任务、验收映射与关闭条件；R1 的既有实现及历史证据不撤销。前文历史记录中的“18 项验收/12 个任务”描述当时范围，不能作为当前完成条件。
+
 ## 关闭检查
 
-- [ ] R1–R12 及全部 EX 编号有对应真实证据，必需能力未遗漏。
+- [ ] 本次有效任务 R1–R6、R8、R9、R11、R12 及对应 16 项 EX 有可信证据；R7/R10 与 EX-08/EX-16 不计入完成条件，未被标记为完成。
 - [ ] 资源监管与清理义务有明确结论，未知未被默认成功或自动重放。
 - [ ] 安装行为、架构当前事实、UI 和 Runbook 与实际一致。
 - [ ] 未完成必要能力不以归档/Backlog 隐藏；其他后续事项按治理记录。

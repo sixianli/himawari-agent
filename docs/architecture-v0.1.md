@@ -20,6 +20,8 @@ SRT `0.0.75` 已集中在 `packages/runtime-sandbox`。独立 Job Host、原子�
 
 R1 已新增 `sandbox-execution.v2` 严格合同、`SandboxExecutionPortV2` 类型端口以及共享的 `projectSandboxExecution` / `projectSandboxRunCompletion` 纯判断函数。结果、效果和资源观察独立表达；结果已知时可以保留展示，监管丢失仍禁止续接和环境复用。判断需要由可信 Payload/资格/效果读者核验的证据，并检查调用、策略、sequence 与时效。当前生产适配器仍使用 v1；v2 持久关联、真实证据读者、正式派发与 UI 消费者尚未接入，不能从这些合同导出推断已具备新的运行能力。
 
+本次执行 Spec/Plan 的交付范围已按 Owner 指令移出本地/远程 MCP 接入和 GitHub 已有 commit 推送，相关产品需求与长期架构方向保留。下方目标图不表示两项属于本批验收；当前任务和验收集合以配套 Spec/Plan 为准，R1 的通用 service/remote 合同不回退。
+
 ### 已采纳、待实施的职责划分
 
 2026-09-09 Owner 已批准 [SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]，替代 ADR 0024 的统一作业表达。保留 SRT 本地主机路线、原目录默认模式以及原首批能力；分离工具结果、受管理任务/服务与执行环境的生命周期。目标合同及验收见 [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]，执行次序见 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md]。下图是目标设计，不是已实现状态。
