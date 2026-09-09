@@ -14,7 +14,7 @@ date: "2026-09-07"
 
 **目标：** 在现有 Pi、Capability、Grant/Handle、Worker 和 SQLite 权威上实现通用工具执行；分别管理操作结果、副作用、后台任务/服务和环境释放，交付首批文件/编码、Shell、MCP、联网、Web Search 与 GitHub 已有 commit 推送。
 
-2026-09-09 按 Owner 已批准方案重排实施任务。本文 R1–R12 是当前执行顺序，替代原 Task 3–10 未完成待办；不将历史 v1 组件测试勾选成 v2 完成。此次仅完成设计文档，不实施这些代码任务，也不执行真实外部动作。原 Task 1–2 设计和 v1 组件交付事实保留在历史验证段；原首批范围未延期或删除。
+2026-09-09 按 Owner 已批准方案重排实施任务。本文 R1–R12 是当前执行顺序，替代原 Task 3–10 未完成待办；不将历史 v1 组件测试勾选成 v2 完成。设计重排提交仅修改文档；随后按 Owner 指令完成 R1 的合同、端口和纯判断函数。R2–R12 仍待实施，未执行真实外部动作。原 Task 1–2 设计和 v1 组件交付事实保留在历史验证段；原首批范围未延期或删除。
 
 ## 当前基线与复用边界
 
@@ -28,14 +28,14 @@ date: "2026-09-07"
 | Mac 受控探针 | 已有策略、资源阈值、取消及隔离不重放证据，仍为 productionSuitable:false；不自动转换为 v2 或安装资格 |
 | Pi SRT/SSH/Gondolin 示例 | 用作接口和风险依据；不直接安装或复制回退/默认权限；Gondolin 后端不在当前实施关键路径 |
 
-产品 PRD 首批范围不变。Runbook 仍对应现有二进制和旧运行合同，本次设计不更改其操作步骤或 seal。架构记录当前实现与目标差距，历史图保留并注明时间，目标图使用仓库内 Mermaid。
+产品 PRD 首批范围不变。Runbook 仍对应现有二进制和旧运行合同，R1 新增类型端口后已核对安装 Runbook 的 v1 运行边界，操作步骤不变；其选定源码变化需要重新计算静态 seal。架构记录当前实现与目标差距，历史图保留并注明时间，目标图使用仓库内 Mermaid。
 
 ## 文件与调用方边界
 
 | 责任 | 实际入口/改动位置 | 迁移要求 |
 |---|---|---|
 | Pi 定义和执行 | `packages/runtime-pi/src/governed-coding-tools.ts`、`governed-host-operations.ts`、`pi-runtime-adapter.ts`、`governed-read-executor.ts` | 只有 runtime-pi 导入 Pi；Agent 只接纳请求，实际工具算法进受限 runner |
-| 产品合同 | `packages/execution-contracts/src/sandbox-execution-v1.ts`、拟新增同目录 v2 合同及导出；`packages/application/src/ports/sandbox-execution.ts` | v1 只保留原解释；v2 结果/效果/资源严格区分，外层 execution.v2 不被混淆 |
+| 产品合同 | `packages/execution-contracts/src/sandbox-execution-v1.ts`、同目录 `sandbox-execution-v2.ts` 及导出；`packages/application/src/ports/sandbox-execution.ts` | v1 只保留原解释；v2 结果/效果/资源严格区分，外层 execution.v2 不被混淆 |
 | 授权来源 | `apps/agent-service/src/production-runtime-tools.ts`、`production-file-read-workflow.ts`、`production-sandbox-services.ts`；既有 Worker 准入/委托服务 | 沿既有服务补能力投影、父范围和同 Grant 检查，不重建准入框架 |
 | 生命周期与恢复 | `packages/application/src/services/sandbox-job-lifecycle-service.ts`、现有 RuntimeContinuationService/RunCoordinator；生产恢复入口 | 独立判断结果/续接/资源释放；核查没有启动能力，Run 状态复用 |
 | SQLite 权威 | `packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts`、现有作业实现及下一条 migration | 原子身份关联、观察 CAS、资源占用和有界分页；不改 0020/0027 |
@@ -54,17 +54,37 @@ date: "2026-09-07"
 
 ## 实施任务
 
-### R1：完成事实与模式合同（最高优先级）
+### R1：完成事实与模式合同（已完成）
 
 依据 Spec §2、§3.2–3.4、§4，验证 EX-01、EX-06–EX-10、EX-12。
 
-- [ ] 先以只读、写入、前台 Shell、后台启动、MCP 多请求及取消未知六种调用绘制合同测试输入/期望，明确结果发布、续接、环境复用、Run 完成的不同判定。
-- [ ] 新增 sandbox-execution.v2 严格 schema 与现有端口升级；保留 v1 parser 及旧读回，拒绝 mode/result/readiness 分支混用、任意句柄/输出、跨调用和策略摘要替换。
-- [ ] 定义操作 contract 描述与效果验证责任：固定读 not_applicable、普通正常命令 not_asserted、写入/push 必需 verified、中断或缺失必需证据 unknown；禁止用弱合同掩盖未决效果。
-- [ ] 在一个产品投影实现中落实 Spec §3.4 判断表；Worker/Run/UI 使用同一投影，不各自判断 cleanup===confirmed 即成功。
-- [ ] 从失败用例开始验证：result 已知/cleanup pending、已有结果后 lost、empty output、迟到结果、ready 与 started 差异、Run cancel 后禁止模型续接。
+- [x] 先以只读、写入、前台 Shell、后台启动、MCP 多请求及取消未知六种调用绘制合同测试输入/期望，明确结果发布、续接、环境复用、Run 完成的不同判定。
+- [x] 新增 sandbox-execution.v2 严格 schema 与现有端口升级；保留 v1 parser 及旧读回，拒绝 mode/result/readiness 分支混用、任意句柄/输出、跨调用和策略摘要替换。
+- [x] 定义操作 contract 描述与效果验证责任：固定读 not_applicable、普通正常命令 not_asserted、写入/push 必需 verified、中断或缺失必需证据 unknown；禁止用弱合同掩盖未决效果。
+- [x] 在一个产品投影实现中落实 Spec §3.4 判断表；Worker/Run/UI 使用同一投影，不各自判断 cleanup===confirmed 即成功。
+- [x] 从失败用例开始验证：result 已知/cleanup pending、已有结果后 lost、empty output、迟到结果、ready 与 started 差异、Run cancel 后禁止模型续接。
 
 完成条件：合同/投影测试通过，v1 旧样本语义不变；新增枚举不能让缺少真实监督证据的适配器自动返回 controlled 或 released。
+
+R1 实现位于 `packages/execution-contracts/src/sandbox-execution-v2.ts`、现有 `packages/application/src/ports/sandbox-execution.ts` 及 `packages/application/src/services/sandbox-execution-projection.ts`。现有端口以 `SandboxExecutionPortV2` 显式选择版本；原 v1 实现及读回不改变。统一的 `projectSandboxExecution` 和 `projectSandboxRunCompletion` 可供 Worker/Run/UI 接入，实际持久化、CAS、证据读取及生产调用方接入按 R2–R4/R11 实施；本阶段没有将纯函数的测试冒充正式派发验证。
+
+| 合同测试输入 | 结果与继续判断 | 环境与 Run 判断 |
+|---|---|---|
+| 固定只读，保护输出长度为零，监管有效、清理 pending | succeeded，可披露并续接；空输出不是结果丢失 | 不复用，不正常终结 Run |
+| 写入或专用 push 的合同，匹配 verifier/target 的可信效果证据 | verified 才确定成功；必需证据缺失为 unknown，不能换成普通命令合同 | 未清理仍保留资源义务 |
+| 前台 Shell 正常退出、完整输出 | effect=not_asserted，仅判断退出/输出；非零退出为失败，中断效果须核查 | 退出不代表清理确认 |
+| 后台启动已登记 running 句柄 | started，不代表后台工作完成 | 存活期保留资源义务 |
+| MCP ready 与同一环境的两个请求 | readiness 必须独立核验；两个请求分别绑定 invocation/Handle，未 ready 不派发 | 共享环境，保持独立调用结果 |
+| 取消时 ack 未知或结果迟到，以及已有结果后 lost | 不自动重试或续接；已知且获准披露的输出仍可展示 | 隔离和清理继续，不正常完成或复用 |
+
+验证证据（2026-09-09）：
+
+- 失败基线：在旧 parser 输入 succeeded/confirmed-effect/cleanup-pending 记录，实际以 `terminal result requires confirmed cleanup and effect` 拒绝。旧规则保留；新测试在 v2 验证相同的结果/清理分离语义。
+- 新增回归先失败：同时替换回执和资源观察的句柄引用，最初未被拒绝（1 failed / 31 passed）；环境关联新增冻结 resourceRef 后拒绝该替换。
+- 新增回归先失败：远程连接使用本地进程证据，最初未被拒绝（1 failed / 27 passed）；补充监督证据主体的 local_process/remote_connection 严格分支及连接绑定后通过。
+- `sandbox-execution-v2.test.ts` 与原 `sandbox-execution-contract.test.ts`：33 + 17 项通过；旧 `job-host.unit.test.ts` 7 项通过，未赋予旧适配器 controlled/released 默认值。
+- 类型检查、Node/合同构建、修改文件 Biome、依赖边界、v0.2 覆盖映射/不变量、秘密扫描、CI policy 和 docs strict 均通过；安装 Runbook 已核对 v1 运行边界并重新 seal。这些是本地合同证据，不是主机监督资格或实际工具验收。
+- 全仓 `npm run check` 的格式检查通过，但 lint 失败（182 errors、988 warnings）。本次修改的 6 个 TypeScript 文件单独执行 `biome lint --error-on-warnings` 通过；诊断路径核对确认这些错误和警告均不在本次改动文件中，未在 R1 中扩展修复。
 
 ### R2：追加持久关联、占用与迁移
 

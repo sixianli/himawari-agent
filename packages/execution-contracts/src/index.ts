@@ -3,6 +3,7 @@ export * from "./contracts-v2.ts";
 export * from "./execution-admission-v1.ts";
 export * from "./payload-broker-v1.ts";
 export * from "./sandbox-execution-v1.ts";
+export * from "./sandbox-execution-v2.ts";
 export * from "./sandbox-host-binding-v1.ts";
 export * from "./sandbox-qualification-v1.ts";
 export * from "./sandbox-scope-v1.ts";

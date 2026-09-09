@@ -45,6 +45,7 @@ export {
   createSandboxExecutionPlan,
   createSandboxExecutionPlanCandidate,
 } from "./sandbox-execution-plan.js";
+export * from "./sandbox-execution-projection.js";
 export {
   type SandboxJobLifecycleOptions,
   SandboxJobLifecycleService,

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:397ef951db66f00facb1b750887ce0fb725171f2910b4b09b95ebd186b3eb29a"
+contract_sha256: "sha256:e184b4114edac54a30e55d7c90bab578b63a068c9d7ea0efa615604d37abdc19"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -87,6 +87,8 @@ date: "2026-08-27"
 ## Scope
 
 SRT 的 Agent Service 和 Worker 启动组合已连接现有准入、目录授权状态、受保护 scope、认证 Payload 通道与作业监督器；当前 root scope 来源只支持已接入的文件 inspect/read 工作流，不能据此启用所有工具。网络范围须来自本次操作同一 Grant 的审批快照确切域名目标，并与主机能力上界核对；不新增授权或再次消费 Grant。准入及启动前验证授权、父调用和真实 host/runtime/runner/qualification。缺少可信来源时拒绝。策略只由 Worker 编译，初始观察可无摘要，首次原子启动固定摘要后不可替换。
+
+安装产物源码新增了 R1 的 v2 合同、类型端口和纯判断函数，正式组合仍使用 `SandboxExecutionPort` 与 v1 账本；没有可据此切换的 v2 配置开关。新增 `SandboxExecutionPortV2` 导出不代表 Job Host 取得新监督资格，也不会把旧 unknown 回执转换为已清理。后续接入 v2 持久化与适配器时，须重新核对本 Runbook 的迁移、恢复和安装验证。
 
 schema 27 的作业账本继续作为持久依据；不能给无账本的旧凭证补建可启动作业，不能自动重放清理未知作业。旧作业读回、清理和重复观察不恢复执行权限。Job Host 接收至多 48 KiB 的私有 IPC 输入，仅送入任务 stdin；正文不进入 argv 或环境变量。stdout 保留原 runner 合同并保存为受保护 Payload；CPU/RSS 观察随作业观察持久保存。固定有界进程采样超限或失败时请求停止，采样不能证明硬配额、所有短命后代都被计入或整个进程树已退出。
 

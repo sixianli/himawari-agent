@@ -216,7 +216,7 @@ sequenceDiagram
 
 #### 3.2 版本化目标数据
 
-目标为产品内部 `sandbox-execution.v2`，不是重命名现有外层 `execution.v2`。下列字段是待实现合同；现有 v1 保留原解释和读回能力。所有身份、绑定、时间、引用和枚举采用严格 schema；未知字段、不同分支字段混用、非有限数及不匹配摘要都拒绝。
+目标为产品内部 `sandbox-execution.v2`，不是重命名现有外层 `execution.v2`。下列字段已在 R1 实现严格 schema 和纯判断函数；持久化、真实证据读取和生产端口实现仍按后续任务推进。现有 v1 保留原解释和读回能力。所有身份、绑定、时间、引用和枚举采用严格 schema；未知字段、不同分支字段混用、非有限数及不匹配摘要都拒绝。
 
 | 记录 | 必需内容及验证责任 |
 |---|---|
@@ -228,6 +228,10 @@ sequenceDiagram
 | 任务/服务句柄 | 随机不透明引用；持久绑定创建调用、Run、host、scope、期限、后端关联；任务状态 starting/running/exited/unknown，服务另有 starting/ready/unavailable 的 readiness 事实；句柄内容不提供权限 |
 
 `not_applicable` 仅用于工具合同能证明没有本次要确认的用户/远端变更，例如固定只读 runner；私有日志清理由资源义务另行管理。`not_asserted` 表示正常返回的通用命令只承诺退出/输出，不承诺业务效果：它依然需要覆盖可能写入/联网的授权。中断、输出丢失、必需后置条件缺失不能降为 not_asserted。文件写入和专用 Git push 必须核查对应内容或远端效果，禁止选择更弱合同绕过失败。verified 不能从任意 stdout 的 success 字段推导。
+
+R1 的操作合同描述分为 `fixed_read`、`command`、`verified_effect`、`task_start`、`service_start`，均冻结 ref/version。专用写入和 push 使用 `verified_effect`，额外绑定 verifier/version/target；具体能力从可信目录解析描述后，与计划逐项核对，不能由调用者改选较弱合同。服务后续请求复用前三种操作语义，但 mode 保持 service，分别持有自己的调用身份。后台/服务的 started 回执只使用 not_asserted 表示已登记启动，不断言后台业务效果完成。
+
+环境关联冻结 resourceRef，回执和资源观察必须同时匹配它，不能通过同时替换两者来换用任意句柄。资源观察另带 task 状态或 service readiness，不能从不可变的初始 started 回执推导当前可用性。监督证据区分本地进程启动身份和远端 connectionRef，不为远端连接编造本地 PID。`validateSandboxExecutionFacts` 检查冻结环境/合同、调用和策略绑定以及观察次序；`SandboxExecutionEvidencePort` 的可信实现负责验证 Payload 内容/归属、效果核查与主机资格。schema 通过不代表真实性通过，缺少该证据读取结果时投影拒绝继续执行和释放义务。
 
 #### 3.3 端口与命令分派
 
@@ -250,6 +254,8 @@ start 只有在原子消费并建账之后、唯一 starting CAS 获胜且当前
 | 结果已知但监管丢失或清理未知 | 可向获授权用户展示“已有结果，资源待核查”；不抹去已确认效果 | 进入原 Run 核查/暂停路径，不再发起依赖该资源的动作或模型续接；独立 Run 仍需避开隔离范围 | 持久隔离相关环境和工作区范围，不正常完成、不复用 |
 | 启动 ack/结果未知，或取消、超时、撤权竞态 | 分别展示停止请求与已知证据，不说未执行或已撤销 | 不自动重试、不把迟到结果触发为下一轮；取消 Run 禁止续接 | 有界停止与核查；无法确认则隔离 |
 | 全部必需结果确定，资源清理确认且无未决审批/核查 | 由原 RunCoordinator 按用户目标报告整体结论 | 不新增隐含动作 | 才可正常终结 Run；目标失败仍报告失败而非伪造成功 |
+
+R1 的统一入口为 `projectSandboxExecution`，分别返回结果结论、用户展示、单次工具交付、模型续接、新动作、服务调用、环境复用与资源义务判断。`projectSandboxRunCompletion` 还要求现有 RunCoordinator 提供完整资源/操作清单和当前 Run/fence，不能从单条作业成功推出 Run 成功。投影是只读规则，不执行授权消费或模型派发；后续消费者必须在现有事务中验证输入 sequence/fence 并在派发前复核。可信证据读取结果绑定被核验的完整不可变事实快照、当前调用、环境、策略、资源 sequence、读取时刻和有效期；子进程输出不得充当该输入。
 
 `controlled` 必须由该 profile 的资格规则和带时效的监督证据产生，至少绑定正确 boot/进程启动身份、范围与未过期监督窗口；没有心跳或只有父 PID 存活不能证明任意后代受控。能力声明中的“无法保证任意后代回收”和本次“已失去监管”是不同事实，但不能用前者给后者重新贴 controlled 标签。存在具体逃逸/残留风险、不可核验所有权、观测失效或应急停止失败即进入 lost/unknown。监管有效期间也不能跨已冻结权限续命。
 
