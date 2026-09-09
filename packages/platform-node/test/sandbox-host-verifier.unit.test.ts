@@ -16,9 +16,11 @@ import type {
   SandboxHostBinding,
   SandboxRuntimeQualification,
 } from "@himawari-agent/execution-contracts";
+import { sandboxScopeSchema } from "@himawari-agent/execution-contracts";
 import { afterEach, expect, it } from "vitest";
 import {
   digestSandboxRuntime,
+  resolveSandboxWorkspaceClaim,
   verifySandboxHost,
 } from "../src/capabilities/sandbox-host-verifier.js";
 
@@ -216,3 +218,90 @@ it.each(["valid", "final", "qualification", "runner", "capability", "guarantee",
       );
   },
 );
+
+function scopeFor(input: Awaited<ReturnType<typeof fixture>>) {
+  return sandboxScopeSchema.parse({
+    schemaVersion: "sandbox-scope.v1",
+    ownerId: "owner",
+    agentId: "agent",
+    threadId: "thread",
+    runId: "run",
+    toolCallId: "call",
+    parentToolCallId: null,
+    parentRequestId: "run",
+    hostId: input.hostId,
+    handleRef: "handle",
+    inputRef: "input",
+    operation: "read",
+    authorizationRef: "grant",
+    modelRef: "model",
+    profileRef: input.binding.profileRef,
+    directoryGrant: {
+      ref: "directory",
+      revision: 1,
+      canonicalRootId: "root",
+      authorizationRef: "directory-grant",
+      operations: ["read"],
+    },
+    networkAuthorizationRef: null,
+    expiresAt: "2999-01-01T00:00:00.000Z",
+  });
+}
+it("derives occupancy from current filesystem ancestors and detects directory replacement", async () => {
+  const input = await fixture();
+  const scope = scopeFor(input);
+  const claim = await resolveSandboxWorkspaceClaim({ ...input, scope });
+  const root = input.binding.roots[0];
+  if (!root) throw new Error("fixture root missing");
+  expect(claim.lineage.at(-1)).toEqual({ device: root.device, inode: root.inode });
+  expect(claim.access).toBe("read");
+  const nested = path.join(root.canonicalPath, "nested");
+  await mkdir(nested, { mode: 0o700 });
+  const identity = await stat(nested);
+  const child = await resolveSandboxWorkspaceClaim({
+    scope,
+    binding: {
+      ...input.binding,
+      roots: [
+        {
+          ...root,
+          canonicalPath: nested,
+          device: String(identity.dev),
+          inode: String(identity.ino),
+        },
+      ],
+    },
+  });
+  expect(child.lineage.slice(0, -1)).toEqual(claim.lineage);
+  expect(
+    (
+      await resolveSandboxWorkspaceClaim({
+        ...input,
+        scope: {
+          ...scope,
+          directoryGrant: { ...scope.directoryGrant, operations: ["read", "update"] },
+        },
+      })
+    ).access,
+  ).toBe("write");
+  await rename(root.canonicalPath, `${root.canonicalPath}-old`);
+  await mkdir(root.canonicalPath, { mode: 0o700 });
+  await expect(resolveSandboxWorkspaceClaim({ ...input, scope })).rejects.toThrow("ROOT_CHANGED");
+});
+it("rejects foreign roots and symlink aliases rather than trusting root labels", async () => {
+  const input = await fixture();
+  const scope = scopeFor(input);
+  await expect(
+    resolveSandboxWorkspaceClaim({ ...input, scope: { ...scope, hostId: "other" } }),
+  ).rejects.toThrow("ROOT_CHANGED");
+  const root = input.binding.roots[0];
+  if (!root) throw new Error("fixture root missing");
+  const alias = `${root.canonicalPath}-alias`;
+  await symlink(root.canonicalPath, alias);
+  await expect(
+    resolveSandboxWorkspaceClaim({
+      scope,
+      binding: { ...input.binding, roots: [{ ...root, canonicalPath: alias }] },
+    }),
+  ).rejects.toThrow("PATH_UNSAFE");
+});

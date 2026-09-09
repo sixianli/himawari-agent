@@ -1,14 +1,22 @@
 import { fork } from "node:child_process";
+import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import type { JobHostControlBinding } from "./job-host-control.js";
 import {
   type JobHostRequest,
   type JobHostResult,
+  type JobHostSupervision,
   parseJobHostRequest,
 } from "./job-host-protocol.ts";
 
 export interface SandboxJobHost {
+  readonly controlBinding?: JobHostControlBinding;
   readonly ready: Promise<void>;
   readonly result: Promise<JobHostResult>;
+  /** Observation only; an expired or replaced session never grants control. */
+  inspect(): JobHostSupervision | null;
+  /** Limited stop of this owned fork only; never adopts a PID from a receipt. */
+  stop(expected: Pick<JobHostSupervision, "sessionId" | "bootId" | "processIdentityRef">): void;
   /** Caller must persist the unique start intent before sending this command. */
   start(): void;
   cancel(): void;
@@ -16,8 +24,26 @@ export interface SandboxJobHost {
 
 /** Trusted infrastructure only. Resolving ready never starts the task. Authority,
  * protected scope and qualification are owned by the Worker admission path. */
-export function prepareSandboxJobHost(value: JobHostRequest): SandboxJobHost {
+export function prepareSandboxJobHost(
+  value: JobHostRequest,
+  controlDirectory?: string,
+): SandboxJobHost {
   const request = parseJobHostRequest(value);
+  const sessionId = randomUUID();
+  const controlBinding =
+    controlDirectory === undefined
+      ? undefined
+      : Object.freeze({
+          directory: controlDirectory,
+          token: randomBytes(32).toString("hex"),
+          sessionId,
+          jobId: request.jobId,
+          attemptId: request.attemptId,
+        });
+  let supervision: JobHostSupervision | null = null;
+  let lastMessageTick = performance.now();
+  let ipcSequence = 0;
+  let workerSequence = 0;
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
   const child = fork(fileURLToPath(new URL(`./job-host-main.${extension}`, import.meta.url)), [], {
     cwd: request.policy.workspace,
@@ -46,6 +72,7 @@ export function prepareSandboxJobHost(value: JobHostRequest): SandboxJobHost {
   let started = false;
   let cancelled = false;
   let ended = false;
+  let childExited = false;
   let taskPid: number | undefined;
   let received = 0;
   const stdout: Buffer[] = [];
@@ -61,14 +88,32 @@ export function prepareSandboxJobHost(value: JobHostRequest): SandboxJobHost {
       }
   };
   const force = () => {
-    killGroup(taskPid);
-    killGroup(child.pid);
+    // Only the unreaped owned fork may be signalled. A task PID received over
+    // IPC is not a durable OS identity and must not be adopted after host loss.
+    if (!childExited && !ended) killGroup(child.pid);
   };
-  const send = (message: { type: string; request?: JobHostRequest; reason?: string }) => {
+  child.once("exit", () => {
+    childExited = true;
+  });
+  const send = (message: {
+    type: string;
+    request?: JobHostRequest;
+    reason?: string;
+    control?: JobHostControlBinding;
+  }) => {
     if (child.connected)
-      child.send(message, (error) => {
-        if (error) force();
-      });
+      child.send(
+        {
+          ...message,
+          protocolVersion: "job-host.v2",
+          sessionId,
+          sequence: ++workerSequence,
+          observedAt: new Date().toISOString(),
+        },
+        (error) => {
+          if (error) force();
+        },
+      );
   };
   const cancel = (reason = "cancelled") => {
     if (cancelled || ended) return;
@@ -76,6 +121,23 @@ export function prepareSandboxJobHost(value: JobHostRequest): SandboxJobHost {
     send({ type: "cancel", reason });
     forceTimer ??= setTimeout(force, request.cleanupTimeoutMs);
   };
+  const inspect = (): JobHostSupervision | null =>
+    supervision
+      ? {
+          ...supervision,
+          state: ended
+            ? completion
+              ? "exited"
+              : "lost"
+            : cancelled || !child.connected || performance.now() - lastMessageTick > 1500
+              ? "lost"
+              : "alive",
+        }
+      : null;
+  const supervisionTimer = setInterval(() => {
+    if (!ended && performance.now() - lastMessageTick > 1500) cancel("host_failure");
+    if (!ended && !cancelled) send({ type: "heartbeat" });
+  }, 250);
   const timer = setTimeout(
     () => cancel("deadline"),
     Math.max(1, Date.parse(request.deadlineAt) - Date.now()),
@@ -88,10 +150,50 @@ export function prepareSandboxJobHost(value: JobHostRequest): SandboxJobHost {
   child.stderr?.on("data", () => {});
   child.on("message", (value: unknown) => {
     if (!value || typeof value !== "object" || !("type" in value)) {
-      cancel();
+      cancel("host_failure");
       return;
     }
     const message = value as Record<string, unknown>;
+    if (
+      message["protocolVersion"] !== "job-host.v2" ||
+      message["sessionId"] !== sessionId ||
+      message["processId"] !== child.pid ||
+      typeof message["bootId"] !== "string" ||
+      !/^[0-9a-f-]{36}$/.test(message["bootId"]) ||
+      typeof message["processIdentityRef"] !== "string" ||
+      !/^job-host-process:[0-9a-f-]{36}$/.test(message["processIdentityRef"]) ||
+      typeof message["processStartedAt"] !== "string" ||
+      !Number.isFinite(Date.parse(message["processStartedAt"])) ||
+      typeof message["observedAt"] !== "string" ||
+      !Number.isFinite(Date.parse(message["observedAt"])) ||
+      Date.parse(message["observedAt"]) > Date.now() ||
+      Date.now() - Date.parse(message["observedAt"]) > 1500 ||
+      message["sequence"] !== ipcSequence + 1 ||
+      (supervision &&
+        (message["bootId"] !== supervision.bootId ||
+          message["processIdentityRef"] !== supervision.processIdentityRef ||
+          message["processStartedAt"] !== supervision.processStartedAt))
+    ) {
+      cancel("host_failure");
+      return;
+    }
+    ipcSequence++;
+    lastMessageTick = performance.now();
+    supervision = {
+      protocolVersion: "job-host.v2",
+      sessionId,
+      bootId: message["bootId"],
+      processId: child.pid as number,
+      processIdentityRef: message["processIdentityRef"],
+      processStartedAt: message["processStartedAt"],
+      sequence: ipcSequence,
+      observedAt: message["observedAt"],
+      validUntil: new Date(Date.parse(message["observedAt"]) + 1500).toISOString(),
+      state: "alive",
+      task: supervision?.task ?? null,
+      taskTreeGuarantee: "unverified",
+    };
+    if (message["type"] === "heartbeat") return;
     if (message["type"] === "ready") {
       if (
         prepared ||
@@ -99,7 +201,7 @@ export function prepareSandboxJobHost(value: JobHostRequest): SandboxJobHost {
         message["attemptId"] !== request.attemptId ||
         message["policyDigest"] !== request.policyDigest
       ) {
-        cancel();
+        cancel("host_failure");
         return;
       }
       prepared = true;
@@ -112,29 +214,56 @@ export function prepareSandboxJobHost(value: JobHostRequest): SandboxJobHost {
         !Number.isSafeInteger(message["pid"]) ||
         (message["pid"] as number) <= 1
       ) {
-        cancel();
+        cancel("host_failure");
+        return;
+      }
+      if (
+        typeof message["taskIdentityRef"] !== "string" ||
+        !/^sandbox-process:[0-9a-f-]{36}$/.test(message["taskIdentityRef"]) ||
+        typeof message["taskStartedAt"] !== "string" ||
+        !Number.isFinite(Date.parse(message["taskStartedAt"]))
+      ) {
+        cancel("host_failure");
         return;
       }
       taskPid = message["pid"] as number;
+      supervision = {
+        ...supervision,
+        task: {
+          processId: taskPid,
+          processIdentityRef: message["taskIdentityRef"],
+          startedAt: message["taskStartedAt"],
+        },
+      };
     } else if (message["type"] === "output") {
       if (
+        !started ||
+        completion !== undefined ||
         typeof message["bytes"] !== "string" ||
+        message["bytes"].length > 131072 ||
         !["stdout", "stderr"].includes(message["channel"] as string)
       ) {
-        cancel();
+        cancel("host_failure");
         return;
       }
       const bytes = Buffer.from(message["bytes"], "base64");
-      if (received + bytes.byteLength > request.maxOutputBytes) {
-        cancel();
+      if (
+        bytes.toString("base64") !== message["bytes"] ||
+        received + bytes.byteLength > request.maxOutputBytes
+      ) {
+        cancel("host_failure");
         return;
       }
       received += bytes.byteLength;
       (message["channel"] === "stdout" ? stdout : stderr).push(bytes);
     } else if (message["type"] === "result") {
+      if (completion !== undefined) {
+        cancel("host_failure");
+        return;
+      }
       completion = message;
       forceTimer ??= setTimeout(force, request.cleanupTimeoutMs);
-    } else cancel();
+    } else cancel("host_failure");
   });
   child.once("error", () => {
     rejectReady(new Error("JOB_HOST_START_FAILED"));
@@ -142,11 +271,10 @@ export function prepareSandboxJobHost(value: JobHostRequest): SandboxJobHost {
   });
   child.once("close", () => {
     ended = true;
+    clearInterval(supervisionTimer);
     clearTimeout(timer);
     clearTimeout(preparationTimer);
     clearTimeout(forceTimer);
-    killGroup(taskPid);
-    killGroup(child.pid);
     rejectReady(new Error("JOB_HOST_NOT_READY"));
     const reason = completion?.["reason"];
     const validReason = [
@@ -176,6 +304,7 @@ export function prepareSandboxJobHost(value: JobHostRequest): SandboxJobHost {
     resolveResult({
       jobId: request.jobId,
       attemptId: request.attemptId,
+      supervision: inspect(),
       reason: validReason ? (reason as JobHostResult["reason"]) : "host_failure",
       resources,
       exitCode: typeof completion?.["exitCode"] === "number" ? completion["exitCode"] : null,
@@ -188,14 +317,27 @@ export function prepareSandboxJobHost(value: JobHostRequest): SandboxJobHost {
       taskTreeCleanup: taskStarted === false ? "not_started" : "unknown",
     });
   });
-  send({ type: "prepare", request });
+  send({ type: "prepare", request, ...(controlBinding ? { control: controlBinding } : {}) });
   return Object.freeze({
+    ...(controlBinding ? { controlBinding } : {}),
     ready,
     result,
+    inspect,
+    stop(expected: Pick<JobHostSupervision, "sessionId" | "bootId" | "processIdentityRef">) {
+      if (
+        !supervision ||
+        expected.sessionId !== sessionId ||
+        expected.bootId !== supervision.bootId ||
+        expected.processIdentityRef !== supervision.processIdentityRef
+      )
+        throw new Error("JOB_HOST_IDENTITY_CHANGED");
+      cancel();
+    },
     cancel: () => cancel(),
     start() {
       if (
         !prepared ||
+        inspect()?.state !== "alive" ||
         started ||
         cancelled ||
         ended ||

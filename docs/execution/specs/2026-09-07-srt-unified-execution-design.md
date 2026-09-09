@@ -405,13 +405,19 @@ Worker 将正文、来源、实际读取范围、截断状态、内容摘要和�
 
 审计串联 `Run → toolCall → approval → Handle → invocation → attempt → job → policy/qualification → result`。公开诊断只显示安全错误码、范围摘要和计数；敏感路径、命令与正文按权限保护，秘密不能进入日志、截图或测试报告。真实模型用量沿原账本累计，重放历史工具消息不记作新外部请求。
 
+#### R4 实现说明（2026-09-09）
+
+前台固定读取/命令路径已接入真实准备、控制登记及首次绑定 CAS。启动前效果保持 unknown，不提前断言操作结果。控制 secret 和原环境绑定存入既有受保护 Run trace；Agent 通过仅含 inspect/stop 的认证端口读取原 Job Host，结束后读取签名终态文件。当前权威核查与原 Worker 启动凭证分开；核查不启动任务，超时或身份不符不能释放占用。
+
+Linux 依赖固定 SRT 的 PID namespace：用户代码启动前，私有握手定位 namespace init 的 inode/PID/启动时钟并验证祖先关系，确认后才转发原 stdin。只有原 namespace init 已退出且任务退出、stdio 关闭、SRT reset、原 Job Host 退出等事实完整时可生成清理证据。Mac 保留 best-effort，已启动任务的 setsid 风险仍使清理保持 unknown。后台/服务没有因此取得资格。真实探针、完整 Mac UDS/SQLite/Worker 组合与测试资格只提供相应行为证据，不签发生产资格。
+
 ### 9. 模块依赖与适配责任
 
 | 模块 | 保留及目标责任 | 依赖方向 |
 |---|---|---|
 | runtime-pi | Pi 定义、工具实现及 Operations 薄适配；模型侧无工具 I/O，runner 侧执行完整实现 | 唯一 Pi 包入口，依赖产品端口；不依赖 SQLite 或 SRT |
 | application / execution-contracts | 类型化调用/资源合同、动作后置条件、结果与续接判断、通用 HITL | 只使用产品类型，不引入 Pi/SRT/OS SDK 类型 |
-| Agent Service | 当前授权/目录/父调用/网络 scope 来源、原子准入、当前权威核查及服务版本组合 | 通过现有持久端口与认证通道；不直接编译 SRT 策略 |
+| Agent Service | 当前授权/目录/父调用/网络 scope 来源、原子准入、当前权威核查及服务版本组合 | 通过现有持久端口与认证通道；仅导入 runtime-sandbox/control 核查客户端，不加载或编译 SRT |
 | Execution Worker | 派发验证、计划/策略、任务/服务管理、受保护结果与监督观察 | 组合 application、platform 与 runtime-sandbox；无数据库准入 authority |
 | runtime-sandbox / Job Host | 固定 SRT、干净环境、受限启动、输出/资源/停止事实 | 唯一直接依赖 SRT，不反向依赖应用或 UI |
 | platform-node / SQLite | 文件身份和安全访问、安装产物资格；事务消费、观察/占用与当前权威 | 不从模型/子进程输出签发权限，不把数据库状态冒充 OS 限制 |
@@ -433,6 +439,8 @@ Worker 将正文、来源、实际读取范围、截断状态、内容摘要和�
 新记录使用 sandbox-execution.v2，不原地改变 v1 的 completed/failed 语义。已有 execution.v2 外层消息只增加经明确版本协商的内部 binding，不能发送 v2 正文却标为 v1。Agent/Worker/runner/部署资格均声明支持版本；不匹配在消费/启动前拒绝。读回旧结果允许旧版本解析器，旧版本解析器没有新执行能力。
 
 R2 通过追加 SQLite migration 0028 增加环境/任务/服务关联、监管观察及隔离占用；复用原数据库、invocation 唯一性和事务/fence，不修改 0020/0027 或其他已发布 migration。新建账失败与凭证消费同事务回滚；首笔 starting 与策略摘要固定同事务完成。后台创建与其调用/环境关联同事务保存，后续任务事件按单调 sequence CAS 追加。结果引用必须属于同一调用的受保护结果，不能凭任意输出路径装配。
+
+Owner 已批准准备顺序修正：追加 migration 0029，在既有账本区分已准入预留与实际运行绑定。预留通过 `sandbox-preparation.v1` 保存调用/环境定位、模式、资源引用及目录占用，不保存尚未产生的策略摘要、Job Host boot 或私有目录身份。Worker 完成准备后，Agent 重核当前授权与实际绑定，首笔 `bindAndStart` CAS 同时固定不可变运行事实和开始意图；只有首次应用的请求可启动，重复响应只读回原绑定。既有 0028 记录保留 `legacy_bound` 解释，不能通过新绑定入口改写或重新取得启动权。准备失败、启动确认丢失和进程重启均保留原占用，直到风险消除证据通过核查。
 
 旧 completed/failed 只展示为旧合同事实；旧 prepared/starting/running/stopping/reconciling/quarantined 先核查并建立保守占用。旧记录没有可信目录祖先链时按主机保守占用，缺少主机身份时占用覆盖所有主机；原记录及历史 migration 不改写。未解决的占用阻止随 Run 级联删除。旧 unknown 无法补足环境身份时保持隔离，不允许“迁移默认值”标 controlled、verified 或 released。追加新证据也不得覆盖旧观察；无法验证的旧任务只允许安全核查/限定停止，不转换为可继续服务。旧服务没有持久句柄时不按 PID 自动接管。
 

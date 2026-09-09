@@ -3,6 +3,14 @@ import {
   sandboxJobIdentitySchema,
   sandboxJobReceiptSchema,
 } from "./sandbox-execution-v1.ts";
+import {
+  sandboxExecutionBrokerCommandSchema,
+  sandboxExecutionFactsSchema,
+  sandboxExecutionPlanV2Schema,
+  sandboxResourceOutputPageSchema,
+  validateSandboxExecutionFacts,
+} from "./sandbox-execution-v2.ts";
+import { sandboxExecutionReservationSchema } from "./sandbox-preparation-v2.ts";
 import { resolvedSandboxScopeSchema } from "./sandbox-scope-v1.ts";
 import {
   booleanValue,
@@ -21,6 +29,8 @@ import {
 export const PAYLOAD_BROKER_V1_SCHEMA_VERSION = "payload-broker.v1" as const;
 
 export const PAYLOAD_BROKER_V1_MESSAGE_TYPES = [
+  "payload.sandbox.execution",
+  "payload.sandbox.execution.result",
   "payload.sandbox.job",
   "payload.sandbox.job.result",
   "payload.handshake",
@@ -239,6 +249,109 @@ export const payloadSandboxJobResultSchema: Schema<PayloadBrokerSandboxJobResult
   },
 };
 
+const sandboxExecutionRequestShape = object({
+  ...requestEnvelope("payload.sandbox.execution"),
+  payload: object({
+    ...payloadIdentitySchema,
+    identity: sandboxJobIdentitySchema,
+    command: sandboxExecutionBrokerCommandSchema,
+  }),
+});
+export type PayloadBrokerSandboxExecutionRequest = InferSchema<typeof sandboxExecutionRequestShape>;
+export const payloadSandboxExecutionRequestSchema: Schema<PayloadBrokerSandboxExecutionRequest> = {
+  parse(value, path = "$") {
+    const result = sandboxExecutionRequestShape.parse(value, path);
+    const { identity, command } = result.payload;
+    if (
+      identity.invocationId !== result.payload.invocationId ||
+      (command.kind === "bind" &&
+        JSON.stringify(command.facts.environment.creator) !== JSON.stringify(identity)) ||
+      ((command.kind === "append" || command.kind === "operation") &&
+        command.facts.result &&
+        JSON.stringify(command.facts.result.identity) !== JSON.stringify(identity))
+    )
+      throw new ContractValidationError(path, "sandbox execution identity mismatch");
+    return result;
+  },
+};
+const boundExecutionWireShape = object({
+  phase: literal("bound"),
+  plan: sandboxExecutionPlanV2Schema,
+  facts: sandboxExecutionFactsSchema,
+  startedAt: nullable(timestamp),
+  operationRevision: integer(0),
+});
+const reservedExecutionWireShape = object({
+  phase: literal("reserved"),
+  plan: sandboxExecutionPlanV2Schema,
+  reservation: sandboxExecutionReservationSchema,
+  startedAt: literal(null),
+  operationRevision: integer(0, 0),
+});
+const executionWireRecord: Schema<
+  InferSchema<typeof boundExecutionWireShape> | InferSchema<typeof reservedExecutionWireShape>
+> = {
+  parse(value, path = "$") {
+    if (
+      value !== null &&
+      typeof value === "object" &&
+      "phase" in value &&
+      value.phase === "reserved"
+    )
+      return reservedExecutionWireShape.parse(value, path);
+    return boundExecutionWireShape.parse(value, path);
+  },
+};
+const sandboxExecutionResultShape = object({
+  ...envelope("response", "payload.sandbox.execution.result"),
+  payload: object({
+    ...payloadResponseIdentitySchema,
+    record: executionWireRecord,
+    applied: booleanValue,
+    resolvedScope: nullable(resolvedSandboxScopeSchema),
+    output: nullable(sandboxResourceOutputPageSchema),
+  }),
+});
+export type PayloadBrokerSandboxExecutionResult = InferSchema<typeof sandboxExecutionResultShape>;
+export const payloadSandboxExecutionResultSchema: Schema<PayloadBrokerSandboxExecutionResult> = {
+  parse(value, path = "$") {
+    const result = sandboxExecutionResultShape.parse(value, path);
+    const { record, resolvedScope, output } = result.payload;
+    if (record.phase === "bound")
+      validateSandboxExecutionFacts(record.plan, record.facts, {
+        environment: record.facts.environment,
+        operationContract: record.plan.operationContract,
+      });
+    else if (
+      JSON.stringify(record.reservation.identity) !== JSON.stringify(record.plan.identity) ||
+      record.reservation.environmentId !== record.plan.environmentId ||
+      record.reservation.mode !== record.plan.mode ||
+      output !== null ||
+      result.payload.applied
+    )
+      throw new ContractValidationError(path, "invalid unbound reservation");
+    if (
+      record.plan.identity.invocationId !== result.payload.invocationId ||
+      record.plan.handleRef !== result.payload.handleRef ||
+      (output &&
+        (record.phase !== "bound" || output.resourceRef !== record.facts.environment.resourceRef))
+    )
+      throw new ContractValidationError(path, "sandbox execution result mismatch");
+    if (
+      resolvedScope &&
+      (resolvedScope.scope.runId !== record.plan.identity.runId ||
+        resolvedScope.scope.hostId !== record.plan.identity.hostId ||
+        resolvedScope.scope.inputRef !== record.plan.inputRef ||
+        resolvedScope.scope.handleRef !== record.plan.handleRef ||
+        resolvedScope.scope.toolCallId !== record.plan.identity.toolCallId ||
+        resolvedScope.scope.ownerId !== record.plan.identity.ownerId ||
+        resolvedScope.scope.agentId !== record.plan.identity.agentId)
+    )
+      throw new ContractValidationError(path, "sandbox execution scope mismatch");
+    return result;
+  },
+};
+
 export type PayloadBrokerHandshakeRequest = InferSchema<typeof payloadBrokerHandshakeRequestSchema>;
 export type PayloadBrokerHandshakeAccepted = InferSchema<
   typeof payloadBrokerHandshakeAcceptedSchema
@@ -249,12 +362,14 @@ export type PayloadBrokerOutputWriteRequest = InferSchema<typeof payloadOutputWr
 export type PayloadBrokerOutputWriteAccepted = InferSchema<typeof payloadOutputWriteAcceptedSchema>;
 
 export type PayloadBrokerRequest =
+  | PayloadBrokerSandboxExecutionRequest
   | PayloadBrokerSandboxJobRequest
   | PayloadBrokerHandshakeRequest
   | PayloadBrokerInputReadRequest
   | PayloadBrokerOutputWriteRequest;
 
 export type PayloadBrokerResponse =
+  | PayloadBrokerSandboxExecutionResult
   | PayloadBrokerSandboxJobResult
   | PayloadBrokerHandshakeAccepted
   | PayloadBrokerInputReadResult
@@ -271,6 +386,10 @@ function parsePayloadBrokerMessage(input: unknown): PayloadBrokerMessage {
     throw new ContractValidationError("$", "expected a payload broker message");
   }
   switch (input.type) {
+    case "payload.sandbox.execution":
+      return payloadSandboxExecutionRequestSchema.parse(input);
+    case "payload.sandbox.execution.result":
+      return payloadSandboxExecutionResultSchema.parse(input);
     case "payload.sandbox.job":
       return payloadSandboxJobRequestSchema.parse(input);
     case "payload.sandbox.job.result":

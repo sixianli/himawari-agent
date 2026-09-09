@@ -1,19 +1,21 @@
 import type {
   CapabilityInvocationAuthority,
   CapabilityInvocationConsumeResult,
+  SandboxExecutionAdmissionRecord,
   SandboxExecutionJournalPort,
+  SandboxExecutionPreparationPort,
   SandboxExecutionProjectionContext,
   SandboxExecutionRecord,
   SandboxWorkspaceClaim,
 } from "@himawari-agent/application";
 import { projectSandboxExecution } from "@himawari-agent/application/sandbox-execution-projection";
 import {
-  type SandboxExecutionFacts,
   type SandboxExecutionPlanV2,
   type SandboxJobIdentity,
   sandboxExecutionFactsSchema,
   sandboxExecutionPlanCandidateV2Schema,
   sandboxExecutionPlanV2Schema,
+  sandboxExecutionReservationSchema,
   sandboxJobIdentitySchema,
   validateSandboxExecutionFacts,
 } from "@himawari-agent/execution-contracts";
@@ -67,9 +69,49 @@ export class SqliteSandboxExecutionOperations {
   }
   execute(operation: string, raw: unknown, owner: string, agent: string): unknown {
     if (operation === "read") return this.read(sandboxJobIdentitySchema.parse(raw), owner, agent);
+    if (operation === "readAdmission")
+      return this.readAdmission(sandboxJobIdentitySchema.parse(raw), owner, agent);
     const input = raw as Record<string, unknown>;
     if (!input || typeof input !== "object" || Array.isArray(input))
       return this.fail("PORT_INVALID_OPERATION", "Invalid sandbox journal request");
+    if (operation === "readAdmissionByInvocation") {
+      if (!id(input["runId"]) || !id(input["invocationId"]))
+        return this.fail("PORT_INVALID_OPERATION", "Invalid invocation locator");
+      const row = this.db
+        .prepare(
+          "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? AND invocation_id=?",
+        )
+        .get(owner, agent, input["runId"], input["invocationId"]) as { plan: string } | undefined;
+      return row
+        ? this.readAdmission(
+            sandboxExecutionPlanV2Schema.parse(JSON.parse(row.plan)).identity,
+            owner,
+            agent,
+          )
+        : undefined;
+    }
+    if (operation === "listAdmissions") {
+      const { afterJobId, limit } = input;
+      if (
+        (afterJobId !== null && !id(afterJobId)) ||
+        !Number.isSafeInteger(limit) ||
+        Number(limit) < 1 ||
+        Number(limit) > 100
+      )
+        return this.fail("PORT_INVALID_OPERATION", "Invalid bounded page");
+      const rows = this.db
+        .prepare(
+          "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND job_id>? ORDER BY job_id LIMIT ?",
+        )
+        .all(owner, agent, afterJobId ?? "", limit) as { plan: string }[];
+      return rows.map((row) =>
+        this.readAdmission(
+          sandboxExecutionPlanV2Schema.parse(JSON.parse(row.plan)).identity,
+          owner,
+          agent,
+        ),
+      );
+    }
     if (operation === "listPending") {
       const { afterJobId, limit } = input;
       if (
@@ -81,7 +123,7 @@ export class SqliteSandboxExecutionOperations {
         return this.fail("PORT_INVALID_OPERATION", "Invalid bounded page");
       return (
         this.db
-          .prepare(`SELECT plan_json AS plan FROM sandbox_execution_records r WHERE owner_id=? AND agent_id=? AND job_id>? AND
+          .prepare(`SELECT plan_json AS plan FROM sandbox_execution_records r WHERE owner_id=? AND agent_id=? AND job_id>? AND preparation_state!='reserved' AND
         (json_extract(facts_json,'$.resource.supervision') != 'released' OR json_extract(facts_json,'$.effect.kind')='unknown' OR json_extract(facts_json,'$.result.kind') IS NULL OR json_extract(facts_json,'$.result.kind')='unknown' OR EXISTS(SELECT 1 FROM sandbox_execution_intents i WHERE i.job_id=r.job_id AND i.dispatched_at IS NOT NULL AND i.acknowledged_at IS NULL)) ORDER BY job_id LIMIT ?`)
           .all(owner, agent, afterJobId ?? "", limit) as { plan: string }[]
       ).map((r) =>
@@ -91,6 +133,12 @@ export class SqliteSandboxExecutionOperations {
     this.authority.disk();
     return this.db
       .transaction(() => {
+        if (operation === "reserve")
+          return this.reserve(
+            raw as Parameters<SandboxExecutionPreparationPort["reserve"]>[0],
+            owner,
+            agent,
+          );
         if (operation === "admit") return this.admit(raw as Input<"admit">, owner, agent);
         const identity = sandboxJobIdentitySchema.parse(input["identity"]);
         const now = input["now"];
@@ -101,6 +149,12 @@ export class SqliteSandboxExecutionOperations {
         )
           return this.fail("PORT_INVALID_OPERATION", "Invalid observation time");
         this.authority.authority(input["authority"], owner, agent, now);
+        if (operation === "bindAndStart")
+          return this.bindAndStart(
+            raw as Parameters<SandboxExecutionPreparationPort["bindAndStart"]>[0],
+            owner,
+            agent,
+          );
         const current = this.read(identity, owner, agent);
         if (!current) return this.fail("PORT_NOT_FOUND", "Sandbox execution missing");
         if (operation === "start") {
@@ -189,7 +243,7 @@ export class SqliteSandboxExecutionOperations {
   private claims(
     raw: readonly SandboxWorkspaceClaim[],
     plan: SandboxExecutionPlanV2,
-    facts: SandboxExecutionFacts,
+    conflictRefs: readonly string[],
   ): readonly SandboxWorkspaceClaim[] {
     if (!Array.isArray(raw) || raw.length === 0 || raw.length > 64)
       return this.fail("PORT_INVALID_OPERATION", "Verified workspace coverage required");
@@ -226,10 +280,7 @@ export class SqliteSandboxExecutionOperations {
     });
     if (
       new Set(claims.map((c) => c.ref)).size !== claims.length ||
-      !same(
-        [...claims.map((c) => c.ref)].sort(),
-        [...facts.environment.workspaceConflictRefs].sort(),
-      )
+      !same([...claims.map((c) => c.ref)].sort(), [...conflictRefs].sort())
     )
       return this.fail("PORT_CONFLICT", "Workspace claims do not cover frozen environment");
     return claims;
@@ -252,7 +303,14 @@ export class SqliteSandboxExecutionOperations {
         .all(claim.hostId, exceptJob) as { claim: string; facts: string; uncertain: number }[];
       for (const row of occupied) {
         const existing = JSON.parse(row.claim) as SandboxWorkspaceClaim;
-        const facts = sandboxExecutionFactsSchema.parse(JSON.parse(row.facts));
+        const rawFacts = JSON.parse(row.facts) as { schemaVersion?: unknown };
+        if (rawFacts.schemaVersion === "sandbox-preparation.v1") {
+          sandboxExecutionReservationSchema.parse(rawFacts);
+          if (overlaps(claim, existing))
+            this.fail("PORT_CONFLICT", "Workspace has a pending preparation");
+          continue;
+        }
+        const facts = sandboxExecutionFactsSchema.parse(rawFacts);
         const uncertain =
           row.uncertain !== 0 ||
           (facts.resource.supervision === "controlled" &&
@@ -281,6 +339,11 @@ export class SqliteSandboxExecutionOperations {
       )
       .get(identity.jobId, owner, agent) as Row | undefined;
     if (!row) return undefined;
+    if (
+      (JSON.parse(row.facts) as { schemaVersion?: unknown }).schemaVersion ===
+      "sandbox-preparation.v1"
+    )
+      return this.fail("PORT_CONFLICT", "Sandbox runtime has not been bound");
     const plan = sandboxExecutionPlanV2Schema.parse(JSON.parse(row.plan));
     if (!same(plan.identity, identity))
       return this.fail("PORT_CONFLICT", "Sandbox identity changed");
@@ -299,6 +362,195 @@ export class SqliteSandboxExecutionOperations {
       operationRevision: row.operationRevision,
     };
   }
+  private readAdmission(
+    identity: SandboxJobIdentity,
+    owner: string,
+    agent: string,
+  ): SandboxExecutionAdmissionRecord | undefined {
+    if (identity.ownerId !== owner || identity.agentId !== agent)
+      return this.fail("PORT_NOT_AUTHORITATIVE", "Sandbox scope mismatch");
+    const row = this.db
+      .prepare(
+        "SELECT preparation_state AS phase,plan_json AS plan,facts_json AS facts FROM sandbox_execution_records WHERE job_id=? AND owner_id=? AND agent_id=?",
+      )
+      .get(identity.jobId, owner, agent) as
+      | { phase: string; plan: string; facts: string }
+      | undefined;
+    if (!row) return undefined;
+    const plan = sandboxExecutionPlanV2Schema.parse(JSON.parse(row.plan));
+    if (!same(plan.identity, identity))
+      return this.fail("PORT_CONFLICT", "Sandbox identity changed");
+    if (row.phase !== "reserved") {
+      const record = this.read(identity, owner, agent);
+      if (!record) return this.fail("PORT_NOT_FOUND", "Sandbox execution missing");
+      return { phase: "bound", record };
+    }
+    const reservation = sandboxExecutionReservationSchema.parse(JSON.parse(row.facts));
+    const workspaces = (
+      this.db
+        .prepare(
+          "SELECT claim_json AS claim FROM sandbox_workspace_occupancy WHERE job_id=? ORDER BY scope_ref",
+        )
+        .all(identity.jobId) as { claim: string }[]
+    ).map((row) => JSON.parse(row.claim) as SandboxWorkspaceClaim);
+    return { phase: "reserved", plan, reservation, workspaces };
+  }
+  private reserve(
+    input: Parameters<SandboxExecutionPreparationPort["reserve"]>[0],
+    owner: string,
+    agent: string,
+  ) {
+    const candidate = sandboxExecutionPlanCandidateV2Schema.parse(input.plan);
+    const reservation = sandboxExecutionReservationSchema.parse(input.reservation);
+    const consumed = this.authority.consume(input.invocation, owner, agent);
+    const plan = sandboxExecutionPlanV2Schema.parse({
+      ...candidate,
+      semanticFingerprint: consumed.receipt.semanticFingerprint,
+    });
+    const workspaces = [
+      ...this.claims(input.workspaces, plan, reservation.workspaceConflictRefs),
+    ].sort((a, b) => a.ref.localeCompare(b.ref));
+    if (
+      !same(plan.identity, reservation.identity) ||
+      plan.identity.ownerId !== owner ||
+      plan.identity.agentId !== agent ||
+      plan.identity.receiptRef !== consumed.receipt.receiptRef ||
+      plan.identity.invocationId !== consumed.receipt.invocationId ||
+      plan.handleRef !== consumed.receipt.handleRef ||
+      reservation.environmentId !== plan.environmentId ||
+      reservation.mode !== plan.mode ||
+      (reservation.resourceRef === null) !== (plan.mode === "foreground") ||
+      reservation.createdAt !== plan.requestedAt ||
+      reservation.createdAt > input.invocation.consumedAt
+    )
+      return this.fail("PORT_CONFLICT", "Reservation binding mismatch");
+    const admission = JSON.stringify({ plan, reservation, workspaces });
+    const previous = this.readAdmission(plan.identity, owner, agent);
+    if (previous) {
+      const row = this.db
+        .prepare("SELECT admission_json AS admission FROM sandbox_execution_records WHERE job_id=?")
+        .get(plan.identity.jobId) as { admission: string };
+      if (row.admission !== admission)
+        return this.fail("PORT_CONFLICT", "Reservation changed on replay");
+      return { admission: previous, applied: false, receipt: consumed.receipt };
+    }
+    if (consumed.replayed)
+      return this.fail("PORT_CONFLICT", "Consumed invocation without reservation is unknown");
+    if (plan.mode === "service" && plan.operationContract.kind !== "service_start")
+      return this.fail("PORT_INVALID_OPERATION", "Service request requires its existing resource");
+    this.authority.live(plan, input.invocation.authority, input.invocation.consumedAt);
+    this.assertAvailable(workspaces, plan.identity.jobId, input.invocation.consumedAt);
+    if (
+      this.db
+        .prepare("SELECT 1 FROM sandbox_jobs WHERE job_id=? OR receipt_ref=? OR attempt_id=?")
+        .get(plan.identity.jobId, plan.identity.receiptRef, plan.identity.attemptId)
+    )
+      return this.fail("PORT_CONFLICT", "Invocation has a v1 sandbox record");
+    this.db
+      .prepare(
+        "INSERT INTO sandbox_execution_records(job_id,attempt_id,receipt_ref,owner_id,agent_id,run_id,invocation_id,environment_id,resource_ref,plan_json,admission_json,facts_json,sequence,preparation_state) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,'reserved')",
+      )
+      .run(
+        plan.identity.jobId,
+        plan.identity.attemptId,
+        plan.identity.receiptRef,
+        owner,
+        agent,
+        plan.identity.runId,
+        plan.identity.invocationId,
+        plan.environmentId,
+        reservation.resourceRef,
+        JSON.stringify(plan),
+        admission,
+        JSON.stringify(reservation),
+      );
+    for (const claim of workspaces)
+      this.db
+        .prepare(
+          "INSERT INTO sandbox_workspace_occupancy(job_id,scope_ref,host_id,claim_json) VALUES(?,?,?,?)",
+        )
+        .run(plan.identity.jobId, claim.ref, claim.hostId, JSON.stringify(claim));
+    this.db
+      .prepare(
+        "INSERT INTO sandbox_execution_observations(job_id,sequence,facts_json) VALUES(?,1,?)",
+      )
+      .run(plan.identity.jobId, JSON.stringify(reservation));
+    return {
+      admission: { phase: "reserved" as const, plan, reservation, workspaces },
+      applied: true,
+      receipt: consumed.receipt,
+    };
+  }
+  private bindAndStart(
+    input: Parameters<SandboxExecutionPreparationPort["bindAndStart"]>[0],
+    owner: string,
+    agent: string,
+  ) {
+    const admission = this.readAdmission(input.identity, owner, agent);
+    if (!admission) return this.fail("PORT_NOT_FOUND", "Sandbox reservation missing");
+    const plan = admission.phase === "reserved" ? admission.plan : admission.record.plan;
+    this.authority.live(plan, input.authority, input.now);
+    const facts = validateSandboxExecutionFacts(plan, input.facts, {
+      environment: input.facts.environment,
+      operationContract: plan.operationContract,
+    });
+    if (
+      input.expectedSequence !== 1 ||
+      facts.result !== null ||
+      facts.effect.kind !== "unknown" ||
+      facts.resource.sequence !== 2 ||
+      facts.resource.supervision !== "initializing" ||
+      facts.resource.occurredAt > input.now
+    )
+      return this.fail("PORT_CONFLICT", "Start cannot assert execution or effects");
+    if (admission.phase === "bound") {
+      const initial = this.db
+        .prepare(
+          "SELECT facts_json AS facts FROM sandbox_execution_observations WHERE job_id=? AND sequence=2",
+        )
+        .get(plan.identity.jobId) as { facts: string } | undefined;
+      const state = this.db
+        .prepare("SELECT preparation_state AS state FROM sandbox_execution_records WHERE job_id=?")
+        .get(plan.identity.jobId) as { state: string };
+      if (
+        state.state !== "bound" ||
+        !admission.record.startedAt ||
+        !initial ||
+        initial.facts !== JSON.stringify(facts)
+      )
+        return this.fail("PORT_CONFLICT", "Start binding changed");
+      return { record: admission.record, applied: false };
+    }
+    if (
+      facts.environment.resourceRef !== admission.reservation.resourceRef ||
+      !same(
+        [...facts.environment.workspaceConflictRefs].sort(),
+        [...admission.reservation.workspaceConflictRefs].sort(),
+      )
+    )
+      return this.fail("PORT_CONFLICT", "Environment differs from reservation");
+    this.assertAvailable(admission.workspaces, plan.identity.jobId, input.now);
+    this.db
+      .prepare(
+        "UPDATE sandbox_execution_records SET preparation_state='bound',started_at=?,start_policy_digest=?,facts_json=?,sequence=2 WHERE job_id=? AND preparation_state='reserved'",
+      )
+      .run(input.now, facts.environment.policyDigest, JSON.stringify(facts), plan.identity.jobId);
+    this.db
+      .prepare(
+        "INSERT INTO sandbox_execution_observations(job_id,sequence,facts_json) VALUES(?,2,?)",
+      )
+      .run(plan.identity.jobId, JSON.stringify(facts));
+    return {
+      record: {
+        plan,
+        facts,
+        workspaces: admission.workspaces,
+        startedAt: input.now,
+        operationRevision: 0,
+      },
+      applied: true,
+    };
+  }
   private admit(input: Input<"admit">, owner: string, agent: string) {
     const candidate = sandboxExecutionPlanCandidateV2Schema.parse(input.plan);
     const consumed = this.authority.consume(input.invocation, owner, agent);
@@ -310,9 +562,9 @@ export class SqliteSandboxExecutionOperations {
       environment: input.facts.environment,
       operationContract: plan.operationContract,
     });
-    const workspaces = [...this.claims(input.workspaces, plan, facts)].sort((a, b) =>
-      a.ref.localeCompare(b.ref),
-    );
+    const workspaces = [
+      ...this.claims(input.workspaces, plan, facts.environment.workspaceConflictRefs),
+    ].sort((a, b) => a.ref.localeCompare(b.ref));
     if (
       plan.identity.ownerId !== owner ||
       plan.identity.agentId !== agent ||

@@ -32,6 +32,7 @@ import {
 } from "@himawari-agent/platform-node";
 import { ProductionExecutionWorker } from "./production-execution-worker.js";
 import { ProductionPayloadBrokerClient } from "./production-payload-broker-client.js";
+import { ProductionSandboxExecutionV2 } from "./production-sandbox-execution-v2.js";
 import { createProductionSandboxWorker } from "./production-sandbox-worker.js";
 import { WorkerDelegationStore } from "./worker-delegation-store.js";
 
@@ -524,6 +525,12 @@ export async function createProductionWorkerComposition(
   const worker = new ProductionExecutionWorker({
     ...(deployment.snapshot.capabilities.some((entry) => entry.binding.kind === "sandbox")
       ? {
+          sandboxV2: new ProductionSandboxExecutionV2({
+            configuration,
+            peer: peerBinding,
+            payloads,
+            clock,
+          }),
           sandbox: createProductionSandboxWorker({
             configuration,
             peer: peerBinding,

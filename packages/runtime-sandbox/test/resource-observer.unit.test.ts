@@ -140,3 +140,16 @@ describe("sampled task resources", () => {
     ).toEqual({ maxCpuTimeMs: 1, maxMemoryBytes: 1 });
   });
 });
+
+it("uses the platform containment contract for a detached process group", async () => {
+  execFile.mockImplementation((_file, _args, _options, callback) =>
+    callback(null, row(10, 1, 10, 1, "00:00.01") + row(11, 10, 11, 1, "00:00.01")),
+  );
+  const stop = vi.fn();
+  const observer = observeTaskResources(10, { maxCpuTimeMs: 1000, maxMemoryBytes: 1048576 }, stop);
+  await Promise.resolve();
+  await Promise.resolve();
+  if (process.platform === "linux") expect(stop).not.toHaveBeenCalled();
+  else expect(stop).toHaveBeenCalledExactlyOnceWith("host_failure");
+  observer.stop();
+});

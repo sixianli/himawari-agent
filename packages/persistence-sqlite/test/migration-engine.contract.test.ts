@@ -18,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const temporaryDirectories: string[] = [];
-const CURRENT_SCHEMA_SEQUENCE = 28;
+const CURRENT_SCHEMA_SEQUENCE = 29;
 
 afterEach(async () => {
   await Promise.all(
@@ -114,7 +114,7 @@ describe("immutable SQLite migration engine", () => {
       database.prepare("INSERT INTO owners (id, revision) VALUES ('preserved-owner', 7)").run();
       const before = readMigrationLedger(database);
       const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
-      expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+      expect(applyMigrations(database, migrations.slice(0, 28), { snapshot })).toEqual({
         appliedSequences: [28],
         currentSequence: 28,
       });
@@ -124,6 +124,33 @@ describe("immutable SQLite migration engine", () => {
       ).toBe(7);
       expect(database.prepare("SELECT count(*) FROM sandbox_jobs").pluck().get()).toBe(0);
       expect(database.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("appends preparation state without rewriting existing migration history", async () => {
+    const { databasePath, snapshotPath } = await temporaryDatabase();
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      const migrations = await loadBundledMigrations();
+      applyMigrations(database, migrations.slice(0, 28));
+      const before = readMigrationLedger(database);
+      const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+      expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+        appliedSequences: [29],
+        currentSequence: 29,
+      });
+      expect(readMigrationLedger(database).slice(0, 28)).toEqual(before);
+      expect(database.pragma("foreign_key_check")).toEqual([]);
+      expect(
+        database
+          .prepare(
+            "SELECT dflt_value FROM pragma_table_info('sandbox_execution_records') WHERE name='preparation_state'",
+          )
+          .pluck()
+          .get(),
+      ).toBe("'legacy_bound'");
     } finally {
       database.close();
     }

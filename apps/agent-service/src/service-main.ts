@@ -9,10 +9,14 @@ import {
   DurableMemoryService,
   type IdGeneratorPort,
   type ProductConfiguration,
+  recoverSandboxExecutionsAtStartup,
   recoverSandboxJobsAtStartup,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
-import type { ExecutionAdmissionPeerBinding } from "@himawari-agent/execution-contracts";
+import type {
+  ExecutionAdmissionPeerBinding,
+  SandboxExecutionSupport,
+} from "@himawari-agent/execution-contracts";
 import {
   inspectDeploymentAuthorityReadOnly,
   openQualifiedDatabase,
@@ -566,6 +570,11 @@ export async function runAgentService(
       authority: invocationAuthority,
       now: () => clock.now(),
     });
+    await recoverSandboxExecutionsAtStartup({
+      journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
+      authority: invocationAuthority,
+      now: () => clock.now(),
+    });
     const fileReadServices = createProductionFileReadServices({
       configuration,
       repository,
@@ -573,7 +582,9 @@ export async function runAgentService(
       clock,
       ids,
     });
+    let workerSandboxSupport: SandboxExecutionSupport | undefined;
     const sandboxServices = await createProductionSandboxServices({
+      workerSupport: () => workerSandboxSupport,
       configuration,
       repository,
       protector,
@@ -598,7 +609,9 @@ export async function runAgentService(
       trustedPeerBinding: () => peerBinding,
     });
     const payloadHandler = new ProductionPayloadBrokerHandler({
-      ...(sandboxServices ? { sandboxJobs: sandboxServices.broker } : {}),
+      ...(sandboxServices
+        ? { sandboxJobs: sandboxServices.broker, sandboxExecutions: sandboxServices.brokerV2 }
+        : {}),
       receipts: repository.capabilityInvocationReceiptPort(
         configuration.ownerId,
         configuration.agentId,
@@ -695,6 +708,7 @@ export async function runAgentService(
       worker,
       () => authorityLifecycle?.isAccepting() === true && !authorityLost,
     );
+    workerSandboxSupport = handshake.payload.supportedExecutions;
     if (authorityLost || !authorityLifecycle.isAccepting()) {
       throw authorityLossError ?? new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
     }

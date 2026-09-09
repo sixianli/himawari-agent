@@ -14,3 +14,5 @@ export function isBrowserImportAllowed(
   specifier: string,
   workspaceNames: ReadonlySet<string>,
 ): boolean;
+
+export function isSandboxImportAllowed(packageName: string, specifier: string): boolean;

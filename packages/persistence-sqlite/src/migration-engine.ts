@@ -273,6 +273,13 @@ const bundledMigrationFiles = [
     phase: "contract" as const,
     file: "0028_sandbox_execution_resources.sql",
   },
+  {
+    sequence: 29,
+    name: "sandbox_execution_preparation",
+    changeSet: "sandbox-execution-preparation",
+    phase: "contract" as const,
+    file: "0029_sandbox_execution_preparation.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

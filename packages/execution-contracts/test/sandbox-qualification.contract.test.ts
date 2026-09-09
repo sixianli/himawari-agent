@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { sandboxHostBindingSchema, sandboxRuntimeQualificationSchema } from "../src/index.ts";
+import {
+  assertSandboxExecutionSupport,
+  sandboxExecutionSupportSchema,
+  sandboxHostBindingSchema,
+  sandboxRuntimeQualificationSchema,
+} from "../src/index.ts";
 
 const qualification = {
   schemaVersion: "sandbox-runtime-qualification.v1",
@@ -117,5 +122,41 @@ describe("sandbox host qualification", () => {
     { readOnlyToolchainPaths: ["/work"] },
   ])("rejects unsafe host binding: %j", (override) => {
     expect(() => sandboxHostBindingSchema.parse({ ...binding, ...override })).toThrow();
+  });
+});
+
+describe("sandbox execution compatibility declarations", () => {
+  const foreground = { schemaVersion: "sandbox-execution.v2", mode: "foreground" } as const;
+  it("requires every installed participant to declare the requested schema and mode", () => {
+    const declaration = sandboxExecutionSupportSchema.parse([foreground]);
+    expect(() =>
+      assertSandboxExecutionSupport(foreground, [declaration, declaration]),
+    ).not.toThrow();
+    expect(() => assertSandboxExecutionSupport(foreground, [declaration, undefined])).toThrow(
+      "VERSION_UNAVAILABLE",
+    );
+    expect(() =>
+      assertSandboxExecutionSupport({ ...foreground, mode: "background" }, [declaration]),
+    ).toThrow("VERSION_UNAVAILABLE");
+    expect(() => assertSandboxExecutionSupport(foreground, [])).toThrow("VERSION_UNAVAILABLE");
+    expect(
+      sandboxHostBindingSchema.parse({ ...binding, supportedExecutions: declaration })
+        .supportedExecutions,
+    ).toEqual(declaration);
+    expect(
+      sandboxRuntimeQualificationSchema.parse({
+        ...qualification,
+        supportedExecutions: declaration,
+      }).supportedExecutions,
+    ).toEqual(declaration);
+  });
+  it("rejects ambiguous support declarations", () => {
+    for (const value of [
+      [],
+      [{ schemaVersion: "sandbox-execution.v3", mode: "foreground" }],
+      [{ schemaVersion: "sandbox-execution.v1", mode: "background" }],
+      [foreground, foreground],
+    ])
+      expect(() => sandboxExecutionSupportSchema.parse(value)).toThrow();
   });
 });

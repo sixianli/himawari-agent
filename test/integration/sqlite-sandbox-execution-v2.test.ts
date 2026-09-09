@@ -1,8 +1,9 @@
 import path from "node:path";
-import type {
-  SandboxExecutionJournalPort,
-  SandboxExecutionProjectionContext,
-  SandboxExecutionRecord,
+import {
+  recoverSandboxExecutionsAtStartup,
+  type SandboxExecutionProjectionContext,
+  SandboxExecutionReconciliationService,
+  type SandboxExecutionRecord,
 } from "@himawari-agent/application";
 import {
   type SandboxExecutionFacts,
@@ -19,8 +20,11 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { describe, expect, it } from "vitest";
 import {
+  sandboxV2Admission as admission,
+  sandboxV2Call as call,
+} from "../fixtures/sandbox-execution-v2-fixture.ts";
+import {
   AGENT_ID,
-  invocation,
   OWNER_ID,
   openSandboxJournal,
   operationsForDatabase,
@@ -32,106 +36,7 @@ import {
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
 type Fixture = Awaited<ReturnType<typeof openSandboxJournal>>;
-type Admission = Parameters<SandboxExecutionJournalPort["admit"]>[0];
 const evidence = { ref: "supervision-evidence", digest: "e".repeat(64) };
-function admission(
-  f: Fixture,
-  suffix = "",
-  lineage = [
-    { device: "1", inode: "1" },
-    { device: "1", inode: "10" },
-  ],
-  access: "read" | "write" = "write",
-): Admission {
-  const { semanticFingerprint: _fingerprint, ...v1 } = f.plan;
-  const identity = {
-    ...v1.identity,
-    jobId: `job${suffix}`,
-    attemptId: `attempt${suffix}`,
-    receiptRef: suffix ? `receipt${suffix}` : v1.identity.receiptRef,
-    invocationId: suffix ? `invocation${suffix}` : v1.identity.invocationId,
-  };
-  const plan = sandboxExecutionPlanCandidateV2Schema.parse({
-    ...v1,
-    identity,
-    schemaVersion: "sandbox-execution.v2",
-    mode: "foreground",
-    environmentId: `environment${suffix}`,
-    backendRef: "srt",
-    operationContract: { ref: "fixed-read", version: "1", kind: "fixed_read" },
-  });
-  const environment = {
-    schemaVersion: "sandbox-execution.v2",
-    kind: "local",
-    environmentId: plan.environmentId,
-    resourceRef: null,
-    creator: identity,
-    mode: plan.mode,
-    backendRef: plan.backendRef,
-    authorizationRef: plan.authorizationRef,
-    scopeDigest: plan.binding.scopeDigest,
-    policyDigest: "d".repeat(64),
-    deadlineAt: plan.effectiveDeadlineAt,
-    supervisor: { supervisorId: "supervisor", bootId: "boot", epoch: 1 },
-    workspaceConflictRefs: ["workspace"],
-    privateDirectoryRef: "private-dir",
-    privateDirectoryOwnerRef: "host",
-  };
-  const facts = sandboxExecutionFactsSchema.parse({
-    schemaVersion: "sandbox-execution.v2",
-    environment,
-    result: null,
-    effect: { kind: "unknown", reasonCode: "pending" },
-    resource: {
-      schemaVersion: "sandbox-execution.v2",
-      environmentId: plan.environmentId,
-      creator: identity,
-      policyDigest: environment.policyDigest,
-      scopeDigest: environment.scopeDigest,
-      sequence: 1,
-      occurredAt: T1,
-      supervisor: environment.supervisor,
-      resourceRef: null,
-      status: { kind: "foreground" },
-      metrics: null,
-      supervision: "initializing",
-      cleanup: "pending",
-    },
-  });
-  return {
-    invocation: invocation(
-      suffix
-        ? {
-            receiptRef: identity.receiptRef,
-            invocationId: identity.invocationId,
-            idempotencyKey: `idempotency${suffix}`,
-          }
-        : {},
-    ) as unknown as Admission["invocation"],
-    plan,
-    facts,
-    workspaces: [
-      {
-        ref: "workspace",
-        hostId: identity.hostId,
-        canonicalRootId: "root-fixture",
-        access,
-        lineage,
-      },
-    ],
-  };
-}
-function call<K extends keyof SandboxExecutionJournalPort>(
-  f: Fixture,
-  name: K,
-  input: Parameters<SandboxExecutionJournalPort[K]>[0],
-): Awaited<ReturnType<SandboxExecutionJournalPort[K]>> {
-  return operationsForDatabase(f.database).execute(`capabilityInvocation.sandboxV2.${name}`, {
-    ownerId: OWNER_ID,
-    agentId: AGENT_ID,
-    input,
-  }) as Awaited<ReturnType<SandboxExecutionJournalPort[K]>>;
-}
 function context(
   record: SandboxExecutionRecord,
   facts: SandboxExecutionFacts,
@@ -843,7 +748,7 @@ describe("R2 SQLite durable execution resources", () => {
         old,
         path.join(f.resource.stateRoot, "legacy-snapshot.sqlite"),
       );
-      expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([28]);
+      expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([28, 29]);
       expect(readMigrationLedger(old).slice(0, 27)).toEqual(ledger);
       expect(old.prepare("SELECT * FROM sandbox_jobs").all()).toEqual(before);
       expect(old.prepare("SELECT count(*) FROM sandbox_execution_records").pluck().get()).toBe(0);
@@ -872,3 +777,167 @@ describe("R2 SQLite durable execution resources", () => {
     }
   });
 });
+
+// Characterizes the R1/R2 contract conflict found while composing R3. This is
+// negative evidence, not an acceptance test for the proposed preparation protocol.
+it("records why current v2 cannot bind a policy first compiled after admission", async () => {
+  const f = await openSandboxJournal();
+  try {
+    const input = admission(f);
+    expect(() =>
+      sandboxExecutionFactsSchema.parse({
+        ...input.facts,
+        environment: { ...input.facts.environment, policyDigest: null },
+      }),
+    ).toThrow();
+    const saved = call(f, "admit", input).record;
+    expect(() =>
+      call(f, "start", {
+        identity: saved.plan.identity,
+        expectedSequence: 1,
+        policyDigest: "9".repeat(64),
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+      }),
+    ).toThrow("Start policy differs");
+    expect(call(f, "read", saved.plan.identity)?.startedAt).toBeNull();
+  } finally {
+    await f.close();
+  }
+});
+
+it("v2 startup invalidates previous supervision durably without replay or erasing known output", async () => {
+  const f = await openSandboxJournal();
+  const recoveryAuthority = {
+    ...SERVICE_AUTHORITY,
+    agentServiceBootId: "recovery-agent-boot",
+    workerBootId: "recovery-worker-boot",
+  };
+  try {
+    let record = start(f);
+    record = append(f, record, result(f, record), true);
+    record = append(f, record, resource(record, "controlled"));
+    const continuation = {
+      identity: record.plan.identity,
+      intentId: "before-restart",
+      kind: "continue" as const,
+      expectedSequence: record.facts.resource.sequence,
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      context: context(record, record.facts),
+    };
+    call(f, "prepareIntent", continuation);
+    f.database.close();
+    let repo = await SqliteProductStateRepository.open({ stateRoot: f.resource.stateRoot });
+    try {
+      let journal = repo.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+      expect(
+        await recoverSandboxExecutionsAtStartup({
+          journal,
+          authority: () => recoveryAuthority,
+          now: () => T1,
+        }),
+      ).toEqual({ examined: 1, quarantined: 1 });
+      const lost = await journal.read(record.plan.identity);
+      expect(lost?.facts.result).toEqual(record.facts.result);
+      expect(lost?.facts.effect).toEqual(record.facts.effect);
+      expect(lost?.facts.resource.supervision).toBe("lost");
+      expect(lost?.facts.resource.sequence).toBe(record.facts.resource.sequence + 1);
+      await expect(journal.admit(admission(f, "-blocked"))).rejects.toThrow("occupied");
+      await expect(journal.dispatchIntent(continuation)).rejects.toThrow();
+      expect(
+        (
+          await journal.admit(
+            admission(f, "-independent", [
+              { device: "1", inode: "1" },
+              { device: "1", inode: "20" },
+            ]),
+          )
+        ).applied,
+      ).toBe(true);
+      await repo.close();
+      repo = await SqliteProductStateRepository.open({ stateRoot: f.resource.stateRoot });
+      journal = repo.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+      expect(
+        await recoverSandboxExecutionsAtStartup({
+          journal,
+          authority: () => recoveryAuthority,
+          now: () => T1,
+        }),
+      ).toEqual({ examined: 2, quarantined: 1 });
+      expect((await journal.read(record.plan.identity))?.facts).toEqual(lost?.facts);
+    } finally {
+      await repo.close();
+    }
+  } finally {
+    await f.close();
+  }
+});
+
+for (const scenario of ["verified", "untrusted", "timeout", "concurrent"] as const) {
+  it(`reconciliation ${scenario} preserves operation facts and only releases verified risk`, async () => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, result(f, record), true);
+      record = append(f, record, resource(record, "lost"));
+      let stops = 0;
+      const service = new SandboxExecutionReconciliationService({
+        hostId: record.plan.identity.hostId,
+        journal: {
+          read: async (identity) => call(f, "read", identity),
+          append: async (input) => call(f, "append", input),
+        },
+        now: () => T1,
+        timeoutMs: scenario === "timeout" ? 10 : 1000,
+        evidence: {
+          verify: async ({ facts }) => {
+            const proof = context(record, facts).verification;
+            if (!proof) throw new Error("missing fixture proof");
+            return scenario === "untrusted" ? { ...proof, evidence: [] } : proof;
+          },
+        },
+        backend: {
+          inspect: async () => {
+            throw new Error("unused");
+          },
+          stop: async (current, signal) => {
+            stops++;
+            if (scenario === "timeout") {
+              await new Promise((resolve) => setTimeout(resolve, 30));
+              expect(signal.aborted).toBe(true);
+            }
+            return resource(current, "released").resource;
+          },
+        },
+      });
+      const request = {
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence,
+        authority: { ...SERVICE_AUTHORITY, workerBootId: "current-reconciler" },
+        action: "stop" as const,
+      };
+      const requests =
+        scenario === "concurrent"
+          ? [service.reconcile(request), service.reconcile(request)]
+          : [service.reconcile(request)];
+      await Promise.allSettled(requests);
+      expect(stops).toBe(1);
+      const final = call(f, "read", record.plan.identity);
+      expect(final?.facts.result).toEqual(record.facts.result);
+      expect(final?.facts.effect).toEqual(record.facts.effect);
+      const released = scenario === "verified" || scenario === "concurrent";
+      expect(final?.facts.resource.supervision).toBe(released ? "released" : "lost");
+      if (released) expect(call(f, "admit", admission(f, "-after-reconcile")).applied).toBe(true);
+      else expect(() => call(f, "admit", admission(f, "-after-reconcile"))).toThrow("occupied");
+      if (scenario === "timeout") {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        expect(call(f, "read", record.plan.identity)?.facts.resource).toEqual(
+          final?.facts.resource,
+        );
+      }
+    } finally {
+      await f.close();
+    }
+  });
+}

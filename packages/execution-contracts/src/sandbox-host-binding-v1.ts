@@ -1,4 +1,12 @@
 import {
+  type SandboxExecutionSupport,
+  withSandboxExecutionSupport,
+} from "./sandbox-execution-support.ts";
+import {
+  type SandboxOperationBinding,
+  withSandboxOperationBindings,
+} from "./sandbox-operation-binding.ts";
+import {
   array,
   ContractValidationError,
   type InferSchema,
@@ -86,44 +94,49 @@ const shape = object({
     maxProgressEvents: integer(1),
   }),
 });
-export type SandboxHostBinding = InferSchema<typeof shape>;
+export type SandboxHostBinding = InferSchema<typeof shape> & {
+  readonly supportedExecutions?: SandboxExecutionSupport;
+  readonly operationBindings?: readonly SandboxOperationBinding[];
+};
 function contains(parent: string, child: string) {
   return child === parent || child.startsWith(`${parent}/`);
 }
-export const sandboxHostBindingSchema: Schema<SandboxHostBinding> = {
-  parse(value, path = "$") {
-    const binding = shape.parse(value, path);
-    if (
-      binding.roots.length === 0 ||
-      new Set(binding.roots.map((root) => root.canonicalRootId)).size !== binding.roots.length ||
-      new Set(binding.allowedDomains).size !== binding.allowedDomains.length ||
-      !contains(binding.runtimeRoot, binding.runner.path) ||
-      ![binding.runtimeRoot, ...binding.readOnlyToolchainPaths].some((root) =>
-        contains(root, binding.executable.path),
-      ) ||
-      binding.roots.some((root, index) =>
-        binding.roots
-          .slice(index + 1)
-          .some(
-            (other) =>
-              contains(root.canonicalPath, other.canonicalPath) ||
-              contains(other.canonicalPath, root.canonicalPath),
+export const sandboxHostBindingSchema: Schema<SandboxHostBinding> = withSandboxOperationBindings(
+  withSandboxExecutionSupport({
+    parse(value, path = "$") {
+      const binding = shape.parse(value, path);
+      if (
+        binding.roots.length === 0 ||
+        new Set(binding.roots.map((root) => root.canonicalRootId)).size !== binding.roots.length ||
+        new Set(binding.allowedDomains).size !== binding.allowedDomains.length ||
+        !contains(binding.runtimeRoot, binding.runner.path) ||
+        ![binding.runtimeRoot, ...binding.readOnlyToolchainPaths].some((root) =>
+          contains(root, binding.executable.path),
+        ) ||
+        binding.roots.some((root, index) =>
+          binding.roots
+            .slice(index + 1)
+            .some(
+              (other) =>
+                contains(root.canonicalPath, other.canonicalPath) ||
+                contains(other.canonicalPath, root.canonicalPath),
+            ),
+        ) ||
+        binding.roots.some((root) =>
+          [binding.runtimeRoot, binding.privateRoot, ...binding.readOnlyToolchainPaths].some(
+            (protectedRoot) =>
+              contains(root.canonicalPath, protectedRoot) ||
+              contains(protectedRoot, root.canonicalPath),
           ),
-      ) ||
-      binding.roots.some((root) =>
-        [binding.runtimeRoot, binding.privateRoot, ...binding.readOnlyToolchainPaths].some(
-          (protectedRoot) =>
-            contains(root.canonicalPath, protectedRoot) ||
-            contains(protectedRoot, root.canonicalPath),
-        ),
-      ) ||
-      contains(binding.privateRoot, binding.runtimeRoot) ||
-      contains(binding.runtimeRoot, binding.privateRoot)
-    )
-      throw new ContractValidationError(
-        path,
-        "sandbox host layout is ambiguous or reopens trusted paths",
-      );
-    return binding;
-  },
-};
+        ) ||
+        contains(binding.privateRoot, binding.runtimeRoot) ||
+        contains(binding.runtimeRoot, binding.privateRoot)
+      )
+        throw new ContractValidationError(
+          path,
+          "sandbox host layout is ambiguous or reopens trusted paths",
+        );
+      return binding;
+    },
+  }),
+);

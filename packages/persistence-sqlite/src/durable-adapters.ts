@@ -29,8 +29,9 @@ import type {
   RunPayloadArtifactPort,
   RunReconciliationCandidate,
   RunReconciliationPort,
-  SandboxJobJournalPort,
   SandboxExecutionJournalPort,
+  SandboxExecutionPreparationPort,
+  SandboxJobJournalPort,
   SchedulerPort,
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
@@ -409,6 +410,40 @@ export class SqliteDurableAdapters {
       consume: (input) =>
         this.context.write("capabilityInvocation.consume", { ownerId, agentId, input }),
       read: (input) => this.context.read("capabilityInvocation.read", { ownerId, agentId, input }),
+    });
+  }
+
+  sandboxExecutionPreparations(
+    ownerId: OwnerId,
+    agentId: AgentId,
+  ): SandboxExecutionPreparationPort {
+    return Object.freeze<SandboxExecutionPreparationPort>({
+      reserve: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.reserve", { ownerId, agentId, input }),
+      bindAndStart: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.bindAndStart", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      readAdmission: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.readAdmission", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      readAdmissionByInvocation: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.readAdmissionByInvocation", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      listAdmissions: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.listAdmissions", {
+          ownerId,
+          agentId,
+          input,
+        }),
     });
   }
 

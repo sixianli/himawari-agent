@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:4fa7d11b91d741a1e8e61b0212ec448d4b587b822a2c96a40df6b9960e990483"
+contract_sha256: "sha256:0fc6b8af242e45ff26bdcf9df9097fcbbafafc9388882aef481d75096707865e"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,16 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/production-sandbox-control.ts
+- packages/application/src/services/sandbox-execution-reconciliation.ts
+- packages/runtime-sandbox/src/job-host-control-client.ts
+- packages/runtime-sandbox/src/linux-namespace.ts
+- packages/execution-contracts/src/sandbox-preparation-v2.ts
+- packages/persistence-sqlite/src/migrations/0029_sandbox_execution_preparation.sql
+- packages/execution-contracts/src/sandbox-execution-support.ts
+- packages/execution-contracts/src/sandbox-host-binding-v1.ts
+- packages/execution-contracts/src/sandbox-qualification-v1.ts
+- packages/execution-contracts/src/sandbox-execution-v2.ts
 - packages/application/src/ports/sandbox-execution-journal.ts
 - packages/application/src/services/sandbox-execution-projection.ts
 - packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts
@@ -90,15 +100,19 @@ date: "2026-08-27"
 
 ## Scope
 
-当前 schema 28 在原数据库追加 v2 资源关联、独立操作/资源观察、目录占用和派发回执。升级既有库仍须先取得已验证快照；0020/0027 不改写。恢复/迁移时必须保留占用和未确认派发；旧未结束作业缺少可信目录链时按主机保守阻止新准入，缺少主机身份时阻止所有主机的新准入。禁止通过删除 Run、清空占用或把旧记录改成 v2 来恢复执行。已确认清理的旧历史结果保持原解释，不由迁移补写新资格。
+schema 28 在原数据库追加 v2 资源关联、独立操作/资源观察、目录占用和派发回执。升级既有库仍须先取得已验证快照；0020/0027 不改写。恢复/迁移时必须保留占用和未确认派发；旧未结束作业缺少可信目录链时按主机保守阻止新准入，缺少主机身份时阻止所有主机的新准入。禁止通过删除 Run、清空占用或把旧记录改成 v2 来恢复执行。已确认清理的旧历史结果保持原解释，不由迁移补写新资格。
 
-这些 SQLite 机制已有独立测试数据库的升级、重开和事务验证；本次未升级运行中的 state root，也未执行真实安装、恢复或跨主机迁移。正式执行组合仍使用 v1，v2 证据读取、目录身份解析和派发接入尚待后续阶段完成。恢复后继续适用当前主机/目录/权威检查，不能自动重放旧任务或未确认派发。
+这些 SQLite 机制已有独立测试数据库的升级、重开和事务验证；本次未升级运行中的 state root，也未执行真实安装、恢复或跨主机迁移。正式组合已具备显式 v2 foreground 固定读取/命令路径、目录身份和证据读取，完整工具派发与安装资格仍待验收。恢复后继续适用当前主机/目录/权威检查，不能自动重放旧任务或未确认派发。
 
 SRT 的 Agent Service 和 Worker 启动组合已连接现有准入、目录授权状态、受保护 scope、认证 Payload 通道与作业监督器；当前 root scope 来源只支持已接入的文件 inspect/read 工作流，不能据此启用所有工具。网络范围须来自本次操作同一 Grant 的审批快照确切域名目标，并与主机能力上界核对；不新增授权或再次消费 Grant。准入及启动前验证授权、父调用和真实 host/runtime/runner/qualification。缺少可信来源时拒绝。策略只由 Worker 编译，初始观察可无摘要，首次原子启动固定摘要后不可替换。
 
-安装产物源码新增了 R1 的 v2 合同、类型端口和纯判断函数，以及 R2 的 SQLite 账本，正式组合仍使用 `SandboxExecutionPort` 与 v1 账本；没有可据此切换的 v2 配置开关。新增 `SandboxExecutionPortV2` 导出不代表 Job Host 取得新监督资格，也不会把旧 unknown 回执转换为已清理。后续接入 v2 正式适配器时，须重新核对本 Runbook 的迁移、恢复和安装验证。
+安装产物源码新增了 R1 的 v2 合同、类型端口和纯判断函数，以及 R2 的 SQLite 账本，正式组合按安装声明分别使用 v1 与 v2 foreground；声明不能代替目标平台资格。新增 `SandboxExecutionPortV2` 导出不代表 Job Host 取得新监督资格，也不会把旧 unknown 回执转换为已清理。后续接入 v2 正式适配器时，须重新核对本 Runbook 的迁移、恢复和安装验证。
+
+v2 broker 与 Worker foreground 已接入准备、登记、唯一绑定、观察和限定核查，并有真实 Mac UDS/SQLite/Worker 假数据验收；后台/服务仍拒绝。安装清单/资格中的 `supportedExecutions` 仅表示显式兼容声明，不提供授权、监管证明或 v2 启用开关；缺少声明不能推断支持 v2，显式排除 v1 的声明也不能通过旧路径运行。追加 migration 0029 已修正准备顺序：先保存不含运行摘要的执行预留及目录占用，Worker 准备后首次 CAS 固定真实绑定；旧记录保持 `legacy_bound`。迁移仍须通过现有同机备份和停机入口，不能直接对正在运行的产品库执行 SQL。完整 R3 工具接入与安装资格尚未完成，不得用占位摘要或把 v2 数据标为 v1 进行安装验收。Job Host 私有 IPC 增加会话/boot/序号/监督窗口，但 PID、心跳、主进程退出及 reset 仍不构成任务树释放证明；真实长临时路径探针在 SRT 初始化出现过 `EADDRINUSE`，安装资格还须验证所选 privateRoot 的实际可用性。
 
 schema 27 的作业账本继续作为持久依据；不能给无账本的旧凭证补建可启动作业，不能自动重放清理未知作业。旧作业读回、清理和重复观察不恢复执行权限。Job Host 接收至多 48 KiB 的私有 IPC 输入，仅送入任务 stdin；正文不进入 argv 或环境变量。stdout 保留原 runner 合同并保存为受保护 Payload；CPU/RSS 观察随作业观察持久保存。固定有界进程采样超限或失败时请求停止，采样不能证明硬配额、所有短命后代都被计入或整个进程树已退出。
+
+Agent 启动在开放准入前还会使用当前权威失效 v2 旧监督观察，保留已知结果、效果和目录占用；此恢复没有启动能力，不按旧 PID 接管进程。Job Host 双向心跳超时会请求停止，过期 IPC 消息不能续期。Worker 卡住、重启记录转为 lost/unknown 的测试通过不表示残留风险已消除；解除占用仍需独立可信清理证据。
 
 真实 Mac 假数据组合探针已验证实际 scope/UDS/SQLite/Worker/Job Host、保护规则、资源记录及隔离后不重放，但使用的是受控测试资格和已准备的测试调用；它不是正式主机资格签发，也没有验证真实模型/HITL 或实际进程崩溃后的安装恢复。正式安装与恢复验收仍待完成。启动时的旧作业核查、清理未知隔离，以及关闭时先保存观察再断开通道的顺序继续适用。安装、备份和权威迁移流程不因组件接入而改变，恢复的旧 Capability 记录不能充当新 SRT profile 的资格。
 
@@ -246,3 +260,9 @@ Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最�
 | `SERVICE_AUTHORITY_MISMATCH` 或 schema error | 对比 authority.json、SQLite deployment、config 和 bundled migration ledger | 停止；选择匹配的 prefix/state root 或走独立迁移/恢复决策，不手工改 authority |
 | forced stop 后无法恢复 | 保留 lock/socket/SQLite 现场，运行只读 doctor、db status 和进程检查 | 若正式 recovery 未证明安全则停止，转入 backup/restore 或 incident diagnosis 的独立 Runbook |
 | 需要 systemd/launchd 或 Hermes 操作 | 仅确认当前 Runbook scope 不包含服务管理器和远端部署 | 停止；选择经过验证且已授权的对应 Runbook，不猜测命令 |
+
+### v2 原环境核查约束（2026-09-09）
+
+恢复必须保留既有受保护 Run trace 中的控制引用、终态证据及其 Payload；不得仅备份 SQLite 中的 PID。当前 Agent 权威通过原环境认证控制端口 inspect/stop，或读取原 Job Host 的签名终态；身份、目录 inode、策略或宿主变化时继续隔离，不能在目标主机按旧 PID 停止或重启。Agent 仅加载不含 SRT 启动能力的控制客户端。
+
+Linux 前台清理证据要求原 PID namespace init 已消失及完整终态；Mac 已启动任务没有全树保证时继续 unknown。端口失联、证据不完整和超时均不能解除相交占用。真实假数据探针不签发安装资格；不得把测试临时 bubblewrap/socat 的 PATH 配置用于生产，生产依赖位置须单独验证。实际安装、备份恢复和跨主机迁移的既有步骤及审批边界保持适用。

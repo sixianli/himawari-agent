@@ -131,18 +131,68 @@ R1 实现位于 `packages/execution-contracts/src/sandbox-execution-v2.ts`、现
 
 完成条件：真实 UDS+SQLite 测试覆盖撤权竞态、跨 Grant/主机/父调用、旧凭证、未知版本、重投递及单次消费；不依赖注入的 allow 布尔值证明正式授权。
 
+#### R3 接入核实与已批准修正（2026-09-09）
+
+R3/R4 尚未完成。当前已实现版本声明、真实目录祖先身份、v2 broker 合同/传输、预留与绑定 CAS；`service-main` 已组合 v2 观察处理器和 Worker 握手支持查询。Worker 当前仍只声明 v1 foreground，明确拒绝 v2 执行，不能经普通适配器或 v1 路径降级执行；完整 v2 启动及资源控制仍未启用。不得据此勾选上述完成条件。
+
+已确认一个跨 R1/R2 的准备顺序冲突：Spec 规定 Worker 在准备阶段编译策略，并在首笔原子启动时固定摘要；但 `sandboxEnvironmentSchema` 在准入 facts 中强制要求非空 `policyDigest`，SQLite v2 `start` 又只接受与已保存 environment 相同的摘要，且后续观察不能改变 environment。新增负向测试实际验证了空摘要被拒绝、启动时换成后来编译的摘要同样被拒绝、`startedAt` 保持空值。这说明现有 R1/R2 静态夹具预填摘要掩盖了正式准备顺序的问题，不是允许使用占位摘要的理由。
+
+**Owner 已批准，正在按此实施：** 将“已准入的执行预留”与“已取得实际运行绑定的环境”区分为明确阶段。准入事务继续消费同一个 Handle 一次、保留 invocation/job/environment 定位及目录占用，并冻结授权、scope、模式、资格和原期限；此时不虚构策略摘要、Job Host 实际 boot 或私有目录所有权。Worker 通过现有认证通道取得范围并完成真实准备，在首笔启动请求中提交实际准备绑定；Agent 重核当前授权、主机产物和期限，SQLite 用一次 CAS 固定该绑定并登记启动，只有赢家可以启动。固定后的绑定不可替换；重投递、ack 丢失和重启只能读取或核查原预留，不产生新的启动资格。
+
+影响范围是 R1 合同/投影、R2 journal/SQLite、R3 broker 与 R4 Worker/Job Host；仍沿用现有授权库、回执、Run 和通道。需要迁移时追加新 migration，不改 0027/0028；既有已绑定记录保留原文及含义，未绑定或来源不明的记录不自动补成可运行状态。准备失败或绑定提交后失联仍保留占用，直到可信核查证明风险消除。验证须补未准备准入、唯一绑定、绑定替换拒绝、绑定期间撤权、启动 ack 丢失及旧记录读回。
+
+Owner 已明确批准本项涉及 R1/R2 的结构调整，无须就同一范围重复请求批准。这里不改变已批准的 Worker 独占策略编译原则，也不把编译挪给 Agent 或将初始化字段硬填成假证据。
+
+追加 migration `0029_sandbox_execution_preparation`，在既有账本中区分 `reserved`、`bound` 和保留历史语义的 `legacy_bound`；不修改 0027/0028。预留阶段保存 `sandbox-preparation.v1`，不生成 policyDigest、supervisor 或 privateDirectory 的占位值；首笔绑定固定实际 facts，绑定替换与重放不产生启动权。真实 UDS+SQLite 已覆盖首次绑定并发、绑定中撤权、重复请求、单次消费；数据库重开测试覆盖未绑定预留和已固定绑定。通用工具目录/网络映射与输出证据读取仍需完成正式组合的完整验证，不能据这些局部测试勾选 R3。
+
 ### R4：监管、停止与核查证据生产
 
 依赖 R3；依据 Spec §3.4、§4.1、§4.4–4.5，验证 EX-09–EX-13。
 
-- [ ] 升级 Job Host 私有 IPC，分别产出真实启动/退出、输出、监管和清理事实；使用已验证 boot/进程启动标记与监督窗口，不把 PID/心跳单独作为全树保证。
-- [ ] 保留一环境一 manager、干净环境、固定 initialize、代理 ready、显式 start、有界 stdin/输出；超时、取消、超限与观察失效均进入停止。
-- [ ] 增加 profile 对前台/后台/服务的监管证据校验；无法证明时按真实情况保持不可用或 lost，不能硬编码 controlled/confirmed。保留 Mac setsid 负向事实。
-- [ ] 实现核查的只读/限定停止端口及追加证据；隔离解除必须证明相交风险消除，没有 relaunch 分支，不复用旧 Worker 凭证。
-- [ ] 实际运行测试子进程并注入 Worker/Job Host 崩溃、ack 丢失、持有管道、setsid、进程身份替换、初始化失败与停止失败；每个测试有独立目录、总超时、清理与残留证据。
-- [ ] 验证已有结果后监管丢失会阻止后续模型续接和相交新任务，其他无关目录不被误解锁或无故占用。
+- [x] 升级 Job Host 私有 IPC，分别产出真实启动/退出、输出、监管和清理事实；使用已验证 boot/进程启动标记与监督窗口，不把 PID/心跳单独作为全树保证。
+- [x] 保留一环境一 manager、干净环境、固定 initialize、代理 ready、显式 start、有界 stdin/输出；超时、取消、超限与观察失效均进入停止。
+- [x] 增加 profile 对前台/后台/服务的监管证据校验；无法证明时按真实情况保持不可用或 lost，不能硬编码 controlled/confirmed。保留 Mac setsid 负向事实。
+- [x] 实现核查的只读/限定停止端口及追加证据；隔离解除必须证明相交风险消除，没有 relaunch 分支，不复用旧 Worker 凭证。
+- [x] 实际运行测试子进程并注入 Worker/Job Host 崩溃、ack 丢失、持有管道、setsid、进程身份替换、初始化失败与停止失败；每个测试有独立目录、总超时、清理与残留证据。
+- [x] 验证已有结果后监管丢失会阻止后续模型续接和相交新任务，其他无关目录不被误解锁或无故占用。
 
 完成条件：真实后端能生成符合目标 profile 的观察；未达到保证的 mode 明确不可用。固定探针通过仍不签发生产资格；后端能力不足属于具体 blocker，不靠改状态让测试通过。
+
+#### R4 阶段记录：后端负向证据（2026-09-09）
+
+实际运行 `node packages/runtime-sandbox/scripts/qualify-job-host.mjs --installed`，使用脚本拥有的专用假数据目录。normal、output-limit、cpu-limit、memory-limit、cancel、deadline 探针返回主进程退出、stdio 关闭及 SRT reset；整体仍为 `productionSuitable:false`。脚本中的 Perl `fork`/`setsid` 后代在主进程退出后继续写入 `detached-finished`，任务树清理仍为 `unknown`。因此退出、管道关闭和 reset 不能作为整个任务树的释放证据；这次运行不签发主机资格，也不能替代 R4 要求的崩溃、身份替换与限定核查测试。
+
+新增 `probe-supervision.mjs` 实际运行八种有限寿命子进程场景：normal、identity、ack-loss、pipes、init-failure、host-crash、stop-failure、worker-crash。2026-09-09 的编译源码探针通过，`productionSuitable:false`；故障结果保持 `lost` / `unknown`。identity 只验证当前私有 IPC 会话拒绝错误 boot，不是操作系统 PID 复用证明；ack-loss 验证同一 session 不接受第二次 start，不代替 Worker/数据库跨重启测试。长临时路径曾在 SRT 初始化阶段出现 `EADDRINUSE`，测试改用拥有的短路径后通过；生产私有路径的长度仍须纳入安装资格。该探针不覆盖完整生产授权链或任务树释放证明。
+
+以下为后续接入之前的阶段记录，并非最新完成状态。R3/R4 当时验证与未完成边界：两组定向回归共 248 项通过，覆盖合同、SQLite/UDS、迁移、同机备份恢复、权威迁移、Worker 拒绝降级及 Job Host 私有 IPC；类型检查、改动文件 Biome 检查、依赖边界和文档严格检查通过。项目整体 `npm run check` 在 lint 阶段失败：当前 182 errors / 985 warnings；对原 HEAD 的隔离源码副本复核为 182 errors / 988 warnings，不能将整体检查写为通过。
+
+尚需完成完整 v2 Worker 准备/启动与资源控制、生产范围/输出证据的端到端验证，以及跨进程重启、真实 PID 复用和风险消除核查。当前产品适配器尚未接入任务树完整监管/释放证据；这不能推导为 SRT 在所有平台上均无法满足要求。Mac 已接受 best-effort 限制，Linux 固定版本 SRT 已使用 PID namespace，两者必须分别验证；已有局部实现和 `lost` 观察不能代替上述工作。R3/R4 保持未完成，工作区草稿不作为已交付提交。
+
+#### R4 双向失联与 v2 启动恢复进展（2026-09-09）
+
+Worker→Job Host 增加带 session、单调序号和时间戳的心跳；两端均拒绝过期消息刷新监督窗口。Job Host 在 Worker 卡住但 IPC 未断开时，也按单调时钟的监督窗口停止任务。两个新增单元用例先复现失败，修复后通过。`probe-supervision.mjs` 增加 worker-stall：暂停真实 Worker，独立观察任务的假数据计数文件停止更新，恢复 Worker 后仍为 lost/unknown；九种有限进程场景全部通过。这不将心跳升级为任务树完整证明。
+
+`recoverSandboxExecutionsAtStartup` 已在 Agent 开放准入前处理 v2 未释放记录，使用当前权威追加 lost/unknown；保留原结果、效果、运行绑定与目录占用，没有启动或按旧 PID 接管分支。SQLite 重开测试验证更换 Agent/Worker boot 后旧监督失效、已知结果不变、旧续接意图被拒绝、相交任务仍被拒绝、独立目录可以准入，以及重复恢复不重复追加既有 lost 观察。预留记录仍由原占用保护，恢复不为其补造运行绑定；已 released 但效果未决的记录不反转清理事实。
+
+本轮专项回归 112 项通过；随后增加新 boot 恢复断言的 28 项定向回归通过。类型检查通过。另在 Hermes 使用现有 Python/unshare 运行 PID namespace/setsid 实验：namespace init 退出后，后代未存活到原定 4 秒，命令约 0.32 秒结束。该实验未使用 bubblewrap/SRT，不签发 Linux 资格；实际完整 SRT 验收仍待准备缺失依赖后运行。不得把这份内核机制证据转写为产品 released 证据。
+
+本阶段结束时 R4 仍未完成：尚需 profile 对应的真实监督/清理证据生产和校验、重启后限定停止的完整通道，以及证明相交风险消除后解除隔离的正向验收。双向停止与启动恢复修复不替代这些完成条件。
+
+#### R4 完成证据（2026-09-09）
+
+R4 所需的 R3 前台基础已接通：显式 v2 foreground 固定读取/命令经既有 scope、回执与认证 Payload UDS 完成准备，原 Job Host 登记后由唯一 `bindAndStart` CAS 固定真实运行绑定。后台/服务仍明确拒绝，完整 Pi 工具、通用网络派发和 UI 消费不因此勾选 R3/R5/R6/R9。
+
+- Job Host 私有 IPC 绑定真实会话、boot、进程启动标记、单调序号和监督窗口；双向失联请求停止。控制目录与任务私有目录隔离，控制 secret 不进入 task argv/env/stdin；Agent 仅导入无 SRT/启动能力的 `runtime-sandbox/control` 客户端。
+- 原环境控制引用与签名观察存入既有受保护 Run trace。核查先 CAS 追加状态，再进行有界 inspect/stop；复用请求不重复停止，迟到结果不改写账本。当前 Agent 权威可以核查旧 Worker 原环境，不能复用旧 Worker 凭证启动；引用、目录 inode、boot 或策略不符均保持隔离。正向清理与不可信/超时/并发/重启保留结果及占用由真实 SQLite 测试覆盖。
+- Linux 用户代码启动前，通过私有握手核实固定 SRT PID namespace init 的身份和祖先关系；二进制 stdin 原样交给任务。只有原 namespace init 消失、任务退出、stdio 关闭、SRT reset 和原 Job Host 退出的证据完整时允许清理 confirmed。此时仍须经过产品投影和派发/效果检查才能释放占用。Mac 已启动任务继续 unknown，不把 setsid 负向事实改成成功。
+- Mac `probe-supervision.mjs` 的九项真实有限进程场景通过，覆盖 Worker/Host 崩溃、Worker 卡住、ack 丢失、持有管道、错误 boot、初始化与停止失败。身份测试不宣称强制制造了操作系统 PID 复用。
+- Mac 与 Hermes 均运行 `probe-job-host-control.mjs` 五项：限定停止、Worker 崩溃、未启动停止、setsid、包含 NUL/换行的 stdin；同时验证错误凭证拒绝、任务无法读取控制目录、终态签名篡改拒绝。Linux 五项清理 confirmed；Mac 仅未启动项 confirmed，其余 unknown。Hermes 另运行固定 SRT 的普通/setsid 两项 namespace 探针通过。
+- Hermes 依赖仅下载并校验后解包到 Owner 批准的 `/data/himawari-r4-uxRKWbwG`，使用 SRT 0.0.75、bubblewrap 0.6.1 与 socat 1.7.4.1；未安装系统软件或修改服务/安全设置。专用 PATH 仅用于探针，不是生产配置或资格。
+- `HIMAWARI_LIVE_SANDBOX_PROBE=1 node packages/runtime-sandbox/scripts/qualify-production.mjs --v2` 通过真实 Mac SQLite、回执、scope、UDS、生产 v2 Worker、Job Host 和受保护输出路径；未知清理仍隔离，新 Worker 重投递没有再启动。验收发现并修复了 Worker 传入过多资源字段、初始效果提前断言与数据库合同不符的问题。固定假数据/测试资格不代表真实模型、HITL、安装或生产资格完成。
+
+最终检查：367 项合同/迁移/集成/Worker 路由与边界测试、40 项 runtime-sandbox 单元测试通过；`npm run build:node`、`npm run check` 和改动文件 Biome 检查通过。早先整体 lint 失败的记录保留为历史；当前源码基线已包含独立的 `f37fa06` lint 修复提交，不再把旧失败当作现状。
+
+上述证据完成 R4 的监管、限定停止和风险核查要求。完整 Spec/Plan 保持进行中，R3 其余通用接入及后续阶段未因本项完成而勾选。
 
 ### R5：完整前台 Pi 工具 runner
 

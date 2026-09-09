@@ -8,6 +8,7 @@ import {
   isBrowserImportAllowed,
   isExactExternalVersion,
   isNodeImportAllowed,
+  isSandboxImportAllowed,
   packageSpecifier,
   piDependencyOwner,
   srtDependencyOwner,
@@ -166,6 +167,10 @@ for (const { directory, manifest, manifestPath } of workspacePackages) {
       }
 
       const importedPackage = packageSpecifier(specifier);
+      if (!isSandboxImportAllowed(packageName, specifier)) {
+        errors.push(`${fileLabel}: Agent may import only the bounded sandbox control client`);
+      }
+
       if (
         importedPackage === "@anthropic-ai/sandbox-runtime" &&
         packageName !== srtDependencyOwner

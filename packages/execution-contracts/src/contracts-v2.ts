@@ -1,3 +1,4 @@
+import { withSandboxExecutionSupport } from "./sandbox-execution-support.ts";
 import { type SandboxJobIdentity, sandboxJobIdentitySchema } from "./sandbox-execution-v1.ts";
 import {
   array,
@@ -85,13 +86,15 @@ export const workerHandshakeRequestSchema = object({
 
 export const workerHandshakeAcceptedSchema = object({
   ...envelope("response", "worker.handshake.accepted"),
-  payload: object({
-    workerInstanceId: machineString,
-    workerBootId: machineString,
-    selectedSchemaVersion: literal(EXECUTION_V2_SCHEMA_VERSION),
-    ready: booleanValue,
-    acceptedAt: timestamp,
-  }),
+  payload: withSandboxExecutionSupport(
+    object({
+      workerInstanceId: machineString,
+      workerBootId: machineString,
+      selectedSchemaVersion: literal(EXECUTION_V2_SCHEMA_VERSION),
+      ready: booleanValue,
+      acceptedAt: timestamp,
+    }),
+  ),
 });
 
 export const workerReadinessQuerySchema = object({
@@ -184,14 +187,25 @@ const executePayloadSchema = object({
   deadlineAt: timestamp,
 });
 
+const sandboxExecutionBindingSchema = object({
+  schemaVersion: literal("sandbox-execution.v2"),
+  mode: enumeration(["foreground", "background", "service"]),
+  environmentId: machineString,
+  identity: sandboxJobIdentitySchema,
+});
+export type SandboxExecutionBinding = InferSchema<typeof sandboxExecutionBindingSchema>;
 const executeWorkRequestShape = object({
   ...requestEnvelope("work.execute"),
   payload: {
     parse(
       input: unknown,
       path = "$.payload",
-    ): InferSchema<typeof executePayloadSchema> & { readonly sandboxJob?: SandboxJobIdentity } {
+    ): InferSchema<typeof executePayloadSchema> & {
+      readonly sandboxJob?: SandboxJobIdentity;
+      readonly sandboxExecution?: SandboxExecutionBinding;
+    } {
       let sandboxJob: SandboxJobIdentity | undefined;
+      let sandboxExecution: SandboxExecutionBinding | undefined;
       let base = input;
       if (
         input !== null &&
@@ -203,11 +217,27 @@ const executeWorkRequestShape = object({
         sandboxJob = sandboxJobIdentitySchema.parse(identity, `${path}.sandboxJob`);
         base = rest;
       }
+      if (
+        base !== null &&
+        typeof base === "object" &&
+        !Array.isArray(base) &&
+        "sandboxExecution" in base
+      ) {
+        const { sandboxExecution: binding, ...rest } = base;
+        if (sandboxJob)
+          throw new ContractValidationError(path, "execution versions are mutually exclusive");
+        sandboxExecution = sandboxExecutionBindingSchema.parse(binding, `${path}.sandboxExecution`);
+        base = rest;
+      }
       const payload = executePayloadSchema.parse(base, path);
       if (payload.deadlineAt <= payload.requestedAt) {
         throw new ContractValidationError(`${path}.deadlineAt`, "must be later than requestedAt");
       }
-      return sandboxJob ? { ...payload, sandboxJob } : payload;
+      return sandboxJob
+        ? { ...payload, sandboxJob }
+        : sandboxExecution
+          ? { ...payload, sandboxExecution }
+          : payload;
     },
   },
 });
@@ -215,7 +245,7 @@ const executeWorkRequestShape = object({
 export const executeWorkV2RequestSchema: Schema<InferSchema<typeof executeWorkRequestShape>> = {
   parse(input, path = "$") {
     const request = executeWorkRequestShape.parse(input, path);
-    const job = request.payload.sandboxJob;
+    const job = request.payload.sandboxExecution?.identity ?? request.payload.sandboxJob;
     if (
       job &&
       (job.invocationId !== request.messageId ||

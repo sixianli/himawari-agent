@@ -35,14 +35,34 @@ function request(): JobHostRequest {
 function child() {
   const process = Object.assign(new EventEmitter(), {
     connected: true,
-    pid: undefined,
+    pid: 12345,
     stderr: new PassThrough(),
     send: vi.fn(),
   });
+  vi.spyOn(globalThis.process, "kill").mockImplementation(() => true);
   fork.mockReturnValue(process);
-  return process;
+  let sequence = 0;
+  const startedAt = new Date().toISOString();
+  return Object.assign(process, {
+    emitMessage(message: Record<string, unknown>) {
+      process.emit("message", {
+        protocolVersion: "job-host.v2",
+        sessionId: process.send.mock.calls[0]?.[0].sessionId,
+        bootId: "11111111-1111-1111-1111-111111111111",
+        processId: process.pid,
+        processIdentityRef: "job-host-process:11111111-1111-1111-1111-111111111111",
+        processStartedAt: startedAt,
+        observedAt: new Date().toISOString(),
+        sequence: ++sequence,
+        ...message,
+      });
+    },
+  });
 }
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 describe("Job Host admission and observation", () => {
   it("freezes caller input and rejects malformed inputs before forking", () => {
     const input = request();
@@ -64,7 +84,11 @@ describe("Job Host admission and observation", () => {
     const input = request();
     const host = prepareSandboxJobHost(input);
     expect(() => host.start()).toThrow("START_NOT_ALLOWED");
-    expect(process.send.mock.calls[0]?.[0]).toEqual({ type: "prepare", request: input });
+    expect(process.send.mock.calls[0]?.[0]).toMatchObject({
+      type: "prepare",
+      request: input,
+      protocolVersion: "job-host.v2",
+    });
     const options = fork.mock.calls.at(-1)?.[2];
     expect(Object.keys(options.env).sort()).toEqual([
       "CLAUDE_CODE_TMPDIR",
@@ -73,7 +97,7 @@ describe("Job Host admission and observation", () => {
       "TMPDIR",
     ]);
     expect(options.execArgv).toEqual([]);
-    process.emit("message", {
+    process.emitMessage({
       type: "ready",
       jobId: input.jobId,
       attemptId: input.attemptId,
@@ -91,7 +115,7 @@ describe("Job Host admission and observation", () => {
   it("rejects changed policy identity and never starts on readiness failure", async () => {
     const process = child();
     const host = prepareSandboxJobHost(request());
-    process.emit("message", {
+    process.emitMessage({
       type: "ready",
       jobId: "job",
       attemptId: "attempt",
@@ -106,7 +130,7 @@ describe("Job Host admission and observation", () => {
     const process = child();
     const input = request();
     const host = prepareSandboxJobHost(input);
-    process.emit("message", {
+    process.emitMessage({
       type: "ready",
       jobId: "job",
       attemptId: "attempt",
@@ -114,7 +138,7 @@ describe("Job Host admission and observation", () => {
     });
     await host.ready;
     host.start();
-    process.emit("message", {
+    process.emitMessage({
       type: "output",
       channel: "stdout",
       bytes: Buffer.alloc(17).toString("base64"),
@@ -156,7 +180,7 @@ it("returns observed resource usage without converting it into cleanup confirmat
   const process = child();
   const input = { ...request(), resourceLimits: { maxCpuTimeMs: 100, maxMemoryBytes: 1024 } };
   const host = prepareSandboxJobHost(input);
-  process.emit("message", {
+  process.emitMessage({
     type: "ready",
     jobId: "job",
     attemptId: "attempt",
@@ -165,7 +189,7 @@ it("returns observed resource usage without converting it into cleanup confirmat
   await host.ready;
   host.start();
   const resources = { samples: 2, observedCpuTimeMs: 120, peakObservedMemoryBytes: 512 };
-  process.emit("message", {
+  process.emitMessage({
     type: "result",
     reason: "resource_limit",
     resources,
@@ -180,4 +204,88 @@ it("returns observed resource usage without converting it into cleanup confirmat
     resources,
     taskTreeCleanup: "unknown",
   });
+});
+
+it("expires supervision and rejects replaced boot identities without granting a new start", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const input = request();
+  const host = prepareSandboxJobHost(input);
+  process.emitMessage({
+    type: "ready",
+    jobId: input.jobId,
+    attemptId: input.attemptId,
+    policyDigest: input.policyDigest,
+  });
+  await host.ready;
+  expect(host.inspect()).toMatchObject({ state: "alive", taskTreeGuarantee: "unverified" });
+  process.emitMessage({ type: "heartbeat", bootId: "22222222-2222-2222-2222-222222222222" });
+  expect(host.inspect()?.state).toBe("lost");
+  expect(() => host.start()).toThrow();
+  process.emit("close");
+  await host.result;
+});
+it("requests stop when the owned IPC observation window expires", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const input = request();
+  const host = prepareSandboxJobHost(input);
+  process.emitMessage({
+    type: "ready",
+    jobId: input.jobId,
+    attemptId: input.attemptId,
+    policyDigest: input.policyDigest,
+  });
+  await host.ready;
+  host.start();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(
+    process.send.mock.calls.some(
+      ([message]) => message.type === "cancel" && message.reason === "host_failure",
+    ),
+  ).toBe(true);
+  expect(host.inspect()?.state).toBe("lost");
+  process.emit("close");
+  expect((await host.result).taskTreeCleanup).toBe("unknown");
+});
+
+it("does not signal a reaped process id when its old pipes close", async () => {
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  process.emit("exit", 0, null);
+  process.emit("close", 0, null);
+  await host.result;
+  expect(globalThis.process.kill).not.toHaveBeenCalled();
+});
+
+it("renews the Worker lease while attached and stops renewing after completion", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  await vi.advanceTimersByTimeAsync(500);
+  const heartbeats = process.send.mock.calls.filter(([message]) => message.type === "heartbeat");
+  expect(heartbeats.length).toBe(2);
+  expect(heartbeats[1]?.[0].sequence).toBeGreaterThan(heartbeats[0]?.[0].sequence);
+  process.emit("close");
+  await host.result;
+  const sent = process.send.mock.calls.length;
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(process.send.mock.calls.length).toBe(sent);
+});
+
+it("does not renew supervision from a delayed message", async () => {
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  process.emitMessage({
+    type: "ready",
+    jobId: "job",
+    attemptId: "attempt",
+    policyDigest: "a".repeat(64),
+  });
+  await host.ready;
+  process.emitMessage({ type: "heartbeat", observedAt: new Date(Date.now() - 2000).toISOString() });
+  expect(host.inspect()?.state).toBe("lost");
+  expect(() => host.start()).toThrow();
+  process.emit("close");
+  await host.result;
 });

@@ -11,23 +11,36 @@ import {
   type PayloadProtectorPort,
   type ProductConfiguration,
   type RuntimeToolInvocation,
+  resolveSandboxActionGrant,
+  type SandboxExecutionEvidencePort,
   type SandboxExecutionPlan,
+  SandboxExecutionReconciliationService,
   SandboxScopeService,
   type WorkerDelegationAdmissionServiceOptions,
 } from "@himawari-agent/application";
 import {
+  assertSandboxExecutionSupport,
   type SandboxExecutionPlanCandidate,
+  type SandboxExecutionPlanCandidateV2,
+  type SandboxExecutionPlanV2,
+  type SandboxExecutionSupport,
+  type SandboxOperationBinding,
   type SandboxScope,
   sandboxExecutionPlanCandidateSchema,
+  sandboxExecutionPlanCandidateV2Schema,
+  sandboxExecutionReservationSchema,
   sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   CapabilityDeploymentSnapshotLoader,
+  resolveSandboxWorkspaceClaim,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
+import { configuredModelDisclosureIdentity } from "./production-file-read-services.js";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
 import type { ProductionRuntimeSandbox } from "./production-runtime-tools.js";
+import { createProductionSandboxControl } from "./production-sandbox-control.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const bytesHash = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -37,7 +50,7 @@ const bytesHash = (value: Uint8Array) => createHash("sha256").update(value).dige
 export async function createProductionSandboxServices(options: {
   readonly configuration: Pick<
     ProductConfiguration,
-    "ownerId" | "agentId" | "capabilityDeployment"
+    "ownerId" | "agentId" | "capabilityDeployment" | "modelDescriptors"
   >;
   readonly repository: SqliteProductStateRepository;
   readonly protector: PayloadProtectorPort;
@@ -45,6 +58,7 @@ export async function createProductionSandboxServices(options: {
   readonly fileRead: ProductionFileReadServices;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
+  readonly workerSupport?: () => SandboxExecutionSupport | undefined;
 }) {
   const { configuration, repository, protector, clock, ids } = options;
   if (!configuration.capabilityDeployment) return undefined;
@@ -57,6 +71,13 @@ export async function createProductionSandboxServices(options: {
     (entry) => entry.binding.kind === "sandbox",
   );
   if (sandboxEntries.length === 0) return undefined;
+  const modelIdentity = (ref: string) => {
+    const model = configuration.modelDescriptors.find(
+      (model) => model.ref === ref && model.role !== "embedding",
+    );
+    if (!model) throw new Error("SANDBOX_MODEL_UNAVAILABLE");
+    return configuredModelDisclosureIdentity(model);
+  };
   const hostIds = new Set(
     sandboxEntries.map((entry) =>
       entry.binding.kind === "sandbox" ? entry.binding.value.hostId : "",
@@ -66,6 +87,10 @@ export async function createProductionSandboxServices(options: {
   const hostId = [...hostIds][0];
   if (!hostId) throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
   const journal = repository.sandboxJobJournal(configuration.ownerId, configuration.agentId);
+  const preparations = repository.sandboxExecutionPreparations(
+    configuration.ownerId,
+    configuration.agentId,
+  );
   const capabilities = repository.capabilityStore(configuration.ownerId, configuration.agentId);
   const payloads = repository.payloadStore(configuration.ownerId, configuration.agentId);
   const artifacts = () =>
@@ -99,7 +124,10 @@ export async function createProductionSandboxServices(options: {
       throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
     return { binding: entry.binding.value, qualification: entry.qualification.sandbox };
   };
-  const verifyParent = async (scope: SandboxScope, plan: SandboxExecutionPlanCandidate) => {
+  const verifyParent = async (
+    scope: SandboxScope,
+    plan: SandboxExecutionPlanCandidate | SandboxExecutionPlanCandidateV2,
+  ) => {
     const saved = await artifacts().lookup({
       runId: scope.runId as RuntimeToolInvocation["runId"],
       purpose: "trace",
@@ -156,36 +184,102 @@ export async function createProductionSandboxServices(options: {
         throw new Error("SANDBOX_PARENT_CHANGED");
       return;
     }
-    const parent = await journal.readByInvocation({
+    const v2 = await preparations.readAdmissionByInvocation({
       runId: scope.runId,
       invocationId: scope.parentRequestId,
     });
+    const legacy = v2
+      ? undefined
+      : await journal.readByInvocation({ runId: scope.runId, invocationId: scope.parentRequestId });
+    const parentPlan = v2?.phase === "bound" ? v2.record.plan : legacy?.plan;
+    const available = v2
+      ? v2.phase === "bound" &&
+        v2.record.facts.resource.supervision === "controlled" &&
+        v2.record.facts.resource.evidence.validUntil > clock.now()
+      : legacy && ["starting", "running"].includes(legacy.observation.state);
     if (
-      !parent ||
-      !["starting", "running"].includes(parent.observation.state) ||
-      parent.plan.identity.toolCallId !== scope.parentToolCallId ||
-      parent.plan.modelRef !== plan.modelRef ||
-      parent.plan.identity.threadId !== plan.identity.threadId ||
-      hash(parent.plan.executionLease) !== hash(plan.executionLease) ||
-      parent.plan.identity.hostId !== plan.identity.hostId
+      !available ||
+      !parentPlan ||
+      parentPlan.identity.toolCallId !== scope.parentToolCallId ||
+      parentPlan.modelRef !== plan.modelRef ||
+      parentPlan.identity.threadId !== plan.identity.threadId ||
+      hash(parentPlan.executionLease) !== hash(plan.executionLease) ||
+      parentPlan.identity.hostId !== plan.identity.hostId
     )
       throw new Error("SANDBOX_PARENT_UNAVAILABLE");
     const live = await repository
       .capabilityInvocationReceiptPort(configuration.ownerId, configuration.agentId)
       .read({
-        handleRef: parent.plan.handleRef,
-        invocationId: parent.plan.identity.invocationId,
+        handleRef: parentPlan.handleRef,
+        invocationId: parentPlan.identity.invocationId,
         authority: options.authority(),
         now: clock.now(),
       });
     if (!live) throw new Error("SANDBOX_PARENT_UNAVAILABLE");
   };
-  const resolve = async (value: SandboxExecutionPlanCandidate | SandboxExecutionPlan) => {
-    const { semanticFingerprint: _fingerprint, ...candidate } = value as SandboxExecutionPlan;
-    const plan = sandboxExecutionPlanCandidateSchema.parse(candidate);
+  const resolve = async (
+    value:
+      | SandboxExecutionPlanCandidate
+      | SandboxExecutionPlan
+      | SandboxExecutionPlanCandidateV2
+      | SandboxExecutionPlanV2,
+  ) => {
+    const candidate =
+      "semanticFingerprint" in value
+        ? (({ semanticFingerprint: _fingerprint, ...rest }) => rest)(value)
+        : value;
+    const plan =
+      candidate.schemaVersion === "sandbox-execution.v2"
+        ? sandboxExecutionPlanCandidateV2Schema.parse(candidate)
+        : sandboxExecutionPlanCandidateSchema.parse(candidate);
     const { binding, qualification } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
     await verifySandboxHost({ binding, qualification, hostId, plan });
+    if (plan.schemaVersion === "sandbox-execution.v2") {
+      assertSandboxExecutionSupport({ schemaVersion: plan.schemaVersion, mode: plan.mode }, [
+        options.workerSupport?.(),
+        binding.supportedExecutions,
+        qualification.supportedExecutions,
+      ]);
+      const descriptor = binding.operationBindings?.find(
+        (item) => item.operation === plan.operation,
+      );
+      if (
+        !descriptor ||
+        descriptor.mode !== plan.mode ||
+        descriptor.backendRef !== plan.backendRef ||
+        hash(descriptor.contract) !== hash(plan.operationContract)
+      )
+        throw new Error("SANDBOX_OPERATION_BINDING_CHANGED");
+    }
     const raw = sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef));
+    if (plan.schemaVersion === "sandbox-execution.v2") {
+      const descriptor = binding.operationBindings?.find(
+        (item) => item.operation === plan.operation,
+      );
+      if (
+        !descriptor ||
+        descriptor.directoryOperations.some((op) => !raw.directoryGrant.operations.includes(op)) ||
+        raw.directoryGrant.operations.some((op) => !descriptor.directoryOperations.includes(op)) ||
+        (descriptor.network === "disabled" && raw.networkAuthorizationRef !== null)
+      )
+        throw new Error("SANDBOX_OPERATION_SCOPE_CHANGED");
+      if (descriptor.scopeSource === "grant_targets") {
+        const { intent } = await resolveSandboxActionGrant({
+          plan,
+          authorizations: repository.authorizationStore(),
+          now: () => clock.now(),
+        });
+        const directories = intent.targets.filter((item) => item.type === "directory-grant");
+        if (
+          directories.length !== 1 ||
+          directories[0]?.ref !== raw.directoryGrant.ref ||
+          !intent.targets.some((item) => item.type === "host" && item.ref === hostId) ||
+          intent.disclosure !== "named_recipients" ||
+          !intent.recipients.includes(modelIdentity(plan.modelRef))
+        )
+          throw new Error("SANDBOX_ACTION_SCOPE_CHANGED");
+      }
+    }
     const reader = new SandboxScopeService({
       hostId,
       payloads,
@@ -215,7 +309,8 @@ export async function createProductionSandboxServices(options: {
       )
     )
       throw new Error("SANDBOX_ROOT_UNAVAILABLE");
-    return { binding, qualification, ...resolved };
+    const workspaceClaim = await resolveSandboxWorkspaceClaim({ binding, scope: resolved.scope });
+    return { binding, qualification, workspaceClaim, ...resolved };
   };
   const persistScope = async (scope: SandboxScope, invocationId: string) => {
     const plaintext = new TextEncoder().encode(JSON.stringify(sandboxScopeSchema.parse(scope)));
@@ -280,18 +375,210 @@ export async function createProductionSandboxServices(options: {
   const appliesTo = (input: ConsumeCapabilityInvocationInput) =>
     sandboxEntries.some((entry) => entry.manifest.ref === input.capabilityRef);
   const scopes = {
-    read: async (plan: SandboxExecutionPlanCandidate, parentRequestId: string | null) => {
+    read: async (
+      plan: SandboxExecutionPlanCandidate | SandboxExecutionPlanCandidateV2,
+      parentRequestId: string | null,
+    ) => {
       const result = await resolve(plan);
       if (result.scope.parentRequestId !== parentRequestId)
         throw new Error("SANDBOX_PARENT_CHANGED");
       return result.scope;
     },
   };
+  const replayReservation = async (input: ConsumeCapabilityInvocationInput) => {
+    const existing = await preparations.readAdmissionByInvocation({
+      runId: input.requestScope.runId,
+      invocationId: input.invocationId,
+    });
+    if (existing) {
+      // The reservation is immutable. A replay returns its original admission;
+      // reserve will never project a second executable Worker request.
+      const plan = existing.phase === "reserved" ? existing.plan : existing.record.plan;
+      const { semanticFingerprint: _fingerprint, ...candidate } = plan;
+      const workspaces =
+        existing.phase === "reserved" ? existing.workspaces : existing.record.workspaces;
+      const reservation = sandboxExecutionReservationSchema.parse({
+        schemaVersion: "sandbox-preparation.v1",
+        identity: plan.identity,
+        environmentId: plan.environmentId,
+        resourceRef:
+          existing.phase === "reserved"
+            ? existing.reservation.resourceRef
+            : existing.record.facts.environment.resourceRef,
+        mode: plan.mode,
+        workspaceConflictRefs: workspaces.map((item) => item.ref),
+        sequence: 1,
+        createdAt: plan.requestedAt,
+      });
+      await resolve(candidate);
+      return { plan: candidate, reservation, workspaces };
+    }
+    return undefined;
+  };
+  const prepareRuntimeV2 = async (
+    input: ConsumeCapabilityInvocationInput,
+    call: RuntimeToolInvocation,
+    parentCall: RuntimeToolInvocation | undefined,
+    descriptor: SandboxOperationBinding,
+  ) => {
+    const replay = await replayReservation(input);
+    if (replay) return replay;
+    const handle = await currentHandle(input);
+    if (!call.context || !call.executionDeadlineAt)
+      throw new Error("SANDBOX_SCOPE_SOURCE_UNAVAILABLE");
+    const { binding, qualification } = await entryFor(input.capabilityRef, input.capabilityVersion);
+    assertSandboxExecutionSupport(
+      { schemaVersion: "sandbox-execution.v2", mode: descriptor.mode },
+      [options.workerSupport?.(), binding.supportedExecutions, qualification.supportedExecutions],
+    );
+    let expiresAt = new Date(
+      Math.min(
+        Date.parse(handle.expiresAt),
+        Date.parse(input.deadlineAt),
+        Date.parse(call.executionDeadlineAt),
+      ),
+    ).toISOString();
+    let grant: HostDirectoryGrant | undefined;
+    if (descriptor.scopeSource === "file_workflow") {
+      const file = await options.fileRead.binding(parentCall ?? call);
+      if (
+        !file ||
+        file.capabilityRef !== input.capabilityRef ||
+        file.capabilityVersion !== input.capabilityVersion ||
+        !["inspect", "read"].includes(input.operation)
+      )
+        throw new Error("SANDBOX_SCOPE_SOURCE_UNAVAILABLE");
+      grant = file.grant;
+    } else {
+      const { intent } = await resolveSandboxActionGrant({
+        plan: {
+          authorizationRef: handle.authorizationRef,
+          capabilityRef: input.capabilityRef,
+          capabilityVersion: input.capabilityVersion,
+          operation: input.operation,
+          effectiveDeadlineAt: expiresAt,
+          identity: {
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            runId: call.runId,
+            threadId: call.context.threadId,
+          },
+        },
+        authorizations: repository.authorizationStore(),
+        now: () => clock.now(),
+      });
+      const targets = intent.targets.filter((item) => item.type === "directory-grant");
+      if (
+        targets.length !== 1 ||
+        !targets[0] ||
+        !intent.targets.some((item) => item.type === "host" && item.ref === hostId) ||
+        intent.disclosure !== "named_recipients" ||
+        !intent.recipients.includes(modelIdentity(call.context.modelRef))
+      )
+        throw new Error("SANDBOX_SCOPE_SOURCE_UNAVAILABLE");
+      grant = (
+        await repository.readScopedState(
+          configuration.ownerId,
+          configuration.agentId,
+          hostDirectoryGrantStateKey(targets[0].ref),
+        )
+      )?.value as unknown as HostDirectoryGrant | undefined;
+    }
+    if (!grant) throw new Error("SANDBOX_DIRECTORY_GRANT_UNAVAILABLE");
+    expiresAt = new Date(
+      Math.min(Date.parse(expiresAt), Date.parse(grant.expiresAt)),
+    ).toISOString();
+    const scope = sandboxScopeSchema.parse({
+      schemaVersion: "sandbox-scope.v1",
+      ownerId: configuration.ownerId,
+      agentId: configuration.agentId,
+      threadId: call.context.threadId,
+      runId: call.runId,
+      toolCallId: call.toolCallId,
+      parentToolCallId: parentCall?.toolCallId ?? null,
+      parentRequestId: call.runId,
+      hostId,
+      handleRef: handle.ref,
+      inputRef: input.inputRef,
+      operation: input.operation,
+      authorizationRef: handle.authorizationRef,
+      modelRef: call.context.modelRef,
+      profileRef: binding.profileRef,
+      directoryGrant: {
+        ref: grant.id,
+        revision: grant.revision,
+        canonicalRootId: grant.canonicalRootId,
+        authorizationRef: grant.authorizationRef,
+        operations: descriptor.directoryOperations,
+      },
+      networkAuthorizationRef:
+        descriptor.network === "grant_targets" ? handle.authorizationRef : null,
+      expiresAt,
+    });
+    const scopeBinding = await persistScope(scope, input.invocationId);
+    const base = createSandboxExecutionPlanCandidate({
+      admission: input,
+      handle,
+      invocation: call,
+      request: {
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        runId: call.runId,
+        threadId: call.context.threadId,
+        modelRef: call.context.modelRef,
+        executionLease: call.context.executionLease,
+        executionDeadlineAt: call.executionDeadlineAt,
+      },
+      jobId: `sandbox-job:${hash(input.invocationId)}`,
+      attemptId: `sandbox-attempt:${hash(input.invocationId)}`,
+      hostId,
+      now: input.requestedAt,
+      binding: {
+        ...scopeBinding,
+        profileRef: binding.profileRef,
+        runtimeDigest: binding.runtimeDigest,
+        runnerDigest: binding.runner.sha256,
+        qualificationRef: qualification.qualificationRef,
+        requiredGuarantees: qualification.guarantees,
+      },
+      digest: (canonical) => createHash("sha256").update(canonical).digest("hex"),
+    });
+    const plan = sandboxExecutionPlanCandidateV2Schema.parse({
+      ...base,
+      schemaVersion: "sandbox-execution.v2",
+      effectiveDeadlineAt: expiresAt,
+      mode: descriptor.mode,
+      operationContract: descriptor.contract,
+      backendRef: descriptor.backendRef,
+      environmentId: `environment:${hash(input.invocationId)}`,
+    });
+    const resolved = await resolve(plan);
+    const reservation = sandboxExecutionReservationSchema.parse({
+      schemaVersion: "sandbox-preparation.v1",
+      identity: plan.identity,
+      environmentId: plan.environmentId,
+      resourceRef: plan.mode === "foreground" ? null : ids.next("sandbox-resource"),
+      mode: plan.mode,
+      workspaceConflictRefs: [resolved.workspaceClaim.ref],
+      sequence: 1,
+      createdAt: plan.requestedAt,
+    });
+    return { plan, reservation, workspaces: [resolved.workspaceClaim] };
+  };
   const runtime: ProductionRuntimeSandbox = {
     journal,
+    preparations,
     scopes,
     appliesTo,
     prepare: async (input, call, parentCall) => {
+      const selected = await entryFor(input.capabilityRef, input.capabilityVersion);
+      if (selected.binding.operationBindings) {
+        const descriptor = selected.binding.operationBindings.find(
+          (item) => item.operation === input.operation,
+        );
+        if (!descriptor) throw new Error("SANDBOX_OPERATION_UNAVAILABLE");
+        return prepareRuntimeV2(input, call, parentCall, descriptor);
+      }
       const existing = await journal.readByInvocation({
         runId: input.requestScope.runId,
         invocationId: input.invocationId,
@@ -381,9 +668,126 @@ export async function createProductionSandboxServices(options: {
   };
   const child: NonNullable<WorkerDelegationAdmissionServiceOptions["sandbox"]> = {
     journal,
+    preparations,
     scopes,
     appliesTo,
     prepare: async (input, request) => {
+      const childEntry = await entryFor(input.capabilityRef, input.capabilityVersion);
+      if (childEntry.binding.operationBindings) {
+        const replay = await replayReservation(input);
+        if (replay) return replay;
+        if (!request.causationId) throw new Error("SANDBOX_PARENT_UNAVAILABLE");
+        const parent = await preparations.readAdmissionByInvocation({
+          runId: input.requestScope.runId,
+          invocationId: request.causationId,
+        });
+        const descriptor = childEntry.binding.operationBindings.find(
+          (item) => item.operation === input.operation,
+        );
+        if (
+          !descriptor ||
+          parent?.phase !== "bound" ||
+          parent.record.facts.resource.supervision !== "controlled" ||
+          parent.record.facts.resource.evidence.validUntil <= clock.now()
+        )
+          throw new Error("SANDBOX_PARENT_UNAVAILABLE");
+        const prior = parent.record.plan;
+        const inherited = await resolve(prior);
+        const handle = await currentHandle(input);
+        const { binding, qualification } = childEntry;
+        assertSandboxExecutionSupport(
+          { schemaVersion: "sandbox-execution.v2", mode: descriptor.mode },
+          [
+            options.workerSupport?.(),
+            binding.supportedExecutions,
+            qualification.supportedExecutions,
+          ],
+        );
+        if (
+          binding.hostId !== prior.identity.hostId ||
+          binding.profileRef !== prior.binding.profileRef ||
+          descriptor.directoryOperations.some(
+            (op) => !inherited.scope.directoryGrant.operations.includes(op),
+          ) ||
+          Object.entries(input.resourceCeiling).some(
+            ([key, value]) =>
+              value > prior.resourceCeiling[key as keyof typeof prior.resourceCeiling],
+          )
+        )
+          throw new Error("SANDBOX_CHILD_SCOPE_EXCEEDED");
+        const expiresAt = new Date(
+          Math.min(
+            Date.parse(input.deadlineAt),
+            Date.parse(handle.expiresAt),
+            Date.parse(prior.effectiveDeadlineAt),
+          ),
+        ).toISOString();
+        const scope = sandboxScopeSchema.parse({
+          ...inherited.scope,
+          toolCallId: input.invocationId,
+          parentToolCallId: prior.identity.toolCallId,
+          parentRequestId: request.causationId,
+          handleRef: handle.ref,
+          inputRef: input.inputRef,
+          operation: input.operation,
+          authorizationRef: handle.authorizationRef,
+          networkAuthorizationRef:
+            descriptor.network === "grant_targets" ? handle.authorizationRef : null,
+          directoryGrant: {
+            ...inherited.scope.directoryGrant,
+            operations: descriptor.directoryOperations,
+          },
+          expiresAt,
+        });
+        const scopeBinding = await persistScope(scope, input.invocationId);
+        const { semanticFingerprint: _fingerprint, ...candidate } = prior;
+        const plan = sandboxExecutionPlanCandidateV2Schema.parse({
+          ...candidate,
+          identity: {
+            ...prior.identity,
+            jobId: `sandbox-job:${hash(input.invocationId)}`,
+            attemptId: `sandbox-attempt:${hash(input.invocationId)}`,
+            invocationId: input.invocationId,
+            receiptRef: input.receiptRef,
+            toolCallId: scope.toolCallId,
+          },
+          environmentId: `environment:${hash(input.invocationId)}`,
+          mode: descriptor.mode,
+          operationContract: descriptor.contract,
+          backendRef: descriptor.backendRef,
+          handleRef: handle.ref,
+          inputRef: input.inputRef,
+          operation: input.operation,
+          capabilityRef: input.capabilityRef,
+          capabilityVersion: input.capabilityVersion,
+          authorizationRef: handle.authorizationRef,
+          requestedAt: input.requestedAt,
+          effectiveDeadlineAt: expiresAt,
+          resourceCeiling: input.resourceCeiling,
+          binding: {
+            ...scopeBinding,
+            profileRef: binding.profileRef,
+            runtimeDigest: binding.runtimeDigest,
+            runnerDigest: binding.runner.sha256,
+            qualificationRef: qualification.qualificationRef,
+            requiredGuarantees: qualification.guarantees,
+          },
+        });
+        const resolved = await resolve(plan);
+        if (resolved.allowedDomains.some((domain) => !inherited.allowedDomains.includes(domain)))
+          throw new Error("SANDBOX_CHILD_SCOPE_EXCEEDED");
+        const reservation = sandboxExecutionReservationSchema.parse({
+          schemaVersion: "sandbox-preparation.v1",
+          identity: plan.identity,
+          environmentId: plan.environmentId,
+          resourceRef: plan.mode === "foreground" ? null : ids.next("sandbox-resource"),
+          mode: plan.mode,
+          workspaceConflictRefs: [resolved.workspaceClaim.ref],
+          sequence: 1,
+          createdAt: plan.requestedAt,
+        });
+        return { plan, reservation, workspaces: [resolved.workspaceClaim] };
+      }
       if (!request.causationId) throw new Error("SANDBOX_PARENT_UNAVAILABLE");
       const parent = await journal.readByInvocation({
         runId: input.requestScope.runId,
@@ -462,9 +866,135 @@ export async function createProductionSandboxServices(options: {
       return prepared(plan);
     },
   };
+  const control = createProductionSandboxControl({
+    now: () => clock.now(),
+    host: async (plan) => {
+      const entry = await entryFor(plan.capabilityRef, plan.capabilityVersion);
+      await verifySandboxHost({ ...entry, hostId, plan });
+      return entry;
+    },
+    read: async (plan, key) => {
+      const saved = await artifacts().lookup({
+        runId: plan.identity.runId as RuntimeToolInvocation["runId"],
+        purpose: "trace",
+        operationKey: key,
+      });
+      if (!saved) return undefined;
+      const payload = await payloads.get(saved.payloadRef);
+      if (!payload || payload.dataClassification !== "restricted")
+        throw new Error("SANDBOX_CONTROL_ARTIFACT_INVALID");
+      const value = await readJson(saved.payloadRef);
+      return { ref: saved.payloadRef, digest: hash(value), value };
+    },
+    write: async (plan, key, value) => {
+      const plaintext = new TextEncoder().encode(JSON.stringify(value));
+      if (plaintext.byteLength > 65536) throw new Error("SANDBOX_CONTROL_ARTIFACT_TOO_LARGE");
+      const payload = await protector.protect({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        ref: ids.next("sandbox-control"),
+        dataClassification: "restricted",
+        contentType: "application/json",
+        plaintext,
+        createdAt: clock.now(),
+      });
+      const saved = await artifacts().commit({
+        runId: plan.identity.runId as RuntimeToolInvocation["runId"],
+        purpose: "trace",
+        operationKey: key,
+        payload,
+      });
+      if (hash(await readJson(saved.ref)) !== bytesHash(plaintext))
+        throw new Error("SANDBOX_CONTROL_ARTIFACT_CHANGED");
+      return { ref: saved.ref, digest: bytesHash(plaintext) };
+    },
+  });
+  const evidence: SandboxExecutionEvidencePort = {
+    verify: async ({ plan, facts, now }) => {
+      const outputs: { ref: string; digest: string; byteLength: number }[] = [];
+      if (facts.result && facts.result.kind !== "unknown") {
+        // A retained result is already bound by the journal to its immutable
+        // invocation artifact. Reconciliation under a new boot may authenticate
+        // these same bytes without adopting the old Worker's execution authority.
+        const previous = await repository
+          .sandboxExecutionJournal(configuration.ownerId, configuration.agentId)
+          .read(plan.identity);
+        const retained =
+          previous &&
+          previous.plan.semanticFingerprint === plan.semanticFingerprint &&
+          JSON.stringify(previous.facts.result) === JSON.stringify(facts.result);
+        if (!retained) {
+          const artifact = await repository
+            .capabilityInvocationResultPort(configuration.ownerId, configuration.agentId)
+            .lookupOutput({
+              handleRef: plan.handleRef,
+              invocationId: plan.identity.invocationId,
+              authority: options.authority(),
+              now,
+            });
+          if (!artifact || artifact.payloadRef !== facts.result.output.ref)
+            throw new Error("SANDBOX_OUTPUT_BINDING_CHANGED");
+        }
+        const payload = await payloads.get(facts.result.output.ref);
+        if (
+          !payload ||
+          payload.ciphertext.byteLength > plan.resourceCeiling.maxOutputBytes + 131072
+        )
+          throw new Error("SANDBOX_OUTPUT_UNAVAILABLE");
+        const bytes = await protector.unprotect({
+          ownerId: configuration.ownerId,
+          agentId: configuration.agentId,
+          payload,
+        });
+        if (
+          bytes.byteLength > plan.resourceCeiling.maxOutputBytes ||
+          bytes.byteLength !== facts.result.output.byteLength ||
+          bytesHash(bytes) !== facts.result.output.digest
+        )
+          throw new Error("SANDBOX_OUTPUT_CHANGED");
+        outputs.push({ ...facts.result.output });
+      }
+      // Authenticate retained output and independently stored supervisor facts.
+      return {
+        facts,
+        identity: plan.identity,
+        environmentId: plan.environmentId,
+        policyDigest: facts.environment.policyDigest,
+        resourceSequence: facts.resource.sequence,
+        checkedAt: now,
+        validUntil: new Date(Date.parse(now) + 1000).toISOString(),
+        outputs,
+        evidence: await control.evidence(plan, facts),
+      };
+    },
+  };
   return {
     runtime,
     child,
+    brokerV2: {
+      evidence,
+      registerControl: control.register,
+      observeControl: control.observe,
+      verifyPreparation: control.verifyPreparation,
+      reconciliation: new SandboxExecutionReconciliationService({
+        hostId,
+        journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
+        evidence,
+        backend: control.backend,
+        timeoutMs: 5000,
+        now: () => clock.now(),
+      }),
+      hostId,
+      journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
+      preparations,
+      resolveScope: async (plan: SandboxExecutionPlanV2) => {
+        const { scope, allowedDomains } = await resolve(plan);
+        return { scope, allowedDomains };
+      },
+      verifyStart: async (plan: SandboxExecutionPlanV2) => {
+        await resolve(plan);
+      },
+    },
     broker: {
       hostId,
       journal,

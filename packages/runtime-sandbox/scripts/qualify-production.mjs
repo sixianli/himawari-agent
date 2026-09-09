@@ -12,7 +12,9 @@ try {
   const { qualifyProductionSandboxMac } = await server.ssrLoadModule(
     "/test/qualification/sandbox-production-mac-probe.ts",
   );
-  process.stdout.write(`${JSON.stringify(await qualifyProductionSandboxMac())}\n`);
+  process.stdout.write(
+    `${JSON.stringify(await qualifyProductionSandboxMac(process.argv.includes("--v2")))}\n`,
+  );
 } finally {
   await server.close();
 }

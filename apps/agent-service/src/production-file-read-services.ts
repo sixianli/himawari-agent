@@ -2,16 +2,23 @@ import { createHash } from "node:crypto";
 import {
   ActionPolicyService,
   CapabilityHandleService,
-  hostDirectoryGrantStateKey,
   type CapabilityInvocationAuthority,
   type CapabilityManifest,
   type ClockPort,
   type HostDirectoryGrant,
+  hostDirectoryGrantStateKey,
   type IdGeneratorPort,
   type ProductConfiguration,
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
+
+/** The same identity is used for file and generic tool disclosure approvals. */
+export function configuredModelDisclosureIdentity(
+  model: ProductConfiguration["modelDescriptors"][number],
+): string {
+  return `model:${model.provider}:${model.model}:${createHash("sha256").update(JSON.stringify(model)).digest("hex")}`;
+}
 
 /** Production composition: routing never creates grants or capability qualification. */
 export function createProductionFileReadServices(options: {
@@ -101,7 +108,6 @@ export function createProductionFileReadServices(options: {
       if (!stored || !grant || grant.id !== route.grantId || grant.hostId !== route.hostId)
         return undefined;
       // Freeze the configured provider/model/routing identity, including fallback changes.
-      const identity = createHash("sha256").update(JSON.stringify(model)).digest("hex");
       return {
         revision: stored.revision,
         hostId: route.hostId,
@@ -112,7 +118,7 @@ export function createProductionFileReadServices(options: {
         maximumBytes: route.maximumBytes,
         threadId: context.threadId,
         modelRef: context.modelRef,
-        modelIdentity: `model:${model.provider}:${model.model}:${identity}`,
+        modelIdentity: configuredModelDisclosureIdentity(model),
       };
     },
     authorize: (intent) =>

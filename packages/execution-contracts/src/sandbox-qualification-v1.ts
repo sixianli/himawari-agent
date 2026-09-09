@@ -1,4 +1,8 @@
 import {
+  type SandboxExecutionSupport,
+  withSandboxExecutionSupport,
+} from "./sandbox-execution-support.ts";
+import {
   array,
   ContractValidationError,
   enumeration,
@@ -47,38 +51,41 @@ const shape = object({
   guarantees: array(enumeration(guarantees)),
   limitations: array(literal("detached_descendants_may_survive_stop")),
 });
-export type SandboxRuntimeQualification = InferSchema<typeof shape>;
+export type SandboxRuntimeQualification = InferSchema<typeof shape> & {
+  readonly supportedExecutions?: SandboxExecutionSupport;
+};
 /** Qualification evidence has its own explicit guarantees. It must never be
  * converted into a claim of hard quotas or confirmed cleanup for a particular job. */
-export const sandboxRuntimeQualificationSchema: Schema<SandboxRuntimeQualification> = {
-  parse(value, path = "$") {
-    const record = shape.parse(value, path);
-    const required = guarantees.slice(0, 9);
-    if (
-      new Set(record.guarantees).size !== record.guarantees.length ||
-      new Set(record.limitations).size !== record.limitations.length ||
-      required.some((guarantee) => !record.guarantees.includes(guarantee))
-    )
-      throw new ContractValidationError(path, "missing or duplicate sandbox guarantees");
-    if (record.platform === "darwin") {
+export const sandboxRuntimeQualificationSchema: Schema<SandboxRuntimeQualification> =
+  withSandboxExecutionSupport({
+    parse(value, path = "$") {
+      const record = shape.parse(value, path);
+      const required = guarantees.slice(0, 9);
       if (
-        record.terminationMode !== "best_effort" ||
-        !record.guarantees.includes("best_effort_stop") ||
-        record.guarantees.includes("task_tree_termination") ||
-        record.guarantees.includes("worker_crash_cleanup") ||
-        record.limitations.length !== 1
+        new Set(record.guarantees).size !== record.guarantees.length ||
+        new Set(record.limitations).size !== record.limitations.length ||
+        required.some((guarantee) => !record.guarantees.includes(guarantee))
       )
-        throw new ContractValidationError(
-          path,
-          "Mac profile must preserve accepted cleanup uncertainty",
-        );
-    } else if (
-      record.terminationMode !== "verified_tree" ||
-      record.limitations.length !== 0 ||
-      !record.guarantees.includes("task_tree_termination") ||
-      !record.guarantees.includes("worker_crash_cleanup")
-    )
-      throw new ContractValidationError(path, "Linux profile requires verified tree cleanup");
-    return record;
-  },
-};
+        throw new ContractValidationError(path, "missing or duplicate sandbox guarantees");
+      if (record.platform === "darwin") {
+        if (
+          record.terminationMode !== "best_effort" ||
+          !record.guarantees.includes("best_effort_stop") ||
+          record.guarantees.includes("task_tree_termination") ||
+          record.guarantees.includes("worker_crash_cleanup") ||
+          record.limitations.length !== 1
+        )
+          throw new ContractValidationError(
+            path,
+            "Mac profile must preserve accepted cleanup uncertainty",
+          );
+      } else if (
+        record.terminationMode !== "verified_tree" ||
+        record.limitations.length !== 0 ||
+        !record.guarantees.includes("task_tree_termination") ||
+        !record.guarantees.includes("worker_crash_cleanup")
+      )
+        throw new ContractValidationError(path, "Linux profile requires verified tree cleanup");
+      return record;
+    },
+  });

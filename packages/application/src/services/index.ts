@@ -41,11 +41,13 @@ export * from "./run-execution-input-service.js";
 export * from "./run-state-commit-coordinator.js";
 export * from "./runtime-continuation-service.js";
 export * from "./runtime-tool-authorization.js";
+export * from "./sandbox-action-grant.js";
 export {
   createSandboxExecutionPlan,
   createSandboxExecutionPlanCandidate,
 } from "./sandbox-execution-plan.js";
 export * from "./sandbox-execution-projection.js";
+export * from "./sandbox-execution-reconciliation.js";
 export {
   type SandboxJobLifecycleOptions,
   SandboxJobLifecycleService,

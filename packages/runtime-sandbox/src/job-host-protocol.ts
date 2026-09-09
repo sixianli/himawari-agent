@@ -123,6 +123,7 @@ export function quoteJobArgument(argument: string): string {
 }
 
 export interface JobHostResult {
+  readonly supervision?: JobHostSupervision | null;
   readonly jobId: string;
   readonly attemptId: string;
   readonly reason:
@@ -142,4 +143,25 @@ export interface JobHostResult {
   readonly srtReset: boolean;
   /** Process/group exit is not evidence that detached descendants are gone. */
   readonly taskTreeCleanup: "not_started" | "unknown";
+}
+
+/** Authenticated only while attached to the original owned fork/IPC channel.
+ * This is not a kernel task-tree identity and cannot be reconstructed from a PID. */
+export interface JobHostSupervision {
+  readonly protocolVersion: "job-host.v2";
+  readonly sessionId: string;
+  readonly bootId: string;
+  readonly processId: number;
+  readonly processIdentityRef: string;
+  readonly processStartedAt: string;
+  readonly sequence: number;
+  readonly observedAt: string;
+  readonly validUntil: string;
+  readonly state: "alive" | "lost" | "exited";
+  readonly task: {
+    readonly processId: number;
+    readonly processIdentityRef: string;
+    readonly startedAt: string;
+  } | null;
+  readonly taskTreeGuarantee: "unverified";
 }

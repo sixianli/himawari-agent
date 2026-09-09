@@ -2,15 +2,23 @@ import { createHash } from "node:crypto";
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { release } from "node:os";
 import path from "node:path";
+import type { SandboxWorkspaceClaim } from "@himawari-agent/application";
 import {
+  assertSandboxExecutionSupport,
   type SandboxExecutionPlan,
   type SandboxExecutionPlanCandidate,
+  type SandboxExecutionPlanCandidateV2,
+  type SandboxExecutionPlanV2,
   type SandboxHostBinding,
   type SandboxRuntimeQualification,
+  type SandboxScope,
   sandboxExecutionPlanCandidateSchema,
+  sandboxExecutionPlanCandidateV2Schema,
   sandboxExecutionPlanSchema,
+  sandboxExecutionPlanV2Schema,
   sandboxHostBindingSchema,
   sandboxRuntimeQualificationSchema,
+  sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import { digestRegularFile } from "./artifact-verifier.js";
 
@@ -76,16 +84,36 @@ export async function verifySandboxHost(input: {
   readonly binding: SandboxHostBinding;
   readonly qualification: SandboxRuntimeQualification;
   readonly hostId: string;
-  readonly plan?: SandboxExecutionPlanCandidate | SandboxExecutionPlan;
+  readonly plan?:
+    | SandboxExecutionPlanCandidate
+    | SandboxExecutionPlan
+    | SandboxExecutionPlanCandidateV2
+    | SandboxExecutionPlanV2;
 }): Promise<void> {
   const binding = sandboxHostBindingSchema.parse(input.binding);
   const qualification = sandboxRuntimeQualificationSchema.parse(input.qualification);
   const plan =
     input.plan === undefined
       ? undefined
-      : "semanticFingerprint" in input.plan
-        ? sandboxExecutionPlanSchema.parse(input.plan)
-        : sandboxExecutionPlanCandidateSchema.parse(input.plan);
+      : input.plan.schemaVersion === "sandbox-execution.v2"
+        ? "semanticFingerprint" in input.plan
+          ? sandboxExecutionPlanV2Schema.parse(input.plan)
+          : sandboxExecutionPlanCandidateV2Schema.parse(input.plan)
+        : "semanticFingerprint" in input.plan
+          ? sandboxExecutionPlanSchema.parse(input.plan)
+          : sandboxExecutionPlanCandidateSchema.parse(input.plan);
+  if (plan) {
+    const legacy = [{ schemaVersion: "sandbox-execution.v1", mode: "foreground" }] as const;
+    const declared = (value: typeof binding.supportedExecutions) =>
+      value ?? (plan.schemaVersion === "sandbox-execution.v1" ? legacy : undefined);
+    assertSandboxExecutionSupport(
+      {
+        schemaVersion: plan.schemaVersion,
+        mode: plan.schemaVersion === "sandbox-execution.v2" ? plan.mode : "foreground",
+      },
+      [declared(binding.supportedExecutions), declared(qualification.supportedExecutions)],
+    );
+  }
   if (
     binding.hostId !== input.hostId ||
     qualification.hostId !== input.hostId ||
@@ -134,4 +162,63 @@ export async function verifySandboxHost(input: {
     (await digestSandboxRuntime(binding.runtimeRoot)) !== binding.runtimeDigest
   )
     throw new Error("SANDBOX_HOST_ARTIFACT_CHANGED");
+}
+
+/** Current host directory identities for R2 occupancy. Scope must already have
+ * passed the existing directory/Grant/parent checks; inventory never grants access. */
+export async function resolveSandboxWorkspaceClaim(input: {
+  readonly binding: SandboxHostBinding;
+  readonly scope: SandboxScope;
+}): Promise<SandboxWorkspaceClaim> {
+  const binding = sandboxHostBindingSchema.parse(input.binding);
+  const scope = sandboxScopeSchema.parse(input.scope);
+  const root = binding.roots.find(
+    (item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId,
+  );
+  if (
+    !root ||
+    scope.hostId !== binding.hostId ||
+    scope.profileRef !== binding.profileRef ||
+    scope.directoryGrant.operations.length === 0
+  )
+    throw new Error("SANDBOX_HOST_ROOT_CHANGED");
+  const before = await checkedPath(root.canonicalPath, true);
+  if (String(before.dev) !== root.device || String(before.ino) !== root.inode)
+    throw new Error("SANDBOX_HOST_ROOT_CHANGED");
+  const paths: string[] = [];
+  for (let current = root.canonicalPath; ; current = path.dirname(current)) {
+    paths.unshift(current);
+    if (path.dirname(current) === current) break;
+  }
+  const metadata = await Promise.all(
+    paths.map(async (filename) => {
+      const info = await lstat(filename, { bigint: true });
+      if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("SANDBOX_HOST_PATH_UNSAFE");
+      return info;
+    }),
+  );
+  const after = await checkedPath(root.canonicalPath, true);
+  if (before.dev !== after.dev || before.ino !== after.ino)
+    throw new Error("SANDBOX_HOST_ROOT_CHANGED");
+  for (let index = 0; index < paths.length; index++) {
+    const filename = paths[index];
+    const prior = metadata[index];
+    if (!filename || !prior) throw new Error("SANDBOX_HOST_ROOT_CHANGED");
+    const current = await lstat(filename, { bigint: true });
+    if (current.dev !== prior.dev || current.ino !== prior.ino || !current.isDirectory())
+      throw new Error("SANDBOX_HOST_ROOT_CHANGED");
+  }
+  return Object.freeze({
+    ref: `workspace:${createHash("sha256")
+      .update(JSON.stringify([binding.hostId, scope.directoryGrant.ref, root.canonicalRootId]))
+      .digest("hex")}`,
+    hostId: binding.hostId,
+    canonicalRootId: root.canonicalRootId,
+    access: scope.directoryGrant.operations.every((operation) => operation === "read")
+      ? "read"
+      : "write",
+    lineage: Object.freeze(
+      metadata.map((info) => Object.freeze({ device: String(info.dev), inode: String(info.ino) })),
+    ),
+  });
 }

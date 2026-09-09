@@ -88,6 +88,7 @@ export class TaskResourceAccumulator {
   readonly #root: number;
   readonly #known = new Map<number, string>();
   readonly #cpu = new Map<string, number>();
+  #escaped = false;
   #samples = 0;
   #peak = 0;
   constructor(root: number) {
@@ -122,6 +123,7 @@ export class TaskResourceAccumulator {
     let memory = 0;
     for (const process of snapshot) {
       if (!members.has(process.pid)) continue;
+      if (process.group !== this.#root) this.#escaped = true;
       this.#known.set(process.pid, process.birth);
       const key = `${process.pid}:${process.birth}`;
       this.#cpu.set(key, Math.max(this.#cpu.get(key) ?? 0, process.cpuTimeMs));
@@ -132,6 +134,9 @@ export class TaskResourceAccumulator {
     this.#peak = Math.max(this.#peak, memory);
     this.#samples++;
     return this.current();
+  }
+  hasEscapedDescendants(): boolean {
+    return this.#escaped;
   }
   current(): ResourceObservation {
     const cpu = [...this.#cpu.values()].reduce((sum, value) => sum + value, 0);
@@ -155,6 +160,11 @@ export function observeTaskResources(
       const snapshot = await readProcessSnapshot();
       if (stopped) return;
       const usage = accumulator.add(snapshot);
+      if (process.platform !== "linux" && accumulator.hasEscapedDescendants()) {
+        stopped = true;
+        stopTask("host_failure");
+        return;
+      }
       if (
         usage.observedCpuTimeMs > limits.maxCpuTimeMs ||
         usage.peakObservedMemoryBytes > limits.maxMemoryBytes

@@ -7,7 +7,12 @@ import { digestSandboxRuntime } from "@himawari-agent/platform-node";
 
 /** Controlled test qualification only. Live file identities/digests are real;
  * this fixture does not issue an installation or production qualification. */
-export async function macSandboxDeployment(root: string, plan: SandboxExecutionPlan, now: string) {
+export async function macSandboxDeployment(
+  root: string,
+  plan: SandboxExecutionPlan,
+  now: string,
+  v2 = false,
+) {
   const base = await realpath(root);
   const workspace = path.join(base, "live-workspace");
   const runtimeRoot = path.join(base, "live-runtime");
@@ -59,7 +64,26 @@ printf '{"probe":"passed"}'
     .digest("hex")}`;
   const artifactDigest = `sha256:${await fileHash(runner)}`;
   const metadata = await stat(workspace);
+  const v2Declaration = v2
+    ? {
+        supportedExecutions: [
+          { schemaVersion: "sandbox-execution.v2" as const, mode: "foreground" as const },
+        ],
+        operationBindings: [
+          {
+            operation: plan.operation,
+            mode: "foreground" as const,
+            contract: { ref: "fixed-read", version: "1", kind: "fixed_read" as const },
+            backendRef: "srt",
+            scopeSource: "file_workflow" as const,
+            directoryOperations: ["read" as const],
+            network: "disabled" as const,
+          },
+        ],
+      }
+    : {};
   const binding = {
+    ...v2Declaration,
     schemaVersion: "sandbox-host-binding.v1" as const,
     capabilityRef: plan.capabilityRef,
     capabilityVersion: plan.capabilityVersion,
@@ -87,6 +111,9 @@ printf '{"probe":"passed"}'
     maximumResourceCeiling: plan.resourceCeiling,
   };
   const sandbox = {
+    ...(v2Declaration.supportedExecutions
+      ? { supportedExecutions: v2Declaration.supportedExecutions }
+      : {}),
     schemaVersion: "sandbox-runtime-qualification.v1",
     qualificationRef: plan.binding.qualificationRef,
     hostId: binding.hostId,

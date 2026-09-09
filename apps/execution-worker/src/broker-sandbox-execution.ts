@@ -5,6 +5,7 @@ import type {
   SandboxHostSession,
 } from "@himawari-agent/application";
 import { SandboxJobLifecycleService } from "@himawari-agent/application";
+import type { ExecutionV2Request } from "@himawari-agent/execution-contracts";
 import type { ProductionPayloadBrokerClient } from "./production-payload-broker-client.js";
 import { ProductionSandboxExecution } from "./production-sandbox-execution.js";
 
@@ -26,20 +27,7 @@ export function createBrokerSandboxExecution(options: {
       const identity = request.payload.sandboxJob;
       if (!identity || !request.scope.ownerId || !request.scope.agentId || !request.scope.runId)
         throw new Error("SANDBOX_JOB_REQUIRED");
-      const invocation: CapabilityInvocationRequest = {
-        invocationId: request.messageId,
-        ownerId: request.scope.ownerId as CapabilityInvocationRequest["ownerId"],
-        agentId: request.scope.agentId as CapabilityInvocationRequest["agentId"],
-        runId: request.scope.runId as CapabilityInvocationRequest["runId"],
-        capabilityRef: request.payload.capabilityId,
-        capabilityHandleRef: request.payload.capabilityHandleRef,
-        operation: request.payload.operation,
-        inputRef: request.payload.inputRef,
-        delegatedContextRefs: request.payload.delegatedContextRefs,
-        secretHandleRefs: request.payload.secretRefs.map((secret) => secret.secretRef),
-        dataClassification: request.dataClassification,
-        resourceCeiling: request.payload.resourceCeiling,
-      };
+      const invocation = sandboxInvocationFromRequest(request);
       const { record } = await options.payloads.readSandboxJob(invocation, identity);
       const lifecycle = new SandboxJobLifecycleService({
         journal: {
@@ -55,4 +43,25 @@ export function createBrokerSandboxExecution(options: {
       return { plan: record.plan, lifecycle };
     },
   });
+}
+
+export function sandboxInvocationFromRequest(
+  request: Extract<ExecutionV2Request, { type: "work.execute" }>,
+): CapabilityInvocationRequest {
+  if (!request.scope.ownerId || !request.scope.agentId || !request.scope.runId)
+    throw new Error("SANDBOX_INVOCATION_SCOPE_REQUIRED");
+  return {
+    invocationId: request.messageId,
+    ownerId: request.scope.ownerId as CapabilityInvocationRequest["ownerId"],
+    agentId: request.scope.agentId as CapabilityInvocationRequest["agentId"],
+    runId: request.scope.runId as CapabilityInvocationRequest["runId"],
+    capabilityRef: request.payload.capabilityId,
+    capabilityHandleRef: request.payload.capabilityHandleRef,
+    operation: request.payload.operation,
+    inputRef: request.payload.inputRef,
+    delegatedContextRefs: request.payload.delegatedContextRefs,
+    secretHandleRefs: request.payload.secretRefs.map((secret) => secret.secretRef),
+    dataClassification: request.dataClassification,
+    resourceCeiling: request.payload.resourceCeiling,
+  };
 }

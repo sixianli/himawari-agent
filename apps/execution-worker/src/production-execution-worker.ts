@@ -19,6 +19,7 @@ import {
   type SandboxWorkerResult,
   sandboxExternalActionId,
 } from "./production-sandbox-execution.js";
+import type { ProductionSandboxExecutionV2 } from "./production-sandbox-execution-v2.js";
 
 export const PRODUCTION_WORKER_ERROR_CODES = Object.freeze({
   SANDBOX_SUPERVISOR_UNAVAILABLE: "SANDBOX_SUPERVISOR_UNAVAILABLE",
@@ -59,6 +60,10 @@ export interface RegisteredWorkerAdapter {
 export interface ProductionExecutionWorkerOptions {
   readonly service: ExecutionWorkerService;
   readonly sandbox?: ProductionSandboxExecution;
+  readonly sandboxV2?: Pick<
+    ProductionSandboxExecutionV2,
+    "execute" | "handles" | "cancel" | "reconcile" | "shutdown"
+  >;
   readonly workerInstanceId: string;
   readonly workerBootId: string;
   readonly bootTokenRef: string;
@@ -190,6 +195,19 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     this.assertReadyAndAuthoritative(parsed);
     if (parsed.type === "work.events.replay") return null;
     if (parsed.type === "work.execute") {
+      if (parsed.payload.sandboxExecution) {
+        if (!this.options.sandboxV2)
+          throw new ProductionExecutionWorkerError(
+            PRODUCTION_WORKER_ERROR_CODES.SANDBOX_SUPERVISOR_UNAVAILABLE,
+          );
+        if (!withinCeiling(parsed.payload.resourceCeiling, this.options.maximumResourceCeiling))
+          throw new ProductionExecutionWorkerError(
+            PRODUCTION_WORKER_ERROR_CODES.RESOURCE_CEILING_EXCEEDED,
+          );
+        if (this.isReplay(parsed)) return null;
+        this.track(this.executeSandbox(parsed));
+        return null;
+      }
       if (parsed.payload.sandboxJob) {
         if (!this.options.sandbox)
           throw new ProductionExecutionWorkerError(
@@ -274,6 +292,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   async shutdown(): Promise<void> {
     this.ready = false;
     for (const { controller } of this.activeSubtasks.values()) controller.abort();
+    await this.options.sandboxV2?.shutdown();
     await this.options.sandbox?.shutdown();
     await this.waitForIdle();
     this.options.delegations?.clear();
@@ -298,6 +317,18 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
         workerInstanceId: this.options.workerInstanceId,
         workerBootId: this.options.workerBootId,
         selectedSchemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+        ...(this.options.sandbox || this.options.sandboxV2
+          ? {
+              supportedExecutions: [
+                ...(this.options.sandbox
+                  ? [{ schemaVersion: "sandbox-execution.v1", mode: "foreground" }]
+                  : []),
+                ...(this.options.sandboxV2
+                  ? [{ schemaVersion: "sandbox-execution.v2", mode: "foreground" }]
+                  : []),
+              ],
+            }
+          : {}),
         ready: this.ready && gate.ready,
         acceptedAt: this.options.now(),
       },
@@ -477,11 +508,14 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   }
 
   private async executeSandbox(request: ExecuteRequest): Promise<void> {
-    const identity = request.payload.sandboxJob;
+    const identity = request.payload.sandboxExecution?.identity ?? request.payload.sandboxJob;
     if (!identity) throw new Error("SANDBOX_JOB_REQUIRED");
     try {
-      if (!this.options.sandbox) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
-      const result = await this.options.sandbox.execute(request);
+      const sandbox = request.payload.sandboxExecution
+        ? this.options.sandboxV2
+        : this.options.sandbox;
+      if (!sandbox) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
+      const result = await sandbox.execute(request);
       this.appendSandboxResult(request, result);
     } catch {
       this.appendSandboxResult(request, {
@@ -607,6 +641,10 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
 
   private async cancel(request: CancelRequest): Promise<void> {
     try {
+      if (this.options.sandboxV2?.handles(request.payload.targetRequestId)) {
+        await this.options.sandboxV2.cancel(request);
+        return;
+      }
       if (this.options.sandbox?.handles(request.payload.targetRequestId)) {
         await this.options.sandbox.cancel(request);
         return;
@@ -994,6 +1032,11 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   private async reconcile(request: ReconcileRequest): Promise<void> {
     if (request.payload.externalActionId.startsWith("sandbox-job:")) {
       try {
+        if (this.options.sandboxV2?.handles(request.payload.targetRequestId)) {
+          this.appendSandboxResult(request, await this.options.sandboxV2.reconcile(request));
+          return;
+        }
+
         if (!this.options.sandbox) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
         this.appendSandboxResult(request, await this.options.sandbox.reconcile(request));
       } catch {

@@ -1,27 +1,32 @@
+import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { hostDirectoryGrantStateKey } from "@himawari-agent/application";
 import {
   type ExecutionV2Request,
+  type SandboxExecutionPlanV2,
+  sandboxExecutionPlanCandidateV2Schema,
+  sandboxExecutionReservationSchema,
+  sandboxScopeSchema,
   executionV2MessageSchema,
 } from "@himawari-agent/execution-contracts";
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
-import { PayloadUdsServer } from "@himawari-agent/platform-node";
-import assert from "node:assert/strict";
+import { PayloadUdsServer, resolveSandboxWorkspaceClaim } from "@himawari-agent/platform-node";
 import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.js";
 import {
-  OWNER_ID,
   AGENT_ID,
-  RUN_ID,
   LIVE_SANDBOX,
-  T1,
+  OWNER_ID,
+  openSandboxJournal,
+  operationsForDatabase,
+  RUN_ID,
   SERVICE_AUTHORITY,
   serviceRequest,
-  openSandboxJournal,
+  T1,
 } from "../fixtures/sqlite-capability-invocation-fixture.js";
 
-export async function qualifyProductionSandboxMac() {
+export async function qualifyProductionSandboxMac(v2 = false) {
   if (!LIVE_SANDBOX || process.platform !== "darwin")
     throw new Error("MAC_SANDBOX_PROBE_OPT_IN_REQUIRED");
   const { macSandboxDeployment } = await import("../fixtures/mac-sandbox-deployment.js");
@@ -50,8 +55,10 @@ export async function qualifyProductionSandboxMac() {
   try {
     const fixture = await openSandboxJournal();
     cleanup.push(() => fixture.close());
-    const host = await macSandboxDeployment(fixture.resource.stateRoot, fixture.plan, T1);
-    const scope = { ...fixture.scope, parentToolCallId: null };
+    const hostRoot = v2 ? await mkdtemp("/tmp/h-v2-") : fixture.resource.stateRoot;
+    if (v2) cleanup.push(() => rm(hostRoot, { recursive: true, force: true }));
+    const host = await macSandboxDeployment(hostRoot, fixture.plan, T1, v2);
+    const scope = sandboxScopeSchema.parse({ ...fixture.scope, parentToolCallId: null });
     const payload = await fixture.protector.protect({
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
@@ -82,7 +89,41 @@ export async function qualifyProductionSandboxMac() {
         JSON.stringify({ ...fixture.directoryGrant, displayPath: host.workspace }),
         T1,
       );
-    fixture.call("Prepare", { plan, observation: { ...fixture.prepared, policyDigest: null } });
+    let v2Plan: SandboxExecutionPlanV2 | undefined;
+    if (v2) {
+      const { sandboxV2Admission } = await import("../fixtures/sandbox-execution-v2-fixture.js");
+      const input = sandboxV2Admission(fixture);
+      const { semanticFingerprint: _fingerprint, ...candidate } = plan;
+      const next = sandboxExecutionPlanCandidateV2Schema.parse({
+        ...candidate,
+        schemaVersion: "sandbox-execution.v2",
+        mode: "foreground",
+        environmentId: "live-environment",
+        backendRef: "srt",
+        operationContract: { ref: "fixed-read", version: "1", kind: "fixed_read" },
+      });
+      const workspace = await resolveSandboxWorkspaceClaim({ binding: host.binding, scope });
+      const reservation = sandboxExecutionReservationSchema.parse({
+        schemaVersion: "sandbox-preparation.v1",
+        identity: next.identity,
+        environmentId: next.environmentId,
+        resourceRef: null,
+        mode: next.mode,
+        workspaceConflictRefs: [workspace.ref],
+        sequence: 1,
+        createdAt: T1,
+      });
+      const saved = operationsForDatabase(fixture.database).execute(
+        "capabilityInvocation.sandboxV2.reserve",
+        {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: { invocation: input.invocation, plan: next, reservation, workspaces: [workspace] },
+        },
+      ) as { admission: { plan: SandboxExecutionPlanV2 } };
+      v2Plan = saved.admission.plan;
+    } else
+      fixture.call("Prepare", { plan, observation: { ...fixture.prepared, policyDigest: null } });
     fixture.database.close();
     const repository = await SqliteProductStateRepository.open({
       stateRoot: fixture.resource.stateRoot,
@@ -115,6 +156,7 @@ export async function qualifyProductionSandboxMac() {
       agentId: AGENT_ID,
       deploymentId: SERVICE_AUTHORITY.product.deploymentId,
       capabilityDeployment: host.capabilityDeployment,
+      modelDescriptors: [],
     };
     const services = await createProductionSandboxServices({
       configuration,
@@ -132,6 +174,13 @@ export async function qualifyProductionSandboxMac() {
       },
       clock,
       ids,
+      ...(v2
+        ? {
+            workerSupport: () => [
+              { schemaVersion: "sandbox-execution.v2" as const, mode: "foreground" as const },
+            ],
+          }
+        : {}),
     });
     if (!services) throw new Error("sandbox composition absent");
     const protectTrace = async (ref: string, value: unknown, operationKey: string) =>
@@ -195,6 +244,7 @@ export async function qualifyProductionSandboxMac() {
       maximumPayloadBytes: 4096,
       allowedContentTypes: ["application/json", "application/octet-stream"],
       sandboxJobs: services.broker,
+      sandboxExecutions: services.brokerV2,
     });
     const server = new PayloadUdsServer({
       ...common,
@@ -213,7 +263,14 @@ export async function qualifyProductionSandboxMac() {
       nextId: () => `live-rpc:${++counter}`,
     });
     cleanup.push(async () => client.disconnect());
-    const worker = createProductionSandboxWorker({ configuration, peer, payloads: client, clock });
+    const { ProductionSandboxExecutionV2 } = await import(
+      "../../apps/execution-worker/src/production-sandbox-execution-v2.js"
+    );
+    const makeWorker = () =>
+      v2
+        ? new ProductionSandboxExecutionV2({ configuration, peer, payloads: client, clock })
+        : createProductionSandboxWorker({ configuration, peer, payloads: client, clock });
+    const worker = makeWorker();
     cleanup.push(() => worker.shutdown());
     await server.start();
     await client.connect();
@@ -221,16 +278,36 @@ export async function qualifyProductionSandboxMac() {
       ...serviceRequest(),
       messageId: plan.identity.invocationId,
       causationId: scope.parentRequestId,
-      payload: { ...serviceRequest().payload, sandboxJob: plan.identity },
+      payload: {
+        ...serviceRequest().payload,
+        ...(v2Plan
+          ? {
+              sandboxExecution: {
+                schemaVersion: "sandbox-execution.v2",
+                mode: v2Plan.mode,
+                environmentId: v2Plan.environmentId,
+                identity: v2Plan.identity,
+              },
+            }
+          : { sandboxJob: plan.identity }),
+      },
     }) as Extract<ExecutionV2Request, { type: "work.execute" }>;
     const result = await worker.execute(request);
     assert.equal(result.outcome, "result_unknown");
-    const record = await services.broker.journal.read(plan.identity);
-    assert.equal(record?.observation.state, "quarantined");
-    assert.ok((record?.observation.resources?.samples ?? 0) > 0);
-    const output = await repository
-      .payloadStore(OWNER_ID, AGENT_ID)
-      .get(record?.observation.outputRef ?? "missing");
+    const record = v2
+      ? await services.brokerV2.journal.read(plan.identity)
+      : await services.broker.journal.read(plan.identity);
+    const observation = record && "facts" in record ? record.facts.resource : record?.observation;
+    assert.ok(observation);
+    if ("supervision" in observation) assert.equal(observation.supervision, "lost");
+    else assert.equal(observation.state, "quarantined");
+    const outputRef =
+      record && "facts" in record && record.facts.result && "output" in record.facts.result
+        ? record.facts.result.output.ref
+        : record && "observation" in record
+          ? record.observation.outputRef
+          : null;
+    const output = await repository.payloadStore(OWNER_ID, AGENT_ID).get(outputRef ?? "missing");
     if (!output) throw new Error("live output absent");
     const bytes = await fixture.protector.unprotect({
       ownerId: OWNER_ID,
@@ -243,13 +320,13 @@ export async function qualifyProductionSandboxMac() {
       "run\n",
     );
     await worker.execute(request);
-    assert.deepEqual(await services.broker.journal.read(plan.identity), record);
-    const resumed = createProductionSandboxWorker({
-      configuration,
-      peer,
-      payloads: client,
-      clock,
-    });
+    assert.deepEqual(
+      v2
+        ? await services.brokerV2.journal.read(plan.identity)
+        : await services.broker.journal.read(plan.identity),
+      record,
+    );
+    const resumed = makeWorker();
     try {
       await resumed.execute(request);
     } finally {
@@ -261,6 +338,7 @@ export async function qualifyProductionSandboxMac() {
     );
     return {
       productionSandboxProbePassed: true,
+      schema: v2 ? "sandbox-execution.v2" : "sandbox-execution.v1",
       productionSuitable: false,
       networkDenial: "blocked-by-allowlist",
       cleanup: "unknown",

@@ -2,8 +2,11 @@ import {
   EXECUTION_V2_SCHEMA_VERSION,
   type ExecutionV2Request,
   executionV2MessageSchema,
+  type SandboxExecutionBinding,
   type SandboxJobIdentity,
   sandboxExecutionPlanCandidateSchema,
+  sandboxExecutionPlanCandidateV2Schema,
+  sandboxExecutionReservationSchema,
   sandboxJobReceiptSchema,
 } from "@himawari-agent/execution-contracts";
 import type {
@@ -15,6 +18,7 @@ import type {
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ExecutionTransportPort } from "../ports/coordination.js";
 import type { SandboxJobJournalPort } from "../ports/sandbox-execution.js";
+import type { SandboxExecutionPreparationPort } from "../ports/sandbox-execution-journal.js";
 import type { SandboxScopeService } from "./sandbox-scope-service.js";
 
 export type WorkerExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
@@ -88,11 +92,15 @@ export interface WorkerDelegationAdmissionServiceOptions {
   readonly sandbox?: {
     readonly appliesTo?: (invocation: ConsumeCapabilityInvocationInput) => boolean;
     readonly journal: Pick<SandboxJobJournalPort, "admit">;
+    readonly preparations?: Pick<SandboxExecutionPreparationPort, "reserve">;
     readonly scopes: Pick<SandboxScopeService, "read">;
     readonly prepare: (
       invocation: ConsumeCapabilityInvocationInput,
       request: WorkerExecuteRequest,
-    ) => Promise<Omit<Parameters<SandboxJobJournalPort["admit"]>[0], "invocation">>;
+    ) => Promise<
+      | Omit<Parameters<SandboxJobJournalPort["admit"]>[0], "invocation">
+      | Omit<Parameters<SandboxExecutionPreparationPort["reserve"]>[0], "invocation">
+    >;
   };
   /** Trusted current Agent/Worker attempt and product lease identity. */
   readonly invocationAuthority: () => CapabilityInvocationAuthority;
@@ -135,7 +143,7 @@ export class WorkerDelegationAdmissionService {
     if (parsed.kind !== "request" || parsed.type !== "work.execute") {
       throw new TypeError("Worker delegation accepts work.execute requests only");
     }
-    if (parsed.payload.sandboxJob)
+    if (parsed.payload.sandboxJob || parsed.payload.sandboxExecution)
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
         "Sandbox job identity is assigned by trusted admission",
@@ -152,7 +160,12 @@ export class WorkerDelegationAdmissionService {
     return {
       disposition: "consumed",
       receipt: consumed.receipt,
-      projection: this.#project(parsed, consumed.receipt, consumed.sandboxJob),
+      projection: this.#project(
+        parsed,
+        consumed.receipt,
+        consumed.sandboxJob,
+        consumed.sandboxExecution,
+      ),
     };
   }
 
@@ -160,6 +173,7 @@ export class WorkerDelegationAdmissionService {
     request: WorkerExecuteRequest,
     receipt: FrozenCapabilityInvocationReceipt,
     sandboxJob?: SandboxJobIdentity,
+    sandboxExecution?: SandboxExecutionBinding,
   ): WorkerDelegationProjection {
     const delegate = executionV2MessageSchema.parse({
       schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
@@ -222,6 +236,7 @@ export class WorkerDelegationAdmissionService {
       idempotencyKey: receipt.idempotencyKey,
       payload: {
         ...(sandboxJob ? { sandboxJob } : {}),
+        ...(sandboxExecution ? { sandboxExecution } : {}),
         capabilityId: receipt.capabilityRef,
         capabilityVersion: receipt.capabilityVersion,
         operation: receipt.operation,
@@ -268,10 +283,45 @@ export class WorkerDelegationAdmissionService {
     };
     const sandbox = this.#options.sandbox;
     if (!sandbox || sandbox.appliesTo?.(input) === false) {
-      return { ...(await this.#options.invocations.consume(input)), sandboxJob: undefined };
+      return {
+        ...(await this.#options.invocations.consume(input)),
+        sandboxJob: undefined,
+        sandboxExecution: undefined,
+      };
     }
     // Keep the request used for admission separate from the async resolver's copy.
     const prepared = await sandbox.prepare(structuredClone(input), structuredClone(request));
+    if ("reservation" in prepared) {
+      if (!sandbox.preparations)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "Sandbox v2 admission unavailable",
+        );
+      const plan = sandboxExecutionPlanCandidateV2Schema.parse(prepared.plan);
+      const reservation = sandboxExecutionReservationSchema.parse(prepared.reservation);
+      await sandbox.scopes.read(plan, request.causationId);
+      const admitted = await sandbox.preparations.reserve({
+        plan,
+        reservation,
+        workspaces: prepared.workspaces,
+        invocation: { ...input, consumedAt: this.#options.now() },
+      });
+      const saved =
+        admitted.admission.phase === "reserved"
+          ? admitted.admission.plan
+          : admitted.admission.record.plan;
+      return {
+        replayed: !admitted.applied,
+        receipt: admitted.receipt,
+        sandboxJob: undefined,
+        sandboxExecution: {
+          schemaVersion: "sandbox-execution.v2" as const,
+          mode: saved.mode,
+          environmentId: saved.environmentId,
+          identity: saved.identity,
+        },
+      };
+    }
     const plan = sandboxExecutionPlanCandidateSchema.parse(prepared.plan);
     const observation = sandboxJobReceiptSchema.parse(prepared.observation);
     await sandbox.scopes.read(plan, request.causationId);
@@ -284,6 +334,7 @@ export class WorkerDelegationAdmissionService {
       replayed: !admitted.applied,
       receipt: admitted.receipt,
       sandboxJob: admitted.record.plan.identity,
+      sandboxExecution: undefined,
     };
   }
 }

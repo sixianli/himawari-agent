@@ -36,8 +36,9 @@ import type {
   RunPayloadArtifactAuthority,
   RunPayloadArtifactPort,
   RunReconciliationPort,
-  SandboxJobJournalPort,
   SandboxExecutionJournalPort,
+  SandboxExecutionPreparationPort,
+  SandboxJobJournalPort,
   SchedulerPort,
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
@@ -391,6 +392,13 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     agentId: AgentId,
   ): CapabilityInvocationReceiptPort {
     return this.durable.capabilityInvocationReceiptPort(ownerId, agentId);
+  }
+
+  sandboxExecutionPreparations(
+    ownerId: OwnerId,
+    agentId: AgentId,
+  ): SandboxExecutionPreparationPort {
+    return this.durable.sandboxExecutionPreparations(ownerId, agentId);
   }
 
   sandboxExecutionJournal(ownerId: OwnerId, agentId: AgentId): SandboxExecutionJournalPort {

@@ -2,8 +2,10 @@ import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
   type ResolvedSandboxScope,
   type SandboxExecutionPlanCandidate,
+  type SandboxExecutionPlanCandidateV2,
   type SandboxScope,
   sandboxExecutionPlanCandidateSchema,
+  sandboxExecutionPlanCandidateV2Schema,
   sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import type { AuthorizationStorePort } from "../ports/authorization.js";
@@ -24,7 +26,7 @@ export interface SandboxScopeServiceOptions {
   };
   readonly verifyParent?: (
     scope: SandboxScope,
-    plan: SandboxExecutionPlanCandidate,
+    plan: SandboxExecutionPlanCandidate | SandboxExecutionPlanCandidateV2,
   ) => Promise<void>;
   readonly now: () => string;
   /** Trusted SHA-256 over exact bytes, returning lowercase hex. */
@@ -41,18 +43,21 @@ export class SandboxScopeService {
   }
 
   async read(
-    input: SandboxExecutionPlanCandidate,
+    input: SandboxExecutionPlanCandidate | SandboxExecutionPlanCandidateV2,
     parentRequestId: string | null,
   ): Promise<SandboxScope> {
     return (await this.resolve(input, parentRequestId)).scope;
   }
 
   async resolve(
-    input: SandboxExecutionPlanCandidate,
+    input: SandboxExecutionPlanCandidate | SandboxExecutionPlanCandidateV2,
     parentRequestId: string | null,
   ): Promise<ResolvedSandboxScope> {
     // Parse before awaiting, retaining an immutable snapshot of caller input.
-    const plan = sandboxExecutionPlanCandidateSchema.parse(input);
+    const plan =
+      input.schemaVersion === "sandbox-execution.v2"
+        ? sandboxExecutionPlanCandidateV2Schema.parse(input)
+        : sandboxExecutionPlanCandidateSchema.parse(input);
     try {
       const payload = await this.#options.payloads.get(plan.binding.scopeRef);
       if (

@@ -8,6 +8,7 @@ import {
   isExactExternalVersion,
   isInternalDependencyAllowed,
   isNodeImportAllowed,
+  isSandboxImportAllowed,
   piDependencyOwner,
   srtDependencyOwner,
 } from "../../../scripts/boundary-policy.mjs";
@@ -110,4 +111,24 @@ describe("committed manifest and lock constraints", () => {
     expect(lockfile).not.toContain('"file:');
     expect(lockfile).not.toContain('"link:');
   });
+});
+
+it("limits Agent imports to risk-reducing sandbox control", async () => {
+  for (const specifier of [
+    "@himawari-agent/runtime-sandbox",
+    "@himawari-agent/runtime-sandbox/src/job-host.ts",
+  ])
+    expect(isSandboxImportAllowed("@himawari-agent/agent-service", specifier)).toBe(false);
+  expect(
+    isSandboxImportAllowed(
+      "@himawari-agent/agent-service",
+      "@himawari-agent/runtime-sandbox/control",
+    ),
+  ).toBe(true);
+  const control = await import("@himawari-agent/runtime-sandbox/control");
+  expect(Object.keys(control).sort()).toEqual([
+    "queryJobHostControl",
+    "readJobHostFinalEvidence",
+    "readLinuxNamespaceState",
+  ]);
 });

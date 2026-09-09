@@ -1,11 +1,10 @@
-import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
   type SandboxExecutionPlanCandidate,
   type SandboxScope,
   sandboxNetworkDomainSchema,
 } from "@himawari-agent/execution-contracts";
-import type { AuthorizationStorePort, GovernedActionIntent } from "../ports/authorization.js";
-import { actionIntentFingerprint } from "./permission-service.js";
+import type { AuthorizationStorePort } from "../ports/authorization.js";
+import { resolveSandboxActionGrant } from "./sandbox-action-grant.js";
 
 /** Network scope is a projection of the same action Grant, not another grant
  * consumption. The original admission/start transaction still owns live use.
@@ -33,48 +32,7 @@ export async function resolveSandboxNetworkAuthorization(input: {
       scope.authorizationRef !== plan.authorizationRef
     )
       throw new Error("different grant");
-    const grants = await input.authorizations.listGrants(
-      createOwnerId(plan.identity.ownerId),
-      createAgentId(plan.identity.agentId),
-    );
-    const grant = grants.find((entry) => entry.id === plan.authorizationRef);
-    if (!grant) throw new Error("missing grant");
-    const approval = await input.authorizations.getApproval(grant.sourceApprovalRequestId);
-    const now = input.now();
-    const intent = approval?.intentSnapshot as GovernedActionIntent | undefined;
-    if (
-      !approval ||
-      !intent ||
-      intent.contractVersion !== "authorization.v2" ||
-      approval.status !== "approved" ||
-      approval.grantId !== grant.id ||
-      approval.ownerId !== plan.identity.ownerId ||
-      approval.agentId !== plan.identity.agentId ||
-      approval.runId !== plan.identity.runId ||
-      grant.ownerId !== plan.identity.ownerId ||
-      grant.agentId !== plan.identity.agentId ||
-      grant.revokedAt !== null ||
-      !Number.isFinite(Date.parse(now)) ||
-      new Date(now).toISOString() !== now ||
-      now < grant.validFrom ||
-      now >= grant.expiresAt ||
-      plan.effectiveDeadlineAt > grant.expiresAt ||
-      intent.ownerId !== plan.identity.ownerId ||
-      intent.agentId !== plan.identity.agentId ||
-      intent.runId !== plan.identity.runId ||
-      intent.threadId !== plan.identity.threadId ||
-      intent.capabilityRef !== plan.capabilityRef ||
-      intent.capabilityVersion !== plan.capabilityVersion ||
-      intent.operation !== plan.operation ||
-      grant.scope.capabilityRef !== plan.capabilityRef ||
-      !grant.scope.operations.includes(plan.operation) ||
-      now >= intent.expiresAt ||
-      plan.effectiveDeadlineAt > intent.expiresAt ||
-      approval.semanticSnapshotHash !== actionIntentFingerprint(intent) ||
-      (grant.intentFingerprint !== null &&
-        grant.intentFingerprint !== approval.semanticSnapshotHash)
-    )
-      throw new Error("grant or approval changed");
+    const { intent } = await resolveSandboxActionGrant(input);
     const domains = intent.targets
       .filter((target) => target.type === "network-domain")
       .map((target) => sandboxNetworkDomainSchema.parse(target.ref));

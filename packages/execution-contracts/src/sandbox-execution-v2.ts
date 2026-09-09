@@ -513,3 +513,81 @@ export const sandboxResourceOutputPageSchema = object({
 
 export type SandboxResourceOutputQuery = InferSchema<typeof sandboxResourceOutputQuerySchema>;
 export type SandboxResourceOutputPage = InferSchema<typeof sandboxResourceOutputPageSchema>;
+
+/** Resource-specific infrastructure credential, carried only by authenticated
+ * private Payload IPC and stored as a restricted Run artifact. Never a tool argument. */
+const controlDirectory: Schema<string> = {
+  parse(value, path = "$") {
+    if (
+      typeof value !== "string" ||
+      !value.startsWith("/") ||
+      value.length > 4096 ||
+      value.endsWith("/") ||
+      value.includes("//") ||
+      [...value].some(
+        (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+      ) ||
+      value.split("/").some((part) => part === "." || part === "..")
+    )
+      throw new ContractValidationError(path, "expected a normalized absolute control directory");
+    return value;
+  },
+};
+export const sandboxJobControlBindingSchema = object({
+  directory: controlDirectory,
+  token: digest,
+  sessionId: machineString,
+  jobId: machineString,
+  attemptId: machineString,
+});
+export type SandboxJobControlBinding = InferSchema<typeof sandboxJobControlBindingSchema>;
+
+/** Authenticated Worker requests carry facts and locators, never database authority. */
+export const sandboxExecutionBrokerCommandSchema = variant("kind", {
+  register_control: object({
+    kind: literal("register_control"),
+    expectedSequence: integer(1, 1),
+    control: sandboxJobControlBindingSchema,
+  }),
+  observe_control: object({ kind: literal("observe_control"), expectedSequence: integer(1) }),
+  bind: object({
+    kind: literal("bind"),
+    expectedSequence: integer(1, 1),
+    facts: sandboxExecutionFactsSchema,
+  }),
+  read: object({ kind: literal("read") }),
+  resolve: object({ kind: literal("resolve") }),
+  start: object({ kind: literal("start"), expectedSequence: integer(1), policyDigest: digest }),
+  append: object({
+    kind: literal("append"),
+    expectedSequence: integer(1),
+    expectedOperationRevision: integer(0),
+    facts: sandboxExecutionFactsSchema,
+  }),
+  operation: object({
+    kind: literal("operation"),
+    expectedSequence: integer(1),
+    expectedOperationRevision: integer(0),
+    facts: sandboxExecutionFactsSchema,
+  }),
+  inspect: object({
+    kind: literal("inspect"),
+    resourceRef: machineString,
+    expectedSequence: integer(1),
+  }),
+  output: object({
+    kind: literal("output"),
+    resourceRef: machineString,
+    cursor: nullable(machineString),
+    limit: integer(1, 1_048_576),
+    expectedSequence: integer(1),
+  }),
+  stop: object({
+    kind: literal("stop"),
+    resourceRef: nullable(machineString),
+    expectedSequence: integer(1),
+    reason: enumeration(["owner_cancelled", "deadline_exceeded", "supervision_lost"]),
+  }),
+  reconcile: object({ kind: literal("reconcile"), expectedSequence: integer(1) }),
+});
+export type SandboxExecutionBrokerCommand = InferSchema<typeof sandboxExecutionBrokerCommandSchema>;

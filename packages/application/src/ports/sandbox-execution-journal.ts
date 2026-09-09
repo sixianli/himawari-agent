@@ -2,6 +2,7 @@ import type {
   SandboxExecutionFacts,
   SandboxExecutionPlanCandidateV2,
   SandboxExecutionPlanV2,
+  SandboxExecutionReservation,
   SandboxJobIdentity,
 } from "@himawari-agent/execution-contracts";
 import type { SandboxExecutionProjectionContext } from "../services/sandbox-execution-projection.js";
@@ -96,4 +97,43 @@ export interface SandboxContinuationIntentInput {
   readonly authority: CapabilityInvocationAuthority;
   readonly now: string;
   readonly context: SandboxExecutionProjectionContext;
+}
+
+/** R3 reservations have no runtime binding until the one successful start CAS. */
+export type SandboxExecutionAdmissionRecord =
+  | {
+      readonly phase: "reserved";
+      readonly plan: SandboxExecutionPlanV2;
+      readonly reservation: SandboxExecutionReservation;
+      readonly workspaces: readonly SandboxWorkspaceClaim[];
+    }
+  | { readonly phase: "bound"; readonly record: SandboxExecutionRecord };
+export interface SandboxExecutionPreparationPort {
+  reserve(input: {
+    readonly invocation: ConsumeCapabilityInvocationInput;
+    readonly plan: SandboxExecutionPlanCandidateV2;
+    readonly reservation: SandboxExecutionReservation;
+    readonly workspaces: readonly SandboxWorkspaceClaim[];
+  }): Promise<{
+    readonly admission: SandboxExecutionAdmissionRecord;
+    readonly applied: boolean;
+    readonly receipt: FrozenCapabilityInvocationReceipt;
+  }>;
+  readAdmission(identity: SandboxJobIdentity): Promise<SandboxExecutionAdmissionRecord | undefined>;
+  readAdmissionByInvocation(input: {
+    readonly runId: string;
+    readonly invocationId: string;
+  }): Promise<SandboxExecutionAdmissionRecord | undefined>;
+  listAdmissions(input: {
+    readonly afterJobId: string | null;
+    readonly limit: number;
+  }): Promise<readonly SandboxExecutionAdmissionRecord[]>;
+  /** Actual policy, boot and private directory binding; no result or controlled claim. */
+  bindAndStart(input: {
+    readonly identity: SandboxJobIdentity;
+    readonly expectedSequence: 1;
+    readonly facts: SandboxExecutionFacts;
+    readonly authority: CapabilityInvocationAuthority;
+    readonly now: string;
+  }): Promise<SandboxExecutionMutation>;
 }

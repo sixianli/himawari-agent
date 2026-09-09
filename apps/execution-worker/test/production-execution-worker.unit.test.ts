@@ -146,6 +146,7 @@ async function workerFixture(
   options: {
     readonly unknownResult?: boolean;
     readonly sandbox?: ProductionSandboxExecution;
+    readonly sandboxV2?: ConstructorParameters<typeof ProductionExecutionWorker>[0]["sandboxV2"];
     readonly now?: () => string;
     readonly capability?: CapabilityPort;
     readonly hostOperations?: ConstructorParameters<
@@ -269,6 +270,7 @@ async function workerFixture(
         },
       ],
       ...(options.sandbox ? { sandbox: options.sandbox } : {}),
+      ...(options.sandboxV2 ? { sandboxV2: options.sandboxV2 } : {}),
       ...(options.hostOperations ? { hostOperations: options.hostOperations } : {}),
       ...(options.subtasks ? { subtasks: options.subtasks } : {}),
       now: options.now ?? (() => adapters.clock.now()),
@@ -341,6 +343,8 @@ describe("production execution Worker", () => {
     const { worker } = await workerFixture();
     await worker.request(handshake());
     const request = execute();
+    const { ownerId, agentId, runId } = request.scope;
+    if (!ownerId || !agentId || !runId) throw new Error("fixture scope missing");
     const job = {
       jobId: "job",
       attemptId: "attempt",
@@ -349,12 +353,26 @@ describe("production execution Worker", () => {
       threadId: "thread",
       toolCallId: "tool",
       invocationId: request.messageId,
-      ownerId: request.scope.ownerId!,
-      agentId: request.scope.agentId!,
-      runId: request.scope.runId!,
+      ownerId,
+      agentId,
+      runId,
     };
     await expect(
       worker.request({ ...request, payload: { ...request.payload, sandboxJob: job } }),
+    ).rejects.toMatchObject({ code: "SANDBOX_SUPERVISOR_UNAVAILABLE" });
+    await expect(
+      worker.request({
+        ...request,
+        payload: {
+          ...request.payload,
+          sandboxExecution: {
+            schemaVersion: "sandbox-execution.v2",
+            mode: "foreground",
+            environmentId: "environment",
+            identity: job,
+          },
+        },
+      }),
     ).rejects.toMatchObject({ code: "SANDBOX_SUPERVISOR_UNAVAILABLE" });
     await worker.waitForIdle();
     expect(await readEvents(worker)).toEqual([]);
@@ -1596,4 +1614,60 @@ describe("production execution Worker", () => {
     await expect(pendingRequest).rejects.toMatchObject({ code: "WORKER_NOT_READY" });
     expect(adapterCalls).toBe(callsBeforeShutdown);
   });
+});
+
+it("routes v2 only to its supervisor and advertises its explicit foreground support", async () => {
+  const adapter = {
+    execute: vi.fn(async () => ({
+      outcome: "result_unknown" as const,
+      outputRef: null,
+      errorCode: null,
+      externalActionId: "sandbox-job:test",
+    })),
+    handles: () => false,
+    cancel: vi.fn(),
+    reconcile: vi.fn(),
+    shutdown: vi.fn(),
+  };
+  const { worker } = await workerFixture({ sandboxV2: adapter });
+  const accepted = await worker.request(handshake());
+  expect(accepted).toMatchObject({
+    payload: {
+      supportedExecutions: [{ schemaVersion: "sandbox-execution.v2", mode: "foreground" }],
+    },
+  });
+  const base = execute();
+  const { ownerId, agentId, runId } = base.scope;
+  if (!ownerId || !agentId || !runId) throw new Error("fixture scope");
+  const request = {
+    ...base,
+    payload: {
+      ...base.payload,
+      sandboxExecution: {
+        schemaVersion: "sandbox-execution.v2" as const,
+        mode: "foreground" as const,
+        environmentId: "environment",
+        identity: {
+          ownerId,
+          agentId,
+          runId,
+          jobId: "job",
+          attemptId: "attempt",
+          invocationId: base.messageId,
+          receiptRef: "receipt",
+          hostId: "host",
+          threadId: null,
+          toolCallId: "tool",
+        },
+      },
+    },
+  };
+  await worker.request(request);
+  await worker.waitForIdle();
+  await worker.request(request);
+  await worker.waitForIdle();
+  expect(adapter.execute).toHaveBeenCalledTimes(1);
+  expect(await readEvents(worker)).toMatchObject([
+    { type: "work.result", payload: { outcome: "result_unknown" } },
+  ]);
 });
