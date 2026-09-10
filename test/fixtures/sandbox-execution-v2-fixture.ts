@@ -85,8 +85,9 @@ export function sandboxV2Admission(
             receiptRef: identity.receiptRef,
             invocationId: identity.invocationId,
             idempotencyKey: `idempotency${suffix}`,
+            authorizationRef: plan.authorizationRef,
           }
-        : {},
+        : { authorizationRef: plan.authorizationRef },
     ) as unknown as Admission["invocation"],
     plan,
     facts,

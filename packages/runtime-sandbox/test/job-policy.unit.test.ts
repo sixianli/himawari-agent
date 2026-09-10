@@ -50,10 +50,10 @@ it.each(["symlink", "permissions", "traversal"])(
   },
 );
 it("freezes scope before asynchronous directory preparation", async () => {
-  const domains = ["example.com"];
+  const domains = ["example.com:443"];
   const pending = prepareJobPolicy({ ...input, allowedDomains: domains });
   domains.push("other.example");
   expect(JSON.parse((await pending).compiled.policyJson).network.allowedDomains).toEqual([
-    "example.com",
+    "example.com:443",
   ]);
 });

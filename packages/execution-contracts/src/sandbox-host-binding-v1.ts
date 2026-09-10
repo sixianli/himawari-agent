@@ -54,13 +54,18 @@ const artifactDigest: Schema<string> = {
 };
 export const sandboxNetworkDomainSchema: Schema<string> = {
   parse(value, path = "$") {
+    const parts = typeof value === "string" ? value.split(":") : [];
+    const host = parts[0] ?? "";
+    const port = parts[1] ?? "";
     if (
       typeof value !== "string" ||
-      value.length > 253 ||
-      value !== value.toLowerCase() ||
-      !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(value)
+      parts.length !== 2 ||
+      host.length > 253 ||
+      !/^[1-9][0-9]{0,4}$/.test(port) ||
+      Number(port) > 65535 ||
+      !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(host)
     )
-      throw new ContractValidationError(path, "expected an exact DNS hostname");
+      throw new ContractValidationError(path, "expected an exact lowercase DNS hostname:port");
     return value;
   },
 };

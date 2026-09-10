@@ -1,0 +1,17 @@
+{
+  "runtime": "/data/himawari-r8-ucNhI6hn/runtime",
+  "platform": "linux",
+  "node": "v26.1.0",
+  "scenario": "worker-sigkill-with-setsid-descendant",
+  "linuxNamespace": {
+    "namespaceId": "pid:[4026533390]",
+    "initPid": 342735,
+    "initStartTicks": "527554192"
+  },
+  "namespaceState": "released",
+  "markerAbsent": true,
+  "srtReset": true,
+  "taskProcessExited": true,
+  "passed": true,
+  "productionSuitable": false
+}

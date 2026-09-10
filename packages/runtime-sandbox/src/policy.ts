@@ -136,13 +136,17 @@ export async function compileSandboxPolicy(
     throw new Error("SRT_POLICY_TOOLCHAIN_OVERLAP");
   }
   for (const domain of domains) {
-    // Initial scope accepts exact DNS hosts only; no URLs, wildcard, credentials or ports.
+    // This infrastructure package cannot import product contracts. Independently
+    // revalidate the primitive boundary before handing exact host:port rules to SRT.
+    const parts = typeof domain === "string" ? domain.split(":") : [];
+    const host = parts[0] ?? "";
+    const port = parts[1] ?? "";
     if (
-      typeof domain !== "string" ||
-      domain.length > 253 ||
-      !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(
-        domain,
-      )
+      parts.length !== 2 ||
+      host.length > 253 ||
+      !/^[1-9][0-9]{0,4}$/.test(port) ||
+      Number(port) > 65535 ||
+      !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(host)
     ) {
       throw new Error("SRT_POLICY_DOMAIN_INVALID");
     }

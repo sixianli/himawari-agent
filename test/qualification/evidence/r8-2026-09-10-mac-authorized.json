@@ -1,0 +1,197 @@
+{
+  "platform": "darwin",
+  "osRelease": "27.0.0",
+  "architecture": "arm64",
+  "node": "v22.22.3",
+  "srt": "0.0.75",
+  "runtime": "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime",
+  "runnerDigest": "da50694e9fc50423a4e738e88fdd5372cc2ad7479f431f0fee9809914f8da3aa",
+  "productionSuitable": false,
+  "evidence": [
+    {
+      "scenario": "plain-http",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 5,
+        "observedCpuTimeMs": 40,
+        "peakObservedMemoryBytes": 6897664
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "HTTP/1.1 301 Moved Permanently\r\ndate: Thu, 10 Sep 2026 00:49:55 GMT\r\ncontent-type: text/plain;charset=UTF-8\r\ncontent-length: 0\r\nlocation: https://registry.npmjs.org/is-number/7.0.0\r\nset-cookie: [redacted]\r\nset-cookie: [redacted]\r\nserver: cloudflare\r\ncf-ray: a38a6f835a66bf9f-NRT\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown"
+    },
+    {
+      "scenario": "download",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 3,
+        "observedCpuTimeMs": 40,
+        "peakObservedMemoryBytes": 8323072
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "",
+      "artifactSha256": "7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e",
+      "taskTreeCleanup": "unknown"
+    },
+    {
+      "scenario": "socks-download",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 3,
+        "observedCpuTimeMs": 30,
+        "peakObservedMemoryBytes": 8355840
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "",
+      "artifactSha256": "7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e",
+      "taskTreeCleanup": "unknown"
+    },
+    {
+      "scenario": "install",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 10,
+        "observedCpuTimeMs": 370,
+        "peakObservedMemoryBytes": 90423296
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 2,
+        "closed": true
+      },
+      "output": "\nadded 1 package in 988ms\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown"
+    },
+    {
+      "scenario": "redirect-denied",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 8,
+        "observedCpuTimeMs": 30,
+        "peakObservedMemoryBytes": 10715136
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "curl: (22) The requested URL returned error: 403\nHTTP/1.1 200 Connection Established\r\n\r\nHTTP/2 302 \r\ndate: Thu, 10 Sep 2026 00:49:59 GMT\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: 0\r\nlocation: https://example.com\r\nserver: gunicorn/19.9.0\r\naccess-control-allow-origin: *\r\naccess-control-allow-credentials: true\r\n\r\nHTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nX-Proxy-Error: blocked-by-allowlist\r\n\r\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown"
+    },
+    {
+      "scenario": "cpu",
+      "passed": true,
+      "reason": "resource_limit",
+      "exitCode": null,
+      "resources": {
+        "samples": 2,
+        "observedCpuTimeMs": 120,
+        "peakObservedMemoryBytes": 48398336
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "output": "",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown"
+    },
+    {
+      "scenario": "memory",
+      "passed": true,
+      "reason": "resource_limit",
+      "exitCode": null,
+      "resources": {
+        "samples": 2,
+        "observedCpuTimeMs": 60,
+        "peakObservedMemoryBytes": 126369792
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "output": "",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown"
+    },
+    {
+      "scenario": "cancel",
+      "passed": true,
+      "reason": "cancelled",
+      "exitCode": null,
+      "resources": {
+        "samples": 2,
+        "observedCpuTimeMs": 50,
+        "peakObservedMemoryBytes": 43974656
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "tunnel-established\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown"
+    },
+    {
+      "scenario": "proxy-variables-removed",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 1,
+        "observedCpuTimeMs": 0,
+        "peakObservedMemoryBytes": 2162688
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "output": "EPERM\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown"
+    }
+  ],
+  "passed": true,
+  "redaction": {
+    "removed": "response credential headers",
+    "originalSha256": "994b8ce4a5a471c0a96592a8890ab6d54f82328009720504c76659f4806efe9d"
+  }
+}

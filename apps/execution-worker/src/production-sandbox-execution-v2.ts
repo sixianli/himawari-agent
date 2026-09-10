@@ -492,7 +492,9 @@ export class ProductionSandboxExecutionV2 {
         const current = entry.record;
         if (!current || current.phase !== "bound") throw new Error("SANDBOX_BINDING_LOST");
         try {
-          if (plan.mode !== "foreground") await this.rpc(entry, { kind: "resolve" });
+          // Foreground network connections retain authority only while the same
+          // Grant remains valid, just like background tasks and services.
+          await this.rpc(entry, { kind: "resolve" });
           await flush(false);
           const observed = await this.rpc(entry, {
             kind: "observe_control",

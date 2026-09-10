@@ -1,0 +1,260 @@
+{
+  "platform": "linux",
+  "osRelease": "5.15.0-185-generic",
+  "architecture": "x64",
+  "node": "v26.1.0",
+  "srt": "0.0.75",
+  "runtime": "/data/himawari-r8-ucNhI6hn/runtime",
+  "runnerDigest": "dcc5a8e779ba28cb8b25b63fc1a528a7f3ba93252a6eaf2b8359dcb9b2a6de8a",
+  "productionSuitable": false,
+  "evidence": [
+    {
+      "scenario": "plain-http",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 2,
+        "observedCpuTimeMs": 0,
+        "peakObservedMemoryBytes": 23318528
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "HTTP/1.1 301 Moved Permanently\r\ndate: Thu, 10 Sep 2026 02:04:19 GMT\r\ncontent-type: text/plain;charset=UTF-8\r\ncontent-length: 0\r\nlocation: https://registry.npmjs.org/is-number/7.0.0\r\nset-cookie: [redacted]\r\nset-cookie: [redacted]\r\nserver: cloudflare\r\ncf-ray: a38adc7e389d8a90-NRT\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": {
+        "namespaceId": "pid:[4026533390]",
+        "initPid": 328507,
+        "initStartTicks": "527532589"
+      },
+      "namespaceState": "released",
+      "hostNetNamespace": "net:[4026531840]"
+    },
+    {
+      "scenario": "download",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 3,
+        "observedCpuTimeMs": 0,
+        "peakObservedMemoryBytes": 28151808
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "",
+      "artifactSha256": "7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e",
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": {
+        "namespaceId": "pid:[4026533390]",
+        "initPid": 328587,
+        "initStartTicks": "527532674"
+      },
+      "namespaceState": "released",
+      "hostNetNamespace": "net:[4026531840]"
+    },
+    {
+      "scenario": "socks-download",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 3,
+        "observedCpuTimeMs": 0,
+        "peakObservedMemoryBytes": 27779072
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "",
+      "artifactSha256": "7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e",
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": {
+        "namespaceId": "pid:[4026533390]",
+        "initPid": 328707,
+        "initStartTicks": "527532772"
+      },
+      "namespaceState": "released",
+      "hostNetNamespace": "net:[4026531840]"
+    },
+    {
+      "scenario": "install",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 34,
+        "observedCpuTimeMs": 1000,
+        "peakObservedMemoryBytes": 108630016
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 2,
+        "closed": true
+      },
+      "output": "\nadded 1 package in 4s\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": {
+        "namespaceId": "pid:[4026533390]",
+        "initPid": 328814,
+        "initStartTicks": "527532857"
+      },
+      "namespaceState": "released",
+      "hostNetNamespace": "net:[4026531840]"
+    },
+    {
+      "scenario": "redirect-denied",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 9,
+        "observedCpuTimeMs": 0,
+        "peakObservedMemoryBytes": 30322688
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "curl: (22) The requested URL returned error: 403\nHTTP/1.1 200 Connection Established\r\n\r\nHTTP/2 302 \r\ndate: Thu, 10 Sep 2026 02:04:28 GMT\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: 0\r\nlocation: https://example.com\r\nserver: gunicorn/19.9.0\r\naccess-control-allow-origin: *\r\naccess-control-allow-credentials: true\r\n\r\nHTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nX-Proxy-Error: blocked-by-allowlist\r\n\r\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": {
+        "namespaceId": "pid:[4026533390]",
+        "initPid": 329199,
+        "initStartTicks": "527533369"
+      },
+      "namespaceState": "released",
+      "hostNetNamespace": "net:[4026531840]"
+    },
+    {
+      "scenario": "cpu",
+      "passed": true,
+      "reason": "resource_limit",
+      "exitCode": null,
+      "resources": {
+        "samples": 10,
+        "observedCpuTimeMs": 1000,
+        "peakObservedMemoryBytes": 63004672
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "output": "",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": {
+        "namespaceId": "pid:[4026533390]",
+        "initPid": 329301,
+        "initStartTicks": "527533548"
+      },
+      "namespaceState": "released",
+      "hostNetNamespace": "net:[4026531840]"
+    },
+    {
+      "scenario": "memory",
+      "passed": true,
+      "reason": "resource_limit",
+      "exitCode": null,
+      "resources": {
+        "samples": 1,
+        "observedCpuTimeMs": 0,
+        "peakObservedMemoryBytes": 37044224
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "output": "",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": {
+        "namespaceId": "pid:[4026533390]",
+        "initPid": 329539,
+        "initStartTicks": "527533744"
+      },
+      "namespaceState": "released",
+      "hostNetNamespace": "net:[4026531840]"
+    },
+    {
+      "scenario": "cancel",
+      "passed": true,
+      "reason": "cancelled",
+      "exitCode": null,
+      "resources": {
+        "samples": 2,
+        "observedCpuTimeMs": 0,
+        "peakObservedMemoryBytes": 57749504
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "tunnel-established\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": {
+        "namespaceId": "pid:[4026533390]",
+        "initPid": 329582,
+        "initStartTicks": "527533809"
+      },
+      "namespaceState": "released",
+      "hostNetNamespace": "net:[4026531840]"
+    },
+    {
+      "scenario": "proxy-variables-removed",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 1,
+        "observedCpuTimeMs": 0,
+        "peakObservedMemoryBytes": 37404672
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "output": "netns=net:[4026533121]\nENETUNREACH\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": {
+        "namespaceId": "pid:[4026533390]",
+        "initPid": 329727,
+        "initStartTicks": "527533888"
+      },
+      "namespaceState": "released",
+      "hostNetNamespace": "net:[4026531840]"
+    }
+  ],
+  "passed": true,
+  "redaction": {
+    "removed": "response credential headers",
+    "originalSha256": "5ab3b7358c382d55aa21e5014d4d437c4923c5ccf2aaea36a0b88a20fa6f0406"
+  }
+}

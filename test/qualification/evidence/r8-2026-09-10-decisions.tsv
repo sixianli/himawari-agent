@@ -1,0 +1,26 @@
+ts	phase	decision	why	evidence	result
+2026-09-09T16:20:22Z	frame	先验证网络后端边界	SRT 名称过滤未见连接地址校验，先实测再决定实现	node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-manager.js	待实测
+2026-09-09T16:26:25Z	evidence	确认 HTTP 与 SOCKS 的 DNS 回环访问	域名允许不等于解析地址安全	/private/tmp/himawari-r8-network.json	两条代理路径返回假数据；直接 TCP EPERM；结构性改造待批准
+2026-09-09T16:26:25Z	implementation	统一显式域名端口解析	固定版本已支持端口，无需重写 SRT 协议	packages/execution-contracts/src/sandbox-host-binding-v1.ts	修改前 3 条用例失败，正在复验
+2026-09-09T16:30:13Z	correction	撤销 runtime-sandbox 对产品合同的依赖	原有依赖边界不允许，基础设施自行验证原始输入	packages/runtime-sandbox/src/policy.ts	npm run check 已通过，未修改依赖规则
+2026-09-09T16:30:13Z	verification	端口限定仍不解决 SSRF	当前源码构建的实际代理与服务端证据	test/qualification/evidence/r8-2026-09-10-mac-network.json	R8 未通过，可信出口结构改造待批准
+2026-09-09T16:30:13Z	verification	记录已完成与未完成验证	不能用静态检查替代后端资格	docs/execution/plans/2026-09-07-srt-unified-execution-plan.md	83 相关测试与 check/build 通过；严格文档校验提示安装 Runbook seal 因源码变化失配；完整 R8 尚未完成，不提前重封
+2026-09-10T00:40:21Z	approval	Owner 批准受管理上游出口方案	当前用户明确同意继续，复用现有批准不再询问	docs/adr/0026-job-scoped-network-egress.md	已实施每作业 HTTP 上游，SRT 负责 SOCKS 转发
+2026-09-10T00:40:21Z	verification	通过真实下载安装和取消矩阵	回环反例修复还需证明合法网络可用	test/qualification/evidence/r8-2026-09-10-mac-authorized.json	8 场景通过；系统 DNS 并非零外联保证
+2026-09-10T00:40:21Z	correction	SRT 代理变量改用数字回环地址	只读放行 hosts 仍无法让受限 Node 解析 localhost；不开放额外系统解析服务	packages/runtime-sandbox/src/job-host-main.ts	保留 SRT 原认证和端口，真实 npm 安装及 CONNECT 取消通过
+2026-09-10T00:55:24Z	verification	补齐前台运行中撤权重核	原代码仅后台重核，新增用例在旧实现超时	apps/execution-worker/src/production-sandbox-execution-v2.ts	修改后 9 项生命周期测试通过；端到端撤权时延尚无资格
+2026-09-10T00:55:24Z	qualification	保存最终安装与 v2 复测边界	实际运行产物仍须区别于正式资格注册	test/qualification/evidence/r8-2026-09-10-installation.json	安装 9 项联网/停止及 7 项拒绝通过；一次 v2 绑定前失败后复测通过，原失败根因未确认
+2026-09-10T01:42:07Z	qualification	将 Hermes 纳入本次验收并重新预检	Owner 已授权目标平台测试	test/qualification/evidence/r8-2026-09-10-hermes-followup.json	数据盘及自有目录已确认；缺依赖和 SSH 断连阻止 Linux 实跑，不登记资格
+2026-09-10T02:16:07Z	correction	修复 Linux exec export 启动错误	真实 Linux 拒绝矩阵发现任务未执行，不能把启动失败算作网络拒绝	test/qualification/evidence/r8-2026-09-10-linux-exec-failure.json	先设置变量再 exec；真实 shell 回归与实际 Linux 场景通过
+2026-09-10T02:16:07Z	qualification	补充双机安装和实际端口冲突证据	系统依赖已由 Owner 安装；备用已配置 SSH 入口恢复同机传输	test/qualification/evidence/r8-2026-09-10-linux-bind-failure.json	EADDRINUSE 后拒绝 ready 且任务未启动；不签发生产资格
+2026-09-10T02:17:47Z	qualification	整理候选矩阵并保留正式资格缺口	目标测试安装可复核，但没有生产 profile 和保护目录输入	test/qualification/evidence/r8-2026-09-10-candidate-matrix.json	两机各 7 项拒绝和 10 项授权/停止/秘密测试通过；所有引用摘要已核验，未注册生产或后台联网资格
+2026-09-10T03:15:15.739118+00:00	qualification	补充 Hermes Node22 完整组合验收并暂停网页入口	Owner 改为 Hermes 单机安装，Mac 不运行 Agent，域名稍后设置	test/qualification/evidence/r8-2026-09-10-linux-production-v2.json	输出、网络拒绝、重放与清理通过；受控身份不签发正式资格，密钥已授权复制，未收费调用
+2026-09-10T05:08:11.388693+00:00	deployment	按 Owner 授权接入 Himawari 域名和 Access	批准 himawari.siyi.win 及仅限个人邮箱规则	test/qualification/evidence/r8-2026-09-10-cloudflare-entry.json	Access、DNS、隧道路由保存并回读；匿名访问302，后端未启动导致浏览器502，正式资格仍未签发
+2026-09-10T05:54:00Z	deployment	Hermes 正式服务启动与 Owner 绑定	Owner 明确批准 CF 会话凭据的内存传输和首次身份绑定	Hermes:/data/hermes/himawari/qualifications/owner-bootstrap-result.json	两个服务 ready；首次绑定201、产品会话201、配置200；工具 profile 仅 foreground 离线 read/find/grep/ls/bash；对话验收继续
+2026-09-10T05:54:00Z	correction	修复正式 Worker 将 SRT program 误判为旧进程后端	实际启动被 WORKER_HOST_ISOLATION_BINDING_REQUIRED 拒绝，回归先失败后通过	apps/execution-worker/src/production-worker-composition.ts	按 binding.kind 检查旧进程依赖，保留 SRT 实际主机校验；5项回归通过，Hermes Worker 启动成功
+2026-09-10T05:54:00Z	correction	补浏览器登录入口并分开对话连接状态	网页登录后治理事件为空使全局离线，阻止新建对话	apps/control-center/src/app.tsx	产品会话通过按钮建立；对话连接采用已有 Thread SSE，实机已显示实时连接；未跳过身份和CSRF校验
+2026-09-10T06:30:43.261223+00:00	correction	按稳定身份判断正常租约续期	并发校验不能因续租替换对象误判失权	apps/agent-service/test/production-authority-lifecycle.unit.test.ts	失败前 1 项失败；修复后 10 项通过，失权和停止仍拒绝
+2026-09-10T06:30:43.267773+00:00	correction	网页使用后端确认的产品 sessionId 并修复重复正文摘要比较	实机消息提交被拒及重试冲突	apps/agent-service/test/production-http-composition.unit.test.ts	同内容重试通过，不同内容与其他 session 仍拒绝
+2026-09-10T06:30:43.267780+00:00	correction	并发活跃时间更新冲突后重读会话和设备状态	12 个并发请求中 11 个曾误报 401	packages/platform-node/test/identity-gateway.unit.test.ts	19 项回归通过；12 个并发请求均通过；并发撤销仍拒绝
+2026-09-10T06:30:43.267784+00:00	qualification	签发 Hermes foreground 有界联网资格	完整目标安装矩阵和真实 Grant 撤销证据已具备	test/qualification/evidence/r8-2026-09-10-hermes-acceptance.json	真实 Grant 撤销至 Host 退出及 namespace 释放 368 ms；仅 bash 按 Grant 访问 npm registry 两端口
+2026-09-10T06:30:43.267788+00:00	acceptance	完成 Owner 绑定并关闭 bootstrap，完成网页真实对话及重启回读	Owner 已明确授权身份传递及总费用 1 美元内验收	test/qualification/evidence/r8-2026-09-10-hermes-acceptance.json	一条 Run 完成；OpenRouter 用量增量 0.00004826 美元；没有 Mac Agent 安装

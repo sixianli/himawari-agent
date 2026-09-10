@@ -69,7 +69,7 @@ export async function productionSandboxScope(
   const snapshot = JSON.parse(await readFile(host.capabilityDeployment.snapshotPath, "utf8"));
   const entry = snapshot.capabilities[0];
   entry.binding.value.operationBindings = [descriptor];
-  entry.binding.value.allowedDomains = ["example.com"];
+  entry.binding.value.allowedDomains = ["example.com:443"];
   const support: SandboxExecutionSupport = [
     { schemaVersion: "sandbox-execution.v2", mode: descriptor.mode },
   ];
@@ -130,7 +130,7 @@ export async function productionSandboxScope(
       { type: "directory-grant", ref: directory.id },
       { type: "host", ref: host.binding.hostId },
       ...(descriptor.network === "grant_targets"
-        ? [{ type: "network-domain", ref: "example.com" }]
+        ? [{ type: "network-domain", ref: "example.com:443" }]
         : []),
     ],
     resourceRefs: [directory.id],

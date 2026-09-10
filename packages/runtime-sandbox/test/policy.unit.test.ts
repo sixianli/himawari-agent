@@ -47,13 +47,13 @@ describe("SRT candidate policy compilation", () => {
   });
 
   it("freezes input before asynchronous filesystem resolution", async () => {
-    const domains = ["example.com"];
+    const domains = ["example.com:443"];
     const mutable = { ...input, allowedDomains: domains };
     const pending = compileSandboxPolicy(mutable);
     domains.push("attacker.example");
     mutable.writable = false;
     const policy = JSON.parse((await pending).policyJson);
-    expect(policy.network.allowedDomains).toEqual(["example.com"]);
+    expect(policy.network.allowedDomains).toEqual(["example.com:443"]);
     expect(policy.filesystem.allowWrite).toContain(input.workspace);
   });
 
@@ -114,7 +114,10 @@ describe("SRT candidate policy compilation", () => {
     "*.example.com",
     "https://example.com",
     "user:password@example.com",
-    "example.com:443",
+    "example.com",
+    "example.com:0",
+    "example.com:65536",
+    "example.com:0443",
     "127.0.0.1",
     "localhost",
   ])("rejects unreviewed domain syntax %s", async (domain) => {

@@ -1,0 +1,56 @@
+{
+  "platform": "darwin",
+  "osRelease": "27.0.0",
+  "architecture": "arm64",
+  "node": "v22.22.3",
+  "srt": "0.0.75",
+  "productionSuitable": false,
+  "jobHostDigest": "da50694e9fc50423a4e738e88fdd5372cc2ad7479f431f0fee9809914f8da3aa",
+  "evidence": [
+    {
+      "scenario": "task",
+      "policyDigest": "1fbfc39d62cecb66a189a4376af029e9cd37d7ff93120ccc203b62e46dae3e40",
+      "mode": "background",
+      "reason": "cancelled",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "outputBytes": 5
+    },
+    {
+      "scenario": "service",
+      "policyDigest": "d14f1ae29da6499cae327604342544339311a276478b6622f086cd61d850b38a",
+      "mode": "service",
+      "reason": "cancelled",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "outputBytes": 43
+    },
+    {
+      "scenario": "readiness-timeout",
+      "policyDigest": "2d060fecc1e1e8a03d6bc5aec21523bbca094275df37d2e3351d86e51c61b603",
+      "mode": "service",
+      "reason": "host_failure",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "outputBytes": 95
+    },
+    {
+      "scenario": "readiness-cancel",
+      "policyDigest": "d04596a33c2497dcfe3d526b83a00f85865656b16be27a0b0ee41ffc0118a163",
+      "mode": "service",
+      "reason": "cancelled",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "outputBytes": 0
+    },
+    {
+      "scenario": "flood",
+      "policyDigest": "f90b08ccddfd7d4d8a5f13b859ad4ba48306ca30a245908865519ad6bc1a9da3",
+      "mode": "background",
+      "reason": "output_limit",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "outputBytes": 4096
+    }
+  ]
+}

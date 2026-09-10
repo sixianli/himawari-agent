@@ -1,8 +1,6 @@
-import { setTimeout as delay } from "node:timers/promises";
 // Opt-in installed-runner verification with disposable fake data. This does not
 // issue a deployment qualification or grant access to a user's project.
 import assert from "node:assert/strict";
-import childProcess from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFile,
@@ -16,40 +14,25 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { syncBuiltinESMExports } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-if (process.env.HIMAWARI_LIVE_SANDBOX_PROBE !== "1" || process.platform !== "darwin")
-  throw new Error("MAC_SANDBOX_PROBE_OPT_IN_REQUIRED");
+if (
+  process.env.HIMAWARI_LIVE_SANDBOX_PROBE !== "1" ||
+  !["darwin", "linux"].includes(process.platform)
+)
+  throw new Error("SANDBOX_PROBE_OPT_IN_REQUIRED");
+const useInstallation = process.env.HIMAWARI_PROBE_RUNTIME !== undefined;
 const fd = process.env.HIMAWARI_PROBE_FD;
 const rg = process.env.HIMAWARI_PROBE_RG;
 const bash = process.env.HIMAWARI_PROBE_BASH;
-if (!fd || !rg || !bash) throw new Error("PREINSTALLED_TOOLS_REQUIRED");
+if (!useInstallation && (!fd || !rg || !bash)) throw new Error("PREINSTALLED_TOOLS_REQUIRED");
 const installed = await realpath(
-  fileURLToPath(new URL("../../../dist/node-runtime", import.meta.url)),
+  process.env.HIMAWARI_PROBE_RUNTIME ??
+    fileURLToPath(new URL("../../../dist/node-runtime", import.meta.url)),
 );
-const originalFork = childProcess.fork;
-childProcess.fork = (...args) => {
-  const child = originalFork(...args);
-  const began = performance.now();
-  child.once("message", () =>
-    process.stderr.write(`host-first-message-ms=${Math.round(performance.now() - began)}\n`),
-  );
-  child.once("exit", (code, signal) => {
-    if (code !== 0) process.stderr.write(`host-exit=${code}:${signal}\n`);
-  });
-  let remaining = 4096;
-  child.stderr?.on("data", (chunk) => {
-    if (remaining > 0) {
-      process.stderr.write(chunk.subarray(0, remaining));
-      remaining -= chunk.length;
-    }
-  });
-  return child;
-};
-syncBuiltinESMExports();
 const { prepareJobPolicy, prepareSandboxJobHost } = await import(
   path.join(installed, "node_modules/@himawari-agent/runtime-sandbox/dist/index.js")
 );
@@ -57,17 +40,23 @@ const runner = path.join(
   installed,
   "node_modules/@himawari-agent/agent-service/dist/capability-programs/pi-coding-main.js",
 );
-const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "himawari-r5-")));
+const scratch = process.env.HIMAWARI_PROBE_SCRATCH ?? os.tmpdir();
+if (process.platform === "linux" && !scratch.startsWith("/data/"))
+  throw new Error("LINUX_PROBE_REQUIRES_DATA_DISK");
+const root = await realpath(await mkdtemp(path.join(scratch, "himawari-pi-")));
 const workspace = path.join(root, "workspace");
-const runtimeRoot = path.join(root, "installation");
+const runtimeRoot = useInstallation ? installed : path.join(root, "installation");
 const privateRoot = path.join(root, "jobs");
 const binaries = path.join(runtimeRoot, "pi-tools/bin");
-await Promise.all([mkdir(workspace), mkdir(privateRoot), mkdir(binaries, { recursive: true })]);
-await Promise.all([
-  copyFile(fd, path.join(binaries, "fd")),
-  copyFile(rg, path.join(binaries, "rg")),
-  copyFile(bash, path.join(binaries, "bash")),
-]);
+await Promise.all([mkdir(workspace, { mode: 0o700 }), mkdir(privateRoot, { mode: 0o700 })]);
+if (!useInstallation) {
+  await mkdir(binaries, { recursive: true, mode: 0o700 });
+  await Promise.all([
+    copyFile(fd, path.join(binaries, "fd")),
+    copyFile(rg, path.join(binaries, "rg")),
+    copyFile(bash, path.join(binaries, "bash")),
+  ]);
+}
 await writeFile(path.join(workspace, "note.txt"), "first\nsecond\nthird\n");
 await writeFile(path.join(workspace, "empty.txt"), "");
 await writeFile(path.join(workspace, ".env"), "synthetic-secret-marker");
@@ -107,14 +96,15 @@ async function run(tool, parameters, writable = false, executionMode = "foregrou
         "/bin",
         "/usr/bin",
         "/usr/lib",
-        "/System",
         "/dev",
-        "/opt/homebrew",
+        ...(process.platform === "darwin"
+          ? ["/System", "/opt/homebrew"]
+          : ["/lib", "/lib64", "/proc", "/etc/ssl", "/etc/hosts"]),
       ].map((p) => realpath(p)),
     ),
     allowedDomains: [],
   });
-  const expiresAt = new Date(Date.now() + 15000).toISOString();
+  const expiresAt = new Date(Date.now() + 30000).toISOString();
   const input = {
     schemaVersion: "pi-runner.v1",
     executionMode,
@@ -152,18 +142,23 @@ async function run(tool, parameters, writable = false, executionMode = "foregrou
       expiresAt,
     },
   };
-  const host = prepareSandboxJobHost({
-    jobId,
-    attemptId: "attempt-1",
-    policy,
-    policyDigest: compiled.policyDigest,
-    executable: await realpath(process.execPath),
-    args: [runner, "host-1", "worker-1"],
-    stdinBase64: Buffer.from(JSON.stringify(input)).toString("base64"),
-    deadlineAt: expiresAt,
-    maxOutputBytes: 512 * 1024,
-    cleanupTimeoutMs: 1000,
-  });
+  const controlDirectory = path.join(root, `${jobId}-control`);
+  await mkdir(controlDirectory, { mode: 0o700 });
+  const host = prepareSandboxJobHost(
+    {
+      jobId,
+      attemptId: "attempt-1",
+      policy,
+      policyDigest: compiled.policyDigest,
+      executable: await realpath(process.execPath),
+      args: [runner, "host-1", "worker-1"],
+      stdinBase64: Buffer.from(JSON.stringify(input)).toString("base64"),
+      deadlineAt: expiresAt,
+      maxOutputBytes: 512 * 1024,
+      cleanupTimeoutMs: 1000,
+    },
+    controlDirectory,
+  );
   await host.ready;
   host.start();
   let liveObserved = false;
@@ -181,14 +176,27 @@ async function run(tool, parameters, writable = false, executionMode = "foregrou
     }
   }
   const result = await host.result;
+  let namespaceState = null;
+  if (process.platform === "linux") {
+    const { readJobHostFinalEvidence, readLinuxNamespaceState } = await import(
+      path.join(
+        installed,
+        "node_modules/@himawari-agent/runtime-sandbox/dist/job-host-control-client.js",
+      )
+    );
+    const final = await readJobHostFinalEvidence(host.controlBinding);
+    assert.ok(final.linuxNamespace, "Linux runner requires an authenticated namespace identity");
+    namespaceState = await readLinuxNamespaceState(final.linuxNamespace);
+    assert.equal(namespaceState, "released");
+  }
   if (!result.stdout.length)
     process.stderr.write(
-      JSON.stringify({
+      `${JSON.stringify({
         tool,
         exitCode: result.exitCode,
         stderr: Buffer.from(result.stderr).toString("utf8"),
         supervision: result.supervision,
-      }) + "\n",
+      })}\n`,
     );
   assert.equal(result.taskStarted, true, "runner must actually start");
   const output = result.stdout.length
@@ -202,6 +210,8 @@ async function run(tool, parameters, writable = false, executionMode = "foregrou
     liveObserved,
     exitCode: result.exitCode,
     cleanup: result.taskTreeCleanup,
+    namespaceState,
+    policyDigest: compiled.policyDigest,
   });
   return { result, output, liveObserved };
 }
@@ -290,10 +300,12 @@ try {
   );
   assert.equal(writeTask.result.exitCode, 0);
   assert.equal(await readFile(path.join(workspace, "note.txt"), "utf8"), "changed");
-  await rename(path.join(binaries, "fd"), path.join(binaries, "fd.unavailable"));
-  assert.equal((await run("find", { pattern: "*.txt" })).result.exitCode, 1);
-  await rename(path.join(binaries, "rg"), path.join(binaries, "rg.unavailable"));
-  assert.equal((await run("grep", { pattern: "second", path: "note.txt" })).result.exitCode, 1);
+  if (!useInstallation) {
+    await rename(path.join(binaries, "fd"), path.join(binaries, "fd.unavailable"));
+    assert.equal((await run("find", { pattern: "*.txt" })).result.exitCode, 1);
+    await rename(path.join(binaries, "rg"), path.join(binaries, "rg.unavailable"));
+    assert.equal((await run("grep", { pattern: "second", path: "note.txt" })).result.exitCode, 1);
+  }
   process.stdout.write(
     `${JSON.stringify({ passed: reports.length, platform: process.platform, qualification: false, toolDigests, nodeVersion: process.version, reports })}\n`,
   );

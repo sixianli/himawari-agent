@@ -1,0 +1,86 @@
+{
+  "platform": "darwin",
+  "osRelease": "27.0.0",
+  "architecture": "arm64",
+  "node": "v22.22.3",
+  "srt": "0.0.75",
+  "artifact": "source-build",
+  "productionSuitable": false,
+  "jobHostDigest": "a4be1508b0e5057052628076d4c009090c0c0b3bc39135263878c3e6f60468ce",
+  "hostname": "127.0.0.1.sslip.io",
+  "addresses": [
+    {
+      "address": "127.0.0.1",
+      "family": 4
+    }
+  ],
+  "evidence": [
+    {
+      "scenario": "offline-http",
+      "policyDigest": "384830fc7d520d7b55b163401e8e81ad86770fd1605ee6eb3abe81b2e234a28f",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nX-Proxy-Error: blocked-by-allowlist\r\nDate: Wed, 09 Sep 2026 16:29:46 GMT\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\nTransfer-Encoding: chunked\r\n\r\nConnection blocked by network allowlist",
+      "serverRequests": [],
+      "denialObserved": true,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "direct-loopback",
+      "policyDigest": "df0574b71a363ec8dc0e4cb10db6c0501051730e4f2590a94c3cb58b2cb50347",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "EPERM\n",
+      "serverRequests": [],
+      "denialObserved": true,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "allowed-dns-loopback-http",
+      "policyDigest": "5ed38b5745ba44a84184301dc6710f76f133ed65a7c6f9c48ad42c2aecea7183",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "HTTP/1.1 200 OK\r\ndate: Wed, 09 Sep 2026 16:29:46 GMT\r\ncontent-length: 30\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\nhimawari-r8-synthetic-loopback",
+      "serverRequests": ["/allowed-dns-loopback-http"],
+      "denialObserved": false,
+      "loopbackReached": true
+    },
+    {
+      "scenario": "allowed-dns-loopback-socks",
+      "policyDigest": "e57635c29b8605ba45b886d693b203b3d6cfd90c6425cb0225cfb9b140817e5f",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "himawari-r8-synthetic-loopback",
+      "serverRequests": ["/allowed-dns-loopback-socks"],
+      "denialObserved": false,
+      "loopbackReached": true
+    },
+    {
+      "scenario": "allowed-wrong-port",
+      "policyDigest": "c5862de9ec051341a9bc7a06f23030b2ec92d970cf9a4116637cf80990f24964",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nX-Proxy-Error: blocked-by-allowlist\r\nDate: Wed, 09 Sep 2026 16:29:47 GMT\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\nTransfer-Encoding: chunked\r\n\r\nConnection blocked by network allowlist",
+      "serverRequests": [],
+      "denialObserved": true,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "allowed-metadata",
+      "policyDigest": "34e435c2039d84647dee89dc65cfb8513a31b65f805a9da65177ba07abb3607d",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nX-Proxy-Error: blocked-by-allowlist\r\nDate: Wed, 09 Sep 2026 16:29:47 GMT\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\nTransfer-Encoding: chunked\r\n\r\nConnection blocked by network allowlist",
+      "serverRequests": [],
+      "denialObserved": true,
+      "loopbackReached": false
+    }
+  ],
+  "ssrfCounterexampleConfirmed": true
+}

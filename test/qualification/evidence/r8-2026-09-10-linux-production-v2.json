@@ -1,0 +1,9 @@
+{
+  "productionSandboxProbePassed": true,
+  "schema": "sandbox-execution.v2",
+  "productionSuitable": false,
+  "networkDenial": "blocked-by-allowlist",
+  "platform": "linux",
+  "cleanup": "confirmed",
+  "replayExecuted": false
+}

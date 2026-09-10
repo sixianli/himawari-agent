@@ -1,0 +1,12 @@
+{
+  "platform": "darwin",
+  "runtime": "/private/tmp/r8-install-linux-fix/lib/himawari-agent",
+  "faultInjection": "occupied-loopback-port",
+  "nativeCollision": true,
+  "readyRejected": true,
+  "taskStarted": false,
+  "network": null,
+  "srtReset": true,
+  "passed": true,
+  "productionSuitable": false
+}

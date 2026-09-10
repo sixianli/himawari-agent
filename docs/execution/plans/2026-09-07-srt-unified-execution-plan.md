@@ -284,13 +284,55 @@ Pi 扩展通过原 RuntimeToolPort 注册 `execution_task_start/status/output/ca
 
 依赖 R3–R5；依据 Spec §4.5、§7，验证 EX-03、EX-13、EX-14。
 
-- [ ] 将原域名 Grant 到网络策略映射扩展到实际安装/下载/工具链请求；冻结实际 domain:port 与披露，不因重定向或镜像自动扩权。
-- [ ] 验证 HTTP/裸 TCP/SOCKS、删除代理变量、DNS、localhost/socket、SSRF/元数据、重定向和代理初始化失败；网络拒绝以实际拒绝证据判断，不能只看 curl 非零退出。
-- [ ] 资源 CPU/RSS 观测与阈值停止、授权撤销停止分别记录覆盖和局限，不宣称硬配额或即时撤回残留进程文件权。
-- [ ] 按 host/backend/profile/mode/schema/runtime/runner/保证绑定资格；Mac 与实际需启用的 Linux 分开取证，Hermes 先核实数据盘及测试目录。
-- [ ] 强隔离后端只列能力缺口及候选验证条件；不在本任务隐式安装 Gondolin/容器或恢复旧 fallback。
+- [x] 将原域名 Grant 到网络策略映射扩展到实际安装/下载/工具链请求；冻结实际 domain:port 与披露，不因重定向或镜像自动扩权。
+- [x] 验证 HTTP/裸 TCP/SOCKS、删除代理变量、DNS、localhost/socket、SSRF/元数据、重定向和代理初始化失败；网络拒绝以实际拒绝证据判断，不能只看 curl 非零退出。
+- [x] 资源 CPU/RSS 观测与阈值停止、授权撤销停止分别记录覆盖和局限，不宣称硬配额或即时撤回残留进程文件权。
+- [x] 按 host/backend/profile/mode/schema/runtime/runner/保证绑定资格；Mac 与实际需启用的 Linux 分开取证，Hermes 先核实数据盘及测试目录。
+- [x] 强隔离后端只列能力缺口及候选验证条件；不在本任务隐式安装 Gondolin/容器或恢复旧 fallback。
 
 完成条件：拟启用组合有真实目标主机证据；失败或未测的 mode 不注册。首批必要联网能力未通过仍报告整批未完成。
+
+#### R8：2026-09-10 已实现部分与资格边界
+
+Owner 已明确批准 [SOURCE: docs/adr/0026-job-scoped-network-egress.md]。同一 Grant 的 targets、Host inventory 和 SRT 策略要求明确小写 hostname:port；旧裸域名不自动补端口，不修改旧审批快照。披露与预算仍绑定原 action intent fingerprint，镜像和重定向不自动扩权。
+
+Job Host 现在先创建每作业认证上游，再将 SRT HTTP/HTTPS 上游指向该入口，并显式清空 noProxy。HTTP、CONNECT 以及 SRT 转发的 SOCKS 在每次实际建连前检查全部解析地址，用检查过的数字 IP 拨号；不解密 TLS或注入真实秘密。停止时立即关闭出口和连接，异步 DNS 返回后再次检查关闭状态。Worker 的 foreground/background/service 现在都在 250 ms 监督循环中通过原 resolve 入口重查授权；RPC 耗时和进程调度使实际响应不等于固定 250 ms。出口计数由原认证 IPC 返回，不从工具 stdout 推导。SRT 生成的 localhost 代理地址在包装内规范为数字回环，保留认证和端口，不开放额外系统 DNS 服务。
+
+| 主机 / 后端 / 路径 | 本次实际证据 | 启用边界 |
+|---|---|---|
+| Mac Darwin 27.0.0 arm64 / SRT 0.0.75 / 当前 Job Host | 修复前 HTTP/SOCKS 经 DNS 别名访问回环的反例；修复后两条路径均有出口地址拒绝计数，服务端无请求。离线 HTTP、错误端口、元数据 IP 有代理拒绝头；直接回环 TCP 和原始 UDP DNS 返回 EPERM | 只证明已执行的有界场景，不签发生产 profile |
+| 同 Mac / 授权联网及资源停止 | HTTP/SOCKS 下载 is-number 7.0.0、小包临时安装（禁用安装脚本）、跨域重定向明确拒绝、CPU/RSS 阈值停止、已建立 CONNECT 的取消关闭、删除代理变量后直接连接拒绝均通过 | 资源为采样与超限停止，不是硬配额；取消探针不是端到端 Grant 撤销时延证据 |
+| 同 Mac / sandbox-execution.v2 生产组合 | 真实 UDS/SQLite/Worker 假数据组合通过；网络明确拒绝，未知隔离且不重放 | 测试身份和资格，非真实生产注册 |
+| 同 Mac / background、service 回归 | 实际受管理任务、服务 Unix HTTP 就绪、就绪超时/取消、输出超限通过，TCP 与非声明 Unix socket 拒绝 | 此次为已有管理路径回归，未取得完整 background/service 联网资格 |
+| Hermes Linux 5.15.0-185-generic x64 / Node 26.1.0 / SRT 0.0.75 / Job Host | Owner 安装系统 bwrap 0.6.1、socat 1.7.4.1 后依赖检查无错误和警告。7 项网络拒绝、10 项联网/资源/取消/秘密拒绝及真实端口冲突导致准备失败通过；Worker SIGKILL 后 setsid 子进程未写出标记，原 PID namespace 已释放 | 完整 runtime 和独立安装副本分别取证；属于测试安装和 Job Host 路径，未注册生产 profile 或 background/service 联网资格 |
+| Hermes 正式安装 / Node 22.22.3 / SRT foreground v2 | 安装 Pi runner 22 项、联网 10 项、拒绝 7 项、崩溃清理、真实 Grant 撤销至进程及 namespace 释放 368 ms、网页登录与真实模型回答及重启回读 | 已登记 read/find/grep/ls/bash；bash 仅按 Grant 访问 npm registry 的 80/443；其他模式及 write/edit 不登记 |
+| Gondolin / 容器 / 其他强隔离候选 | 未安装和运行；仍需验证平台、挂载写回、凭据/网络、资源回收、崩溃接管与产物完整性 | 保持候选，不恢复 fallback |
+
+证据位于 `test/qualification/evidence/` 的 `r8-2026-09-10-*` 文件：原始失败反例、修复后网络边界、合法联网、v2 组合、受管理任务回归、Hermes 预检和决策 TSV。工具链中系统 OpenSSL 配置与证书按确切只读路径授予；没有读取真实凭据。每个有界场景运行完毕后清理自有假数据目录；Mac taskTreeCleanup 仍为 unknown，未改成 confirmed。
+
+Owner 随后明确同意将 Hermes Linux 纳入本次验收并安装系统依赖。`/data` 为 `/dev/sda1` ext4，可用 261 GiB；专用测试根为 `/data/himawari-r8-ucNhI6hn`。Cloudflare SSH 传输发生断连后，使用本机已配置且校验主机密钥的 Tailscale SSH 入口确认同一主机并完成传输，没有修改认证或网络配置。归档 SHA-256 与本地一致；真实安装器生成独立 prefix 并逐文件校验复制结果。最终 Mac 安装 prefix 为 `/private/tmp/r8-install-linux-fix`，Linux 为 `/data/himawari-r8-ucNhI6hn/installed`。最终 manifest、Job Host、命令包装、出口、策略、schema、Worker 和 Node/SRT 辅助文件身份见 `*-final-identity.json`。
+
+Linux 实跑发现 `exec export` 导致任务未执行，原失败保留在 `r8-2026-09-10-linux-exec-failure.json`。修复为先设置 SRT 代理变量，再 exec 已安全引用的真正命令；两个真实 shell 回归用例及相关 45 项单测通过。Linux 的直接回环和原始 UDP DNS 分别返回 ECONNREFUSED/ENETUNREACH；探针另外核对任务与宿主网络 namespace 不同，不能只凭连接错误算拒绝。范围外假秘密在宿主仍存在，但 Linux 任务视图不可见，Mac 返回权限拒绝。每项 Linux 场景的签名最终观察对应原 PID namespace，随后验证其释放；不修改 JobHostResult 原有 unknown 字段来伪造清理事实。
+
+独立安装的 Mac/Linux 均通过占用临时回环端口的故障注入：OS 实际返回 EADDRINUSE，ready 被拒绝，任务未启动，也没有出口对象。这证明该初始化失败路径会拒绝执行，不等于覆盖所有 OS 网络故障。Worker 崩溃测试使用专用测试父进程，不能替代完整 Agent Service/SQLite/UDS 的 Linux 生产组合验收。
+
+**R8 已完成本次拟启用组合的资格验收：Hermes 单机、SRT 0.0.75、sandbox-execution.v2、authorized-project.v1、foreground。** Mac 保留已有假数据矩阵，按 Owner 后续要求仅作浏览器客户端，不安装或启动 Agent。未测组合不登记：background/service 联网及其他强隔离后端仍不启用。
+
+Hermes 正式版本目录为 `/data/hermes/himawari/releases/2026-09-10-89640a591583`，锁定 Node 22.22.3、npm 11.8.0 和 Python 3.12.10，数据、数据库、缓存、日志、构建与资格材料均位于 `/data/hermes/himawari`。Pi 0.84.2 的 find 参数要求新版 fd；实际安装使用已核对官方发布摘要的 fd 10.3.0，旧 fd 8.3.1 不能通过该验收。当前 runtime 摘要为 `4caf6376109368c38d0ec520a33d08cee41f4f84ae7b7eee50b43a5a8591837c`；早期 `16bdb32…` inventory 是更新工具链和修复启动前的历史快照，不再作为当前运行身份。
+
+正式安装实跑包括 Pi runner 22 项、联网与资源 10 项、网络边界拒绝 7 项、Worker SIGKILL 后隔离任务树释放，以及已安装模块的真实 SQLite／认证 UDS／Worker v2 组合。新增 `qualify-production.mjs --v2 --revoke-network` 通过同一持久 Grant 建立 `registry.npmjs.org:443` CONNECT 后撤销 Grant，368 ms 内 Job Host 退出、原 PID namespace 释放，账本 cleanup=confirmed；重复请求和重新建立 Worker 只读回原结果，不再次启动。该探针仍明确使用测试身份、productionSuitable=false；正式资格由 Hermes 安装来源另行检查真实目录、完整产物摘要和系统工具后签发，不能复制测试资格充当生产注册。
+
+主机 Ed25519 签名回执绑定实际 host/backend/profile/mode/schema/runtime/runner、目录 device/inode、保证、工具摘要及证据摘要。启动脚本 `qualifications/verified-start.mjs` 每次启动验证签名、证据、完整运行目录和真实主机，再生成时效有效的 deployment snapshot；不只刷新时间戳。签名私钥和原始含认证信息的探针材料保持主机 0600，不进入源码。公开脱敏验收见 `test/qualification/evidence/r8-2026-09-10-hermes-acceptance.json`。
+
+登记的前台操作为 read/find/grep/ls/bash。只有 bash 可依据动作自己的 Grant 联网，主机上界为 `registry.npmjs.org:80` 和 `registry.npmjs.org:443`；inventory 不是授权，其他域名、端口、镜像和重定向不自动放行。write/edit 的正式效果验证描述仍未配置，因此不登记；其通用 runner 测试通过不能替代实际效果合同。资源限制为观测后停止，不是硬配额。Mac taskTreeCleanup=unknown、未知后代文件权限及已发出数据不可撤回等边界继续保留。
+
+Owner 批准的 `https://himawari.siyi.win` 已通过 Cloudflare Access 现有 Allow James only 规则和 hermes-edge 隧道回源到 Hermes `127.0.0.1:18082`。首次 Owner 绑定得到单独授权后执行，返回 201；浏览器产品 session 同样返回 201，首次绑定入口随后关闭。Agent Service 和 Worker 由已启用的用户 systemd unit 管理，二者均实际报告 service.ready，健康检查返回 ready；服务重启后原 Owner、session、Thread 和消息仍可回读。
+
+实机暴露并修复四类启动／网页缺陷：SRT binding 被旧 process isolation 条件误拦；同一租约续期与并发校验交错导致误报权限丢失；网页缺少登录入口且对话错误依赖空的通用事件流；消息使用虚构 sessionId、重复 Payload 摘要格式不一致，以及并发 session activity 更新导致误判登录失效。修复复用既有认证、会话、Pi 与 Worker 接口，不降低撤权、跨会话、不同内容幂等键冲突的检查。回归分别保留失败前／通过后证据，最后相关 7 个文件 142 项测试通过。
+
+真实网页对话使用已批准的 `deepseek/deepseek-v4-flash-0731`，上下文检索调用 `qwen/qwen3-embedding-8b`。唯一测试 Run 完成，回答“7 × 8 = 56。”并持久保存；重启后回读没有新增模型调用。产品预算账本结算 53 微美元，OpenRouter 用量增量为 0.00004826 美元，低于 Owner 批准的 1 美元总额。凭据未进入聊天、源码或日志。这只证明已执行的登录与对话路径，R9、R11、R12 其余能力不因这次验收自动完成。
+
+最终静态检查、Node/browser 构建、文档治理与 Git 证据随本次提交记录。源 checkout 的前期证据明确包含未提交任务改动；已安装产物身份始终以主机签名回执的摘要为准，不用单个旧 commit 冒充当前安装内容。
 
 ### R9：真实 Web Search 与页面核实
 

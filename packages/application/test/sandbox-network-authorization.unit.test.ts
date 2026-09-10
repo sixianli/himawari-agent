@@ -34,7 +34,7 @@ function fixture() {
     reversible: true,
     requestedAt: now,
     expiresAt: end,
-    targets: [{ type: "network-domain", ref: "example.com" }],
+    targets: [{ type: "network-domain", ref: "example.com:443" }],
     actionKind: "READ",
     disclosure: "none",
     recipients: [],
@@ -112,14 +112,14 @@ function fixture() {
     plan,
     scope,
     authorizations,
-    maximumDomains: ["example.com", "unapproved.example"],
+    maximumDomains: ["example.com:443", "unapproved.example:443"],
     now: () => now,
   };
 }
 describe("network scope from the same action Grant", () => {
   it("uses approved exact hosts without granting the larger inventory or consuming again", async () => {
     const input = fixture();
-    await expect(resolveSandboxNetworkAuthorization(input)).resolves.toEqual(["example.com"]);
+    await expect(resolveSandboxNetworkAuthorization(input)).resolves.toEqual(["example.com:443"]);
     expect(input.grant.uses).toBe(1);
     expect(input.authorizations.listGrants).toHaveBeenCalledWith(
       input.grant.ownerId,
@@ -138,6 +138,8 @@ describe("network scope from the same action Grant", () => {
     "expired",
     "unapproved",
     "changed-snapshot",
+    "changed-disclosure",
+    "other-port",
     "other-run",
     "other-operation",
     "outside-inventory",
@@ -153,9 +155,14 @@ describe("network scope from the same action Grant", () => {
       Object.assign(input.approval, {
         intentSnapshot: {
           ...input.approval.intentSnapshot,
-          targets: [{ type: "network-domain", ref: "unapproved.example" }],
+          targets: [{ type: "network-domain", ref: "unapproved.example:443" }],
         },
       });
+    if (mode === "changed-disclosure")
+      Object.assign(input.approval, {
+        intentSnapshot: { ...input.approval.intentSnapshot, disclosure: "external" },
+      });
+    if (mode === "other-port") input.maximumDomains = ["example.com:80"];
     if (mode === "other-run")
       input.plan = { ...input.plan, identity: { ...input.plan.identity, runId: "other" } };
     if (mode === "other-operation") input.plan = { ...input.plan, operation: "write" };

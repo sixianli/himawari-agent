@@ -1,5 +1,6 @@
 import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
 import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { release } from "node:os";
 import path from "node:path";
 import type { SandboxExecutionPlan } from "@himawari-agent/application";
@@ -13,6 +14,7 @@ export async function macSandboxDeployment(
   now: string,
   v2 = false,
   platform: "darwin" | "linux" = "darwin",
+  revokeNetwork = false,
 ) {
   const base = await realpath(root);
   const workspace = path.join(base, "live-workspace");
@@ -25,6 +27,10 @@ export async function macSandboxDeployment(
   await writeFile(path.join(workspace, ".env"), "synthetic-secret", { mode: 0o600 });
   await writeFile(path.join(base, "outside.txt"), "synthetic-outside", { mode: 0o600 });
   const runner = path.join(runtimeRoot, "runner.sh");
+  const proxyClient =
+    platform === "linux"
+      ? `/usr/bin/socat - TCP:127.0.0.1:"\${HTTPS_PROXY##*:}",connect-timeout=2`
+      : `/usr/bin/nc -n -w 2 127.0.0.1 "\${HTTPS_PROXY##*:}"`;
   await writeFile(
     runner,
     `set -eu
@@ -41,7 +47,7 @@ if /bin/cat ../outside.txt >/dev/null 2>&1; then exit 12; fi
 stage=write
 if (printf forbidden > forbidden.txt) 2>/dev/null; then exit 13; fi
 stage=network
-proxy_userinfo="\${HTTPS_PROXY%@*}"; proxy_token="\${proxy_userinfo##*:}"; proxy_auth=$(printf 'srt:%s' "$proxy_token" | /usr/bin/base64); { printf 'CONNECT example.com:443 HTTP/1.1\\r\\nHost: example.com:443\\r\\nProxy-Authorization: Basic %s\\r\\n\\r\\n' "$proxy_auth"; /bin/sleep 0.5; } | /usr/bin/nc -n -w 2 127.0.0.1 "\${HTTPS_PROXY##*:}" > "$TMPDIR/network-headers"
+proxy_userinfo="\${HTTPS_PROXY%@*}"; proxy_token="\${proxy_userinfo##*:}"; proxy_auth=$(printf 'srt:%s' "$proxy_token" | /usr/bin/base64); { printf 'CONNECT example.com:443 HTTP/1.1\\r\\nHost: example.com:443\\r\\nProxy-Authorization: Basic %s\\r\\n\\r\\n' "$proxy_auth"; /bin/sleep 0.5; } | ${proxyClient} > "$TMPDIR/network-headers"
 stage=network-proof
 if ! /usr/bin/grep -qi 'X-Proxy-Error: blocked-by-allowlist' "$TMPDIR/network-headers"; then /bin/cat "$TMPDIR/network-headers"; exit 19; fi
 printf 'run\\n' >> "$TMPDIR/runs"
@@ -50,6 +56,28 @@ printf '{"probe":"passed"}'
 `,
     { mode: 0o600 },
   );
+  if (revokeNetwork) {
+    await writeFile(
+      runner,
+      `set -eu
+/bin/cat >/dev/null
+proxy_userinfo="\${HTTPS_PROXY%@*}"; proxy_token="\${proxy_userinfo##*:}"
+proxy_auth=$(printf 'srt:%s' "$proxy_token" | /usr/bin/base64)
+{ printf 'CONNECT registry.npmjs.org:443 HTTP/1.1\\r\\nHost: registry.npmjs.org:443\\r\\nProxy-Authorization: Basic %s\\r\\n\\r\\n' "$proxy_auth"; /bin/sleep 25; } | ${proxyClient} > "$TMPDIR/network-headers" &
+for i in $(/usr/bin/seq 1 100); do
+  if /usr/bin/grep -q '200 Connection' "$TMPDIR/network-headers"; then
+    printf 'run\\n' >> "$TMPDIR/runs"
+    printf 'established' > "$TMPDIR/network-established"
+    wait
+    exit 0
+  fi
+  /bin/sleep 0.05
+done
+exit 21
+`,
+      { mode: 0o600 },
+    );
+  }
   const executable = await realpath("/bin/bash");
   const fileHash = async (filename: string) =>
     createHash("sha256")
@@ -78,7 +106,7 @@ printf '{"probe":"passed"}'
             backendRef: "srt",
             scopeSource: "file_workflow" as const,
             directoryOperations: ["read" as const],
-            network: "disabled" as const,
+            network: revokeNetwork ? ("grant_targets" as const) : ("disabled" as const),
           },
         ],
       }
@@ -105,12 +133,31 @@ printf '{"probe":"passed"}'
       },
     ],
     readOnlyToolchainPaths: await Promise.all(
-      ["/bin", "/usr/bin", "/usr/lib", ...(platform === "darwin" ? ["/System"] : []), "/dev"].map(
-        (entry) => realpath(entry),
-      ),
+      [
+        ...(process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"]
+          ? [process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"]]
+          : []),
+        "/bin",
+        "/usr/bin",
+        "/usr/lib",
+        ...(platform === "darwin"
+          ? ["/System"]
+          : [
+              "/lib",
+              "/lib64",
+              "/proc",
+              path.resolve(
+                path.dirname(
+                  createRequire(import.meta.url).resolve("@anthropic-ai/sandbox-runtime"),
+                ),
+                "../vendor/seccomp",
+              ),
+            ]),
+        "/dev",
+      ].map((entry) => realpath(entry)),
     ),
     protectedPaths: [path.join(workspace, ".env")],
-    allowedDomains: [],
+    allowedDomains: revokeNetwork ? ["registry.npmjs.org:443"] : [],
     maximumResourceCeiling: plan.resourceCeiling,
   };
   const sandbox = {
@@ -206,7 +253,7 @@ printf '{"probe":"passed"}'
             processes: true,
             secrets: true,
             resourceCeilings: false,
-            termination: false,
+            termination: platform === "linux",
           },
           reasonCodes: [],
           checkedAt: now,

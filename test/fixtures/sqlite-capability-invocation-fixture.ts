@@ -6,6 +6,7 @@ import type {
   CapabilityInvocationAuthority,
   CapabilityRegistryRecord,
   FrozenCapabilityInvocationReceipt,
+  GovernedActionIntent,
   GovernedCapabilityExecutionHandle,
   GrantRecord,
   HostDirectoryGrant,
@@ -13,7 +14,11 @@ import type {
   SandboxExecutionPlan,
   SandboxJobReceipt,
 } from "@himawari-agent/application";
-import { ApplicationPortError, type PortErrorCode } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  actionIntentFingerprint,
+  type PortErrorCode,
+} from "@himawari-agent/application";
 import {
   createAgentId,
   createAuthorityLeaseId,
@@ -480,23 +485,63 @@ export function callOperation(
 
 export async function seed(
   repository: SqliteProductStateRepository,
+  networkDomains: readonly string[] = [],
 ): Promise<GovernedCapabilityExecutionHandle> {
   const capabilities = repository.capabilityStore(OWNER_ID, AGENT_ID);
   await capabilities.create(capability());
-  const value = handle();
+  let value = handle();
+  if (networkDomains.length) {
+    const approval = grantApproval();
+    const intent: GovernedActionIntent = {
+      ...approval.intentSnapshot,
+      contractVersion: "authorization.v2",
+      threadId: "thread-capability-invocation",
+      capabilityVersion: "1.0.0",
+      actionKind: "READ",
+      targets: networkDomains.map((ref) => ({ type: "network-domain" as const, ref })),
+      resourceRefs: ["resource-capability-invocation"],
+      disclosure: "none",
+      recipients: [],
+      credentialOrAccessChange: false,
+      expiresAt: T2,
+      modelClassification: {
+        actionKind: "READ",
+        suggestedRisk: "LOW",
+        reasonCode: "live-network-probe",
+      },
+      deterministicFacts: [],
+      finalRisk: "LOW",
+    };
+    const fingerprint = actionIntentFingerprint(intent);
+    const authorizations = repository.authorizationStore();
+    await authorizations.createApproval({
+      ...approval,
+      intentSnapshot: intent,
+      semanticSnapshotHash: fingerprint,
+    });
+    await authorizations.resolveApproval({
+      approvalRequestId: approval.id,
+      expectedRevision: 1,
+      semanticSnapshotHash: fingerprint,
+      resolution: "approved",
+      decidedAt: T0,
+      grant: { ...grant(), intentFingerprint: fingerprint },
+    });
+    value = { ...grantHandle(), ref: handle().ref };
+  }
   await capabilities.createExecutionHandle(value);
   return value;
 }
 
-export async function openSandboxJournal(legacy = false) {
+export async function openSandboxJournal(legacy = false, networkDomains: readonly string[] = []) {
   const resource = await openRepository();
-  await seed(resource.repository);
+  const seededHandle = await seed(resource.repository, networkDomains);
   const { database, operations } = await openOperations(resource);
   database.exec("SAVEPOINT preview_receipt");
   const consumed = operations.execute("capabilityInvocation.consume", {
     ownerId: OWNER_ID,
     agentId: AGENT_ID,
-    input: invocation(),
+    input: invocation({ authorizationRef: seededHandle.authorizationRef }),
   }) as { receipt: FrozenCapabilityInvocationReceipt };
   if (!legacy) database.exec("ROLLBACK TO preview_receipt");
   database.exec("RELEASE preview_receipt");
@@ -538,7 +583,7 @@ export async function openSandboxJournal(legacy = false) {
       authorizationRef: "directory-authorization",
       operations: ["read"],
     },
-    networkAuthorizationRef: null,
+    networkAuthorizationRef: networkDomains.length ? receipt.authorizationRef : null,
     expiresAt: T2,
   };
   const directoryGrant: HostDirectoryGrant = {

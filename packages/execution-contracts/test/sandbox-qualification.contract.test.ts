@@ -51,7 +51,7 @@ const binding = {
   ],
   readOnlyToolchainPaths: ["/usr/bin"],
   protectedPaths: ["/work/project/.env"],
-  allowedDomains: ["example.com"],
+  allowedDomains: ["example.com:443"],
   maximumResourceCeiling: {
     maxWallTimeMs: 1000,
     maxCpuTimeMs: 1000,
@@ -116,7 +116,7 @@ describe("sandbox host qualification", () => {
     { allowedDomains: ["*.example.com"] },
     { allowedDomains: ["127.0.0.1"] },
     { allowedDomains: ["example.123"] },
-    { allowedDomains: ["example.com", "example.com"] },
+    { allowedDomains: ["example.com:443", "example.com:443"] },
     { privateRoot: "/tmp/../private" },
     { privateRoot: "/tmp/with\nnewline" },
     { readOnlyToolchainPaths: ["/work"] },

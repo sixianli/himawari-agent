@@ -1,13 +1,15 @@
-import { startReadinessProbe } from "./readiness-probe.ts";
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
+import { jobCommand } from "./job-command.ts";
 import { type JobHostControlBinding, openJobHostControl } from "./job-host-control.ts";
-import { type JobHostRequest, parseJobHostRequest, quoteJobArgument } from "./job-host-protocol.ts";
+import { type JobHostRequest, parseJobHostRequest } from "./job-host-protocol.ts";
 import { captureLinuxNamespace, type LinuxNamespaceIdentity } from "./linux-namespace.ts";
+import { openNetworkEgress } from "./network-egress.ts";
 import { compileSandboxPolicy } from "./policy.ts";
+import { startReadinessProbe } from "./readiness-probe.ts";
 import { observeTaskResources, readProcessSnapshot } from "./resource-observer.ts";
 
 // This entry is forked by the trusted Worker with a clean environment before any
@@ -37,6 +39,7 @@ let exited = false;
 let closed = false;
 let finishing = false;
 let sdkOperation: Promise<unknown> = Promise.resolve();
+let egress: Awaited<ReturnType<typeof openNetworkEgress>> | undefined;
 let deadline: ReturnType<typeof setTimeout> | undefined;
 let emergency: ReturnType<typeof setTimeout> | undefined;
 
@@ -76,6 +79,7 @@ async function finish() {
   observer?.stop();
   clearInterval(heartbeat);
   phase = "stopping";
+  void egress?.close();
   clearTimeout(deadline);
   killTask();
   readiness?.cancel();
@@ -87,6 +91,7 @@ async function finish() {
     // Initialization/wrapping must settle before reset. The emergency deadline
     // remains armed if the SDK never settles.
     await sdkOperation.catch(() => {});
+    await egress?.close();
     SandboxManager.cleanupAfterCommand();
     await SandboxManager.reset();
     reset = true;
@@ -102,6 +107,7 @@ async function finish() {
   }
   send({
     type: "result",
+    network: egress?.observation() ?? null,
     reason,
     resources: observer?.current() ?? null,
     exitCode: task?.exitCode ?? null,
@@ -120,6 +126,7 @@ function stop(cause: string) {
   if (phase === "finished") return;
   if (phase !== "stopping") reason = cause;
   phase = "stopping";
+  void egress?.close();
   killTask();
   emergency ??= setTimeout(() => {
     void finish();
@@ -214,7 +221,19 @@ async function prepare(value: unknown, controlValue?: unknown) {
     () => stop("deadline"),
     Math.max(1, Date.parse(request.deadlineAt) - Date.now()),
   );
-  sdkOperation = SandboxManager.initialize(JSON.parse(policy.policyJson), undefined, false);
+  // The ephemeral upstream is infrastructure-owned, never accepted from a scope.
+  // The frozen policy digest binds the allowed targets; runtime digest binds this
+  // mandatory routing implementation. Both proxy schemes disable all bypasses.
+  sdkOperation = (async () => {
+    const configuration = JSON.parse(policy.policyJson);
+    egress = await openNetworkEgress(configuration.network.allowedDomains);
+    if (phase !== "preparing") {
+      await egress.close();
+      return;
+    }
+    configuration.network.parentProxy = egress.parentProxy;
+    await SandboxManager.initialize(configuration, undefined, false);
+  })();
   await sdkOperation;
   if (phase !== "preparing") {
     await finish();
@@ -231,12 +250,15 @@ async function prepare(value: unknown, controlValue?: unknown) {
 async function start() {
   if (phase !== "ready" || !request) throw new Error("JOB_HOST_NOT_READY");
   phase = "running";
-  const actualCommand = [request.executable, ...request.args].map(quoteJobArgument).join(" ");
+  // SRT 0.0.75 advertises localhost in proxy URLs. Node's getaddrinfo can
+  // fail under the Mac resolver restrictions even with /etc/hosts readable.
+  // Normalize only SRT-owned proxy variables inside its wrapper; retain its
+  // authentication/ports and the OS deny policy, without opening DNS services.
   const namespaceToken = randomUUID();
   const namespaceGate = process.platform === "linux";
   const command = namespaceGate
-    ? `printf '${namespaceToken}:%s:%s\\n' "$$" "$(readlink /proc/self/ns/pid)" >&2; IFS= read -r himawari_start; [ "$himawari_start" = '${namespaceToken}' ] || exit 125; exec ${actualCommand}`
-    : actualCommand;
+    ? `printf '${namespaceToken}:%s:%s\\n' "$$" "$(readlink /proc/self/ns/pid)" >&2; IFS= read -r himawari_start; [ "$himawari_start" = '${namespaceToken}' ] || exit 125; ${jobCommand(request.executable, request.args, true)}`
+    : jobCommand(request.executable, request.args, false);
   const wrapping = SandboxManager.wrapWithSandboxArgv(command, "/bin/bash");
   sdkOperation = wrapping;
   const launch = await wrapping;

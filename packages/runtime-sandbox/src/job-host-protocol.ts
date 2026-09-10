@@ -170,6 +170,12 @@ export function quoteJobArgument(argument: string): string {
 }
 
 export interface JobHostResult {
+  readonly network?: {
+    readonly deniedTargets: number;
+    readonly deniedAddresses: number;
+    readonly connected: number;
+    readonly closed: boolean;
+  } | null;
   readonly supervision?: JobHostSupervision | null;
   readonly jobId: string;
   readonly attemptId: string;

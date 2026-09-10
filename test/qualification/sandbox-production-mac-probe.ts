@@ -5,11 +5,11 @@ import path from "node:path";
 import { hostDirectoryGrantStateKey } from "@himawari-agent/application";
 import {
   type ExecutionV2Request,
+  executionV2MessageSchema,
   type SandboxExecutionPlanV2,
   sandboxExecutionPlanCandidateV2Schema,
   sandboxExecutionReservationSchema,
   sandboxScopeSchema,
-  executionV2MessageSchema,
 } from "@himawari-agent/execution-contracts";
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PayloadUdsServer, resolveSandboxWorkspaceClaim } from "@himawari-agent/platform-node";
@@ -26,9 +26,15 @@ import {
   T1,
 } from "../fixtures/sqlite-capability-invocation-fixture.js";
 
-export async function qualifyProductionSandboxMac(v2 = false) {
-  if (!LIVE_SANDBOX || process.platform !== "darwin")
-    throw new Error("MAC_SANDBOX_PROBE_OPT_IN_REQUIRED");
+export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false) {
+  if (revokeNetwork && (!v2 || process.platform !== "linux"))
+    throw new Error("NETWORK_REVOCATION_REQUIRES_LINUX_V2");
+  if (
+    !LIVE_SANDBOX ||
+    !["darwin", "linux"].includes(process.platform) ||
+    (process.platform === "linux" && !v2)
+  )
+    throw new Error("SANDBOX_PROBE_OPT_IN_REQUIRED");
   const { macSandboxDeployment } = await import("../fixtures/mac-sandbox-deployment.js");
   const { createProductionSandboxServices } = await import(
     "../../apps/agent-service/src/production-sandbox-services.js"
@@ -53,11 +59,21 @@ export async function qualifyProductionSandboxMac(v2 = false) {
   };
 
   try {
-    const fixture = await openSandboxJournal();
+    const fixture = await openSandboxJournal(
+      false,
+      revokeNetwork ? ["registry.npmjs.org:443"] : [],
+    );
     cleanup.push(() => fixture.close());
     const hostRoot = v2 ? await mkdtemp("/tmp/h-v2-") : fixture.resource.stateRoot;
     if (v2) cleanup.push(() => rm(hostRoot, { recursive: true, force: true }));
-    const host = await macSandboxDeployment(hostRoot, fixture.plan, T1, v2);
+    const host = await macSandboxDeployment(
+      hostRoot,
+      fixture.plan,
+      T1,
+      v2,
+      process.platform as "darwin" | "linux",
+      revokeNetwork,
+    );
     const scope = sandboxScopeSchema.parse({ ...fixture.scope, parentToolCallId: null });
     const payload = await fixture.protector.protect({
       ownerId: OWNER_ID,
@@ -292,29 +308,60 @@ export async function qualifyProductionSandboxMac(v2 = false) {
           : { sandboxJob: plan.identity }),
       },
     }) as Extract<ExecutionV2Request, { type: "work.execute" }>;
-    const result = await worker.execute(request);
+    let revocationStarted: number | undefined;
+    const executing = worker.execute(request);
+    if (revokeNetwork) {
+      const marker = path.join(host.privateRoot, plan.identity.jobId, "network-established");
+      const deadline = Date.now() + 15000;
+      while (!(await readFile(marker, "utf8").catch(() => ""))) {
+        if (Date.now() >= deadline) throw new Error("NETWORK_CONNECTION_NOT_ESTABLISHED");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      const authorizations = repository.authorizationStore();
+      const grant = (await authorizations.listGrants(OWNER_ID, AGENT_ID)).find(
+        (value) => value.id === scope.authorizationRef,
+      );
+      assert.ok(grant);
+      revocationStarted = performance.now();
+      await authorizations.revokeGrant(
+        grant.id,
+        new Date().toISOString(),
+        "LIVE_NETWORK_REVOCATION",
+        grant.revision,
+      );
+    }
+    const result = await executing;
+    const revokeToReleasedMs =
+      revocationStarted === undefined ? null : Math.ceil(performance.now() - revocationStarted);
     assert.equal(result.outcome, "result_unknown");
     const record = v2
       ? await services.brokerV2.journal.read(plan.identity)
       : await services.broker.journal.read(plan.identity);
     const observation = record && "facts" in record ? record.facts.resource : record?.observation;
     assert.ok(observation);
-    if ("supervision" in observation) assert.equal(observation.supervision, "lost");
-    else assert.equal(observation.state, "quarantined");
-    const outputRef =
-      record && "facts" in record && record.facts.result && "output" in record.facts.result
-        ? record.facts.result.output.ref
-        : record && "observation" in record
-          ? record.observation.outputRef
-          : null;
-    const output = await repository.payloadStore(OWNER_ID, AGENT_ID).get(outputRef ?? "missing");
-    if (!output) throw new Error("live output absent");
-    const bytes = await fixture.protector.unprotect({
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      payload: output,
-    });
-    assert.equal(new TextDecoder().decode(bytes), '{"probe":"passed"}');
+    if ("supervision" in observation) {
+      assert.equal(observation.supervision, process.platform === "linux" ? "released" : "lost");
+      assert.equal(observation.cleanup, process.platform === "linux" ? "confirmed" : "unknown");
+    } else
+      assert.equal(observation.state, process.platform === "linux" ? "released" : "quarantined");
+    if (revokeToReleasedMs !== null)
+      assert.ok(revokeToReleasedMs < 8000, "NETWORK_REVOCATION_TOO_SLOW");
+    if (!revokeNetwork) {
+      const outputRef =
+        record && "facts" in record && record.facts.result && "output" in record.facts.result
+          ? record.facts.result.output.ref
+          : record && "observation" in record
+            ? record.observation.outputRef
+            : null;
+      const output = await repository.payloadStore(OWNER_ID, AGENT_ID).get(outputRef ?? "missing");
+      if (!output) throw new Error("live output absent");
+      const bytes = await fixture.protector.unprotect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        payload: output,
+      });
+      assert.equal(new TextDecoder().decode(bytes), '{"probe":"passed"}');
+    }
     assert.equal(
       await readFile(path.join(host.privateRoot, plan.identity.jobId, "runs"), "utf8"),
       "run\n",
@@ -340,8 +387,18 @@ export async function qualifyProductionSandboxMac(v2 = false) {
       productionSandboxProbePassed: true,
       schema: v2 ? "sandbox-execution.v2" : "sandbox-execution.v1",
       productionSuitable: false,
-      networkDenial: "blocked-by-allowlist",
-      cleanup: "unknown",
+      networkDenial: revokeNetwork ? null : "blocked-by-allowlist",
+      networkRevocation: revokeNetwork
+        ? {
+            connectionEstablished: true,
+            grantRevoked: true,
+            revokeToReleasedMs,
+            jobHostExited: true,
+            taskNamespaceReleased: true,
+          }
+        : null,
+      platform: process.platform,
+      cleanup: process.platform === "linux" ? "confirmed" : "unknown",
       replayExecuted: false,
     };
   } finally {

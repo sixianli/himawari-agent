@@ -40,6 +40,7 @@ it.each([
   "replay",
   "bind-ack-loss",
   "registration-revoked",
+  "revoked-running",
   "background",
   "background-ack-loss",
   "service",
@@ -100,7 +101,7 @@ it.each([
     inspect: () => ({ bootId: "boot", state: "alive" }),
     start: vi.fn(() => {
       calls.push("host-start");
-      if (background) return;
+      if (background || scenario === "revoked-running") return;
       resolveResult({
         stdout: new TextEncoder().encode("result"),
         taskStarted: true,
@@ -196,6 +197,12 @@ it.each([
       command: { kind: string; facts?: typeof facts },
     ) => {
       calls.push(command.kind);
+      if (
+        command.kind === "resolve" &&
+        scenario === "revoked-running" &&
+        host.start.mock.calls.length > 0
+      )
+        throw new Error("revoked during foreground execution");
       if (command.kind === "register_control" && scenario === "registration-revoked")
         throw new Error("revoked");
       if (command.kind === "bind") {
@@ -303,7 +310,9 @@ it.each([
     return;
   }
   expect(await worker.execute(request)).toEqual(outcome);
-  expect(host.start).toHaveBeenCalledTimes(scenario === "normal" || scenario === "pi" ? 1 : 0);
+  expect(host.start).toHaveBeenCalledTimes(
+    scenario === "normal" || scenario === "pi" || scenario === "revoked-running" ? 1 : 0,
+  );
   if (scenario === "normal" || scenario === "pi") {
     expect(calls.indexOf("register_control")).toBeLessThan(calls.indexOf("bind"));
     expect(calls.indexOf("bind")).toBeLessThan(calls.indexOf("host-start"));

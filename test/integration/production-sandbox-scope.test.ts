@@ -45,7 +45,7 @@ it.each(["read", "edit", "write", "search", "bash", "background"])(
     const send = await f.connect(admitted.admission.plan.identity);
     const scope = (await send({ kind: "resolve" })).resolvedScope;
     if (!scope) throw new Error("scope missing");
-    expect(scope.allowedDomains).toEqual(["example.com"]);
+    expect(scope.allowedDomains).toEqual(["example.com:443"]);
     expect(scope.scope.networkAuthorizationRef).toBe(f.input.authorizationRef);
     expect(scope.scope.directoryGrant.operations).toEqual(
       descriptor(operation).directoryOperations,

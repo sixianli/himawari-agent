@@ -324,6 +324,22 @@ export function prepareSandboxJobHost(
           ? false
           : null;
     resolveResult({
+      network: (() => {
+        const value = completion?.["network"];
+        if (!value || typeof value !== "object") return null;
+        const record = value as Record<string, unknown>;
+        if (
+          typeof record["closed"] !== "boolean" ||
+          !["deniedTargets", "deniedAddresses", "connected"].every(
+            (key) =>
+              typeof record[key] === "number" &&
+              Number.isSafeInteger(record[key]) &&
+              (record[key] as number) >= 0,
+          )
+        )
+          return null;
+        return record as NonNullable<JobHostResult["network"]>;
+      })(),
       jobId: request.jobId,
       attemptId: request.attemptId,
       supervision: inspect(),

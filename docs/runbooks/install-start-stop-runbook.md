@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:f465aee7e4d2fecb4042c37b4ef0ca2f80246e25b8a45d59de4ac27225efc741"
+contract_sha256: "sha256:b15c3532f951d4619d8ae9b727728b2a11e9fcf9543fa8582dae41a3c336c1be"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -115,7 +115,9 @@ schema 28 在原数据库追加 v2 资源关联、独立操作/资源观察、�
 
 这些 SQLite 机制已有独立测试数据库的升级、重开和事务验证；本次未升级运行中的 state root，也未执行真实安装、恢复或跨主机迁移。正式组合已具备显式 v2 foreground 固定读取/命令路径、目录身份和证据读取，Pi 七工具前台 runner 已有假数据验收，目标安装资格仍须独立验证。恢复后继续适用当前主机/目录/权威检查，不能自动重放旧任务或未确认派发。
 
-SRT 的 Agent Service 和 Worker 启动组合已连接现有准入、目录授权状态、受保护 scope、认证 Payload 通道与作业监督器；scope 来源已支持文件 inspect/read 工作流及已批准 Grant targets 的通用工具范围；七工具前台 runner 及后台执行已有专用假数据验收，目标安装资格仍须独立完成。网络范围须来自本次操作同一 Grant 的审批快照确切域名目标，并与主机能力上界核对；不新增授权或再次消费 Grant。准入及启动前验证授权、父调用和真实 host/runtime/runner/qualification。缺少可信来源时拒绝。策略只由 Worker 编译，初始观察可无摘要，首次原子启动固定摘要后不可替换。
+SRT 的 Agent Service 和 Worker 启动组合已连接现有准入、目录授权状态、受保护 scope、认证 Payload 通道与作业监督器；scope 来源已支持文件 inspect/read 工作流及已批准 Grant targets 的通用工具范围；七工具前台 runner 及后台执行已有专用假数据验收，目标安装资格仍须独立完成。网络范围须来自本次操作同一 Grant 的审批快照确切小写 hostname:port 目标，并与主机能力上界核对；不新增授权或再次消费 Grant。准入及启动前验证授权、父调用和真实 host/runtime/runner/qualification。缺少可信来源时拒绝。策略只由 Worker 编译，初始观察可无摘要，首次原子启动固定摘要后不可替换。
+
+R8 增加 Job Host 私有认证上游，初始化时强制 SRT 两种代理协议通过上游并禁用 bypass；解析后的非公网地址被拒绝。旧裸域名绑定与审批快照不可自动补端口，须由现有授权流程取得有效的明确端口目标。Worker 对所有 mode 每轮监督都重查原授权，失败后请求 Job Host 关闭；关闭出口会终止连接，不等于撤回已经外发的数据或未知后代的文件权限。监督间隔为 250 ms，但 RPC 和调度会增加实际停止延迟。Node 客户端使用 SRT 生成并规范为数字回环地址的代理 URL，不需要为解析 localhost 开放额外 DNS 服务。联网工具仍须在主机 inventory 中声明其必要的只读系统工具链/证书文件，并验证下载、安装和重定向。出口测试计数不是生产签名资格；不得手工把测试证据复制到部署 qualification。
 
 安装产物源码新增了 R1 的 v2 合同、类型端口和纯判断函数，以及 R2 的 SQLite 账本，正式组合按安装声明分别使用 v1 与 v2 foreground；声明不能代替目标平台资格。新增 `SandboxExecutionPortV2` 导出不代表 Job Host 取得新监督资格，也不会把旧 unknown 回执转换为已清理。后续接入 v2 正式适配器时，须重新核对本 Runbook 的迁移、恢复和安装验证。
 
@@ -146,6 +148,10 @@ Agent 启动在开放准入前还会使用当前权威失效 v2 旧监督观察�
 - CI 源码摘要记录实际工作树中的构建输入，包含普通源码的新增、修改、删除和文件模式，不能只记录 Git HEAD。构建器仍引用的模块或显式必需文件缺失时必须失败；构建期间及安装前再次核对摘要，不能用忽略所有缺失文件的方式通过校验。
 - state root、SQLite migration、Worker recovery 与身份边界：`packages/platform-node/src/state-root-layout.ts`、`packages/persistence-sqlite/src/product-state-repository.ts`。
 - 本 Runbook contract selector 中列出的源文件和 portable durable web-agent Spec。
+
+本地安装合同补充：Worker 以 deployment binding.kind 区分 sandbox 与旧 process 后端；SRT 不需要伪造旧 process isolation 配置，仍须通过真实 host 资格复核。权限续租只改变到期信息时，不使并发读取失去原权威；停止或身份变化仍必须拒绝。公开网页客户端先创建产品 session，再从认证配置读取 sessionId，不能拼造 ID。重复 Payload 上传须比较带 `sha256:` 前缀的同一正文摘要；并发活跃时间更新冲突时重新检查会话及设备撤销状态。这些规则已通过实际 HTTP／SQLite 和并发回归验证。
+
+Hermes 的 systemd、Cloudflare 入口、Host 签名与付费模型验收是 Owner 另行明确授权的部署操作，证据记录在 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md] 的 R8；不扩张本 Runbook 的本地安装操作范围。
 
 ## Safety and Preconditions
 

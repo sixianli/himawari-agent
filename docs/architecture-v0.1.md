@@ -16,6 +16,8 @@ Pi `0.84.2` 管理模型与工具循环，模型侧工具执行委托现有 `Run
 
 SRT `0.0.75` 已集中在 `packages/runtime-sandbox`。独立 Job Host、原子准入/启动 CAS、scope 解析、主机与运行产物复核、认证 Payload UDS、正式 Worker 组合以及启动恢复核查均有实现。scope 已支持文件 inspect/read 工作流及从现有 Grant targets 取得通用工具范围；Pi 七工具前台 runner 已接入显式合同，后台执行仍待后续阶段，MCP 不在本次交付范围。
 
+R8 在 Job Host 内增加每作业认证 HTTP 上游，复用 SRT `parentProxy` 汇集 HTTP/CONNECT/SOCKS。冻结的 hostname:port 同时限定 Grant、主机上界与策略；解析后检查全部地址并按数字 IP 建连。停止先关闭出口和连接，迟到 DNS 不能触发连接；出口拒绝、连接与关闭计数通过原认证 IPC 返回。SRT 继续负责 OS 隔离及客户端代理协议，Pi Operations 不变。该实现不证明系统 DNS 绝对零外联，也不扩大 Mac 清理保证。设计依据见 [SOURCE: docs/adr/0026-job-scoped-network-egress.md]；真实资格范围见配套 Plan。
+
 现有 `sandbox-execution.v1` 把正常完成与清理/副作用确认绑定；正式 Job Host 适配对已启动任务仍报告 cleanup/effect unknown。因此受控 Mac 组合能保存输出并隔离未知作业，不能据此声称正式文件总结成功、环境已清理或全部工具可用。v2 `reconcile` 已通过原 Job Host 的认证控制端口和受保护终态证据核查；Mac 已启动任务仍保持清理未知，Linux 只有原 PID namespace 消失且退出证据完整时才允许释放。已跑历史验证及具体限制归配套 Plan，不把合成资格当作安装主机资格。
 
 R1 已新增 `sandbox-execution.v2` 严格合同、`SandboxExecutionPortV2` 类型端口以及共享的 `projectSandboxExecution` / `projectSandboxRunCompletion` 纯判断函数。结果、效果和资源观察独立表达；结果已知时可以保留展示，监管丢失仍禁止续接和环境复用。判断需要由可信 Payload/资格/效果读者核验的证据，并检查调用、策略、sequence 与时效。生产组合已接入显式声明的 v2 foreground 固定读取/命令路径及真实证据读者；后台/服务与 UI 消费仍需后续工作。v1 与 v2 按原合同分别处理，不隐式降级。
@@ -427,9 +429,13 @@ Delivery 有独立于 Run 的 revision 和 `pending → delivering → delivered
 
 Identity Gateway 把 bootstrap、产品 session 和 break-glass 保持为独立最小 route。bootstrap 默认关闭、仅 loopback、短时有效并通过 SQLite transaction 只创建一次 Owner 外部 subject binding。Cloudflare Access verifier 只接受 RS256 并校验 `kid`/JWKS 有界缓存与轮换、issuer、audience、signature、`exp`、`nbf` 和 clock skew；产品只保存由 issuer/subject 派生的稳定外部引用，不信任 forwarded email/username。产品 session/device 只保存 bearer token digest 与 authentication reference，支持 activity 和级联撤销；CSRF token 绑定产品 session。break-glass 另需 loopback credential 与独占文件锁，只允许修复 Owner mapping、撤销 session/device 或关闭公网入口，并产生受保护审计。
 
+浏览器先用已验证的 Cloudflare Access 身份显式创建产品 session，再加载受保护配置。配置投影包含认证服务确认的 sessionId；提交消息使用该值，后端继续检查其与当前会话一致，不从 Owner ID 拼造会话。并发请求更新最后活跃时间时，若出现版本冲突，认证服务重新检查原会话身份和设备撤销状态，不覆盖并发写入，也不把普通活跃时间竞争当成退出登录。Payload 幂等比较沿用受保护正文的 `sha256:` 摘要格式，同键同内容重放，同键不同内容拒绝。Thread 页面使用自己的持久事件流判断连接状态。
+
+Hermes 单机的当前安装资格与真实网页登录／模型对话证据见 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md] 的 R8。该范围为 SRT foreground：read/find/grep/ls/bash，bash 联网仍要求动作 Grant；write/edit 及 background/service 联网未登记。安装资格不等于全部后续产品旅程通过。Agent 权限租约的并发校验比较同一租约身份和 fencing token，允许正常续租替换记录；停止、失权或不同身份仍拒绝执行。
+
 近期认证不是新建产品 session 的时间，也不是 JWT 的签发时间。`CloudflareAccessIdentityClient` 在 JWT 验证后向固定 HTTPS issuer 的 `get-identity` 端点发送临时 `CF_Authorization` Cookie，禁止重定向，并限制响应大小与总请求时间；提前拒绝和超时会取消响应流。它要求显式配置 `user_uuid_equals_sub` 主体绑定，把响应登录时间形成 `RecentAuthenticationEvidence`，绑定外部身份引用、Owner、device、产品 session 和到期时间。原始 JWT 与 provider subject 不进入产品持久状态，公开 verifier 返回值也不包含 provider subject。该登录时间证明不等同于 MFA 证明；真实部署的 provider 主体对应关系仍需环境验证。
 
-`RecentAuthenticationGuard` 使用显式最大年龄和时钟偏差，拒绝缺失、非法、过期、未来、跨身份或跨会话证据，并重读有效 Owner binding 与 session。需要近期认证的 Approval 批准、Host commit、永久文件删除和 Thread 永久删除在实际变更前调用同一 guard；未组合 guard 时拒绝敏感操作。只有持久回执确认的相同语义、无新副作用重放可复用既有结果，调用者不能自报已重放来跳过认证。登录时间查询不可用不会否定已通过的普通 JWT/session 认证，但 HTTP 配置不提供近期认证引用，敏感操作保持拒绝。上述模块和本地回归已经实现；生产服务入口尚未完成这些依赖的组合，不能据此认定真实 Access/MFA 或安装后服务验收通过。
+`RecentAuthenticationGuard` 使用显式最大年龄和时钟偏差，拒绝缺失、非法、过期、未来、跨身份或跨会话证据，并重读有效 Owner binding 与 session。需要近期认证的 Approval 批准、Host commit、永久文件删除和 Thread 永久删除在实际变更前调用同一 guard；未组合 guard 时拒绝敏感操作。只有持久回执确认的相同语义、无新副作用重放可复用既有结果，调用者不能自报已重放来跳过认证。登录时间查询不可用不会否定已通过的普通 JWT/session 认证，但 HTTP 配置不提供近期认证引用，敏感操作保持拒绝。上述依赖已组合进正式 HTTP 入口，Hermes 的普通 Access/session 登录及对话已有实机证据；近期认证、MFA 与其他敏感动作仍须分别验收，普通登录不能替代这些证明。
 
 `apps/control-center` 只依赖浏览器 API、Gateway contracts 与 React/Vite。typed client 将私人正文先交给 Payload admission，再只在 command 中传引用；v2 与 Thread v3 SSE synchronizer 分别使用 durable cursor 恢复。`localStorage` 只保存未发送 Thread 草稿、显示偏好、UI locale、v2/Thread last cursor，以及结果未确定期间无正文的 mutation identity；它不能在浏览器本地接纳命令或保存已提交历史、搜索正文、authority state 或长期 Memory 正文。Thread 页面已接通 list/detail/search、committed Message sequence、Run lifecycle、独立 answer locale、create/send/rename/pin/archive/restore/Fork/checkpoint/deletion coordination。Approval、Capability 与 Grant 页面从 Agent-scoped list/detail snapshot 显示冻结 intent、来源/版本/完整性、权限、protected secret refs、隔离/health、更新/回退、scope/usage/budget 与受影响 Task；mutation 使用调用方持久化幂等 identity 和 revision CAS，409 强制权威刷新，离线与缺 recent-auth 时不发送，401 清除旧身份状态。所有已接通页面都不执行 optimistic truth 或 silent last-write-wins。Chromium 151 与 WebKit 26.5 的受控 fixture 已验证 Thread/search/checkpoint/conflict/archive/delete-impact/Fork、治理 approve/deny/review/install/update/rollback/disable/revoke、多标签、断网/关闭重开、三语、移动视口、44 px target、320 px reflow 和 axe 基线，但不代表真实公网身份、人工辅助技术或正式六浏览器平台矩阵。
 
