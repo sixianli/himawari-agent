@@ -758,12 +758,17 @@ describe("R2 SQLite durable execution resources", () => {
           unknown
         >[];
         for (const row of rows) {
-          const columns = Object.keys(row);
+          const oldColumns = new Set(
+            (old.prepare(`PRAGMA table_info("${name}")`).all() as { name: string }[]).map(
+              (column) => column.name,
+            ),
+          );
+          const columns = Object.keys(row).filter((column) => oldColumns.has(column));
           old
             .prepare(
               `INSERT INTO "${name}" (${columns.map((c) => `"${c}"`).join(",")}) VALUES (${columns.map(() => "?").join(",")})`,
             )
-            .run(...Object.values(row));
+            .run(...columns.map((column) => row[column]));
         }
       }
       old.pragma("foreign_keys = ON");
@@ -785,7 +790,7 @@ describe("R2 SQLite durable execution resources", () => {
         old,
         path.join(f.resource.stateRoot, "legacy-snapshot.sqlite"),
       );
-      expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([28, 29]);
+      expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([28, 29, 30]);
       expect(readMigrationLedger(old).slice(0, 27)).toEqual(ledger);
       expect(old.prepare("SELECT * FROM sandbox_jobs").all()).toEqual(before);
       expect(old.prepare("SELECT count(*) FROM sandbox_execution_records").pluck().get()).toBe(0);

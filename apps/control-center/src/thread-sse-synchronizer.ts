@@ -27,6 +27,7 @@ export class ThreadSseSynchronizer {
   #reconnectHandle: number | undefined;
   #attempt = 0;
   #stopped = true;
+  #networkOffline = false;
 
   constructor(options: ThreadSseSynchronizerOptions) {
     this.#options = options;
@@ -36,6 +37,18 @@ export class ThreadSseSynchronizer {
     if (!this.#stopped) return;
     this.#stopped = false;
     this.#connect();
+  }
+
+  setNetworkOnline(online: boolean): void {
+    this.#networkOffline = !online;
+    if (online) {
+      this.reconnectNow();
+      return;
+    }
+    this.#source?.close();
+    this.#source = undefined;
+    this.#clearReconnect();
+    this.#options.onConnectionState?.("offline");
   }
 
   reconnectNow(): void {
@@ -54,7 +67,7 @@ export class ThreadSseSynchronizer {
   }
 
   #connect(): void {
-    if (this.#stopped || this.#source) return;
+    if (this.#stopped || this.#networkOffline || this.#source) return;
     this.#options.onConnectionState?.("connecting");
     const subscription = threadSubscriptionMessage(
       this.#options.configuration,
@@ -66,13 +79,23 @@ export class ThreadSseSynchronizer {
     const source = this.#options.createEventSource(url);
     this.#source = source;
     source.onopen = () => {
+      if (this.#stopped || this.#source !== source) return;
+      this.#options.onSnapshotRequired();
       this.#attempt = 0;
       this.#options.onConnectionState?.("connected");
     };
     source.onmessage = (message) => {
+      if (this.#stopped || this.#source !== source) return;
       try {
         const parsed = threadGatewayMessageSchema.parseJson(message.data);
         if (parsed.kind !== "event") throw new Error("CONTROL_CENTER_THREAD_EVENT_INVALID");
+        const previous = this.#options.storage.readThreadLastCursor();
+        const ordinal = (cursor: string | null) => Number(cursor?.match(/:(\d+)$/)?.[1] ?? -1);
+        if (
+          previous === parsed.payload.cursor ||
+          ordinal(previous) >= ordinal(parsed.payload.cursor)
+        )
+          return;
         this.#options.storage.saveThreadLastCursor(parsed.payload.cursor);
         this.#attempt = 0;
         this.#options.onCommittedEvent();
@@ -81,10 +104,12 @@ export class ThreadSseSynchronizer {
       }
     };
     source.addEventListener?.("thread.snapshot_required", () => {
+      if (this.#stopped || this.#source !== source) return;
       this.#options.storage.clearThreadLastCursor();
       this.#options.onSnapshotRequired();
     });
     source.onerror = () => {
+      if (this.#stopped || this.#source !== source) return;
       if (this.#source === source) this.#source = undefined;
       source.close();
       this.#options.onConnectionState?.("offline");

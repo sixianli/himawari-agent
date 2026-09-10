@@ -10,6 +10,16 @@ date: "2026-08-25"
 
 ## 执行架构：当前实现与已采纳设计
 
+### 控制中心展示与执行选择（2026-09-10）
+
+控制中心采用已确认的侧栏、聊天阅读区、固定输入和按需详情；Light/Dark 与六种主题色保存在客户端界面偏好中，三语与管理模块入口继续保留。原始品牌/原型资源不覆盖。
+
+`ThreadExecutionProjection` 从 Owner/Agent/Thread/Run 归属校验后的持久化 Trace 提取受限展示字段，经现有 Thread Gateway 查询返回。原始 JSON、未标记为可展示摘要的 thinking、签名与 provider 元数据不开放。Trace 追加事务同时发布 Thread 事件通知，浏览器重连读取持久化投影，不另建流式协议。
+
+用户提交仍对应产品 Turn/Run，Pi 内部 turn 是轮内执行步骤。可选模型由已配置、允许 private 数据的 generation descriptor 与 Pi 0.84.2 能力共同决定；`thread.message.submit_configured` 在 migration 0030 的 `runs.model_selection_json` 保存本次选择，后续仍由 RunExecutionInputService 冻结策略并执行原预算/披露/授权检查。界面中的下一轮选择不会改变活动 Run。停止复用 RunCoordinator；文本附件经既有 private Payload 发送，仅“执行”模式可用。
+
+本轮实际验收按用户要求限于本机版本；真实服务与真实模型资格需单独取得。具体设计见 [SOURCE: docs/archive/specs/2026-09-10-control-center-product-refactor-design.md]。
+
 ### 当前实现基线（2026-09-09）
 
 Pi `0.84.2` 管理模型与工具循环，模型侧工具执行委托现有 `RuntimeToolPort` 和 Worker。产品权威保存在调用回执、Grant/Handle、Run checkpoint、受保护 Payload 和 SQLite 作业观察中；没有独立的第二套工具身份或权限数据库。

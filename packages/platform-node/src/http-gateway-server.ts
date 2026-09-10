@@ -98,6 +98,15 @@ export interface HttpGatewayServerOptions {
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
   readonly browserConfiguration?: {
+    readonly executionPresentationAvailable?: boolean;
+    readonly canCancelRun?: boolean;
+    readonly availableModels?: readonly {
+      ref: string;
+      model: string;
+      name: string;
+      provider: string;
+      thinkingLevels: readonly string[];
+    }[];
     readonly installedGatewayV2Operations?: readonly (GatewayV2Query | GatewayV2Command)["type"][];
     readonly agentId: string;
     readonly deploymentId: string;
@@ -677,6 +686,9 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         csrfToken: await issueCsrf(authentication),
         authorizationRef: authentication.authenticationRef,
         recentAuthenticationRef,
+        executionPresentationAvailable: configuration.executionPresentationAvailable ?? false,
+        canCancelRun: configuration.canCancelRun ?? false,
+        availableModels: configuration.availableModels ?? [],
         primaryModel: configuration.primaryModel ?? null,
         primaryModelRef: configuration.primaryModelRef ?? null,
         repositoryAllowlistRefs: configuration.repositoryAllowlistRefs ?? [],

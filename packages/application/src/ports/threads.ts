@@ -10,8 +10,8 @@ import type {
   RunStatus,
   SessionId,
   ThreadId,
-  TurnId,
   TriggerId,
+  TurnId,
 } from "@himawari-agent/domain";
 import type { DataClassification, PayloadRef } from "./common.js";
 
@@ -47,6 +47,7 @@ export interface ThreadUpdateInput {
 }
 
 export interface AdmitOwnerMessageInput {
+  readonly modelSelection?: import("./run-execution-source.js").RunModelSelection;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly threadId: ThreadId;

@@ -50,6 +50,7 @@ import type {
   ProductAuthorityFence,
   SessionId,
 } from "@himawari-agent/domain";
+import { createDeploymentId } from "@himawari-agent/domain";
 import type {
   EventSubscription,
   GetRunSnapshotQuery,
@@ -1349,6 +1350,35 @@ export class SqliteDurableOperations {
           event.recordedAt,
           JSON.stringify(event),
         );
+      // The notification and durable observation commit together. The existing
+      // Thread cursor is the sole browser reconnect position; no parallel stream.
+      if (event.threadId && event.eventType.startsWith("runtime.")) {
+        const scope = this.database
+          .prepare(`SELECT t.revision AS revision, d.id AS deploymentId,
+          d.authority_epoch AS authorityEpoch, d.fencing_token AS fencingToken
+          FROM threads t JOIN deployments d ON d.owner_id = t.owner_id AND d.agent_id = t.agent_id
+          WHERE t.id = ? AND t.owner_id = ? AND t.agent_id = ? AND t.revision >= 1 AND d.status = 'active' AND d.authority_epoch >= 1 AND d.fencing_token >= 1`)
+          .get(event.threadId, event.ownerId, event.agentId) as
+          | { revision: number; deploymentId: string; authorityEpoch: number; fencingToken: number }
+          | undefined;
+        if (scope)
+          this.thread.appendGatewayEventInTransaction({
+            ownerId: event.ownerId,
+            agentId: event.agentId,
+            threadId: event.threadId,
+            threadRevision: scope.revision,
+            eventId: event.id,
+            commandId: event.id,
+            commandType: "thread.execution.updated",
+            resultRef: null,
+            committedAt: event.recordedAt,
+            authority: {
+              deploymentId: createDeploymentId(scope.deploymentId),
+              authorityEpoch: scope.authorityEpoch,
+              fencingToken: scope.fencingToken,
+            },
+          });
+      }
     });
     transaction.immediate();
   }

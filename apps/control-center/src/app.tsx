@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ControlCenterShell } from "./app/app-shell.js";
 import {
   CONTROL_CENTER_SURFACE_INVENTORY,
-  isSurfaceInstalled,
   type ControlCenterSurfaceInventoryEntry,
+  isSurfaceInstalled,
 } from "./app/control-center-inventory.js";
 import {
   type ControlCenterRouteState,
@@ -126,6 +126,10 @@ export function ControlCenterApp() {
   const [preferences, setPreferences] = useState<ControlCenterPreferences>(() =>
     storage.readPreferences(),
   );
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", preferences.theme);
+    document.documentElement.setAttribute("data-accent", preferences.accent ?? "violet");
+  }, [preferences]);
   const updateLocale = (next: ControlCenterUiLocale) => {
     storage.saveLocale(next);
     setLocale(next);
@@ -272,17 +276,22 @@ function LocalizedControlCenterApp({
       log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
+    if (!navigator.onLine) synchronizer.setNetworkOnline(false);
+    const online = () => synchronizer.setNetworkOnline(true);
+    const offline = () => synchronizer.setNetworkOnline(false);
     const reconnect = () => synchronizer.reconnectNow();
     const synchronizeTab = (event: StorageEvent) => {
       if (event.key === THREAD_CURSOR_STORAGE_KEY) {
         setThreadRefreshSignal((current) => current + 1);
       }
     };
-    window.addEventListener("online", reconnect);
+    window.addEventListener("online", online);
+    window.addEventListener("offline", offline);
     window.addEventListener("storage", synchronizeTab);
     document.addEventListener("visibilitychange", reconnect);
     return () => {
-      window.removeEventListener("online", reconnect);
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", offline);
       window.removeEventListener("storage", synchronizeTab);
       document.removeEventListener("visibilitychange", reconnect);
       synchronizer.stop();
@@ -623,7 +632,9 @@ function LocalizedControlCenterApp({
       onLocaleChange={onLocaleChange}
       onNavigate={navigate}
       onPreferencesChange={onPreferencesChange}
-      pageTitle={message(titleIds[route.surfaceId])}
+      pageTitle={
+        route.surfaceId === "threads" ? threadModel.title : message(titleIds[route.surfaceId])
+      }
       preferences={preferences}
       route={route}
     />

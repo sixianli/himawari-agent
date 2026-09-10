@@ -23,6 +23,7 @@ import { threadCommandFingerprint } from "./thread-command-service.js";
 
 /** Trusted Core policy; browser messages and model output cannot supply this object. */
 export interface RunExecutionPolicy {
+  readonly thinkingLevel?: import("../ports/run-execution-source.js").RunThinkingLevel;
   readonly modelRef: string;
   readonly systemInstructionRef: string;
   readonly policyVersion: string;
@@ -202,6 +203,7 @@ export class RunExecutionInputService {
       runtime: {
         ...scope,
         modelRef: policy.modelRef,
+        ...(policy.thinkingLevel ? { thinkingLevel: policy.thinkingLevel } : {}),
         systemInstructionRef: policy.systemInstructionRef,
         capabilityHandleRefs: policy.capabilityHandleRefs,
         budget: {},

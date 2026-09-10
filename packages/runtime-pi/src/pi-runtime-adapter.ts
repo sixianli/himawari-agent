@@ -11,7 +11,10 @@ import type {
   ToolResultMessage,
   UserMessage,
 } from "@earendil-works/pi-ai";
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  getSupportedThinkingLevels,
+} from "@earendil-works/pi-ai";
 import {
   type AgentSession,
   type AgentSessionEvent,
@@ -855,12 +858,14 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         this.#dependencies.cwd,
       );
       const sessionFactory = this.#dependencies.createSession ?? createAgentSession;
+      if (!getSupportedThinkingLevels(binding.model).includes(request.thinkingLevel ?? "off"))
+        throw new Error("PI_THINKING_LEVEL_UNSUPPORTED");
       const created = await sessionFactory({
         cwd: this.#dependencies.cwd,
         ...(this.#dependencies.agentDir ? { agentDir: this.#dependencies.agentDir } : {}),
         model: binding.model,
         modelRuntime: sessionModelRuntime(binding),
-        thinkingLevel: "off",
+        thinkingLevel: request.thinkingLevel ?? "off",
         noTools: "all",
         tools: descriptors.map(({ name }) => name),
         customTools: descriptors.map((descriptor) =>
@@ -1109,7 +1114,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       definition = {
         name: descriptor.name,
         label: descriptor.name,
-        description: descriptor.description,
+        description: "description" in descriptor ? descriptor.description : "",
         parameters: descriptor.parameters as ToolDefinition["parameters"],
       };
     }
@@ -1203,7 +1208,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     const mapped: RuntimeEvent[] = [];
     switch (event.type) {
       case "agent_start":
-        mapped.push({ type: "runtime.model_started", runId: request.runId, occurredAt: now });
+        mapped.push({
+          type: "runtime.model_started",
+          runId: request.runId,
+          modelRef: request.modelRef,
+          thinkingLevel: request.thinkingLevel ?? "off",
+          occurredAt: now,
+        });
         break;
       case "agent_settled":
         return { events: mapped, settled: true, failed: false, aborted: false };
@@ -1281,6 +1292,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           kind: "tool_intent",
           value: redactObservation({
             toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            description: "description" in descriptor ? descriptor.description : "",
             arguments: event.args,
           }),
           dataClassification: request.dataClassification,
@@ -1302,6 +1315,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           kind: "tool_result",
           value: redactObservation({
             toolCallId: event.toolCallId,
+            toolName: event.toolName,
             result: event.result,
             isError: event.isError,
           }),

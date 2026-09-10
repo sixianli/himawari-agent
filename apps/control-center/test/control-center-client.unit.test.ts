@@ -633,6 +633,41 @@ describe("browser storage and SSE recovery", () => {
     synchronizer.stop();
   });
 
+  it("ignores replay and callbacks from disconnected Thread sources", () => {
+    const storage = new ControlCenterBrowserStorage(new MemoryStorage());
+    const sources: EventSourceLike[] = [];
+    const changed = vi.fn();
+    const states: string[] = [];
+    const synchronizer = new ThreadSseSynchronizer({
+      configuration,
+      storage,
+      createEventSource: () => {
+        const source: EventSourceLike = { onmessage: null, onerror: null, close: vi.fn() };
+        sources.push(source);
+        return source;
+      },
+      onCommittedEvent: changed,
+      onSnapshotRequired: vi.fn(),
+      onConnectionState: (state) => states.push(state),
+      log: vi.fn(),
+    });
+    synchronizer.start();
+    const message = { data: JSON.stringify(threadEvent()) } as MessageEvent<string>;
+    sources[0]?.onmessage?.(message);
+    sources[0]?.onmessage?.(message);
+    expect(changed).toHaveBeenCalledTimes(1);
+    synchronizer.setNetworkOnline(false);
+    sources[0]?.onopen?.(new Event("open"));
+    sources[0]?.onmessage?.(message);
+    expect(states.at(-1)).toBe("offline");
+    expect(changed).toHaveBeenCalledTimes(1);
+    synchronizer.setNetworkOnline(true);
+    expect(sources).toHaveLength(2);
+    sources[1]?.onopen?.(new Event("open"));
+    expect(states.at(-1)).toBe("connected");
+    synchronizer.stop();
+  });
+
   it("resumes Thread events from a separate cursor and requests a snapshot on retention loss", () => {
     const storage = new ControlCenterBrowserStorage(new MemoryStorage());
     storage.saveThreadLastCursor("thread-cursor:01");
@@ -686,7 +721,7 @@ describe("browser storage and SSE recovery", () => {
       type: "thread.events",
       payload: { afterCursor: "thread-cursor:01" },
     });
-    expect(callbacks).toEqual(["event", "snapshot"]);
+    expect(callbacks).toEqual(["snapshot", "event", "snapshot"]);
     expect(storage.readThreadLastCursor()).toBeNull();
     synchronizer.stop();
   });

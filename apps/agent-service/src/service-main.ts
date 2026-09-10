@@ -48,7 +48,10 @@ import {
   writeAuthorityFile,
   writeServiceDiagnostic,
 } from "@himawari-agent/platform-node";
-import { admissionCostForConfiguredPiModel } from "@himawari-agent/runtime-pi";
+import {
+  admissionCostForConfiguredPiModel,
+  getPiModelPresentation,
+} from "@himawari-agent/runtime-pi";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
@@ -885,7 +888,26 @@ export async function runAgentService(
         agentDir: path.join(configuration.cacheDirectory, "pi-agent"),
         onFailure: ({ error }) => failRuntime(error),
       });
+      const configuredPiModels = modelComposition.composition.piModels;
       http = await createProductionHttpComposition({
+        modelCatalog: await Promise.all(
+          modelComposition.descriptors.generation
+            .filter((descriptor) => descriptor.allowedDataClassifications.includes("private"))
+            .map(async (descriptor) =>
+              getPiModelPresentation(await configuredPiModels.resolve(descriptor.ref)),
+            ),
+        ),
+        cancelRun: async (input) => {
+          if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");
+          await runs.coordinator.cancel({
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            runId: input.runId,
+            authority: activeAuthority.authorityLease(),
+            command: input.command,
+            reasonCode: "OWNER_REQUESTED_STOP",
+          });
+        },
         configuration,
         repository,
         authority: () => activeAuthority.authorityFence(),

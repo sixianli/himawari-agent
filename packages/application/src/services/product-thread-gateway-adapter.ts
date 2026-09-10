@@ -1,5 +1,6 @@
 import {
   createAgentId,
+  createIdempotencyKey,
   createMessageId,
   createOwnerId,
   createRunId,
@@ -18,8 +19,8 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import {
   ApplicationPortError,
-  PORT_ERROR_CODES,
   type GatewayAuthenticationContext,
+  PORT_ERROR_CODES,
   type ThreadDistillationStatePort,
   type ThreadGatewayControlPlanePort,
   type ThreadGatewayReadModelPort,
@@ -27,12 +28,33 @@ import {
   type ThreadRepositoryPort,
 } from "../ports/index.js";
 import type { ClockPort } from "../ports/system.js";
-import type { ThreadCommandService } from "./thread-command-service.js";
+import { type ThreadCommandService, threadCommandFingerprint } from "./thread-command-service.js";
+import type { CancelCoordinatedRunInput } from "./run-coordinator.js";
 import type { ThreadDeletionCoordinationService } from "./thread-deletion-coordination-service.js";
 import type { ThreadForkService } from "./thread-fork-service.js";
 import type { ThreadQueryService } from "./thread-query-service.js";
 
 export interface ProductThreadGatewayAdapterDependencies {
+  readonly execution?: {
+    read(input: {
+      ownerId: string;
+      agentId: string;
+      threadId: string;
+      runId: string;
+      afterSequence: number;
+      limit: number;
+    }): Promise<{
+      records: readonly import("@himawari-agent/gateway-contracts").ThreadExecutionRecord[];
+      nextSequence: number | null;
+    }>;
+  };
+  readonly validateModelSelection?: (
+    selection: { modelRef: string; thinkingLevel: string },
+    classification: string,
+  ) => void;
+  readonly cancelRun?: (
+    input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
+  ) => Promise<void>;
   readonly repository: ThreadRepositoryPort;
   readonly checkpoints: ThreadDistillationStatePort;
   readonly commands: ThreadCommandService;
@@ -125,6 +147,58 @@ export class ProductThreadGatewayAdapter
       command.idempotencyKey as ThreadMutationReceipt["idempotencyKey"],
     );
     try {
+      if (command.type === "thread.run.cancel") {
+        const thread = await this.#dependencies.repository.read(
+          ownerId,
+          agentId,
+          createThreadId(command.payload.threadId),
+        );
+        const run = (
+          await this.#dependencies.repository.listRuns(
+            ownerId,
+            agentId,
+            createThreadId(command.payload.threadId),
+          )
+        ).find((run) => run.runId === command.payload.runId);
+        if (!thread || !run || !this.#dependencies.cancelRun)
+          throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "THREAD_RUN_NOT_FOUND");
+        if (
+          run.revision !== command.payload.expectedRunRevision &&
+          !["completed", "failed", "cancelled"].includes(run.status)
+        )
+          throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "RUN_REVISION_CONFLICT");
+        await this.#dependencies.cancelRun({
+          runId: createRunId(command.payload.runId),
+          command: {
+            idempotencyKey: createIdempotencyKey(command.idempotencyKey),
+            commandFingerprint: threadCommandFingerprint(command.payload),
+            payloadRef: command.payload.resultRef,
+          },
+        });
+        return parseResult({
+          ...responseEnvelope(command, "result", "thread.command_result"),
+          payload: {
+            commandType: command.type,
+            commandId: command.messageId,
+            threadId: thread.id,
+            threadRevision: thread.revision,
+            resultRef: command.payload.resultRef,
+            replayed: run.status === "cancelled",
+            committedAt: this.#dependencies.clock.now(),
+          },
+        });
+      }
+      if (command.type === "thread.message.submit_configured") {
+        if (!this.#dependencies.validateModelSelection)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "MODEL_SELECTION_NOT_INSTALLED",
+          );
+        this.#dependencies.validateModelSelection(
+          command.payload,
+          command.payload.dataClassification,
+        );
+      }
       const outcome = await this.#executeCommand(command, ownerId, agentId, authentication);
       return parseResult({
         ...responseEnvelope(command, "result", "thread.command_result"),
@@ -184,6 +258,27 @@ export class ProductThreadGatewayAdapter
             nextCursor:
               threads.length === query.payload.limit ? (threads.at(-1)?.id ?? null) : null,
             snapshotRef,
+            generatedAt,
+          },
+        });
+      }
+      case "thread.execution": {
+        if (!this.#dependencies.execution)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "THREAD_EXECUTION_NOT_INSTALLED",
+          );
+        const result = await this.#dependencies.execution.read({
+          ownerId,
+          agentId,
+          ...query.payload,
+        });
+        return parseResult({
+          ...responseEnvelope(query, "snapshot", "thread.execution_snapshot"),
+          payload: {
+            threadId: query.payload.threadId,
+            runId: query.payload.runId,
+            ...result,
             generatedAt,
           },
         });
@@ -399,8 +494,19 @@ export class ProductThreadGatewayAdapter
           answerLocale: command.payload.answerLocale,
           resultRef: command.payload.resultRef,
         });
+      case "thread.run.cancel":
+        throw new Error("RUN_CANCEL_DISPATCH_INVALID");
+      case "thread.message.submit_configured":
       case "thread.message.submit":
         return this.#dependencies.commands.admitOwnerMessage({
+          ...(command.type === "thread.message.submit_configured"
+            ? {
+                modelSelection: {
+                  modelRef: command.payload.modelRef,
+                  thinkingLevel: command.payload.thinkingLevel,
+                },
+              }
+            : {}),
           ownerId,
           agentId,
           threadId: createThreadId(command.payload.threadId),

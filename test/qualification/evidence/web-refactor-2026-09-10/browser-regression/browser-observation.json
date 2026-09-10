@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "events": [],
+  "dropped": 0,
+  "errors": [],
+  "droppedErrors": 0,
+  "profile": "chromium",
+  "browserVersion": null,
+  "platform": "darwin-arm64"
+}

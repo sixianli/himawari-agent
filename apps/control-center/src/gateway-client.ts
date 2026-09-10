@@ -38,7 +38,18 @@ export interface GatewayClientOptions {
   readonly csrfToken: () => string;
 }
 
+export interface AvailableModel {
+  readonly ref: string;
+  readonly model: string;
+  readonly name: string;
+  readonly provider: string;
+  readonly thinkingLevels: readonly string[];
+}
+
 export interface ControlCenterRuntimeConfiguration {
+  readonly executionPresentationAvailable?: boolean;
+  readonly canCancelRun?: boolean;
+  readonly availableModels?: readonly AvailableModel[];
   readonly healthDependenciesAvailable?: boolean;
   readonly installedGatewayV2Operations?: readonly string[];
   readonly ownerId: string;
@@ -94,6 +105,9 @@ export async function loadRuntimeConfiguration(
     throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
   }
   const value = body as {
+    readonly executionPresentationAvailable?: unknown;
+    readonly canCancelRun?: unknown;
+    readonly availableModels?: unknown;
     readonly healthDependenciesAvailable?: unknown;
     readonly installedGatewayV2Operations?: unknown;
     readonly ownerId?: unknown;
@@ -182,6 +196,24 @@ export async function loadRuntimeConfiguration(
   ) {
     throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
   }
+  const availableModels = value.availableModels ?? [];
+  if (
+    !Array.isArray(availableModels) ||
+    !availableModels.every(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        ["ref", "model", "name", "provider"].every(
+          (key) => typeof item[key] === "string" && item[key].length > 0,
+        ) &&
+        Array.isArray(item.thinkingLevels) &&
+        item.thinkingLevels.length > 0 &&
+        item.thinkingLevels.every((level: unknown) =>
+          ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(String(level)),
+        ),
+    )
+  )
+    throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
   return Object.freeze({
     ...(value as unknown as Omit<
       ControlCenterRuntimeConfiguration,
@@ -192,6 +224,9 @@ export async function loadRuntimeConfiguration(
       | "authorizationRef"
       | "recentAuthenticationRef"
     >),
+    executionPresentationAvailable: value.executionPresentationAvailable === true,
+    canCancelRun: value.canCancelRun === true,
+    availableModels: Object.freeze(availableModels as AvailableModel[]),
     authorizationRef,
     installedGatewayV2Operations: Object.freeze([...installedGatewayV2Operations]),
     healthDependenciesAvailable: value.healthDependenciesAvailable === true,

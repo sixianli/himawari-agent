@@ -36,7 +36,12 @@ export function createProductionRunPolicy(options: {
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
         "RUN_POLICY_SCOPE_MISMATCH",
       );
-    if (!primary.allowedDataClassifications.includes(source.dataClassification))
+    const selected = source.modelSelection
+      ? configuration.modelDescriptors.find(
+          (model) => model.ref === source.modelSelection?.modelRef && model.role !== "embedding",
+        )
+      : primary;
+    if (!selected || !selected.allowedDataClassifications.includes(source.dataClassification))
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
         "RUN_POLICY_MODEL_DISCLOSURE_DENIED",
@@ -61,7 +66,8 @@ export function createProductionRunPolicy(options: {
     }
     const handles = await listHandles(source.runId, options.clock.now());
     return Object.freeze({
-      modelRef: primary.ref,
+      modelRef: selected.ref,
+      ...(source.modelSelection ? { thinkingLevel: source.modelSelection.thinkingLevel } : {}),
       systemInstructionRef: instruction.payloadRef,
       policyVersion: policy.version,
       policies: [],

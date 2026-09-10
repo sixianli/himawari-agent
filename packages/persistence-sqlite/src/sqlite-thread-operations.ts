@@ -6,12 +6,12 @@ import type {
   ResolveThreadTaskInput,
   RunExecutionSource,
   ScheduledJob,
-  ThreadCreateInput,
   ThreadCommittedMessagesByIdsQuery,
   ThreadContextSnapshotQuery,
+  ThreadCreateInput,
   ThreadDeletionImpact,
-  ThreadListQuery,
   ThreadGatewayEventRecord,
+  ThreadListQuery,
   ThreadMutationReceipt,
   ThreadRunSummaryRecord,
   ThreadSearchProjectionInput,
@@ -994,6 +994,10 @@ export class SqliteThreadOperations {
           input.occurredAt,
           input.occurredAt,
         );
+      if (input.modelSelection)
+        this.database
+          .prepare("UPDATE runs SET model_selection_json = ? WHERE id = ?")
+          .run(JSON.stringify(input.modelSelection), input.runId);
       this.database
         .prepare(
           `INSERT INTO turns (
@@ -1349,12 +1353,12 @@ export class SqliteThreadOperations {
     readonly agentId: AgentId;
     readonly runId: RunId;
   }): RunExecutionSource | undefined {
-    return this.database
+    const row = this.database
       .prepare(`
       SELECT r.owner_id AS ownerId, r.agent_id AS agentId, r.id AS runId,
         r.session_id AS sessionId, r.thread_id AS threadId, r.trigger_id AS triggerId,
         t.source_type AS sourceType, t.source_id AS sourceId, t.payload_ref AS payloadRef,
-        p.classification AS dataClassification, t.occurred_at AS occurredAt
+        p.classification AS dataClassification, t.occurred_at AS occurredAt, r.model_selection_json AS modelSelectionJson
       FROM runs r
       JOIN triggers t ON t.id = r.trigger_id AND t.owner_id = r.owner_id
         AND t.agent_id = r.agent_id AND t.thread_id IS r.thread_id
@@ -1374,7 +1378,14 @@ export class SqliteThreadOperations {
             AND m.message_status = 'committed'
         ))
     `)
-      .get(input.runId, input.ownerId, input.agentId) as RunExecutionSource | undefined;
+      .get(input.runId, input.ownerId, input.agentId) as
+      | (RunExecutionSource & { modelSelectionJson: string | null })
+      | undefined;
+    if (!row) return undefined;
+    const { modelSelectionJson, ...source } = row;
+    return modelSelectionJson
+      ? { ...source, modelSelection: JSON.parse(modelSelectionJson) }
+      : source;
   }
 
   private readContextSnapshot(

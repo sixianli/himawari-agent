@@ -152,6 +152,7 @@ export interface ModelPort {
 }
 
 export interface RuntimeRequest {
+  readonly thinkingLevel?: import("./run-execution-source.js").RunThinkingLevel;
   /** Product checkpoint for resuming the same logical tool batch. */
   readonly continuationRef?: PayloadRef;
   /** Absolute product deadline; tools must not extend this execution window. */
@@ -200,6 +201,8 @@ export type RuntimeEvent =
     }
   | {
       readonly type: "runtime.model_started";
+      readonly modelRef?: string;
+      readonly thinkingLevel?: string;
       readonly runId: RunId;
       readonly occurredAt: string;
     }

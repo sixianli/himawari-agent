@@ -3,6 +3,7 @@ import { lstat } from "node:fs/promises";
 import path from "node:path";
 import type {
   PayloadProtectionRequest,
+  CancelCoordinatedRunInput,
   ThreadCreateInput,
   ThreadGatewayInboundMessage,
 } from "@himawari-agent/application";
@@ -22,6 +23,7 @@ import {
   type SessionDeviceStatePort,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
+  ThreadExecutionProjection,
   ThreadForkService,
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
@@ -53,11 +55,11 @@ import {
   registerIdentityAuthenticationRoutes,
   SessionBoundCsrfService,
 } from "@himawari-agent/platform-node";
+import type { FastifyInstance } from "fastify";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
 } from "./production-approval-gateway.js";
-import type { FastifyInstance } from "fastify";
 
 type OwnerId = PayloadProtectionRequest["ownerId"];
 type AgentId = PayloadProtectionRequest["agentId"];
@@ -91,6 +93,16 @@ export interface ProductionHttpCompositionSecretSources {
 }
 
 export interface ProductionHttpCompositionOptions {
+  readonly modelCatalog?: readonly {
+    ref: string;
+    model: string;
+    name: string;
+    provider: string;
+    thinkingLevels: readonly string[];
+  }[];
+  readonly cancelRun?: (
+    input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
+  ) => Promise<void>;
   readonly health?: RuntimeHealthModel;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
@@ -304,7 +316,7 @@ export class ProductionThreadGatewayAccessPolicy implements ThreadGatewayAccessP
     if (!session) return { allowed: false, reasonCode: "SESSION_INACTIVE" };
     if (
       input.message.kind === "command" &&
-      input.message.type === "thread.message.submit" &&
+      ["thread.message.submit", "thread.message.submit_configured"].includes(input.message.type) &&
       "sessionId" in input.message.payload &&
       input.message.payload.sessionId !== session.id
     ) {
@@ -433,6 +445,8 @@ function routeOptions(
   health: RuntimeHealthModel,
   metrics: RuntimeMetricsRegistry,
   authority: ProductAuthorityFence,
+  modelCatalog: ProductionHttpCompositionOptions["modelCatalog"],
+  canCancelRun: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -453,6 +467,9 @@ function routeOptions(
     health,
     metrics,
     browserConfiguration: {
+      executionPresentationAvailable: true,
+      canCancelRun,
+      availableModels: modelCatalog ?? [],
       installedGatewayV2Operations: PRODUCTION_APPROVAL_OPERATIONS,
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -595,6 +612,28 @@ export async function createProductionHttpComposition(
     recentAuthentication,
   });
   const threadAdapter = new ProductThreadGatewayAdapter({
+    validateModelSelection: (selection, classification) => {
+      const model = options.modelCatalog?.find((entry) => entry.ref === selection.modelRef);
+      const descriptor = configuration.modelDescriptors.find(
+        (entry) => entry.ref === selection.modelRef && entry.role !== "embedding",
+      );
+      if (
+        !model ||
+        !model.thinkingLevels.includes(selection.thinkingLevel) ||
+        !descriptor?.allowedDataClassifications.some((value) => value === classification)
+      )
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "MODEL_SELECTION_NOT_ALLOWED",
+        );
+    },
+    ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
+    execution: new ThreadExecutionProjection({
+      threads,
+      trace: repository.traceStore(),
+      payloads: () => repository.payloadStore(ownerId, agentId),
+      protector: payloadProtector,
+    }),
     repository: threads,
     checkpoints: repository.threadDistillationState(),
     commands: threadCommands,
@@ -651,6 +690,8 @@ export async function createProductionHttpComposition(
       health,
       metrics,
       authority,
+      options.modelCatalog,
+      Boolean(options.cancelRun),
     ),
     gatewayV2,
   });

@@ -1,0 +1,122 @@
+[
+  {
+    "theme": "light",
+    "accent": "violet",
+    "background": "#fcfcfb",
+    "text": "#252921",
+    "color": "#87539c",
+    "success": "#42682a",
+    "warning": "#806013",
+    "error": "#a73c30"
+  },
+  {
+    "theme": "light",
+    "accent": "blue",
+    "background": "#fcfcfb",
+    "text": "#252921",
+    "color": "#3269b5",
+    "success": "#42682a",
+    "warning": "#806013",
+    "error": "#a73c30"
+  },
+  {
+    "theme": "light",
+    "accent": "teal",
+    "background": "#fcfcfb",
+    "text": "#252921",
+    "color": "#34725b",
+    "success": "#42682a",
+    "warning": "#806013",
+    "error": "#a73c30"
+  },
+  {
+    "theme": "light",
+    "accent": "amber",
+    "background": "#fcfcfb",
+    "text": "#252921",
+    "color": "#876218",
+    "success": "#42682a",
+    "warning": "#806013",
+    "error": "#a73c30"
+  },
+  {
+    "theme": "light",
+    "accent": "rose",
+    "background": "#fcfcfb",
+    "text": "#252921",
+    "color": "#a44c6a",
+    "success": "#42682a",
+    "warning": "#806013",
+    "error": "#a73c30"
+  },
+  {
+    "theme": "light",
+    "accent": "graphite",
+    "background": "#fcfcfb",
+    "text": "#252921",
+    "color": "#555",
+    "success": "#42682a",
+    "warning": "#806013",
+    "error": "#a73c30"
+  },
+  {
+    "theme": "dark",
+    "accent": "violet",
+    "background": "#1e1e1e",
+    "text": "#d4d4d4",
+    "color": "#d38ce2",
+    "success": "#accd88",
+    "warning": "#d6b55d",
+    "error": "#efa095"
+  },
+  {
+    "theme": "dark",
+    "accent": "blue",
+    "background": "#1e1e1e",
+    "text": "#d4d4d4",
+    "color": "#87b5f3",
+    "success": "#accd88",
+    "warning": "#d6b55d",
+    "error": "#efa095"
+  },
+  {
+    "theme": "dark",
+    "accent": "teal",
+    "background": "#1e1e1e",
+    "text": "#d4d4d4",
+    "color": "#85c5a5",
+    "success": "#accd88",
+    "warning": "#d6b55d",
+    "error": "#efa095"
+  },
+  {
+    "theme": "dark",
+    "accent": "amber",
+    "background": "#1e1e1e",
+    "text": "#d4d4d4",
+    "color": "#d9b562",
+    "success": "#accd88",
+    "warning": "#d6b55d",
+    "error": "#efa095"
+  },
+  {
+    "theme": "dark",
+    "accent": "rose",
+    "background": "#1e1e1e",
+    "text": "#d4d4d4",
+    "color": "#e89db6",
+    "success": "#accd88",
+    "warning": "#d6b55d",
+    "error": "#efa095"
+  },
+  {
+    "theme": "dark",
+    "accent": "graphite",
+    "background": "#1e1e1e",
+    "text": "#d4d4d4",
+    "color": "#bdbdbd",
+    "success": "#accd88",
+    "warning": "#d6b55d",
+    "error": "#efa095"
+  }
+]

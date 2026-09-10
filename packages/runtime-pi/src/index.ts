@@ -16,6 +16,8 @@ export {
   type GovernedPiCodingToolsOptions,
 } from "./governed-coding-tools.js";
 export { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
+export { executeGovernedPiRead } from "./governed-read-executor.js";
+export { getPiModelPresentation } from "./model-presentation.js";
 export {
   type PiModelPayloadBoundary,
   PiModelTransport,
@@ -33,5 +35,4 @@ export {
   type PiModelBindingPort,
   type PiRuntimeResourcePort,
 } from "./pi-runtime-adapter.js";
-export { executeGovernedPiRead } from "./governed-read-executor.js";
 export { executeSandboxedPiCodingTool } from "./sandboxed-coding-executor.js";

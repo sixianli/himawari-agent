@@ -14,10 +14,12 @@ import {
   RunExecutionInputService,
   type RunExecutionLease,
   type RunLifecyclePort,
+  type RunModelSelection,
   RunStateCommitCoordinator,
   type RuntimeEvent,
   SessionTraceRecorder,
   ThreadCommandService,
+  ThreadExecutionProjection,
   type TransitionRunStateInput,
   type WorkerRunEvent,
   type WorkerRunPort,
@@ -70,6 +72,7 @@ afterEach(async () => {
 });
 
 interface FixtureOptions {
+  readonly modelSelection?: RunModelSelection;
   readonly executionLeaseExpiresAt?: string;
 }
 
@@ -127,6 +130,7 @@ async function fixture(options: FixtureOptions = {}) {
     expectedThreadRevision: created.thread.revision,
     sessionId: createSessionId("session-run-lifecycle"),
     idempotencyKey: "thread-submit",
+    ...(options.modelSelection ? { modelSelection: options.modelSelection } : {}),
     contentRef: "payload-run-lifecycle",
     sourceProofRef: "proof:owner",
     dataClassification: "private",
@@ -2467,4 +2471,141 @@ it("publishes approval, resume and cancellation as durable Thread events without
   } finally {
     database.close();
   }
+});
+
+it("persists selected model and depth at admission across repository reopen", async () => {
+  const selection = { modelRef: "configured-model:v2", thinkingLevel: "high" as const };
+  const setup = await fixture({ modelSelection: selection });
+  expect(
+    (await setup.repository.runExecutionSource(ownerId, agentId).read(setup.runId))?.modelSelection,
+  ).toEqual(selection);
+  await setup.repository.close();
+  repositories.splice(repositories.indexOf(setup.repository), 1);
+  const reopened = await SqliteProductStateRepository.open({
+    stateRoot: setup.stateRoot,
+    databasePath: setup.databasePath,
+    minimumFreeBytes: 0,
+    now: () => clock.now(),
+  });
+  repositories.push(reopened);
+  expect(
+    (await reopened.runExecutionSource(ownerId, agentId).read(setup.runId))?.modelSelection,
+  ).toEqual(selection);
+});
+
+it("projects encrypted execution history with owner isolation and no raw reasoning or credentials", async () => {
+  const setup = await executionFixture();
+  const artifactPort = setup.repository.runPayloadArtifactPort(ownerId, agentId, {
+    product: authority,
+    lease,
+  });
+  const scope = {
+    ownerId,
+    agentId,
+    sessionId: setup.input.runtime.sessionId,
+    threadId: setup.admitted.thread.id,
+    runId: setup.runId,
+    turnId: null,
+    parentEventId: null,
+    causationId: null,
+    correlationId: "display-test",
+    actorId: "display-test",
+    dataClassification: "private" as const,
+  };
+  const capture = async (kind: string, value: unknown) => {
+    const ref = `display:${kind}`;
+    await artifactPort.commit({
+      runId: setup.runId,
+      purpose: "trace",
+      operationKey: `runtime:${setup.runId}:${kind}:${ref}`,
+      payload: await setup.protector.protect({
+        ownerId,
+        agentId,
+        ref,
+        dataClassification: "private",
+        contentType: "application/json",
+        plaintext: new TextEncoder().encode(JSON.stringify(value)),
+        createdAt: clock.now(),
+      }),
+    });
+    return ref;
+  };
+  const messageRef = await capture("message", {
+    role: "assistant",
+    timestamp: 1,
+    model: "actual-model",
+    content: [
+      {
+        type: "thinking",
+        thinking: "PRIVATE_REASONING_MUST_NOT_LEAK",
+        signature: "PRIVATE_SIGNATURE",
+      },
+      { type: "text", text: "Visible answer" },
+    ],
+    providerMetadata: "PRIVATE_PROVIDER_DATA",
+  });
+  await setup.trace.record({
+    ...scope,
+    eventType: "runtime.message",
+    payload: { role: "assistant", phase: "ended", payloadRef: messageRef },
+  });
+  const toolRef = await capture("tool_intent", {
+    toolCallId: "provider|call",
+    toolName: "read",
+    arguments: { path: "README.md", authorization: "PRIVATE_CREDENTIAL" },
+  });
+  await setup.trace.record({
+    ...scope,
+    eventType: "runtime.tool_intent",
+    payload: { capabilityRef: "project.read", payloadRef: toolRef },
+  });
+  const resultRef = await capture("tool_result", {
+    toolCallId: "provider|call",
+    toolName: "read",
+    result: {
+      content: [{ type: "text", text: "Allowed file content" }],
+      internal: "PRIVATE_INTERNAL_DATA",
+    },
+    isError: false,
+  });
+  await setup.trace.record({
+    ...scope,
+    eventType: "runtime.tool_result",
+    payload: { capabilityRef: "project.read", payloadRef: resultRef },
+  });
+  const projection = new ThreadExecutionProjection({
+    threads: setup.repository.threadRepository(),
+    trace: setup.repository.traceStore(),
+    payloads: (owner, agent) =>
+      setup.repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
+    protector: setup.protector,
+  });
+  const query = {
+    ownerId,
+    agentId,
+    threadId: setup.admitted.thread.id,
+    runId: setup.runId,
+    afterSequence: 0,
+    limit: 100,
+  };
+  const displayed = await projection.read(query);
+  expect(displayed.records).toHaveLength(3);
+  expect(displayed.records[0]?.text).toBe("Visible answer");
+  expect(displayed.records[1]?.input).toContain("[REDACTED]");
+  expect(displayed.records[1]?.itemId).toBe(displayed.records[2]?.itemId);
+  expect(displayed.records[2]?.output).toBe("Allowed file content");
+  expect(JSON.stringify(displayed)).not.toContain("PRIVATE_");
+  expect(await projection.read(query)).toEqual(displayed);
+  await expect(projection.read({ ...query, ownerId: "other-owner" })).rejects.toThrow(
+    "THREAD_EXECUTION_NOT_FOUND",
+  );
+  const after = await projection.read({
+    ...query,
+    afterSequence: displayed.records[0]?.sequence ?? 0,
+  });
+  expect(after.records).toHaveLength(2);
+  const events = await setup.repository
+    .threadRepository()
+    .listGatewayEvents(ownerId, agentId, null, 100);
+  expect(events.filter((event) => event.eventType === "thread.execution.updated")).toHaveLength(3);
 });

@@ -18,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const temporaryDirectories: string[] = [];
-const CURRENT_SCHEMA_SEQUENCE = 29;
+const CURRENT_SCHEMA_SEQUENCE = 30;
 
 afterEach(async () => {
   await Promise.all(
@@ -138,8 +138,8 @@ describe("immutable SQLite migration engine", () => {
       const before = readMigrationLedger(database);
       const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-        appliedSequences: [29],
-        currentSequence: 29,
+        appliedSequences: [29, 30],
+        currentSequence: 30,
       });
       expect(readMigrationLedger(database).slice(0, 28)).toEqual(before);
       expect(database.pragma("foreign_key_check")).toEqual([]);

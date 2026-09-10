@@ -1,10 +1,13 @@
 import type {
+  ThreadExecutionRecord,
   ThreadGatewayRequestResult,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import type { ControlCenterRouteState } from "./app/router.js";
 import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./browser-storage.js";
+import { ChatComposer } from "./components/chat-composer.js";
+import { ChatHistory } from "./components/chat-history.js";
 import {
   ActionButton,
   AppLink,
@@ -19,8 +22,8 @@ import type {
   MutationStatus,
 } from "./gateway-client.js";
 import type { MessageId } from "./i18n/message-ids.js";
-import { findPendingRunApproval } from "./run-approval.js";
 import { threadCommandMessage, threadQueryMessage } from "./messages.js";
+import { findPendingRunApproval } from "./run-approval.js";
 
 type ThreadCollectionSnapshot = Extract<
   ThreadGatewaySnapshot,
@@ -36,10 +39,14 @@ type ThreadDeletionImpactSnapshot = Extract<
   { type: "thread.deletion_impact_snapshot" }
 >;
 type ThreadSummary = ThreadDetailSnapshot["payload"]["thread"];
-type ThreadMessage = ThreadDetailSnapshot["payload"]["messages"][number];
 
 type ThreadIntent =
-  | { readonly kind: "submit"; readonly content: string }
+  | {
+      readonly kind: "submit";
+      readonly content: string;
+      readonly selection?: { modelRef: string; thinkingLevel: string };
+    }
+  | { readonly kind: "stop"; readonly runId: string; readonly revision: number }
   | { readonly kind: "rename"; readonly title: string }
   | { readonly kind: "pin"; readonly pinOrder: number | null }
   | { readonly kind: "archive" }
@@ -74,6 +81,7 @@ export interface ThreadControlCenterOptions {
 }
 
 export interface ThreadControlCenterModel {
+  readonly title: string;
   readonly content: ReactNode;
   readonly details: ReactNode;
   readonly list: ReactNode;
@@ -144,10 +152,6 @@ function mutationIdentity(
   return created;
 }
 
-function messageLabel(message: ThreadMessage): string {
-  return `${message.role} #${message.sequence}`;
-}
-
 export function useThreadControlCenter(
   options: ThreadControlCenterOptions,
 ): ThreadControlCenterModel {
@@ -169,6 +173,21 @@ export function useThreadControlCenter(
   const [deletionImpact, setDeletionImpact] = useState<ThreadDeletionImpactSnapshot>();
   const [contentByRef, setContentByRef] = useState<Readonly<Record<string, string>>>({});
   const [draft, setDraft] = useState("");
+  const [execution, setExecution] = useState<
+    Readonly<Record<string, readonly ThreadExecutionRecord[]>>
+  >({});
+  const [modelRef, setModelRef] = useState("");
+  const [thinkingLevel, setThinkingLevel] = useState("off");
+  const availableModels = configuration?.availableModels ?? [];
+  const selectedModel =
+    availableModels.find((item) => item.ref === modelRef) ??
+    availableModels.find((item) => item.ref === configuration?.primaryModelRef) ??
+    availableModels[0];
+  const selectedThinking = selectedModel?.thinkingLevels.includes(thinkingLevel)
+    ? thinkingLevel
+    : (selectedModel?.thinkingLevels[0] ?? "off");
+  const payloadCache = useRef<Record<string, string>>({});
+  const executionCache = useRef<Record<string, ThreadExecutionRecord[]>>({});
   const [renameTitle, setRenameTitle] = useState("");
   const [searchText, setSearchText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -176,12 +195,36 @@ export function useThreadControlCenter(
   const [mutationStatus, setMutationStatus] = useState<MutationStatus | null>(null);
   const [conflict, setConflict] = useState<ConflictState | null>(null);
   const refreshSequence = useRef(0);
+  const refreshing = useRef(false);
+  const refreshAgain = useRef(false);
+  const refreshLatest = useRef<() => Promise<void>>(async () => {});
+  const refreshTimer = useRef<number | undefined>(undefined);
   const selectedThreadId = route.objectId ?? null;
+  const selectedIdRef = useRef(selectedThreadId);
+  selectedIdRef.current = selectedThreadId;
+  useEffect(() => {
+    refreshSequence.current++;
+    setDetail(undefined);
+    setDraft(selectedThreadId ? storage.readDraft(selectedThreadId) : "");
+    setConflict(null);
+    setMutationStatus(null);
+  }, [selectedThreadId, storage]);
+  useEffect(() => {
+    void client;
+    setContentByRef({});
+    setExecution({});
+    return () => {
+      refreshSequence.current++;
+      payloadCache.current = {};
+      executionCache.current = {};
+    };
+  }, [client]);
 
   const loadPayloads = useCallback(
     async (refs: readonly string[]) => {
       if (!client) return;
-      const unique = [...new Set(refs)];
+      const unique = [...new Set(refs)].filter((ref) => payloadCache.current[ref] === undefined);
+      const sequence = refreshSequence.current;
       const entries = await Promise.all(
         unique.map(async (ref) => {
           try {
@@ -191,13 +234,20 @@ export function useThreadControlCenter(
           }
         }),
       );
-      setContentByRef((current) => Object.freeze({ ...current, ...Object.fromEntries(entries) }));
+      if (sequence !== refreshSequence.current) return;
+      Object.assign(payloadCache.current, Object.fromEntries(entries));
+      setContentByRef({ ...payloadCache.current });
     },
     [client, message],
   );
 
   const refresh = useCallback(async () => {
     if (!active || !client || !configuration) return;
+    if (refreshing.current) {
+      refreshAgain.current = true;
+      return;
+    }
+    refreshing.current = true;
     const sequence = ++refreshSequence.current;
     setLoading(true);
     setError(null);
@@ -227,7 +277,7 @@ export function useThreadControlCenter(
         setDetail(undefined);
         return;
       }
-      const current = await client.queryThread(
+      let current = await client.queryThread(
         threadQueryMessage(configuration, "thread.detail", {
           threadId: selectedThreadId,
           afterSequence: 0,
@@ -235,8 +285,65 @@ export function useThreadControlCenter(
         }),
       );
       if (sequence !== refreshSequence.current || current.type !== "thread.detail_snapshot") return;
+      const pages = [...current.payload.messages];
+      while (current.payload.nextSequence !== null) {
+        const page = await client.queryThread(
+          threadQueryMessage(configuration, "thread.detail", {
+            threadId: selectedThreadId,
+            afterSequence: current.payload.nextSequence,
+            limit: 1000,
+          }),
+        );
+        if (sequence !== refreshSequence.current || page.type !== "thread.detail_snapshot") return;
+        if (
+          page.payload.nextSequence !== null &&
+          page.payload.nextSequence <= (current.payload.nextSequence ?? 0)
+        )
+          throw new Error("THREAD_PAGE_NOT_ADVANCING");
+        pages.push(...page.payload.messages);
+        current = page;
+      }
+      current = {
+        ...current,
+        payload: {
+          ...current.payload,
+          messages: [...new Map(pages.map((item) => [item.messageId, item])).values()].sort(
+            (a, b) => a.sequence - b.sequence,
+          ),
+        },
+      };
       setDetail(current);
-      setDraft(storage.readDraft(selectedThreadId));
+      if (configuration.executionPresentationAvailable) {
+        await Promise.all(
+          current.payload.runs.map(async (run) => {
+            const cached = executionCache.current[run.runId] ?? [];
+            let afterSequence = cached.at(-1)?.sequence ?? 0;
+            const records = [...cached];
+            for (;;) {
+              const page = await client.queryThread(
+                threadQueryMessage(configuration, "thread.execution", {
+                  threadId: selectedThreadId,
+                  runId: run.runId,
+                  afterSequence,
+                  limit: 200,
+                }),
+              );
+              if (sequence !== refreshSequence.current || page.type !== "thread.execution_snapshot")
+                return;
+              records.push(...page.payload.records);
+              if (page.payload.nextSequence === null) break;
+              if (page.payload.nextSequence <= afterSequence)
+                throw new Error("EXECUTION_PAGE_NOT_ADVANCING");
+              afterSequence = page.payload.nextSequence;
+            }
+            executionCache.current[run.runId] = [
+              ...new Map(records.map((item) => [item.id, item])).values(),
+            ].sort((a, b) => a.sequence - b.sequence);
+          }),
+        );
+        if (sequence !== refreshSequence.current) return;
+        setExecution({ ...executionCache.current });
+      }
       void loadPayloads([
         ...(current.payload.thread.titleRef ? [current.payload.thread.titleRef] : []),
         ...current.payload.messages.map(({ contentRef }) => contentRef),
@@ -249,7 +356,15 @@ export function useThreadControlCenter(
       if (status === 401) onUnauthorized();
       setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
     } finally {
+      refreshing.current = false;
       if (sequence === refreshSequence.current) setLoading(false);
+      if (refreshAgain.current) {
+        refreshAgain.current = false;
+        refreshTimer.current = window.setTimeout(() => {
+          refreshTimer.current = undefined;
+          void refreshLatest.current();
+        }, 80);
+      }
     }
   }, [
     active,
@@ -260,13 +375,24 @@ export function useThreadControlCenter(
     route.afterCursor,
     route.status,
     selectedThreadId,
-    storage,
   ]);
 
+  refreshLatest.current = refresh;
   useEffect(() => {
+    void refresh;
     void refreshSignal;
-    void refresh();
+    if (refreshTimer.current === undefined)
+      refreshTimer.current = window.setTimeout(() => {
+        refreshTimer.current = undefined;
+        void refreshLatest.current();
+      }, 80);
   }, [refresh, refreshSignal]);
+  useEffect(
+    () => () => {
+      if (refreshTimer.current !== undefined) window.clearTimeout(refreshTimer.current);
+    },
+    [],
+  );
 
   const settleMutation = useCallback(
     async (
@@ -294,17 +420,32 @@ export function useThreadControlCenter(
 
   const performIntent = useCallback(
     async (intent: ThreadIntent, expectedRevision?: number) => {
-      if (!client || !configuration || !detail || connection !== "connected") return;
+      if (
+        !client ||
+        !configuration ||
+        !detail ||
+        detail.payload.thread.threadId !== selectedIdRef.current ||
+        connection !== "connected"
+      )
+        return;
       const thread = detail.payload.thread;
       const revision = expectedRevision ?? thread.revision;
       const commandType =
         intent.kind === "submit"
-          ? "thread.message.submit"
-          : intent.kind === "locale"
-            ? "thread.set_answer_locale"
-            : `thread.${intent.kind}`;
+          ? intent.selection
+            ? "thread.message.submit_configured"
+            : "thread.message.submit"
+          : intent.kind === "stop"
+            ? "thread.run.cancel"
+            : intent.kind === "locale"
+              ? "thread.set_answer_locale"
+              : `thread.${intent.kind}`;
       const identity = mutationIdentity(storage, {
-        operationKey: operationKey(intent.kind, thread.threadId, revision),
+        operationKey: operationKey(
+          intent.kind,
+          thread.threadId,
+          intent.kind === "stop" ? intent.runId : revision,
+        ),
         commandType,
         threadId: thread.threadId,
       });
@@ -320,6 +461,8 @@ export function useThreadControlCenter(
         let payload: unknown;
         let type:
           | "thread.message.submit"
+          | "thread.message.submit_configured"
+          | "thread.run.cancel"
           | "thread.rename"
           | "thread.pin"
           | "thread.archive"
@@ -336,8 +479,9 @@ export function useThreadControlCenter(
               "private",
               `payload-content:${stableSuffix}`,
             );
-            type = "thread.message.submit";
+            type = intent.selection ? "thread.message.submit_configured" : "thread.message.submit";
             payload = {
+              ...(intent.selection ?? {}),
               threadId: thread.threadId,
               expectedRevision: revision,
               messageId: `message:${stableSuffix}`,
@@ -352,6 +496,17 @@ export function useThreadControlCenter(
             };
             break;
           }
+          case "stop":
+            type = "thread.run.cancel";
+            payload = {
+              threadId: thread.threadId,
+              runId: intent.runId,
+              expectedRunRevision:
+                detail.payload.runs.find((run) => run.runId === intent.runId)?.revision ??
+                intent.revision,
+              resultRef,
+            };
+            break;
           case "rename": {
             const titleRef = await client.protectText(
               intent.title,
@@ -415,10 +570,10 @@ export function useThreadControlCenter(
         );
         if (intent.kind === "submit" && result.kind === "result") {
           storage.saveDraft(thread.threadId, "");
-          setDraft("");
+          if (selectedIdRef.current === thread.threadId) setDraft("");
         }
         if (intent.kind === "fork" && result.kind === "result") {
-          navigate({ ...route, objectId: result.payload.threadId, view: "details" });
+          navigate({ ...route, objectId: result.payload.threadId, view: "content" });
         }
         await settleMutation(identity, result, intent);
       } catch (caught) {
@@ -455,7 +610,7 @@ export function useThreadControlCenter(
       );
       await settleMutation(identity, result, null);
       if (result.kind === "result") {
-        navigate({ ...route, objectId: result.payload.threadId, view: "details" });
+        navigate({ ...route, objectId: result.payload.threadId, view: "content" });
       }
     } catch (caught) {
       setMutationStatus("rejected");
@@ -643,16 +798,18 @@ export function useThreadControlCenter(
             href={`#${encodeURIComponent(thread.threadId)}`}
             onClick={(event) => {
               event.preventDefault();
-              navigate({ ...route, objectId: thread.threadId, view: "details" });
+              navigate({ ...route, objectId: thread.threadId, view: "content" });
             }}
           >
             <span>
               {thread.titleRef
-                ? (contentByRef[thread.titleRef] ?? thread.threadId)
-                : thread.threadId}
+                ? (contentByRef[thread.titleRef] ?? message("chat.untitled"))
+                : message("chat.untitled")}
             </span>
             <small>
-              {message(threadStatusMessageId(thread.status))} · r{thread.revision}
+              {thread.pinOrder !== null
+                ? message("chat.pinned")
+                : new Date(thread.updatedAt).toLocaleDateString()}
             </small>
           </AppLink>
         )}
@@ -662,6 +819,9 @@ export function useThreadControlCenter(
 
   const content = (
     <div className="thread-content">
+      <StatusRegion className="sr-only">
+        {message("mutation.label")}: {message(mutationMessageId(mutationStatus))}
+      </StatusRegion>
       {error ? (
         <Banner title={message("error.currentUnavailable")} tone="danger">
           <code>{error}</code>
@@ -689,107 +849,72 @@ export function useThreadControlCenter(
           </ActionButton>
         </Banner>
       ) : null}
-      <StatusRegion className="mutation-status">
-        {message("mutation.label")}: {message(mutationMessageId(mutationStatus))}
-      </StatusRegion>
       {!detail ? (
         <p>{loading ? message("state.loading") : message("common.select")}</p>
       ) : (
         <>
-          <header className="thread-heading">
-            <div>
-              <h2>
-                {detail.payload.thread.titleRef
-                  ? (contentByRef[detail.payload.thread.titleRef] ?? detail.payload.thread.threadId)
-                  : detail.payload.thread.threadId}
-              </h2>
-              <p>
-                {message("threads.revision")}: {detail.payload.thread.revision}
-              </p>
-            </div>
-            <Field label={message("threads.answerLocale")}>
-              <select
-                value={detail.payload.thread.answerLocale}
-                onChange={(event) =>
-                  void performIntent({
-                    kind: "locale",
-                    answerLocale: event.target.value as "zh-CN" | "en" | "ja",
-                  })
-                }
-              >
-                <option value="zh-CN">简体中文</option>
-                <option value="en">English</option>
-                <option value="ja">日本語</option>
-              </select>
-            </Field>
-          </header>
-          <Banner title={message("threads.rawContentNotice")} tone="info">
-            <ActionButton disabled variant="secondary">
-              {message("threads.translate")}
-            </ActionButton>
-          </Banner>
-          <section aria-labelledby="thread-messages-title">
-            <h3 id="thread-messages-title">{message("threads.messages")}</h3>
-            <SemanticList
-              empty={message("threads.messagesEmpty")}
-              getId={(item) => item.messageId}
-              items={detail.payload.messages}
-              label={message("threads.messages")}
-              renderItem={(item) => (
-                <article className={`thread-message thread-message-${item.role}`}>
-                  <header>
-                    <strong>{messageLabel(item)}</strong>
-                    <time dateTime={item.committedAt}>{item.committedAt}</time>
-                  </header>
-                  <pre className="thread-message-content">
-                    {contentByRef[item.contentRef] ?? "…"}
-                  </pre>
-                  <div className="message-actions">
-                    <code>{item.dataClassification}</code>
-                    {item.turnId ? (
-                      <ActionButton
-                        onClick={() =>
-                          void performIntent({
-                            kind: "fork",
-                            sourceTurnId: item.turnId as string,
-                            sourceWatermark: item.sequence,
-                          })
-                        }
-                        variant="secondary"
-                      >
-                        {message("threads.fork")}
-                      </ActionButton>
-                    ) : null}
-                  </div>
-                </article>
-              )}
-            />
-          </section>
-          <form
-            className="composer"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (draft.trim()) void performIntent({ kind: "submit", content: draft });
+          <ChatHistory
+            key={detail.payload.thread.threadId}
+            detail={detail}
+            contentByRef={contentByRef}
+            execution={execution}
+            connection={connection}
+            onApproval={(runId) => void openApproval(runId)}
+            message={message}
+            onFork={(turnId, sequence) =>
+              void performIntent({ kind: "fork", sourceTurnId: turnId, sourceWatermark: sequence })
+            }
+          />
+          <ChatComposer
+            key={`composer:${detail.payload.thread.threadId}`}
+            draft={draft}
+            onDraft={(value) => {
+              setDraft(value);
+              storage.saveDraft(detail.payload.thread.threadId, value);
             }}
-          >
-            <Field label={message("threads.draft")}>
-              <textarea
-                rows={7}
-                value={draft}
-                onChange={(event) => {
-                  setDraft(event.target.value);
-                  storage.saveDraft(detail.payload.thread.threadId, event.target.value);
-                }}
-              />
-            </Field>
-            <ActionButton
-              disabled={!draft.trim() || connection !== "connected"}
-              pending={mutationStatus === "pending"}
-              type="submit"
-            >
-              {message("threads.send")}
-            </ActionButton>
-          </form>
+            onSubmit={() =>
+              void performIntent({
+                kind: "submit",
+                content: draft,
+                ...(selectedModel
+                  ? { selection: { modelRef: selectedModel.ref, thinkingLevel: selectedThinking } }
+                  : {}),
+              })
+            }
+            connected={connection === "connected"}
+            pending={mutationStatus === "pending"}
+            model={configuration?.primaryModel?.model}
+            models={availableModels}
+            modelRef={selectedModel?.ref ?? ""}
+            thinkingLevel={selectedThinking}
+            onModelChange={setModelRef}
+            onThinkingChange={setThinkingLevel}
+            onStop={
+              configuration?.canCancelRun &&
+              detail.payload.runs.some(
+                (run) => !["completed", "failed", "cancelled"].includes(run.status),
+              )
+                ? () => {
+                    const run = detail.payload.runs.find(
+                      (item) => !["completed", "failed", "cancelled"].includes(item.status),
+                    );
+                    if (run)
+                      void performIntent({
+                        kind: "stop",
+                        runId: run.runId,
+                        revision: run.revision,
+                      });
+                  }
+                : undefined
+            }
+            message={message}
+            canSend={
+              detail.payload.thread.status === "active" &&
+              !detail.payload.runs.some(
+                (run) => !["completed", "failed", "cancelled"].includes(run.status),
+              )
+            }
+          />
         </>
       )}
     </div>
@@ -797,6 +922,24 @@ export function useThreadControlCenter(
 
   const details = selectedSummary ? (
     <div className="thread-details">
+      {detail ? (
+        <Field label={message("threads.answerLocale")}>
+          <select
+            value={detail.payload.thread.answerLocale}
+            onChange={(event) =>
+              void performIntent({
+                kind: "locale",
+                answerLocale: event.target.value as "zh-CN" | "en" | "ja",
+              })
+            }
+          >
+            <option value="zh-CN">简体中文</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+          </select>
+        </Field>
+      ) : null}
+      <p>{message("threads.rawContentNotice")}</p>
       <dl>
         <div>
           <dt>Thread ID</dt>
@@ -942,5 +1085,13 @@ export function useThreadControlCenter(
     <p>{message("common.select")}</p>
   );
 
-  return Object.freeze({ content, details, list, refresh });
+  return Object.freeze({
+    content,
+    details,
+    list,
+    refresh,
+    title: selectedSummary?.titleRef
+      ? (contentByRef[selectedSummary.titleRef] ?? message("chat.untitled"))
+      : message("chat.untitled"),
+  });
 }

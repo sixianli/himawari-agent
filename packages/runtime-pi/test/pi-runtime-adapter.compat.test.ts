@@ -332,6 +332,7 @@ class RecordingRuntimeTools implements RuntimeToolPort {
 }
 
 interface FakeSessionOptions {
+  readonly thinkingLevel?: string;
   readonly customTools?: readonly {
     readonly name: string;
     readonly description: string;
@@ -414,12 +415,13 @@ function createAdapter(
   projection: RecordingProjection,
   tools: RecordingRuntimeTools,
   createSession: ReturnType<typeof fakeSessionFactory>,
+  model: Partial<Model<Api>> = {},
 ) {
   return new PiAgentRuntimeAdapter({
     projection,
     tools,
     models: {
-      resolve: async () => ({ model: {}, modelRuntime: {} }) as unknown as PiModelBinding,
+      resolve: async () => ({ model, modelRuntime: {} }) as unknown as PiModelBinding,
     },
     cwd: process.cwd(),
     now: () => NOW,
@@ -790,6 +792,39 @@ describe("Pi stream admission accounting", () => {
 });
 
 describe("Pi Agent Runtime adapter compatibility", () => {
+  it("passes the Run-frozen supported thinking level to Pi", async () => {
+    let observed: string | undefined;
+    const adapter = createAdapter(
+      new RecordingProjection(),
+      new RecordingRuntimeTools(),
+      fakeSessionFactory(async (emit, options) => {
+        observed = options.thinkingLevel;
+        emit({ type: "agent_start" });
+        emit({ type: "agent_settled" });
+      }),
+      { ...ADMISSION_MODEL, reasoning: true },
+    );
+    const events = await collect(adapter.run({ ...request, thinkingLevel: "high" }));
+    expect(observed).toBe("high");
+    expect(events[0]).toMatchObject({
+      type: "runtime.model_started",
+      modelRef: request.modelRef,
+      thinkingLevel: "high",
+    });
+  });
+  it("rejects a thinking level unsupported by the resolved Pi model before creating a session", async () => {
+    const factory = vi.fn(fakeSessionFactory(async () => {}));
+    const adapter = createAdapter(
+      new RecordingProjection(),
+      new RecordingRuntimeTools(),
+      factory,
+      ADMISSION_MODEL,
+    );
+    const events = await collect(adapter.run({ ...request, thinkingLevel: "high" }));
+    expect(factory).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+
   it.each(["unknown", "throw"] as const)(
     "never completes a Run after unresolved tool execution (%s) even if Pi supplies a final answer",
     async (mode) => {
@@ -1390,7 +1425,13 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     const iterator = adapter.run(request)[Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toEqual({
       done: false,
-      value: { type: "runtime.model_started", runId: request.runId, occurredAt: NOW },
+      value: {
+        type: "runtime.model_started",
+        runId: request.runId,
+        modelRef: request.modelRef,
+        thinkingLevel: "off",
+        occurredAt: NOW,
+      },
     });
     releasePrompt?.();
     await expect(iterator.next()).resolves.toEqual({

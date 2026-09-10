@@ -365,3 +365,72 @@ describe("Thread Gateway control-center adapter", () => {
     }
   });
 });
+
+it("rejects uninstalled model selection and cancellation outside the selected Thread", async () => {
+  const paths = await seedState();
+  const clock = new ManualClock("2026-08-28T00:00:00.000Z");
+  const repository = await SqliteProductStateRepository.open({
+    ...paths,
+    minimumFreeBytes: 0,
+    now: () => clock.now(),
+  });
+  try {
+    const gateway = adapter(repository, clock);
+    await gateway.execute({
+      authentication,
+      command: command("thread.create", {
+        threadId: "thread-selection",
+        answerLocale: "zh-CN",
+        resultRef: "payload:create",
+      }),
+    });
+    const configured = threadGatewayMessageSchema.parse({
+      ...envelope("command", "thread.message.submit_configured"),
+      idempotencyKey: "selection:not-installed",
+      payload: {
+        threadId: "thread-selection",
+        expectedRevision: 1,
+        messageId: "message:selected",
+        turnId: "turn:selected",
+        runId: "run:selected",
+        sessionId: "session-thread-gateway",
+        contentRef: "payload:create",
+        sourceProofRef: "browser:fixture",
+        dataClassification: "private",
+        occurredAt: clock.now(),
+        resultRef: "payload:pin",
+        modelRef: "model:not-configured",
+        thinkingLevel: "high",
+      },
+    }) as ThreadGatewayCommand;
+    await expect(gateway.execute({ authentication, command: configured })).rejects.toThrow(
+      "MODEL_SELECTION_NOT_INSTALLED",
+    );
+    const cancel = threadGatewayMessageSchema.parse({
+      ...envelope("command", "thread.run.cancel"),
+      idempotencyKey: "cancel:wrong-run",
+      payload: {
+        threadId: "thread-selection",
+        runId: "run:another-thread",
+        expectedRunRevision: 1,
+        resultRef: "payload:pin",
+      },
+    }) as ThreadGatewayCommand;
+    await expect(gateway.execute({ authentication, command: cancel })).rejects.toThrow(
+      "THREAD_RUN_NOT_FOUND",
+    );
+    const snapshot = await gateway.query({
+      authentication,
+      query: query("thread.detail", {
+        threadId: "thread-selection",
+        afterSequence: 0,
+        limit: 10,
+      }),
+    });
+    expect(snapshot).toMatchObject({
+      payload: { thread: { revision: 1 }, messages: [], runs: [] },
+    });
+  } finally {
+    await repository.close();
+  }
+});

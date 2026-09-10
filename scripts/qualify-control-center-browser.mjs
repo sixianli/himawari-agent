@@ -203,7 +203,10 @@ export async function qualifyBrowser({
   }
 
   async function waitForConnected(page, text = "实时连接") {
-    await waitForText(page.getByRole("status"), text);
+    await page
+      .getByRole("status")
+      .filter({ hasText: text })
+      .waitFor({ state: "visible", timeout: 15_000 });
   }
 
   async function waitForAccepted(page) {
@@ -390,6 +393,7 @@ export async function qualifyBrowser({
     }
     await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
 
+    await page.getByRole("button", { name: "显示详情", exact: true }).click();
     await page.getByLabel("回答语言").selectOption("en");
     await waitForAccepted(page);
     if ((await page.locator("html").getAttribute("lang")) !== "zh-CN") {
@@ -435,8 +439,8 @@ export async function qualifyBrowser({
     }
 
     await page.getByRole("button", { name: "从此轮 Fork", exact: true }).first().click();
-    await waitForAccepted(page);
     await page.waitForURL(/\/threads\/thread-fork%3A|\/threads\/thread-fork:/);
+    await page.getByRole("button", { name: "显示详情", exact: true }).click();
     await page.getByText("thread-fork:", { exact: false }).first().waitFor();
     await page.goto(`${baseUrl}/threads/thread-main?view=content`);
     await waitForConnected(page);
@@ -444,7 +448,8 @@ export async function qualifyBrowser({
     const primaryNavigation = page.getByRole("navigation", { name: "控制中心功能" });
     for (const surface of surfaces) {
       await primaryNavigation.getByRole("link", { name: surface.label, exact: true }).click();
-      await page.getByRole("heading", { name: surface.title, exact: true }).waitFor();
+      if (surface.label === "对话") await page.locator("#page-title").waitFor();
+      else await page.getByRole("heading", { name: surface.title, exact: true }).waitFor();
       const focusedId = await page.evaluate(() => document.activeElement?.id ?? null);
       if (focusedId !== "page-title") {
         throw new Error(`CONTROL_CENTER_ROUTE_FOCUS_NOT_MOVED:${surface.label}:${focusedId}`);
@@ -522,7 +527,7 @@ export async function qualifyBrowser({
     await assertAxeClean(page, "desktop-ja");
     await page.getByLabel("メッセージ下書き").fill("");
     await localeSelect.selectOption("zh-CN");
-    await page.getByRole("heading", { name: "对话", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "多客户端冲突后的标题", exact: true }).waitFor();
     if (
       (await page.evaluate(() => localStorage.getItem("himawari.control-center.v1.locale"))) !==
       "zh-CN"
@@ -554,7 +559,7 @@ export async function qualifyBrowser({
     releaseLoading?.();
     await loadingComplete;
     await page.unroute("**/api/gateway/v2/queries", loadingHandler);
-    await waitForText(page.getByRole("main"), "approval-approve");
+    await waitForText(page.locator(".list-pane"), "approval-approve");
 
     const hiddenExecutionStatus = await page.evaluate(() =>
       fetch("/api/capabilities/capability-review/execute", { method: "POST" }).then(
@@ -709,6 +714,9 @@ export async function qualifyBrowser({
       throw new Error("CONTROL_CENTER_REVOKED_SESSION_VIEW_STATE_RETAINED");
     }
     await page.unroute("**/api/gateway/v2/queries", revokedSessionHandler);
+    // The injected revocation has ended; bootstrap a newly authorized fixture session.
+    await page.reload();
+    await waitForConnected(page);
 
     await primaryNavigation.getByRole("link", { name: "能力与适配器", exact: true }).click();
     await page.getByText("capability-review", { exact: true }).first().waitFor();
@@ -747,19 +755,20 @@ export async function qualifyBrowser({
     await background.close();
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole("button", { name: "显示内容" }).click();
+    if (await page.getByRole("button", { name: "关闭", exact: true }).isVisible())
+      await page.getByRole("button", { name: "关闭", exact: true }).click();
     await page.getByRole("button", { name: "发送并启动 Run" }).waitFor();
     await page.getByRole("button", { name: "显示列表" }).click();
     if (
       !(await page.locator(".list-pane").isVisible()) ||
-      (await page.locator(".content-pane").isVisible())
+      !(await page.locator(".content-pane").isVisible())
     ) {
       throw new Error("CONTROL_CENTER_MOBILE_LIST_VIEW_INVALID");
     }
     await page.getByRole("button", { name: "显示详情" }).click();
     if (
       !(await page.locator(".details-pane").isVisible()) ||
-      (await page.locator(".content-pane").isVisible())
+      !(await page.locator(".content-pane").isVisible())
     ) {
       throw new Error("CONTROL_CENTER_MOBILE_DETAILS_VIEW_INVALID");
     }
@@ -775,13 +784,12 @@ export async function qualifyBrowser({
     await assertNoDocumentOverflow(page, "320px-equivalent-400-percent-reflow");
 
     await page.setViewportSize({ width: 1280, height: 800 });
-    const layoutRanges = page.locator(".layout-controls input[type=range]");
-    await layoutRanges.nth(0).fill("31");
-    await layoutRanges.nth(1).fill("29");
+    await page.locator(".interface-details summary").click();
+    await page.locator(".interface-details input[type=range]").fill("29");
     const savedPreferences = await page.evaluate(() =>
       JSON.parse(localStorage.getItem("himawari.control-center.v1.preferences") ?? "null"),
     );
-    if (savedPreferences?.listPanePercent !== 31 || savedPreferences?.detailPanePercent !== 29) {
+    if (savedPreferences?.detailPanePercent !== 29) {
       throw new Error("CONTROL_CENTER_LAYOUT_PREFERENCES_NOT_PERSISTED");
     }
 
@@ -856,6 +864,7 @@ export async function qualifyBrowser({
     await page.goto(`${baseUrl}/threads/thread-main?view=content`);
     await waitForConnected(page);
     await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "显示详情", exact: true }).click();
     await page.getByText("run-01", { exact: true }).waitFor();
     const reopenedNavigation = page.getByRole("navigation", { name: "控制中心功能" });
     await reopenedNavigation.getByRole("link", { name: "审批", exact: true }).click();
