@@ -37,7 +37,9 @@ import {
   buildHttpGatewayServer,
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
-  type CloudflareAccessJwtVerifier,
+  type HttpGatewayAuthenticationPort,
+  BuiltInAuthenticationService,
+  registerBuiltInIdentityRoutes,
   digestIdentityCredential,
   EnvelopePayloadProtector,
   type HostProviderSecretSource,
@@ -121,10 +123,8 @@ export interface ProductionHttpCompositionOptions {
 
 export interface ProductionHttpComposition {
   readonly app: FastifyInstance;
-  readonly authentication: ProductSessionAuthenticationService;
-  readonly verifier: CloudflareAccessJwtVerifier;
-  readonly identity: CloudflareAccessIdentityClient;
-  readonly bootstrap: OwnerBootstrapService;
+  readonly authentication: HttpGatewayAuthenticationPort;
+  assertIdentityReady(): Promise<void>;
   readonly csrf: SessionBoundCsrfService;
   readonly recentAuthentication: RecentAuthenticationGuard;
   readonly threadGateway: AgentThreadGatewayService;
@@ -195,6 +195,21 @@ function assertProductionConfiguration(configuration: ProductConfiguration): voi
     http.heartbeatMilliseconds > 300_000
   ) {
     compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.CONFIGURATION_INCOMPLETE);
+  }
+  if (identity.kind === "built-in") {
+    const origin = new URL(configuration.publicOrigin);
+    if (
+      origin.origin !== configuration.publicOrigin ||
+      (origin.protocol !== "https:" &&
+        !(
+          !configuration.publicMode &&
+          origin.protocol === "http:" &&
+          ["127.0.0.1", "[::1]", "localhost"].includes(origin.hostname)
+        ))
+    ) {
+      compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.CONFIGURATION_INCOMPLETE);
+    }
+    return;
   }
   let publicOrigin: URL;
   let issuer: URL;
@@ -436,7 +451,7 @@ function authorityForConfiguration(
 
 function routeOptions(
   configuration: ProductConfiguration,
-  identity: ProductSessionAuthenticationService,
+  identity: HttpGatewayAuthenticationPort,
   csrf: SessionBoundCsrfService,
   recentAuthentication: RecentAuthenticationGuard,
   threadGateway: AgentThreadGatewayService,
@@ -504,7 +519,11 @@ export async function createProductionHttpComposition(
   const { configuration, repository, secretSources } = options;
   const httpConfiguration = configuration.http;
   const identityConfiguration = configuration.identity;
-  if (!configuration.publicMode || !httpConfiguration || !identityConfiguration) {
+  if (
+    !httpConfiguration ||
+    !identityConfiguration ||
+    (!configuration.publicMode && identityConfiguration.kind !== "built-in")
+  ) {
     compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.CONFIGURATION_INCOMPLETE);
   }
   assertProductionConfiguration(configuration);
@@ -532,55 +551,113 @@ export async function createProductionHttpComposition(
   if (csrfKey.byteLength < 32) {
     compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.SECRET_MATERIAL_INVALID);
   }
-  const bootstrap = identityConfiguration.bootstrap;
-  let bootstrapTokenDigest = "";
-  if (bootstrap.enabled) {
-    if (bootstrap.tokenSecretRef === null) {
-      compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.SECRET_REFERENCE_INVALID);
-    }
-    const bootstrapSecret = configuredSecret(
-      configuration,
-      bootstrap.tokenSecretRef,
-      "identity-bootstrap",
-    );
-    bootstrapTokenDigest = digestIdentityCredential(
-      await secretSources.provider.resolve(bootstrapSecret.ref, bootstrapSecret.version),
-    );
-  }
-  const jwksFetcher =
-    options.jwksFetcher ??
-    new BoundedJwksFetcher({
-      allowedUrl: identityConfiguration.jwksUrl,
-      timeoutMilliseconds: identityConfiguration.jwksTimeoutMilliseconds,
-      maximumBodyBytes: identityConfiguration.jwksMaximumBodyBytes,
+  let authentication: HttpGatewayAuthenticationPort;
+  let assertIdentityReady: () => Promise<void>;
+  let registerAuthentication: (
+    app: FastifyInstance,
+    csrf: SessionBoundCsrfService,
+    guard: RecentAuthenticationGuard,
+  ) => void;
+  if (identityConfiguration.kind === "built-in") {
+    const native = new BuiltInAuthenticationService({
+      ownerId,
+      state: repository.builtInIdentityState(ownerId, agentId),
+      policy: identityConfiguration,
+      now,
+      readFactor: async (ref) => {
+        const payload = await repository.payloadStore(ownerId, agentId).get(ref);
+        if (
+          !payload ||
+          payload.dataClassification !== "restricted" ||
+          payload.contentType !== "application/vnd.himawari.identity-factor"
+        )
+          throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.SESSION_INVALID);
+        return payloadProtector.unprotect({ ownerId, agentId, payload });
+      },
     });
-  const verifier = new AccessJwtVerifier({
-    issuer: identityConfiguration.issuer,
-    audience: identityConfiguration.audience,
-    jwksUrl: identityConfiguration.jwksUrl,
-    jwksFetcher,
-    now,
-    cacheMilliseconds: identityConfiguration.jwksCacheMilliseconds,
-    clockToleranceSeconds: identityConfiguration.clockToleranceSeconds,
-  });
-  const identity = new CloudflareAccessIdentityClient({
-    issuer: identityConfiguration.issuer,
-    subjectBinding: "user_uuid_equals_sub",
-    ...(options.identityFetcher === undefined ? {} : { fetcher: options.identityFetcher }),
-    now,
-    timeoutMilliseconds: identityConfiguration.identityLookupTimeoutMilliseconds,
-    maximumBodyBytes: identityConfiguration.identityLookupMaximumBodyBytes,
-  });
-  const authentication = new ProductSessionAuthenticationService({
-    verifier,
-    identityState,
-    sessionState: sessionsState,
-    recentAuthenticationProvider: identity,
-    now,
-    ...(options.createSessionId === undefined ? {} : { createSessionId: options.createSessionId }),
-    ...(options.createDeviceId === undefined ? {} : { createDeviceId: options.createDeviceId }),
-    createToken: options.createSessionToken ?? (() => randomBytes(32).toString("base64url")),
-  });
+    authentication = native;
+    assertIdentityReady = () => native.assertReady();
+    registerAuthentication = (app, csrf, recentAuthentication) =>
+      registerBuiltInIdentityRoutes(app, {
+        publicOrigin: configuration.publicOrigin,
+        sessionCookieName: httpConfiguration.sessionCookieName,
+        sessions: native,
+        state: sessionsState,
+        csrf,
+        recentAuthentication,
+        now,
+        sessionAbsoluteMilliseconds: identityConfiguration.sessionAbsoluteMilliseconds,
+      });
+  } else {
+    const bootstrap = identityConfiguration.bootstrap;
+    let bootstrapTokenDigest = "";
+    if (bootstrap.enabled) {
+      if (bootstrap.tokenSecretRef === null) {
+        compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.SECRET_REFERENCE_INVALID);
+      }
+      const bootstrapSecret = configuredSecret(
+        configuration,
+        bootstrap.tokenSecretRef,
+        "identity-bootstrap",
+      );
+      bootstrapTokenDigest = digestIdentityCredential(
+        await secretSources.provider.resolve(bootstrapSecret.ref, bootstrapSecret.version),
+      );
+    }
+    const jwksFetcher =
+      options.jwksFetcher ??
+      new BoundedJwksFetcher({
+        allowedUrl: identityConfiguration.jwksUrl,
+        timeoutMilliseconds: identityConfiguration.jwksTimeoutMilliseconds,
+        maximumBodyBytes: identityConfiguration.jwksMaximumBodyBytes,
+      });
+    const verifier = new AccessJwtVerifier({
+      issuer: identityConfiguration.issuer,
+      audience: identityConfiguration.audience,
+      jwksUrl: identityConfiguration.jwksUrl,
+      jwksFetcher,
+      now,
+      cacheMilliseconds: identityConfiguration.jwksCacheMilliseconds,
+      clockToleranceSeconds: identityConfiguration.clockToleranceSeconds,
+    });
+    const identity = new CloudflareAccessIdentityClient({
+      issuer: identityConfiguration.issuer,
+      subjectBinding: "user_uuid_equals_sub",
+      ...(options.identityFetcher === undefined ? {} : { fetcher: options.identityFetcher }),
+      now,
+      timeoutMilliseconds: identityConfiguration.identityLookupTimeoutMilliseconds,
+      maximumBodyBytes: identityConfiguration.identityLookupMaximumBodyBytes,
+    });
+    const externalAuthentication = new ProductSessionAuthenticationService({
+      verifier,
+      identityState,
+      sessionState: sessionsState,
+      recentAuthenticationProvider: identity,
+      now,
+      ...(options.createSessionId === undefined
+        ? {}
+        : { createSessionId: options.createSessionId }),
+      ...(options.createDeviceId === undefined ? {} : { createDeviceId: options.createDeviceId }),
+      createToken: options.createSessionToken ?? (() => randomBytes(32).toString("base64url")),
+    });
+    const bootstrapService = new OwnerBootstrapService({
+      enabled: bootstrap.enabled,
+      expiresAt: bootstrap.expiresAt,
+      tokenDigest: bootstrapTokenDigest,
+      identityState,
+      now,
+    });
+    authentication = externalAuthentication;
+    assertIdentityReady = () => verifier.assertReady();
+    registerAuthentication = (app) =>
+      registerIdentityAuthenticationRoutes(app, {
+        publicOrigin: configuration.publicOrigin,
+        verifier,
+        bootstrap: bootstrapService,
+        sessions: externalAuthentication,
+        sessionCookieName: httpConfiguration.sessionCookieName,
+      });
+  }
   const csrf = new SessionBoundCsrfService({
     key: new Uint8Array(csrfKey),
     now,
@@ -591,13 +668,6 @@ export async function createProductionHttpComposition(
     sessionState: sessionsState,
     policy: identityConfiguration.recentAuthentication,
     now: clock,
-  });
-  const bootstrapService = new OwnerBootstrapService({
-    enabled: bootstrap.enabled,
-    expiresAt: bootstrap.expiresAt,
-    tokenDigest: bootstrapTokenDigest,
-    identityState,
-    now,
   });
   const threads = repository.threadRepository();
   const threadCommands = new ThreadCommandService({
@@ -695,19 +765,16 @@ export async function createProductionHttpComposition(
     ),
     gatewayV2,
   });
-  registerIdentityAuthenticationRoutes(app, {
-    publicOrigin: configuration.publicOrigin,
-    verifier,
-    bootstrap: bootstrapService,
-    sessions: authentication,
-    sessionCookieName: httpConfiguration.sessionCookieName,
-  });
+  app.get("/api/identity/v1/method", async (_request, reply) =>
+    reply.header("cache-control", "no-store").send({
+      method: identityConfiguration.kind === "built-in" ? "built-in" : "cloudflare-access",
+    }),
+  );
+  registerAuthentication(app, csrf, recentAuthentication);
   return Object.freeze({
     app,
     authentication,
-    verifier,
-    identity,
-    bootstrap: bootstrapService,
+    assertIdentityReady,
     csrf,
     recentAuthentication,
     threadGateway,

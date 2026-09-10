@@ -106,7 +106,8 @@ export interface IdentityCsrfConfiguration {
   readonly ttlMilliseconds: number;
 }
 
-export interface IdentityConfiguration {
+export interface CloudflareIdentityConfiguration {
+  readonly kind?: "cloudflare-access";
   readonly issuer: string;
   readonly audience: string;
   readonly jwksUrl: string;
@@ -120,6 +121,16 @@ export interface IdentityConfiguration {
   readonly bootstrap: IdentityBootstrapConfiguration;
   readonly csrf: IdentityCsrfConfiguration;
 }
+
+export interface BuiltInIdentityConfiguration {
+  readonly kind: "built-in";
+  readonly sessionIdleMilliseconds: number;
+  readonly sessionAbsoluteMilliseconds: number;
+  readonly recentAuthentication: RecentAuthenticationConfiguration;
+  readonly csrf: IdentityCsrfConfiguration;
+}
+
+export type IdentityConfiguration = CloudflareIdentityConfiguration | BuiltInIdentityConfiguration;
 
 export interface CapabilityDeploymentConfiguration {
   readonly snapshotPath: string;

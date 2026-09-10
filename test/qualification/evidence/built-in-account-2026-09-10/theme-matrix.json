@@ -1,0 +1,98 @@
+[
+  {
+    "theme": "light",
+    "accent": "violet",
+    "background": "#fcfcfb",
+    "text": "rgb(37, 41, 33)",
+    "danger": "#a73c30",
+    "selected": "紫罗兰"
+  },
+  {
+    "theme": "light",
+    "accent": "blue",
+    "background": "#fcfcfb",
+    "text": "rgb(37, 41, 33)",
+    "danger": "#a73c30",
+    "selected": "海蓝"
+  },
+  {
+    "theme": "light",
+    "accent": "teal",
+    "background": "#fcfcfb",
+    "text": "rgb(37, 41, 33)",
+    "danger": "#a73c30",
+    "selected": "青绿"
+  },
+  {
+    "theme": "light",
+    "accent": "amber",
+    "background": "#fcfcfb",
+    "text": "rgb(37, 41, 33)",
+    "danger": "#a73c30",
+    "selected": "琥珀"
+  },
+  {
+    "theme": "light",
+    "accent": "rose",
+    "background": "#fcfcfb",
+    "text": "rgb(37, 41, 33)",
+    "danger": "#a73c30",
+    "selected": "玫瑰"
+  },
+  {
+    "theme": "light",
+    "accent": "graphite",
+    "background": "#fcfcfb",
+    "text": "rgb(37, 41, 33)",
+    "danger": "#a73c30",
+    "selected": "石墨"
+  },
+  {
+    "theme": "dark",
+    "accent": "violet",
+    "background": "#1e1e1e",
+    "text": "rgb(212, 212, 212)",
+    "danger": "#efa095",
+    "selected": "紫罗兰"
+  },
+  {
+    "theme": "dark",
+    "accent": "blue",
+    "background": "#1e1e1e",
+    "text": "rgb(212, 212, 212)",
+    "danger": "#efa095",
+    "selected": "海蓝"
+  },
+  {
+    "theme": "dark",
+    "accent": "teal",
+    "background": "#1e1e1e",
+    "text": "rgb(212, 212, 212)",
+    "danger": "#efa095",
+    "selected": "青绿"
+  },
+  {
+    "theme": "dark",
+    "accent": "amber",
+    "background": "#1e1e1e",
+    "text": "rgb(212, 212, 212)",
+    "danger": "#efa095",
+    "selected": "琥珀"
+  },
+  {
+    "theme": "dark",
+    "accent": "rose",
+    "background": "#1e1e1e",
+    "text": "rgb(212, 212, 212)",
+    "danger": "#efa095",
+    "selected": "玫瑰"
+  },
+  {
+    "theme": "dark",
+    "accent": "graphite",
+    "background": "#1e1e1e",
+    "text": "rgb(212, 212, 212)",
+    "danger": "#efa095",
+    "selected": "石墨"
+  }
+]

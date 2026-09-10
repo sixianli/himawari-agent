@@ -1,3 +1,4 @@
+import { invalidateRecoveredBuiltInIdentity } from "./built-in-identity-recovery.js";
 import {
   createCipheriv,
   createDecipheriv,
@@ -817,6 +818,19 @@ export class SqliteRecoveryPointAdapter implements RecoveryPointPort {
           RECOVERY_POINT_ERROR_CODES.TARGET_MISMATCH,
           "Recovery point identity or authority does not match the target",
         );
+      }
+      const authenticationState = new BetterSqlite3(path.join(staging, "data", "product.sqlite"));
+      try {
+        authenticationState.transaction(() =>
+          invalidateRecoveredBuiltInIdentity(authenticationState, {
+            ownerId: this.#options.ownerId,
+            agentId: this.#options.agentId,
+            now: restoreStartedAt,
+            requireAccountRecovery: true,
+          }),
+        )();
+      } finally {
+        authenticationState.close();
       }
       await this.#fault("restore.before-switch");
       await rename(currentData, previousData);

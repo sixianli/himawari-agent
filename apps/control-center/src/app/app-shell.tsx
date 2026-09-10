@@ -34,9 +34,10 @@ const navMessageIds: Readonly<
 };
 
 export interface ControlCenterShellProps {
+  readonly builtInIdentity?: boolean;
   readonly healthDependenciesAvailable?: boolean;
   readonly installedGatewayV2Operations?: readonly string[];
-  readonly connection: "connecting" | "connected" | "offline";
+  readonly connection: "connecting" | "connected" | "offline" | null;
   readonly content: ReactNode;
   readonly details: ReactNode;
   readonly list: ReactNode;
@@ -54,6 +55,7 @@ function shouldHandleNavigation(event: MouseEvent<HTMLAnchorElement>): boolean {
 }
 
 export function ControlCenterShell({
+  builtInIdentity = false,
   healthDependenciesAvailable = false,
   installedGatewayV2Operations = [],
   connection,
@@ -118,7 +120,8 @@ export function ControlCenterShell({
                 }}
               >
                 {message(navMessageIds[surface.id])}
-                {!isSurfaceInstalled(
+                {!(builtInIdentity && surface.id === "sessions-devices") &&
+                !isSurfaceInstalled(
                   surface,
                   installedGatewayV2Operations,
                   healthDependenciesAvailable,
@@ -164,18 +167,20 @@ export function ControlCenterShell({
             </h1>
           </div>
           <div className="topbar-controls">
-            <StatusRegion className={`connection connection-${connection}`}>
-              <span aria-hidden="true">●</span>
-              <span className="connection-label">
-                {message(
-                  connection === "connected"
-                    ? "connection.connected"
-                    : connection === "connecting"
-                      ? "connection.connecting"
-                      : "connection.offline",
-                )}
-              </span>
-            </StatusRegion>
+            {connection ? (
+              <StatusRegion className={`connection connection-${connection}`}>
+                <span aria-hidden="true">●</span>
+                <span className="connection-label">
+                  {message(
+                    connection === "connected"
+                      ? "connection.connected"
+                      : connection === "connecting"
+                        ? "connection.connecting"
+                        : "connection.offline",
+                  )}
+                </span>
+              </StatusRegion>
+            ) : null}
             <AppearancePicker preferences={preferences} onChange={onPreferencesChange} />
             <ActionButton
               aria-label={message("layout.showDetails")}

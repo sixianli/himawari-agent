@@ -70,6 +70,7 @@ import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operation
 import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
 import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
 import { SqliteRunPayloadArtifactOperations } from "./sqlite-run-payload-artifact-operations.ts";
+import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
 
 export type SqliteApplicationFailure = (
@@ -317,6 +318,7 @@ export class SqliteDurableOperations {
   private readonly checkpoint: SqliteCheckpointOperations;
   private readonly capabilityInvocations: SqliteCapabilityInvocationOperations;
   private readonly memory: SqliteMemoryOperations;
+  private readonly builtInIdentity: SqliteBuiltInIdentityOperations;
   private readonly thread: SqliteThreadOperations;
   private readonly runs: SqliteRunLifecycleOperations;
   private readonly runCheckpoints: SqliteRunCheckpointOperations;
@@ -329,6 +331,7 @@ export class SqliteDurableOperations {
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
   ) {
+    this.builtInIdentity = new SqliteBuiltInIdentityOperations(database, fail, assertDiskHeadroom);
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
@@ -395,6 +398,8 @@ export class SqliteDurableOperations {
   }
 
   execute(operation: string, payload: unknown): unknown {
+    if (operation.startsWith("builtInIdentity."))
+      return this.builtInIdentity.execute(operation, payload);
     if (operation.startsWith("runDispatch.")) {
       return this.executeRunDispatch(operation, payload);
     }

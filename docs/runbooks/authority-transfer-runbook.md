@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:fb700a2b9c1575ba244212b9fbce3aafb28320afa9e9d93812df913707d48d84"
+contract_sha256: "sha256:a63d62ba9a99a47166408e19279ae79b1c443e1c544f860662f69848cb9ef41d"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,9 @@ date: "2026-08-27"
 # 停机加密 Authority Transfer Runbook
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/built-in-identity-recovery.ts
+- packages/persistence-sqlite/src/migrations/0031_built_in_identity.sql
+- packages/application/src/ports/built-in-identity.ts
 - apps/agent-service/src/production-managed-tasks.ts
 - apps/agent-service/src/production-sandbox-stream.ts
 - apps/agent-service/src/production-sandbox-services.ts
@@ -256,3 +259,10 @@ v2 已保存输出的分页引用和 cursor 归原 Run 的受保护 artifact；�
 服务仅在安装声明含匹配的 `readinessProbes` 且具备该模式资格时启用。本批探针使用私有目录内唯一 Unix socket 的 HTTP GET、预期 2xx 状态和最多 30 秒期限；不开放通用本地 TCP 或其他 Unix socket，不以日志判断就绪。恢复后的声明、运行文件与资格必须重新匹配；不得凭旧 ready 回执连接新服务。
 
 Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释放资源的 Run。未知清理进入原核查流程并保留写目录占用。Mac 测试主进程退出仍不证明任意后代已全部退出，不能清除隔离以获得正常完成。这里没有新增迁移文件、安装资格签发或运行中数据库修改步骤。
+
+
+## 内置账号的恢复边界
+
+目标主机激活时会撤销内置账号随迁移复制的旧产品会话、设备和未完成验证请求。内置账号本身保留，用户须用密码和第二因素在新主机重新登录；原有 Cookie 不获得新主机访问权。迁移仍须按原有权限重新绑定 Host secret、验证 Payload 和平台资格。
+
+[SOURCE: docs/adr/0027-built-in-owner-authentication.md] [SOURCE: docs/runbooks/install-start-stop-runbook.md]

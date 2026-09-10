@@ -51,6 +51,7 @@ export interface HttpGatewayAuthenticationInput {
 }
 
 export interface HttpGatewayAuthenticationPort {
+  revalidate?(authentication: GatewayAuthenticationContext): Promise<void>;
   authenticate(input: HttpGatewayAuthenticationInput): Promise<GatewayAuthenticationContext>;
 }
 
@@ -350,6 +351,7 @@ function refreshQueries(subscription: EventSubscription): readonly GatewayQuery[
 }
 
 async function* streamGatewayEvents(input: {
+  readonly revalidate: () => Promise<void>;
   readonly gateway: AgentGatewayPort;
   readonly authentication: GatewayAuthenticationContext;
   readonly subscription: EventSubscription;
@@ -382,6 +384,15 @@ async function* streamGatewayEvents(input: {
       throw error;
     }
     if (timer) clearTimeout(timer);
+    try {
+      await input.revalidate();
+    } catch {
+      yield serializeSse({
+        event: "gateway.stream_error",
+        data: { code: "IDENTITY_SESSION_INVALID" },
+      });
+      return;
+    }
     if (result.kind === "heartbeat") {
       yield ": heartbeat\n\n";
       continue;
@@ -394,6 +405,7 @@ async function* streamGatewayEvents(input: {
 }
 
 async function* streamGatewayV2Events(input: {
+  readonly revalidate: () => Promise<void>;
   readonly gateway: AgentGatewayV2Port;
   readonly authentication: GatewayAuthenticationContext;
   readonly afterCursor: string | null;
@@ -436,6 +448,15 @@ async function* streamGatewayV2Events(input: {
         if (timer) clearTimeout(timer);
       }
       if (input.signal.aborted || result.kind === "aborted") return;
+      try {
+        await input.revalidate();
+      } catch {
+        yield serializeSse({
+          event: "gateway.stream_error",
+          data: { code: "IDENTITY_SESSION_INVALID" },
+        });
+        return;
+      }
       if (result.kind === "heartbeat") {
         yield ": heartbeat\n\n";
         continue;
@@ -457,6 +478,7 @@ async function* streamGatewayV2Events(input: {
 }
 
 async function* streamThreadGatewayEvents(input: {
+  readonly revalidate: () => Promise<void>;
   readonly gateway: AgentThreadGatewayPort;
   readonly authentication: GatewayAuthenticationContext;
   readonly subscription: ThreadGatewaySubscription;
@@ -499,6 +521,15 @@ async function* streamThreadGatewayEvents(input: {
         throw error;
       }
       if (timer) clearTimeout(timer);
+      try {
+        await input.revalidate();
+      } catch {
+        yield serializeSse({
+          event: "gateway.stream_error",
+          data: { code: "IDENTITY_SESSION_INVALID" },
+        });
+        return;
+      }
       if (result.kind === "heartbeat") {
         yield ": heartbeat\n\n";
         continue;
@@ -738,6 +769,8 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             authentication,
             subscription,
             heartbeatMilliseconds,
+            revalidate: () =>
+              options.authentication.revalidate?.(authentication) ?? Promise.resolve(),
           });
           const first = await source.next();
           stream = Readable.from(
@@ -834,6 +867,8 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             authentication,
             afterCursor,
             heartbeatMilliseconds,
+            revalidate: () =>
+              options.authentication.revalidate?.(authentication) ?? Promise.resolve(),
             signal: controller.signal,
           }),
         );
@@ -888,6 +923,8 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             authentication,
             subscription,
             heartbeatMilliseconds,
+            revalidate: () =>
+              options.authentication.revalidate?.(authentication) ?? Promise.resolve(),
           }),
         );
         setSecurityHeaders(reply);

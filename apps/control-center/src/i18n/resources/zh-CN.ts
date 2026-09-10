@@ -1,6 +1,31 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "account.signIn": "登录 Himawari",
+  "account.reauthenticate": "再次验证身份",
+  "account.passwordHelp": "使用在此 Himawari 服务中创建的账号。",
+  "account.factorHelp": "输入验证器中的 6 位验证码，或一条尚未使用的恢复码。",
+  "account.username": "用户名",
+  "account.password": "密码",
+  "account.deviceLabel": "设备名称",
+  "account.factor": "验证码或恢复码",
+  "account.verifying": "正在验证…",
+  "account.continue": "继续",
+  "account.verify": "验证并登录",
+  "account.restart": "重新输入账号",
+  "account.rateLimited": "尝试次数过多，请 5 分钟后再试。",
+  "account.rejected": "验证未通过或已过期。请检查输入，必要时重新开始登录。",
+  "account.recoveryHelp":
+    "无法使用验证器时，可用恢复码代替验证码。若密码和恢复方式均不可用，需要在服务所在电脑上通过管理命令恢复账号。",
+  "account.devicesHelp":
+    "这里显示已登录的设备。撤销设备后，其会话和后续数据访问立即失效。敏感操作需要最近完成的身份验证。",
+  "account.deviceActionFailed":
+    "操作未完成。请检查连接；敏感操作若需要再次验证，请先完成身份验证后重试。",
+  "account.currentDevice": "当前设备",
+  "account.lastSeen": "最近使用",
+  "account.revoke": "撤销设备",
+  "account.signOut": "退出登录",
+
   "chat.model": "模型（下一轮）",
   "chat.depth": "思考深度（下一轮）",
   "chat.actualModel": "本轮模型",

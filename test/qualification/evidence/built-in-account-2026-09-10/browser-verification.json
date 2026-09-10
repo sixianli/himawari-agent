@@ -1,0 +1,28 @@
+{
+  "scope": "controlled-native-authentication-browser",
+  "browser": "Ego Chromium",
+  "httpComposition": "createProductionHttpComposition",
+  "persistence": "real SQLite and protected factor Payload",
+  "credentials": "temporary randomly generated QA account; no user credential",
+  "modelCalls": 0,
+  "workerExecution": false,
+  "scenarios": {
+    "password_and_totp_login": "passed",
+    "wrong_password_rejected": "passed",
+    "password_and_recovery_code_login": "passed",
+    "reauthentication": "passed",
+    "refresh_preserves_session": "passed",
+    "logout_removes_private_view": "passed",
+    "device_revocation_clears_two_open_tabs": "passed",
+    "unauthenticated_connection_indicator_hidden": "passed",
+    "tab_focus_username_to_password": "passed",
+    "factor_input_autofocus": "passed",
+    "light_dark_six_accents": "passed",
+    "mobile_320_reflow_and_44px_inputs": "passed",
+    "native_physical_mobile_keyboard": "not verified",
+    "enter_form_submission": "passed for password and TOTP with CDP Enter character event; initial helper attempt did not establish submission",
+    "public_https_deployment": "not verified",
+    "real_model_tool_approval_service": "not verified",
+    "unicode_password_input": "passed; 128 supplementary Unicode code points retained after UTF-16 maxlength correction"
+  }
+}

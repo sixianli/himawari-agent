@@ -23,3 +23,6 @@ export * from "./strict-configuration.js";
 export * from "./trusted-model-provider.js";
 export * from "./web-host-boundary.js";
 export * from "./workspaces/index.js";
+
+export * from "./built-in-identity.js";
+export * from "./built-in-identity-routes.js";

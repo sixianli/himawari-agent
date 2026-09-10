@@ -287,6 +287,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0030_run_model_selection.sql",
   },
+  {
+    sequence: 31,
+    name: "built_in_identity",
+    changeSet: "built-in-identity",
+    phase: "expand" as const,
+    file: "0031_built_in_identity.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

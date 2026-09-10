@@ -204,6 +204,10 @@ class ReadModel implements GatewayReadModelPort {
 }
 
 class Authentication implements HttpGatewayAuthenticationPort {
+  revoked = false;
+  async revalidate(): Promise<void> {
+    if (this.revoked) throw new Error("SESSION_REVOKED");
+  }
   readonly observed: Array<{ readonly accessAssertion: string | null; readonly path: string }> = [];
 
   async authenticate(input: { readonly accessAssertion: string | null; readonly path: string }) {
@@ -282,6 +286,36 @@ function createFixture(
 }
 
 describe("HTTP Gateway contract and security boundary", () => {
+  it("stops an already open stream before emitting another event after session revocation", async () => {
+    const fixture = createFixture({
+      request: async () => {
+        throw new Error("unused");
+      },
+      async *subscribe() {
+        yield {
+          kind: "snapshot_required" as const,
+          scope: { ownerId: "owner-01", agentId: "agent-01" },
+          reason: "state_changed" as const,
+        };
+        fixture.auth.revoked = true;
+        yield {
+          kind: "snapshot_required" as const,
+          scope: { ownerId: "owner-01", agentId: "agent-01" },
+          reason: "state_changed" as const,
+        };
+      },
+    });
+    try {
+      const response = await fixture.app.inject({
+        url: "/api/gateway/v2/events",
+        headers: requestHeaders(),
+      });
+      expect(response.body.match(/event: gateway.snapshot_required/g)).toHaveLength(1);
+      expect(response.body).toContain("IDENTITY_SESSION_INVALID");
+    } finally {
+      await fixture.app.close();
+    }
+  });
   it("reports uninstalled operations as 501 and publishes installed operations", async () => {
     const { app } = createFixture(
       {

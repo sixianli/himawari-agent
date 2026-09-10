@@ -4,6 +4,7 @@ import type { VerifiedIdentityAssertion } from "./identity.js";
 
 export type RecentAuthenticationEvidenceSource =
   | "cloudflare_access_login_time"
+  | "built_in_mfa"
   | "provider_step_up";
 
 /**

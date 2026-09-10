@@ -1,3 +1,4 @@
+import { AccountLogin, AccountDevices, accountRequest } from "./components/account-login.js";
 import type { GatewayV2Query, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ControlCenterShell } from "./app/app-shell.js";
@@ -172,13 +173,18 @@ function LocalizedControlCenterApp({
     match.kind === "matched" ? match.state : routeForSurface("threads", { view: "content" });
   const surface = surfaceInventory(route.surfaceId);
   const [configuration, setConfiguration] = useState<RuntimeConfiguration>();
+  const [identityMethod, setIdentityMethod] = useState<"built-in" | "cloudflare-access" | null>(
+    null,
+  );
+  const nativeDevices = identityMethod === "built-in" && route.surfaceId === "sessions-devices";
   const surfaceInstalled =
     configuration !== undefined &&
-    isSurfaceInstalled(
-      surface,
-      configuration.installedGatewayV2Operations ?? [],
-      configuration.healthDependenciesAvailable,
-    );
+    (nativeDevices ||
+      isSurfaceInstalled(
+        surface,
+        configuration.installedGatewayV2Operations ?? [],
+        configuration.healthDependenciesAvailable,
+      ));
   const [authenticationRequired, setAuthenticationRequired] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [bootstrapRevision, setBootstrapRevision] = useState(0);
@@ -230,6 +236,22 @@ function LocalizedControlCenterApp({
     };
   }, [bootstrapRevision]);
 
+  useEffect(() => {
+    let active = true;
+    void accountRequest("method")
+      .then((value) => {
+        if (!active || !value || typeof value !== "object" || !("method" in value)) return;
+        if (value.method === "built-in" || value.method === "cloudflare-access")
+          setIdentityMethod(value.method);
+      })
+      .catch(() => {
+        /* Older external Gateway deployments retain their explicit session exchange. */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const signIn = async () => {
     if (signingIn) return;
     setSigningIn(true);
@@ -243,6 +265,16 @@ function LocalizedControlCenterApp({
     }
   };
 
+  const clearPrivateViewState = useCallback(() => {
+    setSnapshot(undefined);
+    setSelectedRef("");
+    setMutationStatus(null);
+    setRequestError("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
+    setAuthenticationRequired(true);
+    setConfiguration(undefined);
+    setClient(undefined);
+  }, []);
+
   useEffect(() => {
     if (!configuration) return;
     const synchronizer = new SseStateSynchronizer({
@@ -251,6 +283,7 @@ function LocalizedControlCenterApp({
       onEvent: () => setGatewayRefreshSignal((current) => current + 1),
       onSnapshotRequired: () => setGatewayRefreshSignal((current) => current + 1),
       onConnectionState: setConnection,
+      onUnauthorized: clearPrivateViewState,
       log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
@@ -262,7 +295,7 @@ function LocalizedControlCenterApp({
       document.removeEventListener("visibilitychange", reconnect);
       synchronizer.stop();
     };
-  }, [configuration, storage]);
+  }, [configuration, storage, clearPrivateViewState]);
 
   useEffect(() => {
     if (!configuration) return;
@@ -273,6 +306,7 @@ function LocalizedControlCenterApp({
       onCommittedEvent: () => setThreadRefreshSignal((current) => current + 1),
       onSnapshotRequired: () => setThreadRefreshSignal((current) => current + 1),
       onConnectionState: setThreadConnection,
+      onUnauthorized: clearPrivateViewState,
       log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
@@ -296,17 +330,7 @@ function LocalizedControlCenterApp({
       document.removeEventListener("visibilitychange", reconnect);
       synchronizer.stop();
     };
-  }, [configuration, storage]);
-
-  const clearPrivateViewState = useCallback(() => {
-    setSnapshot(undefined);
-    setSelectedRef("");
-    setMutationStatus(null);
-    setRequestError("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
-    setAuthenticationRequired(true);
-    setConfiguration(undefined);
-    setClient(undefined);
-  }, []);
+  }, [configuration, storage, clearPrivateViewState]);
 
   const refresh = useCallback(async () => {
     if (!client || !configuration) return;
@@ -572,11 +596,16 @@ function LocalizedControlCenterApp({
 
   return (
     <ControlCenterShell
+      builtInIdentity={identityMethod === "built-in" && Boolean(configuration)}
       healthDependenciesAvailable={configuration?.healthDependenciesAvailable ?? false}
       installedGatewayV2Operations={configuration?.installedGatewayV2Operations ?? []}
-      connection={route.surfaceId === "threads" ? threadConnection : connection}
+      connection={
+        configuration ? (route.surfaceId === "threads" ? threadConnection : connection) : null
+      }
       content={
-        !configuration && requestError ? (
+        !configuration && authenticationRequired && identityMethod === "built-in" ? (
+          <AccountLogin onComplete={() => setBootstrapRevision((value) => value + 1)} />
+        ) : !configuration && requestError ? (
           <Banner
             title={message(
               authenticationRequired ? "authentication.required" : "error.currentUnavailable",
@@ -590,6 +619,12 @@ function LocalizedControlCenterApp({
             ) : null}
             <code>{requestError}</code>
           </Banner>
+        ) : configuration && nativeDevices ? (
+          <AccountDevices
+            csrfToken={configuration.csrfToken}
+            onSignedOut={clearPrivateViewState}
+            onReauthenticated={() => setBootstrapRevision((value) => value + 1)}
+          />
         ) : configuration && !surfaceInstalled ? (
           <Banner title={message("surface.notInstalled.title")} tone="warning">
             <p>{message("surface.notInstalled.description")}</p>

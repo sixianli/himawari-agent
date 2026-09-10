@@ -1,3 +1,4 @@
+import { runAccountCommand } from "./account-command.js";
 import { randomUUID } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -272,7 +273,7 @@ async function doctor(configurationPath: string) {
     payload: await resourceStatus(layout.payloadCiphertext, "directory"),
     worker: await resourceStatus(path.join(layout.runtime, "execution.sock"), "socket"),
     memory: await resourceStatus(configuration.memory.storagePath, "directory"),
-    identity: configuration.publicMode ? "unavailable" : "not-required",
+    identity: configuration.identity || configuration.publicMode ? "unavailable" : "not-required",
   });
   const ready = Object.entries(dependencies).every(
     ([name, status]) =>
@@ -726,6 +727,10 @@ export async function runAdminCli(
   errorOutput: NodeJS.WritableStream = process.stderr,
 ): Promise<number> {
   try {
+    if (arguments_[0] === "account") {
+      output.write(`${JSON.stringify(await runAccountCommand(arguments_))}\n`);
+      return 0;
+    }
     const parsed = parseArguments(arguments_);
     const result = parsed.command.startsWith("backup.")
       ? await backupCommand(parsed, output)

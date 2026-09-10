@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "checkId": "policy",
+  "matrixKey": "default",
+  "repository": "sixianli/himawari-agent",
+  "event": "workflow_dispatch",
+  "runId": "1789050340489",
+  "attempt": 1,
+  "testedSha": "a047d8e800ac16451a91e9bf9131df3ecc794976",
+  "headSha": "a047d8e800ac16451a91e9bf9131df3ecc794976",
+  "baseSha": "a047d8e800ac16451a91e9bf9131df3ecc794976",
+  "policySha256": "7415f0b2c663872613be7c53d8282d9ba6f9ae64280041617e6a8f1fb2eeb6a0",
+  "toolchainSha256": "fb2bdaa2b4f801c1c70e2d5e29403a6cab84584151d04022f8993290144ce34a",
+  "initialization": false,
+  "toolchain": {
+    "node": "22.22.3",
+    "npm": "11.8.0",
+    "os": "darwin",
+    "arch": "arm64",
+    "abi": "127",
+    "runnerImage": "local"
+  },
+  "status": "passed",
+  "exitCode": 0,
+  "durationMs": 63630,
+  "retryCount": 0,
+  "counts": {
+    "files": 23,
+    "executed": 565,
+    "passed": 565,
+    "failed": 0,
+    "skipped": 0
+  },
+  "projects": [
+    {
+      "id": "tooling",
+      "counts": {
+        "files": 23,
+        "executed": 565,
+        "passed": 565,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  ],
+  "reports": [
+    {
+      "path": "policy.log",
+      "kind": "diagnostic",
+      "sha256": "c31e2ac7e925c6c4d53e134a5dfca953603b1508727a67d89f5763703a0fe426",
+      "bytes": 481
+    },
+    {
+      "path": "toolchain.log",
+      "kind": "diagnostic",
+      "sha256": "59b196cbeb82bbea12e68f3660b6fa4bb54019412aafd0c3c24db344b73b9213",
+      "bytes": 78
+    },
+    {
+      "path": "governance-source.log",
+      "kind": "diagnostic",
+      "sha256": "ae3d00929109d00850e5ddda61130703ae10d7800b774bc4dc9ecfa9ee69ad9b",
+      "bytes": 188
+    },
+    {
+      "path": "tooling.json",
+      "kind": "json",
+      "sha256": "245e20a602501b2760a9501c86eee54e4722b5dcfc437d9646f3635c6397a587",
+      "bytes": 174131
+    },
+    {
+      "path": "tooling.xml",
+      "kind": "junit",
+      "sha256": "e118ba618039aa312a7e063b58e727d6448b0b2ffb25667260e357f591c11174",
+      "bytes": 116087
+    },
+    {
+      "path": "vitest-tooling.log",
+      "kind": "diagnostic",
+      "sha256": "245f57f2e437e2bc145c02a7196089490e790b4f0f71d9b1a37b70ee7370f638",
+      "bytes": 343
+    },
+    {
+      "path": "details.json",
+      "kind": "json",
+      "sha256": "f2e7e537c8eaccb2c24b9705b70ba05dc4c00905db88ab6e75e735379b227734",
+      "bytes": 1608
+    }
+  ],
+  "artifacts": []
+}

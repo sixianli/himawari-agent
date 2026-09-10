@@ -29,7 +29,11 @@ function validNonNegativeInteger(value: number): boolean {
 }
 
 function validSource(value: string): value is RecentAuthenticationEvidence["source"] {
-  return value === "cloudflare_access_login_time" || value === "provider_step_up";
+  return (
+    value === "cloudflare_access_login_time" ||
+    value === "provider_step_up" ||
+    value === "built_in_mfa"
+  );
 }
 
 export class RecentAuthenticationGuard implements RecentAuthenticationGuardPort {

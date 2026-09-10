@@ -790,7 +790,9 @@ describe("R2 SQLite durable execution resources", () => {
         old,
         path.join(f.resource.stateRoot, "legacy-snapshot.sqlite"),
       );
-      expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([28, 29, 30]);
+      expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([
+        28, 29, 30, 31,
+      ]);
       expect(readMigrationLedger(old).slice(0, 27)).toEqual(ledger);
       expect(old.prepare("SELECT * FROM sandbox_jobs").all()).toEqual(before);
       expect(old.prepare("SELECT count(*) FROM sandbox_execution_records").pluck().get()).toBe(0);

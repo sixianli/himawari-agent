@@ -39,3 +39,4 @@ export * from "./system.js";
 export * from "./threads.js";
 export * from "./web.js";
 export * from "./workspaces.js";
+export * from "./built-in-identity.js";

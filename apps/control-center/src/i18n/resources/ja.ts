@@ -1,6 +1,33 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "account.signIn": "Himawari にログイン",
+  "account.reauthenticate": "本人確認を行う",
+  "account.passwordHelp": "この Himawari サービスで作成したアカウントを使用します。",
+  "account.factorHelp":
+    "認証アプリの 6 桁のコード、または未使用のリカバリーコードを入力してください。",
+  "account.username": "ユーザー名",
+  "account.password": "パスワード",
+  "account.deviceLabel": "デバイス名",
+  "account.factor": "認証コードまたはリカバリーコード",
+  "account.verifying": "確認中…",
+  "account.continue": "続ける",
+  "account.verify": "確認してログイン",
+  "account.restart": "最初からやり直す",
+  "account.rateLimited": "試行回数が多すぎます。5 分後に再試行してください。",
+  "account.rejected":
+    "認証に失敗したか、有効期限が切れました。入力を確認するか、最初からやり直してください。",
+  "account.recoveryHelp":
+    "認証アプリを利用できない場合はリカバリーコードを使用できます。パスワードや復旧手段を失った場合は、サーバーの管理コマンドで復旧してください。",
+  "account.devicesHelp":
+    "ログイン済みのデバイスです。無効化するとセッションと以後のデータアクセスが失効します。重要な操作には直近の本人確認が必要です。",
+  "account.deviceActionFailed":
+    "操作を完了できませんでした。接続を確認し、必要に応じて本人確認を行ってから再試行してください。",
+  "account.currentDevice": "このデバイス",
+  "account.lastSeen": "最終利用",
+  "account.revoke": "デバイスを無効化",
+  "account.signOut": "ログアウト",
+
   "chat.model": "モデル（次のターン）",
   "chat.depth": "思考の深さ（次のターン）",
   "chat.actualModel": "このターンのモデル",

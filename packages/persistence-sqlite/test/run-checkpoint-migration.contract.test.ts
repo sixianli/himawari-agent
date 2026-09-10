@@ -19,7 +19,7 @@ const AGENT_ID = "agent-checkpoint-migration";
 const RUN_ID = "run-checkpoint-migration";
 const THREAD_ID = "thread-checkpoint-migration";
 const TRACE_ID = "trace-checkpoint-migration";
-const CURRENT_SCHEMA_SEQUENCE = 30;
+const CURRENT_SCHEMA_SEQUENCE = 31;
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));

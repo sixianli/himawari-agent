@@ -27,6 +27,27 @@ function entry(
 }
 
 export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
+  entry(
+    "built_in_accounts",
+    "BuiltInIdentityStatePort",
+    "credential revision and bounded login attempts",
+    "payload_reference",
+    "cascade with Owner deletion; replace on protected account recovery",
+  ),
+  entry(
+    "built_in_challenges",
+    "BuiltInIdentityStatePort",
+    "short-lived password verification, consumed atomically at MFA",
+    "metadata_only",
+    "delete on expiry, successful authentication or credential reset",
+  ),
+  entry(
+    "built_in_session_credentials",
+    "BuiltInIdentityStatePort",
+    "bind product sessions to a credential revision",
+    "metadata_only",
+    "cascade with product session deletion",
+  ),
   ...[
     "sandbox_execution_records",
     "sandbox_operation_observations",

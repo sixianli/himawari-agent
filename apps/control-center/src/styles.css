@@ -883,3 +883,61 @@ fieldset.filter-group {
     transition-duration: 0.01ms;
   }
 }
+
+.account-card {
+  width: min(100%, 440px);
+  margin: auto;
+  padding: 32px 20px;
+}
+.account-card h2 {
+  margin-block: 24px 12px;
+}
+.account-card p {
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+.account-card form {
+  display: grid;
+  gap: 18px;
+  margin-block: 24px;
+}
+.account-card label {
+  display: grid;
+  gap: 8px;
+}
+.account-card input {
+  width: 100%;
+  min-height: 44px;
+}
+.account-card [role="alert"] {
+  color: var(--danger);
+}
+.account-card .account-help {
+  font-size: 12px;
+}
+.account-devices {
+  width: min(100%, 680px);
+}
+.account-devices ul {
+  list-style: none;
+  padding: 0;
+}
+.account-devices li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 16px 0;
+}
+.account-devices li div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.account-devices li button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.account-devices > button {
+  margin: 8px 8px 8px 0;
+}

@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: ""
-superseded_by: ""
+superseded_by: docs/adr/0027-built-in-owner-authentication.md
 date: "2026-08-26"
 ---
 
@@ -58,3 +58,5 @@ Himawari Agent 的公共人类访问必须经过支持多因素认证的外部 i
 - [SOURCE: docs/adr/0002-headless-agent-gateway.md]
 - [SOURCE: docs/adr/0004-deterministic-authorization.md]
 - [SOURCE: docs/adr/0012-portable-local-first-deployment.md]
+
+本决策由 [ADR 0027](0027-built-in-owner-authentication.md) 替代；以上保留原有决策背景。

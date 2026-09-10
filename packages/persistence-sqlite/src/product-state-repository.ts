@@ -1,6 +1,7 @@
 import path from "node:path";
 import type {
   AttentionStatePort,
+  BuiltInIdentityStatePort,
   AuditLedgerPort,
   AuthorityFence,
   AuthorityLeasePort,
@@ -430,6 +431,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   sessionDeletionState(): SessionDeletionStatePort {
     return this.durable.sessionDeletionState();
+  }
+
+  builtInIdentityState(ownerId: OwnerId, agentId: AgentId): BuiltInIdentityStatePort {
+    return this.durable.builtInIdentityState(ownerId, agentId);
   }
 
   ownerIdentityState(): OwnerIdentityStatePort {

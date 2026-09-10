@@ -1,0 +1,89 @@
+{
+  "scope": "local native-account implementation; controlled authentication service, not daily Agent/Worker acceptance",
+  "baseCommit": "a047d8e800ac16451a91e9bf9131df3ecc794976",
+  "sourceState": "task changes in working tree; report testedSha is the pre-commit base, not a claim that changes were already committed",
+  "build": {
+    "status": "passed",
+    "counts": {
+      "files": 64469,
+      "executed": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0
+    },
+    "report": "build-result.json"
+  },
+  "fullTest": {
+    "status": "passed",
+    "durationMs": 487936,
+    "retryCount": 0,
+    "counts": {
+      "files": 185,
+      "executed": 1921,
+      "passed": 1921,
+      "failed": 0,
+      "skipped": 0
+    },
+    "report": "test-result.json"
+  },
+  "tooling": {
+    "status": "passed",
+    "durationMs": 63630,
+    "counts": {
+      "files": 23,
+      "executed": 565,
+      "passed": 565,
+      "failed": 0,
+      "skipped": 0
+    },
+    "report": "policy-result.json"
+  },
+  "postMatrixChange": {
+    "scope": "password HTML maxlength 128 to 256 UTF-16 units; server and auth contracts unchanged",
+    "verification": [
+      "browser input failing before and passing after",
+      "final source build and static checks recorded separately"
+    ],
+    "fullMatrixRepeated": false,
+    "evidence": "unicode-password-input.json"
+  },
+  "staticCheck": {
+    "command": "npm run check",
+    "status": "passed",
+    "exitCode": 0,
+    "includes": [
+      "format",
+      "lint",
+      "TypeScript",
+      "workspace boundaries",
+      "v0.2 coverage and invariants",
+      "machine secrets",
+      "CI policy"
+    ]
+  },
+  "documentation": {
+    "status": "passed",
+    "strict": true,
+    "warnings": 0,
+    "nativeSpecAndPlan": "archived",
+    "originalRealServicePlan": "active"
+  },
+  "browser": "browser-verification.json",
+  "realService": {
+    "status": "not verified",
+    "dailyStateRootCreated": false,
+    "providerCalls": 0,
+    "costUsd": 0,
+    "remaining": [
+      "formal first-install authority and deployment initialization",
+      "current-host qualification for actual tool capabilities",
+      "real model, tool, approval and recovery journeys"
+    ]
+  },
+  "finalBuild": {
+    "command": "npm run build",
+    "status": "passed",
+    "exitCode": 0,
+    "scope": "fresh source Node runtime, browser and artifact manifest after Unicode input correction"
+  }
+}

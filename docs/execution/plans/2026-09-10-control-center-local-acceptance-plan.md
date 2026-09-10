@@ -28,6 +28,12 @@ CI 改动限于测试运行器及其直接回归测试；真实运行使用独�
 
 完整五项目最终检查通过：183 个文件、1,914 项测试，0 失败、0 跳过、0 重试，耗时 487667 毫秒。分项为 unit 787、contracts 266、integration 787、e2e 3、pi-compat 71。integration 本轮实际耗时 317348 毫秒，越过旧 300 秒限制后正常完成。完整报告为 `.ci-output/local-1789041051666/test-macos-arm64/result.json`，脱敏副本保存于验收证据目录。这是 macOS 本机自动化验证，不代表真实模型、审批和本机登录验收。
 
-正式 HTTP 每次请求依赖 Cloudflare assertion，现有 bootstrap 不提供本机登录。已在来源 Spec 写明仅 loopback 的本机身份扩展方案，并按用户要求等待确认。当前未创建 `~/.himawari-local`、未新增钥匙串项、未调用收费模型。真实工具的安装资格仍须以当前主机实测建立，不能使用现有测试资格。
+变更前正式 HTTP 每次请求依赖 Cloudflare assertion，原 bootstrap 不提供本机登录。用户已否决仅 loopback 的身份方案，选择通用内置账号；按 [SOURCE: docs/archive/plans/2026-09-10-built-in-account-authentication-plan.md] 实施。截至测试修复交付未创建 `~/.himawari-local`、未新增钥匙串项、未调用收费模型。真实工具的安装资格仍须以当前主机实测建立，不能使用现有测试资格。
 
 脱敏证据保存在 `test/qualification/evidence/local-acceptance-2026-09-10/`；公开模型目录已单独核对，不能用旧模型价格估算本次真实验收费用。完整 policy 初次执行发现治理快照中有 Finder `.DS_Store`，从校验目录移出该系统元数据后重跑通过，没有放宽快照白名单或修改上游副本。
+
+## 内置账号交付后的剩余步骤
+
+通用内置账号已实现，并通过受控服务及浏览器验收；新增完整检查为 185 个文件、1,921 项通过，tooling 565 项通过，证据保存在 `test/qualification/evidence/built-in-account-2026-09-10/`。此前 1,914 项结果保留为测试运行器修复时的历史证据。
+
+尚未建立首次产品 Owner/Agent/活动部署的正式初始化入口；账号 CLI 需要已初始化且停止的活动主机。真实工具还需要由当前产物在当前主机取得资格，SDK 探针不能签发资格。完成这些能力后再启用已授权的 `~/.himawari-local` 及专用密钥，执行原第 3–5 步。当前未创建该目录、未新增钥匙串项、模型费用为 0 美元。

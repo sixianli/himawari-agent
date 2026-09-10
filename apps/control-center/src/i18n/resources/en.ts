@@ -1,6 +1,32 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "account.signIn": "Sign in to Himawari",
+  "account.reauthenticate": "Verify your identity again",
+  "account.passwordHelp": "Use the account created on this Himawari service.",
+  "account.factorHelp":
+    "Enter the 6-digit code from your authenticator or an unused recovery code.",
+  "account.username": "Username",
+  "account.password": "Password",
+  "account.deviceLabel": "Device name",
+  "account.factor": "Verification or recovery code",
+  "account.verifying": "Verifying…",
+  "account.continue": "Continue",
+  "account.verify": "Verify and sign in",
+  "account.restart": "Start again",
+  "account.rateLimited": "Too many attempts. Try again in 5 minutes.",
+  "account.rejected": "Verification failed or expired. Check your entry or start again.",
+  "account.recoveryHelp":
+    "A recovery code can replace an authenticator code. If you lose your password or all recovery methods, use the account recovery command on the server.",
+  "account.devicesHelp":
+    "These devices are signed in. Revoking a device invalidates its sessions and subsequent data access. Sensitive actions require recent verification.",
+  "account.deviceActionFailed":
+    "The action did not complete. Check your connection and verify your identity again if required, then retry.",
+  "account.currentDevice": "This device",
+  "account.lastSeen": "Last active",
+  "account.revoke": "Revoke device",
+  "account.signOut": "Sign out",
+
   "chat.model": "Model (next turn)",
   "chat.depth": "Thinking depth (next turn)",
   "chat.actualModel": "Model used for this turn",

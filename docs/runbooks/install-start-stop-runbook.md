@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:b4111468c6ef65001d94b02b68634910ec896046f29a280d58bf8f98ad4939db"
+contract_sha256: "sha256:f6b64aa337a129136a6e3eb590eaf67f5c76bc4c7c5d8416c070c690b830ed8f"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,12 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- packages/platform-node/src/built-in-identity.ts
+- packages/platform-node/src/built-in-identity-routes.ts
+- packages/persistence-sqlite/src/sqlite-built-in-identity.ts
+- packages/persistence-sqlite/src/built-in-identity-recovery.ts
+- packages/persistence-sqlite/src/migrations/0031_built_in_identity.sql
+- packages/application/src/ports/built-in-identity.ts
 - apps/agent-service/src/production-managed-tasks.ts
 - apps/agent-service/src/production-sandbox-stream.ts
 - apps/agent-service/src/production-sandbox-services.ts
@@ -308,3 +314,23 @@ v2 已保存输出的分页引用和 cursor 归原 Run 的受保护 artifact；�
 服务仅在安装声明含匹配的 `readinessProbes` 且具备该模式资格时启用。本批探针使用私有目录内唯一 Unix socket 的 HTTP GET、预期 2xx 状态和最多 30 秒期限；不开放通用本地 TCP 或其他 Unix socket，不以日志判断就绪。恢复后的声明、运行文件与资格必须重新匹配；不得凭旧 ready 回执连接新服务。
 
 Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释放资源的 Run。未知清理进入原核查流程并保留写目录占用。Mac 测试主进程退出仍不证明任意后代已全部退出，不能清除隔离以获得正常完成。这里没有新增迁移文件、安装资格签发或运行中数据库修改步骤。
+
+
+## 内置账号初始化与恢复
+
+此流程属于已配置活动主机上的停机管理操作，不建立新的 deployment authority，不自动启用公网入口，不向模型发送数据。账号与配置合同见 [SOURCE: docs/archive/specs/2026-09-10-built-in-account-authentication-design.md]、[SOURCE: docs/adr/0027-built-in-owner-authentication.md]。
+
+1. 使用已安装构建并完成本 Runbook 的 Live-State Preflight。核对 `identity.kind` 为 `built-in`、配置中的唯一 Owner/Agent/deployment 与 `authority.json` 及数据库活动权威一致，服务已停止，数据库已按正常迁移流程升级到当前 schema。确认保存密码输入与验证器设置资料的目录归当前用户所有、权限为 0700；所有操作只针对选定 state root。
+2. 在该受保护目录准备 `account-input.json`（0600），只包含 `username` 与 `password`。用户名为 3–64 位字母、数字、点、下划线或连字符，首位为字母或数字；会统一为小写。密码为 12–128 个字符，不作为命令行参数、环境变量或诊断输出。目标设置文件必须尚不存在。
+3. 首次创建命令为 `himawari account create --config <绝对配置路径> --input <绝对输入文件路径> --output <新的绝对设置文件路径>`。macOS 默认从与服务相同的钥匙串 Payload source 解析配置的加密密钥；其他平台或文件 source 使用 `--secret-dir <受保护密钥目录>`。命令使用 state-root 独占锁并验证活动权威，不通过公网提供初始化入口。
+4. 输出的设置文件为 0600，包含用户名、验证器 `otpUri` 与 10 条一次性恢复码。验证器按 `otpUri` 中的 secret 设置 TOTP（SHA1、6 位、30 秒）；妥善保存恢复码。终端结果只报告设置文件路径和是否撤销旧会话。输入/设置资料按 Owner 的秘密保存策略保管，不进入 Git、普通备份日志、浏览器 localStorage 或模型上下文。
+5. 启动 Worker 与 Agent 后，从配置的同源地址打开控制中心。输入用户名/密码，再输入验证码或恢复码；只有第二步成功才建立产品会话。HTTPS Cookie 使用 Secure；明确配置的 loopback HTTP 仍执行同样的认证。跨设备通过 HTTPS 反向代理访问，listener 仍绑定 loopback，不用放宽 Host/Origin 来解决代理配置错误。
+
+   同一个验证器时间步只能成功认证一次；连续在多台设备登录或再次验证时，须等待下一组验证码，或使用尚未消费的恢复码。登录和第二因素共用每 5 分钟 20 次的账号尝试预算；触发限流时按页面提示等待。
+
+6. 从“会话与设备”验证设备列表、再次验证、撤销与退出登录。需要近期验证的敏感操作应在完成验证后由用户重新提交；不得自动重放审批。会话失效后，普通请求和流式继续披露都被拒绝，前端清除已认证视图。
+7. 丢失验证器时可在密码步骤后使用未使用过的恢复码。丢失密码或所有第二因素时，停止服务并准备新的受保护输入/设置文件，执行 `himawari account recover ... --confirm RECOVER_ACCOUNT_<配置中的 Owner ID>`。恢复要求原账号已存在，重置密码和第二因素，撤销全部旧会话、设备与未完成验证请求并写入审计。外部 Owner 绑定不能通过这个命令被静默替换。
+
+失败处理：配置、目录权限、活动权威、独占锁、加密 Payload 或第二因素失败时停止本操作。已有账号不会被 create 覆盖，设置文件不会被覆盖；创建失败留下的私密设置文件不能作为账号成功证据，应以账号记录、命令结果与后续真实登录核对。数据库升级失败按前述迁移/恢复点流程处理，不直接回写旧 schema。账号恢复属于不可撤销的凭据轮换；回退代码前保留当前 state root 和已验证恢复点，旧版本不能使用更新后的凭据或忽略较新的 schema。
+
+验证来源：账号命令使用真实 SQLite 与受保护文件源的自动化检查、真实密码/TOTP/恢复码/会话事务集成检查，以及浏览器认证流程。受控服务不执行模型或 Worker，不能代替实际平台资格或原控制中心端到端验收。

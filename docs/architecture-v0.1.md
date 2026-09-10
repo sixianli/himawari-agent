@@ -241,7 +241,7 @@ HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 
 ### SQLite schema and immutable migrations
 
-`packages/persistence-sqlite` 现在以二十五个连续 SQL migration 建立 70 个登记表，包含产品状态与内部治理表。产品表规范化保存 Owner/Agent、deployment/authority、Thread/Run、session/device/外部 subject binding、approval/Grant、capability、Product State、command result/outbox、Trace/audit、Task/Attention、Gateway Read Model、Memory、GitHub、删除、恢复点与存储健康状态；foreign key、唯一键、revision、authority epoch/fencing token 和稳定幂等键在 schema 层形成第一道约束。第九个 migration 扩展后台 occurrence 与 Run checkpoint 恢复字段，第十个 migration 增加唯一 Owner 外部身份 binding 和产品 session authentication reference，第十一至十三个 migration 增加 Memory projection reliability、敏感候选审批和 Thread distillation；第十四个 migration 增加 GitHub history policy 的 durable retry/readback 状态，第十五个 migration 增加 Thread lifecycle、opaque Message/title search projection 与删除 task binding，第十六个 migration 增加 cursor-ordered committed Thread Gateway event，第十七个 migration 增加不保存 command body 的治理 mutation receipt；第十八个 migration 将旧 JSON 协调检查点迁入 Run 归属表和 Worker 结果引用表，并禁止旧通用状态入口重新写入协调检查点。第十九个 migration 增加 Run 正文归属与语义操作回执，并以复合作用域外键保护 Run 和 Payload 的关系。第二十个 migration 增加作用域内唯一的 Capability 调用回执，冻结任务语义和首次执行的进程身份、deployment fence 与租约。第二十一个 migration 增加 Run 执行租约，保存领取者、唯一执行身份、当前权威关联、单调 revision 和释放时间；该表不复制 Run 的业务状态。第二十二个 migration 建立前台 Run 与后台 occurrence 共用的模型预算账户和逐调用分配。第二十三个 migration 建立持久模型调用身份，以 `Run + logical slot + sequence` 固定物理尝试、模型与价格、预算分配、authority 和执行租约；数据库约束阻止同一身份换租约、换模型或跳过合法状态。第二十四个 migration 允许 Run 模型调用身份记录 embedding 来源；第二十五个 migration 让 Memory projection job 使用同一预算账户，并在重建账户约束时保留已有账户、逐调用分配与模型身份。`schemaCatalog` 为每个表固定产品端口、生命周期、加密或 Payload 引用分类、删除关系和 migration owner，不能用供应商表替代产品权威状态。
+`packages/persistence-sqlite` 现在以三十一个连续 SQL migration 建立 81 个登记表，包含产品状态与内部治理表。产品表规范化保存 Owner/Agent、deployment/authority、Thread/Run、session/device/外部 subject binding、approval/Grant、capability、Product State、command result/outbox、Trace/audit、Task/Attention、Gateway Read Model、Memory、GitHub、删除、恢复点与存储健康状态；foreign key、唯一键、revision、authority epoch/fencing token 和稳定幂等键在 schema 层形成第一道约束。第九个 migration 扩展后台 occurrence 与 Run checkpoint 恢复字段，第十个 migration 增加唯一 Owner 外部身份 binding 和产品 session authentication reference，第十一至十三个 migration 增加 Memory projection reliability、敏感候选审批和 Thread distillation；第十四个 migration 增加 GitHub history policy 的 durable retry/readback 状态，第十五个 migration 增加 Thread lifecycle、opaque Message/title search projection 与删除 task binding，第十六个 migration 增加 cursor-ordered committed Thread Gateway event，第十七个 migration 增加不保存 command body 的治理 mutation receipt；第十八个 migration 将旧 JSON 协调检查点迁入 Run 归属表和 Worker 结果引用表，并禁止旧通用状态入口重新写入协调检查点。第十九个 migration 增加 Run 正文归属与语义操作回执，并以复合作用域外键保护 Run 和 Payload 的关系。第二十个 migration 增加作用域内唯一的 Capability 调用回执，冻结任务语义和首次执行的进程身份、deployment fence 与租约。第二十一个 migration 增加 Run 执行租约，保存领取者、唯一执行身份、当前权威关联、单调 revision 和释放时间；该表不复制 Run 的业务状态。第二十二个 migration 建立前台 Run 与后台 occurrence 共用的模型预算账户和逐调用分配。第二十三个 migration 建立持久模型调用身份，以 `Run + logical slot + sequence` 固定物理尝试、模型与价格、预算分配、authority 和执行租约；数据库约束阻止同一身份换租约、换模型或跳过合法状态。第二十四个 migration 允许 Run 模型调用身份记录 embedding 来源；第二十五个 migration 让 Memory projection job 使用同一预算账户，并在重建账户约束时保留已有账户、逐调用分配与模型身份。`schemaCatalog` 为每个表固定产品端口、生命周期、加密或 Payload 引用分类、删除关系和 migration owner，不能用供应商表替代产品权威状态。
 
 迁移 ledger 持久化连续 `sequence`、`name`、`phase`、SQL SHA-256 与应用时间。loader 验证定义连续性和 digest；启动会拒绝历史内容不匹配、ledger 空洞、未知已应用 migration、未来 schema 及过旧 writer。`expand → backfill → verify → contract` 是受检查的单向 change-set 阶段，系统不提供自动数据库 downgrade。
 
@@ -527,7 +527,7 @@ Pi 0.84.2 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适
 
 生成继续复用 Pi ModelRuntime 和 AgentSession；embedding 继续复用 Mem0 3.1.7 的 OpenAI-compatible SDK。产品在该固定版本的 embedding 请求边界加准入，关闭 SDK 自动重试，核对模型、维度、输入上限和分类，再预留预算、记录开始并以实际 `prompt_tokens` 结算。Run 检索使用其执行租约和模型调用身份；后台投影使用自身领取租约和统一预算账户。缺少用量、断连或结果无法确认时保留未知费用，重复调用不会因此获得新的付费机会。Mem0 ESM 会直接导入其可选 peer `pg`，因此适配包显式依赖锁定的 `pg@8.11.3`；构建在独立打包目录导入 Mem0/Pi 以验证实际依赖。
 
-服务先验证权威、数据库、Worker、JWKS 与 Payload 加解密，再启动消费者并开放 HTTP。Run loop 启动只等待恢复扫描，任务执行不会拖住 HTTP 就绪。停止先拒绝新领取并中断活动 Pi，再等待状态处理，最后关闭 Worker 通道、Memory、权威和数据库。就绪查询会读取 Worker 当前 readiness，并验证权威；Provider 的实时可用性仍是单独、可降级的状态，不能由配置解析替代。安装进程测试使用受控本机 Provider；真实 Cloudflare、实际付费模型与 Mac/Hermes 服务管理器资格仍需目标环境证据。
+服务先验证权威、数据库、Worker、所选身份适配器（外部模式为 JWKS）与 Payload 加解密，再启动消费者并开放 HTTP。Run loop 启动只等待恢复扫描，任务执行不会拖住 HTTP 就绪。停止先拒绝新领取并中断活动 Pi，再等待状态处理，最后关闭 Worker 通道、Memory、权威和数据库。就绪查询会读取 Worker 当前 readiness，并验证权威；Provider 的实时可用性仍是单独、可降级的状态，不能由配置解析替代。安装进程测试使用受控本机 Provider；真实 Cloudflare、实际付费模型与 Mac/Hermes 服务管理器资格仍需目标环境证据。
 
 ## Known Limitations
 
@@ -566,3 +566,16 @@ Pi 0.84.2 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适
 - TypeScript and Node.js runtime：[SOURCE: docs/adr/0016-typescript-node-runtime.md]
 - Workspace monorepo：[SOURCE: docs/adr/0017-workspace-monorepo.md]
 - Pi 工具与受管理执行生命周期：[SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]
+
+
+## 内置账号与人类登录会话（2026-09-10）
+
+用户选择内置账号后，公共 Web 登录不再强制依赖 Cloudflare。配置通过 `identity.kind: built-in` 选择密码与 TOTP/恢复码认证；已有未声明 kind 的 Cloudflare 配置保持原语义。外部模式继续验证断言。两种模式共用 GatewayAuthenticationContext、Owner binding、产品会话、设备、CSRF 与近期身份验证检查。登录不改变工具授权、数据披露、预算或 Pi 执行边界。决策：[SOURCE: docs/adr/0027-built-in-owner-authentication.md]
+
+内置账号由活动主机的停机管理命令建立；无公网注册接口。密码使用 Node scrypt（N=131072、r=8、p=1）与独立随机盐；TOTP 使用固定版本 OTPAuth 9.5.2，密钥只保存在 restricted 加密 Payload，使用专用 content type 防止进入浏览器文本读取。恢复码仅保存摘要，首次配置文件以 0600 写入受保护目录。第 31 个 SQL migration 增加账号、短期验证请求与会话凭据版本关联三个表；所有 31 个 migration 共登记 81 个表。
+
+验证码计数器、恢复码消费、挑战消费和产品会话创建/轮换在同一个 SQLite 写事务中提交。凭据重置使所有旧会话和设备失效；未完成验证请求也会清除。登录限流按 Owner 持久化，每 5 分钟最多 20 次密码/第二因素验证请求；单个服务最多执行一个昂贵的密码校验。密码成功只产生 5 分钟的 HttpOnly 验证 Cookie，第二因素成功才产生产品会话 Cookie。Cookie 使用 SameSite=Strict，HTTPS 时使用 Secure，所有写入口校验 Host、Origin 与 CSRF（尚未登录时以严格同源校验保护登录入口）。
+
+普通活动更新空闲时间，绝对期限与真正完成 MFA 的时间不会随刷新重置。流式连接在每次输出和心跳前重新检查会话，不以心跳延长空闲期限。再次验证保留产品 Session/Device ID，轮换认证摘要及 CSRF 关联，当前浏览器刷新配置后由用户重新提交敏感动作。账号重置、验证码、Cookie 与恢复码均不进入模型上下文或普通业务事件。
+
+配置了内置账号的本机 HTTP 使用与公网相同的正式 Web/Run/Worker 组合；仅 transport 允许明确的 loopback HTTP。跨设备入口应由 TLS 反向代理连接 loopback listener。身份接入成功不替代 Worker capability qualification、真实模型或服务管理器的目标环境验证。技术设计与验证范围：[SOURCE: docs/archive/specs/2026-09-10-built-in-account-authentication-design.md]

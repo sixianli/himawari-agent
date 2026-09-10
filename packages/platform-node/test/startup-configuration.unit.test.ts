@@ -357,6 +357,41 @@ describe("strict product configuration", () => {
     });
   });
 
+  it("accepts built-in accounts without external identity fields and rejects unbounded sessions", () => {
+    const stateRoot = path.join(tmpdir(), "himawari-config-built-in");
+    const input = config(stateRoot);
+    input["http"] = {
+      listenHost: "127.0.0.1",
+      listenPort: 8787,
+      staticRoot: path.join(stateRoot, "browser"),
+      sessionCookieName: "himawari_session",
+      maximumBodyBytes: 262144,
+      maximumStaticAssetBytes: 8388608,
+      heartbeatMilliseconds: 15000,
+    };
+    input["identity"] = {
+      kind: "built-in",
+      sessionIdleMilliseconds: 86400000,
+      sessionAbsoluteMilliseconds: 604800000,
+      recentAuthentication: { maximumAgeMilliseconds: 900000, clockSkewMilliseconds: 30000 },
+      csrf: { keySecretRef: "identity-csrf", ttlMilliseconds: 1800000 },
+    };
+    (input["secretReferences"] as unknown[]).push({
+      ref: "identity-csrf",
+      version: "v1",
+      purpose: "identity-csrf",
+      scope: "agent",
+    });
+    expect(parseProductConfiguration(input, "2026-09-10T00:00:00.000Z").identity).toEqual(
+      input["identity"],
+    );
+    input["identity"] = {
+      ...(input["identity"] as Record<string, unknown>),
+      sessionIdleMilliseconds: 0,
+    };
+    expect(() => parseProductConfiguration(input, "2026-09-10T00:00:00.000Z")).toThrow();
+  });
+
   it("accepts an explicit HTTPS origin port only when the fixed endpoint matches it", () => {
     const stateRoot = path.join(tmpdir(), "himawari-config-explicit-port");
     const input = config(stateRoot);
@@ -399,6 +434,7 @@ describe("strict product configuration", () => {
     );
 
     const parsed = parseProductConfiguration(input, "2026-08-27T00:00:00.000Z");
+    if (parsed.identity?.kind === "built-in") throw new Error("Expected external identity");
     expect(parsed.identity?.issuer).toBe("https://team.cloudflareaccess.com:8443");
     expect(parsed.identity?.jwksUrl).toBe(
       "https://team.cloudflareaccess.com:8443/cdn-cgi/access/certs",

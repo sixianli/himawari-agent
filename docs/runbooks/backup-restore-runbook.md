@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:750099fe217460ac72bdbfcd99d647488b00d6868c9e30c838382e64e36583be"
+contract_sha256: "sha256:43a98787d5208d68d8673c1b63d4aa63f3bc95173262b8f9e71787297382592b"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,9 @@ date: "2026-08-27"
 # 同机备份与恢复 Runbook
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/built-in-identity-recovery.ts
+- packages/persistence-sqlite/src/migrations/0031_built_in_identity.sql
+- packages/application/src/ports/built-in-identity.ts
 - apps/agent-service/src/production-managed-tasks.ts
 - apps/agent-service/src/production-sandbox-stream.ts
 - apps/agent-service/src/production-sandbox-services.ts
@@ -208,3 +211,10 @@ v2 已保存输出的分页引用和 cursor 归原 Run 的受保护 artifact；�
 服务仅在安装声明含匹配的 `readinessProbes` 且具备该模式资格时启用。本批探针使用私有目录内唯一 Unix socket 的 HTTP GET、预期 2xx 状态和最多 30 秒期限；不开放通用本地 TCP 或其他 Unix socket，不以日志判断就绪。恢复后的声明、运行文件与资格必须重新匹配；不得凭旧 ready 回执连接新服务。
 
 Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释放资源的 Run。未知清理进入原核查流程并保留写目录占用。Mac 测试主进程退出仍不证明任意后代已全部退出，不能清除隔离以获得正常完成。这里没有新增迁移文件、安装资格签发或运行中数据库修改步骤。
+
+
+## 内置账号的恢复边界
+
+恢复副本在切换为活动 data 目录前会撤销内置账号的旧会话、设备和未完成验证请求，并禁用内置身份绑定。原因是恢复旧数据库可能重新带回旧密码或已消耗恢复码。恢复后必须通过安装运行说明中的停机 `account recover` 管理步骤设置新的凭据，才能重新开放内置账号登录；不能把恢复点中的旧凭据当作当前认证证明。
+
+[SOURCE: docs/adr/0027-built-in-owner-authentication.md] [SOURCE: docs/runbooks/install-start-stop-runbook.md]

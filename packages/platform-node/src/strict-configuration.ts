@@ -524,9 +524,45 @@ function parseIdentityCsrfConfiguration(value: unknown): IdentityCsrfConfigurati
 
 function parseIdentityConfiguration(value: unknown): IdentityConfiguration {
   const input = record(value, "configuration.identity");
+  if (input["kind"] === "built-in") {
+    rejectUnknown(
+      input,
+      [
+        "kind",
+        "sessionIdleMilliseconds",
+        "sessionAbsoluteMilliseconds",
+        "recentAuthentication",
+        "csrf",
+      ],
+      "configuration.identity",
+    );
+    const idle = integer(
+      input["sessionIdleMilliseconds"],
+      "configuration.identity.sessionIdleMilliseconds",
+      60000,
+      604800000,
+    );
+    const absolute = integer(
+      input["sessionAbsoluteMilliseconds"],
+      "configuration.identity.sessionAbsoluteMilliseconds",
+      idle,
+      2592000000,
+    );
+    return Object.freeze({
+      kind: "built-in",
+      sessionIdleMilliseconds: idle,
+      sessionAbsoluteMilliseconds: absolute,
+      recentAuthentication: parseRecentAuthenticationConfiguration(input["recentAuthentication"]),
+      csrf: parseIdentityCsrfConfiguration(input["csrf"]),
+    });
+  }
+  if (input["kind"] !== undefined && input["kind"] !== "cloudflare-access") {
+    throw invalid("configuration.identity.kind", "must select an installed authentication method");
+  }
   rejectUnknown(
     input,
     [
+      "kind",
       "issuer",
       "audience",
       "jwksUrl",
@@ -553,6 +589,7 @@ function parseIdentityConfiguration(value: unknown): IdentityConfiguration {
     throw invalid("configuration.identity.jwksUrl", "must be the fixed issuer JWKS endpoint");
   }
   return Object.freeze({
+    ...(input["kind"] === "cloudflare-access" ? { kind: "cloudflare-access" as const } : {}),
     issuer,
     audience: safeReference(input["audience"], "configuration.identity.audience"),
     jwksUrl,
@@ -820,12 +857,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     throw invalid("configuration.secretReferences", "must not contain duplicate ref/version pairs");
   }
   if (identity) {
-    assertIdentitySecretReference(
-      secretReferences,
-      identity.bootstrap.tokenSecretRef,
-      "identity-bootstrap",
-      "configuration.identity.bootstrap.tokenSecretRef",
-    );
+    if (identity.kind !== "built-in")
+      assertIdentitySecretReference(
+        secretReferences,
+        identity.bootstrap.tokenSecretRef,
+        "identity-bootstrap",
+        "configuration.identity.bootstrap.tokenSecretRef",
+      );
     assertIdentitySecretReference(
       secretReferences,
       identity.csrf.keySecretRef,

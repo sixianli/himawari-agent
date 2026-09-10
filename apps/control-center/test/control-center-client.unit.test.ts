@@ -26,6 +26,48 @@ const configuration = {
   csrfToken: "csrf-01",
 } as const;
 
+it.each(["gateway", "thread"] as const)(
+  "clears authenticated UI state and stops reconnecting on %s session revocation",
+  (kind) => {
+    const handlers = new Map<string, (event: MessageEvent<string>) => void>();
+    const source: EventSourceLike = {
+      onmessage: null,
+      onerror: null,
+      close: vi.fn(),
+      addEventListener: (name, handler) => {
+        handlers.set(name, handler);
+      },
+    };
+    const onUnauthorized = vi.fn();
+    const schedule = vi.fn(() => 1);
+    const options = {
+      storage: new ControlCenterBrowserStorage(new MemoryStorage()),
+      createEventSource: () => source,
+      onUnauthorized,
+      schedule,
+      onConnectionState: vi.fn(),
+      log: vi.fn(),
+    };
+    const synchronizer =
+      kind === "gateway"
+        ? new SseStateSynchronizer({ ...options, onEvent: vi.fn() })
+        : new ThreadSseSynchronizer({
+            ...options,
+            configuration,
+            onCommittedEvent: vi.fn(),
+            onSnapshotRequired: vi.fn(),
+          });
+    synchronizer.start();
+    handlers.get("gateway.stream_error")?.({
+      data: JSON.stringify({ code: "IDENTITY_SESSION_INVALID" }),
+    } as MessageEvent<string>);
+    source.onerror?.(new Event("error"));
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+    expect(source.close).toHaveBeenCalled();
+    expect(schedule).not.toHaveBeenCalled();
+  },
+);
+
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
 

@@ -438,8 +438,11 @@ export async function runAgentService(
   try {
     const args = parseServiceArguments(arguments_);
     const configuration = await new JsonFileConfigurationPort(args.configurationPath).load();
+    const webEnabled =
+      configuration.publicMode ||
+      (configuration.identity?.kind === "built-in" && Boolean(configuration.http));
     if (
-      configuration.publicMode &&
+      webEnabled &&
       (!configuration.runPolicy ||
         !configuration.http ||
         !configuration.identity ||
@@ -722,7 +725,7 @@ export async function runAgentService(
         state: repository.productMemoryState(),
         jobs: repository.memoryProjectionJobs(),
         provider: memoryComposition.projection,
-        ...(configuration.publicMode
+        ...(webEnabled
           ? ({
               project: (job, memory, operation) => {
                 if (!governedMemory) throw new Error("MEMORY_ADMISSION_NOT_READY");
@@ -767,9 +770,9 @@ export async function runAgentService(
           resolveAuthorityLoss?.();
         },
       });
-      if (!configuration.publicMode) await memoryWorker.start();
+      if (!webEnabled) await memoryWorker.start();
     }
-    if (configuration.publicMode) {
+    if (webEnabled) {
       if (!modelComposition || !memoryComposition || !durableMemory || !protector || !worker)
         throw new Error("PUBLIC_RUNTIME_DEPENDENCY_MISSING");
       const activeAuthority = authorityLifecycle;
@@ -950,7 +953,7 @@ export async function runAgentService(
           return reply.code(503).send({ error: "AUTHORITY_UNAVAILABLE" });
         }
       });
-      await http.verifier.assertReady();
+      await http.assertIdentityReady();
       const probe = await protector.protect({
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,

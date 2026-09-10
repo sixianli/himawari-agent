@@ -6,6 +6,7 @@ import { threadSubscriptionMessage } from "./messages.js";
 import type { EventSourceLike } from "./sse-synchronizer.js";
 
 export interface ThreadSseSynchronizerOptions {
+  readonly onUnauthorized?: () => void;
   readonly configuration: ControlCenterRuntimeConfiguration;
   readonly storage: ControlCenterBrowserStorage;
   readonly createEventSource: (url: string) => EventSourceLike;
@@ -103,6 +104,23 @@ export class ThreadSseSynchronizer {
         this.#options.log(safeBrowserLog("CONTROL_CENTER_THREAD_EVENT_REJECTED"));
       }
     };
+    source.addEventListener?.("gateway.stream_error", (event) => {
+      if (this.#stopped || this.#source !== source) return;
+      try {
+        const value: unknown = JSON.parse(event.data);
+        if (
+          value &&
+          typeof value === "object" &&
+          "code" in value &&
+          value.code === "IDENTITY_SESSION_INVALID"
+        ) {
+          this.stop();
+          this.#options.onUnauthorized?.();
+        }
+      } catch {
+        this.#options.log(safeBrowserLog("CONTROL_CENTER_EVENT_REJECTED"));
+      }
+    });
     source.addEventListener?.("thread.snapshot_required", () => {
       if (this.#stopped || this.#source !== source) return;
       this.#options.storage.clearThreadLastCursor();

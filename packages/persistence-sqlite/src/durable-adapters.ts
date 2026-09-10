@@ -1,5 +1,6 @@
 import type {
   AttentionStatePort,
+  BuiltInIdentityStatePort,
   AuditLedgerPort,
   AuthorityFence,
   AuthorizationStorePort,
@@ -627,6 +628,25 @@ export class SqliteDurableAdapters {
       get: (deletionId) => this.context.read("deletion.get", { deletionId }),
       save: (record, expectedRevision) =>
         this.context.write("deletion.save", { record, expectedRevision }),
+    });
+  }
+
+  builtInIdentityState(ownerId: OwnerId, agentId: AgentId): BuiltInIdentityStatePort {
+    const scope = { ownerId, agentId };
+    return Object.freeze<BuiltInIdentityStatePort>({
+      recordFailure: (input) =>
+        this.context.write("builtInIdentity.recordFailure", { ...scope, input }),
+      readAccount: () => this.context.read("builtInIdentity.readAccount", scope),
+      provision: (input) => this.context.write("builtInIdentity.provision", { ...scope, input }),
+      reserveAttempt: (input) =>
+        this.context.write("builtInIdentity.reserveAttempt", { ...scope, input }),
+      issueChallenge: (input) =>
+        this.context.write("builtInIdentity.issueChallenge", { ...scope, input }),
+      readChallenge: (digest) =>
+        this.context.read("builtInIdentity.readChallenge", { ...scope, digest }),
+      finish: (input) => this.context.write("builtInIdentity.finish", { ...scope, input }),
+      authenticate: (input) =>
+        this.context.write("builtInIdentity.authenticate", { ...scope, input }),
     });
   }
 

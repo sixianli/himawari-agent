@@ -1,0 +1,20 @@
+{
+  "scope": "actual local SDK dependency read-only probe, no user command launched",
+  "result": {
+    "version": "0.0.75",
+    "platformSupported": true,
+    "errors": [],
+    "warnings": [],
+    "productionSuitable": false,
+    "missingGuarantees": [
+      "resource_observation",
+      "best_effort_stop_and_unknown_quarantine",
+      "worker_crash_reconciliation",
+      "durable_start_admission"
+    ],
+    "limitations": ["detached_descendants_may_survive_stop"]
+  },
+  "interpretation": "Dependency readiness does not issue host qualification or prove that supervisor implementations are absent; the deployment still needs independently verified host evidence",
+  "dailyStateRootCreated": false,
+  "paidCalls": 0
+}

@@ -30,7 +30,9 @@ date: "2026-09-10"
 
 先核对运行所需的配置、身份和能力安装合同。真实工具必须取得本机资格并走现有授权与 Worker 边界；缺少资格时保持拒绝，不能移植测试中的伪造合格记录。若正式首次初始化存在缺口，先明确缺口与必要初始化范围，再按现有领域合同补齐。
 
-## 本机身份扩展提案（待确认）
+## 本机身份扩展提案（已否决）
+
+用户已明确否决下述仅限本机的提案，选择开发通用内置账号登录。此节保留提案经过，不作为实施依据。后续身份工作见 [SOURCE: docs/archive/specs/2026-09-10-built-in-account-authentication-design.md]。
 
 实际检查发现，`createProductionHttpComposition()` 固定构造 Cloudflare JWT 验证器及身份查询客户端；`ProductSessionAuthenticationService.authenticate()` 每次请求都要求外部 assertion。现有 loopback bootstrap 只是绑定外部 subject，不提供本机登录。`publicMode: false` 也不是本机 Web 模式：正式 HTTP 组合会拒绝启动。当前管理 CLI 没有首次初始化命令。故仅创建配置、复用 OpenRouter 凭据，不能得到可日常使用的正式网页。
 
@@ -52,4 +54,6 @@ date: "2026-09-10"
 
 完整五项目检查已通过：183 个文件、1,914 项，0 失败、0 跳过、0 重试，总耗时约 8 分 8 秒。CI 检查时限仍为 30 分钟；测试准备和 Node floor 的前置构建均计入父检查剩余预算。回归验证、首次完整失败、上下文不匹配拒绝和最终成功记录保存在 `test/qualification/evidence/local-acceptance-2026-09-10/`。
 
-本机身份扩展尚待用户确认，故正式本机安装和真实浏览器流程尚未执行，没有新增运行目录或钥匙串项，也没有收费模型调用。保留此 Spec 和 Plan 为 active，不能用自动化检查通过将真实服务验收标为完成。
+截至本轮测试修复交付，正式本机安装和真实浏览器流程尚未执行，没有新增运行目录或钥匙串项，也没有收费模型调用。用户随后否决仅本机身份提案，选择通用内置账号；身份工作按新 Spec 推进。保留此 Spec 和 Plan 为 active，不能用自动化检查通过将真实服务验收标为完成。
+
+通用内置账号后续已实现并完成受控认证验收，详见账号 Spec 与 `test/qualification/evidence/built-in-account-2026-09-10/`。该实现不初始化产品活动权威，也不签发工具主机资格，原真实服务验收继续保持未完成。

@@ -11,6 +11,7 @@ export interface EventSourceLike {
 }
 
 export interface SseSynchronizerOptions {
+  readonly onUnauthorized?: () => void;
   readonly storage: ControlCenterBrowserStorage;
   readonly createEventSource: (url: string) => EventSourceLike;
   readonly onEvent: (event: GatewayV2Event) => void;
@@ -71,6 +72,23 @@ export class SseStateSynchronizer {
       : "/api/gateway/v2/events";
     const source = this.options.createEventSource(url);
     this.source = source;
+    source.addEventListener?.("gateway.stream_error", (event) => {
+      if (this.stopped || this.source !== source) return;
+      try {
+        const value: unknown = JSON.parse(event.data);
+        if (
+          value &&
+          typeof value === "object" &&
+          "code" in value &&
+          value.code === "IDENTITY_SESSION_INVALID"
+        ) {
+          this.stop();
+          this.options.onUnauthorized?.();
+        }
+      } catch {
+        this.options.log(safeBrowserLog("CONTROL_CENTER_EVENT_REJECTED"));
+      }
+    });
     source.addEventListener?.("gateway.snapshot_required", (message) => {
       if (this.stopped || this.source !== source) return;
       try {
