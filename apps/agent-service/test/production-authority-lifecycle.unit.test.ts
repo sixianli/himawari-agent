@@ -158,6 +158,40 @@ function lifecycle(
 }
 
 describe("ProductionAuthorityLifecycle", () => {
+  it("keeps authority when validation overlaps renewal of the same lease", async () => {
+    const deploymentStore = new DeploymentFixture();
+    const leases = new LeaseFixture(deploymentStore);
+    const losses: unknown[] = [];
+    const service = lifecycle(deploymentStore, leases, undefined, (error) => losses.push(error));
+    await service.start();
+    let releaseValidation!: () => void;
+    let enterValidation!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enterValidation = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      releaseValidation = resolve;
+    });
+    const assertCurrent = deploymentStore.assertCurrent.bind(deploymentStore);
+    let first = true;
+    deploymentStore.assertCurrent = async (fence) => {
+      if (first) {
+        first = false;
+        enterValidation();
+        await gate;
+      }
+      return assertCurrent(fence);
+    };
+    const validation = service.assertActive();
+    await entered;
+    await service.renew();
+    releaseValidation();
+    await expect(validation).resolves.toBeUndefined();
+    expect(service.isAccepting()).toBe(true);
+    expect(losses).toEqual([]);
+    await service.stop();
+  });
+
   it("publishes the post-claim database fence and repairs a stale mirror", async () => {
     const deploymentStore = new DeploymentFixture();
     const leases = new LeaseFixture(deploymentStore);

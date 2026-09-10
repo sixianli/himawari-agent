@@ -509,7 +509,19 @@ export class ProductionAuthorityLifecycle {
   }
 
   private assertActiveGeneration(generation: number, record: AuthorityLeaseRecord): void {
-    if (this.#state !== "active" || this.#generation !== generation || this.#record !== record) {
+    // Renewal replaces the record while preserving the authority identity. An
+    // overlapping validation must survive that replacement, but never a new lease.
+    const current = this.#record;
+    if (
+      this.#state !== "active" ||
+      this.#generation !== generation ||
+      !current ||
+      current.lease.id !== record.lease.id ||
+      current.lease.holderId !== record.lease.holderId ||
+      current.lease.ownerId !== record.lease.ownerId ||
+      current.lease.agentId !== record.lease.agentId ||
+      current.fencingToken !== record.fencingToken
+    ) {
       throw new ProductionAuthorityLifecycleError(
         PRODUCTION_AUTHORITY_LIFECYCLE_ERROR_CODES.NOT_ACTIVE,
         "Authority operation was superseded before it completed",
