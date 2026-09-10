@@ -4,6 +4,7 @@ export const persistenceSqliteWorkspace = {
 } as const;
 
 export * from "./migration-engine.js";
+export * from "./initialize-product-identity.js";
 export * from "./durable-adapters.js";
 export * from "./product-state-repository.js";
 export * from "./schema-catalog.js";
