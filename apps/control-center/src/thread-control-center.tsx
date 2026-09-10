@@ -1016,6 +1016,21 @@ export function useThreadControlCenter(
               renderItem={(run) => (
                 <span>
                   <code>{run.runId}</code> {message(runStatusMessageId(run.status))}
+                  {configuration?.canCancelRun && ["cancelled", "failed"].includes(run.status) ? (
+                    <ActionButton
+                      variant="secondary"
+                      disabled={connection !== "connected" || mutationStatus === "pending"}
+                      onClick={() =>
+                        void performIntent({
+                          kind: "stop",
+                          runId: run.runId,
+                          revision: run.revision,
+                        })
+                      }
+                    >
+                      {message("chat.retryCleanup")}
+                    </ActionButton>
+                  ) : null}
                   {run.status === "awaiting_approval" ? (
                     <ActionButton variant="secondary" onClick={() => void openApproval(run.runId)}>
                       {message("nav.approvals")}

@@ -305,3 +305,35 @@ it("rejects foreign roots and symlink aliases rather than trusting root labels",
     }),
   ).rejects.toThrow("PATH_UNSAFE");
 });
+
+it.each(["content", "file-link", "directory-link", "writable"])(
+  "revalidates nested runtime leaves and rejects %s changes",
+  async (change) => {
+    const input = await fixture();
+    const directory = path.join(input.binding.runtimeRoot, "nested");
+    await mkdir(directory, { mode: 0o700 });
+    await Promise.all(
+      Array.from({ length: 18 }, (_, index) =>
+        writeFile(path.join(directory, `helper-${index}`), "nested-helper", { mode: 0o600 }),
+      ),
+    );
+    const expected = await digestSandboxRuntime(input.binding.runtimeRoot);
+    Object.assign(input.binding, { runtimeDigest: expected });
+    Object.assign(input.qualification, { runtimeDigest: expected });
+    await verifySandboxHost(input);
+    const target = path.join(directory, "helper-0");
+    if (change === "content") await writeFile(target, "changed-helper");
+    if (change === "writable") await chmod(target, 0o666);
+    if (change === "file-link") {
+      const outside = path.join(input.binding.privateRoot, "helper");
+      await rename(target, outside);
+      await symlink(outside, target);
+    }
+    if (change === "directory-link") {
+      const outside = path.join(input.binding.privateRoot, "nested");
+      await rename(directory, outside);
+      await symlink(outside, directory);
+    }
+    await expect(verifySandboxHost(input)).rejects.toThrow(/SANDBOX_HOST/);
+  },
+);

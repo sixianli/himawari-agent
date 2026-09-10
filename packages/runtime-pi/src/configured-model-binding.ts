@@ -40,6 +40,7 @@ export interface ConfiguredPiModelDescriptor extends ModelDescriptor {
   readonly api: "openai-completions";
   readonly baseUrl?: string;
   readonly reasoning: boolean;
+  readonly reasoningRequired?: boolean;
   readonly input: readonly ("text" | "image")[];
   readonly cost: PiModelCost;
   readonly contextWindow: number;
@@ -159,6 +160,13 @@ function validateDescriptor(descriptor: ConfiguredPiModelDescriptor, index: numb
   ] as const) {
     assertNonEmpty(value, `${field}.${name}`);
   }
+  if (
+    descriptor.reasoningRequired !== undefined &&
+    (typeof descriptor.reasoningRequired !== "boolean" ||
+      (descriptor.reasoningRequired && !descriptor.reasoning))
+  ) {
+    throw new TypeError(`${field}.reasoningRequired requires reasoning capability`);
+  }
   if (descriptor.provider !== "openrouter") throw new TypeError(`${field}.provider is unsupported`);
   if (descriptor.api !== "openai-completions") throw new TypeError(`${field}.api is unsupported`);
   if (descriptor.input.length === 0 || !descriptor.input.includes("text")) {
@@ -226,6 +234,7 @@ function providerModelConfig(
     api: descriptor.api,
     baseUrl,
     reasoning: descriptor.reasoning,
+    ...(descriptor.reasoningRequired ? { thinkingLevelMap: { off: null } } : {}),
     input: [...descriptor.input],
     cost: { ...descriptor.cost },
     contextWindow: descriptor.contextWindow,

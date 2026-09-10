@@ -55,7 +55,15 @@ export function createProductionFileReadServices(options: {
   const handles = new CapabilityHandleService({ store: capabilities, clock, ids });
   return {
     binding: async (call) => {
-      const route = configuration.runPolicy?.fileRead;
+      const coding = configuration.runPolicy?.coding;
+      const route = coding?.enabledTools.some(
+        (tool) => `${coding.capabilityRef}.${tool}` === call.capabilityRef,
+      )
+        ? coding
+        : call.capabilityRef ===
+            `${configuration.runPolicy?.publicSearch?.capabilityRef}.web_search`
+          ? configuration.runPolicy?.publicSearch
+          : configuration.runPolicy?.fileRead;
       const context = call.context;
       if (!route || !context?.threadId) return undefined;
       const authority = options.authority();

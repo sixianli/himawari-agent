@@ -41,6 +41,7 @@ export interface ConfiguredGenerationModelDescriptor extends ConfiguredModelDesc
   readonly name: string;
   readonly api: "openai-completions";
   readonly reasoning: boolean;
+  readonly reasoningRequired?: boolean;
   readonly input: readonly ("text" | "image")[];
   readonly contextWindow: number;
   readonly maxTokens: number;
@@ -148,7 +149,13 @@ export interface FileReadRouteConfiguration {
   readonly maximumBytes: number;
 }
 
+export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
+  readonly enabledTools: readonly ("read" | "write" | "edit" | "bash" | "find" | "grep" | "ls")[];
+}
+
 export interface RunPolicyConfiguration {
+  readonly coding?: CodingRouteConfiguration;
+  readonly publicSearch?: FileReadRouteConfiguration;
   readonly fileRead?: FileReadRouteConfiguration;
   readonly version: string;
   readonly systemInstruction: string;

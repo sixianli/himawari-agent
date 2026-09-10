@@ -529,6 +529,7 @@ it("selects trusted Run policy and binds instruction content across configuratio
     clock: adapters.clock,
     ids: adapters.ids,
   };
+  const protect = vi.spyOn(adapters.payloadProtector, "protect");
   const policy = createProductionRunPolicy(options);
   const first = await policy(source);
   expect(first).toMatchObject({
@@ -536,6 +537,9 @@ it("selects trusted Run policy and binds instruction content across configuratio
     policyVersion: "policy-v1",
     capabilityHandleRefs: [],
   });
+  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
+    source.occurredAt,
+  );
   expect(list).toHaveBeenCalledWith(source.runId, adapters.clock.now());
   expect((await policy(source)).systemInstructionRef).toBe(first.systemInstructionRef);
   const changed = await createProductionRunPolicy({

@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ConfiguredPiModelBindingPort,
+  getPiModelPresentation,
   type ConfiguredPiModelDescriptor,
   type PiModelRuntime,
   type PiModelRuntimeFactory,
@@ -93,6 +94,28 @@ class RecordingRuntime {
 
 describe("ConfiguredPiModelBindingPort", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("omits off for endpoints that require reasoning, using Pi capability mapping", async () => {
+    const runtime = new RecordingRuntime();
+    const binding = new ConfiguredPiModelBindingPort({
+      descriptors: [
+        modelDescriptor("primary", { reasoning: true, reasoningRequired: true }),
+        modelDescriptor("fallback"),
+      ],
+      secretSource: { productionSuitable: true, resolve: async () => SECRET },
+      runtimeFactory: { create: async () => runtime as unknown as PiModelRuntime },
+    });
+    const primary = await binding.resolve(PRIMARY_REF);
+    expect(getPiModelPresentation(primary).thinkingLevels).toEqual([
+      "minimal",
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(getPiModelPresentation(await binding.resolve(FALLBACK_REF)).thinkingLevels).toEqual([
+      "off",
+    ]);
+  });
 
   it("registers exactly the closed model set and defers the shared secret", async () => {
     const runtime = new RecordingRuntime();

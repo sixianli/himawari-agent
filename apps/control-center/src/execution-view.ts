@@ -2,6 +2,24 @@ import type {
   ThreadExecutionRecord,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
+import type { MessageId } from "./i18n/message-ids.js";
+
+export function executionFailureMessage(records: readonly ThreadExecutionRecord[]): MessageId {
+  const failure = [...records]
+    .filter((item) => item.kind === "status" && item.name === "runtime.failed")
+    .sort((a, b) => a.sequence - b.sequence)
+    .at(-1);
+  switch (failure?.text) {
+    case "PI_MODEL_RATE_LIMITED":
+      return "chat.error.rateLimited";
+    case "PI_MODEL_AUTH_FAILED":
+      return "chat.error.authFailed";
+    case "PI_MODEL_UNAVAILABLE":
+      return "chat.error.unavailable";
+    default:
+      return "chat.error.failed";
+  }
+}
 
 export type RunSummary = Extract<
   ThreadGatewaySnapshot,
@@ -28,10 +46,42 @@ export function executionItems(records: readonly ThreadExecutionRecord[]) {
       startedAt:
         previous?.startedAt ??
         (record.phase === "started" || record.kind === "message" ? record.occurredAt : null),
-      endedAt: ["completed", "failed"].includes(record.phase) ? record.occurredAt : null,
+      endedAt:
+        previous?.endedAt ??
+        (["completed", "failed", "stopped"].includes(record.phase) ? record.occurredAt : null),
     });
   }
   return [...items.values()];
+}
+
+/** The displayed tool/message duration excludes the Run's recorded approval waits. */
+export function executionItemWorkTime(
+  item: { startedAt: string | null; endedAt: string | null },
+  records: readonly ThreadExecutionRecord[],
+): number | null {
+  if (!item.startedAt || !item.endedAt) return null;
+  const start = Date.parse(item.startedAt),
+    end = Date.parse(item.endedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  let waitingSince: number | undefined;
+  let wait = 0;
+  const overlap = (from: number, to: number) =>
+    Math.max(0, Math.min(end, to) - Math.max(start, from));
+  for (const record of [...new Map(records.map((record) => [record.id, record])).values()].sort(
+    (a, b) => a.sequence - b.sequence,
+  )) {
+    if (
+      record.kind !== "status" ||
+      !["started", "waiting", "completed", "failed", "stopped"].includes(record.phase)
+    )
+      continue;
+    const at = Date.parse(record.occurredAt);
+    if (!Number.isFinite(at)) continue;
+    if (waitingSince !== undefined) wait += overlap(waitingSince, at);
+    waitingSince = record.phase === "waiting" ? at : undefined;
+  }
+  if (waitingSince !== undefined) wait += overlap(waitingSince, end);
+  return Math.max(0, end - start - wait);
 }
 
 /** Time is derived only from recorded execution boundaries, excluding approval waits. */

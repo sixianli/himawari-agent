@@ -15,6 +15,24 @@ async function exposed(f: ReturnType<typeof fixture>) {
 }
 
 describe("ProductionRuntimeTools", () => {
+  it("intersects configured resources with the qualified capability before dispatch", async () => {
+    const f = fixture();
+    const qualified = { ...f.options.ceiling, maxCpuTimeMs: 30, maxOutputBytes: 10000 };
+    const maximumResourceCeiling = vi.fn(async () => qualified);
+    const tool = new ProductionRuntimeTools({ ...f.options, maximumResourceCeiling });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    expect((await tool.execute(invocation)).outcome).toBe("succeeded");
+    const execute = f.request.mock.calls.find(([message]) => message.type === "work.execute")?.[0];
+    expect(execute).toMatchObject({
+      payload: {
+        resourceCeiling: {
+          ...f.options.ceiling,
+          maxCpuTimeMs: 30,
+        },
+      },
+    });
+    expect(maximumResourceCeiling).toHaveBeenCalledWith(invocation.capabilityRef, "1.0.0");
+  });
   it("offers a path request without a Handle and never dispatches it before authorization exists", async () => {
     const f = fixture();
     const tool = f.tool();
@@ -230,3 +248,32 @@ it("exposes management as Pi extension definitions and sends no Worker request f
   await expect(tools.execute(invocation)).rejects.toThrow("identity changed");
   expect(f.request).not.toHaveBeenCalled();
 });
+
+it.each([true, false, null])(
+  "uses Agent verification for Worker result notification: %s",
+  async (verified) => {
+    const f = fixture();
+    const completeSandboxToolResult = vi.fn(async (_input, delivery) => {
+      await delivery.assertDisclosure();
+      if (verified === null) return null;
+      if (!verified) return undefined;
+      const result = {
+        outcome: "succeeded" as const,
+        outputRef: "output:tools",
+        errorCode: null,
+        externalActionId: null,
+      };
+      await delivery.saveReceipt(result);
+      return result;
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    const result = await tool.execute(invocation);
+    expect(result.outcome).toBe(verified === false ? "result_unknown" : "succeeded");
+    expect(completeSandboxToolResult).toHaveBeenCalledTimes(1);
+    expect(completeSandboxToolResult.mock.calls[0]?.[0]).toMatchObject({ runId: invocation.runId });
+    expect([...f.artifacts.keys()].some((key) => key.startsWith("runtime-sandbox-delivery:"))).toBe(
+      verified === true,
+    );
+  },
+);

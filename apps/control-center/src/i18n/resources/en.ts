@@ -27,6 +27,12 @@ export const messages = {
   "account.revoke": "Revoke device",
   "account.signOut": "Sign out",
 
+  "chat.error.rateLimited":
+    "The model service is rate limited. Retry later or select another configured model for the next turn.",
+  "chat.error.authFailed":
+    "Model authentication failed. Check the server credentials and model access.",
+  "chat.error.unavailable": "The model service is unavailable. Try again later.",
+  "chat.error.failed": "This run failed. Saved messages and execution records remain available.",
   "chat.model": "Model (next turn)",
   "chat.depth": "Thinking depth (next turn)",
   "chat.actualModel": "Model used for this turn",
@@ -62,6 +68,7 @@ export const messages = {
   "chat.execute": "Execute",
   "chat.modelUnavailable": "Model information unavailable",
   "chat.attach": "Attach text file",
+  "chat.retryCleanup": "Retry stop and cleanup check",
   "chat.stop": "Stop",
   "chat.copy": "Copy answer",
   "chat.pendingModel": "For the next message",

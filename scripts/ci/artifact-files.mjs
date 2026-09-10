@@ -13,6 +13,7 @@ export async function digestFile(filename) {
 export async function collectArtifactFiles(root, { normalizeModes = false } = {}) {
   const output = [];
   const visit = async (directory, prefix = "") => {
+    if (normalizeModes) await chmod(directory, 0o755);
     for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) =>
       a.name.localeCompare(b.name),
     )) {

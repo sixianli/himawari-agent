@@ -129,7 +129,7 @@ function intent(): GovernedActionIntent {
     capabilityRef: "governed-ui-tool",
     capabilityVersion: "1.0.0",
     operation: "read",
-    targets: [{ type: "workspace", ref: "workspace:governed-ui" }],
+    targets: [{ type: "workspace", ref: "/data/hermes/himawari/workspaces/验收目录" }],
     resourceRef: "workspace:governed-ui",
     resourceRefs: ["workspace:governed-ui"],
     dataClassification: "private",
@@ -374,6 +374,7 @@ describe("S4 Task 11 governance Control Center boundary", () => {
         intent: {
           capabilityRef: "governed-ui-tool",
           resourceRefs: ["workspace:governed-ui"],
+          targetRefs: ["/data/hermes/himawari/workspaces/验收目录"],
           deterministicFactCodes: ["private_workspace_read"],
         },
       },

@@ -69,7 +69,12 @@ try {
         .some((part) => part === ".git" || part === ".env" || part.startsWith(".himawari-")))
   )
     throw new Error("PI_PATH_OUTSIDE_SCOPE");
+  let verifiedWrite: { path: string; contentDigest: string; byteLength: number } | null = null;
   const operations = await createSandboxedCodingOperations({
+    onVerifiedWrite: (proof) => {
+      if (verifiedWrite) throw new Error("PI_MULTIPLE_WRITES_UNSUPPORTED");
+      verifiedWrite = proof;
+    },
     grant: {
       id: input.scope.directoryGrant.ref,
       revision: input.scope.directoryGrant.revision,
@@ -161,7 +166,9 @@ try {
       fullOutput,
       isError: result.isError,
       commandExitCode,
+      verifiedWrite,
       source: {
+        workspace: input.workspace,
         toolCallId: input.scope.toolCallId,
         directoryGrantRef: input.scope.directoryGrant.ref,
         directoryGrantRevision: input.scope.directoryGrant.revision,

@@ -5,6 +5,7 @@ import {
   type SandboxExecutionProjectionContext,
   SandboxExecutionReconciliationService,
   type SandboxExecutionRecord,
+  type SandboxExecutionJournalPort,
 } from "@himawari-agent/application";
 import { createIdempotencyKey, createRunId } from "@himawari-agent/domain";
 import {
@@ -20,7 +21,7 @@ import {
   readMigrationLedger,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   sandboxV2Admission as admission,
   sandboxV2Call as call,
@@ -36,6 +37,8 @@ import {
   T1,
   T2,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
+
+import { createProductionSandboxToolResult } from "../../apps/agent-service/src/production-sandbox-tool-result.ts";
 
 type Fixture = Awaited<ReturnType<typeof openSandboxJournal>>;
 const evidence = { ref: "supervision-evidence", digest: "e".repeat(64) };
@@ -985,3 +988,116 @@ for (const scenario of ["verified", "untrusted", "timeout", "concurrent"] as con
     }
   });
 }
+
+// Actual SQLite intents and output bindings; platform verification is synthetic.
+it.each(["deliver", "cancel-before-dispatch", "receipt-fails", "expired-proof"] as const)(
+  "Agent foreground result handoff: %s",
+  async (scenario) => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, result(f, record), true);
+      record = append(f, record, resource(record, "lost"));
+      record = append(f, record, resource(record, "reconciling"));
+      record = append(f, record, resource(record, "released"));
+      const identity = record.plan.identity;
+      const journal = Object.fromEntries(
+        [
+          "read",
+          "append",
+          "prepareIntent",
+          "dispatchIntent",
+          "acknowledgeIntent",
+          "observeIntent",
+        ].map((name) => [
+          name,
+          async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
+        ]),
+      ) as unknown as SandboxExecutionJournalPort;
+      const complete = createProductionSandboxToolResult({
+        journal,
+        preparations: {
+          readAdmissionByInvocation: async () => ({
+            phase: "bound",
+            record: call(f, "read", identity) as SandboxExecutionRecord,
+          }),
+        },
+        authority: () => SERVICE_AUTHORITY,
+        now: () => (scenario === "expired-proof" ? T2 : T1),
+        verifyFresh: async (current) => {
+          const facts = resource(current, "released");
+          const proof = context(current, facts).verification;
+          if (!proof) throw new Error("missing synthetic evidence");
+          return proof;
+        },
+      });
+      let checks = 0;
+      const receipt = vi.fn(async () => {
+        if (scenario === "receipt-fails") throw new Error("receipt unavailable");
+      });
+      const delivery = {
+        assertDisclosure: async () => {
+          if (++checks === 3 && scenario === "cancel-before-dispatch")
+            f.database.prepare("UPDATE runs SET status='cancelled' WHERE id=?").run(identity.runId);
+        },
+        saveReceipt: receipt,
+      };
+      const request = { runId: identity.runId, invocationId: identity.invocationId };
+      if (scenario === "deliver") {
+        expect(await complete(request, delivery)).toMatchObject({
+          outcome: "succeeded",
+          outputRef: "output",
+        });
+        expect(receipt).toHaveBeenCalledTimes(1);
+        expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toEqual([]);
+        await expect(complete(request, delivery)).rejects.toThrow();
+        expect(receipt).toHaveBeenCalledTimes(1);
+      } else if (scenario === "expired-proof") {
+        expect(await complete(request, delivery)).toBeUndefined();
+        expect(receipt).not.toHaveBeenCalled();
+      } else {
+        await expect(complete(request, delivery)).rejects.toThrow();
+        if (scenario === "cancel-before-dispatch") expect(receipt).not.toHaveBeenCalled();
+        else expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toHaveLength(1);
+      }
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it.each(["subject", "metrics", "revive"])(
+  "released proof renewal rejects changed %s",
+  async (change) => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, result(f, record), true);
+      record = append(f, record, resource(record, "stopping"));
+      record = append(f, record, resource(record, "released"));
+      const fresh = resource(record, "released");
+      if (fresh.resource.supervision !== "released") throw new Error("released fixture required");
+      const changed = sandboxExecutionFactsSchema.parse({
+        ...fresh,
+        resource: {
+          ...fresh.resource,
+          ...(change === "subject"
+            ? {
+                evidence: {
+                  ...fresh.resource.evidence,
+                  subject: { kind: "local_process", processIdentityRef: "replacement" },
+                },
+              }
+            : {}),
+          ...(change === "metrics"
+            ? { metrics: { samples: 1, cpuTimeMs: 10, peakMemoryBytes: 20 } }
+            : {}),
+          ...(change === "revive" ? { supervision: "controlled", cleanup: "pending" } : {}),
+        },
+      });
+      expect(() => append(f, record, changed)).toThrow();
+    } finally {
+      await f.close();
+    }
+  },
+);

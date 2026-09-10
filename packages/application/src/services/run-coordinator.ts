@@ -603,7 +603,13 @@ export class RunCoordinator {
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
         "Cancellation scope does not match the canonical Run",
       );
-    if (isTerminalStatus(existing.run.status)) return existing;
+    if (isTerminalStatus(existing.run.status)) {
+      // Cancellation is terminal for model execution, but cleanup may need a
+      // later attempt after the original supervisor finishes. Never restart it.
+      if (existing.run.status === "cancelled" || existing.run.status === "failed")
+        await this.dependencies.resources?.stopRun(input.runId);
+      return existing;
+    }
     await this.dependencies.runs.cancelRun({
       ownerId: input.ownerId,
       agentId: input.agentId,

@@ -155,7 +155,8 @@ async function run(tool, parameters, writable = false, executionMode = "foregrou
       stdinBase64: Buffer.from(JSON.stringify(input)).toString("base64"),
       deadlineAt: expiresAt,
       maxOutputBytes: 512 * 1024,
-      cleanupTimeoutMs: 1000,
+      // Match the installed production Worker cleanup deadline.
+      cleanupTimeoutMs: 5000,
     },
     controlDirectory,
   );
@@ -189,11 +190,15 @@ async function run(tool, parameters, writable = false, executionMode = "foregrou
     namespaceState = await readLinuxNamespaceState(final.linuxNamespace);
     assert.equal(namespaceState, "released");
   }
-  if (!result.stdout.length)
+  if (!result.stdout.length || result.exitCode === null)
     process.stderr.write(
       `${JSON.stringify({
         tool,
         exitCode: result.exitCode,
+        reason: result.reason,
+        taskProcessExited: result.taskProcessExited,
+        stdioClosed: result.stdioClosed,
+        srtReset: result.srtReset,
         stderr: Buffer.from(result.stderr).toString("utf8"),
         supervision: result.supervision,
       })}\n`,
@@ -204,6 +209,15 @@ async function run(tool, parameters, writable = false, executionMode = "foregrou
       ? JSON.parse(Buffer.from(result.stdout).toString("utf8"))
       : Buffer.from(result.stdout).toString("utf8")
     : null;
+  if (["write", "edit"].includes(tool) && result.exitCode === 0) {
+    const actual = await readFile(path.resolve(workspace, parameters.path));
+    assert.equal(output.verifiedWrite.path, path.resolve(workspace, parameters.path));
+    assert.equal(
+      output.verifiedWrite.contentDigest,
+      createHash("sha256").update(actual).digest("hex"),
+    );
+    assert.equal(output.verifiedWrite.byteLength, actual.length);
+  }
   reports.push({
     tool,
     executionMode,
@@ -307,7 +321,7 @@ try {
     assert.equal((await run("grep", { pattern: "second", path: "note.txt" })).result.exitCode, 1);
   }
   process.stdout.write(
-    `${JSON.stringify({ passed: reports.length, platform: process.platform, qualification: false, toolDigests, nodeVersion: process.version, reports })}\n`,
+    `${JSON.stringify({ passed: reports.length, platform: process.platform, qualification: false, cleanupTimeoutMs: 5000, toolDigests, nodeVersion: process.version, reports })}\n`,
   );
 } finally {
   // Only this probe's own disposable fake data and copied binaries.

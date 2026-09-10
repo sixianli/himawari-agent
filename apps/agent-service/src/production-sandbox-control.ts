@@ -347,6 +347,18 @@ export function createProductionSandboxControl(options: Options) {
         throw new Error("SANDBOX_CONTROL_PREPARATION_CHANGED");
     },
     observe: (record: SandboxExecutionRecord) => observe(record, "inspect"),
+    // Carry proof produced by this same host/process verification. Do not repeat
+    // the expensive installed-byte check after issuing a one-second proof.
+    async refreshEvidence(record: SandboxExecutionRecord) {
+      const resource = await observe(record, "inspect");
+      return {
+        resource,
+        evidence:
+          resource.supervision === "released" || resource.supervision === "controlled"
+            ? [{ ref: resource.evidence.ref, digest: resource.evidence.digest }]
+            : [],
+      };
+    },
     backend: {
       inspect: (record, signal) => observe(record, "inspect", signal),
       stop: (record, signal) => observe(record, "stop", signal),

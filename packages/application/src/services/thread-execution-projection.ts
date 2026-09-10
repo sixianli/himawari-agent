@@ -119,7 +119,14 @@ export class ThreadExecutionProjection {
               .replace(/[^a-zA-Z0-9]/g, "")
               .slice(-64)}`,
             kind: "message",
-            phase: envelope["phase"] === "ended" ? "completed" : "updated",
+            phase:
+              envelope["phase"] !== "ended"
+                ? "updated"
+                : message["stopReason"] === "error"
+                  ? "failed"
+                  : message["stopReason"] === "aborted"
+                    ? "stopped"
+                    : "completed",
             name: text(message["model"]),
             text: text(redactTracePayload(visibleText(message["content"]))),
           });
@@ -130,12 +137,19 @@ export class ThreadExecutionProjection {
           const tool = object(await this.readPayload(event, envelope["payloadRef"]));
           const ended = event.eventType === "runtime.tool_result";
           const result = object(tool["result"]);
+          // Older Pi captures can report isError=false for a resolved product
+          // failure. Retained product error evidence must not become success.
+          const productError = text(object(result["details"])["errorCode"]);
           records.push({
             ...base,
             itemId: identifier(tool["toolCallId"], event.id),
             kind: "tool",
             text: text(redactTracePayload(text(tool["description"]))),
-            phase: ended ? (tool["isError"] === true ? "failed" : "completed") : "started",
+            phase: ended
+              ? tool["isError"] === true || productError
+                ? "failed"
+                : "completed"
+              : "started",
             name: text(tool["toolName"]) || text(envelope["capabilityRef"]),
             input: ended
               ? ""
@@ -170,7 +184,17 @@ export class ThreadExecutionProjection {
                   name: text(envelope["modelRef"]) || base.name,
                   text: text(envelope["thinkingLevel"]),
                 }
-              : {}),
+              : event.eventType === "runtime.failed"
+                ? {
+                    text: [
+                      "PI_MODEL_RATE_LIMITED",
+                      "PI_MODEL_AUTH_FAILED",
+                      "PI_MODEL_UNAVAILABLE",
+                    ].includes(text(envelope["errorCode"]))
+                      ? text(envelope["errorCode"])
+                      : "RUNTIME_EXECUTION_FAILED",
+                  }
+                : {}),
           });
         }
       } catch {

@@ -8,6 +8,7 @@ import type {
 import type { ExecutionAdmissionPeerBinding } from "@himawari-agent/execution-contracts";
 import {
   CapabilityDeploymentSnapshotLoader,
+  revalidateCapabilityDeploymentSnapshot,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
 import { prepareJobPolicy } from "@himawari-agent/runtime-sandbox";
@@ -27,8 +28,10 @@ export function createProductionSandboxWorker(options: {
   const deployment = configuration.capabilityDeployment;
   if (!deployment) throw new Error("SANDBOX_DEPLOYMENT_UNAVAILABLE");
   const loader = new CapabilityDeploymentSnapshotLoader({ ...deployment, now: () => clock.now() });
+  const admitted = loader.load();
+  void admitted.catch(() => {});
   const hostFor = async (plan: SandboxExecutionPlan) => {
-    const loaded = await loader.load();
+    const loaded = await revalidateCapabilityDeploymentSnapshot(await admitted);
     const entry = loaded.snapshot.capabilities.find(
       (entry) =>
         entry.manifest.ref === plan.capabilityRef &&

@@ -35,18 +35,23 @@ import type { SqliteProductStateRepository } from "@himawari-agent/persistence-s
 import {
   CapabilityDeploymentSnapshotLoader,
   resolveSandboxWorkspaceClaim,
+  revalidateCapabilityDeploymentSnapshot,
+  verifyPiWriteEvidence,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
 import { configuredModelDisclosureIdentity } from "./production-file-read-services.js";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
+import { createProductionManagedTasks } from "./production-managed-tasks.js";
 import type { ProductionRuntimeSandbox } from "./production-runtime-tools.js";
 import { createProductionSandboxControl } from "./production-sandbox-control.js";
-
-import { createProductionManagedTasks } from "./production-managed-tasks.js";
-import { createProductionSandboxStream } from "./production-sandbox-stream.js";
 import { createProductionSandboxOutput } from "./production-sandbox-output.js";
+import { createProductionSandboxToolResult } from "./production-sandbox-tool-result.js";
+import { createProductionSandboxStream } from "./production-sandbox-stream.js";
 
+// Job directory names encode the full digest compactly: SRT appends Unix socket
+// names below them. External reconciliation IDs retain their separate contract.
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const jobId = (value: unknown) => `j${Buffer.from(hash(value), "hex").toString("base64url")}`;
 const bytesHash = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 
 /** Composition only: existing grants, protected Run artifacts and the existing
@@ -119,7 +124,7 @@ export async function createProductionSandboxServices(options: {
     return JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(bytes));
   };
   const entryFor = async (capabilityRef: string, capabilityVersion: string) => {
-    const loaded = await loader.load();
+    const loaded = await revalidateCapabilityDeploymentSnapshot(initial);
     const entry = loaded.snapshot.capabilities.find(
       (entry) =>
         entry.manifest.ref === capabilityRef && entry.manifest.version === capabilityVersion,
@@ -533,7 +538,7 @@ export async function createProductionSandboxServices(options: {
         executionLease: call.context.executionLease,
         executionDeadlineAt: call.executionDeadlineAt,
       },
-      jobId: `sandbox-job:${hash(input.invocationId)}`,
+      jobId: jobId(input.invocationId),
       attemptId: `sandbox-attempt:${hash(input.invocationId)}`,
       hostId,
       now: input.requestedAt,
@@ -653,7 +658,7 @@ export async function createProductionSandboxServices(options: {
           executionLease: call.context.executionLease,
           executionDeadlineAt: call.executionDeadlineAt,
         },
-        jobId: `sandbox-job:${hash(input.invocationId)}`,
+        jobId: jobId(input.invocationId),
         attemptId: `sandbox-attempt:${hash(input.invocationId)}`,
         hostId,
         now: input.requestedAt,
@@ -749,7 +754,7 @@ export async function createProductionSandboxServices(options: {
           ...candidate,
           identity: {
             ...prior.identity,
-            jobId: `sandbox-job:${hash(input.invocationId)}`,
+            jobId: jobId(input.invocationId),
             attemptId: `sandbox-attempt:${hash(input.invocationId)}`,
             invocationId: input.invocationId,
             receiptRef: input.receiptRef,
@@ -840,7 +845,7 @@ export async function createProductionSandboxServices(options: {
         ...parentCandidate,
         identity: {
           ...parent.plan.identity,
-          jobId: `sandbox-job:${hash(input.invocationId)}`,
+          jobId: jobId(input.invocationId),
           attemptId: `sandbox-attempt:${hash(input.invocationId)}`,
           invocationId: input.invocationId,
           receiptRef: input.receiptRef,
@@ -913,52 +918,72 @@ export async function createProductionSandboxServices(options: {
       return { ref: saved.ref, digest: bytesHash(plaintext) };
     },
   });
+  const verifyOutput = async ({
+    plan,
+    facts,
+    now,
+  }: Parameters<SandboxExecutionEvidencePort["verify"]>[0]) => {
+    const effectEvidence: { ref: string; digest: string }[] = [];
+    const outputs: { ref: string; digest: string; byteLength: number }[] = [];
+    if (facts.result && facts.result.kind !== "unknown") {
+      // A retained result is already bound by the journal to its immutable
+      // invocation artifact. Reconciliation under a new boot may authenticate
+      // these same bytes without adopting the old Worker's execution authority.
+      const previous = await repository
+        .sandboxExecutionJournal(configuration.ownerId, configuration.agentId)
+        .read(plan.identity);
+      const retained =
+        previous &&
+        previous.plan.semanticFingerprint === plan.semanticFingerprint &&
+        JSON.stringify(previous.facts.result) === JSON.stringify(facts.result);
+      if (!retained) {
+        const artifact = await repository
+          .capabilityInvocationResultPort(configuration.ownerId, configuration.agentId)
+          .lookupOutput({
+            handleRef: plan.handleRef,
+            invocationId: plan.identity.invocationId,
+            authority: options.authority(),
+            now,
+          });
+        if (!artifact || artifact.payloadRef !== facts.result.output.ref)
+          throw new Error("SANDBOX_OUTPUT_BINDING_CHANGED");
+      }
+      const payload = await payloads.get(facts.result.output.ref);
+      if (!payload || payload.ciphertext.byteLength > plan.resourceCeiling.maxOutputBytes + 131072)
+        throw new Error("SANDBOX_OUTPUT_UNAVAILABLE");
+      const bytes = await protector.unprotect({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        payload,
+      });
+      if (
+        bytes.byteLength > plan.resourceCeiling.maxOutputBytes ||
+        bytes.byteLength !== facts.result.output.byteLength ||
+        bytesHash(bytes) !== facts.result.output.digest
+      )
+        throw new Error("SANDBOX_OUTPUT_CHANGED");
+      if (facts.effect.kind === "verified") {
+        if (
+          facts.result.kind !== "result" ||
+          facts.effect.evidence.ref !== facts.result.output.ref ||
+          facts.effect.evidence.digest !== facts.result.output.digest
+        )
+          throw new Error("PI_WRITE_EVIDENCE_INVALID");
+        verifyPiWriteEvidence({
+          bytes,
+          parameters: await readJson(plan.inputRef),
+          plan,
+          scope: sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef)),
+        });
+        effectEvidence.push({ ...facts.effect.evidence });
+      }
+      outputs.push({ ...facts.result.output });
+    }
+    return { outputs, effectEvidence };
+  };
   const evidence: SandboxExecutionEvidencePort = {
     verify: async ({ plan, facts, now }) => {
-      const outputs: { ref: string; digest: string; byteLength: number }[] = [];
-      if (facts.result && facts.result.kind !== "unknown") {
-        // A retained result is already bound by the journal to its immutable
-        // invocation artifact. Reconciliation under a new boot may authenticate
-        // these same bytes without adopting the old Worker's execution authority.
-        const previous = await repository
-          .sandboxExecutionJournal(configuration.ownerId, configuration.agentId)
-          .read(plan.identity);
-        const retained =
-          previous &&
-          previous.plan.semanticFingerprint === plan.semanticFingerprint &&
-          JSON.stringify(previous.facts.result) === JSON.stringify(facts.result);
-        if (!retained) {
-          const artifact = await repository
-            .capabilityInvocationResultPort(configuration.ownerId, configuration.agentId)
-            .lookupOutput({
-              handleRef: plan.handleRef,
-              invocationId: plan.identity.invocationId,
-              authority: options.authority(),
-              now,
-            });
-          if (!artifact || artifact.payloadRef !== facts.result.output.ref)
-            throw new Error("SANDBOX_OUTPUT_BINDING_CHANGED");
-        }
-        const payload = await payloads.get(facts.result.output.ref);
-        if (
-          !payload ||
-          payload.ciphertext.byteLength > plan.resourceCeiling.maxOutputBytes + 131072
-        )
-          throw new Error("SANDBOX_OUTPUT_UNAVAILABLE");
-        const bytes = await protector.unprotect({
-          ownerId: configuration.ownerId,
-          agentId: configuration.agentId,
-          payload,
-        });
-        if (
-          bytes.byteLength > plan.resourceCeiling.maxOutputBytes ||
-          bytes.byteLength !== facts.result.output.byteLength ||
-          bytesHash(bytes) !== facts.result.output.digest
-        )
-          throw new Error("SANDBOX_OUTPUT_CHANGED");
-        outputs.push({ ...facts.result.output });
-      }
-      // Authenticate retained output and independently stored supervisor facts.
+      const { outputs, effectEvidence } = await verifyOutput({ plan, facts, now });
       return {
         facts,
         identity: plan.identity,
@@ -968,10 +993,38 @@ export async function createProductionSandboxServices(options: {
         checkedAt: now,
         validUntil: new Date(Date.parse(now) + 1000).toISOString(),
         outputs,
-        evidence: await control.evidence(plan, facts),
+        evidence: [...(await control.evidence(plan, facts)), ...effectEvidence],
       };
     },
   };
+  const refreshVerification = async (record: Parameters<typeof control.refreshEvidence>[0]) => {
+    const { outputs, effectEvidence } = await verifyOutput({
+      plan: record.plan,
+      facts: record.facts,
+      now: clock.now(),
+    });
+    const observed = await control.refreshEvidence(record);
+    const facts = { ...record.facts, resource: observed.resource };
+    const now = clock.now();
+    return {
+      facts,
+      identity: record.plan.identity,
+      environmentId: record.plan.environmentId,
+      policyDigest: facts.environment.policyDigest,
+      resourceSequence: facts.resource.sequence,
+      checkedAt: now,
+      validUntil: new Date(Date.parse(now) + 1000).toISOString(),
+      outputs,
+      evidence: [...observed.evidence, ...effectEvidence],
+    };
+  };
+  const completeToolResult = createProductionSandboxToolResult({
+    preparations,
+    journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
+    authority: options.authority,
+    now: () => clock.now(),
+    verifyFresh: refreshVerification,
+  });
   const outputOptions = {
     ownerId: configuration.ownerId,
     agentId: configuration.agentId,
@@ -988,7 +1041,9 @@ export async function createProductionSandboxServices(options: {
     journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
     evidence,
     backend: control.backend,
-    timeoutMs: 5000,
+    // Reconciliation verifies installed runtime bytes on the host as well as process facts.
+    // Use the existing bounded maximum so mechanical-disk verification can finish.
+    timeoutMs: 30000,
     now: () => clock.now(),
   });
   const stopRecord = async (record: Parameters<typeof stream.output>[0]) => {
@@ -1113,7 +1168,12 @@ export async function createProductionSandboxServices(options: {
     },
   });
   return {
+    maximumResourceCeiling: async (capabilityRef: string, capabilityVersion: string) => {
+      if (!sandboxEntries.some((entry) => entry.manifest.ref === capabilityRef)) return undefined;
+      return (await entryFor(capabilityRef, capabilityVersion)).binding.maximumResourceCeiling;
+    },
     runtime,
+    completeToolResult,
     child,
     managedTasks,
     resources: {
@@ -1124,18 +1184,14 @@ export async function createProductionSandboxServices(options: {
           const page = await preparations.listAdmissions({ runId, afterJobId, limit: 100 });
           for (const admission of page) {
             const plan = admission.phase === "bound" ? admission.record.plan : admission.plan;
-            if (plan.identity.runId !== runId || plan.mode === "foreground") continue;
+            if (plan.identity.runId !== runId) continue;
             if (admission.phase !== "bound") {
               released = false;
               continue;
             }
             try {
               const result = { record: await stopRecord(admission.record) };
-              if (
-                result.record.facts.resource.supervision !== "released" ||
-                result.record.facts.result?.kind !== "started"
-              )
-                released = false;
+              if (result.record.facts.resource.supervision !== "released") released = false;
             } catch {
               released = false;
             }
@@ -1170,6 +1226,7 @@ export async function createProductionSandboxServices(options: {
     },
     brokerV2: {
       evidence,
+      refreshVerification,
       appendOutput: stream.append,
       readOutput: (
         record: Parameters<typeof readForegroundOutput>[0],

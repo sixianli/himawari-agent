@@ -11,6 +11,11 @@ import {
 } from "./validation.ts";
 
 export const PI_RUNNER_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "1" });
+export const PI_WRITE_VERIFIER = Object.freeze({
+  ref: "pi-atomic-write",
+  version: "1",
+  targetRef: "pi-input:path",
+});
 export const piCodingToolNameSchema = enumeration([
   "read",
   "write",

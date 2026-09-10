@@ -157,6 +157,9 @@ function piGenerationDescriptor(
     name: descriptor.name,
     api: descriptor.api,
     reasoning: descriptor.reasoning,
+    ...(descriptor.reasoningRequired === undefined
+      ? {}
+      : { reasoningRequired: descriptor.reasoningRequired }),
     input: Object.freeze([...descriptor.input]),
     cost: Object.freeze({ ...descriptor.cost }),
     contextWindow: descriptor.contextWindow,

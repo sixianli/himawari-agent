@@ -5,7 +5,9 @@ import type {
 import { useEffect, useRef, useState } from "react";
 import {
   duration,
+  executionFailureMessage,
   executionItems,
+  executionItemWorkTime,
   executionTime,
   isTerminalRun,
   type RunSummary,
@@ -55,6 +57,9 @@ function TurnProcess({
         <span className="process-time">{time.known ? duration(time.work) : ""}</span>
       </summary>
       <div className="turn-process-body">
+        {run.status === "failed" ? (
+          <output>{message(executionFailureMessage(records))}</output>
+        ) : null}
         <p>{message("chat.noThinking")}</p>
         {time.known ? (
           <p className="process-timing">
@@ -93,7 +98,7 @@ function TurnProcess({
                     : (`chat.phase.${item.phase}` as MessageId),
                 )}{" "}
                 {item.endedAt && item.startedAt
-                  ? duration(Date.parse(item.endedAt) - Date.parse(item.startedAt))
+                  ? duration(executionItemWorkTime(item, records) ?? 0)
                   : ""}
               </summary>
               {item.startedAt ? (

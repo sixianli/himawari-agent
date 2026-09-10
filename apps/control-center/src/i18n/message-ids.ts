@@ -21,6 +21,10 @@ export const MESSAGE_IDS = [
   "account.revoke",
   "account.signOut",
 
+  "chat.error.rateLimited",
+  "chat.error.authFailed",
+  "chat.error.unavailable",
+  "chat.error.failed",
   "chat.model",
   "chat.depth",
   "chat.actualModel",
@@ -57,6 +61,7 @@ export const MESSAGE_IDS = [
   "chat.modelUnavailable",
   "chat.attach",
   "chat.stop",
+  "chat.retryCleanup",
   "chat.copy",
   "chat.pendingModel",
   "chat.attachmentError",

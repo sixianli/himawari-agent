@@ -1406,3 +1406,18 @@ export function loadCapabilityDeploymentSnapshot(
 ): Promise<LoadedCapabilityDeployment> {
   return new CapabilityDeploymentSnapshotLoader(options).load();
 }
+
+/** Recheck an immutable deployment admitted during this process boot. Qualification
+ * freshness gates admission; subsequent jobs still verify snapshot bytes and the
+ * actual host/runtime binding. This does not admit a new or changed installation. */
+export async function revalidateCapabilityDeploymentSnapshot(
+  admitted: LoadedCapabilityDeployment,
+): Promise<LoadedCapabilityDeployment> {
+  const bytes = await readSnapshotBytes(admitted.snapshotPath, CAPABILITY_DEPLOYMENT_MAX_BYTES);
+  if (`sha256:${createHash("sha256").update(bytes).digest("hex")}` !== admitted.snapshotDigest)
+    throw new CapabilityDeploymentError(
+      CAPABILITY_DEPLOYMENT_ERROR_CODES.DIGEST_MISMATCH,
+      "Running capability deployment changed",
+    );
+  return admitted;
+}

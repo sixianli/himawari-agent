@@ -194,6 +194,16 @@ function runtimeFailure(request: RuntimeRequest, now: string, errorCode: string)
   return { type: "runtime.failed", runId: request.runId, errorCode, occurredAt: now };
 }
 
+/** Pi preserves HTTP failures as status-prefixed messages; expose only product categories. */
+function modelFailureCode(errorMessage: string | undefined): string {
+  const status = /^(\d{3})(?:\s|:)/.exec(errorMessage ?? "")?.[1];
+  if (status === "429") return "PI_MODEL_RATE_LIMITED";
+  if (status === "401" || status === "403") return "PI_MODEL_AUTH_FAILED";
+  if (status !== undefined && Number(status) >= 500 && Number(status) <= 599)
+    return "PI_MODEL_UNAVAILABLE";
+  return "PI_MODEL_ERROR";
+}
+
 function epoch(occurredAt: string): number {
   const timestamp = Date.parse(occurredAt);
   if (!Number.isFinite(timestamp)) throw new TypeError("RUNTIME_PROJECTION_INVALID_TIMESTAMP");
@@ -736,6 +746,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           request.capabilityHandleRefs,
         ) ?? Promise.resolve(EMPTY_RESOURCES),
       ]);
+      // Resolve an omitted preference through Pi's capability map; explicit
+      // unsupported selections must still fail instead of being silently changed.
+      request = {
+        ...request,
+        thinkingLevel:
+          request.thinkingLevel ?? getSupportedThinkingLevels(binding.model)[0] ?? "off",
+      };
       if (projection.prompt.content.trim().length === 0) {
         throw new TypeError("RUNTIME_PROJECTION_EMPTY_PROMPT");
       }
@@ -806,6 +823,22 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           "promptTemplatePaths",
         ),
         extensionFactories: [
+          {
+            name: "himawari-tool-outcomes",
+            hidden: true,
+            factory: (pi: ExtensionAPI) => {
+              // Pi marks resolved execute() values as success. Use its official
+              // result hook to retain protected product details and error truth.
+              pi.on("tool_result", (event) => {
+                const details = event.details as { productOutcome?: unknown } | undefined;
+                if (
+                  details?.productOutcome === "failed" ||
+                  details?.productOutcome === "result_unknown"
+                )
+                  return { isError: true };
+              });
+            },
+          },
           {
             name: "himawari-provider-observer",
             hidden: true,
@@ -1149,6 +1182,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             details: {
               permissionDecisionRef: decision.permissionDecisionRef,
               reasonCode: decision.reasonCode,
+              productOutcome: "failed",
             },
             isError: true,
           };
@@ -1181,6 +1215,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         return {
           content: [{ type: "text", text: result.modelContent }],
           details: {
+            productOutcome: result.outcome,
             resultRef: result.resultRef,
             errorCode: result.errorCode,
             externalActionId: result.externalActionId,
@@ -1268,7 +1303,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             occurredAt: now,
           });
           if (event.message.stopReason === "error") {
-            mapped.push(runtimeFailure(request, now, "PI_MODEL_ERROR"));
+            mapped.push(runtimeFailure(request, now, modelFailureCode(event.message.errorMessage)));
           }
         }
         return {

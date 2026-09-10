@@ -2608,4 +2608,56 @@ it("projects encrypted execution history with owner isolation and no raw reasoni
     .threadRepository()
     .listGatewayEvents(ownerId, agentId, null, 100);
   expect(events.filter((event) => event.eventType === "thread.execution.updated")).toHaveLength(3);
+  const failedMessageRef = await capture("failed-message", {
+    role: "assistant",
+    timestamp: 2,
+    model: "actual-model",
+    content: [],
+    stopReason: "error",
+    errorMessage: "429: PRIVATE_PROVIDER_DATA",
+  });
+  await setup.trace.record({
+    ...scope,
+    eventType: "runtime.message",
+    payload: {
+      role: "assistant",
+      phase: "ended",
+      payloadRef: failedMessageRef,
+    },
+  });
+  await setup.trace.record({
+    ...scope,
+    eventType: "runtime.failed",
+    payload: {
+      errorCode: "PI_MODEL_RATE_LIMITED",
+      errorMessage: "PRIVATE_PROVIDER_DATA",
+    },
+  });
+  const failed = await projection.read(query);
+  expect(failed.records.at(-2)).toMatchObject({ kind: "message", phase: "failed", text: "" });
+  expect(failed.records.at(-1)).toMatchObject({
+    kind: "status",
+    phase: "failed",
+    text: "PI_MODEL_RATE_LIMITED",
+  });
+  expect(JSON.stringify(failed)).not.toContain("PRIVATE_");
+  const unresolvedRef = await capture("legacy-unresolved-tool", {
+    toolCallId: "legacy-call",
+    toolName: "write",
+    isError: false,
+    result: {
+      content: [{ type: "text", text: "Result needs reconciliation" }],
+      details: { errorCode: "RUNTIME_TOOL_EXECUTION_UNRESOLVED" },
+    },
+  });
+  await setup.trace.record({
+    ...scope,
+    eventType: "runtime.tool_result",
+    payload: { capabilityRef: "project.write", payloadRef: unresolvedRef },
+  });
+  expect((await projection.read(query)).records.at(-1)).toMatchObject({
+    kind: "tool",
+    phase: "failed",
+    output: "Result needs reconciliation",
+  });
 });

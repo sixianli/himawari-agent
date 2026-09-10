@@ -1,18 +1,18 @@
 import { createHash } from "node:crypto";
-import {
-  resolveHostFileReadPath,
-  runtimeToolAuthorizationResult,
-} from "@himawari-agent/application";
 import type {
+  CapabilityHandleService,
   GovernedActionIntent,
   GovernedCapabilityExecutionHandle,
   HostDirectoryGrant,
   PermissionDecision,
   ResolvedHostFileReadTarget,
+  RuntimeRequest,
   RuntimeToolExecutionResult,
   RuntimeToolInvocation,
-  RuntimeRequest,
-  CapabilityHandleService,
+} from "@himawari-agent/application";
+import {
+  resolveHostFileReadPath,
+  runtimeToolAuthorizationResult,
 } from "@himawari-agent/application";
 
 export interface FileReadBinding {
@@ -45,7 +45,7 @@ export interface FileReadExecutionContext {
   save(key: string, value: unknown): Promise<{ readonly ref: string; readonly value: unknown }>;
   phase(
     handle: GovernedCapabilityExecutionHandle,
-    phase: "inspect" | "read",
+    phase: "inspect" | "read" | "write" | "edit" | "bash" | "find" | "grep" | "ls" | "web_search",
     inputRef: string,
   ): Promise<RuntimeToolExecutionResult>;
 }
@@ -230,7 +230,7 @@ export class ProductionFileReadWorkflow {
       finalRisk: disclose ? "HIGH" : "LOW",
     });
     const runPhase = async (
-      phase: "inspect" | "read",
+      phase: "inspect" | "read" | "write" | "edit" | "bash" | "find" | "grep" | "ls" | "web_search",
       payload: unknown,
       action: GovernedActionIntent,
     ) => {

@@ -871,3 +871,24 @@ it.each([true, false])("checks resource release before completing a Run: %s", as
   expect(stopRun).toHaveBeenCalledWith(f.input.runId);
   expect(result.run.run.status).toBe(released ? "completed" : "reconciling_external_result");
 });
+
+it("rechecks cleanup when a cancelled Run receives another stop without restarting it", async () => {
+  const runtime = { run: vi.fn(async function* () {}), cancel: vi.fn(async () => {}) };
+  const stopRun = vi.fn(async () => ({ released: false }));
+  const f = await fixture("cancel-cleanup-retry", runtime, undefined, { stopRun });
+  const command = {
+    ownerId: f.input.ownerId,
+    agentId: f.input.agentId,
+    runId: f.input.runId,
+    authority: f.authority,
+    command: f.input.commands.cancelled,
+    reasonCode: "OWNER_REQUESTED",
+  };
+  await f.coordinator.cancel(command);
+  stopRun.mockResolvedValue({ released: true });
+  const repeated = await f.coordinator.cancel(command);
+  expect(repeated.run.status).toBe("cancelled");
+  expect(stopRun).toHaveBeenCalledTimes(2);
+  expect(runtime.cancel).toHaveBeenCalledTimes(1);
+  expect(runtime.run).not.toHaveBeenCalled();
+});

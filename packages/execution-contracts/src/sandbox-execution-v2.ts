@@ -321,7 +321,9 @@ const transitions: Record<
   stopping: ["stopping", "lost", "reconciling", "released"],
   lost: ["lost", "reconciling"],
   reconciling: ["reconciling", "lost", "released"],
-  released: [],
+  // A fresh verification may renew the proof of the same terminal resource.
+  // It cannot revive the environment or replace its process/status facts.
+  released: ["released"],
 };
 /** Checks binding/semantics only. Evidence authenticity must be resolved by trusted host ports. */
 export function validateSandboxExecutionFacts(
@@ -413,6 +415,14 @@ export function validateSandboxExecutionFacts(
       prior.resource.resourceRef !== obs.resourceRef
     )
       fail("invalid resource observation transition");
+    if (
+      prior.resource.supervision === "released" &&
+      obs.supervision === "released" &&
+      (!same(prior.resource.status, obs.status) ||
+        !same(prior.resource.metrics, obs.metrics) ||
+        !same(prior.resource.evidence.subject, obs.evidence.subject))
+    )
+      fail("released resource facts are immutable");
     if (
       prior.result !== null &&
       prior.result.kind !== "unknown" &&

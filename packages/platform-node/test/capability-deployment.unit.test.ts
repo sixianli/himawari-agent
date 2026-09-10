@@ -8,6 +8,7 @@ import {
   CAPABILITY_DEPLOYMENT_MAX_BYTES,
   CAPABILITY_DEPLOYMENT_MAX_QUALIFICATION_AGE_MS,
   CapabilityDeploymentSnapshotLoader,
+  revalidateCapabilityDeploymentSnapshot,
 } from "../src/capabilities/capability-deployment.js";
 
 const NOW = "2026-09-05T00:00:00.000Z";
@@ -576,4 +577,19 @@ describe("capability deployment snapshot loader", () => {
       CAPABILITY_DEPLOYMENT_ERROR_CODES.BINDING_MISMATCH,
     );
   });
+});
+
+it("keeps an unchanged boot admission usable while rejecting stale boots and changed files", async () => {
+  const value = await writeSnapshot(snapshot([processEntry()]));
+  const admitted = await loader(value.snapshotPath, value.digest).load();
+  await expectDeploymentError(
+    loader(value.snapshotPath, value.digest, { now: () => "2026-09-05T01:00:00.000Z" }).load(),
+    CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_STALE,
+  );
+  expect(await revalidateCapabilityDeploymentSnapshot(admitted)).toBe(admitted);
+  await writeFile(value.snapshotPath, JSON.stringify(snapshot([endpointEntry()])));
+  await expectDeploymentError(
+    revalidateCapabilityDeploymentSnapshot(admitted),
+    CAPABILITY_DEPLOYMENT_ERROR_CODES.DIGEST_MISMATCH,
+  );
 });

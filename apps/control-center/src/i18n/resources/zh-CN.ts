@@ -26,6 +26,10 @@ export const messages = {
   "account.revoke": "撤销设备",
   "account.signOut": "退出登录",
 
+  "chat.error.rateLimited": "模型服务当前限流。请稍后重试，或为下一轮选择其他已配置模型。",
+  "chat.error.authFailed": "模型服务认证失败。请检查服务端的模型凭据和访问权限。",
+  "chat.error.unavailable": "模型服务暂不可用。请稍后重试。",
+  "chat.error.failed": "本轮执行失败。已保存的消息和过程记录仍可查看。",
   "chat.model": "模型（下一轮）",
   "chat.depth": "思考深度（下一轮）",
   "chat.actualModel": "本轮模型",
@@ -61,6 +65,7 @@ export const messages = {
   "chat.execute": "执行",
   "chat.modelUnavailable": "模型信息未提供",
   "chat.attach": "添加文本附件",
+  "chat.retryCleanup": "再次停止并检查清理",
   "chat.stop": "停止",
   "chat.copy": "复制回答",
   "chat.pendingModel": "用于下一条消息",

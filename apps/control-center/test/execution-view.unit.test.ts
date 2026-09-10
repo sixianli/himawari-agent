@@ -1,6 +1,12 @@
 import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
-import { executionItems, executionTime, type RunSummary } from "../src/execution-view.js";
+import {
+  executionFailureMessage,
+  executionItems,
+  executionItemWorkTime,
+  executionTime,
+  type RunSummary,
+} from "../src/execution-view.js";
 
 const record = (
   sequence: number,
@@ -71,4 +77,34 @@ describe("durable execution presentation", () => {
     );
     expect(executionTime([], run, 999999)).toEqual({ work: 0, wait: 0, known: false });
   });
+});
+
+it("shows only known failure messages from replayed execution records", () => {
+  const failed = record(3, 3, {
+    phase: "failed",
+    name: "runtime.failed",
+    text: "PI_MODEL_RATE_LIMITED",
+  });
+  expect(executionFailureMessage([failed, record(1, 1), failed])).toBe("chat.error.rateLimited");
+  expect(executionFailureMessage([{ ...failed, text: "PRIVATE_PROVIDER_ERROR" }])).toBe(
+    "chat.error.failed",
+  );
+  expect(executionFailureMessage([])).toBe("chat.error.failed");
+});
+
+it("excludes approval wait from tool time and keeps the first completed message boundary", () => {
+  const start = record(1, 10, { kind: "tool" });
+  const wait = record(2, 12, { phase: "waiting" });
+  const resume = record(3, 42);
+  const end = record(4, 45, { kind: "tool", phase: "completed" });
+  const history = [end, wait, start, resume, wait];
+  const item = executionItems(history)[0];
+  if (!item) throw new Error("Missing tool fixture");
+  expect(executionItemWorkTime(item, history)).toBe(5000);
+  const replayed = executionItems([
+    start,
+    end,
+    record(5, 90, { kind: "tool", phase: "completed" }),
+  ])[0];
+  expect(replayed?.endedAt).toBe(end.occurredAt);
 });

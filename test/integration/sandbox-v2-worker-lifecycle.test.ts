@@ -17,6 +17,7 @@ vi.mock("@himawari-agent/platform-node", async (original) => ({
   CapabilityDeploymentSnapshotLoader: class {
     load = mocks.load;
   },
+  revalidateCapabilityDeploymentSnapshot: async (admitted: unknown) => admitted,
   verifySandboxHost: mocks.verify,
 }));
 
@@ -36,6 +37,7 @@ afterEach(async () => {
 });
 it.each([
   "normal",
+  "command",
   "pi",
   "replay",
   "bind-ack-loss",
@@ -73,12 +75,17 @@ it.each([
             }
           : { kind: "task_start" as const, ref: "task", version: "1" },
       }
-    : scenario === "pi"
+    : scenario === "command"
       ? {
           ...admitted.plan,
-          operationContract: { kind: "fixed_read" as const, ref: "pi-coding-tool", version: "1" },
+          operationContract: { kind: "command" as const, ref: "command", version: "1" },
         }
-      : admitted.plan;
+      : scenario === "pi"
+        ? {
+            ...admitted.plan,
+            operationContract: { kind: "fixed_read" as const, ref: "pi-coding-tool", version: "1" },
+          }
+        : admitted.plan;
   const calls: string[] = [];
   let bound = false;
   let facts = admitted.facts;
@@ -311,9 +318,17 @@ it.each([
   }
   expect(await worker.execute(request)).toEqual(outcome);
   expect(host.start).toHaveBeenCalledTimes(
-    scenario === "normal" || scenario === "pi" || scenario === "revoked-running" ? 1 : 0,
+    scenario === "normal" ||
+      scenario === "command" ||
+      scenario === "pi" ||
+      scenario === "revoked-running"
+      ? 1
+      : 0,
   );
-  if (scenario === "normal" || scenario === "pi") {
+  if (scenario === "normal" || scenario === "pi")
+    expect(facts.effect).toEqual({ kind: "not_applicable" });
+  if (scenario === "command") expect(facts.effect).toEqual({ kind: "not_asserted" });
+  if (scenario === "normal" || scenario === "command" || scenario === "pi") {
     expect(calls.indexOf("register_control")).toBeLessThan(calls.indexOf("bind"));
     expect(calls.indexOf("bind")).toBeLessThan(calls.indexOf("host-start"));
     expect(facts.result).toMatchObject({

@@ -28,6 +28,13 @@ export const messages = {
   "account.revoke": "デバイスを無効化",
   "account.signOut": "ログアウト",
 
+  "chat.error.rateLimited":
+    "モデルサービスの利用制限に達しました。後で再試行するか、次のターンで別の設定済みモデルを選択してください。",
+  "chat.error.authFailed":
+    "モデルサービスの認証に失敗しました。サーバーの認証情報とアクセス権限を確認してください。",
+  "chat.error.unavailable": "モデルサービスを現在利用できません。後で再試行してください。",
+  "chat.error.failed":
+    "この実行は失敗しました。保存済みのメッセージと実行記録は引き続き確認できます。",
   "chat.model": "モデル（次のターン）",
   "chat.depth": "思考の深さ（次のターン）",
   "chat.actualModel": "このターンのモデル",
@@ -63,6 +70,7 @@ export const messages = {
   "chat.execute": "実行",
   "chat.modelUnavailable": "モデル情報がありません",
   "chat.attach": "テキストファイルを添付",
+  "chat.retryCleanup": "停止と終了処理の確認を再試行",
   "chat.stop": "停止",
   "chat.copy": "回答をコピー",
   "chat.pendingModel": "次のメッセージに適用",

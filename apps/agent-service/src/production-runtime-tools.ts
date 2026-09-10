@@ -16,6 +16,7 @@ import {
   type PayloadProtectorPort,
   type PayloadStorePort,
   PORT_ERROR_CODES,
+  type ProductConfiguration,
   type RunPayloadArtifactPort,
   type RuntimeRequest,
   type RuntimeToolDescriptor,
@@ -31,16 +32,22 @@ import {
   type ExecutionV2Event,
   type ExecutionV2Request,
 } from "@himawari-agent/execution-contracts";
-import {
-  managedTaskDescriptors,
-  MANAGED_TASK_ACTIONS,
-  type ProductionManagedTasks,
-} from "./production-managed-tasks.js";
+import { executeProductionCodingRequest } from "./production-coding-workflow.js";
 import type { ProductionExecutionAdmissionParentBinding } from "./production-execution-admission-handler.js";
 import {
+  type FileReadExecutionContext,
   type ProductionFileReadServices,
   ProductionFileReadWorkflow,
 } from "./production-file-read-workflow.js";
+import {
+  MANAGED_TASK_ACTIONS,
+  managedTaskDescriptors,
+  type ProductionManagedTasks,
+} from "./production-managed-tasks.js";
+import type {
+  SandboxToolCompletion,
+  SandboxToolDelivery,
+} from "./production-sandbox-tool-result.js";
 import { ProductionWorkerForwardTransport } from "./production-worker-forward-transport.js";
 import type { ProductionWorkerParentBindingRegistryWriter } from "./production-worker-parent-binding-registry.js";
 
@@ -111,6 +118,14 @@ export type ProductionRuntimeSandbox = Omit<SandboxAdmission, "prepare"> & {
 };
 
 export interface ProductionRuntimeToolsOptions {
+  readonly completeSandboxToolResult?: (
+    input: { runId: string; invocationId: string },
+    delivery: SandboxToolDelivery,
+  ) => Promise<SandboxToolCompletion | null | undefined>;
+
+  readonly coding?: NonNullable<ProductConfiguration["runPolicy"]>["coding"];
+  readonly publicSearch?: NonNullable<ProductConfiguration["runPolicy"]>["publicSearch"];
+  readonly fileReadEnabled?: boolean;
   readonly sandbox?: ProductionRuntimeSandbox;
   readonly managedTasks?: ProductionManagedTasks;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
@@ -130,6 +145,10 @@ export interface ProductionRuntimeToolsOptions {
   readonly payloads: Pick<PayloadStorePort, "get">;
   readonly protector: Pick<PayloadProtectorPort, "protect" | "unprotect">;
   readonly ceiling: CapabilityResourceCeiling;
+  readonly maximumResourceCeiling?: (
+    capabilityRef: string,
+    capabilityVersion: string,
+  ) => Promise<CapabilityResourceCeiling | undefined>;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
 }
@@ -177,14 +196,49 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   ): Promise<readonly RuntimeToolDescriptor[]> {
     await this.#options.assertRunActive(runId);
     if (new Set(refs).size !== refs.length) reject();
-    const descriptors: RuntimeToolDescriptor[] = [
-      {
-        definition: "builtin-read",
-        name: "read",
-        capabilityRef: "host.file.read",
+    const descriptors: RuntimeToolDescriptor[] =
+      this.#options.fileReadEnabled === false
+        ? []
+        : [
+            {
+              definition: "builtin-read",
+              name: "read",
+              capabilityRef: "host.file.read",
+              capabilityHandleRef: null,
+            },
+          ];
+    const coding = this.#options.coding;
+    if (coding) {
+      if (
+        coding.enabledTools.includes("read") &&
+        descriptors[0]?.capabilityRef === "host.file.read"
+      )
+        descriptors.splice(0, 1);
+      for (const name of coding.enabledTools)
+        descriptors.push({
+          definition: "builtin-coding",
+          name,
+          capabilityRef: `${coding.capabilityRef}.${name}`,
+          capabilityHandleRef: null,
+        });
+    }
+    if (this.#options.publicSearch)
+      descriptors.push({
+        name: "web_search",
+        capabilityRef: `${this.#options.publicSearch.capabilityRef}.web_search`,
         capabilityHandleRef: null,
-      },
-    ];
+        description:
+          "搜索公开互联网的最新资料。查询经用户确认后发送给 Exa；返回来源网址、摘录和查询时间，不能将摘录当作已打开的完整网页。不要把文件正文或凭据放入查询。",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", minLength: 1, maxLength: 4096 },
+            limit: { type: "integer", minimum: 1, maximum: 10 },
+          },
+          required: ["query"],
+          additionalProperties: false,
+        },
+      });
     const tasks: string[] = [];
     for (const ref of refs) {
       const handle = await this.#handle(runId, ref);
@@ -255,6 +309,18 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       MANAGED_TASK_ACTIONS.some((action) => invocation.capabilityRef === `execution.task.${action}`)
     );
   }
+  #codingTool(call: RuntimeToolInvocation) {
+    if (
+      this.#options.publicSearch &&
+      call.capabilityRef === `${this.#options.publicSearch.capabilityRef}.web_search`
+    )
+      return "web_search" as const;
+    const coding = this.#options.coding;
+    return coding?.enabledTools.find(
+      (tool) => call.capabilityRef === `${coding.capabilityRef}.${tool}`,
+    );
+  }
+
   async preflight(value: RuntimeToolInvocation) {
     const invocation = await this.#taskStart(value);
     if (this.#isTaskManagement(invocation)) {
@@ -268,7 +334,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (invocation.capabilityHandleRef === null) {
       await this.#options.assertRunActive(invocation.runId);
       const valid =
-        this.#exposed.has(invocation.runId) && invocation.capabilityRef === "host.file.read";
+        this.#exposed.has(invocation.runId) &&
+        ((invocation.capabilityRef === "host.file.read" &&
+          this.#options.fileReadEnabled !== false) ||
+          this.#codingTool(invocation) !== undefined);
       return {
         allowed: valid && this.#options.fileRead !== undefined,
         permissionDecisionRef: `tool-workflow:${digest([invocation.runId, invocation.toolCallId])}`,
@@ -335,18 +404,33 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
     const result =
       invocation.capabilityHandleRef === null && this.#options.fileRead
-        ? this.#executeFileRead(invocation, key)
+        ? this.#executeRequest(invocation, key)
         : this.#execute(invocation, key, fingerprint);
     this.#inFlight.set(key, { fingerprint: attemptFingerprint, result });
     void result.finally(() => this.#inFlight.delete(key)).catch(() => undefined);
     return result;
   }
 
-  async #executeFileRead(invocation: RuntimeToolInvocation, key: string) {
+  async #executeRequest(invocation: RuntimeToolInvocation, key: string) {
     if (!this.#exposed.has(invocation.runId) || !this.#options.fileRead) reject();
-    const workflow = new ProductionFileReadWorkflow(this.#options.fileRead);
+    const coding = this.#codingTool(invocation);
+    if (coding)
+      return executeProductionCodingRequest(
+        invocation,
+        coding,
+        this.#options.fileRead,
+        this.#workflowContext(invocation, key),
+      );
+    return new ProductionFileReadWorkflow(this.#options.fileRead).execute(
+      invocation,
+      this.#workflowContext(invocation, key),
+    );
+  }
+
+  #workflowContext(invocation: RuntimeToolInvocation, key: string): FileReadExecutionContext {
+    if (!this.#exposed.has(invocation.runId) || !this.#options.fileRead) reject();
     const operationKey = (suffix: string) => `runtime-file-read:${key}:${suffix}`;
-    return workflow.execute(invocation, {
+    return {
       ownerId: this.#options.ownerId,
       agentId: this.#options.agentId,
       now: () => this.#options.clock.now(),
@@ -362,6 +446,16 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         return record ? this.#readJson(record.payloadRef) : undefined;
       },
       save: async (suffix, value) => {
+        // A resumed request reuses the original frozen record. Recommitting
+        // a new timestamp or lease under its operation key is a durable conflict.
+        // The workflow compares the returned identity before granting any effect.
+        const existing = await this.#options.artifacts.lookup({
+          runId: invocation.runId,
+          purpose: "trace",
+          operationKey: operationKey(suffix),
+        });
+        if (existing)
+          return { ref: existing.payloadRef, value: await this.#readJson(existing.payloadRef) };
         const saved = await this.#writeJson(invocation, operationKey(suffix), value);
         return { ref: saved.ref, value: await this.#readJson(saved.ref) };
       },
@@ -399,7 +493,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           invocation,
         );
       },
-    });
+    };
   }
 
   async #handle(
@@ -493,11 +587,25 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       await this.#validate(invocation, internal);
       return replay;
     }
+    const maximum = await this.#options.maximumResourceCeiling?.(
+      handle.capabilityRef,
+      handle.capabilityVersion,
+    );
+    const configured = this.#options.ceiling;
+    const ceiling = maximum
+      ? {
+          maxWallTimeMs: Math.min(configured.maxWallTimeMs, maximum.maxWallTimeMs),
+          maxCpuTimeMs: Math.min(configured.maxCpuTimeMs, maximum.maxCpuTimeMs),
+          maxMemoryBytes: Math.min(configured.maxMemoryBytes, maximum.maxMemoryBytes),
+          maxOutputBytes: Math.min(configured.maxOutputBytes, maximum.maxOutputBytes),
+          maxProgressEvents: Math.min(configured.maxProgressEvents, maximum.maxProgressEvents),
+        }
+      : configured;
     const now = this.#options.clock.now();
     const deadlineAt = new Date(
       Math.min(
         Date.parse(handle.expiresAt),
-        Date.parse(now) + this.#options.ceiling.maxWallTimeMs,
+        Date.parse(now) + ceiling.maxWallTimeMs,
         invocation.executionDeadlineAt === undefined
           ? Number.POSITIVE_INFINITY
           : Date.parse(invocation.executionDeadlineAt),
@@ -531,7 +639,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         capabilityHandleRef: handle.ref,
         delegatedContextRefs: [...handle.delegatedContextRefs],
         secretRefs: [...handle.secretRefs],
-        resourceCeiling: this.#options.ceiling,
+        resourceCeiling: ceiling,
         requestedAt: now,
         deadlineAt,
       },
@@ -554,7 +662,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       scope,
       authority: this.#options.peer(),
       dataClassification: invocation.dataClassification,
-      resourceCeiling: this.#options.ceiling,
+      resourceCeiling: ceiling,
       deadlineAt,
       capabilityHandleRefs: [handle.ref],
       delegatedContextRefs: [...handle.delegatedContextRefs],
@@ -594,6 +702,27 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             )
               continue;
             await this.#validate(invocation, internal);
+            let completion = event.type === "work.result" ? event.payload : undefined;
+            if (completion && this.#options.completeSandboxToolResult) {
+              const verified = await this.#options.completeSandboxToolResult(
+                { runId: invocation.runId, invocationId: request.messageId },
+                {
+                  assertDisclosure: () => this.#assertDisclosure(invocation, key, internal),
+                  saveReceipt: async (value) => {
+                    await this.#writeJson(invocation, `runtime-sandbox-delivery:${key}`, value);
+                  },
+                },
+              );
+              if (verified !== null)
+                completion = {
+                  ...completion,
+                  ...(verified ?? {
+                    outcome: "result_unknown" as const,
+                    outputRef: null,
+                    errorCode: null,
+                  }),
+                };
+            }
             if (event.type === "work.cancelled") {
               outcome = {
                 outcome: "failed",
@@ -602,8 +731,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 externalActionId: null,
                 modelContent: "操作已取消。",
               };
-            } else if (event.payload.outcome === "succeeded") {
-              if (!event.payload.outputRef) throw new Error("WORKER_OUTPUT_MISSING");
+            } else if (completion?.outcome === "succeeded") {
+              if (!completion.outputRef) throw new Error("WORKER_OUTPUT_MISSING");
               await this.#assertDisclosure(invocation, key, internal);
               const observed = await this.#options.results.lookupOutput({
                 handleRef: handle.ref,
@@ -611,7 +740,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 authority: this.#options.authority(),
                 now: this.#options.clock.now(),
               });
-              if (!observed || observed.payloadRef !== event.payload.outputRef)
+              if (!observed || observed.payloadRef !== completion.outputRef)
                 throw new Error("WORKER_OUTPUT_OBSERVATION_MISSING");
               const payload = await this.#options.payloads.get(observed.payloadRef);
               if (
@@ -625,7 +754,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 agentId: this.#options.agentId,
                 payload,
               });
-              if (bytes.byteLength > this.#options.ceiling.maxOutputBytes)
+              if (bytes.byteLength > ceiling.maxOutputBytes)
                 throw new Error("WORKER_OUTPUT_LIMIT_EXCEEDED");
               outcome = {
                 outcome: "succeeded",
@@ -636,10 +765,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
               };
             } else {
               outcome = {
-                outcome: event.payload.outcome,
+                outcome: completion?.outcome ?? "result_unknown",
                 resultRef: null,
-                errorCode: event.payload.errorCode,
-                externalActionId: event.payload.externalActionId,
+                errorCode: completion?.errorCode ?? null,
+                externalActionId: completion?.externalActionId ?? null,
                 modelContent: "操作未确认成功。",
               };
             }

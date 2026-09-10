@@ -57,7 +57,9 @@ export function createProductionRunPolicy(options: {
         ownerId: source.ownerId,
         agentId: source.agentId,
         ref: options.ids.next("run-system-instruction"),
-        plaintext: new TextEncoder().encode(policy.systemInstruction),
+        plaintext: new TextEncoder().encode(
+          `${policy.systemInstruction}\n\n本轮请求时间（ISO 8601）：${source.occurredAt}。涉及“今天”或最新信息时，根据这个时间使用真实查询，并核对来源日期。`,
+        ),
         dataClassification: source.dataClassification,
         contentType: "text/plain",
         createdAt: options.clock.now(),

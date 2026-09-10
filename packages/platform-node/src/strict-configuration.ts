@@ -250,6 +250,7 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
             "name",
             "api",
             "reasoning",
+            "reasoningRequired",
             "input",
             "contextWindow",
             "maxTokens",
@@ -304,6 +305,9 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     name: string(input["name"], `${field}.name`),
     api: "openai-completions",
     reasoning: boolean(input["reasoning"], `${field}.reasoning`),
+    ...(input["reasoningRequired"] === undefined
+      ? {}
+      : { reasoningRequired: boolean(input["reasoningRequired"], `${field}.reasoningRequired`) }),
     input: inputModalities(input["input"], `${field}.input`),
     contextWindow: integer(
       input["contextWindow"],
@@ -316,6 +320,9 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       ? {}
       : { providerRouting: providerRouting(input["providerRouting"], `${field}.providerRouting`) }),
   };
+  if (descriptor.reasoningRequired && !descriptor.reasoning) {
+    throw invalid(`${field}.reasoningRequired`, "requires a reasoning-capable model");
+  }
   if (role === "fallback") {
     if (
       descriptor.allowedDataClassifications.length !== 1 ||
@@ -670,6 +677,27 @@ function parseFileReadRoute(value: unknown): NonNullable<RunPolicyConfiguration[
   });
 }
 
+function parseCodingRoute(value: unknown): NonNullable<RunPolicyConfiguration["coding"]> {
+  const input = record(value, "configuration.runPolicy.coding");
+  const { enabledTools, ...route } = input;
+  if (
+    !Array.isArray(enabledTools) ||
+    enabledTools.length === 0 ||
+    new Set(enabledTools).size !== enabledTools.length ||
+    enabledTools.some(
+      (tool) => !["read", "write", "edit", "bash", "find", "grep", "ls"].includes(tool),
+    )
+  )
+    throw invalid(
+      "configuration.runPolicy.coding.enabledTools",
+      "must select distinct installed Pi tools",
+    );
+  return {
+    ...parseFileReadRoute(route),
+    enabledTools: enabledTools as NonNullable<RunPolicyConfiguration["coding"]>["enabledTools"],
+  };
+}
+
 function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   const input = record(value, "configuration.runPolicy");
   rejectUnknown(
@@ -681,6 +709,8 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "maxSelectedMemories",
       "maxMemoryClassification",
       "fileRead",
+      "coding",
+      "publicSearch",
     ],
     "configuration.runPolicy",
   );
@@ -692,6 +722,10 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     throw invalid("configuration.runPolicy.systemInstruction", "must not exceed 16384 bytes");
   const memoryLimit = integer(input["memoryLimit"], "configuration.runPolicy.memoryLimit", 1, 1000);
   return Object.freeze({
+    ...(input["publicSearch"] === undefined
+      ? {}
+      : { publicSearch: parseFileReadRoute(input["publicSearch"]) }),
+    ...(input["coding"] === undefined ? {} : { coding: parseCodingRoute(input["coding"]) }),
     ...(input["fileRead"] === undefined ? {} : { fileRead: parseFileReadRoute(input["fileRead"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,

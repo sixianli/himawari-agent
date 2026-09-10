@@ -1,11 +1,11 @@
 import { appendFile, mkdir, rename } from "node:fs/promises";
 import {
-  sandboxExecutionFactsSchema,
   type SandboxOperationBinding,
+  sandboxExecutionFactsSchema,
 } from "@himawari-agent/execution-contracts";
-import { afterEach, expect, it } from "vitest";
-import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
+import { afterEach, expect, it, vi } from "vitest";
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
+import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { AGENT_ID, OWNER_ID, T1, T2 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -42,6 +42,9 @@ it.each(["read", "edit", "write", "search", "bash", "background"])(
       invocation: f.input,
     });
     if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
+    // SRT adds proxy sockets below the job directory on the production host.
+    const socketPath = `/data/hermes/himawari/jobs/${admitted.admission.plan.identity.jobId}/claude-socks-0123456789abcdef.sock`;
+    expect(Buffer.byteLength(socketPath)).toBeLessThan(108);
     const send = await f.connect(admitted.admission.plan.identity);
     const scope = (await send({ kind: "resolve" })).resolvedScope;
     if (!scope) throw new Error("scope missing");
@@ -240,4 +243,78 @@ it("manages the original task and live output through SQLite and authenticated U
   expect((await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID))[0]?.uses).toBe(1);
   await f.repository.authorizationStore().revokeGrant(f.input.authorizationRef ?? "", T1, "test");
   await expect(f.services.managedTasks.execute(call)).rejects.toThrow();
+});
+
+it("stops foreground records and does not report reserved environments as released", async () => {
+  const f = await productionSandboxScope(descriptor("read"));
+  cleanups.push(f.close);
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("expected v2");
+  const admitted = await f.services.brokerV2.preparations.reserve({
+    ...prepared,
+    invocation: f.input,
+  });
+  if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
+  expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: false });
+  const { plan, reservation } = admitted.admission;
+  const base = sandboxV2Admission(f.f).facts;
+  const environment = {
+    ...base.environment,
+    creator: plan.identity,
+    environmentId: plan.environmentId,
+    mode: plan.mode,
+    resourceRef: reservation.resourceRef,
+    scopeDigest: plan.binding.scopeDigest,
+    authorizationRef: plan.authorizationRef,
+    backendRef: plan.backendRef,
+    deadlineAt: plan.effectiveDeadlineAt,
+    workspaceConflictRefs: reservation.workspaceConflictRefs,
+  };
+  const facts = sandboxExecutionFactsSchema.parse({
+    ...base,
+    environment,
+    resource: {
+      ...base.resource,
+      creator: plan.identity,
+      environmentId: plan.environmentId,
+      scopeDigest: plan.binding.scopeDigest,
+      resourceRef: reservation.resourceRef,
+      status: { kind: "foreground" },
+      sequence: 2,
+    },
+  });
+  const bound = await f.services.brokerV2.preparations.bindAndStart({
+    identity: plan.identity,
+    expectedSequence: 1,
+    facts,
+    authority: f.input.authority,
+    now: T1,
+  });
+
+  const reconcile = vi.spyOn(f.services.brokerV2.reconciliation, "reconcile").mockResolvedValue({
+    applied: true,
+    record: {
+      ...bound.record,
+      facts: {
+        ...bound.record.facts,
+        resource: {
+          ...bound.record.facts.resource,
+          supervision: "released",
+          cleanup: "confirmed",
+          evidence: {
+            ref: "release",
+            digest: "a".repeat(64),
+            profileRef: plan.binding.profileRef,
+            qualificationRef: plan.binding.qualificationRef,
+            validUntil: T2,
+            subject: { kind: "local_process", processIdentityRef: "original-process" },
+          },
+        },
+      },
+    },
+  });
+  expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: true });
+  expect(reconcile).toHaveBeenCalledWith(
+    expect.objectContaining({ identity: plan.identity, action: "stop" }),
+  );
 });

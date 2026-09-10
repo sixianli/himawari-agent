@@ -1500,6 +1500,43 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(JSON.stringify(events)).not.toContain("unsafe raw failure");
   });
 
+  it.each([
+    ["429: provider overloaded PRIVATE_PROVIDER_DATA", "PI_MODEL_RATE_LIMITED"],
+    ["401: PRIVATE_CREDENTIAL", "PI_MODEL_AUTH_FAILED"],
+    ["503: provider unavailable", "PI_MODEL_UNAVAILABLE"],
+    ["arbitrary message containing 429", "PI_MODEL_ERROR"],
+  ])(
+    "classifies provider failure without exposing raw data: %s",
+    async (errorMessage, errorCode) => {
+      const adapter = createAdapter(
+        new RecordingProjection(),
+        new RecordingRuntimeTools(),
+        fakeSessionFactory((emit) => {
+          emit({ type: "agent_start" });
+          emit({
+            type: "message_end",
+            message: {
+              role: "assistant",
+              content: [],
+              stopReason: "error",
+              errorMessage,
+            },
+          });
+          emit({ type: "agent_settled" });
+        }),
+      );
+      const events = await collect(adapter.run(request));
+      expect(events).toContainEqual({
+        type: "runtime.failed",
+        runId: request.runId,
+        errorCode,
+        occurredAt: NOW,
+      });
+      expect(JSON.stringify(events)).not.toContain("PRIVATE_");
+      expect(events.some(({ type }) => type === "runtime.completed")).toBe(false);
+    },
+  );
+
   it("redacts machine-secret-shaped Pi observations before product capture", async () => {
     const projection = new RecordingProjection();
     const secretShapedOutput = ["password", "x".repeat(12)].join("=");
@@ -1783,6 +1820,15 @@ it.each(["approved", "denied", "effect_without_receipt"] as const)(
       }),
     );
     expect(effects).toBe(resolution === "denied" ? 0 : 1);
+    expect(projection.captures).toContainEqual(
+      expect.objectContaining({
+        kind: "tool_result",
+        value: expect.objectContaining({
+          toolCallId: "controlled-call",
+          isError: resolution !== "approved",
+        }),
+      }),
+    );
     if (resolution === "effect_without_receipt") {
       expect(resumed.at(-1)).toMatchObject({ type: "runtime.result_unknown" });
       expect(slots).toEqual([1]);

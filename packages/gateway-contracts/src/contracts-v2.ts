@@ -723,7 +723,8 @@ export const approvalSnapshotSchema = object({
       capabilityRef: machineString,
       capabilityVersion: machineString,
       operation: machineString,
-      targetRefs: array(machineString),
+      // Targets include canonical paths and model identities, not just IDs.
+      targetRefs: array(boundedString()),
       resourceRefs: array(boundedString()),
       dataClassification: classificationSchema,
       disclosure: enumeration(["none", "same_owner", "named_recipients", "public"]),

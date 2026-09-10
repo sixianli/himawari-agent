@@ -267,7 +267,18 @@ export function runtimeToolFixture(wallTime = 1000) {
       lookup: async (input) => artifacts.get(input.operationKey),
       commit: async (input) => {
         const existing = artifacts.get(input.operationKey);
-        if (existing) return { ref: existing.payloadRef, artifact: existing, replayed: true };
+        if (existing) {
+          if (
+            existing.contentDigest !== input.payload.contentDigest ||
+            existing.contentType !== input.payload.contentType ||
+            existing.dataClassification !== input.payload.dataClassification
+          ) {
+            throw new Error(
+              "Run Payload artifact operation identity conflicts with its existing receipt",
+            );
+          }
+          return { ref: existing.payloadRef, artifact: existing, replayed: true };
+        }
         const artifact: RunPayloadArtifact = {
           ...input,
           ownerId: handle.ownerId,

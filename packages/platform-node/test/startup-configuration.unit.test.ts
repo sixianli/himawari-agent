@@ -174,6 +174,23 @@ describe("strict product configuration", () => {
     expect(parsed.capabilityDeployment).toBeUndefined();
   });
 
+  it("validates an endpoint requiring reasoning without accepting contradictory capabilities", () => {
+    const input = config(path.join(tmpdir(), "himawari-reasoning-config"));
+    const models = input["modelDescriptors"] as Record<string, unknown>[];
+    const primary = models[0];
+    if (!primary) throw new Error("Primary fixture missing");
+    primary["reasoning"] = true;
+    primary["reasoningRequired"] = true;
+    expect(
+      parseProductConfiguration(input, "2026-08-27T00:00:00.000Z").modelDescriptors[0],
+    ).toMatchObject({ reasoningRequired: true });
+    primary["reasoning"] = false;
+    expect(() => parseProductConfiguration(input, "2026-08-27T00:00:00.000Z")).toThrow();
+    primary["reasoning"] = true;
+    primary["reasoningRequired"] = "yes";
+    expect(() => parseProductConfiguration(input, "2026-08-27T00:00:00.000Z")).toThrow();
+  });
+
   it("accepts an optional capability deployment snapshot reference with strict fields", () => {
     const stateRoot = path.join(tmpdir(), "himawari-capability-deployment-config");
     const input = config(stateRoot);

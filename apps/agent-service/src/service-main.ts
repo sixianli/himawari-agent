@@ -95,7 +95,6 @@ export const AGENT_SERVICE_ERROR_CODES = Object.freeze({
 
 const AUTHORITY_LEASE_DURATION_MS = 30_000;
 const AUTHORITY_RENEWAL_INTERVAL_MS = 10_000;
-const STARTUP_WAIT_TIMEOUT_MS = 30_000;
 const STARTUP_RETRY_DELAY_MS = 50;
 const MAXIMUM_BODY_BYTES = 65_536;
 const MAXIMUM_PAYLOAD_BYTES = 48 * 1024;
@@ -264,7 +263,7 @@ async function waitForWorkerBootBinding(input: {
   readonly authority: AgentAuthorityRecord;
   readonly isAuthorityActive?: () => boolean;
 }): Promise<Awaited<ReturnType<typeof readWorkerServiceBootBinding>>> {
-  const deadline = Date.now() + STARTUP_WAIT_TIMEOUT_MS;
+  const deadline = Date.now() + input.configuration.deadlines.workerRequestMs;
   for (;;) {
     if (input.isAuthorityActive && !input.isAuthorityActive()) {
       throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
@@ -299,9 +298,10 @@ function retryableWorkerStartupError(error: unknown): boolean {
 
 async function connectWorkerWithRetry(
   client: AgentServiceExecutionClient,
+  timeoutMs: number,
   isAuthorityActive?: () => boolean,
 ): Promise<Awaited<ReturnType<AgentServiceExecutionClient["start"]>>> {
-  const deadline = Date.now() + STARTUP_WAIT_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
   for (;;) {
     if (isAuthorityActive && !isAuthorityActive()) {
       throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
@@ -710,8 +710,11 @@ export async function runAgentService(
         return `${scope}:${idSequence}:${randomUUID()}`;
       },
     });
+    // Initial handshake includes the Worker's complete installed-byte checks.
+    // Respect its configured request budget on slower installation volumes.
     const handshake = await connectWorkerWithRetry(
       worker,
+      configuration.deadlines.workerRequestMs,
       () => authorityLifecycle?.isAccepting() === true && !authorityLost,
     );
     workerSandboxSupport = handshake.payload.supportedExecutions;
@@ -799,10 +802,17 @@ export async function runAgentService(
         resolveAuthorityLoss?.();
       };
       const tools = new ProductionRuntimeTools({
+        fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
+        ...(configuration.runPolicy?.publicSearch
+          ? { publicSearch: configuration.runPolicy.publicSearch }
+          : {}),
+        ...(configuration.runPolicy?.coding ? { coding: configuration.runPolicy.coding } : {}),
         fileRead: fileReadServices,
         ...(sandboxServices
           ? {
               sandbox: sandboxServices.runtime,
+              completeSandboxToolResult: sandboxServices.completeToolResult,
+              maximumResourceCeiling: sandboxServices.maximumResourceCeiling,
               managedTasks: sandboxServices.managedTasks,
               taskHandle: sandboxServices.taskHandle,
             }

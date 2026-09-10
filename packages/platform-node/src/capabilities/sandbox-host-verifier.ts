@@ -30,17 +30,28 @@ export async function digestSandboxRuntime(root: string): Promise<string> {
   const visit = async (directory: string, prefix: string) => {
     const before = await checkedPath(directory, true);
     const entries = await readdir(directory, { withFileTypes: true });
-    for (const entry of entries) {
-      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
-      const filename = path.join(directory, entry.name);
-      if (entry.isDirectory()) await visit(filename, relative);
-      else {
-        const metadata = await checkedPath(filename, false);
-        const sha256 = (await digestRegularFile(filename)).slice(7);
-        const after = await checkedPath(filename, false);
-        if (!sameFile(metadata, after)) throw new Error("SANDBOX_HOST_CHANGED");
-        files.push({ path: relative, sha256, bytes: metadata.size, mode: metadata.mode & 0o777 });
-      }
+    // Bound concurrent file reads across the entire walk: directories remain
+    // sequential. Verify every byte and the same before/after metadata without
+    // turning filesystem latency into one round trip per file.
+    const leaves = entries.filter((entry) => !entry.isDirectory());
+    for (let offset = 0; offset < leaves.length; offset += 8) {
+      await Promise.all(
+        leaves.slice(offset, offset + 8).map(async (entry) => {
+          const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+          const filename = path.join(directory, entry.name);
+          const metadata = await checkedPath(filename, false);
+          const sha256 = (await digestRegularFile(filename)).slice(7);
+          const after = await checkedPath(filename, false);
+          if (!sameFile(metadata, after)) throw new Error("SANDBOX_HOST_CHANGED");
+          files.push({ path: relative, sha256, bytes: metadata.size, mode: metadata.mode & 0o777 });
+        }),
+      );
+    }
+    for (const entry of entries.filter((entry) => entry.isDirectory())) {
+      await visit(
+        path.join(directory, entry.name),
+        prefix ? `${prefix}/${entry.name}` : entry.name,
+      );
     }
     if (!sameFile(before, await checkedPath(directory, true)))
       throw new Error("SANDBOX_HOST_CHANGED");

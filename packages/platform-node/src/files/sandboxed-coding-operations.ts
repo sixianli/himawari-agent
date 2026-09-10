@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import type {
@@ -18,6 +19,11 @@ export async function createSandboxedCodingOperations(input: {
   readonly binaryDirectory: string;
   readonly maxOutputBytes: number;
   readonly signal?: AbortSignal;
+  readonly onVerifiedWrite?: (proof: {
+    readonly path: string;
+    readonly contentDigest: string;
+    readonly byteLength: number;
+  }) => void;
 }): Promise<GovernedCodingOperationsPort> {
   const platform = new ConstrainedHostFileSystem();
   const grant = structuredClone(input.grant);
@@ -99,6 +105,11 @@ export async function createSandboxedCodingOperations(input: {
       else await platform.createExclusive(grant, name, bytes);
       const observed = await platform.read(grant, name, Math.max(1, bytes.length));
       if (!Buffer.from(observed).equals(bytes)) throw new Error("PI_WRITE_VERIFICATION_FAILED");
+      input.onVerifiedWrite?.({
+        path: absolute,
+        contentDigest: createHash("sha256").update(observed).digest("hex"),
+        byteLength: observed.byteLength,
+      });
     },
     async executeCommand(command) {
       check();

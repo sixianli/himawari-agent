@@ -590,6 +590,7 @@ describe("production file read workflow through the Worker transport", () => {
     f.permitted.delete("read");
     expect(await (await f.open()).execute(f.call)).toMatchObject({ outcome: "awaiting_approval" });
     f.permitted.add("read");
+    f.setTime(new Date(Date.parse(now) + 1000).toISOString());
     if (!f.call.context) throw new Error("Expected trusted runtime context");
     const resumed = {
       ...f.call,

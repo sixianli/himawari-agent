@@ -15,14 +15,16 @@ import {
   PI_RUNNER_CONTRACT,
   piCodingToolNameSchema,
   piRunnerInputSchema,
-  type SandboxTaskTermination,
   type SandboxExecutionBrokerCommand,
   type SandboxExecutionPlanV2,
+  type SandboxTaskTermination,
   sandboxExecutionFactsSchema,
 } from "@himawari-agent/execution-contracts";
 import {
   CapabilityDeploymentSnapshotLoader,
+  revalidateCapabilityDeploymentSnapshot,
   verifySandboxHost,
+  verifyPiWriteEvidence,
 } from "@himawari-agent/platform-node";
 import {
   prepareJobPolicy,
@@ -62,8 +64,17 @@ export class ProductionSandboxExecutionV2 {
   private readonly options: Options;
   private readonly entries = new Map<string, Entry>();
   private closed = false;
+  private readonly admitted: ReturnType<CapabilityDeploymentSnapshotLoader["load"]>;
   constructor(options: Options) {
     this.options = options;
+    const deployment = options.configuration.capabilityDeployment;
+    this.admitted = deployment
+      ? new CapabilityDeploymentSnapshotLoader({
+          ...deployment,
+          now: () => options.clock.now(),
+        }).load()
+      : Promise.reject(new Error("SANDBOX_DEPLOYMENT_UNAVAILABLE"));
+    void this.admitted.catch(() => {});
   }
   handles(id: string) {
     return this.entries.has(id);
@@ -115,10 +126,7 @@ export class ProductionSandboxExecutionV2 {
   private async hostBinding(plan: SandboxExecutionPlanV2) {
     const deployment = this.options.configuration.capabilityDeployment;
     if (!deployment) throw new Error("SANDBOX_DEPLOYMENT_UNAVAILABLE");
-    const loaded = await new CapabilityDeploymentSnapshotLoader({
-      ...deployment,
-      now: () => this.options.clock.now(),
-    }).load();
+    const loaded = await revalidateCapabilityDeploymentSnapshot(await this.admitted);
     const entry = loaded.snapshot.capabilities.find(
       (item) =>
         item.manifest.ref === plan.capabilityRef &&
@@ -544,8 +552,33 @@ export class ProductionSandboxExecutionV2 {
       };
       const { evidence: _evidence, ...resourceFields } = latest.facts
         .resource as typeof latest.facts.resource & { evidence?: unknown };
+      if (knownExit && result.exitCode === 0 && plan.operationContract.kind === "verified_effect")
+        verifyPiWriteEvidence({
+          bytes: result.stdout,
+          parameters: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input)),
+          plan,
+          scope: resolved.scope,
+          workspace: root.canonicalPath,
+        });
       const observation = sandboxExecutionFactsSchema.parse({
         ...latest.facts,
+        effect:
+          knownExit && plan.operationContract.kind === "fixed_read"
+            ? { kind: "not_applicable" }
+            : knownExit && plan.operationContract.kind === "command"
+              ? { kind: "not_asserted" }
+              : knownExit &&
+                  result.exitCode === 0 &&
+                  plan.operationContract.kind === "verified_effect"
+                ? {
+                    kind: "verified",
+                    verifierRef: plan.operationContract.verifierRef,
+                    verifierVersion: plan.operationContract.verifierVersion,
+                    targetRef: plan.operationContract.targetRef,
+                    evidence: { ref: output.ref, digest: output.digest },
+                    occurredAt: this.options.clock.now(),
+                  }
+                : latest.facts.effect,
         result:
           latest.facts.result?.kind === "started"
             ? latest.facts.result
