@@ -123,6 +123,8 @@ export const browserExternalPackages = new Set([
   "react",
   "react-dom",
   "react-intl",
+  // Browser rendering only: no HTML injection, network transport, or host I/O.
+  "marked",
   "vite",
   "vitest",
 ]);

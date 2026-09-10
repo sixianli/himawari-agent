@@ -51,14 +51,17 @@ describe("runtime-specific import negative probes", () => {
     },
   );
 
-  it.each(["react", "react-dom/client", "react-intl", "@himawari-agent/gateway-contracts"])(
-    "allows %s in the browser-only workspace",
-    (specifier) => {
-      expect(
-        isBrowserImportAllowed("@himawari-agent/control-center", specifier, workspaceNames),
-      ).toBe(true);
-    },
-  );
+  it.each([
+    "react",
+    "react-dom/client",
+    "react-intl",
+    "marked",
+    "@himawari-agent/gateway-contracts",
+  ])("allows %s in the browser-only workspace", (specifier) => {
+    expect(
+      isBrowserImportAllowed("@himawari-agent/control-center", specifier, workspaceNames),
+    ).toBe(true);
+  });
 
   it("keeps SRT dependencies owned by runtime-sandbox", () => {
     expect(srtDependencyOwner).toBe("@himawari-agent/runtime-sandbox");

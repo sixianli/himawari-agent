@@ -13,6 +13,7 @@ import {
   type RunSummary,
 } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
+import { AssistantMarkdown } from "./assistant-markdown.js";
 import { HimawariBrand } from "./brand.js";
 import { ActionButton } from "./primitives.js";
 
@@ -237,12 +238,13 @@ export function ChatHistory({
                   ) : null}
                   {agentMessages.length ? (
                     agentMessages.map((item) => (
-                      <pre key={item.messageId} className="thread-message-content">
-                        {contentByRef[item.contentRef] ?? "…"}
-                      </pre>
+                      <AssistantMarkdown
+                        key={item.messageId}
+                        text={contentByRef[item.contentRef] ?? "…"}
+                      />
                     ))
                   ) : partial ? (
-                    <pre className="thread-message-content">{partial}</pre>
+                    <AssistantMarkdown text={partial} />
                   ) : null}
                   <div className="message-actions">
                     {agentMessages.map((item) =>

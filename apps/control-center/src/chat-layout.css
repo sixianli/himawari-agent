@@ -488,6 +488,62 @@
   max-width: 82%;
   margin-left: auto;
 }
+.assistant-markdown {
+  white-space: normal;
+}
+.assistant-markdown > :first-child {
+  margin-top: 0;
+}
+.assistant-markdown > :last-child {
+  margin-bottom: 0;
+}
+.assistant-markdown p {
+  margin: 0.8em 0;
+}
+.assistant-markdown :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 1.1em;
+  line-height: 1.5;
+  margin: 1em 0 0.5em;
+}
+.thread-message .assistant-markdown a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.assistant-markdown pre {
+  white-space: pre;
+  overflow: auto;
+  max-width: 100%;
+  padding: 12px;
+  background: var(--input);
+  border-radius: 8px;
+}
+.assistant-markdown code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+.assistant-markdown :not(pre) > code {
+  background: var(--input);
+  padding: 0.1em 0.25em;
+  border-radius: 4px;
+}
+.assistant-markdown blockquote {
+  margin-inline: 0;
+  padding-inline-start: 1em;
+  border-inline-start: 2px solid var(--accent);
+}
+.markdown-table {
+  max-width: 100%;
+  overflow: auto;
+}
+.markdown-table table {
+  border-collapse: collapse;
+}
+.markdown-table :is(td, th) {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  text-align: start;
+}
 .thread-message-owner header {
   display: none;
 }
