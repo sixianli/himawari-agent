@@ -329,6 +329,90 @@ describe("production Worker composition", () => {
     });
   });
 
+  it("checks an SRT program host without requiring a legacy process binding", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "himawari-worker-composition-srt-"));
+    roots.push(root);
+    const entry = processEntry();
+    const deployment = await snapshot(root, [
+      {
+        ...entry,
+        binding: {
+          kind: "sandbox",
+          value: {
+            schemaVersion: "sandbox-host-binding.v1",
+            capabilityRef: entry.manifest.ref,
+            capabilityVersion: entry.manifest.version,
+            artifactDigest: entry.manifest.integrity,
+            hostId: "host:fixture",
+            profileRef: "host-readonly.v1",
+            runtimeRoot: "/opt/runtime",
+            runtimeDigest: "d".repeat(64),
+            executable: { path: "/usr/bin/node", sha256: "a".repeat(64) },
+            runner: { path: "/opt/runtime/runner.js", sha256: "e".repeat(64) },
+            privateRoot: "/var/private-jobs",
+            roots: [
+              {
+                canonicalRootId: "root:fixture",
+                canonicalPath: "/work/project",
+                device: "1",
+                inode: "2",
+              },
+            ],
+            readOnlyToolchainPaths: ["/usr/bin"],
+            protectedPaths: [],
+            allowedDomains: [],
+            maximumResourceCeiling: CEILING,
+          },
+        },
+        qualification: {
+          ...entry.qualification,
+          runtimeIdentity: "srt:0.0.75",
+          enforcement: { ...entry.qualification.enforcement, resourceCeilings: false },
+          sandbox: {
+            schemaVersion: "sandbox-runtime-qualification.v1",
+            qualificationRef: "qualification:fixture",
+            hostId: "host:fixture",
+            profileRef: "host-readonly.v1",
+            srtVersion: "0.0.75",
+            platform: "linux",
+            architecture: "x64",
+            osRelease: "deliberately-unqualified-kernel",
+            runtimeDigest: "d".repeat(64),
+            runnerDigest: "e".repeat(64),
+            evidenceDigest: "f".repeat(64),
+            resourceMode: "observe_and_stop",
+            terminationMode: "verified_tree",
+            guarantees: [
+              "filesystem_default_deny",
+              "network_allowlist",
+              "clean_environment",
+              "bounded_output",
+              "wall_clock_stop",
+              "resource_observation",
+              "durable_start_admission",
+              "unknown_quarantine",
+              "restart_reconciliation",
+              "task_tree_termination",
+              "worker_crash_cleanup",
+            ],
+            limitations: [],
+          },
+        },
+      },
+    ]);
+    // The real host verifier must still reject the deliberately mismatched host.
+    await expect(
+      createProductionWorkerComposition({
+        configuration: configuration(root, deployment),
+        credential: CREDENTIAL,
+        authority: { authorityEpoch: 2, fencingToken: 3 },
+        agentServiceBootId: "agent-service-boot:composition",
+        platform: "linux",
+        clock: { now: () => NOW },
+      }),
+    ).rejects.toThrow("SANDBOX_HOST_QUALIFICATION_CHANGED");
+  });
+
   it("does not turn an empty signed registry into a ready Worker", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "himawari-worker-composition-empty-"));
     roots.push(root);

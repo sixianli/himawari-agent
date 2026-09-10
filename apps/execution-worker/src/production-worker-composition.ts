@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type {
-  CapabilityManifest,
   CapabilityRuntimeQualification,
   ClockPort,
   ExecutionWorkerService,
@@ -190,10 +189,6 @@ function qualificationMismatch(
   return undefined;
 }
 
-function processManifest(manifest: CapabilityManifest): boolean {
-  return manifest.runtime.kind === "program" || manifest.runtime.kind === "mcp";
-}
-
 function completeDeployment(deployment: LoadedCapabilityDeployment): void {
   const entries = deployment.snapshot.capabilities;
   if (
@@ -325,7 +320,9 @@ function isolationBackend(
       PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.PLATFORM_UNSUPPORTED,
     );
   }
-  const hasProcess = deployment.manifests.some(processManifest);
+  const hasProcess = deployment.snapshot.capabilities.some(
+    (entry) => entry.binding.kind === "process",
+  );
   if (hasProcess && deployment.hostIsolation === undefined) {
     throw new ProductionWorkerCompositionError(
       PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.HOST_ISOLATION_BINDING_REQUIRED,
