@@ -646,6 +646,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         authorityEpoch: configuration.authorityEpoch,
         fencingToken: configuration.fencingToken,
         actorId: authentication.subjectId,
+        sessionId: authentication.sessionId ?? null,
         csrfToken: await issueCsrf(authentication),
         authorizationRef: authentication.authenticationRef,
         recentAuthenticationRef,

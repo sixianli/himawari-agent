@@ -1,7 +1,12 @@
 import type { GatewayV2Event, ThreadGatewayEvent } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it, vi } from "vitest";
 import { ControlCenterBrowserStorage } from "../src/browser-storage.js";
-import { GatewayClient, loadRuntimeConfiguration, safeBrowserLog } from "../src/gateway-client.js";
+import {
+  createBrowserSession,
+  GatewayClient,
+  loadRuntimeConfiguration,
+  safeBrowserLog,
+} from "../src/gateway-client.js";
 import {
   commandMessage,
   queryMessage,
@@ -132,6 +137,7 @@ describe("typed browser Gateway client", () => {
         new Response(
           JSON.stringify({
             ...configuration,
+            sessionId: "session:verified-browser",
             authorizationRef: "authentication:owner-session-01",
             recentAuthenticationRef: "authentication:owner-session-01",
           }),
@@ -140,11 +146,26 @@ describe("typed browser Gateway client", () => {
     );
 
     expect(loaded).toMatchObject({
+      sessionId: "session:verified-browser",
       authorizationRef: "authentication:owner-session-01",
       recentAuthenticationRef: "authentication:owner-session-01",
     });
     expect(JSON.stringify(loaded)).not.toContain("password");
     expect(JSON.stringify(loaded)).not.toContain("accessToken");
+  });
+
+  it("rejects malformed product session identity from browser configuration", async () => {
+    await expect(
+      loadRuntimeConfiguration(
+        (async () =>
+          new Response(
+            JSON.stringify({
+              ...configuration,
+              sessionId: { token: "not-a-session-id" },
+            }),
+          )) as typeof fetch,
+      ),
+    ).rejects.toThrow("CONTROL_CENTER_CONFIGURATION_INVALID");
   });
 
   it("strictly serializes commands, keeps one idempotency key and reports replay", async () => {
@@ -540,6 +561,7 @@ describe("browser storage and SSE recovery", () => {
       EventSourceLike & { listeners: Map<string, (event: MessageEvent<string>) => void> }
     > = [];
     const callbacks: string[] = [];
+    const connectionStates: string[] = [];
     const synchronizer = new ThreadSseSynchronizer({
       configuration,
       storage,
@@ -563,9 +585,13 @@ describe("browser storage and SSE recovery", () => {
       },
       onCommittedEvent: () => callbacks.push("event"),
       onSnapshotRequired: () => callbacks.push("snapshot"),
+      onConnectionState: (state) => connectionStates.push(state),
       log: vi.fn(),
     });
     synchronizer.start();
+    expect(connectionStates).toEqual(["connecting"]);
+    sources[0]?.onopen?.(new Event("open"));
+    expect(connectionStates).toEqual(["connecting", "connected"]);
     sources[0]?.onmessage?.({ data: JSON.stringify(threadEvent()) } as MessageEvent<string>);
     sources[0]?.listeners.get("thread.snapshot_required")?.(
       new MessageEvent("thread.snapshot_required", { data: "{}" }),
@@ -583,5 +609,32 @@ describe("browser storage and SSE recovery", () => {
     expect(callbacks).toEqual(["event", "snapshot"]);
     expect(storage.readThreadLastCursor()).toBeNull();
     synchronizer.stop();
+  });
+});
+
+describe("browser identity session", () => {
+  it("creates the session through the authenticated same-origin route", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response("{}", { status: 201 }));
+    await createBrowserSession(fetch, "My browser");
+    expect(fetch).toHaveBeenCalledExactlyOnceWith("/api/identity/v1/sessions", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ deviceLabel: "My browser" }),
+    });
+  });
+  it("preserves rejected identity and does not retry automatically", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: "IDENTITY_SUBJECT_UNBOUND" } }), {
+        status: 403,
+      }),
+    );
+    await expect(createBrowserSession(fetch, "My browser")).rejects.toMatchObject({
+      message: "IDENTITY_SUBJECT_UNBOUND",
+      status: 403,
+    });
+    expect(fetch).toHaveBeenCalledOnce();
   });
 });

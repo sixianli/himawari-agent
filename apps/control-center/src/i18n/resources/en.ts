@@ -1,6 +1,9 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "authentication.required": "Sign in to connect this browser",
+  "authentication.signIn": "Sign in to Himawari",
+  "authentication.deviceLabel": "Himawari web browser",
   "app.eyebrow": "HIMAWARI AGENT",
   "app.title": "Control Center",
   "app.skipToMain": "Skip to main content",

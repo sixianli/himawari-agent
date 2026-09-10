@@ -5,7 +5,11 @@ import type {
   ProductSessionRecord,
   SessionDeviceStatePort,
 } from "@himawari-agent/application";
-import { RecentAuthenticationGuard } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  PORT_ERROR_CODES,
+  RecentAuthenticationGuard,
+} from "@himawari-agent/application";
 import {
   createDeviceId,
   createOwnerId,
@@ -609,7 +613,23 @@ describe("Owner bootstrap and product sessions", () => {
 
     current = new Date(NOW.valueOf() + 20_000);
     const active = await sessions.readSession(created.session.id);
-    await sessions.revokeSession(created.session.id, active?.revision ?? -1, current.toISOString());
+    vi.spyOn(sessions, "saveSession").mockImplementationOnce(async () => {
+      await sessions.revokeSession(
+        created.session.id,
+        active?.revision ?? -1,
+        current.toISOString(),
+      );
+      throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "concurrent session revocation");
+    });
+    await expect(
+      service.authenticate({
+        accessAssertion: signed,
+        sessionToken: created.token,
+        method: "GET",
+        path: "/api/gateway/v1/events",
+      }),
+    ).rejects.toMatchObject({ code: IDENTITY_GATEWAY_ERROR_CODES.SESSION_INVALID });
+    expect((await sessions.readSession(created.session.id))?.status).toBe("revoked");
     await expect(
       service.authenticate({
         accessAssertion: signed,

@@ -3,12 +3,12 @@ import {
   type GatewayV2Command,
   type GatewayV2Query,
   type GatewayV2Snapshot,
-  type ThreadGatewayCommand,
-  type ThreadGatewayRequestResult,
-  type ThreadGatewayQuery,
-  type ThreadGatewaySnapshot,
-  gatewayV2MessageSchema,
   gatewayMessageSchema,
+  gatewayV2MessageSchema,
+  type ThreadGatewayCommand,
+  type ThreadGatewayQuery,
+  type ThreadGatewayRequestResult,
+  type ThreadGatewaySnapshot,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 
@@ -33,6 +33,7 @@ export interface ControlCenterRuntimeConfiguration {
   readonly fencingToken: number;
   readonly actorId: string;
   readonly csrfToken: string;
+  readonly sessionId?: string | null;
   readonly authorizationRef?: string | null;
   readonly recentAuthenticationRef?: string | null;
   readonly primaryModel?: {
@@ -48,6 +49,21 @@ export interface ControlCenterRuntimeConfiguration {
     | "sensitive"
     | "restricted"
   )[];
+}
+
+/** Exchange the current verified Access identity for a secure product session. */
+export async function createBrowserSession(
+  fetchImplementation: typeof globalThis.fetch,
+  deviceLabel: string,
+): Promise<void> {
+  await json(
+    await fetchImplementation("/api/identity/v1/sessions", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ deviceLabel }),
+    }),
+  );
 }
 
 export async function loadRuntimeConfiguration(
@@ -70,6 +86,7 @@ export async function loadRuntimeConfiguration(
     readonly fencingToken?: unknown;
     readonly actorId?: unknown;
     readonly csrfToken?: unknown;
+    readonly sessionId?: unknown;
     readonly authorizationRef?: unknown;
     readonly recentAuthenticationRef?: unknown;
     readonly primaryModel?: unknown;
@@ -96,6 +113,15 @@ export async function loadRuntimeConfiguration(
     !Array.isArray(value.primaryModel)
       ? (value.primaryModel as { provider?: unknown; model?: unknown; version?: unknown })
       : null;
+  if (
+    value.sessionId !== undefined &&
+    value.sessionId !== null &&
+    (typeof value.sessionId !== "string" ||
+      value.sessionId.length === 0 ||
+      value.sessionId.length > 128)
+  ) {
+    throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
+  }
   const normalizedPrimary =
     primaryModel &&
     typeof primaryModel.provider === "string" &&

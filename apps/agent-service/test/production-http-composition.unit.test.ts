@@ -1,12 +1,12 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { ProductConfiguration, ThreadCreateInput } from "@himawari-agent/application";
 import {
   actionIntentFingerprint,
   type GovernedActionIntent,
   type GovernedApprovalRequest,
 } from "@himawari-agent/application";
-import type { ProductConfiguration, ThreadCreateInput } from "@himawari-agent/application";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -340,9 +340,23 @@ describe("production HTTP composition", () => {
       expect(configResponse.statusCode).toBe(200);
       const browserConfig = configResponse.json() as {
         readonly csrfToken: string;
+        readonly sessionId: string;
         readonly recentAuthenticationRef: string;
       };
       expect(browserConfig.recentAuthenticationRef).toBe(sessionBody.session.authenticationRef);
+      expect(browserConfig.sessionId).toBe(sessionBody.session.id);
+      const concurrentConfigurations = await Promise.all(
+        Array.from({ length: 12 }, () =>
+          composition.app.inject({
+            method: "GET",
+            url: "/api/control-center/v1/config",
+            headers: requestHeaders(token, cookie),
+          }),
+        ),
+      );
+      expect(concurrentConfigurations.map((response) => response.statusCode)).toEqual(
+        Array(12).fill(200),
+      );
 
       const csrfRejected = await composition.app.inject({
         method: "POST",
@@ -370,6 +384,17 @@ describe("production HTTP composition", () => {
       }
 
       const createResultRef = await upload("payload-create-result", "create-result");
+      expect(await upload("payload-create-result", "create-result")).toBe(createResultRef);
+      const conflictingUpload = await composition.app.inject({
+        method: "POST",
+        url: "/api/payload/v1/text",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": "payload-create-result",
+        },
+        payload: { content: "different-content", dataClassification: "private" },
+      });
+      expect(conflictingUpload.statusCode).toBe(409);
       const createCommand = {
         ...envelope("command", "thread.create"),
         idempotencyKey: "thread-create-production-http",

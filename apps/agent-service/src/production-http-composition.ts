@@ -352,7 +352,7 @@ class ProductionHttpPayloadAdmission implements HttpGatewayPayloadAdmissionPort 
     const payloadRef = `payload:http:${sha256(
       `${input.authentication.authenticationRef}\u0000${input.idempotencyKey}`,
     )}`;
-    const contentDigest = sha256(new TextEncoder().encode(input.content));
+    const contentDigest = `sha256:${sha256(new TextEncoder().encode(input.content))}`;
     const existing = await this.#payloads.get(payloadRef);
     if (existing) {
       if (

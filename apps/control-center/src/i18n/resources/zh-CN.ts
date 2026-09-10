@@ -1,6 +1,9 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "authentication.required": "请登录以连接此浏览器",
+  "authentication.signIn": "登录 Himawari",
+  "authentication.deviceLabel": "Himawari 网页浏览器",
   "app.eyebrow": "HIMAWARI AGENT",
   "app.title": "控制中心",
   "app.skipToMain": "跳到主要内容",

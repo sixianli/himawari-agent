@@ -329,6 +329,8 @@ export function useThreadControlCenter(
           | "thread.trash";
         switch (intent.kind) {
           case "submit": {
+            if (!configuration.sessionId)
+              throw new Error("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
             const contentRef = await client.protectText(
               intent.content,
               "private",
@@ -341,7 +343,7 @@ export function useThreadControlCenter(
               messageId: `message:${stableSuffix}`,
               turnId: `turn:${stableSuffix}`,
               runId: `run:${stableSuffix}`,
-              sessionId: `session:${configuration.actorId}`.slice(0, 128),
+              sessionId: configuration.sessionId,
               contentRef,
               sourceProofRef: `browser:${configuration.actorId}`.slice(0, 128),
               dataClassification: "private",

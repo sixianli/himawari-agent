@@ -27,6 +27,8 @@ export interface GatewayAuthenticationContext {
   readonly deviceId: string;
   readonly authenticatedAt: string;
   readonly authenticationRef: string;
+  /** Verified product session identity, when the transport uses product sessions. */
+  readonly sessionId?: string;
   /** Optional provider evidence; ordinary authentication remains usable without it. */
   readonly recentAuthenticationEvidence?: RecentAuthenticationEvidence;
 }

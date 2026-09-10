@@ -9,7 +9,11 @@ import type {
   SessionDeviceStatePort,
   VerifiedIdentityAssertion,
 } from "@himawari-agent/application";
-import { recentAuthenticationEvidence as createRecentAuthenticationEvidence } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  recentAuthenticationEvidence as createRecentAuthenticationEvidence,
+  PORT_ERROR_CODES,
+} from "@himawari-agent/application";
 import {
   createDeviceId,
   createOwnerId,
@@ -635,10 +639,39 @@ export class ProductSessionAuthenticationService implements HttpGatewayAuthentic
     ) {
       throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.SESSION_INVALID);
     }
-    await this.options.sessionState.saveSession(
-      { ...session, lastActiveAt: now.toISOString() },
-      session.revision,
-    );
+    try {
+      await this.options.sessionState.saveSession(
+        {
+          ...session,
+          lastActiveAt:
+            now.toISOString() > session.lastActiveAt ? now.toISOString() : session.lastActiveAt,
+        },
+        session.revision,
+      );
+    } catch (error) {
+      if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.CONFLICT)
+        throw error;
+      // Parallel browser requests may have already updated activity. Re-read
+      // identity and revocation instead of overwriting that concurrent update.
+      const current = await this.options.sessionState.findSessionByAuthenticationRef(
+        session.authenticationRef,
+      );
+      const device = (await this.options.sessionState.listDevices(session.ownerId, false)).find(
+        (candidate) => candidate.id === session.deviceId,
+      );
+      if (
+        !current ||
+        current.status !== "active" ||
+        current.id !== session.id ||
+        current.ownerId !== session.ownerId ||
+        current.deviceId !== session.deviceId ||
+        current.authenticationRef !== session.authenticationRef ||
+        !device ||
+        device.status !== "active"
+      ) {
+        throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.SESSION_INVALID);
+      }
+    }
     let recentAuthenticationEvidence: GatewayAuthenticationContext["recentAuthenticationEvidence"];
     if (this.options.recentAuthenticationProvider) {
       try {
@@ -675,6 +708,7 @@ export class ProductSessionAuthenticationService implements HttpGatewayAuthentic
       deviceId: session.deviceId,
       authenticatedAt: assertion.authenticatedAt,
       authenticationRef: session.authenticationRef,
+      sessionId: session.id,
     };
     return Object.freeze(
       recentAuthenticationEvidence ? { ...context, recentAuthenticationEvidence } : context,

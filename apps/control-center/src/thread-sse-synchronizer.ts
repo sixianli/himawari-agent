@@ -1,7 +1,7 @@
 import { threadGatewayMessageSchema } from "@himawari-agent/gateway-contracts";
 import type { ControlCenterBrowserStorage } from "./browser-storage.js";
 import type { ControlCenterRuntimeConfiguration } from "./gateway-client.js";
-import { safeBrowserLog, type SafeBrowserLogEntry } from "./gateway-client.js";
+import { type SafeBrowserLogEntry, safeBrowserLog } from "./gateway-client.js";
 import { threadSubscriptionMessage } from "./messages.js";
 import type { EventSourceLike } from "./sse-synchronizer.js";
 
@@ -11,6 +11,7 @@ export interface ThreadSseSynchronizerOptions {
   readonly createEventSource: (url: string) => EventSourceLike;
   readonly onCommittedEvent: () => void;
   readonly onSnapshotRequired: () => void;
+  readonly onConnectionState?: (state: "connecting" | "connected" | "offline") => void;
   readonly log: (entry: SafeBrowserLogEntry) => void;
   readonly schedule?: (callback: () => void, milliseconds: number) => number;
   readonly cancelSchedule?: (handle: number) => void;
@@ -54,6 +55,7 @@ export class ThreadSseSynchronizer {
 
   #connect(): void {
     if (this.#stopped || this.#source) return;
+    this.#options.onConnectionState?.("connecting");
     const subscription = threadSubscriptionMessage(
       this.#options.configuration,
       this.#options.storage.readThreadLastCursor(),
@@ -65,6 +67,7 @@ export class ThreadSseSynchronizer {
     this.#source = source;
     source.onopen = () => {
       this.#attempt = 0;
+      this.#options.onConnectionState?.("connected");
     };
     source.onmessage = (message) => {
       try {
@@ -84,6 +87,7 @@ export class ThreadSseSynchronizer {
     source.onerror = () => {
       if (this.#source === source) this.#source = undefined;
       source.close();
+      this.#options.onConnectionState?.("offline");
       this.#scheduleReconnect();
     };
   }

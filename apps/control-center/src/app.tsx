@@ -12,9 +12,9 @@ import {
 } from "./app/router.js";
 import {
   ControlCenterBrowserStorage,
-  THREAD_CURSOR_STORAGE_KEY,
   type ControlCenterPreferences,
   type ControlCenterUiLocale,
+  THREAD_CURSOR_STORAGE_KEY,
 } from "./browser-storage.js";
 import {
   ActionButton,
@@ -25,18 +25,23 @@ import {
   StatusRegion,
   Tabs,
 } from "./components/index.js";
-import { GatewayClient, loadRuntimeConfiguration, type MutationStatus } from "./gateway-client.js";
+import {
+  createBrowserSession,
+  GatewayClient,
+  loadRuntimeConfiguration,
+  type MutationStatus,
+} from "./gateway-client.js";
+import { useGovernanceControlCenter } from "./governance-control-center.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import {
   bootstrapLoadingLabel,
   ControlCenterIntlProvider,
   useControlCenterIntl,
 } from "./i18n/runtime.js";
+import { useOperationsControlCenter } from "./operations-control-center.js";
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
 import { useThreadControlCenter } from "./thread-control-center.js";
 import { ThreadSseSynchronizer } from "./thread-sse-synchronizer.js";
-import { useGovernanceControlCenter } from "./governance-control-center.js";
-import { useOperationsControlCenter } from "./operations-control-center.js";
 
 type SurfaceId = (typeof CONTROL_CENTER_SURFACE_INVENTORY)[number]["id"];
 type RuntimeConfiguration = Awaited<ReturnType<typeof loadRuntimeConfiguration>>;
@@ -161,11 +166,17 @@ function LocalizedControlCenterApp({
     match.kind === "matched" ? match.state : routeForSurface("threads", { view: "content" });
   const surface = surfaceInventory(route.surfaceId);
   const [configuration, setConfiguration] = useState<RuntimeConfiguration>();
+  const [authenticationRequired, setAuthenticationRequired] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const [bootstrapRevision, setBootstrapRevision] = useState(0);
   const [client, setClient] = useState<GatewayClient>();
   const [snapshot, setSnapshot] = useState<GatewayV2Snapshot>();
   const [gatewayRefreshSignal, setGatewayRefreshSignal] = useState(0);
   const [threadRefreshSignal, setThreadRefreshSignal] = useState(0);
   const [connection, setConnection] = useState<"connecting" | "connected" | "offline">(
+    "connecting",
+  );
+  const [threadConnection, setThreadConnection] = useState<"connecting" | "connected" | "offline">(
     "connecting",
   );
   const [loading, setLoading] = useState(false);
@@ -179,10 +190,13 @@ function LocalizedControlCenterApp({
   }, [route]);
 
   useEffect(() => {
+    void bootstrapRevision;
     let active = true;
     void loadRuntimeConfiguration(window.fetch.bind(window))
       .then((loaded) => {
         if (!active) return;
+        setAuthenticationRequired(false);
+        setRequestError(null);
         setConfiguration(loaded);
         setClient(
           new GatewayClient({
@@ -192,12 +206,29 @@ function LocalizedControlCenterApp({
         );
       })
       .catch((error: Error) => {
-        if (active) setRequestError(error.message);
+        if (active) {
+          setRequestError(error.message);
+          const status = "status" in error ? error.status : undefined;
+          setAuthenticationRequired(status === 401 || status === 403);
+        }
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [bootstrapRevision]);
+
+  const signIn = async () => {
+    if (signingIn) return;
+    setSigningIn(true);
+    try {
+      await createBrowserSession(window.fetch.bind(window), message("authentication.deviceLabel"));
+      setBootstrapRevision((revision) => revision + 1);
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : "CONTROL_CENTER_REQUEST_REJECTED");
+    } finally {
+      setSigningIn(false);
+    }
+  };
 
   useEffect(() => {
     if (!configuration) return;
@@ -228,6 +259,7 @@ function LocalizedControlCenterApp({
       createEventSource: (url) => new EventSource(url, { withCredentials: true }),
       onCommittedEvent: () => setThreadRefreshSignal((current) => current + 1),
       onSnapshotRequired: () => setThreadRefreshSignal((current) => current + 1),
+      onConnectionState: setThreadConnection,
       log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
@@ -253,6 +285,9 @@ function LocalizedControlCenterApp({
     setSelectedRef("");
     setMutationStatus(null);
     setRequestError("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
+    setAuthenticationRequired(true);
+    setConfiguration(undefined);
+    setClient(undefined);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -288,7 +323,7 @@ function LocalizedControlCenterApp({
     active: route.surfaceId === "threads",
     client,
     configuration,
-    connection,
+    connection: threadConnection,
     message,
     navigate,
     refreshSignal: threadRefreshSignal,
@@ -519,33 +554,53 @@ function LocalizedControlCenterApp({
 
   return (
     <ControlCenterShell
-      connection={connection}
+      connection={route.surfaceId === "threads" ? threadConnection : connection}
       content={
-        route.surfaceId === "threads"
-          ? threadModel.content
-          : governanceSurface
-            ? governanceModel.content
-            : operationsSurface
-              ? operationsModel.content
-              : genericContent
+        !configuration && requestError ? (
+          <Banner
+            title={message(
+              authenticationRequired ? "authentication.required" : "error.currentUnavailable",
+            )}
+            tone="warning"
+          >
+            {authenticationRequired ? (
+              <ActionButton disabled={signingIn} onClick={() => void signIn()}>
+                {message("authentication.signIn")}
+              </ActionButton>
+            ) : null}
+            <code>{requestError}</code>
+          </Banner>
+        ) : route.surfaceId === "threads" ? (
+          threadModel.content
+        ) : governanceSurface ? (
+          governanceModel.content
+        ) : operationsSurface ? (
+          operationsModel.content
+        ) : (
+          genericContent
+        )
       }
       details={
-        route.surfaceId === "threads"
-          ? threadModel.details
-          : governanceSurface
-            ? governanceModel.details
-            : operationsSurface
-              ? operationsModel.details
-              : genericDetails
+        !configuration
+          ? null
+          : route.surfaceId === "threads"
+            ? threadModel.details
+            : governanceSurface
+              ? governanceModel.details
+              : operationsSurface
+                ? operationsModel.details
+                : genericDetails
       }
       list={
-        route.surfaceId === "threads"
-          ? threadModel.list
-          : governanceSurface
-            ? governanceModel.list
-            : operationsSurface
-              ? operationsModel.list
-              : genericList
+        !configuration
+          ? null
+          : route.surfaceId === "threads"
+            ? threadModel.list
+            : governanceSurface
+              ? governanceModel.list
+              : operationsSurface
+                ? operationsModel.list
+                : genericList
       }
       locale={locale}
       onLocaleChange={onLocaleChange}

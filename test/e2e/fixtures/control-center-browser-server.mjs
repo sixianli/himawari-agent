@@ -1166,6 +1166,7 @@ async function handleRequest(request, response) {
       authorityEpoch: 1,
       fencingToken: 1,
       actorId: "owner-01",
+      sessionId: "session-01",
       csrfToken: "csrf-fixture",
       authorizationRef: governanceAuthorizationRef,
       recentAuthenticationRef: recentAuthenticationAvailable ? governanceAuthorizationRef : null,

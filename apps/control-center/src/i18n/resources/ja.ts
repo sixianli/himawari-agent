@@ -1,6 +1,9 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "authentication.required": "このブラウザーでログインしてください",
+  "authentication.signIn": "Himawari にログイン",
+  "authentication.deviceLabel": "Himawari ウェブブラウザー",
   "app.eyebrow": "HIMAWARI AGENT",
   "app.title": "コントロールセンター",
   "app.skipToMain": "メインコンテンツへ移動",
