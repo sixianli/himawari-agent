@@ -7,6 +7,7 @@ import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
   type GatewayAuthenticationContext,
+  type GatewayV2StreamItem,
   PORT_ERROR_CODES,
   type RecentAuthenticationGuardPort,
 } from "@himawari-agent/application";
@@ -17,7 +18,6 @@ import {
   type GatewayCommand,
   type GatewayQuery,
   type GatewayV2Command,
-  type GatewayV2Event,
   type GatewayV2Query,
   gatewayMessageSchema,
   gatewayV2MessageSchema,
@@ -388,39 +388,61 @@ async function* streamGatewayV2Events(input: {
   readonly authentication: GatewayAuthenticationContext;
   readonly afterCursor: string | null;
   readonly heartbeatMilliseconds: number;
+  readonly signal: AbortSignal;
 }): AsyncGenerator<string> {
   const iterator = input.gateway
-    .subscribe(input.authentication, input.afterCursor)
+    .subscribe(input.authentication, input.afterCursor, input.signal)
     [Symbol.asyncIterator]();
   let pending = iterator.next();
-  while (true) {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let result:
-      | { readonly kind: "item"; readonly value: IteratorResult<GatewayV2Event> }
-      | { readonly kind: "heartbeat" };
-    try {
-      result = await Promise.race([
-        pending.then((value) => ({ kind: "item" as const, value })),
-        new Promise<{ readonly kind: "heartbeat" }>((resolve) => {
-          timer = setTimeout(() => resolve({ kind: "heartbeat" }), input.heartbeatMilliseconds);
-        }),
-      ]);
-    } catch (error) {
-      if (error instanceof ApplicationPortError) {
-        yield serializeSse({ event: "gateway.stream_error", data: { code: error.code } });
-        return;
+  let onAbort: () => void = () => {};
+  const aborted = new Promise<{ readonly kind: "aborted" }>((resolve) => {
+    onAbort = () => resolve({ kind: "aborted" });
+    if (input.signal.aborted) onAbort();
+    else input.signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    while (!input.signal.aborted) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let result:
+        | { readonly kind: "item"; readonly value: IteratorResult<GatewayV2StreamItem> }
+        | { readonly kind: "heartbeat" }
+        | { readonly kind: "aborted" };
+      try {
+        result = await Promise.race([
+          pending.then((value) => ({ kind: "item" as const, value })),
+          aborted,
+          new Promise<{ readonly kind: "heartbeat" }>((resolve) => {
+            timer = setTimeout(() => resolve({ kind: "heartbeat" }), input.heartbeatMilliseconds);
+          }),
+        ]);
+      } catch (error) {
+        if (input.signal.aborted) return;
+        if (error instanceof ApplicationPortError) {
+          yield serializeSse({ event: "gateway.stream_error", data: { code: error.code } });
+          return;
+        }
+        throw error;
+      } finally {
+        if (timer) clearTimeout(timer);
       }
-      throw error;
+      if (input.signal.aborted || result.kind === "aborted") return;
+      if (result.kind === "heartbeat") {
+        yield ": heartbeat\n\n";
+        continue;
+      }
+      if (result.value.done) return;
+      const event = result.value.value;
+      if (event.kind === "snapshot_required") {
+        yield serializeSse({ event: "gateway.snapshot_required", data: { reason: event.reason } });
+      } else {
+        yield serializeSse({ event: "message", id: event.payload.cursor, data: event });
+      }
+      pending = iterator.next();
     }
-    if (timer) clearTimeout(timer);
-    if (result.kind === "heartbeat") {
-      yield ": heartbeat\n\n";
-      continue;
-    }
-    if (result.value.done) return;
-    const event = result.value.value;
-    pending = iterator.next();
-    yield serializeSse({ event: "message", id: event.payload.cursor, data: event });
+  } finally {
+    input.signal.removeEventListener("abort", onAbort);
+    void pending.catch(() => undefined);
+    void iterator.return?.().catch(() => undefined);
   }
 }
 
@@ -787,12 +809,15 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         ) {
           throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.REQUEST_INVALID, 400);
         }
+        const controller = new AbortController();
+        reply.raw.once("close", () => controller.abort());
         const stream = Readable.from(
           streamGatewayV2Events({
             gateway: gatewayV2,
             authentication,
             afterCursor,
             heartbeatMilliseconds,
+            signal: controller.signal,
           }),
         );
         setSecurityHeaders(reply);

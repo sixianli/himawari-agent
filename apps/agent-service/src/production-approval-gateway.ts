@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as wait } from "node:timers/promises";
 import {
   AgentGatewayV2Service,
   ApprovalService,
@@ -41,7 +42,68 @@ export function createProductionApprovalGateway(options: {
     authorization,
     capabilities,
     clock,
-    delegate: { query: unsupported, async *subscribe() {} },
+    delegate: {
+      query: unsupported,
+      async *subscribe({ authentication, signal }) {
+        let previous: string | undefined;
+        while (!signal?.aborted) {
+          const authority = options.authority();
+          const decision = await options.access.authorize({
+            authentication,
+            message: {
+              schemaVersion: "gateway.v2",
+              kind: "query",
+              type: "approval.list",
+              messageId: "approval-subscription",
+              correlationId: "approval-subscription",
+              causationId: null,
+              dataClassification: "private",
+              risk: "low",
+              authorizationRef: null,
+              scope: { ownerId, agentId },
+              authority,
+              actor: { actorType: "owner", actorId: authentication.subjectId },
+              payload: { status: null, afterCursor: null, limit: 100 },
+            },
+          });
+          if (authentication.ownerId !== ownerId || !decision.allowed) {
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+              "Approval subscription is no longer authorized",
+            );
+          }
+          const approvals = await authorization.listApprovals(ownerId, agentId);
+          const now = clock.now();
+          const version = JSON.stringify([
+            authority,
+            approvals.map((approval) => [
+              approval.id,
+              approval.revision,
+              approval.status === "pending" && now >= approval.expiresAt
+                ? "expired"
+                : approval.status,
+            ]),
+          ]);
+          if (signal?.aborted) return;
+          if (version !== previous) {
+            previous = version;
+            // This installation has authoritative snapshots, not a durable v2
+            // event journal. Reconnects always re-read; never invent a cursor.
+            yield {
+              kind: "snapshot_required",
+              scope: { ownerId, agentId },
+              reason: "state_changed",
+            };
+          }
+          try {
+            await wait(1000, undefined, { ...(signal ? { signal } : {}), ref: false });
+          } catch (error) {
+            if (signal?.aborted) return;
+            throw error;
+          }
+        }
+      },
+    },
     dependencies: {
       listTaskRefsByCapability: unsupported,
       listTaskRefsByGrant: unsupported,

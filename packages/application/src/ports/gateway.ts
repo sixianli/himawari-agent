@@ -91,12 +91,22 @@ export interface GatewayV2ControlPlanePort {
   execute(input: GatewayV2CommandExecution): Promise<GatewayCommandResult>;
 }
 
+/** Snapshot invalidations are hints, not durable events or replay cursors. */
+export type GatewayV2StreamItem =
+  | GatewayV2Event
+  | {
+      readonly kind: "snapshot_required";
+      readonly scope: { readonly ownerId: string; readonly agentId: string };
+      readonly reason: "state_changed";
+    };
+
 export interface GatewayV2ReadModelPort {
   query(query: GatewayV2Query): Promise<GatewayV2Snapshot>;
   subscribe(input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly afterCursor: string | null;
-  }): AsyncIterable<GatewayV2Event>;
+    readonly signal?: AbortSignal;
+  }): AsyncIterable<GatewayV2StreamItem>;
 }
 
 export type GatewayV2InboundMessage = GatewayV2Command | GatewayV2Query;
@@ -116,7 +126,8 @@ export interface AgentGatewayV2Port {
   subscribe(
     authentication: GatewayAuthenticationContext,
     afterCursor: string | null,
-  ): AsyncIterable<GatewayV2Event>;
+    signal?: AbortSignal,
+  ): AsyncIterable<GatewayV2StreamItem>;
 }
 
 export type ThreadGatewayRequestMessage = ThreadGatewayCommand | ThreadGatewayQuery;

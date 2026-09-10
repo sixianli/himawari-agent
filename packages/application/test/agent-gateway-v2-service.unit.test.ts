@@ -11,6 +11,7 @@ import {
   type GatewayV2AccessPolicyPort,
   type GatewayV2ControlPlanePort,
   type GatewayV2ReadModelPort,
+  type GatewayV2StreamItem,
 } from "../src/index.js";
 
 const authentication: GatewayAuthenticationContext = {
@@ -83,7 +84,7 @@ function event(cursor: string, sequence: number): GatewayV2Event {
   };
 }
 
-function fixture(events: readonly GatewayV2Event[] = [event("cursor-01", 1)]) {
+function fixture(events: readonly GatewayV2StreamItem[] = [event("cursor-01", 1)]) {
   const executions: GatewayV2Command[] = [];
   const access: GatewayV2AccessPolicyPort = {
     async authorize() {
@@ -139,6 +140,23 @@ describe("AgentGatewayV2Service", () => {
       gateway.request({ ...authentication, ownerId: "owner-02" }, command()),
     ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
     expect(executions).toEqual([]);
+  });
+
+  it("keeps snapshot hints separate from durable ordering and rejects cross-owner hints", async () => {
+    const hint = {
+      kind: "snapshot_required",
+      scope: { ownerId: "owner-01", agentId: "agent-01" },
+      reason: "state_changed",
+    } as const;
+    const items = [event("cursor-01", 1), hint, event("cursor-02", 2)];
+    const received: GatewayV2StreamItem[] = [];
+    for await (const item of fixture(items).gateway.subscribe(authentication, null))
+      received.push(item);
+    expect(received).toEqual(items);
+    const foreign = fixture([{ ...hint, scope: { ...hint.scope, ownerId: "owner-02" } }]);
+    await expect(
+      foreign.gateway.subscribe(authentication, null)[Symbol.asyncIterator]().next(),
+    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
   });
 
   it("rejects duplicate cursors and non-increasing per-scope sequences", async () => {

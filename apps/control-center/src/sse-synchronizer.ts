@@ -15,7 +15,11 @@ export interface SseSynchronizerOptions {
   readonly createEventSource: (url: string) => EventSourceLike;
   readonly onEvent: (event: GatewayV2Event) => void;
   readonly onSnapshotRequired?: (
-    reason: "cursor_retention_gap" | "event_sequence_gap" | "authority_scope_changed",
+    reason:
+      | "cursor_retention_gap"
+      | "event_sequence_gap"
+      | "authority_scope_changed"
+      | "state_changed",
   ) => void;
   readonly onConnectionState: (state: "connecting" | "connected" | "offline") => void;
   readonly log: (entry: SafeBrowserLogEntry) => void;
@@ -67,6 +71,16 @@ export class SseStateSynchronizer {
       : "/api/gateway/v2/events";
     const source = this.options.createEventSource(url);
     this.source = source;
+    source.addEventListener?.("gateway.snapshot_required", (message) => {
+      if (this.stopped || this.source !== source) return;
+      try {
+        const notification = JSON.parse(message.data) as { readonly reason?: unknown };
+        if (notification.reason !== "state_changed") throw new Error("INVALID_SNAPSHOT_REASON");
+        this.options.onSnapshotRequired?.("state_changed");
+      } catch {
+        this.options.log(safeBrowserLog("CONTROL_CENTER_EVENT_REJECTED"));
+      }
+    });
     source.onopen = () => {
       this.reconnectAttempt = 0;
       this.options.onConnectionState("connected");

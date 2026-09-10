@@ -1,3 +1,4 @@
+import { request as httpRequest, type IncomingMessage } from "node:http";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -731,6 +732,60 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(stream.body).toContain("id: cursor-v2-02");
     expect(requests).toEqual(["thread.list", "thread.message.submit"]);
     expect(cursors).toEqual(["cursor-v2-01"]);
+  });
+
+  it("keeps an idle v2 subscription open and aborts it when the HTTP client closes", async () => {
+    let subscriptionSignal: AbortSignal | undefined;
+    let released = false;
+    const { app } = createFixture({
+      request: async () => {
+        throw new Error("unused");
+      },
+      async *subscribe(_authentication, _afterCursor, signal) {
+        subscriptionSignal = signal;
+        try {
+          yield {
+            kind: "snapshot_required",
+            scope: { ownerId: "owner-01", agentId: "agent-01" },
+            reason: "state_changed",
+          };
+          await new Promise<void>((resolve) => {
+            if (signal?.aborted) resolve();
+            else signal?.addEventListener("abort", () => resolve(), { once: true });
+          });
+        } finally {
+          released = true;
+        }
+      },
+    });
+    const controller = new AbortController();
+    try {
+      const origin = await app.listen({ host: "127.0.0.1", port: 0 });
+      const response = await new Promise<IncomingMessage>((resolve, reject) => {
+        const request = httpRequest(
+          `${origin}/api/gateway/v2/events`,
+          { headers: requestHeaders(), signal: controller.signal },
+          resolve,
+        );
+        request.on("error", reject);
+        request.end();
+      });
+      expect(response.statusCode).toBe(200);
+      const reader = response[Symbol.asyncIterator]();
+      const first = await reader.next();
+      expect(first.done).toBe(false);
+      expect(String(first.value)).toContain("event: gateway.snapshot_required");
+      const heartbeat = await reader.next();
+      expect(heartbeat.done).toBe(false);
+      expect(String(heartbeat.value)).toContain(": heartbeat");
+      expect(released).toBe(false);
+      response.destroy();
+      await expect.poll(() => subscriptionSignal?.aborted).toBe(true);
+      await expect.poll(() => released).toBe(true);
+    } finally {
+      controller.abort();
+      await app.close();
+    }
   });
 
   it("routes strict Thread v3 commands, queries and durable cursor events", async () => {

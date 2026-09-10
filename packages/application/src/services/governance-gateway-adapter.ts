@@ -16,6 +16,7 @@ import type {
   GatewayV2CommandExecution,
   GatewayV2ControlPlanePort,
   GatewayV2ReadModelPort,
+  GatewayV2StreamItem,
 } from "../ports/gateway.js";
 import type { RecentAuthenticationGuardPort } from "../ports/recent-authentication.js";
 import type {
@@ -29,7 +30,6 @@ import type { AgentId, OwnerId } from "@himawari-agent/domain";
 import {
   gatewayV2MessageSchema,
   type GatewayV2Command,
-  type GatewayV2Event,
   type GatewayV2Query,
   type GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
@@ -276,7 +276,8 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
   subscribe(input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly afterCursor: string | null;
-  }): AsyncIterable<GatewayV2Event> {
+    readonly signal?: AbortSignal;
+  }): AsyncIterable<GatewayV2StreamItem> {
     return this.#dependencies.delegate.subscribe(input);
   }
 

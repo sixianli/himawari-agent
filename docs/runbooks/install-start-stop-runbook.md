@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:b15c3532f951d4619d8ae9b727728b2a11e9fcf9543fa8582dae41a3c336c1be"
+contract_sha256: "sha256:fab79327c994f4a6befb99ca490846b7590e055d9a3cec78d2e1dbbc3f511431"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -150,6 +150,8 @@ Agent 启动在开放准入前还会使用当前权威失效 v2 旧监督观察�
 - 本 Runbook contract selector 中列出的源文件和 portable durable web-agent Spec。
 
 本地安装合同补充：Worker 以 deployment binding.kind 区分 sandbox 与旧 process 后端；SRT 不需要伪造旧 process isolation 配置，仍须通过真实 host 资格复核。权限续租只改变到期信息时，不使并发读取失去原权威；停止或身份变化仍必须拒绝。公开网页客户端先创建产品 session，再从认证配置读取 sessionId，不能拼造 ID。重复 Payload 上传须比较带 `sha256:` 前缀的同一正文摘要；并发活跃时间更新冲突时重新检查会话及设备撤销状态。这些规则已通过实际 HTTP／SQLite 和并发回归验证。
+
+审批页空闲时，`/api/gateway/v2/events` 应保持连接并发送心跳；HTTP 200 后立即结束不是正常空闲状态。正式审批组合通过受控订阅通知快照变化，浏览器重新读取审批列表／详情；该提示没有 durable cursor。验收须覆盖空列表下的连接稳定、持久数据变化后的刷新和客户端断开后的订阅取消，不能只检查状态码或用测试服务器的常驻空连接替代正式组合。
 
 Hermes 的 systemd、Cloudflare 入口、Host 签名与付费模型验收是 Owner 另行明确授权的部署操作，证据记录在 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md] 的 R8；不扩张本 Runbook 的本地安装操作范围。
 

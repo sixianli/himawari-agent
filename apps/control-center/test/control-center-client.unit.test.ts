@@ -460,6 +460,41 @@ describe("browser storage and SSE recovery", () => {
     synchronizer.stop();
   });
 
+  it("refreshes snapshots without changing durable cursors or reconnecting on invalidation hints", () => {
+    const storage = new ControlCenterBrowserStorage(new MemoryStorage());
+    storage.saveLastCursor("cursor-01");
+    const listeners = new Map<string, (event: MessageEvent<string>) => void>();
+    const refresh = vi.fn();
+    const connect = vi.fn(() => ({
+      onmessage: null,
+      onerror: null,
+      close: vi.fn(),
+      addEventListener(type: string, listener: (event: MessageEvent<string>) => void) {
+        listeners.set(type, listener);
+      },
+    }));
+    const synchronizer = new SseStateSynchronizer({
+      storage,
+      createEventSource: connect,
+      onEvent: vi.fn(),
+      onSnapshotRequired: refresh,
+      onConnectionState: vi.fn(),
+      log: vi.fn(),
+    });
+    synchronizer.start();
+    const notify = () =>
+      listeners.get("gateway.snapshot_required")?.({
+        data: JSON.stringify({ reason: "state_changed" }),
+      } as MessageEvent<string>);
+    notify();
+    expect(refresh).toHaveBeenCalledWith("state_changed");
+    expect(storage.readLastCursor()).toBe("cursor-01");
+    expect(connect).toHaveBeenCalledTimes(1);
+    synchronizer.stop();
+    notify();
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it("deduplicates events and requests a snapshot for gaps or authority changes", () => {
     const storage = new ControlCenterBrowserStorage(new MemoryStorage());
     storage.saveLastCursor("cursor-01");

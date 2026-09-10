@@ -1,0 +1,52 @@
+{
+  "schema": "himawari-approval-stream-verification.v1",
+  "publicOrigin": "https://himawari.siyi.win",
+  "path": "/approvals",
+  "date": "2026-09-10",
+  "cause": "生产审批订阅的空生成器立即结束；客户端反复重连使离线提示出现和消失",
+  "before": {
+    "observationMilliseconds": 6000,
+    "connectionStateTransitions": 19,
+    "eventRequestsReturned200AndEnded": true
+  },
+  "after": {
+    "observationMilliseconds": 30000,
+    "connectionStateTransitions": 0,
+    "offlineBannerObserved": false,
+    "completedEventRequests": 0,
+    "connectionState": "connected",
+    "readiness": "ready",
+    "serviceActive": true,
+    "unexpectedRestarts": 0,
+    "navigationToThreadsAndBackPassed": true,
+    "loginPreserved": true,
+    "contentObservation": {
+      "milliseconds": 10019,
+      "mutations": 1,
+      "connectionState": "connected"
+    }
+  },
+  "verification": {
+    "failingBefore": "生产订阅第一次 next() 返回 done=true",
+    "sqliteChangesAndExpiryInvalidate": true,
+    "idleSubscriptionRemainsOpen": true,
+    "revokedSessionRejected": true,
+    "httpDisconnectCancelsSubscription": true,
+    "crossOwnerNotificationsRejected": true,
+    "durableCursorPreserved": true,
+    "regressionTestsPassed": 47,
+    "projectCheck": "passed",
+    "nodeCompilation": "passed",
+    "browserBuild": "passed",
+    "documentGovernance": "passed, 0 warnings"
+  },
+  "deployment": {
+    "runtimeDigest": "473fe3de28371761afacedbeaadea6d3284b85934cce84058ebd6b39aae2cd21",
+    "receiptDigest": "dc414f6714cf301343ed97b3a529e09c917e8c62fa20753d90f93561ac279b26",
+    "liveHostVerified": true,
+    "signatureVerified": true,
+    "qualificationScopeChanged": false,
+    "browserAsset": "index-CuyccXKd.js"
+  },
+  "paidCallsMadeForThisFix": false
+}
