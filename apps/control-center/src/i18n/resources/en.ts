@@ -62,6 +62,10 @@ export const messages = {
   "state.degraded": "Dependency degraded",
   "state.offline": "Only unsent drafts remain available offline",
   "surface.blocked.title": "Domain contract is not frozen",
+  "surface.notInstalled.title": "This feature is not enabled in this deployment",
+  "surface.notInstalled.description":
+    "This feature has not been connected to the current server. It requires integration and verification before use; signing in again or refreshing will not enable it.",
+  "surface.notInstalled.label": "Not enabled",
   "surface.blocked.description":
     "There {count, plural, one {is # blocker} other {are # blockers}}. This page will not invent temporary business semantics.",
   "layout.label": "Desktop layout",

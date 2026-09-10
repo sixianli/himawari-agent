@@ -98,6 +98,7 @@ export interface HttpGatewayServerOptions {
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
   readonly browserConfiguration?: {
+    readonly installedGatewayV2Operations?: readonly (GatewayV2Query | GatewayV2Command)["type"][];
     readonly agentId: string;
     readonly deploymentId: string;
     readonly authorityEpoch: number;
@@ -589,7 +590,9 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
           ? 403
           : error.code === PORT_ERROR_CODES.NOT_FOUND
             ? 404
-            : 409;
+            : error.code === PORT_ERROR_CODES.OPERATION_NOT_INSTALLED
+              ? 501
+              : 409;
       sendJson(reply, statusCode, { error: { code: error.code } });
       return;
     }
@@ -663,6 +666,8 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       }
       return sendJson(reply, 200, {
         ownerId: authentication.ownerId,
+        installedGatewayV2Operations: configuration.installedGatewayV2Operations ?? [],
+        healthDependenciesAvailable: options.health !== undefined,
         agentId: configuration.agentId,
         deploymentId: configuration.deploymentId,
         authorityEpoch: configuration.authorityEpoch,

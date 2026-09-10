@@ -9,6 +9,7 @@ import {
   CONTROL_CENTER_INTEGRATION_READY_SURFACE_IDS,
   CONTROL_CENTER_REQUIRED_UI_STATES,
   CONTROL_CENTER_SURFACE_INVENTORY,
+  isSurfaceInstalled,
 } from "../src/app/control-center-inventory.js";
 
 const expectedSurfaceIds = [
@@ -31,6 +32,25 @@ const expectedSurfaceIds = [
 ];
 
 describe("control center information architecture inventory", () => {
+  it("uses installed handlers rather than frozen contracts to enable pages", () => {
+    const operations = ["approval.list", "approval.detail", "approval.respond"];
+    expect(
+      CONTROL_CENTER_SURFACE_INVENTORY.filter((surface) =>
+        isSurfaceInstalled(surface, operations),
+      ).map(({ id }) => id),
+    ).toEqual(["threads", "approvals"]);
+    const approval = CONTROL_CENTER_SURFACE_INVENTORY.find(({ id }) => id === "approvals");
+    expect(approval).toBeDefined();
+    if (!approval) throw new Error("missing approval surface");
+    expect(isSurfaceInstalled(approval, ["approval.list"])).toBe(false);
+    expect(isSurfaceInstalled(approval, [])).toBe(false);
+    expect(
+      CONTROL_CENTER_SURFACE_INVENTORY.filter((surface) =>
+        isSurfaceInstalled(surface, operations, true),
+      ).map(({ id }) => id),
+    ).toEqual(["threads", "approvals", "health-deployment"]);
+  });
+
   it("covers every required surface, acceptance and UI state exactly", () => {
     expect(CONTROL_CENTER_SURFACE_INVENTORY.map(({ id }) => id)).toEqual(expectedSurfaceIds);
     expect(new Set(CONTROL_CENTER_SURFACE_INVENTORY.map(({ route }) => route)).size).toBe(

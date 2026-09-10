@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-10",
+  "status": "passed",
+  "scope": "deployment-availability-and-existing-health-interface",
+  "source": {
+    "baseCommit": "2d5427496270f79be64d2851a44afff9adb4fabc",
+    "includesTaskChanges": true
+  },
+  "before": {
+    "observedPages": ["/inbox", "/health"],
+    "error": "PORT_NOT_AUTHORITATIVE",
+    "httpStatus": 403,
+    "sourceConfirmedUninstalledPageCount": 14
+  },
+  "after": {
+    "availablePages": ["/threads", "/approvals", "/health"],
+    "unavailablePages": [
+      "/tasks",
+      "/inbox",
+      "/memory",
+      "/capabilities",
+      "/authorizations",
+      "/workspaces",
+      "/suggestions",
+      "/reflection",
+      "/workers",
+      "/improvements",
+      "/trace",
+      "/settings",
+      "/sessions"
+    ],
+    "productionPageAudit": {
+      "pages": 13,
+      "allShowNotInstalled": true,
+      "permissionErrors": 0,
+      "completedGatewayQueriesBefore": 0,
+      "completedGatewayQueriesAfter": 0
+    },
+    "health": {
+      "endpoint": "/api/health/v1/dependencies",
+      "live": true,
+      "ready": true,
+      "requiredDependenciesHealthy": true,
+      "modelProviderReason": "NOT_CHECKED"
+    },
+    "productionApiAudit": {
+      "configurationStatus": 200,
+      "approvalListStatus": 200,
+      "inboxListStatus": 501,
+      "inboxError": "PORT_OPERATION_NOT_INSTALLED"
+    }
+  },
+  "verification": {
+    "regressionTestsPassed": 74,
+    "projectCheck": "passed",
+    "nodeCompilation": "passed",
+    "browserBuild": "passed",
+    "documentGovernance": "passed",
+    "focusedBrowser": {
+      "scope": "fixture-only",
+      "browser": "Chrome 151.0.7922.174",
+      "unavailablePages": 13,
+      "unsupportedQueries": 0,
+      "approvalVisible": true,
+      "healthVisible": true,
+      "axeViolations": 0
+    },
+    "broaderBrowserSuite": {
+      "status": "incomplete",
+      "reason": "multi-tab navigation timeout before availability scenario"
+    }
+  },
+  "deployment": {
+    "runtimeDigest": "12e59c5badae13d09eae3b3316a6984f04e5116a5e8485e2bfdfdc3caa45c37d",
+    "receiptDigest": "e42882486b5784f0d2edc95fce53f7309df2ff2f18fa3239242d7d6aa7d06333",
+    "browserAsset": "index-Dx9JPak8.js",
+    "startupAttestationAt": "2026-09-10T07:54:22.481Z",
+    "liveHostVerified": true,
+    "signatureVerified": true,
+    "qualificationScopeChanged": false,
+    "service": "active/running",
+    "automaticRestarts": 0,
+    "rollbackAvailable": true
+  },
+  "limits": {
+    "fullBusinessIntegration": false,
+    "newModelCalls": 0,
+    "macAgentInstalled": false
+  }
+}

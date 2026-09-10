@@ -1168,6 +1168,40 @@ async function handleRequest(request, response) {
       actorId: "owner-01",
       sessionId: "session-01",
       csrfToken: "csrf-fixture",
+      healthDependenciesAvailable: true,
+      installedGatewayV2Operations: [
+        "approval.list",
+        "approval.detail",
+        "approval.respond",
+        "capability.list",
+        "capability.detail",
+        "capability.review",
+        "capability.install.approve",
+        "capability.update.respond",
+        "capability.disable",
+        "capability.rollback",
+        "grant.list",
+        "grant.detail",
+        "grant.revoke",
+        "task.list",
+        "task.detail",
+        "task.set_state",
+        "github.monitor.set_state",
+        "inbox.list",
+        "inbox.detail",
+        "inbox.digest",
+        "memory.search",
+        "memory.detail",
+        "memory.mutate",
+        "trace.timeline",
+        "trace.detail",
+        "settings.read",
+        "settings.update",
+        "identity.sessions",
+        "identity.session_detail",
+        "session.revoke",
+        "health.status",
+      ],
       authorizationRef: governanceAuthorizationRef,
       recentAuthenticationRef: recentAuthenticationAvailable ? governanceAuthorizationRef : null,
       primaryModel: { provider: "fixture-provider", model: "fixture-primary", version: "v1" },
@@ -1180,6 +1214,23 @@ async function handleRequest(request, response) {
   if (request.method === "POST" && url.pathname === "/__fixture/degrade") {
     healthDegraded = true;
     json(response, 200, { degraded: true });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/health/v1/dependencies") {
+    json(response, 200, {
+      id: "health-fixture",
+      live: true,
+      ready: true,
+      status: healthDegraded ? "degraded" : "healthy",
+      dependencies: [
+        {
+          name: "model-provider",
+          required: false,
+          status: healthDegraded ? "degraded" : "healthy",
+          reasonCode: healthDegraded ? "PROVIDER_DEGRADED" : null,
+        },
+      ],
+    });
     return;
   }
   if (request.method === "POST" && url.pathname === "/__fixture/recent-auth") {

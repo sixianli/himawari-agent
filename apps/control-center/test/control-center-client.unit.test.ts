@@ -131,6 +131,51 @@ function threadEvent(): ThreadGatewayEvent {
 }
 
 describe("typed browser Gateway client", () => {
+  it("reads and validates the existing authenticated health endpoint", async () => {
+    const value = {
+      id: "health-01",
+      live: true,
+      ready: true,
+      status: "healthy",
+      dependencies: [{ name: "sqlite", required: true, status: "healthy", reasonCode: null }],
+    };
+    const fetchImplementation = vi.fn(async () => new Response(JSON.stringify(value)));
+    const client = new GatewayClient({ fetch: fetchImplementation, csrfToken: () => "unused" });
+    expect(await client.healthDependencies()).toEqual(value);
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      "/api/health/v1/dependencies",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+    fetchImplementation.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ ...value, dependencies: [{ name: "sqlite", status: "invented" }] }),
+      ),
+    );
+    await expect(client.healthDependencies()).rejects.toThrow("CONTROL_CENTER_RESPONSE_INVALID");
+    fetchImplementation.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: "HTTP_GATEWAY_AUTHENTICATION_REQUIRED" } }), {
+        status: 401,
+      }),
+    );
+    await expect(client.healthDependencies()).rejects.toMatchObject({ status: 401 });
+  });
+  it("loads explicit deployment operations and rejects malformed availability", async () => {
+    const load = (operations: unknown) =>
+      loadRuntimeConfiguration(
+        async () =>
+          new Response(
+            JSON.stringify({ ...configuration, installedGatewayV2Operations: operations }),
+          ),
+      );
+    expect(
+      (await load(["approval.list", "approval.detail", "approval.respond"]))
+        .installedGatewayV2Operations,
+    ).toEqual(["approval.list", "approval.detail", "approval.respond"]);
+    expect((await load(undefined)).installedGatewayV2Operations).toEqual([]);
+    await expect(load("all")).rejects.toThrow("CONTROL_CENTER_CONFIGURATION_INVALID");
+    await expect(load([false])).rejects.toThrow("CONTROL_CENTER_CONFIGURATION_INVALID");
+  });
+
   it("loads scoped governance authentication references without exposing credentials", async () => {
     const loaded = await loadRuntimeConfiguration(
       (async () =>

@@ -318,7 +318,7 @@ Linux 实跑发现 `exec export` 导致任务未执行，原失败保留在 `r8-
 
 **R8 已完成本次拟启用组合的资格验收：Hermes 单机、SRT 0.0.75、sandbox-execution.v2、authorized-project.v1、foreground。** Mac 保留已有假数据矩阵，按 Owner 后续要求仅作浏览器客户端，不安装或启动 Agent。未测组合不登记：background/service 联网及其他强隔离后端仍不启用。
 
-Hermes 正式版本目录为 `/data/hermes/himawari/releases/2026-09-10-89640a591583`，锁定 Node 22.22.3、npm 11.8.0 和 Python 3.12.10，数据、数据库、缓存、日志、构建与资格材料均位于 `/data/hermes/himawari`。Pi 0.84.2 的 find 参数要求新版 fd；实际安装使用已核对官方发布摘要的 fd 10.3.0，旧 fd 8.3.1 不能通过该验收。R8 首次验收的 runtime 摘要为 `4caf6376109368c38d0ec520a33d08cee41f4f84ae7b7eee50b43a5a8591837c`；后续审批页空闲订阅修复后的安装摘要为 `473fe3de28371761afacedbeaadea6d3284b85934cce84058ebd6b39aae2cd21`，主机保留原签名回执和更新证据，已登记能力范围不变；早期 `16bdb32…` inventory 是更新工具链和修复启动前的历史快照，不再作为当前运行身份。
+Hermes 正式版本目录为 `/data/hermes/himawari/releases/2026-09-10-89640a591583`，锁定 Node 22.22.3、npm 11.8.0 和 Python 3.12.10，数据、数据库、缓存、日志、构建与资格材料均位于 `/data/hermes/himawari`。Pi 0.84.2 的 find 参数要求新版 fd；实际安装使用已核对官方发布摘要的 fd 10.3.0，旧 fd 8.3.1 不能通过该验收。R8 首次验收的 runtime 摘要为 `4caf6376109368c38d0ec520a33d08cee41f4f84ae7b7eee50b43a5a8591837c`；后续审批页空闲订阅修复后的安装摘要为 `473fe3de28371761afacedbeaadea6d3284b85934cce84058ebd6b39aae2cd21`，主机保留原签名回执和更新证据，已登记能力范围不变。后续控制中心部署可用性修复后的安装摘要为 `12e59c5badae13d09eae3b3316a6984f04e5116a5e8485e2bfdfdc3caa45c37d`，修复只区分缺失接口与权限拒绝、按安装清单显示页面，并接通已有健康接口；前台执行资格范围继续保持不变；早期 `16bdb32…` inventory 是更新工具链和修复启动前的历史快照，不再作为当前运行身份。
 
 正式安装实跑包括 Pi runner 22 项、联网与资源 10 项、网络边界拒绝 7 项、Worker SIGKILL 后隔离任务树释放，以及已安装模块的真实 SQLite／认证 UDS／Worker v2 组合。新增 `qualify-production.mjs --v2 --revoke-network` 通过同一持久 Grant 建立 `registry.npmjs.org:443` CONNECT 后撤销 Grant，368 ms 内 Job Host 退出、原 PID namespace 释放，账本 cleanup=confirmed；重复请求和重新建立 Worker 只读回原结果，不再次启动。该探针仍明确使用测试身份、productionSuitable=false；正式资格由 Hermes 安装来源另行检查真实目录、完整产物摘要和系统工具后签发，不能复制测试资格充当生产注册。
 

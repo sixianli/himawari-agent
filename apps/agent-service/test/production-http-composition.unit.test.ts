@@ -338,6 +338,19 @@ describe("production HTTP composition", () => {
         headers: requestHeaders(token, cookie),
       });
       expect(configResponse.statusCode).toBe(200);
+      expect(configResponse.json()).toMatchObject({
+        installedGatewayV2Operations: ["approval.list", "approval.detail", "approval.respond"],
+        healthDependenciesAvailable: true,
+      });
+      const healthResponse = await composition.app.inject({
+        method: "GET",
+        url: "/api/health/v1/dependencies",
+        headers: requestHeaders(token, cookie),
+      });
+      expect(healthResponse.statusCode).toBe(200);
+      expect(healthResponse.json()).toMatchObject({
+        dependencies: expect.arrayContaining([expect.objectContaining({ name: "sqlite" })]),
+      });
       const browserConfig = configResponse.json() as {
         readonly csrfToken: string;
         readonly sessionId: string;

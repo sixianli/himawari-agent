@@ -282,6 +282,61 @@ function createFixture(
 }
 
 describe("HTTP Gateway contract and security boundary", () => {
+  it("reports uninstalled operations as 501 and publishes installed operations", async () => {
+    const { app } = createFixture(
+      {
+        async request() {
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.OPERATION_NOT_INSTALLED,
+            "internal detail",
+            { internal: "private detail" },
+          );
+        },
+        async *subscribe() {},
+      },
+      undefined,
+      {
+        browserConfiguration: {
+          agentId: "agent-01",
+          deploymentId: "deployment-01",
+          authorityEpoch: 1,
+          fencingToken: 1,
+          installedGatewayV2Operations: ["approval.list", "approval.detail", "approval.respond"],
+        },
+      },
+    );
+    try {
+      const configuration = await app.inject({
+        method: "GET",
+        url: "/api/control-center/v1/config",
+        headers: requestHeaders(),
+      });
+      expect(configuration.statusCode).toBe(200);
+      expect(configuration.json().installedGatewayV2Operations).toEqual([
+        "approval.list",
+        "approval.detail",
+        "approval.respond",
+      ]);
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(),
+        payload: {
+          ...envelope("query", "inbox.list"),
+          schemaVersion: "gateway.v2",
+          risk: "low",
+          authorizationRef: null,
+          authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+          payload: { unreadOnly: false, afterCursor: null, limit: 10 },
+        },
+      });
+      expect(response.statusCode).toBe(501);
+      expect(response.json()).toEqual({ error: { code: "PORT_OPERATION_NOT_INSTALLED" } });
+    } finally {
+      await app.close();
+    }
+  });
+
   const fixtures: ReturnType<typeof createFixture>[] = [];
 
   afterEach(async () => {

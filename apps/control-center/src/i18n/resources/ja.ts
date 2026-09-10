@@ -62,6 +62,10 @@ export const messages = {
   "state.degraded": "依存関係が縮退中",
   "state.offline": "オフラインでは未送信の下書きだけを保持します",
   "surface.blocked.title": "ドメイン contract がまだ固定されていません",
+  "surface.notInstalled.title": "現在の環境ではこの機能は有効になっていません",
+  "surface.notInstalled.description":
+    "この機能は現在のサーバーに接続されていません。利用には接続と検証が必要です。再ログインやページの更新では有効になりません。",
+  "surface.notInstalled.label": "未有効",
   "surface.blocked.description":
     "ブロッカーが {count, plural, other {# 件}}あります。このページで一時的な業務上の意味を作成しません。",
   "layout.label": "デスクトップレイアウト",

@@ -433,6 +433,9 @@ Identity Gateway 把 bootstrap、产品 session 和 break-glass 保持为独立�
 
 正式审批组合以 SQLite 审批快照为准，没有持久化的 Gateway v2 事件日志。其订阅保持打开，每秒复核会话权限和审批版本，初次连接、数据变化或审批到期时发送 `gateway.snapshot_required` 提示；客户端收到后重新查询权威快照。提示不携带正文、不生成或改变 durable cursor，也不充当可重放事件。空闲时由 HTTP 层发送心跳，连接关闭时 AbortSignal 沿订阅调用链停止轮询。不能用立即结束的空生成器代替空闲订阅，否则浏览器会持续重连并反复显示离线提示。
 
+正式控制中心的可用性由已认证配置接口公布的 `installedGatewayV2Operations` 和 `healthDependenciesAvailable` 决定；静态页面清单中的 frozen contract 仅表示协议已定义，不能证明正式部署已接入。当前正式 Gateway v2 只安装 `approval.list/detail/respond`，Thread 使用独立的 v3 Gateway；健康页直接读取已有 `/api/health/v1/dependencies`，显示真实服务及依赖状态，不构造不存在的运维 checkpoint。其他页面显示“当前部署未启用此功能”并停止查询，不显示空列表冒充没有业务数据。后端先校验身份、scope 和 authority，再以同一安装操作清单拒绝缺失操作，返回 HTTP 501 / `PORT_OPERATION_NOT_INSTALLED`；真正的权限拒绝仍为 HTTP 403 / `PORT_NOT_AUTHORITATIVE`。页面清单不是授权来源，客户端修改该清单不能开放后端操作。
+
+
 Hermes 单机的当前安装资格与真实网页登录／模型对话证据见 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md] 的 R8。该范围为 SRT foreground：read/find/grep/ls/bash，bash 联网仍要求动作 Grant；write/edit 及 background/service 联网未登记。安装资格不等于全部后续产品旅程通过。Agent 权限租约的并发校验比较同一租约身份和 fencing token，允许正常续租替换记录；停止、失权或不同身份仍拒绝执行。
 
 近期认证不是新建产品 session 的时间，也不是 JWT 的签发时间。`CloudflareAccessIdentityClient` 在 JWT 验证后向固定 HTTPS issuer 的 `get-identity` 端点发送临时 `CF_Authorization` Cookie，禁止重定向，并限制响应大小与总请求时间；提前拒绝和超时会取消响应流。它要求显式配置 `user_uuid_equals_sub` 主体绑定，把响应登录时间形成 `RecentAuthenticationEvidence`，绑定外部身份引用、Owner、device、产品 session 和到期时间。原始 JWT 与 provider subject 不进入产品持久状态，公开 verifier 返回值也不包含 provider subject。该登录时间证明不等同于 MFA 证明；真实部署的 provider 主体对应关系仍需环境验证。

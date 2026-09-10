@@ -53,7 +53,10 @@ import {
   registerIdentityAuthenticationRoutes,
   SessionBoundCsrfService,
 } from "@himawari-agent/platform-node";
-import { createProductionApprovalGateway } from "./production-approval-gateway.js";
+import {
+  createProductionApprovalGateway,
+  PRODUCTION_APPROVAL_OPERATIONS,
+} from "./production-approval-gateway.js";
 import type { FastifyInstance } from "fastify";
 
 type OwnerId = PayloadProtectionRequest["ownerId"];
@@ -450,6 +453,7 @@ function routeOptions(
     health,
     metrics,
     browserConfiguration: {
+      installedGatewayV2Operations: PRODUCTION_APPROVAL_OPERATIONS,
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
       authorityEpoch: authority.authorityEpoch,

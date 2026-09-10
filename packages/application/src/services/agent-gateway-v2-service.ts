@@ -13,6 +13,7 @@ import {
 import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 
 export interface AgentGatewayV2ServiceDependencies {
+  readonly installedOperations?: readonly GatewayV2InboundMessage["type"][];
   readonly access: GatewayV2AccessPolicyPort;
   readonly controlPlane: GatewayV2ControlPlanePort;
   readonly reads: GatewayV2ReadModelPort;
@@ -30,6 +31,15 @@ export class AgentGatewayV2Service implements AgentGatewayV2Port {
     message: GatewayV2InboundMessage,
   ): Promise<GatewayCommandResult | GatewayV2Snapshot> {
     await this.authorize(authentication, message);
+    if (
+      this.dependencies.installedOperations &&
+      !this.dependencies.installedOperations.includes(message.type)
+    ) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.OPERATION_NOT_INSTALLED,
+        "Gateway operation is not installed in this deployment",
+      );
+    }
     return message.kind === "command"
       ? this.dependencies.controlPlane.execute({ authentication, command: message })
       : this.dependencies.reads.query(message);

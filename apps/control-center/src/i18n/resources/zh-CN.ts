@@ -61,6 +61,10 @@ export const messages = {
   "state.degraded": "依赖降级",
   "state.offline": "离线期间只保留未发送草稿",
   "surface.blocked.title": "领域 contract 尚未冻结",
+  "surface.notInstalled.title": "当前部署未启用此功能",
+  "surface.notInstalled.description":
+    "此功能尚未接入当前服务器。服务接入并验收后才能使用；重新登录或刷新页面不会启用它。",
+  "surface.notInstalled.label": "未启用",
   "surface.blocked.description":
     "仍有 {count, plural, one {# 个阻塞项} other {# 个阻塞项}}，本页面不会创建临时业务语义。",
   "layout.label": "桌面布局",

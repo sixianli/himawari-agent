@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ControlCenterShell } from "./app/app-shell.js";
 import {
   CONTROL_CENTER_SURFACE_INVENTORY,
+  isSurfaceInstalled,
   type ControlCenterSurfaceInventoryEntry,
 } from "./app/control-center-inventory.js";
 import {
@@ -32,6 +33,7 @@ import {
   type MutationStatus,
 } from "./gateway-client.js";
 import { useGovernanceControlCenter } from "./governance-control-center.js";
+import { HealthControlCenter } from "./health-control-center.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import {
   bootstrapLoadingLabel,
@@ -166,6 +168,13 @@ function LocalizedControlCenterApp({
     match.kind === "matched" ? match.state : routeForSurface("threads", { view: "content" });
   const surface = surfaceInventory(route.surfaceId);
   const [configuration, setConfiguration] = useState<RuntimeConfiguration>();
+  const surfaceInstalled =
+    configuration !== undefined &&
+    isSurfaceInstalled(
+      surface,
+      configuration.installedGatewayV2Operations ?? [],
+      configuration.healthDependenciesAvailable,
+    );
   const [authenticationRequired, setAuthenticationRequired] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [bootstrapRevision, setBootstrapRevision] = useState(0);
@@ -337,7 +346,7 @@ function LocalizedControlCenterApp({
     "authorizations-grants",
   ].includes(route.surfaceId);
   const governanceModel = useGovernanceControlCenter({
-    active: governanceSurface,
+    active: governanceSurface && surfaceInstalled,
     client,
     configuration,
     connection,
@@ -350,7 +359,7 @@ function LocalizedControlCenterApp({
   });
   const operationsSurface = route.surfaceId !== "threads" && !governanceSurface;
   const operationsModel = useOperationsControlCenter({
-    active: operationsSurface,
+    active: operationsSurface && surfaceInstalled && route.surfaceId !== "health-deployment",
     client,
     configuration,
     connection,
@@ -554,6 +563,8 @@ function LocalizedControlCenterApp({
 
   return (
     <ControlCenterShell
+      healthDependenciesAvailable={configuration?.healthDependenciesAvailable ?? false}
+      installedGatewayV2Operations={configuration?.installedGatewayV2Operations ?? []}
       connection={route.surfaceId === "threads" ? threadConnection : connection}
       content={
         !configuration && requestError ? (
@@ -570,6 +581,12 @@ function LocalizedControlCenterApp({
             ) : null}
             <code>{requestError}</code>
           </Banner>
+        ) : configuration && !surfaceInstalled ? (
+          <Banner title={message("surface.notInstalled.title")} tone="warning">
+            <p>{message("surface.notInstalled.description")}</p>
+          </Banner>
+        ) : route.surfaceId === "health-deployment" && client ? (
+          <HealthControlCenter client={client} onUnauthorized={clearPrivateViewState} />
         ) : route.surfaceId === "threads" ? (
           threadModel.content
         ) : governanceSurface ? (
@@ -581,7 +598,7 @@ function LocalizedControlCenterApp({
         )
       }
       details={
-        !configuration
+        !configuration || !surfaceInstalled || route.surfaceId === "health-deployment"
           ? null
           : route.surfaceId === "threads"
             ? threadModel.details
@@ -592,7 +609,7 @@ function LocalizedControlCenterApp({
                 : genericDetails
       }
       list={
-        !configuration
+        !configuration || !surfaceInstalled || route.surfaceId === "health-deployment"
           ? null
           : route.surfaceId === "threads"
             ? threadModel.list

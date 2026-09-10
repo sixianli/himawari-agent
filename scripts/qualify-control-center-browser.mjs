@@ -47,6 +47,52 @@ const profiles = {
     emulation: "Pixel 7",
   },
 };
+export async function qualifyDeploymentAvailability(page, baseUrl) {
+  await page.route("**/api/control-center/v1/config", async (route) => {
+    const response = await route.fetch();
+    const configuration = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...configuration,
+        installedGatewayV2Operations: ["approval.list", "approval.detail", "approval.respond"],
+      },
+    });
+  });
+  await page.goto(`${baseUrl}/inbox`);
+  await page.getByText("当前部署未启用此功能", { exact: true }).waitFor();
+  let unsupportedQueries = 0;
+  const countQueries = (request) => {
+    if (request.url().endsWith("/api/gateway/v2/queries")) unsupportedQueries += 1;
+  };
+  page.on("request", countQueries);
+  const unavailableNavigation = page.getByRole("navigation", { name: "控制中心功能" });
+  const unavailableLinks = unavailableNavigation.getByRole("link").filter({ hasText: "未启用" });
+  if ((await unavailableLinks.count()) !== 13)
+    throw new Error("CONTROL_CENTER_AVAILABILITY_INVENTORY_INVALID");
+  for (let index = 0; index < 13; index += 1) {
+    await unavailableLinks.nth(index).click();
+    await page.getByText("当前部署未启用此功能", { exact: true }).waitFor();
+    if (await page.getByText("PORT_NOT_AUTHORITATIVE", { exact: true }).count())
+      throw new Error("CONTROL_CENTER_UNINSTALLED_SHOWN_AS_DENIED");
+  }
+  if (unsupportedQueries !== 0) throw new Error("CONTROL_CENTER_UNINSTALLED_QUERY_SENT");
+  page.off("request", countQueries);
+  await unavailableNavigation.getByRole("link", { name: "审批", exact: true }).click();
+  await page.getByText("approval-approve", { exact: true }).waitFor();
+  await unavailableNavigation.getByRole("link", { name: "健康与部署", exact: true }).click();
+  await page.getByText("model-provider", { exact: true }).waitFor();
+  const violations = (await new AxeBuilder({ page }).analyze()).violations;
+  if (violations.length) throw new Error("CONTROL_CENTER_AVAILABILITY_AXE_FAILED");
+  return {
+    unavailablePages: 13,
+    unsupportedQueries,
+    approvalVisible: true,
+    healthVisible: true,
+    axeViolations: violations.length,
+  };
+}
+
 export async function qualifyBrowser({
   profileName = "chromium",
   staticRoot = path.join(repositoryRoot, "apps/control-center/dist"),
@@ -832,6 +878,9 @@ export async function qualifyBrowser({
       throw new Error(`CONTROL_CENTER_PAGE_ERRORS:${unexpectedBrowserErrors.join("|")}`);
     }
 
+    phase = "deployment-availability";
+    await qualifyDeploymentAvailability(page, baseUrl);
+
     const report = {
       schemaVersion: 2,
       status: "passed",
@@ -844,6 +893,8 @@ export async function qualifyBrowser({
       emulation: profile.emulation ?? null,
       surfaces: surfaces.map(({ label, policy }) => ({ label, policy })),
       journeys: [
+        "deployment-availability-no-unsupported-queries",
+        "installed-health-dependencies",
         "thread-chat",
         "thread-answer-locale",
         "thread-search",

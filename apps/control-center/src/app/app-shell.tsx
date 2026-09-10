@@ -4,7 +4,10 @@ import type { ControlCenterPreferences, ControlCenterUiLocale } from "../browser
 import { ActionButton, AppLink, StatusRegion } from "../components/index.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { UI_LOCALES, useControlCenterIntl } from "../i18n/runtime.js";
-import { CONTROL_CENTER_SURFACE_INVENTORY } from "./control-center-inventory.js";
+import {
+  CONTROL_CENTER_SURFACE_INVENTORY,
+  isSurfaceInstalled,
+} from "./control-center-inventory.js";
 import { type ControlCenterRouteState, controlCenterHref, routeForSurface } from "./router.js";
 
 const navMessageIds: Readonly<
@@ -29,6 +32,8 @@ const navMessageIds: Readonly<
 };
 
 export interface ControlCenterShellProps {
+  readonly healthDependenciesAvailable?: boolean;
+  readonly installedGatewayV2Operations?: readonly string[];
   readonly connection: "connecting" | "connected" | "offline";
   readonly content: ReactNode;
   readonly details: ReactNode;
@@ -47,6 +52,8 @@ function shouldHandleNavigation(event: MouseEvent<HTMLAnchorElement>): boolean {
 }
 
 export function ControlCenterShell({
+  healthDependenciesAvailable = false,
+  installedGatewayV2Operations = [],
   connection,
   content,
   details,
@@ -130,6 +137,13 @@ export function ControlCenterShell({
               }}
             >
               {message(navMessageIds[surface.id])}
+              {!isSurfaceInstalled(
+                surface,
+                installedGatewayV2Operations,
+                healthDependenciesAvailable,
+              ) ? (
+                <small> · {message("surface.notInstalled.label")}</small>
+              ) : null}
             </AppLink>
           );
         })}

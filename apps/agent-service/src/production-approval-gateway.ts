@@ -17,6 +17,12 @@ import {
 type ProductAuthorityFence = ThreadCreateInput["authority"];
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 
+export const PRODUCTION_APPROVAL_OPERATIONS = Object.freeze([
+  "approval.list",
+  "approval.detail",
+  "approval.respond",
+] as const);
+
 /** Only the installed approval surface is exposed; other governance mutations stay unavailable. */
 export function createProductionApprovalGateway(options: {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
@@ -137,12 +143,11 @@ export function createProductionApprovalGateway(options: {
     recentAuthentication: options.recentAuthentication,
   });
   return new AgentGatewayV2Service({
+    installedOperations: PRODUCTION_APPROVAL_OPERATIONS,
     reads,
     controlPlane,
     access: {
       authorize: async (input) => {
-        if (!["approval.list", "approval.detail", "approval.respond"].includes(input.message.type))
-          return { allowed: false, reasonCode: "GATEWAY_OPERATION_NOT_INSTALLED" };
         const fence = options.authority();
         if (
           input.message.authority.deploymentId !== fence.deploymentId ||

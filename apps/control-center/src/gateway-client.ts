@@ -14,6 +14,19 @@ import {
 
 export type MutationStatus = "pending" | "accepted" | "rejected" | "expired" | "replayed";
 
+export interface HealthDependenciesSnapshot {
+  readonly id: string;
+  readonly live: boolean;
+  readonly ready: boolean;
+  readonly status: "healthy" | "degraded" | "not_ready" | "not_live";
+  readonly dependencies: readonly {
+    readonly name: string;
+    readonly required: boolean;
+    readonly status: "healthy" | "degraded" | "blocked" | "unavailable";
+    readonly reasonCode: string | null;
+  }[];
+}
+
 export interface GatewayClientMutationResult {
   readonly resultRef: string;
   readonly replayed: boolean;
@@ -26,6 +39,8 @@ export interface GatewayClientOptions {
 }
 
 export interface ControlCenterRuntimeConfiguration {
+  readonly healthDependenciesAvailable?: boolean;
+  readonly installedGatewayV2Operations?: readonly string[];
   readonly ownerId: string;
   readonly agentId: string;
   readonly deploymentId: string;
@@ -79,6 +94,8 @@ export async function loadRuntimeConfiguration(
     throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
   }
   const value = body as {
+    readonly healthDependenciesAvailable?: unknown;
+    readonly installedGatewayV2Operations?: unknown;
     readonly ownerId?: unknown;
     readonly agentId?: unknown;
     readonly deploymentId?: unknown;
@@ -158,6 +175,13 @@ export async function loadRuntimeConfiguration(
     typeof value.recentAuthenticationRef === "string" && value.recentAuthenticationRef.length > 0
       ? value.recentAuthenticationRef
       : null;
+  const installedGatewayV2Operations = value.installedGatewayV2Operations ?? [];
+  if (
+    !Array.isArray(installedGatewayV2Operations) ||
+    !installedGatewayV2Operations.every((operation) => typeof operation === "string")
+  ) {
+    throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
+  }
   return Object.freeze({
     ...(value as unknown as Omit<
       ControlCenterRuntimeConfiguration,
@@ -169,6 +193,8 @@ export async function loadRuntimeConfiguration(
       | "recentAuthenticationRef"
     >),
     authorizationRef,
+    installedGatewayV2Operations: Object.freeze([...installedGatewayV2Operations]),
+    healthDependenciesAvailable: value.healthDependenciesAvailable === true,
     recentAuthenticationRef,
     primaryModel: normalizedPrimary,
     primaryModelRef,
@@ -225,6 +251,37 @@ export class GatewayClient {
 
   constructor(options: GatewayClientOptions) {
     this.options = options;
+  }
+
+  async healthDependencies(): Promise<HealthDependenciesSnapshot> {
+    const body = await json(
+      await this.options.fetch("/api/health/v1/dependencies", {
+        credentials: "same-origin",
+        headers: { accept: "application/json" },
+      }),
+    );
+    if (!body || typeof body !== "object" || Array.isArray(body))
+      throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+    const value = body as Partial<HealthDependenciesSnapshot>;
+    if (
+      typeof value.id !== "string" ||
+      typeof value.live !== "boolean" ||
+      typeof value.ready !== "boolean" ||
+      !["healthy", "degraded", "not_ready", "not_live"].includes(value.status ?? "") ||
+      !Array.isArray(value.dependencies) ||
+      !value.dependencies.every((item: unknown) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+        const dependency = item as Partial<HealthDependenciesSnapshot["dependencies"][number]>;
+        return (
+          typeof dependency.name === "string" &&
+          typeof dependency.required === "boolean" &&
+          ["healthy", "degraded", "blocked", "unavailable"].includes(dependency.status ?? "") &&
+          (dependency.reasonCode === null || typeof dependency.reasonCode === "string")
+        );
+      })
+    )
+      throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+    return value as HealthDependenciesSnapshot;
   }
 
   async query(message: GatewayV2Query): Promise<GatewayV2Snapshot> {

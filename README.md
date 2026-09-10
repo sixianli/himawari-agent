@@ -4,6 +4,8 @@ Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私�
 
 当前交付是可安装、可运行的架构验证平台，不是 production-ready 服务。Node runtime 已有 Agent Service、Execution Worker 和 admin CLI 的 `main`、受保护 UDS、持久 SQLite、doctor/db status 及信号 drain；支持的 OpenRouter 配置现在会在 Agent Service 生命周期中创建 Model/Pi 与 Mem0 composition，并把 4096 维 embedding identity 写入 ready diagnostic。主机文件/代码工作区已接通 Gateway v2、Worker 和控制中心，支持受治理 read/write/move/Trash/restore/permanent delete、workspace ownership、无 filter 独立 index 暂存、冻结 CommitPreview 与 task-only local commit；主动建议、周期反思、最小 Worker delegation 和永久 review-required 的隔离自我改进候选也已完成本地状态、恢复和 UI 边界。Mac 命令已冻结为双层合同：低风险只读关闭集合进入签名 App Sandbox/XPC helper，高风险与未知命令进入 Apple `container 1.2.0`，路由失败不降级；Hermes 使用 `bubblewrap 0.11.2 + prlimit >=2.38`。三种 production backend 都尚未通过同一 revision 的真实资格，Node host path adapter 也必须在对应外层隔离通过前保持 inactive。没有安装或启用真实 capability，治理 Gateway 中的审批查询与决定已组合进 production Agent Service，其余治理入口尚未完成总组合。公开 HTTP listener、身份、可信 Run policy、持久执行与回答、Pi、Mem0 projection consumer 和已授权 Worker 工具现已接入主入口；真实公共身份路径资格、生产 Vault/GitHub 总组合、结构化 Worker 子任务、真实远程 Worker 沙箱、地图/预订供应商和通知客户端仍未完成。默认 local composition 使用进程内参考适配器，退出后数据不会保留。完整边界和限制见 [Architecture v0.1](docs/architecture-v0.1.md)。
 
+正式网页入口的可用页面以服务器实际安装的接口为准。目前开放对话、审批以及服务与依赖健康检查；其余页面显示“未启用”。下文各领域的本地实现与测试覆盖不等于正式 Gateway 已接通。
+
 当前审查修复将工作区变更归属、Git index 事务、删除内容版本、建议/反思/委派状态转换和候选资源清理落实为明确的持久合同。恢复与并发测试使用本地临时仓库和受控适配器；真实模型恢复、Mac/Hermes 隔离资格仍按上述门禁独立验收。
 
 ## Toolchain
