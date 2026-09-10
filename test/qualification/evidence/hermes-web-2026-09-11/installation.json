@@ -1,0 +1,51 @@
+{
+  "host": "hermes-home",
+  "platform": "linux-x64",
+  "root": "/data/hermes/himawari",
+  "runtimeDigest": "bc93e3b08b41573ad045946bde819030fa4569cbf74ff6934b8313e75966474d",
+  "serverSourceArchiveSha256": "afb63ddd6f49af866146bde9a2682a25dc17eeddaad6f9cc3fdb1fd71e5da5c4",
+  "webArchiveSha256": "a7b6f92ba2d2ad541fff00d738e090ff50f572202a18a2f9d1ea1093e3b94453",
+  "qualificationKind": "固定合成输入与真实安装主机，不等于 Web 全流程",
+  "probes": [
+    {
+      "name": "pi-installed",
+      "exitCode": 0
+    },
+    {
+      "name": "composition-installed",
+      "exitCode": 0
+    },
+    {
+      "name": "network-installed",
+      "exitCode": 0
+    },
+    {
+      "name": "boundary-installed",
+      "exitCode": 0
+    },
+    {
+      "name": "worker-loss-installed",
+      "exitCode": 0
+    },
+    {
+      "name": "web-search-installed",
+      "exitCode": 0
+    }
+  ],
+  "sourceManifestCaveat": "v15 归档清单内 archiveSha256 为旧值；实际安装脚本核对上述真实归档摘要及逐文件摘要，未采用该旧字段。",
+  "databaseSchema": 31,
+  "previousReleaseRetained": true,
+  "staticWebInstallFiles": 6,
+  "webOnlyInstallRestartedServer": false,
+  "finalCodeCommit": "f363d6b",
+  "serverSourceComparison": {
+    "archiveFiles": 448,
+    "changedSinceV15": [
+      "apps/control-center/package.json",
+      "apps/control-center/src/chat-layout.css",
+      "apps/control-center/src/components/chat-history.tsx",
+      "package-lock.json"
+    ],
+    "explanation": "差异限定于独立更新的 Web 源码、浏览器依赖与边界配置；安装服务端源码未变。"
+  }
+}

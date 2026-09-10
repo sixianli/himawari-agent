@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "errors": [],
+  "assets": [
+    { "name": "en-C2dhfUi_.js", "bytes": 19299, "gzipBytes": 6157 },
+    { "name": "index-C47JaPjX.js", "bytes": 471612, "gzipBytes": 134415 },
+    { "name": "index-CWBX2msp.css", "bytes": 28058, "gzipBytes": 6470 },
+    { "name": "ja-CMuD4NUP.js", "bytes": 22370, "gzipBytes": 7652 }
+  ],
+  "localeChunks": ["en-C2dhfUi_.js", "ja-CMuD4NUP.js"],
+  "sourceMaps": 0,
+  "inlineScripts": 0,
+  "inlineStyles": 0,
+  "budgets": {
+    "maximumEntryGzipBytes": 153600,
+    "maximumTotalGzipBytes": 184320,
+    "totalGzipBytes": 154694
+  }
+}

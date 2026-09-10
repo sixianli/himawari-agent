@@ -1,0 +1,122 @@
+[
+  {
+    "theme": "light",
+    "accent": "violet",
+    "background": "rgb(252, 252, 251)",
+    "text": "rgb(37, 41, 33)",
+    "input": "rgba(0, 0, 0, 0)",
+    "warning": "#806013",
+    "danger": "#a73c30",
+    "success": "#42682a"
+  },
+  {
+    "theme": "light",
+    "accent": "blue",
+    "background": "rgb(252, 252, 251)",
+    "text": "rgb(37, 41, 33)",
+    "input": "rgba(0, 0, 0, 0)",
+    "warning": "#806013",
+    "danger": "#a73c30",
+    "success": "#42682a"
+  },
+  {
+    "theme": "light",
+    "accent": "teal",
+    "background": "rgb(252, 252, 251)",
+    "text": "rgb(37, 41, 33)",
+    "input": "rgba(0, 0, 0, 0)",
+    "warning": "#806013",
+    "danger": "#a73c30",
+    "success": "#42682a"
+  },
+  {
+    "theme": "light",
+    "accent": "amber",
+    "background": "rgb(252, 252, 251)",
+    "text": "rgb(37, 41, 33)",
+    "input": "rgba(0, 0, 0, 0)",
+    "warning": "#806013",
+    "danger": "#a73c30",
+    "success": "#42682a"
+  },
+  {
+    "theme": "light",
+    "accent": "rose",
+    "background": "rgb(252, 252, 251)",
+    "text": "rgb(37, 41, 33)",
+    "input": "rgba(0, 0, 0, 0)",
+    "warning": "#806013",
+    "danger": "#a73c30",
+    "success": "#42682a"
+  },
+  {
+    "theme": "light",
+    "accent": "graphite",
+    "background": "rgb(252, 252, 251)",
+    "text": "rgb(37, 41, 33)",
+    "input": "rgba(0, 0, 0, 0)",
+    "warning": "#806013",
+    "danger": "#a73c30",
+    "success": "#42682a"
+  },
+  {
+    "theme": "dark",
+    "accent": "violet",
+    "background": "rgb(30, 30, 30)",
+    "text": "rgb(212, 212, 212)",
+    "input": "rgba(0, 0, 0, 0)",
+    "warning": "#d6b55d",
+    "danger": "#efa095",
+    "success": "#accd88"
+  },
+  {
+    "theme": "dark",
+    "accent": "blue",
+    "background": "rgb(30, 30, 30)",
+    "text": "rgb(212, 212, 212)",
+    "input": "rgba(0, 0, 0, 0)",
+    "warning": "#d6b55d",
+    "danger": "#efa095",
+    "success": "#accd88"
+  },
+  {
+    "theme": "dark",
+    "accent": "teal",
+    "background": "rgb(30, 30, 30)",
+    "text": "rgb(212, 212, 212)",
+    "input": "rgba(0, 0, 0, 0)",
+    "warning": "#d6b55d",
+    "danger": "#efa095",
+    "success": "#accd88"
+  },
+  {
+    "theme": "dark",
+    "accent": "amber",
+    "background": "rgb(30, 30, 30)",
+    "text": "rgb(212, 212, 212)",
+    "input": "rgba(0, 0, 0, 0)",
+    "warning": "#d6b55d",
+    "danger": "#efa095",
+    "success": "#accd88"
+  },
+  {
+    "theme": "dark",
+    "accent": "rose",
+    "background": "rgb(30, 30, 30)",
+    "text": "rgb(212, 212, 212)",
+    "input": "rgba(0, 0, 0, 0)",
+    "warning": "#d6b55d",
+    "danger": "#efa095",
+    "success": "#accd88"
+  },
+  {
+    "theme": "dark",
+    "accent": "graphite",
+    "background": "rgb(30, 30, 30)",
+    "text": "rgb(212, 212, 212)",
+    "input": "rgba(0, 0, 0, 0)",
+    "warning": "#d6b55d",
+    "danger": "#efa095",
+    "success": "#accd88"
+  }
+]

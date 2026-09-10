@@ -1,0 +1,212 @@
+{
+  "kind": "真实 Hermes Web 验收，工具仅操作专用验收文件",
+  "observedAt": "2026-09-10T21:26:59.921982+00:00",
+  "url": "https://himawari.siyi.win",
+  "serverArtifact": "v15",
+  "webArtifact": "v17",
+  "databaseQuickCheck": "ok",
+  "service": {
+    "active": "active",
+    "enabled": "enabled"
+  },
+  "runs": [
+    {
+      "id": "run:fef12416-a0fc-475c-a596-318c89c2e445",
+      "status": "cancelled",
+      "created_at": "2026-09-10T19:37:17.994Z",
+      "updated_at": "2026-09-10T19:43:21.955Z",
+      "thread": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+      "jobs": [
+        {
+          "jobId": "jrCs4HAbuwn2-O5RedligDhHREWfocX2Uf9stb8jbuCM",
+          "phase": "bound",
+          "supervision": "released",
+          "cleanup": "confirmed",
+          "sequence": 7,
+          "resultKind": "result",
+          "effectKind": "verified",
+          "toolHandoffs": []
+        }
+      ]
+    },
+    {
+      "id": "run:9f7cdb58-003f-4041-8855-1e93972c22e3",
+      "status": "cancelled",
+      "created_at": "2026-09-10T20:05:16.930Z",
+      "updated_at": "2026-09-10T20:22:10.473Z",
+      "thread": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+      "jobs": [
+        {
+          "jobId": "jyFh28f4Y3qPh2ODHpZ6dQPKjoAxgJy6M6k5XfJ2Se5E",
+          "phase": "bound",
+          "supervision": "released",
+          "cleanup": "confirmed",
+          "sequence": 6,
+          "resultKind": "result",
+          "effectKind": "not_applicable",
+          "toolHandoffs": []
+        }
+      ]
+    },
+    {
+      "id": "run:78973d12-b7ac-498a-ad25-8149bdb738a9",
+      "status": "completed",
+      "created_at": "2026-09-10T20:32:57.098Z",
+      "updated_at": "2026-09-10T20:39:22.098Z",
+      "thread": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+      "jobs": [
+        {
+          "jobId": "jKLc3BHO4nMM34BIXEMDESy2xWMIN1SZA-n1GBBuprJs",
+          "phase": "bound",
+          "supervision": "released",
+          "cleanup": "confirmed",
+          "sequence": 6,
+          "resultKind": "result",
+          "effectKind": "not_applicable",
+          "toolHandoffs": [
+            {
+              "kind": "tool_result",
+              "dispatched_at": "2026-09-10T20:39:01.152Z",
+              "acknowledged_at": "2026-09-10T20:39:01.240Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "run:9031a2fa-7494-49e8-acc9-2b603d9a7c03",
+      "status": "completed",
+      "created_at": "2026-09-10T20:40:06.313Z",
+      "updated_at": "2026-09-10T20:47:35.608Z",
+      "thread": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+      "jobs": [
+        {
+          "jobId": "jTgUVbJHE_F-A4vECVRvfm_p8Q7Qb4NcJoUKc9O0WjhU",
+          "phase": "bound",
+          "supervision": "released",
+          "cleanup": "confirmed",
+          "sequence": 6,
+          "resultKind": "result",
+          "effectKind": "not_applicable",
+          "toolHandoffs": [
+            {
+              "kind": "tool_result",
+              "dispatched_at": "2026-09-10T20:44:50.764Z",
+              "acknowledged_at": "2026-09-10T20:44:50.881Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "run:ed204253-6f5e-4505-b3e0-b30ae94ecb38",
+      "status": "completed",
+      "created_at": "2026-09-10T20:48:53.260Z",
+      "updated_at": "2026-09-10T20:57:17.037Z",
+      "thread": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+      "jobs": [
+        {
+          "jobId": "jH9Ktoey868-EP4Md9Xp-0vHa3Tyi9RVjOfB3-GagY0M",
+          "phase": "bound",
+          "supervision": "released",
+          "cleanup": "confirmed",
+          "sequence": 6,
+          "resultKind": "result",
+          "effectKind": "verified",
+          "toolHandoffs": [
+            {
+              "kind": "tool_result",
+              "dispatched_at": "2026-09-10T20:55:08.772Z",
+              "acknowledged_at": "2026-09-10T20:55:08.892Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "run:408dd8f3-1e41-4eb8-9fb2-ea78a8dcd29d",
+      "status": "completed",
+      "created_at": "2026-09-10T20:58:02.049Z",
+      "updated_at": "2026-09-10T20:59:38.042Z",
+      "thread": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+      "jobs": []
+    },
+    {
+      "id": "run:cf969f0a-75f6-42e1-a39b-64903861b3ca",
+      "status": "completed",
+      "created_at": "2026-09-10T21:01:47.901Z",
+      "updated_at": "2026-09-10T21:02:50.567Z",
+      "thread": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+      "jobs": []
+    },
+    {
+      "id": "run:3765d027-b296-453c-8c3b-c7fcf073da77",
+      "status": "completed",
+      "created_at": "2026-09-10T21:03:48.263Z",
+      "updated_at": "2026-09-10T21:06:21.659Z",
+      "thread": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+      "jobs": []
+    },
+    {
+      "id": "run:ab5b4803-23d6-4da6-86b6-945bb7ed9583",
+      "status": "cancelled",
+      "created_at": "2026-09-10T21:08:00.858Z",
+      "updated_at": "2026-09-10T21:09:51.426Z",
+      "thread": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+      "jobs": []
+    },
+    {
+      "id": "run:f6d7677a-a96e-49d1-a7ba-d17f19ac7051",
+      "status": "completed",
+      "created_at": "2026-09-10T21:12:52.594Z",
+      "updated_at": "2026-09-10T21:14:24.799Z",
+      "thread": "thread:cb71512e-ccdc-43ce-b488-d11fe7c19322",
+      "jobs": []
+    },
+    {
+      "id": "run:90be1290-64cb-4bc9-b799-dba0899339ed",
+      "status": "completed",
+      "created_at": "2026-09-10T21:21:58.487Z",
+      "updated_at": "2026-09-10T21:22:35.157Z",
+      "thread": "thread:cb71512e-ccdc-43ce-b488-d11fe7c19322",
+      "jobs": []
+    }
+  ],
+  "files": [
+    {
+      "name": "acceptance-morning.txt",
+      "exists": true,
+      "bytes": 18,
+      "sha256": "77d8e51b68cd5f82595be18334b7e067feb05c55beda86579c85530cbfdce322"
+    },
+    {
+      "name": "acceptance-daily-note.py",
+      "exists": true,
+      "bytes": 865,
+      "sha256": "c5b9fdd3c09fd508708da499bd9461d0af478ca8cd3bd1c79ac12433c97c3212"
+    },
+    {
+      "name": "acceptance-daily-note.log",
+      "exists": false
+    },
+    {
+      "name": "acceptance-rejected.txt",
+      "exists": false
+    }
+  ],
+  "budgetMicros": {
+    "spent": 9543,
+    "reserved": 228230,
+    "earlierMacUnknownReservation": 63652,
+    "earlierEmbeddingUpperBound": 1,
+    "combinedSpentAndReservedUpperBound": 301426
+  },
+  "restart": {
+    "workerReady": "2026-09-10T21:20:33.373Z",
+    "agentReady": "2026-09-10T21:20:34.265Z",
+    "fencingToken": 28,
+    "unfinishedRunsAtReady": 0,
+    "historyAndDraftRestored": true,
+    "followupCompleted": true
+  }
+}

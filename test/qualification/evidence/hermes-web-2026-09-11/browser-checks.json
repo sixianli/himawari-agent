@@ -1,0 +1,50 @@
+{
+  "kind": "实际浏览器操作；手机是视口与触摸模拟",
+  "desktopCss": {
+    "width": 1280,
+    "height": 820
+  },
+  "mobileCss": {
+    "width": 390,
+    "height": 844,
+    "scrollWidth": 390
+  },
+  "newSwitchContinue": "passed",
+  "renamePinArchiveRestore": "passed",
+  "searchThreads": {
+    "status": "failed",
+    "httpStatus": 404,
+    "path": "/api/thread-search/v1/prepare",
+    "reason": "生产组合未装配准备接口和索引同步"
+  },
+  "realWebSearch": "passed",
+  "approvalApproveDeny": "passed",
+  "utf8TextAttachment": "passed",
+  "offlineDraftRefresh": "passed",
+  "restartHistoryDraftContinue": "passed",
+  "streamStop": {
+    "model": "GLM 5.3 Flash",
+    "thinkingLevel": "low",
+    "beforeStopCharacters": 496,
+    "afterRefreshCharacters": 1294,
+    "prefixPreserved": true,
+    "terminal": "cancelled"
+  },
+  "scrollFollow": {
+    "pausedScrollTop": 3796,
+    "latestButtonShown": true
+  },
+  "keyboard": {
+    "shiftEnterNewline": "passed",
+    "enterSubmit": "passed"
+  },
+  "mobileTouch": {
+    "sidebarToggle": "passed",
+    "minimumVerifiedTargetCssPixels": 44,
+    "physicalDeviceTested": false
+  },
+  "themeMatrixFile": "theme-matrix.json",
+  "thinking": "模型没有提供允许展示的摘要；页面明确说明，未生成模拟思考",
+  "nextModelPreferenceAfterRefresh": "恢复配置默认值，尚未持久化",
+  "responseQualityFailure": "一次模型声称等待批准，但没有发起工具；没有把该文字当作真实审批。"
+}
