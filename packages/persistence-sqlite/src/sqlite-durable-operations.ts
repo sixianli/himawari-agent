@@ -482,6 +482,8 @@ export class SqliteDurableOperations {
         );
       case "trace.append":
         return this.appendTrace((payload as { event: TraceEvent }).event);
+      case "trace.appendNext":
+        return this.appendNextTrace((payload as { event: Omit<TraceEvent, "sequence"> }).event);
       case "trace.readRun":
         return this.readTraceRun(
           payload as { runId: string; afterSequence: number; limit: number },
@@ -1279,6 +1281,27 @@ export class SqliteDurableOperations {
       )
       .run(input.consumerId, input.eventId, input.processedAt);
     return result.changes === 1;
+  }
+
+  private appendNextTrace(input: Omit<TraceEvent, "sequence">): TraceEvent {
+    return this.database
+      .transaction(() => {
+        const row = this.database
+          .prepare(
+            "SELECT COALESCE(MAX(sequence), 0) AS sequence FROM trace_events WHERE run_id = ?",
+          )
+          .get(input.runId) as { sequence: number };
+        if (
+          !Number.isSafeInteger(row.sequence) ||
+          row.sequence < 0 ||
+          row.sequence === Number.MAX_SAFE_INTEGER
+        )
+          return this.fail("PORT_INVALID_OPERATION", "Trace sequence is exhausted or invalid");
+        const event: TraceEvent = { ...input, sequence: row.sequence + 1 };
+        this.appendTrace(event);
+        return event;
+      })
+      .immediate();
   }
 
   private appendTrace(event: TraceEvent): void {

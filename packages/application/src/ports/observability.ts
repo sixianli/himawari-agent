@@ -29,6 +29,8 @@ export interface TraceEvent {
 }
 
 export interface TraceStorePort {
+  /** Allocate the Run-local sequence and append in one storage transaction. */
+  appendNext(event: Omit<TraceEvent, "sequence">): Promise<TraceEvent>;
   append(event: TraceEvent): Promise<void>;
   readRun(runId: RunId, afterSequence: number, limit: number): Promise<readonly TraceEvent[]>;
   readSession(

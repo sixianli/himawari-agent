@@ -26,6 +26,21 @@ export class InMemoryTraceStore implements TraceStorePort {
     this.failures = failures;
   }
 
+  async appendNext(input: Omit<TraceEvent, "sequence">): Promise<TraceEvent> {
+    const sequence =
+      [...this.records.values()]
+        .filter(({ runId }) => runId === input.runId)
+        .reduce((last, event) => Math.max(last, event.sequence), 0) + 1;
+    if (!Number.isSafeInteger(sequence) || sequence < 1)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Trace sequence is exhausted or invalid",
+      );
+    const event: TraceEvent = { ...input, sequence };
+    await this.append(event);
+    return frozenCopy(event);
+  }
+
   async append(event: TraceEvent): Promise<void> {
     this.failures.checkpoint("trace.append");
     if (this.records.has(event.id)) {

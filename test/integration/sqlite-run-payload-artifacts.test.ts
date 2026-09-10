@@ -397,6 +397,9 @@ describe("Run-owned Payload artifacts", () => {
     try {
       const recorder = new SessionTraceRecorder({
         trace: {
+          appendNext: async () => {
+            throw new Error("trace append failed");
+          },
           append: async () => {
             throw new Error("trace append failed");
           },

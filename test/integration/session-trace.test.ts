@@ -58,19 +58,24 @@ function traceInput(eventType: string) {
 }
 
 describe("Task 6 Session Trace", () => {
-  it.each([0, Number.MAX_SAFE_INTEGER])(
-    "rejects a non-advancing or exhausted persisted sequence %i",
-    async (sequence) => {
-      const { adapters, recorder } = createRecorder();
-      const first = await recorder.record(traceInput("run.accepted"));
-      const append = vi.spyOn(adapters.trace, "append");
-      vi.spyOn(adapters.trace, "readRun").mockResolvedValue([{ ...first.event, sequence }]);
-      await expect(recorder.record(traceInput("runtime.message"))).rejects.toMatchObject({
-        code: PORT_ERROR_CODES.INVALID_OPERATION,
-      });
-      expect(append).not.toHaveBeenCalled();
-    },
-  );
+  it("keeps concurrent runtime and authorization records without sequence collisions", async () => {
+    const { adapters, recorder } = createRecorder();
+    const recorded = await Promise.all([
+      recorder.record({ ...traceInput("runtime.tool_result"), payload: { outcome: "unknown" } }),
+      recorder.record({
+        ...traceInput("authorization.grant_consumed"),
+        payload: { operation: "write" },
+      }),
+    ]);
+    expect(recorded.map(({ event }) => event.sequence).sort()).toEqual([1, 2]);
+    expect(await adapters.trace.readRun(RUN_ID, 0, 10)).toHaveLength(2);
+  });
+  it("delegates sequence allocation to the atomic append instead of a stale read", async () => {
+    const { adapters, recorder } = createRecorder();
+    const read = vi.spyOn(adapters.trace, "readRun").mockRejectedValue(new Error("must not scan"));
+    expect((await recorder.record(traceInput("runtime.message"))).event.sequence).toBe(1);
+    expect(read).not.toHaveBeenCalled();
+  });
 
   it("records ordered model, tool, and approval payload references with causal relationships", async () => {
     const { adapters, recorder } = createRecorder();

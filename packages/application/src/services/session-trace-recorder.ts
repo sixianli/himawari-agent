@@ -6,7 +6,6 @@ import type {
   PayloadRef,
   TraceEventId,
 } from "../ports/common.js";
-import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type {
   AuditLedgerPort,
   AuditRecord,
@@ -64,7 +63,6 @@ export class SessionTraceRecorder {
   }
 
   async record(input: RecordTraceInput): Promise<RecordTraceResult> {
-    const lastSequence = await this.lastSequence(input.runId);
     const now = this.dependencies.clock.now();
     let eventId: TraceEventId | null = null;
     let payloadRef: PayloadRef | null = null;
@@ -109,7 +107,7 @@ export class SessionTraceRecorder {
 
     eventId ??= this.dependencies.ids.next("trace");
 
-    const event: TraceEvent = Object.freeze({
+    const event = await this.dependencies.trace.appendNext({
       id: eventId,
       schemaVersion: "trace.v1",
       ownerId: input.ownerId,
@@ -121,7 +119,6 @@ export class SessionTraceRecorder {
       parentEventId: input.parentEventId,
       causationId: input.causationId,
       correlationId: input.correlationId,
-      sequence: lastSequence + 1,
       occurredAt: input.occurredAt ?? now,
       recordedAt: now,
       actorId: input.actorId,
@@ -129,7 +126,6 @@ export class SessionTraceRecorder {
       eventType,
       payloadRef,
     });
-    await this.dependencies.trace.append(event);
 
     if (audit) {
       await this.dependencies.audit.append({
@@ -144,29 +140,5 @@ export class SessionTraceRecorder {
     }
 
     return Object.freeze({ event, payloadRef });
-  }
-
-  private async lastSequence(runId: RunId): Promise<number> {
-    const pageSize = 1000;
-    let afterSequence = 0;
-    while (true) {
-      const page = await this.dependencies.trace.readRun(runId, afterSequence, pageSize);
-      for (const event of page) {
-        if (!Number.isSafeInteger(event.sequence) || event.sequence <= afterSequence) {
-          throw new ApplicationPortError(
-            PORT_ERROR_CODES.INVALID_OPERATION,
-            "Trace page does not advance its sequence",
-          );
-        }
-        afterSequence = event.sequence;
-      }
-      if (afterSequence === Number.MAX_SAFE_INTEGER) {
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.INVALID_OPERATION,
-          "Trace sequence is exhausted",
-        );
-      }
-      if (page.length < pageSize) return afterSequence;
-    }
   }
 }

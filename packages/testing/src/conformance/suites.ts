@@ -361,6 +361,26 @@ function traceEvent(id: string, sequence: number): TraceEvent {
 
 export function traceStorePortConformance(harness: PortConformanceHarness<TraceStorePort>): void {
   describe("TraceStorePort conformance", () => {
+    it("atomically sequences concurrent appenders and retains scope checks", async () => {
+      await withPort(harness, async (port) => {
+        const next = (id: string) => {
+          const { sequence: _sequence, ...event } = traceEvent(id, 1);
+          return event;
+        };
+        const events = await Promise.all([
+          port.appendNext(next("atomic-1")),
+          port.appendNext(next("atomic-2")),
+        ]);
+        expect(events.map((event) => event.sequence).sort()).toEqual([1, 2]);
+        expect(await port.readRun(RUN_ID, 0, 10)).toHaveLength(2);
+        await expectPortError(() => port.appendNext(next("atomic-1")), PORT_ERROR_CODES.DUPLICATE);
+        await expectPortError(
+          () => port.appendNext({ ...next("wrong-scope"), correlationId: "other-correlation" }),
+          PORT_ERROR_CODES.INVALID_OPERATION,
+        );
+        expect((await port.appendNext(next("atomic-3"))).sequence).toBe(3);
+      });
+    });
     it("preserves append order and supports Run-local resume", async () => {
       await withPort(harness, async (port) => {
         await port.append(traceEvent("trace-01", 1));

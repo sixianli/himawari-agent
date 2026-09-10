@@ -250,6 +250,7 @@ export class SqliteDurableAdapters {
 
   traceStore(): TraceStorePort {
     return Object.freeze<TraceStorePort>({
+      appendNext: (event) => this.context.write("trace.appendNext", { event }),
       append: (event) => this.context.write("trace.append", { event }),
       readRun: (runId, afterSequence, limit) =>
         this.context.read("trace.readRun", { runId, afterSequence, limit }),
