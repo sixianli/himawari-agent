@@ -347,6 +347,7 @@ export async function runCheck({
               artifact: outcome.archive,
               output: path.join(directory, "tests"),
               context,
+              remainingBudgetMs: check.timeoutMinutes * 60_000 - (performance.now() - started),
             });
           }
         } else if (checkId === "test") {
@@ -355,6 +356,7 @@ export async function runCheck({
             artifact,
             output: path.join(directory, "tests"),
             context,
+            remainingBudgetMs: check.timeoutMinutes * 60_000 - (performance.now() - started),
           });
         } else {
           outcome = await runBrowser({

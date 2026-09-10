@@ -34,6 +34,9 @@ export default defineConfig({
           exclude,
           fileParallelism,
           retry: 0,
+          // Durable integration cases start workers and use real filesystem/UDS I/O.
+          // Their harness deadline is separate from asserted product deadlines.
+          ...(id === "integration" ? { testTimeout: 30_000 } : {}),
           ...(id === "tooling" ? { env: toolingEnvironment } : {}),
         },
       })),

@@ -1,0 +1,90 @@
+{
+  "source": "https://openrouter.ai/api/v1/models",
+  "checkedAt": "2026-09-10T11:39:26.931707+00:00",
+  "authenticated": false,
+  "paidCalls": 0,
+  "models": [
+    {
+      "id": "z-ai/glm-5.3-flash",
+      "pricing": {
+        "prompt": "0.00000015",
+        "completion": "0.0000005",
+        "input_cache_read": "0.00000003"
+      },
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "context_length": 1310720
+    },
+    {
+      "id": "deepseek/deepseek-v4-flash-0731",
+      "pricing": {
+        "prompt": "0.000000065",
+        "completion": "0.00000018",
+        "input_cache_read": "0.000000016"
+      },
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "parallel_tool_calls",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_a",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "context_length": 1310720
+    }
+  ],
+  "embeddingSource": "https://openrouter.ai/api/v1/embeddings/models",
+  "embeddingModels": [
+    {
+      "id": "qwen/qwen3-embedding-8b",
+      "pricing": {
+        "prompt": "0.00000001",
+        "completion": "0"
+      },
+      "context_length": 32768,
+      "architecture": {
+        "modality": "text->embeddings",
+        "input_modalities": ["text"],
+        "output_modalities": ["embeddings"],
+        "tokenizer": "Other",
+        "instruct_type": null
+      }
+    }
+  ]
+}
