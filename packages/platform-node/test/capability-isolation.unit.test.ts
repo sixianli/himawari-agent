@@ -350,19 +350,30 @@ describe("capability process isolation", () => {
     });
   });
 
-  it("enforces wall time and output bytes when supervising the sandbox process group", async () => {
-    const outputLimited = await runSandboxedProcess(
-      {
-        command: process.execPath,
-        args: ["-e", "process.stdout.write('x'.repeat(10000))"],
-        cwd: "/",
-        environment: {},
-        ceiling: { ...CEILING, maxOutputBytes: 128 },
-      },
-      null,
-    );
-    expect(outputLimited.outputLimitExceeded).toBe(true);
+  it(
+    "enforces output bytes independently of process startup time",
+    { timeout: 15_000 },
+    async () => {
+      const outputLimited = await runSandboxedProcess(
+        {
+          command: process.execPath,
+          args: ["-e", "process.stdout.write('x'.repeat(10000))"],
+          cwd: "/",
+          environment: {},
+          // Give this output-quota assertion a separate wall deadline: cold Node startup
+          // must not satisfy a different resource limit before the child writes output.
+          ceiling: { ...CEILING, maxWallTimeMs: 10_000, maxOutputBytes: 128 },
+        },
+        null,
+      );
+      expect(outputLimited).toMatchObject({ outputLimitExceeded: true, timedOut: false });
+      expect(outputLimited.stdout.byteLength + outputLimited.stderr.byteLength).toBeLessThanOrEqual(
+        128,
+      );
+    },
+  );
 
+  it("enforces wall time when supervising the sandbox process group", async () => {
     const timedOut = await runSandboxedProcess(
       {
         command: process.execPath,
@@ -373,6 +384,6 @@ describe("capability process isolation", () => {
       },
       null,
     );
-    expect(timedOut.timedOut).toBe(true);
+    expect(timedOut).toMatchObject({ timedOut: true, outputLimitExceeded: false });
   });
 });

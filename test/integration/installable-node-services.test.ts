@@ -515,8 +515,10 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
     const duplicate = spawnSync(executable("himawari-agent-service"), serviceArguments(), {
       cwd: testRoot,
       encoding: "utf8",
-      timeout: 3_000,
+      timeout: childExitTimeoutMilliseconds,
     });
+    expect(duplicate.error).toBeUndefined();
+    expect(duplicate.signal).toBeNull();
     expect(duplicate.status).toBe(1);
     expect(duplicate.stderr).toContain("SQLITE_STATE_ROOT_LOCKED");
     const unconfirmed = runInstalled("himawari", ["db", "migrate", "--config", configurationPath]);
