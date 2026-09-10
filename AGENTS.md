@@ -8,6 +8,12 @@ This repository explicitly adopts the `document-governance` skill for all govern
 
 - Write all project documentation content in Simplified Chinese.
 
+## 已确认的 Web 设计基准
+
+- 在修改控制中心的视觉、聊天交互或品牌资源前，先阅读 [已确认的 Web 与 Logo 设计基准](docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md)，并打开其中的交互原型和效果图。
+- `assets/brand/himawari/v1/` 与 `docs/assets/control-center/2026-09-10-v1/` 保存用户于 2026-09-10 确认的原始设计。后续实现以此核对布局、主题、逐轮过程与工具展示；不要直接覆盖基准文件。设计发生经用户确认的变化时，另存新版本并更新文档引用。
+- 原型中的消息、模型、thinking 摘要、工具输出、计时和审批均为演示数据，不能作为正式功能已实现或真实执行成功的证据。
+
 ## Engineering Diagrams
 
 - Do not use the `archify` skill to generate any engineering diagrams for this project, including flowcharts, architecture diagrams, sequence diagrams, state diagrams, and data-flow diagrams, unless the user explicitly requests its use. A general request to create a diagram does not authorize using `archify`.

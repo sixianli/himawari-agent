@@ -14,6 +14,7 @@ date: "2026-08-26"
 
 ## 来源上下文
 
+- 已确认的聊天视觉与交互基准：[SOURCE: docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md]。后续聊天页面重构按该基准核对外观与交互；本 Spec 中的身份、状态权威、三语与无障碍要求继续适用。
 - 产品目标与范围：[SOURCE: docs/prd-v0.2.md#产品目标]
 - 控制中心与身份：[SOURCE: docs/prd-v0.2.md#web-控制中心身份与设备]
 - 语言与无障碍：[SOURCE: docs/prd-v0.2.md#web-ui-语言回答语言与无障碍]

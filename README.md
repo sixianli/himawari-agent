@@ -8,6 +8,10 @@ Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私�
 
 当前审查修复将工作区变更归属、Git index 事务、删除内容版本、建议/反思/委派状态转换和候选资源清理落实为明确的持久合同。恢复与并发测试使用本地临时仓库和受控适配器；真实模型恢复、Mac/Hermes 隔离资格仍按上述门禁独立验收。
 
+## 已确认的 Web 设计
+
+2026-09-10 确认的 Logo 与聊天界面已保存为后续重构的设计基准。修改控制中心前，请先查看 [设计说明](docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md)、[交互原型](docs/assets/control-center/2026-09-10-v1/index.html) 和 [Logo 图片资源](assets/brand/himawari/README.md)。原型可下载或在本地用浏览器直接打开，图标已内嵌，支持离线查看；页面中的运行结果均为演示数据。
+
 ## Toolchain
 
 - Node.js 要求：`>=22.19.0`
