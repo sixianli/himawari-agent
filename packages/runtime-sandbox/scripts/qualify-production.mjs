@@ -1,10 +1,11 @@
 // Source integration qualification with controlled test identity and temporary data.
 // Existing component probes separately verify the packaged Job Host entry.
 
+import { Console } from "node:console";
 import { realpath } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { createServer } from "vite";
+import { createLogger, createServer } from "vite";
 
 const installed = process.env.HIMAWARI_QUALIFY_INSTALLED_RUNTIME
   ? await realpath(process.env.HIMAWARI_QUALIFY_INSTALLED_RUNTIME)
@@ -19,6 +20,11 @@ if (
   throw new Error("SANDBOX_PROBE_OPT_IN_REQUIRED");
 const server = await createServer({
   configFile: false,
+  // Qualification consumers parse all stdout as JSON, including on a cold cache.
+  customLogger: createLogger("info", {
+    console: new Console({ stdout: process.stderr, stderr: process.stderr }),
+    allowClearScreen: false,
+  }),
   server: { middlewareMode: true },
   appType: "custom",
   plugins: installed
