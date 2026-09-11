@@ -130,6 +130,21 @@ export class ThreadExecutionProjection {
             name: text(message["model"]),
             text: text(redactTracePayload(visibleText(message["content"]))),
           });
+          const content = Array.isArray(message["content"]) ? message["content"] : [];
+          const activity = object(content.at(-1))["type"];
+          if (["thinking", "text", "toolCall"].includes(String(activity))) {
+            records.push({
+              ...base,
+              id: `${event.id}:activity`,
+              phase: "updated",
+              name: `runtime.activity.${String(activity)}`,
+              // Report the observed activity only. Raw reasoning and signatures
+              // remain in the protected payload, outside the display projection.
+              text: content.some((part) => object(part)["type"] === "thinking")
+                ? "thinking_observed"
+                : "",
+            });
+          }
         } else if (
           event.eventType === "runtime.tool_intent" ||
           event.eventType === "runtime.tool_result"

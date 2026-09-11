@@ -1,0 +1,208 @@
+{
+  "observedAt": "2026-09-11T02:09:01.520693+00:00",
+  "scope": "real Hermes HTTPS, GLM minimal, identical fixed Tokyo query and limit 3, one search per run; single before/after observation not a latency distribution",
+  "runs": [
+    {
+      "id": "run:6f90b64c-9ce4-48fa-aa6a-e0dd51c0e804",
+      "status": "completed",
+      "created_at": "2026-09-11T01:53:38.588Z",
+      "updated_at": "2026-09-11T01:55:01.341Z",
+      "events": [
+        {
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T01:53:39.964Z",
+          "recorded_at": "2026-09-11T01:53:39.964Z"
+        },
+        {
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T01:53:41.773Z",
+          "recorded_at": "2026-09-11T01:53:41.773Z"
+        },
+        {
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T01:53:41.891Z",
+          "recorded_at": "2026-09-11T01:53:41.891Z"
+        },
+        {
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T01:53:42.058Z",
+          "recorded_at": "2026-09-11T01:53:42.058Z"
+        },
+        {
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T01:53:42.338Z",
+          "recorded_at": "2026-09-11T01:53:42.339Z"
+        },
+        {
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T01:53:42.338Z",
+          "recorded_at": "2026-09-11T01:53:42.524Z"
+        },
+        {
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T01:53:49.564Z",
+          "recorded_at": "2026-09-11T01:53:50.918Z"
+        },
+        {
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T01:53:49.564Z",
+          "recorded_at": "2026-09-11T01:53:51.228Z"
+        },
+        {
+          "event_type": "authorization.grant_consumed",
+          "occurred_at": "2026-09-11T01:53:51.273Z",
+          "recorded_at": "2026-09-11T01:53:51.273Z"
+        },
+        {
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T01:54:50.890Z",
+          "recorded_at": "2026-09-11T01:54:50.961Z"
+        },
+        {
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T01:54:50.894Z",
+          "recorded_at": "2026-09-11T01:54:51.571Z"
+        },
+        {
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T01:54:50.895Z",
+          "recorded_at": "2026-09-11T01:54:51.704Z"
+        },
+        {
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T01:54:59.349Z",
+          "recorded_at": "2026-09-11T01:55:00.028Z"
+        },
+        {
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T01:54:59.350Z",
+          "recorded_at": "2026-09-11T01:55:00.726Z"
+        },
+        {
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T01:55:00.871Z",
+          "recorded_at": "2026-09-11T01:55:00.993Z"
+        }
+      ],
+      "jobs": [
+        {
+          "jobId": "jiE0_VQzBl5OD2x3cdlVr9icihhpwelg6_FpshKqbNK8",
+          "supervision": "released",
+          "cleanup": "confirmed",
+          "resultKind": "result"
+        }
+      ],
+      "measurementsMs": {
+        "wholeRun": 82753,
+        "modelStartToToolIntent": 7226,
+        "toolIntentToResult": 61326,
+        "toolResultToFinalModelOutput": 8459
+      }
+    },
+    {
+      "id": "run:ca147f5a-2947-4643-a6f8-bb83a8163ff3",
+      "status": "completed",
+      "created_at": "2026-09-11T02:06:40.581Z",
+      "updated_at": "2026-09-11T02:08:53.707Z",
+      "events": [
+        {
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T02:06:41.839Z",
+          "recorded_at": "2026-09-11T02:06:41.839Z"
+        },
+        {
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T02:06:43.411Z",
+          "recorded_at": "2026-09-11T02:06:43.411Z"
+        },
+        {
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T02:06:43.515Z",
+          "recorded_at": "2026-09-11T02:06:43.515Z"
+        },
+        {
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T02:06:43.748Z",
+          "recorded_at": "2026-09-11T02:06:43.748Z"
+        },
+        {
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T02:06:44.943Z",
+          "recorded_at": "2026-09-11T02:06:44.944Z"
+        },
+        {
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T02:06:44.943Z",
+          "recorded_at": "2026-09-11T02:06:45.315Z"
+        },
+        {
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T02:07:18.476Z",
+          "recorded_at": "2026-09-11T02:07:19.687Z"
+        },
+        {
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T02:07:18.476Z",
+          "recorded_at": "2026-09-11T02:07:20.082Z"
+        },
+        {
+          "event_type": "authorization.grant_consumed",
+          "occurred_at": "2026-09-11T02:07:20.463Z",
+          "recorded_at": "2026-09-11T02:07:20.463Z"
+        },
+        {
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T02:08:11.519Z",
+          "recorded_at": "2026-09-11T02:08:11.601Z"
+        },
+        {
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T02:08:11.523Z",
+          "recorded_at": "2026-09-11T02:08:12.577Z"
+        },
+        {
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T02:08:11.524Z",
+          "recorded_at": "2026-09-11T02:08:12.778Z"
+        },
+        {
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T02:08:52.072Z",
+          "recorded_at": "2026-09-11T02:08:52.927Z"
+        },
+        {
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T02:08:52.072Z",
+          "recorded_at": "2026-09-11T02:08:53.104Z"
+        },
+        {
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T02:08:53.237Z",
+          "recorded_at": "2026-09-11T02:08:53.426Z"
+        }
+      ],
+      "jobs": [
+        {
+          "jobId": "jxSpKqeK-7TDwRgB7BNBE5AAR0dGw7emb1eYNjlV_5B8",
+          "supervision": "released",
+          "cleanup": "confirmed",
+          "resultKind": "result"
+        }
+      ],
+      "measurementsMs": {
+        "wholeRun": 133126,
+        "modelStartToToolIntent": 33533,
+        "toolIntentToResult": 53043,
+        "toolResultToFinalModelOutput": 40553
+      }
+    }
+  ],
+  "quickCheck": "ok",
+  "budget": {
+    "spent": 14648,
+    "reserved": 297125,
+    "priorMacUpperBoundMicros": 63653,
+    "combinedUpperBoundMicros": 375426
+  },
+  "serviceActive": "active"
+}

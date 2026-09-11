@@ -501,6 +501,7 @@ it("selects trusted Run policy and binds instruction content across configuratio
     ...selectedEmbeddingConfiguration(temporaryDirectory),
     runPolicy: {
       version: "policy-v1",
+      timeZone: "Asia/Tokyo",
       systemInstruction: "可信系统指令",
       memoryLimit: 10,
       maxSelectedMemories: 5,
@@ -518,7 +519,7 @@ it("selects trusted Run policy and binds instruction content across configuratio
     sourceId: "owner-message",
     payloadRef: "owner-content",
     dataClassification: "private",
-    occurredAt: adapters.clock.now(),
+    occurredAt: "2026-09-10T23:04:00.000Z",
   };
   const list = vi.fn(async () => []);
   const options = {
@@ -539,6 +540,9 @@ it("selects trusted Run policy and binds instruction content across configuratio
   });
   expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
     source.occurredAt,
+  );
+  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
+    "2026-09-11 08:04:00 GMT+09:00",
   );
   expect(list).toHaveBeenCalledWith(source.runId, adapters.clock.now());
   expect((await policy(source)).systemInstructionRef).toBe(first.systemInstructionRef);

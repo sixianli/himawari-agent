@@ -1,0 +1,124 @@
+{
+  "date": "2026-09-11",
+  "implementation": "experience and duplicate-verification performance fixes deployed; real search completed; end-to-end speed still unacceptable",
+  "productionChanged": true,
+  "productionPidAtReadback": 1568904,
+  "searchSettingEnabledInProduction": true,
+  "approvedScope": "Owner approved revocable fixed Exa search authorization on Hermes",
+  "candidatePrefix": "/data/hermes/himawari/releases/2026-09-11-experience",
+  "candidateQualificationRoot": "/data/hermes/himawari/qualifications/2026-09-11-experience",
+  "candidateProbes": {
+    "pi-installed": "passed",
+    "composition-installed": "passed",
+    "network-installed": "passed",
+    "boundary-installed": "passed",
+    "worker-loss-installed": "passed",
+    "web-search-installed": "passed"
+  },
+  "signedForProduction": true,
+  "tests": {
+    "command": "npm test",
+    "scope": "local macOS arm64 build and full test suite",
+    "status": "passed",
+    "passed": 1999,
+    "failed": 0,
+    "projects": {
+      "unit": 839,
+      "contracts": 268,
+      "integration": 812,
+      "e2e": 3,
+      "pi-compat": 77
+    },
+    "source": ".ci-output/local-1789090949869/local-summary.json"
+  },
+  "staticCheck": "npm run check passed",
+  "documentGovernance": "strict validation passed, 0 warnings",
+  "controlledBrowser": {
+    "origin": "http://127.0.0.1:4192",
+    "scope": "real browser with synthetic backend events",
+    "verified": [
+      "inline approval button accepts without navigation",
+      "inline deny button accepts without navigation",
+      "thinking activity from supplied fixture event",
+      "current web_search label from supplied fixture event",
+      "no recent progress message",
+      "mobile reflow without horizontal document overflow"
+    ],
+    "limitations": ["fixture does not execute a model or actual tool"]
+  },
+  "liveAcceptancePending": [
+    "latency goal not met; immutable release design requires approval",
+    "repeat real denial and reconnect on performance candidate"
+  ],
+  "blocker": null,
+  "installedCandidateFullDigestBenchmark": {
+    "durationMs": [3173, 3138, 3056],
+    "allThreeDigestsEqual": true,
+    "runtimeDigest": "27f42787975d15ed3e3c2dbecc1bea996cef921d548b1f0f682a31ab75fb34f6",
+    "scope": "complete byte audit on installed Hermes candidate, no cross-invocation cache; not end-to-end chat latency"
+  },
+  "productionPrefix": "/data/hermes/himawari/releases/2026-09-11-control-center",
+  "productionRuntimeDigest": "2b9a034f551d47a8e13b39b95a4132aee3dd4e4a612ae3beaba8d91a9577a86a",
+  "liveExperience": {
+    "threadId": "thread:eabcf638-9733-4e83-829d-80951075cc53",
+    "deepSeekRun": "run:a6052a28-d2b0-4fd7-b28a-53a3ee244744",
+    "deepSeek": "real text, thinking activity, Exa calls; cancelled after repeated searches without a final answer",
+    "toolDurationsMs": [62566, 59686, 59384],
+    "glmRun": "run:3e05f2d2-a442-4b24-b021-d4dcb5e4a222",
+    "glm": "completed with real Exa and inline-approved write",
+    "fileContentReadback": true,
+    "draftAndNextModelAfterRefresh": true,
+    "runtimeModelUnchangedByNextSelection": true,
+    "allStoppedDeepSeekEnvironmentsReleased": true
+  },
+  "cleanupPerformance": {
+    "scope": "controlled supervisor and qualification; real installed bytes on Hermes; no model or production journal mutation",
+    "repeatMs": [6791, 6172, 6155],
+    "reuseMs": [3175, 3122, 3064],
+    "hostVerificationsBefore": 2,
+    "hostVerificationsAfter": 1,
+    "endToEndClaim": false
+  },
+  "performanceDeployment": {
+    "qualificationRoot": "/data/hermes/himawari/qualifications/2026-09-11-performance",
+    "backup": "before-performance-2026-09-11-v2",
+    "finalPathProbesPassed": 6,
+    "registeredCapabilitiesUnchanged": true,
+    "agentReadyAt": "2026-09-11T02:05:21.384Z",
+    "workerReadyAt": "2026-09-11T02:05:20.375Z",
+    "fencingToken": 31,
+    "preparationFailure": "missing private prepared config; copied unchanged current config, then verified signed installation and capability semantics before restart",
+    "searchAuthorization": "re-enabled within existing Owner consent after artifact identity changed"
+  },
+  "fullTestAttempts": [
+    {
+      "source": ".ci-output/local-1789090350200",
+      "result": "build infrastructure failed ARTIFACT_BUILD_INPUT_MISMATCH while source was still being edited; tests not executed"
+    },
+    {
+      "source": ".ci-output/local-1789090669314",
+      "result": "same build input mismatch; tests not executed"
+    },
+    {
+      "source": ".ci-output/local-1789090949869",
+      "result": "frozen source build and all 1999 tests passed"
+    }
+  ],
+  "performanceComparison": {
+    "source": "performance-comparison.json",
+    "before": {
+      "wholeRun": 82753,
+      "modelStartToToolIntent": 7226,
+      "toolIntentToResult": 61326,
+      "toolResultToFinalModelOutput": 8459
+    },
+    "after": {
+      "wholeRun": 133126,
+      "modelStartToToolIntent": 33533,
+      "toolIntentToResult": 53043,
+      "toolResultToFinalModelOutput": 40553
+    },
+    "bothCompletedAndReleased": true,
+    "latencyGoalMet": false
+  }
+}

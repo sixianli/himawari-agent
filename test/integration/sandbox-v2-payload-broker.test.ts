@@ -7,6 +7,7 @@ import {
   type CapabilityInvocationResultPort,
   type SandboxExecutionJournalPort,
   type SandboxExecutionPreparationPort,
+  type SandboxExecutionVerification,
   SandboxExecutionReconciliationService,
   SandboxScopeService,
 } from "@himawari-agent/application";
@@ -34,7 +35,7 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
 });
-async function fixture(reserve = false, newBoot = false, resource = false) {
+async function fixture(reserve = false, newBoot = false, resource = false, observed = false) {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
   const baseInput = sandboxV2Admission(f);
@@ -147,6 +148,9 @@ async function fixture(reserve = false, newBoot = false, resource = false) {
   let outputWrites = 0;
   let now = T1;
   let beforeVerify = async () => {};
+  let observation: SandboxExecutionVerification | undefined;
+  let observationReads = 0;
+  let externalVerifications = 0;
   const scopeReader = new SandboxScopeService({
     payloads: { get: async (ref) => (ref === f.scopePayload.ref ? f.scopePayload : undefined) },
     protector: f.protector,
@@ -183,7 +187,24 @@ async function fixture(reserve = false, newBoot = false, resource = false) {
         end: true,
       }),
       journal,
-      registerControl: async () => {
+      observeVerifiedControl: async () => {
+        observationReads++;
+        if (!observation) throw new Error("observation unavailable");
+        return observation;
+      },
+      ...(observed
+        ? {
+            evidence: {
+              verify: async () => {
+                externalVerifications++;
+                throw new Error("external facts lack authenticated evidence");
+              },
+            },
+          }
+        : {}),
+      registerControl: async (plan) => {
+        await beforeVerify();
+        await resolve(plan);
         registrations++;
         return true;
       },
@@ -264,6 +285,10 @@ async function fixture(reserve = false, newBoot = false, resource = false) {
     registrations: () => registrations,
     outputWrites: () => outputWrites,
     preparations,
+    observe: (value: SandboxExecutionVerification) => {
+      observation = value;
+    },
+    verificationCounts: () => ({ observationReads, externalVerifications }),
     setBeforeVerify: (hook: () => Promise<void>) => {
       beforeVerify = hook;
     },
@@ -279,6 +304,63 @@ async function fixture(reserve = false, newBoot = false, resource = false) {
 }
 
 describe("v2 observation over authenticated UDS and SQLite", () => {
+  it("persists Agent-authenticated observations once while external claims still require verification", async () => {
+    const f = await fixture(false, false, false, true);
+    await f.request({
+      kind: "start",
+      expectedSequence: 1,
+      policyDigest: f.record.facts.environment.policyDigest,
+    });
+    const evidence = {
+      ref: "agent-control-evidence",
+      digest: "a".repeat(64),
+      profileRef: f.record.plan.binding.profileRef,
+      qualificationRef: f.record.plan.binding.qualificationRef,
+      validUntil: T2,
+      subject: { kind: "local_process", processIdentityRef: "authenticated-host-process" },
+    };
+    const facts = sandboxExecutionFactsSchema.parse({
+      ...f.record.facts,
+      resource: {
+        ...f.record.facts.resource,
+        sequence: 2,
+        supervision: "controlled",
+        cleanup: "pending",
+        evidence,
+      },
+    });
+    f.observe({
+      facts,
+      identity: f.record.plan.identity,
+      environmentId: f.record.plan.environmentId,
+      policyDigest: facts.environment.policyDigest,
+      resourceSequence: 2,
+      checkedAt: T1,
+      validUntil: T2,
+      evidence: [evidence],
+      outputs: [],
+    });
+    const result = await f.request({ kind: "observe_control", expectedSequence: 1 });
+    expect(result.applied).toBe(true);
+    expect(result.record.phase).toBe("bound");
+    if (result.record.phase !== "bound") throw new Error("expected bound execution");
+    expect(result.record.facts.resource.supervision).toBe("controlled");
+    expect(f.verificationCounts()).toEqual({ observationReads: 1, externalVerifications: 0 });
+    await expect(f.request({ kind: "observe_control", expectedSequence: 1 })).rejects.toThrow();
+    expect(f.verificationCounts().observationReads).toBe(1);
+    await expect(
+      f.request({
+        kind: "append",
+        expectedSequence: 2,
+        expectedOperationRevision: result.record.operationRevision,
+        facts: sandboxExecutionFactsSchema.parse({
+          ...facts,
+          resource: { ...facts.resource, sequence: 3 },
+        }),
+      }),
+    ).rejects.toThrow();
+    expect(f.verificationCounts().externalVerifications).toBe(1);
+  });
   it("reserves before compilation and binds a later digest once over real UDS", async () => {
     const f = await fixture(true);
     expect((await f.request({ kind: "read" })).record.phase).toBe("reserved");

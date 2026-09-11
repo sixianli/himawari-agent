@@ -154,6 +154,7 @@ export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
 }
 
 export interface RunPolicyConfiguration {
+  readonly timeZone?: string;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: FileReadRouteConfiguration;
   readonly fileRead?: FileReadRouteConfiguration;

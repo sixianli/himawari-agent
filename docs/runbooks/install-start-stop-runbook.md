@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:3ee8a38e2595a36f6983309bf9c70dde8c70910a8f1d44d2f02a51d4a4de70f8"
+contract_sha256: "sha256:38d98f079c42314c83748e61304f219499507eda5604652123b55d489031c8bb"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,11 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/public-search-authorization.ts
+- packages/application/src/services/sandbox-action-grant.ts
+- packages/persistence-sqlite/src/sqlite-durable-operations.ts
+- packages/platform-node/src/capabilities/sandbox-runtime-digest-worker.ts
+- packages/platform-node/src/capabilities/protected-runtime.ts
 - packages/platform-node/src/built-in-identity.ts
 - packages/platform-node/src/built-in-identity-routes.ts
 - packages/persistence-sqlite/src/sqlite-built-in-identity.ts
@@ -116,6 +121,10 @@ date: "2026-08-27"
 -->
 
 ## Scope
+
+2026-09-11 聊天运行体验更新：可撤销的联网搜索设置保存在既有 Product State，关联审批记录通过 `policyAuthorization` 标明真实授权来源，不新增迁移文件。备份/迁移须共同保留设置 revision、派生 Grant 与审计；关闭设置后，旧 Grant 的消费和 Sandbox 准入被拒绝。恢复后核对设置与当前固定 Exa 路径、主机/目录路由和模型披露身份一致，配置绑定不同不能沿用开启状态。它不授予其他文件、命令或网络权限。Pi 更新合并仅影响尚未持久化的连续累计片段，不能删除已持久化记录或工具边界。`runPolicy.timeZone` 是显式 IANA 时区，只用于新 Run 的时间上下文；历史已冻结内容保持原值。
+
+未配置受保护安装时，完整 runtime 字节校验仍在每次调用的独立工作线程运行；安装必须包含编译后的 `sandbox-runtime-digest-worker.js`。ADR 0028 允许已经独立验证权限的 Linux 安装，在相同进程、相同 root 保护版本身份下复用首次完整审计；每次仍验证当前进程和保护记录，失效立即拒绝，不接受普通时间缓存。保护记录不属于备份或迁移数据，目标主机必须重新建立身份、权限与安装资格，不能复制源主机记录作为证据。此变化不改变数据格式、迁移权威或停止条件。参见 [SOURCE: docs/adr/0028-protected-runtime-installation.md] 和 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]；本 Runbook 原有操作范围保持不变。
 
 本次 Web 重构追加 schema 30：`runs.model_selection_json` 保存用户提交时选择的模型引用和思考深度。备份、恢复和迁移必须保留此列及原 Trace/Payload；恢复不能用当前输入框的选择改写旧 Run，也不能给旧记录补造选择。目标配置仍须支持原模型、深度、预算与披露，缺失时报告失败而不是静默替换。浏览器的主题、主题色和未发送草稿属于客户端偏好，不随服务数据库恢复。
 
@@ -344,3 +353,6 @@ Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释
 生成模型可选 `reasoningRequired` 能力需与 `reasoning` 一致；原配置省略时保持原语义。真实审批目标展示允许有界路径文本，不改变身份、Grant 或审批决定合同。
 
 恢复审批须读取已有冻结请求，不能用新时间重写同一持久化 key。验收核对 Pi 工具真实失败标记、审批等待扣除和文件回读；是否要求近期认证以实际审批合同为准，不以“工具”一概判断。
+
+
+同次进程观察现在携带 Agent 在该次核验中产生的证据，保存时不重复扫描安装字节；外部 Worker 事实仍独立核验，序号、身份、有效期及事务检查保留。注册控制入口统一核对当前 Scope、Grant 和安装；终态工具仍保存结果并完成原清理核验。此调整不改变停机、恢复、迁移或重新授权步骤，不使旧进程证据恢复执行权限。

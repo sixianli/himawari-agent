@@ -1699,6 +1699,7 @@ export class SqliteDurableOperations {
     const transaction = this.database.transaction(() => {
       const current = this.approvalRow(input.approvalRequestId);
       if (!current) this.fail("PORT_NOT_FOUND", `Approval ${input.approvalRequestId} not found`);
+      if (input.resolution === "approved") this.assertApprovalPolicyCurrent(current);
       if (current.revision !== input.expectedRevision || current.status !== "pending") {
         this.fail("PORT_CONFLICT", `Approval ${current.id} cannot be resolved`);
       }
@@ -1752,6 +1753,20 @@ export class SqliteDurableOperations {
     );
   }
 
+  private assertApprovalPolicyCurrent(approval: ApprovalRequest): void {
+    if (!approval.policyAuthorization) return;
+    const source = approval.policyAuthorization;
+    const row = this.database
+      .prepare(
+        "SELECT revision, value_json AS valueJson FROM product_state_records WHERE key = ? AND owner_id = ? AND agent_id = ?",
+      )
+      .get(source.key, approval.ownerId, approval.agentId) as
+      | { revision: number; valueJson: string }
+      | undefined;
+    if (!row || row.revision !== source.revision || JSON.parse(row.valueJson).enabled !== true)
+      this.fail("PORT_NOT_AUTHORITATIVE", "Owner policy revoked or changed");
+  }
+
   private grantRow(grantId: string): GrantRecord | undefined {
     return parseRecord<GrantRecord>(
       this.database
@@ -1763,6 +1778,11 @@ export class SqliteDurableOperations {
   private consumeGrant(input: ConsumeGrantInput): GrantRecord {
     this.assertDiskHeadroom();
     const transaction = this.database.transaction(() => {
+      const sourceGrant = this.grantRow(input.grantId);
+      const sourceApproval = sourceGrant
+        ? this.approvalRow(sourceGrant.sourceApprovalRequestId)
+        : undefined;
+      if (sourceApproval) this.assertApprovalPolicyCurrent(sourceApproval);
       if (input.usageId) {
         const replay = this.database
           .prepare("SELECT 1 FROM authorization_usage WHERE id = ? AND grant_id = ?")

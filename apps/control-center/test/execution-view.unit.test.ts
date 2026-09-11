@@ -2,6 +2,7 @@ import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
 import {
   executionFailureMessage,
+  executionActivity,
   executionItems,
   executionItemWorkTime,
   executionTime,
@@ -107,4 +108,23 @@ it("excludes approval wait from tool time and keeps the first completed message 
     record(5, 90, { kind: "tool", phase: "completed" }),
   ])[0];
   expect(replayed?.endedAt).toBe(end.occurredAt);
+});
+
+it("distinguishes actual thinking, tools, waiting and a stale connection", () => {
+  const thinking = record(1, 10, { phase: "updated", name: "runtime.activity.thinking" });
+  expect(executionActivity([thinking], run, "connected", 12000)).toMatchObject({
+    label: "chat.activity.thinking",
+    stale: false,
+  });
+  const tool = record(2, 12, { kind: "tool", name: "web_search" });
+  expect(executionActivity([thinking, tool], run, "connected", 30000)).toMatchObject({
+    label: "chat.activity.tool",
+    tool: "web_search",
+    stale: true,
+    age: 18000,
+  });
+  expect(executionActivity([tool], run, "offline", 30000).label).toBe("chat.disconnected");
+  expect(
+    executionActivity([tool], { ...run, status: "awaiting_approval" }, "connected", 30000),
+  ).toMatchObject({ label: "runs.status.awaitingApproval", stale: false });
 });

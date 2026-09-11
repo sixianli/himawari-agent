@@ -1027,3 +1027,71 @@
 .thread-list-controls .semantic-list a[aria-current="page"] small {
   color: var(--nav-text);
 }
+
+.turn-activity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+.turn-activity p {
+  flex-basis: 100%;
+  margin: 0;
+}
+.turn-activity .run-running {
+  animation: activity-pulse 1.4s ease-in-out infinite;
+}
+@keyframes activity-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .turn-activity .run-running {
+    animation: none;
+  }
+}
+.approval-inline {
+  display: block;
+}
+.approval-inline dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.5rem 1rem;
+}
+.approval-inline dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.approval-inline .actions {
+  margin-top: 1rem;
+}
+
+.search-authorization {
+  position: relative;
+  font-size: 0.8rem;
+}
+.search-authorization-panel {
+  position: absolute;
+  bottom: 2rem;
+  left: 0;
+  width: min(20rem, 70vw);
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  z-index: 10;
+}
+
+.approval-input {
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 0.75rem;
+  background: var(--surface-muted);
+  border-radius: 0.5rem;
+}

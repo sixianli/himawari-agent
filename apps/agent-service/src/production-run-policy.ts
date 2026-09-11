@@ -49,7 +49,9 @@ export function createProductionRunPolicy(options: {
     const identity = {
       runId: source.runId,
       purpose: "context" as const,
-      operationKey: `run-system-instruction:v1:${createHash("sha256").update(policy.systemInstruction).digest("hex")}`,
+      operationKey: `run-system-instruction:v2:${createHash("sha256")
+        .update(JSON.stringify([policy.systemInstruction, policy.timeZone ?? "UTC"]))
+        .digest("hex")}`,
     };
     let instruction = await options.artifacts.lookup(identity);
     if (!instruction) {
@@ -58,7 +60,7 @@ export function createProductionRunPolicy(options: {
         agentId: source.agentId,
         ref: options.ids.next("run-system-instruction"),
         plaintext: new TextEncoder().encode(
-          `${policy.systemInstruction}\n\n本轮请求时间（ISO 8601）：${source.occurredAt}。涉及“今天”或最新信息时，根据这个时间使用真实查询，并核对来源日期。`,
+          `${policy.systemInstruction}\n\n本轮请求时间（UTC）：${source.occurredAt}。配置时区 ${policy.timeZone ?? "UTC"} 的当地时间：${new Intl.DateTimeFormat("sv-SE", { timeZone: policy.timeZone ?? "UTC", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "longOffset" }).format(new Date(source.occurredAt))}。涉及“今天”或最新信息时，必须按查询地点的时区换算日期，不能直接截取 UTC 日期。使用真实查询，并核对来源日期。`,
         ),
         dataClassification: source.dataClassification,
         contentType: "text/plain",

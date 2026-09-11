@@ -924,6 +924,7 @@ export async function runAgentService(
         configuration,
         repository,
         authority: () => activeAuthority.authorityFence(),
+        executionAuthority: () => activeAuthority.authorityLease(),
         secretSources: sources,
         ...dependencies.httpOptions,
         health,

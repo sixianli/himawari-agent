@@ -311,6 +311,12 @@ export class SqliteDurableAdapters {
 
   authorizationStore(): AuthorizationStorePort {
     return Object.freeze<AuthorizationStorePort>({
+      isPolicyAuthorizationCurrent: async ({ ownerId, agentId, key, revision }) => {
+        const state = await this.context.read<
+          { revision: number; value: { enabled?: boolean } } | undefined
+        >("readScopedState", { ownerId, agentId, key });
+        return state?.revision === revision && state.value.enabled === true;
+      },
       createApproval: (request) => this.context.write("authorization.createApproval", { request }),
       findApprovalByIntent: (intentId) =>
         this.context.read("authorization.findApprovalByIntent", { intentId }),

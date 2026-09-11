@@ -2,9 +2,10 @@ import type {
   ThreadExecutionRecord,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   duration,
+  executionActivity,
   executionFailureMessage,
   executionItems,
   executionItemWorkTime,
@@ -49,83 +50,110 @@ function TurnProcess({
   const items = executionItems(records);
   const time = executionTime(records, run, now);
   const current = items.findLast((item) => item.kind === "tool" && item.phase === "started");
+  const activity = executionActivity(records, run, connection, now);
+  const thinkingObserved = records.some((record) => record.text === "thinking_observed");
+  const actualModel = items.findLast((item) => item.kind === "message" && item.name)?.name;
   return (
-    <details className="turn-process">
-      <summary>
-        <span className={`run-indicator run-${run.status}`} />
-        {message("chat.process")} · {message(statusId(run))}
-        {current && !isTerminalRun(run) ? ` · ${current.name}` : ""}
-        <span className="process-time">{time.known ? duration(time.work) : ""}</span>
-      </summary>
-      <div className="turn-process-body">
-        {run.status === "failed" ? (
-          <output>{message(executionFailureMessage(records))}</output>
-        ) : null}
-        <p>{message("chat.noThinking")}</p>
-        {time.known ? (
-          <p className="process-timing">
-            {message("chat.workTime", { time: duration(time.work) })} ·{" "}
-            {message("chat.waitTime", { time: duration(time.wait) })}
-            {connection !== "connected" && !isTerminalRun(run)
-              ? ` · ${message("chat.disconnected")}`
-              : ""}
-          </p>
-        ) : (
-          <p>{message("chat.unknownTime")}</p>
-        )}
-        {records
-          .filter(
-            (item) =>
-              item.kind === "status" &&
-              item.phase === "started" &&
-              item.name !== "runtime.model_started",
-          )
-          .slice(-1)
-          .map((item) => (
-            <p key={item.id}>
-              {message("chat.actualModel")}: {item.name} {item.text}
+    <>
+      {!isTerminalRun(run) ? (
+        <div className="turn-activity">
+          <span className={`run-indicator run-${run.status}`} />
+          <output>
+            <strong>{message(activity.label, { tool: activity.tool })}</strong>
+          </output>
+          {time.known ? (
+            <span>{message("chat.workTime", { time: duration(time.work) })}</span>
+          ) : null}
+          <small>{message("chat.lastActivity", { time: duration(activity.age) })}</small>
+          {activity.stale ? <p>{message("chat.progressDelayed")}</p> : null}
+        </div>
+      ) : null}
+      {run.status === "failed" ? (
+        <p role="alert">{message(executionFailureMessage(records))}</p>
+      ) : null}
+      <details className="turn-process">
+        <summary>
+          <span className={`run-indicator run-${run.status}`} />
+          {message("chat.process")} · {message(statusId(run))}
+          {current && !isTerminalRun(run) ? ` · ${current.name}` : ""}
+          <span className="process-time">{time.known ? duration(time.work) : ""}</span>
+        </summary>
+        <div className="turn-process-body">
+          {isTerminalRun(run) || thinkingObserved ? (
+            <p>{message(thinkingObserved ? "chat.thinkingPrivate" : "chat.noThinking")}</p>
+          ) : null}
+          {time.known ? (
+            <p className="process-timing">
+              {message("chat.workTime", { time: duration(time.work) })} ·{" "}
+              {message("chat.waitTime", { time: duration(time.wait) })}
+              {connection !== "connected" && !isTerminalRun(run)
+                ? ` · ${message("chat.disconnected")}`
+                : ""}
             </p>
-          ))}
-        {!items.length ? (
-          <p>{message("chat.noProcess")}</p>
-        ) : (
-          items.map((item) => (
-            <details key={item.itemId} className={`tool-record tool-${item.phase}`}>
-              <summary>
-                {item.kind === "tool" ? item.name : message("chat.output")} ·{" "}
-                {message(
-                  isTerminalRun(run) && item.phase === "started"
-                    ? "chat.recordUnavailable"
-                    : (`chat.phase.${item.phase}` as MessageId),
-                )}{" "}
-                {item.endedAt && item.startedAt
-                  ? duration(executionItemWorkTime(item, records) ?? 0)
-                  : ""}
-              </summary>
-              {item.startedAt ? (
-                <time dateTime={item.startedAt}>{new Date(item.startedAt).toLocaleString()}</time>
-              ) : (
-                <p>{message("chat.unknownTime")}</p>
-              )}
-              {item.kind === "tool" ? (
-                <>
-                  {item.text ? <p>{item.text}</p> : null}
-                  <h4>{message("chat.input")}</h4>
-                  <pre>{item.input || message("chat.notProvided")}</pre>
-                  <h4>{message("chat.output")}</h4>
-                  <pre>{item.output || message("chat.notProvided")}</pre>
-                </>
-              ) : (
-                <pre>{item.text || message("chat.notProvided")}</pre>
-              )}
-            </details>
-          ))
-        )}
-        {records.some((item) => item.phase === "unavailable") ? (
-          <output>{message("chat.recordUnavailable")}</output>
-        ) : null}
-      </div>
-    </details>
+          ) : (
+            <p>{message("chat.unknownTime")}</p>
+          )}
+          {records
+            .filter(
+              (item) =>
+                item.kind === "status" &&
+                item.phase === "started" &&
+                item.name !== "runtime.model_started",
+            )
+            .slice(-1)
+            .map((item) => (
+              <p key={item.id}>
+                {message("chat.actualModel")}: {actualModel || item.name} {item.text}
+              </p>
+            ))}
+          {!items.length ? (
+            <p>{message("chat.noProcess")}</p>
+          ) : (
+            items.map((item) => (
+              <details key={item.itemId} className={`tool-record tool-${item.phase}`}>
+                <summary>
+                  {item.kind === "tool" ? item.name : message("chat.output")} ·{" "}
+                  {message(
+                    isTerminalRun(run) && item.phase === "started"
+                      ? "chat.recordUnavailable"
+                      : (`chat.phase.${item.phase}` as MessageId),
+                  )}{" "}
+                  {item.endedAt && item.startedAt
+                    ? duration(executionItemWorkTime(item, records) ?? 0)
+                    : ""}
+                </summary>
+                {item.startedAt ? (
+                  <time dateTime={item.startedAt}>{new Date(item.startedAt).toLocaleString()}</time>
+                ) : (
+                  <p>{message("chat.unknownTime")}</p>
+                )}
+                {item.kind === "tool" ? (
+                  <>
+                    {item.text ? <p>{item.text}</p> : null}
+                    <h4>{message("chat.input")}</h4>
+                    <pre>{item.input || message("chat.notProvided")}</pre>
+                    <h4>{message("chat.output")}</h4>
+                    <pre>
+                      {item.output ||
+                        message(
+                          item.phase === "started" && !isTerminalRun(run)
+                            ? "chat.waitingToolResult"
+                            : "chat.notProvided",
+                        )}
+                    </pre>
+                  </>
+                ) : (
+                  <pre>{item.text || message("chat.notProvided")}</pre>
+                )}
+              </details>
+            ))
+          )}
+          {records.some((item) => item.phase === "unavailable") ? (
+            <output>{message("chat.recordUnavailable")}</output>
+          ) : null}
+        </div>
+      </details>
+    </>
   );
 }
 export function ChatHistory({
@@ -135,14 +163,14 @@ export function ChatHistory({
   connection,
   message,
   onFork,
-  onApproval,
+  renderApproval,
 }: {
   readonly detail: Detail;
   readonly contentByRef: Readonly<Record<string, string>>;
   readonly execution: Readonly<Record<string, readonly ThreadExecutionRecord[]>>;
   readonly connection: string;
   readonly message: Message;
-  readonly onApproval: (runId: string) => void;
+  readonly renderApproval: (runId: string, records: readonly ThreadExecutionRecord[]) => ReactNode;
   readonly onFork: (turnId: string, sequence: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -223,19 +251,9 @@ export function ChatHistory({
                   ) : (
                     <p>{message("chat.noProcess")}</p>
                   )}
-                  {group.run?.status === "awaiting_approval" ? (
-                    <div className="approval-inline">
-                      <span>{message("runs.status.awaitingApproval")}</span>
-                      <ActionButton
-                        variant="secondary"
-                        onClick={() => {
-                          if (group.run) onApproval(group.run.runId);
-                        }}
-                      >
-                        {message("nav.approvals")}
-                      </ActionButton>
-                    </div>
-                  ) : null}
+                  {group.run?.status === "awaiting_approval"
+                    ? renderApproval(group.run.runId, records)
+                    : null}
                   {agentMessages.length ? (
                     agentMessages.map((item) => (
                       <AssistantMarkdown

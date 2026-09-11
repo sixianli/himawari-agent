@@ -20,6 +20,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "thread.message.submit",
   "thread.checkpoint.request",
   "approval.respond",
+  "search.authorization.set",
+  "search.authorization.read",
+  "search.authorization.snapshot",
   "task.set_state",
   "settings.update",
   "github.monitor.set_state",
@@ -157,6 +160,29 @@ export const respondApprovalV2CommandSchema = object({
     semanticSnapshotHash: machineString,
     editedPayloadRef: nullable(machineString),
     recentAuthenticationRef: nullable(machineString),
+  }),
+});
+
+const searchAuthorizationCommandSchema = object({
+  ...commandEnvelope("search.authorization.set"),
+  payload: object({
+    expectedRevision: integer(0),
+    enabled: booleanValue,
+    recipient: literal("https://mcp.exa.ai"),
+  }),
+});
+const searchAuthorizationQuerySchema = object({
+  ...envelope("query", "search.authorization.read"),
+  payload: object({}),
+});
+const searchAuthorizationSnapshotSchema = object({
+  ...envelope("snapshot", "search.authorization.snapshot"),
+  payload: object({
+    revision: integer(0),
+    enabled: booleanValue,
+    available: booleanValue,
+    recipient: literal("https://mcp.exa.ai"),
+    generatedAt: timestamp,
   }),
 });
 
@@ -1243,6 +1269,9 @@ const schemasByType = {
   "thread.message.submit": submitThreadMessageCommandSchema,
   "thread.checkpoint.request": requestThreadCheckpointCommandSchema,
   "approval.respond": respondApprovalV2CommandSchema,
+  "search.authorization.set": searchAuthorizationCommandSchema,
+  "search.authorization.read": searchAuthorizationQuerySchema,
+  "search.authorization.snapshot": searchAuthorizationSnapshotSchema,
   "task.set_state": setTaskStateCommandSchema,
   "settings.update": updateSettingsCommandSchema,
   "github.monitor.set_state": setGitHubMonitorStateCommandSchema,

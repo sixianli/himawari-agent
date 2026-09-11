@@ -28,6 +28,42 @@ export type RunSummary = Extract<
 export const isTerminalRun = (run: RunSummary) =>
   ["completed", "failed", "cancelled"].includes(run.status);
 
+/** Connection health is distinct from execution progress; an old observation is not a heartbeat. */
+export function executionActivity(
+  records: readonly ThreadExecutionRecord[],
+  run: RunSummary,
+  connection: string,
+  now: number,
+) {
+  const ordered = [...records].sort((a, b) => a.sequence - b.sequence);
+  const last = ordered.at(-1);
+  const activity = ordered.findLast((record) => record.name.startsWith("runtime.activity."));
+  const tool = executionItems(records).findLast(
+    (record) => record.kind === "tool" && record.phase === "started",
+  );
+  const age = Math.max(0, now - Date.parse(last?.occurredAt ?? run.updatedAt));
+  const label: MessageId =
+    connection !== "connected" && !isTerminalRun(run)
+      ? "chat.disconnected"
+      : run.status === "awaiting_approval"
+        ? "runs.status.awaitingApproval"
+        : tool
+          ? "chat.activity.tool"
+          : activity?.name === "runtime.activity.thinking"
+            ? "chat.activity.thinking"
+            : activity?.name === "runtime.activity.text"
+              ? "chat.activity.output"
+              : activity?.name === "runtime.activity.toolCall"
+                ? "chat.activity.preparingTool"
+                : "chat.activity.waitingModel";
+  return {
+    label,
+    tool: tool?.name ?? "",
+    age,
+    stale: !isTerminalRun(run) && run.status !== "awaiting_approval" && age >= 15000,
+  };
+}
+
 /** A delta notification can be replayed; snapshots have stable event and item identities. */
 export function executionItems(records: readonly ThreadExecutionRecord[]) {
   const items = new Map<

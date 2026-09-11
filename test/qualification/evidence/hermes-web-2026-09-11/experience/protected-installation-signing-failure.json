@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "scope": "actual detached migration, qualification output failure, rollback and prepared correction",
+  "migrationSucceeded": false,
+  "detachedExecution": true,
+  "probeProcessesSucceeded": [
+    "pi-installed",
+    "composition-installed",
+    "network-installed",
+    "boundary-installed",
+    "worker-loss-installed",
+    "web-search-installed"
+  ],
+  "failureStage": "strict JSON parse before signing",
+  "observedOutputPrefix": "12:49:06 PM [vite] (client) Re-optimizing dependencies because vite config has changed",
+  "diagnosticOnlyResultValidation": {
+    "allExistingResultAssertionsPassed": true,
+    "signingPerformed": false,
+    "note": "Only the known diagnostic line was omitted for read-only diagnosis. This was not signed or accepted as qualification evidence."
+  },
+  "originalServiceRestored": true,
+  "agentReadyAt": "2026-09-11T03:50:12.403Z",
+  "workerReadyAt": "2026-09-11T03:50:11.408Z",
+  "regressionTest": {
+    "file": "test/tooling/qualification-output.test.mjs",
+    "before": "failed JSON.parse on diagnostic-prefixed stdout",
+    "after": "passed; stdout contains exactly one JSON value; diagnostics preserved on stderr",
+    "scope": "controlled Vite diagnostic and qualification result, no real sandbox I/O"
+  },
+  "npmRunCheck": "passed",
+  "migrationV4Sha256": "cfa5f882e01e65a966ecdacaa4da41f2052e19e413c1c08511acc1aad90b9eac",
+  "correctedProbeSha256": "dc72634b8617e7421f676361b38c535f7850e17154f68e50a6a4e4d18e1c9d3c",
+  "v4Execution": "pending administrator authentication",
+  "actualProtectedPermissions": "not verified",
+  "protectedFastPathEnabled": false,
+  "realProtectedPerformance": "not measured"
+}

@@ -15,7 +15,7 @@ import type {
 } from "@himawari-agent/execution-contracts";
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PayloadUdsClient, PayloadUdsServer } from "@himawari-agent/platform-node";
-import { configuredModelDisclosureIdentity } from "../../apps/agent-service/src/production-file-read-services.ts";
+import { configuredModelDisclosureIdentity } from "../../apps/agent-service/src/production-model-disclosure.ts";
 import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.ts";
 import { createProductionSandboxServices } from "../../apps/agent-service/src/production-sandbox-services.ts";
 import { macSandboxDeployment } from "./mac-sandbox-deployment.ts";

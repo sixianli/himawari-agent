@@ -503,7 +503,12 @@ export class ProductionSandboxExecutionV2 {
           // Foreground network connections retain authority only while the same
           // Grant remains valid, just like background tasks and services.
           await this.rpc(entry, { kind: "resolve" });
+          // Completion can arrive during the asynchronous authority check. Its
+          // final output/cleanup path below still verifies every durable fact;
+          // do not enqueue a now-obsolete running-state observation first.
+          if (finished) break;
           await flush(false);
+          if (finished) break;
           const observed = await this.rpc(entry, {
             kind: "observe_control",
             expectedSequence: current.facts.resource.sequence,

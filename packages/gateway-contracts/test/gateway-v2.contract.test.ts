@@ -35,6 +35,19 @@ function fixture(
 }
 
 const governanceMessages = [
+  fixture("query", "search.authorization.read", {}),
+  fixture("command", "search.authorization.set", {
+    expectedRevision: 0,
+    enabled: true,
+    recipient: "https://mcp.exa.ai",
+  }),
+  fixture("snapshot", "search.authorization.snapshot", {
+    revision: 1,
+    enabled: true,
+    available: true,
+    recipient: "https://mcp.exa.ai",
+    generatedAt: "2026-09-11T00:00:00.000Z",
+  }),
   fixture("command", "grant.revoke", {
     grantId: "grant-01",
     expectedRevision: 2,

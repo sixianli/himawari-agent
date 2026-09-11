@@ -2589,11 +2589,16 @@ it("projects encrypted execution history with owner isolation and no raw reasoni
     limit: 100,
   };
   const displayed = await projection.read(query);
-  expect(displayed.records).toHaveLength(3);
+  expect(displayed.records).toHaveLength(4);
   expect(displayed.records[0]?.text).toBe("Visible answer");
-  expect(displayed.records[1]?.input).toContain("[REDACTED]");
-  expect(displayed.records[1]?.itemId).toBe(displayed.records[2]?.itemId);
-  expect(displayed.records[2]?.output).toBe("Allowed file content");
+  expect(displayed.records[1]).toMatchObject({
+    name: "runtime.activity.text",
+    text: "thinking_observed",
+    phase: "updated",
+  });
+  expect(displayed.records[2]?.input).toContain("[REDACTED]");
+  expect(displayed.records[2]?.itemId).toBe(displayed.records[3]?.itemId);
+  expect(displayed.records[3]?.output).toBe("Allowed file content");
   expect(JSON.stringify(displayed)).not.toContain("PRIVATE_");
   expect(await projection.read(query)).toEqual(displayed);
   await expect(projection.read({ ...query, ownerId: "other-owner" })).rejects.toThrow(

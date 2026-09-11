@@ -43,6 +43,7 @@ it.each([
   "bind-ack-loss",
   "registration-revoked",
   "revoked-running",
+  "finished-during-check",
   "background",
   "background-ack-loss",
   "service",
@@ -108,7 +109,8 @@ it.each([
     inspect: () => ({ bootId: "boot", state: "alive" }),
     start: vi.fn(() => {
       calls.push("host-start");
-      if (background || scenario === "revoked-running") return;
+      if (background || scenario === "revoked-running" || scenario === "finished-during-check")
+        return;
       resolveResult({
         stdout: new TextEncoder().encode("result"),
         taskStarted: true,
@@ -204,6 +206,19 @@ it.each([
       command: { kind: string; facts?: typeof facts },
     ) => {
       calls.push(command.kind);
+      if (
+        command.kind === "resolve" &&
+        scenario === "finished-during-check" &&
+        host.start.mock.calls.length > 0
+      ) {
+        resolveResult({
+          stdout: new TextEncoder().encode("result"),
+          taskStarted: true,
+          taskProcessExited: true,
+          exitCode: 0,
+        });
+        await Promise.resolve();
+      }
       if (
         command.kind === "resolve" &&
         scenario === "revoked-running" &&
@@ -321,6 +336,7 @@ it.each([
     scenario === "normal" ||
       scenario === "command" ||
       scenario === "pi" ||
+      scenario === "finished-during-check" ||
       scenario === "revoked-running"
       ? 1
       : 0,
@@ -328,6 +344,15 @@ it.each([
   if (scenario === "normal" || scenario === "pi")
     expect(facts.effect).toEqual({ kind: "not_applicable" });
   if (scenario === "command") expect(facts.effect).toEqual({ kind: "not_asserted" });
+  if (scenario === "finished-during-check") {
+    expect(calls).not.toContain("observe_control");
+    expect(calls).toContain("append");
+    expect(facts.result).toMatchObject({
+      kind: "result",
+      output: { ref: "output", byteLength: 6 },
+    });
+    expect(facts.resource).toMatchObject({ supervision: "lost", cleanup: "unknown" });
+  }
   if (scenario === "normal" || scenario === "command" || scenario === "pi") {
     expect(calls.indexOf("register_control")).toBeLessThan(calls.indexOf("bind"));
     expect(calls.indexOf("bind")).toBeLessThan(calls.indexOf("host-start"));

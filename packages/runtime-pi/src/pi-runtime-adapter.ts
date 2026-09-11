@@ -649,28 +649,35 @@ async function admitPiStream(
 }
 
 class RuntimeEventQueue implements AsyncIterable<RuntimeEvent> {
-  readonly #values: RuntimeEvent[] = [];
+  readonly #values: { value: RuntimeEvent; accepted: () => void }[] = [];
   readonly #waiters: Array<(result: IteratorResult<RuntimeEvent>) => void> = [];
   #closed = false;
 
-  push(value: RuntimeEvent): void {
-    if (this.#closed) return;
+  push(value: RuntimeEvent): Promise<void> {
+    if (this.#closed) return Promise.resolve();
     const waiter = this.#waiters.shift();
-    if (waiter) waiter({ done: false, value });
-    else this.#values.push(value);
+    if (waiter) {
+      waiter({ done: false, value });
+      return Promise.resolve();
+    }
+    return new Promise((accepted) => this.#values.push({ value, accepted }));
   }
 
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
+    for (const pending of this.#values) pending.accepted();
     for (const waiter of this.#waiters.splice(0)) waiter({ done: true, value: undefined });
   }
 
   [Symbol.asyncIterator](): AsyncIterator<RuntimeEvent> {
     return {
       next: async () => {
-        const value = this.#values.shift();
-        if (value !== undefined) return { done: false as const, value };
+        const pending = this.#values.shift();
+        if (pending !== undefined) {
+          pending.accepted();
+          return { done: false as const, value: pending.value };
+        }
         if (this.#closed) return { done: true as const, value: undefined };
         return new Promise<IteratorResult<RuntimeEvent>>((resolve) => this.#waiters.push(resolve));
       },
@@ -696,6 +703,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       for await (const event of queue) yield event;
       await producer;
     } finally {
+      queue.close();
       if (this.#activeSessions.has(request.runId)) await this.cancel(request.runId);
       await producer.catch(() => undefined);
       this.#cancelledRuns.delete(request.runId);
@@ -710,7 +718,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
 
   private async produce(
     request: RuntimeRequest,
-    emit: (event: RuntimeEvent) => void,
+    emit: (event: RuntimeEvent) => Promise<void>,
   ): Promise<void> {
     if (this.#cancelledRuns.has(request.runId)) {
       emit({
@@ -731,7 +739,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     let finalAssistant: AssistantMessage | undefined;
     let suspended: Extract<RuntimeEvent, { type: "runtime.suspended" }> | undefined;
     let unknownTool: Extract<RuntimeEvent, { type: "runtime.result_unknown" }> | undefined;
+    let pendingUpdate: { event: AgentSessionEvent; occurredAt: string } | undefined;
     const enqueue = (operation: () => Promise<void> | void): Promise<void> => {
+      pendingUpdate = undefined;
       eventChain = eventChain.then(operation);
       return eventChain;
     };
@@ -966,7 +976,26 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       this.#activeSessions.set(request.runId, session);
 
       const unsubscribe = session.subscribe((event) => {
+        // Pi emits cumulative snapshots, not independent text fragments. Keep
+        // only the latest snapshot still waiting for durable consumption. Never
+        // cross a lifecycle/tool boundary or replace an already emitted record.
+        // Pi shares nested content blocks with the next delta, so copy on receipt.
+        const observed = {
+          event:
+            event.type === "message_start" ||
+            event.type === "message_update" ||
+            event.type === "message_end"
+              ? structuredClone(event)
+              : event,
+          occurredAt: this.now(),
+        };
+        if (event.type === "message_update" && pendingUpdate) {
+          Object.assign(pendingUpdate, observed);
+          return;
+        }
         void enqueue(async () => {
+          if (pendingUpdate === observed) pendingUpdate = undefined;
+          const event = observed.event;
           if (suspended) return;
           // agent.continue() owns completion after restoring; prompt-only session events do not fire.
           if (restored && event.type === "agent_end") settled = true;
@@ -979,6 +1008,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             () => ++turnIndex,
             () => turnIndex,
             () => ++messageSequence,
+            observed.occurredAt,
           );
           for (const mappedEvent of mapped.events) {
             if (
@@ -986,12 +1016,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               (mappedEvent.type === "runtime.failed" || mappedEvent.type === "runtime.cancelled")
             )
               continue;
-            emit(mappedEvent);
+            await emit(mappedEvent);
           }
           settled ||= mapped.settled;
           failed ||= mapped.failed;
           aborted ||= mapped.aborted;
         });
+        if (event.type === "message_update") pendingUpdate = observed;
       });
 
       try {
@@ -1233,13 +1264,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     nextTurnIndex: () => number,
     currentTurnIndex: () => number,
     nextMessageSequence: () => number,
+    now: string,
   ): Promise<{
     readonly events: readonly RuntimeEvent[];
     readonly settled: boolean;
     readonly failed: boolean;
     readonly aborted: boolean;
   }> {
-    const now = this.now();
     const mapped: RuntimeEvent[] = [];
     switch (event.type) {
       case "agent_start":

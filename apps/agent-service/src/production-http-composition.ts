@@ -110,6 +110,7 @@ export interface ProductionHttpCompositionOptions {
   readonly repository: SqliteProductStateRepository;
   /** Core owns the authority lifecycle and supplies the current product fence. */
   readonly authority: () => ProductAuthorityFence;
+  readonly executionAuthority?: () => import("@himawari-agent/application").AuthorityFence;
   readonly secretSources: ProductionHttpCompositionSecretSources;
   /** Test-only local JWKS boundary; production defaults to the fixed HTTPS endpoint. */
   readonly jwksFetcher?: JwksFetcher;
@@ -747,6 +748,7 @@ export async function createProductionHttpComposition(
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
+    ...(options.executionAuthority ? { executionAuthority: options.executionAuthority } : {}),
   });
   const app = buildHttpGatewayServer({
     ...routeOptions(

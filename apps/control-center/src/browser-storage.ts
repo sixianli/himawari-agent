@@ -132,7 +132,8 @@ export class ControlCenterBrowserStorage {
         !CURSOR_PATTERN.test(value.commandType ?? "") ||
         !CURSOR_PATTERN.test(value.objectRef ?? "") ||
         !Number.isSafeInteger(value.expectedRevision) ||
-        (value.expectedRevision as number) < 1
+        (value.expectedRevision as number) <
+          (value.commandType === "search.authorization.set" ? 0 : 1)
       ) {
         return null;
       }
@@ -149,7 +150,7 @@ export class ControlCenterBrowserStorage {
       !CURSOR_PATTERN.test(mutation.commandType) ||
       !CURSOR_PATTERN.test(mutation.objectRef) ||
       !Number.isSafeInteger(mutation.expectedRevision) ||
-      mutation.expectedRevision < 1
+      mutation.expectedRevision < (mutation.commandType === "search.authorization.set" ? 0 : 1)
     ) {
       throw new Error("CONTROL_CENTER_MUTATION_IDENTITY_INVALID");
     }

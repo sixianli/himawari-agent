@@ -339,7 +339,13 @@ describe("production HTTP composition", () => {
       });
       expect(configResponse.statusCode).toBe(200);
       expect(configResponse.json()).toMatchObject({
-        installedGatewayV2Operations: ["approval.list", "approval.detail", "approval.respond"],
+        installedGatewayV2Operations: [
+          "approval.list",
+          "approval.detail",
+          "approval.respond",
+          "search.authorization.read",
+          "search.authorization.set",
+        ],
         healthDependenciesAvailable: true,
       });
       const healthResponse = await composition.app.inject({

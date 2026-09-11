@@ -54,6 +54,10 @@ interface Options {
   readonly host: (
     plan: SandboxExecutionPlanV2,
   ) => Promise<{ binding: SandboxHostBinding; qualification: SandboxRuntimeQualification }>;
+  /** Admission checks current scope/Grant and host bytes together before registration. */
+  readonly admit: (
+    plan: SandboxExecutionPlanV2,
+  ) => Promise<{ binding: SandboxHostBinding; qualification: SandboxRuntimeQualification }>;
 }
 const key = (plan: SandboxExecutionPlanV2) =>
   `sandbox-control:${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex")}`;
@@ -128,6 +132,7 @@ export function createProductionSandboxControl(options: Options) {
   const classify = async (
     record: SandboxExecutionRecord,
     raw: JobHostControlObservation,
+    qualification: SandboxRuntimeQualification,
   ): Promise<"controlled" | "released" | "lost"> => {
     if (
       raw.bootId !== record.facts.environment.supervisor.bootId ||
@@ -135,7 +140,6 @@ export function createProductionSandboxControl(options: Options) {
       raw.policyDigest !== record.facts.environment.policyDigest
     )
       return "lost";
-    const { qualification } = await options.host(record.plan);
     const namespace = raw.linuxNamespace
       ? await readLinuxNamespaceState(raw.linuxNamespace)
       : "unknown";
@@ -185,9 +189,21 @@ export function createProductionSandboxControl(options: Options) {
     command: "inspect" | "stop",
     signal?: AbortSignal,
   ): Promise<SandboxResourceObservation> => {
-    const raw = await inspect(record.plan, command, signal);
+    // Stop the authenticated original host promptly, then verify its resulting
+    // state. File verification must never delay delivery of a stop request.
+    if (command === "stop") await inspect(record.plan, "stop", signal);
+    // Read installed bytes before sampling a live process. A slow disk must not
+    // consume the observation's freshness window before classification begins.
+    let host: Awaited<ReturnType<Options["host"]>> | undefined;
+    try {
+      host = await options.host(record.plan);
+    } catch {
+      // Still retain the process observation; unqualified cleanup remains lost.
+    }
+    const raw = await inspect(record.plan, "inspect", signal);
     if (record.plan.operationContract.kind === "service_start") {
-      const { binding } = await options.host(record.plan);
+      if (!host) throw new Error("SANDBOX_HOST_UNAVAILABLE");
+      const { binding } = host;
       const ref = record.plan.operationContract.readinessProbeRef;
       const probe = binding.readinessProbes?.find((probe) => probe.ref === ref);
       if (
@@ -215,7 +231,7 @@ export function createProductionSandboxControl(options: Options) {
     }
     let state: "controlled" | "released" | "lost" = "lost";
     try {
-      state = await classify(record, raw);
+      if (host) state = await classify(record, raw, host.qualification);
     } catch {
       /* Qualification loss cannot turn a cleanup attempt into a launch. */
     }
@@ -270,6 +286,26 @@ export function createProductionSandboxControl(options: Options) {
           }),
     });
   };
+  const readinessEvidence = async (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) => {
+    if (facts.result?.kind === "started" && facts.result.handle.kind === "service") {
+      const control = await readControl(plan);
+      const saved = await options.read(plan, `sandbox-readiness:${plan.identity.jobId}`);
+      const first = saved?.value as
+        | { ref: string; digest: string; observation: JobHostControlObservation }
+        | undefined;
+      if (
+        !first ||
+        !first.observation.readiness?.readyAt ||
+        first.ref !== facts.result.readinessEvidence?.ref ||
+        first.digest !== facts.result.readinessEvidence.digest ||
+        first.observation.bootId !== control.bootId ||
+        first.observation.processIdentityRef !== control.processIdentityRef
+      )
+        throw new Error("SANDBOX_READINESS_EVIDENCE_CHANGED");
+      return [{ ref: first.ref, digest: first.digest }];
+    }
+    return [];
+  };
   return {
     async register(
       plan: SandboxExecutionPlanV2,
@@ -278,13 +314,13 @@ export function createProductionSandboxControl(options: Options) {
       const control = sandboxJobControlBindingSchema.parse(input);
       if (control.jobId !== plan.identity.jobId || control.attemptId !== plan.identity.attemptId)
         throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
+      const { binding } = await options.admit(plan);
       const existing = await options.read(plan, key(plan));
       if (existing) {
         const stored = await readControl(plan);
         if (!same(stored.control, control)) throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
         return false;
       }
-      const { binding } = await options.host(plan);
       if (
         (await realpath(control.directory)) !== control.directory ||
         !within(binding.privateRoot, control.directory) ||
@@ -355,7 +391,10 @@ export function createProductionSandboxControl(options: Options) {
         resource,
         evidence:
           resource.supervision === "released" || resource.supervision === "controlled"
-            ? [{ ref: resource.evidence.ref, digest: resource.evidence.digest }]
+            ? [
+                { ref: resource.evidence.ref, digest: resource.evidence.digest },
+                ...(await readinessEvidence(record.plan, record.facts)),
+              ]
             : [],
       };
     },
@@ -387,26 +426,14 @@ export function createProductionSandboxControl(options: Options) {
         (await classify(
           { plan, facts, workspaces: [], startedAt: null, operationRevision: 0 },
           value.observation,
+          (
+            await options.host(plan)
+          ).qualification,
         )) !== resource.supervision
       )
         throw new Error("SANDBOX_CONTROL_EVIDENCE_CHANGED");
       const proofs = [{ ref: artifact.ref, digest: artifact.digest }];
-      if (facts.result?.kind === "started" && facts.result.handle.kind === "service") {
-        const saved = await options.read(plan, `sandbox-readiness:${plan.identity.jobId}`);
-        const first = saved?.value as
-          | { ref: string; digest: string; observation: JobHostControlObservation }
-          | undefined;
-        if (
-          !first ||
-          !first.observation.readiness?.readyAt ||
-          first.ref !== facts.result.readinessEvidence?.ref ||
-          first.digest !== facts.result.readinessEvidence.digest ||
-          first.observation.bootId !== control.bootId ||
-          first.observation.processIdentityRef !== control.processIdentityRef
-        )
-          throw new Error("SANDBOX_READINESS_EVIDENCE_CHANGED");
-        proofs.push({ ref: first.ref, digest: first.digest });
-      }
+      proofs.push(...(await readinessEvidence(plan, facts)));
       return proofs;
     },
   };

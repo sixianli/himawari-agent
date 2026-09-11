@@ -23,7 +23,8 @@ import type {
 } from "./gateway-client.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import { threadCommandMessage, threadQueryMessage } from "./messages.js";
-import { findPendingRunApproval } from "./run-approval.js";
+import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
+import { RunApprovalCard } from "./components/run-approval-card.js";
 
 type ThreadCollectionSnapshot = Extract<
   ThreadGatewaySnapshot,
@@ -718,21 +719,6 @@ export function useThreadControlCenter(
     }
   };
 
-  const openApproval = async (runId: string) => {
-    if (!client || !configuration) return;
-    try {
-      const objectId = await findPendingRunApproval(client, configuration, runId);
-      navigate({
-        surfaceId: "approvals",
-        objectId,
-        status: "pending",
-        afterCursor: null,
-        view: "details",
-      });
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
-    }
-  };
   const threadItems = collection?.payload.threads ?? [];
   const selectedSummary =
     detail?.payload.thread ?? threadItems.find(({ threadId }) => threadId === selectedThreadId);
@@ -859,13 +845,41 @@ export function useThreadControlCenter(
             contentByRef={contentByRef}
             execution={execution}
             connection={connection}
-            onApproval={(runId) => void openApproval(runId)}
+            renderApproval={(runId, records) =>
+              client && configuration ? (
+                <RunApprovalCard
+                  runId={runId}
+                  records={records}
+                  client={client}
+                  configuration={configuration}
+                  storage={storage}
+                  connection={connection}
+                  refreshSignal={refreshSignal}
+                  message={message}
+                  onSettled={refresh}
+                  onUnauthorized={onUnauthorized}
+                />
+              ) : null
+            }
             message={message}
             onFork={(turnId, sequence) =>
               void performIntent({ kind: "fork", sourceTurnId: turnId, sourceWatermark: sequence })
             }
           />
           <ChatComposer
+            searchControl={
+              client &&
+              configuration?.installedGatewayV2Operations?.includes("search.authorization.set") ? (
+                <SearchAuthorizationControl
+                  client={client}
+                  configuration={configuration}
+                  storage={storage}
+                  connected={connection === "connected"}
+                  refreshSignal={refreshSignal}
+                  message={message}
+                />
+              ) : null
+            }
             key={`composer:${detail.payload.thread.threadId}`}
             draft={draft}
             onDraft={(value) => {
@@ -1032,7 +1046,14 @@ export function useThreadControlCenter(
                     </ActionButton>
                   ) : null}
                   {run.status === "awaiting_approval" ? (
-                    <ActionButton variant="secondary" onClick={() => void openApproval(run.runId)}>
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() =>
+                        document
+                          .getElementById(`approval-${run.runId}`)
+                          ?.scrollIntoView({ block: "center" })
+                      }
+                    >
                       {message("nav.approvals")}
                     </ActionButton>
                   ) : null}

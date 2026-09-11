@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "migrationSucceeded": false,
+  "failedStage": "deployment signer after six successful probe processes",
+  "signerExitCode": 1,
+  "allSixOutputsStrictJson": true,
+  "originalServiceRestored": true,
+  "workerReadyAt": "2026-09-11T04:03:37.215Z",
+  "agentReadyAt": "2026-09-11T04:03:38.083Z",
+  "browser": {
+    "realtimeConnected": true,
+    "visibleThreads": 9,
+    "searchAuthorization": "allowed",
+    "screenshot": "live-restored-after-v4.png",
+    "newModelCallPerformed": false
+  },
+  "permissionConflict": {
+    "codeEvidence": "workspaces recursively chowned to UID 998 before UID 1000 signer stats workspaces/default; directories retain 0700",
+    "liveReproduction": {
+      "callerUid": 1000,
+      "privateDirectoryUid": 998,
+      "privateDirectoryMode": "0o700",
+      "childStatResult": "EACCES"
+    },
+    "rootPrivateStderrRead": false
+  },
+  "preparedCorrection": "sign workspace identity before transferring workspace ownership; verify device and inode after transfer",
+  "preparedCorrectionExecuted": false,
+  "furtherManualRetryRequested": false,
+  "protectedFastPathEnabled": false,
+  "realProtectedPerformanceMeasured": false
+}

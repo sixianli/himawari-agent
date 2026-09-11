@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   ActionPolicyService,
   CapabilityHandleService,
@@ -13,12 +12,8 @@ import {
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
 
-/** The same identity is used for file and generic tool disclosure approvals. */
-export function configuredModelDisclosureIdentity(
-  model: ProductConfiguration["modelDescriptors"][number],
-): string {
-  return `model:${model.provider}:${model.model}:${createHash("sha256").update(JSON.stringify(model)).digest("hex")}`;
-}
+import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
+import { PublicSearchAuthorization } from "./public-search-authorization.js";
 
 /** Production composition: routing never creates grants or capability qualification. */
 export function createProductionFileReadServices(options: {
@@ -26,6 +21,8 @@ export function createProductionFileReadServices(options: {
   readonly repository: Pick<
     SqliteProductStateRepository,
     | "readScopedState"
+    | "commitStateAndEvents"
+    | "auditLedger"
     | "runExecutionSource"
     | "runDispatch"
     | "authorizationStore"
@@ -49,6 +46,12 @@ export function createProductionFileReadServices(options: {
       },
     },
     policy: { version: "file-read.v1", rules: [] },
+    clock,
+    ids,
+  });
+  const searchAuthorization = new PublicSearchAuthorization({
+    configuration,
+    repository,
     clock,
     ids,
   });
@@ -129,8 +132,10 @@ export function createProductionFileReadServices(options: {
         modelIdentity: configuredModelDisclosureIdentity(model),
       };
     },
-    authorize: (intent) =>
-      policy.evaluate(intent, { uiAvailable: true, approvalExpiresAt: intent.expiresAt }),
+    authorize: async (intent) => {
+      await searchAuthorization.authorize(intent);
+      return policy.evaluate(intent, { uiAvailable: true, approvalExpiresAt: intent.expiresAt });
+    },
     issue: (input) => handles.issue(input),
   };
 }

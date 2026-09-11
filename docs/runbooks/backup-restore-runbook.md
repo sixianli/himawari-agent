@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:94c363342b01a25956683c19d2d079a8a49163cffa23f1d62913a1ce9056bc6c"
+contract_sha256: "sha256:d53385fed95ea20c032dbfb1687b361a71ede9a76349af43d282ffbec88b9739"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,11 @@ date: "2026-08-27"
 # 同机备份与恢复 Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/public-search-authorization.ts
+- packages/application/src/services/sandbox-action-grant.ts
+- packages/persistence-sqlite/src/sqlite-durable-operations.ts
+- packages/platform-node/src/capabilities/sandbox-runtime-digest-worker.ts
+- packages/platform-node/src/capabilities/protected-runtime.ts
 - packages/persistence-sqlite/src/built-in-identity-recovery.ts
 - packages/persistence-sqlite/src/migrations/0031_built_in_identity.sql
 - packages/application/src/ports/built-in-identity.ts
@@ -54,6 +59,10 @@ date: "2026-08-27"
 -->
 
 ## Scope
+
+2026-09-11 聊天运行体验更新：可撤销的联网搜索设置保存在既有 Product State，关联审批记录通过 `policyAuthorization` 标明真实授权来源，不新增迁移文件。备份/迁移须共同保留设置 revision、派生 Grant 与审计；关闭设置后，旧 Grant 的消费和 Sandbox 准入被拒绝。恢复后核对设置与当前固定 Exa 路径、主机/目录路由和模型披露身份一致，配置绑定不同不能沿用开启状态。它不授予其他文件、命令或网络权限。Pi 更新合并仅影响尚未持久化的连续累计片段，不能删除已持久化记录或工具边界。`runPolicy.timeZone` 是显式 IANA 时区，只用于新 Run 的时间上下文；历史已冻结内容保持原值。
+
+未配置受保护安装时，完整 runtime 字节校验仍在每次调用的独立工作线程运行；安装必须包含编译后的 `sandbox-runtime-digest-worker.js`。ADR 0028 允许已经独立验证权限的 Linux 安装，在相同进程、相同 root 保护版本身份下复用首次完整审计；每次仍验证当前进程和保护记录，失效立即拒绝，不接受普通时间缓存。保护记录不属于备份或迁移数据，目标主机必须重新建立身份、权限与安装资格，不能复制源主机记录作为证据。此变化不改变数据格式、迁移权威或停止条件。参见 [SOURCE: docs/adr/0028-protected-runtime-installation.md] 和 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]；本 Runbook 原有操作范围保持不变。
 
 2026-09-11 合同核查：新增离线初始化、目录 Grant 与能力登记仍属于当前身份的停机管理操作，不修改本 Runbook 的备份/迁移数据格式。恢复必须保留其审计、目录身份与授权；不能在已恢复 state root 再运行首次初始化，不能将原主机安装资格当作目标主机资格。启动后快照按原字节复查，工具每次仍检查当前主机与授权；模型失败展示改进不改变原始记录和费用核算。
 
@@ -125,7 +134,7 @@ himawari backup verify --config <absolute-config-path> --secret-dir <absolute-se
 himawari backup create --config <absolute-config-path> --secret-dir <absolute-secret-directory> --backup-id <backup-id>
 ~~~
 
-3. 创建命令只有在自动临时解密验证全部通过后才返回成功。随后从独立命令再次验证：
+3. 创建命令只有在自动临时解密验证全部通过后才返回成功。审批、能力声明与授权使用记录的空元数据占位仍随整库加密、认证和恢复；只有既有 metadata 引用、指定媒体类型、private 分类、空内联字节、匹配摘要且无加密字段的严格形状可免于正文解密。包含正文、未知摘要或加密字段的记录继续拒绝。随后从独立命令再次验证：
 
 ~~~text
 himawari backup verify --config <absolute-config-path> --secret-dir <absolute-secret-directory> --backup <backup-id>
@@ -224,3 +233,6 @@ Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释
 生成模型可选 `reasoningRequired` 能力需与 `reasoning` 一致；原配置省略时保持原语义。真实审批目标展示允许有界路径文本，不改变身份、Grant 或审批决定合同。
 
 恢复审批须读取已有冻结请求，不能用新时间重写同一持久化 key。验收核对 Pi 工具真实失败标记、审批等待扣除和文件回读；是否要求近期认证以实际审批合同为准，不以“工具”一概判断。
+
+
+同次进程观察现在携带 Agent 在该次核验中产生的证据，保存时不重复扫描安装字节；外部 Worker 事实仍独立核验，序号、身份、有效期及事务检查保留。注册控制入口统一核对当前 Scope、Grant 和安装；终态工具仍保存结果并完成原清理核验。此调整不改变停机、恢复、迁移或重新授权步骤，不使旧进程证据恢复执行权限。

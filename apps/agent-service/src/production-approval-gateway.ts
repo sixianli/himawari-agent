@@ -9,6 +9,7 @@ import {
   GrantService,
   PORT_ERROR_CODES,
   type ClockPort,
+  type AuthorityFence,
   type ThreadCreateInput,
   type GatewayV2AccessPolicyPort,
   type ProductConfiguration,
@@ -17,15 +18,21 @@ import {
 type ProductAuthorityFence = ThreadCreateInput["authority"];
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 
+import { PublicSearchAuthorization } from "./public-search-authorization.js";
+
 export const PRODUCTION_APPROVAL_OPERATIONS = Object.freeze([
   "approval.list",
   "approval.detail",
   "approval.respond",
+  "search.authorization.read",
+  "search.authorization.set",
 ] as const);
 
 /** Only the installed approval surface is exposed; other governance mutations stay unavailable. */
 export function createProductionApprovalGateway(options: {
-  readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
+  readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId"> &
+    Partial<Pick<ProductConfiguration, "modelDescriptors" | "runPolicy">>;
+  readonly executionAuthority?: () => AuthorityFence;
   readonly repository: SqliteProductStateRepository;
   readonly access: GatewayV2AccessPolicyPort;
   readonly recentAuthentication: RecentAuthenticationGuardPort;
@@ -36,6 +43,12 @@ export function createProductionApprovalGateway(options: {
   const { repository, clock } = options;
   const authorization = repository.authorizationStore();
   const capabilities = repository.capabilityStore(ownerId, agentId);
+  const searchAuthorization = new PublicSearchAuthorization({
+    configuration: options.configuration,
+    repository,
+    clock,
+    ids: { next: (scope) => `${scope}:${randomUUID()}` },
+  });
   const unsupported = async (): Promise<never> => {
     throw new ApplicationPortError(
       PORT_ERROR_CODES.INVALID_OPERATION,
@@ -49,7 +62,7 @@ export function createProductionApprovalGateway(options: {
     capabilities,
     clock,
     delegate: {
-      query: unsupported,
+      query: (query) => searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -82,6 +95,7 @@ export function createProductionApprovalGateway(options: {
           const now = clock.now();
           const version = JSON.stringify([
             authority,
+            await searchAuthorization.revision(),
             approvals.map((approval) => [
               approval.id,
               approval.revision,
@@ -131,7 +145,17 @@ export function createProductionApprovalGateway(options: {
     authorization,
     capabilities,
     clock,
-    delegate: { execute: unsupported },
+    delegate: {
+      execute: async ({ authentication, command }) => {
+        if (
+          !options.executionAuthority ||
+          authentication.ownerId !== ownerId ||
+          authentication.subjectId !== command.actor.actorId
+        )
+          return unsupported();
+        return searchAuthorization.set(command, options.executionAuthority());
+      },
+    },
     receipts: repository.governanceMutationReceiptStore(),
     approvalService: new ApprovalService({ store: authorization, clock }),
     grantService: new GrantService({

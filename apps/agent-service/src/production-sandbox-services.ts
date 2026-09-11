@@ -39,7 +39,7 @@ import {
   verifyPiWriteEvidence,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
-import { configuredModelDisclosureIdentity } from "./production-file-read-services.js";
+import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
 import { createProductionManagedTasks } from "./production-managed-tasks.js";
 import type { ProductionRuntimeSandbox } from "./production-runtime-tools.js";
@@ -877,6 +877,7 @@ export async function createProductionSandboxServices(options: {
   };
   const control = createProductionSandboxControl({
     now: () => clock.now(),
+    admit: resolve,
     host: async (plan) => {
       const entry = await entryFor(plan.capabilityRef, plan.capabilityVersion);
       await verifySandboxHost({ ...entry, hostId, plan });
@@ -1236,7 +1237,7 @@ export async function createProductionSandboxServices(options: {
           ? readForegroundOutput(record, query)
           : stream.output(record, query),
       registerControl: control.register,
-      observeControl: control.observe,
+      observeVerifiedControl: refreshVerification,
       verifyPreparation: control.verifyPreparation,
       reconciliation,
       hostId,

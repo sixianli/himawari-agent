@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AvailableModel } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { ModelPicker } from "./model-picker.js";
@@ -36,6 +36,7 @@ export function ChatComposer({
   onStop,
   message,
   canSend = true,
+  searchControl,
 }: {
   readonly draft: string;
   readonly onDraft: (draft: string) => void;
@@ -51,6 +52,7 @@ export function ChatComposer({
   readonly onStop?: (() => void) | undefined;
   readonly message: (id: MessageId) => string;
   readonly canSend?: boolean;
+  readonly searchControl?: ReactNode;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
@@ -138,6 +140,7 @@ export function ChatComposer({
             ＋
           </ActionButton>
           <span className="execution-mode">{message("chat.execute")}</span>
+          {searchControl}
           {models.length ? (
             <div className="model-selection">
               <ModelPicker

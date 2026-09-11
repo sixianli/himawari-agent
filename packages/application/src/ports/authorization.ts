@@ -136,6 +136,8 @@ export interface GrantRecord {
 }
 
 export interface ApprovalRequest {
+  /** A durable Owner policy decision, never a claim of a per-action human click. */
+  readonly policyAuthorization?: { readonly key: string; readonly revision: number };
   readonly id: string;
   readonly revision: number;
   readonly ownerId: OwnerId;
@@ -196,6 +198,12 @@ export interface GovernedGrantRecord extends GrantRecord {
 }
 
 export interface AuthorizationStorePort {
+  isPolicyAuthorizationCurrent?(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    key: string;
+    revision: number;
+  }): Promise<boolean>;
   createApproval(request: ApprovalRequest): Promise<ApprovalRequest>;
   findApprovalByIntent(intentId: string): Promise<ApprovalRequest | undefined>;
   getApproval(approvalRequestId: string): Promise<ApprovalRequest | undefined>;

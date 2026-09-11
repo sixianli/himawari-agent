@@ -23,6 +23,10 @@ afterEach(async () => {
 // A real authenticated socket and durable journal exercise the product verifier.
 // The supervisor and qualification facts here are synthetic, not platform qualification.
 async function fixture() {
+  let clockOffset = 0;
+  let hostElapsed = 0;
+  const order: string[] = [];
+  const now = () => new Date(Date.now() + clockOffset).toISOString();
   const f = await openSandboxJournal();
   cleanups.push(f.close);
   const root = await realpath(await mkdtemp("/tmp/r4-evidence-"));
@@ -63,10 +67,11 @@ async function fixture() {
     binding,
     () => ({
       ...observation,
-      observedAt: new Date().toISOString(),
+      observedAt: now(),
       sequence: ++sequence,
     }),
     () => {
+      order.push("stop");
       observation = { ...observation, phase: "stopping" };
     },
   );
@@ -76,8 +81,22 @@ async function fixture() {
   });
   const stored = new Map<string, { ref: string; digest: string; value: unknown }>();
   let platform = "darwin";
+  const verifiedHost = async () => ({
+    binding: {
+      privateRoot: root,
+      runtimeRoot: "/runtime",
+      readOnlyToolchainPaths: [],
+      roots: [],
+    } as unknown as SandboxHostBinding,
+    qualification: {
+      platform,
+      terminationMode: "best_effort",
+    } as unknown as SandboxRuntimeQualification,
+  });
+  let hostChecks = 0;
+  let admissionChecks = 0;
   const control = createProductionSandboxControl({
-    now: () => new Date().toISOString(),
+    now,
     read: async (_plan, key) => structuredClone(stored.get(key)),
     write: async (_plan, key, value) => {
       const artifact = {
@@ -89,18 +108,16 @@ async function fixture() {
       stored.set(key, artifact);
       return artifact;
     },
-    host: async () => ({
-      binding: {
-        privateRoot: root,
-        runtimeRoot: "/runtime",
-        readOnlyToolchainPaths: [],
-        roots: [],
-      } as unknown as SandboxHostBinding,
-      qualification: {
-        platform,
-        terminationMode: "best_effort",
-      } as unknown as SandboxRuntimeQualification,
-    }),
+    host: async () => {
+      order.push("verify-host");
+      hostChecks++;
+      clockOffset += hostElapsed;
+      return verifiedHost();
+    },
+    admit: async () => {
+      admissionChecks++;
+      return verifiedHost();
+    },
   });
   await control.register(record.plan, binding);
   const facts = {
@@ -119,6 +136,11 @@ async function fixture() {
   };
   return {
     control,
+    order,
+    counts: () => ({ hostChecks, admissionChecks }),
+    setHostElapsed: (milliseconds: number) => {
+      hostElapsed = milliseconds;
+    },
     record: bound,
     binding,
     stored,
@@ -133,13 +155,56 @@ async function fixture() {
 }
 it("binds preparation to the original ready host and rejects replacement", async () => {
   const f = await fixture();
+  expect(f.counts()).toEqual({ hostChecks: 0, admissionChecks: 1 });
   await expect(f.control.verifyPreparation(f.record.plan, f.record.facts)).resolves.toBeUndefined();
   expect(await f.control.register(f.record.plan, f.binding)).toBe(false);
+  expect(f.counts()).toEqual({ hostChecks: 0, admissionChecks: 2 });
   await expect(
     f.control.register(f.record.plan, { ...f.binding, token: "b".repeat(64) }),
   ).rejects.toThrow();
   f.set({ phase: "running", taskStarted: true });
   await expect(f.control.verifyPreparation(f.record.plan, f.record.facts)).rejects.toThrow();
+});
+it("returns observation proof from one host verification without caching later observations", async () => {
+  const f = await fixture();
+  f.set({
+    phase: "running",
+    taskStarted: true,
+    resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
+  });
+  const first = await f.control.refreshEvidence(f.record);
+  expect(first.resource.supervision).toBe("controlled");
+  expect(first.evidence).toHaveLength(1);
+  expect(f.counts().hostChecks).toBe(1);
+  f.setPlatform("linux");
+  const second = await f.control.refreshEvidence({
+    ...f.record,
+    facts: { ...f.record.facts, resource: first.resource },
+  });
+  expect(second.resource.supervision).toBe("lost");
+  expect(second.evidence).toEqual([]);
+  expect(f.counts().hostChecks).toBe(2);
+});
+it("samples live process state after slow host verification instead of aging the sample", async () => {
+  const f = await fixture();
+  f.setHostElapsed(2000);
+  f.set({
+    phase: "running",
+    taskStarted: true,
+    resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
+  });
+  const checked = await f.control.refreshEvidence(f.record);
+  expect(checked.resource.supervision).toBe("controlled");
+  expect(checked.evidence).toHaveLength(1);
+  expect(f.counts().hostChecks).toBe(1);
+});
+it("delivers stop before expensive host verification and still requires cleanup evidence", async () => {
+  const f = await fixture();
+  f.setHostElapsed(2000);
+  const resource = await f.control.backend.stop(f.record, new AbortController().signal);
+  expect(f.order).toEqual(["stop", "verify-host"]);
+  expect(resource.supervision).toBe("lost");
+  expect(resource.cleanup).toBe("unknown");
 });
 it("requires stored exact evidence and never promotes a Linux sample to tree proof", async () => {
   const f = await fixture();

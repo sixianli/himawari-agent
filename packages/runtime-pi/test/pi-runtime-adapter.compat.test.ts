@@ -926,6 +926,39 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(projection.finalAnswers[0]?.text.startsWith('"')).toBe(false);
   });
 
+  it("coalesces pending Pi snapshots without losing boundaries or retaining mutable messages", async () => {
+    const projection = new RecordingProjection();
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        const block = { type: "text", text: "" };
+        const message = { role: "assistant", content: [block] };
+        emit({ type: "message_start", message });
+        for (let index = 1; index <= 1000; index++) {
+          block.text = `fragment ${index}`;
+          emit({ type: "message_update", message });
+        }
+        emit({ type: "message_end", message: { ...message, stopReason: "stop" } });
+        emit({ type: "agent_settled" });
+      }),
+    );
+    const events = await collect(adapter.run(request));
+    const messages = events.filter((event) => event.type === "runtime.message");
+    expect(messages[0]?.phase).toBe("started");
+    expect(messages.at(-1)?.phase).toBe("ended");
+    expect(messages.filter((event) => event.phase === "updated").length).toBeLessThanOrEqual(2);
+    const captured = projection.captures as {
+      kind: string;
+      value: { content: { text: string }[] };
+    }[];
+    expect(captured.find((item) => item.kind === "message")?.value.content[0]?.text).toBe("");
+    expect(captured.filter((item) => item.kind === "message").at(-1)?.value.content[0]?.text).toBe(
+      "fragment 1000",
+    );
+    expect(events.at(-1)?.type).toBe("runtime.completed");
+  });
+
   it("exposes only authorized custom tools and maps Pi lifecycle events after settlement", async () => {
     const projection = new RecordingProjection();
     const tools = new RecordingRuntimeTools();

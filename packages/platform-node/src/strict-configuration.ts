@@ -704,6 +704,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     input,
     [
       "version",
+      "timeZone",
       "systemInstruction",
       "memoryLimit",
       "maxSelectedMemories",
@@ -721,7 +722,19 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   if (Buffer.byteLength(instruction, "utf8") > 16384)
     throw invalid("configuration.runPolicy.systemInstruction", "must not exceed 16384 bytes");
   const memoryLimit = integer(input["memoryLimit"], "configuration.runPolicy.memoryLimit", 1, 1000);
+  const timeZone =
+    input["timeZone"] === undefined
+      ? undefined
+      : string(input["timeZone"], "configuration.runPolicy.timeZone");
+  if (timeZone !== undefined) {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone }).format(0);
+    } catch {
+      throw invalid("configuration.runPolicy.timeZone", "must be a supported IANA time zone");
+    }
+  }
   return Object.freeze({
+    ...(timeZone === undefined ? {} : { timeZone }),
     ...(input["publicSearch"] === undefined
       ? {}
       : { publicSearch: parseFileReadRoute(input["publicSearch"]) }),

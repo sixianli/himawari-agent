@@ -453,6 +453,22 @@ describe("typed browser Gateway client", () => {
 });
 
 describe("browser storage and SSE recovery", () => {
+  it("retains the initial search-setting retry identity without accepting revision zero for existing objects", () => {
+    const storage = new ControlCenterBrowserStorage(new MemoryStorage());
+    const pending = {
+      operationKey: "search-authorization:0:enable",
+      idempotencyKey: "governance:search-enable",
+      commandType: "search.authorization.set",
+      objectRef: "search-authorization",
+      expectedRevision: 0,
+    };
+    storage.savePendingGovernanceMutation(pending);
+    expect(storage.readPendingGovernanceMutation(pending.operationKey)).toEqual(pending);
+    expect(() =>
+      storage.savePendingGovernanceMutation({ ...pending, commandType: "approval.respond" }),
+    ).toThrow("CONTROL_CENTER_MUTATION_IDENTITY_INVALID");
+  });
+
   it("stores only draft, preferences and durable cursor while logs omit content", () => {
     const raw = new MemoryStorage();
     const storage = new ControlCenterBrowserStorage(raw);

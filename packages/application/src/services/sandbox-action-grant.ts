@@ -15,7 +15,10 @@ export async function resolveSandboxActionGrant(input: {
       "ownerId" | "agentId" | "runId" | "threadId"
     >;
   };
-  readonly authorizations: Pick<AuthorizationStorePort, "listGrants" | "getApproval">;
+  readonly authorizations: Pick<
+    AuthorizationStorePort,
+    "listGrants" | "getApproval" | "isPolicyAuthorizationCurrent"
+  >;
   readonly now: () => string;
 }) {
   const { plan } = input;
@@ -26,6 +29,15 @@ export async function resolveSandboxActionGrant(input: {
   const grant = grants.find((entry) => entry.id === plan.authorizationRef);
   if (!grant) throw new Error("missing grant");
   const approval = await input.authorizations.getApproval(grant.sourceApprovalRequestId);
+  if (
+    approval?.policyAuthorization &&
+    !(await input.authorizations.isPolicyAuthorizationCurrent?.({
+      ownerId: approval.ownerId,
+      agentId: approval.agentId,
+      ...approval.policyAuthorization,
+    }))
+  )
+    throw new Error("owner policy revoked or changed");
   const now = input.now();
   const intent = approval?.intentSnapshot as GovernedActionIntent | undefined;
   if (

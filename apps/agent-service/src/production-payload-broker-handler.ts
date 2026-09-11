@@ -16,6 +16,7 @@ import type {
   SandboxExecutionPreparationPort,
   SandboxExecutionReconciliationService,
   SandboxExecutionRecord,
+  SandboxExecutionVerification,
   SandboxJobJournalPort,
 } from "@himawari-agent/application";
 import type {
@@ -34,7 +35,6 @@ import {
   payloadSandboxJobRequestSchema,
   type SandboxExecutionPlanV2,
   type SandboxJobControlBinding,
-  type SandboxResourceObservation,
 } from "@himawari-agent/execution-contracts";
 import type {
   PayloadBrokerOutputReceipt,
@@ -98,13 +98,15 @@ export interface ProductionPayloadBrokerHandlerOptions {
     readonly hostId: string;
     readonly journal: SandboxExecutionJournalPort;
     readonly preparations?: SandboxExecutionPreparationPort;
+    /** Verify current scope, Grant and installed host before registering; caller rechecks authority. */
     readonly registerControl?: (
       plan: SandboxExecutionPlanV2,
       control: SandboxJobControlBinding,
     ) => Promise<boolean>;
-    readonly observeControl?: (
+    /** Agent-owned observation and proof from one verification; never supplied over UDS. */
+    readonly observeVerifiedControl?: (
       record: SandboxExecutionRecord,
-    ) => Promise<SandboxResourceObservation>;
+    ) => Promise<SandboxExecutionVerification>;
     readonly verifyPreparation?: (
       plan: SandboxExecutionPlanV2,
       facts: SandboxExecutionFacts,
@@ -382,7 +384,6 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         if (record.phase !== "reserved" || !configured.registerControl)
           throw new Error("control registration unavailable");
         await current(true);
-        await configured.verifyStart(record.plan);
         await configured.registerControl(record.plan, command.control);
         await current(true);
         return { record, applied: false, resolvedScope: null, output: null };
@@ -422,23 +423,26 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         });
         return { ...mutation, record: wire(mutation.record), resolvedScope: null, output: null };
       }
+      let observedVerification: SandboxExecutionVerification | undefined;
       if (command.kind === "observe_control") {
-        if (!configured.observeControl || !bound)
+        if (!configured.observeVerifiedControl || !bound)
           throw new Error("control observation unavailable");
         await current(false);
-        const resource = await configured.observeControl(bound);
+        observedVerification = await configured.observeVerifiedControl(bound);
         command = {
           kind: "append",
           expectedSequence: command.expectedSequence,
           expectedOperationRevision: record.operationRevision,
-          facts: { ...record.facts, resource },
+          facts: observedVerification.facts,
         };
       }
       if (command.kind === "append" || command.kind === "operation") {
         const now = this.#options.clock.now();
-        const verification = configured.evidence
-          ? await configured.evidence.verify({ plan: record.plan, facts: command.facts, now })
-          : null;
+        const verification =
+          observedVerification ??
+          (configured.evidence
+            ? await configured.evidence.verify({ plan: record.plan, facts: command.facts, now })
+            : null);
         await current(false);
         // This endpoint records observations only. It never grants disclosure,
         // continuation or a new operation, even when evidence verifies cleanup.

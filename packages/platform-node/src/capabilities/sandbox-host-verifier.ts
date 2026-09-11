@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { lstat, readdir, realpath } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
 import { release } from "node:os";
+import { Worker } from "node:worker_threads";
 import path from "node:path";
 import type { SandboxWorkspaceClaim } from "@himawari-agent/application";
 import {
@@ -21,44 +22,34 @@ import {
   sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import { digestRegularFile } from "./artifact-verifier.js";
+import { verifyProtectedRuntime } from "./protected-runtime.js";
 
 /** Same path/hash/size/mode digest as the installation artifact inventory.
  * Read the actual closure, including SRT helper files; a manifest hash alone
  * cannot establish that installed executable code is unchanged. */
-export async function digestSandboxRuntime(root: string): Promise<string> {
-  const files: { path: string; sha256: string; bytes: number; mode: number }[] = [];
-  const visit = async (directory: string, prefix: string) => {
-    const before = await checkedPath(directory, true);
-    const entries = await readdir(directory, { withFileTypes: true });
-    // Bound concurrent file reads across the entire walk: directories remain
-    // sequential. Verify every byte and the same before/after metadata without
-    // turning filesystem latency into one round trip per file.
-    const leaves = entries.filter((entry) => !entry.isDirectory());
-    for (let offset = 0; offset < leaves.length; offset += 8) {
-      await Promise.all(
-        leaves.slice(offset, offset + 8).map(async (entry) => {
-          const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
-          const filename = path.join(directory, entry.name);
-          const metadata = await checkedPath(filename, false);
-          const sha256 = (await digestRegularFile(filename)).slice(7);
-          const after = await checkedPath(filename, false);
-          if (!sameFile(metadata, after)) throw new Error("SANDBOX_HOST_CHANGED");
-          files.push({ path: relative, sha256, bytes: metadata.size, mode: metadata.mode & 0o777 });
-        }),
-      );
-    }
-    for (const entry of entries.filter((entry) => entry.isDirectory())) {
-      await visit(
-        path.join(directory, entry.name),
-        prefix ? `${prefix}/${entry.name}` : entry.name,
-      );
-    }
-    if (!sameFile(before, await checkedPath(directory, true)))
-      throw new Error("SANDBOX_HOST_CHANGED");
-  };
-  await visit(root, "");
-  files.sort((a, b) => a.path.localeCompare(b.path));
-  return createHash("sha256").update(JSON.stringify(files)).digest("hex");
+export function digestSandboxRuntime(root: string): Promise<string> {
+  // Source checkout uses Node's native TypeScript erasure; packaged code uses
+  // the compiled sibling. This keeps the same verifier in tests and releases.
+  const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(
+      new URL(`./sandbox-runtime-digest-worker.${extension}`, import.meta.url),
+      { workerData: root },
+    );
+    let received = false;
+    worker.once("message", (value: unknown) => {
+      if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
+        reject(new Error("SANDBOX_HOST_DIGEST_INVALID"));
+        return;
+      }
+      received = true;
+      resolve(value);
+    });
+    worker.once("error", reject);
+    worker.once("exit", (code) => {
+      if (!received) reject(new Error(`SANDBOX_HOST_DIGEST_WORKER_EXIT:${code}`));
+    });
+  });
 }
 
 async function checkedPath(filename: string, directory: boolean) {
@@ -68,6 +59,9 @@ async function checkedPath(filename: string, directory: boolean) {
     (await realpath(filename)) !== filename
   )
     throw new Error("SANDBOX_HOST_PATH_UNSAFE");
+  return checkedMetadata(filename, directory);
+}
+async function checkedMetadata(filename: string, directory: boolean) {
   const info = await lstat(filename);
   if (
     (directory ? !info.isDirectory() : !info.isFile()) ||
@@ -77,20 +71,12 @@ async function checkedPath(filename: string, directory: boolean) {
     throw new Error("SANDBOX_HOST_PATH_UNSAFE");
   return info;
 }
-function sameFile(a: Awaited<ReturnType<typeof lstat>>, b: Awaited<ReturnType<typeof lstat>>) {
-  return (
-    a.dev === b.dev &&
-    a.ino === b.ino &&
-    a.size === b.size &&
-    a.mode === b.mode &&
-    a.mtimeMs === b.mtimeMs &&
-    a.ctimeMs === b.ctimeMs
-  );
-}
 
 /** The binding/qualification must originate in the verified deployment snapshot.
  * This checks live host identity and bytes, and never issues a qualification or
- * treats inventory roots/domains as execution authority. Do not cache across jobs. */
+ * treats inventory roots/domains as execution authority. Mutable installations
+ * are audited per call; protected installations retain a process-local initial
+ * audit only while administrator-owned deployment identity remains unchanged. */
 export async function verifySandboxHost(input: {
   readonly binding: SandboxHostBinding;
   readonly qualification: SandboxRuntimeQualification;
@@ -170,7 +156,12 @@ export async function verifySandboxHost(input: {
   if (
     (await digestRegularFile(binding.executable.path)) !== `sha256:${binding.executable.sha256}` ||
     (await digestRegularFile(binding.runner.path)) !== `sha256:${binding.runner.sha256}` ||
-    (await digestSandboxRuntime(binding.runtimeRoot)) !== binding.runtimeDigest
+    (!(await verifyProtectedRuntime(
+      binding.runtimeRoot,
+      binding.runtimeDigest,
+      digestSandboxRuntime,
+    )) &&
+      (await digestSandboxRuntime(binding.runtimeRoot)) !== binding.runtimeDigest)
   )
     throw new Error("SANDBOX_HOST_ARTIFACT_CHANGED");
 }
