@@ -407,6 +407,64 @@ function adapterWith(
 }
 
 describe("encrypted same-host SQLite recovery points", () => {
+  it("backs up and restores empty durable metadata alongside encrypted content", async () => {
+    const { adapter, databasePath, stateRoot } = await fixture();
+    const database = openQualifiedDatabase(databasePath);
+    database
+      .prepare(`INSERT INTO payloads (
+      ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+      content_digest, lifecycle_state, created_at, content_type
+    ) VALUES (?, ?, ?, 'private', 'sqlite_blob', X'', ?, 'active', ?,
+      'application/x-himawari-metadata')`)
+      .run(
+        "metadata:approval-intent:test",
+        OWNER_ID,
+        AGENT_ID,
+        "metadata:metadata:approval-intent:test",
+        CREATED_AT,
+      );
+    database.close();
+    const report = await adapter.createNamed("metadata-backup");
+    expect(report.payloadCount).toBe(2);
+    expect((await adapter.verifyNamed("metadata-backup")).fullIntegrityCheck).toBe("ok");
+    await adapter.restoreNamed("metadata-backup", stateRoot);
+    const restored = openQualifiedDatabase(databasePath);
+    try {
+      expect(
+        restored
+          .prepare("SELECT content_digest, length(ciphertext) AS bytes FROM payloads WHERE ref = ?")
+          .get("metadata:approval-intent:test"),
+      ).toEqual({
+        content_digest: "metadata:metadata:approval-intent:test",
+        bytes: 0,
+      });
+    } finally {
+      restored.close();
+    }
+  });
+
+  it.each([
+    ["body", "UPDATE payloads SET ciphertext = X'01' WHERE ref LIKE 'metadata:%'"],
+    ["digest", "UPDATE payloads SET content_digest = 'changed' WHERE ref LIKE 'metadata:%'"],
+    ["type", "UPDATE payloads SET content_type = 'text/plain' WHERE ref LIKE 'metadata:%'"],
+    ["key", "UPDATE payloads SET key_ref = 'unexpected-key' WHERE ref LIKE 'metadata:%'"],
+  ])("rejects a malformed metadata placeholder: %s", async (_name, mutation) => {
+    const { adapter, databasePath } = await fixture();
+    const database = openQualifiedDatabase(databasePath);
+    database
+      .prepare(`INSERT INTO payloads (
+      ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+      content_digest, lifecycle_state, created_at, content_type
+    ) VALUES ('metadata:test', ?, ?, 'private', 'sqlite_blob', X'',
+      'metadata:metadata:test', 'active', ?, 'application/x-himawari-metadata')`)
+      .run(OWNER_ID, AGENT_ID, CREATED_AT);
+    database.exec(mutation);
+    database.close();
+    await expect(adapter.createNamed("invalid-metadata")).rejects.toMatchObject({
+      code: RECOVERY_POINT_ERROR_CODES.PAYLOAD_INVALID,
+    });
+  });
+
   it("creates, authenticates, verifies and atomically restores the allowlisted state", async () => {
     const source = await fixture();
     const backupId = createBackupId("backup-real-drill");
