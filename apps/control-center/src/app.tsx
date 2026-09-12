@@ -31,6 +31,7 @@ import {
   createBrowserSession,
   GatewayClient,
   loadRuntimeConfiguration,
+  refreshRuntimeConfiguration,
   type MutationStatus,
 } from "./gateway-client.js";
 import { useGovernanceControlCenter } from "./governance-control-center.js";
@@ -221,6 +222,15 @@ function LocalizedControlCenterApp({
           new GatewayClient({
             fetch: window.fetch.bind(window),
             csrfToken: () => loaded.csrfToken,
+            refreshCsrfToken: async () => {
+              if (!active) throw new Error("CONTROL_CENTER_CLIENT_DISPOSED");
+              const fresh = await refreshRuntimeConfiguration(window.fetch.bind(window), loaded);
+              if (!active) throw new Error("CONTROL_CENTER_CLIENT_DISPOSED");
+              setConfiguration((current) =>
+                current ? { ...current, csrfToken: fresh.csrfToken } : current,
+              );
+              return fresh.csrfToken;
+            },
           }),
         );
       })

@@ -36,6 +36,7 @@ export interface GatewayClientMutationResult {
 export interface GatewayClientOptions {
   readonly fetch: typeof globalThis.fetch;
   readonly csrfToken: () => string;
+  readonly refreshCsrfToken?: () => Promise<string>;
 }
 
 export interface AvailableModel {
@@ -244,6 +245,28 @@ function parsedResponseBody(value: unknown): GatewayV2Snapshot {
   return parsed;
 }
 
+export async function refreshRuntimeConfiguration(
+  fetchImplementation: typeof globalThis.fetch,
+  expected: ControlCenterRuntimeConfiguration,
+): Promise<ControlCenterRuntimeConfiguration> {
+  const fresh = await loadRuntimeConfiguration(fetchImplementation);
+  for (const key of [
+    "ownerId",
+    "agentId",
+    "deploymentId",
+    "actorId",
+    "sessionId",
+    "authorityEpoch",
+    "fencingToken",
+  ] as const) {
+    if ((fresh[key] ?? null) !== (expected[key] ?? null))
+      throw Object.assign(new Error("CONTROL_CENTER_AUTHENTICATION_SCOPE_CHANGED"), {
+        status: 409,
+      });
+  }
+  return fresh;
+}
+
 function mutationResult(value: unknown): GatewayClientMutationResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
@@ -283,9 +306,51 @@ async function json(response: Response): Promise<unknown> {
 
 export class GatewayClient {
   private readonly options: GatewayClientOptions;
+  private refreshedCsrfToken?: string;
+  private refreshingCsrfToken: Promise<string> | undefined;
 
   constructor(options: GatewayClientOptions) {
     this.options = options;
+  }
+
+  /** A CSRF rejection happens before dispatch. Retry only that rejection, once. */
+  private async authenticatedFetch(url: string, init: RequestInit): Promise<Response> {
+    const token = this.refreshedCsrfToken ?? this.options.csrfToken();
+    const send = (csrfToken: string) => {
+      const headers = new Headers(init.headers);
+      headers.set("x-csrf-token", csrfToken);
+      return this.options.fetch(url, { ...init, headers });
+    };
+    const response = await send(token);
+    if (response.status !== 403 || !this.options.refreshCsrfToken) return response;
+    const body: unknown = await response
+      .clone()
+      .json()
+      .catch(() => null);
+    if (
+      !body ||
+      typeof body !== "object" ||
+      (body as { error?: { code?: unknown } }).error?.code !== "HTTP_GATEWAY_CSRF_REJECTED"
+    )
+      return response;
+    if (!this.refreshedCsrfToken || this.refreshedCsrfToken === token) {
+      const refresh =
+        this.refreshingCsrfToken ??
+        this.options.refreshCsrfToken().then((fresh) => {
+          if (typeof fresh !== "string" || fresh.length === 0)
+            throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
+          this.refreshedCsrfToken = fresh;
+          return fresh;
+        });
+      this.refreshingCsrfToken = refresh;
+      try {
+        await refresh;
+      } finally {
+        if (this.refreshingCsrfToken === refresh) this.refreshingCsrfToken = undefined;
+      }
+    }
+    const fresh = this.refreshedCsrfToken;
+    return fresh && fresh !== token ? send(fresh) : response;
   }
 
   async healthDependencies(): Promise<HealthDependenciesSnapshot> {
@@ -334,7 +399,7 @@ export class GatewayClient {
   async mutate(message: GatewayV2Command): Promise<GatewayClientMutationResult> {
     const parsed = gatewayV2MessageSchema.parse(message);
     if (parsed.kind !== "command") throw new Error("CONTROL_CENTER_COMMAND_INVALID");
-    const response = await this.options.fetch("/api/gateway/v2/commands", {
+    const response = await this.authenticatedFetch("/api/gateway/v2/commands", {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -350,7 +415,7 @@ export class GatewayClient {
   async mutateV1(message: GatewayCommand): Promise<GatewayClientMutationResult> {
     const parsed = gatewayMessageSchema.parse(message);
     if (parsed.kind !== "command") throw new Error("CONTROL_CENTER_COMMAND_INVALID");
-    const response = await this.options.fetch("/api/gateway/v1/commands", {
+    const response = await this.authenticatedFetch("/api/gateway/v1/commands", {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -380,7 +445,7 @@ export class GatewayClient {
   async mutateThread(message: ThreadGatewayCommand): Promise<ThreadGatewayRequestResult> {
     const parsed = threadGatewayMessageSchema.parse(message);
     if (parsed.kind !== "command") throw new Error("CONTROL_CENTER_THREAD_COMMAND_INVALID");
-    const response = await this.options.fetch("/api/gateway/thread/v3/commands", {
+    const response = await this.authenticatedFetch("/api/gateway/thread/v3/commands", {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -401,7 +466,7 @@ export class GatewayClient {
     if (content.length === 0 || content.length > 64 * 1024) {
       throw new Error("CONTROL_CENTER_PAYLOAD_INVALID");
     }
-    const response = await this.options.fetch("/api/payload/v1/text", {
+    const response = await this.authenticatedFetch("/api/payload/v1/text", {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -427,7 +492,7 @@ export class GatewayClient {
     readonly content: string;
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
   }> {
-    const response = await this.options.fetch("/api/payload/v1/text/read", {
+    const response = await this.authenticatedFetch("/api/payload/v1/text/read", {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -469,7 +534,7 @@ export class GatewayClient {
     readonly tokenRefs: readonly string[];
     readonly projectionVersion: string;
   }> {
-    const response = await this.options.fetch("/api/thread-search/v1/prepare", {
+    const response = await this.authenticatedFetch("/api/thread-search/v1/prepare", {
       method: "POST",
       credentials: "same-origin",
       headers: {

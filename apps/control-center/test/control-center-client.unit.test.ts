@@ -5,6 +5,7 @@ import {
   createBrowserSession,
   GatewayClient,
   loadRuntimeConfiguration,
+  refreshRuntimeConfiguration,
   safeBrowserLog,
 } from "../src/gateway-client.js";
 import {
@@ -360,6 +361,124 @@ describe("typed browser Gateway client", () => {
     ).toMatchObject({ type: "collection.snapshot" });
     expect(bodies[0]).toContain("私人正文");
     expect(bodies[1]).not.toContain("私人正文");
+  });
+
+  it("refreshes an expired CSRF token once without changing the request or idempotency key", async () => {
+    const calls: RequestInit[] = [];
+    let refreshes = 0;
+    const client = new GatewayClient({
+      csrfToken: () => "expired",
+      refreshCsrfToken: async () => {
+        refreshes += 1;
+        return "fresh";
+      },
+      fetch: (async (_url, init) => {
+        calls.push(init ?? {});
+        return new Headers(init?.headers).get("x-csrf-token") === "expired"
+          ? new Response(JSON.stringify({ error: { code: "HTTP_GATEWAY_CSRF_REJECTED" } }), {
+              status: 403,
+            })
+          : new Response(JSON.stringify({ payloadRef: "payload-01" }), { status: 201 });
+      }) as typeof fetch,
+    });
+    expect(await client.protectText("同一条消息", "private", "same-command")).toBe("payload-01");
+    expect(refreshes).toBe(1);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.body).toBe(calls[0]?.body);
+    expect(new Headers(calls[1]?.headers).get("idempotency-key")).toBe("same-command");
+    await client.protectText("下一条消息", "private", "next-command");
+    expect(refreshes).toBe(1);
+    expect(new Headers(calls[2]?.headers).get("x-csrf-token")).toBe("fresh");
+  });
+
+  it.each(["HTTP_GATEWAY_CSRF_REJECTED", "HTTP_GATEWAY_FORBIDDEN"])(
+    "does not loop or retry unrelated rejection: %s",
+    async (code) => {
+      let calls = 0;
+      let refreshes = 0;
+      const client = new GatewayClient({
+        csrfToken: () => "old",
+        refreshCsrfToken: async () => {
+          refreshes += 1;
+          return "new";
+        },
+        fetch: (async () => {
+          calls += 1;
+          return new Response(JSON.stringify({ error: { code } }), { status: 403 });
+        }) as typeof fetch,
+      });
+      await expect(client.protectText("message")).rejects.toThrow(code);
+      expect(calls).toBe(code === "HTTP_GATEWAY_CSRF_REJECTED" ? 2 : 1);
+      expect(refreshes).toBe(code === "HTTP_GATEWAY_CSRF_REJECTED" ? 1 : 0);
+    },
+  );
+
+  it("shares token refresh across concurrent rejected requests", async () => {
+    let release: (token: string) => void = () => {};
+    const refresh = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const tokens: string[] = [];
+    const client = new GatewayClient({
+      csrfToken: () => "expired",
+      refreshCsrfToken: refresh,
+      fetch: (async (_url, init) => {
+        const token = new Headers(init?.headers).get("x-csrf-token") ?? "";
+        tokens.push(token);
+        return token === "expired"
+          ? new Response(JSON.stringify({ error: { code: "HTTP_GATEWAY_CSRF_REJECTED" } }), {
+              status: 403,
+            })
+          : new Response(JSON.stringify({ payloadRef: "payload-01" }), { status: 201 });
+      }) as typeof fetch,
+    });
+    const requests = [client.protectText("first"), client.protectText("second")];
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    release("fresh");
+    await expect(Promise.all(requests)).resolves.toEqual(["payload-01", "payload-01"]);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(tokens).toEqual(["expired", "expired", "fresh", "fresh"]);
+  });
+
+  it("does not retry a network failure whose dispatch status is unknown", async () => {
+    const fetch = vi.fn(async () => {
+      throw new Error("network interrupted");
+    });
+    const refresh = vi.fn(async () => "fresh");
+    const client = new GatewayClient({ fetch, csrfToken: () => "old", refreshCsrfToken: refresh });
+    await expect(client.protectText("message")).rejects.toThrow("network interrupted");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["ownerId", "other-owner"],
+    ["actorId", "other-actor"],
+    ["agentId", "other-agent"],
+    ["deploymentId", "other-deployment"],
+    ["sessionId", "other-session"],
+    ["authorityEpoch", 2],
+    ["fencingToken", 2],
+  ])("does not refresh into another authentication scope: %s", async (key, value) => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ...configuration, csrfToken: "fresh", [key]: value })),
+    );
+    await expect(refreshRuntimeConfiguration(fetch, configuration)).rejects.toThrow(
+      "CONTROL_CENTER_AUTHENTICATION_SCOPE_CHANGED",
+    );
+  });
+
+  it("accepts a renewed token for the same authenticated scope", async () => {
+    const fetch = vi.fn(
+      async () => new Response(JSON.stringify({ ...configuration, csrfToken: "fresh" })),
+    );
+    await expect(refreshRuntimeConfiguration(fetch, configuration)).resolves.toMatchObject({
+      csrfToken: "fresh",
+    });
   });
 
   it("uses strict Thread v3 endpoints and preserves a caller-supplied idempotency key", async () => {
