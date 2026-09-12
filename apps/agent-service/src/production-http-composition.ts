@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -34,6 +34,9 @@ import {
   assertProductionSecretSource,
   BoundedJwksFetcher,
   BrowserTextPayloadReader,
+  BrowserThreadSearchPreparer,
+  ScopedThreadSearchTokenizer,
+  ThreadSearchProjector,
   buildHttpGatewayServer,
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
@@ -739,6 +742,22 @@ export async function createProductionHttpComposition(
     payloads: () => repository.payloadStore(ownerId, agentId),
     protector: payloadProtector,
   });
+  const searchKey = createHmac("sha256", csrfKey).update("himawari.search.key.v2").digest();
+  const searchTokenizer = new ScopedThreadSearchTokenizer({
+    keys: { resolve: async () => searchKey },
+    projectionVersion: `thread-search-v2:${createHash("sha256").update(searchKey).digest("hex").slice(0, 24)}`,
+  });
+  const searchProjector = new ThreadSearchProjector({
+    sources: repository.threadSearchProjectionSource(),
+    threads,
+    reader: payloadRead,
+    tokenizer: searchTokenizer,
+  });
+  const threadSearch = new BrowserThreadSearchPreparer({
+    tokenizer: searchTokenizer,
+    payloadAdmission,
+    synchronize: (input) => searchProjector.synchronize(input),
+  });
   const health = options.health ?? new RuntimeHealthModel({ publicMode: true, now: clock });
   const metrics = new RuntimeMetricsRegistry({ now: clock });
   const gatewayV2 = createProductionApprovalGateway({
@@ -766,6 +785,7 @@ export async function createProductionHttpComposition(
       Boolean(options.cancelRun),
     ),
     gatewayV2,
+    threadSearch,
   });
   app.get("/api/identity/v1/method", async (_request, reply) =>
     reply.header("cache-control", "no-store").send({

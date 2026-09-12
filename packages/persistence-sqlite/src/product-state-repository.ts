@@ -47,6 +47,7 @@ import type {
   StateRecord,
   ThreadDistillationStatePort,
   ThreadRepositoryPort,
+  ThreadSearchProjectionSourcePort,
   TraceStorePort,
 } from "@himawari-agent/application";
 import type {
@@ -463,6 +464,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   threadRepository(): ThreadRepositoryPort {
     return this.durable.threadRepository();
+  }
+
+  threadSearchProjectionSource(): ThreadSearchProjectionSourcePort {
+    return { pending: (input) => this.context.request("thread.pendingSearchProjection", input) };
   }
 
   runExecutionSource(ownerId: OwnerId, agentId: AgentId): RunExecutionSourcePort {

@@ -19,24 +19,30 @@ export interface ScopedThreadSearchTokenizerOptions {
   readonly projectionVersion: string;
 }
 
-function canonicalTokens(text: string): readonly string[] {
+function canonicalTokens(text: string, document = false): readonly string[] {
   const normalized = text.normalize("NFKC").toLowerCase().trim();
-  if (!normalized || normalized.length > MAXIMUM_QUERY_CHARACTERS) {
+  if (
+    (!document && !normalized) ||
+    normalized.length > (document ? 65_536 : MAXIMUM_QUERY_CHARACTERS)
+  ) {
     throw new Error("THREAD_SEARCH_QUERY_INVALID");
   }
   const candidates: string[] = [];
   for (const match of normalized.matchAll(/[\p{L}\p{N}]+/gu)) {
     const segment = match[0];
-    candidates.push(segment);
     const characters = [...segment];
     if (/\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}/u.test(segment)) {
+      if (document) candidates.push(...characters);
+      else if (characters.length === 1) candidates.push(segment);
       for (let index = 0; index < characters.length - 1; index += 1) {
         candidates.push(`${characters[index]}${characters[index + 1]}`);
       }
-    }
+    } else candidates.push(segment);
   }
-  const unique = [...new Set(candidates)].slice(0, MAXIMUM_TOKENS);
-  if (unique.length === 0) throw new Error("THREAD_SEARCH_QUERY_INVALID");
+  if (document) candidates.push("\0document-indexed");
+  const unique = [...new Set(candidates)];
+  if ((!document && unique.length > MAXIMUM_TOKENS) || unique.length === 0)
+    throw new Error("THREAD_SEARCH_QUERY_INVALID");
   return Object.freeze(unique);
 }
 
@@ -97,6 +103,20 @@ export class ScopedThreadSearchTokenizer {
     );
   }
 
+  async tokenizeDocument(input: {
+    readonly ownerId: string;
+    readonly agentId: string;
+    readonly text: string;
+  }): Promise<readonly string[]> {
+    const key = await this.#options.keys.resolve(input);
+    return Object.freeze(
+      canonicalTokens(input.text, true).map(
+        (token) =>
+          `search-token:${scopedDigest(key, SEARCH_TOKEN_CONTEXT, input.ownerId, input.agentId, this.#options.projectionVersion, token)}`,
+      ),
+    );
+  }
+
   async queryIdempotencyKey(input: {
     readonly ownerId: string;
     readonly agentId: string;
@@ -119,6 +139,10 @@ export class ScopedThreadSearchTokenizer {
 export interface BrowserThreadSearchPreparerOptions {
   readonly tokenizer: ScopedThreadSearchTokenizer;
   readonly payloadAdmission: HttpGatewayPayloadAdmissionPort;
+  readonly synchronize?: (input: {
+    authentication: GatewayAuthenticationContext;
+    agentId: string;
+  }) => Promise<void>;
 }
 
 export class BrowserThreadSearchPreparer implements HttpGatewayThreadSearchPort {
@@ -146,6 +170,7 @@ export class BrowserThreadSearchPreparer implements HttpGatewayThreadSearchPort 
       this.#options.tokenizer.tokenize(scope),
       this.#options.tokenizer.queryIdempotencyKey(scope),
     ]);
+    await this.#options.synchronize?.(input);
     const protectedQuery = await this.#options.payloadAdmission.protect({
       authentication: input.authentication,
       idempotencyKey,

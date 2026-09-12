@@ -20,8 +20,9 @@ import {
   loadBundledMigrations,
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
+import { ScopedThreadSearchTokenizer, ThreadSearchProjector } from "@himawari-agent/platform-node";
 import { ManualClock } from "@himawari-agent/testing";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const ownerId = createOwnerId("owner-thread-lifecycle");
 const agentId = createAgentId("agent-thread-lifecycle");
@@ -605,4 +606,137 @@ describe("Thread product lifecycle", () => {
       await repository.close();
     }
   });
+});
+
+it("rebuilds scoped search from canonical titles and messages and reuses durable projections", async () => {
+  const paths = await seedState();
+  const db = openQualifiedDatabase(paths.databasePath);
+  db.prepare("UPDATE payloads SET content_type='text/plain'").run();
+  db.close();
+  const clock = new ManualClock("2026-08-28T00:00:00.000Z");
+  let repository = await SqliteProductStateRepository.open({
+    ...paths,
+    minimumFreeBytes: 0,
+    now: () => clock.now(),
+  });
+  const command = new ThreadCommandService({
+    repository: repository.threadRepository(),
+    clock,
+    authority: () => authority,
+  });
+  const created = await command.create({
+    ownerId,
+    agentId,
+    idempotencyKey: "search-create",
+    resultRef: "payload-result-create",
+  });
+  const admitted = await command.admitOwnerMessage({
+    ownerId,
+    agentId,
+    threadId: created.thread.id,
+    expectedThreadRevision: 1,
+    sessionId,
+    idempotencyKey: "search-admit",
+    contentRef: "payload-owner-message",
+    sourceProofRef: "test",
+    dataClassification: "private",
+    resultRef: "payload-result-admit",
+  });
+  await command.rename({
+    ownerId,
+    agentId,
+    threadId: created.thread.id,
+    expectedRevision: 2,
+    titleRef: "payload-owner-title",
+    source: "owner",
+    idempotencyKey: "search-title",
+    resultRef: "payload-result-rename",
+  });
+  const tokenizer = new ScopedThreadSearchTokenizer({
+    keys: { resolve: async () => new Uint8Array(32).fill(17) },
+    projectionVersion: "search-live-v2",
+  });
+  const read = vi.fn(async ({ payloadRef }: { payloadRef: string }) => ({
+    content:
+      payloadRef === "payload-owner-title" ? "海风计划" : "项目是海风花园，计划明天整理资料。",
+    dataClassification: "private" as const,
+    contentType: "text/plain" as const,
+  }));
+  const input = {
+    authentication: {
+      subjectId: ownerId,
+      ownerId,
+      deviceId: "test",
+      authenticatedAt: clock.now(),
+      authenticationRef: "test",
+    },
+    agentId,
+  };
+  const projector = () =>
+    new ThreadSearchProjector({
+      sources: repository.threadSearchProjectionSource(),
+      threads: repository.threadRepository(),
+      tokenizer,
+      reader: { read },
+    });
+  try {
+    expect(
+      await repository.threadSearchProjectionSource().pending({
+        ownerId: createOwnerId("other-owner"),
+        agentId,
+        projectionVersion: tokenizer.projectionVersion,
+        limit: 64,
+      }),
+    ).toEqual([]);
+    await projector().synchronize(input);
+    expect(read).toHaveBeenCalledTimes(2);
+    const query = async (text: string) =>
+      new ThreadQueryService(repository.threadRepository()).search({
+        ownerId,
+        agentId,
+        tokenRefs: await tokenizer.tokenize({ ownerId, agentId, text }),
+        projectionVersion: tokenizer.projectionVersion,
+        limit: 10,
+      });
+    expect((await query("海风计划")).map((t) => t.id)).toEqual([created.thread.id]);
+    expect((await query("海风花园")).map((t) => t.id)).toEqual([created.thread.id]);
+    await repository.close();
+    repository = await SqliteProductStateRepository.open({
+      ...paths,
+      minimumFreeBytes: 0,
+      now: () => clock.now(),
+    });
+    await projector().synchronize(input);
+    expect(read).toHaveBeenCalledTimes(2);
+    const currentThread = await repository
+      .threadRepository()
+      .read(ownerId, agentId, created.thread.id);
+    if (!currentThread) throw new Error("TEST_THREAD_MISSING");
+    const revision = currentThread.revision;
+    await new ThreadCommandService({
+      repository: repository.threadRepository(),
+      clock,
+      authority: () => authority,
+    }).rename({
+      ownerId,
+      agentId,
+      threadId: created.thread.id,
+      expectedRevision: revision,
+      titleRef: "payload-auto-title",
+      source: "owner",
+      idempotencyKey: "search-title-new",
+      resultRef: "payload-result-auto-title",
+    });
+    expect(await query("海风计划")).toEqual([]);
+    await projector().synchronize(input);
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(
+      await repository
+        .threadSearchProjectionSource()
+        .pending({ ownerId, agentId, projectionVersion: tokenizer.projectionVersion, limit: 64 }),
+    ).toEqual([]);
+    expect(admitted.message.status).toBe("committed");
+  } finally {
+    await repository.close();
+  }
 });

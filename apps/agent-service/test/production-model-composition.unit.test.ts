@@ -546,6 +546,14 @@ it("selects trusted Run policy and binds instruction content across configuratio
   );
   expect(list).toHaveBeenCalledWith(source.runId, adapters.clock.now());
   expect((await policy(source)).systemInstructionRef).toBe(first.systemInstructionRef);
+  const threadSource = {
+    ...source,
+    threadId: "language-thread" as NonNullable<RunExecutionSource["threadId"]>,
+  };
+  const threadPolicy = await policy(threadSource);
+  expect(threadPolicy.answerLocalePolicy).toBeUndefined();
+  expect(threadPolicy.systemInstructionRef).toBe(first.systemInstructionRef);
+  expect(protect).toHaveBeenCalledTimes(1);
   const changed = await createProductionRunPolicy({
     ...options,
     configuration: {

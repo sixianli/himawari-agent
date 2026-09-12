@@ -50,6 +50,18 @@ describe("browser Thread search boundary", () => {
     expect(JSON.stringify(first)).not.toContain("对话");
   });
 
+  it("indexes the full body and matches CJK phrases inside sentences", async () => {
+    const service = tokenizer();
+    const scope = { ownerId: "owner-01", agentId: "agent-01" };
+    const indexed = await service.tokenizeDocument({
+      ...scope,
+      text: `${"资料 ".repeat(1000)}验收项目是海风花园，结束。`,
+    });
+    const query = await service.tokenize({ ...scope, text: "海风花园" });
+    expect(query.every((token) => indexed.includes(token))).toBe(true);
+    expect(await service.tokenizeDocument({ ...scope, text: "!!!" })).toHaveLength(1);
+  });
+
   it("protects the query body and returns only opaque search references to the browser", async () => {
     const protect = vi.fn(async () => ({ payloadRef: "payload:search-query-01" }));
     const service = new BrowserThreadSearchPreparer({

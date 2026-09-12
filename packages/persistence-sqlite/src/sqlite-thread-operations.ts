@@ -17,6 +17,8 @@ import type {
   ThreadMutationReceipt,
   ThreadRunSummaryRecord,
   ThreadSearchProjectionInput,
+  ThreadSearchProjectionSourcePort,
+  ThreadSearchProjectionSource,
   ThreadSearchQuery,
   ThreadTaskBinding,
   ThreadTitleSearchProjectionInput,
@@ -234,6 +236,10 @@ export class SqliteThreadOperations {
           input.atOrBeforeWatermark,
         );
       }
+      case "thread.pendingSearchProjection":
+        return this.pendingSearchProjection(
+          payload as Parameters<ThreadSearchProjectionSourcePort["pending"]>[0],
+        );
       case "thread.projectSearch":
         return this.projectSearch((payload as { input: ThreadSearchProjectionInput }).input);
       case "thread.projectTitleSearch":
@@ -1668,6 +1674,40 @@ export class SqliteThreadOperations {
         )
         .get(ownerId, agentId, threadId, turnId, atOrBeforeWatermark),
     );
+  }
+
+  private pendingSearchProjection(
+    input: Parameters<ThreadSearchProjectionSourcePort["pending"]>[0],
+  ): readonly ThreadSearchProjectionSource[] {
+    this.assertLimit(input.limit);
+    if (!input.projectionVersion)
+      this.fail("PORT_INVALID_OPERATION", "Projection version required");
+    return this.database
+      .prepare(`
+      SELECT 'title' AS kind, t.owner_id AS ownerId, t.agent_id AS agentId, t.id AS threadId,
+        t.title_ref AS payloadRef, p.classification AS dataClassification,
+        t.title_revision AS titleRevision, NULL AS messageId, NULL AS sequence
+      FROM threads t JOIN payloads p ON p.ref=t.title_ref AND p.owner_id=t.owner_id AND p.agent_id=t.agent_id
+      WHERE t.owner_id=? AND t.agent_id=? AND t.status='open' AND p.lifecycle_state='active' AND p.content_type='text/plain'
+        AND NOT EXISTS (SELECT 1 FROM thread_title_search_projection s WHERE s.thread_id=t.id AND s.title_revision=t.title_revision AND s.projection_version=?)
+      UNION ALL
+      SELECT 'message', m.owner_id, m.agent_id, m.thread_id, m.content_ref, m.classification,
+        NULL, m.id, m.sequence
+      FROM thread_messages m JOIN threads t ON t.id=m.thread_id AND t.owner_id=m.owner_id AND t.agent_id=m.agent_id
+        JOIN payloads p ON p.ref=m.content_ref AND p.owner_id=m.owner_id AND p.agent_id=m.agent_id
+      WHERE m.owner_id=? AND m.agent_id=? AND t.status='open' AND m.message_status='committed'
+        AND p.lifecycle_state='active' AND p.content_type='text/plain'
+        AND NOT EXISTS (SELECT 1 FROM thread_search_projection s WHERE s.thread_id=m.thread_id AND s.message_id=m.id AND s.projection_version=?)
+      LIMIT ?`)
+      .all(
+        input.ownerId,
+        input.agentId,
+        input.projectionVersion,
+        input.ownerId,
+        input.agentId,
+        input.projectionVersion,
+        input.limit,
+      ) as ThreadSearchProjectionSource[];
   }
 
   private projectSearch(input: ThreadSearchProjectionInput): void {
