@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -302,6 +302,8 @@ async function writeSnapshot(value: JsonObject, mode = 0o600) {
   const snapshotPath = path.join(root, "deployment.json");
   const bytes = Buffer.from(JSON.stringify(value), "utf8");
   await writeFile(snapshotPath, bytes, { mode });
+  // Exercise the requested permission boundary independently of the runner's umask.
+  await chmod(snapshotPath, mode);
   return {
     root,
     snapshotPath,
