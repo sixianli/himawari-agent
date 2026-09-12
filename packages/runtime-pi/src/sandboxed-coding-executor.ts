@@ -64,7 +64,21 @@ export async function executeSandboxedPiCodingTool(input: {
       },
       {} as never,
     );
-    return { ...result, isError: false };
+    // The pinned Pi write tool labels UTF-16 string length as bytes. Keep Pi's
+    // execution and details, but report the UTF-8 length passed to governed I/O.
+    const written = parameters as { content?: unknown; path?: unknown };
+    const content =
+      input.name === "write" &&
+      typeof written.content === "string" &&
+      typeof written.path === "string"
+        ? [
+            {
+              type: "text" as const,
+              text: `Successfully wrote ${new TextEncoder().encode(written.content).byteLength} bytes to ${written.path}`,
+            },
+          ]
+        : result.content;
+    return { ...result, content, isError: false };
   } catch (error) {
     // Pi reports a nonzero shell exit by throwing after shaping its output.
     // Preserve that protected result (including the last truncation metadata),
