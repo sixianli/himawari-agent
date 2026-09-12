@@ -17,6 +17,20 @@ describe("disclosed assistant Markdown", () => {
     expect(result).toContain('rel="noopener noreferrer"');
     expect(result).toContain('referrerPolicy="no-referrer"');
   });
+  it("keeps Chinese prose outside automatically detected source links", () => {
+    const result = render(
+      "来源（https://weathernews.jp/news/202609/120091/），属前一天预报。数据：https://example.com/?year=2026&month=9）。",
+    );
+    expect(result).toContain('href="https://weathernews.jp/news/202609/120091/"');
+    expect(result).toContain('href="https://example.com/?year=2026&amp;month=9"');
+    expect(result).toContain("</a>），属前一天预报。");
+    expect(result).toContain("</a>）。");
+  });
+  it("preserves explicit Unicode destinations and bare Unicode paths", () => {
+    const result = render("[资料](https://example.com/（天气）) https://example.com/天气");
+    expect(result).toContain('href="https://example.com/%EF%BC%88%E5%A4%A9%E6%B0%94%EF%BC%89"');
+    expect(result).toContain('href="https://example.com/%E5%A4%A9%E6%B0%94"');
+  });
   it("never embeds HTML or remote images from model text", () => {
     const result = render(
       '<script>alert(1)</script>\n\n<img src="https://example.com/tracker">\n\n![示意图](https://example.com/image.png)',

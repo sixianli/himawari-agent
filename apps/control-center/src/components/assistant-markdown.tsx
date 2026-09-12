@@ -1,4 +1,4 @@
-import { lexer, type MarkedToken, type Token } from "marked";
+import { Lexer, lexer, type MarkedToken, type Token } from "marked";
 import { Fragment, createElement as h, type ReactNode } from "react";
 
 function safeLink(value: string): string | undefined {
@@ -53,14 +53,32 @@ function renderToken(token: MarkedToken): ReactNode {
     case "blockquote":
       return h(token.type, null, children(token.tokens));
     case "link": {
-      const href = safeLink(token.href);
-      return href
+      // GFM bare-URL detection can absorb CJK sentence punctuation. Trim only
+      // automatically detected links; explicit Markdown destinations stay exact.
+      const boundary =
+        token.raw === token.text && /^(?:https?:\/\/|www\.)/.test(token.raw)
+          ? token.raw.search(/[，。；：！？（）【】《》「」『』、]/u)
+          : -1;
+      const label = boundary >= 0 ? token.raw.slice(0, boundary) : undefined;
+      const href = safeLink(
+        label === undefined ? token.href : label.startsWith("www.") ? `http://${label}` : label,
+      );
+      const body = label ?? children(token.tokens);
+      const link = href
         ? h(
             "a",
             { href, target: "_blank", rel: "noopener noreferrer", referrerPolicy: "no-referrer" },
-            children(token.tokens),
+            body,
           )
-        : children(token.tokens);
+        : body;
+      return boundary >= 0
+        ? h(
+            Fragment,
+            null,
+            link,
+            children(Lexer.lexInline(token.raw.slice(boundary), { gfm: true })),
+          )
+        : link;
     }
     case "checkbox":
       return token.checked ? "☑ " : "☐ ";
