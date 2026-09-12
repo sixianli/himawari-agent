@@ -13,10 +13,22 @@ export function parseExaSearchResults(text: string, limit: number): readonly Web
     if (!title || !rawUrl) continue;
     const url = new URL(rawUrl);
     if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) continue;
+    // Exa's Z suffix means UTC. Spell it out for readers without converting
+    // the source time or assigning a zone to date-only / offset-free values.
+    // Only annotate the metadata header; quoted excerpt text stays intact.
+    const highlights = part.indexOf("\nHighlights:");
+    const headerEnd = highlights < 0 ? part.length : highlights;
+    const summary =
+      part
+        .slice(0, headerEnd)
+        .replace(
+          /^Published: (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)$/m,
+          "Published: $1 (UTC)",
+        ) + part.slice(headerEnd);
     results.push({
       url: url.href,
       title: title.slice(0, 1024),
-      summary: part.slice(0, 12000),
+      summary: summary.slice(0, 12000),
       resultRank: results.length + 1,
       openedResourceId: null,
     });

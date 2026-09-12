@@ -21,6 +21,23 @@ describe("public search provider boundary", () => {
     );
     expect(() => parseExaSearchResults("x".repeat(131073), 5)).toThrow("WEB_SEARCH_OUTPUT_LIMIT");
   });
+  it.each([
+    ["2026-09-12T07:45:00.000Z", "2026-09-12T07:45:00.000Z (UTC)"],
+    ["2026-09-12T07:45:00Z", "2026-09-12T07:45:00Z (UTC)"],
+    ["2026-09-12", "2026-09-12"],
+    ["2026-09-12T16:45:00+09:00", "2026-09-12T16:45:00+09:00"],
+    ["N/A", "N/A"],
+  ])(
+    "makes explicit UTC publication time readable without inventing a zone: %s",
+    (raw, expected) => {
+      const excerpt = "Forecast excerpt\nPublished: 2026-09-12T01:00:00Z";
+      const [result] = parseExaSearchResults(
+        `Title: Forecast\nURL: https://example.org/weather\nPublished: ${raw}\nHighlights:\n${excerpt}`,
+        1,
+      );
+      expect(result?.summary).toContain(`Published: ${expected}\nHighlights:\n${excerpt}`);
+    },
+  );
   it("rejects credential-bearing source URLs", () => {
     expect(() =>
       parseExaSearchResults("Title: Unsafe\nURL: https://user:password@example.org/x", 5),
