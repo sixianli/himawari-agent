@@ -1,0 +1,86 @@
+{
+  "observedAt": "2026-09-11T08:24:00.145006+00:00",
+  "scope": "actual protected migration and service readiness; chat acceptance recorded separately",
+  "evidence": {
+    "migration-result.json": {
+      "passed": true,
+      "runtimeUid": 998,
+      "pid": 2977382,
+      "runtimeDigest": "2da9b4f6bc1a20f00478d457fc73602bebc4fd852bb78ac449a5190a966c568d",
+      "realModelAcceptance": "pending",
+      "scope": "protected installation, actual permission denials, six sandbox qualification groups, service readiness"
+    },
+    "protected-runtime-probe.json": {
+      "schemaVersion": "protected-runtime-probe.v1",
+      "passed": true,
+      "runtimeRoot": "/data/hermes/himawari/releases/2026-09-11-control-center/lib/himawari-agent",
+      "runtimeDigest": "2da9b4f6bc1a20f00478d457fc73602bebc4fd852bb78ac449a5190a966c568d",
+      "runtimeUid": 998,
+      "denied": [
+        "overwrite sentinel",
+        "restore file write permission",
+        "restore directory write permission",
+        "delete sentinel",
+        "replace installation child",
+        "create installation child",
+        "open deployment record for writing",
+        "change deployment record permissions",
+        "write runtime root",
+        "replace release directory",
+        "access Docker control socket"
+      ],
+      "workspaceWriteRead": true,
+      "fullAudits": 1,
+      "initialAuditMs": 4730.195612,
+      "subsequentVerifyMs": [
+        1.6167000000004919, 1.414053000000422, 1.1823229999999967, 5.250038000000131,
+        1.2744740000007369, 0.9183929999999236, 1.0936000000001513, 0.9869570000000749,
+        0.933524999999463, 0.9687789999998131
+      ],
+      "scope": "real Linux permissions and installation verification; not a model or complete tool latency measurement"
+    },
+    "handoff-rehearsal.json": {
+      "passed": true,
+      "observations": [
+        {
+          "uid": 1000,
+          "device": 2049,
+          "inode": 3060018,
+          "mode": 448
+        },
+        {
+          "uid": 998,
+          "device": 2049,
+          "inode": 3060018,
+          "mode": 448
+        }
+      ],
+      "oldAccountDeniedAfterHandoff": true,
+      "productionDataTouched": false
+    },
+    "namespace-preflight-v5.json": {
+      "passed": true,
+      "runtimeUid": 998,
+      "privateParentUid": 0,
+      "privateParentMode": "0o755",
+      "visibleChildren": ["himawari"],
+      "sameProductDirectoryIdentity": true,
+      "nodeVersion": "v22.22.3"
+    },
+    "signer-preflight.json": {
+      "passed": true,
+      "signerUid": 1000,
+      "workspaceDevice": "2049",
+      "workspaceInode": "4762079"
+    }
+  },
+  "systemd": [
+    "MainPID=2977382",
+    "Environment=PATH=/data/hermes/himawari/releases/2026-09-11-control-center/lib/himawari-agent/pi-tools/bin:/usr/bin:/bin HIMAWARI_RUNTIME_PROTECTION_FILE=/etc/himawari/runtime.json",
+    "User=himawari",
+    "Group=himawari",
+    "NoNewPrivileges=yes",
+    "ActiveState=active",
+    "SubState=running"
+  ]
+}

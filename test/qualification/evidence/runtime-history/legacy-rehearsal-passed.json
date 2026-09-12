@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "scope": "isolated database rehearsal only",
+  "schemaSequence": 32,
+  "appliedSequences": [
+    32
+  ],
+  "messageCount": 34,
+  "coveredRuns": 10,
+  "sourceRowsUnchanged": true,
+  "foreignKeysValid": true,
+  "latestPromptLast": true,
+  "modelCalls": 0,
+  "productionDatabaseWritten": false
+}

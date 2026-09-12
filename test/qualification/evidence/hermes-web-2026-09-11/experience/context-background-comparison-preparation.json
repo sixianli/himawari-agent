@@ -1,0 +1,33 @@
+{
+  "at": "2026-09-11T11:56:30.814554+00:00",
+  "status": "prepared_not_executed",
+  "scope": "Two fixed DeepSeek generations: ask weather after cancellation; explicitly resume the cancelled article. No tool execution or product mutation.",
+  "candidate": "Move the cancelled article request from a standalone user message into cancelled_history reference data in the final user message, alongside current_request; preserve earlier history, original cancelled text and tool schemas. Add system policy interpreting those fields.",
+  "limits": [
+    "Combined formatting and policy candidate; cannot isolate either contribution.",
+    "One sample per case; same 512-token cap and price constraints as v1.",
+    "No current baseline rerun; v1 supplies the earlier observation.",
+    "Does not qualify full article length, tools, or production Run behavior."
+  ],
+  "budget": {
+    "newReservationMicros": 160000,
+    "previousCombinedUpperBoundMicros": 828122,
+    "expectedCombinedUpperBoundMicros": 988122,
+    "liveBudgetRecheckBeforeCalls": true,
+    "amountsAreConservativeReservationsNotBilling": true
+  },
+  "offlineChecks": {
+    "plannerInvariants": true,
+    "encryptedPayloadToPiSseFixture": true,
+    "fixtureDatabaseUnchanged": true,
+    "externalNetworkUsed": false,
+    "realCredentialsUsed": false,
+    "realToolsExecuted": false,
+    "localAndRemotePythonSyntax": true,
+    "localRemoteLauncherDigestMatch": true
+  },
+  "launcherSha256": "620bd11880add8ffe864d054d97e61a22f9af87e763d213ad0bd57a8ea13b8b5",
+  "remoteLauncher": "/data/hermes/himawari/builds/2026-09-11-migration-repair/hermes-context-background-comparison.py",
+  "remoteOutput": "/data/hermes/himawari/qualifications/2026-09-11-protected/attempt-v5/context-background-comparison-v2.json",
+  "blocker": "sudo requires interactive administrator password; no model calls started"
+}

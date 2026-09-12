@@ -1,0 +1,19 @@
+{
+  "testsPassed": 3,
+  "positive": {
+    "passed": true,
+    "scope": "isolated database rehearsal only",
+    "schemaSequence": 32,
+    "appliedSequences": [32],
+    "messageCount": 2,
+    "coveredRuns": 1,
+    "sourceRowsUnchanged": true,
+    "foreignKeysValid": true,
+    "latestPromptLast": true,
+    "modelCalls": 0,
+    "productionDatabaseWritten": false
+  },
+  "staleCandidateRejected": true,
+  "missingSourceRejected": true,
+  "sourceSchemaUnchanged": true
+}

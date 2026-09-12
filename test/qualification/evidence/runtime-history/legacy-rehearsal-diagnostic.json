@@ -1,0 +1,62 @@
+{
+  "lineCount": 22,
+  "errorTypes": ["Error"],
+  "codes": ["MODULE_NOT_FOUND"],
+  "patterns": ["module_not_found"],
+  "stackFrames": [
+    {
+      "file": "loader",
+      "line": 1430,
+      "column": 15
+    },
+    {
+      "file": "loader",
+      "line": 1040,
+      "column": 19
+    },
+    {
+      "file": "loader",
+      "line": 1045,
+      "column": 22
+    },
+    {
+      "file": "loader",
+      "line": 1216,
+      "column": 25
+    },
+    {
+      "file": "loader",
+      "line": 254,
+      "column": 19
+    },
+    {
+      "file": "loader",
+      "line": 1527,
+      "column": 12
+    },
+    {
+      "file": "helpers",
+      "line": 147,
+      "column": 16
+    },
+    {
+      "file": "module_job",
+      "line": 343,
+      "column": 25
+    }
+  ],
+  "modulePaths": ["@himawari-agent/platform-node"],
+  "sourceLocations": [],
+  "logBytes": 1003,
+  "progress": {
+    "work/result": {
+      "exists": false
+    },
+    "work/result/state/product.sqlite": {
+      "exists": false
+    },
+    "work/result/schema-before.sqlite": {
+      "exists": false
+    }
+  }
+}

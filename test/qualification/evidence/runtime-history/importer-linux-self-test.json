@@ -1,0 +1,29 @@
+{
+  "passed": true,
+  "testsPassed": 4,
+  "first": {
+    "passed": true,
+    "imported": true,
+    "threadId": "thread-rehearsal",
+    "messageCount": 2,
+    "coveredRuns": 1,
+    "originalRecordsUnchanged": true,
+    "foreignKeysValid": true,
+    "modelCalls": 0
+  },
+  "repeat": {
+    "passed": true,
+    "imported": false,
+    "threadId": "thread-rehearsal",
+    "messageCount": 2,
+    "coveredRuns": 1,
+    "originalRecordsUnchanged": true,
+    "foreignKeysValid": true,
+    "modelCalls": 0
+  },
+  "staleCandidateRejected": true,
+  "missingSourceRejected": true,
+  "snapshots": 1,
+  "importAuditEvents": 1,
+  "modelCalls": 0
+}

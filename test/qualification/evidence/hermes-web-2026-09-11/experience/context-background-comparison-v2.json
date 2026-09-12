@@ -1,0 +1,105 @@
+{
+  "at": "2026-09-11T11:58:33.271244+00:00",
+  "status": "completed",
+  "scope": "two fixed background-context comparisons; original service and product database unchanged; no tool execution",
+  "budget": {
+    "spent": 17344,
+    "reserved": 297125,
+    "priorMacUpperBoundMicros": 63653,
+    "priorComparisonReservationMicros": 450000,
+    "thisDiagnosticReservationMicros": 160000,
+    "combinedUpperBoundMicros": 988122
+  },
+  "results": [
+    {
+      "case": "weather-background",
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "elapsedMs": 15526,
+      "httpStatus": 200,
+      "stopReason": "toolUse",
+      "requestCalls": 1,
+      "reservedMicros": 80000,
+      "messageOrder": [
+        "system",
+        "user",
+        "user",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "text": "我来查询东京当前的实时天气（东京现在约 18:31）。\n\n",
+      "toolCalls": [
+        {
+          "name": "web_search",
+          "arguments": {
+            "query": "东京 天气 今晚 9月11日 气温 降雨"
+          }
+        },
+        {
+          "name": "web_search",
+          "arguments": {
+            "query": "東京 9月11日 夜 天気 気温 現在"
+          }
+        }
+      ],
+      "tokens": {
+        "input": 3886,
+        "output": 319
+      },
+      "scope": "single model generation; no returned tool is executed; not a full application Run"
+    },
+    {
+      "case": "resume-background",
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "elapsedMs": 9202,
+      "httpStatus": 200,
+      "stopReason": "toolUse",
+      "requestCalls": 1,
+      "reservedMicros": 80000,
+      "messageOrder": [
+        "system",
+        "user",
+        "user",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "text": " 我现在实际调用 write 工具，提交写入请求。\n\n",
+      "toolCalls": [
+        {
+          "name": "write",
+          "arguments": {
+            "path": "/data/hermes/himawari/workspaces/default/acceptance-rejected.txt",
+            "content": "审批拒绝验收"
+          }
+        }
+      ],
+      "tokens": {
+        "input": 3900,
+        "output": 151
+      },
+      "scope": "single model generation; no returned tool is executed; not a full application Run"
+    }
+  ],
+  "exitCode": 0
+}

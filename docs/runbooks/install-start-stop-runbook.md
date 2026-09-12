@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:38d98f079c42314c83748e61304f219499507eda5604652123b55d489031c8bb"
+contract_sha256: "sha256:af62fb2172f6f1695e078be3a9e74991f748af1af1308e443c01cc386ef59862"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,9 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/migrations/0032_runtime_history.sql
+- packages/application/src/services/runtime-history-service.ts
+- packages/runtime-pi/src/pi-native-history.ts
 - apps/agent-service/src/public-search-authorization.ts
 - packages/application/src/services/sandbox-action-grant.ts
 - packages/persistence-sqlite/src/sqlite-durable-operations.ts
@@ -256,6 +259,10 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 10. 完成验证后保存脱敏命令输出、artifact identity、进程退出码、socket/lock 回读和 rollback 状态；临时 prefix、临时 state root 与证据目录按本次授权的保留策略清理。
 
 ## Verification
+
+工具审批续跑快照同时保存本轮进展指纹和已完成工具结果，备份、恢复及迁移须连同其受保护 Payload 一起保留。恢复审批时只重放同一暂停点已有的结果，不再次执行对应工具；因循环保护中止的 Run 保持失败，即使随后生成了结果说明，也不能改记为任务成功。这些运行层行为不依赖具体模型提供商。
+
+Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用。迁移须先取得既有机制核验通过的停机备份；升级后回读 `run_payload_artifacts`、对应 Payload 密文和 `thread_fork_lineage.runtime_history_json`，核对旧 artifact 内容未变、外键完整。恢复与迁移须保留清单引用的所有消息 Payload，不能只搬运聊天正文。重启后以新 Run 验证旧工具调用/结果可见且不重新执行；取消后核对实际结果及新请求，不能仅看服务 ready。旧 Trace 没有自动导入为完整历史，不能由 schema 升级推断旧会话已修复。回退需要匹配旧版本的整套已核验数据库备份，禁止旧二进制直接打开 schema 32，也不手工删除 migration ledger。
 
 - 未保存完整审批暂停点的中断执行交给生产恢复组件后，Run 与 checkpoint 必须同时显示 `reconciling_external_result`，旧执行租约失效，已有结果引用保留；恢复不能重新调用模型或工具。此检查当前有本地 SQLite 证据，完整安装入口验证仍待完成。已经待核实的记录不重复占用初始扫描批次，不代表外部结果已经确认。
 

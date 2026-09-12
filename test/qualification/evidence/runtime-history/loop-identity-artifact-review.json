@@ -1,0 +1,11 @@
+{
+  "files": 34469,
+  "added": [],
+  "removed": [],
+  "changed": [
+    "bin/himawari",
+    "bin/himawari-agent-service",
+    "bin/himawari-execution-worker",
+    "lib/himawari-agent/node_modules/@himawari-agent/runtime-pi/dist/pi-runtime-adapter.js"
+  ]
+}

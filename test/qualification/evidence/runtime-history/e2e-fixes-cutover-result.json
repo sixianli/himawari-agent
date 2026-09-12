@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "deploymentComplete": true,
+  "schemaSequence": 32,
+  "historyReimported": false,
+  "runtimeDigest": "c55fff099c0a25071e53586b2bb234858a2e2541046eff3c4390c3406c51bd02",
+  "receiptDigest": "1d1a69538209797e91e3be28f935ac5e78b49c480097cf906fa8bb3c99cdd975",
+  "ready": [
+    "agent",
+    "worker"
+  ],
+  "runtimeUid": 998,
+  "backupId": "before-e2e-fixes-2026-09-12",
+  "modelCalls": 0,
+  "realModelAcceptance": "pending"
+}

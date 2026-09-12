@@ -1,0 +1,2698 @@
+{
+  "observedAt": "2026-09-11T16:27:11.098Z",
+  "readOnly": true,
+  "modelCalls": 0,
+  "runs": [
+    {
+      "id": "run:e4e4913a-0d85-4a88-80e9-0fe68fe7e040",
+      "status": "completed",
+      "created_at": "2026-09-11T15:39:39.502Z",
+      "updated_at": "2026-09-11T15:40:23.595Z",
+      "providers": [
+        {
+          "at": "2026-09-11T15:39:45.639Z",
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "stream_options",
+            "store",
+            "max_tokens",
+            "tools",
+            "reasoning",
+            "provider"
+          ],
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "system": null,
+          "messages": [
+            {
+              "index": 0,
+              "role": "system",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 1867,
+              "sha256": "b05f23dc2308096eff195e546f1be7222dfadad5f00e8635ea03c6f40d38a57b",
+              "markers": [
+                "最后一条用户消息",
+                "本轮请求时间",
+                "配置时区",
+                "2026-09-12",
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-11T15:39:39.502Z",
+                "2026-09-12"
+              ]
+            },
+            {
+              "index": 1,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 261,
+              "sha256": "48936a5cd8bfa07f3ad5bd26a81d419ca2e36c85c1a6d8fc2ce46360895feeaa",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 2,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_d60300ca28a743fb85f9c717",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 263,
+              "sha256": "b31d233d03a5c88e1adf5100a042e1eead433980b08250926e9df584ce3f13d8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 3,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_d60300ca28a743fb85f9c717",
+              "bytes": 59,
+              "sha256": "106b7268b86be0b8c8c13799aefd57bf8624080499f3d550d171eb5b5da198d8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 4,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 283,
+              "sha256": "2e3230d17586de44fb4429f48746c6e2385882f31d50d4cafcea11fafa552fb3",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 5,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 178,
+              "sha256": "a04c487140879a245e86d324c8a1be44b09d0b9832c8f3e4931c8ac2cffe1317",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 6,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_662e7856f4ce47ba8d32f806",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "498c4cb13a34e6aee4f42a23f9c4225b1ae2647b42284b7a71751ab760b9a4a8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 7,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_662e7856f4ce47ba8d32f806",
+              "bytes": 26,
+              "sha256": "1fe04387bad7cf91cb459913bd7f3d72cbf8a16abfcc36c57835f161ced72deb",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 8,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 283,
+              "sha256": "2e3230d17586de44fb4429f48746c6e2385882f31d50d4cafcea11fafa552fb3",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 9,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 253,
+              "sha256": "77b89e9da2c21f1576a4ef627720fd3494fb8d513f07539b0a0d24c553b6f8db",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 10,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_45b3baa46ed643579c881f61",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "7363506b6623d00464625265a3b25838ce42baef2c73b7c5b19bc0402273df3e",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 11,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_45b3baa46ed643579c881f61",
+              "bytes": 566,
+              "sha256": "7b9f725fbe06799b06993212645827e5f57305106a00511168e3728a88a845e6",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 12,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 284,
+              "sha256": "b0675ee3be49d72b0a6fb35b018cc17543775b9fb9418f7669f9e47f75b05dfb",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 13,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 292,
+              "sha256": "95f320b0eb8cd19d79e1f1e791cc8917e6137cd172f599c55310ab138f74cb94",
+              "markers": [
+                "天气",
+                "东京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 14,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_9560612db91746d88a150a24",
+                  "name": "web_search"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 253,
+              "sha256": "da84cceea9ea337026c9929de6a8aae1daf652aeb7364b8f12b8f8d684987b5d",
+              "markers": [
+                "天气",
+                "东京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 15,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_9560612db91746d88a150a24",
+              "bytes": 14822,
+              "sha256": "a378f89aa32ee2738e7e2ea20c9bde439dbe6bb3e5ed63280e53b126e647620a",
+              "markers": [
+                "天气",
+                "东京",
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-10T20:43:39.277Z",
+                "2026-09-10T00:00:00.000Z",
+                "2026-09-11",
+                "2026-09-10T08:30:06.000Z",
+                "2026-09-10T15:57:25.000Z"
+              ]
+            },
+            {
+              "index": 16,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 2096,
+              "sha256": "4c3f8d3058325868149371b2ecf5deae1d3274e65ccf506372a6525708190130",
+              "markers": [
+                "天气",
+                "东京",
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-10",
+                "2026-09-11"
+              ]
+            },
+            {
+              "index": 17,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 428,
+              "sha256": "d510a2e8fdfadd04130bd5f9cb7086f6c7f4c21f0fe17ed8e06d7dbc231364d7",
+              "markers": [
+                "东京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 18,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_6f05648e5e694ea3810f2e15",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 87,
+              "sha256": "c6391502b80bd32b93899ec3a33d05a4c463e41f0518c6c8370880cc89cdc443",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 19,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_6f05648e5e694ea3810f2e15",
+              "bytes": 1849,
+              "sha256": "7cad4d6c64775fcfde965c4618f4d070c49b61698099cc00ea112e901f35c189",
+              "markers": [
+                "东京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 20,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 975,
+              "sha256": "555e3d0fbc577c6eaa0852dc11effe28d57fa1d2b9f4898095815b2f290f4d5a",
+              "markers": [
+                "东京",
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-11"
+              ]
+            },
+            {
+              "index": 21,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "4620320fc2d13547d4c8dae3042b3a9beab36e4e91fb89b577430222abdae549",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 22,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 80,
+              "sha256": "d321c1e87c9920a717d3107c1da27fd45ef0598ebd65268a966bb2b41c2c3c05",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 23,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 214,
+              "sha256": "78470c8d61b478ef022068a114829847d54790ad095da884578422453da4907e",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 24,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 301,
+              "sha256": "e40c84fdda3946213727a1a0a6c874e8f244daf948e566f119574b88229d87c0",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 25,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 316,
+              "sha256": "93e2312a9249fc3857afd94890fe0bfe003525560b3f3bd3f61f8f2411c529ec",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 26,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_856e24b6b411443b91eff5f8",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 264,
+              "sha256": "4176a4badf9a212d061786060844cd0e089c540622407ac5a90222ccd958d7eb",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 27,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_856e24b6b411443b91eff5f8",
+              "bytes": 35,
+              "sha256": "3c350d3143a43ccdc7a26ae1ad07bf5ae4344de373d503afe99fbac89fab3127",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 28,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 323,
+              "sha256": "2117d8dc53066265cdb484372cd3c9c0e8f2a6d614388f7d109fb63d0c93da68",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 29,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 159,
+              "sha256": "5bcd48d475af5da294806cbedaf1d41335c22a9b7fc91ffa003785c9bb058df7",
+              "markers": [
+                "学习资料"
+              ],
+              "dates": []
+            },
+            {
+              "index": 30,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 283,
+              "sha256": "2e3230d17586de44fb4429f48746c6e2385882f31d50d4cafcea11fafa552fb3",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 31,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 54,
+              "sha256": "e86c6cd3c535af5a6596b6ad85a83e4505d9e91092bc5fdadc357f27c6df0dd9",
+              "markers": [
+                "天气"
+              ],
+              "dates": []
+            },
+            {
+              "index": 32,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 7379,
+              "sha256": "b42de3c8baa055cfafe48baa80db3092386c94a2b6ce1ad724d7d5f0239c599c",
+              "markers": [
+                "天气",
+                "学习资料"
+              ],
+              "dates": []
+            },
+            {
+              "index": 33,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 123,
+              "sha256": "4061ad178576dba1eb1052753f84c01422ff0f9fe38e13211c08a0f5979e4128",
+              "markers": [
+                "天气",
+                "东京"
+              ],
+              "dates": []
+            }
+          ]
+        },
+        {
+          "at": "2026-09-11T15:40:12.136Z",
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "stream_options",
+            "store",
+            "max_tokens",
+            "tools",
+            "reasoning",
+            "provider"
+          ],
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "system": null,
+          "messages": [
+            {
+              "index": 0,
+              "role": "system",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 1867,
+              "sha256": "b05f23dc2308096eff195e546f1be7222dfadad5f00e8635ea03c6f40d38a57b",
+              "markers": [
+                "最后一条用户消息",
+                "本轮请求时间",
+                "配置时区",
+                "2026-09-12",
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-11T15:39:39.502Z",
+                "2026-09-12"
+              ]
+            },
+            {
+              "index": 1,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 261,
+              "sha256": "48936a5cd8bfa07f3ad5bd26a81d419ca2e36c85c1a6d8fc2ce46360895feeaa",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 2,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_d60300ca28a743fb85f9c717",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 263,
+              "sha256": "b31d233d03a5c88e1adf5100a042e1eead433980b08250926e9df584ce3f13d8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 3,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_d60300ca28a743fb85f9c717",
+              "bytes": 59,
+              "sha256": "106b7268b86be0b8c8c13799aefd57bf8624080499f3d550d171eb5b5da198d8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 4,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 283,
+              "sha256": "2e3230d17586de44fb4429f48746c6e2385882f31d50d4cafcea11fafa552fb3",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 5,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 178,
+              "sha256": "a04c487140879a245e86d324c8a1be44b09d0b9832c8f3e4931c8ac2cffe1317",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 6,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_662e7856f4ce47ba8d32f806",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "498c4cb13a34e6aee4f42a23f9c4225b1ae2647b42284b7a71751ab760b9a4a8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 7,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_662e7856f4ce47ba8d32f806",
+              "bytes": 26,
+              "sha256": "1fe04387bad7cf91cb459913bd7f3d72cbf8a16abfcc36c57835f161ced72deb",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 8,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 283,
+              "sha256": "2e3230d17586de44fb4429f48746c6e2385882f31d50d4cafcea11fafa552fb3",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 9,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 253,
+              "sha256": "77b89e9da2c21f1576a4ef627720fd3494fb8d513f07539b0a0d24c553b6f8db",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 10,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_45b3baa46ed643579c881f61",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "7363506b6623d00464625265a3b25838ce42baef2c73b7c5b19bc0402273df3e",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 11,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_45b3baa46ed643579c881f61",
+              "bytes": 566,
+              "sha256": "7b9f725fbe06799b06993212645827e5f57305106a00511168e3728a88a845e6",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 12,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 284,
+              "sha256": "b0675ee3be49d72b0a6fb35b018cc17543775b9fb9418f7669f9e47f75b05dfb",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 13,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 292,
+              "sha256": "95f320b0eb8cd19d79e1f1e791cc8917e6137cd172f599c55310ab138f74cb94",
+              "markers": [
+                "天气",
+                "东京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 14,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_9560612db91746d88a150a24",
+                  "name": "web_search"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 253,
+              "sha256": "da84cceea9ea337026c9929de6a8aae1daf652aeb7364b8f12b8f8d684987b5d",
+              "markers": [
+                "天气",
+                "东京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 15,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_9560612db91746d88a150a24",
+              "bytes": 14822,
+              "sha256": "a378f89aa32ee2738e7e2ea20c9bde439dbe6bb3e5ed63280e53b126e647620a",
+              "markers": [
+                "天气",
+                "东京",
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-10T20:43:39.277Z",
+                "2026-09-10T00:00:00.000Z",
+                "2026-09-11",
+                "2026-09-10T08:30:06.000Z",
+                "2026-09-10T15:57:25.000Z"
+              ]
+            },
+            {
+              "index": 16,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 2096,
+              "sha256": "4c3f8d3058325868149371b2ecf5deae1d3274e65ccf506372a6525708190130",
+              "markers": [
+                "天气",
+                "东京",
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-10",
+                "2026-09-11"
+              ]
+            },
+            {
+              "index": 17,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 428,
+              "sha256": "d510a2e8fdfadd04130bd5f9cb7086f6c7f4c21f0fe17ed8e06d7dbc231364d7",
+              "markers": [
+                "东京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 18,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_6f05648e5e694ea3810f2e15",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 87,
+              "sha256": "c6391502b80bd32b93899ec3a33d05a4c463e41f0518c6c8370880cc89cdc443",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 19,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_6f05648e5e694ea3810f2e15",
+              "bytes": 1849,
+              "sha256": "7cad4d6c64775fcfde965c4618f4d070c49b61698099cc00ea112e901f35c189",
+              "markers": [
+                "东京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 20,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 975,
+              "sha256": "555e3d0fbc577c6eaa0852dc11effe28d57fa1d2b9f4898095815b2f290f4d5a",
+              "markers": [
+                "东京",
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-11"
+              ]
+            },
+            {
+              "index": 21,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "4620320fc2d13547d4c8dae3042b3a9beab36e4e91fb89b577430222abdae549",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 22,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 80,
+              "sha256": "d321c1e87c9920a717d3107c1da27fd45ef0598ebd65268a966bb2b41c2c3c05",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 23,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 214,
+              "sha256": "78470c8d61b478ef022068a114829847d54790ad095da884578422453da4907e",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 24,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 301,
+              "sha256": "e40c84fdda3946213727a1a0a6c874e8f244daf948e566f119574b88229d87c0",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 25,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 316,
+              "sha256": "93e2312a9249fc3857afd94890fe0bfe003525560b3f3bd3f61f8f2411c529ec",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 26,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_856e24b6b411443b91eff5f8",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 264,
+              "sha256": "4176a4badf9a212d061786060844cd0e089c540622407ac5a90222ccd958d7eb",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 27,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_856e24b6b411443b91eff5f8",
+              "bytes": 35,
+              "sha256": "3c350d3143a43ccdc7a26ae1ad07bf5ae4344de373d503afe99fbac89fab3127",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 28,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 323,
+              "sha256": "2117d8dc53066265cdb484372cd3c9c0e8f2a6d614388f7d109fb63d0c93da68",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 29,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 159,
+              "sha256": "5bcd48d475af5da294806cbedaf1d41335c22a9b7fc91ffa003785c9bb058df7",
+              "markers": [
+                "学习资料"
+              ],
+              "dates": []
+            },
+            {
+              "index": 30,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 283,
+              "sha256": "2e3230d17586de44fb4429f48746c6e2385882f31d50d4cafcea11fafa552fb3",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 31,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 54,
+              "sha256": "e86c6cd3c535af5a6596b6ad85a83e4505d9e91092bc5fdadc357f27c6df0dd9",
+              "markers": [
+                "天气"
+              ],
+              "dates": []
+            },
+            {
+              "index": 32,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 7379,
+              "sha256": "b42de3c8baa055cfafe48baa80db3092386c94a2b6ce1ad724d7d5f0239c599c",
+              "markers": [
+                "天气",
+                "学习资料"
+              ],
+              "dates": []
+            },
+            {
+              "index": 33,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 123,
+              "sha256": "4061ad178576dba1eb1052753f84c01422ff0f9fe38e13211c08a0f5979e4128",
+              "markers": [
+                "天气",
+                "东京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 34,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-975d27020b31c7db",
+                  "name": "web_search"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 206,
+              "sha256": "5edf473bee857cf9589985db0019d3b2133e0463cd149fd92d17b4080ff7e765",
+              "markers": [
+                "天气",
+                "东京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 35,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-975d27020b31c7db",
+              "bytes": 5474,
+              "sha256": "6f6de865da50cbfe8036a6a51d6c505307e76de2956504b0a9d8e89997735ac5",
+              "markers": [
+                "天气",
+                "东京",
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-11T15:40:08.910Z",
+                "2026-09-11T00:00:00.000Z"
+              ]
+            }
+          ]
+        }
+      ],
+      "checkpoints": [],
+      "trace": [
+        {
+          "type": "memory.query",
+          "at": "2026-09-11T15:39:40.376Z",
+          "facts": []
+        },
+        {
+          "type": "memory.candidates",
+          "at": "2026-09-11T15:39:43.616Z",
+          "facts": []
+        },
+        {
+          "type": "memory.selection",
+          "at": "2026-09-11T15:39:43.687Z",
+          "facts": []
+        },
+        {
+          "type": "context.formed",
+          "at": "2026-09-11T15:39:43.798Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-11T15:39:44.148Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-11T15:39:44.149Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-11T15:39:45.718Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "request"
+            }
+          ]
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-11T15:39:49.143Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "response"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-11T15:39:51.248Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-11T15:39:51.250Z",
+          "facts": []
+        },
+        {
+          "type": "authorization.grant_consumed",
+          "at": "2026-09-11T15:39:52.657Z",
+          "facts": [
+            {
+              "path": "kind",
+              "value": "metadata_reference_only"
+            }
+          ]
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-11T15:40:11.331Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_completed",
+          "at": "2026-09-11T15:40:11.333Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-11T15:40:11.334Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-11T15:40:12.417Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "request"
+            }
+          ]
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-11T15:40:14.966Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "response"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-11T15:40:22.060Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_completed",
+          "at": "2026-09-11T15:40:22.061Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.completed",
+          "at": "2026-09-11T15:40:23.323Z",
+          "facts": [
+            {
+              "path": "output.kind",
+              "value": "assistant-answer"
+            }
+          ]
+        }
+      ],
+      "receipts": [
+        {
+          "operation": "web_search",
+          "invocation_id": "runtime-tool:1b919734f02cc88bad3102077278a4e33d33254fd99a742d3187e4df4dbe73b8",
+          "worker_run_id": "runtime-worker:1b919734f02cc88bad3102077278a4e33d33254fd99a742d3187e4df4dbe73b8",
+          "requested_at": "2026-09-11T15:39:52.894Z",
+          "deadline_at": "2026-09-11T15:44:52.894Z"
+        }
+      ],
+      "jobs": [
+        {
+          "jobId": "jj0h7zJrdHR6iIpeCAUVXaQbo8hAiuNjNjIdMSkVkASM",
+          "startedAt": "2026-09-11T15:40:04.620Z",
+          "facts": [
+            {
+              "path": "environment.kind",
+              "value": "local"
+            },
+            {
+              "path": "result.kind",
+              "value": "result"
+            },
+            {
+              "path": "effect.kind",
+              "value": "not_applicable"
+            },
+            {
+              "path": "resource.status.kind",
+              "value": "foreground"
+            },
+            {
+              "path": "resource.supervision",
+              "value": "released"
+            },
+            {
+              "path": "resource.cleanup",
+              "value": "confirmed"
+            },
+            {
+              "path": "resource.evidence.subject.kind",
+              "value": "local_process"
+            }
+          ]
+        }
+      ],
+      "coordination": {
+        "phase": "completed",
+        "terminal_status": "completed",
+        "diagnostic_code": null,
+        "updated_at": "2026-09-11T15:40:23.662Z"
+      }
+    },
+    {
+      "id": "run:8047c3f2-5336-4386-8d64-0f74e1889ddc",
+      "status": "completed",
+      "created_at": "2026-09-11T16:04:07.228Z",
+      "updated_at": "2026-09-11T16:04:27.315Z",
+      "providers": [
+        {
+          "at": "2026-09-11T16:04:20.739Z",
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "stream_options",
+            "store",
+            "max_tokens",
+            "tools",
+            "reasoning",
+            "provider"
+          ],
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "system": null,
+          "messages": [
+            {
+              "index": 0,
+              "role": "system",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 1867,
+              "sha256": "46f19e3a51dbf1cf077a094b0c9ed4aca9515030b04bac37c05d99278c65d6fa",
+              "markers": [
+                "最后一条用户消息",
+                "本轮请求时间",
+                "配置时区",
+                "2026-09-12",
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-11T16:04:07.228Z",
+                "2026-09-12"
+              ]
+            },
+            {
+              "index": 1,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 134,
+              "sha256": "c8af962e2f0b08b915f9d6b34f49553813bd99f8b2008990fa34babfbb1f2f17",
+              "markers": [
+                "青柠灯塔72"
+              ],
+              "dates": []
+            },
+            {
+              "index": 2,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 11,
+              "sha256": "b0b1e39b482429c2a6a53a3c4fd390cd659c2e9ed0583446181400c5ba35fca2",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 3,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 105,
+              "sha256": "c0f275326b16a1cb181b30f913a7488dc22870a6b0a49000cf67edadda3db41d",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 4,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 17,
+              "sha256": "5629521be20104594549c098040e7677aef952d1330a71e0e189be60dd76ee97",
+              "markers": [
+                "青柠灯塔72"
+              ],
+              "dates": []
+            },
+            {
+              "index": 5,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 103,
+              "sha256": "2082626591e5f2d5ced0f2f280e90c0c68e1e80bf0c2ad546b901b7614c53712",
+              "markers": [
+                "植物养护"
+              ],
+              "dates": []
+            },
+            {
+              "index": 6,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 254,
+              "sha256": "f70a260e562af5c8a6523cb87c6739603aa16d444312a27aea7edfbafe411274",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 7,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 85,
+              "sha256": "b54c70639e0223fdeb5a3213d5181672b15f6a97f168ae8dceed447cc0099375",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 8,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 4,
+              "sha256": "8334c554c7276f59674810b92fff5197cd46bf6ccbe872742f9b04ca31dfe3d1",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 9,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 270,
+              "sha256": "250ca15284f847186a5c32371721f5e0f077be145bb6f51323146b5b7697b9bc",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 10,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-9fee1b89b94fbfc8",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 407,
+              "sha256": "3894b1d5d6f6b331e3dd3c0e668530230187a94897b5003b4264e3150bf3b722",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 11,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-9fee1b89b94fbfc8",
+              "bytes": 849,
+              "sha256": "8b119861a89fb0bc64f7de76eca415a794ad134918277a4831cd0bc2b028bb88",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 12,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-af4f20d2aeda9ec1",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "54cee1d2842ce8734a2d81727dede79f77081c93c34a08e66f55f732fea4f118",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 13,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-af4f20d2aeda9ec1",
+              "bytes": 561,
+              "sha256": "4321a06d012aa94fef52f7f2363de44d682620647f63a748c2cc928428b14289",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 14,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 594,
+              "sha256": "afd413e74e9912c20253330cc3e65339e1a7cf2620a5db14e44327dca389e52f",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 15,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 281,
+              "sha256": "c12b1c4fa58db946a18cde22151917b7da29b59eb11f84a51069f5c641504140",
+              "markers": [
+                "海风书签84",
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 16,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-ab47c34d5770bee3",
+                  "name": "edit"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 621,
+              "sha256": "66a78cceded974af8ea6987cd5eb00b9431fbfdbe1b6f3f4bc1414b31af4c77d",
+              "markers": [
+                "海风书签84",
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 17,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-ab47c34d5770bee3",
+              "bytes": 1246,
+              "sha256": "e740c74b6865bd9746c57660e9b053706a4319efe9eb7f00fa3c46d215965f83",
+              "markers": [
+                "海风书签84",
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 18,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 341,
+              "sha256": "b30e648e5557e8fc1ec09d432f27015602c4d8d6cf74e91964f852223a362421",
+              "markers": [
+                "海风书签84",
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 19,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 245,
+              "sha256": "bd9188cacb14b0062c94e5364aa4c950394b58f8ffe272ae51970ff3dff8951c",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 20,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-a4c8462cc003b25b",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 439,
+              "sha256": "a9418db8fd33652f5b111fbee1aa36025896f29b4795030ae23388edc8d11dca",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 21,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-a4c8462cc003b25b",
+              "bytes": 35,
+              "sha256": "3c350d3143a43ccdc7a26ae1ad07bf5ae4344de373d503afe99fbac89fab3127",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 22,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 78,
+              "sha256": "31694456ac64f97f25b6a5fc8c6ec7e66837444a1988c986fafce88b86ed828f",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 23,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 205,
+              "sha256": "92b2d2416bd6e6ef404ff5c5b8d5f0fac254880c95bbafeef8231ec3ab7f22b1",
+              "markers": [
+                "海风花园"
+              ],
+              "dates": []
+            }
+          ]
+        }
+      ],
+      "checkpoints": [],
+      "trace": [
+        {
+          "type": "memory.query",
+          "at": "2026-09-11T16:04:07.902Z",
+          "facts": []
+        },
+        {
+          "type": "memory.candidates",
+          "at": "2026-09-11T16:04:18.289Z",
+          "facts": []
+        },
+        {
+          "type": "memory.selection",
+          "at": "2026-09-11T16:04:18.416Z",
+          "facts": []
+        },
+        {
+          "type": "context.formed",
+          "at": "2026-09-11T16:04:18.583Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-11T16:04:19.117Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-11T16:04:19.117Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-11T16:04:20.865Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "request"
+            }
+          ]
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-11T16:04:23.285Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "response"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-11T16:04:25.400Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_completed",
+          "at": "2026-09-11T16:04:25.400Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.completed",
+          "at": "2026-09-11T16:04:27.023Z",
+          "facts": [
+            {
+              "path": "output.kind",
+              "value": "assistant-answer"
+            }
+          ]
+        }
+      ],
+      "receipts": [],
+      "jobs": [],
+      "coordination": {
+        "phase": "completed",
+        "terminal_status": "completed",
+        "diagnostic_code": null,
+        "updated_at": "2026-09-11T16:04:27.371Z"
+      }
+    },
+    {
+      "id": "run:49a9dac9-20c9-462e-b605-0b992a468a6a",
+      "status": "reconciling_external_result",
+      "created_at": "2026-09-11T16:04:57.285Z",
+      "updated_at": "2026-09-11T16:12:29.544Z",
+      "providers": [
+        {
+          "at": "2026-09-11T16:05:07.142Z",
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "stream_options",
+            "store",
+            "max_tokens",
+            "tools",
+            "reasoning",
+            "provider"
+          ],
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "system": null,
+          "messages": [
+            {
+              "index": 0,
+              "role": "system",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 1867,
+              "sha256": "fd1b69ac85e49bbb7c4368097190ba00518e6c8b31dd2fe3300d149d959aec45",
+              "markers": [
+                "最后一条用户消息",
+                "本轮请求时间",
+                "配置时区",
+                "2026-09-12",
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-11T16:04:57.285Z",
+                "2026-09-12"
+              ]
+            },
+            {
+              "index": 1,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 134,
+              "sha256": "c8af962e2f0b08b915f9d6b34f49553813bd99f8b2008990fa34babfbb1f2f17",
+              "markers": [
+                "青柠灯塔72"
+              ],
+              "dates": []
+            },
+            {
+              "index": 2,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 11,
+              "sha256": "b0b1e39b482429c2a6a53a3c4fd390cd659c2e9ed0583446181400c5ba35fca2",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 3,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 105,
+              "sha256": "c0f275326b16a1cb181b30f913a7488dc22870a6b0a49000cf67edadda3db41d",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 4,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 17,
+              "sha256": "5629521be20104594549c098040e7677aef952d1330a71e0e189be60dd76ee97",
+              "markers": [
+                "青柠灯塔72"
+              ],
+              "dates": []
+            },
+            {
+              "index": 5,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 103,
+              "sha256": "2082626591e5f2d5ced0f2f280e90c0c68e1e80bf0c2ad546b901b7614c53712",
+              "markers": [
+                "植物养护"
+              ],
+              "dates": []
+            },
+            {
+              "index": 6,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 254,
+              "sha256": "f70a260e562af5c8a6523cb87c6739603aa16d444312a27aea7edfbafe411274",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 7,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 85,
+              "sha256": "b54c70639e0223fdeb5a3213d5181672b15f6a97f168ae8dceed447cc0099375",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 8,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 4,
+              "sha256": "8334c554c7276f59674810b92fff5197cd46bf6ccbe872742f9b04ca31dfe3d1",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 9,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 270,
+              "sha256": "250ca15284f847186a5c32371721f5e0f077be145bb6f51323146b5b7697b9bc",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 10,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-9fee1b89b94fbfc8",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 407,
+              "sha256": "3894b1d5d6f6b331e3dd3c0e668530230187a94897b5003b4264e3150bf3b722",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 11,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-9fee1b89b94fbfc8",
+              "bytes": 849,
+              "sha256": "8b119861a89fb0bc64f7de76eca415a794ad134918277a4831cd0bc2b028bb88",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 12,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-af4f20d2aeda9ec1",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "54cee1d2842ce8734a2d81727dede79f77081c93c34a08e66f55f732fea4f118",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 13,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-af4f20d2aeda9ec1",
+              "bytes": 561,
+              "sha256": "4321a06d012aa94fef52f7f2363de44d682620647f63a748c2cc928428b14289",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 14,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 594,
+              "sha256": "afd413e74e9912c20253330cc3e65339e1a7cf2620a5db14e44327dca389e52f",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 15,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 281,
+              "sha256": "c12b1c4fa58db946a18cde22151917b7da29b59eb11f84a51069f5c641504140",
+              "markers": [
+                "海风书签84",
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 16,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-ab47c34d5770bee3",
+                  "name": "edit"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 621,
+              "sha256": "66a78cceded974af8ea6987cd5eb00b9431fbfdbe1b6f3f4bc1414b31af4c77d",
+              "markers": [
+                "海风书签84",
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 17,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-ab47c34d5770bee3",
+              "bytes": 1246,
+              "sha256": "e740c74b6865bd9746c57660e9b053706a4319efe9eb7f00fa3c46d215965f83",
+              "markers": [
+                "海风书签84",
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 18,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 341,
+              "sha256": "b30e648e5557e8fc1ec09d432f27015602c4d8d6cf74e91964f852223a362421",
+              "markers": [
+                "海风书签84",
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 19,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 245,
+              "sha256": "bd9188cacb14b0062c94e5364aa4c950394b58f8ffe272ae51970ff3dff8951c",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 20,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-a4c8462cc003b25b",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 439,
+              "sha256": "a9418db8fd33652f5b111fbee1aa36025896f29b4795030ae23388edc8d11dca",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 21,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-a4c8462cc003b25b",
+              "bytes": 35,
+              "sha256": "3c350d3143a43ccdc7a26ae1ad07bf5ae4344de373d503afe99fbac89fab3127",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 22,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 78,
+              "sha256": "31694456ac64f97f25b6a5fc8c6ec7e66837444a1988c986fafce88b86ed828f",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 23,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 205,
+              "sha256": "92b2d2416bd6e6ef404ff5c5b8d5f0fac254880c95bbafeef8231ec3ab7f22b1",
+              "markers": [
+                "海风花园"
+              ],
+              "dates": []
+            },
+            {
+              "index": 24,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 164,
+              "sha256": "57f8e05f993c53df9cb5be87477c40b3cff80720bd4dc043d88b13e048e91c27",
+              "markers": [
+                "海风花园",
+                "海风书签84",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 25,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 379,
+              "sha256": "1a163880f96e0822bedcf1a55ef3fcb98f2f861cc5a4be1b273bb2530302e4cc",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            }
+          ]
+        },
+        {
+          "at": "2026-09-11T16:06:06.699Z",
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "stream_options",
+            "store",
+            "max_tokens",
+            "tools",
+            "reasoning",
+            "provider"
+          ],
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "system": null,
+          "messages": [
+            {
+              "index": 0,
+              "role": "system",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 1867,
+              "sha256": "fd1b69ac85e49bbb7c4368097190ba00518e6c8b31dd2fe3300d149d959aec45",
+              "markers": [
+                "最后一条用户消息",
+                "本轮请求时间",
+                "配置时区",
+                "2026-09-12",
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-11T16:04:57.285Z",
+                "2026-09-12"
+              ]
+            },
+            {
+              "index": 1,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 134,
+              "sha256": "c8af962e2f0b08b915f9d6b34f49553813bd99f8b2008990fa34babfbb1f2f17",
+              "markers": [
+                "青柠灯塔72"
+              ],
+              "dates": []
+            },
+            {
+              "index": 2,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 11,
+              "sha256": "b0b1e39b482429c2a6a53a3c4fd390cd659c2e9ed0583446181400c5ba35fca2",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 3,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 105,
+              "sha256": "c0f275326b16a1cb181b30f913a7488dc22870a6b0a49000cf67edadda3db41d",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 4,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 17,
+              "sha256": "5629521be20104594549c098040e7677aef952d1330a71e0e189be60dd76ee97",
+              "markers": [
+                "青柠灯塔72"
+              ],
+              "dates": []
+            },
+            {
+              "index": 5,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 103,
+              "sha256": "2082626591e5f2d5ced0f2f280e90c0c68e1e80bf0c2ad546b901b7614c53712",
+              "markers": [
+                "植物养护"
+              ],
+              "dates": []
+            },
+            {
+              "index": 6,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 254,
+              "sha256": "f70a260e562af5c8a6523cb87c6739603aa16d444312a27aea7edfbafe411274",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 7,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 85,
+              "sha256": "b54c70639e0223fdeb5a3213d5181672b15f6a97f168ae8dceed447cc0099375",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 8,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 4,
+              "sha256": "8334c554c7276f59674810b92fff5197cd46bf6ccbe872742f9b04ca31dfe3d1",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 9,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 270,
+              "sha256": "250ca15284f847186a5c32371721f5e0f077be145bb6f51323146b5b7697b9bc",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 10,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-9fee1b89b94fbfc8",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 407,
+              "sha256": "3894b1d5d6f6b331e3dd3c0e668530230187a94897b5003b4264e3150bf3b722",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 11,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-9fee1b89b94fbfc8",
+              "bytes": 849,
+              "sha256": "8b119861a89fb0bc64f7de76eca415a794ad134918277a4831cd0bc2b028bb88",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 12,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-af4f20d2aeda9ec1",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "54cee1d2842ce8734a2d81727dede79f77081c93c34a08e66f55f732fea4f118",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 13,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-af4f20d2aeda9ec1",
+              "bytes": 561,
+              "sha256": "4321a06d012aa94fef52f7f2363de44d682620647f63a748c2cc928428b14289",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 14,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 594,
+              "sha256": "afd413e74e9912c20253330cc3e65339e1a7cf2620a5db14e44327dca389e52f",
+              "markers": [
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 15,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 281,
+              "sha256": "c12b1c4fa58db946a18cde22151917b7da29b59eb11f84a51069f5c641504140",
+              "markers": [
+                "海风书签84",
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 16,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-ab47c34d5770bee3",
+                  "name": "edit"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 621,
+              "sha256": "66a78cceded974af8ea6987cd5eb00b9431fbfdbe1b6f3f4bc1414b31af4c77d",
+              "markers": [
+                "海风书签84",
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 17,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-ab47c34d5770bee3",
+              "bytes": 1246,
+              "sha256": "e740c74b6865bd9746c57660e9b053706a4319efe9eb7f00fa3c46d215965f83",
+              "markers": [
+                "海风书签84",
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 18,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 341,
+              "sha256": "b30e648e5557e8fc1ec09d432f27015602c4d8d6cf74e91964f852223a362421",
+              "markers": [
+                "海风书签84",
+                "青柠灯塔72",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 19,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 245,
+              "sha256": "bd9188cacb14b0062c94e5364aa4c950394b58f8ffe272ae51970ff3dff8951c",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 20,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-a4c8462cc003b25b",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 439,
+              "sha256": "a9418db8fd33652f5b111fbee1aa36025896f29b4795030ae23388edc8d11dca",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 21,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-a4c8462cc003b25b",
+              "bytes": 35,
+              "sha256": "3c350d3143a43ccdc7a26ae1ad07bf5ae4344de373d503afe99fbac89fab3127",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 22,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 78,
+              "sha256": "31694456ac64f97f25b6a5fc8c6ec7e66837444a1988c986fafce88b86ed828f",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 23,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 205,
+              "sha256": "92b2d2416bd6e6ef404ff5c5b8d5f0fac254880c95bbafeef8231ec3ab7f22b1",
+              "markers": [
+                "海风花园"
+              ],
+              "dates": []
+            },
+            {
+              "index": 24,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 164,
+              "sha256": "57f8e05f993c53df9cb5be87477c40b3cff80720bd4dc043d88b13e048e91c27",
+              "markers": [
+                "海风花园",
+                "海风书签84",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 25,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 379,
+              "sha256": "1a163880f96e0822bedcf1a55ef3fcb98f2f861cc5a4be1b273bb2530302e4cc",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 26,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-a2efd20395ea3afb",
+                  "name": "ls"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 443,
+              "sha256": "34dbe51c57f98231f477cf53d43b1da84650960dab8f4776f1f721765ccb75c1",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 27,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-a2efd20395ea3afb",
+              "bytes": 646,
+              "sha256": "c5bafded1d89ace65b0b3808b5da4390fef88a813aa89ed58be902c5789cc527",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            }
+          ]
+        }
+      ],
+      "checkpoints": [],
+      "trace": [
+        {
+          "type": "memory.query",
+          "at": "2026-09-11T16:04:59.246Z",
+          "facts": []
+        },
+        {
+          "type": "memory.candidates",
+          "at": "2026-09-11T16:05:05.209Z",
+          "facts": []
+        },
+        {
+          "type": "memory.selection",
+          "at": "2026-09-11T16:05:05.350Z",
+          "facts": []
+        },
+        {
+          "type": "context.formed",
+          "at": "2026-09-11T16:05:05.550Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-11T16:05:06.027Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-11T16:05:06.027Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-11T16:05:07.293Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "request"
+            }
+          ]
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-11T16:05:09.875Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "response"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-11T16:05:14.394Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-11T16:05:14.395Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.suspended",
+          "at": "2026-09-11T16:05:16.681Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-11T16:05:51.280Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-11T16:05:51.280Z",
+          "facts": []
+        },
+        {
+          "type": "authorization.grant_consumed",
+          "at": "2026-09-11T16:05:52.184Z",
+          "facts": [
+            {
+              "path": "kind",
+              "value": "metadata_reference_only"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-11T16:05:51.284Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-11T16:05:51.285Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-11T16:06:04.876Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_completed",
+          "at": "2026-09-11T16:06:04.877Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-11T16:06:04.877Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-11T16:06:06.894Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "request"
+            }
+          ]
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-11T16:06:09.635Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "response"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-11T16:06:15.919Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-11T16:06:15.920Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.suspended",
+          "at": "2026-09-11T16:06:19.887Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-11T16:07:07.936Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-11T16:07:07.936Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-11T16:07:07.937Z",
+          "facts": []
+        },
+        {
+          "type": "authorization.grant_consumed",
+          "at": "2026-09-11T16:07:09.076Z",
+          "facts": [
+            {
+              "path": "kind",
+              "value": "metadata_reference_only"
+            }
+          ]
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-11T16:07:07.938Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-11T16:07:25.977Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-11T16:07:25.978Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.suspended",
+          "at": "2026-09-11T16:07:28.195Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-11T16:11:41.201Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-11T16:11:41.201Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-11T16:11:41.202Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-11T16:11:41.203Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-11T16:11:42.831Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-11T16:11:42.832Z",
+          "facts": []
+        },
+        {
+          "type": "authorization.grant_consumed",
+          "at": "2026-09-11T16:11:44.308Z",
+          "facts": [
+            {
+              "path": "kind",
+              "value": "metadata_reference_only"
+            }
+          ]
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-11T16:11:55.669Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-11T16:11:55.674Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.suspended",
+          "at": "2026-09-11T16:11:57.903Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-11T16:12:22.518Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-11T16:12:22.518Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-11T16:12:22.519Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-11T16:12:22.520Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-11T16:12:25.322Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_completed",
+          "at": "2026-09-11T16:12:25.324Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-11T16:12:25.325Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-11T16:12:25.913Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_completed",
+          "at": "2026-09-11T16:12:25.914Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.result_unknown",
+          "at": "2026-09-11T16:12:25.321Z",
+          "facts": []
+        }
+      ],
+      "receipts": [
+        {
+          "operation": "ls",
+          "invocation_id": "runtime-tool:8df70e3e74884f49f7d7bc79204e348f2ca7f9c228a6026884755c1d351fbf27",
+          "worker_run_id": "runtime-worker:8df70e3e74884f49f7d7bc79204e348f2ca7f9c228a6026884755c1d351fbf27",
+          "requested_at": "2026-09-11T16:05:53.481Z",
+          "deadline_at": "2026-09-11T16:10:53.481Z"
+        },
+        {
+          "operation": "find",
+          "invocation_id": "runtime-tool:8255907f924d08da07e00dd34733d2da146ec4e32e958cedb53e748652f44b51",
+          "worker_run_id": "runtime-worker:8255907f924d08da07e00dd34733d2da146ec4e32e958cedb53e748652f44b51",
+          "requested_at": "2026-09-11T16:07:10.044Z",
+          "deadline_at": "2026-09-11T16:12:10.044Z"
+        },
+        {
+          "operation": "grep",
+          "invocation_id": "runtime-tool:04e73e1b8bf2912c12ee50eaf7735cf48145a0442a672acf4f50434708920c7a",
+          "worker_run_id": "runtime-worker:04e73e1b8bf2912c12ee50eaf7735cf48145a0442a672acf4f50434708920c7a",
+          "requested_at": "2026-09-11T16:11:44.762Z",
+          "deadline_at": "2026-09-11T16:16:44.762Z"
+        }
+      ],
+      "jobs": [
+        {
+          "jobId": "j4uLqT6oSyXjpAnQkWbRmsLPyRHUMdy4TMdhfWsZS2gI",
+          "startedAt": "2026-09-11T16:11:48.902Z",
+          "facts": [
+            {
+              "path": "environment.kind",
+              "value": "local"
+            },
+            {
+              "path": "result.kind",
+              "value": "result"
+            },
+            {
+              "path": "effect.kind",
+              "value": "not_applicable"
+            },
+            {
+              "path": "resource.status.kind",
+              "value": "foreground"
+            },
+            {
+              "path": "resource.supervision",
+              "value": "released"
+            },
+            {
+              "path": "resource.cleanup",
+              "value": "confirmed"
+            },
+            {
+              "path": "resource.evidence.subject.kind",
+              "value": "local_process"
+            }
+          ]
+        },
+        {
+          "jobId": "jT8D39zvJVWUNTSois4lIjGjWk0m263Pd8BQYZwRJvwY",
+          "startedAt": "2026-09-11T16:07:14.527Z",
+          "facts": [
+            {
+              "path": "environment.kind",
+              "value": "local"
+            },
+            {
+              "path": "result.kind",
+              "value": "result"
+            },
+            {
+              "path": "effect.kind",
+              "value": "not_applicable"
+            },
+            {
+              "path": "resource.status.kind",
+              "value": "foreground"
+            },
+            {
+              "path": "resource.supervision",
+              "value": "released"
+            },
+            {
+              "path": "resource.cleanup",
+              "value": "confirmed"
+            },
+            {
+              "path": "resource.evidence.subject.kind",
+              "value": "local_process"
+            }
+          ]
+        },
+        {
+          "jobId": "jH5xThq47l9DH3mdclk9wBWsB8wE8nJm43Gyq0EdL8Yc",
+          "startedAt": "2026-09-11T16:05:57.918Z",
+          "facts": [
+            {
+              "path": "environment.kind",
+              "value": "local"
+            },
+            {
+              "path": "result.kind",
+              "value": "result"
+            },
+            {
+              "path": "effect.kind",
+              "value": "not_applicable"
+            },
+            {
+              "path": "resource.status.kind",
+              "value": "foreground"
+            },
+            {
+              "path": "resource.supervision",
+              "value": "released"
+            },
+            {
+              "path": "resource.cleanup",
+              "value": "confirmed"
+            },
+            {
+              "path": "resource.evidence.subject.kind",
+              "value": "local_process"
+            }
+          ]
+        }
+      ],
+      "coordination": {
+        "phase": "reconciling_external_result",
+        "terminal_status": null,
+        "diagnostic_code": "RUNTIME_TOOL_RESULT_UNKNOWN",
+        "updated_at": "2026-09-11T16:12:29.431Z"
+      }
+    }
+  ]
+}

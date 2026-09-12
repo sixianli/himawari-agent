@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "command": "db.migrate",
+  "deploymentId": "deployment-hermes-9e8dc197-146e-4465-bbd1-4246eb2fc96f",
+  "currentSequence": 32,
+  "appliedSequences": [
+    32
+  ],
+  "snapshotPath": "/data/hermes/himawari/state/data/pre-migration-4AGrCu/product.sqlite"
+}

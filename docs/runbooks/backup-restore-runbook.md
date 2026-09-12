@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:d53385fed95ea20c032dbfb1687b361a71ede9a76349af43d282ffbec88b9739"
+contract_sha256: "sha256:8b29ccc2aaacd21de8bbea7c7f02d4046ba723ff3d5793f929cd48379c5c4aab"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,9 @@ date: "2026-08-27"
 # 同机备份与恢复 Runbook
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/migrations/0032_runtime_history.sql
+- packages/application/src/services/runtime-history-service.ts
+- packages/runtime-pi/src/pi-native-history.ts
 - apps/agent-service/src/public-search-authorization.ts
 - packages/application/src/services/sandbox-action-grant.ts
 - packages/persistence-sqlite/src/sqlite-durable-operations.ts
@@ -151,6 +154,10 @@ himawari backup restore --config <absolute-config-path> --secret-dir <absolute-s
 7. 按本次已验证的服务启动程序重新启动 Worker 与 Agent Service；重新运行 `db status`、`doctor` 和业务只读查询。未完成对应 install/start/stop Runbook 前，不在此处猜测 launchd/systemd 命令。
 
 ## Verification
+
+工具审批续跑快照同时保存本轮进展指纹和已完成工具结果，备份、恢复及迁移须连同其受保护 Payload 一起保留。恢复审批时只重放同一暂停点已有的结果，不再次执行对应工具；因循环保护中止的 Run 保持失败，即使随后生成了结果说明，也不能改记为任务成功。这些运行层行为不依赖具体模型提供商。
+
+Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用。迁移须先取得既有机制核验通过的停机备份；升级后回读 `run_payload_artifacts`、对应 Payload 密文和 `thread_fork_lineage.runtime_history_json`，核对旧 artifact 内容未变、外键完整。恢复与迁移须保留清单引用的所有消息 Payload，不能只搬运聊天正文。重启后以新 Run 验证旧工具调用/结果可见且不重新执行；取消后核对实际结果及新请求，不能仅看服务 ready。旧 Trace 没有自动导入为完整历史，不能由 schema 升级推断旧会话已修复。回退需要匹配旧版本的整套已核验数据库备份，禁止旧二进制直接打开 schema 32，也不手工删除 migration ledger。
 
 恢复或迁移后的候选必须支持 migration 0024/0025：embedding 调用身份和 Memory projection 预算账户随产品 SQLite 一起验证，不能丢弃 started/unknown 费用记录来触发重试。公开入口还需要当前主机的 `http`、`identity`、`runPolicy` 与模型配置；被冻结的 Run 输入继续使用原有快照。重新启动后检查 Run dispatch、Memory consumer、Worker 与权威就绪状态，并回读原 Thread/Run 和受保护回答正文。此检查不替代真实公共身份入口或目标平台资格。
 

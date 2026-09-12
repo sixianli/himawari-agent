@@ -1,0 +1,22 @@
+{
+  "status": "installed_by_owner_live_verified",
+  "userAuthorization": "Allow eight hours of full sudo with root scope over the entire Hermes host",
+  "script": "scripts/operations/hermes-temporary-sudo.py",
+  "sha256": "3336ab58e569961e3c5e320409967027f223d41e5dc9c0ac949048d4e8cd32fa",
+  "staticContract": "sha256:d6018539aec6dc168572eb1e8da279bb9a6b699a4afbfacd38b5965a23eeb429",
+  "host": "hermes-home",
+  "sudoVersion": "1.9.9",
+  "visudoSyntaxValidation": "passed",
+  "rulePath": "/etc/sudoers.d/99-himawari-codex-20260913",
+  "passwordHandled": false,
+  "expiration": "NOTAFTER eight hours from invocation, plus hash-checked removal timer",
+  "boundary": "Expiration blocks new sudo commands; existing processes and prior changes are not reverted. Owner installed the grant; agent verified it without handling a password.",
+  "receipt": "test/qualification/evidence/runtime-history/temporary-sudo-receipt.json",
+  "expiresAt": "2026-09-13T00:31:37+00:00",
+  "liveVerification": {
+    "sudoFreshNonInteractiveUid": 0,
+    "expiryTimer": "active",
+    "service": "active",
+    "servicePid": 1578983
+  }
+}

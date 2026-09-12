@@ -1,0 +1,5 @@
+{
+  "passed": true,
+  "untraversableParent": { "code": "MODULE_NOT_FOUND" },
+  "traversableParent": { "value": 1 }
+}

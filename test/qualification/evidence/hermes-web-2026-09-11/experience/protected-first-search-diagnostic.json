@@ -1,0 +1,162 @@
+{
+  "at": "2026-09-11T08:44:23.731460+00:00",
+  "runId": "run:1f216d09-3926-4fbc-89e1-a074bd5a1ec2",
+  "scope": "read-only synthetic run diagnosis; no payload decryption, user text or credentials",
+  "run": {
+    "id": "run:1f216d09-3926-4fbc-89e1-a074bd5a1ec2",
+    "status": "completed",
+    "created_at": "2026-09-11T08:29:58.197Z",
+    "updated_at": "2026-09-11T08:30:51.764Z"
+  },
+  "jobs": [
+    {
+      "jobId": "juP8216h51tq2Q1j8hVBIIn1uGBJ_HRYfEeFOz8Qv6Ic",
+      "operation": "web_search",
+      "resultKind": "error",
+      "reasonCode": "SANDBOX_OPERATION_FAILED",
+      "termination": {
+        "type": "failure"
+      },
+      "outputByteLength": 0,
+      "supervision": "released",
+      "cleanup": "confirmed",
+      "resourceReason": null,
+      "effect": {
+        "kind": "not_applicable"
+      },
+      "occurredAt": "2026-09-11T08:30:38.360Z",
+      "unverifiedControlObservation": {
+        "phase": "finished",
+        "taskStarted": true,
+        "taskProcessExited": true,
+        "stdioClosed": true,
+        "srtReset": true,
+        "observedAt": "2026-09-11T08:30:38.089Z",
+        "resources": {
+          "samples": 13,
+          "observedCpuTimeMs": 0,
+          "peakObservedMemoryBytes": 140324864
+        }
+      }
+    }
+  ],
+  "events": [
+    {
+      "event_type": "memory.query",
+      "occurred_at": "2026-09-11T08:29:59.398Z"
+    },
+    {
+      "event_type": "memory.candidates",
+      "occurred_at": "2026-09-11T08:30:04.796Z"
+    },
+    {
+      "event_type": "memory.selection",
+      "occurred_at": "2026-09-11T08:30:05.033Z"
+    },
+    {
+      "event_type": "context.formed",
+      "occurred_at": "2026-09-11T08:30:05.266Z"
+    },
+    {
+      "event_type": "runtime.model_started",
+      "occurred_at": "2026-09-11T08:30:05.714Z"
+    },
+    {
+      "event_type": "runtime.turn_started",
+      "occurred_at": "2026-09-11T08:30:05.714Z"
+    },
+    {
+      "event_type": "runtime.message",
+      "occurred_at": "2026-09-11T08:30:05.715Z"
+    },
+    {
+      "event_type": "runtime.message",
+      "occurred_at": "2026-09-11T08:30:05.715Z"
+    },
+    {
+      "event_type": "runtime.provider_observation",
+      "occurred_at": "2026-09-11T08:30:06.875Z"
+    },
+    {
+      "event_type": "runtime.provider_observation",
+      "occurred_at": "2026-09-11T08:30:12.541Z"
+    },
+    {
+      "event_type": "runtime.message",
+      "occurred_at": "2026-09-11T08:30:12.548Z"
+    },
+    {
+      "event_type": "runtime.message",
+      "occurred_at": "2026-09-11T08:30:12.554Z"
+    },
+    {
+      "event_type": "runtime.message",
+      "occurred_at": "2026-09-11T08:30:12.608Z"
+    },
+    {
+      "event_type": "runtime.tool_intent",
+      "occurred_at": "2026-09-11T08:30:12.609Z"
+    },
+    {
+      "event_type": "authorization.grant_consumed",
+      "occurred_at": "2026-09-11T08:30:14.849Z"
+    },
+    {
+      "event_type": "runtime.tool_result",
+      "occurred_at": "2026-09-11T08:30:40.760Z"
+    },
+    {
+      "event_type": "runtime.message",
+      "occurred_at": "2026-09-11T08:30:40.762Z"
+    },
+    {
+      "event_type": "runtime.message",
+      "occurred_at": "2026-09-11T08:30:40.762Z"
+    },
+    {
+      "event_type": "runtime.turn_completed",
+      "occurred_at": "2026-09-11T08:30:40.763Z"
+    },
+    {
+      "event_type": "runtime.turn_started",
+      "occurred_at": "2026-09-11T08:30:40.764Z"
+    },
+    {
+      "event_type": "runtime.provider_observation",
+      "occurred_at": "2026-09-11T08:30:42.783Z"
+    },
+    {
+      "event_type": "runtime.provider_observation",
+      "occurred_at": "2026-09-11T08:30:49.608Z"
+    },
+    {
+      "event_type": "runtime.message",
+      "occurred_at": "2026-09-11T08:30:49.610Z"
+    },
+    {
+      "event_type": "runtime.message",
+      "occurred_at": "2026-09-11T08:30:49.618Z"
+    },
+    {
+      "event_type": "runtime.message",
+      "occurred_at": "2026-09-11T08:30:49.968Z"
+    },
+    {
+      "event_type": "runtime.message",
+      "occurred_at": "2026-09-11T08:30:50.029Z"
+    },
+    {
+      "event_type": "runtime.turn_completed",
+      "occurred_at": "2026-09-11T08:30:50.030Z"
+    },
+    {
+      "event_type": "runtime.completed",
+      "occurred_at": "2026-09-11T08:30:51.349Z"
+    }
+  ],
+  "activeRuns": 0,
+  "logCodes": {
+    "agent": [],
+    "worker": []
+  }
+}

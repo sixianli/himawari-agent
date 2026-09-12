@@ -17,6 +17,12 @@
   },
   "overrides": [
     {
+      "includes": ["test/qualification/evidence/**"],
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
       "includes": ["ci/rules/fixtures/unsafe.fixture.ts"],
       "linter": {
         "rules": {

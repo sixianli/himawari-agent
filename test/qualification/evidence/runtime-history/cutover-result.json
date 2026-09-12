@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "deploymentComplete": true,
+  "schemaSequence": 32,
+  "importedMessages": 34,
+  "coveredRuns": 10,
+  "runtimeDigest": "2aa0cd9f40f257788a5c96557e97b519da7ca520a6a378883a90a2c7e3b513b6",
+  "receiptDigest": "4fa686b825f559221d96df60cbcbb788425664f3fcf76587cb0932dcf4881956",
+  "ready": [
+    "agent",
+    "worker"
+  ],
+  "runtimeUid": 998,
+  "backupId": "before-native-history-2026-09-12",
+  "modelCalls": 0,
+  "realModelAcceptance": "pending"
+}

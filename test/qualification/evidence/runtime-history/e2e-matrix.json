@@ -1,0 +1,135 @@
+{
+  "at": "2026-09-12T03:00:31.445331+00:00",
+  "status": "in_progress_not_deliverable",
+  "additionalBudgetUsd": 2,
+  "preferredModel": "deepseek/deepseek-v4-flash-0731",
+  "testThread": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+  "forkThread": "thread-fork:dbd3edc2-bda1-49cb-b1f9-3e0a0428acfe",
+  "cases": {
+    "部署备份与34条旧历史导入": "passed",
+    "原对话11项列表、10轮旧记录和实时连接": "passed",
+    "DeepSeek旧对话天气切题与日期准确": "failed-current-result-grounding; DeepSeek low and GLM minimal controls also failed",
+    "新建对话": "passed",
+    "重命名": "passed",
+    "置顶与取消置顶": "passed",
+    "归档与恢复": "passed",
+    "标题搜索": "passed-after-e2e-fixes-cutover; rename and old-title removal verified",
+    "正文搜索": "passed-after-e2e-fixes-cutover; known body finds one scoped thread",
+    "草稿刷新保留": "passed",
+    "断线禁发、草稿保留与自动恢复": "passed",
+    "纯文本回复": "passed",
+    "多轮上下文暗号恢复": "passed",
+    "Fork创建": "passed",
+    "Fork上下文冻结": "passed",
+    "停止流式生成与取消后新任务": "passed",
+    "模型切换与逐轮模型标识": "passed",
+    "思考深度切换": "passed",
+    "文本附件与非法附件": "passed-latest-attachment-grounding-and-existing-validation",
+    "write批准及主机文件校验": "passed",
+    "read回读": "passed",
+    "edit更新及主机校验": "passed",
+    "bash只读、ls、find、grep": "all-four-jobs-once-and-cleanup-passed; complete-model-run-failed-repeated-bash-and-deadline",
+    "写入拒绝与文件不存在": "passed",
+    "审批页面与刷新后审批恢复": "passed",
+    "联网授权撤销与恢复": "passed",
+    "主题、主题色和持久化": "passed",
+    "桌面和手机布局": "passed-320-and-390-no-overflow; brand-passed-after-cutover",
+    "删除影响预览": "passed",
+    "稳定检查点查询": "passed-empty",
+    "健康依赖": "partial",
+    "未启用页面边界": "passed-13-disabled-pages",
+    "创建脚本但不执行或安装定时器": "passed-ui-and-host-hash; log-absent",
+    "界面三语": "UI locale switching passed; removal of independent answer locale qualified locally, new protected qualification running",
+    "长开页面令牌过期后提交": "live-defect-confirmed; local-CSRF-refresh-regression-passed; deployment-pending"
+  },
+  "failures": [
+    {
+      "case": "weather",
+      "evidence": "e2e-weather-first.json",
+      "finding": "仅调用一次搜索，未重放旧工具；但回答混入旧任务、日期错误且引用无日期/过期摘录。"
+    },
+    {
+      "case": "search",
+      "finding": "POST /api/thread-search/v1/prepare 返回404；production-http-composition未组装已有搜索服务与索引写入。",
+      "currentStatus": "resolved-in-live-retest",
+      "currentEvidence": "e2e-post-cutover.json"
+    },
+    {
+      "case": "cancelled-output-status",
+      "finding": "已取消轮次的子输出记录仍显示输出中；外层已取消，未继续执行。待复核最终事件到展示投影。",
+      "currentStatus": "resolved-in-live-retest",
+      "currentEvidence": "e2e-post-cutover.json"
+    },
+    {
+      "case": "logo",
+      "finding": "页面全部品牌图naturalWidth=0，URL返回404；实际Linux源归档未包含assets，Vite保留未解析URL。",
+      "currentStatus": "resolved-in-live-retest",
+      "currentEvidence": "e2e-post-cutover.json"
+    },
+    {
+      "case": "write-byte-count",
+      "finding": "Pi固定版本用content.length显示bytes；中文6字符实际14UTF-8字节。verifiedWrite与主机摘要正确。",
+      "currentStatus": "resolved-in-live-retest",
+      "currentEvidence": "e2e-post-cutover.json"
+    },
+    {
+      "case": "attachment-grounding",
+      "finding": "附件事实正确但模型擅自追加与上轮验收文件的项目关联；正文上传与超限/非法文本拦截通过，回答严格依据附件未达标。",
+      "currentStatus": "resolved-in-live-retest",
+      "currentEvidence": "e2e-post-cutover.json"
+    },
+    {
+      "case": "multi-approval-resume",
+      "finding": "三个真实作业均成功且清理完成；后续审批恢复重新进入已完成find操作，原执行凭证过期后返回RUNTIME_TOOL_RESULT_UNKNOWN。真实诊断与本地回归吻合。",
+      "evidence": "e2e-diagnostic-v2.json",
+      "localFix": "缓存并恢复已披露结果，连续两次审批57项Pi兼容测试通过；已部署并核对实际工具结果送达",
+      "currentStatus": "resume-and-result-delivery-fixed; model-run-still-fails",
+      "currentEvidence": "e2e-post-cutover.json"
+    }
+  ],
+  "limits": [
+    "阶段性实测记录，尚未完成全功能验收。",
+    "重命名、置顶、归档、草稿、断线与查询结果已在本轮ego-browser工具输出直接观察。",
+    "健康页模型依赖为NOT_CHECKED；基础依赖healthy。",
+    "Run12天气35秒是在候选构建期间观察到的界面耗时，不能作为空闲机器性能基准；检索未取得可靠当天资料，模型未提供要求的来源链接。",
+    "用户明确语言切换仅控制 UI；撤回额外模型语言指令的本地代码已通过9项回归，线上撤回仍待部署。",
+    "旧对话回答质量与整轮多工具用例仍失败；工具结果已逐项核对确实进入模型请求，不能把失败归因于未送达。"
+  ],
+  "localFixes": {
+    "cancelled-output": "3 SSR cases passed",
+    "brand": "asset import + source digest + emitted artifact passed",
+    "write-byte-count": "real UTF-8 write regression passed",
+    "multi-approval-resume": "57 Pi compatibility tests passed; invalid restored result cases passed",
+    "search": "production prepare route and durable title/body indexing wired; SQLite reopen/rename/scoped query tests passed; deployed; actual title/body search passed"
+  },
+  "budget": {
+    "lastObservedAt": "2026-09-12T01:02:15.639566+00:00",
+    "modelUpperBoundMicros": 75836,
+    "subsequentCalls": [],
+    "conservativeSubsequentModelReservationMicros": 0,
+    "note": "受保护数据库只读汇总包含本次19个Run；模型保守费用不等于搜索供应商账单。"
+  },
+  "validation": {
+    "fullLocalTests": 2052,
+    "fullLocalTestFailures": 0,
+    "linuxPiTests": 97,
+    "linuxHistoryTests": 95,
+    "linuxModelCompositionTests": 9,
+    "candidateBuilt": true,
+    "candidateSourceArchiveSha256": "762c50fd231ef53163e686d83d03b4810fea790c9d47df94c49c49b03ae13c2a",
+    "postBuildNonProductEdits": [
+      "packages/runtime-pi/test/pi-tool-batch-continuation.compat.test.ts",
+      "scripts/check-boundaries.mjs",
+      "scripts/operations/hermes-native-history-e2e-diagnostic.mjs",
+      "test/integration/thread-lifecycle.test.ts",
+      "test/tooling/brand-asset.test.mjs"
+    ],
+    "productionDeployed": true,
+    "protectedInstallationQualified": true,
+    "cutoverExecuted": true,
+    "deploymentEvidence": "e2e-fixes-cutover-result.json",
+    "validationScope": "Previous six-fix deployment; UI-only language and CSRF candidate is separate, not yet deployed"
+  },
+  "postCutoverEvidence": "e2e-post-cutover.json",
+  "uiSessionCandidate": "ui-session-preparation.json"
+}

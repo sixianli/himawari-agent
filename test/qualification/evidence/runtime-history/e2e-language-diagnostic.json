@@ -1,0 +1,889 @@
+{
+  "observedAt": "2026-09-12T01:35:25.567Z",
+  "readOnly": true,
+  "modelCalls": 0,
+  "runs": [
+    {
+      "id": "run:ea16b5bc-b2ac-45f1-b0cd-1650cc749835",
+      "status": "completed",
+      "created_at": "2026-09-12T01:12:02.790Z",
+      "updated_at": "2026-09-12T01:12:13.163Z",
+      "providers": [
+        {
+          "at": "2026-09-12T01:12:08.726Z",
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "stream_options",
+            "store",
+            "max_tokens",
+            "tools",
+            "reasoning",
+            "provider"
+          ],
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "system": null,
+          "messages": [
+            {
+              "index": 0,
+              "role": "system",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 2121,
+              "sha256": "36d91b01b42d829f6a7a8d8dd309b4769430a446713cf10e64668af1871e6e7d",
+              "markers": [
+                "The owner selected answer language en",
+                "Write user-facing answers in English",
+                "最后一条用户消息",
+                "本轮请求时间",
+                "配置时区",
+                "2026-09-12"
+              ],
+              "dates": [
+                "2026-09-12T01:12:02.790Z",
+                "2026-09-12"
+              ]
+            },
+            {
+              "index": 1,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 134,
+              "sha256": "c8af962e2f0b08b915f9d6b34f49553813bd99f8b2008990fa34babfbb1f2f17",
+              "markers": [
+                "青柠灯塔72"
+              ],
+              "dates": []
+            },
+            {
+              "index": 2,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 11,
+              "sha256": "b0b1e39b482429c2a6a53a3c4fd390cd659c2e9ed0583446181400c5ba35fca2",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 3,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 99,
+              "sha256": "8c3029986190f85e61ea2958edb58ddab979275994482648fe0bf7a0be2db730",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 4,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 17,
+              "sha256": "5629521be20104594549c098040e7677aef952d1330a71e0e189be60dd76ee97",
+              "markers": [
+                "青柠灯塔72"
+              ],
+              "dates": []
+            },
+            {
+              "index": 5,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 113,
+              "sha256": "7c385210e723d92204632d9e894157ff91d71d6cc8c646404c4d56203cd6be85",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 6,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 11,
+              "sha256": "f6cab2d2acff25a10221daa579b9e20ed21c9ea375b72bbce8c3636cd8dd0fd8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 7,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 96,
+              "sha256": "8f499c113a484108d2d8d234b310a97a311630f614d609b85ec445d41333a0fd",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 8,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 16,
+              "sha256": "2c8b8b8efff30108cc2dd60c9943d28b12acc83fd78f40cbc5dc9f60c8f332f8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 9,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 96,
+              "sha256": "8f499c113a484108d2d8d234b310a97a311630f614d609b85ec445d41333a0fd",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 10,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 16,
+              "sha256": "2c8b8b8efff30108cc2dd60c9943d28b12acc83fd78f40cbc5dc9f60c8f332f8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 11,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 75,
+              "sha256": "98915bfd520ae4cafdfb851b43fdfaaa42b1dad3d5f6fe4453c94ade69192e34",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 12,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 48,
+              "sha256": "3ba0f0656246192e8b955474131601c251578814f9c4583171b85b885a00d02c",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 13,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 78,
+              "sha256": "e20beda35190a7813529cce617b57cebbe423b99966b094b3b992ea3a818dbea",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 14,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 50,
+              "sha256": "5434fd9a74c5ca4ea87f65788590d367c8ce124a6bda5304ed8a99bfb22fb759",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 15,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 75,
+              "sha256": "98915bfd520ae4cafdfb851b43fdfaaa42b1dad3d5f6fe4453c94ade69192e34",
+              "markers": [],
+              "dates": []
+            }
+          ]
+        }
+      ],
+      "contextArtifacts": [
+        {
+          "operationKey": "context:run:ea16b5bc-b2ac-45f1-b0cd-1650cc749835",
+          "bytes": 5733,
+          "sha256": "797d63df565d987d7e0985b7d88afeb6b2690294db205bb32df315d0a51a427f",
+          "markers": [
+            "2026-09-12",
+            "2026-09-11"
+          ],
+          "dates": [
+            "2026-09-12T01:12:06.086Z",
+            "2026-09-11T15:47:41.217Z",
+            "2026-09-11T15:47:56.617Z",
+            "2026-09-11T15:48:54.716Z",
+            "2026-09-11T15:49:08.448Z",
+            "2026-09-11T15:50:41.588Z",
+            "2026-09-11T15:50:50.966Z",
+            "2026-09-11T16:13:47.763Z",
+            "2026-09-11T16:14:02.548Z",
+            "2026-09-11T16:15:18.345Z",
+            "2026-09-11T16:15:33.868Z",
+            "2026-09-11T16:45:51.901Z",
+            "2026-09-11T16:46:02.239Z",
+            "2026-09-11T16:47:39.492Z",
+            "2026-09-11T16:47:50.737Z",
+            "2026-09-12T01:12:02.790Z"
+          ],
+          "facts": [
+            {
+              "path": "history[0].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[1].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[2].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[3].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[4].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[5].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[6].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[7].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[8].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[9].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[10].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[11].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[12].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[13].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "runtimeHistory.runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "systemPolicyRefs[0].kind",
+              "value": "answer-locale"
+            }
+          ]
+        },
+        {
+          "operationKey": "run-answer-locale:v1:en",
+          "bytes": 252,
+          "sha256": "e15d23bf14bfb762804ba308a35bd2893a84024241da6cbbf7e4e3b6f8455a6f",
+          "markers": [
+            "The owner selected answer language en",
+            "Write user-facing answers in English"
+          ],
+          "dates": [],
+          "facts": []
+        },
+        {
+          "operationKey": "run-execution-input:v1",
+          "bytes": 1240,
+          "sha256": "8baa31da4194566e0bc09181bb9610f1cdceafc63274d87411216fdf8a84952b",
+          "markers": [
+            "2026-09-12"
+          ],
+          "dates": [
+            "2026-09-12T01:12:03.993Z",
+            "2026-09-12T01:27:03.993Z",
+            "2026-09-12T01:12:02.790Z"
+          ],
+          "facts": [
+            {
+              "path": "policy.answerLocalePolicy.locale",
+              "value": "en"
+            }
+          ]
+        },
+        {
+          "operationKey": "run-system-instruction:v2:34143cd6fe7136ce30cfc3474e95f0276a839a83da843a097f65393846ff5aaf",
+          "bytes": 1406,
+          "sha256": "4a91d2135caae827e755be0aeec05c746c374e19bf9a4bc7fd9351b7ab77e59e",
+          "markers": [
+            "本轮请求时间",
+            "配置时区",
+            "2026-09-12"
+          ],
+          "dates": [
+            "2026-09-12T01:12:02.790Z",
+            "2026-09-12"
+          ],
+          "facts": []
+        }
+      ],
+      "checkpoints": [],
+      "trace": [
+        {
+          "type": "memory.query",
+          "at": "2026-09-12T01:12:04.248Z",
+          "facts": []
+        },
+        {
+          "type": "memory.candidates",
+          "at": "2026-09-12T01:12:05.788Z",
+          "facts": []
+        },
+        {
+          "type": "memory.selection",
+          "at": "2026-09-12T01:12:05.942Z",
+          "facts": []
+        },
+        {
+          "type": "context.formed",
+          "at": "2026-09-12T01:12:06.153Z",
+          "facts": [
+            {
+              "path": "answerLocalePolicy.locale",
+              "value": "en"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-12T01:12:07.136Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-12T01:12:07.137Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-12T01:12:08.806Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "request"
+            }
+          ]
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-12T01:12:10.204Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "response"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-12T01:12:10.628Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_completed",
+          "at": "2026-09-12T01:12:10.629Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.completed",
+          "at": "2026-09-12T01:12:12.676Z",
+          "facts": [
+            {
+              "path": "output.kind",
+              "value": "assistant-answer"
+            }
+          ]
+        }
+      ],
+      "receipts": [],
+      "jobs": [],
+      "coordination": {
+        "phase": "completed",
+        "terminal_status": "completed",
+        "diagnostic_code": null,
+        "updated_at": "2026-09-12T01:12:13.355Z"
+      }
+    },
+    {
+      "id": "run:3707de79-f306-4944-aaa7-a5390b26167c",
+      "status": "completed",
+      "created_at": "2026-09-12T01:16:47.262Z",
+      "updated_at": "2026-09-12T01:16:59.603Z",
+      "providers": [
+        {
+          "at": "2026-09-12T01:16:54.598Z",
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "stream_options",
+            "store",
+            "max_tokens",
+            "tools",
+            "reasoning",
+            "provider"
+          ],
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "system": null,
+          "messages": [
+            {
+              "index": 0,
+              "role": "system",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 2122,
+              "sha256": "92186640d3563768d2c44d4ef1d9599202b700cfd204fb0b5670f2538308309a",
+              "markers": [
+                "The owner selected answer language ja",
+                "Write user-facing answers in Japanese",
+                "最后一条用户消息",
+                "本轮请求时间",
+                "配置时区",
+                "2026-09-12"
+              ],
+              "dates": [
+                "2026-09-12T01:16:47.262Z",
+                "2026-09-12"
+              ]
+            },
+            {
+              "index": 1,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 134,
+              "sha256": "c8af962e2f0b08b915f9d6b34f49553813bd99f8b2008990fa34babfbb1f2f17",
+              "markers": [
+                "青柠灯塔72"
+              ],
+              "dates": []
+            },
+            {
+              "index": 2,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 11,
+              "sha256": "b0b1e39b482429c2a6a53a3c4fd390cd659c2e9ed0583446181400c5ba35fca2",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 3,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 99,
+              "sha256": "8c3029986190f85e61ea2958edb58ddab979275994482648fe0bf7a0be2db730",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 4,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 17,
+              "sha256": "5629521be20104594549c098040e7677aef952d1330a71e0e189be60dd76ee97",
+              "markers": [
+                "青柠灯塔72"
+              ],
+              "dates": []
+            },
+            {
+              "index": 5,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 113,
+              "sha256": "7c385210e723d92204632d9e894157ff91d71d6cc8c646404c4d56203cd6be85",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 6,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 11,
+              "sha256": "f6cab2d2acff25a10221daa579b9e20ed21c9ea375b72bbce8c3636cd8dd0fd8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 7,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 96,
+              "sha256": "8f499c113a484108d2d8d234b310a97a311630f614d609b85ec445d41333a0fd",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 8,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 16,
+              "sha256": "2c8b8b8efff30108cc2dd60c9943d28b12acc83fd78f40cbc5dc9f60c8f332f8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 9,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 96,
+              "sha256": "8f499c113a484108d2d8d234b310a97a311630f614d609b85ec445d41333a0fd",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 10,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 16,
+              "sha256": "2c8b8b8efff30108cc2dd60c9943d28b12acc83fd78f40cbc5dc9f60c8f332f8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 11,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 75,
+              "sha256": "98915bfd520ae4cafdfb851b43fdfaaa42b1dad3d5f6fe4453c94ade69192e34",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 12,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 48,
+              "sha256": "3ba0f0656246192e8b955474131601c251578814f9c4583171b85b885a00d02c",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 13,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 78,
+              "sha256": "e20beda35190a7813529cce617b57cebbe423b99966b094b3b992ea3a818dbea",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 14,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 50,
+              "sha256": "5434fd9a74c5ca4ea87f65788590d367c8ce124a6bda5304ed8a99bfb22fb759",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 15,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 75,
+              "sha256": "98915bfd520ae4cafdfb851b43fdfaaa42b1dad3d5f6fe4453c94ade69192e34",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 16,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 48,
+              "sha256": "3ba0f0656246192e8b955474131601c251578814f9c4583171b85b885a00d02c",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 17,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 108,
+              "sha256": "fbea35008aac162c52d9c56a26af85c662f50a8787c26e02630350de9c90120a",
+              "markers": [],
+              "dates": []
+            }
+          ]
+        }
+      ],
+      "contextArtifacts": [
+        {
+          "operationKey": "context:run:3707de79-f306-4944-aaa7-a5390b26167c",
+          "bytes": 6388,
+          "sha256": "40cc2f82c5b31457f0e77a8e44b9a00716d63ca1674fbfd0626263865bdc1661",
+          "markers": [
+            "2026-09-12",
+            "2026-09-11"
+          ],
+          "dates": [
+            "2026-09-12T01:16:50.319Z",
+            "2026-09-11T15:47:41.217Z",
+            "2026-09-11T15:47:56.617Z",
+            "2026-09-11T15:48:54.716Z",
+            "2026-09-11T15:49:08.448Z",
+            "2026-09-11T15:50:41.588Z",
+            "2026-09-11T15:50:50.966Z",
+            "2026-09-11T16:13:47.763Z",
+            "2026-09-11T16:14:02.548Z",
+            "2026-09-11T16:15:18.345Z",
+            "2026-09-11T16:15:33.868Z",
+            "2026-09-11T16:45:51.901Z",
+            "2026-09-11T16:46:02.239Z",
+            "2026-09-11T16:47:39.492Z",
+            "2026-09-11T16:47:50.737Z",
+            "2026-09-12T01:12:02.790Z",
+            "2026-09-12T01:12:13.163Z",
+            "2026-09-12T01:16:47.262Z"
+          ],
+          "facts": [
+            {
+              "path": "history[0].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[1].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[2].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[3].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[4].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[5].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[6].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[7].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[8].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[9].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[10].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[11].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[12].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[13].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[14].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "history[15].runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "runtimeHistory.runState.status",
+              "value": "completed"
+            },
+            {
+              "path": "systemPolicyRefs[0].kind",
+              "value": "answer-locale"
+            }
+          ]
+        },
+        {
+          "operationKey": "run-answer-locale:v1:ja",
+          "bytes": 253,
+          "sha256": "0896f0d335a60aef49dcc27371dfdd5d02266b490a52b3a598174c1af0870d1b",
+          "markers": [
+            "The owner selected answer language ja",
+            "Write user-facing answers in Japanese"
+          ],
+          "dates": [],
+          "facts": []
+        },
+        {
+          "operationKey": "run-execution-input:v1",
+          "bytes": 1240,
+          "sha256": "db55347a5e9e5b9d0a8c7c27ff3695c8e7e0603a2b7dbd219a063f345cf41a34",
+          "markers": [
+            "2026-09-12"
+          ],
+          "dates": [
+            "2026-09-12T01:16:47.994Z",
+            "2026-09-12T01:31:47.994Z",
+            "2026-09-12T01:16:47.262Z"
+          ],
+          "facts": [
+            {
+              "path": "policy.answerLocalePolicy.locale",
+              "value": "ja"
+            }
+          ]
+        },
+        {
+          "operationKey": "run-system-instruction:v2:34143cd6fe7136ce30cfc3474e95f0276a839a83da843a097f65393846ff5aaf",
+          "bytes": 1406,
+          "sha256": "b023913765cf2e522fd8050493b36536ecf7657e29a8aaabd5373dc8ff148654",
+          "markers": [
+            "本轮请求时间",
+            "配置时区",
+            "2026-09-12"
+          ],
+          "dates": [
+            "2026-09-12T01:16:47.262Z",
+            "2026-09-12"
+          ],
+          "facts": []
+        }
+      ],
+      "checkpoints": [],
+      "trace": [
+        {
+          "type": "memory.query",
+          "at": "2026-09-12T01:16:48.550Z",
+          "facts": []
+        },
+        {
+          "type": "memory.candidates",
+          "at": "2026-09-12T01:16:49.990Z",
+          "facts": []
+        },
+        {
+          "type": "memory.selection",
+          "at": "2026-09-12T01:16:50.164Z",
+          "facts": []
+        },
+        {
+          "type": "context.formed",
+          "at": "2026-09-12T01:16:50.475Z",
+          "facts": [
+            {
+              "path": "answerLocalePolicy.locale",
+              "value": "ja"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-12T01:16:52.601Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-12T01:16:52.601Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-12T01:16:54.733Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "request"
+            }
+          ]
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-12T01:16:56.279Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "response"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-12T01:16:56.587Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_completed",
+          "at": "2026-09-12T01:16:56.587Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.completed",
+          "at": "2026-09-12T01:16:58.841Z",
+          "facts": [
+            {
+              "path": "output.kind",
+              "value": "assistant-answer"
+            }
+          ]
+        }
+      ],
+      "receipts": [],
+      "jobs": [],
+      "coordination": {
+        "phase": "completed",
+        "terminal_status": "completed",
+        "diagnostic_code": null,
+        "updated_at": "2026-09-12T01:16:59.779Z"
+      }
+    }
+  ]
+}

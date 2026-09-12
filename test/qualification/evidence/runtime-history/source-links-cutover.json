@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "deploymentComplete": true,
+  "schemaSequence": 32,
+  "historyReimported": false,
+  "runtimeDigest": "a9b48f6731f4087feff92f000c98f2436245ca580569708d8f585f4d848c307d",
+  "receiptDigest": "65a920903c1aa840decadc47f24eab3f97b2321bd6d961d74b36209430c39202",
+  "ready": [
+    "agent",
+    "worker"
+  ],
+  "runtimeUid": 998,
+  "backupId": "before-source-links-2026-09-13",
+  "modelCalls": 0,
+  "realModelAcceptance": "pending"
+}

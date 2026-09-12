@@ -1,0 +1,158 @@
+{
+  "piVersion": "0.84.2",
+  "realAgentSessionAbort": true,
+  "externalNetworkUsed": false,
+  "realCommandsExecuted": false,
+  "scope": "Synthetic Pi sessions and real pinned OpenAI-compatible serialization. Model responses are deterministic fixtures; product comparison reflects the observed committed-user-only history.",
+  "reports": [
+    {
+      "kind": "text",
+      "afterNativeAbort": [
+        {
+          "role": "user"
+        },
+        {
+          "role": "assistant",
+          "stopReason": "aborted"
+        }
+      ],
+      "native": [
+        {
+          "role": "system",
+          "content": "Synthetic context comparison."
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "请写一篇约两千字的学习资料文章。不要调用工具。"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "现在的天气怎么样？"
+            }
+          ]
+        }
+      ],
+      "himawariCommittedUserOnly": [
+        {
+          "role": "system",
+          "content": "Synthetic context comparison."
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "请写一篇约两千字的学习资料文章。不要调用工具。"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "现在的天气怎么样？"
+            }
+          ]
+        }
+      ],
+      "serializedMessagesEqual": true
+    },
+    {
+      "kind": "tool",
+      "afterNativeAbort": [
+        {
+          "role": "user"
+        },
+        {
+          "role": "assistant",
+          "stopReason": "toolUse"
+        },
+        {
+          "role": "toolResult",
+          "isError": true
+        },
+        {
+          "role": "assistant",
+          "stopReason": "error"
+        }
+      ],
+      "native": [
+        {
+          "role": "system",
+          "content": "Synthetic context comparison."
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "请仅调用 bash，命令为 sleep 30。"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call-synthetic",
+              "type": "function",
+              "function": {
+                "name": "bash",
+                "arguments": "{\"command\":\"sleep 30\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "content": "Operation aborted",
+          "tool_call_id": "call-synthetic"
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "请仅使用 read 读取验收文件，不要运行命令。"
+            }
+          ]
+        }
+      ],
+      "himawariCommittedUserOnly": [
+        {
+          "role": "system",
+          "content": "Synthetic context comparison."
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "请仅调用 bash，命令为 sleep 30。"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "请仅使用 read 读取验收文件，不要运行命令。"
+            }
+          ]
+        }
+      ],
+      "serializedMessagesEqual": false
+    }
+  ]
+}

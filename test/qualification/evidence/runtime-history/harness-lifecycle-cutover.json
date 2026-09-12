@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "deploymentComplete": true,
+  "schemaSequence": 32,
+  "historyReimported": false,
+  "runtimeDigest": "0d269e653bba534e7fc14591e2dc2dddb0373aedbddbe1284da7eeb33b980861",
+  "receiptDigest": "5c65078c0ba3bfec67fd8bc919206b97065575dbdaf63d9a602cd312a2e8abad",
+  "ready": [
+    "agent",
+    "worker"
+  ],
+  "runtimeUid": 998,
+  "backupId": "before-harness-lifecycle-2026-09-12",
+  "modelCalls": 0,
+  "realModelAcceptance": "pending"
+}

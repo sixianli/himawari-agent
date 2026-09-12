@@ -1,0 +1,71 @@
+{
+  "status": "passed",
+  "counts": {
+    "files": 197,
+    "executed": 2045,
+    "passed": 2045,
+    "failed": 0,
+    "skipped": 0
+  },
+  "toolchain": {
+    "node": "22.22.3",
+    "npm": "11.8.0",
+    "os": "darwin",
+    "arch": "arm64",
+    "abi": "127",
+    "runnerImage": "local"
+  },
+  "projects": [
+    {
+      "id": "unit",
+      "counts": {
+        "files": 101,
+        "executed": 855,
+        "passed": 855,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "id": "contracts",
+      "counts": {
+        "files": 21,
+        "executed": 268,
+        "passed": 268,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "id": "integration",
+      "counts": {
+        "files": 66,
+        "executed": 824,
+        "passed": 824,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "id": "e2e",
+      "counts": {
+        "files": 1,
+        "executed": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "id": "pi-compat",
+      "counts": {
+        "files": 8,
+        "executed": 95,
+        "passed": 95,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  ],
+  "durationMs": 519453
+}

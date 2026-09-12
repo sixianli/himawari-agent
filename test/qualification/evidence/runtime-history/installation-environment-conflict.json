@@ -1,0 +1,20 @@
+{
+  "finding": "synthetic_runtime_received_unrelated_protected_installation_record",
+  "reproduction": {
+    "host": "hermes-home",
+    "account": "andy",
+    "sameCompositionProbe": true,
+    "withProtectionEnvironment": "PORT_CONFLICT: Sandbox runtime has not been bound",
+    "withoutProtectionEnvironment": "passed",
+    "cleanup": "confirmed"
+  },
+  "codeEvidence": [
+    "packages/platform-node/src/capabilities/protected-runtime.ts: verify rejects different runtimeRoot before account validation",
+    "test/fixtures/mac-sandbox-deployment.ts: runtimeRoot is temporary live-runtime",
+    "scripts/operations/hermes-native-history-qualify.py: shared environment passed installation protection record to composition probe"
+  ],
+  "correction": "omit protection environment only for the temporary-runtime composition probe; retain full digest validation and separate real-account installation protection test",
+  "actualHimawariAccountRetest": "pending sudo authentication",
+  "modelCalls": 0,
+  "productionDatabaseWritten": false
+}
