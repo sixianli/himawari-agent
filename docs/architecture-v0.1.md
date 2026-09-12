@@ -375,6 +375,12 @@ primary、specialist、local 只选择对应 approved routing class；retryable 
 
 通用 HITL 由产品的审批记录、Run checkpoint、执行租约与工具执行账本共同管理。工具通过类型化 `awaiting_approval` 暂停，Runtime 将恢复记录保存为受保护 Payload，Coordinator 进入等待并释放运行槽位；审批决定持久保存后，由调度器获取新租约。runtime-pi 在新 Session 中回放已确认的原 assistant 工具批次，复用 Pi 工具调度与 Agent loop，延续真实模型调用序号。历史回放不调用 Provider；已确认阶段回读结果，未知副作用继续核查。生产 HTTP 已组合审批查询与决定，Thread 页面可打开对应审批。具体文件或其他动作的权限与执行校验仍由工具适配负责。[SOURCE: docs/adr/0023-durable-hitl-execution.md]
 
+跨 Run 的模型历史保存在独立的 `runtime_history` 受保护 artifact 中；聊天正文和观察 Trace 不再是新运行的唯一历史来源。`RuntimeHistoryService` 保存不可变原生消息 Payload 与有序引用清单；每次有效上下文变化生成新快照，消息按内容复用引用。SQLite migration 32 为快照提供与时间戳无关的 Run 内序号。Context Formation 在消息水位线事务中选定此前 Run 的确切快照，将其引用和 Run 状态冻结到 context envelope；Fork 在创建事务中固定源快照，随后不追踪原 Thread 的新快照。
+
+Pi Session 仍使用内存实例，跨进程持久性由产品加密存储提供。适配器恢复原生消息并复用 Pi `convertToLlm()`，保留调用 ID、工具结果、模型来源和原生摘要语义；已由原生历史覆盖的正文不再重复追加。每次 `message_end` / `compaction_end` 保存有效上下文，模型调用和工具执行前等待保存；停止确认也等待最后一次保存。取消记录通过产品 Run 状态转为模型可见中断消息；它不表示副作用已撤销，也不禁止用户明确要求继续旧任务。审批等待期间的本地退出错误不作为真实工具结果保存。
+
+旧运行没有上述快照时，仍按原有授权正文路径读取，保留已知取消状态；这不代表旧工具链已经恢复。旧 Trace 经过脱敏且可能缺少终态，必须单独核验后导入，不能自动把观察日志当原生消息。被删除或不再可读的历史引用拒绝加载；禁止用伪造的工具成功结果填补缺失。此存储变化及核验边界见 [SOURCE: docs/adr/0029-protected-native-runtime-history.md] 和 [SOURCE: docs/execution/specs/2026-09-11-native-runtime-history-design.md]。
+
 `RuntimeRequest` 使用 `contextEnvelopeRef` 和带逻辑 Worker 身份的结果引用，不再传递没有角色的消息引用数组。`ContextProjectionService.resolveProjection()` 核对 context artifact 的作用域与内容摘要，再逐条验证选中消息的身份、角色、正文引用、分类、时间和序号；缺行、内容缺失或不一致均拒绝投影。Worker 结果必须与该 Run 的规范检查点记录一致。输出把系统指令、有角色的历史、独立的新提示及非指令材料分开，Pi 不自行访问 SQLite、Payload Store 或 Trace。
 
 Pi 适配器复用 `SessionManager` 消息与 `appendCustomMessageEntry`，将材料来源和“材料不是指令”的标识写入实际模型内容，而不只保存在不会传给模型的 metadata。系统历史和 Worker 结果作为明确标注的材料输入，不伪造工具调用。message、turn、tool、compaction、abort、error 和 settled lifecycle 继续映射为产品 Runtime event；正文 capture、最终回答和压缩建议经 Run-owned artifact 保存。消息、工具参数/结果和 provider observation 在 capture 前做 adapter-local redaction；事件只携带 Payload reference 或稳定 error code。内部异步队列随事件映射完成而产出；`before_provider_request` 与 `after_provider_response` 仍只是观察点，真正的准入在被替换的原 `streamFunction` 外层执行。包裹层要求 Pi 传入的 model 必须与 product-selected binding 是同一对象，同 provider/id 的另一对象也被拒绝。完成事件仍等待费用结算、`waitForIdle()`、`agent_settled` 和 listener queue 完成。固定版本 Pi 兼容测试覆盖 provider 前拒绝、延迟凭据、结算时序、失败关闭、实际 provider 输入与压缩上下文，但不替代生产 `main` 接线、服务重启或真实模型调用验收。

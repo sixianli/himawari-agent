@@ -63,6 +63,7 @@ export function capabilityInvocationOutputOperationKey(invocationId: string): st
 }
 
 const RUN_PAYLOAD_ARTIFACT_PURPOSES: readonly RunPayloadArtifactPurpose[] = [
+  "runtime_history",
   "trace",
   "context",
   "final_answer",
@@ -383,8 +384,8 @@ export class SqliteRunPayloadArtifactOperations {
       .prepare(
         `INSERT INTO run_payload_artifacts (
           owner_id, agent_id, run_id, purpose, operation_key, payload_ref,
-          content_digest, content_type, classification, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          content_digest, content_type, classification, created_at, history_sequence
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.ownerId,
@@ -397,6 +398,15 @@ export class SqliteRunPayloadArtifactOperations {
         protectedPayload.contentType,
         protectedPayload.dataClassification,
         protectedPayload.createdAt,
+        input.purpose === "runtime_history" && input.operationKey.startsWith("snapshot:")
+          ? (
+              this.database
+                .prepare(
+                  "SELECT COALESCE(MAX(history_sequence), 0) + 1 AS next FROM run_payload_artifacts WHERE owner_id = ? AND agent_id = ? AND run_id = ?",
+                )
+                .get(input.ownerId, input.agentId, input.runId) as { next: number }
+            ).next
+          : 0,
       );
     return { ref: protectedPayload.ref, replayed: false, artifact };
   }
@@ -449,11 +459,12 @@ export class SqliteRunPayloadArtifactOperations {
     if (
       forWrite &&
       input.purpose !== "trace" &&
+      input.purpose !== "runtime_history" &&
       !RUN_PAYLOAD_EXECUTION_STATUSES.some((status) => status === row.status)
     ) {
       this.fail(
         "PORT_INVALID_OPERATION",
-        "Only terminal Trace artifacts may be written after a Run reaches a terminal status",
+        "Only terminal Trace and runtime history artifacts may be written after a Run reaches a terminal status",
         { runId: input.runId, purpose: input.purpose, status: row.status },
       );
     }

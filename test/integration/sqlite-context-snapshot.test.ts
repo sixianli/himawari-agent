@@ -1,23 +1,25 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import path from "node:path";
 import { tmpdir } from "node:os";
+import path from "node:path";
 import { ThreadCommandService, type ThreadContextSnapshotQuery } from "@himawari-agent/application";
 import {
   createAgentId,
   createAuthorityLeaseId,
   createDeploymentId,
+  createIdempotencyKey,
   createMessageId,
   createOwnerId,
+  createProductThread,
   createSessionId,
   createThreadId,
   type ProductAuthorityFence,
   type RunId,
 } from "@himawari-agent/domain";
 import {
-  SqliteProductStateRepository,
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { ManualClock } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
@@ -143,6 +145,23 @@ function query(
 }
 
 describe("SQLite context snapshot", () => {
+  it("includes the cancelled historical Run outcome without including future Runs", async () => {
+    const setup = await fixture();
+    const [first, second, third] = setup.admissions;
+    if (!first?.message.runId || !second?.message.runId || !third?.message.runId)
+      throw new Error("Expected admitted Runs");
+    const database = openQualifiedDatabase(setup.databasePath);
+    database.prepare("UPDATE runs SET status = 'cancelled' WHERE id = ?").run(first.message.runId);
+    database.close();
+    const snapshot = await setup.repository
+      .threadRepository()
+      .readContextSnapshot(query(setup.threadId, second.message.runId));
+    expect(snapshot).toMatchObject({
+      runStates: [{ runId: first.message.runId, status: "cancelled" }],
+      messages: [{ id: first.message.id }],
+    });
+  });
+
   it("uses trigger sequence as the causal boundary and keeps a recent bounded window", async () => {
     const setup = await fixture();
     const thread = setup.repository.threadRepository();
@@ -188,4 +207,116 @@ describe("SQLite context snapshot", () => {
         .readContextSnapshot(query(setup.threadId, first.message.runId as RunId)),
     ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
   });
+});
+
+it("pins a native snapshot independently of timestamps and excludes future Runs", async () => {
+  const setup = await fixture();
+  const [first, second, third] = setup.admissions;
+  if (!first?.message.runId || !second?.message.runId || !third?.message.runId)
+    throw new Error("missing runs");
+  const { RuntimeHistoryService } = await import("@himawari-agent/application");
+  const { EnvelopePayloadProtector, InMemoryDevelopmentSecretSource } = await import(
+    "@himawari-agent/platform-node"
+  );
+  let id = 0;
+  const history = new RuntimeHistoryService({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    clock: CLOCK,
+    ids: { next: () => `native-sqlite-${++id}` },
+    protector: new EnvelopePayloadProtector({
+      keys: new InMemoryDevelopmentSecretSource({ "native-key@v1": new Uint8Array(32).fill(1) }),
+      activeKey: { keyRef: "native-key", kekVersion: "v1", dekVersion: "v1" },
+    }),
+    artifacts: setup.repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, {
+      product: AUTHORITY,
+      lease: { leaseId: LEASE_ID, fencingToken: 1 },
+    }),
+    payloads: setup.repository.payloadStore(OWNER_ID, AGENT_ID),
+  });
+  const older = await history.save({
+    runId: first.message.runId,
+    dataClassification: "private",
+    messages: [{ role: "user", content: "first", timestamp: 1 }],
+  });
+  const latest = await history.save({
+    runId: first.message.runId,
+    dataClassification: "private",
+    messages: [
+      { role: "user", content: "first", timestamp: 1 },
+      {
+        role: "toolResult",
+        toolCallId: "call",
+        toolName: "write",
+        isError: true,
+        content: [{ type: "text", text: "denied" }],
+        timestamp: 2,
+      },
+    ],
+  });
+  await history.save({
+    runId: third.message.runId,
+    dataClassification: "private",
+    messages: [{ role: "user", content: "FUTURE", timestamp: 4 }],
+  });
+  const snapshot = await setup.repository
+    .threadRepository()
+    .readContextSnapshot(query(setup.threadId, second.message.runId));
+  expect(snapshot?.runtimeHistory?.reference).toEqual(latest);
+  expect((await history.load(older, "private")).messages).toHaveLength(1);
+  expect(JSON.stringify(await history.load(latest, "private"))).not.toContain("FUTURE");
+  const db = openQualifiedDatabase(setup.databasePath);
+  db.prepare("UPDATE turns SET committed_at = ? WHERE id = ?").run(
+    CLOCK.now(),
+    first.message.turnId,
+  );
+  db.close();
+  if (!first.message.turnId) throw new Error("Missing source Turn");
+  const fork = await setup.repository.threadRepository().fork({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    sourceThreadId: setup.threadId,
+    sourceTurnId: first.message.turnId,
+    sourceWatermark: first.message.sequence,
+    targetThread: createProductThread({
+      id: createThreadId("native-fork"),
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      createdAt: CLOCK.now(),
+    }),
+    summaryRefs: [],
+    policyRefs: [],
+    idempotencyKey: createIdempotencyKey("native-fork"),
+    semanticFingerprint: "native-fork",
+    resultRef: "payload-result",
+    authority: AUTHORITY,
+  });
+  // A later snapshot in the very same parent Run must not change the Fork.
+  await history.save({
+    runId: first.message.runId,
+    dataClassification: "private",
+    messages: [{ role: "user", content: "LATE PARENT", timestamp: 8 }],
+  });
+  const commands = new ThreadCommandService({
+    repository: setup.repository.threadRepository(),
+    clock: CLOCK,
+    authority: () => AUTHORITY,
+  });
+  const next = await commands.admitOwnerMessage({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    threadId: fork.thread.id,
+    expectedThreadRevision: fork.thread.revision,
+    sessionId: createSessionId("native-fork-session"),
+    idempotencyKey: "native-fork-message",
+    contentRef: "payload-message-2",
+    sourceProofRef: "proof:fork",
+    dataClassification: "private",
+    resultRef: "payload-result",
+  });
+  if (!next.message.runId) throw new Error("Missing Fork run");
+  const forkSnapshot = await setup.repository
+    .threadRepository()
+    .readContextSnapshot(query(fork.thread.id, next.message.runId));
+  expect(forkSnapshot?.runtimeHistory?.reference).toEqual(latest);
 });

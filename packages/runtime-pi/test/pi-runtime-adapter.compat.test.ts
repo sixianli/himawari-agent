@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import fsPromises from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -304,7 +305,9 @@ class RecordingRuntimeTools implements RuntimeToolPort {
     reasonCode: "grant_allows",
   }));
   readonly execute = vi.fn(
-    async (): Promise<RuntimeToolExecutionResult> => ({
+    async (
+      _invocation: Parameters<RuntimeToolPort["execute"]>[0],
+    ): Promise<RuntimeToolExecutionResult> => ({
       outcome: "succeeded" as const,
       resultRef: "payload-tool-result-task-11",
       errorCode: null,
@@ -1732,6 +1735,72 @@ it("runs the actual pinned AgentSession with an opaque HTTP product session iden
   expect(projection.finalAnswers[0]?.text).toBe("真实 Pi Session 回答");
 });
 
+it("keeps Pi's tool guidance alongside the product policy in the actual provider context", async () => {
+  const model = await createFauxModelFixture("工具使用说明已保留");
+  const tools = new RecordingRuntimeTools();
+  vi.spyOn(tools, "listAuthorized").mockResolvedValue([
+    {
+      definition: "builtin-coding",
+      name: "read",
+      capabilityRef: "project.read",
+      capabilityHandleRef: null,
+    },
+  ]);
+  const adapter = new PiAgentRuntimeAdapter({
+    projection: new RecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `pi-guidance:${ordinal}`,
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+  const context = model.observed[0] as { systemPrompt: string };
+  const read = createReadToolDefinition(process.cwd());
+  expect(context.systemPrompt).toContain("Available tools:");
+  expect(context.systemPrompt).toContain(read.promptSnippet);
+  for (const guideline of read.promptGuidelines ?? [])
+    expect(context.systemPrompt).toContain(guideline);
+  expect(context.systemPrompt).toContain(DEFAULT_CONTEXT.systemInstruction);
+  expect(tools.execute).not.toHaveBeenCalled();
+});
+
+it("does not load ambient prompt files or interpret product policy as a file path", async () => {
+  const cwd = await fsPromises.mkdtemp(join(tmpdir(), "himawari-pi-prompt-"));
+  try {
+    const agentDir = join(cwd, "agent");
+    await fsPromises.mkdir(agentDir);
+    await fsPromises.mkdir(join(cwd, ".pi"));
+    const marker = "UNAUTHORIZED_AMBIENT_PROMPT";
+    for (const directory of [agentDir, join(cwd, ".pi")]) {
+      await fsPromises.writeFile(join(directory, "SYSTEM.md"), marker);
+      await fsPromises.writeFile(join(directory, "APPEND_SYSTEM.md"), marker);
+    }
+    const policy = join(cwd, "policy.txt");
+    await fsPromises.writeFile(policy, marker);
+    const model = await createFauxModelFixture("只使用显式授权的文本");
+    const adapter = new PiAgentRuntimeAdapter({
+      projection: new RecordingProjection({ ...DEFAULT_CONTEXT, systemInstruction: policy }),
+      tools: new RecordingRuntimeTools(),
+      models: model.models,
+      cwd,
+      agentDir,
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (_request, ordinal) => `pi-prompt-sources:${ordinal}`,
+    });
+    const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+    expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+    const context = model.observed[0] as { systemPrompt: string };
+    expect(context.systemPrompt).toContain(policy);
+    expect(context.systemPrompt).not.toContain(marker);
+  } finally {
+    await fsPromises.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 it.each(["approved", "denied", "effect_without_receipt"] as const)(
   "suspends and resumes a generic side-effect tool: %s",
   async (resolution) => {
@@ -1967,4 +2036,737 @@ it("runs configured OpenRouter sessions without storing credentials in the share
       server.close((error) => (error ? reject(error) : resolve())),
     );
   }
+});
+
+it("preserves a denied tool call across native session restart and delivers only the new prompt", async () => {
+  class HistoryProjection extends RecordingProjection {
+    saved: readonly unknown[] = [];
+    async captureHistory(input: { messages: readonly unknown[] }) {
+      this.saved = JSON.parse(JSON.stringify(input.messages)) as unknown[];
+      return {
+        runId: request.runId,
+        operationKey: "snapshot:test",
+        payloadRef: "native-test",
+        dataClassification: "private" as const,
+      };
+    }
+  }
+  const firstModel = await createFauxModelFixture("请求被拒绝，未写入", {
+    name: "restaurant_search",
+    id: "refused-call",
+    arguments: { query: "test" },
+  });
+  const firstProjection = new HistoryProjection({
+    ...DEFAULT_CONTEXT,
+    history: [],
+    prompt: { id: "first", content: "执行测试工具", occurredAt: NOW },
+  });
+  const tools = new RecordingRuntimeTools();
+  tools.execute.mockResolvedValue({
+    outcome: "failed",
+    resultRef: null,
+    errorCode: "approval_denied",
+    externalActionId: null,
+    modelContent: "用户拒绝，未执行",
+  });
+  const make = (projection: RecordingProjection, models: typeof firstModel.models) =>
+    new PiAgentRuntimeAdapter({
+      projection,
+      tools,
+      models,
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (r, n) => `${r.runId}:history:${n}`,
+    });
+  expect(
+    (
+      await collect(
+        make(firstProjection, firstModel.models).run({
+          ...request,
+          modelRef: firstModel.descriptor.ref,
+        }),
+      )
+    ).at(-1)?.type,
+  ).toBe("runtime.completed");
+  expect(firstProjection.saved).toContainEqual(
+    expect.objectContaining({ role: "toolResult", toolCallId: "refused-call", isError: true }),
+  );
+  const secondModel = await createFauxModelFixture("处理新的天气问题");
+  const nextProjection = new HistoryProjection({
+    ...DEFAULT_CONTEXT,
+    history: [],
+    nativeHistory: { messages: firstProjection.saved, coveredRunIds: [request.runId] },
+    prompt: { id: "weather", content: "现在的天气怎么样？", occurredAt: NOW },
+  });
+  const nextRequest = {
+    ...request,
+    runId: fixtureIdentifier<RuntimeRequest["runId"]>("history-second-run"),
+    modelRef: secondModel.descriptor.ref,
+  };
+  expect(
+    (await collect(make(nextProjection, secondModel.models).run(nextRequest))).at(-1)?.type,
+  ).toBe("runtime.completed");
+  const context = secondModel.observed[0] as { messages: unknown[] };
+  expect(context.messages).toContainEqual(
+    expect.objectContaining({ role: "toolResult", toolCallId: "refused-call", isError: true }),
+  );
+  expect(JSON.stringify(context.messages)).toContain("approval_denied");
+  expect(context.messages.at(-1)).toMatchObject({
+    role: "user",
+    content: [{ type: "text", text: "现在的天气怎么样？" }],
+  });
+  expect(tools.execute).toHaveBeenCalledTimes(1);
+});
+
+it("waits for cancelled native history persistence before acknowledging cancel", async () => {
+  const model = await createFauxModelFixture("should not continue", {
+    name: "restaurant_search",
+    id: "cancel-call",
+    arguments: { query: "test" },
+  });
+  const projection = new RecordingProjection({ ...DEFAULT_CONTEXT, history: [] });
+  let saved: readonly unknown[] = [];
+  let releaseTool: () => void = () => undefined;
+  let entered: () => void = () => undefined;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const toolWait = new Promise<void>((resolve) => {
+    releaseTool = resolve;
+  });
+  const tools = new RecordingRuntimeTools();
+  tools.execute.mockImplementation(async () => {
+    entered();
+    await toolWait;
+    return {
+      outcome: "failed",
+      resultRef: null,
+      errorCode: "CANCELLED",
+      externalActionId: null,
+      modelContent: "工具已停止",
+    };
+  });
+  const historyProjection = Object.assign(projection, {
+    captureHistory: async (input: { messages: readonly unknown[] }) => {
+      await Promise.resolve();
+      saved = structuredClone(input.messages);
+      return {
+        runId: request.runId,
+        operationKey: "snapshot:cancel",
+        payloadRef: "cancel-history",
+        dataClassification: "private" as const,
+      };
+    },
+  });
+  const adapter = new PiAgentRuntimeAdapter({
+    projection: historyProjection,
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (r, n) => `${r.runId}:cancel-history:${n}`,
+  });
+  const running = collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  await started;
+  const cancelled = adapter.cancel(request.runId);
+  releaseTool();
+  await cancelled;
+  expect(saved).toContainEqual(
+    expect.objectContaining({ role: "toolResult", toolCallId: "cancel-call", isError: true }),
+  );
+  expect((await running).at(-1)?.type).toBe("runtime.cancelled");
+  expect(model.observed).toHaveLength(1);
+  const nextModel = await createFauxModelFixture("响应新请求");
+  const nextProjection = new RecordingProjection({
+    ...DEFAULT_CONTEXT,
+    history: [],
+    nativeHistory: { messages: saved, coveredRunIds: [request.runId] },
+    interruptedRunId: request.runId,
+    prompt: { id: "after-cancel", content: "只读取验收文件，不执行旧工具。", occurredAt: NOW },
+  });
+  const next = new PiAgentRuntimeAdapter({
+    projection: nextProjection,
+    tools,
+    models: nextModel.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (r, n) => `${r.runId}:after-cancel:${n}`,
+  });
+  await collect(
+    next.run({
+      ...request,
+      modelRef: nextModel.descriptor.ref,
+      runId: fixtureIdentifier("after-cancel"),
+    }),
+  );
+  expect(JSON.stringify(nextModel.observed[0])).toContain("turn_aborted");
+  expect((nextModel.observed[0] as { messages: unknown[] }).messages.at(-1)).toMatchObject({
+    role: "user",
+    content: [{ type: "text", text: "只读取验收文件，不执行旧工具。" }],
+  });
+  expect(tools.execute).toHaveBeenCalledTimes(1);
+});
+
+it("does not call the model when native history cannot be persisted", async () => {
+  const model = await createFauxModelFixture("must not run");
+  const projection = Object.assign(new RecordingProjection(), {
+    captureHistory: async () => {
+      throw new Error("DISK_WRITE_FAILED");
+    },
+  });
+  const adapter = new PiAgentRuntimeAdapter({
+    projection,
+    tools: new RecordingRuntimeTools(),
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_r, n) => `failed-history:${n}`,
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(model.observed).toEqual([]);
+  expect(events.at(-1)?.type).not.toBe("runtime.completed");
+});
+
+it("does not execute a tool when saving its assistant request fails", async () => {
+  const model = await createFauxModelFixture("must not finish", {
+    name: "restaurant_search",
+    id: "unsaved-call",
+    arguments: { query: "test" },
+  });
+  const tools = new RecordingRuntimeTools();
+  const projection = Object.assign(new RecordingProjection({ ...DEFAULT_CONTEXT, history: [] }), {
+    captureHistory: async (input: { messages: readonly unknown[] }) => {
+      if (
+        input.messages.some(
+          (message) =>
+            message !== null &&
+            typeof message === "object" &&
+            "role" in message &&
+            message.role === "assistant",
+        )
+      )
+        throw new Error("DISK_WRITE_FAILED");
+      return {
+        runId: request.runId,
+        operationKey: "snapshot:user",
+        payloadRef: "persisted-user",
+        dataClassification: "private" as const,
+      };
+    },
+  });
+  const adapter = new PiAgentRuntimeAdapter({
+    projection,
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_r, n) => `unsaved-tool:${n}`,
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(model.observed).toHaveLength(1);
+  expect(tools.execute).not.toHaveBeenCalled();
+  expect(events.at(-1)?.type).not.toBe("runtime.completed");
+});
+
+it("restores already disclosed batch results across consecutive approvals without re-entering expired executions", async () => {
+  const model = await createFauxModelFixture("完成", [
+    { name: "controlled_action", id: "completed-before-wait", arguments: { value: "first" } },
+    { name: "controlled_action", id: "waiting-action", arguments: { value: "second" } },
+    { name: "controlled_action", id: "third-action", arguments: { value: "third" } },
+  ]);
+  const projection = new RecordingProjection();
+  const snapshots = new Map<string, string>();
+  const calls: string[] = [];
+  let approvals = 0;
+  const tools: RuntimeToolPort = {
+    listAuthorized: async () => [
+      {
+        name: "controlled_action",
+        description: "Controlled fixture",
+        capabilityRef: "test.batch",
+        capabilityHandleRef: null,
+        parameters: {
+          type: "object",
+          properties: { value: { type: "string" } },
+          required: ["value"],
+        },
+      },
+    ],
+    preflight: async () => ({
+      allowed: true,
+      permissionDecisionRef: "test",
+      reasonCode: "evaluate",
+    }),
+    execute: async (call) => {
+      calls.push(call.toolCallId);
+      // The completed operation's execution receipt expires while a later approval waits.
+      if (
+        (approvals > 0 && call.toolCallId === "completed-before-wait") ||
+        (approvals > 1 && call.toolCallId === "waiting-action")
+      )
+        throw new Error("PORT_HANDLE_REVOKED");
+      if (
+        (approvals === 0 && call.toolCallId === "waiting-action") ||
+        (approvals === 1 && call.toolCallId === "third-action")
+      )
+        return {
+          outcome: "awaiting_approval",
+          approval: {
+            approvalRequestId: `approval:${call.toolCallId}`,
+            semanticSnapshotHash: `frozen:${call.toolCallId}`,
+            expiresAt: "2999-01-01T00:00:00Z",
+          },
+          resultRef: null,
+          errorCode: null,
+          externalActionId: null,
+          modelContent: "",
+        };
+      return {
+        outcome: "succeeded",
+        resultRef: `result:${call.toolCallId}`,
+        errorCode: null,
+        externalActionId: null,
+        modelContent:
+          call.toolCallId === "completed-before-wait"
+            ? "first confirmed result"
+            : "second confirmed result",
+      };
+    },
+  };
+  const create = () =>
+    new PiAgentRuntimeAdapter({
+      projection,
+      tools,
+      models: model.models,
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (_request, ordinal) => `batch-history:${ordinal}`,
+      continuations: {
+        save: async (_request, value) => {
+          const ref = `continuation:${snapshots.size}`;
+          snapshots.set(ref, JSON.stringify(value));
+          return ref;
+        },
+        load: async (_request, ref) => JSON.parse(snapshots.get(ref) ?? "null"),
+      },
+    });
+  const input = { ...request, modelRef: model.descriptor.ref };
+  const first = await collect(create().run(input));
+  const suspended = first.at(-1);
+  expect(suspended?.type).toBe("runtime.suspended");
+  if (suspended?.type !== "runtime.suspended") throw new Error("Expected approval wait");
+  approvals = 1;
+  const secondWait = await collect(
+    create().run({ ...input, continuationRef: suspended.continuationRef }),
+  );
+  const nextWait = secondWait.at(-1);
+  expect(nextWait?.type).toBe("runtime.suspended");
+  if (nextWait?.type !== "runtime.suspended") throw new Error("Expected third approval wait");
+  approvals = 2;
+  const resumed = await collect(
+    create().run({ ...input, continuationRef: nextWait.continuationRef }),
+  );
+  expect(resumed.at(-1)).toMatchObject({ type: "runtime.completed" });
+  expect(calls).toEqual([
+    "completed-before-wait",
+    "waiting-action",
+    "waiting-action",
+    "third-action",
+    "third-action",
+  ]);
+  expect(model.observed).toHaveLength(2);
+  const sent = JSON.stringify(model.observed.at(-1));
+  expect(sent).toContain("first confirmed result");
+  expect(sent).toContain("second confirmed result");
+  expect(sent).not.toContain("PORT_HANDLE_REVOKED");
+});
+
+it("summarizes confirmed results once after a loop without declaring task success", async () => {
+  const calls = Array.from({ length: 4 }, (_, index) => ({
+    name: "restaurant_search",
+    id: `repeat-${index}`,
+    arguments: { query: "same request" },
+  }));
+  const model = await createFauxModelFixture(
+    "Confirmed results are available; the task was stopped by the loop guard",
+    calls[0],
+    calls.slice(1).map((call) => [call]),
+  );
+  const projection = new RecordingProjection();
+  const tools = new RecordingRuntimeTools();
+  const adapter = new PiAgentRuntimeAdapter({
+    projection,
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `loop:${ordinal}`,
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(events.at(-1)).toMatchObject({
+    type: "runtime.failed",
+    errorCode: "PI_TOOL_LOOP_DETECTED",
+  });
+  expect(events.some((event) => event.type === "runtime.completed")).toBe(false);
+  expect(tools.execute).toHaveBeenCalledTimes(4);
+  expect(model.observed).toHaveLength(5);
+  const finalContext = model.observed.at(-1) as {
+    tools: unknown[];
+    messages: unknown[];
+    systemPrompt: string;
+  };
+  expect(finalContext.tools).toEqual([]);
+  expect(
+    finalContext.messages.filter((m) => (m as { role: string }).role === "toolResult"),
+  ).toHaveLength(4);
+  expect(finalContext.systemPrompt).toContain("Do not claim overall task success");
+  expect(JSON.stringify(projection.captures)).toContain("Confirmed results are available");
+  expect(projection.finalAnswers).toHaveLength(0);
+});
+
+it.each([
+  "matching-id",
+  "worker-id",
+  "content",
+  "details",
+  "source",
+  "non-string-id",
+  "mismatched-tool",
+  "custom-tool",
+])(
+  "compares governed tool results independently of invocation identity (other change: %s)",
+  async (change) => {
+    const calls = Array.from({ length: 4 }, (_, index) => ({
+      name: "ls",
+      id: `provenance-${index}`,
+      arguments: { path: "/authorized" },
+    }));
+    const model = await createFauxModelFixture(
+      "Results reported",
+      calls[0],
+      calls.slice(1).map((call) => [call]),
+    );
+    const tools = new RecordingRuntimeTools();
+    vi.spyOn(tools, "listAuthorized").mockResolvedValue([
+      change === "custom-tool"
+        ? {
+            name: "ls",
+            capabilityRef: "custom",
+            capabilityHandleRef: null,
+            description: "Custom tool",
+            parameters: { type: "object", properties: { path: { type: "string" } } },
+          }
+        : {
+            definition: "builtin-coding",
+            name: "ls",
+            capabilityRef: "project.ls",
+            capabilityHandleRef: null,
+          },
+    ]);
+    tools.execute.mockImplementation(async (call) => ({
+      outcome: "succeeded",
+      resultRef: `result:${call.toolCallId}`,
+      errorCode: null,
+      externalActionId: null,
+      modelContent: JSON.stringify({
+        schemaVersion: "pi-result.v1",
+        tool: change === "mismatched-tool" ? "another_tool" : "ls",
+        content: [{ type: "text", text: change === "content" ? call.toolCallId : "same result" }],
+        details: change === "details" ? { observed: call.toolCallId } : {},
+        fullOutput: null,
+        isError: false,
+        commandExitCode: null,
+        verifiedWrite: null,
+        source: {
+          // Real production execution assigns a child ID in the file workflow.
+          toolCallId:
+            change === "matching-id" || change === "custom-tool"
+              ? call.toolCallId
+              : change === "non-string-id"
+                ? Number(call.toolCallId.slice(-1))
+                : `file-phase:${call.toolCallId}`,
+          workspace: change === "source" ? `/authorized/${call.toolCallId}` : "/authorized",
+          parameters: call.arguments,
+        },
+      }),
+    }));
+    const adapter = new PiAgentRuntimeAdapter({
+      projection: new RecordingProjection(),
+      tools,
+      models: model.models,
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (_request, ordinal) => `provenance:${ordinal}`,
+    });
+    const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+    expect(events.at(-1)).toMatchObject(
+      !["matching-id", "worker-id"].includes(change)
+        ? { type: "runtime.completed" }
+        : { type: "runtime.failed", errorCode: "PI_TOOL_LOOP_DETECTED" },
+    );
+    expect(tools.execute).toHaveBeenCalledTimes(4);
+    expect(model.observed).toHaveLength(5);
+    const context = model.observed.at(-1) as { tools: unknown[]; messages: unknown[] };
+    expect(context.tools.length === 0).toBe(["matching-id", "worker-id"].includes(change));
+    // Fingerprint normalization must not alter the model-visible or protected evidence.
+    expect(JSON.stringify(context.messages)).toContain("provenance-3");
+  },
+);
+
+it("preserves loop detection across approval without counting local result replay", async () => {
+  const calls = Array.from({ length: 4 }, (_, index) => ({
+    name: "restaurant_search",
+    id: `approval-loop-${index}`,
+    arguments: { query: "same request" },
+  }));
+  const model = await createFauxModelFixture("Partial results after approval", calls);
+  const projection = new RecordingProjection();
+  const tools = new RecordingRuntimeTools();
+  let approved = false;
+  tools.execute.mockImplementation(async (call) => {
+    if (call.toolCallId === "approval-loop-3" && !approved)
+      return {
+        outcome: "awaiting_approval",
+        approval: {
+          approvalRequestId: "loop-approval",
+          semanticSnapshotHash: "loop-frozen",
+          expiresAt: "2999-01-01T00:00:00Z",
+        },
+        resultRef: null,
+        errorCode: null,
+        externalActionId: null,
+        modelContent: "",
+      };
+    return {
+      outcome: "succeeded",
+      resultRef: "same-result",
+      errorCode: null,
+      externalActionId: null,
+      modelContent: "same output",
+    };
+  });
+  let saved: unknown;
+  const create = () =>
+    new PiAgentRuntimeAdapter({
+      projection,
+      tools,
+      models: model.models,
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (_request, ordinal) => `approval-loop:${ordinal}`,
+      continuations: {
+        save: async (_request, value) => {
+          saved = structuredClone(value);
+          return "loop-continuation";
+        },
+        load: async () => structuredClone(saved),
+      },
+    });
+  const input = { ...request, modelRef: model.descriptor.ref };
+  const waiting = (await collect(create().run(input))).at(-1);
+  expect(waiting?.type).toBe("runtime.suspended");
+  if (waiting?.type !== "runtime.suspended") throw new Error("Expected approval wait");
+  approved = true;
+  const resumed = await collect(
+    create().run({ ...input, continuationRef: waiting.continuationRef }),
+  );
+  expect(resumed.at(-1)).toMatchObject({
+    type: "runtime.failed",
+    errorCode: "PI_TOOL_LOOP_DETECTED",
+  });
+  expect(tools.execute).toHaveBeenCalledTimes(5);
+  expect(model.observed).toHaveLength(2);
+  expect((model.observed.at(-1) as { tools: unknown[] }).tools).toEqual([]);
+  expect(projection.finalAnswers).toHaveLength(0);
+});
+
+it("preserves native cancellation provenance across repeated session restoration", async () => {
+  const marker = {
+    role: "custom",
+    customType: "himawari.turn_aborted",
+    content: "<turn_aborted>Old task cancelled; do not resume automatically.</turn_aborted>",
+    display: false,
+    timestamp: 1,
+  };
+  let history: readonly unknown[] = [{ role: "user", content: "old task", timestamp: 0 }, marker];
+  for (let turn = 0; turn < 2; turn++) {
+    const model = await createFauxModelFixture("new task answered");
+    const projection = Object.assign(
+      new RecordingProjection({
+        ...DEFAULT_CONTEXT,
+        history: [],
+        nativeHistory: { messages: history, coveredRunIds: [] },
+        prompt: { id: `new-${turn}`, content: `new task ${turn}`, occurredAt: NOW },
+      }),
+      {
+        captureHistory: async (input: { messages: readonly unknown[] }) => {
+          history = structuredClone(input.messages);
+          return {
+            runId: request.runId,
+            operationKey: `custom:${turn}`,
+            payloadRef: `custom:${turn}`,
+            dataClassification: "private" as const,
+          };
+        },
+      },
+    );
+    const tools = new RecordingRuntimeTools();
+    const adapter = new PiAgentRuntimeAdapter({
+      projection,
+      tools,
+      models: model.models,
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (_request, ordinal) => `native-custom:${turn}:${ordinal}`,
+    });
+    expect(
+      (await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }))).at(-1),
+    ).toMatchObject({ type: "runtime.completed" });
+    expect(history).toContainEqual(marker);
+    const outbound = model.observed[0] as { messages: Array<{ role: string; content: unknown }> };
+    expect(outbound.messages.every((message) => message.role !== "custom")).toBe(true);
+    expect(JSON.stringify(outbound)).toContain("Old task cancelled");
+    expect(tools.execute).not.toHaveBeenCalled();
+  }
+});
+
+it("allows ordinary multi-step work and repeated reads below the loop threshold", async () => {
+  const calls = Array.from({ length: 3 }, (_, index) => ({
+    name: "restaurant_search",
+    id: `valid-step-${index}`,
+    arguments: { query: "same request" },
+  }));
+  const model = await createFauxModelFixture(
+    "Task completed",
+    calls[0],
+    calls.slice(1).map((call) => [call]),
+  );
+  const tools = new RecordingRuntimeTools();
+  const adapter = new PiAgentRuntimeAdapter({
+    projection: new RecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `valid-step:${ordinal}`,
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(events.at(-1)?.type).toBe("runtime.completed");
+  expect(tools.execute).toHaveBeenCalledTimes(3);
+  expect(model.observed).toHaveLength(4);
+  expect((model.observed.at(-1) as { tools: unknown[] }).tools.length).toBeGreaterThan(0);
+});
+
+it("does not execute tools or pay for a second summary if the finalizer requests a tool", async () => {
+  const calls = Array.from({ length: 5 }, (_, index) => ({
+    name: "restaurant_search",
+    id: `stubborn-${index}`,
+    arguments: { query: "same request" },
+  }));
+  const model = await createFauxModelFixture(
+    "Must never reach a second summary",
+    calls[0],
+    calls.slice(1).map((call) => [call]),
+  );
+  const tools = new RecordingRuntimeTools();
+  const projection = new RecordingProjection();
+  const adapter = new PiAgentRuntimeAdapter({
+    projection,
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `stubborn:${ordinal}`,
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(events.at(-1)).toMatchObject({
+    type: "runtime.failed",
+    errorCode: "PI_TOOL_LOOP_DETECTED",
+  });
+  expect(tools.execute).toHaveBeenCalledTimes(4);
+  expect(model.observed).toHaveLength(5);
+  expect((model.observed.at(-1) as { tools: unknown[] }).tools).toEqual([]);
+  expect(projection.finalAnswers).toHaveLength(0);
+});
+
+it("keeps summary generation behind the model admission gate", async () => {
+  const calls = Array.from({ length: 4 }, (_, index) => ({
+    name: "restaurant_search",
+    id: `budget-loop-${index}`,
+    arguments: { query: "same request" },
+  }));
+  const model = await createFauxModelFixture(
+    "Must not spend without admission",
+    calls[0],
+    calls.slice(1).map((call) => [call]),
+  );
+  const tools = new RecordingRuntimeTools();
+  let admissions = 0;
+  const adapter = new PiAgentRuntimeAdapter({
+    projection: new RecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => {
+      admissions++;
+      if (admissions === 5) throw new Error("budget exhausted");
+      return allowAdmission(scope);
+    },
+    logicalSlot: (_request, ordinal) => `budget-loop:${ordinal}`,
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(events.at(-1)).toMatchObject({
+    type: "runtime.failed",
+    errorCode: "PI_TOOL_LOOP_DETECTED",
+  });
+  expect(admissions).toBe(5);
+  expect(model.observed).toHaveLength(4);
+  expect(tools.execute).toHaveBeenCalledTimes(4);
+});
+
+it("preserves owner cancellation during admission of the loop summary", async () => {
+  const calls = Array.from({ length: 4 }, (_, index) => ({
+    name: "restaurant_search",
+    id: `cancel-summary-${index}`,
+    arguments: { query: "same request" },
+  }));
+  const model = await createFauxModelFixture(
+    "Must not answer after cancellation",
+    calls[0],
+    calls.slice(1).map((call) => [call]),
+  );
+  const tools = new RecordingRuntimeTools();
+  let admissions = 0;
+  let cancellation: Promise<void> | undefined;
+  const adapter = new PiAgentRuntimeAdapter({
+    projection: new RecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => {
+      if (++admissions === 5) cancellation = adapter.cancel(request.runId);
+      return allowAdmission(scope);
+    },
+    logicalSlot: (_request, ordinal) => `cancel-summary:${ordinal}`,
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  await cancellation;
+  expect(events.at(-1)?.type).toBe("runtime.cancelled");
+  expect(events.some((event) => event.type === "runtime.completed")).toBe(false);
+  expect(model.observed).toHaveLength(4);
+  expect(tools.execute).toHaveBeenCalledTimes(4);
 });

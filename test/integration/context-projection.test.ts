@@ -140,7 +140,10 @@ async function putText(
   );
 }
 
-async function createContext(fixture: ReturnType<typeof createFixture>): Promise<string> {
+async function createContext(
+  fixture: ReturnType<typeof createFixture>,
+  scenario?: { readonly previous: string; readonly current: string; readonly runState: unknown },
+): Promise<string> {
   const envelope = {
     schemaVersion: "context.v1" as const,
     ownerId: OWNER_ID,
@@ -158,6 +161,7 @@ async function createContext(fixture: ReturnType<typeof createFixture>): Promise
         contentRef: "payload-history-owner",
         occurredAt: NOW,
         dataClassification: "private" as const,
+        ...(scenario ? { runState: scenario.runState } : {}),
       },
       {
         messageId: createMessageId("message-context-system"),
@@ -189,8 +193,8 @@ async function createContext(fixture: ReturnType<typeof createFixture>): Promise
   for (const [ref, text] of [
     ["payload-system", "Base system policy"],
     ["payload-policy-product", "Product policy: answer in Chinese"],
-    ["payload-current-prompt", "当前触发问题"],
-    ["payload-history-owner", "之前的用户问题"],
+    ["payload-current-prompt", scenario?.current ?? "当前触发问题"],
+    ["payload-history-owner", scenario?.previous ?? "之前的用户问题"],
     ["payload-history-system", "历史系统材料"],
     ["payload-memory", "非权威记忆摘要"],
     ["payload-worker-result", "Worker result material"],
@@ -231,6 +235,46 @@ function request(contextEnvelopeRef: string): RuntimeProjectionRequest {
 }
 
 describe("ContextProjectionService", () => {
+  it.each([
+    ["请写一篇约两千字的学习资料文章。不要调用工具。", "现在的天气怎么样？"],
+    ["仅调用 bash 执行 sleep 30。", "仅使用 read 读取验收文件，不要运行命令。"],
+  ])(
+    "marks cancelled history as inactive while preserving the new task: %s",
+    async (previous, current) => {
+      const fixture = createFixture();
+      const contextRef = await createContext(fixture, {
+        previous,
+        current,
+        runState: { runId: RUN_ID, status: "cancelled" },
+      });
+      const projection = await fixture.service.resolveProjection(request(contextRef));
+      expect(projection.prompt.content).toBe(current);
+      expect(projection.history[0]?.content).toEqual([
+        expect.objectContaining({ text: expect.stringContaining(previous) }),
+      ]);
+      expect(JSON.stringify(projection.history[0]?.content)).toContain("已取消");
+      expect(projection.systemInstruction).toContain("不要自动恢复");
+      expect(projection.systemInstruction).toContain("最后一条用户消息");
+      expect(fixture.messages[0]?.contentRef).toBe("payload-history-owner");
+      expect(
+        await new ContextProjectionService(fixture.dependencies).resolveProjection(
+          request(contextRef),
+        ),
+      ).toEqual(projection);
+    },
+  );
+
+  it.each([
+    { runId: RUN_ID, status: "invented" },
+    { runId: "run-other", status: "cancelled" },
+  ])("rejects invalid or mismatched historical run state", async (runState) => {
+    const fixture = createFixture();
+    const contextRef = await createContext(fixture, { previous: "old", current: "new", runState });
+    await expect(fixture.service.resolveProjection(request(contextRef))).rejects.toMatchObject({
+      code: "PORT_INVALID_OPERATION",
+    });
+  });
+
   it("materializes one protected envelope without mixing policy or worker material into prompt", async () => {
     const fixture = createFixture();
     const contextRef = await createContext(fixture);

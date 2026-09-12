@@ -13,6 +13,7 @@ import {
 } from "@himawari-agent/domain";
 import {
   applyMigrations,
+  createVerifiedMigrationSnapshot,
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteGovernedDeletionAdapter,
@@ -526,4 +527,88 @@ describe("Run-owned Payload artifacts", () => {
       final.close();
     }
   });
+});
+
+it("preserves existing artifact receipts and ciphertext when upgrading schema 31", async () => {
+  const f = await fixture();
+  const old = openQualifiedDatabase(path.join(f.stateRoot, "schema31.sqlite"));
+  const current = openQualifiedDatabase(f.databasePath);
+  try {
+    const migrations = await loadBundledMigrations();
+    applyMigrations(old, migrations.slice(0, 31));
+    const artifacts = f.repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, AUTHORITY);
+    await artifacts.commit({
+      runId: RUN_ID,
+      purpose: "trace",
+      operationKey: "existing-trace",
+      payload: await protectedPayload("existing-encrypted-trace", "preserved evidence"),
+    });
+    old.pragma("foreign_keys = OFF");
+    const tables = old
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('schema_migration_ledger','schema_metadata')",
+      )
+      .all() as { name: string }[];
+    for (const { name } of tables) {
+      const columns = (old.prepare(`PRAGMA table_info("${name}")`).all() as { name: string }[]).map(
+        (x) => x.name,
+      );
+      const rows = current
+        .prepare(`SELECT ${columns.map((c) => `"${c}"`).join(",")} FROM "${name}"`)
+        .all() as Record<string, unknown>[];
+      for (const row of rows)
+        old
+          .prepare(
+            `INSERT OR IGNORE INTO "${name}" (${columns.map((c) => `"${c}"`).join(",")}) VALUES (${columns.map(() => "?").join(",")})`,
+          )
+          .run(...columns.map((c) => row[c]));
+    }
+    old.pragma("foreign_keys = ON");
+    const before = old.prepare("SELECT * FROM run_payload_artifacts").all() as Record<
+      string,
+      unknown
+    >[];
+    const ciphertext = old
+      .prepare("SELECT ciphertext FROM payloads WHERE ref = ?")
+      .get("existing-encrypted-trace");
+    const snapshot = await createVerifiedMigrationSnapshot(
+      old,
+      path.join(f.stateRoot, "schema31-backup.sqlite"),
+    );
+    expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([32]);
+    expect(old.prepare("SELECT * FROM run_payload_artifacts").all()).toEqual(
+      before.map((row) => ({ ...row, history_sequence: 0 })),
+    );
+    expect(
+      old.prepare("SELECT ciphertext FROM payloads WHERE ref = ?").get("existing-encrypted-trace"),
+    ).toEqual(ciphertext);
+    expect(old.pragma("foreign_key_check")).toEqual([]);
+  } finally {
+    old.close();
+    current.close();
+    await f.repository.close();
+  }
+});
+
+it("persists final native history after cancellation but rejects an obsolete authority", async () => {
+  const f = await fixture({ status: "cancelled" });
+  try {
+    const commit = {
+      runId: RUN_ID,
+      purpose: "runtime_history" as const,
+      operationKey: "snapshot:cancelled",
+      payload: await protectedPayload("cancelled-native-history", "final cancelled record"),
+    };
+    await expect(
+      f.repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, AUTHORITY).commit(commit),
+    ).resolves.toMatchObject({ replayed: false });
+    const invalid = { ...AUTHORITY, product: { ...AUTHORITY.product, authorityEpoch: 2 } };
+    await expect(
+      f.repository
+        .runPayloadArtifactPort(OWNER_ID, AGENT_ID, invalid)
+        .commit({ ...commit, operationKey: "snapshot:stale" }),
+    ).rejects.toThrow();
+  } finally {
+    await f.repository.close();
+  }
 });

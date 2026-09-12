@@ -50,11 +50,13 @@ import type {
 import { redactMachineSecrets } from "@himawari-agent/application/runtime-port";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
+import { nativeHistoryMessages } from "./pi-native-history.js";
 import {
   capturePiToolBatch,
   type PiToolBatchContinuation,
   restorePiToolBatch,
 } from "./pi-tool-batch-continuation.js";
+import { PiToolProgressGuard, type PiToolProgressState } from "./pi-tool-progress-guard.js";
 
 type RuntimeTurnId = Extract<RuntimeEvent, { readonly type: "runtime.turn_completed" }>["turnId"];
 type PiStreamFunction = (
@@ -194,6 +196,39 @@ function runtimeFailure(request: RuntimeRequest, now: string, errorCode: string)
   return { type: "runtime.failed", runId: request.runId, errorCode, occurredAt: now };
 }
 
+/** Worker phase IDs differ from model call IDs and change on every execution.
+ * Identity binding belongs to the governed execution port. For built-in tools,
+ * omit only that phase ID from progress comparison, retaining the full result
+ * in history and model input. Custom tool payloads remain opaque. */
+function toolProgressOutput(
+  descriptor: RuntimeToolDescriptor | undefined,
+  content: unknown,
+): unknown {
+  if (descriptor?.definition !== "builtin-coding" && descriptor?.definition !== "builtin-read")
+    return content;
+  if (!Array.isArray(content) || content.length !== 1) return content;
+  const part = content[0];
+  if (!part || part.type !== "text" || typeof part.text !== "string") return content;
+  try {
+    const result = JSON.parse(part.text);
+    if (
+      !result ||
+      result.schemaVersion !== "pi-result.v1" ||
+      result.tool !== descriptor.name ||
+      !Array.isArray(result.content) ||
+      typeof result.isError !== "boolean" ||
+      !result.source ||
+      typeof result.source.toolCallId !== "string" ||
+      result.source.toolCallId.length === 0
+    )
+      return content;
+    const { toolCallId: _invocationId, ...source } = result.source;
+    return { ...result, source };
+  } catch {
+    return content;
+  }
+}
+
 /** Pi preserves HTTP failures as status-prefixed messages; expose only product categories. */
 function modelFailureCode(errorMessage: string | undefined): string {
   const status = /^(\d{3})(?:\s|:)/.exec(errorMessage ?? "")?.[1];
@@ -320,6 +355,16 @@ function prehydrateSession(
     )
     .digest("hex")}`;
   const sessionManager = SessionManager.inMemory(cwd, { id: piSessionId });
+  if (projection.nativeHistory) {
+    for (const message of nativeHistoryMessages(projection.nativeHistory.messages))
+      sessionManager.appendMessage(message);
+  }
+  if (projection.interruptedRunId)
+    sessionManager.appendCustomMessageEntry(
+      "himawari.turn_aborted",
+      `<turn_aborted>The user interrupted the previous turn. Some tools may have partially executed; use recorded results and verify unknown effects. Handle the new user request. Resume earlier work only when requested.</turn_aborted>`,
+      false,
+    );
   const piEntryByProductMessage = new Map<string, string>();
   for (const message of projection.history) {
     if (piEntryByProductMessage.has(message.id)) {
@@ -689,6 +734,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
   readonly #dependencies: PiAgentRuntimeAdapterDependencies;
   readonly #activeSessions = new Map<RuntimeRequest["runId"], AgentSession>();
   readonly #cancelledRuns = new Set<RuntimeRequest["runId"]>();
+  readonly #historyWrites = new Map<RuntimeRequest["runId"], Promise<unknown>>();
 
   constructor(dependencies: PiAgentRuntimeAdapterDependencies) {
     this.#dependencies = dependencies;
@@ -714,6 +760,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     this.#cancelledRuns.add(runId);
     const session = this.#activeSessions.get(runId);
     if (session) await session.abort();
+    await this.#historyWrites.get(runId);
   }
 
   private async produce(
@@ -786,6 +833,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                   batch: PiToolBatchContinuation;
                   turnIndex: number;
                   messageSequence: number;
+                  toolProgress?: PiToolProgressState;
                 }
               | undefined);
       if (request.continuationRef && (!continuation || continuation.identity !== identity))
@@ -802,6 +850,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         messageSequence = continuation.messageSequence;
       }
       let streamOrdinal = continuation?.batch.completedStreamOrdinal ?? 0;
+      const toolProgress = new PiToolProgressGuard(continuation?.toolProgress);
+      const replayedResults = new Set<string>();
       const descriptorsByName = new Map(
         descriptors.map((descriptor) => [descriptor.name, descriptor]),
       );
@@ -825,7 +875,12 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         noPromptTemplates: true,
         noThemes: true,
         noContextFiles: true,
-        systemPrompt: projection.systemInstruction,
+        // Keep Pi's tool-aware default prompt. Explicit empty sources disable
+        // ambient SYSTEM.md/APPEND_SYSTEM.md discovery; the override supplies
+        // product policy as text, never as a possible local file path.
+        systemPrompt: "",
+        appendSystemPrompt: [],
+        appendSystemPromptOverride: () => [projection.systemInstruction],
         additionalExtensionPaths: authorizedPaths(resources.extensionPaths, "extensionPaths"),
         additionalSkillPaths: authorizedPaths(resources.skillPaths, "skillPaths"),
         additionalPromptTemplatePaths: authorizedPaths(
@@ -837,10 +892,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             name: "himawari-tool-outcomes",
             hidden: true,
             factory: (pi: ExtensionAPI) => {
+              pi.on("tool_call", () => {
+                if (toolProgress.blocked) return { block: true, reason: "PI_TOOL_LOOP_DETECTED" };
+              });
               // Pi marks resolved execute() values as success. Use its official
               // result hook to retain protected product details and error truth.
               pi.on("tool_result", (event) => {
                 const details = event.details as { productOutcome?: unknown } | undefined;
+                if (!suspended && !unknownTool && !replayedResults.delete(event.toolCallId))
+                  toolProgress.observe(
+                    event.toolName,
+                    event.input,
+                    toolProgressOutput(descriptorsByName.get(event.toolName), event.content),
+                    event.isError || details?.productOutcome === "failed",
+                  );
                 if (
                   details?.productOutcome === "failed" ||
                   details?.productOutcome === "result_unknown"
@@ -901,6 +966,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         this.#dependencies.cwd,
       );
       const sessionFactory = this.#dependencies.createSession ?? createAgentSession;
+      let restored: ReturnType<typeof restorePiToolBatch> | undefined;
       if (!getSupportedThinkingLevels(binding.model).includes(request.thinkingLevel ?? "off"))
         throw new Error("PI_THINKING_LEVEL_UNSUPPORTED");
       const created = await sessionFactory({
@@ -913,6 +979,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         tools: descriptors.map(({ name }) => name),
         customTools: descriptors.map((descriptor) =>
           this.createTool(request, descriptor, {
+            completedResult: (toolCallId) => {
+              const result = restored?.completedResult(toolCallId, descriptor.name);
+              if (result) replayedResults.add(toolCallId);
+              return result;
+            },
             assertKnown: () => {
               if (suspended || unknownTool) throw new Error("RUNTIME_TOOL_EXECUTION_STOPPED");
             },
@@ -927,6 +998,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                 batch,
                 turnIndex,
                 messageSequence,
+                toolProgress: toolProgress.snapshot(),
               });
               suspended = {
                 type: "runtime.suspended",
@@ -957,25 +1029,66 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       });
       const session = created.session;
       const originalStreamFunction = session.agent.streamFunction;
-      const restored = continuation ? restorePiToolBatch(session, continuation.batch) : undefined;
-      session.agent.streamFunction = (model, context, options) =>
-        restored?.takeReplay() ??
-        (suspended || unknownTool
-          ? failedPiStream(model, "Runtime tool reconciliation is required")
-          : admitPiStream(
-              request,
-              binding,
-              this.#dependencies.admission,
-              model,
-              context,
-              options,
-              ++streamOrdinal,
-              originalStreamFunction,
-              this.#dependencies.logicalSlot,
-            ));
+      restored = continuation ? restorePiToolBatch(session, continuation.batch) : undefined;
+      let loopSummaryAttempted = false;
+      session.agent.streamFunction = async (model, context, options) => {
+        await this.#historyWrites.get(request.runId);
+        const replay = restored?.takeReplay();
+        if (replay) return replay;
+        if (suspended || unknownTool)
+          return failedPiStream(model, "Runtime tool reconciliation is required");
+        if (toolProgress.blocked) {
+          if (loopSummaryAttempted) return failedPiStream(model, "PI_TOOL_LOOP_DETECTED");
+          // The loop guard owns the stop decision. Pi still owns serialization
+          // and streaming; this single admitted request can only report results.
+          // Keep the failed Run status even if the model supplies fluent prose.
+          loopSummaryAttempted = true;
+          context = {
+            ...context,
+            tools: [],
+            systemPrompt: [
+              context.systemPrompt,
+              "Execution was stopped because repeated tool calls made no progress. " +
+                "No further tools are available in this Run. Summarize confirmed results " +
+                "and identify any incomplete work. Do not claim overall task success.",
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+          };
+        }
+        return admitPiStream(
+          request,
+          binding,
+          this.#dependencies.admission,
+          model,
+          context,
+          options,
+          ++streamOrdinal,
+          originalStreamFunction,
+          this.#dependencies.logicalSlot,
+        );
+      };
       this.#activeSessions.set(request.runId, session);
 
       const unsubscribe = session.subscribe((event) => {
+        if (
+          !suspended &&
+          this.#dependencies.projection.captureHistory &&
+          (event.type === "message_end" || event.type === "compaction_end")
+        ) {
+          const messages = structuredClone(session.agent.state.messages);
+          const pending = (this.#historyWrites.get(request.runId) ?? Promise.resolve()).then(() =>
+            this.#dependencies.projection.captureHistory?.({
+              runId: request.runId,
+              dataClassification: request.dataClassification,
+              coveredRunIds: projection.coveredRunIds ?? [],
+              messages,
+            }),
+          );
+          this.#historyWrites.set(request.runId, pending);
+          void pending.catch(() => session.agent.abort());
+        }
+
         // Pi emits cumulative snapshots, not independent text fragments. Keep
         // only the latest snapshot still waiting for durable consumption. Never
         // cross a lifecycle/tool boundary or replace an already emitted record.
@@ -1011,6 +1124,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             observed.occurredAt,
           );
           for (const mappedEvent of mapped.events) {
+            if (toolProgress.blocked && mappedEvent.type === "runtime.failed") continue;
             if (
               unknownTool &&
               (mappedEvent.type === "runtime.failed" || mappedEvent.type === "runtime.cancelled")
@@ -1034,10 +1148,12 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           });
         await session.waitForIdle();
         await eventChain;
+        await this.#historyWrites.get(request.runId);
       } finally {
         unsubscribe();
         session.dispose();
         this.#activeSessions.delete(request.runId);
+        this.#historyWrites.delete(request.runId);
       }
 
       if (suspended && !this.#cancelledRuns.has(request.runId)) {
@@ -1051,6 +1167,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           reasonCode: "PI_ABORTED",
           occurredAt: this.now(),
         });
+      } else if (toolProgress.blocked) {
+        emit(runtimeFailure(request, this.now(), "PI_TOOL_LOOP_DETECTED"));
       } else if (!failed && settled) {
         if (
           finalAssistant &&
@@ -1115,6 +1233,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     request: RuntimeRequest,
     descriptor: RuntimeToolDescriptor,
     reconciliation: {
+      completedResult(
+        toolCallId: string,
+      ): PiToolBatchContinuation["completedResults"][number] | undefined;
       assertKnown(): void;
       suspend(invocation: RuntimeToolInvocation, approval: RuntimeApprovalWait): Promise<void>;
       unknown(
@@ -1186,8 +1307,19 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       ...definition,
       executionMode: "sequential",
       execute: async (toolCallId, parameters, signal) => {
+        // A tool side effect must not outrun durable recording of its request.
+        await this.#historyWrites.get(request.runId);
         signal?.throwIfAborted();
         reconciliation.assertKnown();
+        // These bytes were already disclosed in this same bound, protected
+        // continuation. Restoring history must not renew or repeat an execution.
+        const completed = reconciliation.completedResult(toolCallId);
+        if (completed)
+          return {
+            content: completed.content,
+            details: completed.details,
+            isError: completed.isError,
+          };
         const invocation: RuntimeToolInvocation = {
           runId: request.runId,
           context: {

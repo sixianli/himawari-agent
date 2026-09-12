@@ -2,11 +2,13 @@ import type {
   AdmitOwnerMessageInput,
   CommitAssistantMessageInput,
   ForkThreadInput,
+  ProductContextRunState,
   RequestThreadDeletionInput,
   ResolveThreadTaskInput,
   RunExecutionSource,
   ScheduledJob,
   ThreadCommittedMessagesByIdsQuery,
+  ThreadContextSnapshot,
   ThreadContextSnapshotQuery,
   ThreadCreateInput,
   ThreadDeletionImpact,
@@ -1209,8 +1211,8 @@ export class SqliteThreadOperations {
           `INSERT INTO thread_fork_lineage (
             thread_id, owner_id, agent_id, source_thread_id, source_turn_id,
             source_thread_marker, source_turn_marker, source_watermark,
-            summary_refs_json, policy_refs_json, source_content_available, forked_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+            summary_refs_json, policy_refs_json, source_content_available, forked_at, runtime_history_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
         )
         .run(
           input.targetThread.id,
@@ -1224,6 +1226,15 @@ export class SqliteThreadOperations {
           JSON.stringify(input.summaryRefs),
           JSON.stringify(input.policyRefs),
           input.targetThread.createdAt,
+          JSON.stringify(
+            this.readNativeHistory(
+              input.ownerId,
+              input.agentId,
+              source,
+              input.sourceWatermark,
+              new Set(),
+            ) ?? null,
+          ),
         );
       const receipt = this.writeReceipt({
         ownerId: input.ownerId,
@@ -1390,9 +1401,7 @@ export class SqliteThreadOperations {
 
   private readContextSnapshot(
     query: ThreadContextSnapshotQuery,
-  ):
-    | { readonly thread: ProductThread; readonly messages: readonly ProductThreadMessage[] }
-    | undefined {
+  ): ThreadContextSnapshot | undefined {
     this.assertLimit(query.limit);
     if (!Number.isSafeInteger(query.afterSequence) || query.afterSequence < 0) {
       this.fail("PORT_INVALID_OPERATION", "Thread context snapshot cursor is invalid");
@@ -1465,9 +1474,85 @@ export class SqliteThreadOperations {
         )
         .map((row) => this.messageFromRow(row as MessageRow))
         .reverse();
-      return { thread, messages, sourceWatermark: watermark.sourceWatermark };
+      const readRunState = this.database.prepare(
+        "SELECT id AS runId, status FROM runs WHERE id = ? AND owner_id = ? AND agent_id = ?",
+      );
+      const runStates = [...new Set(messages.flatMap(({ runId }) => (runId ? [runId] : [])))].map(
+        (runId) => {
+          const state = readRunState.get(runId, query.ownerId, query.agentId) as
+            | ProductContextRunState
+            | undefined;
+          if (!state)
+            this.fail("PORT_INVALID_OPERATION", "Historical message Run is unavailable", { runId });
+          return state;
+        },
+      );
+      // Freeze a native snapshot in the same read transaction as the visible message frontier.
+      // A snapshot is an immutable protected artifact, not a presentation Trace event.
+      const runtimeHistory = this.readNativeHistory(
+        query.ownerId,
+        query.agentId,
+        thread,
+        watermark.sourceWatermark ?? 0,
+        new Set(),
+      );
+      return {
+        thread,
+        messages,
+        runStates,
+        ...(runtimeHistory ? { runtimeHistory } : {}),
+        sourceWatermark: watermark.sourceWatermark,
+      };
     });
     return transaction.immediate();
+  }
+
+  private readNativeHistory(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    thread: ProductThread,
+    watermark: number,
+    visited: Set<string>,
+  ): ThreadContextSnapshot["runtimeHistory"] {
+    if (visited.has(thread.id))
+      this.fail("PORT_INVALID_OPERATION", "Thread lineage contains a cycle");
+    visited.add(thread.id);
+    const historyRuns = this.database
+      .prepare(`SELECT run_id AS runId FROM thread_messages
+      WHERE owner_id = ? AND agent_id = ? AND thread_id = ? AND message_status = 'committed'
+        AND sequence <= ? AND run_id IS NOT NULL GROUP BY run_id ORDER BY MAX(sequence) DESC`)
+      .all(ownerId, agentId, thread.id, watermark) as { runId: RunId }[];
+    const readNative = this.database.prepare(`SELECT artifact.run_id AS runId,
+      artifact.operation_key AS operationKey, artifact.payload_ref AS payloadRef,
+      artifact.classification AS dataClassification, runs.status
+      FROM run_payload_artifacts artifact JOIN runs ON runs.id = artifact.run_id
+        AND runs.owner_id = artifact.owner_id AND runs.agent_id = artifact.agent_id
+      WHERE artifact.owner_id = ? AND artifact.agent_id = ? AND artifact.run_id = ?
+        AND artifact.purpose = 'runtime_history' AND artifact.history_sequence > 0
+      ORDER BY artifact.history_sequence DESC LIMIT 1`);
+    for (const candidate of historyRuns) {
+      const saved = readNative.get(ownerId, agentId, candidate.runId) as
+        | (NonNullable<ThreadContextSnapshot["runtimeHistory"]>["reference"] & {
+            status: ProductContextRunState["status"];
+          })
+        | undefined;
+      if (saved) {
+        const { status, ...reference } = saved;
+        return { reference, runState: { runId: saved.runId, status } };
+      }
+    }
+    if (thread.lineage?.sourceContentAvailable) {
+      const parent = this.read(ownerId, agentId, thread.lineage.sourceThreadId);
+      if (parent && (parent.status === "active" || parent.status === "archived")) {
+        // Freeze the actual snapshot at Fork creation. Never follow a parent's later head.
+        const pinned = this.database
+          .prepare(`SELECT runtime_history_json AS json FROM thread_fork_lineage
+          WHERE thread_id = ? AND owner_id = ? AND agent_id = ?`)
+          .get(thread.id, ownerId, agentId) as { json: string | null } | undefined;
+        if (pinned?.json) return JSON.parse(pinned.json) as ThreadContextSnapshot["runtimeHistory"];
+      }
+    }
+    return undefined;
   }
 
   private readCommittedMessagesByIds(

@@ -14,6 +14,7 @@ import type {
   TurnId,
 } from "@himawari-agent/domain";
 import type { DataClassification, PayloadRef } from "./common.js";
+import type { ProductContextRunState } from "./context-projection.js";
 
 export interface ThreadMutationReceipt {
   readonly commandId: string;
@@ -145,6 +146,9 @@ export interface ThreadContextSnapshotQuery {
 export interface ThreadContextSnapshot {
   readonly thread: ProductThread;
   readonly messages: readonly ProductThreadMessage[];
+  /** Read atomically with messages; contains only their associated Runs. */
+  readonly runStates: readonly ProductContextRunState[];
+  readonly runtimeHistory?: import("./context-projection.js").ProductContextEnvelopeV1["runtimeHistory"];
   /** Highest canonical message sequence causally visible to this Run. */
   readonly sourceWatermark: number | null;
 }

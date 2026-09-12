@@ -17,6 +17,7 @@ export {
 } from "./governed-coding-tools.js";
 export { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
 export { executeGovernedPiRead } from "./governed-read-executor.js";
+export { type LegacyPiRunHistory, qualifyLegacyPiHistory } from "./legacy-pi-history.js";
 export { getPiModelPresentation } from "./model-presentation.js";
 export {
   type PiModelPayloadBoundary,

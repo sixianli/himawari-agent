@@ -310,7 +310,7 @@ describe("SQLite Run dispatch execution leases", () => {
           verifiedAt: NOW,
         },
       });
-      expect(result.appliedSequences).toEqual([26, 27, 28, 29, 30, 31]);
+      expect(result.appliedSequences).toEqual([26, 27, 28, 29, 30, 31, 32]);
       expect(
         database
           .prepare(

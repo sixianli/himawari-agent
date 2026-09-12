@@ -337,6 +337,9 @@ export interface RuntimeProjectionCompaction {
 }
 
 export interface RuntimeProjectionContext {
+  readonly nativeHistory?: import("./runtime-history.js").RuntimeHistoryState;
+  readonly coveredRunIds?: readonly RunId[];
+  readonly interruptedRunId?: RunId;
   /** Ordered historical messages materialized from product-owned state. */
   readonly history: readonly RuntimeProjectionMessage[];
   /** The new user prompt for this Run; it is not part of `history`. */
@@ -384,6 +387,9 @@ export interface RuntimeProjection extends RuntimeProjectionContext {
  * as product Payload references. Pi Session data never implements this port.
  */
 export interface RuntimeProjectionPort {
+  captureHistory?(
+    input: Parameters<import("./runtime-history.js").RuntimeHistoryPort["save"]>[0],
+  ): Promise<import("./runtime-history.js").RuntimeHistoryReference>;
   resolveProjection(input: RuntimeProjectionRequest): Promise<RuntimeProjection>;
   capture(input: RuntimeProjectionCapture): Promise<PayloadRef>;
   captureFinalAnswer(input: {

@@ -2,6 +2,7 @@ import type { AgentId, OwnerId, RunId } from "@himawari-agent/domain";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import {
   contextArtifactOperationKey,
+  isProductContextRunState,
   type ProductContextEnvelopeV1,
 } from "../ports/context-projection.js";
 import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
@@ -18,8 +19,14 @@ import type {
   RuntimeProjectionPort,
   RuntimeProjectionRequest,
 } from "../runtime-port.js";
+import { isRuntimeHistoryReference, RuntimeHistoryService } from "./runtime-history-service.js";
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
+
+const CURRENT_TASK_POLICY =
+  "Himawari 任务边界：最后一条用户消息承载本轮的新请求。历史消息供理解背景，不是等待执行的任务队列。" +
+  "标为已取消的历史请求已终止，不要自动恢复，也不要把其中的一次性要求或工具限制当成本轮要求。" +
+  "只有本轮新请求明确要求继续或重做时，才重新处理旧任务；仍须遵守当前工具授权与审批。";
 
 export interface ContextProjectionServiceDependencies {
   readonly ownerId: OwnerId;
@@ -40,15 +47,20 @@ export interface ContextProjectionServiceDependencies {
  */
 export class ContextProjectionService implements RuntimeProjectionPort {
   readonly #dependencies: ContextProjectionServiceDependencies;
+  readonly #history: RuntimeHistoryService;
 
   constructor(dependencies: ContextProjectionServiceDependencies) {
     this.#dependencies = dependencies;
+    this.#history = new RuntimeHistoryService(dependencies);
   }
 
   async resolveProjection(input: RuntimeProjectionRequest): Promise<RuntimeProjection> {
     this.assertScope(input);
     const envelope = await this.readEnvelope(input);
-    const history = await this.readHistory(input, envelope);
+    const nativeHistory = envelope.runtimeHistory
+      ? await this.#history.load(envelope.runtimeHistory.reference, input.dataClassification)
+      : undefined;
+    const history = await this.readHistory(input, envelope, nativeHistory?.coveredRunIds);
     const prompt = await this.readText(input, envelope.prompt.payloadRef, "context prompt");
     const policyTexts = await Promise.all(
       envelope.systemPolicyRefs.map(({ payloadRef }) =>
@@ -58,6 +70,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     const systemInstruction = [
       await this.readText(input, input.systemInstructionRef, "system instruction"),
       ...policyTexts,
+      CURRENT_TASK_POLICY,
     ]
       .filter((text) => text.length > 0)
       .join("\n\n");
@@ -66,6 +79,16 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     const workerBlocks = await this.readWorkerResults(input);
     return Object.freeze({
       systemInstruction,
+      ...(nativeHistory ? { nativeHistory } : {}),
+      coveredRunIds: [
+        ...new Set([
+          ...(nativeHistory?.coveredRunIds ?? []),
+          ...envelope.history.flatMap((item) => (item.runState ? [item.runState.runId] : [])),
+        ]),
+      ],
+      ...(envelope.runtimeHistory?.runState.status === "cancelled"
+        ? { interruptedRunId: envelope.runtimeHistory.runState.runId }
+        : {}),
       history: Object.freeze(history.messages),
       prompt: Object.freeze({
         id: envelope.prompt.id,
@@ -74,6 +97,10 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       }),
       contextBlocks: Object.freeze([...contextBlocks, ...workerBlocks]),
     });
+  }
+
+  async captureHistory(input: Parameters<RuntimeHistoryService["save"]>[0]) {
+    return this.#history.save(input);
   }
 
   async capture(input: {
@@ -241,6 +268,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
   private async readHistory(
     input: RuntimeProjectionRequest,
     envelope: ProductContextEnvelopeV1,
+    coveredRunIds: readonly RunId[] = [],
   ): Promise<{
     readonly messages: readonly RuntimeProjectionMessage[];
     readonly systemBlocks: readonly RuntimeProjectionContextBlock[];
@@ -288,7 +316,8 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         message.role !== item.role ||
         message.contentRef !== item.contentRef ||
         message.dataClassification !== item.dataClassification ||
-        message.committedAt !== item.occurredAt
+        message.committedAt !== item.occurredAt ||
+        (item.runState !== undefined && item.runState.runId !== message.runId)
       ) {
         throw new ApplicationPortError(
           PORT_ERROR_CODES.INVALID_OPERATION,
@@ -304,6 +333,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         );
       }
       previousSequence = message.sequence;
+      if (message.runId && coveredRunIds.includes(message.runId)) continue;
       const content = await this.readText(
         input,
         item.contentRef,
@@ -314,7 +344,16 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         projected.push({
           id: item.messageId,
           role: item.role === "owner" ? "user" : "assistant",
-          content: Object.freeze([{ type: "text", text: content }]),
+          content: Object.freeze([
+            {
+              type: "text",
+              text:
+                item.role === "owner" && item.runState?.status === "cancelled"
+                  ? "[Himawari 系统记录：此历史请求所属任务已取消，仅保留为背景，不要自动恢复。取消不代表任何工具执行成功，也不代表已撤销之前的副作用。]\n" +
+                    content
+                  : content,
+            },
+          ]),
           occurredAt: item.occurredAt,
         });
       } else {
@@ -590,6 +629,12 @@ function isContextEnvelope(value: unknown): value is ProductContextEnvelopeV1 {
     ) ||
     !nonEmpty(value["policyVersion"]) ||
     !Array.isArray(value["history"]) ||
+    (value["runtimeHistory"] !== undefined &&
+      (!isRecord(value["runtimeHistory"]) ||
+        !isRuntimeHistoryReference(value["runtimeHistory"]["reference"]) ||
+        !isProductContextRunState(value["runtimeHistory"]["runState"]) ||
+        value["runtimeHistory"]["reference"].runId !==
+          value["runtimeHistory"]["runState"].runId)) ||
     !isRecord(value["prompt"]) ||
     !Array.isArray(value["systemPolicyRefs"]) ||
     !Array.isArray(value["contextBlocks"])
@@ -615,7 +660,8 @@ function isContextEnvelope(value: unknown): value is ProductContextEnvelopeV1 {
         (item["role"] === "owner" || item["role"] === "agent" || item["role"] === "system") &&
         nonEmpty(item["contentRef"]) &&
         nonEmpty(item["occurredAt"]) &&
-        classification(item["dataClassification"])
+        classification(item["dataClassification"]) &&
+        (item["runState"] === undefined || isProductContextRunState(item["runState"]))
       );
     }) ||
     !value["systemPolicyRefs"].every((item: unknown) => {

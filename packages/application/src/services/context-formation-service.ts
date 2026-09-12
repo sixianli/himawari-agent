@@ -17,9 +17,11 @@ import type {
 } from "../ports/common.js";
 import {
   contextArtifactOperationKey,
+  isProductContextRunState,
   type ProductContextBlock,
   type ProductContextEnvelopeV1,
   type ProductContextMessageRole,
+  type ProductContextRunState,
 } from "../ports/context-projection.js";
 import type { ThreadDistillationStatePort, ThreadSummaryRecord } from "../ports/conversation.js";
 import type { MemoryCandidate, MemoryPort } from "../ports/intelligence.js";
@@ -27,6 +29,7 @@ import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observabil
 import type { RunPayloadArtifactPort } from "../ports/run-payload-artifacts.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import type { ThreadContextSnapshot, ThreadRepositoryPort } from "../ports/threads.js";
+import { isRuntimeHistoryReference } from "./runtime-history-service.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
@@ -42,6 +45,7 @@ export interface ContextThreadMessage {
   readonly dataClassification?: DataClassification;
   readonly relevanceScore?: number;
   readonly sequence?: number;
+  readonly runState?: ProductContextRunState;
 }
 
 export interface ContextPolicySummary {
@@ -133,8 +137,23 @@ export class ContextFormationService implements ContextFormationPort {
     const existing = await this.readExistingEnvelope(request);
     if (existing) return this.replayedContext(request, existing);
     const snapshot = await this.readSnapshot(request);
+    if (
+      snapshot?.runtimeHistory &&
+      CLASSIFICATION_RANK[snapshot.runtimeHistory.reference.dataClassification] >
+        Math.min(
+          CLASSIFICATION_RANK[request.dataClassification],
+          CLASSIFICATION_RANK[request.maxMemoryClassification],
+        )
+    )
+      throw new Error("RUNTIME_HISTORY_CLASSIFICATION_DENIED");
+    const runStates = new Map(snapshot?.runStates.map((state) => [state.runId, state]));
     const sourceMessages = snapshot
-      ? snapshot.messages.map((message) => contextMessageFromProductMessage(message))
+      ? snapshot.messages.map((message) =>
+          contextMessageFromProductMessage(
+            message,
+            message.runId ? runStates.get(message.runId) : undefined,
+          ),
+        )
       : request.threadMessages;
     const sourceWatermark = snapshot ? snapshot.sourceWatermark : request.sourceWatermark;
     if (
@@ -279,6 +298,7 @@ export class ContextFormationService implements ContextFormationPort {
     });
 
     const injectedContentRefs = Object.freeze([
+      ...(snapshot?.runtimeHistory ? [snapshot.runtimeHistory.reference.payloadRef] : []),
       ...(allowedSummary ? [allowedSummary.contentRef] : []),
       ...selectedHistory.map(({ payloadRef }) => payloadRef),
       request.trigger.payloadRef,
@@ -291,6 +311,7 @@ export class ContextFormationService implements ContextFormationPort {
       request,
       sourceWatermark,
       selectedHistory,
+      runtimeHistory: snapshot?.runtimeHistory,
       allowedSummary,
       selected,
     });
@@ -493,6 +514,7 @@ export class ContextFormationService implements ContextFormationPort {
     readonly request: ContextFormationRequest;
     readonly sourceWatermark: number | null;
     readonly selectedHistory: readonly ContextThreadMessage[];
+    readonly runtimeHistory?: ProductContextEnvelopeV1["runtimeHistory"];
     readonly allowedSummary: ThreadSummaryRecord | undefined;
     readonly selected: readonly SelectedMemory[];
   }): ProductContextEnvelopeV1 {
@@ -503,6 +525,7 @@ export class ContextFormationService implements ContextFormationPort {
       contentRef: message.payloadRef,
       occurredAt: message.occurredAt,
       dataClassification: message.dataClassification ?? request.dataClassification,
+      ...(message.runState ? { runState: message.runState } : {}),
     }));
     const systemPolicyRefs = [
       ...request.policies.map(({ ref, payloadRef }) => ({
@@ -557,6 +580,7 @@ export class ContextFormationService implements ContextFormationPort {
       sourceWatermark: input.sourceWatermark,
       policyVersion: request.policyVersion,
       history: Object.freeze(history),
+      ...(input.runtimeHistory ? { runtimeHistory: input.runtimeHistory } : {}),
       prompt: Object.freeze({
         id: request.trigger.id,
         sourceType: request.trigger.sourceType,
@@ -583,7 +607,10 @@ export class ContextFormationService implements ContextFormationPort {
   }
 }
 
-function contextMessageFromProductMessage(message: ProductThreadMessage): ContextThreadMessage {
+function contextMessageFromProductMessage(
+  message: ProductThreadMessage,
+  runState: ProductContextRunState | undefined,
+): ContextThreadMessage {
   return Object.freeze({
     id: message.id,
     role: message.role === "owner" ? "user" : message.role === "agent" ? "assistant" : "system",
@@ -592,6 +619,7 @@ function contextMessageFromProductMessage(message: ProductThreadMessage): Contex
     sourceRef: message.id,
     sequence: message.sequence,
     dataClassification: message.dataClassification,
+    ...(runState ? { runState } : {}),
   });
 }
 
@@ -638,6 +666,12 @@ function isProductContextEnvelopeV1(value: unknown): value is ProductContextEnve
     ) ||
     !isNonEmptyText(value["policyVersion"]) ||
     !Array.isArray(value["history"]) ||
+    (value["runtimeHistory"] !== undefined &&
+      (!isRecord(value["runtimeHistory"]) ||
+        !isRuntimeHistoryReference(value["runtimeHistory"]["reference"]) ||
+        !isProductContextRunState(value["runtimeHistory"]["runState"]) ||
+        value["runtimeHistory"]["reference"].runId !==
+          value["runtimeHistory"]["runState"].runId)) ||
     !isRecord(value["prompt"]) ||
     !Array.isArray(value["systemPolicyRefs"]) ||
     !Array.isArray(value["contextBlocks"])
@@ -665,7 +699,8 @@ function isProductContextEnvelopeV1(value: unknown): value is ProductContextEnve
         (item["role"] === "owner" || item["role"] === "agent" || item["role"] === "system") &&
         isNonEmptyText(item["contentRef"]) &&
         isNonEmptyText(item["occurredAt"]) &&
-        isDataClassification(item["dataClassification"])
+        isDataClassification(item["dataClassification"]) &&
+        (item["runState"] === undefined || isProductContextRunState(item["runState"]))
       );
     }) &&
     value["systemPolicyRefs"].every((item: unknown) => {

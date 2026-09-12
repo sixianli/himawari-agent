@@ -95,7 +95,45 @@ describe("pinned Pi tool-batch continuation", () => {
       first.dispose();
       approved = true;
       const second = await freshSession();
-      const restored = restorePiToolBatch(second, JSON.parse(JSON.stringify(saved)));
+      const snapshot = JSON.parse(JSON.stringify(saved)) as PiToolBatchContinuation;
+      const completed = (value: PiToolBatchContinuation) => {
+        const result = value.completedResults[0];
+        if (!result) throw new Error("TEST_COMPLETED_RESULT_MISSING");
+        return result;
+      };
+      for (const mutate of [
+        (value: PiToolBatchContinuation) => {
+          value.completedResults.splice(0);
+        },
+        (value: PiToolBatchContinuation) => {
+          value.completedResults.push(structuredClone(completed(value)));
+        },
+        (value: PiToolBatchContinuation) => {
+          completed(value).toolCallId = "another-call";
+        },
+        (value: PiToolBatchContinuation) => {
+          completed(value).toolName = "another-tool";
+        },
+        (value: PiToolBatchContinuation) => {
+          completed(value).details = { productOutcome: "result_unknown" };
+        },
+      ]) {
+        const invalid = structuredClone(snapshot);
+        mutate(invalid);
+        expect(() => restorePiToolBatch(second, invalid)).toThrow(
+          "PI_CONTINUATION_RESULTS_INVALID",
+        );
+      }
+      const probe = restorePiToolBatch(second, snapshot);
+      expect(() => probe.completedResult("confirmed", "wrong-name")).toThrow(
+        "PI_CONTINUATION_RESULT_TOOL_MISMATCH",
+      );
+      expect(probe.completedResult("confirmed", "controlled_action")?.content).toEqual([
+        { type: "text", text: "first" },
+      ]);
+      expect(probe.completedResult("confirmed", "controlled_action")).toBeUndefined();
+      expect(probe.completedResult("waiting", "controlled_action")).toBeUndefined();
+      const restored = restorePiToolBatch(second, snapshot);
       const providerStream = second.agent.streamFunction;
       let ordinal = restored.completedStreamOrdinal;
       const actualOrdinals: number[] = [];

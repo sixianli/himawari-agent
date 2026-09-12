@@ -12,6 +12,7 @@ interface FauxTool {
 export async function createFauxModelFixture(
   answer: string,
   tool?: FauxTool | readonly FauxTool[],
+  followingBatches: readonly (readonly FauxTool[])[] = [],
 ) {
   const aiEntry = new URL(
     "../node_modules/@earendil-works/pi-ai/dist/index.js",
@@ -40,6 +41,13 @@ export async function createFauxModelFixture(
           },
         ]
       : []),
+    ...followingBatches.map((batch) => (context: unknown) => {
+      observed.push(context);
+      return ai.fauxAssistantMessage(
+        batch.map((call) => ({ type: "toolCall", ...call })),
+        { stopReason: "toolUse" },
+      );
+    }),
     (context: unknown) => {
       observed.push(context);
       return ai.fauxAssistantMessage(answer);

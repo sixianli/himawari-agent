@@ -5,6 +5,7 @@ import type { AuthorityFence } from "./persistence.js";
 
 export const RUN_PAYLOAD_ARTIFACT_PURPOSES = [
   "trace",
+  "runtime_history",
   "context",
   "final_answer",
   "worker_result",

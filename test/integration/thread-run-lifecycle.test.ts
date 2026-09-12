@@ -2215,12 +2215,13 @@ it("freezes execution policy across factory recreation and rejects a different c
 });
 
 it.each([
-  { budget: 100, unknown: false },
-  { budget: 0, unknown: false },
-  { budget: 100, unknown: true },
+  { budget: 100, unknown: false, denied: false },
+  { budget: 100, unknown: false, denied: true },
+  { budget: 0, unknown: false, denied: false },
+  { budget: 100, unknown: true, denied: false },
 ])(
-  "executes persistent dispatch through the real Pi loop ($budget, unknown=$unknown)",
-  async ({ budget, unknown }) => {
+  "executes persistent dispatch through the real Pi loop ($budget, unknown=$unknown, denied=$denied)",
+  async ({ budget, unknown, denied }) => {
     const { createFauxModelFixture } = await import(
       "../../packages/runtime-pi/test/faux-model-fixture.js"
     );
@@ -2231,7 +2232,7 @@ it.each([
     const adapters = createReferenceAdapterSet({ clock });
     const model = await createFauxModelFixture(
       "这是 Pi 执行后持久保存的回答。",
-      unknown
+      unknown || denied
         ? {
             name: "uncertain_tool",
             id: "real-pi-unknown-call",
@@ -2277,7 +2278,7 @@ it.each([
       resultRef: "pi-prompt",
     });
     const failure = vi.fn();
-    const composed = createProductionRunComposition({
+    const compositionOptions: Parameters<typeof createProductionRunComposition>[0] = {
       configuration: {
         ownerId,
         agentId,
@@ -2307,7 +2308,7 @@ it.each([
       memory: adapters.memory,
       tools: {
         listAuthorized: async () =>
-          unknown
+          unknown || denied
             ? [
                 {
                   name: "uncertain_tool",
@@ -2319,18 +2320,18 @@ it.each([
               ]
             : [],
         preflight: async () => {
-          if (!unknown) throw new Error("No tools are authorized in this test");
+          if (!unknown && !denied) throw new Error("No tools are authorized in this test");
           return { allowed: true, permissionDecisionRef: "test-policy", reasonCode: "test" };
         },
         execute: async () => {
-          if (!unknown) throw new Error("No tools are authorized in this test");
+          if (!unknown && !denied) throw new Error("No tools are authorized in this test");
           toolCalls += 1;
           return {
-            outcome: "result_unknown" as const,
+            outcome: denied ? ("failed" as const) : ("result_unknown" as const),
             resultRef: null,
-            errorCode: null,
-            externalActionId: "test-external-action",
-            modelContent: "结果未知",
+            errorCode: denied ? "approval_denied" : null,
+            externalActionId: denied ? null : "test-external-action",
+            modelContent: denied ? "用户拒绝，未执行" : "结果未知",
           };
         },
       },
@@ -2341,7 +2342,7 @@ it.each([
         policyVersion: "pi-test-policy",
         policies: [],
         capabilities: [],
-        capabilityHandleRefs: unknown ? ["test-handle"] : [],
+        capabilityHandleRefs: unknown || denied ? ["test-handle"] : [],
         maxMemoryClassification: "private",
         memoryLimit: 5,
         maxSelectedMemories: 0,
@@ -2352,7 +2353,8 @@ it.each([
       cwd: setup.stateRoot,
       agentDir: path.join(setup.stateRoot, "pi-agent"),
       onFailure: failure,
-    });
+    };
+    const composed = createProductionRunComposition(compositionOptions);
     const pumped = await composed.dispatcher.pump();
     expect(pumped).toMatchObject({
       claimed: 1,
@@ -2375,7 +2377,7 @@ it.each([
       expect(model.observed).toHaveLength(1);
       expect(toolCalls).toBe(1);
     } else if (budget > 0) {
-      expect(model.observed).toHaveLength(1);
+      expect(model.observed).toHaveLength(denied ? 2 : 1);
       expect(JSON.stringify(model.observed)).toContain("请回答本次请求。");
       expect(answer?.runId).toBe(admitted.message.runId);
       const payload = await payloads.get(answer?.contentRef ?? "missing");
@@ -2407,13 +2409,69 @@ it.each([
       expect(
         new TextDecoder().decode(await setup.protector.unprotect({ ownerId, agentId, payload })),
       ).toBe("这是 Pi 执行后持久保存的回答。");
+      // Destroy the runtime/projection objects, then form a new Run from SQLite.
+      await composed.loop.stop(1000);
+      const nextModel = await createFauxModelFixture("这是新问题的回答。");
+      const nextPrompt = "现在的天气怎么样？只处理本轮请求。";
+      await payloads.put(
+        await setup.protector.protect({
+          ownerId,
+          agentId,
+          ref: "pi-next-prompt",
+          dataClassification: "private",
+          contentType: "text/plain",
+          plaintext: new TextEncoder().encode(nextPrompt),
+          createdAt: clock.now(),
+        }),
+      );
+      const current = await setup.repository
+        .threadRepository()
+        .read(ownerId, agentId, thread.thread.id);
+      if (!current) throw new Error("Missing thread");
+      await setup.commands.admitOwnerMessage({
+        ownerId,
+        agentId,
+        threadId: current.id,
+        expectedThreadRevision: current.revision,
+        sessionId: createSessionId("pi-session-next"),
+        idempotencyKey: "pi-next-message",
+        contentRef: "pi-next-prompt",
+        sourceProofRef: "owner:pi-test",
+        dataClassification: "private",
+        resultRef: "pi-next-prompt",
+      });
+      const restarted = createProductionRunComposition({
+        ...compositionOptions,
+        models: nextModel.models,
+        instanceId: "pi-composition-restarted",
+      });
+      expect(await restarted.dispatcher.pump()).toMatchObject({ claimed: 1, settled: 1 });
+      expect(nextModel.observed).toHaveLength(1);
+      const submitted = nextModel.observed[0] as { messages: { role: string; content: unknown }[] };
+      expect(submitted.messages.map((message) => message.role)).toEqual(
+        denied
+          ? ["user", "assistant", "toolResult", "assistant", "user"]
+          : ["user", "assistant", "user"],
+      );
+      if (denied) {
+        expect(JSON.stringify(submitted.messages)).toContain("approval_denied");
+        expect(toolCalls).toBe(1);
+      }
+      expect(JSON.stringify(submitted.messages.at(-2)?.content)).toContain(
+        "这是 Pi 执行后持久保存的回答。",
+      );
+      expect(submitted.messages.at(-1)?.content).toEqual([{ type: "text", text: nextPrompt }]);
+      await restarted.loop.stop(1000);
+
       const database = openQualifiedDatabase(setup.databasePath);
       try {
         expect(
           database
             .prepare("SELECT status FROM model_invocation_identities WHERE run_id = ?")
             .all(admitted.message.runId),
-        ).toEqual([{ status: "settled" }]);
+        ).toEqual(
+          denied ? [{ status: "settled" }, { status: "settled" }] : [{ status: "settled" }],
+        );
       } finally {
         database.close();
       }

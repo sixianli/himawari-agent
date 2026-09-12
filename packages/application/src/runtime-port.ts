@@ -17,10 +17,10 @@ export type {
   ModelInvocationRequest,
   ModelProviderRouting,
   ModelSecretRequirement,
-  RuntimeCompactionProposal,
-  RuntimeEvent,
   RuntimeApprovalWait,
+  RuntimeCompactionProposal,
   RuntimeContinuationPort,
+  RuntimeEvent,
   RuntimeProjection,
   RuntimeProjectionCapture,
   RuntimeProjectionCompaction,
@@ -66,6 +66,11 @@ export type {
   PayloadStorePort,
   PayloadUnprotectionRequest,
 } from "./ports/observability.js";
+export type {
+  RuntimeHistoryPort,
+  RuntimeHistoryReference,
+  RuntimeHistoryState,
+} from "./ports/runtime-history.js";
 export type { ClockPort } from "./ports/system.js";
 export {
   assertMachineSecretFree,

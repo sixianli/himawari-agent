@@ -43,7 +43,7 @@ async function seedMemory(
 }
 
 function createService(threadSummaries?: Pick<ThreadDistillationStatePort, "latestSummary">) {
-  const adapters = createReferenceAdapterSet();
+  const adapters = createReferenceAdapterSet({ scope: { ownerId: OWNER_ID, agentId: AGENT_ID } });
   const trace = new SessionTraceRecorder({
     trace: adapters.trace,
     artifacts: adapters.runPayloadArtifacts,
@@ -113,6 +113,21 @@ function request(sourceType: "user_message" | "schedule" | "external_event") {
 }
 
 describe("Task 9 Memory and context formation", () => {
+  it("freezes historical cancellation with the selected message across replay", async () => {
+    const { service } = createService();
+    const input = request("user_message");
+    const previous = input.threadMessages[0];
+    if (!previous) throw new Error("Expected history");
+    const runState = { runId: createRunId("run-previous"), status: "cancelled" as const };
+    const formed = await service.form({
+      ...input,
+      threadMessages: [{ ...previous, runState }],
+    });
+    expect(formed.envelope.history[0]).toMatchObject({ runState });
+    const replayed = await service.form(input);
+    expect(replayed.envelope.history[0]).toMatchObject({ runState });
+  });
+
   it("replays an existing context artifact without reselecting after Trace failure", async () => {
     const failures = new DeterministicFailureScheduler();
     failures.failOn("trace.append", 4);
