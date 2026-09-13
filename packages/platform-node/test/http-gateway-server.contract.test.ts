@@ -254,7 +254,11 @@ function createFixture(
   threadGateway?: AgentThreadGatewayPort,
   extensions: Pick<
     HttpGatewayServerOptions,
-    "browserConfiguration" | "payloadAdmission" | "payloadRead" | "threadSearch"
+    | "browserConfiguration"
+    | "payloadAdmission"
+    | "payloadRead"
+    | "threadSearch"
+    | "heartbeatMilliseconds"
   > = {},
 ) {
   const access = new AccessPolicy();
@@ -280,7 +284,7 @@ function createFixture(
     publicOrigin: ORIGIN,
     staticRoot,
     maximumBodyBytes: 2048,
-    heartbeatMilliseconds: 20,
+    heartbeatMilliseconds: extensions.heartbeatMilliseconds ?? 20,
   });
   return { access, controlPlane, reads, auth, app };
 }
@@ -822,6 +826,65 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(requests).toEqual(["thread.list", "thread.message.submit"]);
     expect(cursors).toEqual(["cursor-v2-01"]);
   });
+
+  it.each(["v2", "thread"] as const)(
+    "opens an idle %s stream before its first heartbeat",
+    async (kind) => {
+      const idle = async function* () {
+        // No domain event is available during the connection handshake.
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      };
+      const request = async () => {
+        throw new Error("unused");
+      };
+      const { app } = createFixture(
+        kind === "v2" ? { request, subscribe: idle } : undefined,
+        kind === "thread" ? { request, subscribe: idle } : undefined,
+        { heartbeatMilliseconds: 2_000 },
+      );
+      const subscription = Buffer.from(
+        JSON.stringify({
+          schemaVersion: "gateway.thread.v3",
+          messageId: "subscription-01",
+          correlationId: "correlation-01",
+          causationId: null,
+          scope: { ownerId: "owner-01", agentId: "agent-01" },
+          authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+          actor: { actorType: "owner", actorId: "owner-01" },
+          kind: "subscription",
+          type: "thread.events",
+          payload: { afterCursor: null },
+        }),
+      ).toString("base64url");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 500);
+      try {
+        const origin = await app.listen({ host: "127.0.0.1", port: 0 });
+        const endpoint =
+          kind === "v2"
+            ? "/api/gateway/v2/events"
+            : `/api/gateway/thread/v3/events?subscription=${subscription}`;
+        const response = await new Promise<IncomingMessage>((resolve, reject) => {
+          const req = httpRequest(
+            `${origin}${endpoint}`,
+            { headers: requestHeaders(), signal: controller.signal },
+            resolve,
+          );
+          req.on("error", reject);
+          req.end();
+        });
+        expect(response.statusCode).toBe(200);
+        expect(response.headers["content-type"]).toContain("text/event-stream");
+        const first = await response[Symbol.asyncIterator]().next();
+        expect(String(first.value)).toContain(": connected\n\n");
+        response.destroy();
+      } finally {
+        clearTimeout(timeout);
+        controller.abort();
+        await app.close();
+      }
+    },
+  );
 
   it("keeps an idle v2 subscription open and aborts it when the HTTP client closes", async () => {
     let subscriptionSignal: AbortSignal | undefined;

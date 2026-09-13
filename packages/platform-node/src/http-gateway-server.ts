@@ -412,6 +412,9 @@ async function* streamGatewayV2Events(input: {
   readonly heartbeatMilliseconds: number;
   readonly signal: AbortSignal;
 }): AsyncGenerator<string> {
+  // HTTP authentication has passed. Flush the transport without waiting for a domain event.
+  // This SSE comment contains no data and does not bypass subscription authorization.
+  yield ": connected\n\n";
   const iterator = input.gateway
     .subscribe(input.authentication, input.afterCursor, input.signal)
     [Symbol.asyncIterator]();
@@ -484,6 +487,9 @@ async function* streamThreadGatewayEvents(input: {
   readonly subscription: ThreadGatewaySubscription;
   readonly heartbeatMilliseconds: number;
 }): AsyncGenerator<string> {
+  // HTTP authentication has passed. Flush the transport without waiting for a domain event.
+  // This SSE comment contains no data and does not bypass subscription authorization.
+  yield ": connected\n\n";
   const controller = new AbortController();
   const iterator = input.gateway
     .subscribe(input.authentication, input.subscription, controller.signal)

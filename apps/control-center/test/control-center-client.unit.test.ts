@@ -69,6 +69,81 @@ it.each(["gateway", "thread"] as const)(
   },
 );
 
+describe.each(["gateway", "thread"] as const)("%s connection lifecycle", (kind) => {
+  function setup() {
+    const sources: EventSourceLike[] = [];
+    const retries: Array<() => void> = [];
+    const onConnectionState = vi.fn();
+    const options = {
+      storage: new ControlCenterBrowserStorage(new MemoryStorage()),
+      createEventSource: () => {
+        const source: EventSourceLike = { onmessage: null, onerror: null, close: vi.fn() };
+        sources.push(source);
+        return source;
+      },
+      onConnectionState,
+      log: vi.fn(),
+      schedule: (retry: () => void) => retries.push(retry),
+      cancelSchedule: vi.fn(),
+    };
+    const synchronizer =
+      kind === "gateway"
+        ? new SseStateSynchronizer({ ...options, onEvent: vi.fn() })
+        : new ThreadSseSynchronizer({
+            ...options,
+            configuration,
+            onCommittedEvent: vi.fn(),
+            onSnapshotRequired: vi.fn(),
+          });
+    return { synchronizer, sources, retries, onConnectionState };
+  }
+
+  it("preserves an opening or healthy connection when the page resumes", () => {
+    const { synchronizer, sources, onConnectionState } = setup();
+    try {
+      synchronizer.start();
+      synchronizer.reconnectNow();
+      expect(sources).toHaveLength(1);
+      sources[0]?.onopen?.(new Event("open"));
+      synchronizer.reconnectNow();
+      expect(sources).toHaveLength(1);
+      expect(sources[0]?.close).not.toHaveBeenCalled();
+      expect(onConnectionState).toHaveBeenLastCalledWith("connected");
+    } finally {
+      synchronizer.stop();
+    }
+  });
+
+  it("retries a stalled handshake and ignores callbacks from the expired source", () => {
+    vi.useFakeTimers();
+    const { synchronizer, sources, retries, onConnectionState } = setup();
+    try {
+      synchronizer.start();
+      vi.advanceTimersByTime(10_000);
+      expect(sources[0]?.close).toHaveBeenCalledOnce();
+      expect(onConnectionState).toHaveBeenLastCalledWith("offline");
+      expect(retries).toHaveLength(1);
+      sources[0]?.onopen?.(new Event("open"));
+      sources[0]?.onerror?.(new Event("error"));
+      expect(onConnectionState).toHaveBeenLastCalledWith("offline");
+      expect(retries).toHaveLength(1);
+      retries[0]?.();
+      expect(sources).toHaveLength(2);
+      sources[1]?.onopen?.(new Event("open"));
+      vi.advanceTimersByTime(20_000);
+      expect(sources[1]?.close).not.toHaveBeenCalled();
+      expect(onConnectionState).toHaveBeenLastCalledWith("connected");
+      synchronizer.stop();
+      sources[1]?.onopen?.(new Event("open"));
+      sources[1]?.onerror?.(new Event("error"));
+      expect(retries).toHaveLength(1);
+    } finally {
+      synchronizer.stop();
+      vi.useRealTimers();
+    }
+  });
+});
+
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
 

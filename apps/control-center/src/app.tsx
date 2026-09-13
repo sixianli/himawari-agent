@@ -297,7 +297,9 @@ function LocalizedControlCenterApp({
       log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
-    const reconnect = () => synchronizer.reconnectNow();
+    const reconnect = () => {
+      if (document.visibilityState === "visible") synchronizer.reconnectNow();
+    };
     window.addEventListener("online", reconnect);
     document.addEventListener("visibilitychange", reconnect);
     return () => {
@@ -323,7 +325,9 @@ function LocalizedControlCenterApp({
     if (!navigator.onLine) synchronizer.setNetworkOnline(false);
     const online = () => synchronizer.setNetworkOnline(true);
     const offline = () => synchronizer.setNetworkOnline(false);
-    const reconnect = () => synchronizer.reconnectNow();
+    const reconnect = () => {
+      if (document.visibilityState === "visible") synchronizer.reconnectNow();
+    };
     const synchronizeTab = (event: StorageEvent) => {
       if (event.key === THREAD_CURSOR_STORAGE_KEY) {
         setThreadRefreshSignal((current) => current + 1);

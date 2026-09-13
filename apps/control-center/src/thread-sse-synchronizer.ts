@@ -25,6 +25,7 @@ function base64Url(value: string): string {
 export class ThreadSseSynchronizer {
   readonly #options: ThreadSseSynchronizerOptions;
   #source: EventSourceLike | undefined;
+  #handshakeTimer: ReturnType<typeof setTimeout> | undefined;
   #reconnectHandle: number | undefined;
   #attempt = 0;
   #stopped = true;
@@ -46,6 +47,7 @@ export class ThreadSseSynchronizer {
       this.reconnectNow();
       return;
     }
+    this.#clearHandshake();
     this.#source?.close();
     this.#source = undefined;
     this.#clearReconnect();
@@ -53,15 +55,14 @@ export class ThreadSseSynchronizer {
   }
 
   reconnectNow(): void {
-    if (this.#stopped) return;
-    this.#source?.close();
-    this.#source = undefined;
+    if (this.#stopped || this.#source) return;
     this.#clearReconnect();
     this.#connect();
   }
 
   stop(): void {
     this.#stopped = true;
+    this.#clearHandshake();
     this.#source?.close();
     this.#source = undefined;
     this.#clearReconnect();
@@ -81,6 +82,7 @@ export class ThreadSseSynchronizer {
     this.#source = source;
     source.onopen = () => {
       if (this.#stopped || this.#source !== source) return;
+      this.#clearHandshake();
       this.#options.onSnapshotRequired();
       this.#attempt = 0;
       this.#options.onConnectionState?.("connected");
@@ -126,13 +128,21 @@ export class ThreadSseSynchronizer {
       this.#options.storage.clearThreadLastCursor();
       this.#options.onSnapshotRequired();
     });
-    source.onerror = () => {
+    const disconnect = () => {
       if (this.#stopped || this.#source !== source) return;
-      if (this.#source === source) this.#source = undefined;
+      this.#clearHandshake();
+      this.#source = undefined;
       source.close();
       this.#options.onConnectionState?.("offline");
       this.#scheduleReconnect();
     };
+    source.onerror = disconnect;
+    this.#handshakeTimer = setTimeout(disconnect, 10_000);
+  }
+
+  #clearHandshake(): void {
+    clearTimeout(this.#handshakeTimer);
+    this.#handshakeTimer = undefined;
   }
 
   #scheduleReconnect(): void {

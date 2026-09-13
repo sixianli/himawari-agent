@@ -31,6 +31,7 @@ export interface SseSynchronizerOptions {
 export class SseStateSynchronizer {
   private readonly options: SseSynchronizerOptions;
   private source: EventSourceLike | undefined;
+  private handshakeTimer: ReturnType<typeof setTimeout> | undefined;
   private reconnectHandle: number | undefined;
   private reconnectAttempt = 0;
   private stopped = true;
@@ -49,15 +50,14 @@ export class SseStateSynchronizer {
   }
 
   reconnectNow(): void {
-    if (this.stopped) return;
-    this.source?.close();
-    this.source = undefined;
+    if (this.stopped || this.source) return;
     this.clearReconnect();
     this.connect();
   }
 
   stop(): void {
     this.stopped = true;
+    this.clearHandshake();
     this.source?.close();
     this.source = undefined;
     this.clearReconnect();
@@ -100,10 +100,13 @@ export class SseStateSynchronizer {
       }
     });
     source.onopen = () => {
+      if (this.stopped || this.source !== source) return;
+      this.clearHandshake();
       this.reconnectAttempt = 0;
       this.options.onConnectionState("connected");
     };
     source.onmessage = (message) => {
+      if (this.stopped || this.source !== source) return;
       try {
         const parsed = gatewayV2MessageSchema.parseJson(message.data);
         if (parsed.kind !== "event") throw new Error("CONTROL_CENTER_EVENT_INVALID");
@@ -125,12 +128,21 @@ export class SseStateSynchronizer {
         this.options.log(safeBrowserLog("CONTROL_CENTER_EVENT_REJECTED"));
       }
     };
-    source.onerror = () => {
-      if (this.source === source) this.source = undefined;
+    const disconnect = () => {
+      if (this.stopped || this.source !== source) return;
+      this.clearHandshake();
+      this.source = undefined;
       source.close();
       this.options.onConnectionState("offline");
       this.scheduleReconnect();
     };
+    source.onerror = disconnect;
+    this.handshakeTimer = setTimeout(disconnect, 10_000);
+  }
+
+  private clearHandshake(): void {
+    clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = undefined;
   }
 
   private reduceEvent(
