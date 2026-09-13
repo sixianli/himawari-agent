@@ -98,6 +98,25 @@ describe.each(["gateway", "thread"] as const)("%s connection lifecycle", (kind) 
     return { synchronizer, sources, retries, onConnectionState };
   }
 
+  it("closes the stream immediately while offline and reconnects only after recovery", () => {
+    const { synchronizer, sources, onConnectionState } = setup();
+    try {
+      synchronizer.start();
+      sources[0]?.onopen?.(new Event("open"));
+      synchronizer.setNetworkOnline(false);
+      expect(sources[0]?.close).toHaveBeenCalledOnce();
+      expect(onConnectionState).toHaveBeenLastCalledWith("offline");
+      synchronizer.reconnectNow();
+      expect(sources).toHaveLength(1);
+      synchronizer.setNetworkOnline(true);
+      expect(sources).toHaveLength(2);
+      sources[1]?.onopen?.(new Event("open"));
+      expect(onConnectionState).toHaveBeenLastCalledWith("connected");
+    } finally {
+      synchronizer.stop();
+    }
+  });
+
   it("preserves an opening or healthy connection when the page resumes", () => {
     const { synchronizer, sources, onConnectionState } = setup();
     try {

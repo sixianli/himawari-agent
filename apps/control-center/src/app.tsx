@@ -297,13 +297,18 @@ function LocalizedControlCenterApp({
       log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
+    if (!navigator.onLine) synchronizer.setNetworkOnline(false);
+    const online = () => synchronizer.setNetworkOnline(navigator.onLine);
+    const offline = () => synchronizer.setNetworkOnline(false);
     const reconnect = () => {
       if (document.visibilityState === "visible") synchronizer.reconnectNow();
     };
-    window.addEventListener("online", reconnect);
+    window.addEventListener("online", online);
+    window.addEventListener("offline", offline);
     document.addEventListener("visibilitychange", reconnect);
     return () => {
-      window.removeEventListener("online", reconnect);
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", offline);
       document.removeEventListener("visibilitychange", reconnect);
       synchronizer.stop();
     };
@@ -323,7 +328,7 @@ function LocalizedControlCenterApp({
     });
     synchronizer.start();
     if (!navigator.onLine) synchronizer.setNetworkOnline(false);
-    const online = () => synchronizer.setNetworkOnline(true);
+    const online = () => synchronizer.setNetworkOnline(navigator.onLine);
     const offline = () => synchronizer.setNetworkOnline(false);
     const reconnect = () => {
       if (document.visibilityState === "visible") synchronizer.reconnectNow();

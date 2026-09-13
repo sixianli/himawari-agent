@@ -35,6 +35,7 @@ export class SseStateSynchronizer {
   private reconnectHandle: number | undefined;
   private reconnectAttempt = 0;
   private stopped = true;
+  private networkOffline = false;
   private readonly seenEventIds = new Set<string>();
   private readonly scopeSequences = new Map<string, number>();
   private authorityScope: string | undefined;
@@ -49,8 +50,21 @@ export class SseStateSynchronizer {
     this.connect();
   }
 
+  setNetworkOnline(online: boolean): void {
+    this.networkOffline = !online;
+    if (online) {
+      this.reconnectNow();
+      return;
+    }
+    this.clearHandshake();
+    this.source?.close();
+    this.source = undefined;
+    this.clearReconnect();
+    this.options.onConnectionState("offline");
+  }
+
   reconnectNow(): void {
-    if (this.stopped || this.source) return;
+    if (this.stopped || this.networkOffline || this.source) return;
     this.clearReconnect();
     this.connect();
   }
@@ -64,7 +78,7 @@ export class SseStateSynchronizer {
   }
 
   private connect(): void {
-    if (this.stopped || this.source) return;
+    if (this.stopped || this.networkOffline || this.source) return;
     this.options.onConnectionState("connecting");
     const cursor = this.options.storage.readLastCursor();
     const url = cursor
