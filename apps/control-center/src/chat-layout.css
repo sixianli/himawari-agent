@@ -1226,3 +1226,41 @@
   background: var(--surface-muted);
   border-radius: 0.5rem;
 }
+
+.thread-loading-skeleton {
+  display: block;
+  padding: 12px;
+}
+.thread-loading-skeleton [aria-hidden] {
+  display: grid;
+  gap: 18px;
+}
+.thread-loading-bar {
+  display: block;
+  height: 12px;
+  width: 82%;
+  border-radius: 6px;
+  background: var(--border);
+  opacity: 0.5;
+}
+.thread-loading-bar:nth-child(2) {
+  width: 64%;
+}
+.thread-loading-bar:nth-child(3) {
+  width: 72%;
+}
+.thread-loading-skeleton[data-scope="conversation"] {
+  width: min(100%, 760px);
+  margin: 32px auto;
+}
+.thread-load-feedback {
+  display: block;
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.thread-load-message {
+  display: block;
+  margin: 0 0 4px;
+}

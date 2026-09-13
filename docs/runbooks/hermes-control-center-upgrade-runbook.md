@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:afabae256241420a3298084e8f958078509771e41e0d538d00a71f9cedfe750a"
+contract_sha256: "sha256:333205bda6faeffff0d4503b54b31ee820bb29bc3a4b6cff07d94010d399d389"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -18,6 +18,7 @@ date: "2026-09-11"
 - apps/agent-service/src
 - apps/control-center/src
 - scripts/qualify-control-center-browser.mjs
+- scripts/test-thread-loading-browser.mjs
 - apps/execution-worker/src
 - packages/platform-node/src
 - packages/application/src/ports/configuration.ts
@@ -114,7 +115,7 @@ Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-q
 
 ## Verification
 
-连接与侧栏修订的候选须同时包含 HTTP Gateway 和控制中心资源。空闲 SSE 在 HTTP 身份校验后立即发送不含业务数据的注释帧；订阅授权仍由 Gateway 执行。浏览器切换标签页时保留健康连接，握手超过 10 秒会关闭并按既有退避重试。验收需覆盖无新事件时建立连接、标签页恢复、断网重连及会话撤销，不能以单次健康响应代替。侧栏验收从新建、折叠搜索、置顶和最近分组进入；管理页面通过底部“管理”菜单打开，未启用页面在该菜单内展开。核对桌面收起恢复、手机抽屉、三语和键盘焦点。
+连接与侧栏修订的候选须同时包含 HTTP Gateway 和控制中心资源。空闲 SSE 在 HTTP 身份校验后立即发送不含业务数据的注释帧；订阅授权仍由 Gateway 执行。浏览器切换标签页时保留健康连接，握手超过 10 秒会关闭并按既有退避重试。验收需覆盖无新事件时建立连接、标签页恢复、断网重连及会话撤销，不能以单次健康响应代替。侧栏验收从新建、折叠搜索、置顶和最近分组进入；管理页面通过底部“管理”菜单打开，未启用页面在该菜单内展开。核对桌面收起恢复、手机抽屉、三语和键盘焦点。 对话首页不再展示全局加载提示，首次列表使用占位条，正常后台刷新保持现有消息和草稿。以 `scripts/test-thread-loading-browser.mjs` 实测 3 秒慢请求、失败重试、空列表刷新、手机直达链接失败及快速切换；重试应替换旧读取而非等待其结束。完整浏览器验收还须证明聊天和管理页面断网时立即禁止联网操作，联网后恢复。隔离浏览器报告不能替代 Hermes 上对应版本的实际验收。
 
 此次后端修改会改变运行时摘要。历史固定日期的资格与切换脚本只用于各自绑定的冻结候选，不能直接复用于本修订。部署前必须从明确的提交及获准附带的工作区改动准备独立候选，重新绑定源码、安装、脚本与当前安装摘要，完成既有安装资格探针和停机备份前置检查。未完成该准备或未获本次切换授权时，不执行线上变更。
 

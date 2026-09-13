@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import { ThreadLoadingSkeleton } from "./thread-load-feedback.js";
 import type { ThreadGatewaySnapshot } from "@himawari-agent/gateway-contracts";
 import { controlCenterHref, routeForSurface, type ControlCenterRouteState } from "../app/router.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
@@ -13,6 +15,8 @@ export interface ThreadSidebarProps {
   readonly threads: readonly Thread[];
   readonly contentByRef: Readonly<Record<string, string>>;
   readonly loading: boolean;
+  readonly hasLoaded: boolean;
+  readonly feedback?: ReactNode;
   readonly searchText: string;
   readonly route: ControlCenterRouteState;
   readonly selectedThreadId: string | null;
@@ -27,6 +31,8 @@ export function ThreadSidebar({
   threads,
   contentByRef,
   loading,
+  hasLoaded,
+  feedback,
   searchText,
   route,
   selectedThreadId,
@@ -67,7 +73,7 @@ export function ThreadSidebar({
   };
   return (
     <div className="thread-list-controls">
-      <div className="thread-sidebar-actions">
+      <nav className="thread-sidebar-actions" aria-label={message("nav.threads")}>
         <ActionButton onClick={onCreate} variant="quiet">
           <SidebarIcon name="compose" />
           {message("threads.new")}
@@ -119,8 +125,8 @@ export function ThreadSidebar({
           <SidebarIcon name="approvals" />
           {message("nav.approvals")}
         </AppLink>
-      </div>
-      <div className="thread-sidebar-records">
+      </nav>
+      <div className="thread-sidebar-records" aria-busy={loading}>
         <div className="thread-collection-heading">
           <select
             aria-label={message("threads.filter")}
@@ -141,6 +147,8 @@ export function ThreadSidebar({
             <SidebarIcon name="refresh" />
           </ActionButton>
         </div>
+        {feedback}
+        {!hasLoaded ? <ThreadLoadingSkeleton scope="list" /> : null}
         {pinned.length > 0 ? (
           <details className="thread-group" open>
             <summary>{message("chat.pinned")}</summary>
@@ -156,7 +164,7 @@ export function ThreadSidebar({
         <details className="thread-group" open>
           <summary>{message("threads.recent")}</summary>
           <SemanticList
-            empty={loading ? message("state.loading") : message("common.noRecords")}
+            empty={hasLoaded ? message("common.noRecords") : null}
             items={recent}
             getId={(thread) => thread.threadId}
             label={message("threads.recent")}

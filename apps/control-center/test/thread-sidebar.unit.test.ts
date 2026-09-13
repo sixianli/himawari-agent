@@ -20,7 +20,7 @@ const thread = (id: string, pinOrder: number | null): ThreadSidebarProps["thread
   updatedAt: "2026-09-13T00:00:00Z",
 });
 
-function render(threads: ThreadSidebarProps["threads"]) {
+function render(threads: ThreadSidebarProps["threads"], loading = false, hasLoaded = true) {
   return renderToStaticMarkup(
     h(
       IntlProvider,
@@ -32,7 +32,8 @@ function render(threads: ThreadSidebarProps["threads"]) {
           "title:last": "后置顶",
           "title:recent": "最近的工作",
         },
-        loading: false,
+        loading,
+        hasLoaded,
         searchText: "",
         selectedThreadId: "recent",
         route: routeForSurface("threads"),
@@ -47,6 +48,18 @@ function render(threads: ThreadSidebarProps["threads"]) {
 }
 
 describe("thread sidebar navigation", () => {
+  it("shows quiet placeholders only before the first collection arrives", () => {
+    const markup = render([], true, false);
+    expect(markup).toContain('class="thread-loading-skeleton"');
+    expect(markup).not.toContain("正在加载权威状态");
+  });
+
+  it("keeps a loaded empty collection quiet during background refresh", () => {
+    const markup = render([], true, true);
+    expect(markup).not.toContain("正在加载权威状态");
+    expect(markup).not.toContain('class="thread-loading-skeleton"');
+  });
+
   it("separates ordered pins from recent conversations without duplicating links", () => {
     const threads = [thread("recent", null), thread("last", 2), thread("first", 0)];
     const markup = render(threads);

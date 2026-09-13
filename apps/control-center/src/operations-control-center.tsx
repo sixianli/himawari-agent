@@ -993,14 +993,8 @@ export function useOperationsControlCenter(input: UseOperationsControlCenterInpu
     </>
   );
 
-  const content = (
+  const feedback = (
     <>
-      <div className="panel-heading">
-        <p className="eyebrow">{message("operations.authoritativeState")}</p>
-        <ActionButton onClick={() => void refresh()} variant="secondary">
-          {message("common.refresh")}
-        </ActionButton>
-      </div>
       {connection === "offline" ? (
         <Banner title={message("state.offline")} tone="warning">
           {message("operations.offlineNoMutation")}
@@ -1020,6 +1014,18 @@ export function useOperationsControlCenter(input: UseOperationsControlCenterInpu
         {message("mutation.label")}:{" "}
         {message(mutationStatus ? (`mutation.${mutationStatus}` as MessageId) : "mutation.none")}
       </StatusRegion>
+    </>
+  );
+
+  const content = (
+    <>
+      <div className="panel-heading">
+        <p className="eyebrow">{message("operations.authoritativeState")}</p>
+        <ActionButton onClick={() => void refresh()} variant="secondary">
+          {message("common.refresh")}
+        </ActionButton>
+      </div>
+      {route.view !== "details" || !detail ? feedback : null}
       {direct ? <DirectRows message={message} snapshot={direct} /> : null}
       {direct?.type === "reflection.snapshot" && reflectionDraft ? (
         <fieldset className="actions">
@@ -1134,6 +1140,7 @@ export function useOperationsControlCenter(input: UseOperationsControlCenterInpu
 
   const details = detail ? (
     <>
+      {route.view === "details" ? feedback : null}
       <DetailRows message={message} snapshot={detail} />
       {detail.type === "memory.snapshot" ? (
         <label>

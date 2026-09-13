@@ -7,6 +7,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import type { ControlCenterRouteState } from "./app/router.js";
 import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./browser-storage.js";
 import { ChatComposer } from "./components/chat-composer.js";
+import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
 import { ThreadSidebar } from "./components/thread-sidebar.js";
 import { ChatHistory } from "./components/chat-history.js";
 import { ActionButton, Banner, Field, SemanticList, StatusRegion } from "./components/index.js";
@@ -186,6 +187,10 @@ export function useThreadControlCenter(
   const [renameTitle, setRenameTitle] = useState("");
   const [searchText, setSearchText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [readFailed, setReadFailed] = useState(false);
+  const [readScope, setReadScope] = useState<"list" | "conversation" | "search">("list");
+  const [readAttempt, setReadAttempt] = useState(0);
+  const readController = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mutationStatus, setMutationStatus] = useState<MutationStatus | null>(null);
   const [conflict, setConflict] = useState<ConflictState | null>(null);
@@ -215,6 +220,22 @@ export function useThreadControlCenter(
     };
   }, [client]);
 
+  useEffect(() => {
+    void client;
+    void selectedThreadId;
+    void route.status;
+    void route.afterCursor;
+    void active;
+    setReadFailed(false);
+    return () => {
+      readController.current?.abort();
+      readController.current = null;
+      refreshing.current = false;
+      refreshAgain.current = false;
+      refreshSequence.current++;
+    };
+  }, [client, selectedThreadId, route.status, route.afterCursor, active]);
+
   const loadPayloads = useCallback(
     async (refs: readonly string[]) => {
       if (!client) return;
@@ -236,141 +257,169 @@ export function useThreadControlCenter(
     [client, message],
   );
 
-  const refresh = useCallback(async () => {
-    if (!active || !client || !configuration) return;
-    if (refreshing.current) {
-      refreshAgain.current = true;
-      return;
-    }
-    refreshing.current = true;
-    const sequence = ++refreshSequence.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const statuses =
-        route.status === "archived"
-          ? (["archived"] as const)
-          : route.status === "all"
-            ? (["active", "archived"] as const)
-            : (["active"] as const);
-      const list = await client.queryThread(
-        threadQueryMessage(configuration, "thread.list", {
-          statuses,
-          pinnedOnly: false,
-          afterCursor: route.afterCursor,
-          limit: 100,
-        }),
-      );
-      if (sequence !== refreshSequence.current || list.type !== "thread.collection_snapshot") {
+  const refresh = useCallback(
+    async (force = false) => {
+      if (!active || !client || !configuration) return;
+      if (refreshing.current && !force) {
+        refreshAgain.current = true;
         return;
       }
-      setCollection(list);
-      void loadPayloads(
-        list.payload.threads.flatMap((thread) => (thread.titleRef ? [thread.titleRef] : [])),
-      );
-      if (!selectedThreadId) {
-        setDetail(undefined);
-        return;
+      if (force) {
+        refreshAgain.current = false;
+        if (refreshTimer.current !== undefined) {
+          window.clearTimeout(refreshTimer.current);
+          refreshTimer.current = undefined;
+        }
       }
-      let current = await client.queryThread(
-        threadQueryMessage(configuration, "thread.detail", {
-          threadId: selectedThreadId,
-          afterSequence: 0,
-          limit: 1000,
-        }),
-      );
-      if (sequence !== refreshSequence.current || current.type !== "thread.detail_snapshot") return;
-      const pages = [...current.payload.messages];
-      while (current.payload.nextSequence !== null) {
-        const page = await client.queryThread(
+      readController.current?.abort();
+      const controller = new AbortController();
+      readController.current = controller;
+      refreshing.current = true;
+      const sequence = ++refreshSequence.current;
+      setLoading(true);
+      setReadFailed(false);
+      setReadScope("list");
+      setReadAttempt(sequence);
+      try {
+        const statuses =
+          route.status === "archived"
+            ? (["archived"] as const)
+            : route.status === "all"
+              ? (["active", "archived"] as const)
+              : (["active"] as const);
+        const list = await client.queryThread(
+          threadQueryMessage(configuration, "thread.list", {
+            statuses,
+            pinnedOnly: false,
+            afterCursor: route.afterCursor,
+            limit: 100,
+          }),
+          controller.signal,
+        );
+        if (sequence !== refreshSequence.current || list.type !== "thread.collection_snapshot") {
+          return;
+        }
+        setCollection(list);
+        void loadPayloads(
+          list.payload.threads.flatMap((thread) => (thread.titleRef ? [thread.titleRef] : [])),
+        );
+        if (!selectedThreadId) {
+          setDetail(undefined);
+          return;
+        }
+        setReadScope("conversation");
+        let current = await client.queryThread(
           threadQueryMessage(configuration, "thread.detail", {
             threadId: selectedThreadId,
-            afterSequence: current.payload.nextSequence,
+            afterSequence: 0,
             limit: 1000,
           }),
+          controller.signal,
         );
-        if (sequence !== refreshSequence.current || page.type !== "thread.detail_snapshot") return;
-        if (
-          page.payload.nextSequence !== null &&
-          page.payload.nextSequence <= (current.payload.nextSequence ?? 0)
-        )
-          throw new Error("THREAD_PAGE_NOT_ADVANCING");
-        pages.push(...page.payload.messages);
-        current = page;
+        if (sequence !== refreshSequence.current || current.type !== "thread.detail_snapshot")
+          return;
+        const pages = [...current.payload.messages];
+        while (current.payload.nextSequence !== null) {
+          const page = await client.queryThread(
+            threadQueryMessage(configuration, "thread.detail", {
+              threadId: selectedThreadId,
+              afterSequence: current.payload.nextSequence,
+              limit: 1000,
+            }),
+          );
+          if (sequence !== refreshSequence.current || page.type !== "thread.detail_snapshot")
+            return;
+          if (
+            page.payload.nextSequence !== null &&
+            page.payload.nextSequence <= (current.payload.nextSequence ?? 0)
+          )
+            throw new Error("THREAD_PAGE_NOT_ADVANCING");
+          pages.push(...page.payload.messages);
+          current = page;
+        }
+        current = {
+          ...current,
+          payload: {
+            ...current.payload,
+            messages: [...new Map(pages.map((item) => [item.messageId, item])).values()].sort(
+              (a, b) => a.sequence - b.sequence,
+            ),
+          },
+        };
+        setDetail(current);
+        if (configuration.executionPresentationAvailable) {
+          await Promise.all(
+            current.payload.runs.map(async (run) => {
+              const cached = executionCache.current[run.runId] ?? [];
+              let afterSequence = cached.at(-1)?.sequence ?? 0;
+              const records = [...cached];
+              for (;;) {
+                const page = await client.queryThread(
+                  threadQueryMessage(configuration, "thread.execution", {
+                    threadId: selectedThreadId,
+                    runId: run.runId,
+                    afterSequence,
+                    limit: 200,
+                  }),
+                  controller.signal,
+                );
+                if (
+                  sequence !== refreshSequence.current ||
+                  page.type !== "thread.execution_snapshot"
+                )
+                  return;
+                records.push(...page.payload.records);
+                if (page.payload.nextSequence === null) break;
+                if (page.payload.nextSequence <= afterSequence)
+                  throw new Error("EXECUTION_PAGE_NOT_ADVANCING");
+                afterSequence = page.payload.nextSequence;
+              }
+              executionCache.current[run.runId] = [
+                ...new Map(records.map((item) => [item.id, item])).values(),
+              ].sort((a, b) => a.sequence - b.sequence);
+            }),
+          );
+          if (sequence !== refreshSequence.current) return;
+          setExecution({ ...executionCache.current });
+        }
+        void loadPayloads([
+          ...(current.payload.thread.titleRef ? [current.payload.thread.titleRef] : []),
+          ...current.payload.messages.map(({ contentRef }) => contentRef),
+        ]);
+      } catch (caught) {
+        if (controller.signal.aborted || sequence !== refreshSequence.current) return;
+        const status =
+          caught && typeof caught === "object" && "status" in caught
+            ? (caught as { readonly status?: unknown }).status
+            : null;
+        if (status === 401) onUnauthorized();
+        setReadFailed(true);
+      } finally {
+        if (readController.current === controller) {
+          readController.current = null;
+          refreshing.current = false;
+          if (sequence === refreshSequence.current) setLoading(false);
+          if (refreshAgain.current) {
+            refreshAgain.current = false;
+            refreshTimer.current = window.setTimeout(() => {
+              refreshTimer.current = undefined;
+              void refreshLatest.current();
+            }, 80);
+          }
+        }
       }
-      current = {
-        ...current,
-        payload: {
-          ...current.payload,
-          messages: [...new Map(pages.map((item) => [item.messageId, item])).values()].sort(
-            (a, b) => a.sequence - b.sequence,
-          ),
-        },
-      };
-      setDetail(current);
-      if (configuration.executionPresentationAvailable) {
-        await Promise.all(
-          current.payload.runs.map(async (run) => {
-            const cached = executionCache.current[run.runId] ?? [];
-            let afterSequence = cached.at(-1)?.sequence ?? 0;
-            const records = [...cached];
-            for (;;) {
-              const page = await client.queryThread(
-                threadQueryMessage(configuration, "thread.execution", {
-                  threadId: selectedThreadId,
-                  runId: run.runId,
-                  afterSequence,
-                  limit: 200,
-                }),
-              );
-              if (sequence !== refreshSequence.current || page.type !== "thread.execution_snapshot")
-                return;
-              records.push(...page.payload.records);
-              if (page.payload.nextSequence === null) break;
-              if (page.payload.nextSequence <= afterSequence)
-                throw new Error("EXECUTION_PAGE_NOT_ADVANCING");
-              afterSequence = page.payload.nextSequence;
-            }
-            executionCache.current[run.runId] = [
-              ...new Map(records.map((item) => [item.id, item])).values(),
-            ].sort((a, b) => a.sequence - b.sequence);
-          }),
-        );
-        if (sequence !== refreshSequence.current) return;
-        setExecution({ ...executionCache.current });
-      }
-      void loadPayloads([
-        ...(current.payload.thread.titleRef ? [current.payload.thread.titleRef] : []),
-        ...current.payload.messages.map(({ contentRef }) => contentRef),
-      ]);
-    } catch (caught) {
-      const status =
-        caught && typeof caught === "object" && "status" in caught
-          ? (caught as { readonly status?: unknown }).status
-          : null;
-      if (status === 401) onUnauthorized();
-      setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
-    } finally {
-      refreshing.current = false;
-      if (sequence === refreshSequence.current) setLoading(false);
-      if (refreshAgain.current) {
-        refreshAgain.current = false;
-        refreshTimer.current = window.setTimeout(() => {
-          refreshTimer.current = undefined;
-          void refreshLatest.current();
-        }, 80);
-      }
-    }
-  }, [
-    active,
-    client,
-    configuration,
-    loadPayloads,
-    onUnauthorized,
-    route.afterCursor,
-    route.status,
-    selectedThreadId,
-  ]);
+    },
+    [
+      active,
+      client,
+      configuration,
+      loadPayloads,
+      onUnauthorized,
+      route.afterCursor,
+      route.status,
+      selectedThreadId,
+    ],
+  );
 
   refreshLatest.current = refresh;
   useEffect(() => {
@@ -615,10 +664,18 @@ export function useThreadControlCenter(
 
   const search = async () => {
     if (!client || !configuration || !searchText.trim()) return;
+    readController.current?.abort();
+    const controller = new AbortController();
+    readController.current = controller;
+    refreshing.current = true;
+    const sequence = ++refreshSequence.current;
     setLoading(true);
-    setError(null);
+    setReadFailed(false);
+    setReadScope("search");
+    setReadAttempt(sequence);
     try {
       const prepared = await client.prepareThreadSearch(searchText);
+      if (controller.signal.aborted || sequence !== refreshSequence.current) return;
       const result = await client.queryThread(
         threadQueryMessage(configuration, "thread.search", {
           queryRef: prepared.queryRef,
@@ -631,7 +688,9 @@ export function useThreadControlCenter(
           afterCursor: null,
           limit: 100,
         }),
+        controller.signal,
       );
+      if (controller.signal.aborted || sequence !== refreshSequence.current) return;
       if (result.type !== "thread.search_snapshot") {
         throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
       }
@@ -640,9 +699,17 @@ export function useThreadControlCenter(
         result.payload.threads.flatMap((thread) => (thread.titleRef ? [thread.titleRef] : [])),
       );
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
+      if (controller.signal.aborted || sequence !== refreshSequence.current) return;
+      if (caught && typeof caught === "object" && "status" in caught && caught.status === 401)
+        onUnauthorized();
+      setReadFailed(true);
     } finally {
-      setLoading(false);
+      if (readController.current === controller) {
+        readController.current = null;
+        refreshing.current = false;
+        refreshAgain.current = false;
+        setLoading(false);
+      }
     }
   };
 
@@ -717,24 +784,39 @@ export function useThreadControlCenter(
   const selectedSummary =
     detail?.payload.thread ?? threadItems.find(({ threadId }) => threadId === selectedThreadId);
 
+  const feedbackInConversation =
+    selectedThreadId !== null && (readScope === "conversation" || !detail);
+
   const list = (
     <ThreadSidebar
       threads={threadItems}
       contentByRef={contentByRef}
       loading={loading}
+      hasLoaded={collection !== undefined}
+      feedback={
+        readScope !== "conversation" && !feedbackInConversation ? (
+          <ThreadLoadFeedback
+            pending={loading}
+            failed={readFailed}
+            scope={readScope}
+            attempt={readAttempt}
+            onRetry={() => void (readScope === "search" ? search() : refresh(true))}
+          />
+        ) : null
+      }
       searchText={searchText}
       route={route}
       selectedThreadId={selectedThreadId}
       onSearchTextChange={setSearchText}
       onSearch={() => void search()}
       onCreate={() => void createThread()}
-      onRefresh={() => void refresh()}
+      onRefresh={() => void refresh(true)}
       onNavigate={navigate}
     />
   );
 
-  const content = (
-    <div className="thread-content">
+  const feedback = (
+    <>
       <StatusRegion className="sr-only">
         {message("mutation.label")}: {message(mutationMessageId(mutationStatus))}
       </StatusRegion>
@@ -748,7 +830,15 @@ export function useThreadControlCenter(
           <code>CONTROL_CENTER_OFFLINE</code>
         </Banner>
       ) : null}
-      {loading ? <StatusRegion>{message("state.loading")}</StatusRegion> : null}
+      {feedbackInConversation ? (
+        <ThreadLoadFeedback
+          pending={loading}
+          failed={readFailed}
+          scope="conversation"
+          attempt={readAttempt}
+          onRetry={() => void refresh(true)}
+        />
+      ) : null}
       {conflict ? (
         <Banner title={message("threads.conflictTitle")} tone="warning">
           <p>{message("threads.conflictDescription")}</p>
@@ -765,7 +855,15 @@ export function useThreadControlCenter(
           </ActionButton>
         </Banner>
       ) : null}
-      {!detail ? (
+    </>
+  );
+
+  const content = (
+    <div className="thread-content">
+      {route.view !== "details" || !selectedSummary ? feedback : null}
+      {!detail && selectedThreadId ? (
+        <ThreadLoadingSkeleton scope="conversation" />
+      ) : !detail ? (
         <div className="thread-welcome">
           <h2>{message("chat.welcome")}</h2>
           <p>{message("chat.welcomeHint")}</p>
@@ -872,6 +970,7 @@ export function useThreadControlCenter(
 
   const details = selectedSummary ? (
     <div className="thread-details">
+      {route.view === "details" ? feedback : null}
       {detail ? (
         <Field label={message("threads.answerLocale")}>
           <select

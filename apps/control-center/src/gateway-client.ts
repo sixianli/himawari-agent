@@ -428,7 +428,10 @@ export class GatewayClient {
     return mutationResult(await json(response));
   }
 
-  async queryThread(message: ThreadGatewayQuery): Promise<ThreadGatewaySnapshot> {
+  async queryThread(
+    message: ThreadGatewayQuery,
+    signal?: AbortSignal,
+  ): Promise<ThreadGatewaySnapshot> {
     const parsed = threadGatewayMessageSchema.parse(message);
     if (parsed.kind !== "query") throw new Error("CONTROL_CENTER_THREAD_QUERY_INVALID");
     const response = await this.options.fetch("/api/gateway/thread/v3/queries", {
@@ -436,6 +439,7 @@ export class GatewayClient {
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
       body: threadGatewayMessageSchema.serialize(parsed),
+      ...(signal ? { signal } : {}),
     });
     const result = threadResponse(await json(response));
     if (result.kind !== "snapshot") throw new Error("CONTROL_CENTER_RESPONSE_INVALID");

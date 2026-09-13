@@ -165,6 +165,17 @@ export const messages = {
   "mutation.rejected": "拒否済み",
   "mutation.expired": "期限切れ",
   "state.empty": "表示する内容はありません",
+  "loading.list": "会話一覧を読み込み中",
+  "loading.conversation": "会話を読み込み中",
+  "loading.slowList":
+    "会話一覧の読み込みに時間がかかっています。お待ちいただくか、再試行してください。",
+  "loading.slowConversation":
+    "会話の読み込みに時間がかかっています。お待ちいただくか、再試行してください。",
+  "loading.slowSearch": "検索に時間がかかっています。お待ちいただくか、再試行してください。",
+  "loading.failedList": "会話一覧を読み込めませんでした。再試行してください。",
+  "loading.failedConversation": "この会話を読み込めませんでした。再試行してください。",
+  "loading.failedSearch": "検索を完了できませんでした。再試行してください。",
+  "loading.retry": "再試行",
   "state.loading": "権威ある状態を読み込み中",
   "state.error": "読み込みに失敗しました",
   "state.degraded": "依存関係が縮退中",

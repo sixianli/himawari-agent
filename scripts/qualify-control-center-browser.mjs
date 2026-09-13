@@ -47,7 +47,14 @@ const profiles = {
     emulation: "Pixel 7",
   },
 };
+async function showNavigation(page) {
+  const toggle = page.locator(".mobile-sidebar-toggle");
+  if ((await toggle.isVisible()) && (await toggle.getAttribute("aria-expanded")) !== "true")
+    await toggle.click();
+}
+
 async function openManagementNavigation(page) {
+  await showNavigation(page);
   const menu = page.locator(".sidebar-management");
   if ((await menu.getAttribute("open")) === null) await menu.locator(":scope > summary").click();
 }
@@ -71,6 +78,8 @@ export async function qualifyDeploymentAvailability(page, baseUrl) {
     if (request.url().endsWith("/api/gateway/v2/queries")) unsupportedQueries += 1;
   };
   page.on("request", countQueries);
+  await openManagementNavigation(page);
+  await page.locator(".unavailable-surfaces > summary").click();
   const unavailableNavigation = page.getByRole("navigation", { name: "控制中心功能" });
   const unavailableLinks = unavailableNavigation.locator(".unavailable-surfaces").getByRole("link");
   if ((await unavailableLinks.count()) !== 13)
@@ -89,6 +98,7 @@ export async function qualifyDeploymentAvailability(page, baseUrl) {
   page.off("request", countQueries);
   await openManagementNavigation(page);
   await unavailableNavigation.getByRole("link", { name: "审批", exact: true }).click();
+  await showNavigation(page);
   await page.getByText("approval-approve", { exact: true }).waitFor();
   await openManagementNavigation(page);
   await unavailableNavigation.getByRole("link", { name: "健康与部署", exact: true }).click();
@@ -306,6 +316,7 @@ export async function qualifyBrowser({
   ];
 
   let browser;
+  let page;
   try {
     await waitForServer();
     browser = await profile.engine.launch({
@@ -331,7 +342,7 @@ export async function qualifyBrowser({
         window.__himawariSafeLogs.push(event.detail);
       });
     });
-    let page = await context.newPage();
+    page = await context.newPage();
     observePageErrors(page);
     await page.goto(`${baseUrl}/threads/thread-main?view=content`);
     await waitForConnected(page);
@@ -386,6 +397,7 @@ export async function qualifyBrowser({
     if (!keyboardFocus?.visible || !keyboardFocus.accessibleName) {
       throw new Error(`CONTROL_CENTER_KEYBOARD_FOCUS_NOT_VISIBLE:${JSON.stringify(keyboardFocus)}`);
     }
+    if (profile.emulation) await showNavigation(page);
     const ariaSnapshot = await page.locator("body").ariaSnapshot();
     const requiredLandmarks = profile.emulation
       ? ["navigation", "main", "heading"]
@@ -395,6 +407,8 @@ export async function qualifyBrowser({
         throw new Error(`CONTROL_CENTER_ARIA_LANDMARK_MISSING:${requiredLandmark}`);
       }
     }
+
+    if (profile.emulation) await page.locator(".mobile-sidebar-toggle").click();
 
     await page.getByLabel("消息草稿").fill("浏览器资格测试消息");
     await page.getByRole("button", { name: "发送并启动 Run" }).click();
@@ -412,14 +426,18 @@ export async function qualifyBrowser({
     }
     await page.getByRole("button", { name: "稳定检查点", exact: true }).click();
     await page.getByText("completed", { exact: true }).waitFor();
+    await showNavigation(page);
     await page.locator(".thread-search-disclosure > summary").click();
-    await page.getByLabel("搜索对话").fill("计划");
+    await page.getByRole("searchbox", { name: "搜索对话", exact: true }).fill("计划");
     await page
       .locator(".thread-search")
       .getByRole("button", { name: "搜索对话", exact: true })
       .click();
     await page.getByRole("link").filter({ hasText: "主对话" }).first().waitFor();
 
+    if (profile.emulation) await page.locator(".mobile-sidebar-toggle").click();
+    if (!(await page.getByLabel("重命名").isVisible()))
+      await page.getByRole("button", { name: "显示详情", exact: true }).click();
     await page.getByLabel("重命名").fill("多客户端冲突后的标题");
     await page.evaluate(() =>
       fetch("/__fixture/conflict", {
@@ -442,6 +460,7 @@ export async function qualifyBrowser({
     await waitForAccepted(peer);
     await page.getByRole("button", { name: "置顶", exact: true }).waitFor();
     await peer.close();
+    diagnosticPage = page;
 
     await page.getByRole("button", { name: "归档", exact: true }).click();
     await waitForAccepted(page);
@@ -453,6 +472,8 @@ export async function qualifyBrowser({
       throw new Error("CONTROL_CENTER_DELETION_IMPACT_NOT_APPLIED");
     }
 
+    if (profile.emulation)
+      await page.getByRole("button", { name: "显示详情", exact: true }).click();
     await page.getByRole("button", { name: "从此轮 Fork", exact: true }).first().click();
     await page.waitForURL(/\/threads\/thread-fork%3A|\/threads\/thread-fork:/);
     await page.getByRole("button", { name: "显示详情", exact: true }).click();
@@ -519,11 +540,13 @@ export async function qualifyBrowser({
     await waitForText(page.getByRole("main"), "Owner MacBook");
 
     const localeSelect = page.locator(".locale-control select");
+    await showNavigation(page);
     await localeSelect.selectOption("en");
     await page.getByRole("heading", { name: "Sessions and devices", exact: true }).waitFor();
     if ((await page.locator("html").getAttribute("lang")) !== "en") {
       throw new Error("CONTROL_CENTER_EN_LOCALE_NOT_APPLIED");
     }
+    await showNavigation(page);
     await localeSelect.selectOption("ja");
     await page.getByRole("heading", { name: "セッションとデバイス", exact: true }).waitFor();
     if ((await page.locator("html").getAttribute("lang")) !== "ja") {
@@ -532,6 +555,7 @@ export async function qualifyBrowser({
     const japaneseNavigation = page.getByRole("navigation", { name: "コントロールセンター機能" });
     await openManagementNavigation(page);
     await japaneseNavigation.getByRole("link", { name: "会話", exact: true }).click();
+    await showNavigation(page);
     await page.locator('.list-pane a[href="/threads/thread-main"]').click();
     await page.getByRole("heading", { name: "多客户端冲突后的标题", exact: true }).waitFor();
     await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
@@ -544,6 +568,7 @@ export async function qualifyBrowser({
     await assertNoDocumentOverflow(page, "desktop-ja-long-input");
     await assertAxeClean(page, "desktop-ja");
     await page.getByLabel("メッセージ下書き").fill("");
+    await showNavigation(page);
     await localeSelect.selectOption("zh-CN");
     await page.getByRole("heading", { name: "多客户端冲突后的标题", exact: true }).waitFor();
     if (
@@ -556,7 +581,12 @@ export async function qualifyBrowser({
     await page.goto(`${baseUrl}/capabilities/capability-review?view=details`);
     await waitForConnected(page);
     await page.getByRole("heading", { name: "能力与适配器", exact: true }).waitFor();
-    await page.getByText("capability-review", { exact: true }).first().waitFor();
+    await showNavigation(page);
+    await page
+      .getByText("capability-review", { exact: true })
+      .filter({ visible: true })
+      .first()
+      .waitFor();
 
     let releaseLoading;
     let markLoadingComplete;
@@ -574,10 +604,16 @@ export async function qualifyBrowser({
     await page.route("**/api/gateway/v2/queries", loadingHandler);
     await openManagementNavigation(page);
     await primaryNavigation.getByRole("link", { name: "审批", exact: true }).click();
-    await page.getByText("正在加载权威状态", { exact: true }).first().waitFor();
+    await showNavigation(page);
+    await page
+      .getByText("正在加载权威状态", { exact: true })
+      .filter({ visible: true })
+      .first()
+      .waitFor();
     releaseLoading?.();
     await loadingComplete;
     await page.unroute("**/api/gateway/v2/queries", loadingHandler);
+    await showNavigation(page);
     await waitForText(page.locator(".list-pane"), "approval-approve");
 
     const hiddenExecutionStatus = await page.evaluate(() =>
@@ -695,7 +731,6 @@ export async function qualifyBrowser({
     await page.getByRole("button", { name: "停用能力", exact: true }).click();
     phase = "offline";
     await context.setOffline(true);
-    await page.evaluate(() => window.dispatchEvent(new Event("online")));
     await waitForText(page.locator(".connection"), "离线");
     const offlineGovernanceDialog = page.getByRole("dialog", { name: "确认治理操作" });
     await offlineGovernanceDialog.getByLabel("我已核对当前权威快照和操作影响。").check();
@@ -727,8 +762,8 @@ export async function qualifyBrowser({
         body: JSON.stringify({ error: { code: "SESSION_REVOKED" } }),
       });
     };
-    await page.route("**/api/gateway/v2/queries", revokedSessionHandler);
     await openManagementNavigation(page);
+    await page.route("**/api/gateway/v2/queries", revokedSessionHandler);
     await primaryNavigation.getByRole("link", { name: "后台任务", exact: true }).click();
     await page.getByText("CONTROL_CENTER_REAUTHENTICATION_REQUIRED", { exact: true }).waitFor();
     if ((await page.getByText("approval-01", { exact: true }).count()) > 0) {
@@ -741,7 +776,12 @@ export async function qualifyBrowser({
 
     await openManagementNavigation(page);
     await primaryNavigation.getByRole("link", { name: "能力与适配器", exact: true }).click();
-    await page.getByText("capability-review", { exact: true }).first().waitFor();
+    await showNavigation(page);
+    await page
+      .getByText("capability-review", { exact: true })
+      .filter({ visible: true })
+      .first()
+      .waitFor();
 
     await page.evaluate(() => fetch("/__fixture/degrade", { method: "POST" }));
     await openManagementNavigation(page);
@@ -755,6 +795,7 @@ export async function qualifyBrowser({
     );
     await openManagementNavigation(page);
     await primaryNavigation.getByRole("link", { name: "对话", exact: true }).click();
+    await showNavigation(page);
     await page.locator('.list-pane a[href="/threads/thread-main"]').click();
     await page.getByRole("heading", { name: "多客户端冲突后的标题", exact: true }).waitFor();
     await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
@@ -762,7 +803,6 @@ export async function qualifyBrowser({
     await page.getByLabel("消息草稿").fill("离线草稿");
     phase = "offline";
     await context.setOffline(true);
-    await page.evaluate(() => window.dispatchEvent(new Event("online")));
     await waitForText(page.locator(".connection"), "离线");
     if (!(await page.getByRole("button", { name: "发送并启动 Run" }).isDisabled())) {
       throw new Error("CONTROL_CENTER_OFFLINE_MUTATION_ENABLED");
@@ -893,9 +933,11 @@ export async function qualifyBrowser({
     const reopenedNavigation = page.getByRole("navigation", { name: "控制中心功能" });
     await openManagementNavigation(page);
     await reopenedNavigation.getByRole("link", { name: "审批", exact: true }).click();
+    await showNavigation(page);
     await page.getByText("approval-approve", { exact: true }).waitFor();
     await openManagementNavigation(page);
     await reopenedNavigation.getByRole("link", { name: "后台任务", exact: true }).click();
+    await showNavigation(page);
     await page.getByText("job-repository-monitor", { exact: true }).waitFor();
     const expectedOfflineBrowserError = (error) =>
       error.includes("access control checks") &&
@@ -1002,6 +1044,8 @@ export async function qualifyBrowser({
     reportResult = report;
   } catch (error) {
     primaryError = error;
+    diagnosticPage = page;
+    diagnostics.push({ phase, url: diagnosticPage?.url() });
     if (reportDirectory) {
       if (diagnosticPage && !diagnosticPage.isClosed()) {
         try {
