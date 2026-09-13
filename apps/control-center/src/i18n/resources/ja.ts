@@ -1,6 +1,12 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "layout.hideList": "サイドバーを閉じる",
+  "nav.manage": "管理",
+  "threads.recent": "最近の会話",
+  "chat.start": "会話を始める",
+  "chat.welcome": "今日は何をしましょうか？",
+  "chat.welcomeHint": "新しい会話を始めるか、前の作業を再開しましょう。",
   "account.signIn": "Himawari にログイン",
   "account.reauthenticate": "本人確認を行う",
   "account.passwordHelp": "この Himawari サービスで作成したアカウントを使用します。",

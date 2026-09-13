@@ -1,7 +1,8 @@
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ControlCenterPreferences, ControlCenterUiLocale } from "../browser-storage.js";
 import { AppearancePicker } from "../components/appearance-picker.js";
+import { SidebarIcon } from "../components/sidebar-icon.js";
 import { HimawariBrand } from "../components/brand.js";
 import { ActionButton, AppLink, StatusRegion } from "../components/index.js";
 import type { MessageId } from "../i18n/message-ids.js";
@@ -71,10 +72,27 @@ export function ControlCenterShell({
   route,
 }: ControlCenterShellProps) {
   const { message } = useControlCenterIntl();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const collapseRef = useRef<HTMLButtonElement>(null);
+  const restoreRef = useRef<HTMLButtonElement>(null);
+  const sidebarFocusRequested = useRef(false);
+  useEffect(() => {
+    if (!sidebarFocusRequested.current) return;
+    sidebarFocusRequested.current = false;
+    (sidebarCollapsed ? restoreRef : collapseRef).current?.focus();
+  }, [sidebarCollapsed]);
+  const toggleSidebar = (collapsed: boolean) => {
+    sidebarFocusRequested.current = true;
+    setSidebarCollapsed(collapsed);
+  };
+  const managementRef = useRef<HTMLDetailsElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const routeFocusKey = `${route.surfaceId}:${route.objectId ?? ""}:${route.view}`;
   useEffect(() => {
-    if (routeFocusKey) headingRef.current?.focus();
+    if (routeFocusKey) {
+      if (managementRef.current) managementRef.current.open = false;
+      headingRef.current?.focus({ preventScroll: true });
+    }
   }, [routeFocusKey]);
   const updateView = (view: ControlCenterRouteState["view"]) => onNavigate({ ...route, view });
 
@@ -82,6 +100,7 @@ export function ControlCenterShell({
     <div
       className="app-shell"
       data-density={preferences.density}
+      data-sidebar-collapsed={sidebarCollapsed}
       data-mobile-view={route.view}
       data-details-open={route.view === "details"}
       data-surface={route.surfaceId}
@@ -91,66 +110,115 @@ export function ControlCenterShell({
         {message("app.skipToMain")}
       </AppLink>
       <aside className="sidebar" aria-label={message("nav.label")}>
-        <a
-          className="brand-link"
-          href="/threads"
-          onClick={(event) => {
-            if (!shouldHandleNavigation(event)) return;
-            event.preventDefault();
-            onNavigate(routeForSurface("threads", { view: "content" }));
-          }}
-        >
-          <HimawariBrand wordmark />
-        </a>
+        <div className="brand-heading">
+          <a
+            className="brand-link"
+            href="/threads"
+            onClick={(event) => {
+              if (!shouldHandleNavigation(event)) return;
+              event.preventDefault();
+              onNavigate(routeForSurface("threads", { view: "content" }));
+            }}
+          >
+            <HimawariBrand wordmark />
+          </a>
+          <ActionButton
+            className="desktop-sidebar-toggle"
+            ref={collapseRef}
+            variant="quiet"
+            aria-label={message("layout.hideList")}
+            aria-expanded={!sidebarCollapsed}
+            onClick={() => toggleSidebar(true)}
+          >
+            ◧
+          </ActionButton>
+        </div>
         <section className="list-pane" aria-label={message("common.currentRecords")}>
           {list}
         </section>
-        <nav aria-label={message("nav.label")} className="primary-nav">
-          {CONTROL_CENTER_SURFACE_INVENTORY.map((surface) => {
-            const state = routeForSurface(surface.id, { view: "content" });
-            return (
-              <AppLink
-                current={route.surfaceId === surface.id}
-                href={controlCenterHref(state)}
-                key={surface.id}
-                onClick={(event) => {
-                  if (!shouldHandleNavigation(event)) return;
-                  event.preventDefault();
-                  onNavigate(state);
-                }}
-              >
-                {message(navMessageIds[surface.id])}
-                {!(builtInIdentity && surface.id === "sessions-devices") &&
-                !isSurfaceInstalled(
-                  surface,
-                  installedGatewayV2Operations,
-                  healthDependenciesAvailable,
-                ) ? (
-                  <small> · {message("surface.notInstalled.label")}</small>
-                ) : null}
-              </AppLink>
-            );
-          })}
-        </nav>
-        <label className="locale-control">
-          <span className="visually-hidden">{message("locale.label")}</span>
-          <select
-            aria-label={message("locale.label")}
-            onChange={(event) => onLocaleChange(event.target.value as ControlCenterUiLocale)}
-            value={locale}
+        <div className="sidebar-footer">
+          <details
+            className="sidebar-management"
+            ref={managementRef}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.currentTarget.open = false;
+                event.currentTarget.querySelector("summary")?.focus();
+              }
+            }}
           >
-            {UI_LOCALES.map((value) => (
-              <option key={value} value={value}>
-                {message(
-                  value === "zh-CN" ? "locale.zhCN" : value === "ja" ? "locale.ja" : "locale.en",
-                )}
-              </option>
-            ))}
-          </select>
-        </label>
+            <summary>
+              <SidebarIcon name="manage" />
+              <span>{message("nav.manage")}</span>
+            </summary>
+            <nav aria-label={message("nav.label")} className="primary-nav">
+              {[true, false].map((installed) => {
+                const links = CONTROL_CENTER_SURFACE_INVENTORY.filter(
+                  (surface) =>
+                    ((builtInIdentity && surface.id === "sessions-devices") ||
+                      isSurfaceInstalled(
+                        surface,
+                        installedGatewayV2Operations,
+                        healthDependenciesAvailable,
+                      )) === installed,
+                ).map((surface) => {
+                  const state = routeForSurface(surface.id, { view: "content" });
+                  return (
+                    <AppLink
+                      current={route.surfaceId === surface.id}
+                      href={controlCenterHref(state)}
+                      key={surface.id}
+                      onClick={(event) => {
+                        if (!shouldHandleNavigation(event)) return;
+                        event.preventDefault();
+                        onNavigate(state);
+                      }}
+                    >
+                      {message(navMessageIds[surface.id])}
+                    </AppLink>
+                  );
+                });
+                return installed ? (
+                  <div key="installed">{links}</div>
+                ) : links.length ? (
+                  <details className="unavailable-surfaces" key="unavailable">
+                    <summary>{message("surface.notInstalled.label")}</summary>
+                    {links}
+                  </details>
+                ) : null;
+              })}
+            </nav>
+          </details>
+          <label className="locale-control">
+            <span className="visually-hidden">{message("locale.label")}</span>
+            <select
+              aria-label={message("locale.label")}
+              onChange={(event) => onLocaleChange(event.target.value as ControlCenterUiLocale)}
+              value={locale}
+            >
+              {UI_LOCALES.map((value) => (
+                <option key={value} value={value}>
+                  {message(
+                    value === "zh-CN" ? "locale.zhCN" : value === "ja" ? "locale.ja" : "locale.en",
+                  )}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </aside>
       <div className="workspace">
         <header className="topbar">
+          <ActionButton
+            className="desktop-sidebar-restore"
+            ref={restoreRef}
+            variant="quiet"
+            aria-label={message("layout.showList")}
+            aria-expanded={!sidebarCollapsed}
+            onClick={() => toggleSidebar(false)}
+          >
+            ◧
+          </ActionButton>
           <ActionButton
             className="mobile-sidebar-toggle"
             aria-label={message("layout.showList")}
@@ -161,7 +229,6 @@ export function ControlCenterShell({
             ☰
           </ActionButton>
           <div className="page-heading">
-            <p className="eyebrow">Himawari / {message("app.title")}</p>
             <h1 id="page-title" ref={headingRef} tabIndex={-1}>
               {pageTitle}
             </h1>

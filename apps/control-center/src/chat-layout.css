@@ -1,4 +1,4 @@
-/* Product layout follows the approved v1 reference; shared business primitives remain intact. */
+/* Brand and chat follow v1; sidebar hierarchy follows the September 13 refinement. */
 [hidden] {
   /* biome-ignore lint/complexity/noImportantStyles: The HTML hidden state must override component display rules. */
   display: none !important;
@@ -18,17 +18,43 @@
   --pane-padding: 20px;
 }
 .sidebar {
-  width: 220px;
-  flex: 0 0 220px;
+  width: 272px;
+  flex: 0 0 272px;
+  position: relative;
   display: flex;
   flex-direction: column;
-  padding: 18px 12px 12px;
+  padding: 24px 12px 12px;
   background: var(--sidebar);
   border-right: 1px solid var(--border);
   overflow: hidden;
 }
+.brand-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 26px 12px;
+  gap: 8px;
+}
+.desktop-sidebar-toggle {
+  padding: 4px;
+  min-height: 32px;
+  width: 32px;
+  color: var(--text-muted);
+  font-size: 20px;
+}
+.desktop-sidebar-restore {
+  display: none;
+}
+@media (min-width: 641px) {
+  .app-shell[data-sidebar-collapsed="true"] .sidebar {
+    display: none;
+  }
+  .app-shell[data-sidebar-collapsed="true"] .desktop-sidebar-restore {
+    display: inline-flex;
+  }
+}
 .brand-link {
-  padding: 2px 8px 22px;
+  padding: 2px 0;
   color: var(--text);
   text-decoration: none;
 }
@@ -61,14 +87,8 @@
   min-width: 0;
   flex: 1;
 }
-.page-heading .eyebrow {
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: 0;
-  margin: 0;
-}
 .page-heading h1 {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   letter-spacing: 0;
   overflow: hidden;
@@ -146,49 +166,98 @@
 .details-pane .panel-heading {
   margin-bottom: 20px;
 }
+.sidebar-footer {
+  flex-shrink: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.sidebar-management {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-management > summary,
+.thread-search-disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  color: var(--nav-text);
+  cursor: pointer;
+  list-style: none;
+}
+.sidebar-management > summary::-webkit-details-marker,
+.thread-search-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.sidebar-management > summary:hover,
+.thread-search-disclosure > summary:hover {
+  background: var(--surface-muted);
+}
+.sidebar-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
 .primary-nav {
   display: grid;
-  flex-shrink: 0;
-  max-height: 28vh;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: min(65dvh, 540px);
   overflow: auto;
-  gap: 2px;
-  border-top: 1px solid var(--border);
-  margin-top: 12px;
-  padding: 10px 0;
+  gap: 4px;
+  margin: 0;
+  padding: 8px;
+  background: var(--sidebar);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px #0004;
 }
 .primary-nav .app-link {
   display: flex;
-  flex-wrap: wrap;
-  min-height: 36px;
-  padding: 6px 10px;
+  min-height: 40px;
+  padding: 8px 10px;
   border: 0;
   border-radius: 7px;
   background: transparent;
   color: var(--nav-text);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
 }
-.primary-nav small {
-  color: var(--text-muted);
-  font-size: 10px;
-}
-.primary-nav .app-link[aria-current="page"] {
-  color: var(--text);
-  background: var(--surface-muted);
-  text-decoration: none;
-  box-shadow: inset 2px 0 var(--primary);
-}
+.primary-nav .app-link[aria-current="page"],
 .primary-nav .app-link:hover {
   background: var(--surface-muted);
+  color: var(--text);
+  box-shadow: none;
+}
+.unavailable-surfaces > summary {
+  padding: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
 }
 .locale-control {
   display: block;
+  max-width: 112px;
 }
 .locale-control select {
-  min-height: 36px;
-  padding: 4px 8px;
+  min-height: 44px;
+  padding: 4px 6px;
   font-size: 12px;
   background: transparent;
+  border-color: transparent;
+}
+/* Route announcements focus a non-interactive heading, not an editable title. */
+.page-heading h1:focus {
+  outline: none;
 }
 .mobile-sidebar-toggle {
   display: none;
@@ -297,98 +366,137 @@
   font-size: 12px;
   color: var(--text-muted);
 }
-.thread-list-controls .actions {
-  flex-wrap: wrap;
-  gap: 3px;
+.thread-sidebar-actions {
+  padding-bottom: 16px;
 }
-.thread-list-controls .actions .action-button {
-  font-size: 12px;
-  min-height: 36px;
-  padding: 6px 9px;
+.thread-sidebar-actions > .action-button,
+.thread-sidebar-actions > .app-link {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--nav-text);
+  text-align: left;
+  text-decoration: none;
+}
+.thread-sidebar-actions > .action-button:hover,
+.thread-sidebar-actions > .app-link:hover {
+  background: var(--surface-muted);
+}
+.thread-search-disclosure > summary {
+  font-size: 14px;
 }
 .thread-search {
   display: flex;
-  flex-wrap: wrap;
   gap: 4px;
-  margin: 12px 0;
-}
-.thread-search .field {
-  margin: 0;
-  flex: 1;
-  min-width: 0;
-}
-.thread-search label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
+  margin: 6px 4px 10px;
 }
 .thread-search input {
-  min-height: 36px;
-  padding: 7px 9px;
-  font-size: 12px;
+  min-width: 0;
+  flex: 1;
+  min-height: 40px;
+  padding: 8px;
+  font-size: 13px;
 }
 .thread-search .action-button {
-  min-height: 36px;
-  font-size: 11px;
-  padding: 5px;
+  padding: 8px;
+  min-height: 40px;
 }
-.thread-list-controls .filter-group {
+.thread-collection-heading {
   display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  border: 0;
-  margin: 8px 0;
-  padding: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 6px;
 }
-.thread-list-controls .filter-group legend {
-  font-size: 11px;
+.thread-collection-heading select {
+  width: auto;
+  min-height: 36px;
+  padding: 4px;
+  font-size: 12px;
   color: var(--text-muted);
+  background: transparent;
+  border-color: transparent;
 }
-.thread-list-controls .filter-group .action-button {
-  min-height: 32px;
-  padding: 4px 7px;
-  font-size: 11px;
+.thread-collection-heading .action-button {
+  padding: 6px;
+  min-height: 36px;
 }
-.thread-list-controls > p {
-  font-size: 11px;
+.thread-collection-heading .sidebar-icon {
+  width: 16px;
+  height: 16px;
+}
+.thread-group {
+  margin-bottom: 20px;
+}
+.thread-group > summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-muted);
 }
 .thread-list-controls .semantic-list {
   display: block;
-  padding: 0;
+  gap: 2px;
 }
 .thread-list-controls .semantic-list > li {
+  border: 0;
   padding: 0;
   background: transparent;
-  border: 0;
 }
 .thread-list-controls .semantic-list a {
   display: flex;
-  align-items: center;
   min-height: 40px;
-  gap: 5px;
-  padding: 8px 9px;
-  color: var(--nav-text);
-  text-decoration: none;
+  padding: 10px 12px;
+  border-radius: 9px;
   font-size: 13px;
-  border-radius: 7px;
+  line-height: 20px;
+  text-decoration: none;
 }
 .thread-list-controls .semantic-list a > span {
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  flex: 1;
-}
-.thread-list-controls .semantic-list a small {
-  font-size: 10px;
-  color: var(--text-muted);
 }
 .thread-list-controls .semantic-list a[aria-current="page"] {
+  color: var(--text);
   background: var(--surface-muted);
-  box-shadow: inset 2px 0 var(--primary);
+  box-shadow: none;
 }
+.thread-list-controls .empty-state {
+  margin: 8px 12px;
+  font-size: 12px;
+}
+.thread-welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px 100px;
+  text-align: center;
+}
+.thread-welcome h2 {
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 500;
+  letter-spacing: -0.6px;
+  margin: 0 0 12px;
+}
+.thread-welcome p {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0 0 24px;
+}
+
 .app-shell[data-surface="threads"] .content-pane {
   padding: 0;
   overflow: hidden;
@@ -680,8 +788,8 @@
 }
 @media (max-width: 900px) {
   .sidebar {
-    width: 200px;
-    flex-basis: 200px;
+    width: 240px;
+    flex-basis: 240px;
   }
   .details-pane {
     position: absolute;
@@ -702,6 +810,10 @@
   }
 }
 @media (max-width: 640px) {
+  .desktop-sidebar-toggle,
+  .desktop-sidebar-restore {
+    display: none;
+  }
   .app-shell {
     width: 100%;
     margin: 0;
@@ -815,11 +927,28 @@
 .thread-message-owner .message-actions {
   display: none;
 }
-.thread-list-controls {
-  display: block;
+.app-shell[data-surface="threads"] .list-pane {
+  overflow: hidden;
 }
+.thread-list-controls {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.thread-sidebar-actions {
+  flex-shrink: 0;
+}
+.thread-sidebar-records {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
 .thread-list-controls .semantic-list .app-link {
   display: flex;
+  color: var(--nav-text);
 }
 .thread-list-controls .semantic-list .app-link[aria-current="page"] {
   border-inline-start: 0;
@@ -1016,6 +1145,8 @@
 @media (max-width: 700px) {
   .app-shell .action-button,
   .app-shell summary,
+  .thread-collection-heading select,
+  .thread-collection-heading .action-button,
   .app-shell .primary-nav a {
     min-height: 44px;
   }

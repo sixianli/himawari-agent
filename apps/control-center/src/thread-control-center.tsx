@@ -7,15 +7,9 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import type { ControlCenterRouteState } from "./app/router.js";
 import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./browser-storage.js";
 import { ChatComposer } from "./components/chat-composer.js";
+import { ThreadSidebar } from "./components/thread-sidebar.js";
 import { ChatHistory } from "./components/chat-history.js";
-import {
-  ActionButton,
-  AppLink,
-  Banner,
-  Field,
-  SemanticList,
-  StatusRegion,
-} from "./components/index.js";
+import { ActionButton, Banner, Field, SemanticList, StatusRegion } from "./components/index.js";
 import type {
   ControlCenterRuntimeConfiguration,
   GatewayClient,
@@ -724,83 +718,19 @@ export function useThreadControlCenter(
     detail?.payload.thread ?? threadItems.find(({ threadId }) => threadId === selectedThreadId);
 
   const list = (
-    <div className="thread-list-controls">
-      <div className="actions">
-        <ActionButton onClick={() => void createThread()}>{message("threads.new")}</ActionButton>
-        <ActionButton onClick={() => void refresh()} variant="secondary">
-          {message("common.refresh")}
-        </ActionButton>
-      </div>
-      <form
-        className="thread-search"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void search();
-        }}
-      >
-        <Field label={message("threads.search")}>
-          <input
-            placeholder={message("threads.searchPlaceholder")}
-            type="search"
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
-          />
-        </Field>
-        <ActionButton disabled={!searchText.trim()} type="submit" variant="secondary">
-          {message("threads.search")}
-        </ActionButton>
-      </form>
-      <fieldset className="filter-group">
-        <legend>{message("threads.filter")}</legend>
-        {(
-          [
-            [null, "threads.filterActive"],
-            ["archived", "threads.filterArchived"],
-            ["all", "threads.filterAll"],
-          ] as const
-        ).map(([status, label]) => (
-          <ActionButton
-            key={label}
-            onClick={() => navigate({ ...route, status, afterCursor: null })}
-            variant={
-              route.status === status || (!route.status && status === null)
-                ? "primary"
-                : "secondary"
-            }
-          >
-            {message(label)}
-          </ActionButton>
-        ))}
-      </fieldset>
-      <p>{message("objects.count", { count: threadItems.length })}</p>
-      <SemanticList
-        empty={loading ? message("state.loading") : message("common.noRecords")}
-        getId={(thread) => thread.threadId}
-        items={threadItems}
-        label={message("common.currentRecords")}
-        renderItem={(thread) => (
-          <AppLink
-            current={thread.threadId === selectedThreadId}
-            href={`#${encodeURIComponent(thread.threadId)}`}
-            onClick={(event) => {
-              event.preventDefault();
-              navigate({ ...route, objectId: thread.threadId, view: "content" });
-            }}
-          >
-            <span>
-              {thread.titleRef
-                ? (contentByRef[thread.titleRef] ?? message("chat.untitled"))
-                : message("chat.untitled")}
-            </span>
-            <small>
-              {thread.pinOrder !== null
-                ? message("chat.pinned")
-                : new Date(thread.updatedAt).toLocaleDateString()}
-            </small>
-          </AppLink>
-        )}
-      />
-    </div>
+    <ThreadSidebar
+      threads={threadItems}
+      contentByRef={contentByRef}
+      loading={loading}
+      searchText={searchText}
+      route={route}
+      selectedThreadId={selectedThreadId}
+      onSearchTextChange={setSearchText}
+      onSearch={() => void search()}
+      onCreate={() => void createThread()}
+      onRefresh={() => void refresh()}
+      onNavigate={navigate}
+    />
   );
 
   const content = (
@@ -836,7 +766,13 @@ export function useThreadControlCenter(
         </Banner>
       ) : null}
       {!detail ? (
-        <p>{loading ? message("state.loading") : message("common.select")}</p>
+        <div className="thread-welcome">
+          <h2>{message("chat.welcome")}</h2>
+          <p>{message("chat.welcomeHint")}</p>
+          <ActionButton onClick={() => void createThread()} variant="secondary">
+            {message("chat.start")}
+          </ActionButton>
+        </div>
       ) : (
         <>
           <ChatHistory

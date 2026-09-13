@@ -1,6 +1,12 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "layout.hideList": "收起侧栏",
+  "nav.manage": "管理",
+  "threads.recent": "最近对话",
+  "chat.start": "开始对话",
+  "chat.welcome": "今天想做些什么？",
+  "chat.welcomeHint": "开始一段新对话，或从左侧继续之前的工作。",
   "account.signIn": "登录 Himawari",
   "account.reauthenticate": "再次验证身份",
   "account.passwordHelp": "使用在此 Himawari 服务中创建的账号。",

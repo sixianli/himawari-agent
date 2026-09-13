@@ -47,6 +47,11 @@ const profiles = {
     emulation: "Pixel 7",
   },
 };
+async function openManagementNavigation(page) {
+  const menu = page.locator(".sidebar-management");
+  if ((await menu.getAttribute("open")) === null) await menu.locator(":scope > summary").click();
+}
+
 export async function qualifyDeploymentAvailability(page, baseUrl) {
   await page.route("**/api/control-center/v1/config", async (route) => {
     const response = await route.fetch();
@@ -67,10 +72,14 @@ export async function qualifyDeploymentAvailability(page, baseUrl) {
   };
   page.on("request", countQueries);
   const unavailableNavigation = page.getByRole("navigation", { name: "控制中心功能" });
-  const unavailableLinks = unavailableNavigation.getByRole("link").filter({ hasText: "未启用" });
+  const unavailableLinks = unavailableNavigation.locator(".unavailable-surfaces").getByRole("link");
   if ((await unavailableLinks.count()) !== 13)
     throw new Error("CONTROL_CENTER_AVAILABILITY_INVENTORY_INVALID");
   for (let index = 0; index < 13; index += 1) {
+    await openManagementNavigation(page);
+    const unavailable = page.locator(".unavailable-surfaces");
+    if ((await unavailable.getAttribute("open")) === null)
+      await unavailable.locator(":scope > summary").click();
     await unavailableLinks.nth(index).click();
     await page.getByText("当前部署未启用此功能", { exact: true }).waitFor();
     if (await page.getByText("PORT_NOT_AUTHORITATIVE", { exact: true }).count())
@@ -78,8 +87,10 @@ export async function qualifyDeploymentAvailability(page, baseUrl) {
   }
   if (unsupportedQueries !== 0) throw new Error("CONTROL_CENTER_UNINSTALLED_QUERY_SENT");
   page.off("request", countQueries);
+  await openManagementNavigation(page);
   await unavailableNavigation.getByRole("link", { name: "审批", exact: true }).click();
   await page.getByText("approval-approve", { exact: true }).waitFor();
+  await openManagementNavigation(page);
   await unavailableNavigation.getByRole("link", { name: "健康与部署", exact: true }).click();
   await page.getByText("model-provider", { exact: true }).waitFor();
   const violations = (await new AxeBuilder({ page }).analyze()).violations;
@@ -401,8 +412,12 @@ export async function qualifyBrowser({
     }
     await page.getByRole("button", { name: "稳定检查点", exact: true }).click();
     await page.getByText("completed", { exact: true }).waitFor();
+    await page.locator(".thread-search-disclosure > summary").click();
     await page.getByLabel("搜索对话").fill("计划");
-    await page.getByRole("button", { name: "搜索对话", exact: true }).click();
+    await page
+      .locator(".thread-search")
+      .getByRole("button", { name: "搜索对话", exact: true })
+      .click();
     await page.getByRole("link").filter({ hasText: "主对话" }).first().waitFor();
 
     await page.getByLabel("重命名").fill("多客户端冲突后的标题");
@@ -447,6 +462,7 @@ export async function qualifyBrowser({
 
     const primaryNavigation = page.getByRole("navigation", { name: "控制中心功能" });
     for (const surface of surfaces) {
+      await openManagementNavigation(page);
       await primaryNavigation.getByRole("link", { name: surface.label, exact: true }).click();
       if (surface.label === "对话") await page.locator("#page-title").waitFor();
       else await page.getByRole("heading", { name: surface.title, exact: true }).waitFor();
@@ -490,6 +506,7 @@ export async function qualifyBrowser({
     await waitForText(page.getByRole("main"), "fixture-provider");
     await waitForText(page.getByRole("main"), "model:fixture-primary:v1");
 
+    await openManagementNavigation(page);
     await primaryNavigation.getByRole("link", { name: "设置", exact: true }).click();
     await waitForText(page.getByRole("main"), "model:fixture-fallback:v1");
     await waitForText(
@@ -513,8 +530,9 @@ export async function qualifyBrowser({
       throw new Error("CONTROL_CENTER_JA_LOCALE_NOT_APPLIED");
     }
     const japaneseNavigation = page.getByRole("navigation", { name: "コントロールセンター機能" });
+    await openManagementNavigation(page);
     await japaneseNavigation.getByRole("link", { name: "会話", exact: true }).click();
-    await page.locator('.list-pane a[href="#thread-main"]').click();
+    await page.locator('.list-pane a[href="/threads/thread-main"]').click();
     await page.getByRole("heading", { name: "多客户端冲突后的标题", exact: true }).waitFor();
     await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
     await waitForConnected(page, "リアルタイム接続");
@@ -554,6 +572,7 @@ export async function qualifyBrowser({
       markLoadingComplete?.();
     };
     await page.route("**/api/gateway/v2/queries", loadingHandler);
+    await openManagementNavigation(page);
     await primaryNavigation.getByRole("link", { name: "审批", exact: true }).click();
     await page.getByText("正在加载权威状态", { exact: true }).first().waitFor();
     releaseLoading?.();
@@ -696,6 +715,7 @@ export async function qualifyBrowser({
       });
     };
     await page.route("**/api/gateway/v2/queries", errorHandler);
+    await openManagementNavigation(page);
     await primaryNavigation.getByRole("link", { name: "收件箱与摘要", exact: true }).click();
     await page.getByText("CONTROL_CENTER_FIXTURE_UNAVAILABLE", { exact: true }).waitFor();
     await page.unroute("**/api/gateway/v2/queries", errorHandler);
@@ -708,6 +728,7 @@ export async function qualifyBrowser({
       });
     };
     await page.route("**/api/gateway/v2/queries", revokedSessionHandler);
+    await openManagementNavigation(page);
     await primaryNavigation.getByRole("link", { name: "后台任务", exact: true }).click();
     await page.getByText("CONTROL_CENTER_REAUTHENTICATION_REQUIRED", { exact: true }).waitFor();
     if ((await page.getByText("approval-01", { exact: true }).count()) > 0) {
@@ -718,10 +739,12 @@ export async function qualifyBrowser({
     await page.reload();
     await waitForConnected(page);
 
+    await openManagementNavigation(page);
     await primaryNavigation.getByRole("link", { name: "能力与适配器", exact: true }).click();
     await page.getByText("capability-review", { exact: true }).first().waitFor();
 
     await page.evaluate(() => fetch("/__fixture/degrade", { method: "POST" }));
+    await openManagementNavigation(page);
     await primaryNavigation.getByRole("link", { name: "健康与部署", exact: true }).click();
     await waitForText(page.getByRole("main"), "degraded");
 
@@ -730,8 +753,9 @@ export async function qualifyBrowser({
     const cursorBeforeOffline = await page.evaluate(() =>
       localStorage.getItem("himawari.control-center.v1.threadLastCursor"),
     );
+    await openManagementNavigation(page);
     await primaryNavigation.getByRole("link", { name: "对话", exact: true }).click();
-    await page.locator('.list-pane a[href="#thread-main"]').click();
+    await page.locator('.list-pane a[href="/threads/thread-main"]').click();
     await page.getByRole("heading", { name: "多客户端冲突后的标题", exact: true }).waitFor();
     await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
     await waitForConnected(page);
@@ -867,8 +891,10 @@ export async function qualifyBrowser({
     await page.getByRole("button", { name: "显示详情", exact: true }).click();
     await page.getByText("run-01", { exact: true }).waitFor();
     const reopenedNavigation = page.getByRole("navigation", { name: "控制中心功能" });
+    await openManagementNavigation(page);
     await reopenedNavigation.getByRole("link", { name: "审批", exact: true }).click();
     await page.getByText("approval-approve", { exact: true }).waitFor();
+    await openManagementNavigation(page);
     await reopenedNavigation.getByRole("link", { name: "后台任务", exact: true }).click();
     await page.getByText("job-repository-monitor", { exact: true }).waitFor();
     const expectedOfflineBrowserError = (error) =>

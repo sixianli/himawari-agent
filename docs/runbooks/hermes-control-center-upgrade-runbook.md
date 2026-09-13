@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:9a8a6459b12ce717a6ac44664a9edcda18ce4da413ee58280a0deeeda08f7723"
+contract_sha256: "sha256:afabae256241420a3298084e8f958078509771e41e0d538d00a71f9cedfe750a"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -113,6 +113,10 @@ Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-q
 用户于 2026-09-13 另行明确选择“允许 8 小时完整 sudo，接受整台主机的 root 权限范围”。仅此临时授权允许执行 `hermes-temporary-sudo.py --grant-eight-hours`：在 Hermes 的 `/etc/sudoers.d/99-himawari-codex-20260913` 创建 `andy` 可作为 root 执行任意命令的免密码规则，使用 sudo 的 `NOTAFTER` 限定从安装起八小时，并由固定 systemd 定时器调用 root 持有的 `/etc/himawari/codex-sudo-expiry-20260913.py`，核对规则摘要后删除该条规则。此权限在系统层面覆盖整台主机；本任务仍只执行已授权的 Himawari 工作，不自动延长授权。它是对本 Runbook 项目路径范围的显式账户权限例外，不能泛化为后续任务的默认权限。安装前验证主机、账号、父目录所有权、目标与定时单元不存在及整个 sudoers 配置；先准备规则并通过 `visudo`，启动清理定时器后原子安装，再从 `andy` 身份忽略缓存执行 `sudo -n -k id -u` 验证。失败时撤销本次创建的规则与清理入口。用户在自己的终端输入密码，脚本不接收或保存密码。安装回执写入 `/data/hermes/himawari/qualifications/2026-09-13-temporary-sudo/receipt.json`，代理须读取实际到期时间。到期阻止新 sudo 命令，不能撤销已完成的修改或自动停止已启动的服务；重启后即使临时清理定时器丢失，规则自身的到期限制仍保留。若规则被修改，自动清理拒绝删除并保留诊断。需要提前撤销时，仅删除该临时规则并重新检查 sudoers，不覆盖系统已有规则。
 
 ## Verification
+
+连接与侧栏修订的候选须同时包含 HTTP Gateway 和控制中心资源。空闲 SSE 在 HTTP 身份校验后立即发送不含业务数据的注释帧；订阅授权仍由 Gateway 执行。浏览器切换标签页时保留健康连接，握手超过 10 秒会关闭并按既有退避重试。验收需覆盖无新事件时建立连接、标签页恢复、断网重连及会话撤销，不能以单次健康响应代替。侧栏验收从新建、折叠搜索、置顶和最近分组进入；管理页面通过底部“管理”菜单打开，未启用页面在该菜单内展开。核对桌面收起恢复、手机抽屉、三语和键盘焦点。
+
+此次后端修改会改变运行时摘要。历史固定日期的资格与切换脚本只用于各自绑定的冻结候选，不能直接复用于本修订。部署前必须从明确的提交及获准附带的工作区改动准备独立候选，重新绑定源码、安装、脚本与当前安装摘要，完成既有安装资格探针和停机备份前置检查。未完成该准备或未获本次切换授权时，不执行线上变更。
 
 Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用。迁移须先取得既有机制核验通过的停机备份；升级后回读 `run_payload_artifacts`、对应 Payload 密文和 `thread_fork_lineage.runtime_history_json`，核对旧 artifact 内容未变、外键完整。恢复与迁移须保留清单引用的所有消息 Payload，不能只搬运聊天正文。重启后以新 Run 验证旧工具调用/结果可见且不重新执行；取消后核对实际结果及新请求，不能仅看服务 ready。旧 Trace 没有自动导入为完整历史，不能由 schema 升级推断旧会话已修复。回退需要匹配旧版本的整套已核验数据库备份，禁止旧二进制直接打开 schema 32，也不手工删除 migration ledger。
 

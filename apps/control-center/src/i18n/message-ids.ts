@@ -1,4 +1,10 @@
 export const MESSAGE_IDS = [
+  "layout.hideList",
+  "nav.manage",
+  "threads.recent",
+  "chat.start",
+  "chat.welcome",
+  "chat.welcomeHint",
   "account.signIn",
   "account.reauthenticate",
   "account.passwordHelp",
