@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +44,7 @@ let root: string;
 beforeEach(() => {
   vi.resetModules();
   vi.resetAllMocks();
-  root = mkdtempSync(path.join(tmpdir(), "runtime-digest-contract-"));
+  root = realpathSync(mkdtempSync(path.join(tmpdir(), "runtime-digest-contract-")));
   chmodSync(root, 0o700);
   boundary.root = root;
   boundary.port = { postMessage: vi.fn() };

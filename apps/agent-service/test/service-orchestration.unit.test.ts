@@ -45,6 +45,11 @@ vi.mock("@himawari-agent/platform-node", async (original) => ({
     productionSuitable = true;
     resolve = boundary.key;
   },
+  MacOsKeychainSecretSource: class {
+    kind = "macos-keychain";
+    productionSuitable = true;
+    resolve = boundary.key;
+  },
   initializeStateRoot: boundary.initialize,
   readAuthorityFile: boundary.authorityFile,
   readRestrictedExecutionTokenFile: boundary.token,
@@ -311,6 +316,7 @@ afterEach(async () => {
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("agent service startup ownership", () => {
@@ -509,32 +515,40 @@ function web() {
   return { model, memory, runs, http, port };
 }
 describe("web service composition and readiness", () => {
-  it("opens HTTP only after memory and dispatch are ready, then closes models after consumers", async () => {
-    const f = web();
-    start();
-    await settle();
-    expect(stderr).toBe("");
-    expect(stdout).toContain('"event":"service.ready"');
-    expect(boundary.events.slice(-3)).toEqual(["memory-worker.start", "runs.start", "http.listen"]);
-    const options = boundary.http.mock.calls[0]?.[0];
-    expect(options.modelCatalog).toMatchObject([{ ref: "primary", name: "Fixture" }]);
-    await options.cancelRun({ runId: "run-fixture", command: { commandId: "cancel-fixture" } });
-    expect(f.runs.coordinator.cancel).toHaveBeenCalledWith(
-      expect.objectContaining({ runId: "run-fixture", reasonCode: "OWNER_REQUESTED_STOP" }),
-    );
-    signal?.();
-    await settle();
-    expect(await exit).toBe(0);
-    expect(f.runs.dispatcher.stopAccepting).toHaveBeenCalledOnce();
-    expect(f.runs.titles.stop).toHaveBeenCalledOnce();
-    expect(boundary.events.indexOf("http.close")).toBeLessThan(
-      boundary.events.indexOf("memory.close"),
-    );
-    expect(boundary.events.indexOf("memory.close")).toBeLessThan(
-      boundary.events.indexOf("model.close"),
-    );
-    expect(boundary.events.at(-1)).toBe("repository.close");
-  });
+  it.each(["linux", "darwin"])(
+    "opens HTTP only after memory and dispatch are ready on %s, then closes models after consumers",
+    async (platform) => {
+      vi.stubGlobal("process", Object.create(process, { platform: { value: platform } }));
+      const f = web();
+      start();
+      await settle();
+      expect(stderr).toBe("");
+      expect(stdout).toContain('"event":"service.ready"');
+      expect(boundary.events.slice(-3)).toEqual([
+        "memory-worker.start",
+        "runs.start",
+        "http.listen",
+      ]);
+      const options = boundary.http.mock.calls[0]?.[0];
+      expect(options.modelCatalog).toMatchObject([{ ref: "primary", name: "Fixture" }]);
+      await options.cancelRun({ runId: "run-fixture", command: { commandId: "cancel-fixture" } });
+      expect(f.runs.coordinator.cancel).toHaveBeenCalledWith(
+        expect.objectContaining({ runId: "run-fixture", reasonCode: "OWNER_REQUESTED_STOP" }),
+      );
+      signal?.();
+      await settle();
+      expect(await exit).toBe(0);
+      expect(f.runs.dispatcher.stopAccepting).toHaveBeenCalledOnce();
+      expect(f.runs.titles.stop).toHaveBeenCalledOnce();
+      expect(boundary.events.indexOf("http.close")).toBeLessThan(
+        boundary.events.indexOf("memory.close"),
+      );
+      expect(boundary.events.indexOf("memory.close")).toBeLessThan(
+        boundary.events.indexOf("model.close"),
+      );
+      expect(boundary.events.at(-1)).toBe("repository.close");
+    },
+  );
   it.each(["models", "memory", "identity", "key", "dispatch", "listen", "drain", "model-close"])(
     "cleans up acquired resources after %s failure",
     async (kind) => {

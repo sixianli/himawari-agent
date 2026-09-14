@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fs = vi.hoisted(() => ({
   lstat: vi.fn(),
@@ -28,6 +28,7 @@ function stat(pid: number, parent: number, start: string) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubGlobal("process", Object.create(process, { platform: { value: "linux" } }));
   records = new Map([
     [10, { parent: 1, start: "100", inner: 10, ns: host }],
     [20, { parent: 10, start: "200", inner: 1, ns: namespaceId }],
@@ -54,7 +55,16 @@ beforeEach(() => {
       : `Name: task\nNSpid:\t${r.pid}\t${r.inner}\n`;
   });
 });
+afterEach(() => vi.unstubAllGlobals());
 describe("Linux namespace identity and release proof", () => {
+  it("rejects non-Linux capture before consulting the proc fixture", async () => {
+    vi.stubGlobal("process", Object.create(process, { platform: { value: "darwin" } }));
+    await expect(captureLinuxNamespace(10, 2, namespaceId)).rejects.toThrow(
+      "NAMESPACE_CAPTURE_INVALID",
+    );
+    expect(fs.readdir).not.toHaveBeenCalled();
+    expect(fs.readFile).not.toHaveBeenCalled();
+  });
   it("binds namespace init to the supplied task ancestry and rechecks its birth marker", async () => {
     expect(await captureLinuxNamespace(10, 2, namespaceId)).toEqual(proof);
     expect(await readLinuxNamespaceState(proof)).toBe("alive");
