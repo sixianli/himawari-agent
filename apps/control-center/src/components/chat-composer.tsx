@@ -139,8 +139,7 @@ export function ChatComposer({
           >
             ＋
           </ActionButton>
-          <span className="execution-mode">{message("chat.execute")}</span>
-          {searchControl}
+          {searchControl ?? <span className="execution-mode">{message("chat.execute")}</span>}
           {models.length ? (
             <div className="model-selection">
               <ModelPicker
@@ -165,20 +164,33 @@ export function ChatComposer({
             >
               ■
             </ActionButton>
-          ) : null}
-          <ActionButton
-            className="send-button"
-            aria-label={message("threads.send")}
-            disabled={!enabled}
-            pending={pending}
-            type="submit"
-          >
-            ↑
-          </ActionButton>
+          ) : (
+            <ActionButton
+              className="send-button"
+              aria-label={message("threads.send")}
+              disabled={!enabled}
+              pending={pending}
+              type="submit"
+            >
+              ↑
+            </ActionButton>
+          )}
         </div>
       </form>
       <div className="composer-hint">
-        <span>{message("chat.permission")}</span>
+        <span className="composer-permission">
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          >
+            <path d="m12 3 8 4v5c0 5-8 9-8 9s-8-4-8-9V7z" />
+            <path d="m8 12 3 3 5-6" />
+          </svg>
+          {message("chat.permission")}
+        </span>
         <span className="keyboard-hint">{message("chat.keyboard")}</span>
       </div>
     </>

@@ -40,7 +40,10 @@ export function ModelPicker({
       }}
     >
       <summary aria-label={message("chat.model")} title={message("chat.pendingModel")}>
-        {model?.name} <span>⌄</span>
+        <span className="model-name" title={model?.name}>
+          {model?.name}
+        </span>{" "}
+        <span aria-hidden="true">⌄</span>
         <span className="depth-label">{thinkingLevel}</span>
       </summary>
       <div className="model-panel">

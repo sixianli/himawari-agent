@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gateway-client.js";
 import type { ControlCenterBrowserStorage } from "../browser-storage.js";
@@ -21,6 +21,15 @@ export function SearchAuthorizationControl({
   refreshSignal: number;
   message: (id: MessageId) => string;
 }) {
+  const menu = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const dismiss = (event: MouseEvent) => {
+      if (menu.current && event.target instanceof Node && !menu.current.contains(event.target))
+        menu.current.open = false;
+    };
+    document.addEventListener("click", dismiss);
+    return () => document.removeEventListener("click", dismiss);
+  }, []);
   const [snapshot, setSnapshot] = useState<Extract<
     GatewayV2Snapshot,
     { type: "search.authorization.snapshot" }
@@ -81,11 +90,32 @@ export function SearchAuthorizationControl({
     }
   };
   return (
-    <details className="search-authorization">
+    <details
+      className="search-authorization"
+      ref={menu}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.currentTarget.open = false;
+          event.currentTarget.querySelector("summary")?.focus();
+        }
+      }}
+    >
       <summary>
-        {message(snapshot?.payload.enabled ? "chat.search.allowed" : "chat.search.ask")}
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        >
+          <path d="m10 3 2 5 5 2-5 2-2 5-2-5-5-2 5-2zM19 14l1 3 3 1-3 1-1 3-1-3-3-1 3-1z" />
+        </svg>
+        {message("chat.execute")} <span aria-hidden="true">⌄</span>
       </summary>
       <div className="search-authorization-panel">
+        <p className="search-authorization-status">
+          {message(snapshot?.payload.enabled ? "chat.search.allowed" : "chat.search.ask")}
+        </p>
         <p>{message("chat.search.disclosure")}</p>
         <ActionButton
           disabled={!connected || busy || !snapshot?.payload.available}

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:333205bda6faeffff0d4503b54b31ee820bb29bc3a4b6cff07d94010d399d389"
+contract_sha256: "sha256:f5faf5f596bbe682f52658ef371116eb032938b5f39fb67631040a29d97c1f65"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -19,6 +19,7 @@ date: "2026-09-11"
 - apps/control-center/src
 - scripts/qualify-control-center-browser.mjs
 - scripts/test-thread-loading-browser.mjs
+- scripts/test-mobile-composer-browser.mjs
 - apps/execution-worker/src
 - packages/platform-node/src
 - packages/application/src/ports/configuration.ts
@@ -96,6 +97,8 @@ Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-q
 
 ## Procedure
 
+仅修改控制中心资源的修订可以采用静态资源切换：先核对候选提交相对当前生产提交只改变浏览器实现、对应测试及运行手册，依赖锁、Gateway、Agent、Worker、数据库和受保护运行时字节均不变。在 `/data` 的独立目录构建浏览器资源，执行移动端与完整浏览器验收；随后将新资源以 root 持有、服务账号只读的权限复制到静态目录，保留旧的带内容摘要的资源文件，最后原子替换 `index.html`。切换前保存旧入口及每个文件的摘要；切换后回读 HTTP 返回的入口和资源，复查原服务 PID、运行时摘要与核心健康状态。失败只恢复旧入口，不回滚数据库。此流程不重启服务、不更换运行时资格、不重签工具；只要运行时或依赖发生变化，就必须执行下面的完整安装资格与切换流程。
+
 循环退出候选使用 `scripts/operations/hermes-loop-finalization-qualify.py --qualify` 和 `hermes-loop-finalization-cutover.py --apply --receipt <已核对的摘要>`。入口绑定 `2026-09-13-loop-finalization` 构建、源码清单、完整安装文件集、启动与签署脚本，以及当前运行时摘要；沿用六组受保护安装探针。安装验证期间保留线上服务，切换前核对没有活动任务、沙箱资源已释放、schema 32 和备份可恢复，切换只替换安装与已签署配置。此候选修复循环结果指纹中的调用编号干扰，并允许循环中止后最多一次受费用准入约束的说明；正常多步任务保留活动工具。检查源码回归和直接导入打包模块的回归结果，随后仍须真实浏览器验收，不能把循环中止后给出说明算作四工具正常完成。新启动前失败沿用安装恢复；新启动后失败保留现场并诊断，不覆盖对话数据库。
 
 1. 检查本 Runbook 静态合同。只传输已审阅且通过秘密扫描的源码白名单；不打包配置、凭据、真实数据或历史浏览器证据。构建安装到本次独立发布目录，保留旧版本。
@@ -114,6 +117,8 @@ Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-q
 用户于 2026-09-13 另行明确选择“允许 8 小时完整 sudo，接受整台主机的 root 权限范围”。仅此临时授权允许执行 `hermes-temporary-sudo.py --grant-eight-hours`：在 Hermes 的 `/etc/sudoers.d/99-himawari-codex-20260913` 创建 `andy` 可作为 root 执行任意命令的免密码规则，使用 sudo 的 `NOTAFTER` 限定从安装起八小时，并由固定 systemd 定时器调用 root 持有的 `/etc/himawari/codex-sudo-expiry-20260913.py`，核对规则摘要后删除该条规则。此权限在系统层面覆盖整台主机；本任务仍只执行已授权的 Himawari 工作，不自动延长授权。它是对本 Runbook 项目路径范围的显式账户权限例外，不能泛化为后续任务的默认权限。安装前验证主机、账号、父目录所有权、目标与定时单元不存在及整个 sudoers 配置；先准备规则并通过 `visudo`，启动清理定时器后原子安装，再从 `andy` 身份忽略缓存执行 `sudo -n -k id -u` 验证。失败时撤销本次创建的规则与清理入口。用户在自己的终端输入密码，脚本不接收或保存密码。安装回执写入 `/data/hermes/himawari/qualifications/2026-09-13-temporary-sudo/receipt.json`，代理须读取实际到期时间。到期阻止新 sudo 命令，不能撤销已完成的修改或自动停止已启动的服务；重启后即使临时清理定时器丢失，规则自身的到期限制仍保留。若规则被修改，自动清理拒绝删除并保留诊断。需要提前撤销时，仅删除该临时规则并重新检查 sudoers，不覆盖系统已有规则。
 
 ## Verification
+
+手机输入区遵循已确认原型的单行附件、执行菜单、模型、发送按钮顺序；搜索授权仅在执行菜单中展开，思考深度位于模型菜单内，运行时停止按钮占用发送位置。`scripts/test-mobile-composer-browser.mjs` 使用现有 HTTP fixture，通过 Gateway 边界提供生产同类的模型及搜索控件，检查三语、320/393/430 像素宽度、长模型名、菜单位置、较矮视口和运行状态。几何断言检查同一行、无重叠、触摸区域和视口内可见性，失败截图保留在报告目录；同时运行完整浏览器验收。模拟 WebKit 不等于真实 iPhone 软键盘或第三方浏览器已验证。
 
 连接与侧栏修订的候选须同时包含 HTTP Gateway 和控制中心资源。空闲 SSE 在 HTTP 身份校验后立即发送不含业务数据的注释帧；订阅授权仍由 Gateway 执行。浏览器切换标签页时保留健康连接，握手超过 10 秒会关闭并按既有退避重试。验收需覆盖无新事件时建立连接、标签页恢复、断网重连及会话撤销，不能以单次健康响应代替。侧栏验收从新建、折叠搜索、置顶和最近分组进入；管理页面通过底部“管理”菜单打开，未启用页面在该菜单内展开。核对桌面收起恢复、手机抽屉、三语和键盘焦点。 对话首页不再展示全局加载提示，首次列表使用占位条，正常后台刷新保持现有消息和草稿。以 `scripts/test-thread-loading-browser.mjs` 实测 3 秒慢请求、失败重试、空列表刷新、手机直达链接失败及快速切换；重试应替换旧读取而非等待其结束。完整浏览器验收还须证明聊天和管理页面断网时立即禁止联网操作，联网后恢复。隔离浏览器报告不能替代 Hermes 上对应版本的实际验收。
 

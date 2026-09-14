@@ -10,6 +10,7 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 import { parseArguments } from "./ci/contracts.mjs";
 import { createBrowserObservation } from "./ci/browser-observation.mjs";
 import { redactText } from "./ci/security-redaction.mjs";
+import { qualifyMobileComposer } from "./test-mobile-composer-browser.mjs";
 
 const profiles = {
   chromium: { engine: chromium, runtime: "playwright-chromium" },
@@ -325,6 +326,9 @@ export async function qualifyBrowser({
       ...profile.launchOptions,
     });
     const browserVersion = browser.version();
+    phase = "mobile-composer";
+    const mobileComposer = await qualifyMobileComposer(browser, baseUrl, reportDirectory);
+    phase = "initialization";
     const context = await browser.newContext({
       locale: "zh-CN",
       viewport: { width: 1280, height: 800 },
@@ -960,6 +964,7 @@ export async function qualifyBrowser({
 
     const report = {
       schemaVersion: 2,
+      mobileComposer,
       status: "passed",
       scope: "fixture-only",
       engine: profile.engine.name(),
@@ -970,6 +975,7 @@ export async function qualifyBrowser({
       emulation: profile.emulation ?? null,
       surfaces: surfaces.map(({ label, policy }) => ({ label, policy })),
       journeys: [
+        "mobile-composer-prototype-layout-and-menus",
         "deployment-availability-no-unsupported-queries",
         "installed-health-dependencies",
         "thread-chat",

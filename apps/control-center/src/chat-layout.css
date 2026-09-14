@@ -727,6 +727,7 @@
   align-items: center;
   gap: 5px;
   padding: 6px 12px 10px;
+  flex-wrap: nowrap;
 }
 .composer-tools .action-button {
   min-height: 36px;
@@ -760,6 +761,16 @@
   margin: -6px max(24px, calc((100% - 720px) / 2)) 14px;
   color: var(--text-muted);
   font-size: 10px;
+}
+.composer-permission {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.composer-permission svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
 }
 .chat-latest {
   align-self: center;
@@ -892,7 +903,6 @@
   .composer-tools {
     padding: 4px 8px 8px;
     gap: 2px;
-    flex-wrap: wrap;
   }
   .composer-tools select {
     max-width: 132px;
@@ -1045,6 +1055,12 @@
   cursor: pointer;
   list-style: none;
 }
+.model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .model-picker > summary::-webkit-details-marker {
   display: none;
 }
@@ -1120,15 +1136,6 @@
   color: var(--text-muted);
   font-size: 11px;
 }
-@media (max-width: 640px) {
-  .model-panel {
-    position: fixed;
-    bottom: 130px;
-    right: 14px;
-    max-height: calc(100dvh - 200px);
-    overflow: auto;
-  }
-}
 
 .sr-only {
   position: absolute;
@@ -1203,7 +1210,32 @@
 
 .search-authorization {
   position: relative;
-  font-size: 0.8rem;
+  flex: none;
+  font-size: 12px;
+}
+.search-authorization > summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 5px;
+  min-height: 36px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.search-authorization > summary::-webkit-details-marker {
+  display: none;
+}
+.search-authorization > summary:hover {
+  background: var(--surface-muted);
+}
+.search-authorization > summary svg {
+  width: 14px;
+  height: 14px;
+}
+.search-authorization-status {
+  font-weight: 500;
 }
 .search-authorization-panel {
   position: absolute;
@@ -1215,6 +1247,47 @@
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   z-index: 10;
+}
+
+@media (max-width: 640px) {
+  .composer-tools > .action-button {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  .composer-tools .model-selection {
+    flex: 0 1 auto;
+    overflow-wrap: anywhere;
+  }
+  .model-picker > summary {
+    min-width: 44px;
+    padding: 0 5px;
+    gap: 4px;
+    height: 44px;
+  }
+  .composer .search-authorization > summary {
+    height: 44px;
+  }
+  .model-picker .depth-label {
+    display: none;
+  }
+  .model-picker,
+  .composer .search-authorization {
+    position: static;
+  }
+  .composer .model-panel,
+  .composer .search-authorization-panel {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    width: auto;
+    max-width: none;
+    max-height: min(360px, calc(100dvh - 240px));
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
 }
 
 .approval-input {
