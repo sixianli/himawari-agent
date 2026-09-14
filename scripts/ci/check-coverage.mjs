@@ -68,9 +68,9 @@ export function sourceTreeDigest(sources) {
   );
 }
 
-function collectTestSources(root, policy) {
+function collectTestSources(root, policy, { includeSupport = false } = {}) {
   const selected = policy.testProjects.filter((project) =>
-    ["unit", "contracts", "tooling"].includes(project.id),
+    ["unit", "contracts", "tooling", "integration"].includes(project.id),
   );
   const files = new Map();
   const walk = (relative) => {
@@ -82,13 +82,17 @@ function collectTestSources(root, policy) {
       if (item.isDirectory()) walk(filename);
       else if (
         item.isFile() &&
-        selected.some(
+        (selected.some(
           (project) =>
             project.include.some((glob) => path.matchesGlob(filename, glob)) &&
             !project.exclude.some((glob) => path.matchesGlob(filename, glob)),
-        )
+        ) ||
+          (includeSupport &&
+            (/\.fixture\.[cm]?[jt]sx?$/u.test(filename) ||
+              /(?:^|\/)fixtures\//u.test(filename) ||
+              filename.startsWith("packages/testing/src/"))))
       )
-        files.set(filename, readFileSync(path.join(root, filename), "utf8"));
+        files.set(filename, readFileSync(path.join(root, filename)));
     }
   };
   for (const directory of ["apps", "packages", "test"]) walk(directory);
@@ -155,9 +159,11 @@ export function createSnapshot({ root, context, policy, sourceState = "commit" }
       ...["package.json", "package-lock.json", "vitest.workspace.ts", "ci/policy.json"].map(
         (filename) => [filename, sha256(readFileSync(path.join(root, filename)))],
       ),
-      ...[...collectTestSources(root, readJson(path.join(root, "ci/policy.json")))].map(
-        ([filename, source]) => [filename, sha256(source)],
-      ),
+      ...[
+        ...collectTestSources(root, readJson(path.join(root, "ci/policy.json")), {
+          includeSupport: true,
+        }),
+      ].map(([filename, source]) => [filename, sha256(source)]),
     ]),
     tools: verifyCoverageTools(root, policy),
   };
@@ -353,7 +359,7 @@ export function verifyTestRun(report, policy, root) {
     "coverage test run failed, skipped, or is empty",
   );
   const selected = policy.testProjects.filter((project) =>
-    ["unit", "contracts", "tooling"].includes(project.id),
+    ["unit", "contracts", "tooling", "integration"].includes(project.id),
   );
   const counts = Object.fromEntries(
     selected.map((project) => [
@@ -390,7 +396,7 @@ export function verifyTestRun(report, policy, root) {
   }
   assert(
     Object.values(counts).every((value) => value.executed > 0),
-    "coverage must execute all three projects",
+    "coverage must execute all four projects",
   );
   assert(
     Object.values(counts).reduce((sum, value) => sum + value.executed, 0) === report.numTotalTests,
@@ -540,8 +546,18 @@ export function main(argv = process.argv.slice(2)) {
   const analysis = analyzeCoverage({ coverage: JSON.parse(reportBytes), sources, policy, root });
   verifyLcov(lcov, analysis, root);
   const diff = resolveCoverageDiff({ root, context, sources, sourceState });
+  const comparison = args["--comparison"]
+    ? verifyComparison({
+        root,
+        policy,
+        acceptedPolicy: source.coverage,
+        testPolicy: source.policy,
+        manifest: readJson(args["--comparison"]),
+      })
+    : undefined;
   const result = {
     schemaVersion: 1,
+    comparison: comparison ?? null,
     ...contextIdentity(context),
     ...evaluateCoverage({
       acceptedPolicy: source.coverage,
@@ -550,15 +566,7 @@ export function main(argv = process.argv.slice(2)) {
       changed: diff.changed,
       deleted: diff.deleted,
       initialization: source.initialization,
-      comparison: args["--comparison"]
-        ? verifyComparison({
-            root,
-            policy,
-            acceptedPolicy: source.coverage,
-            testPolicy: source.policy,
-            manifest: readJson(args["--comparison"]),
-          })
-        : undefined,
+      comparison,
     }),
     sourceState,
     sourceTreeSha256: analysis.sourceTreeSha256,

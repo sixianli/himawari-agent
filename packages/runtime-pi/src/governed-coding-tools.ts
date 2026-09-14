@@ -1,4 +1,5 @@
 import {
+  type BashOperations,
   createBashToolDefinition,
   createEditToolDefinition,
   createFindToolDefinition,
@@ -6,12 +7,12 @@ import {
   createLsToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
-  type BashOperations,
   type EditOperations,
   type FindOperations,
   type GrepOperations,
   type LsOperations,
   type ReadOperations,
+  type ToolDefinition,
   type WriteOperations,
 } from "@earendil-works/pi-coding-agent";
 
@@ -32,11 +33,20 @@ export interface GovernedPiCodingToolOperations {
   readonly ls?: LsOperations;
 }
 
-export interface GovernedPiCodingToolsOptions {
+export type GovernedPiCodingToolsOptions = {
   readonly cwd: string;
   readonly enabled: readonly GovernedPiCodingToolName[];
-  readonly operations: GovernedPiCodingToolOperations;
-}
+} & (
+  | { readonly operations: GovernedPiCodingToolOperations; readonly operationsForCall?: never }
+  | {
+      readonly operations?: never;
+      readonly operationsForCall: (call: {
+        readonly toolCallId: string;
+        readonly toolName: GovernedPiCodingToolName;
+        readonly signal: AbortSignal | undefined;
+      }) => Promise<GovernedPiCodingToolOperations> | GovernedPiCodingToolOperations;
+    }
+);
 
 export type GovernedPiCodingToolDefinition =
   | ReturnType<typeof createReadToolDefinition>
@@ -63,6 +73,50 @@ export function createGovernedPiCodingTools(
   if (new Set(options.enabled).size !== options.enabled.length) {
     throw new TypeError("Pi coding tool names must be unique");
   }
+  if (options.operationsForCall) {
+    if (options.operations !== undefined) throw new TypeError("PI_GOVERNED_AMBIGUOUS_OPERATIONS");
+    const cwd = options.cwd;
+    const operationsForCall = options.operationsForCall;
+    const forbidden = async (): Promise<never> => {
+      throw new Error("PI_UNBOUND_OPERATIONS");
+    };
+    // Reuse Pi definitions, but resolve Operations inside each execute call.
+    // The factory is a trusted product closure; model parameters are not passed
+    // as authority. No shared mutable 'current tool call' exists.
+    return Object.freeze(
+      options.enabled.map((toolName) => {
+        const stub = new Proxy({}, { get: () => forbidden });
+        const [definition] = createGovernedPiCodingTools({
+          cwd,
+          enabled: [toolName],
+          operations: { [toolName]: stub },
+        });
+        if (!definition) throw new Error("PI_TOOL_DEFINITION_MISSING");
+        const execute: ToolDefinition["execute"] = async (
+          toolCallId,
+          parameters,
+          signal,
+          onUpdate,
+          context,
+        ) => {
+          signal?.throwIfAborted();
+          if (!toolCallId.trim()) throw new Error("PI_TOOL_CALL_ID_REQUIRED");
+          const operations = await operationsForCall(
+            Object.freeze({ toolCallId, toolName, signal }),
+          );
+          signal?.throwIfAborted();
+          const [bound] = createGovernedPiCodingTools({
+            cwd,
+            enabled: [toolName],
+            operations,
+          });
+          if (!bound) throw new Error("PI_TOOL_DEFINITION_MISSING");
+          return bound.execute(toolCallId, parameters as never, signal, onUpdate as never, context);
+        };
+        return { ...definition, execute } as GovernedPiCodingToolDefinition;
+      }),
+    );
+  }
   return Object.freeze(
     options.enabled.map((name): GovernedPiCodingToolDefinition => {
       switch (name) {
@@ -73,6 +127,7 @@ export function createGovernedPiCodingTools(
         case "bash":
           return createBashToolDefinition(options.cwd, {
             operations: operation("bash", options.operations),
+            exposeSessionEnvironment: false,
           });
         case "edit":
           return createEditToolDefinition(options.cwd, {

@@ -48,6 +48,20 @@ export class AgentServiceExecutionClient implements ExecutionTransportPort {
     return this.client.connect(message);
   }
 
+  async checkReadiness(): Promise<boolean> {
+    const message = executionV2MessageSchema.parse({
+      ...this.requestEnvelope("worker.readiness.query"),
+      payload: { requestedAt: this.options.now() },
+    });
+    if (message.kind !== "request") throw new Error("WORKER_READINESS_REQUEST_INVALID");
+    const response = await this.request(message);
+    return (
+      response?.type === "worker.readiness.snapshot" &&
+      response.payload.live &&
+      response.payload.ready
+    );
+  }
+
   isReady(): boolean {
     return this.client.isReady();
   }
@@ -70,7 +84,7 @@ export class AgentServiceExecutionClient implements ExecutionTransportPort {
     this.client.disconnect();
   }
 
-  private requestEnvelope(type: "worker.handshake") {
+  private requestEnvelope(type: "worker.handshake" | "worker.readiness.query") {
     const messageId = this.options.nextId("execution-request");
     return {
       schemaVersion: EXECUTION_V2_SCHEMA_VERSION,

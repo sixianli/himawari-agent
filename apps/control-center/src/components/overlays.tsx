@@ -1,4 +1,5 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { nextRovingIndex } from "./collections.js";
 import { ActionButton } from "./primitives.js";
 
@@ -39,7 +40,7 @@ export function ModalDialog({ children, closeLabel, onClose, open, title }: Moda
     return () => dialog.removeEventListener("close", restore);
   }, []);
 
-  return (
+  const dialog = (
     <dialog
       aria-labelledby={titleId}
       aria-modal="true"
@@ -60,6 +61,9 @@ export function ModalDialog({ children, closeLabel, onClose, open, title }: Moda
       {children}
     </dialog>
   );
+  // Mobile layouts hide inactive panes. Mount the modal outside those panes
+  // so a dialog opened from the details drawer stays visible and focusable.
+  return typeof document === "undefined" ? dialog : createPortal(dialog, document.body);
 }
 
 export interface ActionMenuItem {

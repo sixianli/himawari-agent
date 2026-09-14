@@ -1,3 +1,4 @@
+import { invalidateRecoveredBuiltInIdentity } from "./built-in-identity-recovery.js";
 import {
   createCipheriv,
   createDecipheriv,
@@ -915,6 +916,12 @@ export class SqliteAuthorityTransferAdapter implements AuthorityTransferPort {
             );
           }
           database.transaction(() => {
+            invalidateRecoveredBuiltInIdentity(database, {
+              ownerId: this.#options.ownerId,
+              agentId: this.#options.agentId,
+              now: this.#now(),
+              requireAccountRecovery: false,
+            });
             const retired = database
               .prepare(
                 `UPDATE deployments SET status = 'retired', revision = revision + 1

@@ -1,0 +1,237 @@
+{
+  "observedAt": "2026-09-11T08:43:30.647Z",
+  "samples": [
+    {
+      "label": "baseline",
+      "threadId": "thread:843c8f39-ead1-4fc8-b7e7-0d0c939f0a8f",
+      "records": [
+        {
+          "sequence": 5,
+          "itemId": "trace:6d359adc-6ae8-4bf7-9902-cd366aa1ebf2",
+          "kind": "status",
+          "phase": "started",
+          "name": "model-primary",
+          "occurredAt": "2026-09-11T02:06:44.943Z"
+        },
+        {
+          "sequence": 14,
+          "itemId": "message:threadcommandv1c4599b3e57e85cfa89deeab283cdf614",
+          "kind": "message",
+          "phase": "completed",
+          "name": "z-ai/glm-5.3-flash",
+          "occurredAt": "2026-09-11T02:07:18.476Z",
+          "textLength": 0
+        },
+        {
+          "sequence": 16,
+          "itemId": "tool:threadcommandv11e36b15d9f91ee0179f558c3070d01a0",
+          "kind": "tool",
+          "phase": "started",
+          "name": "web_search",
+          "occurredAt": "2026-09-11T02:07:18.476Z",
+          "input": "{\n  \"limit\": 3,\n  \"query\": \"東京 2026年9月11日 天気 気温\"\n}",
+          "outputSummary": ""
+        },
+        {
+          "sequence": 18,
+          "itemId": "tool:threadcommandv11e36b15d9f91ee0179f558c3070d01a0",
+          "kind": "tool",
+          "phase": "completed",
+          "name": "web_search",
+          "occurredAt": "2026-09-11T02:08:11.519Z",
+          "input": "",
+          "outputSummary": {
+            "retrievedAt": "2026-09-11T02:07:56.000Z",
+            "resultCount": 3
+          }
+        },
+        {
+          "sequence": 30,
+          "itemId": "message:threadcommandv166615051ce9d8032299f4aadd8e99320",
+          "kind": "message",
+          "phase": "completed",
+          "name": "z-ai/glm-5.3-flash",
+          "occurredAt": "2026-09-11T02:08:52.072Z",
+          "textLength": 281
+        },
+        {
+          "sequence": 33,
+          "itemId": "trace:87413eed-33e3-4d90-a4d9-d8675a38abab",
+          "kind": "status",
+          "phase": "completed",
+          "name": "runtime.completed",
+          "occurredAt": "2026-09-11T02:08:53.237Z"
+        }
+      ],
+      "run": {
+        "runId": "run:ca147f5a-2947-4643-a6f8-bb83a8163ff3",
+        "status": "completed",
+        "createdAt": "2026-09-11T02:06:40.581Z",
+        "updatedAt": "2026-09-11T02:08:53.707Z"
+      },
+      "measurements": {
+        "wholeRunMs": 133126,
+        "toolMs": 53043,
+        "toolOutcome": "completed"
+      }
+    },
+    {
+      "label": "first",
+      "threadId": "thread:5d4c4dc4-110f-4a5e-a5a0-8c701fa454ef",
+      "records": [
+        {
+          "sequence": 5,
+          "itemId": "trace:49a4915b-8838-4b73-a08a-a517dd1e2442",
+          "kind": "status",
+          "phase": "started",
+          "name": "model-primary",
+          "occurredAt": "2026-09-11T08:30:05.714Z"
+        },
+        {
+          "sequence": 13,
+          "itemId": "message:threadcommandv132274b23f050f27bb02a47e9fe6377b3",
+          "kind": "message",
+          "phase": "completed",
+          "name": "z-ai/glm-5.3-flash",
+          "occurredAt": "2026-09-11T08:30:12.608Z",
+          "textLength": 0
+        },
+        {
+          "sequence": 15,
+          "itemId": "tool:threadcommandv11b1302ef6512e39a47fea892e53ad099",
+          "kind": "tool",
+          "phase": "started",
+          "name": "web_search",
+          "occurredAt": "2026-09-11T08:30:12.609Z",
+          "input": "{\n  \"limit\": 3,\n  \"query\": \"東京 2026年9月11日 天気 気温\"\n}",
+          "outputSummary": ""
+        },
+        {
+          "sequence": 17,
+          "itemId": "tool:threadcommandv11b1302ef6512e39a47fea892e53ad099",
+          "kind": "tool",
+          "phase": "failed",
+          "name": "web_search",
+          "occurredAt": "2026-09-11T08:30:40.760Z",
+          "input": "",
+          "outputSummary": "操作未确认成功。"
+        },
+        {
+          "sequence": 27,
+          "itemId": "message:threadcommandv1a56f61e6ed360a0fd03832e522107217",
+          "kind": "message",
+          "phase": "completed",
+          "name": "z-ai/glm-5.3-flash",
+          "occurredAt": "2026-09-11T08:30:50.029Z",
+          "textLength": 123
+        },
+        {
+          "sequence": 30,
+          "itemId": "trace:cc0006e7-f019-4551-9774-73a018dc0dae",
+          "kind": "status",
+          "phase": "completed",
+          "name": "runtime.completed",
+          "occurredAt": "2026-09-11T08:30:51.349Z"
+        }
+      ],
+      "run": {
+        "runId": "run:1f216d09-3926-4fbc-89e1-a074bd5a1ec2",
+        "status": "completed",
+        "createdAt": "2026-09-11T08:29:58.197Z",
+        "updatedAt": "2026-09-11T08:30:51.764Z"
+      },
+      "measurements": {
+        "wholeRunMs": 53567,
+        "toolMs": 28151,
+        "toolOutcome": "failed"
+      }
+    },
+    {
+      "label": "second",
+      "threadId": "thread:9e717296-a9f1-4d43-a3b2-fca2cafca124",
+      "records": [
+        {
+          "sequence": 5,
+          "itemId": "trace:266fd219-ad43-4c07-866e-ce8437669677",
+          "kind": "status",
+          "phase": "started",
+          "name": "model-primary",
+          "occurredAt": "2026-09-11T08:38:00.092Z"
+        },
+        {
+          "sequence": 13,
+          "itemId": "message:threadcommandv1dd5be1dfd38a33b5ecfdfd9015ad4e71",
+          "kind": "message",
+          "phase": "completed",
+          "name": "z-ai/glm-5.3-flash",
+          "occurredAt": "2026-09-11T08:38:08.134Z",
+          "textLength": 0
+        },
+        {
+          "sequence": 15,
+          "itemId": "tool:threadcommandv133438d735f0d7c76e67da34808bc3529",
+          "kind": "tool",
+          "phase": "started",
+          "name": "web_search",
+          "occurredAt": "2026-09-11T08:38:08.134Z",
+          "input": "{\n  \"limit\": 3,\n  \"query\": \"東京 2026年9月11日 天気 気温\"\n}",
+          "outputSummary": ""
+        },
+        {
+          "sequence": 17,
+          "itemId": "tool:threadcommandv133438d735f0d7c76e67da34808bc3529",
+          "kind": "tool",
+          "phase": "completed",
+          "name": "web_search",
+          "occurredAt": "2026-09-11T08:38:26.268Z",
+          "input": "",
+          "outputSummary": {
+            "retrievedAt": "2026-09-11T08:38:23.662Z",
+            "resultCount": 3
+          }
+        },
+        {
+          "sequence": 28,
+          "itemId": "message:threadcommandv180f6226bf8509b5fb9d66fa3605b85cf",
+          "kind": "message",
+          "phase": "completed",
+          "name": "z-ai/glm-5.3-flash",
+          "occurredAt": "2026-09-11T08:38:35.362Z",
+          "textLength": 342
+        },
+        {
+          "sequence": 31,
+          "itemId": "trace:e7e5440c-83b5-43dc-9b3a-ea4feca2ff4a",
+          "kind": "status",
+          "phase": "completed",
+          "name": "runtime.completed",
+          "occurredAt": "2026-09-11T08:38:37.810Z"
+        }
+      ],
+      "run": {
+        "runId": "run:dcf2075d-1237-4f10-9e81-b427e0a7368f",
+        "status": "completed",
+        "createdAt": "2026-09-11T08:37:55.954Z",
+        "updatedAt": "2026-09-11T08:38:38.261Z"
+      },
+      "measurements": {
+        "wholeRunMs": 42307,
+        "toolMs": 18134,
+        "toolOutcome": "completed"
+      }
+    }
+  ],
+  "pageAfterReload": {
+    "url": "https://himawari.siyi.win/threads/thread%3A9e717296-a9f1-4d43-a3b2-fca2cafca124",
+    "connected": true,
+    "searchAllowed": true,
+    "resultVisible": true,
+    "historyCount": "共 11 项"
+  },
+  "interpretation": {
+    "status": "protected-installation-deployed; live-acceptance-incomplete",
+    "comparison": "Same GLM minimal, fixed synthetic query and limit 3; one successful after sample and one failed after sample. Model and external search timings uncontrolled.",
+    "firstFailure": "SANDBOX_OPERATION_FAILED; persisted supervision released and cleanup confirmed. Search entrypoint discards provider details; exact underlying error remains unknown.",
+    "subsequentVerification": "Real browser stop and service restart under the new account not yet exercised."
+  }
+}

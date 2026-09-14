@@ -1,10 +1,10 @@
 import {
   type GatewayV2Command,
   type GatewayV2Query,
+  gatewayV2MessageSchema,
   type ThreadGatewayCommand,
   type ThreadGatewayQuery,
   type ThreadGatewaySubscription,
-  gatewayV2MessageSchema,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import type { ControlCenterRuntimeConfiguration } from "./gateway-client.js";
@@ -97,6 +97,7 @@ function threadBase(
 export function threadQueryMessage(
   configuration: ControlCenterRuntimeConfiguration,
   type:
+    | "thread.execution"
     | "thread.list"
     | "thread.detail"
     | "thread.search"
@@ -118,6 +119,8 @@ export function threadCommandMessage(
   type:
     | "thread.create"
     | "thread.message.submit"
+    | "thread.message.submit_configured"
+    | "thread.run.cancel"
     | "thread.rename"
     | "thread.pin"
     | "thread.archive"

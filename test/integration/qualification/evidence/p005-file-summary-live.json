@@ -1,0 +1,419 @@
+{
+  "schemaVersion": "himawari.p005.qualification.v1",
+  "qualifiedOn": "2026-09-07",
+  "passed": true,
+  "scope": "真实 Pi 模型工具协议与 Mem0 embedding 兼容性；不包含生产 Worker 和浏览器",
+  "sourceBaseCommit": "afd8ff63bc5cd82a0575b3f0d7386c38c662994a",
+  "sourceSha256": {
+    "test/integration/openrouter-generation-live.test.ts": "4d71e4587007b045475112dfe242ace9420491972986e5c945db42d8468c5a26",
+    "test/integration/fixtures/file-summary-live-probe.ts": "a61efdacb1a7e6ce630ba8bdada4e62db37b527f5b18586b3a80666d83c9cdbb",
+    "test/integration/fixtures/file-summary-network.ts": "21989d219cf1400d49ee2203aeea2b3c442b744532bc026c0f68d33e93f74349"
+  },
+  "reportedCostUsd": 0.00017004,
+  "budgetLimitUsd": 1,
+  "totalReservedCostMicros": 335572,
+  "requestAttempts": 10,
+  "successfulHttpRequests": 8,
+  "costBoundary": "合计供应商返回的计费值；429 和本地传输失败没有计费记录，仍保留预算预留。",
+  "earlierAttempts": [
+    {
+      "startedAt": "2026-09-07T01:02:32.824Z",
+      "finishedAt": "2026-09-07T01:02:36.605Z",
+      "passed": false,
+      "phase": null,
+      "reservedCostMicros": 63284,
+      "requests": [
+        {
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "kind": "generation",
+          "status": 200,
+          "maxTokens": 2048,
+          "providerRouting": {
+            "order": ["deepinfra/fp8"],
+            "allow_fallbacks": false,
+            "require_parameters": true,
+            "data_collection": "deny"
+          },
+          "toolDefinitions": 1,
+          "toolResults": 0,
+          "reservedCostMicros": 63284,
+          "responseModel": null
+        }
+      ],
+      "generations": [
+        {
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "responseModel": "deepseek/deepseek-v4-flash-0731",
+          "responseId": "gen-1788742953-KNyXf0oz2jG0rvhb7787",
+          "stopReason": "toolUse",
+          "usage": {
+            "input": 374,
+            "output": 103,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 58,
+            "totalTokens": 477,
+            "cost": {
+              "input": 2.244e-5,
+              "output": 1.854e-5,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 4.098e-5
+            }
+          }
+        }
+      ],
+      "embeddings": [],
+      "reason": "计费元数据查询过早返回 404；稍后同 ID 查询成功",
+      "laterMetadata": {
+        "status": 200,
+        "responseId": "gen-1788742953-KNyXf0oz2jG0rvhb7787",
+        "provider": "DeepInfra",
+        "totalCostUsd": 4.098e-5
+      }
+    },
+    {
+      "startedAt": "2026-09-07T01:05:41.570Z",
+      "finishedAt": "2026-09-07T01:05:42.298Z",
+      "passed": false,
+      "phase": null,
+      "reservedCostMicros": 126568,
+      "requests": [
+        {
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "kind": "generation",
+          "status": 429,
+          "maxTokens": 2048,
+          "providerRouting": {
+            "order": ["deepinfra/fp8"],
+            "allow_fallbacks": false,
+            "require_parameters": true,
+            "data_collection": "deny"
+          },
+          "toolDefinitions": 1,
+          "toolResults": 0,
+          "reservedCostMicros": 63284,
+          "responseModel": null
+        }
+      ],
+      "generations": [
+        {
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "responseModel": "deepseek/deepseek-v4-flash-0731",
+          "responseId": null,
+          "stopReason": "error",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          }
+        }
+      ],
+      "embeddings": [],
+      "reason": "OpenRouter 返回 HTTP 429；未进入工具执行"
+    },
+    {
+      "startedAt": "2026-09-07T01:08:18.841Z",
+      "finishedAt": "2026-09-07T01:08:19.135Z",
+      "passed": false,
+      "phase": "embedding",
+      "reservedCostMicros": 127224,
+      "requests": [
+        {
+          "model": "qwen/qwen3-embedding-8b",
+          "kind": "embedding",
+          "status": null,
+          "maxTokens": null,
+          "providerRouting": null,
+          "toolDefinitions": 0,
+          "toolResults": 0,
+          "reservedCostMicros": 656,
+          "responseModel": null,
+          "error": null,
+          "retryAfter": null
+        }
+      ],
+      "generations": [],
+      "embeddings": [],
+      "reason": "测试夹具混用了 fetch 实现，本地 content-length 校验失败"
+    },
+    {
+      "startedAt": "2026-09-07T01:10:05.630Z",
+      "finishedAt": "2026-09-07T01:10:16.645Z",
+      "passed": false,
+      "phase": "embedding",
+      "reservedCostMicros": 128536,
+      "requests": [
+        {
+          "model": "qwen/qwen3-embedding-8b",
+          "kind": "embedding",
+          "status": 200,
+          "maxTokens": null,
+          "providerRouting": null,
+          "toolDefinitions": 0,
+          "toolResults": 0,
+          "reservedCostMicros": 656,
+          "responseModel": "Qwen/Qwen3-Embedding-8B",
+          "error": null,
+          "retryAfter": null
+        },
+        {
+          "model": "qwen/qwen3-embedding-8b",
+          "kind": "embedding",
+          "status": 200,
+          "maxTokens": null,
+          "providerRouting": null,
+          "toolDefinitions": 0,
+          "toolResults": 0,
+          "reservedCostMicros": 656,
+          "responseModel": "Qwen/Qwen3-Embedding-8B",
+          "error": null,
+          "retryAfter": null
+        }
+      ],
+      "generations": [],
+      "embeddings": [
+        {
+          "model": "qwen/qwen3-embedding-8b",
+          "requestedDimensions": 4096,
+          "dimensions": [4096],
+          "finite": true,
+          "usage": {
+            "prompt_tokens": 134,
+            "total_tokens": 134,
+            "cost": 1.34e-6
+          }
+        },
+        {
+          "model": "qwen/qwen3-embedding-8b",
+          "requestedDimensions": 4096,
+          "dimensions": [4096],
+          "finite": true,
+          "usage": {
+            "prompt_tokens": 5,
+            "total_tokens": 5,
+            "cost": 5e-8
+          }
+        }
+      ],
+      "reason": "真实向量和检索成功，但夹具错误地要求固定 3 次 embedding"
+    }
+  ],
+  "successfulRun": {
+    "schemaVersion": "himawari.p005.evidence.v1",
+    "startedAt": "2026-09-07T01:11:47.670Z",
+    "finishedAt": "2026-09-07T01:12:17.581Z",
+    "passed": true,
+    "phase": "all",
+    "credentialSource": "macos-keychain",
+    "generationCredentialReads": 1,
+    "configurationSha256": "df4c301a75136171bafb0c923c5d359275027fd03176f8508d28eaa5257bac64",
+    "budgetLimitUsd": 1,
+    "priorReservationMicros": 128536,
+    "summary": "我已成功读取 `project-brief.txt`，以下是内容总结。\n\n## 项目总结\n\n**项目代号**：向日葵-海盐-4827\n\n### 项目目标\n为社区图书角整理 **37 本** 自然科学读物。\n\n### 基本信息\n- 负责人：测试角色小葵\n- 首次盘点日期：2026 年 10 月 12 日\n\n### 已完成事项\n- 已为 **25 本** 书录入目录\n\n### 待办事项\n- **12 本** 书缺少分类标签\n- 下一步：先补齐分类标签，再核对借阅登记\n\n### 明确限制\n- 本次不采购新书\n- 不改变借阅规则\n\n---\n\n**补充说明**：该文件为人工编写的公开测试资料，不包含个人或客户数据。\n\n如需进一步操作或深入分析，请告诉我。",
+    "toolCall": {
+      "id": "chatcmpl-tool-a2dad4ae9d175a07",
+      "name": "read_public_fixture",
+      "arguments": {
+        "file": "project-brief.txt"
+      }
+    },
+    "reservedCostMicros": 335572,
+    "productionWorkerTested": false,
+    "browserTested": false,
+    "toolExecuted": true,
+    "toolResultMatched": true,
+    "summaryFactsMatched": true,
+    "requests": [
+      {
+        "model": "deepseek/deepseek-v4-flash-0731",
+        "kind": "generation",
+        "status": 200,
+        "maxTokens": 2048,
+        "providerRouting": {
+          "order": ["deepinfra/fp8"],
+          "allow_fallbacks": false,
+          "require_parameters": true,
+          "data_collection": "deny"
+        },
+        "toolDefinitions": 1,
+        "toolResults": 0,
+        "reservedCostMicros": 63284,
+        "responseModel": null,
+        "error": null,
+        "retryAfter": null
+      },
+      {
+        "model": "deepseek/deepseek-v4-flash-0731",
+        "kind": "generation",
+        "status": 200,
+        "maxTokens": 2048,
+        "providerRouting": {
+          "order": ["deepinfra/fp8"],
+          "allow_fallbacks": false,
+          "require_parameters": true,
+          "data_collection": "deny"
+        },
+        "toolDefinitions": 1,
+        "toolResults": 1,
+        "reservedCostMicros": 63284,
+        "responseModel": null,
+        "error": null,
+        "retryAfter": null
+      },
+      {
+        "model": "z-ai/glm-5.3-flash",
+        "kind": "generation",
+        "status": 200,
+        "maxTokens": 2048,
+        "providerRouting": {
+          "order": ["z-ai/fp8"],
+          "allow_fallbacks": false,
+          "require_parameters": true,
+          "data_collection": "deny"
+        },
+        "toolDefinitions": 0,
+        "toolResults": 0,
+        "reservedCostMicros": 79156,
+        "responseModel": null,
+        "error": null,
+        "retryAfter": null
+      },
+      {
+        "model": "qwen/qwen3-embedding-8b",
+        "kind": "embedding",
+        "status": 200,
+        "maxTokens": null,
+        "providerRouting": null,
+        "toolDefinitions": 0,
+        "toolResults": 0,
+        "reservedCostMicros": 656,
+        "responseModel": "Qwen/Qwen3-Embedding-8B",
+        "error": null,
+        "retryAfter": null
+      },
+      {
+        "model": "qwen/qwen3-embedding-8b",
+        "kind": "embedding",
+        "status": 200,
+        "maxTokens": null,
+        "providerRouting": null,
+        "toolDefinitions": 0,
+        "toolResults": 0,
+        "reservedCostMicros": 656,
+        "responseModel": "Qwen/Qwen3-Embedding-8B",
+        "error": null,
+        "retryAfter": null
+      }
+    ],
+    "generations": [
+      {
+        "model": "deepseek/deepseek-v4-flash-0731",
+        "responseModel": "deepseek/deepseek-v4-flash-0731",
+        "responseId": "gen-1788743508-nWYXmgPiXRqgEXMtlnJt",
+        "stopReason": "toolUse",
+        "usage": {
+          "input": 452,
+          "output": 101,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 48,
+          "totalTokens": 553,
+          "cost": {
+            "input": 2.7119999999999998e-5,
+            "output": 1.818e-5,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 4.5299999999999997e-5
+          }
+        },
+        "metadataStatuses": [200],
+        "provider": "DeepInfra",
+        "billedCostUsd": 4.53e-5
+      },
+      {
+        "model": "deepseek/deepseek-v4-flash-0731",
+        "responseModel": "deepseek/deepseek-v4-flash-0731",
+        "responseId": "gen-1788743510-4umtSwYOJpSas5tqxsYl",
+        "stopReason": "stop",
+        "usage": {
+          "input": 603,
+          "output": 190,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 793,
+          "cost": {
+            "input": 3.6179999999999996e-5,
+            "output": 3.42e-5,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 7.037999999999999e-5
+          }
+        },
+        "metadataStatuses": [200],
+        "provider": "DeepInfra",
+        "billedCostUsd": 7.038e-5
+      },
+      {
+        "model": "z-ai/glm-5.3-flash",
+        "responseModel": "z-ai/glm-5.3-flash",
+        "responseId": "gen-1788743513-V4Z0rnVQJC0uMWLAIWK0",
+        "stopReason": "stop",
+        "usage": {
+          "input": 18,
+          "output": 37,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 31,
+          "totalTokens": 55,
+          "cost": {
+            "input": 1.35e-6,
+            "output": 9.25e-6,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 1.06e-5
+          }
+        },
+        "metadataStatuses": [200],
+        "provider": "Z.AI",
+        "billedCostUsd": 1.06e-5
+      }
+    ],
+    "embeddings": [
+      {
+        "operation": "upsert",
+        "model": "qwen/qwen3-embedding-8b",
+        "requestedDimensions": 4096,
+        "dimensions": [4096],
+        "finite": true,
+        "usage": {
+          "prompt_tokens": 134,
+          "total_tokens": 134,
+          "cost": 1.34e-6
+        }
+      },
+      {
+        "operation": "search",
+        "model": "qwen/qwen3-embedding-8b",
+        "requestedDimensions": 4096,
+        "dimensions": [4096],
+        "finite": true,
+        "usage": {
+          "prompt_tokens": 5,
+          "total_tokens": 5,
+          "cost": 5e-8
+        }
+      }
+    ]
+  }
+}

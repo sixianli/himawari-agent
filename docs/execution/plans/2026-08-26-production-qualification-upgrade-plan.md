@@ -35,11 +35,11 @@ date: "2026-08-26"
 - [SOURCE: docs/execution/plans/2026-08-26-apple-calendar-integration-plan.md]
 - [SOURCE: docs/execution/plans/2026-08-26-proactivity-workers-self-improvement-plan.md]
 
-**目标：** 建立可机器核验的 v0.2 release qualification 与手动核心升级实现，使同一不可变候选在 Mac、Hermes、六类浏览器、WCAG 2.2 AA、设计规模、性能、恢复和两次 7 天 soak 全部通过后，才可能由 Owner 签署 qualified_v0.2。
+**目标：** 建立可机器核验的 v0.2 release qualification 与手动核心升级实现，使同一不可变候选在 Mac、Hermes、六类浏览器、WCAG 2.2 AA、设计规模、性能及运行与故障恢复全部通过后，才可能由 Owner 签署 qualified_v0.2。按 2026-09-04 Owner 决定，连续运行观察不设上线前置时长。
 
 **架构：** qualification tooling 聚合 PRD→Spec→Plan→implementation→evidence，不重新定义领域行为。UpgradeOperation 使用 S1 的权威、SQLite、恢复点、drain、migration 和 fencing，在明确状态机中执行；release artifact、evidence manifest 和签署都绑定同一 candidate revision/digests。
 
-本 Plan 可以先实现 evidence/qualification/upgrade harness，但正式 RC、真实平台、7 天 soak、升级、回退、生产标识和签署必须等待 S0–S6、S8 的必需范围全部完成并取得逐项授权；S7 仅在候选启用 Calendar 时成为必需。创建本 Plan 不授权生产或外部变更。
+本 Plan 可以先实现 evidence/qualification/upgrade harness，但正式 RC、真实平台完整验收、升级、回退、生产标识和签署必须等待 S0–S6、S8 的必需范围全部完成并取得逐项授权；S7 仅在候选启用 Calendar 时成为必需。创建本 Plan 不授权生产或外部变更。
 
 ---
 
@@ -49,7 +49,7 @@ date: "2026-08-26"
 - Mac/Hermes 必须运行同一 product version/schema/contracts 并分别通过；不得 waiver、unsupported 或用单平台替代。
 - 浏览器 major 在每个 RC 通过官方发布渠道 fresh 发现并冻结；不可在 Plan 中写死会过期版本。
 - WCAG 自动检查不能替代人工与辅助技术；规模/性能平均值不能替代样本、p50/p95/p99/max 和失败项。
-- 第一次真实 model/provider、browser lab、Cloudflare/GitHub/Calendar、Mac/Hermes service、7 天 soak、升级/恢复/回退或生产签署前，展示精确 candidate、目标、资源/费用、变更顺序和回退边界并取得授权。
+- 第一次真实 model/provider、browser lab、Cloudflare/GitHub/Calendar、Mac/Hermes service、运行验收或长期观察、升级/恢复/回退或生产签署前，展示精确 candidate、目标、资源/费用、变更顺序和回退边界并取得授权。
 - 任何升级 preflight 或 recovery point 验证失败时不 drain、不安装；migration/validation 失败保持 ingress fenced 并进入人工 recovery decision。
 
 ## 文件边界
@@ -74,14 +74,14 @@ date: "2026-08-26"
 - test/integration/qualification/accessibility/
 - test/integration/qualification/platform/
 - test/integration/qualification/performance/
-- test/integration/qualification/soak/
+- test/integration/qualification/runtime-recovery/
 - test/integration/qualification/upgrade/
 
 只有升级操作实现、恢复演练和静态契约完成后，才从 Runbook 模板创建 docs/runbooks/core-upgrade-runbook.md；本 Plan 不预先创建或 seal 不可执行 Runbook。
 
 ### 修改
 
-- package.json、vitest.workspace.ts：增加 coverage、candidate、browser、accessibility、scale、platform、soak 和 upgrade checks。
+- package.json、vitest.workspace.ts：增加 coverage、candidate、browser、accessibility、scale、platform、runtime-recovery 和 upgrade checks。
 - packages/domain/src/：Qualification/Upgrade stable IDs 与状态。
 - packages/gateway-contracts/src/、packages/execution-contracts/src/：只读 qualification/upgrade status 与受控操作 contracts。
 - packages/persistence-sqlite/：evidence metadata、qualification/upgrade state、lock/checkpoint、migration 与 recovery refs。
@@ -104,7 +104,7 @@ date: "2026-08-26"
 
 ### Task 1：建立 S9 acceptance 与 release requirement catalog
 
-- [ ] 将 S9-A01 版本资格、S9-A02 浏览器无障碍、S9-A03 规模性能恢复、S9-A04 连续运行、S9-A05 核心升级绑定 tasks/evidence。
+- [ ] 将 S9-A01 版本资格、S9-A02 浏览器无障碍、S9-A03 规模性能恢复、S9-A04 运行与故障恢复、S9-A05 核心升级绑定 tasks/evidence。
 - [ ] 消费 S0 的 PRD/S0–S9/acceptance/journey manifest，拒绝无 owner、无 Plan Task、无实现 revision 或无 evidence 的 requirement。
 - [ ] 区分结构准备、fixture evidence、platform evidence、live external readback、manual evidence 和 production sign-off。
 - [ ] 保存当前 foundation 与全部 active Plans 的 baseline；不得把 active Plan 文档当实现完成。
@@ -120,7 +120,7 @@ date: "2026-08-26"
 ### Task 3：实现 ReleaseQualification 产品状态
 
 - [ ] 定义 draft→evidence_collecting→candidate_ready→owner_review→qualified/rejected/expired。
-- [ ] 保存 candidate、Spec/Plan/implementation coverage、Mac/Hermes、browser、accessibility、scale/performance、soak、安全/删除/迁移/升级证据和 blockers。
+- [ ] 保存 candidate、Spec/Plan/implementation coverage、Mac/Hermes、browser、accessibility、scale/performance、运行与故障恢复、安全/删除/迁移/升级证据和 blockers；可选长期观察单独记录，不设时长门禁。
 - [ ] evidence record 绑定 command/status/environment/time/artifact/log/screenshot digest；不同 candidate/platform 不可混合。
 - [ ] 只有全部 required entries fresh 且无 blocker 才进入 owner_review；只有 Owner 签署后进入 qualified。
 - [ ] production label 只接受 qualified manifest hash，任何后续变化撤回为 blocked/evidence_collecting。
@@ -146,7 +146,7 @@ date: "2026-08-26"
 - [ ] 用固定 seed/schema/digest 生成至少 20 万 Message、1 万 Thread、50 万 Run、100 active Task 和 50 Repository。
 - [ ] 数据形状覆盖长短 Thread、active/archive/Trash、不同 Payload/Trace、Task states、Memory versions/tombstones 和跨对象 refs。
 - [ ] 生成数据不含生产私人信息或 secret，并可从 artifact 独立重建。
-- [ ] 删除、迁移和 upgrade 使用独立副本，不污染 soak authority。
+- [ ] 删除、迁移和 upgrade 使用独立副本，不污染运行验收 authority。
 - [ ] 验证生成 row counts、references、classifications 和 expected query fixtures。
 
 ### Task 7：实现混合负载与性能证据
@@ -173,13 +173,13 @@ date: "2026-08-26"
 - [ ] normal restart 与 crash/recovery 分别报告，不以一次恢复覆盖全部 kill points。
 - [ ] 运行 secret scan、orphan work、duplicate effect、authority conflict 和 deletion resurrection checks。
 
-### Task 10：实现 7 天 soak harness
+### Task 10：实现双平台运行与故障恢复验证工具
 
-- [ ] 固定 candidate revision/schema/config，分别为 Mac 与 Hermes 创建独立 7×24 小时计划和 evidence stream。
+- [ ] 固定 candidate revision/schema/config，分别为 Mac 与 Hermes 创建按关键路径完成情况判定的验收计划和 evidence stream，不设置连续运行天数门槛。
 - [ ] 持续覆盖对话、计划 Task、external events、primary/fallback failure、adapter/credential failure、正常 service/host restart、browser reconnect、budget/capacity 和受控存储压力。
 - [ ] 自动记录 downtime、health、coverage gaps、blocked reasons、accepted-work reconciliation、resource growth 和 secret/security alerts。
-- [ ] 中途修改 candidate 或 required config 使该平台窗口失效并从零开始。
-- [ ] soak 不宣称 SLA；任一 silent loss/duplicate/double authority/secret leak 为 release blocker。
+- [ ] 修改 candidate 或 required config 后保留旧证据及其绑定，重跑新候选受影响检查；检查覆盖和结果决定是否通过，不设置连续运行计时门槛。
+- [ ] 长期运行观察可在上线后持续进行，不宣称 SLA，也不以未完成观察阻塞上线；任一已确认的 silent loss/duplicate/double authority/secret leak 仍为 release blocker。
 
 ### Task 11：冻结 UpgradeOperation contracts 与状态
 
@@ -225,7 +225,7 @@ date: "2026-08-26"
 
 - [ ] 只有 UpgradeOperation 实现、故障测试和真实 staging rehearsal 后，读取 document-governance Runbook 工作流并从模板创建升级 Runbook。
 - [ ] 写入 static contract、fresh target preflight、effective risk、授权、evidence、stop、mutation 和 rollback boundaries，semantic reconciliation 后显式 seal/check。
-- [ ] 执行完整必需 PRD→Spec→Plan→evidence、全部核心 journey、双平台、browser/WCAG、scale/performance、fault、7 天 soak 和 upgrade checks；候选启用 Calendar 时加入 S7/J07。
+- [ ] 执行完整必需 PRD→Spec→Plan→evidence、全部核心 journey、双平台、browser/WCAG、scale/performance、运行与故障恢复和 upgrade checks；候选启用 Calendar 时加入 S7/J07。
 - [ ] 对真实外部服务、平台和生产目标做完成后 readback，区分命令成功与目标事实。
 - [ ] 所有 required evidence fresh 且无 blocker 后进入 Owner review；未获签署前不写 production label。
 
@@ -244,7 +244,7 @@ date: "2026-08-26"
 | S9-A01 | 版本资格 | Tasks 1–3、8、15–17 | complete manifest、双平台、Owner signature | 待实施 |
 | S9-A02 | 浏览器与无障碍 | Tasks 4–5、15–17 | fresh majors、Browser E2E、人工/辅助技术 | 待实施 |
 | S9-A03 | 规模、性能与恢复 | Tasks 6–9、16–17 | fixed seed、p50/p95/p99/max、recovery | 待实施 |
-| S9-A04 | 连续运行 | Tasks 9–10、16–17 | Mac/Hermes 各 7×24h、candidate 固定 | 待实施 |
+| S9-A04 | 运行与故障恢复 | Tasks 9–10、16–17 | Mac/Hermes 关键运行路径与故障恢复通过、candidate 固定，无连续运行时长门槛 | 待实施 |
 | S9-A05 | 核心升级 | Tasks 11–16 | preflight/recovery/drain/migrate/activate/rollback matrix | 待实施 |
 
 ## 验证
@@ -254,7 +254,7 @@ date: "2026-08-26"
 - npm run test
 - npm run check:pi-compat
 - 由 Tasks 1–4 新增的 coverage/candidate/browser discovery checks
-- 由 Tasks 5–10 新增的 browser/accessibility/platform/scale/performance/soak checks
+- 由 Tasks 5–10 新增的 browser/accessibility/platform/scale/performance/runtime-recovery checks
 - 由 Tasks 11–14 新增的 upgrade/recovery checks
 - python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py --strict .
 - git diff --check
@@ -265,7 +265,7 @@ date: "2026-08-26"
 
 - [ ] S9-A01–S9-A05 全部绑定同一 immutable candidate 的 fresh evidence。
 - [ ] S0–S6、S8 必需范围全部完成，全部核心 journey 和所有排除/安全不变量通过；候选启用 Calendar 时 S7/J07 也全部完成。
-- [ ] Mac/Hermes、六类浏览器、三语、WCAG、规模/性能、恢复和两次 7 天 soak 无 blocker。
+- [ ] Mac/Hermes、六类浏览器、三语、WCAG、规模/性能、运行与故障恢复无 blocker；长期观察未完成不阻塞收口。
 - [ ] UpgradeOperation、recovery decision 和独立 rollback boundaries 已故障注入与真实演练。
 - [ ] Owner 已审阅完整 manifest 并显式签署；生产标识绑定同一 hash。
 - [ ] Architecture、README、Runbook 与实际实现/平台状态一致。

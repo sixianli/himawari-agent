@@ -1,4 +1,4 @@
-import { DOMAIN_ERROR_CODES, DomainError } from "./errors.js";
+import { DOMAIN_ERROR_CODES, DomainError } from "./errors.ts";
 import type {
   AgentId,
   BackupId,
@@ -19,7 +19,7 @@ import type {
   ThreadId,
   TransferId,
   TurnId,
-} from "./identifiers.js";
+} from "./identifiers.ts";
 
 export type ProductDataClassification = "public" | "private" | "sensitive" | "restricted";
 

@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "deploymentComplete": true,
+  "schemaSequence": 32,
+  "historyReimported": false,
+  "runtimeDigest": "7b05555bbb12cb281d182c3c91d809f40b1dad2ac6c0e466799a051d2ffe57bd",
+  "receiptDigest": "f7814ca32c99523e46a2319ded5e4468fdb634017b58d11cf0fd0b8ab2bc9a24",
+  "ready": [
+    "agent",
+    "worker"
+  ],
+  "runtimeUid": 998,
+  "backupId": "before-loop-finalization-2026-09-13",
+  "modelCalls": 0,
+  "realModelAcceptance": "pending"
+}

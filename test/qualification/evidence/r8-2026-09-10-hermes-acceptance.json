@@ -1,0 +1,105 @@
+{
+  "schema": "himawari-hermes-acceptance.v1",
+  "observedAt": "2026-09-10T06:26:29.006724+00:00",
+  "runtimeDigest": "4caf6376109368c38d0ec520a33d08cee41f4f84ae7b7eee50b43a5a8591837c",
+  "runnerDigest": "3746bbc2766e315c62db46bece1d53c9a099670dda0787b3e1dcf1dfcf3b3e90",
+  "receiptDigest": "70e7f4b6321eb3b6cf8778dd266b377cc37349f5edea422a4348ede0bff21473",
+  "hostSignaturesVerified": true,
+  "liveHostVerified": true,
+  "qualificationRegistered": true,
+  "scope": {
+    "mode": "foreground",
+    "network": "per-action-grant",
+    "macAgentInstalled": false,
+    "operations": ["read", "find", "grep", "ls", "bash"],
+    "maximumDomains": ["registry.npmjs.org:80", "registry.npmjs.org:443"],
+    "networkOperations": ["bash"]
+  },
+  "limitations": [
+    "资源限制为观测后停止，不是硬配额",
+    "write/edit 效果验证合同的正式部署描述未配置，本次暂不登记这两项",
+    "工具联网仍需每次动作的真实 Grant，域名库存本身不授予权限；background/service 联网不登记"
+  ],
+  "observations": {
+    "piScenariosPassed": 22,
+    "authorizedNetworkScenariosPassed": 10,
+    "networkDenialScenariosPassed": 7,
+    "workerLossCleanupPassed": true,
+    "installedComposition": {
+      "productionSandboxProbePassed": true,
+      "schema": "sandbox-execution.v2",
+      "productionSuitable": false,
+      "networkDenial": "blocked-by-allowlist",
+      "platform": "linux",
+      "cleanup": "confirmed",
+      "replayExecuted": false
+    },
+    "grantRevocation": {
+      "connectionEstablished": true,
+      "grantRevoked": true,
+      "revokeToReleasedMs": 368,
+      "jobHostExited": true,
+      "taskNamespaceReleased": true
+    }
+  },
+  "publicOrigin": "https://himawari.siyi.win",
+  "bootstrapEnabled": false,
+  "ownerBound": true,
+  "activeProductSessions": 1,
+  "runs": [
+    {
+      "status": "completed"
+    }
+  ],
+  "modelInvocations": [
+    {
+      "status": "settled",
+      "provider": "openrouter",
+      "model_ref": "model-embedding",
+      "actual_cost_micros": 1
+    },
+    {
+      "status": "settled",
+      "provider": "openrouter",
+      "model_ref": "model-primary",
+      "actual_cost_micros": 52
+    }
+  ],
+  "providerCost": {
+    "at": "2026-09-10T06:17:14.612Z",
+    "keyVerified": true,
+    "baselineAvailable": true,
+    "usageDelta": 4.826e-5,
+    "usageBeforeKeys": ["usage", "usage_daily"],
+    "applicationCostMicros": 53
+  },
+  "readiness": {
+    "status": "ready"
+  },
+  "service": ["NRestarts=0", "ActiveState=active"],
+  "sourceBaseCommit": "db84c6c07438c13f9e7e62c407927a2056ad0448",
+  "sourceAtQualificationIncludedTaskChanges": true,
+  "browser": {
+    "answerVisible": true,
+    "answer": "7 × 8 = 56。",
+    "runCompleted": true,
+    "connected": true,
+    "loginPromptVisible": false,
+    "readBackAfterServiceRestart": true,
+    "additionalModelCallsOnReadBack": false,
+    "simulated401HidesPrivateContent": true,
+    "restoredWithoutNewLogin": true
+  },
+  "r8CompleteForRegisteredScope": true,
+  "verification": {
+    "regressionTestFiles": 7,
+    "regressionTestsPassed": 142,
+    "concurrentAuthenticatedRequests": 12,
+    "concurrentAuthenticatedRequestsAccepted": 12,
+    "nodeBuild": "passed",
+    "browserBuild": "passed",
+    "npmCheck": "passed",
+    "documentGovernance": "passed, 0 warnings",
+    "browserAsset": "index-NjNVNKLx.js"
+  }
+}

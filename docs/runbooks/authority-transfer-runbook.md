@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:cfa17341be1fa07e12d4a97f0fc6f2d20f0c7192971eac8e329667dba3b6d8ca"
+contract_sha256: "sha256:78971aaddf18f24a62893399de14299be0271fb6fc77228612f2e0ff1ef14b63"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,10 +11,60 @@ date: "2026-08-27"
 # 停机加密 Authority Transfer Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/production-thread-titles.ts
+- apps/agent-service/src/production-model-composition.ts
+- apps/agent-service/src/production-run-composition.ts
+- packages/application/src/services/thread-execution-projection.ts
+- packages/persistence-sqlite/src/migrations/0032_runtime_history.sql
+- packages/application/src/services/runtime-history-service.ts
+- packages/runtime-pi/src/pi-native-history.ts
+- apps/agent-service/src/public-search-authorization.ts
+- packages/application/src/services/sandbox-action-grant.ts
+- packages/persistence-sqlite/src/sqlite-durable-operations.ts
+- packages/platform-node/src/capabilities/sandbox-runtime-digest-worker.ts
+- packages/platform-node/src/capabilities/protected-runtime.ts
+- packages/persistence-sqlite/src/built-in-identity-recovery.ts
+- packages/persistence-sqlite/src/migrations/0031_built_in_identity.sql
+- packages/application/src/ports/built-in-identity.ts
+- apps/agent-service/src/production-managed-tasks.ts
+- apps/agent-service/src/production-sandbox-stream.ts
+- apps/agent-service/src/production-sandbox-services.ts
+- apps/execution-worker/src/production-sandbox-execution-v2.ts
+- packages/execution-contracts/src/sandbox-readiness.ts
+- apps/agent-service/src/production-sandbox-output.ts
+- apps/agent-service/src/production-sandbox-control.ts
+- packages/application/src/services/sandbox-execution-reconciliation.ts
+- packages/runtime-sandbox/src/job-host-control-client.ts
+- packages/runtime-sandbox/src/linux-namespace.ts
+- packages/application/src/ports/sandbox-execution-journal.ts
+- packages/application/src/services/sandbox-execution-projection.ts
+- packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts
+- packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts
+- packages/application/src/services/sandbox-startup-recovery.ts
+- packages/application/src/services/sandbox-job-lifecycle-service.ts
+- packages/application/src/services/runtime-continuation-service.ts
+- packages/application/src/ports/run-checkpoints.ts
+- packages/runtime-pi/src/pi-tool-batch-continuation.ts
+- docs/adr/0023-durable-hitl-execution.md
+- packages/application/src/services/run-execution-input-service.ts
+- packages/application/src/services/run-coordinator.ts
+- packages/application/src/ports/run-dispatch.ts
+- packages/domain/src/run-state.ts
+- apps/agent-service/src/production-run-reconciler.ts
 - apps/admin-cli/src
 - apps/agent-service/src/service-main.ts
+- apps/agent-service/src/production-service-lifecycle.ts
+- apps/agent-service/src/production-memory-worker.ts
+- apps/agent-service/src/production-authority-lifecycle.ts
+- apps/agent-service/src/production-execution-client.ts
+- apps/execution-worker/src/service-main.ts
 - packages/domain/src/durable-state.ts
 - packages/persistence-sqlite/src/sqlite-authority-transfer.ts
+- packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts
+- packages/persistence-sqlite/src/sqlite-run-lifecycle-operations.ts
+- packages/persistence-sqlite/src/sqlite-run-checkpoint-operations.ts
+- packages/persistence-sqlite/src/migration-engine.ts
+- packages/persistence-sqlite/src/migrations
 - packages/persistence-sqlite/src/state-root-lock.ts
 - packages/platform-node/src/host-secret-source.ts
 - packages/platform-node/src/payload-protector.ts
@@ -27,7 +77,31 @@ date: "2026-08-27"
 
 ## Scope
 
+2026-09-11 聊天运行体验更新：可撤销的联网搜索设置保存在既有 Product State，关联审批记录通过 `policyAuthorization` 标明真实授权来源，不新增迁移文件。备份/迁移须共同保留设置 revision、派生 Grant 与审计；关闭设置后，旧 Grant 的消费和 Sandbox 准入被拒绝。恢复后核对设置与当前固定 Exa 路径、主机/目录路由和模型披露身份一致，配置绑定不同不能沿用开启状态。它不授予其他文件、命令或网络权限。Pi 更新合并仅影响尚未持久化的连续累计片段，不能删除已持久化记录或工具边界。`runPolicy.timeZone` 是显式 IANA 时区，只用于新 Run 的时间上下文；历史已冻结内容保持原值。
+
+未配置受保护安装时，完整 runtime 字节校验仍在每次调用的独立工作线程运行；安装必须包含编译后的 `sandbox-runtime-digest-worker.js`。ADR 0028 允许已经独立验证权限的 Linux 安装，在相同进程、相同 root 保护版本身份下复用首次完整审计；每次仍验证当前进程和保护记录，失效立即拒绝，不接受普通时间缓存。保护记录不属于备份或迁移数据，目标主机必须重新建立身份、权限与安装资格，不能复制源主机记录作为证据。此变化不改变数据格式、迁移权威或停止条件。参见 [SOURCE: docs/adr/0028-protected-runtime-installation.md] 和 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]；本 Runbook 原有操作范围保持不变。
+
+2026-09-11 合同核查：新增离线初始化、目录 Grant 与能力登记仍属于当前身份的停机管理操作，不修改本 Runbook 的备份/迁移数据格式。恢复必须保留其审计、目录身份与授权；不能在已恢复 state root 再运行首次初始化，不能将原主机安装资格当作目标主机资格。启动后快照按原字节复查，工具每次仍检查当前主机与授权；模型失败展示改进不改变原始记录和费用核算。
+
+本次 Web 重构追加 schema 30：`runs.model_selection_json` 保存用户提交时选择的模型引用和思考深度。备份、恢复和迁移必须保留此列及原 Trace/Payload；恢复不能用当前输入框的选择改写旧 Run，也不能给旧记录补造选择。目标配置仍须支持原模型、深度、预算与披露，缺失时报告失败而不是静默替换。浏览器的主题、主题色和未发送草稿属于客户端偏好，不随服务数据库恢复。
+
+控制中心查询执行过程时仅返回经过归属校验和字段筛选的展示投影；恢复检查应核对多轮历史、模型选择与审批等待，不直接开放原始 Trace JSON。取消仍经过 RunCoordinator。上述展示投影已由受控 SQLite/Pi 适配与浏览器测试验证。2026-09-11 Hermes 同机升级、迁移前快照与真实服务重启由专用 Hermes Runbook 和验收记录约束；未执行跨主机权威迁移或从备份完整恢复服务。
+
+R8 的网络出口和活动连接属于原 Job Host，不随备份或权威迁移恢复。Worker 对 foreground、background、service 均在监督循环重查当前授权，失败后请求停止并关闭出口；恢复的旧 Grant 或连接计数不能恢复网络权限。目标需要自己的明确 hostname:port 授权和平台资格，不能沿用源主机上游端口或认证。此变化不修改数据迁移格式或本 Runbook 的停机/恢复步骤。
+
+schema 28 在原数据库追加 v2 资源关联、独立操作/资源观察、目录占用和派发回执。升级既有库仍须先取得已验证快照；0020/0027 不改写。恢复/迁移时必须保留占用和未确认派发；旧未结束作业缺少可信目录链时按主机保守阻止新准入，缺少主机身份时阻止所有主机的新准入。禁止通过删除 Run、清空占用或把旧记录改成 v2 来恢复执行。已确认清理的旧历史结果保持原解释，不由迁移补写新资格。
+
+schema 29 追加执行准备阶段，保持 schema 28 的历史记录为 `legacy_bound`。新 `reserved` 记录没有实际运行摘要，`bound` 记录保存首次启动固定的摘要和监督身份；两者均须与原调用回执、目录占用及观察历史一同保留。恢复或迁移不能为未绑定记录补造启动资格，也不能把已绑定作业重新派发；源主机上的 PID、IPC session 和 boot 仅供核查，不成为目标的停止或执行句柄。
+
+这些 SQLite 机制已有独立测试数据库的升级、重开和事务验证；本次未升级运行中的 state root，也未执行真实安装、恢复或跨主机迁移。正式组合已具备显式 v2 foreground 路径、真实目录身份解析和限定风险核查；Pi 七工具前台 runner 已有假数据验收，目标安装资格仍须独立验证。恢复或迁移后的 Pi 工具链须与原 runtimeDigest 匹配，不能以同名系统工具替代缺失的 bash/rg/fd，也不能下载补齐后沿用旧资格。恢复后继续适用当前主机/目录/权威检查，不能自动重放旧任务或未确认派发。
+
+SRT 的 Agent Service/Worker 组合已接上现有授权来源、受保护 scope、认证 Payload 通道与作业监督器；Node 打包包含 SRT 0.0.75。当前文件 inspect/read scope 来源与受控 Mac 组合探针已经实现，但未签发正式安装主机资格，也未完成真实跨主机崩溃恢复验收。schema 27 继续保存计划和作业观察；初始观察允许无策略摘要，由首次原子启动固定 Worker 编译的摘要，此后不得更换。资源观察随作业记录迁移，仅为历史证据，不能成为目标主机资格。恢复后不能给无账本的旧凭证补建可启动作业，不能重放清理未知作业。本文的停机、备份与权威迁移流程保持不变；目标仍须独立验证主机资格、目录授权和本次操作的网络 Grant，不得沿用源主机路径或网络上界推断授权。
+
 本 Runbook 只用于把同一个 Owner/Agent 的单一逻辑权威在两个已准备好的 deployment 之间停机迁移。它覆盖源部署导出、迁移包认证检查、空目标导入、inactive-ready 验证、显式激活、未激活导入的放弃，以及加密迁移包的 7 天保留边界。
+
+目标服务必须建立自己的 Agent/Worker boot identity、authority lease 和反向权限/Payload 通道；源 `runtime/` 中的启动绑定不随迁移包转移，也不能在目标重用。
+
+目标 Agent Service 现在会在创建准入入口前核查已有 SRT 作业：prepared/starting 等未结束作业保存为清理未知并隔离，已有隔离状态保持不变。核查使用当前目标权威，仅追加观察；不把源 Worker 凭据变成目标执行权限，不自动重放，也不证明源机器的任务后代已经退出。此启动行为已有同机 SQLite 回归，不能代替实际双向迁移和两台主机的进程核查。
 
 迁移不是在线复制、自动故障切换、普通备份、主机损毁恢复或 active-active。导出一旦进入 `retired_pending_transfer`，源部署不能自动恢复为 active；回切必须由当时的 active target 发起新的 reverse transfer。当前实现把激活后的 source `retired` 状态写入目标侧的权威产品数据库；物理源 state root 保持 `retired_pending_transfer`，两种状态都拒绝普通启动。
 
@@ -43,12 +117,15 @@ date: "2026-08-27"
 - 这是 critical operation。每次 export、import、activate、abandon 和 reverse transfer 都是独立 mutation；上一动作的授权不会自动授权下一动作。
 - 开始前冻结唯一 transfer ID、source deployment、target deployment、Owner/Agent、源 authority epoch/fencing token、源/目标 state root、配置路径、迁移包目录和预计磁盘增量。目标 epoch 与 fencing token 必须各等于源值加一。
 - export 前 Agent Service、Execution Worker、新 Trigger admission、scheduler、全部 SQLite/Memory connection 必须停止；在途 Run 必须已完成或形成稳定 checkpoint。CLI 取得 state-root exclusive offline lock 只证明受该锁保护的写者已停止，不能替代服务管理器、进程、socket 和连接回读。
-- target state root 必须停止且 product `data/` 为空，不能先复制 SQLite、Payload 或 authority file。目标 host 的配置与秘密必须独立准备；机器秘密不得进入迁移包。
+- target state root 必须停止且 product `data/` 为空，不能先复制 SQLite、Payload 或 authority file。目标 host 的配置、秘密、能力部署快照和本平台 runtime root 必须独立准备；迁移包不携带机器秘密、可执行绑定或平台资格。
 - 配置中必须恰好存在一个 `payload-encryption` 和一个 `transfer-recipient` secret reference。当前 CLI 从绝对路径的 restricted secret directory 解析 32-byte key material；目录必须为当前账号所有且 `0700`，文件必须为当前账号所有且 `0600`。密钥值不得进入 argv、环境变量、日志、Trace 或证据。
 - 配置必须通过当前 strict schema，明确声明 primary、private-only fallback 和独立 embedding descriptor 及其 dimensions；迁移只搬运受保护产品状态，不替换、推断或静默刷新这些模型身份。
+- 若目标配置声明能力部署快照，必须在 activation 前验证规范路径、Owner/mode、大小、SHA-256，并逐项对照迁移后的 active Capability Registry 与目标平台资格。源主机快照、runtime root 或资格不能复制后直接视为目标已合格。
 - `activate` 只接受权限受限、字段精确的 preflight JSON。CLI 会实际解析目标 Payload 和 recipient key；`doctorReady` 与 `publicIngressReady` 必须来自本次只读检查。文件中的布尔值不是替代证据，缺少原始回读时停止。
 - 迁移包 plaintext staging 只能位于 CLI 生成的受限临时目录。copy-on-write 与 SSD 删除不保证可靠擦除；主要保护来自包加密、受限权限、临时文件清理和后续 key disposal。
 - 任何公网入口切换、Hermes/Mac 服务操作、外部账户变更和旧包删除都保持各自授权边界。
+
+文件读取的 `runPolicy.fileRead` 属于主机路由选择，不能沿用源主机路径和 Worker instance 推断目标主机授权。迁移的 inspect/read 输入、Handle 和回执仅用于历史回读或核实未知结果；新 authority 下不得自动重签执行，须重新核实本地主机、目录 Grant、文件身份及模型披露权限。
 
 ## Live-State Preflight
 
@@ -90,7 +167,7 @@ himawari transfer import --config <absolute-target-config-path> --secret-dir <ab
 ~~~
 
 8. import 只在受限 staging 中解密并验证 authentication、digests、identity、版本、schema、SQLite、Payload 和 Memory；允许的 forward migration 与目标 KEK rewrap 只修改 staging。全部通过后才原子建立 target `data/` 和 `inactive_ready` authority `epoch/fence=0/0`。此时不得启动普通服务或切公网入口。
-9. 在 target 对 secret references、离线 product diagnostics、目标服务配置、public origin、受控 ingress 和回滚边界执行只读 preflight。创建字段精确、权限 `0600` 的 JSON：
+9. 在 target 对 secret references、离线 product diagnostics、目标服务配置、能力部署快照及目标平台资格、public origin、受控 ingress 和回滚边界执行只读 preflight。创建字段精确、权限 `0600` 的 JSON：
 
 ~~~json
 {
@@ -118,14 +195,38 @@ himawari transfer activate --config <absolute-target-config-path> --secret-dir <
 himawari transfer abandon --config <absolute-target-config-path> --secret-dir <absolute-target-secret-directory> --transfer-id <transfer-id> --confirm ABANDON_<transfer-id>
 ~~~
 
+恢复目标 Agent 在开放准入前使用当前权威处理 v2 未释放观察：旧监督标为 lost/unknown，保留原结果、效果和占用，不复用源 Worker 的 boot 凭证或按旧 PID 接管。已确认清理但效果未决的记录保持其原清理事实及未决义务。此逻辑恢复不能作为源主机残留进程已终止的证据，源风险仍按本 Runbook 的停止条件处理。
+
 ## Verification
+
+自动标题沿用既有 Thread、受保护 Payload 和模型费用账本，不新增 schema。迁移须共同保留 `threads.title_ref`、标题来源与 revision、标题 Payload，以及 `thread-title:<runId>` 对应的调用身份和费用状态；目标不能因标题缺失清除 started/unknown 记录或重放源请求。正常停机先停止 Run 循环，再等待已发起的标题请求结束；标题请求最多等待 20 秒，仍受配置的更短期限约束。强制中断后的进程内标题队列不属于迁移数据，目标以已提交状态为准。已有标题和手动改名优先，不在 import/activate 时批量请求模型。
+
+执行过程继续由原 Trace/Payload 和 Thread 游标投影。记忆检索、筛选及上下文形成只展示阶段发生，不暴露记忆正文和完整模型上下文；模型发出的工具请求与执行、结果按调用 ID 关联。目标回读这些阶段、参数和结果即可验证历史展示，不以重新调用工具作为迁移验收手段。
+
+启用沙箱能力的 Agent 必须在本进程完成首次安装校验后才进入 ready，不能以 Worker 已就绪代替。受保护程序摘要可在安装及文件身份未变化时复用，安装外的程序仍逐次校验；这不改变本手册的数据格式、权威转移或停机步骤。恢复到另一安装或主机时，原进程缓存不适用，必须重新验证实际安装。Hermes 的 NVMe 私有只读挂载及设备回读另见 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]。
+
+工具审批续跑快照同时保存本轮进展指纹和已完成工具结果，备份、恢复及迁移须连同其受保护 Payload 一起保留。恢复审批时只重放同一暂停点已有的结果，不再次执行对应工具；因循环保护中止的 Run 保持失败，即使随后生成了结果说明，也不能改记为任务成功。这些运行层行为不依赖具体模型提供商。
+
+Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用。迁移须先取得既有机制核验通过的停机备份；升级后回读 `run_payload_artifacts`、对应 Payload 密文和 `thread_fork_lineage.runtime_history_json`，核对旧 artifact 内容未变、外键完整。恢复与迁移须保留清单引用的所有消息 Payload，不能只搬运聊天正文。重启后以新 Run 验证旧工具调用/结果可见且不重新执行；取消后核对实际结果及新请求，不能仅看服务 ready。旧 Trace 没有自动导入为完整历史，不能由 schema 升级推断旧会话已修复。回退需要匹配旧版本的整套已核验数据库备份，禁止旧二进制直接打开 schema 32，也不手工删除 migration ledger。
+
+恢复或迁移后的候选必须支持 migration 0024/0025/0026：embedding 调用身份和 Memory projection 预算账户随产品 SQLite 一起验证，不能丢弃 started/unknown 费用记录来触发重试。公开入口还需要当前主机的 `http`、`identity`、`runPolicy` 与模型配置；被冻结的 Run 输入继续使用原有快照。重新启动后检查 Run dispatch、Memory consumer、Worker 与权威就绪状态，并回读原 Thread/Run 和受保护回答正文。此检查不替代真实公共身份入口或目标平台资格。
+
+- 未保存完整审批暂停点的中断执行交给生产恢复组件后，Run 与 checkpoint 必须同时显示 `reconciling_external_result`，旧执行租约失效，已有结果引用保留；恢复不能重新调用模型或工具。此检查当前有本地 SQLite 证据，完整安装入口验证仍待完成。已经待核实的记录不重复占用初始扫描批次，不代表外部结果已经确认。
+
+- 若迁移包包含通用 HITL 暂停点，保存审批、恢复 Payload 和已确认执行结果供核查。恢复记录绑定原 deployment、epoch 与 fence；权威迁移后不得绕过该绑定自动执行旧工具批次。目标重新授权与跨权威续跑尚未验收，应保留待核查状态，不手改恢复记录或重新发送原请求代替恢复。
+
+- 若数据包含 Run 执行输入快照，保留首次执行开始时间与绝对截止时间；恢复或迁移不重新发放运行时长。缺少截止时间的旧快照须停止并核实历史执行，不能自动删除快照后重建。目标时钟须可信，不能以导入或重启时间替换原截止时间。
 
 - authenticated manifest 与 import/activate 输出中的 transfer、Owner/Agent、source/target deployment、product/schema/adapter/Memory versions 完全一致。
 - target activation epoch 与 fencing token 各为源值加一；目标权威 SQLite 与 `authority.json` 状态、epoch、fence 和 transfer ID 一致，且最多一条 deployment 为 `active`。
 - import 前不存在 target product state；import 后 activation 前 target 为 `inactive_ready` 且普通 Agent Service 启动失败；activate 后只有 target 可通过普通启动检查。
 - source 物理 authority 保持 `retired_pending_transfer` 并拒绝普通启动；target canonical SQLite 中 source deployment 为 `retired`。旧 source 不能靠复制旧 authority、旧 SQLite 或旧包回到 active。
 - target Payload 能以目标 KEK 完成 authentication/decryption；Memory projection、Owner/Agent/Thread/Run identity、checkpoint、水位线、jobs 和外部 integration state 以本次范围的只读 fixture 对比一致。
+- 对本次包含运行正文的迁移，核对正文与 Run 的归属、用途、操作身份回执、摘要、分类和媒体类型完整迁移；换 KEK 不改变这些语义身份。尚未发布的正文不得因迁移变成已发布消息，旧部署的租约不得用于新增正文。
+- 若迁移包含 Capability 调用回执，保留原任务语义、幂等键与首次执行的 deployment/lease/Agent/Worker 身份。目标的新 epoch/fence/lease 不能把源执行回执变成可继续执行或读取正文的权限；重复接纳只回读既有结果，未知外部结果须显式核对，不自动派发新执行。
+- 若迁移包含 Run 执行租约，保留来源、执行身份、revision 和释放状态供核对，但目标不能把源 consumer 或源执行租约当作当前执行权限。取消状态、检查点、失效租约和回执须保持一致；新权威只能按当前领取规则处理可恢复任务，未知执行不得因迁移重新派发。
 - manifest allowlist 只含 SQLite、数据库引用的 Payload ciphertext 与 Memory 文件；包不含 secret、cache、log、runtime、lock 或 socket，证据不含 plaintext。
+- 迁移包不含能力部署快照、runtime root 或平台资格；目标 Worker 只在目标主机独立验证快照 digest、active Capability Registry 和本平台 binding/qualification 后 ready。
 - package `retainUntil` 为创建后 7 天；到期清除是独立删除 mutation。未到期不得提前删除唯一加密迁移副本。
 
 ## Evidence
@@ -152,6 +253,7 @@ himawari transfer abandon --config <absolute-target-config-path> --secret-dir <a
 - manifest authentication、file digest/size、schema/adapter/Memory version、SQLite integrity、Payload authentication、Memory diagnostics 或 forward migration 任一失败。
 - 磁盘不足以同时容纳源数据、SQLite snapshot、加密对象和临时解密 staging；不得自动删除 Owner 内容。
 - preflight evidence 缺失、目标 secrets/doctor/readiness/public ingress 任一未通过，或 activation 后 source 普通启动未 fail closed。
+- 目标能力部署快照缺失、篡改、权限不安全、与迁移后的 active Capability Registry 不一致，或沿用源平台资格冒充目标平台验证。
 - 要求自动恢复 source、手工改 authority、直接复制 plaintext state、跳过确认、提前删包、扩大到生产部署或把一次 fixture 成功当作 Mac↔Hermes 完整验收。
 
 ## Troubleshooting
@@ -167,3 +269,35 @@ himawari transfer abandon --config <absolute-target-config-path> --secret-dir <a
 | activation 中断 | 对比 target SQLite 与 authority file 的状态/epoch/fence/transfer ID | 若 DB 已 activated 但 file inactive，以同一 preflight 幂等重试；其他不一致停止并保留现场 |
 | source 被尝试启动 | 回读 source authority 与 SQLite transfer 状态 | 保持停止；不得恢复 active，回切只能从 current active target reverse transfer |
 | `ENOSPC` | 只读回读同一文件系统可用字节和包/staging 估算 | 停止；人工决定空间处理，不自动删除 Owner 数据 |
+
+### v2 原环境核查约束（2026-09-09）
+
+恢复必须保留既有受保护 Run trace 中的控制引用、终态证据及其 Payload；不得仅备份 SQLite 中的 PID。当前 Agent 权威通过原环境认证控制端口 inspect/stop，或读取原 Job Host 的签名终态；身份、目录 inode、策略或宿主变化时继续隔离，不能在目标主机按旧 PID 停止或重启。Agent 仅加载不含 SRT 启动能力的控制客户端。
+
+Linux 前台清理证据要求原 PID namespace init 已消失及完整终态；Mac 已启动任务没有全树保证时继续 unknown。端口失联、证据不完整和超时均不能解除相交占用。真实假数据探针不签发安装资格；不得把测试临时 bubblewrap/socat 的 PATH 配置用于生产，生产依赖位置须单独验证。实际安装、备份恢复和跨主机迁移的既有步骤及审批边界保持适用。
+
+### 资源输出分页保留
+
+v2 已保存输出的分页引用和 cursor 归原 Run 的受保护 artifact；同机恢复须一同保留对应加密 Payload、artifact 关联及原作业账本。游标只定位原调用/资源的固定输出快照，不能改写为宿主路径，也不能用来重新执行任务。原输出缺失或摘要不符时拒绝，不能以空文件代替；权威迁移仍按原回执和当前身份拒绝旧 Worker 输出权限。R6 追加了后台运行输出片段、结束标记和命令退出事实，均归原 Run；恢复时须同时保留这些 artifact，不补造丢失片段、不重启原命令。后台/服务的目标安装资格仍须独立验证。
+
+### 受管理后台资源的安装与恢复
+
+后台 Bash 继续使用安装的 Pi runner 和固定工具链；其运行模式由 Worker 从匹配的操作声明传入，不能从模型参数选择。前台 Bash 保留原结果格式；后台输出只在完整行检查后追加，末尾无换行内容在退出时检查，机器秘密命中即停止并拒绝输出。start 回执只表示资源已启动，命令退出码另存入连续输出的结束事实。资源句柄与管理调用不能重复消费 Grant。
+
+服务仅在安装声明含匹配的 `readinessProbes` 且具备该模式资格时启用。本批探针使用私有目录内唯一 Unix socket 的 HTTP GET、预期 2xx 状态和最多 30 秒期限；不开放通用本地 TCP 或其他 Unix socket，不以日志判断就绪。恢复后的声明、运行文件与资格必须重新匹配；不得凭旧 ready 回执连接新服务。
+
+Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释放资源的 Run。未知清理进入原核查流程并保留写目录占用。Mac 测试主进程退出仍不证明任意后代已全部退出，不能清除隔离以获得正常完成。这里没有新增迁移文件、安装资格签发或运行中数据库修改步骤。
+
+
+## 内置账号的恢复边界
+
+目标主机激活时会撤销内置账号随迁移复制的旧产品会话、设备和未完成验证请求。内置账号本身保留，用户须用密码和第二因素在新主机重新登录；原有 Cookie 不获得新主机访问权。迁移仍须按原有权限重新绑定 Host secret、验证 Payload 和平台资格。
+
+[SOURCE: docs/adr/0027-built-in-owner-authentication.md] [SOURCE: docs/runbooks/install-start-stop-runbook.md]
+
+生成模型可选 `reasoningRequired` 能力需与 `reasoning` 一致；原配置省略时保持原语义。真实审批目标展示允许有界路径文本，不改变身份、Grant 或审批决定合同。
+
+恢复审批须读取已有冻结请求，不能用新时间重写同一持久化 key。验收核对 Pi 工具真实失败标记、审批等待扣除和文件回读；是否要求近期认证以实际审批合同为准，不以“工具”一概判断。
+
+
+同次进程观察现在携带 Agent 在该次核验中产生的证据，保存时不重复扫描安装字节；外部 Worker 事实仍独立核验，序号、身份、有效期及事务检查保留。注册控制入口统一核对当前 Scope、Grant 和安装；终态工具仍保存结果并完成原清理核验。此调整不改变停机、恢复、迁移或重新授权步骤，不使旧进程证据恢复执行权限。

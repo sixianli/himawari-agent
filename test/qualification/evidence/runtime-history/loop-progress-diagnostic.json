@@ -1,0 +1,218 @@
+{
+  "runId": "run:2199cbdf-b1a1-42e1-9d81-d8105dc44d03",
+  "status": "cancelled",
+  "readOnly": true,
+  "modelCalls": 0,
+  "results": [
+    {
+      "toolCallId": "call_84eecda5a73a45f29c0b947d",
+      "toolName": "ls",
+      "isError": false,
+      "schemaVersion": "pi-result.v1",
+      "envelopeTool": "ls",
+      "sourceCallIdMatches": false,
+      "contentHash": "ad632a6ea26b21796e96a74abb1611eb2ed0f44ca4401e0f436500859ad4e6b5",
+      "fieldHashes": {
+        "schemaVersion": "5ef56f9da4d9a096887acc5c8aabdffc37a14f61169c33bad16658d947ef6e8c",
+        "tool": "eb27aa4b6c9210927773a2123ae397048e06be5e14d2851b6a253995f7de31b4",
+        "content": "ad632a6ea26b21796e96a74abb1611eb2ed0f44ca4401e0f436500859ad4e6b5",
+        "details": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "fullOutput": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "isError": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+        "commandExitCode": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "verifiedWrite": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+      },
+      "sourceHashes": {
+        "workspace": "93e3216dde25ef3d1dd5714f2ab02853ae9b23b6ce53b04ce4ee7dfaeba975f3",
+        "toolCallId": "d89b9ef06bba1a6aef0c062fdfd2fb0414d531519bdceab8daae5fe2f046720f",
+        "directoryGrantRef": "2640fdcb2a25e0c7c47b440ff4e22515abab9e141d667f3e63f17dbba1035869",
+        "directoryGrantRevision": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+        "parameters": "0997b9b37fef4f0e25d048c1e507dc38efa76cf7ac23d1e479a3cc746f555aa1"
+      }
+    },
+    {
+      "toolCallId": "call_43ef7d11430f46c7a46302b3",
+      "toolName": "ls",
+      "isError": false,
+      "schemaVersion": "pi-result.v1",
+      "envelopeTool": "ls",
+      "sourceCallIdMatches": false,
+      "contentHash": "ad632a6ea26b21796e96a74abb1611eb2ed0f44ca4401e0f436500859ad4e6b5",
+      "fieldHashes": {
+        "schemaVersion": "5ef56f9da4d9a096887acc5c8aabdffc37a14f61169c33bad16658d947ef6e8c",
+        "tool": "eb27aa4b6c9210927773a2123ae397048e06be5e14d2851b6a253995f7de31b4",
+        "content": "ad632a6ea26b21796e96a74abb1611eb2ed0f44ca4401e0f436500859ad4e6b5",
+        "details": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "fullOutput": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "isError": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+        "commandExitCode": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "verifiedWrite": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+      },
+      "sourceHashes": {
+        "workspace": "93e3216dde25ef3d1dd5714f2ab02853ae9b23b6ce53b04ce4ee7dfaeba975f3",
+        "toolCallId": "cd4f0c819f92115349bd338d62f692cac90f385dbaa1aee59dc9e95fa76dad2d",
+        "directoryGrantRef": "2640fdcb2a25e0c7c47b440ff4e22515abab9e141d667f3e63f17dbba1035869",
+        "directoryGrantRevision": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+        "parameters": "0997b9b37fef4f0e25d048c1e507dc38efa76cf7ac23d1e479a3cc746f555aa1"
+      }
+    },
+    {
+      "toolCallId": "call_2056b5af97ba413098199206",
+      "toolName": "ls",
+      "isError": false,
+      "schemaVersion": "pi-result.v1",
+      "envelopeTool": "ls",
+      "sourceCallIdMatches": false,
+      "contentHash": "ad632a6ea26b21796e96a74abb1611eb2ed0f44ca4401e0f436500859ad4e6b5",
+      "fieldHashes": {
+        "schemaVersion": "5ef56f9da4d9a096887acc5c8aabdffc37a14f61169c33bad16658d947ef6e8c",
+        "tool": "eb27aa4b6c9210927773a2123ae397048e06be5e14d2851b6a253995f7de31b4",
+        "content": "ad632a6ea26b21796e96a74abb1611eb2ed0f44ca4401e0f436500859ad4e6b5",
+        "details": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "fullOutput": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "isError": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+        "commandExitCode": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "verifiedWrite": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+      },
+      "sourceHashes": {
+        "workspace": "93e3216dde25ef3d1dd5714f2ab02853ae9b23b6ce53b04ce4ee7dfaeba975f3",
+        "toolCallId": "f66a4e81fe056ecdc1bde2cf9001ba3bc6ffa212671efb0c6f63209f5939beec",
+        "directoryGrantRef": "2640fdcb2a25e0c7c47b440ff4e22515abab9e141d667f3e63f17dbba1035869",
+        "directoryGrantRevision": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+        "parameters": "0997b9b37fef4f0e25d048c1e507dc38efa76cf7ac23d1e479a3cc746f555aa1"
+      }
+    },
+    {
+      "toolCallId": "call_f95adc12abc44d769b5eaca3",
+      "toolName": "ls",
+      "isError": false,
+      "schemaVersion": "pi-result.v1",
+      "envelopeTool": "ls",
+      "sourceCallIdMatches": false,
+      "contentHash": "ad632a6ea26b21796e96a74abb1611eb2ed0f44ca4401e0f436500859ad4e6b5",
+      "fieldHashes": {
+        "schemaVersion": "5ef56f9da4d9a096887acc5c8aabdffc37a14f61169c33bad16658d947ef6e8c",
+        "tool": "eb27aa4b6c9210927773a2123ae397048e06be5e14d2851b6a253995f7de31b4",
+        "content": "ad632a6ea26b21796e96a74abb1611eb2ed0f44ca4401e0f436500859ad4e6b5",
+        "details": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "fullOutput": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "isError": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+        "commandExitCode": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "verifiedWrite": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+      },
+      "sourceHashes": {
+        "workspace": "93e3216dde25ef3d1dd5714f2ab02853ae9b23b6ce53b04ce4ee7dfaeba975f3",
+        "toolCallId": "06b5b8af7ab8ecb7be5f2afc149aec6f10efe3a6a40ad15311d23ef923679bf1",
+        "directoryGrantRef": "2640fdcb2a25e0c7c47b440ff4e22515abab9e141d667f3e63f17dbba1035869",
+        "directoryGrantRevision": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+        "parameters": "0997b9b37fef4f0e25d048c1e507dc38efa76cf7ac23d1e479a3cc746f555aa1"
+      }
+    }
+  ],
+  "continuations": [
+    {
+      "toolProgress": {
+        "version": "pi-tool-progress.v1",
+        "recent": [],
+        "lastResult": null,
+        "consecutive": 0,
+        "stopped": false
+      },
+      "batchKeys": [
+        "version",
+        "systemPrompt",
+        "prefix",
+        "assistant",
+        "completedResults",
+        "waitingToolCallId",
+        "completedStreamOrdinal"
+      ]
+    },
+    {
+      "toolProgress": {
+        "version": "pi-tool-progress.v1",
+        "recent": [
+          "6c4eb1bff39dfa018c04157f88b47f0f4799e03b383523b7ee1cc2ae6972e2da"
+        ],
+        "lastResult": "72122aeeade249c8131b992e0460de559915732b560b359702ae7daea724f994",
+        "consecutive": 1,
+        "stopped": false
+      },
+      "batchKeys": [
+        "version",
+        "systemPrompt",
+        "prefix",
+        "assistant",
+        "completedResults",
+        "waitingToolCallId",
+        "completedStreamOrdinal"
+      ]
+    },
+    {
+      "toolProgress": {
+        "version": "pi-tool-progress.v1",
+        "recent": [
+          "6c4eb1bff39dfa018c04157f88b47f0f4799e03b383523b7ee1cc2ae6972e2da",
+          "6c4eb1bff39dfa018c04157f88b47f0f4799e03b383523b7ee1cc2ae6972e2da"
+        ],
+        "lastResult": "c5a770d4020f2177b9d80e2924abb8bdb655a499369c45fa24d380aaef275deb",
+        "consecutive": 1,
+        "stopped": false
+      },
+      "batchKeys": [
+        "version",
+        "systemPrompt",
+        "prefix",
+        "assistant",
+        "completedResults",
+        "waitingToolCallId",
+        "completedStreamOrdinal"
+      ]
+    },
+    {
+      "toolProgress": {
+        "version": "pi-tool-progress.v1",
+        "recent": [
+          "6c4eb1bff39dfa018c04157f88b47f0f4799e03b383523b7ee1cc2ae6972e2da",
+          "6c4eb1bff39dfa018c04157f88b47f0f4799e03b383523b7ee1cc2ae6972e2da",
+          "6c4eb1bff39dfa018c04157f88b47f0f4799e03b383523b7ee1cc2ae6972e2da"
+        ],
+        "lastResult": "b03f7080bc970ccb25117731ca48883d5e1084b9eafd343c1a665588e7c97d49",
+        "consecutive": 1,
+        "stopped": false
+      },
+      "batchKeys": [
+        "version",
+        "systemPrompt",
+        "prefix",
+        "assistant",
+        "completedResults",
+        "waitingToolCallId",
+        "completedStreamOrdinal"
+      ]
+    },
+    {
+      "toolProgress": {
+        "version": "pi-tool-progress.v1",
+        "recent": [
+          "6c4eb1bff39dfa018c04157f88b47f0f4799e03b383523b7ee1cc2ae6972e2da",
+          "6c4eb1bff39dfa018c04157f88b47f0f4799e03b383523b7ee1cc2ae6972e2da",
+          "6c4eb1bff39dfa018c04157f88b47f0f4799e03b383523b7ee1cc2ae6972e2da",
+          "6c4eb1bff39dfa018c04157f88b47f0f4799e03b383523b7ee1cc2ae6972e2da"
+        ],
+        "lastResult": "4febebd346b239807f5143630bcd40b0c5101b7b890b44c589ceb2cf6684ad95",
+        "consecutive": 1,
+        "stopped": false
+      },
+      "batchKeys": [
+        "version",
+        "systemPrompt",
+        "prefix",
+        "assistant",
+        "completedResults",
+        "waitingToolCallId",
+        "completedStreamOrdinal"
+      ]
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { request as httpRequest, type IncomingMessage } from "node:http";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -21,9 +22,9 @@ import {
   type GetThreadSnapshotQuery,
   type RunSnapshot,
   type StreamEvent,
-  type ThreadSnapshot,
   type ThreadGatewayEvent,
   type ThreadGatewayRequestResult,
+  type ThreadSnapshot,
   type TraceQuery,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
@@ -203,6 +204,10 @@ class ReadModel implements GatewayReadModelPort {
 }
 
 class Authentication implements HttpGatewayAuthenticationPort {
+  revoked = false;
+  async revalidate(): Promise<void> {
+    if (this.revoked) throw new Error("SESSION_REVOKED");
+  }
   readonly observed: Array<{ readonly accessAssertion: string | null; readonly path: string }> = [];
 
   async authenticate(input: { readonly accessAssertion: string | null; readonly path: string }) {
@@ -249,7 +254,11 @@ function createFixture(
   threadGateway?: AgentThreadGatewayPort,
   extensions: Pick<
     HttpGatewayServerOptions,
-    "browserConfiguration" | "payloadAdmission" | "payloadRead" | "threadSearch"
+    | "browserConfiguration"
+    | "payloadAdmission"
+    | "payloadRead"
+    | "threadSearch"
+    | "heartbeatMilliseconds"
   > = {},
 ) {
   const access = new AccessPolicy();
@@ -275,12 +284,97 @@ function createFixture(
     publicOrigin: ORIGIN,
     staticRoot,
     maximumBodyBytes: 2048,
-    heartbeatMilliseconds: 20,
+    heartbeatMilliseconds: extensions.heartbeatMilliseconds ?? 20,
   });
   return { access, controlPlane, reads, auth, app };
 }
 
 describe("HTTP Gateway contract and security boundary", () => {
+  it("stops an already open stream before emitting another event after session revocation", async () => {
+    const fixture = createFixture({
+      request: async () => {
+        throw new Error("unused");
+      },
+      async *subscribe() {
+        yield {
+          kind: "snapshot_required" as const,
+          scope: { ownerId: "owner-01", agentId: "agent-01" },
+          reason: "state_changed" as const,
+        };
+        fixture.auth.revoked = true;
+        yield {
+          kind: "snapshot_required" as const,
+          scope: { ownerId: "owner-01", agentId: "agent-01" },
+          reason: "state_changed" as const,
+        };
+      },
+    });
+    try {
+      const response = await fixture.app.inject({
+        url: "/api/gateway/v2/events",
+        headers: requestHeaders(),
+      });
+      expect(response.body.match(/event: gateway.snapshot_required/g)).toHaveLength(1);
+      expect(response.body).toContain("IDENTITY_SESSION_INVALID");
+    } finally {
+      await fixture.app.close();
+    }
+  });
+  it("reports uninstalled operations as 501 and publishes installed operations", async () => {
+    const { app } = createFixture(
+      {
+        async request() {
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.OPERATION_NOT_INSTALLED,
+            "internal detail",
+            { internal: "private detail" },
+          );
+        },
+        async *subscribe() {},
+      },
+      undefined,
+      {
+        browserConfiguration: {
+          agentId: "agent-01",
+          deploymentId: "deployment-01",
+          authorityEpoch: 1,
+          fencingToken: 1,
+          installedGatewayV2Operations: ["approval.list", "approval.detail", "approval.respond"],
+        },
+      },
+    );
+    try {
+      const configuration = await app.inject({
+        method: "GET",
+        url: "/api/control-center/v1/config",
+        headers: requestHeaders(),
+      });
+      expect(configuration.statusCode).toBe(200);
+      expect(configuration.json().installedGatewayV2Operations).toEqual([
+        "approval.list",
+        "approval.detail",
+        "approval.respond",
+      ]);
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(),
+        payload: {
+          ...envelope("query", "inbox.list"),
+          schemaVersion: "gateway.v2",
+          risk: "low",
+          authorizationRef: null,
+          authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+          payload: { unreadOnly: false, afterCursor: null, limit: 10 },
+        },
+      });
+      expect(response.statusCode).toBe(501);
+      expect(response.json()).toEqual({ error: { code: "PORT_OPERATION_NOT_INSTALLED" } });
+    } finally {
+      await app.close();
+    }
+  });
+
   const fixtures: ReturnType<typeof createFixture>[] = [];
 
   afterEach(async () => {
@@ -311,6 +405,32 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(page.headers["x-content-type-options"]).toBe("nosniff");
     expect(page.headers["cache-control"]).toBe("no-cache");
     expect(asset.headers["cache-control"]).toContain("immutable");
+  });
+
+  it("does not expose legacy v1 routes when no legacy gateway is composed", async () => {
+    const auth = new Authentication();
+    const app = buildHttpGatewayServer({
+      authentication: auth,
+      csrf: {
+        async verify() {
+          return true;
+        },
+      },
+      publicOrigin: ORIGIN,
+      staticRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/gateway/v1/commands",
+        headers: requestHeaders(),
+        payload: command(),
+      });
+      expect(response.statusCode).toBe(404);
+      expect(auth.observed).toHaveLength(0);
+    } finally {
+      await app.close();
+    }
   });
 
   it("serves the SPA shell for HTML deep links without masking API or asset failures", async () => {
@@ -707,6 +827,119 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(cursors).toEqual(["cursor-v2-01"]);
   });
 
+  it.each(["v2", "thread"] as const)(
+    "opens an idle %s stream before its first heartbeat",
+    async (kind) => {
+      const idle = async function* () {
+        // No domain event is available during the connection handshake.
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      };
+      const request = async () => {
+        throw new Error("unused");
+      };
+      const { app } = createFixture(
+        kind === "v2" ? { request, subscribe: idle } : undefined,
+        kind === "thread" ? { request, subscribe: idle } : undefined,
+        { heartbeatMilliseconds: 2_000 },
+      );
+      const subscription = Buffer.from(
+        JSON.stringify({
+          schemaVersion: "gateway.thread.v3",
+          messageId: "subscription-01",
+          correlationId: "correlation-01",
+          causationId: null,
+          scope: { ownerId: "owner-01", agentId: "agent-01" },
+          authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+          actor: { actorType: "owner", actorId: "owner-01" },
+          kind: "subscription",
+          type: "thread.events",
+          payload: { afterCursor: null },
+        }),
+      ).toString("base64url");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 500);
+      try {
+        const origin = await app.listen({ host: "127.0.0.1", port: 0 });
+        const endpoint =
+          kind === "v2"
+            ? "/api/gateway/v2/events"
+            : `/api/gateway/thread/v3/events?subscription=${subscription}`;
+        const response = await new Promise<IncomingMessage>((resolve, reject) => {
+          const req = httpRequest(
+            `${origin}${endpoint}`,
+            { headers: requestHeaders(), signal: controller.signal },
+            resolve,
+          );
+          req.on("error", reject);
+          req.end();
+        });
+        expect(response.statusCode).toBe(200);
+        expect(response.headers["content-type"]).toContain("text/event-stream");
+        const first = await response[Symbol.asyncIterator]().next();
+        expect(String(first.value)).toContain(": connected\n\n");
+        response.destroy();
+      } finally {
+        clearTimeout(timeout);
+        controller.abort();
+        await app.close();
+      }
+    },
+  );
+
+  it("keeps an idle v2 subscription open and aborts it when the HTTP client closes", async () => {
+    let subscriptionSignal: AbortSignal | undefined;
+    let released = false;
+    const { app } = createFixture({
+      request: async () => {
+        throw new Error("unused");
+      },
+      async *subscribe(_authentication, _afterCursor, signal) {
+        subscriptionSignal = signal;
+        try {
+          yield {
+            kind: "snapshot_required",
+            scope: { ownerId: "owner-01", agentId: "agent-01" },
+            reason: "state_changed",
+          };
+          await new Promise<void>((resolve) => {
+            if (signal?.aborted) resolve();
+            else signal?.addEventListener("abort", () => resolve(), { once: true });
+          });
+        } finally {
+          released = true;
+        }
+      },
+    });
+    const controller = new AbortController();
+    try {
+      const origin = await app.listen({ host: "127.0.0.1", port: 0 });
+      const response = await new Promise<IncomingMessage>((resolve, reject) => {
+        const request = httpRequest(
+          `${origin}/api/gateway/v2/events`,
+          { headers: requestHeaders(), signal: controller.signal },
+          resolve,
+        );
+        request.on("error", reject);
+        request.end();
+      });
+      expect(response.statusCode).toBe(200);
+      const reader = response[Symbol.asyncIterator]();
+      const first = await reader.next();
+      expect(first.done).toBe(false);
+      expect(String(first.value)).toContain("event: gateway.snapshot_required");
+      const heartbeat = await reader.next();
+      expect(heartbeat.done).toBe(false);
+      expect(String(heartbeat.value)).toContain(": heartbeat");
+      expect(released).toBe(false);
+      response.destroy();
+      await expect.poll(() => subscriptionSignal?.aborted).toBe(true);
+      await expect.poll(() => released).toBe(true);
+    } finally {
+      controller.abort();
+      await app.close();
+    }
+  });
+
   it("routes strict Thread v3 commands, queries and durable cursor events", async () => {
     const requests: string[] = [];
     const subscriptions: Array<string | null> = [];
@@ -916,7 +1149,7 @@ describe("HTTP Gateway contract and security boundary", () => {
     ]);
   });
 
-  it("exposes only scoped authentication references in the authenticated browser configuration", async () => {
+  it("does not advertise a session reference as recent authentication proof", async () => {
     const { app } = createFixture(undefined, undefined, {
       browserConfiguration: {
         agentId: "agent-01",
@@ -941,7 +1174,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       agentId: "agent-01",
       csrfToken: "csrf-issued-01",
       authorizationRef: authentication.authenticationRef,
-      recentAuthenticationRef: authentication.authenticationRef,
+      recentAuthenticationRef: null,
     });
     expect(response.body).not.toContain("session-token-01");
     expect(response.body).not.toContain("assertion-01");

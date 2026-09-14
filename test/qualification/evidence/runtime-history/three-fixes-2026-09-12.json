@@ -1,0 +1,1144 @@
+{
+  "observedAt": "2026-09-12T19:22:22.787339+00:00",
+  "status": "three_blockers_fixed_deployed_and_live_verified",
+  "referenceProject": "../cindy",
+  "confirmedFinding": {
+    "code": "PI_DEFAULT_TOOL_GUIDANCE_REPLACED",
+    "explanation": "替换式 systemPrompt 绕过 Pi 默认工具说明生成；真实 Pi Session 与替身 provider 的回归在修复前失败。",
+    "change": "保留 Pi 默认系统提示，通过 appendSystemPromptOverride 追加产品策略；显式禁用环境提示文件发现及路径解释。",
+    "qualityRootCause": "保留已确认的 Pi 默认工具提示、原生历史及循环状态缺陷；最终分别通过旧对话天气、两种既有模型的四工具正常结束、必要续跑和循环终止验证。不能把单个提示变更称为全部历史失败的唯一根因。"
+  },
+  "sourceSha256": {
+    "packages/runtime-pi/src/pi-runtime-adapter.ts": "173680b80ba121d03da756bb3e277789321d78b1ea83e9cba88b1444e4762871",
+    "packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts": "f8bcd9d9834fecbdbd81e9b4e5e8ca5e50916b6529495434f9e556116c7ddd15"
+  },
+  "validation": {
+    "linuxScratch": "/data/hermes/himawari/builds/2026-09-12-three-fixes",
+    "pinnedPi": "0.84.2",
+    "red": {
+      "testsFailed": 1,
+      "assertion": "实际 provider context 缺少 Available tools"
+    },
+    "piAndBrowser": {
+      "passed": 179,
+      "files": 20,
+      "failed": 0,
+      "skipped": 0,
+      "scope": "真实 Pi 调用链与替身 provider；浏览器客户端单元测试，非生产浏览器验收"
+    },
+    "typecheck": "passed-in-linux-scratch",
+    "dependencyBoundaries": "passed-16-workspaces",
+    "extendedIntegration": "整组检查未完成并主动停止；其中已观察到的服务组合失败在隔离复测中通过。",
+    "build": "passed: build:node、build:browser、build:artifacts；仅隔离候选构建。",
+    "requiredLocalChecks": "完整 npm run check 与文档严格检查持续停留在 macOS 按需文件读取，已停止；Linux 源包不含文档，无法替代这部分检查。",
+    "newPaidModelCalls": "已完成三次产品模型回归及十二次隔离输入对照，累计模型费用约 0.008322463 美元；另有两次搜索作业。",
+    "focusedHistoryIntegration": {
+      "passed": 86,
+      "failed": 0,
+      "files": 6,
+      "temporaryFilesystem": "Linux tmpfs，仅测试数据，非性能验收"
+    },
+    "serviceCompositionRetest": {
+      "passed": 1,
+      "failed": 0,
+      "temporaryFilesystem": "Linux tmpfs",
+      "testTimeoutMilliseconds": 30000,
+      "observedTestMilliseconds": 3070,
+      "scope": "单独验证身份、持久化接收与重启重放；不据此推断完整扩展测试通过"
+    },
+    "scratchInstallation": {
+      "installed": true,
+      "prefix": "/data/hermes/himawari/builds/2026-09-12-three-fixes/prefix",
+      "protectedInstallationQualified": true,
+      "cliHelp": "现有 CLI 不支持 --help，返回 ADMIN_ARGUMENT_INVALID；不作为功能成功证据。",
+      "installedModuleLoad": "passed"
+    },
+    "gitDiffCheck": "passed",
+    "qualificationTooling": {
+      "passed": 4,
+      "files": 1,
+      "platform": "Hermes Linux",
+      "scope": "Vitest 启动 Python 合成 SQLite 与链接重定位检查；未运行安装探针",
+      "initialHarnessAttempt": "validation-source 未挂载依赖，MODULE_NOT_FOUND；补充隔离目录 ../node_modules 链接后通过"
+    }
+  },
+  "liveCsrf": {
+    "previousClaimCorrection": "旧记录中的 deployment-pending 已过时；当前安装记录证明 CSRF 候选已切换。",
+    "cutoverEvidence": "/data/hermes/himawari/qualifications/2026-09-12-ui-session-cutover/result.json",
+    "deploymentComplete": true,
+    "runtimeDigest": "45dd3fa8dbb27b796e51865cfed7ceb871589f42a3b6ce2ca59c5bf362510d7f",
+    "receiptDigest": "2de542e9a1110be5e0a95a67933941455f1aeff6cfb81605e98321d6f537e523",
+    "service": "himawari.service",
+    "activeState": "active",
+    "mainPid": 3152758,
+    "realBrowserRegression": "稳定服务中连续保留页面超过 60 分钟后，临时改名与恢复均 Accepted，版本 58→59→60，无页面刷新和服务重启。",
+    "browserSessionRetainedSince": "2026-09-12T11:20:03.000Z",
+    "browserTestPlan": "稳定服务下超过 60 分钟的提交验证已完成。",
+    "longOpenSubmission": {
+      "passed": true,
+      "threadId": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+      "sessionRetainedSince": "2026-09-12T11:20:03.000Z",
+      "submittedAfter": "2026-09-12T11:50:11.000Z",
+      "pageReloaded": false,
+      "originalTitleRestored": true,
+      "revisions": [
+        56,
+        57,
+        58
+      ],
+      "modelCalls": 0,
+      "explicitTokenExpiryObserved": false,
+      "console403Records": 0
+    },
+    "configuredTtlMilliseconds": 3600000,
+    "configuredTtlEvidence": "/data/hermes/himawari/qualifications/2026-09-12-three-fixes-cutover/browser-session-policy.json",
+    "earlierServiceObservation": "其中 activeState 和 mainPid 为切换前观察；当前故障状态见 cutoverAttempt。",
+    "crossRestartExpiredSubmission": {
+      "submitted": true,
+      "accepted": false,
+      "code": "CONTROL_CENTER_AUTHENTICATION_SCOPE_CHANGED",
+      "newRuns": 0,
+      "interpretation": "进入过期令牌刷新流程后，重启导致运行权限版本变化，现有规则拒绝自动重放；不算稳定服务下的过期恢复通过。"
+    },
+    "stableServicePageLoadedAfter": "2026-09-12T12:28:22.000Z",
+    "stableServiceExpiredSubmission": {
+      "passed": true,
+      "browserSessionRetainedSince": "2026-09-12T12:28:22.000Z",
+      "submittedAfter": "2026-09-12T13:28:38.000Z",
+      "confirmedBefore": "2026-09-12T13:29:05.000Z",
+      "configuredTtlMilliseconds": 3600000,
+      "serviceMainPid": 880284,
+      "serviceRestarted": false,
+      "pageReloaded": false,
+      "threadId": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+      "revisions": [
+        58,
+        59,
+        60
+      ],
+      "commandStatuses": [
+        "accepted",
+        "accepted"
+      ],
+      "originalTitleRestored": true,
+      "modelCalls": 0,
+      "newRuns": 0,
+      "expiryEvidence": "页面保留时间超过部署配置的 TTL；代码仅在首次加载和明确 CSRF 拒绝后加载令牌，没有定时续期。未采集网络层 403 请求记录，不将空控制台日志作为刷新分支的直接证据。",
+      "consoleErrorRecords": 0
+    }
+  },
+  "candidateDeploymentComplete": true,
+  "remaining": [],
+  "preservation": "历次失败记录保留；当前 schema 32，既有对话与配置保持，后续候选仅安装切换，不重新导入历史。",
+  "sourceArchive": {
+    "fileCount": 890,
+    "sha256": "a475f185af58e19fb4d6c53e933cc2b111db62e26c843c876daa0d60a423458f",
+    "path": "/data/hermes/himawari/builds/2026-09-12-three-fixes/himawari-three-fixes-source.tar.gz",
+    "scope": "基于已部署候选的源文件清单，包含本次 Pi 适配与回归测试，以及缺失的两份脚本类型声明。"
+  },
+  "budgetAuthorization": {
+    "authorized": true,
+    "maximumAdditionalMicros": 2000000,
+    "scope": "本次模型与搜索回归；已有验收对话及测试文件",
+    "source": "用户回复“允许”",
+    "observationSince": "2026-09-12T11:20:03.000Z",
+    "freshPreflight": {
+      "observedAt": "2026-09-12T12:01:54.529815+00:00",
+      "modelBudgetUpperBoundMicros": 0,
+      "searchJobCount": 0,
+      "perRunCostMicros": 250000,
+      "configuredGlobalCostMicros": 900000
+    }
+  },
+  "qualificationPreparation": {
+    "script": "scripts/operations/hermes-three-fixes-qualify.py",
+    "scriptSha256": "70f65452815874ed916ddd38ce36bca7cdd3d7f7d07920fcffc1522b4018a3db",
+    "installedFiles": 34462,
+    "syntaxAndSyntheticObserverTests": "passed",
+    "staticRunbookContract": "sha256:6c884bb1d5d9ec780b9b362325662f64b777671bb247268b7e01d070fa396404",
+    "staticCheckScope": "冻结候选源码与当前操作脚本；不代表完整工作区所有检查通过",
+    "administratorAuthentication": "用户已启动 --resume-links；六组探针及签署均通过。切换命令已准备，等待用户终端启动。",
+    "cutoverScriptSha256": "cf84158fea5d0c000c7ac3d841b540612664b5ac825b8fbf11b9bbf248777235"
+  },
+  "qualificationAttempt1": {
+    "passed": false,
+    "error": "UNSAFE_SOURCE_LINK",
+    "phase": "protect copied probe-source before any probe",
+    "externalWorkspaceLinks": 16,
+    "productionServiceChanged": false,
+    "productionDatabaseWritten": false,
+    "evidence": "/data/hermes/himawari/qualifications/2026-09-12-three-fixes-installation/status.json",
+    "repair": "只允许隔离源码同名 workspace 包重定位；保留失败记录，不放宽其他外部链接检查",
+    "regression": "Mac 与 Hermes 合成检查通过：重定位、幂等、拒绝任意外部链接且不提前改写、拒绝包名不匹配"
+  },
+  "qualificationResult": {
+    "passed": true,
+    "runtimeDigest": "a83239f95583c9c82264059c40e9f59bfddc5355017caedb62affedf4b441a56",
+    "receiptDigest": "07c87d57b8a86f4c2a68c17cdf8678dbb36851f89273588914deeb0db92f38c1",
+    "productionServiceChanged": false,
+    "productionDatabaseWritten": false,
+    "modelCalls": 0,
+    "relocatedWorkspaceLinks": 16,
+    "piCases": 22,
+    "composition": {
+      "passed": true,
+      "cleanup": "confirmed",
+      "replayExecuted": false
+    },
+    "networkCases": 10,
+    "boundaryCases": 7,
+    "workerLossPassed": true,
+    "webSearchCases": 3,
+    "evidence": "/data/hermes/himawari/qualifications/2026-09-12-three-fixes-installation/result.json"
+  },
+  "cutoverAttempt": {
+    "passed": false,
+    "backupCreatedAndVerified": true,
+    "installationSwitched": true,
+    "ready": [
+      "worker"
+    ],
+    "notReady": [
+      "agent"
+    ],
+    "terminalCode": "CUTOVER_SERVICE_NOT_READY",
+    "serviceStoppedAfterFailure": true,
+    "databaseRestored": false,
+    "newModelCalls": 0,
+    "firstDiagnosticLimitation": "筛选 Error 未捕获 service.failed；已准备包含最近 12 行的脱敏诊断",
+    "recovery": "等待用户启动已准备的旧安装恢复，不恢复数据库",
+    "confirmedStartupCode": "PRODUCTION_HTTP_STATIC_ROOT_INVALID",
+    "rootCause": "本次安装准备漏掉 share/control-center；已生成的六个页面文件与原安装内容完全相同。六组运行时探针未覆盖静态页面根目录。"
+  },
+  "recovery": {
+    "passed": true,
+    "previousInstallationRestored": true,
+    "databaseRestored": false,
+    "schemaSequence": 32,
+    "ready": [
+      "agent",
+      "worker"
+    ],
+    "mainPid": 835357,
+    "modelCalls": 0,
+    "failedInstallationPreserved": true
+  },
+  "staticArtifactRetry": {
+    "scriptSha256": "db75753678d67d0139a0a1187c94db53709e56877585ed95d096f6ffc6bc852a",
+    "files": 6,
+    "matchCurrentInstallation": true,
+    "preStopRuntimeUid": 998,
+    "missingCorruptSymlinkTests": "passed on Mac and Hermes",
+    "livePreflight": {
+      "passed": true,
+      "runtimeUid": 998,
+      "staticFiles": 6,
+      "runtimeDigest": "a83239f95583c9c82264059c40e9f59bfddc5355017caedb62affedf4b441a56"
+    }
+  },
+  "cutoverAttempt2": {
+    "passed": true,
+    "deploymentComplete": true,
+    "schemaSequence": 32,
+    "historyReimported": false,
+    "ready": [
+      "agent",
+      "worker"
+    ],
+    "backupId": "before-three-fixes-2026-09-12-v2",
+    "receiptDigest": "07c87d57b8a86f4c2a68c17cdf8678dbb36851f89273588914deeb0db92f38c1",
+    "evidence": "/data/hermes/himawari/qualifications/2026-09-12-three-fixes-cutover-attempt-v2/result.json"
+  },
+  "liveModelRegressions": [
+    {
+      "case": "old-conversation-weather-glm",
+      "runId": "run:ebc44f05-0148-4eb5-915b-60773ea7e0a5",
+      "passed": true,
+      "model": "z-ai/glm-5.3-flash",
+      "thinking": "minimal",
+      "workSeconds": 48,
+      "searchJobs": 1,
+      "searchRetrievedAt": "2026-09-12T12:29:17.248Z",
+      "searchSeconds": 23,
+      "cleanup": "confirmed",
+      "supervision": "released",
+      "grounding": "24.5 摄氏度、预报 24 摄氏度、资料日期及两个来源链接均来自本轮实际搜索；剔除第一条占位数据；未出现旧文件任务评论。",
+      "sourceUrls": [
+        "https://topics.smt.docomo.ne.jp/article/tbs/nation/tbs-2940534?redirect=1",
+        "https://tenki.jp/forecaster/a_aoyama/2026/09/12/40580.html"
+      ]
+    }
+  ],
+  "deepseekRegression": {
+    "runId": "run:a7f2c922-14bb-4516-9525-feaa6ad4354e",
+    "model": "deepseek/deepseek-v4-flash-0731",
+    "thinking": "low",
+    "passed": false,
+    "status": "completed",
+    "actualNewSearchJobs": 1,
+    "jobId": "jQXanz6_UjS6zCrNurz5XCjUnhFUdp-9hfGN1j8ZuTbw",
+    "cleanup": "confirmed",
+    "supervision": "released",
+    "finalAnswer": "错误转回旧 acceptance-morning.txt 写入任务，声称执行结果尚未确认；本轮没有实际写入作业。",
+    "diagnosis": "当前搜索成功后最终回答偏离；消息顺序、调用标识及模型输入待定向诊断，不将 Pi 默认提示修复视为完整根因。"
+  },
+  "multiToolRegression": {
+    "runId": "run:cb547c58-80ea-42e6-8b90-4cfac81dcdf2",
+    "passed": false,
+    "model": "deepseek/deepseek-v4-flash-0731",
+    "thinking": "minimal",
+    "jobs": [
+      {
+        "jobId": "jIIL9ZVMrJScqoVxbhK7WUwlZJfyukTdnQ9tRBZO59_M",
+        "operation": "grep",
+        "resultKind": "result",
+        "reasonCode": null,
+        "cleanup": "confirmed",
+        "supervision": "released"
+      },
+      {
+        "jobId": "jOJD5Cum-6gmlx7QlwyCttYb_TJzSeN6xPkyYuwlBnj4",
+        "operation": "find",
+        "resultKind": "result",
+        "reasonCode": null,
+        "cleanup": "confirmed",
+        "supervision": "released"
+      },
+      {
+        "jobId": "jM6gpafmZIFjjJ5cAWSBafFTTTaQfr06yvqDN-rucbDI",
+        "operation": "bash",
+        "resultKind": "result",
+        "reasonCode": null,
+        "cleanup": "confirmed",
+        "supervision": "released"
+      },
+      {
+        "jobId": "jtnXalSoPOJBo_1C1mQrpOxae_osmCD2z1JWnA_KqVeA",
+        "operation": "ls",
+        "resultKind": "result",
+        "reasonCode": null,
+        "cleanup": "confirmed",
+        "supervision": "released"
+      }
+    ],
+    "repeatedToolRequested": "ls",
+    "repeatedToolExecuted": false,
+    "status": "cancelled",
+    "disposition": "确认四个作业成功、清理完成后出现重复 ls，未批准并取消该回归；当前并非截止超时。"
+  },
+  "modelDiagnostic": {
+    "evidence": "three-fixes-model-diagnostic.json",
+    "duplicateToolCallIds": false,
+    "prefixChangedAfterSearch": false,
+    "currentSearchResultMatchesProviderInput": true,
+    "conclusion": "排除本次两个天气请求的顺序改变、重复调用编号及结果错配；仍未确认历史影响或模型服务行为的根因。"
+  },
+  "inputComparison": {
+    "status": "completed",
+    "finishedAt": "2026-09-12T13:06:52.743Z",
+    "requests": 12,
+    "actualCostUsd": 0.0019404630000000001,
+    "executedTools": 0,
+    "evidence": "three-fixes-input-comparison.json",
+    "findings": [
+      "完整历史的天气对照仍会请求旧文件写入；多工具对照仍会重复或额外调用。",
+      "只移除旧明文推理没有解决问题，两个天气响应触及 2048 token 输出上限。",
+      "仅当前轮的天气样本均结束；多工具第二个样本仍重复请求四个工具，故不能据此采用历史截断。"
+    ],
+    "limits": [
+      "每个条件只有两个样本，不能证明稳定成功率。",
+      "非流式且输出上限 2048，与线上流式请求不完全相同。",
+      "12 次均由 OpenInference 处理，尚未隔离上游服务因素。",
+      "旧文件名也存在于当前 ls 结果，单独 oldWriteMentioned 标志不能证明串任务。"
+    ]
+  },
+  "providerComparison": {
+    "status": "stopped",
+    "script": "scripts/operations/hermes-three-fixes-provider-comparison.mjs",
+    "sha256": "63f193a363de43fd3b4a26456a9e509f903d77136a42d36886437bae7e93d799",
+    "staticContract": "sha256:a30dc90b6e16eecc6f5a50c0d839cddebb3cf244d9bb73928bad0eb586dfc8ce",
+    "maximumCalls": 12,
+    "maximumEstimatedCostMicros": 500000,
+    "sourceCases": [
+      "weather_after_search",
+      "four_tools_after_results"
+    ],
+    "providers": [
+      "OpenInference",
+      "DeepInfra"
+    ],
+    "variants": [
+      "original",
+      "native_current_tool_content_for_four_tools"
+    ],
+    "productHistoryPreserved": true,
+    "toolExecution": false,
+    "validation": "3 tooling tests passed on Linux; syntax and diff checks passed",
+    "blocker": "第二次请求超时，停止后保留未返回调用的费用预估；未自动重试",
+    "finishedAt": "2026-09-12T13:22:47.261Z",
+    "requestsStarted": 2,
+    "requestsCompleted": 1,
+    "errorType": "TimeoutError",
+    "costUpperBoundReservedMicros": 94400,
+    "costPreflight": {
+      "productCostMicros": 6382,
+      "priorComparisonCostMicros": 1941,
+      "searchReserveMicros": 250000,
+      "authorizedMicros": 2000000
+    },
+    "evidence": "three-fixes-provider-comparison.json",
+    "finding": "OpenInference 原天气输入再次回答旧写入任务。DeepInfra 在 90 秒内未返回，包装格式比较尚未执行；不能据此判断上游或包装根因。"
+  },
+  "latestServiceObservation": {
+    "passed": true,
+    "deploymentComplete": true,
+    "schemaSequence": 32,
+    "historyReimported": false,
+    "runtimeDigest": "a9b48f6731f4087feff92f000c98f2436245ca580569708d8f585f4d848c307d",
+    "receiptDigest": "65a920903c1aa840decadc47f24eab3f97b2321bd6d961d74b36209430c39202",
+    "ready": [
+      "agent",
+      "worker"
+    ],
+    "runtimeUid": 998,
+    "backupId": "before-source-links-2026-09-13",
+    "modelCalls": 0,
+    "realModelAcceptance": "核心运行时代码与 H 相同；沿用已核验真实任务，本次只复查页面链接，无新增模型请求。"
+  },
+  "glmMultiToolRegression": {
+    "status": "passed-in-real-browser",
+    "threadId": "thread-fork:dbd3edc2-bda1-49cb-b1f9-3e0a0428acfe",
+    "model": "z-ai/glm-5.3-flash",
+    "thinkingLevel": "minimal",
+    "samePromptAsDeepSeek": true,
+    "costPreflight": {
+      "productModelSpentMicros": 6382,
+      "inputComparisonMicrosRoundedUp": 1941,
+      "providerComparisonMaximumReservedMicros": 94400,
+      "searchReserveMicros": 250000,
+      "nextRunMaximumMicros": 250000,
+      "totalUpperBoundMicros": 602723,
+      "authorizedMicros": 2000000,
+      "freshProductCostReadAt": "2026-09-12T13:20:54.118Z",
+      "subsequentProductModelRunsBeforeThis": 0
+    },
+    "runId": "run:db37f90f-6026-4b35-af0d-ca7106bc1a02",
+    "turn": 15,
+    "workingSeconds": 92,
+    "approvalWaitSeconds": 127,
+    "toolCalls": [
+      {
+        "tool": "ls",
+        "count": 1,
+        "status": "completed",
+        "seconds": 18
+      },
+      {
+        "tool": "find",
+        "count": 1,
+        "status": "completed",
+        "seconds": 18
+      },
+      {
+        "tool": "grep",
+        "count": 1,
+        "status": "completed",
+        "seconds": 21
+      },
+      {
+        "tool": "bash",
+        "count": 1,
+        "status": "completed",
+        "seconds": 18
+      }
+    ],
+    "correctFinalSummary": true,
+    "extraToolCalls": 0,
+    "cancelled": false,
+    "evidenceBoundary": "真实浏览器展示的审批、四项完成记录与最终回答；本轮尚未通过受保护数据库导出实际费用和清理事实。"
+  },
+  "toolContentComparison": {
+    "status": "completed",
+    "script": "scripts/operations/hermes-three-fixes-tool-content-comparison.mjs",
+    "sha256": "32bb25886b10f992d3e0ba82d5b420c3dd299fc93743eed0b00087cc3e59a69f",
+    "staticContract": "sha256:e2eeb7089b44c587069f78ef32594334e774e7ffa52a95c7591c5355dba2eee5",
+    "maximumCalls": 4,
+    "maximumEstimatedCostMicros": 500000,
+    "scope": "只补做原 DeepSeek 四工具失败输入在 OpenInference 的包装格式对照，每组两次；保留历史及本轮推理，不执行返回工具。",
+    "costAccounting": "保留前一超时组全部预估 94400 micros，再加本次预估、产品新鲜已结算费用、第一组对照实际费用和搜索预留；总额不得超过 2 美元。",
+    "validation": "复用的转换与隔离测试共 3 项通过；新入口语法、源文件摘要和操作文档静态检查通过。",
+    "blocker": null,
+    "finishedAt": "2026-09-12T13:42:18.211Z",
+    "actualCostUsd": 0.0007031580000000001,
+    "evidence": "three-fixes-tool-content-comparison.json",
+    "finding": "原生文本两个样本分别追加 read/read/read 和 ls/find/grep/bash；原包装一例正常结束并提及四工具，另一例重复四工具。不能以提取原生文本作为该问题修复。"
+  },
+  "providerMatrix": {
+    "status": "completed_diagnostic_only_route_change_rejected",
+    "script": "scripts/operations/hermes-three-fixes-provider-matrix.mjs",
+    "sha256": "31c2ace4e17b6378cd84a7d3d488d146dbb36d5c8dbab5587b6fd533389d3ee6",
+    "staticContract": "sha256:cdc282b2e86a59c464d23c4aa92dc815059387cedaf782ed277aae4829a9441c",
+    "maximumCalls": 12,
+    "requestTimeoutMilliseconds": 240000,
+    "endpoints": [
+      "open-inference/fp8",
+      "baseten/fp8",
+      "deepinfra/fp8"
+    ],
+    "historyAndToolResultsUnmodified": true,
+    "onRequestFailure": "保留费用预估，跳过该端点剩余样本；认证、错误路由和费用超界停止整组。",
+    "validation": "4 项隔离、消息保留、端点定价及未知费用预留测试通过；新入口语法和操作文档静态检查通过。",
+    "maximumEstimatedCostMicros": 500000,
+    "totalAuthorizedMicros": 2000000,
+    "evidence": "test/qualification/evidence/runtime-history/three-fixes-provider-matrix.json",
+    "evidenceSha256": "9a6e108cfa3f3afd457e9ed18f8483e20fd50673829cd3560f12a61d3f67a360",
+    "actualCalls": 10,
+    "skippedCalls": 2,
+    "costUpperBoundMicros": 27306,
+    "finishedAt": "2026-09-12T14:02:56.258Z",
+    "deepInfraPassedCases": 4,
+    "productionRouteChanged": false,
+    "interpretation": "相同捕获输入在不同端点表现不同，只能用于定位模型交互边界，不能证明通用 Harness 已修复。用户明确要求与模型及提供商无关，已撤销未执行的路由切换脚本。继续从历史投影、工具续跑和有界终止机制修复。"
+  },
+  "genericHarnessRepair": {
+    "status": "deployed_loop_summary_live_guard_failed_worker_identity_fix_verified_locally",
+    "providerSpecificBranches": false,
+    "productionRouteChanged": false,
+    "cindyReuse": "结果指纹、连续重复和滑动窗口轮转检测；通过 Pi 正式扩展接入，审批 continuation 保留状态并排除本地结果重放。",
+    "changes": [
+      "packages/runtime-pi/src/pi-tool-progress-guard.ts",
+      "packages/runtime-pi/src/pi-runtime-adapter.ts",
+      "packages/runtime-pi/src/pi-native-history.ts"
+    ],
+    "redBefore": [
+      {
+        "test": "stops a repeated tool loop through the real Pi session before another provider request",
+        "observed": "runtime.completed instead of PI_TOOL_LOOP_DETECTED"
+      },
+      {
+        "test": "refreshes current task context after tools without persisting a duplicate user request",
+        "observed": "last provider input was the tool result, with no current-task state reminder"
+      },
+      {
+        "test": "preserves native cancellation provenance across repeated session restoration",
+        "observed": "custom cancellation marker became a normal user message in the next persisted history"
+      }
+    ],
+    "validation": {
+      "tests": 85,
+      "files": 6,
+      "runtime": "Linux Node 22.22.3; pinned Pi 0.84.2 real AgentSession and deterministic faux model",
+      "typecheck": "passed",
+      "nodeCompilation": "passed",
+      "scopedLint": "passed_with_31_existing_informational_useLiteralKeys_notes",
+      "dependencyBoundaries": "passed_16_workspaces",
+      "boundary": "80 runtime tests plus 5 diagnostic tooling tests; no paid model calls; production not exercised"
+    },
+    "liveUnverified": [
+      "循环保护实际触发后的生产终态与费用准入",
+      "旧对话答案依据及来源完整性",
+      "四工具正常汇总：本次再次失败",
+      "完整发布检查"
+    ],
+    "script": "scripts/operations/hermes-three-fixes-task-context.mjs",
+    "scriptSha256": "f20d80f802739f98dd01f27461ab7b93672db9ec6fa9ba7ed2cebc95d5687ef5",
+    "contextModuleSha256": "609f01d68c60e9dea04d1856e2527e2178189f76605c600a2ef99ccc130240ac",
+    "staticContract": "sha256:dc63d1c2449f157501cc5448bfb6fb883d116182b8b2690eb5867303c1d932d6",
+    "maximumCalls": 8,
+    "maximumCostMicros": 500000,
+    "totalAuthorizedMicros": 2000000,
+    "databaseReadOnly": true,
+    "executeReturnedTools": false,
+    "taskContextResult": {
+      "status": "completed_rejected",
+      "samples": 8,
+      "candidatePassed": 1,
+      "candidateTotal": 4,
+      "candidateMultiToolPassed": 0,
+      "costUpperBoundMicros": 1165,
+      "finishedAt": "2026-09-12T14:40:49.217Z",
+      "evidence": "test/qualification/evidence/runtime-history/three-fixes-task-context.json",
+      "sha256": "52ddeb2ac0eb61367214618e17febc9d1f16daa1840625a4194335a72230dc71",
+      "runtimeExtensionRemoved": true,
+      "fixture": "packages/runtime-pi/test/fixtures/rejected-current-task-context.ts"
+    },
+    "validationBeforeNativeEventFix": {
+      "tests": 77,
+      "files": 5,
+      "runtime": "Linux Node 22.22.3; pinned Pi 0.84.2 real AgentSession and deterministic faux model",
+      "typecheck": "passed",
+      "nodeCompilation": "passed",
+      "scopedLint": "passed",
+      "dependencyBoundaries": "passed_16_workspaces",
+      "diffCheck": "passed"
+    },
+    "nativeCancellationEvent": {
+      "preserves": [
+        "role",
+        "customType",
+        "content",
+        "display",
+        "timestamp"
+      ],
+      "realSessionRestorations": 2,
+      "outboundConversion": "Pi convertToLlm remains responsible for provider-visible representation",
+      "semanticAcceptance": "not_proven"
+    },
+    "installationCandidate": {
+      "status": "protected_qualification_passed",
+      "build": "/data/hermes/himawari/builds/2026-09-12-harness-lifecycle",
+      "script": "scripts/operations/hermes-harness-qualify.py",
+      "scriptSha256": "7770da0bfb1eeed3787f21efbe190cb2d46601318289d8c050f3c606e6042405",
+      "staticContract": "sha256:b522eb4544ae07692d7f8a82871638b0ea7adab889730b22cd4286c283ed4d68",
+      "artifactEvidence": "test/qualification/evidence/runtime-history/harness-lifecycle-artifact-review.json",
+      "packagedSmokeEvidence": "test/qualification/evidence/runtime-history/harness-lifecycle-packaged-smoke.json",
+      "sourceFiles": 909,
+      "prefixFiles": 34469,
+      "productionServiceChanged": false,
+      "newModelCalls": 0,
+      "qualificationEvidence": "test/qualification/evidence/runtime-history/harness-lifecycle-installation.json",
+      "runtimeDigest": "0d269e653bba534e7fc14591e2dc2dddb0373aedbddbe1284da7eeb33b980861",
+      "receiptDigest": "5c65078c0ba3bfec67fd8bc919206b97065575dbdaf63d9a602cd312a2e8abad"
+    },
+    "cutover": {
+      "status": "passed",
+      "script": "scripts/operations/hermes-harness-cutover.py",
+      "scriptSha256": "5eb3b29294fcd8d754d0f43d694b565d81fa1416e4191a9c0d2b19ce33bb44bd",
+      "staticContract": "sha256:4f3de9cafffdd26ac579cbc4efffe856fb69ef07565598ed0156e06418e5c545",
+      "schemaSequence": 32,
+      "historyReimported": false,
+      "newModelCalls": 0,
+      "evidence": "test/qualification/evidence/runtime-history/harness-lifecycle-cutover.json",
+      "ready": [
+        "agent",
+        "worker"
+      ],
+      "backupId": "before-harness-lifecycle-2026-09-12"
+    },
+    "liveAcceptance": {
+      "status": "failed_full_acceptance",
+      "runtimeDigest": "0d269e653bba534e7fc14591e2dc2dddb0373aedbddbe1284da7eeb33b980861",
+      "productionRouteChanged": false,
+      "weatherQueryDate": "2026-09-13",
+      "priorConservativeCostAndSearchReserveMicros": 384239,
+      "authorizedTotalMicros": 2000000,
+      "draftPreservation": "Existing fork has an unsent draft and is left untouched; use other already authorized test threads.",
+      "weather": {
+        "status": "failed_full_acceptance",
+        "runId": "run:b8d0ddc0-e12a-4c9d-890a-a16c9e70d53b",
+        "threadId": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+        "model": "deepseek/deepseek-v4-flash-0731",
+        "thinkingLevel": "low",
+        "durationSeconds": 49,
+        "webSearchCalls": 1,
+        "oldFileTaskContaminationObserved": false,
+        "sourceLinksPresent": false,
+        "finding": "This sample executed the current date query once and did not resume the old write task, but its answer omitted source links and inaccurately described all results as two-week forecasts. Result 2 was an explicit September 13 forecast published September 12.",
+        "evidenceBoundary": "Observed live browser tool input, full returned search excerpts and final answer; one sample is not a stability proof."
+      },
+      "fourTools": {
+        "status": "failed_repeated_tool_after_completed_batch",
+        "runId": "run:d1872f77-4434-405f-af8c-ecb3cfbb485c",
+        "threadId": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+        "model": "deepseek/deepseek-v4-flash-0731",
+        "thinkingLevel": "minimal",
+        "executedOperations": [
+          "ls",
+          "find",
+          "grep",
+          "bash"
+        ],
+        "executionCountPerOperation": 1,
+        "cleanup": "confirmed",
+        "supervision": "released",
+        "extraRequestedOperation": "ls",
+        "extraRequestApproved": false,
+        "terminalStatus": "cancelled_by_acceptance_operator",
+        "normalFinalSummary": false,
+        "evidence": "test/qualification/evidence/runtime-history/harness-lifecycle-live.json",
+        "boundary": "Used another authorized existing test thread because the original fork has an unsent draft; the exact original fork was not retested."
+      }
+    },
+    "finalizationComparison": {
+      "status": "completed",
+      "script": "scripts/operations/hermes-harness-finalization-comparison.mjs",
+      "sha256": "f9ae08bdf4c44f3797ae2dc768fbe527368d45ad9f411499807f7bb088b3241c",
+      "staticContract": "sha256:b1cf238782504532209ad57a81c22708065aa06bde8799e6f47c1f8c71abcfad",
+      "maximumCalls": 8,
+      "maximumEstimatedCostMicros": 500000,
+      "totalAuthorizedMicros": 2000000,
+      "inputChange": "Pi empty active tools serialization after an already completed four-tool batch; no history or route changes",
+      "sources": [
+        "run:cb547c58-80ea-42e6-8b90-4cfac81dcdf2",
+        "run:d1872f77-4434-405f-af8c-ecb3cfbb485c"
+      ],
+      "tests": 7,
+      "sourceEvidence": "pi-mono/packages/ai/src/api/openai-completions.ts:797-808",
+      "productBehaviorChanged": false,
+      "evidence": "test/qualification/evidence/runtime-history/harness-finalization-comparison.json",
+      "originalContinuedTools": 4,
+      "emptyToolsProducedSummary": 4,
+      "costUpperBoundMicros": 944,
+      "boundary": "Two fixed post-tool inputs, repeated twice. This demonstrates summary generation, not automatic detection of task completion or production acceptance."
+    },
+    "loopSummaryCandidate": {
+      "status": "deployed_live_loop_guard_failed",
+      "runtimeSource": "packages/runtime-pi/src/pi-runtime-adapter.ts",
+      "sourceSha256": "9fc7ff15ba1aceb5c3a6a22a94e9871df526200b86e57e57e79cafaa19de0147",
+      "tests": 93,
+      "runtimeTests": 84,
+      "diagnosticTests": 3,
+      "failingBefore": {
+        "failed": 4,
+        "passed": 1,
+        "reason": "Existing guard exited before an admitted final report could be generated"
+      },
+      "typecheck": "passed",
+      "lint": "passed_with_two_informational_style_notes",
+      "behavior": "One admitted tools-disabled report after detected loop; failed outcome retained; ordinary multistep work unchanged; cancellation and unknown results take precedence",
+      "boundary": "Deployed; first live test failed to detect identical Worker-phase results; superseded by workerIdentityCandidate. Normal completion remains independently unproven.",
+      "packagedRuntimeTests": 12,
+      "packagedRuntimeChanged": [
+        "pi-runtime-adapter.js"
+      ],
+      "staticContract": "sha256:2c0c73c8322217fc6d2c2c4173b7a2b1eb4de9c64424adce60a6dfc2eee72607",
+      "runtimeDigest": "7b05555bbb12cb281d182c3c91d809f40b1dad2ac6c0e466799a051d2ffe57bd",
+      "receiptDigest": "f7814ca32c99523e46a2319ded5e4468fdb634017b58d11cf0fd0b8ab2bc9a24",
+      "installationEvidence": "test/qualification/evidence/runtime-history/loop-finalization-installation.json",
+      "cutoverEvidence": "test/qualification/evidence/runtime-history/loop-finalization-cutover.json",
+      "liveLoopTest": {
+        "runId": "run:2199cbdf-b1a1-42e1-9d81-d8105dc44d03",
+        "threadId": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+        "status": "cancelled_after_fifth_approval_request",
+        "actualLsExecutions": 4,
+        "fifthExecuted": false,
+        "loopSummaryReached": false,
+        "model": "existing UI default GLM 5.3 Flash after reload",
+        "sourceCallIdMatchesModelCallId": false,
+        "evidence": "test/qualification/evidence/runtime-history/loop-progress-diagnostic.json"
+      }
+    },
+    "continuationGateComparison": {
+      "status": "completed_rejected_for_product",
+      "script": "scripts/operations/hermes-harness-continuation-gate.mjs",
+      "sha256": "79acab6304d753c73c0deb1c6103cc7789099c3bf1b60cb1eab99b9f889cf176",
+      "maximumCalls": 12,
+      "maximumEstimatedCostMicros": 500000,
+      "totalAuthorizedMicros": 2000000,
+      "priorConservativeUsedAndReservedMicros": 386368,
+      "productBehaviorChanged": false,
+      "variants": [
+        "original",
+        "continuation_gate"
+      ],
+      "sources": [
+        "run:cb547c58-80ea-42e6-8b90-4cfac81dcdf2",
+        "run:d1872f77-4434-405f-af8c-ecb3cfbb485c",
+        "synthetic:listing-before-script-read"
+      ],
+      "boundary": "Positive control retains only actual ls result and substitutes an explicitly synthetic unfinished file-read task. Returned tools are never executed. Candidate is not wired into product.",
+      "staticContract": "sha256:b4deab6434dc278893350ba9600930cf3d221919e12f375f6187a16255f15c84",
+      "evidence": "test/qualification/evidence/runtime-history/harness-continuation-gate.json",
+      "costUpperBoundMicros": 1134,
+      "completedTaskSummaries": 2,
+      "completedTaskSamples": 4,
+      "validNecessaryContinuationRequests": 0,
+      "unfinishedTaskSamples": 2,
+      "unadvertisedToolResponses": 4,
+      "assessment": "The only advertised experimental tool was continue_work, but four candidate responses requested other tools. Necessary-continuation controls failed. Do not wire this gate into product or claim normal completion fixed.",
+      "conservativeUsedAndReservedMicros": 387502
+    },
+    "resultFingerprintRepair": {
+      "cause": "pi-result.v1 source.toolCallId changed on every real invocation and prevented identical-result detection",
+      "redBefore": {
+        "failed": 1,
+        "passed": 1,
+        "failure": "runtime.completed instead of PI_TOOL_LOOP_DETECTED for four identical outputs with distinct invocation IDs"
+      },
+      "greenAfter": {
+        "cases": 6,
+        "passed": 6,
+        "controls": [
+          "changed content",
+          "changed details",
+          "changed source workspace",
+          "mismatched envelope call ID",
+          "mismatched envelope tool name"
+        ]
+      },
+      "modelInputChanged": false,
+      "protectedResultChanged": false,
+      "scope": "strip matching source.toolCallId only from the comparison fingerprint",
+      "liveAcceptance": "failed_wrong_identity_comparison"
+    },
+    "fullReleaseCheck": {
+      "status": "formatting_fixed_coverage_passed_other_static_checks_running",
+      "checkedFiles": 858,
+      "formatErrors": 10,
+      "remainingChecks": {
+        "formatting": "10 task files reformatted and reviewed; no full repository gate claim",
+        "lint": "passed with informational diagnostics",
+        "invariants": "passed; 336 source files, 17 package files, 20 routes",
+        "coverage": "isolated source missing docs/prd-v0.2.md; Mac attempt timed out after 12 seconds",
+        "secretsAndCiPolicy": "isolated build has no Git metadata; not a passing full-repository check"
+      },
+      "separatePassedChecks": [
+        "root and browser typecheck",
+        "16 workspace boundaries",
+        "runtime scoped Biome check"
+      ],
+      "scope": "isolated source snapshot; cannot claim full repository release gate passed",
+      "coverage": {
+        "status": "passed",
+        "node": "24.19.0",
+        "requirements": 79,
+        "acceptanceIds": 53,
+        "specPlanPairs": 10,
+        "priorNode22Attempt": "90_second_timeout"
+      },
+      "productTests": {
+        "passed": 2124,
+        "failed": 29,
+        "skipped": 6,
+        "environmentFailures": {
+          "overlappingDevScratch": 19,
+          "permissiveFixtureUmask": 6,
+          "missingCopiedDocs": 3,
+          "missingWorkspaceZod4": 1
+        },
+        "correctedScopeTestsPassed": 19,
+        "remainingPreparation": "fresh npm ci in 2026-09-13-search-time source; governed documents copied; use private executable scratch and umask 077"
+      },
+      "snapshotSecretScan": {
+        "passed": true,
+        "scannedFiles": 1297,
+        "node": "22.22.3",
+        "scope": "Mac 当前 Git 索引与隔离字节副本，最终新增证据仍需补扫。"
+      },
+      "ciPolicy": {
+        "passed": true,
+        "baseSha": "1cb72b1713147ad5b58c8340de704f178ce9dbf8",
+        "files": 239,
+        "projects": {
+          "unit": 102,
+          "contracts": 21,
+          "integration": 66,
+          "e2e": 1,
+          "pi-compat": 10,
+          "tooling": 30
+        }
+      },
+      "toolingBrowser": {
+        "passed": 638,
+        "failed": 26,
+        "causes": {
+          "missingGitMetadata": 25,
+          "missingNativeModuleFromIgnoreScriptsInstall": 1
+        },
+        "nativeModuleNowInstalled": true,
+        "historyCheckoutLimit": "Mac 当前等待的 Git 对象具有 dataless 标志；不假造仓库历史，不覆盖原仓库。",
+        "followup": "真实 Git 索引与原生模块补齐后复测；最后缺失的 Python 归档依赖补齐，26 项归档测试全部通过。原 664 项断言均已在对应环境中覆盖，非一次完整执行。"
+      },
+      "macProductSuite": {
+        "passed": 2086,
+        "failed": 0,
+        "skipped": 6,
+        "missingArtifactSuites": 2
+      },
+      "macInstalledProcessSuites": {
+        "passed": 6,
+        "failed": 0,
+        "artifactSha256": "a30abdbebc99704706f79c50a690a68d14839f833697bbade5de8bd9e1fa1158",
+        "officialBuild": "local_passed",
+        "hostedGate": "not_executed"
+      },
+      "linuxFreshDependenciesSuite": {
+        "passed": 2052,
+        "failed": 34,
+        "skipped": 6,
+        "retest": "14 个失败文件按原断言、120 秒测试等待上限复测中；首个 backup-cli 默认 5 秒超时已直接复现",
+        "resolution": "92 项相关断言复测为 91 通过、1 个权限夹具失败；显式 chmod 修正夹具后该文件 14 项通过，无剩余失败。"
+      },
+      "documentsStrict": "passed_zero_warnings",
+      "finalEvidence": "test/qualification/evidence/runtime-history/release-checks-2026-09-13.json"
+    },
+    "workerIdentityRepair": {
+      "cause": "production file workflow assigns file-phase child execution IDs, distinct from model call IDs",
+      "fix": "normalize phase ID only for product-selected built-in tools; leave custom results opaque; keep execution identity validation in product port",
+      "redBefore": {
+        "passed": 6,
+        "failed": 2
+      },
+      "greenAfter": {
+        "passed": 8,
+        "failed": 0
+      },
+      "relatedTestsPassed": 102,
+      "typecheck": "passed",
+      "nodeCompilation": "passed",
+      "installed": true
+    },
+    "workerIdentityCandidate": {
+      "status": "live_loop_normal_completion_and_necessary_continuation_passed",
+      "build": "2026-09-13-loop-identity",
+      "sourceArchiveSha256": "af6cc7afaddde4ef82e77731bccd99c29a44d25ed723899df94cdffb00f7454e",
+      "preparationSha256": "589a941d6761fbe7d62c54e96a4ebfb335641b501b0387c169eedea8aeff27c7",
+      "runtimeArtifactChanges": [
+        "pi-runtime-adapter.js"
+      ],
+      "prefixFiles": 34469,
+      "packagedTestsPassed": 72,
+      "relatedTestsPassed": 102,
+      "formatCheckPassed": true,
+      "supplementalToolingTestsPassed": 7,
+      "installed": true,
+      "runtimeDigest": "4c2ffd5de278c5b294860dcae87cbd64a826990a8cd596cb9ed16e84246ceb13",
+      "receiptDigest": "dd8eab8306e6d9b2907260cf62122358f9cc2890f8852727320d26f731af8642",
+      "installationEvidence": "test/qualification/evidence/runtime-history/loop-identity-installation.json",
+      "cutoverEvidence": "test/qualification/evidence/runtime-history/loop-identity-cutover.json",
+      "liveLoopAcceptance": {
+        "passed": true,
+        "runId": "run:7ce7b052-55a3-479e-919a-e337b9e7f142",
+        "actualExecutions": 4,
+        "fifthExecuted": false,
+        "runStatus": "failed",
+        "summaryCorrectlySeparatesExecutedAndBlocked": true,
+        "providerObservationEvents": 4,
+        "modelCostMicros": 1674,
+        "normalCompletionAcceptance": "passed_separate_glm_and_deepseek_runs",
+        "summaryPersistsAfterReload": true
+      },
+      "normalFourToolsAcceptance": {
+        "passed": true,
+        "runId": "run:5a1e40c1-7463-46a3-8ea6-36e5c0ae701a",
+        "model": "GLM 5.3 Flash minimal; existing UI default",
+        "realJobs": [
+          {
+            "jobId": "jSpMA9Wh0c_zRcmdOdso_8GzFw0ominQCL79vvF271r4",
+            "operation": "find",
+            "resultKind": "result",
+            "reasonCode": null,
+            "cleanup": "confirmed",
+            "supervision": "released"
+          },
+          {
+            "jobId": "jRdnvGFF4zw1fXQ8DMduJKddIsjSLF6Ug7p8A53l-Jhw",
+            "operation": "ls",
+            "resultKind": "result",
+            "reasonCode": null,
+            "cleanup": "confirmed",
+            "supervision": "released"
+          },
+          {
+            "jobId": "jNfsSBN6kh3zmuartJl4mEBnHjpcU9Wxq1LDO0eGdm6A",
+            "operation": "bash",
+            "resultKind": "result",
+            "reasonCode": null,
+            "cleanup": "confirmed",
+            "supervision": "released"
+          },
+          {
+            "jobId": "jgFBfG4i6H0JWYuc8W9J6peFuI6A8ye_nJp067ScPCm8",
+            "operation": "grep",
+            "resultKind": "result",
+            "reasonCode": null,
+            "cleanup": "confirmed",
+            "supervision": "released"
+          }
+        ],
+        "summaryMatchesResults": true,
+        "noRepeatedCall": true,
+        "workingDurationSeconds": 100,
+        "priorDeepSeekFailureNotOverwritten": true
+      },
+      "necessaryContinuation": {
+        "status": "passed",
+        "threadId": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+        "turn": 15,
+        "sequence": [
+          "ls",
+          "read"
+        ],
+        "answer": "海风书签84",
+        "noPrematureCompletion": true,
+        "runId": "run:86d7b46f-c9d2-43f3-b3dd-9f42f8fa49af",
+        "jobsVerified": true
+      },
+      "oldWeatherAcceptance": {
+        "status": "task_boundary_passed_timezone_label_failed",
+        "runId": "run:51d27735-dc71-4532-bafd-d9c099e803b5",
+        "model": "GLM 5.3 Flash minimal",
+        "toolCount": 1,
+        "sourceUrl": "https://weathernews.jp/news/202609/120091/",
+        "sourcePublished": "2026-09-12T07:45:00.000Z",
+        "answerPublished": "2026-09-12 07:45 JST",
+        "issue": "UTC timestamp mislabeled as JST; source date, forecast qualification and weather excerpt otherwise matched actual current search",
+        "staleFileTaskResumed": false
+      },
+      "deepseekFourToolsAcceptance": {
+        "status": "passed",
+        "runId": "run:912bcd2e-c458-4b48-bece-5d7e556d6873",
+        "model": "DeepSeek V4 Flash 0731",
+        "thinking": "minimal",
+        "jobs": [
+          {
+            "jobId": "jCY6j9zf0mrgap6bDAGZZ8bkf3GB8Ryjg9SHW1T5mIgY",
+            "operation": "find",
+            "resultKind": "result",
+            "reasonCode": null,
+            "cleanup": "confirmed",
+            "supervision": "released"
+          },
+          {
+            "jobId": "jZtci3LFJTfSf_1RDlPAD6jVfwKd45NK6BffVuin5nP8",
+            "operation": "bash",
+            "resultKind": "result",
+            "reasonCode": null,
+            "cleanup": "confirmed",
+            "supervision": "released"
+          },
+          {
+            "jobId": "j1KczI76inJGq_LAGwS8-YGgXz_5OedGdk_bZCg-qIdc",
+            "operation": "grep",
+            "resultKind": "result",
+            "reasonCode": null,
+            "cleanup": "confirmed",
+            "supervision": "released"
+          },
+          {
+            "jobId": "jHV0WKeQmzWqG4sxreUg_I3rUsgH486kErVS376y4oP4",
+            "operation": "ls",
+            "resultKind": "result",
+            "reasonCode": null,
+            "cleanup": "confirmed",
+            "supervision": "released"
+          }
+        ],
+        "providerRequests": 2,
+        "terminal": "completed",
+        "workingSeconds": 189,
+        "costMicros": 979,
+        "extraTools": 0,
+        "productionRouteChanged": false,
+        "uiSummary": "四个工具全部成功，随后直接结束。"
+      },
+      "interruptedCompatibilityAttempt": {
+        "runId": "run:64461d7a-5ff5-479e-bcfb-e74de67f79b0",
+        "status": "failed",
+        "completedJobs": 2,
+        "lastStateBeforeFailure": "awaiting_approval",
+        "createdAt": "2026-09-12T17:51:41.685Z",
+        "updatedAt": "2026-09-12T18:06:42.867Z",
+        "boundary": "浏览器连接中断，审批未完成；不作为模型是否正常汇总的判定。"
+      }
+    },
+    "searchTimeRepair": {
+      "status": "deployed_live_weather_semantics_passed",
+      "redFailed": 2,
+      "greenPassed": 9,
+      "typecheck": "passed",
+      "compile": "passed",
+      "behavior": "Annotate only explicit Z-suffixed Published metadata as UTC; preserve date-only, numeric offsets and excerpt body",
+      "packagedTestsPassed": 9,
+      "sourceArchiveSha256": "167d968b6ecfb68f01fd8b12c04eae95f3895fc451c7b4d78083737ba1b9f3d3",
+      "prefixFiles": 34438,
+      "staticContract": "sha256:13f22587095e492adc16fb7b15c21f92337dd9d315734ada9b428695e9904bf9",
+      "dependencyInstallation": "原锁文件 npm 11.8.0 ci，恢复工作区 Zod 4；SQLite 使用同版本预编译模块，实际安装资格待完成。",
+      "installation": {
+        "passed": true,
+        "candidatePrefix": "/data/hermes/himawari/releases/2026-09-13-search-time",
+        "qualifiedRuntimePath": "/data/hermes/himawari/releases/2026-09-11-control-center/lib/himawari-agent",
+        "runtimeDigest": "a9b48f6731f4087feff92f000c98f2436245ca580569708d8f585f4d848c307d",
+        "receiptDigest": "17b7ce94c59fcba52ba75cf6d354edbb81d422dee41b98a4175c485b94f0515b",
+        "runtimeUid": 998,
+        "productionServiceChanged": false,
+        "productionDatabaseWritten": false,
+        "modelCalls": 0,
+        "next": "verified backup and schema-32 installation switch still required; do not import legacy history again"
+      },
+      "cutover": {
+        "passed": true,
+        "deploymentComplete": true,
+        "schemaSequence": 32,
+        "historyReimported": false,
+        "runtimeDigest": "a9b48f6731f4087feff92f000c98f2436245ca580569708d8f585f4d848c307d",
+        "receiptDigest": "17b7ce94c59fcba52ba75cf6d354edbb81d422dee41b98a4175c485b94f0515b",
+        "ready": [
+          "agent",
+          "worker"
+        ],
+        "runtimeUid": 998,
+        "backupId": "before-search-time-2026-09-13",
+        "modelCalls": 0,
+        "realModelAcceptance": "pending"
+      },
+      "liveWeatherAcceptance": {
+        "passed": true,
+        "runId": "run:a6a0f5fe-f5b4-4c2f-a80e-1c1295d3d8a6",
+        "threadId": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+        "turn": 20,
+        "toolCount": 1,
+        "jobId": "j8HFXdAUR_9XvYIwk1BxKrhgn623MgLxvFulHXFTt-DU",
+        "cleanup": "confirmed",
+        "supervision": "released",
+        "status": "completed",
+        "workingSeconds": 67,
+        "costMicros": 5881,
+        "sourceDateAccurate": true,
+        "unconfirmedCurrentConditionsDisclosed": true,
+        "staleFileTaskResumed": false,
+        "renderedUrlIssue": "另行修复自动链接吸入中文标点；回答语义通过不能代替链接验收"
+      }
+    },
+    "sourceLinkRepair": {
+      "status": "deployed_saved_answer_browser_acceptance_passed",
+      "redFailed": 1,
+      "greenPassed": 10,
+      "browserTestsPassed": 82,
+      "typecheck": "passed",
+      "browserBuild": "passed",
+      "runtimeUnchangedFromSearchTime": true,
+      "runtimeDigest": "a9b48f6731f4087feff92f000c98f2436245ca580569708d8f585f4d848c307d",
+      "archiveSha256": "941bc302192483b1f3c2235b968da633f92ee52978298f735f35a3b35e29ef36",
+      "runbookStaticContract": "sha256:9a8a6459b12ce717a6ac44664a9edcda18ce4da413ee58280a0deeeda08f7723",
+      "staticContractDiscrepancy": "打包缺少两个空目录；补齐后同一脚本、同一源码的摘要一致",
+      "installation": {
+        "passed": true,
+        "candidatePrefix": "/data/hermes/himawari/releases/2026-09-13-source-links",
+        "qualifiedRuntimePath": "/data/hermes/himawari/releases/2026-09-11-control-center/lib/himawari-agent",
+        "runtimeDigest": "a9b48f6731f4087feff92f000c98f2436245ca580569708d8f585f4d848c307d",
+        "receiptDigest": "65a920903c1aa840decadc47f24eab3f97b2321bd6d961d74b36209430c39202",
+        "runtimeUid": 998,
+        "productionServiceChanged": false,
+        "productionDatabaseWritten": false,
+        "modelCalls": 0,
+        "next": "verified backup and schema-32 installation switch still required; do not import legacy history again"
+      },
+      "cutover": {
+        "passed": true,
+        "deploymentComplete": true,
+        "schemaSequence": 32,
+        "historyReimported": false,
+        "runtimeDigest": "a9b48f6731f4087feff92f000c98f2436245ca580569708d8f585f4d848c307d",
+        "receiptDigest": "65a920903c1aa840decadc47f24eab3f97b2321bd6d961d74b36209430c39202",
+        "ready": [
+          "agent",
+          "worker"
+        ],
+        "runtimeUid": 998,
+        "backupId": "before-source-links-2026-09-13",
+        "modelCalls": 0,
+        "realModelAcceptance": "pending"
+      },
+      "browserEvidence": "test/qualification/evidence/runtime-history/source-links-browser-acceptance.json",
+      "initialQualificationFailure": {
+        "phase": "web-static",
+        "cause": "复用了上一个页面制品的固定文件名及摘要探针；正确拒绝新 bundle。",
+        "productionChanged": false,
+        "retainedAt": "/data/hermes/himawari/qualifications/2026-09-13-source-links-installation-attempt-1",
+        "fix": "专用探针绑定本次六个静态文件及摘要，重新通过六组资格后切换。"
+      }
+    }
+  },
+  "releaseScope": "Hermes 既有 Cloudflare 身份入口下的个人 Web Agent；不把本次验收扩大为全部规划功能或托管 CI 已发布。"
+}

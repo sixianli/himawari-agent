@@ -1,18 +1,20 @@
+import { withSandboxExecutionSupport } from "./sandbox-execution-support.ts";
+import { type SandboxJobIdentity, sandboxJobIdentitySchema } from "./sandbox-execution-v1.ts";
 import {
-  ContractValidationError,
-  type InferSchema,
-  type Schema,
   array,
   booleanValue,
+  ContractValidationError,
   enumeration,
+  type InferSchema,
   integer,
   literal,
   machineString,
   nullable,
   object,
   parseJson,
+  type Schema,
   timestamp,
-} from "./validation.js";
+} from "./validation.ts";
 
 export const EXECUTION_V2_SCHEMA_VERSION = "execution.v2" as const;
 export const EXECUTION_V2_MESSAGE_TYPES = [
@@ -84,13 +86,15 @@ export const workerHandshakeRequestSchema = object({
 
 export const workerHandshakeAcceptedSchema = object({
   ...envelope("response", "worker.handshake.accepted"),
-  payload: object({
-    workerInstanceId: machineString,
-    workerBootId: machineString,
-    selectedSchemaVersion: literal(EXECUTION_V2_SCHEMA_VERSION),
-    ready: booleanValue,
-    acceptedAt: timestamp,
-  }),
+  payload: withSandboxExecutionSupport(
+    object({
+      workerInstanceId: machineString,
+      workerBootId: machineString,
+      selectedSchemaVersion: literal(EXECUTION_V2_SCHEMA_VERSION),
+      ready: booleanValue,
+      acceptedAt: timestamp,
+    }),
+  ),
 });
 
 export const workerReadinessQuerySchema = object({
@@ -183,18 +187,79 @@ const executePayloadSchema = object({
   deadlineAt: timestamp,
 });
 
-export const executeWorkV2RequestSchema = object({
+const sandboxExecutionBindingSchema = object({
+  schemaVersion: literal("sandbox-execution.v2"),
+  mode: enumeration(["foreground", "background", "service"]),
+  environmentId: machineString,
+  identity: sandboxJobIdentitySchema,
+});
+export type SandboxExecutionBinding = InferSchema<typeof sandboxExecutionBindingSchema>;
+const executeWorkRequestShape = object({
   ...requestEnvelope("work.execute"),
   payload: {
-    parse(input, path = "$.payload") {
-      const payload = executePayloadSchema.parse(input, path);
+    parse(
+      input: unknown,
+      path = "$.payload",
+    ): InferSchema<typeof executePayloadSchema> & {
+      readonly sandboxJob?: SandboxJobIdentity;
+      readonly sandboxExecution?: SandboxExecutionBinding;
+    } {
+      let sandboxJob: SandboxJobIdentity | undefined;
+      let sandboxExecution: SandboxExecutionBinding | undefined;
+      let base = input;
+      if (
+        input !== null &&
+        typeof input === "object" &&
+        !Array.isArray(input) &&
+        "sandboxJob" in input
+      ) {
+        const { sandboxJob: identity, ...rest } = input;
+        sandboxJob = sandboxJobIdentitySchema.parse(identity, `${path}.sandboxJob`);
+        base = rest;
+      }
+      if (
+        base !== null &&
+        typeof base === "object" &&
+        !Array.isArray(base) &&
+        "sandboxExecution" in base
+      ) {
+        const { sandboxExecution: binding, ...rest } = base;
+        if (sandboxJob)
+          throw new ContractValidationError(path, "execution versions are mutually exclusive");
+        sandboxExecution = sandboxExecutionBindingSchema.parse(binding, `${path}.sandboxExecution`);
+        base = rest;
+      }
+      const payload = executePayloadSchema.parse(base, path);
       if (payload.deadlineAt <= payload.requestedAt) {
         throw new ContractValidationError(`${path}.deadlineAt`, "must be later than requestedAt");
       }
-      return payload;
+      return sandboxJob
+        ? { ...payload, sandboxJob }
+        : sandboxExecution
+          ? { ...payload, sandboxExecution }
+          : payload;
     },
   },
 });
+
+export const executeWorkV2RequestSchema: Schema<InferSchema<typeof executeWorkRequestShape>> = {
+  parse(input, path = "$") {
+    const request = executeWorkRequestShape.parse(input, path);
+    const job = request.payload.sandboxExecution?.identity ?? request.payload.sandboxJob;
+    if (
+      job &&
+      (job.invocationId !== request.messageId ||
+        job.ownerId !== request.scope.ownerId ||
+        job.agentId !== request.scope.agentId ||
+        job.runId !== request.scope.runId)
+    )
+      throw new ContractValidationError(
+        `${path}.payload.sandboxJob`,
+        "job must belong to the execution request",
+      );
+    return request;
+  },
+};
 
 export const cancelWorkV2RequestSchema = object({
   ...requestEnvelope("work.cancel"),

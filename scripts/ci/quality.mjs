@@ -58,7 +58,7 @@ export async function quality({
     },
     performanceComparison: "not_comparable_without_same_hardware_policy_and_interleaved_samples",
     productQualification: "not_assessed",
-    pending: ["S9 平台资格、正式浏览器、人工 WCAG、soak 与 Owner 签署"],
+    pending: ["双平台执行隔离、正式浏览器、人工 WCAG、运行与故障恢复及 Owner 签署"],
   };
   try {
     const installation = await verifyInstalledTools({ directory: toolsDirectory, root });

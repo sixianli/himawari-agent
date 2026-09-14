@@ -1,0 +1,13 @@
+{
+  "granted": true,
+  "user": "andy",
+  "runAs": "root",
+  "commands": "ALL",
+  "rulePath": "/etc/sudoers.d/99-himawari-codex-20260913",
+  "ruleSha256": "83a72a2e19cafa6fcc210db27fe97283fbe48e0cd73e942b1a3607920dd05a06",
+  "expiresAt": "2026-09-13T00:31:37+00:00",
+  "expiryUnit": "himawari-codex-sudo-expiry-20260913.timer",
+  "passwordHandled": false,
+  "verification": "runuser andy sudo -n -k id -u returned 0",
+  "boundary": "Expiration blocks new sudo commands; existing processes and prior changes are not reverted."
+}

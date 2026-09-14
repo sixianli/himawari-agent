@@ -1,0 +1,111 @@
+{
+  "kind": "受控测试，不能代替真实服务验收",
+  "sourceBaseCommit": "099eefc1a5cec454cc4a5e68e984f08714c53014",
+  "testedWorkingTree": true,
+  "results": [
+    {
+      "source": ".ci-output/local-1789073977375/test-macos-arm64/result.json",
+      "checkId": "test",
+      "matrixKey": "macos-arm64",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 477019,
+      "counts": {
+        "files": 192,
+        "executed": 1984,
+        "passed": 1984,
+        "failed": 0,
+        "skipped": 0
+      },
+      "projects": [
+        {
+          "id": "unit",
+          "counts": {
+            "files": 100,
+            "executed": 836,
+            "passed": 836,
+            "failed": 0,
+            "skipped": 0
+          }
+        },
+        {
+          "id": "contracts",
+          "counts": {
+            "files": 21,
+            "executed": 268,
+            "passed": 268,
+            "failed": 0,
+            "skipped": 0
+          }
+        },
+        {
+          "id": "integration",
+          "counts": {
+            "files": 64,
+            "executed": 801,
+            "passed": 801,
+            "failed": 0,
+            "skipped": 0
+          }
+        },
+        {
+          "id": "e2e",
+          "counts": {
+            "files": 1,
+            "executed": 3,
+            "passed": 3,
+            "failed": 0,
+            "skipped": 0
+          }
+        },
+        {
+          "id": "pi-compat",
+          "counts": {
+            "files": 6,
+            "executed": 76,
+            "passed": 76,
+            "failed": 0,
+            "skipped": 0
+          }
+        }
+      ]
+    },
+    {
+      "source": ".ci-output/local-1789075123545/policy-default/result.json",
+      "checkId": "policy",
+      "matrixKey": "default",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 57731,
+      "counts": {
+        "files": 23,
+        "executed": 565,
+        "passed": 565,
+        "failed": 0,
+        "skipped": 0
+      },
+      "projects": [
+        {
+          "id": "tooling",
+          "counts": {
+            "files": 23,
+            "executed": 565,
+            "passed": 565,
+            "failed": 0,
+            "skipped": 0
+          }
+        }
+      ]
+    }
+  ],
+  "failedAttempts": [
+    {
+      "source": ".ci-output/local-1789074077259/policy-default/result.json",
+      "reason": "与完整测试并发时仓库文件扫描用例耗时 5.56 秒，超过既有 5 秒期限；不改期限，完整测试结束后单独重跑通过。"
+    },
+    {
+      "source": ".ci-output/local-1789073515141/build-macos-arm64/details.json",
+      "reason": "已放弃的 React Markdown 实现超过既有浏览器大小上限；Marked 实现通过原上限。"
+    }
+  ]
+}

@@ -19,6 +19,7 @@ import type {
   ThreadGatewayRequestResult,
   ThreadGatewaySubscription,
 } from "@himawari-agent/gateway-contracts";
+import type { RecentAuthenticationEvidence } from "./recent-authentication.js";
 
 export interface GatewayAuthenticationContext {
   readonly subjectId: string;
@@ -26,6 +27,10 @@ export interface GatewayAuthenticationContext {
   readonly deviceId: string;
   readonly authenticatedAt: string;
   readonly authenticationRef: string;
+  /** Verified product session identity, when the transport uses product sessions. */
+  readonly sessionId?: string;
+  /** Optional provider evidence; ordinary authentication remains usable without it. */
+  readonly recentAuthenticationEvidence?: RecentAuthenticationEvidence;
 }
 
 export type GatewayInboundMessage = GatewayCommand | GatewayQuery | EventSubscription;
@@ -86,12 +91,22 @@ export interface GatewayV2ControlPlanePort {
   execute(input: GatewayV2CommandExecution): Promise<GatewayCommandResult>;
 }
 
+/** Snapshot invalidations are hints, not durable events or replay cursors. */
+export type GatewayV2StreamItem =
+  | GatewayV2Event
+  | {
+      readonly kind: "snapshot_required";
+      readonly scope: { readonly ownerId: string; readonly agentId: string };
+      readonly reason: "state_changed";
+    };
+
 export interface GatewayV2ReadModelPort {
   query(query: GatewayV2Query): Promise<GatewayV2Snapshot>;
   subscribe(input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly afterCursor: string | null;
-  }): AsyncIterable<GatewayV2Event>;
+    readonly signal?: AbortSignal;
+  }): AsyncIterable<GatewayV2StreamItem>;
 }
 
 export type GatewayV2InboundMessage = GatewayV2Command | GatewayV2Query;
@@ -111,7 +126,8 @@ export interface AgentGatewayV2Port {
   subscribe(
     authentication: GatewayAuthenticationContext,
     afterCursor: string | null,
-  ): AsyncIterable<GatewayV2Event>;
+    signal?: AbortSignal,
+  ): AsyncIterable<GatewayV2StreamItem>;
 }
 
 export type ThreadGatewayRequestMessage = ThreadGatewayCommand | ThreadGatewayQuery;
@@ -139,6 +155,7 @@ export interface ThreadGatewayReadModelPort {
   subscribe(input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly subscription: ThreadGatewaySubscription;
+    readonly signal?: AbortSignal;
   }): AsyncIterable<ThreadGatewayEvent>;
 }
 
@@ -150,5 +167,6 @@ export interface AgentThreadGatewayPort {
   subscribe(
     authentication: GatewayAuthenticationContext,
     subscription: ThreadGatewaySubscription,
+    signal?: AbortSignal,
   ): AsyncIterable<ThreadGatewayEvent>;
 }

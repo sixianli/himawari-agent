@@ -2,6 +2,7 @@ import type {
   AgentGatewayPort,
   AgentGatewayV2Port,
   GatewayAuthenticationContext,
+  GatewayV2StreamItem,
   GatewayRequestMessage,
   GatewayRequestResult,
 } from "@himawari-agent/application";
@@ -10,7 +11,6 @@ import {
   type StreamEvent,
   gatewayMessageSchema,
   gatewayV2MessageSchema,
-  type GatewayV2Event,
   type GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
 
@@ -38,7 +38,10 @@ export class InProcessGatewayV2Transport {
     return this.#gateway.request(authentication, message);
   }
 
-  async *subscribe(credential: unknown, afterCursor: string | null): AsyncIterable<GatewayV2Event> {
+  async *subscribe(
+    credential: unknown,
+    afterCursor: string | null,
+  ): AsyncIterable<GatewayV2StreamItem> {
     const authentication = await this.#authenticator.authenticate(credential);
     for await (const event of this.#gateway.subscribe(authentication, afterCursor)) yield event;
   }

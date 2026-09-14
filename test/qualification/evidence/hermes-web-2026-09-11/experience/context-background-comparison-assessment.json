@@ -1,0 +1,27 @@
+{
+  "at": "2026-09-11T12:00:09.963239+00:00",
+  "evidence": "context-background-comparison-v2.json",
+  "candidateAccepted": false,
+  "weatherObservation": "Selects two web_search calls about Tokyo weather; no old article text in this generation. Returned tools were not executed.",
+  "resumeObservation": "Despite an explicit request to continue the article without tools, selects write for acceptance-rejected.txt with the text from an earlier unrelated request. No write was executed.",
+  "interpretation": "Relocating only the immediately cancelled article into reference data with an added system policy is insufficient. This is an observed wrong-task selection, not proof that all historical terminal outcomes are missing or that one particular component is solely responsible.",
+  "crossCheck": "context-content-diagnostic.json shows the earlier write request at messages[13], followed by an assistant message at [14]; the unexpected request is not evidence that the prior assistant message was absent.",
+  "nextInvestigation": "Reassess complete historical message and tool-result reconstruction and model/provider handling before another candidate; do not extend the failed marker draft or deploy this candidate.",
+  "limits": [
+    "One generation per scenario; no tool execution or end-to-end Run.",
+    "512 output token cap; no full article completion qualification.",
+    "Baseline is the earlier v1 sample, not a concurrent control.",
+    "Underlying provider endpoint variability was not captured."
+  ],
+  "productionObserved": {
+    "mainPid": 3233868,
+    "activeState": "active",
+    "subState": "running"
+  },
+  "budget": {
+    "combinedUpperBoundMicros": 988122,
+    "remainingUnderOneDollarMicros": 11878,
+    "interpretation": "Conservative accounting includes prior unresolved reservations, not actual billed cost; no further paid calls started."
+  },
+  "repairStatus": "unrepaired; local product draft paused; no deployment or commit"
+}

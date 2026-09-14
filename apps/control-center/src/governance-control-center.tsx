@@ -832,14 +832,8 @@ export function useGovernanceControlCenter({
     </>
   );
 
-  const content = (
+  const feedback = (
     <>
-      <div className="panel-heading">
-        <p className="eyebrow">{message("governance.authoritativeState")}</p>
-        <ActionButton onClick={() => void refresh()} variant="secondary">
-          {message("common.refresh")}
-        </ActionButton>
-      </div>
       {error ? (
         <Banner title={message("state.error")} tone="danger">
           <code>{error}</code>
@@ -858,6 +852,18 @@ export function useGovernanceControlCenter({
       <StatusRegion className="mutation-status">
         {message("mutation.label")}: {message(mutationMessage(mutationStatus))}
       </StatusRegion>
+    </>
+  );
+
+  const content = (
+    <>
+      <div className="panel-heading">
+        <p className="eyebrow">{message("governance.authoritativeState")}</p>
+        <ActionButton onClick={() => void refresh()} variant="secondary">
+          {message("common.refresh")}
+        </ActionButton>
+      </div>
+      {route.view !== "details" || !detailSnapshot ? feedback : null}
       {detailSnapshot ? (
         <section aria-labelledby="governance-summary-title">
           <h3 id="governance-summary-title">{message("governance.authoritativeSummary")}</h3>
@@ -912,15 +918,18 @@ export function useGovernanceControlCenter({
   );
 
   const details = (
-    <GovernanceDetails
-      actions={actions}
-      message={message}
-      onAction={(nextAction) => {
-        setAcknowledged(false);
-        setAction(nextAction);
-      }}
-      snapshot={detailSnapshot}
-    />
+    <>
+      {route.view === "details" && detailSnapshot ? feedback : null}
+      <GovernanceDetails
+        actions={actions}
+        message={message}
+        onAction={(nextAction) => {
+          setAcknowledged(false);
+          setAction(nextAction);
+        }}
+        snapshot={detailSnapshot}
+      />
+    </>
   );
 
   return { content, details, list };

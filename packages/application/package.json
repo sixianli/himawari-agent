@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./runtime-port": "./src/runtime-port.ts"
+    "./runtime-port": "./src/runtime-port.ts",
+    "./sandbox-execution-projection": "./src/services/sandbox-execution-projection.ts"
   },
   "dependencies": {
     "@himawari-agent/domain": "0.0.0",

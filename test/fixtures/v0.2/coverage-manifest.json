@@ -3,8 +3,8 @@
   "generatedFrom": "owner-reviewed S0 coverage matrix and active Plan acceptance tables",
   "prd": {
     "path": "docs/prd-v0.2.md",
-    "sha256": "cc2f63b6bab7ff13e0cc81be7d6d946d48148a98f10c9d81dc97fc5eba8ea9e4",
-    "markdownListClauseCount": 256
+    "sha256": "03c3f736843904ba94c7b1d8c78de3c3f10dad16185f2ed48a5a1f8ef0c100f6",
+    "markdownListClauseCount": 259
   },
   "coverageSource": "docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md",
   "requirements": [
@@ -520,7 +520,7 @@
           "label": "删除与存储压力",
           "planTasks": "Tasks 23、25–26、28",
           "planEvidence": "Trash/restore、删除传播、snapshot 清除、disk pressure 与恢复；证据：Tasks 23、25–26、28 evidence",
-          "planStatus": "本地删除/恢复/压力路径和规模 p50/p95/p99 已验证；跨主机恢复副本、真实 retention 回读和 7 天 soak 未完成",
+          "planStatus": "本地删除/恢复/压力路径和规模 p50/p95/p99 已验证；跨主机恢复副本、真实 retention 回读未完成",
           "verificationEntrypoints": [
             "npm run test:contracts",
             "npm run test:integration",
@@ -967,9 +967,9 @@
         },
         {
           "id": "S9-A04",
-          "label": "连续运行",
+          "label": "运行与故障恢复",
           "planTasks": "Tasks 9–10、16–17",
-          "planEvidence": "Mac/Hermes 各 7×24h、candidate 固定",
+          "planEvidence": "Mac/Hermes 关键运行路径与故障恢复通过、candidate 固定，无连续运行时长门槛",
           "planStatus": "待实施",
           "verificationEntrypoints": ["npm run check", "npm run test", "npm run check:pi-compat"]
         },

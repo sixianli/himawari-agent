@@ -60,13 +60,21 @@ async function runJourney() {
   });
   const trace = new SessionTraceRecorder({
     trace: adapters.trace,
-    payloads: adapters.payload,
+    artifacts: adapters.runPayloadArtifacts,
     protector: adapters.payloadProtector,
     audit: adapters.audit,
     clock,
     ids: adapters.ids,
   });
-  const context = new ContextFormationService({ memory: adapters.memory, trace });
+  const context = new ContextFormationService({
+    memory: adapters.memory,
+    trace,
+    artifacts: adapters.runPayloadArtifacts,
+    payloads: adapters.payload,
+    protector: adapters.payloadProtector,
+    clock,
+    ids: adapters.ids,
+  });
   const router = new ModelRouterService({
     model,
     secrets: adapters.secret,
@@ -165,8 +173,11 @@ async function runJourney() {
       id: fixture.runs.recommendation.triggerId,
       sourceType: "user_message",
       payloadRef: fixture.payloads.newThreadMessage,
+      occurredAt: fixture.times.start,
     },
     threadMessages: [],
+    sourceWatermark: null,
+    policyVersion: "context-policy-v1",
     policies: [{ ref: "policy-owner-v1", payloadRef: fixture.payloads.ownerProfile }],
     memoryQueryRef: fixture.payloads.memoryQuery,
     memoryQueryTerms: ["beef", "restaurant", "tokyo"],
@@ -197,7 +208,7 @@ async function runJourney() {
     runId: fixture.runs.recommendation.id,
     taskProfile: "primary",
     requiredCapabilities: ["reasoning"],
-    inputRef: formed.finalContextRef,
+    inputRef: formed.contextEnvelopeRef,
     dataClassification: "private",
     maxDisclosure: "trusted_remote",
     allowedDisclosureRef: "disclosure-owner-private-v1",
@@ -283,8 +294,11 @@ async function runJourney() {
       id: fixture.runs.monitoring.triggerId,
       sourceType: "schedule",
       payloadRef: fixture.payloads.monitoringScope,
+      occurredAt: fixture.times.start,
     },
     threadMessages: [],
+    sourceWatermark: null,
+    policyVersion: "context-policy-v1",
     policies: [{ ref: monitoringApproval.grantId, payloadRef: fixture.payloads.monitoringScope }],
     memoryQueryRef: fixture.payloads.memoryQuery,
     memoryQueryTerms: ["beef", "restaurant", "tokyo"],
@@ -309,7 +323,7 @@ async function runJourney() {
   await record(fixture.runs.monitoring.id, "worker.delegated", {
     workerRunId: "worker-beef-search",
     taskRef: fixture.payloads.restaurantSearchInput,
-    delegatedContextRefs: [monitorContext.finalContextRef],
+    delegatedContextRefs: [monitorContext.contextEnvelopeRef],
   });
 
   for (const declaration of fixture.capabilityDeclarations) {
@@ -339,7 +353,7 @@ async function runJourney() {
     operation: "search",
     permission: searchDecision,
     inputRefs: [fixture.payloads.restaurantSearchInput],
-    delegatedContextRefs: [monitorContext.finalContextRef],
+    delegatedContextRefs: [monitorContext.contextEnvelopeRef],
     secretRefs: [],
     expiresAt: fixture.times.deadline,
   });
@@ -364,7 +378,7 @@ async function runJourney() {
       operation: "search",
       inputRef: fixture.payloads.restaurantSearchInput,
       capabilityHandleRef: searchHandle.ref,
-      delegatedContextRefs: [monitorContext.finalContextRef],
+      delegatedContextRefs: [monitorContext.contextEnvelopeRef],
       secretRefs: [],
       requestedAt: fixture.times.start,
       deadlineAt: fixture.times.deadline,
@@ -460,7 +474,7 @@ async function runJourney() {
     operation: "reserve",
     permission: reservationDecision,
     inputRefs: [fixture.payloads.reservationInput],
-    delegatedContextRefs: [formed.finalContextRef],
+    delegatedContextRefs: [formed.contextEnvelopeRef],
     secretRefs: [fixture.reservationSecret],
     expiresAt: fixture.times.deadline,
   });
@@ -490,7 +504,7 @@ async function runJourney() {
       operation: "reserve",
       inputRef: fixture.payloads.reservationInput,
       capabilityHandleRef: reservationHandle.ref,
-      delegatedContextRefs: [formed.finalContextRef],
+      delegatedContextRefs: [formed.contextEnvelopeRef],
       secretRefs: [fixture.reservationSecret],
       requestedAt: fixture.times.start,
       deadlineAt: fixture.times.deadline,

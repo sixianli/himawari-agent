@@ -1,0 +1,67 @@
+{
+  "platform": "linux",
+  "architecture": "x64",
+  "osRelease": "5.15.0-185-generic",
+  "node": "v26.1.0",
+  "runtime": "/data/himawari-r8-ucNhI6hn/components",
+  "dependencies": {
+    "version": "0.0.75",
+    "platformSupported": true,
+    "errors": [],
+    "warnings": [],
+    "productionSuitable": false,
+    "missingGuarantees": [
+      "resource_observation",
+      "task_tree_termination",
+      "worker_crash_cleanup",
+      "durable_start_admission"
+    ],
+    "limitations": []
+  },
+  "preparation": "ready-not-started",
+  "taskStarted": false,
+  "result": {
+    "network": {
+      "deniedTargets": 0,
+      "deniedAddresses": 0,
+      "connected": 0,
+      "closed": true
+    },
+    "jobId": "linux-readiness",
+    "attemptId": "attempt",
+    "supervision": {
+      "protocolVersion": "job-host.v2",
+      "sessionId": "b086289d-c950-4d5d-acfe-a59d36c13dfd",
+      "bootId": "df533149-ea87-456d-a20d-8b341f59f4af",
+      "processId": 308749,
+      "processIdentityRef": "job-host-process:e61e0b3b-2829-4b34-9dd0-01beae7057ad",
+      "processStartedAt": "2026-09-10T01:59:25.130Z",
+      "sequence": 2,
+      "observedAt": "2026-09-10T01:59:25.638Z",
+      "validUntil": "2026-09-10T01:59:27.138Z",
+      "state": "exited",
+      "task": null,
+      "taskTreeGuarantee": "unverified"
+    },
+    "reason": "cancelled",
+    "resources": null,
+    "exitCode": null,
+    "stdout": {
+      "type": "Buffer",
+      "data": []
+    },
+    "stderr": {
+      "type": "Buffer",
+      "data": []
+    },
+    "taskStarted": false,
+    "taskProcessExited": false,
+    "stdioClosed": false,
+    "srtReset": true,
+    "taskTreeCleanup": "not_started"
+  },
+  "runnerDigest": "da50694e9fc50423a4e738e88fdd5372cc2ad7479f431f0fee9809914f8da3aa",
+  "productionSuitable": false,
+  "artifact": "packaged-components",
+  "archiveSha256": "9954a2e36c32edcb45914927fcecf8b9a4d77dfff46b5106e01936e1a189c051"
+}

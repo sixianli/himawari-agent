@@ -1,8 +1,12 @@
+export const ACCENT_COLORS = ["violet", "blue", "teal", "amber", "rose", "graphite"] as const;
+export type AccentColor = (typeof ACCENT_COLORS)[number];
+
 export interface ControlCenterPreferences {
   readonly density: "comfortable" | "compact";
   readonly detailPanePercent: number;
   readonly listPanePercent: number;
-  readonly theme: "system" | "light" | "dark";
+  readonly theme: "light" | "dark";
+  readonly accent?: AccentColor;
 }
 
 export const CONTROL_CENTER_UI_LOCALES = ["zh-CN", "en", "ja"] as const;
@@ -128,7 +132,8 @@ export class ControlCenterBrowserStorage {
         !CURSOR_PATTERN.test(value.commandType ?? "") ||
         !CURSOR_PATTERN.test(value.objectRef ?? "") ||
         !Number.isSafeInteger(value.expectedRevision) ||
-        (value.expectedRevision as number) < 1
+        (value.expectedRevision as number) <
+          (value.commandType === "search.authorization.set" ? 0 : 1)
       ) {
         return null;
       }
@@ -145,7 +150,7 @@ export class ControlCenterBrowserStorage {
       !CURSOR_PATTERN.test(mutation.commandType) ||
       !CURSOR_PATTERN.test(mutation.objectRef) ||
       !Number.isSafeInteger(mutation.expectedRevision) ||
-      mutation.expectedRevision < 1
+      mutation.expectedRevision < (mutation.commandType === "search.authorization.set" ? 0 : 1)
     ) {
       throw new Error("CONTROL_CENTER_MUTATION_IDENTITY_INVALID");
     }
@@ -165,7 +170,8 @@ export class ControlCenterBrowserStorage {
       density: "comfortable",
       detailPanePercent: 24,
       listPanePercent: 26,
-      theme: "system",
+      theme: "dark",
+      accent: "violet",
     };
     const raw = this.storage.getItem(`${KEY_PREFIX}.preferences`);
     if (!raw) return fallback;
@@ -175,7 +181,10 @@ export class ControlCenterBrowserStorage {
         density: parsed.density === "compact" ? "compact" : "comfortable",
         detailPanePercent: boundedPanePercent(parsed.detailPanePercent, 24),
         listPanePercent: boundedPanePercent(parsed.listPanePercent, 26),
-        theme: parsed.theme === "light" || parsed.theme === "dark" ? parsed.theme : "system",
+        theme: parsed.theme === "light" ? "light" : "dark",
+        accent: ACCENT_COLORS.includes(parsed.accent as AccentColor)
+          ? (parsed.accent as AccentColor)
+          : "violet",
       };
     } catch {
       return fallback;

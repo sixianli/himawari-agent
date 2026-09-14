@@ -7,7 +7,9 @@ import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
   type GatewayAuthenticationContext,
+  type GatewayV2StreamItem,
   PORT_ERROR_CODES,
+  type RecentAuthenticationGuardPort,
 } from "@himawari-agent/application";
 import type { DeploymentHealthSnapshot } from "@himawari-agent/domain";
 import {
@@ -16,16 +18,15 @@ import {
   type GatewayCommand,
   type GatewayQuery,
   type GatewayV2Command,
-  type GatewayV2Event,
   type GatewayV2Query,
+  gatewayMessageSchema,
+  gatewayV2MessageSchema,
+  type StreamEvent,
   type ThreadGatewayCommand,
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
   type ThreadGatewaySubscription,
-  gatewayMessageSchema,
-  gatewayV2MessageSchema,
   threadGatewayMessageSchema,
-  type StreamEvent,
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
@@ -50,6 +51,7 @@ export interface HttpGatewayAuthenticationInput {
 }
 
 export interface HttpGatewayAuthenticationPort {
+  revalidate?(authentication: GatewayAuthenticationContext): Promise<void>;
   authenticate(input: HttpGatewayAuthenticationInput): Promise<GatewayAuthenticationContext>;
 }
 
@@ -77,13 +79,16 @@ export interface HttpGatewayMetricsPort {
 }
 
 export interface HttpGatewayServerOptions {
-  readonly gateway: AgentGatewayPort;
+  /** Optional legacy v1 gateway; absent routes are intentionally not registered. */
+  readonly gateway?: AgentGatewayPort;
   readonly gatewayV2?: AgentGatewayV2Port;
   readonly threadGateway?: AgentThreadGatewayPort;
   readonly payloadAdmission?: HttpGatewayPayloadAdmissionPort;
   readonly payloadRead?: HttpGatewayPayloadReadPort;
   readonly threadSearch?: HttpGatewayThreadSearchPort;
   readonly authentication: HttpGatewayAuthenticationPort;
+  /** Optional low-risk configuration projection of a currently valid proof. */
+  readonly recentAuthentication?: RecentAuthenticationGuardPort;
   readonly csrf: HttpGatewayCsrfPort;
   readonly publicOrigin: string;
   readonly staticRoot: string;
@@ -94,6 +99,16 @@ export interface HttpGatewayServerOptions {
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
   readonly browserConfiguration?: {
+    readonly executionPresentationAvailable?: boolean;
+    readonly canCancelRun?: boolean;
+    readonly availableModels?: readonly {
+      ref: string;
+      model: string;
+      name: string;
+      provider: string;
+      thinkingLevels: readonly string[];
+    }[];
+    readonly installedGatewayV2Operations?: readonly (GatewayV2Query | GatewayV2Command)["type"][];
     readonly agentId: string;
     readonly deploymentId: string;
     readonly authorityEpoch: number;
@@ -336,6 +351,7 @@ function refreshQueries(subscription: EventSubscription): readonly GatewayQuery[
 }
 
 async function* streamGatewayEvents(input: {
+  readonly revalidate: () => Promise<void>;
   readonly gateway: AgentGatewayPort;
   readonly authentication: GatewayAuthenticationContext;
   readonly subscription: EventSubscription;
@@ -368,6 +384,15 @@ async function* streamGatewayEvents(input: {
       throw error;
     }
     if (timer) clearTimeout(timer);
+    try {
+      await input.revalidate();
+    } catch {
+      yield serializeSse({
+        event: "gateway.stream_error",
+        data: { code: "IDENTITY_SESSION_INVALID" },
+      });
+      return;
+    }
     if (result.kind === "heartbeat") {
       yield ": heartbeat\n\n";
       continue;
@@ -380,95 +405,150 @@ async function* streamGatewayEvents(input: {
 }
 
 async function* streamGatewayV2Events(input: {
+  readonly revalidate: () => Promise<void>;
   readonly gateway: AgentGatewayV2Port;
   readonly authentication: GatewayAuthenticationContext;
   readonly afterCursor: string | null;
   readonly heartbeatMilliseconds: number;
+  readonly signal: AbortSignal;
 }): AsyncGenerator<string> {
+  // HTTP authentication has passed. Flush the transport without waiting for a domain event.
+  // This SSE comment contains no data and does not bypass subscription authorization.
+  yield ": connected\n\n";
   const iterator = input.gateway
-    .subscribe(input.authentication, input.afterCursor)
+    .subscribe(input.authentication, input.afterCursor, input.signal)
     [Symbol.asyncIterator]();
   let pending = iterator.next();
-  while (true) {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let result:
-      | { readonly kind: "item"; readonly value: IteratorResult<GatewayV2Event> }
-      | { readonly kind: "heartbeat" };
-    try {
-      result = await Promise.race([
-        pending.then((value) => ({ kind: "item" as const, value })),
-        new Promise<{ readonly kind: "heartbeat" }>((resolve) => {
-          timer = setTimeout(() => resolve({ kind: "heartbeat" }), input.heartbeatMilliseconds);
-        }),
-      ]);
-    } catch (error) {
-      if (error instanceof ApplicationPortError) {
-        yield serializeSse({ event: "gateway.stream_error", data: { code: error.code } });
+  let onAbort: () => void = () => {};
+  const aborted = new Promise<{ readonly kind: "aborted" }>((resolve) => {
+    onAbort = () => resolve({ kind: "aborted" });
+    if (input.signal.aborted) onAbort();
+    else input.signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    while (!input.signal.aborted) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let result:
+        | { readonly kind: "item"; readonly value: IteratorResult<GatewayV2StreamItem> }
+        | { readonly kind: "heartbeat" }
+        | { readonly kind: "aborted" };
+      try {
+        result = await Promise.race([
+          pending.then((value) => ({ kind: "item" as const, value })),
+          aborted,
+          new Promise<{ readonly kind: "heartbeat" }>((resolve) => {
+            timer = setTimeout(() => resolve({ kind: "heartbeat" }), input.heartbeatMilliseconds);
+          }),
+        ]);
+      } catch (error) {
+        if (input.signal.aborted) return;
+        if (error instanceof ApplicationPortError) {
+          yield serializeSse({ event: "gateway.stream_error", data: { code: error.code } });
+          return;
+        }
+        throw error;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+      if (input.signal.aborted || result.kind === "aborted") return;
+      try {
+        await input.revalidate();
+      } catch {
+        yield serializeSse({
+          event: "gateway.stream_error",
+          data: { code: "IDENTITY_SESSION_INVALID" },
+        });
         return;
       }
-      throw error;
+      if (result.kind === "heartbeat") {
+        yield ": heartbeat\n\n";
+        continue;
+      }
+      if (result.value.done) return;
+      const event = result.value.value;
+      if (event.kind === "snapshot_required") {
+        yield serializeSse({ event: "gateway.snapshot_required", data: { reason: event.reason } });
+      } else {
+        yield serializeSse({ event: "message", id: event.payload.cursor, data: event });
+      }
+      pending = iterator.next();
     }
-    if (timer) clearTimeout(timer);
-    if (result.kind === "heartbeat") {
-      yield ": heartbeat\n\n";
-      continue;
-    }
-    if (result.value.done) return;
-    const event = result.value.value;
-    pending = iterator.next();
-    yield serializeSse({ event: "message", id: event.payload.cursor, data: event });
+  } finally {
+    input.signal.removeEventListener("abort", onAbort);
+    void pending.catch(() => undefined);
+    void iterator.return?.().catch(() => undefined);
   }
 }
 
 async function* streamThreadGatewayEvents(input: {
+  readonly revalidate: () => Promise<void>;
   readonly gateway: AgentThreadGatewayPort;
   readonly authentication: GatewayAuthenticationContext;
   readonly subscription: ThreadGatewaySubscription;
   readonly heartbeatMilliseconds: number;
 }): AsyncGenerator<string> {
+  // HTTP authentication has passed. Flush the transport without waiting for a domain event.
+  // This SSE comment contains no data and does not bypass subscription authorization.
+  yield ": connected\n\n";
+  const controller = new AbortController();
   const iterator = input.gateway
-    .subscribe(input.authentication, input.subscription)
+    .subscribe(input.authentication, input.subscription, controller.signal)
     [Symbol.asyncIterator]();
   let pending = iterator.next();
-  while (true) {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let result:
-      | { readonly kind: "item"; readonly value: IteratorResult<ThreadGatewayEvent> }
-      | { readonly kind: "heartbeat" };
-    try {
-      result = await Promise.race([
-        pending.then((value) => ({ kind: "item" as const, value })),
-        new Promise<{ readonly kind: "heartbeat" }>((resolve) => {
-          timer = setTimeout(() => resolve({ kind: "heartbeat" }), input.heartbeatMilliseconds);
-        }),
-      ]);
-    } catch (error) {
-      if (error instanceof ApplicationPortError) {
+  try {
+    while (true) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let result:
+        | { readonly kind: "item"; readonly value: IteratorResult<ThreadGatewayEvent> }
+        | { readonly kind: "heartbeat" };
+      try {
+        result = await Promise.race([
+          pending.then((value) => ({ kind: "item" as const, value })),
+          new Promise<{ readonly kind: "heartbeat" }>((resolve) => {
+            timer = setTimeout(() => resolve({ kind: "heartbeat" }), input.heartbeatMilliseconds);
+          }),
+        ]);
+      } catch (error) {
+        if (error instanceof ApplicationPortError) {
+          yield serializeSse({
+            event:
+              error.code === PORT_ERROR_CODES.NOT_FOUND
+                ? "thread.snapshot_required"
+                : "gateway.stream_error",
+            data: {
+              code: error.code,
+              ...(error.code === PORT_ERROR_CODES.NOT_FOUND
+                ? { reasonCode: "CURSOR_OUTSIDE_RETENTION" }
+                : {}),
+            },
+          });
+          return;
+        }
+        throw error;
+      }
+      if (timer) clearTimeout(timer);
+      try {
+        await input.revalidate();
+      } catch {
         yield serializeSse({
-          event:
-            error.code === PORT_ERROR_CODES.NOT_FOUND
-              ? "thread.snapshot_required"
-              : "gateway.stream_error",
-          data: {
-            code: error.code,
-            ...(error.code === PORT_ERROR_CODES.NOT_FOUND
-              ? { reasonCode: "CURSOR_OUTSIDE_RETENTION" }
-              : {}),
-          },
+          event: "gateway.stream_error",
+          data: { code: "IDENTITY_SESSION_INVALID" },
         });
         return;
       }
-      throw error;
+      if (result.kind === "heartbeat") {
+        yield ": heartbeat\n\n";
+        continue;
+      }
+      if (result.value.done) return;
+      const event = result.value.value;
+      yield serializeSse({ event: "message", id: event.payload.cursor, data: event });
+      pending = iterator.next();
     }
-    if (timer) clearTimeout(timer);
-    if (result.kind === "heartbeat") {
-      yield ": heartbeat\n\n";
-      continue;
-    }
-    if (result.value.done) return;
-    const event = result.value.value;
-    pending = iterator.next();
-    yield serializeSse({ event: "message", id: event.payload.cursor, data: event });
+  } finally {
+    controller.abort();
+    void pending.catch(() => undefined);
+    void iterator.return?.().catch(() => undefined);
   }
 }
 
@@ -534,6 +614,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     bodyLimit: options.maximumBodyBytes ?? DEFAULT_BODY_LIMIT,
     logger: false,
     trustProxy: false,
+    forceCloseConnections: true,
   });
 
   app.addHook("onSend", async (_request, reply) => {
@@ -555,7 +636,9 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
           ? 403
           : error.code === PORT_ERROR_CODES.NOT_FOUND
             ? 404
-            : 409;
+            : error.code === PORT_ERROR_CODES.OPERATION_NOT_INSTALLED
+              ? 501
+              : 409;
       sendJson(reply, statusCode, { error: { code: error.code } });
       return;
     }
@@ -609,16 +692,40 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     app.get("/api/control-center/v1/config", async (request, reply) => {
       assertPublicHost(request, publicOrigin);
       const authentication = await authenticate(request, options);
+      let recentAuthenticationRef: string | null = null;
+      if (options.recentAuthentication) {
+        try {
+          const evidence = await options.recentAuthentication.assertRecentAuthentication({
+            authentication,
+            expectedAuthenticationRef:
+              authentication.recentAuthenticationEvidence?.authenticationRef ?? null,
+          });
+          recentAuthenticationRef = evidence.authenticationRef;
+        } catch (error) {
+          if (
+            !(error instanceof ApplicationPortError) ||
+            error.code !== PORT_ERROR_CODES.NOT_AUTHORITATIVE
+          ) {
+            throw error;
+          }
+        }
+      }
       return sendJson(reply, 200, {
         ownerId: authentication.ownerId,
+        installedGatewayV2Operations: configuration.installedGatewayV2Operations ?? [],
+        healthDependenciesAvailable: options.health !== undefined,
         agentId: configuration.agentId,
         deploymentId: configuration.deploymentId,
         authorityEpoch: configuration.authorityEpoch,
         fencingToken: configuration.fencingToken,
         actorId: authentication.subjectId,
+        sessionId: authentication.sessionId ?? null,
         csrfToken: await issueCsrf(authentication),
         authorizationRef: authentication.authenticationRef,
-        recentAuthenticationRef: authentication.authenticationRef,
+        recentAuthenticationRef,
+        executionPresentationAvailable: configuration.executionPresentationAvailable ?? false,
+        canCancelRun: configuration.canCancelRun ?? false,
+        availableModels: configuration.availableModels ?? [],
         primaryModel: configuration.primaryModel ?? null,
         primaryModelRef: configuration.primaryModelRef ?? null,
         repositoryAllowlistRefs: configuration.repositoryAllowlistRefs ?? [],
@@ -627,87 +734,95 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     });
   }
 
-  app.post("/api/gateway/v1/commands", async (request, reply) => {
-    assertMutationBoundary(request, publicOrigin);
-    const authentication = await authenticate(request, options);
-    const csrfAccepted = await options.csrf.verify({
-      authentication,
-      token: header(request, "x-csrf-token"),
-      method: request.method,
-      path: requestPath(request),
-    });
-    if (!csrfAccepted) {
-      throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
-    }
-    const command = parseBusinessMessage(request.body, "command");
-    if (header(request, "idempotency-key") !== command.idempotencyKey) {
-      throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.IDEMPOTENCY_MISMATCH, 400);
-    }
-    return sendJson(reply, 200, await options.gateway.request(authentication, command));
-  });
-
-  app.post("/api/gateway/v1/queries", async (request, reply) => {
-    assertMutationBoundary(request, publicOrigin);
-    const authentication = await authenticate(request, options);
-    const query = parseBusinessMessage(request.body, "query");
-    return sendJson(reply, 200, await options.gateway.request(authentication, query));
-  });
-
-  app.get<{ Querystring: { readonly subscription?: string } }>(
-    "/api/gateway/v1/events",
-    async (request, reply) => {
-      assertPublicHost(request, publicOrigin);
+  if (options.gateway) {
+    const gateway = options.gateway;
+    app.post("/api/gateway/v1/commands", async (request, reply) => {
+      assertMutationBoundary(request, publicOrigin);
       const authentication = await authenticate(request, options);
-      const subscription = parseSubscription(request.query.subscription);
-      let stream: Readable;
-      try {
-        const source = streamGatewayEvents({
-          gateway: options.gateway,
-          authentication,
-          subscription,
-          heartbeatMilliseconds,
-        });
-        const first = await source.next();
-        stream = Readable.from(
-          (async function* () {
-            if (!first.done) yield first.value;
-            yield* source;
-          })(),
-        );
-      } catch (error) {
-        if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.NOT_FOUND) {
-          throw error;
-        }
-        const snapshots = [];
-        for (const query of refreshQueries(subscription).slice(0, 2)) {
-          snapshots.push(await options.gateway.request(authentication, query));
-        }
-        stream = Readable.from(
-          snapshots.length > 0
-            ? snapshots.map((snapshot, index) =>
-                serializeSse({
-                  event: "gateway.snapshot",
-                  id: `snapshot:${index + 1}`,
-                  data: snapshot,
-                }),
-              )
-            : [
-                serializeSse({
-                  event: "gateway.snapshot_required",
-                  data: { reasonCode: "CURSOR_OUTSIDE_RETENTION" },
-                }),
-              ],
-        );
+      const csrfAccepted = await options.csrf.verify({
+        authentication,
+        token: header(request, "x-csrf-token"),
+        method: request.method,
+        path: requestPath(request),
+      });
+      if (!csrfAccepted) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
       }
-      setSecurityHeaders(reply);
-      reply
-        .header("cache-control", "no-cache, no-store")
-        .header("connection", "keep-alive")
-        .header("x-accel-buffering", "no")
-        .type(SSE_CONTENT_TYPE);
-      return reply.send(stream);
-    },
-  );
+      const command = parseBusinessMessage(request.body, "command");
+      if (header(request, "idempotency-key") !== command.idempotencyKey) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.IDEMPOTENCY_MISMATCH, 400);
+      }
+      return sendJson(reply, 200, await gateway.request(authentication, command));
+    });
+
+    app.post("/api/gateway/v1/queries", async (request, reply) => {
+      assertMutationBoundary(request, publicOrigin);
+      const authentication = await authenticate(request, options);
+      const query = parseBusinessMessage(request.body, "query");
+      return sendJson(reply, 200, await gateway.request(authentication, query));
+    });
+
+    app.get<{ Querystring: { readonly subscription?: string } }>(
+      "/api/gateway/v1/events",
+      async (request, reply) => {
+        assertPublicHost(request, publicOrigin);
+        const authentication = await authenticate(request, options);
+        const subscription = parseSubscription(request.query.subscription);
+        let stream: Readable;
+        try {
+          const source = streamGatewayEvents({
+            gateway,
+            authentication,
+            subscription,
+            heartbeatMilliseconds,
+            revalidate: () =>
+              options.authentication.revalidate?.(authentication) ?? Promise.resolve(),
+          });
+          const first = await source.next();
+          stream = Readable.from(
+            (async function* () {
+              if (!first.done) yield first.value;
+              yield* source;
+            })(),
+          );
+        } catch (error) {
+          if (
+            !(error instanceof ApplicationPortError) ||
+            error.code !== PORT_ERROR_CODES.NOT_FOUND
+          ) {
+            throw error;
+          }
+          const snapshots = [];
+          for (const query of refreshQueries(subscription).slice(0, 2)) {
+            snapshots.push(await gateway.request(authentication, query));
+          }
+          stream = Readable.from(
+            snapshots.length > 0
+              ? snapshots.map((snapshot, index) =>
+                  serializeSse({
+                    event: "gateway.snapshot",
+                    id: `snapshot:${index + 1}`,
+                    data: snapshot,
+                  }),
+                )
+              : [
+                  serializeSse({
+                    event: "gateway.snapshot_required",
+                    data: { reasonCode: "CURSOR_OUTSIDE_RETENTION" },
+                  }),
+                ],
+          );
+        }
+        setSecurityHeaders(reply);
+        reply
+          .header("cache-control", "no-cache, no-store")
+          .header("connection", "keep-alive")
+          .header("x-accel-buffering", "no")
+          .type(SSE_CONTENT_TYPE);
+        return reply.send(stream);
+      },
+    );
+  }
 
   if (options.gatewayV2) {
     const gatewayV2 = options.gatewayV2;
@@ -750,12 +865,17 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         ) {
           throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.REQUEST_INVALID, 400);
         }
+        const controller = new AbortController();
+        reply.raw.once("close", () => controller.abort());
         const stream = Readable.from(
           streamGatewayV2Events({
             gateway: gatewayV2,
             authentication,
             afterCursor,
             heartbeatMilliseconds,
+            revalidate: () =>
+              options.authentication.revalidate?.(authentication) ?? Promise.resolve(),
+            signal: controller.signal,
           }),
         );
         setSecurityHeaders(reply);
@@ -809,6 +929,8 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             authentication,
             subscription,
             heartbeatMilliseconds,
+            revalidate: () =>
+              options.authentication.revalidate?.(authentication) ?? Promise.resolve(),
           }),
         );
         setSecurityHeaders(reply);

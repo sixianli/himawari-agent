@@ -1,13 +1,14 @@
 import {
+  type AgentRuntimePort,
   ContextFormationService,
   PORT_ERROR_CODES,
   RunCoordinator,
+  type RunExecutionLeaseClaim,
   RunStateCommitCoordinator,
-  SessionTraceRecorder,
-  type AgentRuntimePort,
   type RuntimeEvent,
   type RuntimeRequest,
   type RuntimeToolInvocation,
+  SessionTraceRecorder,
 } from "@himawari-agent/application";
 import {
   createAgent,
@@ -15,10 +16,12 @@ import {
   createAgentId,
   createAuthorityHolderId,
   createAuthorityLeaseId,
+  createDeploymentId,
   createIdempotencyKey,
   createOwner,
   createOwnerId,
   createRun,
+  createRunExecutionLeaseId,
   createRunId,
   createSession,
   createSessionId,
@@ -28,13 +31,13 @@ import {
   createTriggerId,
 } from "@himawari-agent/domain";
 import {
+  createReferenceAdapterSet,
   IdempotentRuntimeToolPort,
   ManualClock,
   ScriptedAgentRuntime,
   ScriptedWorkerRunPort,
-  createReferenceAdapterSet,
 } from "@himawari-agent/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const T0 = "2026-08-25T00:00:00.000Z";
 const T1 = "2026-08-25T00:00:01.000Z";
@@ -60,6 +63,7 @@ async function fixture(
   suffix: string,
   runtime: AgentRuntimePort,
   workers: ScriptedWorkerRunPort = new ScriptedWorkerRunPort(),
+  resources?: ConstructorParameters<typeof RunCoordinator>[0]["resources"],
 ) {
   const owner = createOwner(createOwnerId(`owner-${suffix}`));
   const agent = createAgent({ id: createAgentId(`agent-${suffix}`), owner });
@@ -84,6 +88,16 @@ async function fixture(
     leaseId: lease.id,
     fencingToken: authorityRecord.fencingToken,
   };
+  const executionLease = Object.freeze({
+    executionLeaseId: createRunExecutionLeaseId(`execution-${suffix}`),
+    expectedLeaseRevision: 1,
+    authorityLeaseId: lease.id,
+    authorityFencingToken: authorityRecord.fencingToken,
+    deploymentId: createDeploymentId(`deployment-${suffix}`),
+    authorityEpoch: 1,
+    fencingToken: authorityRecord.fencingToken,
+    consumerId: `coordinator-${suffix}`,
+  }) satisfies RunExecutionLeaseClaim;
   const runs = new RunStateCommitCoordinator(adapters.productState, clock);
   await runs.admitRun({
     run,
@@ -94,16 +108,26 @@ async function fixture(
   });
   const trace = new SessionTraceRecorder({
     trace: adapters.trace,
-    payloads: adapters.payload,
+    artifacts: adapters.runPayloadArtifacts,
     protector: adapters.payloadProtector,
     audit: adapters.audit,
     clock,
     ids: adapters.ids,
   });
-  const context = new ContextFormationService({ memory: adapters.memory, trace });
+  const context = new ContextFormationService({
+    memory: adapters.memory,
+    trace,
+    artifacts: adapters.runPayloadArtifacts,
+    payloads: adapters.payload,
+    protector: adapters.payloadProtector,
+    clock,
+    ids: adapters.ids,
+  });
   const coordinator = new RunCoordinator({
+    ...(resources ? { resources } : {}),
+    clock,
     runs,
-    checkpoints: adapters.state,
+    checkpoints: adapters.runCheckpoints,
     context,
     runtime,
     workers,
@@ -114,6 +138,7 @@ async function fixture(
     agentId: agent.id,
     runId: run.id,
     authority,
+    executionLease,
     context: {
       ownerId: owner.id,
       agentId: agent.id,
@@ -124,6 +149,7 @@ async function fixture(
         id: trigger.id,
         sourceType: "user_message" as const,
         payloadRef: `payload-trigger-${suffix}`,
+        occurredAt: T0,
       },
       threadMessages: [
         {
@@ -133,6 +159,8 @@ async function fixture(
           occurredAt: T0,
         },
       ],
+      sourceWatermark: null,
+      policyVersion: "context-policy-v1",
       policies: [],
       memoryQueryRef: `payload-query-${suffix}`,
       memoryQueryTerms: ["dinner"],
@@ -164,10 +192,335 @@ async function fixture(
     delegableContextRefs: [] as readonly string[],
     commands: runCommands(suffix),
   };
-  return { adapters, coordinator, input, run, runs, trace, context, authority };
+  return { adapters, coordinator, input, run, runs, trace, context, authority, clock };
 }
 
 describe("Task 13 Run Coordinator and worker orchestration", () => {
+  it("persists repeated suspensions and resumes the same Run without restarting the user request", async () => {
+    const suffix = "generic-suspension";
+    const runId = createRunId(`run-${suffix}`);
+    const requests: RuntimeRequest[] = [];
+    const runtime: AgentRuntimePort = {
+      async *run(request) {
+        requests.push(request);
+        if (requests.length <= 2)
+          yield {
+            type: "runtime.suspended",
+            runId,
+            occurredAt: T1,
+            continuationRef: `continuation-${requests.length}`,
+            approval: {
+              approvalRequestId: `approval-${requests.length}`,
+              semanticSnapshotHash: "frozen",
+              expiresAt: T2,
+            },
+          };
+        else
+          yield {
+            type: "runtime.completed",
+            runId,
+            occurredAt: T2,
+            output: { kind: "assistant-answer", contentRef: "final-generic-answer" },
+          };
+      },
+      async cancel() {},
+    };
+    const setup = await fixture(suffix, runtime);
+    const first = await setup.coordinator.execute(setup.input);
+    expect(first.run.run.status).toBe("awaiting_approval");
+    expect(first.checkpoint.terminalStatus).toBeNull();
+    expect(first.checkpoint.suspension?.continuationRef).toBe("continuation-1");
+    const second = await setup.coordinator.execute(setup.input);
+    expect(second.run.run.status).toBe("awaiting_approval");
+    expect(requests[1]?.continuationRef).toBe("continuation-1");
+    const third = await setup.coordinator.execute(setup.input);
+    expect(third.run.run.status).toBe("completed");
+    expect(requests[2]?.continuationRef).toBe("continuation-2");
+    await setup.coordinator.execute(setup.input);
+    expect(requests).toHaveLength(3);
+  });
+  it("fails a durable approval wait at the original deadline without entering Pi again", async () => {
+    const suffix = "expired-suspension";
+    const runId = createRunId(`run-${suffix}`);
+    let attempts = 0;
+    const runtime: AgentRuntimePort = {
+      async *run() {
+        attempts += 1;
+        yield {
+          type: "runtime.suspended",
+          runId,
+          occurredAt: T1,
+          continuationRef: "expired-continuation",
+          approval: {
+            approvalRequestId: "pending",
+            semanticSnapshotHash: "frozen",
+            expiresAt: "2099-01-01T00:00:00.000Z",
+          },
+        };
+      },
+      async cancel() {},
+    };
+    const setup = await fixture(suffix, runtime);
+    const input = { ...setup.input, executionDeadlineAt: T2 };
+    await setup.coordinator.execute(input);
+    setup.clock.set(T2);
+    const result = await setup.coordinator.execute(input);
+    expect(result.run.run.status).toBe("failed");
+    expect(result.checkpoint).toMatchObject({
+      phase: "failed",
+      diagnosticCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+    });
+    expect(attempts).toBe(1);
+  });
+  it("does not resume a cancelled approval wait after a late decision", async () => {
+    const suffix = "cancel-suspension";
+    const runId = createRunId(`run-${suffix}`);
+    let attempts = 0;
+    const runtime: AgentRuntimePort = {
+      async *run() {
+        attempts += 1;
+        yield {
+          type: "runtime.suspended",
+          runId,
+          occurredAt: T1,
+          continuationRef: "cancelled-continuation",
+          approval: {
+            approvalRequestId: "cancelled-approval",
+            semanticSnapshotHash: "frozen",
+            expiresAt: T2,
+          },
+        };
+      },
+      async cancel() {},
+    };
+    const setup = await fixture(suffix, runtime);
+    await setup.coordinator.execute(setup.input);
+    await setup.coordinator.cancel({
+      ownerId: setup.input.ownerId,
+      agentId: setup.input.agentId,
+      runId,
+      authority: setup.input.authority,
+      command: setup.input.commands.cancelled,
+      reasonCode: "OWNER_CANCELLED",
+    });
+    const resumed = await setup.coordinator.execute(setup.input);
+    expect(resumed.run.run.status).toBe("cancelled");
+    // The reference Run adapter checks terminal dispatch here; SQLite tests below
+    // cover atomic cancellation of the checkpoint and lease.
+    expect(attempts).toBe(1);
+  });
+  it("interrupts the runtime at its deadline without accepting a late successful answer", async () => {
+    const suffix = "runtime-deadline";
+    const runId = createRunId(`run-${suffix}`);
+    let release = () => {};
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = () => {};
+    const running = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const cancel = vi.fn(async () => {
+      release();
+    });
+    const runtime: AgentRuntimePort = {
+      async *run() {
+        started();
+        await pending;
+        yield {
+          type: "runtime.completed" as const,
+          runId,
+          output: { kind: "assistant-answer" as const, contentRef: "late-answer" },
+          occurredAt: T1,
+        };
+      },
+      cancel,
+    };
+    const setup = await fixture(suffix, runtime);
+    vi.useFakeTimers();
+    try {
+      const execution = setup.coordinator.execute({
+        ...setup.input,
+        executionDeadlineAt: new Date(Date.parse(T0) + 1000).toISOString(),
+      });
+      const rejected = expect(execution).rejects.toMatchObject({
+        reasonCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+      });
+      await running;
+      await vi.advanceTimersByTimeAsync(1000);
+      await rejected;
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect((await setup.runs.readRun(runId))?.run.status).toBe("running");
+      expect((await setup.adapters.runCheckpoints.read(runId))?.checkpoint).toMatchObject({
+        phase: "runtime_running",
+        terminalStatus: null,
+        output: null,
+      });
+      expect(vi.getTimerCount()).toBe(0);
+      const restarted = new RunCoordinator({
+        runs: setup.runs,
+        checkpoints: setup.adapters.runCheckpoints,
+        context: setup.context,
+        runtime,
+        workers: new ScriptedWorkerRunPort(),
+        trace: setup.trace,
+        clock: setup.clock,
+      });
+      expect((await restarted.execute(setup.input)).run.run.status).toBe(
+        "reconciling_external_result",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears its deadline timer when execution finishes early", async () => {
+    const suffix = "early-deadline-completion";
+    const runId = createRunId(`run-${suffix}`);
+    const runtime: AgentRuntimePort = {
+      async *run() {
+        yield {
+          type: "runtime.completed",
+          runId,
+          output: { kind: "assistant-answer", contentRef: "answer" },
+          occurredAt: T0,
+        };
+      },
+      cancel: vi.fn(async () => {}),
+    };
+    const setup = await fixture(suffix, runtime);
+    vi.useFakeTimers();
+    try {
+      expect(
+        (await setup.coordinator.execute({ ...setup.input, executionDeadlineAt: T1 })).run.run
+          .status,
+      ).toBe("completed");
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(runtime.cancel).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects an expired or malformed execution deadline before context or model work", async () => {
+    const runtime = new ScriptedAgentRuntime(() => T0, []);
+    const setup = await fixture("expired-deadline", runtime);
+    await expect(
+      setup.coordinator.execute({ ...setup.input, executionDeadlineAt: T0 }),
+    ).rejects.toMatchObject({ reasonCode: "RUN_EXECUTION_DEADLINE_EXCEEDED" });
+    await expect(
+      setup.coordinator.execute({ ...setup.input, executionDeadlineAt: "invalid" }),
+    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.INVALID_OPERATION });
+    expect(runtime.observedRequests()).toHaveLength(0);
+    expect(await setup.adapters.trace.readRun(setup.run.id, 0, 20)).toHaveLength(0);
+  });
+
+  it("persists runtime tool uncertainty and never accepts a following completion or reruns it", async () => {
+    const suffix = "runtime-tool-unknown";
+    const runId = createRunId(`run-${suffix}`);
+    let attempts = 0;
+    let advancedAfterUnknown = false;
+    const runtime: AgentRuntimePort = {
+      async *run() {
+        attempts += 1;
+        yield {
+          type: "runtime.result_unknown" as const,
+          runId,
+          toolCallId: "uncertain-tool-call",
+          capabilityRef: "restaurant-search",
+          externalActionId: "external:unknown",
+          occurredAt: T1,
+        };
+        advancedAfterUnknown = true;
+        yield {
+          type: "runtime.completed" as const,
+          runId,
+          output: { kind: "assistant-answer" as const, contentRef: "must-not-commit" },
+          occurredAt: T2,
+        };
+      },
+      async cancel() {},
+    };
+    const setup = await fixture(suffix, runtime);
+    const result = await setup.coordinator.execute(setup.input);
+    expect(result.run.run.status).toBe("reconciling_external_result");
+    expect(result.checkpoint).toMatchObject({
+      phase: "reconciling_external_result",
+      terminalStatus: null,
+      output: null,
+      diagnosticCode: "RUNTIME_TOOL_RESULT_UNKNOWN",
+    });
+    expect(advancedAfterUnknown).toBe(false);
+    const restarted = new RunCoordinator({
+      runs: setup.runs,
+      checkpoints: setup.adapters.runCheckpoints,
+      context: setup.context,
+      runtime,
+      workers: new ScriptedWorkerRunPort(),
+      trace: setup.trace,
+    });
+    expect((await restarted.execute(setup.input)).run.run.status).toBe(
+      "reconciling_external_result",
+    );
+    expect(attempts).toBe(1);
+    expect(
+      (await setup.adapters.trace.readRun(runId, 0, 30)).map((event) => event.eventType),
+    ).toContain("runtime.result_unknown");
+  });
+
+  it("passes the frozen dispatch lease claim unchanged to the runtime", async () => {
+    const suffix = "task-13-runtime-lease";
+    const runId = createRunId(`run-${suffix}`);
+    let observed: RuntimeRequest | undefined;
+    const runtime: AgentRuntimePort = {
+      async *run(request: RuntimeRequest): AsyncIterable<RuntimeEvent> {
+        observed = request;
+        yield {
+          type: "runtime.completed",
+          runId,
+          output: { kind: "assistant-answer", contentRef: "payload-answer" },
+          occurredAt: T1,
+        };
+      },
+      async cancel() {},
+    };
+    const setup = await fixture(suffix, runtime);
+
+    await setup.coordinator.execute(setup.input);
+
+    expect(observed?.executionLease).toBe(setup.input.executionLease);
+    expect(Object.isFrozen(observed?.executionLease)).toBe(true);
+  });
+
+  it("rejects a lease claim that does not match the active authority fence", async () => {
+    const suffix = "task-13-runtime-lease-mismatch";
+    const runtime = new ScriptedAgentRuntime(() => T0, []);
+    const setup = await fixture(suffix, runtime);
+    const mismatchedClaim = Object.freeze({
+      ...setup.input.executionLease,
+      authorityFencingToken: setup.authority.fencingToken + 1,
+      fencingToken: setup.authority.fencingToken + 1,
+    });
+
+    await expect(
+      setup.coordinator.execute({ ...setup.input, executionLease: mismatchedClaim }),
+    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+    expect(runtime.observedRequests()).toHaveLength(0);
+  });
+
+  it("rejects an unfrozen lease claim before runtime admission", async () => {
+    const suffix = "task-13-runtime-lease-unfrozen";
+    const runtime = new ScriptedAgentRuntime(() => T0, []);
+    const setup = await fixture(suffix, runtime);
+    const mutableClaim = { ...setup.input.executionLease };
+
+    await expect(
+      setup.coordinator.execute({ ...setup.input, executionLease: mutableClaim }),
+    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+    expect(runtime.observedRequests()).toHaveLength(0);
+  });
+
   it("coordinates context, an explicitly delegated worker, runtime events and terminal Run state", async () => {
     const suffix = "task-13-complete";
     const runId = createRunId(`run-${suffix}`);
@@ -189,7 +542,12 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
           payloadRef: "payload-tool-result",
           occurredAt: T1,
         },
-        { type: "runtime.completed", runId, occurredAt: T2 },
+        {
+          type: "runtime.completed",
+          runId,
+          output: { kind: "assistant-answer", contentRef: "payload-answer" },
+          occurredAt: T2,
+        },
       ],
     );
     const workers = new ScriptedWorkerRunPort([
@@ -238,9 +596,9 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
 
     expect(result.run.run.status).toBe("completed");
     expect(result.workerResultRefs).toEqual(["payload-worker-result"]);
-    expect(runtime.observedRequests()[0]?.messageRefs).toEqual([
-      result.checkpoint.contextRef,
-      "payload-worker-result",
+    expect(runtime.observedRequests()[0]?.contextEnvelopeRef).toBe(result.checkpoint.contextRef);
+    expect(runtime.observedRequests()[0]?.workerResultRefs).toEqual([
+      { workerRunId: "worker-run-restaurant", resultRef: "payload-worker-result" },
     ]);
     expect(workers.observedRequests()[0]).toMatchObject({
       parentRunId: setup.run.id,
@@ -270,7 +628,17 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
     const runId = createRunId(`run-${suffix}`);
     const setup = await fixture(
       suffix,
-      new ScriptedAgentRuntime(() => T0, [{ type: "runtime.completed", runId, occurredAt: T1 }]),
+      new ScriptedAgentRuntime(
+        () => T0,
+        [
+          {
+            type: "runtime.completed",
+            runId,
+            output: { kind: "assistant-answer", contentRef: "payload-answer" },
+            occurredAt: T1,
+          },
+        ],
+      ),
       new ScriptedWorkerRunPort(),
     );
 
@@ -318,7 +686,17 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
     ]);
     const setup = await fixture(
       suffix,
-      new ScriptedAgentRuntime(() => T0, [{ type: "runtime.completed", runId, occurredAt: T2 }]),
+      new ScriptedAgentRuntime(
+        () => T0,
+        [
+          {
+            type: "runtime.completed",
+            runId,
+            output: { kind: "assistant-answer", contentRef: "payload-answer" },
+            occurredAt: T2,
+          },
+        ],
+      ),
       workers,
     );
     const result = await setup.coordinator.execute({
@@ -395,7 +773,12 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
           payloadRef: "payload-booking-result",
           occurredAt: T1,
         };
-        yield { type: "runtime.completed", runId, occurredAt: T2 };
+        yield {
+          type: "runtime.completed",
+          runId,
+          output: { kind: "assistant-answer", contentRef: "payload-answer" },
+          occurredAt: T2,
+        };
       },
       async cancel() {},
     };
@@ -404,7 +787,7 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
     await expect(setup.coordinator.execute(setup.input)).rejects.toThrow("simulated runtime crash");
     const restarted = new RunCoordinator({
       runs: setup.runs,
-      checkpoints: setup.adapters.state,
+      checkpoints: setup.adapters.runCheckpoints,
       context: setup.context,
       runtime: crashingRuntime,
       workers: new ScriptedWorkerRunPort(),
@@ -413,9 +796,10 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
     const result = await restarted.execute(setup.input);
 
     expect(result.resumed).toBe(true);
-    expect(result.run.run.status).toBe("completed");
+    expect(result.run.run.status).toBe("reconciling_external_result");
+    expect(result.checkpoint.diagnosticCode).toBe("RUNTIME_ATTEMPT_INTERRUPTED");
     expect(tools.underlyingExecutionCount()).toBe(1);
-    expect(attempts).toBe(2);
+    expect(attempts).toBe(1);
   });
 
   it("propagates cancellation to an active runtime and settles the Run as cancelled", async () => {
@@ -466,4 +850,45 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
     });
     expect(cancelled).toBe(true);
   });
+});
+
+it.each([true, false])("checks resource release before completing a Run: %s", async (released) => {
+  const suffix = `resources-${released}`;
+  const runtime: AgentRuntimePort = {
+    async *run() {
+      yield {
+        type: "runtime.completed",
+        runId: createRunId(`run-${suffix}`),
+        output: { kind: "assistant-answer", contentRef: "answer" },
+        occurredAt: T0,
+      };
+    },
+    cancel: async () => {},
+  };
+  const stopRun = vi.fn(async () => ({ released }));
+  const f = await fixture(suffix, runtime, undefined, { stopRun });
+  const result = await f.coordinator.execute(f.input);
+  expect(stopRun).toHaveBeenCalledWith(f.input.runId);
+  expect(result.run.run.status).toBe(released ? "completed" : "reconciling_external_result");
+});
+
+it("rechecks cleanup when a cancelled Run receives another stop without restarting it", async () => {
+  const runtime = { run: vi.fn(async function* () {}), cancel: vi.fn(async () => {}) };
+  const stopRun = vi.fn(async () => ({ released: false }));
+  const f = await fixture("cancel-cleanup-retry", runtime, undefined, { stopRun });
+  const command = {
+    ownerId: f.input.ownerId,
+    agentId: f.input.agentId,
+    runId: f.input.runId,
+    authority: f.authority,
+    command: f.input.commands.cancelled,
+    reasonCode: "OWNER_REQUESTED",
+  };
+  await f.coordinator.cancel(command);
+  stopRun.mockResolvedValue({ released: true });
+  const repeated = await f.coordinator.cancel(command);
+  expect(repeated.run.status).toBe("cancelled");
+  expect(stopRun).toHaveBeenCalledTimes(2);
+  expect(runtime.cancel).toHaveBeenCalledTimes(1);
+  expect(runtime.run).not.toHaveBeenCalled();
 });

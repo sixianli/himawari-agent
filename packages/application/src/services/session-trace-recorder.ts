@@ -1,25 +1,25 @@
 import type { AgentId, OwnerId, RunId, SessionId, ThreadId, TurnId } from "@himawari-agent/domain";
 import type {
-  AuditLedgerPort,
-  AuditRecord,
-  PayloadProtectorPort,
-  PayloadStorePort,
-  TraceEvent,
-  TraceStorePort,
-} from "../ports/observability.js";
-import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
-import type {
   CausationId,
   CorrelationId,
   DataClassification,
   PayloadRef,
   TraceEventId,
 } from "../ports/common.js";
+import type {
+  AuditLedgerPort,
+  AuditRecord,
+  PayloadProtectorPort,
+  TraceEvent,
+  TraceStorePort,
+} from "../ports/observability.js";
+import type { RunPayloadArtifactPort } from "../ports/run-payload-artifacts.js";
+import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import { redactTracePayload } from "./trace-redaction.js";
 
 export interface SessionTraceRecorderDependencies {
   readonly trace: TraceStorePort;
-  readonly payloads: PayloadStorePort;
+  readonly artifacts: RunPayloadArtifactPort;
   readonly protector: PayloadProtectorPort;
   readonly audit: AuditLedgerPort;
   readonly clock: ClockPort;
@@ -63,6 +63,8 @@ export class SessionTraceRecorder {
   }
 
   async record(input: RecordTraceInput): Promise<RecordTraceResult> {
+    const now = this.dependencies.clock.now();
+    let eventId: TraceEventId | null = null;
     let payloadRef: PayloadRef | null = null;
     let eventType = input.eventType;
     let audit = input.audit;
@@ -78,7 +80,6 @@ export class SessionTraceRecorder {
 
       if (redacted !== undefined) {
         try {
-          const now = this.dependencies.clock.now();
           const ref = this.dependencies.ids.next("payload");
           const protectedPayload = await this.dependencies.protector.protect({
             ownerId: input.ownerId,
@@ -89,8 +90,14 @@ export class SessionTraceRecorder {
             plaintext: new TextEncoder().encode(JSON.stringify(redacted)),
             createdAt: now,
           });
-          await this.dependencies.payloads.put(protectedPayload);
-          payloadRef = ref;
+          eventId = this.dependencies.ids.next("trace");
+          const receipt = await this.dependencies.artifacts.commit({
+            runId: input.runId,
+            purpose: "trace",
+            operationKey: eventId,
+            payload: protectedPayload,
+          });
+          payloadRef = receipt.ref;
         } catch {
           eventType = "trace.payload_write_failed";
           audit = { action: "trace.payload_write_failed", outcome: "failed" };
@@ -98,10 +105,10 @@ export class SessionTraceRecorder {
       }
     }
 
-    const previous = await this.dependencies.trace.readRun(input.runId, 0, Number.MAX_SAFE_INTEGER);
-    const now = this.dependencies.clock.now();
-    const event: TraceEvent = Object.freeze({
-      id: this.dependencies.ids.next("trace"),
+    eventId ??= this.dependencies.ids.next("trace");
+
+    const event = await this.dependencies.trace.appendNext({
+      id: eventId,
       schemaVersion: "trace.v1",
       ownerId: input.ownerId,
       agentId: input.agentId,
@@ -112,7 +119,6 @@ export class SessionTraceRecorder {
       parentEventId: input.parentEventId,
       causationId: input.causationId,
       correlationId: input.correlationId,
-      sequence: previous.length + 1,
       occurredAt: input.occurredAt ?? now,
       recordedAt: now,
       actorId: input.actorId,
@@ -120,7 +126,6 @@ export class SessionTraceRecorder {
       eventType,
       payloadRef,
     });
-    await this.dependencies.trace.append(event);
 
     if (audit) {
       await this.dependencies.audit.append({

@@ -8,13 +8,108 @@ date: "2026-08-25"
 ---
 # Himawari Agent Architecture v0.1
 
+## 执行架构：当前实现与已采纳设计
+
+### 控制中心展示与执行选择（2026-09-10）
+
+控制中心采用已确认的侧栏、聊天阅读区、固定输入和按需详情；Light/Dark 与六种主题色保存在客户端界面偏好中，三语与管理模块入口继续保留。原始品牌/原型资源不覆盖。
+
+`ThreadExecutionProjection` 从 Owner/Agent/Thread/Run 归属校验后的持久化 Trace 提取受限展示字段，经现有 Thread Gateway 查询返回。原始 JSON、未标记为可展示摘要的 thinking、签名与 provider 元数据不开放。Trace 追加事务同时发布 Thread 事件通知，浏览器重连读取持久化投影，不另建流式协议。
+
+用户提交仍对应产品 Turn/Run，Pi 内部 turn 是轮内执行步骤。可选模型由已配置、允许 private 数据的 generation descriptor 与 Pi 0.84.2 能力共同决定；`thread.message.submit_configured` 在 migration 0030 的 `runs.model_selection_json` 保存本次选择，后续仍由 RunExecutionInputService 冻结策略并执行原预算/披露/授权检查。界面中的下一轮选择不会改变活动 Run。停止复用 RunCoordinator；文本附件经既有 private Payload 发送，仅“执行”模式可用。
+
+本轮实际验收按用户要求限于本机版本；真实服务与真实模型资格需单独取得。具体设计见 [SOURCE: docs/archive/specs/2026-09-10-control-center-product-refactor-design.md]。
+
+### 当前实现基线（2026-09-09）
+
+Pi `0.84.2` 管理模型与工具循环，模型侧工具执行委托现有 `RuntimeToolPort` 和 Worker。产品权威保存在调用回执、Grant/Handle、Run checkpoint、受保护 Payload 和 SQLite 作业观察中；没有独立的第二套工具身份或权限数据库。
+
+SRT `0.0.75` 已集中在 `packages/runtime-sandbox`。独立 Job Host、原子准入/启动 CAS、scope 解析、主机与运行产物复核、认证 Payload UDS、正式 Worker 组合以及启动恢复核查均有实现。scope 已支持文件 inspect/read 工作流及从现有 Grant targets 取得通用工具范围；Pi 七工具前台 runner 已接入显式合同，后台执行仍待后续阶段，MCP 不在本次交付范围。
+
+R8 在 Job Host 内增加每作业认证 HTTP 上游，复用 SRT `parentProxy` 汇集 HTTP/CONNECT/SOCKS。冻结的 hostname:port 同时限定 Grant、主机上界与策略；解析后检查全部地址并按数字 IP 建连。停止先关闭出口和连接，迟到 DNS 不能触发连接；出口拒绝、连接与关闭计数通过原认证 IPC 返回。SRT 继续负责 OS 隔离及客户端代理协议，Pi Operations 不变。该实现不证明系统 DNS 绝对零外联，也不扩大 Mac 清理保证。设计依据见 [SOURCE: docs/adr/0026-job-scoped-network-egress.md]；真实资格范围见配套 Plan。
+
+现有 `sandbox-execution.v1` 把正常完成与清理/副作用确认绑定；正式 Job Host 适配对已启动任务仍报告 cleanup/effect unknown。因此受控 Mac 组合能保存输出并隔离未知作业，不能据此声称正式文件总结成功、环境已清理或全部工具可用。v2 `reconcile` 已通过原 Job Host 的认证控制端口和受保护终态证据核查；Mac 已启动任务仍保持清理未知，Linux 只有原 PID namespace 消失且退出证据完整时才允许释放。已跑历史验证及具体限制归配套 Plan，不把合成资格当作安装主机资格。
+
+R1 已新增 `sandbox-execution.v2` 严格合同、`SandboxExecutionPortV2` 类型端口以及共享的 `projectSandboxExecution` / `projectSandboxRunCompletion` 纯判断函数。结果、效果和资源观察独立表达；结果已知时可以保留展示，监管丢失仍禁止续接和环境复用。判断需要由可信 Payload/资格/效果读者核验的证据，并检查调用、策略、sequence 与时效。生产组合已接入显式声明的 v2 foreground 固定读取/命令路径及真实证据读者；后台/服务与 UI 消费仍需后续工作。v1 与 v2 按原合同分别处理，不隐式降级。
+
+R2 已在现有产品 SQLite 追加 migration 0028，通过 `SandboxExecutionJournalPort` 保存 v2 创建调用、环境及 task/service 资源关联。准入复用原 Handle/Grant 消费事务，首次启动 CAS 固定策略摘要；资源 sequence 与操作结果 revision 分开追加。目录占用使用可信主机提供的 device/inode 祖先链，写环境存活期间排斥相交操作，监管丢失后也阻止相交读取。该链不是授权来源，R3 已增加真实根目录及 device/inode 祖先解析，通用范围的正式准入组合与真实 UDS/SQLite 授权验收已完成。经 Owner 批准的 migration 0029 进一步区分未准备的 `reserved` 与固定运行绑定的 `bound`，既有记录保留 `legacy_bound`；预留和目录占用同事务保存，Worker 准备后由首次 `bindAndStart` CAS 固定真实策略/监督身份，不以占位值提前冻结。当前 Agent 与 Worker 已组合 v2 foreground：准备后登记原监督器，首次绑定 CAS 赢家才可启动；后台/服务模式明确拒绝。目标主机仍需独立资格，不能仅凭新增合同启用。 Agent 开放准入前会用当前权威失效 v2 旧监督观察，保留已知结果、效果及目录占用，不按旧 PID 接管。Job Host 与 Worker 使用双向、带序号和时限的私有 IPC 心跳，单端卡住也触发停止；这些机制仍不构成完整任务树清理证明。
+
+派发意图在事务中核对最新观察、Run 和执行 fence，派发前再次检查；未确认回执的派发跨重启保留为不确定，不能因资源已经清理而消失。结果、资源占用和派发回执一起决定是否解除占用。v1 记录保持原文；未结束或缺少清理事实的旧记录保留主机级占用，缺少主机身份时保守阻止所有主机的新准入。未解决占用不能随 Run 删除。SQLite 仍由现有 state-root 锁和单一 Worker 管理，不新增数据库权威或 Task 状态机。
+
+本次执行 Spec/Plan 的交付范围已按 Owner 指令移出本地/远程 MCP 接入和 GitHub 已有 commit 推送，相关产品需求与长期架构方向保留。下方目标图不表示两项属于本批验收；当前任务和验收集合以配套 Spec/Plan 为准，R1 的通用 service/remote 合同不回退。
+
+R4 核查使用既有受保护 Run trace 保存控制引用与签名观察。控制端口只接受 inspect/stop，原会话、boot、进程启动标记、目录 inode 和策略摘要必须匹配；当前 Agent 权威可以核查旧 Worker 的原环境，旧 Worker 凭证不能取得新启动权。证据过期、身份变化、停止失败或控制失联保持隔离；核查超时后的迟到结果不能改写账本。Linux 在用户代码启动前捕获固定 SRT PID namespace 的 init 身份，启动握手保留二进制 stdin；Mac 不从主进程退出推导全树释放。
+
+Agent Service 仅允许导入 `@himawari-agent/runtime-sandbox/control` 的 Node 控制客户端，它不加载 SRT、不编译策略、没有启动 API；依赖检查拒绝根入口和其他深层导入。SRT 初始化与实际工具执行仍属于 Worker/Job Host。
+
+R3 的通用范围、版本匹配和启动前复核已完成验收。资源输出分页读取账本绑定的受保护快照；页和游标沿用 Run artifact，游标绑定原调用/资源/输出摘要，数据库重开继续读回不会重新执行。尚无已知输出返回 null，真实空输出返回零字节页；流式后台输出由 R6 的连续受保护片段补充。Pi 工具的完整实现继续复用 runtime-pi 内的上游定义和 Operations，R3 不新增模型侧工具协议。
+
+R5 使用安装树中的 `pi-coding-main.js` 执行 Pi 七种前台工具。Worker 只为 `pi-coding-tool` 版本 `1` 的匹配操作构造 `pi-runner.v1` 输入；目录、主机、调用和期限来自既有 scope，模型参数仍是原冻结 Payload。`host-file-read-main.js` 保留文件元数据/正文双阶段。Pi 定义只在 runtime-pi 内提取，模型侧执行仍经过产品端口；新增 runner 不自动注册未授权工具。目标安装目录中的 `pi-tools/bin/{bash,rg,fd}` 是普通可执行文件，纳入原 runtimeDigest，禁止软链接、PATH 回退和 Pi 自动下载。
+
+R6 在同一 RuntimeToolPort 上注册四个管理扩展，start 沿用冻结命令授权，status/output/cancel 只定位本 Run 的资源。Job Host 区分准备、实际进程启动与结束；Worker 返回不可变 started 回执后继续监督。运行输出按连续编号保存为受保护 Run artifact，分页与恢复读取均不产生执行。服务就绪来自安装声明的 Unix HTTP 探针和受保护监督证据；探针与测试服务只能访问任务私有目录内指定的 socket，策略不开放通用本地 TCP 或其他 Unix socket。Run Coordinator 在正常结束前停止后台资源，未确认释放进入原核查状态，SQLite 完成事务再次阻止未释放资源遗漏。后台/服务须由 Worker、安装声明和对应资格共同声明，不由新增接口自动启用。
+
+
+编辑与写入复用 ConstrainedHostFileSystem 的独占创建、原内容核对、备份和安全替换；Shell 的部分写权限不能推断出删除等任意副作用权限。工具结果、来源、截断与完整输出保存到同一受保护结果中，输出文件须在本作业私有目录、属当前进程用户且为无链接普通文件，模型不会取得原 fullOutputPath。Shell 无退出码视为失败；非零退出及输出保留。Mac 任务树清理未知及正式主机资格限制继续生效。
+
+### 已采纳、待实施的职责划分
+
+2026-09-09 Owner 已批准 [SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]，替代 ADR 0024 的统一作业表达。保留 SRT 本地主机路线、原目录默认模式以及原首批能力；分离工具结果、受管理任务/服务与执行环境的生命周期。目标合同及验收见 [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]，执行次序见 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md]。下图是目标设计，不是已实现状态。
+
+```mermaid
+flowchart TB
+    PI[Pi AgentSession 与工具定义] --> A[现有动作授权与调用接纳]
+    A <--> DB[(调用回执 / Grant / Run / 保护结果)]
+    A --> W[按 hostId 派发到可信 Worker]
+    W <--> J[(作业观察 / 任务关联 / 核查证据)]
+    W --> H[权限固定的 Job Host]
+    H --> S[SRT 隔离环境]
+    S --> F[一次性 Pi 工具 runner]
+    S --> T[受管理后台任务或 MCP 服务]
+    F --> R[有界结果与操作后置条件]
+    T --> R
+    R --> DB
+    DB --> D[披露检查与原工具结果回传]
+    D --> PI
+    A --> X[狭窄外部服务适配]
+    X --> R
+    H --> O[监管 / 停止 / 清理观察]
+    O --> J
+    J --> G[继续执行 / 环境复用 / Run 完成判断]
+```
+
+| 责任 | 所有者与边界 |
+|---|---|
+| 工具定义与行为 | Pi 工厂、Agent loop、参数/结果语义；Himawari 通过 `runtime-pi` 薄适配复用 |
+| 执行权威 | 既有 Agent Service/Capability/SQLite；固定身份、输入、Grant 和期限，准入及启动复核 |
+| 实际工具 I/O | Worker 管理的受限 runner；Pi 路径探测、搜索器和临时输出也必须在边界内，Operations 不是唯一隔离层 |
+| 持续资源 | Worker 监督的任务/服务，以创建 invocation 和冻结 scope 为根；每个后续调用仍独立授权 |
+| 平台隔离 | SRT 后端与主机资格；一次性环境独占，持续环境只在同 Run/同授权范围内使用，不跨 Grant 累积权限 |
+| 输出和副作用 | 已有保护结果库及操作适配的核查证据；命令退出不等于远端业务效果确认 |
+| 清理与恢复 | 原作业账本扩展；监管丢失阻止依赖动作，未知不重放；逻辑隔离不宣称已终止 OS 进程 |
+
+工具结果落库、模型披露、后续动作准入、环境复用和 Run 完成分别判断。受管理任务可以在调用返回句柄后运行；首批以原 Run 和授权期限为上限，Run 结束要停止其资源，不默认跨 Run 续命。失联后的输出可作为带限制的事实展示，不能触发未经核实的后续副作用或伪造整体成功。详细判定只由 Spec 定义，避免架构文档维护另一套状态机。
+
+SRT 继续用于本机授权目录；Gondolin/容器/远端沙箱是有独立资格的可选后端方向，当前未启用且不构成自动 fallback。Git push 继续使用 Pi Bash 意图、产品内部专用动作和标准 Git，冻结仓库/ref/OID，凭据只由专用传输使用；本地兼容实验不等于真实 GitHub 验收。
+
+## 架构总览图
+
+下图是保留的 2026-09-07 组件快照，不描述上述新生命周期或最新 SRT 接线；当前执行边界以上文和配套 Spec 为准。图中记录当时的主要组件和接入状态，箭头表示主要调用方向，省略响应回传和部分共享依赖。绿色主线表示消息执行路径；紫色虚线表示尚未接通的路径；红色表示已授权执行通道。
+
+![Himawari Agent 项目架构总览](assets/architecture/system-overview.png)
+
+[打开交互式架构图](assets/architecture/system-overview.html) · [图表源文件（Archify JSON）](assets/architecture/system-overview.json)
+
+交互版为独立 HTML，下载后可在浏览器中打开，支持缩放、搜索、主题切换和导出。静态预览用于直接阅读文档；更新图表时应同步维护源文件、交互版和预览图。
+
+图中的 OpenRouter 表示已有接口接线，不表示真实模型读取 Mac 文件的完整场景已通过验收。当前安装进程验证使用本地模拟模型响应；动态工具请求到授权签发、Mac 文件能力及 GitHub 总组合仍有接入缺口。Pi 负责模型交互与工具循环，Himawari 负责产品权限、预算、持久状态和 Worker 集成。
+
 ## Current System
 
 仓库当前实现是一个私有 npm workspace monorepo 基础。根工具链要求 Node.js `>=22.19.0`，以 npm `11.8.0` 管理锁文件，以 TypeScript `5.9.3` 做 strict、`erasableSyntaxOnly` 类型检查，以 Biome `2.3.5` 做格式和 lint，并以 Vitest `4.1.9` 提供 unit、contracts、integration、e2e、Pi compatibility、browser、admin CLI、Node services 和 workspace scaffold 九个可独立选择的测试项目。
 
-当前代码包含十四个 workspace。`packages/domain` 实现不可变身份、所有权规则、Run 状态机、Agent 权威租约，以及 deployment/fence、Thread 生命周期、消息/检查点、产品 session/device、后台 job/occurrence、Memory generation/lifecycle、GitHub receipt/coverage gap、恢复点/transfer 和 health 状态；两类基础 contracts 保留 `gateway.v1`/`gateway.v2` 与 `execution.v1`/`execution.v2`，Thread 扩展使用独立 `gateway.thread.v3`；`packages/application` 实现产品端口、v1/v2 Gateway、认证 Thread Gateway、Thread command/query/Fork/deletion 组合、最小 Context Formation、Run/Worker 编排、可靠事件、Trace、授权、产品 Memory/projection、增量自动 Memory、Thread 稳定检查点与候选提炼、模型、调度、Attention 和外部结果对账；`packages/platform-node` 已实现可信模型 Provider 边界、Payload envelope encryption、host secret source、严格配置、state-root layout、health/lifecycle coordinator、无私人标签的运行指标、`execution.v2` HTTP/JSON over UDS、同源 v1/v2/Thread v3 HTTP/SSE Gateway、浏览器正文读取/opaque search admission 与身份入口，`packages/runtime-pi` 实现 Pi Agent Runtime 适配器及闭合的产品模型绑定；`packages/testing` 提供 conformance suites、内存参考适配器、牛肉餐厅夹具、故障注入器，以及 v0.2 canonical scope 与 evidence harness。`packages/persistence-sqlite` 已实现规范 schema、十七项不可变 migration、专用 SQLite execution context、state-root lock、持久 deployment/lease、原子 Product State transaction、主要产品 repository、可恢复 Outbox、持久 Gateway Read Model、身份 binding/session/device、产品 Memory/projection job、敏感 Memory 审批元数据、Thread 生命周期/消息/lineage/opaque search projection/durable Gateway event、Thread 摘要/派生候选/provenance、治理 mutation receipt、受保护 Payload envelope metadata、受治理删除、GitHub monitor history retain/delete 状态机、加密同机恢复点 create/verify/restore，以及停机 authority transfer；`packages/memory-mem0` 已实现显式配置、单记录投影、检索、清理与产品 ID round-trip 的 Mem0 adapter，并提供把 strict OpenRouter embedding descriptor 映射到 Mem0 既有 OpenAI-compatible embedder 的生产组合；`packages/integration-github` 已实现只读 permission boundary、host-secret/短期 installation token 边界、raw-byte HMAC webhook admission、SQLite receipt/occurrence 去重、bounded mirror、relevance/Attention/coverage-gap、`gateway.v2` monitor enable/pause/revoke handler 和 capability deny 断言。该 handler 已校验 Owner/Agent scope、安装状态、CAS revision、模型/仓库/分类披露，并按撤销顺序同步 scheduler、删除 mirror 后调用 history policy port；SQLite durable adapter 已提供 retry/readback 组合点，最终 Agent Service/Gateway 总组合仍由对应后续 Tasks 验收。
+当前代码包含十五个 workspace。`packages/domain` 实现不可变身份、所有权规则、Run 状态机、Agent 权威租约，以及 deployment/fence、Thread 生命周期、消息/检查点、产品 session/device、后台 job/occurrence、Memory generation/lifecycle、GitHub receipt/coverage gap、恢复点/transfer 和 health 状态；两类基础 contracts 保留 `gateway.v1`/`gateway.v2` 与 `execution.v1`/`execution.v2`，Thread 扩展使用独立 `gateway.thread.v3`；`packages/application` 实现产品端口、v1/v2 Gateway、认证 Thread Gateway、Thread command/query/Fork/deletion 组合、最小 Context Formation、Run/Worker 编排、可靠事件、Trace、授权、产品 Memory/projection、增量自动 Memory、Thread 稳定检查点与候选提炼、模型、调度、Attention 和外部结果对账；`packages/platform-node` 已实现可信模型 Provider 边界、Payload envelope encryption、host secret source、严格配置、state-root layout、health/lifecycle coordinator、无私人标签的运行指标、`execution.v2` HTTP/JSON over UDS、同源 v1/v2/Thread v3 HTTP/SSE Gateway、浏览器正文读取/opaque search admission 与身份入口，`packages/runtime-pi` 实现 Pi Agent Runtime 适配器及闭合的产品模型绑定；`packages/testing` 提供 conformance suites、内存参考适配器、牛肉餐厅夹具、故障注入器，以及 v0.2 canonical scope 与 evidence harness。`packages/persistence-sqlite` 已实现规范 schema、二十三项不可变 migration、专用 SQLite execution context、state-root lock、持久 deployment/lease、原子 Product State transaction、主要产品 repository、可恢复 Outbox、持久 Gateway Read Model、身份 binding/session/device、产品 Memory/projection job、敏感 Memory 审批元数据、Thread 生命周期/消息/lineage/opaque search projection/durable Gateway event、Thread 摘要/派生候选/provenance、治理 mutation receipt、受保护 Payload envelope metadata、受治理删除、GitHub monitor history retain/delete 状态机、加密同机恢复点 create/verify/restore，以及停机 authority transfer；`packages/memory-mem0` 已实现显式配置、单记录投影、检索、清理与产品 ID round-trip 的 Mem0 adapter，并提供把 strict OpenRouter embedding descriptor 映射到 Mem0 既有 OpenAI-compatible embedder 的生产组合；`packages/integration-github` 已实现只读 permission boundary、host-secret/短期 installation token 边界、raw-byte HMAC webhook admission、SQLite receipt/occurrence 去重、bounded mirror、relevance/Attention/coverage-gap、`gateway.v2` monitor enable/pause/revoke handler 和 capability deny 断言。该 handler 已校验 Owner/Agent scope、安装状态、CAS revision、模型/仓库/分类披露，并按撤销顺序同步 scheduler、删除 mirror 后调用 history policy port；SQLite durable adapter 已提供 retry/readback 组合点，最终 Agent Service/Gateway 总组合仍由对应后续 Tasks 验收。
 
-`apps/agent-service` 现有可编程的本地前台组合根、严格 `gateway.v1` in-process transport、production `execution.v2` UDS client、可安装 `main`，以及从严格配置创建并在启动/关闭生命周期中管理的 production Model/Pi 与 Mem0 composition；支持的 OpenRouter 配置会把独立 embedding descriptor 交给 Mem0，deterministic fixture 只报告显式 descriptor，不创建任何 Pi、Mem0 或隐式模型路径。`apps/execution-worker` 同时保留确定性的 `execution.v1` in-process test profile，并实现验证 authority fence、adapter registry、resource ceiling、去重、cursor、取消与对账的 production Worker runtime。两项服务均有可重定位 Node runtime、稳定诊断/退出码和信号 drain，但 public HTTP、身份与真实业务 adapters 尚未在最终 `main` 中组合。`apps/control-center` 已实现 browser-only React/Vite 控制中心基础、typed Gateway client、v2/Thread v3 SSE 恢复、native History typed routes、11 入口响应式三栏/单栏 Shell、`react-intl` 三语 runtime 和 native-first 语义组件；Thread、Approval、Capabilities/Adapters 与 Authorizations/Grants surface 已接通严格权威 read model 和 mutation contract，Task、Inbox、Memory、Trace、Session/Device、Health 仍为 `baseline_only`，Settings 保持 `blocked`，因此全入口仍不等于全业务操作面已接通。`apps/admin-cli` 已实现可执行 doctor、只读 db status 和受 offline lock/confirm 保护的 migration 入口。
+`apps/agent-service` 现有可编程的本地前台组合根、严格 `gateway.v1` in-process transport、production `execution.v2` UDS client、可安装 `main`，以及从严格配置创建并在启动/关闭生命周期中管理的 production Model/Pi 与 Mem0 composition；支持的 OpenRouter 配置会把独立 embedding descriptor 交给 Mem0，deterministic fixture 只报告显式 descriptor，不创建任何 Pi、Mem0 或隐式模型路径。`apps/execution-worker` 同时保留确定性的 `execution.v1` in-process test profile，并实现验证 authority fence、adapter registry、resource ceiling、去重、cursor、取消与对账的 production Worker runtime。两项服务均有可重定位 Node runtime、稳定诊断/退出码和信号 drain，公开模式的最终 `main` 已组合 HTTP、身份、持久 Run、Pi、Memory consumer 与已授权 Worker 工具；GitHub 总组合和结构化 Worker subtask adapter 仍待完成。`apps/control-center` 已实现 browser-only React/Vite 控制中心基础、typed Gateway client、v2/Thread v3 SSE 恢复、native History typed routes、11 入口响应式三栏/单栏 Shell、`react-intl` 三语 runtime 和 native-first 语义组件；Thread、Approval、Capabilities/Adapters 与 Authorizations/Grants surface 已接通严格权威 read model 和 mutation contract，Task、Inbox、Memory、Trace、Session/Device、Health 仍为 `baseline_only`，Settings 保持 `blocked`，因此全入口仍不等于全业务操作面已接通。`apps/admin-cli` 已实现可执行 doctor、只读 db status 和受 offline lock/confirm 保护的 migration 入口。
 
 已关闭 Foundation Spec 的 Task 1 至 Task 20 已按确定性参考配置实现并验证：[SOURCE: docs/archive/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/archive/plans/2026-08-25-agent-foundation-plan.md] 当前 portable durable web-agent Plan 的 Task 20–27 已有代码与确定性资格证据，其中真实 GitHub/Cloudflare、跨主机 transfer、完整浏览器矩阵和最终 Agent Service 生产组合仍按各自证据保持未验证。Task 20 的 OpenRouter 模型路径已完成受保护 transport、strict provider routing、闭合 Pi 运行时绑定、独立 4096 维 Qwen embedding descriptor、严格配置映射、Mem0 OpenAI-compatible projection 以及 Agent Service 启动生命周期接入；embedding 与 primary/fixed fallback generation 的有界 live provider/model/token/cost readback 均已通过。上游仍未公开不可变模型版本，所以本地日期化 catalog snapshot 不是官方 immutable version。
 
@@ -38,7 +133,7 @@ domain → no internal dependency
 testing → application + domain + product contracts
 ```
 
-`scripts/check-boundaries.mjs` 从根和各 workspace 的 `package.json` 及 TypeScript import 构建依赖图，检查非精确直接外部依赖、非法方向、循环、未声明依赖和逃出 workspace 根的相对 import。任何 `@earendil-works/pi-*` 依赖或 import 只能位于 `packages/runtime-pi`；domain、contracts、application 和 browser-only workspace 不能直接 import `node:` 模块，browser-only workspace 也只能声明或导入明确允许的浏览器依赖。控制中心当前逐项允许 React、React DOM、`react-intl`、Vite/Vitest 与类型/构建配套，不把 browser-only 放宽为任意 npm 包；`test/integration/workspace/workspace-boundaries.test.ts` 会为依赖图的每个非法 workspace 方向以及 Node、browser、Pi 和本地路径规则运行 negative probe。
+`scripts/check-boundaries.mjs` 从根和各 workspace 的 `package.json` 及 TypeScript import 构建依赖图，检查非精确直接外部依赖、非法方向、循环、未声明依赖和逃出 workspace 根的相对 import。任何 `@earendil-works/pi-*` 依赖或 import 只能位于 `packages/runtime-pi`；`@anthropic-ai/sandbox-runtime` 只由 `packages/runtime-sandbox` 直接依赖或导入；domain、contracts、application 和 browser-only workspace 不能直接 import `node:` 模块，browser-only workspace 也只能声明或导入明确允许的浏览器依赖。控制中心当前逐项允许 React、React DOM、`react-intl`、Vite/Vitest 与类型/构建配套，不把 browser-only 放宽为任意 npm 包；`test/integration/workspace/workspace-boundaries.test.ts` 会为依赖图的每个非法 workspace 方向以及 Node、browser、Pi 和本地路径规则运行 negative probe。
 
 根构建可以分别验证 Node 图、两类 contracts、两个服务、browser bundle 和 admin CLI。`build:browser` 在 Vite production build 后执行 `scripts/check-control-center-build.mjs`，机械验证外部 CSS/JS、en/ja locale code splitting、无 source map、无 inline script/style、无动态代码求值，以及 entry/总 gzip 预算；Fastify `GET /*` 只对非 `/api`、非 `/assets` 且 `Accept` 包含 `text/html` 的路径返回同源 SPA shell，未知 API 与非 HTML 请求仍为 404。`scripts/generate-artifact-manifest.mjs` 会在构建后生成 machine-readable manifest，固定根 manifest/lock SHA-256、每个 workspace 的内容 checksum，以及当次 browser artifacts 的路径、大小和 SHA-256；生成物位于忽略提交的 `dist/`，脚本和 checksum contract 才是当前受版本控制的稳定入口。
 
@@ -91,6 +186,8 @@ Gateway 信封携带消息标识、schema 版本、相关关系、可空因果�
 
 由于 v1 parser 会拒绝未知字段和消息类型，持久 Web 扩展没有暗改 v1，而是分别发布 `gateway.v2` 与 `execution.v2` 和独立 JSON fixtures。`gateway.v2` 覆盖 Thread message/checkpoint、approval、task、inbox、Memory、Trace、product sessions/devices、health、collection snapshot 和 durable stream event；`execution.v2` 覆盖 Worker handshake/readiness、cursor replay、deadline、cancellation、resource ceiling、result 和 reconciliation。两个 v2 信封都携带 deployment/authority epoch/fence、数据等级、风险和授权引用；高风险或关键 mutation 缺授权、零 epoch/fence、不支持版本、未知字段或不匹配 outcome 一律 fail closed。正文、Worker 输入输出和秘密仍只通过 Payload/secret reference 传递。
 
+Worker 正文传输另用严格的 `payload-broker.v1`，不把明文加入上述业务事件。此协议只在认证的本机 Unix socket 上传输有界正文；请求携带 opaque handle、invocation 和进程身份，不接受 Worker 自报 Owner、Agent、Run 或任意输入正文引用。双方核对启动身份、authority epoch/fence 与本次请求的响应关联，输出确认只返回引用和重放标记，不回显正文。认证、大小限制、目录与 socket 权限以及绝对截止时限由两个本机协议共享的传输层实现。
+
 两类协议使用零外部依赖的运行时 schema，同时导出从 schema 推导的 TypeScript 类型。解析器要求精确字段、规范 UTC 毫秒时间戳、受限枚举和有界整数；未知字段、未知消息类型及不受支持的版本会返回带固定 `CONTRACT_VALIDATION_ERROR` code 和字段路径的错误。`public`、`private`、`sensitive`、`restricted` 是当前四个数据等级。v1 JSON 兼容性夹具固定首版 wire shape；在 v1 中添加未知字段不会被静默接受。
 
 ## Application Ports and Reference Adapters
@@ -124,7 +221,11 @@ HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 
 ### Product state commit and reliable publication
 
-`RunStateCommitCoordinator` 是窄状态提交服务；`RunCoordinator` 组合它和其他产品端口，但不取代原有提交边界。状态提交服务读取产品 Run 状态、调用领域 `transitionRun()`，并把下一版状态、幂等命令结果和对应业务事件提交给 `ProductStateRepositoryPort`。Run 采用 `run:<RunId>` 状态键；业务事件采用由命令 idempotency key 派生的稳定事件 ID。
+`RunCoordinator` 通过 `RunLifecyclePort` 读取和推进 Run，不再依赖具体状态提交服务。参考组合中的 `RunStateCommitCoordinator` 仍使用 `ProductStateRepositoryPort`，以 `run:<RunId>` 状态键提交下一版状态、幂等命令结果和业务事件。这个参考存储不是 Thread 消息接纳创建的关系型 `runs` 表，不能在生产中为同一 Run 再建立一份状态。
+
+`SqliteProductStateRepository.runLifecycle(ownerId, agentId, authority)` 提供关系型实现，直接读取 Thread 接纳事务创建的 `runs`。状态转换在原有专用 SQLite execution context 中验证作用域、当前 deployment/lease/fence、revision 和领域状态机，并原子写入 Run、命令结果和可靠事件，不镜像写入 `product_state_records`。普通状态转换拒绝直接把 Thread Run 标为 `completed`。`completeRun` 在同一 SQLite 事务中解析接纳时的产品 Turn、检查最终正文的活动范围/媒体类型/分类，并复用原助手消息提交：assistant、Turn、Run、Thread、命令回执和可靠事件一起成功或回滚。内部助手回执使用独立派生幂等键，不与 Run completion 回执争用身份。完成期间重命名 Thread 不丢弃答案，归档或 Trash 仍拒绝普通提交。这个端口不等于已完成生产入口接线；持久领取任务、生产上下文投影与 HTTP/Pi 总组合仍须继续验证。
+
+领域包的源码内部相对导入使用真实 `.ts` 扩展名，供 Node 原生类型擦除环境中的 SQLite Worker 复用同一个领域状态机；Node 构建通过 `rewriteRelativeImportExtensions` 转成 `.js`。不为 Worker 复制一套合法状态转换表，也不增加只为绕过源码加载错误的平行领域入口。
 
 参考 Product State Repository 在一个无 `await` 的 mutation 边界内同时写入 State revision、命令结果和 pending Reliable Event，提供内存 transaction/outbox 等价语义。提交前会完成以下检查：
 
@@ -140,7 +241,7 @@ HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 
 ### SQLite schema and immutable migrations
 
-`packages/persistence-sqlite` 现在以十七个连续 SQL migration 建立 58 个产品表及 3 个内部治理表。产品表规范化保存 Owner/Agent、deployment/authority、Thread/Run、session/device/外部 subject binding、approval/Grant、capability、Product State、command result/outbox、Trace/audit、Task/Attention、Gateway Read Model、Memory、GitHub、删除、恢复点与存储健康状态；foreign key、唯一键、revision、authority epoch/fencing token 和稳定幂等键在 schema 层形成第一道约束。第九个 migration 扩展后台 occurrence 与 Run checkpoint 恢复字段，第十个 migration 增加唯一 Owner 外部身份 binding 和产品 session authentication reference，第十一至十三个 migration 增加 Memory projection reliability、敏感候选审批和 Thread distillation；第十四个 migration 增加 GitHub history policy 的 durable retry/readback 状态，第十五个 migration 增加 Thread lifecycle、opaque Message/title search projection 与删除 task binding，第十六个 migration 增加 cursor-ordered committed Thread Gateway event，第十七个 migration 增加不保存 command body 的治理 mutation receipt。`schemaCatalog` 为每个表固定产品端口、生命周期、加密或 Payload 引用分类、删除关系和 migration owner，不能用供应商表替代产品权威状态。
+`packages/persistence-sqlite` 现在以三十一个连续 SQL migration 建立 81 个登记表，包含产品状态与内部治理表。产品表规范化保存 Owner/Agent、deployment/authority、Thread/Run、session/device/外部 subject binding、approval/Grant、capability、Product State、command result/outbox、Trace/audit、Task/Attention、Gateway Read Model、Memory、GitHub、删除、恢复点与存储健康状态；foreign key、唯一键、revision、authority epoch/fencing token 和稳定幂等键在 schema 层形成第一道约束。第九个 migration 扩展后台 occurrence 与 Run checkpoint 恢复字段，第十个 migration 增加唯一 Owner 外部身份 binding 和产品 session authentication reference，第十一至十三个 migration 增加 Memory projection reliability、敏感候选审批和 Thread distillation；第十四个 migration 增加 GitHub history policy 的 durable retry/readback 状态，第十五个 migration 增加 Thread lifecycle、opaque Message/title search projection 与删除 task binding，第十六个 migration 增加 cursor-ordered committed Thread Gateway event，第十七个 migration 增加不保存 command body 的治理 mutation receipt；第十八个 migration 将旧 JSON 协调检查点迁入 Run 归属表和 Worker 结果引用表，并禁止旧通用状态入口重新写入协调检查点。第十九个 migration 增加 Run 正文归属与语义操作回执，并以复合作用域外键保护 Run 和 Payload 的关系。第二十个 migration 增加作用域内唯一的 Capability 调用回执，冻结任务语义和首次执行的进程身份、deployment fence 与租约。第二十一个 migration 增加 Run 执行租约，保存领取者、唯一执行身份、当前权威关联、单调 revision 和释放时间；该表不复制 Run 的业务状态。第二十二个 migration 建立前台 Run 与后台 occurrence 共用的模型预算账户和逐调用分配。第二十三个 migration 建立持久模型调用身份，以 `Run + logical slot + sequence` 固定物理尝试、模型与价格、预算分配、authority 和执行租约；数据库约束阻止同一身份换租约、换模型或跳过合法状态。第二十四个 migration 允许 Run 模型调用身份记录 embedding 来源；第二十五个 migration 让 Memory projection job 使用同一预算账户，并在重建账户约束时保留已有账户、逐调用分配与模型身份。`schemaCatalog` 为每个表固定产品端口、生命周期、加密或 Payload 引用分类、删除关系和 migration owner，不能用供应商表替代产品权威状态。
 
 迁移 ledger 持久化连续 `sequence`、`name`、`phase`、SQL SHA-256 与应用时间。loader 验证定义连续性和 digest；启动会拒绝历史内容不匹配、ledger 空洞、未知已应用 migration、未来 schema 及过旧 writer。`expand → backfill → verify → contract` 是受检查的单向 change-set 阶段，系统不提供自动数据库 downgrade。
 
@@ -170,11 +271,17 @@ Gateway Read Model 分开保存单调 revision 的 Thread/Run snapshot、全局�
 
 S2 Thread repository 的列表路径把 lifecycle 与 pin 过滤下推到 SQLite，并按“已置顶组、`pin_order`、`updated_at DESC`、`ThreadId`”做 keyset 分页；cursor 引用的 Thread 不存在时 fail closed，要求客户端重新取得 snapshot。opaque Message/title search projection 同样在 SQL 内完成 Owner/Agent、projection version、lifecycle、时间与 task status 过滤，再按 `ThreadId` 分页；查询端口不接收明文正文。Thread 专项资格在 10,000 个同时间戳 Thread、200,000 条初始 Message、8,000 active/1,000 archived/1,000 trashed 上完整枚举列表与搜索，无重复或遗漏；active list/search/pin/Fork/projection rebuild 的 p95 为 2.811/8.835/3.215/1.262/0.646 ms，repository 正常关闭重开为 357.85 ms。100 个 rebuild 目标删除旧 projection version 后保留 10,000 条 current 行且 stale 行为 0。数据只存在临时本地 SQLite，并不构成生产容量、跨主机或 soak 证明。
 
-Worker 在 `ready` 前执行冷启动恢复：过期 Outbox claim 回到 `pending`，中断的 `delivering` 以新 revision 回到 `pending` 并记录 `PROCESS_RESTARTED`；恢复报告枚举 pending event、未终结 Run/checkpoint、pending approval/delivery/deletion、到期 work lease、可安全重试 occurrence、可见 blocker、`MODEL_BLOCKED` 和未知外部结果。正式 Agent Service 已在 Worker handshake 前打开专用 SQLite execution context，并把这些脱敏计数写入启动诊断。恢复只重新暴露或 claim 可恢复工作，不回答 Owner 审批、不重放未知外部副作用，也不把旧 authority fence 变成当前权威。
+`SqliteProductStateRepository.open()` 只取得 state-root 锁、执行受治理 migration 并启动专用 SQLite execution context，不再隐式执行产品恢复写。冷启动恢复是独立的显式操作，调用方必须提交 Owner、Agent、当前 deployment fence 与 authority lease；SQLite writer 在同一个即时事务内重验归属、epoch、fencing token、租约到期和释放状态后才允许写入。过期 Outbox claim 回到 `pending`，中断的 `delivering` 以新 revision 回到 `pending` 并记录 `PROCESS_RESTARTED`；恢复报告枚举 pending event、未终结 Run/checkpoint、pending approval/delivery/deletion、到期 work lease、可安全重试 occurrence、可见 blocker、`MODEL_BLOCKED` 和未知外部结果。只读 `recoverySnapshot()` 不改变状态。当前 Agent Service 兼容入口在 Worker handshake 前读取当前租约并显式请求恢复；最终生产组合仍须由该进程先取得并持续持有自己的 authority lifecycle，不能把读取到另一个 holder 的租约当作完整启动资格。恢复只重新暴露或 claim 可恢复工作，不回答 Owner 审批、不重放未知外部副作用，也不把旧 authority fence 变成当前权威。
 
 ### Session Trace, protected Payload and deletion propagation
 
 `SessionTraceRecorder` 生成 `trace.v1` 信封并由 Trace Store 强制校验 Run 内严格连续序号、稳定 Run scope、父事件归属及已有因果事件的相关关系。事件正文不内嵌模型输入、工具结果或审批快照，而是在写入前转换为产品 JSON、脱敏、交给 `PayloadProtectorPort`，最后只保存 Payload 引用。无法确认安全转换的负载不会写入 Payload；Trace 改写为不含原文的 `trace.redaction_failed`，并留下最小失败审计记录。
+
+正文首次保存使用绑定 Owner/Agent、当前 deployment 与有效租约的 `RunPayloadArtifactPort`。保护器先在 SQLite 事务外生成内联密文，再由单一 writer 把正文与 Run 归属、用途、稳定操作身份回执一起提交。相同操作按明文摘要、分类和媒体类型回读原引用，不比较随机密文；异义重试拒绝覆盖。已有回执在 Run 终态仍可读取和同义重放，新建非审计正文要求 Run 尚未终结，这不构成执行动作的授权；终态审计正文仍可保存，Run 删除后不能复活归属。Trace 追加失败不会把已保存正文变成孤儿，两条治理删除路径都先收集归属引用，再回收没有存活引用的正文。正文已保存不等于助手消息已发布。
+
+当前调用方迁移覆盖 `SessionTraceRecorder`。新 port 已具备 context、final answer 和 Worker result 的用途类型，但对应生产生成方及正文代理尚待接线；类型存在和直接调用端口的测试不能替代完整生产链路。
+
+记录下一条 Trace 前，记录器按最多 1,000 条的有界页读取已有序号，拒绝不前进或超过安全整数容量的序列；不再向 SQLite 请求无限量历史。序号写入仍由 Store 校验，读取与追加不是一个事务，并发冲突会被拒绝而不是静默覆盖。
 
 Payload 端口的持久化输入是 ciphertext、算法标识、key reference、内容 digest 和分类元数据，不接收明文语义字段。`packages/testing` 的 `test-xor-v1` 只用于证明“写前脱敏、保护后存储、引用组装”的接口顺序和防御性复制，不是生产密码学实现，也不能成为部署配置。
 
@@ -194,17 +301,29 @@ Grant 与 Capability 声明分离。一次性 Grant 精确绑定原 Intent 并�
 
 ### Capability Registry and execution boundary
 
+`NodeCapabilityRuntimePort` 的正文依赖仅有绑定完整 invocation 的 `readInput` 和 `writeOutput`，不再向执行侧暴露任意 Payload store、加解密器或结果引用生成器。Program、MCP 和 Endpoint 共用此边界；输入读取失败会在执行前拒绝，已发生外部动作但结果写入失败时返回结果不确定。当前八项单元测试验证调用合同和失败行为，其中正文保护使用测试替身，不构成真实密码学或进程隔离证明。生产 Agent 端受保护正文代理、实际委派认证、结果幂等归属与 Worker 总组合尚未接入。
+
+`ProductionPayloadBrokerClient` 已通过独立正文协议实现该窄接口。主代理实测八项协议合同和十八项本机通信、旧执行通道及 Worker 客户端测试通过，覆盖错误脱敏、错关联响应、缓慢正文与响应、超时后不再发起调用，以及已开始的提交不被虚报撤销。`ProductionPayloadBrokerHandler` 已实现 Agent 侧可信处理边界：从已消费回执取得作用域与执行身份，读取时重新检查权限，输出先由 Agent 保护再交持久结果端口。Worker 不持有 SQLite 或正文加密密钥。handler、真实 SQLite 结果观察与客户端分别有回归，但两项服务的安装后完整组合及真实能力注册仍未完成，不能凭有效握手声称业务执行已经接通。
+
 Capability Registry 分开保存不可变版本声明、安装生命周期和短期执行 Handle。声明固定来源 locator、exact version、SHA-256 integrity、operations、permission refs 与 isolation；记录在 `discovered → installation_proposed → installation_approved → active` 之后才能签发 Handle。更新固定新的 version/integrity，标记 operation 或 permission expansion，并再次经过 proposal/approval 才能激活；停用后的版本先 `disabled` 再 `uninstalled`。
 
 `capability.v2` Manifest 保存 source identity、artifact digest/signature、精确版本、operations、permission/data/network/file/secret scope、isolation、费用、health、review 和 runtime contract。只有 `discovered → review_required → installation_proposed → installation_approved → active` 的已审查健康能力可投影；disabled/revoked/uninstalled 在 SQLite 同一 transaction 内撤销活动 Handle 与依赖任务。更新提议与等待批准只改变 candidate 状态，当前已资格版本在原子切换前继续有权执行；同可信来源、完整性有效、兼容且无扩张的非执行代码变化才可按 Owner policy 自动批准，新执行代码、source/major/runtime/executable/signer/compatibility 变化或 scope 扩张必须显式批准。切换前重新验证 rollback 与 candidate artifact/runtime，切换 transaction 同时撤销旧版本 Handle；回退只切换版本，结构化记录明确不声称撤销外部副作用或产品数据库状态。Foundation `CapabilityRegistryService` 不接受 v2 Manifest。
 
 一个 `capability-handle.v2` 只携带 Permission 已允许的 authorization reference、Owner/Agent/Run、authority fence、固定 capability/version/operation、input/context/secret refs、maximum classification、deadline、次数/费用和幂等 usage，不携带秘密原值。Worker 每次执行都重新验证当前有权版本、Grant、scope、budget、expiry 和 fence；超期、撤销、停用、版本切换或 authority transfer 会使旧 Handle 失效。
 
+Agent 侧通过 Owner/Agent 绑定的 `CapabilityInvocationReceiptPort` 消费持久 Handle。SQLite 同一即时事务验证任务声称、Run 状态、能力版本、Grant、租约与次数，再共同更新 Handle usage 和冻结调用回执；已经由行动授权消费的 Grant 不重复扣费或计次。同一幂等键改变任务语义会冲突，同一调用身份不能换键再次消费。`WorkerDelegationService` 只从首次回执投影受限 Handle 与执行请求；相同请求重放只返回，不再发送 Worker 请求，撤权或过期也不能把旧回执变成一次新执行。旧 `CapabilityHandleService.consume` 已移除，旧 SQLite 直接消费入口明确拒绝；Worker 内存中的一次性受限 Handle 消费不受此替换影响。
+
+输入正文读取使用回执的独立 live-authority 检查，必须同时匹配冻结的 deployment/epoch/fence、lease 和 Agent/Worker instance/boot，并重新检查当前 Run、能力版本、Grant、撤销与到期状态。合法的新租约也不能读取旧执行身份的正文。输入分类允许低于回执的披露上限，不能高于该上限；输出采用冻结分类，并核对媒体类型和实际明文字节上限。
+
+`CapabilityInvocationResultPort` 将晚到输出作为已经发生的事实保存，不把它当成继续执行的权限。它在同一 SQLite 即时事务中核对完整冻结回执、当前权威与仍存在的 Run，再委托唯一 Run 正文 writer 保存 `worker_result`；固定操作键为 `capability-output:${invocationId}`。相同语义和字节可以重放，不同正文冲突，即使保护时产生新随机数也不重复生成归属。Run 已终结或调用期限已过不抹掉已发生事实，但旧进程、旧权威或已删除 Run 不能新增观察。这条路径不修改 Run 状态、检查点、Handle、Grant 或成功事件。真实 SQLite 回归覆盖晚到结果、冲突、权威变化、治理删除与事务回滚。Worker 子任务中保留未知外部动作的局部回归也已通过；该动作身份进入 Agent 持久核对流程的最终生产接线尚未完成。
+
 `ExecutionWorkerService` 以现有 `execution.v1` 请求为边界，向能力适配器只转交 Handle 允许的上下文与短期 Secret Handle。取消、调用期限、progress、result、unknown external result 和 failure 映射回版本化 Worker 事件。`work.reconcile` 另经 `ExternalActionReconciliationPort` 查询外部动作，只接受 outcome 与引用一致的 `confirmed_succeeded`、`confirmed_failed` 或 `still_unknown`，并返回 `work.reconciled`；未知结果不能被执行请求自动重试。
 
 `packages/platform-node` 的能力运行时使用 Node `crypto` 验证普通文件 SHA-256、受信 Ed25519 signer 与不可变 metadata；本地 program/stdio MCP 只接受精确 process binding。Linux 后端生成非 setuid `bubblewrap >=0.11.2` 与 `prlimit >=2.38` launch，固定无网络 namespace、只读 runtime root、显式 filesystem bind、清空环境和 CPU/地址空间/进程/输出上限，并由 Worker 监督 wall time 与进程组终止。官方 MCP TypeScript client/server `2.0.0` fixture 验证现代 `2026-07-28` stdio 握手、精确 server identity、批准 tool mapping、输出字节上限和关闭。远程 API/adapter 只可访问绑定的 HTTPS/明确 loopback 同源 endpoint，禁止 redirect，secret material 只由 invocation-bound 短期 Handle 注入声明 header，输出先保护再存储；有副作用请求在断连、非成功响应、响应超限或结果持久化失败后只返回 unknown，不能被当作确定失败自动重试。
 
-平台资格与实现能力分开：Mac 命令沙箱按冻结的 `sandboxTier` 分成两层。`native-low-risk` 只接受无网络、无 secret、无脚本、无写入的只读 Git 关闭集合，并必须由签名的 App Sandbox/XPC helper 执行；这里的 Seatbelt 指 App Sandbox 的正式产品边界，不允许用 `/usr/bin/sandbox-exec` 冒充生产实现。`isolated-high-risk` 覆盖 `node`、`npm`、脚本、secret、写入及所有未知命令，使用 Apple `container 1.2.0` candidate provider，要求 pinned image、`--network none`、`--no-dns`、`--home-mount none`、只读 root、单一 workspace bind、guest `prlimit` 和实际 loopback-only/无 raw-IP 默认路由/宿主不可见/root 不可写 probe。`MacCommandSandboxRouter` 只按冻结 tier 路由，任何后端失败都 fail closed，绝不向较弱层降级。当前签名 helper 尚未交付，Apple container 安装签名也未通过，因此两层都不能标记为 production suitable。Hermes candidate 继续要求 non-setuid `bubblewrap 0.11.2` 与 `prlimit >=2.38`；当前主机缺少 `bwrap` 且 `prlimit 2.37.2` 低于门禁，也不能激活本地 program/stdio MCP。当前没有安装或启用真实 capability，也没有把测试 direct-process fixture 当作生产隔离。`DeterministicRestaurantCapabilityPort` 与 `ScriptedExternalActionReconciliationPort` 仍只验证搜索、预订和对账产品语义；production Worker 以 `execution.v2` 严格消息在权限受限 UDS 上接收请求，并只执行配置中精确注册的 adapter/version/operation。该边界落实受治理能力决策：[SOURCE: docs/adr/0008-governed-capability-registry.md] [SOURCE: docs/adr/0022-mac-tiered-command-sandbox.md]
+平台资格与实现能力分开：Mac 命令沙箱按冻结的 `sandboxTier` 分成两层。`native-low-risk` 只接受无网络、无 secret、无脚本、无写入的只读 Git 关闭集合，并必须由签名的 App Sandbox/XPC helper 执行；这里的 Seatbelt 指 App Sandbox 的正式产品边界，不允许用 `/usr/bin/sandbox-exec` 冒充生产实现。`isolated-high-risk` 覆盖 `node`、`npm`、脚本、secret、写入及所有未知命令，使用 Apple `container 1.2.0` candidate provider，要求 pinned image、`--network none`、`--no-dns`、`--home-mount none`、只读 root、单一 workspace bind、guest `prlimit` 和实际 loopback-only/无 raw-IP 默认路由/宿主不可见/root 不可写 probe。`MacCommandSandboxRouter` 只按冻结 tier 路由，任何后端失败都 fail closed，绝不向较弱层降级。当前签名 helper 尚未交付，Apple container 安装签名也未通过，因此两层都不能标记为 production suitable。
+
+Hermes candidate 继续要求 non-setuid `bubblewrap 0.11.2` 与 `prlimit >=2.38`。2026-09-04 经 Owner 授权，仅在机械盘专项目录中校验源码并构建了 `bubblewrap 0.11.2` 与 util-linux `2.42.3` 的 `prlimit`，没有替换系统软件或改动已有服务。临时真实进程探针确认了只读根、隔离网络和宿主敏感目录不可见；原生产参数暴露的用户命名空间与外层进程数限制问题已据此修正。后端现在显式创建用户命名空间，在隔离内通过受摘要和路径校验的 `prlimit` 施加进程数限制，并拒绝覆盖该辅助程序或已校验执行文件的挂载。2026-09-05 使用独立完整临时运行根的 shell/C 探针通过了不加进程数限制的对照、隔离内进程数拒绝、进程组清理和父进程退出清理四项验证。同日用摘要与当前工作区一致的 `isolation.ts` 在 Hermes 实机运行 Node 后端探针：正常 launch 退出 0；篡改的 `prlimit` 摘要和把 helper 放入可写 workspace 的绑定均被拒绝；取消和超时用例先确认 payload 已启动并持有 FIFO，再确认终止后 FIFO 到达 EOF，均以 `SIGTERM` 结束且无输出泄漏。运行根和工作目录始终限于 Owner 授权的机械盘专项目录。该轮使用已有 Node `26.1.0`，证据级别是 `node26-diagnostic-only`；它不是锁定 Node 22 安装产物、真实 capability、Worker 主程序或 Mac 同版本隔离的完整验收。当前没有安装或启用真实 capability，也没有把测试 direct-process fixture 当作生产隔离。`DeterministicRestaurantCapabilityPort` 与 `ScriptedExternalActionReconciliationPort` 仍只验证搜索、预订和对账产品语义；`ProductionExecutionWorker` 已定义 `execution.v2` 严格消息和精确 adapter/version/operation 注册边界，但实际服务入口仍缺少真实能力运行时注册。该边界落实受治理能力决策：[SOURCE: docs/adr/0008-governed-capability-registry.md] [SOURCE: docs/adr/0022-mac-tiered-command-sandbox.md]
 
 S6 主机文件与代码工作区使用产品自有 `HostDirectoryGrant`、文件 identity、prepare/execute/verify、受控 Trash、永久删除计划、WorkspaceSnapshot、change ownership、CommandProfile 和 CommitPreview；Pi coding tool 复用 pinned `0.84.2` 的 ToolDefinition 与结果形状。Gateway v2、Execution Worker 和 Control Center 已接通这些本地服务。工作区首次已有的 Owner 改动保持原归属；路径写权限本身不构成任务归属证明。纯任务路径必须由干净基线及受控写入的前后摘要共同证明，混合 Owner 改动无法安全分离时拒绝整文件暂存。`clean` 由冻结 HEAD、index blob 和实际文件字节/模式共同验证。
 
@@ -220,7 +339,9 @@ Improvement candidate 的 `allowedPaths` 表示相对源码变更范围，`Comma
 
 Memory 端口使用产品自己的 proposal、record、candidate 和 correction 值；正文仍是 Payload 引用，provenance 是 source Trace reference。`packages/testing` 的内存适配器只按标准化 search terms 做可重复 overlap score 和稳定 ID tie-break，不读取正文，也不代表最终召回算法或供应商选择。
 
-`ContextFormationService` 对 Memory 只持有 `search` 子集，并可读取当前 Thread 最新的已完成摘要。每次调用先按数据等级、相关性、数量上限选择必要历史，再按时间顺序组装 Thread summary ref、选定 Thread message refs、trigger Payload、policy refs、显式 answer-locale policy ref、通过数据等级与数量限制的 memory content refs 和 Capability summary refs，并把最终清单写成 protected Payload。检索 query、全部 candidates、选择/排除理由、history source refs 和 final context 分成四个父子/因果相连的 Trace 事件；高敏候选会在 candidates 中可见，但不能进入较低等级上下文。摘要只作为附加上下文，原始 transcript 继续保留并可按相关性回取。
+`ContextFormationService` 是上下文选择的唯一入口，对 Memory 只持有 `search` 子集。生产 Thread 查询通过同一 SQLite 事务解析 Run 与 Trigger，再以触发消息之前的提交序号或外部触发之前的提交时间形成有界因果快照；最近历史仍按规范消息序号排序。摘要的来源水位与末尾序号均不能超过该快照。未注入 Thread repository 的参考组合仍可使用显式历史候选，但不能据此声称具备生产查询边界。
+
+选择结果保存为受保护的 `context.v1`，明确区分 Owner/Agent/Session/Thread/Run、来源水位、策略版本、精确历史消息身份、单独的新提示、系统策略引用和非指令上下文材料。检索 query、candidates、选择理由与最终清单分别记录 Trace；供模型读取的权威选择结果是 Run-owned context artifact，不是 Trace JSON。`context:<RunId>` 操作回执先于最终 Trace 提交，重试先回读并检查既有信封，不因 Memory 更新或 Trace 写入失败重新选择内容。摘要和记忆只是附加材料，不能取代原始产品历史或获得系统指令权限。
 
 `ThreadCheckpointService` 以 `ThreadId + source watermark + distillation policy version` 派生稳定 checkpoint job 与 generation identity。Owner 明确请求、所有 admitted Runs 已稳定的受控 idle、compaction 前和达到 source-size threshold 都进入同一持久队列；触发本身不关闭、归档或替换 Thread。SQLite claim lease 维护 `pending → running → completed` 或有界 `retry_wait → failed_terminal`，进程中断后只恢复原 identity。`pre_compaction` 必须携带 Pi 已生成并已保护的 summary Payload；该引用直接占用既有 `summary_ref`，派生模型只提取 Memory/experience/commitment candidates 并必须返回空 summary，产品提交原样发布同一摘要，不再执行第二次摘要生成。其他三类产品触发仍由显式 distillation model 生成摘要。
 
@@ -238,7 +359,7 @@ primary、specialist、local 只选择对应 approved routing class；retryable 
 
 每次模型调用都把 request、started、output reference、completed 或 failed 转成父子/因果相连的产品 Trace；重试另有 `model.retry` 和新的 route decision。terminal Payload 记录 token usage、cost micros 和 latency milliseconds，错误只记录稳定机器码。输入和流式输出正文仍只通过 Payload reference 传递。Pi 返回 `length` 终态时映射为 `OPENROUTER_OUTPUT_TRUNCATED`；成功响应没有任何可持久正文时映射为可重试的 `OPENROUTER_EMPTY_RESPONSE`，两者都不能形成 completed 业务结果。
 
-需要供应商凭证时，Router 根据 descriptor 的 reference/version/purpose 签发仅绑定当前 Owner、Agent、Run、invocation 和 deadline 的 opaque Secret Handle。`packages/platform-node` 的 `TrustedModelProviderAdapter` 在进入受信任 transport 前重新验证 Handle，并只在该适配器的局部内存解析原值；应用请求、产品事件、Trace 和 reference-only resolution log 都不包含原值。调用结束后 Router 撤销 Handle。模型请求、provider API 选择、HTTP 调用、SSE 解析、usage 与标准重试语义全部交给 Pi `ModelRuntime.stream()`；Himawari 的 `PiModelTransport` 只负责产品 Payload 读写、跨 chunk machine-secret redaction、产品终态映射，以及 Pi `0.84.2` 尚未公开的 OpenRouter generation/provider/实际 cost 元数据旁路观察。观察器只读取克隆 Response，不能替代或影响 Pi 的响应解析。`RestrictedProviderSecretSource`、systemd credential 和 macOS Keychain provider-secret 边界也已与固定大小的 Payload 加密密钥 source 分离。独立 embedding descriptor 保留在产品配置与 Memory 边界，不进入 Pi generation binding；`resolveConfiguredModelDescriptorSet()` 只把获准的 OpenRouter primary/fallback 转成 canonical Pi descriptor，`createOpenRouterMem0ProjectionAdapter()` 则把该 descriptor 映射到 Mem0 已有的 OpenAI-compatible provider，并强制 embedding/vector 均为配置的 `4096` dimensions（本次 Qwen 配置）。`apps/agent-service` 的 production `main` 在支持的 provider 配置下创建并关闭 Model/Pi 与 Mem0 composition，deterministic 配置只保留 descriptor-only 启动路径。Task 20 的确定性验证已覆盖 strict provider routing、Keychain provider-secret readback、闭合 Pi 两模型注册、配置映射、Mem0 projection、入口生命周期、cancellation、tool-call 拒绝、disclosure、fallback、secret redaction、空响应和截断终态。Qwen embedding 与 generation primary/fixed fallback 的有界 paid call 已完成 provider/model/token/cost 回读；最终 Gateway/Memory/Worker 组合仍由后续任务验收。该边界落实受策略控制的模型路由：[SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
+需要供应商凭证时，Router 根据 descriptor 的 reference/version/purpose 签发仅绑定当前 Owner、Agent、Run、invocation 和 deadline 的 opaque Secret Handle。`packages/platform-node` 的 `TrustedModelProviderAdapter` 在进入受信任 transport 前重新验证 Handle，并只在该适配器的局部内存解析原值；应用请求、产品事件、Trace 和 reference-only resolution log 都不包含原值。调用结束后 Router 撤销 Handle。模型请求、provider API 选择、HTTP 调用、SSE 解析和 usage 仍交给 Pi `ModelRuntime.stream()`；产品包裹每个物理 stream，在 provider 前执行预算预留、执行身份与取消核对，通过后才延迟解析本次凭据并以 `options.apiKey` 交给原 Pi stream。共享 Pi runtime 不再保存全局 API Key，且每次物理调用强制 `maxRetries: 0`，不让 Pi 内部不可见重试绕过逐调用账本。完成/失败终态只在费用结算或 unknown 事实持久化后暴露；缺失可信 usage 时不猜测为零。Himawari 的 `PiModelTransport` 只负责产品 Payload 读写、跨 chunk machine-secret redaction、产品终态映射，以及 Pi `0.84.2` 尚未公开的 OpenRouter generation/provider/实际 cost 元数据旁路观察。观察器只读取克隆 Response，不能替代或影响 Pi 的响应解析。`RestrictedProviderSecretSource`、systemd credential 和 macOS Keychain provider-secret 边界也已与固定大小的 Payload 加密密钥 source 分离。独立 embedding descriptor 保留在产品配置与 Memory 边界，不进入 Pi generation binding；`resolveConfiguredModelDescriptorSet()` 只把获准的 OpenRouter primary/fallback 转成 canonical Pi descriptor，`createOpenRouterMem0ProjectionAdapter()` 则把该 descriptor 映射到 Mem0 已有的 OpenAI-compatible provider，并强制 embedding/vector 均为配置的 `4096` dimensions（本次 Qwen 配置）。`apps/agent-service` 的 production `main` 尚未注入持久 admission resolver 和 checkpoint-stable operation key，因此当前门禁组件是 fail-closed 组合点，不是已接通的生产模型路径。该边界落实受策略控制的模型路由：[SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
 
 ### Pi Agent Runtime projection
 
@@ -246,21 +367,49 @@ primary、specialist、local 只选择对应 approved routing class；retryable 
 
 每次 Pi Session 重建都从 durable product history 与已接受 checkpoint 重新填充 `SessionManager`，而不是持久化或恢复 Pi 自有 Session 文件。compatibility matrix 以相同 Thread/Run/Session request 连续重建两次，验证产品 identity 与投影后的消息/compaction 语义一致；Pi entry identity 仍是适配器内部实现细节，不能替代 ThreadId、MessageId、TurnId 或 RunId。
 
-`ConfiguredPiModelBindingPort` 只接受一组 canonical primary/fallback descriptor；同一个对象同时承载产品策略身份与 Pi provider model config，不再维护可能漂移的 `{ model, pi }` 双描述符。严格配置的生成字段经 `resolveConfiguredModelDescriptorSet()` 映射到该对象，而独立 embedding descriptor 仅交给产品 Memory 组合，永远不会伪装成 Pi generation model。它通过 `modelsPath: null`、Pi `InMemoryCredentialStore`、`allowModelNetwork: false` 和 `refreshOnCreate: false` 关闭磁盘模型发现与网络刷新，只注册闭合的两个 OpenRouter 模型。共享 provider secret 由 production-suitable host source 在首次 binding 时按需解析并只交给 Pi runtime；原值不进入 descriptor、runtime options、Trace 或诊断。fallback 的 `order: ["z-ai"]` 仅作用于 fallback descriptor，不把该上游顺序强加给 primary。
+`ConfiguredPiModelBindingPort` 只接受一组 canonical primary/fallback descriptor；同一个对象同时承载产品策略身份与 Pi provider model config，不再维护可能漂移的 `{ model, pi }` 双描述符。严格配置的生成字段经 `resolveConfiguredModelDescriptorSet()` 映射到该对象，而独立 embedding descriptor 仅交给产品 Memory 组合，永远不会伪装成 Pi generation model。它通过 `modelsPath: null`、Pi `InMemoryCredentialStore`、`allowModelNetwork: false` 和 `refreshOnCreate: false` 关闭磁盘模型发现与网络刷新，只注册闭合的两个 OpenRouter 模型。binding 只保留延迟 secret resolver；实际原值在每个已准入物理 stream 中单独解析，不写入共享 Pi runtime、descriptor、runtime options、Trace 或诊断。fallback 的 `order: ["z-ai"]` 仅作用于 fallback descriptor，不把该上游顺序强加给 primary。
 
 资源加载器关闭项目 context、themes 和所有 ambient Extensions/Skills/prompts discovery；产品授权端口返回的路径只能通过 `additionalExtensionPaths`、`additionalSkillPaths` 与 `additionalPromptTemplatePaths` 显式加载。`noTools: "all"` 默认关闭 Pi 本机 coding tools，适配器只把 `RuntimeToolPort.listAuthorized()` 返回的 custom tools 加入 Session，并在 Pi 参数 schema 验证后调用产品 preflight。对于后续 Host Files/Code Workspace 能力，`createGovernedPiCodingTools()` 直接复用 Pi 的 read/bash/edit/write/grep/find/ls 定义、参数规范化和结果形状，只要求注入产品受治理的 Operations；Operations 缺失时 fail closed，不回退到 Pi 本机文件或 shell。Permission 已撤销、Handle 不匹配或其他 fail-closed 决定不会到达 capability execution。
 
-`RuntimeProjectionPort.resolveContext()` 返回有角色的历史消息、tool call/tool result、独立的新 user prompt 和可选已接受 checkpoint；适配器逐条预填充 Pi `SessionManager`，不再把多个 Payload 文本用空行拼接成一条 user message。Pi 的 message、turn、tool、compaction、abort、error 和 settled lifecycle 被映射为产品 Runtime event。消息、工具参数/结果和 provider observation 在进入产品 Payload capture 前做 adapter-local redaction；Runtime event 只携带 Payload reference 或稳定 error code。内部异步队列在事件映射完成时立即向调用者产出，而不是等整个 Run 结束后回放。`before_provider_request` 与 `after_provider_response` 是当前 request/response 观察点。完成事件只会在 `waitForIdle()`、`agent_settled` 和适配器 listener queue 都完成后产生。
+生产 `RuntimeToolPort.listAuthorized()` 用 `definition: "builtin-read"` 选择 Pi 的 `read` 工具，`capabilityHandleRef: null` 表示尚未授权。runtime-pi 从 `createGovernedPiCodingTools()` 获取名称、参数与提示元数据，生产模型侧接口为 `path/offset/limit`，不维护另一份文件读取 schema。Agent Service 的执行入口替换为产品 preflight/execute，不调用 Pi 自带的本机路径解析；底层 Operations 通过现有产品适配器显式禁用本机 I/O。正式入口现通过 `ProductionFileReadWorkflow` 从受信任路由和持久目录 Grant 绑定目标主机，并分别授权 metadata inspect、正文 read 和向当前模型 disclose。inspect/read 使用独立受保护输入与单次 Handle，经现有 work.execute 交给目标 Worker；服务端不执行本机 Pi read。文件程序组合于 agent-service 的独立 capability-programs 入口，由 Worker 的 program runtime 在合格隔离后端中启动，内部复用 Pi read 与受约束 Operations。配置不创建授权或平台资格；正式 Mac 安装及真实模型浏览器验收仍需单独完成。原有字符串 Handle 工具保持受限 `inputRef` 行为。[SOURCE: docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md]
+
+通用 HITL 由产品的审批记录、Run checkpoint、执行租约与工具执行账本共同管理。工具通过类型化 `awaiting_approval` 暂停，Runtime 将恢复记录保存为受保护 Payload，Coordinator 进入等待并释放运行槽位；审批决定持久保存后，由调度器获取新租约。runtime-pi 在新 Session 中回放已确认的原 assistant 工具批次，复用 Pi 工具调度与 Agent loop，延续真实模型调用序号。历史回放不调用 Provider；已确认阶段回读结果，未知副作用继续核查。生产 HTTP 已组合审批查询与决定，Thread 页面可打开对应审批。具体文件或其他动作的权限与执行校验仍由工具适配负责。[SOURCE: docs/adr/0023-durable-hitl-execution.md]
+
+跨 Run 的模型历史保存在独立的 `runtime_history` 受保护 artifact 中；聊天正文和观察 Trace 不再是新运行的唯一历史来源。`RuntimeHistoryService` 保存不可变原生消息 Payload 与有序引用清单；每次有效上下文变化生成新快照，消息按内容复用引用。SQLite migration 32 为快照提供与时间戳无关的 Run 内序号。Context Formation 在消息水位线事务中选定此前 Run 的确切快照，将其引用和 Run 状态冻结到 context envelope；Fork 在创建事务中固定源快照，随后不追踪原 Thread 的新快照。
+
+Pi Session 仍使用内存实例，跨进程持久性由产品加密存储提供。适配器恢复原生消息并复用 Pi `convertToLlm()`，保留调用 ID、工具结果、模型来源和原生摘要语义；已由原生历史覆盖的正文不再重复追加。每次 `message_end` / `compaction_end` 保存有效上下文，模型调用和工具执行前等待保存；停止确认也等待最后一次保存。取消记录通过产品 Run 状态转为模型可见中断消息；它不表示副作用已撤销，也不禁止用户明确要求继续旧任务。审批等待期间的本地退出错误不作为真实工具结果保存。
+
+旧运行没有上述快照时，仍按原有授权正文路径读取，保留已知取消状态；这不代表旧工具链已经恢复。旧 Trace 经过脱敏且可能缺少终态，必须单独核验后导入，不能自动把观察日志当原生消息。被删除或不再可读的历史引用拒绝加载；禁止用伪造的工具成功结果填补缺失。此存储变化及核验边界见 [SOURCE: docs/adr/0029-protected-native-runtime-history.md] 和 [SOURCE: docs/execution/specs/2026-09-11-native-runtime-history-design.md]。
+
+`RuntimeRequest` 使用 `contextEnvelopeRef` 和带逻辑 Worker 身份的结果引用，不再传递没有角色的消息引用数组。`ContextProjectionService.resolveProjection()` 核对 context artifact 的作用域与内容摘要，再逐条验证选中消息的身份、角色、正文引用、分类、时间和序号；缺行、内容缺失或不一致均拒绝投影。Worker 结果必须与该 Run 的规范检查点记录一致。输出把系统指令、有角色的历史、独立的新提示及非指令材料分开，Pi 不自行访问 SQLite、Payload Store 或 Trace。
+
+Pi 适配器复用 `SessionManager` 消息与 `appendCustomMessageEntry`，将材料来源和“材料不是指令”的标识写入实际模型内容，而不只保存在不会传给模型的 metadata。系统历史和 Worker 结果作为明确标注的材料输入，不伪造工具调用。message、turn、tool、compaction、abort、error 和 settled lifecycle 继续映射为产品 Runtime event；正文 capture、最终回答和压缩建议经 Run-owned artifact 保存。消息、工具参数/结果和 provider observation 在 capture 前做 adapter-local redaction；事件只携带 Payload reference 或稳定 error code。内部异步队列随事件映射完成而产出；`before_provider_request` 与 `after_provider_response` 仍只是观察点，真正的准入在被替换的原 `streamFunction` 外层执行。包裹层要求 Pi 传入的 model 必须与 product-selected binding 是同一对象，同 provider/id 的另一对象也被拒绝。完成事件仍等待费用结算、`waitForIdle()`、`agent_settled` 和 listener queue 完成。固定版本 Pi 兼容测试覆盖 provider 前拒绝、延迟凭据、结算时序、失败关闭、实际 provider 输入与压缩上下文，但不替代生产 `main` 接线、服务重启或真实模型调用验收。
+
+最终回答由 Pi 适配器在 settled 后从最后一个已结束的 assistant 消息中识别，只接受 `stop`、无待执行工具调用且非空的文本；截断、工具调用终态、错误或空 Thread 回答不能伪装成成功。文本经独立的 `captureFinalAnswer` 正文边界保存为受保护引用，再随 `runtime.completed.output` 交给产品协调器；应用层和 SQLite 不解析 Pi 消息 JSON。Pi 内部工具回合的 Turn ID 只用于运行观察，不能替代消息接纳时的产品 Turn ID。没有 Thread 的工作可以显式使用 `no-answer`，也可返回有效正文；Thread 必须有最终回答。
 
 Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请求；它不能直接写 Thread、Memory 或产品消息。产品接受后把同一受保护 Payload 作为 `pre_compaction` Thread checkpoint 的 prepared summary，派生流程不得再次摘要。Runtime 工具端口以 `RunId + toolCallId` 作为外部动作幂等边界，使 Session 重建不会重新提交已完成动作。该边界落实产品状态高于 Pi 投影的决策：[SOURCE: docs/adr/0001-pi-runtime-adapter.md] [SOURCE: docs/adr/0015-product-state-over-pi-runtime-projection.md]
 
+`ProductionRuntimeTools` 把当前 Run 的已授权 Handle 投影为 Pi custom tool，参数只能选择 Handle 已列出的 `inputRef`，不能扩大输入、Context 或 Secret 范围。它先原子保存受保护的调用意图，再复用 `WorkerDelegationService` 消费持久权限和 `ProductionWorkerForwardTransport` 登记父请求；并发竞争失败者及恢复执行器均不重发。只有作用域匹配的 Worker 终态、持久输出观察和当前有效的 invocation receipt 同时成立，才向模型返回正文；恢复读取成功结果时也重新检查撤权。传输挂起、输出未确认和超时保留未知结果，取消记为失败。此适配器已通过独立单元测试及 SQLite 调用消费与结果重读测试，但尚未接入安装后的 `service-main`；它也不负责为任意模型参数新建 Payload 或签发 Handle。
+
+生产 Run 输入将配置中的 `deadlines.runMs` 转为首次执行开始时间和绝对截止时间，随受保护快照保存。恢复可采用更短的当前配置限制，但不能超过首次冻结的截止时间；缺少截止时间的旧快照拒绝执行，不能通过重新生成快照获取新预算。协调器在截止时请求 Pi/Worker 停止，并拒绝迟到的完成事件；运行中断仍进入既有待核实恢复流程。截止时间也传入 Pi 工具调用，Worker 请求取父 Run 截止、Handle 到期和工具资源上限三者中的最早时间。运行正常结束会清除计时器。取消完成仍依赖适配器遵守取消协议及自身 I/O 截止限制，这不是对任意挂死进程的强制终止保证。
+
 ### Run coordination and scoped worker delegation
 
-`RunCoordinator` 只依赖产品拥有的 `ContextFormationPort`、`WorkerRunPort`、`AgentRuntimePort`、Run 状态提交、State checkpoint 和 Session Trace。它按 `accepted → building_context → running → terminal/reconciliation` 驱动 Run，并把 Owner 取消同时传播给当前 Runtime 与活跃 Worker。Runtime、Worker 和 Pi Session 都不能自行写产品 Run 终态。
+`RunCoordinator` 只依赖产品拥有的 `ContextFormationPort`、`WorkerRunPort`、`AgentRuntimePort`、`RunLifecyclePort`、`RunCheckpointStore` 和 Session Trace。它按 `accepted → building_context → running → terminal/reconciliation` 驱动 Run，并把 Owner 取消同时传播给当前 Runtime 与活跃 Worker。Runtime、Worker 和 Pi Session 都不能自行写产品 Run 终态。Pi custom tool 返回未知结果或执行阶段抛错时，适配器复用 Pi `Agent.abort()` 停止当前循环，禁止后续工具和模型请求，并产出 `runtime.result_unknown`。协调器先持久保存待核实 checkpoint，再把 Run 转入 `reconciling_external_result`；即使随后收到最终回答也不能发布成功，恢复也不重跑该执行。执行异常只记录稳定代码，不把原始错误文本传给模型。
 
 每个 Worker request 显式绑定 parent Run、Owner、Agent、task reference、可委派 context references、短期 capability-handle references、数据等级、deadline 和 duration/cost/progress budgets。协调器要求这些引用是父 Run 授权集合的子集，并拒绝任何 secret reference；因此 Worker 不会继承父 Agent 未委派的 Grant 或秘密。Worker result reference 被聚合为 Runtime 输入，unknown external result 则把父 Run 转入 `reconciling_external_result`。
 
-协调检查点使用 `run-checkpoint:<RunId>`，在每个可挂起阶段记录形成的 context reference、已完成 Worker result references、Runtime event count、最新 Trace event 和终态。进程重建后由产品 State 恢复，而不是依赖 Pi Session。`RuntimeToolPort` 的参考实现另以稳定 `RunId + toolCallId` 保存外部动作结果，因此“动作已成功、Runtime 尚未发出结果事件”之间崩溃时，重试返回原结果而不再次执行动作。
+协调检查点通过 `RunCheckpointStore` 以规范 `RunId` 读写。`run_coordination_checkpoints` 保存当前阶段、context reference、Runtime event count、最新 Trace event、观察到的终态、类型明确的输出和诊断码，`run_coordination_worker_results` 保存逻辑 Worker 身份与结果引用。Run 和 Payload 的归属由数据库外键约束；写入在同一即时事务中验证 deployment fence、Run scope、存活 Payload、Trace scope、revision CAS 和当前执行租约。Worker 身份不是尚不存在的独立 Worker 表外键。历史 `run_checkpoints` 保留原有追加记录语义，不与协调检查点混用。
+
+`RunDispatchPort` 从规范 Run 和检查点中分别列出可领取任务与待核对任务。`run_execution_leases` 限定唯一执行身份、consumer、当前权威租约、deployment、epoch 和 fence。其 revision 表示执行代次，领取、重新领取、释放或 Owner 取消会推进代次，心跳续租不会改变代次。续租只允许延长当前有效期，相同有效期的重放只回读，缩短有效期会被拒绝，因此执行方原有凭证可在续租后继续通过同事务校验。`initial_expires_at` 保留首次领取参数，确保首次回包丢失后，即使已经续租，相同请求仍只回读原领取，不触发新执行。相同 Thread 的任务按规范 Turn 顺序执行，未结束的旧执行不会因新进程启动而自动重跑。`runtime_running`、`workers_running` 及缺少检查点的中断执行进入待核对集合，不当作安全续跑候选。
+
+执行方推进 Run、完成助手提交或写协调检查点时，SQLite writer 在自己的同一事务内核对执行租约，不能先由另一条异步请求检查再写入。执行身份不参与原业务命令 fingerprint，因此增加租约不改变已持久化回执的幂等语义。显式 `RunLifecyclePort.cancelRun` 不接受执行租约；它在一次权威校验和 Run revision 检查之后，原子提交取消状态、取消检查点、执行租约失效、命令回执与可靠事件。`RunCoordinator.cancel` 在该事务成功后才取消 Runtime 与 Worker。事件插入失败时整笔事务回滚，既有已生成正文不会被误标为已发布。
+
+执行租约续期失败时，`ProductionRunDispatcher` 按 Run 与执行租约 ID 中断当前执行。协调器在异步等待之后、派发 Runtime 或 Worker 之前检查该执行的停止状态，不把执行权丢失伪装成 Owner 取消。同一协调器内，一个 Run 只能有一个带租约的活跃执行；取消清理结束后才释放位置，旧执行的延迟取消不会与后续执行重叠。每个已启动目标只取消一次，失败诊断随中断结果交给待核对路径，不自动重新执行。
+
+这些持久化端口和协调器路径已有真实 SQLite 回归。延迟取消测试覆盖运行流先结束、取消后结束的交错，并确认移除等待会错误地接纳第二次执行。安装后的服务领取循环、权威续期、HTTP 请求接纳到真实 Runtime 的完整生产组合仍在接线，不能用端口存在或模拟 Runtime 测试替代安装后端到端验收。
+
+Runtime 成功事件与输出引用在同一次 checkpoint CAS 中保存；重启看到已终结输出时只重试 `completeRun`，不重新调用模型。SQL Run 是产品终态的唯一来源，不能从检查点输出推断助手消息已发布。取消发生在答案生成之后时，已生成正文仍需保留归属供后续清理，但不能提交助手消息。永久删除先收集 context、最终答案和 Worker 结果引用，再删除 Run 的归属记录；仍被存活记录引用的共享正文保留。只有 `runtime_running` 而无终结结果时进入可见的 `reconciling_external_result`，记录 `RUNTIME_ATTEMPT_INTERRUPTED`；旧检查点声称完成却没有输出时记录 `RUNTIME_COMPLETION_OUTPUT_MISSING`，不推断空回答。Runtime event count 仅用于观测，不能作为重新启动非确定性模型流并跳过旧事件的恢复游标。`RuntimeToolPort` 的参考实现另以稳定 `RunId + toolCallId` 保存外部动作结果，但工具幂等不能证明重新调用模型没有额外成本或语义变化。
 
 ### Unified trigger ingestion and scheduling
 
@@ -271,6 +420,10 @@ Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请�
 每个定时 occurrence 以 `job ID + provider occurrence identity` 派生 stable key，并由 `DurableBackgroundWorkService` 复用唯一 `UnifiedTriggerIngestionService` 生成 Trigger admission idempotency key。SQLite 的 `(job_id, stable_key)` 唯一键把 timer、人工重放和外部投递合并为原 occurrence；同一 job 默认只允许一个 admitted/running Run，只有 occurrence 明确标记 `parallelSafe` 时才允许并行。旧 authority fence 在创建、接纳、claim 和 settle 四个边界都被拒绝。
 
 预算与容量在同一 `BEGIN IMMEDIATE` transaction 内检查并保留：全局、数据分类和单 Run 费用都是硬上限；总并发、category 并发和前台保留槽位共同决定接纳。已在线持久化但资源不足的 occurrence 保持可查询的 `budget_blocked` 或 `capacity_blocked`，不会因浏览器离线丢失。Worker claim 保存 lease ID、holder、取得/到期时间；重启只重新暴露已到期 lease，completed occurrence 不会回退。transport/provider failure 使用 attempt 有界、最大延迟有界且由稳定 seed 决定 jitter 的 exponential backoff；credential、authorization、policy 与 invalid input 没有自动 retry 时间。`MODEL_BLOCKED` 与未知外部结果保留原 occurrence/Run identity，后者必须先走 reconcile。
+
+`ModelBudgetPort` 是前台 Run 和后台 occurrence 的统一预算写入边界。migration `0022_model_budget_ledger` 把既有 occurrence 的预留、支出和未知结果迁入父账户，并以 Run 或 occurrence 二选一的外键归属约束账户；同一后台工作不能再创建第二个 Run 父账户。逐次模型调用使用 operation key 保存 `reserved → started → settled | unknown` 子分配；Provider 尚未开始时，取消、secret 失败或执行租约失效可通过独立操作把 `reserved` 原子改为 `released` 并返还额度，重复释放幂等，任何 started、unknown 或 settled 调用都不能被伪装为未执行。所有金额和聚合使用非负安全整数，额度预留、执行身份、当前 authority、后台 admission/settlement 与恢复门禁都在同一 SQLite 即时事务内核对。费用未知会把账户置为 `reconcile_required`，阻止 Run dispatch、occurrence 恢复枚举和 claim；迟到结算只更新费用事实，全部未知调用结清后才重新允许领取。实际费用超过估算会保留真实支出并维持 `over_budget`，父任务的零成本收尾不能清除此状态。账户及子分配随治理删除的 Run 或 occurrence 级联删除，同机加密恢复点包含两张表及完整性核对。typed admission service 冻结模型身份、数据等级、估算和 cache-aware 价格，先重验当前 Run execution lease 再预留和启动；`TrustedModelProviderAdapter` 与 `PiAgentRuntimeAdapter` 只有在真实 usage 成功持久结算后才允许完成事件继续向上游传播，用量无效、结算失败或结果未知都转为失败或对账状态，不再伪装成成功。
+
+migration `0023_model_invocation_identities` 为每个逻辑调用槽分配持久 sequence 和物理 invocation identity，并把 identity 插入与预算预留放在同一个 SQLite 即时事务中。相同 logical slot 的 `reserved`、`started`、`unknown` 或 `settled` 身份在进程重启、租约重领或重复请求后只返回 `reconciliation_required`，不会再次进入 Pi Provider；只有已确认 Provider 未开始并持久变为 `released` 的身份才能分配下一 sequence。数据库同时冻结模型版本、cache-aware 价格、预算 operation key、authority lease 和 Run execution lease，约束未知/结算状态必须来自已启动调用。该层复用 Pi 的 Provider stream 和 usage 事件，Himawari 只增加产品权威、预算与重放所有权，没有复制 Pi 协议。当前尚无把“Provider 结果已经写入 Run 产品 checkpoint”与 identity 做同事务 `product-consumed` 的写入；因此任何非 `released` replay 都保持显式对账，而不是自动恢复。生产 `service-main` 已组合 Run admission resolver、持久 dispatcher、Pi runtime、已授权 Worker 工具、Mem0 检索和 HTTP。版本化 `runPolicy` 来自受保护的主机配置，系统指令按内容摘要绑定受保护的 Run artifact；接纳来源只从持久 Run 读取。安装后的总链路仍须由同一候选的进程验证确认，不能从组件构造成功推导上线资格。
 
 `evaluateDurableSchedule()` 支持固定 interval、one-shot 和 IANA timezone daily schedule。周期 misfire 直接合并并跳过旧 occurrence，one-shot 超过 grace 后成为 `MISSED`；IANA 日历通过运行时 timezone database 解析，不存在的 DST wall time没有候选，重复 wall time按本地日期只采用第一次。当前生产服务已执行持久恢复并持有这些 adapters；HTTP Trigger Control Plane 边界已经实现，但自动 timer loop 与真实 command handler 要等最终 Agent Service 组合，不能把测试用 admission sink 当作公共 Gateway。
 
@@ -290,15 +443,30 @@ Delivery 有独立于 Run 的 revision 和 `pending → delivering → delivered
 
 `AgentGatewayV2Service` 对 `gateway.v2` 使用相同的认证、scope 与确定性授权顺序，并校验 deployment、authority epoch 与 fencing token。`AgentThreadGatewayService` 对 `gateway.thread.v3` 再验证认证 Owner/actor、设备授权、event scope、cursor 唯一性和单 Thread revision 不后退；`ProductThreadGatewayAdapter` 把严格消息组合到既有 Thread command/query/Fork/deletion 服务。`createHttpGatewayServer()` 在 Fastify 中提供同源静态资产、v1/v2/Thread v3 command/query 与 durable SSE；请求先经过严格 parser、Host/Origin/Fetch Metadata、session-bound CSRF、精确媒体类型、bounded body 和 header/message 幂等键一致性，再进入应用 Gateway。响应配置 restrictive CSP、frame deny、MIME 与 no-store。SSE 传递持久 cursor/event ID/scope、heartbeat 和 backpressure；重复 cursor、同 Run 非递增 sequence 或跨 scope 事件使 stream fail closed，v1 retention miss 只返回有界 snapshot refresh，Thread cursor 不可用时发出 `thread.snapshot_required`。浏览器正文读取只解析已认证 Owner/Agent scope 的 `text/plain` protected Payload；搜索 query 先作为 private Payload 接纳，再使用共享 tokenizer 生成 Agent/projection-scoped HMAC token refs，浏览器不接触索引明文。
 
-Identity Gateway 把 bootstrap、产品 session 和 break-glass 保持为独立最小 route。bootstrap 默认关闭、仅 loopback、短时有效并通过 SQLite transaction 只创建一次 Owner 外部 subject binding。Cloudflare Access verifier 只接受 RS256 并校验 `kid`/JWKS 有界缓存与轮换、issuer、audience、signature、`exp`、`nbf` 和 clock skew；产品只保存由 issuer/subject 派生的稳定外部引用，不信任 forwarded email/username。产品 session/device 只保存 bearer token digest 与 authentication reference，支持 activity、recent-auth 和级联撤销；CSRF token 绑定产品 session。break-glass 另需 loopback credential 与独占文件锁，只允许修复 Owner mapping、撤销 session/device 或关闭公网入口，并产生受保护审计。
+Identity Gateway 把 bootstrap、产品 session 和 break-glass 保持为独立最小 route。bootstrap 默认关闭、仅 loopback、短时有效并通过 SQLite transaction 只创建一次 Owner 外部 subject binding。Cloudflare Access verifier 只接受 RS256 并校验 `kid`/JWKS 有界缓存与轮换、issuer、audience、signature、`exp`、`nbf` 和 clock skew；产品只保存由 issuer/subject 派生的稳定外部引用，不信任 forwarded email/username。产品 session/device 只保存 bearer token digest 与 authentication reference，支持 activity 和级联撤销；CSRF token 绑定产品 session。break-glass 另需 loopback credential 与独占文件锁，只允许修复 Owner mapping、撤销 session/device 或关闭公网入口，并产生受保护审计。
+
+浏览器先用已验证的 Cloudflare Access 身份显式创建产品 session，再加载受保护配置。配置投影包含认证服务确认的 sessionId；提交消息使用该值，后端继续检查其与当前会话一致，不从 Owner ID 拼造会话。并发请求更新最后活跃时间时，若出现版本冲突，认证服务重新检查原会话身份和设备撤销状态，不覆盖并发写入，也不把普通活跃时间竞争当成退出登录。Payload 幂等比较沿用受保护正文的 `sha256:` 摘要格式，同键同内容重放，同键不同内容拒绝。Thread 页面使用自己的持久事件流判断连接状态。
+
+正式审批组合以 SQLite 审批快照为准，没有持久化的 Gateway v2 事件日志。其订阅保持打开，每秒复核会话权限和审批版本，初次连接、数据变化或审批到期时发送 `gateway.snapshot_required` 提示；客户端收到后重新查询权威快照。提示不携带正文、不生成或改变 durable cursor，也不充当可重放事件。空闲时由 HTTP 层发送心跳，连接关闭时 AbortSignal 沿订阅调用链停止轮询。不能用立即结束的空生成器代替空闲订阅，否则浏览器会持续重连并反复显示离线提示。
+
+正式控制中心的可用性由已认证配置接口公布的 `installedGatewayV2Operations` 和 `healthDependenciesAvailable` 决定；静态页面清单中的 frozen contract 仅表示协议已定义，不能证明正式部署已接入。当前正式 Gateway v2 只安装 `approval.list/detail/respond`，Thread 使用独立的 v3 Gateway；健康页直接读取已有 `/api/health/v1/dependencies`，显示真实服务及依赖状态，不构造不存在的运维 checkpoint。其他页面显示“当前部署未启用此功能”并停止查询，不显示空列表冒充没有业务数据。后端先校验身份、scope 和 authority，再以同一安装操作清单拒绝缺失操作，返回 HTTP 501 / `PORT_OPERATION_NOT_INSTALLED`；真正的权限拒绝仍为 HTTP 403 / `PORT_NOT_AUTHORITATIVE`。页面清单不是授权来源，客户端修改该清单不能开放后端操作。
+
+
+Hermes 单机的当前安装资格与真实网页登录／模型对话证据见 [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md] 的 R8。该范围为 SRT foreground：read/find/grep/ls/bash，bash 联网仍要求动作 Grant；write/edit 及 background/service 联网未登记。安装资格不等于全部后续产品旅程通过。Agent 权限租约的并发校验比较同一租约身份和 fencing token，允许正常续租替换记录；停止、失权或不同身份仍拒绝执行。
+
+近期认证不是新建产品 session 的时间，也不是 JWT 的签发时间。`CloudflareAccessIdentityClient` 在 JWT 验证后向固定 HTTPS issuer 的 `get-identity` 端点发送临时 `CF_Authorization` Cookie，禁止重定向，并限制响应大小与总请求时间；提前拒绝和超时会取消响应流。它要求显式配置 `user_uuid_equals_sub` 主体绑定，把响应登录时间形成 `RecentAuthenticationEvidence`，绑定外部身份引用、Owner、device、产品 session 和到期时间。原始 JWT 与 provider subject 不进入产品持久状态，公开 verifier 返回值也不包含 provider subject。该登录时间证明不等同于 MFA 证明；真实部署的 provider 主体对应关系仍需环境验证。
+
+`RecentAuthenticationGuard` 使用显式最大年龄和时钟偏差，拒绝缺失、非法、过期、未来、跨身份或跨会话证据，并重读有效 Owner binding 与 session。需要近期认证的 Approval 批准、Host commit、永久文件删除和 Thread 永久删除在实际变更前调用同一 guard；未组合 guard 时拒绝敏感操作。只有持久回执确认的相同语义、无新副作用重放可复用既有结果，调用者不能自报已重放来跳过认证。登录时间查询不可用不会否定已通过的普通 JWT/session 认证，但 HTTP 配置不提供近期认证引用，敏感操作保持拒绝。上述依赖已组合进正式 HTTP 入口，Hermes 的普通 Access/session 登录及对话已有实机证据；近期认证、MFA 与其他敏感动作仍须分别验收，普通登录不能替代这些证明。
 
 `apps/control-center` 只依赖浏览器 API、Gateway contracts 与 React/Vite。typed client 将私人正文先交给 Payload admission，再只在 command 中传引用；v2 与 Thread v3 SSE synchronizer 分别使用 durable cursor 恢复。`localStorage` 只保存未发送 Thread 草稿、显示偏好、UI locale、v2/Thread last cursor，以及结果未确定期间无正文的 mutation identity；它不能在浏览器本地接纳命令或保存已提交历史、搜索正文、authority state 或长期 Memory 正文。Thread 页面已接通 list/detail/search、committed Message sequence、Run lifecycle、独立 answer locale、create/send/rename/pin/archive/restore/Fork/checkpoint/deletion coordination。Approval、Capability 与 Grant 页面从 Agent-scoped list/detail snapshot 显示冻结 intent、来源/版本/完整性、权限、protected secret refs、隔离/health、更新/回退、scope/usage/budget 与受影响 Task；mutation 使用调用方持久化幂等 identity 和 revision CAS，409 强制权威刷新，离线与缺 recent-auth 时不发送，401 清除旧身份状态。所有已接通页面都不执行 optimistic truth 或 silent last-write-wins。Chromium 151 与 WebKit 26.5 的受控 fixture 已验证 Thread/search/checkpoint/conflict/archive/delete-impact/Fork、治理 approve/deny/review/install/update/rollback/disable/revoke、多标签、断网/关闭重开、三语、移动视口、44 px target、320 px reflow 和 axe 基线，但不代表真实公网身份、人工辅助技术或正式六浏览器平台矩阵。
 
 控制中心的信息架构 inventory 现在固定 11 个页面的主责 Spec、稳定对象、Gateway query/mutation、revision、授权/re-auth 以及 empty/loading/error/degraded/offline 状态。Thread、Approval、Capabilities/Adapters 与 Authorizations/Grants 标记为 `frozen/allowed`；Task、Inbox、Memory、Trace、Session/Device 与 Health 的既有 `gateway.v2` 骨架仍属于 `baseline_only`，Settings 在领域 Gateway contract 冻结前保持 `blocked`。单元检查会拒绝未知 message type、缺少状态或把未冻结页面标成可接入的变更。
 
-`createLocalAgentServiceComposition()` 组合 Gateway、Run state/outbox、Trace、Context Formation、Model Router、Permission、Capability Registry、Attention 和 Run Coordinator。确定性 test profile 继续由 `createLocalExecutionWorkerProcess()` 单独启动并只接受 ready 的 `execution.v1` client；production profile 使用 `AgentServiceExecutionClient` 完成 instance/boot-token/schema handshake 后，通过 `execution.v2` UDS 请求、结果 cursor 和 readiness 工作，Worker unavailable 时明确失败且不回落到 Agent Service 进程内执行。启动诊断只输出 component、adapter identity、schema version 与 readiness。关闭先进入 draining、拒绝新请求，再等待登记的 Run settlement。Secret Port 是显式注入项，诊断和 Trace 不读取原值。该边界落实可组合服务和本地优先部署决策：[SOURCE: docs/adr/0011-composable-service-boundaries.md] [SOURCE: docs/adr/0012-portable-local-first-deployment.md]
+`createLocalAgentServiceComposition()` 是 `apps/agent-service/test/fixtures` 中的确定性测试组装，组合 Gateway、Run state/outbox、Trace、Context Formation、Model Router、Permission、Capability Registry、Attention 和 Run Coordinator。生产包不导出该 fixture，`@himawari-agent/testing` 只属于开发依赖；安装后的公共入口不能间接要求加载测试包。确定性 test profile 继续由 `createLocalExecutionWorkerProcess()` 单独启动并只接受 ready 的 `execution.v1` client；production profile 使用 `AgentServiceExecutionClient` 完成 instance/boot-token/schema handshake 后，通过 `execution.v2` UDS 请求、结果 cursor 和 readiness 工作，Worker unavailable 时明确失败且不回落到 Agent Service 进程内执行。启动诊断只输出 component、adapter identity、schema version 与 readiness。关闭先进入 draining、拒绝新请求，再等待登记的 Run settlement。Secret Port 是显式注入项，诊断和 Trace 不读取原值。该边界落实可组合服务和本地优先部署决策：[SOURCE: docs/adr/0011-composable-service-boundaries.md] [SOURCE: docs/adr/0012-portable-local-first-deployment.md]
 
 ### Reference E2E and recovery evidence
+
+2026-09-05，主代理使用锁定 Node22.22.3 构建并安装当前产物，通过独立子进程从公开包入口创建 `createProductionHttpComposition`。真实 SQLite 与默认 TLS 请求路径的测试覆盖身份引导、产品会话、同源与 CSRF 检查、Thread 接纳、受保护正文、关键操作拒绝、重启回读和幂等重放。身份 provider 使用本地 HTTPS 夹具和专用 CA，不涉及真实外部账户。该结果证明已安装 HTTP 组合可运行，不证明实际 `service-main`、模型调用、Worker 执行或最终助手回答已连通。
 
 `test/e2e/beef-restaurant.test.ts` 使用确定性模型、Memory、Capability、Scheduler、Attention、Gateway 和 Worker 适配器运行三段参考旅程。它把牛肉偏好及来源写入长期 Memory，在新 Thread 中选择该记忆并生成建议；语义批准一个长期餐厅监控 Grant；由 timer Trigger 委派搜索 Worker 并产生 `INBOX` Delivery；随后对预订请求签发一次性 Grant 和短期 Secret Handle。预订先返回 `result_unknown`，再由独立 reconcile 请求确认成功。第二客户端读取同一 Thread/Session 的 37 个事件，并从 cursor 10 恢复订阅。
 
@@ -307,6 +475,18 @@ Identity Gateway 把 bootstrap、产品 session 和 break-glass 保持为独立�
 本地源码学习模式只改变 `node_modules` 解析状态。只读检查要求 sibling 的 package name、version 和七个 runtime/build entrypoint 与 committed published pin 一致。受管 link 先保留 published package，再创建指向 sibling coding-agent package 的 symlink；恢复时校验 state、link target、manifest/lockfile hash 和 published backup version。它不会写 `file:` 依赖，不会更新 lockfile，也不会让本地路径进入正式安装契约。普通 `npm ci --ignore-scripts` 始终选择 npm 发布物。
 
 ## Main Flows
+
+生产 Run 组合内置 `createProductionRunReconciler()`，不再要求调用方注入恢复占位函数。它通过 `RunReconciliationPort.quarantine()` 在同一 SQLite 事务中核对当前 authority、Run revision 和执行租约 revision；有效租约只能由同一 consumer 持匹配执行身份主动结束，恢复扫描只能接管已释放或到期的执行。事务同时结束旧租约、把 Run 和 checkpoint 记为 `reconciling_external_result`，保留上下文、已观察输出及 Worker 结果引用；Owner 已取消或其他终态不被重新打开。输入快照加载等阶段抛错时也先持久记录不确定状态，再向服务报告错误，防止租约到期后反复领取同一无效输入。`accepted`、`building_context` 允许进入待核实状态，不能仅因尚未进入 Runtime 就假定上下文形成或模型预算没有外部影响。
+
+待核实状态不表示外部结果已查明，更不能发布成功回答。已经同时具有待核实 Run/checkpoint 的记录不再占用初始恢复扫描批次；结果证据的后续核对与人工处理入口仍待生产接入。此路径不调用 Pi、Worker 或 provider，不释放未知模型费用，也不重新授予执行租约。真实 SQLite 测试覆盖恢复后重建、活跃租约竞争、旧版本和失效 authority 拒绝、写入失败回滚及取消保留；安装后入口仍未接入完整 HTTP/Run 主链路。
+
+Run 执行输入从 SQLite 中该 Run 关联的 Trigger 和 Payload 读取，查询同时约束 Owner、Agent、Thread 和已提交来源消息，不使用线程最新消息推测执行目标。`RunExecutionInputService` 在检查当前执行租约后，把可信 Core 提供的模型、系统指令引用、策略和 Capability Handle 引用保存为加密的 Run 所属快照；恢复时复用快照，仅重新绑定当前租约。该服务已经过真实 SQLite 与 RunCoordinator 的集成验证，完整 HTTP/Pi/Worker 入口组合仍待接入。
+
+`createProductionRunComposition` 统一组合持久调度、输入快照、Context Formation/Projection、Pi Agent Runtime 和 RunCoordinator。每次 Pi stream 使用当前 Run 执行租约绑定的 `ModelInvocationAdmissionService`，由 SQLite 保存调用身份和预算记录；调用槽位在同一 Run 内保持稳定，未知结果不会作为新的物理调用自动重放。最终回答使用产品约定的 UTF-8 `text/plain` Payload，供 Run 完成事务和浏览器正文读取复用。集成测试已使用固定版本 Pi 的真实 Session 和本地确定性 provider 验证成功回答与零预算拒绝；这不代表真实远端 provider、HTTP 登录和 Worker 工具调用已完成安装后验证。
+
+Agent/Worker 启动绑定使用显式双向启动身份：Agent 发布的绑定包含目标 Worker 的 instance 与 boot identity，Worker 只有在两者均匹配本次启动时才连接反向通道；权限代次相同的旧 Agent 绑定也不能被新 Worker 复用。本地 macOS 归档的安装后集成测试已通过，包括启动、诊断、互斥锁、正常停止与强制重启；这不代表 HTTP/Run 链路或双平台发布验收完成。
+
+Agent Service 的退出清理由统一生命周期管理：先停止接收新工作，再等待已接任务结束，最后按依赖逆序关闭资源；某个资源清理失败不阻断其余资源清理。正常退出与启动失败共用同一条幂等清理路径。生产 Memory 组合启动后会创建实际投影消费者，每次领取一个持久任务，等待权限检查完成后执行；停止时先禁止领取新任务，再等待当前任务结束，最后关闭 Mem0 和 SQLite。这些行为已有本地单元测试，尚未替代安装后进程重启验收。HTTP、Run Dispatcher 与 Pi/Worker 的完整生产组合仍待接入。
 
 当前可执行入口包括可安装 Agent Service、Execution Worker、管理 CLI、程序化本地参考组合、GitHub/模型确定性边界测试、规模资格测试，以及独立 HTTP/Identity/Control Center 资格测试。最终 public HTTP 组合尚未进入 Agent Service `main`：
 
@@ -342,18 +522,31 @@ Ubuntu coverage 作业通过显式 `initial-only` 选项，在合法初始化且
 
 `ci.yml` 描述托管完整矩阵，`quality.yml` 描述默认分支手动检测及周期参数分流，schedule 仍停用。共享 Context 已支持核对冻结默认分支提交、启用状态和 cron，并将周期 base 固定为该次 SHA；质量报告独立绑定质量政策摘要。纯政策校验同时检查质量 workflow 的完整执行合同，普通 CI 汇总和 push 交接继续拒绝周期事件。正常 PR 在 `718ef1b` 的 run `33844439408` 中 13 个 job 全部通过。Owner 于 2026-09-04 授权分支收尾，`main` 的 Ruleset `22256403` 已启用为 Active，要求 PR、来源为 GitHub Actions（App 15368）的 `ci/required`、分支保持最新及讨论解决，禁止强推和删除，无 bypass，审批人数为 0；规则 API 回读与目标配置一致。目标 fork 审批策略和专项红绿拒绝验收仍未全部完成。公开报告与诊断分别按 30/7 天保留，上传通过显式白名单和脱敏检查。S9 交接格式验证默认分支 CI、平台产物、未完成项及 24 小时安全新鲜度，保留生产资格、Owner 签署和持久转存责任。实现与验收进度由 CI Plan 记录，S0/S9 产品验收归属不变。[SOURCE: docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md]
 
+## 生产主入口与 Memory 调用预算
+
+公开模式要求同时提供 `http`、`identity`、`runPolicy` 和实际模型配置。`runPolicy` 固定版本、系统指令、Memory 检索数量、选取数量与分类上限；模型由配置中的 primary descriptor 决定，工具只来自该 Run 下未撤销、未过期、当前权威且 Capability 仍活动的持久 Handle。Memory 返回与选取的分类均不能超过 Run 分类。输入快照持久化后，重启不从最新消息或最新配置重建已冻结输入。
+
+HTTP 身份 Session ID 可以包含冒号；Pi SessionManager 只接受受限字符。适配层对版本化 Owner/Agent/Session/Thread 元组计算 SHA-256，生成稳定 Pi 内部 ID；数据库中的产品身份保持原值，重建仍由产品检查点负责。
+
+Pi 0.84.2 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适配层为当前 Session 提供只读 runtime view，使 `hasConfiguredAuth` 识别该模型声明的 Secret source；其他方法仍绑定原始 Pi runtime。此处不读取密钥，也不修改共享凭据库。每次物理请求仍由 `admitPiStream` 先检查权限和预算，再从主机 Secret source 读取密钥。真实 OpenRouter 协议的本地 HTTPS 安装测试与本地 HTTP Pi 兼容测试分别验证该路径，不能把仅允许匿名认证的 faux provider 测试当作凭据接线证据。
+
+
+生成继续复用 Pi ModelRuntime 和 AgentSession；embedding 继续复用 Mem0 3.1.7 的 OpenAI-compatible SDK。产品在该固定版本的 embedding 请求边界加准入，关闭 SDK 自动重试，核对模型、维度、输入上限和分类，再预留预算、记录开始并以实际 `prompt_tokens` 结算。Run 检索使用其执行租约和模型调用身份；后台投影使用自身领取租约和统一预算账户。缺少用量、断连或结果无法确认时保留未知费用，重复调用不会因此获得新的付费机会。Mem0 ESM 会直接导入其可选 peer `pg`，因此适配包显式依赖锁定的 `pg@8.11.3`；构建在独立打包目录导入 Mem0/Pi 以验证实际依赖。
+
+服务先验证权威、数据库、Worker、所选身份适配器（外部模式为 JWKS）与 Payload 加解密，再启动消费者并开放 HTTP。Run loop 启动只等待恢复扫描，任务执行不会拖住 HTTP 就绪。停止先拒绝新领取并中断活动 Pi，再等待状态处理，最后关闭 Worker 通道、Memory、权威和数据库。就绪查询会读取 Worker 当前 readiness，并验证权威；Provider 的实时可用性仍是单独、可降级的状态，不能由配置解析替代。安装进程测试使用受控本机 Provider；真实 Cloudflare、实际付费模型与 Mac/Hermes 服务管理器资格仍需目标环境证据。
+
 ## Known Limitations
 
-- `apps/agent-service` 和 `apps/execution-worker` 已有正式 `main`、workspace `build/start`、production UDS client/server、信号 drain、稳定退出码、可重定位 Node runtime 和真实子进程测试；Agent Service 已打开持久 repository、读取后台恢复清单，并在支持的 provider 配置下接入 Model/Pi 与 Mem0 composition 的启动与关闭生命周期，但尚未安装 launchd/systemd unit，也未把已经实现的 HTTP、身份和 Control Center adapters 以及后续 Memory projection worker、模型调用和 GitHub adapters 组合为最终 readiness。
-- `persistence-sqlite` 已实现真实 schema/migration、execution context、state-root lock、authority lease/deployment、原子 Product State transaction、claim 型 Outbox、持久 Gateway Read Model、Thread committed Gateway event、治理 mutation receipt、Run checkpoint、Thread distillation generation、后台 occurrence/lease/budget/blocker、identity binding/session/device、产品 Memory/projection job、敏感 Memory 审批 metadata、Payload envelope metadata、受治理删除、GitHub history retain/delete 状态机、加密同机 recovery point，以及停机加密 authority transfer。Payload cryptography 与外部 ciphertext file store 已实现，尚未接入全部产品正文路径。authority transfer 使用 authenticated streaming package、recipient/target KEK 两次 DEK rewrap、offline lock、inactive target、单调 epoch/fence 和 SQLite/authority file 双读 fail-closed；当前已有临时 fixture、安装后二进制演练及 Hermes 隔离目录中的 Linux 安装后资格测试，真实 Mac↔Hermes 双向迁移属于 Task 28。`mem0ai@3.1.7` 已通过双平台 compatibility gate；`memory-mem0` 已实现单条产品投影、检索删除与 provider ID round-trip，避免依赖批量 embedding 的全有或全无语义，并已把选定的 4096 维 Qwen embedding 通过 Mem0 的 OpenAI-compatible provider 接入 production memory composition。增量自动 Memory、秘密排除、敏感逐项审批与 Thread 稳定检查点已通过确定性 baseline；generation provider path 已完成有界 primary/fallback 资格，但真实摘要/提取质量和 durable projection worker 仍由最终组合任务验证。`integration-github` 已实现只读 permission、webhook admission、receipt/occurrence 去重、mirror、coverage gap、capability deny 和 `gateway.v2` monitor lifecycle handler 的确定性边界；SQLite 已实现撤销后 retain/delete 的 durable adapter、retry/readback、关联 Task/Run/Trace/Inbox/summary 清理和受限 ciphertext file 删除。最终 Agent Service/Gateway 总组合仍属于 Tasks 27–30；真实 GitHub App 安装、权限 readback、外部 webhook 和线上模型仍未验证。`control-center` 已完成 Thread 与 Approval/Capability/Grant 权威旅程、多标签/离线/重开、浏览器 Payload/search/secret-reference 边界；Tasks/Attention、Memory/Trace/settings/device/health 领域页面和最终生产组合仍待后续 Tasks。`admin-cli` 已有 doctor、db status，以及受 offline lock/confirm 保护的 migration、backup、transfer 和 delete 命令。可重定位 Node artifact 包含 GitHub/Mem0/Pi 运行时包与锁定的外部依赖，因 native Node/SQLite 依赖仍须按平台分别构建和验收。
+- `apps/agent-service` 和 `apps/execution-worker` 已有正式 `main`、workspace `build/start`、production UDS client/server、信号 drain、稳定退出码、可重定位 Node runtime 和真实子进程测试；Agent Service 已打开持久 repository、读取后台恢复清单，并在支持的 provider 配置下接入 Model/Pi 与 Mem0 composition 的启动与关闭生命周期，公开模式现已组合 HTTP、身份、持久 Run、Pi、Memory projection consumer 和 Worker，并检查这些组件的 readiness；尚未安装或验收目标 launchd/systemd unit，GitHub 总组合与真实公共身份入口仍待验证。
+- `persistence-sqlite` 已实现真实 schema/migration、execution context、state-root lock、authority lease/deployment、原子 Product State transaction、claim 型 Outbox、持久 Gateway Read Model、Thread committed Gateway event、治理 mutation receipt、Run checkpoint、Thread distillation generation、后台 occurrence/lease/budget/blocker、identity binding/session/device、产品 Memory/projection job、敏感 Memory 审批 metadata、Payload envelope metadata、受治理删除、GitHub history retain/delete 状态机、加密同机 recovery point，以及停机加密 authority transfer。Payload cryptography 与外部 ciphertext file store 已实现，尚未接入全部产品正文路径。authority transfer 使用 authenticated streaming package、recipient/target KEK 两次 DEK rewrap、offline lock、inactive target、单调 epoch/fence 和 SQLite/authority file 双读 fail-closed；当前已有临时 fixture、安装后二进制演练及 Hermes 隔离目录中的 Linux 安装后资格测试，真实 Mac↔Hermes 双向迁移属于 Task 28。`mem0ai@3.1.7` 已通过双平台 compatibility gate；`memory-mem0` 已实现单条产品投影、检索删除与 provider ID round-trip，避免依赖批量 embedding 的全有或全无语义，并已把选定的 4096 维 Qwen embedding 通过 Mem0 的 OpenAI-compatible provider 接入 production memory composition。增量自动 Memory、秘密排除、敏感逐项审批与 Thread 稳定检查点已通过确定性 baseline；generation provider path 已完成有界 primary/fallback 资格，但durable projection worker 已接入主入口；真实摘要/提取质量仍需授权后的模型验证。`integration-github` 已实现只读 permission、webhook admission、receipt/occurrence 去重、mirror、coverage gap、capability deny 和 `gateway.v2` monitor lifecycle handler 的确定性边界；SQLite 已实现撤销后 retain/delete 的 durable adapter、retry/readback、关联 Task/Run/Trace/Inbox/summary 清理和受限 ciphertext file 删除。最终 Agent Service/Gateway 总组合仍属于 Tasks 27–30；真实 GitHub App 安装、权限 readback、外部 webhook 和线上模型仍未验证。`control-center` 已完成 Thread 与 Approval/Capability/Grant 权威旅程、多标签/离线/重开、浏览器 Payload/search/secret-reference 边界；Tasks/Attention、Memory/Trace/settings/device/health 领域页面和最终生产组合仍待后续 Tasks。`admin-cli` 已有 doctor、db status，以及受 offline lock/confirm 保护的 migration、backup、transfer 和 delete 命令。可重定位 Node artifact 包含 GitHub/Mem0/Pi 运行时包与锁定的外部依赖，因 native Node/SQLite 依赖仍须按平台分别构建和验收。
 - 默认 local composition 使用 `packages/testing` 的内存 State、Memory、Trace、Authorization、Scheduler、Delivery 和 Gateway read model；进程退出后数据丢失，且不提供跨进程 transaction、加密强度、高可用或灾难恢复。
 - Pi adapter 已通过 published `0.84.2` 与 local-source compatibility，但牛肉餐厅 E2E 使用确定性 Model/Capability，不调用真实模型、地图或预订供应商。
-- Execution Worker 已具有真实 HTTP/JSON over UDS transport、boot-scoped authentication、严格 resource ceiling validation、deadline/progress limits 和 child-process crash/reconnect 证据。Node 能力运行时、Linux bubblewrap/prlimit launch、artifact verifier、MCP/API/program adapters 与版本切换已实现并通过非生产 fixture，但当前 Mac/Hermes 均未通过本地 program/stdio MCP 生产资格，也尚无 service-manager CPU/内存强制、签名 Mac helper、真实 capability binding/trust root 或最终 Worker 组合。
+- Execution Worker 已具有真实 HTTP/JSON over UDS transport、boot-scoped authentication、严格 resource ceiling validation、deadline/progress limits 和 child-process crash/reconnect 证据。Node 能力运行时、Linux bubblewrap/prlimit launch、artifact verifier、MCP/API/program adapters 与版本切换已实现并通过非生产 fixture，但当前 Mac/Hermes 均未通过本地 program/stdio MCP 生产资格，也尚无 service-manager CPU/内存强制、签名 Mac helper、真实 capability binding/trust root ；主入口已接入基于当前授权 Handle 的 Worker 工具通道，结构化子任务执行仍需独立实现。
 - Session 删除的抽象 conformance 与 Thread/task/Memory/Payload 的真实 SQLite、ciphertext file 和受管 derived-artifact 删除路径均已验证；最终 Agent Service 组合仍需把所有正文生产者统一登记到这些受管路径，Memory provider cleanup 也仍依赖 durable projection worker 正常运行。
 - Thread 已通过 Chromium/WebKit、双确定性设备身份、服务/SQLite 重启、Pi Session 重建、summary/projection rebuild 和 1 万/20 万规模矩阵；这些本地证据未执行物理 macOS 重启、真实外部 IdP MFA 或实体移动设备 readback，不能据此声明正式平台或 production qualification。
-- Gateway v1/v2 已保证认证/授权/Control Plane 委派边界，HTTP/SSE 与 Identity adapters 也有 contract/security/browser 证据；默认 `InMemoryGatewayControlPlane` 不实现生产 Thread/Run/Approval command handler，真实 Cloudflare 公网路径和 Agent Service 最终组合仍未验证。
+- Gateway v1/v2 已保证认证/授权/Control Plane 委派边界，HTTP/SSE 与 Identity adapters 也有 contract/security/browser 证据；默认 `InMemoryGatewayControlPlane` 不实现生产 Thread/Run/Approval command handler，主入口已使用持久 Thread/Run handler，真实 Cloudflare 公网路径仍未验证。
 - `gateway.v2`、`execution.v2` 和新增 application ports 是冻结的产品契约；Execution UDS、严格 configuration/state-root、health/metrics model、可安装服务、HTTP/SSE、身份断言、Control Center 基础旅程、产品 Memory/Mem0 projection、受治理删除、同机 recovery point 与停机 authority transfer 已实现，其余 GitHub 与 production adapter 组合尚未实现。
-- 生产 Secrets Vault、Provider material source、通知客户端、自动 timer loop 和远程 Worker 均未实现；network Gateway 只作为独立 adapter 验证，尚未在 public production readiness 中启用。本版本不应描述为可生产部署。
+- 生产 Secrets Vault、通知客户端和远程 Worker 的完整能力仍未完成；本机 secret source、Run dispatch loop 与 Memory consumer 已接入；公开 HTTP Gateway 已接入主入口，真实公共身份入口仍未取得本轮资格证据。本版本不应描述为可生产部署。
 
 ## Backlog Links
 
@@ -378,3 +571,29 @@ Ubuntu coverage 作业通过显式 `initial-only` 选项，在合法初始化且
 - Product state over Pi runtime projection：[SOURCE: docs/adr/0015-product-state-over-pi-runtime-projection.md]
 - TypeScript and Node.js runtime：[SOURCE: docs/adr/0016-typescript-node-runtime.md]
 - Workspace monorepo：[SOURCE: docs/adr/0017-workspace-monorepo.md]
+- Pi 工具与受管理执行生命周期：[SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]
+
+
+## 内置账号与人类登录会话（2026-09-10）
+
+用户选择内置账号后，公共 Web 登录不再强制依赖 Cloudflare。配置通过 `identity.kind: built-in` 选择密码与 TOTP/恢复码认证；已有未声明 kind 的 Cloudflare 配置保持原语义。外部模式继续验证断言。两种模式共用 GatewayAuthenticationContext、Owner binding、产品会话、设备、CSRF 与近期身份验证检查。登录不改变工具授权、数据披露、预算或 Pi 执行边界。决策：[SOURCE: docs/adr/0027-built-in-owner-authentication.md]
+
+内置账号由活动主机的停机管理命令建立；无公网注册接口。密码使用 Node scrypt（N=131072、r=8、p=1）与独立随机盐；TOTP 使用固定版本 OTPAuth 9.5.2，密钥只保存在 restricted 加密 Payload，使用专用 content type 防止进入浏览器文本读取。恢复码仅保存摘要，首次配置文件以 0600 写入受保护目录。第 31 个 SQL migration 增加账号、短期验证请求与会话凭据版本关联三个表；所有 31 个 migration 共登记 81 个表。
+
+验证码计数器、恢复码消费、挑战消费和产品会话创建/轮换在同一个 SQLite 写事务中提交。凭据重置使所有旧会话和设备失效；未完成验证请求也会清除。登录限流按 Owner 持久化，每 5 分钟最多 20 次密码/第二因素验证请求；单个服务最多执行一个昂贵的密码校验。密码成功只产生 5 分钟的 HttpOnly 验证 Cookie，第二因素成功才产生产品会话 Cookie。Cookie 使用 SameSite=Strict，HTTPS 时使用 Secure，所有写入口校验 Host、Origin 与 CSRF（尚未登录时以严格同源校验保护登录入口）。
+
+普通活动更新空闲时间，绝对期限与真正完成 MFA 的时间不会随刷新重置。流式连接在每次输出和心跳前重新检查会话，不以心跳延长空闲期限。再次验证保留产品 Session/Device ID，轮换认证摘要及 CSRF 关联，当前浏览器刷新配置后由用户重新提交敏感动作。账号重置、验证码、Cookie 与恢复码均不进入模型上下文或普通业务事件。
+
+配置了内置账号的本机 HTTP 使用与公网相同的正式 Web/Run/Worker 组合；仅 transport 允许明确的 loopback HTTP。跨设备入口应由 TLS 反向代理连接 loopback listener。身份接入成功不替代 Worker capability qualification、真实模型或服务管理器的目标环境验证。技术设计与验证范围：[SOURCE: docs/archive/specs/2026-09-10-built-in-account-authentication-design.md]
+
+
+### 已授权公开搜索与聊天执行反馈
+
+用户可在聊天输入区明确开启或撤销固定 Exa 的联网搜索披露授权。设置属于服务端 Owner/Agent 状态，使用既有 Product State 的 Authority fence、revision CAS 和幂等 receipt，不属于浏览器外观偏好。每次符合配置、模型披露身份及固定出口的真实搜索，从该设置派生精确一次性 Grant，并记录 `policyAuthorization` 来源；SQLite 消费和 Sandbox 准入都重新检查设置 revision。它不扩大文件、命令或任意网络权限，也不伪造人工点击。配置绑定变化使设置失效。
+
+Pi 的累计消息更新在 Runtime 适配器中复制快照，并只合并尚未交付的连续更新；生命周期和工具边界始终保留，持久化消费提供背压。浏览器从真实事件显示思考活动、当前工具与最后进度时间；未获披露许可的原始 reasoning 和 Provider 元数据不作为思考摘要展示。审批使用原批准合同在当前 Run 的聊天卡片操作，保留披露 hash、revision、近期认证和重试身份。完整安装校验使用独立线程逐字节扫描，避免大量异步小文件调度拖慢工具过程，不省略完整性检查。
+
+执行与验收记录：[SOURCE: docs/execution/specs/2026-09-10-control-center-local-acceptance-design.md]、[SOURCE: docs/execution/plans/2026-09-10-control-center-local-acceptance-plan.md]。
+
+
+受保护安装校验由 platform-node 实现，见 [ADR 0028](adr/0028-protected-runtime-installation.md)。Linux 部署可用 root 所有记录绑定非 root 运行账号与不可写安装；同进程初始审计复用与动态授权分别处理。此入口在实际权限与记录核验通过后才生效，普通可写安装仍走完整校验。

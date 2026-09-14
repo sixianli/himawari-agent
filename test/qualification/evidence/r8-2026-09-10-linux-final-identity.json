@@ -1,0 +1,73 @@
+{
+  "platform": "linux",
+  "architecture": "x64",
+  "osRelease": "5.15.0-185-generic",
+  "node": "v26.1.0",
+  "source": "/data/himawari-r8-ucNhI6hn/runtime",
+  "installed": "/data/himawari-r8-ucNhI6hn/installed/lib/himawari-agent",
+  "files": [
+    {
+      "file": "runtime-manifest.json",
+      "source": "14d0276bee3c2bb6a1b9b8fc5b3102366c147bde3e059614d4d02fe7a6d1fd49",
+      "installed": "14d0276bee3c2bb6a1b9b8fc5b3102366c147bde3e059614d4d02fe7a6d1fd49"
+    },
+    {
+      "file": "node_modules/@himawari-agent/runtime-sandbox/dist/job-host-main.js",
+      "source": "dcc5a8e779ba28cb8b25b63fc1a528a7f3ba93252a6eaf2b8359dcb9b2a6de8a",
+      "installed": "dcc5a8e779ba28cb8b25b63fc1a528a7f3ba93252a6eaf2b8359dcb9b2a6de8a"
+    },
+    {
+      "file": "node_modules/@himawari-agent/runtime-sandbox/dist/job-command.js",
+      "source": "a682e531a75268fdea58cb72b61a3c23faa4fc63a09d18e2dad60519d6d5a4ae",
+      "installed": "a682e531a75268fdea58cb72b61a3c23faa4fc63a09d18e2dad60519d6d5a4ae"
+    },
+    {
+      "file": "node_modules/@himawari-agent/runtime-sandbox/dist/network-egress.js",
+      "source": "a328b5b9a4a7d7e265d22e3076c241823928232279f7a2dd09207a7f63e33802",
+      "installed": "a328b5b9a4a7d7e265d22e3076c241823928232279f7a2dd09207a7f63e33802"
+    },
+    {
+      "file": "node_modules/@himawari-agent/runtime-sandbox/dist/policy.js",
+      "source": "3bbaa93fdd466829c62823f5956af7a78e8b3cd4b59bf483bd1d2128293f04d1",
+      "installed": "3bbaa93fdd466829c62823f5956af7a78e8b3cd4b59bf483bd1d2128293f04d1"
+    },
+    {
+      "file": "node_modules/@himawari-agent/execution-contracts/dist/sandbox-execution-v2.js",
+      "source": "73f0bd2d2daca16deaacd3beb95174bc518f0abcc42cabd6ef4f324db8a0c0cd",
+      "installed": "73f0bd2d2daca16deaacd3beb95174bc518f0abcc42cabd6ef4f324db8a0c0cd"
+    },
+    {
+      "file": "node_modules/@himawari-agent/execution-worker/dist/production-sandbox-execution-v2.js",
+      "source": "d1cbcccc9699278511a56bfe4574bf41778431d87b3b7f35578876022e7d7234",
+      "installed": "d1cbcccc9699278511a56bfe4574bf41778431d87b3b7f35578876022e7d7234"
+    }
+  ],
+  "sourceInstalledMatched": true,
+  "helpers": [
+    {
+      "file": "/data/hermes/node/bin/node",
+      "sha256": "da220b82279ed9885a7759f6efb8c4b9351ece579f93429bf7b7d2fbd481bcf8"
+    },
+    {
+      "file": "/usr/bin/bwrap",
+      "sha256": "d78807229d616606e339c5988392b9e0ab4a6a6998fa51e4590837f426a12fca"
+    },
+    {
+      "file": "/usr/bin/socat",
+      "sha256": "ac1a7165c0ade4dfdab602895cc56ff21d61f8443a80fb676946e4a624c52f68"
+    },
+    {
+      "file": "/data/himawari-r8-ucNhI6hn/installed/lib/himawari-agent/node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/arm64/apply-seccomp",
+      "sha256": "9ace43a76dab5650b5e544230814eaaac8f2136f4a40c2f6069f0631fee230e1"
+    },
+    {
+      "file": "/data/himawari-r8-ucNhI6hn/installed/lib/himawari-agent/node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/build.ts",
+      "sha256": "d0589bdfb3c9ad8e46380e237ae93c71f7f3caa82c8c27589ad18bd65aa141de"
+    },
+    {
+      "file": "/data/himawari-r8-ucNhI6hn/installed/lib/himawari-agent/node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/x64/apply-seccomp",
+      "sha256": "64fa7514fa7199584b836159885e59b9ce3684fb8fef7e13de49965b23f54f6b"
+    }
+  ],
+  "productionSuitable": false
+}

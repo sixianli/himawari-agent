@@ -1,0 +1,10 @@
+{
+  "checkedFiles": 911,
+  "mismatches": [
+    "biome.json"
+  ],
+  "archiveSha256": "167d968b6ecfb68f01fd8b12c04eae95f3895fc451c7b4d78083737ba1b9f3d3",
+  "explanation": {
+    "biome.json": "候选沿用原冻结格式配置；工作区另外禁止自动格式化原始资格证据，防止破坏已绑定字节。910 个其余源码输入与候选逐字节一致。"
+  }
+}

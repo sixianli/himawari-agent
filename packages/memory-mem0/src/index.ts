@@ -1,16 +1,17 @@
 import path from "node:path";
 import {
   ApplicationPortError,
-  PORT_ERROR_CODES,
   type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredGenerationModelDescriptor,
   type ConfiguredMemoryDescriptor,
   type MemoryProviderHit,
   type MemoryProviderProjectionPort,
   type ModelSecretRequirement,
+  PORT_ERROR_CODES,
   type ProductMemoryRecord,
 } from "@himawari-agent/application";
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
+import BetterSqlite3 from "better-sqlite3";
 
 /**
  * Mem0's OpenAI embedder already supports an OpenAI-compatible base URL and
@@ -78,6 +79,23 @@ interface Mem0Result {
     readonly [key: string]: unknown;
   }>;
 }
+
+export interface Mem0EmbeddingRequest {
+  readonly model: string;
+  readonly input: string | readonly string[];
+  readonly dimensions?: number;
+}
+export interface Mem0EmbeddingResponse {
+  readonly data: readonly { readonly embedding: readonly number[]; readonly index: number }[];
+  readonly usage: { readonly prompt_tokens: number; readonly total_tokens: number };
+}
+export type Mem0EmbeddingBoundary = (
+  request: Mem0EmbeddingRequest,
+  send: (options?: {
+    readonly timeoutMs?: number;
+    readonly signal?: AbortSignal;
+  }) => Promise<Mem0EmbeddingResponse>,
+) => Promise<Mem0EmbeddingResponse>;
 
 interface Mem0MemoryLike {
   add(
@@ -221,9 +239,11 @@ function productMemoryId(result: Mem0Result): MemoryId | null {
 
 export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
   private readonly memory: Mem0MemoryLike;
+  private readonly historyDbPath: string;
 
-  private constructor(memory: Mem0MemoryLike) {
+  private constructor(memory: Mem0MemoryLike, historyDbPath: string) {
     this.memory = memory;
+    this.historyDbPath = historyDbPath;
   }
 
   static async create(options: Mem0ProjectionAdapterOptions): Promise<Mem0ProjectionAdapter> {
@@ -246,7 +266,44 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
       disableHistory: false,
       customInstructions: options.configuration.customInstructions,
     };
-    return new Mem0ProjectionAdapter(new module.Memory(configuration));
+    return new Mem0ProjectionAdapter(
+      new module.Memory(configuration),
+      options.configuration.historyStore.config.historyDbPath,
+    );
+  }
+
+  /** Thin, pinned Mem0 3.1.7 adaptation: retain its SDK protocol and observe real usage. */
+  bindEmbeddingBoundary(boundary: Mem0EmbeddingBoundary, timeoutMs: number): void {
+    const memory = this.memory as unknown as {
+      embedder?: {
+        openai?: {
+          maxRetries: number;
+          timeout: number;
+          embeddings?: {
+            create: (
+              request: Mem0EmbeddingRequest,
+              options?: { timeout?: number; signal?: AbortSignal },
+            ) => Promise<Mem0EmbeddingResponse>;
+          };
+        };
+      };
+    };
+    const client = memory.embedder?.openai;
+    const embeddings = client?.embeddings;
+    if (!client || !embeddings || typeof embeddings.create !== "function")
+      fail("Pinned Mem0 OpenAI embedder boundary is unavailable");
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) fail("Invalid embedding timeout");
+    // Each physical request consumes one admission; SDK retries must not bypass it.
+    client.maxRetries = 0;
+    client.timeout = timeoutMs;
+    const send = embeddings.create.bind(embeddings);
+    embeddings.create = (request) =>
+      boundary(request, (options) =>
+        send(request, {
+          ...(options?.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
+          ...(options?.signal === undefined ? {} : { signal: options.signal }),
+        }),
+      );
   }
 
   async close(): Promise<void> {
@@ -259,7 +316,15 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
   }): Promise<string> {
     requiredText(input.content, "content");
     const providerMetadata = metadata(input.memory);
-    if (input.memory.providerRecordId) {
+    const existing = input.memory.providerRecordId
+      ? await this.memory.get(input.memory.providerRecordId)
+      : null;
+    if (existing && productMemoryId(existing) !== input.memory.id) {
+      fail("Mem0 provider identity belongs to a different product Memory", {
+        memoryId: input.memory.id,
+      });
+    }
+    if (existing && input.memory.providerRecordId) {
       await this.memory.update(input.memory.providerRecordId, {
         text: input.content,
         metadata: providerMetadata,
@@ -295,9 +360,30 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
 
   async delete(providerRecordId: string): Promise<void> {
     requiredText(providerRecordId, "providerRecordId");
-    await this.memory.delete(providerRecordId);
+    if ((await this.memory.get(providerRecordId)) !== null)
+      await this.memory.delete(providerRecordId);
     if ((await this.memory.get(providerRecordId)) !== null) {
       fail("Mem0 provider record remains after delete", { providerRecordId });
+    }
+    // Mem0 3.1.7 retains deleted text in its SQLite history. A missing vector
+    // alone is not deletion evidence; retry this cleanup even after a crash.
+    const history = new BetterSqlite3(this.historyDbPath, { fileMustExist: true });
+    try {
+      history.pragma("secure_delete = ON");
+      history
+        .transaction(() => {
+          history.prepare("DELETE FROM memory_history WHERE memory_id = ?").run(providerRecordId);
+          if (
+            history
+              .prepare("SELECT 1 FROM memory_history WHERE memory_id = ? LIMIT 1")
+              .get(providerRecordId)
+          ) {
+            fail("Mem0 history remains after delete", { providerRecordId });
+          }
+        })
+        .immediate();
+    } finally {
+      history.close();
     }
   }
 
@@ -330,8 +416,21 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
   }
 
   async clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void> {
-    const result = await this.memory.getAll({ filters: { user_id: ownerId, agent_id: agentId } });
-    for (const record of result.results) await this.delete(record.id);
+    const deleted = new Set<string>();
+    while (true) {
+      const result = await this.memory.getAll({
+        filters: { user_id: ownerId, agent_id: agentId },
+        topK: 100,
+        showExpired: true,
+      });
+      if (result.results.length === 0) return;
+      for (const record of result.results) {
+        if (deleted.has(record.id))
+          fail("Mem0 scope cleanup made no progress", { providerRecordId: record.id });
+        await this.delete(record.id);
+        deleted.add(record.id);
+      }
+    }
   }
 }
 

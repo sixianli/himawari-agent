@@ -1,0 +1,212 @@
+{
+  "observedAt": "2026-09-12T19:13:46.364647+00:00",
+  "modelBudgetUpperBoundMicros": 31353,
+  "searchJobCount": 5,
+  "runs": [
+    {
+      "id": "run:7ce7b052-55a3-479e-919a-e337b9e7f142",
+      "thread_id": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+      "status": "failed",
+      "created_at": "2026-09-12T17:30:51.260Z",
+      "updated_at": "2026-09-12T17:33:58.259Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 1674,
+          "status": "active"
+        }
+      ],
+      "jobs": [
+        {
+          "jobId": "jIFwWgv58cnW0z_fLdwNXXRAP5QvKy53W63eI-cRa_RM",
+          "operation": "ls",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "j49YNo8uHln16Z6IHLx3TIniAtSRVHnnqLzEXhXNKNLk",
+          "operation": "ls",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "jYOm-dee73Q6gdp4ddnBv0scbRMgGZPwvoAuuFDJDpXk",
+          "operation": "ls",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "j_FF4hewxK5t5jcxYBegHYl3ayRRk3qzBePKQ69Ex1lY",
+          "operation": "ls",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        }
+      ],
+      "modelObservationEvents": 4
+    },
+    {
+      "id": "run:5a1e40c1-7463-46a3-8ea6-36e5c0ae701a",
+      "thread_id": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+      "status": "completed",
+      "created_at": "2026-09-12T17:34:56.792Z",
+      "updated_at": "2026-09-12T17:38:42.715Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 1429,
+          "status": "active"
+        }
+      ],
+      "jobs": [
+        {
+          "jobId": "jSpMA9Wh0c_zRcmdOdso_8GzFw0ominQCL79vvF271r4",
+          "operation": "find",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "jRdnvGFF4zw1fXQ8DMduJKddIsjSLF6Ug7p8A53l-Jhw",
+          "operation": "ls",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "jNfsSBN6kh3zmuartJl4mEBnHjpcU9Wxq1LDO0eGdm6A",
+          "operation": "bash",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "jgFBfG4i6H0JWYuc8W9J6peFuI6A8ye_nJp067ScPCm8",
+          "operation": "grep",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        }
+      ],
+      "modelObservationEvents": 4
+    },
+    {
+      "id": "run:86d7b46f-c9d2-43f3-b3dd-9f42f8fa49af",
+      "thread_id": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+      "status": "completed",
+      "created_at": "2026-09-12T17:42:30.085Z",
+      "updated_at": "2026-09-12T17:46:28.069Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 1467,
+          "status": "active"
+        }
+      ],
+      "jobs": [
+        {
+          "jobId": "jHQwmqt0vdutDeAa63FFMaY_sXrr-bZndsVU9Z8x2I00",
+          "operation": "read",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "jUbGzqSbY2Yha3t_z0tgH3JEM-PgeWXzdFO2in9AEdMM",
+          "operation": "ls",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        }
+      ],
+      "modelObservationEvents": 6
+    },
+    {
+      "id": "run:912bcd2e-c458-4b48-bece-5d7e556d6873",
+      "thread_id": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+      "status": "completed",
+      "created_at": "2026-09-12T18:10:16.646Z",
+      "updated_at": "2026-09-12T18:17:14.954Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 979,
+          "status": "active"
+        }
+      ],
+      "jobs": [
+        {
+          "jobId": "jCY6j9zf0mrgap6bDAGZZ8bkf3GB8Ryjg9SHW1T5mIgY",
+          "operation": "find",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "jZtci3LFJTfSf_1RDlPAD6jVfwKd45NK6BffVuin5nP8",
+          "operation": "bash",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "j1KczI76inJGq_LAGwS8-YGgXz_5OedGdk_bZCg-qIdc",
+          "operation": "grep",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "jHV0WKeQmzWqG4sxreUg_I3rUsgH486kErVS376y4oP4",
+          "operation": "ls",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        }
+      ],
+      "modelObservationEvents": 4
+    },
+    {
+      "id": "run:a6a0f5fe-f5b4-4c2f-a80e-1c1295d3d8a6",
+      "thread_id": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+      "status": "completed",
+      "created_at": "2026-09-12T18:38:57.256Z",
+      "updated_at": "2026-09-12T18:40:12.643Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 5881,
+          "status": "active"
+        }
+      ],
+      "jobs": [
+        {
+          "jobId": "j8HFXdAUR_9XvYIwk1BxKrhgn623MgLxvFulHXFTt-DU",
+          "operation": "web_search",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        }
+      ],
+      "modelObservationEvents": 4
+    }
+  ]
+}

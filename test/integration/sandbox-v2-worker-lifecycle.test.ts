@@ -1,0 +1,367 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { afterEach, expect, it, vi } from "vitest";
+import type { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.ts";
+
+const mocks = vi.hoisted(() => ({
+  prepare: vi.fn(),
+  policy: vi.fn(),
+  load: vi.fn(),
+  verify: vi.fn(),
+}));
+vi.mock("@himawari-agent/runtime-sandbox", () => ({
+  prepareSandboxJobHost: mocks.prepare,
+  prepareJobPolicy: mocks.policy,
+}));
+vi.mock("@himawari-agent/platform-node", async (original) => ({
+  ...(await original<object>()),
+  CapabilityDeploymentSnapshotLoader: class {
+    load = mocks.load;
+  },
+  revalidateCapabilityDeploymentSnapshot: async (admitted: unknown) => admitted,
+  verifySandboxHost: mocks.verify,
+}));
+
+import { ProductionSandboxExecutionV2 } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
+import { parseJobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
+import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
+import {
+  openSandboxJournal,
+  serviceRequest,
+  T1,
+} from "../fixtures/sqlite-capability-invocation-fixture.ts";
+
+const cleanups: Array<() => Promise<void>> = [];
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  vi.resetAllMocks();
+});
+it.each([
+  "normal",
+  "command",
+  "pi",
+  "replay",
+  "bind-ack-loss",
+  "registration-revoked",
+  "revoked-running",
+  "finished-during-check",
+  "background",
+  "background-ack-loss",
+  "service",
+] as const)("v2 lifecycle: %s", async (scenario) => {
+  const f = await openSandboxJournal();
+  cleanups.push(f.close);
+  const root = await mkdtemp("/tmp/r4-worker-v2-");
+  cleanups.push(() => rm(root, { recursive: true, force: true }));
+  const admitted = sandboxV2Call(f, "admit", sandboxV2Admission(f)).record;
+  const service = scenario === "service";
+  const background = scenario.startsWith("background") || service;
+  const probe = {
+    kind: "unix_http" as const,
+    ref: "ready",
+    socketName: "ready.sock",
+    path: "/ready",
+    expectedStatus: 204,
+    timeoutMs: 1000,
+  };
+  const plan = background
+    ? {
+        ...admitted.plan,
+        mode: service ? ("service" as const) : ("background" as const),
+        operationContract: service
+          ? {
+              kind: "service_start" as const,
+              ref: "service",
+              version: "1",
+              readinessProbeRef: "ready",
+            }
+          : { kind: "task_start" as const, ref: "task", version: "1" },
+      }
+    : scenario === "command"
+      ? {
+          ...admitted.plan,
+          operationContract: { kind: "command" as const, ref: "command", version: "1" },
+        }
+      : scenario === "pi"
+        ? {
+            ...admitted.plan,
+            operationContract: { kind: "fixed_read" as const, ref: "pi-coding-tool", version: "1" },
+          }
+        : admitted.plan;
+  const calls: string[] = [];
+  let bound = false;
+  let facts = admitted.facts;
+  let resolveResult!: (value: unknown) => void;
+  const result = new Promise((resolve) => {
+    resolveResult = resolve;
+  });
+  const host = {
+    ready: Promise.resolve(),
+    started: Promise.resolve({ processId: 1234 }),
+    readOutput: () => ({ bytes: new Uint8Array(), nextOffset: 0, end: true }),
+    result,
+    controlBinding: {
+      directory: `${root}/control`,
+      token: "a".repeat(64),
+      sessionId: "session",
+      jobId: plan.identity.jobId,
+      attemptId: plan.identity.attemptId,
+    },
+    inspect: () => ({ bootId: "boot", state: "alive" }),
+    start: vi.fn(() => {
+      calls.push("host-start");
+      if (background || scenario === "revoked-running" || scenario === "finished-during-check")
+        return;
+      resolveResult({
+        stdout: new TextEncoder().encode("result"),
+        taskStarted: true,
+        taskProcessExited: true,
+        exitCode: 0,
+      });
+    }),
+    cancel: vi.fn(() =>
+      resolveResult({
+        stdout: new Uint8Array(),
+        taskStarted: false,
+        taskProcessExited: false,
+        exitCode: null,
+      }),
+    ),
+  };
+  mocks.prepare.mockImplementation((request) => {
+    parseJobHostRequest({ ...request, deadlineAt: new Date(Date.now() + 60000).toISOString() });
+    if (scenario === "pi") {
+      const input = JSON.parse(Buffer.from(request.stdinBase64, "base64").toString("utf8"));
+      expect(input).toMatchObject({
+        schemaVersion: "pi-runner.v1",
+        tool: plan.operation,
+        workspace: root,
+        scope: { authorizationRef: plan.authorizationRef, profileRef: "authorized-project.v1" },
+      });
+      expect(JSON.parse(input.parametersJson)).toEqual({
+        path: "file.txt",
+        workspace: "/untrusted",
+        authorizationRef: "forged",
+      });
+    }
+    return host;
+  });
+  mocks.policy.mockResolvedValue({
+    policy: {
+      workspace: root,
+      privateDirectory: `${root}/scratch`,
+      ...(service ? { allowedUnixSockets: [`${root}/scratch/ready.sock`] } : {}),
+      writable: false,
+      readOnlyToolchainPaths: [],
+      protectedPaths: [],
+      allowedDomains: [],
+    },
+    compiled: { policyDigest: admitted.facts.environment.policyDigest },
+  });
+  mocks.load.mockResolvedValue({
+    snapshot: {
+      capabilities: [
+        {
+          manifest: { ref: plan.capabilityRef, version: plan.capabilityVersion },
+          binding: {
+            kind: "sandbox",
+            value: {
+              privateRoot: root,
+              ...(service ? { readinessProbes: [probe] } : {}),
+              hostId: plan.identity.hostId,
+              runtimeRoot: "/runtime",
+              readOnlyToolchainPaths: [],
+              protectedPaths: [],
+              roots: [
+                { canonicalRootId: f.scope.directoryGrant.canonicalRootId, canonicalPath: root },
+              ],
+              executable: { path: "/bin/true" },
+              runner: { path: "/runner" },
+            },
+          },
+          qualification: { sandbox: {} },
+        },
+      ],
+    },
+  });
+  mocks.verify.mockResolvedValue(undefined);
+  const reservation = {
+    resourceRef: background ? "resource-task" : null,
+    workspaceConflictRefs: admitted.workspaces.map((item) => item.ref),
+  };
+  const payloads = {
+    readInput: async () =>
+      scenario === "pi"
+        ? Buffer.from(
+            JSON.stringify({
+              path: "file.txt",
+              workspace: "/untrusted",
+              authorizationRef: "forged",
+            }),
+          )
+        : new Uint8Array(),
+    writeOutput: async () => "output",
+    sandboxExecution: async (
+      _invocation: unknown,
+      _identity: unknown,
+      command: { kind: string; facts?: typeof facts },
+    ) => {
+      calls.push(command.kind);
+      if (
+        command.kind === "resolve" &&
+        scenario === "finished-during-check" &&
+        host.start.mock.calls.length > 0
+      ) {
+        resolveResult({
+          stdout: new TextEncoder().encode("result"),
+          taskStarted: true,
+          taskProcessExited: true,
+          exitCode: 0,
+        });
+        await Promise.resolve();
+      }
+      if (
+        command.kind === "resolve" &&
+        scenario === "revoked-running" &&
+        host.start.mock.calls.length > 0
+      )
+        throw new Error("revoked during foreground execution");
+      if (command.kind === "register_control" && scenario === "registration-revoked")
+        throw new Error("revoked");
+      if (command.kind === "bind") {
+        bound = true;
+        if (!command.facts) throw new Error("facts missing");
+        facts = command.facts;
+        if (scenario === "bind-ack-loss") throw new Error("ack lost after commit");
+      }
+      if (command.kind === "observe_control") {
+        facts = {
+          ...facts,
+          resource: {
+            ...facts.resource,
+            sequence: facts.resource.sequence + 1,
+            status: service
+              ? { kind: "service", readiness: "ready" }
+              : { kind: "task", state: "running" },
+            supervision: "controlled",
+            cleanup: "pending",
+            evidence: {
+              ref: "control-proof",
+              subject: { kind: "local_process", processIdentityRef: "task-process" },
+              digest: "a".repeat(64),
+              profileRef: plan.binding.profileRef,
+              qualificationRef: plan.binding.qualificationRef,
+              validUntil: plan.effectiveDeadlineAt,
+            },
+          },
+        };
+      }
+      if (command.kind === "append" || command.kind === "operation") {
+        if (!command.facts) throw new Error("facts missing");
+        facts = command.facts;
+        if (command.kind === "operation" && scenario === "background-ack-loss")
+          throw new Error("ack lost");
+      }
+      return {
+        record: bound
+          ? { ...admitted, plan, phase: "bound", facts }
+          : { phase: "reserved", plan, reservation, startedAt: null, operationRevision: 0 },
+        applied: command.kind === "bind" && scenario !== "replay",
+        resolvedScope:
+          command.kind === "resolve"
+            ? {
+                scope:
+                  scenario === "pi" ? { ...f.scope, profileRef: "authorized-project.v1" } : f.scope,
+                allowedDomains: [],
+              }
+            : null,
+        output: null,
+      };
+    },
+  } as unknown as ProductionPayloadBrokerClient;
+  const worker = new ProductionSandboxExecutionV2({
+    configuration: { capabilityDeployment: {} as never },
+    peer: { workerInstanceId: "worker" } as never,
+    payloads,
+    clock: { now: () => T1 },
+  });
+  const base = serviceRequest();
+  const request = {
+    ...base,
+    messageId: plan.identity.invocationId,
+    authorizationRef: plan.authorizationRef,
+    scope: {
+      ...base.scope,
+      deploymentId: plan.executionLease.deploymentId,
+      authorityEpoch: plan.executionLease.authorityEpoch,
+      fencingToken: plan.executionLease.fencingToken,
+    },
+    payload: {
+      ...base.payload,
+      capabilityId: plan.capabilityRef,
+      capabilityVersion: plan.capabilityVersion,
+      capabilityHandleRef: plan.handleRef,
+      inputRef: plan.inputRef,
+      operation: plan.operation,
+      deadlineAt: plan.effectiveDeadlineAt,
+      resourceCeiling: plan.resourceCeiling,
+      sandboxExecution: {
+        schemaVersion: "sandbox-execution.v2" as const,
+        mode: plan.mode,
+        environmentId: plan.environmentId,
+        identity: plan.identity,
+      },
+    },
+  };
+  const outcome = await worker.execute(request);
+  expect(outcome.outcome).toBe(
+    scenario === "background" || service ? "succeeded" : "result_unknown",
+  );
+  if (background) {
+    expect(facts.result).toMatchObject({
+      kind: "started",
+      handle: {
+        ref: "resource-task",
+        ...(service ? { readiness: "ready" } : { state: "running" }),
+      },
+    });
+    if (scenario === "background" || service) expect(host.cancel).not.toHaveBeenCalled();
+    expect(await worker.execute(request)).toEqual(outcome);
+    await worker.shutdown();
+    expect(facts.result?.kind).toBe("started");
+    expect(host.start).toHaveBeenCalledTimes(1);
+    return;
+  }
+  expect(await worker.execute(request)).toEqual(outcome);
+  expect(host.start).toHaveBeenCalledTimes(
+    scenario === "normal" ||
+      scenario === "command" ||
+      scenario === "pi" ||
+      scenario === "finished-during-check" ||
+      scenario === "revoked-running"
+      ? 1
+      : 0,
+  );
+  if (scenario === "normal" || scenario === "pi")
+    expect(facts.effect).toEqual({ kind: "not_applicable" });
+  if (scenario === "command") expect(facts.effect).toEqual({ kind: "not_asserted" });
+  if (scenario === "finished-during-check") {
+    expect(calls).not.toContain("observe_control");
+    expect(calls).toContain("append");
+    expect(facts.result).toMatchObject({
+      kind: "result",
+      output: { ref: "output", byteLength: 6 },
+    });
+    expect(facts.resource).toMatchObject({ supervision: "lost", cleanup: "unknown" });
+  }
+  if (scenario === "normal" || scenario === "command" || scenario === "pi") {
+    expect(calls.indexOf("register_control")).toBeLessThan(calls.indexOf("bind"));
+    expect(calls.indexOf("bind")).toBeLessThan(calls.indexOf("host-start"));
+    expect(facts.result).toMatchObject({
+      kind: "result",
+      output: { ref: "output", byteLength: 6 },
+    });
+    expect(facts.resource).toMatchObject({ supervision: "lost", cleanup: "unknown" });
+  }
+  expect(host.cancel).toHaveBeenCalled();
+  await worker.shutdown();
+});

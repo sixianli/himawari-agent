@@ -1,4 +1,4 @@
-import { DOMAIN_ERROR_CODES, DomainError } from "./errors.js";
+import { DOMAIN_ERROR_CODES, DomainError } from "./errors.ts";
 import type {
   AgentId,
   IdempotencyKey,
@@ -7,8 +7,8 @@ import type {
   ThreadId,
   TriggerId,
   TurnId,
-} from "./identifiers.js";
-import type { Run } from "./run-state.js";
+} from "./identifiers.ts";
+import type { Run } from "./run-state.ts";
 
 export interface Owner {
   readonly id: OwnerId;

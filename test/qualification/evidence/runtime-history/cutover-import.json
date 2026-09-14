@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "imported": true,
+  "threadId": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+  "messageCount": 34,
+  "coveredRuns": 10,
+  "originalRecordsUnchanged": true,
+  "foreignKeysValid": true,
+  "modelCalls": 0
+}

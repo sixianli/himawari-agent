@@ -1,0 +1,26 @@
+{
+  "sourceArchiveSha256": "4bdf5a25dc6139be9e5068e1897c626534161430c25cf3849e292ed012e404a4",
+  "sourceManifestSha256": "4ebb7c0bbcb33ca7db68d1d5c00c4e46100ee72383c7367dbfb9b5ff349fd683",
+  "preparationSha256": "d85f4b6de731e9801f05a90b5285d5ddbd23e1268e00cdb9086230387c151aa6",
+  "sourceFiles": 909,
+  "prefixFiles": 34469,
+  "changed": [
+    "bin/himawari",
+    "bin/himawari-agent-service",
+    "bin/himawari-execution-worker",
+    "lib/himawari-agent/node_modules/@himawari-agent/runtime-pi/dist/pi-native-history.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/runtime-pi/dist/pi-runtime-adapter.js"
+  ],
+  "added": [
+    "lib/himawari-agent/node_modules/@himawari-agent/runtime-pi/dist/pi-tool-progress-guard.js",
+    "share/control-center/assets/en-BGDC4yOB.js",
+    "share/control-center/assets/index-B32F2PDK.css",
+    "share/control-center/assets/index-BQ7wuh-9.js",
+    "share/control-center/assets/ja-CYkHIGdT.js",
+    "share/control-center/assets/logo-symbol-light-DDULTiXD.png",
+    "share/control-center/index.html"
+  ],
+  "removed": [],
+  "staticFiles": 6,
+  "productionServiceChanged": false
+}

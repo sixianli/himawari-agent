@@ -41,36 +41,65 @@ export class AgentThreadGatewayService implements AgentThreadGatewayPort {
   async *subscribe(
     authentication: GatewayAuthenticationContext,
     subscription: ThreadGatewaySubscription,
+    signal?: AbortSignal,
   ): AsyncIterable<ThreadGatewayEvent> {
     await this.#authorize(authentication, subscription);
     const seen = new Set<string>();
     const revisions = new Map<string, number>();
-    for await (const event of this.#dependencies.reads.subscribe({
-      authentication,
-      subscription,
-    })) {
-      if (event.scope.ownerId !== authentication.ownerId) {
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
-          "Thread Gateway event is outside authenticated Owner scope",
-        );
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) controller.abort();
+    const iterator = this.#dependencies.reads
+      .subscribe({ authentication, subscription, signal: controller.signal })
+      [Symbol.asyncIterator]();
+    let pending = iterator.next();
+    try {
+      while (!controller.signal.aborted) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const tick = new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), 1000);
+        });
+        let item: IteratorResult<ThreadGatewayEvent> | null;
+        try {
+          item = await Promise.race([pending, tick]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+        if (controller.signal.aborted) return;
+        await this.#authorize(authentication, subscription);
+        if (!item) continue;
+        if (item.done) return;
+        const event = item.value;
+        if (event.scope.ownerId !== authentication.ownerId) {
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "Thread Gateway event is outside authenticated Owner scope",
+          );
+        }
+        if (seen.has(event.payload.cursor)) {
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "Thread Gateway stream repeated a durable cursor",
+          );
+        }
+        const previousRevision = revisions.get(event.payload.threadId) ?? 0;
+        if (event.payload.revision < previousRevision) {
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "Thread Gateway stream moved a Thread revision backwards",
+          );
+        }
+        seen.add(event.payload.cursor);
+        revisions.set(event.payload.threadId, event.payload.revision);
+        yield event;
+        pending = iterator.next();
       }
-      if (seen.has(event.payload.cursor)) {
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.INVALID_OPERATION,
-          "Thread Gateway stream repeated a durable cursor",
-        );
-      }
-      const previousRevision = revisions.get(event.payload.threadId) ?? 0;
-      if (event.payload.revision < previousRevision) {
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.INVALID_OPERATION,
-          "Thread Gateway stream moved a Thread revision backwards",
-        );
-      }
-      seen.add(event.payload.cursor);
-      revisions.set(event.payload.threadId, event.payload.revision);
-      yield event;
+    } finally {
+      controller.abort();
+      signal?.removeEventListener("abort", abort);
+      void pending.catch(() => undefined);
+      void iterator.return?.().catch(() => undefined);
     }
   }
 

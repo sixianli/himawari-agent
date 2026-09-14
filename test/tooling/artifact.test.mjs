@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -139,7 +139,9 @@ describe("same-artifact verification", () => {
         path.join(payload, "runtime/runtime-manifest.json"),
         JSON.stringify({ entrypoints: {}, externalDependencyClosure: {} }),
       );
-    record.files = (await collectArtifactFiles(payload)).filter(
+    // Match the packager after inserting new files; umask must not replace the
+    // intended payload rejection with an unrelated noncanonical-mode error.
+    record.files = (await collectArtifactFiles(payload, { normalizeModes: true })).filter(
       (file) => file.path !== "artifact-record.json",
     );
     record.contentSha256 = contentDigest(record.files);
@@ -162,6 +164,7 @@ describe("same-artifact verification", () => {
       "packages/persistence-sqlite",
       "packages/platform-node",
       "packages/runtime-pi",
+      "packages/runtime-sandbox",
     ];
     await writeFile(
       path.join(temporary, "package.json"),
@@ -207,12 +210,18 @@ describe("same-artifact verification", () => {
     );
     await writeFile(path.join(outer, "index.js"), "import 'inner-fixture';");
     await writeFile(path.join(inner, "index.js"), "export const value = 1;");
+    await chmod(outer, 0o775);
+    await chmod(path.join(outer, "index.js"), 0o775);
     const output = path.join(temporary, "runtime");
     await packageNodeRuntime({
       root: temporary,
       buildRoot: path.join(temporary, "compiled"),
       runtimeRoot: output,
     });
+    expect((await lstat(path.join(output, "node_modules/outer-fixture"))).mode & 0o022).toBe(0);
+    expect(
+      (await lstat(path.join(output, "node_modules/outer-fixture/index.js"))).mode & 0o777,
+    ).toBe(0o755);
     const manifest = JSON.parse(await readFile(path.join(output, "runtime-manifest.json"), "utf8"));
     expect(
       manifest.externalDependencyClosure["outer-fixture/node_modules/inner-fixture"].version,

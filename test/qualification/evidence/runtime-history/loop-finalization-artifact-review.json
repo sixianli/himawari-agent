@@ -1,0 +1,16 @@
+{
+  "prefixFiles": 34469,
+  "changed": [
+    "bin/himawari",
+    "bin/himawari-agent-service",
+    "bin/himawari-execution-worker",
+    "lib/himawari-agent/node_modules/@himawari-agent/runtime-pi/dist/pi-runtime-adapter.js"
+  ],
+  "added": [],
+  "removed": [],
+  "productionServiceChanged": false,
+  "sourceFiles": 911,
+  "sourceArchiveSha256": "e97a997e6d71533db192e3b3ec2c89dc5ab4e7ac65c2e74583daff9f03a9943a",
+  "sourceManifestSha256": "99c020b0567bdc146bc1edfafc8f6b0d31833849f28b9c0aeaa3c7d54242ddf9",
+  "preparationSha256": "914a5a51ab4e64fb6abf960e64bfd79fd0b1c7731c75f5523018bf57a807911d"
+}

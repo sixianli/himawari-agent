@@ -1,38 +1,54 @@
 import path from "node:path";
 import type {
   AttentionStatePort,
+  BuiltInIdentityStatePort,
   AuditLedgerPort,
-  BackgroundWorkStatePort,
+  AuthorityFence,
   AuthorityLeasePort,
   AuthorityLeaseRecord,
+  AuthorizationStorePort,
+  BackgroundWorkStatePort,
+  CapabilityExecutionHandleStorePort,
+  CapabilityInvocationReceiptPort,
+  CapabilityInvocationResultPort,
+  CapabilityRegistryStorePort,
   ClockPort,
   CommandResultLookup,
   CommandResultRecord,
   CommitStateAndEventsInput,
   CommitStateAndEventsResult,
   DeploymentAuthorityStatePort,
-  AuthorizationStorePort,
-  CapabilityExecutionHandleStorePort,
-  CapabilityRegistryStorePort,
+  DurableGitHubMonitorHistoryPolicyPort,
+  GitHubIntegrationStatePort,
+  GovernanceMutationReceiptStorePort,
+  MemoryProjectionJobStatePort,
+  ModelBudgetPort,
+  ModelInvocationIdentityPort,
+  OwnerIdentityStatePort,
   PayloadStorePort,
+  ProductMemoryStatePort,
   ProductStateRepositoryPort,
   ReliableEventPort,
   ReliableEventRecord,
+  RunCheckpointStore,
+  RunDispatchPort,
+  RunExecutionSourcePort,
+  RunLifecyclePort,
+  RunPayloadArtifactAuthority,
+  RunPayloadArtifactPort,
+  RunReconciliationPort,
+  SandboxExecutionJournalPort,
+  SandboxExecutionPreparationPort,
+  SandboxJobJournalPort,
   SchedulerPort,
-  SessionDeviceStatePort,
-  SessionDeletionStatePort,
-  StateRecord,
-  StateStorePort,
-  TraceStorePort,
-  OwnerIdentityStatePort,
-  MemoryProjectionJobStatePort,
-  ProductMemoryStatePort,
   SensitiveMemoryApprovalStatePort,
+  SessionDeletionStatePort,
+  SessionDeviceStatePort,
+  StateRecord,
   ThreadDistillationStatePort,
-  GitHubIntegrationStatePort,
-  GovernanceMutationReceiptStorePort,
-  DurableGitHubMonitorHistoryPolicyPort,
   ThreadRepositoryPort,
+  ThreadSearchProjectionSourcePort,
+  TraceStorePort,
 } from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
@@ -40,15 +56,16 @@ import type {
   AuthorityLeaseId,
   DeploymentAuthorityState,
   DeploymentId,
-  ProductAuthorityFence,
   OwnerId,
+  ProductAuthorityFence,
 } from "@himawari-agent/domain";
 import {
+  SqliteDurableAdapters,
   type SqliteGatewayReadModel,
+  type SqliteRecoveryAuthorityScope,
   type SqliteReliableEventConsumerDeduplicator,
   type SqliteReliableEventOutbox,
   type SqliteStartupRecovery,
-  SqliteDurableAdapters,
 } from "./durable-adapters.js";
 import type { VerifiedMigrationSnapshot } from "./migration-engine.js";
 import {
@@ -57,12 +74,16 @@ import {
   openQualifiedDatabase,
 } from "./migration-engine.js";
 import {
-  type SqliteWorkerConfiguration,
   SqliteExecutionContext,
+  type SqliteWorkerConfiguration,
 } from "./sqlite-execution-context.js";
-import { SQLITE_PERSISTENCE_ERROR_CODES, SqlitePersistenceError } from "./state-root-lock.js";
-import { acquireStateRootLock, type StateRootLock } from "./state-root-lock.js";
 import { SqliteGitHubMonitorHistoryPolicyAdapter } from "./sqlite-github-history-policy.js";
+import {
+  acquireStateRootLock,
+  SQLITE_PERSISTENCE_ERROR_CODES,
+  SqlitePersistenceError,
+  type StateRootLock,
+} from "./state-root-lock.js";
 
 export interface SqliteProductStateRepositoryOptions {
   readonly stateRoot: string;
@@ -182,7 +203,6 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
         busyTimeoutMs,
         minimumFreeBytes,
         warningFreeBytes,
-        startupNow: (options.now ?? (() => new Date().toISOString()))(),
         ...(options.qualification ? { qualification: options.qualification } : {}),
       });
       return new SqliteProductStateRepository({
@@ -201,6 +221,16 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
   read(key: string): Promise<StateRecord | undefined> {
     this.assertOpen();
     return this.context.request("read", { key });
+  }
+
+  /** Read product state without crossing the configured Owner/Agent boundary. */
+  readScopedState(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    key: string,
+  ): Promise<StateRecord | undefined> {
+    this.assertOpen();
+    return this.context.request("readScopedState", { ownerId, agentId, key });
   }
 
   listPending(limit: number): Promise<readonly ReliableEventRecord[]> {
@@ -270,12 +300,50 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.reliableEventPort(ownerId, agentId);
   }
 
-  authoritativeRunCheckpointStore(
+  runCheckpointStore(
     ownerId: OwnerId,
     agentId: AgentId,
     authority: ProductAuthorityFence,
-  ): StateStorePort {
-    return this.durable.authoritativeRunCheckpointStore(ownerId, agentId, authority, this.now);
+  ): RunCheckpointStore {
+    return this.durable.runCheckpointStore(ownerId, agentId, authority, this.now);
+  }
+
+  runReconciliation(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    authorityLease: AuthorityFence,
+    consumerId: string,
+  ): RunReconciliationPort {
+    return this.durable.runReconciliation(ownerId, agentId, authority, authorityLease, consumerId);
+  }
+
+  runDispatch(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    authorityLease: { readonly leaseId: AuthorityLeaseId; readonly fencingToken: number },
+    consumerId: string,
+  ): RunDispatchPort {
+    return this.durable.runDispatch(ownerId, agentId, authority, authorityLease, consumerId);
+  }
+
+  modelBudgetPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    authorityLease: { readonly leaseId: AuthorityLeaseId; readonly fencingToken: number },
+  ): ModelBudgetPort {
+    return this.durable.modelBudgetPort(ownerId, agentId, authority, authorityLease);
+  }
+
+  modelInvocationIdentityPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+    authorityLease: { readonly leaseId: AuthorityLeaseId; readonly fencingToken: number },
+  ): ModelInvocationIdentityPort {
+    return this.durable.modelInvocationIdentityPort(ownerId, agentId, authority, authorityLease);
   }
 
   reliableEventOutbox(): SqliteReliableEventOutbox {
@@ -292,6 +360,14 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   payloadStore(ownerId: OwnerId, agentId: AgentId): PayloadStorePort {
     return this.durable.payloadStore(ownerId, agentId);
+  }
+
+  runPayloadArtifactPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: RunPayloadArtifactAuthority,
+  ): RunPayloadArtifactPort {
+    return this.durable.runPayloadArtifactPort(ownerId, agentId, authority, this.now);
   }
 
   auditLedger(): AuditLedgerPort {
@@ -313,6 +389,35 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.capabilityStore(ownerId, agentId);
   }
 
+  capabilityInvocationReceiptPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+  ): CapabilityInvocationReceiptPort {
+    return this.durable.capabilityInvocationReceiptPort(ownerId, agentId);
+  }
+
+  sandboxExecutionPreparations(
+    ownerId: OwnerId,
+    agentId: AgentId,
+  ): SandboxExecutionPreparationPort {
+    return this.durable.sandboxExecutionPreparations(ownerId, agentId);
+  }
+
+  sandboxExecutionJournal(ownerId: OwnerId, agentId: AgentId): SandboxExecutionJournalPort {
+    return this.durable.sandboxExecutionJournal(ownerId, agentId);
+  }
+
+  sandboxJobJournal(ownerId: OwnerId, agentId: AgentId): SandboxJobJournalPort {
+    return this.durable.sandboxJobJournal(ownerId, agentId);
+  }
+
+  capabilityInvocationResultPort(
+    ownerId: OwnerId,
+    agentId: AgentId,
+  ): CapabilityInvocationResultPort {
+    return this.durable.capabilityInvocationResultPort(ownerId, agentId);
+  }
+
   scheduler(): SchedulerPort {
     return this.durable.scheduler();
   }
@@ -327,6 +432,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   sessionDeletionState(): SessionDeletionStatePort {
     return this.durable.sessionDeletionState();
+  }
+
+  builtInIdentityState(ownerId: OwnerId, agentId: AgentId): BuiltInIdentityStatePort {
+    return this.durable.builtInIdentityState(ownerId, agentId);
   }
 
   ownerIdentityState(): OwnerIdentityStatePort {
@@ -357,6 +466,25 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.threadRepository();
   }
 
+  threadSearchProjectionSource(): ThreadSearchProjectionSourcePort {
+    return { pending: (input) => this.context.request("thread.pendingSearchProjection", input) };
+  }
+
+  runExecutionSource(ownerId: OwnerId, agentId: AgentId): RunExecutionSourcePort {
+    return Object.freeze<RunExecutionSourcePort>({
+      read: (runId) =>
+        this.context.request("thread.readRunExecutionSource", { ownerId, agentId, runId }),
+    });
+  }
+
+  runLifecycle(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    authority: ProductAuthorityFence,
+  ): RunLifecyclePort {
+    return this.durable.runLifecycle(ownerId, agentId, authority, this.now);
+  }
+
   githubIntegrationState(): GitHubIntegrationStatePort {
     return this.durable.githubIntegrationState();
   }
@@ -369,9 +497,14 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.gatewayReadModel();
   }
 
-  startupRecovery(): Promise<SqliteStartupRecovery> {
+  recoverySnapshot(): Promise<SqliteStartupRecovery> {
     this.assertOpen();
-    return Promise.resolve(this.context.initialRecovery<SqliteStartupRecovery>());
+    return this.durable.recoverySnapshot();
+  }
+
+  startupRecovery(scope: SqliteRecoveryAuthorityScope): Promise<SqliteStartupRecovery> {
+    this.assertOpen();
+    return this.durable.startupRecovery(scope, this.now());
   }
 
   checkpoint(mode: "passive" | "truncate" = "passive"): Promise<SqliteCheckpointResult> {

@@ -14,6 +14,7 @@ import {
   sha256,
   validateRecord,
 } from "./contracts.mjs";
+import { coverageProjects, inCoverageScope } from "./coverage-model.mjs";
 import { validateQualityWorkflow } from "./quality-policy.mjs";
 
 const sorted = (values) => [...values].sort();
@@ -36,7 +37,14 @@ const jobIds = [
 ];
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
 
-export function validatePolicy(policy) {
+export function validatePolicy(policy, { allowLegacyCoverage = false } = {}) {
+  const legacyCoverage =
+    allowLegacyCoverage &&
+    sameSet(policy.checks?.find((check) => check.id === "coverage")?.projects ?? [], [
+      "unit",
+      "contracts",
+      "tooling",
+    ]);
   validateRecord("CheckPolicy", policy);
   unique(policy.events, "event");
   unique(
@@ -102,7 +110,7 @@ export function validatePolicy(policy) {
     test: ["policy", "build"],
     "node-floor": ["policy"],
     browser: ["build"],
-    coverage: ["policy"],
+    coverage: legacyCoverage ? ["policy"] : ["policy", "build"],
     security: ["policy"],
     required: jobIds.filter((id) => id !== "required"),
   };
@@ -127,7 +135,9 @@ export function validatePolicy(policy) {
     const requiredProjects = ["test", "node-floor"].includes(check.id)
       ? mainProjects.filter((id) => id !== "tooling")
       : check.id === "coverage"
-        ? ["unit", "contracts", "tooling"]
+        ? legacyCoverage
+          ? ["unit", "contracts", "tooling"]
+          : coverageProjects
         : check.id === "policy"
           ? ["tooling"]
           : [];
@@ -315,12 +325,23 @@ export function validateWorkflow(policy, source, toolchain) {
       }
     }
     if (check.id === "coverage") {
+      const downloads = job.steps.filter((step) =>
+        step.uses?.startsWith("actions/download-artifact@"),
+      );
+      assert(
+        downloads.length === 1 &&
+          downloads[0].if === undefined &&
+          downloads[0].with?.["artifact-ids"] === githubExpression("needs.build.outputs.linux") &&
+          downloads[0].with?.path === ".ci-output/input" &&
+          downloads[0].with?.["merge-multiple"] === true,
+        "Coverage must download this attempt's Linux build by artifact ID",
+      );
       const executions = job.steps.filter((step) => step.run?.includes("scripts/ci/run.mjs"));
       assert(
         executions.length === 1 &&
           executions[0].if === undefined &&
           executions[0].run ===
-            '.ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only',
+            '.ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only --input .ci-output/input/result.json',
         "Coverage must use the shared runner with the initial-only baseline candidate option",
       );
     }
@@ -477,7 +498,16 @@ export function inspectTestSource(source, filename) {
   return { declarations, modifiers, emptySuites };
 }
 
-export function validateTestInventory(policy, files, readSource) {
+export function validateTestPlacement(files, coveragePolicy) {
+  for (const filename of files)
+    if (/(?:\.test|\.spec|\.type-test)\.[cm]?[jt]sx?$/u.test(filename))
+      assert(
+        !inCoverageScope(filename, coveragePolicy),
+        `Test file overlaps production coverage: ${filename}; move it to the workspace test directory`,
+      );
+}
+
+export function planTestInventory(policy, files) {
   validatePolicy(policy);
   unique(files, "inventory file");
   const tests = files.filter((file) => /(?:\.test|\.spec|\.type-test)\.[cm]?[jt]sx?$/u.test(file));
@@ -485,6 +515,7 @@ export function validateTestInventory(policy, files, readSource) {
   const registered = new Map(policy.registeredTests.map((entry) => [entry.path, entry]));
   for (const registration of policy.registeredTests)
     assert(tests.includes(registration.path), `Stale test registration: ${registration.path}`);
+  const entries = [];
   for (const filename of tests) {
     const owners = policy.testProjects.filter(
       (project) =>
@@ -497,21 +528,34 @@ export function validateTestInventory(policy, files, readSource) {
       `Test requires exactly one owner: ${filename}`,
     );
     if (owners.length) counts[owners[0].id] += 1;
-    if (registration?.kind === "type-check") continue;
-    const inspection = inspectTestSource(readSource(filename), filename);
-    assert(inspection.declarations > 0, `No executable test declarations: ${filename}`);
-    assert(inspection.emptySuites.length === 0, `Empty suite: ${filename}`);
-    for (const { modifier, line } of inspection.modifiers) {
-      assert(
-        modifier !== "only" &&
-          modifier !== "<dynamic>" &&
-          registration?.allowedModifiers.includes(modifier),
-        `Forbidden test modifier ${modifier}: ${filename}:${line}`,
-      );
-    }
+    entries.push({ filename, registration });
   }
   for (const [id, count] of Object.entries(counts)) assert(count > 0, `Empty project: ${id}`);
-  return { files: tests.length, projects: counts };
+  return { files: tests.length, projects: counts, entries };
+}
+
+export function validateTestFileSource(source, filename, registration) {
+  if (registration?.kind === "type-check") return;
+  const inspection = inspectTestSource(source, filename);
+  assert(inspection.declarations > 0, `No executable test declarations: ${filename}`);
+  assert(inspection.emptySuites.length === 0, `Empty suite: ${filename}`);
+  for (const { modifier, line } of inspection.modifiers) {
+    assert(
+      modifier !== "only" &&
+        modifier !== "<dynamic>" &&
+        registration?.allowedModifiers.includes(modifier),
+      `Forbidden test modifier ${modifier}: ${filename}:${line}`,
+    );
+  }
+}
+
+export function validateTestInventory(policy, files, readSource) {
+  const { entries, ...inventory } = planTestInventory(policy, files);
+  for (const { filename, registration } of entries) {
+    if (registration?.kind !== "type-check")
+      validateTestFileSource(readSource(filename), filename, registration);
+  }
+  return inventory;
 }
 
 export function resolvePolicySource({
@@ -541,7 +585,15 @@ export function resolvePolicySource({
   const bytes = hasPolicy
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
-  const policy = validatePolicy(JSON.parse(bytes));
+  const policy = validatePolicy(JSON.parse(bytes), { allowLegacyCoverage: true });
+  // The approved migration only adds integration collection and its build input.
+  // Keep the accepted bytes/hash, thresholds, inventory and every other gate.
+  const collection = policy.checks.find((check) => check.id === "coverage");
+  if (!collection.projects.includes("integration")) {
+    collection.projects = [...coverageProjects];
+    collection.needs = ["policy", "build"];
+    collection.outputs = [...new Set([...collection.outputs, "artifact"])];
+  }
   const coverage = hasCoverage ? JSON.parse(git(["show", `${baseSha}:${coveragePath}`])) : null;
   assert(
     !hasCoverage || (coverage && typeof coverage === "object" && !Array.isArray(coverage)),
@@ -672,6 +724,8 @@ export async function main(argv = process.argv.slice(2)) {
   )
     .split("\0")
     .filter(Boolean);
+  validateTestPlacement(files, readJson(path.join(root, "ci/coverage-policy.json")));
+  if (source.coverage) validateTestPlacement(files, source.coverage);
   const inventory = validateTestInventory(source.policy, [...new Set(files)], (file) =>
     readFileSync(path.join(root, file), "utf8"),
   );

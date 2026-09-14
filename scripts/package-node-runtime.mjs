@@ -4,6 +4,8 @@ import { builtinModules, createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { collectArtifactFiles } from "./ci/artifact-files.mjs";
+
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const internalRoots = [
   "apps/admin-cli",
@@ -18,6 +20,7 @@ const internalRoots = [
   "packages/persistence-sqlite",
   "packages/platform-node",
   "packages/runtime-pi",
+  "packages/runtime-sandbox",
 ];
 
 export async function packageNodeRuntime({
@@ -222,6 +225,9 @@ export async function packageNodeRuntime({
       2,
     )}\n`,
   );
+  // Published runtime bytes must not be writable by other users, regardless of
+  // the builder umask or dependency extraction modes. Preserve executable bits.
+  await collectArtifactFiles(runtimeRoot, { normalizeModes: true });
   return { runtimeRoot, externalDependencyClosure: Object.fromEntries(external) };
 }
 

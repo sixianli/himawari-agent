@@ -25,12 +25,14 @@ import {
   repositoryRoot,
   validateRecord,
 } from "./contracts.mjs";
-import { validateCoveragePolicy } from "./coverage-model.mjs";
+import { prepareCoverageComparison, retainComparisonEvidence } from "./coverage-comparison.mjs";
+import { strategyDigest, validateCoveragePolicy } from "./coverage-model.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
 import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
 import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
 import { runTests } from "./test.mjs";
+import { verifyArtifact } from "./verify-artifact.mjs";
 
 const json = (filename, value) =>
   writeFileSync(filename, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx" });
@@ -71,6 +73,7 @@ export async function runCheck({
   context,
   artifact,
   baselineCandidate,
+  comparison,
   hosted = process.env.GITHUB_ACTIONS === "true",
 }) {
   if (
@@ -85,7 +88,8 @@ export async function runCheck({
   if (existsSync(directory)) throw new Error("CI_OUTPUT_ALREADY_EXISTS");
   if (artifact && (!existsSync(artifact) || !statSync(artifact).isFile()))
     throw new Error("CI_ARTIFACT_INVALID");
-  if (["test", "browser"].includes(checkId) && !artifact) throw new Error("CI_ARTIFACT_REQUIRED");
+  if (["test", "browser", "coverage"].includes(checkId) && !artifact)
+    throw new Error("CI_ARTIFACT_REQUIRED");
   mkdirSync(directory, { recursive: true });
   json(path.join(directory, "context.json"), context);
   const started = performance.now();
@@ -118,6 +122,7 @@ export async function runCheck({
   };
   const files = [];
   let baselineCandidatePath;
+  const comparisonDirectories = [];
   const temporaryDirectory = mkdtempSync("/tmp/hci-");
   const resourceObserver = await observeResources({ root, toolsDirectory, temporaryDirectory });
   try {
@@ -160,13 +165,13 @@ export async function runCheck({
     )
       throw new Error("CI_EXECUTING_TOOLCHAIN_MISMATCH");
     result.toolchain.npm = version;
-    const command = async (name, executable, args) => {
+    const command = async (name, executable, args, options = {}) => {
       const log = path.join(directory, `${name}.log`);
       const remaining = check.timeoutMinutes * 60_000 - (performance.now() - started);
       if (remaining <= 0) throw new Error("CI_CHECK_TIMEOUT");
       const outcome = await execute(executable, args, {
-        cwd: root,
-        env,
+        cwd: options.cwd ?? root,
+        env: options.env ?? env,
         log,
         timeoutMs: remaining,
       });
@@ -178,6 +183,23 @@ export async function runCheck({
         throw new Error(`CI_COMMAND_FAILED:${name}`);
       }
       return outcome;
+    };
+    const reportedTestCommand = async (name, args, scope, collect) => {
+      let commandError;
+      try {
+        await command(name, tools.node, args);
+      } catch (error) {
+        commandError = error;
+      }
+      // Failed processes can still produce valid reports. Keep their measurements,
+      // but never let a report override the actual process exit code.
+      try {
+        collect();
+      } catch (error) {
+        if (!commandError) throw error;
+        details.failures.push(`CI_TEST_REPORT_INVALID:${scope}:${redactText(error.message)}`);
+      }
+      if (commandError) throw commandError;
     };
     const vitest = async (projects) => {
       for (const id of projects) {
@@ -198,10 +220,13 @@ export async function runCheck({
           `--outputFile.junit=${junit}`,
         ];
         files.push({ path: filename, kind: "json" }, { path: junit, kind: "junit" });
-        await command(`vitest-${id}`, tools.node, args);
-        const counts = vitestCounts(readJson(filename));
+        let counts;
+        await reportedTestCommand(`vitest-${id}`, args, id, () => {
+          counts = vitestCounts(readJson(filename));
+          result.projects.push({ id, counts });
+          result.counts = sumCounts(result.projects);
+        });
         if (counts.failed || counts.skipped) throw new Error(`CI_TEST_INCOMPLETE:${id}`);
-        result.projects.push({ id, counts });
       }
       result.counts = sumCounts(result.projects);
     };
@@ -252,6 +277,21 @@ export async function runCheck({
         throw new Error("CI_SECURITY_FAILED");
       }
     } else if (checkId === "coverage") {
+      await verifyArtifact({ archive: artifact, root, context, python: tools.python });
+      const retained = path.join(directory, path.basename(artifact));
+      copyFileSync(artifact, retained);
+      if (fileSha256(retained) !== fileSha256(artifact))
+        throw new Error("CI_COVERAGE_ARTIFACT_COPY_CHANGED");
+      const entry = reportEntry(retained, "artifact", directory);
+      files.push({ path: retained, kind: "artifact" });
+      result.artifacts.push({
+        role: "consumed",
+        platform: process.platform === "darwin" ? "macos-arm64" : "linux-x64",
+        path: entry.path,
+        sha256: entry.sha256,
+      });
+      env.HIMAWARI_TEST_ARTIFACT = retained;
+      env.HIMAWARI_TEST_CONTEXT = path.join(directory, "context.json");
       const coverageDirectory = path.join(directory, "coverage");
       const filename = path.join(directory, "tests.json");
       const snapshot = path.join(directory, "source-snapshot.json");
@@ -279,37 +319,85 @@ export async function runCheck({
         "--output",
         snapshot,
       ]);
-      await command("coverage", tools.node, [
-        path.join(root, "node_modules/vitest/vitest.mjs"),
-        "run",
-        "--config",
-        "vitest.workspace.ts",
-        ...check.projects.flatMap((id) => ["--project", id]),
-        "--maxWorkers",
-        "2",
-        "--coverage",
-        "--coverage.reportsDirectory",
-        coverageDirectory,
-        "--reporter=json",
-        `--outputFile=${filename}`,
-      ]);
-      const testReport = readJson(filename);
-      for (const id of check.projects) {
-        const project = source.policy.testProjects.find((entry) => entry.id === id);
-        const subset = testReport.testResults.filter((entry) => {
-          const name = path.relative(root, entry.name).split(path.sep).join("/");
-          return (
-            project.include.some((glob) => path.matchesGlob(name, glob)) &&
-            !project.exclude.some((glob) => path.matchesGlob(name, glob))
-          );
-        });
-        if (!subset.length) throw new Error(`CI_COVERAGE_PROJECT_UNIDENTIFIED:${id}`);
-        result.projects.push({ id, counts: vitestCounts({ success: true, testResults: subset }) });
-      }
-      result.counts = sumCounts(result.projects);
+      // Candidate collection and historical remeasurement own separate trees.
+      // Await both outcomes before verification or cleanup, including failures.
+      // The existing check budget bounds every child process in both paths.
+      const collectCoverage = async () => {
+        await reportedTestCommand(
+          "coverage",
+          [
+            path.join(root, "node_modules/vitest/vitest.mjs"),
+            "run",
+            "--config",
+            "vitest.workspace.ts",
+            ...check.projects.flatMap((id) => ["--project", id]),
+            "--maxWorkers",
+            "2",
+            "--coverage",
+            "--coverage.reportsDirectory",
+            coverageDirectory,
+            "--reporter=json",
+            `--outputFile=${filename}`,
+          ],
+          "coverage",
+          () => {
+            const testReport = readJson(filename);
+            vitestCounts(testReport);
+            for (const id of check.projects) {
+              const project = source.policy.testProjects.find((entry) => entry.id === id);
+              const subset = testReport.testResults.filter((entry) => {
+                const name = path.relative(root, entry.name).split(path.sep).join("/");
+                return (
+                  project.include.some((glob) => path.matchesGlob(name, glob)) &&
+                  !project.exclude.some((glob) => path.matchesGlob(name, glob))
+                );
+              });
+              if (!subset.length) throw new Error(`CI_COVERAGE_PROJECT_UNIDENTIFIED:${id}`);
+              const success = subset.every((entry) =>
+                entry.assertionResults.every((assertion) => assertion.status === "passed"),
+              );
+              result.projects.push({ id, counts: vitestCounts({ success, testResults: subset }) });
+            }
+            result.counts = sumCounts(result.projects);
+          },
+        );
+        if (result.counts.failed || result.counts.skipped)
+          throw new Error("CI_TEST_INCOMPLETE:coverage");
+      };
+      const compareCoverage = async () => {
+        if (
+          !comparison &&
+          source.coverage &&
+          strategyDigest(source.coverage) !==
+            strategyDigest(readJson(path.join(root, "ci/coverage-policy.json")))
+        ) {
+          const prepared = await prepareCoverageComparison({
+            root,
+            context,
+            policy: readJson(path.join(root, "ci/coverage-policy.json")),
+            acceptedPolicy: source.coverage,
+            tools,
+            toolsDirectory,
+            env,
+            output: directory,
+            command,
+            own: (owned) => comparisonDirectories.push(owned),
+          });
+          comparison = prepared.filename;
+          files.push({ path: comparison, kind: "json" });
+        }
+      };
+      const measured = await Promise.allSettled([collectCoverage(), compareCoverage()]);
+      const failures = measured.filter((outcome) => outcome.status === "rejected");
+      if (failures.length)
+        throw new AggregateError(
+          failures.map((outcome) => outcome.reason),
+          "CI_COVERAGE_MEASUREMENT_FAILED",
+        );
       await command("coverage-policy", tools.node, [
         "scripts/ci/check-coverage.mjs",
         ...(candidate ? ["--mode", "measure", "--baseline-output", candidate] : []),
+        ...(comparison ? ["--comparison", comparison] : []),
         "--context",
         path.join(directory, "context.json"),
         "--snapshot",
@@ -347,6 +435,7 @@ export async function runCheck({
               artifact: outcome.archive,
               output: path.join(directory, "tests"),
               context,
+              remainingBudgetMs: check.timeoutMinutes * 60_000 - (performance.now() - started),
             });
           }
         } else if (checkId === "test") {
@@ -355,6 +444,7 @@ export async function runCheck({
             artifact,
             output: path.join(directory, "tests"),
             context,
+            remainingBudgetMs: check.timeoutMinutes * 60_000 - (performance.now() - started),
           });
         } else {
           outcome = await runBrowser({
@@ -407,6 +497,18 @@ export async function runCheck({
       for (const cause of error.errors) details.failures.push(redactText(cause.message));
   }
   details.resources = await resourceObserver.stop();
+  for (const owned of comparisonDirectories) {
+    try {
+      files.push(
+        ...retainComparisonEvidence(path.join(owned, "source/.ci-output/comparison"), directory),
+      );
+      rmSync(owned, { recursive: true });
+    } catch (error) {
+      details.failures.push(`CI_COMPARISON_CLEANUP_FAILED:${error.code ?? error.message}`);
+      result.status = "infrastructure_failed";
+      result.exitCode = 1;
+    }
+  }
   try {
     rmSync(temporaryDirectory, { recursive: true });
   } catch (error) {
@@ -438,6 +540,7 @@ export async function main(argv = process.argv.slice(2)) {
     "--artifact",
     "--input",
     "--baseline-candidate",
+    "--comparison",
   ]);
   for (const key of ["--check", "--output", "--tools"])
     if (!args[key]) throw new Error(`Missing argument: ${key}`);
@@ -470,6 +573,7 @@ export async function main(argv = process.argv.slice(2)) {
     context,
     artifact,
     baselineCandidate: args["--baseline-candidate"],
+    comparison: args["--comparison"] && path.resolve(args["--comparison"]),
   });
   process.stdout.write(
     `${result.checkId}/${result.matrixKey}: ${result.status} (${result.counts.passed} passed, ${result.counts.failed} failed)\n`,

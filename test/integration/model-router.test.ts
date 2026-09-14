@@ -1,12 +1,19 @@
 import {
+  type ModelDescriptor,
+  type ModelInvocationAdmissionInput,
+  type ModelInvocationAdmissionResult,
+  type ModelInvocationEvent,
+  type ModelInvocationIdentity,
+  type ModelInvocationPermit,
   ModelRouterService,
   SessionTraceRecorder,
-  type ModelDescriptor,
-  type ModelInvocationEvent,
 } from "@himawari-agent/application";
 import {
   createAgentId,
+  createAuthorityLeaseId,
+  createDeploymentId,
   createOwnerId,
+  createRunExecutionLeaseId,
   createRunId,
   createSessionId,
   createThreadId,
@@ -17,7 +24,7 @@ import {
   type TrustedModelTransport,
   type TrustedModelTransportInput,
 } from "@himawari-agent/platform-node";
-import { ManualClock, ScriptedModelPort, createReferenceAdapterSet } from "@himawari-agent/testing";
+import { createReferenceAdapterSet, ManualClock, ScriptedModelPort } from "@himawari-agent/testing";
 import { describe, expect, it } from "vitest";
 
 const OWNER_ID = createOwnerId("owner-model-router");
@@ -28,6 +35,83 @@ const RUN_ID = createRunId("run-model-router");
 const T0 = "2026-08-25T00:00:00.000Z";
 const T1 = "2026-08-25T00:00:01.000Z";
 const T2 = "2026-08-25T00:00:02.000Z";
+
+const TEST_EXECUTION_LEASE = Object.freeze({
+  executionLeaseId: createRunExecutionLeaseId("execution-model-router"),
+  expectedLeaseRevision: 1,
+  authorityLeaseId: createAuthorityLeaseId("authority-model-router"),
+  authorityFencingToken: 1,
+  deploymentId: createDeploymentId("deployment-model-router"),
+  authorityEpoch: 1,
+  fencingToken: 1,
+  consumerId: "model-router-test",
+});
+
+function allowModelAdmission() {
+  const permit: ModelInvocationPermit = {
+    assertActive: async () => undefined,
+    markStarted: async () => undefined,
+    releaseReserved: async () => undefined,
+    settle: async () => undefined,
+    markUnknown: async () => undefined,
+  };
+  const fresh = (input: ModelInvocationAdmissionInput): ModelInvocationAdmissionResult => ({
+    disposition: "fresh",
+    identity: Object.freeze({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      logicalSlot: input.logicalSlot,
+      sequence: 1,
+      invocationId: input.logicalSlot,
+      modelRef: input.modelRef,
+      provider: input.provider,
+      model: input.model,
+      modelVersion: input.modelVersion,
+      dataClassification: input.dataClassification,
+      source: input.source,
+      ordinal: input.ordinal,
+      pricing: Object.freeze({ ...input.pricing }),
+      pricingFingerprint: "sha256:model-router-fixture",
+      estimatedCostMicros: input.estimatedCostMicros,
+      budgetAccountId: "run-account-model-router",
+      budgetOperationKey: `model-invocation:${input.logicalSlot}`,
+      authority: Object.freeze({
+        deploymentId: TEST_EXECUTION_LEASE.deploymentId,
+        authorityEpoch: TEST_EXECUTION_LEASE.authorityEpoch,
+        fencingToken: TEST_EXECUTION_LEASE.fencingToken,
+      }),
+      authorityLease: Object.freeze({
+        leaseId: TEST_EXECUTION_LEASE.authorityLeaseId,
+        fencingToken: TEST_EXECUTION_LEASE.authorityFencingToken,
+      }),
+      executionLease: TEST_EXECUTION_LEASE,
+      status: "reserved",
+      reservedAt: T0,
+      startedAt: null,
+      observedAt: null,
+      settledAt: null,
+      releasedAt: null,
+      actualCostMicros: null,
+      reasonCode: null,
+    } satisfies ModelInvocationIdentity),
+    permit,
+  });
+  return {
+    context: {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      executionLease: TEST_EXECUTION_LEASE,
+    },
+    begin: async (input: ModelInvocationAdmissionInput) => fresh(input),
+  };
+}
+
+const TEST_ADMISSION_COST = {
+  pricing: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 },
+  estimatedCostMicros: 1_000,
+};
 
 function descriptor(
   ref: string,
@@ -64,6 +148,8 @@ function completed(modelRef: string): readonly ModelInvocationEvent[] {
       invocationId: `invocation-${modelRef}`,
       inputTokens: 100,
       outputTokens: 25,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
       costMicros: 250,
       latencyMs: 1000,
       occurredAt: T1,
@@ -78,7 +164,7 @@ function createRouter(
   const adapters = createReferenceAdapterSet({ clock });
   const trace = new SessionTraceRecorder({
     trace: adapters.trace,
-    payloads: adapters.payload,
+    artifacts: adapters.runPayloadArtifacts,
     protector: adapters.payloadProtector,
     audit: adapters.audit,
     clock,
@@ -296,7 +382,9 @@ describe("Task 10 Model Router and trusted Provider secrets", () => {
           modelRef: input.descriptor.ref,
           credentialMatched: input.secretValues.length === 1 && input.secretValues[0] === rawSecret,
         });
-        yield* completed(input.descriptor.ref);
+        for (const event of completed(input.descriptor.ref)) {
+          yield { ...event, invocationId: input.request.invocationId };
+        }
       }
     }
     const clock = new ManualClock(T0);
@@ -310,15 +398,19 @@ describe("Task 10 Model Router and trusted Provider secrets", () => {
     });
     const transport = new DeterministicTransport();
     const provider = new TrustedModelProviderAdapter({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
       descriptors: [primary],
       handles: adapters.secret,
       secretSource,
       transport,
       clock,
+      admission: async () => allowModelAdmission(),
+      admissionCost: () => TEST_ADMISSION_COST,
     });
     const trace = new SessionTraceRecorder({
       trace: adapters.trace,
-      payloads: adapters.payload,
+      artifacts: adapters.runPayloadArtifacts,
       protector: adapters.payloadProtector,
       audit: adapters.audit,
       clock,
@@ -408,21 +500,25 @@ describe("Task 10 Model Router and trusted Provider secrets", () => {
     const adapters = createReferenceAdapterSet({ clock });
     const primary = descriptor("model-trusted-duplicate", "primary");
     const transport: TrustedModelTransport = {
-      async *invoke(): AsyncIterable<ModelInvocationEvent> {
+      async *invoke(input: TrustedModelTransportInput): AsyncIterable<ModelInvocationEvent> {
         yield {
           type: "model.completed",
-          invocationId: "ignored-by-adapter",
+          invocationId: input.request.invocationId,
           inputTokens: 1,
           outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
           costMicros: 1,
           latencyMs: 1,
           occurredAt: T1,
         };
         yield {
           type: "model.completed",
-          invocationId: "ignored-by-adapter",
+          invocationId: input.request.invocationId,
           inputTokens: 99,
           outputTokens: 99,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
           costMicros: 99,
           latencyMs: 99,
           occurredAt: T1,
@@ -430,11 +526,15 @@ describe("Task 10 Model Router and trusted Provider secrets", () => {
       },
     };
     const provider = new TrustedModelProviderAdapter({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
       descriptors: [primary],
       handles: adapters.secret,
       secretSource: { resolve: async () => "unused" },
       transport,
       clock,
+      admission: async () => allowModelAdmission(),
+      admissionCost: () => TEST_ADMISSION_COST,
     });
     const events: ModelInvocationEvent[] = [];
     for await (const event of provider.invoke({

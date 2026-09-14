@@ -1,4 +1,5 @@
 export const allowedInternalDependencies = new Map([
+  ["@himawari-agent/runtime-sandbox", new Set()],
   ["@himawari-agent/domain", new Set()],
   ["@himawari-agent/gateway-contracts", new Set()],
   ["@himawari-agent/execution-contracts", new Set()],
@@ -64,6 +65,8 @@ export const allowedInternalDependencies = new Map([
   [
     "@himawari-agent/agent-service",
     new Set([
+      // Only the bounded control client subpath; never the SRT launch entry.
+      "@himawari-agent/runtime-sandbox",
       "@himawari-agent/application",
       "@himawari-agent/gateway-contracts",
       "@himawari-agent/execution-contracts",
@@ -79,6 +82,7 @@ export const allowedInternalDependencies = new Map([
   [
     "@himawari-agent/execution-worker",
     new Set([
+      "@himawari-agent/runtime-sandbox",
       "@himawari-agent/application",
       "@himawari-agent/execution-contracts",
       "@himawari-agent/platform-node",
@@ -98,6 +102,7 @@ export const allowedInternalDependencies = new Map([
 ]);
 
 export const nodeImportAllowedPackages = new Set([
+  "@himawari-agent/runtime-sandbox",
   "@himawari-agent/runtime-pi",
   "@himawari-agent/persistence-sqlite",
   "@himawari-agent/memory-mem0",
@@ -118,6 +123,8 @@ export const browserExternalPackages = new Set([
   "react",
   "react-dom",
   "react-intl",
+  // Browser rendering only: no HTML injection, network transport, or host I/O.
+  "marked",
   "vite",
   "vitest",
 ]);
@@ -150,4 +157,14 @@ export function isBrowserImportAllowed(packageName, specifier, workspaceNames) {
     return isInternalDependencyAllowed(packageName, dependency);
   }
   return browserExternalPackages.has(dependency);
+}
+
+export const srtDependencyOwner = "@himawari-agent/runtime-sandbox";
+
+export function isSandboxImportAllowed(packageName, specifier) {
+  return (
+    packageName !== "@himawari-agent/agent-service" ||
+    packageSpecifier(specifier) !== "@himawari-agent/runtime-sandbox" ||
+    specifier === "@himawari-agent/runtime-sandbox/control"
+  );
 }

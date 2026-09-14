@@ -1,0 +1,13 @@
+{
+  "probe": "ordinary-source-entrypoint",
+  "result": {
+    "productionSandboxProbePassed": true,
+    "schema": "sandbox-execution.v2",
+    "productionSuitable": false,
+    "networkDenial": "blocked-by-allowlist",
+    "cleanup": "unknown",
+    "replayExecuted": false
+  },
+  "stderrEmpty": true,
+  "priorIntermittentFailureRootCause": "unconfirmed"
+}

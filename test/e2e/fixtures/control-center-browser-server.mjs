@@ -14,6 +14,8 @@ const port = Number(process.env.HIMAWARI_BROWSER_FIXTURE_PORT ?? "4173");
 if (!Number.isInteger(port) || port < 0 || port > 65535)
   throw new Error("CONTROL_CENTER_PORT_INVALID");
 const now = "2026-08-27T00:00:00.000Z";
+const executionQualification = process.env.HIMAWARI_EXECUTION_FIXTURE === "1";
+const executionRecords = new Map();
 const accepted = new Set();
 const acceptedThreadCommands = new Map();
 const acceptedGovernanceCommands = new Map();
@@ -912,6 +914,8 @@ function contentType(filePath) {
       return "text/javascript; charset=utf-8";
     case ".css":
       return "text/css; charset=utf-8";
+    case ".png":
+      return "image/png";
     case ".svg":
       return "image/svg+xml";
     default:
@@ -961,6 +965,20 @@ function handleThreadQuery(message) {
   }
   const thread = threads.get(message.payload.threadId);
   if (!thread) return null;
+  if (message.type === "thread.execution" && executionQualification) {
+    const records = executionRecords.get(message.payload.runId) ?? [];
+    return {
+      ...common,
+      type: "thread.execution_snapshot",
+      payload: {
+        threadId: thread.threadId,
+        runId: message.payload.runId,
+        records: records.filter((record) => record.sequence > message.payload.afterSequence),
+        nextSequence: null,
+        generatedAt: new Date().toISOString(),
+      },
+    };
+  }
   if (message.type === "thread.detail") {
     return {
       ...common,
@@ -1092,6 +1110,7 @@ function handleThreadCommand(message) {
         runs: [],
       });
       break;
+    case "thread.message.submit_configured":
     case "thread.message.submit":
       thread.revision += 1;
       thread.messageWatermark += 1;
@@ -1115,6 +1134,15 @@ function handleThreadCommand(message) {
         updatedAt: message.payload.occurredAt,
       });
       break;
+    case "thread.run.cancel": {
+      const run = thread.runs.find((item) => item.runId === message.payload.runId);
+      if (run) {
+        run.status = "cancelled";
+        run.revision += 1;
+        run.updatedAt = new Date().toISOString();
+      }
+      break;
+    }
     case "thread.rename":
       thread.revision += 1;
       thread.titleRevision += 1;
@@ -1166,7 +1194,64 @@ async function handleRequest(request, response) {
       authorityEpoch: 1,
       fencingToken: 1,
       actorId: "owner-01",
+      sessionId: "session-01",
       csrfToken: "csrf-fixture",
+      ...(executionQualification
+        ? {
+            executionPresentationAvailable: true,
+            canCancelRun: true,
+            availableModels: [
+              {
+                ref: "model:fixture-primary:v1",
+                model: "fixture-primary",
+                name: "受控测试模型 A",
+                provider: "fixture",
+                thinkingLevels: ["off", "low", "high"],
+              },
+              {
+                ref: "model:fixture-secondary:v1",
+                model: "fixture-secondary",
+                name: "受控测试模型 B",
+                provider: "fixture",
+                thinkingLevels: ["off", "medium"],
+              },
+            ],
+          }
+        : {}),
+      healthDependenciesAvailable: true,
+      installedGatewayV2Operations: [
+        "approval.list",
+        "approval.detail",
+        "approval.respond",
+        "capability.list",
+        "capability.detail",
+        "capability.review",
+        "capability.install.approve",
+        "capability.update.respond",
+        "capability.disable",
+        "capability.rollback",
+        "grant.list",
+        "grant.detail",
+        "grant.revoke",
+        "task.list",
+        "task.detail",
+        "task.set_state",
+        "github.monitor.set_state",
+        "inbox.list",
+        "inbox.detail",
+        "inbox.digest",
+        "memory.search",
+        "memory.detail",
+        "memory.mutate",
+        "trace.timeline",
+        "trace.detail",
+        "settings.read",
+        "settings.update",
+        "identity.sessions",
+        "identity.session_detail",
+        "session.revoke",
+        "health.status",
+      ],
       authorizationRef: governanceAuthorizationRef,
       recentAuthenticationRef: recentAuthenticationAvailable ? governanceAuthorizationRef : null,
       primaryModel: { provider: "fixture-provider", model: "fixture-primary", version: "v1" },
@@ -1176,9 +1261,100 @@ async function handleRequest(request, response) {
     });
     return;
   }
+  if (executionQualification && url.pathname === "/__fixture/execution") {
+    if (request.method === "GET") {
+      json(response, 200, {
+        threads: [...threads.values()],
+        commands: [...acceptedThreadCommands.values()],
+        records: Object.fromEntries(executionRecords),
+      });
+      return;
+    }
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    const thread = threads.get(input.threadId);
+    const run = thread?.runs.find((item) => item.runId === input.runId);
+    if (!run) {
+      json(response, 404, {});
+      return;
+    }
+    if (input.reset) executionRecords.delete(run.runId);
+    if (typeof input.title === "string") {
+      const ref = `payload:fixture-title:${thread.threadId}:${thread.titleRevision + 1}`;
+      payloads.set(ref, { content: input.title, dataClassification: "private" });
+      thread.titleRef = ref;
+      thread.titleSource = "automatic";
+      thread.titleRevision += 1;
+      thread.revision += 1;
+      writeThreadEvent({ messageId: "fixture-title" }, thread.threadId, "thread.rename");
+    }
+    if (input.records)
+      executionRecords.set(run.runId, [
+        ...(executionRecords.get(run.runId) ?? []),
+        ...input.records,
+      ]);
+    if (input.status) {
+      run.status = input.status;
+      run.revision += 1;
+      run.updatedAt = input.occurredAt ?? new Date().toISOString();
+    }
+    if (input.answer) {
+      const ref = `payload:fixture-answer:${run.runId}`;
+      payloads.set(ref, { content: input.answer, dataClassification: "private" });
+      const ownerMessage = thread.messages.find((item) => item.runId === run.runId);
+      thread.messageWatermark += 1;
+      thread.revision += 1;
+      thread.messages.push({
+        messageId: `answer:${run.runId}`,
+        sequence: thread.messageWatermark,
+        role: "agent",
+        contentRef: ref,
+        dataClassification: "private",
+        status: "committed",
+        turnId: ownerMessage.turnId,
+        runId: run.runId,
+        committedAt: run.updatedAt,
+      });
+    }
+    writeThreadEvent(
+      { messageId: "fixture-execution" },
+      thread.threadId,
+      "thread.execution.updated",
+    );
+    if (input.replay) {
+      const event = threadEvents.at(-1);
+      for (const client of threadEventClients) client.write(`data: ${JSON.stringify(event)}\n\n`);
+    }
+    if (input.disconnect) {
+      for (const client of threadEventClients) {
+        threadEventClients.delete(client);
+        client.end();
+      }
+    }
+    json(response, 200, { accepted: true });
+    return;
+  }
   if (request.method === "POST" && url.pathname === "/__fixture/degrade") {
     healthDegraded = true;
     json(response, 200, { degraded: true });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/health/v1/dependencies") {
+    json(response, 200, {
+      id: "health-fixture",
+      live: true,
+      ready: true,
+      status: healthDegraded ? "degraded" : "healthy",
+      dependencies: [
+        {
+          name: "model-provider",
+          required: false,
+          status: healthDegraded ? "degraded" : "healthy",
+          reasonCode: healthDegraded ? "PROVIDER_DEGRADED" : null,
+        },
+      ],
+    });
     return;
   }
   if (request.method === "POST" && url.pathname === "/__fixture/recent-auth") {
@@ -1416,6 +1592,7 @@ async function handleRequest(request, response) {
         `id: ${event.payload.cursor}\nevent: message\ndata: ${JSON.stringify(event)}\n\n`,
       );
     }
+    response.write(": connected\n\n");
     threadEventClients.add(response);
     const timer = setInterval(() => response.write(": heartbeat\n\n"), 1000);
     request.on("close", () => {

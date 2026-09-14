@@ -1,0 +1,3897 @@
+{
+  "observedAt": "2026-09-12T02:12:22.950Z",
+  "readOnly": true,
+  "modelCalls": 0,
+  "runs": [
+    {
+      "id": "run:a2b3bb7a-7db8-4d97-94d2-7899ca4a7965",
+      "status": "failed",
+      "created_at": "2026-09-12T01:16:04.284Z",
+      "updated_at": "2026-09-12T01:31:05.361Z",
+      "providers": [
+        {
+          "at": "2026-09-12T01:16:11.349Z",
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "stream_options",
+            "store",
+            "max_tokens",
+            "tools",
+            "reasoning",
+            "provider"
+          ],
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "system": null,
+          "messages": [
+            {
+              "index": 0,
+              "role": "system",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 2135,
+              "sha256": "a4e44d3eccebda0820ee05d160c562875dcb1288b951ab28cf35b1e5ee1ffafe",
+              "textSha256": "819cf4ec6bb39cbd9e4572ddf90d1980e0b57b1ef4c969ce31f3d9e17ac77fa4",
+              "markers": [
+                "2026-09-12"
+              ],
+              "dates": [
+                "2026-09-12T01:16:04.284Z",
+                "2026-09-12"
+              ]
+            },
+            {
+              "index": 1,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 134,
+              "sha256": "c8af962e2f0b08b915f9d6b34f49553813bd99f8b2008990fa34babfbb1f2f17",
+              "textSha256": "a27b62bf00315628d5263480b63a4dfb8fd11f7852df0cc38754ef9013d59b68",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 2,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 11,
+              "sha256": "b0b1e39b482429c2a6a53a3c4fd390cd659c2e9ed0583446181400c5ba35fca2",
+              "textSha256": "0648810164264ff1a25a62ff9f9bc5ee1dbd1abaeaaf720108d442e18418cdde",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 3,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 105,
+              "sha256": "c0f275326b16a1cb181b30f913a7488dc22870a6b0a49000cf67edadda3db41d",
+              "textSha256": "1decf877d0533f6154f33c8134ffc83ede7e63742327d355ef9fa04b2bfe8f15",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 4,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 17,
+              "sha256": "5629521be20104594549c098040e7677aef952d1330a71e0e189be60dd76ee97",
+              "textSha256": "22c5f549597eac39b156fbf59c3e8dc52e3ee424195014e29178ca8f480d4144",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 5,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 103,
+              "sha256": "2082626591e5f2d5ced0f2f280e90c0c68e1e80bf0c2ad546b901b7614c53712",
+              "textSha256": "308e767612b8be5e16736f1d7b997d29c06b202a5dfed8e37f0fc4eadb2f4c39",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 6,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 254,
+              "sha256": "f70a260e562af5c8a6523cb87c6739603aa16d444312a27aea7edfbafe411274",
+              "textSha256": "0d8c645e96416429d65a2a204afb703ca7ed04c7ca01b3c865a9e01c6da6e8b3",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 7,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 85,
+              "sha256": "b54c70639e0223fdeb5a3213d5181672b15f6a97f168ae8dceed447cc0099375",
+              "textSha256": "2976fcaab1272b2c644740aefdcb8943482f953916840dd18b27de66017516ea",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 8,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 4,
+              "sha256": "8334c554c7276f59674810b92fff5197cd46bf6ccbe872742f9b04ca31dfe3d1",
+              "textSha256": "73475cb40a568e8da8a045ced110137e159f890ac4da883b6b17dc651b3a8049",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 9,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 270,
+              "sha256": "250ca15284f847186a5c32371721f5e0f077be145bb6f51323146b5b7697b9bc",
+              "textSha256": "3645e9329541b329199459187937ffe91b2e679407a889281bb9cb22281a4cb1",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 10,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-9fee1b89b94fbfc8",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 407,
+              "sha256": "3894b1d5d6f6b331e3dd3c0e668530230187a94897b5003b4264e3150bf3b722",
+              "textSha256": "3894b1d5d6f6b331e3dd3c0e668530230187a94897b5003b4264e3150bf3b722",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 11,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-9fee1b89b94fbfc8",
+              "bytes": 849,
+              "sha256": "8b119861a89fb0bc64f7de76eca415a794ad134918277a4831cd0bc2b028bb88",
+              "textSha256": "2612d229e785a98dbb2d6361a3a2aafc359e5400ce02dffcbe4b310ee3473a4b",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 12,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-af4f20d2aeda9ec1",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "54cee1d2842ce8734a2d81727dede79f77081c93c34a08e66f55f732fea4f118",
+              "textSha256": "54cee1d2842ce8734a2d81727dede79f77081c93c34a08e66f55f732fea4f118",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 13,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-af4f20d2aeda9ec1",
+              "bytes": 561,
+              "sha256": "4321a06d012aa94fef52f7f2363de44d682620647f63a748c2cc928428b14289",
+              "textSha256": "d75cd4d5cba3c5133d875005fafd58bc0778dd829067f5dd90dc424fba5eea11",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 14,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 594,
+              "sha256": "afd413e74e9912c20253330cc3e65339e1a7cf2620a5db14e44327dca389e52f",
+              "textSha256": "f1a8e9c38dea23aad39e15075574ebf50da69a162cdb794ab92cbec28c83a35f",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 15,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 281,
+              "sha256": "c12b1c4fa58db946a18cde22151917b7da29b59eb11f84a51069f5c641504140",
+              "textSha256": "75e76fb93f56b86c959feae23ec8e1fbd0920d7a2d1951b297819c503c056454",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 16,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-ab47c34d5770bee3",
+                  "name": "edit"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 621,
+              "sha256": "66a78cceded974af8ea6987cd5eb00b9431fbfdbe1b6f3f4bc1414b31af4c77d",
+              "textSha256": "66a78cceded974af8ea6987cd5eb00b9431fbfdbe1b6f3f4bc1414b31af4c77d",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 17,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-ab47c34d5770bee3",
+              "bytes": 1246,
+              "sha256": "e740c74b6865bd9746c57660e9b053706a4319efe9eb7f00fa3c46d215965f83",
+              "textSha256": "e1de2aafb5a18fc9ea416069fb9cbc5530c6a9cc97ca372937fa60716e8d4155",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 18,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 341,
+              "sha256": "b30e648e5557e8fc1ec09d432f27015602c4d8d6cf74e91964f852223a362421",
+              "textSha256": "09da109597854f0a3b97484c2267d7838e8f91cc19151c50490a998a0d26a267",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 19,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 245,
+              "sha256": "bd9188cacb14b0062c94e5364aa4c950394b58f8ffe272ae51970ff3dff8951c",
+              "textSha256": "40737fd7c742a9259dbb85954ae10af824e7a9df9ae632481d0392facce12598",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 20,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-a4c8462cc003b25b",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 439,
+              "sha256": "a9418db8fd33652f5b111fbee1aa36025896f29b4795030ae23388edc8d11dca",
+              "textSha256": "a9418db8fd33652f5b111fbee1aa36025896f29b4795030ae23388edc8d11dca",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 21,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-a4c8462cc003b25b",
+              "bytes": 35,
+              "sha256": "3c350d3143a43ccdc7a26ae1ad07bf5ae4344de373d503afe99fbac89fab3127",
+              "textSha256": "1d642c42eaadb63109b53db60ee6a3dc4ca24397df101120b135b592771e92c2",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 22,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 78,
+              "sha256": "31694456ac64f97f25b6a5fc8c6ec7e66837444a1988c986fafce88b86ed828f",
+              "textSha256": "45cecafec1a4eaf9147ec71b5149bfe4a64705e136439e5aedd01ee0f1591c20",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 23,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 205,
+              "sha256": "92b2d2416bd6e6ef404ff5c5b8d5f0fac254880c95bbafeef8231ec3ab7f22b1",
+              "textSha256": "b9662f56a78508140895221feb6f9f2504494f048263807ed91342b8755c165d",
+              "markers": [
+                "海风"
+              ],
+              "dates": []
+            },
+            {
+              "index": 24,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 164,
+              "sha256": "57f8e05f993c53df9cb5be87477c40b3cff80720bd4dc043d88b13e048e91c27",
+              "textSha256": "0919078a3c5761b98887925bd8abc60d5a3093484f7c77b32b39d5dccf82147a",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 25,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 379,
+              "sha256": "1a163880f96e0822bedcf1a55ef3fcb98f2f861cc5a4be1b273bb2530302e4cc",
+              "textSha256": "e491efb092b8c574293e5be78268771f34afb88406b6338ec101b88a717b6851",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt",
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 26,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-a2efd20395ea3afb",
+                  "name": "ls"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 443,
+              "sha256": "34dbe51c57f98231f477cf53d43b1da84650960dab8f4776f1f721765ccb75c1",
+              "textSha256": "34dbe51c57f98231f477cf53d43b1da84650960dab8f4776f1f721765ccb75c1",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 27,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-a2efd20395ea3afb",
+              "bytes": 646,
+              "sha256": "c5bafded1d89ace65b0b3808b5da4390fef88a813aa89ed58be902c5789cc527",
+              "textSha256": "17463903090e7ded4e5d5dcf21d90af6b86f34870ae86b71e78014f8650a2cfc",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 28,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-93d34d7eee8cb5ec",
+                  "name": "find"
+                },
+                {
+                  "id": "chatcmpl-tool-b421a5590c59d97a",
+                  "name": "grep"
+                },
+                {
+                  "id": "chatcmpl-tool-a4d4f6d9991155dd",
+                  "name": "bash"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 620,
+              "sha256": "c30cd475380f57fdc316dd4b73f854c3c5b1abca3d5f6451ac16714cfc520d97",
+              "textSha256": "c30cd475380f57fdc316dd4b73f854c3c5b1abca3d5f6451ac16714cfc520d97",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt",
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 29,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-93d34d7eee8cb5ec",
+              "bytes": 56,
+              "sha256": "b3bf2763ea1df06512cad1372bebb536ac3985d60a35b3e4138103b121d23ae5",
+              "textSha256": "6b9ace4e66a77632020859696393f3c8989dea7beb72592868008b0ae2ca8b53",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 30,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-b421a5590c59d97a",
+              "bytes": 20,
+              "sha256": "7b85f856f6aaafb990ee4cacaac04b72aedad16a18bb4d542dae4335eacfdd1c",
+              "textSha256": "4528dd4018983d8009c482cd01fdb27c44168db3949381a83a1e682678199fdd",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 31,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-a4d4f6d9991155dd",
+              "bytes": 20,
+              "sha256": "7b85f856f6aaafb990ee4cacaac04b72aedad16a18bb4d542dae4335eacfdd1c",
+              "textSha256": "4528dd4018983d8009c482cd01fdb27c44168db3949381a83a1e682678199fdd",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 32,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 254,
+              "sha256": "f70a260e562af5c8a6523cb87c6739603aa16d444312a27aea7edfbafe411274",
+              "textSha256": "0d8c645e96416429d65a2a204afb703ca7ed04c7ca01b3c865a9e01c6da6e8b3",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 33,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 156,
+              "sha256": "49c1981e57d5c21c74fbdc5b6e19f82f2aa53db3491542c6eb4672a1a2310d58",
+              "textSha256": "10425df2bcaad814d402045e658045932caa8d6de78ddb3cff82d1e5553dec78",
+              "markers": [
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 34,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-b7b59a81422381b0",
+                  "name": "bash"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 171,
+              "sha256": "58557970ec80f655e967975b2ab42bab2925f7c15b437c6d93607cc63f890100",
+              "textSha256": "58557970ec80f655e967975b2ab42bab2925f7c15b437c6d93607cc63f890100",
+              "markers": [
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 35,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-b7b59a81422381b0",
+              "bytes": 531,
+              "sha256": "bdf5d0b2988bac08d54c5b5eef9f4c6676772ec7db74f5a065c174717ef71024",
+              "textSha256": "0fa3353d5355b8cb8fc79049bffc306365bca645979d87644328f500d641ad5a",
+              "markers": [
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 36,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 243,
+              "sha256": "bde91976d982a556e09aa7a8885a6d74d65982ba6ea8d640861a295a706cca51",
+              "textSha256": "d74dea416acabfea08503719e4b72daaad7bb1f6649edcf40ca2f91c14691e7c",
+              "markers": [
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 37,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 422,
+              "sha256": "1c30dbfd2fc3ba89cde0b3670eb3d53c82188c1b1d8199bbd77fe0f40411d9b3",
+              "textSha256": "79b48a2ae45a5fefbaee9519cff49ae5ab921e212d9927ebf9084d32fc8e0850",
+              "markers": [
+                "海风"
+              ],
+              "dates": []
+            },
+            {
+              "index": 38,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-9fbd244d68726bd1",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 754,
+              "sha256": "582e2759b86a04a1dd657ce82eced8a79785e3c073b7c2012bcdaf90f631ef45",
+              "textSha256": "582e2759b86a04a1dd657ce82eced8a79785e3c073b7c2012bcdaf90f631ef45",
+              "markers": [
+                "海风"
+              ],
+              "dates": []
+            },
+            {
+              "index": 39,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-9fbd244d68726bd1",
+              "bytes": 1349,
+              "sha256": "0db8fa06b4eabc3c9011895e4d1ba34c01a76fdf67d7e854591060e1ed29e871",
+              "textSha256": "090ba828395a648c900110d0ec2f7e3ecdcc9e467d6bca1927c7010a4163cd0f",
+              "markers": [
+                "海风"
+              ],
+              "dates": []
+            },
+            {
+              "index": 40,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 590,
+              "sha256": "70c141fb7cb443c30d0804b195aba346a4f9775dd61b62c7b54a16ccbbc8d324",
+              "textSha256": "9b96d454762a6639a3a3887cab9d19bae01596b982498cb6f003566a70414c3b",
+              "markers": [
+                "海风"
+              ],
+              "dates": []
+            },
+            {
+              "index": 41,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 434,
+              "sha256": "00987a0bb3b6086ec4a87437ec8d56e36235df884141bf36320bfd000f557526",
+              "textSha256": "e9c6f56d8839cd53c8fc60d874fdea554bfe6c52539d5bdec8823c5667fc86cc",
+              "markers": [
+                "不重复调用",
+                "海风",
+                "e2e-20260912-note.txt",
+                "pwd"
+              ],
+              "dates": []
+            }
+          ]
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "stream_options",
+            "store",
+            "max_tokens",
+            "tools",
+            "reasoning",
+            "provider"
+          ],
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "system": null,
+          "messages": [
+            {
+              "index": 0,
+              "role": "system",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 2135,
+              "sha256": "a4e44d3eccebda0820ee05d160c562875dcb1288b951ab28cf35b1e5ee1ffafe",
+              "textSha256": "819cf4ec6bb39cbd9e4572ddf90d1980e0b57b1ef4c969ce31f3d9e17ac77fa4",
+              "markers": [
+                "2026-09-12"
+              ],
+              "dates": [
+                "2026-09-12T01:16:04.284Z",
+                "2026-09-12"
+              ]
+            },
+            {
+              "index": 1,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 134,
+              "sha256": "c8af962e2f0b08b915f9d6b34f49553813bd99f8b2008990fa34babfbb1f2f17",
+              "textSha256": "a27b62bf00315628d5263480b63a4dfb8fd11f7852df0cc38754ef9013d59b68",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 2,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 11,
+              "sha256": "b0b1e39b482429c2a6a53a3c4fd390cd659c2e9ed0583446181400c5ba35fca2",
+              "textSha256": "0648810164264ff1a25a62ff9f9bc5ee1dbd1abaeaaf720108d442e18418cdde",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 3,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 105,
+              "sha256": "c0f275326b16a1cb181b30f913a7488dc22870a6b0a49000cf67edadda3db41d",
+              "textSha256": "1decf877d0533f6154f33c8134ffc83ede7e63742327d355ef9fa04b2bfe8f15",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 4,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 17,
+              "sha256": "5629521be20104594549c098040e7677aef952d1330a71e0e189be60dd76ee97",
+              "textSha256": "22c5f549597eac39b156fbf59c3e8dc52e3ee424195014e29178ca8f480d4144",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 5,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 103,
+              "sha256": "2082626591e5f2d5ced0f2f280e90c0c68e1e80bf0c2ad546b901b7614c53712",
+              "textSha256": "308e767612b8be5e16736f1d7b997d29c06b202a5dfed8e37f0fc4eadb2f4c39",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 6,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 254,
+              "sha256": "f70a260e562af5c8a6523cb87c6739603aa16d444312a27aea7edfbafe411274",
+              "textSha256": "0d8c645e96416429d65a2a204afb703ca7ed04c7ca01b3c865a9e01c6da6e8b3",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 7,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 85,
+              "sha256": "b54c70639e0223fdeb5a3213d5181672b15f6a97f168ae8dceed447cc0099375",
+              "textSha256": "2976fcaab1272b2c644740aefdcb8943482f953916840dd18b27de66017516ea",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 8,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 4,
+              "sha256": "8334c554c7276f59674810b92fff5197cd46bf6ccbe872742f9b04ca31dfe3d1",
+              "textSha256": "73475cb40a568e8da8a045ced110137e159f890ac4da883b6b17dc651b3a8049",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 9,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 270,
+              "sha256": "250ca15284f847186a5c32371721f5e0f077be145bb6f51323146b5b7697b9bc",
+              "textSha256": "3645e9329541b329199459187937ffe91b2e679407a889281bb9cb22281a4cb1",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 10,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-9fee1b89b94fbfc8",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 407,
+              "sha256": "3894b1d5d6f6b331e3dd3c0e668530230187a94897b5003b4264e3150bf3b722",
+              "textSha256": "3894b1d5d6f6b331e3dd3c0e668530230187a94897b5003b4264e3150bf3b722",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 11,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-9fee1b89b94fbfc8",
+              "bytes": 849,
+              "sha256": "8b119861a89fb0bc64f7de76eca415a794ad134918277a4831cd0bc2b028bb88",
+              "textSha256": "2612d229e785a98dbb2d6361a3a2aafc359e5400ce02dffcbe4b310ee3473a4b",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 12,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-af4f20d2aeda9ec1",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "54cee1d2842ce8734a2d81727dede79f77081c93c34a08e66f55f732fea4f118",
+              "textSha256": "54cee1d2842ce8734a2d81727dede79f77081c93c34a08e66f55f732fea4f118",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 13,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-af4f20d2aeda9ec1",
+              "bytes": 561,
+              "sha256": "4321a06d012aa94fef52f7f2363de44d682620647f63a748c2cc928428b14289",
+              "textSha256": "d75cd4d5cba3c5133d875005fafd58bc0778dd829067f5dd90dc424fba5eea11",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 14,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 594,
+              "sha256": "afd413e74e9912c20253330cc3e65339e1a7cf2620a5db14e44327dca389e52f",
+              "textSha256": "f1a8e9c38dea23aad39e15075574ebf50da69a162cdb794ab92cbec28c83a35f",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 15,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 281,
+              "sha256": "c12b1c4fa58db946a18cde22151917b7da29b59eb11f84a51069f5c641504140",
+              "textSha256": "75e76fb93f56b86c959feae23ec8e1fbd0920d7a2d1951b297819c503c056454",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 16,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-ab47c34d5770bee3",
+                  "name": "edit"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 621,
+              "sha256": "66a78cceded974af8ea6987cd5eb00b9431fbfdbe1b6f3f4bc1414b31af4c77d",
+              "textSha256": "66a78cceded974af8ea6987cd5eb00b9431fbfdbe1b6f3f4bc1414b31af4c77d",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 17,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-ab47c34d5770bee3",
+              "bytes": 1246,
+              "sha256": "e740c74b6865bd9746c57660e9b053706a4319efe9eb7f00fa3c46d215965f83",
+              "textSha256": "e1de2aafb5a18fc9ea416069fb9cbc5530c6a9cc97ca372937fa60716e8d4155",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 18,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 341,
+              "sha256": "b30e648e5557e8fc1ec09d432f27015602c4d8d6cf74e91964f852223a362421",
+              "textSha256": "09da109597854f0a3b97484c2267d7838e8f91cc19151c50490a998a0d26a267",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 19,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 245,
+              "sha256": "bd9188cacb14b0062c94e5364aa4c950394b58f8ffe272ae51970ff3dff8951c",
+              "textSha256": "40737fd7c742a9259dbb85954ae10af824e7a9df9ae632481d0392facce12598",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 20,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-a4c8462cc003b25b",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 439,
+              "sha256": "a9418db8fd33652f5b111fbee1aa36025896f29b4795030ae23388edc8d11dca",
+              "textSha256": "a9418db8fd33652f5b111fbee1aa36025896f29b4795030ae23388edc8d11dca",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 21,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-a4c8462cc003b25b",
+              "bytes": 35,
+              "sha256": "3c350d3143a43ccdc7a26ae1ad07bf5ae4344de373d503afe99fbac89fab3127",
+              "textSha256": "1d642c42eaadb63109b53db60ee6a3dc4ca24397df101120b135b592771e92c2",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 22,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 78,
+              "sha256": "31694456ac64f97f25b6a5fc8c6ec7e66837444a1988c986fafce88b86ed828f",
+              "textSha256": "45cecafec1a4eaf9147ec71b5149bfe4a64705e136439e5aedd01ee0f1591c20",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 23,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 205,
+              "sha256": "92b2d2416bd6e6ef404ff5c5b8d5f0fac254880c95bbafeef8231ec3ab7f22b1",
+              "textSha256": "b9662f56a78508140895221feb6f9f2504494f048263807ed91342b8755c165d",
+              "markers": [
+                "海风"
+              ],
+              "dates": []
+            },
+            {
+              "index": 24,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 164,
+              "sha256": "57f8e05f993c53df9cb5be87477c40b3cff80720bd4dc043d88b13e048e91c27",
+              "textSha256": "0919078a3c5761b98887925bd8abc60d5a3093484f7c77b32b39d5dccf82147a",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 25,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 379,
+              "sha256": "1a163880f96e0822bedcf1a55ef3fcb98f2f861cc5a4be1b273bb2530302e4cc",
+              "textSha256": "e491efb092b8c574293e5be78268771f34afb88406b6338ec101b88a717b6851",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt",
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 26,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-a2efd20395ea3afb",
+                  "name": "ls"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 443,
+              "sha256": "34dbe51c57f98231f477cf53d43b1da84650960dab8f4776f1f721765ccb75c1",
+              "textSha256": "34dbe51c57f98231f477cf53d43b1da84650960dab8f4776f1f721765ccb75c1",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 27,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-a2efd20395ea3afb",
+              "bytes": 646,
+              "sha256": "c5bafded1d89ace65b0b3808b5da4390fef88a813aa89ed58be902c5789cc527",
+              "textSha256": "17463903090e7ded4e5d5dcf21d90af6b86f34870ae86b71e78014f8650a2cfc",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 28,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-93d34d7eee8cb5ec",
+                  "name": "find"
+                },
+                {
+                  "id": "chatcmpl-tool-b421a5590c59d97a",
+                  "name": "grep"
+                },
+                {
+                  "id": "chatcmpl-tool-a4d4f6d9991155dd",
+                  "name": "bash"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 620,
+              "sha256": "c30cd475380f57fdc316dd4b73f854c3c5b1abca3d5f6451ac16714cfc520d97",
+              "textSha256": "c30cd475380f57fdc316dd4b73f854c3c5b1abca3d5f6451ac16714cfc520d97",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt",
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 29,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-93d34d7eee8cb5ec",
+              "bytes": 56,
+              "sha256": "b3bf2763ea1df06512cad1372bebb536ac3985d60a35b3e4138103b121d23ae5",
+              "textSha256": "6b9ace4e66a77632020859696393f3c8989dea7beb72592868008b0ae2ca8b53",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 30,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-b421a5590c59d97a",
+              "bytes": 20,
+              "sha256": "7b85f856f6aaafb990ee4cacaac04b72aedad16a18bb4d542dae4335eacfdd1c",
+              "textSha256": "4528dd4018983d8009c482cd01fdb27c44168db3949381a83a1e682678199fdd",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 31,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-a4d4f6d9991155dd",
+              "bytes": 20,
+              "sha256": "7b85f856f6aaafb990ee4cacaac04b72aedad16a18bb4d542dae4335eacfdd1c",
+              "textSha256": "4528dd4018983d8009c482cd01fdb27c44168db3949381a83a1e682678199fdd",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 32,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 254,
+              "sha256": "f70a260e562af5c8a6523cb87c6739603aa16d444312a27aea7edfbafe411274",
+              "textSha256": "0d8c645e96416429d65a2a204afb703ca7ed04c7ca01b3c865a9e01c6da6e8b3",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 33,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 156,
+              "sha256": "49c1981e57d5c21c74fbdc5b6e19f82f2aa53db3491542c6eb4672a1a2310d58",
+              "textSha256": "10425df2bcaad814d402045e658045932caa8d6de78ddb3cff82d1e5553dec78",
+              "markers": [
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 34,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-b7b59a81422381b0",
+                  "name": "bash"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 171,
+              "sha256": "58557970ec80f655e967975b2ab42bab2925f7c15b437c6d93607cc63f890100",
+              "textSha256": "58557970ec80f655e967975b2ab42bab2925f7c15b437c6d93607cc63f890100",
+              "markers": [
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 35,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-b7b59a81422381b0",
+              "bytes": 531,
+              "sha256": "bdf5d0b2988bac08d54c5b5eef9f4c6676772ec7db74f5a065c174717ef71024",
+              "textSha256": "0fa3353d5355b8cb8fc79049bffc306365bca645979d87644328f500d641ad5a",
+              "markers": [
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 36,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 243,
+              "sha256": "bde91976d982a556e09aa7a8885a6d74d65982ba6ea8d640861a295a706cca51",
+              "textSha256": "d74dea416acabfea08503719e4b72daaad7bb1f6649edcf40ca2f91c14691e7c",
+              "markers": [
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 37,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 422,
+              "sha256": "1c30dbfd2fc3ba89cde0b3670eb3d53c82188c1b1d8199bbd77fe0f40411d9b3",
+              "textSha256": "79b48a2ae45a5fefbaee9519cff49ae5ab921e212d9927ebf9084d32fc8e0850",
+              "markers": [
+                "海风"
+              ],
+              "dates": []
+            },
+            {
+              "index": 38,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-9fbd244d68726bd1",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 754,
+              "sha256": "582e2759b86a04a1dd657ce82eced8a79785e3c073b7c2012bcdaf90f631ef45",
+              "textSha256": "582e2759b86a04a1dd657ce82eced8a79785e3c073b7c2012bcdaf90f631ef45",
+              "markers": [
+                "海风"
+              ],
+              "dates": []
+            },
+            {
+              "index": 39,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-9fbd244d68726bd1",
+              "bytes": 1349,
+              "sha256": "0db8fa06b4eabc3c9011895e4d1ba34c01a76fdf67d7e854591060e1ed29e871",
+              "textSha256": "090ba828395a648c900110d0ec2f7e3ecdcc9e467d6bca1927c7010a4163cd0f",
+              "markers": [
+                "海风"
+              ],
+              "dates": []
+            },
+            {
+              "index": 40,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 590,
+              "sha256": "70c141fb7cb443c30d0804b195aba346a4f9775dd61b62c7b54a16ccbbc8d324",
+              "textSha256": "9b96d454762a6639a3a3887cab9d19bae01596b982498cb6f003566a70414c3b",
+              "markers": [
+                "海风"
+              ],
+              "dates": []
+            },
+            {
+              "index": 41,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 434,
+              "sha256": "00987a0bb3b6086ec4a87437ec8d56e36235df884141bf36320bfd000f557526",
+              "textSha256": "e9c6f56d8839cd53c8fc60d874fdea554bfe6c52539d5bdec8823c5667fc86cc",
+              "markers": [
+                "不重复调用",
+                "海风",
+                "e2e-20260912-note.txt",
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 42,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-9b28f9d6c96a0a90",
+                  "name": "ls"
+                },
+                {
+                  "id": "chatcmpl-tool-8ccc29ef0e42eed0",
+                  "name": "find"
+                },
+                {
+                  "id": "chatcmpl-tool-b9dbb9a82ffde2a8",
+                  "name": "grep"
+                },
+                {
+                  "id": "chatcmpl-tool-a5ba34ac44369986",
+                  "name": "bash"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 947,
+              "sha256": "75e6f5397bbec66ce54b0dd6b1ddc21c8baec3ad69e749b8512669609504ed4e",
+              "textSha256": "75e6f5397bbec66ce54b0dd6b1ddc21c8baec3ad69e749b8512669609504ed4e",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt",
+                "pwd"
+              ],
+              "dates": []
+            },
+            {
+              "index": 43,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-9b28f9d6c96a0a90",
+              "bytes": 671,
+              "sha256": "0882a71d7c8e83cecdbc75a24c4e89e0575a5a7bef40646e0a80568b566139f4",
+              "textSha256": "bd9ed131b19791b698c00d77aefc2cf2caad58b8dc960a858ae99ee8a4e3311d",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 44,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-8ccc29ef0e42eed0",
+              "bytes": 584,
+              "sha256": "7f3ed63b89fd0d4336214a25e299d829e3a121cfc83c91c0270c60357a09dfa0",
+              "textSha256": "04e674197a39abc708722050beb42f02359acde3fe70a8965354e33f7ea0f72d",
+              "markers": [
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 45,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-b9dbb9a82ffde2a8",
+              "bytes": 609,
+              "sha256": "d959f203172adf479d7ea7e8a82733fe37cbc19496282fba32d2ee226473bcf1",
+              "textSha256": "58f8eb76a72647d8e4dc6927e22b6d8da38e4ce735f9c113db95f0ba3bbd439e",
+              "markers": [
+                "海风",
+                "e2e-20260912-note.txt"
+              ],
+              "dates": []
+            },
+            {
+              "index": 46,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-a5ba34ac44369986",
+              "bytes": 531,
+              "sha256": "17118fb79c131e8e92b3b126a5292a00797b235ea600c02ef0fb268a8e9cb531",
+              "textSha256": "dfbfb634100763e0f6ea75b9767f05937d4cd38254dfeecbb5a3be35d46de79f",
+              "markers": [
+                "pwd"
+              ],
+              "dates": []
+            }
+          ]
+        }
+      ],
+      "contextArtifacts": [],
+      "toolResults": [
+        {
+          "at": "2026-09-12T01:17:30.801Z",
+          "toolCallId": "chatcmpl-tool-9b28f9d6c96a0a90",
+          "toolName": "ls",
+          "isError": false,
+          "content": {
+            "bytes": 696,
+            "sha256": "920384963d138e99bfbac7a32d3beef6cc023e2d041f4754705cfbc99d93b93e",
+            "textSha256": "bd9ed131b19791b698c00d77aefc2cf2caad58b8dc960a858ae99ee8a4e3311d",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ],
+            "dates": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:23:16.566Z",
+          "toolCallId": "chatcmpl-tool-9b28f9d6c96a0a90",
+          "toolName": "ls",
+          "isError": false,
+          "content": {
+            "bytes": 696,
+            "sha256": "920384963d138e99bfbac7a32d3beef6cc023e2d041f4754705cfbc99d93b93e",
+            "textSha256": "bd9ed131b19791b698c00d77aefc2cf2caad58b8dc960a858ae99ee8a4e3311d",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ],
+            "dates": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:23:32.931Z",
+          "toolCallId": "chatcmpl-tool-8ccc29ef0e42eed0",
+          "toolName": "find",
+          "isError": false,
+          "content": {
+            "bytes": 609,
+            "sha256": "1ba6cb32295d5cfc6cf39e0d28d39ed93f3f6fc8e386c9b9d553a90ee22d93fc",
+            "textSha256": "04e674197a39abc708722050beb42f02359acde3fe70a8965354e33f7ea0f72d",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ],
+            "dates": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:26:24.504Z",
+          "toolCallId": "chatcmpl-tool-9b28f9d6c96a0a90",
+          "toolName": "ls",
+          "isError": false,
+          "content": {
+            "bytes": 696,
+            "sha256": "920384963d138e99bfbac7a32d3beef6cc023e2d041f4754705cfbc99d93b93e",
+            "textSha256": "bd9ed131b19791b698c00d77aefc2cf2caad58b8dc960a858ae99ee8a4e3311d",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ],
+            "dates": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:26:26.231Z",
+          "toolCallId": "chatcmpl-tool-8ccc29ef0e42eed0",
+          "toolName": "find",
+          "isError": false,
+          "content": {
+            "bytes": 609,
+            "sha256": "1ba6cb32295d5cfc6cf39e0d28d39ed93f3f6fc8e386c9b9d553a90ee22d93fc",
+            "textSha256": "04e674197a39abc708722050beb42f02359acde3fe70a8965354e33f7ea0f72d",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ],
+            "dates": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:26:41.097Z",
+          "toolCallId": "chatcmpl-tool-b9dbb9a82ffde2a8",
+          "toolName": "grep",
+          "isError": false,
+          "content": {
+            "bytes": 634,
+            "sha256": "e57f13d6cd2b6d6d9c09c6749642c90eb5bf26a6a52ae9118c7834a1fdb7ff0e",
+            "textSha256": "58f8eb76a72647d8e4dc6927e22b6d8da38e4ce735f9c113db95f0ba3bbd439e",
+            "markers": [
+              "海风",
+              "e2e-20260912-note.txt"
+            ],
+            "dates": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:08.899Z",
+          "toolCallId": "chatcmpl-tool-9b28f9d6c96a0a90",
+          "toolName": "ls",
+          "isError": false,
+          "content": {
+            "bytes": 696,
+            "sha256": "920384963d138e99bfbac7a32d3beef6cc023e2d041f4754705cfbc99d93b93e",
+            "textSha256": "bd9ed131b19791b698c00d77aefc2cf2caad58b8dc960a858ae99ee8a4e3311d",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ],
+            "dates": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:10.818Z",
+          "toolCallId": "chatcmpl-tool-8ccc29ef0e42eed0",
+          "toolName": "find",
+          "isError": false,
+          "content": {
+            "bytes": 609,
+            "sha256": "1ba6cb32295d5cfc6cf39e0d28d39ed93f3f6fc8e386c9b9d553a90ee22d93fc",
+            "textSha256": "04e674197a39abc708722050beb42f02359acde3fe70a8965354e33f7ea0f72d",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ],
+            "dates": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:12.405Z",
+          "toolCallId": "chatcmpl-tool-b9dbb9a82ffde2a8",
+          "toolName": "grep",
+          "isError": false,
+          "content": {
+            "bytes": 634,
+            "sha256": "e57f13d6cd2b6d6d9c09c6749642c90eb5bf26a6a52ae9118c7834a1fdb7ff0e",
+            "textSha256": "58f8eb76a72647d8e4dc6927e22b6d8da38e4ce735f9c113db95f0ba3bbd439e",
+            "markers": [
+              "海风",
+              "e2e-20260912-note.txt"
+            ],
+            "dates": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:25.443Z",
+          "toolCallId": "chatcmpl-tool-a5ba34ac44369986",
+          "toolName": "bash",
+          "isError": false,
+          "content": {
+            "bytes": 556,
+            "sha256": "90c089fc69b03ff3816bb14e68fbe50da1dd16990d168392352498294c89badb",
+            "textSha256": "dfbfb634100763e0f6ea75b9767f05937d4cd38254dfeecbb5a3be35d46de79f",
+            "markers": [
+              "pwd"
+            ],
+            "dates": []
+          }
+        }
+      ],
+      "checkpoints": [],
+      "trace": [
+        {
+          "type": "memory.query",
+          "at": "2026-09-12T01:16:05.866Z",
+          "facts": []
+        },
+        {
+          "type": "memory.candidates",
+          "at": "2026-09-12T01:16:08.115Z",
+          "facts": []
+        },
+        {
+          "type": "memory.selection",
+          "at": "2026-09-12T01:16:08.390Z",
+          "facts": []
+        },
+        {
+          "type": "context.formed",
+          "at": "2026-09-12T01:16:08.666Z",
+          "facts": [
+            {
+              "path": "answerLocalePolicy.locale",
+              "value": "zh-CN"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-12T01:16:09.937Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-12T01:16:09.937Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-12T01:16:11.506Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "request"
+            }
+          ]
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-12T01:16:13.759Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "response"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-12T01:16:23.187Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:16:23.188Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.suspended",
+          "at": "2026-09-12T01:16:26.223Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-12T01:17:08.268Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-12T01:17:08.268Z",
+          "facts": []
+        },
+        {
+          "type": "authorization.grant_consumed",
+          "at": "2026-09-12T01:17:09.688Z",
+          "facts": [
+            {
+              "path": "kind",
+              "value": "metadata_reference_only"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-12T01:17:08.270Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:17:08.272Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-12T01:17:30.800Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:17:30.803Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.suspended",
+          "at": "2026-09-12T01:17:32.616Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-12T01:23:14.040Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-12T01:23:14.040Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-12T01:23:14.041Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:23:14.042Z",
+          "facts": []
+        },
+        {
+          "type": "authorization.grant_consumed",
+          "at": "2026-09-12T01:23:16.821Z",
+          "facts": [
+            {
+              "path": "kind",
+              "value": "metadata_reference_only"
+            }
+          ]
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-12T01:23:14.200Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:23:14.202Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-12T01:23:32.929Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:23:32.934Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.suspended",
+          "at": "2026-09-12T01:23:35.572Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-12T01:26:22.806Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-12T01:26:22.806Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-12T01:26:22.807Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:26:22.808Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-12T01:26:22.895Z",
+          "facts": []
+        },
+        {
+          "type": "authorization.grant_consumed",
+          "at": "2026-09-12T01:26:25.325Z",
+          "facts": [
+            {
+              "path": "kind",
+              "value": "metadata_reference_only"
+            }
+          ]
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:26:22.898Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-12T01:26:23.083Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:26:23.084Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-12T01:26:41.096Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:26:41.101Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.suspended",
+          "at": "2026-09-12T01:26:42.279Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-12T01:28:07.110Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-12T01:28:07.110Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-12T01:28:07.111Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:28:07.112Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-12T01:28:07.221Z",
+          "facts": []
+        },
+        {
+          "type": "authorization.grant_consumed",
+          "at": "2026-09-12T01:28:09.813Z",
+          "facts": [
+            {
+              "path": "kind",
+              "value": "metadata_reference_only"
+            }
+          ]
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:28:07.222Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-12T01:28:07.398Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:28:07.399Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-12T01:28:07.736Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:28:07.737Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-12T01:28:25.442Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_completed",
+          "at": "2026-09-12T01:28:25.444Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-12T01:28:25.444Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-12T01:28:26.926Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "request"
+            }
+          ]
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-12T01:28:29.448Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "response"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-12T01:29:40.201Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:29:40.202Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.suspended",
+          "at": "2026-09-12T01:29:43.265Z",
+          "facts": []
+        }
+      ],
+      "receipts": [
+        {
+          "operation": "ls",
+          "invocation_id": "runtime-tool:e979baed6332b1028ec8cde339a28fb389252c15c23c93ea748ce7ce6ec49eed",
+          "worker_run_id": "runtime-worker:e979baed6332b1028ec8cde339a28fb389252c15c23c93ea748ce7ce6ec49eed",
+          "requested_at": "2026-09-12T01:17:11.404Z",
+          "deadline_at": "2026-09-12T01:22:11.404Z"
+        },
+        {
+          "operation": "find",
+          "invocation_id": "runtime-tool:9d1aede838733ed737e2b74b817834e6751fc04d0a61ad69d3b3e8062d0a4566",
+          "worker_run_id": "runtime-worker:9d1aede838733ed737e2b74b817834e6751fc04d0a61ad69d3b3e8062d0a4566",
+          "requested_at": "2026-09-12T01:23:19.512Z",
+          "deadline_at": "2026-09-12T01:28:19.512Z"
+        },
+        {
+          "operation": "grep",
+          "invocation_id": "runtime-tool:df52463e80d988fe643ec8da92c6806803fe3020349c1ce58a251f2fd7752bfc",
+          "worker_run_id": "runtime-worker:df52463e80d988fe643ec8da92c6806803fe3020349c1ce58a251f2fd7752bfc",
+          "requested_at": "2026-09-12T01:26:28.053Z",
+          "deadline_at": "2026-09-12T01:31:04.911Z"
+        },
+        {
+          "operation": "bash",
+          "invocation_id": "runtime-tool:95250df19163125f4e87dd3edcac5fa1c2a09e3f9a1b3289d423f96d441f9f2d",
+          "worker_run_id": "runtime-worker:95250df19163125f4e87dd3edcac5fa1c2a09e3f9a1b3289d423f96d441f9f2d",
+          "requested_at": "2026-09-12T01:28:13.037Z",
+          "deadline_at": "2026-09-12T01:31:04.911Z"
+        }
+      ],
+      "jobs": [
+        {
+          "jobId": "jiI6-6cLRs66CHkAeQG_T1JjKyfWyw7nbi8fugB4iBAI",
+          "startedAt": "2026-09-12T01:28:18.211Z",
+          "facts": [
+            {
+              "path": "environment.kind",
+              "value": "local"
+            },
+            {
+              "path": "result.kind",
+              "value": "result"
+            },
+            {
+              "path": "effect.kind",
+              "value": "not_asserted"
+            },
+            {
+              "path": "resource.status.kind",
+              "value": "foreground"
+            },
+            {
+              "path": "resource.supervision",
+              "value": "released"
+            },
+            {
+              "path": "resource.cleanup",
+              "value": "confirmed"
+            },
+            {
+              "path": "resource.evidence.subject.kind",
+              "value": "local_process"
+            }
+          ]
+        },
+        {
+          "jobId": "jvzFmmfB87BMDDzTjitBIrnODcCvfXT7kQbK4LR965MQ",
+          "startedAt": "2026-09-12T01:23:25.392Z",
+          "facts": [
+            {
+              "path": "environment.kind",
+              "value": "local"
+            },
+            {
+              "path": "result.kind",
+              "value": "result"
+            },
+            {
+              "path": "effect.kind",
+              "value": "not_applicable"
+            },
+            {
+              "path": "resource.status.kind",
+              "value": "foreground"
+            },
+            {
+              "path": "resource.supervision",
+              "value": "released"
+            },
+            {
+              "path": "resource.cleanup",
+              "value": "confirmed"
+            },
+            {
+              "path": "resource.evidence.subject.kind",
+              "value": "local_process"
+            }
+          ]
+        },
+        {
+          "jobId": "j_OXMagTP-_FQHtF3Nj8MMk6L19AviaiDKCyDRgtmgH8",
+          "startedAt": "2026-09-12T01:26:33.181Z",
+          "facts": [
+            {
+              "path": "environment.kind",
+              "value": "local"
+            },
+            {
+              "path": "result.kind",
+              "value": "result"
+            },
+            {
+              "path": "effect.kind",
+              "value": "not_applicable"
+            },
+            {
+              "path": "resource.status.kind",
+              "value": "foreground"
+            },
+            {
+              "path": "resource.supervision",
+              "value": "released"
+            },
+            {
+              "path": "resource.cleanup",
+              "value": "confirmed"
+            },
+            {
+              "path": "resource.evidence.subject.kind",
+              "value": "local_process"
+            }
+          ]
+        },
+        {
+          "jobId": "j3Rgq7d5Auh7owWGisr-yxpQZiZWH9F6BqX1BADHrg9c",
+          "startedAt": "2026-09-12T01:17:23.648Z",
+          "facts": [
+            {
+              "path": "environment.kind",
+              "value": "local"
+            },
+            {
+              "path": "result.kind",
+              "value": "result"
+            },
+            {
+              "path": "effect.kind",
+              "value": "not_applicable"
+            },
+            {
+              "path": "resource.status.kind",
+              "value": "foreground"
+            },
+            {
+              "path": "resource.supervision",
+              "value": "released"
+            },
+            {
+              "path": "resource.cleanup",
+              "value": "confirmed"
+            },
+            {
+              "path": "resource.evidence.subject.kind",
+              "value": "local_process"
+            }
+          ]
+        }
+      ],
+      "coordination": {
+        "phase": "failed",
+        "terminal_status": "failed",
+        "diagnostic_code": "RUN_EXECUTION_DEADLINE_EXCEEDED",
+        "updated_at": "2026-09-12T01:31:05.427Z"
+      },
+      "toolMessageComparisons": [
+        {
+          "at": "2026-09-12T01:16:11.349Z",
+          "toolCallId": "chatcmpl-tool-9fee1b89b94fbfc8",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 849,
+            "textSha256": "2612d229e785a98dbb2d6361a3a2aafc359e5400ce02dffcbe4b310ee3473a4b",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:16:11.349Z",
+          "toolCallId": "chatcmpl-tool-af4f20d2aeda9ec1",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 561,
+            "textSha256": "d75cd4d5cba3c5133d875005fafd58bc0778dd829067f5dd90dc424fba5eea11",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:16:11.349Z",
+          "toolCallId": "chatcmpl-tool-ab47c34d5770bee3",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 1246,
+            "textSha256": "e1de2aafb5a18fc9ea416069fb9cbc5530c6a9cc97ca372937fa60716e8d4155",
+            "markers": [
+              "海风",
+              "e2e-20260912-note.txt"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:16:11.349Z",
+          "toolCallId": "chatcmpl-tool-a4c8462cc003b25b",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 35,
+            "textSha256": "1d642c42eaadb63109b53db60ee6a3dc4ca24397df101120b135b592771e92c2",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:16:11.349Z",
+          "toolCallId": "chatcmpl-tool-a2efd20395ea3afb",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 646,
+            "textSha256": "17463903090e7ded4e5d5dcf21d90af6b86f34870ae86b71e78014f8650a2cfc",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:16:11.349Z",
+          "toolCallId": "chatcmpl-tool-93d34d7eee8cb5ec",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 56,
+            "textSha256": "6b9ace4e66a77632020859696393f3c8989dea7beb72592868008b0ae2ca8b53",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:16:11.349Z",
+          "toolCallId": "chatcmpl-tool-b421a5590c59d97a",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 20,
+            "textSha256": "4528dd4018983d8009c482cd01fdb27c44168db3949381a83a1e682678199fdd",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:16:11.349Z",
+          "toolCallId": "chatcmpl-tool-a4d4f6d9991155dd",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 20,
+            "textSha256": "4528dd4018983d8009c482cd01fdb27c44168db3949381a83a1e682678199fdd",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:16:11.349Z",
+          "toolCallId": "chatcmpl-tool-b7b59a81422381b0",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 531,
+            "textSha256": "0fa3353d5355b8cb8fc79049bffc306365bca645979d87644328f500d641ad5a",
+            "markers": [
+              "pwd"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:16:11.349Z",
+          "toolCallId": "chatcmpl-tool-9fbd244d68726bd1",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 1349,
+            "textSha256": "090ba828395a648c900110d0ec2f7e3ecdcc9e467d6bca1927c7010a4163cd0f",
+            "markers": [
+              "海风"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-9fee1b89b94fbfc8",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 849,
+            "textSha256": "2612d229e785a98dbb2d6361a3a2aafc359e5400ce02dffcbe4b310ee3473a4b",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-af4f20d2aeda9ec1",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 561,
+            "textSha256": "d75cd4d5cba3c5133d875005fafd58bc0778dd829067f5dd90dc424fba5eea11",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-ab47c34d5770bee3",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 1246,
+            "textSha256": "e1de2aafb5a18fc9ea416069fb9cbc5530c6a9cc97ca372937fa60716e8d4155",
+            "markers": [
+              "海风",
+              "e2e-20260912-note.txt"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-a4c8462cc003b25b",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 35,
+            "textSha256": "1d642c42eaadb63109b53db60ee6a3dc4ca24397df101120b135b592771e92c2",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-a2efd20395ea3afb",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 646,
+            "textSha256": "17463903090e7ded4e5d5dcf21d90af6b86f34870ae86b71e78014f8650a2cfc",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-93d34d7eee8cb5ec",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 56,
+            "textSha256": "6b9ace4e66a77632020859696393f3c8989dea7beb72592868008b0ae2ca8b53",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-b421a5590c59d97a",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 20,
+            "textSha256": "4528dd4018983d8009c482cd01fdb27c44168db3949381a83a1e682678199fdd",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-a4d4f6d9991155dd",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 20,
+            "textSha256": "4528dd4018983d8009c482cd01fdb27c44168db3949381a83a1e682678199fdd",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-b7b59a81422381b0",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 531,
+            "textSha256": "0fa3353d5355b8cb8fc79049bffc306365bca645979d87644328f500d641ad5a",
+            "markers": [
+              "pwd"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-9fbd244d68726bd1",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 1349,
+            "textSha256": "090ba828395a648c900110d0ec2f7e3ecdcc9e467d6bca1927c7010a4163cd0f",
+            "markers": [
+              "海风"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-9b28f9d6c96a0a90",
+          "currentRunResults": 4,
+          "matchesRecordedContent": true,
+          "providerContent": {
+            "bytes": 671,
+            "textSha256": "bd9ed131b19791b698c00d77aefc2cf2caad58b8dc960a858ae99ee8a4e3311d",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-8ccc29ef0e42eed0",
+          "currentRunResults": 3,
+          "matchesRecordedContent": true,
+          "providerContent": {
+            "bytes": 584,
+            "textSha256": "04e674197a39abc708722050beb42f02359acde3fe70a8965354e33f7ea0f72d",
+            "markers": [
+              "e2e-20260912-note.txt"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-b9dbb9a82ffde2a8",
+          "currentRunResults": 2,
+          "matchesRecordedContent": true,
+          "providerContent": {
+            "bytes": 609,
+            "textSha256": "58f8eb76a72647d8e4dc6927e22b6d8da38e4ce735f9c113db95f0ba3bbd439e",
+            "markers": [
+              "海风",
+              "e2e-20260912-note.txt"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:28:26.549Z",
+          "toolCallId": "chatcmpl-tool-a5ba34ac44369986",
+          "currentRunResults": 1,
+          "matchesRecordedContent": true,
+          "providerContent": {
+            "bytes": 531,
+            "textSha256": "dfbfb634100763e0f6ea75b9767f05937d4cd38254dfeecbb5a3be35d46de79f",
+            "markers": [
+              "pwd"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "run:9e9a2eb7-3466-4f09-bfb5-bd6699f01992",
+      "status": "completed",
+      "created_at": "2026-09-12T01:20:41.115Z",
+      "updated_at": "2026-09-12T01:21:57.143Z",
+      "providers": [
+        {
+          "at": "2026-09-12T01:20:59.249Z",
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "stream_options",
+            "store",
+            "max_tokens",
+            "tools",
+            "reasoning",
+            "provider"
+          ],
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "system": null,
+          "messages": [
+            {
+              "index": 0,
+              "role": "system",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 2135,
+              "sha256": "9d5c0385aa719f132b9cc16df12efb0c0025fb6bac5e8a55967ae1c05bf2b4d2",
+              "textSha256": "87b496926ba3dc219aeee70a4cea2f7dffe114e6d55f5d11d353d3c600400592",
+              "markers": [
+                "2026-09-12"
+              ],
+              "dates": [
+                "2026-09-12T01:20:41.115Z",
+                "2026-09-12"
+              ]
+            },
+            {
+              "index": 1,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 261,
+              "sha256": "48936a5cd8bfa07f3ad5bd26a81d419ca2e36c85c1a6d8fc2ce46360895feeaa",
+              "textSha256": "240573981cda309614308de4b0d256cf2280f5fc1669251dacb9f2a15dd8dc0b",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 2,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_d60300ca28a743fb85f9c717",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 263,
+              "sha256": "b31d233d03a5c88e1adf5100a042e1eead433980b08250926e9df584ce3f13d8",
+              "textSha256": "b31d233d03a5c88e1adf5100a042e1eead433980b08250926e9df584ce3f13d8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 3,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_d60300ca28a743fb85f9c717",
+              "bytes": 59,
+              "sha256": "106b7268b86be0b8c8c13799aefd57bf8624080499f3d550d171eb5b5da198d8",
+              "textSha256": "7c52b340b2f0039bcf3d2451149df0730b8ac11842b1707d7abb71161d60ae70",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 4,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 283,
+              "sha256": "2e3230d17586de44fb4429f48746c6e2385882f31d50d4cafcea11fafa552fb3",
+              "textSha256": "1314d7f7df49abbe6265986aa92a23ca6db1828d9936d205717c3e01d82b7a92",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 5,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 178,
+              "sha256": "a04c487140879a245e86d324c8a1be44b09d0b9832c8f3e4931c8ac2cffe1317",
+              "textSha256": "431daba2d0c2cf4fe0e807ad577ac44c5228c90dedf94bf04392126ce98ed87b",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 6,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_662e7856f4ce47ba8d32f806",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "498c4cb13a34e6aee4f42a23f9c4225b1ae2647b42284b7a71751ab760b9a4a8",
+              "textSha256": "498c4cb13a34e6aee4f42a23f9c4225b1ae2647b42284b7a71751ab760b9a4a8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 7,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_662e7856f4ce47ba8d32f806",
+              "bytes": 26,
+              "sha256": "1fe04387bad7cf91cb459913bd7f3d72cbf8a16abfcc36c57835f161ced72deb",
+              "textSha256": "f50cea68735a979e76c321a64f39f8300c761afd19937950415b17d3b5293460",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 8,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 283,
+              "sha256": "2e3230d17586de44fb4429f48746c6e2385882f31d50d4cafcea11fafa552fb3",
+              "textSha256": "1314d7f7df49abbe6265986aa92a23ca6db1828d9936d205717c3e01d82b7a92",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 9,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 253,
+              "sha256": "77b89e9da2c21f1576a4ef627720fd3494fb8d513f07539b0a0d24c553b6f8db",
+              "textSha256": "ff10549a43f90769512a1683ed6510819c5e9f05424441e1dd5d113967491496",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 10,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_45b3baa46ed643579c881f61",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "7363506b6623d00464625265a3b25838ce42baef2c73b7c5b19bc0402273df3e",
+              "textSha256": "7363506b6623d00464625265a3b25838ce42baef2c73b7c5b19bc0402273df3e",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 11,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_45b3baa46ed643579c881f61",
+              "bytes": 566,
+              "sha256": "7b9f725fbe06799b06993212645827e5f57305106a00511168e3728a88a845e6",
+              "textSha256": "65b4cb79163e33476e1ddb345dcad98609438d80f7330b3fd3ae0bd98405aaea",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 12,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 284,
+              "sha256": "b0675ee3be49d72b0a6fb35b018cc17543775b9fb9418f7669f9e47f75b05dfb",
+              "textSha256": "427d687d0e82c44f628e658032ff155de40cd180d2a022da67dac48307abbd19",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 13,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 292,
+              "sha256": "95f320b0eb8cd19d79e1f1e791cc8917e6137cd172f599c55310ab138f74cb94",
+              "textSha256": "bdeacdf24572684cf2b0eefdea0b706a7f62803bfb0a421d27a3d44a3a2fc8ae",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 14,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_9560612db91746d88a150a24",
+                  "name": "web_search"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 253,
+              "sha256": "da84cceea9ea337026c9929de6a8aae1daf652aeb7364b8f12b8f8d684987b5d",
+              "textSha256": "da84cceea9ea337026c9929de6a8aae1daf652aeb7364b8f12b8f8d684987b5d",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 15,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_9560612db91746d88a150a24",
+              "bytes": 14822,
+              "sha256": "a378f89aa32ee2738e7e2ea20c9bde439dbe6bb3e5ed63280e53b126e647620a",
+              "textSha256": "a2843837b4f0d66ffc5f02a104f28f104306beb1acd7bed36aa5851f784924a1",
+              "markers": [
+                "2026-09-11",
+                "tenki.jp",
+                "東京"
+              ],
+              "dates": [
+                "2026-09-10T20:43:39.277Z",
+                "2026-09-10T00:00:00.000Z",
+                "2026-09-11",
+                "2026-09-10T08:30:06.000Z",
+                "2026-09-10T15:57:25.000Z"
+              ]
+            },
+            {
+              "index": 16,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 2096,
+              "sha256": "4c3f8d3058325868149371b2ecf5deae1d3274e65ccf506372a6525708190130",
+              "textSha256": "bcb54c9762896d3f3c8ff5533e5182bf2541081c771452630c7c8ab638e73b77",
+              "markers": [
+                "2026-09-11",
+                "tenki.jp"
+              ],
+              "dates": [
+                "2026-09-10",
+                "2026-09-11"
+              ]
+            },
+            {
+              "index": 17,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 428,
+              "sha256": "d510a2e8fdfadd04130bd5f9cb7086f6c7f4c21f0fe17ed8e06d7dbc231364d7",
+              "textSha256": "bc8a57b1d548214d439fdf44238cfeb75676e8711a45d0c4c7e2598d2c4bb6a6",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 18,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_6f05648e5e694ea3810f2e15",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 87,
+              "sha256": "c6391502b80bd32b93899ec3a33d05a4c463e41f0518c6c8370880cc89cdc443",
+              "textSha256": "6c716d3a8990d1071b84738d1a763e89bcb6a7e7a7bcaf2bad5e2a88c7a6b4dc",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 19,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_6f05648e5e694ea3810f2e15",
+              "bytes": 1849,
+              "sha256": "7cad4d6c64775fcfde965c4618f4d070c49b61698099cc00ea112e901f35c189",
+              "textSha256": "34acc01d588a5d44fb54008370bf7bf2bae6a2d1c09e58d82396740aa4fe5712",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 20,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 975,
+              "sha256": "555e3d0fbc577c6eaa0852dc11effe28d57fa1d2b9f4898095815b2f290f4d5a",
+              "textSha256": "fcb1556d7dbee60c10afa2f37e33179a2f46cd1d1a021f426916c321a224b3f0",
+              "markers": [
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-11"
+              ]
+            },
+            {
+              "index": 21,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "4620320fc2d13547d4c8dae3042b3a9beab36e4e91fb89b577430222abdae549",
+              "textSha256": "aa1ca131ac9c7e4a5e4a4bdaf2013a7bfc1228ed1624d02f02568138995b2358",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 22,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 80,
+              "sha256": "d321c1e87c9920a717d3107c1da27fd45ef0598ebd65268a966bb2b41c2c3c05",
+              "textSha256": "e85ec2ce15858cb263fa70118b3e28f0044c3d0da270f1f8429e1d3c7eae057b",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 23,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 214,
+              "sha256": "78470c8d61b478ef022068a114829847d54790ad095da884578422453da4907e",
+              "textSha256": "3d1eb08bd3263aa56e18956de0e397d4be58cc82c95692300018cecc40434e7f",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 24,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 301,
+              "sha256": "e40c84fdda3946213727a1a0a6c874e8f244daf948e566f119574b88229d87c0",
+              "textSha256": "c35c1b0e2067f56c3de02bb239c12e7c2ff37cd16bd251d25e36abd32132a1d9",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 25,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 316,
+              "sha256": "93e2312a9249fc3857afd94890fe0bfe003525560b3f3bd3f61f8f2411c529ec",
+              "textSha256": "b2550b4e1b42228d7f386176b26d4fc26ed70d2015bfdebc3c546866dee7afe6",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 26,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_856e24b6b411443b91eff5f8",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 264,
+              "sha256": "4176a4badf9a212d061786060844cd0e089c540622407ac5a90222ccd958d7eb",
+              "textSha256": "4176a4badf9a212d061786060844cd0e089c540622407ac5a90222ccd958d7eb",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 27,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_856e24b6b411443b91eff5f8",
+              "bytes": 35,
+              "sha256": "3c350d3143a43ccdc7a26ae1ad07bf5ae4344de373d503afe99fbac89fab3127",
+              "textSha256": "1d642c42eaadb63109b53db60ee6a3dc4ca24397df101120b135b592771e92c2",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 28,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 323,
+              "sha256": "2117d8dc53066265cdb484372cd3c9c0e8f2a6d614388f7d109fb63d0c93da68",
+              "textSha256": "cd49a68900cf6ddc1359be37ddc5f72f5a7a53519531f8e8d212bada78c4ffef",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 29,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 159,
+              "sha256": "5bcd48d475af5da294806cbedaf1d41335c22a9b7fc91ffa003785c9bb058df7",
+              "textSha256": "7f13c6542d6c215434f3c6742df142a7acf3099f01cd23922190e0d2bd21174c",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 30,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 283,
+              "sha256": "2e3230d17586de44fb4429f48746c6e2385882f31d50d4cafcea11fafa552fb3",
+              "textSha256": "1314d7f7df49abbe6265986aa92a23ca6db1828d9936d205717c3e01d82b7a92",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 31,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 54,
+              "sha256": "e86c6cd3c535af5a6596b6ad85a83e4505d9e91092bc5fdadc357f27c6df0dd9",
+              "textSha256": "b93104e892268ed4bc5c38e09cb04daa74c58474d70e1868a286553475bf2ff6",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 32,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 7379,
+              "sha256": "b42de3c8baa055cfafe48baa80db3092386c94a2b6ce1ad724d7d5f0239c599c",
+              "textSha256": "b172e737fece3eca3cef44a8bb5a2e4f26aa247c9ae6d6788200a439efd8e0c1",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 33,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 123,
+              "sha256": "4061ad178576dba1eb1052753f84c01422ff0f9fe38e13211c08a0f5979e4128",
+              "textSha256": "77bb6a2779ba4fe737d6ab799f283e2768d9cd0752bffacbb5accf17f2bd6023",
+              "markers": [
+                "只搜索一次"
+              ],
+              "dates": []
+            },
+            {
+              "index": 34,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-975d27020b31c7db",
+                  "name": "web_search"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 206,
+              "sha256": "5edf473bee857cf9589985db0019d3b2133e0463cd149fd92d17b4080ff7e765",
+              "textSha256": "5edf473bee857cf9589985db0019d3b2133e0463cd149fd92d17b4080ff7e765",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 35,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-975d27020b31c7db",
+              "bytes": 5474,
+              "sha256": "6f6de865da50cbfe8036a6a51d6c505307e76de2956504b0a9d8e89997735ac5",
+              "textSha256": "4cd7ba724a5e14934fe2f7ef6dbbacfbf3b3073348081ce962c7e88157ce8f35",
+              "markers": [
+                "2026-09-11",
+                "tenki.jp",
+                "東京"
+              ],
+              "dates": [
+                "2026-09-11T15:40:08.910Z",
+                "2026-09-11T00:00:00.000Z"
+              ]
+            },
+            {
+              "index": 36,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 744,
+              "sha256": "d4948fd036cf4f53d1c4f1c799c5c603645f4f87a0966381230fa1c0b1c11e4c",
+              "textSha256": "900cd468cfc46474b43b65fb45689289c1adc566c1c1764e580356a250eb72b1",
+              "markers": [
+                "2026-09-11",
+                "東京"
+              ],
+              "dates": [
+                "2026-09-11"
+              ]
+            },
+            {
+              "index": 37,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 311,
+              "sha256": "8fb940d5d67503cd419c245586d1a164e05189bc0855039ed72a2d0cebccd260",
+              "textSha256": "1c8b5dfd6cd927652aff144e54e42029525e22644deeaac431941c7091114e59",
+              "markers": [
+                "東京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 38,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-8ee972e80909ceb7",
+                  "name": "web_search"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 285,
+              "sha256": "b80de76eba2ae33a2e526de2eb395c14f4a87b40756c66fa0745cc4bb0b78399",
+              "textSha256": "b80de76eba2ae33a2e526de2eb395c14f4a87b40756c66fa0745cc4bb0b78399",
+              "markers": [
+                "東京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 39,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-8ee972e80909ceb7",
+              "bytes": 6704,
+              "sha256": "79c552db13254bef47e78ce4d89e1f10dbae4f7e01553e21e1c291769ecfabb8",
+              "textSha256": "8bd3101a01dd22da1a1f1292d868c0408d31e931180f8c655703ae67d8507089",
+              "markers": [
+                "2026-09-11",
+                "toshin.com",
+                "weathernews.jp",
+                "東京"
+              ],
+              "dates": [
+                "2026-09-11T17:02:06.855Z",
+                "2026-09-11T00:00:00.000Z",
+                "2026-09-11T07:50:00.000Z"
+              ]
+            },
+            {
+              "index": 40,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 574,
+              "sha256": "3985a460c393c7f011a702ceb2a5e24338b02e7948f2e91b033df23b0868e16a",
+              "textSha256": "8d09cb5edeee24c79edbbcc01cedf4c1c60edd37e37d5d69aa0a984f4c668fc0",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 41,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 333,
+              "sha256": "63c448e65cba750cf74b1ab797171bae3d18b6f96de7d2a277e019f71ef746f0",
+              "textSha256": "3d3d48b7e0d803bef447cba50a314f0518690b0448f619fcee0afc099f8511b2",
+              "markers": [
+                "只搜索一次",
+                "東京"
+              ],
+              "dates": []
+            }
+          ]
+        },
+        {
+          "at": "2026-09-12T01:21:27.566Z",
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "stream_options",
+            "store",
+            "max_tokens",
+            "tools",
+            "reasoning",
+            "provider"
+          ],
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "system": null,
+          "messages": [
+            {
+              "index": 0,
+              "role": "system",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 2135,
+              "sha256": "9d5c0385aa719f132b9cc16df12efb0c0025fb6bac5e8a55967ae1c05bf2b4d2",
+              "textSha256": "87b496926ba3dc219aeee70a4cea2f7dffe114e6d55f5d11d353d3c600400592",
+              "markers": [
+                "2026-09-12"
+              ],
+              "dates": [
+                "2026-09-12T01:20:41.115Z",
+                "2026-09-12"
+              ]
+            },
+            {
+              "index": 1,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 261,
+              "sha256": "48936a5cd8bfa07f3ad5bd26a81d419ca2e36c85c1a6d8fc2ce46360895feeaa",
+              "textSha256": "240573981cda309614308de4b0d256cf2280f5fc1669251dacb9f2a15dd8dc0b",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 2,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_d60300ca28a743fb85f9c717",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 263,
+              "sha256": "b31d233d03a5c88e1adf5100a042e1eead433980b08250926e9df584ce3f13d8",
+              "textSha256": "b31d233d03a5c88e1adf5100a042e1eead433980b08250926e9df584ce3f13d8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 3,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_d60300ca28a743fb85f9c717",
+              "bytes": 59,
+              "sha256": "106b7268b86be0b8c8c13799aefd57bf8624080499f3d550d171eb5b5da198d8",
+              "textSha256": "7c52b340b2f0039bcf3d2451149df0730b8ac11842b1707d7abb71161d60ae70",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 4,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 283,
+              "sha256": "2e3230d17586de44fb4429f48746c6e2385882f31d50d4cafcea11fafa552fb3",
+              "textSha256": "1314d7f7df49abbe6265986aa92a23ca6db1828d9936d205717c3e01d82b7a92",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 5,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 178,
+              "sha256": "a04c487140879a245e86d324c8a1be44b09d0b9832c8f3e4931c8ac2cffe1317",
+              "textSha256": "431daba2d0c2cf4fe0e807ad577ac44c5228c90dedf94bf04392126ce98ed87b",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 6,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_662e7856f4ce47ba8d32f806",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "498c4cb13a34e6aee4f42a23f9c4225b1ae2647b42284b7a71751ab760b9a4a8",
+              "textSha256": "498c4cb13a34e6aee4f42a23f9c4225b1ae2647b42284b7a71751ab760b9a4a8",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 7,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_662e7856f4ce47ba8d32f806",
+              "bytes": 26,
+              "sha256": "1fe04387bad7cf91cb459913bd7f3d72cbf8a16abfcc36c57835f161ced72deb",
+              "textSha256": "f50cea68735a979e76c321a64f39f8300c761afd19937950415b17d3b5293460",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 8,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 283,
+              "sha256": "2e3230d17586de44fb4429f48746c6e2385882f31d50d4cafcea11fafa552fb3",
+              "textSha256": "1314d7f7df49abbe6265986aa92a23ca6db1828d9936d205717c3e01d82b7a92",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 9,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 253,
+              "sha256": "77b89e9da2c21f1576a4ef627720fd3494fb8d513f07539b0a0d24c553b6f8db",
+              "textSha256": "ff10549a43f90769512a1683ed6510819c5e9f05424441e1dd5d113967491496",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 10,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_45b3baa46ed643579c881f61",
+                  "name": "read"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "7363506b6623d00464625265a3b25838ce42baef2c73b7c5b19bc0402273df3e",
+              "textSha256": "7363506b6623d00464625265a3b25838ce42baef2c73b7c5b19bc0402273df3e",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 11,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_45b3baa46ed643579c881f61",
+              "bytes": 566,
+              "sha256": "7b9f725fbe06799b06993212645827e5f57305106a00511168e3728a88a845e6",
+              "textSha256": "65b4cb79163e33476e1ddb345dcad98609438d80f7330b3fd3ae0bd98405aaea",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 12,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 284,
+              "sha256": "b0675ee3be49d72b0a6fb35b018cc17543775b9fb9418f7669f9e47f75b05dfb",
+              "textSha256": "427d687d0e82c44f628e658032ff155de40cd180d2a022da67dac48307abbd19",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 13,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 292,
+              "sha256": "95f320b0eb8cd19d79e1f1e791cc8917e6137cd172f599c55310ab138f74cb94",
+              "textSha256": "bdeacdf24572684cf2b0eefdea0b706a7f62803bfb0a421d27a3d44a3a2fc8ae",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 14,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_9560612db91746d88a150a24",
+                  "name": "web_search"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 253,
+              "sha256": "da84cceea9ea337026c9929de6a8aae1daf652aeb7364b8f12b8f8d684987b5d",
+              "textSha256": "da84cceea9ea337026c9929de6a8aae1daf652aeb7364b8f12b8f8d684987b5d",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 15,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_9560612db91746d88a150a24",
+              "bytes": 14822,
+              "sha256": "a378f89aa32ee2738e7e2ea20c9bde439dbe6bb3e5ed63280e53b126e647620a",
+              "textSha256": "a2843837b4f0d66ffc5f02a104f28f104306beb1acd7bed36aa5851f784924a1",
+              "markers": [
+                "2026-09-11",
+                "tenki.jp",
+                "東京"
+              ],
+              "dates": [
+                "2026-09-10T20:43:39.277Z",
+                "2026-09-10T00:00:00.000Z",
+                "2026-09-11",
+                "2026-09-10T08:30:06.000Z",
+                "2026-09-10T15:57:25.000Z"
+              ]
+            },
+            {
+              "index": 16,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 2096,
+              "sha256": "4c3f8d3058325868149371b2ecf5deae1d3274e65ccf506372a6525708190130",
+              "textSha256": "bcb54c9762896d3f3c8ff5533e5182bf2541081c771452630c7c8ab638e73b77",
+              "markers": [
+                "2026-09-11",
+                "tenki.jp"
+              ],
+              "dates": [
+                "2026-09-10",
+                "2026-09-11"
+              ]
+            },
+            {
+              "index": 17,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 428,
+              "sha256": "d510a2e8fdfadd04130bd5f9cb7086f6c7f4c21f0fe17ed8e06d7dbc231364d7",
+              "textSha256": "bc8a57b1d548214d439fdf44238cfeb75676e8711a45d0c4c7e2598d2c4bb6a6",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 18,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_6f05648e5e694ea3810f2e15",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 87,
+              "sha256": "c6391502b80bd32b93899ec3a33d05a4c463e41f0518c6c8370880cc89cdc443",
+              "textSha256": "6c716d3a8990d1071b84738d1a763e89bcb6a7e7a7bcaf2bad5e2a88c7a6b4dc",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 19,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_6f05648e5e694ea3810f2e15",
+              "bytes": 1849,
+              "sha256": "7cad4d6c64775fcfde965c4618f4d070c49b61698099cc00ea112e901f35c189",
+              "textSha256": "34acc01d588a5d44fb54008370bf7bf2bae6a2d1c09e58d82396740aa4fe5712",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 20,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 975,
+              "sha256": "555e3d0fbc577c6eaa0852dc11effe28d57fa1d2b9f4898095815b2f290f4d5a",
+              "textSha256": "fcb1556d7dbee60c10afa2f37e33179a2f46cd1d1a021f426916c321a224b3f0",
+              "markers": [
+                "2026-09-11"
+              ],
+              "dates": [
+                "2026-09-11"
+              ]
+            },
+            {
+              "index": 21,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 227,
+              "sha256": "4620320fc2d13547d4c8dae3042b3a9beab36e4e91fb89b577430222abdae549",
+              "textSha256": "aa1ca131ac9c7e4a5e4a4bdaf2013a7bfc1228ed1624d02f02568138995b2358",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 22,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 80,
+              "sha256": "d321c1e87c9920a717d3107c1da27fd45ef0598ebd65268a966bb2b41c2c3c05",
+              "textSha256": "e85ec2ce15858cb263fa70118b3e28f0044c3d0da270f1f8429e1d3c7eae057b",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 23,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 214,
+              "sha256": "78470c8d61b478ef022068a114829847d54790ad095da884578422453da4907e",
+              "textSha256": "3d1eb08bd3263aa56e18956de0e397d4be58cc82c95692300018cecc40434e7f",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 24,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 301,
+              "sha256": "e40c84fdda3946213727a1a0a6c874e8f244daf948e566f119574b88229d87c0",
+              "textSha256": "c35c1b0e2067f56c3de02bb239c12e7c2ff37cd16bd251d25e36abd32132a1d9",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 25,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 316,
+              "sha256": "93e2312a9249fc3857afd94890fe0bfe003525560b3f3bd3f61f8f2411c529ec",
+              "textSha256": "b2550b4e1b42228d7f386176b26d4fc26ed70d2015bfdebc3c546866dee7afe6",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 26,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "call_856e24b6b411443b91eff5f8",
+                  "name": "write"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 264,
+              "sha256": "4176a4badf9a212d061786060844cd0e089c540622407ac5a90222ccd958d7eb",
+              "textSha256": "4176a4badf9a212d061786060844cd0e089c540622407ac5a90222ccd958d7eb",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 27,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "call_856e24b6b411443b91eff5f8",
+              "bytes": 35,
+              "sha256": "3c350d3143a43ccdc7a26ae1ad07bf5ae4344de373d503afe99fbac89fab3127",
+              "textSha256": "1d642c42eaadb63109b53db60ee6a3dc4ca24397df101120b135b592771e92c2",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 28,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 323,
+              "sha256": "2117d8dc53066265cdb484372cd3c9c0e8f2a6d614388f7d109fb63d0c93da68",
+              "textSha256": "cd49a68900cf6ddc1359be37ddc5f72f5a7a53519531f8e8d212bada78c4ffef",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 29,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 159,
+              "sha256": "5bcd48d475af5da294806cbedaf1d41335c22a9b7fc91ffa003785c9bb058df7",
+              "textSha256": "7f13c6542d6c215434f3c6742df142a7acf3099f01cd23922190e0d2bd21174c",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 30,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 283,
+              "sha256": "2e3230d17586de44fb4429f48746c6e2385882f31d50d4cafcea11fafa552fb3",
+              "textSha256": "1314d7f7df49abbe6265986aa92a23ca6db1828d9936d205717c3e01d82b7a92",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 31,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 54,
+              "sha256": "e86c6cd3c535af5a6596b6ad85a83e4505d9e91092bc5fdadc357f27c6df0dd9",
+              "textSha256": "b93104e892268ed4bc5c38e09cb04daa74c58474d70e1868a286553475bf2ff6",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 32,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 7379,
+              "sha256": "b42de3c8baa055cfafe48baa80db3092386c94a2b6ce1ad724d7d5f0239c599c",
+              "textSha256": "b172e737fece3eca3cef44a8bb5a2e4f26aa247c9ae6d6788200a439efd8e0c1",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 33,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 123,
+              "sha256": "4061ad178576dba1eb1052753f84c01422ff0f9fe38e13211c08a0f5979e4128",
+              "textSha256": "77bb6a2779ba4fe737d6ab799f283e2768d9cd0752bffacbb5accf17f2bd6023",
+              "markers": [
+                "只搜索一次"
+              ],
+              "dates": []
+            },
+            {
+              "index": 34,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-975d27020b31c7db",
+                  "name": "web_search"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 206,
+              "sha256": "5edf473bee857cf9589985db0019d3b2133e0463cd149fd92d17b4080ff7e765",
+              "textSha256": "5edf473bee857cf9589985db0019d3b2133e0463cd149fd92d17b4080ff7e765",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 35,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-975d27020b31c7db",
+              "bytes": 5474,
+              "sha256": "6f6de865da50cbfe8036a6a51d6c505307e76de2956504b0a9d8e89997735ac5",
+              "textSha256": "4cd7ba724a5e14934fe2f7ef6dbbacfbf3b3073348081ce962c7e88157ce8f35",
+              "markers": [
+                "2026-09-11",
+                "tenki.jp",
+                "東京"
+              ],
+              "dates": [
+                "2026-09-11T15:40:08.910Z",
+                "2026-09-11T00:00:00.000Z"
+              ]
+            },
+            {
+              "index": 36,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 744,
+              "sha256": "d4948fd036cf4f53d1c4f1c799c5c603645f4f87a0966381230fa1c0b1c11e4c",
+              "textSha256": "900cd468cfc46474b43b65fb45689289c1adc566c1c1764e580356a250eb72b1",
+              "markers": [
+                "2026-09-11",
+                "東京"
+              ],
+              "dates": [
+                "2026-09-11"
+              ]
+            },
+            {
+              "index": 37,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 311,
+              "sha256": "8fb940d5d67503cd419c245586d1a164e05189bc0855039ed72a2d0cebccd260",
+              "textSha256": "1c8b5dfd6cd927652aff144e54e42029525e22644deeaac431941c7091114e59",
+              "markers": [
+                "東京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 38,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-8ee972e80909ceb7",
+                  "name": "web_search"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 285,
+              "sha256": "b80de76eba2ae33a2e526de2eb395c14f4a87b40756c66fa0745cc4bb0b78399",
+              "textSha256": "b80de76eba2ae33a2e526de2eb395c14f4a87b40756c66fa0745cc4bb0b78399",
+              "markers": [
+                "東京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 39,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-8ee972e80909ceb7",
+              "bytes": 6704,
+              "sha256": "79c552db13254bef47e78ce4d89e1f10dbae4f7e01553e21e1c291769ecfabb8",
+              "textSha256": "8bd3101a01dd22da1a1f1292d868c0408d31e931180f8c655703ae67d8507089",
+              "markers": [
+                "2026-09-11",
+                "toshin.com",
+                "weathernews.jp",
+                "東京"
+              ],
+              "dates": [
+                "2026-09-11T17:02:06.855Z",
+                "2026-09-11T00:00:00.000Z",
+                "2026-09-11T07:50:00.000Z"
+              ]
+            },
+            {
+              "index": 40,
+              "role": "assistant",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 574,
+              "sha256": "3985a460c393c7f011a702ceb2a5e24338b02e7948f2e91b033df23b0868e16a",
+              "textSha256": "8d09cb5edeee24c79edbbcc01cedf4c1c60edd37e37d5d69aa0a984f4c668fc0",
+              "markers": [],
+              "dates": []
+            },
+            {
+              "index": 41,
+              "role": "user",
+              "toolCalls": [],
+              "toolCallId": null,
+              "bytes": 333,
+              "sha256": "63c448e65cba750cf74b1ab797171bae3d18b6f96de7d2a277e019f71ef746f0",
+              "textSha256": "3d3d48b7e0d803bef447cba50a314f0518690b0448f619fcee0afc099f8511b2",
+              "markers": [
+                "只搜索一次",
+                "東京"
+              ],
+              "dates": []
+            },
+            {
+              "index": 42,
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "chatcmpl-tool-a4e61b328b2ef03d",
+                  "name": "web_search"
+                }
+              ],
+              "toolCallId": null,
+              "bytes": 687,
+              "sha256": "7295f1ba1ef1db00103da89cbe777f8c8024987e5a17da8564a4387c06f5a453",
+              "textSha256": "7295f1ba1ef1db00103da89cbe777f8c8024987e5a17da8564a4387c06f5a453",
+              "markers": [
+                "2026-09-12",
+                "東京"
+              ],
+              "dates": [
+                "2026-09-12"
+              ]
+            },
+            {
+              "index": 43,
+              "role": "tool",
+              "toolCalls": [],
+              "toolCallId": "chatcmpl-tool-a4e61b328b2ef03d",
+              "bytes": 7214,
+              "sha256": "1418928bad575bf3e2be592adf1bfcc857cf2dde794d5e805ccf821a0f83c46c",
+              "textSha256": "c696ff8a903f410d899d607b034bfb99dba3613735c71014491ee49c4fc60220",
+              "markers": [
+                "2026-09-12",
+                "tenki.jp",
+                "toshin.com",
+                "exa.ai",
+                "東京"
+              ],
+              "dates": [
+                "2026-09-12T01:21:23.307Z",
+                "2026-09-12T00:00:00.000Z",
+                "2026-09-12",
+                "2026-09-12T12:00:00.000Z"
+              ]
+            }
+          ]
+        }
+      ],
+      "contextArtifacts": [],
+      "toolResults": [
+        {
+          "at": "2026-09-12T01:21:26.095Z",
+          "toolCallId": "chatcmpl-tool-a4e61b328b2ef03d",
+          "toolName": "web_search",
+          "isError": false,
+          "content": {
+            "bytes": 7239,
+            "sha256": "cd5a887ec1fd8c93f9ae88ccdedc8d892bab9f4b07debbdd8da980b9b5320591",
+            "textSha256": "c696ff8a903f410d899d607b034bfb99dba3613735c71014491ee49c4fc60220",
+            "markers": [
+              "2026-09-12",
+              "tenki.jp",
+              "toshin.com",
+              "exa.ai",
+              "東京"
+            ],
+            "dates": [
+              "2026-09-12T01:21:23.307Z",
+              "2026-09-12T00:00:00.000Z",
+              "2026-09-12",
+              "2026-09-12T12:00:00.000Z"
+            ]
+          }
+        }
+      ],
+      "checkpoints": [],
+      "trace": [
+        {
+          "type": "memory.query",
+          "at": "2026-09-12T01:20:43.566Z",
+          "facts": []
+        },
+        {
+          "type": "memory.candidates",
+          "at": "2026-09-12T01:20:55.803Z",
+          "facts": []
+        },
+        {
+          "type": "memory.selection",
+          "at": "2026-09-12T01:20:55.930Z",
+          "facts": []
+        },
+        {
+          "type": "context.formed",
+          "at": "2026-09-12T01:20:56.131Z",
+          "facts": [
+            {
+              "path": "answerLocalePolicy.locale",
+              "value": "zh-CN"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_started",
+          "at": "2026-09-12T01:20:56.564Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-12T01:20:56.564Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-12T01:20:59.439Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "request"
+            }
+          ]
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-12T01:21:02.167Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "response"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-12T01:21:08.439Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.tool_intent",
+          "at": "2026-09-12T01:21:08.441Z",
+          "facts": []
+        },
+        {
+          "type": "authorization.grant_consumed",
+          "at": "2026-09-12T01:21:12.665Z",
+          "facts": [
+            {
+              "path": "kind",
+              "value": "metadata_reference_only"
+            }
+          ]
+        },
+        {
+          "type": "runtime.tool_result",
+          "at": "2026-09-12T01:21:26.093Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_completed",
+          "at": "2026-09-12T01:21:26.099Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_started",
+          "at": "2026-09-12T01:21:26.100Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-12T01:21:27.976Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "request"
+            }
+          ]
+        },
+        {
+          "type": "runtime.provider_observation",
+          "at": "2026-09-12T01:21:30.020Z",
+          "facts": [
+            {
+              "path": "phase",
+              "value": "response"
+            }
+          ]
+        },
+        {
+          "type": "runtime.model_output",
+          "at": "2026-09-12T01:21:54.686Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.turn_completed",
+          "at": "2026-09-12T01:21:54.687Z",
+          "facts": []
+        },
+        {
+          "type": "runtime.completed",
+          "at": "2026-09-12T01:21:56.562Z",
+          "facts": [
+            {
+              "path": "output.kind",
+              "value": "assistant-answer"
+            }
+          ]
+        }
+      ],
+      "receipts": [
+        {
+          "operation": "web_search",
+          "invocation_id": "runtime-tool:90460f16b4d29d7d1354897f11a7bdf1a45a33b1084f026d2c96dbecc12f422f",
+          "worker_run_id": "runtime-worker:90460f16b4d29d7d1354897f11a7bdf1a45a33b1084f026d2c96dbecc12f422f",
+          "requested_at": "2026-09-12T01:21:14.220Z",
+          "deadline_at": "2026-09-12T01:26:14.220Z"
+        }
+      ],
+      "jobs": [
+        {
+          "jobId": "jDqkF860wrM0OGEPUf8kaNSTk77CH79fhWZaXuNgz7os",
+          "startedAt": "2026-09-12T01:21:19.113Z",
+          "facts": [
+            {
+              "path": "environment.kind",
+              "value": "local"
+            },
+            {
+              "path": "result.kind",
+              "value": "result"
+            },
+            {
+              "path": "effect.kind",
+              "value": "not_applicable"
+            },
+            {
+              "path": "resource.status.kind",
+              "value": "foreground"
+            },
+            {
+              "path": "resource.supervision",
+              "value": "released"
+            },
+            {
+              "path": "resource.cleanup",
+              "value": "confirmed"
+            },
+            {
+              "path": "resource.evidence.subject.kind",
+              "value": "local_process"
+            }
+          ]
+        }
+      ],
+      "coordination": {
+        "phase": "completed",
+        "terminal_status": "completed",
+        "diagnostic_code": null,
+        "updated_at": "2026-09-12T01:21:57.240Z"
+      },
+      "toolMessageComparisons": [
+        {
+          "at": "2026-09-12T01:20:59.249Z",
+          "toolCallId": "call_d60300ca28a743fb85f9c717",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 59,
+            "textSha256": "7c52b340b2f0039bcf3d2451149df0730b8ac11842b1707d7abb71161d60ae70",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:20:59.249Z",
+          "toolCallId": "call_662e7856f4ce47ba8d32f806",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 26,
+            "textSha256": "f50cea68735a979e76c321a64f39f8300c761afd19937950415b17d3b5293460",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:20:59.249Z",
+          "toolCallId": "call_45b3baa46ed643579c881f61",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 566,
+            "textSha256": "65b4cb79163e33476e1ddb345dcad98609438d80f7330b3fd3ae0bd98405aaea",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:20:59.249Z",
+          "toolCallId": "call_9560612db91746d88a150a24",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 14822,
+            "textSha256": "a2843837b4f0d66ffc5f02a104f28f104306beb1acd7bed36aa5851f784924a1",
+            "markers": [
+              "2026-09-11",
+              "tenki.jp",
+              "東京"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:20:59.249Z",
+          "toolCallId": "call_6f05648e5e694ea3810f2e15",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 1849,
+            "textSha256": "34acc01d588a5d44fb54008370bf7bf2bae6a2d1c09e58d82396740aa4fe5712",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:20:59.249Z",
+          "toolCallId": "call_856e24b6b411443b91eff5f8",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 35,
+            "textSha256": "1d642c42eaadb63109b53db60ee6a3dc4ca24397df101120b135b592771e92c2",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:20:59.249Z",
+          "toolCallId": "chatcmpl-tool-975d27020b31c7db",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 5474,
+            "textSha256": "4cd7ba724a5e14934fe2f7ef6dbbacfbf3b3073348081ce962c7e88157ce8f35",
+            "markers": [
+              "2026-09-11",
+              "tenki.jp",
+              "東京"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:20:59.249Z",
+          "toolCallId": "chatcmpl-tool-8ee972e80909ceb7",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 6704,
+            "textSha256": "8bd3101a01dd22da1a1f1292d868c0408d31e931180f8c655703ae67d8507089",
+            "markers": [
+              "2026-09-11",
+              "toshin.com",
+              "weathernews.jp",
+              "東京"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:21:27.566Z",
+          "toolCallId": "call_d60300ca28a743fb85f9c717",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 59,
+            "textSha256": "7c52b340b2f0039bcf3d2451149df0730b8ac11842b1707d7abb71161d60ae70",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:21:27.566Z",
+          "toolCallId": "call_662e7856f4ce47ba8d32f806",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 26,
+            "textSha256": "f50cea68735a979e76c321a64f39f8300c761afd19937950415b17d3b5293460",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:21:27.566Z",
+          "toolCallId": "call_45b3baa46ed643579c881f61",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 566,
+            "textSha256": "65b4cb79163e33476e1ddb345dcad98609438d80f7330b3fd3ae0bd98405aaea",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:21:27.566Z",
+          "toolCallId": "call_9560612db91746d88a150a24",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 14822,
+            "textSha256": "a2843837b4f0d66ffc5f02a104f28f104306beb1acd7bed36aa5851f784924a1",
+            "markers": [
+              "2026-09-11",
+              "tenki.jp",
+              "東京"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:21:27.566Z",
+          "toolCallId": "call_6f05648e5e694ea3810f2e15",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 1849,
+            "textSha256": "34acc01d588a5d44fb54008370bf7bf2bae6a2d1c09e58d82396740aa4fe5712",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:21:27.566Z",
+          "toolCallId": "call_856e24b6b411443b91eff5f8",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 35,
+            "textSha256": "1d642c42eaadb63109b53db60ee6a3dc4ca24397df101120b135b592771e92c2",
+            "markers": []
+          }
+        },
+        {
+          "at": "2026-09-12T01:21:27.566Z",
+          "toolCallId": "chatcmpl-tool-975d27020b31c7db",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 5474,
+            "textSha256": "4cd7ba724a5e14934fe2f7ef6dbbacfbf3b3073348081ce962c7e88157ce8f35",
+            "markers": [
+              "2026-09-11",
+              "tenki.jp",
+              "東京"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:21:27.566Z",
+          "toolCallId": "chatcmpl-tool-8ee972e80909ceb7",
+          "currentRunResults": 0,
+          "matchesRecordedContent": false,
+          "providerContent": {
+            "bytes": 6704,
+            "textSha256": "8bd3101a01dd22da1a1f1292d868c0408d31e931180f8c655703ae67d8507089",
+            "markers": [
+              "2026-09-11",
+              "toshin.com",
+              "weathernews.jp",
+              "東京"
+            ]
+          }
+        },
+        {
+          "at": "2026-09-12T01:21:27.566Z",
+          "toolCallId": "chatcmpl-tool-a4e61b328b2ef03d",
+          "currentRunResults": 1,
+          "matchesRecordedContent": true,
+          "providerContent": {
+            "bytes": 7214,
+            "textSha256": "c696ff8a903f410d899d607b034bfb99dba3613735c71014491ee49c4fc60220",
+            "markers": [
+              "2026-09-12",
+              "tenki.jp",
+              "toshin.com",
+              "exa.ai",
+              "東京"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

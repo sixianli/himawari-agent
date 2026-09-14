@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "attempt": "attempt-v2",
+  "candidatePrefix": "/data/hermes/himawari/releases/2026-09-11-native-history",
+  "qualifiedRuntimePath": "/data/hermes/himawari/releases/2026-09-11-control-center/lib/himawari-agent",
+  "runtimeDigest": "2aa0cd9f40f257788a5c96557e97b519da7ca520a6a378883a90a2c7e3b513b6",
+  "receiptDigest": "4fa686b825f559221d96df60cbcbb788425664f3fcf76587cb0932dcf4881956",
+  "runtimeUid": 998,
+  "productionServiceChanged": false,
+  "productionDatabaseWritten": false,
+  "modelCalls": 0,
+  "next": "verified backup, offline migration/import and cutover still required"
+}

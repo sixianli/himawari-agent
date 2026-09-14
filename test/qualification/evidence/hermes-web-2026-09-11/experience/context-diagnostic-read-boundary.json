@@ -1,0 +1,41 @@
+{
+  "date": "2026-09-11",
+  "runId": "run:27c7c9a9-2f5f-48e9-b65f-1945114d278e",
+  "referenceExport": "User executed the fixed root diagnostic; provider-request and context references were returned.",
+  "browserPayloadRead": {
+    "triggerText": {
+      "status": 200,
+      "content": "现在的天气怎么样？"
+    },
+    "providerRequest": {
+      "status": 404,
+      "code": "PORT_NOT_FOUND"
+    },
+    "contextEnvelope": {
+      "status": 404,
+      "code": "PORT_NOT_FOUND"
+    },
+    "frozenRunInput": {
+      "status": 404,
+      "code": "PORT_NOT_FOUND"
+    }
+  },
+  "codeEvidence": {
+    "reader": "packages/platform-node/src/browser-text-payload-reader.ts",
+    "rule": "BrowserTextPayloadReader rejects records whose contentType is not text/plain",
+    "capture": "packages/application/src/services/context-projection-service.ts",
+    "providerRecordContentType": "application/json"
+  },
+  "interpretation": "The 404 response does not prove a missing model input; this interface does not disclose JSON artifacts.",
+  "preparedDiagnostic": {
+    "serverPath": "/data/hermes/himawari/builds/2026-09-11-migration-repair/hermes-context-content-diagnostic.py",
+    "fixedRuns": [
+      "run:27c7c9a9-2f5f-48e9-b65f-1945114d278e",
+      "run:472ef642-cbeb-436d-a7c7-83891a1d7305"
+    ],
+    "localFixture": "Passed encrypted payload roundtrip, final user message extraction, and unchanged database bytes using packaged product libraries",
+    "productionExecution": "User executed successfully; two fixed runs decrypted and summarized, output retained as context-content-diagnostic.json",
+    "boundary": "Temporary himawari diagnostic process with read-only bind, PrivateNetwork, ProtectSystem=strict, and existing payload decryption implementation; only bounded summaries leave process"
+  },
+  "rootCauseStatus": "Recorded outbound requests include the correct final input; historical cancelled run outcome is omitted. Causal sufficiency of a repair remains untested."
+}

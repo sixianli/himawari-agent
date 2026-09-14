@@ -12,11 +12,13 @@ import {
   JsonFileConfigurationPort,
   parseProductConfiguration,
   RuntimeHealthModel,
+  readAgentServiceBootBinding,
   readAuthorityFile,
   ServiceLifecycleError,
   STARTUP_PHASES,
   STATE_ROOT_ERROR_CODES,
   StartupDrainCoordinator,
+  writeAgentServiceBootBinding,
   writeAuthorityFile,
 } from "../src/index.js";
 
@@ -169,6 +171,55 @@ describe("strict product configuration", () => {
       dimensions: 1536,
     });
     expect(parsed.stateRoot).not.toBe(process.cwd());
+    expect(parsed.capabilityDeployment).toBeUndefined();
+  });
+
+  it("validates an endpoint requiring reasoning without accepting contradictory capabilities", () => {
+    const input = config(path.join(tmpdir(), "himawari-reasoning-config"));
+    const models = input["modelDescriptors"] as Record<string, unknown>[];
+    const primary = models[0];
+    if (!primary) throw new Error("Primary fixture missing");
+    primary["reasoning"] = true;
+    primary["reasoningRequired"] = true;
+    expect(
+      parseProductConfiguration(input, "2026-08-27T00:00:00.000Z").modelDescriptors[0],
+    ).toMatchObject({ reasoningRequired: true });
+    primary["reasoning"] = false;
+    expect(() => parseProductConfiguration(input, "2026-08-27T00:00:00.000Z")).toThrow();
+    primary["reasoning"] = true;
+    primary["reasoningRequired"] = "yes";
+    expect(() => parseProductConfiguration(input, "2026-08-27T00:00:00.000Z")).toThrow();
+  });
+
+  it("accepts an optional capability deployment snapshot reference with strict fields", () => {
+    const stateRoot = path.join(tmpdir(), "himawari-capability-deployment-config");
+    const input = config(stateRoot);
+    input["capabilityDeployment"] = {
+      snapshotPath: path.join(stateRoot, "runtime", "capability-deployment.json"),
+      sha256: `sha256:${"a".repeat(64)}`,
+    };
+    expect(
+      parseProductConfiguration(input, "2026-08-27T00:00:00.000Z").capabilityDeployment,
+    ).toEqual(input["capabilityDeployment"]);
+
+    const unknown = config(stateRoot);
+    unknown["capabilityDeployment"] = {
+      snapshotPath: path.join(stateRoot, "runtime", "capability-deployment.json"),
+      sha256: `sha256:${"a".repeat(64)}`,
+      unexpected: true,
+    };
+    expect(() => parseProductConfiguration(unknown, "2026-08-27T00:00:00.000Z")).toThrowError(
+      expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.UNKNOWN_FIELD }),
+    );
+
+    const invalidDigest = config(stateRoot);
+    invalidDigest["capabilityDeployment"] = {
+      snapshotPath: path.join(stateRoot, "runtime", "capability-deployment.json"),
+      sha256: "not-a-digest",
+    };
+    expect(() => parseProductConfiguration(invalidDigest, "2026-08-27T00:00:00.000Z")).toThrowError(
+      expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
+    );
   });
 
   it("rejects unknown fields recursively and raw machine-secret material", () => {
@@ -271,6 +322,229 @@ describe("strict product configuration", () => {
     ).toThrowError();
   });
 
+  it("parses bounded public HTTP and identity configuration without defaults", () => {
+    const stateRoot = path.join(tmpdir(), "himawari-config-public");
+    const input = config(stateRoot);
+    input["http"] = {
+      listenHost: "127.0.0.1",
+      listenPort: 8787,
+      staticRoot: path.join(stateRoot, "browser"),
+      sessionCookieName: "himawari_session",
+      maximumBodyBytes: 262_144,
+      maximumStaticAssetBytes: 8 * 1024 * 1024,
+      heartbeatMilliseconds: 15_000,
+    };
+    input["identity"] = {
+      issuer: "https://team.cloudflareaccess.com",
+      audience: "access-audience-v1",
+      jwksUrl: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+      jwksCacheMilliseconds: 300_000,
+      jwksTimeoutMilliseconds: 2_000,
+      jwksMaximumBodyBytes: 65_536,
+      clockToleranceSeconds: 30,
+      identityLookupTimeoutMilliseconds: 2_000,
+      identityLookupMaximumBodyBytes: 65_536,
+      recentAuthentication: {
+        maximumAgeMilliseconds: 900_000,
+        clockSkewMilliseconds: 30_000,
+      },
+      bootstrap: {
+        enabled: true,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        tokenSecretRef: "identity-bootstrap",
+      },
+      csrf: {
+        keySecretRef: "identity-csrf",
+        ttlMilliseconds: 1_800_000,
+      },
+    };
+    (input["secretReferences"] as unknown[]).push(
+      { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
+      { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
+    );
+    const parsed = parseProductConfiguration(input, "2026-08-27T00:00:00.000Z");
+    expect(parsed.http).toEqual(input["http"]);
+    expect(parsed.identity).toMatchObject({
+      issuer: "https://team.cloudflareaccess.com",
+      jwksUrl: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+      recentAuthentication: {
+        maximumAgeMilliseconds: 900_000,
+        clockSkewMilliseconds: 30_000,
+      },
+    });
+  });
+
+  it("accepts built-in accounts without external identity fields and rejects unbounded sessions", () => {
+    const stateRoot = path.join(tmpdir(), "himawari-config-built-in");
+    const input = config(stateRoot);
+    input["http"] = {
+      listenHost: "127.0.0.1",
+      listenPort: 8787,
+      staticRoot: path.join(stateRoot, "browser"),
+      sessionCookieName: "himawari_session",
+      maximumBodyBytes: 262144,
+      maximumStaticAssetBytes: 8388608,
+      heartbeatMilliseconds: 15000,
+    };
+    input["identity"] = {
+      kind: "built-in",
+      sessionIdleMilliseconds: 86400000,
+      sessionAbsoluteMilliseconds: 604800000,
+      recentAuthentication: { maximumAgeMilliseconds: 900000, clockSkewMilliseconds: 30000 },
+      csrf: { keySecretRef: "identity-csrf", ttlMilliseconds: 1800000 },
+    };
+    (input["secretReferences"] as unknown[]).push({
+      ref: "identity-csrf",
+      version: "v1",
+      purpose: "identity-csrf",
+      scope: "agent",
+    });
+    expect(parseProductConfiguration(input, "2026-09-10T00:00:00.000Z").identity).toEqual(
+      input["identity"],
+    );
+    input["identity"] = {
+      ...(input["identity"] as Record<string, unknown>),
+      sessionIdleMilliseconds: 0,
+    };
+    expect(() => parseProductConfiguration(input, "2026-09-10T00:00:00.000Z")).toThrow();
+  });
+
+  it("accepts an explicit HTTPS origin port only when the fixed endpoint matches it", () => {
+    const stateRoot = path.join(tmpdir(), "himawari-config-explicit-port");
+    const input = config(stateRoot);
+    input["http"] = {
+      listenHost: "127.0.0.1",
+      listenPort: 8787,
+      staticRoot: path.join(stateRoot, "browser"),
+      sessionCookieName: "himawari_session",
+      maximumBodyBytes: 262_144,
+      maximumStaticAssetBytes: 8 * 1024 * 1024,
+      heartbeatMilliseconds: 15_000,
+    };
+    input["identity"] = {
+      issuer: "https://team.cloudflareaccess.com:8443",
+      audience: "access-audience-v1",
+      jwksUrl: "https://team.cloudflareaccess.com:8443/cdn-cgi/access/certs",
+      jwksCacheMilliseconds: 300_000,
+      jwksTimeoutMilliseconds: 2_000,
+      jwksMaximumBodyBytes: 65_536,
+      clockToleranceSeconds: 30,
+      identityLookupTimeoutMilliseconds: 2_000,
+      identityLookupMaximumBodyBytes: 65_536,
+      recentAuthentication: {
+        maximumAgeMilliseconds: 900_000,
+        clockSkewMilliseconds: 30_000,
+      },
+      bootstrap: {
+        enabled: true,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        tokenSecretRef: "identity-bootstrap",
+      },
+      csrf: {
+        keySecretRef: "identity-csrf",
+        ttlMilliseconds: 1_800_000,
+      },
+    };
+    (input["secretReferences"] as unknown[]).push(
+      { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
+      { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
+    );
+
+    const parsed = parseProductConfiguration(input, "2026-08-27T00:00:00.000Z");
+    if (parsed.identity?.kind === "built-in") throw new Error("Expected external identity");
+    expect(parsed.identity?.issuer).toBe("https://team.cloudflareaccess.com:8443");
+    expect(parsed.identity?.jwksUrl).toBe(
+      "https://team.cloudflareaccess.com:8443/cdn-cgi/access/certs",
+    );
+
+    const crossPort = structuredClone(input) as Record<string, unknown>;
+    crossPort["identity"] = {
+      ...(crossPort["identity"] as Record<string, unknown>),
+      jwksUrl: "https://team.cloudflareaccess.com:9443/cdn-cgi/access/certs",
+    };
+    expect(() => parseProductConfiguration(crossPort, "2026-08-27T00:00:00.000Z")).toThrowError(
+      expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
+    );
+
+    const crossHost = structuredClone(input) as Record<string, unknown>;
+    crossHost["identity"] = {
+      ...(crossHost["identity"] as Record<string, unknown>),
+      jwksUrl: "https://other.example:8443/cdn-cgi/access/certs",
+    };
+    expect(() => parseProductConfiguration(crossHost, "2026-08-27T00:00:00.000Z")).toThrowError(
+      expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
+    );
+  });
+
+  it.each([
+    ["configuration.http.listenHost", { http: { listenHost: "0.0.0.0" } }],
+    ["configuration.identity.issuer", { identity: { issuer: "http://team.cloudflareaccess.com" } }],
+    ["configuration.identity.jwksUrl", { identity: { jwksUrl: "https://other.example/certs" } }],
+    [
+      "configuration.identity.recentAuthentication.maximumAgeMilliseconds",
+      { identity: { recentAuthentication: { maximumAgeMilliseconds: undefined } } },
+    ],
+  ])("rejects unsafe or incomplete public field %s", (_field, override) => {
+    const stateRoot = path.join(tmpdir(), "himawari-config-public-invalid");
+    const input = config(stateRoot);
+    const complete = {
+      http: {
+        listenHost: "127.0.0.1",
+        listenPort: 8787,
+        staticRoot: path.join(stateRoot, "browser"),
+        sessionCookieName: "himawari_session",
+        maximumBodyBytes: 262_144,
+        maximumStaticAssetBytes: 8 * 1024 * 1024,
+        heartbeatMilliseconds: 15_000,
+      },
+      identity: {
+        issuer: "https://team.cloudflareaccess.com",
+        audience: "access-audience-v1",
+        jwksUrl: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+        jwksCacheMilliseconds: 300_000,
+        jwksTimeoutMilliseconds: 2_000,
+        jwksMaximumBodyBytes: 65_536,
+        clockToleranceSeconds: 30,
+        identityLookupTimeoutMilliseconds: 2_000,
+        identityLookupMaximumBodyBytes: 65_536,
+        recentAuthentication: {
+          maximumAgeMilliseconds: 900_000,
+          clockSkewMilliseconds: 30_000,
+        },
+        bootstrap: {
+          enabled: true,
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          tokenSecretRef: "identity-bootstrap",
+        },
+        csrf: { keySecretRef: "identity-csrf", ttlMilliseconds: 1_800_000 },
+      },
+    };
+    input["http"] = { ...complete.http, ...((override as { http?: object }).http ?? {}) };
+    input["identity"] = {
+      ...complete.identity,
+      ...((override as { identity?: object }).identity ?? {}),
+    };
+    if (
+      (override as { identity?: { recentAuthentication?: object } }).identity?.recentAuthentication
+    ) {
+      input["identity"] = {
+        ...(input["identity"] as object),
+        recentAuthentication: {
+          ...complete.identity.recentAuthentication,
+          ...((override as { identity?: { recentAuthentication?: object } }).identity
+            ?.recentAuthentication ?? {}),
+        },
+      };
+    }
+    (input["secretReferences"] as unknown[]).push(
+      { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
+      { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
+    );
+    expect(() => parseProductConfiguration(input, new Date().toISOString())).toThrowError(
+      expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
+    );
+  });
+
   it("reads only a regular non-writable-by-others JSON file", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "himawari-config-file-"));
     roots.push(root);
@@ -315,6 +589,43 @@ describe("state-root lifecycle", () => {
     expect((await lstat(layout.authorityFile)).mode & 0o077).toBe(0);
     await expect(readAuthorityFile(layout)).resolves.toEqual(authority);
     expect(await readFile(layout.authorityFile, "utf8")).not.toContain(process.cwd());
+  });
+
+  it("atomically publishes and generation-checks the Agent Service boot binding", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "himawari-state-root-boot-"));
+    roots.push(root);
+    const layout = await initializeStateRoot(path.join(root, "state"));
+    const authority = Object.freeze({
+      id: createDeploymentId("deployment-boot-binding"),
+      ownerId: createOwnerId("owner-boot-binding"),
+      agentId: createAgentId("agent-boot-binding"),
+      revision: 1,
+      status: "active" as const,
+      authorityEpoch: 2,
+      fencingToken: 3,
+      transferId: null,
+    });
+    const first = await writeAgentServiceBootBinding(layout, {
+      workerInstanceId: "worker:fixture",
+      workerBootId: "worker-boot:old",
+      agentServiceInstanceId: "agent-service:deployment-boot-binding",
+      agentServiceBootId: "agent-service-boot:first",
+      authorityLeaseId: "authority:agent-boot-binding:first",
+      authority,
+    });
+    expect((await lstat(layout.agentServiceBootBindingFile)).mode & 0o077).toBe(0);
+    await expect(readAgentServiceBootBinding(layout)).resolves.toEqual(first);
+
+    const second = await writeAgentServiceBootBinding(layout, {
+      workerInstanceId: "worker:fixture",
+      workerBootId: "worker-boot:old",
+      agentServiceInstanceId: first.agentServiceInstanceId,
+      agentServiceBootId: "agent-service-boot:second",
+      authorityLeaseId: "authority:agent-boot-binding:second",
+      authority,
+    });
+    await expect(readAgentServiceBootBinding(layout)).resolves.toEqual(second);
+    expect((await lstat(layout.agentServiceBootBindingFile)).isFile()).toBe(true);
   });
 
   it("refuses an existing broadly accessible root and an unknown authority field", async () => {
@@ -435,4 +746,29 @@ describe("startup and drain coordinator", () => {
       expect(coordinator.ready).toBe(false);
     },
   );
+});
+
+it("validates the versioned Run policy and rejects inconsistent Memory bounds", () => {
+  const raw = config("/tmp/himawari-policy-config");
+  raw["runPolicy"] = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+    maxMemoryClassification: "private",
+  };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.version).toBe(
+    "policy-v1",
+  );
+  raw["runPolicy"] = { ...(raw["runPolicy"] as object), maxSelectedMemories: 11 };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  raw["runPolicy"] = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+    maxMemoryClassification: "private",
+    allowUntrustedTools: true,
+  };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
 });

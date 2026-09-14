@@ -1,0 +1,64 @@
+{
+  "at": "2026-09-12T02:49:54.131456+00:00",
+  "status": "protected_candidate_qualified_cutover_pending",
+  "archiveSha256": "601e6dad9fdb882b876a662d6df91da5e692c410ddf33edc128f5c5010c9741b",
+  "sourceFiles": 888,
+  "bytes": 3937837,
+  "target": "/data/hermes/himawari/builds/2026-09-12-ui-session",
+  "local": {
+    "browserUnitTests": 80,
+    "clientTestsIncluded": 34,
+    "diagnosticTests": 6,
+    "backupHistoryContinuationTests": 11,
+    "npmCheck": "passed",
+    "docsStrict": "passed",
+    "browserFixture": "ui-locale-csrf-chrome-final/browser.json"
+  },
+  "changesAfterArchive": {
+    "files": [
+      "biome.json"
+    ],
+    "purpose": "Preserve qualification evidence bytes from formatting. Does not affect runtime, compiled UI or dependency lockfile."
+  },
+  "scope": [
+    "Remove independent answer-language UI and extra production instruction",
+    "Refresh expired CSRF once with same request and idempotency key in unchanged identity/authority scope"
+  ],
+  "productionChanged": false,
+  "remaining": [
+    "Production cutover",
+    "Live regression",
+    "Old-thread grounding failure still unresolved"
+  ],
+  "linux": {
+    "piTests": 97,
+    "historyIntegrationTests": 95,
+    "productionModelCompositionTests": 9,
+    "browserUnitTests": 80,
+    "historyDurationSeconds": 453.11,
+    "build": "passed",
+    "installCandidate": "passed",
+    "productionService": "active_unchanged"
+  },
+  "qualification": {
+    "passed": true,
+    "candidatePrefix": "/data/hermes/himawari/releases/2026-09-12-ui-session",
+    "qualifiedRuntimePath": "/data/hermes/himawari/releases/2026-09-11-control-center/lib/himawari-agent",
+    "runtimeDigest": "45dd3fa8dbb27b796e51865cfed7ceb871589f42a3b6ce2ca59c5bf362510d7f",
+    "receiptDigest": "2de542e9a1110be5e0a95a67933941455f1aeff6cfb81605e98321d6f537e523",
+    "runtimeUid": 998,
+    "productionServiceChanged": false,
+    "productionDatabaseWritten": false,
+    "modelCalls": 0,
+    "next": "verified backup and schema-32 installation switch still required; do not import legacy history again"
+  },
+  "signatureVerification": {
+    "passed": true,
+    "artifactDigestsVerified": 6
+  },
+  "cutoverSimulation": {
+    "mac": 7,
+    "linux": 7,
+    "productionMutations": 0
+  }
+}

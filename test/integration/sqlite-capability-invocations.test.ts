@@ -1,0 +1,2815 @@
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
+import path from "node:path";
+import type {
+  CapabilityRegistryRecord,
+  ConsumeCapabilityInvocationInput,
+  ExecutionTransportPort,
+  GovernedCapabilityExecutionHandle,
+  SandboxJobReceipt,
+} from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  CapabilityHandleService,
+  type CapabilityManifest,
+  PORT_ERROR_CODES,
+  type PortErrorCode,
+  type RuntimeToolInvocation,
+  recoverSandboxJobsAtStartup,
+  type SandboxHostObservation,
+  SandboxJobLifecycleService,
+  SandboxScopeService,
+  WorkerDelegationService,
+} from "@himawari-agent/application";
+import {
+  EXECUTION_V2_SCHEMA_VERSION,
+  type ExecutionV2Event,
+  type ExecutionV2Request,
+  type ExecutionV2Response,
+  executionV2MessageSchema,
+} from "@himawari-agent/execution-contracts";
+import {
+  openQualifiedDatabase,
+  SqliteGovernedDeletionAdapter,
+  SqliteProductStateRepository,
+  SqliteRunPayloadArtifactOperations,
+} from "@himawari-agent/persistence-sqlite";
+import { PayloadUdsClient, PayloadUdsServer } from "@himawari-agent/platform-node";
+import { describe, expect, it } from "vitest";
+import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.js";
+import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.js";
+import { createProductionWorkerParentBindingRegistry } from "../../apps/agent-service/src/production-worker-parent-binding-registry.js";
+import { createBrokerSandboxExecution } from "../../apps/execution-worker/src/broker-sandbox-execution.js";
+import {
+  OWNER_ID,
+  AGENT_ID,
+  OTHER_OWNER_ID,
+  OTHER_AGENT_ID,
+  RUN_ID,
+  T0,
+  T1,
+  T2,
+  SERVICE_AUTHORITY,
+  serviceRequest,
+  openRepository,
+  capability,
+  handle,
+  grantApproval,
+  grant,
+  grantHandle,
+  invocation,
+  readInvocation,
+  outputPayload,
+  outputObservation,
+  operationsForDatabase,
+  openOperations,
+  callOperation,
+  seed,
+  openSandboxJournal,
+} from "../fixtures/sqlite-capability-invocation-fixture.js";
+
+class RecordingServiceTransport implements ExecutionTransportPort {
+  readonly requests: ExecutionV2Request[] = [];
+
+  async request(message: ExecutionV2Request): Promise<ExecutionV2Response | null> {
+    this.requests.push(message);
+    if (message.type !== "work.delegate") return null;
+    return executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "response",
+      type: "work.delegate.accepted",
+      messageId: "service-worker-delegate-accepted",
+      correlationId: message.correlationId,
+      causationId: message.messageId,
+      dataClassification: message.dataClassification,
+      risk: message.risk,
+      authorizationRef: message.authorizationRef,
+      scope: message.scope,
+      payload: {
+        handleRef: message.payload.handle.ref,
+        workerBootId: SERVICE_AUTHORITY.workerBootId,
+        acceptedAt: T1,
+      },
+    }) as Extract<ExecutionV2Response, { type: "work.delegate.accepted" }>;
+  }
+
+  async *events(_afterCursor: string | null): AsyncIterable<ExecutionV2Event> {}
+}
+
+describe("SQLite capability invocation authority", () => {
+  it("routes capability result operations through the public Repository", async () => {
+    const resource = await openRepository();
+    try {
+      await seed(resource.repository);
+      const request = serviceRequest();
+      const service = new WorkerDelegationService({
+        invocations: resource.repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+        invocationAuthority: () => SERVICE_AUTHORITY,
+        now: () => T1,
+        nextId: (scope) => `${scope}:result-routing`,
+        transport: new RecordingServiceTransport(),
+      });
+      await service.dispatch(request);
+      const results = resource.repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID);
+      const lookup = {
+        handleRef: request.payload.capabilityHandleRef,
+        invocationId: request.messageId,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+      };
+      expect(await results.lookupFrozen(lookup)).toMatchObject({ invocationId: request.messageId });
+      expect(await results.lookupOutput(lookup)).toBeUndefined();
+      expect(
+        await results.observeOutput({
+          ...lookup,
+          payload: outputPayload(),
+          plaintextByteLength: 2,
+        }),
+      ).toMatchObject({ replayed: false });
+      expect(await results.lookupOutput(lookup)).toMatchObject({ payloadRef: outputPayload().ref });
+      expect(
+        await results.observeOutput({
+          ...lookup,
+          payload: outputPayload(),
+          plaintextByteLength: 2,
+        }),
+      ).toMatchObject({ replayed: true });
+    } finally {
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("scopes directory state reads to both Owner and Agent", async () => {
+    const resource = await openRepository();
+    try {
+      const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      try {
+        database
+          .prepare(
+            "INSERT INTO product_state_records (key, owner_id, agent_id, revision, value_json, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
+          )
+          .run(
+            "host-workspace:directory-grant:test",
+            OWNER_ID,
+            AGENT_ID,
+            JSON.stringify({ id: "test" }),
+            T1,
+          );
+      } finally {
+        database.close();
+      }
+      const key = "host-workspace:directory-grant:test";
+      expect(await resource.repository.readScopedState(OWNER_ID, AGENT_ID, key)).toMatchObject({
+        revision: 1,
+        value: { id: "test" },
+      });
+      expect(
+        await resource.repository.readScopedState(OTHER_OWNER_ID, AGENT_ID, key),
+      ).toBeUndefined();
+      expect(
+        await resource.repository.readScopedState(OWNER_ID, OTHER_AGENT_ID, key),
+      ).toBeUndefined();
+    } finally {
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("persists both dynamically issued file phases across a database reopen", async () => {
+    const resource = await openRepository();
+    let repository = resource.repository;
+    let sequence = 0;
+    const clock = { now: () => T1 };
+    const ids = { next: (scope: string) => `${scope}:${++sequence}` };
+    const manifest: CapabilityManifest = {
+      ...capability().declaration,
+      manifestVersion: "capability.v2",
+      operations: ["inspect", "read", "disclose"],
+      sourceIdentity: "test",
+      artifact: {
+        digest: "test",
+        signatureStatus: "not_applicable",
+        signerRef: null,
+        rollbackArtifactRef: null,
+      },
+      scopes: {
+        dataClassifications: ["private"],
+        network: [],
+        filesystem: ["/fixture"],
+        secrets: [],
+      },
+      cost: { currency: "USD", maxMicrosPerInvocation: 0 },
+      health: { status: "healthy", checkedAt: T0 },
+      reviewedBy: null,
+      reviewedAt: null,
+      contractCompatibility: ["host-file.v1"],
+      runtime: {
+        kind: "program",
+        argv: ["fixture"],
+        environmentKeys: [],
+        workdirRef: "fixture",
+        stdin: "protected_payload",
+        stdout: "protected_payload",
+        subprocesses: [],
+        network: [],
+        filesystem: ["/fixture"],
+      },
+    };
+    const peer = { ...SERVICE_AUTHORITY.product, ...SERVICE_AUTHORITY };
+    const parents = createProductionWorkerParentBindingRegistry({ trustedPeerBinding: () => peer });
+    const requests: Extract<ExecutionV2Request, { type: "work.execute" }>[] = [];
+    const grant = {
+      id: "directory:fixture",
+      revision: 1,
+      hostId: "host:fixture",
+      canonicalRootId: "1:2",
+      displayPath: "/fixture",
+      operations: ["read"] as const,
+      dataClassification: "private" as const,
+      disclosure: "model" as const,
+      pathPolicy: "same_filesystem_no_links" as const,
+      mountPolicy: "fixed_device" as const,
+      authorizationRef: "directory:approval",
+      expiresAt: T2,
+      revokedAt: null,
+    };
+    const target = {
+      hostId: grant.hostId,
+      grantId: grant.id,
+      grantRevision: 1,
+      canonicalRootId: grant.canonicalRootId,
+      authorizationRef: grant.authorizationRef,
+      requestedPath: "note.txt",
+      relativePath: "note.txt",
+      maximumBytes: 1000,
+      observedAt: T1,
+      identity: {
+        canonicalPath: "/fixture/note.txt",
+        device: "1",
+        inode: "3",
+        mode: 0o100600,
+        linkCount: 1,
+        sizeBytes: 7,
+        modifiedAtMillis: 0,
+      },
+    };
+    const call: RuntimeToolInvocation = {
+      runId: RUN_ID,
+      toolCallId: "dynamic-file",
+      capabilityRef: "host.file.read",
+      capabilityHandleRef: null,
+      arguments: { path: "note.txt" },
+      dataClassification: "private",
+      executionDeadlineAt: T2,
+      context: {
+        threadId: "thread-capability-invocation" as NonNullable<
+          NonNullable<RuntimeToolInvocation["context"]>["threadId"]
+        >,
+        modelRef: "model:test",
+        executionLease: {
+          executionLeaseId: "execution:fixture" as NonNullable<
+            RuntimeToolInvocation["context"]
+          >["executionLease"]["executionLeaseId"],
+          expectedLeaseRevision: 1,
+          authorityLeaseId: SERVICE_AUTHORITY.lease.leaseId,
+          authorityFencingToken: 1,
+          ...SERVICE_AUTHORITY.product,
+          consumerId: "consumer:fixture",
+        },
+      },
+    };
+    const create = () => {
+      const capabilities = repository.capabilityStore(OWNER_ID, AGENT_ID);
+      const handles = new CapabilityHandleService({ store: capabilities, clock, ids });
+      const results = repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID);
+      return new ProductionRuntimeTools({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        capabilities,
+        clock,
+        ids,
+        authority: () => SERVICE_AUTHORITY,
+        peer: () => peer,
+        parents: parents.writer,
+        assertRunActive: async () => {},
+        invocations: repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+        results,
+        payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
+        artifacts: repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
+        ceiling: serviceRequest().payload.resourceCeiling,
+        protector: {
+          protect: async (input) => ({
+            ...input,
+            ciphertext: input.plaintext,
+            encryption: { algorithm: "fixture", keyRef: "fixture-key" },
+            contentDigest: createHash("sha256").update(input.plaintext).digest("hex"),
+          }),
+          unprotect: async ({ payload }) => payload.ciphertext,
+        },
+        fileRead: {
+          binding: async () => ({
+            revision: 1,
+            hostId: grant.hostId,
+            workerInstanceId: peer.workerInstanceId,
+            grant,
+            capabilityRef: manifest.ref,
+            capabilityVersion: manifest.version,
+            maximumBytes: 1000,
+            threadId: "thread-capability-invocation",
+            modelRef: "model:test",
+            modelIdentity: "model:test:fixed",
+          }),
+          issue: (input) => handles.issue(input),
+          // This test isolates SQLite durability. Policy/approval semantics are tested with ActionPolicyService separately.
+          authorize: async (intent) => ({
+            decision: "ALLOW",
+            basis: { type: "policy", ref: "policy:fixture" },
+            executionScope: {
+              capabilityRef: manifest.ref,
+              operations: [intent.operation],
+              exactResourceRef: intent.resourceRef,
+              resourcePrefixes: [],
+              maxDataClassification: "private",
+              sideEffects: ["none"],
+              maxCostMicrosPerUse: 0,
+              maxFrequency: { count: 1, intervalMs: null },
+            },
+          }),
+        },
+        transport: {
+          request: async (message) => {
+            if (message.type === "work.delegate")
+              return {
+                ...message,
+                kind: "response",
+                type: "work.delegate.accepted",
+                messageId: ids.next("accepted"),
+                causationId: message.messageId,
+                payload: {
+                  handleRef: message.payload.handle.ref,
+                  workerBootId: peer.workerBootId,
+                  acceptedAt: T1,
+                },
+              };
+            if (message.type === "work.execute") requests.push(message);
+            return null;
+          },
+          async *events() {
+            const request = requests.at(-1);
+            if (!request) return;
+            const input = await repository
+              .payloadStore(OWNER_ID, AGENT_ID)
+              .get(request.payload.inputRef);
+            if (!input) throw new Error("test input missing");
+            expect(JSON.parse(new TextDecoder().decode(input.ciphertext))).toMatchObject({
+              phase: request.payload.operation,
+            });
+            const bytes = new TextEncoder().encode(
+              request.payload.operation === "inspect"
+                ? JSON.stringify(target)
+                : "fixture file result",
+            );
+            const payload = outputPayload(
+              ids.next("phase-output"),
+              createHash("sha256").update(bytes).digest("hex"),
+              bytes,
+            );
+            await results.observeOutput({
+              handleRef: request.payload.capabilityHandleRef,
+              invocationId: request.messageId,
+              authority: SERVICE_AUTHORITY,
+              now: T1,
+              payload,
+              plaintextByteLength: bytes.length,
+            });
+            yield {
+              ...request,
+              kind: "event" as const,
+              type: "work.result" as const,
+              messageId: ids.next("result"),
+              causationId: request.messageId,
+              payload: {
+                requestId: request.messageId,
+                cursor: String(requests.length),
+                sequence: requests.length,
+                completedAt: T1,
+                outcome: "succeeded" as const,
+                outputRef: payload.ref,
+                errorCode: null,
+                externalActionId: null,
+              },
+            };
+          },
+        },
+      });
+    };
+    try {
+      await repository
+        .capabilityStore(OWNER_ID, AGENT_ID)
+        .create({ ...capability(), declaration: manifest });
+      const first = create();
+      await first.listAuthorized(RUN_ID, []);
+      const result = await first.execute(call);
+      expect(result).toMatchObject({ outcome: "succeeded", modelContent: "fixture file result" });
+      await repository.close();
+      repository = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      const restarted = create();
+      await restarted.listAuthorized(RUN_ID, []);
+      expect(await restarted.execute(call)).toEqual(result);
+      expect(requests.map(({ payload }) => payload.operation)).toEqual(["inspect", "read"]);
+      for (const { payload } of requests)
+        expect(
+          await repository
+            .capabilityStore(OWNER_ID, AGENT_ID)
+            .getExecutionHandle(payload.capabilityHandleRef),
+        ).toMatchObject({
+          maxUses: 1,
+          uses: 1,
+          operation: payload.operation,
+          inputRefs: [payload.inputRef],
+        });
+    } finally {
+      await repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("lists only current Run handles with active capability authority", async () => {
+    const resource = await openRepository();
+    try {
+      const value = await seed(resource.repository);
+      const store = resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
+      if (!store.listRunExecutionHandles) throw new Error("HANDLE_LIST_UNAVAILABLE");
+      expect(await store.listRunExecutionHandles(RUN_ID, T1)).toEqual([value]);
+      expect(await store.listRunExecutionHandles(RUN_ID, T2)).toEqual([]);
+      let record = capability();
+      for (const lifecycle of ["update_proposed", "update_approved", "disabled"] as const) {
+        record = await store.save(
+          { ...record, revision: record.revision + 1, lifecycle },
+          record.revision,
+        );
+        expect(await store.listRunExecutionHandles(RUN_ID, T1)).toEqual(
+          lifecycle === "disabled" ? [] : [value],
+        );
+      }
+    } finally {
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("persists runtime tool intent and failed Worker result without redispatch on restart", async () => {
+    const resource = await openRepository();
+    try {
+      await seed(resource.repository);
+      const transport = new RecordingServiceTransport();
+      const peer = { ...SERVICE_AUTHORITY.product, ...SERVICE_AUTHORITY };
+      const parents = createProductionWorkerParentBindingRegistry({
+        trustedPeerBinding: () => peer,
+      });
+      const registry = resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
+      const artifacts = resource.repository.runPayloadArtifactPort(
+        OWNER_ID,
+        AGENT_ID,
+        SERVICE_AUTHORITY,
+      );
+      let sequence = 0;
+      const create = () =>
+        new ProductionRuntimeTools({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          capabilities: registry,
+          invocations: resource.repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+          results: resource.repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID),
+          authority: () => SERVICE_AUTHORITY,
+          peer: () => peer,
+          parents: parents.writer,
+          assertRunActive: async () => {},
+          artifacts,
+          payloads: resource.repository.payloadStore(OWNER_ID, AGENT_ID),
+          protector: {
+            protect: async (input) => ({
+              ...input,
+              ciphertext: input.plaintext,
+              encryption: { algorithm: "fixture", keyRef: "fixture-key" },
+              contentDigest: createHash("sha256").update(input.plaintext).digest("hex"),
+            }),
+            unprotect: async ({ payload }) => payload.ciphertext,
+          },
+          clock: { now: () => T1 },
+          ids: { next: (scope) => `${scope}:${++sequence}` },
+          ceiling: serviceRequest().payload.resourceCeiling,
+          transport: {
+            request: (message) => transport.request(message),
+            async *events() {
+              const request = transport.requests.find((message) => message.type === "work.execute");
+              if (!request) return;
+              yield {
+                ...request,
+                kind: "event" as const,
+                type: "work.result" as const,
+                messageId: "runtime-failed-result",
+                causationId: request.messageId,
+                payload: {
+                  requestId: request.messageId,
+                  cursor: "1",
+                  sequence: 1,
+                  completedAt: T1,
+                  outcome: "failed" as const,
+                  outputRef: null,
+                  errorCode: "TEST_FAILURE",
+                  externalActionId: null,
+                },
+              };
+            },
+          },
+        });
+      const call = {
+        runId: RUN_ID,
+        toolCallId: "runtime-call",
+        capabilityRef: handle().capabilityRef,
+        capabilityHandleRef: handle().ref,
+        arguments: { inputRef: handle().inputRefs[0] ?? "missing" },
+        dataClassification: "private" as const,
+      };
+      const first = create();
+      await first.listAuthorized(RUN_ID, [call.capabilityHandleRef]);
+      expect(await first.execute(call)).toMatchObject({
+        outcome: "failed",
+        errorCode: "TEST_FAILURE",
+      });
+      const restarted = create();
+      await restarted.listAuthorized(RUN_ID, [call.capabilityHandleRef]);
+      expect(await restarted.execute(call)).toMatchObject({
+        outcome: "failed",
+        errorCode: "TEST_FAILURE",
+      });
+      expect(transport.requests.map((message) => message.type)).toEqual([
+        "work.delegate",
+        "work.execute",
+      ]);
+      expect(
+        (await registry.getExecutionHandle(
+          call.capabilityHandleRef,
+        )) as GovernedCapabilityExecutionHandle,
+      ).toMatchObject({ uses: 1 });
+    } finally {
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("replays an equivalent receipt and rejects same-key semantic changes", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      const first = opened.operations.execute("capabilityInvocation.consume", {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        input: invocation(),
+      });
+      expect(first).toMatchObject({
+        replayed: false,
+        receipt: {
+          receiptVersion: "capability-invocation.v1",
+          invocationId: "invocation-capability-invocation",
+          handleRevision: 2,
+        },
+      });
+      await expect(
+        Promise.resolve(
+          callOperation(opened.operations, "capabilityInvocation.consume", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: invocation({ consumedAt: T2 }),
+          }),
+        ),
+      ).resolves.toMatchObject({ replayed: true });
+      await expect(
+        Promise.resolve(
+          callOperation(opened.operations, "capabilityInvocation.consume", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: invocation({ inputRef: "payload-input-mutated", consumedAt: T2 }),
+          }),
+        ),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+      await expect(
+        Promise.resolve(
+          callOperation(opened.operations, "capabilityInvocation.consume", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: invocation({ operation: "write", consumedAt: T2 }),
+          }),
+        ),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+      expect(
+        database
+          .prepare(
+            "SELECT json_extract(record_json, '$.uses') FROM capability_handles WHERE id = ?",
+          )
+          .pluck()
+          .get("handle-capability-invocation"),
+      ).toBe(1);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("does not recount a consumed Grant, blocks revoked reads, and only replays the receipt", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      const capabilities = resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
+      await capabilities.create(capability());
+      const grantValue = grant();
+      const approvalValue = grantApproval();
+      const authorization = resource.repository.authorizationStore();
+      await authorization.createApproval(approvalValue);
+      await authorization.resolveApproval({
+        approvalRequestId: approvalValue.id,
+        expectedRevision: 1,
+        semanticSnapshotHash: approvalValue.semanticSnapshotHash,
+        resolution: "approved",
+        decidedAt: T1,
+        grant: grantValue,
+      });
+      await expect(
+        authorization.consumeGrant({
+          grantId: grantValue.id,
+          expectedRevision: 1,
+          costMicros: 0,
+          consumedAt: T1,
+          usageId: "usage-capability-invocation-grant",
+          operation: "read",
+        }),
+      ).resolves.toMatchObject({ uses: 1, revision: 2 });
+      const grantHandleValue = grantHandle();
+      await capabilities.createExecutionHandle(grantHandleValue);
+
+      const opened = await openOperations(resource);
+      database = opened.database;
+      let operations = opened.operations;
+      const grantInvocation = invocation({
+        receiptRef: "receipt-capability-invocation-grant",
+        handleRef: grantHandleValue.ref,
+        invocationId: "invocation-capability-invocation-grant",
+        authorizationRef: grantValue.id,
+        idempotencyKey: "capability-invocation-grant-idempotency",
+      });
+      await expect(
+        callOperation(operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: grantInvocation,
+        }),
+      ).resolves.toMatchObject({ replayed: false, receipt: { handleRevision: 2 } });
+      await expect(
+        callOperation(operations, "capabilityInvocation.read", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: readInvocation({
+            handleRef: grantHandleValue.ref,
+            invocationId: "invocation-capability-invocation-grant",
+          }),
+        }),
+      ).resolves.toMatchObject({ invocationId: "invocation-capability-invocation-grant" });
+      expect(
+        database
+          .prepare("SELECT json_extract(record_json, '$.uses') FROM grants WHERE id = ?")
+          .pluck()
+          .get(grantValue.id),
+      ).toBe(1);
+
+      database.close();
+      database = undefined;
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      await reopened.authorizationStore().revokeGrant(grantValue.id, T1, "test_grant_revoked", 2);
+      await reopened.close();
+      database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      operations = operationsForDatabase(database);
+
+      await expect(
+        callOperation(operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: { ...grantInvocation, consumedAt: T2 },
+        }),
+      ).resolves.toMatchObject({ replayed: true });
+      await expect(
+        callOperation(operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: {
+            ...grantInvocation,
+            receiptRef: "receipt-capability-invocation-grant-new",
+            invocationId: "invocation-capability-invocation-grant-new",
+            idempotencyKey: "capability-invocation-grant-idempotency-new",
+            consumedAt: T1,
+          },
+        }),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.HANDLE_REVOKED });
+      await expect(
+        callOperation(operations, "capabilityInvocation.read", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: readInvocation({
+            handleRef: grantHandleValue.ref,
+            invocationId: "invocation-capability-invocation-grant",
+          }),
+        }),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.HANDLE_REVOKED });
+      expect(
+        database
+          .prepare("SELECT json_extract(record_json, '$.uses') FROM grants WHERE id = ?")
+          .pluck()
+          .get(grantValue.id),
+      ).toBe(1);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("rejects a first invalid semantic consume without recording its key", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      const invalid = invocation({
+        receiptRef: "receipt-capability-invocation-invalid",
+        invocationId: "invocation-capability-invocation-invalid",
+        idempotencyKey: "capability-invocation-invalid-first",
+        operation: "write",
+      });
+      await expect(
+        Promise.resolve(
+          callOperation(opened.operations, "capabilityInvocation.consume", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: invalid,
+          }),
+        ),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+      await expect(
+        Promise.resolve(
+          callOperation(opened.operations, "capabilityInvocation.consume", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: { ...invalid, operation: "read" },
+          }),
+        ),
+      ).resolves.toMatchObject({ replayed: false, receipt: { handleRevision: 2 } });
+      expect(
+        database
+          .prepare(
+            "SELECT json_extract(record_json, '$.uses') FROM capability_handles WHERE id = ?",
+          )
+          .pluck()
+          .get("handle-capability-invocation"),
+      ).toBe(1);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("rejects the retired unscoped consume path without changing the Handle", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const capabilities = resource.repository.capabilityStore(OTHER_OWNER_ID, OTHER_AGENT_ID);
+      const consumeHandle = capabilities.consumeExecutionHandle;
+      if (!consumeHandle) throw new Error("governed capability store is incomplete");
+      await expect(
+        consumeHandle({
+          handleRef: "handle-capability-invocation",
+          expectedRevision: 1,
+          authorityFence: 1,
+          operation: "read",
+          inputRef: "payload-input-capability-invocation",
+          delegatedContextRefs: ["payload-context-capability-invocation"],
+          secretRefs: [],
+          dataClassification: "private",
+          costMicros: 0,
+          idempotencyKey: "capability-invocation-cross-scope",
+          consumedAt: T1,
+        }),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+      await expect(
+        resource.repository
+          .capabilityStore(OWNER_ID, AGENT_ID)
+          .getExecutionHandle("handle-capability-invocation"),
+      ).resolves.toMatchObject({ uses: 0 });
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("rejects a new receipt consume outside its scoped adapter", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      const crossScope = invocation({
+        receiptRef: "receipt-capability-invocation-cross-scope",
+        invocationId: "invocation-capability-invocation-cross-scope",
+        idempotencyKey: "capability-invocation-cross-scope-receipt",
+        requestScope: {
+          deploymentId: "deployment-capability-invocation",
+          authorityEpoch: 1,
+          fencingToken: 1,
+          ownerId: OTHER_OWNER_ID,
+          agentId: OTHER_AGENT_ID,
+          runId: RUN_ID,
+          workerRunId: "worker-run-capability-invocation",
+        },
+      });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OTHER_OWNER_ID,
+          agentId: OTHER_AGENT_ID,
+          input: crossScope,
+        }),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+      expect(
+        database
+          .prepare(
+            "SELECT json_extract(record_json, '$.uses') FROM capability_handles WHERE id = ?",
+          )
+          .pluck()
+          .get("handle-capability-invocation"),
+      ).toBe(0);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("rejects stale authority before consuming a new Capability Handle", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      const stale = invocation({
+        receiptRef: "receipt-capability-invocation-stale-fence",
+        invocationId: "invocation-capability-invocation-stale-fence",
+        idempotencyKey: "capability-invocation-stale-fence",
+        requestScope: {
+          deploymentId: "deployment-capability-invocation",
+          authorityEpoch: 2,
+          fencingToken: 2,
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          workerRunId: "worker-run-capability-invocation",
+        },
+        authority: {
+          product: {
+            deploymentId: "deployment-capability-invocation",
+            authorityEpoch: 2,
+            fencingToken: 2,
+          },
+          lease: { leaseId: "lease-capability-invocation", fencingToken: 2 },
+          agentServiceInstanceId: "agent-service-instance-capability-invocation",
+          agentServiceBootId: "agent-service-boot-capability-invocation",
+          workerInstanceId: "worker-instance-capability-invocation",
+          workerBootId: "worker-boot-capability-invocation",
+        },
+      });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: stale,
+        }),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+      expect(
+        database
+          .prepare(
+            "SELECT json_extract(record_json, '$.uses') FROM capability_handles WHERE id = ?",
+          )
+          .pluck()
+          .get("handle-capability-invocation"),
+      ).toBe(0);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("requires the frozen Agent and Worker attempt plus a live lease on read", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      const read = (authority: Record<string, unknown>) =>
+        callOperation(opened.operations, "capabilityInvocation.read", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: readInvocation({ authority }),
+        });
+      await expect(
+        read({ agentServiceInstanceId: "agent-service-instance-other" }),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+      await expect(read({ agentServiceBootId: "agent-service-boot-other" })).rejects.toMatchObject({
+        code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      });
+      await expect(read({ workerInstanceId: "worker-instance-other" })).rejects.toMatchObject({
+        code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      });
+      await expect(read({ workerBootId: "worker-boot-other" })).rejects.toMatchObject({
+        code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      });
+      await expect(
+        read({ lease: { leaseId: "lease-capability-invocation", fencingToken: 99 } }),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.read", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: readInvocation(),
+        }),
+      ).resolves.toMatchObject({ invocationId: "invocation-capability-invocation" });
+      database
+        .prepare(
+          "UPDATE deployments SET revision = 1, authority_epoch = 2, fencing_token = 2 WHERE id = ?",
+        )
+        .run("deployment-capability-invocation");
+      database
+        .prepare("UPDATE authority_leases SET released_at = ? WHERE id = ?")
+        .run(T1, "lease-capability-invocation");
+      database
+        .prepare(
+          `INSERT INTO authority_leases (
+            id, owner_id, agent_id, deployment_id, holder_id, authority_epoch,
+            fencing_token, acquired_at, expires_at
+          ) VALUES ('lease-capability-invocation-rotated', ?, ?,
+            'deployment-capability-invocation', 'holder-capability-invocation-rotated',
+            2, 2, ?, '2999-12-31T23:59:59.999Z')`,
+        )
+        .run(OWNER_ID, AGENT_ID, T1);
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.read", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: readInvocation({
+            authority: {
+              product: {
+                deploymentId: "deployment-capability-invocation",
+                authorityEpoch: 2,
+                fencingToken: 2,
+              },
+              lease: { leaseId: "lease-capability-invocation-rotated", fencingToken: 2 },
+            },
+          }),
+        }),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+      expect(
+        database
+          .prepare(
+            "SELECT json_extract(record_json, '$.uses') FROM capability_handles WHERE id = ?",
+          )
+          .pluck()
+          .get("handle-capability-invocation"),
+      ).toBe(1);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("replays a completed service dispatch after deadline and Handle revocation", async () => {
+    const resource = await openRepository();
+    let now = T1;
+    try {
+      await seed(resource.repository);
+      const transport = new RecordingServiceTransport();
+      let nextId = 0;
+      const service = new WorkerDelegationService({
+        invocations: resource.repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+        invocationAuthority: () => SERVICE_AUTHORITY,
+        transport,
+        now: () => now,
+        nextId: (scope) => `${scope}-service-${++nextId}`,
+      });
+      const request = serviceRequest();
+      await service.dispatch(request);
+      expect(transport.requests.map(({ type }) => type)).toEqual(["work.delegate", "work.execute"]);
+      await resource.repository
+        .capabilityStore(OWNER_ID, AGENT_ID)
+        .revokeExecutionHandle(request.payload.capabilityHandleRef, T1);
+      now = T2;
+      await service.dispatch(request);
+      expect(transport.requests.map(({ type }) => type)).toEqual(["work.delegate", "work.execute"]);
+    } finally {
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("does not read an old receipt after Run or capability authority leaves execution", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      const read = () =>
+        callOperation(opened.operations, "capabilityInvocation.read", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: readInvocation(),
+        });
+      database
+        .prepare("UPDATE runs SET status = 'completed', revision = 1, updated_at = ? WHERE id = ?")
+        .run(T1, RUN_ID);
+      await expect(read()).rejects.toMatchObject({ code: PORT_ERROR_CODES.HANDLE_REVOKED });
+      database
+        .prepare("UPDATE runs SET status = 'running', revision = 2, updated_at = ? WHERE id = ?")
+        .run(T1, RUN_ID);
+      const capabilityRow = database
+        .prepare("SELECT record_json AS recordJson FROM capability_declarations WHERE id = ?")
+        .get("capability-invocation") as { readonly recordJson: string };
+      const revokedCapability = {
+        ...(JSON.parse(capabilityRow.recordJson) as CapabilityRegistryRecord),
+        revision: 2,
+        lifecycle: "revoked" as const,
+        updatedAt: T1,
+      };
+      database
+        .prepare(
+          "UPDATE capability_declarations SET revision = 2, status = 'disabled', record_json = ? WHERE id = ?",
+        )
+        .run(JSON.stringify(revokedCapability), "capability-invocation");
+      await expect(read()).rejects.toMatchObject({ code: PORT_ERROR_CODES.HANDLE_REVOKED });
+      const versionDrift = {
+        ...revokedCapability,
+        revision: 3,
+        lifecycle: "active" as const,
+        declaration: { ...revokedCapability.declaration, version: "2.0.0" },
+        updatedAt: T1,
+      };
+      database
+        .prepare(
+          "UPDATE capability_declarations SET revision = 3, version = '2.0.0', status = 'active', record_json = ? WHERE id = ?",
+        )
+        .run(JSON.stringify(versionDrift), "capability-invocation");
+      await expect(read()).rejects.toMatchObject({ code: PORT_ERROR_CODES.HANDLE_REVOKED });
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("records a late output observation after the Run becomes terminal", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      database
+        .prepare(
+          "UPDATE runs SET status = 'completed', revision = revision + 1, updated_at = ? WHERE id = ?",
+        )
+        .run(T1, RUN_ID);
+
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation(),
+        }),
+      ).resolves.toMatchObject({
+        replayed: false,
+        artifact: {
+          runId: RUN_ID,
+          purpose: "worker_result",
+          operationKey: "capability-output:invocation-capability-invocation",
+        },
+      });
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM run_payload_artifacts WHERE run_id = ? AND purpose = 'worker_result'",
+          )
+          .pluck()
+          .get(RUN_ID),
+      ).toBe(1);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("replays equivalent output bytes and rejects a conflicting observation", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+
+      const first = await callOperation(
+        opened.operations,
+        "capabilityInvocationResult.observeOutput",
+        {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation(),
+        },
+      );
+      expect(first).toMatchObject({
+        replayed: false,
+        ref: "payload-capability-invocation-output",
+      });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            now: T2,
+            payload: outputPayload(
+              "payload-capability-invocation-output-retry",
+              "sha256:capability-invocation-output",
+              new Uint8Array([0x31, 0x32]),
+            ),
+          }),
+        }),
+      ).resolves.toMatchObject({
+        replayed: true,
+        ref: "payload-capability-invocation-output",
+      });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            payload: outputPayload(
+              "payload-capability-invocation-output-conflict",
+              "sha256:capability-invocation-output-conflict",
+            ),
+          }),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.lookupFrozen", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: readInvocation({ now: T2 }),
+        }),
+      ).resolves.toMatchObject({ invocationId: "invocation-capability-invocation" });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.lookupOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: readInvocation({ now: T2 }),
+        }),
+      ).resolves.toMatchObject({
+        payloadRef: "payload-capability-invocation-output",
+        operationKey: "capability-output:invocation-capability-invocation",
+      });
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM payloads WHERE ref LIKE 'payload-capability-invocation-output%'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(1);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("rejects old attempt identities and a legal rotated lease without writing output", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            authority: {
+              ...SERVICE_AUTHORITY,
+              workerBootId: "worker-boot-capability-invocation-old",
+            },
+          }),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+
+      database
+        .prepare(
+          "UPDATE deployments SET revision = 1, authority_epoch = 2, fencing_token = 2 WHERE id = ?",
+        )
+        .run("deployment-capability-invocation");
+      database
+        .prepare("UPDATE authority_leases SET released_at = ? WHERE id = ?")
+        .run(T1, "lease-capability-invocation");
+      database
+        .prepare(
+          `INSERT INTO authority_leases (
+            id, owner_id, agent_id, deployment_id, holder_id, authority_epoch,
+            fencing_token, acquired_at, expires_at
+          ) VALUES ('lease-capability-invocation-rotated-result', ?, ?,
+            'deployment-capability-invocation', 'holder-capability-invocation-rotated-result',
+            2, 2, ?, '2999-12-31T23:59:59.999Z')`,
+        )
+        .run(OWNER_ID, AGENT_ID, T1);
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            authority: {
+              ...SERVICE_AUTHORITY,
+              product: {
+                ...SERVICE_AUTHORITY.product,
+                authorityEpoch: 2,
+                fencingToken: 2,
+              },
+              lease: {
+                leaseId: "lease-capability-invocation-rotated-result",
+                fencingToken: 2,
+              },
+            },
+          }),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+      expect(
+        database
+          .prepare("SELECT COUNT(*) FROM run_payload_artifacts WHERE purpose = 'worker_result'")
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM payloads WHERE ref = 'payload-capability-invocation-output'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(0);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("rolls back a protected output when the artifact receipt insert fails", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      database.exec(`
+        CREATE TRIGGER test_capability_invocation_observation_abort
+        BEFORE INSERT ON run_payload_artifacts
+        BEGIN SELECT RAISE(ABORT, 'test observation receipt failure'); END;
+      `);
+
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation(),
+        }),
+      ).rejects.toThrow("test observation receipt failure");
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM payloads WHERE ref = 'payload-capability-invocation-output'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        database
+          .prepare("SELECT COUNT(*) FROM run_payload_artifacts WHERE purpose = 'worker_result'")
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        database
+          .prepare(
+            "SELECT json_extract(record_json, '$.uses') FROM capability_handles WHERE id = ?",
+          )
+          .pluck()
+          .get("handle-capability-invocation"),
+      ).toBe(1);
+      expect(database.prepare("SELECT status FROM runs WHERE id = ?").pluck().get(RUN_ID)).toBe(
+        "running",
+      );
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("rejects output observations outside the frozen classification, media, or byte ceiling", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            payload: { ...outputPayload(), dataClassification: "public" },
+          }),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            payload: { ...outputPayload(), contentType: "not-a-media-type" },
+          }),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({ plaintextByteLength: 4097 }),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+      expect(
+        database
+          .prepare("SELECT COUNT(*) FROM run_payload_artifacts WHERE purpose = 'worker_result'")
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM payloads WHERE ref = 'payload-capability-invocation-output'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(0);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("requires the invocation observation writer to run inside a transaction", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      const opened = await openOperations(resource);
+      database = opened.database;
+      const writer = new SqliteRunPayloadArtifactOperations(
+        database,
+        (code: string, message: string, details?: Readonly<Record<string, string>>): never => {
+          throw new ApplicationPortError(code as PortErrorCode, message, details);
+        },
+        () => undefined,
+      );
+      let error: unknown;
+      try {
+        writer.commitInvocationObservationWithinTransaction({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          invocationId: "invocation-capability-invocation",
+          authority: {
+            product: SERVICE_AUTHORITY.product,
+            lease: SERVICE_AUTHORITY.lease,
+          },
+          now: T1,
+          payload: outputPayload(),
+        });
+      } catch (candidate) {
+        error = candidate;
+      }
+      expect(error).toMatchObject({ code: "PORT_INVALID_OPERATION" });
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
+  it("removes the receipt, observation, and protected output when the Run is deleted", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      await expect(
+        callOperation(opened.operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: invocation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      await expect(
+        callOperation(opened.operations, "capabilityInvocationResult.observeOutput", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation(),
+        }),
+      ).resolves.toMatchObject({ replayed: false });
+      database.close();
+      database = undefined;
+      await resource.repository.close();
+      await mkdir(path.join(resource.stateRoot, "data"), { recursive: true });
+      await rename(
+        path.join(resource.stateRoot, "product.sqlite"),
+        path.join(resource.stateRoot, "data", "product.sqlite"),
+      );
+      const deletion = new SqliteGovernedDeletionAdapter({
+        stateRoot: resource.stateRoot,
+        databasePath: path.join(resource.stateRoot, "data", "product.sqlite"),
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        now: () => T1,
+      });
+      await deletion.deleteImmediately({ objectType: "run", objectId: RUN_ID });
+      const after = openQualifiedDatabase(path.join(resource.stateRoot, "data", "product.sqlite"));
+      try {
+        expect(
+          after
+            .prepare("SELECT COUNT(*) FROM capability_invocation_receipts WHERE run_id = ?")
+            .pluck()
+            .get(RUN_ID),
+        ).toBe(0);
+        expect(
+          after
+            .prepare("SELECT COUNT(*) FROM run_payload_artifacts WHERE run_id = ?")
+            .pluck()
+            .get(RUN_ID),
+        ).toBe(0);
+        expect(
+          after
+            .prepare(
+              "SELECT COUNT(*) FROM payloads WHERE ref = 'payload-capability-invocation-output'",
+            )
+            .pluck()
+            .get(),
+        ).toBe(0);
+        const afterOperations = operationsForDatabase(after);
+        await expect(
+          callOperation(afterOperations, "capabilityInvocationResult.lookupFrozen", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: readInvocation(),
+          }),
+        ).resolves.toBeUndefined();
+        await expect(
+          callOperation(afterOperations, "capabilityInvocationResult.observeOutput", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: outputObservation(),
+          }),
+        ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
+      } finally {
+        after.close();
+      }
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+});
+
+describe("durable sandbox invocation journal", () => {
+  it.each(["prepared", "starting"] as const)(
+    "quarantines old boot %s jobs before new admission",
+    async (state) => {
+      const fixture = await openSandboxJournal();
+      fixture.prepare();
+      if (state === "starting") fixture.append({ ...fixture.prepared, state, sequence: 2 });
+      fixture.database.close();
+      const repository = await SqliteProductStateRepository.open({
+        stateRoot: fixture.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      try {
+        const journal = repository.sandboxJobJournal(OWNER_ID, AGENT_ID);
+        const options = {
+          journal,
+          authority: () => ({
+            ...SERVICE_AUTHORITY,
+            agentServiceBootId: "new-agent-boot",
+            workerBootId: "new-worker-boot",
+          }),
+          now: () => T1,
+        };
+        expect(await recoverSandboxJobsAtStartup(options)).toEqual({ examined: 1, quarantined: 1 });
+        const first = await journal.read(fixture.plan.identity);
+        expect(first?.observation).toMatchObject({
+          state: "quarantined",
+          cleanup: "unknown",
+          effect: "unknown",
+        });
+        expect(await recoverSandboxJobsAtStartup(options)).toEqual({ examined: 1, quarantined: 0 });
+        expect(await journal.read(fixture.plan.identity)).toEqual(first);
+      } finally {
+        await repository.close();
+        await fixture.close();
+      }
+    },
+  );
+
+  it.each(["manual", "execute", "cancel", "restart"] as const)(
+    "persists sandbox lifecycle over authenticated UDS: %s",
+    async (mode) => {
+      const fixture = await openSandboxJournal();
+      fixture.prepare();
+      fixture.database.close();
+      const repository = await SqliteProductStateRepository.open({
+        stateRoot: fixture.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      const directory = await mkdtemp("/tmp/hj-");
+      const credential = { tokenRef: "test-boot", tokenValue: "0123456789abcdef0123456789abcdef" };
+      const { agentServiceInstanceId, agentServiceBootId, workerInstanceId, workerBootId } =
+        SERVICE_AUTHORITY;
+      const { authorityEpoch, fencingToken } = SERVICE_AUTHORITY.product;
+      const common = {
+        credential,
+        agentServiceInstanceId,
+        agentServiceBootId,
+        authorityEpoch,
+        fencingToken,
+        maximumBodyBytes: 131072,
+        maximumPayloadBytes: 4096,
+        requestTimeoutMs: 3000,
+      };
+      const journal = repository.sandboxJobJournal(OWNER_ID, AGENT_ID);
+      let currentAuthority = SERVICE_AUTHORITY;
+      let currentDirectory = fixture.directoryGrant;
+      let startChecks = 0;
+      const startScopes = new SandboxScopeService({
+        files: { readGrant: async () => currentDirectory },
+        hostId: fixture.plan.identity.hostId,
+        payloads: { get: async () => fixture.scopePayload },
+        protector: fixture.protector,
+        now: () => T1,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+      });
+      const handler = new ProductionPayloadBrokerHandler({
+        receipts: repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+        results: repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID),
+        payloadsFor: (owner, agent) => repository.payloadStore(owner, agent),
+        protector: fixture.protector,
+        currentAuthority: () => currentAuthority,
+        clock: { now: () => T1 },
+        ids: { next: () => "test-payload" },
+        agentServiceInstanceId,
+        agentServiceBootId,
+        maximumPayloadBytes: 4096,
+        allowedContentTypes: ["application/json"],
+        sandboxJobs: {
+          hostId: fixture.plan.identity.hostId,
+          journal,
+          resolveScope: async (plan) => {
+            const { semanticFingerprint: _fingerprint, ...candidate } = plan;
+            return {
+              scope: await startScopes.read(candidate, fixture.scope.parentRequestId),
+              allowedDomains: [],
+            };
+          },
+          verifyStart: async (plan) => {
+            startChecks++;
+            const { semanticFingerprint: _fingerprint, ...candidate } = plan;
+            await startScopes.read(candidate, fixture.scope.parentRequestId);
+          },
+        },
+      });
+      const server = new PayloadUdsServer({
+        ...common,
+        runtimeDirectory: directory,
+        allowedWorkerIdentities: [{ workerInstanceId, workerBootId }],
+        handler,
+      });
+      let sequence = 0;
+      const client = new PayloadUdsClient({
+        ...common,
+        socketPath: server.socketPath,
+        workerInstanceId,
+        workerBootId,
+        nextId: () => `rpc-${++sequence}`,
+      });
+      const identity = {
+        handleRef: fixture.plan.handleRef,
+        invocationId: fixture.plan.identity.invocationId,
+        workerInstanceId,
+        workerBootId,
+        authorityEpoch,
+        fencingToken,
+      };
+      try {
+        await server.start();
+        await expect(client.sandboxJob(identity, fixture.plan.identity)).rejects.toThrow();
+        await client.connect();
+        expect(await client.sandboxJob(identity, fixture.plan.identity)).toMatchObject({
+          applied: false,
+          record: { observation: { state: "prepared", sequence: 1 } },
+        });
+        expect(
+          (await client.sandboxJob(identity, fixture.plan.identity, null, true)).resolvedScope,
+        ).toEqual({ scope: fixture.scope, allowedDomains: [] });
+        expect(
+          (
+            await journal.readByInvocation({
+              runId: RUN_ID,
+              invocationId: fixture.plan.identity.invocationId,
+            })
+          )?.plan,
+        ).toEqual(fixture.plan);
+        expect(
+          await journal.readByInvocation({
+            runId: "other-run",
+            invocationId: fixture.plan.identity.invocationId,
+          }),
+        ).toBeUndefined();
+        for (const replacement of [
+          { hostId: "other-host" },
+          { jobId: "other-job" },
+          { ownerId: "other-owner" },
+        ]) {
+          await expect(
+            client.sandboxJob(identity, { ...fixture.plan.identity, ...replacement }),
+          ).rejects.toThrow();
+        }
+        await expect(
+          client.sandboxJob({ ...identity, workerBootId: "other-boot" }, fixture.plan.identity),
+        ).rejects.toThrow();
+        expect((await journal.read(fixture.plan.identity))?.observation.sequence).toBe(1);
+        if (mode === "manual") {
+          currentDirectory = { ...currentDirectory, revokedAt: T1 };
+          await expect(
+            client.sandboxJob(identity, fixture.plan.identity, null, true),
+          ).rejects.toThrow();
+          expect(
+            (await client.sandboxJob(identity, fixture.plan.identity)).record.observation.state,
+          ).toBe("prepared");
+          await expect(
+            client.sandboxJob(identity, fixture.plan.identity, {
+              ...fixture.prepared,
+              sequence: 2,
+              state: "starting",
+            }),
+          ).rejects.toThrow();
+          expect(startChecks).toBe(1);
+          expect((await journal.read(fixture.plan.identity))?.observation.sequence).toBe(1);
+          currentDirectory = fixture.directoryGrant;
+        }
+        if (mode !== "manual") {
+          if (mode === "restart")
+            await client.sandboxJob(identity, fixture.plan.identity, {
+              ...fixture.prepared,
+              sequence: 2,
+              state: "starting",
+            });
+          let starts = 0;
+          let notifyPrepared: () => void = () => {};
+          const hostPrepared = new Promise<void>((resolve) => {
+            notifyPrepared = resolve;
+          });
+          const sandbox = createBrokerSandboxExecution({
+            payloads: {
+              readSandboxJob: async (_invocation, job) => client.sandboxJob(identity, job),
+              appendSandboxJob: async (_invocation, observation) =>
+                client.sandboxJob(identity, observation.identity, observation),
+            },
+            authority: () => SERVICE_AUTHORITY,
+            now: () => T1,
+            verify: async () => {},
+            prepareHost: async () => {
+              let ready: () => void = () => {};
+              let finish: (value: SandboxHostObservation) => void = () => {};
+              const result = new Promise<SandboxHostObservation>((resolve) => {
+                finish = resolve;
+              });
+              const prepared = new Promise<void>((resolve) => {
+                ready = resolve;
+              });
+              const observation: SandboxHostObservation = {
+                outcome: "succeeded",
+                cleanup: "unknown",
+                effect: "unknown",
+                outputRef: null,
+                outputDigest: null,
+                reasonCode: "SANDBOX_CLEANUP_UNKNOWN",
+              };
+              notifyPrepared();
+              if (mode !== "cancel") ready();
+              return {
+                policyDigest: fixture.prepared.policyDigest,
+                ready: prepared,
+                result,
+                start: () => {
+                  starts++;
+                  finish(observation);
+                },
+                cancel: () => {
+                  ready();
+                  finish({ ...observation, outcome: "cancelled", effect: "not_started" });
+                },
+              };
+            },
+          });
+          const plan = fixture.plan;
+          const execution = executionV2MessageSchema.parse({
+            schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+            kind: "request",
+            type: "work.execute",
+            messageId: plan.identity.invocationId,
+            correlationId: "sandbox-correlation",
+            causationId: "sandbox-parent",
+            idempotencyKey: plan.identity.invocationId,
+            dataClassification: "private",
+            risk: "low",
+            authorizationRef: plan.authorizationRef,
+            scope: {
+              ...SERVICE_AUTHORITY.product,
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              runId: RUN_ID,
+              workerRunId: "sandbox-worker-run",
+            },
+            payload: {
+              capabilityId: plan.capabilityRef,
+              capabilityVersion: plan.capabilityVersion,
+              capabilityHandleRef: plan.handleRef,
+              inputRef: plan.inputRef,
+              operation: plan.operation,
+              delegatedContextRefs: [],
+              secretRefs: [],
+              resourceCeiling: plan.resourceCeiling,
+              requestedAt: plan.requestedAt,
+              deadlineAt: plan.effectiveDeadlineAt,
+              sandboxJob: plan.identity,
+            },
+          });
+          if (execution.type !== "work.execute") throw new Error("invalid fixture");
+          const completion = sandbox.execute(execution);
+          if (mode === "cancel") {
+            await hostPrepared;
+            const cancellation = executionV2MessageSchema.parse({
+              ...execution,
+              type: "work.cancel",
+              messageId: "sandbox-cancel",
+              idempotencyKey: "sandbox-cancel",
+              payload: {
+                targetRequestId: execution.messageId,
+                reasonCode: "owner_cancelled",
+                requestedAt: T1,
+              },
+            });
+            if (cancellation.type !== "work.cancel") throw new Error("invalid fixture");
+            await sandbox.cancel(cancellation);
+          }
+          expect(await completion).toMatchObject({
+            outcome: "result_unknown",
+            externalActionId: expect.stringMatching(/^sandbox-job:[a-f0-9]{64}$/),
+          });
+          expect((await journal.read(plan.identity))?.observation.state).toBe("quarantined");
+          expect(starts).toBe(mode === "execute" ? 1 : 0);
+          await sandbox.execute(execution);
+          expect(starts).toBe(mode === "execute" ? 1 : 0);
+          await sandbox.shutdown();
+          return;
+        }
+        const starting: SandboxJobReceipt = { ...fixture.prepared, sequence: 2, state: "starting" };
+        expect(await client.sandboxJob(identity, fixture.plan.identity, starting)).toMatchObject({
+          applied: true,
+        });
+        expect(await client.sandboxJob(identity, fixture.plan.identity, starting)).toMatchObject({
+          applied: false,
+        });
+        await expect(
+          client.sandboxJob(identity, fixture.plan.identity, {
+            ...starting,
+            identity: { ...starting.identity, jobId: "substituted" },
+          }),
+        ).rejects.toThrow();
+        const stopping: SandboxJobReceipt = {
+          ...starting,
+          sequence: 3,
+          state: "stopping",
+          effect: "unknown",
+        };
+        await client.sandboxJob(identity, fixture.plan.identity, stopping);
+        const quarantined: SandboxJobReceipt = {
+          ...stopping,
+          sequence: 4,
+          state: "quarantined",
+          outcome: "unknown",
+          cleanup: "unknown",
+          reasonCode: "WORKER_DISCONNECTED",
+        };
+        await client.sandboxJob(identity, fixture.plan.identity, quarantined);
+        // Replaying an older observation returns the latest durable record without a new write.
+        expect(await client.sandboxJob(identity, fixture.plan.identity, starting)).toMatchObject({
+          applied: false,
+          record: { observation: quarantined },
+        });
+        client.disconnect();
+        await client.connect();
+        expect(await client.sandboxJob(identity, fixture.plan.identity)).toMatchObject({
+          applied: false,
+          record: { observation: quarantined },
+        });
+        currentAuthority = {
+          ...SERVICE_AUTHORITY,
+          product: {
+            ...SERVICE_AUTHORITY.product,
+            fencingToken: SERVICE_AUTHORITY.product.fencingToken + 1,
+          },
+        };
+        await expect(client.sandboxJob(identity, fixture.plan.identity)).rejects.toThrow();
+        expect((await journal.read(fixture.plan.identity))?.observation).toEqual(quarantined);
+      } finally {
+        client.disconnect();
+        await server.stop();
+        await repository.close();
+        await fixture.close();
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("ignores a late result from an abandoned preparation after retry", async () => {
+    const fixture = await openSandboxJournal();
+    fixture.prepare();
+    fixture.database.close();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: fixture.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    const journal = repository.sandboxJobJournal(OWNER_ID, AGENT_ID);
+    const outcomes: ((value: SandboxHostObservation) => void)[] = [];
+    let checks = 0;
+    let starts = 0;
+    const unknownResult: SandboxHostObservation = {
+      outcome: "unknown",
+      cleanup: "unknown",
+      effect: "unknown",
+      outputRef: null,
+      outputDigest: null,
+      reasonCode: "unknown",
+    };
+    const service = new SandboxJobLifecycleService({
+      journal,
+      authority: () => SERVICE_AUTHORITY,
+      now: () => T1,
+      verify: async () => {
+        if (++checks === 2) throw new Error("temporary verification failure");
+      },
+      prepareHost: async () => {
+        let resolveResult!: (value: SandboxHostObservation) => void;
+        const result = new Promise<SandboxHostObservation>((resolve) => {
+          resolveResult = resolve;
+        });
+        outcomes.push(resolveResult);
+        return {
+          policyDigest: fixture.prepared.policyDigest,
+          ready: Promise.resolve(),
+          result,
+          start: () => {
+            starts++;
+          },
+          cancel: () => {},
+        };
+      },
+    });
+    try {
+      await expect(service.start(fixture.plan.identity)).rejects.toThrow(
+        "temporary verification failure",
+      );
+      const abandoned = service.wait(fixture.plan.identity);
+      await service.start(fixture.plan.identity);
+      outcomes[0]?.(unknownResult);
+      await abandoned;
+      expect((await journal.read(fixture.plan.identity))?.observation.state).toBe("starting");
+      outcomes[1]?.(unknownResult);
+      await service.wait(fixture.plan.identity);
+      expect(starts).toBe(1);
+      expect((await journal.read(fixture.plan.identity))?.observation.state).toBe("quarantined");
+    } finally {
+      await repository.close();
+      await fixture.close();
+    }
+  });
+
+  it("lets only the durable CAS winner own job observations across coordinators", async () => {
+    const fixture = await openSandboxJournal();
+    fixture.prepare();
+    fixture.database.close();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: fixture.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const outcomes: ((result: SandboxHostObservation) => void)[] = [];
+    let starts = 0;
+    const unknownResult: SandboxHostObservation = {
+      outcome: "unknown",
+      cleanup: "unknown",
+      effect: "unknown",
+      outputRef: null,
+      outputDigest: null,
+      reasonCode: "unknown",
+    };
+    const journal = repository.sandboxJobJournal(OWNER_ID, AGENT_ID);
+    const options = {
+      journal,
+      authority: () => SERVICE_AUTHORITY,
+      now: () => T1,
+      verify: async () => {},
+      prepareHost: async () => {
+        let resolveResult!: (result: SandboxHostObservation) => void;
+        const result = new Promise<SandboxHostObservation>((resolve) => {
+          resolveResult = resolve;
+        });
+        outcomes.push(resolveResult);
+        if (outcomes.length === 2) release();
+        return {
+          policyDigest: fixture.prepared.policyDigest,
+          ready,
+          result,
+          start: () => {
+            starts++;
+          },
+          cancel: () => resolveResult(unknownResult),
+        };
+      },
+    };
+    try {
+      const first = new SandboxJobLifecycleService(options);
+      const second = new SandboxJobLifecycleService(options);
+      await Promise.all([first.start(fixture.plan.identity), second.start(fixture.plan.identity)]);
+      expect(starts).toBe(1);
+      // The cancelled losing host must not quarantine the winner's running job.
+      expect((await journal.read(fixture.plan.identity))?.observation.state).toBe("starting");
+      for (const resolve of outcomes) resolve(unknownResult);
+      await Promise.all([first.wait(fixture.plan.identity), second.wait(fixture.plan.identity)]);
+      expect((await journal.read(fixture.plan.identity))?.observation.state).toBe("quarantined");
+    } finally {
+      await repository.close();
+      await fixture.close();
+    }
+  });
+  it("cancels while a Job Host is preparing without sending start", async () => {
+    const fixture = await openSandboxJournal();
+    fixture.prepare();
+    fixture.database.close();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: fixture.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    let readyReject!: (error: Error) => void;
+    const ready = new Promise<void>((_, reject) => {
+      readyReject = reject;
+    });
+    let resolveResult!: (result: SandboxHostObservation) => void;
+    const result = new Promise<SandboxHostObservation>((resolve) => {
+      resolveResult = resolve;
+    });
+    let preparedResolve!: () => void;
+    const prepared = new Promise<void>((resolve) => {
+      preparedResolve = resolve;
+    });
+    let starts = 0;
+    const service = new SandboxJobLifecycleService({
+      journal: repository.sandboxJobJournal(OWNER_ID, AGENT_ID),
+      authority: () => SERVICE_AUTHORITY,
+      now: () => T1,
+      verify: async () => {},
+      prepareHost: async () => {
+        preparedResolve();
+        return {
+          policyDigest: fixture.prepared.policyDigest,
+          ready,
+          result,
+          start: () => {
+            starts++;
+          },
+          cancel: () => {
+            readyReject(new Error("cancelled"));
+            resolveResult({
+              outcome: "cancelled",
+              cleanup: "unknown",
+              effect: "not_started",
+              outputRef: null,
+              outputDigest: null,
+              reasonCode: "cancelled",
+            });
+          },
+        };
+      },
+    });
+    try {
+      const starting = service.start(fixture.plan.identity);
+      const rejected = expect(starting).rejects.toThrow(/cancelled|CANCELLED/);
+      await prepared;
+      await service.cancel(fixture.plan.identity, "owner_cancelled");
+      await rejected;
+      expect(starts).toBe(0);
+      expect(await service.wait(fixture.plan.identity)).toMatchObject({
+        state: "quarantined",
+        cleanup: "unknown",
+      });
+    } finally {
+      await repository.close();
+      await fixture.close();
+    }
+  });
+
+  it.each(["complete_unknown", "restart", "revoked_before_start", "concurrent"])(
+    "coordinates durable Job Host lifecycle without replay: %s",
+    async (mode) => {
+      const fixture = await openSandboxJournal();
+      fixture.prepare();
+      fixture.database.close();
+      const repository = await SqliteProductStateRepository.open({
+        stateRoot: fixture.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      let resolveResult!: (value: SandboxHostObservation) => void;
+      const result = new Promise<SandboxHostObservation>((resolve) => {
+        resolveResult = resolve;
+      });
+      let starts = 0;
+      let checks = 0;
+      const journal = repository.sandboxJobJournal(OWNER_ID, AGENT_ID);
+      const options = {
+        journal,
+        authority: () => SERVICE_AUTHORITY,
+        now: () => T1,
+        verify: async () => {
+          checks++;
+          if (mode === "revoked_before_start" && checks === 2) throw new Error("revoked");
+        },
+        prepareHost: async () => ({
+          policyDigest: fixture.prepared.policyDigest,
+          ready: Promise.resolve(),
+          result,
+          start: () => {
+            starts++;
+          },
+          cancel: () =>
+            resolveResult({
+              outcome: "unknown",
+              cleanup: "unknown",
+              effect: "unknown",
+              outputRef: null,
+              outputDigest: null,
+              reasonCode: "cancelled",
+            }),
+        }),
+      };
+      try {
+        const service = new SandboxJobLifecycleService(options);
+        if (mode === "revoked_before_start") {
+          await expect(service.start(fixture.plan.identity)).rejects.toThrow("revoked");
+          await service.wait(fixture.plan.identity);
+          expect(starts).toBe(0);
+          expect((await journal.read(fixture.plan.identity))?.observation.state).toBe("prepared");
+        } else {
+          if (mode === "concurrent")
+            await Promise.all([
+              service.start(fixture.plan.identity),
+              service.start(fixture.plan.identity),
+            ]);
+          else await service.start(fixture.plan.identity);
+          expect(starts).toBe(1);
+          expect((await journal.read(fixture.plan.identity))?.observation.state).toBe("starting");
+          if (mode === "restart") {
+            const recovery = new SandboxJobLifecycleService({
+              ...options,
+              prepareHost: async () => {
+                throw new Error("must not relaunch");
+              },
+            });
+            expect(await recovery.reconcile(fixture.plan.identity)).toMatchObject({
+              state: "quarantined",
+              cleanup: "unknown",
+            });
+            expect(await recovery.start(fixture.plan.identity)).toMatchObject({
+              state: "quarantined",
+            });
+          }
+          resolveResult({
+            outcome: "succeeded",
+            cleanup: "unknown",
+            effect: "unknown",
+            outputRef: null,
+            outputDigest: null,
+            reasonCode: "SANDBOX_CLEANUP_UNKNOWN",
+          });
+          expect(await service.wait(fixture.plan.identity)).toMatchObject({
+            state: "quarantined",
+            cleanup: "unknown",
+          });
+          await service.start(fixture.plan.identity);
+          expect(starts).toBe(1);
+        }
+      } finally {
+        await repository.close();
+        await fixture.close();
+      }
+    },
+  );
+
+  it.each([
+    ["revoked", { revokedAt: T1 }],
+    ["expired", { expiresAt: T1 }],
+    ["revision", { revision: 2 }],
+    ["root", { canonicalRootId: "other-root" }],
+    ["host", { hostId: "other-host" }],
+    ["operations", { operations: [] }],
+    ["authorization", { authorizationRef: "other-authorization" }],
+    ["id", { id: "other-grant" }],
+  ] as const)("rejects changed current directory authority: %s", async (_name, replacement) => {
+    const fixture = await openSandboxJournal();
+    try {
+      const { semanticFingerprint: _fingerprint, ...candidate } = fixture.plan;
+      const reader = new SandboxScopeService({
+        files: { readGrant: async () => ({ ...fixture.directoryGrant, ...replacement }) },
+        hostId: "sandbox-host",
+        payloads: { get: async () => fixture.scopePayload },
+        protector: fixture.protector,
+        now: () => T1,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+      });
+      await expect(reader.read(candidate, fixture.scope.parentRequestId)).rejects.toThrow(
+        "SANDBOX_SCOPE_UNAVAILABLE",
+      );
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it.each([
+    "hostId",
+    "runId",
+    "toolCallId",
+    "inputRef",
+    "authorizationRef",
+    "modelRef",
+    "profileRef",
+    "parentToolCallId",
+    "parentRequestId",
+    "expiresAt",
+  ])("rejects an authentic scope with mismatched %s", async (field) => {
+    const fixture = await openSandboxJournal();
+    try {
+      const changed = {
+        ...fixture.scope,
+        [field]:
+          field === "parentToolCallId"
+            ? fixture.scope.toolCallId
+            : field === "expiresAt"
+              ? T1
+              : "foreign",
+      };
+      const payload = await fixture.protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: fixture.scopePayload.ref,
+        dataClassification: "private",
+        contentType: "application/json",
+        plaintext: new TextEncoder().encode(JSON.stringify(changed)),
+        createdAt: T1,
+      });
+      const { semanticFingerprint: _fingerprint, ...candidate } = fixture.plan;
+      const reader = new SandboxScopeService({
+        files: fixture.files,
+        hostId: "sandbox-host",
+        payloads: { get: async () => payload },
+        protector: fixture.protector,
+        now: () => T1,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+      });
+      await expect(
+        reader.read(
+          {
+            ...candidate,
+            binding: { ...candidate.binding, scopeDigest: payload.contentDigest.slice(7) },
+          },
+          fixture.scope.parentRequestId,
+        ),
+      ).rejects.toThrow("SANDBOX_SCOPE_UNAVAILABLE");
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("rejects scope ciphertext tampering and digest substitution", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      const { semanticFingerprint: _fingerprint, ...candidate } = fixture.plan;
+      const reader = new SandboxScopeService({
+        files: fixture.files,
+        hostId: "sandbox-host",
+        payloads: { get: async () => fixture.scopePayload },
+        protector: fixture.protector,
+        now: () => T1,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+      });
+      await expect(
+        reader.read(
+          {
+            ...candidate,
+            binding: { ...candidate.binding, scopeDigest: "0".repeat(64) },
+          },
+          fixture.scope.parentRequestId,
+        ),
+      ).rejects.toThrow("SANDBOX_SCOPE_UNAVAILABLE");
+      fixture.scopePayload.ciphertext[0] = (fixture.scopePayload.ciphertext[0] ?? 0) ^ 1;
+      await expect(reader.read(candidate, fixture.scope.parentRequestId)).rejects.toThrow(
+        "SANDBOX_SCOPE_UNAVAILABLE",
+      );
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it.each(["fresh", "legacy", "scope_failure", "expired_preparation", "revoked_directory"])(
+    "routes Worker admission through the journal: %s",
+    async (mode) => {
+      const fixture = await openSandboxJournal(mode === "legacy");
+      fixture.database.close();
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: fixture.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      try {
+        const { semanticFingerprint: _fingerprint, ...plan } = fixture.plan;
+        const transport = new RecordingServiceTransport();
+        let admissionNow = T1;
+        await reopened.payloadStore(OWNER_ID, AGENT_ID).put(fixture.scopePayload);
+        const service = new WorkerDelegationService({
+          invocations: {
+            consume: async () => {
+              throw new Error("must not consume separately");
+            },
+            read: async () => {
+              throw new Error("must not re-read to construct projection");
+            },
+          },
+          sandbox: {
+            scopes: new SandboxScopeService({
+              files: {
+                readGrant: async () =>
+                  mode === "revoked_directory"
+                    ? { ...fixture.directoryGrant, revokedAt: T1 }
+                    : fixture.directoryGrant,
+              },
+              hostId: "sandbox-host",
+              payloads: reopened.payloadStore(OWNER_ID, AGENT_ID),
+              protector: fixture.protector,
+              now: () => admissionNow,
+              digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+            }),
+            journal: reopened.sandboxJobJournal(OWNER_ID, AGENT_ID),
+            prepare: async () => {
+              if (mode === "scope_failure") throw new Error("scope unavailable");
+              if (mode === "expired_preparation") admissionNow = T2;
+              return { plan, observation: fixture.prepared };
+            },
+          },
+          invocationAuthority: () => SERVICE_AUTHORITY,
+          transport,
+          now: () => admissionNow,
+          nextId: () => fixture.plan.identity.receiptRef,
+        });
+        const source = invocation() as unknown as ConsumeCapabilityInvocationInput;
+        const request = {
+          ...serviceRequest(),
+          messageId: source.invocationId,
+          idempotencyKey: source.idempotencyKey,
+        };
+        if (mode === "fresh") {
+          await service.dispatch(request);
+          await service.dispatch(request);
+          expect(transport.requests.map(({ type }) => type)).toEqual([
+            "work.delegate",
+            "work.execute",
+          ]);
+          expect(transport.requests.find(({ type }) => type === "work.execute")).toMatchObject({
+            payload: { sandboxJob: plan.identity },
+          });
+          expect(
+            await reopened.sandboxJobJournal(OWNER_ID, AGENT_ID).read(plan.identity),
+          ).toMatchObject({ observation: { state: "prepared" } });
+        } else {
+          await expect(service.dispatch(request)).rejects.toThrow();
+          expect(transport.requests).toEqual([]);
+          expect(
+            await reopened.sandboxJobJournal(OWNER_ID, AGENT_ID).read(plan.identity),
+          ).toBeUndefined();
+        }
+      } finally {
+        await reopened.close();
+        await fixture.close();
+      }
+    },
+  );
+
+  it("admits through the SQLite worker and rejects the separate preparation entry", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      expect(() =>
+        operationsForDatabase(fixture.database).execute("capabilityInvocation.sandboxPrepare", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: {
+            plan: fixture.plan,
+            observation: fixture.prepared,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+          },
+        }),
+      ).toThrow("requires atomic admission");
+      fixture.database.close();
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: fixture.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      try {
+        const { semanticFingerprint: _fingerprint, ...plan } = fixture.plan;
+        const input = {
+          invocation: invocation() as unknown as ConsumeCapabilityInvocationInput,
+          plan,
+          observation: fixture.prepared,
+        };
+        expect(await reopened.sandboxJobJournal(OWNER_ID, AGENT_ID).admit(input)).toMatchObject({
+          applied: true,
+          record: { plan: fixture.plan },
+        });
+        expect(await reopened.sandboxJobJournal(OWNER_ID, AGENT_ID).admit(input)).toMatchObject({
+          applied: false,
+        });
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("rejects a consumed receipt without a journal even when no output exists", async () => {
+    const fixture = await openSandboxJournal(true);
+    try {
+      expect(() => fixture.prepare()).toThrow("execution is unknown");
+      expect(fixture.call("Read", fixture.plan.identity)).toBeUndefined();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("rolls back Handle consumption when initial journal persistence fails", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      fixture.database.exec(
+        "CREATE TEMP TRIGGER fail_admission BEFORE INSERT ON sandbox_job_observations BEGIN SELECT RAISE(ABORT, 'synthetic admission failure'); END;",
+      );
+      expect(() => fixture.prepare()).toThrow("synthetic admission failure");
+      expect(
+        fixture.database
+          .prepare("SELECT count(*) AS count FROM capability_invocation_receipts")
+          .get(),
+      ).toEqual({ count: 0 });
+      expect(fixture.call("Read", fixture.plan.identity)).toBeUndefined();
+      fixture.database.exec("DROP TRIGGER fail_admission");
+      expect(fixture.prepare()).toMatchObject({ applied: true });
+      expect(fixture.prepare()).toMatchObject({ applied: false });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("persists a single start intent across reopen and rejects another start", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      expect(fixture.prepare()).toMatchObject({ applied: true });
+      const starting = { ...fixture.prepared, sequence: 2, state: "starting" as const };
+      expect(fixture.append(starting)).toMatchObject({ applied: true });
+      expect(fixture.append(starting)).toMatchObject({ applied: false });
+      expect(() => fixture.append({ ...starting, sequence: 3 })).toThrow("only one start intent");
+      fixture.database.close();
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: fixture.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      try {
+        expect(
+          await reopened.sandboxJobJournal(OWNER_ID, AGENT_ID).read(fixture.plan.identity),
+        ).toMatchObject({ observation: { state: "starting", sequence: 2 } });
+        expect(
+          await reopened
+            .sandboxJobJournal(OWNER_ID, AGENT_ID)
+            .append({ observation: starting, authority: SERVICE_AUTHORITY, now: T1 }),
+        ).toMatchObject({ applied: false });
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it.each(["lease", "handle", "run"])(
+    "rejects start after %s authority changes without appending",
+    async (kind) => {
+      const fixture = await openSandboxJournal();
+      try {
+        fixture.prepare();
+        if (kind === "lease")
+          fixture.database.prepare("UPDATE run_execution_leases SET revision = revision + 1").run();
+        if (kind === "handle")
+          fixture.database
+            .prepare(
+              "UPDATE capability_handles SET record_json = json_set(record_json, '$.revokedAt', ?)",
+            )
+            .run(T1);
+        if (kind === "run") fixture.database.prepare("UPDATE runs SET status = 'cancelled'").run();
+        expect(() =>
+          fixture.append({ ...fixture.prepared, sequence: 2, state: "starting" }),
+        ).toThrow();
+        expect(fixture.call("Read", fixture.plan.identity)).toMatchObject({
+          observation: { sequence: 1 },
+        });
+        expect(
+          fixture.database.prepare("SELECT count(*) AS count FROM sandbox_job_observations").get(),
+        ).toEqual({ count: 1 });
+      } finally {
+        await fixture.close();
+      }
+    },
+  );
+
+  it("records cleanup after deadline while forbidding a new execution", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      fixture.prepare();
+      expect(() =>
+        fixture.append({ ...fixture.prepared, sequence: 2, state: "starting", occurredAt: T2 }, T2),
+      ).toThrow();
+      const stopping = {
+        ...fixture.prepared,
+        sequence: 2,
+        state: "stopping" as const,
+        occurredAt: T2,
+      };
+      expect(fixture.append(stopping, T2)).toMatchObject({ applied: true });
+      const unknown = {
+        ...stopping,
+        sequence: 3,
+        state: "reconciling" as const,
+        effect: "unknown" as const,
+        cleanup: "unknown" as const,
+        outcome: "unknown" as const,
+        reasonCode: "worker_lost",
+      };
+      expect(fixture.append(unknown, T2)).toMatchObject({ applied: true });
+      expect(() => fixture.append({ ...unknown, sequence: 4, state: "starting" }, T2)).toThrow();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("retains unresolved jobs and removes metadata only after confirmed cleanup", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      fixture.prepare();
+      fixture.append({ ...fixture.prepared, sequence: 2, state: "starting" });
+      expect(() => fixture.database.prepare("DELETE FROM runs WHERE id = ?").run(RUN_ID)).toThrow(
+        "Unresolved legacy",
+      );
+      fixture.append({ ...fixture.prepared, sequence: 3, state: "stopping" });
+      operationsForDatabase(fixture.database).execute("capabilityInvocationResult.observeOutput", {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        input: outputObservation({
+          payload: outputPayload("cleanup-output", `sha256:${"f".repeat(64)}`),
+        }),
+      });
+      fixture.append({
+        ...fixture.prepared,
+        sequence: 4,
+        state: "completed",
+        outcome: "succeeded",
+        effect: "confirmed",
+        cleanup: "confirmed",
+        outputRef: "cleanup-output",
+        outputDigest: "f".repeat(64),
+      });
+      fixture.database.prepare("DELETE FROM runs WHERE id = ?").run(RUN_ID);
+      expect(fixture.database.prepare("SELECT count(*) AS count FROM sandbox_jobs").get()).toEqual({
+        count: 0,
+      });
+      expect(
+        fixture.database.prepare("SELECT count(*) AS count FROM sandbox_job_observations").get(),
+      ).toEqual({ count: 0 });
+      expect(fixture.database.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("does not prepare an invocation that already has a legacy durable result", async () => {
+    const fixture = await openSandboxJournal(true);
+    try {
+      operationsForDatabase(fixture.database).execute("capabilityInvocationResult.observeOutput", {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        input: outputObservation(),
+      });
+      expect(() => fixture.prepare()).toThrow("execution is unknown");
+      expect(fixture.call("Read", fixture.plan.identity)).toBeUndefined();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("rolls back the latest sequence if observation persistence fails", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      fixture.prepare();
+      fixture.database.exec(
+        "CREATE TEMP TRIGGER fail_sandbox_observation BEFORE INSERT ON sandbox_job_observations BEGIN SELECT RAISE(ABORT, 'synthetic journal failure'); END;",
+      );
+      expect(() => fixture.append({ ...fixture.prepared, sequence: 2, state: "starting" })).toThrow(
+        "synthetic journal failure",
+      );
+      expect(fixture.call("Read", fixture.plan.identity)).toMatchObject({
+        observation: { sequence: 1, state: "prepared" },
+      });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("requires protected output persistence before completion and forbids restarting a completed job", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      fixture.prepare();
+      fixture.append({ ...fixture.prepared, sequence: 2, state: "starting" });
+      fixture.append({ ...fixture.prepared, sequence: 3, state: "running" });
+      fixture.append({ ...fixture.prepared, sequence: 4, state: "stopping" });
+      const completed: SandboxJobReceipt = {
+        ...fixture.prepared,
+        sequence: 5,
+        state: "completed",
+        outcome: "succeeded",
+        effect: "confirmed",
+        cleanup: "confirmed",
+        outputRef: "payload-sandbox-output",
+        outputDigest: "f".repeat(64),
+      };
+      expect(() => fixture.append(completed)).toThrow("not durably bound");
+      operationsForDatabase(fixture.database).execute("capabilityInvocationResult.observeOutput", {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        input: outputObservation({
+          payload: outputPayload(completed.outputRef as string, `sha256:${completed.outputDigest}`),
+        }),
+      });
+      expect(fixture.call("ListPending", { afterJobId: null, limit: 10 })).toHaveLength(1);
+      expect(fixture.append(completed)).toMatchObject({ applied: true });
+      expect(fixture.call("ListPending", { afterJobId: null, limit: 10 })).toEqual([]);
+      expect(() => fixture.append({ ...completed, sequence: 6, state: "starting" })).toThrow();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("rejects plan replacement, a second attempt, policy replacement and foreign reads", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      fixture.prepare();
+      expect(() =>
+        fixture.call("Prepare", {
+          plan: { ...fixture.plan, inputRef: "replaced" },
+          observation: fixture.prepared,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+        }),
+      ).toThrow();
+      const identity = {
+        ...fixture.plan.identity,
+        jobId: "another-job",
+        attemptId: "another-attempt",
+      };
+      expect(() =>
+        fixture.call("Prepare", {
+          plan: { ...fixture.plan, identity },
+          observation: { ...fixture.prepared, identity },
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+        }),
+      ).toThrow("execution is unknown");
+      expect(() =>
+        fixture.append({
+          ...fixture.prepared,
+          sequence: 2,
+          state: "starting",
+          policyDigest: "e".repeat(64),
+        }),
+      ).toThrow();
+      expect(() =>
+        fixture.call("Read", { ...fixture.plan.identity, ownerId: OTHER_OWNER_ID }),
+      ).toThrow();
+    } finally {
+      await fixture.close();
+    }
+  });
+});
+
+it("freezes the Worker-compiled policy in the first start transaction and persists resource observations", async () => {
+  const fixture = await openSandboxJournal();
+  fixture.call("Prepare", {
+    plan: fixture.plan,
+    observation: { ...fixture.prepared, policyDigest: null },
+  });
+  expect(() =>
+    fixture.append({ ...fixture.prepared, policyDigest: null, state: "starting", sequence: 2 }),
+  ).toThrow();
+  fixture.database.close();
+  const repository = await SqliteProductStateRepository.open({
+    stateRoot: fixture.resource.stateRoot,
+    minimumFreeBytes: 0,
+    now: () => T1,
+  });
+  const journal = repository.sandboxJobJournal(OWNER_ID, AGENT_ID);
+  let starts = 0;
+  const resources = { samples: 3, observedCpuTimeMs: 100, peakObservedMemoryBytes: 8192 };
+  let settle!: (value: SandboxHostObservation) => void;
+  const result = new Promise<SandboxHostObservation>((resolve) => {
+    settle = resolve;
+  });
+  const lifecycle = new SandboxJobLifecycleService({
+    journal,
+    authority: () => SERVICE_AUTHORITY,
+    now: () => T1,
+    verify: async () => {},
+    prepareHost: async () => ({
+      policyDigest: fixture.prepared.policyDigest,
+      ready: Promise.resolve(),
+      result,
+      start: () => {
+        starts++;
+      },
+      cancel: () => {},
+    }),
+  });
+  try {
+    await lifecycle.start(fixture.plan.identity);
+    const started = await journal.read(fixture.plan.identity);
+    expect(started?.observation).toMatchObject({
+      state: "starting",
+      policyDigest: fixture.prepared.policyDigest,
+    });
+    await lifecycle.start(fixture.plan.identity);
+    expect(starts).toBe(1);
+    await expect(
+      journal.append({
+        observation: {
+          ...fixture.prepared,
+          state: "running",
+          sequence: 3,
+          policyDigest: "e".repeat(64),
+        },
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+      }),
+    ).rejects.toThrow();
+    settle({
+      outcome: "failed",
+      cleanup: "unknown",
+      effect: "unknown",
+      outputRef: null,
+      outputDigest: null,
+      reasonCode: "SANDBOX_RESOURCE_LIMIT",
+      resources,
+    });
+    await lifecycle.wait(fixture.plan.identity);
+    expect((await journal.read(fixture.plan.identity))?.observation).toMatchObject({
+      state: "quarantined",
+      resources,
+    });
+  } finally {
+    await repository.close();
+    await fixture.close();
+  }
+});

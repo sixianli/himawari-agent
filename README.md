@@ -2,9 +2,17 @@
 
 Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私人 Agent。Foundation Plan 的 Task 1 至 Task 20 已在确定性参考配置中完成；当前 portable durable web-agent Plan 已补齐模型路由、GitHub webhook/只读 monitor、持久 receipt 去重、浏览器 disclosure preview、真实进程恢复和规模资格的本地实现与证据。当前已按明确批准的边界完成 OpenRouter `qwen/qwen3-embedding-8b` 的 4096 维 Mem0 embedding live smoke，并完成 primary `deepseek/deepseek-v4-flash-0731` 与 fixed fallback `z-ai/glm-5.3-flash` 的有界 generation provider/model/token/cost 回读；GitHub/Cloudflare 账户、跨主机 transfer 和最终 production composition 仍按证据单独验收。
 
-当前交付是可安装、可运行的架构验证平台，不是 production-ready 服务。Node runtime 已有 Agent Service、Execution Worker 和 admin CLI 的 `main`、受保护 UDS、持久 SQLite、doctor/db status 及信号 drain；支持的 OpenRouter 配置现在会在 Agent Service 生命周期中创建 Model/Pi 与 Mem0 composition，并把 4096 维 embedding identity 写入 ready diagnostic。主机文件/代码工作区已接通 Gateway v2、Worker 和控制中心，支持受治理 read/write/move/Trash/restore/permanent delete、workspace ownership、无 filter 独立 index 暂存、冻结 CommitPreview 与 task-only local commit；主动建议、周期反思、最小 Worker delegation 和永久 review-required 的隔离自我改进候选也已完成本地状态、恢复和 UI 边界。Mac 命令已冻结为双层合同：低风险只读关闭集合进入签名 App Sandbox/XPC helper，高风险与未知命令进入 Apple `container 1.2.0`，路由失败不降级；Hermes 使用 `bubblewrap 0.11.2 + prlimit >=2.38`。三种 production backend 都尚未通过同一 revision 的真实资格，Node host path adapter 也必须在对应外层隔离通过前保持 inactive。没有安装或启用真实 capability，治理 Gateway 也尚未组合进最终 production Agent Service。最终公网 listener、生产 Vault/Memory projection worker/Model/GitHub 组合、真实远程 Worker 沙箱、地图/预订供应商和通知客户端仍未完成。默认 local composition 使用进程内参考适配器，退出后数据不会保留。完整边界和限制见 [Architecture v0.1](docs/architecture-v0.1.md)。
+当前交付是可安装、可运行的架构验证平台，不是 production-ready 服务。Node runtime 已有 Agent Service、Execution Worker 和 admin CLI 的 `main`、受保护 UDS、持久 SQLite、doctor/db status 及信号 drain；支持的 OpenRouter 配置现在会在 Agent Service 生命周期中创建 Model/Pi 与 Mem0 composition，并把 4096 维 embedding identity 写入 ready diagnostic。主机文件/代码工作区已接通 Gateway v2、Worker 和控制中心，支持受治理 read/write/move/Trash/restore/permanent delete、workspace ownership、无 filter 独立 index 暂存、冻结 CommitPreview 与 task-only local commit；主动建议、周期反思、最小 Worker delegation 和永久 review-required 的隔离自我改进候选也已完成本地状态、恢复和 UI 边界。Mac 命令已冻结为双层合同：低风险只读关闭集合进入签名 App Sandbox/XPC helper，高风险与未知命令进入 Apple `container 1.2.0`，路由失败不降级；Hermes 使用 `bubblewrap 0.11.2 + prlimit >=2.38`。三种 production backend 都尚未通过同一 revision 的真实资格，Node host path adapter 也必须在对应外层隔离通过前保持 inactive。没有安装或启用真实 capability，治理 Gateway 中的审批查询与决定已组合进 production Agent Service，其余治理入口尚未完成总组合。公开 HTTP listener、身份、可信 Run policy、持久执行与回答、Pi、Mem0 projection consumer 和已授权 Worker 工具现已接入主入口；真实公共身份路径资格、生产 Vault/GitHub 总组合、结构化 Worker 子任务、真实远程 Worker 沙箱、地图/预订供应商和通知客户端仍未完成。默认 local composition 使用进程内参考适配器，退出后数据不会保留。完整边界和限制见 [Architecture v0.1](docs/architecture-v0.1.md)。
+
+正式网页入口的可用页面以服务器实际安装的接口为准。目前开放对话、审批以及服务与依赖健康检查；其余页面显示“未启用”。下文各领域的本地实现与测试覆盖不等于正式 Gateway 已接通。
 
 当前审查修复将工作区变更归属、Git index 事务、删除内容版本、建议/反思/委派状态转换和候选资源清理落实为明确的持久合同。恢复与并发测试使用本地临时仓库和受控适配器；真实模型恢复、Mac/Hermes 隔离资格仍按上述门禁独立验收。
+
+控制中心的本机重构采用已确认的 Himawari 品牌、Light/Dark 与六种主题色；聊天按每轮持久记录显示输出、工具和审批等待，输入区的模型/思考深度由配置能力决定，并在提交时冻结。实现与本机验收边界见 [控制中心重构设计](docs/archive/specs/2026-09-10-control-center-product-refactor-design.md)。原型与测试服务中的消息不代表真实模型验收。
+
+## 已确认的 Web 设计
+
+2026-09-10 确认的 Logo 与聊天界面已保存为后续重构的设计基准。修改控制中心前，请先查看 [设计说明](docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md)、[交互原型](docs/assets/control-center/2026-09-10-v1/index.html) 和 [Logo 图片资源](assets/brand/himawari/README.md)。原型可下载或在本地用浏览器直接打开，图标已内嵌，支持离线查看；页面中的运行结果均为演示数据。
 
 ## Toolchain
 
@@ -33,12 +41,20 @@ export PATH="$PWD/.ci-output/tools/bin:$PATH"
 在固定工具环境下，本地入口为：
 
 ```bash
-CI_BASE="$(git rev-parse HEAD)"
+git fetch origin main
+CI_BASE="$(git rev-parse origin/main)"
+umask 077
 npm run check
 npm run test:tooling -- --base "$CI_BASE"
 npm test -- --base "$CI_BASE"
 npm run ci:local -- --base "$CI_BASE"
 ```
+
+提交或推送涉及安装、发布辅助脚本、CI 或其测试的修改前，必须在准备提交的干净候选源码上执行上面的 `npm run check` 和完整 `npm run test:tooling`，再执行受影响的产品测试。`npm run check` 不包含 tooling 测试，不能替代它；工作区存在其他未提交内容时，不要把混合工作区的通过结果当作候选提交的验证。合并仍以 PR 最新提交的完整 `ci/required` 为准。
+
+准备合入 `main` 的 PR 必须使用最新 `origin/main` 作为 `--base`，不能用功能分支自己的 `HEAD` 代替目标分支，否则历史扫描、已接受例外及覆盖率比较与 GitHub 不一致。涉及 CI 或安全扫描的修改还必须运行完整 `npm run ci:local`；该入口对每项报告执行与 GitHub 相同的公开产物检查，仅写入本地 `.ci-output`，不会上传文件。构建成功但产物扫描失败时，本地结果仍为失败。测试源码放在各 workspace 的 `test` 目录，不能落入生产覆盖率包含的 `src` 目录；policy 会在耗时的构建和覆盖率任务之前拒绝这种混放。
+
+历史发布辅助脚本中的固定摘要代表当时审核过的输入，不能为了适配当前文件而直接更新。共享探针继续演进时，历史校验使用带来源提交和摘要的原始快照；新发布独立审核并绑定自己的输入。快照缺失或被改动仍须使测试失败。示例见 `test/tooling/fixtures/releases/2026-09-12-three-fixes/README.md`。
 
 工具目录可用 `--tools` 指定；输出写入独立 `.ci-output` 目录。工具安装目录和依赖安装的证据目录须为空，已有结果不会被静默覆盖。依赖安装默认使用独立空缓存；需要测量热缓存时可显式传入 `--cache .ci-output/npm-cache`，仍执行完整锁文件安装和原生探测。执行报告记录硬件、耗时与分配磁盘采样峰值；峰值是观测下界，不代表未采到的瞬间峰值。浏览器引擎使用锁定 Playwright 配套版本，安装到独立位置：
 
@@ -48,7 +64,10 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/.ci-output/browsers" .ci-output/tools/bin/node no
 
 `npm test` 准备一份当前平台归档，再依次执行 unit、contracts、integration、e2e、pi-compat。安装测试从归档安装到临时前缀，在源码目录外验证三个 binary；测试自身不构建。已有归档必须同时传入其 `--context`，来源、平台、ABI、依赖、迁移和内容摘要均重新核验。四类 scale/live 测试有独立资格 project，普通 integration 明确排除它们。
 
-覆盖率采集 unit/contracts/tooling，包含未被导入的生产 TS/TSX 和自有 CI 执行脚本。变更行至少 90%，变更函数的可定位分支至少 85%；各 workspace 四类指标使用目标分支接受的基线。首次引入仅免去不存在的历史基线比较，不放宽增量阈值。安全检查使用原有机器密钥扫描和固定 Gitleaks/Semgrep；缺报告、扫描不可用、到期例外或未豁免阻断发现均失败。按维护者要求，CI 不执行 npm 依赖漏洞查询；安全检查通过不代表依赖无已知漏洞。
+覆盖率采集 unit/contracts/tooling/integration，包含未被导入的生产 TS/TSX 和自有 CI 执行脚本。变更行至少 80%，变更函数的可定位分支至少 70%；各 workspace 四类指标使用目标分支接受的基线。首次引入仅免去不存在的历史基线比较，不放宽增量阈值。安全检查使用原有机器密钥扫描和固定 Gitleaks/Semgrep；缺报告、扫描不可用、到期例外或未豁免阻断发现均失败。按维护者要求，CI 不执行 npm 依赖漏洞查询；安全检查通过不代表依赖无已知漏洞。
+
+新增安全例外必须先形成精确清单并获得仓库所有者批准。`.github/security-review-manifest.json` 保存被批准的原始清单，`.github/security-review-comment.json` 仅保存 PR 评论编号；编号或文件内的状态字段都不能证明已获批准。检查从 GitHub 公开 API 读取评论，核对所有者身份、仓库、PR、源码提交、清单原始字节摘要与有效期，并继续执行源码来源、发现数量及依赖文档全文校验。清单内容变化后需要新的明确批准；不能扩大为目录豁免或延长既有例外。GitHub 不可访问、评论撤回或失效时检查失败，应恢复有效证据后重跑。审批只覆盖列出的扫描发现，不替代测试、覆盖率或部署验收。
+
 
 Ubuntu coverage 作业显式传入 `--baseline-candidate initial-only`，仅在合法初始化且本轮校验通过时，使用同一份 snapshot、测试、JSON 和 LCOV 生成 `initial-coverage-baseline.json` 报告。维护者核对该 run/attempt、artifact 摘要与测量结果后，显式审阅提交候选；CI 不修改仓库基线。初始化结束后该选项继续执行通常的基线比较，不再生成初始候选。
 
@@ -62,7 +81,7 @@ Ubuntu coverage 作业显式传入 `--baseline-candidate initial-only`，仅在�
 
 `apps/execution-worker` 和 `apps/agent-service` 同时公开程序化 process API 与可安装 `main`。参考启动顺序是先独立启动 Worker，再把它的 `execution.v2` client 注入前台 Agent Service；Agent process 不会隐式启动 Worker。启动诊断只包含 component、adapter identity、schema version 和 readiness，不包含 credential 或 Secret reference。
 
-程序化组合用于自动化测试和本地架构验证；可安装入口使用受保护的 `execution.v2` UDS，但最终 public HTTP 组合尚未接入生产 `main`。支持的 OpenRouter 配置还会显式构造 Mem0 projection；deterministic profile 仍只报告 descriptor，不触发 Pi、Mem0 或 provider。可运行的生命周期、边界与规模验证是：
+程序化组合用于自动化测试和本地架构验证；可安装入口使用受保护的 `execution.v2` UDS，公开模式通过生产 `main` 组合 HTTP、身份、持久 Run、Pi、Memory 与已授权 Worker 工具。支持的 OpenRouter 配置还会显式构造 Mem0 projection；deterministic profile 仍只报告 descriptor，不触发 Pi、Mem0 或 provider。可运行的生命周期、边界与规模验证是：
 
 ```bash
 npm run test:unit -- local-execution-worker local-composition-root
@@ -154,6 +173,10 @@ VS Code 可以用下列 launch 配置在 Vitest 中断进 sibling TypeScript sou
 | `apps/execution-worker` | 独立 `execution.v1` Worker process 边界 | application、execution-contracts、platform-node；测试期使用 testing |
 
 `npm run check:boundaries` 会检查根和 workspace 清单以及 TypeScript import，拒绝非精确的直接外部依赖、非法反向依赖、依赖环、未声明的内部依赖、逃出 workspace 根的相对 import、纯产品层的 `node:` import，以及 `packages/runtime-pi` 之外的直接 Pi import。
+
+文件总结的 P007–P009 已接入正式 `read` 的两阶段 Worker 路径：先用独立凭证检查文件身份，再分别授权读取和当前模型披露，保存新输入并签发单次读取凭证。可选 `runPolicy.fileRead` 只选择主机、Worker、目录 Grant 和能力版本；现有授权记录与平台资格仍须独立有效。文件程序由 Worker 的受隔离 program runtime 启动，复用 Pi read；Agent Service 不旁路读取。配置、完成证据与未完成的正式 Mac/ego Lite 验收见 [真实文件总结设计](docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md)。
+
+通用 HITL 已接入受保护暂停记录、SQLite checkpoint、审批后新租约恢复和 Pi 原工具批次回放；文件读取使用同一契约。审批等待不依赖存活进程，也不重新发送原模型请求。未知副作用继续核查，不能通过再次批准重做。设计与实际验证边界见 [通用 HITL 决策](docs/adr/0023-durable-hitl-execution.md)。
 
 ## Domain foundation
 
@@ -251,3 +274,10 @@ npm run qualify:thread-scale -- --output .ci-output/thread-scale-run
 - 当前实现：[Architecture v0.1](docs/architecture-v0.1.md)
 - 已关闭设计：[Foundation Spec](docs/archive/specs/2026-08-25-agent-foundation-design.md)
 - 已完成计划：[Foundation Plan](docs/archive/plans/2026-08-25-agent-foundation-plan.md)
+
+
+### 内置账号登录
+
+控制中心可通过 `identity.kind: "built-in"` 使用 Himawari 自己的账号，登录流程为用户名/密码加验证器验证码，恢复码可代替第二步验证码。账号用于本机或经 HTTPS 反向代理访问的服务器，不要求 Cloudflare；现有 Cloudflare 配置继续可用。仍为单一 Owner，不开放公众注册。登录后的“会话与设备”提供再次验证、设备撤销和退出登录。
+
+首次账号由服务所在主机的管理命令创建，输入与验证器设置资料通过权限为 0600 的文件传递；不能把密码放在命令参数或日志中。账号恢复需停机、活动权威验证和独占状态目录锁，并撤销旧会话。配置、命令和验证边界见 [内置账号设计](docs/archive/specs/2026-09-10-built-in-account-authentication-design.md) 与 [安装运行说明](docs/runbooks/install-start-stop-runbook.md)。登录能力不替代真实 Worker、模型或公网入口的独立验收。

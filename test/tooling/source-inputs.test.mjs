@@ -46,6 +46,47 @@ describe("transitive build inputs", () => {
     await writeFile(path.join(root, "ci/policy.schema.json"), '{"changed":true}');
     expect(await sourceTreeDigest(root)).not.toBe(modeChanged);
   });
+  it("tracks current worktree deletions and restoration without hiding missing imports", async () => {
+    const root = await fixture({
+      "scripts/ci/build.mjs": "import './execute.mjs';",
+      "scripts/ci/execute.mjs": "export const value=1;",
+      "scripts/ci/artifact-archive.py": "# fixture",
+      "scripts/package-node-runtime.mjs": "export {};",
+      "scripts/generate-artifact-manifest.mjs": "export {};",
+      "scripts/check-control-center-build.mjs": "export {};",
+      "ci/policy.schema.json": "{}",
+      "apps/agent-service/src/removed-before-build.mjs": "export const value=1;",
+    });
+    execFileSync("git", ["init", "--quiet", root]);
+    execFileSync("git", ["add", "--all"], { cwd: root });
+    const before = await sourceTreeDigest(root);
+
+    const trackedPath = path.join(root, "apps/agent-service/src/removed-before-build.mjs");
+    await rm(trackedPath);
+    const deleted = await sourceTreeDigest(root);
+    expect(deleted).not.toBe(before);
+    execFileSync("git", ["add", "--all"], { cwd: root });
+    expect(await sourceTreeDigest(root)).toBe(deleted);
+
+    await writeFile(trackedPath, "export const value=1;");
+    expect(await sourceTreeDigest(root)).toBe(before);
+    execFileSync("git", ["add", "--all"], { cwd: root });
+    expect(await sourceTreeDigest(root)).toBe(before);
+
+    const addedPath = path.join(root, "apps/agent-service/src/added-after-build.mjs");
+    await writeFile(addedPath, "export {};\n");
+    const added = await sourceTreeDigest(root);
+    expect(added).not.toBe(before);
+    execFileSync("git", ["add", "--all"], { cwd: root });
+    expect(await sourceTreeDigest(root)).toBe(added);
+    await rm(addedPath);
+    expect(await sourceTreeDigest(root)).toBe(before);
+    execFileSync("git", ["add", "--all"], { cwd: root });
+    expect(await sourceTreeDigest(root)).toBe(before);
+
+    await rm(path.join(root, "scripts/ci/execute.mjs"));
+    await expect(sourceTreeDigest(root)).rejects.toThrow(/ENOENT/u);
+  });
   it("follows static, reexport, JSON and dynamic relative imports through cycles", async () => {
     const root = await fixture({
       "build.mjs":

@@ -1,0 +1,10 @@
+{
+  "platform": "linux",
+  "node": "v26.1.0",
+  "dependencySource": "historical-fixture-only",
+  "readiness": {
+    "errors": ["bubblewrap (bwrap) not installed", "socat not installed"],
+    "warnings": []
+  },
+  "productionSuitable": false
+}

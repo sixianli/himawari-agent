@@ -1,4 +1,4 @@
-import { InMemoryCredentialStore, type Api, type Model } from "@earendil-works/pi-ai";
+import { type Api, InMemoryCredentialStore, type Model } from "@earendil-works/pi-ai";
 import type {
   CreateModelRuntimeOptions,
   ModelRuntime,
@@ -7,6 +7,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type {
   ModelDescriptor,
+  ModelInvocationPricing,
   ModelProviderRouting,
   ModelSecretRequirement,
 } from "@himawari-agent/application/runtime-port";
@@ -19,6 +20,11 @@ export interface PiModelCost {
   readonly output: number;
   readonly cacheRead: number;
   readonly cacheWrite: number;
+}
+
+export interface PiModelAdmissionCost {
+  readonly pricing: ModelInvocationPricing;
+  readonly estimatedCostMicros: number;
 }
 
 /**
@@ -34,6 +40,7 @@ export interface ConfiguredPiModelDescriptor extends ModelDescriptor {
   readonly api: "openai-completions";
   readonly baseUrl?: string;
   readonly reasoning: boolean;
+  readonly reasoningRequired?: boolean;
   readonly input: readonly ("text" | "image")[];
   readonly cost: PiModelCost;
   readonly contextWindow: number;
@@ -153,6 +160,13 @@ function validateDescriptor(descriptor: ConfiguredPiModelDescriptor, index: numb
   ] as const) {
     assertNonEmpty(value, `${field}.${name}`);
   }
+  if (
+    descriptor.reasoningRequired !== undefined &&
+    (typeof descriptor.reasoningRequired !== "boolean" ||
+      (descriptor.reasoningRequired && !descriptor.reasoning))
+  ) {
+    throw new TypeError(`${field}.reasoningRequired requires reasoning capability`);
+  }
   if (descriptor.provider !== "openrouter") throw new TypeError(`${field}.provider is unsupported`);
   if (descriptor.api !== "openai-completions") throw new TypeError(`${field}.api is unsupported`);
   if (descriptor.input.length === 0 || !descriptor.input.includes("text")) {
@@ -187,6 +201,29 @@ function validateDescriptor(descriptor: ConfiguredPiModelDescriptor, index: numb
   if (descriptor.baseUrl !== undefined) assertBaseUrl(descriptor.baseUrl);
 }
 
+/**
+ * Convert one immutable product descriptor into the conservative reservation
+ * used by the application admission gate. The estimate is intentionally an
+ * upper bound over the configured context and output limits; terminal billing
+ * still uses provider-reported usage.
+ */
+export function admissionCostForConfiguredPiModel(
+  descriptor: ConfiguredPiModelDescriptor,
+): PiModelAdmissionCost {
+  const estimatedCostMicros = Math.ceil(
+    descriptor.contextWindow *
+      Math.max(descriptor.cost.input, descriptor.cost.cacheRead, descriptor.cost.cacheWrite) +
+      descriptor.maxTokens * descriptor.cost.output,
+  );
+  if (!Number.isSafeInteger(estimatedCostMicros) || estimatedCostMicros < 0) {
+    throw new TypeError("PI_MODEL_ADMISSION_ESTIMATE_UNSAFE");
+  }
+  return Object.freeze({
+    pricing: Object.freeze({ ...descriptor.cost }),
+    estimatedCostMicros,
+  });
+}
+
 function providerModelConfig(
   descriptor: ConfiguredPiModelDescriptor,
   baseUrl: string,
@@ -197,6 +234,7 @@ function providerModelConfig(
     api: descriptor.api,
     baseUrl,
     reasoning: descriptor.reasoning,
+    ...(descriptor.reasoningRequired ? { thinkingLevelMap: { off: null } } : {}),
     input: [...descriptor.input],
     cost: { ...descriptor.cost },
     contextWindow: descriptor.contextWindow,
@@ -280,17 +318,31 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
     const runtime = await this.runtime();
     const model = runtime.getModel(descriptor.provider, descriptor.model);
     if (model === undefined) throw new Error("PI_MODEL_NOT_REGISTERED");
-    return { model: model as Model<Api>, modelRuntime: runtime };
+    const secretRequirement = descriptor.secretRequirement;
+    return {
+      model: model as Model<Api>,
+      modelRuntime: runtime,
+      descriptor,
+      admissionCost: admissionCostForConfiguredPiModel(descriptor),
+      resolveSecret: async () => {
+        const secret = await this.#secretSource.resolve(
+          secretRequirement.secretRef,
+          secretRequirement.secretVersion,
+        );
+        if (typeof secret !== "string" || secret.trim().length === 0) {
+          throw new Error("PI_PROVIDER_SECRET_UNAVAILABLE");
+        }
+        return secret;
+      },
+    };
   }
 
   async close(): Promise<void> {
     await this.#initialization?.catch(() => undefined);
-    const runtime = this.#runtime;
     this.#runtime = undefined;
     this.#initialization = undefined;
-    if (runtime !== undefined) {
-      await runtime.removeRuntimeApiKey("openrouter").catch(() => undefined);
-    }
+    // Provider credentials are request-scoped and are never installed in the
+    // shared Pi runtime, so closing the runtime has no credential cleanup step.
   }
 
   private async runtime(): Promise<ModelRuntime> {
@@ -309,18 +361,6 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
   private async initializeRuntime(): Promise<ModelRuntime> {
     const first = this.#descriptors[0];
     if (first === undefined) throw new Error("PI_MODEL_BINDING_EMPTY");
-    const secretRequirement = first.secretRequirement;
-    let secret: string;
-    try {
-      secret = await this.#secretSource.resolve(
-        secretRequirement.secretRef,
-        secretRequirement.secretVersion,
-      );
-    } catch {
-      throw new Error("PI_PROVIDER_SECRET_UNAVAILABLE");
-    }
-    if (secret.trim().length === 0) throw new Error("PI_PROVIDER_SECRET_UNAVAILABLE");
-
     const baseUrl = first.baseUrl ?? OPENROUTER_BASE_URL;
     const runtime = await this.#runtimeFactory.create({
       credentials: new InMemoryCredentialStore(),
@@ -336,14 +376,12 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
         authHeader: true,
         models: this.#descriptors.map((descriptor) => providerModelConfig(descriptor, baseUrl)),
       } satisfies ProviderConfig);
-      await runtime.setRuntimeApiKey(first.provider, secret);
       for (const descriptor of this.#descriptors) {
         if (runtime.getModel(descriptor.provider, descriptor.model) === undefined) {
           throw new Error("PI_MODEL_NOT_REGISTERED");
         }
       }
     } catch {
-      await runtime.removeRuntimeApiKey(first.provider).catch(() => undefined);
       throw new Error("PI_MODEL_RUNTIME_CONFIGURATION_FAILED");
     }
     return runtime;

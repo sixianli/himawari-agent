@@ -1,0 +1,515 @@
+{
+  "at": "2026-09-11T13:28:59.262Z",
+  "threadId": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+  "scope": "read-only legacy history qualification; no content, signatures, keys or provider calls",
+  "runs": [
+    {
+      "runId": "run:fef12416-a0fc-475c-a596-318c89c2e445",
+      "status": "cancelled",
+      "sequence": 1,
+      "partialEvents": 9,
+      "finalMessages": [
+        {
+          "traceSequence": 8,
+          "payloadRef": "runtime-payload:bbf6ec67-54df-4346-80e5-ba262f579dd8",
+          "digest": "sha256:f2de6eca15ff793e88cb6cc96368293f61815fa3297e3dad9993d886c56a46e5",
+          "role": "user",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 16,
+          "payloadRef": "runtime-payload:aa1ae65c-1288-4e08-9a64-5421dd020749",
+          "digest": "sha256:724edc6f9c2e0d0416e1151042e83093190670fdc344e6c581cb63294cbc4b10",
+          "role": "assistant",
+          "stopReason": "toolUse",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 1,
+          "hasProviderIdentity": true
+        },
+        {
+          "traceSequence": 23,
+          "payloadRef": "runtime-payload:60d7ec7b-3c36-46e5-b2a8-966bab3a14b0",
+          "digest": "sha256:724edc6f9c2e0d0416e1151042e83093190670fdc344e6c581cb63294cbc4b10",
+          "role": "assistant",
+          "stopReason": "toolUse",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 1,
+          "hasProviderIdentity": true
+        },
+        {
+          "traceSequence": 29,
+          "payloadRef": "runtime-payload:c4cf0ebf-6ddb-4500-846d-2a16eec154c6",
+          "digest": "sha256:a8c59873ec794128065ef0189c4d217d90cc8d38e7be5e665390bcb1aabd3672",
+          "role": "toolResult",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 33,
+          "payloadRef": "runtime-payload:ef480604-bf97-4e4e-9794-d284af6fc15a",
+          "digest": "sha256:ba882d5993b304fa6a3ebe15533fd1c243753ae6e13f54d1fd0076a71511b544",
+          "role": "assistant",
+          "stopReason": "error",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": true
+        }
+      ],
+      "unpairedCallCount": 0,
+      "orphanResultCount": 0
+    },
+    {
+      "runId": "run:9f7cdb58-003f-4041-8855-1e93972c22e3",
+      "status": "cancelled",
+      "sequence": 2,
+      "partialEvents": 9,
+      "finalMessages": [
+        {
+          "traceSequence": 8,
+          "payloadRef": "runtime-payload:74f11cea-9ff9-4180-b2dc-45d16227e61e",
+          "digest": "sha256:566c73137ed65483461048738f556be4a35c806dff026f0e3c3442376a22dc3a",
+          "role": "user",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 16,
+          "payloadRef": "runtime-payload:9c6c285c-dfe5-4677-9c17-53173c314613",
+          "digest": "sha256:21a437b9597976adec2f4d4594d9ba26c2fdfb2c46a6e0562359c8a18739f39d",
+          "role": "assistant",
+          "stopReason": "toolUse",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 1,
+          "hasProviderIdentity": true
+        },
+        {
+          "traceSequence": 23,
+          "payloadRef": "runtime-payload:220aaac8-6c27-402c-ba1b-91fd759f5664",
+          "digest": "sha256:21a437b9597976adec2f4d4594d9ba26c2fdfb2c46a6e0562359c8a18739f39d",
+          "role": "assistant",
+          "stopReason": "toolUse",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 1,
+          "hasProviderIdentity": true
+        },
+        {
+          "traceSequence": 29,
+          "payloadRef": "runtime-payload:685b9547-cb08-4d44-b463-6e91533c47b4",
+          "digest": "sha256:6eaef0525ffa7453b06452fae4966fa06e04174f586510e242f91a9301d3e825",
+          "role": "toolResult",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 33,
+          "payloadRef": "runtime-payload:a2cf1240-455e-4a33-819f-9c8130d3fdec",
+          "digest": "sha256:7c814c40e865313855c646d14b12f8918cfdecd6cea254049b371ebe681d3c04",
+          "role": "assistant",
+          "stopReason": "error",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": true
+        }
+      ],
+      "unpairedCallCount": 0,
+      "orphanResultCount": 0
+    },
+    {
+      "runId": "run:78973d12-b7ac-498a-ad25-8149bdb738a9",
+      "status": "completed",
+      "sequence": 3,
+      "partialEvents": 75,
+      "finalMessages": [
+        {
+          "traceSequence": 8,
+          "payloadRef": "runtime-payload:37a49e4f-2f43-4342-b155-c2922a2a5b9d",
+          "digest": "sha256:6b06aead8a763f07f4cd6385f3480b9fb17238671f305ab29351f3bf037dfbc4",
+          "role": "user",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 16,
+          "payloadRef": "runtime-payload:264ec479-e376-4157-889b-725763b7787a",
+          "digest": "sha256:e970ee9b7d6ea3641aec72fa221e7b65fb510d2593035efa7a11f6fdf984e95e",
+          "role": "assistant",
+          "stopReason": "toolUse",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 1,
+          "hasProviderIdentity": true
+        },
+        {
+          "traceSequence": 23,
+          "payloadRef": "runtime-payload:47da8f94-dd52-4814-8f4b-3add6742102b",
+          "digest": "sha256:e970ee9b7d6ea3641aec72fa221e7b65fb510d2593035efa7a11f6fdf984e95e",
+          "role": "assistant",
+          "stopReason": "toolUse",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 1,
+          "hasProviderIdentity": true
+        },
+        {
+          "traceSequence": 29,
+          "payloadRef": "runtime-payload:d8994d96-6f1d-4a05-a883-73111e84ea94",
+          "digest": "sha256:f5350116366ea8d43943807db2a861f7e20395e2423c544e54717308c10e38b2",
+          "role": "toolResult",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 101,
+          "payloadRef": "runtime-payload:36b6c37d-5c3a-41e5-8f4f-84aa7f21bbad",
+          "digest": "sha256:64d0e45f923ffc611a60e8fc46fbb4bf67121326cbdae91c30cf31c5f49b6d3a",
+          "role": "assistant",
+          "stopReason": "stop",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": true
+        }
+      ],
+      "unpairedCallCount": 0,
+      "orphanResultCount": 0
+    },
+    {
+      "runId": "run:9031a2fa-7494-49e8-acc9-2b603d9a7c03",
+      "status": "completed",
+      "sequence": 5,
+      "partialEvents": 643,
+      "finalMessages": [
+        {
+          "traceSequence": 8,
+          "payloadRef": "runtime-payload:846767f3-dea2-4ff3-b248-c2050e529f72",
+          "digest": "sha256:417cf1afb80ce60a0c4c833724245fb0d8cc88657e558f2760f743c0d22d8c63",
+          "role": "user",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 16,
+          "payloadRef": "runtime-payload:d5232afc-6955-493a-80a3-37f7672de9b8",
+          "digest": "sha256:373ea851d1a9320fbbeadaf4afe5708fc64652468244af865a246550af778289",
+          "role": "assistant",
+          "stopReason": "toolUse",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 1,
+          "hasProviderIdentity": true
+        },
+        {
+          "traceSequence": 23,
+          "payloadRef": "runtime-payload:34f673ed-0e42-4aca-b75e-aaeff24c61ae",
+          "digest": "sha256:373ea851d1a9320fbbeadaf4afe5708fc64652468244af865a246550af778289",
+          "role": "assistant",
+          "stopReason": "toolUse",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 1,
+          "hasProviderIdentity": true
+        },
+        {
+          "traceSequence": 29,
+          "payloadRef": "runtime-payload:05a992a1-168b-4b52-809e-7fa52c98fc1c",
+          "digest": "sha256:68947adad16b1aa60d342818f2566a31b27daefd38a0fea78c7fc1685ecabf77",
+          "role": "toolResult",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 669,
+          "payloadRef": "runtime-payload:4a225fbf-8d39-4585-ad28-2e9705dce7f4",
+          "digest": "sha256:67a240a43817a066a05804c27d8d5112c4d1658808a7ba950294bcffdc6308ab",
+          "role": "assistant",
+          "stopReason": "stop",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": true
+        }
+      ],
+      "unpairedCallCount": 0,
+      "orphanResultCount": 0
+    },
+    {
+      "runId": "run:ed204253-6f5e-4505-b3e0-b30ae94ecb38",
+      "status": "completed",
+      "sequence": 7,
+      "partialEvents": 295,
+      "finalMessages": [
+        {
+          "traceSequence": 8,
+          "payloadRef": "runtime-payload:20808a75-5455-4d96-9ad8-fd89195b5406",
+          "digest": "sha256:f8951ae233429aa37d60dd6639ba2ee72781da53cf15dc323d8db216e3913f62",
+          "role": "user",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 39,
+          "payloadRef": "runtime-payload:925009c4-8f87-4bbc-b532-c58699f15763",
+          "digest": "sha256:1579e4512e70556c0ad2b7fdd36333b22173e4844ac6ce554068283167d2d307",
+          "role": "assistant",
+          "stopReason": "toolUse",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 1,
+          "hasProviderIdentity": true
+        },
+        {
+          "traceSequence": 47,
+          "payloadRef": "runtime-payload:8f173b65-04d5-4c37-a3b1-9cf5683e7772",
+          "digest": "sha256:1579e4512e70556c0ad2b7fdd36333b22173e4844ac6ce554068283167d2d307",
+          "role": "assistant",
+          "stopReason": "toolUse",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 1,
+          "hasProviderIdentity": true
+        },
+        {
+          "traceSequence": 52,
+          "payloadRef": "runtime-payload:d1e1f639-e37d-4797-96a4-1c1bbe557907",
+          "digest": "sha256:8ed32177e79da05132b7ae6f744e878d7d35b67414208ec10a414966664d39c0",
+          "role": "toolResult",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 321,
+          "payloadRef": "runtime-payload:61160a75-dafa-44ca-8907-4bff5d8e3ff0",
+          "digest": "sha256:ae5606fde9aa4bf1dbba11a28fe8bc64cd566cbc4901f2cfe9b16d0d4a7b707c",
+          "role": "assistant",
+          "stopReason": "stop",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": true
+        }
+      ],
+      "unpairedCallCount": 0,
+      "orphanResultCount": 0
+    },
+    {
+      "runId": "run:408dd8f3-1e41-4eb8-9fb2-ea78a8dcd29d",
+      "status": "completed",
+      "sequence": 9,
+      "partialEvents": 21,
+      "finalMessages": [
+        {
+          "traceSequence": 8,
+          "payloadRef": "runtime-payload:4cbe30f5-4d2e-4d03-bc7d-4790190e3d05",
+          "digest": "sha256:b6182bbd794cc5d8ab006c8603675e36b5dc721013fd79ff8391dd7c4d76641a",
+          "role": "user",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 31,
+          "payloadRef": "runtime-payload:d88a6f9d-524a-4a2d-8cdc-95ec63d5a146",
+          "digest": "sha256:b68096527b64cb03371e75a0a896636b336c5fbdd92084d1f253e0155320789e",
+          "role": "assistant",
+          "stopReason": "stop",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": true
+        }
+      ],
+      "unpairedCallCount": 0,
+      "orphanResultCount": 0
+    },
+    {
+      "runId": "run:cf969f0a-75f6-42e1-a39b-64903861b3ca",
+      "status": "completed",
+      "sequence": 11,
+      "partialEvents": 67,
+      "finalMessages": [
+        {
+          "traceSequence": 8,
+          "payloadRef": "runtime-payload:32e6d14b-e5ce-4a34-a610-2787e67e16b0",
+          "digest": "sha256:20a3f67720d5cd0a08a5c7eceffddeed5250e007493e20ea1007637f39c84887",
+          "role": "user",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 77,
+          "payloadRef": "runtime-payload:ee21f382-a579-4a27-a7fd-5915edf6923a",
+          "digest": "sha256:42a037d7fdf1e6783d3eadda2666529dad79d42a5365906bdbfa6b18d809eae2",
+          "role": "assistant",
+          "stopReason": "stop",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": true
+        }
+      ],
+      "unpairedCallCount": 0,
+      "orphanResultCount": 0
+    },
+    {
+      "runId": "run:3765d027-b296-453c-8c3b-c7fcf073da77",
+      "status": "completed",
+      "sequence": 13,
+      "partialEvents": 82,
+      "finalMessages": [
+        {
+          "traceSequence": 8,
+          "payloadRef": "runtime-payload:b8e1731e-7871-4e4b-ae26-4817b6e3f9e3",
+          "digest": "sha256:0db317a8e412e2edb3e772c8b133da3adf544abd5a1a58ed8bf9cd94f00ad076",
+          "role": "user",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 16,
+          "payloadRef": "runtime-payload:90f94ea4-5e00-4a8e-a2eb-94002f90952e",
+          "digest": "sha256:e05f1ae67518ae18d94ffcaa8dcfec91c651ba2714f1df5fccf365b9129508cb",
+          "role": "assistant",
+          "stopReason": "toolUse",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 1,
+          "hasProviderIdentity": true
+        },
+        {
+          "traceSequence": 23,
+          "payloadRef": "runtime-payload:f9132b5a-a205-45dd-858a-f933fe09877d",
+          "digest": "sha256:e05f1ae67518ae18d94ffcaa8dcfec91c651ba2714f1df5fccf365b9129508cb",
+          "role": "assistant",
+          "stopReason": "toolUse",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 1,
+          "hasProviderIdentity": true
+        },
+        {
+          "traceSequence": 28,
+          "payloadRef": "runtime-payload:55c754c9-91b4-4ecc-a61c-14961a5db6ec",
+          "digest": "sha256:f972762ae7394a97bfc73c61ec544755ba7baa5407e20e066b5187a7b097d222",
+          "role": "toolResult",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 107,
+          "payloadRef": "runtime-payload:5fd14924-6c69-49c0-a1e6-8636d1f3dc1e",
+          "digest": "sha256:7116f8a34f1c2ae0c85bb85672faf328b76aa44e06082b3822f4ad0d8ac43d7b",
+          "role": "assistant",
+          "stopReason": "stop",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": true
+        }
+      ],
+      "unpairedCallCount": 0,
+      "orphanResultCount": 0
+    },
+    {
+      "runId": "run:ab5b4803-23d6-4da6-86b6-945bb7ed9583",
+      "status": "cancelled",
+      "sequence": 15,
+      "partialEvents": 110,
+      "finalMessages": [
+        {
+          "traceSequence": 8,
+          "payloadRef": "runtime-payload:254e9ddf-4a2d-4d4b-aaf1-a6a511e0403d",
+          "digest": "sha256:88c2aae127a2acc25a11292822d8a93ed976bf73060fd4d9a24a25ef51c50d9d",
+          "role": "user",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        }
+      ],
+      "unpairedCallCount": 0,
+      "orphanResultCount": 0
+    },
+    {
+      "runId": "run:27c7c9a9-2f5f-48e9-b65f-1945114d278e",
+      "status": "completed",
+      "sequence": 16,
+      "partialEvents": 239,
+      "finalMessages": [
+        {
+          "traceSequence": 8,
+          "payloadRef": "runtime-payload:f9b6386a-9b14-4d0a-b06f-bea9bf5bed32",
+          "digest": "sha256:b492ccbed8b4c93dacdc6fc08cf6150b896d5233e2a4f013d45496c8d1a9c656",
+          "role": "user",
+          "stopReason": null,
+          "redacted": false,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": false
+        },
+        {
+          "traceSequence": 249,
+          "payloadRef": "runtime-payload:271f8481-e59c-4d35-a0eb-2ee8fc6a2697",
+          "digest": "sha256:36d5cb4604c03416fd61a32e91c83d9331462c3c4473e28e65dd13eab89d8cb2",
+          "role": "assistant",
+          "stopReason": "stop",
+          "redacted": true,
+          "localUnwind": false,
+          "toolCalls": 0,
+          "hasProviderIdentity": true
+        }
+      ],
+      "unpairedCallCount": 0,
+      "orphanResultCount": 0
+    }
+  ],
+  "passed": true
+}

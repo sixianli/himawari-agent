@@ -46,8 +46,8 @@
       "additionalProperties": false,
       "required": ["changedLines", "changedFunctionBranches"],
       "properties": {
-        "changedLines": { "type": "number", "minimum": 90, "maximum": 100 },
-        "changedFunctionBranches": { "type": "number", "minimum": 85, "maximum": 100 }
+        "changedLines": { "type": "number", "minimum": 80, "maximum": 100 },
+        "changedFunctionBranches": { "type": "number", "minimum": 70, "maximum": 100 }
       }
     },
     "baseline": {

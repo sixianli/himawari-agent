@@ -1,16 +1,16 @@
 import {
-  ContractValidationError,
-  type InferSchema,
-  type Schema,
   array,
   booleanValue,
+  ContractValidationError,
   enumeration,
+  type InferSchema,
   integer,
   literal,
   machineString,
   nullable,
   object,
   parseJson,
+  type Schema,
   timestamp,
 } from "./validation.js";
 
@@ -18,6 +18,8 @@ export const THREAD_GATEWAY_SCHEMA_VERSION = "gateway.thread.v3" as const;
 export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.create",
   "thread.message.submit",
+  "thread.message.submit_configured",
+  "thread.run.cancel",
   "thread.message.commit_assistant",
   "thread.rename",
   "thread.pin",
@@ -32,6 +34,8 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.events",
   "thread.list",
   "thread.detail",
+  "thread.execution",
+  "thread.execution_snapshot",
   "thread.search",
   "thread.lineage",
   "thread.checkpoint",
@@ -70,6 +74,8 @@ const threadStatusSchema = enumeration([
 const threadCommandTypeSchema = enumeration([
   "thread.create",
   "thread.message.submit",
+  "thread.message.submit_configured",
+  "thread.run.cancel",
   "thread.message.commit_assistant",
   "thread.rename",
   "thread.pin",
@@ -135,6 +141,35 @@ export const submitThreadMessageV3CommandSchema = object({
     sourceProofRef: machineString,
     dataClassification: classificationSchema,
     occurredAt: timestamp,
+    resultRef: machineString,
+  }),
+});
+
+export const submitConfiguredThreadMessageSchema = object({
+  ...commandEnvelope("thread.message.submit_configured"),
+  payload: object({
+    modelRef: machineString,
+    thinkingLevel: enumeration(["off", "minimal", "low", "medium", "high", "xhigh", "max"]),
+    threadId: machineString,
+    expectedRevision: integer(1),
+    messageId: machineString,
+    turnId: machineString,
+    runId: machineString,
+    sessionId: machineString,
+    contentRef: machineString,
+    sourceProofRef: machineString,
+    dataClassification: classificationSchema,
+    occurredAt: timestamp,
+    resultRef: machineString,
+  }),
+});
+
+const cancelThreadRunSchema = object({
+  ...commandEnvelope("thread.run.cancel"),
+  payload: object({
+    threadId: machineString,
+    runId: machineString,
+    expectedRunRevision: integer(1),
     resultRef: machineString,
   }),
 });
@@ -481,7 +516,59 @@ export const threadEventV3Schema = object({
   }),
 });
 
+const displayText: Schema<string> = {
+  parse(value, path = "$") {
+    if (typeof value !== "string" || value.length > 65536)
+      throw new ContractValidationError(path, "expected bounded display text");
+    return value;
+  },
+};
+export const threadExecutionRecordSchema = object({
+  id: machineString,
+  sequence: integer(1),
+  itemId: machineString,
+  kind: enumeration(["message", "tool", "status"]),
+  phase: enumeration([
+    "started",
+    "updated",
+    "completed",
+    "failed",
+    "waiting",
+    "stopped",
+    "unavailable",
+  ]),
+  name: displayText,
+  text: displayText,
+  input: displayText,
+  output: displayText,
+  occurredAt: timestamp,
+});
+export type ThreadExecutionRecord = InferSchema<typeof threadExecutionRecordSchema>;
+const threadExecutionQuerySchema = object({
+  ...envelope("query", "thread.execution"),
+  payload: object({
+    threadId: machineString,
+    runId: machineString,
+    afterSequence: integer(0),
+    limit: integer(1, 1000),
+  }),
+});
+const threadExecutionSnapshotSchema = object({
+  ...envelope("snapshot", "thread.execution_snapshot"),
+  payload: object({
+    threadId: machineString,
+    runId: machineString,
+    records: array(threadExecutionRecordSchema),
+    nextSequence: nullable(integer(1)),
+    generatedAt: timestamp,
+  }),
+});
+
 const schemasByType = {
+  "thread.message.submit_configured": submitConfiguredThreadMessageSchema,
+  "thread.run.cancel": cancelThreadRunSchema,
+  "thread.execution": threadExecutionQuerySchema,
+  "thread.execution_snapshot": threadExecutionSnapshotSchema,
   "thread.create": createThreadV3CommandSchema,
   "thread.message.submit": submitThreadMessageV3CommandSchema,
   "thread.message.commit_assistant": commitAssistantMessageV3CommandSchema,

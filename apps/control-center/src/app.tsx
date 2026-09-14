@@ -1,9 +1,11 @@
+import { AccountLogin, AccountDevices, accountRequest } from "./components/account-login.js";
 import type { GatewayV2Query, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ControlCenterShell } from "./app/app-shell.js";
 import {
   CONTROL_CENTER_SURFACE_INVENTORY,
   type ControlCenterSurfaceInventoryEntry,
+  isSurfaceInstalled,
 } from "./app/control-center-inventory.js";
 import {
   type ControlCenterRouteState,
@@ -12,9 +14,9 @@ import {
 } from "./app/router.js";
 import {
   ControlCenterBrowserStorage,
-  THREAD_CURSOR_STORAGE_KEY,
   type ControlCenterPreferences,
   type ControlCenterUiLocale,
+  THREAD_CURSOR_STORAGE_KEY,
 } from "./browser-storage.js";
 import {
   ActionButton,
@@ -25,18 +27,25 @@ import {
   StatusRegion,
   Tabs,
 } from "./components/index.js";
-import { GatewayClient, loadRuntimeConfiguration, type MutationStatus } from "./gateway-client.js";
+import {
+  createBrowserSession,
+  GatewayClient,
+  loadRuntimeConfiguration,
+  refreshRuntimeConfiguration,
+  type MutationStatus,
+} from "./gateway-client.js";
+import { useGovernanceControlCenter } from "./governance-control-center.js";
+import { HealthControlCenter } from "./health-control-center.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import {
   bootstrapLoadingLabel,
   ControlCenterIntlProvider,
   useControlCenterIntl,
 } from "./i18n/runtime.js";
+import { useOperationsControlCenter } from "./operations-control-center.js";
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
 import { useThreadControlCenter } from "./thread-control-center.js";
 import { ThreadSseSynchronizer } from "./thread-sse-synchronizer.js";
-import { useGovernanceControlCenter } from "./governance-control-center.js";
-import { useOperationsControlCenter } from "./operations-control-center.js";
 
 type SurfaceId = (typeof CONTROL_CENTER_SURFACE_INVENTORY)[number]["id"];
 type RuntimeConfiguration = Awaited<ReturnType<typeof loadRuntimeConfiguration>>;
@@ -119,6 +128,10 @@ export function ControlCenterApp() {
   const [preferences, setPreferences] = useState<ControlCenterPreferences>(() =>
     storage.readPreferences(),
   );
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", preferences.theme);
+    document.documentElement.setAttribute("data-accent", preferences.accent ?? "violet");
+  }, [preferences]);
   const updateLocale = (next: ControlCenterUiLocale) => {
     storage.saveLocale(next);
     setLocale(next);
@@ -161,11 +174,29 @@ function LocalizedControlCenterApp({
     match.kind === "matched" ? match.state : routeForSurface("threads", { view: "content" });
   const surface = surfaceInventory(route.surfaceId);
   const [configuration, setConfiguration] = useState<RuntimeConfiguration>();
+  const [identityMethod, setIdentityMethod] = useState<"built-in" | "cloudflare-access" | null>(
+    null,
+  );
+  const nativeDevices = identityMethod === "built-in" && route.surfaceId === "sessions-devices";
+  const surfaceInstalled =
+    configuration !== undefined &&
+    (nativeDevices ||
+      isSurfaceInstalled(
+        surface,
+        configuration.installedGatewayV2Operations ?? [],
+        configuration.healthDependenciesAvailable,
+      ));
+  const [authenticationRequired, setAuthenticationRequired] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const [bootstrapRevision, setBootstrapRevision] = useState(0);
   const [client, setClient] = useState<GatewayClient>();
   const [snapshot, setSnapshot] = useState<GatewayV2Snapshot>();
   const [gatewayRefreshSignal, setGatewayRefreshSignal] = useState(0);
   const [threadRefreshSignal, setThreadRefreshSignal] = useState(0);
   const [connection, setConnection] = useState<"connecting" | "connected" | "offline">(
+    "connecting",
+  );
+  const [threadConnection, setThreadConnection] = useState<"connecting" | "connected" | "offline">(
     "connecting",
   );
   const [loading, setLoading] = useState(false);
@@ -179,24 +210,79 @@ function LocalizedControlCenterApp({
   }, [route]);
 
   useEffect(() => {
+    void bootstrapRevision;
     let active = true;
     void loadRuntimeConfiguration(window.fetch.bind(window))
       .then((loaded) => {
         if (!active) return;
+        setAuthenticationRequired(false);
+        setRequestError(null);
         setConfiguration(loaded);
         setClient(
           new GatewayClient({
             fetch: window.fetch.bind(window),
             csrfToken: () => loaded.csrfToken,
+            refreshCsrfToken: async () => {
+              if (!active) throw new Error("CONTROL_CENTER_CLIENT_DISPOSED");
+              const fresh = await refreshRuntimeConfiguration(window.fetch.bind(window), loaded);
+              if (!active) throw new Error("CONTROL_CENTER_CLIENT_DISPOSED");
+              setConfiguration((current) =>
+                current ? { ...current, csrfToken: fresh.csrfToken } : current,
+              );
+              return fresh.csrfToken;
+            },
           }),
         );
       })
       .catch((error: Error) => {
-        if (active) setRequestError(error.message);
+        if (active) {
+          setRequestError(error.message);
+          const status = "status" in error ? error.status : undefined;
+          setAuthenticationRequired(status === 401 || status === 403);
+        }
       });
     return () => {
       active = false;
     };
+  }, [bootstrapRevision]);
+
+  useEffect(() => {
+    let active = true;
+    void accountRequest("method")
+      .then((value) => {
+        if (!active || !value || typeof value !== "object" || !("method" in value)) return;
+        if (value.method === "built-in" || value.method === "cloudflare-access")
+          setIdentityMethod(value.method);
+      })
+      .catch(() => {
+        /* Older external Gateway deployments retain their explicit session exchange. */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const signIn = async () => {
+    if (signingIn) return;
+    setSigningIn(true);
+    try {
+      await createBrowserSession(window.fetch.bind(window), message("authentication.deviceLabel"));
+      setBootstrapRevision((revision) => revision + 1);
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : "CONTROL_CENTER_REQUEST_REJECTED");
+    } finally {
+      setSigningIn(false);
+    }
+  };
+
+  const clearPrivateViewState = useCallback(() => {
+    setSnapshot(undefined);
+    setSelectedRef("");
+    setMutationStatus(null);
+    setRequestError("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
+    setAuthenticationRequired(true);
+    setConfiguration(undefined);
+    setClient(undefined);
   }, []);
 
   useEffect(() => {
@@ -207,18 +293,26 @@ function LocalizedControlCenterApp({
       onEvent: () => setGatewayRefreshSignal((current) => current + 1),
       onSnapshotRequired: () => setGatewayRefreshSignal((current) => current + 1),
       onConnectionState: setConnection,
+      onUnauthorized: clearPrivateViewState,
       log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
-    const reconnect = () => synchronizer.reconnectNow();
-    window.addEventListener("online", reconnect);
+    // navigator.onLine is an OS hint; establish the real transport before declaring offline.
+    const online = () => synchronizer.setNetworkOnline(true);
+    const offline = () => synchronizer.setNetworkOnline(false);
+    const reconnect = () => {
+      if (document.visibilityState === "visible") synchronizer.reconnectNow();
+    };
+    window.addEventListener("online", online);
+    window.addEventListener("offline", offline);
     document.addEventListener("visibilitychange", reconnect);
     return () => {
-      window.removeEventListener("online", reconnect);
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", offline);
       document.removeEventListener("visibilitychange", reconnect);
       synchronizer.stop();
     };
-  }, [configuration, storage]);
+  }, [configuration, storage, clearPrivateViewState]);
 
   useEffect(() => {
     if (!configuration) return;
@@ -228,32 +322,34 @@ function LocalizedControlCenterApp({
       createEventSource: (url) => new EventSource(url, { withCredentials: true }),
       onCommittedEvent: () => setThreadRefreshSignal((current) => current + 1),
       onSnapshotRequired: () => setThreadRefreshSignal((current) => current + 1),
+      onConnectionState: setThreadConnection,
+      onUnauthorized: clearPrivateViewState,
       log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
-    const reconnect = () => synchronizer.reconnectNow();
+    // navigator.onLine is an OS hint; establish the real transport before declaring offline.
+    const online = () => synchronizer.setNetworkOnline(true);
+    const offline = () => synchronizer.setNetworkOnline(false);
+    const reconnect = () => {
+      if (document.visibilityState === "visible") synchronizer.reconnectNow();
+    };
     const synchronizeTab = (event: StorageEvent) => {
       if (event.key === THREAD_CURSOR_STORAGE_KEY) {
         setThreadRefreshSignal((current) => current + 1);
       }
     };
-    window.addEventListener("online", reconnect);
+    window.addEventListener("online", online);
+    window.addEventListener("offline", offline);
     window.addEventListener("storage", synchronizeTab);
     document.addEventListener("visibilitychange", reconnect);
     return () => {
-      window.removeEventListener("online", reconnect);
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", offline);
       window.removeEventListener("storage", synchronizeTab);
       document.removeEventListener("visibilitychange", reconnect);
       synchronizer.stop();
     };
-  }, [configuration, storage]);
-
-  const clearPrivateViewState = useCallback(() => {
-    setSnapshot(undefined);
-    setSelectedRef("");
-    setMutationStatus(null);
-    setRequestError("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
-  }, []);
+  }, [configuration, storage, clearPrivateViewState]);
 
   const refresh = useCallback(async () => {
     if (!client || !configuration) return;
@@ -288,7 +384,7 @@ function LocalizedControlCenterApp({
     active: route.surfaceId === "threads",
     client,
     configuration,
-    connection,
+    connection: threadConnection,
     message,
     navigate,
     refreshSignal: threadRefreshSignal,
@@ -302,7 +398,7 @@ function LocalizedControlCenterApp({
     "authorizations-grants",
   ].includes(route.surfaceId);
   const governanceModel = useGovernanceControlCenter({
-    active: governanceSurface,
+    active: governanceSurface && surfaceInstalled,
     client,
     configuration,
     connection,
@@ -315,7 +411,7 @@ function LocalizedControlCenterApp({
   });
   const operationsSurface = route.surfaceId !== "threads" && !governanceSurface;
   const operationsModel = useOperationsControlCenter({
-    active: operationsSurface,
+    active: operationsSurface && surfaceInstalled && route.surfaceId !== "health-deployment",
     client,
     configuration,
     connection,
@@ -519,39 +615,80 @@ function LocalizedControlCenterApp({
 
   return (
     <ControlCenterShell
-      connection={connection}
+      builtInIdentity={identityMethod === "built-in" && Boolean(configuration)}
+      healthDependenciesAvailable={configuration?.healthDependenciesAvailable ?? false}
+      installedGatewayV2Operations={configuration?.installedGatewayV2Operations ?? []}
+      connection={
+        configuration ? (route.surfaceId === "threads" ? threadConnection : connection) : null
+      }
       content={
-        route.surfaceId === "threads"
-          ? threadModel.content
-          : governanceSurface
-            ? governanceModel.content
-            : operationsSurface
-              ? operationsModel.content
-              : genericContent
+        !configuration && authenticationRequired && identityMethod === "built-in" ? (
+          <AccountLogin onComplete={() => setBootstrapRevision((value) => value + 1)} />
+        ) : !configuration && requestError ? (
+          <Banner
+            title={message(
+              authenticationRequired ? "authentication.required" : "error.currentUnavailable",
+            )}
+            tone="warning"
+          >
+            {authenticationRequired ? (
+              <ActionButton disabled={signingIn} onClick={() => void signIn()}>
+                {message("authentication.signIn")}
+              </ActionButton>
+            ) : null}
+            <code>{requestError}</code>
+          </Banner>
+        ) : configuration && nativeDevices ? (
+          <AccountDevices
+            csrfToken={configuration.csrfToken}
+            onSignedOut={clearPrivateViewState}
+            onReauthenticated={() => setBootstrapRevision((value) => value + 1)}
+          />
+        ) : configuration && !surfaceInstalled ? (
+          <Banner title={message("surface.notInstalled.title")} tone="warning">
+            <p>{message("surface.notInstalled.description")}</p>
+          </Banner>
+        ) : route.surfaceId === "health-deployment" && client ? (
+          <HealthControlCenter client={client} onUnauthorized={clearPrivateViewState} />
+        ) : route.surfaceId === "threads" ? (
+          threadModel.content
+        ) : governanceSurface ? (
+          governanceModel.content
+        ) : operationsSurface ? (
+          operationsModel.content
+        ) : (
+          genericContent
+        )
       }
       details={
-        route.surfaceId === "threads"
-          ? threadModel.details
-          : governanceSurface
-            ? governanceModel.details
-            : operationsSurface
-              ? operationsModel.details
-              : genericDetails
+        !configuration || !surfaceInstalled || route.surfaceId === "health-deployment"
+          ? null
+          : route.surfaceId === "threads"
+            ? threadModel.details
+            : governanceSurface
+              ? governanceModel.details
+              : operationsSurface
+                ? operationsModel.details
+                : genericDetails
       }
       list={
-        route.surfaceId === "threads"
-          ? threadModel.list
-          : governanceSurface
-            ? governanceModel.list
-            : operationsSurface
-              ? operationsModel.list
-              : genericList
+        !configuration || !surfaceInstalled || route.surfaceId === "health-deployment"
+          ? null
+          : route.surfaceId === "threads"
+            ? threadModel.list
+            : governanceSurface
+              ? governanceModel.list
+              : operationsSurface
+                ? operationsModel.list
+                : genericList
       }
       locale={locale}
       onLocaleChange={onLocaleChange}
       onNavigate={navigate}
       onPreferencesChange={onPreferencesChange}
-      pageTitle={message(titleIds[route.surfaceId])}
+      pageTitle={
+        route.surfaceId === "threads" ? threadModel.title : message(titleIds[route.surfaceId])
+      }
       preferences={preferences}
       route={route}
     />

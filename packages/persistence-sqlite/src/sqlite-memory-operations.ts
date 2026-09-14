@@ -131,6 +131,14 @@ export class SqliteMemoryOperations {
         return this.save(
           payload as { memory: ProductMemoryRecord; expectedRevision: number | null },
         );
+      case "memory.saveWithProjection":
+        return this.saveWithProjection(
+          payload as {
+            memory: ProductMemoryRecord;
+            expectedRevision: number | null;
+            job: MemoryProjectionJob;
+          },
+        );
       case "memory.listActive":
         return this.listActive(payload as { ownerId: OwnerId; agentId: AgentId });
       case "memory.markUsed":
@@ -321,6 +329,29 @@ export class SqliteMemoryOperations {
     }
     if (current === "archived" || current === "trashed") return next === "deletion_pending";
     return current === "deletion_pending" && next === "deleted_verified";
+  }
+
+  private saveWithProjection(input: {
+    memory: ProductMemoryRecord;
+    expectedRevision: number | null;
+    job: MemoryProjectionJob;
+  }): ProductMemoryRecord {
+    if (
+      input.job.memoryId !== input.memory.id ||
+      input.job.memoryRevision !== input.memory.revision ||
+      input.job.operation !== (input.memory.status === "active" ? "upsert" : "delete") ||
+      input.memory.status === "deleted_verified" ||
+      input.job.providerRecordId !== input.memory.providerRecordId
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "Memory projection does not match the saved record");
+    }
+    return this.database
+      .transaction(() => {
+        const saved = this.save(input);
+        this.proposeJob({ job: input.job, requeueCompleted: false });
+        return saved;
+      })
+      .immediate();
   }
 
   private save(input: {

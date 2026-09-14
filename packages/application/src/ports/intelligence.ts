@@ -1,5 +1,9 @@
 import type { AgentId, OwnerId, RunId, SessionId, ThreadId, TurnId } from "@himawari-agent/domain";
 import type { CorrelationId, DataClassification, JsonObject, PayloadRef } from "./common.js";
+import type { ProductContextBlockKind } from "./context-projection.js";
+import type { RunExecutionLeaseClaim } from "./run-dispatch.js";
+
+export type { ProductContextEnvelopeV1 } from "./context-projection.js";
 
 export interface MemoryRecord {
   readonly id: string;
@@ -17,6 +21,11 @@ export interface MemoryCandidate extends MemoryRecord {
 }
 
 export interface MemorySearchRequest {
+  readonly signal?: AbortSignal;
+  readonly deadlineAt?: string;
+  readonly runId?: RunId;
+  readonly executionLease?: RunExecutionLeaseClaim;
+  readonly dataClassification?: DataClassification;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly queryRef: PayloadRef;
@@ -120,6 +129,9 @@ export type ModelInvocationEvent =
       readonly invocationId: string;
       readonly inputTokens: number;
       readonly outputTokens: number;
+      /** Provider-reported cache token counts, when the transport exposes them. */
+      readonly cacheReadTokens?: number;
+      readonly cacheWriteTokens?: number;
       readonly costMicros: number;
       readonly latencyMs: number;
       readonly providerObservation?: ModelProviderObservation;
@@ -140,25 +152,65 @@ export interface ModelPort {
 }
 
 export interface RuntimeRequest {
+  readonly thinkingLevel?: import("./run-execution-source.js").RunThinkingLevel;
+  /** Product checkpoint for resuming the same logical tool batch. */
+  readonly continuationRef?: PayloadRef;
+  /** Absolute product deadline; tools must not extend this execution window. */
+  readonly executionDeadlineAt?: string;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly runId: RunId;
+  /** Frozen claim supplied by the canonical Run dispatch boundary. */
+  readonly executionLease: RunExecutionLeaseClaim;
   readonly sessionId: SessionId;
   readonly threadId: ThreadId | null;
   readonly modelRef: string;
   readonly systemInstructionRef: PayloadRef;
-  readonly messageRefs: readonly PayloadRef[];
+  readonly contextEnvelopeRef: PayloadRef;
+  readonly workerResultRefs: readonly RuntimeWorkerResultReference[];
   readonly capabilityHandleRefs: readonly string[];
   readonly budget: JsonObject;
   readonly correlationId: CorrelationId;
   readonly dataClassification: DataClassification;
 }
 
+export interface RuntimeWorkerResultReference {
+  readonly workerRunId: string;
+  readonly resultRef: PayloadRef;
+}
+
+export type RuntimeSuccessfulOutput =
+  | { readonly kind: "assistant-answer"; readonly contentRef: PayloadRef }
+  | { readonly kind: "no-answer" };
+
 export type RuntimeEvent =
   | {
-      readonly type: "runtime.model_started" | "runtime.completed";
+      readonly type: "runtime.suspended";
+      readonly runId: RunId;
+      readonly continuationRef: PayloadRef;
+      readonly approval: RuntimeApprovalWait;
+      readonly occurredAt: string;
+    }
+  | {
+      readonly type: "runtime.result_unknown";
+      readonly runId: RunId;
+      readonly toolCallId: string;
+      readonly capabilityRef: string;
+      readonly externalActionId: string | null;
+      readonly occurredAt: string;
+    }
+  | {
+      readonly type: "runtime.model_started";
+      readonly modelRef?: string;
+      readonly thinkingLevel?: string;
       readonly runId: RunId;
       readonly occurredAt: string;
+    }
+  | {
+      readonly type: "runtime.completed";
+      readonly runId: RunId;
+      readonly occurredAt: string;
+      readonly output: RuntimeSuccessfulOutput;
     }
   | {
       readonly type: "runtime.turn_started";
@@ -285,6 +337,9 @@ export interface RuntimeProjectionCompaction {
 }
 
 export interface RuntimeProjectionContext {
+  readonly nativeHistory?: import("./runtime-history.js").RuntimeHistoryState;
+  readonly coveredRunIds?: readonly RunId[];
+  readonly interruptedRunId?: RunId;
   /** Ordered historical messages materialized from product-owned state. */
   readonly history: readonly RuntimeProjectionMessage[];
   /** The new user prompt for this Run; it is not part of `history`. */
@@ -293,8 +348,37 @@ export interface RuntimeProjectionContext {
     readonly content: string;
     readonly occurredAt: string;
   };
+  /** Non-authoritative summaries and capability context, never product truth. */
+  readonly contextBlocks: readonly RuntimeProjectionContextBlock[];
   /** Latest accepted product checkpoint, when the projected history was compacted. */
   readonly compaction?: RuntimeProjectionCompaction;
+}
+
+export interface RuntimeProjectionContextBlock {
+  readonly authority: "non-authoritative";
+  readonly kind: ProductContextBlockKind | "system-history" | "worker-result";
+  readonly ref: string;
+  readonly content: string;
+  readonly sourceRef?: string;
+  readonly dataClassification: DataClassification;
+  readonly productRole?: "system";
+}
+
+export type RuntimeProjectionRequest = Pick<
+  RuntimeRequest,
+  | "ownerId"
+  | "agentId"
+  | "runId"
+  | "sessionId"
+  | "threadId"
+  | "systemInstructionRef"
+  | "contextEnvelopeRef"
+  | "workerResultRefs"
+  | "dataClassification"
+>;
+
+export interface RuntimeProjection extends RuntimeProjectionContext {
+  readonly systemInstruction: string;
 }
 
 /**
@@ -303,28 +387,62 @@ export interface RuntimeProjectionContext {
  * as product Payload references. Pi Session data never implements this port.
  */
 export interface RuntimeProjectionPort {
-  resolveSystemInstruction(runId: RunId, payloadRef: PayloadRef): Promise<string>;
-  resolveContext(
-    runId: RunId,
-    messageRefs: readonly PayloadRef[],
-  ): Promise<RuntimeProjectionContext>;
+  captureHistory?(
+    input: Parameters<import("./runtime-history.js").RuntimeHistoryPort["save"]>[0],
+  ): Promise<import("./runtime-history.js").RuntimeHistoryReference>;
+  resolveProjection(input: RuntimeProjectionRequest): Promise<RuntimeProjection>;
   capture(input: RuntimeProjectionCapture): Promise<PayloadRef>;
+  captureFinalAnswer(input: {
+    readonly runId: RunId;
+    readonly text: string;
+    readonly dataClassification: DataClassification;
+  }): Promise<PayloadRef>;
   proposeCompaction(input: RuntimeCompactionProposal): Promise<PayloadRef>;
 }
 
-export interface RuntimeToolDescriptor {
+export type RuntimeToolDescriptor =
+  | RuntimeCustomToolDescriptor
+  | RuntimeBuiltinReadDescriptor
+  | RuntimeBuiltinCodingDescriptor;
+
+/** Definition selection is product-owned; execution still uses RuntimeToolPort. */
+export interface RuntimeBuiltinCodingDescriptor {
+  readonly definition: "builtin-coding";
+  readonly name: "read" | "write" | "edit" | "bash" | "find" | "grep" | "ls";
   readonly capabilityRef: string;
-  readonly capabilityHandleRef: string;
+  readonly capabilityHandleRef: string | null;
+}
+
+/** Product selects the built-in definition; runtime-pi owns its schema and metadata. */
+export interface RuntimeBuiltinReadDescriptor {
+  readonly definition: "builtin-read";
+  readonly name: "read";
+  readonly capabilityRef: string;
+  readonly capabilityHandleRef: null;
+}
+
+export interface RuntimeCustomToolDescriptor {
+  readonly definition?: never;
+  readonly capabilityRef: string;
+  /** null denotes an operation request, never an execution authority. */
+  readonly capabilityHandleRef: string | null;
   readonly name: string;
   readonly description: string;
   readonly parameters: JsonObject;
 }
 
 export interface RuntimeToolInvocation {
+  /** Captured by the runtime, never taken from model-generated tool arguments. */
+  readonly context?: Pick<
+    RuntimeRequest,
+    "threadId" | "modelRef" | "executionLease" | "continuationRef"
+  >;
+  readonly executionDeadlineAt?: string;
   readonly runId: RunId;
   readonly toolCallId: string;
   readonly capabilityRef: string;
-  readonly capabilityHandleRef: string;
+  /** null denotes an operation request, never an execution authority. */
+  readonly capabilityHandleRef: string | null;
   readonly arguments: JsonObject;
   readonly dataClassification: DataClassification;
 }
@@ -335,7 +453,19 @@ export interface RuntimeToolPreflightDecision {
   readonly reasonCode: string;
 }
 
-export interface RuntimeToolExecutionResult {
+export interface RuntimeApprovalWait {
+  readonly approvalRequestId: string;
+  readonly semanticSnapshotHash: string;
+  readonly expiresAt: string;
+}
+
+/** Opaque runtime state is protected by Core, never sent through browser events. */
+export interface RuntimeContinuationPort {
+  save(request: RuntimeRequest, value: unknown): Promise<PayloadRef>;
+  load(request: RuntimeRequest, ref: PayloadRef): Promise<unknown>;
+}
+
+export interface RuntimeToolSettledResult {
   readonly outcome: "succeeded" | "failed" | "result_unknown";
   readonly resultRef: PayloadRef | null;
   readonly errorCode: string | null;
@@ -343,12 +473,24 @@ export interface RuntimeToolExecutionResult {
   readonly modelContent: string;
 }
 
+export interface RuntimeToolSuspendedResult {
+  readonly outcome: "awaiting_approval";
+  readonly approval: RuntimeApprovalWait;
+  readonly resultRef: null;
+  readonly errorCode: null;
+  readonly externalActionId: null;
+  readonly modelContent: "";
+}
+
+export type RuntimeToolExecutionResult = RuntimeToolSettledResult | RuntimeToolSuspendedResult;
+
 /**
  * Final product enforcement boundary for tools exposed to an Agent Runtime.
  * Implementations must make completed external actions idempotent by
  * `runId + toolCallId`.
  */
 export interface RuntimeToolPort {
+  /** List tools permitted to be offered, including requests that still require authorization. */
   listAuthorized(
     runId: RunId,
     capabilityHandleRefs: readonly string[],

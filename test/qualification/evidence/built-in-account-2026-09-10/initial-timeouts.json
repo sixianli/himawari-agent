@@ -1,0 +1,193 @@
+{
+  "firstFullTest": {
+    "counts": {
+      "files": 185,
+      "executed": 1920,
+      "passed": 1919,
+      "failed": 1,
+      "skipped": 0
+    },
+    "status": "failed",
+    "durationMs": 944153,
+    "failure": "existing sqlite-product-state child-after-COMMIT test exceeded its 15s timeout"
+  },
+  "firstToolingCheck": {
+    "status": "failed",
+    "durationMs": 254982,
+    "counts": {
+      "executed": 565,
+      "passed": 563,
+      "failed": 2
+    },
+    "failures": [
+      "existing context identity test exceeded 5s",
+      "existing repository test inventory scan exceeded 5s"
+    ]
+  },
+  "concurrentWork": ["full test", "tooling check", "browser verification"],
+  "resolution": "stop browser verification and rerun complete checks sequentially without increasing test deadlines",
+  "finalResult": {
+    "fullTest": "test-result.json",
+    "policy": "policy-result.json",
+    "status": "passed",
+    "automaticRetries": 0
+  },
+  "secondFullTestFailure": {
+    "file": "packages/platform-node/test/capability-isolation.unit.test.ts",
+    "assertion": "outputLimitExceeded expected true, received false",
+    "observedDurationMs": 1061.937209,
+    "competingWallLimitMs": 1000,
+    "causeAssessment": "inference from code and elapsed time: the wall deadline can fire before cold Node output; original report did not record timedOut",
+    "change": "split output and wall limits; output case uses a 10s independent deadline and asserts not timedOut; wall case retains 50ms; no product runtime changes",
+    "focusedVerification": {
+      "tests": 13,
+      "passed": 13,
+      "durationSeconds": 3.24
+    }
+  },
+  "secondFullTest": {
+    "status": "failed",
+    "counts": {
+      "files": 185,
+      "executed": 1916,
+      "passed": 1915,
+      "failed": 1,
+      "skipped": 4
+    },
+    "durationMs": 836153,
+    "projects": [
+      {
+        "id": "unit",
+        "counts": {
+          "files": 94,
+          "executed": 791,
+          "passed": 790,
+          "failed": 1,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "contracts",
+        "counts": {
+          "files": 21,
+          "executed": 267,
+          "passed": 267,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "integration",
+        "counts": {
+          "files": 63,
+          "executed": 784,
+          "passed": 784,
+          "failed": 0,
+          "skipped": 4
+        }
+      },
+      {
+        "id": "e2e",
+        "counts": {
+          "files": 1,
+          "executed": 3,
+          "passed": 3,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "pi-compat",
+        "counts": {
+          "files": 6,
+          "executed": 71,
+          "passed": 71,
+          "failed": 0,
+          "skipped": 0
+        }
+      }
+    ],
+    "note": "SQLite crash/replay integration passed without increasing its 15s limit; only the independent output-quota assertion failed"
+  },
+  "thirdFullTest": {
+    "status": "failed",
+    "counts": {
+      "files": 185,
+      "executed": 1921,
+      "passed": 1920,
+      "failed": 1,
+      "skipped": 0
+    },
+    "durationMs": 775818,
+    "projects": [
+      {
+        "id": "unit",
+        "counts": {
+          "files": 94,
+          "executed": 792,
+          "passed": 792,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "contracts",
+        "counts": {
+          "files": 21,
+          "executed": 267,
+          "passed": 267,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "integration",
+        "counts": {
+          "files": 63,
+          "executed": 788,
+          "passed": 787,
+          "failed": 1,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "e2e",
+        "counts": {
+          "files": 1,
+          "executed": 3,
+          "passed": 3,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "pi-compat",
+        "counts": {
+          "files": 6,
+          "executed": 71,
+          "passed": 71,
+          "failed": 0,
+          "skipped": 0
+        }
+      }
+    ],
+    "failure": {
+      "file": "test/integration/installable-node-services.test.ts",
+      "assertion": "duplicate service status expected 1, received null",
+      "originalProcessTimeoutMs": 3000,
+      "change": "use existing fixture childExitTimeoutMilliseconds (10000), assert error is undefined and signal is null, keep status=1 and SQLITE_STATE_ROOT_LOCKED assertions",
+      "causeAssessment": "The old assertion hid process error/signal details; a competing startup deadline is inferred from the configured 3s timeout, not claimed as recorded signal evidence"
+    }
+  },
+  "focusedInstallPreflight": {
+    "firstAttempt": "rejected before running cases",
+    "reason": "ARTIFACT_LOCKED_PYTHON_REQUIRED",
+    "resolution": "provide the existing locked Python and Node paths from .ci-output/tools/installation.json; no validation bypass",
+    "verification": {
+      "tests": 4,
+      "passed": 4,
+      "skipped": 0,
+      "durationSeconds": 49.55
+    }
+  }
+}

@@ -1,0 +1,1046 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { ProductConfiguration, ThreadCreateInput } from "@himawari-agent/application";
+import {
+  actionIntentFingerprint,
+  type GovernedActionIntent,
+  type GovernedApprovalRequest,
+} from "@himawari-agent/application";
+import {
+  applyMigrations,
+  loadBundledMigrations,
+  openQualifiedDatabase,
+  SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
+import {
+  type HostProviderSecretSource,
+  type HostSecretMaterialSource,
+  initializeStateRoot,
+  parseProductConfiguration,
+} from "@himawari-agent/platform-node";
+import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createProductionHttpComposition,
+  type ProductionHttpCompositionSecretSources,
+  ProductionThreadGatewayAccessPolicy,
+} from "../src/production-http-composition.js";
+
+const ORIGIN = "https://agent.example.test";
+const ISSUER = "https://team.cloudflareaccess.com";
+const JWKS_URL = `${ISSUER}/cdn-cgi/access/certs`;
+const AUDIENCE = "access-audience-production-fixture";
+const NOW = new Date("2026-09-04T00:00:00.000Z");
+const OWNER_ID = "owner-production-http";
+const AGENT_ID = "agent-production-http";
+const DEPLOYMENT_ID = "deployment-production-http";
+type ProductAuthorityFence = ThreadCreateInput["authority"];
+const AUTHORITY = {
+  deploymentId: DEPLOYMENT_ID,
+  authorityEpoch: 2,
+  fencingToken: 7,
+};
+
+const roots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+async function fixture() {
+  const root = await mkdtemp(path.join(tmpdir(), "himawari-production-http-"));
+  roots.push(root);
+  const stateRoot = path.join(root, "state");
+  const layout = await initializeStateRoot(stateRoot);
+  const staticRoot = path.join(root, "browser");
+  await mkdir(staticRoot);
+  await writeFile(path.join(staticRoot, "index.html"), "<!doctype html><title>Himawari</title>");
+  const databasePath = path.join(layout.data, "product.sqlite");
+  const database = openQualifiedDatabase(databasePath);
+  applyMigrations(database, await loadBundledMigrations());
+  database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
+  database
+    .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+    .run(AGENT_ID, OWNER_ID);
+  database
+    .prepare(
+      `INSERT INTO deployments (
+        id, owner_id, agent_id, revision, status, authority_epoch, fencing_token
+      ) VALUES (?, ?, ?, 0, 'active', ?, ?)`,
+    )
+    .run(DEPLOYMENT_ID, OWNER_ID, AGENT_ID, AUTHORITY.authorityEpoch, AUTHORITY.fencingToken);
+  database.close();
+  return { stateRoot, staticRoot, databasePath };
+}
+
+function configuration(paths: Awaited<ReturnType<typeof fixture>>): ProductConfiguration {
+  return parseProductConfiguration(
+    {
+      schemaVersion: "himawari.configuration.v1",
+      deploymentId: DEPLOYMENT_ID,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      stateRoot: paths.stateRoot,
+      runtimeDirectory: path.join(paths.stateRoot, "runtime"),
+      cacheDirectory: path.join(paths.stateRoot, "cache"),
+      publicOrigin: ORIGIN,
+      publicMode: true,
+      http: {
+        listenHost: "127.0.0.1",
+        listenPort: 8787,
+        staticRoot: paths.staticRoot,
+        sessionCookieName: "himawari_session",
+        maximumBodyBytes: 256 * 1024,
+        maximumStaticAssetBytes: 8 * 1024 * 1024,
+        heartbeatMilliseconds: 15_000,
+      },
+      identity: {
+        issuer: ISSUER,
+        audience: AUDIENCE,
+        jwksUrl: JWKS_URL,
+        jwksCacheMilliseconds: 300_000,
+        jwksTimeoutMilliseconds: 2_000,
+        jwksMaximumBodyBytes: 65_536,
+        clockToleranceSeconds: 30,
+        identityLookupTimeoutMilliseconds: 2_000,
+        identityLookupMaximumBodyBytes: 65_536,
+        recentAuthentication: {
+          maximumAgeMilliseconds: 900_000,
+          clockSkewMilliseconds: 30_000,
+        },
+        bootstrap: {
+          enabled: true,
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          tokenSecretRef: "identity-bootstrap",
+        },
+        csrf: {
+          keySecretRef: "identity-csrf",
+          ttlMilliseconds: 1_800_000,
+        },
+      },
+      modelDescriptors: [
+        {
+          ref: "model-primary",
+          role: "primary",
+          provider: "deterministic",
+          model: "deterministic-primary",
+          version: "v1",
+          allowedDataClassifications: ["public", "private"],
+          disclosure: "local_only",
+          secretRef: null,
+          capabilities: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          priority: 1,
+          name: "Production HTTP fixture primary",
+          api: "openai-completions",
+          reasoning: false,
+          input: ["text"],
+          contextWindow: 8192,
+          maxTokens: 1024,
+        },
+        {
+          ref: "model-fallback",
+          role: "fallback",
+          provider: "deterministic",
+          model: "deterministic-fallback",
+          version: "v1",
+          allowedDataClassifications: ["private"],
+          disclosure: "local_only",
+          secretRef: null,
+          capabilities: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          priority: 2,
+          name: "Production HTTP fixture fallback",
+          api: "openai-completions",
+          reasoning: false,
+          input: ["text"],
+          contextWindow: 8192,
+          maxTokens: 1024,
+        },
+        {
+          ref: "model-embedding",
+          role: "embedding",
+          provider: "deterministic",
+          model: "deterministic-embedding",
+          version: "v1",
+          allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
+          disclosure: "local_only",
+          secretRef: null,
+          capabilities: ["embedding"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          dimensions: 1536,
+        },
+      ],
+      memory: {
+        adapter: "mem0-oss",
+        version: "3.1.7",
+        storagePath: path.join(paths.stateRoot, "data", "memory"),
+        dimensions: 1536,
+      },
+      repositoryAllowlistRefs: [],
+      secretReferences: [
+        { ref: "payload-kek", version: "v1", purpose: "payload-encryption", scope: "agent" },
+        { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
+        { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
+      ],
+      budgets: {
+        globalCostMicros: 1_000_000,
+        perRunCostMicros: 100_000,
+        perClassificationCostMicros: {
+          public: 100_000,
+          private: 100_000,
+          sensitive: 0,
+          restricted: 0,
+        },
+      },
+      concurrency: { totalRuns: 4, foregroundReserved: 1, perCategory: { foreground: 2 } },
+      deadlines: { runMs: 60_000, workerRequestMs: 5_000, providerRequestMs: 5_000 },
+    },
+    NOW.toISOString(),
+  );
+}
+
+function secretSources(): ProductionHttpCompositionSecretSources {
+  const key = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
+  const keys: HostSecretMaterialSource = {
+    kind: "restricted-secret-file",
+    productionSuitable: true,
+    async resolve() {
+      return new Uint8Array(key);
+    },
+  };
+  const provider: HostProviderSecretSource = {
+    kind: "restricted-secret-file",
+    productionSuitable: true,
+    async resolve() {
+      return "bootstrap-token-production-fixture";
+    },
+  };
+  return { provider, keys };
+}
+
+function authority(configurationValue: ProductConfiguration): ProductAuthorityFence {
+  return {
+    deploymentId: configurationValue.deploymentId,
+    authorityEpoch: AUTHORITY.authorityEpoch,
+    fencingToken: AUTHORITY.fencingToken,
+  };
+}
+
+function requestHeaders(token: string, cookie: string, csrf?: string) {
+  return {
+    host: "agent.example.test",
+    origin: ORIGIN,
+    "sec-fetch-site": "same-origin",
+    "content-type": "application/json",
+    "cf-access-jwt-assertion": token,
+    cookie,
+    ...(csrf === undefined ? {} : { "x-csrf-token": csrf }),
+  };
+}
+
+function envelope(kind: "command" | "query", type: string) {
+  return {
+    schemaVersion: "gateway.thread.v3" as const,
+    kind,
+    type,
+    messageId: `message:${type}`,
+    correlationId: `correlation:${type}`,
+    causationId: null,
+    scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+    authority: AUTHORITY,
+    actor: { actorType: "owner" as const, actorId: OWNER_ID },
+  };
+}
+
+describe("production HTTP composition", () => {
+  it("authenticates an RS256 assertion, admits a durable Thread run, and replays after restart", async () => {
+    const paths = await fixture();
+    const keyPair = await generateKeyPair("RS256", { extractable: true });
+    const jwks: JSONWebKeySet = {
+      keys: [{ ...(await exportJWK(keyPair.publicKey)), kid: "key-production-http", alg: "RS256" }],
+    };
+    const token = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256", kid: "key-production-http" })
+      .setIssuer(ISSUER)
+      .setAudience(AUDIENCE)
+      .setSubject("subject-production-http")
+      .setIssuedAt(Math.floor(NOW.valueOf() / 1000))
+      .setExpirationTime(Math.floor(NOW.valueOf() / 1000) + 300)
+      .sign(keyPair.privateKey);
+    let identityLookupAvailable = true;
+    const identityFetcher = {
+      async fetch(input: { readonly url: URL; readonly assertionToken: string }) {
+        expect(input.url.href).toBe(`${ISSUER}/cdn-cgi/access/get-identity`);
+        expect(input.assertionToken).toBe(token);
+        if (!identityLookupAvailable) {
+          throw new Error("identity lookup unavailable in controlled fixture");
+        }
+        return {
+          user_uuid: "subject-production-http",
+          iat: Math.floor(NOW.valueOf() / 1000),
+        };
+      },
+    };
+    const jwksFetcher = {
+      async fetch(url: URL) {
+        expect(url.href).toBe(JWKS_URL);
+        return jwks;
+      },
+    };
+    const config = configuration(paths);
+    const configAuthority = authority(config);
+    let repository = await SqliteProductStateRepository.open({
+      stateRoot: paths.stateRoot,
+      databasePath: paths.databasePath,
+      minimumFreeBytes: 0,
+      now: () => NOW.toISOString(),
+    });
+    let composition = await createProductionHttpComposition({
+      configuration: config,
+      repository,
+      authority: () => configAuthority,
+      secretSources: secretSources(),
+      jwksFetcher,
+      identityFetcher,
+      now: () => new Date(NOW),
+      createSessionToken: () => "session-token-production-http",
+    });
+    try {
+      const bootstrap = await composition.app.inject({
+        method: "POST",
+        url: "/bootstrap",
+        payload: {
+          token: "bootstrap-token-production-fixture",
+          ownerId: OWNER_ID,
+          assertionToken: token,
+        },
+      });
+      expect(bootstrap.statusCode).toBe(201);
+
+      const session = await composition.app.inject({
+        method: "POST",
+        url: "/api/identity/v1/sessions",
+        headers: requestHeaders(token, "", undefined),
+        payload: { deviceLabel: "production HTTP fixture" },
+      });
+      expect(session.statusCode).toBe(201);
+      const cookieHeader = session.headers["set-cookie"];
+      expect(cookieHeader).toContain("himawari_session=session-token-production-http");
+      const cookie = "himawari_session=session-token-production-http";
+      const sessionBody = session.json() as {
+        readonly session: { readonly authenticationRef: string; readonly id: string };
+      };
+
+      const configResponse = await composition.app.inject({
+        method: "GET",
+        url: "/api/control-center/v1/config",
+        headers: requestHeaders(token, cookie),
+      });
+      expect(configResponse.statusCode).toBe(200);
+      expect(configResponse.json()).toMatchObject({
+        installedGatewayV2Operations: [
+          "approval.list",
+          "approval.detail",
+          "approval.respond",
+          "search.authorization.read",
+          "search.authorization.set",
+        ],
+        healthDependenciesAvailable: true,
+      });
+      const healthResponse = await composition.app.inject({
+        method: "GET",
+        url: "/api/health/v1/dependencies",
+        headers: requestHeaders(token, cookie),
+      });
+      expect(healthResponse.statusCode).toBe(200);
+      expect(healthResponse.json()).toMatchObject({
+        dependencies: expect.arrayContaining([expect.objectContaining({ name: "sqlite" })]),
+      });
+      const browserConfig = configResponse.json() as {
+        readonly csrfToken: string;
+        readonly sessionId: string;
+        readonly recentAuthenticationRef: string;
+      };
+      expect(browserConfig.recentAuthenticationRef).toBe(sessionBody.session.authenticationRef);
+      expect(browserConfig.sessionId).toBe(sessionBody.session.id);
+      const concurrentConfigurations = await Promise.all(
+        Array.from({ length: 12 }, () =>
+          composition.app.inject({
+            method: "GET",
+            url: "/api/control-center/v1/config",
+            headers: requestHeaders(token, cookie),
+          }),
+        ),
+      );
+      expect(concurrentConfigurations.map((response) => response.statusCode)).toEqual(
+        Array(12).fill(200),
+      );
+
+      const csrfRejected = await composition.app.inject({
+        method: "POST",
+        url: "/api/payload/v1/text",
+        headers: {
+          ...requestHeaders(token, cookie),
+          "idempotency-key": "payload-csrf-rejected",
+        },
+        payload: { content: "must not persist", dataClassification: "private" },
+      });
+      expect(csrfRejected.statusCode).toBe(403);
+
+      async function upload(idempotencyKey: string, content: string) {
+        const response = await composition.app.inject({
+          method: "POST",
+          url: "/api/payload/v1/text",
+          headers: {
+            ...requestHeaders(token, cookie, browserConfig.csrfToken),
+            "idempotency-key": idempotencyKey,
+          },
+          payload: { content, dataClassification: "private" },
+        });
+        expect(response.statusCode).toBe(201);
+        return (response.json() as { readonly payloadRef: string }).payloadRef;
+      }
+
+      const createResultRef = await upload("payload-create-result", "create-result");
+      expect(await upload("payload-create-result", "create-result")).toBe(createResultRef);
+      const conflictingUpload = await composition.app.inject({
+        method: "POST",
+        url: "/api/payload/v1/text",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": "payload-create-result",
+        },
+        payload: { content: "different-content", dataClassification: "private" },
+      });
+      expect(conflictingUpload.statusCode).toBe(409);
+      const createCommand = {
+        ...envelope("command", "thread.create"),
+        idempotencyKey: "thread-create-production-http",
+        payload: {
+          threadId: "thread-production-http",
+          answerLocale: "zh-CN" as const,
+          resultRef: createResultRef,
+        },
+      };
+      const created = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/thread/v3/commands",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": createCommand.idempotencyKey,
+        },
+        payload: createCommand,
+      });
+      expect(created.statusCode).toBe(200);
+      expect(created.json()).toMatchObject({
+        type: "thread.command_result",
+        payload: { threadRevision: 1, replayed: false },
+      });
+
+      const submitResultRef = await upload("payload-submit-result", "submit-result");
+      const contentRef = await upload("payload-submit-content", "hello from the owner");
+      const submitCommand = {
+        ...envelope("command", "thread.message.submit"),
+        messageId: "message:production-http-submit",
+        correlationId: "correlation:production-http-submit",
+        idempotencyKey: "thread-submit-production-http",
+        payload: {
+          threadId: "thread-production-http",
+          expectedRevision: 1,
+          messageId: "message:production-http-owner",
+          turnId: "turn:production-http-owner",
+          runId: "run:production-http-owner",
+          sessionId: sessionBody.session.id,
+          contentRef,
+          sourceProofRef: "proof:production-http-fixture",
+          dataClassification: "private" as const,
+          occurredAt: NOW.toISOString(),
+          resultRef: submitResultRef,
+        },
+      };
+      const crossSession = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/thread/v3/commands",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": "thread-submit-cross-session",
+        },
+        payload: {
+          ...submitCommand,
+          messageId: "message:production-http-cross-session",
+          correlationId: "correlation:production-http-cross-session",
+          idempotencyKey: "thread-submit-cross-session",
+          payload: { ...submitCommand.payload, sessionId: "session:other" },
+        },
+      });
+      expect(crossSession.statusCode).toBe(403);
+
+      const admitted = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/thread/v3/commands",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": submitCommand.idempotencyKey,
+        },
+        payload: submitCommand,
+      });
+      expect(admitted.statusCode).toBe(200);
+      expect(admitted.json()).toMatchObject({
+        type: "thread.command_result",
+        payload: { threadRevision: 2, replayed: false },
+      });
+
+      const action: GovernedActionIntent = {
+        contractVersion: "authorization.v2",
+        id: "action-http-approval",
+        ownerId: config.ownerId,
+        agentId: config.agentId,
+        threadId: submitCommand.payload.threadId,
+        runId: submitCommand.payload.runId as GovernedActionIntent["runId"],
+        capabilityRef: "test.communicate",
+        capabilityVersion: "1",
+        operation: "send",
+        resourceRef: "recipient:test-only",
+        resourceRefs: ["recipient:test-only"],
+        targets: [{ type: "recipient", ref: "test-only" }],
+        dataClassification: "private",
+        sideEffect: "irreversible",
+        estimatedCostMicros: 0,
+        frequency: { count: 1, intervalMs: null },
+        idempotencyKey: "http-approval-action" as GovernedActionIntent["idempotencyKey"],
+        reversible: false,
+        requestedAt: NOW.toISOString(),
+        expiresAt: "2026-09-04T01:00:00.000Z",
+        actionKind: "COMMUNICATE",
+        disclosure: "named_recipients",
+        recipients: ["recipient:test-only"],
+        credentialOrAccessChange: false,
+        modelClassification: {
+          actionKind: "COMMUNICATE",
+          suggestedRisk: "HIGH",
+          reasonCode: "test",
+        },
+        deterministicFacts: [],
+        finalRisk: "HIGH",
+      };
+      const approvalId = "approval-production-http";
+      const snapshotHash = actionIntentFingerprint(action);
+      const approval: GovernedApprovalRequest = {
+        id: approvalId,
+        revision: 1,
+        ownerId: config.ownerId,
+        agentId: config.agentId,
+        runId: action.runId,
+        intentId: action.id,
+        intentSnapshot: action,
+        semanticSnapshotHash: snapshotHash,
+        status: "pending",
+        deliveryState: "deliverable",
+        requestedAt: action.requestedAt,
+        expiresAt: action.expiresAt,
+        decidedAt: null,
+        grantId: null,
+        finalRisk: "HIGH",
+        recentAuthenticationRequired: false,
+        recentAuthenticationRef: null,
+      };
+      await repository.authorizationStore().createApproval(approval);
+      const approvalEnvelope = {
+        schemaVersion: "gateway.v2",
+        scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        authority: configAuthority,
+        actor: { actorType: "owner", actorId: OWNER_ID },
+        dataClassification: "private",
+        risk: "high",
+        authorizationRef: sessionBody.session.authenticationRef,
+        correlationId: "correlation-approval-http",
+        causationId: null,
+      };
+      const approvalQuery = {
+        ...approvalEnvelope,
+        kind: "query",
+        type: "approval.detail",
+        messageId: "approval-query-http",
+        payload: { approvalRequestId: approvalId },
+      };
+      const pendingApproval = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, cookie),
+        payload: approvalQuery,
+      });
+      expect(pendingApproval.statusCode).toBe(200);
+      expect(pendingApproval.json()).toMatchObject({
+        type: "approval.snapshot",
+        payload: { status: "pending", intent: { actionKind: "COMMUNICATE" } },
+      });
+      const approvalCommand = {
+        ...approvalEnvelope,
+        kind: "command",
+        type: "approval.respond",
+        messageId: "approval-command-http",
+        idempotencyKey: "approval-command-http",
+        payload: {
+          approvalRequestId: approvalId,
+          expectedRevision: 1,
+          semanticSnapshotHash: snapshotHash,
+          decision: "approved",
+          editedPayloadRef: null,
+          recentAuthenticationRef: null,
+        },
+      };
+      const approvalWithoutCsrf = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: {
+          ...requestHeaders(token, cookie),
+          "idempotency-key": approvalCommand.idempotencyKey,
+        },
+        payload: approvalCommand,
+      });
+      expect(approvalWithoutCsrf.statusCode).toBe(403);
+      const badAuthority = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": approvalCommand.idempotencyKey,
+        },
+        payload: {
+          ...approvalCommand,
+          authority: { ...configAuthority, fencingToken: configAuthority.fencingToken + 1 },
+        },
+      });
+      expect(badAuthority.statusCode).toBe(403);
+      const approved = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": approvalCommand.idempotencyKey,
+        },
+        payload: approvalCommand,
+      });
+      expect(approved.statusCode).toBe(200);
+      expect((await repository.authorizationStore().getApproval(approvalId))?.status).toBe(
+        "approved",
+      );
+      const replayedApproval = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": approvalCommand.idempotencyKey,
+        },
+        payload: approvalCommand,
+      });
+      expect(replayedApproval.statusCode).toBe(200);
+      expect(replayedApproval.json()).toMatchObject({ replayed: true });
+      expect(
+        await repository.authorizationStore().listGrants(config.ownerId, config.agentId),
+      ).toHaveLength(1);
+
+      const detail = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/thread/v3/queries",
+        headers: requestHeaders(token, cookie),
+        payload: {
+          ...envelope("query", "thread.detail"),
+          payload: {
+            threadId: "thread-production-http",
+            afterSequence: 0,
+            limit: 10,
+          },
+        },
+      });
+      expect(detail.statusCode).toBe(200);
+      expect(detail.json()).toMatchObject({
+        type: "thread.detail_snapshot",
+        payload: {
+          thread: { revision: 2, messageWatermark: 1 },
+          runs: [{ runId: "run:production-http-owner", status: "accepted" }],
+        },
+      });
+
+      identityLookupAvailable = false;
+      const missingFreshnessConfig = await composition.app.inject({
+        method: "GET",
+        url: "/api/control-center/v1/config",
+        headers: requestHeaders(token, cookie),
+      });
+      expect(missingFreshnessConfig.statusCode).toBe(200);
+      expect(missingFreshnessConfig.json()).toMatchObject({ recentAuthenticationRef: null });
+
+      const readWithoutFreshness = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/thread/v3/queries",
+        headers: requestHeaders(token, cookie),
+        payload: {
+          ...envelope("query", "thread.detail"),
+          messageId: "message:production-http-no-freshness",
+          payload: {
+            threadId: "thread-production-http",
+            afterSequence: 0,
+            limit: 10,
+          },
+        },
+      });
+      expect(readWithoutFreshness.statusCode).toBe(200);
+      expect(readWithoutFreshness.json()).toMatchObject({
+        payload: { thread: { revision: 2 }, runs: [{ status: "accepted" }] },
+      });
+
+      const deleteResultRef = "payload:production-http-delete-result";
+      const sensitiveDelete = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/thread/v3/commands",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": "thread-delete-without-freshness",
+        },
+        payload: {
+          ...envelope("command", "thread.delete_permanently"),
+          messageId: "message:production-http-delete-without-freshness",
+          correlationId: "correlation:production-http-delete-without-freshness",
+          idempotencyKey: "thread-delete-without-freshness",
+          payload: {
+            threadId: "thread-production-http",
+            expectedRevision: 2,
+            reasonCode: "controlled-freshness-rejection",
+            authorizationRef: "authorization:production-http",
+            recentAuthenticationRef: sessionBody.session.authenticationRef,
+            resultRef: deleteResultRef,
+          },
+        },
+      });
+      expect(sensitiveDelete.statusCode).toBe(403);
+      expect(sensitiveDelete.json()).toMatchObject({ error: { code: "PORT_NOT_AUTHORITATIVE" } });
+
+      identityLookupAvailable = true;
+
+      await composition.close();
+      await repository.close();
+      repository = await SqliteProductStateRepository.open({
+        stateRoot: paths.stateRoot,
+        databasePath: paths.databasePath,
+        minimumFreeBytes: 0,
+        now: () => NOW.toISOString(),
+      });
+      const restarted = await createProductionHttpComposition({
+        configuration: config,
+        repository,
+        authority: () => configAuthority,
+        secretSources: secretSources(),
+        jwksFetcher,
+        identityFetcher,
+        now: () => new Date(NOW),
+        createSessionToken: () => "session-token-production-http-02",
+      });
+      composition = restarted;
+      const replay = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/thread/v3/commands",
+        headers: {
+          ...requestHeaders(token, cookie, browserConfig.csrfToken),
+          "idempotency-key": submitCommand.idempotencyKey,
+        },
+        payload: submitCommand,
+      });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json()).toMatchObject({
+        type: "thread.command_result",
+        payload: { threadRevision: 2, replayed: true },
+      });
+      const restartedDetail = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/thread/v3/queries",
+        headers: requestHeaders(token, cookie),
+        payload: {
+          ...envelope("query", "thread.detail"),
+          messageId: "message:production-http-detail-restarted",
+          payload: { threadId: "thread-production-http", afterSequence: 0, limit: 10 },
+        },
+      });
+      expect(restartedDetail.statusCode).toBe(200);
+      expect(restartedDetail.json()).toMatchObject({
+        payload: { thread: { revision: 2 }, runs: [{ status: "accepted" }] },
+      });
+
+      const persistedSession = (
+        await repository.sessionDeviceState().listSessions(config.ownerId, true)
+      ).find(
+        ({ authenticationRef }) => authenticationRef === sessionBody.session.authenticationRef,
+      );
+      expect(persistedSession?.status).toBe("active");
+      if (!persistedSession) throw new Error("session fixture was not persisted");
+      await repository
+        .sessionDeviceState()
+        .revokeSession(persistedSession.id, persistedSession.revision, NOW.toISOString());
+      const revokedSession = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/thread/v3/queries",
+        headers: requestHeaders(token, cookie),
+        payload: {
+          ...envelope("query", "thread.detail"),
+          messageId: "message:production-http-revoked",
+          payload: { threadId: "thread-production-http", afterSequence: 0, limit: 10 },
+        },
+      });
+      expect(revokedSession.statusCode).toBe(401);
+    } finally {
+      await composition.close();
+      await repository.close();
+    }
+  });
+});
+
+describe("production HTTP startup rejection contracts", () => {
+  async function rejectedConfiguration(
+    change: (value: ProductConfiguration) => ProductConfiguration,
+    expected: string,
+    fenceChange?: (value: ProductAuthorityFence) => ProductAuthorityFence,
+  ) {
+    const paths = await fixture();
+    const original = configuration(paths);
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: paths.stateRoot,
+      databasePath: paths.databasePath,
+      minimumFreeBytes: 0,
+      now: () => NOW.toISOString(),
+    });
+    try {
+      await expect(
+        createProductionHttpComposition({
+          configuration: change(original),
+          repository,
+          authority: () => (fenceChange ? fenceChange(authority(original)) : authority(original)),
+          secretSources: secretSources(),
+          now: () => new Date(NOW),
+        }),
+      ).rejects.toMatchObject({ code: expected });
+    } finally {
+      await repository.close();
+    }
+  }
+  it.each([
+    ["listenHost", "0.0.0.0"],
+    ["listenPort", 0],
+    ["listenPort", 65536],
+    ["listenPort", 1.5],
+    ["maximumBodyBytes", 0],
+    ["maximumBodyBytes", 16 * 1024 * 1024 + 1],
+    ["maximumBodyBytes", 1.5],
+    ["maximumStaticAssetBytes", 0],
+    ["maximumStaticAssetBytes", 64 * 1024 * 1024 + 1],
+    ["maximumStaticAssetBytes", 1.5],
+    ["heartbeatMilliseconds", 9],
+    ["heartbeatMilliseconds", 300001],
+    ["heartbeatMilliseconds", 10.5],
+  ])("rejects unsafe listener configuration %s=%s", async (key, value) => {
+    await rejectedConfiguration((c) => {
+      if (!c.http) throw new Error("Missing fixture HTTP configuration");
+      return { ...c, http: { ...c.http, [key as string]: value } };
+    }, "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE");
+  });
+  it.each(["http", "identity"])("requires the %s boundary", async (key) => {
+    await rejectedConfiguration((c) => {
+      const copy = { ...c };
+      delete (copy as Record<string, unknown>)[key];
+      return copy;
+    }, "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE");
+  });
+  it("does not enable external Access identity in local mode", async () => {
+    await rejectedConfiguration(
+      (c) => ({ ...c, publicMode: false }),
+      "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE",
+    );
+  });
+  it.each(["invalid", "http://agent.example.test", "https://agent.example.test/path"])(
+    "rejects an unsafe public origin %s",
+    async (publicOrigin) => {
+      await rejectedConfiguration(
+        (c) => ({ ...c, publicOrigin }),
+        "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE",
+      );
+    },
+  );
+  it.each([
+    ["issuer", "invalid"],
+    ["issuer", "http://team.cloudflareaccess.com"],
+    ["issuer", "https://team.cloudflareaccess.com/path"],
+    ["jwksUrl", "invalid"],
+    ["jwksUrl", "http://team.cloudflareaccess.com/cdn-cgi/access/certs"],
+    ["jwksUrl", "https://person@team.cloudflareaccess.com/cdn-cgi/access/certs"],
+    ["jwksUrl", "https://:fixture@team.cloudflareaccess.com/cdn-cgi/access/certs"],
+    ["jwksUrl", `${JWKS_URL}?redirect=1`],
+    ["jwksUrl", `${JWKS_URL}#fragment`],
+    ["jwksUrl", "https://elsewhere.example.test/cdn-cgi/access/certs"],
+  ])("rejects identity discovery escape %s=%s", async (key, value) => {
+    await rejectedConfiguration((c) => {
+      if (!c.identity) throw new Error("Missing fixture identity configuration");
+      return { ...c, identity: { ...c.identity, [key]: value } };
+    }, "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE");
+  });
+  it.each(["relative", "/tmp/../tmp/browser", "/tmp/himawari-nonexistent-contract-root"])(
+    "requires a real normalized browser artifact %s",
+    async (staticRoot) => {
+      await rejectedConfiguration((c) => {
+        if (!c.http) throw new Error("Missing fixture HTTP configuration");
+        return { ...c, http: { ...c.http, staticRoot } };
+      }, "PRODUCTION_HTTP_STATIC_ROOT_INVALID");
+    },
+  );
+  it.each([
+    ["deploymentId", "deployment-other"],
+    ["authorityEpoch", 0],
+    ["authorityEpoch", 1.5],
+    ["fencingToken", 0],
+    ["fencingToken", 1.5],
+  ])("rejects an invalid active authority %s=%s", async (key, value) => {
+    await rejectedConfiguration(
+      (c) => c,
+      "PRODUCTION_HTTP_AUTHORITY_INVALID",
+      (fence) => ({ ...fence, [key as string]: value }),
+    );
+  });
+  it.each(["payload-encryption", "identity-csrf"])(
+    "requires exactly one correctly bound %s secret reference",
+    async (purpose) => {
+      await rejectedConfiguration(
+        (c) => ({
+          ...c,
+          secretReferences: c.secretReferences.filter((ref) => ref.purpose !== purpose),
+        }),
+        "PRODUCTION_HTTP_SECRET_REFERENCE_INVALID",
+      );
+      await rejectedConfiguration(
+        (c) => ({
+          ...c,
+          secretReferences: [
+            ...c.secretReferences,
+            ...c.secretReferences.filter((ref) => ref.purpose === purpose),
+          ],
+        }),
+        "PRODUCTION_HTTP_SECRET_REFERENCE_INVALID",
+      );
+    },
+  );
+});
+
+describe("production Thread access scope", () => {
+  function accessFixture() {
+    const session = { id: "session", status: "active", ownerId: OWNER_ID, deviceId: "device" };
+    const findSessionByAuthenticationRef = vi.fn(
+      async (): Promise<typeof session | undefined> => session,
+    );
+    const policy = new ProductionThreadGatewayAccessPolicy({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      sessions: { findSessionByAuthenticationRef },
+    } as unknown as ConstructorParameters<typeof ProductionThreadGatewayAccessPolicy>[0]);
+    const authentication = {
+      ownerId: OWNER_ID,
+      subjectId: OWNER_ID,
+      deviceId: "device",
+      authenticationRef: "authentication",
+      authenticatedAt: NOW.toISOString(),
+    };
+    const message = {
+      ...envelope("query", "thread.list"),
+      payload: { statuses: ["active"], pinnedOnly: false, afterCursor: null, limit: 10 },
+    } as Parameters<typeof policy.authorize>[0]["message"];
+    return { policy, session, findSessionByAuthenticationRef, input: { authentication, message } };
+  }
+  it("requires the active session on every authorized read", async () => {
+    const f = accessFixture();
+    expect(await f.policy.authorize(f.input)).toEqual({
+      allowed: true,
+      reasonCode: "OWNER_SESSION_AUTHORIZED",
+    });
+    expect(f.findSessionByAuthenticationRef).toHaveBeenCalledExactlyOnceWith("authentication");
+    f.session.status = "revoked";
+    expect(await f.policy.authorize(f.input)).toEqual({
+      allowed: false,
+      reasonCode: "SESSION_INACTIVE",
+    });
+  });
+  it.each(["message-owner", "message-agent", "authentication-owner", "actor"])(
+    "rejects %s mismatch before session lookup",
+    async (field) => {
+      const f = accessFixture();
+      if (field === "message-owner")
+        f.input.message = {
+          ...f.input.message,
+          scope: { ...f.input.message.scope, ownerId: "other" },
+        };
+      else if (field === "message-agent")
+        f.input.message = {
+          ...f.input.message,
+          scope: { ...f.input.message.scope, agentId: "other" },
+        };
+      else if (field === "authentication-owner") f.input.authentication.ownerId = "other";
+      else
+        f.input.message = {
+          ...f.input.message,
+          actor: { actorType: "owner" as const, actorId: "other" },
+        };
+      expect(await f.policy.authorize(f.input)).toEqual({
+        allowed: false,
+        reasonCode: "THREAD_SCOPE_MISMATCH",
+      });
+      expect(f.findSessionByAuthenticationRef).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["ownerId", "deviceId", "status"])("rejects session %s substitution", async (field) => {
+    const f = accessFixture();
+    Object.assign(f.session, { [field]: "other" });
+    expect(await f.policy.authorize(f.input)).toEqual({
+      allowed: false,
+      reasonCode: "SESSION_INACTIVE",
+    });
+  });
+  it("rejects an unbound session and a subject that is not the owner", async () => {
+    const f = accessFixture();
+    f.findSessionByAuthenticationRef.mockResolvedValueOnce(undefined);
+    expect(await f.policy.authorize(f.input)).toEqual({
+      allowed: false,
+      reasonCode: "SESSION_INACTIVE",
+    });
+    f.input.authentication.subjectId = "external-subject";
+    f.input.message = {
+      ...f.input.message,
+      actor: { actorType: "owner" as const, actorId: "external-subject" },
+    };
+    expect(await f.policy.authorize(f.input)).toEqual({
+      allowed: false,
+      reasonCode: "SESSION_INACTIVE",
+    });
+  });
+  it.each(["thread.message.submit", "thread.message.submit_configured"])(
+    "binds %s to the current browser session",
+    async (type) => {
+      const f = accessFixture();
+      const message = {
+        ...f.input.message,
+        kind: "command",
+        type,
+        payload: { sessionId: "other" },
+      } as Parameters<typeof f.policy.authorize>[0]["message"];
+      expect(await f.policy.authorize({ ...f.input, message })).toEqual({
+        allowed: false,
+        reasonCode: "SESSION_SCOPE_MISMATCH",
+      });
+      expect(
+        await f.policy.authorize({
+          ...f.input,
+          message: {
+            ...message,
+            payload: { ...message.payload, sessionId: "session" },
+          } as typeof message,
+        }),
+      ).toEqual({ allowed: true, reasonCode: "OWNER_SESSION_AUTHORIZED" });
+    },
+  );
+});

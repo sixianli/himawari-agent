@@ -1,0 +1,139 @@
+{
+  "platform": "darwin",
+  "osRelease": "27.0.0",
+  "architecture": "arm64",
+  "node": "v22.22.3",
+  "srt": "0.0.75",
+  "artifact": "source-build",
+  "productionSuitable": false,
+  "jobHostDigest": "da50694e9fc50423a4e738e88fdd5372cc2ad7479f431f0fee9809914f8da3aa",
+  "hostname": "127.0.0.1.sslip.io",
+  "addresses": [
+    {
+      "address": "127.0.0.1",
+      "family": 4
+    }
+  ],
+  "evidence": [
+    {
+      "scenario": "offline-http",
+      "policyDigest": "ba2308f4a47b7cdfb872bbc4e2dcdf710f8cbe6199292807c7278fb0eff824ff",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nX-Proxy-Error: blocked-by-allowlist\r\nDate: Thu, 10 Sep 2026 00:40:47 GMT\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\nTransfer-Encoding: chunked\r\n\r\nConnection blocked by network allowlist",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": true,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "direct-loopback",
+      "policyDigest": "f179d518b57abab120926f3b65557260db91d97c2e6f0a1143e433149a96e9f8",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "EPERM\n",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": true,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "direct-dns",
+      "policyDigest": "69303ac6be6b7a00c9223b69b9c1e9d343cd967ea639a32dfdfe856b74e167ae",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "EPERM\n",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": true,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "allowed-dns-loopback-http",
+      "policyDigest": "ea5e9128da0bba818be3c5aa245dffc36e1d164e31a76393163e55e06611f7e3",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "HTTP/1.1 403 Forbidden\r\nx-himawari-egress-error: target-denied\r\ndate: Thu, 10 Sep 2026 00:40:48 GMT\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\nTransfer-Encoding: chunked\r\n\r\n",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 1,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": true,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "allowed-dns-loopback-socks",
+      "policyDigest": "5730dde245a871d20b50a849e4ce8d859b935018336fc368b4184a617c834eba",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "curl: (97) Can't complete SOCKS5 connection to 127.0.0.1.sslip.io. (4)\n",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 1,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": true,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "allowed-wrong-port",
+      "policyDigest": "380f2e4e4e90da70602b9536db2635bef564a1c4bd729a2725bb07d6ce3e1f60",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nX-Proxy-Error: blocked-by-allowlist\r\nDate: Thu, 10 Sep 2026 00:40:49 GMT\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\nTransfer-Encoding: chunked\r\n\r\nConnection blocked by network allowlist",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": true,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "allowed-metadata",
+      "policyDigest": "2eb901563019d71ee21af8023d47bcc985b96e9ecf2e4a7944f55e8d49c87047",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nX-Proxy-Error: blocked-by-allowlist\r\nDate: Thu, 10 Sep 2026 00:40:49 GMT\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\nTransfer-Encoding: chunked\r\n\r\nConnection blocked by network allowlist",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": true,
+      "loopbackReached": false
+    }
+  ],
+  "ssrfCounterexampleConfirmed": false
+}

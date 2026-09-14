@@ -3,8 +3,9 @@ import {
   type GatewayV2AccessPolicyPort,
   type GatewayV2ControlPlanePort,
   type GatewayV2ReadModelPort,
+  type GatewayV2StreamItem,
 } from "@himawari-agent/application";
-import type { GatewayV2Event, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import {
   type GatewayAuthenticatorPort,
   InProcessGatewayV2Transport,
@@ -43,7 +44,7 @@ export class LocalAgentGatewayV2Process {
     >;
   }
 
-  subscribe(credential: unknown, afterCursor: string | null): AsyncIterable<GatewayV2Event> {
+  subscribe(credential: unknown, afterCursor: string | null): AsyncIterable<GatewayV2StreamItem> {
     this.#assertReady();
     return this.#transport.subscribe(credential, afterCursor);
   }

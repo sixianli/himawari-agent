@@ -3,14 +3,21 @@ import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assertMachineSecretFree,
+  type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
   type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredGenerationModelDescriptor,
   type ConfiguredModelDescriptor,
   type DataClassification,
+  type HttpConfiguration,
+  type IdentityBootstrapConfiguration,
+  type IdentityConfiguration,
+  type IdentityCsrfConfiguration,
   type ModelCostDescriptor,
   type ModelProviderRouting,
   type ProductConfiguration,
+  type RecentAuthenticationConfiguration,
+  type RunPolicyConfiguration,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 
@@ -110,6 +117,24 @@ function absolutePath(value: unknown, field: string): string {
     throw invalid(field, "must be a normalized absolute path");
   }
   return candidate;
+}
+
+function sha256Reference(value: unknown, field: string): string {
+  const candidate = string(value, field);
+  if (!/^sha256:[a-f0-9]{64}$/.test(candidate) || /^sha256:0{64}$/.test(candidate)) {
+    throw invalid(field, "must be a lowercase sha256 reference");
+  }
+  return candidate;
+}
+
+function parseCapabilityDeploymentConfiguration(value: unknown): CapabilityDeploymentConfiguration {
+  const field = "configuration.capabilityDeployment";
+  const input = record(value, field);
+  rejectUnknown(input, ["snapshotPath", "sha256"], field);
+  return Object.freeze({
+    snapshotPath: absolutePath(input["snapshotPath"], `${field}.snapshotPath`),
+    sha256: sha256Reference(input["sha256"], `${field}.sha256`),
+  });
 }
 
 function stringArray(value: unknown, field: string): readonly string[] {
@@ -225,6 +250,7 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
             "name",
             "api",
             "reasoning",
+            "reasoningRequired",
             "input",
             "contextWindow",
             "maxTokens",
@@ -279,6 +305,9 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     name: string(input["name"], `${field}.name`),
     api: "openai-completions",
     reasoning: boolean(input["reasoning"], `${field}.reasoning`),
+    ...(input["reasoningRequired"] === undefined
+      ? {}
+      : { reasoningRequired: boolean(input["reasoningRequired"], `${field}.reasoningRequired`) }),
     input: inputModalities(input["input"], `${field}.input`),
     contextWindow: integer(
       input["contextWindow"],
@@ -291,6 +320,9 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       ? {}
       : { providerRouting: providerRouting(input["providerRouting"], `${field}.providerRouting`) }),
   };
+  if (descriptor.reasoningRequired && !descriptor.reasoning) {
+    throw invalid(`${field}.reasoningRequired`, "requires a reasoning-capable model");
+  }
   if (role === "fallback") {
     if (
       descriptor.allowedDataClassifications.length !== 1 ||
@@ -333,6 +365,397 @@ function parseNumberMap(value: unknown, field: string): Readonly<Record<string, 
   return Object.freeze(result);
 }
 
+function httpsOrigin(value: unknown, field: string): string {
+  const candidate = string(value, field);
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw invalid(field, "must be an absolute HTTPS origin");
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.origin !== candidate ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw invalid(field, "must be an absolute HTTPS origin");
+  }
+  return candidate;
+}
+
+function httpsFixedUrl(value: unknown, field: string, pathname: string): string {
+  const candidate = string(value, field);
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw invalid(field, "must be an absolute HTTPS URL");
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash ||
+    parsed.pathname !== pathname ||
+    parsed.href !== candidate
+  ) {
+    throw invalid(field, "must be the fixed HTTPS endpoint");
+  }
+  return candidate;
+}
+
+function timestamp(value: unknown, field: string): string {
+  const candidate = string(value, field);
+  if (!Number.isFinite(Date.parse(candidate))) throw invalid(field, "must be a valid timestamp");
+  return candidate;
+}
+
+function parseHttpConfiguration(value: unknown): HttpConfiguration {
+  const input = record(value, "configuration.http");
+  rejectUnknown(
+    input,
+    [
+      "listenHost",
+      "listenPort",
+      "staticRoot",
+      "sessionCookieName",
+      "maximumBodyBytes",
+      "maximumStaticAssetBytes",
+      "heartbeatMilliseconds",
+    ],
+    "configuration.http",
+  );
+  const listenHost = string(input["listenHost"], "configuration.http.listenHost");
+  if (listenHost !== "127.0.0.1" && listenHost !== "::1") {
+    throw invalid("configuration.http.listenHost", "must be a loopback address");
+  }
+  const sessionCookieName = string(
+    input["sessionCookieName"],
+    "configuration.http.sessionCookieName",
+  );
+  if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(sessionCookieName)) {
+    throw invalid("configuration.http.sessionCookieName", "must be a safe HTTP cookie name");
+  }
+  return Object.freeze({
+    listenHost,
+    listenPort: integer(input["listenPort"], "configuration.http.listenPort", 1, 65_535),
+    staticRoot: absolutePath(input["staticRoot"], "configuration.http.staticRoot"),
+    sessionCookieName,
+    maximumBodyBytes: integer(
+      input["maximumBodyBytes"],
+      "configuration.http.maximumBodyBytes",
+      1,
+      16 * 1024 * 1024,
+    ),
+    maximumStaticAssetBytes: integer(
+      input["maximumStaticAssetBytes"],
+      "configuration.http.maximumStaticAssetBytes",
+      1,
+      64 * 1024 * 1024,
+    ),
+    heartbeatMilliseconds: integer(
+      input["heartbeatMilliseconds"],
+      "configuration.http.heartbeatMilliseconds",
+      10,
+      300_000,
+    ),
+  });
+}
+
+function parseRecentAuthenticationConfiguration(value: unknown): RecentAuthenticationConfiguration {
+  const input = record(value, "configuration.identity.recentAuthentication");
+  rejectUnknown(
+    input,
+    ["maximumAgeMilliseconds", "clockSkewMilliseconds"],
+    "configuration.identity.recentAuthentication",
+  );
+  return Object.freeze({
+    maximumAgeMilliseconds: integer(
+      input["maximumAgeMilliseconds"],
+      "configuration.identity.recentAuthentication.maximumAgeMilliseconds",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    ),
+    clockSkewMilliseconds: integer(
+      input["clockSkewMilliseconds"],
+      "configuration.identity.recentAuthentication.clockSkewMilliseconds",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    ),
+  });
+}
+
+function parseIdentityBootstrapConfiguration(value: unknown): IdentityBootstrapConfiguration {
+  const input = record(value, "configuration.identity.bootstrap");
+  rejectUnknown(
+    input,
+    ["enabled", "expiresAt", "tokenSecretRef"],
+    "configuration.identity.bootstrap",
+  );
+  const enabled = boolean(input["enabled"], "configuration.identity.bootstrap.enabled");
+  const tokenSecretRefValue = input["tokenSecretRef"];
+  const tokenSecretRef =
+    tokenSecretRefValue === null
+      ? null
+      : safeReference(tokenSecretRefValue, "configuration.identity.bootstrap.tokenSecretRef");
+  if (enabled && tokenSecretRef === null) {
+    throw invalid(
+      "configuration.identity.bootstrap.tokenSecretRef",
+      "is required when bootstrap is enabled",
+    );
+  }
+  return Object.freeze({
+    enabled,
+    expiresAt: timestamp(input["expiresAt"], "configuration.identity.bootstrap.expiresAt"),
+    tokenSecretRef,
+  });
+}
+
+function parseIdentityCsrfConfiguration(value: unknown): IdentityCsrfConfiguration {
+  const input = record(value, "configuration.identity.csrf");
+  rejectUnknown(input, ["keySecretRef", "ttlMilliseconds"], "configuration.identity.csrf");
+  return Object.freeze({
+    keySecretRef: safeReference(input["keySecretRef"], "configuration.identity.csrf.keySecretRef"),
+    ttlMilliseconds: integer(
+      input["ttlMilliseconds"],
+      "configuration.identity.csrf.ttlMilliseconds",
+      60_000,
+      24 * 60 * 60_000,
+    ),
+  });
+}
+
+function parseIdentityConfiguration(value: unknown): IdentityConfiguration {
+  const input = record(value, "configuration.identity");
+  if (input["kind"] === "built-in") {
+    rejectUnknown(
+      input,
+      [
+        "kind",
+        "sessionIdleMilliseconds",
+        "sessionAbsoluteMilliseconds",
+        "recentAuthentication",
+        "csrf",
+      ],
+      "configuration.identity",
+    );
+    const idle = integer(
+      input["sessionIdleMilliseconds"],
+      "configuration.identity.sessionIdleMilliseconds",
+      60000,
+      604800000,
+    );
+    const absolute = integer(
+      input["sessionAbsoluteMilliseconds"],
+      "configuration.identity.sessionAbsoluteMilliseconds",
+      idle,
+      2592000000,
+    );
+    return Object.freeze({
+      kind: "built-in",
+      sessionIdleMilliseconds: idle,
+      sessionAbsoluteMilliseconds: absolute,
+      recentAuthentication: parseRecentAuthenticationConfiguration(input["recentAuthentication"]),
+      csrf: parseIdentityCsrfConfiguration(input["csrf"]),
+    });
+  }
+  if (input["kind"] !== undefined && input["kind"] !== "cloudflare-access") {
+    throw invalid("configuration.identity.kind", "must select an installed authentication method");
+  }
+  rejectUnknown(
+    input,
+    [
+      "kind",
+      "issuer",
+      "audience",
+      "jwksUrl",
+      "jwksCacheMilliseconds",
+      "jwksTimeoutMilliseconds",
+      "jwksMaximumBodyBytes",
+      "clockToleranceSeconds",
+      "identityLookupTimeoutMilliseconds",
+      "identityLookupMaximumBodyBytes",
+      "recentAuthentication",
+      "bootstrap",
+      "csrf",
+    ],
+    "configuration.identity",
+  );
+  const issuer = httpsOrigin(input["issuer"], "configuration.identity.issuer");
+  const jwksUrl = httpsFixedUrl(
+    input["jwksUrl"],
+    "configuration.identity.jwksUrl",
+    "/cdn-cgi/access/certs",
+  );
+  const expectedJwksUrl = new URL("/cdn-cgi/access/certs", issuer).href;
+  if (jwksUrl !== expectedJwksUrl) {
+    throw invalid("configuration.identity.jwksUrl", "must be the fixed issuer JWKS endpoint");
+  }
+  return Object.freeze({
+    ...(input["kind"] === "cloudflare-access" ? { kind: "cloudflare-access" as const } : {}),
+    issuer,
+    audience: safeReference(input["audience"], "configuration.identity.audience"),
+    jwksUrl,
+    jwksCacheMilliseconds: integer(
+      input["jwksCacheMilliseconds"],
+      "configuration.identity.jwksCacheMilliseconds",
+      1_000,
+      3_600_000,
+    ),
+    jwksTimeoutMilliseconds: integer(
+      input["jwksTimeoutMilliseconds"],
+      "configuration.identity.jwksTimeoutMilliseconds",
+      1,
+      10_000,
+    ),
+    jwksMaximumBodyBytes: integer(
+      input["jwksMaximumBodyBytes"],
+      "configuration.identity.jwksMaximumBodyBytes",
+      1,
+      1024 * 1024,
+    ),
+    clockToleranceSeconds: integer(
+      input["clockToleranceSeconds"],
+      "configuration.identity.clockToleranceSeconds",
+      0,
+      120,
+    ),
+    identityLookupTimeoutMilliseconds: integer(
+      input["identityLookupTimeoutMilliseconds"],
+      "configuration.identity.identityLookupTimeoutMilliseconds",
+      1,
+      10_000,
+    ),
+    identityLookupMaximumBodyBytes: integer(
+      input["identityLookupMaximumBodyBytes"],
+      "configuration.identity.identityLookupMaximumBodyBytes",
+      1,
+      1024 * 1024,
+    ),
+    recentAuthentication: parseRecentAuthenticationConfiguration(input["recentAuthentication"]),
+    bootstrap: parseIdentityBootstrapConfiguration(input["bootstrap"]),
+    csrf: parseIdentityCsrfConfiguration(input["csrf"]),
+  });
+}
+
+function assertIdentitySecretReference(
+  secretReferences: readonly {
+    readonly ref: string;
+    readonly version: string;
+    readonly purpose: string;
+  }[],
+  ref: string | null,
+  purpose: string,
+  field: string,
+): void {
+  if (ref === null) return;
+  const matches = secretReferences.filter((entry) => entry.ref === ref);
+  if (matches.length !== 1 || matches[0]?.purpose !== purpose) {
+    throw invalid(field, `must reference exactly one ${purpose} secret`);
+  }
+}
+
+function parseFileReadRoute(value: unknown): NonNullable<RunPolicyConfiguration["fileRead"]> {
+  const field = "configuration.runPolicy.fileRead";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["hostId", "workerInstanceId", "grantId", "capabilityRef", "capabilityVersion", "maximumBytes"],
+    field,
+  );
+  return Object.freeze({
+    hostId: safeReference(input["hostId"], `${field}.hostId`),
+    workerInstanceId: safeReference(input["workerInstanceId"], `${field}.workerInstanceId`),
+    grantId: safeReference(input["grantId"], `${field}.grantId`),
+    capabilityRef: safeReference(input["capabilityRef"], `${field}.capabilityRef`),
+    capabilityVersion: safeReference(input["capabilityVersion"], `${field}.capabilityVersion`),
+    maximumBytes: integer(input["maximumBytes"], `${field}.maximumBytes`, 1, 48 * 1024),
+  });
+}
+
+function parseCodingRoute(value: unknown): NonNullable<RunPolicyConfiguration["coding"]> {
+  const input = record(value, "configuration.runPolicy.coding");
+  const { enabledTools, ...route } = input;
+  if (
+    !Array.isArray(enabledTools) ||
+    enabledTools.length === 0 ||
+    new Set(enabledTools).size !== enabledTools.length ||
+    enabledTools.some(
+      (tool) => !["read", "write", "edit", "bash", "find", "grep", "ls"].includes(tool),
+    )
+  )
+    throw invalid(
+      "configuration.runPolicy.coding.enabledTools",
+      "must select distinct installed Pi tools",
+    );
+  return {
+    ...parseFileReadRoute(route),
+    enabledTools: enabledTools as NonNullable<RunPolicyConfiguration["coding"]>["enabledTools"],
+  };
+}
+
+function parseRunPolicy(value: unknown): RunPolicyConfiguration {
+  const input = record(value, "configuration.runPolicy");
+  rejectUnknown(
+    input,
+    [
+      "version",
+      "timeZone",
+      "systemInstruction",
+      "memoryLimit",
+      "maxSelectedMemories",
+      "maxMemoryClassification",
+      "fileRead",
+      "coding",
+      "publicSearch",
+    ],
+    "configuration.runPolicy",
+  );
+  const instruction = string(
+    input["systemInstruction"],
+    "configuration.runPolicy.systemInstruction",
+  );
+  if (Buffer.byteLength(instruction, "utf8") > 16384)
+    throw invalid("configuration.runPolicy.systemInstruction", "must not exceed 16384 bytes");
+  const memoryLimit = integer(input["memoryLimit"], "configuration.runPolicy.memoryLimit", 1, 1000);
+  const timeZone =
+    input["timeZone"] === undefined
+      ? undefined
+      : string(input["timeZone"], "configuration.runPolicy.timeZone");
+  if (timeZone !== undefined) {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone }).format(0);
+    } catch {
+      throw invalid("configuration.runPolicy.timeZone", "must be a supported IANA time zone");
+    }
+  }
+  return Object.freeze({
+    ...(timeZone === undefined ? {} : { timeZone }),
+    ...(input["publicSearch"] === undefined
+      ? {}
+      : { publicSearch: parseFileReadRoute(input["publicSearch"]) }),
+    ...(input["coding"] === undefined ? {} : { coding: parseCodingRoute(input["coding"]) }),
+    ...(input["fileRead"] === undefined ? {} : { fileRead: parseFileReadRoute(input["fileRead"]) }),
+    version: safeReference(input["version"], "configuration.runPolicy.version"),
+    systemInstruction: instruction,
+    memoryLimit,
+    maxSelectedMemories: integer(
+      input["maxSelectedMemories"],
+      "configuration.runPolicy.maxSelectedMemories",
+      0,
+      memoryLimit,
+    ),
+    maxMemoryClassification: classifications(
+      [input["maxMemoryClassification"]],
+      "configuration.runPolicy.maxMemoryClassification",
+    )[0] as DataClassification,
+  });
+}
+
 export function parseProductConfiguration(value: unknown, loadedAt: string): ProductConfiguration {
   const input = record(value, "configuration");
   rejectUnknown(
@@ -347,6 +770,10 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "cacheDirectory",
       "publicOrigin",
       "publicMode",
+      "runPolicy",
+      "capabilityDeployment",
+      "http",
+      "identity",
       "modelDescriptors",
       "memory",
       "repositoryAllowlistRefs",
@@ -398,6 +825,17 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     origin.protocol === "https:" || (!publicMode && origin.protocol === "http:" && loopback);
   if (!transportAllowed) {
     throw invalid("configuration.publicOrigin", "does not meet transport security policy");
+  }
+
+  const http = input["http"] === undefined ? undefined : parseHttpConfiguration(input["http"]);
+  const identity =
+    input["identity"] === undefined ? undefined : parseIdentityConfiguration(input["identity"]);
+  const capabilityDeployment =
+    input["capabilityDeployment"] === undefined
+      ? undefined
+      : parseCapabilityDeploymentConfiguration(input["capabilityDeployment"]);
+  if ((http === undefined) !== (identity === undefined)) {
+    throw invalid("configuration", "http and identity must be configured together");
   }
 
   if (!Array.isArray(input["modelDescriptors"])) {
@@ -465,6 +903,21 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   ) {
     throw invalid("configuration.secretReferences", "must not contain duplicate ref/version pairs");
   }
+  if (identity) {
+    if (identity.kind !== "built-in")
+      assertIdentitySecretReference(
+        secretReferences,
+        identity.bootstrap.tokenSecretRef,
+        "identity-bootstrap",
+        "configuration.identity.bootstrap.tokenSecretRef",
+      );
+    assertIdentitySecretReference(
+      secretReferences,
+      identity.csrf.keySecretRef,
+      "identity-csrf",
+      "configuration.identity.csrf.keySecretRef",
+    );
+  }
   const secretReferenceNames = new Set(secretReferences.map(({ ref }) => ref));
   for (const descriptor of modelDescriptors) {
     if (descriptor.secretRef !== null && !secretReferenceNames.has(descriptor.secretRef)) {
@@ -527,6 +980,10 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     cacheDirectory,
     publicOrigin,
     publicMode,
+    ...(input["runPolicy"] === undefined ? {} : { runPolicy: parseRunPolicy(input["runPolicy"]) }),
+    ...(capabilityDeployment === undefined ? {} : { capabilityDeployment }),
+    ...(http === undefined ? {} : { http }),
+    ...(identity === undefined ? {} : { identity }),
     modelDescriptors,
     memory: Object.freeze({
       adapter: "mem0-oss" as const,

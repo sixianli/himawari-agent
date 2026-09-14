@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "backupCreatedAndVerified": true,
+  "migratedTo": 32,
+  "importedMessages": 2,
+  "restoredTo": 31,
+  "oldArtifactCount": 2,
+  "foreignKeysValid": true,
+  "modelCalls": 0,
+  "scope": "synthetic database with actual old and new installed modules"
+}

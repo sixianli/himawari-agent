@@ -1,6 +1,6 @@
-import { DOMAIN_ERROR_CODES, DomainError } from "./errors.js";
-import type { Session, Trigger } from "./entities.js";
-import type { AgentId, OwnerId, RunId, SessionId, ThreadId, TriggerId } from "./identifiers.js";
+import type { Session, Trigger } from "./entities.ts";
+import { DOMAIN_ERROR_CODES, DomainError } from "./errors.ts";
+import type { AgentId, OwnerId, RunId, SessionId, ThreadId, TriggerId } from "./identifiers.ts";
 
 export const RUN_STATUSES = [
   "accepted",
@@ -28,8 +28,8 @@ export interface Run {
 const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus> = new Set(["completed", "failed", "cancelled"]);
 
 const ALLOWED_TRANSITIONS: Readonly<Record<RunStatus, ReadonlySet<RunStatus>>> = {
-  accepted: new Set(["building_context", "failed", "cancelled"]),
-  building_context: new Set(["running", "failed", "cancelled"]),
+  accepted: new Set(["building_context", "reconciling_external_result", "failed", "cancelled"]),
+  building_context: new Set(["running", "reconciling_external_result", "failed", "cancelled"]),
   running: new Set([
     "awaiting_approval",
     "reconciling_external_result",

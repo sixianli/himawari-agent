@@ -136,12 +136,34 @@ async function fixture(): Promise<Fixture> {
     .run(OWNER_ID, AGENT_ID, T0, T0);
   database
     .prepare(
-      `INSERT INTO run_checkpoints (
-        id, owner_id, agent_id, run_id, revision, phase, checkpoint_ref, created_at
-      ) VALUES ('checkpoint-delete', ?, ?, 'run-delete', 0, 'fixture',
-        'payload-run-checkpoint', ?)`,
+      `INSERT INTO run_coordination_checkpoints (
+        run_id, owner_id, agent_id, revision, phase, context_ref,
+        runtime_event_count, last_trace_event_id, terminal_status,
+        output_kind, final_answer_ref, diagnostic_code, updated_at
+      ) VALUES ('run-delete', ?, ?, 1, 'runtime_settled',
+        'payload-run-checkpoint', 0, NULL, NULL, NULL, NULL, NULL, ?)`,
     )
     .run(OWNER_ID, AGENT_ID, T0);
+  database
+    .prepare(
+      `INSERT INTO model_budget_accounts (
+        owner_id, agent_id, account_id, parent_kind, run_id, occurrence_id,
+        data_classification, reserved_cost_micros, spent_cost_micros,
+        status, revision
+      ) VALUES (?, ?, 'run:run-delete', 'run', 'run-delete', NULL,
+        'private', 0, 5, 'active', 1)`,
+    )
+    .run(OWNER_ID, AGENT_ID);
+  database
+    .prepare(
+      `INSERT INTO model_budget_allocations (
+        owner_id, agent_id, account_id, operation_key, model_ref,
+        data_classification, estimated_cost_micros, actual_cost_micros,
+        status, reserved_at, started_at, observed_at, settled_at, reason_code
+      ) VALUES (?, ?, 'run:run-delete', 'deletion-budget-call',
+        'approved-model-v1', 'private', 5, 5, 'settled', ?, ?, NULL, ?, NULL)`,
+    )
+    .run(OWNER_ID, AGENT_ID, T0, T0, T0);
   database
     .prepare(
       `INSERT INTO trace_events (
@@ -289,6 +311,18 @@ describe("SQLite governed deletion", () => {
     expect(
       scalar(resource.databasePath, "SELECT status FROM scheduled_jobs WHERE id = 'task-delete'"),
     ).toBe("paused");
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT COUNT(*) FROM model_budget_accounts WHERE account_id = 'run:run-delete'",
+      ),
+    ).toBe(1);
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT COUNT(*) FROM model_budget_allocations WHERE account_id = 'run:run-delete'",
+      ),
+    ).toBe(1);
 
     const restored = await resource.adapter.restoreThread("thread-delete");
     expect(restored.lifecycle).toBe("active");
@@ -299,6 +333,12 @@ describe("SQLite governed deletion", () => {
     expect(
       scalar(resource.databasePath, "SELECT status FROM scheduled_jobs WHERE id = 'task-delete'"),
     ).toBe("paused");
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT COUNT(*) FROM model_budget_accounts WHERE account_id = 'run:run-delete'",
+      ),
+    ).toBe(1);
   });
 
   it("uses real inactive states for task and Memory Trash and restores prior visibility", async () => {
@@ -352,6 +392,18 @@ describe("SQLite governed deletion", () => {
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM threads")).toBe(0);
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM runs")).toBe(0);
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM trace_events")).toBe(0);
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT COUNT(*) FROM model_budget_accounts WHERE account_id = 'run:run-delete'",
+      ),
+    ).toBe(0);
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT COUNT(*) FROM model_budget_allocations WHERE account_id = 'run:run-delete'",
+      ),
+    ).toBe(0);
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM inbox_deliveries")).toBe(0);
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM scheduled_jobs")).toBe(1);
     expect(
@@ -453,6 +505,18 @@ describe("SQLite governed deletion", () => {
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM runs")).toBe(0);
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM trace_events")).toBe(0);
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM inbox_deliveries")).toBe(0);
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT COUNT(*) FROM model_budget_accounts WHERE account_id = 'run:run-delete'",
+      ),
+    ).toBe(0);
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT COUNT(*) FROM model_budget_allocations WHERE account_id = 'run:run-delete'",
+      ),
+    ).toBe(0);
     expect(
       scalar(resource.databasePath, "SELECT COUNT(*) FROM payloads WHERE ref = 'payload-task'"),
     ).toBe(0);

@@ -1,7 +1,13 @@
 import type { GatewayV2Event, ThreadGatewayEvent } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it, vi } from "vitest";
 import { ControlCenterBrowserStorage } from "../src/browser-storage.js";
-import { GatewayClient, loadRuntimeConfiguration, safeBrowserLog } from "../src/gateway-client.js";
+import {
+  createBrowserSession,
+  GatewayClient,
+  loadRuntimeConfiguration,
+  refreshRuntimeConfiguration,
+  safeBrowserLog,
+} from "../src/gateway-client.js";
 import {
   commandMessage,
   queryMessage,
@@ -20,6 +26,142 @@ const configuration = {
   actorId: "owner-01",
   csrfToken: "csrf-01",
 } as const;
+
+it.each(["gateway", "thread"] as const)(
+  "clears authenticated UI state and stops reconnecting on %s session revocation",
+  (kind) => {
+    const handlers = new Map<string, (event: MessageEvent<string>) => void>();
+    const source: EventSourceLike = {
+      onmessage: null,
+      onerror: null,
+      close: vi.fn(),
+      addEventListener: (name, handler) => {
+        handlers.set(name, handler);
+      },
+    };
+    const onUnauthorized = vi.fn();
+    const schedule = vi.fn(() => 1);
+    const options = {
+      storage: new ControlCenterBrowserStorage(new MemoryStorage()),
+      createEventSource: () => source,
+      onUnauthorized,
+      schedule,
+      onConnectionState: vi.fn(),
+      log: vi.fn(),
+    };
+    const synchronizer =
+      kind === "gateway"
+        ? new SseStateSynchronizer({ ...options, onEvent: vi.fn() })
+        : new ThreadSseSynchronizer({
+            ...options,
+            configuration,
+            onCommittedEvent: vi.fn(),
+            onSnapshotRequired: vi.fn(),
+          });
+    synchronizer.start();
+    handlers.get("gateway.stream_error")?.({
+      data: JSON.stringify({ code: "IDENTITY_SESSION_INVALID" }),
+    } as MessageEvent<string>);
+    source.onerror?.(new Event("error"));
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+    expect(source.close).toHaveBeenCalled();
+    expect(schedule).not.toHaveBeenCalled();
+  },
+);
+
+describe.each(["gateway", "thread"] as const)("%s connection lifecycle", (kind) => {
+  function setup() {
+    const sources: EventSourceLike[] = [];
+    const retries: Array<() => void> = [];
+    const onConnectionState = vi.fn();
+    const options = {
+      storage: new ControlCenterBrowserStorage(new MemoryStorage()),
+      createEventSource: () => {
+        const source: EventSourceLike = { onmessage: null, onerror: null, close: vi.fn() };
+        sources.push(source);
+        return source;
+      },
+      onConnectionState,
+      log: vi.fn(),
+      schedule: (retry: () => void) => retries.push(retry),
+      cancelSchedule: vi.fn(),
+    };
+    const synchronizer =
+      kind === "gateway"
+        ? new SseStateSynchronizer({ ...options, onEvent: vi.fn() })
+        : new ThreadSseSynchronizer({
+            ...options,
+            configuration,
+            onCommittedEvent: vi.fn(),
+            onSnapshotRequired: vi.fn(),
+          });
+    return { synchronizer, sources, retries, onConnectionState };
+  }
+
+  it("closes the stream immediately while offline and reconnects only after recovery", () => {
+    const { synchronizer, sources, onConnectionState } = setup();
+    try {
+      synchronizer.start();
+      sources[0]?.onopen?.(new Event("open"));
+      synchronizer.setNetworkOnline(false);
+      expect(sources[0]?.close).toHaveBeenCalledOnce();
+      expect(onConnectionState).toHaveBeenLastCalledWith("offline");
+      synchronizer.reconnectNow();
+      expect(sources).toHaveLength(1);
+      synchronizer.setNetworkOnline(true);
+      expect(sources).toHaveLength(2);
+      sources[1]?.onopen?.(new Event("open"));
+      expect(onConnectionState).toHaveBeenLastCalledWith("connected");
+    } finally {
+      synchronizer.stop();
+    }
+  });
+
+  it("preserves an opening or healthy connection when the page resumes", () => {
+    const { synchronizer, sources, onConnectionState } = setup();
+    try {
+      synchronizer.start();
+      synchronizer.reconnectNow();
+      expect(sources).toHaveLength(1);
+      sources[0]?.onopen?.(new Event("open"));
+      synchronizer.reconnectNow();
+      expect(sources).toHaveLength(1);
+      expect(sources[0]?.close).not.toHaveBeenCalled();
+      expect(onConnectionState).toHaveBeenLastCalledWith("connected");
+    } finally {
+      synchronizer.stop();
+    }
+  });
+
+  it("retries a stalled handshake and ignores callbacks from the expired source", () => {
+    vi.useFakeTimers();
+    const { synchronizer, sources, retries, onConnectionState } = setup();
+    try {
+      synchronizer.start();
+      vi.advanceTimersByTime(10_000);
+      expect(sources[0]?.close).toHaveBeenCalledOnce();
+      expect(onConnectionState).toHaveBeenLastCalledWith("offline");
+      expect(retries).toHaveLength(1);
+      sources[0]?.onopen?.(new Event("open"));
+      sources[0]?.onerror?.(new Event("error"));
+      expect(onConnectionState).toHaveBeenLastCalledWith("offline");
+      expect(retries).toHaveLength(1);
+      retries[0]?.();
+      expect(sources).toHaveLength(2);
+      sources[1]?.onopen?.(new Event("open"));
+      vi.advanceTimersByTime(20_000);
+      expect(sources[1]?.close).not.toHaveBeenCalled();
+      expect(onConnectionState).toHaveBeenLastCalledWith("connected");
+      synchronizer.stop();
+      sources[1]?.onopen?.(new Event("open"));
+      sources[1]?.onerror?.(new Event("error"));
+      expect(retries).toHaveLength(1);
+    } finally {
+      synchronizer.stop();
+      vi.useRealTimers();
+    }
+  });
+});
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -126,12 +268,58 @@ function threadEvent(): ThreadGatewayEvent {
 }
 
 describe("typed browser Gateway client", () => {
+  it("reads and validates the existing authenticated health endpoint", async () => {
+    const value = {
+      id: "health-01",
+      live: true,
+      ready: true,
+      status: "healthy",
+      dependencies: [{ name: "sqlite", required: true, status: "healthy", reasonCode: null }],
+    };
+    const fetchImplementation = vi.fn(async () => new Response(JSON.stringify(value)));
+    const client = new GatewayClient({ fetch: fetchImplementation, csrfToken: () => "unused" });
+    expect(await client.healthDependencies()).toEqual(value);
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      "/api/health/v1/dependencies",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+    fetchImplementation.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ ...value, dependencies: [{ name: "sqlite", status: "invented" }] }),
+      ),
+    );
+    await expect(client.healthDependencies()).rejects.toThrow("CONTROL_CENTER_RESPONSE_INVALID");
+    fetchImplementation.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: "HTTP_GATEWAY_AUTHENTICATION_REQUIRED" } }), {
+        status: 401,
+      }),
+    );
+    await expect(client.healthDependencies()).rejects.toMatchObject({ status: 401 });
+  });
+  it("loads explicit deployment operations and rejects malformed availability", async () => {
+    const load = (operations: unknown) =>
+      loadRuntimeConfiguration(
+        async () =>
+          new Response(
+            JSON.stringify({ ...configuration, installedGatewayV2Operations: operations }),
+          ),
+      );
+    expect(
+      (await load(["approval.list", "approval.detail", "approval.respond"]))
+        .installedGatewayV2Operations,
+    ).toEqual(["approval.list", "approval.detail", "approval.respond"]);
+    expect((await load(undefined)).installedGatewayV2Operations).toEqual([]);
+    await expect(load("all")).rejects.toThrow("CONTROL_CENTER_CONFIGURATION_INVALID");
+    await expect(load([false])).rejects.toThrow("CONTROL_CENTER_CONFIGURATION_INVALID");
+  });
+
   it("loads scoped governance authentication references without exposing credentials", async () => {
     const loaded = await loadRuntimeConfiguration(
       (async () =>
         new Response(
           JSON.stringify({
             ...configuration,
+            sessionId: "session:verified-browser",
             authorizationRef: "authentication:owner-session-01",
             recentAuthenticationRef: "authentication:owner-session-01",
           }),
@@ -140,11 +328,26 @@ describe("typed browser Gateway client", () => {
     );
 
     expect(loaded).toMatchObject({
+      sessionId: "session:verified-browser",
       authorizationRef: "authentication:owner-session-01",
       recentAuthenticationRef: "authentication:owner-session-01",
     });
     expect(JSON.stringify(loaded)).not.toContain("password");
     expect(JSON.stringify(loaded)).not.toContain("accessToken");
+  });
+
+  it("rejects malformed product session identity from browser configuration", async () => {
+    await expect(
+      loadRuntimeConfiguration(
+        (async () =>
+          new Response(
+            JSON.stringify({
+              ...configuration,
+              sessionId: { token: "not-a-session-id" },
+            }),
+          )) as typeof fetch,
+      ),
+    ).rejects.toThrow("CONTROL_CENTER_CONFIGURATION_INVALID");
   });
 
   it("strictly serializes commands, keeps one idempotency key and reports replay", async () => {
@@ -254,6 +457,124 @@ describe("typed browser Gateway client", () => {
     expect(bodies[1]).not.toContain("私人正文");
   });
 
+  it("refreshes an expired CSRF token once without changing the request or idempotency key", async () => {
+    const calls: RequestInit[] = [];
+    let refreshes = 0;
+    const client = new GatewayClient({
+      csrfToken: () => "expired",
+      refreshCsrfToken: async () => {
+        refreshes += 1;
+        return "fresh";
+      },
+      fetch: (async (_url, init) => {
+        calls.push(init ?? {});
+        return new Headers(init?.headers).get("x-csrf-token") === "expired"
+          ? new Response(JSON.stringify({ error: { code: "HTTP_GATEWAY_CSRF_REJECTED" } }), {
+              status: 403,
+            })
+          : new Response(JSON.stringify({ payloadRef: "payload-01" }), { status: 201 });
+      }) as typeof fetch,
+    });
+    expect(await client.protectText("同一条消息", "private", "same-command")).toBe("payload-01");
+    expect(refreshes).toBe(1);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.body).toBe(calls[0]?.body);
+    expect(new Headers(calls[1]?.headers).get("idempotency-key")).toBe("same-command");
+    await client.protectText("下一条消息", "private", "next-command");
+    expect(refreshes).toBe(1);
+    expect(new Headers(calls[2]?.headers).get("x-csrf-token")).toBe("fresh");
+  });
+
+  it.each(["HTTP_GATEWAY_CSRF_REJECTED", "HTTP_GATEWAY_FORBIDDEN"])(
+    "does not loop or retry unrelated rejection: %s",
+    async (code) => {
+      let calls = 0;
+      let refreshes = 0;
+      const client = new GatewayClient({
+        csrfToken: () => "old",
+        refreshCsrfToken: async () => {
+          refreshes += 1;
+          return "new";
+        },
+        fetch: (async () => {
+          calls += 1;
+          return new Response(JSON.stringify({ error: { code } }), { status: 403 });
+        }) as typeof fetch,
+      });
+      await expect(client.protectText("message")).rejects.toThrow(code);
+      expect(calls).toBe(code === "HTTP_GATEWAY_CSRF_REJECTED" ? 2 : 1);
+      expect(refreshes).toBe(code === "HTTP_GATEWAY_CSRF_REJECTED" ? 1 : 0);
+    },
+  );
+
+  it("shares token refresh across concurrent rejected requests", async () => {
+    let release: (token: string) => void = () => {};
+    const refresh = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const tokens: string[] = [];
+    const client = new GatewayClient({
+      csrfToken: () => "expired",
+      refreshCsrfToken: refresh,
+      fetch: (async (_url, init) => {
+        const token = new Headers(init?.headers).get("x-csrf-token") ?? "";
+        tokens.push(token);
+        return token === "expired"
+          ? new Response(JSON.stringify({ error: { code: "HTTP_GATEWAY_CSRF_REJECTED" } }), {
+              status: 403,
+            })
+          : new Response(JSON.stringify({ payloadRef: "payload-01" }), { status: 201 });
+      }) as typeof fetch,
+    });
+    const requests = [client.protectText("first"), client.protectText("second")];
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    release("fresh");
+    await expect(Promise.all(requests)).resolves.toEqual(["payload-01", "payload-01"]);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(tokens).toEqual(["expired", "expired", "fresh", "fresh"]);
+  });
+
+  it("does not retry a network failure whose dispatch status is unknown", async () => {
+    const fetch = vi.fn(async () => {
+      throw new Error("network interrupted");
+    });
+    const refresh = vi.fn(async () => "fresh");
+    const client = new GatewayClient({ fetch, csrfToken: () => "old", refreshCsrfToken: refresh });
+    await expect(client.protectText("message")).rejects.toThrow("network interrupted");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["ownerId", "other-owner"],
+    ["actorId", "other-actor"],
+    ["agentId", "other-agent"],
+    ["deploymentId", "other-deployment"],
+    ["sessionId", "other-session"],
+    ["authorityEpoch", 2],
+    ["fencingToken", 2],
+  ])("does not refresh into another authentication scope: %s", async (key, value) => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ...configuration, csrfToken: "fresh", [key]: value })),
+    );
+    await expect(refreshRuntimeConfiguration(fetch, configuration)).rejects.toThrow(
+      "CONTROL_CENTER_AUTHENTICATION_SCOPE_CHANGED",
+    );
+  });
+
+  it("accepts a renewed token for the same authenticated scope", async () => {
+    const fetch = vi.fn(
+      async () => new Response(JSON.stringify({ ...configuration, csrfToken: "fresh" })),
+    );
+    await expect(refreshRuntimeConfiguration(fetch, configuration)).resolves.toMatchObject({
+      csrfToken: "fresh",
+    });
+  });
+
   it("uses strict Thread v3 endpoints and preserves a caller-supplied idempotency key", async () => {
     const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
     const client = new GatewayClient({
@@ -345,6 +666,22 @@ describe("typed browser Gateway client", () => {
 });
 
 describe("browser storage and SSE recovery", () => {
+  it("retains the initial search-setting retry identity without accepting revision zero for existing objects", () => {
+    const storage = new ControlCenterBrowserStorage(new MemoryStorage());
+    const pending = {
+      operationKey: "search-authorization:0:enable",
+      idempotencyKey: "governance:search-enable",
+      commandType: "search.authorization.set",
+      objectRef: "search-authorization",
+      expectedRevision: 0,
+    };
+    storage.savePendingGovernanceMutation(pending);
+    expect(storage.readPendingGovernanceMutation(pending.operationKey)).toEqual(pending);
+    expect(() =>
+      storage.savePendingGovernanceMutation({ ...pending, commandType: "approval.respond" }),
+    ).toThrow("CONTROL_CENTER_MUTATION_IDENTITY_INVALID");
+  });
+
   it("stores only draft, preferences and durable cursor while logs omit content", () => {
     const raw = new MemoryStorage();
     const storage = new ControlCenterBrowserStorage(raw);
@@ -437,6 +774,41 @@ describe("browser storage and SSE recovery", () => {
       "/api/gateway/v2/events?afterCursor=cursor-02",
     ]);
     synchronizer.stop();
+  });
+
+  it("refreshes snapshots without changing durable cursors or reconnecting on invalidation hints", () => {
+    const storage = new ControlCenterBrowserStorage(new MemoryStorage());
+    storage.saveLastCursor("cursor-01");
+    const listeners = new Map<string, (event: MessageEvent<string>) => void>();
+    const refresh = vi.fn();
+    const connect = vi.fn(() => ({
+      onmessage: null,
+      onerror: null,
+      close: vi.fn(),
+      addEventListener(type: string, listener: (event: MessageEvent<string>) => void) {
+        listeners.set(type, listener);
+      },
+    }));
+    const synchronizer = new SseStateSynchronizer({
+      storage,
+      createEventSource: connect,
+      onEvent: vi.fn(),
+      onSnapshotRequired: refresh,
+      onConnectionState: vi.fn(),
+      log: vi.fn(),
+    });
+    synchronizer.start();
+    const notify = () =>
+      listeners.get("gateway.snapshot_required")?.({
+        data: JSON.stringify({ reason: "state_changed" }),
+      } as MessageEvent<string>);
+    notify();
+    expect(refresh).toHaveBeenCalledWith("state_changed");
+    expect(storage.readLastCursor()).toBe("cursor-01");
+    expect(connect).toHaveBeenCalledTimes(1);
+    synchronizer.stop();
+    notify();
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 
   it("deduplicates events and requests a snapshot for gaps or authority changes", () => {
@@ -532,6 +904,41 @@ describe("browser storage and SSE recovery", () => {
     synchronizer.stop();
   });
 
+  it("ignores replay and callbacks from disconnected Thread sources", () => {
+    const storage = new ControlCenterBrowserStorage(new MemoryStorage());
+    const sources: EventSourceLike[] = [];
+    const changed = vi.fn();
+    const states: string[] = [];
+    const synchronizer = new ThreadSseSynchronizer({
+      configuration,
+      storage,
+      createEventSource: () => {
+        const source: EventSourceLike = { onmessage: null, onerror: null, close: vi.fn() };
+        sources.push(source);
+        return source;
+      },
+      onCommittedEvent: changed,
+      onSnapshotRequired: vi.fn(),
+      onConnectionState: (state) => states.push(state),
+      log: vi.fn(),
+    });
+    synchronizer.start();
+    const message = { data: JSON.stringify(threadEvent()) } as MessageEvent<string>;
+    sources[0]?.onmessage?.(message);
+    sources[0]?.onmessage?.(message);
+    expect(changed).toHaveBeenCalledTimes(1);
+    synchronizer.setNetworkOnline(false);
+    sources[0]?.onopen?.(new Event("open"));
+    sources[0]?.onmessage?.(message);
+    expect(states.at(-1)).toBe("offline");
+    expect(changed).toHaveBeenCalledTimes(1);
+    synchronizer.setNetworkOnline(true);
+    expect(sources).toHaveLength(2);
+    sources[1]?.onopen?.(new Event("open"));
+    expect(states.at(-1)).toBe("connected");
+    synchronizer.stop();
+  });
+
   it("resumes Thread events from a separate cursor and requests a snapshot on retention loss", () => {
     const storage = new ControlCenterBrowserStorage(new MemoryStorage());
     storage.saveThreadLastCursor("thread-cursor:01");
@@ -540,6 +947,7 @@ describe("browser storage and SSE recovery", () => {
       EventSourceLike & { listeners: Map<string, (event: MessageEvent<string>) => void> }
     > = [];
     const callbacks: string[] = [];
+    const connectionStates: string[] = [];
     const synchronizer = new ThreadSseSynchronizer({
       configuration,
       storage,
@@ -563,9 +971,13 @@ describe("browser storage and SSE recovery", () => {
       },
       onCommittedEvent: () => callbacks.push("event"),
       onSnapshotRequired: () => callbacks.push("snapshot"),
+      onConnectionState: (state) => connectionStates.push(state),
       log: vi.fn(),
     });
     synchronizer.start();
+    expect(connectionStates).toEqual(["connecting"]);
+    sources[0]?.onopen?.(new Event("open"));
+    expect(connectionStates).toEqual(["connecting", "connected"]);
     sources[0]?.onmessage?.({ data: JSON.stringify(threadEvent()) } as MessageEvent<string>);
     sources[0]?.listeners.get("thread.snapshot_required")?.(
       new MessageEvent("thread.snapshot_required", { data: "{}" }),
@@ -580,8 +992,35 @@ describe("browser storage and SSE recovery", () => {
       type: "thread.events",
       payload: { afterCursor: "thread-cursor:01" },
     });
-    expect(callbacks).toEqual(["event", "snapshot"]);
+    expect(callbacks).toEqual(["snapshot", "event", "snapshot"]);
     expect(storage.readThreadLastCursor()).toBeNull();
     synchronizer.stop();
+  });
+});
+
+describe("browser identity session", () => {
+  it("creates the session through the authenticated same-origin route", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response("{}", { status: 201 }));
+    await createBrowserSession(fetch, "My browser");
+    expect(fetch).toHaveBeenCalledExactlyOnceWith("/api/identity/v1/sessions", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ deviceLabel: "My browser" }),
+    });
+  });
+  it("preserves rejected identity and does not retry automatically", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: "IDENTITY_SUBJECT_UNBOUND" } }), {
+        status: 403,
+      }),
+    );
+    await expect(createBrowserSession(fetch, "My browser")).rejects.toMatchObject({
+      message: "IDENTITY_SUBJECT_UNBOUND",
+      status: 403,
+    });
+    expect(fetch).toHaveBeenCalledOnce();
   });
 });

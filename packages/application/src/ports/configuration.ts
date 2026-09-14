@@ -41,6 +41,7 @@ export interface ConfiguredGenerationModelDescriptor extends ConfiguredModelDesc
   readonly name: string;
   readonly api: "openai-completions";
   readonly reasoning: boolean;
+  readonly reasoningRequired?: boolean;
   readonly input: readonly ("text" | "image")[];
   readonly contextWindow: number;
   readonly maxTokens: number;
@@ -80,6 +81,90 @@ export interface DeadlineConfiguration {
   readonly providerRequestMs: number;
 }
 
+export interface HttpConfiguration {
+  readonly listenHost: string;
+  readonly listenPort: number;
+  readonly staticRoot: string;
+  readonly sessionCookieName: string;
+  readonly maximumBodyBytes: number;
+  readonly maximumStaticAssetBytes: number;
+  readonly heartbeatMilliseconds: number;
+}
+
+export interface RecentAuthenticationConfiguration {
+  readonly maximumAgeMilliseconds: number;
+  readonly clockSkewMilliseconds: number;
+}
+
+export interface IdentityBootstrapConfiguration {
+  readonly enabled: boolean;
+  readonly expiresAt: string;
+  readonly tokenSecretRef: string | null;
+}
+
+export interface IdentityCsrfConfiguration {
+  readonly keySecretRef: string;
+  readonly ttlMilliseconds: number;
+}
+
+export interface CloudflareIdentityConfiguration {
+  readonly kind?: "cloudflare-access";
+  readonly issuer: string;
+  readonly audience: string;
+  readonly jwksUrl: string;
+  readonly jwksCacheMilliseconds: number;
+  readonly jwksTimeoutMilliseconds: number;
+  readonly jwksMaximumBodyBytes: number;
+  readonly clockToleranceSeconds: number;
+  readonly identityLookupTimeoutMilliseconds: number;
+  readonly identityLookupMaximumBodyBytes: number;
+  readonly recentAuthentication: RecentAuthenticationConfiguration;
+  readonly bootstrap: IdentityBootstrapConfiguration;
+  readonly csrf: IdentityCsrfConfiguration;
+}
+
+export interface BuiltInIdentityConfiguration {
+  readonly kind: "built-in";
+  readonly sessionIdleMilliseconds: number;
+  readonly sessionAbsoluteMilliseconds: number;
+  readonly recentAuthentication: RecentAuthenticationConfiguration;
+  readonly csrf: IdentityCsrfConfiguration;
+}
+
+export type IdentityConfiguration = CloudflareIdentityConfiguration | BuiltInIdentityConfiguration;
+
+export interface CapabilityDeploymentConfiguration {
+  readonly snapshotPath: string;
+  readonly sha256: string;
+}
+
+/** Host-owned, versioned instructions; never supplied by a browser message. */
+/** Routing selection only. Directory and action grants remain separate durable authority. */
+export interface FileReadRouteConfiguration {
+  readonly hostId: string;
+  readonly workerInstanceId: string;
+  readonly grantId: string;
+  readonly capabilityRef: string;
+  readonly capabilityVersion: string;
+  readonly maximumBytes: number;
+}
+
+export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
+  readonly enabledTools: readonly ("read" | "write" | "edit" | "bash" | "find" | "grep" | "ls")[];
+}
+
+export interface RunPolicyConfiguration {
+  readonly timeZone?: string;
+  readonly coding?: CodingRouteConfiguration;
+  readonly publicSearch?: FileReadRouteConfiguration;
+  readonly fileRead?: FileReadRouteConfiguration;
+  readonly version: string;
+  readonly systemInstruction: string;
+  readonly memoryLimit: number;
+  readonly maxSelectedMemories: number;
+  readonly maxMemoryClassification: DataClassification;
+}
+
 export interface ProductConfiguration {
   readonly schemaVersion: string;
   readonly deploymentId: DeploymentId;
@@ -90,6 +175,13 @@ export interface ProductConfiguration {
   readonly cacheDirectory: string;
   readonly publicOrigin: string;
   readonly publicMode: boolean;
+  readonly runPolicy?: RunPolicyConfiguration;
+  /** Present only when a verified capability deployment snapshot is configured. */
+  readonly capabilityDeployment?: CapabilityDeploymentConfiguration;
+  /** Present only for a configured public HTTP composition. */
+  readonly http?: HttpConfiguration;
+  /** Present only for a configured public identity composition. */
+  readonly identity?: IdentityConfiguration;
   readonly modelDescriptors: readonly ConfiguredModelDescriptor[];
   readonly memory: ConfiguredMemoryDescriptor;
   readonly repositoryAllowlistRefs: readonly string[];

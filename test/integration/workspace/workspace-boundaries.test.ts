@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -8,7 +8,9 @@ import {
   isExactExternalVersion,
   isInternalDependencyAllowed,
   isNodeImportAllowed,
+  isSandboxImportAllowed,
   piDependencyOwner,
+  srtDependencyOwner,
 } from "../../../scripts/boundary-policy.mjs";
 
 const workspaceNames = new Set(allowedInternalDependencies.keys());
@@ -49,14 +51,22 @@ describe("runtime-specific import negative probes", () => {
     },
   );
 
-  it.each(["react", "react-dom/client", "react-intl", "@himawari-agent/gateway-contracts"])(
-    "allows %s in the browser-only workspace",
-    (specifier) => {
-      expect(
-        isBrowserImportAllowed("@himawari-agent/control-center", specifier, workspaceNames),
-      ).toBe(true);
-    },
-  );
+  it.each([
+    "react",
+    "react-dom/client",
+    "react-intl",
+    "marked",
+    "@himawari-agent/gateway-contracts",
+  ])("allows %s in the browser-only workspace", (specifier) => {
+    expect(
+      isBrowserImportAllowed("@himawari-agent/control-center", specifier, workspaceNames),
+    ).toBe(true);
+  });
+
+  it("keeps SRT dependencies owned by runtime-sandbox", () => {
+    expect(srtDependencyOwner).toBe("@himawari-agent/runtime-sandbox");
+    expect([...workspaceNames].filter((name) => name === srtDependencyOwner)).toHaveLength(1);
+  });
 
   it("keeps Pi dependencies owned by runtime-pi", () => {
     expect(piDependencyOwner).toBe("@himawari-agent/runtime-pi");
@@ -104,4 +114,24 @@ describe("committed manifest and lock constraints", () => {
     expect(lockfile).not.toContain('"file:');
     expect(lockfile).not.toContain('"link:');
   });
+});
+
+it("limits Agent imports to risk-reducing sandbox control", async () => {
+  for (const specifier of [
+    "@himawari-agent/runtime-sandbox",
+    "@himawari-agent/runtime-sandbox/src/job-host.ts",
+  ])
+    expect(isSandboxImportAllowed("@himawari-agent/agent-service", specifier)).toBe(false);
+  expect(
+    isSandboxImportAllowed(
+      "@himawari-agent/agent-service",
+      "@himawari-agent/runtime-sandbox/control",
+    ),
+  ).toBe(true);
+  const control = await import("@himawari-agent/runtime-sandbox/control");
+  expect(Object.keys(control).sort()).toEqual([
+    "queryJobHostControl",
+    "readJobHostFinalEvidence",
+    "readLinuxNamespaceState",
+  ]);
 });

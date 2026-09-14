@@ -132,7 +132,7 @@
     },
     {
       "id": "coverage",
-      "needs": ["policy"],
+      "needs": ["policy", "build"],
       "timeoutMinutes": 15,
       "members": [
         {
@@ -143,8 +143,8 @@
           "node": "22.22.3"
         }
       ],
-      "projects": ["unit", "contracts", "tooling"],
-      "outputs": ["json", "lcov"]
+      "projects": ["unit", "contracts", "tooling", "integration"],
+      "outputs": ["json", "lcov", "artifact"]
     },
     {
       "id": "security",

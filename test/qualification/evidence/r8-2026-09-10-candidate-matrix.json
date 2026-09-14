@@ -1,0 +1,135 @@
+{
+  "schema": "r8-test-evidence-matrix.v1",
+  "productionSuitable": false,
+  "hosts": [
+    {
+      "host": "mac",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "osRelease": "27.0.0",
+      "node": "v22.22.3",
+      "backend": "srt",
+      "srtVersion": "0.0.75",
+      "installation": "/private/tmp/r8-install-linux-fix/lib/himawari-agent",
+      "profileRef": "r8-test-mac-foreground",
+      "qualificationStatus": "test-evidence-only",
+      "productionRegistered": false,
+      "applicationSchema": "sandbox-execution.v2",
+      "protocolActuallyProbed": "job-host.v2",
+      "applicationComposition": "controlled-mac-fixture-passed",
+      "modeCoverage": {
+        "foreground": "job-host-probed",
+        "background": "network-not-qualified",
+        "service": "network-not-qualified"
+      },
+      "identity": {
+        "file": "r8-2026-09-10-mac-final-identity.json",
+        "sha256": "eaf92c8aa8708cea21813e954ee94fa82ca068ad2687c90a1284287be0a050cd"
+      },
+      "authorizedNetwork": {
+        "file": "r8-2026-09-10-mac-installed-authorized-final.json",
+        "sha256": "dc75bfa24e845cc76b3ff6f87d53b282c9653c25bd2f4110ab9a5b3b870541fd"
+      },
+      "networkBoundary": {
+        "file": "r8-2026-09-10-mac-final-network.json",
+        "sha256": "8b27198695d37c9c934b9a9885764772e04918ec0b353aac95021efb3c8f3bda"
+      },
+      "proxyInitializationFailure": {
+        "file": "r8-2026-09-10-mac-bind-failure.json",
+        "sha256": "a5148e4a88060ac6b680cde170a2566d3eeeba1c9b738e51e9c978f772176988"
+      },
+      "policyDigests": [
+        "24e7e033c457e136f39bb3b2d39ec2218d491b46d42d4c4806dcb81d6243b09b",
+        "279c910035d6129927a8b9961882a4bcbf9bd03584640c478127ecd612effca0",
+        "33ce7ffef754f861bb4167ee90c63e1fd50d156d8123a4b681f64e27e646b43f",
+        "48d9ff02f1a77d8dc6b997e2ff5f54e55399a2e8cf2113536a14c126db55485a",
+        "50c68c3d442642bf99ea2129c03ffe6862ff1464e239783d88ee09ea13feafcc",
+        "7dc9f2ae671e1a4d12a2c94e756376ffc7c2ba7a039590517128142c66e6f811",
+        "942b5185050b15f0b483ce9c369218cecc2194bc2f365ac37467a88637cf6827",
+        "a4b6bdda38413505c1df93be0d85a3b0f40ba56f49050b88ebb136a491908cc6",
+        "ad33094abf12d166a8da81b493acd15140cd3b47568e8ad4e3df135161d28cfc",
+        "c3bce8f8d54fd1c13b338fcf1669e7b5d3c1c3b153b86aaeb8a133274deb9056",
+        "c89bbc61511e91229a488ccedd6fa560d7aed30fa7440b8766b5d6140580b4bd",
+        "c8bc8731e907fb432a08c6e0a642bb8bb6d1102b9a2867abdb27409161f551b2",
+        "d00042553347bcdb1e4b7d6fcfa5c0f1d29cbbb2761dea52dc96b5523ffe5ded",
+        "d00fafee9153444a9584d9f40bad563758442c43382dfd0139724234403688f3",
+        "d2a511250175ea70dd5147ccc0f1b597d727268c3619ed471974ee7f04b29b88",
+        "d389726f54b3b423c841dcd2618ab112ce04768165849e1254acda8773422b7c",
+        "facbf049f663620cbc899c94afe1122d3b3dd76467fcc1889de9bff287e7257a"
+      ],
+      "terminationEvidence": "best-effort-with-unknown-quarantine",
+      "workerLossEvidence": null,
+      "unverified": [
+        "production-host-inventory-and-protected-paths",
+        "end-to-end-grant-revocation-latency",
+        "prior-intermittent-v2-prepare-failure-root-cause"
+      ]
+    },
+    {
+      "host": "linux",
+      "platform": "linux",
+      "architecture": "x64",
+      "osRelease": "5.15.0-185-generic",
+      "node": "v26.1.0",
+      "backend": "srt",
+      "srtVersion": "0.0.75",
+      "installation": "/data/himawari-r8-ucNhI6hn/installed/lib/himawari-agent",
+      "profileRef": "r8-test-linux-foreground",
+      "qualificationStatus": "test-evidence-only",
+      "productionRegistered": false,
+      "applicationSchema": "sandbox-execution.v2",
+      "protocolActuallyProbed": "job-host.v2",
+      "applicationComposition": "not-run",
+      "modeCoverage": {
+        "foreground": "job-host-probed",
+        "background": "network-not-qualified",
+        "service": "network-not-qualified"
+      },
+      "identity": {
+        "file": "r8-2026-09-10-linux-final-identity.json",
+        "sha256": "050f472031f1eca2d822be9c925fa6cffe11e64539f1d7e25c55c36b385ee39b"
+      },
+      "authorizedNetwork": {
+        "file": "r8-2026-09-10-linux-installed-authorized-final.json",
+        "sha256": "e5503d905ba746fcb030d027727967372aeebc4bb3aee4eb5692745502a68a05"
+      },
+      "networkBoundary": {
+        "file": "r8-2026-09-10-linux-installed-network.json",
+        "sha256": "0ecf27f87fe8e69fe8ef5dbb15c16303b8808d1c0eccc5c0725aa4d649043cda"
+      },
+      "proxyInitializationFailure": {
+        "file": "r8-2026-09-10-linux-bind-failure.json",
+        "sha256": "16560c525dcb9e7944580a96bd9a4b1d6f6dc4475db56b35150cc74311fc547d"
+      },
+      "policyDigests": [
+        "106625aacb01ce6237c7b8acf3ae2473ddfd15559345af9613a236538b3da5d4",
+        "2a54a56128e2c31553acf806d8e30b6dfe9691195947af7ca5649087dac3fce0",
+        "373736f80e7a06ad015bfdf0d1170fe9432c65bd3e9d29318d921568c4d089ae",
+        "4bef54e1221ecf35d81a39767dd7590054307323cdae1745a6fe3ac0a813c09c",
+        "500d91ac29bc36ac4462cda0fef01cf1a9808200e8624dd1a249f683d090d074",
+        "50c67784ba78b7490f9e341ec08b87dfdb4e67de62fd59b13fc1e2d3af08eadd",
+        "51455079a3d2bbaae152d6eee9c2efc36704a04ebc792d89089784073209378a",
+        "7261e26e6a211009f06c9bbe7ddd35b6db40b2ac11dccb93f209db3312220664",
+        "7424a3cbf99acaa8295a785c79d88430149c0ba06c9b4a18899b2eb45365b7bc",
+        "8118f38b163363c9157a599a50211857aaaff150699fbe7773c367f109fab721",
+        "8830d7dc007b0ecc1a3e1b141c6056df64708da873a5a63ef4d2b4f8fbc8ab99",
+        "9842cc60dee0512540ee48ee406b6698de178c2fd2577f528375c9bccf82aac8",
+        "a170f502750d78f4d825d97190e76a1613f26eec2868cc4b738e0aad9a855770",
+        "b0c196e0ac2ef8e7a49839504a8217bc8a7246c0fb779ca2abfd5fae8a8dcea6",
+        "e321a7b0dfa88d5ef792ff53064628d33332e5d61c21a7690a9074f99c212db7",
+        "f2bd5d489ccd344b79369a970a038a82d522cc4fb35770646ed66eb78afd20bb",
+        "f6a056d8e17b8b70f355c5be66f5e98940367b7530144cd8707018ce76ffbd1a"
+      ],
+      "terminationEvidence": "original-pid-namespace-released",
+      "workerLossEvidence": {
+        "file": "r8-2026-09-10-linux-worker-loss.json",
+        "sha256": "72fa9a494058ac8e13d046c1e9b3c7aabc41507b39ae363387ab82bade98ec3f"
+      },
+      "unverified": [
+        "production-host-inventory-and-protected-paths",
+        "end-to-end-grant-revocation-latency",
+        "full-agent-sqlite-uds-worker-composition"
+      ]
+    }
+  ]
+}

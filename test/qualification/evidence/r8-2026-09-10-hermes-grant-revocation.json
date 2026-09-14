@@ -1,0 +1,28 @@
+{
+  "productionSandboxProbePassed": true,
+  "schema": "sandbox-execution.v2",
+  "productionSuitable": false,
+  "networkDenial": null,
+  "networkRevocation": {
+    "connectionEstablished": true,
+    "grantRevoked": true,
+    "revokeToReleasedMs": 368,
+    "jobHostExited": true,
+    "taskNamespaceReleased": true
+  },
+  "platform": "linux",
+  "cleanup": "confirmed",
+  "replayExecuted": false,
+  "installedRuntime": "/data/hermes/himawari/releases/2026-09-10-89640a591583/lib/himawari-agent",
+  "installedModules": [
+    "/data/hermes/himawari/releases/2026-09-10-89640a591583/lib/himawari-agent/node_modules/@himawari-agent/agent-service/dist/production-payload-broker-handler.js",
+    "/data/hermes/himawari/releases/2026-09-10-89640a591583/lib/himawari-agent/node_modules/@himawari-agent/agent-service/dist/production-sandbox-services.js",
+    "/data/hermes/himawari/releases/2026-09-10-89640a591583/lib/himawari-agent/node_modules/@himawari-agent/application/dist/index.js",
+    "/data/hermes/himawari/releases/2026-09-10-89640a591583/lib/himawari-agent/node_modules/@himawari-agent/execution-contracts/dist/index.js",
+    "/data/hermes/himawari/releases/2026-09-10-89640a591583/lib/himawari-agent/node_modules/@himawari-agent/execution-worker/dist/production-payload-broker-client.js",
+    "/data/hermes/himawari/releases/2026-09-10-89640a591583/lib/himawari-agent/node_modules/@himawari-agent/execution-worker/dist/production-sandbox-execution-v2.js",
+    "/data/hermes/himawari/releases/2026-09-10-89640a591583/lib/himawari-agent/node_modules/@himawari-agent/execution-worker/dist/production-sandbox-worker.js",
+    "/data/hermes/himawari/releases/2026-09-10-89640a591583/lib/himawari-agent/node_modules/@himawari-agent/persistence-sqlite/dist/index.js",
+    "/data/hermes/himawari/releases/2026-09-10-89640a591583/lib/himawari-agent/node_modules/@himawari-agent/platform-node/dist/index.js"
+  ]
+}

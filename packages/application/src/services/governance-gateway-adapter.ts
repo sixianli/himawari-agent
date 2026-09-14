@@ -16,7 +16,9 @@ import type {
   GatewayV2CommandExecution,
   GatewayV2ControlPlanePort,
   GatewayV2ReadModelPort,
+  GatewayV2StreamItem,
 } from "../ports/gateway.js";
+import type { RecentAuthenticationGuardPort } from "../ports/recent-authentication.js";
 import type {
   GovernanceDependencyReadPort,
   GovernanceMutationReceipt,
@@ -28,7 +30,6 @@ import type { AgentId, OwnerId } from "@himawari-agent/domain";
 import {
   gatewayV2MessageSchema,
   type GatewayV2Command,
-  type GatewayV2Event,
   type GatewayV2Query,
   type GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
@@ -99,6 +100,13 @@ function lowerRisk(value: string): "low" | "medium" | "high" | "critical" {
     return normalized as "low" | "medium" | "high" | "critical";
   }
   throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, `Unknown risk ${value}`);
+}
+
+function effectiveApprovalStatus(
+  approval: ApprovalRequest,
+  now: string,
+): ApprovalRequest["status"] {
+  return approval.status === "pending" && now >= approval.expiresAt ? "expired" : approval.status;
 }
 
 function governedApproval(value: ApprovalRequest): value is GovernedApprovalRequest {
@@ -212,7 +220,9 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
         ).filter(
           (approval) =>
             governedApproval(approval) &&
-            (query.payload.status === null || approval.status === query.payload.status),
+            (query.payload.status === null ||
+              effectiveApprovalStatus(approval, this.#dependencies.clock.now()) ===
+                query.payload.status),
         );
         return this.#collection(
           query,
@@ -266,7 +276,8 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
   subscribe(input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly afterCursor: string | null;
-  }): AsyncIterable<GatewayV2Event> {
+    readonly signal?: AbortSignal;
+  }): AsyncIterable<GatewayV2StreamItem> {
     return this.#dependencies.delegate.subscribe(input);
   }
 
@@ -357,7 +368,7 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
       payload: {
         approvalRequestId: approval.id,
         revision: approval.revision,
-        status: approval.status,
+        status: effectiveApprovalStatus(approval, generatedAt),
         deliveryState: approval.deliveryState,
         semanticSnapshotHash: approval.semanticSnapshotHash,
         finalRisk: lowerRisk(approval.finalRisk),
@@ -559,11 +570,12 @@ export interface GovernanceGatewayV2ControlPlaneDependencies {
   readonly capabilities: CapabilityRegistryStorePort;
   readonly approvalService: ApprovalService;
   readonly grantService: GrantService;
-  readonly capabilityLifecycle: CapabilityLifecycleService;
+  readonly capabilityLifecycle?: CapabilityLifecycleService;
   readonly audit: AuditLedgerPort;
   readonly clock: ClockPort;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
+  readonly recentAuthentication?: RecentAuthenticationGuardPort;
 }
 
 interface ReceiptAttempt {
@@ -615,16 +627,6 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
         "Governance mutations require the scoped authenticated Owner and authorization",
-      );
-    }
-    if (
-      command.type === "approval.respond" &&
-      command.payload.recentAuthenticationRef !== null &&
-      command.payload.recentAuthenticationRef !== authentication.authenticationRef
-    ) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
-        "Approval recent authentication does not match the authenticated session",
       );
     }
   }
@@ -726,6 +728,16 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     }
   }
 
+  #capabilityLifecycle(): CapabilityLifecycleService {
+    const lifecycle = this.#dependencies.capabilityLifecycle;
+    if (!lifecycle)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Capability lifecycle is not available on this gateway",
+      );
+    return lifecycle;
+  }
+
   async #respondApproval(
     authentication: GatewayAuthenticationContext,
     command: Extract<GovernanceCommand, { readonly type: "approval.respond" }>,
@@ -752,14 +764,10 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     ) {
       return `approval:${current.id}:revision-${current.revision}`;
     }
-    if (
-      command.payload.decision === "approved" &&
-      current.recentAuthenticationRequired &&
-      command.payload.recentAuthenticationRef !== authentication.authenticationRef
-    ) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
-        "This Approval requires the current recent authentication reference",
+    if (command.payload.decision === "approved" && current.recentAuthenticationRequired) {
+      await this.#assertRecentAuthentication(
+        authentication,
+        command.payload.recentAuthenticationRef,
       );
     }
     const response =
@@ -849,7 +857,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     ) {
       return this.#capabilityResult(current);
     }
-    const reviewed = await this.#dependencies.capabilityLifecycle.recordSourceReview(
+    const reviewed = await this.#capabilityLifecycle().recordSourceReview(
       current.ref,
       { reviewer: authentication.subjectId, reviewedAt: this.#dependencies.clock.now() },
       command.payload.expectedRevision,
@@ -876,18 +884,15 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       current.lifecycle === "installation_approved" &&
       current.approvalRefs.includes(command.payload.approvalRef)
     ) {
-      current = await this.#dependencies.capabilityLifecycle.activate(
-        current.ref,
-        current.revision,
-      );
+      current = await this.#capabilityLifecycle().activate(current.ref, current.revision);
       return this.#capabilityResult(current);
     }
-    current = await this.#dependencies.capabilityLifecycle.approveInstallation(
+    current = await this.#capabilityLifecycle().approveInstallation(
       current.ref,
       command.payload.approvalRef,
       command.payload.expectedRevision,
     );
-    current = await this.#dependencies.capabilityLifecycle.activate(current.ref, current.revision);
+    current = await this.#capabilityLifecycle().activate(current.ref, current.revision);
     return this.#capabilityResult(current);
   }
 
@@ -905,7 +910,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       ) {
         return this.#capabilityResult(current);
       }
-      current = await this.#dependencies.capabilityLifecycle.rejectUpdate(
+      current = await this.#capabilityLifecycle().rejectUpdate(
         current.ref,
         command.payload.expectedRevision,
       );
@@ -930,21 +935,15 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       current.lifecycle === "update_approved" &&
       current.approvalRefs.includes(approvalRef)
     ) {
-      current = await this.#dependencies.capabilityLifecycle.activateUpdate(
-        current.ref,
-        current.revision,
-      );
+      current = await this.#capabilityLifecycle().activateUpdate(current.ref, current.revision);
       return this.#capabilityResult(current);
     }
-    current = await this.#dependencies.capabilityLifecycle.approveUpdate(
+    current = await this.#capabilityLifecycle().approveUpdate(
       current.ref,
       approvalRef,
       command.payload.expectedRevision,
     );
-    current = await this.#dependencies.capabilityLifecycle.activateUpdate(
-      current.ref,
-      current.revision,
-    );
+    current = await this.#capabilityLifecycle().activateUpdate(current.ref, current.revision);
     return this.#capabilityResult(current);
   }
 
@@ -960,7 +959,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     ) {
       return this.#capabilityResult(current);
     }
-    const disabled = await this.#dependencies.capabilityLifecycle.disable(
+    const disabled = await this.#capabilityLifecycle().disable(
       current.ref,
       command.payload.expectedRevision,
     );
@@ -980,7 +979,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     ) {
       return this.#capabilityResult(current);
     }
-    const rolledBack = await this.#dependencies.capabilityLifecycle.rollback(
+    const rolledBack = await this.#capabilityLifecycle().rollback(
       current.ref,
       command.payload.expectedRevision,
     );
@@ -1002,6 +1001,23 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
         `${kind} is outside the configured Owner and Agent scope`,
       );
     }
+  }
+
+  async #assertRecentAuthentication(
+    authentication: GatewayAuthenticationContext,
+    ref: string | null,
+  ): Promise<void> {
+    if (!this.#dependencies.recentAuthentication) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Recent Owner authentication evidence is required",
+        { reasonCode: "RECENT_AUTH_REQUIRED" },
+      );
+    }
+    await this.#dependencies.recentAuthentication.assertRecentAuthentication({
+      authentication,
+      expectedAuthenticationRef: ref,
+    });
   }
 
   #capabilityResult(record: CapabilityRegistryRecord): string {

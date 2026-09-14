@@ -1,27 +1,35 @@
 import type {
+  CapabilityExecutionHandle,
   ExecutionTransportPort,
   ExecutionWorkerEvent,
   ExecutionWorkerService,
-  CapabilityExecutionHandle,
 } from "@himawari-agent/application";
 import {
+  type DelegatedCapabilityHandleV2,
   EXECUTION_SCHEMA_VERSION,
   EXECUTION_V2_SCHEMA_VERSION,
-  type DelegatedCapabilityHandleV2,
   type ExecutionV2Event,
   type ExecutionV2Request,
   type ExecutionV2Response,
   executionV2MessageSchema,
   type ResourceCeiling,
 } from "@himawari-agent/execution-contracts";
+import {
+  type ProductionSandboxExecution,
+  type SandboxWorkerResult,
+  sandboxExternalActionId,
+} from "./production-sandbox-execution.js";
+import type { ProductionSandboxExecutionV2 } from "./production-sandbox-execution-v2.js";
 
 export const PRODUCTION_WORKER_ERROR_CODES = Object.freeze({
+  SANDBOX_SUPERVISOR_UNAVAILABLE: "SANDBOX_SUPERVISOR_UNAVAILABLE",
   ADAPTER_NOT_REGISTERED: "WORKER_ADAPTER_NOT_REGISTERED",
   BOOT_TOKEN_REJECTED: "WORKER_BOOT_TOKEN_REJECTED",
   DUPLICATE_CONFLICT: "WORKER_DUPLICATE_CONFLICT",
   HANDSHAKE_REQUIRED: "WORKER_HANDSHAKE_REQUIRED",
   NOT_READY: "WORKER_NOT_READY",
   RESOURCE_CEILING_EXCEEDED: "WORKER_RESOURCE_CEILING_EXCEEDED",
+  RESULT_UNKNOWN_OBSERVED: "WORKER_RESULT_UNKNOWN_OBSERVED",
   SCHEMA_UNSUPPORTED: "WORKER_SCHEMA_UNSUPPORTED",
   STALE_FENCE: "WORKER_STALE_FENCE",
   DELEGATION_INVALID: "WORKER_DELEGATION_INVALID",
@@ -51,6 +59,11 @@ export interface RegisteredWorkerAdapter {
 
 export interface ProductionExecutionWorkerOptions {
   readonly service: ExecutionWorkerService;
+  readonly sandbox?: ProductionSandboxExecution;
+  readonly sandboxV2?: Pick<
+    ProductionSandboxExecutionV2,
+    "execute" | "handles" | "cancel" | "reconcile" | "shutdown"
+  >;
   readonly workerInstanceId: string;
   readonly workerBootId: string;
   readonly bootTokenRef: string;
@@ -68,6 +81,12 @@ export interface ProductionExecutionWorkerOptions {
   };
   readonly now: () => string;
   readonly nextId: (scope: string) => string;
+  /** Host composition gate; an unready dependency must never be reported ready. */
+  readonly readiness?: () => {
+    readonly live: boolean;
+    readonly ready: boolean;
+    readonly reasonCodes: readonly string[];
+  };
 }
 
 type HandshakeRequest = Extract<ExecutionV2Request, { type: "worker.handshake" }>;
@@ -78,6 +97,12 @@ type CancelRequest = Extract<ExecutionV2Request, { type: "work.cancel" }>;
 type ReconcileRequest = Extract<ExecutionV2Request, { type: "work.reconcile" }>;
 type HostOperationRequest = Extract<ExecutionV2Request, { type: "host.operation.execute" }>;
 type WorkerSubtaskRequest = Extract<ExecutionV2Request, { type: "worker.subtask.execute" }>;
+
+type SubtaskCapabilityInput = Parameters<WorkerSubtaskExecutionContext["executeCapability"]>[0];
+
+interface SubtaskExecutionObservation {
+  readonly unknownExternalActionIds: Set<string>;
+}
 
 export interface RegisteredHostOperationAdapter {
   readonly operations: readonly HostOperationRequest["payload"]["operation"][];
@@ -170,6 +195,32 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     this.assertReadyAndAuthoritative(parsed);
     if (parsed.type === "work.events.replay") return null;
     if (parsed.type === "work.execute") {
+      if (parsed.payload.sandboxExecution) {
+        if (!this.options.sandboxV2)
+          throw new ProductionExecutionWorkerError(
+            PRODUCTION_WORKER_ERROR_CODES.SANDBOX_SUPERVISOR_UNAVAILABLE,
+          );
+        if (!withinCeiling(parsed.payload.resourceCeiling, this.options.maximumResourceCeiling))
+          throw new ProductionExecutionWorkerError(
+            PRODUCTION_WORKER_ERROR_CODES.RESOURCE_CEILING_EXCEEDED,
+          );
+        if (this.isReplay(parsed)) return null;
+        this.track(this.executeSandbox(parsed));
+        return null;
+      }
+      if (parsed.payload.sandboxJob) {
+        if (!this.options.sandbox)
+          throw new ProductionExecutionWorkerError(
+            PRODUCTION_WORKER_ERROR_CODES.SANDBOX_SUPERVISOR_UNAVAILABLE,
+          );
+        if (!withinCeiling(parsed.payload.resourceCeiling, this.options.maximumResourceCeiling))
+          throw new ProductionExecutionWorkerError(
+            PRODUCTION_WORKER_ERROR_CODES.RESOURCE_CEILING_EXCEEDED,
+          );
+        if (this.isReplay(parsed)) return null;
+        this.track(this.executeSandbox(parsed));
+        return null;
+      }
       await this.assertExecutable(parsed);
       if (this.isReplay(parsed)) return null;
       this.track(this.execute(parsed));
@@ -241,6 +292,8 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   async shutdown(): Promise<void> {
     this.ready = false;
     for (const { controller } of this.activeSubtasks.values()) controller.abort();
+    await this.options.sandboxV2?.shutdown();
+    await this.options.sandbox?.shutdown();
     await this.waitForIdle();
     this.options.delegations?.clear();
     this.handshakeAgentInstanceId = null;
@@ -250,6 +303,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     request: HandshakeRequest,
   ): Extract<ExecutionV2Response, { type: "worker.handshake.accepted" }> {
     this.assertAuthority(request);
+    const gate = this.readinessGate();
     if (request.payload.bootTokenRef !== this.options.bootTokenRef) {
       throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.BOOT_TOKEN_REJECTED);
     }
@@ -263,7 +317,23 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
         workerInstanceId: this.options.workerInstanceId,
         workerBootId: this.options.workerBootId,
         selectedSchemaVersion: EXECUTION_V2_SCHEMA_VERSION,
-        ready: this.ready,
+        ...(this.options.sandbox || this.options.sandboxV2
+          ? {
+              supportedExecutions: [
+                ...(this.options.sandbox
+                  ? [{ schemaVersion: "sandbox-execution.v1", mode: "foreground" }]
+                  : []),
+                ...(this.options.sandboxV2
+                  ? [
+                      { schemaVersion: "sandbox-execution.v2", mode: "foreground" },
+                      { schemaVersion: "sandbox-execution.v2", mode: "background" },
+                      { schemaVersion: "sandbox-execution.v2", mode: "service" },
+                    ]
+                  : []),
+              ],
+            }
+          : {}),
+        ready: this.ready && gate.ready,
         acceptedAt: this.options.now(),
       },
     }) as Extract<ExecutionV2Response, { type: "worker.handshake.accepted" }>;
@@ -273,22 +343,26 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     request: ReadinessRequest,
   ): Extract<ExecutionV2Response, { type: "worker.readiness.snapshot" }> {
     this.assertAuthority(request);
+    const gate = this.readinessGate();
     return executionV2MessageSchema.parse({
       ...this.responseEnvelope(request, "worker.readiness.snapshot"),
       payload: {
         workerInstanceId: this.options.workerInstanceId,
-        live: true,
-        ready: this.ready && this.handshakeAgentInstanceId !== null,
+        live: this.ready && gate.live,
+        ready: this.ready && this.handshakeAgentInstanceId !== null && gate.ready,
         supportedSchemaVersions: [EXECUTION_V2_SCHEMA_VERSION],
-        reasonCodes:
-          this.ready && this.handshakeAgentInstanceId !== null ? [] : ["WORKER_HANDSHAKE_REQUIRED"],
+        reasonCodes: [
+          ...gate.reasonCodes,
+          ...(this.handshakeAgentInstanceId === null ? ["WORKER_HANDSHAKE_REQUIRED"] : []),
+        ],
         observedAt: this.options.now(),
       },
     }) as Extract<ExecutionV2Response, { type: "worker.readiness.snapshot" }>;
   }
 
   private assertReadyAndAuthoritative(request: ExecutionV2Request): void {
-    if (!this.ready) {
+    const gate = this.readinessGate();
+    if (!this.ready || !gate.ready) {
       throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.NOT_READY);
     }
     if (this.handshakeAgentInstanceId === null) {
@@ -305,6 +379,14 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     ) {
       throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.STALE_FENCE);
     }
+  }
+
+  private readinessGate(): {
+    readonly live: boolean;
+    readonly ready: boolean;
+    readonly reasonCodes: readonly string[];
+  } {
+    return this.options.readiness?.() ?? { live: true, ready: true, reasonCodes: [] };
   }
 
   private delegate(
@@ -426,7 +508,55 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
 
   private track(operation: Promise<void>): void {
     this.active.add(operation);
-    void operation.finally(() => this.active.delete(operation));
+    void operation.finally(() => this.active.delete(operation)).catch(() => {});
+  }
+
+  private async executeSandbox(request: ExecuteRequest): Promise<void> {
+    const identity = request.payload.sandboxExecution?.identity ?? request.payload.sandboxJob;
+    if (!identity) throw new Error("SANDBOX_JOB_REQUIRED");
+    try {
+      const sandbox = request.payload.sandboxExecution
+        ? this.options.sandboxV2
+        : this.options.sandbox;
+      if (!sandbox) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
+      const result = await sandbox.execute(request);
+      this.appendSandboxResult(request, result);
+    } catch {
+      this.appendSandboxResult(request, {
+        outcome: "result_unknown",
+        outputRef: null,
+        errorCode: null,
+        externalActionId: sandboxExternalActionId(identity),
+      });
+    }
+  }
+  private appendSandboxResult(
+    request: ExecuteRequest | ReconcileRequest,
+    result: SandboxWorkerResult,
+  ): void {
+    const requestId =
+      request.type === "work.execute" ? request.messageId : request.payload.targetRequestId;
+    const event = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "event",
+      type: "work.result",
+      messageId: this.options.nextId("sandbox-result"),
+      correlationId: request.correlationId,
+      causationId: request.messageId,
+      dataClassification: request.dataClassification,
+      risk: request.risk,
+      authorizationRef: request.authorizationRef,
+      scope: request.scope,
+      payload: {
+        ...result,
+        requestId,
+        cursor: this.nextCursor(),
+        sequence: this.nextSequence(requestId),
+        completedAt: this.options.now(),
+      },
+    });
+    if (event.kind !== "event") throw new Error("SANDBOX_EVENT_INVALID");
+    this.eventsByCursor.push(event);
   }
 
   private async execute(request: ExecuteRequest): Promise<void> {
@@ -515,6 +645,14 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
 
   private async cancel(request: CancelRequest): Promise<void> {
     try {
+      if (this.options.sandboxV2?.handles(request.payload.targetRequestId)) {
+        await this.options.sandboxV2.cancel(request);
+        return;
+      }
+      if (this.options.sandbox?.handles(request.payload.targetRequestId)) {
+        await this.options.sandbox.cancel(request);
+        return;
+      }
       const active = this.activeSubtasks.get(request.scope.workerRunId as string);
       if (active && active.request.messageId === request.payload.targetRequestId) {
         if (
@@ -610,6 +748,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
 
   private async executeSubtask(request: WorkerSubtaskRequest): Promise<void> {
     const controller = new AbortController();
+    const observation: SubtaskExecutionObservation = { unknownExternalActionIds: new Set() };
     const workerRunId = request.scope.workerRunId as string;
     this.activeSubtasks.set(workerRunId, { request, controller });
     const remainingMs = Math.min(
@@ -634,12 +773,16 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
         );
       });
       const result = await Promise.race([
-        adapter.execute(request, this.subtaskContext(request, controller)),
+        adapter.execute(request, this.subtaskContext(request, controller, observation)),
         cancelled,
       ]);
       if (controller.signal.aborted)
         throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.DEADLINE_EXPIRED);
       this.assertDeadline(request.payload.deadlineAt);
+      if (observation.unknownExternalActionIds.size > 0)
+        throw new ProductionExecutionWorkerError(
+          PRODUCTION_WORKER_ERROR_CODES.RESULT_UNKNOWN_OBSERVED,
+        );
       if (
         result.actualModelRef !== request.payload.selectedModelRef ||
         result.actualCostMicros > request.payload.maximumCostMicros ||
@@ -677,15 +820,25 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   private subtaskContext(
     request: WorkerSubtaskRequest,
     controller: AbortController,
+    observation: SubtaskExecutionObservation,
   ): WorkerSubtaskExecutionContext {
     const worker = this;
     let progressEvents = 0;
     const invocations = new Set<string>();
     return Object.freeze({
       signal: controller.signal,
-      async *executeCapability(
-        input: Parameters<WorkerSubtaskExecutionContext["executeCapability"]>[0],
-      ) {
+      async *executeCapability(input: SubtaskCapabilityInput) {
+        const assertDelegation = () => {
+          if (
+            !request.payload.capabilityHandleRefs.includes(input.capabilityHandleRef) ||
+            !input.delegatedContextRefs.every((ref) =>
+              request.payload.delegatedContextRefs.includes(ref),
+            )
+          )
+            throw new ProductionExecutionWorkerError(
+              PRODUCTION_WORKER_ERROR_CODES.DELEGATION_INVALID,
+            );
+        };
         const assertActive = () => {
           worker.assertReadyAndAuthoritative(request);
           worker.assertDeadline(request.payload.deadlineAt);
@@ -697,23 +850,20 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
             throw new ProductionExecutionWorkerError(
               PRODUCTION_WORKER_ERROR_CODES.SUBTASK_NOT_ACTIVE,
             );
-          if (
-            !request.payload.capabilityHandleRefs.includes(input.capabilityHandleRef) ||
-            !input.delegatedContextRefs.every((ref) =>
-              request.payload.delegatedContextRefs.includes(ref),
-            )
-          )
-            throw new ProductionExecutionWorkerError(
-              PRODUCTION_WORKER_ERROR_CODES.DELEGATION_INVALID,
-            );
+          assertDelegation();
+        };
+        const assertObservationActive = () => {
+          worker.assertReadyAndAuthoritative(request);
+          assertDelegation();
         };
         assertActive();
-        if (invocations.has(input.invocationId))
+        const invocationRequest = worker.subtaskCapabilityRequest(request, input);
+        if (invocations.has(invocationRequest.messageId))
           throw new ProductionExecutionWorkerError(
             PRODUCTION_WORKER_ERROR_CODES.DUPLICATE_CONFLICT,
           );
-        invocations.add(input.invocationId);
-        const invocationId = `${request.messageId}:tool:${input.invocationId}`;
+        invocations.add(invocationRequest.messageId);
+        const invocationId = invocationRequest.messageId;
         const cancel = () => {
           void worker.options.service
             .cancel({
@@ -756,7 +906,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
                 runId: request.scope.runId as string,
                 workerRunId: request.scope.workerRunId as string,
               },
-              idempotencyKey: `${request.idempotencyKey}:tool:${input.invocationId}`,
+              idempotencyKey: invocationRequest.idempotencyKey,
               payload: {
                 capabilityId: input.capabilityId,
                 capabilityVersion: input.capabilityVersion,
@@ -776,7 +926,16 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
             },
             assertActive,
           )) {
-            assertActive();
+            if (event.type === "work.result" && event.payload.outcome === "result_unknown") {
+              assertObservationActive();
+              if (event.payload.externalActionId === null) {
+                observation.unknownExternalActionIds.add(event.payload.requestId);
+                throw new TypeError("Worker received an unknown result without an external ID");
+              }
+              observation.unknownExternalActionIds.add(event.payload.externalActionId);
+            } else {
+              assertActive();
+            }
             if (
               event.type === "work.progress" &&
               ++progressEvents > request.payload.maximumProgressEvents
@@ -786,6 +945,12 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
                 PRODUCTION_WORKER_ERROR_CODES.RESOURCE_CEILING_EXCEEDED,
               );
             }
+            worker.appendMappedEvent(
+              invocationRequest,
+              event,
+              invocationRequest.messageId,
+              request.messageId,
+            );
             yield event;
           }
         } finally {
@@ -793,6 +958,44 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
         }
       },
     });
+  }
+
+  private subtaskCapabilityRequest(
+    request: WorkerSubtaskRequest,
+    input: SubtaskCapabilityInput,
+  ): ExecuteRequest {
+    const parsed = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "request",
+      type: "work.execute",
+      messageId: `${request.messageId}:tool:${input.invocationId}`,
+      correlationId: request.correlationId,
+      causationId: request.messageId,
+      dataClassification: request.dataClassification,
+      risk: request.risk,
+      authorizationRef: request.authorizationRef,
+      scope: request.scope,
+      idempotencyKey: `${request.idempotencyKey}:tool:${input.invocationId}`,
+      payload: {
+        capabilityId: input.capabilityId,
+        capabilityVersion: input.capabilityVersion,
+        operation: input.operation,
+        inputRef: input.inputRef,
+        capabilityHandleRef: input.capabilityHandleRef,
+        delegatedContextRefs: input.delegatedContextRefs,
+        secretRefs: [],
+        resourceCeiling: {
+          ...this.options.maximumResourceCeiling,
+          maxWallTimeMs: request.payload.maximumDurationMs,
+          maxProgressEvents: request.payload.maximumProgressEvents,
+        },
+        requestedAt: request.payload.requestedAt,
+        deadlineAt: request.payload.deadlineAt,
+      },
+    });
+    if (parsed.kind !== "request" || parsed.type !== "work.execute")
+      throw new TypeError("Worker produced an invalid nested capability request");
+    return parsed;
   }
 
   private appendSubtaskResult(
@@ -831,6 +1034,25 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   }
 
   private async reconcile(request: ReconcileRequest): Promise<void> {
+    if (request.payload.externalActionId.startsWith("sandbox-job:")) {
+      try {
+        if (this.options.sandboxV2?.handles(request.payload.targetRequestId)) {
+          this.appendSandboxResult(request, await this.options.sandboxV2.reconcile(request));
+          return;
+        }
+
+        if (!this.options.sandbox) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
+        this.appendSandboxResult(request, await this.options.sandbox.reconcile(request));
+      } catch {
+        this.appendSandboxResult(request, {
+          outcome: "result_unknown",
+          outputRef: null,
+          errorCode: null,
+          externalActionId: request.payload.externalActionId,
+        });
+      }
+      return;
+    }
     try {
       const event = await this.options.service.reconcile({
         schemaVersion: EXECUTION_SCHEMA_VERSION,
@@ -863,6 +1085,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     request: ExecuteRequest | CancelRequest | ReconcileRequest,
     event: ExecutionWorkerEvent,
     requestIdOverride?: string,
+    causationIdOverride?: string | null,
   ): void {
     const sequence = this.nextSequence(requestIdOverride ?? event.payload.requestId);
     const cursor = this.nextCursor();
@@ -872,7 +1095,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
       type: event.type,
       messageId: event.messageId,
       correlationId: event.correlationId,
-      causationId: event.causationId,
+      causationId: causationIdOverride === undefined ? event.causationId : causationIdOverride,
       dataClassification: event.dataClassification,
       risk: request.risk,
       authorizationRef: request.authorizationRef,

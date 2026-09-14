@@ -102,7 +102,7 @@ async function fixture() {
   mocks.source.mockResolvedValue("f".repeat(64));
   mocks.policy.mockReturnValue({
     policy: {
-      checks: [{ id: "test", projects: ids }],
+      checks: [{ id: "test", projects: ids, timeoutMinutes: 30 }],
       testProjects: ids.map((id) => ({ id, include: [`test/${id}.test.ts`], exclude: [] })),
     },
   });
@@ -163,6 +163,7 @@ async function fixture() {
 }
 beforeEach(() => vi.resetAllMocks());
 afterEach(async () => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   for (const root of directories.splice(0)) await rm(root, { recursive: true, force: true });
 });
@@ -195,7 +196,7 @@ describe("build process contract", () => {
     const options = await fixture();
     const result = await build(options);
     expect(result.exitCode).toBe(0);
-    expect(result.counts).toMatchObject({ executed: 7, passed: 7, failed: 0, skipped: 0 });
+    expect(result.counts).toMatchObject({ executed: 8, passed: 8, failed: 0, skipped: 0 });
     expect(result.sha256).toBe(await digestFile(result.archive));
     expect(existsSync(path.join(options.root, options.output, "work"))).toBe(false);
     expect(mocks.execute.mock.calls[0][1].slice(-2)).toEqual([
@@ -260,6 +261,47 @@ describe("build process contract", () => {
 });
 
 describe("five-project execution contract", () => {
+  it("shares the policy check budget across projects without an extra five-minute limit", async () => {
+    const options = await fixture();
+    let elapsed = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    const original = mocks.execute.getMockImplementation();
+    mocks.execute.mockImplementation(async (...args) => {
+      const result = await original(...args);
+      elapsed += 360_000;
+      return result;
+    });
+    const result = await runTests(options);
+    expect(result.exitCode).toBe(0);
+    expect(mocks.execute.mock.calls.map((call) => call[2].timeoutMs)).toEqual([
+      1_800_000, 1_440_000, 1_080_000, 720_000, 360_000,
+    ]);
+  });
+  it("does not start another project after the parent check budget is exhausted", async () => {
+    const options = await fixture();
+    let elapsed = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    const original = mocks.execute.getMockImplementation();
+    mocks.execute.mockImplementation(async (...args) => {
+      const result = await original(...args);
+      elapsed = 1_001;
+      return result;
+    });
+    await expect(runTests({ ...options, remainingBudgetMs: 1_000 })).rejects.toThrow(
+      "CI_TEST_CHECK_TIMEOUT",
+    );
+    expect(mocks.execute).toHaveBeenCalledOnce();
+  });
+  it("reports process termination before attempting to read a missing report", async () => {
+    const options = await fixture();
+    mocks.execute.mockResolvedValue({
+      exitCode: 128,
+      signal: "SIGKILL",
+      termination: "timeout",
+      durationMs: 1_800_000,
+    });
+    await expect(runTests(options)).rejects.toThrow("CI_TEST_PROCESS_TERMINATED:unit:timeout");
+  });
   it("runs exact projects with no retry, private installed-artifact paths and real report counts", async () => {
     const options = await fixture();
     vi.stubEnv("NODE_PATH", "/source-only/modules");

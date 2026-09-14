@@ -1,0 +1,71 @@
+{
+  "macProduct": {
+    "passed": 2086,
+    "failed": 0,
+    "skipped": 6,
+    "reportSha256": "84fb26770ea89e831a3e59764093be8fa9d5deb0b0ffdbaf895a6209532f219d",
+    "success": false
+  },
+  "macInstalledProcess": {
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "reportSha256": "526f109fbf8d5d7ca248438d3299df8daf408f3c308a40a93f8861541ccc54b5",
+    "success": true
+  },
+  "archiveRetest": {
+    "passed": 26,
+    "failed": 0,
+    "skipped": 0,
+    "reportSha256": "abd1ac1df5d6224c3e889355e9455458f79616d3269583b32ced6ccca42fc294",
+    "success": true
+  },
+  "linuxInitial": {
+    "passed": 2052,
+    "failed": 34,
+    "skipped": 6,
+    "reportSha256": "fbecef3397580beac97a440c9e8cc1fdf205ffd9360ee4d90f67676164519524",
+    "success": false
+  },
+  "sourceChecks": {
+    "status": "passed",
+    "command": "npm run check",
+    "copiedSourceFiles": 1307,
+    "sourceRoot": "/tmp/himawari-release-checkout-20260913",
+    "originalGitBase": "1cb72b1713147ad5b58c8340de704f178ce9dbf8",
+    "logSha256": "3d86219f246397b1a16eb4ae17d06287f7949af013b94b22589e70f294640ec0",
+    "notice": "同字节源码副本使用锁定工具运行；未修改原工作区依赖。后续页面探针绑定变更单独检查。"
+  },
+  "observedAt": "2026-09-12T19:12:47.197484+00:00",
+  "linuxTimeoutRetest": {
+    "passed": 91,
+    "failed": 1,
+    "skipped": 0,
+    "reportSha256": "a6b6859a2afc7aabcd45c0234c07b879a965adc20305dcfc6fea3608ec62fda5",
+    "success": false
+  },
+  "linuxPermissionFixtureRetest": {
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "reportSha256": "0acc27aada090fedf735f5fdcfeb029fd1b22c6c95e69357ce849d00662fa798",
+    "success": true
+  },
+  "linuxResolution": {
+    "originalFailures": 34,
+    "remainingFailures": 0,
+    "runnerTimeoutMilliseconds": 120000,
+    "fixtureUmask": "0077",
+    "fixtureCorrection": "writeSnapshot 显式 chmod 所请求的权限，确保 0640 反例不会被 umask 收紧成 0600；生产检查未改变。",
+    "boundary": "原失败用例均在复测中通过。未把原默认时间限制下的失败报告改写为通过，也未更改产品执行期限。"
+  },
+  "finalMachineSecretScan": {
+    "status": "passed",
+    "scannedFiles": 1314
+  },
+  "finalDocsStrict": {
+    "status": "passed",
+    "warnings": 0
+  },
+  "lastChangedFilesFormatAndLint": "passed"
+}

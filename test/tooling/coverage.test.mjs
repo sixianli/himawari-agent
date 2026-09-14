@@ -141,12 +141,13 @@ function tests(root) {
     "packages/example/test/a.unit.test.ts",
     "packages/example/test/a.contract.test.ts",
     "test/tooling/a.test.mjs",
+    "test/integration/a.test.ts",
   ];
   for (const name of names) put(root, name, "export {};\n");
   return {
     success: true,
-    numTotalTests: 3,
-    numPassedTests: 3,
+    numTotalTests: 4,
+    numPassedTests: 4,
     numFailedTests: 0,
     numPendingTests: 0,
     numTodoTests: 0,
@@ -240,6 +241,17 @@ function fixture(initialization = true) {
 }
 
 describe("source-mapped coverage contract", () => {
+  it("coverage 必须验证 integration 报告且不能省略该项目", () => {
+    const f = fixture();
+    const report = tests(f.root);
+    expect(verifyTestRun(report, testPolicy, f.root).map((entry) => entry.id)).toContain(
+      "integration",
+    );
+    report.testResults.pop();
+    report.numTotalTests -= 1;
+    report.numPassedTests -= 1;
+    expect(() => verifyTestRun(report, testPolicy, f.root)).toThrow();
+  });
   it("counts all production files including unimported code and preserves exact zero denominators", () => {
     const missing = "apps/unimported/src/main.ts";
     const records = {
@@ -343,7 +355,7 @@ describe("source-mapped coverage contract", () => {
     ])
       expect(() => verifyLcov(bad, actual, repositoryRoot)).toThrow();
   });
-  it("applies incremental 90/85 even during initialization and reports exact inapplicable reasons", () => {
+  it("applies incremental 80/70 even during initialization and reports exact inapplicable reasons", () => {
     const value = record();
     value.s[0] = 0;
     value.b[0][1] = 0;
@@ -379,6 +391,63 @@ describe("source-mapped coverage contract", () => {
       changedMetrics(actual, { [filename]: [{ start: 2, end: 2, kind: "deletion-context" }] })
         .changedFunctionBranches.total,
     ).toBe(2);
+  });
+  it("applies the explicitly approved 90/85 to 80/70 transition at exact boundaries", () => {
+    const records = {},
+      sources = new Map(),
+      changes = {};
+    for (let index = 0; index < 10; index++) {
+      const name = `packages/example/src/choose${index}.ts`;
+      const value = record(name, index < 8 ? 1 : 0);
+      value.b[0] = index < 7 ? [1, 1] : [0, 0];
+      records[name] = value;
+      sources.set(name, source);
+      changes[name] = [{ start: 2, end: 2, kind: "added" }];
+    }
+    const actual = analyze(records, sources);
+    const accepted = baseline(actual);
+    accepted.thresholds = { changedLines: 90, changedFunctionBranches: 85 };
+    const proposed = structuredClone(accepted);
+    proposed.thresholds = { changedLines: 80, changedFunctionBranches: 70 };
+    const evaluate = (candidate = proposed, analysis = actual) =>
+      evaluateCoverage({
+        acceptedPolicy: accepted,
+        proposedPolicy: candidate,
+        analysis,
+        changed: changes,
+        initialization: false,
+      });
+    const result = evaluate();
+    expect(result.changedLines.pct).toBe(80);
+    expect(result.changedFunctionBranches.pct).toBe(70);
+    expect(result.status).toBe("passed");
+    for (const [field, invalid] of [
+      ["changedLines", 79.99],
+      ["changedFunctionBranches", 69.99],
+    ]) {
+      const lowered = structuredClone(proposed);
+      lowered.thresholds[field] = invalid;
+      expect(() => evaluate(lowered)).toThrow();
+    }
+    const unapproved = structuredClone(proposed);
+    unapproved.thresholds.changedLines = 81;
+    expect(
+      evaluate(unapproved).failures.find((item) => item.code === "changedLines").required,
+    ).toBe(90);
+    records["packages/example/src/choose7.ts"].s[0] = 0;
+    const belowLines = evaluate(proposed, analyze(records, sources));
+    expect(belowLines.failures.find((item) => item.code === "changedLines")).toMatchObject({
+      required: 80,
+      actual: 70,
+    });
+    expect(belowLines.failures.some((item) => item.code === "baseline-regression")).toBe(true);
+    records["packages/example/src/choose7.ts"].s[0] = 1;
+    records["packages/example/src/choose6.ts"].b[0][1] = 0;
+    expect(
+      evaluate(proposed, analyze(records, sources)).failures.find(
+        (item) => item.code === "changedFunctionBranches",
+      ),
+    ).toMatchObject({ required: 70, actual: 65 });
   });
   it("does not invent a source location for the pinned mapper's implicit else", () => {
     const value = record();
@@ -540,6 +609,7 @@ describe("coverage evidence and Git boundaries", { timeout: 60000 }, () => {
     expect(verifyTestRun(f.testRun, testPolicy, f.root).map((p) => p.id)).toEqual([
       "unit",
       "contracts",
+      "integration",
       "tooling",
     ]);
     for (const mutate of [
@@ -550,7 +620,7 @@ describe("coverage evidence and Git boundaries", { timeout: 60000 }, () => {
         r.numPendingTests = 1;
       },
       (r) => {
-        r.numTotalTests = 4;
+        r.numTotalTests = 5;
       },
       (r) => {
         r.testResults.pop();
@@ -571,6 +641,22 @@ describe("coverage evidence and Git boundaries", { timeout: 60000 }, () => {
     }
     put(f.root, "packages/example/test/missing.unit.test.ts", "export {};\n");
     expect(() => verifyTestRun(f.testRun, testPolicy, f.root)).toThrow("inventory is incomplete");
+  });
+  it.each([
+    "test/integration/shared.fixture.ts",
+    "packages/example/test/fixtures/data.json",
+    "packages/testing/src/contracts.ts",
+  ])("binds shared test support %s without requiring it to declare tests", (support) => {
+    const f = fixture(),
+      p = policy();
+    put(f.root, support, "initial fixture bytes");
+    const snapshot = createSnapshot({ root: f.root, context: f.context, policy: p });
+    expect(snapshot.inputs).toHaveProperty(support);
+    expect(() => verifyTestRun(f.testRun, testPolicy, f.root)).not.toThrow();
+    put(f.root, support, "changed fixture bytes");
+    expect(() =>
+      verifySnapshot(snapshot, createSnapshot({ root: f.root, context: f.context, policy: p })),
+    ).toThrow("inputs");
   });
   it("snapshots source, test inputs, tool versions and rejects dirty source or escaped links", () => {
     const f = fixture(),

@@ -1,0 +1,36 @@
+{
+  "schema": "himawari-hermes-installation-progress.v1",
+  "observedAt": "2026-09-10T05:55:22.268973+00:00",
+  "runtimeDigest": "2c7ea18c182d62da58e302967671c03df81080fdf153798c53b3ee961a3d2227",
+  "runnerDigest": "3746bbc2766e315c62db46bece1d53c9a099670dda0787b3e1dcf1dfcf3b3e90",
+  "receiptDigest": "434265b146c979bb469d547a908a98897ff929d7e1aa5246404634a8cd9ee162",
+  "scope": {
+    "mode": "foreground",
+    "network": "disabled",
+    "macAgentInstalled": false,
+    "operations": ["read", "find", "grep", "ls", "bash"]
+  },
+  "limitations": [
+    "联网 Grant 撤销后的端到端断连时延仍待验收，当前正式 profile 不允许工具联网",
+    "资源限制为观测后停止，不是硬配额",
+    "write/edit 效果验证合同的正式部署描述未配置，本次暂不登记这两项"
+  ],
+  "observations": {
+    "piScenariosPassed": 22,
+    "authorizedNetworkScenariosPassed": 10,
+    "networkDenialScenariosPassed": 7,
+    "workerLossCleanupPassed": true,
+    "installedCompositionPassed": true,
+    "installedCompositionCleanup": "confirmed",
+    "replayExecuted": false
+  },
+  "ownerBootstrap": {
+    "at": "2026-09-10T05:42:39.075Z",
+    "status": 201,
+    "ownerBound": true,
+    "error": null
+  },
+  "dialogueVerified": false,
+  "fullR8Complete": false,
+  "sourceIncludesUncommittedTaskChanges": true
+}

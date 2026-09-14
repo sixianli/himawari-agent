@@ -4,6 +4,7 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { parentPort, workerData } from "node:worker_threads";
 import type {
+  AuthorityFence,
   AuthorityLeaseRecord,
   CommandResultLookup,
   CommandResultRecord,
@@ -22,7 +23,10 @@ import type {
   ProductAuthorityFence,
 } from "@himawari-agent/domain";
 import BetterSqlite3 from "better-sqlite3";
-import { SqliteDurableOperations } from "./sqlite-durable-operations.ts";
+import {
+  SqliteDurableOperations,
+  type SqliteRecoveryAuthorityScope,
+} from "./sqlite-durable-operations.ts";
 import type { SqliteWorkerConfiguration } from "./sqlite-execution-context.js";
 
 interface WorkerRequest {
@@ -90,6 +94,19 @@ interface LeaseRow {
   readonly acquiredAt: string;
   readonly expiresAt: string;
   readonly releasedAt: string | null;
+}
+
+interface RecoveryObject {
+  readonly authority?: unknown;
+  readonly authorityEpoch?: unknown;
+  readonly authorityLease?: unknown;
+  readonly agentId?: unknown;
+  readonly deploymentId?: unknown;
+  readonly fencingToken?: unknown;
+  readonly leaseId?: unknown;
+  readonly now?: unknown;
+  readonly ownerId?: unknown;
+  readonly scope?: unknown;
 }
 
 const configuration = workerData as SqliteWorkerConfiguration;
@@ -328,6 +345,82 @@ function assertCurrentDeployment(fence: ProductAuthorityFence): DeploymentAuthor
   return deployment;
 }
 
+function recoveryScopeFailure(
+  message: string,
+  details: Readonly<Record<string, string>> = {},
+): never {
+  applicationFailure("PORT_NOT_AUTHORITATIVE", message, details);
+}
+
+function recoveryRecord(value: unknown, field: string): RecoveryObject {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    recoveryScopeFailure(`Startup recovery authority scope is missing ${field}`);
+  }
+  return value as RecoveryObject;
+}
+
+function recoveryText(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    recoveryScopeFailure(`Startup recovery authority scope has an invalid ${field}`);
+  }
+  return value;
+}
+
+function recoveryFenceNumber(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
+    recoveryScopeFailure(`Startup recovery authority scope has an invalid ${field}`);
+  }
+  return value;
+}
+
+function parseRecoveryScope(value: unknown): SqliteRecoveryAuthorityScope {
+  const input = recoveryRecord(value, "scope");
+  const authority = recoveryRecord(input.authority, "authority");
+  const authorityLease = recoveryRecord(input.authorityLease, "authorityLease");
+  const authorityFencingToken = recoveryFenceNumber(
+    authority.fencingToken,
+    "authority.fencingToken",
+  );
+  const leaseFencingToken = recoveryFenceNumber(
+    authorityLease.fencingToken,
+    "authorityLease.fencingToken",
+  );
+  if (authorityFencingToken !== leaseFencingToken) {
+    recoveryScopeFailure("Startup recovery authority fences do not match", {
+      authorityFencingToken: String(authorityFencingToken),
+      leaseFencingToken: String(leaseFencingToken),
+    });
+  }
+  return {
+    ownerId: recoveryText(input.ownerId, "ownerId") as SqliteRecoveryAuthorityScope["ownerId"],
+    agentId: recoveryText(input.agentId, "agentId") as SqliteRecoveryAuthorityScope["agentId"],
+    authority: {
+      deploymentId: recoveryText(
+        authority.deploymentId,
+        "authority.deploymentId",
+      ) as ProductAuthorityFence["deploymentId"],
+      authorityEpoch: recoveryFenceNumber(authority.authorityEpoch, "authority.authorityEpoch"),
+      fencingToken: authorityFencingToken,
+    },
+    authorityLease: {
+      leaseId: recoveryText(
+        authorityLease.leaseId,
+        "authorityLease.leaseId",
+      ) as AuthorityFence["leaseId"],
+      fencingToken: leaseFencingToken,
+    },
+  };
+}
+
+function parseRecoveryNow(value: unknown): string {
+  const now = recoveryText(value, "now");
+  const timestamp = Date.parse(now);
+  if (!Number.isFinite(timestamp)) {
+    recoveryScopeFailure("Startup recovery now must be a valid timestamp");
+  }
+  return new Date(timestamp).toISOString();
+}
+
 const leaseSelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId,
   holder_id AS holderId, fencing_token AS fencingToken, acquired_at AS acquiredAt,
   expires_at AS expiresAt, released_at AS releasedAt FROM authority_leases`;
@@ -457,6 +550,20 @@ function readState(key: string): StateRecord | undefined {
   );
 }
 
+function readScopedState(input: {
+  ownerId: string;
+  agentId: string;
+  key: string;
+}): StateRecord | undefined {
+  return stateFromRow(
+    database
+      .prepare(
+        "SELECT key, owner_id AS ownerId, agent_id AS agentId, revision, value_json AS valueJson FROM product_state_records WHERE key = ? AND owner_id = ? AND agent_id = ?",
+      )
+      .get(input.key, input.ownerId, input.agentId) as StateRow | undefined,
+  );
+}
+
 function findCommandResult(lookup: CommandResultLookup): CommandResultRecord | undefined {
   const row = database
     .prepare(
@@ -536,7 +643,6 @@ const durableOperations = new SqliteDurableOperations(
   applicationFailure,
   assertDiskHeadroom,
 );
-const startupRecovery = durableOperations.recoverStartup(configuration.startupNow);
 
 function currentAuthority(input: CommitStateAndEventsInput, now: string): AuthorityRow {
   const row = database
@@ -615,6 +721,15 @@ function commitStateAndEvents(
     const concurrentReplay = replayExisting(input);
     if (concurrentReplay) return concurrentReplay;
     const authority = currentAuthority(input, now);
+    if (
+      input.state.key.startsWith("run:") &&
+      database.prepare("SELECT 1 FROM runs WHERE id = ?").get(input.state.key.slice(4))
+    ) {
+      applicationFailure(
+        "PORT_INVALID_OPERATION",
+        "A relational Run cannot also be stored as a product-state Run",
+      );
+    }
     const currentRow = database
       .prepare(
         "SELECT key, owner_id AS ownerId, agent_id AS agentId, revision, value_json AS valueJson FROM product_state_records WHERE key = ?",
@@ -872,7 +987,12 @@ channel.on("message", (request: WorkerRequest) => {
     let value: unknown;
     switch (request.operation) {
       case "ready":
-        value = { writerSequence: configuration.writerSequence, startupRecovery };
+        value = { writerSequence: configuration.writerSequence };
+        break;
+      case "readScopedState":
+        value = readScopedState(
+          request.payload as { ownerId: string; agentId: string; key: string },
+        );
         break;
       case "read":
         value = readState((request.payload as { key: string }).key);
@@ -940,6 +1060,14 @@ channel.on("message", (request: WorkerRequest) => {
           (request.payload as { fence: ProductAuthorityFence }).fence,
         );
         break;
+      case "recovery.run": {
+        const payload = recoveryRecord(request.payload, "payload");
+        value = durableOperations.recoverStartupWithAuthority(
+          parseRecoveryScope(payload.scope),
+          parseRecoveryNow(payload.now),
+        );
+        break;
+      }
       case "status":
         value = operationalStatus();
         break;

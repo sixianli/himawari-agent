@@ -1,0 +1,31 @@
+{
+  "platform": "linux",
+  "node": "v26.1.0",
+  "dataMount": {
+    "source": "/dev/sda1",
+    "target": "/data",
+    "filesystem": "ext4",
+    "availableGiB": 261
+  },
+  "testDirectory": "/data/himawari-r8-ucNhI6hn",
+  "systemDependencies": {
+    "bubblewrap": {
+      "installed": false,
+      "aptCandidate": "0.6.1-1ubuntu0.1"
+    },
+    "socat": {
+      "installed": false,
+      "aptCandidate": "1.7.4.1-3ubuntu4"
+    }
+  },
+  "sudoNoninteractiveAvailable": false,
+  "transfer": {
+    "fullRuntime": "ssh-disconnected",
+    "componentArchive": "ssh-disconnected",
+    "verifiedComplete": false,
+    "localComponentArchiveBytes": 5119772,
+    "remotePartialArchiveBytes": 1044480
+  },
+  "linuxExecutionQualified": false,
+  "productionSuitable": false
+}

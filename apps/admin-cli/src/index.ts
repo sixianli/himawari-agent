@@ -1,28 +1,34 @@
 import { randomUUID } from "node:crypto";
-import { lstat, readFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  SqliteGovernedDeletionAdapter,
-  SqliteRecoveryPointAdapter,
-  SqliteAuthorityTransferAdapter,
   acquireStateRootLock,
   applyMigrations,
+  createVerifiedMigrationSnapshot,
+  type GovernedDeletionObjectType,
   inspectSqliteDatabaseReadOnly,
   loadBundledMigrations,
   openQualifiedDatabase,
-  type GovernedDeletionObjectType,
+  readMigrationLedger,
+  SqliteAuthorityTransferAdapter,
+  SqliteGovernedDeletionAdapter,
+  SqliteRecoveryPointAdapter,
 } from "@himawari-agent/persistence-sqlite";
 import {
-  EnvelopePayloadProtector,
-  JsonFileConfigurationPort,
-  RestrictedSecretFileSource,
   activateImportedAuthority,
+  EnvelopePayloadProtector,
   establishImportedAuthority,
+  JsonFileConfigurationPort,
   markAuthorityTransferPending,
+  RestrictedSecretFileSource,
   readAuthorityFile,
   stableErrorCode,
   writeServiceDiagnostic,
 } from "@himawari-agent/platform-node";
+import { runAccountCommand } from "./account-command.js";
+import { runCapabilitiesCommand } from "./capabilities-command.js";
+import { runInitializeCommand } from "./initialize-command.js";
+import { runWorkspaceCommand } from "./workspace-command.js";
 
 export const adminCliWorkspace = {
   applicationKind: "offline-admin",
@@ -241,6 +247,7 @@ function stateLayout(stateRoot: string) {
     cache: path.join(stateRoot, "cache"),
     payloadCiphertext: path.join(stateRoot, "data", "payload-ciphertext"),
     authorityFile: path.join(stateRoot, "authority.json"),
+    agentServiceBootBindingFile: path.join(stateRoot, "runtime", "agent-service.boot.json"),
   });
 }
 
@@ -271,7 +278,7 @@ async function doctor(configurationPath: string) {
     payload: await resourceStatus(layout.payloadCiphertext, "directory"),
     worker: await resourceStatus(path.join(layout.runtime, "execution.sock"), "socket"),
     memory: await resourceStatus(configuration.memory.storagePath, "directory"),
-    identity: configuration.publicMode ? "unavailable" : "not-required",
+    identity: configuration.identity || configuration.publicMode ? "unavailable" : "not-required",
   });
   const ready = Object.entries(dependencies).every(
     ([name, status]) =>
@@ -326,13 +333,26 @@ async function migrate(
       path.join(configuration.stateRoot, "data", "product.sqlite"),
     );
     try {
-      const result = applyMigrations(database, migrations);
+      const current = readMigrationLedger(database).at(-1)?.sequence ?? 0;
+      let snapshot: Awaited<ReturnType<typeof createVerifiedMigrationSnapshot>> | undefined;
+      if (current > 0 && current < migrations.length) {
+        const directory = await mkdtemp(
+          path.join(configuration.stateRoot, "data", "pre-migration-"),
+        );
+        snapshot = await createVerifiedMigrationSnapshot(
+          database,
+          path.join(directory, "product.sqlite"),
+        );
+        await chmod(snapshot.snapshotPath, 0o600);
+      }
+      const result = applyMigrations(database, migrations, snapshot ? { snapshot } : {});
       return Object.freeze({
         schemaVersion: 1,
         command: "db.migrate",
         deploymentId: configuration.deploymentId,
         currentSequence: result.currentSequence,
         appliedSequences: result.appliedSequences,
+        snapshotPath: snapshot?.snapshotPath ?? null,
       });
     } finally {
       database.close();
@@ -725,6 +745,22 @@ export async function runAdminCli(
   errorOutput: NodeJS.WritableStream = process.stderr,
 ): Promise<number> {
   try {
+    if (arguments_[0] === "capabilities") {
+      output.write(`${JSON.stringify(await runCapabilitiesCommand(arguments_))}\n`);
+      return 0;
+    }
+    if (arguments_[0] === "workspace") {
+      output.write(`${JSON.stringify(await runWorkspaceCommand(arguments_))}\n`);
+      return 0;
+    }
+    if (arguments_[0] === "init") {
+      output.write(`${JSON.stringify(await runInitializeCommand(arguments_))}\n`);
+      return 0;
+    }
+    if (arguments_[0] === "account") {
+      output.write(`${JSON.stringify(await runAccountCommand(arguments_))}\n`);
+      return 0;
+    }
     const parsed = parseArguments(arguments_);
     const result = parsed.command.startsWith("backup.")
       ? await backupCommand(parsed, output)

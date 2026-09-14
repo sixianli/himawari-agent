@@ -2,28 +2,345 @@ import {
   EXECUTION_V2_SCHEMA_VERSION,
   type ExecutionV2Request,
   executionV2MessageSchema,
+  type SandboxExecutionBinding,
+  type SandboxJobIdentity,
+  sandboxExecutionPlanCandidateSchema,
+  sandboxExecutionPlanCandidateV2Schema,
+  sandboxExecutionReservationSchema,
+  sandboxJobReceiptSchema,
 } from "@himawari-agent/execution-contracts";
-import type { AuthorizationStorePort } from "../ports/authorization.js";
-import {
-  capabilityLifecycleHasActiveAuthority,
-  type CapabilityExecutionHandleStorePort,
-  type CapabilityRegistryStorePort,
-  type GovernedCapabilityExecutionHandle,
-} from "../ports/capabilities.js";
+import type {
+  CapabilityInvocationAuthority,
+  CapabilityInvocationReceiptPort,
+  ConsumeCapabilityInvocationInput,
+  FrozenCapabilityInvocationReceipt,
+} from "../ports/capability-invocations.js";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ExecutionTransportPort } from "../ports/coordination.js";
+import type { SandboxJobJournalPort } from "../ports/sandbox-execution.js";
+import type { SandboxExecutionPreparationPort } from "../ports/sandbox-execution-journal.js";
+import type { SandboxScopeService } from "./sandbox-scope-service.js";
 
-const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
+export type WorkerExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
+export type WorkerDelegateRequest = Extract<ExecutionV2Request, { type: "work.delegate" }>;
+type CompleteExecutionScope = {
+  readonly deploymentId: string;
+  readonly authorityEpoch: number;
+  readonly fencingToken: number;
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly runId: string;
+  readonly workerRunId: string;
+};
 
-type ExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
+function completeScope(scope: WorkerExecuteRequest["scope"]): CompleteExecutionScope {
+  if (
+    scope.ownerId === null ||
+    scope.agentId === null ||
+    scope.runId === null ||
+    scope.workerRunId === null
+  ) {
+    throw new ApplicationPortError(
+      PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      "work.execute must carry a complete owner, Agent, Run, and Worker scope",
+    );
+  }
+  return {
+    deploymentId: scope.deploymentId,
+    authorityEpoch: scope.authorityEpoch,
+    fencingToken: scope.fencingToken,
+    ownerId: scope.ownerId,
+    agentId: scope.agentId,
+    runId: scope.runId,
+    workerRunId: scope.workerRunId,
+  };
+}
 
-export interface WorkerDelegationServiceOptions {
-  readonly handles: CapabilityRegistryStorePort & CapabilityExecutionHandleStorePort;
-  readonly authorization: AuthorizationStorePort;
-  readonly transport: ExecutionTransportPort;
-  readonly authorityFence: () => number;
+function receiptScope(receipt: FrozenCapabilityInvocationReceipt): CompleteExecutionScope {
+  return {
+    deploymentId: receipt.authority.product.deploymentId,
+    authorityEpoch: receipt.authority.product.authorityEpoch,
+    fencingToken: receipt.authority.product.fencingToken,
+    ownerId: receipt.ownerId,
+    agentId: receipt.agentId,
+    runId: receipt.runId,
+    workerRunId: receipt.workerRunId,
+  };
+}
+
+function scopeMatches(
+  left: CompleteExecutionScope | WorkerExecuteRequest["scope"],
+  right: CompleteExecutionScope | WorkerExecuteRequest["scope"],
+): boolean {
+  return (
+    left.deploymentId === right.deploymentId &&
+    left.authorityEpoch === right.authorityEpoch &&
+    left.fencingToken === right.fencingToken &&
+    left.ownerId === right.ownerId &&
+    left.agentId === right.agentId &&
+    left.runId === right.runId &&
+    left.workerRunId === right.workerRunId
+  );
+}
+
+export interface WorkerDelegationAdmissionServiceOptions {
+  /** Agent-scoped atomic consume port backed by the durable authority owner. */
+  readonly invocations: CapabilityInvocationReceiptPort;
+  /** Trusted composition selects this mode only for SRT executions. Preparation
+   * resolves authorized scope/qualification; failure never falls back to consume.
+   * It must return a stable persisted job identity when handling a replay. */
+  readonly sandbox?: {
+    readonly appliesTo?: (invocation: ConsumeCapabilityInvocationInput) => boolean;
+    readonly journal: Pick<SandboxJobJournalPort, "admit">;
+    readonly preparations?: Pick<SandboxExecutionPreparationPort, "reserve">;
+    readonly scopes: Pick<SandboxScopeService, "read">;
+    readonly prepare: (
+      invocation: ConsumeCapabilityInvocationInput,
+      request: WorkerExecuteRequest,
+    ) => Promise<
+      | Omit<Parameters<SandboxJobJournalPort["admit"]>[0], "invocation">
+      | Omit<Parameters<SandboxExecutionPreparationPort["reserve"]>[0], "invocation">
+    >;
+  };
+  /** Trusted current Agent/Worker attempt and product lease identity. */
+  readonly invocationAuthority: () => CapabilityInvocationAuthority;
   readonly now: () => string;
   readonly nextId: (scope: string) => string;
+}
+
+export interface WorkerDelegationProjection {
+  readonly delegate: WorkerDelegateRequest;
+  readonly execute: WorkerExecuteRequest;
+}
+
+export type WorkerDelegationAdmissionResult =
+  | {
+      /** A new durable receipt was consumed and has not been sent to the Worker yet. */
+      readonly disposition: "consumed";
+      readonly receipt: FrozenCapabilityInvocationReceipt;
+      readonly projection: WorkerDelegationProjection;
+    }
+  | {
+      /** The durable receipt already existed; this does not prove delivery or execution. */
+      readonly disposition: "replayed";
+      readonly receipt: FrozenCapabilityInvocationReceipt;
+    };
+
+/**
+ * Performs durable capability-invocation admission without sending a Worker
+ * message. A replay only returns the existing receipt, so callers cannot
+ * accidentally turn uncertain delivery into a second executable projection.
+ */
+export class WorkerDelegationAdmissionService {
+  readonly #options: WorkerDelegationAdmissionServiceOptions;
+
+  constructor(options: WorkerDelegationAdmissionServiceOptions) {
+    this.#options = options;
+  }
+
+  async admit(request: WorkerExecuteRequest): Promise<WorkerDelegationAdmissionResult> {
+    const parsed = executionV2MessageSchema.parse(request);
+    if (parsed.kind !== "request" || parsed.type !== "work.execute") {
+      throw new TypeError("Worker delegation accepts work.execute requests only");
+    }
+    if (parsed.payload.sandboxJob || parsed.payload.sandboxExecution)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Sandbox job identity is assigned by trusted admission",
+      );
+    const scope = completeScope(parsed.scope);
+    const authority = this.#options.invocationAuthority();
+    const consumed = await this.#consume(parsed, scope, authority, this.#options.now());
+    if (consumed.replayed) {
+      return {
+        disposition: "replayed",
+        receipt: consumed.receipt,
+      };
+    }
+    return {
+      disposition: "consumed",
+      receipt: consumed.receipt,
+      projection: this.#project(
+        parsed,
+        consumed.receipt,
+        consumed.sandboxJob,
+        consumed.sandboxExecution,
+      ),
+    };
+  }
+
+  #project(
+    request: WorkerExecuteRequest,
+    receipt: FrozenCapabilityInvocationReceipt,
+    sandboxJob?: SandboxJobIdentity,
+    sandboxExecution?: SandboxExecutionBinding,
+  ): WorkerDelegationProjection {
+    const delegate = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "request",
+      type: "work.delegate",
+      messageId: this.#options.nextId("worker-delegation"),
+      correlationId: request.correlationId,
+      causationId: request.messageId,
+      dataClassification: receipt.dataClassification,
+      risk: request.risk,
+      authorizationRef: receipt.authorizationRef,
+      scope: receiptScope(receipt),
+      idempotencyKey: `${receipt.idempotencyKey}:delegate`,
+      payload: {
+        handle: {
+          handleVersion: "capability-handle.v2",
+          ref: receipt.handleRef,
+          revision: receipt.handleRevision,
+          authorityFence: receipt.authority.product.fencingToken,
+          ownerId: receipt.ownerId,
+          agentId: receipt.agentId,
+          runId: receipt.runId,
+          capabilityRef: receipt.capabilityRef,
+          capabilityVersion: receipt.capabilityVersion,
+          authorizationType: receipt.authorization.type,
+          authorizationRef: receipt.authorizationRef,
+          operations: [receipt.operation],
+          inputRefs: [receipt.inputRef],
+          delegatedContextRefs: receipt.delegatedContextRefs,
+          secretRefs: receipt.secretRefs,
+          maxDataClassification: receipt.dataClassification,
+          issuedAt: receipt.consumedAt,
+          expiresAt: receipt.effectiveExpiresAt,
+          revokedAt: null,
+          operation: receipt.operation,
+          maxUses: 1,
+          uses: 0,
+          maxTotalCostMicros: 0,
+          spentCostMicros: 0,
+          idempotencyKeys: [],
+          workerEndedAt: null,
+        },
+        requestedAt: receipt.requestedAt,
+      },
+    });
+    if (delegate.kind !== "request" || delegate.type !== "work.delegate") {
+      throw new TypeError("Worker delegation message is invalid");
+    }
+    const execute = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "request",
+      type: "work.execute",
+      messageId: receipt.invocationId,
+      correlationId: request.correlationId,
+      causationId: request.causationId,
+      dataClassification: receipt.dataClassification,
+      risk: request.risk,
+      authorizationRef: receipt.authorizationRef,
+      scope: receiptScope(receipt),
+      idempotencyKey: receipt.idempotencyKey,
+      payload: {
+        ...(sandboxJob ? { sandboxJob } : {}),
+        ...(sandboxExecution ? { sandboxExecution } : {}),
+        capabilityId: receipt.capabilityRef,
+        capabilityVersion: receipt.capabilityVersion,
+        operation: receipt.operation,
+        inputRef: receipt.inputRef,
+        capabilityHandleRef: receipt.handleRef,
+        delegatedContextRefs: receipt.delegatedContextRefs,
+        secretRefs: receipt.secretRefs,
+        resourceCeiling: receipt.resourceCeiling,
+        requestedAt: receipt.requestedAt,
+        deadlineAt: receipt.deadlineAt,
+      },
+    });
+    if (execute.kind !== "request" || execute.type !== "work.execute") {
+      throw new TypeError("Worker execution message is invalid");
+    }
+    return { delegate, execute };
+  }
+
+  async #consume(
+    request: WorkerExecuteRequest,
+    scope: CompleteExecutionScope,
+    authority: CapabilityInvocationAuthority,
+    consumedAt: string,
+  ) {
+    const input: ConsumeCapabilityInvocationInput = {
+      receiptRef: this.#options.nextId("capability-invocation-receipt"),
+      handleRef: request.payload.capabilityHandleRef,
+      invocationId: request.messageId,
+      requestScope: scope,
+      capabilityRef: request.payload.capabilityId,
+      capabilityVersion: request.payload.capabilityVersion,
+      authorizationRef: request.authorizationRef,
+      idempotencyKey: request.idempotencyKey,
+      operation: request.payload.operation,
+      inputRef: request.payload.inputRef,
+      delegatedContextRefs: request.payload.delegatedContextRefs,
+      secretRefs: request.payload.secretRefs,
+      dataClassification: request.dataClassification,
+      resourceCeiling: request.payload.resourceCeiling,
+      requestedAt: request.payload.requestedAt,
+      deadlineAt: request.payload.deadlineAt,
+      authority,
+      consumedAt,
+    };
+    const sandbox = this.#options.sandbox;
+    if (!sandbox || sandbox.appliesTo?.(input) === false) {
+      return {
+        ...(await this.#options.invocations.consume(input)),
+        sandboxJob: undefined,
+        sandboxExecution: undefined,
+      };
+    }
+    // Keep the request used for admission separate from the async resolver's copy.
+    const prepared = await sandbox.prepare(structuredClone(input), structuredClone(request));
+    if ("reservation" in prepared) {
+      if (!sandbox.preparations)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "Sandbox v2 admission unavailable",
+        );
+      const plan = sandboxExecutionPlanCandidateV2Schema.parse(prepared.plan);
+      const reservation = sandboxExecutionReservationSchema.parse(prepared.reservation);
+      await sandbox.scopes.read(plan, request.causationId);
+      const admitted = await sandbox.preparations.reserve({
+        plan,
+        reservation,
+        workspaces: prepared.workspaces,
+        invocation: { ...input, consumedAt: this.#options.now() },
+      });
+      const saved =
+        admitted.admission.phase === "reserved"
+          ? admitted.admission.plan
+          : admitted.admission.record.plan;
+      return {
+        replayed: !admitted.applied,
+        receipt: admitted.receipt,
+        sandboxJob: undefined,
+        sandboxExecution: {
+          schemaVersion: "sandbox-execution.v2" as const,
+          mode: saved.mode,
+          environmentId: saved.environmentId,
+          identity: saved.identity,
+        },
+      };
+    }
+    const plan = sandboxExecutionPlanCandidateSchema.parse(prepared.plan);
+    const observation = sandboxJobReceiptSchema.parse(prepared.observation);
+    await sandbox.scopes.read(plan, request.causationId);
+    const admitted = await sandbox.journal.admit({
+      plan,
+      observation,
+      invocation: { ...input, consumedAt: this.#options.now() },
+    });
+    return {
+      replayed: !admitted.applied,
+      receipt: admitted.receipt,
+      sandboxJob: admitted.record.plan.identity,
+      sandboxExecution: undefined,
+    };
+  }
+}
+
+export interface WorkerDelegationServiceOptions extends WorkerDelegationAdmissionServiceOptions {
+  readonly transport: ExecutionTransportPort;
 }
 
 /**
@@ -32,169 +349,39 @@ export interface WorkerDelegationServiceOptions {
  */
 export class WorkerDelegationService {
   readonly #options: WorkerDelegationServiceOptions;
+  readonly #admission: WorkerDelegationAdmissionService;
 
   constructor(options: WorkerDelegationServiceOptions) {
     this.#options = options;
+    this.#admission = new WorkerDelegationAdmissionService(options);
   }
 
-  async dispatch(request: ExecuteRequest): Promise<void> {
-    const parsed = executionV2MessageSchema.parse(request);
-    if (parsed.kind !== "request" || parsed.type !== "work.execute") {
-      throw new TypeError("Worker delegation accepts work.execute requests only");
-    }
-    if (this.#options.now() >= parsed.payload.deadlineAt) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.INVALID_OPERATION,
-        "Expired work cannot consume a durable Capability Handle",
-      );
-    }
-    const source = await this.#requiredGovernedHandle(parsed);
-    const consumed = await this.#consume(parsed, source);
-    const expiresAt =
-      consumed.expiresAt <= parsed.payload.deadlineAt
-        ? consumed.expiresAt
-        : parsed.payload.deadlineAt;
-    const delegate = executionV2MessageSchema.parse({
-      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
-      kind: "request",
-      type: "work.delegate",
-      messageId: this.#options.nextId("worker-delegation"),
-      correlationId: parsed.correlationId,
-      causationId: parsed.messageId,
-      dataClassification: parsed.dataClassification,
-      risk: parsed.risk,
-      authorizationRef: consumed.authorizationRef,
-      scope: parsed.scope,
-      idempotencyKey: `${parsed.idempotencyKey}:delegate`,
-      payload: {
-        handle: {
-          handleVersion: "capability-handle.v2",
-          ref: consumed.ref,
-          revision: consumed.revision,
-          authorityFence: consumed.authorityFence,
-          ownerId: consumed.ownerId,
-          agentId: consumed.agentId,
-          runId: consumed.runId,
-          capabilityRef: consumed.capabilityRef,
-          capabilityVersion: consumed.capabilityVersion,
-          authorizationType: consumed.authorization.type,
-          authorizationRef: consumed.authorizationRef,
-          operations: [parsed.payload.operation],
-          inputRefs: [parsed.payload.inputRef],
-          delegatedContextRefs: parsed.payload.delegatedContextRefs,
-          secretRefs: parsed.payload.secretRefs,
-          maxDataClassification: parsed.dataClassification,
-          issuedAt: this.#options.now(),
-          expiresAt,
-          revokedAt: null,
-          operation: parsed.payload.operation,
-          maxUses: 1,
-          uses: 0,
-          maxTotalCostMicros: 0,
-          spentCostMicros: 0,
-          idempotencyKeys: [],
-          workerEndedAt: null,
-        },
-        requestedAt: this.#options.now(),
-      },
-    });
-    if (delegate.kind !== "request" || delegate.type !== "work.delegate") {
-      throw new TypeError("Worker delegation message is invalid");
-    }
-    const accepted = await this.#options.transport.request(delegate);
+  async dispatch(request: WorkerExecuteRequest): Promise<void> {
+    const admission = await this.#admission.admit(request);
+    if (admission.disposition === "replayed") return;
+
+    const { receipt, projection } = admission;
+    const accepted = await this.#options.transport.request(projection.delegate);
     if (
+      accepted?.kind !== "response" ||
       accepted?.type !== "work.delegate.accepted" ||
-      accepted.payload.handleRef !== consumed.ref
+      accepted.payload.handleRef !== receipt.handleRef ||
+      accepted.payload.workerBootId !== receipt.authority.workerBootId ||
+      accepted.correlationId !== projection.delegate.correlationId ||
+      accepted.causationId !== projection.delegate.messageId ||
+      !scopeMatches(accepted.scope, receiptScope(receipt))
     ) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.PROVIDER_FAILURE,
         "Worker did not accept the attenuated Capability Handle",
       );
     }
-    const response = await this.#options.transport.request(parsed);
+    const response = await this.#options.transport.request(projection.execute);
     if (response !== null) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.PROVIDER_FAILURE,
         "Worker returned an unexpected synchronous work response",
       );
     }
-  }
-
-  async #requiredGovernedHandle(request: ExecuteRequest) {
-    const handle = await this.#options.handles.getExecutionHandle(
-      request.payload.capabilityHandleRef,
-    );
-    const governed = handle as GovernedCapabilityExecutionHandle | undefined;
-    const capability = handle ? await this.#options.handles.get(handle.capabilityRef) : undefined;
-    const valid =
-      governed?.handleVersion === "capability-handle.v2" &&
-      governed.revokedAt === null &&
-      governed.workerEndedAt === null &&
-      this.#options.now() < governed.expiresAt &&
-      governed.authorityFence === this.#options.authorityFence() &&
-      capability !== undefined &&
-      capabilityLifecycleHasActiveAuthority(capability.lifecycle) &&
-      capability.declaration.version === governed.capabilityVersion &&
-      governed.ownerId === request.scope.ownerId &&
-      governed.agentId === request.scope.agentId &&
-      governed.runId === request.scope.runId &&
-      governed.capabilityRef === request.payload.capabilityId &&
-      governed.capabilityVersion === request.payload.capabilityVersion &&
-      governed.operations.includes(request.payload.operation) &&
-      governed.inputRefs.includes(request.payload.inputRef) &&
-      request.payload.delegatedContextRefs.every((ref) =>
-        governed.delegatedContextRefs.includes(ref),
-      ) &&
-      request.payload.secretRefs.every((secret) =>
-        governed.secretRefs.some(
-          (allowed) =>
-            allowed.secretRef === secret.secretRef &&
-            allowed.secretVersion === secret.secretVersion &&
-            allowed.purpose === secret.purpose,
-        ),
-      ) &&
-      CLASSIFICATION_RANK[request.dataClassification] <=
-        CLASSIFICATION_RANK[governed.maxDataClassification] &&
-      (request.authorizationRef === null || request.authorizationRef === governed.authorizationRef);
-    if (!valid) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
-        `Execution request ${request.messageId} exceeds its durable Capability Handle`,
-      );
-    }
-    return governed;
-  }
-
-  async #consume(request: ExecuteRequest, handle: GovernedCapabilityExecutionHandle) {
-    if (!this.#options.handles.consumeExecutionHandle) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
-        "Durable Capability Handle consumption is unavailable",
-      );
-    }
-    if (handle.authorization.type === "grant") {
-      const grants = await this.#options.authorization.listGrants(handle.ownerId, handle.agentId);
-      const grant = grants.find(({ id }) => id === handle.authorization.ref);
-      const now = this.#options.now();
-      if (!grant || grant.revokedAt !== null || now < grant.validFrom || now >= grant.expiresAt) {
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.HANDLE_REVOKED,
-          `Grant for Capability Handle ${handle.ref} is no longer active`,
-        );
-      }
-    }
-    return this.#options.handles.consumeExecutionHandle({
-      handleRef: handle.ref,
-      expectedRevision: handle.revision,
-      authorityFence: handle.authorityFence,
-      operation: request.payload.operation,
-      inputRef: request.payload.inputRef,
-      delegatedContextRefs: request.payload.delegatedContextRefs,
-      secretRefs: request.payload.secretRefs.map(({ secretRef }) => secretRef),
-      dataClassification: request.dataClassification,
-      costMicros: 0,
-      idempotencyKey: request.idempotencyKey,
-      consumedAt: this.#options.now(),
-    });
   }
 }

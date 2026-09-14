@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import BetterSqlite3 from "better-sqlite3";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,7 +16,7 @@ import {
   createOwnerId,
   createThreadId,
 } from "@himawari-agent/domain";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createOpenRouterMem0ProjectionAdapter,
   MEM0_OPENROUTER_BASE_URL,
@@ -56,6 +58,14 @@ class FakeMem0Memory {
 
   constructor(configuration: Readonly<Record<string, unknown>>) {
     this.configuration = configuration;
+    const historyPath = configuration["historyDbPath"] as string;
+    mkdirSync(path.dirname(historyPath), { recursive: true });
+    const database = new BetterSqlite3(historyPath);
+    database.exec(
+      "CREATE TABLE IF NOT EXISTS memory_history (memory_id TEXT, previous_value TEXT)",
+    );
+    database.close();
+
     FakeMem0Memory.latest = this;
   }
 
@@ -89,7 +99,7 @@ class FakeMem0Memory {
   }
 
   async getAll() {
-    return { results: [...this.records.values()] };
+    return { results: [...this.records.values()].slice(0, 20) };
   }
 
   async search() {
@@ -97,6 +107,13 @@ class FakeMem0Memory {
   }
 
   async delete(providerRecordId: string) {
+    const record = this.records.get(providerRecordId);
+    if (!record) throw new Error("missing provider record");
+    const database = new BetterSqlite3(this.configuration["historyDbPath"] as string);
+    database
+      .prepare("INSERT INTO memory_history VALUES (?, ?)")
+      .run(providerRecordId, record.memory);
+    database.close();
     this.records.delete(providerRecordId);
   }
 }
@@ -170,6 +187,73 @@ async function adapter() {
 }
 
 describe("Mem0 product projection adapter", () => {
+  it("recreates a missing provider projection while retaining product identity", async () => {
+    const projection = await adapter();
+    const providerId = await projection.upsert({ memory: productMemory(), content: "original" });
+    const fake = FakeMem0Memory.latest as FakeMem0Memory;
+    fake.records.clear();
+    const rebuilt = await projection.upsert({
+      memory: productMemory(providerId),
+      content: "rebuilt",
+    });
+    expect(fake.records.get(rebuilt)).toMatchObject({
+      memory: "rebuilt",
+      metadata: { product_memory_id: productMemory().id },
+    });
+  });
+
+  it("clears every page of provider records and their history", async () => {
+    const projection = await adapter();
+    for (let index = 0; index < 25; index += 1) {
+      await projection.upsert({
+        memory: { ...productMemory(), id: createMemoryId(`memory-batch-${index}`) },
+        content: `content ${index}`,
+      });
+    }
+    const fake = FakeMem0Memory.latest as FakeMem0Memory;
+    expect(fake.records.size).toBe(25);
+    await projection.clearScope(OWNER_ID, AGENT_ID);
+    expect(fake.records.size).toBe(0);
+    const history = new BetterSqlite3(fake.configuration["historyDbPath"] as string);
+    try {
+      expect(history.prepare("SELECT * FROM memory_history").all()).toEqual([]);
+    } finally {
+      history.close();
+    }
+  });
+
+  it("removes retained history and retries cleanup after the vector is already gone", async () => {
+    const projection = await adapter();
+    const providerId = await projection.upsert({
+      memory: productMemory(),
+      content: "private text",
+    });
+    const fake = FakeMem0Memory.latest as FakeMem0Memory;
+    await fake.delete(providerId);
+    const history = new BetterSqlite3(fake.configuration["historyDbPath"] as string);
+    try {
+      expect(
+        history
+          .prepare("SELECT previous_value FROM memory_history WHERE memory_id = ?")
+          .get(providerId),
+      ).toEqual({ previous_value: "private text" });
+      history.prepare("INSERT INTO memory_history VALUES (?, ?)").run("unrelated", "keep");
+      await projection.delete(providerId);
+      await projection.delete(providerId);
+      expect(
+        history.prepare("SELECT * FROM memory_history WHERE memory_id = ?").all(providerId),
+      ).toEqual([]);
+      expect(
+        history
+          .prepare("SELECT previous_value FROM memory_history WHERE memory_id = 'unrelated'")
+          .get(),
+      ).toEqual({ previous_value: "keep" });
+    } finally {
+      history.close();
+      await projection.close();
+    }
+  });
+
   it("uses one non-inferred provider add and round-trips the product identity", async () => {
     const projection = await adapter();
     const providerId = await projection.upsert({
@@ -337,4 +421,46 @@ describe("Mem0 product projection adapter", () => {
     });
     await projection.close();
   });
+});
+
+it("governs the pinned embedding SDK call without hidden retries and preserves provider usage", async () => {
+  const adapter = await Mem0ProjectionAdapter.create({
+    configuration: configuration(),
+    load: async () => ({ Memory: FakeMem0Memory }),
+  });
+  const memory = FakeMem0Memory.latest;
+  if (!memory) throw new Error("MEM0_MISSING");
+  const response = {
+    data: [{ index: 0, embedding: [0.1] }],
+    usage: { prompt_tokens: 7, total_tokens: 7 },
+  };
+  const send = vi.fn(async () => response);
+  const client = { maxRetries: 2, timeout: 60_000, embeddings: { create: send } };
+  Object.assign(memory, { embedder: { openai: client } });
+  let allowed = false;
+  adapter.bindEmbeddingBoundary(async (_request, operation) => {
+    if (!allowed) throw new Error("ADMISSION_DENIED");
+    return operation();
+  }, 500);
+  expect(client.maxRetries).toBe(0);
+  expect(client.timeout).toBe(500);
+  await expect(client.embeddings.create()).rejects.toThrow("ADMISSION_DENIED");
+  expect(send).not.toHaveBeenCalled();
+  allowed = true;
+  expect(await client.embeddings.create()).toEqual(response);
+  expect(send).toHaveBeenCalledTimes(1);
+  await adapter.close();
+});
+
+it("constructs the actual pinned Mem0 SDK and installs the embedding admission boundary", async () => {
+  const config = configuration();
+  mkdirSync(config.stateRoot, { recursive: true });
+  const adapter = await Mem0ProjectionAdapter.create({ configuration: config });
+  adapter.bindEmbeddingBoundary(async () => {
+    throw new Error("NO_PROVIDER_CALL_ALLOWED");
+  }, 500);
+  await expect(
+    adapter.search({ ownerId: OWNER_ID, agentId: AGENT_ID, query: "test", limit: 1 }),
+  ).rejects.toThrow("NO_PROVIDER_CALL_ALLOWED");
+  await adapter.close();
 });

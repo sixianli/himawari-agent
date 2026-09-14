@@ -66,7 +66,7 @@ export class DurableWebStateAdapter implements WebStatePort {
     operation: WebOperationRecord,
   ): Promise<{ record: WebOperationRecord; replayed: boolean }> {
     const stateKey = key("operation", operation.id);
-    const existing = await this.#read<WebOperationRecord>(stateKey);
+    const existing = await this.readOperation(operation.id);
     if (existing) return this.#replay(existing, operation);
     try {
       await this.#state.compareAndSet({
@@ -79,27 +79,39 @@ export class DurableWebStateAdapter implements WebStatePort {
       if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.CONFLICT) {
         throw error;
       }
-      const raced = await this.#read<WebOperationRecord>(stateKey);
+      const raced = await this.readOperation(operation.id);
       if (!raced) throw error;
       return this.#replay(raced, operation);
     }
   }
 
-  async saveOperation(operation: WebOperationRecord): Promise<WebOperationRecord> {
+  async saveOperation(
+    operation: WebOperationRecord,
+    expectedRevision: number,
+  ): Promise<WebOperationRecord> {
     const stateKey = key("operation", operation.id);
-    const current = await this.#state.read(stateKey);
-    if (!current)
-      throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "Web operation missing");
+    if (operation.revision !== expectedRevision + 1)
+      throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Web operation revision is stale");
     await this.#state.compareAndSet({
       key: stateKey,
-      expectedRevision: current.revision,
+      expectedRevision,
       value: json(operation),
     });
     return operation;
   }
 
   async readOperation(operationId: string): Promise<WebOperationRecord | undefined> {
-    return this.#read<WebOperationRecord>(key("operation", operationId));
+    const record = await this.#state.read(key("operation", operationId));
+    if (!record) return undefined;
+    const value = record.value as unknown as WebOperationRecord;
+    // Legacy records acquire the durable store version; they have no live lease.
+    return {
+      ...value,
+      revision: record.revision,
+      executionOwner: value.executionOwner ?? null,
+      leaseExpiresAt: value.leaseExpiresAt ?? null,
+      authorityFence: value.authorityFence ?? 0,
+    };
   }
 
   async #read<TValue>(stateKey: string): Promise<TValue | undefined> {

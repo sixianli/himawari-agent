@@ -2,7 +2,6 @@ import type {
   CapabilityExecutionHandleStorePort,
   CapabilityManifest,
   CapabilityRegistryStorePort,
-  ConsumeCapabilityExecutionHandleInput,
   GovernedCapabilityExecutionHandle,
 } from "../ports/capabilities.js";
 import { capabilityLifecycleHasActiveAuthority } from "../ports/capabilities.js";
@@ -11,8 +10,6 @@ import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import type { AgentId, OwnerId, RunId } from "@himawari-agent/domain";
 import type { PermissionAllowDecision } from "../ports/authorization.js";
-
-const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
 
 export interface IssueGovernedCapabilityHandleInput {
   readonly ownerId: OwnerId;
@@ -105,41 +102,6 @@ export class CapabilityHandleService {
     return this.dependencies.store.createExecutionHandle(
       handle,
     ) as Promise<GovernedCapabilityExecutionHandle>;
-  }
-
-  async consume(
-    input: ConsumeCapabilityExecutionHandleInput,
-  ): Promise<GovernedCapabilityExecutionHandle> {
-    const current = (await this.dependencies.store.getExecutionHandle(input.handleRef)) as
-      | GovernedCapabilityExecutionHandle
-      | undefined;
-    const record = current ? await this.dependencies.store.get(current.capabilityRef) : undefined;
-    const now = this.dependencies.clock.now();
-    if (
-      !current ||
-      current.handleVersion !== "capability-handle.v2" ||
-      !record ||
-      !capabilityLifecycleHasActiveAuthority(record.lifecycle) ||
-      record.declaration.version !== current.capabilityVersion ||
-      current.revokedAt !== null ||
-      current.workerEndedAt !== null ||
-      now >= current.expiresAt ||
-      input.consumedAt >= current.expiresAt ||
-      input.authorityFence !== current.authorityFence ||
-      input.operation !== current.operation ||
-      !current.inputRefs.includes(input.inputRef) ||
-      !input.delegatedContextRefs.every((ref) => current.delegatedContextRefs.includes(ref)) ||
-      !input.secretRefs.every((ref) =>
-        current.secretRefs.some(({ secretRef }) => secretRef === ref),
-      ) ||
-      CLASSIFICATION_RANK[input.dataClassification] >
-        CLASSIFICATION_RANK[current.maxDataClassification]
-    )
-      this.rejected("Capability Handle is stale, forged, expired, or out of scope");
-    if (!this.dependencies.store.consumeExecutionHandle) {
-      this.rejected("Capability Handle store cannot consume v0.2 handles atomically");
-    }
-    return this.dependencies.store.consumeExecutionHandle(input);
   }
 
   async endRun(runId: RunId): Promise<number> {

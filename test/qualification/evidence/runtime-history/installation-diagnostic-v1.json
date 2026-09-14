@@ -1,0 +1,15 @@
+{
+  "originalUnboundErrorConfirmed": true,
+  "originalErrorCodes": [
+    "PORT_CONFLICT"
+  ],
+  "productionDatabaseWritten": false,
+  "modelCalls": 0,
+  "diagnosticRan": true,
+  "exitCode": 1,
+  "jobHostCodes": [],
+  "errorCodes": [
+    "PORT_CONFLICT"
+  ],
+  "liveServiceUnchanged": true
+}

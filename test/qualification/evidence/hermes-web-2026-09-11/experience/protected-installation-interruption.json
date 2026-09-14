@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "scope": "actual second migration interruption and prepared detached recovery",
+  "migrationSucceeded": false,
+  "namespacePreflight": {
+    "passed": true,
+    "runtimeUid": 998,
+    "privateParentUid": 0,
+    "privateParentMode": "0o755",
+    "visibleChildren": ["himawari"],
+    "sameProductDirectoryIdentity": true,
+    "nodeVersion": "v22.22.3"
+  },
+  "migrationSshSessionEndedAt": "2026-09-11T12:30:06+09:00",
+  "firstQualificationUnitEndedAt": "2026-09-11T12:30:47+09:00",
+  "firstQualificationUnitResult": "deactivated successfully; complete private probe output not yet read",
+  "lastDurableStage": "qualifying_final_readonly_installation_as_runtime_user",
+  "migrationProcessPresentAtInspection": false,
+  "originalServiceActive": false,
+  "newServiceActive": false,
+  "rootCauseEvidence": "migration process and sudo session ended with SSH session; exact terminating signal not observed",
+  "originalInstallationArchiveRetained": true,
+  "recoveryScriptSha256": "69040ce40bfce838b56e5f00f8da18625e10318ab58b5bf6b7aa19e3b1b63e65",
+  "recoveryLocalChecks": {
+    "passed": 4,
+    "scope": "broken output handling, durable phase record, termination handler, existing qualification and rollback logic retention"
+  },
+  "controlledDetachedUserUnit": {
+    "passed": true,
+    "scope": "separate SSH read confirmed completion after launching SSH session exited; not root migration acceptance"
+  },
+  "rootRecoveryExecution": "pending administrator invocation",
+  "realProtectedPerformance": "not measured"
+}

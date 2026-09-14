@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 2,
+  "status": "passed",
+  "scope": "fixture-only",
+  "engine": "chromium",
+  "profile": "chrome",
+  "runtime": "installed-google-chrome",
+  "browserVersion": "151.0.7922.174",
+  "platform": "darwin-arm64",
+  "emulation": null,
+  "surfaces": [
+    {
+      "label": "对话",
+      "policy": "allowed"
+    },
+    {
+      "label": "审批",
+      "policy": "allowed"
+    },
+    {
+      "label": "后台任务",
+      "policy": "allowed"
+    },
+    {
+      "label": "收件箱与摘要",
+      "policy": "allowed"
+    },
+    {
+      "label": "记忆",
+      "policy": "allowed"
+    },
+    {
+      "label": "能力与适配器",
+      "policy": "allowed"
+    },
+    {
+      "label": "授权与 Grant",
+      "policy": "allowed"
+    },
+    {
+      "label": "追踪",
+      "policy": "allowed"
+    },
+    {
+      "label": "设置",
+      "policy": "allowed"
+    },
+    {
+      "label": "会话与设备",
+      "policy": "allowed"
+    },
+    {
+      "label": "健康与部署",
+      "policy": "allowed"
+    }
+  ],
+  "journeys": [
+    "deployment-availability-no-unsupported-queries",
+    "installed-health-dependencies",
+    "thread-chat",
+    "thread-answer-locale",
+    "thread-search",
+    "thread-checkpoint",
+    "thread-revision-conflict-reapply",
+    "thread-archive-restore",
+    "thread-deletion-impact",
+    "thread-fork",
+    "thread-multi-tab",
+    "approval-approve-deny",
+    "approval-recent-authentication-gate",
+    "capability-review-install",
+    "capability-update-approve-deny",
+    "capability-rollback-disable",
+    "grant-revision-conflict-revoke",
+    "governance-offline-no-mutation",
+    "unapproved-capability-hidden-route-absent",
+    "task-budget-attention-pause",
+    "inbox-digest-result-sources",
+    "memory-sensitive-correction",
+    "trace-observable-causal-chain",
+    "settings-secret-reference-only",
+    "session-device-authoritative-detail",
+    "browser-private-storage-scan"
+  ],
+  "routeStates": [
+    "deep-link",
+    "focus-management",
+    "loading",
+    "empty",
+    "error",
+    "degraded",
+    "offline",
+    "session-revoked"
+  ],
+  "locales": ["zh-CN", "en", "ja"],
+  "keyboard": ["visible-focus", "settings-tabs-roving"],
+  "sse": [
+    "durable-thread-cursor",
+    "event-id-deduplication",
+    "sequence-gap-snapshot-refresh",
+    "authority-scope-snapshot-refresh",
+    "offline-reconnect",
+    "multi-tab",
+    "close-reopen"
+  ],
+  "privacy": {
+    "indexedDbDatabases": 0,
+    "cacheEntries": 0,
+    "serviceWorkers": 0,
+    "sessionStorageKeys": 0,
+    "safeLogEntries": 0
+  },
+  "responsive": ["desktop-three-pane", "mobile-single-pane", "320px-reflow"],
+  "minimumTargetHeight": 44,
+  "axeViolations": 0,
+  "keyboardFocus": {
+    "tagName": "summary",
+    "accessibleName": "外观与主题色",
+    "visible": true
+  },
+  "semanticLandmarks": ["navigation", "main", "heading", "complementary"],
+  "nonColorConnectionStatus": true,
+  "unsafeBaselineMutations": 0,
+  "expectedOfflineTransportErrors": 0,
+  "browserStorageKeys": [
+    "himawari.control-center.v1.draft.thread-main",
+    "himawari.control-center.v1.lastCursor",
+    "himawari.control-center.v1.locale",
+    "himawari.control-center.v1.preferences",
+    "himawari.control-center.v1.threadLastCursor"
+  ],
+  "cursorAfterReopen": "thread-cursor:11"
+}

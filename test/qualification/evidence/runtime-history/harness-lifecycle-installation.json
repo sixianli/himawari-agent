@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "candidatePrefix": "/data/hermes/himawari/releases/2026-09-12-harness-lifecycle",
+  "qualifiedRuntimePath": "/data/hermes/himawari/releases/2026-09-11-control-center/lib/himawari-agent",
+  "runtimeDigest": "0d269e653bba534e7fc14591e2dc2dddb0373aedbddbe1284da7eeb33b980861",
+  "receiptDigest": "5c65078c0ba3bfec67fd8bc919206b97065575dbdaf63d9a602cd312a2e8abad",
+  "runtimeUid": 998,
+  "productionServiceChanged": false,
+  "productionDatabaseWritten": false,
+  "modelCalls": 0,
+  "next": "verified backup and schema-32 installation switch still required; do not import legacy history again"
+}

@@ -1,0 +1,258 @@
+{
+  "platform": "darwin",
+  "osRelease": "27.0.0",
+  "architecture": "arm64",
+  "node": "v22.22.3",
+  "srt": "0.0.75",
+  "runtime": "/private/tmp/r8-install-linux-fix/lib/himawari-agent",
+  "runnerDigest": "dcc5a8e779ba28cb8b25b63fc1a528a7f3ba93252a6eaf2b8359dcb9b2a6de8a",
+  "productionSuitable": false,
+  "evidence": [
+    {
+      "scenario": "plain-http",
+      "policyDigest": "ad33094abf12d166a8da81b493acd15140cd3b47568e8ad4e3df135161d28cfc",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 2,
+        "observedCpuTimeMs": 30,
+        "peakObservedMemoryBytes": 6881280
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "HTTP/1.1 301 Moved Permanently\r\ndate: Thu, 10 Sep 2026 02:15:13 GMT\r\ncontent-type: text/plain;charset=UTF-8\r\ncontent-length: 0\r\nlocation: https://registry.npmjs.org/is-number/7.0.0\r\nset-cookie: [redacted]\r\nset-cookie: [redacted]\r\nserver: cloudflare\r\ncf-ray: a38aec7599c0c4ee-NRT\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": null,
+      "namespaceState": null,
+      "hostNetNamespace": null
+    },
+    {
+      "scenario": "download",
+      "policyDigest": "24e7e033c457e136f39bb3b2d39ec2218d491b46d42d4c4806dcb81d6243b09b",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 3,
+        "observedCpuTimeMs": 40,
+        "peakObservedMemoryBytes": 8339456
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "",
+      "artifactSha256": "7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e",
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": null,
+      "namespaceState": null,
+      "hostNetNamespace": null
+    },
+    {
+      "scenario": "socks-download",
+      "policyDigest": "d389726f54b3b423c841dcd2618ab112ce04768165849e1254acda8773422b7c",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 3,
+        "observedCpuTimeMs": 40,
+        "peakObservedMemoryBytes": 8355840
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "",
+      "artifactSha256": "7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e",
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": null,
+      "namespaceState": null,
+      "hostNetNamespace": null
+    },
+    {
+      "scenario": "install",
+      "policyDigest": "c89bbc61511e91229a488ccedd6fa560d7aed30fa7440b8766b5d6140580b4bd",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 8,
+        "observedCpuTimeMs": 400,
+        "peakObservedMemoryBytes": 95420416
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 2,
+        "closed": true
+      },
+      "output": "\nadded 1 package in 702ms\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": null,
+      "namespaceState": null,
+      "hostNetNamespace": null
+    },
+    {
+      "scenario": "redirect-denied",
+      "policyDigest": "c8bc8731e907fb432a08c6e0a642bb8bb6d1102b9a2867abdb27409161f551b2",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 10,
+        "observedCpuTimeMs": 40,
+        "peakObservedMemoryBytes": 10747904
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "curl: (22) The requested URL returned error: 403\nHTTP/1.1 200 Connection Established\r\n\r\nHTTP/2 302 \r\ndate: Thu, 10 Sep 2026 02:15:17 GMT\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: 0\r\nlocation: https://example.com\r\nserver: gunicorn/19.9.0\r\naccess-control-allow-origin: *\r\naccess-control-allow-credentials: true\r\n\r\nHTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nX-Proxy-Error: blocked-by-allowlist\r\n\r\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": null,
+      "namespaceState": null,
+      "hostNetNamespace": null
+    },
+    {
+      "scenario": "cpu",
+      "policyDigest": "942b5185050b15f0b483ce9c369218cecc2194bc2f365ac37467a88637cf6827",
+      "passed": true,
+      "reason": "resource_limit",
+      "exitCode": null,
+      "resources": {
+        "samples": 2,
+        "observedCpuTimeMs": 110,
+        "peakObservedMemoryBytes": 48300032
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "output": "",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": null,
+      "namespaceState": null,
+      "hostNetNamespace": null
+    },
+    {
+      "scenario": "memory",
+      "policyDigest": "33ce7ffef754f861bb4167ee90c63e1fd50d156d8123a4b681f64e27e646b43f",
+      "passed": true,
+      "reason": "resource_limit",
+      "exitCode": null,
+      "resources": {
+        "samples": 2,
+        "observedCpuTimeMs": 60,
+        "peakObservedMemoryBytes": 126435328
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "output": "",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": null,
+      "namespaceState": null,
+      "hostNetNamespace": null
+    },
+    {
+      "scenario": "cancel",
+      "policyDigest": "50c68c3d442642bf99ea2129c03ffe6862ff1464e239783d88ee09ea13feafcc",
+      "passed": true,
+      "reason": "cancelled",
+      "exitCode": null,
+      "resources": {
+        "samples": 2,
+        "observedCpuTimeMs": 50,
+        "peakObservedMemoryBytes": 43941888
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 1,
+        "closed": true
+      },
+      "output": "tunnel-established\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": null,
+      "namespaceState": null,
+      "hostNetNamespace": null
+    },
+    {
+      "scenario": "proxy-variables-removed",
+      "policyDigest": "48d9ff02f1a77d8dc6b997e2ff5f54e55399a2e8cf2113536a14c126db55485a",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "resources": {
+        "samples": 1,
+        "observedCpuTimeMs": 0,
+        "peakObservedMemoryBytes": 2162688
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "output": "EPERM\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": null,
+      "namespaceState": null,
+      "hostNetNamespace": null
+    },
+    {
+      "scenario": "host-secret-denied",
+      "policyDigest": "c3bce8f8d54fd1c13b338fcf1669e7b5d3c1c3b153b86aaeb8a133274deb9056",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 1,
+      "resources": {
+        "samples": 1,
+        "observedCpuTimeMs": 0,
+        "peakObservedMemoryBytes": 2162688
+      },
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "output": "cat: /private/tmp/r8-use-cCyNqh/host-secret: Operation not permitted\n",
+      "artifactSha256": null,
+      "hostSecretPresent": true,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": null,
+      "namespaceState": null,
+      "hostNetNamespace": null
+    }
+  ],
+  "passed": true,
+  "redaction": {
+    "removed": "response credential headers",
+    "originalSha256": "bb24109bed0a7a6a3e5e25d3672be5088bcb96a8ae72d3af3726dedd52923237"
+  }
+}

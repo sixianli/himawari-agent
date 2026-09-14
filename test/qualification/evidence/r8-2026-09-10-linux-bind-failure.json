@@ -1,0 +1,12 @@
+{
+  "platform": "linux",
+  "runtime": "/data/himawari-r8-ucNhI6hn/installed/lib/himawari-agent",
+  "faultInjection": "occupied-loopback-port",
+  "nativeCollision": true,
+  "readyRejected": true,
+  "taskStarted": false,
+  "network": null,
+  "srtReset": true,
+  "passed": true,
+  "productionSuitable": false
+}

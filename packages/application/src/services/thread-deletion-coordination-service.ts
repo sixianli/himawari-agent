@@ -6,6 +6,8 @@ import {
   type ThreadId,
 } from "@himawari-agent/domain";
 import { ApplicationPortError, PORT_ERROR_CODES, type PayloadRef } from "../ports/common.js";
+import type { GatewayAuthenticationContext } from "../ports/gateway.js";
+import type { RecentAuthenticationGuardPort } from "../ports/recent-authentication.js";
 import type { ThreadRepositoryPort, ThreadTaskResolution } from "../ports/threads.js";
 import type { ClockPort } from "../ports/system.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
@@ -14,6 +16,7 @@ export interface ThreadDeletionCoordinationServiceDependencies {
   readonly repository: ThreadRepositoryPort;
   readonly clock: ClockPort;
   readonly authority: () => ProductAuthorityFence;
+  readonly recentAuthentication?: RecentAuthenticationGuardPort;
 }
 
 export class ThreadDeletionCoordinationService {
@@ -74,7 +77,7 @@ export class ThreadDeletionCoordinationService {
     });
   }
 
-  deletePermanently(input: {
+  async deletePermanently(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
     readonly threadId: ThreadId;
@@ -82,6 +85,7 @@ export class ThreadDeletionCoordinationService {
     readonly reasonCode: string;
     readonly authorizationRef: string;
     readonly recentAuthenticationRef: string;
+    readonly authentication: GatewayAuthenticationContext;
     readonly idempotencyKey: string;
     readonly resultRef: PayloadRef;
   }) {
@@ -91,7 +95,56 @@ export class ThreadDeletionCoordinationService {
         "Permanent Thread deletion requires one-time authorization and recent authentication",
       );
     }
-    return this.requestDeletion({ ...input, mode: "permanent" });
+    if (input.authentication.ownerId !== input.ownerId) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Permanent Thread deletion requires the scoped authenticated Owner",
+      );
+    }
+    const idempotencyKey = createIdempotencyKey(input.idempotencyKey);
+    const existing = await this.dependencies.repository.findReceipt(
+      input.ownerId,
+      input.agentId,
+      idempotencyKey,
+    );
+    const replayed =
+      existing?.commandType === "thread.delete_permanently" &&
+      existing.semanticFingerprint ===
+        threadCommandFingerprint({
+          type: "thread.delete_permanently",
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          threadId: input.threadId,
+          expectedThreadRevision: input.expectedThreadRevision,
+          reasonCode: input.reasonCode,
+          authorizationRef: input.authorizationRef,
+          recentAuthenticationRef: input.recentAuthenticationRef,
+        });
+    if (!replayed) {
+      if (!this.dependencies.recentAuthentication) {
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "Recent Owner authentication evidence is required",
+          { reasonCode: "RECENT_AUTH_REQUIRED" },
+        );
+      }
+      await this.dependencies.recentAuthentication.assertRecentAuthentication({
+        authentication: input.authentication,
+        expectedAuthenticationRef: input.recentAuthenticationRef,
+      });
+    }
+    return this.requestDeletion({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      threadId: input.threadId,
+      expectedThreadRevision: input.expectedThreadRevision,
+      reasonCode: input.reasonCode,
+      authorizationRef: input.authorizationRef,
+      recentAuthenticationRef: input.recentAuthenticationRef,
+      idempotencyKey,
+      resultRef: input.resultRef,
+      mode: "permanent",
+    });
   }
 
   private requestDeletion(input: {

@@ -49,10 +49,6 @@ export interface BackgroundWorkStatePort {
   saveJob(job: BackgroundJobState, expectedRevision: number): Promise<BackgroundJobState>;
   readOccurrence(occurrenceId: OccurrenceId): Promise<BackgroundOccurrence | undefined>;
   createOccurrence(occurrence: BackgroundOccurrence): Promise<BackgroundOccurrence>;
-  saveOccurrence(
-    occurrence: BackgroundOccurrence,
-    expectedRevision: number,
-  ): Promise<BackgroundOccurrence>;
   reserveAdmission(input: BackgroundAdmissionReservation): Promise<BackgroundAdmissionResult>;
   claimOccurrence(input: BackgroundOccurrenceClaim): Promise<BackgroundOccurrence>;
   settleOccurrence(input: BackgroundOccurrenceSettlement): Promise<BackgroundOccurrence>;

@@ -1,0 +1,96 @@
+{
+  "at": "2026-09-11T12:07:39.504041+00:00",
+  "scope": "只读核查现有源码、部署安装包哈希与已导出的模型请求；未修改产品代码，未调用模型，未重启服务。仅新增调查证据。",
+  "method": "代码调用链证据及部署文件一致性，不是新行为测试或完整生产数据库逐行核对。",
+  "deploymentParity": {
+    "application/dist/services/context-projection-service.js": "bc9c571f6b87fca2a696505daed49cdd27b398ba51df9df2bf4ac37739159b04",
+    "application/dist/services/context-formation-service.js": "601f1c5d7b15149742b7a31bcaed91cd16f7f0229b0b09a3eeb9f2b6394d88ad",
+    "runtime-pi/dist/pi-runtime-adapter.js": "dee2505f93a714dfe640571bca1fb14171f26d68f8089ddd5155e19d4983df69",
+    "persistence-sqlite/dist/sqlite-thread-operations.js": "335d11b87c444d4eaa5c98e3a7f641baa9666de4ba0996fe80e7641e68c37bf6"
+  },
+  "localArtifactRoot": "dist/node-runtime/node_modules/@himawari-agent",
+  "remoteArtifactRoot": "/data/hermes/himawari/releases/2026-09-11-control-center/lib/himawari-agent/node_modules/@himawari-agent",
+  "findings": [
+    {
+      "status": "confirmed",
+      "claim": "下一轮历史来自 thread_messages；历史正文被投影成 user/assistant text，没有历史工具调用或 tool_result。",
+      "evidence": [
+        "部署 context-projection-service.js:124-183",
+        "部署 sqlite-thread-operations.js:831 起",
+        "HEAD 的 ContextFormationService.createEnvelope 只选择消息标识、角色、正文引用、时间、分类"
+      ],
+      "boundary": "本地未部署的取消标记草稿单独识别；不将草稿内容视为线上行为。"
+    },
+    {
+      "status": "confirmed",
+      "claim": "RuntimeProjection/Pi 适配层能表示工具调用和结果，缺失发生在上游产品历史构建路径。",
+      "evidence": [
+        "packages/runtime-pi/src/pi-runtime-adapter.ts:214-269 projectedMessage",
+        "packages/runtime-pi/src/pi-runtime-adapter.ts:303-332 prehydrateSession"
+      ]
+    },
+    {
+      "status": "confirmed",
+      "claim": "运行时消息、工具意图和结果通过 capture 保存受保护 trace artifact；协调器记录事件，UI 从这些事件生成过程展示。",
+      "evidence": [
+        "packages/runtime-pi/src/pi-runtime-adapter.ts:1303-1398",
+        "packages/application/src/services/context-projection-service.ts capture",
+        "packages/application/src/services/run-coordinator.ts:820-838",
+        "packages/application/src/services/thread-execution-projection.ts:111-175"
+      ],
+      "boundary": "不能由代码推断每一个生产事件均已落库；本轮未直接重读所有管理员私有 trace 行。"
+    },
+    {
+      "status": "confirmed",
+      "claim": "成功完成时只将最终答案正文提交为 agent 聊天消息；取消更新 Run 和 checkpoint，不提交一条等价的助手最终回答。",
+      "evidence": [
+        "packages/runtime-pi/src/pi-runtime-adapter.ts:1043-1110",
+        "packages/persistence-sqlite/src/sqlite-run-lifecycle-operations.ts:429-474,702-719"
+      ]
+    },
+    {
+      "status": "confirmed",
+      "claim": "同一 Run 的审批恢复使用独立的 Pi 工具批次 continuation，保留 prefix、assistant tool call、system prompt；新 Run 没有通过此机制继承历史工具结果。",
+      "evidence": [
+        "packages/runtime-pi/src/pi-tool-batch-continuation.ts:1-94",
+        "packages/runtime-pi/src/pi-runtime-adapter.ts:955-1035",
+        "packages/application/src/services/runtime-tool-authorization.ts:4-32",
+        "packages/application/src/services/permission-service.ts:232-244"
+      ]
+    },
+    {
+      "status": "confirmed",
+      "claim": "等待审批时抛出的 RUNTIME_TOOL_SUSPENDED 是本地退出信号，后续事件被抑制；不能把它补写为真实工具执行失败。",
+      "evidence": [
+        "packages/runtime-pi/src/pi-runtime-adapter.ts:999",
+        "packages/runtime-pi/src/pi-runtime-adapter.ts:1240-1244",
+        "packages/runtime-pi/src/pi-tool-batch-continuation.ts:16"
+      ]
+    },
+    {
+      "status": "partially confirmed",
+      "claim": "实际天气请求与只读请求均最后传入；导出的旧历史没有结构化工具调用/结果。此次检查解释了这些字段为何缺失。",
+      "evidence": [
+        "context-content-diagnostic.json"
+      ],
+      "boundary": "旧审批拒绝的助手文字仍存在；缺失的是结构化执行记录，不能说模型完全没有收到拒绝信息。"
+    },
+    {
+      "status": "uncertain",
+      "claim": "恢复结构化工具历史是否足以消除全部答非所问。",
+      "evidence": [
+        "context-model-comparison-v1.json",
+        "context-background-comparison-v2.json"
+      ],
+      "boundary": "仅 GLM 的单次合成工具取消对照改善；DeepSeek 的两种文字/格式候选均未通过全部场景。纯文本取消不能仅因缺少文字标记就归因；Pi 也可能序列化为连续 user 消息。"
+    }
+  ],
+  "proposedRepairBoundary": [
+    "产品侧提供按 Run/Turn 归属、顺序和终态组织的可信历史；Pi 继续负责消息协议和 Agent Loop。",
+    "工具调用与结果成对，区分审批拒绝、审批等待后取消、执行中取消及结果未知；不得伪造成功或将取消当作副作用撤销。",
+    "不要直接把累计 trace 快照全部重放：其中包含重复消息快照、脱敏观察、未完成片段和本地退出信号。",
+    "保留现有 Owner/Agent 归属、分类披露、上下文水位线和冻结快照，不自动扩权或重执行历史工具。",
+    "正式改动前建立跨 Run 保存/还原检查，覆盖成功、拒绝、取消和明确继续；局部 Pi 测试或提示词存在性检查不能代替这一验证。"
+  ],
+  "completion": "此次调用链调查完成；正式修复、回归验证、真实聊天验收未完成；不提交或部署暂停草稿。"
+}

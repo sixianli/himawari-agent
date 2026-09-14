@@ -1,0 +1,113 @@
+{
+  "at": "2026-09-12T02:40:18.119500+00:00",
+  "status": "in_progress_not_deliverable",
+  "deployment": "e2e-fixes-cutover-result.json",
+  "passed": {
+    "brandImageNaturalWidth": 1254,
+    "searchKnownBody": "海风花园 -> one fixture thread",
+    "searchRename": "星桥验收标题947 -> one match; restore original title -> zero matches",
+    "cancelledOutputLabel": "已停止",
+    "writeByteReport": {
+      "uiWorkSeconds": 30,
+      "reportedBytes": 14,
+      "hostBytes": 14,
+      "sha256": "5a6a736de40d9dc5efda97c87c8b0c4fc8d160127dfc909dbf72d2445a82cab9",
+      "jobs": 1,
+      "cleanup": "confirmed"
+    },
+    "mobile390": {
+      "viewport": 390,
+      "pageWidth": 390,
+      "screenshot": "e2e-post-cutover-mobile.png",
+      "visuallyReviewed": true
+    },
+    "multiApprovalContinuation": {
+      "run": "run:a2b3bb7a-7db8-4d97-94d2-7899ca4a7965",
+      "firstToolCompletedAt": "2026-09-12T01:17:30.800Z",
+      "nextApprovalClickedAt": "2026-09-12T01:23:11.739Z",
+      "delaySeconds": 340.939,
+      "progress": "All four distinct jobs completed exactly once; cleanup confirmed and supervision released"
+    },
+    "attachmentGrounding": {
+      "run": "run:43a8c2eb-9fe6-424b-bf46-46db513249fa",
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "thinking": "minimal",
+      "uiWorkSeconds": 7,
+      "actualAnswer": "附件提到的项目名称是「松林花圃」，安排是后天上午整理三份资料。",
+      "toolJobs": 0,
+      "historyLeakObserved": false
+    }
+  },
+  "failed": {
+    "weatherGrounding": {
+      "threadRunOrdinal": 13,
+      "uiWorkSeconds": 59,
+      "uiToolSeconds": 17,
+      "topicAndDate": "on topic; single search; dated source link provided",
+      "sourceMismatch": "Final answer said one result was a September 11 excerpt; actual current 3 results contained no September 11 page. Prior-run description appears reused; request-body cause not yet proven.",
+      "providerDelivery": "Current search text matches provider tool message exactly (SHA256 c696ff8a903f410d899d607b034bfb99dba3613735c71014491ee49c4fc60220)"
+    },
+    "multiApprovalRun": {
+      "run": "run:a2b3bb7a-7db8-4d97-94d2-7899ca4a7965",
+      "observation": "After four successful jobs model requested bash pwd again; repeat not approved; run later failed; terminal cause not yet verified",
+      "terminalCode": "RUN_EXECUTION_DEADLINE_EXCEEDED",
+      "providerDelivery": "All four tool result texts match final provider request exactly; one tool message per call"
+    },
+    "weatherDeepSeekLow": {
+      "threadRunOrdinal": 14,
+      "uiWorkSeconds": 44,
+      "result": "cancelled_after_wrong_read_requested",
+      "requestedPath": "/data/hermes/himawari/workspaces/default/acceptance-morning.txt",
+      "approvalGranted": false
+    },
+    "weatherGlmMinimal": {
+      "threadRunOrdinal": 15,
+      "uiWorkSeconds": 20,
+      "terminal": "completed",
+      "result": "failed",
+      "observation": "Answers from prior search and adds unrelated file-read commentary. No new search observed in UI; does not meet current request."
+    },
+    "expiredCsrf": {
+      "code": "HTTP_GATEWAY_CSRF_REJECTED",
+      "draftPreserved": true,
+      "pageReloadRestoredSubmission": true,
+      "localFix": "explicit CSRF rejection only; one refresh/retry; identical body and idempotency key; unchanged authentication/authority scope",
+      "liveFix": "pending"
+    }
+  },
+  "pending": {},
+  "modelBudgetUpperBoundMicros": 79770,
+  "budgetObservationAt": "2026-09-12T01:46:24.569808+00:00",
+  "excludedByUser": {
+    "answerLanguage": {
+      "reason": "用户明确页面语言只控制 UI，不需要独立模型回答语言设置；模型依用户消息自行选择语言",
+      "previousObservation": {
+        "englishRun": "run:ea16b5bc-b2ac-45f1-b0cd-1650cc749835",
+        "japaneseRun": "run:3707de79-f306-4944-aaa7-a5390b26167c",
+        "observed": "Both saved language settings produced Chinese final answers",
+        "diagnostic": "e2e-language-diagnostic.json: both provider requests contain correct locale instruction in system message; current user message last; model comparison pending",
+        "glmControl": {
+          "run": "run:5a57158b-e188-4f26-b763-9bc385af23e9",
+          "model": "GLM 5.3 Flash",
+          "thinking": "minimal",
+          "locale": "en",
+          "prompt": "用一句话向读者问好，不调用工具。",
+          "answer": "大家好，很高兴又和大家见面了。",
+          "uiWorkSeconds": 10,
+          "result": "failed"
+        },
+        "nextCheck": "Compare configured Chinese language directive and actual system request; root authentication pending; initial deployment source contains explicit Chinese directive but live persistence unverified"
+      },
+      "productionInjection": "local rollback completed; production rollback pending"
+    }
+  },
+  "diagnostic": "e2e-tool-flow-diagnostic.json",
+  "localVerification": {
+    "browserUnitTests": 80,
+    "diagnosticTests": 6,
+    "typecheck": "passed",
+    "browserReport": "ui-locale-csrf-chrome-final/browser.json",
+    "scope": "fixture-only; not deployment or live model qualification"
+  },
+  "budgetLimitations": "79770 micros observation predates Run14 and Run15 and excludes unverified external search billing; do not present as current total"
+}

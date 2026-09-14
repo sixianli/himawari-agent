@@ -1,6 +1,6 @@
 import {
-  PORT_ERROR_CODES,
   ApplicationPortError,
+  PORT_ERROR_CODES,
   SessionDeletionCoordinator,
   SessionTraceRecorder,
   type TraceEvent,
@@ -14,11 +14,11 @@ import {
   createTurnId,
 } from "@himawari-agent/domain";
 import {
+  createReferenceAdapterSet,
   DeterministicFailureScheduler,
   InMemoryDeletionTarget,
-  createReferenceAdapterSet,
 } from "@himawari-agent/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const OWNER_ID = createOwnerId("owner-trace");
 const AGENT_ID = createAgentId("agent-trace");
@@ -31,7 +31,7 @@ function createRecorder() {
   const adapters = createReferenceAdapterSet();
   const recorder = new SessionTraceRecorder({
     trace: adapters.trace,
-    payloads: adapters.payload,
+    artifacts: adapters.runPayloadArtifacts,
     protector: adapters.payloadProtector,
     audit: adapters.audit,
     clock: adapters.clock,
@@ -58,6 +58,25 @@ function traceInput(eventType: string) {
 }
 
 describe("Task 6 Session Trace", () => {
+  it("keeps concurrent runtime and authorization records without sequence collisions", async () => {
+    const { adapters, recorder } = createRecorder();
+    const recorded = await Promise.all([
+      recorder.record({ ...traceInput("runtime.tool_result"), payload: { outcome: "unknown" } }),
+      recorder.record({
+        ...traceInput("authorization.grant_consumed"),
+        payload: { operation: "write" },
+      }),
+    ]);
+    expect(recorded.map(({ event }) => event.sequence).sort()).toEqual([1, 2]);
+    expect(await adapters.trace.readRun(RUN_ID, 0, 10)).toHaveLength(2);
+  });
+  it("delegates sequence allocation to the atomic append instead of a stale read", async () => {
+    const { adapters, recorder } = createRecorder();
+    const read = vi.spyOn(adapters.trace, "readRun").mockRejectedValue(new Error("must not scan"));
+    expect((await recorder.record(traceInput("runtime.message"))).event.sequence).toBe(1);
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it("records ordered model, tool, and approval payload references with causal relationships", async () => {
     const { adapters, recorder } = createRecorder();
     const model = await recorder.record({

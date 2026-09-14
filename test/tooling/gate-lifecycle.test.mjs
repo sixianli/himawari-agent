@@ -248,7 +248,7 @@ function gateFixture(event = "workflow_dispatch") {
     const output = path.join(reports, check.id, member.key),
       projects = check.projects.map((id) => ({ id, counts: count() })),
       total = Math.max(1, projects.length),
-      artifactPlatform = check.id === "browser" ? "linux-x64" : member.key;
+      artifactPlatform = ["browser", "coverage"].includes(check.id) ? "linux-x64" : member.key;
     const items = check.outputs.map((kind) => {
       const name = check.id === "security" ? "security-report.json" : `report.${kind}`;
       const contents =

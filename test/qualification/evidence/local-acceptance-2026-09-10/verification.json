@@ -1,0 +1,210 @@
+{
+  "scope": "受控测试与本机启动前检查，不是真实服务验收",
+  "checks": {
+    "tooling": {
+      "status": "passed",
+      "counts": {
+        "files": 23,
+        "executed": 565,
+        "passed": 565,
+        "failed": 0,
+        "skipped": 0
+      },
+      "durationMs": 104818,
+      "testedSha": "585ac00df0d71d0094e1ab1a84969208b8e3d196",
+      "report": ".ci-output/local-1789040328934/policy-default/result.json",
+      "reportSha256": "a91268ef9072e22b19d8ace3daaa218d25d7678e0b05a1d6c467c5ae58a60a04"
+    },
+    "build": {
+      "status": "passed",
+      "counts": {
+        "files": 64379,
+        "executed": 8,
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "durationMs": 248122,
+      "testedSha": "585ac00df0d71d0094e1ab1a84969208b8e3d196",
+      "report": ".ci-output/local-1789040067708/build-macos-arm64/result.json",
+      "reportSha256": "b73ec3331af22dc94f8f6755902b4dc90d5c4d310c6e9f5966f03fd71c29f3f9"
+    }
+  },
+  "regression": {
+    "command": "npx vitest run --config vitest.workspace.ts --project tooling test/tooling/pipeline.test.mjs test/tooling/runner-orchestration.test.mjs test/tooling/gate-lifecycle.test.mjs",
+    "files": 3,
+    "passed": 61,
+    "failed": 0,
+    "skipped": 0,
+    "redEvidence": "/tmp/himawari-ci-budget-red.txt",
+    "greenEvidence": "/tmp/himawari-ci-budget-final-regression.txt",
+    "redObserved": [
+      "五个项目均收到固定 300000 毫秒，而不是剩余总预算",
+      "父检查预算耗尽后仍启动后续项目",
+      "进程超时后 ENOENT 掩盖终止原因",
+      "既有构建断言仍预期 7 项，但实际已是 8 项"
+    ],
+    "logDigests": {
+      "/tmp/himawari-ci-budget-red.txt": "f54ee0c15aa14b9d6e393b8e6146b2544b66838aeb46f3d25a906bbb98b6fe14",
+      "/tmp/himawari-ci-budget-final-regression.txt": "8c53d8b8e88dd628c95580206b5a22b215193c859c67e9a3143fc3dc94c991f5"
+    }
+  },
+  "staticChecks": {
+    "npmRunCheck": "passed",
+    "documentGovernanceStrict": "passed",
+    "installRunbookContract": "passed",
+    "npmRunCheckFinal": "passed"
+  },
+  "liveService": {
+    "status": "pending_local_identity_decision",
+    "paidCalls": 0,
+    "costUsd": 0,
+    "stateRootCreated": false,
+    "newKeychainItemsCreated": false,
+    "browserJourneysExecuted": false
+  },
+  "firstCompleteRun": {
+    "status": "failed",
+    "counts": {
+      "files": 183,
+      "executed": 1914,
+      "passed": 1908,
+      "failed": 6,
+      "skipped": 0
+    },
+    "durationMs": 536484,
+    "testedSha": "585ac00df0d71d0094e1ab1a84969208b8e3d196",
+    "report": ".ci-output/local-1789040067708/test-macos-arm64/result.json",
+    "failures": [
+      {
+        "file": "test/integration/production-sandbox-scope.test.ts",
+        "test": "production scope derives read from the same durable Grant",
+        "seconds": 5.034205833,
+        "message": "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\"."
+      },
+      {
+        "file": "test/integration/production-sandbox-scope.test.ts",
+        "test": "production scope derives edit from the same durable Grant",
+        "seconds": 5.229343917,
+        "message": "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\"."
+      },
+      {
+        "file": "test/integration/production-sandbox-scope.test.ts",
+        "test": "production scope derives write from the same durable Grant",
+        "seconds": 5.070731625,
+        "message": "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\"."
+      },
+      {
+        "file": "test/integration/production-sandbox-scope.test.ts",
+        "test": "production scope derives search from the same durable Grant",
+        "seconds": 5.041007584,
+        "message": "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\"."
+      },
+      {
+        "file": "test/integration/sqlite-model-budget-operations.test.ts",
+        "test": "SQLite durable model invocation identities > revalidates current authority before replaying an identity",
+        "seconds": 5.606114833,
+        "message": "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\"."
+      },
+      {
+        "file": "test/integration/sqlite-model-budget-operations.test.ts",
+        "test": "SQLite durable model invocation identities > requires a held execution lease before begin replay or idempotent start",
+        "seconds": 5.057351125,
+        "message": "Test timed out in 5000ms. If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\"."
+      }
+    ]
+  },
+  "isolatedIntegrationReproduction": {
+    "files": 2,
+    "passed": 42,
+    "failed": 0,
+    "skipped": 0,
+    "durationSeconds": 14.2,
+    "report": "/tmp/himawari-integration-timeout-repro.log",
+    "businessAssertionFailures": 0
+  },
+  "artifactReusePreflight": {
+    "firstAttempt": "rejected",
+    "error": "ARTIFACT_CONTEXT_MISMATCH:runId",
+    "report": ".ci-output/local-1789040983402/test-macos-arm64/details.json",
+    "resolution": "复用安装产物时显式传入其原始 context.json；未修改验证规则"
+  },
+  "fullTest": {
+    "status": "passed",
+    "counts": {
+      "files": 183,
+      "executed": 1914,
+      "passed": 1914,
+      "failed": 0,
+      "skipped": 0
+    },
+    "durationMs": 487667,
+    "testedSha": "585ac00df0d71d0094e1ab1a84969208b8e3d196",
+    "retryCount": 0,
+    "projects": [
+      {
+        "id": "unit",
+        "counts": {
+          "files": 93,
+          "executed": 787,
+          "passed": 787,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "contracts",
+        "counts": {
+          "files": 21,
+          "executed": 266,
+          "passed": 266,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "integration",
+        "counts": {
+          "files": 62,
+          "executed": 787,
+          "passed": 787,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "e2e",
+        "counts": {
+          "files": 1,
+          "executed": 3,
+          "passed": 3,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "pi-compat",
+        "counts": {
+          "files": 6,
+          "executed": 71,
+          "passed": 71,
+          "failed": 0,
+          "skipped": 0
+        }
+      }
+    ],
+    "command": "node scripts/ci/local.mjs --check test --context .ci-output/local-1789040067708/context.json --artifact .ci-output/local-1789040067708/build-macos-arm64/macos-arm64-abi127-585ac00df0d71d0094e1ab1a84969208b8e3d196-1789040067712-1.tar.gz",
+    "report": ".ci-output/local-1789041051666/test-macos-arm64/result.json",
+    "resourceObservation": {
+      "status": "measured",
+      "failureCount": 0,
+      "peakIsLowerBound": true
+    }
+  },
+  "implementationSha256": {
+    "scripts/ci/test.mjs": "5994e13691581d879dfc8aae36d1cfbe27134462f103bf72650114b0d79617e8",
+    "scripts/ci/run.mjs": "7c819b575c7cd40611a026b0d1a3b337c910b4d485690cd00015731b3267c0cd",
+    "vitest.workspace.ts": "c1c8a9ce8351df87e3eb449a47041f85db3fad58030ae575da26443587d3ed40",
+    "test/tooling/pipeline.test.mjs": "e57789a082978dba2cea6f179ef5a66a3ca056fffd7036d719db220e86d853c3"
+  }
+}

@@ -199,8 +199,8 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
     const entry = entries.get(id);
     if (!entry) continue;
     const { result, source } = entry;
-    if (["test", "browser"].includes(check.id)) {
-      const platform = check.id === "browser" ? "linux-x64" : member.key;
+    if (["test", "browser", "coverage"].includes(check.id)) {
+      const platform = ["browser", "coverage"].includes(check.id) ? "linux-x64" : member.key;
       const matching = result.artifacts.filter(
         (artifact) => artifact.role === "consumed" && artifact.platform === platform,
       );

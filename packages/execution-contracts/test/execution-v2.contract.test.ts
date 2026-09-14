@@ -29,6 +29,35 @@ function collectKeys(value: unknown): string[] {
 }
 
 describe("Execution v2 compatibility fixtures", () => {
+  it("round trips sandbox identity and rejects substitution across invocation scopes", () => {
+    const job = {
+      jobId: "job",
+      attemptId: "attempt",
+      receiptRef: "receipt",
+      hostId: "host",
+      threadId: "thread",
+      toolCallId: "tool",
+      invocationId: executeMessage.messageId,
+      ownerId: executeMessage.scope.ownerId,
+      agentId: executeMessage.scope.agentId,
+      runId: executeMessage.scope.runId,
+    };
+    const message = { ...executeMessage, payload: { ...executeMessage.payload, sandboxJob: job } };
+    expect(
+      executionV2MessageSchema.parseJson(
+        executionV2MessageSchema.serialize(executionV2MessageSchema.parse(message)),
+      ),
+    ).toEqual(message);
+    for (const key of ["invocationId", "ownerId", "agentId", "runId"]) {
+      expect(() =>
+        executionV2MessageSchema.parse({
+          ...message,
+          payload: { ...message.payload, sandboxJob: { ...job, [key]: "foreign" } },
+        }),
+      ).toThrow();
+    }
+  });
+
   it("round-trips handshake, readiness, cursor replay, bounded work, cancellation and reconciliation", () => {
     const parsed = messages.map((message) => executionV2MessageSchema.parse(message));
 

@@ -8,16 +8,17 @@ import type {
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId, createRunId } from "@himawari-agent/domain";
 import { describe, expect, it, vi } from "vitest";
-import {
-  NODE_CAPABILITY_RUNTIME_ERROR_CODES,
-  NodeCapabilityRuntimePort,
-} from "../src/capabilities/node-capability-runtime.js";
 import type {
   CapabilityEndpointBinding,
   CapabilityProcessBinding,
   CapabilityRuntimeBindingPort,
   SandboxedProcessIsolationBackend,
 } from "../src/capabilities/isolation.js";
+import type { CapabilityPayloadBoundary } from "../src/capabilities/node-capability-runtime.js";
+import {
+  NODE_CAPABILITY_RUNTIME_ERROR_CODES,
+  NodeCapabilityRuntimePort,
+} from "../src/capabilities/node-capability-runtime.js";
 import { EphemeralSecretPort } from "../src/ephemeral-secret-port.js";
 
 const NOW = "2026-08-28T08:20:00.000Z";
@@ -130,22 +131,61 @@ async function runtimeFixture(
   isolation: SandboxedProcessIsolationBackend,
   fetch?: typeof globalThis.fetch,
   listActive?: () => Promise<readonly CapabilityManifest[]>,
+  payloadBoundaryOverrides?: Partial<CapabilityPayloadBoundary>,
 ) {
   const clock = { now: () => NOW };
   const payloadStore = new FixturePayloadStore();
+  const readInputCalls: CapabilityInvocationRequest[] = [];
+  const writeOutputCalls: Array<{
+    readonly request: CapabilityInvocationRequest;
+    readonly plaintext: Uint8Array;
+    readonly contentType: string;
+  }> = [];
   const secretHandles = new EphemeralSecretPort({
     clock,
     ids: { next: (namespace) => `${namespace}:fixture` },
   });
+  const defaultPayloadBoundary: CapabilityPayloadBoundary = {
+    readInput: async (input) => {
+      readInputCalls.push(structuredClone(input));
+      const payload = await payloadStore.get(input.inputRef);
+      if (!payload) throw new Error(NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_INPUT_MISSING);
+      return fixtureProtector.unprotect({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        payload,
+      });
+    },
+    writeOutput: async (input, plaintext, contentType) => {
+      writeOutputCalls.push({
+        request: structuredClone(input),
+        plaintext: new Uint8Array(plaintext),
+        contentType,
+      });
+      const ref = `payload:result:${input.invocationId}`;
+      await payloadStore.put(
+        await fixtureProtector.protect({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          ref,
+          dataClassification: input.dataClassification,
+          contentType,
+          plaintext,
+          createdAt: NOW,
+        }),
+      );
+      return ref;
+    },
+  };
+  const payloadBoundary: CapabilityPayloadBoundary = {
+    readInput: payloadBoundaryOverrides?.readInput ?? defaultPayloadBoundary.readInput,
+    writeOutput: payloadBoundaryOverrides?.writeOutput ?? defaultPayloadBoundary.writeOutput,
+  };
   const port = new NodeCapabilityRuntimePort({
     manifests: { listActive: listActive ?? (async () => active) },
     bindings,
     isolation,
-    payloads: {
-      store: () => payloadStore,
-      protector: fixtureProtector,
-      nextResultRef: (input) => `payload:result:${input.invocationId}`,
-    },
+    payloads: payloadBoundary,
     secretHandles,
     secretSource: { resolve: async () => "fixture-secret" },
     clock,
@@ -164,7 +204,15 @@ async function runtimeFixture(
       }),
     );
   };
-  return { payloadStore, port, protector: fixtureProtector, putInput, secretHandles };
+  return {
+    payloadStore,
+    port,
+    protector: fixtureProtector,
+    putInput,
+    readInputCalls,
+    secretHandles,
+    writeOutputCalls,
+  };
 }
 
 async function collect(port: NodeCapabilityRuntimePort, input: CapabilityInvocationRequest) {
@@ -217,6 +265,63 @@ describe("NodeCapabilityRuntimePort", () => {
     expect(resolveEndpoint).not.toHaveBeenCalled();
   });
 
+  it("routes program output through the narrow payload boundary", async () => {
+    const capability = manifest(
+      {
+        kind: "program",
+        argv: [process.execPath],
+        environmentKeys: [],
+        workdirRef: "fixture",
+        stdin: "protected_payload",
+        stdout: "protected_payload",
+        subprocesses: [],
+        network: [],
+        filesystem: [],
+      },
+      "program",
+      { ref: "qualified-program", isolation: "sandbox" },
+    );
+    const createLaunch = vi.fn(async (_manifest: CapabilityManifest, ceiling: typeof CEILING) => ({
+      command: process.execPath,
+      args: ["-e", "process.stdout.write('program output')"],
+      cwd: "/",
+      environment: {},
+      ceiling,
+    }));
+    const fixture = await runtimeFixture(
+      [capability],
+      { resolveProcess: async () => undefined, resolveEndpoint: async () => undefined },
+      {
+        qualify: async () => {
+          throw new Error("not called");
+        },
+        createLaunch,
+      },
+    );
+    const invocation = request(capability.ref);
+    await fixture.putInput(invocation, { value: "program input" });
+    const events = await collect(fixture.port, invocation);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      type: "capability.progress",
+      invocationId: invocation.invocationId,
+    });
+    expect(events[1]).toEqual({
+      type: "capability.completed",
+      invocationId: invocation.invocationId,
+      resultRef: `payload:result:${invocation.invocationId}`,
+      occurredAt: NOW,
+    });
+    expect(createLaunch).toHaveBeenCalledWith(capability, CEILING);
+    expect(fixture.readInputCalls).toEqual([invocation]);
+    const outputCall = fixture.writeOutputCalls[0];
+    expect(outputCall).toBeDefined();
+    if (!outputCall) throw new Error("program output boundary call is missing");
+    expect(outputCall.request).toEqual(invocation);
+    expect(outputCall.contentType).toBe("application/octet-stream");
+    expect(new TextDecoder().decode(outputCall.plaintext)).toBe("program output");
+  });
+
   it("uses the official MCP v2 stdio SDK, enforces exact server/tool identity, and protects output", async () => {
     const capability = manifest(
       {
@@ -238,6 +343,7 @@ describe("NodeCapabilityRuntimePort", () => {
       sandboxWorkdir: "/",
       environment: {},
       availableExecutables: [process.execPath],
+      resourceLimitExecutable: { sandboxPath: "/bin/prlimit", sha256: DIGEST },
       filesystem: [],
       maximumResourceCeiling: CEILING,
       mcpServerIdentity: "himawari-qualified-echo@1.0.0",
@@ -291,6 +397,12 @@ describe("NodeCapabilityRuntimePort", () => {
     expect(output).toBeDefined();
     if (!output) throw new Error("protected MCP output is missing");
     expect(JSON.stringify(output)).not.toContain("hello from qualified MCP");
+    expect(fixture.readInputCalls).toEqual([invocation]);
+    const outputCall = fixture.writeOutputCalls[0];
+    expect(outputCall).toBeDefined();
+    if (!outputCall) throw new Error("MCP output boundary call is missing");
+    expect(outputCall.request).toEqual(invocation);
+    expect(outputCall.contentType).toBe("application/json");
     const decoded = JSON.parse(
       new TextDecoder().decode(
         await fixture.protector.unprotect({
@@ -429,6 +541,121 @@ describe("NodeCapabilityRuntimePort", () => {
     const output = await fixture.payloadStore.get(`payload:result:${invocation.invocationId}`);
     expect(output).toBeDefined();
     expect(JSON.stringify(output)).not.toContain('"status":"ok"');
+    expect(fixture.readInputCalls).toEqual([invocation]);
+    const outputCall = fixture.writeOutputCalls[0];
+    expect(outputCall).toBeDefined();
+    if (!outputCall) throw new Error("endpoint output boundary call is missing");
+    expect(outputCall.request).toEqual(invocation);
+    expect(outputCall.contentType).toBe("application/json");
+  });
+
+  it("reports an uncertain side effect when the output boundary rejects a successful endpoint", async () => {
+    const capability = manifest(
+      {
+        kind: "adapter",
+        endpointIdentity: "adapter:output-rejected",
+        protectedReferenceOnly: true,
+      },
+      "adapter",
+      { ref: "output-boundary-rejected", isolation: "remote", operations: ["publish"] },
+    );
+    const endpoint: CapabilityEndpointBinding = {
+      endpointIdentity: "adapter:output-rejected",
+      artifactDigest: capability.integrity,
+      url: "https://api.example.test/v1/",
+      allowedMethods: ["POST"],
+      operations: { publish: { method: "POST", path: "/v1/publish", secretHeaders: {} } },
+      productionSuitable: true,
+      allowLoopbackQualification: false,
+    };
+    const resolveEndpoint = vi.fn(async () => endpoint);
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ accepted: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const writeOutput = vi.fn(
+      async (_input: CapabilityInvocationRequest, _plaintext: Uint8Array, _contentType: string) => {
+        throw new Error("output boundary rejected");
+      },
+    );
+    const fixture = await runtimeFixture(
+      [capability],
+      { resolveProcess: async () => undefined, resolveEndpoint },
+      {
+        qualify: async () => {
+          throw new Error("not called");
+        },
+        createLaunch: async () => {
+          throw new Error("not called");
+        },
+      },
+      fetch,
+      undefined,
+      { writeOutput },
+    );
+    const invocation = request(capability.ref, "publish");
+    await fixture.putInput(invocation, { message: "publish once" });
+    const events = await collect(fixture.port, invocation);
+    expect(events).toEqual([
+      {
+        type: "capability.result_unknown",
+        invocationId: invocation.invocationId,
+        externalActionId: `external:${invocation.invocationId}`,
+        occurredAt: NOW,
+      },
+    ]);
+    expect(resolveEndpoint).toHaveBeenCalledWith(capability);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(writeOutput).toHaveBeenCalledWith(
+      invocation,
+      expect.any(Uint8Array),
+      "application/json",
+    );
+    expect(events.some((event) => event.type === "capability.completed")).toBe(false);
+  });
+
+  it("does not dispatch or report completion when the input boundary rejects the request", async () => {
+    const capability = manifest(
+      { kind: "adapter", endpointIdentity: "adapter:rejected", protectedReferenceOnly: true },
+      "adapter",
+      { ref: "boundary-rejected", isolation: "remote" },
+    );
+    const resolveEndpoint = vi.fn(async () => undefined);
+    const createLaunch = vi.fn(async () => {
+      throw new Error("not called");
+    });
+    const readInput = vi.fn(async () => {
+      throw new Error("scope rejected");
+    });
+    const fixture = await runtimeFixture(
+      [capability],
+      { resolveProcess: async () => undefined, resolveEndpoint },
+      {
+        qualify: async () => {
+          throw new Error("not called");
+        },
+        createLaunch,
+      },
+      undefined,
+      undefined,
+      { readInput },
+    );
+    const invocation = request(capability.ref);
+    await fixture.putInput(invocation, {});
+    await expect(collect(fixture.port, invocation)).resolves.toEqual([
+      {
+        type: "capability.failed",
+        invocationId: invocation.invocationId,
+        errorCode: NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_INPUT_INVALID,
+        occurredAt: NOW,
+      },
+    ]);
+    expect(readInput).toHaveBeenCalledWith(invocation);
+    expect(resolveEndpoint).not.toHaveBeenCalled();
+    expect(createLaunch).not.toHaveBeenCalled();
+    expect(fixture.writeOutputCalls).toHaveLength(0);
   });
 
   it("fails before any runtime call when the resource ceiling is missing", async () => {

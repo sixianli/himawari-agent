@@ -3,16 +3,29 @@ import {
   type GatewayV2Command,
   type GatewayV2Query,
   type GatewayV2Snapshot,
-  type ThreadGatewayCommand,
-  type ThreadGatewayRequestResult,
-  type ThreadGatewayQuery,
-  type ThreadGatewaySnapshot,
-  gatewayV2MessageSchema,
   gatewayMessageSchema,
+  gatewayV2MessageSchema,
+  type ThreadGatewayCommand,
+  type ThreadGatewayQuery,
+  type ThreadGatewayRequestResult,
+  type ThreadGatewaySnapshot,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 
 export type MutationStatus = "pending" | "accepted" | "rejected" | "expired" | "replayed";
+
+export interface HealthDependenciesSnapshot {
+  readonly id: string;
+  readonly live: boolean;
+  readonly ready: boolean;
+  readonly status: "healthy" | "degraded" | "not_ready" | "not_live";
+  readonly dependencies: readonly {
+    readonly name: string;
+    readonly required: boolean;
+    readonly status: "healthy" | "degraded" | "blocked" | "unavailable";
+    readonly reasonCode: string | null;
+  }[];
+}
 
 export interface GatewayClientMutationResult {
   readonly resultRef: string;
@@ -23,9 +36,23 @@ export interface GatewayClientMutationResult {
 export interface GatewayClientOptions {
   readonly fetch: typeof globalThis.fetch;
   readonly csrfToken: () => string;
+  readonly refreshCsrfToken?: () => Promise<string>;
+}
+
+export interface AvailableModel {
+  readonly ref: string;
+  readonly model: string;
+  readonly name: string;
+  readonly provider: string;
+  readonly thinkingLevels: readonly string[];
 }
 
 export interface ControlCenterRuntimeConfiguration {
+  readonly executionPresentationAvailable?: boolean;
+  readonly canCancelRun?: boolean;
+  readonly availableModels?: readonly AvailableModel[];
+  readonly healthDependenciesAvailable?: boolean;
+  readonly installedGatewayV2Operations?: readonly string[];
   readonly ownerId: string;
   readonly agentId: string;
   readonly deploymentId: string;
@@ -33,6 +60,7 @@ export interface ControlCenterRuntimeConfiguration {
   readonly fencingToken: number;
   readonly actorId: string;
   readonly csrfToken: string;
+  readonly sessionId?: string | null;
   readonly authorizationRef?: string | null;
   readonly recentAuthenticationRef?: string | null;
   readonly primaryModel?: {
@@ -50,6 +78,21 @@ export interface ControlCenterRuntimeConfiguration {
   )[];
 }
 
+/** Exchange the current verified Access identity for a secure product session. */
+export async function createBrowserSession(
+  fetchImplementation: typeof globalThis.fetch,
+  deviceLabel: string,
+): Promise<void> {
+  await json(
+    await fetchImplementation("/api/identity/v1/sessions", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ deviceLabel }),
+    }),
+  );
+}
+
 export async function loadRuntimeConfiguration(
   fetchImplementation: typeof globalThis.fetch,
 ): Promise<ControlCenterRuntimeConfiguration> {
@@ -63,6 +106,11 @@ export async function loadRuntimeConfiguration(
     throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
   }
   const value = body as {
+    readonly executionPresentationAvailable?: unknown;
+    readonly canCancelRun?: unknown;
+    readonly availableModels?: unknown;
+    readonly healthDependenciesAvailable?: unknown;
+    readonly installedGatewayV2Operations?: unknown;
     readonly ownerId?: unknown;
     readonly agentId?: unknown;
     readonly deploymentId?: unknown;
@@ -70,6 +118,7 @@ export async function loadRuntimeConfiguration(
     readonly fencingToken?: unknown;
     readonly actorId?: unknown;
     readonly csrfToken?: unknown;
+    readonly sessionId?: unknown;
     readonly authorizationRef?: unknown;
     readonly recentAuthenticationRef?: unknown;
     readonly primaryModel?: unknown;
@@ -96,6 +145,15 @@ export async function loadRuntimeConfiguration(
     !Array.isArray(value.primaryModel)
       ? (value.primaryModel as { provider?: unknown; model?: unknown; version?: unknown })
       : null;
+  if (
+    value.sessionId !== undefined &&
+    value.sessionId !== null &&
+    (typeof value.sessionId !== "string" ||
+      value.sessionId.length === 0 ||
+      value.sessionId.length > 128)
+  ) {
+    throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
+  }
   const normalizedPrimary =
     primaryModel &&
     typeof primaryModel.provider === "string" &&
@@ -132,6 +190,31 @@ export async function loadRuntimeConfiguration(
     typeof value.recentAuthenticationRef === "string" && value.recentAuthenticationRef.length > 0
       ? value.recentAuthenticationRef
       : null;
+  const installedGatewayV2Operations = value.installedGatewayV2Operations ?? [];
+  if (
+    !Array.isArray(installedGatewayV2Operations) ||
+    !installedGatewayV2Operations.every((operation) => typeof operation === "string")
+  ) {
+    throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
+  }
+  const availableModels = value.availableModels ?? [];
+  if (
+    !Array.isArray(availableModels) ||
+    !availableModels.every(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        ["ref", "model", "name", "provider"].every(
+          (key) => typeof item[key] === "string" && item[key].length > 0,
+        ) &&
+        Array.isArray(item.thinkingLevels) &&
+        item.thinkingLevels.length > 0 &&
+        item.thinkingLevels.every((level: unknown) =>
+          ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(String(level)),
+        ),
+    )
+  )
+    throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
   return Object.freeze({
     ...(value as unknown as Omit<
       ControlCenterRuntimeConfiguration,
@@ -142,7 +225,12 @@ export async function loadRuntimeConfiguration(
       | "authorizationRef"
       | "recentAuthenticationRef"
     >),
+    executionPresentationAvailable: value.executionPresentationAvailable === true,
+    canCancelRun: value.canCancelRun === true,
+    availableModels: Object.freeze(availableModels as AvailableModel[]),
     authorizationRef,
+    installedGatewayV2Operations: Object.freeze([...installedGatewayV2Operations]),
+    healthDependenciesAvailable: value.healthDependenciesAvailable === true,
     recentAuthenticationRef,
     primaryModel: normalizedPrimary,
     primaryModelRef,
@@ -155,6 +243,28 @@ function parsedResponseBody(value: unknown): GatewayV2Snapshot {
   const parsed = gatewayV2MessageSchema.parse(value);
   if (parsed.kind !== "snapshot") throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
   return parsed;
+}
+
+export async function refreshRuntimeConfiguration(
+  fetchImplementation: typeof globalThis.fetch,
+  expected: ControlCenterRuntimeConfiguration,
+): Promise<ControlCenterRuntimeConfiguration> {
+  const fresh = await loadRuntimeConfiguration(fetchImplementation);
+  for (const key of [
+    "ownerId",
+    "agentId",
+    "deploymentId",
+    "actorId",
+    "sessionId",
+    "authorityEpoch",
+    "fencingToken",
+  ] as const) {
+    if ((fresh[key] ?? null) !== (expected[key] ?? null))
+      throw Object.assign(new Error("CONTROL_CENTER_AUTHENTICATION_SCOPE_CHANGED"), {
+        status: 409,
+      });
+  }
+  return fresh;
 }
 
 function mutationResult(value: unknown): GatewayClientMutationResult {
@@ -196,9 +306,82 @@ async function json(response: Response): Promise<unknown> {
 
 export class GatewayClient {
   private readonly options: GatewayClientOptions;
+  private refreshedCsrfToken?: string;
+  private refreshingCsrfToken: Promise<string> | undefined;
 
   constructor(options: GatewayClientOptions) {
     this.options = options;
+  }
+
+  /** A CSRF rejection happens before dispatch. Retry only that rejection, once. */
+  private async authenticatedFetch(url: string, init: RequestInit): Promise<Response> {
+    const token = this.refreshedCsrfToken ?? this.options.csrfToken();
+    const send = (csrfToken: string) => {
+      const headers = new Headers(init.headers);
+      headers.set("x-csrf-token", csrfToken);
+      return this.options.fetch(url, { ...init, headers });
+    };
+    const response = await send(token);
+    if (response.status !== 403 || !this.options.refreshCsrfToken) return response;
+    const body: unknown = await response
+      .clone()
+      .json()
+      .catch(() => null);
+    if (
+      !body ||
+      typeof body !== "object" ||
+      (body as { error?: { code?: unknown } }).error?.code !== "HTTP_GATEWAY_CSRF_REJECTED"
+    )
+      return response;
+    if (!this.refreshedCsrfToken || this.refreshedCsrfToken === token) {
+      const refresh =
+        this.refreshingCsrfToken ??
+        this.options.refreshCsrfToken().then((fresh) => {
+          if (typeof fresh !== "string" || fresh.length === 0)
+            throw new Error("CONTROL_CENTER_CONFIGURATION_INVALID");
+          this.refreshedCsrfToken = fresh;
+          return fresh;
+        });
+      this.refreshingCsrfToken = refresh;
+      try {
+        await refresh;
+      } finally {
+        if (this.refreshingCsrfToken === refresh) this.refreshingCsrfToken = undefined;
+      }
+    }
+    const fresh = this.refreshedCsrfToken;
+    return fresh && fresh !== token ? send(fresh) : response;
+  }
+
+  async healthDependencies(): Promise<HealthDependenciesSnapshot> {
+    const body = await json(
+      await this.options.fetch("/api/health/v1/dependencies", {
+        credentials: "same-origin",
+        headers: { accept: "application/json" },
+      }),
+    );
+    if (!body || typeof body !== "object" || Array.isArray(body))
+      throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+    const value = body as Partial<HealthDependenciesSnapshot>;
+    if (
+      typeof value.id !== "string" ||
+      typeof value.live !== "boolean" ||
+      typeof value.ready !== "boolean" ||
+      !["healthy", "degraded", "not_ready", "not_live"].includes(value.status ?? "") ||
+      !Array.isArray(value.dependencies) ||
+      !value.dependencies.every((item: unknown) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+        const dependency = item as Partial<HealthDependenciesSnapshot["dependencies"][number]>;
+        return (
+          typeof dependency.name === "string" &&
+          typeof dependency.required === "boolean" &&
+          ["healthy", "degraded", "blocked", "unavailable"].includes(dependency.status ?? "") &&
+          (dependency.reasonCode === null || typeof dependency.reasonCode === "string")
+        );
+      })
+    )
+      throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+    return value as HealthDependenciesSnapshot;
   }
 
   async query(message: GatewayV2Query): Promise<GatewayV2Snapshot> {
@@ -216,7 +399,7 @@ export class GatewayClient {
   async mutate(message: GatewayV2Command): Promise<GatewayClientMutationResult> {
     const parsed = gatewayV2MessageSchema.parse(message);
     if (parsed.kind !== "command") throw new Error("CONTROL_CENTER_COMMAND_INVALID");
-    const response = await this.options.fetch("/api/gateway/v2/commands", {
+    const response = await this.authenticatedFetch("/api/gateway/v2/commands", {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -232,7 +415,7 @@ export class GatewayClient {
   async mutateV1(message: GatewayCommand): Promise<GatewayClientMutationResult> {
     const parsed = gatewayMessageSchema.parse(message);
     if (parsed.kind !== "command") throw new Error("CONTROL_CENTER_COMMAND_INVALID");
-    const response = await this.options.fetch("/api/gateway/v1/commands", {
+    const response = await this.authenticatedFetch("/api/gateway/v1/commands", {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -245,7 +428,10 @@ export class GatewayClient {
     return mutationResult(await json(response));
   }
 
-  async queryThread(message: ThreadGatewayQuery): Promise<ThreadGatewaySnapshot> {
+  async queryThread(
+    message: ThreadGatewayQuery,
+    signal?: AbortSignal,
+  ): Promise<ThreadGatewaySnapshot> {
     const parsed = threadGatewayMessageSchema.parse(message);
     if (parsed.kind !== "query") throw new Error("CONTROL_CENTER_THREAD_QUERY_INVALID");
     const response = await this.options.fetch("/api/gateway/thread/v3/queries", {
@@ -253,6 +439,7 @@ export class GatewayClient {
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
       body: threadGatewayMessageSchema.serialize(parsed),
+      ...(signal ? { signal } : {}),
     });
     const result = threadResponse(await json(response));
     if (result.kind !== "snapshot") throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
@@ -262,7 +449,7 @@ export class GatewayClient {
   async mutateThread(message: ThreadGatewayCommand): Promise<ThreadGatewayRequestResult> {
     const parsed = threadGatewayMessageSchema.parse(message);
     if (parsed.kind !== "command") throw new Error("CONTROL_CENTER_THREAD_COMMAND_INVALID");
-    const response = await this.options.fetch("/api/gateway/thread/v3/commands", {
+    const response = await this.authenticatedFetch("/api/gateway/thread/v3/commands", {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -283,7 +470,7 @@ export class GatewayClient {
     if (content.length === 0 || content.length > 64 * 1024) {
       throw new Error("CONTROL_CENTER_PAYLOAD_INVALID");
     }
-    const response = await this.options.fetch("/api/payload/v1/text", {
+    const response = await this.authenticatedFetch("/api/payload/v1/text", {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -309,7 +496,7 @@ export class GatewayClient {
     readonly content: string;
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
   }> {
-    const response = await this.options.fetch("/api/payload/v1/text/read", {
+    const response = await this.authenticatedFetch("/api/payload/v1/text/read", {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -351,7 +538,7 @@ export class GatewayClient {
     readonly tokenRefs: readonly string[];
     readonly projectionVersion: string;
   }> {
-    const response = await this.options.fetch("/api/thread-search/v1/prepare", {
+    const response = await this.authenticatedFetch("/api/thread-search/v1/prepare", {
       method: "POST",
       credentials: "same-origin",
       headers: {

@@ -1,0 +1,140 @@
+{
+  "platform": "linux",
+  "osRelease": "5.15.0-185-generic",
+  "architecture": "x64",
+  "node": "v26.1.0",
+  "srt": "0.0.75",
+  "artifact": "installed-runtime-probe",
+  "runtimeRoot": "/data/himawari-r8-ucNhI6hn/components",
+  "productionSuitable": false,
+  "jobHostDigest": "da50694e9fc50423a4e738e88fdd5372cc2ad7479f431f0fee9809914f8da3aa",
+  "hostname": "127.0.0.1.sslip.io",
+  "addresses": [
+    {
+      "address": "127.0.0.1",
+      "family": 4
+    }
+  ],
+  "evidence": [
+    {
+      "scenario": "offline-http",
+      "policyDigest": "88f7f001516c2fec872fcc2db0a8bff283cc7c1f41835b71825c2e892f9553ef",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "/bin/bash: line 1: exec: export: not found\n",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": false,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "direct-loopback",
+      "policyDigest": "6a8dc0a2f7636dffe266c4d4eb1d625166d5df06011e28c7909e0c5f196f75cf",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "/bin/bash: line 1: exec: export: not found\n",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": false,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "direct-dns",
+      "policyDigest": "6bdb986385134376510bb1d846be636c15c0b206d7073603522dc7ccf8c1a1f0",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "/bin/bash: line 1: exec: export: not found\n",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": false,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "allowed-dns-loopback-http",
+      "policyDigest": "a029d075bd04da88bf2660a1bd532cffaeb1ea64b817d4176f6c511f3245f017",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "/bin/bash: line 1: exec: export: not found\n",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": false,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "allowed-dns-loopback-socks",
+      "policyDigest": "098e1d0371b93a450e894e789759643a01a1963bd1b11fff85e32aefa4845f1e",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "/bin/bash: line 1: exec: export: not found\n",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": false,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "allowed-wrong-port",
+      "policyDigest": "60a8c9797a6cf5a89b63ba1ed090e9892100262c731124c480c4dba6245e4a8a",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "/bin/bash: line 1: exec: export: not found\n",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": false,
+      "loopbackReached": false
+    },
+    {
+      "scenario": "allowed-metadata",
+      "policyDigest": "5b9735c0c04b6368cd9f0e3147056b863693ac8c2eaedd6637d09a38bda4e4ce",
+      "reason": "exited",
+      "taskProcessExited": true,
+      "taskTreeCleanup": "unknown",
+      "output": "/bin/bash: line 1: exec: export: not found\n",
+      "network": {
+        "deniedTargets": 0,
+        "deniedAddresses": 0,
+        "connected": 0,
+        "closed": true
+      },
+      "serverRequests": [],
+      "denialObserved": false,
+      "loopbackReached": false
+    }
+  ],
+  "ssrfCounterexampleConfirmed": false
+}

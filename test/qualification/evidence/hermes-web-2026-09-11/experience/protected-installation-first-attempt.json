@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "scope": "actual failed administrator migration and prepared deployment correction",
+  "migrationSucceeded": false,
+  "runtimeUserCreated": true,
+  "runtimeUid": 998,
+  "failedStage": "first Pi qualification interpreter launch",
+  "exitCode": 126,
+  "observedParentMode": "0700",
+  "originalServiceRestored": true,
+  "workerReadyAt": "2026-09-11T03:13:44.525Z",
+  "agentReadyAt": "2026-09-11T03:13:45.469Z",
+  "sqliteQuickCheck": "ok",
+  "activeRuns": 0,
+  "protectedFastPathEnabled": false,
+  "resumeScriptSha256": "0271283f87357b35078ccda47c3e28a9350b31564c87a603646392eec1a6e942",
+  "systemdVersion": "249.11-0ubuntu3.22",
+  "systemdStaticVerifyExitCode": 0,
+  "privateMountViewActualProbe": "not executed; administrator authentication required",
+  "realModelPerformanceAfterProtection": "not executed"
+}

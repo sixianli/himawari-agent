@@ -55,6 +55,22 @@ export interface ControlCenterSurfaceInventoryEntry {
   readonly baselineEvidence: readonly string[];
 }
 
+/** Contract coverage alone does not prove that a deployment installed its handlers. */
+export function isSurfaceInstalled(
+  surface: ControlCenterSurfaceInventoryEntry,
+  installedGatewayV2Operations: readonly string[],
+  healthDependenciesAvailable = false,
+): boolean {
+  if (surface.id === "health-deployment") return healthDependenciesAvailable;
+  // Conversations use the separately composed Thread v3 gateway.
+  return (
+    surface.id === "threads" ||
+    [...surface.queries, ...surface.mutations].every((operation) =>
+      installedGatewayV2Operations.includes(operation),
+    )
+  );
+}
+
 const CONTROL_CENTER_SPEC = "docs/execution/specs/2026-08-26-control-center-experience-design.md";
 const THREAD_SPEC = "docs/execution/specs/2026-08-26-owner-thread-conversation-design.md";
 const AUTHORIZATION_SPEC =

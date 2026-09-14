@@ -1,0 +1,3636 @@
+{
+  "observedAt": "2026-09-11T16:39:19.612587+00:00",
+  "since": "2026-09-11T15:39:00.000Z",
+  "modelBudgetUpperBoundMicros": 74219,
+  "additionalAuthorizedBudgetMicros": 2000000,
+  "allocations": [
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 1,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 363,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 304,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 2,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 155,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 1,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 155,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 1,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 156,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 1,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 151,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 1,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 1,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 160,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 3,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 178,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 198,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 282,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 4,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 248,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 271,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 3,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 282,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 278,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 2,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 280,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 4,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 307,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 332,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 1,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 163,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 1,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-primary",
+      "estimated_cost_micros": 159335,
+      "actual_cost_micros": 367,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-embedding",
+      "estimated_cost_micros": 656,
+      "actual_cost_micros": 2,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 325,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": 341,
+      "status": "settled"
+    },
+    {
+      "model_ref": "model-fallback",
+      "estimated_cost_micros": 68895,
+      "actual_cost_micros": null,
+      "status": "unknown"
+    }
+  ],
+  "runs": [
+    {
+      "id": "run:e4e4913a-0d85-4a88-80e9-0fe68fe7e040",
+      "thread_id": "thread:67f83b5e-f5ab-4313-9efd-94f30e4d97b3",
+      "status": "completed",
+      "created_at": "2026-09-11T15:39:39.502Z",
+      "updated_at": "2026-09-11T15:40:23.595Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 668,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T15:39:40.376Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T15:39:43.616Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T15:39:43.687Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T15:39:43.798Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T15:39:44.148Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:39:44.149Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:39:44.149Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:39:44.150Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:39:45.718Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:39:49.143Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:39:49.146Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:39:49.146Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:39:50.120Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:39:50.719Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:39:50.914Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:39:51.194Z"
+        },
+        {
+          "sequence": 17,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:39:51.194Z"
+        },
+        {
+          "sequence": 18,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:39:51.248Z"
+        },
+        {
+          "sequence": 19,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:39:51.248Z"
+        },
+        {
+          "sequence": 20,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T15:39:51.250Z"
+        },
+        {
+          "sequence": 21,
+          "event_type": "authorization.grant_consumed",
+          "occurred_at": "2026-09-11T15:39:52.657Z"
+        },
+        {
+          "sequence": 22,
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T15:40:11.331Z"
+        },
+        {
+          "sequence": 23,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:11.332Z"
+        },
+        {
+          "sequence": 24,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:11.333Z"
+        },
+        {
+          "sequence": 25,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T15:40:11.333Z"
+        },
+        {
+          "sequence": 26,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:40:11.334Z"
+        },
+        {
+          "sequence": 27,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:40:12.417Z"
+        },
+        {
+          "sequence": 28,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:40:14.966Z"
+        },
+        {
+          "sequence": 29,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:14.967Z"
+        },
+        {
+          "sequence": 30,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:15.020Z"
+        },
+        {
+          "sequence": 31,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:15.551Z"
+        },
+        {
+          "sequence": 32,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:16.566Z"
+        },
+        {
+          "sequence": 33,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:16.855Z"
+        },
+        {
+          "sequence": 34,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:17.112Z"
+        },
+        {
+          "sequence": 35,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:17.510Z"
+        },
+        {
+          "sequence": 36,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:17.824Z"
+        },
+        {
+          "sequence": 37,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:18.065Z"
+        },
+        {
+          "sequence": 38,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:18.401Z"
+        },
+        {
+          "sequence": 39,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:18.569Z"
+        },
+        {
+          "sequence": 40,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:18.881Z"
+        },
+        {
+          "sequence": 41,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:19.067Z"
+        },
+        {
+          "sequence": 42,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:19.499Z"
+        },
+        {
+          "sequence": 43,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:21.290Z"
+        },
+        {
+          "sequence": 44,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:21.568Z"
+        },
+        {
+          "sequence": 45,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:21.831Z"
+        },
+        {
+          "sequence": 46,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:21.961Z"
+        },
+        {
+          "sequence": 47,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:40:22.060Z"
+        },
+        {
+          "sequence": 48,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:40:22.060Z"
+        },
+        {
+          "sequence": 49,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T15:40:22.061Z"
+        },
+        {
+          "sequence": 50,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T15:40:23.323Z"
+        }
+      ],
+      "history": {
+        "artifacts": 11,
+        "latest_sequence": 4
+      },
+      "jobs": [
+        {
+          "jobId": "jj0h7zJrdHR6iIpeCAUVXaQbo8hAiuNjNjIdMSkVkASM",
+          "operation": "web_search",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        }
+      ]
+    },
+    {
+      "id": "run:38bbdbe5-ddfe-4829-9fd0-1291d84fd836",
+      "thread_id": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+      "status": "completed",
+      "created_at": "2026-09-11T15:47:41.217Z",
+      "updated_at": "2026-09-11T15:47:56.617Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 157,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T15:47:44.146Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T15:47:50.510Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T15:47:50.628Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T15:47:50.795Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T15:47:51.146Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:47:51.146Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:47:51.146Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:47:51.146Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:47:52.214Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:47:54.013Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:47:54.014Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:47:54.018Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:47:54.502Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:47:54.705Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:47:54.791Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:47:54.791Z"
+        },
+        {
+          "sequence": 17,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T15:47:54.791Z"
+        },
+        {
+          "sequence": 18,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T15:47:56.078Z"
+        }
+      ],
+      "history": {
+        "artifacts": 4,
+        "latest_sequence": 2
+      },
+      "jobs": []
+    },
+    {
+      "id": "run:006acd4a-2506-48aa-bc9b-b657ac6e146d",
+      "thread_id": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+      "status": "completed",
+      "created_at": "2026-09-11T15:48:54.716Z",
+      "updated_at": "2026-09-11T15:49:08.448Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 156,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T15:48:56.512Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T15:49:03.230Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T15:49:03.362Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T15:49:03.551Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T15:49:03.878Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:49:03.878Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:49:03.879Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:49:03.879Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:49:04.883Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:49:06.658Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:49:06.659Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:49:06.734Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:49:06.839Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:49:06.839Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T15:49:06.839Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T15:49:08.134Z"
+        }
+      ],
+      "history": {
+        "artifacts": 4,
+        "latest_sequence": 2
+      },
+      "jobs": []
+    },
+    {
+      "id": "run:eb034969-2c28-4823-a74f-ea655e1b0114",
+      "thread_id": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+      "status": "completed",
+      "created_at": "2026-09-11T15:50:41.588Z",
+      "updated_at": "2026-09-11T15:50:50.966Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 157,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T15:50:42.892Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T15:50:44.296Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T15:50:44.382Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T15:50:44.671Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T15:50:45.173Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:50:45.174Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:50:45.174Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:50:45.174Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:50:46.456Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:50:48.522Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:50:48.525Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:50:48.529Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:50:48.578Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:50:48.578Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T15:50:48.579Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T15:50:50.598Z"
+        }
+      ],
+      "history": {
+        "artifacts": 4,
+        "latest_sequence": 2
+      },
+      "jobs": []
+    },
+    {
+      "id": "run:04a8a66d-34be-4603-a100-b0013bfdf958",
+      "thread_id": "thread-fork:dbd3edc2-bda1-49cb-b1f9-3e0a0428acfe",
+      "status": "completed",
+      "created_at": "2026-09-11T15:51:20.875Z",
+      "updated_at": "2026-09-11T15:51:31.348Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 152,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T15:51:22.516Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T15:51:23.438Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T15:51:23.578Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T15:51:23.821Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T15:51:24.326Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:51:24.326Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:24.326Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:24.326Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:51:25.948Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:51:27.756Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:27.758Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:27.993Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:28.249Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:28.525Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:28.656Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:28.826Z"
+        },
+        {
+          "sequence": 17,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:51:28.826Z"
+        },
+        {
+          "sequence": 18,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T15:51:28.827Z"
+        },
+        {
+          "sequence": 19,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T15:51:30.846Z"
+        }
+      ],
+      "history": {
+        "artifacts": 4,
+        "latest_sequence": 2
+      },
+      "jobs": []
+    },
+    {
+      "id": "run:f1834ad4-61b8-4b0e-8562-c5fb00828ed6",
+      "thread_id": "thread-fork:dbd3edc2-bda1-49cb-b1f9-3e0a0428acfe",
+      "status": "cancelled",
+      "created_at": "2026-09-11T15:51:47.669Z",
+      "updated_at": "2026-09-11T15:52:03.762Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 68895,
+          "spent_cost_micros": 1,
+          "status": "reconcile_required"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T15:51:49.329Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T15:51:50.202Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T15:51:50.300Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T15:51:50.466Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T15:51:50.985Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:51:50.985Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:50.986Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:50.986Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:51:51.977Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:51:54.252Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:54.253Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:54.537Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:54.794Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:55.083Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:55.327Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:55.776Z"
+        },
+        {
+          "sequence": 17,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:56.230Z"
+        },
+        {
+          "sequence": 18,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:56.683Z"
+        },
+        {
+          "sequence": 19,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:57.022Z"
+        },
+        {
+          "sequence": 20,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:57.458Z"
+        },
+        {
+          "sequence": 21,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:57.813Z"
+        },
+        {
+          "sequence": 22,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:59.026Z"
+        },
+        {
+          "sequence": 23,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:59.449Z"
+        },
+        {
+          "sequence": 24,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:51:59.993Z"
+        },
+        {
+          "sequence": 25,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:00.336Z"
+        },
+        {
+          "sequence": 26,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:00.723Z"
+        },
+        {
+          "sequence": 27,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:01.041Z"
+        },
+        {
+          "sequence": 28,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:01.296Z"
+        },
+        {
+          "sequence": 29,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:01.611Z"
+        },
+        {
+          "sequence": 30,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:01.987Z"
+        },
+        {
+          "sequence": 31,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:02.300Z"
+        },
+        {
+          "sequence": 32,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:02.633Z"
+        },
+        {
+          "sequence": 33,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:02.949Z"
+        },
+        {
+          "sequence": 34,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:03.254Z"
+        }
+      ],
+      "history": {
+        "artifacts": 4,
+        "latest_sequence": 2
+      },
+      "jobs": []
+    },
+    {
+      "id": "run:8155f04a-d597-4d63-af9e-eae34b07238e",
+      "thread_id": "thread-fork:dbd3edc2-bda1-49cb-b1f9-3e0a0428acfe",
+      "status": "completed",
+      "created_at": "2026-09-11T15:52:26.931Z",
+      "updated_at": "2026-09-11T15:52:35.929Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 161,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T15:52:27.835Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T15:52:29.055Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T15:52:29.295Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T15:52:29.506Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T15:52:30.077Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:52:30.077Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:30.078Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:30.078Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:52:32.148Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:52:33.801Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:33.802Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:33.805Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:52:33.868Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:52:33.868Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T15:52:33.868Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T15:52:35.632Z"
+        }
+      ],
+      "history": {
+        "artifacts": 5,
+        "latest_sequence": 2
+      },
+      "jobs": []
+    },
+    {
+      "id": "run:957a47c5-750f-4534-8de8-95185a56bab9",
+      "thread_id": "thread-fork:dbd3edc2-bda1-49cb-b1f9-3e0a0428acfe",
+      "status": "completed",
+      "created_at": "2026-09-11T15:53:11.048Z",
+      "updated_at": "2026-09-11T15:57:35.232Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 661,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T15:53:11.751Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T15:53:20.208Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T15:53:20.377Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T15:53:20.554Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T15:53:20.892Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:53:20.892Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:20.893Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:20.894Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:53:22.863Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:53:24.928Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:24.929Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:25.345Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:25.706Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:25.737Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:26.298Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:26.299Z"
+        },
+        {
+          "sequence": 17,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:26.684Z"
+        },
+        {
+          "sequence": 18,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:27.549Z"
+        },
+        {
+          "sequence": 19,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:28.008Z"
+        },
+        {
+          "sequence": 20,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:28.233Z"
+        },
+        {
+          "sequence": 21,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:28.402Z"
+        },
+        {
+          "sequence": 22,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:28.681Z"
+        },
+        {
+          "sequence": 23,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:53:28.851Z"
+        },
+        {
+          "sequence": 24,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:53:28.851Z"
+        },
+        {
+          "sequence": 25,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T15:53:28.853Z"
+        },
+        {
+          "sequence": 26,
+          "event_type": "runtime.suspended",
+          "occurred_at": "2026-09-11T15:53:31.295Z"
+        },
+        {
+          "sequence": 27,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T15:55:38.835Z"
+        },
+        {
+          "sequence": 28,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:55:38.835Z"
+        },
+        {
+          "sequence": 29,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:55:38.837Z"
+        },
+        {
+          "sequence": 30,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:55:38.837Z"
+        },
+        {
+          "sequence": 31,
+          "event_type": "authorization.grant_consumed",
+          "occurred_at": "2026-09-11T15:55:40.035Z"
+        },
+        {
+          "sequence": 32,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:55:38.837Z"
+        },
+        {
+          "sequence": 33,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T15:55:38.838Z"
+        },
+        {
+          "sequence": 34,
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T15:55:52.357Z"
+        },
+        {
+          "sequence": 35,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:55:52.360Z"
+        },
+        {
+          "sequence": 36,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:55:52.360Z"
+        },
+        {
+          "sequence": 37,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T15:55:52.361Z"
+        },
+        {
+          "sequence": 38,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:55:52.362Z"
+        },
+        {
+          "sequence": 39,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:55:53.801Z"
+        },
+        {
+          "sequence": 40,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:55:56.225Z"
+        },
+        {
+          "sequence": 41,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:55:56.226Z"
+        },
+        {
+          "sequence": 42,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:55:56.227Z"
+        },
+        {
+          "sequence": 43,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:55:57.138Z"
+        },
+        {
+          "sequence": 44,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:55:58.181Z"
+        },
+        {
+          "sequence": 45,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:55:58.387Z"
+        },
+        {
+          "sequence": 46,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:55:58.653Z"
+        },
+        {
+          "sequence": 47,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:55:58.653Z"
+        },
+        {
+          "sequence": 48,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:55:58.818Z"
+        },
+        {
+          "sequence": 49,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:55:58.818Z"
+        },
+        {
+          "sequence": 50,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T15:55:58.819Z"
+        },
+        {
+          "sequence": 51,
+          "event_type": "runtime.suspended",
+          "occurred_at": "2026-09-11T15:56:01.332Z"
+        },
+        {
+          "sequence": 52,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T15:56:59.134Z"
+        },
+        {
+          "sequence": 53,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:56:59.134Z"
+        },
+        {
+          "sequence": 54,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:56:59.136Z"
+        },
+        {
+          "sequence": 55,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:56:59.136Z"
+        },
+        {
+          "sequence": 56,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:56:59.136Z"
+        },
+        {
+          "sequence": 57,
+          "event_type": "authorization.grant_consumed",
+          "occurred_at": "2026-09-11T15:57:00.637Z"
+        },
+        {
+          "sequence": 58,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T15:56:59.137Z"
+        },
+        {
+          "sequence": 59,
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T15:57:12.828Z"
+        },
+        {
+          "sequence": 60,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:12.840Z"
+        },
+        {
+          "sequence": 61,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:12.840Z"
+        },
+        {
+          "sequence": 62,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T15:57:12.842Z"
+        },
+        {
+          "sequence": 63,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:57:12.842Z"
+        },
+        {
+          "sequence": 64,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:57:13.962Z"
+        },
+        {
+          "sequence": 65,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:57:16.538Z"
+        },
+        {
+          "sequence": 66,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:16.540Z"
+        },
+        {
+          "sequence": 67,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:16.852Z"
+        },
+        {
+          "sequence": 68,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:16.956Z"
+        },
+        {
+          "sequence": 69,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:17.232Z"
+        },
+        {
+          "sequence": 70,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:17.576Z"
+        },
+        {
+          "sequence": 71,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:17.884Z"
+        },
+        {
+          "sequence": 72,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:18.127Z"
+        },
+        {
+          "sequence": 73,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:18.363Z"
+        },
+        {
+          "sequence": 74,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:18.844Z"
+        },
+        {
+          "sequence": 75,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:19.352Z"
+        },
+        {
+          "sequence": 76,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:19.762Z"
+        },
+        {
+          "sequence": 77,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:20.207Z"
+        },
+        {
+          "sequence": 78,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:20.479Z"
+        },
+        {
+          "sequence": 79,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:20.887Z"
+        },
+        {
+          "sequence": 80,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:21.159Z"
+        },
+        {
+          "sequence": 81,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:21.466Z"
+        },
+        {
+          "sequence": 82,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:22.826Z"
+        },
+        {
+          "sequence": 83,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:23.163Z"
+        },
+        {
+          "sequence": 84,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:23.480Z"
+        },
+        {
+          "sequence": 85,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:23.820Z"
+        },
+        {
+          "sequence": 86,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:24.024Z"
+        },
+        {
+          "sequence": 87,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:24.334Z"
+        },
+        {
+          "sequence": 88,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:25.289Z"
+        },
+        {
+          "sequence": 89,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:25.886Z"
+        },
+        {
+          "sequence": 90,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:26.392Z"
+        },
+        {
+          "sequence": 91,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:26.739Z"
+        },
+        {
+          "sequence": 92,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:27.042Z"
+        },
+        {
+          "sequence": 93,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:27.314Z"
+        },
+        {
+          "sequence": 94,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:27.523Z"
+        },
+        {
+          "sequence": 95,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:27.800Z"
+        },
+        {
+          "sequence": 96,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:28.041Z"
+        },
+        {
+          "sequence": 97,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:28.316Z"
+        },
+        {
+          "sequence": 98,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:28.693Z"
+        },
+        {
+          "sequence": 99,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:29.146Z"
+        },
+        {
+          "sequence": 100,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:29.558Z"
+        },
+        {
+          "sequence": 101,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:29.972Z"
+        },
+        {
+          "sequence": 102,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:30.358Z"
+        },
+        {
+          "sequence": 103,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:30.657Z"
+        },
+        {
+          "sequence": 104,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:31.024Z"
+        },
+        {
+          "sequence": 105,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:31.372Z"
+        },
+        {
+          "sequence": 106,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:31.478Z"
+        },
+        {
+          "sequence": 107,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:31.955Z"
+        },
+        {
+          "sequence": 108,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:32.257Z"
+        },
+        {
+          "sequence": 109,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:32.400Z"
+        },
+        {
+          "sequence": 110,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:57:33.400Z"
+        },
+        {
+          "sequence": 111,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:57:33.400Z"
+        },
+        {
+          "sequence": 112,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T15:57:33.401Z"
+        },
+        {
+          "sequence": 113,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T15:57:34.920Z"
+        }
+      ],
+      "history": {
+        "artifacts": 15,
+        "latest_sequence": 8
+      },
+      "jobs": [
+        {
+          "jobId": "jR52NIlmLANMW618IOvpxZ0XqDTASFuaiGCI7v1cdn-k",
+          "operation": "read",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "jmXwZ-5H5kd51dIdMzZNEa6X1z9d_jMJPkrIEy5rPe9w",
+          "operation": "write",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        }
+      ]
+    },
+    {
+      "id": "run:47cb86c7-b775-4ce1-89d3-9ca0f8183406",
+      "thread_id": "thread-fork:dbd3edc2-bda1-49cb-b1f9-3e0a0428acfe",
+      "status": "completed",
+      "created_at": "2026-09-11T15:58:48.450Z",
+      "updated_at": "2026-09-11T16:01:40.773Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 523,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T15:58:50.071Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T15:58:51.422Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T15:58:51.563Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T15:58:51.797Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T15:58:52.474Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T15:58:52.474Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:58:52.475Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:58:52.475Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:58:53.663Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T15:58:55.792Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:58:55.794Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:58:56.046Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:58:56.886Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:58:57.256Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:58:57.583Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:58:58.096Z"
+        },
+        {
+          "sequence": 17,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:58:58.097Z"
+        },
+        {
+          "sequence": 18,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:58:58.491Z"
+        },
+        {
+          "sequence": 19,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:58:59.295Z"
+        },
+        {
+          "sequence": 20,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:59:00.572Z"
+        },
+        {
+          "sequence": 21,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:59:00.636Z"
+        },
+        {
+          "sequence": 22,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:59:00.853Z"
+        },
+        {
+          "sequence": 23,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T15:59:00.955Z"
+        },
+        {
+          "sequence": 24,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T15:59:00.955Z"
+        },
+        {
+          "sequence": 25,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T15:59:00.956Z"
+        },
+        {
+          "sequence": 26,
+          "event_type": "runtime.suspended",
+          "occurred_at": "2026-09-11T15:59:03.022Z"
+        },
+        {
+          "sequence": 27,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:01:14.803Z"
+        },
+        {
+          "sequence": 28,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:01:14.804Z"
+        },
+        {
+          "sequence": 29,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:14.805Z"
+        },
+        {
+          "sequence": 30,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:14.806Z"
+        },
+        {
+          "sequence": 31,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:01:14.806Z"
+        },
+        {
+          "sequence": 32,
+          "event_type": "authorization.grant_consumed",
+          "occurred_at": "2026-09-11T16:01:16.749Z"
+        },
+        {
+          "sequence": 33,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:01:14.806Z"
+        },
+        {
+          "sequence": 34,
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T16:01:29.914Z"
+        },
+        {
+          "sequence": 35,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:29.916Z"
+        },
+        {
+          "sequence": 36,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:29.917Z"
+        },
+        {
+          "sequence": 37,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T16:01:29.918Z"
+        },
+        {
+          "sequence": 38,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:01:29.918Z"
+        },
+        {
+          "sequence": 39,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:01:31.291Z"
+        },
+        {
+          "sequence": 40,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:01:34.153Z"
+        },
+        {
+          "sequence": 41,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:34.155Z"
+        },
+        {
+          "sequence": 42,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:34.467Z"
+        },
+        {
+          "sequence": 43,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:34.892Z"
+        },
+        {
+          "sequence": 44,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:35.127Z"
+        },
+        {
+          "sequence": 45,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:35.375Z"
+        },
+        {
+          "sequence": 46,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:35.705Z"
+        },
+        {
+          "sequence": 47,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:36.260Z"
+        },
+        {
+          "sequence": 48,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:37.414Z"
+        },
+        {
+          "sequence": 49,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:37.823Z"
+        },
+        {
+          "sequence": 50,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:38.090Z"
+        },
+        {
+          "sequence": 51,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:38.213Z"
+        },
+        {
+          "sequence": 52,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:01:38.358Z"
+        },
+        {
+          "sequence": 53,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:01:38.358Z"
+        },
+        {
+          "sequence": 54,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T16:01:38.360Z"
+        },
+        {
+          "sequence": 55,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T16:01:40.255Z"
+        }
+      ],
+      "history": {
+        "artifacts": 9,
+        "latest_sequence": 5
+      },
+      "jobs": [
+        {
+          "jobId": "jc_-wHRKrkptoHcpNk9pVfWeaz4mnt9vyUZ8y943BxxA",
+          "operation": "edit",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        }
+      ]
+    },
+    {
+      "id": "run:e9452e28-9ae8-4741-8716-2114c2fbae5c",
+      "thread_id": "thread-fork:dbd3edc2-bda1-49cb-b1f9-3e0a0428acfe",
+      "status": "completed",
+      "created_at": "2026-09-11T16:03:08.165Z",
+      "updated_at": "2026-09-11T16:03:44.513Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 563,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T16:03:09.073Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T16:03:16.132Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T16:03:16.250Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T16:03:16.882Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:03:17.159Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:03:17.159Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:17.160Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:17.160Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:03:18.437Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:03:21.727Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:21.728Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:21.966Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:22.015Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:22.605Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:22.962Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:23.238Z"
+        },
+        {
+          "sequence": 17,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:23.752Z"
+        },
+        {
+          "sequence": 18,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:24.459Z"
+        },
+        {
+          "sequence": 19,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:24.637Z"
+        },
+        {
+          "sequence": 20,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:24.854Z"
+        },
+        {
+          "sequence": 21,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:24.855Z"
+        },
+        {
+          "sequence": 22,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:25.011Z"
+        },
+        {
+          "sequence": 23,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:03:25.011Z"
+        },
+        {
+          "sequence": 24,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:03:25.012Z"
+        },
+        {
+          "sequence": 25,
+          "event_type": "runtime.suspended",
+          "occurred_at": "2026-09-11T16:03:27.452Z"
+        },
+        {
+          "sequence": 26,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:03:33.912Z"
+        },
+        {
+          "sequence": 27,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:03:33.912Z"
+        },
+        {
+          "sequence": 28,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:33.913Z"
+        },
+        {
+          "sequence": 29,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:33.913Z"
+        },
+        {
+          "sequence": 30,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:03:33.913Z"
+        },
+        {
+          "sequence": 31,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:03:33.913Z"
+        },
+        {
+          "sequence": 32,
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T16:03:35.422Z"
+        },
+        {
+          "sequence": 33,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:35.423Z"
+        },
+        {
+          "sequence": 34,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:35.423Z"
+        },
+        {
+          "sequence": 35,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T16:03:35.423Z"
+        },
+        {
+          "sequence": 36,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:03:35.423Z"
+        },
+        {
+          "sequence": 37,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:03:38.055Z"
+        },
+        {
+          "sequence": 38,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:03:40.440Z"
+        },
+        {
+          "sequence": 39,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:40.441Z"
+        },
+        {
+          "sequence": 40,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:40.713Z"
+        },
+        {
+          "sequence": 41,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:40.958Z"
+        },
+        {
+          "sequence": 42,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:41.171Z"
+        },
+        {
+          "sequence": 43,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:41.636Z"
+        },
+        {
+          "sequence": 44,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:41.956Z"
+        },
+        {
+          "sequence": 45,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:42.178Z"
+        },
+        {
+          "sequence": 46,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:42.258Z"
+        },
+        {
+          "sequence": 47,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:03:42.434Z"
+        },
+        {
+          "sequence": 48,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:03:42.434Z"
+        },
+        {
+          "sequence": 49,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T16:03:42.434Z"
+        },
+        {
+          "sequence": 50,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T16:03:44.145Z"
+        }
+      ],
+      "history": {
+        "artifacts": 9,
+        "latest_sequence": 5
+      },
+      "jobs": []
+    },
+    {
+      "id": "run:8047c3f2-5336-4386-8d64-0f74e1889ddc",
+      "thread_id": "thread-fork:dbd3edc2-bda1-49cb-b1f9-3e0a0428acfe",
+      "status": "completed",
+      "created_at": "2026-09-11T16:04:07.228Z",
+      "updated_at": "2026-09-11T16:04:27.315Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 282,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T16:04:07.902Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T16:04:18.289Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T16:04:18.416Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T16:04:18.583Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:04:19.117Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:04:19.117Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:04:19.118Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:04:19.118Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:04:20.865Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:04:23.285Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:04:23.286Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:04:23.547Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:04:23.860Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:04:24.156Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:04:24.479Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:04:24.948Z"
+        },
+        {
+          "sequence": 17,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:04:25.038Z"
+        },
+        {
+          "sequence": 18,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:04:25.400Z"
+        },
+        {
+          "sequence": 19,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:04:25.400Z"
+        },
+        {
+          "sequence": 20,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T16:04:25.400Z"
+        },
+        {
+          "sequence": 21,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T16:04:27.023Z"
+        }
+      ],
+      "history": {
+        "artifacts": 4,
+        "latest_sequence": 2
+      },
+      "jobs": []
+    },
+    {
+      "id": "run:49a9dac9-20c9-462e-b605-0b992a468a6a",
+      "thread_id": "thread-fork:dbd3edc2-bda1-49cb-b1f9-3e0a0428acfe",
+      "status": "cancelled",
+      "created_at": "2026-09-11T16:04:57.285Z",
+      "updated_at": "2026-09-11T16:28:58.714Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 643,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T16:04:59.246Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T16:05:05.209Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T16:05:05.350Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T16:05:05.550Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:05:06.027Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:05:06.027Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:06.028Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:06.028Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:05:07.293Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:05:09.875Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:09.876Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:10.117Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:10.470Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:10.841Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:11.178Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:11.611Z"
+        },
+        {
+          "sequence": 17,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:11.915Z"
+        },
+        {
+          "sequence": 18,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:12.021Z"
+        },
+        {
+          "sequence": 19,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:12.644Z"
+        },
+        {
+          "sequence": 20,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:12.646Z"
+        },
+        {
+          "sequence": 21,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:13.104Z"
+        },
+        {
+          "sequence": 22,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:13.996Z"
+        },
+        {
+          "sequence": 23,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:14.305Z"
+        },
+        {
+          "sequence": 24,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:14.394Z"
+        },
+        {
+          "sequence": 25,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:05:14.394Z"
+        },
+        {
+          "sequence": 26,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:05:14.395Z"
+        },
+        {
+          "sequence": 27,
+          "event_type": "runtime.suspended",
+          "occurred_at": "2026-09-11T16:05:16.681Z"
+        },
+        {
+          "sequence": 28,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:05:51.280Z"
+        },
+        {
+          "sequence": 29,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:05:51.280Z"
+        },
+        {
+          "sequence": 30,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:51.283Z"
+        },
+        {
+          "sequence": 31,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:05:51.284Z"
+        },
+        {
+          "sequence": 32,
+          "event_type": "authorization.grant_consumed",
+          "occurred_at": "2026-09-11T16:05:52.184Z"
+        },
+        {
+          "sequence": 33,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:05:51.284Z"
+        },
+        {
+          "sequence": 34,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:05:51.285Z"
+        },
+        {
+          "sequence": 35,
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T16:06:04.876Z"
+        },
+        {
+          "sequence": 36,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:04.877Z"
+        },
+        {
+          "sequence": 37,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:04.877Z"
+        },
+        {
+          "sequence": 38,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T16:06:04.877Z"
+        },
+        {
+          "sequence": 39,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:06:04.877Z"
+        },
+        {
+          "sequence": 40,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:06:06.894Z"
+        },
+        {
+          "sequence": 41,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:06:09.635Z"
+        },
+        {
+          "sequence": 42,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:09.636Z"
+        },
+        {
+          "sequence": 43,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:09.833Z"
+        },
+        {
+          "sequence": 44,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:10.323Z"
+        },
+        {
+          "sequence": 45,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:10.665Z"
+        },
+        {
+          "sequence": 46,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:11.260Z"
+        },
+        {
+          "sequence": 47,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:11.572Z"
+        },
+        {
+          "sequence": 48,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:12.016Z"
+        },
+        {
+          "sequence": 49,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:12.229Z"
+        },
+        {
+          "sequence": 50,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:12.504Z"
+        },
+        {
+          "sequence": 51,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:12.873Z"
+        },
+        {
+          "sequence": 52,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:13.790Z"
+        },
+        {
+          "sequence": 53,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:14.092Z"
+        },
+        {
+          "sequence": 54,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:14.399Z"
+        },
+        {
+          "sequence": 55,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:14.478Z"
+        },
+        {
+          "sequence": 56,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:14.731Z"
+        },
+        {
+          "sequence": 57,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:15.120Z"
+        },
+        {
+          "sequence": 58,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:15.319Z"
+        },
+        {
+          "sequence": 59,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:15.488Z"
+        },
+        {
+          "sequence": 60,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:15.703Z"
+        },
+        {
+          "sequence": 61,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:06:15.919Z"
+        },
+        {
+          "sequence": 62,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:06:15.919Z"
+        },
+        {
+          "sequence": 63,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:06:15.920Z"
+        },
+        {
+          "sequence": 64,
+          "event_type": "runtime.suspended",
+          "occurred_at": "2026-09-11T16:06:19.887Z"
+        },
+        {
+          "sequence": 65,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:07:07.936Z"
+        },
+        {
+          "sequence": 66,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:07:07.936Z"
+        },
+        {
+          "sequence": 67,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:07:07.937Z"
+        },
+        {
+          "sequence": 68,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:07:07.937Z"
+        },
+        {
+          "sequence": 69,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:07:07.937Z"
+        },
+        {
+          "sequence": 70,
+          "event_type": "authorization.grant_consumed",
+          "occurred_at": "2026-09-11T16:07:09.076Z"
+        },
+        {
+          "sequence": 71,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:07:07.938Z"
+        },
+        {
+          "sequence": 72,
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T16:07:25.977Z"
+        },
+        {
+          "sequence": 73,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:07:25.978Z"
+        },
+        {
+          "sequence": 74,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:07:25.978Z"
+        },
+        {
+          "sequence": 75,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:07:25.978Z"
+        },
+        {
+          "sequence": 76,
+          "event_type": "runtime.suspended",
+          "occurred_at": "2026-09-11T16:07:28.195Z"
+        },
+        {
+          "sequence": 77,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:11:41.201Z"
+        },
+        {
+          "sequence": 78,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:11:41.201Z"
+        },
+        {
+          "sequence": 79,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:11:41.202Z"
+        },
+        {
+          "sequence": 80,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:11:41.202Z"
+        },
+        {
+          "sequence": 81,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:11:41.202Z"
+        },
+        {
+          "sequence": 82,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:11:41.203Z"
+        },
+        {
+          "sequence": 83,
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T16:11:42.831Z"
+        },
+        {
+          "sequence": 84,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:11:42.832Z"
+        },
+        {
+          "sequence": 85,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:11:42.832Z"
+        },
+        {
+          "sequence": 86,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:11:42.832Z"
+        },
+        {
+          "sequence": 87,
+          "event_type": "authorization.grant_consumed",
+          "occurred_at": "2026-09-11T16:11:44.308Z"
+        },
+        {
+          "sequence": 88,
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T16:11:55.669Z"
+        },
+        {
+          "sequence": 89,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:11:55.671Z"
+        },
+        {
+          "sequence": 90,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:11:55.672Z"
+        },
+        {
+          "sequence": 91,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:11:55.674Z"
+        },
+        {
+          "sequence": 92,
+          "event_type": "runtime.suspended",
+          "occurred_at": "2026-09-11T16:11:57.903Z"
+        },
+        {
+          "sequence": 93,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:12:22.518Z"
+        },
+        {
+          "sequence": 94,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:12:22.518Z"
+        },
+        {
+          "sequence": 95,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:12:22.519Z"
+        },
+        {
+          "sequence": 96,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:12:22.519Z"
+        },
+        {
+          "sequence": 97,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:12:22.519Z"
+        },
+        {
+          "sequence": 98,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:12:22.520Z"
+        },
+        {
+          "sequence": 99,
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T16:12:25.322Z"
+        },
+        {
+          "sequence": 100,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:12:25.323Z"
+        },
+        {
+          "sequence": 101,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:12:25.323Z"
+        },
+        {
+          "sequence": 102,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T16:12:25.324Z"
+        },
+        {
+          "sequence": 103,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:12:25.325Z"
+        },
+        {
+          "sequence": 104,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:12:25.912Z"
+        },
+        {
+          "sequence": 105,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:12:25.913Z"
+        },
+        {
+          "sequence": 106,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:12:25.913Z"
+        },
+        {
+          "sequence": 107,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T16:12:25.914Z"
+        },
+        {
+          "sequence": 108,
+          "event_type": "runtime.result_unknown",
+          "occurred_at": "2026-09-11T16:12:25.321Z"
+        }
+      ],
+      "history": {
+        "artifacts": 22,
+        "latest_sequence": 13
+      },
+      "jobs": [
+        {
+          "jobId": "j4uLqT6oSyXjpAnQkWbRmsLPyRHUMdy4TMdhfWsZS2gI",
+          "operation": "grep",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "jT8D39zvJVWUNTSois4lIjGjWk0m263Pd8BQYZwRJvwY",
+          "operation": "find",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        },
+        {
+          "jobId": "jH5xThq47l9DH3mdclk9wBWsB8wE8nJm43Gyq0EdL8Yc",
+          "operation": "ls",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        }
+      ]
+    },
+    {
+      "id": "run:58e57553-b7af-4e55-9b38-694dac3692ba",
+      "thread_id": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+      "status": "completed",
+      "created_at": "2026-09-11T16:13:47.763Z",
+      "updated_at": "2026-09-11T16:14:02.548Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 164,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T16:13:49.463Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T16:13:54.388Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T16:13:54.472Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T16:13:54.627Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:13:54.972Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:13:54.972Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:13:54.973Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:13:54.973Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:13:56.549Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:13:58.704Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:13:58.706Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:13:58.977Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:13:59.361Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:13:59.664Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:13:59.959Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:13:59.959Z"
+        },
+        {
+          "sequence": 17,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T16:13:59.960Z"
+        },
+        {
+          "sequence": 18,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T16:14:01.424Z"
+        }
+      ],
+      "history": {
+        "artifacts": 4,
+        "latest_sequence": 2
+      },
+      "jobs": []
+    },
+    {
+      "id": "run:a8d193a0-2ac9-412f-8045-c6d34ba394d5",
+      "thread_id": "thread:63599620-84b5-44d5-adc3-61c65cc83041",
+      "status": "completed",
+      "created_at": "2026-09-11T16:15:18.345Z",
+      "updated_at": "2026-09-11T16:15:33.868Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 368,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T16:15:19.274Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T16:15:24.027Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T16:15:24.157Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T16:15:24.335Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:15:24.740Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:15:24.740Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:15:24.740Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:15:24.741Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:15:26.362Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:15:31.680Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:15:31.681Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:15:31.682Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:15:31.735Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:15:31.735Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T16:15:31.735Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T16:15:33.566Z"
+        }
+      ],
+      "history": {
+        "artifacts": 4,
+        "latest_sequence": 2
+      },
+      "jobs": []
+    },
+    {
+      "id": "run:c3a53e19-0317-42aa-9411-b559d130a66a",
+      "thread_id": "thread-fork:dbd3edc2-bda1-49cb-b1f9-3e0a0428acfe",
+      "status": "completed",
+      "created_at": "2026-09-11T16:30:43.061Z",
+      "updated_at": "2026-09-11T16:32:50.260Z",
+      "budget": [
+        {
+          "reserved_cost_micros": 0,
+          "spent_cost_micros": 668,
+          "status": "active"
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "event_type": "memory.query",
+          "occurred_at": "2026-09-11T16:30:44.433Z"
+        },
+        {
+          "sequence": 2,
+          "event_type": "memory.candidates",
+          "occurred_at": "2026-09-11T16:30:45.674Z"
+        },
+        {
+          "sequence": 3,
+          "event_type": "memory.selection",
+          "occurred_at": "2026-09-11T16:30:45.822Z"
+        },
+        {
+          "sequence": 4,
+          "event_type": "context.formed",
+          "occurred_at": "2026-09-11T16:30:45.960Z"
+        },
+        {
+          "sequence": 5,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:30:46.347Z"
+        },
+        {
+          "sequence": 6,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:30:46.347Z"
+        },
+        {
+          "sequence": 7,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:30:46.348Z"
+        },
+        {
+          "sequence": 8,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:30:46.348Z"
+        },
+        {
+          "sequence": 9,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:30:47.194Z"
+        },
+        {
+          "sequence": 10,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:30:49.693Z"
+        },
+        {
+          "sequence": 11,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:30:49.695Z"
+        },
+        {
+          "sequence": 12,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:30:49.696Z"
+        },
+        {
+          "sequence": 13,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:30:50.135Z"
+        },
+        {
+          "sequence": 14,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:30:50.137Z"
+        },
+        {
+          "sequence": 15,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:30:50.781Z"
+        },
+        {
+          "sequence": 16,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:30:51.050Z"
+        },
+        {
+          "sequence": 17,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:30:51.091Z"
+        },
+        {
+          "sequence": 18,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:30:51.091Z"
+        },
+        {
+          "sequence": 19,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:30:51.092Z"
+        },
+        {
+          "sequence": 20,
+          "event_type": "runtime.suspended",
+          "occurred_at": "2026-09-11T16:30:52.570Z"
+        },
+        {
+          "sequence": 21,
+          "event_type": "runtime.model_started",
+          "occurred_at": "2026-09-11T16:32:23.626Z"
+        },
+        {
+          "sequence": 22,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:32:23.626Z"
+        },
+        {
+          "sequence": 23,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:23.627Z"
+        },
+        {
+          "sequence": 24,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:23.628Z"
+        },
+        {
+          "sequence": 25,
+          "event_type": "authorization.grant_consumed",
+          "occurred_at": "2026-09-11T16:32:24.190Z"
+        },
+        {
+          "sequence": 26,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:32:23.628Z"
+        },
+        {
+          "sequence": 27,
+          "event_type": "runtime.tool_intent",
+          "occurred_at": "2026-09-11T16:32:23.628Z"
+        },
+        {
+          "sequence": 28,
+          "event_type": "runtime.tool_result",
+          "occurred_at": "2026-09-11T16:32:41.841Z"
+        },
+        {
+          "sequence": 29,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:41.844Z"
+        },
+        {
+          "sequence": 30,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:41.845Z"
+        },
+        {
+          "sequence": 31,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T16:32:41.846Z"
+        },
+        {
+          "sequence": 32,
+          "event_type": "runtime.turn_started",
+          "occurred_at": "2026-09-11T16:32:41.846Z"
+        },
+        {
+          "sequence": 33,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:32:42.647Z"
+        },
+        {
+          "sequence": 34,
+          "event_type": "runtime.provider_observation",
+          "occurred_at": "2026-09-11T16:32:46.610Z"
+        },
+        {
+          "sequence": 35,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:46.611Z"
+        },
+        {
+          "sequence": 36,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:46.775Z"
+        },
+        {
+          "sequence": 37,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:46.944Z"
+        },
+        {
+          "sequence": 38,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:47.241Z"
+        },
+        {
+          "sequence": 39,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:47.424Z"
+        },
+        {
+          "sequence": 40,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:47.540Z"
+        },
+        {
+          "sequence": 41,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:47.673Z"
+        },
+        {
+          "sequence": 42,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:47.906Z"
+        },
+        {
+          "sequence": 43,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:48.045Z"
+        },
+        {
+          "sequence": 44,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:48.213Z"
+        },
+        {
+          "sequence": 45,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:48.426Z"
+        },
+        {
+          "sequence": 46,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:48.595Z"
+        },
+        {
+          "sequence": 47,
+          "event_type": "runtime.message",
+          "occurred_at": "2026-09-11T16:32:48.677Z"
+        },
+        {
+          "sequence": 48,
+          "event_type": "runtime.model_output",
+          "occurred_at": "2026-09-11T16:32:48.677Z"
+        },
+        {
+          "sequence": 49,
+          "event_type": "runtime.turn_completed",
+          "occurred_at": "2026-09-11T16:32:48.679Z"
+        },
+        {
+          "sequence": 50,
+          "event_type": "runtime.completed",
+          "occurred_at": "2026-09-11T16:32:50.021Z"
+        }
+      ],
+      "history": {
+        "artifacts": 10,
+        "latest_sequence": 5
+      },
+      "jobs": [
+        {
+          "jobId": "jhTNX2oXoHVZIPBBUAQXgwLNyE31XymV92_1jFOZxYBk",
+          "operation": "bash",
+          "resultKind": "result",
+          "reasonCode": null,
+          "cleanup": "confirmed",
+          "supervision": "released"
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "name": "e2e-20260912-note.txt",
+      "exists": true,
+      "bytes": 14,
+      "sha256": "5a6a736de40d9dc5efda97c87c8b0c4fc8d160127dfc909dbf72d2445a82cab9"
+    },
+    {
+      "name": "e2e-20260912-rejected.txt",
+      "exists": false
+    },
+    {
+      "name": "e2e-20260912-script.py",
+      "exists": false
+    },
+    {
+      "name": "e2e-20260912-script.log",
+      "exists": false
+    }
+  ]
+}

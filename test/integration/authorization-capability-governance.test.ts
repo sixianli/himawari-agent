@@ -437,7 +437,7 @@ describe("S4 authorization and capability governance", () => {
     });
   });
 
-  it("enforces reviewed capability lifecycle and bounded fenced Handle consumption", async () => {
+  it("enforces reviewed capability lifecycle and invalidates issued Handles", async () => {
     const { clock, store, lifecycle } = await activeCapability();
     const ids = createReferenceAdapterSet({ clock }).ids;
     const handles = new CapabilityHandleService({ store, clock, ids });
@@ -471,36 +471,16 @@ describe("S4 authorization and capability governance", () => {
       maxTotalCostMicros: 100,
       expiresAt: T1,
     });
-    const use = {
-      handleRef: handle.ref,
-      expectedRevision: 1,
-      authorityFence: 7,
-      operation: "read",
-      inputRef: "payload:input",
-      delegatedContextRefs: ["payload:context"],
-      secretRefs: ["provider-token"],
-      dataClassification: "private" as const,
-      costMicros: 100,
-      idempotencyKey: "handle-use-1",
-      consumedAt: T0,
-    };
-    await expect(handles.consume(use)).resolves.toMatchObject({ uses: 1, revision: 2 });
-    await expect(handles.consume(use)).resolves.toMatchObject({ uses: 1, revision: 2 });
-    await expect(
-      handles.consume({ ...use, expectedRevision: 2, authorityFence: 8, idempotencyKey: "forged" }),
-    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.HANDLE_REVOKED });
     await expect(handles.endRun(RUN_ID)).resolves.toBe(1);
     await expect(store.getExecutionHandle(handle.ref)).resolves.toMatchObject({
-      revision: 3,
+      revision: 2,
       workerEndedAt: T0,
     });
-    await expect(
-      handles.consume({ ...use, expectedRevision: 3, idempotencyKey: "after-worker-end" }),
-    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.HANDLE_REVOKED });
     await lifecycle.disable("governed-tool");
-    await expect(
-      handles.consume({ ...use, expectedRevision: 3, idempotencyKey: "after-disable" }),
-    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.HANDLE_REVOKED });
+    await expect(store.getExecutionHandle(handle.ref)).resolves.toMatchObject({
+      revokedAt: T0,
+      workerEndedAt: T0,
+    });
   });
 
   it("makes the Worker revalidate active Grant, scope and current authority fence before invocation", async () => {

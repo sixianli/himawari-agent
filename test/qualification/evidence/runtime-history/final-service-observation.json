@@ -1,0 +1,10 @@
+{
+  "observedAt": "2026-09-12T19:25:31.895828+00:00",
+  "serviceState": "active",
+  "runtimeDigest": "a9b48f6731f4087feff92f000c98f2436245ca580569708d8f585f4d848c307d",
+  "runtimeUid": 998,
+  "schemaSequence": 32,
+  "activeRuns": 0,
+  "quickCheck": "ok",
+  "dataMount": "/data"
+}

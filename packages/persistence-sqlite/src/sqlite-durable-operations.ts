@@ -4,40 +4,43 @@ import type {
   AttentionDecisionCommitResult,
   AttentionPolicyState,
   AuditRecord,
+  AuthorityFence,
   BackgroundAdmissionReservation,
   BackgroundAdmissionResult,
   BackgroundOccurrenceClaim,
   BackgroundOccurrenceSettlement,
   CapabilityExecutionHandle,
-  ConsumeCapabilityExecutionHandleInput,
-  GovernedCapabilityExecutionHandle,
   CapabilityRegistryRecord,
   ConsumeGrantInput,
   DeliveryClaim,
   DeliveryRequest,
   DeliverySettlement,
   GitHubCoverageGapRecord,
-  GitHubMonitorHistoryPolicyOperation,
   GitHubInstallationRecord,
+  GitHubMonitorHistoryPolicyOperation,
   GitHubRepositoryMonitor,
   GitHubWebhookReceiptRecord,
   GovernanceMutationReceipt,
+  GovernedCapabilityExecutionHandle,
   GrantRecord,
+  OwnerIdentityBindingRecord,
   PayloadRecord,
   ProductDeviceRecord,
   ProductSessionRecord,
-  OwnerIdentityBindingRecord,
   ReliableEvent,
   ReliableEventRecord,
   ResolveApprovalInput,
+  RunDispatchScope,
+  RunExecutionLeaseTransactionGuard,
+  RunPayloadArtifact,
+  RunPayloadArtifactCommitResult,
   ScheduledJob,
   ScheduledJobWrite,
   SessionDeletionRecord,
-  StateRecord,
-  JsonObject,
   TraceEvent,
 } from "@himawari-agent/application";
 import type {
+  AgentId,
   BackgroundJobState,
   BackgroundOccurrence,
   DeviceId,
@@ -47,6 +50,7 @@ import type {
   ProductAuthorityFence,
   SessionId,
 } from "@himawari-agent/domain";
+import { createDeploymentId } from "@himawari-agent/domain";
 import type {
   EventSubscription,
   GetRunSnapshotQuery,
@@ -57,8 +61,16 @@ import type {
   TraceQuery,
 } from "@himawari-agent/gateway-contracts";
 import type Database from "better-sqlite3";
+import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
+import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
+import { SqliteModelInvocationOperations } from "./sqlite-model-invocation-operations.ts";
+import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
+import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
+import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
+import { SqliteRunPayloadArtifactOperations } from "./sqlite-run-payload-artifact-operations.ts";
+import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
 
 export type SqliteApplicationFailure = (
@@ -86,6 +98,13 @@ export interface SqliteStartupRecovery {
   readonly blockedOccurrenceIds: readonly string[];
   readonly modelBlockedOccurrenceIds: readonly string[];
   readonly unknownExternalResultOccurrenceIds: readonly string[];
+}
+
+export interface SqliteRecoveryAuthorityScope {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly authority: ProductAuthorityFence;
+  readonly authorityLease: AuthorityFence;
 }
 
 export interface GatewayProjectionMetadata {
@@ -241,6 +260,33 @@ function quoteIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
+function runDispatchRpc(value: unknown): {
+  readonly scope: RunDispatchScope;
+  readonly input: unknown;
+} {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("Run dispatch RPC payload must be an object");
+  }
+  const payload = value as {
+    readonly ownerId?: unknown;
+    readonly agentId?: unknown;
+    readonly authority?: unknown;
+    readonly authorityLease?: unknown;
+    readonly consumerId?: unknown;
+    readonly input?: unknown;
+  };
+  return {
+    scope: {
+      ownerId: payload.ownerId as RunDispatchScope["ownerId"],
+      agentId: payload.agentId as RunDispatchScope["agentId"],
+      authority: payload.authority as RunDispatchScope["authority"],
+      authorityLease: payload.authorityLease as RunDispatchScope["authorityLease"],
+      consumerId: payload.consumerId as RunDispatchScope["consumerId"],
+    },
+    input: payload.input,
+  };
+}
+
 function grantStatus(record: GrantRecord): "active" | "revoked" | "expired" | "consumed" {
   if (record.revokedAt !== null) return "revoked";
   if (record.uses >= record.maxUses || record.spentCostMicros >= record.maxTotalCostMicros) {
@@ -270,25 +316,117 @@ export class SqliteDurableOperations {
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
   private readonly checkpoint: SqliteCheckpointOperations;
+  private readonly capabilityInvocations: SqliteCapabilityInvocationOperations;
   private readonly memory: SqliteMemoryOperations;
+  private readonly builtInIdentity: SqliteBuiltInIdentityOperations;
   private readonly thread: SqliteThreadOperations;
+  private readonly runs: SqliteRunLifecycleOperations;
+  private readonly runCheckpoints: SqliteRunCheckpointOperations;
+  private readonly runPayloadArtifacts: SqliteRunPayloadArtifactOperations;
+  private readonly modelBudget: SqliteModelBudgetOperations;
+  private readonly modelInvocations: SqliteModelInvocationOperations;
 
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
   ) {
+    this.builtInIdentity = new SqliteBuiltInIdentityOperations(database, fail, assertDiskHeadroom);
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
     this.checkpoint = new SqliteCheckpointOperations(database, fail, assertDiskHeadroom);
+    this.runPayloadArtifacts = new SqliteRunPayloadArtifactOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
+    this.capabilityInvocations = new SqliteCapabilityInvocationOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+      this.runPayloadArtifacts,
+    );
+    this.modelBudget = new SqliteModelBudgetOperations(database, fail, assertDiskHeadroom);
+    this.modelInvocations = new SqliteModelInvocationOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+      this.modelBudget,
+    );
     this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
+    const executionLease = (input: {
+      readonly ownerId: string;
+      readonly agentId: string;
+      readonly authority: ProductAuthorityFence;
+      readonly authorityLeaseId: string;
+      readonly authorityFencingToken: number;
+      readonly consumerId: string;
+    }): Pick<
+      RunExecutionLeaseTransactionGuard,
+      "assertHeldInTransaction" | "invalidateForOwnerCancellationInTransaction"
+    > =>
+      new SqliteRunDispatchOperations(
+        database,
+        {
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          authority: input.authority,
+          authorityLease: {
+            leaseId: input.authorityLeaseId,
+            fencingToken: input.authorityFencingToken,
+          },
+          consumerId: input.consumerId,
+        },
+        fail,
+      );
+    this.runs = new SqliteRunLifecycleOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+      this.thread,
+      executionLease,
+    );
+    this.runCheckpoints = new SqliteRunCheckpointOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+      (ownerId, agentId, authority) => this.assertBackgroundFence(ownerId, agentId, authority),
+      executionLease,
+    );
   }
 
   execute(operation: string, payload: unknown): unknown {
+    if (operation.startsWith("builtInIdentity."))
+      return this.builtInIdentity.execute(operation, payload);
+    if (operation.startsWith("runDispatch.")) {
+      return this.executeRunDispatch(operation, payload);
+    }
+    if (operation.startsWith("runLifecycle.")) return this.runs.execute(operation, payload);
+    if (operation.startsWith("runCheckpoint.")) {
+      return this.runCheckpoints.execute(operation, payload);
+    }
+    if (operation.startsWith("runPayloadArtifact.")) {
+      return this.runPayloadArtifacts.execute(operation, payload) as
+        | RunPayloadArtifact
+        | RunPayloadArtifactCommitResult
+        | undefined;
+    }
     if (operation.startsWith("thread.")) {
       return this.thread.execute(operation, payload);
+    }
+    if (
+      operation.startsWith("capabilityInvocation.") ||
+      operation.startsWith("capabilityInvocationResult.")
+    ) {
+      return this.capabilityInvocations.execute(operation, payload);
+    }
+    if (operation.startsWith("modelBudget.")) {
+      return this.modelBudget.execute(operation, payload);
+    }
+    if (operation.startsWith("modelInvocation.")) {
+      return this.modelInvocations.execute(operation, payload);
     }
     if (operation.startsWith("threadDistillation.")) {
       return this.checkpoint.execute(operation, payload);
@@ -304,20 +442,6 @@ export class SqliteDurableOperations {
       case "event.append":
         return this.appendEvent(
           payload as { ownerId: string; agentId: string; event: ReliableEvent },
-        );
-      case "state.read":
-        return this.readScopedState(payload as { ownerId: string; agentId: string; key: string });
-      case "state.compareAndSet":
-        return this.compareAndSetState(
-          payload as {
-            ownerId: string;
-            agentId: string;
-            authority: ProductAuthorityFence;
-            key: string;
-            expectedRevision: number | null;
-            value: JsonObject;
-            updatedAt: string;
-          },
         );
       case "event.listPending":
         return this.listPendingEvents(
@@ -358,6 +482,8 @@ export class SqliteDurableOperations {
         );
       case "trace.append":
         return this.appendTrace((payload as { event: TraceEvent }).event);
+      case "trace.appendNext":
+        return this.appendNextTrace((payload as { event: Omit<TraceEvent, "sequence"> }).event);
       case "trace.readRun":
         return this.readTraceRun(
           payload as { runId: string; afterSequence: number; limit: number },
@@ -456,6 +582,10 @@ export class SqliteDurableOperations {
         return this.createCapabilityHandle(
           (payload as { handle: CapabilityExecutionHandle }).handle,
         );
+      case "capability.listRunHandles":
+        return this.listRunCapabilityHandles(
+          payload as { ownerId: string; agentId: string; runId: string; at: string },
+        );
       case "capability.getHandle":
         return this.getCapabilityHandle(
           payload as { ownerId: string; agentId: string; handleRef: string },
@@ -465,9 +595,7 @@ export class SqliteDurableOperations {
           payload as { ownerId: string; agentId: string; handleRef: string; revokedAt: string },
         );
       case "capability.consumeHandle":
-        return this.consumeCapabilityHandle(
-          (payload as { input: ConsumeCapabilityExecutionHandleInput }).input,
-        );
+        return this.consumeCapabilityHandle(payload);
       case "capability.revokeHandles":
         return this.revokeCapabilityHandles(
           payload as { ownerId: string; agentId: string; capabilityRef: string; revokedAt: string },
@@ -496,10 +624,6 @@ export class SqliteDurableOperations {
         return this.readOccurrence((payload as { occurrenceId: OccurrenceId }).occurrenceId);
       case "background.createOccurrence":
         return this.createOccurrence((payload as { occurrence: BackgroundOccurrence }).occurrence);
-      case "background.saveOccurrence":
-        return this.saveOccurrence(
-          payload as { occurrence: BackgroundOccurrence; expectedRevision: number },
-        );
       case "background.reserveAdmission":
         return this.reserveBackgroundAdmission(
           (payload as { input: BackgroundAdmissionReservation }).input,
@@ -663,159 +787,204 @@ export class SqliteDurableOperations {
     }
   }
 
-  recoverStartup(now: string): SqliteStartupRecovery {
+  private executeRunDispatch(operation: string, payload: unknown): unknown {
+    const rpc = runDispatchRpc(payload);
+    const dispatch = new SqliteRunDispatchOperations(this.database, rpc.scope, this.fail);
+    return dispatch.execute(operation, rpc.input);
+  }
+
+  recoverStartupWithAuthority(
+    scope: SqliteRecoveryAuthorityScope,
+    now: string,
+  ): SqliteStartupRecovery {
     const transaction = this.database.transaction(() => {
-      this.database
-        .prepare(
-          `UPDATE github_history_policy_operations
-          SET status = 'retry_wait', last_error_code = 'history_process_interrupted', updated_at = ?
-          WHERE status = 'running'`,
-        )
-        .run(now);
-      const expiredClaims = this.database
-        .prepare(
-          `SELECT id FROM reliable_events
-          WHERE publication_state = 'claimed' AND claim_expires_at <= ? ORDER BY id`,
-        )
-        .all(now) as Array<{ readonly id: string }>;
-      this.database
-        .prepare(
-          `UPDATE reliable_events SET publication_state = 'pending', claim_id = NULL,
-            claim_expires_at = NULL
-          WHERE publication_state = 'claimed' AND claim_expires_at <= ?`,
-        )
-        .run(now);
-      const recoveredDeliveries = this.database
-        .prepare("SELECT id FROM inbox_deliveries WHERE status = 'delivering' ORDER BY id")
-        .all() as Array<{ readonly id: string }>;
-      for (const { id } of recoveredDeliveries) {
-        const current = this.readDelivery(id);
-        if (!current) continue;
-        const recovered: DeliveryRequest = {
-          ...current,
-          revision: current.revision + 1,
-          status: "pending",
-          assignedClientId: null,
-          lastErrorCode: "PROCESS_RESTARTED",
-          updatedAt: now,
-        };
-        this.database
-          .prepare(
-            `UPDATE inbox_deliveries SET revision = ?, status = 'pending', updated_at = ?,
-              record_json = ? WHERE id = ?`,
-          )
-          .run(recovered.revision, now, JSON.stringify(recovered), id);
-      }
-      return {
-        pendingEventIds: this.idList(
-          "SELECT id FROM reliable_events WHERE published_at IS NULL ORDER BY occurred_at, id",
-        ),
-        recoveredExpiredClaimIds: expiredClaims.map(({ id }) => id),
-        unfinishedRunKeys: this.unfinishedRunKeys(),
-        pendingApprovalRequestIds: this.idList(
-          "SELECT id FROM approval_requests WHERE status = 'pending' ORDER BY requested_at, id",
-        ),
-        recoveredDeliveryRequestIds: recoveredDeliveries.map(({ id }) => id),
-        pendingDeliveryRequestIds: this.idList(
-          "SELECT id FROM inbox_deliveries WHERE status = 'pending' ORDER BY created_at, id",
-        ),
-        pendingDeletionIds: this.idList(
-          "SELECT id FROM deletion_tombstones WHERE status IN ('pending', 'incomplete') ORDER BY requested_at, id",
-        ),
-        retryableJobOccurrenceIds: this.idListWith(
-          `SELECT id FROM job_occurrences WHERE status IN ('queued', 'admitted')
-            OR (status = 'retry_wait' AND (next_retry_at IS NULL OR next_retry_at <= ?))
-            OR (status = 'running' AND work_lease_expires_at <= ?) ORDER BY id`,
-          now,
-          now,
-        ),
-        expiredWorkLeaseOccurrenceIds: this.idListWith(
-          `SELECT id FROM job_occurrences WHERE status = 'running'
-            AND work_lease_expires_at <= ? ORDER BY id`,
-          now,
-        ),
-        blockedOccurrenceIds: this.idList(
-          `SELECT id FROM job_occurrences WHERE status IN (
-            'blocked_credentials', 'blocked_approval', 'budget_blocked', 'capacity_blocked'
-          ) ORDER BY id`,
-        ),
-        modelBlockedOccurrenceIds: this.idList(
-          `SELECT id FROM job_occurrences WHERE status = 'blocked_approval'
-            AND last_error_code = 'MODEL_BLOCKED' ORDER BY id`,
-        ),
-        unknownExternalResultOccurrenceIds: this.idList(
-          `SELECT id FROM job_occurrences WHERE status = 'retry_wait'
-            AND last_error_code = 'EXTERNAL_RESULT_UNKNOWN' ORDER BY id`,
-        ),
-      } satisfies SqliteStartupRecovery;
+      this.assertCurrentRecoveryAuthority(scope, now);
+      this.assertDiskHeadroom();
+      return this.recoverStartupInTransaction(now);
     });
     return transaction.immediate();
+  }
+
+  private assertCurrentRecoveryAuthority(scope: SqliteRecoveryAuthorityScope, now: string): void {
+    if (scope.authority.fencingToken !== scope.authorityLease.fencingToken) {
+      this.fail("PORT_NOT_AUTHORITATIVE", "Startup recovery authority fences do not match", {
+        deploymentId: scope.authority.deploymentId,
+        authorityFencingToken: String(scope.authority.fencingToken),
+        leaseFencingToken: String(scope.authorityLease.fencingToken),
+      });
+    }
+    const current = this.database
+      .prepare(
+        `SELECT deployments.owner_id AS ownerId, deployments.agent_id AS agentId,
+          deployments.status AS deploymentStatus,
+          deployments.authority_epoch AS deploymentAuthorityEpoch,
+          deployments.fencing_token AS deploymentFencingToken,
+          authority_leases.owner_id AS leaseOwnerId,
+          authority_leases.agent_id AS leaseAgentId,
+          authority_leases.deployment_id AS leaseDeploymentId,
+          authority_leases.authority_epoch AS leaseAuthorityEpoch,
+          authority_leases.fencing_token AS leaseFencingToken,
+          authority_leases.expires_at AS leaseExpiresAt,
+          authority_leases.released_at AS leaseReleasedAt
+        FROM deployments
+        JOIN authority_leases ON authority_leases.deployment_id = deployments.id
+        WHERE deployments.id = ? AND authority_leases.id = ?`,
+      )
+      .get(scope.authority.deploymentId, scope.authorityLease.leaseId) as
+      | {
+          readonly ownerId: string;
+          readonly agentId: string;
+          readonly deploymentStatus: string;
+          readonly deploymentAuthorityEpoch: number;
+          readonly deploymentFencingToken: number;
+          readonly leaseOwnerId: string;
+          readonly leaseAgentId: string;
+          readonly leaseDeploymentId: string;
+          readonly leaseAuthorityEpoch: number;
+          readonly leaseFencingToken: number;
+          readonly leaseExpiresAt: string;
+          readonly leaseReleasedAt: string | null;
+        }
+      | undefined;
+    if (
+      !current ||
+      current.ownerId !== scope.ownerId ||
+      current.agentId !== scope.agentId ||
+      current.leaseOwnerId !== scope.ownerId ||
+      current.leaseAgentId !== scope.agentId ||
+      current.deploymentStatus !== "active" ||
+      current.deploymentAuthorityEpoch !== scope.authority.authorityEpoch ||
+      current.deploymentFencingToken !== scope.authority.fencingToken ||
+      current.leaseDeploymentId !== scope.authority.deploymentId ||
+      current.leaseAuthorityEpoch !== scope.authority.authorityEpoch ||
+      current.leaseFencingToken !== scope.authorityLease.fencingToken ||
+      current.leaseReleasedAt !== null ||
+      current.leaseExpiresAt <= now
+    ) {
+      this.fail("PORT_NOT_AUTHORITATIVE", "Startup recovery authority is not current", {
+        deploymentId: scope.authority.deploymentId,
+        leaseId: scope.authorityLease.leaseId,
+        ownerId: scope.ownerId,
+        agentId: scope.agentId,
+      });
+    }
+  }
+
+  private recoverStartupInTransaction(now: string): SqliteStartupRecovery {
+    this.database
+      .prepare(
+        `UPDATE github_history_policy_operations
+          SET status = 'retry_wait', last_error_code = 'history_process_interrupted', updated_at = ?
+          WHERE status = 'running'`,
+      )
+      .run(now);
+    const expiredClaims = this.database
+      .prepare(
+        `SELECT id FROM reliable_events
+          WHERE publication_state = 'claimed' AND claim_expires_at <= ? ORDER BY id`,
+      )
+      .all(now) as Array<{ readonly id: string }>;
+    this.database
+      .prepare(
+        `UPDATE reliable_events SET publication_state = 'pending', claim_id = NULL,
+            claim_expires_at = NULL
+          WHERE publication_state = 'claimed' AND claim_expires_at <= ?`,
+      )
+      .run(now);
+    const recoveredDeliveries = this.database
+      .prepare("SELECT id FROM inbox_deliveries WHERE status = 'delivering' ORDER BY id")
+      .all() as Array<{ readonly id: string }>;
+    for (const { id } of recoveredDeliveries) {
+      const current = this.readDelivery(id);
+      if (!current) continue;
+      const recovered: DeliveryRequest = {
+        ...current,
+        revision: current.revision + 1,
+        status: "pending",
+        assignedClientId: null,
+        lastErrorCode: "PROCESS_RESTARTED",
+        updatedAt: now,
+      };
+      this.database
+        .prepare(
+          `UPDATE inbox_deliveries SET revision = ?, status = 'pending', updated_at = ?,
+              record_json = ? WHERE id = ?`,
+        )
+        .run(recovered.revision, now, JSON.stringify(recovered), id);
+    }
+    return {
+      pendingEventIds: this.idList(
+        "SELECT id FROM reliable_events WHERE published_at IS NULL ORDER BY occurred_at, id",
+      ),
+      recoveredExpiredClaimIds: expiredClaims.map(({ id }) => id),
+      unfinishedRunKeys: this.unfinishedRunKeys(),
+      pendingApprovalRequestIds: this.idList(
+        "SELECT id FROM approval_requests WHERE status = 'pending' ORDER BY requested_at, id",
+      ),
+      recoveredDeliveryRequestIds: recoveredDeliveries.map(({ id }) => id),
+      pendingDeliveryRequestIds: this.idList(
+        "SELECT id FROM inbox_deliveries WHERE status = 'pending' ORDER BY created_at, id",
+      ),
+      pendingDeletionIds: this.idList(
+        "SELECT id FROM deletion_tombstones WHERE status IN ('pending', 'incomplete') ORDER BY requested_at, id",
+      ),
+      retryableJobOccurrenceIds: this.idListWith(
+        `SELECT id FROM job_occurrences
+         WHERE NOT EXISTS (
+           SELECT 1 FROM model_budget_accounts budget
+           WHERE budget.owner_id = job_occurrences.owner_id
+             AND budget.agent_id = job_occurrences.agent_id
+             AND budget.occurrence_id = job_occurrences.id
+             AND budget.status = 'reconcile_required'
+         )
+         AND (last_error_code IS NULL OR last_error_code <> 'EXTERNAL_RESULT_UNKNOWN')
+         AND (
+           status IN ('queued', 'admitted')
+           OR (status = 'retry_wait' AND (next_retry_at IS NULL OR next_retry_at <= ?))
+           OR (status = 'running' AND work_lease_expires_at <= ?)
+         ) ORDER BY id`,
+        now,
+        now,
+      ),
+      expiredWorkLeaseOccurrenceIds: this.idListWith(
+        `SELECT id FROM job_occurrences
+         WHERE status = 'running' AND work_lease_expires_at <= ?
+           AND NOT EXISTS (
+             SELECT 1 FROM model_budget_accounts budget
+             WHERE budget.owner_id = job_occurrences.owner_id
+               AND budget.agent_id = job_occurrences.agent_id
+               AND budget.occurrence_id = job_occurrences.id
+               AND budget.status = 'reconcile_required'
+           )
+           AND (last_error_code IS NULL OR last_error_code <> 'EXTERNAL_RESULT_UNKNOWN')
+           ORDER BY id`,
+        now,
+      ),
+      blockedOccurrenceIds: this.idList(
+        `SELECT id FROM job_occurrences WHERE status IN (
+          'blocked_credentials', 'blocked_approval', 'budget_blocked', 'capacity_blocked'
+        ) ORDER BY id`,
+      ),
+      modelBlockedOccurrenceIds: this.idList(
+        `SELECT id FROM job_occurrences WHERE status = 'blocked_approval'
+          AND last_error_code = 'MODEL_BLOCKED' ORDER BY id`,
+      ),
+      unknownExternalResultOccurrenceIds: this.idList(
+        `SELECT id FROM job_occurrences
+         WHERE (status = 'retry_wait' AND last_error_code = 'EXTERNAL_RESULT_UNKNOWN')
+           OR EXISTS (
+             SELECT 1 FROM model_budget_accounts budget
+             WHERE budget.owner_id = job_occurrences.owner_id
+               AND budget.agent_id = job_occurrences.agent_id
+               AND budget.occurrence_id = job_occurrences.id
+               AND budget.status = 'reconcile_required'
+           ) ORDER BY id`,
+      ),
+    } satisfies SqliteStartupRecovery;
   }
 
   private idList(sql: string): readonly string[] {
     return (this.database.prepare(sql).all() as Array<{ readonly id: string }>).map(({ id }) => id);
-  }
-
-  private readScopedState(input: {
-    ownerId: string;
-    agentId: string;
-    key: string;
-  }): StateRecord | undefined {
-    if (!input.key.startsWith("run-checkpoint:")) {
-      this.fail("PORT_INVALID_OPERATION", "The durable checkpoint store only accepts Run keys");
-    }
-    const row = this.database
-      .prepare(
-        `SELECT key, revision, value_json AS valueJson FROM product_state_records
-        WHERE key = ? AND owner_id = ? AND agent_id = ?`,
-      )
-      .get(input.key, input.ownerId, input.agentId) as
-      | { readonly key: string; readonly revision: number; readonly valueJson: string }
-      | undefined;
-    return row
-      ? { key: row.key, revision: row.revision, value: JSON.parse(row.valueJson) as JsonObject }
-      : undefined;
-  }
-
-  private compareAndSetState(input: {
-    ownerId: string;
-    agentId: string;
-    authority: ProductAuthorityFence;
-    key: string;
-    expectedRevision: number | null;
-    value: JsonObject;
-    updatedAt: string;
-  }): StateRecord {
-    this.assertDiskHeadroom();
-    if (!input.key.startsWith("run-checkpoint:")) {
-      this.fail("PORT_INVALID_OPERATION", "The durable checkpoint store only accepts Run keys");
-    }
-    this.assertBackgroundFence(input.ownerId, input.agentId, input.authority);
-    const transaction = this.database.transaction(() => {
-      const current = this.readScopedState(input);
-      if ((current?.revision ?? null) !== input.expectedRevision) {
-        this.fail("PORT_CONFLICT", `State ${input.key} revision conflict`, { key: input.key });
-      }
-      const revision = (current?.revision ?? 0) + 1;
-      this.database
-        .prepare(
-          `INSERT INTO product_state_records (
-            key, owner_id, agent_id, revision, value_json, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET
-            revision = excluded.revision, value_json = excluded.value_json,
-            updated_at = excluded.updated_at`,
-        )
-        .run(
-          input.key,
-          input.ownerId,
-          input.agentId,
-          revision,
-          JSON.stringify(input.value),
-          input.updatedAt,
-        );
-      return { key: input.key, revision, value: input.value };
-    });
-    return transaction.immediate();
   }
 
   private idListWith(sql: string, ...parameters: readonly unknown[]): readonly string[] {
@@ -850,23 +1019,29 @@ export class SqliteDurableOperations {
     const terminal = new Set(["completed", "failed", "cancelled"]);
     const stateKeys = (
       this.database
-        .prepare("SELECT key, value_json AS valueJson FROM product_state_records ORDER BY key")
+        .prepare(
+          `SELECT key, value_json AS valueJson FROM product_state_records
+          WHERE substr(key, 1, 15) != 'run-checkpoint:' ORDER BY key`,
+        )
         .all() as Array<{ readonly key: string; readonly valueJson: string }>
     )
-      .filter(({ key, valueJson }) => {
-        const value = JSON.parse(valueJson) as {
-          readonly status?: unknown;
-          readonly terminalStatus?: unknown;
-        };
-        if (key.startsWith("run-checkpoint:")) return value.terminalStatus === null;
+      .filter(({ valueJson }) => {
+        const value = JSON.parse(valueJson) as { readonly status?: unknown };
         return typeof value.status === "string" && !terminal.has(value.status);
       })
       .map(({ key }) => key);
+    const checkpointRunIds = this.idList(
+      `SELECT checkpoint.run_id AS id FROM run_coordination_checkpoints checkpoint
+      JOIN runs run ON run.id = checkpoint.run_id
+        AND run.owner_id = checkpoint.owner_id AND run.agent_id = checkpoint.agent_id
+      WHERE checkpoint.terminal_status IS NULL
+        AND run.status NOT IN ('completed', 'failed', 'cancelled') ORDER BY checkpoint.run_id`,
+    );
     const runIds = this.idList(
       `SELECT id FROM runs
       WHERE status NOT IN ('completed', 'failed', 'cancelled') ORDER BY created_at, id`,
     );
-    return [...new Set([...stateKeys, ...runIds])].sort();
+    return [...new Set([...stateKeys, ...checkpointRunIds, ...runIds])].sort();
   }
 
   private recoverySnapshot(): SqliteStartupRecovery {
@@ -887,7 +1062,16 @@ export class SqliteDurableOperations {
         "SELECT id FROM deletion_tombstones WHERE status IN ('pending', 'incomplete') ORDER BY requested_at, id",
       ),
       retryableJobOccurrenceIds: this.idList(
-        "SELECT id FROM job_occurrences WHERE status IN ('queued', 'retry_wait') ORDER BY id",
+        `SELECT id FROM job_occurrences
+         WHERE NOT EXISTS (
+           SELECT 1 FROM model_budget_accounts budget
+           WHERE budget.owner_id = job_occurrences.owner_id
+             AND budget.agent_id = job_occurrences.agent_id
+             AND budget.occurrence_id = job_occurrences.id
+             AND budget.status = 'reconcile_required'
+         )
+         AND (last_error_code IS NULL OR last_error_code <> 'EXTERNAL_RESULT_UNKNOWN')
+         AND (status = 'queued' OR status = 'retry_wait') ORDER BY id`,
       ),
       expiredWorkLeaseOccurrenceIds: [],
       blockedOccurrenceIds: this.idList(
@@ -900,8 +1084,15 @@ export class SqliteDurableOperations {
           AND last_error_code = 'MODEL_BLOCKED' ORDER BY id`,
       ),
       unknownExternalResultOccurrenceIds: this.idList(
-        `SELECT id FROM job_occurrences WHERE status = 'retry_wait'
-          AND last_error_code = 'EXTERNAL_RESULT_UNKNOWN' ORDER BY id`,
+        `SELECT id FROM job_occurrences
+         WHERE (status = 'retry_wait' AND last_error_code = 'EXTERNAL_RESULT_UNKNOWN')
+           OR EXISTS (
+             SELECT 1 FROM model_budget_accounts budget
+             WHERE budget.owner_id = job_occurrences.owner_id
+               AND budget.agent_id = job_occurrences.agent_id
+               AND budget.occurrence_id = job_occurrences.id
+               AND budget.status = 'reconcile_required'
+           ) ORDER BY id`,
       ),
     };
   }
@@ -1092,6 +1283,27 @@ export class SqliteDurableOperations {
     return result.changes === 1;
   }
 
+  private appendNextTrace(input: Omit<TraceEvent, "sequence">): TraceEvent {
+    return this.database
+      .transaction(() => {
+        const row = this.database
+          .prepare(
+            "SELECT COALESCE(MAX(sequence), 0) AS sequence FROM trace_events WHERE run_id = ?",
+          )
+          .get(input.runId) as { sequence: number };
+        if (
+          !Number.isSafeInteger(row.sequence) ||
+          row.sequence < 0 ||
+          row.sequence === Number.MAX_SAFE_INTEGER
+        )
+          return this.fail("PORT_INVALID_OPERATION", "Trace sequence is exhausted or invalid");
+        const event: TraceEvent = { ...input, sequence: row.sequence + 1 };
+        this.appendTrace(event);
+        return event;
+      })
+      .immediate();
+  }
+
   private appendTrace(event: TraceEvent): void {
     this.assertDiskHeadroom();
     this.assertRunScope(event.runId, event.ownerId, event.agentId);
@@ -1166,6 +1378,41 @@ export class SqliteDurableOperations {
           event.recordedAt,
           JSON.stringify(event),
         );
+      // The notification and durable observation commit together. The existing
+      // Thread cursor is the sole browser reconnect position; no parallel stream.
+      if (
+        event.threadId &&
+        (event.eventType.startsWith("runtime.") ||
+          ["memory.query", "memory.candidates", "memory.selection", "context.formed"].includes(
+            event.eventType,
+          ))
+      ) {
+        const scope = this.database
+          .prepare(`SELECT t.revision AS revision, d.id AS deploymentId,
+          d.authority_epoch AS authorityEpoch, d.fencing_token AS fencingToken
+          FROM threads t JOIN deployments d ON d.owner_id = t.owner_id AND d.agent_id = t.agent_id
+          WHERE t.id = ? AND t.owner_id = ? AND t.agent_id = ? AND t.revision >= 1 AND d.status = 'active' AND d.authority_epoch >= 1 AND d.fencing_token >= 1`)
+          .get(event.threadId, event.ownerId, event.agentId) as
+          | { revision: number; deploymentId: string; authorityEpoch: number; fencingToken: number }
+          | undefined;
+        if (scope)
+          this.thread.appendGatewayEventInTransaction({
+            ownerId: event.ownerId,
+            agentId: event.agentId,
+            threadId: event.threadId,
+            threadRevision: scope.revision,
+            eventId: event.id,
+            commandId: event.id,
+            commandType: "thread.execution.updated",
+            resultRef: null,
+            committedAt: event.recordedAt,
+            authority: {
+              deploymentId: createDeploymentId(scope.deploymentId),
+              authorityEpoch: scope.authorityEpoch,
+              fencingToken: scope.fencingToken,
+            },
+          });
+      }
     });
     transaction.immediate();
   }
@@ -1458,6 +1705,7 @@ export class SqliteDurableOperations {
     const transaction = this.database.transaction(() => {
       const current = this.approvalRow(input.approvalRequestId);
       if (!current) this.fail("PORT_NOT_FOUND", `Approval ${input.approvalRequestId} not found`);
+      if (input.resolution === "approved") this.assertApprovalPolicyCurrent(current);
       if (current.revision !== input.expectedRevision || current.status !== "pending") {
         this.fail("PORT_CONFLICT", `Approval ${current.id} cannot be resolved`);
       }
@@ -1511,6 +1759,20 @@ export class SqliteDurableOperations {
     );
   }
 
+  private assertApprovalPolicyCurrent(approval: ApprovalRequest): void {
+    if (!approval.policyAuthorization) return;
+    const source = approval.policyAuthorization;
+    const row = this.database
+      .prepare(
+        "SELECT revision, value_json AS valueJson FROM product_state_records WHERE key = ? AND owner_id = ? AND agent_id = ?",
+      )
+      .get(source.key, approval.ownerId, approval.agentId) as
+      | { revision: number; valueJson: string }
+      | undefined;
+    if (!row || row.revision !== source.revision || JSON.parse(row.valueJson).enabled !== true)
+      this.fail("PORT_NOT_AUTHORITATIVE", "Owner policy revoked or changed");
+  }
+
   private grantRow(grantId: string): GrantRecord | undefined {
     return parseRecord<GrantRecord>(
       this.database
@@ -1522,6 +1784,11 @@ export class SqliteDurableOperations {
   private consumeGrant(input: ConsumeGrantInput): GrantRecord {
     this.assertDiskHeadroom();
     const transaction = this.database.transaction(() => {
+      const sourceGrant = this.grantRow(input.grantId);
+      const sourceApproval = sourceGrant
+        ? this.approvalRow(sourceGrant.sourceApprovalRequestId)
+        : undefined;
+      if (sourceApproval) this.assertApprovalPolicyCurrent(sourceApproval);
       if (input.usageId) {
         const replay = this.database
           .prepare("SELECT 1 FROM authorization_usage WHERE id = ? AND grant_id = ?")
@@ -2038,6 +2305,56 @@ export class SqliteDurableOperations {
     return transaction.immediate();
   }
 
+  private listRunCapabilityHandles(input: {
+    ownerId: string;
+    agentId: string;
+    runId: string;
+    at: string;
+  }): readonly CapabilityExecutionHandle[] {
+    this.assertRunScope(input.runId, input.ownerId, input.agentId);
+    if (!Number.isFinite(Date.parse(input.at)))
+      return this.fail("PORT_INVALID_OPERATION", "Invalid handle lookup time");
+    const deployment = this.database
+      .prepare(`SELECT fencing_token AS fencingToken FROM deployments
+      WHERE owner_id = ? AND agent_id = ? AND status = 'active'`)
+      .get(input.ownerId, input.agentId) as { fencingToken: number } | undefined;
+    if (!deployment) return [];
+    const rows = this.database
+      .prepare(`SELECT h.id FROM capability_handles h
+      JOIN capability_declarations c ON c.id = h.capability_id
+      WHERE c.owner_id = ? AND c.agent_id = ? AND h.run_id = ?
+      AND json_extract(c.record_json, '$.lifecycle') IN ('active', 'update_proposed', 'update_approved')
+      ORDER BY h.id`)
+      .all(input.ownerId, input.agentId, input.runId) as { id: string }[];
+    return rows.flatMap(({ id }) => {
+      const handle = this.getCapabilityHandle({ ...input, handleRef: id });
+      if (
+        !handle ||
+        handle.ownerId !== input.ownerId ||
+        handle.agentId !== input.agentId ||
+        handle.runId !== input.runId ||
+        handle.revokedAt !== null ||
+        !("handleVersion" in handle) ||
+        handle.handleVersion !== "capability-handle.v2" ||
+        !Number.isFinite(Date.parse(handle.expiresAt)) ||
+        !Number.isFinite(Date.parse(handle.issuedAt)) ||
+        Date.parse(handle.issuedAt) > Date.parse(input.at) ||
+        Date.parse(handle.expiresAt) <= Date.parse(input.at)
+      )
+        return [];
+      const governed = handle as GovernedCapabilityExecutionHandle;
+      const capability = this.getCapability({ ...input, capabilityRef: handle.capabilityRef });
+      if (
+        governed.workerEndedAt !== null ||
+        governed.authorityFence !== deployment.fencingToken ||
+        !capability ||
+        capability.declaration.version !== handle.capabilityVersion
+      )
+        return [];
+      return [handle];
+    });
+  }
+
   private getCapabilityHandle(input: {
     ownerId: string;
     agentId: string;
@@ -2075,46 +2392,11 @@ export class SqliteDurableOperations {
     return revoked;
   }
 
-  private consumeCapabilityHandle(
-    input: ConsumeCapabilityExecutionHandleInput,
-  ): GovernedCapabilityExecutionHandle {
-    this.assertDiskHeadroom();
-    const transaction = this.database.transaction(() => {
-      const row = this.database
-        .prepare("SELECT record_json AS recordJson FROM capability_handles WHERE id = ?")
-        .get(input.handleRef) as JsonRow | undefined;
-      const current = parseRecord<GovernedCapabilityExecutionHandle>(row);
-      if (!current || current.handleVersion !== "capability-handle.v2") {
-        this.fail("PORT_NOT_FOUND", `Capability handle ${input.handleRef} not found`);
-      }
-      if (current.idempotencyKeys.includes(input.idempotencyKey)) return current;
-      if (
-        current.revision !== input.expectedRevision ||
-        current.revokedAt !== null ||
-        current.workerEndedAt !== null ||
-        input.consumedAt >= current.expiresAt ||
-        current.authorityFence !== input.authorityFence ||
-        current.uses >= current.maxUses ||
-        current.spentCostMicros + input.costMicros > current.maxTotalCostMicros
-      )
-        this.fail("PORT_CONFLICT", `Capability handle ${input.handleRef} is not consumable`);
-      const consumed: GovernedCapabilityExecutionHandle = {
-        ...current,
-        revision: current.revision + 1,
-        uses: current.uses + 1,
-        spentCostMicros: current.spentCostMicros + input.costMicros,
-        idempotencyKeys: [...current.idempotencyKeys, input.idempotencyKey],
-      };
-      this.database
-        .prepare("UPDATE capability_handles SET status = ?, record_json = ? WHERE id = ?")
-        .run(
-          consumed.uses >= consumed.maxUses ? "consumed" : "active",
-          JSON.stringify(consumed),
-          consumed.ref,
-        );
-      return consumed;
-    });
-    return transaction.immediate();
+  private consumeCapabilityHandle(_input: unknown): never {
+    return this.fail(
+      "PORT_NOT_AUTHORITATIVE",
+      "Direct Capability Handle consumption is retired; use the scoped invocation receipt port",
+    );
   }
 
   private revokeCapabilityHandles(input: {
@@ -2995,6 +3277,10 @@ export class SqliteDurableOperations {
     if (runIds.length > 0) {
       for (const [table, column] of [
         ["run_checkpoints", "checkpoint_ref"],
+        ["run_coordination_checkpoints", "context_ref"],
+        ["run_coordination_checkpoints", "final_answer_ref"],
+        ["run_coordination_worker_results", "result_ref"],
+        ["run_payload_artifacts", "payload_ref"],
         ["approval_requests", "intent_ref"],
         ["trace_events", "payload_ref"],
         ["attention_decisions", "decision_ref"],
@@ -3112,9 +3398,9 @@ export class SqliteDurableOperations {
     for (const { name } of tables) {
       const foreignKeys = this.database
         .prepare(`PRAGMA foreign_key_list(${quoteIdentifier(name)})`)
-        .all() as Array<{ table: string; from: string }>;
+        .all() as Array<{ table: string; from: string; to: string }>;
       for (const foreignKey of foreignKeys) {
-        if (foreignKey.table !== "payloads") continue;
+        if (foreignKey.table !== "payloads" || foreignKey.to !== "ref") continue;
         const count = Number(
           this.database
             .prepare(
@@ -3258,7 +3544,23 @@ export class SqliteDurableOperations {
     this.assertOccurrenceShape(occurrence);
     this.assertBackgroundFence(occurrence.ownerId, occurrence.agentId, occurrence.authority);
     const duplicate = this.readOccurrenceByStableKey(occurrence.jobId, occurrence.stableKey);
-    if (duplicate) return duplicate;
+    if (duplicate) {
+      if (
+        duplicate.ownerId !== occurrence.ownerId ||
+        duplicate.agentId !== occurrence.agentId ||
+        duplicate.category !== occurrence.category ||
+        duplicate.dataClassification !== occurrence.dataClassification ||
+        duplicate.estimatedCostMicros !== occurrence.estimatedCostMicros ||
+        duplicate.foreground !== occurrence.foreground ||
+        duplicate.parallelSafe !== occurrence.parallelSafe
+      ) {
+        this.fail(
+          "PORT_CONFLICT",
+          "Background occurrence stable identity has conflicting semantics",
+        );
+      }
+      return duplicate;
+    }
     if (this.readOccurrence(occurrence.id)) {
       this.fail("PORT_CONFLICT", `Background occurrence ${occurrence.id} already exists`);
     }
@@ -3357,33 +3659,6 @@ export class SqliteDurableOperations {
       );
   }
 
-  private saveOccurrence(input: {
-    occurrence: BackgroundOccurrence;
-    expectedRevision: number;
-  }): BackgroundOccurrence {
-    this.assertDiskHeadroom();
-    this.assertOccurrenceShape(input.occurrence);
-    const current = this.readOccurrence(input.occurrence.id);
-    if (!current) this.fail("PORT_NOT_FOUND", `Occurrence ${input.occurrence.id} not found`);
-    if (
-      current.revision !== input.expectedRevision ||
-      input.occurrence.revision !== input.expectedRevision + 1 ||
-      current.jobId !== input.occurrence.jobId ||
-      current.ownerId !== input.occurrence.ownerId ||
-      current.agentId !== input.occurrence.agentId ||
-      current.stableKey !== input.occurrence.stableKey
-    ) {
-      this.fail("PORT_CONFLICT", `Occurrence ${input.occurrence.id} has a stale revision or scope`);
-    }
-    this.assertBackgroundFence(
-      input.occurrence.ownerId,
-      input.occurrence.agentId,
-      input.occurrence.authority,
-    );
-    this.writeOccurrence(input.occurrence);
-    return input.occurrence;
-  }
-
   private reserveBackgroundAdmission(
     input: BackgroundAdmissionReservation,
   ): BackgroundAdmissionResult {
@@ -3392,6 +3667,35 @@ export class SqliteDurableOperations {
       const current = this.readOccurrence(input.occurrenceId);
       if (!current) this.fail("PORT_NOT_FOUND", `Occurrence ${input.occurrenceId} not found`);
       this.assertBackgroundFence(current.ownerId, current.agentId, input.authority);
+      const runScope = this.database
+        .prepare("SELECT owner_id AS ownerId, agent_id AS agentId FROM runs WHERE id = ?")
+        .get(input.runId) as { readonly ownerId: string; readonly agentId: string } | undefined;
+      if (
+        !runScope ||
+        runScope.ownerId !== current.ownerId ||
+        runScope.agentId !== current.agentId
+      ) {
+        this.fail("PORT_INVALID_OPERATION", `Run ${input.runId} is outside occurrence scope`);
+      }
+      this.modelBudget.assertNoRunBudgetAccountWithinTransaction({
+        ownerId: current.ownerId,
+        agentId: current.agentId,
+        runId: input.runId,
+      });
+      const requiresReconciliation =
+        current.lastErrorCode === "EXTERNAL_RESULT_UNKNOWN" ||
+        this.modelBudget.occurrenceRequiresReconciliationWithinTransaction({
+          ownerId: current.ownerId,
+          agentId: current.agentId,
+          occurrenceId: current.id,
+        });
+      if (requiresReconciliation) {
+        return {
+          occurrence: current,
+          outcome: "reconcile_required" as const,
+          reasonCode: "EXTERNAL_RESULT_RECONCILIATION_REQUIRED" as const,
+        };
+      }
       if (
         current.status === "completed" ||
         current.status === "failed_terminal" ||
@@ -3407,13 +3711,6 @@ export class SqliteDurableOperations {
       }
       if (current.revision !== input.expectedRevision) {
         this.fail("PORT_CONFLICT", `Occurrence ${input.occurrenceId} revision conflict`);
-      }
-      if (current.status === "retry_wait" && current.lastErrorCode === "EXTERNAL_RESULT_UNKNOWN") {
-        return {
-          occurrence: current,
-          outcome: "reconcile_required" as const,
-          reasonCode: "EXTERNAL_RESULT_RECONCILIATION_REQUIRED" as const,
-        };
       }
       if (current.status === "blocked_credentials") {
         return {
@@ -3552,37 +3849,17 @@ export class SqliteDurableOperations {
         }
       }
 
-      const usage = this.database
-        .prepare(
-          `SELECT COALESCE(SUM(reserved_cost_micros + spent_cost_micros), 0) AS globalUsed,
-            COALESCE(SUM(CASE WHEN data_classification = ?
-              THEN reserved_cost_micros + spent_cost_micros ELSE 0 END), 0) AS classificationUsed
-          FROM job_occurrences WHERE owner_id = ? AND agent_id = ? AND id <> ?`,
-        )
-        .get(current.dataClassification, current.ownerId, current.agentId, current.id) as {
-        readonly globalUsed: number;
-        readonly classificationUsed: number;
-      };
-      if (
-        !reasonCode &&
-        current.spentCostMicros + current.estimatedCostMicros > limits.perRunCostMicros
-      ) {
-        reasonCode = "RUN_BUDGET_EXCEEDED";
-      }
-      if (
-        !reasonCode &&
-        usage.globalUsed + current.spentCostMicros + current.estimatedCostMicros >
-          limits.globalCostMicros
-      ) {
-        reasonCode = "GLOBAL_BUDGET_EXHAUSTED";
-      }
-      if (
-        !reasonCode &&
-        usage.classificationUsed + current.spentCostMicros + current.estimatedCostMicros >
-          limits.perClassificationCostMicros[current.dataClassification]
-      ) {
-        reasonCode = "CLASSIFICATION_BUDGET_EXHAUSTED";
-      }
+      const budget = reasonCode
+        ? {
+            reservedCostMicros: current.reservedCostMicros,
+            spentCostMicros: current.spentCostMicros,
+            reasonCode: null,
+          }
+        : this.modelBudget.reserveOccurrenceWithinTransaction({
+            occurrence: current,
+            limits,
+          });
+      reasonCode = reasonCode ?? budget.reasonCode;
 
       const blockedByBudget =
         reasonCode === "RUN_BUDGET_EXCEEDED" ||
@@ -3594,7 +3871,8 @@ export class SqliteDurableOperations {
         status: reasonCode ? (blockedByBudget ? "budget_blocked" : "capacity_blocked") : "admitted",
         authority: input.authority,
         runId: input.runId,
-        reservedCostMicros: reasonCode ? 0 : current.estimatedCostMicros,
+        reservedCostMicros: budget.reservedCostMicros,
+        spentCostMicros: budget.spentCostMicros,
         nextRetryAt: null,
         lastErrorCode: reasonCode,
       };
@@ -3621,6 +3899,19 @@ export class SqliteDurableOperations {
       this.assertBackgroundFence(current.ownerId, current.agentId, input.authority);
       if (current.revision !== input.expectedRevision) {
         this.fail("PORT_CONFLICT", `Occurrence ${input.occurrenceId} revision conflict`);
+      }
+      if (
+        current.lastErrorCode === "EXTERNAL_RESULT_UNKNOWN" ||
+        this.modelBudget.occurrenceRequiresReconciliationWithinTransaction({
+          ownerId: current.ownerId,
+          agentId: current.agentId,
+          occurrenceId: current.id,
+        })
+      ) {
+        this.fail(
+          "PORT_CONFLICT",
+          `Occurrence ${input.occurrenceId} requires reconciliation before it can be claimed`,
+        );
       }
       const claimedAt = new Date(input.claimedAt);
       const expiresAt = new Date(input.expiresAt);
@@ -3732,13 +4023,17 @@ export class SqliteDurableOperations {
       } else {
         status = "failed_terminal";
       }
+      const budget = this.modelBudget.settleOccurrenceWithinTransaction({
+        occurrence: current,
+        settlement: input,
+      });
       const settled: BackgroundOccurrence = {
         ...current,
         revision: current.revision + 1,
         status,
         authority: input.authority,
-        reservedCostMicros: 0,
-        spentCostMicros: current.spentCostMicros + input.spentCostMicros,
+        reservedCostMicros: budget.reservedCostMicros,
+        spentCostMicros: budget.spentCostMicros,
         nextRetryAt,
         workLease: null,
         lastErrorCode: errorCode,
@@ -3771,7 +4066,16 @@ export class SqliteDurableOperations {
     return (
       this.database
         .prepare(
-          `${this.occurrenceSelect()} WHERE owner_id = ? AND agent_id = ? AND (
+          `${this.occurrenceSelect()} WHERE owner_id = ? AND agent_id = ?
+            AND NOT EXISTS (
+              SELECT 1 FROM model_budget_accounts AS budget
+              WHERE budget.owner_id = job_occurrences.owner_id
+                AND budget.agent_id = job_occurrences.agent_id
+                AND budget.occurrence_id = job_occurrences.id
+                AND budget.status = 'reconcile_required'
+            )
+            AND (last_error_code IS NULL OR last_error_code <> 'EXTERNAL_RESULT_UNKNOWN')
+            AND (
             status IN ('queued', 'admitted', 'blocked_credentials', 'blocked_approval',
               'budget_blocked', 'capacity_blocked')
             OR (status = 'retry_wait' AND (next_retry_at IS NULL OR next_retry_at <= ?))

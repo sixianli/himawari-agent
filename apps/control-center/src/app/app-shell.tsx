@@ -1,10 +1,16 @@
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ControlCenterPreferences, ControlCenterUiLocale } from "../browser-storage.js";
+import { AppearancePicker } from "../components/appearance-picker.js";
+import { SidebarIcon } from "../components/sidebar-icon.js";
+import { HimawariBrand } from "../components/brand.js";
 import { ActionButton, AppLink, StatusRegion } from "../components/index.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { UI_LOCALES, useControlCenterIntl } from "../i18n/runtime.js";
-import { CONTROL_CENTER_SURFACE_INVENTORY } from "./control-center-inventory.js";
+import {
+  CONTROL_CENTER_SURFACE_INVENTORY,
+  isSurfaceInstalled,
+} from "./control-center-inventory.js";
 import { type ControlCenterRouteState, controlCenterHref, routeForSurface } from "./router.js";
 
 const navMessageIds: Readonly<
@@ -29,7 +35,10 @@ const navMessageIds: Readonly<
 };
 
 export interface ControlCenterShellProps {
-  readonly connection: "connecting" | "connected" | "offline";
+  readonly builtInIdentity?: boolean;
+  readonly healthDependenciesAvailable?: boolean;
+  readonly installedGatewayV2Operations?: readonly string[];
+  readonly connection: "connecting" | "connected" | "offline" | null;
   readonly content: ReactNode;
   readonly details: ReactNode;
   readonly list: ReactNode;
@@ -47,6 +56,9 @@ function shouldHandleNavigation(event: MouseEvent<HTMLAnchorElement>): boolean {
 }
 
 export function ControlCenterShell({
+  builtInIdentity = false,
+  healthDependenciesAvailable = false,
+  installedGatewayV2Operations = [],
   connection,
   content,
   details,
@@ -60,10 +72,27 @@ export function ControlCenterShell({
   route,
 }: ControlCenterShellProps) {
   const { message } = useControlCenterIntl();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const collapseRef = useRef<HTMLButtonElement>(null);
+  const restoreRef = useRef<HTMLButtonElement>(null);
+  const sidebarFocusRequested = useRef(false);
+  useEffect(() => {
+    if (!sidebarFocusRequested.current) return;
+    sidebarFocusRequested.current = false;
+    (sidebarCollapsed ? restoreRef : collapseRef).current?.focus();
+  }, [sidebarCollapsed]);
+  const toggleSidebar = (collapsed: boolean) => {
+    sidebarFocusRequested.current = true;
+    setSidebarCollapsed(collapsed);
+  };
+  const managementRef = useRef<HTMLDetailsElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const routeFocusKey = `${route.surfaceId}:${route.objectId ?? ""}:${route.view}`;
   useEffect(() => {
-    if (routeFocusKey) headingRef.current?.focus();
+    if (routeFocusKey) {
+      if (managementRef.current) managementRef.current.open = false;
+      headingRef.current?.focus({ preventScroll: true });
+    }
   }, [routeFocusKey]);
   const updateView = (view: ControlCenterRouteState["view"]) => onNavigate({ ...route, view });
 
@@ -71,26 +100,99 @@ export function ControlCenterShell({
     <div
       className="app-shell"
       data-density={preferences.density}
+      data-sidebar-collapsed={sidebarCollapsed}
       data-mobile-view={route.view}
-      style={
-        {
-          "--detail-pane-percent": `${preferences.detailPanePercent}%`,
-          "--list-pane-percent": `${preferences.listPanePercent}%`,
-        } as CSSProperties
-      }
+      data-details-open={route.view === "details"}
+      data-surface={route.surfaceId}
+      style={{ "--detail-pane-percent": `${preferences.detailPanePercent}%` } as CSSProperties}
     >
       <AppLink className="skip-link" href="#main-content">
         {message("app.skipToMain")}
       </AppLink>
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">{message("app.eyebrow")}</p>
-          <h1>{message("app.title")}</h1>
+      <aside className="sidebar" aria-label={message("nav.label")}>
+        <div className="brand-heading">
+          <a
+            className="brand-link"
+            href="/threads"
+            onClick={(event) => {
+              if (!shouldHandleNavigation(event)) return;
+              event.preventDefault();
+              onNavigate(routeForSurface("threads", { view: "content" }));
+            }}
+          >
+            <HimawariBrand wordmark />
+          </a>
+          <ActionButton
+            className="desktop-sidebar-toggle"
+            ref={collapseRef}
+            variant="quiet"
+            aria-label={message("layout.hideList")}
+            aria-expanded={!sidebarCollapsed}
+            onClick={() => toggleSidebar(true)}
+          >
+            ◧
+          </ActionButton>
         </div>
-        <div className="topbar-controls">
+        <section className="list-pane" aria-label={message("common.currentRecords")}>
+          {list}
+        </section>
+        <div className="sidebar-footer">
+          <details
+            className="sidebar-management"
+            ref={managementRef}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.currentTarget.open = false;
+                event.currentTarget.querySelector("summary")?.focus();
+              }
+            }}
+          >
+            <summary>
+              <SidebarIcon name="manage" />
+              <span>{message("nav.manage")}</span>
+            </summary>
+            <nav aria-label={message("nav.label")} className="primary-nav">
+              {[true, false].map((installed) => {
+                const links = CONTROL_CENTER_SURFACE_INVENTORY.filter(
+                  (surface) =>
+                    ((builtInIdentity && surface.id === "sessions-devices") ||
+                      isSurfaceInstalled(
+                        surface,
+                        installedGatewayV2Operations,
+                        healthDependenciesAvailable,
+                      )) === installed,
+                ).map((surface) => {
+                  const state = routeForSurface(surface.id, { view: "content" });
+                  return (
+                    <AppLink
+                      current={route.surfaceId === surface.id}
+                      href={controlCenterHref(state)}
+                      key={surface.id}
+                      onClick={(event) => {
+                        if (!shouldHandleNavigation(event)) return;
+                        event.preventDefault();
+                        onNavigate(state);
+                      }}
+                    >
+                      {message(navMessageIds[surface.id])}
+                    </AppLink>
+                  );
+                });
+                return installed ? (
+                  <div key="installed">{links}</div>
+                ) : links.length ? (
+                  <details className="unavailable-surfaces" key="unavailable">
+                    <summary>{message("surface.notInstalled.label")}</summary>
+                    {links}
+                  </details>
+                ) : null;
+              })}
+            </nav>
+          </details>
           <label className="locale-control">
-            <span>{message("locale.label")}</span>
+            <span className="visually-hidden">{message("locale.label")}</span>
             <select
+              aria-label={message("locale.label")}
               onChange={(event) => onLocaleChange(event.target.value as ControlCenterUiLocale)}
               value={locale}
             >
@@ -103,113 +205,103 @@ export function ControlCenterShell({
               ))}
             </select>
           </label>
-          <StatusRegion className={`connection connection-${connection}`}>
-            <span aria-hidden="true">●</span>{" "}
-            {message(
-              connection === "connected"
-                ? "connection.connected"
-                : connection === "connecting"
-                  ? "connection.connecting"
-                  : "connection.offline",
-            )}
-          </StatusRegion>
         </div>
-      </header>
-      <nav aria-label={message("nav.label")} className="primary-nav">
-        {CONTROL_CENTER_SURFACE_INVENTORY.map((surface) => {
-          const state = routeForSurface(surface.id);
-          return (
-            <AppLink
-              current={route.surfaceId === surface.id}
-              href={controlCenterHref(state)}
-              key={surface.id}
-              onClick={(event) => {
-                if (!shouldHandleNavigation(event)) return;
-                event.preventDefault();
-                onNavigate(state);
-              }}
+      </aside>
+      <div className="workspace">
+        <header className="topbar">
+          <ActionButton
+            className="desktop-sidebar-restore"
+            ref={restoreRef}
+            variant="quiet"
+            aria-label={message("layout.showList")}
+            aria-expanded={!sidebarCollapsed}
+            onClick={() => toggleSidebar(false)}
+          >
+            ◧
+          </ActionButton>
+          <ActionButton
+            className="mobile-sidebar-toggle"
+            aria-label={message("layout.showList")}
+            aria-expanded={route.view === "list"}
+            onClick={() => updateView(route.view === "list" ? "content" : "list")}
+            variant="quiet"
+          >
+            ☰
+          </ActionButton>
+          <div className="page-heading">
+            <h1 id="page-title" ref={headingRef} tabIndex={-1}>
+              {pageTitle}
+            </h1>
+          </div>
+          <div className="topbar-controls">
+            {connection ? (
+              <StatusRegion className={`connection connection-${connection}`}>
+                <span aria-hidden="true">●</span>
+                <span className="connection-label">
+                  {message(
+                    connection === "connected"
+                      ? "connection.connected"
+                      : connection === "connecting"
+                        ? "connection.connecting"
+                        : "connection.offline",
+                  )}
+                </span>
+              </StatusRegion>
+            ) : null}
+            <AppearancePicker preferences={preferences} onChange={onPreferencesChange} />
+            <ActionButton
+              aria-label={message("layout.showDetails")}
+              aria-pressed={route.view === "details"}
+              onClick={() => updateView(route.view === "details" ? "content" : "details")}
+              variant="quiet"
             >
-              {message(navMessageIds[surface.id])}
-            </AppLink>
-          );
-        })}
-      </nav>
-
-      <section aria-label={message("layout.label")} className="layout-controls">
-        <label>
-          <span>{message("layout.listWidth")}</span>
-          <input
-            max="40"
-            min="18"
-            onChange={(event) =>
-              onPreferencesChange({
-                ...preferences,
-                listPanePercent: Number(event.target.value),
-              })
-            }
-            type="range"
-            value={preferences.listPanePercent}
-          />
-        </label>
-        <label>
-          <span>{message("layout.detailWidth")}</span>
-          <input
-            max="40"
-            min="18"
-            onChange={(event) =>
-              onPreferencesChange({
-                ...preferences,
-                detailPanePercent: Number(event.target.value),
-              })
-            }
-            type="range"
-            value={preferences.detailPanePercent}
-          />
-        </label>
-      </section>
-
-      <nav aria-label={message("layout.label")} className="mobile-view-switcher">
-        <ActionButton
-          aria-pressed={route.view === "list"}
-          onClick={() => updateView("list")}
-          variant="quiet"
-        >
-          {message("layout.showList")}
-        </ActionButton>
-        <ActionButton
-          aria-pressed={route.view === "content"}
-          onClick={() => updateView("content")}
-          variant="quiet"
-        >
-          {message("layout.showContent")}
-        </ActionButton>
-        <ActionButton
-          aria-pressed={route.view === "details"}
-          onClick={() => updateView("details")}
-          variant="quiet"
-        >
-          {message("layout.showDetails")}
-        </ActionButton>
-      </nav>
-
-      <main className="workspace-layout" id="main-content">
-        <aside aria-label={message("common.currentRecords")} className="list-pane">
-          {list}
-        </aside>
-        <section aria-labelledby="page-title" className="content-pane">
-          <h2 id="page-title" ref={headingRef} tabIndex={-1}>
-            {pageTitle}
-          </h2>
-          {content}
-        </section>
-        <aside aria-label={message("common.details")} className="details-pane">
-          {details}
-        </aside>
-      </main>
-      <footer>
-        <span>{message("app.privacyBoundary")}</span>
-        <code>CONTROL_CENTER_RENDERED</code>
-      </footer>
+              ◫
+            </ActionButton>
+          </div>
+        </header>
+        <main className="workspace-layout" id="main-content">
+          <section aria-labelledby="page-title" className="content-pane">
+            {content}
+          </section>
+          <aside
+            aria-label={message("common.details")}
+            className="details-pane"
+            hidden={route.view !== "details"}
+          >
+            <div className="panel-heading">
+              <h2>{message("common.details")}</h2>
+              <ActionButton
+                aria-label={message("common.close")}
+                onClick={() => updateView("content")}
+                variant="quiet"
+              >
+                ×
+              </ActionButton>
+            </div>
+            {details}
+            <details className="interface-details">
+              <summary>{message("layout.label")}</summary>
+              <label>
+                {message("layout.detailWidth")}
+                <input
+                  max="40"
+                  min="18"
+                  type="range"
+                  value={preferences.detailPanePercent}
+                  onChange={(event) =>
+                    onPreferencesChange({
+                      ...preferences,
+                      detailPanePercent: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              <p>{message("app.privacyBoundary")}</p>
+              <code>CONTROL_CENTER_RENDERED</code>
+            </details>
+          </aside>
+        </main>
+      </div>
     </div>
   );
 }

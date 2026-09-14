@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
   calls: [],
   fail: "",
   failSecurity: false,
+  testReportFailure: "",
   empty: false,
   pipelineExitCode: 0,
   writtenCandidateFailure: false,
@@ -25,6 +26,9 @@ const state = vi.hoisted(() => ({
   cleanupPaths: [],
   candidateFault: "",
   failBuildAndCleanup: false,
+  artifactFailure: false,
+  verified: [],
+  parallel: undefined,
 }));
 vi.mock("node:fs", async (original) => {
   const actual = await original();
@@ -41,6 +45,35 @@ vi.mock("node:fs", async (original) => {
     },
   };
 });
+vi.mock("../../scripts/ci/check-policy.mjs", async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    resolvePolicySource: (options) => {
+      const value = actual.resolvePolicySource(options);
+      if (!state.parallel) return value;
+      const coverage = JSON.parse(
+        readFileSync(path.join(options.root, "ci/coverage-policy.json"), "utf8"),
+      );
+      return { ...value, coverage: { ...coverage, projects: ["unit", "contracts", "tooling"] } };
+    },
+  };
+});
+vi.mock("../../scripts/ci/coverage-comparison.mjs", async (original) => ({
+  ...(await original()),
+  prepareCoverageComparison: async ({ output, own }) => {
+    if (!state.parallel) throw new Error("unexpected comparison");
+    state.parallel.started = true;
+    const owned = mkdtempSync(path.join(state.root, "comparison-owned-"));
+    own(owned);
+    state.parallel.owned = owned;
+    await state.parallel.releaseComparison.promise;
+    if (state.parallel.failComparison) throw new Error("CI_COMPARISON_FIXTURE_FAILED");
+    const filename = path.join(output, "comparison-manifest.json");
+    write(filename, { root: owned });
+    return { filename };
+  },
+}));
 const write = (filename, value) => {
   mkdirSync(path.dirname(filename), { recursive: true });
   writeFileSync(filename, typeof value === "string" ? value : JSON.stringify(value));
@@ -71,25 +104,36 @@ vi.mock("../../scripts/ci/execute.mjs", async (original) => ({
     const name = path.basename(options.log, ".log");
     state.calls.push({ name, executable, args, env: options.env });
     write(options.log, "controlled child output\n");
+    if (name === "coverage" && state.parallel) {
+      state.parallel.coverageReached.resolve();
+      await state.parallel.releaseCoverage.promise;
+    }
     if (name === state.fail) return { exitCode: 7, durationMs: 1 };
     const json = args.find(
       (arg) => arg.startsWith("--outputFile.json=") || arg.startsWith("--outputFile="),
     );
-    if (json) {
+    if (json && state.testReportFailure !== "missing") {
       const projects = args.flatMap((arg, index) => (arg === "--project" ? [args[index + 1]] : []));
       const names = {
         unit: "packages/example/src/example.unit.test.ts",
         contracts: "packages/example/src/example.contract.test.ts",
         tooling: "test/tooling/example.test.mjs",
+        integration: "test/integration/example.test.ts",
       };
       write(json.slice(json.indexOf("=") + 1), {
-        success: true,
+        success: state.testReportFailure !== "failed",
         testResults: projects.map((project) => ({
           name: path.join(state.root, names[project]),
-          assertionResults: [{ status: "passed" }],
+          assertionResults:
+            state.testReportFailure === "failed"
+              ? [{ status: "passed" }, { status: "failed" }]
+              : [{ status: "passed" }],
         })),
       });
     }
+    if (json && state.testReportFailure === "malformed")
+      write(json.slice(json.indexOf("=") + 1), "{broken");
+    if (json && state.testReportFailure) return { exitCode: 7, durationMs: 1 };
     const junit = args.find((arg) => arg.startsWith("--outputFile.junit="));
     if (junit) write(junit.slice(junit.indexOf("=") + 1), "<testsuites/>\n");
     if (name === "coverage") {
@@ -142,6 +186,13 @@ vi.mock("../../scripts/ci/build.mjs", () => ({
     };
   },
 }));
+vi.mock("../../scripts/ci/verify-artifact.mjs", () => ({
+  verifyArtifact: async (options) => {
+    state.verified.push(options);
+    if (state.artifactFailure) throw new Error("ARTIFACT_CONTEXT_MISMATCH");
+    return { sha256: sha256(readFileSync(options.archive)) };
+  },
+}));
 vi.mock("../../scripts/ci/test.mjs", () => ({
   runTests: async ({ output, artifact }) => {
     const report = path.join(output, "tests.json");
@@ -190,11 +241,15 @@ import { runCheck } from "../../scripts/ci/run.mjs";
 
 let context;
 beforeEach(() => {
+  state.parallel = undefined;
   state.failBuildAndCleanup = false;
+  state.artifactFailure = false;
+  state.verified = [];
   state.root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "himawari-orchestration-")));
   state.calls = [];
   state.fail = "";
   state.failSecurity = false;
+  state.testReportFailure = "";
   state.empty = false;
   state.pipelineExitCode = 0;
   state.writtenCandidateFailure = false;
@@ -211,6 +266,7 @@ beforeEach(() => {
   mkdirSync(path.join(state.root, "ci"));
   for (const filename of ["policy.json", "coverage-policy.json", "toolchain-lock.json"])
     copyFileSync(path.join(repositoryRoot, "ci", filename), path.join(state.root, "ci", filename));
+  write(path.join(state.root, "runtime.tar.gz"), "artifact fixture");
   write(path.join(state.root, "npm.mjs"), "process.stdout.write('11.8.0')");
   context = createContext({ root: state.root });
 });
@@ -227,16 +283,86 @@ const run = (checkId, extra = {}) =>
     output: `.ci-output/${checkId}`,
     toolsDirectory: state.root,
     hosted: false,
+    ...(checkId === "coverage" ? { artifact: path.join(state.root, "runtime.tar.gz") } : {}),
     ...extra,
   });
 
 describe("共享runner的调度、来源和失败传播", () => {
+  it.each(["both pass", "candidate fails", "comparison fails"])(
+    "迁移时并行采集，等待双方退出后才清理：%s",
+    async (mode) => {
+      const deferred = () => {
+        let resolve;
+        const promise = new Promise((done) => {
+          resolve = done;
+        });
+        return { promise, resolve };
+      };
+      state.parallel = {
+        started: false,
+        coverageReached: deferred(),
+        releaseCoverage: deferred(),
+        releaseComparison: deferred(),
+        failComparison: mode === "comparison fails",
+      };
+      if (mode === "candidate fails") state.fail = "coverage";
+      const pending = run("coverage");
+      try {
+        await state.parallel.coverageReached.promise;
+        expect(state.parallel.started).toBe(true);
+        expect(existsSync(state.parallel.owned)).toBe(true);
+        expect(state.calls.some(({ name }) => name === "coverage-policy")).toBe(false);
+        state.parallel.releaseCoverage.resolve();
+        // Comparison still owns its directory even if candidate collection failed.
+        await new Promise((done) => setImmediate(done));
+        expect(existsSync(state.parallel.owned)).toBe(true);
+      } finally {
+        state.parallel.releaseCoverage.resolve();
+        state.parallel.releaseComparison.resolve();
+        const result = await pending;
+        expect(result.status).toBe(
+          mode === "both pass"
+            ? "passed"
+            : mode === "candidate fails"
+              ? "failed"
+              : "infrastructure_failed",
+        );
+        expect(existsSync(state.parallel.owned)).toBe(false);
+      }
+    },
+  );
+  it("coverage 在缺少构建归档时拒绝启动采集", async () => {
+    await expect(run("coverage", { artifact: undefined })).rejects.toThrow("CI_ARTIFACT_REQUIRED");
+    expect(state.calls).toEqual([]);
+  });
+
   it("rejects scheduled quality before creating or executing a required CI check", async () => {
     await expect(run("policy", { context: { ...context, event: "schedule" } })).rejects.toThrow(
       "CI_EVENT_UNSUPPORTED",
     );
     expect(state.calls).toEqual([]);
     expect(existsSync(path.join(state.root, ".ci-output/policy"))).toBe(false);
+  });
+  it("coverage 在归档身份不符时失败，不开始快照或测试", async () => {
+    state.artifactFailure = true;
+    const result = await run("coverage");
+    expect(result.status).toBe("infrastructure_failed");
+    expect(state.calls).toEqual([]);
+    expect(state.verified[0].context).toEqual(context);
+  });
+  it("coverage 使用已核验的归档和同次 context，记录消费摘要", async () => {
+    const result = await run("coverage");
+    expect(result.status).toBe("passed");
+    const collection = state.calls.find(({ name }) => name === "coverage");
+    expect(collection.env.HIMAWARI_TEST_ARTIFACT).toBe(
+      path.join(state.root, ".ci-output/coverage/runtime.tar.gz"),
+    );
+    expect(JSON.parse(readFileSync(collection.env.HIMAWARI_TEST_CONTEXT, "utf8"))).toEqual(context);
+    expect(result.artifacts[0]).toMatchObject({
+      role: "consumed",
+      sha256: sha256("artifact fixture"),
+    });
+    expect(collection.args).toContain("integration");
   });
   it("policy先校验固定合同，再运行tooling；子进程不继承凭据", async () => {
     const result = await run("policy");
@@ -252,6 +378,63 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(state.calls[0].env).not.toHaveProperty("OPENAI_API_KEY");
     expect(state.calls[0].env.HOME).toContain(".ci-output");
   });
+  it.each(["failed", "passed", "missing", "malformed"])(
+    "保留失败进程的退出码与有效测试计数：%s",
+    async (report) => {
+      state.testReportFailure = report;
+      const result = await run("policy");
+      expect(result).toMatchObject({ status: "failed", exitCode: 7 });
+      const expected =
+        report === "failed"
+          ? { files: 1, executed: 2, passed: 1, failed: 1, skipped: 0 }
+          : report === "passed"
+            ? { files: 1, executed: 1, passed: 1, failed: 0, skipped: 0 }
+            : { files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 };
+      expect(result.counts).toEqual(expected);
+      expect(result.projects).toEqual(
+        ["failed", "passed"].includes(report) ? [{ id: "tooling", counts: expected }] : [],
+      );
+      const details = JSON.parse(
+        readFileSync(path.join(state.root, ".ci-output/policy/details.json"), "utf8"),
+      );
+      expect(details.failures).toContain("CI_COMMAND_FAILED:vitest-tooling");
+      if (report === "malformed")
+        expect(
+          details.failures.some((failure) => failure.startsWith("CI_TEST_REPORT_INVALID:tooling:")),
+        ).toBe(true);
+    },
+  );
+  it.each(["failed", "passed", "missing", "malformed"])(
+    "覆盖率进程失败时保留四组实际测试计数与退出码：%s",
+    async (report) => {
+      state.testReportFailure = report;
+      const result = await run("coverage");
+      expect(result).toMatchObject({ status: "failed", exitCode: 7 });
+      expect(result.counts).toEqual(
+        report === "failed"
+          ? { files: 4, executed: 8, passed: 4, failed: 4, skipped: 0 }
+          : report === "passed"
+            ? { files: 4, executed: 4, passed: 4, failed: 0, skipped: 0 }
+            : { files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 },
+      );
+      expect(result.projects.map(({ id }) => id)).toEqual(
+        ["failed", "passed"].includes(report)
+          ? ["unit", "contracts", "tooling", "integration"]
+          : [],
+      );
+      expect(state.calls.map(({ name }) => name)).toEqual(["coverage-snapshot", "coverage"]);
+      const details = JSON.parse(
+        readFileSync(path.join(state.root, ".ci-output/coverage/details.json"), "utf8"),
+      );
+      expect(details.failures).toContain("CI_COMMAND_FAILED:coverage");
+      if (["missing", "malformed"].includes(report))
+        expect(
+          details.failures.some((failure) =>
+            failure.startsWith("CI_TEST_REPORT_INVALID:coverage:"),
+          ),
+        ).toBe(true);
+    },
+  );
   it("static调用原有检查、原始治理脚本和actionlint，不执行报告中的shell", async () => {
     const result = await run("static");
     expect(result.status).toBe("passed");
@@ -313,10 +496,15 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(test.artifacts[0].role).toBe("consumed");
     expect(test.projects).toHaveLength(5);
   });
-  it("coverage先绑定源码快照，三个project合并后再判定覆盖率", async () => {
+  it("coverage先绑定源码快照，四个project合并后再判定覆盖率", async () => {
     const result = await run("coverage");
     expect(result.status).toBe("passed");
-    expect(result.projects.map((entry) => entry.id)).toEqual(["unit", "contracts", "tooling"]);
+    expect(result.projects.map((entry) => entry.id)).toEqual([
+      "unit",
+      "contracts",
+      "tooling",
+      "integration",
+    ]);
     expect(state.calls.map((entry) => entry.name)).toEqual([
       "coverage-snapshot",
       "coverage",

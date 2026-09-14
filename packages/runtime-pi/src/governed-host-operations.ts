@@ -1,11 +1,21 @@
-import type { GovernedCodingOperationsPort } from "@himawari-agent/application/runtime-port";
 import type {
   BashOperations,
   EditOperations,
   ReadOperations,
   WriteOperations,
 } from "@earendil-works/pi-coding-agent";
+import type { GovernedCodingOperationsPort } from "@himawari-agent/application/runtime-port";
 import type { GovernedPiCodingToolOperations } from "./governed-coding-tools.js";
+
+function timeoutMilliseconds(seconds: number | undefined): number | undefined {
+  if (seconds === undefined) return undefined;
+  // Pi validates this in its local BashOperations, which governed I/O replaces.
+  const milliseconds = seconds * 1000;
+  if (!Number.isFinite(seconds) || seconds <= 0 || milliseconds > 2_147_483_647) {
+    throw new Error("PI_GOVERNED_INVALID_TIMEOUT_SECONDS");
+  }
+  return milliseconds;
+}
 
 export function createPiOperationsFromGovernedHostPort(
   port: GovernedCodingOperationsPort,
@@ -30,15 +40,17 @@ export function createPiOperationsFromGovernedHostPort(
     writeFile: (absolutePath, content) => port.writeFile(absolutePath, content),
   };
   const bash: BashOperations = {
-    exec: (command, cwd, options) =>
-      port.executeCommand({
+    exec: async (command, cwd, options) => {
+      const timeoutMs = timeoutMilliseconds(options.timeout);
+      return port.executeCommand({
         command,
         cwd,
         ...(options.signal ? { signal: options.signal } : {}),
-        ...(options.timeout === undefined ? {} : { timeoutMs: options.timeout }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
         ...(options.env ? { environment: options.env } : {}),
         onData: (data) => options.onData(Buffer.from(data)),
-      }),
+      });
+    },
   };
   return Object.freeze({ read, write, edit, bash });
 }

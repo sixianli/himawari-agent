@@ -17,8 +17,38 @@
   },
   "overrides": [
     {
+      "includes": ["test/qualification/evidence/**"],
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
       "includes": ["ci/rules/fixtures/unsafe.fixture.ts"],
-      "linter": { "rules": { "security": { "noGlobalEval": "off" } } }
+      "linter": {
+        "rules": {
+          "security": {
+            "noGlobalEval": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["docs/assets/architecture/system-overview.html"],
+      "linter": {
+        "enabled": false
+      }
+    },
+    {
+      "includes": [
+        "docs/assets/control-center/2026-09-10-v1/index.html",
+        "docs/assets/control-center/2026-09-10-v1/source.html"
+      ],
+      "formatter": {
+        "enabled": false
+      },
+      "linter": {
+        "enabled": false
+      }
     }
   ],
   "linter": {

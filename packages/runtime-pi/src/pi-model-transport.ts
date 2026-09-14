@@ -625,6 +625,8 @@ export class PiModelTransport {
       invocationId: request.invocationId,
       inputTokens: usage.input + usage.cacheRead + usage.cacheWrite,
       outputTokens: usage.output,
+      cacheReadTokens: usage.cacheRead,
+      cacheWriteTokens: usage.cacheWrite,
       costMicros: observation.costMicros,
       latencyMs: Date.now() - startedAt,
       providerObservation,

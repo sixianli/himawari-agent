@@ -11,12 +11,22 @@ import { verifyArtifact } from "./verify-artifact.mjs";
 
 export const parseVitestReport = vitestCounts;
 
-export async function runTests({ root = repositoryRoot, artifact, output, context } = {}) {
+export async function runTests({
+  root = repositoryRoot,
+  artifact,
+  output,
+  context,
+  remainingBudgetMs,
+} = {}) {
+  const started = performance.now();
   verifyContext(context, { root });
   const destination = outputPath(output, root);
   await mkdir(path.dirname(destination), { recursive: true });
   await mkdir(destination, { recursive: false });
   const policy = resolvePolicySource({ root, base: context.baseSha }).policy;
+  const check = policy.checks.find((entry) => entry.id === "test");
+  const budgetMs = Math.min(check.timeoutMinutes * 60_000, remainingBudgetMs ?? Infinity);
+  if (!Number.isFinite(budgetMs) || budgetMs <= 0) throw new Error("CI_TEST_CHECK_TIMEOUT");
   const config = await import(pathToFileURL(path.join(root, "vitest.workspace.ts")).href);
   validateVitestProjects(policy, config.default);
   const verified = await verifyArtifact({ archive: artifact, root, context });
@@ -39,8 +49,10 @@ export async function runTests({ root = repositoryRoot, artifact, output, contex
         .filter(Boolean),
     ),
   ];
-  const selection = policy.checks.find((check) => check.id === "test").projects;
+  const selection = check.projects;
   for (const id of selection) {
+    const remaining = budgetMs - (performance.now() - started);
+    if (remaining <= 0) throw new Error(`CI_TEST_CHECK_TIMEOUT:${id}`);
     const json = path.join(destination, `${id}.json`);
     const junit = path.join(destination, `${id}.xml`);
     const log = path.join(destination, `${id}.log`);
@@ -65,7 +77,7 @@ export async function runTests({ root = repositoryRoot, artifact, output, contex
       {
         cwd: root,
         log,
-        timeoutMs: 300_000,
+        timeoutMs: remaining,
         env: {
           ...process.env,
           NODE_PATH: "",
@@ -76,6 +88,10 @@ export async function runTests({ root = repositoryRoot, artifact, output, contex
       },
     );
     outcomes.push({ id, ...outcome });
+    if (outcome.termination || outcome.error || outcome.signal)
+      throw new Error(
+        `CI_TEST_PROCESS_TERMINATED:${id}:${outcome.termination ?? outcome.error ?? outcome.signal}`,
+      );
     const report = JSON.parse(await readFile(json, "utf8"));
     const counts = parseVitestReport(report);
     if (outcome.exitCode === 0 && (counts.failed || counts.skipped))

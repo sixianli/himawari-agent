@@ -5,8 +5,8 @@ import type {
   AttentionPort,
   AttentionStatePort,
   AuditLedgerPort,
-  AuthorizationStorePort,
   AuthorityLeasePort,
+  AuthorizationStorePort,
   CapabilityDescriptor,
   CapabilityExecutionHandleStorePort,
   CapabilityInvocationEvent,
@@ -15,9 +15,9 @@ import type {
   ClockPort,
   DeliveryAttemptResult,
   DeliveryPort,
+  GrantRecord,
   IdGeneratorPort,
   JsonObject,
-  GrantRecord,
   MemoryPort,
   ModelDescriptor,
   ModelInvocationEvent,
@@ -38,16 +38,18 @@ import type {
   WorkerRunEvent,
   WorkerRunPort,
 } from "@himawari-agent/application";
-import { PORT_ERROR_CODES, ApplicationPortError } from "@himawari-agent/application";
+import { ApplicationPortError, PORT_ERROR_CODES } from "@himawari-agent/application";
 import {
   createAgent,
   createAgentAuthorityLease,
   createAgentId,
   createAuthorityHolderId,
   createAuthorityLeaseId,
+  createDeploymentId,
   createIdempotencyKey,
   createOwner,
   createOwnerId,
+  createRunExecutionLeaseId,
   createRunId,
   createSessionId,
   createThreadId,
@@ -70,6 +72,16 @@ const TURN_ID = createTurnId("turn-conformance");
 const T0 = "2026-08-25T00:00:00.000Z";
 const T1 = "2026-08-25T00:00:01.000Z";
 const T2 = "2026-08-25T00:00:02.000Z";
+const EXECUTION_LEASE = Object.freeze({
+  executionLeaseId: createRunExecutionLeaseId("execution-conformance"),
+  expectedLeaseRevision: 1,
+  authorityLeaseId: createAuthorityLeaseId("authority-conformance"),
+  authorityFencingToken: 1,
+  deploymentId: createDeploymentId("deployment-conformance"),
+  authorityEpoch: 1,
+  fencingToken: 1,
+  consumerId: "conformance-runtime",
+});
 
 async function collect<TValue>(values: AsyncIterable<TValue>): Promise<readonly TValue[]> {
   const collected: TValue[] = [];
@@ -349,6 +361,26 @@ function traceEvent(id: string, sequence: number): TraceEvent {
 
 export function traceStorePortConformance(harness: PortConformanceHarness<TraceStorePort>): void {
   describe("TraceStorePort conformance", () => {
+    it("atomically sequences concurrent appenders and retains scope checks", async () => {
+      await withPort(harness, async (port) => {
+        const next = (id: string) => {
+          const { sequence: _sequence, ...event } = traceEvent(id, 1);
+          return event;
+        };
+        const events = await Promise.all([
+          port.appendNext(next("atomic-1")),
+          port.appendNext(next("atomic-2")),
+        ]);
+        expect(events.map((event) => event.sequence).sort()).toEqual([1, 2]);
+        expect(await port.readRun(RUN_ID, 0, 10)).toHaveLength(2);
+        await expectPortError(() => port.appendNext(next("atomic-1")), PORT_ERROR_CODES.DUPLICATE);
+        await expectPortError(
+          () => port.appendNext({ ...next("wrong-scope"), correlationId: "other-correlation" }),
+          PORT_ERROR_CODES.INVALID_OPERATION,
+        );
+        expect((await port.appendNext(next("atomic-3"))).sequence).toBe(3);
+      });
+    });
     it("preserves append order and supports Run-local resume", async () => {
       await withPort(harness, async (port) => {
         await port.append(traceEvent("trace-01", 1));
@@ -768,11 +800,13 @@ export function agentRuntimePortConformance(
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
       runId: RUN_ID,
+      executionLease: EXECUTION_LEASE,
       sessionId: SESSION_ID,
       threadId: null,
       modelRef: "model-primary",
       systemInstructionRef: "payload-system-01",
-      messageRefs: ["payload-message-01"],
+      contextEnvelopeRef: "payload-context-01",
+      workerResultRefs: [],
       capabilityHandleRefs: ["capability-handle-01"],
       budget: { maxTurns: 3 },
       correlationId: "correlation-01",
@@ -782,7 +816,7 @@ export function agentRuntimePortConformance(
     it("streams only product runtime events", async () => {
       const events: readonly RuntimeEvent[] = [
         { type: "runtime.model_started", runId: RUN_ID, occurredAt: T0 },
-        { type: "runtime.completed", runId: RUN_ID, occurredAt: T1 },
+        { type: "runtime.completed", runId: RUN_ID, output: { kind: "no-answer" }, occurredAt: T1 },
       ];
       await withConfiguredPort(harness, { events }, async (port) => {
         const observed = await collect(port.run(request));
@@ -872,13 +906,13 @@ export function runtimeToolPortConformance(
 ): void {
   describe("RuntimeToolPort conformance", () => {
     it("authorizes exact handles and deduplicates execution by Run and tool call", async () => {
-      const descriptor: RuntimeToolDescriptor = {
+      const descriptor = {
         capabilityRef: "restaurant-search",
         capabilityHandleRef: "capability-handle-01",
         name: "restaurant_search",
         description: "Search restaurants",
         parameters: { type: "object" },
-      };
+      } satisfies RuntimeToolDescriptor;
       const execution: RuntimeToolExecutionResult = {
         outcome: "succeeded",
         resultRef: "payload-tool-result-01",

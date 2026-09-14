@@ -1,0 +1,13 @@
+{
+  "name": "@himawari-agent/runtime-sandbox",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./control": "./src/job-host-control-client.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "0.0.75"
+  }
+}

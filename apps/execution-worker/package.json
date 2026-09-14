@@ -13,7 +13,8 @@
   "dependencies": {
     "@himawari-agent/application": "0.0.0",
     "@himawari-agent/execution-contracts": "0.0.0",
-    "@himawari-agent/platform-node": "0.0.0"
+    "@himawari-agent/platform-node": "0.0.0",
+    "@himawari-agent/runtime-sandbox": "0.0.0"
   },
   "devDependencies": {
     "@himawari-agent/testing": "0.0.0"

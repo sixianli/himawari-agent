@@ -252,7 +252,10 @@ export class IdempotentRuntimeToolPort implements RuntimeToolPort {
   ): Promise<readonly RuntimeToolDescriptor[]> {
     const handles = new Set(capabilityHandleRefs);
     return this.descriptors
-      .filter(({ capabilityHandleRef }) => handles.has(capabilityHandleRef))
+      .filter(
+        ({ capabilityHandleRef }) =>
+          capabilityHandleRef === null || handles.has(capabilityHandleRef),
+      )
       .map(frozenCopy);
   }
 

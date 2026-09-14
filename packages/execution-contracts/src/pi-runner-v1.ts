@@ -1,0 +1,84 @@
+import { sandboxScopeSchema } from "./sandbox-scope-v1.ts";
+import {
+  ContractValidationError,
+  enumeration,
+  type InferSchema,
+  integer,
+  literal,
+  machineString,
+  object,
+  type Schema,
+} from "./validation.ts";
+
+export const PI_RUNNER_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "1" });
+export const PI_WRITE_VERIFIER = Object.freeze({
+  ref: "pi-atomic-write",
+  version: "1",
+  targetRef: "pi-input:path",
+});
+export const piCodingToolNameSchema = enumeration([
+  "read",
+  "write",
+  "edit",
+  "bash",
+  "find",
+  "grep",
+  "ls",
+]);
+const absolutePath: Schema<string> = {
+  parse(value, location = "$") {
+    if (
+      typeof value !== "string" ||
+      !value.startsWith("/") ||
+      value === "/" ||
+      value.length > 4096 ||
+      value.endsWith("/") ||
+      value.includes("//") ||
+      Array.from(value).some(
+        (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+      ) ||
+      value.split("/").some((part) => part === ".." || part === ".")
+    )
+      throw new ContractValidationError(location, "expected absolute host path");
+    return value;
+  },
+};
+const text: Schema<string> = {
+  parse(value, location = "$") {
+    if (typeof value !== "string" || new TextEncoder().encode(value).length > 49152)
+      throw new ContractValidationError(location, "invalid protected input");
+    return value;
+  },
+};
+/** Constructed by the Worker from the resolved scope and frozen input. These
+ * fields are never accepted as model parameters or a new authority source. */
+const runnerInput = object({
+  schemaVersion: literal("pi-runner.v1"),
+  workerInstanceId: machineString,
+  tool: piCodingToolNameSchema,
+  scope: sandboxScopeSchema,
+  workspace: absolutePath,
+  runtimeRoot: absolutePath,
+  privateDirectory: absolutePath,
+  maxOutputBytes: integer(1, 16777216),
+  parametersJson: text,
+});
+type BaseInput = InferSchema<typeof runnerInput>;
+export type PiRunnerInput = BaseInput & {
+  readonly executionMode: "foreground" | "background" | "service";
+};
+export const piRunnerInputSchema: Schema<PiRunnerInput> = {
+  parse(value, location = "$") {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new ContractValidationError(location, "invalid Pi runner input");
+    const { executionMode = "foreground", ...rest } = value as Record<string, unknown>;
+    const mode = enumeration(["foreground", "background", "service"]).parse(
+      executionMode,
+      location,
+    );
+    const input = runnerInput.parse(rest, location);
+    if (mode !== "foreground" && input.tool !== "bash")
+      throw new ContractValidationError(location, "only Bash can own a background resource");
+    return { ...input, executionMode: mode };
+  },
+};

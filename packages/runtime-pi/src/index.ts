@@ -1,7 +1,8 @@
 export {
-  type ConfiguredPiModelDescriptor,
+  admissionCostForConfiguredPiModel,
   ConfiguredPiModelBindingPort,
   type ConfiguredPiModelBindingPortOptions,
+  type ConfiguredPiModelDescriptor,
   type PiModelCost,
   type PiModelRuntime,
   type PiModelRuntimeFactory,
@@ -15,9 +16,12 @@ export {
   type GovernedPiCodingToolsOptions,
 } from "./governed-coding-tools.js";
 export { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
+export { executeGovernedPiRead } from "./governed-read-executor.js";
+export { type LegacyPiRunHistory, qualifyLegacyPiHistory } from "./legacy-pi-history.js";
+export { getPiModelPresentation } from "./model-presentation.js";
 export {
-  PiModelTransport,
   type PiModelPayloadBoundary,
+  PiModelTransport,
   type PiModelTransportInput,
   type PiModelTransportObservation,
   type PiModelTransportOptions,
@@ -32,3 +36,4 @@ export {
   type PiModelBindingPort,
   type PiRuntimeResourcePort,
 } from "./pi-runtime-adapter.js";
+export { executeSandboxedPiCodingTool } from "./sandboxed-coding-executor.js";

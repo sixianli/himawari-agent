@@ -2,7 +2,6 @@ import type { AgentId, OwnerId } from "@himawari-agent/domain";
 import {
   gatewayV2MessageSchema,
   type GatewayV2Command,
-  type GatewayV2Event,
   type GatewayV2Query,
   type GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
@@ -14,6 +13,7 @@ import {
   type GatewayV2CommandExecution,
   type GatewayV2ControlPlanePort,
   type GatewayV2ReadModelPort,
+  type GatewayV2StreamItem,
   type GovernanceMutationReceipt,
   type GovernanceMutationReceiptStorePort,
   type HostDirectoryProjectionRecord,
@@ -21,6 +21,7 @@ import {
   type HostWorkspaceGatewayPayloadPort,
   type HostWorkspaceProjectionPort,
   type HostWorkspaceProjectionRecord,
+  type RecentAuthenticationGuardPort,
   type WorkspaceStatePort,
 } from "../ports/index.js";
 import type { ClockPort } from "../ports/system.js";
@@ -71,6 +72,7 @@ interface HostWorkspaceControlDependencies {
   readonly clock: ClockPort;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
+  readonly recentAuthentication?: RecentAuthenticationGuardPort;
 }
 
 interface HostWorkspaceReadDependencies {
@@ -248,7 +250,10 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
           !(recovering && plan.revision > command.payload.expectedRevision))
       )
         throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Deletion plan revision changed");
-      this.#assertRecentAuthentication(authentication, command.payload.recentAuthenticationRef);
+      await this.#assertRecentAuthentication(
+        authentication,
+        command.payload.recentAuthenticationRef,
+      );
       const result = await this.#dependencies.files.executePermanentDeletion({
         planId: plan.id,
         expectedHash: command.payload.canonicalHash,
@@ -363,7 +368,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
       preview.canonicalHash !== command.payload.semanticSnapshotHash
     )
       throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Commit preview revision changed");
-    this.#assertRecentAuthentication(authentication, command.payload.recentAuthenticationRef);
+    await this.#assertRecentAuthentication(authentication, command.payload.recentAuthenticationRef);
     const result = await this.#dependencies.commits.commit({
       handle: {
         ref: `commit-handle:${command.idempotencyKey}`,
@@ -394,12 +399,21 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
       );
   }
 
-  #assertRecentAuthentication(authentication: GatewayAuthenticationContext, ref: string | null) {
-    if (!ref || ref !== authentication.authenticationRef)
+  async #assertRecentAuthentication(
+    authentication: GatewayAuthenticationContext,
+    ref: string | null,
+  ) {
+    if (!this.#dependencies.recentAuthentication) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
-        "Recent authentication does not match",
+        "Recent Owner authentication evidence is required",
+        { reasonCode: "RECENT_AUTH_REQUIRED" },
       );
+    }
+    await this.#dependencies.recentAuthentication.assertRecentAuthentication({
+      authentication,
+      expectedAuthenticationRef: ref,
+    });
   }
 
   async #recordPrepared(
@@ -531,7 +545,8 @@ export class HostWorkspaceGatewayV2ReadModel implements GatewayV2ReadModelPort {
   subscribe(input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly afterCursor: string | null;
-  }): AsyncIterable<GatewayV2Event> {
+    readonly signal?: AbortSignal;
+  }): AsyncIterable<GatewayV2StreamItem> {
     return this.#dependencies.delegate.subscribe(input);
   }
 

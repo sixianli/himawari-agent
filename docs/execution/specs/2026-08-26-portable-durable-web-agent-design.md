@@ -94,7 +94,7 @@ date: "2026-08-26"
 - active-active、多主写入、共享网络 SQLite、在线状态复制、自动跨机器 failover 和零停机迁移。
 - 多用户注册、团队授权、计费和面向公众的自助 API。
 - 原生应用、站外 IM 投递、语音客户端、移动 push 和离线接纳浏览器命令。
-- GitHub 写操作或通用仓库编码自动化。
+- 在线监控凭据执行 GitHub 写操作。2026-09-07 确认的已有 commit push 属于独立授权的 SRT 扩展，见 [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]；不扩张本 Spec 的只读监控权限。
 - v0.2 本地生成模型；只保留未来适配边界。
 - Memory backend federation、产品自建向量数据库、任意不可信包执行和公共能力市场。
 - 主机与其存储同时损毁后的异机灾难恢复、跨设备备份、RPO 和 RTO 保证。
@@ -170,6 +170,10 @@ date: "2026-08-26"
 - 删除 Thread 前必须列出关联活动任务，并由 Owner 取消、暂停或重新绑定；Thread 永久删除级联其消息、内部 Session、Run、Trace、私人 Payload、审批和 Thread 专属 inbox，但不自动删除已经形成的长期 Memory。
 - 保留的 Memory 如果来源 Thread 已删除，只能保留非正文来源标识并显示“来源已删除”；不得保留已经删除的原始来源正文。
 - 删除任务必须级联任务定义、Run、checkpoint、Trace 和任务 inbox；已发生外部副作用只保留不含原始内容的最小审计墓碑。
+- 运行协调检查点必须归属真实 Run，其上下文、Worker 结果和未提交答案的 Payload 引用必须有数据库引用约束。永久删除 Run 或 Thread 时，检查点随归属记录删除；仅由被删除记录引用的正文一并清除，仍被存活记录引用的正文不得误删。不得以通用 JSON 状态中的隐式引用替代这一生命周期约束。
+- 新建运行正文必须在首次持久化时同时建立真实 Run 归属，不能先保存正文、再依赖检查点或 Trace 的后续写入补上关系。已保护的内联正文、用途和稳定操作身份在同一 SQLite 事务内提交；相同身份按正文摘要、分类和媒体类型回读，异义重试拒绝覆盖。正文传输与存储不能扩散到只承载引用的 Runtime/Execution 业务事件。取消不代表已经生成的正文被发布；删除后到达的旧写入不得复活 Run 或正文，终态审计仍须在当前权威和未删除的归属范围内保存。
+- 已消费调用的晚到输出与继续执行权限必须分开：Agent 侧可信处理器保护正文后，持久结果端口在同一事务中验证冻结调用身份、当前权威和仍存在的 Run，再交唯一正文 writer 保存事实。调用过期或 Run 已终结不能自动丢弃该事实，也不能因此重新授予输入读取、执行或成功发布权限。相同语义和字节只回读，身份或正文冲突拒绝；已删除 Run 不可被晚到输出恢复。未知外部结果保留动作身份供显式核对，取消和超时不得把晚到成功伪装成正常完成，也不得吞掉未知事实。
+- 将旧协调检查点迁入规范化存储时，必须保留同一 Run 身份、revision、阶段和结果引用，成功后移除旧状态来源。坏 JSON、孤儿 Run、跨归属或缺失 Payload 必须中止迁移并回滚，不得静默丢弃或伪造答案。已有数据库仍须通过同机验证快照门禁；该缺陷修正不授权操作实际用户数据库。
 - 删除 Memory 时，产品活动记录先立即失活，并可靠清理 Mem0 projection、search/cache 和可恢复副本；provider cleanup 失败不得让旧内容重新进入检索。
 - 永久删除的数据必须在 30 天内退出本机可恢复 snapshot。严重磁盘不足时停止新的高容量接纳，同时保留只读、transfer export 和人工清理；不得自动删除 Owner 内容。
 
@@ -298,6 +302,10 @@ product.sqlite 始终是权威。即使大 Payload 使用 content-addressed ciph
 
 非秘密配置使用严格、版本化文件，记录 IDs、bind paths、public origin、Memory/model descriptors、repository allowlist 和 secret references，不嵌入 secret values。cache 与临时 work directories 单独设上限，并且可重建。
 
+生产 Worker 还必须由同一份严格配置引用一份不可变的能力部署快照。配置只保存快照的规范绝对路径与预期 SHA-256，不内嵌命令、凭证或可变能力定义。快照必须是 Owner 独占、非符号链接、有明确字节上限、版本化且拒绝未知字段的普通文件；内容按 `capabilityRef + capabilityVersion` 唯一列出完整 Manifest、平台运行绑定和已通过的运行资格。进程程序只能引用冻结 runtime root 内经 digest 验证的可执行文件，远程端点必须固定 HTTPS identity、方法与路径，secret 仍只使用受保护引用。
+
+Agent Service 与 Execution Worker 必须验证同一组快照字节和 digest。Agent Service 还要把快照逐项与 SQLite 中当前 active Capability Registry、artifact verification 和本机 qualification 对照；Worker 只从通过验证的快照建立 boot-scoped 只读投影，不打开 `product.sqlite`，也不能创建、启用或扩大能力。缺少快照、digest 不符、版本/operation 冲突、资格过期或不适用于当前平台、artifact/runtime binding 不一致、注册表为空时，Worker 可以保持 live，但 readiness 必须为 false，且不能接收业务执行。能力升级先在 Agent Service 完成治理与资格，再原子切换到新路径和 digest；不得原地改写正在使用的快照。
+
 ### SQLite schema 与事务边界
 
 | 分组 | 代表记录 |
@@ -341,6 +349,10 @@ Migration 是带 sequence、name 与 SHA-256 digest 的不可变 SQL。ledger �
 
 publisher 使用 revision/state claim pending rows，以稳定 event ID 投递并记录 acknowledgment。若投递后、确认前崩溃，会用相同 ID replay，由 consumer dedupe。transaction 内不得发出外部网络调用。
 
+生产执行领取以规范 Run 为归属，独立保存领取者、唯一执行身份、当前权威租约、deployment fence、执行代次和有效期，不建立第二份 Run 状态。领取、重新领取、释放或 Owner 取消推进代次；同一执行的续租不改变代次，只能单调延长有效期，相同有效期重放只回读。首次领取参数必须保留，确保回包丢失后即使已经续租，相同请求仍只回读同一领取，不能产生第二次执行；新领取者不能沿用旧执行凭证。执行方的 Run、助手完成和协调检查点写入，必须在实际业务 writer 的同一事务内验证当前执行租约。执行身份属于尝试权限，不改变业务命令的幂等 fingerprint。
+
+Owner 取消必须通过独立、受权威校验的取消操作，在同一事务内更新 Run、协调检查点、执行租约失效、命令回执及可靠事件；成功后才向 Runtime 和 Worker 发送取消信号。关闭服务或丢失租约不能伪造 Owner 取消。相同 Thread 的领取保持消息因果顺序；已有结果可安全提交的检查点与结果未知的中断执行必须分开处理，不能因恢复或续租自动再次调用模型或外部动作。
+
 启动恢复以下项目：
 
 - 已 accepted、building、running、awaiting 或对账中的 Run 与产品 checkpoints；
@@ -351,7 +363,7 @@ publisher 使用 revision/state claim pending rows，以稳定 event ID 投递�
 - 已持久化但尚未规范化的在线 webhook receipts；
 - lease 已过期的 Attention 与 Delivery claims。
 
-Pi Session 只从产品 messages、context references 和 checkpoints 重建为 runtime projection。它不是用户可见生命周期，也不是恢复权威。
+Pi Session 只从产品 messages、context references 和 checkpoints 重建为 runtime projection。它不是用户可见生命周期，也不是恢复权威。产品 Session ID 是 opaque identity，不受 Pi 文件名字符限制约束；适配层以版本化的 Owner/Agent/Session/Thread 元组派生稳定内部 ID，不能为适应 Pi 改写产品身份。
 
 ### Web Gateway 与浏览器协议
 
@@ -408,6 +420,10 @@ Browser → Cloudflare public hostname → Access + MFA
 
 产品 session 记录稳定 session ID、device label、首次与最近活动时间、authentication reference、撤销状态和 recent-auth 时间。Owner 可以逐个撤销；关键行动若 recent-auth 过期则重新认证。
 
+近期认证必须来自可验证的外部认证发生时间，并绑定当前 Owner、外部 subject、设备和产品 session。验证请求的时间、新建产品 session 的时间、应用 JWT 的签发时间，以及缺少来源的旧 session 时间戳，都不能替代这一证明。最大有效年龄与允许时钟偏差必须显式配置；非法时间、超出偏差的未来时间、过期证明、被撤销的 session 或失效 Owner 绑定不得授权敏感操作。普通已认证读取不要求近期证明；浏览器配置只有在证明当前有效时才返回近期认证引用。
+
+近期认证与一次性行动授权分别承担身份新鲜度和行动许可，不建立第二套逐操作授权消费状态。关键审批、Host 提交或永久删除、Thread 永久删除在新副作用前经过同一近期认证边界；已完成回执的只读回放仍检查当前身份与归属，但不重复执行或消费行动。Cloudflare `get-identity` 的登录时间可以作为明确标识来源的证据，不能冒称近期 MFA；真实 Access/MFA 策略仍须单独验证。不得自动退出跨应用会话或修改 Access 配置来制造新鲜时间。参见 [Cloudflare application token](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/) 与 [session management](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/)。
+
 break-glass 只在活动主机本地、独立恢复凭据与独占管理锁下可用，所有动作进入受保护审计。它可以撤销 sessions、修复 Owner mapping 或关闭公网入口，但不能绕过行动授权或读取普通秘密值。
 
 ### Execution Worker 与本机 transport
@@ -426,6 +442,12 @@ Worker 是活动主机上的独立进程。首个 transport 把 execution.v1 env
 请求与响应有大小限制、严格解析和版本。大输入与结果只传 Payload reference。handshake 验证 execution.v1 compatibility、worker instance identity 与当前 boot token。Agent Service 持久化 parent checkpoints/events；Worker local state 不能成为 Agent 权威。
 
 Worker 不直接打开 product.sqlite，也不签发或扩大权限。Agent Service 重新验证 Capability 生命周期、版本、Grant、epoch/fence、输入/上下文/secret refs 和分类后，先在 SQLite 原子消费 durable Handle，再通过受认证 UDS 发送 work.delegate。Worker 只保存当前 boot 生命周期内的易失、一次性委派副本，并在 work.execute 时再次验证 adapter/version/operation、资源上限、deadline 和委派引用；拒绝的请求在通过授权与 adapter 校验前不得占用幂等 identity。
+
+首次消费必须在同一 SQLite 事务内完成当前授权核查、Handle 消耗和不可变调用回执。回执绑定原请求幂等键、执行消息身份、Owner/Agent/Run/Worker Run、能力版本、授权引用、操作、输入和上下文、精确 secret 版本与用途、分类、资源上限、截止时间，以及首次 Agent/Worker 实例与启动身份。真正发送的任务由已核验的冻结记录投影，不能核验一份记录却发送另一份请求。同键不同语义或同调用身份换键必须拒绝，拒绝不得留下消耗或回执；原 Grant 在行动授权阶段已经计入的使用量不能再次计费。
+
+同语义重放只返回既有记录，不重新委派或执行；首次执行的时效门禁不能阻止已完成记录的只读核对。重启或通信超时不证明外部行动没有发生，不得自动换一个启动身份再执行。Agent 侧旧消费入口不得成为绕过规范回执的另一写入路径；Worker 内部的一次性内存句柄仍仅用于本次隔离进程中的权限收窄。
+
+Worker 子任务内部发起的动态工具调用也必须经过上述持久准入。它通过独立受认证本机通道提交完整 `work.execute`，Agent 核对从正向握手取得的双方实例、启动身份与当前权威，以及原父委派的作用域、消息关联、Handle/上下文子集、分类、资源上限和截止时间。父委派只能由 Agent 在首次可能投递前登记，不能由 Worker 自报创建，也不能等发送成功返回后才登记。只有首次消费返回可执行投影；重放不再次返回投影。消费后响应丢失或父任务失效要保留已消费事实，不伪造未消费或自动重投。通信层复用现有受认证 UDS 基础，不扩充正文通道的职责；完成该通道不等于生产 Worker 主入口已经接线。
 
 首个 Worker 只执行产品拥有且已经注册的 adapters，例如有界 work directory 中的 GitHub read operations。MCP/package 的完整治理和隔离由行动授权与能力治理 Spec 定义；本切片提供真实 process boundary、deadline、cancellation、resource ceilings 和 handle validation。
 
@@ -507,7 +529,21 @@ Model Router 总是先选 primary。只有配置为 retryable 的 transport/prov
 
 Thread checkpoint、Mem0 extraction 和 embedding 都只能使用显式 descriptor；没有隐式 model。v0.2 不实现本地生成模型，也不静默安装或下载任何本地模型。`pre_compaction` 例外地直接采用 Pi 已生成且已保护的 compaction summary，后续提炼模型只提取派生候选，不得生成第二份摘要；其他 checkpoint trigger 仍使用显式 distillation descriptor。
 
+前台 Run、后台 occurrence 与 Memory projection job 共用一个持久预算写入端口。预算账户必须唯一归属其中一者，逐次模型调用作为账户内的子分配；全局和分类额度只累计账户的预留与已发生费用，不再次累计子分配。后台已有历史费用和预留必须完整迁移，不重置额度，不以独立前台账本绕过现有总额。旧后台准入和结算入口也必须经同一事务写入责任，普通 occurrence 元数据更新不得改写预算事实。 Memory 投影直接归属其产品任务，不为向量写入制造聊天 Run。预留和开始时必须核对当前领取者、attempt、租约到期时间、Memory revision、活动状态及分类；删除该任务时按既有治理关系删除账户。
+
+预算账户跟随既有治理删除归属。Trash 不释放账目；永久删除对应 Run 或任务时按其关系处理，不留下孤儿，也不借恢复旧副本重新创建已删除的业务记录。既有后台使用量按仍存在的 occurrence 汇总，删除记录会减少该汇总；本次迁移不隐式新增永久费用墓碑、账期重置或新的保留策略。
+
+每次调用在实际 provider 请求前完成额度预留与开始记录。事务内验证作用域、当前部署权威和有效执行身份；同一语义操作可以重放，冲突内容必须拒绝。费用采用非负安全整数微单位，单值及求和都检查溢出。子调用结算把已发生费用从账户预留转为支出，未用额度回到账户可用分配，不提前释放整个账户。开始后取消、失联或缺少可信终态费用时保留预留并进入待核对状态，不能按零费用释放或自动重试。实际费用超过预估时仍记录事实并停止新增调用，不能伪造低于上限的支出。迟到结算不恢复 Run 的执行资格。
+
+父任务终结后由同一预算端口幂等收尾，释放可证明未使用的预留，保留已发生支出；仍有已开始或费用未知的子调用时，收尾不能清除其占用。前台和后台都必须有此路径，不能让正常完成的 Run 永久占用未使用的估算额度。后台结束状态和逐调用费用分别提交其事实，不能把已由子调用结算的模型费用再加一次。
+
+产品模型调用门禁复用 Pi 的原始 stream 函数，并覆盖工具循环、压缩、分支摘要和每次重试，而非仅首次 prompt。每次调用分别检查精确模型身份、分类披露、预算和凭证；缺少可靠价格或额度不能假定为免费。上述预算合同不更换已批准的 provider、model 或费用策略，也不授予真实付费调用权限。
+
 Pi adapter 只接收产品为单个 Run 选择的 canonical model descriptor、结构化 history/prompt/checkpoint projection 与 authorized capabilities。模型请求、provider transport、stream parsing、usage 和 Agent Loop 复用 Pi `ModelRuntime`/`AgentSession`；Himawari 只保留 routing policy、Secret Handle、Payload、分类披露、预算、Trace 和 Pi 未公开的 provider/cost observation。Ambient Skills/Extensions/prompts discovery 保持关闭，批准资源只能通过 Pi `DefaultResourceLoader` 的显式 additional paths 装载。Pi built-in coding tools 只能使用产品注入的受治理 Operations，缺失时不得回退到本机默认 I/O。Pi 自有 model selection 或 Session persistence 不能绕过产品 routing、authority 或 capability governance。
+
+Context Formation 是上下文的唯一选择者。它按触发消息的规范顺序确定历史上界，排除后续消息与超出上界的摘要，并把精确消息身份、角色、顺序、正文引用、单一触发 prompt、产品策略和非权威材料保存为归属该 Run 的受保护 `context.v1`。该记录提交后，即使 Trace 或检查点保存失败，重试也只回读同一选择，不能重新查询记忆后换一份上下文。Runtime Projection 只校验并读取这些已选对象；缺消息、正文、归属或角色不一致时拒绝，不从 Trace JSON 或 Pi session 文件重新推断产品事实。
+
+产品策略、规范对话、当前触发问题与补充材料分别投影。Memory、历史系统材料、Thread 摘要和 Worker 结果必须在模型实际收到的正文中保留来源及非指令标识；只保存运行库元数据不足以满足此约束。Worker 结果保留其执行身份，不静默丢弃，也不伪造不存在的工具调用。Pi 负责其已有的消息转换与 Agent Loop，产品只增加上述归属、选择和权限边界。
 
 ### GitHub 仓库在线监控
 

@@ -4,20 +4,21 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  MIGRATION_PHASES,
-  SQLITE_MIGRATION_ERROR_CODES,
-  SqliteMigrationError,
   applyMigrations,
   assertWritableSchema,
   createVerifiedMigrationSnapshot,
   loadBundledMigrations,
+  MIGRATION_PHASES,
   openQualifiedDatabase,
   readMigrationLedger,
   readSqliteRuntimeStatus,
+  SQLITE_MIGRATION_ERROR_CODES,
+  SqliteMigrationError,
   schemaCatalog,
 } from "../src/index.ts";
 
 const temporaryDirectories: string[] = [];
+const CURRENT_SCHEMA_SEQUENCE = 32;
 
 afterEach(async () => {
   await Promise.all(
@@ -52,8 +53,8 @@ describe("immutable SQLite migration engine", () => {
     const migrations = await loadBundledMigrations();
 
     expect(applyMigrations(database, migrations)).toEqual({
-      appliedSequences: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
-      currentSequence: 17,
+      appliedSequences: Array.from({ length: CURRENT_SCHEMA_SEQUENCE }, (_, index) => index + 1),
+      currentSequence: CURRENT_SCHEMA_SEQUENCE,
     });
     expect(readSqliteRuntimeStatus(database)).toMatchObject({
       foreignKeys: true,
@@ -61,7 +62,7 @@ describe("immutable SQLite migration engine", () => {
       synchronous: "full",
       quickCheck: "ok",
     });
-    expect(readMigrationLedger(database)).toHaveLength(17);
+    expect(readMigrationLedger(database)).toHaveLength(CURRENT_SCHEMA_SEQUENCE);
 
     const tables = database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
@@ -92,13 +93,67 @@ describe("immutable SQLite migration engine", () => {
     );
     const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
     expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-      appliedSequences: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
-      currentSequence: 17,
+      appliedSequences: Array.from(
+        { length: CURRENT_SCHEMA_SEQUENCE - 1 },
+        (_, index) => index + 2,
+      ),
+      currentSequence: CURRENT_SCHEMA_SEQUENCE,
     });
     expect(database.prepare("SELECT id FROM owners").pluck().all()).toEqual(["owner-01"]);
     expect(database.prepare("SELECT COUNT(*) FROM storage_health_samples").pluck().get()).toBe(0);
 
     database.close();
+  });
+
+  it("upgrades the previous schema by appending only the execution resource migration", async () => {
+    const { databasePath, snapshotPath } = await temporaryDatabase();
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      const migrations = await loadBundledMigrations();
+      applyMigrations(database, migrations.slice(0, 27));
+      database.prepare("INSERT INTO owners (id, revision) VALUES ('preserved-owner', 7)").run();
+      const before = readMigrationLedger(database);
+      const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+      expect(applyMigrations(database, migrations.slice(0, 28), { snapshot })).toEqual({
+        appliedSequences: [28],
+        currentSequence: 28,
+      });
+      expect(readMigrationLedger(database).slice(0, 27)).toEqual(before);
+      expect(
+        database.prepare("SELECT revision FROM owners WHERE id = 'preserved-owner'").pluck().get(),
+      ).toBe(7);
+      expect(database.prepare("SELECT count(*) FROM sandbox_jobs").pluck().get()).toBe(0);
+      expect(database.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("appends preparation state without rewriting existing migration history", async () => {
+    const { databasePath, snapshotPath } = await temporaryDatabase();
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      const migrations = await loadBundledMigrations();
+      applyMigrations(database, migrations.slice(0, 28));
+      const before = readMigrationLedger(database);
+      const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+      expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+        appliedSequences: [29, 30, 31, 32],
+        currentSequence: 32,
+      });
+      expect(readMigrationLedger(database).slice(0, 28)).toEqual(before);
+      expect(database.pragma("foreign_key_check")).toEqual([]);
+      expect(
+        database
+          .prepare(
+            "SELECT dflt_value FROM pragma_table_info('sandbox_execution_records') WHERE name='preparation_state'",
+          )
+          .pluck()
+          .get(),
+      ).toBe("'legacy_bound'");
+    } finally {
+      database.close();
+    }
   });
 
   it("is idempotent after the schema is current", async () => {
@@ -109,7 +164,7 @@ describe("immutable SQLite migration engine", () => {
 
     expect(applyMigrations(database, migrations)).toEqual({
       appliedSequences: [],
-      currentSequence: 17,
+      currentSequence: CURRENT_SCHEMA_SEQUENCE,
     });
 
     database.close();
@@ -172,9 +227,9 @@ describe("immutable SQLite migration engine", () => {
     );
     database
       .prepare(
-        "INSERT INTO schema_migration_ledger (sequence, name, phase, digest, applied_at) VALUES (18, 'future', 'expand', 'sha256-future', ?)",
+        "INSERT INTO schema_migration_ledger (sequence, name, phase, digest, applied_at) VALUES (?, 'future', 'expand', 'sha256-future', ?)",
       )
-      .run("2026-08-26T00:00:00.000Z");
+      .run(CURRENT_SCHEMA_SEQUENCE + 1, "2026-08-26T00:00:00.000Z");
     expectMigrationCode(
       () => applyMigrations(database, migrations),
       SQLITE_MIGRATION_ERROR_CODES.UNKNOWN_APPLIED_MIGRATION,
@@ -194,9 +249,9 @@ describe("immutable SQLite migration engine", () => {
     expect(() => applyMigrations(second, migrations)).toThrow();
     first.exec("ROLLBACK");
 
-    expect(applyMigrations(second, migrations).currentSequence).toBe(17);
+    expect(applyMigrations(second, migrations).currentSequence).toBe(CURRENT_SCHEMA_SEQUENCE);
     expect(second.pragma("foreign_key_check")).toEqual([]);
-    expect(readMigrationLedger(second)).toHaveLength(17);
+    expect(readMigrationLedger(second)).toHaveLength(CURRENT_SCHEMA_SEQUENCE);
 
     first.close();
     second.close();

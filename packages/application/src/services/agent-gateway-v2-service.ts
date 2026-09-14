@@ -8,10 +8,12 @@ import {
   type GatewayV2ControlPlanePort,
   type GatewayV2InboundMessage,
   type GatewayV2ReadModelPort,
+  type GatewayV2StreamItem,
 } from "../ports/index.js";
-import type { GatewayV2Event, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 
 export interface AgentGatewayV2ServiceDependencies {
+  readonly installedOperations?: readonly GatewayV2InboundMessage["type"][];
   readonly access: GatewayV2AccessPolicyPort;
   readonly controlPlane: GatewayV2ControlPlanePort;
   readonly reads: GatewayV2ReadModelPort;
@@ -29,6 +31,15 @@ export class AgentGatewayV2Service implements AgentGatewayV2Port {
     message: GatewayV2InboundMessage,
   ): Promise<GatewayCommandResult | GatewayV2Snapshot> {
     await this.authorize(authentication, message);
+    if (
+      this.dependencies.installedOperations &&
+      !this.dependencies.installedOperations.includes(message.type)
+    ) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.OPERATION_NOT_INSTALLED,
+        "Gateway operation is not installed in this deployment",
+      );
+    }
     return message.kind === "command"
       ? this.dependencies.controlPlane.execute({ authentication, command: message })
       : this.dependencies.reads.query(message);
@@ -37,15 +48,25 @@ export class AgentGatewayV2Service implements AgentGatewayV2Port {
   async *subscribe(
     authentication: GatewayAuthenticationContext,
     afterCursor: string | null,
-  ): AsyncIterable<GatewayV2Event> {
+    signal?: AbortSignal,
+  ): AsyncIterable<GatewayV2StreamItem> {
     const seen = new Set<string>();
     const sequences = new Map<string, number>();
-    for await (const event of this.dependencies.reads.subscribe({ authentication, afterCursor })) {
+    for await (const event of this.dependencies.reads.subscribe({
+      authentication,
+      afterCursor,
+      ...(signal ? { signal } : {}),
+    })) {
+      if (signal?.aborted) return;
       if (event.scope.ownerId !== authentication.ownerId) {
         throw new ApplicationPortError(
           PORT_ERROR_CODES.NOT_AUTHORITATIVE,
           "Gateway v2 event is outside authenticated Owner scope",
         );
+      }
+      if (event.kind === "snapshot_required") {
+        yield event;
+        continue;
       }
       if (seen.has(event.payload.cursor)) {
         throw new ApplicationPortError(

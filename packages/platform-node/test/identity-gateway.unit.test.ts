@@ -6,6 +6,11 @@ import type {
   SessionDeviceStatePort,
 } from "@himawari-agent/application";
 import {
+  ApplicationPortError,
+  PORT_ERROR_CODES,
+  RecentAuthenticationGuard,
+} from "@himawari-agent/application";
+import {
   createDeviceId,
   createOwnerId,
   createSessionId,
@@ -13,22 +18,25 @@ import {
   type OwnerId,
   type SessionId,
 } from "@himawari-agent/domain";
-import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JSONWebKeySet } from "jose";
 import Fastify from "fastify";
-import { beforeAll, describe, expect, it } from "vitest";
+import { type CryptoKey, exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   BreakGlassService,
+  CloudflareAccessIdentityClient,
   CloudflareAccessJwtVerifier,
+  digestIdentityCredential,
   IDENTITY_GATEWAY_ERROR_CODES,
   OwnerBootstrapService,
   ProductSessionAuthenticationService,
-  SessionBoundCsrfService,
-  digestIdentityCredential,
+  registerIdentityAuthenticationRoutes,
   registerIdentityGatewayRoutes,
+  SessionBoundCsrfService,
 } from "../src/identity-gateway.js";
 
 const NOW = new Date("2026-08-27T00:00:00.000Z");
 const ISSUER = "https://team.cloudflareaccess.com";
+const ORIGIN = "https://agent.example.test";
 const AUDIENCE = "access-audience-01";
 const OWNER_ID = createOwnerId("owner-01");
 
@@ -54,6 +62,7 @@ async function token(input: {
   readonly issuer?: string;
   readonly audience?: string;
   readonly subject?: string;
+  readonly issuedAt?: number;
   readonly expiresAt?: number;
   readonly notBefore?: number;
 }) {
@@ -63,7 +72,7 @@ async function token(input: {
     .setIssuer(input.issuer ?? ISSUER)
     .setAudience(input.audience ?? AUDIENCE)
     .setSubject(input.subject ?? "subject-01")
-    .setIssuedAt(seconds)
+    .setIssuedAt(input.issuedAt ?? seconds)
     .setNotBefore(input.notBefore ?? seconds - 1)
     .setExpirationTime(input.expiresAt ?? seconds + 300)
     .sign(input.key ?? firstPrivateKey);
@@ -264,6 +273,251 @@ describe("Cloudflare Access JWT verification", () => {
   });
 });
 
+describe("Cloudflare Access get-identity freshness source", () => {
+  it("uses the fixed get-identity endpoint with the official authorization cookie", async () => {
+    const signed = await token({});
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          return firstJwks;
+        },
+      },
+      now: () => NOW,
+    });
+    const assertion = await verifier.verifyForIdentityLookup(signed);
+    const calls: Array<{ readonly url: URL; readonly init: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: URL | string, init?: RequestInit) => {
+        calls.push({ url: new URL(url), init: init ?? {} });
+        return new Response(
+          JSON.stringify({
+            user_uuid: assertion.providerSubject,
+            iat: Math.floor((NOW.valueOf() - 30_000) / 1000),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+    try {
+      const client = new CloudflareAccessIdentityClient({
+        issuer: ISSUER,
+        subjectBinding: "user_uuid_equals_sub",
+        now: () => NOW,
+      });
+      await expect(
+        client.read({
+          assertionToken: signed,
+          assertion,
+          providerSubject: assertion.providerSubject,
+        }),
+      ).resolves.toMatchObject({
+        source: "cloudflare_access_login_time",
+        externalSubjectRef: assertion.externalSubjectRef,
+        expiresAt: assertion.expiresAt,
+        authenticatedAt: new Date(NOW.valueOf() - 30_000).toISOString(),
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.url.toString()).toBe(`${ISSUER}/cdn-cgi/access/get-identity`);
+      expect(calls[0]?.init.redirect).toBe("error");
+      expect(calls[0]?.init.headers).toMatchObject({
+        Cookie: `CF_Authorization=${signed}`,
+      });
+      expect(calls[0]?.init.headers).not.toHaveProperty("cf-access-jwt-assertion");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("rejects a subject mismatch, oversized response, streaming overflow, and timed-out lookup", async () => {
+    const signed = await token({});
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          return firstJwks;
+        },
+      },
+      now: () => NOW,
+    });
+    const assertion = await verifier.verifyForIdentityLookup(signed);
+    const client = new CloudflareAccessIdentityClient({
+      issuer: ISSUER,
+      subjectBinding: "user_uuid_equals_sub",
+      maximumBodyBytes: 64,
+      timeoutMilliseconds: 5,
+      now: () => NOW,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ user_uuid: "other-subject", iat: 1 }), { status: 200 }),
+      ),
+    );
+    try {
+      await expect(
+        client.read({
+          assertionToken: signed,
+          assertion,
+          providerSubject: assertion.providerSubject,
+        }),
+      ).rejects.toMatchObject({ code: IDENTITY_GATEWAY_ERROR_CODES.FRESHNESS_UNAVAILABLE });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    let stalledBodyCancelled = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([123]));
+          },
+          pull() {
+            return new Promise<void>(() => undefined);
+          },
+          cancel() {
+            stalledBodyCancelled = true;
+          },
+        });
+        return new Response(stream, { status: 200 });
+      }),
+    );
+    try {
+      await expect(
+        client.read({
+          assertionToken: signed,
+          assertion,
+          providerSubject: assertion.providerSubject,
+        }),
+      ).rejects.toMatchObject({ code: IDENTITY_GATEWAY_ERROR_CODES.FRESHNESS_UNAVAILABLE });
+      expect(stalledBodyCancelled).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    let oversizedBodyCancelled = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new Uint8Array([123]));
+              },
+              cancel() {
+                oversizedBodyCancelled = true;
+              },
+            }),
+            { status: 200, headers: { "content-length": "1000" } },
+          ),
+      ),
+    );
+    try {
+      await expect(
+        client.read({
+          assertionToken: signed,
+          assertion,
+          providerSubject: assertion.providerSubject,
+        }),
+      ).rejects.toMatchObject({ code: IDENTITY_GATEWAY_ERROR_CODES.FRESHNESS_UNAVAILABLE });
+      expect(oversizedBodyCancelled).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    let errorBodyCancelled = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new Uint8Array([123]));
+              },
+              cancel() {
+                errorBodyCancelled = true;
+              },
+            }),
+            { status: 401 },
+          ),
+      ),
+    );
+    try {
+      await expect(
+        client.read({
+          assertionToken: signed,
+          assertion,
+          providerSubject: assertion.providerSubject,
+        }),
+      ).rejects.toMatchObject({ code: IDENTITY_GATEWAY_ERROR_CODES.FRESHNESS_UNAVAILABLE });
+      expect(errorBodyCancelled).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    let overflowBodyCancelled = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("x".repeat(100)));
+          },
+          cancel() {
+            overflowBodyCancelled = true;
+          },
+        });
+        return new Response(stream, { status: 200 });
+      }),
+    );
+    try {
+      await expect(
+        client.read({
+          assertionToken: signed,
+          assertion,
+          providerSubject: assertion.providerSubject,
+        }),
+      ).rejects.toMatchObject({ code: IDENTITY_GATEWAY_ERROR_CODES.FRESHNESS_UNAVAILABLE });
+      expect(overflowBodyCancelled).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async (_url: URL | string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("timed out")), {
+              once: true,
+            });
+          }),
+      ),
+    );
+    try {
+      await expect(
+        client.read({
+          assertionToken: signed,
+          assertion,
+          providerSubject: assertion.providerSubject,
+        }),
+      ).rejects.toMatchObject({ code: IDENTITY_GATEWAY_ERROR_CODES.FRESHNESS_UNAVAILABLE });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe("Owner bootstrap and product sessions", () => {
   it("allows one short-lived loopback bootstrap and rejects replay/non-loopback/default-off", async () => {
     const identity = new IdentityState();
@@ -355,14 +609,27 @@ describe("Owner bootstrap and product sessions", () => {
       path: "/api/gateway/v1/commands",
     });
     expect(authenticated).toMatchObject({ ownerId: OWNER_ID, deviceId: created.device.id });
-    await service.assertRecentAuthentication(created.session.authenticationRef, 10_000);
+    expect(authenticated.recentAuthenticationEvidence).toBeUndefined();
 
     current = new Date(NOW.valueOf() + 20_000);
-    await expect(
-      service.assertRecentAuthentication(created.session.authenticationRef, 10_000),
-    ).rejects.toMatchObject({ code: IDENTITY_GATEWAY_ERROR_CODES.RECENT_AUTH_REQUIRED });
     const active = await sessions.readSession(created.session.id);
-    await sessions.revokeSession(created.session.id, active?.revision ?? -1, current.toISOString());
+    vi.spyOn(sessions, "saveSession").mockImplementationOnce(async () => {
+      await sessions.revokeSession(
+        created.session.id,
+        active?.revision ?? -1,
+        current.toISOString(),
+      );
+      throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "concurrent session revocation");
+    });
+    await expect(
+      service.authenticate({
+        accessAssertion: signed,
+        sessionToken: created.token,
+        method: "GET",
+        path: "/api/gateway/v1/events",
+      }),
+    ).rejects.toMatchObject({ code: IDENTITY_GATEWAY_ERROR_CODES.SESSION_INVALID });
+    expect((await sessions.readSession(created.session.id))?.status).toBe("revoked");
     await expect(
       service.authenticate({
         accessAssertion: signed,
@@ -376,6 +643,199 @@ describe("Owner bootstrap and product sessions", () => {
     await expect(
       service.create({ assertionToken: otherSubject, deviceLabel: "Unknown" }),
     ).rejects.toMatchObject({ code: IDENTITY_GATEWAY_ERROR_CODES.OWNER_NOT_BOUND });
+  });
+
+  it("does not promote an old but still valid assertion into recent authentication", async () => {
+    const signed = await token({
+      issuedAt: Math.floor((NOW.valueOf() - 120_000) / 1000),
+      expiresAt: Math.floor((NOW.valueOf() + 300_000) / 1000),
+    });
+    const identity = new IdentityState();
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          return firstJwks;
+        },
+      },
+      now: () => NOW,
+    });
+    const assertion = await verifier.verify(signed);
+    identity.binding = {
+      ownerId: OWNER_ID,
+      externalSubjectRef: assertion.externalSubjectRef,
+      boundAt: NOW.toISOString(),
+      status: "active",
+    };
+    const sessions = new SessionState();
+    const service = new ProductSessionAuthenticationService({
+      verifier,
+      identityState: identity,
+      sessionState: sessions,
+      now: () => NOW,
+      createDeviceId: () => createDeviceId("device-old-assertion"),
+      createSessionId: () => createSessionId("session-old-assertion"),
+      createToken: () => "session-old-assertion-secret",
+    });
+
+    const created = await service.create({
+      assertionToken: signed,
+      deviceLabel: "Old assertion",
+    });
+    const authenticated = await service.authenticate({
+      accessAssertion: signed,
+      sessionToken: created.token,
+      method: "GET",
+      path: "/api/control-center/v1/config",
+    });
+    expect(authenticated.recentAuthenticationEvidence).toBeUndefined();
+    const guard = new RecentAuthenticationGuard({
+      identityState: identity,
+      sessionState: sessions,
+      policy: { maximumAgeMilliseconds: 60_000, clockSkewMilliseconds: 0 },
+      now: () => NOW.toISOString(),
+    });
+    await expect(
+      guard.assertRecentAuthentication({
+        authentication: authenticated,
+        expectedAuthenticationRef: created.session.authenticationRef,
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_NOT_AUTHORITATIVE",
+      details: { reasonCode: "RECENT_AUTH_REQUIRED", reason: "evidence_missing" },
+    });
+  });
+
+  it("keeps provider freshness typed, session-bound, and optional for ordinary auth", async () => {
+    const signed = await token({});
+    const identity = new IdentityState();
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          return firstJwks;
+        },
+      },
+      now: () => NOW,
+    });
+    const assertion = await verifier.verifyForIdentityLookup(signed);
+    identity.binding = {
+      ownerId: OWNER_ID,
+      externalSubjectRef: assertion.externalSubjectRef,
+      boundAt: NOW.toISOString(),
+      status: "active",
+    };
+    const sessions = new SessionState();
+    let providerAvailable = true;
+    const service = new ProductSessionAuthenticationService({
+      verifier,
+      identityState: identity,
+      sessionState: sessions,
+      recentAuthenticationProvider: {
+        async read(input) {
+          if (!providerAvailable) throw new Error("bounded lookup unavailable");
+          return {
+            source: "cloudflare_access_login_time" as const,
+            externalSubjectRef: input.assertion.externalSubjectRef,
+            authenticatedAt: new Date(NOW.valueOf() - 30_000).toISOString(),
+            expiresAt: input.assertion.expiresAt,
+          };
+        },
+      },
+      now: () => NOW,
+      createDeviceId: () => createDeviceId("device-optional-freshness"),
+      createSessionId: () => createSessionId("session-optional-freshness"),
+      createToken: () => "session-optional-freshness-secret",
+    });
+    const created = await service.create({ assertionToken: signed, deviceLabel: "MacBook" });
+    const fresh = await service.authenticate({
+      accessAssertion: signed,
+      sessionToken: created.token,
+      method: "GET",
+      path: "/api/control-center/v1/config",
+    });
+    expect(fresh.recentAuthenticationEvidence).toMatchObject({
+      source: "cloudflare_access_login_time",
+      externalSubjectRef: assertion.externalSubjectRef,
+      ownerId: OWNER_ID,
+      deviceId: created.device.id,
+      authenticationRef: created.session.authenticationRef,
+    });
+
+    providerAvailable = false;
+    const ordinary = await service.authenticate({
+      accessAssertion: signed,
+      sessionToken: created.token,
+      method: "GET",
+      path: "/api/gateway/v1/queries",
+    });
+    expect(ordinary.recentAuthenticationEvidence).toBeUndefined();
+  });
+
+  it.each([
+    ["malformed", "not-a-date"],
+    ["future", new Date(NOW.valueOf() + 60_000).toISOString()],
+  ])("rejects %s persisted recent-auth timestamps", async (_label, recentAuthenticatedAt) => {
+    const signed = await token({});
+    const identity = new IdentityState();
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          return firstJwks;
+        },
+      },
+      now: () => NOW,
+    });
+    const assertion = await verifier.verify(signed);
+    identity.binding = {
+      ownerId: OWNER_ID,
+      externalSubjectRef: assertion.externalSubjectRef,
+      boundAt: NOW.toISOString(),
+      status: "active",
+    };
+    const sessions = new SessionState();
+    const service = new ProductSessionAuthenticationService({
+      verifier,
+      identityState: identity,
+      sessionState: sessions,
+      now: () => NOW,
+      createDeviceId: () => createDeviceId("device-invalid-recent-auth"),
+      createSessionId: () => createSessionId("session-invalid-recent-auth"),
+      createToken: () => "session-invalid-recent-auth-secret",
+    });
+    const created = await service.create({ assertionToken: signed, deviceLabel: "Fixture" });
+    const session = await sessions.readSession(created.session.id);
+    if (!session) throw new Error("session fixture missing");
+    sessions.sessions.set(session.id, { ...session, recentAuthenticatedAt });
+    const authenticated = await service.authenticate({
+      accessAssertion: signed,
+      sessionToken: created.token,
+      method: "GET",
+      path: "/api/control-center/v1/config",
+    });
+    expect(authenticated.recentAuthenticationEvidence).toBeUndefined();
+    const guard = new RecentAuthenticationGuard({
+      identityState: identity,
+      sessionState: sessions,
+      policy: { maximumAgeMilliseconds: 60_000, clockSkewMilliseconds: 0 },
+      now: () => NOW.toISOString(),
+    });
+    await expect(
+      guard.assertRecentAuthentication({
+        authentication: authenticated,
+        expectedAuthenticationRef: created.session.authenticationRef,
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_NOT_AUTHORITATIVE",
+      details: { reasonCode: "RECENT_AUTH_REQUIRED", reason: "evidence_missing" },
+    });
   });
 
   it("issues session-bound CSRF tokens with expiry and rejects cross-session replay", async () => {
@@ -554,6 +1014,53 @@ describe("break-glass boundary", () => {
     });
     expect(recovered.statusCode).toBe(204);
     expect(publicDisabled).toBe(true);
+    await app.close();
+  });
+
+  it("allows production composition to register authentication without break-glass", async () => {
+    const app = Fastify({ logger: false });
+    const signed = await token({});
+    const identity = new IdentityState();
+    const verifier = new CloudflareAccessJwtVerifier({
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: `${ISSUER}/cdn-cgi/access/certs`,
+      jwksFetcher: {
+        async fetch() {
+          return firstJwks;
+        },
+      },
+      now: () => NOW,
+    });
+    const bootstrap = new OwnerBootstrapService({
+      enabled: false,
+      expiresAt: new Date(NOW.valueOf() + 60_000).toISOString(),
+      tokenDigest: digestIdentityCredential("unused"),
+      identityState: identity,
+      now: () => NOW,
+    });
+    const sessions = new ProductSessionAuthenticationService({
+      verifier,
+      identityState: identity,
+      sessionState: new SessionState(),
+      now: () => NOW,
+      createDeviceId: () => createDeviceId("device-auth-routes"),
+      createSessionId: () => createSessionId("session-auth-routes"),
+    });
+    registerIdentityAuthenticationRoutes(app, {
+      publicOrigin: ORIGIN,
+      verifier,
+      bootstrap,
+      sessions,
+    });
+    const breakGlass = await app.inject({ method: "POST", url: "/break-glass", payload: {} });
+    expect(breakGlass.statusCode).toBe(404);
+    const disabledBootstrap = await app.inject({
+      method: "POST",
+      url: "/bootstrap",
+      payload: { token: "unused", ownerId: OWNER_ID, assertionToken: signed },
+    });
+    expect(disabledBootstrap.statusCode).toBe(404);
     await app.close();
   });
 });

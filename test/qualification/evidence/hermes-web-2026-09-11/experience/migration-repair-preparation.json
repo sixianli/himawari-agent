@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "scope": "migration repair preparation and current unprotected Hermes readback",
+  "migrationExecuted": false,
+  "protectedFastPathEnabled": false,
+  "administratorAuthentication": "required",
+  "liveReadback": {
+    "at": "2026-09-11T08:05:52.862465+00:00",
+    "host": "hermes-home",
+    "oldServiceActive": true,
+    "newServiceActive": false,
+    "threads": 9,
+    "activeRuns": 0,
+    "databaseQuickCheck": "ok",
+    "browserRealtimeConnected": true
+  },
+  "signerPreflight": {
+    "passed": true,
+    "signerUid": 1000,
+    "workspaceDevice": "2049",
+    "workspaceInode": "4762079",
+    "signingPerformed": false
+  },
+  "historicalToolDurationReverifiedMs": 53043,
+  "historicalWholeRunDurationReverifiedMs": 133126,
+  "candidateFullDigest": {
+    "durationsMs": [10316.373194, 3462.383982000001, 3525.449737000001],
+    "digest": "2da9b4f6bc1a20f00478d457fc73602bebc4fd852bb78ac449a5190a966c568d",
+    "allDigestsEqual": true,
+    "scope": "full byte audit of inactive candidate; OS cache state uncontrolled; not optimized verifier or tool latency"
+  },
+  "checks": {
+    "handoffRegression": {
+      "before": "1 EACCES simulation error and 3 invariant failures",
+      "afterPassed": 4,
+      "scope": "real temporary directories; OS chown boundary simulated"
+    },
+    "toolingFilesPassed": 2,
+    "protectedVerifierTestsPassed": 37,
+    "npmRunCheck": "passed",
+    "documentGovernance": "passed, 0 warnings"
+  },
+  "uploadedDirectory": "/data/hermes/himawari/builds/2026-09-11-migration-repair",
+  "uploadedFilesSha256": {
+    "hermes-protected-migration.py": "202cc6503cbd24957dd22bae3119d0365aa4c8c495e4b623ea87814e46130eec",
+    "hermes-protected-registered.mjs": "7904085d39a50e3d2bbab9547ed2e230cc96a9d2592556d8bb5db722b8f6aaa8",
+    "hermes-protected-seal.mjs": "6298f67ea19680e977a1529c3ea8568c87bd4fdbd564587c50a7ab9d6cc803e4",
+    "hermes-protected-start.mjs": "03cf3ea57209293a3045d8d553d34431a9d046937ec7de9544e74e4b5e4eec88"
+  },
+  "stillRequired": [
+    "real Linux account handoff rehearsal",
+    "six final installation probes",
+    "signed ownership handoff",
+    "actual denied-write and cache reuse checks",
+    "new service readiness",
+    "real chat tools and stop/restart recovery",
+    "optimized tool latency measurements"
+  ],
+  "privateV4SignerLogRead": false
+}

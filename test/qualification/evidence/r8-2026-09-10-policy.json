@@ -1,0 +1,19 @@
+{
+  "version": "0.0.75",
+  "platform": "darwin",
+  "policyDigest": "892863258482af719e93456652769fa9e8255fd3a6202b0812a0a25f9efad521",
+  "policyProbePassed": true,
+  "observations": {
+    "code": 0,
+    "signal": null,
+    "output": "visible-ok\nsecret-denied\noutside-denied\nsymlink-denied\nwrite-ok\nnetwork-denied\n",
+    "error": ""
+  },
+  "productionSuitable": false,
+  "missingGuarantees": [
+    "resource_observation",
+    "best_effort_stop_and_unknown_quarantine",
+    "worker_crash_reconciliation",
+    "durable_start_admission"
+  ]
+}

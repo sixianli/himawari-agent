@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import * as fsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -11,8 +12,13 @@ import {
   type PermanentDeletionPlan,
   type PreparedFileOperation,
 } from "@himawari-agent/application";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConstrainedHostFileSystem } from "../src/index.js";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...original, open: vi.fn(original.open) };
+});
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -132,6 +138,84 @@ class CrashAfterEffectPlatform extends ConstrainedHostFileSystem {
 }
 
 describe("ConstrainedHostFileSystem", () => {
+  it("preserves same-inode edits made after write preview", async () => {
+    const { root, service, grant, state } = await fixture();
+    await writeFile(path.join(root, "note.txt"), "original");
+    const candidateBytes = new TextEncoder().encode("new");
+    const prepared = await service.prepareWrite({
+      grantId: grant.id,
+      operation: "update",
+      relativePath: "note.txt",
+      candidatePayloadRef: "payload:candidate",
+      candidateBytes,
+      redactedDiffRef: null,
+      expiresAt: "2026-08-28T20:30:00.000Z",
+    });
+    await writeFile(path.join(root, "note.txt"), "owner edit");
+    await expect(
+      service.executeWrite({
+        operationId: prepared.id,
+        expectedHash: prepared.canonicalHash,
+        candidateBytes,
+      }),
+    ).rejects.toThrow("content changed");
+    expect(await readFile(path.join(root, "note.txt"), "utf8")).toBe("owner edit");
+    expect((await state.readPrepared(prepared.id))?.status).toBe("invalidated");
+  });
+
+  it("checks content again at the platform replacement boundary", async () => {
+    const { root, platform, grant } = await fixture();
+    await writeFile(path.join(root, "note.txt"), "original");
+    const expected = await platform.inspect(grant, "note.txt");
+    if (!expected) throw new Error("Missing fixture file");
+    await writeFile(path.join(root, "note.txt"), "modified");
+    await expect(
+      platform.replaceAtomic(
+        grant,
+        "note.txt",
+        expected,
+        new TextEncoder().encode("new"),
+        new TextEncoder().encode("original"),
+      ),
+    ).rejects.toThrow("HOST_FILE_CONTENT_CHANGED");
+    expect(await readFile(path.join(root, "note.txt"), "utf8")).toBe("modified");
+  });
+
+  it("retries an interrupted update whose original content is longer than its replacement", async () => {
+    class InterruptedPlatform extends ConstrainedHostFileSystem {
+      fail = true;
+      override async replaceAtomic(
+        ...input: Parameters<ConstrainedHostFileSystem["replaceAtomic"]>
+      ) {
+        if (this.fail) {
+          this.fail = false;
+          throw new Error("before replacement");
+        }
+        return super.replaceAtomic(...input);
+      }
+    }
+    const { root, service, grant } = await fixture(new InterruptedPlatform());
+    await writeFile(path.join(root, "note.txt"), "long original content");
+    const candidateBytes = new TextEncoder().encode("new");
+    const prepared = await service.prepareWrite({
+      grantId: grant.id,
+      operation: "update",
+      relativePath: "note.txt",
+      candidatePayloadRef: "payload:candidate",
+      candidateBytes,
+      redactedDiffRef: null,
+      expiresAt: "2026-08-28T20:30:00.000Z",
+    });
+    const input = {
+      operationId: prepared.id,
+      expectedHash: prepared.canonicalHash,
+      candidateBytes,
+    };
+    await expect(service.executeWrite(input)).rejects.toThrow("before replacement");
+    expect((await service.executeWrite(input)).status).toBe("verified");
+    expect(await readFile(path.join(root, "note.txt"), "utf8")).toBe("new");
+  });
+
   it("rejects same-inode content changes before deleting any approved target", async () => {
     const { root, service, grant, platform } = await fixture();
     await mkdir(path.join(root, "remove"));
@@ -289,6 +373,45 @@ describe("ConstrainedHostFileSystem", () => {
     ).rejects.toThrow("machine-secret material");
   });
 
+  it("reads every byte when the descriptor returns short reads", async () => {
+    const { root, grant, platform } = await fixture();
+    await writeFile(path.join(root, "short.txt"), "short reads must not produce zero padding");
+    const originalOpen = (
+      await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")
+    ).open;
+    const open = vi.spyOn(fsPromises, "open").mockImplementation(async (...args) => {
+      const handle = await originalOpen(...args);
+      return new Proxy(handle, {
+        get(target, property) {
+          if (property === "read")
+            return (buffer: Uint8Array, offset: number, length: number, position: number) =>
+              target.read(buffer, offset, Math.min(length, 2), position);
+          const value: unknown = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    });
+    try {
+      expect(new TextDecoder().decode(await platform.read(grant, "short.txt", 1024))).toBe(
+        "short reads must not produce zero padding",
+      );
+    } finally {
+      open.mockRestore();
+    }
+  });
+
+  it("checks the opened descriptor against the inspected file identity", async () => {
+    const { root, grant, platform } = await fixture();
+    await writeFile(path.join(root, "identity.txt"), "original");
+    const expected = await platform.inspect(grant, "identity.txt");
+    if (!expected) throw new Error("identity missing");
+    await rename(path.join(root, "identity.txt"), path.join(root, "original.txt"));
+    await writeFile(path.join(root, "identity.txt"), "replaced");
+    await expect(platform.read(grant, "identity.txt", 1024, expected)).rejects.toThrow(
+      "HOST_FILE_IDENTITY_CHANGED",
+    );
+  });
+
   it("blocks capacity-increasing writes at the reserve floor while preserving reads", async () => {
     class LowStoragePlatform extends ConstrainedHostFileSystem {
       override async storageObservation() {
@@ -427,5 +550,148 @@ describe("ConstrainedHostFileSystem", () => {
     ).toBe("verified");
     expect((await state.readDeletionPlan(deletion.id))?.status).toBe("verified");
     await expect(readFile(path.join(root, "recover/moved.txt"))).rejects.toThrow();
+  });
+});
+
+describe("host file read target resolution", () => {
+  function resolver(f: Awaited<ReturnType<typeof fixture>>) {
+    const protect = vi.fn(async () => "unexpected-payload");
+    const service = new HostFileReadService({
+      state: f.state,
+      platform: f.platform,
+      disclosure: { protect },
+      hostId: "host-mac",
+      clock: { now: () => "2026-08-28T20:00:00.000Z" },
+    });
+    const resolve = (filePath: string, maximumBytes = 64) =>
+      service.resolveTarget({
+        hostId: "host-mac",
+        grantId: f.grant.id,
+        path: filePath,
+        maximumBytes,
+      });
+    return { service, resolve, protect };
+  }
+
+  it("binds absolute and relative paths to the same host, grant revision and file identity without reading content", async () => {
+    const f = await fixture();
+    await writeFile(path.join(f.root, "中文.txt"), "sample");
+    const read = vi.spyOn(f.platform, "read");
+    const { resolve, protect } = resolver(f);
+    const absolute = await resolve(path.join(f.root, "中文.txt"));
+    const relative = await resolve("中文.txt");
+    expect(absolute).toMatchObject({
+      hostId: "host-mac",
+      grantId: f.grant.id,
+      grantRevision: f.grant.revision,
+      canonicalRootId: f.grant.canonicalRootId,
+      authorizationRef: f.grant.authorizationRef,
+      relativePath: "中文.txt",
+      maximumBytes: 64,
+      identity: { sizeBytes: 6 },
+    });
+    expect(absolute.identity).toEqual(relative.identity);
+    expect(Object.isFrozen(absolute)).toBe(true);
+    expect(Object.isFrozen(absolute.identity)).toBe(true);
+    expect(read).not.toHaveBeenCalled();
+    expect(protect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "../outside.txt",
+    "sub/../file.txt",
+    "/other/file.txt",
+    "~/file.txt",
+    "@file.txt",
+    "a\\b.txt",
+    "file\u0000.txt",
+    "",
+    "sub//file.txt",
+  ])("rejects unsafe path %j before filesystem inspection", async (filePath) => {
+    const f = await fixture();
+    const inspect = vi.spyOn(f.platform, "inspect");
+    await expect(resolver(f).resolve(filePath)).rejects.toThrow();
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it("rejects sibling prefixes, links, directories, missing files and files over the byte limit", async () => {
+    const f = await fixture();
+    const { resolve } = resolver(f);
+    await writeFile(path.join(f.root, "file.txt"), "12345");
+    await mkdir(path.join(f.root, "directory"));
+    await expect(resolve(`${f.root}-sibling/file.txt`)).rejects.toThrow("HOST_PATH_ESCAPE_BLOCKED");
+    await expect(resolve("file.txt", 4)).rejects.toThrow("HOST_FILE_READ_LIMIT_EXCEEDED");
+    expect((await resolve("file.txt", 5)).identity.sizeBytes).toBe(5);
+    await expect(resolve("directory")).rejects.toThrow("HOST_FILE_NOT_REGULAR");
+    await expect(resolve("missing.txt")).rejects.toThrow("HOST_FILE_TARGET_MISSING");
+    await expect(resolve("missing/file.txt")).rejects.toThrow("HOST_FILE_TARGET_MISSING");
+    await symlink(path.join(f.root, "file.txt"), path.join(f.root, "symbolic"));
+    await expect(resolve("symbolic")).rejects.toThrow("HOST_PATH_ESCAPE_BLOCKED");
+    await symlink(f.root, path.join(f.root, "linked-directory"));
+    await expect(resolve("linked-directory/file.txt")).rejects.toThrow("HOST_PATH_ESCAPE_BLOCKED");
+    await link(path.join(f.root, "file.txt"), path.join(f.root, "hard-link"));
+    await expect(resolve("hard-link")).rejects.toThrow("HOST_LINK_ESCAPE_BLOCKED");
+  });
+
+  it.each(["revoked", "expired", "wrong-host", "no-read", "invalid-expiry"])(
+    "rejects an unusable grant (%s) before filesystem inspection",
+    async (mode) => {
+      const f = await fixture();
+      const changes = {
+        revoked: { revokedAt: "2026-08-28T19:00:00.000Z" },
+        expired: { expiresAt: "2026-08-28T19:00:00.000Z" },
+        "wrong-host": { hostId: "host-hermes" },
+        "no-read": { operations: [] },
+        "invalid-expiry": { expiresAt: "invalid" },
+      };
+      f.state.grants.set(f.grant.id, { ...f.grant, ...changes[mode as keyof typeof changes] });
+      const inspect = vi.spyOn(f.platform, "inspect");
+      await expect(resolver(f).resolve("file.txt")).rejects.toThrow();
+      expect(inspect).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a request for another host and invalid size limits before inspection", async () => {
+    const f = await fixture();
+    const { service, resolve } = resolver(f);
+    const inspect = vi.spyOn(f.platform, "inspect");
+    await expect(
+      service.resolveTarget({
+        hostId: "host-hermes",
+        grantId: f.grant.id,
+        path: "file.txt",
+        maximumBytes: 64,
+      }),
+    ).rejects.toThrow();
+    for (const size of [0, -1, NaN, Infinity, 1.5])
+      await expect(resolve("file.txt", size)).rejects.toThrow();
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it.each(["revocation", "replacement"])("rejects %s during inspection", async (change) => {
+    const f = await fixture();
+    await writeFile(path.join(f.root, "file.txt"), "sample");
+    const original = f.platform.inspect.bind(f.platform);
+    vi.spyOn(f.platform, "inspect").mockImplementation(async (grant, relativePath) => {
+      const identity = await original(grant, relativePath);
+      f.state.grants.set(
+        grant.id,
+        change === "revocation"
+          ? { ...grant, revokedAt: "2026-08-28T20:00:00.000Z" }
+          : { ...grant, revision: grant.revision + 1 },
+      );
+      return identity;
+    });
+    await expect(resolver(f).resolve("file.txt")).rejects.toThrow();
+  });
+
+  it("rejects replacement of the granted root directory", async () => {
+    const f = await fixture();
+    const oldRoot = `${f.root}-old`;
+    await rename(f.root, oldRoot);
+    roots.push(oldRoot);
+    await mkdir(f.root);
+    await writeFile(path.join(f.root, "file.txt"), "sample");
+    await expect(resolver(f).resolve("file.txt")).rejects.toThrow("HOST_ROOT_IDENTITY_CHANGED");
   });
 });

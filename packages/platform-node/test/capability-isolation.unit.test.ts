@@ -1,15 +1,16 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { CapabilityManifest } from "@himawari-agent/application";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CAPABILITY_ISOLATION_ERROR_CODES,
+  type CapabilityProcessBinding,
+  type CapabilityRuntimeBindingPort,
   LinuxBubblewrapIsolationBackend,
   MacSignedHelperIsolationBackend,
   runSandboxedProcess,
-  type CapabilityProcessBinding,
-  type CapabilityRuntimeBindingPort,
 } from "../src/capabilities/isolation.js";
 
 const NOW = "2026-08-28T08:10:00.000Z";
@@ -77,11 +78,25 @@ async function backendFixture(): Promise<{
   const runtimeRoot = path.join(root, "runtime-root");
   const runtimeBin = path.join(runtimeRoot, "bin");
   const workspace = path.join(root, "workspace");
-  await Promise.all([mkdir(runtimeBin, { recursive: true }), mkdir(workspace)]);
+  await Promise.all([
+    mkdir(runtimeBin, { recursive: true, mode: 0o700 }),
+    mkdir(workspace, { mode: 0o700 }),
+    mkdir(path.join(runtimeRoot, "proc"), { recursive: true, mode: 0o700 }),
+    mkdir(path.join(runtimeRoot, "dev"), { recursive: true, mode: 0o700 }),
+    mkdir(path.join(runtimeRoot, "tmp"), { recursive: true, mode: 0o700 }),
+    mkdir(path.join(runtimeRoot, "workspace"), { recursive: true, mode: 0o700 }),
+  ]);
   await writeFile(path.join(runtimeBin, "fixture"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+  const resourceLimitSource = "#!/bin/sh\nexit 0\n";
+  await writeFile(path.join(runtimeBin, "prlimit"), resourceLimitSource, { mode: 0o700 });
   await writeFile(
     bwrap,
-    '#!/bin/sh\nif [ "$1" = "--version" ]; then echo \'bubblewrap 0.11.2\'; fi\nexit 0\n',
+    "#!/bin/sh\n" +
+      'if [ "$1" = "--version" ]; then echo \'bubblewrap 0.11.2\'; exit 0; fi\n' +
+      'case " $* " in *" --unshare-user "*) ;; *) exit 97;; esac\n' +
+      'case " $* " in *" --symlink usr/lib /lib "*) ;; *) exit 98;; esac\n' +
+      'case " $* " in *" --symlink usr/lib64 /lib64 "*) ;; *) exit 99;; esac\n' +
+      "exit 0\n",
     { mode: 0o700 },
   );
   await writeFile(
@@ -99,6 +114,10 @@ async function backendFixture(): Promise<{
     sandboxWorkdir: "/workspace",
     environment: { LANG: "C.UTF-8" },
     availableExecutables: ["/bin/fixture"],
+    resourceLimitExecutable: {
+      sandboxPath: "/bin/prlimit",
+      sha256: `sha256:${createHash("sha256").update(resourceLimitSource).digest("hex")}`,
+    },
     filesystem: [
       {
         scopeRef: "workspace:fixture",
@@ -150,17 +169,129 @@ describe("capability process isolation", () => {
       reasonCodes: [],
     });
     const launch = await backend.createLaunch(manifest, CEILING);
+    const processLimitIndex = launch.args.indexOf("--nproc=2");
     expect(launch.args).toEqual(
       expect.arrayContaining([
         "--unshare-all",
         "--clearenv",
+        "--unshare-user",
         "--disable-userns",
         "--ro-bind",
         "--cpu=1",
         `--as=${String(CEILING.maxMemoryBytes)}`,
       ]),
     );
+    expect(launch.args.filter((argument) => argument === "--nproc=2")).toHaveLength(1);
+    expect(processLimitIndex).toBeGreaterThan(launch.args.indexOf("/bin/prlimit"));
+    expect(launch.args[processLimitIndex + 1]).toBe("--");
+    expect(launch.args[processLimitIndex + 2]).toBe("/bin/fixture");
     expect(launch.args).not.toContain("--share-net");
+  });
+
+  it("rejects a process-limit helper that is not the frozen runtime-root executable", async () => {
+    const fixture = await backendFixture();
+    Object.assign(fixture.binding, {
+      resourceLimitExecutable: {
+        sandboxPath: "/host/prlimit",
+        sha256: `sha256:${"a".repeat(64)}`,
+      },
+    });
+    await expect(fixture.backend.qualify(programManifest())).resolves.toMatchObject({
+      productionSuitable: false,
+      reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE],
+    });
+  });
+
+  it("rejects a process-limit helper covered by a writable filesystem mount", async () => {
+    const fixture = await backendFixture();
+    const runtimeWorkspace = path.join(fixture.binding.runtimeRoot, "workspace");
+    const resourceLimitSource = "#!/bin/sh\nexit 0\n";
+    await writeFile(path.join(runtimeWorkspace, "prlimit"), resourceLimitSource, { mode: 0o700 });
+    Object.assign(fixture.binding, {
+      resourceLimitExecutable: {
+        sandboxPath: "/workspace/prlimit",
+        sha256: `sha256:${createHash("sha256").update(resourceLimitSource).digest("hex")}`,
+      },
+    });
+    await expect(fixture.backend.qualify(programManifest())).resolves.toMatchObject({
+      productionSuitable: false,
+      reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISMATCH],
+    });
+  });
+
+  it("rejects a runtime root without the fixed bubblewrap mountpoints", async () => {
+    const fixture = await backendFixture();
+    await rm(path.join(fixture.binding.runtimeRoot, "proc"), { recursive: true });
+    await expect(fixture.backend.qualify(programManifest())).resolves.toMatchObject({
+      productionSuitable: false,
+      reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE],
+    });
+  });
+
+  it("accepts a regular-file filesystem bind when the runtime target has the same shape", async () => {
+    const fixture = await backendFixture();
+    const hostFile = path.join(fixture.binding.filesystem[0]?.hostPath ?? "/missing", "input.txt");
+    const runtimeFile = path.join(fixture.binding.runtimeRoot, "workspace", "input.txt");
+    await Promise.all([writeFile(hostFile, "fixture input\n"), writeFile(runtimeFile, "target\n")]);
+    const mcpManifest: CapabilityManifest = {
+      ...programManifest(),
+      scopes: {
+        ...programManifest().scopes,
+        filesystem: ["file:fixture"],
+      },
+      runtime: {
+        kind: "mcp",
+        serverIdentity: "fixture-mcp@1.0.0",
+        transport: "stdio:mcp-2026-07-28",
+        mappedResources: ["tool:execute"],
+      },
+    };
+    Object.assign(fixture.binding, {
+      workdirRef: "file:fixture",
+      filesystem: [
+        {
+          scopeRef: "file:fixture",
+          hostPath: hostFile,
+          sandboxPath: "/workspace/input.txt",
+          access: "read",
+        },
+      ],
+      mcpServerIdentity: "fixture-mcp@1.0.0",
+      mcpServerName: "fixture-mcp",
+      mcpServerVersion: "1.0.0",
+      mcpOperationMap: { execute: "execute" },
+      environment: {},
+    });
+    await expect(fixture.backend.qualify(mcpManifest)).resolves.toMatchObject({
+      productionSuitable: true,
+      reasonCodes: [],
+    });
+  });
+
+  it("rejects a process-limit helper whose bytes do not match the frozen digest", async () => {
+    const fixture = await backendFixture();
+    await writeFile(path.join(fixture.binding.runtimeRoot, "bin", "prlimit"), "tampered\n", {
+      mode: 0o700,
+    });
+    await expect(fixture.backend.qualify(programManifest())).resolves.toMatchObject({
+      productionSuitable: false,
+      reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE],
+    });
+  });
+
+  it("rejects a symlinked process-limit helper even when its target is inside the runtime root", async () => {
+    const fixture = await backendFixture();
+    await symlink("prlimit", path.join(fixture.binding.runtimeRoot, "bin", "prlimit-link"));
+    Object.assign(fixture.binding, {
+      resourceLimitExecutable: {
+        sandboxPath: "/bin/prlimit-link",
+        sha256: fixture.binding.resourceLimitExecutable.sha256,
+      },
+    });
+    await expect(fixture.backend.qualify(programManifest())).resolves.toMatchObject({
+      productionSuitable: false,
+      reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE],
+    });
   });
 
   it("blocks network-scoped Linux programs because bubblewrap cannot enforce host allowlists", async () => {
@@ -219,19 +350,30 @@ describe("capability process isolation", () => {
     });
   });
 
-  it("enforces wall time and output bytes when supervising the sandbox process group", async () => {
-    const outputLimited = await runSandboxedProcess(
-      {
-        command: process.execPath,
-        args: ["-e", "process.stdout.write('x'.repeat(10000))"],
-        cwd: "/",
-        environment: {},
-        ceiling: { ...CEILING, maxOutputBytes: 128 },
-      },
-      null,
-    );
-    expect(outputLimited.outputLimitExceeded).toBe(true);
+  it(
+    "enforces output bytes independently of process startup time",
+    { timeout: 15_000 },
+    async () => {
+      const outputLimited = await runSandboxedProcess(
+        {
+          command: process.execPath,
+          args: ["-e", "process.stdout.write('x'.repeat(10000))"],
+          cwd: "/",
+          environment: {},
+          // Give this output-quota assertion a separate wall deadline: cold Node startup
+          // must not satisfy a different resource limit before the child writes output.
+          ceiling: { ...CEILING, maxWallTimeMs: 10_000, maxOutputBytes: 128 },
+        },
+        null,
+      );
+      expect(outputLimited).toMatchObject({ outputLimitExceeded: true, timedOut: false });
+      expect(outputLimited.stdout.byteLength + outputLimited.stderr.byteLength).toBeLessThanOrEqual(
+        128,
+      );
+    },
+  );
 
+  it("enforces wall time when supervising the sandbox process group", async () => {
     const timedOut = await runSandboxedProcess(
       {
         command: process.execPath,
@@ -242,6 +384,113 @@ describe("capability process isolation", () => {
       },
       null,
     );
-    expect(timedOut.timedOut).toBe(true);
+    expect(timedOut).toMatchObject({ timedOut: true, outputLimitExceeded: false });
+  });
+});
+
+describe("frozen sandbox launch boundary", () => {
+  it.each([
+    ["capabilityRef", "other"],
+    ["capabilityVersion", "other"],
+    ["artifactDigest", `sha256:${"b".repeat(64)}`],
+    ["workdirRef", "workspace:other"],
+    ["command", "/bin/other"],
+    ["availableExecutables", ["/bin/fixture", "/bin/fixture"]],
+    ["availableExecutables", []],
+    ["availableExecutables", ["/bin/fixture", "/bin/undeclared"]],
+    ["environment", { UNDECLARED: "1" }],
+    ["filesystem", []],
+    ["sandboxWorkdir", "/workspace/other"],
+    ["mcpServerIdentity", "server"],
+    ["mcpServerName", "server"],
+    ["mcpServerVersion", "1"],
+    ["mcpOperationMap", { execute: "tool" }],
+    ["maximumResourceCeiling", { ...CEILING, maxMemoryBytes: 0 }],
+  ])("refuses launch when frozen %s is substituted", async (key, value) => {
+    const { backend, binding } = await backendFixture();
+    Object.assign(binding, { [key as string]: value });
+    await expect(backend.qualify(programManifest())).resolves.toMatchObject({
+      productionSuitable: false,
+      reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISMATCH],
+    });
+    await expect(backend.createLaunch(programManifest(), CEILING)).rejects.toThrow(
+      CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISMATCH,
+    );
+  });
+  it.each(["/workspace", "/workspace/child"])(
+    "refuses overlapping filesystem mounts %s",
+    async (sandboxPath) => {
+      const { backend, binding } = await backendFixture();
+      Object.assign(binding, {
+        filesystem: [...binding.filesystem, { ...binding.filesystem[0], sandboxPath }],
+      });
+      await expect(backend.qualify(programManifest())).resolves.toMatchObject({
+        productionSuitable: false,
+        reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISMATCH],
+      });
+    },
+  );
+  it.each(["relative", "/", "/bin/../bin/prlimit"])(
+    "refuses noncanonical helper path %s",
+    async (sandboxPath) => {
+      const { backend, binding } = await backendFixture();
+      Object.assign(binding, {
+        resourceLimitExecutable: { ...binding.resourceLimitExecutable, sandboxPath },
+      });
+      await expect(backend.qualify(programManifest())).resolves.toMatchObject({
+        productionSuitable: false,
+        reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE],
+      });
+    },
+  );
+  it.each(["bin/prlimit", "bin/fixture", "proc", "workspace"])(
+    "refuses writable runtime member %s",
+    async (member) => {
+      const { backend, binding } = await backendFixture();
+      await chmod(path.join(binding.runtimeRoot, member), 0o777);
+      await expect(backend.qualify(programManifest())).resolves.toMatchObject({
+        productionSuitable: false,
+        reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE],
+      });
+    },
+  );
+  it.each(["empty", "not-executable", "invalid-digest"])(
+    "refuses helper with %s identity",
+    async (kind) => {
+      const { backend, binding } = await backendFixture();
+      const executable = path.join(binding.runtimeRoot, "bin/prlimit");
+      if (kind === "empty") await writeFile(executable, "");
+      else if (kind === "not-executable") await chmod(executable, 0o600);
+      else
+        Object.assign(binding, {
+          resourceLimitExecutable: { ...binding.resourceLimitExecutable, sha256: "invalid" },
+        });
+      await expect(backend.qualify(programManifest())).resolves.toMatchObject({
+        productionSuitable: false,
+        reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE],
+      });
+    },
+  );
+  it("refuses host filesystem access with group write permissions", async () => {
+    const { backend, binding } = await backendFixture();
+    const filesystem = binding.filesystem[0];
+    if (!filesystem) throw new Error("Expected filesystem binding");
+    await chmod(filesystem.hostPath, 0o770);
+    await expect(backend.qualify(programManifest())).resolves.toMatchObject({
+      productionSuitable: false,
+      reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.FILESYSTEM_SCOPE_UNSAFE],
+    });
+  });
+  it.each(["scope", "secrets"])("refuses a manifest that changes %s assumptions", async (kind) => {
+    const { backend } = await backendFixture();
+    const manifest = programManifest();
+    const invalid =
+      kind === "scope"
+        ? { ...manifest, isolation: "worker" as const }
+        : { ...manifest, scopes: { ...manifest.scopes, secrets: ["secret:fixture"] } };
+    await expect(backend.qualify(invalid)).resolves.toMatchObject({
+      productionSuitable: false,
+      reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISMATCH],
+    });
   });
 });

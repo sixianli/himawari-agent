@@ -5,6 +5,7 @@ import { join } from "node:path";
 import Ajv from "ajv";
 import { resolvePolicySource } from "./check-policy.mjs";
 import { repositoryRoot, safeRelativePath } from "./contracts.mjs";
+import { loadOwnerReview } from "./security-owner-review.mjs";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const exceptionPath = "ci/security-exceptions.json";
@@ -192,6 +193,7 @@ export function loadReviewedExceptions({
   now,
   ruleIds,
   dependencies,
+  readReviewComment,
 }) {
   const source = resolvePolicySource({ root, base: context.baseSha });
   assert(source.initialization === context.initialization, "SECURITY_POLICY_SOURCE_MISMATCH");
@@ -211,6 +213,32 @@ export function loadReviewedExceptions({
       document.proposal?.status === "proposed_owner_review_required",
     "SECURITY_INITIAL_EXCEPTIONS_REQUIRE_PROPOSAL",
   );
+  const ownerReview = loadOwnerReview({ root, context, now, readComment: readReviewComment });
+  if (ownerReview) {
+    const combined = [...exceptions, ...ownerReview.exceptions];
+    validateSecurityExceptions(
+      { schemaVersion: 1, exceptions: combined },
+      { now, ruleIds, dependencies },
+    );
+    return {
+      exceptions: combined,
+      machineExceptions: ownerReview.machineExceptions,
+      provenanceReview: {
+        sourceSha: ownerReview.sourceSha,
+        entries: ownerReview.exceptions
+          .filter((entry) => entry.kind === "synthetic-secret")
+          .map(({ id, path, digest }) => ({ id, path, digest })),
+      },
+      sha256: sha256(`${sha256(bytes)}:${ownerReview.sha256}`),
+      sourceSha: ownerReview.sourceSha,
+      initialization: !available,
+      candidateDiffers: sha256(candidate) !== sha256(bytes),
+      approvalBasis: "owner_pr_comment",
+      reviewStatus: "owner_approved",
+      reviewReference: ownerReview.reference,
+      proposal: document.proposal ?? null,
+    };
+  }
   return {
     exceptions,
     sha256: sha256(bytes),

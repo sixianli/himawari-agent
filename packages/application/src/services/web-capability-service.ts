@@ -25,6 +25,7 @@ export class WebCapabilityService {
   readonly #clock: ClockPort;
   readonly #ids: IdGeneratorPort;
   readonly #hostId: string;
+  readonly #leaseMilliseconds: number;
 
   constructor(input: {
     readonly state: WebStatePort;
@@ -34,6 +35,7 @@ export class WebCapabilityService {
     readonly clock: ClockPort;
     readonly ids: IdGeneratorPort;
     readonly hostId: string;
+    readonly leaseMilliseconds?: number;
   }) {
     this.#state = input.state;
     this.#publicAdapter = input.publicAdapter;
@@ -42,6 +44,13 @@ export class WebCapabilityService {
     this.#clock = input.clock;
     this.#ids = input.ids;
     this.#hostId = input.hostId;
+    this.#leaseMilliseconds = input.leaseMilliseconds ?? 30_000;
+    if (
+      !Number.isSafeInteger(this.#leaseMilliseconds) ||
+      this.#leaseMilliseconds < 1 ||
+      this.#leaseMilliseconds > 300_000
+    )
+      throw new RangeError("Invalid Web execution lease");
   }
 
   async searchPublic(input: {
@@ -281,7 +290,11 @@ export class WebCapabilityService {
     const now = this.#clock.now();
     const existing = await this.#state.readOperation(input.handle.operationId);
     if (existing) {
-      if (existing.idempotencyKey !== input.idempotencyKey) {
+      if (
+        existing.idempotencyKey !== input.idempotencyKey ||
+        existing.preparedActionId !== input.handle.preparedActionId ||
+        existing.authorityFence !== input.authorityFence
+      ) {
         this.#conflict("Web operation identity was reused with different input");
       }
       return existing;
@@ -312,6 +325,10 @@ export class WebCapabilityService {
     }
 
     const operation: WebOperationRecord = Object.freeze({
+      revision: 1,
+      executionOwner: this.#ids.next("web-attempt"),
+      leaseExpiresAt: this.#leaseEnd(),
+      authorityFence: input.authorityFence,
       id: input.handle.operationId,
       kind: "web.execute_action",
       preparedActionId: action.id,
@@ -327,50 +344,134 @@ export class WebCapabilityService {
     });
     const admitted = await this.#state.createOperation(operation);
     if (admitted.replayed) return admitted.record;
-    const dispatching = Object.freeze({ ...operation, dispatchStartedAt: this.#clock.now() });
-    await this.#state.saveOperation(dispatching);
+    const dispatching = Object.freeze({
+      ...operation,
+      revision: operation.revision + 1,
+      dispatchStartedAt: this.#clock.now(),
+    });
+    await this.#state.saveOperation(dispatching, operation.revision);
     await this.#state.savePreparedAction(
       Object.freeze({ ...action, revision: action.revision + 1, status: "executing" }),
       action.revision,
     );
-    try {
-      const result = await this.#authenticatedAdapter.execute({
+    return this.#runWithLease(dispatching, () =>
+      this.#authenticatedAdapter.execute({
         operationId: operation.id,
         session,
         action,
-      });
-      return this.#commitOutcome(dispatching, result);
-    } catch {
-      return this.#commitOutcome(dispatching, {
-        outcome: "unknown",
-        observationRefs: ["dispatch_interrupted"],
-        receiptRef: null,
-        resultRef: null,
-        reconcileMethod: "web.reconcile",
-      });
-    }
+      }),
+    );
   }
 
   async reconcile(operationId: string): Promise<WebOperationRecord> {
     const operation = await this.#state.readOperation(operationId);
-    if (!operation || operation.status !== "unknown" || !operation.preparedActionId) {
-      this.#reject("Only unknown Web operations can be reconciled");
+    if (
+      !operation ||
+      !["unknown", "running"].includes(operation.status) ||
+      !operation.preparedActionId
+    ) {
+      this.#reject("Only unresolved Web operations can be reconciled");
     }
+    if (operation.leaseExpiresAt && operation.leaseExpiresAt > this.#clock.now()) {
+      this.#conflict("Web operation still has an active execution lease");
+    }
+    const claimed = await this.#state.saveOperation(
+      Object.freeze({
+        ...operation,
+        revision: operation.revision + 1,
+        executionOwner: this.#ids.next("web-recovery"),
+        leaseExpiresAt: this.#leaseEnd(),
+        updatedAt: this.#clock.now(),
+      }),
+      operation.revision,
+    );
     const action = await this.#requiredAction(operation.preparedActionId);
     const session = await this.#requiredSession(action.sessionId);
-    const result = await this.#authenticatedAdapter.reconcile({ operation, session, action });
-    return this.#commitOutcome(operation, result);
+    return this.#runWithLease(claimed, () =>
+      this.#authenticatedAdapter.reconcile({
+        operation: claimed,
+        session,
+        action,
+      }),
+    );
+  }
+
+  async #runWithLease(
+    initial: WebOperationRecord,
+    work: () => ReturnType<AuthenticatedWebAdapterPort["execute"]>,
+  ): Promise<WebOperationRecord> {
+    let current = initial;
+    let stopped = false;
+    let renewalError: unknown;
+    let renewing: Promise<void> = Promise.resolve();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      timer = setTimeout(
+        () => {
+          renewing = (async () => {
+            try {
+              this.#requireLiveLease(current);
+              current = await this.#state.saveOperation(
+                Object.freeze({
+                  ...current,
+                  revision: current.revision + 1,
+                  leaseExpiresAt: this.#leaseEnd(),
+                  updatedAt: this.#clock.now(),
+                }),
+                current.revision,
+              );
+              if (!stopped) schedule();
+            } catch (error) {
+              renewalError = error;
+            }
+          })();
+        },
+        Math.max(1, Math.floor(this.#leaseMilliseconds / 2)),
+      );
+    };
+    const unknownOutcome = {
+      outcome: "unknown" as const,
+      observationRefs: ["dispatch_interrupted"],
+      receiptRef: null,
+      resultRef: null,
+      reconcileMethod: "web.reconcile",
+    };
+    let result: Awaited<ReturnType<AuthenticatedWebAdapterPort["execute"]>>;
+    try {
+      this.#requireLiveLease(current);
+      schedule();
+      result = await work();
+    } catch {
+      result = unknownOutcome;
+    } finally {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      await renewing;
+    }
+    if (renewalError) throw renewalError;
+    try {
+      return await this.#commitOutcome(current, result);
+    } catch {
+      return this.#commitOutcome(current, unknownOutcome);
+    }
   }
 
   async #commitOutcome(
     operation: WebOperationRecord,
     result: Awaited<ReturnType<AuthenticatedWebAdapterPort["execute"]>>,
   ): Promise<WebOperationRecord> {
-    if (result.outcome === "confirmed_succeeded" && !result.receiptRef && !result.resultRef) {
-      this.#reject("Confirmed Web success requires stable readback evidence");
+    if (result.outcome !== "unknown" && !result.receiptRef && !result.resultRef) {
+      this.#reject("Confirmed Web outcome requires stable readback evidence");
     }
+    this.#requireLiveLease(operation);
+    const action = operation.preparedActionId
+      ? await this.#requiredAction(operation.preparedActionId)
+      : null;
     const updated = Object.freeze({
       ...operation,
+      revision: operation.revision + 1,
+      executionOwner: null,
+      leaseExpiresAt: null,
       status: result.outcome,
       observationRefs: Object.freeze([...result.observationRefs]),
       receiptRef: result.receiptRef,
@@ -378,15 +479,28 @@ export class WebCapabilityService {
       reconcileMethod: result.reconcileMethod,
       updatedAt: this.#clock.now(),
     });
-    await this.#state.saveOperation(updated);
-    if (operation.preparedActionId) {
-      const action = await this.#requiredAction(operation.preparedActionId);
+    await this.#state.saveOperation(updated, operation.revision);
+    if (action) {
       await this.#state.savePreparedAction(
         Object.freeze({ ...action, revision: action.revision + 1, status: result.outcome }),
         action.revision,
       );
     }
     return updated;
+  }
+
+  #leaseEnd(): string {
+    return new Date(Date.parse(this.#clock.now()) + this.#leaseMilliseconds).toISOString();
+  }
+
+  #requireLiveLease(operation: WebOperationRecord): void {
+    if (
+      !operation.executionOwner ||
+      !operation.leaseExpiresAt ||
+      operation.leaseExpiresAt <= this.#clock.now()
+    ) {
+      this.#conflict("Web execution lease expired; reconcile without resubmitting");
+    }
   }
 
   async #usableSession(sessionId: string): Promise<WebSessionRecord> {

@@ -1,5 +1,18 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
 
+import { ModelInvocationAdmissionService } from "@himawari-agent/application";
+import type {
+  MemorySearchRequest,
+  ModelInvocationPermit,
+  RunExecutionSource,
+} from "@himawari-agent/application";
+
+import type { Mem0EmbeddingBoundary } from "@himawari-agent/memory-mem0";
+import {
+  embeddingAdmissionDescriptor,
+  createProductionRunMemory,
+} from "../src/production-run-memory.js";
+import { createProductionRunPolicy } from "../src/production-run-policy.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -249,13 +262,16 @@ describe("production model composition", () => {
     expect(prepared.resolve).not.toHaveBeenCalled();
     const binding = await composition.piModels.resolve(primaryModel.ref);
     expect(binding.model).toBe(runtime.models.get("openrouter:deepseek/deepseek-v4-flash-0731"));
+    expect(prepared.resolve).not.toHaveBeenCalled();
+    if (!binding.resolveSecret) throw new Error("Expected deferred provider secret resolver");
+    await expect(binding.resolveSecret()).resolves.toBe("fixture-provider-value");
     expect(prepared.resolve).toHaveBeenCalledWith("openrouter-api-key", "v1");
     expect(prepared.resolve).toHaveBeenCalledTimes(1);
     expect(composition.transport).toBeDefined();
     expect(composition.payloadBoundary).toBeDefined();
 
     await composition.close();
-    expect(runtime.removedProviders).toEqual(["openrouter"]);
+    expect(runtime.removedProviders).toEqual([]);
   });
 
   it("rejects unsafe secret sources and conflicting canonical descriptors", () => {
@@ -478,3 +494,350 @@ describe("production model composition", () => {
     await composition.close();
   });
 });
+
+it("selects trusted Run policy and binds instruction content across configuration changes", async () => {
+  const adapters = createReferenceAdapterSet();
+  const configuration = {
+    ...selectedEmbeddingConfiguration(temporaryDirectory),
+    runPolicy: {
+      version: "policy-v1",
+      timeZone: "Asia/Tokyo",
+      systemInstruction: "可信系统指令",
+      memoryLimit: 10,
+      maxSelectedMemories: 5,
+      maxMemoryClassification: "private" as const,
+    },
+  };
+  const source: RunExecutionSource = {
+    ownerId: configuration.ownerId,
+    agentId: configuration.agentId,
+    runId: "policy-run" as RunExecutionSource["runId"],
+    sessionId: "policy-session" as RunExecutionSource["sessionId"],
+    threadId: null,
+    triggerId: "policy-trigger" as RunExecutionSource["triggerId"],
+    sourceType: "user_message",
+    sourceId: "owner-message",
+    payloadRef: "owner-content",
+    dataClassification: "private",
+    occurredAt: "2026-09-10T23:04:00.000Z",
+  };
+  const list = vi.fn(async () => []);
+  const options = {
+    configuration,
+    artifacts: adapters.runPayloadArtifacts,
+    protector: adapters.payloadProtector,
+    handles: { getExecutionHandle: async () => undefined, listRunExecutionHandles: list },
+    clock: adapters.clock,
+    ids: adapters.ids,
+  };
+  const protect = vi.spyOn(adapters.payloadProtector, "protect");
+  const policy = createProductionRunPolicy(options);
+  const first = await policy(source);
+  expect(first).toMatchObject({
+    modelRef: "model-primary",
+    policyVersion: "policy-v1",
+    capabilityHandleRefs: [],
+  });
+  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
+    source.occurredAt,
+  );
+  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
+    "2026-09-11 08:04:00 GMT+09:00",
+  );
+  expect(list).toHaveBeenCalledWith(source.runId, adapters.clock.now());
+  expect((await policy(source)).systemInstructionRef).toBe(first.systemInstructionRef);
+  const threadSource = {
+    ...source,
+    threadId: "language-thread" as NonNullable<RunExecutionSource["threadId"]>,
+  };
+  const threadPolicy = await policy(threadSource);
+  expect(threadPolicy.answerLocalePolicy).toBeUndefined();
+  expect(threadPolicy.systemInstructionRef).toBe(first.systemInstructionRef);
+  expect(protect).toHaveBeenCalledTimes(1);
+  const changed = await createProductionRunPolicy({
+    ...options,
+    configuration: {
+      ...configuration,
+      runPolicy: {
+        ...configuration.runPolicy,
+        version: "policy-v2",
+        systemInstruction: "另一条可信指令",
+      },
+    },
+  })(source);
+  expect(changed.systemInstructionRef).not.toBe(first.systemInstructionRef);
+  await expect(
+    policy({ ...source, ownerId: "another-owner" as RunExecutionSource["ownerId"] }),
+  ).rejects.toThrow("RUN_POLICY_SCOPE_MISMATCH");
+  await expect(policy({ ...source, dataClassification: "restricted" })).rejects.toThrow(
+    "RUN_POLICY_MODEL_DISCLOSURE_DENIED",
+  );
+});
+
+it("propagates Run cancellation and remaining deadline to embedding and retains uncertain spend", async () => {
+  const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
+  let boundary: Mem0EmbeddingBoundary | undefined;
+  const controller = new AbortController();
+  const now = "2026-09-06T00:00:00.000Z";
+  const permit: ModelInvocationPermit = {
+    assertActive: vi.fn(async () => {}),
+    markStarted: vi.fn(async () => {}),
+    releaseReserved: vi.fn(async () => {}),
+    settle: vi.fn(async () => {}),
+    markUnknown: vi.fn(async () => {}),
+  };
+  const send = vi.fn(async (options?: { timeoutMs?: number; signal?: AbortSignal }) => {
+    expect(options?.timeoutMs).toBe(500);
+    controller.abort(new Error("RUN_CANCELLED"));
+    options?.signal?.throwIfAborted();
+    throw new Error("CANCELLATION_NOT_PROPAGATED");
+  });
+  const memory = createProductionRunMemory({
+    configuration,
+    projection: {
+      bindEmbeddingBoundary: (value) => {
+        boundary = value;
+      },
+    },
+    payloads: { get: async () => ({ dataClassification: "private" }) as never },
+    memory: {
+      search: async () => {
+        if (!boundary) throw new Error("BOUNDARY_MISSING");
+        await boundary(
+          { model: "qwen/qwen3-embedding-8b", input: "query", dimensions: 4096 },
+          send,
+        );
+        return [];
+      },
+    },
+    admission: async () => ({ begin: async () => ({ disposition: "fresh", permit }) }) as never,
+    budget: {} as never,
+    assertActive: async () => {},
+    now: () => now,
+  });
+  const request: MemorySearchRequest = {
+    ownerId: configuration.ownerId,
+    agentId: configuration.agentId,
+    runId: "run-embedding" as never,
+    executionLease: {} as never,
+    dataClassification: "private",
+    queryRef: "query" as never,
+    queryTerms: [],
+    limit: 3,
+    signal: controller.signal,
+    deadlineAt: "2026-09-06T00:00:00.500Z",
+  };
+  await expect(memory.search(request)).rejects.toThrow("RUN_CANCELLED");
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(permit.markStarted).toHaveBeenCalledTimes(1);
+  expect(permit.markUnknown).toHaveBeenCalledWith("transport_unresolved");
+  expect(permit.settle).not.toHaveBeenCalled();
+  expect(permit.releaseReserved).not.toHaveBeenCalled();
+  await expect(
+    memory.search({ ...request, signal: new AbortController().signal, deadlineAt: now }),
+  ).rejects.toThrow("EMBEDDING_DEADLINE_EXCEEDED");
+  expect(send).toHaveBeenCalledTimes(1);
+});
+
+it("retries only unstarted projection reservations and never repeats an uncertain provider request", async () => {
+  const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
+  let boundary: Mem0EmbeddingBoundary | undefined;
+  const reserve = vi
+    .fn()
+    .mockResolvedValueOnce({ replayed: true, allocation: { status: "released" } })
+    .mockResolvedValueOnce({ replayed: false, allocation: { status: "reserved" } })
+    .mockResolvedValueOnce({ replayed: true, allocation: { status: "unknown" } });
+  const markStarted = vi.fn(async () => ({}) as never);
+  const settle = vi.fn(async () => ({}) as never);
+  const memory = createProductionRunMemory({
+    configuration,
+    projection: {
+      bindEmbeddingBoundary: (value) => {
+        boundary = value;
+      },
+    },
+    payloads: { get: async () => undefined },
+    memory: { search: async () => [] },
+    admission: async () => undefined,
+    budget: {
+      reserve,
+      markStarted,
+      settle,
+      read: async () => undefined,
+      releaseReserved: async () => ({}) as never,
+      markUnknown: async () => ({}) as never,
+      finalize: async () => ({}) as never,
+    },
+    assertActive: async () => {},
+    now: () => "2026-09-06T00:00:00.000Z",
+  });
+  const send = vi.fn(async () => ({
+    data: [{ index: 0, embedding: Array.from({ length: 4096 }, () => 0.1) }],
+    usage: { prompt_tokens: 8, total_tokens: 8 },
+  }));
+  const project = () =>
+    memory.project(
+      {
+        id: "projection-1",
+        claimedBy: "consumer",
+        attemptCount: 2,
+        claimExpiresAt: "2026-09-06T00:00:30.000Z",
+      } as never,
+      { dataClassification: "private" } as never,
+      async () => {
+        if (!boundary) throw new Error("BOUNDARY_MISSING");
+        await boundary(
+          { model: "qwen/qwen3-embedding-8b", input: "memory", dimensions: 4096 },
+          send,
+        );
+        return "provider-memory-1";
+      },
+    );
+  await expect(project()).resolves.toBe("provider-memory-1");
+  expect(reserve.mock.calls[1]?.[0].operationKey).toMatch(/:attempt:2$/u);
+  expect(markStarted).toHaveBeenCalledTimes(1);
+  expect(settle).toHaveBeenCalledTimes(1);
+  await expect(project()).rejects.toThrow("EMBEDDING_RESULT_REQUIRES_RECONCILIATION");
+  expect(send).toHaveBeenCalledTimes(1);
+});
+
+it("accepts the production embedding descriptor in the real invocation registry", () => {
+  const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
+  expect(
+    () =>
+      new ModelInvocationAdmissionService({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        runId: "run" as never,
+        executionLease: {
+          executionLeaseId: "execution" as never,
+          expectedLeaseRevision: 1,
+          authorityLeaseId: "authority" as never,
+          authorityFencingToken: 1,
+          deploymentId: configuration.deploymentId,
+          authorityEpoch: 1,
+          fencingToken: 1,
+          consumerId: "consumer",
+        },
+        dispatch: {} as never,
+        invocations: {} as never,
+        clock: { now: () => "2026-09-06T00:00:00.000Z" },
+        limits: {
+          accountCostMicros: configuration.budgets.perRunCostMicros,
+          globalCostMicros: configuration.budgets.globalCostMicros,
+          perClassificationCostMicros: configuration.budgets.perClassificationCostMicros,
+        },
+        registry: [embeddingAdmissionDescriptor(configuration)],
+      }),
+  ).not.toThrow();
+});
+
+it.each([false, true])(
+  "generates a title through the selected Pi transport (required reasoning: %s)",
+  async (reasoningRequired) => {
+    const adapters = createReferenceAdapterSet();
+    const streamOptions: Record<string, unknown>[] = [];
+    class TitleRuntime extends RecordingRuntime {
+      override getModel(providerId: string, modelId: string): unknown {
+        const value = super.getModel(providerId, modelId);
+        return value ? { ...(value as Record<string, unknown>), provider: providerId } : undefined;
+      }
+      stream(_model: unknown, _context: unknown, options: Record<string, unknown>) {
+        streamOptions.push(options);
+        return (async function* () {
+          await (options["fetch"] as typeof fetch)("https://openrouter.ai/api/v1/chat/completions");
+          yield {
+            type: "done",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "日本今日头条" }],
+              api: "openai-completions",
+              provider: "openrouter",
+              model: primaryModel.model,
+              stopReason:
+                reasoningRequired && Number(options["maxTokens"]) < 512 ? "length" : "stop",
+              timestamp: Date.now(),
+              usage: {
+                input: 30,
+                output: 10,
+                cacheRead: 0,
+                cacheWrite: 0,
+                totalTokens: 40,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.000001 },
+              },
+            },
+          };
+        })();
+      }
+    }
+    const runtime = new TitleRuntime();
+    const permit: ModelInvocationPermit = {
+      assertActive: vi.fn(async () => {}),
+      markStarted: vi.fn(async () => {}),
+      releaseReserved: vi.fn(async () => {}),
+      settle: vi.fn(async () => {}),
+      markUnknown: vi.fn(async () => {}),
+    };
+    const begin = vi.fn(async () => ({ disposition: "fresh", permit }));
+    const prepared = compositionOptions(adapters, {
+      runtimeFactory: { create: async () => runtime as unknown as PiModelRuntime },
+      fetch: vi.fn(
+        async () =>
+          new Response(
+            `data: ${JSON.stringify({ id: "generation:title", model: primaryModel.model, usage: { cost: 0.000001 }, openrouter_metadata: { attempts: [{ provider: "Fixture", model: primaryModel.model, status: 200 }] } })}\n\ndata: [DONE]\n\n`,
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+      ),
+    });
+    const composition = createProductionModelComposition({
+      ...prepared.options,
+      descriptors: prepared.options.descriptors.map((descriptor) => ({
+        ...descriptor,
+        reasoning: reasoningRequired || descriptor.reasoning,
+        reasoningRequired,
+      })),
+    });
+    try {
+      const request = {
+        ownerId: prepared.options.ownerId,
+        agentId: prepared.options.agentId,
+        runId: "run:title",
+        threadId: "thread:title",
+        modelRef: primaryModel.ref,
+        dataClassification: "private",
+        systemInstructionRef: "disclosure:title",
+        correlationId: "title:test",
+      };
+      const gate = {
+        context: { ownerId: request.ownerId, agentId: request.agentId, runId: request.runId },
+        begin,
+      };
+      expect(
+        await composition.generateTitle?.(
+          request as never,
+          "Generate a short title",
+          gate as never,
+        ),
+      ).toBe("日本今日头条");
+      expect(begin).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: "model-port",
+          modelRef: primaryModel.ref,
+          logicalSlot: "thread-title:run:title",
+        }),
+      );
+      expect(permit.markStarted).toHaveBeenCalledTimes(1);
+      expect(permit.settle).toHaveBeenCalledWith(
+        expect.objectContaining({ inputTokens: 30, outputTokens: 10 }),
+      );
+      expect(permit.markUnknown).not.toHaveBeenCalled();
+      expect(streamOptions[0]).toMatchObject({
+        maxTokens: reasoningRequired ? 1024 : 128,
+        maxRetries: 0,
+        timeoutMs: 20000,
+      });
+    } finally {
+      await composition.close();
+    }
+  },
+);

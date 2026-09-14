@@ -1,0 +1,37 @@
+ts	phase	decision	why	evidence	result
+2026-09-11T12:58:45Z	design	保存原生有效上下文与不可变正文引用	复用 Pi 消息与压缩语义，保留产品加密和历史版本边界	/private/tmp/himawari-agent-research-20260911/thread-context-research.md	用户已批准实施；先完成持久化与请求级回归
+2026-09-11T13:45:37Z	verification	用真实 Pi 与生产组合验证跨轮恢复	中间数组不能证明数据库到模型请求的链路正确	test/qualification/evidence/runtime-history/production-chain.log	普通正文和审批拒绝在重建服务对象后恢复；新问题最后，旧工具不重执行
+2026-09-11T13:45:38Z	legacy	生成经过核验的加密旧历史候选	旧 Trace 存在重复与误脱敏，不能原样重放	test/qualification/evidence/runtime-history/legacy-candidate-qualification.json	Hermes 实测候选34条，去重6条，恢复15个合计；一轮取消输出缺失明确保留
+2026-09-11T13:45:38Z	correction	修正候选程序的实际安装包加载入口	首次程序未核验打包后入口，管理员执行失败且未修改产品数据库	test/qualification/evidence/runtime-history/prepare-legacy-candidate.py	改为实际ESM入口并先在Hermes运行同一加载及转换代码；v2生成候选通过
+2026-09-11T14:02:36Z	verification	完整Mac构建与测试通过	覆盖安装包与全套项目测试，避免仅凭局部测试宣称兼容	test/qualification/evidence/runtime-history/local-ci-summary.json	2045项通过，0失败0跳过；托管CI未执行
+2026-09-11T14:02:36Z	rehearsal	先在真实数据库副本上演练导入	生产数据库与密钥受保护；先核验迁移和原记录不变，再准备正式切换	test/qualification/evidence/runtime-history/linux-rehearsal-self-test.json	Hermes实际候选安装包上3个合成验证通过；真实副本演练等待管理员认证
+2026-09-11T14:10:44Z	correction	改用文件入口启动数据库副本演练	stdin入口的input-type参数被SQLite Worker继承；原测试未覆盖管理员入口差异	test/qualification/evidence/runtime-history/rehearsal-stdin-reproduction.log	Mac和Hermes复现ERR_INPUT_TYPE_NOT_ALLOWED；真实失败私有日志尚未读取，v2先核对错误再决定继续
+2026-09-11T14:10:44Z	verification	重新验证Hermes文件入口	用同一候选安装包运行SQLite迁移和原生历史保存回读	test/qualification/evidence/runtime-history/linux-rehearsal-self-test-v2.json	3个合成用例通过；真实副本演练v2等待管理员认证
+2026-09-11T14:13:50Z	investigation	暂停副本演练，先导出实际错误结构	v2读取现场日志未匹配复现的input-type错误，不能将本地复现当作现场根因	test/qualification/evidence/runtime-history/legacy-rehearsal-attempt-2.json	v2在重新演练前停止；真实错误仍待只读诊断，线上服务保持active
+2026-09-11T14:28:34Z	diagnosis	确认实际失败为运行账号不可穿过候选父目录	实际日志为platform-node的MODULE_NOT_FOUND，副本尚未创建；prefix和lib归andy且0700，runtime本体及后代可读	test/qualification/evidence/runtime-history/legacy-rehearsal-diagnostic.json	启动参数缺陷不是第一次现场失败原因；根因定位为目录权限与挂载层级
+2026-09-11T14:28:34Z	verification	直接挂载runtime并验证隔离路径加载	保留andy私有目录权限；避免要求himawari穿过候选prefix和lib	test/qualification/evidence/runtime-history/linux-namespace-self-test.json	Hermes隔离视图3个合成测试通过；v3先以实际账号执行同一测试，再读取真实数据
+2026-09-11T14:47:16Z	verification	真实运行账号和真实数据库副本演练通过	必须验证实际权限、数据库和旧历史内容，不能以合成数据代替	test/qualification/evidence/runtime-history/legacy-rehearsal-passed.json	schema32，10轮34条历史回读一致，旧消息和Run记录未变，模型调用0，线上数据库未写入
+2026-09-11T15:04:44Z	qualification	候选权限保护通过但组件组合验收失败	不能把权限探针通过当作整个安装验证通过	scripts/operations/hermes-native-history-qualify.py	实际himawari账号权限探针通过；composition-installed返回PORT_CONFLICT，正式切换未执行
+2026-09-11T15:04:44Z	diagnosis	将未绑定错误追溯至更早的Job Host准备阶段	Mac当前执行环境拒绝Job Host操作不能证明Hermes同一根因	test/qualification/evidence/runtime-history/composition-mac-diagnostic.log	Mac诊断见EPERM和JOB_HOST_NOT_READY；所有临时安装模块和源测试改动已恢复
+2026-09-11T15:04:44Z	verification	确认相同候选组件在Hermes普通账号下可执行	需要区分代码本身与实际账号隔离环境	test/qualification/evidence/runtime-history/composition-andy-linux.json	andy运行组件组合通过；实际himawari账号诊断待终端认证
+2026-09-11T15:04:44Z	verification	验证正式导入幂等和旧历史拒绝条件	正式导入不得重复生成快照或接受变化后的源记录	test/qualification/evidence/runtime-history/importer-linux-self-test.json	Mac与Linux各4项通过，首次导入1快照1审计，重复执行数量不变，过期及缺失来源拒绝
+2026-09-11T15:12:06Z	correction	修正临时运行目录验收误用正式安装保护记录	保护记录只授权一个确定安装目录，不能用于临时测试目录	test/qualification/evidence/runtime-history/installation-environment-conflict.json	Hermes同账号同用例有此环境变量失败、无此变量通过；仅修正组合验收环境，实际账号复验待认证
+2026-09-11T15:22:38Z	verification	真实账号候选六组验收与签署完成	修正环境配置后必须重新核验实际安装	test/qualification/evidence/runtime-history/installation-qualified.json	实际himawari账号通过，原服务和数据库未更改，正式部署仍待执行
+2026-09-11T15:22:38Z	verification	验证跨schema失败恢复机制	不能用旧程序直接运行新版数据库	test/qualification/evidence/runtime-history/backup-rollback-linux-self-test.json	Hermes旧版真实备份适配器可恢复经过32迁移和历史导入的合成状态到31；线上备份仍待停服后执行
+2026-09-11T15:37:41Z	deployment	正式切换与旧历史导入成功	使用已验证备份和候选安装执行正式迁移	test/qualification/evidence/runtime-history/cutover-result.json; test/qualification/evidence/runtime-history/cutover-import.json; test/qualification/evidence/runtime-history/cutover-backup-verify.json	schema32，10轮34消息，原记录不变，Agent及Worker就绪，模型调用0；全功能页面E2E尚待完成
+2026-09-11T16:06:07Z	e2e	全功能验收尚未达标，保留失败基线	真实页面暴露了单元和安装资格未覆盖的问题	test/qualification/evidence/runtime-history/e2e-matrix.json; test/qualification/evidence/runtime-history/e2e-weather-first.json	Fork、取消后换任务、文件write/read/edit及拒绝通过；搜索接口404、Logo404、旧上下文附带陈述和输出字节文案等仍需处理
+2026-09-11T16:52:15.868252+00:00	diagnosis	修正空元数据引用的只读诊断分支	空元数据引用不是加密正文；原脚本错误地调用解密器	e2e-diagnostic-v2.json	只读v2执行成功，线上数据库未修改
+2026-09-11T16:52:15.868252+00:00	fix	恢复已披露工具结果而非再次执行历史调用	实际后续审批超过前一工具五分钟凭证期限，重入导致unknown	packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts	连续两次审批本地通过，尚未部署
+2026-09-11T16:52:15.868252+00:00	fix	接入已有回答语言策略	页面语言已保存但生产策略未读取，英文日文实测均仍中文	apps/agent-service/test/production-model-composition.unit.test.ts	先复现失败，修正后9项通过，尚未部署
+2026-09-11T16:52:15.868252+00:00	e2e	保留不通过结论并继续缺陷修复	页面可用不能证明所有功能交付	e2e-matrix.json	搜索仍404，模型仍会附带历史任务陈述；不宣称通过
+2026-09-11T17:20:07.611577+00:00	validation	本地2052测试与Linux候选构建通过	受保护账号资格和线上复测仍未完成	e2e-matrix.json	Linux Pi97、历史95、模型组合9通过；后续仅测试/诊断/边界检查脚本调整，候选产品源码未变
+2026-09-11T17:20:07.611577+00:00	build-boundary	仅放行控制中心引用已确认的单张品牌PNG	品牌资源归仓库所有，不属于其他工作区代码	scripts/check-boundaries.mjs	其余跨工作区相对导入仍拒绝，PNG纳入构建源摘要，原设计文件不修改
+2026-09-12T01:04:00.646941+00:00	qualification	候选权限保护、六组工具隔离验收和签署通过	真实himawari账号证据	e2e-fixes-qualification.json; e2e-fixes-protected-runtime.json; e2e-fixes-observation.json	线上未切换；首次完整核验10秒、后续约1至3毫秒，不等同聊天延迟；无活跃Run或未清理作业
+2026-09-12T01:39:19.351429+00:00	e2e	实际请求确认语言策略已送入模型，继续同历史模型对照	不能再归因于设置未保存或未传递	e2e-language-diagnostic.json; e2e-post-cutover.json	英文日文仍回复中文；搜索当前来源引用和四工具后重复请求尚未通过
+2026-09-12T02:10:50.115487+00:00	correction	依用户明确要求撤回生产策略对回答语言的额外注入	UI语言不决定模型回答语言；原测试不构成本次失败项	e2e-post-cutover.json; apps/agent-service/test/production-model-composition.unit.test.ts	本地9项回归通过，生产尚未撤回；两个独立语言控件的产品范围已向用户说明并确认中
+2026-09-12T02:14:08.678501+00:00	diagnosis	确认实际工具结果完整送达，停止推测上下文传递缺陷	同callId正文摘要完全一致；四工具终态是15分钟期限超时	e2e-tool-flow-diagnostic.json	模型仍出现旧来源描述和重复请求；以相同对话和请求对照DeepSeek low，不增加重复调用特例
+2026-09-12T02:40:18.119500+00:00	correction	用户确认移除独立回答语言设置；本地撤回额外注入及控件	界面语言只决定 UI	ui-locale-csrf-chrome-final/browser.json	80项浏览器单元测试通过；待保护候选验证和正式切换
+2026-09-12T02:40:18.119500+00:00	bugfix	修复旧防伪令牌导致长开页面提交被拒绝	线上明确403且正常刷新后同草稿成功提交	apps/control-center/test/control-center-client.unit.test.ts	失败前测试已复现；34项客户端测试及本地Chrome完整回归通过，线上未修复
+2026-09-12T02:40:18.119500+00:00	diagnosis	DeepSeek low和GLM对照均未达标	前者请求旧文件，后者沿用上一轮并夹带旧任务	e2e-post-cutover.json	不宣称思考等级或换模型解决旧对话问题；无新付费调用
+2026-09-12T02:55:29.464520+00:00	qualification	界面语言与令牌恢复候选在Hermes构建完成	97项Pi、95项历史、9项生产组装、80项浏览器回归通过	ui-session-preparation.json	真实受保护账号验证和签署需sudo认证，线上尚未更新；静态检查保留原始证据字节
+2026-09-12T03:07:16.032584+00:00	qualification	UI语言与令牌恢复候选通过真实账号保护、六组探针及签署	签名与六个工件摘要回读验证一致	ui-session-qualification.json; ui-session-protected-runtime.json	首次审计4.74秒，后续0.86至3.83毫秒；无活动Run或未清理作业；正式切换需终端sudo认证

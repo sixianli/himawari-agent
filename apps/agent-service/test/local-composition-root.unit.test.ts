@@ -5,15 +5,15 @@ import type {
   SecretPort,
 } from "@himawari-agent/application";
 import {
+  createReferenceAdapterSet,
   InMemoryGatewayAccessPolicy,
   InMemoryGatewayReadModel,
-  createReferenceAdapterSet,
 } from "@himawari-agent/testing";
 import { describe, expect, it } from "vitest";
 import {
-  StaticLocalGatewayAuthenticator,
   createLocalAgentServiceComposition,
-} from "../src/index.js";
+  StaticLocalGatewayAuthenticator,
+} from "./fixtures/local-composition-root.js";
 
 const authentication: GatewayAuthenticationContext = {
   subjectId: "owner-01",

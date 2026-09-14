@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "scope": "local macOS artifact build and complete project test command; not Linux protection acceptance",
+  "projects": {
+    "unit": 855,
+    "contracts": 268,
+    "integration": 812,
+    "e2e": 3,
+    "pi-compat": 77
+  },
+  "totalPassed": 2015,
+  "summarySha256": "2fcf81ed1d0dccb447075b542e6a43e8e959509924526023041feae7fde2e99d",
+  "buildDurationMs": 315837,
+  "testDurationMs": 461680,
+  "staticChecksPassed": true,
+  "documentGovernancePassed": true,
+  "runtimeProtectionOnHermes": "pending administrator authentication and actual denied-write qualification",
+  "candidateBuild": "Hermes Linux independent candidate built; production unchanged",
+  "sourceFiles": [
+    "packages/platform-node/src/capabilities/protected-runtime.ts",
+    "scripts/probe-protected-runtime.mjs"
+  ],
+  "productionAcceptance": "not executed: administrator authentication required",
+  "protectedFastPathEnabled": false
+}

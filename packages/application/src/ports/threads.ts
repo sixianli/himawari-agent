@@ -10,10 +10,11 @@ import type {
   RunStatus,
   SessionId,
   ThreadId,
-  TurnId,
   TriggerId,
+  TurnId,
 } from "@himawari-agent/domain";
 import type { DataClassification, PayloadRef } from "./common.js";
+import type { ProductContextRunState } from "./context-projection.js";
 
 export interface ThreadMutationReceipt {
   readonly commandId: string;
@@ -47,6 +48,7 @@ export interface ThreadUpdateInput {
 }
 
 export interface AdmitOwnerMessageInput {
+  readonly modelSelection?: import("./run-execution-source.js").RunModelSelection;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly threadId: ThreadId;
@@ -132,6 +134,32 @@ export interface ThreadSearchProjectionInput {
   readonly projectionVersion: string;
 }
 
+export interface ThreadContextSnapshotQuery {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly runId: RunId;
+  readonly afterSequence: number;
+  readonly limit: number;
+}
+
+export interface ThreadContextSnapshot {
+  readonly thread: ProductThread;
+  readonly messages: readonly ProductThreadMessage[];
+  /** Read atomically with messages; contains only their associated Runs. */
+  readonly runStates: readonly ProductContextRunState[];
+  readonly runtimeHistory?: import("./context-projection.js").ProductContextEnvelopeV1["runtimeHistory"];
+  /** Highest canonical message sequence causally visible to this Run. */
+  readonly sourceWatermark: number | null;
+}
+
+export interface ThreadCommittedMessagesByIdsQuery {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly messageIds: readonly MessageId[];
+}
+
 export interface ThreadTitleSearchProjectionInput {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -215,7 +243,23 @@ export interface RequestThreadDeletionInput {
   readonly authority: ProductAuthorityFence;
 }
 
+export interface ThreadDetailSnapshotQuery {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly afterSequence: number;
+  readonly limit: number;
+}
+
+export interface ThreadDetailSnapshot {
+  readonly thread: ProductThread;
+  readonly messages: readonly ProductThreadMessage[];
+  readonly runs: readonly ThreadRunSummaryRecord[];
+}
+
 export interface ThreadRepositoryPort {
+  /** Read metadata, paged messages and run states from one database snapshot. */
+  readDetailSnapshot(query: ThreadDetailSnapshotQuery): Promise<ThreadDetailSnapshot | undefined>;
   create(
     input: ThreadCreateInput,
   ): Promise<{ thread: ProductThread; receipt: ThreadMutationReceipt }>;
@@ -246,6 +290,12 @@ export interface ThreadRepositoryPort {
     threadId: ThreadId,
     afterSequence: number,
     limit: number,
+  ): Promise<readonly ProductThreadMessage[]>;
+  readContextSnapshot(
+    query: ThreadContextSnapshotQuery,
+  ): Promise<ThreadContextSnapshot | undefined>;
+  readCommittedMessagesByIds(
+    query: ThreadCommittedMessagesByIdsQuery,
   ): Promise<readonly ProductThreadMessage[]>;
   listRuns(
     ownerId: OwnerId,

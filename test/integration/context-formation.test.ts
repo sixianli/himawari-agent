@@ -8,8 +8,8 @@ import {
   createSessionId,
   createThreadId,
 } from "@himawari-agent/domain";
-import { createReferenceAdapterSet } from "@himawari-agent/testing";
-import { describe, expect, it } from "vitest";
+import { createReferenceAdapterSet, DeterministicFailureScheduler } from "@himawari-agent/testing";
+import { describe, expect, it, vi } from "vitest";
 
 const OWNER_ID = createOwnerId("owner-context");
 const AGENT_ID = createAgentId("agent-context");
@@ -43,10 +43,10 @@ async function seedMemory(
 }
 
 function createService(threadSummaries?: Pick<ThreadDistillationStatePort, "latestSummary">) {
-  const adapters = createReferenceAdapterSet();
+  const adapters = createReferenceAdapterSet({ scope: { ownerId: OWNER_ID, agentId: AGENT_ID } });
   const trace = new SessionTraceRecorder({
     trace: adapters.trace,
-    payloads: adapters.payload,
+    artifacts: adapters.runPayloadArtifacts,
     protector: adapters.payloadProtector,
     audit: adapters.audit,
     clock: adapters.clock,
@@ -57,6 +57,11 @@ function createService(threadSummaries?: Pick<ThreadDistillationStatePort, "late
     service: new ContextFormationService({
       memory: adapters.memory,
       trace,
+      artifacts: adapters.runPayloadArtifacts,
+      payloads: adapters.payload,
+      protector: adapters.payloadProtector,
+      clock: adapters.clock,
+      ids: adapters.ids,
       ...(threadSummaries ? { threadSummaries } : {}),
     }),
   };
@@ -73,6 +78,7 @@ function request(sourceType: "user_message" | "schedule" | "external_event") {
       id: `trigger-${sourceType}`,
       sourceType,
       payloadRef: `payload-trigger-${sourceType}`,
+      occurredAt: T1,
     },
     threadMessages: [
       {
@@ -82,6 +88,8 @@ function request(sourceType: "user_message" | "schedule" | "external_event") {
         occurredAt: T0,
       },
     ],
+    sourceWatermark: null,
+    policyVersion: "context-policy-v1",
     policies: [{ ref: "policy-owner-01", payloadRef: "payload-policy-owner-01" }],
     memoryQueryRef: "payload-memory-query-01",
     memoryQueryTerms: ["beef", "dinner"],
@@ -105,6 +113,66 @@ function request(sourceType: "user_message" | "schedule" | "external_event") {
 }
 
 describe("Task 9 Memory and context formation", () => {
+  it("freezes historical cancellation with the selected message across replay", async () => {
+    const { service } = createService();
+    const input = request("user_message");
+    const previous = input.threadMessages[0];
+    if (!previous) throw new Error("Expected history");
+    const runState = { runId: createRunId("run-previous"), status: "cancelled" as const };
+    const formed = await service.form({
+      ...input,
+      threadMessages: [{ ...previous, runState }],
+    });
+    expect(formed.envelope.history[0]).toMatchObject({ runState });
+    const replayed = await service.form(input);
+    expect(replayed.envelope.history[0]).toMatchObject({ runState });
+  });
+
+  it("replays an existing context artifact without reselecting after Trace failure", async () => {
+    const failures = new DeterministicFailureScheduler();
+    failures.failOn("trace.append", 4);
+    const adapters = createReferenceAdapterSet({
+      failures,
+      scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+    });
+    const trace = new SessionTraceRecorder({
+      trace: adapters.trace,
+      artifacts: adapters.runPayloadArtifacts,
+      protector: adapters.payloadProtector,
+      audit: adapters.audit,
+      clock: adapters.clock,
+      ids: adapters.ids,
+    });
+    const service = new ContextFormationService({
+      memory: adapters.memory,
+      trace,
+      artifacts: adapters.runPayloadArtifacts,
+      payloads: adapters.payload,
+      protector: adapters.payloadProtector,
+      clock: adapters.clock,
+      ids: adapters.ids,
+    });
+    await expect(service.form(request("user_message"))).rejects.toMatchObject({
+      code: "PORT_INJECTED_FAILURE",
+    });
+    const search = vi.spyOn(adapters.memory, "search");
+
+    const replayed = await service.form({
+      ...request("user_message"),
+      memoryQueryTerms: ["changed", "after", "failure"],
+    });
+
+    const contextArtifact = await adapters.runPayloadArtifacts.lookup({
+      runId: RUN_ID,
+      purpose: "context",
+      operationKey: `context:${RUN_ID}`,
+    });
+    expect(contextArtifact).toBeDefined();
+    expect(replayed.contextEnvelopeRef).toBe(contextArtifact?.payloadRef);
+    expect(replayed.traceEventIds).toEqual([]);
+    expect(search).not.toHaveBeenCalled();
+  });
+
   it("selects permitted history deterministically and injects the protected answer locale policy", async () => {
     const { adapters, service } = createService();
     const formed = await service.form({

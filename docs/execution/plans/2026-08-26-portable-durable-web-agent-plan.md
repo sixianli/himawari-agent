@@ -258,6 +258,9 @@ startup coordinator 固定 11 个有序阶段，从 configuration 到 HTTP readi
 - [x] 实现 work.execute、work.cancel、work.reconcile、event subscription 和 readiness；大输入/结果只使用 Payload/secret/capability handles。
 - [x] 对重复请求、重复结果、stale handle、stale fence、Worker crash、Agent crash、socket replacement 和未知外部结果运行真实 child-process tests。
 - [x] 证明 Agent Service 不会在 Worker unavailable 时静默降级为进程内执行。
+- [x] 补齐 Worker 动态子调用返回 Agent 的持久准入通道，验证可信父委派、双方启动身份、作用域与资源限制、重放无可执行投影及消费后响应未知；生产发送路径已在首次投递前登记不可变父委派。
+- [ ] 实现 Owner 独占、大小有界、SHA-256 锁定的能力部署快照及严格配置引用；Worker 只从已验证 Manifest、运行绑定和平台资格建立 boot-scoped 只读投影，缺失、篡改、空注册表或不合格时 readiness 为 false。
+- [ ] 以该投影组合 `NodeCapabilityRuntimePort`、正文代理、短期 Handle store、`ExecutionWorkerService` 与 `ProductionExecutionWorker`，并让生产 Worker Run 适配器接入主服务；不得使用测试 adapter、全零 digest、任意 shell 或 Worker 侧 SQLite 读取冒充生产能力。
 
 Task 4 已确认严格 v1 parser 不能兼容 handshake、authority fence、resource ceiling 与 cursor 字段，因此本 Task 标题和来源 Spec 中的“execution.v1 over UDS”作为 Worker protocol 的历史名称保留，实际 wire transport 使用已经冻结的 `execution.v2`，原有 `execution.v1` fixture 与接受集合没有变化。`ExecutionUdsServer` 在权限为 `0700` 的 runtime directory 上绑定 HTTP/JSON Unix socket 并设为 `0600`，同时验证 Owner-only boot token、Agent Service instance、bounded body、content type 和 request deadline；活动 socket、普通文件替换与 inode race 均 fail closed，只有同一账户拥有且确认无人监听的 crash residue 才能在 inode 复核后移除。
 
@@ -284,12 +287,30 @@ Agent Service 只接受显式 `--profile production`，验证 strict configurati
 - [x] 保证同一 job 默认只有一个活动 Run；重复人工、timer 或 external occurrence 使用稳定 key 合并，只有显式安全配置才能并行。
 - [x] 实现 IANA timezone、DST 跳过/单次、periodic missed skip、one-shot `MISSED`、有界退避和凭据/授权/策略错误不重试。
 - [x] 实现全局、分类和单 Run 硬预算与前台保留容量；在线已接纳工作在预算或容量不足时进入可见的 `BUDGET_BLOCKED` 或 `CAPACITY_BLOCKED`。
+- [x] 补齐前台 Run 与后台 occurrence 共用的预算账户和逐调用子分配，迁移历史预留及支出，关闭普通元数据更新改写费用的入口，并验证并发、幂等、未知费用、权威失效与重启恢复。该账本已经完成，但不代表生产模型逐调用门禁已接入。
+- [ ] 在统一账本通过验证后接入 Pi 逐调用门禁，覆盖工具循环、压缩、摘要及重试的模型身份、披露、凭证与预算检查；实际付费模型验证另行取得精确授权。
 - [x] Attention 只产生固定五级结果并应用确定性最低等级；Web Delivery 持久化、可重放、可去重，浏览器关闭不影响后台任务。
 - [x] 重启测试覆盖 running、awaiting approval、retry_wait、MODEL_BLOCKED、unknown external result、pending Delivery 和 authority loss。
 
 Task 12 新增第九个不可变 migration，把 background occurrence revision、分类、预算保留/实际费用、显式并行安全标记、work lease、错误和完整记录加入规范 SQLite schema；Run Coordinator 的 `run-checkpoint:<RunId>` 通过受 scope 限制的持久 checkpoint store 跨进程恢复。`DurableBackgroundWorkService` 以 `(job_id, stable_key)` 合并 timer、人工和 external occurrence，并始终经 `UnifiedTriggerIngestionService` 接纳；SQLite 即时事务共同验证 current deployment fence、单 job active Run、全局/分类/单 Run 预算、总量/category 并发与前台保留容量，阻塞状态保持可见。
 
 schedule evaluator 覆盖 interval、one-shot 和 IANA daily schedule；periodic misfire 跳过旧槽位，one-shot 超时标记 `MISSED`，DST 不存在时刻无候选、重复时刻按本地日期只执行一次。work lease 到期后才允许原 identity reclaim；transport/provider 仅按有界 exponential backoff 与稳定 jitter 重试，credential、authorization、policy 和 invalid input 不自动重试。真实 SQLite restart matrix 同时覆盖 awaiting approval、due retry、`MODEL_BLOCKED`、unknown external result、pending/interrupted Delivery、过期 running lease 与 authority fence 变化。正式 Agent Service 已打开 repository 并输出脱敏恢复计数；生产 timer loop 留到 Task 13 的 Trigger Control Plane 组合，不使用测试 sink 冒充公共 Gateway。实现与验证证据位于 `test/integration/qualification/evidence/s1-task12-durable-background.json`。
+
+2026-09-04 的生产接线修复补充了 `RunLifecyclePort` 和关系表适配器：Thread 接纳的 Run 由同一张 `runs` 表读取和迁移，不再要求在通用 `product_state_records` 中复制状态。迁移在一个事务中检查部署权威、租约、scope、revision 和领域状态机，并写入命令回执及可靠事件；Thread 接纳与通用 Run 写入入口互相拒绝重复状态。Thread 成功完成仍须助手消息、Turn、Run 的原子提交，通用状态迁移不能跳过该边界。此次实际运行 8 个集成文件、79 项测试，覆盖原生 Node 源入口和编译产物加载、关系表接纳/迁移、重启回执重放、越权拒绝、事件失败回滚与取消 checkpoint。最终回复归一化和提交接线、自动 claim/recovery、生产 HTTP/Pi 组合仍未完成；这些测试不构成已安装服务处理真实请求的证据。
+
+同日第二个接线单元实现了类型明确的最终输出、`completeRun` 原子助手提交和终结检查点恢复。真实临时 SQLite 与 envelope 加密路径已验证消息接纳、协调执行、单一助手正文及重启回读；助手事务前后两处故障不重复调用 Runtime，末尾事件写入失败会回滚完整业务事务。还覆盖重命名、Trash、回执重放、scope/fence/CAS/分类拒绝、旧检查点缺输出，以及取消先通过权威校验再触发执行副作用。真实组合额外暴露 Trace 查询上限不匹配，已改为 1,000 条有界分页并验证空历史、整页、跨页和序号耗尽。在新增协调检查点归属迁移之前，主代理独立运行 11 个集成文件、119 项测试及全仓检查通过；该结果不是后续修改后的整体验收。模型循环测试使用固定 Pi 和受控 provider，不能替代真实 provider、安装后服务、自动领取任务或生产 Context projection 的验证；后三项仍是后续接线范围。
+
+删除回归随后确认旧 JSON 协调检查点不属于 Run 的外键关系，导致独占答案残留、存活检查点引用的正文又可被单独删除。本单元改用 `RunCheckpointStore` 与第十八项 migration，保留另一张历史追加检查点表；同事务验证 scope、deployment fence、Payload 和 CAS，并将永久删除纳入真实引用关系。取消后的已生成正文仍保留归属，不代表助手消息已发布。主代理独立完成全仓 `npm run check`、14 个集成文件的 145 项测试、14 个合同文件的 166 项测试，以及三个 Pi 兼容文件的 21 项测试。合同检查中五项 UDS 测试因默认沙箱禁止创建 socket，经过针对临时本机 socket 的授权重跑后全部通过；未连接生产服务。独立只读复核未发现阻塞本单元提交的问题，三个受影响 Runbook 已语义核对并重新封存静态合同，严格文档检查无警告。该单元不包含安装后 HTTP 接线、生产上下文物化、持久执行领取、真实 Worker 通道或双平台隔离验收。
+
+2026-09-04 的 Worker 正文接口单元将 Program、MCP 和 Endpoint 的输入/输出集中到 invocation 级窄边界，移除执行侧的任意 Payload store 和加解密器依赖。主代理独立运行八项单元测试通过，覆盖完整请求传递、输入拒绝后不执行，以及外部动作成功但输出保存失败时只报告结果不确定。全仓检查通过。这些证据仅证明接口迁移；生产认证正文代理、结果幂等事务、真实 Worker 接线和双平台隔离仍待完成。
+
+后续正文通道单元新增独立 `payload-broker.v1`、认证本机 Unix socket server/client 与 Worker 窄客户端，并复用旧执行通道的传输基础。主代理独立运行八项协议合同和十八项真实本机通信、旧执行通道及 Worker 客户端测试通过；后者在默认沙箱遇到 `listen EPERM`，取得精确的临时本机 socket 授权后同命令通过，没有连接外网或修改生产服务。测试覆盖启动身份和响应关联、严格字段/编码/大小、错误脱敏、缓慢正文与响应的绝对截止时限、晚完成提交与重试边界。持久委派核验、结果归属、真实能力 registry 和最终服务接线不在本单元完成范围，不能据此关闭生产 Worker 验收。
+
+运行正文归属单元新增 `RunPayloadArtifactPort` 与第十九项 migration。保护后的正文和 Run 归属、用途、语义操作回执在同一 SQLite 事务提交；当前部署与有效租约、作用域、语义冲突、终态新增和删除后迟到写入均在持久边界检查。已有非审计正文在 Run 结束后仍可同义重放，不能把重放当作新的执行授权。Trace 已迁移到该端口；追加 Trace 失败后留下的是可随 Run 回收的有主正文，而非孤儿。加密备份恢复包含非空归属记录，直接治理删除与 GitHub history 删除均验证 artifact-only 独占正文回收和存活共享引用保护。主代理先完成九个集成文件的 110 项回归；最后收紧终态和删除证据后，两个聚焦文件的 11 项测试通过，另有十八项迁移合同与十项 transfer/治理删除回归通过，冻结后的全仓检查通过。Context、final answer、Worker result 的生产生成方尚未接入新端口，三个生产缺口仍保持未完成。
+
+2026-09-04 的执行领取单元增加第二十一项 migration 和 `RunDispatchPort`，不复制 Run 业务状态。关系表生命周期和协调检查点 writer 在同一事务内验证执行凭证，规范取消原子更新 Run、检查点、租约、回执与可靠事件。真实 SQLite fixture 经正式领取端口取得执行身份。主代理独立完成领取与调用回执两个集成文件的 27 项回归；2026-09-05 又完整运行协调器与 Thread 生命周期两个文件，47 项全部通过，包含取消原子成功、失败回滚和旧 fingerprint 回放。升级合同夹具修正旧版本断言后，18 项迁移合同通过；恢复点、权威迁移与治理删除的 20 项回归通过。这些运行分别记录，不相加为一次全量结果。该批次全仓类型检查曾通过，后续在途接线仍须重新检查。生产领取循环、启动权威续期、安装后 HTTP/Runtime 接线和双机真实隔离仍未完成，不能关闭对应生产验收。
+
+结果观察单元增加 `CapabilityInvocationResultPort` 和 Agent 侧可信正文 handler，复用唯一 Run 正文 writer，并明确终态后保存已发生事实不等于成功发布。真实 SQLite 回归覆盖晚到正文、同义重放、身份与正文冲突、当前权威、治理删除和事务回滚；handler 覆盖输入分类上限、输出分类和媒体类型校验。Worker 子任务的取消与超时路径已保留未知结果供其适配器观察，主代理完整运行该 Worker 文件 11 项通过；最终进入 Agent 持久核对流程的通道仍未完成，不能把局部观察算成生产闭环。
 
 ### Task 13：实现受认证 HTTP Gateway 与可恢复 SSE
 
@@ -491,7 +512,30 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 
 本机真实 Chrome `151.0.7922.172` 与 Edge `150.0.4078.50` 已通过 Thread/chat、Run cancel、approval、task、inbox、Memory、Trace、sessions、health degraded、SSE 断网/后台/关闭重开、键盘焦点、ARIA landmark、axe、触摸目标和非颜色连接状态资格测试。Playwright WebKit `26.5` 通过同一矩阵；iPhone 15 WebKit 与 Pixel 7 Chrome 仅为 macOS 上的设备模拟，不能当作 iOS/Android 真机证据。系统 Safari 为 `27.0`，但现有设置未启用 `Allow remote automation`，因此没有创建会话或修改该设置；Playwright Firefox `153.0` 在缓存路径和无 provenance 的临时副本中都被自身 macOS content sandbox 阻断。真实 Safari、Firefox、iOS/Android 真机、屏幕阅读器和 staging Cloudflare/MFA 仍是明确缺口。
 
-本地密码学和 HTTP 安全矩阵已覆盖本 Task 列出的全部拒绝路径；bootstrap、session/device、recent re-auth 的产品边界和持久重启已通过，但真实 MFA redirect 只能在授权后的 Cloudflare Access 路径验证。阶段性证据位于 `test/integration/qualification/evidence/s1-task27-browser-identity-public-path.json`；本 Task 保持未收口，且这些本机结果不代表 staging 或 production。
+历史本机矩阵覆盖了签名、bootstrap、session/device 和持久重启，阶段性证据位于 `test/integration/qualification/evidence/s1-task27-browser-identity-public-path.json`；它没有证明近期认证的可信时间来源与敏感入口已经闭环。2026-09-04 的新增回归由根代理独立复跑，实际复现五项失败：旧有效 assertion 新建 session 被当成近期认证、非法与未来时间被接受、HTTP config 将普通 session ref 冒充近期证明，以及 Governance 关键审批仅凭 ref 相等即完成。现已实现可信登录时间来源、显式年龄策略和统一敏感操作 guard；根代理独立验证了正常读取降级、身份与会话绑定、撤销、非法时间、回执重放和有界响应处理，并通过全仓静态检查。这里的 provider 与 HTTP 响应仍为受控夹具，未接入安装后的生产入口，也没有验证真实 Cloudflare 主体对应关系或 MFA redirect。真实 Access/MFA 仍须在获授权的目标环境验证。本 Task 保持未收口，本机证据不代表 staging 或 production。
+
+### 2026-09-07：生产主入口接入进度
+
+本次对应先前待办第二组第 4、5、6、3、7 项及第 2、10 项的共同生命周期。已实现可信 Run policy、持久输入/执行领取、Pi 与授权 Worker 工具、Mem0 embedding 的逐请求预算，以及公开 HTTP/身份、持久回答读取、统一停止与实时 Worker readiness。源码实现与本机受控安装进程验证已完成；真实平台资格仍分别记录，不能以本地测试替代上线验收。
+
+- [x] 第二组第 2 项：主入口统一管理 HTTP、Run dispatch、Memory consumer 与 Worker 通道的启动、停止接纳、排空和关闭。
+- [x] 第二组第 3 项：正式 `service-main` 接入公开 HTTP 与持久身份，启动验证 JWKS 和 Payload keyring。
+- [x] 第二组第 4 项：从主机可信配置和持久授权解析 Run policy，冻结输入并接入持久领取与中断恢复。
+- [x] 第二组第 5 项：Pi 生成与 Mem0 embedding 经过分类、Secret source 和统一预算，后台 projection 使用真实任务领取作为预算父项。
+- [x] 第二组第 6 项的能力工具接入范围：`work.delegate/work.execute` 接入已授权 Handle、生产 Worker 通道和持久结果；结构化 subtask 不属于这项完成声明。
+- [x] 第二组第 7 项：回答持久保存，安装后经 HTTP 读取，重启后读取同一结果且不重复调用模型；ego Lite 另行验证受控网页的提交与刷新。
+- [x] 第二组第 10 项：readiness 检查实际 Worker/authority 和运行消费者，Worker 停止后返回 503。
+
+- 生成复用 Pi 0.84.2 的 ModelRuntime/AgentSession；embedding 复用 Mem0 3.1.7 的 OpenAI SDK。产品负责权限、分类、Secret source、预算、持久状态与生命周期。实际安装测试发现并修复 Mem0 静态依赖 `pg` 未打包、embedding descriptor 优先级非法、HTTP opaque Session ID 不被 Pi 接受、Pi 凭据预检不识别产品请求级 Secret source，以及 macOS UDS 超长路径被系统截断的问题。
+- Migration 0024 允许 embedding 调用身份；0025 把真实 Memory projection job 纳入同一预算账本，保留既有 Run/occurrence 账户、分配与调用身份。领取过期、分类越界、未知调用重试和完整迁移数据保留均有集成回归。
+- 已发送但缺少可靠用量的请求保留未知费用；只有证明未发送的 released reservation 才能进入下一稳定调用槽。已结算但结果没有持久化的 embedding 不会自动重发，需核对结果。
+- `work.delegate/work.execute` 的已授权能力工具接入主入口；结构化 `worker.subtask.execute` 仍是独立待完成能力，不把工具调用伪装成该适配器。
+- 本机安装测试使用隔离身份和本机 HTTPS Provider，不产生付费请求；真实 Cloudflare/MFA、Mac/Hermes 服务管理器、平台隔离和双向迁移不因此完成。
+
+
+本次安装验证使用 macOS ARM64 候选，SHA-256 为 `65f5ab320b57bf394d5b1e7451456c5f00d2f20e10a450b069889f45954cc273`。`test/integration/production-http-composition-process.test.ts` 两项测试通过：从安装包启动正式入口和独立 Worker，以本机 TLS 身份/模型服务完成认证、embedding、Pi 生成、SQLite 回答提交与受保护正文读取；停止并重启两个进程后回读同一回答，Provider 调用数不增加；停止 Worker 后 `/health/ready` 返回 503。测试没有替换 Pi/Mem0 SDK，也没有使用真实付费 Provider。浏览器验证按用户指定使用 ego Lite，后端为控制中心 fixture；它证明页面提交与刷新行为，不单独证明安装后的 SQLite 链路。
+
+相关回归包括 `npm run check`、35 项 Pi 兼容测试、33 项预算/Memory 集成测试、18 项 Capability SQLite 测试、38 项 Run/Context/lease 集成测试、10 项 recovery point 和 4 项 authority transfer 测试。恢复测试曾在并行构建时超过 5 秒，单独重跑 10 项均通过；安装测试的文件复制上限调整为 180 秒，业务请求和停止的既有限时保持不变。
 
 ### Task 28：完成 Mac/Hermes、规模与迁移验收
 
@@ -501,9 +545,9 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 - [ ] 证明迁移包不含 machine secrets，target readiness 精确列出需重配 secret/directory permission，source 在 target 激活后不能普通启动。
 - [ ] 在 20 万 messages、1 万 Threads、50 万 Runs、100 active jobs 和 50 repositories 的生成数据上验证核心 query、search、approval、Memory、Trace、delete 和 transfer；记录 p50/p95/p99、资源与瓶颈。
 - [ ] 验证 Web/GitHub 在 2 秒内持久接纳或拒绝、正常重启后 2 分钟内可查询、任务 5 分钟内恢复或显示阻塞；普通在线 GitHub 分析目标 10 分钟只在模型和外部服务可用的授权环境中测量。
-- [ ] 7 天连续运行属于完整 v0.2 上线门槛；如果其他 Specs 尚未完成，本 Plan 只记录基础切片 soak，不宣称 v0.2 production-ready。
+- [ ] 验证基础切片关键运行路径和故障恢复；按 2026-09-04 Owner 决定，长期连续运行观察不再是上线前置门槛。如果其他必需 Specs 尚未完成，不宣称 v0.2 production-ready。
 
-本轮已在 Mac 临时 qualified SQLite 上完成基础规模切片：20 万 messages、1 万 Threads、50 万 Runs、100 active jobs 和 50 个 GitHub repository monitors，记录 query/search/approval/Memory/Trace/delete 的 p50/p95/p99 以及三次 SQLite snapshot transfer；证据位于 `test/integration/qualification/evidence/s1-task28-scale.json`。可重定位 Node artifact 现包含 GitHub、Mem0 与 Pi runtime 包，并通过 Mac 临时前缀安装及真实 Agent/Worker child-process 启停测试。按已授权边界，源码已同步到 Hermes 新隔离目录 `/data/hermes/himawari-agent`，在 Linux x86_64、Node 26 上完成锁定依赖安装、Node runtime 构建及 4 项安装后服务/恢复/authority-transfer 测试；runtime manifest 摘要与本地一致，既有 `/data/hermes` Agent state 未触碰。由于 native 依赖仍需按平台分别构建，Mac/Hermes 双向 authority transfer、完整加密 transfer、公网 2 秒门槛和 7 天 soak 仍未验证，不能据此关闭本 Task。
+本轮已在 Mac 临时 qualified SQLite 上完成基础规模切片：20 万 messages、1 万 Threads、50 万 Runs、100 active jobs 和 50 个 GitHub repository monitors，记录 query/search/approval/Memory/Trace/delete 的 p50/p95/p99 以及三次 SQLite snapshot transfer；证据位于 `test/integration/qualification/evidence/s1-task28-scale.json`。可重定位 Node artifact 现包含 GitHub、Mem0 与 Pi runtime 包，并通过 Mac 临时前缀安装及真实 Agent/Worker child-process 启停测试。按已授权边界，源码已同步到 Hermes 新隔离目录 `/data/hermes/himawari-agent`，在 Linux x86_64、Node 26 上完成锁定依赖安装、Node runtime 构建及 4 项安装后服务/恢复/authority-transfer 测试；runtime manifest 摘要与本地一致，既有 `/data/hermes` Agent state 未触碰。由于 native 依赖仍需按平台分别构建，Mac/Hermes 双向 authority transfer、完整加密 transfer 和公网 2 秒门槛仍未验证，不能据此关闭本 Task。该轮未执行长期连续运行观察；按 2026-09-04 Owner 决定，此项不再阻塞上线。
 
 ### Task 29：创建已验证 Runbooks 并对账当前事实文档
 
@@ -537,7 +581,7 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 | 模型路由 | Task 20 | 精确 descriptors、Owner 费用授权、deterministic 与有界 live evidence；证据：Task 20 model-routing evidence | 基础切片已验证：canonical generation/embedding descriptors、primary/fixed fallback、Pi ModelRuntime transport、严格配置、secret redaction、空响应/截断终态、cancellation/tool-call/disclosure/fallback 确定性矩阵，以及 embedding 和 generation 的有界 live provider/model/token/cost readback 均通过；官方仍无 immutable model version，最终 Gateway/Memory/Worker 生产组合由 Tasks 27–30 验收 |
 | GitHub 在线只读监控 | Tasks 21–22、27 | 权限 manifest、签名/去重、在线事件、coverage gap、无 write surface；证据：Tasks 21–22 GitHub evidence | 部分验证：read-only boundary、raw-byte HMAC、durable receipt、mirror、coverage gap、Attention/BUDGET_BLOCKED 和本地 server-side lifecycle command 通过；真实生产 Gateway 组合、历史策略 durable adapter、App 权限 readback、外部 webhook 和线上模型未完成 |
 | 同机恢复点与跨主机迁移 | Tasks 23–24、28 | 真实 restore、双向 transfer、failure injection、source retired；证据：Tasks 23–24 evidence、Task 28 scale evidence | 同机与临时安装 transfer 已验证；Mac↔Hermes 双向非空状态、完整加密 transfer 和激活后 source readback 未完成 |
-| 删除与存储压力 | Tasks 23、25–26、28 | Trash/restore、删除传播、snapshot 清除、disk pressure 与恢复；证据：Tasks 23、25–26、28 evidence | 本地删除/恢复/压力路径和规模 p50/p95/p99 已验证；跨主机恢复副本、真实 retention 回读和 7 天 soak 未完成 |
+| 删除与存储压力 | Tasks 23、25–26、28 | Trash/restore、删除传播、snapshot 清除、disk pressure 与恢复；证据：Tasks 23、25–26、28 evidence | 本地删除/恢复/压力路径和规模 p50/p95/p99 已验证；跨主机恢复副本、真实 retention 回读未完成 |
 | 本 Spec 收口 | Tasks 25–30 | 安全/规模/平台、Runbooks、Architecture、immutable release evidence | 未收口：当前文档与 Runbook 已对账，外部 readback、完整 acceptance mapping、双向迁移、live adapters、完整矩阵和 sibling Specs 仍有缺口 |
 
 ## 验证
@@ -562,7 +606,7 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 - Browser E2E、identity/security、SSE reconnect 与 accessibility checks。
 - Mem0 compatibility、Memory golden dataset、projection/rebuild/delete。
 - GitHub App permission、webhook、read-only monitor 和 coverage gap。
-- Mac/Hermes packaging、transfer drill、规模与 soak。
+- Mac/Hermes packaging、transfer drill、规模与关键运行路径及故障恢复；长期观察不设上线前置时长。
 
 真实 provider、Cloudflare、GitHub、Mac/Hermes service-manager、迁移和生产类验证必须在对应授权与适用 Runbook/preflight 下单独运行。一次 live success、HTTP 200、测试替身通过或 Compose/配置解析均不能单独证明生产完成。
 
@@ -580,4 +624,4 @@ SQLite status 现在区分 `normal|warning|write_restricted`，并输出 databas
 - [ ] 本 Plan 与来源 Spec 仅在工作真正关闭后移动到 `docs/archive/plans/` 与 `docs/archive/specs/`。
 - [ ] 即使本 Plan 关闭，也没有在其余 v0.2 Specs 和完整 PRD 验收完成前宣称 v0.2 production-ready。
 
-本轮 fresh evidence 已覆盖模型确定性边界、4096 维 Qwen embedding 的 Mem0 production projection、primary/fixed fallback generation 的有界 live readback、GitHub 确定性边界、重复结果恢复、浏览器 disclosure preview、本机规模切片和安装后服务；仍缺少真实 GitHub/Cloudflare、Safari/Firefox/真实移动设备、Mac↔Hermes transfer、immutable clean-install 的双平台 readback、各验收项的外部 readback 证据、完整跨平台矩阵和 7 天 soak。因此 Task 30 与本 Plan 收口清单保持未完成，不把 Task 20 provider qualification 推断为完整生产验收。
+本轮 fresh evidence 已覆盖模型确定性边界、4096 维 Qwen embedding 的 Mem0 production projection、primary/fixed fallback generation 的有界 live readback、GitHub 确定性边界、重复结果恢复、浏览器 disclosure preview、本机规模切片和安装后服务；仍缺少真实 GitHub/Cloudflare、Safari/Firefox/真实移动设备、Mac↔Hermes transfer、immutable clean-install 的双平台 readback、各验收项的外部 readback 证据和完整跨平台矩阵。因此 Task 30 与本 Plan 收口清单保持未完成，不把 Task 20 provider qualification 推断为完整生产验收。长期连续运行观察未完成不再是收口阻塞项。

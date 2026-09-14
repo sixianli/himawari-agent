@@ -6,10 +6,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
 import {
   inspectTestSource,
+  planTestInventory,
   main as policyMain,
   resolvePolicySource,
   validatePolicy,
+  validateTestFileSource,
   validateTestInventory,
+  validateTestPlacement,
   validateVitestProjects,
   validateWorkflow,
 } from "../../scripts/ci/check-policy.mjs";
@@ -17,6 +20,7 @@ import {
   githubExpression,
   readJson,
   repositoryRoot,
+  sha256,
   validateRecord,
 } from "../../scripts/ci/contracts.mjs";
 
@@ -28,7 +32,12 @@ const checkout = {
   sha: "a".repeat(40),
   license: "MIT",
 };
-const lock = { actions: [checkout] };
+const lock = {
+  actions: [
+    checkout,
+    { repository: "actions/download-artifact", sha: "d3f86a106a0bac45b974a628896c90dbdf5c8093" },
+  ],
+};
 const fixtures = [];
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) rmSync(fixture, { recursive: true, force: true });
@@ -99,9 +108,21 @@ function workflow() {
             {
               run:
                 check.id === "coverage"
-                  ? '.ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only'
+                  ? '.ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only --input .ci-output/input/result.json'
                   : "node scripts/ci/run.mjs",
             },
+            ...(check.id === "coverage"
+              ? [
+                  {
+                    uses: `actions/download-artifact@${lock.actions.find((entry) => entry.repository === "actions/download-artifact").sha}`,
+                    with: {
+                      "artifact-ids": githubExpression("needs.build.outputs.linux"),
+                      path: ".ci-output/input",
+                      "merge-multiple": true,
+                    },
+                  },
+                ]
+              : []),
           ],
         },
       ]),
@@ -604,21 +625,87 @@ describe("CI policy contract", () => {
     expect(() => resolvePolicySource({ root, base: "--help" })).toThrow();
     expect(() => resolvePolicySource({ root, base: "f".repeat(40) })).toThrow();
   });
+  it("迁移旧采集政策时保留原始来源、阈值和其他要求", () => {
+    const { root, git } = fixtureRepository();
+    const old = clone();
+    const coverage = old.checks.find((entry) => entry.id === "coverage");
+    coverage.projects = ["unit", "contracts", "tooling"];
+    coverage.needs = ["policy"];
+    coverage.outputs = ["json", "lcov"];
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(old));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted legacy policy");
+    const selected = resolvePolicySource({ root });
+    expect(selected.policy.checks.find((entry) => entry.id === "coverage")).toMatchObject({
+      projects: ["unit", "contracts", "tooling", "integration"],
+      needs: ["policy", "build"],
+      outputs: ["json", "lcov", "artifact"],
+    });
+    expect(selected.policy.checks.filter((entry) => entry.id !== "coverage")).toEqual(
+      old.checks.filter((entry) => entry.id !== "coverage"),
+    );
+    expect(selected.policySha256).toBe(sha256(JSON.stringify(old)));
+    expect(selected.coverage).toEqual(reviewedCoverage());
+  });
+  it.each(["missing", "wrong id", "conditional", "wrong path"])(
+    "拒绝 coverage 构建下载配置错误：%s",
+    (fault) => {
+      const value = workflow();
+      const steps = value.jobs.coverage.steps;
+      const download = steps.find((entry) => entry.uses?.startsWith("actions/download-artifact@"));
+      if (fault === "missing") steps.splice(steps.indexOf(download), 1);
+      if (fault === "wrong id") download.with["artifact-ids"] = "other-build";
+      if (fault === "conditional") download.if = "false";
+      if (fault === "wrong path") download.with.path = ".ci-output/other";
+      expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+        "download this attempt",
+      );
+    },
+  );
   it("keeps result schemas closed", () => {
     expect(() => validateRecord("Context", { surprise: true })).toThrow();
   });
-  it("assigns the repository's current tests without source-text false positives", () => {
-    const files = execFileSync(
-      "git",
-      ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-      { cwd: repositoryRoot, encoding: "utf8" },
-    )
-      .split("\0")
-      .filter(Boolean);
-    expect(
-      validateTestInventory(policy, [...new Set(files)], (file) =>
-        readFileSync(path.join(repositoryRoot, file), "utf8"),
-      ).files,
-    ).toBeGreaterThan(100);
+  it("rejects tests inside production coverage before collecting coverage", () => {
+    const coverage = readJson(path.join(repositoryRoot, "ci/coverage-policy.json"));
+    expect(() =>
+      validateTestPlacement(["apps/execution-worker/src/product-job-host.unit.test.ts"], coverage),
+    ).toThrow("Test file overlaps production coverage");
+    expect(() =>
+      validateTestPlacement(
+        [
+          "apps/execution-worker/src/product-job-host.ts",
+          "apps/execution-worker/test/product-job-host.unit.test.ts",
+          "packages/runtime-pi/test/example.compat.test.ts",
+        ],
+        coverage,
+      ),
+    ).not.toThrow();
   });
+  const repositoryFiles = execFileSync(
+    "git",
+    ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+    { cwd: repositoryRoot, encoding: "utf8" },
+  )
+    .split("\0")
+    .filter(Boolean);
+  const repositoryInventory = planTestInventory(policy, [...new Set(repositoryFiles)]);
+  it("assigns every current repository test to exactly one project or registration", () => {
+    expect(repositoryInventory.files).toBeGreaterThan(100);
+    expect(repositoryInventory.entries).toHaveLength(repositoryInventory.files);
+  });
+  // Each source file is an independent regression case. Repository growth and coverage
+  // instrumentation must not make every source parse share a single unit-test deadline.
+  it.each(repositoryInventory.entries)(
+    "validates executable test source: $filename",
+    ({ filename, registration }) => {
+      expect(() =>
+        validateTestFileSource(
+          readFileSync(path.join(repositoryRoot, filename), "utf8"),
+          filename,
+          registration,
+        ),
+      ).not.toThrow();
+    },
+  );
 });

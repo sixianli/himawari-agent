@@ -1,19 +1,35 @@
 import type {
   AgentId,
   AnswerLocale,
+  MessageId,
   OwnerId,
+  ProductThreadMessage,
   RunId,
   SessionId,
   ThreadId,
 } from "@himawari-agent/domain";
-import type { MemoryCandidate, MemoryPort } from "../ports/intelligence.js";
-import type { ThreadDistillationStatePort } from "../ports/conversation.js";
+import { createMessageId } from "@himawari-agent/domain";
 import type {
   CorrelationId,
   DataClassification,
   PayloadRef,
   TraceEventId,
 } from "../ports/common.js";
+import {
+  contextArtifactOperationKey,
+  isProductContextRunState,
+  type ProductContextBlock,
+  type ProductContextEnvelopeV1,
+  type ProductContextMessageRole,
+  type ProductContextRunState,
+} from "../ports/context-projection.js";
+import type { ThreadDistillationStatePort, ThreadSummaryRecord } from "../ports/conversation.js";
+import type { MemoryCandidate, MemoryPort } from "../ports/intelligence.js";
+import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
+import type { RunPayloadArtifactPort } from "../ports/run-payload-artifacts.js";
+import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
+import type { ThreadContextSnapshot, ThreadRepositoryPort } from "../ports/threads.js";
+import { isRuntimeHistoryReference } from "./runtime-history-service.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
@@ -28,6 +44,8 @@ export interface ContextThreadMessage {
   readonly sourceRef?: string;
   readonly dataClassification?: DataClassification;
   readonly relevanceScore?: number;
+  readonly sequence?: number;
+  readonly runState?: ProductContextRunState;
 }
 
 export interface ContextPolicySummary {
@@ -43,6 +61,9 @@ export interface ContextCapabilitySummary {
 }
 
 export interface ContextFormationRequest {
+  readonly signal?: AbortSignal;
+  readonly deadlineAt?: string;
+  readonly executionLease?: import("../ports/run-dispatch.js").RunExecutionLeaseClaim;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly sessionId: SessionId;
@@ -52,11 +73,14 @@ export interface ContextFormationRequest {
     readonly id: string;
     readonly sourceType: ContextTriggerSource;
     readonly payloadRef: PayloadRef;
+    readonly occurredAt: string;
   };
   readonly threadMessages: readonly ContextThreadMessage[];
   readonly policies: readonly ContextPolicySummary[];
   readonly answerLocalePolicy?: ContextPolicySummary & { readonly locale: AnswerLocale };
   readonly historyCandidates?: readonly ContextThreadMessage[];
+  readonly sourceWatermark: number | null;
+  readonly policyVersion: string;
   readonly maxThreadMessages?: number;
   readonly memoryQueryRef: PayloadRef;
   readonly memoryQueryTerms: readonly string[];
@@ -80,7 +104,8 @@ export interface FormedContext {
   readonly candidates: readonly MemoryCandidate[];
   readonly selected: readonly SelectedMemory[];
   readonly injectedContentRefs: readonly PayloadRef[];
-  readonly finalContextRef: PayloadRef;
+  readonly contextEnvelopeRef: PayloadRef;
+  readonly envelope: ProductContextEnvelopeV1;
   readonly traceEventIds: readonly TraceEventId[];
   readonly answerLocale: AnswerLocale | null;
 }
@@ -88,6 +113,12 @@ export interface FormedContext {
 export interface ContextFormationServiceDependencies {
   readonly memory: Pick<MemoryPort, "search">;
   readonly trace: SessionTraceRecorder;
+  readonly artifacts: RunPayloadArtifactPort;
+  readonly payloads: Pick<PayloadStorePort, "get">;
+  readonly protector: PayloadProtectorPort;
+  readonly clock: ClockPort;
+  readonly ids: IdGeneratorPort;
+  readonly threads?: Pick<ThreadRepositoryPort, "readContextSnapshot">;
   readonly threadSummaries?: Pick<ThreadDistillationStatePort, "latestSummary">;
 }
 
@@ -103,34 +134,80 @@ export class ContextFormationService implements ContextFormationPort {
   }
 
   async form(request: ContextFormationRequest): Promise<FormedContext> {
+    const existing = await this.readExistingEnvelope(request);
+    if (existing) return this.replayedContext(request, existing);
+    const snapshot = await this.readSnapshot(request);
+    if (
+      snapshot?.runtimeHistory &&
+      CLASSIFICATION_RANK[snapshot.runtimeHistory.reference.dataClassification] >
+        Math.min(
+          CLASSIFICATION_RANK[request.dataClassification],
+          CLASSIFICATION_RANK[request.maxMemoryClassification],
+        )
+    )
+      throw new Error("RUNTIME_HISTORY_CLASSIFICATION_DENIED");
+    const runStates = new Map(snapshot?.runStates.map((state) => [state.runId, state]));
+    const sourceMessages = snapshot
+      ? snapshot.messages.map((message) =>
+          contextMessageFromProductMessage(
+            message,
+            message.runId ? runStates.get(message.runId) : undefined,
+          ),
+        )
+      : request.threadMessages;
+    const sourceWatermark = snapshot ? snapshot.sourceWatermark : request.sourceWatermark;
+    if (
+      snapshot &&
+      request.sourceWatermark !== null &&
+      request.sourceWatermark !== sourceWatermark
+    ) {
+      throw new Error("CONTEXT_SOURCE_WATERMARK_CONFLICT");
+    }
     const latestSummary =
       request.threadId && this.dependencies.threadSummaries
         ? await this.dependencies.threadSummaries.latestSummary(request.threadId)
         : undefined;
     const allowedSummary =
       latestSummary &&
+      (snapshot === undefined ||
+        (sourceWatermark !== null &&
+          latestSummary.sourceWatermark <= sourceWatermark &&
+          latestSummary.sourceEndSequence <= sourceWatermark)) &&
       CLASSIFICATION_RANK[latestSummary.dataClassification] <=
         CLASSIFICATION_RANK[request.maxMemoryClassification]
         ? latestSummary
         : undefined;
-    const historyCandidates = request.historyCandidates ?? request.threadMessages;
-    const selectedHistory = [...historyCandidates]
+    const historyCandidates = snapshot
+      ? sourceMessages
+      : (request.historyCandidates ?? sourceMessages);
+    const eligibleHistory = [...historyCandidates]
+      .filter(
+        ({ id, payloadRef }) =>
+          id !== request.trigger.id && payloadRef !== request.trigger.payloadRef,
+      )
       .filter(
         ({ dataClassification = request.dataClassification }) =>
           CLASSIFICATION_RANK[dataClassification] <=
           CLASSIFICATION_RANK[request.maxMemoryClassification],
-      )
-      .sort(
-        (left, right) =>
-          (right.relevanceScore ?? 0) - (left.relevanceScore ?? 0) ||
-          left.occurredAt.localeCompare(right.occurredAt) ||
-          left.id.localeCompare(right.id),
-      )
-      .slice(0, request.maxThreadMessages ?? historyCandidates.length)
-      .sort(
-        (left, right) =>
-          left.occurredAt.localeCompare(right.occurredAt) || left.id.localeCompare(right.id),
       );
+    const historyLimit = request.maxThreadMessages ?? eligibleHistory.length;
+    if (!Number.isSafeInteger(historyLimit) || historyLimit < 0) {
+      throw new Error("CONTEXT_HISTORY_LIMIT_INVALID");
+    }
+    const selectedHistory = snapshot
+      ? eligibleHistory.slice(Math.max(0, eligibleHistory.length - historyLimit))
+      : eligibleHistory
+          .sort(
+            (left, right) =>
+              (right.relevanceScore ?? 0) - (left.relevanceScore ?? 0) ||
+              left.occurredAt.localeCompare(right.occurredAt) ||
+              left.id.localeCompare(right.id),
+          )
+          .slice(0, historyLimit)
+          .sort(
+            (left, right) =>
+              left.occurredAt.localeCompare(right.occurredAt) || left.id.localeCompare(right.id),
+          );
     const query = await this.dependencies.trace.record({
       ...this.traceScope(request),
       parentEventId: request.parentEventId,
@@ -147,6 +224,11 @@ export class ContextFormationService implements ContextFormationPort {
 
     const candidates = [
       ...(await this.dependencies.memory.search({
+        runId: request.runId,
+        ...(request.executionLease ? { executionLease: request.executionLease } : {}),
+        ...(request.signal ? { signal: request.signal } : {}),
+        ...(request.deadlineAt ? { deadlineAt: request.deadlineAt } : {}),
+        dataClassification: request.dataClassification,
         ownerId: request.ownerId,
         agentId: request.agentId,
         queryRef: request.memoryQueryRef,
@@ -175,7 +257,9 @@ export class ContextFormationService implements ContextFormationPort {
     const allowed = candidates.filter(
       (candidate) =>
         CLASSIFICATION_RANK[candidate.dataClassification] <=
-        CLASSIFICATION_RANK[request.maxMemoryClassification],
+          CLASSIFICATION_RANK[request.maxMemoryClassification] &&
+        CLASSIFICATION_RANK[candidate.dataClassification] <=
+          CLASSIFICATION_RANK[request.dataClassification],
     );
     const selected: readonly SelectedMemory[] = allowed
       .slice(0, request.maxSelectedMemories)
@@ -203,7 +287,10 @@ export class ContextFormationService implements ContextFormationPort {
             id: candidate.id,
             reasonCode:
               CLASSIFICATION_RANK[candidate.dataClassification] >
-              CLASSIFICATION_RANK[request.maxMemoryClassification]
+              Math.min(
+                CLASSIFICATION_RANK[request.maxMemoryClassification],
+                CLASSIFICATION_RANK[request.dataClassification],
+              )
                 ? "classification_exceeds_context"
                 : "selection_limit_reached",
           })),
@@ -211,6 +298,7 @@ export class ContextFormationService implements ContextFormationPort {
     });
 
     const injectedContentRefs = Object.freeze([
+      ...(snapshot?.runtimeHistory ? [snapshot.runtimeHistory.reference.payloadRef] : []),
       ...(allowedSummary ? [allowedSummary.contentRef] : []),
       ...selectedHistory.map(({ payloadRef }) => payloadRef),
       request.trigger.payloadRef,
@@ -219,6 +307,30 @@ export class ContextFormationService implements ContextFormationPort {
       ...selected.map(({ contentRef }) => contentRef),
       ...request.capabilities.map(({ summaryRef }) => summaryRef),
     ]);
+    const envelope = this.createEnvelope({
+      request,
+      sourceWatermark,
+      selectedHistory,
+      runtimeHistory: snapshot?.runtimeHistory,
+      allowedSummary,
+      selected,
+    });
+    const contextPayloadRef = this.dependencies.ids.next("payload");
+    const protectedContext = await this.dependencies.protector.protect({
+      ownerId: request.ownerId,
+      agentId: request.agentId,
+      ref: contextPayloadRef,
+      dataClassification: request.dataClassification,
+      contentType: "application/json",
+      plaintext: new TextEncoder().encode(JSON.stringify(envelope)),
+      createdAt: this.dependencies.clock.now(),
+    });
+    const contextReceipt = await this.dependencies.artifacts.commit({
+      runId: request.runId,
+      purpose: "context",
+      operationKey: contextArtifactOperationKey(request.runId),
+      payload: protectedContext,
+    });
     const finalTrace = await this.dependencies.trace.record({
       ...this.traceScope(request),
       parentEventId: selectionTrace.event.id,
@@ -270,18 +382,20 @@ export class ContextFormationService implements ContextFormationPort {
         })),
         capabilities: request.capabilities,
         injectedContentRefs,
+        contextEnvelopeRef: contextReceipt.ref,
+        schemaVersion: envelope.schemaVersion,
+        policyVersion: envelope.policyVersion,
+        sourceWatermark: envelope.sourceWatermark,
       },
     });
-    if (finalTrace.payloadRef === null) {
-      throw new Error("Context formation requires a protected final payload");
-    }
 
     return Object.freeze({
       triggerSourceType: request.trigger.sourceType,
       candidates: Object.freeze(candidates),
       selected: Object.freeze(selected),
       injectedContentRefs,
-      finalContextRef: finalTrace.payloadRef,
+      contextEnvelopeRef: contextReceipt.ref,
+      envelope,
       traceEventIds: Object.freeze([
         query.event.id,
         candidateTrace.event.id,
@@ -289,6 +403,192 @@ export class ContextFormationService implements ContextFormationPort {
         finalTrace.event.id,
       ]),
       answerLocale: request.answerLocalePolicy?.locale ?? null,
+    });
+  }
+
+  private async readSnapshot(
+    request: ContextFormationRequest,
+  ): Promise<ThreadContextSnapshot | undefined> {
+    if (!request.threadId || !this.dependencies.threads) return undefined;
+    const snapshot = await this.dependencies.threads.readContextSnapshot({
+      ownerId: request.ownerId,
+      agentId: request.agentId,
+      threadId: request.threadId,
+      runId: request.runId,
+      afterSequence: 0,
+      limit: 1000,
+    });
+    if (!snapshot) throw new Error("CONTEXT_THREAD_SNAPSHOT_UNAVAILABLE");
+    return snapshot;
+  }
+
+  private async readExistingEnvelope(request: ContextFormationRequest): Promise<
+    | {
+        readonly ref: PayloadRef;
+        readonly envelope: ProductContextEnvelopeV1;
+      }
+    | undefined
+  > {
+    const artifact = await this.dependencies.artifacts.lookup({
+      runId: request.runId,
+      purpose: "context",
+      operationKey: contextArtifactOperationKey(request.runId),
+    });
+    if (!artifact) return undefined;
+    if (
+      artifact.ownerId !== request.ownerId ||
+      artifact.agentId !== request.agentId ||
+      artifact.contentType !== "application/json"
+    ) {
+      throw new Error("CONTEXT_ARTIFACT_SCOPE_CONFLICT");
+    }
+    const payload = await this.dependencies.payloads.get(artifact.payloadRef);
+    if (
+      !payload ||
+      payload.ref !== artifact.payloadRef ||
+      payload.contentDigest !== artifact.contentDigest ||
+      payload.contentType !== artifact.contentType ||
+      payload.dataClassification !== artifact.dataClassification
+    ) {
+      throw new Error("CONTEXT_ARTIFACT_PAYLOAD_UNAVAILABLE");
+    }
+    const plaintext = await this.dependencies.protector.unprotect({
+      ownerId: request.ownerId,
+      agentId: request.agentId,
+      payload,
+    });
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(plaintext)) as unknown;
+    } catch {
+      throw new Error("CONTEXT_ARTIFACT_INVALID_JSON");
+    }
+    if (!isProductContextEnvelopeV1(parsed)) {
+      throw new Error("CONTEXT_ARTIFACT_INVALID_ENVELOPE");
+    }
+    if (
+      parsed.ownerId !== request.ownerId ||
+      parsed.agentId !== request.agentId ||
+      parsed.sessionId !== request.sessionId ||
+      parsed.threadId !== request.threadId ||
+      parsed.runId !== request.runId ||
+      parsed.prompt.id !== request.trigger.id ||
+      parsed.prompt.sourceType !== request.trigger.sourceType ||
+      parsed.prompt.payloadRef !== request.trigger.payloadRef ||
+      parsed.prompt.occurredAt !== request.trigger.occurredAt ||
+      parsed.policyVersion !== request.policyVersion
+    ) {
+      throw new Error("CONTEXT_ARTIFACT_REQUEST_CONFLICT");
+    }
+    if (request.sourceWatermark !== null && parsed.sourceWatermark !== request.sourceWatermark) {
+      throw new Error("CONTEXT_SOURCE_WATERMARK_CONFLICT");
+    }
+    return { ref: artifact.payloadRef, envelope: parsed };
+  }
+
+  private replayedContext(
+    request: ContextFormationRequest,
+    existing: { readonly ref: PayloadRef; readonly envelope: ProductContextEnvelopeV1 },
+  ): FormedContext {
+    const refs = new Set<PayloadRef>();
+    const add = (ref: PayloadRef) => {
+      refs.add(ref);
+    };
+    for (const block of existing.envelope.contextBlocks) add(block.payloadRef);
+    for (const message of existing.envelope.history) add(message.contentRef);
+    add(existing.envelope.prompt.payloadRef);
+    for (const policy of existing.envelope.systemPolicyRefs) add(policy.payloadRef);
+    return Object.freeze({
+      triggerSourceType: request.trigger.sourceType,
+      candidates: Object.freeze([]),
+      selected: Object.freeze([]),
+      injectedContentRefs: Object.freeze([...refs]),
+      contextEnvelopeRef: existing.ref,
+      envelope: existing.envelope,
+      traceEventIds: Object.freeze([]),
+      answerLocale: request.answerLocalePolicy?.locale ?? null,
+    });
+  }
+
+  private createEnvelope(input: {
+    readonly request: ContextFormationRequest;
+    readonly sourceWatermark: number | null;
+    readonly selectedHistory: readonly ContextThreadMessage[];
+    readonly runtimeHistory?: ProductContextEnvelopeV1["runtimeHistory"];
+    readonly allowedSummary: ThreadSummaryRecord | undefined;
+    readonly selected: readonly SelectedMemory[];
+  }): ProductContextEnvelopeV1 {
+    const { request, selectedHistory, allowedSummary, selected } = input;
+    const history = selectedHistory.map((message) => ({
+      messageId: messageId(message.id),
+      role: productRole(message.role),
+      contentRef: message.payloadRef,
+      occurredAt: message.occurredAt,
+      dataClassification: message.dataClassification ?? request.dataClassification,
+      ...(message.runState ? { runState: message.runState } : {}),
+    }));
+    const systemPolicyRefs = [
+      ...request.policies.map(({ ref, payloadRef }) => ({
+        ref,
+        payloadRef,
+        kind: "policy" as const,
+      })),
+      ...(request.answerLocalePolicy
+        ? [
+            {
+              ref: request.answerLocalePolicy.ref,
+              payloadRef: request.answerLocalePolicy.payloadRef,
+              kind: "answer-locale" as const,
+            },
+          ]
+        : []),
+    ];
+    const contextBlocks: ProductContextBlock[] = [
+      ...(allowedSummary
+        ? [
+            {
+              kind: "thread-summary" as const,
+              ref: allowedSummary.id,
+              payloadRef: allowedSummary.contentRef,
+              sourceRef: allowedSummary.id,
+              dataClassification: allowedSummary.dataClassification,
+            },
+          ]
+        : []),
+      ...selected.map(({ id, contentRef, sourceRef, dataClassification }) => ({
+        kind: "memory" as const,
+        ref: id,
+        payloadRef: contentRef,
+        sourceRef,
+        dataClassification,
+      })),
+      ...request.capabilities.map(({ ref, summaryRef }) => ({
+        kind: "capability-summary" as const,
+        ref,
+        payloadRef: summaryRef,
+        dataClassification: request.dataClassification,
+      })),
+    ];
+    return Object.freeze({
+      schemaVersion: "context.v1",
+      ownerId: request.ownerId,
+      agentId: request.agentId,
+      sessionId: request.sessionId,
+      threadId: request.threadId,
+      runId: request.runId,
+      formedAt: this.dependencies.clock.now(),
+      sourceWatermark: input.sourceWatermark,
+      policyVersion: request.policyVersion,
+      history: Object.freeze(history),
+      ...(input.runtimeHistory ? { runtimeHistory: input.runtimeHistory } : {}),
+      prompt: Object.freeze({
+        id: request.trigger.id,
+        sourceType: request.trigger.sourceType,
+        payloadRef: request.trigger.payloadRef,
+        occurredAt: request.trigger.occurredAt,
+      }),
+      systemPolicyRefs: Object.freeze(systemPolicyRefs),
+      contextBlocks: Object.freeze(contextBlocks),
     });
   }
 
@@ -305,4 +605,123 @@ export class ContextFormationService implements ContextFormationPort {
       dataClassification: request.dataClassification,
     };
   }
+}
+
+function contextMessageFromProductMessage(
+  message: ProductThreadMessage,
+  runState: ProductContextRunState | undefined,
+): ContextThreadMessage {
+  return Object.freeze({
+    id: message.id,
+    role: message.role === "owner" ? "user" : message.role === "agent" ? "assistant" : "system",
+    payloadRef: message.contentRef,
+    occurredAt: message.committedAt,
+    sourceRef: message.id,
+    sequence: message.sequence,
+    dataClassification: message.dataClassification,
+    ...(runState ? { runState } : {}),
+  });
+}
+
+function messageId(value: string): MessageId {
+  return createMessageId(value);
+}
+
+function productRole(role: ContextThreadMessage["role"]): ProductContextMessageRole {
+  if (role === "user") return "owner";
+  if (role === "assistant") return "agent";
+  if (role === "system") return "system";
+  throw new Error("CONTEXT_UNSUPPORTED_MESSAGE_ROLE");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyText(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isDataClassification(value: unknown): value is DataClassification {
+  return (
+    value === "public" || value === "private" || value === "sensitive" || value === "restricted"
+  );
+}
+
+function isProductContextEnvelopeV1(value: unknown): value is ProductContextEnvelopeV1 {
+  if (!isRecord(value)) return false;
+  if (
+    value["schemaVersion"] !== "context.v1" ||
+    !isNonEmptyText(value["ownerId"]) ||
+    !isNonEmptyText(value["agentId"]) ||
+    !isNonEmptyText(value["sessionId"]) ||
+    !(value["threadId"] === null || isNonEmptyText(value["threadId"])) ||
+    !isNonEmptyText(value["runId"]) ||
+    !isNonEmptyText(value["formedAt"]) ||
+    !(
+      value["sourceWatermark"] === null ||
+      (typeof value["sourceWatermark"] === "number" &&
+        Number.isSafeInteger(value["sourceWatermark"]) &&
+        value["sourceWatermark"] >= 0)
+    ) ||
+    !isNonEmptyText(value["policyVersion"]) ||
+    !Array.isArray(value["history"]) ||
+    (value["runtimeHistory"] !== undefined &&
+      (!isRecord(value["runtimeHistory"]) ||
+        !isRuntimeHistoryReference(value["runtimeHistory"]["reference"]) ||
+        !isProductContextRunState(value["runtimeHistory"]["runState"]) ||
+        value["runtimeHistory"]["reference"].runId !==
+          value["runtimeHistory"]["runState"].runId)) ||
+    !isRecord(value["prompt"]) ||
+    !Array.isArray(value["systemPolicyRefs"]) ||
+    !Array.isArray(value["contextBlocks"])
+  ) {
+    return false;
+  }
+  const prompt = value["prompt"];
+  if (
+    !isNonEmptyText(prompt["id"]) ||
+    !(
+      prompt["sourceType"] === "user_message" ||
+      prompt["sourceType"] === "schedule" ||
+      prompt["sourceType"] === "external_event"
+    ) ||
+    !isNonEmptyText(prompt["payloadRef"]) ||
+    !isNonEmptyText(prompt["occurredAt"])
+  ) {
+    return false;
+  }
+  return (
+    value["history"].every((item: unknown) => {
+      if (!isRecord(item)) return false;
+      return (
+        isNonEmptyText(item["messageId"]) &&
+        (item["role"] === "owner" || item["role"] === "agent" || item["role"] === "system") &&
+        isNonEmptyText(item["contentRef"]) &&
+        isNonEmptyText(item["occurredAt"]) &&
+        isDataClassification(item["dataClassification"]) &&
+        (item["runState"] === undefined || isProductContextRunState(item["runState"]))
+      );
+    }) &&
+    value["systemPolicyRefs"].every((item: unknown) => {
+      if (!isRecord(item)) return false;
+      return (
+        isNonEmptyText(item["ref"]) &&
+        isNonEmptyText(item["payloadRef"]) &&
+        (item["kind"] === "policy" || item["kind"] === "answer-locale")
+      );
+    }) &&
+    value["contextBlocks"].every((item: unknown) => {
+      if (!isRecord(item)) return false;
+      return (
+        (item["kind"] === "thread-summary" ||
+          item["kind"] === "memory" ||
+          item["kind"] === "capability-summary") &&
+        isNonEmptyText(item["ref"]) &&
+        isNonEmptyText(item["payloadRef"]) &&
+        (item["sourceRef"] === undefined || isNonEmptyText(item["sourceRef"])) &&
+        isDataClassification(item["dataClassification"])
+      );
+    })
+  );
 }

@@ -1,4 +1,6 @@
 import {
+  type AgentId,
+  type AnswerLocale,
   createIdempotencyKey,
   createMessageId,
   createProductThread,
@@ -6,25 +8,23 @@ import {
   createThreadId,
   createTriggerId,
   createTurnId,
-  renameProductThread,
-  setThreadAnswerLocale,
-  setThreadPinOrder,
-  transitionProductThread,
-  type AgentId,
-  type AnswerLocale,
   type MessageId,
   type OwnerId,
   type ProductAuthorityFence,
   type ProductThread,
   type RunId,
+  renameProductThread,
   type SessionId,
+  setThreadAnswerLocale,
+  setThreadPinOrder,
   type ThreadId,
   type TurnId,
+  transitionProductThread,
 } from "@himawari-agent/domain";
 import type { DataClassification, PayloadRef } from "../ports/common.js";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
-import type { ThreadRepositoryPort } from "../ports/threads.js";
 import type { ClockPort } from "../ports/system.js";
+import type { ThreadRepositoryPort } from "../ports/threads.js";
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -192,6 +192,7 @@ export class ThreadCommandService {
   }
 
   async admitOwnerMessage(input: {
+    readonly modelSelection?: import("../ports/run-execution-source.js").RunModelSelection;
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
     readonly threadId: ThreadId;
@@ -233,6 +234,7 @@ export class ThreadCommandService {
         threadId: input.threadId,
         messageId,
         contentRef: input.contentRef,
+        ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
       }),
       occurredAt,
       authority: this.dependencies.authority(),

@@ -1,0 +1,153 @@
+{
+  "scope": "one idle-service restart and bounded synthetic Run/budget observations; no Payload text",
+  "before": {
+    "observedAt": "2026-09-11T09:29:44.412Z",
+    "activeRuns": 0,
+    "budget": {
+      "spent": 15952,
+      "reserved": 297125,
+      "priorMacUpperBoundMicros": 63653,
+      "combinedUpperBoundMicros": 376730
+    },
+    "runs": [
+      {
+        "id": "run:1f216d09-3926-4fbc-89e1-a074bd5a1ec2",
+        "status": "completed",
+        "created_at": "2026-09-11T08:29:58.197Z",
+        "updated_at": "2026-09-11T08:30:51.764Z",
+        "jobs": [
+          {
+            "jobId": "juP8216h51tq2Q1j8hVBIIn1uGBJ_HRYfEeFOz8Qv6Ic",
+            "operation": "web_search",
+            "resultKind": "error",
+            "reasonCode": "SANDBOX_OPERATION_FAILED",
+            "termination": {
+              "type": "failure"
+            },
+            "completion": null,
+            "supervision": "released",
+            "cleanup": "confirmed",
+            "resourceReason": null,
+            "occurredAt": "2026-09-11T08:30:38.360Z"
+          }
+        ]
+      },
+      {
+        "id": "run:dcf2075d-1237-4f10-9e81-b427e0a7368f",
+        "status": "completed",
+        "created_at": "2026-09-11T08:37:55.954Z",
+        "updated_at": "2026-09-11T08:38:38.261Z",
+        "jobs": [
+          {
+            "jobId": "j0l5JSH2bGTklSvkqPD9PDMBM0MEPEBJDMWnkCnP9YT8",
+            "operation": "web_search",
+            "resultKind": "result",
+            "reasonCode": null,
+            "termination": null,
+            "completion": {
+              "type": "value"
+            },
+            "supervision": "released",
+            "cleanup": "confirmed",
+            "resourceReason": null,
+            "occurredAt": "2026-09-11T08:38:24.063Z"
+          }
+        ]
+      }
+    ]
+  },
+  "serviceBefore": {
+    "MainPID": "2977382",
+    "User": "himawari",
+    "Group": "himawari",
+    "NoNewPrivileges": "yes",
+    "ActiveState": "active",
+    "SubState": "running"
+  },
+  "restartStartedAt": "2026-09-11T09:29:44.418Z",
+  "serviceAfter": {
+    "MainPID": "3233868",
+    "User": "himawari",
+    "Group": "himawari",
+    "NoNewPrivileges": "yes",
+    "ActiveState": "active",
+    "SubState": "running"
+  },
+  "readyProcesses": [
+    "agent",
+    "worker"
+  ],
+  "restartReadyAt": "2026-09-11T09:30:08.078Z",
+  "restartPassed": true,
+  "latest": {
+    "observedAt": "2026-09-11T09:45:16.297Z",
+    "activeRuns": 0,
+    "budget": {
+      "spent": 17344,
+      "reserved": 297125,
+      "priorMacUpperBoundMicros": 63653,
+      "combinedUpperBoundMicros": 378122
+    },
+    "runs": [
+      {
+        "id": "run:1f216d09-3926-4fbc-89e1-a074bd5a1ec2",
+        "status": "completed",
+        "created_at": "2026-09-11T08:29:58.197Z",
+        "updated_at": "2026-09-11T08:30:51.764Z",
+        "jobs": [
+          {
+            "jobId": "juP8216h51tq2Q1j8hVBIIn1uGBJ_HRYfEeFOz8Qv6Ic",
+            "operation": "web_search",
+            "resultKind": "error",
+            "reasonCode": "SANDBOX_OPERATION_FAILED",
+            "termination": {
+              "type": "failure"
+            },
+            "completion": null,
+            "supervision": "released",
+            "cleanup": "confirmed",
+            "resourceReason": null,
+            "occurredAt": "2026-09-11T08:30:38.360Z"
+          }
+        ]
+      },
+      {
+        "id": "run:dcf2075d-1237-4f10-9e81-b427e0a7368f",
+        "status": "completed",
+        "created_at": "2026-09-11T08:37:55.954Z",
+        "updated_at": "2026-09-11T08:38:38.261Z",
+        "jobs": [
+          {
+            "jobId": "j0l5JSH2bGTklSvkqPD9PDMBM0MEPEBJDMWnkCnP9YT8",
+            "operation": "web_search",
+            "resultKind": "result",
+            "reasonCode": null,
+            "termination": null,
+            "completion": {
+              "type": "value"
+            },
+            "supervision": "released",
+            "cleanup": "confirmed",
+            "resourceReason": null,
+            "occurredAt": "2026-09-11T08:38:24.063Z"
+          }
+        ]
+      },
+      {
+        "id": "run:69643055-ccec-4cab-b2cd-d932debacc86",
+        "status": "cancelled",
+        "created_at": "2026-09-11T09:32:55.432Z",
+        "updated_at": "2026-09-11T09:39:57.092Z",
+        "jobs": []
+      },
+      {
+        "id": "run:472ef642-cbeb-436d-a7c7-83891a1d7305",
+        "status": "cancelled",
+        "created_at": "2026-09-11T09:40:55.254Z",
+        "updated_at": "2026-09-11T09:41:56.947Z",
+        "jobs": []
+      }
+    ]
+  },
+  "observerStatus": "observation_window_ended"
+}

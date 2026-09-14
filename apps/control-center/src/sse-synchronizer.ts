@@ -11,11 +11,16 @@ export interface EventSourceLike {
 }
 
 export interface SseSynchronizerOptions {
+  readonly onUnauthorized?: () => void;
   readonly storage: ControlCenterBrowserStorage;
   readonly createEventSource: (url: string) => EventSourceLike;
   readonly onEvent: (event: GatewayV2Event) => void;
   readonly onSnapshotRequired?: (
-    reason: "cursor_retention_gap" | "event_sequence_gap" | "authority_scope_changed",
+    reason:
+      | "cursor_retention_gap"
+      | "event_sequence_gap"
+      | "authority_scope_changed"
+      | "state_changed",
   ) => void;
   readonly onConnectionState: (state: "connecting" | "connected" | "offline") => void;
   readonly log: (entry: SafeBrowserLogEntry) => void;
@@ -26,9 +31,11 @@ export interface SseSynchronizerOptions {
 export class SseStateSynchronizer {
   private readonly options: SseSynchronizerOptions;
   private source: EventSourceLike | undefined;
+  private handshakeTimer: ReturnType<typeof setTimeout> | undefined;
   private reconnectHandle: number | undefined;
   private reconnectAttempt = 0;
   private stopped = true;
+  private networkOffline = false;
   private readonly seenEventIds = new Set<string>();
   private readonly scopeSequences = new Map<string, number>();
   private authorityScope: string | undefined;
@@ -43,23 +50,35 @@ export class SseStateSynchronizer {
     this.connect();
   }
 
-  reconnectNow(): void {
-    if (this.stopped) return;
+  setNetworkOnline(online: boolean): void {
+    this.networkOffline = !online;
+    if (online) {
+      this.reconnectNow();
+      return;
+    }
+    this.clearHandshake();
     this.source?.close();
     this.source = undefined;
+    this.clearReconnect();
+    this.options.onConnectionState("offline");
+  }
+
+  reconnectNow(): void {
+    if (this.stopped || this.networkOffline || this.source) return;
     this.clearReconnect();
     this.connect();
   }
 
   stop(): void {
     this.stopped = true;
+    this.clearHandshake();
     this.source?.close();
     this.source = undefined;
     this.clearReconnect();
   }
 
   private connect(): void {
-    if (this.stopped || this.source) return;
+    if (this.stopped || this.networkOffline || this.source) return;
     this.options.onConnectionState("connecting");
     const cursor = this.options.storage.readLastCursor();
     const url = cursor
@@ -67,11 +86,41 @@ export class SseStateSynchronizer {
       : "/api/gateway/v2/events";
     const source = this.options.createEventSource(url);
     this.source = source;
+    source.addEventListener?.("gateway.stream_error", (event) => {
+      if (this.stopped || this.source !== source) return;
+      try {
+        const value: unknown = JSON.parse(event.data);
+        if (
+          value &&
+          typeof value === "object" &&
+          "code" in value &&
+          value.code === "IDENTITY_SESSION_INVALID"
+        ) {
+          this.stop();
+          this.options.onUnauthorized?.();
+        }
+      } catch {
+        this.options.log(safeBrowserLog("CONTROL_CENTER_EVENT_REJECTED"));
+      }
+    });
+    source.addEventListener?.("gateway.snapshot_required", (message) => {
+      if (this.stopped || this.source !== source) return;
+      try {
+        const notification = JSON.parse(message.data) as { readonly reason?: unknown };
+        if (notification.reason !== "state_changed") throw new Error("INVALID_SNAPSHOT_REASON");
+        this.options.onSnapshotRequired?.("state_changed");
+      } catch {
+        this.options.log(safeBrowserLog("CONTROL_CENTER_EVENT_REJECTED"));
+      }
+    });
     source.onopen = () => {
+      if (this.stopped || this.source !== source) return;
+      this.clearHandshake();
       this.reconnectAttempt = 0;
       this.options.onConnectionState("connected");
     };
     source.onmessage = (message) => {
+      if (this.stopped || this.source !== source) return;
       try {
         const parsed = gatewayV2MessageSchema.parseJson(message.data);
         if (parsed.kind !== "event") throw new Error("CONTROL_CENTER_EVENT_INVALID");
@@ -93,12 +142,21 @@ export class SseStateSynchronizer {
         this.options.log(safeBrowserLog("CONTROL_CENTER_EVENT_REJECTED"));
       }
     };
-    source.onerror = () => {
-      if (this.source === source) this.source = undefined;
+    const disconnect = () => {
+      if (this.stopped || this.source !== source) return;
+      this.clearHandshake();
+      this.source = undefined;
       source.close();
       this.options.onConnectionState("offline");
       this.scheduleReconnect();
     };
+    source.onerror = disconnect;
+    this.handshakeTimer = setTimeout(disconnect, 10_000);
+  }
+
+  private clearHandshake(): void {
+    clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = undefined;
   }
 
   private reduceEvent(

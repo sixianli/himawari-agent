@@ -14,6 +14,8 @@ import type { RegisteredWorkerAdapter } from "./production-execution-worker.js";
 export interface WorkerDelegationStoreOptions {
   readonly authorityFence: number;
   readonly adapters: readonly RegisteredWorkerAdapter[];
+  /** Complete records loaded from the owner-controlled deployment snapshot. */
+  readonly records?: readonly CapabilityRegistryRecord[];
   readonly now: () => string;
 }
 
@@ -40,6 +42,25 @@ export class WorkerDelegationStore
   constructor(options: WorkerDelegationStoreOptions) {
     this.#authorityFence = options.authorityFence;
     this.#now = options.now;
+    for (const record of options.records ?? []) {
+      if (this.#records.has(record.ref)) {
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.CONFLICT,
+          `Worker registry contains duplicate capability ${record.ref}`,
+        );
+      }
+      if (
+        record.lifecycle !== "active" ||
+        record.runtimeQualification?.productionSuitable !== true ||
+        record.runtimeQualification.artifactDigest !== record.declaration.integrity
+      ) {
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          `Worker registry record ${record.ref} is not production-qualified`,
+        );
+      }
+      this.#records.set(record.ref, copy(record));
+    }
     for (const adapter of options.adapters) {
       const existing = this.#records.get(adapter.capabilityId);
       if (existing && existing.declaration.version !== adapter.capabilityVersion) {
@@ -47,6 +68,20 @@ export class WorkerDelegationStore
           PORT_ERROR_CODES.CONFLICT,
           `Worker adapter ${adapter.capabilityId} has competing versions`,
         );
+      }
+      if (existing) {
+        if (
+          existing.declaration.operations.length !== adapter.operations.length ||
+          !existing.declaration.operations.every((operation) =>
+            adapter.operations.includes(operation),
+          )
+        ) {
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.CONFLICT,
+            `Worker adapter ${adapter.capabilityId} does not match its registry record`,
+          );
+        }
+        continue;
       }
       this.#records.set(adapter.capabilityId, {
         ref: adapter.capabilityId,

@@ -92,7 +92,7 @@ async function scenario(
   const runs = new RunStateCommitCoordinator(adapters.productState, clock);
   const trace = new SessionTraceRecorder({
     trace: adapters.trace,
-    payloads: adapters.payload,
+    artifacts: adapters.runPayloadArtifacts,
     protector: adapters.payloadProtector,
     audit: adapters.audit,
     clock,

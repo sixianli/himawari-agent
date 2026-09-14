@@ -1,0 +1,237 @@
+{
+  "status": "pending_owner_approval",
+  "repository": "sixianli/himawari-agent",
+  "pullRequest": 4,
+  "sourceHead": "e2a792f855f82e74519daa9d4bea928370c76c50",
+  "entries": [
+    {
+      "kind": "machine-secret",
+      "id": "credential-assignment",
+      "path": "apps/admin-cli/src/account-command.ts",
+      "digest": "1aff263b69dc772356955c23785a2e032e5e5262f2256dfd1209544c6e2e48d0",
+      "count": 1
+    },
+    {
+      "kind": "machine-secret",
+      "id": "credential-assignment",
+      "path": "apps/admin-cli/test/account-cli.unit.test.ts",
+      "digest": "e6930f072966433d831648758dc779c9fb1175841dce123b00a5c6cc3d6f3da2",
+      "count": 1
+    },
+    {
+      "kind": "machine-secret",
+      "id": "credential-assignment",
+      "path": "test/integration/built-in-identity.test.ts",
+      "digest": "3cf3ba5421e368c30c776e260f8544e9b4c9cc5d7cf3b498260469c39d3098cb",
+      "count": 2
+    },
+    {
+      "kind": "machine-secret",
+      "id": "credential-assignment",
+      "path": "test/integration/built-in-identity.test.ts",
+      "digest": "0149bb2269978dd6167623ee04b0065f31de5eec4e24364ddf7f0c2b1ec777f9",
+      "count": 1
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "apps/execution-worker/test/production-payload-broker-client.unit.test.ts",
+      "line": 19,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "apps/execution-worker/test/production-worker-composition.unit.test.ts",
+      "line": 22,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "apps/execution-worker/test/service-main.unit.test.ts",
+      "line": 144,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "packages/platform-node/test/payload-uds-transport.contract.test.ts",
+      "line": 24,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "packages/platform-node/test/execution-admission-uds-transport.contract.test.ts",
+      "line": 29,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/production-http-composition-process.test.ts",
+      "line": 1177,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/sandbox-v2-payload-broker.test.ts",
+      "line": 227,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/fixtures/production-sandbox-scope.ts",
+      "line": 251,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/sqlite-capability-invocations.test.ts",
+      "line": 1629,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/qualification/sandbox-production-mac-probe.ts",
+      "line": 154,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/fixtures/production-sandbox-scope.ts",
+      "line": 251,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "4d502a6ad4b2eda9b0da2d2af12239d655127bfd"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/sandbox-v2-payload-broker.test.ts",
+      "line": 167,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "5d069ab2a65085139f7dd652063843727984cad1"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/qualification/sandbox-production-mac-probe.ts",
+      "line": 97,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "7b38b4c6acb72f281959676787102fb745f151e1"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/sqlite-capability-invocations.test.ts",
+      "line": 2244,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "0102fa1092f20dfda1d4280eefc7074eec5d692f"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/sqlite-capability-invocations.test.ts",
+      "line": 2201,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "f5b54a548fae33c09572baa3e97740ace0fbd3ba"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/production-http-composition-process.test.ts",
+      "line": 1177,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "49d655772de390e08cfc3c3fd8a90f23ec548306"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "apps/execution-worker/test/service-main.unit.test.ts",
+      "line": 144,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "498736e4ae1d45a540257b23cf6748be647f7423"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "apps/execution-worker/test/production-worker-composition.unit.test.ts",
+      "line": 22,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "c75db57b7ee7d32c3fe8abf2e6ab148048db8d99"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "packages/platform-node/test/execution-admission-uds-transport.contract.test.ts",
+      "line": 31,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "17f1a4f9c308ddd29a8b4d11d43cd23d436b7818"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "packages/platform-node/test/payload-uds-transport.contract.test.ts",
+      "line": 24,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "8f934da2b54943e0bd3893bfb602dba2c30223fc"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "apps/execution-worker/test/production-payload-broker-client.unit.test.ts",
+      "line": 19,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "8f934da2b54943e0bd3893bfb602dba2c30223fc"
+    },
+    {
+      "package": "node-forge",
+      "version": "1.4.0",
+      "sourceUrl": "https://registry.npmjs.org/node-forge/-/node-forge-1.4.0.tgz",
+      "integrity": "sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==",
+      "archiveMember": "package/README.md",
+      "fileSha256": "4ea0e2db410fd5d87c3c9b21912b9ed3fe6c57b3107fa92e2c90b1e618121a49",
+      "findingLine": 877,
+      "findingDigest": "7844a86c6b53052a9ca9b19f9d06158d05e6d44f5d797ec481a6f8bfa8f1aea9",
+      "classification": "published documentation example seed",
+      "verification": "Official npm archive integrity matches committed lock; README bytes match installed runtime; ED25519 keypair documentation example."
+    }
+  ]
+}

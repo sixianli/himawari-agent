@@ -50,11 +50,7 @@ type DetailSnapshot = Extract<
 type DirectSnapshot = Extract<
   GatewayV2Snapshot,
   {
-    readonly type:
-      | "digest.snapshot"
-      | "settings.snapshot"
-      | "health.snapshot"
-      | "reflection.snapshot";
+    readonly type: "digest.snapshot" | "settings.snapshot" | "reflection.snapshot";
   }
 >;
 
@@ -206,8 +202,6 @@ function directQuery(
       return queryMessage(configuration, "inbox.digest", { digestId: null });
     case "settings":
       return queryMessage(configuration, "settings.read", { includeIntegrations: true });
-    case "health-deployment":
-      return queryMessage(configuration, "health.status", { includeDependencies: true });
     case "reflection":
       return queryMessage(configuration, "reflection.detail", { includeCheckpoints: true });
     default:
@@ -623,36 +617,7 @@ function DirectRows({
       </dl>
     );
   }
-  return (
-    <>
-      <dl className="health-grid">
-        <Row label={message("health.service")} value={String(snapshot.payload.live)} />
-        <Row label={message("health.admission")} value={String(snapshot.payload.ready)} />
-        <Row label={message("health.state")} value={snapshot.payload.status} />
-        <Row label={message("health.host")} value={snapshot.payload.activeHost} />
-      </dl>
-      <h3>{message("operations.components")}</h3>
-      <SemanticList
-        empty={message("common.noRecords")}
-        getId={(component) => component.componentRef}
-        items={snapshot.payload.components}
-        label={message("operations.components")}
-        renderItem={(component) => (
-          <code>{`${component.componentRef}: ${component.status}${component.reasonCode ? ` / ${component.reasonCode}` : ""}`}</code>
-        )}
-      />
-      <h3>{message("operations.checkpoints")}</h3>
-      <SemanticList
-        empty={message("common.noRecords")}
-        getId={(checkpoint) => checkpoint.operationRef}
-        items={snapshot.payload.operationCheckpoints}
-        label={message("operations.checkpoints")}
-        renderItem={(checkpoint) => (
-          <code>{`${checkpoint.operationRef}: ${checkpoint.kind} / ${checkpoint.phase} / ${checkpoint.status} / ${message("operations.readback")}: ${checkpoint.readbackRef ?? "—"}`}</code>
-        )}
-      />
-    </>
-  );
+  return null;
 }
 
 function actionIdentity(action: OperationAction) {
@@ -784,12 +749,9 @@ export function useOperationsControlCenter(input: UseOperationsControlCenterInpu
       );
       setDirect(
         currentDirect &&
-          [
-            "digest.snapshot",
-            "settings.snapshot",
-            "health.snapshot",
-            "reflection.snapshot",
-          ].includes(currentDirect.type)
+          ["digest.snapshot", "settings.snapshot", "reflection.snapshot"].includes(
+            currentDirect.type,
+          )
           ? (currentDirect as DirectSnapshot)
           : undefined,
       );
@@ -1031,14 +993,8 @@ export function useOperationsControlCenter(input: UseOperationsControlCenterInpu
     </>
   );
 
-  const content = (
+  const feedback = (
     <>
-      <div className="panel-heading">
-        <p className="eyebrow">{message("operations.authoritativeState")}</p>
-        <ActionButton onClick={() => void refresh()} variant="secondary">
-          {message("common.refresh")}
-        </ActionButton>
-      </div>
       {connection === "offline" ? (
         <Banner title={message("state.offline")} tone="warning">
           {message("operations.offlineNoMutation")}
@@ -1058,6 +1014,18 @@ export function useOperationsControlCenter(input: UseOperationsControlCenterInpu
         {message("mutation.label")}:{" "}
         {message(mutationStatus ? (`mutation.${mutationStatus}` as MessageId) : "mutation.none")}
       </StatusRegion>
+    </>
+  );
+
+  const content = (
+    <>
+      <div className="panel-heading">
+        <p className="eyebrow">{message("operations.authoritativeState")}</p>
+        <ActionButton onClick={() => void refresh()} variant="secondary">
+          {message("common.refresh")}
+        </ActionButton>
+      </div>
+      {route.view !== "details" || !detail ? feedback : null}
       {direct ? <DirectRows message={message} snapshot={direct} /> : null}
       {direct?.type === "reflection.snapshot" && reflectionDraft ? (
         <fieldset className="actions">
@@ -1172,6 +1140,7 @@ export function useOperationsControlCenter(input: UseOperationsControlCenterInpu
 
   const details = detail ? (
     <>
+      {route.view === "details" ? feedback : null}
       <DetailRows message={message} snapshot={detail} />
       {detail.type === "memory.snapshot" ? (
         <label>

@@ -47,15 +47,41 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     grant: HostDirectoryGrant,
     relativePath: string,
     maximumBytes: number,
+    expected?: HostFileIdentity,
   ): Promise<Uint8Array> {
+    if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1)
+      throw new Error("HOST_FILE_READ_REJECTED");
+    const parentChain = await this.#captureParentChain(grant, relativePath);
     const target = await this.#resolve(grant, relativePath, true);
     const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const info = await handle.stat();
       rejectUnsafeObject(info);
       if (!info.isFile() || info.size > maximumBytes) throw new Error("HOST_FILE_READ_REJECTED");
+      const observed = identity(target, info);
+      const same = (left: HostFileIdentity, right: HostFileIdentity) =>
+        left.canonicalPath === right.canonicalPath &&
+        left.device === right.device &&
+        left.inode === right.inode &&
+        left.mode === right.mode &&
+        left.linkCount === right.linkCount &&
+        left.sizeBytes === right.sizeBytes &&
+        left.modifiedAtMillis === right.modifiedAtMillis;
+      if (expected && !same(observed, expected)) throw new Error("HOST_FILE_IDENTITY_CHANGED");
+      await this.#assertParentChain(grant, relativePath, parentChain);
       const bytes = new Uint8Array(info.size);
-      await handle.read(bytes, 0, bytes.length, 0);
+      let offset = 0;
+      while (offset < bytes.length) {
+        const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
+        if (bytesRead === 0) throw new Error("HOST_FILE_CONTENT_CHANGED");
+        offset += bytesRead;
+      }
+      const after = await handle.stat();
+      if (!same(observed, identity(target, after)) || info.ctimeMs !== after.ctimeMs)
+        throw new Error("HOST_FILE_CONTENT_CHANGED");
+      await this.#assertParentChain(grant, relativePath, parentChain);
+      const current = await this.inspect(grant, relativePath);
+      if (!current || !same(observed, current)) throw new Error("HOST_FILE_IDENTITY_CHANGED");
       return bytes;
     } finally {
       await handle.close();
@@ -83,12 +109,18 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     relativePath: string,
     expected: HostFileIdentity,
     bytes: Uint8Array,
+    previousBytes: Uint8Array,
   ) {
     const target = await this.#resolve(grant, relativePath, true);
     const parentChain = await this.#captureParentChain(grant, relativePath);
     const before = await this.#requiredSafeIdentity(grant, relativePath);
     if (identityKey(before) !== identityKey(expected))
       throw new Error("HOST_FILE_IDENTITY_CHANGED");
+    const assertContentUnchanged = async () => {
+      const current = await this.read(grant, relativePath, Math.max(1, previousBytes.byteLength));
+      if (!Buffer.from(current).equals(previousBytes)) throw new Error("HOST_FILE_CONTENT_CHANGED");
+    };
+    await assertContentUnchanged();
     const recoveryRoot = await this.#ensureControlledDirectory(grant, ".himawari-recovery");
     const recovery = path.join(
       recoveryRoot,
@@ -115,6 +147,8 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
       if (identityKey(immediatelyBeforeRename) !== identityKey(expected))
         throw new Error("HOST_FILE_IDENTITY_CHANGED");
       await this.#assertParentChain(grant, relativePath, parentChain);
+      // External writers must be isolated for a strict compare-and-replace guarantee.
+      await assertContentUnchanged();
       await rename(temporary, target);
       temporaryCreated = false;
     } finally {

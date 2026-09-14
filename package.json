@@ -58,6 +58,7 @@
     "@types/node": "22.19.19",
     "@vitest/coverage-v8": "4.1.9",
     "ajv": "8.20.0",
+    "jsdom": "27.4.0",
     "typescript": "5.9.3",
     "vitest": "4.1.9",
     "yaml": "2.8.3"

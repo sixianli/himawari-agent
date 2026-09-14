@@ -1,0 +1,91 @@
+{
+  "scope": "本机正式源码与最终安装包的受控验证；外部模型和真实主机工具未验证",
+  "sourceTreeSha256": "3ef92cececab19322168b37418d75655fcd5d1b9cd97514a6c448e786cee1b9f",
+  "build": {
+    "path": ".ci-output/local-1789036004026/build-macos-arm64/result.json",
+    "status": "passed",
+    "artifact": {
+      "role": "produced",
+      "platform": "macos-arm64",
+      "path": "macos-arm64-abi127-67a4abb30bed5a696c7d226ce08e5167c27cbd0b-1789036004027-1.tar.gz",
+      "sha256": "4dea6feb7d6e80a7379b9ba47f2be52437ae398851f6752981eb70b3d17208cd"
+    }
+  },
+  "unit": {
+    "path": ".ci-output/local-1789034998066/test-macos-arm64/tests/unit.json",
+    "sha256": "f63ad69ee551d65b3c67dd1ec041f2b8556b55f48161fadd72ca8f64b2d99e88",
+    "files": 93,
+    "passed": 787,
+    "failed": 0,
+    "skipped": 0
+  },
+  "contracts": {
+    "path": ".ci-output/local-1789034998066/test-macos-arm64/tests/contracts.json",
+    "sha256": "46e9848191385b0fc883fc2dbebd3e8f9cd78ad4f9681269014c96feb1c5bc43",
+    "files": 21,
+    "passed": 266,
+    "failed": 0,
+    "skipped": 0
+  },
+  "integration": {
+    "scope": "以各文件末次执行结果合并，不代表一次完整命令通过",
+    "files": 62,
+    "passed": 787,
+    "failed": 0,
+    "skipped": 0,
+    "reports": [
+      {
+        "path": "/tmp/himawari-integration-complete.json",
+        "sha256": "bf2009b9c15f5d48b98e4e0d9f6937925ea939f022dccac67b89640639390e2d",
+        "files": 62,
+        "passed": 781,
+        "failed": 0,
+        "skipped": 6
+      },
+      {
+        "path": "/tmp/himawari-installed-final.json",
+        "sha256": "1be19f021c37592e949022349fa8f5e24af5f1fe58b02567c7b617b7210b1187",
+        "files": 2,
+        "passed": 5,
+        "failed": 1,
+        "skipped": 0
+      },
+      {
+        "path": "/tmp/himawari-install-lifecycle-final.json",
+        "sha256": "70e336266ee39f8cf3eb81fb7bae2e97efe3f01c4f716b80514a2693d9cd04da",
+        "files": 1,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      }
+    ],
+    "caseIdentitySha256": "054d352d15f7b7eb6f67135d8046e116c3065784aaadf575f2ae2b8da721c67a"
+  },
+  "browserPiE2e": {
+    "files": 16,
+    "passed": 123,
+    "failed": 0,
+    "log": "/tmp/himawari-browser-pi-e2e-final.txt",
+    "sha256": "8dce184c29fb880dc0db226fa11e4bbcd3f7407285d41cd795886ad05e5adaa7",
+    "note": "含 browser 49 项，与 unit 中的 browser 重复，不合并累计"
+  },
+  "browser": {
+    "path": "browser-chrome/browser.json",
+    "scope": "fixture-only",
+    "status": "passed",
+    "journeys": 26,
+    "axeViolations": 0
+  },
+  "official": {
+    "path": ".ci-output/local-1789037011963/test-macos-arm64/result.json",
+    "status": "infrastructure_failed",
+    "counts": {
+      "files": 0,
+      "executed": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "approvalInteraction": "用户已明确接受聊天跳转已有完整审批确认页；冻结原型保留"
+}

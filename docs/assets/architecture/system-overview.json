@@ -1,0 +1,197 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Himawari Agent 项目架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1320, 790]
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "frontend",
+      "label": "浏览器控制中心",
+      "sublabel": "React · HTTP / SSE",
+      "pos": [40, 240],
+      "size": [240, 74]
+    },
+    {
+      "id": "gateway",
+      "type": "security",
+      "label": "身份与 Gateway",
+      "sublabel": "JWT · Session · CSRF",
+      "pos": [370, 240],
+      "size": [240, 74]
+    },
+    {
+      "id": "run",
+      "type": "backend",
+      "label": "Agent Service",
+      "sublabel": "持久 Run · 上下文 · 预算",
+      "pos": [700, 240],
+      "size": [240, 74]
+    },
+    {
+      "id": "pi",
+      "type": "backend",
+      "label": "Pi Runtime",
+      "sublabel": "AgentSession · 工具循环",
+      "pos": [1030, 240],
+      "size": [240, 74]
+    },
+    {
+      "id": "admin",
+      "type": "backend",
+      "label": "管理 CLI",
+      "sublabel": "诊断 · 备份 · 迁移",
+      "pos": [370, 30],
+      "size": [240, 74]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "SQLite 产品状态",
+      "sublabel": "Thread / Run · 授权 · 加密正文",
+      "pos": [700, 30],
+      "size": [240, 74]
+    },
+    {
+      "id": "model",
+      "type": "cloud",
+      "label": "OpenRouter",
+      "sublabel": "生成 / embedding · 真实循环待验",
+      "pos": [1030, 30],
+      "size": [240, 74]
+    },
+    {
+      "id": "github",
+      "type": "external",
+      "label": "GitHub 集成",
+      "sublabel": "Webhook · 仓库监控 · 总组合待接",
+      "pos": [370, 460],
+      "size": [240, 74]
+    },
+    {
+      "id": "memory",
+      "type": "database",
+      "label": "Memory 与 Mem0",
+      "sublabel": "产品记忆 · 投影任务 · 向量检索",
+      "pos": [700, 460],
+      "size": [240, 74]
+    },
+    {
+      "id": "tools",
+      "type": "security",
+      "label": "工具请求与授权",
+      "sublabel": "已有凭证可执行 · 动态签发待接",
+      "pos": [1030, 460],
+      "size": [240, 74]
+    },
+    {
+      "id": "files",
+      "type": "external",
+      "label": "Mac 本地文件",
+      "sublabel": "目录授权 · 读取与模型披露",
+      "pos": [700, 670],
+      "size": [240, 74]
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "Execution Worker",
+      "sublabel": "独立进程 · 隔离执行 · 持久结果",
+      "pos": [1030, 670],
+      "size": [240, 74]
+    }
+  ],
+  "connections": [
+    {
+      "from": "browser",
+      "to": "gateway",
+      "label": "HTTP / SSE",
+      "variant": "emphasis"
+    },
+    {
+      "from": "gateway",
+      "to": "run",
+      "label": "认证命令 / 查询",
+      "variant": "emphasis"
+    },
+    {
+      "from": "run",
+      "to": "pi",
+      "label": "上下文 / 事件",
+      "variant": "emphasis"
+    },
+    {
+      "from": "pi",
+      "to": "model",
+      "label": "模型请求",
+      "variant": "default"
+    },
+    {
+      "from": "run",
+      "to": "db",
+      "label": "事务与恢复",
+      "variant": "default"
+    },
+    {
+      "from": "admin",
+      "to": "db",
+      "label": "离线管理",
+      "variant": "default"
+    },
+    {
+      "from": "run",
+      "to": "memory",
+      "label": "检索 / 消费",
+      "variant": "default",
+      "labelDy": 80
+    },
+    {
+      "from": "gateway",
+      "to": "github",
+      "label": "待组合",
+      "variant": "dashed",
+      "labelDy": 80
+    },
+    {
+      "from": "pi",
+      "to": "tools",
+      "label": "动态授权待接",
+      "variant": "dashed",
+      "labelDy": 80
+    },
+    {
+      "from": "tools",
+      "to": "worker",
+      "label": "授权后 UDS",
+      "variant": "security",
+      "labelDy": 80
+    },
+    {
+      "from": "worker",
+      "to": "files",
+      "label": "读取能力待接",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "已验证范围",
+      "items": ["安装后 HTTP → Pi → 持久回答；模型响应由本地服务模拟。"]
+    },
+    {
+      "dot": "amber",
+      "title": "紫色虚线：接入缺口",
+      "items": ["紫色表示待接路径；红色表示已授权执行通道。"]
+    },
+    {
+      "dot": "violet",
+      "title": "代码职责边界",
+      "items": ["application / domain 定义规则；Pi 提供循环；平台适配器负责执行。"]
+    }
+  ]
+}

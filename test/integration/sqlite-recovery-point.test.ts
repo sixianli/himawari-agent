@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -8,14 +8,14 @@ import {
   createOwnerId,
 } from "@himawari-agent/domain";
 import {
-  RECOVERY_POINT_ERROR_CODES,
-  RecoveryPointError,
-  SqliteRecoveryPointAdapter,
   acquireStateRootLock,
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  RECOVERY_POINT_ERROR_CODES,
+  RecoveryPointError,
   type RecoveryPointFaultStage,
+  SqliteRecoveryPointAdapter,
 } from "@himawari-agent/persistence-sqlite";
 import {
   ContentAddressedCiphertextStore,
@@ -178,6 +178,172 @@ function recoveryState(backupId: string) {
   });
 }
 
+async function seedRuntimeCheckpoint(
+  databasePath: string,
+  protector: EnvelopePayloadProtector,
+): Promise<void> {
+  const protectedContext = await protector.protect({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    ref: "payload-recovery-point",
+    dataClassification: "restricted",
+    contentType: "text/plain",
+    plaintext: PLAINTEXT,
+    createdAt: CREATED_AT,
+  });
+  const protectedAnswer = await protector.protect({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    ref: "payload-recovery-answer",
+    dataClassification: "private",
+    contentType: "text/plain",
+    plaintext: new TextEncoder().encode("restored answer"),
+    createdAt: CREATED_AT,
+  });
+  const protectedWorker = await protector.protect({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    ref: "payload-recovery-worker",
+    dataClassification: "private",
+    contentType: "text/plain",
+    plaintext: new TextEncoder().encode("worker result"),
+    createdAt: CREATED_AT,
+  });
+  const database = openQualifiedDatabase(databasePath);
+  database
+    .prepare(
+      `INSERT INTO payloads (
+        ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+        content_digest, encryption_algorithm, key_ref, lifecycle_state, created_at,
+        content_type, encryption_metadata_json
+      ) VALUES (?, ?, ?, ?, 'sqlite_blob', ?, ?, ?, ?, 'active', ?, ?, ?)`,
+    )
+    .run(
+      protectedWorker.ref,
+      OWNER_ID,
+      AGENT_ID,
+      protectedWorker.dataClassification,
+      protectedWorker.ciphertext,
+      protectedWorker.contentDigest,
+      protectedWorker.encryption.algorithm,
+      protectedWorker.encryption.keyRef,
+      protectedWorker.createdAt,
+      protectedWorker.contentType,
+      JSON.stringify(protectedWorker.encryption),
+    );
+  database
+    .prepare(
+      `INSERT INTO payloads (
+        ref, owner_id, agent_id, classification, storage_kind, ciphertext, content_digest,
+        encryption_algorithm, key_ref, lifecycle_state, created_at, content_type,
+        encryption_metadata_json
+      ) VALUES (?, ?, ?, ?, 'sqlite_blob', ?, ?, ?, ?, 'active', ?, ?, ?)`,
+    )
+    .run(
+      protectedAnswer.ref,
+      OWNER_ID,
+      AGENT_ID,
+      protectedAnswer.dataClassification,
+      protectedAnswer.ciphertext,
+      protectedAnswer.contentDigest,
+      protectedAnswer.encryption.algorithm,
+      protectedAnswer.encryption.keyRef,
+      protectedAnswer.createdAt,
+      protectedAnswer.contentType,
+      JSON.stringify(protectedAnswer.encryption),
+    );
+  database
+    .prepare(
+      `INSERT INTO threads (
+        id, owner_id, agent_id, revision, status, created_at, updated_at
+      ) VALUES ('thread-recovery-checkpoint', ?, ?, 0, 'open', ?, ?)`,
+    )
+    .run(OWNER_ID, AGENT_ID, CREATED_AT, CREATED_AT);
+  database
+    .prepare(
+      `INSERT INTO triggers (
+        id, owner_id, agent_id, thread_id, idempotency_key, source_type,
+        source_id, payload_ref, source_proof_ref, occurred_at
+      ) VALUES ('trigger-recovery-checkpoint', ?, ?, 'thread-recovery-checkpoint',
+        'trigger-recovery-checkpoint', 'user_message', 'fixture', ?, 'fixture-proof', ?)`,
+    )
+    .run(OWNER_ID, AGENT_ID, "payload-recovery-point", CREATED_AT);
+  database
+    .prepare(
+      `INSERT INTO runs (
+        id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
+        status, created_at, updated_at
+      ) VALUES ('run-recovery-checkpoint', ?, ?, 'thread-recovery-checkpoint',
+        'session-recovery-checkpoint', 'trigger-recovery-checkpoint', 1, 'running', ?, ?)`,
+    )
+    .run(OWNER_ID, AGENT_ID, CREATED_AT, CREATED_AT);
+  database
+    .prepare(
+      `INSERT INTO run_coordination_checkpoints (
+        run_id, owner_id, agent_id, revision, phase, context_ref,
+        runtime_event_count, last_trace_event_id, terminal_status,
+        output_kind, final_answer_ref, diagnostic_code, updated_at
+      ) VALUES ('run-recovery-checkpoint', ?, ?, 1, 'runtime_settled', ?,
+        3, NULL, 'completed', 'assistant-answer', ?, NULL, ?)`,
+    )
+    .run(OWNER_ID, AGENT_ID, "payload-recovery-point", "payload-recovery-answer", CREATED_AT);
+  database
+    .prepare(
+      `INSERT INTO run_coordination_worker_results (
+        run_id, owner_id, agent_id, worker_run_id, result_ref
+      ) VALUES ('run-recovery-checkpoint', ?, ?, '__proto__', ?)`,
+    )
+    .run(OWNER_ID, AGENT_ID, "payload-recovery-worker");
+  database
+    .prepare(
+      `INSERT INTO run_payload_artifacts (
+        owner_id, agent_id, run_id, purpose, operation_key, payload_ref,
+        content_digest, content_type, classification, created_at
+      ) VALUES
+        (?, ?, 'run-recovery-checkpoint', 'context', 'context-recovery',
+          'payload-recovery-point', ?, 'text/plain', 'restricted', ?),
+        (?, ?, 'run-recovery-checkpoint', 'final_answer', 'answer-recovery',
+          'payload-recovery-answer', ?, 'text/plain', 'private', ?),
+        (?, ?, 'run-recovery-checkpoint', 'worker_result', '__proto__',
+          'payload-recovery-worker', ?, 'text/plain', 'private', ?)`,
+    )
+    .run(
+      OWNER_ID,
+      AGENT_ID,
+      protectedContext.contentDigest,
+      CREATED_AT,
+      OWNER_ID,
+      AGENT_ID,
+      protectedAnswer.contentDigest,
+      CREATED_AT,
+      OWNER_ID,
+      AGENT_ID,
+      protectedWorker.contentDigest,
+      CREATED_AT,
+    );
+  database
+    .prepare(
+      `INSERT INTO model_budget_accounts (
+        owner_id, agent_id, account_id, parent_kind, run_id, occurrence_id,
+        data_classification, reserved_cost_micros, spent_cost_micros,
+        status, revision
+      ) VALUES (?, ?, 'run:run-recovery-checkpoint', 'run',
+        'run-recovery-checkpoint', NULL, 'private', 0, 12, 'active', 2)`,
+    )
+    .run(OWNER_ID, AGENT_ID);
+  database
+    .prepare(
+      `INSERT INTO model_budget_allocations (
+        owner_id, agent_id, account_id, operation_key, model_ref,
+        data_classification, estimated_cost_micros, actual_cost_micros,
+        status, reserved_at, started_at, observed_at, settled_at, reason_code
+      ) VALUES (?, ?, 'run:run-recovery-checkpoint', 'model-call-recovery',
+        'approved-model-v1', 'private', 12, 12, 'settled', ?, ?, NULL, ?, NULL)`,
+    )
+    .run(OWNER_ID, AGENT_ID, CREATED_AT, CREATED_AT, CREATED_AT);
+  database.close();
+}
+
 async function expectRecoveryCode(action: Promise<unknown>, code: string) {
   try {
     await action;
@@ -241,6 +407,64 @@ function adapterWith(
 }
 
 describe("encrypted same-host SQLite recovery points", () => {
+  it("backs up and restores empty durable metadata alongside encrypted content", async () => {
+    const { adapter, databasePath, stateRoot } = await fixture();
+    const database = openQualifiedDatabase(databasePath);
+    database
+      .prepare(`INSERT INTO payloads (
+      ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+      content_digest, lifecycle_state, created_at, content_type
+    ) VALUES (?, ?, ?, 'private', 'sqlite_blob', X'', ?, 'active', ?,
+      'application/x-himawari-metadata')`)
+      .run(
+        "metadata:approval-intent:test",
+        OWNER_ID,
+        AGENT_ID,
+        "metadata:metadata:approval-intent:test",
+        CREATED_AT,
+      );
+    database.close();
+    const report = await adapter.createNamed("metadata-backup");
+    expect(report.payloadCount).toBe(2);
+    expect((await adapter.verifyNamed("metadata-backup")).fullIntegrityCheck).toBe("ok");
+    await adapter.restoreNamed("metadata-backup", stateRoot);
+    const restored = openQualifiedDatabase(databasePath);
+    try {
+      expect(
+        restored
+          .prepare("SELECT content_digest, length(ciphertext) AS bytes FROM payloads WHERE ref = ?")
+          .get("metadata:approval-intent:test"),
+      ).toEqual({
+        content_digest: "metadata:metadata:approval-intent:test",
+        bytes: 0,
+      });
+    } finally {
+      restored.close();
+    }
+  });
+
+  it.each([
+    ["body", "UPDATE payloads SET ciphertext = X'01' WHERE ref LIKE 'metadata:%'"],
+    ["digest", "UPDATE payloads SET content_digest = 'changed' WHERE ref LIKE 'metadata:%'"],
+    ["type", "UPDATE payloads SET content_type = 'text/plain' WHERE ref LIKE 'metadata:%'"],
+    ["key", "UPDATE payloads SET key_ref = 'unexpected-key' WHERE ref LIKE 'metadata:%'"],
+  ])("rejects a malformed metadata placeholder: %s", async (_name, mutation) => {
+    const { adapter, databasePath } = await fixture();
+    const database = openQualifiedDatabase(databasePath);
+    database
+      .prepare(`INSERT INTO payloads (
+      ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+      content_digest, lifecycle_state, created_at, content_type
+    ) VALUES ('metadata:test', ?, ?, 'private', 'sqlite_blob', X'',
+      'metadata:metadata:test', 'active', ?, 'application/x-himawari-metadata')`)
+      .run(OWNER_ID, AGENT_ID, CREATED_AT);
+    database.exec(mutation);
+    database.close();
+    await expect(adapter.createNamed("invalid-metadata")).rejects.toMatchObject({
+      code: RECOVERY_POINT_ERROR_CODES.PAYLOAD_INVALID,
+    });
+  });
+
   it("creates, authenticates, verifies and atomically restores the allowlisted state", async () => {
     const source = await fixture();
     const backupId = createBackupId("backup-real-drill");
@@ -280,6 +504,135 @@ describe("encrypted same-host SQLite recovery points", () => {
         entries.filter((entry) => entry.startsWith(".restore-")),
       ),
     ).toEqual([]);
+  });
+
+  it("retains a runtime checkpoint and worker reference across encrypted backup restore", async () => {
+    const source = await fixture();
+    await seedRuntimeCheckpoint(source.databasePath, source.protector);
+    const backupId = createBackupId("backup-runtime-checkpoint");
+    const created = await source.adapter.create(recoveryState(backupId));
+    expect(created.payloadCount).toBe(3);
+
+    updateProof(source.databasePath, "checkpoint-after-backup");
+    const mutated = openQualifiedDatabase(source.databasePath);
+    try {
+      mutated
+        .prepare(
+          "DELETE FROM run_coordination_worker_results WHERE run_id = 'run-recovery-checkpoint'",
+        )
+        .run();
+      mutated
+        .prepare(
+          "DELETE FROM run_coordination_checkpoints WHERE run_id = 'run-recovery-checkpoint'",
+        )
+        .run();
+      mutated
+        .prepare("DELETE FROM run_payload_artifacts WHERE run_id = 'run-recovery-checkpoint'")
+        .run();
+      mutated
+        .prepare(
+          "DELETE FROM model_budget_allocations WHERE account_id = 'run:run-recovery-checkpoint'",
+        )
+        .run();
+      mutated
+        .prepare(
+          "DELETE FROM model_budget_accounts WHERE account_id = 'run:run-recovery-checkpoint'",
+        )
+        .run();
+      mutated
+        .prepare(
+          "DELETE FROM payloads WHERE ref IN ('payload-recovery-answer', 'payload-recovery-worker')",
+        )
+        .run();
+    } finally {
+      mutated.close();
+    }
+    await expect(source.adapter.restore(backupId, source.stateRoot)).resolves.toEqual(created);
+
+    const database = openQualifiedDatabase(source.databasePath);
+    try {
+      expect(
+        database
+          .prepare(
+            `SELECT run_id, phase, context_ref, runtime_event_count, terminal_status,
+              output_kind, final_answer_ref
+            FROM run_coordination_checkpoints WHERE run_id = 'run-recovery-checkpoint'`,
+          )
+          .get(),
+      ).toEqual({
+        run_id: "run-recovery-checkpoint",
+        phase: "runtime_settled",
+        context_ref: "payload-recovery-point",
+        runtime_event_count: 3,
+        terminal_status: "completed",
+        output_kind: "assistant-answer",
+        final_answer_ref: "payload-recovery-answer",
+      });
+      expect(
+        database
+          .prepare(
+            `SELECT worker_run_id, result_ref FROM run_coordination_worker_results
+            WHERE run_id = 'run-recovery-checkpoint'`,
+          )
+          .get(),
+      ).toEqual({ worker_run_id: "__proto__", result_ref: "payload-recovery-worker" });
+      expect(
+        database
+          .prepare(
+            `SELECT purpose, operation_key, payload_ref FROM run_payload_artifacts
+            WHERE run_id = 'run-recovery-checkpoint' ORDER BY purpose`,
+          )
+          .all(),
+      ).toEqual([
+        {
+          purpose: "context",
+          operation_key: "context-recovery",
+          payload_ref: "payload-recovery-point",
+        },
+        {
+          purpose: "final_answer",
+          operation_key: "answer-recovery",
+          payload_ref: "payload-recovery-answer",
+        },
+        {
+          purpose: "worker_result",
+          operation_key: "__proto__",
+          payload_ref: "payload-recovery-worker",
+        },
+      ]);
+      expect(
+        database
+          .prepare(
+            `SELECT account_id, reserved_cost_micros, spent_cost_micros, status, revision
+             FROM model_budget_accounts WHERE account_id = 'run:run-recovery-checkpoint'`,
+          )
+          .get(),
+      ).toEqual({
+        account_id: "run:run-recovery-checkpoint",
+        reserved_cost_micros: 0,
+        spent_cost_micros: 12,
+        status: "active",
+        revision: 2,
+      });
+      expect(
+        database
+          .prepare(
+            `SELECT operation_key, model_ref, estimated_cost_micros, actual_cost_micros, status
+             FROM model_budget_allocations
+             WHERE account_id = 'run:run-recovery-checkpoint'`,
+          )
+          .get(),
+      ).toEqual({
+        operation_key: "model-call-recovery",
+        model_ref: "approved-model-v1",
+        estimated_cost_micros: 12,
+        actual_cost_micros: 12,
+        status: "settled",
+      });
+      expect(database.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      database.close();
+    }
   });
 
   it("refuses restore while the service state-root lock is held", async () => {

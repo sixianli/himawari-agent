@@ -8,7 +8,6 @@ export interface SqliteWorkerConfiguration {
   readonly busyTimeoutMs: number;
   readonly minimumFreeBytes: number;
   readonly warningFreeBytes: number;
-  readonly startupNow: string;
   readonly qualification?: {
     readonly crashAt?: "after_state" | "after_result" | "after_event" | "after_commit";
     readonly holdBeforeCommitMs?: number;
@@ -45,7 +44,6 @@ export class SqliteExecutionContext {
   private readonly pending = new Map<number, PendingOperation>();
   private nextId = 1;
   private exited = false;
-  private startupRecovery: unknown;
 
   private constructor(worker: Worker) {
     this.worker = worker;
@@ -71,13 +69,8 @@ export class SqliteExecutionContext {
       workerData: configuration,
     });
     const context = new SqliteExecutionContext(worker);
-    const ready = await context.request<{ readonly startupRecovery: unknown }>("ready", {});
-    context.startupRecovery = ready.startupRecovery;
+    await context.request<{ readonly writerSequence: number }>("ready", {});
     return context;
-  }
-
-  initialRecovery<TResult>(): TResult {
-    return structuredClone(this.startupRecovery) as TResult;
   }
 
   request<TResult>(operation: string, payload: unknown): Promise<TResult> {

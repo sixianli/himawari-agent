@@ -5,3 +5,5 @@ export const integrationWebWorkspace = {
   adapterKind: "web-capability",
   protocolOwnership: "product-contracts-with-injected-platform-driver",
 } as const;
+
+export * from "./public-web-transport.js";

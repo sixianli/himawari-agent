@@ -1,5 +1,7 @@
 import { execFile as execFileCallback, spawn } from "node:child_process";
-import { lstat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { constants } from "node:fs";
+import { lstat, open, realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type {
@@ -40,6 +42,28 @@ export interface CapabilityFilesystemBinding {
   readonly access: "read" | "read_write";
 }
 
+export interface CapabilityResourceLimitExecutableBinding {
+  /** An absolute path inside runtimeRoot; it is never sourced from the host. */
+  readonly sandboxPath: string;
+  /** The frozen SHA-256 digest of the executable bytes at sandboxPath. */
+  readonly sha256: string;
+}
+
+/**
+ * Host-side helper identity is part of the deployment snapshot.  The
+ * executable is never discovered through PATH or an environment variable.
+ */
+export interface CapabilityHostExecutableBinding {
+  readonly hostPath: string;
+  readonly sha256: string;
+}
+
+export interface CapabilityHostIsolationBinding {
+  readonly kind: "linux-bwrap-prlimit.v1";
+  readonly bwrap: CapabilityHostExecutableBinding;
+  readonly prlimit: CapabilityHostExecutableBinding;
+}
+
 export interface CapabilityProcessBinding {
   readonly capabilityRef: string;
   readonly capabilityVersion: string;
@@ -50,6 +74,7 @@ export interface CapabilityProcessBinding {
   readonly sandboxWorkdir: string;
   readonly environment: Readonly<Record<string, string>>;
   readonly availableExecutables: readonly string[];
+  readonly resourceLimitExecutable: CapabilityResourceLimitExecutableBinding;
   readonly filesystem: readonly CapabilityFilesystemBinding[];
   readonly maximumResourceCeiling: CapabilityResourceCeiling;
   readonly mcpServerIdentity: string | null;
@@ -129,10 +154,94 @@ function validCeiling(ceiling: CapabilityResourceCeiling): boolean {
 }
 
 function sandboxPathInRuntimeRoot(runtimeRoot: string, sandboxPath: string): string | undefined {
-  if (!path.posix.isAbsolute(sandboxPath) || sandboxPath === "/") return undefined;
+  if (
+    !path.posix.isAbsolute(sandboxPath) ||
+    sandboxPath === "/" ||
+    path.posix.normalize(sandboxPath) !== sandboxPath
+  ) {
+    return undefined;
+  }
   const resolvedRoot = path.resolve(runtimeRoot);
   const resolvedTarget = path.resolve(resolvedRoot, `.${sandboxPath}`);
   return resolvedTarget.startsWith(`${resolvedRoot}${path.sep}`) ? resolvedTarget : undefined;
+}
+
+const MAX_RESOURCE_LIMIT_EXECUTABLE_BYTES = 16 * 1024 * 1024;
+
+function validSha256(value: string): boolean {
+  return /^sha256:[a-f0-9]{64}$/.test(value);
+}
+
+async function verifiedHostExecutable(
+  executable: CapabilityHostExecutableBinding,
+): Promise<boolean> {
+  if (
+    !path.isAbsolute(executable.hostPath) ||
+    path.normalize(executable.hostPath) !== executable.hostPath ||
+    !validSha256(executable.sha256)
+  ) {
+    return false;
+  }
+  try {
+    const descriptor = await open(
+      executable.hostPath,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+    );
+    try {
+      const info = await descriptor.stat();
+      if (
+        !info.isFile() ||
+        !safeOwnedMode(info) ||
+        (Number(info.mode) & 0o100) === 0 ||
+        Number(info.size) === 0 ||
+        Number(info.size) > MAX_RESOURCE_LIMIT_EXECUTABLE_BYTES
+      ) {
+        return false;
+      }
+      const bytes = await descriptor.readFile();
+      return `sha256:${createHash("sha256").update(bytes).digest("hex")}` === executable.sha256;
+    } finally {
+      await descriptor.close();
+    }
+  } catch {
+    return false;
+  }
+}
+
+async function verifiedRuntimeExecutable(
+  runtimeRoot: string,
+  executable: CapabilityResourceLimitExecutableBinding,
+): Promise<boolean> {
+  if (!validSha256(executable.sha256)) return false;
+  const executablePath = sandboxPathInRuntimeRoot(runtimeRoot, executable.sandboxPath);
+  if (!executablePath) return false;
+  try {
+    const [rootPath, targetPath] = await Promise.all([
+      realpath(runtimeRoot),
+      realpath(executablePath),
+    ]);
+    if (!targetPath.startsWith(`${rootPath}${path.sep}`)) return false;
+
+    const descriptor = await open(executablePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    try {
+      const info = await descriptor.stat();
+      if (
+        !info.isFile() ||
+        Number(info.size) === 0 ||
+        Number(info.size) > MAX_RESOURCE_LIMIT_EXECUTABLE_BYTES ||
+        !safeOwnedMode(info) ||
+        (Number(info.mode) & 0o100) === 0
+      ) {
+        return false;
+      }
+      const bytes = await descriptor.readFile();
+      return `sha256:${createHash("sha256").update(bytes).digest("hex")}` === executable.sha256;
+    } finally {
+      await descriptor.close();
+    }
+  } catch {
+    return false;
+  }
 }
 
 function safeFilesystemSandboxPath(sandboxPath: string): boolean {
@@ -141,6 +250,10 @@ function safeFilesystemSandboxPath(sandboxPath: string): boolean {
     normalized === sandboxPath &&
     (normalized === "/workspace" || normalized.startsWith("/workspace/"))
   );
+}
+
+function pathCoveredByMount(targetPath: string, mountPath: string): boolean {
+  return targetPath === mountPath || targetPath.startsWith(`${mountPath}/`);
 }
 
 function platformName(value: NodeJS.Platform): CapabilityRuntimeQualification["platform"] {
@@ -193,22 +306,25 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
   readonly #bindings: CapabilityRuntimeBindingPort;
   readonly #clock: ClockPort;
   readonly #platform: NodeJS.Platform;
-  readonly #bwrapPath: string;
-  readonly #prlimitPath: string;
+  readonly #bwrapPath: string | undefined;
+  readonly #prlimitPath: string | undefined;
+  readonly #hostBinding: CapabilityHostIsolationBinding | undefined;
   #probePromise: Promise<IsolationProbe> | undefined;
 
   constructor(options: {
     readonly bindings: CapabilityRuntimeBindingPort;
     readonly clock: ClockPort;
     readonly platform?: NodeJS.Platform;
+    readonly hostBinding?: CapabilityHostIsolationBinding;
     readonly bwrapPath?: string;
     readonly prlimitPath?: string;
   }) {
     this.#bindings = options.bindings;
     this.#clock = options.clock;
     this.#platform = options.platform ?? process.platform;
-    this.#bwrapPath = options.bwrapPath ?? "/usr/bin/bwrap";
-    this.#prlimitPath = options.prlimitPath ?? "/usr/bin/prlimit";
+    this.#hostBinding = options.hostBinding;
+    this.#bwrapPath = options.hostBinding?.bwrap.hostPath ?? options.bwrapPath;
+    this.#prlimitPath = options.hostBinding?.prlimit.hostPath ?? options.prlimitPath;
   }
 
   async qualify(manifest: CapabilityManifest): Promise<CapabilityRuntimeQualification> {
@@ -264,8 +380,19 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
   ): Promise<SandboxedProcessLaunch> {
     const result = await this.qualify(manifest);
     if (!result.productionSuitable) throw new Error(result.reasonCodes[0] ?? "isolation-not-ready");
+    if (this.#hostBinding && !(await verifiedHostExecutable(this.#hostBinding.bwrap))) {
+      throw new Error(CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_UNSAFE);
+    }
+    if (this.#hostBinding && !(await verifiedHostExecutable(this.#hostBinding.prlimit))) {
+      throw new Error(CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_UNSAFE);
+    }
     const binding = await this.#bindings.resolveProcess(manifest);
     if (!binding) throw new Error(CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISSING);
+    const bwrapPath = this.#bwrapPath;
+    const prlimitPath = this.#prlimitPath;
+    if (!bwrapPath || !prlimitPath) {
+      throw new Error(CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_MISSING);
+    }
     if (
       !validCeiling(ceiling) ||
       ceiling.maxWallTimeMs > binding.maximumResourceCeiling.maxWallTimeMs ||
@@ -284,6 +411,7 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
     const processLimit = Math.max(2, binding.availableExecutables.length + 1);
     const bwrapArgs = [
       "--unshare-all",
+      "--unshare-user",
       "--clearenv",
       "--new-session",
       "--die-with-parent",
@@ -312,17 +440,24 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
         entry.sandboxPath,
       );
     }
-    bwrapArgs.push("--chdir", binding.sandboxWorkdir, "--", binding.command);
+    bwrapArgs.push(
+      "--chdir",
+      binding.sandboxWorkdir,
+      "--",
+      binding.resourceLimitExecutable.sandboxPath,
+      `--nproc=${String(processLimit)}`,
+      "--",
+      binding.command,
+    );
     if (runtime.kind === "program") bwrapArgs.push(...runtime.argv.slice(1));
     return Object.freeze({
-      command: this.#prlimitPath,
+      command: prlimitPath,
       args: Object.freeze([
         `--cpu=${String(cpuSeconds)}`,
         `--as=${String(ceiling.maxMemoryBytes)}`,
-        `--nproc=${String(processLimit)}`,
         `--fsize=${String(ceiling.maxOutputBytes)}`,
         "--",
-        this.#bwrapPath,
+        bwrapPath,
         ...bwrapArgs,
       ]),
       cwd: "/",
@@ -345,6 +480,13 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
         reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.PLATFORM_UNSUPPORTED],
       });
     }
+    if (!this.#bwrapPath || !this.#prlimitPath) {
+      return Object.freeze({
+        ready: false,
+        identity,
+        reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_MISSING],
+      });
+    }
     try {
       const [bwrapInfo, prlimitInfo] = await Promise.all([
         lstat(this.#bwrapPath),
@@ -358,6 +500,17 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
           reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_UNSAFE],
         });
       }
+      if (
+        this.#hostBinding &&
+        (!(await verifiedHostExecutable(this.#hostBinding.bwrap)) ||
+          !(await verifiedHostExecutable(this.#hostBinding.prlimit)))
+      ) {
+        return Object.freeze({
+          ready: false,
+          identity,
+          reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_UNSAFE],
+        });
+      }
       if ((bwrapInfo.mode & 0o4000) !== 0) {
         return Object.freeze({
           ready: false,
@@ -365,9 +518,11 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
           reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.BACKEND_SETUID_FORBIDDEN],
         });
       }
+      const bwrapPath = this.#bwrapPath;
+      const prlimitPath = this.#prlimitPath;
       const [bwrapVersion, prlimitVersion] = await Promise.all([
-        execFile(this.#bwrapPath, ["--version"], { timeout: 2_000 }),
-        execFile(this.#prlimitPath, ["--version"], { timeout: 2_000 }),
+        execFile(bwrapPath, ["--version"], { timeout: 2_000 }),
+        execFile(prlimitPath, ["--version"], { timeout: 2_000 }),
       ]);
       const bubblewrap = versionTuple(`${bwrapVersion.stdout} ${bwrapVersion.stderr}`);
       const utilLinux = versionTuple(`${prlimitVersion.stdout} ${prlimitVersion.stderr}`);
@@ -384,13 +539,20 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
         });
       }
       await execFile(
-        this.#bwrapPath,
+        bwrapPath,
         [
           "--unshare-all",
+          "--unshare-user",
           "--clearenv",
           "--new-session",
           "--die-with-parent",
           "--disable-userns",
+          "--symlink",
+          "usr/lib",
+          "/lib",
+          "--symlink",
+          "usr/lib64",
+          "/lib64",
           "--ro-bind",
           "/usr",
           "/usr",
@@ -436,6 +598,9 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
         : [binding.command];
     const mappedMcpOperations = Object.entries(binding.mcpOperationMap);
     const filesystemPaths = binding.filesystem.map(({ sandboxPath }) => sandboxPath);
+    const fixedMountPaths = ["/proc", "/dev", "/tmp"];
+    const mountPaths = [...fixedMountPaths, ...filesystemPaths];
+    const resourceLimitSandboxPath = binding.resourceLimitExecutable?.sandboxPath ?? "";
     const overlappingFilesystemPaths = filesystemPaths.some((left, index) =>
       filesystemPaths.some(
         (right, otherIndex) =>
@@ -464,11 +629,9 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
       binding.filesystem.some((entry) => !manifest.scopes.filesystem.includes(entry.scopeRef)) ||
       overlappingFilesystemPaths ||
       binding.availableExecutables.some((executable) =>
-        filesystemPaths.some(
-          (filesystemPath) =>
-            executable === filesystemPath || executable.startsWith(`${filesystemPath}/`),
-        ),
+        mountPaths.some((mountPath) => pathCoveredByMount(executable, mountPath)),
       ) ||
+      mountPaths.some((mountPath) => pathCoveredByMount(resourceLimitSandboxPath, mountPath)) ||
       manifest.scopes.filesystem.some(
         (scope) => !binding.filesystem.some((entry) => entry.scopeRef === scope),
       ) ||
@@ -504,17 +667,39 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
       ) {
         return [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE];
       }
+      if (
+        !(await verifiedRuntimeExecutable(binding.runtimeRoot, binding.resourceLimitExecutable))
+      ) {
+        return [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE];
+      }
+      for (const mountPath of fixedMountPaths) {
+        const mountTarget = sandboxPathInRuntimeRoot(binding.runtimeRoot, mountPath);
+        if (!mountTarget) return [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE];
+        const mountInfo = await lstat(mountTarget);
+        if (!mountInfo.isDirectory() || mountInfo.isSymbolicLink() || !safeOwnedMode(mountInfo)) {
+          return [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE];
+        }
+      }
       for (const entry of binding.filesystem) {
         const host = await lstat(entry.hostPath);
         if (
           !path.isAbsolute(entry.hostPath) ||
           !path.isAbsolute(entry.sandboxPath) ||
           !safeFilesystemSandboxPath(entry.sandboxPath) ||
+          (!host.isDirectory() && !host.isFile()) ||
           host.isSymbolicLink() ||
           broadPath(entry.hostPath) ||
           !safeOwnedMode(host)
         ) {
           return [CAPABILITY_ISOLATION_ERROR_CODES.FILESYSTEM_SCOPE_UNSAFE];
+        }
+        const mountTarget = sandboxPathInRuntimeRoot(binding.runtimeRoot, entry.sandboxPath);
+        if (!mountTarget) return [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE];
+        const mountInfo = await lstat(mountTarget);
+        const sameKind =
+          (host.isDirectory() && mountInfo.isDirectory()) || (host.isFile() && mountInfo.isFile());
+        if (!sameKind || mountInfo.isSymbolicLink() || !safeOwnedMode(mountInfo)) {
+          return [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE];
         }
       }
       for (const executable of binding.availableExecutables) {
@@ -539,7 +724,7 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
   }
 }
 
-export class MacSignedHelperIsolationBackend implements CapabilityRuntimeQualifierPort {
+export class MacSignedHelperIsolationBackend implements SandboxedProcessIsolationBackend {
   readonly #clock: ClockPort;
   readonly #platform: NodeJS.Platform;
 
@@ -554,6 +739,13 @@ export class MacSignedHelperIsolationBackend implements CapabilityRuntimeQualifi
       ready: false,
       reasons: [CAPABILITY_ISOLATION_ERROR_CODES.MACOS_SIGNED_HELPER_REQUIRED],
     });
+  }
+
+  async createLaunch(
+    _manifest: CapabilityManifest,
+    _ceiling: CapabilityResourceCeiling,
+  ): Promise<SandboxedProcessLaunch> {
+    throw new Error(CAPABILITY_ISOLATION_ERROR_CODES.MACOS_SIGNED_HELPER_REQUIRED);
   }
 }
 

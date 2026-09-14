@@ -1,3 +1,4 @@
+import { invalidateRecoveredBuiltInIdentity } from "./built-in-identity-recovery.js";
 import {
   createCipheriv,
   createDecipheriv,
@@ -189,6 +190,8 @@ interface PayloadRow {
   readonly ciphertextPath: string | null;
   readonly contentDigest: string;
   readonly encryptionMetadataJson: string | null;
+  readonly encryptionAlgorithm: string | null;
+  readonly keyRef: string | null;
   readonly createdAt: string;
 }
 
@@ -372,7 +375,8 @@ function payloadRows(database: InstanceType<typeof BetterSqlite3>): readonly Pay
         classification AS dataClassification, content_type AS contentType,
         storage_kind AS storageKind, ciphertext, ciphertext_path AS ciphertextPath,
         content_digest AS contentDigest,
-        encryption_metadata_json AS encryptionMetadataJson, created_at AS createdAt
+        encryption_metadata_json AS encryptionMetadataJson,
+        encryption_algorithm AS encryptionAlgorithm, key_ref AS keyRef, created_at AS createdAt
       FROM payloads WHERE lifecycle_state != 'deleted_verified' ORDER BY ref`,
     )
     .all() as PayloadRow[];
@@ -818,6 +822,19 @@ export class SqliteRecoveryPointAdapter implements RecoveryPointPort {
           "Recovery point identity or authority does not match the target",
         );
       }
+      const authenticationState = new BetterSqlite3(path.join(staging, "data", "product.sqlite"));
+      try {
+        authenticationState.transaction(() =>
+          invalidateRecoveredBuiltInIdentity(authenticationState, {
+            ownerId: this.#options.ownerId,
+            agentId: this.#options.agentId,
+            now: restoreStartedAt,
+            requireAccountRecovery: true,
+          }),
+        )();
+      } finally {
+        authenticationState.close();
+      }
       await this.#fault("restore.before-switch");
       await rename(currentData, previousData);
       previousMoved = true;
@@ -1177,6 +1194,29 @@ export class SqliteRecoveryPointAdapter implements RecoveryPointPort {
   ): Promise<number> {
     const rows = payloadRows(database);
     for (const row of rows) {
+      if (row.ownerId !== this.#options.ownerId || row.agentId !== this.#options.agentId) {
+        throw new RecoveryPointError(
+          RECOVERY_POINT_ERROR_CODES.PAYLOAD_INVALID,
+          "Recovery-point Payload scope does not match this deployment",
+          { payloadRef: row.ref },
+        );
+      }
+      // Durable operations use empty metadata rows as relational references. Their
+      // bytes remain covered by the encrypted, authenticated database snapshot.
+      if (
+        row.ref.startsWith("metadata:") &&
+        row.contentType === "application/x-himawari-metadata" &&
+        row.dataClassification === "private" &&
+        row.storageKind === "sqlite_blob" &&
+        row.ciphertext?.byteLength === 0 &&
+        row.ciphertextPath === null &&
+        row.contentDigest === `metadata:${row.ref}` &&
+        row.encryptionMetadataJson === null &&
+        row.encryptionAlgorithm === null &&
+        row.keyRef === null
+      ) {
+        continue;
+      }
       let encryption: PayloadRecord["encryption"];
       try {
         encryption = JSON.parse(

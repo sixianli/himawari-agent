@@ -1,0 +1,26 @@
+{
+  "prefix": "/private/tmp/r8-install-AQRLpW",
+  "installer": "scripts/install-node-runtime.mjs",
+  "source": "dist/node-runtime",
+  "installedFileCount": 64371,
+  "sourceInstalledMatched": true,
+  "productionSuitable": false,
+  "files": [
+    {
+      "file": "runtime-manifest.json",
+      "sha256": "14d0276bee3c2bb6a1b9b8fc5b3102366c147bde3e059614d4d02fe7a6d1fd49"
+    },
+    {
+      "file": "node_modules/@himawari-agent/runtime-sandbox/dist/job-host-main.js",
+      "sha256": "da50694e9fc50423a4e738e88fdd5372cc2ad7479f431f0fee9809914f8da3aa"
+    },
+    {
+      "file": "node_modules/@himawari-agent/runtime-sandbox/dist/network-egress.js",
+      "sha256": "a328b5b9a4a7d7e265d22e3076c241823928232279f7a2dd09207a7f63e33802"
+    },
+    {
+      "file": "node_modules/@himawari-agent/execution-worker/dist/production-sandbox-execution-v2.js",
+      "sha256": "d1cbcccc9699278511a56bfe4574bf41778431d87b3b7f35578876022e7d7234"
+    }
+  ]
+}

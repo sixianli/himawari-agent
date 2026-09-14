@@ -1,5 +1,5 @@
-import { DOMAIN_ERROR_CODES, DomainError } from "./errors.js";
-import type { AgentId, OwnerId, ThreadId, TurnId } from "./identifiers.js";
+import { DOMAIN_ERROR_CODES, DomainError } from "./errors.ts";
+import type { AgentId, OwnerId, ThreadId, TurnId } from "./identifiers.ts";
 
 export const THREAD_STATUSES = [
   "active",

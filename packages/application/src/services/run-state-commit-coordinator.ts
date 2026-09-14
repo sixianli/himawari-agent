@@ -24,30 +24,19 @@ import {
   type JsonObject,
   type ProductStateRepositoryPort,
   type StateRecord,
+  type RunCommandContext,
+  type RunLifecyclePort,
+  type StoredRun,
+  type TransitionRunStateInput,
+  type RunCompletionInput,
+  type RunCancellationInput,
+  type RunTransitionReceipt,
 } from "../ports/index.js";
 
-interface AgentStateCommandContext {
-  readonly ownerId: OwnerId;
-  readonly agentId: AgentId;
-  readonly idempotencyKey: IdempotencyKey;
-  readonly commandFingerprint: string;
-  readonly authority: AuthorityFence;
-  readonly payloadRef: string;
-}
+export type { StoredRun, TransitionRunStateInput } from "../ports/run-lifecycle.js";
 
-export interface AdmitRunStateInput extends Omit<AgentStateCommandContext, "ownerId" | "agentId"> {
+export interface AdmitRunStateInput extends Omit<RunCommandContext, "ownerId" | "agentId"> {
   readonly run: Run;
-}
-
-export interface TransitionRunStateInput extends AgentStateCommandContext {
-  readonly runId: RunId;
-  readonly expectedRevision: number;
-  readonly nextStatus: RunStatus;
-}
-
-export interface StoredRun {
-  readonly run: Run;
-  readonly revision: number;
 }
 
 function runStateKey(runId: RunId): string {
@@ -112,7 +101,7 @@ function deserializeRun(record: StateRecord): Run {
   });
 }
 
-export class RunStateCommitCoordinator {
+export class RunStateCommitCoordinator implements RunLifecyclePort {
   private readonly repository: ProductStateRepositoryPort;
   private readonly clock: ClockPort;
 
@@ -190,11 +179,37 @@ export class RunStateCommitCoordinator {
     });
   }
 
+  async completeRun(input: RunCompletionInput): Promise<RunTransitionReceipt> {
+    const stored = await this.readRun(input.runId);
+    if (!stored) throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "Run not found");
+    if (stored.run.threadId && input.output.kind === "no-answer")
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Thread completion requires an assistant answer",
+      );
+    if (input.output.kind === "assistant-answer" && input.output.contentRef.trim().length === 0)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Final answer reference is empty",
+      );
+    return this.transitionRun({
+      ...input,
+      nextStatus: "completed",
+      commandFingerprint: JSON.stringify([
+        "run.complete",
+        input.commandFingerprint,
+        input.output,
+        input.dataClassification,
+      ]),
+    });
+  }
+
+  async cancelRun(input: RunCancellationInput): Promise<RunTransitionReceipt> {
+    return this.transitionRun({ ...input, nextStatus: "cancelled" });
+  }
+
   private async replay(
-    input: Pick<
-      AgentStateCommandContext,
-      "ownerId" | "agentId" | "idempotencyKey" | "commandFingerprint"
-    >,
+    input: Pick<RunCommandContext, "ownerId" | "agentId" | "idempotencyKey" | "commandFingerprint">,
     commandType: string,
   ): Promise<CommitStateAndEventsResult | undefined> {
     const existingCommit = await this.repository.findCommandCommit(input);
