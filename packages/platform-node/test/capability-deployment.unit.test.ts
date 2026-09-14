@@ -100,7 +100,7 @@ function processBinding(overrides: JsonObject = {}): JsonObject {
         access: "read_write",
       },
     ],
-    maximumResourceCeiling: CEILING,
+    maximumResourceCeiling: { ...CEILING },
     mcpServerIdentity: null,
     mcpServerName: null,
     mcpServerVersion: null,
@@ -213,7 +213,7 @@ function sandboxEntry(): JsonObject {
         readOnlyToolchainPaths: ["/usr/bin"],
         protectedPaths: [],
         allowedDomains: [],
-        maximumResourceCeiling: CEILING,
+        maximumResourceCeiling: { ...CEILING },
       },
     },
   };
@@ -594,4 +594,143 @@ it("keeps an unchanged boot admission usable while rejecting stale boots and cha
     revalidateCapabilityDeploymentSnapshot(admitted),
     CAPABILITY_DEPLOYMENT_ERROR_CODES.DIGEST_MISMATCH,
   );
+});
+
+describe("deployment snapshot schema and endpoint boundaries", () => {
+  const change = (entry: JsonObject, key: string, value: unknown) => {
+    const parts = key.split(".");
+    const last = parts.pop();
+    if (!last) throw new Error("Fixture field missing");
+    let parent = entry;
+    for (const part of parts) parent = parent[part] as JsonObject;
+    parent[last] = value;
+    return entry;
+  };
+  it.each([
+    ["manifest.ref", "not a reference"],
+    ["manifest.displayName", ""],
+    ["manifest.operations", []],
+    ["manifest.operations", ["execute", "execute"]],
+    ["manifest.permissionRefs", ["bad reference"]],
+    ["manifest.permissionRefs", ["one", "one"]],
+    ["manifest.permissionRefs", "not-array"],
+    ["manifest.health.checkedAt", "invalid-date"],
+    ["manifest.reviewedAt", "invalid-date"],
+    ["manifest.scopes.dataClassifications", []],
+    ["manifest.scopes.dataClassifications", ["private", "private"]],
+    ["manifest.scopes.network", ["example.com", "example.com"]],
+    ["manifest.runtime.argv", []],
+    ["manifest.cost.maxMicrosPerInvocation", -1],
+    ["manifest.cost.maxMicrosPerInvocation", 0.5],
+    ["qualification.productionSuitable", "true"],
+    ["qualification.artifactDigest", "sha256:incorrect"],
+    ["binding.value.runtimeRoot", "relative/root"],
+    ["binding.value.runtimeRoot", "/a/../b"],
+    ["binding.value.maximumResourceCeiling.maxOutputBytes", 0],
+    ["binding.value.maximumResourceCeiling.maxOutputBytes", "1024"],
+    ["binding.value.environment", { LANG: 42 }],
+    ["binding.value.environment", { constructor: "invalid" }],
+    ["binding.value.environment", { "": "invalid" }],
+  ])("rejects invalid %s before publishing bindings", async (field, value) => {
+    const written = await writeSnapshot(snapshot([change(processEntry(), field as string, value)]));
+    await expectDeploymentError(
+      loader(written.snapshotPath, written.digest).load(),
+      (field as string).startsWith("qualification.")
+        ? CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID
+        : CAPABILITY_DEPLOYMENT_ERROR_CODES.INVALID_VALUE,
+    );
+  });
+  it.each([
+    ["url", "relative"],
+    ["url", "http://example.test"],
+    ["allowedMethods", []],
+    ["allowedMethods", "POST"],
+    ["allowedMethods", ["POST", "POST"]],
+    ["allowedMethods", ["UNSUPPORTED"]],
+    ["operations.invoke.path", "relative"],
+    ["operations.invoke.path", "//other.test/path"],
+    ["operations.invoke.method", "UNSUPPORTED"],
+    ["operations.invoke.secretHeaders", { "secret-ref": 42 }],
+  ])("rejects malformed endpoint %s", async (field, value) => {
+    const written = await writeSnapshot(
+      snapshot([change(endpointEntry(), `binding.value.${field}`, value)]),
+    );
+    await expectDeploymentError(
+      loader(written.snapshotPath, written.digest).load(),
+      CAPABILITY_DEPLOYMENT_ERROR_CODES.INVALID_VALUE,
+    );
+  });
+  it.each([
+    ["endpointIdentity", "endpoint:other"],
+    ["productionSuitable", false],
+    ["operations", {}],
+    ["operations", { other: { method: "POST", path: "/invoke", secretHeaders: {} } }],
+    ["allowedMethods", ["GET"]],
+    ["operations.invoke.secretHeaders", { "unapproved-secret": "X-Secret" }],
+  ])("rejects endpoint %s that exceeds its declared authority", async (field, value) => {
+    const written = await writeSnapshot(
+      snapshot([change(endpointEntry(), `binding.value.${field}`, value)]),
+    );
+    await expectDeploymentError(
+      loader(written.snapshotPath, written.digest).load(),
+      CAPABILITY_DEPLOYMENT_ERROR_CODES.BINDING_MISMATCH,
+    );
+  });
+  it("retains explicitly declared environment and secret references without resolving secret material", async () => {
+    const program = processEntry();
+    change(program, "manifest.runtime.environmentKeys", ["LANG"]);
+    change(program, "binding.value.environment", { LANG: "C.UTF-8" });
+    const endpoint = endpointEntry();
+    change(endpoint, "manifest.scopes.secrets", ["secret:approved"]);
+    change(endpoint, "binding.value.operations.invoke.secretHeaders", {
+      "secret:approved": "X-Access",
+    });
+    const written = await writeSnapshot(snapshot([program, endpoint]));
+    const loaded = await loader(written.snapshotPath, written.digest).load();
+    const [programManifest, endpointManifest] = loaded.manifests;
+    if (!programManifest || !endpointManifest) throw new Error("Missing fixture manifests");
+    expect(await loaded.bindings.resolveProcess(programManifest)).toMatchObject({
+      environment: { LANG: "C.UTF-8" },
+    });
+    expect(await loaded.bindings.resolveEndpoint(endpointManifest)).toMatchObject({
+      operations: { invoke: { secretHeaders: { "secret:approved": "X-Access" } } },
+    });
+  });
+  it("binds an MCP operation to its declared server identity and tool map", async () => {
+    const entry = processEntry({
+      manifest: {
+        source: { type: "mcp", locator: "artifact:fixture-mcp:1.0.0" },
+        runtime: {
+          kind: "mcp",
+          serverIdentity: "server:fixture",
+          transport: "stdio",
+          mappedResources: ["tool:execute"],
+        },
+      },
+      binding: {
+        mcpServerIdentity: "server:fixture",
+        mcpServerName: "fixture",
+        mcpServerVersion: "1.0.0",
+        mcpOperationMap: { execute: "execute" },
+      },
+    });
+    const written = await writeSnapshot(snapshot([entry]));
+    const loaded = await loader(written.snapshotPath, written.digest).load();
+    expect(loaded.adapters[0]).toMatchObject({ runtimeKind: "mcp", operations: ["execute"] });
+    for (const [field, value] of [
+      ["mcpServerIdentity", "server:other"],
+      ["mcpServerName", null],
+      ["mcpServerVersion", null],
+      ["mcpOperationMap", { execute: "unlisted" }],
+      ["mcpOperationMap", {}],
+    ] as const) {
+      const invalid = await writeSnapshot(
+        snapshot([change(structuredClone(entry), `binding.value.${field}`, value)]),
+      );
+      await expectDeploymentError(
+        loader(invalid.snapshotPath, invalid.digest).load(),
+        CAPABILITY_DEPLOYMENT_ERROR_CODES.BINDING_MISMATCH,
+      );
+    }
+  });
 });

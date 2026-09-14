@@ -139,7 +139,9 @@ describe("same-artifact verification", () => {
         path.join(payload, "runtime/runtime-manifest.json"),
         JSON.stringify({ entrypoints: {}, externalDependencyClosure: {} }),
       );
-    record.files = (await collectArtifactFiles(payload)).filter(
+    // Match the packager after inserting new files; umask must not replace the
+    // intended payload rejection with an unrelated noncanonical-mode error.
+    record.files = (await collectArtifactFiles(payload, { normalizeModes: true })).filter(
       (file) => file.path !== "artifact-record.json",
     );
     record.contentSha256 = contentDigest(record.files);

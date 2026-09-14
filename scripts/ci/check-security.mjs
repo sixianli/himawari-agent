@@ -25,6 +25,7 @@ import {
   verifyRuleFiles,
 } from "./install-tools.mjs";
 import { enumerateLockDependencies, loadReviewedExceptions } from "./security-exceptions.mjs";
+import { applyMachineReview } from "./security-owner-review.mjs";
 
 export {
   enumerateLockDependencies,
@@ -262,7 +263,11 @@ export function verifySyntheticProvenance({ root, baseSha, entry, findings }) {
   return true;
 }
 
-export function applySecurityExceptions(findings, exceptions, { root, baseSha } = {}) {
+export function applySecurityExceptions(
+  findings,
+  exceptions,
+  { root, baseSha, provenanceReview } = {},
+) {
   exceptions = exceptions.filter((entry) => entry.kind !== "published-synthetic-fixture");
   const consumed = new Map();
   const proven = new Set();
@@ -270,7 +275,14 @@ export function applySecurityExceptions(findings, exceptions, { root, baseSha } 
     if (entry.kind !== "synthetic-secret" || !entry.provenance) continue;
     verifySyntheticProvenance({
       root,
-      baseSha,
+      baseSha: provenanceReview?.entries.some(
+        (identity) =>
+          identity.id === entry.id &&
+          identity.path === entry.path &&
+          identity.digest === entry.digest,
+      )
+        ? provenanceReview.sourceSha
+        : baseSha,
       entry,
       findings: findings.filter(
         (finding) =>
@@ -635,7 +647,9 @@ export async function runSecurityChecks({
     findings = applySecurityExceptions(findings, reviewed?.exceptions ?? [], {
       root,
       baseSha: context.baseSha,
+      provenanceReview: reviewed?.provenanceReview,
     });
+    findings = applyMachineReview(findings, reviewed?.machineExceptions);
   } catch (error) {
     infrastructureFailure = true;
     checks.push({

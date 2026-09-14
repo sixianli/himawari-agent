@@ -47,12 +47,12 @@ function positive() {
           ]),
         )
       : count();
-    const platform = check.id === "browser" ? "linux-x64" : member.key;
+    const platform = ["browser", "coverage"].includes(check.id) ? "linux-x64" : member.key;
     const outputs = check.outputs.map((kind) => {
       const bytes = kind === "artifact" ? archive(platform) : Buffer.from(`real ${kind} report`);
       return { path: `report.${kind}`, kind, bytes: bytes.length, sha256: sha256(bytes) };
     });
-    const artifacts = ["build", "test", "browser"].includes(check.id)
+    const artifacts = ["build", "test", "browser", "coverage"].includes(check.id)
       ? [
           {
             role: check.id === "build" ? "produced" : "consumed",
@@ -433,8 +433,9 @@ describe("complete-attempt gate", () => {
       mkdirSync(folder, { recursive: true });
       writeFileSync(path.join(folder, "result.json"), JSON.stringify(envelope.result));
       for (const report of envelope.result.reports) {
-        const platform =
-          envelope.result.checkId === "browser" ? "linux-x64" : envelope.result.matrixKey;
+        const platform = ["browser", "coverage"].includes(envelope.result.checkId)
+          ? "linux-x64"
+          : envelope.result.matrixKey;
         writeFileSync(
           path.join(folder, report.path),
           report.kind === "artifact"

@@ -15,20 +15,23 @@ function fixture(
     timeoutMs?: number;
   } = {},
 ) {
-  const write = vi.fn(async () => "payload:fixture");
+  const write = vi.fn(
+    async (_input: { contentType: string; plaintext: Uint8Array }) => "payload:fixture",
+  );
   const resolve = vi.fn(async () => options.addresses ?? ["93.184.216.34"]);
   const request = vi.fn(
     async () => new Response("hello", { headers: { "content-type": "text/plain" } }),
   );
+  const search = vi.fn(async () => []);
   const adapter = new BoundedPublicWebAdapter({
     transport: options.transport ?? { request },
     resolver: { resolve },
     timeoutMs: options.timeoutMs ?? 1000,
-    search: { search: async () => [] },
+    search: { search },
     payloads: { write },
     digest: { digest: () => "digest:fixture" },
   });
-  return { adapter, write, resolve, request };
+  return { adapter, write, resolve, request, search };
 }
 const input = { requestedUrl: "https://public.example/source", maximumBytes: 1024 };
 
@@ -152,5 +155,122 @@ describe("public web transport boundaries", () => {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+});
+
+describe("bounded response validation and cleanup", () => {
+  it("delegates only the supplied search query and limit", async () => {
+    const f = fixture();
+    const query = { query: "public documentation", limit: 3 };
+    expect(await f.adapter.search(query)).toEqual([]);
+    expect(f.search).toHaveBeenCalledExactlyOnceWith(query);
+    expect(f.request).not.toHaveBeenCalled();
+  });
+  it.each([0, -1, 60001, 1.5, Number.NaN])("rejects timeout %s before requesting", (timeoutMs) => {
+    expect(() => fixture({ timeoutMs })).toThrow("Invalid web timeout");
+  });
+  it.each([0, -1, 16 * 1024 * 1024 + 1, 0.5])(
+    "rejects response bound %s before resolving",
+    async (maximumBytes) => {
+      const f = fixture();
+      await expect(f.adapter.open({ ...input, maximumBytes })).rejects.toThrow(
+        "Invalid web response size limit",
+      );
+      expect(f.resolve).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["file:///private/file", "https://user@public.example/", "ftp://public.example/"])(
+    "rejects unsafe URL %s",
+    async (requestedUrl) => {
+      const f = fixture();
+      await expect(f.adapter.open({ ...input, requestedUrl })).rejects.toThrow("WEB_URL_UNSAFE");
+      expect(f.resolve).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    [{ "content-type": "application/zip" }, "WEB_CONTENT_TYPE_UNSUPPORTED"],
+    [
+      { "content-type": "text/plain", "content-encoding": "gzip" },
+      "WEB_CONTENT_ENCODING_UNSUPPORTED",
+    ],
+    [{ "content-type": "text/plain", "content-length": "-1" }, "WEB_RESOURCE_TOO_LARGE"],
+    [{ "content-type": "text/plain", "content-length": "2048" }, "WEB_RESOURCE_TOO_LARGE"],
+    [{ "content-type": "text/plain", "content-length": "NaN" }, "WEB_RESOURCE_TOO_LARGE"],
+  ] as const)("rejects headers %j without persisting a body", async (headers, reason) => {
+    const cancel = vi.fn(async () => {
+      throw new Error("body cleanup failed");
+    });
+    const f = fixture({
+      transport: { request: async () => new Response(new ReadableStream({ cancel }), { headers }) },
+    });
+    await expect(f.adapter.open(input)).rejects.toThrow(reason);
+    await Promise.resolve();
+    expect(f.write).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+  it("enforces redirect count and cancels every response", async () => {
+    const cancel = vi.fn();
+    const request = vi.fn(
+      async () =>
+        new Response(new ReadableStream({ cancel }), {
+          status: 302,
+          headers: { location: "/again" },
+        }),
+    );
+    const f = fixture({ transport: { request } });
+    await expect(f.adapter.open(input)).rejects.toThrow("WEB_REDIRECT_LIMIT");
+    expect(request).toHaveBeenCalledTimes(6);
+    expect(cancel).toHaveBeenCalledTimes(6);
+    expect(f.write).not.toHaveBeenCalled();
+  });
+  it("rejects a redirect without a destination", async () => {
+    const f = fixture({ transport: { request: async () => new Response(null, { status: 301 }) } });
+    await expect(f.adapter.open(input)).rejects.toThrow("WEB_REDIRECT_LIMIT");
+  });
+  it("accepts a bodyless response and preserves its actual status", async () => {
+    const f = fixture({
+      transport: {
+        request: async () =>
+          new Response(null, { status: 204, headers: { "content-type": "text/plain" } }),
+      },
+    });
+    expect(await f.adapter.open(input)).toMatchObject({
+      statusCode: 204,
+      title: "public.example",
+      selectedFragmentRefs: ["fragment:0:0"],
+    });
+    expect(f.write.mock.calls[0]?.[0].plaintext).toEqual(new Uint8Array());
+  });
+  it("preserves a read failure even when cancellation also rejects", async () => {
+    const f = fixture({
+      transport: {
+        request: async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new Error("fixture stream failure"));
+              },
+            }),
+            { headers: { "content-type": "text/plain" } },
+          ),
+      },
+    });
+    await expect(f.adapter.open(input)).rejects.toThrow("fixture stream failure");
+    await Promise.resolve();
+    expect(f.write).not.toHaveBeenCalled();
+  });
+  it("uses the final URL for title fallback after a relative redirect", async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 307, headers: { location: "/final" } }))
+      .mockResolvedValueOnce(
+        new Response("<p>source</p>", { headers: { "content-type": "text/html" } }),
+      );
+    const f = fixture({ transport: { request } });
+    expect(await f.adapter.open(input)).toMatchObject({
+      canonicalUrl: "https://public.example/final",
+      redirectChain: ["https://public.example/final"],
+      title: "public.example",
+    });
   });
 });

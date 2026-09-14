@@ -3,7 +3,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createContext, outputPath, verifyContext } from "./context.mjs";
 import { parseArguments, readJson, repositoryRoot } from "./contracts.mjs";
+import { verifyInstalledTools } from "./install-tools.mjs";
+import { publish } from "./publish.mjs";
 import { runCheck } from "./run.mjs";
+import { redactText } from "./security-redaction.mjs";
 
 export async function local({
   check,
@@ -34,6 +37,7 @@ export async function local({
   writeFileSync(path.join(directory, "context.json"), `${JSON.stringify(identity, null, 2)}\n`);
   const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";
   const results = [];
+  const publicationFailures = [];
   const execute = async (checkId, matrixKey = "default", input) => {
     const result = await runCheck({
       root,
@@ -46,11 +50,25 @@ export async function local({
       hosted: false,
     });
     results.push(result);
+    try {
+      const installation = await verifyInstalledTools({ directory: toolsDirectory, root });
+      await publish({
+        root,
+        input: path.join(directory, `${checkId}-${matrixKey}`),
+        output: path.join(directory, `public-${checkId}-${matrixKey}`),
+        python: installation.executables.python,
+      });
+    } catch (error) {
+      const failure = { checkId, matrixKey, error: redactText(error.message) };
+      publicationFailures.push(failure);
+      process.stdout.write(`${checkId}/${matrixKey}: publication failed (${failure.error})\n`);
+    }
     process.stdout.write(`${checkId}/${matrixKey}: ${result.status}\n`);
     return result;
   };
   let built = artifact;
-  const requiresBuild = !check || check === "build" || (check === "test" && !built);
+  const requiresBuild =
+    !check || check === "build" || (["test", "coverage"].includes(check) && !built);
   if (!check || check === "policy") await execute("policy");
   if (!check || check === "static") await execute("static");
   if (requiresBuild) {
@@ -61,17 +79,20 @@ export async function local({
   if ((!check || check === "test") && built) await execute("test", platform, built);
   if (!check && built)
     for (const engine of ["chromium", "firefox", "webkit"]) await execute("browser", engine, built);
-  if (!check || check === "coverage") await execute("coverage");
+  if ((!check || check === "coverage") && built) await execute("coverage", "default", built);
   if (!check || check === "security") await execute("security");
   const summary = {
     schemaVersion: 1,
     scope: "local-platform-validation",
     context: identity,
     status:
-      results.length > 0 && results.every((result) => result.status === "passed")
+      publicationFailures.length === 0 &&
+      results.length > 0 &&
+      results.every((result) => result.status === "passed")
         ? "local_passed"
         : "failed",
     platform,
+    publicationFailures,
     checks: results.map((result) => ({
       checkId: result.checkId,
       matrixKey: result.matrixKey,

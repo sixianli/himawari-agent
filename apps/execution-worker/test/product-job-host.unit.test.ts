@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 const { prepare } = vi.hoisted(() => ({ prepare: vi.fn() }));
 vi.mock("@himawari-agent/runtime-sandbox", () => ({ prepareSandboxJobHost: prepare }));
 
-import { createProductSandboxHostSession } from "./product-job-host.ts";
+import { createProductSandboxHostSession } from "../src/product-job-host.ts";
 
 const plan = {
   identity: { jobId: "job", attemptId: "attempt" },

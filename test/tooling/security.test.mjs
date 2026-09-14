@@ -317,6 +317,39 @@ describe("受审阅的窄范围例外", () => {
     );
   });
 
+  it("只为精确批准的新条目使用其来源提交，main 原有条目继续使用 main", () => {
+    const fixture = provenanceFixture();
+    const identity = {
+      id: fixture.entry.id,
+      path: fixture.entry.path,
+      digest: fixture.entry.digest,
+    };
+    const provenanceReview = { sourceSha: fixture.baseSha, entries: [identity] };
+    expect(
+      applySecurityExceptions(fixture.findings, [fixture.entry], {
+        ...fixture,
+        baseSha: "b".repeat(40),
+        provenanceReview,
+      }).every((finding) => finding.excepted),
+    ).toBe(true);
+    expect(
+      applySecurityExceptions(fixture.findings, [fixture.entry], {
+        ...fixture,
+        provenanceReview: {
+          sourceSha: "b".repeat(40),
+          entries: [{ ...identity, path: "test/other.ts" }],
+        },
+      }).every((finding) => finding.excepted),
+    ).toBe(true);
+    expect(() =>
+      applySecurityExceptions(fixture.findings, [fixture.entry], {
+        ...fixture,
+        baseSha: "b".repeat(40),
+        provenanceReview: { ...provenanceReview, entries: [] },
+      }),
+    ).toThrow();
+  });
+
   it.each(["literal", "classification", "history", "count", "source"])(
     "合成来源%s改变必须拒绝",
     (change) => {

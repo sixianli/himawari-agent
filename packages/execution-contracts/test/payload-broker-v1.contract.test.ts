@@ -115,7 +115,9 @@ describe("payload-broker.v1 contract", () => {
 
     for (const message of messages) {
       const parsed = payloadBrokerV1MessageSchema.parse(message);
-      expect(JSON.parse(payloadBrokerV1MessageSchema.serialize(parsed))).toEqual(message);
+      expect(
+        payloadBrokerV1MessageSchema.parseJson(payloadBrokerV1MessageSchema.serialize(parsed)),
+      ).toEqual(message);
     }
   });
 

@@ -3,7 +3,8 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { chromium, webkit, expect } from "@playwright/test";
+import { chromium, expect, webkit } from "@playwright/test";
+import { qualifyAuthorizationFeedback } from "./test-authorization-feedback-browser.mjs";
 
 // Reuse the product HTTP fixture; configure the real composer with the controls
 // installed in production. Mock only the gateway boundary, never layout or DOM.
@@ -204,6 +205,7 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
       }
     }
   }
+  results.push(...(await qualifyAuthorizationFeedback(browser, baseUrl, output)));
   return results;
 }
 

@@ -16,6 +16,8 @@ const state = vi.hoisted(() => ({
   root: "",
   calls: [],
   contexts: [],
+  publications: [],
+  publicationError: false,
   fail: "",
   security: "passed",
   version: "",
@@ -144,6 +146,14 @@ vi.mock("../../scripts/ci/run.mjs", () => ({
   },
 }));
 
+vi.mock("../../scripts/ci/publish.mjs", () => ({
+  publish: async (options) => {
+    state.publications.push(options);
+    if (state.publicationError) throw new Error("PUBLIC_ARTIFACT_CONTAINS_SECRET");
+    return { status: "passed" };
+  },
+}));
+
 import { fileSha256 } from "../../scripts/ci/contracts.mjs";
 import { local, main as localMain } from "../../scripts/ci/local.mjs";
 import { quality, main as qualityMain } from "../../scripts/ci/quality.mjs";
@@ -153,6 +163,8 @@ beforeEach(() => {
   state.root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "himawari-quality-local-")));
   state.calls = [];
   state.contexts = [];
+  state.publications = [];
+  state.publicationError = false;
   state.fail = "";
   state.security = "passed";
   state.installError = false;
@@ -517,7 +529,9 @@ describe("local shared-runner boundary", () => {
     expect(
       calls.filter((entry) => entry.checkId === "browser").map((entry) => entry.matrixKey),
     ).toEqual(["chromium", "firefox", "webkit"]);
-    const consumers = calls.filter((entry) => ["test", "browser"].includes(entry.checkId));
+    const consumers = calls.filter((entry) =>
+      ["test", "browser", "coverage"].includes(entry.checkId),
+    );
     expect(new Set(consumers.map((entry) => entry.artifact)).size).toBe(1);
     expect(consumers[0].artifact).toContain("runtime.tar.gz");
     expect(calls.every((entry) => entry.hosted === false)).toBe(true);
@@ -531,13 +545,46 @@ describe("local shared-runner boundary", () => {
     expect(summary.pending.join(" ")).toContain("Linux Node floor");
     expect(existsSync(path.join(state.root, ".ci-output/local/local-summary.json"))).toBe(true);
   });
+  it("fails local validation when the hosted publication guard rejects a successful build", async () => {
+    state.publicationError = true;
+    const summary = await runLocal({ check: "build" });
+    expect(summary.status).toBe("failed");
+    expect(summary.publicationFailures).toEqual(
+      [{ checkId: "build", matrixKey: "linux-x64", error: "PUBLIC_ARTIFACT_CONTAINS_SECRET" }].map(
+        (entry) => ({
+          ...entry,
+          matrixKey: process.platform === "darwin" ? "macos-arm64" : entry.matrixKey,
+        }),
+      ),
+    );
+    expect(state.publications).toHaveLength(1);
+    expect(state.publications[0]).toMatchObject({
+      root: state.root,
+      input: path.join(
+        state.root,
+        `.ci-output/local/build-${process.platform === "darwin" ? "macos-arm64" : "linux-x64"}`,
+      ),
+      python: "/fixture/python",
+    });
+  });
+  it("checks publishability for every local report before reporting a full pass", async () => {
+    const summary = await runLocal();
+    expect(summary.status).toBe("local_passed");
+    expect(summary.publicationFailures).toEqual([]);
+    expect(state.publications).toHaveLength(summary.checks.length);
+    expect(new Set(state.publications.map(({ output }) => output)).size).toBe(
+      summary.checks.length,
+    );
+  });
   it("selects individual checks and reuses a supplied archive without rebuilding", async () => {
     for (const check of ["policy", "static", "build", "coverage", "security"]) {
       state.calls = [];
       expect((await runLocal({ check, output: `.ci-output/local-${check}` })).status).toBe(
         "local_passed",
       );
-      expect(state.calls.map((entry) => entry.checkId)).toEqual([check]);
+      expect(state.calls.map((entry) => entry.checkId)).toEqual(
+        check === "coverage" ? ["build", "coverage"] : [check],
+      );
     }
     state.calls = [];
     await runLocal({
@@ -555,12 +602,13 @@ describe("local shared-runner boundary", () => {
     state.fail = "build";
     const failedBuild = await runLocal();
     expect(failedBuild.status).toBe("failed");
-    expect(state.calls.some((entry) => ["test", "browser"].includes(entry.checkId))).toBe(false);
+    expect(
+      state.calls.some((entry) => ["test", "browser", "coverage"].includes(entry.checkId)),
+    ).toBe(false);
     expect(state.calls.map((entry) => entry.checkId)).toEqual([
       "policy",
       "static",
       "build",
-      "coverage",
       "security",
     ]);
     state.fail = "security";

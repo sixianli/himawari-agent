@@ -134,7 +134,10 @@ export async function openRepository(): Promise<{
   const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-sqlite-capability-invocation-"));
   const databasePath = path.join(stateRoot, "product.sqlite");
   const database = openQualifiedDatabase(databasePath);
-  applyMigrations(database, await loadBundledMigrations());
+  const migrations = await loadBundledMigrations();
+  // Seed a fresh test database in one durable transaction; migration and
+  // recovery tests still exercise the production per-migration boundaries.
+  database.transaction(() => applyMigrations(database, migrations)).immediate();
   database
     .prepare("INSERT INTO owners (id, revision) VALUES (?, 0), (?, 0)")
     .run(OWNER_ID, OTHER_OWNER_ID);

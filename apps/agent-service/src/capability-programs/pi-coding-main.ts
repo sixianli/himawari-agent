@@ -1,5 +1,6 @@
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
+import process from "node:process";
 import { scanMachineSecrets } from "@himawari-agent/application";
 import { piRunnerInputSchema } from "@himawari-agent/execution-contracts";
 import { createSandboxedCodingOperations, exportPiOutputFile } from "@himawari-agent/platform-node";

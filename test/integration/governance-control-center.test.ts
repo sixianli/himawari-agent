@@ -1,42 +1,42 @@
 import {
   ApplicationPortError,
   ApprovalService,
-  CapabilityLifecycleService,
-  GovernanceGatewayV2ControlPlane,
-  GovernanceGatewayV2ReadModel,
-  GrantService,
-  PORT_ERROR_CODES,
   actionIntentFingerprint,
+  CapabilityLifecycleService,
   type CapabilityManifest,
   type GatewayAuthenticationContext,
   type GatewayV2ControlPlanePort,
   type GatewayV2ReadModelPort,
+  type GovernanceDependencyReadPort,
+  GovernanceGatewayV2ControlPlane,
+  GovernanceGatewayV2ReadModel,
   type GovernedActionIntent,
   type GovernedApprovalRequest,
-  type GovernanceDependencyReadPort,
+  GrantService,
+  PORT_ERROR_CODES,
   type RecentAuthenticationGuardPort,
 } from "@himawari-agent/application";
 import {
   createAgentId,
+  createDeviceId,
   createIdempotencyKey,
   createOwnerId,
   createRunId,
-  createDeviceId,
 } from "@himawari-agent/domain";
 import {
-  gatewayV2MessageSchema,
   type GatewayV2Command,
   type GatewayV2Query,
+  gatewayV2MessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import {
+  createReferenceAdapterSet,
   InMemoryAuditLedger,
   InMemoryAuthorizationStore,
   InMemoryCapabilityRegistryStore,
   InMemoryGovernanceMutationReceiptStore,
   ManualClock,
-  createReferenceAdapterSet,
 } from "@himawari-agent/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const OWNER_ID = createOwnerId("owner-governance-ui");
 const AGENT_ID = createAgentId("agent-governance-ui");
@@ -313,6 +313,8 @@ async function fixture() {
   });
   return {
     clock,
+    audit,
+    receipts,
     approval,
     authorization,
     capabilities,
@@ -561,5 +563,296 @@ describe("S4 Task 11 governance Control Center boundary", () => {
     await expect(
       setup.control.execute({ authentication: invalidAuthentication, command: approve }),
     ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+  });
+});
+
+describe("governance recovery and read boundaries", () => {
+  async function execute(setup: Awaited<ReturnType<typeof fixture>>, value: GatewayV2Command) {
+    return setup.control.execute({ authentication: AUTHENTICATION, command: value });
+  }
+  async function interruptAfterMutation(
+    setup: Awaited<ReturnType<typeof fixture>>,
+    value: GatewayV2Command,
+  ) {
+    vi.spyOn(setup.audit, "append").mockRejectedValueOnce(
+      new Error("audit temporarily unavailable"),
+    );
+    await expect(execute(setup, value)).rejects.toThrow("audit temporarily unavailable");
+    const receipt = await setup.receipts.get(OWNER_ID, AGENT_ID, value.idempotencyKey);
+    expect(receipt).toMatchObject({ phase: "executing", resultRef: null });
+    const result = await execute(setup, value);
+    expect(result.replayed).toBe(true);
+    expect(await execute(setup, value)).toEqual(result);
+    expect(await setup.receipts.get(OWNER_ID, AGENT_ID, value.idempotencyKey)).toMatchObject({
+      phase: "completed",
+      resultRef: result.resultRef,
+    });
+    return result;
+  }
+  async function activate(setup: Awaited<ReturnType<typeof fixture>>) {
+    await execute(
+      setup,
+      command("capability.review", "review-before-update", "review-before-update", {
+        capabilityRef: manifest().ref,
+        expectedRevision: 2,
+      }),
+    );
+    await execute(
+      setup,
+      command("capability.install.approve", "install-before-update", "install-before-update", {
+        capabilityRef: manifest().ref,
+        expectedRevision: 3,
+        approvalRef: "approval-install",
+      }),
+    );
+    const installed = await setup.capabilities.get(manifest().ref);
+    if (!installed) throw new Error("Expected installed capability");
+    return installed;
+  }
+  it("recovers source review, completed installation and disable without repeating mutation", async () => {
+    const setup = await fixture();
+    const capabilityRef = manifest().ref;
+    await interruptAfterMutation(
+      setup,
+      command("capability.review", "review-recover", "review-recover", {
+        capabilityRef,
+        expectedRevision: 2,
+      }),
+    );
+    expect(await setup.capabilities.get(capabilityRef)).toMatchObject({
+      revision: 3,
+      lifecycle: "installation_proposed",
+    });
+    await interruptAfterMutation(
+      setup,
+      command("capability.install.approve", "install-recover", "install-recover", {
+        capabilityRef,
+        expectedRevision: 3,
+        approvalRef: "approval-recover-install",
+      }),
+    );
+    expect(await setup.capabilities.get(capabilityRef)).toMatchObject({
+      revision: 5,
+      lifecycle: "active",
+    });
+    await interruptAfterMutation(
+      setup,
+      command("capability.disable", "disable-recover", "disable-recover", {
+        capabilityRef,
+        expectedRevision: 5,
+        reasonCode: "owner_disabled",
+      }),
+    );
+    expect(await setup.capabilities.get(capabilityRef)).toMatchObject({
+      revision: 6,
+      lifecycle: "disabled",
+    });
+  });
+  it.each(["approved", "denied"] as const)(
+    "recovers a committed %s approval without creating a second grant",
+    async (decision) => {
+      const setup = await fixture();
+      await interruptAfterMutation(
+        setup,
+        command("approval.respond", "approval-recover", "approval-recover", {
+          approvalRequestId: setup.approval.id,
+          expectedRevision: 1,
+          decision,
+          semanticSnapshotHash: setup.approval.semanticSnapshotHash,
+          editedPayloadRef: null,
+          recentAuthenticationRef: AUTHENTICATION.authenticationRef,
+        }),
+      );
+      const grants = await setup.authorization.listGrants(OWNER_ID, AGENT_ID);
+      expect(grants).toHaveLength(decision === "approved" ? 1 : 0);
+      expect(await setup.authorization.getApproval(setup.approval.id)).toMatchObject({
+        revision: 2,
+        status: decision,
+      });
+      if (decision === "approved") {
+        const grant = grants[0];
+        if (!grant) throw new Error("Expected approved grant");
+        await interruptAfterMutation(
+          setup,
+          command("grant.revoke", "grant-recover", "grant-recover", {
+            grantId: grant.id,
+            expectedRevision: 1,
+            reasonCode: "owner_revoked",
+          }),
+        );
+        expect(
+          await setup.reads.query(
+            query("grant.list", "grants-current", {
+              includeRevoked: false,
+              afterCursor: null,
+              limit: 10,
+            }),
+          ),
+        ).toMatchObject({ payload: { itemRefs: [] } });
+        expect(
+          await setup.reads.query(
+            query("grant.list", "grants-all", {
+              includeRevoked: true,
+              afterCursor: null,
+              limit: 10,
+            }),
+          ),
+        ).toMatchObject({ payload: { itemRefs: [grant.id] } });
+      }
+    },
+  );
+  it.each(["approved", "denied"] as const)(
+    "recovers a committed %s capability update",
+    async (decision) => {
+      const setup = await fixture();
+      const active = await activate(setup);
+      const candidate = { ...manifest(), version: "2.0.0" };
+      const proposed = await setup.lifecycle.proposeUpdate(active.ref, candidate, {
+        policyRef: "owner-update-policy",
+        allowAutomaticCompatibleUpdates: false,
+      });
+      await interruptAfterMutation(
+        setup,
+        command("capability.update.respond", "update-recover", "update-recover", {
+          capabilityRef: active.ref,
+          expectedRevision: proposed.revision,
+          decision,
+          approvalRef: decision === "approved" ? "approval-update" : null,
+        }),
+      );
+      const current = await setup.capabilities.get(active.ref);
+      if (!current) throw new Error("Expected active capability");
+      expect(current).toMatchObject({
+        lifecycle: "active",
+        declaration: { version: decision === "approved" ? "2.0.0" : "1.0.0" },
+        lastVersionTransition: { outcome: decision === "approved" ? "activated" : "rejected" },
+      });
+      if (decision === "approved") {
+        await interruptAfterMutation(
+          setup,
+          command("capability.rollback", "rollback-recover", "rollback-recover", {
+            capabilityRef: active.ref,
+            expectedRevision: current.revision,
+            reasonCode: "owner_rollback",
+          }),
+        );
+        expect(await setup.capabilities.get(active.ref)).toMatchObject({
+          declaration: { version: "1.0.0" },
+          lastVersionTransition: { outcome: "rolled_back" },
+        });
+      }
+    },
+  );
+  it("resumes an approved update after transient runtime qualification failure", async () => {
+    const setup = await fixture();
+    const active = await activate(setup);
+    const proposed = await setup.lifecycle.proposeUpdate(
+      active.ref,
+      { ...manifest(), version: "2.0.0" },
+      { policyRef: "owner-update-policy", allowAutomaticCompatibleUpdates: false },
+    );
+    const update = command(
+      "capability.update.respond",
+      "update-qualification",
+      "update-qualification",
+      {
+        capabilityRef: active.ref,
+        expectedRevision: proposed.revision,
+        decision: "approved",
+        approvalRef: "approval-update",
+      },
+    );
+    setup.setQualificationAvailable(false);
+    await expect(execute(setup, update)).rejects.toMatchObject({
+      code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+    });
+    expect(await setup.capabilities.get(active.ref)).toMatchObject({
+      lifecycle: "update_approved",
+      revision: proposed.revision + 1,
+    });
+    setup.setQualificationAvailable(true);
+    expect(await execute(setup, update)).toMatchObject({ replayed: true });
+    expect(await setup.capabilities.get(active.ref)).toMatchObject({
+      lifecycle: "active",
+      revision: proposed.revision + 2,
+      declaration: { version: "2.0.0" },
+    });
+  });
+  it("paginates a stable approval list and rejects an unknown cursor", async () => {
+    const setup = await fixture();
+    await setup.authorization.createApproval({ ...setup.approval, id: "approval-z" });
+    expect(
+      await setup.reads.query(
+        query("approval.list", "page-one", { status: null, afterCursor: null, limit: 1 }),
+      ),
+    ).toMatchObject({ payload: { itemRefs: [setup.approval.id], nextCursor: setup.approval.id } });
+    expect(
+      await setup.reads.query(
+        query("approval.list", "page-two", {
+          status: null,
+          afterCursor: setup.approval.id,
+          limit: 1,
+        }),
+      ),
+    ).toMatchObject({ payload: { itemRefs: ["approval-z"], nextCursor: null } });
+    await expect(
+      setup.reads.query(
+        query("approval.list", "page-invalid", { status: null, afterCursor: "missing", limit: 1 }),
+      ),
+    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_FOUND });
+    expect(
+      await setup.reads.query(
+        query("capability.list", "capability-filter", {
+          lifecycle: "active",
+          afterCursor: null,
+          limit: 10,
+        }),
+      ),
+    ).toMatchObject({ payload: { itemRefs: [] } });
+    expect(
+      await setup.reads.query(
+        query("capability.list", "capability-all", {
+          lifecycle: null,
+          afterCursor: null,
+          limit: 10,
+        }),
+      ),
+    ).toMatchObject({ payload: { itemRefs: [manifest().ref] } });
+  });
+  it.each(["approval.detail", "capability.detail", "grant.detail"] as const)(
+    "reports missing %s without fabricating a snapshot",
+    async (type) => {
+      const setup = await fixture();
+      const payload =
+        type === "approval.detail"
+          ? { approvalRequestId: "missing" }
+          : type === "capability.detail"
+            ? { capabilityRef: "missing" }
+            : { grantId: "missing" };
+      await expect(setup.reads.query(query(type, "missing", payload))).rejects.toMatchObject({
+        code: PORT_ERROR_CODES.NOT_FOUND,
+      });
+    },
+  );
+  it("rejects edited approval content instead of approving an unfrozen intent", async () => {
+    const setup = await fixture();
+    await expect(
+      execute(
+        setup,
+        command("approval.respond", "edited-approval", "edited-approval", {
+          approvalRequestId: setup.approval.id,
+          expectedRevision: 1,
+          decision: "approved",
+          semanticSnapshotHash: setup.approval.semanticSnapshotHash,
+          editedPayloadRef: "edited-content",
+          recentAuthenticationRef: AUTHENTICATION.authenticationRef,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.INVALID_OPERATION });
+    expect(await setup.authorization.getApproval(setup.approval.id)).toMatchObject({
+      status: "pending",
+      revision: 1,
+    });
+    expect(await setup.authorization.listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
   });
 });

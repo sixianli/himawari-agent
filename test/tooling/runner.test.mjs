@@ -116,10 +116,13 @@ describe("JSON公开报告的原始字节与脱敏", () => {
     const { root, context } = fixture(),
       input = path.join(root, ".ci-output/input");
     // The installation-failure record supplies only a schema-valid transport fixture, not a measurement.
+    const archive = path.join(root, "synthetic.tar.gz");
+    write(archive, "synthetic unavailable-toolchain input");
     const result = await runCheck({
       root,
       context,
       checkId: "coverage",
+      artifact: archive,
       output: input,
       toolsDirectory: path.join(root, "missing"),
     });

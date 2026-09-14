@@ -41,6 +41,7 @@ const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(valu
 export async function productionSandboxScope(
   descriptor: SandboxOperationBinding,
   changeIntent: (intent: GovernedActionIntent) => GovernedActionIntent = (value) => value,
+  options: { readonly legacyFileRead?: boolean } = {},
 ) {
   const f = await openSandboxJournal();
   const h = {
@@ -68,10 +69,14 @@ export async function productionSandboxScope(
   );
   const snapshot = JSON.parse(await readFile(host.capabilityDeployment.snapshotPath, "utf8"));
   const entry = snapshot.capabilities[0];
-  entry.binding.value.operationBindings = [descriptor];
+  if (options.legacyFileRead) delete entry.binding.value.operationBindings;
+  else entry.binding.value.operationBindings = [descriptor];
   entry.binding.value.allowedDomains = ["example.com:443"];
   const support: SandboxExecutionSupport = [
-    { schemaVersion: "sandbox-execution.v2", mode: descriptor.mode },
+    {
+      schemaVersion: options.legacyFileRead ? "sandbox-execution.v1" : "sandbox-execution.v2",
+      mode: descriptor.mode,
+    },
   ];
   entry.binding.value.supportedExecutions = support;
   entry.qualification.sandbox.supportedExecutions = support;
@@ -214,6 +219,19 @@ export async function productionSandboxScope(
       payload: { inputRef: input.inputRef, capabilityHandleRef: h.ref },
     },
   });
+  const fileBinding = {
+    workerInstanceId: "worker-instance-capability-invocation",
+    revision: 1,
+    hostId: host.binding.hostId,
+    grant: directory,
+    capabilityRef: h.capabilityRef,
+    capabilityVersion: h.capabilityVersion,
+    maximumBytes: 4096,
+    threadId: call.context?.threadId ?? "",
+    modelRef: model.ref,
+    modelIdentity: configuredModelDisclosureIdentity(model),
+  };
+  let fileBindingAvailable = options.legacyFileRead || descriptor.scopeSource === "file_workflow";
   const services = await createProductionSandboxServices({
     configuration: {
       ownerId: OWNER_ID,
@@ -228,7 +246,7 @@ export async function productionSandboxScope(
     protector: f.protector,
     authority: () => SERVICE_AUTHORITY,
     fileRead: {
-      binding: async () => undefined,
+      binding: async () => (fileBindingAvailable ? fileBinding : undefined),
       authorize: async () => {
         throw new Error("not a file workflow");
       },
@@ -320,6 +338,10 @@ export async function productionSandboxScope(
       afterResolve = hook;
     },
     f,
+    fileBinding,
+    setFileBindingAvailable: (value: boolean) => {
+      fileBindingAvailable = value;
+    },
     repository,
     services,
     input,

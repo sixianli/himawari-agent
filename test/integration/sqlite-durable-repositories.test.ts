@@ -45,6 +45,7 @@ import {
   traceStorePortConformance,
 } from "@himawari-agent/testing/conformance";
 import { describe, expect, it } from "vitest";
+import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-conformance");
 const AGENT_ID = createAgentId("agent-conformance");
@@ -186,29 +187,260 @@ async function dispose(port: object): Promise<void> {
   await rm(resource.stateRoot, { recursive: true });
 }
 
-reliableEventPortConformance({
-  create: async () => {
-    const resource = await openRepository();
-    return tracked(resource, resource.repository.reliableEventPort(OWNER_ID, AGENT_ID));
-  },
-  dispose,
-});
+describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", (execution) => {
+  useSqliteContractExecution(execution);
 
-traceStorePortConformance({
-  create: async () => {
-    const resource = await openRepository();
-    return tracked(resource, resource.repository.traceStore());
-  },
-  dispose,
-});
+  reliableEventPortConformance({
+    create: async () => {
+      const resource = await openRepository();
+      return tracked(resource, resource.repository.reliableEventPort(OWNER_ID, AGENT_ID));
+    },
+    dispose,
+  });
 
-it.each([0, 1000, 1001])(
-  "records into SQLite after %i events using bounded trace pages",
-  async (count) => {
-    const resource = await openRepository();
-    try {
+  traceStorePortConformance({
+    create: async () => {
+      const resource = await openRepository();
+      return tracked(resource, resource.repository.traceStore());
+    },
+    dispose,
+  });
+
+  it.each([0, 1000, 1001])(
+    "records into SQLite after %i events using bounded trace pages",
+    async (count) => {
+      const resource = await openRepository();
+      try {
+        const trace = resource.repository.traceStore();
+        const scope = {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          sessionId: SESSION_ID,
+          threadId: createThreadId("thread-conformance"),
+          runId: RUN_ID,
+          turnId: null,
+          parentEventId: null,
+          causationId: null,
+          correlationId: "correlation-paged-trace",
+          actorId: "agent-service",
+          dataClassification: "private" as const,
+          eventType: "runtime.message",
+        };
+        for (let sequence = 1; sequence <= count; sequence += 1) {
+          await trace.append({
+            ...scope,
+            id: `existing-trace:${sequence}`,
+            schemaVersion: "trace.v1",
+            sequence,
+            occurredAt: T0,
+            recordedAt: T0,
+            payloadRef: null,
+          });
+        }
+        const adapters = createReferenceAdapterSet();
+        const recorder = new SessionTraceRecorder({
+          trace,
+          artifacts: resource.repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, {
+            product: AUTHORITY,
+            lease: LEASE,
+          }),
+          protector: adapters.payloadProtector,
+          audit: resource.repository.auditLedger(),
+          clock: { now: () => T1 },
+          ids: adapters.ids,
+        });
+        const result = await recorder.record(scope);
+        expect(result.event.sequence).toBe(count + 1);
+        await resource.repository.close();
+        const reopened = await SqliteProductStateRepository.open({
+          stateRoot: resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T2,
+        });
+        try {
+          expect(await reopened.traceStore().readRun(RUN_ID, count, 1)).toEqual([result.event]);
+        } finally {
+          await reopened.close();
+        }
+      } finally {
+        await resource.repository.close();
+        await rm(resource.stateRoot, { recursive: true });
+      }
+    },
+  );
+
+  payloadStorePortConformance({
+    create: async () => {
+      const resource = await openRepository();
+      return tracked(resource, resource.repository.payloadStore(OWNER_ID, AGENT_ID));
+    },
+    dispose,
+  });
+
+  auditLedgerPortConformance({
+    create: async () => {
+      const resource = await openRepository();
+      return tracked(resource, resource.repository.auditLedger());
+    },
+    dispose,
+  });
+
+  authorizationStorePortConformance({
+    create: async () => {
+      const resource = await openRepository();
+      return tracked(resource, resource.repository.authorizationStore());
+    },
+    dispose,
+  });
+
+  capabilityRegistryStorePortConformance({
+    create: async () => {
+      const resource = await openRepository();
+      const port: CapabilityRegistryStorePort & CapabilityExecutionHandleStorePort =
+        resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
+      return tracked(resource, port);
+    },
+    dispose,
+  });
+
+  schedulerPortConformance({
+    create: async () => {
+      const resource = await openRepository();
+      return tracked(resource, resource.repository.scheduler());
+    },
+    dispose,
+  });
+
+  attentionStatePortConformance({
+    create: async () => {
+      const resource = await openRepository();
+      return tracked(resource, resource.repository.attentionState());
+    },
+    dispose,
+  });
+
+  describe("SQLite durable repository adapters", () => {
+    it("persists executing governance receipts and completes them after restart", async () => {
+      const resource = await openRepository();
+      const receipt: GovernanceMutationReceipt = {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        idempotencyKey: "governance-idempotency-sqlite",
+        revision: 1,
+        commandType: "capability.install.approve",
+        semanticFingerprint: '{"capabilityRef":"capability-governed-sqlite"}',
+        phase: "executing",
+        resultRef: null,
+        startedAt: T0,
+        committedAt: null,
+      };
+      await expect(
+        resource.repository.governanceMutationReceiptStore().create(receipt),
+      ).resolves.toEqual(receipt);
+      await resource.repository.close();
+
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      const store = reopened.governanceMutationReceiptStore();
+      await expect(store.get(OWNER_ID, AGENT_ID, receipt.idempotencyKey)).resolves.toEqual(receipt);
+      const completed: GovernanceMutationReceipt = {
+        ...receipt,
+        revision: 2,
+        phase: "completed",
+        resultRef: "capability:capability-governed-sqlite:revision-5",
+        committedAt: T1,
+      };
+      await expect(store.complete(completed, 1)).resolves.toEqual(completed);
+      await expect(store.complete(completed, 1)).resolves.toEqual(completed);
+      await expect(
+        store.create({ ...receipt, commandType: "capability.disable" }),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.DUPLICATE });
+      await reopened.close();
+      await rm(resource.stateRoot, { recursive: true });
+    });
+
+    it("atomically resolves a Grant budget race, preserves idempotency, and fences Handle consumption", async () => {
+      const resource = await openRepository(T0, "running");
+      const authorization = resource.repository.authorizationStore();
+      const action = {
+        id: "intent-governed-sqlite",
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        capabilityRef: "capability-governed-sqlite",
+        operation: "read",
+        resourceRef: "repo:approved/project",
+        dataClassification: "private" as const,
+        sideEffect: "none" as const,
+        estimatedCostMicros: 10,
+        frequency: { count: 1, intervalMs: null },
+        idempotencyKey: createIdempotencyKey("intent-governed-sqlite"),
+        reversible: true,
+        requestedAt: T0,
+      };
+      await authorization.createApproval({
+        id: "approval-governed-sqlite",
+        revision: 1,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        intentId: action.id,
+        intentSnapshot: action,
+        semanticSnapshotHash: "hash-governed-sqlite",
+        status: "pending",
+        deliveryState: "deliverable",
+        requestedAt: T0,
+        expiresAt: T2,
+        decidedAt: null,
+        grantId: null,
+      });
+      const grant: GovernedGrantRecord = {
+        id: "grant-governed-sqlite",
+        revision: 1,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        kind: "one_time",
+        scope: {
+          capabilityRef: action.capabilityRef,
+          capabilityVersion: "1.0.0",
+          operations: [action.operation],
+          exactResourceRef: action.resourceRef,
+          resourceIdentities: [action.resourceRef],
+          resourcePrefixes: [],
+          maxDataClassification: "private",
+          disclosure: "none",
+          sideEffects: ["none"],
+          recipients: [],
+          credentialOrAccessChange: false,
+          maxCostMicrosPerUse: 10,
+          maxFrequency: action.frequency,
+        },
+        intentFingerprint: "fingerprint-governed-sqlite",
+        sourceApprovalRequestId: "approval-governed-sqlite",
+        validFrom: T0,
+        expiresAt: T2,
+        maxUses: 1,
+        uses: 0,
+        maxTotalCostMicros: 10,
+        spentCostMicros: 0,
+        revokedAt: null,
+        revocationReasonCode: null,
+      };
+      await authorization.resolveApproval({
+        approvalRequestId: "approval-governed-sqlite",
+        expectedRevision: 1,
+        semanticSnapshotHash: "hash-governed-sqlite",
+        resolution: "approved",
+        decidedAt: T1,
+        grant,
+      });
       const trace = resource.repository.traceStore();
-      const scope = {
+      await trace.append({
+        id: "trace:approval-governed-sqlite",
+        schemaVersion: "trace.v1",
         ownerId: OWNER_ID,
         agentId: AGENT_ID,
         sessionId: SESSION_ID,
@@ -216,994 +448,772 @@ it.each([0, 1000, 1001])(
         runId: RUN_ID,
         turnId: null,
         parentEventId: null,
-        causationId: null,
-        correlationId: "correlation-paged-trace",
-        actorId: "agent-service",
-        dataClassification: "private" as const,
-        eventType: "runtime.message",
+        causationId: action.id,
+        correlationId: "correlation-governed-sqlite",
+        sequence: 1,
+        occurredAt: T0,
+        recordedAt: T0,
+        actorId: "authorization-control-plane",
+        dataClassification: "private",
+        eventType: "authorization.approval_resolved",
+        payloadRef: null,
+      });
+      const usage = {
+        grantId: grant.id,
+        expectedRevision: 1,
+        costMicros: 10,
+        consumedAt: T1,
+        usageId: "authorization-usage:intent-governed-sqlite",
+        intentId: action.id,
+        runId: RUN_ID,
+        operation: action.operation,
       };
-      for (let sequence = 1; sequence <= count; sequence += 1) {
-        await trace.append({
-          ...scope,
-          id: `existing-trace:${sequence}`,
+      const competingUsage = {
+        ...usage,
+        usageId: "authorization-usage:intent-governed-sqlite-competing",
+      };
+      const race = await Promise.allSettled([
+        authorization.consumeGrant(usage),
+        authorization.consumeGrant(competingUsage),
+      ]);
+      expect(race.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+      expect(race.filter(({ status }) => status === "rejected")).toHaveLength(1);
+      const rejected = race.find(({ status }) => status === "rejected");
+      expect(rejected).toMatchObject({
+        status: "rejected",
+        reason: { code: PORT_ERROR_CODES.CONFLICT },
+      });
+      const winningUsage = race[0]?.status === "fulfilled" ? usage : competingUsage;
+      await expect(authorization.consumeGrant(winningUsage)).resolves.toMatchObject({
+        uses: 1,
+        revision: 2,
+      });
+      await expect(trace.readRun(RUN_ID, 0, 10)).resolves.toEqual([
+        expect.objectContaining({
+          id: "trace:approval-governed-sqlite",
           schemaVersion: "trace.v1",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          parentEventId: null,
+          causationId: action.id,
+          correlationId: "correlation-governed-sqlite",
+          actorId: "authorization-control-plane",
+          eventType: "authorization.approval_resolved",
+        }),
+        expect.objectContaining({
+          id: `trace:${winningUsage.usageId}`,
+          schemaVersion: "trace.v1",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          parentEventId: "trace:approval-governed-sqlite",
+          causationId: action.id,
+          correlationId: "correlation-governed-sqlite",
+          actorId: "authorization-control-plane",
+          eventType: "authorization.grant_consumed",
+        }),
+      ]);
+
+      const capabilities = resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
+      await capabilities.create({
+        ref: action.capabilityRef,
+        revision: 1,
+        lifecycle: "active",
+        declaration: {
+          ref: action.capabilityRef,
+          displayName: "Governed SQLite capability",
+          version: "1.0.0",
+          source: { type: "builtin", locator: "builtin:governed-sqlite" },
+          integrity: `sha256:${"a".repeat(64)}`,
+          operations: [action.operation],
+          permissionRefs: [],
+          isolation: "worker",
+        },
+        pendingDeclaration: null,
+        permissionExpansion: false,
+        runtimeQualification: null,
+        pendingUpdateAssessment: null,
+        rollbackDeclaration: null,
+        rollbackQualification: null,
+        lastVersionTransition: null,
+        approvalRefs: ["approval-governed-sqlite"],
+        discoveredAt: T0,
+        updatedAt: T1,
+      });
+      const handle: GovernedCapabilityExecutionHandle = {
+        ref: "handle-governed-sqlite",
+        handleVersion: "capability-handle.v2",
+        revision: 1,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        authorityFence: 1,
+        capabilityRef: action.capabilityRef,
+        capabilityVersion: "1.0.0",
+        authorization: { type: "grant", ref: grant.id },
+        authorizationRef: grant.id,
+        operations: [action.operation],
+        operation: action.operation,
+        inputRefs: ["payload-input-governed"],
+        delegatedContextRefs: [],
+        secretRefs: [],
+        maxDataClassification: "private",
+        maxUses: 2,
+        uses: 0,
+        maxTotalCostMicros: 20,
+        spentCostMicros: 0,
+        idempotencyKeys: [],
+        issuedAt: T0,
+        expiresAt: T2,
+        revokedAt: null,
+        workerEndedAt: null,
+      };
+      await capabilities.createExecutionHandle(handle);
+      const revokeHandles = capabilities.revokeCapabilityHandles;
+      const endRunHandles = capabilities.endRunExecutionHandles;
+      if (!revokeHandles || !endRunHandles)
+        throw new Error("governed capability store is incomplete");
+      const invocation = {
+        receiptRef: "receipt-governed-sqlite",
+        handleRef: handle.ref,
+        invocationId: "invocation-governed-sqlite",
+        requestScope: {
+          deploymentId: AUTHORITY.deploymentId,
+          authorityEpoch: AUTHORITY.authorityEpoch,
+          fencingToken: AUTHORITY.fencingToken,
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          workerRunId: "worker-run-governed-sqlite",
+        },
+        capabilityRef: action.capabilityRef,
+        capabilityVersion: "1.0.0",
+        authorizationRef: grant.id,
+        idempotencyKey: "handle-use-governed-sqlite",
+        operation: action.operation,
+        inputRef: "payload-input-governed",
+        delegatedContextRefs: [],
+        secretRefs: [],
+        dataClassification: "private" as const,
+        resourceCeiling: {
+          maxWallTimeMs: 1_000,
+          maxCpuTimeMs: 1_000,
+          maxMemoryBytes: 1_000_000,
+          maxOutputBytes: 4_096,
+          maxProgressEvents: 10,
+        },
+        requestedAt: T0,
+        deadlineAt: T2,
+        authority: INVOCATION_AUTHORITY,
+        consumedAt: T1,
+      };
+      const invocations = resource.repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID);
+      await expect(invocations.consume(invocation)).resolves.toMatchObject({
+        replayed: false,
+        receipt: {
+          invocationId: invocation.invocationId,
+          idempotencyKey: invocation.idempotencyKey,
+        },
+      });
+      await expect(invocations.consume(invocation)).resolves.toMatchObject({
+        replayed: true,
+        receipt: {
+          invocationId: invocation.invocationId,
+          idempotencyKey: invocation.idempotencyKey,
+        },
+      });
+      const scheduler = resource.repository.scheduler();
+      await scheduler.upsert(
+        {
+          id: "job-capability-governed-sqlite",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          threadId: null,
+          payloadRef: "payload-schedule-01",
+          sourceProofRef: "source-proof-governed-sqlite",
+          dataClassification: "private",
+          authorizationRef: grant.id,
+          taskScopeRef: "task-scope-governed-sqlite",
+          capabilityRef: action.capabilityRef,
+          operation: action.operation,
+          resourceRef: action.resourceRef,
+          sideEffect: "none",
+          estimatedCostMicros: 10,
+          intervalMs: 60_000,
+          minimumIntervalMs: 60_000,
+          expiresAt: T2,
+          revokedAt: null,
+          nextRunAt: T1,
+          occurrence: 0,
+          status: "active",
+        },
+        null,
+      );
+      const currentCapability = await capabilities.get(action.capabilityRef);
+      if (!currentCapability) throw new Error("expected governed capability");
+      const invalidateAuthority = capabilities.invalidateCapabilityAuthority;
+      if (!invalidateAuthority) throw new Error("capability invalidation must be atomic");
+      await expect(
+        invalidateAuthority(
+          {
+            ...currentCapability,
+            revision: 2,
+            lifecycle: "disabled",
+            updatedAt: T2,
+          },
+          1,
+          T2,
+        ),
+      ).resolves.toMatchObject({ revision: 2, lifecycle: "disabled" });
+      await expect(capabilities.getExecutionHandle(handle.ref)).resolves.toMatchObject({
+        revision: 2,
+        revokedAt: T2,
+        workerEndedAt: null,
+      });
+      await expect(scheduler.read("job-capability-governed-sqlite")).resolves.toMatchObject({
+        revision: 2,
+        status: "cancelled",
+        revokedAt: T2,
+        nextRunAt: null,
+      });
+      await expect(endRunHandles(RUN_ID, T2)).resolves.toBe(0);
+      await expect(revokeHandles(action.capabilityRef, T2)).resolves.toBe(0);
+
+      await resource.repository.close();
+      const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      expect(database.prepare("SELECT COUNT(*) FROM authorization_usage").pluck().get()).toBe(1);
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM reliable_events WHERE topic = 'authorization.grant_consumed'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(1);
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM trace_events WHERE event_type = 'authorization.grant_consumed'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(1);
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) FROM audit_records WHERE action = 'authorization.grant_consumed'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(1);
+      database.close();
+      await rm(resource.stateRoot, { recursive: true });
+    });
+
+    it("persists deletion state across a repository restart", async () => {
+      const resource = await openRepository();
+      const record: SessionDeletionRecord = {
+        id: "deletion-session-01",
+        revision: 1,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+        status: "pending",
+        targets: {
+          payload: { status: "pending", attempts: 0, lastErrorCode: null, verifiedAt: null },
+          search: { status: "pending", attempts: 0, lastErrorCode: null, verifiedAt: null },
+          cache: { status: "pending", attempts: 0, lastErrorCode: null, verifiedAt: null },
+          archive: { status: "pending", attempts: 0, lastErrorCode: null, verifiedAt: null },
+        },
+        requestedAt: T0,
+        updatedAt: T0,
+      };
+      await resource.repository.sessionDeletionState().create(record);
+      await resource.repository.close();
+
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      expect(await reopened.sessionDeletionState().get(record.id)).toEqual(record);
+      expect((await reopened.startupRecovery(RECOVERY_SCOPE)).pendingDeletionIds).toEqual([
+        record.id,
+      ]);
+      await reopened.close();
+      await rm(resource.stateRoot, { recursive: true });
+    });
+
+    it("replays a stable outbox identity after sink success without an acknowledgement commit", async () => {
+      const resource = await openRepository(T0);
+      const eventPort = resource.repository.reliableEventPort(OWNER_ID, AGENT_ID);
+      await eventPort.append({
+        id: "event-replay-01",
+        idempotencyKey: createIdempotencyKey("event-replay-01"),
+        topic: "run.changed",
+        payloadRef: "payload-event-01",
+        occurredAt: T0,
+      });
+      const firstClaim = await resource.repository.reliableEventOutbox().claim({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        claimId: "claim-before-crash",
+        claimedAt: T0,
+        expiresAt: T1,
+        limit: 10,
+      });
+      const observed: string[] = [firstClaim[0]?.event.id ?? "missing"];
+      await resource.repository.close();
+
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T2,
+      });
+      expect((await reopened.recoverySnapshot()).recoveredExpiredClaimIds).toEqual([]);
+      const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      expect(
+        database
+          .prepare("SELECT publication_state, claim_id FROM reliable_events WHERE id = ?")
+          .get("event-replay-01"),
+      ).toEqual({ publication_state: "claimed", claim_id: "claim-before-crash" });
+      database.close();
+      const recovery = await reopened.startupRecovery(RECOVERY_SCOPE);
+      expect(recovery.recoveredExpiredClaimIds).toEqual(["event-replay-01"]);
+      expect((await reopened.startupRecovery(RECOVERY_SCOPE)).recoveredExpiredClaimIds).toEqual([]);
+      const sink: ReliableEventSinkPort = {
+        publish: async (event: ReliableEventRecord) => {
+          observed.push(event.id);
+          return { eventId: event.id, outcome: "duplicate" };
+        },
+      };
+      const publisher = new SqliteReliableEventPublisher({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        outbox: reopened.reliableEventOutbox(),
+        sink,
+        claimId: () => "claim-after-restart",
+        now: () => T2,
+      });
+      expect((await publisher.publishBatch(10)).map(({ id }) => id)).toEqual(["event-replay-01"]);
+      expect(observed).toEqual(["event-replay-01", "event-replay-01"]);
+      const deduplicator = reopened.reliableEventConsumerDeduplicator();
+      expect(
+        await deduplicator.consumeOnce({
+          consumerId: "projection-a",
+          eventId: "event-replay-01",
+          processedAt: T2,
+        }),
+      ).toBe(true);
+      expect(
+        await deduplicator.consumeOnce({
+          consumerId: "projection-a",
+          eventId: "event-replay-01",
+          processedAt: T2,
+        }),
+      ).toBe(false);
+      await reopened.close();
+      await rm(resource.stateRoot, { recursive: true });
+    });
+
+    it("rejects startup recovery without a current scoped authority lease", async () => {
+      const resource = await openRepository(T0);
+      const eventPort = resource.repository.reliableEventPort(OWNER_ID, AGENT_ID);
+      await eventPort.append({
+        id: "event-authority-recovery-01",
+        idempotencyKey: createIdempotencyKey("event-authority-recovery-01"),
+        topic: "run.changed",
+        payloadRef: "payload-event-01",
+        occurredAt: T0,
+      });
+      await resource.repository.reliableEventOutbox().claim({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        claimId: "claim-authority-recovery",
+        claimedAt: T0,
+        expiresAt: T1,
+        limit: 10,
+      });
+      await resource.repository.close();
+
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T2,
+      });
+      await expect(
+        reopened.startupRecovery({
+          ...RECOVERY_SCOPE,
+          authorityLease: {
+            leaseId: createAuthorityLeaseId("lease-missing"),
+            fencingToken: 1,
+          },
+        }),
+      ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+      await expect(
+        reopened.startupRecovery({
+          ...RECOVERY_SCOPE,
+          ownerId: createOwnerId("owner-other"),
+        }),
+      ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+      await expect(
+        reopened.startupRecovery({
+          ...RECOVERY_SCOPE,
+          authority: {
+            ...AUTHORITY,
+            fencingToken: 2,
+          },
+          authorityLease: {
+            ...LEASE,
+            fencingToken: 2,
+          },
+        }),
+      ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+      await reopened.close();
+
+      const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      database
+        .prepare("UPDATE authority_leases SET expires_at = ? WHERE id = ?")
+        .run(T1, LEASE.leaseId);
+      database.close();
+
+      const expired = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T2,
+      });
+      await expect(expired.startupRecovery(RECOVERY_SCOPE)).rejects.toMatchObject({
+        code: "PORT_NOT_AUTHORITATIVE",
+      });
+      await expired.close();
+
+      const unchanged = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      expect(
+        unchanged
+          .prepare("SELECT publication_state, claim_id FROM reliable_events WHERE id = ?")
+          .get("event-authority-recovery-01"),
+      ).toEqual({ publication_state: "claimed", claim_id: "claim-authority-recovery" });
+      unchanged.close();
+      await rm(resource.stateRoot, { recursive: true });
+    });
+
+    it("reopens interrupted delivery work and reports other safe startup work", async () => {
+      const resource = await openRepository(T0);
+      const attention = resource.repository.attentionState();
+      const record = {
+        candidateId: "attention-recovery-01",
+        candidateFingerprint: "fingerprint-recovery-01",
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        duplicateKey: "recovery-01",
+        decision: {
+          candidateId: "attention-recovery-01",
+          level: "NOTIFY" as const,
+          reasonCode: "recovery_test",
+          interruptAuthorizationRef: null,
+        },
+        deliveryRequestId: "delivery-recovery-01",
+        decidedAt: T0,
+      };
+      const delivery = {
+        id: "delivery-recovery-01",
+        candidateId: record.candidateId,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        resultRef: "payload-attention-state-01",
+        dataClassification: "private" as const,
+        level: "NOTIFY" as const,
+        status: "pending" as const,
+        assignedClientId: null,
+        attempts: 0,
+        acknowledgementRef: null,
+        lastErrorCode: null,
+        createdAt: T0,
+        updatedAt: T0,
+      };
+      await attention.commitDecision({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        expectedRevision: 0,
+        record,
+        delivery,
+      });
+      await attention.claimDelivery(delivery.id, "client-before-restart", T1);
+      await resource.repository.authorizationStore().createApproval({
+        id: "approval-recovery-01",
+        revision: 1,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        intentId: "intent-recovery-01",
+        intentSnapshot: {
+          id: "intent-recovery-01",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          capabilityRef: "restaurant-search",
+          operation: "search",
+          resourceRef: "city:tokyo",
+          dataClassification: "private",
+          sideEffect: "none",
+          estimatedCostMicros: 1,
+          frequency: { count: 1, intervalMs: null },
+          idempotencyKey: createIdempotencyKey("intent-recovery-01"),
+          reversible: true,
+          requestedAt: T0,
+        },
+        semanticSnapshotHash: "intent-recovery-hash",
+        status: "pending",
+        deliveryState: "queued_no_ui",
+        requestedAt: T0,
+        expiresAt: "2999-12-31T23:59:59.999Z",
+        decidedAt: null,
+        grantId: null,
+      });
+      await resource.repository.scheduler().upsert(
+        {
+          id: "job-recovery-01",
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          threadId: null,
+          payloadRef: "payload-schedule-01",
+          sourceProofRef: "proof-recovery-01",
+          dataClassification: "private",
+          authorizationRef: "grant-recovery-01",
+          taskScopeRef: "scope-recovery-01",
+          capabilityRef: "restaurant-monitor",
+          operation: "scan",
+          resourceRef: "restaurant:recovery",
+          sideEffect: "none",
+          estimatedCostMicros: 1,
+          intervalMs: 60_000,
+          minimumIntervalMs: 60_000,
+          expiresAt: "2999-12-31T23:59:59.999Z",
+          revokedAt: null,
+          nextRunAt: T2,
+          occurrence: 0,
+          status: "active",
+        },
+        null,
+      );
+      await resource.repository.close();
+
+      const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      database
+        .prepare(
+          `INSERT INTO job_occurrences (
+          id, job_id, owner_id, agent_id, stable_key, status, deployment_id,
+          authority_epoch, fencing_token, attempt_count, deadline_at
+        ) VALUES ('occurrence-recovery-01', 'job-recovery-01', ?, ?, 'stable-recovery-01',
+          'retry_wait', 'deployment-conformance', 1, 1, 1, '2999-12-31T23:59:59.999Z')`,
+        )
+        .run(OWNER_ID, AGENT_ID);
+      database.close();
+
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T2,
+      });
+      const recovery = await reopened.startupRecovery(RECOVERY_SCOPE);
+      expect(recovery.unfinishedRunKeys).toContain(RUN_ID);
+      expect(recovery.pendingApprovalRequestIds).toEqual(["approval-recovery-01"]);
+      expect(recovery.recoveredDeliveryRequestIds).toEqual([delivery.id]);
+      expect(recovery.pendingDeliveryRequestIds).toEqual([delivery.id]);
+      expect(recovery.retryableJobOccurrenceIds).toEqual(["occurrence-recovery-01"]);
+      expect(await reopened.attentionState().readDelivery(delivery.id)).toMatchObject({
+        status: "pending",
+        assignedClientId: null,
+        lastErrorCode: "PROCESS_RESTARTED",
+      });
+      await reopened.close();
+      await rm(resource.stateRoot, { recursive: true });
+    });
+
+    it("enforces scoped snapshots, persistent cursors and a retention watermark", async () => {
+      const resource = await openRepository();
+      const readModel = resource.repository.gatewayReadModel();
+      const envelope = {
+        schemaVersion: "gateway.v1" as const,
+        messageId: "message-thread-snapshot",
+        correlationId: "correlation-read-model",
+        causationId: null,
+        dataClassification: "private" as const,
+        scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        actor: { actorType: "system" as const, actorId: "projection" },
+      };
+      const threadSnapshot = {
+        ...envelope,
+        kind: "snapshot" as const,
+        type: "thread.snapshot" as const,
+        payload: {
+          threadId: "thread-conformance",
+          status: "open" as const,
+          revision: 1,
+          sessionIds: [SESSION_ID],
+          runIds: [RUN_ID],
+        },
+      };
+      await readModel.upsertThreadSnapshot(threadSnapshot);
+      expect(
+        await readModel.getThreadSnapshot({
+          ...envelope,
+          kind: "query",
+          type: "thread.get_snapshot",
+          payload: { threadId: "thread-conformance" },
+        }),
+      ).toEqual(threadSnapshot);
+      await expect(
+        readModel.getThreadSnapshot({
+          ...envelope,
+          scope: { ownerId: "owner-other", agentId: AGENT_ID },
+          kind: "query",
+          type: "thread.get_snapshot",
+          payload: { threadId: "thread-conformance" },
+        }),
+      ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
+      await expect(
+        readModel.upsertThreadSnapshot({
+          ...threadSnapshot,
+          payload: { ...threadSnapshot.payload, status: "closed" },
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      const runSnapshot = {
+        ...envelope,
+        kind: "snapshot" as const,
+        type: "run.snapshot" as const,
+        messageId: "message-run-snapshot",
+        payload: {
+          runId: RUN_ID,
+          threadId: "thread-conformance",
+          sessionId: SESSION_ID,
+          triggerId: "trigger-conformance",
+          status: "running" as const,
+          revision: 1,
+          latestSequence: 0,
+          activeApprovalRequestId: null,
+        },
+      };
+      await readModel.upsertRunSnapshot(runSnapshot);
+      expect(
+        await readModel.getRunSnapshot({
+          ...envelope,
+          kind: "query",
+          type: "run.get_snapshot",
+          payload: { runId: RUN_ID },
+        }),
+      ).toEqual(runSnapshot);
+
+      const event = (cursor: string, sequence: number): StreamEvent => ({
+        ...envelope,
+        kind: "event",
+        type: "stream.event",
+        messageId: `message-${cursor}`,
+        payload: {
+          cursor,
+          sessionId: SESSION_ID,
+          threadId: "thread-conformance",
+          runId: RUN_ID,
+          turnId: null,
+          parentEventId: null,
           sequence,
           occurredAt: T0,
           recordedAt: T0,
+          eventType: "run.changed",
           payloadRef: null,
-        });
-      }
-      const adapters = createReferenceAdapterSet();
-      const recorder = new SessionTraceRecorder({
-        trace,
-        artifacts: resource.repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, {
-          product: AUTHORITY,
-          lease: LEASE,
-        }),
-        protector: adapters.payloadProtector,
-        audit: resource.repository.auditLedger(),
-        clock: { now: () => T1 },
-        ids: adapters.ids,
+        },
       });
-      const result = await recorder.record(scope);
-      expect(result.event.sequence).toBe(count + 1);
+      await readModel.appendEvent(event("cursor-01", 1));
+      await readModel.appendEvent(event("cursor-02", 2));
+      expect(
+        await readModel.queryTrace({
+          ...envelope,
+          kind: "query",
+          type: "trace.query",
+          payload: { sessionId: SESSION_ID, runId: RUN_ID, afterSequence: 0, limit: 10 },
+        }),
+      ).toHaveLength(2);
+      await readModel.setRetentionWatermark(2, T1);
+      await expect(
+        (async () => {
+          for await (const _item of readModel.subscribe({
+            ...envelope,
+            kind: "subscription",
+            type: "events.subscribe",
+            payload: {
+              subscriptionId: "subscription-expired",
+              sessionId: null,
+              threadId: null,
+              runId: null,
+              afterCursor: "cursor-01",
+            },
+          })) {
+            // Exhaust the subscription so cursor validation runs.
+          }
+        })(),
+      ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
+      const subscription = {
+        ...envelope,
+        kind: "subscription" as const,
+        type: "events.subscribe" as const,
+        payload: {
+          subscriptionId: "subscription-01",
+          sessionId: SESSION_ID,
+          threadId: null,
+          runId: null,
+          afterCursor: null,
+        },
+      };
+      const retained = [];
+      for await (const item of readModel.subscribe(subscription))
+        retained.push(item.payload.cursor);
+      expect(retained).toEqual(["cursor-02"]);
+
+      const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      database
+        .prepare("UPDATE threads SET status = 'trashed' WHERE id = 'thread-conformance'")
+        .run();
+      database.close();
+      await expect(
+        readModel.getThreadSnapshot({
+          ...envelope,
+          kind: "query",
+          type: "thread.get_snapshot",
+          payload: { threadId: "thread-conformance" },
+        }),
+      ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
+      await expect(
+        readModel.getRunSnapshot({
+          ...envelope,
+          kind: "query",
+          type: "run.get_snapshot",
+          payload: { runId: RUN_ID },
+        }),
+      ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
+      expect(
+        await readModel.queryTrace({
+          ...envelope,
+          kind: "query",
+          type: "trace.query",
+          payload: { sessionId: SESSION_ID, runId: RUN_ID, afterSequence: 0, limit: 10 },
+        }),
+      ).toEqual([]);
+      const hidden = [];
+      for await (const item of readModel.subscribe(subscription)) hidden.push(item.payload.cursor);
+      expect(hidden).toEqual([]);
+
       await resource.repository.close();
       const reopened = await SqliteProductStateRepository.open({
         stateRoot: resource.stateRoot,
         minimumFreeBytes: 0,
         now: () => T2,
       });
-      try {
-        expect(await reopened.traceStore().readRun(RUN_ID, count, 1)).toEqual([result.event]);
-      } finally {
-        await reopened.close();
-      }
-    } finally {
-      await resource.repository.close();
+      expect((await reopened.gatewayReadModel().metadata()).retentionWatermark).toBe(2);
+      await reopened.close();
       await rm(resource.stateRoot, { recursive: true });
-    }
-  },
-);
-
-payloadStorePortConformance({
-  create: async () => {
-    const resource = await openRepository();
-    return tracked(resource, resource.repository.payloadStore(OWNER_ID, AGENT_ID));
-  },
-  dispose,
-});
-
-auditLedgerPortConformance({
-  create: async () => {
-    const resource = await openRepository();
-    return tracked(resource, resource.repository.auditLedger());
-  },
-  dispose,
-});
-
-authorizationStorePortConformance({
-  create: async () => {
-    const resource = await openRepository();
-    return tracked(resource, resource.repository.authorizationStore());
-  },
-  dispose,
-});
-
-capabilityRegistryStorePortConformance({
-  create: async () => {
-    const resource = await openRepository();
-    const port: CapabilityRegistryStorePort & CapabilityExecutionHandleStorePort =
-      resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
-    return tracked(resource, port);
-  },
-  dispose,
-});
-
-schedulerPortConformance({
-  create: async () => {
-    const resource = await openRepository();
-    return tracked(resource, resource.repository.scheduler());
-  },
-  dispose,
-});
-
-attentionStatePortConformance({
-  create: async () => {
-    const resource = await openRepository();
-    return tracked(resource, resource.repository.attentionState());
-  },
-  dispose,
-});
-
-describe("SQLite durable repository adapters", () => {
-  it("persists executing governance receipts and completes them after restart", async () => {
-    const resource = await openRepository();
-    const receipt: GovernanceMutationReceipt = {
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      idempotencyKey: "governance-idempotency-sqlite",
-      revision: 1,
-      commandType: "capability.install.approve",
-      semanticFingerprint: '{"capabilityRef":"capability-governed-sqlite"}',
-      phase: "executing",
-      resultRef: null,
-      startedAt: T0,
-      committedAt: null,
-    };
-    await expect(
-      resource.repository.governanceMutationReceiptStore().create(receipt),
-    ).resolves.toEqual(receipt);
-    await resource.repository.close();
-
-    const reopened = await SqliteProductStateRepository.open({
-      stateRoot: resource.stateRoot,
-      minimumFreeBytes: 0,
-      now: () => T1,
     });
-    const store = reopened.governanceMutationReceiptStore();
-    await expect(store.get(OWNER_ID, AGENT_ID, receipt.idempotencyKey)).resolves.toEqual(receipt);
-    const completed: GovernanceMutationReceipt = {
-      ...receipt,
-      revision: 2,
-      phase: "completed",
-      resultRef: "capability:capability-governed-sqlite:revision-5",
-      committedAt: T1,
-    };
-    await expect(store.complete(completed, 1)).resolves.toEqual(completed);
-    await expect(store.complete(completed, 1)).resolves.toEqual(completed);
-    await expect(
-      store.create({ ...receipt, commandType: "capability.disable" }),
-    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.DUPLICATE });
-    await reopened.close();
-    await rm(resource.stateRoot, { recursive: true });
-  });
-
-  it("atomically resolves a Grant budget race, preserves idempotency, and fences Handle consumption", async () => {
-    const resource = await openRepository(T0, "running");
-    const authorization = resource.repository.authorizationStore();
-    const action = {
-      id: "intent-governed-sqlite",
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      runId: RUN_ID,
-      capabilityRef: "capability-governed-sqlite",
-      operation: "read",
-      resourceRef: "repo:approved/project",
-      dataClassification: "private" as const,
-      sideEffect: "none" as const,
-      estimatedCostMicros: 10,
-      frequency: { count: 1, intervalMs: null },
-      idempotencyKey: createIdempotencyKey("intent-governed-sqlite"),
-      reversible: true,
-      requestedAt: T0,
-    };
-    await authorization.createApproval({
-      id: "approval-governed-sqlite",
-      revision: 1,
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      runId: RUN_ID,
-      intentId: action.id,
-      intentSnapshot: action,
-      semanticSnapshotHash: "hash-governed-sqlite",
-      status: "pending",
-      deliveryState: "deliverable",
-      requestedAt: T0,
-      expiresAt: T2,
-      decidedAt: null,
-      grantId: null,
-    });
-    const grant: GovernedGrantRecord = {
-      id: "grant-governed-sqlite",
-      revision: 1,
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      kind: "one_time",
-      scope: {
-        capabilityRef: action.capabilityRef,
-        capabilityVersion: "1.0.0",
-        operations: [action.operation],
-        exactResourceRef: action.resourceRef,
-        resourceIdentities: [action.resourceRef],
-        resourcePrefixes: [],
-        maxDataClassification: "private",
-        disclosure: "none",
-        sideEffects: ["none"],
-        recipients: [],
-        credentialOrAccessChange: false,
-        maxCostMicrosPerUse: 10,
-        maxFrequency: action.frequency,
-      },
-      intentFingerprint: "fingerprint-governed-sqlite",
-      sourceApprovalRequestId: "approval-governed-sqlite",
-      validFrom: T0,
-      expiresAt: T2,
-      maxUses: 1,
-      uses: 0,
-      maxTotalCostMicros: 10,
-      spentCostMicros: 0,
-      revokedAt: null,
-      revocationReasonCode: null,
-    };
-    await authorization.resolveApproval({
-      approvalRequestId: "approval-governed-sqlite",
-      expectedRevision: 1,
-      semanticSnapshotHash: "hash-governed-sqlite",
-      resolution: "approved",
-      decidedAt: T1,
-      grant,
-    });
-    const trace = resource.repository.traceStore();
-    await trace.append({
-      id: "trace:approval-governed-sqlite",
-      schemaVersion: "trace.v1",
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      sessionId: SESSION_ID,
-      threadId: createThreadId("thread-conformance"),
-      runId: RUN_ID,
-      turnId: null,
-      parentEventId: null,
-      causationId: action.id,
-      correlationId: "correlation-governed-sqlite",
-      sequence: 1,
-      occurredAt: T0,
-      recordedAt: T0,
-      actorId: "authorization-control-plane",
-      dataClassification: "private",
-      eventType: "authorization.approval_resolved",
-      payloadRef: null,
-    });
-    const usage = {
-      grantId: grant.id,
-      expectedRevision: 1,
-      costMicros: 10,
-      consumedAt: T1,
-      usageId: "authorization-usage:intent-governed-sqlite",
-      intentId: action.id,
-      runId: RUN_ID,
-      operation: action.operation,
-    };
-    const competingUsage = {
-      ...usage,
-      usageId: "authorization-usage:intent-governed-sqlite-competing",
-    };
-    const race = await Promise.allSettled([
-      authorization.consumeGrant(usage),
-      authorization.consumeGrant(competingUsage),
-    ]);
-    expect(race.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
-    expect(race.filter(({ status }) => status === "rejected")).toHaveLength(1);
-    const rejected = race.find(({ status }) => status === "rejected");
-    expect(rejected).toMatchObject({
-      status: "rejected",
-      reason: { code: PORT_ERROR_CODES.CONFLICT },
-    });
-    const winningUsage = race[0]?.status === "fulfilled" ? usage : competingUsage;
-    await expect(authorization.consumeGrant(winningUsage)).resolves.toMatchObject({
-      uses: 1,
-      revision: 2,
-    });
-    await expect(trace.readRun(RUN_ID, 0, 10)).resolves.toEqual([
-      expect.objectContaining({
-        id: "trace:approval-governed-sqlite",
-        schemaVersion: "trace.v1",
-        ownerId: OWNER_ID,
-        agentId: AGENT_ID,
-        runId: RUN_ID,
-        parentEventId: null,
-        causationId: action.id,
-        correlationId: "correlation-governed-sqlite",
-        actorId: "authorization-control-plane",
-        eventType: "authorization.approval_resolved",
-      }),
-      expect.objectContaining({
-        id: `trace:${winningUsage.usageId}`,
-        schemaVersion: "trace.v1",
-        ownerId: OWNER_ID,
-        agentId: AGENT_ID,
-        runId: RUN_ID,
-        parentEventId: "trace:approval-governed-sqlite",
-        causationId: action.id,
-        correlationId: "correlation-governed-sqlite",
-        actorId: "authorization-control-plane",
-        eventType: "authorization.grant_consumed",
-      }),
-    ]);
-
-    const capabilities = resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
-    await capabilities.create({
-      ref: action.capabilityRef,
-      revision: 1,
-      lifecycle: "active",
-      declaration: {
-        ref: action.capabilityRef,
-        displayName: "Governed SQLite capability",
-        version: "1.0.0",
-        source: { type: "builtin", locator: "builtin:governed-sqlite" },
-        integrity: `sha256:${"a".repeat(64)}`,
-        operations: [action.operation],
-        permissionRefs: [],
-        isolation: "worker",
-      },
-      pendingDeclaration: null,
-      permissionExpansion: false,
-      runtimeQualification: null,
-      pendingUpdateAssessment: null,
-      rollbackDeclaration: null,
-      rollbackQualification: null,
-      lastVersionTransition: null,
-      approvalRefs: ["approval-governed-sqlite"],
-      discoveredAt: T0,
-      updatedAt: T1,
-    });
-    const handle: GovernedCapabilityExecutionHandle = {
-      ref: "handle-governed-sqlite",
-      handleVersion: "capability-handle.v2",
-      revision: 1,
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      runId: RUN_ID,
-      authorityFence: 1,
-      capabilityRef: action.capabilityRef,
-      capabilityVersion: "1.0.0",
-      authorization: { type: "grant", ref: grant.id },
-      authorizationRef: grant.id,
-      operations: [action.operation],
-      operation: action.operation,
-      inputRefs: ["payload-input-governed"],
-      delegatedContextRefs: [],
-      secretRefs: [],
-      maxDataClassification: "private",
-      maxUses: 2,
-      uses: 0,
-      maxTotalCostMicros: 20,
-      spentCostMicros: 0,
-      idempotencyKeys: [],
-      issuedAt: T0,
-      expiresAt: T2,
-      revokedAt: null,
-      workerEndedAt: null,
-    };
-    await capabilities.createExecutionHandle(handle);
-    const revokeHandles = capabilities.revokeCapabilityHandles;
-    const endRunHandles = capabilities.endRunExecutionHandles;
-    if (!revokeHandles || !endRunHandles)
-      throw new Error("governed capability store is incomplete");
-    const invocation = {
-      receiptRef: "receipt-governed-sqlite",
-      handleRef: handle.ref,
-      invocationId: "invocation-governed-sqlite",
-      requestScope: {
-        deploymentId: AUTHORITY.deploymentId,
-        authorityEpoch: AUTHORITY.authorityEpoch,
-        fencingToken: AUTHORITY.fencingToken,
-        ownerId: OWNER_ID,
-        agentId: AGENT_ID,
-        runId: RUN_ID,
-        workerRunId: "worker-run-governed-sqlite",
-      },
-      capabilityRef: action.capabilityRef,
-      capabilityVersion: "1.0.0",
-      authorizationRef: grant.id,
-      idempotencyKey: "handle-use-governed-sqlite",
-      operation: action.operation,
-      inputRef: "payload-input-governed",
-      delegatedContextRefs: [],
-      secretRefs: [],
-      dataClassification: "private" as const,
-      resourceCeiling: {
-        maxWallTimeMs: 1_000,
-        maxCpuTimeMs: 1_000,
-        maxMemoryBytes: 1_000_000,
-        maxOutputBytes: 4_096,
-        maxProgressEvents: 10,
-      },
-      requestedAt: T0,
-      deadlineAt: T2,
-      authority: INVOCATION_AUTHORITY,
-      consumedAt: T1,
-    };
-    const invocations = resource.repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID);
-    await expect(invocations.consume(invocation)).resolves.toMatchObject({
-      replayed: false,
-      receipt: {
-        invocationId: invocation.invocationId,
-        idempotencyKey: invocation.idempotencyKey,
-      },
-    });
-    await expect(invocations.consume(invocation)).resolves.toMatchObject({
-      replayed: true,
-      receipt: {
-        invocationId: invocation.invocationId,
-        idempotencyKey: invocation.idempotencyKey,
-      },
-    });
-    const scheduler = resource.repository.scheduler();
-    await scheduler.upsert(
-      {
-        id: "job-capability-governed-sqlite",
-        ownerId: OWNER_ID,
-        agentId: AGENT_ID,
-        threadId: null,
-        payloadRef: "payload-schedule-01",
-        sourceProofRef: "source-proof-governed-sqlite",
-        dataClassification: "private",
-        authorizationRef: grant.id,
-        taskScopeRef: "task-scope-governed-sqlite",
-        capabilityRef: action.capabilityRef,
-        operation: action.operation,
-        resourceRef: action.resourceRef,
-        sideEffect: "none",
-        estimatedCostMicros: 10,
-        intervalMs: 60_000,
-        minimumIntervalMs: 60_000,
-        expiresAt: T2,
-        revokedAt: null,
-        nextRunAt: T1,
-        occurrence: 0,
-        status: "active",
-      },
-      null,
-    );
-    const currentCapability = await capabilities.get(action.capabilityRef);
-    if (!currentCapability) throw new Error("expected governed capability");
-    const invalidateAuthority = capabilities.invalidateCapabilityAuthority;
-    if (!invalidateAuthority) throw new Error("capability invalidation must be atomic");
-    await expect(
-      invalidateAuthority(
-        {
-          ...currentCapability,
-          revision: 2,
-          lifecycle: "disabled",
-          updatedAt: T2,
-        },
-        1,
-        T2,
-      ),
-    ).resolves.toMatchObject({ revision: 2, lifecycle: "disabled" });
-    await expect(capabilities.getExecutionHandle(handle.ref)).resolves.toMatchObject({
-      revision: 2,
-      revokedAt: T2,
-      workerEndedAt: null,
-    });
-    await expect(scheduler.read("job-capability-governed-sqlite")).resolves.toMatchObject({
-      revision: 2,
-      status: "cancelled",
-      revokedAt: T2,
-      nextRunAt: null,
-    });
-    await expect(endRunHandles(RUN_ID, T2)).resolves.toBe(0);
-    await expect(revokeHandles(action.capabilityRef, T2)).resolves.toBe(0);
-
-    await resource.repository.close();
-    const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
-    expect(database.prepare("SELECT COUNT(*) FROM authorization_usage").pluck().get()).toBe(1);
-    expect(
-      database
-        .prepare(
-          "SELECT COUNT(*) FROM reliable_events WHERE topic = 'authorization.grant_consumed'",
-        )
-        .pluck()
-        .get(),
-    ).toBe(1);
-    expect(
-      database
-        .prepare(
-          "SELECT COUNT(*) FROM trace_events WHERE event_type = 'authorization.grant_consumed'",
-        )
-        .pluck()
-        .get(),
-    ).toBe(1);
-    expect(
-      database
-        .prepare("SELECT COUNT(*) FROM audit_records WHERE action = 'authorization.grant_consumed'")
-        .pluck()
-        .get(),
-    ).toBe(1);
-    database.close();
-    await rm(resource.stateRoot, { recursive: true });
-  });
-
-  it("persists deletion state across a repository restart", async () => {
-    const resource = await openRepository();
-    const record: SessionDeletionRecord = {
-      id: "deletion-session-01",
-      revision: 1,
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      sessionId: SESSION_ID,
-      status: "pending",
-      targets: {
-        payload: { status: "pending", attempts: 0, lastErrorCode: null, verifiedAt: null },
-        search: { status: "pending", attempts: 0, lastErrorCode: null, verifiedAt: null },
-        cache: { status: "pending", attempts: 0, lastErrorCode: null, verifiedAt: null },
-        archive: { status: "pending", attempts: 0, lastErrorCode: null, verifiedAt: null },
-      },
-      requestedAt: T0,
-      updatedAt: T0,
-    };
-    await resource.repository.sessionDeletionState().create(record);
-    await resource.repository.close();
-
-    const reopened = await SqliteProductStateRepository.open({
-      stateRoot: resource.stateRoot,
-      minimumFreeBytes: 0,
-      now: () => T1,
-    });
-    expect(await reopened.sessionDeletionState().get(record.id)).toEqual(record);
-    expect((await reopened.startupRecovery(RECOVERY_SCOPE)).pendingDeletionIds).toEqual([
-      record.id,
-    ]);
-    await reopened.close();
-    await rm(resource.stateRoot, { recursive: true });
-  });
-
-  it("replays a stable outbox identity after sink success without an acknowledgement commit", async () => {
-    const resource = await openRepository(T0);
-    const eventPort = resource.repository.reliableEventPort(OWNER_ID, AGENT_ID);
-    await eventPort.append({
-      id: "event-replay-01",
-      idempotencyKey: createIdempotencyKey("event-replay-01"),
-      topic: "run.changed",
-      payloadRef: "payload-event-01",
-      occurredAt: T0,
-    });
-    const firstClaim = await resource.repository.reliableEventOutbox().claim({
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      claimId: "claim-before-crash",
-      claimedAt: T0,
-      expiresAt: T1,
-      limit: 10,
-    });
-    const observed: string[] = [firstClaim[0]?.event.id ?? "missing"];
-    await resource.repository.close();
-
-    const reopened = await SqliteProductStateRepository.open({
-      stateRoot: resource.stateRoot,
-      minimumFreeBytes: 0,
-      now: () => T2,
-    });
-    expect((await reopened.recoverySnapshot()).recoveredExpiredClaimIds).toEqual([]);
-    const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
-    expect(
-      database
-        .prepare("SELECT publication_state, claim_id FROM reliable_events WHERE id = ?")
-        .get("event-replay-01"),
-    ).toEqual({ publication_state: "claimed", claim_id: "claim-before-crash" });
-    database.close();
-    const recovery = await reopened.startupRecovery(RECOVERY_SCOPE);
-    expect(recovery.recoveredExpiredClaimIds).toEqual(["event-replay-01"]);
-    expect((await reopened.startupRecovery(RECOVERY_SCOPE)).recoveredExpiredClaimIds).toEqual([]);
-    const sink: ReliableEventSinkPort = {
-      publish: async (event: ReliableEventRecord) => {
-        observed.push(event.id);
-        return { eventId: event.id, outcome: "duplicate" };
-      },
-    };
-    const publisher = new SqliteReliableEventPublisher({
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      outbox: reopened.reliableEventOutbox(),
-      sink,
-      claimId: () => "claim-after-restart",
-      now: () => T2,
-    });
-    expect((await publisher.publishBatch(10)).map(({ id }) => id)).toEqual(["event-replay-01"]);
-    expect(observed).toEqual(["event-replay-01", "event-replay-01"]);
-    const deduplicator = reopened.reliableEventConsumerDeduplicator();
-    expect(
-      await deduplicator.consumeOnce({
-        consumerId: "projection-a",
-        eventId: "event-replay-01",
-        processedAt: T2,
-      }),
-    ).toBe(true);
-    expect(
-      await deduplicator.consumeOnce({
-        consumerId: "projection-a",
-        eventId: "event-replay-01",
-        processedAt: T2,
-      }),
-    ).toBe(false);
-    await reopened.close();
-    await rm(resource.stateRoot, { recursive: true });
-  });
-
-  it("rejects startup recovery without a current scoped authority lease", async () => {
-    const resource = await openRepository(T0);
-    const eventPort = resource.repository.reliableEventPort(OWNER_ID, AGENT_ID);
-    await eventPort.append({
-      id: "event-authority-recovery-01",
-      idempotencyKey: createIdempotencyKey("event-authority-recovery-01"),
-      topic: "run.changed",
-      payloadRef: "payload-event-01",
-      occurredAt: T0,
-    });
-    await resource.repository.reliableEventOutbox().claim({
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      claimId: "claim-authority-recovery",
-      claimedAt: T0,
-      expiresAt: T1,
-      limit: 10,
-    });
-    await resource.repository.close();
-
-    const reopened = await SqliteProductStateRepository.open({
-      stateRoot: resource.stateRoot,
-      minimumFreeBytes: 0,
-      now: () => T2,
-    });
-    await expect(
-      reopened.startupRecovery({
-        ...RECOVERY_SCOPE,
-        authorityLease: {
-          leaseId: createAuthorityLeaseId("lease-missing"),
-          fencingToken: 1,
-        },
-      }),
-    ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
-    await expect(
-      reopened.startupRecovery({
-        ...RECOVERY_SCOPE,
-        ownerId: createOwnerId("owner-other"),
-      }),
-    ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
-    await expect(
-      reopened.startupRecovery({
-        ...RECOVERY_SCOPE,
-        authority: {
-          ...AUTHORITY,
-          fencingToken: 2,
-        },
-        authorityLease: {
-          ...LEASE,
-          fencingToken: 2,
-        },
-      }),
-    ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
-    await reopened.close();
-
-    const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
-    database
-      .prepare("UPDATE authority_leases SET expires_at = ? WHERE id = ?")
-      .run(T1, LEASE.leaseId);
-    database.close();
-
-    const expired = await SqliteProductStateRepository.open({
-      stateRoot: resource.stateRoot,
-      minimumFreeBytes: 0,
-      now: () => T2,
-    });
-    await expect(expired.startupRecovery(RECOVERY_SCOPE)).rejects.toMatchObject({
-      code: "PORT_NOT_AUTHORITATIVE",
-    });
-    await expired.close();
-
-    const unchanged = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
-    expect(
-      unchanged
-        .prepare("SELECT publication_state, claim_id FROM reliable_events WHERE id = ?")
-        .get("event-authority-recovery-01"),
-    ).toEqual({ publication_state: "claimed", claim_id: "claim-authority-recovery" });
-    unchanged.close();
-    await rm(resource.stateRoot, { recursive: true });
-  });
-
-  it("reopens interrupted delivery work and reports other safe startup work", async () => {
-    const resource = await openRepository(T0);
-    const attention = resource.repository.attentionState();
-    const record = {
-      candidateId: "attention-recovery-01",
-      candidateFingerprint: "fingerprint-recovery-01",
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      runId: RUN_ID,
-      duplicateKey: "recovery-01",
-      decision: {
-        candidateId: "attention-recovery-01",
-        level: "NOTIFY" as const,
-        reasonCode: "recovery_test",
-        interruptAuthorizationRef: null,
-      },
-      deliveryRequestId: "delivery-recovery-01",
-      decidedAt: T0,
-    };
-    const delivery = {
-      id: "delivery-recovery-01",
-      candidateId: record.candidateId,
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      runId: RUN_ID,
-      resultRef: "payload-attention-state-01",
-      dataClassification: "private" as const,
-      level: "NOTIFY" as const,
-      status: "pending" as const,
-      assignedClientId: null,
-      attempts: 0,
-      acknowledgementRef: null,
-      lastErrorCode: null,
-      createdAt: T0,
-      updatedAt: T0,
-    };
-    await attention.commitDecision({
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      expectedRevision: 0,
-      record,
-      delivery,
-    });
-    await attention.claimDelivery(delivery.id, "client-before-restart", T1);
-    await resource.repository.authorizationStore().createApproval({
-      id: "approval-recovery-01",
-      revision: 1,
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      runId: RUN_ID,
-      intentId: "intent-recovery-01",
-      intentSnapshot: {
-        id: "intent-recovery-01",
-        ownerId: OWNER_ID,
-        agentId: AGENT_ID,
-        runId: RUN_ID,
-        capabilityRef: "restaurant-search",
-        operation: "search",
-        resourceRef: "city:tokyo",
-        dataClassification: "private",
-        sideEffect: "none",
-        estimatedCostMicros: 1,
-        frequency: { count: 1, intervalMs: null },
-        idempotencyKey: createIdempotencyKey("intent-recovery-01"),
-        reversible: true,
-        requestedAt: T0,
-      },
-      semanticSnapshotHash: "intent-recovery-hash",
-      status: "pending",
-      deliveryState: "queued_no_ui",
-      requestedAt: T0,
-      expiresAt: "2999-12-31T23:59:59.999Z",
-      decidedAt: null,
-      grantId: null,
-    });
-    await resource.repository.scheduler().upsert(
-      {
-        id: "job-recovery-01",
-        ownerId: OWNER_ID,
-        agentId: AGENT_ID,
-        threadId: null,
-        payloadRef: "payload-schedule-01",
-        sourceProofRef: "proof-recovery-01",
-        dataClassification: "private",
-        authorizationRef: "grant-recovery-01",
-        taskScopeRef: "scope-recovery-01",
-        capabilityRef: "restaurant-monitor",
-        operation: "scan",
-        resourceRef: "restaurant:recovery",
-        sideEffect: "none",
-        estimatedCostMicros: 1,
-        intervalMs: 60_000,
-        minimumIntervalMs: 60_000,
-        expiresAt: "2999-12-31T23:59:59.999Z",
-        revokedAt: null,
-        nextRunAt: T2,
-        occurrence: 0,
-        status: "active",
-      },
-      null,
-    );
-    await resource.repository.close();
-
-    const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
-    database
-      .prepare(
-        `INSERT INTO job_occurrences (
-          id, job_id, owner_id, agent_id, stable_key, status, deployment_id,
-          authority_epoch, fencing_token, attempt_count, deadline_at
-        ) VALUES ('occurrence-recovery-01', 'job-recovery-01', ?, ?, 'stable-recovery-01',
-          'retry_wait', 'deployment-conformance', 1, 1, 1, '2999-12-31T23:59:59.999Z')`,
-      )
-      .run(OWNER_ID, AGENT_ID);
-    database.close();
-
-    const reopened = await SqliteProductStateRepository.open({
-      stateRoot: resource.stateRoot,
-      minimumFreeBytes: 0,
-      now: () => T2,
-    });
-    const recovery = await reopened.startupRecovery(RECOVERY_SCOPE);
-    expect(recovery.unfinishedRunKeys).toContain(RUN_ID);
-    expect(recovery.pendingApprovalRequestIds).toEqual(["approval-recovery-01"]);
-    expect(recovery.recoveredDeliveryRequestIds).toEqual([delivery.id]);
-    expect(recovery.pendingDeliveryRequestIds).toEqual([delivery.id]);
-    expect(recovery.retryableJobOccurrenceIds).toEqual(["occurrence-recovery-01"]);
-    expect(await reopened.attentionState().readDelivery(delivery.id)).toMatchObject({
-      status: "pending",
-      assignedClientId: null,
-      lastErrorCode: "PROCESS_RESTARTED",
-    });
-    await reopened.close();
-    await rm(resource.stateRoot, { recursive: true });
-  });
-
-  it("enforces scoped snapshots, persistent cursors and a retention watermark", async () => {
-    const resource = await openRepository();
-    const readModel = resource.repository.gatewayReadModel();
-    const envelope = {
-      schemaVersion: "gateway.v1" as const,
-      messageId: "message-thread-snapshot",
-      correlationId: "correlation-read-model",
-      causationId: null,
-      dataClassification: "private" as const,
-      scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
-      actor: { actorType: "system" as const, actorId: "projection" },
-    };
-    const threadSnapshot = {
-      ...envelope,
-      kind: "snapshot" as const,
-      type: "thread.snapshot" as const,
-      payload: {
-        threadId: "thread-conformance",
-        status: "open" as const,
-        revision: 1,
-        sessionIds: [SESSION_ID],
-        runIds: [RUN_ID],
-      },
-    };
-    await readModel.upsertThreadSnapshot(threadSnapshot);
-    expect(
-      await readModel.getThreadSnapshot({
-        ...envelope,
-        kind: "query",
-        type: "thread.get_snapshot",
-        payload: { threadId: "thread-conformance" },
-      }),
-    ).toEqual(threadSnapshot);
-    await expect(
-      readModel.getThreadSnapshot({
-        ...envelope,
-        scope: { ownerId: "owner-other", agentId: AGENT_ID },
-        kind: "query",
-        type: "thread.get_snapshot",
-        payload: { threadId: "thread-conformance" },
-      }),
-    ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
-    await expect(
-      readModel.upsertThreadSnapshot({
-        ...threadSnapshot,
-        payload: { ...threadSnapshot.payload, status: "closed" },
-      }),
-    ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
-    const runSnapshot = {
-      ...envelope,
-      kind: "snapshot" as const,
-      type: "run.snapshot" as const,
-      messageId: "message-run-snapshot",
-      payload: {
-        runId: RUN_ID,
-        threadId: "thread-conformance",
-        sessionId: SESSION_ID,
-        triggerId: "trigger-conformance",
-        status: "running" as const,
-        revision: 1,
-        latestSequence: 0,
-        activeApprovalRequestId: null,
-      },
-    };
-    await readModel.upsertRunSnapshot(runSnapshot);
-    expect(
-      await readModel.getRunSnapshot({
-        ...envelope,
-        kind: "query",
-        type: "run.get_snapshot",
-        payload: { runId: RUN_ID },
-      }),
-    ).toEqual(runSnapshot);
-
-    const event = (cursor: string, sequence: number): StreamEvent => ({
-      ...envelope,
-      kind: "event",
-      type: "stream.event",
-      messageId: `message-${cursor}`,
-      payload: {
-        cursor,
-        sessionId: SESSION_ID,
-        threadId: "thread-conformance",
-        runId: RUN_ID,
-        turnId: null,
-        parentEventId: null,
-        sequence,
-        occurredAt: T0,
-        recordedAt: T0,
-        eventType: "run.changed",
-        payloadRef: null,
-      },
-    });
-    await readModel.appendEvent(event("cursor-01", 1));
-    await readModel.appendEvent(event("cursor-02", 2));
-    expect(
-      await readModel.queryTrace({
-        ...envelope,
-        kind: "query",
-        type: "trace.query",
-        payload: { sessionId: SESSION_ID, runId: RUN_ID, afterSequence: 0, limit: 10 },
-      }),
-    ).toHaveLength(2);
-    await readModel.setRetentionWatermark(2, T1);
-    await expect(
-      (async () => {
-        for await (const _item of readModel.subscribe({
-          ...envelope,
-          kind: "subscription",
-          type: "events.subscribe",
-          payload: {
-            subscriptionId: "subscription-expired",
-            sessionId: null,
-            threadId: null,
-            runId: null,
-            afterCursor: "cursor-01",
-          },
-        })) {
-          // Exhaust the subscription so cursor validation runs.
-        }
-      })(),
-    ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
-    const subscription = {
-      ...envelope,
-      kind: "subscription" as const,
-      type: "events.subscribe" as const,
-      payload: {
-        subscriptionId: "subscription-01",
-        sessionId: SESSION_ID,
-        threadId: null,
-        runId: null,
-        afterCursor: null,
-      },
-    };
-    const retained = [];
-    for await (const item of readModel.subscribe(subscription)) retained.push(item.payload.cursor);
-    expect(retained).toEqual(["cursor-02"]);
-
-    const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
-    database.prepare("UPDATE threads SET status = 'trashed' WHERE id = 'thread-conformance'").run();
-    database.close();
-    await expect(
-      readModel.getThreadSnapshot({
-        ...envelope,
-        kind: "query",
-        type: "thread.get_snapshot",
-        payload: { threadId: "thread-conformance" },
-      }),
-    ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
-    await expect(
-      readModel.getRunSnapshot({
-        ...envelope,
-        kind: "query",
-        type: "run.get_snapshot",
-        payload: { runId: RUN_ID },
-      }),
-    ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
-    expect(
-      await readModel.queryTrace({
-        ...envelope,
-        kind: "query",
-        type: "trace.query",
-        payload: { sessionId: SESSION_ID, runId: RUN_ID, afterSequence: 0, limit: 10 },
-      }),
-    ).toEqual([]);
-    const hidden = [];
-    for await (const item of readModel.subscribe(subscription)) hidden.push(item.payload.cursor);
-    expect(hidden).toEqual([]);
-
-    await resource.repository.close();
-    const reopened = await SqliteProductStateRepository.open({
-      stateRoot: resource.stateRoot,
-      minimumFreeBytes: 0,
-      now: () => T2,
-    });
-    expect((await reopened.gatewayReadModel().metadata()).retentionWatermark).toBe(2);
-    await reopened.close();
-    await rm(resource.stateRoot, { recursive: true });
   });
 });

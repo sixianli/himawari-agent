@@ -1,10 +1,10 @@
-import { ProductionRuntimeTools } from "../src/production-runtime-tools.js";
 import type { RuntimeToolInvocation } from "@himawari-agent/application";
 import { describe, expect, it, vi } from "vitest";
+import { ProductionRuntimeTools } from "../src/production-runtime-tools.js";
 import {
   runtimeToolFixture as fixture,
-  invocation,
   identities,
+  invocation,
   now,
 } from "./runtime-tools.fixture.js";
 
@@ -277,3 +277,145 @@ it.each([true, false, null])(
     );
   },
 );
+
+describe("runtime tool exposure and live authority", () => {
+  it("rejects duplicate exposure references before looking up capabilities", async () => {
+    const f = fixture();
+    const read = vi.spyOn(f.options.capabilities, "getExecutionHandle");
+    await expect(
+      f
+        .tool()
+        .listAuthorized(invocation.runId, [
+          invocation.capabilityHandleRef,
+          invocation.capabilityHandleRef,
+        ]),
+    ).rejects.toThrow("not authorized");
+    expect(read).not.toHaveBeenCalled();
+    expect(f.request).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["ownerId", "other"],
+    ["agentId", "other"],
+    ["runId", "other"],
+    ["revokedAt", now],
+    ["workerEndedAt", now],
+    ["expiresAt", "invalid"],
+    ["issuedAt", "invalid"],
+    ["issuedAt", "2999-01-01T00:00:00.000Z"],
+    ["expiresAt", now],
+    ["authorityFence", 2],
+    ["capabilityVersion", "other"],
+    ["handleVersion", "capability-handle.v1"],
+  ])("withdraws exposure when live handle %s changes", async (key, value) => {
+    const f = fixture();
+    const tool = await exposed(f);
+    const handle = await f.options.capabilities.getExecutionHandle(invocation.capabilityHandleRef);
+    if (!handle) throw new Error("Missing handle fixture");
+    vi.spyOn(f.options.capabilities, "getExecutionHandle").mockResolvedValue({
+      ...handle,
+      [key as string]: value,
+    });
+    expect(await tool.preflight(invocation)).toMatchObject({
+      allowed: false,
+      reasonCode: "GOVERNED_HANDLE_INVALID",
+    });
+    await expect(tool.execute(invocation)).rejects.toThrow("not authorized");
+    expect(f.request).not.toHaveBeenCalled();
+    expect(f.artifacts.size).toBe(0);
+  });
+  it("withdraws exposure when the declaration is missing", async () => {
+    const f = fixture();
+    const tool = await exposed(f);
+    vi.spyOn(f.options.capabilities, "get").mockResolvedValue(undefined);
+    expect(await tool.preflight(invocation)).toMatchObject({ allowed: false });
+    expect(f.request).not.toHaveBeenCalled();
+  });
+  it.each(["invalid", now])(
+    "rejects invalid or elapsed execution deadline %s",
+    async (executionDeadlineAt) => {
+      const f = fixture();
+      const tool = await exposed(f);
+      expect(await tool.preflight({ ...invocation, executionDeadlineAt })).toMatchObject({
+        allowed: false,
+        reasonCode: "GOVERNED_HANDLE_INVALID",
+      });
+      expect(f.request).not.toHaveBeenCalled();
+    },
+  );
+  it.each([{ inputRef: 3 }, { inputRef: "other" }, { inputRef: "input:tools", extra: true }, {}])(
+    "does not broaden input authority %j",
+    async (argumentsValue) => {
+      const f = fixture();
+      const tool = await exposed(f);
+      expect(await tool.preflight({ ...invocation, arguments: argumentsValue })).toMatchObject({
+        allowed: false,
+      });
+      expect(f.request).not.toHaveBeenCalled();
+    },
+  );
+  it("rejects a higher data classification without creating execution artifacts", async () => {
+    const f = fixture();
+    const tool = await exposed(f);
+    await expect(tool.execute({ ...invocation, dataClassification: "restricted" })).rejects.toThrow(
+      "not authorized",
+    );
+    expect(f.request).not.toHaveBeenCalled();
+    expect(f.artifacts.size).toBe(0);
+  });
+  it("does not turn authority storage failures into an ordinary permission refusal", async () => {
+    const f = fixture();
+    const tool = await exposed(f);
+    vi.spyOn(f.options.capabilities, "getExecutionHandle").mockRejectedValue(
+      new Error("storage-unavailable"),
+    );
+    await expect(tool.preflight(invocation)).rejects.toThrow("storage-unavailable");
+    expect(f.request).not.toHaveBeenCalled();
+  });
+  it("hides the built-in file reader when disabled", async () => {
+    const f = fixture();
+    const tool = new ProductionRuntimeTools({ ...f.options, fileReadEnabled: false });
+    expect(await tool.listAuthorized(invocation.runId, [])).toEqual([]);
+    expect(
+      await tool.preflight({
+        ...invocation,
+        capabilityRef: "host.file.read",
+        capabilityHandleRef: null,
+        arguments: { path: "/test" },
+      }),
+    ).toMatchObject({ allowed: false, reasonCode: "FILE_READ_REQUEST_INVALID" });
+    expect(f.request).not.toHaveBeenCalled();
+  });
+  it.each([
+    {},
+    { capabilityHandleRef: "handle:tools" },
+    { capabilityHandleRef: "handle:tools", inputRef: 3 },
+    { capabilityHandleRef: "unexposed", inputRef: "input:tools" },
+    { capabilityHandleRef: "handle:tools", inputRef: "input:tools", extra: true },
+  ])("refuses task launch with malformed or unexposed authority %j", async (argumentsValue) => {
+    const f = fixture();
+    const tool = await exposed(f);
+    const call = {
+      ...invocation,
+      capabilityRef: "execution.task.start",
+      capabilityHandleRef: null,
+      arguments: argumentsValue,
+    };
+    await expect(tool.preflight(call)).rejects.toThrow("not authorized");
+    expect(f.request).not.toHaveBeenCalled();
+    expect(f.artifacts.size).toBe(0);
+  });
+  it("refuses to promote a foreground Handle into a managed task", async () => {
+    const f = fixture();
+    const tool = new ProductionRuntimeTools({ ...f.options, taskHandle: async () => false });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    await expect(
+      tool.preflight({
+        ...invocation,
+        capabilityRef: "execution.task.start",
+        capabilityHandleRef: null,
+        arguments: { capabilityHandleRef: invocation.capabilityHandleRef, inputRef: "input:tools" },
+      }),
+    ).rejects.toThrow("not authorized");
+    expect(f.request).not.toHaveBeenCalled();
+  });
+});

@@ -244,3 +244,121 @@ it("rejects directory inode replacement and changed supervisor identity", async 
   await rm(f.directory, { recursive: true });
   await rename(`${f.directory}-old`, f.directory);
 });
+
+it.each([
+  "supervisorId",
+  "bootId",
+  "epoch",
+  "policyDigest",
+  "privateDirectoryOwnerRef",
+  "privateDirectoryRef",
+])("rejects preparation with changed %s", async (field) => {
+  const f = await fixture();
+  const environment = structuredClone(f.record.facts.environment);
+  const changed = ["supervisorId", "bootId", "epoch"].includes(field)
+    ? {
+        ...environment,
+        supervisor: { ...environment.supervisor, [field]: field === "epoch" ? 2 : "changed" },
+      }
+    : { ...environment, [field]: "changed" };
+  await expect(
+    f.control.verifyPreparation(f.record.plan, { ...f.record.facts, environment: changed }),
+  ).rejects.toThrow("SANDBOX_CONTROL_PREPARATION_CHANGED");
+});
+it.each(["missing", "fingerprint", "environmentId"])(
+  "refuses missing or substituted stored control (%s)",
+  async (field) => {
+    const f = await fixture();
+    if (field === "missing") f.stored.clear();
+    else {
+      const entry = [...f.stored.values()][0];
+      if (!entry) throw new Error("Missing fixture control");
+      (entry.value as Record<string, unknown>)[field] = "changed";
+    }
+    await expect(f.control.verifyPreparation(f.record.plan, f.record.facts)).rejects.toThrow(
+      "SANDBOX_CONTROL_BINDING_UNAVAILABLE",
+    );
+  },
+);
+it.each(["jobId", "attemptId"])("refuses to register another %s", async (field) => {
+  const f = await fixture();
+  await expect(
+    f.control.register(f.record.plan, { ...f.binding, [field]: "another" }),
+  ).rejects.toThrow("SANDBOX_CONTROL_BINDING_CHANGED");
+  expect(f.counts().admissionChecks).toBe(1);
+});
+it.each(["bootId", "processIdentityRef", "policyDigest"])(
+  "refuses changed live process %s",
+  async (field) => {
+    const f = await fixture();
+    f.set({ [field]: field === "policyDigest" ? "b".repeat(64) : "another" });
+    await expect(f.control.observe(f.record)).rejects.toThrow();
+  },
+);
+it.each([
+  "ref",
+  "digest",
+  "fingerprint",
+  "environmentId",
+  "resourceSequence",
+  "bootId",
+  "processIdentityRef",
+])("refuses substituted persisted observation %s", async (field) => {
+  const f = await fixture();
+  f.set({
+    phase: "running",
+    taskStarted: true,
+    resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
+  });
+  const resource = await f.control.observe(f.record);
+  const artifact = [...f.stored.values()].at(-1);
+  if (!artifact) throw new Error("Missing observation");
+  if (field === "ref" || field === "digest") artifact[field] = "changed";
+  else {
+    const value = artifact.value as Record<string, unknown>;
+    if (field === "bootId" || field === "processIdentityRef")
+      (value["observation"] as Record<string, unknown>)[field] = "changed";
+    else value[field] = field === "resourceSequence" ? 999 : "changed";
+  }
+  await expect(f.control.evidence(f.record.plan, { ...f.record.facts, resource })).rejects.toThrow(
+    "SANDBOX_CONTROL_EVIDENCE_CHANGED",
+  );
+});
+it.each(["no-task", "exited", "no-samples", "expired", "supervisor-changed"])(
+  "does not classify incomplete supervision as controlled (%s)",
+  async (reason) => {
+    const f = await fixture();
+    f.set({
+      phase: "running",
+      taskStarted: reason !== "no-task",
+      taskProcessExited: reason === "exited",
+      resources: {
+        samples: reason === "no-samples" ? 0 : 1,
+        observedCpuTimeMs: 1,
+        peakObservedMemoryBytes: 1024,
+      },
+    });
+    const record =
+      reason === "expired"
+        ? {
+            ...f.record,
+            plan: { ...f.record.plan, effectiveDeadlineAt: "2000-01-01T00:00:00.000Z" },
+          }
+        : reason === "supervisor-changed"
+          ? {
+              ...f.record,
+              facts: {
+                ...f.record.facts,
+                environment: {
+                  ...f.record.facts.environment,
+                  supervisor: { ...f.record.facts.environment.supervisor, supervisorId: "changed" },
+                },
+              },
+            }
+          : f.record;
+    const resource = await f.control.observe(record);
+    expect(resource.supervision).toBe("lost");
+    expect(resource.cleanup).toBe("unknown");
+    expect(await f.control.evidence(record.plan, { ...record.facts, resource })).toEqual([]);
+  },
+);

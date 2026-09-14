@@ -243,7 +243,23 @@ export interface RequestThreadDeletionInput {
   readonly authority: ProductAuthorityFence;
 }
 
+export interface ThreadDetailSnapshotQuery {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly afterSequence: number;
+  readonly limit: number;
+}
+
+export interface ThreadDetailSnapshot {
+  readonly thread: ProductThread;
+  readonly messages: readonly ProductThreadMessage[];
+  readonly runs: readonly ThreadRunSummaryRecord[];
+}
+
 export interface ThreadRepositoryPort {
+  /** Read metadata, paged messages and run states from one database snapshot. */
+  readDetailSnapshot(query: ThreadDetailSnapshotQuery): Promise<ThreadDetailSnapshot | undefined>;
   create(
     input: ThreadCreateInput,
   ): Promise<{ thread: ProductThread; receipt: ThreadMutationReceipt }>;

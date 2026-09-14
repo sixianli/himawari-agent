@@ -12,13 +12,15 @@ import type {
   ThreadContextSnapshotQuery,
   ThreadCreateInput,
   ThreadDeletionImpact,
+  ThreadDetailSnapshot,
+  ThreadDetailSnapshotQuery,
   ThreadGatewayEventRecord,
   ThreadListQuery,
   ThreadMutationReceipt,
   ThreadRunSummaryRecord,
   ThreadSearchProjectionInput,
-  ThreadSearchProjectionSourcePort,
   ThreadSearchProjectionSource,
+  ThreadSearchProjectionSourcePort,
   ThreadSearchQuery,
   ThreadTaskBinding,
   ThreadTitleSearchProjectionInput,
@@ -155,6 +157,8 @@ export class SqliteThreadOperations {
 
   execute(operation: string, payload: unknown): unknown {
     switch (operation) {
+      case "thread.readDetailSnapshot":
+        return this.readDetailSnapshot((payload as { query: ThreadDetailSnapshotQuery }).query);
       case "thread.create":
         return this.create((payload as { input: ThreadCreateInput }).input);
       case "thread.read": {
@@ -1339,6 +1343,28 @@ export class SqliteThreadOperations {
       )
       .all(...parameters, query.limit) as ThreadRow[];
     return rows.map((row) => this.fromThreadRow(row));
+  }
+
+  private readDetailSnapshot(query: ThreadDetailSnapshotQuery): ThreadDetailSnapshot | undefined {
+    // The same SQLite read transaction binds watermark, messages and Run states.
+    // A completion cannot appear between separate Worker round trips anymore.
+    return this.database
+      .transaction(() => {
+        const thread = this.read(query.ownerId, query.agentId, query.threadId);
+        if (!thread || thread.status === "deleted_verified") return undefined;
+        return {
+          thread,
+          messages: this.listMessages(
+            query.ownerId,
+            query.agentId,
+            query.threadId,
+            query.afterSequence,
+            query.limit,
+          ),
+          runs: this.listRuns(query.ownerId, query.agentId, query.threadId),
+        };
+      })
+      .deferred();
   }
 
   private listMessages(

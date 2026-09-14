@@ -54,7 +54,7 @@ function fixture() {
     mkdirSync(output, { recursive: true });
     const projects = check.projects.map((id) => ({ id, counts: count() }));
     const total = Math.max(1, projects.length);
-    const platform = check.id === "browser" ? "linux-x64" : member.key;
+    const platform = ["browser", "coverage"].includes(check.id) ? "linux-x64" : member.key;
     const items = check.outputs.map((kind) => {
       const name = check.id === "security" ? "security-report.json" : `report.${kind}`;
       write(

@@ -1,0 +1,49 @@
+--- a/test/tooling/policy.test.mjs
++++ b/test/tooling/policy.test.mjs
+@@ -580,18 +580,22 @@
+   it("keeps result schemas closed", () => {
+     expect(() => validateRecord("Context", { surprise: true })).toThrow();
+   });
+-  it("assigns the repository's current tests without source-text false positives", () => {
+-    const files = execFileSync(
+-      "git",
+-      ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+-      { cwd: repositoryRoot, encoding: "utf8" },
+-    )
+-      .split("\0")
+-      .filter(Boolean);
+-    expect(
+-      validateTestInventory(policy, [...new Set(files)], (file) =>
+-        readFileSync(path.join(repositoryRoot, file), "utf8"),
+-      ).files,
+-    ).toBeGreaterThan(100);
++  const repositoryFiles = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: repositoryRoot, encoding: "utf8" }).split("\0").filter(Boolean);
++  const actualTests = [...new Set(repositoryFiles)].filter((file) => /(?:\.test|\.spec|\.type-test)\.[cm]?[jt]sx?$/u.test(file));
++  it("assigns all baseline tests before independently inspecting each source", () => {
++    expect(validateTestInventory(policy, [...new Set(repositoryFiles)], () => "it('inventory fixture', () => {});").files).toBe(actualTests.length);
++    expect(actualTests.length).toBeGreaterThan(100);
++  });
++  it.each(actualTests)("validates baseline test source: %s", (filename) => {
++    const registration = policy.registeredTests.find((entry) => entry.path === filename);
++    if (registration?.kind === "type-check") return;
++    const inspected = inspectTestSource(readFileSync(path.join(repositoryRoot, filename), "utf8"), filename);
++    expect(inspected.declarations).toBeGreaterThan(0);
++    expect(inspected.emptySuites).toEqual([]);
++    for (const { modifier } of inspected.modifiers) {
++      expect(modifier).not.toBe("only");
++      expect(modifier).not.toBe("<dynamic>");
++      expect(registration?.allowedModifiers).toContain(modifier);
++    }
+   });
+ });
+--- a/test/tooling/artifact.test.mjs
++++ b/test/tooling/artifact.test.mjs
+@@ -139,7 +139,7 @@
+         path.join(payload, "runtime/runtime-manifest.json"),
+         JSON.stringify({ entrypoints: {}, externalDependencyClosure: {} }),
+       );
+-    record.files = (await collectArtifactFiles(payload)).filter(
++    record.files = (await collectArtifactFiles(payload, { normalizeModes: true })).filter(
+       (file) => file.path !== "artifact-record.json",
+     );
+     record.contentSha256 = contentDigest(record.files);

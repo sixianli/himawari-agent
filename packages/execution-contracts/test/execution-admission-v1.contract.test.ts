@@ -107,7 +107,11 @@ describe("execution-admission.v1 contract", () => {
     ];
     for (const message of [handshake, accepted, request, ...responses]) {
       const parsed = executionAdmissionV1MessageSchema.parse(message);
-      expect(JSON.parse(executionAdmissionV1MessageSchema.serialize(parsed))).toEqual(message);
+      expect(
+        executionAdmissionV1MessageSchema.parseJson(
+          executionAdmissionV1MessageSchema.serialize(parsed),
+        ),
+      ).toEqual(message);
     }
   });
 

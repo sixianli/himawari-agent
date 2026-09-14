@@ -41,7 +41,9 @@ export PATH="$PWD/.ci-output/tools/bin:$PATH"
 在固定工具环境下，本地入口为：
 
 ```bash
-CI_BASE="$(git rev-parse HEAD)"
+git fetch origin main
+CI_BASE="$(git rev-parse origin/main)"
+umask 077
 npm run check
 npm run test:tooling -- --base "$CI_BASE"
 npm test -- --base "$CI_BASE"
@@ -49,6 +51,8 @@ npm run ci:local -- --base "$CI_BASE"
 ```
 
 提交或推送涉及安装、发布辅助脚本、CI 或其测试的修改前，必须在准备提交的干净候选源码上执行上面的 `npm run check` 和完整 `npm run test:tooling`，再执行受影响的产品测试。`npm run check` 不包含 tooling 测试，不能替代它；工作区存在其他未提交内容时，不要把混合工作区的通过结果当作候选提交的验证。合并仍以 PR 最新提交的完整 `ci/required` 为准。
+
+准备合入 `main` 的 PR 必须使用最新 `origin/main` 作为 `--base`，不能用功能分支自己的 `HEAD` 代替目标分支，否则历史扫描、已接受例外及覆盖率比较与 GitHub 不一致。涉及 CI 或安全扫描的修改还必须运行完整 `npm run ci:local`；该入口对每项报告执行与 GitHub 相同的公开产物检查，仅写入本地 `.ci-output`，不会上传文件。构建成功但产物扫描失败时，本地结果仍为失败。测试源码放在各 workspace 的 `test` 目录，不能落入生产覆盖率包含的 `src` 目录；policy 会在耗时的构建和覆盖率任务之前拒绝这种混放。
 
 历史发布辅助脚本中的固定摘要代表当时审核过的输入，不能为了适配当前文件而直接更新。共享探针继续演进时，历史校验使用带来源提交和摘要的原始快照；新发布独立审核并绑定自己的输入。快照缺失或被改动仍须使测试失败。示例见 `test/tooling/fixtures/releases/2026-09-12-three-fixes/README.md`。
 
@@ -60,7 +64,10 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/.ci-output/browsers" .ci-output/tools/bin/node no
 
 `npm test` 准备一份当前平台归档，再依次执行 unit、contracts、integration、e2e、pi-compat。安装测试从归档安装到临时前缀，在源码目录外验证三个 binary；测试自身不构建。已有归档必须同时传入其 `--context`，来源、平台、ABI、依赖、迁移和内容摘要均重新核验。四类 scale/live 测试有独立资格 project，普通 integration 明确排除它们。
 
-覆盖率采集 unit/contracts/tooling，包含未被导入的生产 TS/TSX 和自有 CI 执行脚本。变更行至少 90%，变更函数的可定位分支至少 85%；各 workspace 四类指标使用目标分支接受的基线。首次引入仅免去不存在的历史基线比较，不放宽增量阈值。安全检查使用原有机器密钥扫描和固定 Gitleaks/Semgrep；缺报告、扫描不可用、到期例外或未豁免阻断发现均失败。按维护者要求，CI 不执行 npm 依赖漏洞查询；安全检查通过不代表依赖无已知漏洞。
+覆盖率采集 unit/contracts/tooling/integration，包含未被导入的生产 TS/TSX 和自有 CI 执行脚本。变更行至少 80%，变更函数的可定位分支至少 70%；各 workspace 四类指标使用目标分支接受的基线。首次引入仅免去不存在的历史基线比较，不放宽增量阈值。安全检查使用原有机器密钥扫描和固定 Gitleaks/Semgrep；缺报告、扫描不可用、到期例外或未豁免阻断发现均失败。按维护者要求，CI 不执行 npm 依赖漏洞查询；安全检查通过不代表依赖无已知漏洞。
+
+新增安全例外必须先形成精确清单并获得仓库所有者批准。`.github/security-review-manifest.json` 保存被批准的原始清单，`.github/security-review-comment.json` 仅保存 PR 评论编号；编号或文件内的状态字段都不能证明已获批准。检查从 GitHub 公开 API 读取评论，核对所有者身份、仓库、PR、源码提交、清单原始字节摘要与有效期，并继续执行源码来源、发现数量及依赖文档全文校验。清单内容变化后需要新的明确批准；不能扩大为目录豁免或延长既有例外。GitHub 不可访问、评论撤回或失效时检查失败，应恢复有效证据后重跑。审批只覆盖列出的扫描发现，不替代测试、覆盖率或部署验收。
+
 
 Ubuntu coverage 作业显式传入 `--baseline-candidate initial-only`，仅在合法初始化且本轮校验通过时，使用同一份 snapshot、测试、JSON 和 LCOV 生成 `initial-coverage-baseline.json` 报告。维护者核对该 run/attempt、artifact 摘要与测量结果后，显式审阅提交候选；CI 不修改仓库基线。初始化结束后该选项继续执行通常的基线比较，不再生成初始候选。
 

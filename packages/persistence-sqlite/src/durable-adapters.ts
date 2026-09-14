@@ -1,10 +1,10 @@
 import type {
   AttentionStatePort,
-  BuiltInIdentityStatePort,
   AuditLedgerPort,
   AuthorityFence,
   AuthorizationStorePort,
   BackgroundWorkStatePort,
+  BuiltInIdentityStatePort,
   CapabilityExecutionHandleStorePort,
   CapabilityInvocationReceiptPort,
   CapabilityInvocationResultPort,
@@ -743,6 +743,7 @@ export class SqliteDurableAdapters {
 
   threadRepository(): ThreadRepositoryPort {
     return Object.freeze<ThreadRepositoryPort>({
+      readDetailSnapshot: (query) => this.context.read("thread.readDetailSnapshot", { query }),
       create: (input) => this.context.write("thread.create", { input }),
       read: (ownerId, agentId, threadId) =>
         this.context.read("thread.read", { ownerId, agentId, threadId }),

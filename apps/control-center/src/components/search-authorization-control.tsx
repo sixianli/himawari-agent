@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
 import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
-import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gateway-client.js";
+import { useEffect, useRef, useState } from "react";
 import type { ControlCenterBrowserStorage } from "../browser-storage.js";
+import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { commandMessage, queryMessage } from "../messages.js";
 import { ActionButton } from "./primitives.js";
@@ -36,6 +36,7 @@ export function SearchAuthorizationControl({
   > | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(false),
+    [loadError, setLoadError] = useState(false),
     [reload, setReload] = useState(0);
   useEffect(() => {
     let disposed = false;
@@ -45,10 +46,13 @@ export function SearchAuthorizationControl({
       void client
         .query(queryMessage(configuration, "search.authorization.read", {}))
         .then((result) => {
-          if (!disposed && result.type === "search.authorization.snapshot") setSnapshot(result);
+          if (!disposed && result.type === "search.authorization.snapshot") {
+            setSnapshot(result);
+            setLoadError(false);
+          }
         })
         .catch(() => {
-          if (!disposed) setError(true);
+          if (!disposed) setLoadError(true);
         });
     return () => {
       disposed = true;
@@ -123,7 +127,7 @@ export function SearchAuthorizationControl({
         >
           {message(snapshot?.payload.enabled ? "chat.search.revoke" : "chat.search.enable")}
         </ActionButton>
-        {error ? <p role="alert">{message("error.currentUnavailable")}</p> : null}
+        {error || loadError ? <p role="alert">{message("error.currentUnavailable")}</p> : null}
       </div>
     </details>
   );

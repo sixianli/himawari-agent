@@ -20,10 +20,11 @@ import {
   parseProductConfiguration,
 } from "@himawari-agent/platform-node";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createProductionHttpComposition,
   type ProductionHttpCompositionSecretSources,
+  ProductionThreadGatewayAccessPolicy,
 } from "../src/production-http-composition.js";
 
 const ORIGIN = "https://agent.example.test";
@@ -793,4 +794,253 @@ describe("production HTTP composition", () => {
       await repository.close();
     }
   });
+});
+
+describe("production HTTP startup rejection contracts", () => {
+  async function rejectedConfiguration(
+    change: (value: ProductConfiguration) => ProductConfiguration,
+    expected: string,
+    fenceChange?: (value: ProductAuthorityFence) => ProductAuthorityFence,
+  ) {
+    const paths = await fixture();
+    const original = configuration(paths);
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: paths.stateRoot,
+      databasePath: paths.databasePath,
+      minimumFreeBytes: 0,
+      now: () => NOW.toISOString(),
+    });
+    try {
+      await expect(
+        createProductionHttpComposition({
+          configuration: change(original),
+          repository,
+          authority: () => (fenceChange ? fenceChange(authority(original)) : authority(original)),
+          secretSources: secretSources(),
+          now: () => new Date(NOW),
+        }),
+      ).rejects.toMatchObject({ code: expected });
+    } finally {
+      await repository.close();
+    }
+  }
+  it.each([
+    ["listenHost", "0.0.0.0"],
+    ["listenPort", 0],
+    ["listenPort", 65536],
+    ["listenPort", 1.5],
+    ["maximumBodyBytes", 0],
+    ["maximumBodyBytes", 16 * 1024 * 1024 + 1],
+    ["maximumBodyBytes", 1.5],
+    ["maximumStaticAssetBytes", 0],
+    ["maximumStaticAssetBytes", 64 * 1024 * 1024 + 1],
+    ["maximumStaticAssetBytes", 1.5],
+    ["heartbeatMilliseconds", 9],
+    ["heartbeatMilliseconds", 300001],
+    ["heartbeatMilliseconds", 10.5],
+  ])("rejects unsafe listener configuration %s=%s", async (key, value) => {
+    await rejectedConfiguration((c) => {
+      if (!c.http) throw new Error("Missing fixture HTTP configuration");
+      return { ...c, http: { ...c.http, [key as string]: value } };
+    }, "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE");
+  });
+  it.each(["http", "identity"])("requires the %s boundary", async (key) => {
+    await rejectedConfiguration((c) => {
+      const copy = { ...c };
+      delete (copy as Record<string, unknown>)[key];
+      return copy;
+    }, "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE");
+  });
+  it("does not enable external Access identity in local mode", async () => {
+    await rejectedConfiguration(
+      (c) => ({ ...c, publicMode: false }),
+      "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE",
+    );
+  });
+  it.each(["invalid", "http://agent.example.test", "https://agent.example.test/path"])(
+    "rejects an unsafe public origin %s",
+    async (publicOrigin) => {
+      await rejectedConfiguration(
+        (c) => ({ ...c, publicOrigin }),
+        "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE",
+      );
+    },
+  );
+  it.each([
+    ["issuer", "invalid"],
+    ["issuer", "http://team.cloudflareaccess.com"],
+    ["issuer", "https://team.cloudflareaccess.com/path"],
+    ["jwksUrl", "invalid"],
+    ["jwksUrl", "http://team.cloudflareaccess.com/cdn-cgi/access/certs"],
+    ["jwksUrl", "https://person@team.cloudflareaccess.com/cdn-cgi/access/certs"],
+    ["jwksUrl", "https://:fixture@team.cloudflareaccess.com/cdn-cgi/access/certs"],
+    ["jwksUrl", `${JWKS_URL}?redirect=1`],
+    ["jwksUrl", `${JWKS_URL}#fragment`],
+    ["jwksUrl", "https://elsewhere.example.test/cdn-cgi/access/certs"],
+  ])("rejects identity discovery escape %s=%s", async (key, value) => {
+    await rejectedConfiguration((c) => {
+      if (!c.identity) throw new Error("Missing fixture identity configuration");
+      return { ...c, identity: { ...c.identity, [key]: value } };
+    }, "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE");
+  });
+  it.each(["relative", "/tmp/../tmp/browser", "/tmp/himawari-nonexistent-contract-root"])(
+    "requires a real normalized browser artifact %s",
+    async (staticRoot) => {
+      await rejectedConfiguration((c) => {
+        if (!c.http) throw new Error("Missing fixture HTTP configuration");
+        return { ...c, http: { ...c.http, staticRoot } };
+      }, "PRODUCTION_HTTP_STATIC_ROOT_INVALID");
+    },
+  );
+  it.each([
+    ["deploymentId", "deployment-other"],
+    ["authorityEpoch", 0],
+    ["authorityEpoch", 1.5],
+    ["fencingToken", 0],
+    ["fencingToken", 1.5],
+  ])("rejects an invalid active authority %s=%s", async (key, value) => {
+    await rejectedConfiguration(
+      (c) => c,
+      "PRODUCTION_HTTP_AUTHORITY_INVALID",
+      (fence) => ({ ...fence, [key as string]: value }),
+    );
+  });
+  it.each(["payload-encryption", "identity-csrf"])(
+    "requires exactly one correctly bound %s secret reference",
+    async (purpose) => {
+      await rejectedConfiguration(
+        (c) => ({
+          ...c,
+          secretReferences: c.secretReferences.filter((ref) => ref.purpose !== purpose),
+        }),
+        "PRODUCTION_HTTP_SECRET_REFERENCE_INVALID",
+      );
+      await rejectedConfiguration(
+        (c) => ({
+          ...c,
+          secretReferences: [
+            ...c.secretReferences,
+            ...c.secretReferences.filter((ref) => ref.purpose === purpose),
+          ],
+        }),
+        "PRODUCTION_HTTP_SECRET_REFERENCE_INVALID",
+      );
+    },
+  );
+});
+
+describe("production Thread access scope", () => {
+  function accessFixture() {
+    const session = { id: "session", status: "active", ownerId: OWNER_ID, deviceId: "device" };
+    const findSessionByAuthenticationRef = vi.fn(
+      async (): Promise<typeof session | undefined> => session,
+    );
+    const policy = new ProductionThreadGatewayAccessPolicy({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      sessions: { findSessionByAuthenticationRef },
+    } as unknown as ConstructorParameters<typeof ProductionThreadGatewayAccessPolicy>[0]);
+    const authentication = {
+      ownerId: OWNER_ID,
+      subjectId: OWNER_ID,
+      deviceId: "device",
+      authenticationRef: "authentication",
+      authenticatedAt: NOW.toISOString(),
+    };
+    const message = {
+      ...envelope("query", "thread.list"),
+      payload: { statuses: ["active"], pinnedOnly: false, afterCursor: null, limit: 10 },
+    } as Parameters<typeof policy.authorize>[0]["message"];
+    return { policy, session, findSessionByAuthenticationRef, input: { authentication, message } };
+  }
+  it("requires the active session on every authorized read", async () => {
+    const f = accessFixture();
+    expect(await f.policy.authorize(f.input)).toEqual({
+      allowed: true,
+      reasonCode: "OWNER_SESSION_AUTHORIZED",
+    });
+    expect(f.findSessionByAuthenticationRef).toHaveBeenCalledExactlyOnceWith("authentication");
+    f.session.status = "revoked";
+    expect(await f.policy.authorize(f.input)).toEqual({
+      allowed: false,
+      reasonCode: "SESSION_INACTIVE",
+    });
+  });
+  it.each(["message-owner", "message-agent", "authentication-owner", "actor"])(
+    "rejects %s mismatch before session lookup",
+    async (field) => {
+      const f = accessFixture();
+      if (field === "message-owner")
+        f.input.message = {
+          ...f.input.message,
+          scope: { ...f.input.message.scope, ownerId: "other" },
+        };
+      else if (field === "message-agent")
+        f.input.message = {
+          ...f.input.message,
+          scope: { ...f.input.message.scope, agentId: "other" },
+        };
+      else if (field === "authentication-owner") f.input.authentication.ownerId = "other";
+      else
+        f.input.message = {
+          ...f.input.message,
+          actor: { actorType: "owner" as const, actorId: "other" },
+        };
+      expect(await f.policy.authorize(f.input)).toEqual({
+        allowed: false,
+        reasonCode: "THREAD_SCOPE_MISMATCH",
+      });
+      expect(f.findSessionByAuthenticationRef).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["ownerId", "deviceId", "status"])("rejects session %s substitution", async (field) => {
+    const f = accessFixture();
+    Object.assign(f.session, { [field]: "other" });
+    expect(await f.policy.authorize(f.input)).toEqual({
+      allowed: false,
+      reasonCode: "SESSION_INACTIVE",
+    });
+  });
+  it("rejects an unbound session and a subject that is not the owner", async () => {
+    const f = accessFixture();
+    f.findSessionByAuthenticationRef.mockResolvedValueOnce(undefined);
+    expect(await f.policy.authorize(f.input)).toEqual({
+      allowed: false,
+      reasonCode: "SESSION_INACTIVE",
+    });
+    f.input.authentication.subjectId = "external-subject";
+    f.input.message = {
+      ...f.input.message,
+      actor: { actorType: "owner" as const, actorId: "external-subject" },
+    };
+    expect(await f.policy.authorize(f.input)).toEqual({
+      allowed: false,
+      reasonCode: "SESSION_INACTIVE",
+    });
+  });
+  it.each(["thread.message.submit", "thread.message.submit_configured"])(
+    "binds %s to the current browser session",
+    async (type) => {
+      const f = accessFixture();
+      const message = {
+        ...f.input.message,
+        kind: "command",
+        type,
+        payload: { sessionId: "other" },
+      } as Parameters<typeof f.policy.authorize>[0]["message"];
+      expect(await f.policy.authorize({ ...f.input, message })).toEqual({
+        allowed: false,
+        reasonCode: "SESSION_SCOPE_MISMATCH",
+      });
+      expect(
+        await f.policy.authorize({
+          ...f.input,
+          message: {
+            ...message,
+            payload: { ...message.payload, sessionId: "session" },
+          } as typeof message,
+        }),
+      ).toEqual({ allowed: true, reasonCode: "OWNER_SESSION_AUTHORIZED" });
+    },
+  );
 });

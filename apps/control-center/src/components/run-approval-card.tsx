@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
 import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
-import { executionItems } from "../execution-view.js";
+import { useEffect, useState } from "react";
 import type { ControlCenterBrowserStorage } from "../browser-storage.js";
+import { executionItems } from "../execution-view.js";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { queryMessage } from "../messages.js";
-import { findPendingRunApproval, respondToRunApproval, type RunApproval } from "../run-approval.js";
+import { findPendingRunApproval, type RunApproval, respondToRunApproval } from "../run-approval.js";
 import { ActionButton } from "./primitives.js";
 
 export function RunApprovalCard({
@@ -33,6 +33,7 @@ export function RunApprovalCard({
 }) {
   const [snapshot, setSnapshot] = useState<RunApproval | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   useEffect(() => {
@@ -49,17 +50,19 @@ export function RunApprovalCard({
             )
           : null;
         if (disposed) return;
+        setLoadError(null);
         if (
           detail?.type === "approval.snapshot" &&
           detail.payload.intent.runId === runId &&
           detail.payload.status === "pending"
         ) {
           setSnapshot(detail);
-          setError(null);
         } else setSnapshot(null);
       } catch (caught) {
         if (!disposed)
-          setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
+          setLoadError(
+            caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED",
+          );
       }
     })();
     return () => {
@@ -85,7 +88,14 @@ export function RunApprovalCard({
     } catch (caught) {
       if (caught && typeof caught === "object" && "status" in caught && caught.status === 401)
         onUnauthorized();
-      setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
+      setError(
+        caught instanceof Error &&
+          caught.message === "CONTROL_CENTER_RECENT_AUTHENTICATION_REQUIRED"
+          ? message("governance.blocker.recentAuthentication")
+          : caught instanceof Error
+            ? caught.message
+            : "CONTROL_CENTER_REQUEST_REJECTED",
+      );
     } finally {
       setBusy(false);
       setReload((value) => value + 1);
@@ -152,7 +162,11 @@ export function RunApprovalCard({
       ) : (
         <p>{message("state.loading")}</p>
       )}
-      {error ? <p role="alert">{error}</p> : null}
+      {error || loadError ? (
+        <p role="alert" style={{ overflowWrap: "anywhere" }}>
+          {error ?? loadError}
+        </p>
+      ) : null}
     </section>
   );
 }

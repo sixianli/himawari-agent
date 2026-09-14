@@ -1,17 +1,18 @@
 import {
-  ContractValidationError,
-  THREAD_GATEWAY_SCHEMA_VERSION,
   archiveThreadV3CommandSchema,
+  ContractValidationError,
   deleteThreadPermanentlyV3CommandSchema,
   forkThreadV3CommandSchema,
   resolveThreadTaskV3CommandSchema,
   searchThreadsV3QuerySchema,
   setThreadAnswerLocaleV3CommandSchema,
   submitThreadMessageV3CommandSchema,
+  THREAD_GATEWAY_SCHEMA_VERSION,
   threadCollectionSnapshotV3Schema,
+  threadConflictV3Schema,
   threadDetailSnapshotV3Schema,
   threadEventsV3SubscriptionSchema,
-  threadConflictV3Schema,
+  threadExecutionRecordSchema,
 } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
 
@@ -281,4 +282,35 @@ describe("Thread Gateway v3 contracts", () => {
     };
     expect(() => setThreadAnswerLocaleV3CommandSchema.parse(base)).toThrow(ContractValidationError);
   });
+});
+
+describe("displayable execution records", () => {
+  const record = {
+    id: "record",
+    sequence: 1,
+    itemId: "item",
+    kind: "tool",
+    phase: "started",
+    name: "read",
+    text: "",
+    input: "fixture input",
+    output: "",
+    occurredAt: "2026-09-14T00:00:00.000Z",
+  };
+  it("preserves empty and bounded display content without treating it as a machine identifier", () => {
+    expect(threadExecutionRecordSchema.parse(record)).toEqual(record);
+    expect(
+      threadExecutionRecordSchema.parse({
+        ...record,
+        input: "a".repeat(65536),
+        output: "line one\nline two",
+      }).output,
+    ).toBe("line one\nline two");
+  });
+  it.each([null, 42, "a".repeat(65537)])(
+    "rejects non-text or oversized execution input",
+    (input) => {
+      expect(() => threadExecutionRecordSchema.parse({ ...record, input })).toThrow("$.input");
+    },
+  );
 });

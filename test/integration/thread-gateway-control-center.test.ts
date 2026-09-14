@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   AgentThreadGatewayService,
+  type GatewayAuthenticationContext,
   ProductThreadGatewayAdapter,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   ThreadForkService,
   ThreadQueryService,
-  type GatewayAuthenticationContext,
 } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -23,10 +23,10 @@ import {
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import {
-  SqliteProductStateRepository,
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { ManualClock } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
@@ -433,4 +433,181 @@ it("rejects uninstalled model selection and cancellation outside the selected Th
   } finally {
     await repository.close();
   }
+});
+
+describe("Thread Gateway lifecycle and empty projections", () => {
+  it("keeps rename, locale and archive changes visible through authoritative snapshots", async () => {
+    const paths = await seedState();
+    const clock = new ManualClock("2026-08-28T00:00:00.000Z");
+    const repository = await SqliteProductStateRepository.open({
+      ...paths,
+      minimumFreeBytes: 0,
+      now: () => clock.now(),
+    });
+    try {
+      const gateway = adapter(repository, clock);
+      let sequence = 0;
+      const send = (type: ThreadGatewayCommand["type"], payload: unknown) => {
+        const id = `lifecycle-${++sequence}`;
+        const value = threadGatewayMessageSchema.parse({
+          ...envelope("command", type),
+          messageId: id,
+          idempotencyKey: id,
+          payload,
+        });
+        if (value.kind !== "command") throw new Error("Expected command");
+        return gateway.execute({ authentication, command: value });
+      };
+      const read = (type: ThreadGatewayQuery["type"], payload: unknown) => {
+        const value = threadGatewayMessageSchema.parse({ ...envelope("query", type), payload });
+        if (value.kind !== "query") throw new Error("Expected query");
+        return gateway.query({ authentication, query: value });
+      };
+      const threadId = "thread-lifecycle";
+      await send("thread.create", { threadId, answerLocale: "zh-CN", resultRef: "payload:create" });
+      await send("thread.rename", {
+        threadId,
+        expectedRevision: 1,
+        titleRef: "payload:pin",
+        titleSource: "owner",
+        resultRef: "payload:pin",
+      });
+      await send("thread.set_answer_locale", {
+        threadId,
+        expectedRevision: 2,
+        answerLocale: "ja",
+        resultRef: "payload:pin",
+      });
+      expect(await read("thread.detail", { threadId, afterSequence: 0, limit: 10 })).toMatchObject({
+        payload: {
+          thread: {
+            revision: 3,
+            titleRef: "payload:pin",
+            titleSource: "owner",
+            answerLocale: "ja",
+          },
+        },
+      });
+      await send("thread.archive", {
+        threadId,
+        expectedRevision: 3,
+        reasonCode: "owner_requested",
+        resultRef: "payload:pin",
+      });
+      expect(
+        await read("thread.list", {
+          statuses: ["active"],
+          pinnedOnly: false,
+          afterCursor: null,
+          limit: 1,
+        }),
+      ).toMatchObject({ payload: { threads: [], nextCursor: null } });
+      expect(
+        await read("thread.list", {
+          statuses: ["archived"],
+          pinnedOnly: false,
+          afterCursor: null,
+          limit: 1,
+        }),
+      ).toMatchObject({
+        payload: { threads: [{ threadId, status: "archived" }], nextCursor: threadId },
+      });
+      expect(
+        await read("thread.list", {
+          statuses: ["archived"],
+          pinnedOnly: false,
+          afterCursor: threadId,
+          limit: 1,
+        }),
+      ).toMatchObject({ payload: { threads: [], nextCursor: null } });
+      await send("thread.restore", {
+        threadId,
+        expectedRevision: 4,
+        reasonCode: "owner_requested",
+        resultRef: "payload:pin",
+      });
+      expect(await read("thread.lineage", { threadId })).toMatchObject({
+        payload: {
+          threadId,
+          sourceThreadId: null,
+          sourceTurnId: null,
+          sourceWatermark: null,
+          summaryRefs: [],
+          policyRefs: [],
+          sourceContentAvailable: false,
+          forkedAt: null,
+        },
+      });
+      expect(await read("thread.checkpoint", { threadId, sourceWatermark: null })).toMatchObject({
+        payload: {
+          threadId,
+          jobId: null,
+          generationId: null,
+          sourceWatermark: null,
+          policyVersion: null,
+          modelDescriptorRef: null,
+          trigger: null,
+          summaryRef: null,
+          status: null,
+          revision: null,
+          attemptCount: null,
+          nextRetryAt: null,
+          errorCode: null,
+        },
+      });
+      expect(
+        await read("thread.search", {
+          queryRef: "query-no-match",
+          tokenRefs: ["token-no-match"],
+          projectionVersion: "projection-v1",
+          statuses: ["active"],
+          jobStatuses: [],
+          updatedAfter: null,
+          updatedBefore: null,
+          afterCursor: null,
+          limit: 1,
+        }),
+      ).toMatchObject({ payload: { threads: [], nextCursor: null, degraded: false } });
+      await expect(
+        read("thread.execution", { threadId, runId: "missing-run", afterSequence: 0, limit: 10 }),
+      ).rejects.toThrow("THREAD_EXECUTION_NOT_INSTALLED");
+      await expect(
+        send("thread.run.cancel", {
+          threadId,
+          runId: "missing-run",
+          expectedRunRevision: 1,
+          resultRef: "payload:pin",
+        }),
+      ).rejects.toThrow("THREAD_RUN_NOT_FOUND");
+      const controller = new AbortController();
+      controller.abort();
+      const iterator = gateway
+        .subscribe({ authentication, subscription: subscription(null), signal: controller.signal })
+        [Symbol.asyncIterator]();
+      expect(await iterator.next()).toMatchObject({ done: true });
+      // Read persisted state through a fresh repository, independently of command acknowledgements.
+      await repository.close();
+      const reopened = await SqliteProductStateRepository.open({
+        ...paths,
+        minimumFreeBytes: 0,
+        now: () => clock.now(),
+      });
+      try {
+        expect(
+          await adapter(reopened, clock).query({
+            authentication,
+            query: query("thread.detail", { threadId, afterSequence: 0, limit: 10 }),
+          }),
+        ).toMatchObject({
+          payload: {
+            thread: { revision: 5, status: "active", answerLocale: "ja", titleSource: "owner" },
+          },
+        });
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      await repository.close();
+    }
+  });
 });
