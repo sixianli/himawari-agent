@@ -19,13 +19,13 @@
     "changedFunctionBranches": 70
   },
   "baseline": {
-    "sourceSha": "e2a792f855f82e74519daa9d4bea928370c76c50",
-    "sourceState": "working-tree",
+    "sourceSha": "5daedc92ff1dddda3917f8e956b9439cb239caef",
+    "sourceState": "commit",
     "sourceTreeSha256": "a78a1d7466ccd45b17d992a7b6e7e4b3c46059cf68e2e77ee8a0119517fb68d4",
-    "reportSha256": "6a9afd87fdbee03e444d5b8a6b9fe12111cabb087906b2523e49a69fac2f6de3",
-    "lcovSha256": "5aecc5ddeee1084e3590b58519380cd207d2dbb06374a10ea5c9ddd87a12d621",
+    "reportSha256": "e35fd0f7f33b9c4220f7faf0f6f82a9fc5abe230cd5eff23ffb5e811a51b4cbf",
+    "lcovSha256": "e8ecb0bb3342ab66576114a0855393aba94943a92068611d9045d083f406527b",
     "strategySha256": "757503bf4cf95dd131bbce2495578d7483931325d87f3b17db6721c346bddc3b",
-    "measuredAt": "2026-09-14T17:37:30.136Z",
+    "measuredAt": "2026-09-14T18:02:56.305Z",
     "groups": {
       "apps/admin-cli": {
         "lines": {
