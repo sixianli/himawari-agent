@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:beb8026c8531ad75b215fcc690a4421d19a15598dc6c1ecdd3b9c4498341f9a8"
+contract_sha256: "sha256:b009c199e15692e6fb72d3e6d3bc945aaa62c0f3d32b3b72cb24652468aa0700"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -96,6 +96,8 @@ Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-q
 新建证据运行 ID 后，将白名单源码清单、SHA-256、秘密扫描结果和真实命令结果写入本次证据目录。工具链使用固定 Node 22.22.3/npm 11.8.0，依赖闭包来自精确 lockfile。构建、开发依赖、临时探针和数据库放在 `/data`。用户授权 NVMe 迁移时，仅完整安装前缀中的程序、运行依赖和静态页面复制到 `/opt/himawari/releases/<版本>`；先核对根盘确为 NVMe、剩余空间至少 10 GiB 且复制后仍保留该余量。数据库、附件、日志、备份与构建缓存继续位于 `/data`。
 
 ## Procedure
+
+执行过程与自动标题版本（源码提交 `3b21555`）沿用 schema 32 的安装切换流程。发布输入必须来自该提交的独立源码归档，不能混入主工作区未提交的品牌、语言或文档修改。候选目录为 `/opt/himawari/releases/2026-09-14-web-3b21555`，独立构建和资格目录分别为 `builds/2026-09-14-web-3b21555`、`qualifications/2026-09-14-web-3b21555-installation`。六组资格探针重新执行并签署本次实际运行时；资格入口和切换入口分别绑定源码、辅助脚本、产物与回执摘要。当前服务已经通过 `BindReadOnlyPaths` 绑定 NVMe 安装，切换时只替换这一条已核实的绑定及对应启动器，保留旧 NVMe 安装用于恢复，不使用最初迁盘时要求“没有旧绑定”的脚本条件。无 schema 迁移与历史重导，模型路由、记忆检索和身份设置保持原配置；新无标题对话的标题请求使用当前模型与原费用账本。发布后检验生产 HTTP 就绪和静态资源，使用明确标记的合成验收对话验证回答、自动标题和刷新持久化；历史对话批量补名不包含在本次发布中。
 
 NVMe 迁移保持已签名能力的规范运行路径不变：在服务私有挂载视图中，用 `BindReadOnlyPaths=/opt/himawari/releases/<版本>:/data/hermes/himawari/releases/2026-09-11-control-center` 将固态盘的受保护安装挂到原路径。宿主上的旧机械盘安装保留，作为切换前回退源；服务实际读取的设备必须通过其挂载命名空间内的 `findmnt`、`stat` 和 `/proc/<PID>/exe` 独立核对，不能只看路径名。新版本的资格探针必须采用完全相同的只读绑定视图，并重新签署实际运行时摘要。切换脚本只替换保护记录、启动入口和绑定配置，不重命名或覆盖旧机械盘安装；后续升级必须检查现有 `BindReadOnlyPaths`，不能继续套用只替换宿主旧目录的脚本。
 
