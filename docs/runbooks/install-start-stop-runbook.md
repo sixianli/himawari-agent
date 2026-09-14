@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a13f03b8ba594729d1d6359db15f47aa9bdb527417e39644411a57b7c03658e3"
+contract_sha256: "sha256:befd28cc725f775320aac71d389fc81c3106430c4b11b549d1186856726f7f98"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,10 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/production-thread-titles.ts
+- apps/agent-service/src/production-model-composition.ts
+- apps/agent-service/src/production-run-composition.ts
+- packages/application/src/services/thread-execution-projection.ts
 - packages/persistence-sqlite/src/migrations/0032_runtime_history.sql
 - packages/application/src/services/runtime-history-service.ts
 - packages/runtime-pi/src/pi-native-history.ts
@@ -259,6 +263,10 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 10. 完成验证后保存脱敏命令输出、artifact identity、进程退出码、socket/lock 回读和 rollback 状态；临时 prefix、临时 state root 与证据目录按本次授权的保留策略清理。
 
 ## Verification
+
+自动标题由正式模型组合注入 Run 组合：首次 Assistant 消息触发对活跃且无标题对话的检查，使用该 Run 的模型引用和首条用户消息的分类，沿用 Pi transport、披露检查与费用准入。正文可先显示，Run 结束前等待本地标题调用准入；标题响应异步完成，成功后写入受保护 Payload 并发布 Thread 改名事件。已有标题、手动改名和归档状态优先，失败只记录 `thread-title.failed`，不把标题失败改记为正文失败。停机时先停止 Run 循环，再等待标题请求结束；单次标题模型请求最多 20 秒或配置的更短期限，不能仅以正文完成判断所有模型请求已结算。
+
+安装验收使用合成对话检查自动标题、刷新持久化和费用记录，再核对执行过程的模型请求、工具参数、执行与结果关联。记忆与上下文阶段仅展示发生记录，不公开原始正文；沿用 Thread 游标，不另设重连位置。以上变化不新增数据库 schema、配置字段或历史批量补名步骤，记忆检索不因生成标题而跳过。真实模型验收须使用本次获准的原模型和费用范围；隔离测试通过不等同于真实模型或迁移验收通过。
 
 启用沙箱能力的 Agent 必须在本进程完成首次安装校验后才进入 ready，不能以 Worker 已就绪代替。受保护程序摘要可在安装及文件身份未变化时复用，安装外的程序仍逐次校验；这不改变本手册的数据格式、权威转移或停机步骤。恢复到另一安装或主机时，原进程缓存不适用，必须重新验证实际安装。Hermes 的 NVMe 私有只读挂载及设备回读另见 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]。
 

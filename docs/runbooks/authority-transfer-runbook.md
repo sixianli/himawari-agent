@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:9329e0827ac2e5d21233d06bbd72f4e82c00f8f48ec9c616868137467778cd4b"
+contract_sha256: "sha256:78971aaddf18f24a62893399de14299be0271fb6fc77228612f2e0ff1ef14b63"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,10 @@ date: "2026-08-27"
 # 停机加密 Authority Transfer Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/production-thread-titles.ts
+- apps/agent-service/src/production-model-composition.ts
+- apps/agent-service/src/production-run-composition.ts
+- packages/application/src/services/thread-execution-projection.ts
 - packages/persistence-sqlite/src/migrations/0032_runtime_history.sql
 - packages/application/src/services/runtime-history-service.ts
 - packages/runtime-pi/src/pi-native-history.ts
@@ -194,6 +198,10 @@ himawari transfer abandon --config <absolute-target-config-path> --secret-dir <a
 恢复目标 Agent 在开放准入前使用当前权威处理 v2 未释放观察：旧监督标为 lost/unknown，保留原结果、效果和占用，不复用源 Worker 的 boot 凭证或按旧 PID 接管。已确认清理但效果未决的记录保持其原清理事实及未决义务。此逻辑恢复不能作为源主机残留进程已终止的证据，源风险仍按本 Runbook 的停止条件处理。
 
 ## Verification
+
+自动标题沿用既有 Thread、受保护 Payload 和模型费用账本，不新增 schema。迁移须共同保留 `threads.title_ref`、标题来源与 revision、标题 Payload，以及 `thread-title:<runId>` 对应的调用身份和费用状态；目标不能因标题缺失清除 started/unknown 记录或重放源请求。正常停机先停止 Run 循环，再等待已发起的标题请求结束；标题请求最多等待 20 秒，仍受配置的更短期限约束。强制中断后的进程内标题队列不属于迁移数据，目标以已提交状态为准。已有标题和手动改名优先，不在 import/activate 时批量请求模型。
+
+执行过程继续由原 Trace/Payload 和 Thread 游标投影。记忆检索、筛选及上下文形成只展示阶段发生，不暴露记忆正文和完整模型上下文；模型发出的工具请求与执行、结果按调用 ID 关联。目标回读这些阶段、参数和结果即可验证历史展示，不以重新调用工具作为迁移验收手段。
 
 启用沙箱能力的 Agent 必须在本进程完成首次安装校验后才进入 ready，不能以 Worker 已就绪代替。受保护程序摘要可在安装及文件身份未变化时复用，安装外的程序仍逐次校验；这不改变本手册的数据格式、权威转移或停机步骤。恢复到另一安装或主机时，原进程缓存不适用，必须重新验证实际安装。Hermes 的 NVMe 私有只读挂载及设备回读另见 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]。
 

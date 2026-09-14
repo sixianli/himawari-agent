@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:2240ead36cb21922036ff25410cf433061006458e42dc059f978d60933f0dadf"
+contract_sha256: "sha256:d321b9a85439daa93e857a58cdfac552705dba257f15161c297f3b88535b6afe"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,11 @@ date: "2026-08-27"
 # 同机备份与恢复 Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/production-thread-titles.ts
+- apps/agent-service/src/production-model-composition.ts
+- apps/agent-service/src/production-run-composition.ts
+- apps/agent-service/src/service-main.ts
+- packages/application/src/services/thread-execution-projection.ts
 - packages/persistence-sqlite/src/migrations/0032_runtime_history.sql
 - packages/application/src/services/runtime-history-service.ts
 - packages/runtime-pi/src/pi-native-history.ts
@@ -154,6 +159,10 @@ himawari backup restore --config <absolute-config-path> --secret-dir <absolute-s
 7. 按本次已验证的服务启动程序重新启动 Worker 与 Agent Service；重新运行 `db status`、`doctor` 和业务只读查询。未完成对应 install/start/stop Runbook 前，不在此处猜测 launchd/systemd 命令。
 
 ## Verification
+
+自动标题沿用既有 Thread 与 Payload 存储，不新增 schema。恢复点须共同保留 `threads.title_ref`、标题来源与 revision、受保护标题 Payload，以及 `thread-title:<runId>` 对应的模型调用身份和费用记录；不能只恢复聊天正文或清除 started/unknown 记录来重新计费。已有自动标题和用户手动标题均保持原值，恢复动作本身不请求模型补名。正常停机先停止 Run 循环，再等待已发起的标题请求结束；强制中断后的记录以数据库实际状态为准，不能把进程内队列视为可恢复任务。标题模型请求最多等待 20 秒，仍受当前配置的更短期限约束；不要因正文已完成就直接杀掉服务。
+
+执行过程使用现有 Thread 事件游标，新增记忆检索、筛选和上下文阶段的发生记录；这些阶段不向页面公开记忆正文或完整模型上下文。工具请求从模型消息中的调用 ID、名称和参数派生，并与同 ID 的执行及结果关联。恢复后核对阶段、工具参数和结果投影仍可读取，不另建第二套历史或重新执行工具以补齐展示。
 
 启用沙箱能力的 Agent 必须在本进程完成首次安装校验后才进入 ready，不能以 Worker 已就绪代替。受保护程序摘要可在安装及文件身份未变化时复用，安装外的程序仍逐次校验；这不改变本手册的数据格式、权威转移或停机步骤。恢复到另一安装或主机时，原进程缓存不适用，必须重新验证实际安装。Hermes 的 NVMe 私有只读挂载及设备回读另见 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]。
 
