@@ -1,5 +1,7 @@
 import {
   type ClockPort,
+  type RuntimeRequest,
+  type ModelInvocationAdmissionPort,
   ContextFormationService,
   ContextProjectionService,
   type IdGeneratorPort,
@@ -26,9 +28,16 @@ import {
   type ProductionRunDispatchLoopFailure,
 } from "./production-run-dispatch-loop.js";
 import { ProductionRunDispatcher } from "./production-run-dispatcher.js";
+import { ProductionThreadTitles } from "./production-thread-titles.js";
 import { createProductionRunReconciler } from "./production-run-reconciler.js";
 
 export interface ProductionRunCompositionOptions {
+  readonly generateTitle?: (
+    request: RuntimeRequest,
+    prompt: string,
+    admission: ModelInvocationAdmissionPort,
+  ) => Promise<string>;
+  readonly onTitleFailure?: (error: unknown) => void;
   readonly resources?: {
     stopRun(
       runId: Parameters<RunCoordinator["cancel"]>[0]["runId"],
@@ -151,13 +160,69 @@ export function createProductionRunComposition(options: ProductionRunComposition
     // of settled or uncertain physical streams after process restart.
     logicalSlot: (_request, ordinal) => `agent-stream:${ordinal}`,
   });
+  const titles = options.generateTitle
+    ? new ProductionThreadTitles({
+        threads: repository.threadRepository(),
+        payloads,
+        protector,
+        clock,
+        authority: () => authority.authorityFence(),
+        assertActive: () => authority.assertActive(),
+        generate: async (request, prompt, onAdmitted) => {
+          const gate = await admission(request);
+          if (!gate || !options.generateTitle)
+            throw new Error("THREAD_TITLE_ADMISSION_UNAVAILABLE");
+          return options.generateTitle(request, prompt, {
+            context: gate.context,
+            begin: async (input) => {
+              const result = await gate.begin(input);
+              if (result.disposition !== "fresh") return result;
+              const { permit } = result;
+              return {
+                ...result,
+                permit: {
+                  assertActive: () => permit.assertActive(),
+                  releaseReserved: () => permit.releaseReserved(),
+                  settle: (usage) => permit.settle(usage),
+                  markUnknown: (reason) => permit.markUnknown(reason),
+                  markStarted: async () => {
+                    await permit.markStarted();
+                    onAdmitted();
+                  },
+                },
+              };
+            },
+          });
+        },
+        onFailure: (error) => options.onTitleFailure?.(error),
+      })
+    : undefined;
+  const titledRuntime = {
+    cancel: (runId: Parameters<typeof runtime.cancel>[0]) => runtime.cancel(runId),
+    async *run(request: RuntimeRequest) {
+      let requested = false;
+      let titleAdmission: Promise<void> | undefined;
+      for await (const event of runtime.run(request)) {
+        if (!requested && event.type === "runtime.message" && event.role === "assistant") {
+          requested = true;
+          titleAdmission = titles?.start(request);
+        }
+        // The coordinator stops consuming at these events and then releases the Run lease.
+        if (
+          ["runtime.completed", "runtime.suspended", "runtime.result_unknown"].includes(event.type)
+        )
+          await titleAdmission;
+        yield event;
+      }
+    },
+  };
   const coordinator = new RunCoordinator({
     ...(options.resources ? { resources: options.resources } : {}),
     clock,
     runs: repository.runLifecycle(ownerId, agentId, fence),
     checkpoints,
     context,
-    runtime,
+    runtime: titledRuntime,
     ...(options.workers ? { workers: options.workers } : {}),
     trace,
   });
@@ -194,5 +259,14 @@ export function createProductionRunComposition(options: ProductionRunComposition
     fallbackScanIntervalMs: 1000,
     onFailure: options.onFailure,
   });
-  return Object.freeze({ input, admission, projection, runtime, coordinator, dispatcher, loop });
+  return Object.freeze({
+    input,
+    admission,
+    projection,
+    runtime,
+    coordinator,
+    dispatcher,
+    loop,
+    titles,
+  });
 }

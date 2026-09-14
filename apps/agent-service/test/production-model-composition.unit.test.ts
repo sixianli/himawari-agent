@@ -731,3 +731,113 @@ it("accepts the production embedding descriptor in the real invocation registry"
       }),
   ).not.toThrow();
 });
+
+it.each([false, true])(
+  "generates a title through the selected Pi transport (required reasoning: %s)",
+  async (reasoningRequired) => {
+    const adapters = createReferenceAdapterSet();
+    const streamOptions: Record<string, unknown>[] = [];
+    class TitleRuntime extends RecordingRuntime {
+      override getModel(providerId: string, modelId: string): unknown {
+        const value = super.getModel(providerId, modelId);
+        return value ? { ...(value as Record<string, unknown>), provider: providerId } : undefined;
+      }
+      stream(_model: unknown, _context: unknown, options: Record<string, unknown>) {
+        streamOptions.push(options);
+        return (async function* () {
+          await (options["fetch"] as typeof fetch)("https://openrouter.ai/api/v1/chat/completions");
+          yield {
+            type: "done",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "日本今日头条" }],
+              api: "openai-completions",
+              provider: "openrouter",
+              model: primaryModel.model,
+              stopReason:
+                reasoningRequired && Number(options["maxTokens"]) < 512 ? "length" : "stop",
+              timestamp: Date.now(),
+              usage: {
+                input: 30,
+                output: 10,
+                cacheRead: 0,
+                cacheWrite: 0,
+                totalTokens: 40,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.000001 },
+              },
+            },
+          };
+        })();
+      }
+    }
+    const runtime = new TitleRuntime();
+    const permit: ModelInvocationPermit = {
+      assertActive: vi.fn(async () => {}),
+      markStarted: vi.fn(async () => {}),
+      releaseReserved: vi.fn(async () => {}),
+      settle: vi.fn(async () => {}),
+      markUnknown: vi.fn(async () => {}),
+    };
+    const begin = vi.fn(async () => ({ disposition: "fresh", permit }));
+    const prepared = compositionOptions(adapters, {
+      runtimeFactory: { create: async () => runtime as unknown as PiModelRuntime },
+      fetch: vi.fn(
+        async () =>
+          new Response(
+            `data: ${JSON.stringify({ id: "generation:title", model: primaryModel.model, usage: { cost: 0.000001 }, openrouter_metadata: { attempts: [{ provider: "Fixture", model: primaryModel.model, status: 200 }] } })}\n\ndata: [DONE]\n\n`,
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+      ),
+    });
+    const composition = createProductionModelComposition({
+      ...prepared.options,
+      descriptors: prepared.options.descriptors.map((descriptor) => ({
+        ...descriptor,
+        reasoning: reasoningRequired || descriptor.reasoning,
+        reasoningRequired,
+      })),
+    });
+    try {
+      const request = {
+        ownerId: prepared.options.ownerId,
+        agentId: prepared.options.agentId,
+        runId: "run:title",
+        threadId: "thread:title",
+        modelRef: primaryModel.ref,
+        dataClassification: "private",
+        systemInstructionRef: "disclosure:title",
+        correlationId: "title:test",
+      };
+      const gate = {
+        context: { ownerId: request.ownerId, agentId: request.agentId, runId: request.runId },
+        begin,
+      };
+      expect(
+        await composition.generateTitle?.(
+          request as never,
+          "Generate a short title",
+          gate as never,
+        ),
+      ).toBe("日本今日头条");
+      expect(begin).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: "model-port",
+          modelRef: primaryModel.ref,
+          logicalSlot: "thread-title:run:title",
+        }),
+      );
+      expect(permit.markStarted).toHaveBeenCalledTimes(1);
+      expect(permit.settle).toHaveBeenCalledWith(
+        expect.objectContaining({ inputTokens: 30, outputTokens: 10 }),
+      );
+      expect(permit.markUnknown).not.toHaveBeenCalled();
+      expect(streamOptions[0]).toMatchObject({
+        maxTokens: reasoningRequired ? 1024 : 128,
+        maxRetries: 0,
+        timeoutMs: 20000,
+      });
+    } finally {
+      await composition.close();
+    }
+  },
+);

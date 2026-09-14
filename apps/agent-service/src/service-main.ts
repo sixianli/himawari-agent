@@ -422,6 +422,7 @@ export async function runAgentService(
     },
     close: async () => {
       await runs?.loop.stop(runStopTimeoutMs);
+      await runs?.titles?.stop();
     },
   });
   lifecycle.register({
@@ -871,6 +872,15 @@ export async function runAgentService(
       });
       governedMemory = memory;
       runs = createProductionRunComposition({
+        ...(modelComposition.composition.generateTitle
+          ? { generateTitle: modelComposition.composition.generateTitle }
+          : {}),
+        onTitleFailure: (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "thread-title.failed",
+            code: stableErrorCode(error),
+          }),
         ...(sandboxServices ? { resources: sandboxServices.resources } : {}),
         configuration,
         repository,

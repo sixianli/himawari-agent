@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   type AgentRuntimePort,
+  type ModelInvocationAdmissionPort,
+  type RuntimeRequest,
   ContextFormationService,
   claimFromRunExecutionLease,
   type ExecuteCoordinatedRunInput,
@@ -2278,6 +2280,42 @@ it.each([
       resultRef: "pi-prompt",
     });
     const failure = vi.fn();
+    const titleFailure = vi.fn();
+    let allowTitleAdmission = () => {};
+    const titleAdmissionGate = new Promise<void>((resolve) => {
+      allowTitleAdmission = resolve;
+    });
+    let releaseTitle: (() => void) | undefined;
+    const titleGate = new Promise<void>((resolve) => {
+      releaseTitle = resolve;
+    });
+    const generateTitle = vi.fn(
+      async (request: RuntimeRequest, _prompt: string, gate: ModelInvocationAdmissionPort) => {
+        if (budget > 0) await titleAdmissionGate;
+        const admittedTitle = await gate.begin({
+          modelRef: model.descriptor.ref,
+          provider: model.descriptor.provider,
+          model: model.descriptor.model,
+          modelVersion: model.descriptor.version,
+          dataClassification: request.dataClassification,
+          logicalSlot: "thread-title:integration",
+          source: "model-port",
+          ordinal: 1,
+          pricing: model.descriptor.pricing,
+          estimatedCostMicros: model.descriptor.estimatedCostMicros,
+        });
+        if (admittedTitle.disposition !== "fresh") throw new Error("Title admission was denied");
+        await admittedTitle.permit.markStarted();
+        await titleGate;
+        await admittedTitle.permit.settle({
+          inputTokens: 20,
+          outputTokens: 10,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        });
+        return "自动生成的对话标题";
+      },
+    );
     const compositionOptions: Parameters<typeof createProductionRunComposition>[0] = {
       configuration: {
         ownerId,
@@ -2353,9 +2391,39 @@ it.each([
       cwd: setup.stateRoot,
       agentDir: path.join(setup.stateRoot, "pi-agent"),
       onFailure: failure,
+      generateTitle,
+      onTitleFailure: titleFailure,
     };
     const composed = createProductionRunComposition(compositionOptions);
-    const pumped = await composed.dispatcher.pump();
+    let settledBeforeTitleAdmission = false;
+    const pumping = composed.dispatcher.pump().then((result) => {
+      settledBeforeTitleAdmission = true;
+      return result;
+    });
+    await vi.waitFor(() => expect(generateTitle).toHaveBeenCalledTimes(1));
+    // Let the synthetic Pi stream drain while the title's local admission is held.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const prematurelySettled = settledBeforeTitleAdmission;
+    allowTitleAdmission();
+    const pumped = await pumping;
+    // The answer and Run can settle while the title provider is still pending.
+    releaseTitle?.();
+    await composed.titles?.stop();
+    if (budget > 0) {
+      expect(prematurelySettled).toBe(false);
+      expect(titleFailure).not.toHaveBeenCalled();
+      expect(generateTitle).toHaveBeenCalledTimes(1);
+      expect(
+        await setup.repository.threadRepository().read(ownerId, agentId, thread.thread.id),
+      ).toMatchObject({ titleSource: "automatic" });
+    } else {
+      expect(titleFailure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: PORT_ERROR_CODES.CONFLICT,
+          message: "Run budget limit is exhausted",
+        }),
+      );
+    }
     expect(pumped).toMatchObject({
       claimed: 1,
       settled: unknown ? 0 : 1,
@@ -2467,11 +2535,20 @@ it.each([
       try {
         expect(
           database
-            .prepare("SELECT status FROM model_invocation_identities WHERE run_id = ?")
+            .prepare(
+              "SELECT status FROM model_invocation_identities WHERE run_id = ? AND source = 'agent-stream'",
+            )
             .all(admitted.message.runId),
         ).toEqual(
           denied ? [{ status: "settled" }, { status: "settled" }] : [{ status: "settled" }],
         );
+        expect(
+          database
+            .prepare(
+              "SELECT status FROM model_invocation_identities WHERE run_id = ? AND source = 'model-port'",
+            )
+            .all(admitted.message.runId),
+        ).toEqual([{ status: "settled" }]);
       } finally {
         database.close();
       }
@@ -2779,4 +2856,84 @@ it("projects encrypted execution history with owner isolation and no raw reasoni
     phase: "failed",
     output: "Result needs reconciliation",
   });
+});
+
+it("persists a generated title and publishes its update without changing Run state", async () => {
+  const setup = await executionFixture();
+  const { ProductionThreadTitles } = await import(
+    "../../apps/agent-service/src/production-thread-titles.js"
+  );
+  const payloads = setup.repository.payloadStore(ownerId, agentId);
+  // Admit protected Owner text through the same command used by HTTP.
+  await payloads.put(
+    await setup.protector.protect({
+      ownerId,
+      agentId,
+      ref: "title-owner-text",
+      contentType: "text/plain",
+      dataClassification: "private",
+      plaintext: new TextEncoder().encode("请展示工具执行记录"),
+      createdAt: clock.now(),
+    }),
+  );
+  const created = await setup.commands.create({
+    ownerId,
+    agentId,
+    idempotencyKey: "title-thread",
+    resultRef: "title-owner-text",
+  });
+  const admitted = await setup.commands.admitOwnerMessage({
+    ownerId,
+    agentId,
+    threadId: created.thread.id,
+    expectedThreadRevision: created.thread.revision,
+    sessionId: createSessionId("title-session"),
+    idempotencyKey: "title-message",
+    contentRef: "title-owner-text",
+    sourceProofRef: "owner:title-test",
+    dataClassification: "private",
+    resultRef: "title-owner-text",
+  });
+  const runId = admitted.message.runId;
+  if (!runId) throw new Error("Expected admitted Run");
+  const before = await setup.repository.runLifecycle(ownerId, agentId, authority).readRun(runId);
+  const failures: unknown[] = [];
+  const generate = vi.fn(async () => "执行记录展示");
+  const titles = new ProductionThreadTitles({
+    threads: setup.repository.threadRepository(),
+    payloads,
+    protector: setup.protector,
+    clock,
+    authority: () => authority,
+    assertActive: async () => {},
+    generate,
+    onFailure: (error) => {
+      failures.push(error);
+    },
+  });
+  titles.start({
+    ...setup.input.runtime,
+    runId,
+    threadId: created.thread.id,
+    executionLease: executionLease(runId),
+    contextEnvelopeRef: "title-owner-text",
+    workerResultRefs: [],
+  });
+  await titles.stop();
+  expect(failures).toEqual([]);
+  expect(generate).toHaveBeenCalledTimes(1);
+  const saved = await setup.repository.threadRepository().read(ownerId, agentId, created.thread.id);
+  expect(saved?.titleSource).toBe("automatic");
+  const value = await payloads.get(saved?.titleRef as string);
+  if (!value) throw new Error("Expected persisted title payload");
+  expect(
+    new TextDecoder().decode(await setup.protector.unprotect({ ownerId, agentId, payload: value })),
+  ).toBe("执行记录展示");
+  const events = await setup.repository
+    .threadRepository()
+    .listGatewayEvents(ownerId, agentId, null, 100);
+  expect(events.filter((event) => event.eventType === "thread.rename")).toHaveLength(1);
+  expect(await setup.repository.runLifecycle(ownerId, agentId, authority).readRun(runId)).toEqual(
+    before,
+  );
 });
