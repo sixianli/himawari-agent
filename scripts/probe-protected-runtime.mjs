@@ -36,7 +36,7 @@ async function mustDeny(name, action) {
   try {
     await action();
   } catch (error) {
-    if (!["EACCES", "EPERM"].includes(error.code)) throw error;
+    if (!["EACCES", "EPERM", "EROFS"].includes(error.code)) throw error;
     blocked = true;
   }
   assert(blocked, `PROTECTION_FAILED:${name}`);

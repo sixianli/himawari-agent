@@ -95,6 +95,18 @@ export async function createProductionSandboxServices(options: {
   if (hostIds.size !== 1) throw new Error("SANDBOX_HOST_BINDING_AMBIGUOUS");
   const hostId = [...hostIds][0];
   if (!hostId) throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
+  // Complete the first installation audit in this Agent process before readiness.
+  // Worker verification uses a separate process and cannot warm this cache.
+  // Per-invocation plan, authority and host checks remain in resolve below.
+  for (const entry of sandboxEntries) {
+    if (entry.binding.kind !== "sandbox" || !entry.qualification.sandbox)
+      throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
+    await verifySandboxHost({
+      binding: entry.binding.value,
+      qualification: entry.qualification.sandbox,
+      hostId,
+    });
+  }
   const journal = repository.sandboxJobJournal(configuration.ownerId, configuration.agentId);
   const preparations = repository.sandboxExecutionPreparations(
     configuration.ownerId,
@@ -241,8 +253,28 @@ export async function createProductionSandboxServices(options: {
       candidate.schemaVersion === "sandbox-execution.v2"
         ? sandboxExecutionPlanCandidateV2Schema.parse(candidate)
         : sandboxExecutionPlanCandidateSchema.parse(candidate);
-    const { binding, qualification } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
-    await verifySandboxHost({ binding, qualification, hostId, plan });
+    const timed = async <T>(stage: string, action: () => Promise<T>): Promise<T> => {
+      const started = performance.now();
+      try {
+        return await action();
+      } finally {
+        console.error(
+          JSON.stringify({
+            event: "sandbox.admission.timing",
+            runId: plan.identity.runId,
+            stage,
+            durationMs: performance.now() - started,
+            at: new Date().toISOString(),
+          }),
+        );
+      }
+    };
+    const { binding, qualification } = await timed("deployment_snapshot", () =>
+      entryFor(plan.capabilityRef, plan.capabilityVersion),
+    );
+    await timed("host_verification", () =>
+      verifySandboxHost({ binding, qualification, hostId, plan }),
+    );
     if (plan.schemaVersion === "sandbox-execution.v2") {
       assertSandboxExecutionSupport({ schemaVersion: plan.schemaVersion, mode: plan.mode }, [
         options.workerSupport?.(),
@@ -260,7 +292,9 @@ export async function createProductionSandboxServices(options: {
       )
         throw new Error("SANDBOX_OPERATION_BINDING_CHANGED");
     }
-    const raw = sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef));
+    const raw = sandboxScopeSchema.parse(
+      await timed("scope_payload", () => readJson(plan.binding.scopeRef)),
+    );
     if (plan.schemaVersion === "sandbox-execution.v2") {
       const descriptor = binding.operationBindings?.find(
         (item) => item.operation === plan.operation,
@@ -311,14 +345,18 @@ export async function createProductionSandboxServices(options: {
         maximumDomains: binding.allowedDomains,
       },
     });
-    const resolved = await reader.resolve(plan, raw.parentRequestId);
+    const resolved = await timed("scope_authorization", () =>
+      reader.resolve(plan, raw.parentRequestId),
+    );
     if (
       !binding.roots.some(
         (root) => root.canonicalRootId === resolved.scope.directoryGrant.canonicalRootId,
       )
     )
       throw new Error("SANDBOX_ROOT_UNAVAILABLE");
-    const workspaceClaim = await resolveSandboxWorkspaceClaim({ binding, scope: resolved.scope });
+    const workspaceClaim = await timed("workspace_identity", () =>
+      resolveSandboxWorkspaceClaim({ binding, scope: resolved.scope }),
+    );
     return { binding, qualification, workspaceClaim, ...resolved };
   };
   const persistScope = async (scope: SandboxScope, invocationId: string) => {

@@ -154,14 +154,16 @@ export async function verifySandboxHost(input: {
   await checkedPath(binding.executable.path, false);
   await checkedPath(binding.runner.path, false);
   if (
+    await verifyProtectedRuntime(binding.runtimeRoot, binding.runtimeDigest, digestSandboxRuntime, [
+      binding.executable,
+      binding.runner,
+    ])
+  )
+    return;
+  if (
     (await digestRegularFile(binding.executable.path)) !== `sha256:${binding.executable.sha256}` ||
     (await digestRegularFile(binding.runner.path)) !== `sha256:${binding.runner.sha256}` ||
-    (!(await verifyProtectedRuntime(
-      binding.runtimeRoot,
-      binding.runtimeDigest,
-      digestSandboxRuntime,
-    )) &&
-      (await digestSandboxRuntime(binding.runtimeRoot)) !== binding.runtimeDigest)
+    (await digestSandboxRuntime(binding.runtimeRoot)) !== binding.runtimeDigest
   )
     throw new Error("SANDBOX_HOST_ARTIFACT_CHANGED");
 }

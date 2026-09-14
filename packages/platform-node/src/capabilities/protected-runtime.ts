@@ -2,6 +2,17 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
+import { digestRegularFile } from "./artifact-verifier.js";
+
+interface RuntimeArtifact {
+  readonly path: string;
+  readonly sha256: string;
+}
+
+async function verifyArtifact(artifact: RuntimeArtifact): Promise<void> {
+  if ((await digestRegularFile(artifact.path)) !== `sha256:${artifact.sha256}`)
+    throw new Error("SANDBOX_HOST_ARTIFACT_CHANGED");
+}
 
 const failure = () => new Error("SANDBOX_RUNTIME_PROTECTION_INVALID");
 const canonical = (value: unknown): value is string =>
@@ -42,6 +53,7 @@ function parse(value: unknown): Protection {
 export class ProtectedRuntimeVerifier {
   readonly #manifestPath: string;
   readonly #audits = new Map<string, Promise<void>>();
+  readonly #artifactAudits = new Map<string, Promise<void>>();
   constructor(manifestPath: string) {
     if (!canonical(manifestPath)) throw failure();
     this.#manifestPath = manifestPath;
@@ -117,18 +129,49 @@ export class ProtectedRuntimeVerifier {
     runtimeRoot: string,
     runtimeDigest: string,
     digest: (root: string) => Promise<string>,
+    artifacts: readonly RuntimeArtifact[] = [],
   ): Promise<void> {
     const { protection, identity } = await this.#manifest();
     if (runtimeRoot !== protection.runtimeRoot || runtimeDigest !== protection.runtimeDigest)
       throw failure();
     await this.#process(protection.runtimeUid);
     const parents = await this.#parents(runtimeRoot, [0, protection.deploymentUid]);
+    const protectedArtifacts = artifacts.filter(
+      (artifact) => canonical(artifact.path) && artifact.path.startsWith(`${runtimeRoot}/`),
+    );
+    const artifactIdentity = async () => {
+      const entries: string[] = [];
+      for (const artifact of protectedArtifacts) {
+        const info = await lstat(artifact.path);
+        if (!info.isFile() || info.uid !== 0 || info.mode & 0o022) throw failure();
+        const ancestors = await this.#parents(path.dirname(artifact.path), [
+          0,
+          protection.deploymentUid,
+        ]);
+        entries.push(
+          JSON.stringify([
+            artifact,
+            ancestors,
+            info.dev,
+            info.ino,
+            info.size,
+            info.mtimeMs,
+            info.ctimeMs,
+            info.uid,
+            info.mode,
+          ]),
+        );
+      }
+      return entries.join("\n");
+    };
+    const artifactKey = await artifactIdentity();
     const key = `${identity}\n${parents}`;
     let audit = this.#audits.get(key);
     if (!audit) {
       // A version switch invalidates the previous audit even if it later switches
       // back. Concurrent callers share only the same in-flight initial audit.
       this.#audits.clear();
+      this.#artifactAudits.clear();
       audit = (async () => {
         await this.#auditPermissions(runtimeRoot);
         if ((await digest(runtimeRoot)) !== runtimeDigest) throw failure();
@@ -147,6 +190,26 @@ export class ProtectedRuntimeVerifier {
       if (this.#audits.get(key) === audit) this.#audits.delete(key);
       throw error;
     }
+    const artifactCacheKey = `${key}\n${artifactKey}`;
+    let artifactAudit = this.#artifactAudits.get(artifactCacheKey);
+    if (!artifactAudit) {
+      artifactAudit = (async () => {
+        for (const artifact of protectedArtifacts) await verifyArtifact(artifact);
+        if ((await artifactIdentity()) !== artifactKey) throw failure();
+      })();
+      this.#artifactAudits.set(artifactCacheKey, artifactAudit);
+    }
+    try {
+      await artifactAudit;
+    } catch (error) {
+      if (this.#artifactAudits.get(artifactCacheKey) === artifactAudit)
+        this.#artifactAudits.delete(artifactCacheKey);
+      throw error;
+    }
+    // Protection applies only to this installation; external executables retain
+    // their per-invocation byte verification, even if the runtime is protected.
+    for (const artifact of artifacts)
+      if (!protectedArtifacts.includes(artifact)) await verifyArtifact(artifact);
   }
 }
 
@@ -155,6 +218,7 @@ export async function verifyProtectedRuntime(
   runtimeRoot: string,
   runtimeDigest: string,
   digest: (root: string) => Promise<string>,
+  artifacts: readonly RuntimeArtifact[] = [],
 ): Promise<boolean> {
   const filename = process.env["HIMAWARI_RUNTIME_PROTECTION_FILE"];
   if (filename === undefined) return false;
@@ -163,6 +227,6 @@ export async function verifyProtectedRuntime(
     verifier = new ProtectedRuntimeVerifier(filename);
     verifiers.set(filename, verifier);
   }
-  await verifier.verify(runtimeRoot, runtimeDigest, digest);
+  await verifier.verify(runtimeRoot, runtimeDigest, digest, artifacts);
   return true;
 }

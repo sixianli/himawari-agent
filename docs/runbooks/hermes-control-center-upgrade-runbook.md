@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:f5faf5f596bbe682f52658ef371116eb032938b5f39fb67631040a29d97c1f65"
+contract_sha256: "sha256:beb8026c8531ad75b215fcc690a4421d19a15598dc6c1ecdd3b9c4498341f9a8"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -39,7 +39,7 @@ date: "2026-09-11"
 
 ## Scope
 
-升级用户已明确授权的 Hermes Linux 上 Himawari 安装。目标限定 `/data/hermes/himawari`，不操作父目录中的其他 Hermes Agent 服务或其他应用。既有网络资格探针另外使用 `/data/himawari-r8-web-2026-09-11` 中新建的唯一临时子目录；执行前须验证此专用验收根为当前服务账号所有、0700、普通规范目录且位于 `/data` 机械盘，不访问其他同级目录。Mac 仅用于源码开发、浏览器和交付查看，不作为运行主机。此流程不执行跨主机 Authority Transfer，不创建 PR 或推送。
+升级用户已明确授权的 Hermes Linux 上 Himawari 安装。目标限定 `/data/hermes/himawari`，以及经用户单独同意后用于程序和运行依赖的 `/opt/himawari/releases`，不操作父目录中的其他 Hermes Agent 服务或其他应用。既有网络资格探针另外使用 `/data/himawari-r8-web-2026-09-11` 中新建的唯一临时子目录；执行前须验证此专用验收根为当前服务账号所有、0700、普通规范目录且位于 `/data` 机械盘，不访问其他同级目录。Mac 仅用于源码开发、浏览器和交付查看，不作为运行主机。此流程不执行跨主机 Authority Transfer，不创建 PR 或推送。
 
 ## Authoritative Sources
 
@@ -93,9 +93,15 @@ Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-q
 
 只读核对主机名、Linux/架构、`findmnt /data` 与磁盘可用空间；核对 `systemctl cat/status himawari.service`（受保护迁移后的系统级服务，运行账号必须为 `himawari`） 的真实单元、PID、安装前缀和工作目录。检查生产配置的 Owner/Agent/deployment 与现有 authority、数据库记录一致，记录活动 Run 和已发生/预留费用，禁止输出配置全文或密钥。确认配置、state、qualifications 均是规范路径且权限安全，旧发布目录保留且可回读。
 
-新建证据运行 ID 后，将白名单源码清单、SHA-256、秘密扫描结果和真实命令结果写入本次证据目录。工具链使用固定 Node 22.22.3/npm 11.8.0，依赖闭包来自精确 lockfile。构建、依赖、临时探针、发布和数据库全部放在 `/data`。
+新建证据运行 ID 后，将白名单源码清单、SHA-256、秘密扫描结果和真实命令结果写入本次证据目录。工具链使用固定 Node 22.22.3/npm 11.8.0，依赖闭包来自精确 lockfile。构建、开发依赖、临时探针和数据库放在 `/data`。用户授权 NVMe 迁移时，仅完整安装前缀中的程序、运行依赖和静态页面复制到 `/opt/himawari/releases/<版本>`；先核对根盘确为 NVMe、剩余空间至少 10 GiB 且复制后仍保留该余量。数据库、附件、日志、备份与构建缓存继续位于 `/data`。
 
 ## Procedure
+
+NVMe 迁移保持已签名能力的规范运行路径不变：在服务私有挂载视图中，用 `BindReadOnlyPaths=/opt/himawari/releases/<版本>:/data/hermes/himawari/releases/2026-09-11-control-center` 将固态盘的受保护安装挂到原路径。宿主上的旧机械盘安装保留，作为切换前回退源；服务实际读取的设备必须通过其挂载命名空间内的 `findmnt`、`stat` 和 `/proc/<PID>/exe` 独立核对，不能只看路径名。新版本的资格探针必须采用完全相同的只读绑定视图，并重新签署实际运行时摘要。切换脚本只替换保护记录、启动入口和绑定配置，不重命名或覆盖旧机械盘安装；后续升级必须检查现有 `BindReadOnlyPaths`，不能继续套用只替换宿主旧目录的脚本。
+
+Agent 在创建沙箱服务时完成本进程的首次安装校验，校验失败不得进入 ready。Worker 的独立校验不能代替 Agent 的校验。受保护安装仅复用安装身份及文件身份、权限、大小和修改时间均一致的程序摘要；每次仍检查保护记录、进程权限、父目录、工作区和执行授权。外置或未受保护程序保留逐次字节校验。首次校验、不同 runner 之间的复用、权限变化和失败重试均须通过自动化回归；记忆检索及其参与问答的流程保持完整，不添加空记忆跳过路径。
+
+迁移前先保持旧服务运行，在独立资格目录验收写入拒绝、六组现有 Linux 探针和实际 host verification 的首次及重复耗时。全部通过后确认无活动 Run 和未清理沙箱，停服创建并独立核验 schema 32 备份，再切换绑定、保护记录和启动配置。首次启动前失败恢复旧 unit、保护记录、配置及 attestation；首次启动已尝试后保留数据库和失败现场。Agent 与 Worker ready 后，再通过真实请求测量记忆检索、搜索启动和完整回答耗时；安装探针通过不代表问答已通过。
 
 仅修改控制中心资源的修订可以采用静态资源切换：先核对候选提交相对当前生产提交只改变浏览器实现、对应测试及运行手册，依赖锁、Gateway、Agent、Worker、数据库和受保护运行时字节均不变。在 `/data` 的独立目录构建浏览器资源，执行移动端与完整浏览器验收；随后将新资源以 root 持有、服务账号只读的权限复制到静态目录，保留旧的带内容摘要的资源文件，最后原子替换 `index.html`。切换前保存旧入口及每个文件的摘要；切换后回读 HTTP 返回的入口和资源，复查原服务 PID、运行时摘要与核心健康状态。失败只恢复旧入口，不回滚数据库。此流程不重启服务、不更换运行时资格、不重签工具；只要运行时或依赖发生变化，就必须执行下面的完整安装资格与切换流程。
 

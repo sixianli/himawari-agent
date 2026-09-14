@@ -3,12 +3,16 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 // Controlled Linux filesystem/process evidence. These tests do not qualify an
 // installed host; the deployment acceptance must run real denied writes too.
 const fixture = vi.hoisted(() => ({
+  artifactDigest: vi.fn(),
   manifest: "",
   status: "",
   nodes: new Map<
     string,
     { uid: number; mode: number; ino: number; directory: boolean; link?: boolean }
   >(),
+}));
+vi.mock("../src/capabilities/artifact-verifier.js", () => ({
+  digestRegularFile: fixture.artifactDigest,
 }));
 vi.mock("node:fs/promises", () => {
   const metadata = (name: string) => {
@@ -54,6 +58,7 @@ const root = "/data/himawari/releases/v1";
 const manifestPath = "/etc/himawari/runtime.json";
 const digest = "a".repeat(64);
 beforeEach(() => {
+  fixture.artifactDigest.mockReset().mockResolvedValue(`sha256:${digest}`);
   fixture.nodes.clear();
   let ino = 1;
   for (const name of [
@@ -85,6 +90,80 @@ beforeEach(() => {
     getuid: () => 1234,
     geteuid: () => 1234,
   });
+});
+
+it("reuses protected artifact bytes only for unchanged installation and file identities", async () => {
+  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const readBytes = vi.fn(async () => digest);
+  const artifacts = [{ path: `${root}/helper.js`, sha256: digest }];
+  await verifier.verify(root, digest, readBytes, artifacts);
+  await verifier.verify(root, digest, readBytes, artifacts);
+  expect(fixture.artifactDigest).toHaveBeenCalledTimes(1);
+  node(`${root}/helper.js`).ino++;
+  await verifier.verify(root, digest, readBytes, artifacts);
+  expect(fixture.artifactDigest).toHaveBeenCalledTimes(2);
+  node(manifestPath).ino++;
+  await verifier.verify(root, digest, readBytes, artifacts);
+  expect(fixture.artifactDigest).toHaveBeenCalledTimes(3);
+});
+
+it("never trusts a different expected artifact digest or retains a failed check", async () => {
+  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const artifacts = [{ path: `${root}/helper.js`, sha256: "b".repeat(64) }];
+  for (let attempt = 0; attempt < 2; attempt++)
+    await expect(verifier.verify(root, digest, async () => digest, artifacts)).rejects.toThrow(
+      "SANDBOX_HOST_ARTIFACT_CHANGED",
+    );
+  expect(fixture.artifactDigest).toHaveBeenCalledTimes(2);
+});
+
+it("does not cache artifact bytes outside the protected runtime", async () => {
+  fixture.nodes.set("/data/external", { uid: 0, mode: 0o644, ino: 99, directory: false });
+  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const artifacts = [{ path: "/data/external", sha256: digest }];
+  await verifier.verify(root, digest, async () => digest, artifacts);
+  await verifier.verify(root, digest, async () => digest, artifacts);
+  expect(fixture.artifactDigest).toHaveBeenCalledTimes(2);
+});
+
+it("shares one installation audit across different protected runners", async () => {
+  fixture.nodes.set(`${root}/search.js`, { uid: 0, mode: 0o644, ino: 99, directory: false });
+  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const readBytes = vi.fn(async () => digest);
+  for (const name of ["helper.js", "search.js", "helper.js", "search.js"])
+    await verifier.verify(root, digest, readBytes, [{ path: `${root}/${name}`, sha256: digest }]);
+  expect(readBytes).toHaveBeenCalledOnce();
+  expect(fixture.artifactDigest).toHaveBeenCalledTimes(2);
+});
+
+it("finishes the installation audit before validating reusable artifact bytes", async () => {
+  let finish: ((value: string) => void) | undefined;
+  const readBytes = vi.fn(
+    () =>
+      new Promise<string>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const verifying = new ProtectedRuntimeVerifier(manifestPath).verify(root, digest, readBytes, [
+    { path: `${root}/helper.js`, sha256: digest },
+  ]);
+  await vi.waitFor(() => expect(readBytes).toHaveBeenCalledOnce());
+  try {
+    expect(fixture.artifactDigest).not.toHaveBeenCalled();
+  } finally {
+    finish?.(digest);
+    await verifying;
+  }
+});
+
+it("rejects changed artifact permissions after a successful cached audit", async () => {
+  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const artifacts = [{ path: `${root}/helper.js`, sha256: digest }];
+  await verifier.verify(root, digest, async () => digest, artifacts);
+  node(`${root}/helper.js`).mode = 0o666;
+  await expect(verifier.verify(root, digest, async () => digest, artifacts)).rejects.toThrow(
+    "PROTECTION_INVALID",
+  );
 });
 afterEach(() => vi.unstubAllGlobals());
 
