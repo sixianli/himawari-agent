@@ -2704,6 +2704,62 @@ it("projects encrypted execution history with owner isolation and no raw reasoni
     text: "PI_MODEL_RATE_LIMITED",
   });
   expect(JSON.stringify(failed)).not.toContain("PRIVATE_");
+  const callOnlyRef = await capture("call-only", {
+    role: "assistant",
+    timestamp: 3,
+    model: "actual-model",
+    stopReason: "toolUse",
+    content: [
+      {
+        type: "toolCall",
+        id: "new-call",
+        name: "web_search",
+        arguments: { query: "Tokyo", authorization: "PRIVATE_CREDENTIAL" },
+      },
+    ],
+  });
+  await setup.trace.record({
+    ...scope,
+    eventType: "runtime.message",
+    payload: { role: "assistant", phase: "ended", payloadRef: callOnlyRef },
+  });
+  const pendingCall = (await projection.read(query)).records.find(
+    (item) => item.kind === "tool" && item.name === "web_search",
+  );
+  expect(pendingCall).toMatchObject({ phase: "updated" });
+  expect(pendingCall?.input).toContain("Tokyo");
+  expect(pendingCall?.input).not.toContain("PRIVATE_CREDENTIAL");
+  const intentRef = await capture("new-call-intent", {
+    toolCallId: "new-call",
+    toolName: "web_search",
+    arguments: { query: "Tokyo" },
+  });
+  await setup.trace.record({
+    ...scope,
+    eventType: "runtime.tool_intent",
+    payload: { payloadRef: intentRef },
+  });
+  expect((await projection.read(query)).records.at(-1)?.itemId).toBe(pendingCall?.itemId);
+  for (const eventType of [
+    "memory.query",
+    "memory.candidates",
+    "memory.selection",
+    "context.formed",
+    "runtime.turn_started",
+  ]) {
+    await setup.trace.record({
+      ...scope,
+      eventType,
+      payload: { privateContext: "PRIVATE_MEMORY_DATA" },
+    });
+    expect((await projection.read(query)).records.at(-1)).toMatchObject({
+      name: eventType,
+      kind: "status",
+      phase: "updated",
+      text: "",
+    });
+  }
+  expect(JSON.stringify(await projection.read(query))).not.toContain("PRIVATE_");
   const unresolvedRef = await capture("legacy-unresolved-tool", {
     toolCallId: "legacy-call",
     toolName: "write",

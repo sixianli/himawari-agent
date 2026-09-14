@@ -297,8 +297,8 @@ function LocalizedControlCenterApp({
       log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
-    if (!navigator.onLine) synchronizer.setNetworkOnline(false);
-    const online = () => synchronizer.setNetworkOnline(navigator.onLine);
+    // navigator.onLine is an OS hint; establish the real transport before declaring offline.
+    const online = () => synchronizer.setNetworkOnline(true);
     const offline = () => synchronizer.setNetworkOnline(false);
     const reconnect = () => {
       if (document.visibilityState === "visible") synchronizer.reconnectNow();
@@ -327,8 +327,8 @@ function LocalizedControlCenterApp({
       log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
-    if (!navigator.onLine) synchronizer.setNetworkOnline(false);
-    const online = () => synchronizer.setNetworkOnline(navigator.onLine);
+    // navigator.onLine is an OS hint; establish the real transport before declaring offline.
+    const online = () => synchronizer.setNetworkOnline(true);
     const offline = () => synchronizer.setNetworkOnline(false);
     const reconnect = () => {
       if (document.visibilityState === "visible") synchronizer.reconnectNow();

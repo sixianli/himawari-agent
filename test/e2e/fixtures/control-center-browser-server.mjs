@@ -1279,6 +1279,16 @@ async function handleRequest(request, response) {
       json(response, 404, {});
       return;
     }
+    if (input.reset) executionRecords.delete(run.runId);
+    if (typeof input.title === "string") {
+      const ref = `payload:fixture-title:${thread.threadId}:${thread.titleRevision + 1}`;
+      payloads.set(ref, { content: input.title, dataClassification: "private" });
+      thread.titleRef = ref;
+      thread.titleSource = "automatic";
+      thread.titleRevision += 1;
+      thread.revision += 1;
+      writeThreadEvent({ messageId: "fixture-title" }, thread.threadId, "thread.rename");
+    }
     if (input.records)
       executionRecords.set(run.runId, [
         ...(executionRecords.get(run.runId) ?? []),
@@ -1582,6 +1592,7 @@ async function handleRequest(request, response) {
         `id: ${event.payload.cursor}\nevent: message\ndata: ${JSON.stringify(event)}\n\n`,
       );
     }
+    response.write(": connected\n\n");
     threadEventClients.add(response);
     const timer = setInterval(() => response.write(": heartbeat\n\n"), 1000);
     request.on("close", () => {

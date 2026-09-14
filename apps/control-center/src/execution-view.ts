@@ -68,7 +68,12 @@ export function executionActivity(
 export function executionItems(records: readonly ThreadExecutionRecord[]) {
   const items = new Map<
     string,
-    ThreadExecutionRecord & { startedAt: string | null; endedAt: string | null }
+    ThreadExecutionRecord & {
+      firstSequence: number;
+      requestedAt: string | null;
+      startedAt: string | null;
+      endedAt: string | null;
+    }
   >();
   for (const record of [...new Map(records.map((item) => [item.id, item])).values()].sort(
     (a, b) => a.sequence - b.sequence,
@@ -77,6 +82,10 @@ export function executionItems(records: readonly ThreadExecutionRecord[]) {
     const previous = items.get(record.itemId);
     items.set(record.itemId, {
       ...record,
+      firstSequence: previous?.firstSequence ?? record.sequence,
+      requestedAt:
+        previous?.requestedAt ??
+        (record.kind === "tool" && record.phase === "updated" ? record.occurredAt : null),
       input: record.input || previous?.input || "",
       text: record.text || previous?.text || "",
       startedAt:
@@ -87,7 +96,12 @@ export function executionItems(records: readonly ThreadExecutionRecord[]) {
         (["completed", "failed", "stopped"].includes(record.phase) ? record.occurredAt : null),
     });
   }
-  return [...items.values()];
+  return [...items.values()].filter(
+    (item) =>
+      item.kind !== "message" ||
+      item.text.trim() ||
+      ["failed", "stopped", "unavailable"].includes(item.phase),
+  );
 }
 
 /** The displayed tool/message duration excludes the Run's recorded approval waits. */
@@ -161,4 +175,19 @@ export function executionTime(
 export function duration(milliseconds: number): string {
   const seconds = Math.floor(Math.max(0, milliseconds) / 1000);
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+/** Only durable, public stage markers; never synthesize reasoning or infer successful steps. */
+export const executionStageLabels: Readonly<Record<string, MessageId>> = {
+  "memory.query": "chat.stage.memoryQuery",
+  "memory.candidates": "chat.stage.memoryCandidates",
+  "memory.selection": "chat.stage.memorySelection",
+  "context.formed": "chat.stage.context",
+  "runtime.turn_started": "chat.stage.model",
+  "runtime.suspended": "chat.phase.waiting",
+};
+export function executionStages(records: readonly ThreadExecutionRecord[]) {
+  return [...new Map(records.map((record) => [record.id, record])).values()]
+    .filter((record) => record.kind === "status" && executionStageLabels[record.name])
+    .sort((a, b) => a.sequence - b.sequence);
 }

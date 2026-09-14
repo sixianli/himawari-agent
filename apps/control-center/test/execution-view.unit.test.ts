@@ -43,7 +43,14 @@ describe("durable execution presentation", () => {
       output: "contents",
     });
     expect(executionItems([ended, started, ended])).toEqual([
-      { ...ended, input: started.input, startedAt: started.occurredAt, endedAt: ended.occurredAt },
+      {
+        ...ended,
+        firstSequence: 1,
+        requestedAt: null,
+        input: started.input,
+        startedAt: started.occurredAt,
+        endedAt: ended.occurredAt,
+      },
     ]);
   });
   it("keeps independent tool calls and message snapshots", () => {
@@ -127,4 +134,37 @@ it("distinguishes actual thinking, tools, waiting and a stale connection", () =>
   expect(
     executionActivity([tool], { ...run, status: "awaiting_approval" }, "connected", 30000),
   ).toMatchObject({ label: "runs.status.awaitingApproval", stale: false });
+});
+
+it("omits successful textless messages but preserves failures and actual text", () => {
+  const items = executionItems([
+    record(1, 1, { kind: "message", itemId: "empty", phase: "completed" }),
+    record(2, 2, { kind: "message", itemId: "space", text: "  \n", phase: "updated" }),
+    record(3, 3, { kind: "message", itemId: "error", phase: "failed" }),
+    record(4, 4, { kind: "message", itemId: "answer", text: "Answer", phase: "completed" }),
+  ]);
+  expect(items.map((item) => item.itemId)).toEqual(["error", "answer"]);
+});
+
+it("keeps the model request time and arguments separate from tool execution", () => {
+  const request = record(1, 1, {
+    kind: "tool",
+    phase: "updated",
+    name: "web_search",
+    input: '{"query":"Tokyo"}',
+  });
+  const start = record(2, 3, { kind: "tool", name: "web_search" });
+  const end = record(3, 8, {
+    kind: "tool",
+    name: "web_search",
+    phase: "completed",
+    output: "News",
+  });
+  expect(executionItems([end, request, start, end])[0]).toMatchObject({
+    requestedAt: request.occurredAt,
+    startedAt: start.occurredAt,
+    endedAt: end.occurredAt,
+    input: request.input,
+    output: "News",
+  });
 });

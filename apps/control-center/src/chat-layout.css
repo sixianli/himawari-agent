@@ -1337,3 +1337,175 @@
   display: block;
   margin: 0 0 4px;
 }
+
+/* Compact, chronological execution steps from the confirmed chat prototype. */
+.turn-process > summary,
+.tool-record > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  min-height: 36px;
+}
+.turn-process summary::-webkit-details-marker {
+  display: none;
+}
+.process-chevron {
+  flex: none;
+  font-size: 18px;
+  transition: transform 120ms;
+}
+.turn-process[open] > summary > .process-chevron,
+.tool-record[open] > summary > .process-chevron {
+  transform: rotate(90deg);
+}
+.process-result,
+.step-status {
+  margin-left: auto;
+  flex: none;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.execution-chain {
+  list-style: none;
+  margin: 10px 0 12px 6px;
+  padding: 0;
+  border-left: 1px solid var(--border);
+}
+.execution-step,
+.execution-stage {
+  position: relative;
+  padding: 4px 0 4px 16px;
+  min-width: 0;
+}
+.step-marker {
+  position: absolute;
+  left: -3px;
+  top: 22px;
+  width: 5px;
+  height: 5px;
+  background: var(--text-muted);
+  border-radius: 50%;
+}
+.execution-stage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.execution-stage .step-marker {
+  top: 20px;
+}
+.execution-chain .execution-stage > time {
+  margin-left: auto;
+  font-size: 11px;
+  flex: none;
+}
+.execution-step .tool-record {
+  padding: 0;
+  min-width: 0;
+}
+.step-name {
+  font-size: 12px;
+  font-weight: 500;
+  flex: none;
+}
+.step-preview {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.step-detail {
+  margin: 6px 0 12px 20px;
+  font-size: 12px;
+  line-height: 1.7;
+  min-width: 0;
+}
+.step-detail pre {
+  margin: 6px 0 12px;
+  font-size: 12px;
+}
+.call-lifecycle {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 12px;
+  color: var(--text-muted);
+}
+.execution-chain .call-lifecycle > li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px;
+}
+.turn-process .call-lifecycle time {
+  display: inline;
+  margin: 0;
+}
+.step-empty,
+.tool-description {
+  color: var(--text-muted);
+}
+.process-metadata {
+  margin: 8px 0 16px 22px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.process-metadata summary {
+  cursor: pointer;
+}
+.tool-failed > .step-marker {
+  background: var(--danger);
+}
+.tool-started > .step-marker,
+.tool-updated > .step-marker {
+  background: var(--primary);
+}
+.tool-failed .step-status,
+.run-text-failed {
+  color: var(--danger);
+}
+.run-text-awaiting_approval {
+  color: var(--warning);
+}
+.tool-record > summary:hover {
+  background: var(--hover);
+  border-radius: 6px;
+}
+@media (max-width: 600px) {
+  .turn-process > summary,
+  .tool-record > summary {
+    flex-wrap: wrap;
+    min-height: 44px;
+    gap: 4px 6px;
+  }
+  .process-result {
+    margin-left: 18px;
+  }
+  .step-preview {
+    order: 4;
+    flex-basis: 100%;
+    margin-left: 16px;
+  }
+  .step-name {
+    flex-shrink: 1;
+    overflow-wrap: anywhere;
+  }
+  .step-status {
+    max-width: 55%;
+    text-align: right;
+  }
+  .step-detail {
+    margin-left: 0;
+  }
+  .execution-stage {
+    flex-wrap: wrap;
+  }
+  .execution-chain .execution-stage > time {
+    font-size: 10px;
+  }
+}

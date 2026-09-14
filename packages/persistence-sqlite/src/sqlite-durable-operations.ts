@@ -1380,7 +1380,13 @@ export class SqliteDurableOperations {
         );
       // The notification and durable observation commit together. The existing
       // Thread cursor is the sole browser reconnect position; no parallel stream.
-      if (event.threadId && event.eventType.startsWith("runtime.")) {
+      if (
+        event.threadId &&
+        (event.eventType.startsWith("runtime.") ||
+          ["memory.query", "memory.candidates", "memory.selection", "context.formed"].includes(
+            event.eventType,
+          ))
+      ) {
         const scope = this.database
           .prepare(`SELECT t.revision AS revision, d.id AS deploymentId,
           d.authority_epoch AS authorityEpoch, d.fencing_token AS fencingToken

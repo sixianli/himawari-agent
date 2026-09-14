@@ -93,7 +93,13 @@ export class ThreadExecutionProjection {
           PORT_ERROR_CODES.NOT_AUTHORITATIVE,
           "THREAD_EXECUTION_SCOPE_MISMATCH",
         );
-      if (!event.eventType.startsWith("runtime.")) continue;
+      if (
+        !event.eventType.startsWith("runtime.") &&
+        !["memory.query", "memory.candidates", "memory.selection", "context.formed"].includes(
+          event.eventType,
+        )
+      )
+        continue;
       const base = {
         id: event.id,
         sequence: event.sequence,
@@ -108,7 +114,18 @@ export class ThreadExecutionProjection {
       };
       try {
         const envelope = object(await this.readPayload(event, event.payloadRef));
-        if (event.eventType === "runtime.message" && envelope["role"] === "assistant") {
+        if (
+          [
+            "memory.query",
+            "memory.candidates",
+            "memory.selection",
+            "context.formed",
+            "runtime.turn_started",
+          ].includes(event.eventType)
+        ) {
+          // Expose stage occurrence only, not private memory text or model context.
+          records.push({ ...base, phase: "updated" });
+        } else if (event.eventType === "runtime.message" && envelope["role"] === "assistant") {
           const message = object(await this.readPayload(event, envelope["payloadRef"]));
           records.push({
             ...base,
@@ -131,6 +148,21 @@ export class ThreadExecutionProjection {
             text: text(redactTracePayload(visibleText(message["content"]))),
           });
           const content = Array.isArray(message["content"]) ? message["content"] : [];
+          if (envelope["phase"] === "ended") {
+            for (const [index, part] of content.entries()) {
+              const call = object(part);
+              if (call["type"] !== "toolCall" || typeof call["id"] !== "string") continue;
+              records.push({
+                ...base,
+                id: `${event.id}:call:${index}`,
+                itemId: identifier(call["id"], event.id),
+                kind: "tool",
+                phase: "updated",
+                name: text(call["name"]),
+                input: text(JSON.stringify(redactTracePayload(call["arguments"] ?? {}), null, 2)),
+              });
+            }
+          }
           const activity = object(content.at(-1))["type"];
           if (["thinking", "text", "toolCall"].includes(String(activity))) {
             records.push({
