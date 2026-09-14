@@ -138,6 +138,7 @@ export async function qualifyBrowser({
   let diagnosticPage;
   const diagnostics = [];
   const requestErrors = [];
+  const networkEmulation = [];
   const browserErrors = [];
   const pageErrorDetails = [];
   const observation = createBrowserObservation({
@@ -165,6 +166,29 @@ export async function qualifyBrowser({
   const sentinels = ["fixture-machine-secret-value"];
   const profile = profiles[profileName];
   if (!profile) throw new Error(`CONTROL_CENTER_BROWSER_PROFILE_INVALID:${profileName}`);
+
+  // Verify actual network blocking and recovery without navigating away from the draft.
+  // Linux WebKit can retain a false OS hint and emit offline on setOffline(false).
+  // Supply the missing online event only after an uncached HTTP request succeeds.
+  async function setEmulatedOffline(context, page, offline) {
+    await context.setOffline(offline);
+    const state = await page.evaluate(async (offline) => {
+      let reachable = false;
+      try {
+        reachable = (await fetch(`/?network-probe=${offline}`, { cache: "no-store" })).ok;
+      } catch {
+        // A failed request is required while the browser transport is disabled.
+      }
+      return { reachable, onlineHint: navigator.onLine };
+    }, offline);
+    if (state.reachable === offline)
+      throw new Error(`CONTROL_CENTER_NETWORK_EMULATION_INVALID:${JSON.stringify(state)}`);
+    const supplementedOnlineEvent =
+      !offline && profile.engine === webkit && process.platform === "linux" && !state.onlineHint;
+    if (supplementedOnlineEvent)
+      await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    networkEmulation.push({ offline, ...state, supplementedOnlineEvent });
+  }
 
   const server = spawn(process.execPath, ["test/e2e/fixtures/control-center-browser-server.mjs"], {
     cwd: repositoryRoot,
@@ -734,7 +758,7 @@ export async function qualifyBrowser({
     await waitForConnected(page);
     await page.getByRole("button", { name: "停用能力", exact: true }).click();
     phase = "offline";
-    await context.setOffline(true);
+    await setEmulatedOffline(context, page, true);
     await waitForText(page.locator(".connection"), "离线");
     const offlineGovernanceDialog = page.getByRole("dialog", { name: "确认治理操作" });
     await offlineGovernanceDialog.getByLabel("我已核对当前权威快照和操作影响。").check();
@@ -742,7 +766,7 @@ export async function qualifyBrowser({
       throw new Error("CONTROL_CENTER_OFFLINE_GOVERNANCE_MUTATION_ENABLED");
     }
     phase = "reconnecting";
-    await context.setOffline(false);
+    await setEmulatedOffline(context, page, false);
     await waitForConnected(page);
     await offlineGovernanceDialog.getByRole("button", { name: "关闭", exact: true }).last().click();
 
@@ -806,13 +830,13 @@ export async function qualifyBrowser({
     await waitForConnected(page);
     await page.getByLabel("消息草稿").fill("离线草稿");
     phase = "offline";
-    await context.setOffline(true);
+    await setEmulatedOffline(context, page, true);
     await waitForText(page.locator(".connection"), "离线");
     if (!(await page.getByRole("button", { name: "发送并启动 Run" }).isDisabled())) {
       throw new Error("CONTROL_CENTER_OFFLINE_MUTATION_ENABLED");
     }
     phase = "reconnecting";
-    await context.setOffline(false);
+    await setEmulatedOffline(context, page, false);
     await waitForConnected(page);
 
     const background = await context.newPage();
@@ -971,6 +995,7 @@ export async function qualifyBrowser({
       profile: profileName,
       runtime: profile.runtime,
       browserVersion,
+      networkEmulation,
       platform: `${process.platform}-${process.arch}`,
       emulation: profile.emulation ?? null,
       surfaces: surfaces.map(({ label, policy }) => ({ label, policy })),
@@ -1078,7 +1103,7 @@ export async function qualifyBrowser({
       }
       await writeFile(
         path.join(reportDirectory, "browser.json"),
-        `${JSON.stringify({ schemaVersion: 2, status: "failed", scope: "fixture-only", engine: profile.engine.name(), error: redactText(error.message, { sentinels }), diagnostics, pageErrors: pageErrorDetails }, null, 2)}\n`,
+        `${JSON.stringify({ schemaVersion: 2, status: "failed", scope: "fixture-only", engine: profile.engine.name(), error: redactText(error.message, { sentinels }), diagnostics, networkEmulation, pageErrors: pageErrorDetails }, null, 2)}\n`,
       );
     }
   } finally {

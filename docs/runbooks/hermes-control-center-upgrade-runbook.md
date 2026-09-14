@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:3c291ae4498aed68313d560242168818a2542fd9c1c31654068652a9172709f4"
+contract_sha256: "sha256:a1811b232d631daf355c24b7f7dc8ea97c26e73a7b9a783ca1c04517e216f6ee"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -127,6 +127,8 @@ Agent 在创建沙箱服务时完成本进程的首次安装校验，校验失�
 用户于 2026-09-13 另行明确选择“允许 8 小时完整 sudo，接受整台主机的 root 权限范围”。仅此临时授权允许执行 `hermes-temporary-sudo.py --grant-eight-hours`：在 Hermes 的 `/etc/sudoers.d/99-himawari-codex-20260913` 创建 `andy` 可作为 root 执行任意命令的免密码规则，使用 sudo 的 `NOTAFTER` 限定从安装起八小时，并由固定 systemd 定时器调用 root 持有的 `/etc/himawari/codex-sudo-expiry-20260913.py`，核对规则摘要后删除该条规则。此权限在系统层面覆盖整台主机；本任务仍只执行已授权的 Himawari 工作，不自动延长授权。它是对本 Runbook 项目路径范围的显式账户权限例外，不能泛化为后续任务的默认权限。安装前验证主机、账号、父目录所有权、目标与定时单元不存在及整个 sudoers 配置；先准备规则并通过 `visudo`，启动清理定时器后原子安装，再从 `andy` 身份忽略缓存执行 `sudo -n -k id -u` 验证。失败时撤销本次创建的规则与清理入口。用户在自己的终端输入密码，脚本不接收或保存密码。安装回执写入 `/data/hermes/himawari/qualifications/2026-09-13-temporary-sudo/receipt.json`，代理须读取实际到期时间。到期阻止新 sudo 命令，不能撤销已完成的修改或自动停止已启动的服务；重启后即使临时清理定时器丢失，规则自身的到期限制仍保留。若规则被修改，自动清理拒绝删除并保留诊断。需要提前撤销时，仅删除该临时规则并重新检查 sudoers，不覆盖系统已有规则。
 
 ## Verification
+
+完整浏览器验收使用 `scripts/qualify-control-center-browser.mjs` 的隔离 HTTP 服务。断网与恢复均先调用浏览器的网络模拟接口，再用不读取缓存的 HTTP 请求确认传输确实被阻断或恢复。Linux WebKit 在传输恢复后可能仍保留离线的系统提示；仅在实际请求成功且该提示仍为离线时，测试脚本补发联网事件，并在 `networkEmulation` 中记录补发情况。草稿保留、离线操作禁用和重连后的恢复断言继续执行；这种事件补发仅验证应用响应，不代表真实操作系统断网切换已验收。
 
 手机输入区遵循已确认原型的单行附件、执行菜单、模型、发送按钮顺序；搜索授权仅在执行菜单中展开，思考深度位于模型菜单内，运行时停止按钮占用发送位置。`scripts/test-mobile-composer-browser.mjs` 使用现有 HTTP fixture，通过 Gateway 边界提供生产同类的模型及搜索控件，检查三语、320/393/430 像素宽度、长模型名、菜单位置、较矮视口和运行状态。几何断言检查同一行、无重叠、触摸区域和视口内可见性，失败截图保留在报告目录；同时运行完整浏览器验收。模拟 WebKit 不等于真实 iPhone 软键盘或第三方浏览器已验证。
 

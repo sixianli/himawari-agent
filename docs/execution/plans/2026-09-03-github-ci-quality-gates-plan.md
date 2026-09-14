@@ -486,3 +486,10 @@ Hermes 隔离候选的正式 15 分钟覆盖率作业 `coverage-batched-fixtures
 
 
 提交 `5daedc92ff1dddda3917f8e956b9439cb239caef` 已在 Hermes 重新构建并测量：Linux 构建 8/8、安全扫描 3/3、完整覆盖率 4148/4148，变更行 87.387187%、变更函数分支 80.26554%，无历史指标回退。测量前捕获的 `commit` 源码快照、同次构建归档、测试报告、JSON 和 LCOV 由正式检查器验证，`ci/coverage-policy.json` 基线现绑定该提交。覆盖率证据位于隔离目录 `.ci-output/coverage-threshold-committed/`，显式基线测量结果为 `.ci-output/threshold-committed-measurement.json`。托管 CI 仍须以 PR 最新 head 的结果确认。
+
+
+### 2026-09-15 完整入口与浏览器网络模拟复验
+
+提交 `fd3612f` 的完整 `ci:local` 入口已运行，policy、static、Linux 构建、常规测试 3345/3345、Chromium、Firefox 和安全扫描通过。覆盖率同时采集候选和历史源码，历史 1553/1553 通过，候选在正式 15 分钟预算内未完成，结果为 `infrastructure_failed`；不得把此前独立通过的覆盖率报告填回该失败运行。之前同策略的完整提交测量仍是 4148/4148、87.387187%/80.26554%。
+
+WebKit 首轮卡在网络恢复。最小空页面证明 Linux WebKit 的模拟传输已恢复 HTTP，但 `navigator.onLine` 仍为 false 且发出 offline 事件。验收脚本现先验证无缓存 HTTP 的阻断与恢复，仅在 Linux WebKit 恢复请求成功而系统提示仍离线时补发 online，并记录 `networkEmulation`；保留原草稿、离线禁用和重连断言。修正后 Chromium、Firefox、WebKit 各 61/61 通过，静态检查 4/4 通过；托管 CI 结果另行确认。证据位于 `.ci-output/threshold-complete-local/`、`.ci-output/webkit-network-corrected/` 和 `.ci-output/webkit-network-probe.log`。
