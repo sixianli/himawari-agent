@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
   calls: [],
   fail: "",
   failSecurity: false,
+  testReportFailure: "",
   empty: false,
   pipelineExitCode: 0,
   writtenCandidateFailure: false,
@@ -75,7 +76,7 @@ vi.mock("../../scripts/ci/execute.mjs", async (original) => ({
     const json = args.find(
       (arg) => arg.startsWith("--outputFile.json=") || arg.startsWith("--outputFile="),
     );
-    if (json) {
+    if (json && state.testReportFailure !== "missing") {
       const projects = args.flatMap((arg, index) => (arg === "--project" ? [args[index + 1]] : []));
       const names = {
         unit: "packages/example/src/example.unit.test.ts",
@@ -83,13 +84,19 @@ vi.mock("../../scripts/ci/execute.mjs", async (original) => ({
         tooling: "test/tooling/example.test.mjs",
       };
       write(json.slice(json.indexOf("=") + 1), {
-        success: true,
+        success: state.testReportFailure !== "failed",
         testResults: projects.map((project) => ({
           name: path.join(state.root, names[project]),
-          assertionResults: [{ status: "passed" }],
+          assertionResults:
+            state.testReportFailure === "failed"
+              ? [{ status: "passed" }, { status: "failed" }]
+              : [{ status: "passed" }],
         })),
       });
     }
+    if (json && state.testReportFailure === "malformed")
+      write(json.slice(json.indexOf("=") + 1), "{broken");
+    if (json && state.testReportFailure) return { exitCode: 7, durationMs: 1 };
     const junit = args.find((arg) => arg.startsWith("--outputFile.junit="));
     if (junit) write(junit.slice(junit.indexOf("=") + 1), "<testsuites/>\n");
     if (name === "coverage") {
@@ -195,6 +202,7 @@ beforeEach(() => {
   state.calls = [];
   state.fail = "";
   state.failSecurity = false;
+  state.testReportFailure = "";
   state.empty = false;
   state.pipelineExitCode = 0;
   state.writtenCandidateFailure = false;
@@ -252,6 +260,32 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(state.calls[0].env).not.toHaveProperty("OPENAI_API_KEY");
     expect(state.calls[0].env.HOME).toContain(".ci-output");
   });
+  it.each(["failed", "passed", "missing", "malformed"])(
+    "保留失败进程的退出码与有效测试计数：%s",
+    async (report) => {
+      state.testReportFailure = report;
+      const result = await run("policy");
+      expect(result).toMatchObject({ status: "failed", exitCode: 7 });
+      const expected =
+        report === "failed"
+          ? { files: 1, executed: 2, passed: 1, failed: 1, skipped: 0 }
+          : report === "passed"
+            ? { files: 1, executed: 1, passed: 1, failed: 0, skipped: 0 }
+            : { files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 };
+      expect(result.counts).toEqual(expected);
+      expect(result.projects).toEqual(
+        ["failed", "passed"].includes(report) ? [{ id: "tooling", counts: expected }] : [],
+      );
+      const details = JSON.parse(
+        readFileSync(path.join(state.root, ".ci-output/policy/details.json"), "utf8"),
+      );
+      expect(details.failures).toContain("CI_COMMAND_FAILED:vitest-tooling");
+      if (report === "malformed")
+        expect(
+          details.failures.some((failure) => failure.startsWith("CI_TEST_REPORT_INVALID:tooling:")),
+        ).toBe(true);
+    },
+  );
   it("static调用原有检查、原始治理脚本和actionlint，不执行报告中的shell", async () => {
     const result = await run("static");
     expect(result.status).toBe("passed");

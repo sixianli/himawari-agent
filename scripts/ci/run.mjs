@@ -198,10 +198,25 @@ export async function runCheck({
           `--outputFile.junit=${junit}`,
         ];
         files.push({ path: filename, kind: "json" }, { path: junit, kind: "junit" });
-        await command(`vitest-${id}`, tools.node, args);
-        const counts = vitestCounts(readJson(filename));
+        let commandError;
+        try {
+          await command(`vitest-${id}`, tools.node, args);
+        } catch (error) {
+          commandError = error;
+        }
+        // A nonzero process can still produce a complete, useful test report.
+        // Preserve its counts without allowing a passing report to override the exit code.
+        let counts;
+        try {
+          counts = vitestCounts(readJson(filename));
+          result.projects.push({ id, counts });
+          result.counts = sumCounts(result.projects);
+        } catch (error) {
+          if (!commandError) throw error;
+          details.failures.push(`CI_TEST_REPORT_INVALID:${id}:${redactText(error.message)}`);
+        }
+        if (commandError) throw commandError;
         if (counts.failed || counts.skipped) throw new Error(`CI_TEST_INCOMPLETE:${id}`);
-        result.projects.push({ id, counts });
       }
       result.counts = sumCounts(result.projects);
     };
