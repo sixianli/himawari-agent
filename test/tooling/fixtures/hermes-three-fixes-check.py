@@ -121,8 +121,29 @@ with tempfile.TemporaryDirectory(prefix='himawari-three-fixes-') as directory:
     else:
         raise AssertionError('页面不能通过符号链接读取其他数据')
 
-for name, digest in qualifier['INPUTS'].items():
-    source = ROOT / ('scripts/probe-protected-runtime.mjs' if name == 'probe-protected-runtime.mjs'
-                     else 'scripts/operations/' + name)
-    assert qualifier['sha'](source) == digest, name
+# Release-specific helpers are frozen in operations; the shared runtime probe
+# evolves separately, so compare the exact historical bytes, not today's probe.
+probe = ROOT / 'test/tooling/fixtures/releases/2026-09-12-three-fixes/probe-protected-runtime.mjs.txt'
+sources = {name: probe if name == 'probe-protected-runtime.mjs'
+           else ROOT / 'scripts/operations' / name for name in qualifier['INPUTS']}
+def verify_helpers(inputs):
+    for name, digest in qualifier['INPUTS'].items():
+        assert qualifier['sha'](inputs[name]) == digest, name
+verify_helpers(sources)
+with tempfile.TemporaryDirectory(prefix='himawari-frozen-helper-') as directory:
+    changed = pathlib.Path(directory) / 'probe.mjs'
+    changed.write_bytes(probe.read_bytes() + b'\n// modified input\n')
+    try:
+        verify_helpers({**sources, 'probe-protected-runtime.mjs': changed})
+    except AssertionError as error:
+        assert str(error) == 'probe-protected-runtime.mjs'
+    else:
+        raise AssertionError('Frozen helper changes must remain rejected')
+    changed.unlink()
+    try:
+        verify_helpers({**sources, 'probe-protected-runtime.mjs': changed})
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError('Missing frozen helpers must remain rejected')
 assert 'source-manifest.json' in (ROOT/'scripts/operations/hermes-three-fixes-seal.mjs').read_text()
