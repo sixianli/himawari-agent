@@ -493,3 +493,8 @@ Hermes 隔离候选的正式 15 分钟覆盖率作业 `coverage-batched-fixtures
 提交 `fd3612f` 的完整 `ci:local` 入口已运行，policy、static、Linux 构建、常规测试 3345/3345、Chromium、Firefox 和安全扫描通过。覆盖率同时采集候选和历史源码，历史 1553/1553 通过，候选在正式 15 分钟预算内未完成，结果为 `infrastructure_failed`；不得把此前独立通过的覆盖率报告填回该失败运行。之前同策略的完整提交测量仍是 4148/4148、87.387187%/80.26554%。
 
 WebKit 首轮卡在网络恢复。最小空页面证明 Linux WebKit 的模拟传输已恢复 HTTP，但 `navigator.onLine` 仍为 false 且发出 offline 事件。验收脚本现先验证无缓存 HTTP 的阻断与恢复，仅在 Linux WebKit 恢复请求成功而系统提示仍离线时补发 online，并记录 `networkEmulation`；保留原草稿、离线禁用和重连断言。修正后 Chromium、Firefox、WebKit 各 61/61 通过，静态检查 4/4 通过；托管 CI 结果另行确认。证据位于 `.ci-output/threshold-complete-local/`、`.ci-output/webkit-network-corrected/` 和 `.ci-output/webkit-network-probe.log`。
+
+
+### 2026-09-15 托管 PR 历史扫描范围修复
+
+运行 `34884676066` 的安全作业在 `SECURITY_EXCEPTION_FINDING_UNKNOWN` 处失败：已接受的 Gateway 幂等测试例外仍在目标分支，重构移走当前字面量后，PR 增量历史范围没有覆盖它的原始来源。本地手动入口扫描全部历史，因此此前通过没有证明这一 PR 路径。PR 改为扫描候选 head 的完整祖先历史，包含全部新增提交及已接受例外的来源，不引入无关分支；当前文件扫描与例外的摘要、数量、来源、有效期和 Owner 校验保持原有要求。未新增或放宽例外。新增真实 Git 分支回归先失败，修正后安全相关 123 项通过；使用实际 PR 合并提交重放的安全入口 3/3、静态检查 4/4 通过；报告明确标记本地复现，不能替代托管复验。

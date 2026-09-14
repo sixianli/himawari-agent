@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applySecurityExceptions,
   enumerateLockDependencies,
+  gitleaksHistoryScope,
   loadReviewedExceptions,
   parseGitleaksReport,
   parseSemgrepReport,
@@ -530,6 +531,47 @@ describe("受审阅的窄范围例外", () => {
 });
 
 describe("scanner报告失败语义", () => {
+  it("PR 历史扫描拒绝把选项作为源码提交", () => {
+    expect(() =>
+      gitleaksHistoryScope({ root, context: { event: "pull_request", headSha: "--all" } }),
+    ).toThrow("GITLEAKS_HEAD_INVALID");
+  });
+  it("PR 覆盖已接受例外的祖先历史，但不扫描无关分支", () => {
+    const directory = temporary();
+    const run = (...args) =>
+      execFileSync("git", ["-C", directory, ...args], { encoding: "utf8" }).trim();
+    run("init", "-q");
+    run("config", "user.name", "Fixture");
+    run("config", "user.email", "fixture@example.invalid");
+    writeFileSync(join(directory, "fixture.txt"), "reviewed synthetic fixture\n");
+    run("add", ".");
+    run("commit", "-qm", "accepted fixture");
+    const baseSha = run("rev-parse", "HEAD");
+    writeFileSync(join(directory, "fixture.txt"), "fixture moved out\n");
+    run("add", ".");
+    run("commit", "-qm", "candidate change");
+    const headSha = run("rev-parse", "HEAD");
+    run("checkout", "-qb", "unrelated", baseSha);
+    writeFileSync(join(directory, "other.txt"), "unrelated branch\n");
+    run("add", ".");
+    run("commit", "-qm", "unrelated change");
+    const unrelated = run("rev-parse", "HEAD");
+    const scope = gitleaksHistoryScope({
+      root: directory,
+      context: { event: "pull_request", baseSha, headSha },
+    });
+    const scanned = run("rev-list", scope.range).split("\n");
+    expect(scanned).toContain(baseSha);
+    expect(scanned).toContain(headSha);
+    expect(scanned).not.toContain(unrelated);
+    expect(scope.commits).toBe(scanned.length);
+    const full = gitleaksHistoryScope({
+      root: directory,
+      context: { event: "workflow_dispatch", baseSha, headSha },
+    });
+    expect(run("rev-list", full.range).split("\n")).toContain(unrelated);
+    expect(full.commits).toBe(3);
+  });
   it("Gitleaks内部git报错且exit0也必须失败", () => {
     expect(() =>
       validateGitleaksExecution({

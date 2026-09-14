@@ -353,6 +353,18 @@ function snapshotCurrent(root, directory) {
   return copied.sort();
 }
 
+export function gitleaksHistoryScope({ root, context }) {
+  // Accepted exceptions can refer to fixtures moved or deleted by the PR.
+  // Scan the head's complete ancestry so their reviewed history remains in scope.
+  // Do not pull unrelated refs into a PR; full repository runs retain --all.
+  const pullRequest = context.event === "pull_request";
+  assert(!pullRequest || /^[a-f0-9]{40}$/.test(context.headSha), "GITLEAKS_HEAD_INVALID");
+  const range = pullRequest ? context.headSha : "--all";
+  const commits = Number(git(root, ["rev-list", "--count", range]).trim());
+  assert(commits > 0, "GITLEAKS_HISTORY_EMPTY");
+  return { range, commits };
+}
+
 function scanGitleaks({ executable, root, scratch, env, files, context, config }) {
   const common = [
     "--config",
@@ -388,14 +400,7 @@ function scanGitleaks({ executable, root, scratch, env, files, context, config }
     git(root, ["rev-parse", "--is-shallow-repository"]).trim() === "false",
     "GITLEAKS_HISTORY_SHALLOW",
   );
-  let range = "--all";
-  let commits;
-  if (context.event === "pull_request") {
-    const base = git(root, ["merge-base", context.baseSha, context.headSha]).trim();
-    range = `${base}..${context.headSha}`;
-    commits = Number(git(root, ["rev-list", "--count", range]).trim());
-  } else commits = Number(git(root, ["rev-list", "--count", "--all"]).trim());
-  assert(commits > 0, "GITLEAKS_HISTORY_EMPTY");
+  const { range, commits } = gitleaksHistoryScope({ root, context });
   const historyPath = join(scratch, "history-raw.json");
   const history = execute(
     executable,
