@@ -475,17 +475,17 @@ describe("SQLite offline authority transfer", () => {
     await expect(readAuthorityFile(target.layout)).rejects.toBeDefined();
   });
 
-  it("keeps every injected export, import and activation failure out of dual-active state", async () => {
-    const exportStages: readonly AuthorityTransferFaultStage[] = [
-      "export.after-intent",
-      "export.after-authority-pending",
-      "export.after-checkpoint",
-      "export.after-snapshot",
-      "export.after-payload-rewrap",
-      "export.after-encryption",
-      "export.after-verification",
-    ];
-    for (const stage of exportStages) {
+  it.each([
+    "export.after-intent",
+    "export.after-authority-pending",
+    "export.after-checkpoint",
+    "export.after-snapshot",
+    "export.after-payload-rewrap",
+    "export.after-encryption",
+    "export.after-verification",
+  ] satisfies readonly AuthorityTransferFaultStage[])(
+    "keeps %s from creating a second authority",
+    async (stage) => {
       const setup = await fixture((current) => {
         if (current === stage) throw new Error(`fault:${stage}`);
       });
@@ -502,22 +502,24 @@ describe("SQLite offline authority transfer", () => {
       const authority = await readAuthorityFile(setup.sourceLayout);
       expect(["active", "retired_pending_transfer"]).toContain(authority.status);
       expect(authority.status).not.toBe("retired");
-    }
+    },
+  );
 
-    const setup = await fixture();
-    const manifest = await setup.source.exportNamed({
-      transferId: TRANSFER_ID,
-      targetDeploymentId: TARGET_DEPLOYMENT_ID,
-    });
-    const importStages: readonly AuthorityTransferFaultStage[] = [
-      "import.after-authentication",
-      "import.after-decryption",
-      "import.after-payload-rewrap",
-      "import.after-diagnostics",
-      "import.after-data-commit",
-      "import.after-authority-file",
-    ];
-    for (const stage of importStages) {
+  it.each([
+    "import.after-authentication",
+    "import.after-decryption",
+    "import.after-payload-rewrap",
+    "import.after-diagnostics",
+    "import.after-data-commit",
+    "import.after-authority-file",
+  ] satisfies readonly AuthorityTransferFaultStage[])(
+    "keeps %s from activating an imported authority",
+    async (stage) => {
+      const setup = await fixture();
+      const manifest = await setup.source.exportNamed({
+        transferId: TRANSFER_ID,
+        targetDeploymentId: TARGET_DEPLOYMENT_ID,
+      });
       const target = await targetAdapter(setup, {
         fault: (current) => {
           if (current === stage) throw new Error(`fault:${stage}`);
@@ -538,14 +540,21 @@ describe("SQLite offline authority transfer", () => {
       }
       const authority = await readAuthorityFile(target.layout).catch(() => undefined);
       expect(authority?.status).not.toBe("active");
-    }
+    },
+  );
 
-    const activationStages: readonly AuthorityTransferFaultStage[] = [
-      "activate.after-preflight",
-      "activate.after-database",
-      "activate.after-authority-file",
-    ];
-    for (const stage of activationStages) {
+  it.each([
+    "activate.after-preflight",
+    "activate.after-database",
+    "activate.after-authority-file",
+  ] satisfies readonly AuthorityTransferFaultStage[])(
+    "keeps %s out of a dual-active state",
+    async (stage) => {
+      const setup = await fixture();
+      const manifest = await setup.source.exportNamed({
+        transferId: TRANSFER_ID,
+        targetDeploymentId: TARGET_DEPLOYMENT_ID,
+      });
       const target = await targetAdapter(setup);
       await target.adapter.importPackage(manifest.packageRef);
       const faulting = await targetAdapter(setup, {
@@ -561,6 +570,6 @@ describe("SQLite offline authority transfer", () => {
       expect(rows.filter((row) => row.status === "active").length).toBeLessThanOrEqual(1);
       const authority = await readAuthorityFile(target.layout);
       expect(authority.status === "active" ? authority.id : null).not.toBe(SOURCE_DEPLOYMENT_ID);
-    }
-  });
+    },
+  );
 });

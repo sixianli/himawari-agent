@@ -2281,6 +2281,10 @@ it.each([
     });
     const failure = vi.fn();
     const titleFailure = vi.fn();
+    let onTitleRequested = () => {};
+    const titleRequested = new Promise<void>((resolve) => {
+      onTitleRequested = resolve;
+    });
     let allowTitleAdmission = () => {};
     const titleAdmissionGate = new Promise<void>((resolve) => {
       allowTitleAdmission = resolve;
@@ -2291,6 +2295,7 @@ it.each([
     });
     const generateTitle = vi.fn(
       async (request: RuntimeRequest, _prompt: string, gate: ModelInvocationAdmissionPort) => {
+        onTitleRequested();
         if (budget > 0) await titleAdmissionGate;
         const admittedTitle = await gate.begin({
           modelRef: model.descriptor.ref,
@@ -2400,15 +2405,31 @@ it.each([
       settledBeforeTitleAdmission = true;
       return result;
     });
-    await vi.waitFor(() => expect(generateTitle).toHaveBeenCalledTimes(1));
-    // Let the synthetic Pi stream drain while the title's local admission is held.
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    const prematurelySettled = settledBeforeTitleAdmission;
-    allowTitleAdmission();
-    const pumped = await pumping;
-    // The answer and Run can settle while the title provider is still pending.
-    releaseTitle?.();
-    await composed.titles?.stop();
+    let prematurelySettled = false;
+    const pumped = await (async () => {
+      try {
+        if (budget > 0) {
+          // Observe the actual request, not a one-second deadline for SQLite and Pi startup.
+          await Promise.race([
+            titleRequested,
+            pumping.then(() => {
+              throw new Error("Run settled without requesting its title");
+            }),
+          ]);
+          expect(generateTitle).toHaveBeenCalledTimes(1);
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          prematurelySettled = settledBeforeTitleAdmission;
+        }
+        allowTitleAdmission();
+        return await pumping;
+      } finally {
+        // Also drain held work after a failed assertion before fixture teardown closes SQLite.
+        allowTitleAdmission();
+        releaseTitle?.();
+        await pumping;
+        await composed.titles?.stop();
+      }
+    })();
     if (budget > 0) {
       expect(prematurelySettled).toBe(false);
       expect(titleFailure).not.toHaveBeenCalled();
@@ -2417,12 +2438,16 @@ it.each([
         await setup.repository.threadRepository().read(ownerId, agentId, thread.thread.id),
       ).toMatchObject({ titleSource: "automatic" });
     } else {
+      expect(generateTitle).toHaveBeenCalledTimes(1);
       expect(titleFailure).toHaveBeenCalledWith(
         expect.objectContaining({
           code: PORT_ERROR_CODES.CONFLICT,
           message: "Run budget limit is exhausted",
         }),
       );
+      expect(
+        await setup.repository.threadRepository().read(ownerId, agentId, thread.thread.id),
+      ).toMatchObject({ titleRef: null });
     }
     expect(pumped).toMatchObject({
       claimed: 1,
@@ -2530,6 +2555,7 @@ it.each([
       );
       expect(submitted.messages.at(-1)?.content).toEqual([{ type: "text", text: nextPrompt }]);
       await restarted.loop.stop(1000);
+      await restarted.titles?.stop();
 
       const database = openQualifiedDatabase(setup.databasePath);
       try {
