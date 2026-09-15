@@ -1,0 +1,25 @@
+{
+  "url": "https://himawari.siyi.win/",
+  "browser": "user Chrome via extension, existing authenticated session",
+  "checked": [
+    "新版首页实际加载",
+    "新建进入草稿页",
+    "未发送草稿刷新恢复",
+    "设置仅通用、工具与权限、会话与数据三组",
+    "语言切换保留设置弹窗，已恢复简体中文",
+    "搜索设置读到原授权且可操作，未改变授权",
+    "归档管理入口可见",
+    "实际模型 GLM 5.3 Flash 与 DeepSeek V4 Flash 0731",
+    "GLM 离散滑块 0 到 1 再恢复 0，未发起模型调用",
+    "会话右键仅重命名、取消置顶、归档",
+    "正常连接无绿点或实时连接字样",
+    "通过真实键盘事件清除验收草稿，发送按钮禁用"
+  ],
+  "limits": [
+    "最后一次清空草稿后的刷新复核遇到浏览器控制通道超时，未将该复核计为通过。",
+    "未发起新的付费模型请求，生产新一轮模型回答、审批与工具计时未作实际调用复测。"
+  ],
+  "searchSettingsObservation": "打开时暂时禁用；完成异步读取后显示既有已授权且可操作。此次未记录精确加载耗时。",
+  "modelRequests": 0,
+  "productionMessagesSubmitted": 0
+}

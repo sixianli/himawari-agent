@@ -8,3 +8,4 @@ ts	phase	decision	why	evidence	result
 2026-09-15T16:39:50.340999+00:00	fix	先对原始 Pi 消息图脱敏，再加入计时元数据	完整单元测试发现循环引用保护被浅复制改变	redaction-regression.log	39 项针对性回归及 3365 项安装包测试通过
 2026-09-15T16:39:50.342756+00:00	verification	将工具过程测试接入既有浏览器验收	每次运行现有浏览器套件自动检查真实事件时长与恢复	chrome-complete/browser.json	四种语言与窗口组合通过
 2026-09-15T16:39:50.342760+00:00	visual	按冻结原型比较关键属性与完整截图	旧字体平滑与正文间距存在偏差	visual-delivery/comparison.json	九个部件属性相等，完整截图非零差异如实记录
+2026-09-15T23:50:02.687121+00:00	deployment	完整 Linux 安装重新验证后切换，并保留旧安装及恢复点	v4 改变后端计时事件，不能只更新静态页面	deployment-hermes/postflight.json	安装、备份、服务及主要生产 UI 通过；新付费模型验收未执行
