@@ -1,0 +1,109 @@
+name: Main confirmation
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: main-confirmation-${{ github.run_id }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+jobs:
+  plan:
+    name: main/evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.verify.outputs.mode }}
+      evidence: ${{ steps.retain.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 查找已合并 PR 的完整验收记录
+        id: candidate
+        env:
+          HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci/main-evidence.mjs discover
+      - name: 下载对应运行的不可变汇总记录
+        if: steps.candidate.outputs.artifact_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.candidate.outputs.run_id }}
+          artifact-ids: ${{ steps.candidate.outputs.artifact_id }}
+          merge-multiple: true
+          path: .ci-output/main-evidence/gate
+      - name: 无法证明一致时选择完整 CI
+        if: always()
+        id: verify
+        env:
+          HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci/main-evidence.mjs verify
+      - name: 保存路径选择证据
+        if: always()
+        id: retain
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: main-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci-output/main-evidence/
+          if-no-files-found: error
+          retention-days: 30
+  full:
+    needs: plan
+    if: always() && (needs.plan.result != 'success' || needs.plan.outputs.mode != 'light')
+    uses: ./.github/workflows/ci.yml
+  confirm:
+    name: main/confirmation
+    needs: plan
+    if: needs.plan.result == 'success' && needs.plan.outputs.mode == 'light'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CI_NODE: 22.22.3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 缓存已校验工具与 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            .ci-output/tools/downloads
+            .ci-output/tools/wheels
+            .ci-output/npm-cache
+          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
+      - name: 安装并核验固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: 隔离安装依赖及 SQLite 探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+      - name: 下载本次确认的 PR 证据
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: ${{ needs.plan.outputs.evidence }}
+          merge-multiple: true
+          path: .ci-output/main-evidence
+      - name: 在实际 main 提交上构建并验证安装启动及安全检查
+        env:
+          HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
+        run: .ci-output/tools/bin/node scripts/ci/main-confirm.mjs
+      - name: 保存 main 确认报告
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: main-confirmation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci-output/main-public/
+          if-no-files-found: error
+          retention-days: 30

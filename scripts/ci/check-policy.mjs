@@ -15,6 +15,7 @@ import {
   validateRecord,
 } from "./contracts.mjs";
 import { coverageProjects, inCoverageScope } from "./coverage-model.mjs";
+import { validateMainWorkflow } from "./main-workflow.mjs";
 import { validateQualityWorkflow } from "./quality-policy.mjs";
 
 const sorted = (values) => [...values].sort();
@@ -199,7 +200,13 @@ export function validateWorkflow(policy, source, toolchain) {
     workflow.on && typeof workflow.on === "object" && !Array.isArray(workflow.on),
     "Workflow events must be explicit mappings",
   );
-  assert(sameSet(Object.keys(workflow.on), policy.events), "Unexpected workflow events");
+  assert(
+    sameSet(
+      Object.keys(workflow.on),
+      policy.events.map((event) => (event === "push" ? "workflow_call" : event)),
+    ),
+    "Unexpected workflow events",
+  );
   for (const event of Object.values(workflow.on))
     assert(
       !event || (!Object.hasOwn(event, "paths") && !Object.hasOwn(event, "paths-ignore")),
@@ -216,8 +223,9 @@ export function validateWorkflow(policy, source, toolchain) {
     "PR activity types are incomplete",
   );
   assert(
-    sameSet(workflow.on.push?.branches ?? [], [policy.defaultBranch]),
-    "Push must target the default branch",
+    workflow.on.workflow_call?.inputs?.base_sha?.type === "string" &&
+      workflow.on.push === undefined,
+    "Main must call the reusable full workflow",
   );
   requireReadPermissions(workflow.permissions, "Workflow", true);
   assert(
@@ -707,6 +715,7 @@ export async function main(argv = process.argv.slice(2)) {
   validateToolchain(proposed, lock, readJson(path.join(root, "package.json")));
   const workflow = path.resolve(root, args["--workflow"] ?? ".github/workflows/ci.yml");
   validateWorkflow(proposed, readFileSync(workflow, "utf8"), lock);
+  validateMainWorkflow(readFileSync(path.join(root, ".github/workflows/main.yml"), "utf8"), lock);
   // The accepted contract also has to hold: proposed changes cannot excuse their own failures.
   validateWorkflow(source.policy, readFileSync(workflow, "utf8"), lock);
   validateQualityWorkflow(

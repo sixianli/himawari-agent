@@ -227,7 +227,7 @@ JSON、JUnit、LCOV、日志、截图和 trace 均按公开可读材料准备。
 
 ### 9. 触发、并发、权限与信任边界
 
-PR 使用 `pull_request`，在 opened、synchronize、reopened、ready_for_review 及影响目标分支的 edited 事件重新验证。初期 draft PR 也完整运行。默认分支使用 `push` 复验。`workflow_dispatch` 只验证明确 ref/SHA，不自动发布。禁用工作流级路径过滤和以 skip 标记跳过必需检查的交付方式。
+PR 使用 `pull_request`，在 opened、synchronize、reopened、ready_for_review 及影响目标分支的 edited 事件重新验证。初期 draft PR 也完整运行。默认分支使用 `main.yml` 接收 `push`，按下述条件选择 main 确认或调用完整 CI。完整 `ci.yml` 保留 PR、手动入口，并通过 `workflow_call` 供 main 回退复用。`workflow_dispatch` 只验证明确 ref/SHA，不自动发布。禁用工作流级路径过滤和以 skip 标记跳过必需检查的交付方式。
 
 公开 fork PR 作为正常贡献入口。目标 Actions 设置为所有外部贡献者需批准运行（`all_external_contributors`）；Owner 先审阅当前提交，特别是 workflow、安装脚本、政策和汇总器变更，再批准相应运行。等待批准属于尚未执行，不能计作成功或自动豁免；批准运行不等于批准合并，之后仍执行完整矩阵。首次贡献者、重复外部贡献者及 Dependabot 的实际审批和只读 token 行为分别验收，不通过改用 `pull_request_target` 或提供写权限来消除等待。
 
@@ -242,6 +242,26 @@ PR 记录 head SHA、base SHA 和实际 tested merge SHA，不擅自将 checkout
 PR 运行在 GitHub 托管临时 runner，不进入个人 Mac 或 Hermes。下载阶段可以访问审核过的软件源；测试只需要 loopback 和合成状态。缺少真实凭据不应导致普通测试偷偷读取主机 Secret。此合同不将测试 mock 或 Node 网络 stub 宣称为对恶意代码的 OS 网络隔离。
 
 同仓库 writer 及外部 PR 都能提议修改 workflow、政策和汇总器，绑定 GitHub Actions 来源不能证明执行逻辑未被修改。当前采用可信 Owner 审阅这一边界，批准外部运行前和合并前均需核对这些改动；有第二名审阅者后可增加 CODEOWNERS/非作者审批。需要独立可信 CI 控制面时另立设计，不能在本方案中假称已实现。
+
+### 9.1 2026-09-15 授权的执行去重
+
+PR 是合并前完整验收的主要入口。普通交付先创建 PR，不先手动运行一遍完整 CI；手动入口保留用于诊断与显式验证。PR 更新继续取消旧的同 PR 运行，完整矩阵、失败拒绝规则、80% 变更行与 70% 变更函数分支门槛不变。暂不启用按文件跳过测试或定期任务。
+
+main 路径选择器仅接受固定仓库的真实 main push。轻量确认必须同时满足：
+
+- 当前提交是一次 merge commit，第一父提交恰好是 push.before，第二父提交是同仓库已合并 PR 的 head；squash、rebase、多次合并打包推送、直接提交走完整 CI。
+- `.github/`、`ci/`、`scripts/ci/` 在此次合并中没有变化；验证逻辑更新后的首次 main 推送仍执行全套。
+- 固定 GitHub API 返回对应 head 的成功 `pull_request` CI；完成时间不超过 24 小时，工作流路径为 `.github/workflows/ci.yml`。手动 CI 不适用。
+- 按 API 返回的不可变 artifact ID 下载该 run/attempt 的 gate，拒绝过期或重复 gate。GateSummary 必须 passed，矩阵完整且唯一，无失败、缺项或失败原因。
+- gate/context 的 repository、event、runId、attempt、base/head/tested SHA、政策及工具链摘要一致。通过 GitHub commit API 独立核对被测 merge 的两个父提交和完整源码树；源码树必须等于实际 main 提交。
+
+API 不可用、下载失败、证据缺失、内容或配置不一致均选择原有完整 CI；不伪造新的完整门禁结论。路径选择本身异常时也调度完整 CI，基础设施异常仍可使外层 workflow 失败。确认 job 启动时再次核验证据；此后构建、安全或启动检查失败直接失败，不通过重跑掩盖失败。
+
+轻量确认在实际 main 提交上重新生成 Linux 构建产物，运行现有机器密钥、Gitleaks、Semgrep 检查，并使用本轮产物执行完整的 `installable-node-services.test.ts` 安装、启动、停止与恢复测试。输出独立的 `main-confirmation` 记录，引用先前 PR run/attempt；不将先前 gate 改写为当前 GateSummary，也不将 PR 产物冒充 main 发布产物。这份确认不替代 S9 全套资格或授权生产部署；需要完整 push GateSummary 的交接仍显式运行完整 CI。
+
+npm 下载和固定工具的 downloads/wheels 归档通过锁定的 cache Action 复用；工具每次从已验证归档重新安装，不缓存解压后的 executable 或安装记录。缓存键包含 OS、arch、精确 Node、job、package-lock、toolchain-lock 和安装脚本摘要；toolchain-lock 同时绑定 npm 和 Node ABI。恢复后仍校验下载完整性、执行锁文件安装和原生探针，禁止缓存 node_modules 或凭据。缓存缺失正常冷安装；损坏下载按现有校验拒绝。
+
+完整 CI 的 required job 保持原有 aggregate/context/报告校验逻辑，只把安装范围改为主锁文件中的 Ajv、TypeScript、YAML 及其精确传递依赖。最小安装禁止 lifecycle 和链接依赖；只在没有 node_modules 的隔离 checkout 中创建安装结果，不覆盖已有开发依赖。
 
 ### 10. GitHub 强制门禁的独立启用
 

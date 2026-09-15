@@ -7,9 +7,11 @@ on:
       - reopened
       - ready_for_review
       - edited
-  push:
-    branches:
-      - main
+  workflow_call:
+    inputs:
+      base_sha:
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       base_sha:
@@ -42,10 +44,18 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
+      - name: 缓存已校验工具与 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            .ci-output/tools/downloads
+            .ci-output/tools/wheels
+            .ci-output/npm-cache
+          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check policy --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -90,10 +100,18 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
+      - name: 缓存已校验工具与 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            .ci-output/tools/downloads
+            .ci-output/tools/wheels
+            .ci-output/npm-cache
+          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check static --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -152,10 +170,18 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node }}
+      - name: 缓存已校验工具与 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            .ci-output/tools/downloads
+            .ci-output/tools/wheels
+            .ci-output/npm-cache
+          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check build --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -223,10 +249,18 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node }}
+      - name: 缓存已校验工具与 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            .ci-output/tools/downloads
+            .ci-output/tools/wheels
+            .ci-output/npm-cache
+          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
       - name: 下载本次构建返回的归档 ID
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -277,10 +311,18 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.19.0
+      - name: 缓存已校验工具与 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            .ci-output/tools/downloads
+            .ci-output/tools/wheels
+            .ci-output/npm-cache
+          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check node-floor --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -347,10 +389,18 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node }}
+      - name: 缓存已校验工具与 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            .ci-output/tools/downloads
+            .ci-output/tools/wheels
+            .ci-output/npm-cache
+          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
       - name: 下载本次构建返回的归档 ID
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -404,10 +454,18 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
+      - name: 缓存已校验工具与 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            .ci-output/tools/downloads
+            .ci-output/tools/wheels
+            .ci-output/npm-cache
+          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
       - name: 下载本次 Linux 构建归档
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -458,10 +516,18 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
+      - name: 缓存已校验工具与 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            .ci-output/tools/downloads
+            .ci-output/tools/wheels
+            .ci-output/npm-cache
+          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
       - name: 执行共享检查
         env:
           HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
@@ -516,10 +582,18 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
+      - name: 缓存已校验工具与 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            .ci-output/tools/downloads
+            .ci-output/tools/wheels
+            .ci-output/npm-cache
+          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE" --without-scanners
-      - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 安装汇总器最小依赖
+        run: .ci-output/tools/bin/node scripts/ci/install-gate-dependencies.mjs
       - name: 下载当前 attempt 的完整报告
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:

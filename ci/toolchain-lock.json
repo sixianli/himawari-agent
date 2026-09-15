@@ -139,6 +139,16 @@
         "url": "https://raw.githubusercontent.com/actions/download-artifact/d3f86a106a0bac45b974a628896c90dbdf5c8093/LICENSE",
         "sha256": "3e855ffa704114a51628ef8f0bf3aeb41728adf9d9070e263bf58aa5640b0eb5"
       }
+    },
+    {
+      "repository": "actions/cache",
+      "version": "v4.3.0",
+      "sha": "0057852bfaa89a56745cba8c7296529d2fc39830",
+      "license": {
+        "identifier": "MIT",
+        "url": "https://raw.githubusercontent.com/actions/cache/0057852bfaa89a56745cba8c7296529d2fc39830/LICENSE",
+        "sha256": "7d070f6b64d9bcc530fe99cc21eaaa4b3c364e0b2d367d7735671fa202a03b32"
+      }
     }
   ],
   "tools": {

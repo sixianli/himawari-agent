@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
+  lstatSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -126,6 +127,7 @@ export function validateToolchainLock(lock) {
   platformArtifacts(lock.python.artifacts);
   assert(Array.isArray(lock.actions), "Actions 清单缺失");
   const expectedActions = [
+    "actions/cache",
     "actions/checkout",
     "actions/setup-node",
     "actions/setup-python",
@@ -455,7 +457,17 @@ export async function installTools({
 }) {
   assert(directory && resolve(directory) !== root, "必须提供独立工具安装目录");
   const prefix = resolve(directory);
-  assert(!existsSync(prefix) || readdirSync(prefix).length === 0, "工具安装目录必须为空");
+  assert(
+    !existsSync(prefix) ||
+      (!lstatSync(prefix).isSymbolicLink() &&
+        readdirSync(prefix).every(
+          (name) =>
+            ["downloads", "wheels"].includes(name) &&
+            lstatSync(join(prefix, name)).isDirectory() &&
+            !lstatSync(join(prefix, name)).isSymbolicLink(),
+        )),
+    "工具安装目录必须为空或仅含下载缓存",
+  );
   const lock = loadToolchainLock(root);
   const version = nodeVersion ?? lock.node.baseline;
   assert([lock.node.baseline, lock.node.floor].includes(version), "不支持的 Node 版本");

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:045d391a840e400c54730c9abca3d890570b0f2321242fb1f14efdc5cd8b7004"
+contract_sha256: "sha256:5e3cd7a6b0378226afdfb885f689d4b8b69c4f20494aaa016d5eecbcc7c23a1c"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -169,6 +169,7 @@ Agent 启动在开放准入前还会使用当前权威失效 v2 旧监督观察�
 - 可重定位 artifact、内部 workspace 包和外部依赖闭包：`scripts/package-node-runtime.mjs`。
 - 绝对前缀安装和三个入口：`scripts/install-node-runtime.mjs`。
 - 固定工具、禁用未知安装脚本和 SQLite 原生构建探针：`ci/toolchain-lock.json`、`scripts/ci/install-tools.mjs`、`scripts/ci/install-dependencies.mjs`。
+- CI 恢复下载缓存时，工具安装前缀只允许已有普通 `downloads`、`wheels` 目录；已有解压程序、安装记录或目录符号链接仍拒绝。每次重新核对归档摘要、解压安装并验证工具身份，不复用上次安装的 executable。仅 CI 汇总器使用主锁文件投影出的最小依赖，产品构建与本 Runbook 安装仍使用完整依赖及 SQLite 探针；该优化不改变运行时产物或服务启停约定。
 - 安装期间的磁盘采样与错误脱敏：`scripts/ci/resources.mjs`、`scripts/ci/redact-text.mjs`；采样只提供观测峰值下界，出现采样错误时须保留不完整状态和有界诊断，不能从安装成功推导采样完整。协调暂停单独记录原因、耗时和操作结果，不抹去暂停前的失败。
 - 文件模式、内容摘要和归档校验：`scripts/ci/artifact-files.mjs`、`scripts/ci/verify-artifact.mjs`。CI 归档安装还绑定同一次运行的 context；它与下述本机目录安装入口有不同的输入参数。 Context 的来源由 `scripts/ci/context.mjs` 核验；周期质量归档还核对已提交的启用状态、默认分支、cron 与同次 SHA，不能通过临时修改工作树取得周期身份。共享 Context 支持周期事件不启用任何安装或周期操作。
 - CI 源码摘要记录实际工作树中的构建输入，包含普通源码的新增、修改、删除和文件模式，不能只记录 Git HEAD。构建器仍引用的模块或显式必需文件缺失时必须失败；构建期间及安装前再次核对摘要，不能用忽略所有缺失文件的方式通过校验。
