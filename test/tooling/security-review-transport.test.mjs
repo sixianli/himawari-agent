@@ -1,3 +1,4 @@
+import { existsSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,7 +8,10 @@ import { readReviewComment } from "../../scripts/ci/security-owner-review.mjs";
 
 describe("GitHub 审批读取边界", () => {
   it("使用固定 HTTPS 地址并禁用隐式 curl 配置，不发送凭据", () => {
-    vi.mocked(execFileSync).mockReturnValueOnce(`${JSON.stringify({ id: 123 })}\n200`);
+    vi.mocked(execFileSync).mockImplementationOnce((_command, args) => {
+      writeFileSync(args[args.indexOf("--output") + 1], JSON.stringify({ id: 123 }));
+      return "200";
+    });
     expect(readReviewComment(123)).toEqual({ id: 123 });
     const [command, args, options] = vi.mocked(execFileSync).mock.calls.at(-1);
     expect(command).toBe("/usr/bin/curl");
@@ -17,6 +21,9 @@ describe("GitHub 审批读取边界", () => {
     expect(args).not.toContain("--location");
     expect(args).toEqual(expect.arrayContaining(["--retry", "2", "--retry-max-time", "40"]));
     expect(options.timeout).toBe(55_000);
+    expect(args).toContain("--retry-all-errors");
+    expect(args).toEqual(expect.arrayContaining(["--max-filesize", "1048576"]));
+    expect(existsSync(args[args.indexOf("--output") + 1])).toBe(false);
     expect(args.at(-1)).toBe(
       "https://api.github.com/repos/sixianli/himawari-agent/issues/comments/123",
     );
@@ -34,6 +41,10 @@ describe("GitHub 审批读取边界", () => {
     [22, "404", "SECURITY_REVIEW_HTTP_NOT_FOUND"],
     [28, "000", "SECURITY_REVIEW_TRANSPORT_TIMEOUT"],
     [60, "000", "SECURITY_REVIEW_TLS_FAILED"],
+    [6, "000", "SECURITY_REVIEW_DNS_FAILED"],
+    [7, "000", "SECURITY_REVIEW_CONNECT_FAILED"],
+    [92, "000", "SECURITY_REVIEW_HTTP_STREAM_FAILED"],
+    [63, "000", "SECURITY_REVIEW_RESPONSE_TOO_LARGE"],
   ])("安全区分 curl %s / HTTP %s 的失败", (status, http, code) => {
     vi.mocked(execFileSync).mockImplementationOnce(() => {
       throw Object.assign(new Error("private diagnostic"), {
@@ -51,7 +62,10 @@ describe("GitHub 审批读取边界", () => {
     expect(() => readReviewComment(123)).toThrow(/^SECURITY_REVIEW_UNAVAILABLE$/);
   });
   it("非 JSON 响应不能充当审批", () => {
-    vi.mocked(execFileSync).mockReturnValueOnce("not json\n200");
+    vi.mocked(execFileSync).mockImplementationOnce((_command, args) => {
+      writeFileSync(args[args.indexOf("--output") + 1], "not json");
+      return "200";
+    });
     expect(() => readReviewComment(123)).toThrow("SECURITY_REVIEW_INVALID_RESPONSE");
   });
 });

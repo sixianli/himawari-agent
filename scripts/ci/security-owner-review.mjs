@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { safeRelativePath } from "./contracts.mjs";
 
 const repository = "sixianli/himawari-agent";
@@ -14,63 +15,84 @@ const assert = (condition, code) => {
 /** Public API, fixed origin, TLS verification and no credentials or redirects. */
 export function readReviewComment(commentId) {
   assert(Number.isSafeInteger(commentId) && commentId > 0, "SECURITY_REVIEW_COMMENT_INVALID");
-  let response;
+  const directory = mkdtempSync(join(tmpdir(), "himawari-review-"));
+  const bodyPath = join(directory, "comment.json");
   try {
-    response = execFileSync(
-      "/usr/bin/curl",
-      [
-        "--disable",
-        "--fail",
-        "--silent",
-        "--show-error",
-        "--connect-timeout",
-        "5",
-        "--max-time",
-        "15",
-        "--retry",
-        "2",
-        "--retry-max-time",
-        "40",
-        "--proto",
-        "=https",
-        "--header",
-        "Accept: application/vnd.github+json",
-        "--write-out",
-        "\\n%{http_code}",
-        `https://api.github.com/repos/${repository}/issues/comments/${commentId}`,
-      ],
-      {
-        encoding: "utf8",
-        maxBuffer: 1024 * 1024,
-        timeout: 55_000,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-  } catch (error) {
-    // Never expose the response body, stderr, or process arguments in public logs.
-    const http = String(error.stdout ?? "")
-      .trimEnd()
-      .slice(-3);
-    const reason =
-      error.status === 22
-        ? ({ 403: "HTTP_FORBIDDEN", 404: "HTTP_NOT_FOUND", 429: "HTTP_RATE_LIMITED" }[http] ??
-          (/^5\d\d$/.test(http) ? "HTTP_SERVER_ERROR" : "HTTP_REJECTED"))
-        : error.status === 28 || error.code === "ETIMEDOUT"
-          ? "TRANSPORT_TIMEOUT"
-          : [35, 51, 60].includes(error.status)
-            ? "TLS_FAILED"
-            : "UNAVAILABLE";
-    throw new Error(`SECURITY_REVIEW_${reason}`);
-  }
-  const separator = response.lastIndexOf("\n");
-  assert(
-    separator >= 0 && response.slice(separator + 1).trim() === "200",
-    "SECURITY_REVIEW_HTTP_REJECTED",
-  );
-  try {
-    return JSON.parse(response.slice(0, separator));
-  } catch {
-    throw new Error("SECURITY_REVIEW_INVALID_RESPONSE");
+    let response;
+    try {
+      response = execFileSync(
+        "/usr/bin/curl",
+        [
+          "--disable",
+          "--fail",
+          "--silent",
+          "--show-error",
+          "--connect-timeout",
+          "5",
+          "--max-time",
+          "15",
+          "--retry",
+          "2",
+          "--retry-all-errors",
+          "--retry-max-time",
+          "40",
+          "--proto",
+          "=https",
+          "--header",
+          "Accept: application/vnd.github+json",
+          "--max-filesize",
+          "1048576",
+          "--output",
+          bodyPath,
+          "--write-out",
+          "%{http_code}",
+          `https://api.github.com/repos/${repository}/issues/comments/${commentId}`,
+        ],
+        {
+          encoding: "utf8",
+          maxBuffer: 1024 * 1024,
+          timeout: 55_000,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+    } catch (error) {
+      // Never expose the response body, stderr, or process arguments in public logs.
+      const http = String(error.stdout ?? "")
+        .trimEnd()
+        .slice(-3);
+      const reason =
+        error.status === 22
+          ? ({ 403: "HTTP_FORBIDDEN", 404: "HTTP_NOT_FOUND", 429: "HTTP_RATE_LIMITED" }[http] ??
+            (/^5\d\d$/.test(http) ? "HTTP_SERVER_ERROR" : "HTTP_REJECTED"))
+          : error.status === 28 || error.code === "ETIMEDOUT"
+            ? "TRANSPORT_TIMEOUT"
+            : [35, 51, 60].includes(error.status)
+              ? "TLS_FAILED"
+              : ({
+                  5: "PROXY_DNS_FAILED",
+                  6: "DNS_FAILED",
+                  7: "CONNECT_FAILED",
+                  16: "HTTP_STREAM_FAILED",
+                  18: "PARTIAL_RESPONSE",
+                  23: "RESPONSE_WRITE_FAILED",
+                  52: "EMPTY_RESPONSE",
+                  55: "SEND_FAILED",
+                  56: "RECEIVE_FAILED",
+                  63: "RESPONSE_TOO_LARGE",
+                  92: "HTTP_STREAM_FAILED",
+                }[error.status] ??
+                (error.code === "ENOBUFS" ? "RESPONSE_TOO_LARGE" : "UNAVAILABLE"));
+      throw new Error(`SECURITY_REVIEW_${reason}`);
+    }
+    assert(response.trim() === "200", "SECURITY_REVIEW_HTTP_REJECTED");
+    try {
+      return JSON.parse(readFileSync(bodyPath, "utf8"));
+    } catch {
+      throw new Error("SECURITY_REVIEW_INVALID_RESPONSE");
+    }
+  } finally {
+    // curl truncates this private output file before retrying partial transfers.
+    rmSync(directory, { recursive: true, force: true });
   }
 }
 
