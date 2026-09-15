@@ -245,7 +245,6 @@ export const messages = {
   "threads.filterAll": "All",
   "threads.messages": "Committed messages",
   "threads.messagesEmpty": "No committed messages yet",
-  "threads.answerLocale": "Answer language",
   "threads.rename": "Rename",
   "threads.pin": "Pin",
   "threads.unpin": "Unpin",

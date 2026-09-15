@@ -208,6 +208,49 @@ afterEach(async () => {
 });
 
 describe("thread control center interactions", () => {
+  it.each(["zh-CN", "en", "ja"] as const)(
+    "does not expose or mutate the legacy %s answer locale in thread details",
+    async (answerLocale) => {
+      thread = { ...thread, answerLocale };
+      await render();
+      await refresh();
+      expect(container.querySelector(".thread-details")).not.toBeNull();
+      expect(field("threads.answerLocale")).toBeNull();
+      expect(mutate).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["zh-CN", "en", "ja"] as const)(
+    "forks a committed turn without propagating the legacy %s answer locale",
+    async (answerLocale) => {
+      thread = { ...thread, answerLocale, messageWatermark: 1 };
+      threadMessages = [
+        {
+          messageId: "message-fork",
+          sequence: 1,
+          role: "agent",
+          contentRef: "content-fork",
+          dataClassification: "private",
+          status: "committed",
+          turnId: "turn-fork",
+          runId: null,
+          committedAt: NOW,
+        },
+      ];
+      await render();
+      await refresh();
+      await click("threads.fork");
+      expect(mutate).toHaveBeenCalledTimes(1);
+      expect(mutate.mock.calls[0]?.[0]).toMatchObject({
+        type: "thread.fork",
+        payload: {
+          sourceThreadId: thread.threadId,
+          sourceTurnId: "turn-fork",
+          sourceWatermark: 1,
+          policyRefs: [],
+        },
+      });
+    },
+  );
   it("loads every message page, removes overlap, and renders chronological content", async () => {
     const original = query.getMockImplementation();
     const row = (sequence: number): Detail["payload"]["messages"][number] => ({
@@ -398,21 +441,14 @@ describe("thread control center interactions", () => {
     expect(navigate).not.toHaveBeenCalled();
     expect(container.textContent).toContain("chat.start");
   });
-  it.each(["archive", "restore", "pin", "locale"])(
+  it.each(["archive", "restore", "pin"])(
     "preserves a refused %s operation without falsely reporting acceptance",
     async (operation) => {
       if (operation === "restore") thread = summary("archived");
       mutate.mockRejectedValueOnce("rejected");
       await render();
       await refresh();
-      if (operation === "locale") {
-        const select = container.querySelector<HTMLSelectElement>(".thread-details select");
-        if (!select) throw new Error("Missing answer locale selector");
-        await act(async () => {
-          select.value = "ja";
-          select.dispatchEvent(new Event("change", { bubbles: true }));
-        });
-      } else await click(`threads.${operation}`);
+      await click(`threads.${operation}`);
       expect(container.textContent).toContain("CONTROL_CENTER_REQUEST_REJECTED");
       expect(navigate).not.toHaveBeenCalled();
     },

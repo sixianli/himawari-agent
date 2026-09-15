@@ -250,7 +250,6 @@ export const messages = {
   "threads.filterAll": "すべて",
   "threads.messages": "確定済みメッセージ",
   "threads.messagesEmpty": "確定済みメッセージはまだありません",
-  "threads.answerLocale": "回答言語",
   "threads.rename": "名前を変更",
   "threads.pin": "ピン留め",
   "threads.unpin": "ピン留めを解除",

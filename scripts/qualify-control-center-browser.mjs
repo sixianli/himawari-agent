@@ -445,12 +445,9 @@ export async function qualifyBrowser({
       throw new Error("CONTROL_CENTER_DRAFT_NOT_CLEARED");
     }
     await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
-
     await page.getByRole("button", { name: "显示详情", exact: true }).click();
-    await page.getByLabel("回答语言").selectOption("en");
-    await waitForAccepted(page);
-    if ((await page.locator("html").getAttribute("lang")) !== "zh-CN") {
-      throw new Error("CONTROL_CENTER_ANSWER_LOCALE_CHANGED_UI_LOCALE");
+    if ((await page.getByLabel("回答语言", { exact: true }).count()) !== 0) {
+      throw new Error("CONTROL_CENTER_UNREQUESTED_ANSWER_LOCALE_CONTROL");
     }
     await page.getByRole("button", { name: "稳定检查点", exact: true }).click();
     await page.getByText("completed", { exact: true }).waitFor();
@@ -568,6 +565,12 @@ export async function qualifyBrowser({
     await waitForText(page.getByRole("main"), "Owner MacBook");
 
     const localeSelect = page.locator(".locale-control select");
+    let localeMutationCount = 0;
+    const countLocaleMutations = (request) => {
+      if (request.method() === "POST" && request.url().endsWith("/commands"))
+        localeMutationCount += 1;
+    };
+    page.on("request", countLocaleMutations);
     await showNavigation(page);
     await localeSelect.selectOption("en");
     await page.getByRole("heading", { name: "Sessions and devices", exact: true }).waitFor();
@@ -605,6 +608,9 @@ export async function qualifyBrowser({
     ) {
       throw new Error("CONTROL_CENTER_LOCALE_NOT_PERSISTED");
     }
+    page.off("request", countLocaleMutations);
+    if (localeMutationCount !== 0)
+      throw new Error(`CONTROL_CENTER_UI_LOCALE_MUTATED_SERVER:${localeMutationCount}`);
 
     await page.goto(`${baseUrl}/capabilities/capability-review?view=details`);
     await waitForConnected(page);
@@ -1004,7 +1010,7 @@ export async function qualifyBrowser({
         "deployment-availability-no-unsupported-queries",
         "installed-health-dependencies",
         "thread-chat",
-        "thread-answer-locale",
+        "thread-ui-language-only",
         "thread-search",
         "thread-checkpoint",
         "thread-revision-conflict-reapply",

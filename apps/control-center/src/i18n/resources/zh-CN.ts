@@ -239,7 +239,6 @@ export const messages = {
   "threads.filterAll": "全部",
   "threads.messages": "已提交消息",
   "threads.messagesEmpty": "尚无已提交消息",
-  "threads.answerLocale": "回答语言",
   "threads.rename": "重命名",
   "threads.pin": "置顶",
   "threads.unpin": "取消置顶",

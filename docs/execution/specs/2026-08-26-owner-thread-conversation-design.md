@@ -10,7 +10,7 @@ date: "2026-08-26"
 
 ## 目标
 
-定义 v0.2 中 Owner 直接感知的长期 Thread 与对话语义：Thread 如何创建、继续、命名、检索、置顶、归档、Fork、压缩和删除，Thread 级回答语言如何持续生效，以及多浏览器、重启和后台任务存在时如何保持同一身份和历史。
+定义 v0.2 中 Owner 直接感知的长期 Thread 与对话语义：Thread 如何创建、继续、命名、检索、置顶、归档、Fork、压缩和删除，模型如何依据对话决定回答语言，以及多浏览器、重启和后台任务存在时如何保持同一身份和历史。
 
 本 Spec 只拥有 Thread 与对话产品语义。SQLite、HTTP/SSE、Memory 提炼、模型路由和权威迁移由持久基础 Spec 负责；完整页面布局、三语 UI 资源与 WCAG 验收由控制中心 Spec 负责。
 
@@ -35,7 +35,7 @@ date: "2026-08-26"
 
 - Thread、Message、Turn、Run 和内部 Session 的用户可见关系。
 - 新建、自动标题、重命名、置顶、归档、恢复、搜索、筛选、Fork 和删除前协调。
-- Thread 级模型回答语言及其与浏览器 UI 语言的独立性。
+- 浏览器 UI 语言独立于模型；模型根据对话要求选择回答语言。
 - Thread 内短期上下文、跨 Thread 相关引用、长期 Memory 和 Owner Profile 的选择边界。
 - 带来源范围、水位线和策略版本的可恢复摘要与上下文压缩。
 - 待审批行动、后台任务和 Thread 生命周期之间的独立关系。
@@ -59,7 +59,7 @@ date: "2026-08-26"
 
 ### 生命周期与查找
 
-- 新 Thread 默认 active、未置顶、回答语言为简体中文，并可以异步生成可被 Owner 覆盖的标题。
+- 新 Thread 默认 active、未置顶，并可以异步生成可被 Owner 覆盖的标题。
 - Owner 可以重命名、置顶或取消置顶、归档和恢复 Thread；归档可逆、默认从主列表隐藏，但不删除内容或取消关联任务。
 - Owner 可以按标题和有权访问的消息内容搜索，并按时间、归档状态和任务状态筛选；被 Trash、永久删除或无权解密的内容不能出现在结果中。
 - 删除 Thread 前必须展示关联 active tasks，并要求 Owner 选择取消、暂停或重新绑定；未解决前不得完成删除。
@@ -72,10 +72,8 @@ date: "2026-08-26"
 
 ### 回答语言与上下文
 
-- 每个新 Thread 默认模型回答语言为简体中文。Owner 通过可见选择或明确自然语言指令修改后，该设置持续到再次修改。
-- 浏览器 UI 语言改变、输入一段外语或引用外文资料都不能自动永久改变 Thread 回答语言。
-- Agent 生成的回答、摘要和解释使用当前 Thread 回答语言；代码、日志、原始引用和专有名词保持原文，只有明确要求时才另行翻译。
-- Context Formation 只选择当前 Thread 必需历史、相关跨 Thread 摘要或片段、Owner Profile、长期 Memory 和有效 policy references；不得无差别发送全部历史。
+- 按 2026-09-12 所有者确认的要求，不设置 Thread 回答语言；模型根据用户提问、上下文和明确语言要求选择回答语言。
+- 浏览器 UI 语言只影响界面，不作为模型策略注入；原始代码、日志、引用和专有名词保持原文。
 
 ### 压缩、审批与任务
 
@@ -129,9 +127,9 @@ Fork transaction 固定来源 Turn 已提交时的消息水位线、当时有效
 
 ### 回答语言
 
-`answer_locale` 使用产品支持的语言标识，v0.2 初始允许 `zh-CN`、`en`、`ja`。自然语言修改必须被解析为显式设置意图并在回复前提交；仅检测输入语言不能更新该字段。
+不再从页面或 Thread 语言字段向生产模型请求注入回答语言策略，也不在新 Fork 中附加回答语言 policy reference。用户以自然语言提出的语言要求仍作为对话内容传给模型。
 
-Context Formation 把回答语言作为 policy reference 注入模型。摘要、Memory 展示解释和主动结果在关联 Thread 存在时使用该 Thread 语言；没有关联 Thread 的全局结果使用 Owner 当前明确设置的全局展示默认值，初始为简体中文，但不反向修改任何 Thread。
+既有 `answer_locale` 字段和旧命令数据保留以读取已有记录，本次不修改数据库 schema 或历史消息；它们不参与生产回答语言选择。不得将保留的历史字段解释为页面仍提供该功能。
 
 ### 上下文压缩
 
@@ -155,7 +153,6 @@ Thread 永久删除的级联和保留 Memory 的 deleted-source marker 遵循持
 | Fork 来源未提交或已删除 | 拒绝 Fork，不创建部分新 Thread |
 | 搜索 projection 不可用 | 明确降级并排队重建，不扫描或披露无权正文 |
 | summary 生成中断 | 保留 transcript 与旧 current summary；同 identity 有界重试 |
-| answer locale 无效 | 保持原设置并返回受支持值，不根据输入语言猜测写入 |
 | Thread 有 active tasks | 阻止删除并返回必须处理的稳定 task references |
 | authority 或 fence 失效 | 拒绝 mutation；只允许安全读取已提交状态 |
 
@@ -166,7 +163,7 @@ Thread 永久删除的级联和保留 Memory 的 deleted-source marker 遵循持
 - Browser E2E 覆盖新建、自动标题与手动覆盖、重命名、置顶、归档/恢复、Fork、语言切换、压缩、任务关联和删除前协调。
 - 对四类 checkpoint 触发和每个 summary commit checkpoint 做 kill/restart，验证原始历史、watermark 与 exactly-once generation。
 - 验证跨 Thread 检索只注入相关引用，Trace 包含候选、选择和来源，删除来源后无法解析正文。
-- 用中英日输入组合证明 UI locale、输入语言和 Thread answer locale 相互独立。
+- 验证三语 UI 切换只保存浏览器偏好；不出现回答语言选择器，不发送 Thread 语言设置命令，不向生产模型注入该策略。
 - 在两个浏览器和正常主机重启后验证同一 Thread、Run、审批、任务和 cursor 的一致恢复。
 - 运行 unit、contract、integration、browser E2E、规模测试、`npm run check` 和 strict document validation。
 
