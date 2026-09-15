@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:00e74a2de7e46f51b49135a4b458d6496c26d92e9b9c22696dbabc6879edc576"
+contract_sha256: "sha256:5e3cd7a6b0378226afdfb885f689d4b8b69c4f20494aaa016d5eecbcc7c23a1c"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -169,6 +169,7 @@ Agent 启动在开放准入前还会使用当前权威失效 v2 旧监督观察�
 - 可重定位 artifact、内部 workspace 包和外部依赖闭包：`scripts/package-node-runtime.mjs`。
 - 绝对前缀安装和三个入口：`scripts/install-node-runtime.mjs`。
 - 固定工具、禁用未知安装脚本和 SQLite 原生构建探针：`ci/toolchain-lock.json`、`scripts/ci/install-tools.mjs`、`scripts/ci/install-dependencies.mjs`。
+- CI 恢复下载缓存时，工具安装前缀只允许已有普通 `downloads`、`wheels` 目录；已有解压程序、安装记录或目录符号链接仍拒绝。每次重新核对归档摘要、解压安装并验证工具身份，不复用上次安装的 executable。仅 CI 汇总器使用主锁文件投影出的最小依赖，产品构建与本 Runbook 安装仍使用完整依赖及 SQLite 探针；该优化不改变运行时产物或服务启停约定。
 - 安装期间的磁盘采样与错误脱敏：`scripts/ci/resources.mjs`、`scripts/ci/redact-text.mjs`；采样只提供观测峰值下界，出现采样错误时须保留不完整状态和有界诊断，不能从安装成功推导采样完整。协调暂停单独记录原因、耗时和操作结果，不抹去暂停前的失败。
 - 文件模式、内容摘要和归档校验：`scripts/ci/artifact-files.mjs`、`scripts/ci/verify-artifact.mjs`。CI 归档安装还绑定同一次运行的 context；它与下述本机目录安装入口有不同的输入参数。 Context 的来源由 `scripts/ci/context.mjs` 核验；周期质量归档还核对已提交的启用状态、默认分支、cron 与同次 SHA，不能通过临时修改工作树取得周期身份。共享 Context 支持周期事件不启用任何安装或周期操作。
 - CI 源码摘要记录实际工作树中的构建输入，包含普通源码的新增、修改、删除和文件模式，不能只记录 Git HEAD。构建器仍引用的模块或显式必需文件缺失时必须失败；构建期间及安装前再次核对摘要，不能用忽略所有缺失文件的方式通过校验。
@@ -247,7 +248,7 @@ ps -axo pid,command
 
 1. 对本 Runbook 执行静态 contract check，建立新的受限 evidence 目录，冻结本次构建 commit、prefix、state root、deployment、Owner/Agent 和运行 ID。
 2. 在干净或已审阅的工作树上按 README 安装固定工具链，再执行 `npm run ci:install`；该入口先运行 `npm ci --ignore-scripts`，只构建清单中已审阅的 SQLite 原生依赖并实际验证内存读写。将本次工具目录的 `bin` 放到 PATH 后执行 `npm run build`。工具目录和安装证据目录必须是本次新目录，已有目录使用显式参数另选路径，不覆盖旧证据。不能把未校验的旧 node_modules 或单独 `npm ci --ignore-scripts` 当作完成原生依赖安装。
-3. 核对两个 artifact manifest 的提交输入、package-lock SHA、workspace checksum、Node 平台/架构、schema/migration sequence 和依赖版本。确认 runtime 外部依赖根与列入打包的生产 workspace manifests 完全对应，`@modelcontextprotocol/client` 等新生产依赖和传递闭包存在，`@himawari-agent/testing` 不存在；若核对失败，删除本次临时产物并停止。
+3. 核对两个 artifact manifest 的提交输入、package-lock SHA、workspace checksum、Node 平台/架构、schema/migration sequence 和依赖版本。构建输入摘要包含仓库 `assets/` 下的品牌资源；Logo 缺失必须导致浏览器构建失败，不能接受资源被改动后仍沿用旧摘要的归档。确认 runtime 外部依赖根与列入打包的生产 workspace manifests 完全对应，`@modelcontextprotocol/client` 等新生产依赖和传递闭包存在，`@himawari-agent/testing` 不存在；若核对失败，删除本次临时产物并停止。
 4. 创建本次明确的绝对安装前缀并安装：
 
 ~~~text

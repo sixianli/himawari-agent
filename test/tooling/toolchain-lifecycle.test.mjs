@@ -311,6 +311,17 @@ describe("合成工具包的安装过程", () => {
       installTools({ root: other.root, directory: other.toolsDirectory }),
     ).rejects.toThrow("SYNTHETIC_pip_FAILED");
   });
+  it("仅复用下载缓存，重新安装并独立校验工具", async () => {
+    const f = fixture();
+    await installTools({ root: f.root, directory: f.toolsDirectory, includeScanners: false });
+    const target = join(f.directory, "warm-tools");
+    mkdirSync(target);
+    cpSync(join(f.toolsDirectory, "downloads"), join(target, "downloads"), { recursive: true });
+    await installTools({ root: f.root, directory: target, includeScanners: false });
+    expect(verifyInstalledTools({ root: f.root, directory: target }).verification).toBe(
+      "download-digests-executable-bytes-and-runtime-versions",
+    );
+  });
   it("拒绝非空目标和未支持版本", async () => {
     const f = fixture();
     mkdirSync(f.toolsDirectory);

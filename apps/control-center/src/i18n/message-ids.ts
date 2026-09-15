@@ -233,7 +233,6 @@ export const MESSAGE_IDS = [
   "threads.filterAll",
   "threads.messages",
   "threads.messagesEmpty",
-  "threads.answerLocale",
   "threads.rename",
   "threads.pin",
   "threads.unpin",

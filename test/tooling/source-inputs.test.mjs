@@ -31,6 +31,7 @@ describe("transitive build inputs", () => {
       "scripts/generate-artifact-manifest.mjs": "export {};",
       "scripts/check-control-center-build.mjs": "export {};",
       "ci/policy.schema.json": "{}",
+      "assets/brand/himawari/v1/logo-symbol-light.png": "asset version 1",
       "scripts/ci/unrelated.mjs": "export {};",
     });
     execFileSync("git", ["init", "--quiet", root]);
@@ -45,6 +46,12 @@ describe("transitive build inputs", () => {
     expect(modeChanged).not.toBe(helperChanged);
     await writeFile(path.join(root, "ci/policy.schema.json"), '{"changed":true}');
     expect(await sourceTreeDigest(root)).not.toBe(modeChanged);
+    const beforeAssetChange = await sourceTreeDigest(root);
+    await writeFile(
+      path.join(root, "assets/brand/himawari/v1/logo-symbol-light.png"),
+      "asset version 2",
+    );
+    expect(await sourceTreeDigest(root)).not.toBe(beforeAssetChange);
   });
   it("tracks current worktree deletions and restoration without hiding missing imports", async () => {
     const root = await fixture({

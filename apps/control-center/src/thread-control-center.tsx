@@ -48,7 +48,6 @@ type ThreadIntent =
   | { readonly kind: "archive" }
   | { readonly kind: "restore" }
   | { readonly kind: "trash" }
-  | { readonly kind: "locale"; readonly answerLocale: "zh-CN" | "en" | "ja" }
   | {
       readonly kind: "fork";
       readonly sourceTurnId: string;
@@ -481,9 +480,7 @@ export function useThreadControlCenter(
             : "thread.message.submit"
           : intent.kind === "stop"
             ? "thread.run.cancel"
-            : intent.kind === "locale"
-              ? "thread.set_answer_locale"
-              : `thread.${intent.kind}`;
+            : `thread.${intent.kind}`;
       const identity = mutationIdentity(storage, {
         operationKey: operationKey(
           intent.kind,
@@ -512,7 +509,6 @@ export function useThreadControlCenter(
           | "thread.archive"
           | "thread.restore"
           | "thread.fork"
-          | "thread.set_answer_locale"
           | "thread.trash";
         switch (intent.kind) {
           case "submit": {
@@ -587,15 +583,6 @@ export function useThreadControlCenter(
               resultRef,
             };
             break;
-          case "locale":
-            type = "thread.set_answer_locale";
-            payload = {
-              threadId: thread.threadId,
-              expectedRevision: revision,
-              answerLocale: intent.answerLocale,
-              resultRef,
-            };
-            break;
           case "fork":
             type = "thread.fork";
             payload = {
@@ -604,7 +591,7 @@ export function useThreadControlCenter(
               sourceWatermark: intent.sourceWatermark,
               targetThreadId: `thread-fork:${stableSuffix}`,
               summaryRefs: [],
-              policyRefs: [`answer-locale:${thread.answerLocale}`],
+              policyRefs: [],
               resultRef,
             };
             break;
@@ -971,23 +958,6 @@ export function useThreadControlCenter(
   const details = selectedSummary ? (
     <div className="thread-details">
       {route.view === "details" ? feedback : null}
-      {detail ? (
-        <Field label={message("threads.answerLocale")}>
-          <select
-            value={detail.payload.thread.answerLocale}
-            onChange={(event) =>
-              void performIntent({
-                kind: "locale",
-                answerLocale: event.target.value as "zh-CN" | "en" | "ja",
-              })
-            }
-          >
-            <option value="zh-CN">简体中文</option>
-            <option value="en">English</option>
-            <option value="ja">日本語</option>
-          </select>
-        </Field>
-      ) : null}
       <p>{message("threads.rawContentNotice")}</p>
       <dl>
         <div>

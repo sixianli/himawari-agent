@@ -116,7 +116,7 @@ export async function sourceTreeDigest(root) {
       ...files.filter(
         (filename) =>
           !deleted.has(filename) &&
-          /^(?:apps\/|packages\/|tsconfig[^/]*\.json$|package(?:-lock)?\.json$|ci\/(?:toolchain-lock|policy|coverage-policy|policy\.schema|result\.schema|coverage\.schema)\.json$)/u.test(
+          /^(?:apps\/|packages\/|assets\/|tsconfig[^/]*\.json$|package(?:-lock)?\.json$|ci\/(?:toolchain-lock|policy|coverage-policy|policy\.schema|result\.schema|coverage\.schema)\.json$)/u.test(
             filename,
           ) &&
           !/(?:^|\/)(?:dist|node_modules|test)(?:\/|$)|\.test\./u.test(filename),

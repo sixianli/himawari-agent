@@ -1,7 +1,4 @@
-const symbol = new URL(
-  "../../../../assets/brand/himawari/v1/logo-symbol-light.png",
-  import.meta.url,
-).href;
+import symbol from "../../../../assets/brand/himawari/v1/logo-symbol-light.png";
 
 /** The approved RGB image deliberately retains its light background. */
 export function HimawariBrand({ wordmark = false }: { readonly wordmark?: boolean }) {

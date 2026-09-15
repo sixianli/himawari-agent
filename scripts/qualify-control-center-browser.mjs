@@ -374,6 +374,14 @@ export async function qualifyBrowser({
     observePageErrors(page);
     await page.goto(`${baseUrl}/threads/thread-main?view=content`);
     await waitForConnected(page);
+    const brandLoaded = await page
+      .locator(".himawari-brand img")
+      .first()
+      .evaluate(async (image) => {
+        await image.decode();
+        return image.naturalWidth > 0 && image.naturalHeight > 0;
+      });
+    if (!brandLoaded) throw new Error("CONTROL_CENTER_BRAND_IMAGE_NOT_LOADED");
     if (fault === "page-error") {
       const receivedError = page.waitForEvent("pageerror");
       await page.evaluate(() =>
@@ -438,6 +446,30 @@ export async function qualifyBrowser({
 
     if (profile.emulation) await page.locator(".mobile-sidebar-toggle").click();
 
+    // Reject before dispatch, as the real gateway does for an expired CSRF token.
+    let csrfRefreshes = 0;
+    const csrfRequests = [];
+    const refreshRoute = async (route) => {
+      csrfRefreshes += 1;
+      const response = await route.fetch();
+      await route.fulfill({
+        response,
+        json: { ...(await response.json()), csrfToken: "csrf-renewed-fixture" },
+      });
+    };
+    const expiredRoute = async (route) => {
+      const request = route.request();
+      csrfRequests.push({ body: request.postData(), headers: request.headers() });
+      if (csrfRequests.length === 1) {
+        await route.fulfill({
+          status: 403,
+          contentType: "application/json",
+          body: JSON.stringify({ error: { code: "HTTP_GATEWAY_CSRF_REJECTED" } }),
+        });
+      } else await route.continue();
+    };
+    await page.route("**/api/control-center/v1/config", refreshRoute);
+    await page.route("**/api/payload/v1/text", expiredRoute);
     await page.getByLabel("消息草稿").fill("浏览器资格测试消息");
     await page.getByRole("button", { name: "发送并启动 Run" }).click();
     await waitForAccepted(page);
@@ -445,12 +477,26 @@ export async function qualifyBrowser({
       throw new Error("CONTROL_CENTER_DRAFT_NOT_CLEARED");
     }
     await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
+    if (
+      csrfRefreshes !== 1 ||
+      csrfRequests.length !== 3 ||
+      csrfRequests[0].body !== csrfRequests[1].body ||
+      !csrfRequests[0].headers["idempotency-key"] ||
+      csrfRequests[0].headers["idempotency-key"] !== csrfRequests[1].headers["idempotency-key"] ||
+      csrfRequests[1].headers["x-csrf-token"] !== "csrf-renewed-fixture" ||
+      csrfRequests[2].headers["x-csrf-token"] !== "csrf-renewed-fixture" ||
+      JSON.parse(csrfRequests[2].body).content !== "浏览器资格测试消息" ||
+      csrfRequests[2].headers["idempotency-key"] === csrfRequests[1].headers["idempotency-key"]
+    )
+      throw new Error(
+        `CONTROL_CENTER_CSRF_REFRESH_INVALID:${JSON.stringify({ csrfRefreshes, requests: csrfRequests.map((request) => ({ body: request.body, token: request.headers["x-csrf-token"], idempotencyKey: request.headers["idempotency-key"] })) })}`,
+      );
+    await page.unroute("**/api/control-center/v1/config", refreshRoute);
+    await page.unroute("**/api/payload/v1/text", expiredRoute);
 
     await page.getByRole("button", { name: "显示详情", exact: true }).click();
-    await page.getByLabel("回答语言").selectOption("en");
-    await waitForAccepted(page);
-    if ((await page.locator("html").getAttribute("lang")) !== "zh-CN") {
-      throw new Error("CONTROL_CENTER_ANSWER_LOCALE_CHANGED_UI_LOCALE");
+    if ((await page.getByLabel("回答语言", { exact: true }).count()) !== 0) {
+      throw new Error("CONTROL_CENTER_UNREQUESTED_ANSWER_LOCALE_CONTROL");
     }
     await page.getByRole("button", { name: "稳定检查点", exact: true }).click();
     await page.getByText("completed", { exact: true }).waitFor();
@@ -568,6 +614,12 @@ export async function qualifyBrowser({
     await waitForText(page.getByRole("main"), "Owner MacBook");
 
     const localeSelect = page.locator(".locale-control select");
+    let localeMutationCount = 0;
+    const countLocaleMutations = (request) => {
+      if (request.method() === "POST" && request.url().endsWith("/commands"))
+        localeMutationCount += 1;
+    };
+    page.on("request", countLocaleMutations);
     await showNavigation(page);
     await localeSelect.selectOption("en");
     await page.getByRole("heading", { name: "Sessions and devices", exact: true }).waitFor();
@@ -605,6 +657,9 @@ export async function qualifyBrowser({
     ) {
       throw new Error("CONTROL_CENTER_LOCALE_NOT_PERSISTED");
     }
+    page.off("request", countLocaleMutations);
+    if (localeMutationCount !== 0)
+      throw new Error(`CONTROL_CENTER_UI_LOCALE_MUTATED_SERVER:${localeMutationCount}`);
 
     await page.goto(`${baseUrl}/capabilities/capability-review?view=details`);
     await waitForConnected(page);
@@ -1000,11 +1055,13 @@ export async function qualifyBrowser({
       emulation: profile.emulation ?? null,
       surfaces: surfaces.map(({ label, policy }) => ({ label, policy })),
       journeys: [
+        "brand-image-loaded-from-build",
         "mobile-composer-prototype-layout-and-menus",
         "deployment-availability-no-unsupported-queries",
         "installed-health-dependencies",
         "thread-chat",
-        "thread-answer-locale",
+        "expired-csrf-refresh-preserves-command",
+        "thread-ui-language-only",
         "thread-search",
         "thread-checkpoint",
         "thread-revision-conflict-reapply",

@@ -57,6 +57,7 @@ it("policy入口在测试发现前拒绝质量工作流漏项", async () => {
     "ci/quality-policy.json",
     "package.json",
     ".github/workflows/ci.yml",
+    ".github/workflows/main.yml",
   ]) {
     mkdirSync(path.dirname(path.join(root, filename)), { recursive: true });
     copyFileSync(path.join(repositoryRoot, filename), path.join(root, filename));
@@ -74,7 +75,7 @@ function workflow() {
     name: "CI",
     on: {
       pull_request: { types: ["opened", "synchronize", "reopened", "ready_for_review", "edited"] },
-      push: { branches: ["main"] },
+      workflow_call: { inputs: { base_sha: { required: false, type: "string" } } },
       workflow_dispatch: {},
     },
     permissions: { contents: "read" },

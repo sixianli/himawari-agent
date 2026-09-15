@@ -439,7 +439,7 @@ function scanGitleaks({ executable, root, scratch, env, files, context, config }
   };
 }
 
-function scanMachineSecrets({ root, snapshot, env, node, context }) {
+export function scanMachineSecrets({ root, snapshot, env, node, context, machineExceptions = [] }) {
   for (const path of [
     "scripts/scan-machine-secrets.mjs",
     "scripts/machine-secret-scan-baseline.json",
@@ -448,6 +448,22 @@ function scanMachineSecrets({ root, snapshot, env, node, context }) {
     mkdirSync(dirname(join(snapshot, path)), { recursive: true });
     writeFileSync(join(snapshot, path), accepted);
   }
+  // Re-observe owner-reviewed entries even after their baseline has merged.
+  // Only the disposable scan copy changes; exact count/disappearance checks remain.
+  const baselinePath = join(snapshot, "scripts/machine-secret-scan-baseline.json");
+  const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
+  writeFileSync(
+    baselinePath,
+    JSON.stringify(
+      baseline.filter(
+        (item) =>
+          !machineExceptions.some(
+            (entry) =>
+              entry.path === item.file && entry.id === item.ruleId && entry.digest === item.digest,
+          ),
+      ),
+    ),
+  );
   const result = execute(node, [join(snapshot, "scripts/scan-machine-secrets.mjs")], {
     root: snapshot,
     env,
@@ -612,7 +628,14 @@ export async function runSecurityChecks({
       }
     };
     await perform("machine-secrets", () =>
-      scanMachineSecrets({ root, snapshot, env, node: verification.executables.node, context }),
+      scanMachineSecrets({
+        root,
+        snapshot,
+        env,
+        node: verification.executables.node,
+        context,
+        machineExceptions: reviewed?.machineExceptions,
+      }),
     );
     await perform("gitleaks", () =>
       scanGitleaks({
