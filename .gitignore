@@ -5,6 +5,7 @@ coverage/
 .playwright-cli/
 output/playwright/
 *.tsbuildinfo
+__pycache__/
 *.log
 .DS_Store
 .env
