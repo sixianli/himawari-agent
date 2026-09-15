@@ -1,12 +1,51 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { parse } from "yaml";
 
 vi.mock("node:child_process", () => ({ execFileSync: vi.fn() }));
 
 import { readReviewComment } from "../../scripts/ci/security-owner-review.mjs";
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.mocked(execFileSync).mockReset();
+});
+
 describe("GitHub 审批读取边界", () => {
+  it("仅在当前 Actions 仓库内通过标准输入发送临时令牌", () => {
+    const credential = ["synthetic", "actions", "credential"].join("_");
+    vi.stubEnv("GITHUB_ACTIONS", "true");
+    vi.stubEnv("GITHUB_REPOSITORY", "sixianli/himawari-agent");
+    vi.stubEnv("HIMAWARI_CI_GITHUB_TOKEN", credential);
+    vi.mocked(execFileSync).mockImplementationOnce((_command, args) => {
+      writeFileSync(args[args.indexOf("--output") + 1], JSON.stringify({ id: 123 }));
+      return "200";
+    });
+    expect(readReviewComment(123)).toEqual({ id: 123 });
+    const [, args, options] = vi.mocked(execFileSync).mock.calls.at(-1);
+    expect(args).not.toContain(credential);
+    expect(args).toEqual(expect.arrayContaining(["--config", "-"]));
+    expect(options.input).toBe(`header = "Authorization: Bearer ${credential}"\n`);
+    expect(options.env.HIMAWARI_CI_GITHUB_TOKEN).toBeUndefined();
+  });
+  it.each(["outside-ci", "other-repository", "header-injection"])("拒绝令牌越界：%s", (mode) => {
+    vi.stubEnv("GITHUB_ACTIONS", mode === "outside-ci" ? "false" : "true");
+    vi.stubEnv(
+      "GITHUB_REPOSITORY",
+      mode === "other-repository" ? "example/other" : "sixianli/himawari-agent",
+    );
+    vi.stubEnv(
+      "HIMAWARI_CI_GITHUB_TOKEN",
+      mode === "header-injection" ? "invalid\nheader" : "synthetic",
+    );
+    vi.mocked(execFileSync).mockImplementationOnce((_command, args) => {
+      writeFileSync(args[args.indexOf("--output") + 1], JSON.stringify({ id: 123 }));
+      return "200";
+    });
+    expect(() => readReviewComment(123)).toThrow(/SECURITY_REVIEW_TOKEN_/);
+    expect(execFileSync).not.toHaveBeenCalled();
+  });
   it("使用固定 HTTPS 地址并禁用隐式 curl 配置，不发送凭据", () => {
     vi.mocked(execFileSync).mockImplementationOnce((_command, args) => {
       writeFileSync(args[args.indexOf("--output") + 1], JSON.stringify({ id: 123 }));
@@ -68,4 +107,22 @@ describe("GitHub 审批读取边界", () => {
     });
     expect(() => readReviewComment(123)).toThrow("SECURITY_REVIEW_INVALID_RESPONSE");
   });
+});
+
+it("CI 仅向需要读取审批的步骤提供现有只读令牌", () => {
+  const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
+  expect(workflow.permissions).toEqual({ contents: "read" });
+  expect(workflow.env?.HIMAWARI_CI_GITHUB_TOKEN).toBeUndefined();
+  let readers = 0;
+  for (const job of Object.values(workflow.jobs)) {
+    expect(job.env?.HIMAWARI_CI_GITHUB_TOKEN).toBeUndefined();
+    for (const step of job.steps) {
+      const needsReview = /scripts\/ci\/publish\.mjs|--check security(?: |$)/.test(step.run ?? "");
+      if (needsReview) {
+        expect(step.env?.HIMAWARI_CI_GITHUB_TOKEN).toBe(`\${{ github.token }}`);
+        readers += 1;
+      } else expect(step.env?.HIMAWARI_CI_GITHUB_TOKEN).toBeUndefined();
+    }
+  }
+  expect(readers).toBeGreaterThan(0);
 });

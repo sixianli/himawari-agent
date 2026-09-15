@@ -12,9 +12,19 @@ const assert = (condition, code) => {
   if (!condition) throw new Error(code);
 };
 
-/** Public API, fixed origin, TLS verification and no credentials or redirects. */
+/** Fixed HTTPS origin; optional Actions read token uses stdin, never argv or redirects. */
 export function readReviewComment(commentId) {
   assert(Number.isSafeInteger(commentId) && commentId > 0, "SECURITY_REVIEW_COMMENT_INVALID");
+  const credential = process.env.HIMAWARI_CI_GITHUB_TOKEN;
+  if (credential) {
+    assert(
+      process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_REPOSITORY === repository,
+      "SECURITY_REVIEW_TOKEN_SCOPE_INVALID",
+    );
+    assert(/^[A-Za-z0-9_.-]+$/.test(credential), "SECURITY_REVIEW_TOKEN_INVALID");
+  }
+  const env = { ...process.env };
+  delete env.HIMAWARI_CI_GITHUB_TOKEN;
   const directory = mkdtempSync(join(tmpdir(), "himawari-review-"));
   const bodyPath = join(directory, "comment.json");
   try {
@@ -24,6 +34,7 @@ export function readReviewComment(commentId) {
         "/usr/bin/curl",
         [
           "--disable",
+          ...(credential ? ["--config", "-"] : []),
           "--fail",
           "--silent",
           "--show-error",
@@ -52,7 +63,9 @@ export function readReviewComment(commentId) {
           encoding: "utf8",
           maxBuffer: 1024 * 1024,
           timeout: 55_000,
-          stdio: ["ignore", "pipe", "pipe"],
+          env,
+          input: credential ? `header = "Authorization: Bearer ${credential}"\n` : undefined,
+          stdio: [credential ? "pipe" : "ignore", "pipe", "pipe"],
         },
       );
     } catch (error) {
