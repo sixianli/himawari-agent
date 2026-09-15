@@ -374,6 +374,14 @@ export async function qualifyBrowser({
     observePageErrors(page);
     await page.goto(`${baseUrl}/threads/thread-main?view=content`);
     await waitForConnected(page);
+    const brandLoaded = await page
+      .locator(".himawari-brand img")
+      .first()
+      .evaluate(async (image) => {
+        await image.decode();
+        return image.naturalWidth > 0 && image.naturalHeight > 0;
+      });
+    if (!brandLoaded) throw new Error("CONTROL_CENTER_BRAND_IMAGE_NOT_LOADED");
     if (fault === "page-error") {
       const receivedError = page.waitForEvent("pageerror");
       await page.evaluate(() =>
@@ -1006,6 +1014,7 @@ export async function qualifyBrowser({
       emulation: profile.emulation ?? null,
       surfaces: surfaces.map(({ label, policy }) => ({ label, policy })),
       journeys: [
+        "brand-image-loaded-from-build",
         "mobile-composer-prototype-layout-and-menus",
         "deployment-availability-no-unsupported-queries",
         "installed-health-dependencies",

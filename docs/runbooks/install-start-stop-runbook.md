@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:00e74a2de7e46f51b49135a4b458d6496c26d92e9b9c22696dbabc6879edc576"
+contract_sha256: "sha256:045d391a840e400c54730c9abca3d890570b0f2321242fb1f14efdc5cd8b7004"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -247,7 +247,7 @@ ps -axo pid,command
 
 1. 对本 Runbook 执行静态 contract check，建立新的受限 evidence 目录，冻结本次构建 commit、prefix、state root、deployment、Owner/Agent 和运行 ID。
 2. 在干净或已审阅的工作树上按 README 安装固定工具链，再执行 `npm run ci:install`；该入口先运行 `npm ci --ignore-scripts`，只构建清单中已审阅的 SQLite 原生依赖并实际验证内存读写。将本次工具目录的 `bin` 放到 PATH 后执行 `npm run build`。工具目录和安装证据目录必须是本次新目录，已有目录使用显式参数另选路径，不覆盖旧证据。不能把未校验的旧 node_modules 或单独 `npm ci --ignore-scripts` 当作完成原生依赖安装。
-3. 核对两个 artifact manifest 的提交输入、package-lock SHA、workspace checksum、Node 平台/架构、schema/migration sequence 和依赖版本。确认 runtime 外部依赖根与列入打包的生产 workspace manifests 完全对应，`@modelcontextprotocol/client` 等新生产依赖和传递闭包存在，`@himawari-agent/testing` 不存在；若核对失败，删除本次临时产物并停止。
+3. 核对两个 artifact manifest 的提交输入、package-lock SHA、workspace checksum、Node 平台/架构、schema/migration sequence 和依赖版本。构建输入摘要包含仓库 `assets/` 下的品牌资源；Logo 缺失必须导致浏览器构建失败，不能接受资源被改动后仍沿用旧摘要的归档。确认 runtime 外部依赖根与列入打包的生产 workspace manifests 完全对应，`@modelcontextprotocol/client` 等新生产依赖和传递闭包存在，`@himawari-agent/testing` 不存在；若核对失败，删除本次临时产物并停止。
 4. 创建本次明确的绝对安装前缀并安装：
 
 ~~~text

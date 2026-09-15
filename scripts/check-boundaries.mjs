@@ -159,7 +159,16 @@ for (const { directory, manifest, manifestPath } of workspacePackages) {
       if (specifier.startsWith(".")) {
         const resolvedImport = path.resolve(path.dirname(file), specifier);
         const relativeImport = path.relative(directory, resolvedImport);
-        if (relativeImport === ".." || relativeImport.startsWith(`..${path.sep}`)) {
+        // The approved brand image is repository-owned build data, not another
+        // workspace's code. Keep this exception exact; all other escapes fail.
+        const approvedBrandAsset =
+          packageName === "@himawari-agent/control-center" &&
+          resolvedImport ===
+            path.join(repositoryRoot, "assets/brand/himawari/v1/logo-symbol-light.png");
+        if (
+          !approvedBrandAsset &&
+          (relativeImport === ".." || relativeImport.startsWith(`..${path.sep}`))
+        ) {
           errors.push(
             `${fileLabel}: relative import ${specifier} escapes workspace ${packageName}`,
           );
