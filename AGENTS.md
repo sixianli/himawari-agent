@@ -10,8 +10,9 @@ This repository explicitly adopts the `document-governance` skill for all govern
 
 ## 已确认的 Web 设计基准
 
-- 在修改控制中心的视觉、聊天交互或品牌资源前，先阅读 [已确认的 Web 与 Logo 设计基准](docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md)，并打开其中的交互原型和效果图。
+- 在修改控制中心的视觉、聊天交互或品牌资源前，先阅读 [当前 v4 交互与视觉基准](docs/execution/specs/2026-09-15-control-center-v4-design.md) 和 [Logo 原始基准](docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md)，并打开其中的交互原型和效果图。
 - `assets/brand/himawari/v1/` 与 `docs/assets/control-center/2026-09-10-v1/` 保存用户于 2026-09-10 确认的原始设计。后续实现以此核对布局、主题、逐轮过程与工具展示；不要直接覆盖基准文件。设计发生经用户确认的变化时，另存新版本并更新文档引用。
+- 当前聊天页面以 `docs/assets/control-center/2026-09-15-v4/` 的冻结原型为准，v1 作为历史与品牌来源保留。新修改不得恢复独立审批入口、通用详情栏或删除会话操作。
 - 原型中的消息、模型、thinking 摘要、工具输出、计时和审批均为演示数据，不能作为正式功能已实现或真实执行成功的证据。
 
 ## Engineering Diagrams

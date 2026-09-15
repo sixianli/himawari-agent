@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AvailableModel } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { ModelPicker } from "./model-picker.js";
@@ -36,7 +36,7 @@ export function ChatComposer({
   onStop,
   message,
   canSend = true,
-  searchControl,
+  retryPending = false,
 }: {
   readonly draft: string;
   readonly onDraft: (draft: string) => void;
@@ -52,7 +52,7 @@ export function ChatComposer({
   readonly onStop?: (() => void) | undefined;
   readonly message: (id: MessageId) => string;
   readonly canSend?: boolean;
-  readonly searchControl?: ReactNode;
+  readonly retryPending?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
@@ -66,7 +66,8 @@ export function ChatComposer({
   const [reading, setReading] = useState(false);
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
-  const enabled = canSend && connected && !pending && !reading && Boolean(draft.trim());
+  const enabled =
+    canSend && connected && !pending && !reading && (retryPending || Boolean(draft.trim()));
   return (
     <>
       <form
@@ -139,7 +140,6 @@ export function ChatComposer({
           >
             ＋
           </ActionButton>
-          {searchControl ?? <span className="execution-mode">{message("chat.execute")}</span>}
           {models.length ? (
             <div className="model-selection">
               <ModelPicker
@@ -154,7 +154,7 @@ export function ChatComposer({
           ) : (
             <span className="model-selection">{model ?? message("chat.modelUnavailable")}</span>
           )}
-          {onStop ? (
+          {onStop && !retryPending ? (
             <ActionButton
               className="stop-button"
               aria-label={message("chat.stop")}
@@ -167,7 +167,7 @@ export function ChatComposer({
           ) : (
             <ActionButton
               className="send-button"
-              aria-label={message("threads.send")}
+              aria-label={message(retryPending ? "review.retrySend" : "threads.send")}
               disabled={!enabled}
               pending={pending}
               type="submit"
@@ -177,20 +177,11 @@ export function ChatComposer({
           )}
         </div>
       </form>
+      {retryPending && !pending ? (
+        <output className="composer-readiness">{message("review.pendingSend")}</output>
+      ) : null}
       <div className="composer-hint">
-        <span className="composer-permission">
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          >
-            <path d="m12 3 8 4v5c0 5-8 9-8 9s-8-4-8-9V7z" />
-            <path d="m8 12 3 3 5-6" />
-          </svg>
-          {message("chat.permission")}
-        </span>
+        <span className="composer-permission">{message("chat.permission")}</span>
         <span className="keyboard-hint">{message("chat.keyboard")}</span>
       </div>
     </>

@@ -962,6 +962,46 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(events.at(-1)?.type).toBe("runtime.completed");
   });
 
+  it("retains thinking-stream boundaries while coalescing deltas", async () => {
+    const projection = new RecordingProjection();
+    const message = {
+      role: "assistant",
+      timestamp: 123,
+      content: [{ type: "thinking", thinking: "PRIVATE_REASONING" }],
+    };
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        emit({ type: "agent_start" });
+        emit({ type: "message_start", message });
+        for (const type of ["thinking_start", "thinking_delta", "thinking_delta", "thinking_end"])
+          emit({
+            type: "message_update",
+            message,
+            assistantMessageEvent: { type, contentIndex: 0 },
+          });
+        emit({
+          type: "message_end",
+          message: { ...message, content: [{ type: "text", text: "Done" }], stopReason: "stop" },
+        });
+        emit({ type: "agent_settled" });
+      }),
+    );
+    expect((await collect(adapter.run(request))).at(-1)?.type).toBe("runtime.completed");
+    const captured = projection.captures as {
+      value: { thinkingBoundary?: { phase: string; contentIndex: number } };
+    }[];
+    expect(
+      captured.flatMap((entry) =>
+        entry.value.thinkingBoundary ? [entry.value.thinkingBoundary] : [],
+      ),
+    ).toEqual([
+      { phase: "started", contentIndex: 0 },
+      { phase: "ended", contentIndex: 0 },
+    ]);
+  });
+
   it("exposes only authorized custom tools and maps Pi lifecycle events after settlement", async () => {
     const projection = new RecordingProjection();
     const tools = new RecordingRuntimeTools();

@@ -466,6 +466,8 @@ export interface RuntimeContinuationPort {
 }
 
 export interface RuntimeToolSettledResult {
+  /** Same-host worker timestamps. Includes worker setup/cleanup, excludes dispatch and approval. */
+  readonly executionTiming?: { readonly startedAt: string; readonly endedAt: string };
   readonly outcome: "succeeded" | "failed" | "result_unknown";
   readonly resultRef: PayloadRef | null;
   readonly errorCode: string | null;

@@ -1,3 +1,6 @@
+import type { ContentPreviewValue } from "./content-preview.js";
+import { ActionButton } from "./primitives.js";
+import { ToolIcon } from "./tool-icon.js";
 import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 import { useEffect, useState } from "react";
 import {
@@ -5,9 +8,8 @@ import {
   executionActivity,
   executionFailureMessage,
   executionItems,
-  executionItemWorkTime,
-  executionStageLabels,
-  executionStages,
+  recordedInterval,
+  thinkingSteps,
   executionTime,
   isTerminalRun,
   type RunSummary,
@@ -48,31 +50,31 @@ export function ExecutionProcess({
   records,
   message,
   connection,
+  onPreview,
 }: {
+  onPreview?: ((preview: ContentPreviewValue) => void) | undefined;
   run: RunSummary;
   records: readonly ThreadExecutionRecord[];
   message: Message;
   connection: string;
 }) {
   const [now, setNow] = useState(Date.now());
-  const [expanded, setExpanded] = useState(!isTerminalRun(run));
+  const [expanded, setExpanded] = useState(true);
   useEffect(() => {
     if (isTerminalRun(run) || connection !== "connected") return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [run, connection]);
   const items = executionItems(records);
+  const thinking = thinkingSteps(records);
   const steps = [
-    ...items.map((item) => ({ sequence: item.firstSequence, item, stage: null })),
-    ...executionStages(records).map((stage) => ({ sequence: stage.sequence, item: null, stage })),
+    ...items
+      .filter((item) => item.kind === "tool")
+      .map((item) => ({ sequence: item.firstSequence, item, stage: null })),
+    ...thinking.map((stage) => ({ sequence: stage.sequence, item: null, stage })),
   ].sort((a, b) => a.sequence - b.sequence);
   const time = executionTime(records, run, now);
   const activity = executionActivity(records, run, connection, now);
-  const actualModel = records.findLast((item) => item.kind === "message" && item.name)?.name;
-  const modelStart = records.findLast(
-    (item) =>
-      item.kind === "status" && item.phase === "started" && item.name !== "runtime.model_started",
-  );
   return (
     <>
       {!isTerminalRun(run) ? (
@@ -101,7 +103,7 @@ export function ExecutionProcess({
             ›
           </span>
           <span>
-            {message("chat.process")} ·{" "}
+            {message("review.thinkingCount", { count: thinking.length })} ·{" "}
             {message("chat.toolCount", {
               count: items.filter((item) => item.kind === "tool").length,
             })}
@@ -117,8 +119,11 @@ export function ExecutionProcess({
               return (
                 <li className="execution-stage" key={stage.id}>
                   <span className="step-marker" aria-hidden="true" />
-                  <span>{message(executionStageLabels[stage.name] as MessageId)}</span>
-                  <RecordedTime at={stage.occurredAt} />
+                  <ToolIcon name="" thinking />
+                  <span>{message("review.thinkingObserved")}</span>
+                  <span className="step-status" title={message("review.thinkingTiming")}>
+                    {stage.elapsed === null ? message("chat.unknownTime") : duration(stage.elapsed)}
+                  </span>
                 </li>
               );
             if (!item) return null;
@@ -131,23 +136,21 @@ export function ExecutionProcess({
                 : item.kind === "tool" && item.phase === "updated"
                   ? "chat.callRequested"
                   : (`chat.phase.${item.phase}` as MessageId);
-            const elapsed = executionItemWorkTime(item, records);
-            const hint = item.kind === "tool" ? preview(item.input) : item.text;
+            const elapsed = recordedInterval(records, item.itemId, "runtime.tool_execution");
+            const hint = item.kind === "tool" ? item.text || preview(item.input) : item.text;
             return (
               <li key={item.itemId} className={`execution-step tool-${item.phase}`}>
                 <span className="step-marker" aria-hidden="true" />
                 <details className="tool-record">
                   <summary>
-                    <span className="process-chevron" aria-hidden="true">
-                      ›
-                    </span>
+                    <ToolIcon name={item.name} />
                     <span className="step-name">
                       {item.kind === "tool" ? item.name : message("chat.responseText")}
                     </span>
                     {hint ? <span className="step-preview">{hint}</span> : null}
-                    <span className="step-status">
+                    <span className="step-status" title={message("review.workerTiming")}>
                       {message(phase)}
-                      {elapsed !== null ? ` · ${duration(elapsed)}` : ""}
+                      {` · ${elapsed !== null ? duration(elapsed) : message("chat.unknownTime")}`}
                     </span>
                   </summary>
                   <div className="step-detail">
@@ -180,7 +183,17 @@ export function ExecutionProcess({
                         <pre>{item.input || message("chat.argumentsUnavailable")}</pre>
                         <h4>{message("chat.toolResult")}</h4>
                         {item.output ? (
-                          <pre>{item.output}</pre>
+                          <>
+                            <pre>{item.output}</pre>
+                            {onPreview ? (
+                              <ActionButton
+                                variant="quiet"
+                                onClick={() => onPreview({ title: item.name, text: item.output })}
+                              >
+                                {message("review.preview")}
+                              </ActionButton>
+                            ) : null}
+                          </>
                         ) : (
                           <p className="step-empty">
                             {message(
@@ -211,22 +224,9 @@ export function ExecutionProcess({
         {records.some((item) => item.phase === "unavailable") ? (
           <output>{message("chat.recordUnavailable")}</output>
         ) : null}
-        <details className="process-metadata">
-          <summary>{message("chat.executionDetails")}</summary>
-          {actualModel || modelStart ? (
-            <p>
-              {message("chat.actualModel")}: {actualModel || modelStart?.name} {modelStart?.text}
-            </p>
-          ) : null}
-          <p>
-            {time.known
-              ? `${message("chat.workTime", { time: duration(time.work) })} · ${message("chat.waitTime", { time: duration(time.wait) })}`
-              : message("chat.unknownTime")}
-          </p>
-          {records.some((record) => record.text === "thinking_observed") ? (
-            <p>{message("chat.thinkingPrivate")}</p>
-          ) : null}
-        </details>
+        {time.known && time.wait > 0 ? (
+          <p className="process-wait">{message("chat.waitTime", { time: duration(time.wait) })}</p>
+        ) : null}
       </details>
     </>
   );

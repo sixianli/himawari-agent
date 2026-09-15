@@ -1,0 +1,10 @@
+ts	phase	decision	why	evidence	result
+2026-09-15T14:44:56Z	baseline	冻结用户批准的 v4	用户要求严格按最新原型实施	docs/execution/specs/2026-09-15-control-center-v4-design.md	原型与原始 v1 分版本保留
+2026-09-15T16:01:29.133845+00:00	implementation	新建先进入本地草稿，首发才创建持久会话	消除初始化依赖与空会话；保留原提交身份重试	apps/control-center/test/thread-interactions.unit.test.ts	组件回归通过，浏览器验收继续
+2026-09-15T16:01:29.134321+00:00	timing	复用 Pi 可观测事件与 Worker 实际起止事件	不把等待或动画当作思考和工具耗时	test/integration/thread-run-lifecycle.test.ts	相关投影集成、Pi 与 Worker 测试通过
+2026-09-15T16:01:29.134323+00:00	ux	移除通用详情与删除入口，改为会话菜单及统一设置	执行用户已批准的 v4 合同	docs/execution/specs/2026-09-15-control-center-v4-design.md	按原型逐项进行截图核对
+2026-09-15T16:01:29.134325+00:00	verification	安装包构建过程中暂停其他源文件修改	第一次并发修改触发 BUILD_INPUT_CHANGED_DURING_BUILD，结果无效	.ci-output/control-center-v4-final/build-macos-arm64/details.json	待代码稳定后重新构建验证
+2026-09-15T16:01:29.134328+00:00	fix	语言资源加载期间保留当前页面树	真实浏览器发现弹窗和页面状态被卸载	apps/control-center/src/i18n/runtime.tsx	加入弹窗保持打开的回归断言
+2026-09-15T16:39:50.340999+00:00	fix	先对原始 Pi 消息图脱敏，再加入计时元数据	完整单元测试发现循环引用保护被浅复制改变	redaction-regression.log	39 项针对性回归及 3365 项安装包测试通过
+2026-09-15T16:39:50.342756+00:00	verification	将工具过程测试接入既有浏览器验收	每次运行现有浏览器套件自动检查真实事件时长与恢复	chrome-complete/browser.json	四种语言与窗口组合通过
+2026-09-15T16:39:50.342760+00:00	visual	按冻结原型比较关键属性与完整截图	旧字体平滑与正文间距存在偏差	visual-delivery/comparison.json	九个部件属性相等，完整截图非零差异如实记录

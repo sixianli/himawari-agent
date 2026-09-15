@@ -2884,6 +2884,52 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       });
     }
     expect(JSON.stringify(await projection.read(query))).not.toContain("PRIVATE_");
+    const timedRef = await capture("timed-tool", {
+      toolCallId: "timed-call",
+      toolName: "read",
+      isError: false,
+      result: {
+        content: [{ type: "text", text: "file contents" }],
+        details: {
+          executionTiming: {
+            startedAt: "2026-09-14T00:00:01.000Z",
+            endedAt: "2026-09-14T00:00:03.250Z",
+          },
+        },
+      },
+    });
+    await setup.trace.record({
+      ...scope,
+      eventType: "runtime.tool_result",
+      payload: { capabilityRef: "project.read", payloadRef: timedRef },
+    });
+    const timed = (await projection.read(query)).records;
+    expect(timed.filter((item) => item.name.startsWith("runtime.tool_execution."))).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "runtime.tool_execution.started",
+          occurredAt: "2026-09-14T00:00:01.000Z",
+        }),
+        expect.objectContaining({
+          name: "runtime.tool_execution.ended",
+          occurredAt: "2026-09-14T00:00:03.250Z",
+        }),
+      ]),
+    );
+    const boundaryRef = await capture("thinking-boundary", {
+      thinkingBoundary: { phase: "started", contentIndex: 0 },
+      role: "assistant",
+      content: [{ type: "thinking", thinking: "PRIVATE_THOUGHT" }],
+    });
+    await setup.trace.record({
+      ...scope,
+      eventType: "runtime.message",
+      payload: { payloadRef: boundaryRef, role: "assistant", phase: "updated" },
+    });
+    expect((await projection.read(query)).records).toContainEqual(
+      expect.objectContaining({ name: "runtime.thinking.started" }),
+    );
+    expect(JSON.stringify(await projection.read(query))).not.toContain("PRIVATE_THOUGHT");
     const unresolvedRef = await capture("legacy-unresolved-tool", {
       toolCallId: "legacy-call",
       toolName: "write",

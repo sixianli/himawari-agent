@@ -33,7 +33,11 @@
       }
     },
     {
-      "includes": ["docs/assets/architecture/system-overview.html"],
+      "includes": [
+        "docs/assets/architecture/system-overview.html",
+        "docs/assets/control-center/2026-09-15-v4/source.html",
+        "docs/assets/control-center/2026-09-15-v4/index.html"
+      ],
       "linter": {
         "enabled": false
       }

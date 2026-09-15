@@ -6,6 +6,8 @@ import {
   executionItems,
   executionItemWorkTime,
   executionTime,
+  recordedInterval,
+  thinkingSteps,
   type RunSummary,
 } from "../src/execution-view.js";
 
@@ -167,4 +169,38 @@ it("keeps the model request time and arguments separate from tool execution", ()
     input: request.input,
     output: "News",
   });
+});
+
+it("uses only execution-host timing, never time spent requesting or awaiting approval", () => {
+  const records = [
+    record(1, 1, { kind: "tool", phase: "started" }),
+    record(2, 2, { phase: "waiting" }),
+    record(3, 62),
+    record(4, 70, { phase: "updated", name: "runtime.tool_execution.started" }),
+    record(5, 72, { phase: "updated", name: "runtime.tool_execution.ended" }),
+    record(6, 80, { kind: "tool", phase: "completed" }),
+  ];
+  expect(recordedInterval(records, "call:one", "runtime.tool_execution")).toBe(2000);
+  expect(
+    recordedInterval(
+      records.filter((_, i) => i === 0 || i === 5),
+      "call:one",
+      "runtime.tool_execution",
+    ),
+  ).toBeNull();
+  expect(recordedInterval(records, "other", "runtime.tool_execution")).toBeNull();
+  expect(
+    recordedInterval([...records, ...records.slice(4, 5)], "call:one", "runtime.tool_execution"),
+  ).toBe(2000);
+});
+it("pairs observed thinking boundaries and keeps legacy observations untimed", () => {
+  const records = [
+    record(1, 10, { phase: "updated", name: "runtime.thinking.started" }),
+    record(2, 12, { phase: "updated", name: "runtime.thinking.ended" }),
+  ];
+  expect(thinkingSteps(records)).toMatchObject([{ elapsed: 2000 }]);
+  expect(thinkingSteps(records.slice(0, 1))).toMatchObject([{ elapsed: null }]);
+  expect(thinkingSteps([record(1, 1, { name: "runtime.activity.thinking" })])).toMatchObject([
+    { elapsed: null },
+  ]);
 });

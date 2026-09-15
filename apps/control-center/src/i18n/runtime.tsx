@@ -45,34 +45,41 @@ export function ControlCenterIntlProvider({
     readonly messages: MessageCatalog;
   }>(() => ({ locale: "zh-CN", messages: zhCNMessages }));
   const requestSequence = useRef(0);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    document.documentElement.lang = locale;
+    const sequence = ++requestSequence.current;
+    document.documentElement.lang = loaded.locale;
     document.documentElement.dir = "ltr";
     if (loaded.locale === locale) return;
-    const sequence = ++requestSequence.current;
-    void loadMessageCatalog(locale).then((messages) => {
-      if (sequence === requestSequence.current) setLoaded({ locale, messages });
-    });
+    setFailed(false);
+    void loadMessageCatalog(locale)
+      .then((messages) => {
+        if (sequence === requestSequence.current) setLoaded({ locale, messages });
+      })
+      .catch(() => {
+        if (sequence === requestSequence.current) setFailed(true);
+      });
+    return () => {
+      requestSequence.current++;
+    };
   }, [loaded.locale, locale]);
 
-  if (loaded.locale !== locale) {
-    return (
-      <output aria-busy="true" aria-live="polite" className="bootstrap-status">
-        {loadingLabel}
-      </output>
-    );
-  }
   return (
     <IntlProvider
-      defaultLocale={locale}
-      locale={locale}
+      defaultLocale={loaded.locale}
+      locale={loaded.locale}
       messages={loaded.messages}
       onError={(error) => {
         throw error;
       }}
     >
       {children}
+      {loaded.locale !== locale ? (
+        <output className="sr-only" aria-live="polite" aria-busy={!failed}>
+          {failed ? loaded.messages["error.currentUnavailable"] : loadingLabel}
+        </output>
+      ) : null}
     </IntlProvider>
   );
 }

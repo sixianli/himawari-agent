@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:5e3cd7a6b0378226afdfb885f689d4b8b69c4f20494aaa016d5eecbcc7c23a1c"
+contract_sha256: "sha256:d09f6b1b941a35071974e43f6ae9868b45a2b288b040f1097b502442519f8cf7"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -264,6 +264,13 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 10. 完成验证后保存脱敏命令输出、artifact identity、进程退出码、socket/lock 回读和 rollback 状态；临时 prefix、临时 state root 与证据目录按本次授权的保留策略清理。
 
 ## Verification
+
+### v4 控制中心与持久事件核对
+
+本次调整增加 Worker 工具实际起止事件和 Pi 可观测思考边界的展示投影，沿用原有 Trace/Payload 存储，不增加数据库迁移。备份、恢复及权威迁移仍须完整保留这些记录；缺少旧时长边界的历史显示“暂无时长”，不得在恢复时补造计时或重放工具。原有停止、安装资格、加密与权威检查程序继续适用。
+
+聊天页的新建先进入本地草稿，首次发送才创建持久会话。审批在所属轮次处理，侧栏红点提醒；归档管理位于齿轮设置的“会话与数据”。联网搜索开关与会话内“记住我的选择”复用原来的受限搜索授权合同。设置不展示内部 checkpoint、修订和连接绿点。安装后须验证草稿恢复、幂等重试、当前轮审批以及真实模型支持的强度档位，不能以原型演示数据作为运行证据。语言切换应保持设置弹窗及当前页面状态。
+
 
 自动标题由正式模型组合注入 Run 组合：首次 Assistant 消息触发对活跃且无标题对话的检查，使用该 Run 的模型引用和首条用户消息的分类，沿用 Pi transport、披露检查与费用准入。正文可先显示，Run 结束前等待本地标题调用准入；标题响应异步完成，成功后写入受保护 Payload 并发布 Thread 改名事件。已有标题、手动改名和归档状态优先，失败只记录 `thread-title.failed`，不把标题失败改记为正文失败。停机时先停止 Run 循环，再等待标题请求结束；单次标题模型请求最多 20 秒或配置的更短期限，不能仅以正文完成判断所有模型请求已结算。
 

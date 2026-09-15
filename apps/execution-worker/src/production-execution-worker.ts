@@ -511,6 +511,34 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     void operation.finally(() => this.active.delete(operation)).catch(() => {});
   }
 
+  /** Emitted by the execution host after admission, before worker processing starts.
+   * Queueing, transport and owner approval happen outside this interval. */
+  private recordExecutionStart(request: ExecuteRequest): void {
+    const event = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "event",
+      type: "work.progress",
+      messageId: this.options.nextId("execution-start"),
+      correlationId: request.correlationId,
+      causationId: request.messageId,
+      dataClassification: request.dataClassification,
+      risk: request.risk,
+      authorizationRef: request.authorizationRef,
+      scope: request.scope,
+      payload: {
+        requestId: request.messageId,
+        cursor: this.nextCursor(),
+        sequence: this.nextSequence(request.messageId),
+        occurredAt: this.options.now(),
+        stage: "worker.execution.started",
+        progressPermille: 0,
+        payloadRef: null,
+      },
+    });
+    if (event.kind !== "event") throw new Error("WORKER_START_EVENT_INVALID");
+    this.eventsByCursor.push(event);
+  }
+
   private async executeSandbox(request: ExecuteRequest): Promise<void> {
     const identity = request.payload.sandboxExecution?.identity ?? request.payload.sandboxJob;
     if (!identity) throw new Error("SANDBOX_JOB_REQUIRED");
@@ -519,6 +547,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
         ? this.options.sandboxV2
         : this.options.sandbox;
       if (!sandbox) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
+      this.recordExecutionStart(request);
       const result = await sandbox.execute(request);
       this.appendSandboxResult(request, result);
     } catch {
@@ -560,6 +589,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   }
 
   private async execute(request: ExecuteRequest): Promise<void> {
+    this.recordExecutionStart(request);
     const v1Request = {
       schemaVersion: EXECUTION_SCHEMA_VERSION,
       kind: "request" as const,

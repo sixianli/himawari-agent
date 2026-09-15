@@ -5,7 +5,7 @@ export interface ControlCenterPreferences {
   readonly density: "comfortable" | "compact";
   readonly detailPanePercent: number;
   readonly listPanePercent: number;
-  readonly theme: "light" | "dark";
+  readonly theme: "light" | "dark" | "system";
   readonly accent?: AccentColor;
 }
 
@@ -20,6 +20,13 @@ export interface PendingThreadMutation {
   readonly idempotencyKey: string;
   readonly commandType: string;
   readonly threadId: string;
+}
+
+export interface PendingThreadSubmission {
+  readonly threadId: string;
+  readonly revision: number;
+  readonly content: string;
+  readonly selection?: { readonly modelRef: string; readonly thinkingLevel: string };
 }
 
 export interface PendingGovernanceMutation {
@@ -120,6 +127,52 @@ export class ControlCenterBrowserStorage {
     this.storage.removeItem(`${KEY_PREFIX}.mutation.${operationKey}`);
   }
 
+  readPendingThreadSubmission(threadId: string): PendingThreadSubmission | null {
+    if (!CURSOR_PATTERN.test(threadId)) return null;
+    try {
+      const value = JSON.parse(
+        this.storage.getItem(`${KEY_PREFIX}.submission.${threadId}`) ?? "null",
+      ) as PendingThreadSubmission | null;
+      if (
+        !value ||
+        value.threadId !== threadId ||
+        !Number.isSafeInteger(value.revision) ||
+        value.revision < 1 ||
+        typeof value.content !== "string" ||
+        value.content.length > 64 * 1024
+      )
+        return null;
+      if (
+        value.selection &&
+        (typeof value.selection.modelRef !== "string" ||
+          typeof value.selection.thinkingLevel !== "string")
+      )
+        return null;
+      return value;
+    } catch {
+      return null;
+    }
+  }
+
+  savePendingThreadSubmission(submission: PendingThreadSubmission): void {
+    if (
+      !CURSOR_PATTERN.test(submission.threadId) ||
+      !Number.isSafeInteger(submission.revision) ||
+      submission.revision < 1 ||
+      submission.content.length > 64 * 1024
+    )
+      throw new Error("CONTROL_CENTER_SUBMISSION_INVALID");
+    this.storage.setItem(
+      `${KEY_PREFIX}.submission.${submission.threadId}`,
+      JSON.stringify(submission),
+    );
+  }
+
+  clearPendingThreadSubmission(threadId: string): void {
+    if (CURSOR_PATTERN.test(threadId))
+      this.storage.removeItem(`${KEY_PREFIX}.submission.${threadId}`);
+  }
+
   readPendingGovernanceMutation(operationKey: string): PendingGovernanceMutation | null {
     if (!CURSOR_PATTERN.test(operationKey)) return null;
     const raw = this.storage.getItem(`${GOVERNANCE_MUTATION_STORAGE_PREFIX}${operationKey}`);
@@ -181,7 +234,7 @@ export class ControlCenterBrowserStorage {
         density: parsed.density === "compact" ? "compact" : "comfortable",
         detailPanePercent: boundedPanePercent(parsed.detailPanePercent, 24),
         listPanePercent: boundedPanePercent(parsed.listPanePercent, 26),
-        theme: parsed.theme === "light" ? "light" : "dark",
+        theme: parsed.theme === "light" || parsed.theme === "system" ? parsed.theme : "dark",
         accent: ACCENT_COLORS.includes(parsed.accent as AccentColor)
           ? (parsed.accent as AccentColor)
           : "violet",

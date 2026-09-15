@@ -62,7 +62,15 @@ const navigate = vi.fn(),
   unauthorized = vi.fn();
 function View() {
   model = useThreadControlCenter(options);
-  return h(Fragment, null, h("h1", null, model.title), model.list, model.content, model.details);
+  return h(
+    Fragment,
+    null,
+    h("h1", null, model.title),
+    model.list,
+    model.content,
+    model.details,
+    model.settingsData,
+  );
 }
 async function render() {
   const provider = { locale: "zh-CN" as const, loadingLabel: "加载中", children: h(View) };
@@ -77,8 +85,11 @@ async function refresh() {
   });
 }
 async function click(label: string) {
-  const button = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === label || button.getAttribute("aria-label") === label,
+  const button = [...document.querySelectorAll("button")].find(
+    (button) =>
+      button.textContent?.trim() === label ||
+      button.textContent?.trim() === messages[label as keyof typeof messages] ||
+      button.getAttribute("aria-label") === label,
   );
   if (!button) throw new Error(`Missing button: ${label}`);
   await act(async () => button.click());
@@ -93,12 +104,33 @@ async function input(element: HTMLInputElement | HTMLTextAreaElement | null, val
   });
 }
 function field(label: string) {
-  const node = [...container.querySelectorAll("label")].find((item) =>
+  const node = [...document.querySelectorAll("label")].find((item) =>
     item.textContent?.includes(label),
   );
   return node ? (document.getElementById(node.htmlFor) as HTMLInputElement) : null;
 }
+async function chooseAction(action: string) {
+  if (action === "restore") {
+    const archives = [...document.querySelectorAll("button")].find(
+      (button) => button.getAttribute("aria-label") === messages["review.archives"],
+    );
+    if (!archives) throw new Error("Missing archive settings");
+    await act(async () => archives.click());
+  } else {
+    const menu = container.querySelector<HTMLButtonElement>(".thread-row .action-menu > button");
+    if (!menu) throw new Error("Missing conversation menu");
+    await act(async () => menu.click());
+  }
+  await click(`threads.${action}`);
+}
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+    this.dispatchEvent(new Event("close"));
+  };
   // These component tests invoke refresh explicitly. Keep the independent SSE
   // debounce clock controlled so it cannot replace a search during assertions.
   vi.useFakeTimers();
@@ -146,7 +178,12 @@ beforeEach(() => {
         return {
           ...shared,
           type: "thread.detail_snapshot",
-          payload: { thread, messages: threadMessages, runs, nextSequence: null },
+          payload: {
+            thread: { ...thread, threadId: request.payload.threadId },
+            messages: threadMessages,
+            runs,
+            nextSequence: null,
+          },
         };
       case "thread.checkpoint":
         return {
@@ -208,13 +245,27 @@ afterEach(async () => {
 });
 
 describe("thread control center interactions", () => {
+  it("opens a local new-chat draft before configuration or realtime is ready", async () => {
+    options = { ...options, client: undefined, configuration: undefined, connection: "connecting" };
+    await render();
+    await click("新建对话");
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ objectId: null, view: "content" }),
+    );
+    expect(mutate).not.toHaveBeenCalled();
+    options = { ...options, route: { ...options.route, objectId: null } };
+    await render();
+    expect(container.querySelector("textarea")).not.toBeNull();
+    await input(container.querySelector("textarea"), "初始化期间的草稿");
+    expect(options.storage.readDraft("new")).toBe("初始化期间的草稿");
+  });
   it.each(["zh-CN", "en", "ja"] as const)(
     "does not expose or mutate the legacy %s answer locale in thread details",
     async (answerLocale) => {
       thread = { ...thread, answerLocale };
       await render();
       await refresh();
-      expect(container.querySelector(".thread-details")).not.toBeNull();
+      expect(container.querySelector(".thread-details")).toBeNull();
       expect(field("threads.answerLocale")).toBeNull();
       expect(mutate).not.toHaveBeenCalled();
     },
@@ -304,7 +355,7 @@ describe("thread control center interactions", () => {
     await render();
     await refresh();
     expect(query.mock.calls.filter(([r]) => r.type === "thread.detail")).toHaveLength(2);
-    expect(container.textContent).toContain(messages["loading.retry"]);
+    expect(document.body.textContent).toContain(messages["loading.retry"]);
     expect(mutate).not.toHaveBeenCalled();
   });
   it("paginates tool records, preserves their input, and resumes from the last confirmed sequence", async () => {
@@ -391,7 +442,8 @@ describe("thread control center interactions", () => {
       await refresh();
       expect(query.mock.calls.filter(([r]) => r.type === "thread.execution")).toHaveLength(1);
       expect(container.querySelectorAll(".tool-record")).toHaveLength(0);
-      if (kind === "stalled") expect(container.textContent).toContain(messages["loading.retry"]);
+      if (kind === "stalled")
+        expect(document.body.textContent).toContain(messages["loading.retry"]);
     },
   );
   it.each(["success", "unauthorized", "unavailable", "wrong-type"])(
@@ -400,7 +452,8 @@ describe("thread control center interactions", () => {
       options = { ...options, route: routeForSurface("threads") };
       await render();
       await refresh();
-      await input(container.querySelector('input[type="search"]'), "天气记录");
+      await click(messages["threads.search"]);
+      await input(document.querySelector('input[type="search"]'), "天气记录");
       if (result === "unauthorized") query.mockRejectedValueOnce({ status: 401 });
       if (result === "unavailable")
         prepareSearch.mockRejectedValueOnce(new Error("controlled search failure"));
@@ -410,7 +463,7 @@ describe("thread control center interactions", () => {
           payload: { threads: [] },
         });
       await act(async () => {
-        container
+        document
           .querySelector("form.thread-search")
           ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       });
@@ -427,7 +480,7 @@ describe("thread control center interactions", () => {
         });
         expect(JSON.stringify(query.mock.calls.at(-1)?.[0])).not.toContain("天气记录");
       } else {
-        expect(container.textContent).toContain(messages["loading.retry"]);
+        expect(document.body.textContent).toContain(messages["loading.retry"]);
       }
     },
   );
@@ -436,10 +489,12 @@ describe("thread control center interactions", () => {
     mutate.mockRejectedValueOnce(new Error("controlled creation failure"));
     await render();
     await refresh();
-    await click("chat.start");
+    await input(container.querySelector("textarea"), "开始新对话");
+    await click("threads.send");
     expect(container.textContent).toContain("controlled creation failure");
     expect(navigate).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("chat.start");
+    expect(container.querySelector("textarea")?.value).toBe("开始新对话");
+    expect(options.storage.readDraft("new")).toBe("开始新对话");
   });
   it.each(["archive", "restore", "pin"])(
     "preserves a refused %s operation without falsely reporting acceptance",
@@ -448,11 +503,38 @@ describe("thread control center interactions", () => {
       mutate.mockRejectedValueOnce("rejected");
       await render();
       await refresh();
-      await click(`threads.${operation}`);
+      await chooseAction(operation);
       expect(container.textContent).toContain("CONTROL_CENTER_REQUEST_REJECTED");
       expect(navigate).not.toHaveBeenCalled();
     },
   );
+  it("loads another history page and retains it through a background refresh", async () => {
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request) => {
+      if (request.type !== "thread.list") return original?.(request);
+      return {
+        kind: "snapshot",
+        type: "thread.collection_snapshot",
+        payload: {
+          threads: request.payload.afterCursor
+            ? [{ ...thread, threadId: "older-thread" }]
+            : [thread],
+          nextCursor: request.payload.afterCursor ? null : "page-two",
+          total: 2,
+        },
+      };
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector('a[href="/threads/older-thread"]')).toBeNull();
+    await click("review.loadMore");
+    expect(container.querySelector('a[href="/threads/older-thread"]')).not.toBeNull();
+    await refresh();
+    expect(container.querySelector('a[href="/threads/older-thread"]')).not.toBeNull();
+    expect(query.mock.calls.some(([request]) => request.payload.afterCursor === "page-two")).toBe(
+      true,
+    );
+  });
   it("loads protected titles and persists a draft without sending it", async () => {
     await render();
     await refresh();
@@ -508,6 +590,66 @@ describe("thread control center interactions", () => {
       expect(container.querySelector("textarea")?.value).toBe("");
     },
   );
+  it("retries an uncertain send with its original identity and preserves a newer draft after revision changes", async () => {
+    await render();
+    await refresh();
+    await input(container.querySelector("textarea"), "原消息");
+    mutate.mockRejectedValueOnce(new Error("response lost"));
+    const send = async () =>
+      act(async () => {
+        container
+          .querySelector("form.composer")
+          ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+    await send();
+    const original = mutate.mock.calls[0]?.[0];
+    await input(container.querySelector("textarea"), "随后编辑的新草稿");
+    thread = { ...thread, revision: 8 };
+    await refresh();
+    expect(container.textContent).toContain("review.pendingSend");
+    await send();
+    const retry = mutate.mock.calls[1]?.[0];
+    expect(retry.idempotencyKey).toBe(original.idempotencyKey);
+    expect(retry.payload).toMatchObject({
+      expectedRevision: 2,
+      contentRef: original.payload.contentRef,
+      messageId: original.payload.messageId,
+      runId: original.payload.runId,
+    });
+    expect(protect.mock.calls.filter(([text]) => text === "原消息")).toHaveLength(2);
+    expect(options.storage.readDraft("thread-ui")).toBe("随后编辑的新草稿");
+    expect(container.querySelector("textarea")?.value).toBe("随后编辑的新草稿");
+    expect(options.storage.readPendingThreadSubmission("thread-ui")).toBeNull();
+  });
+  it("submits only once for two synchronous gestures and does not overwrite another conversation", async () => {
+    await render();
+    await refresh();
+    await input(container.querySelector("textarea"), "原会话发送");
+    let resolve: (value: unknown) => void = () => {};
+    mutate.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    await act(async () => {
+      for (let i = 0; i < 2; i++)
+        container
+          .querySelector("form.composer")
+          ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(mutate).toHaveBeenCalledOnce();
+    options.storage.saveDraft("thread-other", "另一个会话草稿");
+    options = { ...options, route: { ...options.route, objectId: "thread-other" } };
+    await render();
+    await refresh();
+    await act(async () => {
+      resolve({ kind: "result", payload: { replayed: false, threadId: "thread-ui" } });
+    });
+    expect(container.querySelector("textarea")?.value).toBe("另一个会话草稿");
+    expect(options.storage.readDraft("thread-other")).toBe("另一个会话草稿");
+    expect(navigate).not.toHaveBeenCalled();
+  });
   it("keeps unsent content on failed submission and prevents offline sends", async () => {
     await render();
     await refresh();
@@ -528,20 +670,13 @@ describe("thread control center interactions", () => {
     await send();
     expect(mutate).toHaveBeenCalledOnce();
   });
-  it.each(["pin", "archive", "restore", "trash"] as const)(
+  it.each(["pin", "archive", "restore"] as const)(
     "sends an explicit %s with expected revision",
     async (action) => {
       if (action === "restore") thread = summary("archived");
       await render();
       await refresh();
-      if (action === "trash") {
-        query.mockResolvedValueOnce({
-          type: "thread.deletion_impact_snapshot",
-          payload: { deletionAllowed: true, associatedTasks: [] },
-        });
-        await click("threads.inspectDeletion");
-      }
-      await click(`threads.${action}`);
+      await chooseAction(action);
       expect(mutate.mock.calls[0]?.[0]).toMatchObject({
         type: `thread.${action}`,
         payload: { threadId: "thread-ui", expectedRevision: 2 },
@@ -551,12 +686,13 @@ describe("thread control center interactions", () => {
   it("preserves a conflict and reapplies an owner rename only against the displayed latest revision", async () => {
     await render();
     await refresh();
-    await input(field("threads.rename"), "自定义标题");
+    await chooseAction("rename");
+    await input(field("review.conversationName"), "自定义标题");
     mutate.mockResolvedValueOnce({
       kind: "conflict",
       payload: { latest: { ...thread, revision: 4 }, reasonCode: "STALE_REVISION" },
     });
-    await click("threads.rename");
+    await click("review.save");
     expect(container.textContent).toContain("threads.conflictTitle");
     expect(mutate.mock.calls[0]?.[0].payload.expectedRevision).toBe(2);
     await click("threads.reapply");
@@ -568,7 +704,8 @@ describe("thread control center interactions", () => {
     options = { ...options, route: routeForSurface("threads") };
     await render();
     await refresh();
-    await click("chat.start");
+    await input(container.querySelector("textarea"), "开始新对话");
+    await click("threads.send");
     expect(mutate.mock.calls[0]?.[0].type).toBe("thread.create");
     expect(navigate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -590,36 +727,34 @@ describe("thread control center interactions", () => {
       });
     },
   );
-  it.each(["pause", "cancel", "rebind"] as const)(
-    "inspects deletion dependencies before explicitly choosing %s",
-    async (action) => {
-      await render();
-      await refresh();
-      await click("threads.checkpoint");
-      expect(container.textContent).toContain("checkpoint-summary");
-      await click("threads.inspectDeletion");
-      expect(container.textContent).toContain("task-ui");
-      expect(mutate).not.toHaveBeenCalled();
-      await click(`deletion.${action}Task`);
-      expect(mutate.mock.calls[0]?.[0]).toMatchObject({
-        type: "thread.task.resolve",
-        payload: {
-          threadId: "thread-ui",
-          taskId: "task-ui",
-          expectedTaskRevision: 3,
-          action,
-          targetThreadId: action === "rebind" ? "thread-other" : null,
-        },
-      });
-    },
-  );
+  it("offers archive only and never queries deletion or checkpoint controls", async () => {
+    await render();
+    await refresh();
+    const menu = container.querySelector<HTMLButtonElement>(".thread-row .action-menu > button");
+    await act(async () => menu?.click());
+    const labels = [...document.querySelectorAll('[role="menuitem"]')].map(
+      (item) => item.textContent,
+    );
+    expect(labels).toEqual([
+      messages["threads.rename"],
+      messages["threads.pin"],
+      messages["threads.archive"],
+    ]);
+    expect(document.body.textContent).not.toContain(messages["threads.trash"]);
+    expect(
+      query.mock.calls.some(([request]) =>
+        ["thread.checkpoint", "thread.deletion_impact"].includes(request.type),
+      ),
+    ).toBe(false);
+    expect(mutate).not.toHaveBeenCalled();
+  });
   it("shows a retry after a list failure and reports expired authorization", async () => {
     options = { ...options, route: routeForSurface("threads") };
     query.mockRejectedValueOnce({ status: 401 });
     await render();
     await refresh();
     expect(unauthorized).toHaveBeenCalledOnce();
-    const retry = [...container.querySelectorAll("button")].find((button) =>
+    const retry = [...document.querySelectorAll("button")].find((button) =>
       button.textContent?.includes(messages["loading.retry"]),
     );
     if (!retry) throw new Error("Missing retry for failed initial list");
@@ -633,7 +768,7 @@ it("keeps an explicit search from being superseded by an already scheduled list 
   options = { ...options, route: routeForSurface("threads") };
   await render();
   await refresh();
-  const before = query.mock.calls.filter(([request]) => request.type === "thread.list").length;
+
   let resolveSearch!: (value: {
     queryRef: string;
     tokenRefs: string[];
@@ -645,9 +780,10 @@ it("keeps an explicit search from being superseded by an already scheduled list 
         resolveSearch = resolve;
       }),
   );
-  await input(container.querySelector('input[type="search"]'), "天气记录");
+  await click(messages["threads.search"]);
+  await input(document.querySelector('input[type="search"]'), "天气记录");
   await act(async () => {
-    container
+    document
       .querySelector("form.thread-search")
       ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
@@ -662,7 +798,6 @@ it("keeps an explicit search from being superseded by an already scheduled list 
     });
   });
   expect(query.mock.calls.filter(([request]) => request.type === "thread.search")).toHaveLength(1);
-  expect(query.mock.calls.filter(([request]) => request.type === "thread.list")).toHaveLength(
-    before,
-  );
+  expect(document.querySelectorAll(".thread-search-results li")).toHaveLength(1);
+  expect(container.querySelectorAll(".thread-row")).toHaveLength(2);
 });

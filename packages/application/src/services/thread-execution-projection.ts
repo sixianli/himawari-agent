@@ -163,6 +163,25 @@ export class ThreadExecutionProjection {
               });
             }
           }
+          const boundary = object(message["thinkingBoundary"]);
+          if (
+            ["started", "ended"].includes(String(boundary["phase"])) &&
+            Number.isSafeInteger(boundary["contentIndex"])
+          ) {
+            records.push({
+              ...base,
+              id: `${event.id}:thinking`,
+              itemId: `thinking:${threadCommandFingerprint({
+                runId,
+                timestamp: message["timestamp"],
+                index: boundary["contentIndex"],
+              })
+                .replace(/[^a-zA-Z0-9]/g, "")
+                .slice(-64)}`,
+              phase: "updated",
+              name: `runtime.thinking.${String(boundary["phase"])}`,
+            });
+          }
           const activity = object(content.at(-1))["type"];
           if (["thinking", "text", "toolCall"].includes(String(activity))) {
             records.push({
@@ -187,6 +206,28 @@ export class ThreadExecutionProjection {
           // Older Pi captures can report isError=false for a resolved product
           // failure. Retained product error evidence must not become success.
           const productError = text(object(result["details"])["errorCode"]);
+          const timing = object(object(result["details"])["executionTiming"]);
+          const start = text(timing["startedAt"]),
+            end = text(timing["endedAt"]);
+          if (
+            ended &&
+            Number.isFinite(Date.parse(start)) &&
+            Number.isFinite(Date.parse(end)) &&
+            Date.parse(end) >= Date.parse(start)
+          ) {
+            for (const [phase, at] of [
+              ["started", start],
+              ["ended", end],
+            ] as const)
+              records.push({
+                ...base,
+                id: `${event.id}:execution:${phase}`,
+                itemId: identifier(tool["toolCallId"], event.id),
+                phase: "updated",
+                name: `runtime.tool_execution.${phase}`,
+                occurredAt: at,
+              });
+          }
           records.push({
             ...base,
             itemId: identifier(tool["toolCallId"], event.id),

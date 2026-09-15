@@ -36,6 +36,7 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
         },
       });
     });
+    let detailSnapshot;
     await context.route("**/api/gateway/thread/v3/queries", async (route) => {
       const request = route.request().postDataJSON();
       if (request.type === "thread.execution") {
@@ -56,10 +57,9 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
         return;
       }
       if (request.type !== "thread.detail") return route.continue();
-      const response = await route.fetch();
-      const snapshot = await response.json();
+      detailSnapshot ??= route.fetch().then((response) => response.json());
+      const snapshot = await detailSnapshot;
       await route.fulfill({
-        response,
         json: {
           ...snapshot,
           payload: {
@@ -119,9 +119,12 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
     try {
       await page.goto(`${baseUrl}/threads/thread-main`);
       const search = page.locator(".search-authorization");
-      await search.locator(":scope > summary").click();
+      await page.getByRole("button", { name: "设置", exact: true }).click();
+      await page.getByRole("button", { name: "工具与权限", exact: true }).click();
       await expect(search.getByRole("alert")).toBeVisible();
-      await expect(search.getByRole("button")).toBeDisabled();
+      await expect(
+        search.getByRole("checkbox", { name: "允许联网搜索", exact: true }),
+      ).toBeDisabled();
       const failedReads = searchReads;
       failSearchRead = false;
       // Control browser connectivity events at the environment boundary. On
@@ -129,12 +132,14 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
       // navigator.onLine follows the host OS hint. Keep the application mounted
       // so this checks its actual reconnect and stale-error recovery path.
       await page.evaluate(() => window.dispatchEvent(new Event("offline")));
-      await expect(page.getByRole("status").filter({ hasText: "离线，正在恢复" })).toBeVisible();
+      await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "offline");
       await page.evaluate(() => window.dispatchEvent(new Event("online")));
       await expect.poll(() => searchReads).toBeGreaterThan(failedReads);
-      await expect(search.getByRole("button")).toBeEnabled();
+      await expect(
+        search.getByRole("checkbox", { name: "允许联网搜索", exact: true }),
+      ).toBeEnabled();
       await expect(search.getByRole("alert")).toHaveCount(0);
-      await search.locator(":scope > summary").press("Escape");
+      await page.getByRole("dialog", { name: "设置", exact: true }).press("Escape");
       const approval = page.locator("#approval-run-01");
       await expect(approval).toBeVisible();
       const beforeApproval = approvalReads;
@@ -181,6 +186,7 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
         });
       throw error;
     } finally {
+      await context.unrouteAll({ behavior: "wait" });
       await context.close();
     }
   }

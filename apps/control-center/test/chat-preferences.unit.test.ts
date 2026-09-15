@@ -15,14 +15,14 @@ describe("chat preferences and explicit text attachment admission", () => {
       },
     } as Storage;
   };
-  it("migrates system and invalid appearance values without losing pane preferences", () => {
+  it("preserves the approved system theme and normalizes invalid accents without losing pane preferences", () => {
     const raw = storage();
     raw.setItem(
       "himawari.control-center.v1.preferences",
       JSON.stringify({ theme: "system", accent: "red", density: "compact", detailPanePercent: 31 }),
     );
     expect(new ControlCenterBrowserStorage(raw).readPreferences()).toEqual({
-      theme: "dark",
+      theme: "system",
       accent: "violet",
       density: "compact",
       detailPanePercent: 31,
@@ -31,7 +31,7 @@ describe("chat preferences and explicit text attachment admission", () => {
   });
   it("persists each independent theme and accent combination", () => {
     const client = new ControlCenterBrowserStorage(storage());
-    for (const theme of ["light", "dark"] as const)
+    for (const theme of ["light", "dark", "system"] as const)
       for (const accent of ACCENT_COLORS) {
         client.savePreferences({ ...client.readPreferences(), theme, accent });
         expect(client.readPreferences()).toMatchObject({ theme, accent });

@@ -72,26 +72,41 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
           },
         });
       });
+      let forceRunning = false;
+      let detailSnapshot;
+      await context.route("**/api/gateway/thread/v3/queries", async (route) => {
+        if (route.request().postDataJSON().type !== "thread.detail") return route.continue();
+        detailSnapshot ??= route.fetch().then((response) => response.json());
+        const snapshot = await detailSnapshot;
+        await route.fulfill({
+          json: {
+            ...snapshot,
+            payload: {
+              ...snapshot.payload,
+              runs: forceRunning
+                ? snapshot.payload.runs.map((run) => ({ ...run, status: "running" }))
+                : snapshot.payload.runs,
+            },
+          },
+        });
+      });
       try {
         await page.goto(`${baseUrl}/threads/thread-main`);
         const composer = page.locator(".composer");
         const draft = composer.locator("textarea");
         const attach = composer.locator("button[title]");
-        const execution = composer.locator(".search-authorization > summary");
         const model = composer.locator(".model-picker > summary");
         const send = composer.locator(".send-button");
         await expect(model).toContainText("GLM 5.3 Flash");
-        await expect(execution).toBeVisible();
+        await expect(composer.locator(".search-authorization")).toHaveCount(0);
         await draft.fill("手机布局验收草稿 / モバイルテスト");
         await expect(send).toBeEnabled();
         async function toolbar() {
-          const boxes = await Promise.all(
-            [attach, execution, model, send].map((item) => item.boundingBox()),
-          );
+          const boxes = await Promise.all([attach, model, send].map((item) => item.boundingBox()));
           for (const box of boxes) {
             assert.ok(
               box && box.x >= 0 && box.x + box.width <= width + 1,
-              "toolbar control must stay inside viewport",
+              `toolbar control must stay inside viewport: ${JSON.stringify(boxes)}`,
             );
             assert.ok(
               box.height >= 40 && box.width >= 40,
@@ -99,7 +114,7 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
             );
             assert.ok(
               Math.abs(box.y + box.height / 2 - (boxes[0].y + boxes[0].height / 2)) <= 1,
-              "attachment, execution, model and send must share one toolbar row",
+              "attachment, model and send must share one toolbar row",
             );
           }
           for (let index = 1; index < boxes.length; index++)
@@ -130,20 +145,15 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
         await toolbar();
         await page.locator("#page-title").click();
         if (output) await page.screenshot({ path: path.join(output, `${label}-default.png`) });
-        await execution.click();
-        await expect(page.locator(".search-authorization-panel button")).toBeEnabled();
-        await panel(".search-authorization-panel");
         await model.click();
-        await expect(page.locator(".search-authorization-panel")).not.toBeVisible();
         await panel(".model-panel");
+        await page.locator(".picker-model-name").click();
         await page
-          .locator(".model-panel")
+          .locator(".model-options")
           .getByRole("button", { name: /Long model name/ })
           .click();
-        await page
-          .locator(".depth-choices")
-          .getByRole("button", { name: "high", exact: true })
-          .click();
+        await page.getByRole("slider").press("End");
+        await expect(page.getByRole("slider")).toHaveValue("1");
         await model.press("Escape");
         await toolbar();
         await expect(draft).toHaveValue("手机布局验收草稿 / モバイルテスト");
@@ -164,21 +174,7 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
         );
         await model.press("Escape");
         await page.setViewportSize({ width, height: 700 });
-        await context.route("**/api/gateway/thread/v3/queries", async (route) => {
-          if (route.request().postDataJSON().type !== "thread.detail") return route.continue();
-          const response = await route.fetch();
-          const snapshot = await response.json();
-          await route.fulfill({
-            response,
-            json: {
-              ...snapshot,
-              payload: {
-                ...snapshot.payload,
-                runs: snapshot.payload.runs.map((run) => ({ ...run, status: "running" })),
-              },
-            },
-          });
-        });
+        forceRunning = true;
         await page.reload();
         const stop = composer.locator(".stop-button");
         await expect(stop).toBeEnabled();
@@ -193,6 +189,44 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
         results.push({ locale, width, passed: true });
       } catch (error) {
         if (output) {
+          await writeFile(
+            path.join(output, `${label}-layout.json`),
+            JSON.stringify(
+              await page.evaluate(() =>
+                Object.fromEntries(
+                  [
+                    ".workspace",
+                    ".workspace-layout",
+                    ".content-pane",
+                    ".thread-workarea",
+                    ".thread-content",
+                    ".composer",
+                    ".composer-tools",
+                    ".model-selection",
+                    ".model-picker",
+                    ".model-picker > summary",
+                    ".model-name",
+                  ].map((selector) => {
+                    const e = document.querySelector(selector),
+                      s = getComputedStyle(e),
+                      b = e.getBoundingClientRect();
+                    return [
+                      selector,
+                      {
+                        x: b.x,
+                        width: b.width,
+                        minWidth: s.minWidth,
+                        flex: s.flex,
+                        overflow: s.overflow,
+                      },
+                    ];
+                  }),
+                ),
+              ),
+              null,
+              2,
+            ),
+          );
           await page.screenshot({ path: path.join(output, `${label}-failure.png`) });
           await writeFile(
             path.join(output, "failure.json"),
@@ -201,6 +235,7 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
         }
         throw error;
       } finally {
+        await context.unrouteAll({ behavior: "wait" });
         await context.close();
       }
     }

@@ -1,3 +1,4 @@
+import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
 import { AccountLogin, AccountDevices, accountRequest } from "./components/account-login.js";
 import type { GatewayV2Query, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -129,8 +130,16 @@ export function ControlCenterApp() {
     storage.readPreferences(),
   );
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", preferences.theme);
+    const media = window.matchMedia?.("(prefers-color-scheme: light)");
+    const applyTheme = () =>
+      document.documentElement.setAttribute(
+        "data-theme",
+        preferences.theme === "system" ? (media?.matches ? "light" : "dark") : preferences.theme,
+      );
+    applyTheme();
+    media?.addEventListener("change", applyTheme);
     document.documentElement.setAttribute("data-accent", preferences.accent ?? "violet");
+    return () => media?.removeEventListener("change", applyTheme);
   }, [preferences]);
   const updateLocale = (next: ControlCenterUiLocale) => {
     storage.saveLocale(next);
@@ -387,7 +396,7 @@ function LocalizedControlCenterApp({
     connection: threadConnection,
     message,
     navigate,
-    refreshSignal: threadRefreshSignal,
+    refreshSignal: threadRefreshSignal + gatewayRefreshSignal,
     route,
     storage,
     onUnauthorized: clearPrivateViewState,
@@ -615,6 +624,22 @@ function LocalizedControlCenterApp({
 
   return (
     <ControlCenterShell
+      settingsData={threadModel.settingsData}
+      settingsTools={
+        client &&
+        configuration?.installedGatewayV2Operations?.includes("search.authorization.set") ? (
+          <SearchAuthorizationControl
+            client={client}
+            configuration={configuration}
+            storage={storage}
+            connected={threadConnection !== "offline"}
+            refreshSignal={gatewayRefreshSignal}
+            message={message}
+          />
+        ) : (
+          <p>{message("common.notConfigured")}</p>
+        )
+      }
       builtInIdentity={identityMethod === "built-in" && Boolean(configuration)}
       healthDependenciesAvailable={configuration?.healthDependenciesAvailable ?? false}
       installedGatewayV2Operations={configuration?.installedGatewayV2Operations ?? []}
@@ -625,19 +650,26 @@ function LocalizedControlCenterApp({
         !configuration && authenticationRequired && identityMethod === "built-in" ? (
           <AccountLogin onComplete={() => setBootstrapRevision((value) => value + 1)} />
         ) : !configuration && requestError ? (
-          <Banner
-            title={message(
-              authenticationRequired ? "authentication.required" : "error.currentUnavailable",
-            )}
-            tone="warning"
-          >
-            {authenticationRequired ? (
-              <ActionButton disabled={signingIn} onClick={() => void signIn()}>
-                {message("authentication.signIn")}
-              </ActionButton>
-            ) : null}
-            <code>{requestError}</code>
-          </Banner>
+          <>
+            <Banner
+              title={message(
+                authenticationRequired ? "authentication.required" : "error.currentUnavailable",
+              )}
+              tone="warning"
+            >
+              {authenticationRequired ? (
+                <ActionButton disabled={signingIn} onClick={() => void signIn()}>
+                  {message("authentication.signIn")}
+                </ActionButton>
+              ) : (
+                <ActionButton onClick={() => setBootstrapRevision((value) => value + 1)}>
+                  {message("loading.retry")}
+                </ActionButton>
+              )}
+              <code>{requestError}</code>
+            </Banner>
+            {!authenticationRequired && route.surfaceId === "threads" ? threadModel.content : null}
+          </>
         ) : configuration && nativeDevices ? (
           <AccountDevices
             csrfToken={configuration.csrfToken}
@@ -672,15 +704,13 @@ function LocalizedControlCenterApp({
                 : genericDetails
       }
       list={
-        !configuration || !surfaceInstalled || route.surfaceId === "health-deployment"
-          ? null
-          : route.surfaceId === "threads"
-            ? threadModel.list
-            : governanceSurface
-              ? governanceModel.list
-              : operationsSurface
-                ? operationsModel.list
-                : genericList
+        route.surfaceId === "threads"
+          ? threadModel.list
+          : governanceSurface
+            ? governanceModel.list
+            : operationsSurface
+              ? operationsModel.list
+              : genericList
       }
       locale={locale}
       onLocaleChange={onLocaleChange}

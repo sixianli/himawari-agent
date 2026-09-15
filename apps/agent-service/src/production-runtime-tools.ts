@@ -679,6 +679,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         : this.#delegation;
       await beforeDeadline(delegation.dispatch(request), monotonicDeadline);
       let cursor: string | null = null;
+      let workerStartedAt: string | undefined;
       while (
         performance.now() < monotonicDeadline &&
         Date.parse(this.#options.clock.now()) < Date.parse(deadlineAt)
@@ -693,6 +694,17 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             if (next.done) break;
             const event = next.value;
             cursor = event.payload.cursor;
+            if (
+              event.type === "work.progress" &&
+              event.payload.stage === "worker.execution.started" &&
+              event.payload.requestId === request.messageId &&
+              event.causationId === request.messageId &&
+              event.correlationId === request.correlationId &&
+              digest(event.scope) === digest(scope)
+            ) {
+              workerStartedAt ??= event.payload.occurredAt;
+              continue;
+            }
             if (
               (event.type !== "work.result" && event.type !== "work.cancelled") ||
               event.payload.requestId !== request.messageId ||
@@ -772,6 +784,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 modelContent: "操作未确认成功。",
               };
             }
+            const workerEndedAt =
+              event.type === "work.result" ? event.payload.completedAt : event.payload.cancelledAt;
+            if (workerStartedAt && Date.parse(workerEndedAt) >= Date.parse(workerStartedAt))
+              outcome = {
+                ...outcome,
+                executionTiming: { startedAt: workerStartedAt, endedAt: workerEndedAt },
+              };
             await this.#validate(invocation, internal);
             await this.#writeJson(invocation, `runtime-tool-result:${key}`, outcome);
             await this.#assertDisclosure(invocation, key, internal);

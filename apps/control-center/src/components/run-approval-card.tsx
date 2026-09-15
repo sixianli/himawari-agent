@@ -1,15 +1,18 @@
+import type { ContentPreviewValue } from "./content-preview.js";
 import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ControlCenterBrowserStorage } from "../browser-storage.js";
 import { executionItems } from "../execution-view.js";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { queryMessage } from "../messages.js";
 import { findPendingRunApproval, type RunApproval, respondToRunApproval } from "../run-approval.js";
+import { setSearchAuthorization } from "../search-authorization.js";
 import { ActionButton } from "./primitives.js";
 
 export function RunApprovalCard({
   runId,
+  onPreview,
   records,
   client,
   configuration,
@@ -21,6 +24,7 @@ export function RunApprovalCard({
   onUnauthorized,
 }: {
   runId: string;
+  onPreview?: ((preview: ContentPreviewValue) => void) | undefined;
   records: readonly ThreadExecutionRecord[];
   client: GatewayClient;
   configuration: ControlCenterRuntimeConfiguration;
@@ -34,6 +38,12 @@ export function RunApprovalCard({
   const [snapshot, setSnapshot] = useState<RunApproval | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [rememberSearch, setRememberSearch] = useState(true);
+  const isSearch =
+    snapshot?.payload.intent.operation === "web_search" &&
+    snapshot.payload.intent.sideEffect === "none" &&
+    snapshot.payload.intent.recipientRefs.includes("https://mcp.exa.ai");
+  const responseLock = useRef(false);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   useEffect(() => {
@@ -70,10 +80,32 @@ export function RunApprovalCard({
     };
   }, [client, configuration, runId, connection, refreshSignal, reload]);
   const respond = async (decision: "approved" | "denied") => {
-    if (!snapshot || busy || connection !== "connected") return;
+    if (!snapshot || responseLock.current || connection !== "connected") return;
+    responseLock.current = true;
     setBusy(true);
     setError(null);
     try {
+      if (
+        decision === "approved" &&
+        snapshot.payload.recentAuthenticationRequired &&
+        !configuration.recentAuthenticationRef
+      )
+        throw new Error("CONTROL_CENTER_RECENT_AUTHENTICATION_REQUIRED");
+      if (decision === "approved" && isSearch && rememberSearch) {
+        const policy = await client.query(
+          queryMessage(configuration, "search.authorization.read", {}),
+        );
+        if (policy.type !== "search.authorization.snapshot")
+          throw new Error("SEARCH_AUTHORIZATION_INVALID");
+        if (!policy.payload.enabled)
+          await setSearchAuthorization({
+            client,
+            configuration,
+            storage,
+            snapshot: policy,
+            enabled: true,
+          });
+      }
       const result = await respondToRunApproval({
         client,
         configuration,
@@ -97,6 +129,7 @@ export function RunApprovalCard({
             : "CONTROL_CENTER_REQUEST_REJECTED",
       );
     } finally {
+      responseLock.current = false;
       setBusy(false);
       setReload((value) => value + 1);
     }
@@ -105,10 +138,22 @@ export function RunApprovalCard({
     ? executionItems(records).findLast(
         (item) =>
           item.kind === "tool" &&
-          item.phase === "started" &&
+          ["started", "updated"].includes(item.phase) &&
           item.name === snapshot.payload.intent.operation,
       )?.input
     : null;
+  let draft: { title: string; text: string } | undefined;
+  if (input)
+    try {
+      const args = JSON.parse(input);
+      if (typeof args.content === "string")
+        draft = {
+          title: typeof args.path === "string" ? args.path : message("threads.draft"),
+          text: args.content,
+        };
+    } catch {
+      /* Incomplete arguments are not a preview. */
+    }
   return (
     <section
       id={`approval-${runId}`}
@@ -123,7 +168,7 @@ export function RunApprovalCard({
             <dd>{snapshot.payload.intent.operation}</dd>
 
             <dt>{message("governance.sideEffect")}</dt>
-            <dd>{snapshot.payload.intent.sideEffect}</dd>
+            <dd>{message(`review.impact.${snapshot.payload.intent.sideEffect}`)}</dd>
           </dl>
           {input ? <pre className="approval-input">{input}</pre> : null}
           <details>
@@ -135,21 +180,38 @@ export function RunApprovalCard({
               <dd>{snapshot.payload.intent.targetRefs.join(", ")}</dd>
               <dt>{message("governance.dataClassification")}</dt>
               <dd>{snapshot.payload.intent.dataClassification}</dd>
-              <dt>{message("governance.semanticHash")}</dt>
-              <dd>{snapshot.payload.semanticSnapshotHash}</dd>
             </dl>
           </details>
           {snapshot.payload.recentAuthenticationRequired &&
           !configuration.recentAuthenticationRef ? (
             <p>{message("account.reauthenticate")}</p>
           ) : null}
+          {isSearch ? (
+            <>
+              <p>{message("chat.search.disclosure")}</p>
+              <label className="search-remember">
+                <input
+                  type="checkbox"
+                  checked={rememberSearch}
+                  disabled={busy}
+                  onChange={(event) => setRememberSearch(event.currentTarget.checked)}
+                />
+                {message("chat.search.remember")}
+              </label>
+            </>
+          ) : null}
           <div className="actions">
             <ActionButton
               disabled={busy || connection !== "connected"}
               onClick={() => void respond("approved")}
             >
-              {message("chat.allowOnce")}
+              {message(isSearch ? "chat.search.enable" : "chat.allowOnce")}
             </ActionButton>
+            {draft && onPreview ? (
+              <ActionButton variant="quiet" onClick={() => draft && onPreview(draft)}>
+                {message("review.preview")}
+              </ActionButton>
+            ) : null}
             <ActionButton
               disabled={busy || connection !== "connected"}
               variant="secondary"
@@ -162,6 +224,14 @@ export function RunApprovalCard({
       ) : (
         <p>{message("state.loading")}</p>
       )}
+      {loadError ? (
+        <ActionButton
+          disabled={connection !== "connected" || busy}
+          onClick={() => setReload((value) => value + 1)}
+        >
+          {message("common.refresh")}
+        </ActionButton>
+      ) : null}
       {error || loadError ? (
         <p role="alert" style={{ overflowWrap: "anywhere" }}>
           {error ?? loadError}

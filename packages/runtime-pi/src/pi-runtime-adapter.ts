@@ -1102,7 +1102,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               : event,
           occurredAt: this.now(),
         };
-        if (event.type === "message_update" && pendingUpdate) {
+        const coalescible =
+          event.type === "message_update" &&
+          !["thinking_start", "thinking_end"].includes(event.assistantMessageEvent?.type ?? "");
+        if (coalescible && pendingUpdate) {
           Object.assign(pendingUpdate, observed);
           return;
         }
@@ -1136,7 +1139,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           failed ||= mapped.failed;
           aborted ||= mapped.aborted;
         });
-        if (event.type === "message_update") pendingUpdate = observed;
+        if (coalescible) pendingUpdate = observed;
       });
 
       try {
@@ -1378,6 +1381,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         return {
           content: [{ type: "text", text: result.modelContent }],
           details: {
+            ...(result.executionTiming ? { executionTiming: result.executionTiming } : {}),
             productOutcome: result.outcome,
             resultRef: result.resultRef,
             errorCode: result.errorCode,
@@ -1435,10 +1439,28 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       case "message_start":
       case "message_update":
       case "message_end": {
+        // Redact the original graph before adding presentation metadata so
+        // circular references keep the same protected representation.
+        const observation = redactObservation(event.message);
         const payloadRef = await this.#dependencies.projection.capture({
           runId: request.runId,
           kind: "message",
-          value: redactObservation(event.message),
+          value: {
+            ...(observation as Record<string, unknown>),
+            ...(event.type === "message_update" &&
+            ["thinking_start", "thinking_end"].includes(event.assistantMessageEvent?.type ?? "")
+              ? {
+                  thinkingBoundary: {
+                    phase:
+                      event.assistantMessageEvent.type === "thinking_start" ? "started" : "ended",
+                    contentIndex:
+                      "contentIndex" in event.assistantMessageEvent
+                        ? event.assistantMessageEvent.contentIndex
+                        : 0,
+                  },
+                }
+              : {}),
+          },
           dataClassification: request.dataClassification,
         });
         const sequence = nextMessageSequence();

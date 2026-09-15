@@ -120,6 +120,38 @@ describe("ProductionRuntimeTools", () => {
     expect(await (await exposed(f)).execute(invocation)).toEqual(result);
     expect(f.request).toHaveBeenCalledTimes(2);
   });
+  it("uses matching worker boundaries and preserves timing on replay", async () => {
+    const f = fixture();
+    const original = f.options.transport.events.bind(f.options.transport);
+    vi.spyOn(f.options.transport, "events").mockImplementation(async function* (cursor) {
+      for await (const event of original(cursor)) {
+        if (event.type === "work.result") {
+          yield {
+            ...event,
+            type: "work.progress",
+            messageId: "start:tools",
+            payload: {
+              requestId: event.payload.requestId,
+              cursor: "start",
+              sequence: 0,
+              stage: "worker.execution.started",
+              progressPermille: 0,
+              payloadRef: null,
+              occurredAt: new Date(Date.parse(now) - 1200).toISOString(),
+            },
+          };
+        }
+        yield event;
+      }
+    });
+    const tool = await exposed(f);
+    const result = await tool.execute(invocation);
+    expect(result).toMatchObject({
+      executionTiming: { startedAt: new Date(Date.parse(now) - 1200).toISOString(), endedAt: now },
+    });
+    expect(await (await exposed(f)).execute(invocation)).toEqual(result);
+    expect(f.request).toHaveBeenCalledTimes(2);
+  });
   it("rejects expanded input, cross-Run and revoked handles without dispatch", async () => {
     const f = fixture();
     const tool = await exposed(f);

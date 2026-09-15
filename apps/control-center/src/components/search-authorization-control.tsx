@@ -1,9 +1,10 @@
 import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ControlCenterBrowserStorage } from "../browser-storage.js";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
-import { commandMessage, queryMessage } from "../messages.js";
+import { queryMessage } from "../messages.js";
+import { setSearchAuthorization } from "../search-authorization.js";
 import { ActionButton } from "./primitives.js";
 
 export function SearchAuthorizationControl({
@@ -21,15 +22,6 @@ export function SearchAuthorizationControl({
   refreshSignal: number;
   message: (id: MessageId) => string;
 }) {
-  const menu = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const dismiss = (event: MouseEvent) => {
-      if (menu.current && event.target instanceof Node && !menu.current.contains(event.target))
-        menu.current.open = false;
-    };
-    document.addEventListener("click", dismiss);
-    return () => document.removeEventListener("click", dismiss);
-  }, []);
   const [snapshot, setSnapshot] = useState<Extract<
     GatewayV2Snapshot,
     { type: "search.authorization.snapshot" }
@@ -46,7 +38,9 @@ export function SearchAuthorizationControl({
       void client
         .query(queryMessage(configuration, "search.authorization.read", {}))
         .then((result) => {
-          if (!disposed && result.type === "search.authorization.snapshot") {
+          if (result.type !== "search.authorization.snapshot")
+            throw new Error("SEARCH_AUTHORIZATION_INVALID");
+          if (!disposed) {
             setSnapshot(result);
             setLoadError(false);
           }
@@ -60,33 +54,17 @@ export function SearchAuthorizationControl({
   }, [client, configuration, connected, reload, refreshSignal]);
   const change = async () => {
     if (!snapshot || !connected || busy || !configuration.authorizationRef) return;
-    const { revision, enabled, recipient } = snapshot.payload;
-    const operationKey = `search-authorization:${revision}:${enabled ? "revoke" : "enable"}`;
-    const pending = storage.readPendingGovernanceMutation(operationKey);
-    const idempotencyKey = pending?.idempotencyKey ?? `governance:${crypto.randomUUID()}`;
-    storage.savePendingGovernanceMutation({
-      operationKey,
-      idempotencyKey,
-      commandType: "search.authorization.set",
-      objectRef: "search-authorization",
-      expectedRevision: revision,
-    });
     setBusy(true);
     setError(false);
     try {
-      const result = await client.mutate(
-        commandMessage(
-          configuration,
-          "search.authorization.set",
-          { expectedRevision: revision, enabled: !enabled, recipient },
-          { idempotencyKey, authorizationRef: configuration.authorizationRef, risk: "high" },
-        ),
-      );
-      storage.clearPendingGovernanceMutation(operationKey);
-      setError(result.status !== "accepted" && result.status !== "replayed");
-    } catch (caught) {
-      if (caught && typeof caught === "object" && "status" in caught && caught.status === 409)
-        storage.clearPendingGovernanceMutation(operationKey);
+      await setSearchAuthorization({
+        client,
+        configuration,
+        storage,
+        snapshot,
+        enabled: !snapshot.payload.enabled,
+      });
+    } catch {
       setError(true);
     } finally {
       setBusy(false);
@@ -94,41 +72,50 @@ export function SearchAuthorizationControl({
     }
   };
   return (
-    <details
-      className="search-authorization"
-      ref={menu}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.currentTarget.open = false;
-          event.currentTarget.querySelector("summary")?.focus();
-        }
-      }}
-    >
-      <summary>
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        >
-          <path d="m10 3 2 5 5 2-5 2-2 5-2-5-5-2 5-2zM19 14l1 3 3 1-3 1-1 3-1-3-3-1 3-1z" />
-        </svg>
-        {message("chat.execute")} <span aria-hidden="true">⌄</span>
-      </summary>
+    <section className="search-authorization">
       <div className="search-authorization-panel">
-        <p className="search-authorization-status">
-          {message(snapshot?.payload.enabled ? "chat.search.allowed" : "chat.search.ask")}
-        </p>
-        <p>{message("chat.search.disclosure")}</p>
-        <ActionButton
-          disabled={!connected || busy || !snapshot?.payload.available}
-          onClick={() => void change()}
-        >
-          {message(snapshot?.payload.enabled ? "chat.search.revoke" : "chat.search.enable")}
-        </ActionButton>
-        {error || loadError ? <p role="alert">{message("error.currentUnavailable")}</p> : null}
+        <h3>{message("review.settings.tools")}</h3>
+        <label className="setting-row">
+          <span>
+            {message("chat.search.enable")}
+            <small className="setting-description">{message("chat.search.scope")}</small>
+          </span>
+          <input
+            type="checkbox"
+            aria-label={message(
+              snapshot?.payload.enabled ? "chat.search.revoke" : "chat.search.enable",
+            )}
+            checked={snapshot?.payload.enabled ?? false}
+            disabled={
+              !connected ||
+              busy ||
+              !configuration.authorizationRef ||
+              !snapshot ||
+              (!snapshot.payload.available && !snapshot.payload.enabled)
+            }
+            onChange={() => void change()}
+          />
+        </label>
+        <p className="settings-note">{message("chat.search.disclosure")}</p>
+        <p className="settings-note">{message("chat.search.afterRevoke")}</p>
+        <div className="setting-row">
+          <span>
+            {message("chat.search.other")}
+            <small className="setting-description">{message("review.inlineConsent")}</small>
+          </span>
+        </div>
+        {error || loadError ? (
+          <div role="alert">
+            {message("error.currentUnavailable")}
+            <ActionButton
+              disabled={!connected || busy}
+              onClick={() => setReload((value) => value + 1)}
+            >
+              {message("common.refresh")}
+            </ActionButton>
+          </div>
+        ) : null}
       </div>
-    </details>
+    </section>
   );
 }

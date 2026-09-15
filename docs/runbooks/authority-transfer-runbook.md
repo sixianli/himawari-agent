@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:78971aaddf18f24a62893399de14299be0271fb6fc77228612f2e0ff1ef14b63"
+contract_sha256: "sha256:ae4bae232778a81ca7468e3491b26cf4241a9a2694225570caf4624fe75df4fd"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -198,6 +198,13 @@ himawari transfer abandon --config <absolute-target-config-path> --secret-dir <a
 恢复目标 Agent 在开放准入前使用当前权威处理 v2 未释放观察：旧监督标为 lost/unknown，保留原结果、效果和占用，不复用源 Worker 的 boot 凭证或按旧 PID 接管。已确认清理但效果未决的记录保持其原清理事实及未决义务。此逻辑恢复不能作为源主机残留进程已终止的证据，源风险仍按本 Runbook 的停止条件处理。
 
 ## Verification
+
+### v4 控制中心与持久事件核对
+
+本次调整增加 Worker 工具实际起止事件和 Pi 可观测思考边界的展示投影，沿用原有 Trace/Payload 存储，不增加数据库迁移。备份、恢复及权威迁移仍须完整保留这些记录；缺少旧时长边界的历史显示“暂无时长”，不得在恢复时补造计时或重放工具。原有停止、安装资格、加密与权威检查程序继续适用。
+
+聊天页的新建先进入本地草稿，首次发送才创建持久会话。审批在所属轮次处理，侧栏红点提醒；归档管理位于齿轮设置的“会话与数据”。联网搜索开关与会话内“记住我的选择”复用原来的受限搜索授权合同。设置不展示内部 checkpoint、修订和连接绿点。安装后须验证草稿恢复、幂等重试、当前轮审批以及真实模型支持的强度档位，不能以原型演示数据作为运行证据。语言切换应保持设置弹窗及当前页面状态。
+
 
 自动标题沿用既有 Thread、受保护 Payload 和模型费用账本，不新增 schema。迁移须共同保留 `threads.title_ref`、标题来源与 revision、标题 Payload，以及 `thread-title:<runId>` 对应的调用身份和费用状态；目标不能因标题缺失清除 started/unknown 记录或重放源请求。正常停机先停止 Run 循环，再等待已发起的标题请求结束；标题请求最多等待 20 秒，仍受配置的更短期限约束。强制中断后的进程内标题队列不属于迁移数据，目标以已提交状态为准。已有标题和手动改名优先，不在 import/activate 时批量请求模型。
 

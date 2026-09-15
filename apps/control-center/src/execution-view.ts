@@ -173,8 +173,9 @@ export function executionTime(
   };
 }
 export function duration(milliseconds: number): string {
-  const seconds = Math.floor(Math.max(0, milliseconds) / 1000);
-  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  if (milliseconds > 0 && milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
+  const seconds = Math.round(Math.max(0, milliseconds) / 100) / 10;
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
 }
 
 /** Only durable, public stage markers; never synthesize reasoning or infer successful steps. */
@@ -190,4 +191,48 @@ export function executionStages(records: readonly ThreadExecutionRecord[]) {
   return [...new Map(records.map((record) => [record.id, record])).values()]
     .filter((record) => record.kind === "status" && executionStageLabels[record.name])
     .sort((a, b) => a.sequence - b.sequence);
+}
+
+/** Never treat request/transport timestamps as host execution time. */
+export function recordedInterval(
+  records: readonly ThreadExecutionRecord[],
+  itemId: string,
+  prefix: string,
+): number | null {
+  const events = records.filter((record) => record.itemId === itemId);
+  const start = events.find((record) => record.name === `${prefix}.started`);
+  const end = events.find((record) => record.name === `${prefix}.ended`);
+  if (!start || !end) return null;
+  const elapsed = Date.parse(end.occurredAt) - Date.parse(start.occurredAt);
+  return Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : null;
+}
+
+/** Provider thinking-stream boundaries contain no private reasoning text. */
+export function thinkingSteps(records: readonly ThreadExecutionRecord[]) {
+  const boundaries = [
+    ...new Map(
+      records
+        .filter((record) => record.name === "runtime.thinking.started")
+        .map((record) => [record.itemId, record]),
+    ).values(),
+  ];
+  if (boundaries.length)
+    return boundaries.map((record) => ({
+      ...record,
+      elapsed: recordedInterval(records, record.itemId, "runtime.thinking"),
+    }));
+  // Older histories only attest that thinking was observed; they do not provide duration.
+  const observations = records.filter((record) => record.name === "runtime.activity.thinking");
+  return observations
+    .filter(
+      (record, index) =>
+        index === 0 ||
+        records.some(
+          (other) =>
+            other.sequence > (observations[index - 1]?.sequence ?? 0) &&
+            other.sequence < record.sequence &&
+            (other.kind === "tool" || other.name === "runtime.activity.text"),
+        ),
+    )
+    .map((record) => ({ ...record, elapsed: null }));
 }

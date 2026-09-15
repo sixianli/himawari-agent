@@ -83,6 +83,13 @@ async function click(label: string) {
   await act(async () => button.click());
 }
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+    this.dispatchEvent(new Event("close"));
+  };
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("EventSource", Events);
   vi.stubGlobal("fetch", fetcher);
@@ -225,7 +232,8 @@ describe("control center application bootstrap and interaction", () => {
   });
   it("persists interface language and appearance through the actual shell controls", async () => {
     await render();
-    const locale = container.querySelector<HTMLSelectElement>(
+    await click(messages["settings.title"]);
+    const locale = document.querySelector<HTMLSelectElement>(
       'select[aria-label="' + messages["locale.label"] + '"]',
     );
     if (!locale) throw new Error("missing language selector");
@@ -237,7 +245,13 @@ describe("control center application bootstrap and interaction", () => {
     await act(async () => {
       await loadMessageCatalog("en");
     });
-    await click("☼ Light");
+    expect(document.querySelector<HTMLDialogElement>("dialog")?.open).toBe(true);
+    const theme = document.querySelector<HTMLSelectElement>('select[aria-label="Theme"]');
+    if (!theme) throw new Error("Missing theme setting");
+    await act(async () => {
+      theme.value = "light";
+      theme.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
     expect(new ControlCenterBrowserStorage(window.localStorage).readPreferences().theme).toBe(
       "light",

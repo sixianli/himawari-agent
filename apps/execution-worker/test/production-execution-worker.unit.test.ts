@@ -327,6 +327,7 @@ describe("production execution Worker", () => {
     await worker.waitForIdle();
     expect(bind).toHaveBeenCalledTimes(1);
     expect(await readEvents(worker)).toMatchObject([
+      { type: "work.progress", payload: { stage: "worker.execution.started" } },
       {
         type: "work.result",
         payload: {
@@ -498,11 +499,18 @@ describe("production execution Worker", () => {
     await expect(worker.request(request)).resolves.toBeNull();
     await worker.waitForIdle();
     const events = await readEvents(worker);
-    expect(events.map(({ type }) => type)).toEqual(["work.progress", "work.result"]);
-    expect(events[1]).toMatchObject({ payload: { outcome: "succeeded" } });
+    expect(events.map(({ type }) => type)).toEqual([
+      "work.progress",
+      "work.progress",
+      "work.result",
+    ]);
+    expect(events[0]).toMatchObject({
+      payload: { stage: "worker.execution.started", occurredAt: fixture.times.start },
+    });
+    expect(events[2]).toMatchObject({ payload: { outcome: "succeeded" } });
     const firstPayload = events[0]?.payload;
     if (!firstPayload || !("cursor" in firstPayload)) throw new TypeError("cursor missing");
-    await expect(readEvents(worker, firstPayload.cursor)).resolves.toEqual([events[1]]);
+    await expect(readEvents(worker, firstPayload.cursor)).resolves.toEqual([events[1], events[2]]);
   });
 
   it("rejects stale fences, unregistered adapters and excessive ceilings before invocation", async () => {
@@ -536,6 +544,7 @@ describe("production execution Worker", () => {
     await worker.request(execute());
     await worker.waitForIdle();
     await expect(readEvents(worker)).resolves.toMatchObject([
+      { type: "work.progress", payload: { stage: "worker.execution.started" } },
       { type: "work.result", payload: { outcome: "failed", errorCode: "PORT_HANDLE_REVOKED" } },
     ]);
   });
@@ -547,6 +556,7 @@ describe("production execution Worker", () => {
     await worker.waitForIdle();
     const unknown = await readEvents(worker);
     expect(unknown).toMatchObject([
+      { type: "work.progress", payload: { stage: "worker.execution.started" } },
       {
         type: "work.result",
         payload: { outcome: "result_unknown", externalActionId: "external-worker-unit" },
@@ -1672,6 +1682,7 @@ it("routes v2 only to its supervisor and advertises its explicit foreground supp
   await worker.waitForIdle();
   expect(adapter.execute).toHaveBeenCalledTimes(1);
   expect(await readEvents(worker)).toMatchObject([
+    { type: "work.progress", payload: { stage: "worker.execution.started" } },
     { type: "work.result", payload: { outcome: "result_unknown" } },
   ]);
 });

@@ -107,8 +107,12 @@ async function render<T extends object>(component: ComponentType<T>, props: T) {
   await act(async () => root.render(h(ControlCenterIntlProvider, provider)));
 }
 function button(id: MessageId) {
-  const found = [...container.querySelectorAll("button")].find(
-    (item) => item.textContent === message(id),
+  const found = [
+    ...container.querySelectorAll<HTMLButtonElement | HTMLInputElement>(
+      "button, input[type=checkbox]",
+    ),
+  ].find(
+    (item) => item.textContent === message(id) || item.getAttribute("aria-label") === message(id),
   );
   if (!found) throw new Error(`missing button ${id}`);
   return found;
@@ -132,19 +136,11 @@ describe("search authorization menu", () => {
       expectedRevision: 3,
     });
   });
-  it("dismisses with Escape or outside click and returns keyboard focus to its summary", async () => {
+  it("renders authorization inside settings without a separate execution menu", async () => {
     await render(SearchAuthorizationControl, searchProps());
-    const menu = container.querySelector("details");
-    if (!menu) throw new Error("missing execution menu");
-    menu.open = true;
-    await act(async () =>
-      menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
-    );
-    expect(menu.open).toBe(false);
-    expect(document.activeElement).toBe(menu.querySelector("summary"));
-    menu.open = true;
-    await act(async () => document.body.click());
-    expect(menu.open).toBe(false);
+    expect(container.querySelector("details")).toBeNull();
+    expect(container.querySelector(".search-authorization")).not.toBeNull();
+    expect(button("chat.search.enable")).toBeDefined();
   });
   it.each(["offline", "not-authorized", "unavailable"])("does not mutate when %s", async (kind) => {
     const props = searchProps(kind !== "offline");
@@ -273,5 +269,75 @@ describe("inline run approval", () => {
     await render(RunApprovalCard, { ...approvalProps(), refreshSignal: 1 });
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(button("chat.allowOnce").disabled).toBe(false);
+  });
+});
+
+describe("inline search choice", () => {
+  function searchApproval() {
+    approvalSnapshot = {
+      ...approvalSnapshot,
+      payload: {
+        ...approvalSnapshot.payload,
+        intent: {
+          ...approvalSnapshot.payload.intent,
+          operation: "web_search",
+          sideEffect: "none",
+          recipientRefs: ["https://mcp.exa.ai"],
+        },
+      },
+    };
+  }
+  it("remembers only explicit search consent and then settles the exact pending approval", async () => {
+    searchApproval();
+    await render(RunApprovalCard, approvalProps());
+    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
+    await click("chat.search.enable");
+    expect(mutate.mock.calls.map((call) => call[0].type)).toEqual([
+      "search.authorization.set",
+      "approval.respond",
+    ]);
+    expect(mutate.mock.calls[0]?.[0].payload).toEqual({
+      expectedRevision: 2,
+      enabled: true,
+      recipient: "https://mcp.exa.ai",
+    });
+    expect(mutate.mock.calls[1]?.[0].payload).toMatchObject({
+      approvalRequestId: "approval-target",
+      expectedRevision: 1,
+      semanticSnapshotHash: "hash",
+      decision: "approved",
+    });
+    expect((await query({ type: "search.authorization.read" })).payload.enabled).toBe(true);
+  });
+  it.each(["once", "deny", "reauth"])(
+    "does not grant persistent permission for %s",
+    async (kind) => {
+      searchApproval();
+      if (kind === "reauth")
+        approvalSnapshot = {
+          ...approvalSnapshot,
+          payload: { ...approvalSnapshot.payload, recentAuthenticationRequired: true },
+        };
+      await render(RunApprovalCard, approvalProps());
+      if (kind === "once")
+        await act(async () =>
+          container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click(),
+        );
+      await click(kind === "deny" ? "approvals.deny" : "chat.search.enable");
+      expect(mutate.mock.calls.some((call) => call[0].type === "search.authorization.set")).toBe(
+        false,
+      );
+      expect(enabled).toBe(false);
+      expect(mutate).toHaveBeenCalledTimes(kind === "reauth" ? 0 : 1);
+    },
+  );
+  it("does not approve the tool when remembering consent fails", async () => {
+    searchApproval();
+    mutate.mockRejectedValueOnce(new Error("unavailable"));
+    await render(RunApprovalCard, approvalProps());
+    await click("chat.search.enable");
+    expect(mutate).toHaveBeenCalledOnce();
+    expect(approvalSnapshot.payload.status).toBe("pending");
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
   });
 });

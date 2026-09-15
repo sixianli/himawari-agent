@@ -71,12 +71,12 @@ describe("thread sidebar navigation", () => {
     expect(threads.map(({ threadId }) => threadId)).toEqual(["recent", "last", "first"]);
   });
 
-  it("keeps search and archive filters accessible when the collection is empty", () => {
+  it("keeps search accessible and removes global filters from the empty sidebar", () => {
     const markup = render([]);
-    expect(markup).toContain('aria-label="搜索对话"');
-    expect(markup).toContain('aria-label="对话筛选"');
-    expect(markup).toContain('value="archived"');
-    expect(markup).toContain('value="all"');
+    expect(markup).toContain("搜索对话");
+    expect(markup).not.toContain('aria-label="对话筛选"');
+    expect(markup).not.toContain('value="archived"');
+    expect(markup).not.toContain('value="all"');
     expect(markup).not.toContain('aria-label="置顶"');
   });
 });

@@ -1,4 +1,12 @@
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useLayoutEffect,
+} from "react";
 import { createPortal } from "react-dom";
 import { nextRovingIndex } from "./collections.js";
 import { ActionButton } from "./primitives.js";
@@ -75,7 +83,7 @@ export interface ActionMenuItem {
 
 export interface ActionMenuProps {
   readonly items: readonly ActionMenuItem[];
-  readonly label: string;
+  readonly label: ReactNode;
 }
 
 export function ActionMenu({ items, label }: ActionMenuProps) {
@@ -84,6 +92,43 @@ export function ActionMenu({ items, label }: ActionMenuProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const menuId = useId();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ left: 0, top: 0 });
+  useLayoutEffect(() => {
+    if (!open) return;
+    const anchor = triggerRef.current?.getBoundingClientRect();
+    const menu = menuRef.current?.getBoundingClientRect();
+    if (anchor && menu)
+      setPosition({
+        left: Math.max(8, Math.min(anchor.right - menu.width, window.innerWidth - menu.width - 8)),
+        top:
+          anchor.bottom + menu.height + 8 <= window.innerHeight
+            ? anchor.bottom + 4
+            : Math.max(8, anchor.top - menu.height - 4),
+      });
+    itemRefs.current[activeIndex]?.focus();
+  }, [open, activeIndex]);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: Event) => {
+      if (
+        !(event.target instanceof Node) ||
+        menuRef.current?.contains(event.target) ||
+        triggerRef.current?.contains(event.target)
+      )
+        return;
+      setOpen(false);
+    };
+    const reposition = () => setOpen(false);
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("focusin", outside);
+    window.addEventListener("resize", reposition);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("focusin", outside);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open]);
 
   const focusItem = (index: number) => {
     const available = items
@@ -148,28 +193,45 @@ export function ActionMenu({ items, label }: ActionMenuProps) {
       >
         {label}
       </ActionButton>
-      {open ? (
-        <div className="menu-popover" id={menuId} onKeyDown={handleMenuKeyDown} role="menu">
-          {items.map((item, index) => (
-            <button
-              disabled={item.disabled}
-              key={item.id}
-              onClick={() => {
-                item.onSelect();
-                close(true);
+      {open
+        ? createPortal(
+            <div
+              ref={menuRef}
+              style={{
+                position: "fixed",
+                left: position.left,
+                top: position.top,
+                right: "auto",
+                zIndex: 80,
               }}
-              ref={(element) => {
-                itemRefs.current[index] = element;
-              }}
-              role="menuitem"
-              tabIndex={index === activeIndex ? 0 : -1}
-              type="button"
+              className="menu-popover thread-context-menu"
+              id={menuId}
+              onKeyDown={handleMenuKeyDown}
+              role="menu"
             >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
+              {items.map((item, index) => (
+                <button
+                  disabled={item.disabled}
+                  key={item.id}
+                  onClick={() => {
+                    close(false);
+                    triggerRef.current?.focus();
+                    item.onSelect();
+                  }}
+                  ref={(element) => {
+                    itemRefs.current[index] = element;
+                  }}
+                  role="menuitem"
+                  tabIndex={index === activeIndex ? 0 : -1}
+                  type="button"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

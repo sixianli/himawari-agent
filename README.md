@@ -12,7 +12,7 @@ Himawari Agent 是一个本地优先、无头、长期个人记忆驱动的私�
 
 ## 已确认的 Web 设计
 
-2026-09-10 确认的 Logo 与聊天界面已保存为后续重构的设计基准。修改控制中心前，请先查看 [设计说明](docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md)、[交互原型](docs/assets/control-center/2026-09-10-v1/index.html) 和 [Logo 图片资源](assets/brand/himawari/README.md)。原型可下载或在本地用浏览器直接打开，图标已内嵌，支持离线查看；页面中的运行结果均为演示数据。
+当前界面以用户确认的 [v4 设计说明](docs/execution/specs/2026-09-15-control-center-v4-design.md) 和 [冻结交互原型](docs/assets/control-center/2026-09-15-v4/index.html) 为基准。原始 [Logo 与 v1 设计](docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md) 保留。v4 原型的 sandbox 和 CSP 保持原样；原型消息、模型与计时均为演示数据。
 
 ## Toolchain
 

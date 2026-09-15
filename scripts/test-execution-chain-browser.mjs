@@ -71,6 +71,16 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
         record({ name: "memory.selection" }),
         record({ name: "context.formed" }),
         record({ name: "runtime.model_started", phase: "started" }),
+        record({
+          name: "runtime.thinking.started",
+          itemId: "thought-1",
+          occurredAt: "2026-09-14T05:00:05.000Z",
+        }),
+        record({
+          name: "runtime.thinking.ended",
+          itemId: "thought-1",
+          occurredAt: "2026-09-14T05:00:07.000Z",
+        }),
         record({}),
         record({ kind: "message", itemId: "empty-call-message", phase: "completed" }),
         record({
@@ -83,12 +93,16 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
     });
     try {
       await page.goto(`${baseUrl}/threads/thread-main`);
-      await expect(page.locator(".connection-connected")).toBeVisible();
+      await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "connected");
       const process = page.locator(".turn-process").first();
       const tools = process.locator(".tool-record");
       await expect(process).toHaveAttribute("open", "");
       await expect(tools).toHaveCount(1);
-      await expect(process.locator(".execution-stage")).toHaveCount(5);
+      const turnBox = await page.locator(".chat-turn").first().boundingBox();
+      const inputBox = await page.locator(".composer").boundingBox();
+      assert(turnBox && inputBox && Math.abs(turnBox.x - inputBox.x) <= 1);
+      await expect(process.locator(".execution-stage")).toHaveCount(1);
+      await expect(process.locator(".execution-stage .step-status")).toHaveText("2s");
       const first = tools.first();
       await first.locator(":scope > summary").click();
       await expect(first.locator("pre").first()).toContainText('"query":"Tokyo headlines"');
@@ -96,6 +110,11 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       await send({
         records: [
           record({ kind: "tool", itemId: "search-one", phase: "started", name: "web_search" }),
+          record({
+            itemId: "search-one",
+            name: "runtime.tool_execution.started",
+            occurredAt: "2026-09-14T05:00:10.000Z",
+          }),
         ],
         replay: true,
       });
@@ -110,6 +129,11 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
             name: "web_search",
             output: "Search result: Tokyo news",
           }),
+          record({
+            itemId: "search-one",
+            name: "runtime.tool_execution.ended",
+            occurredAt: "2026-09-14T05:00:16.000Z",
+          }),
           record({}),
           record({
             kind: "tool",
@@ -123,6 +147,7 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       await expect(tools).toHaveCount(2);
       await expect(first.locator(".call-lifecycle li")).toHaveCount(3);
       await expect(first).toContainText("Search result: Tokyo news");
+      await expect(first.locator(".step-status")).toContainText("6s");
       await first.locator(":scope > summary").click();
       await send({
         records: [
@@ -153,7 +178,7 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
           record({ name: "runtime.completed", phase: "completed" }),
         ],
       });
-      await expect(tools).toHaveCount(3);
+      await expect(tools).toHaveCount(2);
       await expect(process).toHaveAttribute("open", "");
       const title = `Tokyo headlines ${unique}`;
       await send({ title });
@@ -161,17 +186,19 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       if (width === 1280)
         await expect(page.locator(".thread-sidebar-records")).toContainText(title);
       await page.evaluate(() => window.dispatchEvent(new Event("offline")));
-      await expect(page.locator(".connection-connected")).toHaveCount(0);
+      await expect(page.locator(".app-shell")).not.toHaveAttribute("data-connection", "connected");
       await page.evaluate(() => window.dispatchEvent(new Event("online")));
-      await expect(page.locator(".connection-connected")).toBeVisible();
+      await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "connected");
       await page.reload();
       await expect(page.locator("#page-title")).toHaveText(title);
-      await expect(page.locator(".connection-connected")).toBeVisible();
-      await expect(process).not.toHaveAttribute("open", "");
-      await process.locator(":scope > summary").click();
-      await expect(tools).toHaveCount(3);
+      await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "connected");
+      await expect(process).toHaveAttribute("open", "");
+      await expect(tools).toHaveCount(2);
+      await process.locator(":scope > summary").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: path.join(output, `${unique}-overview.png`) });
       await first.locator(":scope > summary").click();
       await expect(first).toContainText("Search result: Tokyo news");
+      await expect(first.locator(".step-status")).toContainText("6s");
       assert.equal(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
         true,
@@ -200,15 +227,17 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
   }
   return cases;
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  const profile = process.argv[2] ?? "chromium";
-  const output = path.resolve(process.argv[3] ?? `.ci-output/execution-chain/${profile}`);
+export async function qualifyExecutionChainFixture(browser, output, staticRoot) {
   await mkdir(output, { recursive: true });
   const server = spawn(process.execPath, ["test/e2e/fixtures/control-center-browser-server.mjs"], {
-    env: { ...process.env, HIMAWARI_BROWSER_FIXTURE_PORT: "0", HIMAWARI_EXECUTION_FIXTURE: "1" },
+    env: {
+      ...process.env,
+      HIMAWARI_BROWSER_FIXTURE_PORT: "0",
+      HIMAWARI_EXECUTION_FIXTURE: "1",
+      ...(staticRoot ? { HIMAWARI_BROWSER_STATIC_ROOT: staticRoot } : {}),
+    },
     stdio: ["ignore", "pipe", "inherit"],
   });
-  let browser;
   try {
     const baseUrl = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("Fixture startup timeout")), 10000);
@@ -221,30 +250,43 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
           resolve(match[1]);
         }
       });
-      server.once("error", reject);
-      server.once("exit", () => reject(new Error("Fixture exited")));
+      server.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      server.once("exit", () => {
+        clearTimeout(timer);
+        reject(new Error("Fixture exited"));
+      });
     });
-    browser = await (profile === "webkit" ? webkit : chromium).launch();
     const cases = await qualifyExecutionChain(browser, baseUrl, output);
     await writeFile(
       path.join(output, "result.json"),
       JSON.stringify(
-        {
-          profile,
-          cases,
-          scope: "real browser with isolated HTTP fixture; no production model calls",
-        },
+        { cases, scope: "real browser with isolated HTTP fixture; no production model calls" },
         null,
         2,
       ),
     );
-    console.log(JSON.stringify({ passed: true, profile, cases: cases.length }));
+    return cases;
   } finally {
-    await browser?.close();
     if (server.exitCode === null) {
       const exited = new Promise((resolve) => server.once("exit", resolve));
       server.kill("SIGTERM");
       await exited;
     }
+  }
+}
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  const profile = process.argv[2] ?? "chromium";
+  const output = path.resolve(process.argv[3] ?? `.ci-output/execution-chain/${profile}`);
+  const browser = await (profile === "webkit" ? webkit : chromium).launch(
+    profile === "chrome" ? { channel: "chrome" } : {},
+  );
+  try {
+    const cases = await qualifyExecutionChainFixture(browser, output);
+    console.log(JSON.stringify({ passed: true, profile, cases: cases.length }));
+  } finally {
+    await browser.close();
   }
 }
