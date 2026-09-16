@@ -28,6 +28,13 @@ function entry(
 
 export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
+    "authorization_reservations",
+    "AuthorizationStorePort",
+    "reserved quota committed at invocation admission or released before dispatch",
+    "payload_reference",
+    "cascade with grant deletion after execution authority is retired",
+  ),
+  entry(
     "built_in_accounts",
     "BuiltInIdentityStatePort",
     "credential revision and bounded login attempts",

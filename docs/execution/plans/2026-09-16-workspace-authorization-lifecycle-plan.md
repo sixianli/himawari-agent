@@ -16,7 +16,7 @@ date: "2026-09-16"
 
 **架构：** 继续复用 Pi 工具与 Agent Loop、Anthropic Sandbox Runtime、现有 Agent/Worker 和 SQLite。Himawari 接好持久权限、资源身份、文件提交、恢复及页面投影；不重建工具协议、沙箱或工作流系统。
 
-**当前范围：** 用户于 2026-09-16 要求实施本 Plan。P0 的 r3 新增交互已获确认，P1 正在实施：永久释放回执、结果 ACK 分离、有界核验及未派发页面分类已加入代码与回归。完整 P1～P7 未完成；详见[本次实施记录](#implementation-record)。Spec 已通过不等于自动审查配置或生产操作已获授权。
+**当前范围：** 用户于 2026-09-16 要求实施本 Plan。P0 的 r3 新增交互已获确认，P1 释放与交接修复已保存为本地提交 `fe92846`；P2 的审批身份、重复决定与额度预约正在实施。完整 P1～P7 未完成；详见[本次实施记录](#implementation-record)。Spec 已通过不等于自动审查配置或生产操作已获授权。
 
 <a id="contents"></a>
 
@@ -492,16 +492,22 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 - [消费者最终回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/consumers-final.log)：9 文件、264 项通过，包括 Run 停止、真实 SQLite、受控生产沙箱组合和 runtime tools。[类型检查](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/typecheck-final2.log) 通过。
 - 第一轮完整测试执行 3,387 项：3,384 通过，3 失败。一个安装断言仍预期 schema 32；两个失败来自 admit/bind 初次返回缺少 `workspaceBlocked`，已修正创建入口并通过独立读回回归。按原锁文件重新安装依赖，移除安装目录中的重复副本；锁文件和依赖版本未变。清理后的标准本地 CI 已通过：[3,389 项全部通过](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/standard-ci-result.json)，包括安装产物的本地服务测试；hosted gate 未执行。
 
-### P2 接口边界核查（尚未实现）
+### P2 授权连续性与额度预约（局部实现）
 
-生产路径为 `ActionPolicyService.evaluate` → `CapabilityHandleService.issue` → `WorkerDelegationAdmissionService.admit` → SQLite invocation receipt → Worker executable message。当前权限判定直接消费额度，尚无“等待但未获派发权”的独立记录。后续应在原授权存储内预约，并将预约与 Handle 的关联随创建事务持久化；在现有 invocation receipt 授权事务中承诺额度。承诺后不得仅因没有收到 Worker 结果而退回额度，明确撤销派发须先使旧 receipt 无法再执行。
+生产路径仍为 `ActionPolicyService.evaluate` → `CapabilityHandleService.issue` → `WorkerDelegationAdmissionService.admit` → SQLite invocation receipt → Worker executable message。P2 已加入以下代码，尚未完成整个阶段：
 
-请求摘要应使用带版本和域标识的 canonical SHA-256；旧 FNV 标识只用于验证历史记录，不能给新请求继续生成弱摘要。比较历史审批时还须比较完整冻结快照，避免把摘要相等当作内容必然相同。请求内容变化使用新 intent，不能重写旧 key。重复决定在 SQLite 事务中返回同一个历史决定；相反决定、错主体、不同快照和取消/过期后批准均须拒绝。
+- 新 v2 请求使用带域标识的 canonical SHA-256，旧 FNV 只用于读取既有记录；审批复用比较完整快照与主体。硬拒绝命中任一目标即阻止，过期请求不再命中允许规则，放宽策略不复活历史拒绝。
+- SQLite 短事务复用同一请求的审批，重复相同决定读回历史结果；相反决定与不同内容冲突。Gateway 两设备先后或同时批准不会生成第二个 grant。取消/结束的 Run 不接纳新批准，已经发生的批准仍保留为历史事实。
+- Schema 34 的 `authorization_reservations` 保存预约与 Handle 关联。排队时只预约，消费计数保持不变；现有调用回执准入事务同时承诺额度。回执写入失败会回滚额度、Handle 使用次数及预约状态。缺失结果或 ACK 不退回已承诺额度。
+- 释放明确未派发的预约时，同事务撤销其未使用 Handle；Run 结束释放尚未承诺的预约。新请求争用同一份剩余额度时只有一个成功。旧 `authorization_usage` 保留，不通过迁移退费；没有可核对回执的历史使用不会自动转成新执行权。
+- 复用当前已安装的 `@noble/hashes` 2.4.0，新增精确的直接依赖声明；Pi 和 SRT 版本不变。未引入新的模型侧工具协议。
 
-硬拒绝应检查任一目标是否相交，不能要求所有目标都被同一禁止前缀覆盖；历史拒绝应在允许规则和 grant 复用前检查。当前 `assertGrant` 会检查撤销、期限和部分范围，但派发边界还需核对原请求及当前硬规则。以上是代码核查所得实施约束，不是已完成的授权连续性或数据迁移证据。
+[审批修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-local-01/continuity-red.log) 六项失败，[修复后](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-local-01/continuity-green.log) 21 项通过；[额度扣除复现](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-local-01/reservation-red.log) 证明原实现在排队时消费额度。[消费者回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-local-01/all-consumers.log) 233 项通过；[额度原子性与迁移](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-local-01/reservation-atomic.log) 30 项通过；[派发前撤销](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-local-01/withdrawal.log) 60 项通过。第一轮全量执行 3,408 项，其中 41 项失败：23 项为文件读取测试未连接授权与 Handle 预约存储，18 项为迁移断言仍停在 Schema 33。已连接测试存储并更新迁移终点，保留原有执行和历史数据断言。[读取工作流](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-local-01/file-read-fixture.log) 34 项通过。补充验证了异步检查期间到期和多个范围授权的额度选择，原实现两项失败；[修复后的相关回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-local-01/selection-final.log) 66 项通过。标准本地 CI 已通过：[232 文件、3,410 项全部通过、零跳过](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-local-01/standard-ci-result.json)，包含构建和安装产物的本地服务验证；hosted gate 未执行。类型、lint、边界、实现约束、密钥扫描、CI 配置和严格文档检查通过。`npm run check` 仍被原先未跟踪的 r1/r2 原型校验脚本格式问题阻断，未修改这些其他任务文件。
+
+待完成：排队调度与公平性、所有历史消费恢复路径、执行中撤销的真实停止与效果核验、完整页面投影，以及与文件提交和自动审查的联合验收。当前 invocation receipt 被保守视为“可能派发”的承诺点；取得回执后尚未发送的情况仍保留额度，未实现对该情况的自动退款协议。
 
 ### 当前完成边界与下一步
 
-P0 尚未全部完成；P1～P7 和 68 项产品验收仍未完成。已保存复现和审核稿，P1 的释放与交接修复、定向回归及标准本地 CI 已通过，正在保存本地阶段提交；尚无生产迁移或部署。Architecture/README 暂不修改，以免将准备工作写成已实现能力；Spec/Plan 不归档。后续优先实现并验证 W09/W10/W15 对应的永久释放事实、结果交接分离和新风险保护，再推进授权与文件并发。
+P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 正在实现和验证；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
 
 [单一决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv) 记录本轮选择及证据；没有建立另一个项目状态缓存。

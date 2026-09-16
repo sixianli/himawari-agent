@@ -317,6 +317,10 @@ export class SqliteDurableAdapters {
         >("readScopedState", { ownerId, agentId, key });
         return state?.revision === revision && state.value.enabled === true;
       },
+      getAuthorizationReservation: (id) =>
+        this.context.read("authorization.reservation.get", { id }),
+      reserveAuthorization: (input) => this.context.write("authorization.reserve", { input }),
+      releaseAuthorization: (input) => this.context.write("authorization.release", { input }),
       createApproval: (request) => this.context.write("authorization.createApproval", { request }),
       findApprovalByIntent: (intentId) =>
         this.context.read("authorization.findApprovalByIntent", { intentId }),
@@ -380,7 +384,8 @@ export class SqliteDurableAdapters {
           expectedRevision,
           switchedAt,
         }),
-      createExecutionHandle: (handle) => this.context.write("capability.createHandle", { handle }),
+      createExecutionHandle: (handle, options) =>
+        this.context.write("capability.createHandle", { handle, options }),
       listRunExecutionHandles: (runId, at) =>
         this.context.read("capability.listRunHandles", { ownerId, agentId, runId, at }),
       getExecutionHandle: (handleRef) =>

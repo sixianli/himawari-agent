@@ -1,0 +1,63 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/authorization-capability-governance.test.ts (26 tests | 2 failed) 51ms
+     × rechecks the deadline after asynchronous capability inspection 10ms
+     × uses another covering grant when an earlier grant has no remaining quota 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > authorization selection boundaries > rechecks the deadline after asynchronous capability inspection
+AssertionError: expected { decision: 'ALLOW', …(2) } to match object { decision: 'DENY', …(1) }
+(12 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "decision": "DENY",
+-   "reasonCode": "intent_expired",
++   "decision": "ALLOW",
+  }
+
+ ❯ test/integration/authorization-capability-governance.test.ts:1098:8
+    1096|       } } });
+    1097|     expect(await policy.evaluate(intent({ id: "expires-during-inspecti…
+    1098|       .toMatchObject({ decision: "DENY", reasonCode: "intent_expired" …
+       |        ^
+    1099|   });
+    1100|   it("uses another covering grant when an earlier grant has no remaini…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > authorization selection boundaries > uses another covering grant when an earlier grant has no remaining quota
+AssertionError: expected { decision: 'DENY', …(2) } to match object { decision: 'ALLOW', basis: { …(2) } }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "basis": {
+-     "ref": "grant-0002",
+-     "type": "grant",
+-   },
+-   "decision": "ALLOW",
++   "decision": "DENY",
+  }
+
+ ❯ test/integration/authorization-capability-governance.test.ts:1126:8
+    1124|     await f.authorization.consumeGrant({ grantId: first.id, expectedRe…
+    1125|     expect(await f.service().evaluate(intent({ id: "covered-by-second-…
+    1126|       .toMatchObject({ decision: "ALLOW", basis: { type: "grant", ref:…
+       |        ^
+    1127|     expect(await f.service().evaluate(intent({ id: "no-quota-left" }),…
+    1128|       .toMatchObject({ decision: "DENY", reasonCode: "authorization_qu…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 24 passed (26)
+   Start at  19:40:23
+   Duration  853ms (transform 562ms, setup 0ms, import 689ms, tests 51ms, environment 0ms)

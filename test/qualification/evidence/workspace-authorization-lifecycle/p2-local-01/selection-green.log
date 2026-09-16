@@ -1,0 +1,39 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/authorization-capability-governance.test.ts (26 tests | 1 failed) 41ms
+     × persists frozen Approval, requires recent auth for CRITICAL, and consumes one-time Grant idempotently 14ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > S4 authorization and capability governance > persists frozen Approval, requires recent auth for CRITICAL, and consumes one-time Grant idempotently
+AssertionError: expected { decision: 'DENY', …(2) } to match object { decision: 'ALLOW', basis: { …(2) } }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "basis": {
+-     "ref": "grant-0001",
+-     "type": "grant",
+-   },
+-   "decision": "ALLOW",
++   "decision": "DENY",
+  }
+
+ ❯ test/integration/authorization-capability-governance.test.ts:396:6
+    394|     await expect(
+    395|       policy.evaluate(action, { uiAvailable: true, approvalExpiresAt: …
+    396|     ).resolves.toMatchObject({ decision: "ALLOW", basis: { type: "gran…
+       |      ^
+    397|     const stored = (await store.listGrants(OWNER_ID, AGENT_ID))[0];
+    398|     expect(stored).toMatchObject({ uses: 0, spentCostMicros: 0 });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 25 passed (26)
+   Start at  19:41:43
+   Duration  809ms (transform 546ms, setup 0ms, import 670ms, tests 41ms, environment 0ms)

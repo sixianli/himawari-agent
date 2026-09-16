@@ -20,8 +20,20 @@ describe("ProductionRuntimeTools", () => {
     vi.spyOn(f.options.invocations, "consume").mockRejectedValue(
       new ApplicationPortError("PORT_CONFLICT", "private host path must not appear"),
     );
-    const tool = await exposed(f);
+    const revokeExecutionHandle = vi.fn(async () => {
+      const handle = await f.options.capabilities.getExecutionHandle(
+        invocation.capabilityHandleRef,
+      );
+      if (!handle) throw new Error("Fixture Handle missing");
+      return handle;
+    });
+    const tool = new ProductionRuntimeTools({
+      ...f.options,
+      capabilities: { ...f.options.capabilities, revokeExecutionHandle },
+    });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
     const result = await tool.execute(invocation);
+    expect(revokeExecutionHandle).toHaveBeenCalledWith(invocation.capabilityHandleRef, now);
     expect(result).toMatchObject({
       outcome: "failed",
       errorCode: "WORKER_ADMISSION_CONFLICT",

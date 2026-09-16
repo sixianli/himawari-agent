@@ -10,3 +10,5 @@ ts	phase	decision	why	evidence	result
 2026-09-16T09:56:02Z	P1	结果交接重试保留原调用与原未知记录	只补交可信 journal 的已有结果，禁止通过重新派发恢复通知	test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/late-delivery-red.log;test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/late-delivery-green.log	先失败后通过；真实可执行消息只有一次
 2026-09-16T09:56:02Z	P1	一般效果未知不创建工作区保护	Spec 只允许仍可能写入等具体风险阻止冲突操作	test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/handoff-red.log;test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/handoff-green.log	保留结果待核实；旧释放时间不变
 2026-09-16T09:56:02Z	P1	按原锁文件重装本地依赖	发布扫描命中未受审的重复依赖副本；不修改扫描例外	.ci-output/installation-p1-lifecycle/installation-result.json;test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/test-final.log	依赖版本与锁文件不变；重新构建与产物发布检查通过
+2026-09-16T10:39:56.452479+00:00	P2	以调用回执作为额度承诺点	预约和 Handle 关联持久化；取得执行权后不能因 ACK 缺失退费	p2-local-01/reservation-atomic.log; p2-local-01/withdrawal.log	30 项额度与迁移测试、60 项撤销消费者测试通过；完整 CI 尚未完成
+2026-09-16T10:39:56.452479+00:00	P2	保留完整测试发现的装配错误	新增预约不能在内存测试中静默绕过授权关联	p2-local-01/unit-failures.json; p2-local-01/file-read-fixture.log	23 项同因失败，连接共享测试存储后该文件 34 项通过

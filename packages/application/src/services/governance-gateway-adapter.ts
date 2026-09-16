@@ -712,7 +712,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
   ): Promise<string> {
     switch (command.type) {
       case "approval.respond":
-        return this.#respondApproval(authentication, command, recovering);
+        return this.#respondApproval(authentication, command);
       case "grant.revoke":
         return this.#revokeGrant(command, recovering);
       case "capability.review":
@@ -741,7 +741,6 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
   async #respondApproval(
     authentication: GatewayAuthenticationContext,
     command: Extract<GovernanceCommand, { readonly type: "approval.respond" }>,
-    recovering: boolean,
   ): Promise<string> {
     if (command.payload.editedPayloadRef !== null) {
       throw new ApplicationPortError(
@@ -757,7 +756,6 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     }
     this.#assertAuthorizationScope(current.ownerId, current.agentId, "Approval");
     if (
-      recovering &&
       current.revision === command.payload.expectedRevision + 1 &&
       current.status === command.payload.decision &&
       current.semanticSnapshotHash === command.payload.semanticSnapshotHash
@@ -803,12 +801,31 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
             }),
             recentAuthenticationRef: command.payload.recentAuthenticationRef,
           } as const);
-    const resolved = await this.#dependencies.approvalService.respond({
-      approvalRequestId: current.id,
-      expectedRevision: command.payload.expectedRevision,
-      semanticSnapshotHash: command.payload.semanticSnapshotHash,
-      response,
-    });
+    let resolved: ApprovalRequest;
+    try {
+      resolved = await this.#dependencies.approvalService.respond({
+        approvalRequestId: current.id,
+        expectedRevision: command.payload.expectedRevision,
+        semanticSnapshotHash: command.payload.semanticSnapshotHash,
+        response,
+      });
+    } catch (error) {
+      // Concurrent devices may both have read pending. Only acknowledge the
+      // exact decision that won storage arbitration; never issue another grant.
+      if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.CONFLICT)
+        throw error;
+      const winner = await this.#dependencies.authorization.getApproval(current.id);
+      if (
+        !winner ||
+        winner.ownerId !== current.ownerId ||
+        winner.agentId !== current.agentId ||
+        winner.revision !== command.payload.expectedRevision + 1 ||
+        winner.status !== command.payload.decision ||
+        winner.semanticSnapshotHash !== command.payload.semanticSnapshotHash
+      )
+        throw error;
+      resolved = winner;
+    }
     return `approval:${resolved.id}:revision-${resolved.revision}`;
   }
 

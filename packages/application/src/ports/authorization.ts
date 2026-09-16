@@ -197,7 +197,34 @@ export interface GovernedGrantRecord extends GrantRecord {
   readonly intentFingerprint: string | null;
 }
 
+export interface AuthorizationReservation {
+  readonly id: string;
+  readonly grantId: string;
+  readonly intent: GovernedActionIntent;
+  readonly semanticSnapshotHash: string;
+  readonly status: "reserved" | "committed" | "released";
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly handleRef: string | null;
+  readonly invocationRef: string | null;
+  readonly resolvedAt: string | null;
+  readonly reasonCode: string | null;
+}
+
+export interface ReserveAuthorizationInput {
+  readonly grantId: string;
+  readonly intent: GovernedActionIntent;
+  readonly now: string;
+}
+
 export interface AuthorizationStorePort {
+  getAuthorizationReservation?(id: string): Promise<AuthorizationReservation | undefined>;
+  reserveAuthorization?(input: ReserveAuthorizationInput): Promise<AuthorizationReservation>;
+  releaseAuthorization?(input: {
+    readonly reservationId: string;
+    readonly now: string;
+    readonly reasonCode: string;
+  }): Promise<AuthorizationReservation>;
   isPolicyAuthorizationCurrent?(input: {
     ownerId: OwnerId;
     agentId: AgentId;
@@ -220,6 +247,12 @@ export interface AuthorizationStorePort {
 }
 
 export interface PermissionAllowDecision {
+  /** Local durable reservation; it is never a Worker-authority wire credential. */
+  readonly authorizationReservation?: {
+    readonly id: string;
+    readonly createdAt: string;
+    readonly expiresAt: string;
+  };
   readonly decision: "ALLOW";
   readonly basis: { readonly type: "policy" | "grant"; readonly ref: string };
   readonly executionScope: GrantScope;

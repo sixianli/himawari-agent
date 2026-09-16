@@ -1,3 +1,8 @@
+import {
+  actionIntentFingerprint,
+  actionIntentFingerprintMatches,
+} from "./action-intent-snapshot.js";
+export { actionIntentFingerprint } from "./action-intent-snapshot.js";
 import type {
   ActionIntent,
   ApprovalRequest,
@@ -29,55 +34,6 @@ function deepFreeze<TValue>(value: TValue): TValue {
 
 function frozenIntent(intent: ActionIntent): ActionIntent {
   return deepFreeze(structuredClone(intent));
-}
-
-function fnv1a(value: string): string {
-  const bytes = new TextEncoder().encode(value);
-  let hash = 2_166_136_261;
-  for (const byte of bytes) {
-    hash ^= byte;
-    hash = Math.imul(hash, 16_777_619);
-  }
-  return `intent-${(hash >>> 0).toString(16).padStart(8, "0")}`;
-}
-
-export function actionIntentFingerprint(intent: ActionIntent): string {
-  const governed = intent as Partial<import("../ports/authorization.js").GovernedActionIntent>;
-  return fnv1a(
-    JSON.stringify({
-      id: intent.id,
-      ownerId: intent.ownerId,
-      agentId: intent.agentId,
-      runId: intent.runId,
-      capabilityRef: intent.capabilityRef,
-      operation: intent.operation,
-      resourceRef: intent.resourceRef,
-      dataClassification: intent.dataClassification,
-      sideEffect: intent.sideEffect,
-      estimatedCostMicros: intent.estimatedCostMicros,
-      frequency: intent.frequency,
-      idempotencyKey: intent.idempotencyKey,
-      reversible: intent.reversible,
-      requestedAt: intent.requestedAt,
-      ...(governed.contractVersion === "authorization.v2"
-        ? {
-            contractVersion: governed.contractVersion,
-            threadId: governed.threadId,
-            actionKind: governed.actionKind,
-            capabilityVersion: governed.capabilityVersion,
-            targets: governed.targets,
-            resourceRefs: governed.resourceRefs,
-            disclosure: governed.disclosure,
-            recipients: governed.recipients,
-            credentialOrAccessChange: governed.credentialOrAccessChange,
-            expiresAt: governed.expiresAt,
-            modelClassification: governed.modelClassification,
-            deterministicFacts: governed.deterministicFacts,
-            finalRisk: governed.finalRisk,
-          }
-        : {}),
-    }),
-  );
 }
 
 function matchesRule(rule: PermissionPolicyRule, intent: ActionIntent): boolean {
@@ -148,7 +104,7 @@ export function grantCoversIntent(grant: GrantRecord, intent: ActionIntent, now:
     intent.estimatedCostMicros <= scope.maxCostMicrosPerUse &&
     frequencyWithinScope(intent, scope) &&
     (grant.intentFingerprint === null ||
-      grant.intentFingerprint === actionIntentFingerprint(intent))
+      actionIntentFingerprintMatches(intent, grant.intentFingerprint))
   );
 }
 

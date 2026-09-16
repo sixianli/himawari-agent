@@ -1,0 +1,31 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/authorization-reservations.test.ts (3 tests | 1 failed) 1529ms
+     × withdraws an unused Handle before refunding a not-dispatched reservation 610ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/authorization-reservations.test.ts > durable authorization quota lifecycle > withdraws an unused Handle before refunding a not-dispatched reservation
+AssertionError: expected ApplicationPortError: Capability invocati… { …(2) } to match object { code: 'PORT_HANDLE_REVOKED' }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "code": "PORT_HANDLE_REVOKED",
++ ApplicationPortError {
++   "code": "PORT_NOT_AUTHORITATIVE",
+  }
+
+ ❯ test/integration/authorization-reservations.test.ts:62:149
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  19:22:21
+   Duration  3.07s (transform 902ms, setup 0ms, import 1.43s, tests 1.53s, environment 0ms)

@@ -1,7 +1,7 @@
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import type { SandboxExecutionPlanCandidate } from "@himawari-agent/execution-contracts";
 import type { AuthorizationStorePort, GovernedActionIntent } from "../ports/authorization.js";
-import { actionIntentFingerprint } from "./permission-service.js";
+import { actionIntentFingerprintMatches } from "./action-intent-snapshot.js";
 
 /** Re-read the existing action Grant and its approved semantic snapshot. This
  * authenticates scope; it never consumes another use. */
@@ -68,8 +68,9 @@ export async function resolveSandboxActionGrant(input: {
     !grant.scope.operations.includes(plan.operation) ||
     now >= intent.expiresAt ||
     plan.effectiveDeadlineAt > intent.expiresAt ||
-    approval.semanticSnapshotHash !== actionIntentFingerprint(intent) ||
-    (grant.intentFingerprint !== null && grant.intentFingerprint !== approval.semanticSnapshotHash)
+    !actionIntentFingerprintMatches(intent, approval.semanticSnapshotHash) ||
+    (grant.intentFingerprint !== null &&
+      !actionIntentFingerprintMatches(intent, grant.intentFingerprint))
   )
     throw new Error("grant or approval changed");
   return { grant, intent };

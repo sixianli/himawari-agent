@@ -150,7 +150,8 @@ export function createReferenceAdapterSet(
     payload,
     failures,
   );
-  const capabilityRegistry = new InMemoryCapabilityRegistryStore(failures);
+  const authorization = new InMemoryAuthorizationStore(failures);
+  const capabilityRegistry = new InMemoryCapabilityRegistryStore(failures, authorization);
 
   return Object.freeze({
     state: productState,
@@ -163,7 +164,7 @@ export function createReferenceAdapterSet(
     runPayloadArtifacts,
     payloadProtector,
     audit: new InMemoryAuditLedger(failures),
-    authorization: new InMemoryAuthorizationStore(failures),
+    authorization,
     deletionState: new InMemorySessionDeletionState(failures),
     memory: new InMemoryMemoryPort(failures),
     model: new ScriptedModelPort(options.model?.descriptors, options.model?.events),

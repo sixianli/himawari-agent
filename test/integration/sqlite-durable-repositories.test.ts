@@ -12,7 +12,11 @@ import type {
   ReliableEventSinkPort,
   SessionDeletionRecord,
 } from "@himawari-agent/application";
-import { PORT_ERROR_CODES, SessionTraceRecorder } from "@himawari-agent/application";
+import {
+  actionIntentFingerprint,
+  PORT_ERROR_CODES,
+  SessionTraceRecorder,
+} from "@himawari-agent/application";
 import type { ProductAuthorityFence } from "@himawari-agent/domain";
 import {
   createAgentId,
@@ -360,6 +364,92 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       ).rejects.toMatchObject({ code: PORT_ERROR_CODES.DUPLICATE });
       await reopened.close();
       await rm(resource.stateRoot, { recursive: true });
+    });
+
+    it("arbitrates concurrent approval creation and decisions durably", async () => {
+      const resource = await openRepository(T0, "running");
+      const store = resource.repository.authorizationStore();
+      const action = {
+        id: "intent-concurrent",
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        capabilityRef: "read",
+        operation: "read",
+        resourceRef: "workspace:test",
+        dataClassification: "private" as const,
+        sideEffect: "none" as const,
+        estimatedCostMicros: 0,
+        frequency: { count: 1, intervalMs: null },
+        idempotencyKey: createIdempotencyKey("concurrent"),
+        reversible: true,
+        requestedAt: T0,
+      };
+      const request = {
+        id: "approval-concurrent-a",
+        revision: 1,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        intentId: action.id,
+        intentSnapshot: action,
+        semanticSnapshotHash: actionIntentFingerprint(action),
+        status: "pending" as const,
+        deliveryState: "deliverable" as const,
+        requestedAt: T0,
+        expiresAt: T2,
+        decidedAt: null,
+        grantId: null,
+      };
+      const second = resource.repository;
+      try {
+        const results = await Promise.all([
+          store.createApproval(request),
+          second.authorizationStore().createApproval({ ...request, id: "approval-concurrent-b" }),
+        ]);
+        expect(results[0]).toEqual(results[1]);
+        expect(await store.listApprovals(OWNER_ID, AGENT_ID)).toHaveLength(1);
+        await expect(
+          store.createApproval({
+            ...request,
+            id: "approval-cross-thread",
+            intentSnapshot: { ...action, resourceRef: "workspace:other" },
+          }),
+        ).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+        const decision = {
+          approvalRequestId: results[0].id,
+          expectedRevision: 1,
+          semanticSnapshotHash: request.semanticSnapshotHash,
+          resolution: "denied" as const,
+          decidedAt: T1,
+          grant: null,
+        };
+        const replies = await Promise.all([
+          store.resolveApproval(decision),
+          second.authorizationStore().resolveApproval(decision),
+        ]);
+        expect(replies[0]).toEqual(replies[1]);
+        expect(replies[0]).toMatchObject({ status: "denied", revision: 2 });
+        await expect(
+          store.resolveApproval({ ...decision, resolution: "expired" }),
+        ).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+        await expect(store.getApproval(results[0].id)).resolves.toEqual(replies[0]);
+      } finally {
+        await resource.repository.close();
+      }
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      try {
+        expect(await reopened.authorizationStore().listApprovals(OWNER_ID, AGENT_ID)).toEqual([
+          expect.objectContaining({ status: "denied", revision: 2 }),
+        ]);
+      } finally {
+        await reopened.close();
+        await rm(resource.stateRoot, { recursive: true });
+      }
     });
 
     it("atomically resolves a Grant budget race, preserves idempotency, and fences Handle consumption", async () => {

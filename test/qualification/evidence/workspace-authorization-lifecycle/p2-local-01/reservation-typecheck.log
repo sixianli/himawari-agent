@@ -1,0 +1,10 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+packages/application/src/services/action-policy-service.ts(392,12): error TS2304: Cannot find name 'governedGrantAuthorityCovers'.
+packages/persistence-sqlite/src/sqlite-authorization-reservations.ts(100,21): error TS2339: Property 'uses' does not exist on type 'CapabilityExecutionHandle'.
+packages/persistence-sqlite/src/sqlite-authorization-reservations.ts(103,72): error TS2339: Property 'revision' does not exist on type 'CapabilityExecutionHandle'.
+packages/persistence-sqlite/src/sqlite-authorization-reservations.ts(117,68): error TS2339: Property 'maxUses' does not exist on type 'CapabilityExecutionHandle'.
+packages/persistence-sqlite/src/sqlite-authorization-reservations.ts(118,55): error TS2339: Property 'maxTotalCostMicros' does not exist on type 'CapabilityExecutionHandle'.
+test/integration/authorization-capability-governance.test.ts(1025,51): error TS2353: Object literal may only specify known properties, and 'threadId' does not exist in type 'ActionIntent'.

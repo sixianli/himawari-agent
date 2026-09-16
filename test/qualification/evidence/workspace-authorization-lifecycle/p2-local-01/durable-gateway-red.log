@@ -1,0 +1,73 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-durable-repositories.test.ts (58 tests | 2 failed) 15554ms
+       × arbitrates concurrent approval creation and decisions durably 349ms
+       × arbitrates concurrent approval creation and decisions durably 81ms
+ ❯ |integration| test/integration/governance-control-center.test.ts (17 tests | 2 failed) 59ms
+     × acknowledges the same approval decision from another device without a second grant 20ms
+     × paginates a stable approval list and rejects an unknown cursor 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/governance-control-center.test.ts > S4 Task 11 governance Control Center boundary > acknowledges the same approval decision from another device without a second grant
+ApplicationPortError: Recent Owner authentication evidence is required
+ ❯ Object.assertRecentAuthentication test/integration/governance-control-center.test.ts:63:13
+     61|       !Number.isFinite(Date.parse(authentication.authenticatedAt))
+     62|     ) {
+     63|       throw new ApplicationPortError(
+       |             ^
+     64|         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+     65|         "Recent Owner authentication evidence is required",
+ ❯ GovernanceGatewayV2ControlPlane.#assertRecentAuthentication packages/application/src/services/governance-gateway-adapter.ts:1017:51
+ ❯ GovernanceGatewayV2ControlPlane.#respondApproval packages/application/src/services/governance-gateway-adapter.ts:768:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |integration| test/integration/governance-control-center.test.ts > governance recovery and read boundaries > paginates a stable approval list and rejects an unknown cursor
+AssertionError: expected { schemaVersion: 'gateway.v2', …(12) } to match object { payload: { …(2) } }
+(22 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "payload": {
+      "itemRefs": [
+        "approval-governance-ui",
+      ],
+-     "nextCursor": "approval-governance-ui",
++     "nextCursor": null,
+    },
+  }
+
+ ❯ test/integration/governance-control-center.test.ts:801:7
+    799|         query("approval.list", "page-one", { status: null, afterCursor…
+    800|       ),
+    801|     ).toMatchObject({ payload: { itemRefs: [setup.approval.id], nextCu…
+       |       ^
+    802|     expect(
+    803|       await setup.reads.query(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |integration| test/integration/sqlite-durable-repositories.test.ts > SQLite component contracts (worker) > SQLite durable repository adapters > arbitrates concurrent approval creation and decisions durably
+ FAIL  |integration| test/integration/sqlite-durable-repositories.test.ts > SQLite component contracts (direct) > SQLite durable repository adapters > arbitrates concurrent approval creation and decisions durably
+SqlitePersistenceError: The state root is already owned by a live process
+ ❯ acquireStateRootLock packages/persistence-sqlite/src/state-root-lock.ts:140:13
+    138|     }
+    139|     if (current.host !== hostname() || isProcessAlive(current.pid)) {
+    140|       throw new SqlitePersistenceError(
+       |             ^
+    141|         SQLITE_PERSISTENCE_ERROR_CODES.STATE_ROOT_LOCKED,
+    142|         "The state root is already owned by a live process",
+ ❯ Function.open packages/persistence-sqlite/src/product-state-repository.ts:189:18
+ ❯ test/integration/sqlite-durable-repositories.test.ts:376:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 71 passed (75)
+   Start at  19:10:41
+   Duration  17.26s (transform 1.02s, setup 0ms, import 1.41s, tests 15.61s, environment 0ms)

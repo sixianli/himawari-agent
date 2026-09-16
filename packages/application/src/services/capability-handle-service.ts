@@ -95,12 +95,19 @@ export class CapabilityHandleService {
       spentCostMicros: 0,
       idempotencyKeys: Object.freeze([]),
       issuedAt: now,
-      expiresAt: input.expiresAt,
+      expiresAt:
+        input.permission.authorizationReservation &&
+        input.permission.authorizationReservation.expiresAt < input.expiresAt
+          ? input.permission.authorizationReservation.expiresAt
+          : input.expiresAt,
       revokedAt: null,
       workerEndedAt: null,
     });
     return this.dependencies.store.createExecutionHandle(
       handle,
+      input.permission.authorizationReservation
+        ? { authorizationReservationId: input.permission.authorizationReservation.id }
+        : undefined,
     ) as Promise<GovernedCapabilityExecutionHandle>;
   }
 

@@ -2,6 +2,7 @@ import type {
   ActionKind,
   ActionRiskLevel,
   ApprovalRequest,
+  AuthorizationReservation,
   AuthorizationStorePort,
   GovernedActionIntent,
   GovernedApprovalRequest,
@@ -17,7 +18,12 @@ import {
 } from "../ports/capabilities.js";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
-import { actionIntentFingerprint, grantCoversIntent } from "./permission-service.js";
+import {
+  canonicalAuthorizationSnapshot,
+  governedGrantAuthorityCovers,
+  approvalMatchesIntent,
+} from "./action-intent-snapshot.js";
+import { actionIntentFingerprint } from "./permission-service.js";
 
 const RISK_RANK: Readonly<Record<ActionRiskLevel, number>> = Object.freeze({
   LOW: 0,
@@ -134,6 +140,12 @@ export function validateGovernedActionIntent(intent: GovernedActionIntent): void
     intent.targets.some(({ type, ref }) => !type || !ref) ||
     new Set(intent.resourceRefs).size !== intent.resourceRefs.length ||
     new Set(intent.recipients).size !== intent.recipients.length ||
+    !Number.isSafeInteger(intent.frequency.count) ||
+    !Number.isSafeInteger(intent.estimatedCostMicros) ||
+    !Number.isFinite(Date.parse(intent.requestedAt)) ||
+    !Number.isFinite(Date.parse(intent.expiresAt)) ||
+    new Date(intent.requestedAt).toISOString() !== intent.requestedAt ||
+    new Date(intent.expiresAt).toISOString() !== intent.expiresAt ||
     intent.frequency.count < 1 ||
     (intent.frequency.intervalMs !== null && intent.frequency.intervalMs < 1) ||
     intent.estimatedCostMicros < 0 ||
@@ -261,8 +273,11 @@ export class ActionPolicyService {
     let intent: GovernedActionIntent;
     try {
       intent = freezeGovernedActionIntent(source);
-      const now = this.dependencies.clock.now();
+      let now = this.dependencies.clock.now();
+      if (now >= intent.expiresAt) return this.finish(intent, "DENY", "intent_expired", now, false);
       const capability = await this.dependencies.capabilities.inspect(intent.capabilityRef);
+      now = this.dependencies.clock.now();
+      if (now >= intent.expiresAt) return this.finish(intent, "DENY", "intent_expired", now, false);
       const denial = this.capabilityDenial(capability, intent);
       if (denial) return this.finish(intent, "DENY", denial, now, false);
 
@@ -272,32 +287,78 @@ export class ActionPolicyService {
           rule.capabilityRefs.includes(intent.capabilityRef) &&
           rule.operations.includes(intent.operation) &&
           rule.resourcePrefixes.some((prefix) =>
-            intent.resourceRefs.every((ref) => ref.startsWith(prefix)),
+            intent.resourceRefs.some((ref) => ref.startsWith(prefix)),
           ),
       );
       if (deniedRule) return this.finish(intent, "DENY", deniedRule.reasonCode, now, false);
 
+      const existing = await this.dependencies.store.findApprovalByIntent(intent.id);
+      now = this.dependencies.clock.now();
+      if (now >= intent.expiresAt) return this.finish(intent, "DENY", "intent_expired", now, false);
+      if (existing) {
+        if (!approvalMatchesIntent(existing, intent))
+          return this.finish(intent, "DENY", "approval_hash_mismatch", now, false);
+        if (existing.status !== "approved") return this.existingApproval(intent, existing, now);
+      }
+      const priorReservation = await this.dependencies.store.getAuthorizationReservation?.(
+        `authorization-reservation:${intent.id}`,
+      );
+      if (
+        priorReservation &&
+        canonicalAuthorizationSnapshot(priorReservation.intent) !==
+          canonicalAuthorizationSnapshot(intent)
+      )
+        return this.finish(
+          intent,
+          "DENY",
+          "reservation_identity_changed",
+          this.dependencies.clock.now(),
+          false,
+        );
       const grants = await this.dependencies.store.listGrants(intent.ownerId, intent.agentId);
+      now = this.dependencies.clock.now();
+      if (now >= intent.expiresAt) return this.finish(intent, "DENY", "intent_expired", now, false);
+      let quotaUnavailable = false;
       for (const candidate of grants) {
         const grant = candidate as GovernedGrantRecord;
+        if (priorReservation && priorReservation.grantId !== grant.id) continue;
         if (!this.governedGrantCovers(grant, intent, now)) continue;
-        const consumed = await this.dependencies.store.consumeGrant({
-          grantId: grant.id,
-          expectedRevision: grant.revision,
-          costMicros: intent.estimatedCostMicros,
-          consumedAt: now,
-          usageId: `authorization-usage:${intent.id}`,
-          intentId: intent.id,
-          runId: intent.runId,
-          operation: intent.operation,
-        });
+        const reserve = this.dependencies.store.reserveAuthorization;
+        if (!reserve) throw new Error("Authorization store cannot reserve quota");
+        let reservation: AuthorizationReservation;
+        try {
+          reservation = await reserve.call(this.dependencies.store, {
+            grantId: grant.id,
+            intent,
+            now: this.dependencies.clock.now(),
+          });
+        } catch (error) {
+          if (
+            error instanceof ApplicationPortError &&
+            error.details["reasonCode"] === "AUTHORIZATION_QUOTA_UNAVAILABLE"
+          ) {
+            quotaUnavailable = true;
+            continue;
+          }
+          throw error;
+        }
         await this.trace(intent, "ALLOW", "grant", now);
         return Object.freeze({
           decision: "ALLOW",
-          basis: Object.freeze({ type: "grant", ref: consumed.id }),
-          executionScope: consumed.scope,
+          basis: Object.freeze({ type: "grant", ref: grant.id }),
+          executionScope: grant.scope,
+          authorizationReservation: {
+            id: reservation.id,
+            createdAt: reservation.createdAt,
+            expiresAt: reservation.expiresAt,
+          },
         });
       }
+      if (priorReservation)
+        return this.finish(intent, "DENY", "reserved_authority_unavailable", now, false);
+      if (quotaUnavailable)
+        return this.finish(intent, "DENY", "authorization_quota_unavailable", now, false);
+      if (existing) return this.existingApproval(intent, existing, now);
 
       const safeReadRule = this.dependencies.policy.rules.find(
         (rule) => rule.effect === "ALLOW" && this.safePolicyRead(rule, intent),
@@ -323,8 +384,6 @@ export class ActionPolicyService {
       if (options.approvalExpiresAt <= now || options.approvalExpiresAt > intent.expiresAt) {
         return this.finish(intent, "DENY", "approval_expiry_invalid", now, true);
       }
-      const existing = await this.dependencies.store.findApprovalByIntent(intent.id);
-      if (existing) return this.existingApproval(intent, existing, now);
       const request: GovernedApprovalRequest = Object.freeze({
         id: this.dependencies.ids.next("approval"),
         revision: 1,
@@ -381,26 +440,7 @@ export class ActionPolicyService {
     intent: GovernedActionIntent,
     now: string,
   ): boolean {
-    const scope = grant.scope;
-    const replay =
-      grant.intentFingerprint === actionIntentFingerprint(intent) &&
-      grant.uses > 0 &&
-      grant.ownerId === intent.ownerId &&
-      grant.agentId === intent.agentId &&
-      grant.revokedAt === null &&
-      now < grant.expiresAt;
-    return (
-      typeof scope.capabilityVersion === "string" &&
-      scope.capabilityVersion === intent.capabilityVersion &&
-      scope.disclosure === intent.disclosure &&
-      intent.recipients.every((recipient) => scope.recipients.includes(recipient)) &&
-      intent.resourceRefs.every(
-        (ref) =>
-          scope.resourceIdentities.includes(ref) ||
-          scope.resourcePrefixes.some((prefix) => ref.startsWith(prefix)),
-      ) &&
-      (grantCoversIntent(grant, intent, now) || replay)
-    );
+    return governedGrantAuthorityCovers(grant, intent, now);
   }
 
   private safePolicyRead(
@@ -432,7 +472,7 @@ export class ActionPolicyService {
     approval: ApprovalRequest,
     now: string,
   ): Promise<PermissionDecision> {
-    if (approval.semanticSnapshotHash !== actionIntentFingerprint(intent)) {
+    if (!approvalMatchesIntent(approval, intent)) {
       return this.finish(intent, "DENY", "approval_hash_mismatch", now, false);
     }
     if (approval.status !== "pending") {

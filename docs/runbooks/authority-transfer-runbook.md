@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:5a68cb7c548e7bd9695009a9bd3af579ddafd7829fbb1e6833c447a1dc63ae2f"
+contract_sha256: "sha256:778b24cd448ec7a2ab0c668f7b51203979b6d61a57b0157fc4187b91552ade98"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,9 @@ date: "2026-08-27"
 # 停机加密 Authority Transfer Runbook
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/migrations/0034_authorization_reservations.sql
+- packages/persistence-sqlite/src/sqlite-authorization-reservations.ts
+- packages/application/src/services/action-intent-snapshot.ts
 - packages/persistence-sqlite/src/sqlite-sandbox-release-operations.ts
 - packages/persistence-sqlite/src/sqlite-sandbox-recovery-operations.ts
 - apps/agent-service/src/production-thread-titles.ts
@@ -206,6 +209,13 @@ himawari transfer abandon --config <absolute-target-config-path> --secret-dir <a
 Schema 33 保存 `sandbox_release_receipts`、独立控制保护及 `recovery_json`。升级、备份与迁移必须一同保留这些记录、原执行观察与占用；已经提交的 `released_at` 不得清空，结果 ACK 迟到不改变释放事实。旧记录没有新的可信释放回执时不自动回填或解锁，须通过当前安装的受限 inspect/stop 核验；过期凭证不能当作新观察使用。
 
 启动恢复不重发原工具，失去原恢复 owner 或核验超过期限时持久记录 unresolved。验收独立读回原释放时间、恢复 owner/次数/终点和未完成交接，不能仅凭页面状态判定清理完成。恢复回执只证明资源义务已结束，不恢复执行或模型披露权限。Schema 33 不允许旧 writer 直接写入；回退须停止服务并使用匹配旧版本的完整、已核验恢复点，不能删除新表或修改 migration ledger 降级。本次源码与隔离数据库测试不代表已对部署实例执行迁移或解锁。
+
+### Schema 34 审批与额度预约
+
+Schema 34 新增 `authorization_reservations` 并为使用记录增加请求身份。备份与恢复须保留预约、Handle、调用回执和已消费计数的一致快照；历史消费不自动退回，迁移不会使旧请求重新可执行。新 v2 摘要使用 SHA-256，旧摘要只按原快照验证，不覆盖已有审批内容。
+
+验收分别读回 reserved、committed、released：排队预约不增加消费，调用准入与额度承诺同事务完成；未派发释放必须同时撤销未使用 Handle。缺少 ACK 不能作为退费或重发依据。回滚只能在服务停止后恢复匹配旧版本的完整恢复点，禁止让 Schema 33 或更旧 writer 写入 Schema 34，因为它们不理解预约额度。此处仅定义升级合同，未授权或执行部署实例的迁移。
+
 
 ### v4 控制中心与持久事件核对
 

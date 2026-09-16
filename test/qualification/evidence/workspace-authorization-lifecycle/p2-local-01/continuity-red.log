@@ -1,0 +1,150 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/authorization-capability-governance.test.ts (21 tests | 6 failed) 31ms
+     × denies an expired action even when a current read rule would allow it 7ms
+     × applies a hard denial when any target intersects forbidden resources 1ms
+     × does not revive a denied action after policy relaxation 1ms
+     × returns the same durable approval when two evaluations race 2ms
+     × acknowledges a repeated denial without another decision or revision 1ms
+     × uses a versioned cryptographic snapshot identity independent of object key order 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > authorization continuity > denies an expired action even when a current read rule would allow it
+AssertionError: expected { decision: 'ALLOW', …(2) } to match object { decision: 'DENY', …(1) }
+(12 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "decision": "DENY",
+-   "reasonCode": "intent_expired",
++   "decision": "ALLOW",
+  }
+
+ ❯ test/integration/authorization-capability-governance.test.ts:930:8
+    928|     f.clock.set(T2);
+    929|     expect(await f.service().evaluate(intent({ id: "expired-allowed-re…
+    930|       .toMatchObject({ decision: "DENY", reasonCode: "intent_expired" …
+       |        ^
+    931|     expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).to…
+    932|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > authorization continuity > applies a hard denial when any target intersects forbidden resources
+AssertionError: expected { decision: 'ASK', …(1) } to match object { decision: 'DENY', …(1) }
+(18 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "decision": "DENY",
+-   "reasonCode": "account_root_denied",
++   "decision": "ASK",
+  }
+
+ ❯ test/integration/authorization-capability-governance.test.ts:938:8
+    936|     const action = { ...original, resourceRefs: ["account:owner", "rep…
+    937|     expect(await f.service().evaluate(action, { uiAvailable: true, app…
+    938|       .toMatchObject({ decision: "DENY", reasonCode: "account_root_den…
+       |        ^
+    939|   });
+    940|   it("does not revive a denied action after policy relaxation", async …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > authorization continuity > does not revive a denied action after policy relaxation
+AssertionError: expected { decision: 'ALLOW', …(2) } to match object { decision: 'DENY', …(1) }
+(12 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "decision": "DENY",
+-   "reasonCode": "approval_denied",
++   "decision": "ALLOW",
+  }
+
+ ❯ test/integration/authorization-capability-governance.test.ts:949:8
+    947|       semanticSnapshotHash: ask.approvalRequest.semanticSnapshotHash, …
+    948|     expect(await f.service(POLICY.rules).evaluate(action, { uiAvailabl…
+    949|       .toMatchObject({ decision: "DENY", reasonCode: "approval_denied"…
+       |        ^
+    950|   });
+    951|   it("returns the same durable approval when two evaluations race", as…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > authorization continuity > returns the same durable approval when two evaluations race
+AssertionError: expected { decision: 'ASK', …(1) } to deeply equal { decision: 'ASK', …(1) }
+
+- Expected
++ Received
+
+@@ -4,11 +4,11 @@
+      "decidedAt": null,
+      "deliveryState": "deliverable",
+      "expiresAt": "2026-08-28T00:01:00.000Z",
+      "finalRisk": "LOW",
+      "grantId": null,
+-     "id": "approval-0002",
++     "id": "approval-0001",
+      "intentId": "racing-approval",
+      "intentSnapshot": {
+        "actionKind": "READ",
+        "agentId": "agent-governance-v2",
+        "capabilityRef": "governed-tool",
+
+ ❯ test/integration/authorization-capability-governance.test.ts:956:24
+    954|     const results = await Promise.all([f.service().evaluate(action, { …
+    955|       f.service().evaluate(action, { uiAvailable: true, approvalExpire…
+    956|     expect(results[0]).toEqual(results[1]);
+       |                        ^
+    957|     expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).to…
+    958|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > authorization continuity > acknowledges a repeated denial without another decision or revision
+ApplicationPortError: Approval response is stale or duplicated
+ ❯ ApprovalService.fail packages/application/src/services/approval-service.ts:99:11
+     97|
+     98|   private fail(code: PortErrorCode, message: string): never {
+     99|     throw new ApplicationPortError(code, message);
+       |           ^
+    100|   }
+    101| }
+ ❯ ApprovalService.respond packages/application/src/services/approval-service.ts:40:12
+ ❯ test/integration/authorization-capability-governance.test.ts:967:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > authorization continuity > uses a versioned cryptographic snapshot identity independent of object key order
+AssertionError: expected 'intent-2a3329f0' to match /^intent\.v2\.sha256:[0-9a-f]{64}$/
+
+- Expected:
+/^intent\.v2\.sha256:[0-9a-f]{64}$/
+
++ Received:
+"intent-2a3329f0"
+
+ ❯ test/integration/authorization-capability-governance.test.ts:972:45
+    970|   it("uses a versioned cryptographic snapshot identity independent of …
+    971|     const action = intent({ id: "canonical-hash" });
+    972|     expect(actionIntentFingerprint(action)).toMatch(/^intent\.v2\.sha2…
+       |                                             ^
+    973|     const reordered = { ...action, frequency: { intervalMs: null, coun…
+    974|       targets: action.targets.map(target => ({ ref: target.ref, type: …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 15 passed (21)
+   Start at  19:07:05
+   Duration  864ms (transform 589ms, setup 0ms, import 718ms, tests 31ms, environment 0ms)

@@ -308,6 +308,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0033_sandbox_release_receipts.sql",
   },
+  {
+    sequence: 34,
+    name: "authorization_reservations",
+    changeSet: "authorization-reservations",
+    phase: "expand" as const,
+    file: "0034_authorization_reservations.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

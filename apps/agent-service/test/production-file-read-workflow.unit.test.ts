@@ -78,7 +78,8 @@ async function fixture() {
     agentId: base.options.agentId,
     runPolicy: { ...config.runPolicy, fileRead: route },
   };
-  const capabilities = new InMemoryCapabilityRegistryStore();
+  const store = new InMemoryAuthorizationStore();
+  const capabilities = new InMemoryCapabilityRegistryStore(undefined, store);
   const manifest: CapabilityManifest = {
     ...base.capability.declaration,
     ref: route.capabilityRef,
@@ -115,7 +116,6 @@ async function fixture() {
     },
   };
   await capabilities.create({ ...base.capability, ref: manifest.ref, declaration: manifest });
-  const store = new InMemoryAuthorizationStore();
   let at = now;
   const clock = { now: () => at };
   const call: RuntimeToolInvocation = {

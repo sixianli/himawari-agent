@@ -134,7 +134,8 @@ export interface ProductionRuntimeToolsOptions {
   readonly ownerId: RuntimeRequest["ownerId"];
   readonly agentId: RuntimeRequest["agentId"];
   readonly capabilities: Pick<CapabilityRegistryStorePort, "get"> &
-    Pick<CapabilityExecutionHandleStorePort, "getExecutionHandle">;
+    Pick<CapabilityExecutionHandleStorePort, "getExecutionHandle"> &
+    Partial<Pick<CapabilityExecutionHandleStorePort, "revokeExecutionHandle">>;
   readonly invocations: CapabilityInvocationReceiptPort;
   readonly transport: ExecutionTransportPort;
   readonly parents: ProductionWorkerParentBindingRegistryWriter;
@@ -836,7 +837,20 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
               ? "操作尚未派发：资源或请求状态发生冲突。"
               : "操作尚未派发，未开始执行。",
           };
+      let authorityWithdrawalError: string | null = null;
+      if (!possiblySent && this.#options.capabilities.revokeExecutionHandle) {
+        try {
+          await this.#options.capabilities.revokeExecutionHandle(
+            handle.ref,
+            this.#options.clock.now(),
+          );
+        } catch (withdrawalError) {
+          authorityWithdrawalError =
+            withdrawalError instanceof Error ? withdrawalError.message.slice(0, 2048) : "unknown";
+        }
+      }
       await this.#writeJson(invocation, `runtime-tool-diagnostic:${key}`, {
+        authorityWithdrawalError,
         stage: possiblySent ? "possibly_sent" : "not_dispatched",
         reasonCode,
         operationId: key,

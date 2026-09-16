@@ -313,7 +313,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             verifiedAt: NOW,
           },
         });
-        expect(result.appliedSequences).toEqual([26, 27, 28, 29, 30, 31, 32, 33]);
+        expect(result.appliedSequences).toEqual([26, 27, 28, 29, 30, 31, 32, 33, 34]);
         expect(
           database
             .prepare(

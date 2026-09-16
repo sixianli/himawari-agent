@@ -1,0 +1,7 @@
+
+> himawari-agent@0.0.0 test
+> node scripts/ci/local.mjs --check test
+
+build/macos-arm64: passed
+test/macos-arm64: failed
+failed; hosted gate: not_executed

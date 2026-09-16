@@ -473,12 +473,18 @@ export class SqliteCapabilityInvocationOperations {
   private readonly assertDiskHeadroom: () => void;
   private readonly runPayloadArtifacts: SqliteRunPayloadArtifactOperations | undefined;
 
+  private readonly commitAuthorization:
+    | ((handle: string, invocation: string, now: string) => void)
+    | undefined;
+
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
     runPayloadArtifacts?: SqliteRunPayloadArtifactOperations,
+    commitAuthorization?: (handle: string, invocation: string, now: string) => void,
   ) {
+    this.commitAuthorization = commitAuthorization;
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
@@ -923,6 +929,14 @@ export class SqliteCapabilityInvocationOperations {
         }
 
         this.assertGrant(current, input);
+        if (
+          !this.commitAuthorization &&
+          this.database
+            .prepare("SELECT 1 FROM authorization_reservations WHERE handle_ref=?")
+            .get(current.ref)
+        )
+          this.fail("PORT_NOT_AUTHORITATIVE", "Reservation commit owner is unavailable");
+        this.commitAuthorization?.(current.ref, input.invocationId, input.consumedAt);
         const effectiveExpiresAt =
           timestamp(current.expiresAt, "handle.expiresAt") <=
           timestamp(input.deadlineAt, "deadlineAt")

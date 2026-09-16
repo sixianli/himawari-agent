@@ -1,0 +1,96 @@
+{
+  "source": ".ci-output/local-1789554643356/test-macos-arm64/tests/integration.json",
+  "failures": [
+    {
+      "file": "test/integration/sqlite-run-dispatch-lease.test.ts",
+      "test": "SQLite component contracts (worker) SQLite Run dispatch execution leases migrates existing checkpoints and Worker results without dropping their foreign-key data",
+      "failure": "AssertionError: expected [ 26, 27, 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 26, 27, 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-run-dispatch-lease.test.ts",
+      "test": "SQLite component contracts (direct) SQLite Run dispatch execution leases migrates existing checkpoints and Worker results without dropping their foreign-key data",
+      "failure": "AssertionError: expected [ 26, 27, 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 26, 27, 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-run-payload-artifacts.test.ts",
+      "test": "sqlite-run-payload-artifacts through worker preserves existing artifact receipts and ciphertext when upgrading schema 31",
+      "failure": "AssertionError: expected [ 32, 33, 34 ] to deeply equal [ 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-run-payload-artifacts.test.ts",
+      "test": "sqlite-run-payload-artifacts through direct preserves existing artifact receipts and ciphertext when upgrading schema 31",
+      "failure": "AssertionError: expected [ 32, 33, 34 ] to deeply equal [ 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (worker) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting prepared history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (worker) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting starting history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (worker) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting quarantined history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (worker) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting completed history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (worker) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting failed history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (worker) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting missing_host history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (worker) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting missing_state history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (direct) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting prepared history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (direct) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting starting history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (direct) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting quarantined history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (direct) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting completed history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (direct) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting failed history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (direct) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting missing_host history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    },
+    {
+      "file": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "test": "SQLite component contracts (direct) R2 SQLite durable execution resources upgrades populated schema 27 without reinterpreting missing_state history",
+      "failure": "AssertionError: expected [ 28, 29, 30, 31, 32, 33, 34 ] to deeply equal [ 28, 29, 30, 31, 32, 33 ]"
+    }
+  ],
+  "diagnosis": "迁移结果预期未包含新增 Schema 34；原有数据、账本和外键保留断言不变。"
+}
