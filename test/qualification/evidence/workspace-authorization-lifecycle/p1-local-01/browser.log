@@ -1,0 +1,20 @@
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+false !== true
+
+    at qualifyExecutionChain (file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/scripts/test-execution-chain-browser.mjs:224:14)
+    at async qualifyExecutionChainFixture (file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/scripts/test-execution-chain-browser.mjs:280:19)
+    at async file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/scripts/test-execution-chain-browser.mjs:305:19 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v22.22.3

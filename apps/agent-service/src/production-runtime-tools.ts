@@ -23,6 +23,7 @@ import {
   type RuntimeToolExecutionResult,
   type RuntimeToolInvocation,
   type RuntimeToolPort,
+  type RuntimeToolSettledResult,
   type WorkerDelegationAdmissionServiceOptions,
   WorkerDelegationService,
 } from "@himawari-agent/application";
@@ -557,36 +558,6 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     parentCall?: RuntimeToolInvocation,
   ): Promise<RuntimeToolExecutionResult> {
     const handle = await this.#validate(invocation, internal);
-    const intentKey = {
-      runId: invocation.runId,
-      purpose: "trace" as const,
-      operationKey: `runtime-tool-intent:${key}`,
-    };
-    const existing = await this.#options.artifacts.lookup(intentKey);
-    if (existing) {
-      const intent = (await this.#readJson(existing.payloadRef)) as { fingerprint?: string };
-      if (intent.fingerprint !== fingerprint)
-        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
-      const result = await this.#options.artifacts.lookup({
-        ...intentKey,
-        operationKey: `runtime-tool-result:${key}`,
-      });
-      const replay = result
-        ? ((await this.#readJson(result.payloadRef)) as RuntimeToolExecutionResult)
-        : unknownResult();
-      if (replay.outcome === "succeeded") {
-        await this.#assertDisclosure(invocation, key, internal);
-        const observed = await this.#options.results.lookupOutput({
-          handleRef: handle.ref,
-          invocationId: `runtime-tool:${key}`,
-          authority: this.#options.authority(),
-          now: this.#options.clock.now(),
-        });
-        if (!observed || observed.payloadRef !== replay.resultRef) reject();
-      }
-      await this.#validate(invocation, internal);
-      return replay;
-    }
     const maximum = await this.#options.maximumResourceCeiling?.(
       handle.capabilityRef,
       handle.capabilityVersion,
@@ -601,6 +572,67 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           maxProgressEvents: Math.min(configured.maxProgressEvents, maximum.maxProgressEvents),
         }
       : configured;
+    const intentKey = {
+      runId: invocation.runId,
+      purpose: "trace" as const,
+      operationKey: `runtime-tool-intent:${key}`,
+    };
+    const existing = await this.#options.artifacts.lookup(intentKey);
+    if (existing) {
+      const intent = (await this.#readJson(existing.payloadRef)) as { fingerprint?: string };
+      if (intent.fingerprint !== fingerprint)
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
+      const result = await this.#options.artifacts.lookup({
+        ...intentKey,
+        operationKey: `runtime-tool-result:${key}`,
+      });
+      const recovered = await this.#options.artifacts.lookup({
+        ...intentKey,
+        operationKey: `runtime-tool-recovered-result:${key}`,
+      });
+      const storedResult = recovered ?? result;
+      let replay = storedResult
+        ? ((await this.#readJson(storedResult.payloadRef)) as RuntimeToolExecutionResult)
+        : unknownResult();
+      if (
+        (!storedResult || replay.outcome === "result_unknown") &&
+        this.#options.completeSandboxToolResult
+      ) {
+        const completion = await this.#options.completeSandboxToolResult(
+          { runId: invocation.runId, invocationId: `runtime-tool:${key}` },
+          {
+            assertDisclosure: () => this.#assertDisclosure(invocation, key, internal),
+            saveReceipt: async (value) => {
+              await this.#writeJson(invocation, `runtime-sandbox-delivery:${key}`, value);
+            },
+          },
+        );
+        if (completion) {
+          replay = await this.#completionOutcome(
+            invocation,
+            key,
+            handle.ref,
+            completion,
+            ceiling.maxOutputBytes,
+            internal,
+          );
+          await this.#validate(invocation, internal);
+          await this.#writeJson(invocation, `runtime-tool-recovered-result:${key}`, replay);
+        }
+      }
+      if (replay.outcome === "succeeded") {
+        await this.#assertDisclosure(invocation, key, internal);
+        const observed = await this.#options.results.lookupOutput({
+          handleRef: handle.ref,
+          invocationId: `runtime-tool:${key}`,
+          authority: this.#options.authority(),
+          now: this.#options.clock.now(),
+        });
+        if (!observed || observed.payloadRef !== replay.resultRef) reject();
+      }
+      await this.#validate(invocation, internal);
+      return replay;
+    }
     const now = this.#options.clock.now();
     const deadlineAt = new Date(
       Math.min(
@@ -668,6 +700,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       delegatedContextRefs: [...handle.delegatedContextRefs],
     });
     let outcome = unknownResult();
+    let possiblySent = false;
+    let forwardingClosed = false;
     try {
       await this.#options.assertRunActive(invocation.runId);
       const sandbox = this.#options.sandbox;
@@ -677,7 +711,15 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             prepare: (admission) => sandbox.prepare(admission, invocation, parentCall),
           })
         : this.#delegation;
-      await beforeDeadline(delegation.dispatch(request), monotonicDeadline);
+      await beforeDeadline(
+        delegation.dispatch(request, async () => {
+          await this.#validate(invocation, internal);
+          if (forwardingClosed || performance.now() >= monotonicDeadline)
+            throw new Error("WORKER_DEADLINE_EXCEEDED");
+          possiblySent = true;
+        }),
+        monotonicDeadline,
+      );
       let cursor: string | null = null;
       let workerStartedAt: string | undefined;
       while (
@@ -743,46 +785,15 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 externalActionId: null,
                 modelContent: "操作已取消。",
               };
-            } else if (completion?.outcome === "succeeded") {
-              if (!completion.outputRef) throw new Error("WORKER_OUTPUT_MISSING");
-              await this.#assertDisclosure(invocation, key, internal);
-              const observed = await this.#options.results.lookupOutput({
-                handleRef: handle.ref,
-                invocationId: request.messageId,
-                authority: this.#options.authority(),
-                now: this.#options.clock.now(),
-              });
-              if (!observed || observed.payloadRef !== completion.outputRef)
-                throw new Error("WORKER_OUTPUT_OBSERVATION_MISSING");
-              const payload = await this.#options.payloads.get(observed.payloadRef);
-              if (
-                !payload ||
-                RANK.indexOf(payload.dataClassification) >
-                  RANK.indexOf(invocation.dataClassification)
-              )
-                reject();
-              const bytes = await this.#options.protector.unprotect({
-                ownerId: this.#options.ownerId,
-                agentId: this.#options.agentId,
-                payload,
-              });
-              if (bytes.byteLength > ceiling.maxOutputBytes)
-                throw new Error("WORKER_OUTPUT_LIMIT_EXCEEDED");
-              outcome = {
-                outcome: "succeeded",
-                resultRef: payload.ref,
-                errorCode: null,
-                externalActionId: null,
-                modelContent: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-              };
             } else {
-              outcome = {
-                outcome: completion?.outcome ?? "result_unknown",
-                resultRef: null,
-                errorCode: completion?.errorCode ?? null,
-                externalActionId: completion?.externalActionId ?? null,
-                modelContent: "操作未确认成功。",
-              };
+              outcome = await this.#completionOutcome(
+                invocation,
+                key,
+                handle.ref,
+                completion,
+                ceiling.maxOutputBytes,
+                internal,
+              );
             }
             const workerEndedAt =
               event.type === "work.result" ? event.payload.completedAt : event.payload.cancelledAt;
@@ -805,14 +816,102 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           monotonicDeadline,
         );
       }
-    } catch {
-      outcome = unknownResult();
-      // A sent request can have an external effect even when transport or authority fails.
-      // Keep its intent durable and never automatically submit it again.
+    } catch (error) {
+      forwardingClosed = true;
+      const conflict =
+        error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.CONFLICT;
+      const reasonCode = possiblySent
+        ? "WORKER_RESULT_RECONCILIATION_REQUIRED"
+        : conflict
+          ? "WORKER_ADMISSION_CONFLICT"
+          : "WORKER_NOT_DISPATCHED";
+      outcome = possiblySent
+        ? unknownResult()
+        : {
+            outcome: "failed",
+            resultRef: null,
+            errorCode: reasonCode,
+            externalActionId: null,
+            modelContent: conflict
+              ? "操作尚未派发：资源或请求状态发生冲突。"
+              : "操作尚未派发，未开始执行。",
+          };
+      await this.#writeJson(invocation, `runtime-tool-diagnostic:${key}`, {
+        stage: possiblySent ? "possibly_sent" : "not_dispatched",
+        reasonCode,
+        operationId: key,
+        invocationId: request.messageId,
+        runId: invocation.runId,
+        authorityEpoch: authority.product.authorityEpoch,
+        occurredAt: this.#options.clock.now(),
+        error:
+          error instanceof Error
+            ? { name: error.name, message: error.message.slice(0, 8192) }
+            : { name: "UnknownError" },
+      });
+      // Never resend an executable message merely because its result is unknown.
+    } finally {
+      forwardingClosed = true;
     }
     await this.#options.assertRunActive(invocation.runId);
     await this.#writeJson(invocation, `runtime-tool-result:${key}`, outcome);
     return outcome;
+  }
+
+  async #completionOutcome(
+    invocation: RuntimeToolInvocation,
+    key: string,
+    handleRef: string,
+    completion:
+      | {
+          outcome: "succeeded" | "failed" | "result_unknown";
+          outputRef: string | null;
+          errorCode: string | null;
+          externalActionId: string | null;
+        }
+      | undefined,
+    maxOutputBytes: number,
+    internal: boolean,
+  ): Promise<RuntimeToolSettledResult> {
+    if (completion?.outcome === "succeeded") {
+      if (!completion.outputRef) throw new Error("WORKER_OUTPUT_MISSING");
+      await this.#assertDisclosure(invocation, key, internal);
+      const observed = await this.#options.results.lookupOutput({
+        handleRef: handleRef,
+        invocationId: `runtime-tool:${key}`,
+        authority: this.#options.authority(),
+        now: this.#options.clock.now(),
+      });
+      if (!observed || observed.payloadRef !== completion.outputRef)
+        throw new Error("WORKER_OUTPUT_OBSERVATION_MISSING");
+      const payload = await this.#options.payloads.get(observed.payloadRef);
+      if (
+        !payload ||
+        RANK.indexOf(payload.dataClassification) > RANK.indexOf(invocation.dataClassification)
+      )
+        reject();
+      const bytes = await this.#options.protector.unprotect({
+        ownerId: this.#options.ownerId,
+        agentId: this.#options.agentId,
+        payload,
+      });
+      if (bytes.byteLength > maxOutputBytes) throw new Error("WORKER_OUTPUT_LIMIT_EXCEEDED");
+      return {
+        outcome: "succeeded",
+        resultRef: payload.ref,
+        errorCode: null,
+        externalActionId: null,
+        modelContent: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+      };
+    } else {
+      return {
+        outcome: completion?.outcome ?? "result_unknown",
+        resultRef: null,
+        errorCode: completion?.errorCode ?? null,
+        externalActionId: completion?.externalActionId ?? null,
+        modelContent: "操作未确认成功。",
+      };
+    }
   }
 
   async #assertDisclosure(

@@ -1,0 +1,12 @@
+
+> himawari-agent@0.0.0 test:contracts
+> vitest run --config vitest.workspace.ts --project contracts packages/persistence-sqlite/test/model-budget-migration.contract.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  18:25:00
+   Duration  2.33s (transform 1.20s, setup 0ms, import 1.47s, tests 661ms, environment 0ms)

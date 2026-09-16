@@ -313,7 +313,7 @@ it("stops foreground records and does not report reserved environments as releas
       },
     },
   });
-  expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: true });
+  expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: false });
   expect(reconcile).toHaveBeenCalledWith(
     expect.objectContaining({ identity: plan.identity, action: "stop" }),
   );

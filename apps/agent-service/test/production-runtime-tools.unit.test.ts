@@ -1,4 +1,4 @@
-import type { RuntimeToolInvocation } from "@himawari-agent/application";
+import { ApplicationPortError, type RuntimeToolInvocation } from "@himawari-agent/application";
 import { describe, expect, it, vi } from "vitest";
 import { ProductionRuntimeTools } from "../src/production-runtime-tools.js";
 import {
@@ -15,6 +15,45 @@ async function exposed(f: ReturnType<typeof fixture>) {
 }
 
 describe("ProductionRuntimeTools", () => {
+  it("reports admission refusal as not dispatched and retains a protected diagnostic", async () => {
+    const f = fixture();
+    vi.spyOn(f.options.invocations, "consume").mockRejectedValue(
+      new ApplicationPortError("PORT_CONFLICT", "private host path must not appear"),
+    );
+    const tool = await exposed(f);
+    const result = await tool.execute(invocation);
+    expect(result).toMatchObject({
+      outcome: "failed",
+      errorCode: "WORKER_ADMISSION_CONFLICT",
+      modelContent: "操作尚未派发：资源或请求状态发生冲突。",
+    });
+    expect(JSON.stringify(result)).not.toContain("private host");
+    expect(f.request).not.toHaveBeenCalled();
+    expect([...f.artifacts.keys()].some((key) => key.startsWith("runtime-tool-diagnostic:"))).toBe(
+      true,
+    );
+    expect(await (await exposed(f)).execute(invocation)).toEqual(result);
+    expect(f.options.invocations.consume).toHaveBeenCalledTimes(1);
+  });
+  it("never sends a late execute after delegation outlives the caller deadline", async () => {
+    const f = fixture(10);
+    const original = f.request.getMockImplementation();
+    if (!original) throw new Error("fixture");
+    let resume: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    f.request.mockImplementation(async (message) => {
+      if (message.type === "work.delegate") await gate;
+      return original(message);
+    });
+    const result = await (await exposed(f)).execute(invocation);
+    expect(result).toMatchObject({ outcome: "failed", errorCode: "WORKER_NOT_DISPATCHED" });
+    resume();
+    // Flush the admitted continuation, then independently inspect sent requests.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(f.request.mock.calls.map(([message]) => message.type)).toEqual(["work.delegate"]);
+  });
   it("intersects configured resources with the qualified capability before dispatch", async () => {
     const f = fixture();
     const qualified = { ...f.options.ceiling, maxCpuTimeMs: 30, maxOutputBytes: 10000 };
@@ -450,4 +489,63 @@ describe("runtime tool exposure and live authority", () => {
     ).rejects.toThrow("not authorized");
     expect(f.request).not.toHaveBeenCalled();
   });
+});
+
+it("recovers a persisted sandbox handoff after interruption without executing again", async () => {
+  const f = fixture();
+  const completeSandboxToolResult = vi.fn(async (_input, delivery) => {
+    await delivery.assertDisclosure();
+    const result = {
+      outcome: "succeeded" as const,
+      outputRef: "output:tools",
+      errorCode: null,
+      externalActionId: null,
+    };
+    await delivery.saveReceipt(result);
+    return result;
+  });
+  const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+  await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  expect((await tool.execute(invocation)).outcome).toBe("succeeded");
+  // Simulate interruption after the protected handoff but before runtime result persistence.
+  const resultKey = [...f.artifacts.keys()].find((key) => key.startsWith("runtime-tool-result:"));
+  if (!resultKey) throw new Error("missing result fixture");
+  f.artifacts.delete(resultKey);
+  const resumed = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+  await resumed.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  expect(await resumed.execute(invocation)).toMatchObject({
+    outcome: "succeeded",
+    modelContent: "已读取结果",
+  });
+  expect(f.request.mock.calls.filter(([request]) => request.type === "work.execute")).toHaveLength(
+    1,
+  );
+  expect(completeSandboxToolResult).toHaveBeenCalledTimes(2);
+});
+
+it("delivers a later verified sandbox result without resending an unknown operation", async () => {
+  const f = fixture();
+  let verified = false;
+  const completeSandboxToolResult = vi.fn(async (_input, delivery) => {
+    await delivery.assertDisclosure();
+    if (!verified) return undefined;
+    const result = {
+      outcome: "succeeded" as const,
+      outputRef: "output:tools",
+      errorCode: null,
+      externalActionId: null,
+    };
+    await delivery.saveReceipt(result);
+    return result;
+  });
+  const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+  await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  expect((await tool.execute(invocation)).outcome).toBe("result_unknown");
+  verified = true;
+  const resumed = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+  await resumed.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  expect((await resumed.execute(invocation)).outcome).toBe("succeeded");
+  expect(f.request.mock.calls.filter(([request]) => request.type === "work.execute")).toHaveLength(
+    1,
+  );
 });

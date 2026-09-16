@@ -45,23 +45,49 @@ export function executionActivity(
   const label: MessageId =
     connection !== "connected" && !isTerminalRun(run)
       ? "chat.disconnected"
-      : run.status === "awaiting_approval"
-        ? "runs.status.awaitingApproval"
-        : tool
-          ? "chat.activity.tool"
-          : activity?.name === "runtime.activity.thinking"
-            ? "chat.activity.thinking"
-            : activity?.name === "runtime.activity.text"
-              ? "chat.activity.output"
-              : activity?.name === "runtime.activity.toolCall"
-                ? "chat.activity.preparingTool"
-                : "chat.activity.waitingModel";
+      : run.status === "reconciling_external_result"
+        ? "chat.phase.unresolved"
+        : run.status === "awaiting_approval"
+          ? "runs.status.awaitingApproval"
+          : tool
+            ? "chat.activity.tool"
+            : activity?.name === "runtime.activity.thinking"
+              ? "chat.activity.thinking"
+              : activity?.name === "runtime.activity.text"
+                ? "chat.activity.output"
+                : activity?.name === "runtime.activity.toolCall"
+                  ? "chat.activity.preparingTool"
+                  : "chat.activity.waitingModel";
   return {
     label,
     tool: tool?.name ?? "",
     age,
     stale: !isTerminalRun(run) && run.status !== "awaiting_approval" && age >= 15000,
   };
+}
+
+/** Backend outcome markers remain separate from transport/Pi invocation phases. */
+export function executionToolPhase(
+  item: ThreadExecutionRecord,
+  records: readonly ThreadExecutionRecord[],
+): MessageId | undefined {
+  const marker = [...records]
+    .filter(
+      (record) => record.itemId === item.itemId && record.name.startsWith("runtime.tool_outcome."),
+    )
+    .sort((a, b) => a.sequence - b.sequence)
+    .at(-1);
+  if (!marker || marker.sequence < item.sequence) return undefined;
+  switch (marker.name) {
+    case "runtime.tool_outcome.not_dispatched":
+      return "chat.phase.notDispatched";
+    case "runtime.tool_outcome.unresolved":
+      return "chat.phase.unresolved";
+    case "runtime.tool_outcome.preparing":
+      return "chat.phase.preparing";
+    default:
+      return undefined;
+  }
 }
 
 /** A delta notification can be replayed; snapshots have stable event and item identities. */

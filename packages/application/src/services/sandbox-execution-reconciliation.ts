@@ -26,7 +26,10 @@ export interface SandboxReconciliationBackend {
  */
 interface ReconciliationOptions {
   readonly hostId: string;
-  readonly journal: Pick<SandboxExecutionJournalPort, "read" | "append">;
+  readonly journal: Pick<
+    SandboxExecutionJournalPort,
+    "read" | "append" | "beginRecovery" | "finishRecovery"
+  >;
   readonly evidence: SandboxExecutionEvidencePort;
   readonly backend?: SandboxReconciliationBackend;
   readonly timeoutMs: number;
@@ -56,7 +59,21 @@ export class SandboxExecutionReconciliationService {
       throw new Error("SANDBOX_RECONCILIATION_BINDING_INVALID");
     if (record.facts.resource.sequence !== input.expectedSequence)
       throw new Error("SANDBOX_RECONCILIATION_SEQUENCE_CHANGED");
-    if (record.facts.resource.supervision === "released") return { record, applied: false };
+    if (
+      record.facts.resource.supervision === "released" &&
+      record.releaseReceipt &&
+      !record.workspaceBlocked
+    )
+      return { record, applied: false };
+    const startedAt = this.options.now();
+    const recovery = await this.options.journal.beginRecovery({
+      identity,
+      expectedSequence: record.facts.resource.sequence,
+      authority: input.authority,
+      now: startedAt,
+      action: input.action,
+      deadlineAt: new Date(Date.parse(startedAt) + this.options.timeoutMs).toISOString(),
+    });
 
     const observation = (
       state: "reconciling" | "lost",
@@ -83,12 +100,15 @@ export class SandboxExecutionReconciliationService {
     };
     const append = async (resource: SandboxResourceObservation) => {
       if (!record) throw new Error("SANDBOX_RECONCILIATION_BINDING_INVALID");
-      const now = this.options.now();
+      let now = this.options.now();
       const facts = { ...record.facts, resource };
       const verification =
         resource.supervision === "released"
           ? await this.options.evidence.verify({ plan: record.plan, facts, now })
           : null;
+      now = this.options.now();
+      if (resource.supervision === "released" && controller.signal.aborted)
+        throw new Error("SANDBOX_RECONCILIATION_TIMED_OUT");
       const mutation = await this.options.journal.append({
         identity,
         expectedSequence: record.facts.resource.sequence,
@@ -115,16 +135,28 @@ export class SandboxExecutionReconciliationService {
       record = mutation.record;
       return mutation;
     };
-    const admitted = await append(observation("reconciling", "SANDBOX_RECONCILIATION_REQUESTED"));
-    if (!admitted.applied) return admitted;
-    const backend = this.options.backend;
-    if (!backend) return append(observation("lost", "SANDBOX_SUPERVISOR_UNAVAILABLE"));
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let reasonCode = "SANDBOX_RECONCILIATION_UNCONFIRMED";
+    let applied = false;
     try {
-      const resource = await Promise.race([
-        // Pass a copy: a backend cannot alter the known operation/effect facts.
-        backend[input.action](structuredClone(record), controller.signal),
+      // Released observations are monotonic. Legacy rows need a fresh proof,
+      // not a fabricated transition back into execution/reconciling.
+      if (record.facts.resource.supervision !== "released") {
+        const admitted = await append(
+          observation("reconciling", "SANDBOX_RECONCILIATION_REQUESTED"),
+        );
+        if (!admitted.applied) throw new Error("SANDBOX_RECONCILIATION_SEQUENCE_CHANGED");
+      }
+      const backend = this.options.backend;
+      if (!backend) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
+      const mutation = await Promise.race([
+        (async () => {
+          const resource = await backend[input.action](structuredClone(record), controller.signal);
+          if (!["released", "lost"].includes(resource.supervision))
+            throw new Error("SANDBOX_RECONCILIATION_INCONCLUSIVE");
+          return append(sandboxResourceObservationSchema.parse(resource));
+        })(),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
             controller.abort();
@@ -132,16 +164,37 @@ export class SandboxExecutionReconciliationService {
           }, this.options.timeoutMs);
         }),
       ]);
-      if (!["released", "lost"].includes(resource.supervision))
-        throw new Error("SANDBOX_RECONCILIATION_INCONCLUSIVE");
-      return await append(sandboxResourceObservationSchema.parse(resource));
-    } catch {
-      // No positive proof, backend failure, or a rejected release never unlocks
-      // the environment. A concurrent update/fence change still fails this CAS.
-      return append(observation("lost", "SANDBOX_RECONCILIATION_UNCONFIRMED"));
+      reasonCode = mutation.record.workspaceBlocked
+        ? "SANDBOX_PROTECTION_REMAINS"
+        : "SANDBOX_RECONCILIATION_CONFIRMED";
+      applied = mutation.applied;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        [
+          "SANDBOX_RECONCILIATION_TIMED_OUT",
+          "SANDBOX_SUPERVISOR_UNAVAILABLE",
+          "SANDBOX_RECONCILIATION_INCONCLUSIVE",
+        ].includes(error.message)
+      )
+        reasonCode = error.message;
+      // Failure never revokes a historical release or invents isolation evidence.
+      if (record.facts.resource.supervision !== "released")
+        applied = (await append(observation("lost", reasonCode))).applied;
     } finally {
       clearTimeout(timer);
       controller.abort();
+      await this.options.journal.finishRecovery({
+        identity,
+        expectedSequence: record.facts.resource.sequence,
+        expectedRecoveryRevision: recovery.revision,
+        authority: input.authority,
+        now: this.options.now(),
+        reasonCode,
+      });
     }
+    const persisted = await this.options.journal.read(identity);
+    if (!persisted) throw new Error("SANDBOX_RECONCILIATION_BINDING_INVALID");
+    return { record: persisted, applied };
   }
 }

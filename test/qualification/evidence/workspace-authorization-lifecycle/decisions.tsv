@@ -1,0 +1,12 @@
+ts	phase	decision	why	evidence	result
+2026-09-16T08:30:49Z	P0	沿用既有计划和验证入口	保留未提交资料；先复现 ACK 与凭证有效期边界；新增交互需按 Plan 审核	p0-local-01/baseline.json; docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p0	基线已保存；不把静态核查当生产证据
+2026-09-16T08:44:57Z	P0	保留 ACK 到期边界失败作为正式回归输入	既有测试未检测到已释放资源在通知交接后反锁	p0-local-01/baseline.log; p0-local-01/reproduction-red.log; p0-local-01/release-reproduction.test.ts.txt	84 项旧测试通过；新增实验 2 通过、6 失败；尚未修复
+2026-09-16T08:44:57Z	P0	从冻结 v4 扩展新增交互，复用 v1 离线库	保持现有布局；截图发现 v4 CDN 图标依赖在离线 CSP 下不加载，增加 SVG 断言	docs/assets/control-center/2026-09-16-state-review-r3/build.py; p0-local-01/prototype-verification-02.log; p0-local-01/prototype-verification-03.log	第一次图标断言失败，修正后 168 布局与 11 组交互通过；非产品 E2E
+2026-09-16T08:45:33Z	P0	提交具体原型供用户审核，保持 Plan active	Plan P0 明确要求新增交互先审核；本轮未实施产品代码，不能提交或宣称完成 P1	p0-local-01/prototype-verification-final.log; p0-local-01/docs-validation.log; p0-local-01/preservation-check.json; docs/adr/0030-durable-workspace-release-facts.md	最终 168 布局与 11 组交互通过；P0 部分完成，等待交互审核
+2026-09-16T09:18:32Z	P1	接纳时保存不可撤销释放记录，将控制风险单独保护	原复现表明结果派发清空释放时间；后续凭证到期不应推翻历史事实	p1-local-01/red.log; p1-local-01/release-consumers.log; p1-local-01/legacy-recovery.log	先失败后通过；新证明恢复旧残留，过期或缺宿主证据保持保护
+2026-09-16T09:18:32Z	P1	在真正发送可执行消息前记录边界并重验期限	准入失败原被吞成结果未知；慢 delegation 可能越过调用截止时间	p1-local-01/dispatch-red.log; p1-local-01/dispatch-green.log	两个新增失败后转绿，52 项工具服务测试通过；诊断只保存在受保护 payload
+2026-09-16T09:36:33Z	P0	用户已确认 r3 交互	复用本次明确批准继续对应页面实施	conversation:已确认;docs/assets/control-center/2026-09-16-state-review-r3/verification.json	不重复请求原型批准
+2026-09-16T09:36:33Z	P1	冻结源码后重跑标准 CI	第一次构建期间继续编辑导致产物输入摘要不一致	.ci-output/local-1789550336704;test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/test-stable.log	后续源码修改等待本轮验证完成
+2026-09-16T09:56:02Z	P1	结果交接重试保留原调用与原未知记录	只补交可信 journal 的已有结果，禁止通过重新派发恢复通知	test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/late-delivery-red.log;test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/late-delivery-green.log	先失败后通过；真实可执行消息只有一次
+2026-09-16T09:56:02Z	P1	一般效果未知不创建工作区保护	Spec 只允许仍可能写入等具体风险阻止冲突操作	test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/handoff-red.log;test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/handoff-green.log	保留结果待核实；旧释放时间不变
+2026-09-16T09:56:02Z	P1	按原锁文件重装本地依赖	发布扫描命中未受审的重复依赖副本；不修改扫描例外	.ci-output/installation-p1-lifecycle/installation-result.json;test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/test-final.log	依赖版本与锁文件不变；重新构建与产物发布检查通过

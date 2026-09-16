@@ -206,6 +206,27 @@ export class ThreadExecutionProjection {
           // Older Pi captures can report isError=false for a resolved product
           // failure. Retained product error evidence must not become success.
           const productError = text(object(result["details"])["errorCode"]);
+          const productOutcome = text(object(result["details"])["productOutcome"]);
+          const lifecycle = !ended
+            ? "preparing"
+            : ["WORKER_ADMISSION_CONFLICT", "WORKER_NOT_DISPATCHED"].includes(productError)
+              ? "not_dispatched"
+              : productOutcome === "result_unknown" ||
+                  [
+                    "RUNTIME_TOOL_EXECUTION_UNRESOLVED",
+                    "WORKER_RESULT_RECONCILIATION_REQUIRED",
+                  ].includes(productError)
+                ? "unresolved"
+                : null;
+          if (lifecycle)
+            records.push({
+              ...base,
+              id: `${event.id}:outcome`,
+              itemId: identifier(tool["toolCallId"], event.id),
+              kind: "status",
+              phase: "updated",
+              name: `runtime.tool_outcome.${lifecycle}`,
+            });
           const timing = object(object(result["details"])["executionTiming"]);
           const start = text(timing["startedAt"]),
             end = text(timing["endedAt"]);

@@ -1,0 +1,7 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+test/integration/sandbox-v2-payload-broker.test.ts(121,39): error TS2339: Property 'operations' does not exist on type '{ resource: { readonly repository: SqliteProductStateRepository; readonly stateRoot: string; }; database: Database; plan: Readonly<{ schemaVersion: "sandbox-execution.v1"; ... 14 more ...; binding: Readonly<...>; }>; ... 9 more ...; files: { ...; }; }'.
+test/integration/sandbox-v2-payload-broker.test.ts(122,40): error TS2339: Property 'operations' does not exist on type '{ resource: { readonly repository: SqliteProductStateRepository; readonly stateRoot: string; }; database: Database; plan: Readonly<{ schemaVersion: "sandbox-execution.v1"; ... 14 more ...; binding: Readonly<...>; }>; ... 9 more ...; files: { ...; }; }'.
+test/integration/sandbox-v2-payload-broker.test.ts(123,45): error TS2339: Property 'operations' does not exist on type '{ resource: { readonly repository: SqliteProductStateRepository; readonly stateRoot: string; }; database: Database; plan: Readonly<{ schemaVersion: "sandbox-execution.v1"; ... 14 more ...; binding: Readonly<...>; }>; ... 9 more ...; files: { ...; }; }'.

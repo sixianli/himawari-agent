@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:d09f6b1b941a35071974e43f6ae9868b45a2b288b040f1097b502442519f8cf7"
+contract_sha256: "sha256:e03e3173bb3ec8b009217cea7094dab249b2a7b97170b535017f72091deaeb64"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,8 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/sqlite-sandbox-release-operations.ts
+- packages/persistence-sqlite/src/sqlite-sandbox-recovery-operations.ts
 - apps/agent-service/src/production-thread-titles.ts
 - apps/agent-service/src/production-model-composition.ts
 - apps/agent-service/src/production-run-composition.ts
@@ -264,6 +266,12 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 10. 完成验证后保存脱敏命令输出、artifact identity、进程退出码、socket/lock 回读和 rollback 状态；临时 prefix、临时 state root 与证据目录按本次授权的保留策略清理。
 
 ## Verification
+
+### Schema 33 释放事实与有界恢复
+
+Schema 33 保存 `sandbox_release_receipts`、独立控制保护及 `recovery_json`。升级、备份与迁移必须一同保留这些记录、原执行观察与占用；已经提交的 `released_at` 不得清空，结果 ACK 迟到不改变释放事实。旧记录没有新的可信释放回执时不自动回填或解锁，须通过当前安装的受限 inspect/stop 核验；过期凭证不能当作新观察使用。
+
+启动恢复不重发原工具，失去原恢复 owner 或核验超过期限时持久记录 unresolved。验收独立读回原释放时间、恢复 owner/次数/终点和未完成交接，不能仅凭页面状态判定清理完成。恢复回执只证明资源义务已结束，不恢复执行或模型披露权限。Schema 33 不允许旧 writer 直接写入；回退须停止服务并使用匹配旧版本的完整、已核验恢复点，不能删除新表或修改 migration ledger 降级。本次源码与隔离数据库测试不代表已对部署实例执行迁移或解锁。
 
 ### v4 控制中心与持久事件核对
 

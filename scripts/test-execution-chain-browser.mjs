@@ -165,6 +165,24 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       await page.keyboard.press("Enter");
       await expect(tools.nth(1)).toHaveAttribute("open", "");
       await expect(tools.nth(1)).toContainText("Search provider unavailable");
+      const lifecycleText = {
+        "zh-CN": ["尚未派发", "结果未确认"],
+        en: ["Not dispatched", "Result unconfirmed"],
+        ja: ["未送信", "結果未確認"],
+      }[locale];
+      await send({
+        records: [record({ itemId: "search-two", name: "runtime.tool_outcome.not_dispatched" })],
+      });
+      await expect(tools.nth(1).locator(".step-status")).toContainText(lifecycleText[0]);
+      await page.screenshot({ path: path.join(output, `${unique}-not-dispatched.png`) });
+      await send({
+        status: "reconciling_external_result",
+        records: [record({ itemId: "search-two", name: "runtime.tool_outcome.unresolved" })],
+      });
+      await expect(tools.nth(1).locator(".step-status")).toContainText(lifecycleText[1]);
+      await expect(page.locator(".turn-activity").first()).toContainText(lifecycleText[1]);
+      await expect(page.locator(".turn-activity .run-indicator")).toHaveCount(0);
+      await page.screenshot({ path: path.join(output, `${unique}-unresolved.png`) });
       await send({
         status: "completed",
         records: [

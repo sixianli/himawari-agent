@@ -1,0 +1,49 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-scope.test.ts > stops foreground records and does not report reserved environments as released
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":2.066540999998324,"at":"2026-09-16T09:46:15.595Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > stops foreground records and does not report reserved environments as released
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":44.39533400000073,"at":"2026-09-16T09:46:15.640Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > stops foreground records and does not report reserved environments as released
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.5370830000010756,"at":"2026-09-16T09:46:15.640Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > stops foreground records and does not report reserved environments as released
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.1136249999999563,"at":"2026-09-16T09:46:15.642Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > stops foreground records and does not report reserved environments as released
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.8132910000003903,"at":"2026-09-16T09:46:15.643Z"}
+
+ ❯ |integration| test/integration/production-sandbox-scope.test.ts (19 tests | 1 failed) 13925ms
+   × stops foreground records and does not report reserved environments as released 543ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-scope.test.ts > stops foreground records and does not report reserved environments as released
+AssertionError: expected { released: true } to deeply equal { released: false }
+
+- Expected
++ Received
+
+  {
+-   "released": false,
++   "released": true,
+  }
+
+ ❯ test/integration/production-sandbox-scope.test.ts:316:60
+    314|     },
+    315|   });
+    316|   expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ r…
+       |                                                            ^
+    317|   expect(reconcile).toHaveBeenCalledWith(
+    318|     expect.objectContaining({ identity: plan.identity, action: "stop" …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 18 passed (19)
+   Start at  18:46:00
+   Duration  15.65s (transform 995ms, setup 0ms, import 1.55s, tests 13.93s, environment 0ms)

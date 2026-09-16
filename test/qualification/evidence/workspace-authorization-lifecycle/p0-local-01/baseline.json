@@ -1,0 +1,16 @@
+{
+  "head": "753fb63c56417de3b480705701c45602f83f9967",
+  "status": " M AGENTS.md\n?? docs/assets/control-center/2026-09-16-state-review-r2/\n?? docs/assets/control-center/2026-09-16-state-review/\n?? docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md\n?? docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md\n?? test/qualification/evidence/runtime-history/e2e-mobile-320-drawer-before.png\n?? test/qualification/evidence/runtime-history/e2e-mobile-before.png\n?? test/qualification/evidence/runtime-history/e2e-post-cutover-mobile.png\n?? test/qualification/evidence/runtime-history/ui-locale-csrf-chrome-final/\n?? test/qualification/evidence/runtime-history/ui-locale-csrf-chrome-v2/\n?? test/qualification/evidence/runtime-history/ui-locale-csrf-chrome/\n?? test/qualification/evidence/runtime-history/ui-locale-only-browser/\n?? test/qualification/evidence/runtime-history/ui-locale-only-chrome-final/\n?? test/qualification/evidence/runtime-history/ui-locale-only-chrome/\n",
+  "platform": "Darwin arm64",
+  "node": "v22.22.3",
+  "npm": "11.8.0",
+  "sha256": {
+    "AGENTS.md": "bd302648981918770e580c3c53bd911d383b1c8e154f0b050f6738cc887417b9",
+    "docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md": "19196e996e76d841d68d9cfae4a0f6f1eb7527987976767d99ce9dcf0ef0656f",
+    "docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md": "3d87cafe01eaf1a0cb8c4b67548cfaafccca326e6ef5e366a32769300f77518b",
+    "packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts": "b58008d4b25219873d1630b7964d2a0fbe681534f7ecb92e310ae1d94bf97c0d",
+    "packages/application/src/services/sandbox-execution-projection.ts": "e850fc37e4a30a4935d11891c86884465eb1cc2247b7d135d2b958fc39da4577",
+    "test/integration/sqlite-sandbox-execution-v2.test.ts": "d4f2d672b68e1a9be08f4aecbaf97781c9c2676c4efbd9f5ddaec5223acf71ae"
+  },
+  "scope": "隔离 SQLite；不访问生产数据库；平台证明为受控替身"
+}

@@ -1,0 +1,29 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts (54 tests | 1 failed) 258ms
+   × delivers a later verified sandbox result without resending an unknown operation 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > delivers a later verified sandbox result without resending an unknown operation
+AssertionError: expected 'result_unknown' to be 'succeeded' // Object.is equality
+
+Expected: "succeeded"
+Received: "result_unknown"
+
+ ❯ apps/agent-service/test/production-runtime-tools.unit.test.ts:542:55
+    540|   const resumed = new ProductionRuntimeTools({ ...f.options, completeS…
+    541|   await resumed.listAuthorized(invocation.runId, [invocation.capabilit…
+    542|   expect((await resumed.execute(invocation)).outcome).toBe("succeeded"…
+       |                                                       ^
+    543|   expect(f.request.mock.calls.filter(([request]) => request.type === "…
+    544| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 53 passed (54)
+   Start at  18:42:53
+   Duration  1.64s (transform 1.02s, setup 0ms, import 1.24s, tests 258ms, environment 0ms)

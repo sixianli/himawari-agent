@@ -8,6 +8,7 @@ import {
   validateSandboxExecutionFacts,
 } from "@himawari-agent/execution-contracts";
 import type { SandboxExecutionVerification } from "../ports/sandbox-execution.js";
+import type { SandboxReleaseReceipt } from "../ports/sandbox-execution-journal.js";
 
 export interface SandboxExecutionProjectionContext {
   readonly now: string;
@@ -15,6 +16,8 @@ export interface SandboxExecutionProjectionContext {
   /** Resolve by capability/version from the trusted catalog, not request arguments. */
   readonly operationContract: SandboxOperationContract;
   readonly verification: SandboxExecutionVerification | null;
+  /** From the trusted journal only. It proves cleanup, never current disclosure or execution rights. */
+  readonly releaseReceipt?: SandboxReleaseReceipt | null;
   readonly currentResourceSequence: number;
   readonly runState: "active" | "cancelled" | "expired" | "terminated";
   readonly currentAuthority: boolean;
@@ -86,7 +89,28 @@ export function projectSandboxExecution(
     (resource.supervision === "controlled" || resource.supervision === "released") &&
     hasEvidence(resource.evidence) &&
     now < Date.parse(resource.evidence.validUntil);
-  const released = resource.supervision === "released" && supervisionVerified;
+  const receipt = context.releaseReceipt;
+  const historical = receipt?.verification.facts;
+  const acceptedRelease =
+    receipt != null &&
+    historical?.resource.supervision === "released" &&
+    resource.supervision === "released" &&
+    context.currentResourceSequence === resource.sequence &&
+    historical.resource.sequence <= resource.sequence &&
+    Date.parse(receipt.acceptedAt) <= now &&
+    JSON.stringify(historical.environment) === JSON.stringify(facts.environment) &&
+    JSON.stringify(historical.resource.status) === JSON.stringify(resource.status) &&
+    JSON.stringify(historical.resource.metrics) === JSON.stringify(resource.metrics) &&
+    JSON.stringify(historical.resource.evidence.subject) ===
+      JSON.stringify(resource.evidence.subject) &&
+    projectSandboxExecution(plan, historical, {
+      ...context,
+      now: receipt.acceptedAt,
+      verification: receipt.verification,
+      releaseReceipt: null,
+      currentResourceSequence: historical.resource.sequence,
+    }).resourceObligationReleased;
+  const released = resource.supervision === "released" && (supervisionVerified || acceptedRelease);
   const controlled =
     resource.supervision === "controlled" &&
     supervisionVerified &&
@@ -118,8 +142,8 @@ export function projectSandboxExecution(
     conclusion === "unknown" ||
     resource.cleanup === "unknown" ||
     resource.supervision === "reconciling" ||
-    ((resource.supervision === "controlled" || resource.supervision === "released") &&
-      !supervisionVerified);
+    (resource.supervision === "controlled" && !supervisionVerified) ||
+    (resource.supervision === "released" && !released);
   const active = context.runState === "active" && now < Date.parse(plan.effectiveDeadlineAt);
   const canAct =
     active &&

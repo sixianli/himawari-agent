@@ -2,6 +2,7 @@ import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
 import {
   executionFailureMessage,
+  executionToolPhase,
   executionActivity,
   executionItems,
   executionItemWorkTime,
@@ -203,4 +204,28 @@ it("pairs observed thinking boundaries and keeps legacy observations untimed", (
   expect(thinkingSteps([record(1, 1, { name: "runtime.activity.thinking" })])).toMatchObject([
     { elapsed: null },
   ]);
+});
+
+it("uses durable admission and unresolved markers independently from Pi tool starts", () => {
+  const tool = record(2, 1, { kind: "tool", name: "write", phase: "failed" });
+  const outcome = record(2, 1, {
+    id: "outcome",
+    phase: "updated",
+    name: "runtime.tool_outcome.not_dispatched",
+  });
+  expect(executionToolPhase(tool, [outcome, tool])).toBe("chat.phase.notDispatched");
+  expect(executionToolPhase(tool, [{ ...outcome, name: "runtime.tool_outcome.unresolved" }])).toBe(
+    "chat.phase.unresolved",
+  );
+  expect(
+    executionToolPhase(tool, [{ ...outcome, sequence: 1, name: "runtime.tool_outcome.preparing" }]),
+  ).toBeUndefined();
+  expect(
+    executionActivity(
+      [outcome],
+      { ...run, status: "reconciling_external_result" },
+      "connected",
+      1000,
+    ).label,
+  ).toBe("chat.phase.unresolved");
 });

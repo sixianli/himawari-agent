@@ -2769,16 +2769,20 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       limit: 100,
     };
     const displayed = await projection.read(query);
-    expect(displayed.records).toHaveLength(4);
+    expect(displayed.records).toHaveLength(5);
     expect(displayed.records[0]?.text).toBe("Visible answer");
     expect(displayed.records[1]).toMatchObject({
       name: "runtime.activity.text",
       text: "thinking_observed",
       phase: "updated",
     });
-    expect(displayed.records[2]?.input).toContain("[REDACTED]");
-    expect(displayed.records[2]?.itemId).toBe(displayed.records[3]?.itemId);
-    expect(displayed.records[3]?.output).toBe("Allowed file content");
+    expect(displayed.records[2]).toMatchObject({
+      kind: "status",
+      name: "runtime.tool_outcome.preparing",
+    });
+    expect(displayed.records[3]?.input).toContain("[REDACTED]");
+    expect(displayed.records[3]?.itemId).toBe(displayed.records[4]?.itemId);
+    expect(displayed.records[4]?.output).toBe("Allowed file content");
     expect(JSON.stringify(displayed)).not.toContain("PRIVATE_");
     expect(await projection.read(query)).toEqual(displayed);
     await expect(projection.read({ ...query, ownerId: "other-owner" })).rejects.toThrow(
@@ -2788,7 +2792,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       ...query,
       afterSequence: displayed.records[0]?.sequence ?? 0,
     });
-    expect(after.records).toHaveLength(2);
+    expect(after.records).toHaveLength(3);
     const events = await setup.repository
       .threadRepository()
       .listGatewayEvents(ownerId, agentId, null, 100);
@@ -2916,6 +2920,30 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         }),
       ]),
     );
+    for (const [errorCode, state] of [
+      ["WORKER_ADMISSION_CONFLICT", "not_dispatched"],
+      ["WORKER_RESULT_RECONCILIATION_REQUIRED", "unresolved"],
+    ]) {
+      const outcomeRef = await capture(`outcome-${state}`, {
+        toolCallId: `call-${state}`,
+        toolName: "write",
+        isError: true,
+        result: { details: { errorCode }, content: [] },
+      });
+      await setup.trace.record({
+        ...scope,
+        eventType: "runtime.tool_result",
+        payload: { payloadRef: outcomeRef },
+      });
+      expect((await projection.read(query)).records).toContainEqual(
+        expect.objectContaining({
+          kind: "status",
+          name: `runtime.tool_outcome.${state}`,
+          phase: "updated",
+          text: "",
+        }),
+      );
+    }
     const boundaryRef = await capture("thinking-boundary", {
       thinkingBoundary: { phase: "started", contentIndex: 0 },
       role: "assistant",

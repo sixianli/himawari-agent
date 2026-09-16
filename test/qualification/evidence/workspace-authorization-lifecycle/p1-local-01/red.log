@@ -1,0 +1,50 @@
+
+> himawari-agent@0.0.0 test:integration
+> vitest run --config vitest.workspace.ts --project integration test/integration/sqlite-sandbox-execution-v2.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts (86 tests | 8 failed) 13509ms
+       × keeps release after result ACK at evidence expiry -1 ms 272ms
+       × keeps release after result ACK at evidence expiry 0 ms 178ms
+       × keeps release after result ACK at evidence expiry 11 ms 180ms
+       × keeps release after result ACK at evidence expiry 151 ms 179ms
+       × keeps release after result ACK at evidence expiry -1 ms 68ms
+       × keeps release after result ACK at evidence expiry 0 ms 68ms
+       × keeps release after result ACK at evidence expiry 11 ms 72ms
+       × keeps release after result ACK at evidence expiry 151 ms 75ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry -1 ms
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 0 ms
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 11 ms
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 151 ms
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry -1 ms
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 0 ms
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 11 ms
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 151 ms
+AssertionError: expected null to be '2026-09-04T00:00:01.000Z' // Object.is equality
+
+- Expected:
+"2026-09-04T00:00:01.000Z"
+
++ Received:
+null
+
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:180:40
+    178|       expect(call(f, "dispatchIntent", request).applied).toBe(true);
+    179|       const afterDispatch = readOccupancy();
+    180|       expect(afterDispatch.releasedAt).toBe(T1);
+       |                                        ^
+    181|       const ackAt = new Date(Date.parse(expiresAt) + delay).toISOStrin…
+    182|       call(f, "acknowledgeIntent", { identity: request.identity, inten…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 78 passed (86)
+   Start at  18:00:20
+   Duration  15.41s (transform 1.21s, setup 0ms, import 1.78s, tests 13.51s, environment 0ms)

@@ -4,7 +4,6 @@ import type {
   SandboxExecutionAdmissionRecord,
   SandboxExecutionJournalPort,
   SandboxExecutionPreparationPort,
-  SandboxExecutionProjectionContext,
   SandboxExecutionRecord,
   SandboxWorkspaceClaim,
 } from "@himawari-agent/application";
@@ -22,6 +21,9 @@ import {
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { capabilityInvocationOutputOperationKey } from "./sqlite-run-payload-artifact-operations.ts";
+
+import { SqliteSandboxRecoveryOperations } from "./sqlite-sandbox-recovery-operations.ts";
+import { SqliteSandboxReleaseOperations } from "./sqlite-sandbox-release-operations.ts";
 
 type Input<K extends keyof SandboxExecutionJournalPort> = Parameters<
   SandboxExecutionJournalPort[K]
@@ -58,12 +60,14 @@ export class SqliteSandboxExecutionOperations {
   private readonly db: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly authority: AuthorityDependencies;
+  private readonly releases: SqliteSandboxReleaseOperations;
   constructor(
     db: Database.Database,
     fail: SqliteApplicationFailure,
     authority: AuthorityDependencies,
   ) {
     this.db = db;
+    this.releases = new SqliteSandboxReleaseOperations(db);
     this.fail = fail;
     this.authority = authority;
   }
@@ -149,7 +153,7 @@ export class SqliteSandboxExecutionOperations {
       return (
         this.db
           .prepare(`SELECT plan_json AS plan FROM sandbox_execution_records r WHERE owner_id=? AND agent_id=? AND job_id>? AND preparation_state!='reserved' AND
-        (json_extract(facts_json,'$.resource.supervision') != 'released' OR json_extract(facts_json,'$.effect.kind')='unknown' OR json_extract(facts_json,'$.result.kind') IS NULL OR json_extract(facts_json,'$.result.kind')='unknown' OR EXISTS(SELECT 1 FROM sandbox_execution_intents i WHERE i.job_id=r.job_id AND i.dispatched_at IS NOT NULL AND i.acknowledged_at IS NULL)) ORDER BY job_id LIMIT ?`)
+        (EXISTS(SELECT 1 FROM sandbox_workspace_occupancy o WHERE o.job_id=r.job_id AND o.released_at IS NULL) OR EXISTS(SELECT 1 FROM sandbox_workspace_barriers b WHERE b.job_id=r.job_id AND b.resolved_at IS NULL) OR json_extract(facts_json,'$.resource.supervision') != 'released' OR json_extract(facts_json,'$.effect.kind')='unknown' OR json_extract(facts_json,'$.result.kind') IS NULL OR json_extract(facts_json,'$.result.kind')='unknown' OR EXISTS(SELECT 1 FROM sandbox_execution_intents i WHERE i.job_id=r.job_id AND i.dispatched_at IS NOT NULL AND i.acknowledged_at IS NULL)) ORDER BY job_id LIMIT ?`)
           .all(owner, agent, afterJobId ?? "", limit) as { plan: string }[]
       ).map((r) =>
         this.read(sandboxExecutionPlanV2Schema.parse(JSON.parse(r.plan)).identity, owner, agent),
@@ -182,6 +186,12 @@ export class SqliteSandboxExecutionOperations {
           );
         const current = this.read(identity, owner, agent);
         if (!current) return this.fail("PORT_NOT_FOUND", "Sandbox execution missing");
+        if (["beginRecovery", "finishRecovery", "interruptRecovery"].includes(operation))
+          return new SqliteSandboxRecoveryOperations(this.db, this.fail).mutate(
+            operation,
+            raw as Input<"beginRecovery"> & Input<"finishRecovery">,
+            current,
+          );
         if (operation === "start") {
           const start = raw as Input<"start">;
           this.authority.live(current.plan, start.authority, now);
@@ -229,7 +239,7 @@ export class SqliteSandboxExecutionOperations {
           this.db
             .prepare("UPDATE sandbox_execution_intents SET acknowledged_at=? WHERE intent_id=?")
             .run(now, request.intentId);
-          this.releaseOccupancy(current, request.context, now);
+          this.releases.acknowledge(identity.jobId, request.intentId, now);
           return undefined;
         }
         if (operation === "observeIntent") {
@@ -323,8 +333,8 @@ export class SqliteSandboxExecutionOperations {
         .get(claim.hostId, exceptJob);
       if (legacy) this.fail("PORT_CONFLICT", "Legacy execution has unresolved host occupancy");
       const occupied = this.db
-        .prepare(`SELECT o.claim_json AS claim,r.facts_json AS facts, EXISTS(SELECT 1 FROM sandbox_execution_intents i WHERE i.job_id=r.job_id AND i.dispatched_at IS NOT NULL AND i.acknowledged_at IS NULL) AS uncertain FROM sandbox_workspace_occupancy o JOIN sandbox_execution_records r ON r.job_id=o.job_id
-        WHERE o.host_id=? AND o.released_at IS NULL AND o.job_id != ?`)
+        .prepare(`SELECT o.claim_json AS claim,r.facts_json AS facts, EXISTS(SELECT 1 FROM sandbox_execution_intents i WHERE i.job_id=r.job_id AND i.kind='continue' AND i.dispatched_at IS NOT NULL AND i.acknowledged_at IS NULL) OR EXISTS(SELECT 1 FROM sandbox_workspace_barriers b WHERE b.job_id=r.job_id AND b.resolved_at IS NULL) AS uncertain FROM sandbox_workspace_occupancy o JOIN sandbox_execution_records r ON r.job_id=o.job_id
+        WHERE o.host_id=? AND (o.released_at IS NULL OR EXISTS(SELECT 1 FROM sandbox_workspace_barriers b WHERE b.job_id=o.job_id AND b.resolved_at IS NULL)) AND o.job_id != ?`)
         .all(claim.hostId, exceptJob) as { claim: string; facts: string; uncertain: number }[];
       for (const row of occupied) {
         const existing = JSON.parse(row.claim) as SandboxWorkspaceClaim;
@@ -379,12 +389,22 @@ export class SqliteSandboxExecutionOperations {
         )
         .all(identity.jobId) as { claim: string }[]
     ).map((r) => JSON.parse(r.claim) as SandboxWorkspaceClaim);
+    const releaseReceipt = this.releases.read(identity.jobId);
     return {
       plan,
       facts: sandboxExecutionFactsSchema.parse(JSON.parse(row.facts)),
       workspaces,
       startedAt: row.startedAt,
       operationRevision: row.operationRevision,
+      ...(releaseReceipt ? { releaseReceipt } : {}),
+      ...new SqliteSandboxRecoveryOperations(this.db, this.fail).read(identity.jobId),
+      workspaceBlocked: Boolean(
+        this.db
+          .prepare(
+            "SELECT 1 FROM sandbox_workspace_occupancy WHERE job_id=? AND released_at IS NULL UNION ALL SELECT 1 FROM sandbox_workspace_barriers WHERE job_id=? AND resolved_at IS NULL LIMIT 1",
+          )
+          .get(identity.jobId, identity.jobId),
+      ),
     };
   }
   private readAdmission(
@@ -572,6 +592,7 @@ export class SqliteSandboxExecutionOperations {
         workspaces: admission.workspaces,
         startedAt: input.now,
         operationRevision: 0,
+        workspaceBlocked: admission.workspaces.length > 0,
       },
       applied: true,
     };
@@ -659,7 +680,14 @@ export class SqliteSandboxExecutionOperations {
       )
       .run(plan.identity.jobId, JSON.stringify(facts));
     return {
-      record: { plan, facts, workspaces, startedAt: null, operationRevision: 0 },
+      record: {
+        plan,
+        facts,
+        workspaces,
+        startedAt: null,
+        operationRevision: 0,
+        workspaceBlocked: workspaces.length > 0,
+      },
       applied: true,
       receipt: consumed.receipt,
     };
@@ -744,13 +772,16 @@ export class SqliteSandboxExecutionOperations {
     }
     const projection = projectSandboxExecution(current.plan, facts, {
       ...input.context,
+      releaseReceipt: operationOnly ? (current.releaseReceipt ?? null) : null,
       now: input.now,
       environment: current.facts.environment,
       operationContract: current.plan.operationContract,
       currentResourceSequence: facts.resource.sequence,
     });
     if (
-      (facts.resource.supervision === "released" || facts.resource.supervision === "controlled") &&
+      (facts.resource.supervision === "controlled" ||
+        (facts.resource.supervision === "released" &&
+          !(operationOnly && current.releaseReceipt))) &&
       !input.context.verification
     )
       return this.fail("PORT_NOT_AUTHORITATIVE", "Verified supervision evidence required");
@@ -798,8 +829,13 @@ export class SqliteSandboxExecutionOperations {
         input.expectedSequence,
       );
     if (changed.changes !== 1) return this.fail("PORT_CONFLICT", "Observation CAS failed");
-    this.releaseOccupancy({ ...current, facts, operationRevision }, input.context, input.now);
-    return { record: { ...current, facts, operationRevision }, applied: true };
+    const updated = { ...current, facts, operationRevision };
+    if (facts.resource.supervision === "released" && (!operationOnly || !current.releaseReceipt)) {
+      if (!input.context.verification)
+        return this.fail("PORT_NOT_AUTHORITATIVE", "Release proof missing");
+      this.releases.accept(updated, input.context.verification, input.authority, input.now);
+    }
+    return { record: this.read(current.plan.identity, owner, agent), applied: true };
   }
   private hasPendingIntent(jobId: string): boolean {
     return Boolean(
@@ -809,33 +845,6 @@ export class SqliteSandboxExecutionOperations {
         )
         .get(jobId),
     );
-  }
-  private releaseOccupancy(
-    record: SandboxExecutionRecord,
-    context: SandboxExecutionProjectionContext,
-    now: string,
-  ): void {
-    const projection = projectSandboxExecution(record.plan, record.facts, {
-      ...context,
-      now,
-      environment: record.facts.environment,
-      operationContract: record.plan.operationContract,
-      currentResourceSequence: record.facts.resource.sequence,
-    });
-    if (
-      projection.resourceObligationReleased &&
-      !projection.needsReconciliation &&
-      !this.hasPendingIntent(record.plan.identity.jobId)
-    )
-      this.db
-        .prepare(
-          "UPDATE sandbox_workspace_occupancy SET released_at=? WHERE job_id=? AND released_at IS NULL",
-        )
-        .run(now, record.plan.identity.jobId);
-    else
-      this.db
-        .prepare("UPDATE sandbox_workspace_occupancy SET released_at=NULL WHERE job_id=?")
-        .run(record.plan.identity.jobId);
   }
   private intent(
     operation: string,
@@ -870,11 +879,13 @@ export class SqliteSandboxExecutionOperations {
     if (old && old.operation_revision !== current.operationRevision)
       return this.fail("PORT_CONFLICT", "Continuation operation revision changed");
     this.authority.live(current.plan, input.authority, input.now);
-    this.assertAvailable(current.workspaces, current.plan.identity.jobId, input.now);
+    if (input.kind === "continue")
+      this.assertAvailable(current.workspaces, current.plan.identity.jobId, input.now);
     if (this.hasPendingIntent(current.plan.identity.jobId))
       return this.fail("PORT_CONFLICT", "Dispatched operation remains uncertain");
     const projection = projectSandboxExecution(current.plan, current.facts, {
       ...input.context,
+      releaseReceipt: current.releaseReceipt ?? null,
       now: input.now,
       environment: current.facts.environment,
       operationContract: current.plan.operationContract,
@@ -907,10 +918,15 @@ export class SqliteSandboxExecutionOperations {
         "UPDATE sandbox_execution_intents SET dispatched_at=? WHERE intent_id=? AND dispatched_at IS NULL",
       )
       .run(input.now, input.intentId);
-    // A missing transport acknowledgement must remain visible across a crash.
-    this.db
-      .prepare("UPDATE sandbox_workspace_occupancy SET released_at=NULL WHERE job_id=?")
-      .run(current.plan.identity.jobId);
+    // Result delivery cannot launch a writer. Unacknowledged control has separate protection.
+    if (input.kind === "continue")
+      this.releases.protect(
+        current.plan.identity.jobId,
+        `intent:${input.intentId}`,
+        "control_unacknowledged",
+        "SANDBOX_CONTROL_ACK_PENDING",
+        input.now,
+      );
     return { applied: true };
   }
 }

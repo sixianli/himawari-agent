@@ -12,6 +12,32 @@ import type {
   FrozenCapabilityInvocationReceipt,
 } from "./capability-invocations.js";
 import type { HostFileIdentity } from "./host-files.js";
+import type { SandboxExecutionVerification } from "./sandbox-execution.js";
+
+/** Trusted journal receipt: proof was valid when accepted, not a renewable execution grant. */
+export interface SandboxReleaseReceipt {
+  readonly acceptedAt: string;
+  readonly verification: SandboxExecutionVerification;
+}
+
+/** Each request performs one bounded inspect/stop; unresolved never means a background retry. */
+export interface SandboxRecoveryState {
+  readonly revision: number;
+  readonly owner: string;
+  readonly attempts: number;
+  readonly status: "running" | "resolved" | "unresolved";
+  readonly action: "inspect" | "stop";
+  readonly startedAt: string;
+  readonly deadlineAt: string;
+  readonly finishedAt: string | null;
+  readonly reasonCode: string;
+}
+export interface SandboxRecoveryInput {
+  readonly identity: SandboxJobIdentity;
+  readonly authority: CapabilityInvocationAuthority;
+  readonly now: string;
+  readonly expectedSequence: number;
+}
 
 /** Host-verified ancestor chain, filesystem root through the authorized directory.
  * Uses the same device/inode identities as constrained file access. No raw path prefix locks.
@@ -30,6 +56,10 @@ export interface SandboxExecutionRecord {
   readonly workspaces: readonly SandboxWorkspaceClaim[];
   readonly startedAt: string | null;
   readonly operationRevision: number;
+  /** Absent for legacy records until a fresh host verification is accepted. */
+  readonly releaseReceipt?: SandboxReleaseReceipt;
+  readonly recovery?: SandboxRecoveryState;
+  readonly workspaceBlocked?: boolean;
 }
 export interface SandboxExecutionMutation {
   readonly record: SandboxExecutionRecord;
@@ -47,6 +77,20 @@ export interface SandboxExecutionJournalPort {
     readonly afterJobId: string | null;
     readonly limit: number;
   }): Promise<readonly SandboxExecutionRecord[]>;
+  beginRecovery(
+    input: SandboxRecoveryInput & {
+      readonly action: "inspect" | "stop";
+      readonly deadlineAt: string;
+    },
+  ): Promise<SandboxRecoveryState>;
+  finishRecovery(
+    input: SandboxRecoveryInput & {
+      readonly expectedRecoveryRevision: number;
+      readonly reasonCode: string;
+    },
+  ): Promise<SandboxRecoveryState>;
+  /** Startup records a finite unresolved state without launching or inspecting any process. */
+  interruptRecovery(input: SandboxRecoveryInput): Promise<void>;
   /** One starting CAS. Returning applied:false never grants permission to launch. */
   start(input: {
     readonly identity: SandboxJobIdentity;

@@ -652,6 +652,9 @@
   }
   .step-status {
     margin-left: auto;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    min-width: 0;
   }
   .step-detail {
     padding-left: 0;

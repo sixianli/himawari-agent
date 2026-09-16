@@ -259,6 +259,48 @@ function released(f: ReturnType<typeof fixture>): SandboxExecutionFacts {
   });
 }
 
+describe("accepted resource release", () => {
+  it("survives expiry without granting result disclosure or execution", () => {
+    const f = fixture();
+    const facts = released(f);
+    const original = context(f.plan, facts);
+    const releaseReceipt = { acceptedAt: at, verification: original.verification };
+    expect(
+      projectSandboxExecution(f.plan, facts, {
+        ...original,
+        now: deadline,
+        verification: null,
+        releaseReceipt,
+      }),
+    ).toMatchObject({
+      resourceObligationReleased: true,
+      resourcePending: false,
+      showResult: false,
+      deliverToolResult: false,
+      dispatchNewOperation: false,
+    });
+    expect(
+      projectSandboxExecution(f.plan, facts, {
+        ...original,
+        now: deadline,
+        verification: null,
+        releaseReceipt: { ...releaseReceipt, acceptedAt: deadline },
+      }).resourceObligationReleased,
+    ).toBe(false);
+    expect(
+      projectSandboxExecution(f.plan, facts, {
+        ...original,
+        now: deadline,
+        verification: null,
+        releaseReceipt: {
+          ...releaseReceipt,
+          verification: { ...original.verification, identity: { ...identity, jobId: "other" } },
+        },
+      }).resourceObligationReleased,
+    ).toBe(false);
+  });
+});
+
 describe("R1 six operation scenarios and independent completion gates", () => {
   it.each([
     ["read", "succeeded"],

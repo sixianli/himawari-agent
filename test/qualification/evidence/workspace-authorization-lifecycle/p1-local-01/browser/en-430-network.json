@@ -1,0 +1,433 @@
+{
+  "errors": [],
+  "network": [
+    {
+      "start": "http://127.0.0.1:52658/threads/thread-main",
+      "type": "document"
+    },
+    {
+      "start": "http://127.0.0.1:52658/assets/index-Dw-aViQk.js",
+      "type": "script"
+    },
+    {
+      "start": "http://127.0.0.1:52658/assets/index-CsVKJtvP.css",
+      "type": "stylesheet"
+    },
+    {
+      "start": "http://127.0.0.1:52658/assets/logo-symbol-light-DDULTiXD.png",
+      "type": "image"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/control-center/v1/config",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/identity/v1/method",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/assets/en-Bgxyjmd2.js",
+      "type": "script"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/events",
+      "type": "eventsource"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/events",
+      "type": "eventsource"
+    },
+    {
+      "url": "http://127.0.0.1:52658/api/gateway/thread/v3/events",
+      "status": 200
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/payload/v1/text/read",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/payload/v1/text/read",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/payload/v1/text/read",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/payload/v1/text/read",
+      "type": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:52658/api/gateway/v2/events",
+      "status": 200
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/payload/v1/text/read",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:52658/api/gateway/v2/events",
+      "failure": {
+        "errorText": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "url": "http://127.0.0.1:52658/api/gateway/thread/v3/events",
+      "failure": {
+        "errorText": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/events",
+      "type": "eventsource"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/events",
+      "type": "eventsource"
+    },
+    {
+      "url": "http://127.0.0.1:52658/api/gateway/thread/v3/events",
+      "status": 200
+    },
+    {
+      "start": "http://127.0.0.1:52658/threads/thread-main",
+      "type": "document"
+    },
+    {
+      "start": "http://127.0.0.1:52658/assets/index-Dw-aViQk.js",
+      "type": "script"
+    },
+    {
+      "start": "http://127.0.0.1:52658/assets/index-CsVKJtvP.css",
+      "type": "stylesheet"
+    },
+    {
+      "start": "http://127.0.0.1:52658/assets/logo-symbol-light-DDULTiXD.png",
+      "type": "image"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/control-center/v1/config",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/identity/v1/method",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/assets/en-Bgxyjmd2.js",
+      "type": "script"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/events",
+      "type": "eventsource"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/events",
+      "type": "eventsource"
+    },
+    {
+      "url": "http://127.0.0.1:52658/api/gateway/thread/v3/events",
+      "status": 200
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/payload/v1/text/read",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/payload/v1/text/read",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/payload/v1/text/read",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/payload/v1/text/read",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:52658/api/gateway/v2/events",
+      "status": 200
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/thread/v3/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    },
+    {
+      "start": "http://127.0.0.1:52658/api/gateway/v2/queries",
+      "type": "fetch"
+    }
+  ]
+}

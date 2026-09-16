@@ -8,6 +8,7 @@ import {
   executionActivity,
   executionFailureMessage,
   executionItems,
+  executionToolPhase,
   recordedInterval,
   thinkingSteps,
   executionTime,
@@ -79,7 +80,9 @@ export function ExecutionProcess({
     <>
       {!isTerminalRun(run) ? (
         <div className="turn-activity">
-          <span className={`run-indicator run-${run.status}`} />
+          {run.status !== "reconciling_external_result" ? (
+            <span className={`run-indicator run-${run.status}`} />
+          ) : null}
           <output>
             <strong>{message(activity.label, { tool: activity.tool })}</strong>
           </output>
@@ -129,13 +132,14 @@ export function ExecutionProcess({
             if (!item) return null;
             const incomplete = ["started", "updated"].includes(item.phase);
             const phase: MessageId =
-              isTerminalRun(run) && incomplete
+              executionToolPhase(item, records) ??
+              (isTerminalRun(run) && incomplete
                 ? run.status === "cancelled" && item.kind === "message"
                   ? "chat.phase.stopped"
                   : "chat.recordUnavailable"
                 : item.kind === "tool" && item.phase === "updated"
                   ? "chat.callRequested"
-                  : (`chat.phase.${item.phase}` as MessageId);
+                  : (`chat.phase.${item.phase}` as MessageId));
             const elapsed = recordedInterval(records, item.itemId, "runtime.tool_execution");
             const hint = item.kind === "tool" ? item.text || preview(item.input) : item.text;
             return (

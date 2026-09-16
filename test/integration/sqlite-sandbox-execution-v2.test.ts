@@ -160,6 +160,85 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
   useSqliteContractExecution(execution);
 
   describe("R2 SQLite durable execution resources", () => {
+    it.each([-1, 0, 11, 151])(
+      "keeps release after result ACK at evidence expiry %i ms",
+      async (delay) => {
+        const f = await openSandboxJournal();
+        try {
+          let record = start(f);
+          record = append(f, record, result(f, record), true);
+          record = append(f, record, resource(record, "stopping"));
+          const facts = resource(record, "released");
+          if (facts.resource.supervision !== "released") throw new Error("release required");
+          const expiresAt = new Date(Date.parse(T1) + 1000).toISOString();
+          const released = {
+            ...facts,
+            resource: {
+              ...facts.resource,
+              evidence: { ...facts.resource.evidence, validUntil: expiresAt },
+            },
+          };
+          record = append(f, record, released);
+          const readOccupancy = () =>
+            f.database
+              .prepare(
+                "SELECT released_at AS releasedAt FROM sandbox_workspace_occupancy WHERE job_id=?",
+              )
+              .get(record.plan.identity.jobId) as { releasedAt: string | null };
+          expect(readOccupancy().releasedAt).toBe(T1);
+          const request = {
+            identity: record.plan.identity,
+            intentId: "p0-delivery",
+            kind: "tool_result" as const,
+            expectedSequence: record.facts.resource.sequence,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            context: context(record, record.facts),
+          };
+          call(f, "prepareIntent", request);
+          expect(call(f, "dispatchIntent", request).applied).toBe(true);
+          const afterDispatch = readOccupancy();
+          expect(afterDispatch.releasedAt).toBe(T1);
+          const ackAt = new Date(Date.parse(expiresAt) + delay).toISOString();
+          call(f, "acknowledgeIntent", {
+            identity: request.identity,
+            intentId: request.intentId,
+            authority: SERVICE_AUTHORITY,
+            now: ackAt,
+            context: request.context,
+          });
+          call(f, "acknowledgeIntent", {
+            identity: request.identity,
+            intentId: request.intentId,
+            authority: SERVICE_AUTHORITY,
+            now: ackAt,
+            context: request.context,
+          });
+          const current = call(f, "read", request.identity) as SandboxExecutionRecord;
+          expect(current.facts.resource.supervision).toBe("released");
+          expect(current.facts.resource.cleanup).toBe("confirmed");
+          expect(
+            f.database
+              .prepare(
+                "SELECT count(*) AS count FROM sandbox_execution_intents WHERE acknowledged_at IS NULL",
+              )
+              .get(),
+          ).toEqual({ count: 0 });
+          const pending = call(f, "listPending", { afterJobId: null, limit: 10 });
+          let conflict = "";
+          try {
+            call(f, "admit", admission(f, "-next"));
+          } catch (error) {
+            conflict = String(error);
+          }
+          expect(pending).toEqual([]);
+          expect(readOccupancy().releasedAt).toBe(T1);
+          expect(conflict).toBe("");
+        } finally {
+          await f.close();
+        }
+      },
+    );
     it("atomically consumes once, rejects changed replay and persists a single starting winner", async () => {
       const f = await openSandboxJournal();
       try {
@@ -307,7 +386,8 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         let record = start(f);
         record = append(f, record, resource(record, "stopping"));
         record = append(f, record, resource(record, "released"));
-        expect(() => call(f, "admit", admission(f, "-next"))).toThrow("occupied");
+        // Cleanup is independent of whether the read result has arrived.
+        expect(record.releaseReceipt?.acceptedAt).toBe(T1);
         const sequence = record.facts.resource.sequence;
         const previous = record;
         const observed = result(f, record);
@@ -321,7 +401,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         await f.close();
       }
     });
-    it("restores occupancy if late effect evidence becomes uncertain after release", async () => {
+    it("does not turn generic effect uncertainty into a new workspace lock", async () => {
       const f = await openSandboxJournal();
       try {
         let record = start(f);
@@ -334,8 +414,20 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           { ...record.facts, effect: { kind: "unknown", reasonCode: "late_evidence" } },
           true,
         );
+        expect(
+          f.database
+            .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+            .get(record.plan.identity.jobId),
+        ).toEqual({ released_at: T1 });
+        expect(
+          f.database
+            .prepare(
+              "SELECT kind, reason_code FROM sandbox_workspace_barriers WHERE job_id=? AND resolved_at IS NULL",
+            )
+            .all(record.plan.identity.jobId),
+        ).toEqual([]);
         expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toHaveLength(1);
-        expect(() => call(f, "admit", admission(f, "-next"))).toThrow("occupied");
+        expect(call(f, "admit", admission(f, "-next")).applied).toBe(true);
       } finally {
         await f.close();
       }
@@ -813,7 +905,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           path.join(f.resource.stateRoot, "legacy-snapshot.sqlite"),
         );
         expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([
-          28, 29, 30, 31, 32,
+          28, 29, 30, 31, 32, 33,
         ]);
         expect(readMigrationLedger(old).slice(0, 27)).toEqual(ledger);
         expect(old.prepare("SELECT * FROM sandbox_jobs").all()).toEqual(before);
@@ -946,7 +1038,13 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     }
   });
 
-  for (const scenario of ["verified", "untrusted", "timeout", "concurrent"] as const) {
+  for (const scenario of [
+    "verified",
+    "untrusted",
+    "timeout",
+    "evidence-timeout",
+    "concurrent",
+  ] as const) {
     it(`reconciliation ${scenario} preserves operation facts and only releases verified risk`, async () => {
       const f = await openSandboxJournal();
       try {
@@ -959,11 +1057,15 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           journal: {
             read: async (identity) => call(f, "read", identity),
             append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
           },
           now: () => T1,
-          timeoutMs: scenario === "timeout" ? 10 : 1000,
+          timeoutMs: scenario.endsWith("timeout") ? 10 : 1000,
           evidence: {
             verify: async ({ facts }) => {
+              if (scenario === "evidence-timeout")
+                await new Promise((resolve) => setTimeout(resolve, 30));
               const proof = context(record, facts).verification;
               if (!proof) throw new Error("missing fixture proof");
               return scenario === "untrusted" ? { ...proof, evidence: [] } : proof;
@@ -1002,7 +1104,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         expect(final?.facts.resource.supervision).toBe(released ? "released" : "lost");
         if (released) expect(call(f, "admit", admission(f, "-after-reconcile")).applied).toBe(true);
         else expect(() => call(f, "admit", admission(f, "-after-reconcile"))).toThrow("occupied");
-        if (scenario === "timeout") {
+        if (scenario.endsWith("timeout")) {
           await new Promise((resolve) => setTimeout(resolve, 40));
           expect(call(f, "read", record.plan.identity)?.facts.resource).toEqual(
             final?.facts.resource,
@@ -1014,84 +1116,216 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     });
   }
 
-  // Actual SQLite intents and output bindings; platform verification is synthetic.
-  it.each(["deliver", "cancel-before-dispatch", "receipt-fails", "expired-proof"] as const)(
-    "Agent foreground result handoff: %s",
+  it.each(["verified", "expired", "unavailable"] as const)(
+    "recovers legacy released occupancy with %s evidence",
     async (scenario) => {
       const f = await openSandboxJournal();
       try {
         let record = start(f);
         record = append(f, record, result(f, record), true);
-        record = append(f, record, resource(record, "lost"));
-        record = append(f, record, resource(record, "reconciling"));
+        record = append(f, record, resource(record, "stopping"));
         record = append(f, record, resource(record, "released"));
-        const identity = record.plan.identity;
-        const journal = Object.fromEntries(
-          [
-            "read",
-            "append",
-            "prepareIntent",
-            "dispatchIntent",
-            "acknowledgeIntent",
-            "observeIntent",
-          ].map((name) => [
-            name,
-            async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
-          ]),
-        ) as unknown as SandboxExecutionJournalPort;
-        const complete = createProductionSandboxToolResult({
-          journal,
-          preparations: {
-            readAdmissionByInvocation: async () => ({
-              phase: "bound",
-              record: call(f, "read", identity) as SandboxExecutionRecord,
-            }),
-          },
-          authority: () => SERVICE_AUTHORITY,
-          now: () => (scenario === "expired-proof" ? T2 : T1),
-          verifyFresh: async (current) => {
-            const facts = resource(current, "released");
-            const proof = context(current, facts).verification;
-            if (!proof) throw new Error("missing synthetic evidence");
-            return proof;
-          },
-        });
-        let checks = 0;
-        const receipt = vi.fn(async () => {
-          if (scenario === "receipt-fails") throw new Error("receipt unavailable");
-        });
-        const delivery = {
-          assertDisclosure: async () => {
-            if (++checks === 3 && scenario === "cancel-before-dispatch")
-              f.database
-                .prepare("UPDATE runs SET status='cancelled' WHERE id=?")
-                .run(identity.runId);
-          },
-          saveReceipt: receipt,
+        // Construct the schema-32 failure image inside this isolated fixture.
+        const trigger = f.database
+          .prepare("SELECT sql FROM sqlite_master WHERE name='sandbox_occupancy_release_monotonic'")
+          .pluck()
+          .get() as string;
+        f.database.exec("DROP TRIGGER sandbox_occupancy_release_monotonic");
+        f.database
+          .prepare("DELETE FROM sandbox_release_receipts WHERE job_id=?")
+          .run(record.plan.identity.jobId);
+        f.database
+          .prepare("UPDATE sandbox_workspace_occupancy SET released_at=NULL WHERE job_id=?")
+          .run(record.plan.identity.jobId);
+        f.database.exec(trigger);
+        expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toHaveLength(1);
+        const journal = {
+          read: async (identity: SandboxExecutionRecord["plan"]["identity"]) =>
+            call(f, "read", identity),
+          append: async (input: Parameters<SandboxExecutionJournalPort["append"]>[0]) =>
+            call(f, "append", input),
+          beginRecovery: async (
+            input: Parameters<SandboxExecutionJournalPort["beginRecovery"]>[0],
+          ) => call(f, "beginRecovery", input),
+          finishRecovery: async (
+            input: Parameters<SandboxExecutionJournalPort["finishRecovery"]>[0],
+          ) => call(f, "finishRecovery", input),
         };
-        const request = { runId: identity.runId, invocationId: identity.invocationId };
-        if (scenario === "deliver") {
-          expect(await complete(request, delivery)).toMatchObject({
-            outcome: "succeeded",
-            outputRef: "output",
-          });
-          expect(receipt).toHaveBeenCalledTimes(1);
-          expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toEqual([]);
-          await expect(complete(request, delivery)).rejects.toThrow();
-          expect(receipt).toHaveBeenCalledTimes(1);
-        } else if (scenario === "expired-proof") {
-          expect(await complete(request, delivery)).toBeUndefined();
-          expect(receipt).not.toHaveBeenCalled();
+        const backend = {
+          inspect: vi.fn(
+            async (current: SandboxExecutionRecord) => resource(current, "released").resource,
+          ),
+          stop: vi.fn(async () => {
+            throw new Error("must not stop released resource");
+          }),
+        };
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal,
+          now: () => T1,
+          timeoutMs: 1000,
+          evidence: {
+            verify: async ({ facts }) => {
+              const proof = context(record, facts).verification;
+              if (!proof) throw new Error("fixture proof");
+              return scenario === "expired" ? { ...proof, validUntil: T1 } : proof;
+            },
+          },
+          ...(scenario === "unavailable" ? {} : { backend }),
+        });
+        await service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        const final = call(f, "read", record.plan.identity);
+        expect(final?.facts.resource.supervision).toBe("released");
+        expect(final?.facts.result).toEqual(record.facts.result);
+        expect(final?.recovery).toMatchObject({
+          status: scenario === "verified" ? "resolved" : "unresolved",
+          attempts: 1,
+          owner: SERVICE_AUTHORITY.agentServiceBootId,
+          finishedAt: T1,
+        });
+        expect(backend.stop).not.toHaveBeenCalled();
+        if (scenario === "verified") {
+          expect(final?.releaseReceipt?.acceptedAt).toBe(T1);
+          expect(call(f, "admit", admission(f, "-recovered")).applied).toBe(true);
+          expect(() =>
+            f.database
+              .prepare("UPDATE sandbox_workspace_occupancy SET released_at=NULL WHERE job_id=?")
+              .run(record.plan.identity.jobId),
+          ).toThrow("cannot be revoked");
+          expect(() =>
+            f.database
+              .prepare("UPDATE sandbox_release_receipts SET accepted_at=? WHERE job_id=?")
+              .run(T2, record.plan.identity.jobId),
+          ).toThrow("immutable");
         } else {
-          await expect(complete(request, delivery)).rejects.toThrow();
-          if (scenario === "cancel-before-dispatch") expect(receipt).not.toHaveBeenCalled();
-          else expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toHaveLength(1);
+          expect(final?.releaseReceipt).toBeUndefined();
+          expect(() => call(f, "admit", admission(f, "-protected"))).toThrow("occupied");
         }
       } finally {
         await f.close();
       }
     },
   );
+
+  // Actual SQLite intents and output bindings; platform verification is synthetic.
+  it.each([
+    "deliver",
+    "retained-release",
+    "cancel-before-dispatch",
+    "receipt-fails",
+    "expired-proof",
+  ] as const)("Agent foreground result handoff: %s", async (scenario) => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, result(f, record), true);
+      record = append(f, record, resource(record, "lost"));
+      record = append(f, record, resource(record, "reconciling"));
+      const releasedFacts = resource(record, "released");
+      if (releasedFacts.resource.supervision !== "released") throw new Error("fixture");
+      record = append(f, record, {
+        ...releasedFacts,
+        resource: {
+          ...releasedFacts.resource,
+          evidence: {
+            ...releasedFacts.resource.evidence,
+            validUntil: new Date(Date.parse(T1) + 1).toISOString(),
+          },
+        },
+      });
+      const identity = record.plan.identity;
+      const journal = Object.fromEntries(
+        [
+          "read",
+          "append",
+          "prepareIntent",
+          "dispatchIntent",
+          "acknowledgeIntent",
+          "observeIntent",
+        ].map((name) => [
+          name,
+          async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
+        ]),
+      ) as unknown as SandboxExecutionJournalPort;
+      const complete = createProductionSandboxToolResult({
+        journal,
+        preparations: {
+          readAdmissionByInvocation: async () => ({
+            phase: "bound",
+            record: call(f, "read", identity) as SandboxExecutionRecord,
+          }),
+        },
+        authority: () => SERVICE_AUTHORITY,
+        now: () =>
+          scenario === "expired-proof"
+            ? T2
+            : scenario === "retained-release"
+              ? new Date(Date.parse(T1) + 151).toISOString()
+              : T1,
+        verifyFresh: async (current) => {
+          const facts = current.releaseReceipt ? current.facts : resource(current, "released");
+          const proof = context(current, facts).verification;
+          if (!proof) throw new Error("missing synthetic evidence");
+          return proof;
+        },
+      });
+      let checks = 0;
+      const receipt = vi.fn(async () => {
+        if (scenario === "receipt-fails" && receipt.mock.calls.length === 1)
+          throw new Error("receipt unavailable");
+      });
+      const delivery = {
+        assertDisclosure: async () => {
+          if (++checks === 3 && scenario === "cancel-before-dispatch")
+            f.database.prepare("UPDATE runs SET status='cancelled' WHERE id=?").run(identity.runId);
+        },
+        saveReceipt: receipt,
+      };
+      const request = { runId: identity.runId, invocationId: identity.invocationId };
+      if (scenario === "deliver" || scenario === "retained-release") {
+        expect(await complete(request, delivery)).toMatchObject({
+          outcome: "succeeded",
+          outputRef: "output",
+        });
+        expect(receipt).toHaveBeenCalledTimes(1);
+        expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toEqual([]);
+        if (scenario === "retained-release") {
+          expect(await complete(request, delivery)).toMatchObject({
+            outcome: "succeeded",
+            outputRef: "output",
+          });
+          expect(call(f, "read", identity)?.facts.resource.sequence).toBe(
+            record.facts.resource.sequence,
+          );
+        } else expect(await complete(request, delivery)).toMatchObject({ outcome: "succeeded" });
+        expect(
+          f.database
+            .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+            .get(identity.jobId),
+        ).toEqual({ released_at: T1 });
+        expect(receipt).toHaveBeenCalledTimes(2);
+      } else if (scenario === "expired-proof") {
+        expect(await complete(request, delivery)).toBeUndefined();
+        expect(receipt).not.toHaveBeenCalled();
+      } else {
+        await expect(complete(request, delivery)).rejects.toThrow();
+        if (scenario === "cancel-before-dispatch") expect(receipt).not.toHaveBeenCalled();
+        else expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toHaveLength(1);
+        if (scenario === "receipt-fails") {
+          expect(await complete(request, delivery)).toMatchObject({ outcome: "succeeded" });
+          expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toEqual([]);
+          expect(receipt).toHaveBeenCalledTimes(2);
+        }
+      }
+    } finally {
+      await f.close();
+    }
+  });
 
   it.each(["subject", "metrics", "revive"])(
     "released proof renewal rejects changed %s",

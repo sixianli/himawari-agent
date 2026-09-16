@@ -1,0 +1,105 @@
+
+> himawari-agent@0.0.0 test:integration
+> vitest run --config vitest.workspace.ts --project integration test/integration/sqlite-sandbox-execution-v2.test.ts test/integration/sqlite-sandbox-preparation.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts (86 tests | 43 failed) 15310ms
+       × keeps release after result ACK at evidence expiry -1 ms 319ms
+       × keeps release after result ACK at evidence expiry 0 ms 261ms
+       × keeps release after result ACK at evidence expiry 11 ms 236ms
+       × keeps release after result ACK at evidence expiry 151 ms 200ms
+       × atomically consumes once, rejects changed replay and persists a single starting winner 214ms
+       × rolls back Handle consumption, record and occupancy when initial observation fails 217ms
+       × blocks nested and aliased directories for a live writer, allows disjoint directories 214ms
+       × lost supervision quarantines intersecting reads 262ms
+       × known output survives lost supervision; observation CAS and immutable results survive reopen 218ms
+       × stores late operation evidence after release without fabricating resource transitions 331ms
+       × retains release and protects newly uncertain effects 336ms
+       × Run cancellation blocks a prepared continuation but still permits cleanup observations 319ms
+       × dispatch rechecks sequence, is at most once, and preserves post-dispatch uncertainty 308ms
+       × keeps post-dispatch uncertainty pending after resource release 287ms
+       × v1 unknown and missing journals never acquire v2 execution authority 224ms
+       × persists background creator, environment and resource handle in the admission transaction 230ms
+       × persists service creator, environment and resource handle in the admission transaction 206ms
+       × permits intersecting live readers and rejects a subsequent writer 223ms
+       × rejects a legacy Worker bypass and protects unresolved rows from cascading deletion 233ms
+       × rejects forged supervision and output references without changing either history 373ms
+       × does not freeze an unverified effect claim as confirmed business evidence 297ms
+       × rechecks resource sequence and execution fence before dispatch 212ms
+       × serializes concurrent journal requests and rejects a competing state-root owner 185ms
+       × upgrades populated schema 27 without reinterpreting prepared history 217ms
+       × upgrades populated schema 27 without reinterpreting starting history 212ms
+       × upgrades populated schema 27 without reinterpreting quarantined history 230ms
+       × upgrades populated schema 27 without reinterpreting completed history 208ms
+       × upgrades populated schema 27 without reinterpreting failed history 195ms
+       × upgrades populated schema 27 without reinterpreting missing_host history 212ms
+       × upgrades populated schema 27 without reinterpreting missing_state history 215ms
+     × records why current v2 cannot bind a policy first compiled after admission 186ms
+     × v2 startup invalidates previous supervision durably without replay or erasing known output 216ms
+     × reconciliation verified preserves operation facts and only releases verified risk 208ms
+     × reconciliation untrusted preserves operation facts and only releases verified risk 208ms
+     × reconciliation timeout preserves operation facts and only releases verified risk 197ms
+     × reconciliation concurrent preserves operation facts and only releases verified risk 201ms
+     × Agent foreground result handoff: deliver 282ms
+     × Agent foreground result handoff: cancel-before-dispatch 237ms
+     × Agent foreground result handoff: receipt-fails 206ms
+     × Agent foreground result handoff: expired-proof 286ms
+     × released proof renewal rejects changed subject 221ms
+     × released proof renewal rejects changed metrics 221ms
+     × released proof renewal rejects changed revive 266ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 43 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry -1 ms
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 0 ms
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 11 ms
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 151 ms
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > atomically consumes once, rejects changed replay and persists a single starting winner
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > rolls back Handle consumption, record and occupancy when initial observation fails
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > blocks nested and aliased directories for a live writer, allows disjoint directories
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > lost supervision quarantines intersecting reads
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > known output survives lost supervision; observation CAS and immutable results survive reopen
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > stores late operation evidence after release without fabricating resource transitions
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > retains release and protects newly uncertain effects
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > Run cancellation blocks a prepared continuation but still permits cleanup observations
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > dispatch rechecks sequence, is at most once, and preserves post-dispatch uncertainty
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps post-dispatch uncertainty pending after resource release
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > v1 unknown and missing journals never acquire v2 execution authority
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > persists background creator, environment and resource handle in the admission transaction
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > persists service creator, environment and resource handle in the admission transaction
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > permits intersecting live readers and rejects a subsequent writer
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > rejects a legacy Worker bypass and protects unresolved rows from cascading deletion
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > rejects forged supervision and output references without changing either history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > does not freeze an unverified effect claim as confirmed business evidence
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > rechecks resource sequence and execution fence before dispatch
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > serializes concurrent journal requests and rejects a competing state-root owner
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting prepared history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting starting history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting quarantined history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting completed history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting failed history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting missing_host history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting missing_state history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > records why current v2 cannot bind a policy first compiled after admission
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > v2 startup invalidates previous supervision durably without replay or erasing known output
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > reconciliation verified preserves operation facts and only releases verified risk
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > reconciliation untrusted preserves operation facts and only releases verified risk
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > reconciliation timeout preserves operation facts and only releases verified risk
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > reconciliation concurrent preserves operation facts and only releases verified risk
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > Agent foreground result handoff: deliver
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > Agent foreground result handoff: cancel-before-dispatch
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > Agent foreground result handoff: receipt-fails
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > Agent foreground result handoff: expired-proof
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > released proof renewal rejects changed subject
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > released proof renewal rejects changed metrics
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > released proof renewal rejects changed revive
+Error: Cannot find module '/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/persistence-sqlite/src/sqlite-sandbox-release-operations.js' imported from /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/43]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  43 failed | 43 passed (86)
+   Start at  18:06:32
+   Duration  17.88s (transform 1.71s, setup 0ms, import 2.46s, tests 15.31s, environment 0ms)

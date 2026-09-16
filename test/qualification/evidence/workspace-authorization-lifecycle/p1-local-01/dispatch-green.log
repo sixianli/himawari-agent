@@ -1,0 +1,12 @@
+
+> himawari-agent@0.0.0 test:services
+> vitest run --config vitest.workspace.ts --project node-services apps/agent-service/test/production-runtime-tools.unit.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+
+ Test Files  1 passed (1)
+      Tests  52 passed (52)
+   Start at  18:14:32
+   Duration  940ms (transform 603ms, setup 0ms, import 740ms, tests 102ms, environment 0ms)

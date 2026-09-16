@@ -1036,13 +1036,19 @@ export async function createProductionSandboxServices(options: {
       };
     },
   };
-  const refreshVerification = async (record: Parameters<typeof control.refreshEvidence>[0]) => {
+  const refreshVerification = async (
+    record: Parameters<typeof control.refreshEvidence>[0],
+    retainedRelease = false,
+  ) => {
     const { outputs, effectEvidence } = await verifyOutput({
       plan: record.plan,
       facts: record.facts,
       now: clock.now(),
     });
-    const observed = await control.refreshEvidence(record);
+    const observed =
+      retainedRelease && record.releaseReceipt
+        ? { resource: record.facts.resource, evidence: [] }
+        : await control.refreshEvidence(record);
     const facts = { ...record.facts, resource: observed.resource };
     const now = clock.now();
     return {
@@ -1062,7 +1068,7 @@ export async function createProductionSandboxServices(options: {
     journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
     authority: options.authority,
     now: () => clock.now(),
-    verifyFresh: refreshVerification,
+    verifyFresh: (record) => refreshVerification(record, true),
   });
   const outputOptions = {
     ownerId: configuration.ownerId,
@@ -1230,7 +1236,12 @@ export async function createProductionSandboxServices(options: {
             }
             try {
               const result = { record: await stopRecord(admission.record) };
-              if (result.record.facts.resource.supervision !== "released") released = false;
+              if (
+                result.record.facts.resource.supervision !== "released" ||
+                !result.record.releaseReceipt ||
+                result.record.workspaceBlocked
+              )
+                released = false;
             } catch {
               released = false;
             }

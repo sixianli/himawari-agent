@@ -356,7 +356,10 @@ export class WorkerDelegationService {
     this.#admission = new WorkerDelegationAdmissionService(options);
   }
 
-  async dispatch(request: WorkerExecuteRequest): Promise<void> {
+  async dispatch(
+    request: WorkerExecuteRequest,
+    beforeExecute?: () => Promise<void>,
+  ): Promise<void> {
     const admission = await this.#admission.admit(request);
     if (admission.disposition === "replayed") return;
 
@@ -376,6 +379,9 @@ export class WorkerDelegationService {
         "Worker did not accept the attenuated Capability Handle",
       );
     }
+    // Admission and Handle delivery can await slow I/O. The caller must still
+    // own a live deadline/Run immediately before the first executable message.
+    await beforeExecute?.();
     const response = await this.#options.transport.request(projection.execute);
     if (response !== null) {
       throw new ApplicationPortError(

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:ae4bae232778a81ca7468e3491b26cf4241a9a2694225570caf4624fe75df4fd"
+contract_sha256: "sha256:5a68cb7c548e7bd9695009a9bd3af579ddafd7829fbb1e6833c447a1dc63ae2f"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,8 @@ date: "2026-08-27"
 # 停机加密 Authority Transfer Runbook
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/sqlite-sandbox-release-operations.ts
+- packages/persistence-sqlite/src/sqlite-sandbox-recovery-operations.ts
 - apps/agent-service/src/production-thread-titles.ts
 - apps/agent-service/src/production-model-composition.ts
 - apps/agent-service/src/production-run-composition.ts
@@ -198,6 +200,12 @@ himawari transfer abandon --config <absolute-target-config-path> --secret-dir <a
 恢复目标 Agent 在开放准入前使用当前权威处理 v2 未释放观察：旧监督标为 lost/unknown，保留原结果、效果和占用，不复用源 Worker 的 boot 凭证或按旧 PID 接管。已确认清理但效果未决的记录保持其原清理事实及未决义务。此逻辑恢复不能作为源主机残留进程已终止的证据，源风险仍按本 Runbook 的停止条件处理。
 
 ## Verification
+
+### Schema 33 释放事实与有界恢复
+
+Schema 33 保存 `sandbox_release_receipts`、独立控制保护及 `recovery_json`。升级、备份与迁移必须一同保留这些记录、原执行观察与占用；已经提交的 `released_at` 不得清空，结果 ACK 迟到不改变释放事实。旧记录没有新的可信释放回执时不自动回填或解锁，须通过当前安装的受限 inspect/stop 核验；过期凭证不能当作新观察使用。
+
+启动恢复不重发原工具，失去原恢复 owner 或核验超过期限时持久记录 unresolved。验收独立读回原释放时间、恢复 owner/次数/终点和未完成交接，不能仅凭页面状态判定清理完成。恢复回执只证明资源义务已结束，不恢复执行或模型披露权限。Schema 33 不允许旧 writer 直接写入；回退须停止服务并使用匹配旧版本的完整、已核验恢复点，不能删除新表或修改 migration ledger 降级。本次源码与隔离数据库测试不代表已对部署实例执行迁移或解锁。
 
 ### v4 控制中心与持久事件核对
 

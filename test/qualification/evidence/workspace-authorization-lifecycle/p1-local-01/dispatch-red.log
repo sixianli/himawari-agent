@@ -1,0 +1,68 @@
+
+> himawari-agent@0.0.0 test:services
+> vitest run --config vitest.workspace.ts --project node-services apps/agent-service/test/production-runtime-tools.unit.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |node-services| apps/agent-service/test/production-runtime-tools.unit.test.ts (52 tests | 2 failed) 102ms
+     × reports admission refusal as not dispatched and retains a protected diagnostic 18ms
+     × never sends a late execute after delegation outlives the caller deadline 11ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |node-services| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > reports admission refusal as not dispatched and retains a protected diagnostic
+AssertionError: expected { outcome: 'result_unknown', …(4) } to match object { outcome: 'failed', …(2) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "errorCode": "WORKER_ADMISSION_CONFLICT",
+-   "modelContent": "操作尚未派发：资源或请求状态发生冲突。",
+-   "outcome": "failed",
++   "errorCode": "WORKER_RESULT_RECONCILIATION_REQUIRED",
++   "modelContent": "执行结果尚未确认，不能重新执行该操作。",
++   "outcome": "result_unknown",
+  }
+
+ ❯ apps/agent-service/test/production-runtime-tools.unit.test.ts:23:20
+     21|     const tool = await exposed(f);
+     22|     const result = await tool.execute(invocation);
+     23|     expect(result).toMatchObject({outcome: "failed", errorCode: "WORKE…
+       |                    ^
+     24|     expect(JSON.stringify(result)).not.toContain("private host");
+     25|     expect(f.request).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |node-services| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > never sends a late execute after delegation outlives the caller deadline
+AssertionError: expected { outcome: 'result_unknown', …(4) } to match object { outcome: 'failed', …(1) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "errorCode": "WORKER_NOT_DISPATCHED",
+-   "outcome": "failed",
++   "errorCode": "WORKER_RESULT_RECONCILIATION_REQUIRED",
++   "outcome": "result_unknown",
+  }
+
+ ❯ apps/agent-service/test/production-runtime-tools.unit.test.ts:41:20
+     39|     });
+     40|     const result = await (await exposed(f)).execute(invocation);
+     41|     expect(result).toMatchObject({outcome: "failed", errorCode: "WORKE…
+       |                    ^
+     42|     resume();
+     43|     // Flush the admitted continuation, then independently inspect sen…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 50 passed (52)
+   Start at  18:13:48
+   Duration  885ms (transform 557ms, setup 0ms, import 681ms, tests 102ms, environment 0ms)

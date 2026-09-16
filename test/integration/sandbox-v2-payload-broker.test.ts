@@ -118,6 +118,11 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
     throw new Error("not part of observation boundary");
   };
   const journal: SandboxExecutionJournalPort = {
+    beginRecovery: async (input) => sandboxV2Call(f, "beginRecovery", input),
+    finishRecovery: async (input) => sandboxV2Call(f, "finishRecovery", input),
+    interruptRecovery: async (input) => {
+      sandboxV2Call(f, "interruptRecovery", input);
+    },
     admit: unavailable,
     read: async (value) => sandboxV2Call(f, "read", value),
     listPending: unavailable,

@@ -53,6 +53,7 @@ export function createProductionSandboxToolResult(options: {
       environment: record.facts.environment,
       operationContract: plan.operationContract,
       verification,
+      releaseReceipt: record.releaseReceipt ?? null,
       currentResourceSequence: verification.facts.resource.sequence,
       runState: "active",
       currentAuthority: true,
@@ -66,17 +67,18 @@ export function createProductionSandboxToolResult(options: {
     const projection = projectSandboxExecution(plan, verification.facts, context);
     if (!projection.deliverToolResult) return undefined;
     await delivery.assertDisclosure();
-    record = (
-      await options.journal.append({
-        identity: plan.identity,
-        expectedSequence: record.facts.resource.sequence,
-        expectedOperationRevision: record.operationRevision,
-        facts: verification.facts,
-        authority: options.authority(),
-        now: options.now(),
-        context,
-      })
-    ).record;
+    if (verification.facts.resource.sequence !== record.facts.resource.sequence)
+      record = (
+        await options.journal.append({
+          identity: plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          expectedOperationRevision: record.operationRevision,
+          facts: verification.facts,
+          authority: options.authority(),
+          now: options.now(),
+          context,
+        })
+      ).record;
     const intentId = `sandbox-tool-result:${createHash("sha256").update(plan.semanticFingerprint).digest("hex")}`;
     const intent = () => ({
       identity: plan.identity,
@@ -89,7 +91,8 @@ export function createProductionSandboxToolResult(options: {
     });
     await options.journal.prepareIntent(intent());
     await delivery.assertDisclosure();
-    if (!(await options.journal.dispatchIntent(intent())).applied) return undefined;
+    // A repeated handoff retries only the immutable receipt, never executable work.
+    await options.journal.dispatchIntent(intent());
     try {
       await delivery.assertDisclosure();
       const completion: SandboxToolCompletion =

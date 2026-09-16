@@ -473,6 +473,24 @@ export class SqliteDurableAdapters {
           agentId,
           input,
         }),
+      beginRecovery: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.beginRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      finishRecovery: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.finishRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      interruptRecovery: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.interruptRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
       start: (input) =>
         this.context.write("capabilityInvocation.sandboxV2.start", { ownerId, agentId, input }),
       append: (input) =>

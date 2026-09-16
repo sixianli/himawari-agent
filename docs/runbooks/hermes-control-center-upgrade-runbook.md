@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:f7a98db0e15608b7da82be01db4620ad8357230dee67e730d1ec3b5211135418"
+contract_sha256: "sha256:6c0c463fca6322ee857961d8bd910f4199685c2c6ba5521173a09e51a0f28cf2"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -11,6 +11,8 @@ date: "2026-09-11"
 # Hermes 控制中心升级与真实验收
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/sqlite-sandbox-release-operations.ts
+- packages/persistence-sqlite/src/sqlite-sandbox-recovery-operations.ts
 - packages/persistence-sqlite/src/migrations/0032_runtime_history.sql
 - packages/application/src/services/runtime-history-service.ts
 - packages/runtime-pi/src/pi-native-history.ts
@@ -129,6 +131,12 @@ Agent 在创建沙箱服务时完成本进程的首次安装校验，校验失�
 用户于 2026-09-13 另行明确选择“允许 8 小时完整 sudo，接受整台主机的 root 权限范围”。仅此临时授权允许执行 `hermes-temporary-sudo.py --grant-eight-hours`：在 Hermes 的 `/etc/sudoers.d/99-himawari-codex-20260913` 创建 `andy` 可作为 root 执行任意命令的免密码规则，使用 sudo 的 `NOTAFTER` 限定从安装起八小时，并由固定 systemd 定时器调用 root 持有的 `/etc/himawari/codex-sudo-expiry-20260913.py`，核对规则摘要后删除该条规则。此权限在系统层面覆盖整台主机；本任务仍只执行已授权的 Himawari 工作，不自动延长授权。它是对本 Runbook 项目路径范围的显式账户权限例外，不能泛化为后续任务的默认权限。安装前验证主机、账号、父目录所有权、目标与定时单元不存在及整个 sudoers 配置；先准备规则并通过 `visudo`，启动清理定时器后原子安装，再从 `andy` 身份忽略缓存执行 `sudo -n -k id -u` 验证。失败时撤销本次创建的规则与清理入口。用户在自己的终端输入密码，脚本不接收或保存密码。安装回执写入 `/data/hermes/himawari/qualifications/2026-09-13-temporary-sudo/receipt.json`，代理须读取实际到期时间。到期阻止新 sudo 命令，不能撤销已完成的修改或自动停止已启动的服务；重启后即使临时清理定时器丢失，规则自身的到期限制仍保留。若规则被修改，自动清理拒绝删除并保留诊断。需要提前撤销时，仅删除该临时规则并重新检查 sudoers，不覆盖系统已有规则。
 
 ## Verification
+
+### Schema 33 释放事实与有界恢复
+
+Schema 33 保存 `sandbox_release_receipts`、独立控制保护及 `recovery_json`。升级、备份与迁移必须一同保留这些记录、原执行观察与占用；已经提交的 `released_at` 不得清空，结果 ACK 迟到不改变释放事实。旧记录没有新的可信释放回执时不自动回填或解锁，须通过当前安装的受限 inspect/stop 核验；过期凭证不能当作新观察使用。
+
+启动恢复不重发原工具，失去原恢复 owner 或核验超过期限时持久记录 unresolved。验收独立读回原释放时间、恢复 owner/次数/终点和未完成交接，不能仅凭页面状态判定清理完成。恢复回执只证明资源义务已结束，不恢复执行或模型披露权限。Schema 33 不允许旧 writer 直接写入；回退须停止服务并使用匹配旧版本的完整、已核验恢复点，不能删除新表或修改 migration ledger 降级。本次源码与隔离数据库测试不代表已对部署实例执行迁移或解锁。
 
 ### v4 控制中心与持久事件核对
 

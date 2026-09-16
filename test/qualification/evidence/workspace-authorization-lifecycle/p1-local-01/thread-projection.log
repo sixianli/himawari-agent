@@ -1,0 +1,38 @@
+
+> himawari-agent@0.0.0 test:integration
+> vitest run --config vitest.workspace.ts --project integration test/integration/thread-run-lifecycle.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/thread-run-lifecycle.test.ts (118 tests | 2 failed) 24592ms
+     × projects encrypted execution history with owner isolation and no raw reasoning or credentials 187ms
+     × projects encrypted execution history with owner isolation and no raw reasoning or credentials 74ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > projects encrypted execution history with owner isolation and no raw reasoning or credentials
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > projects encrypted execution history with owner isolation and no raw reasoning or credentials
+AssertionError: expected [ { id: 'trace-0001', …(9) }, …(4) ] to have a length of 4 but got 5
+
+- Expected
++ Received
+
+- 4
++ 5
+
+ ❯ test/integration/thread-run-lifecycle.test.ts:2772:31
+    2770|     };
+    2771|     const displayed = await projection.read(query);
+    2772|     expect(displayed.records).toHaveLength(4);
+       |                               ^
+    2773|     expect(displayed.records[0]?.text).toBe("Visible answer");
+    2774|     expect(displayed.records[1]).toMatchObject({
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 116 passed (118)
+   Start at  18:16:49
+   Duration  27.10s (transform 1.72s, setup 0ms, import 2.41s, tests 24.59s, environment 0ms)

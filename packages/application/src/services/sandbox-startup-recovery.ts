@@ -75,8 +75,14 @@ export async function recoverSandboxExecutionsAtStartup(options: {
       afterJobId = record.plan.identity.jobId;
       examined++;
       const previous = record.facts.resource;
-      // A released environment with unresolved effects retains its existing
-      // occupancy. Restart cannot undo confirmed cleanup or resolve effects.
+      // Register finite recovery even for released-but-blocked historical records.
+      // This boot has no proof allowing it to release or restart the old process.
+      await options.journal.interruptRecovery({
+        identity: record.plan.identity,
+        expectedSequence: previous.sequence,
+        authority: options.authority(),
+        now: options.now(),
+      });
       if (previous.supervision === "lost" || previous.supervision === "released") continue;
       const now = options.now();
       const { supervision: _state, cleanup: _cleanup, ...fields } = previous;
