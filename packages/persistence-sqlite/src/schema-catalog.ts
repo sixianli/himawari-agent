@@ -28,6 +28,13 @@ function entry(
 
 export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
+    "sandbox_admission_queue",
+    "SandboxExecutionPreparationPort",
+    "fair admission priority without held resources or consumed invocation quota",
+    "payload_reference",
+    "retain while queued; cascade with retired Handle or Run",
+  ),
+  entry(
     "authorization_reservations",
     "AuthorizationStorePort",
     "reserved quota committed at invocation admission or released before dispatch",

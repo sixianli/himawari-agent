@@ -81,6 +81,19 @@ export interface PreparedFileOperation {
   readonly canonicalHash: string;
   readonly expiresAt: string;
   readonly status: "prepared" | "executing" | "verified" | "invalidated" | "failed";
+  /** Persisted before publishing; matching bytes alone never establish operation ownership. */
+  readonly publication?: HostFilePublication;
+}
+
+export interface HostFilePublication {
+  readonly stagedRelativePath: string;
+  readonly identity: HostFileIdentity;
+}
+
+export interface HostFilePublishHooks {
+  /** Persist the exact staged inode and recheck authority before any final-path effect. */
+  beforePublish(publication: HostFilePublication): Promise<void>;
+  assertCurrentAuthority?(): Promise<void>;
 }
 
 export interface PermanentDeletionTarget {
@@ -131,6 +144,7 @@ export interface HostFilePlatformPort {
     grant: HostDirectoryGrant,
     relativePath: string,
     bytes: Uint8Array,
+    hooks?: HostFilePublishHooks,
   ): Promise<HostFileIdentity>;
   replaceAtomic(
     grant: HostDirectoryGrant,
@@ -138,6 +152,12 @@ export interface HostFilePlatformPort {
     expected: HostFileIdentity,
     bytes: Uint8Array,
     previousBytes: Uint8Array,
+    hooks?: HostFilePublishHooks,
+  ): Promise<HostFileIdentity>;
+  recoverPublication(
+    grant: HostDirectoryGrant,
+    relativePath: string,
+    publication: HostFilePublication,
   ): Promise<HostFileIdentity>;
   move(
     grant: HostDirectoryGrant,

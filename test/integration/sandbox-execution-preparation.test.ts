@@ -1,3 +1,4 @@
+import { WorkerDelegationAdmissionService } from "@himawari-agent/application";
 import type {
   SandboxExecutionAdmissionRecord,
   SandboxExecutionPreparationPort,
@@ -15,6 +16,8 @@ import {
   openSandboxJournal,
   operationsForDatabase,
   SERVICE_AUTHORITY,
+  serviceRequest,
+  T2,
   T1,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
@@ -68,6 +71,222 @@ function reserved(value: SandboxExecutionAdmissionRecord) {
 }
 
 describe("atomic execution reservation and runtime binding", () => {
+  it("allows two read-only preparations over the same workspace", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const first = input(f, "-read-first");
+      const second = input(f, "-read-second");
+      const readOnly = (value: ReturnType<typeof input>) => ({
+        ...value,
+        workspaces: value.workspaces.map((claim) => ({ ...claim, access: "read" as const })),
+      });
+      call(f, "enqueue", readOnly(first));
+      call(f, "enqueue", readOnly(second));
+      expect(call(f, "reserve", readOnly(first)).applied).toBe(true);
+      expect(call(f, "reserve", readOnly(second)).applied).toBe(true);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each(["available", "cancelled", "expired"] as const)(
+    "revalidates a queued production admission before consuming: %s",
+    async (outcome) => {
+      const f = await openSandboxJournal();
+      try {
+        const older = input(f, "-first");
+        call(f, "enqueue", older);
+        const waiting = input(f);
+        let now = T1;
+        let waits = 0;
+        let checks = 0;
+        const preparations = {
+          enqueue: async (value: Parameters<SandboxExecutionPreparationPort["enqueue"]>[0]) =>
+            call(f, "enqueue", value),
+          reserve: async (value: Parameters<SandboxExecutionPreparationPort["reserve"]>[0]) =>
+            call(f, "reserve", value),
+          cancelQueued: async (
+            value: Parameters<SandboxExecutionPreparationPort["cancelQueued"]>[0],
+          ) => {
+            call(f, "cancelQueued", value);
+          },
+          readAdmission: async (
+            value: Parameters<SandboxExecutionPreparationPort["readAdmission"]>[0],
+          ) => call(f, "readAdmission", value),
+        };
+        const admission = new WorkerDelegationAdmissionService({
+          invocations: {
+            consume: async () => {
+              throw new Error("uncoordinated consume");
+            },
+            read: async () => undefined,
+          },
+          invocationAuthority: () => SERVICE_AUTHORITY,
+          now: () => now,
+          nextId: (kind) =>
+            kind === "capability-invocation-receipt"
+              ? waiting.plan.identity.receiptRef
+              : `test-${kind}`,
+          waitForWorkspace: async () => {
+            waits++;
+            expect(waits).toBe(1);
+            expect(
+              f.database
+                .prepare("SELECT COUNT(*) FROM capability_invocation_receipts")
+                .pluck()
+                .get(),
+            ).toBe(0);
+            if (outcome === "expired") now = T2;
+            else if (outcome === "cancelled")
+              f.database
+                .prepare("UPDATE runs SET status='cancelled' WHERE id=?")
+                .run(waiting.plan.identity.runId);
+            call(f, "cancelQueued", {
+              identity: older.plan.identity,
+              authority: SERVICE_AUTHORITY,
+              now,
+            });
+          },
+          sandbox: {
+            journal: {
+              admit: async () => {
+                throw new Error("legacy admission");
+              },
+            },
+            preparations,
+            prepare: async () => waiting,
+            scopes: {
+              read: async () => {
+                checks++;
+                return f.scope as import("@himawari-agent/execution-contracts").SandboxScope;
+              },
+            },
+          },
+        });
+        const original = serviceRequest();
+        const invocation = waiting.invocation;
+        const request = {
+          ...original,
+          messageId: invocation.invocationId,
+          idempotencyKey: invocation.idempotencyKey,
+          scope: invocation.requestScope,
+          authorizationRef: invocation.authorizationRef,
+          payload: {
+            ...original.payload,
+            requestedAt: invocation.requestedAt,
+            deadlineAt: invocation.deadlineAt,
+            capabilityHandleRef: invocation.handleRef,
+            capabilityId: invocation.capabilityRef,
+            capabilityVersion: invocation.capabilityVersion,
+            operation: invocation.operation,
+            inputRef: invocation.inputRef,
+            resourceCeiling: invocation.resourceCeiling,
+          },
+        };
+        if (outcome === "available")
+          expect((await admission.admit(request)).disposition).toBe("consumed");
+        else await expect(admission.admit(request)).rejects.toThrow();
+        expect(waits).toBe(1);
+        expect(checks).toBe(2);
+        expect(
+          f.database.prepare("SELECT COUNT(*) FROM capability_invocation_receipts").pluck().get(),
+        ).toBe(outcome === "available" ? 1 : 0);
+        expect(
+          f.database
+            .prepare("SELECT status FROM sandbox_admission_queue WHERE job_id=?")
+            .pluck()
+            .get(waiting.plan.identity.jobId),
+        ).toBe(outcome === "available" ? "admitted" : "cancelled");
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it("queues without effects and prevents a newer conflicting request from jumping ahead", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const older = input(f, "-older");
+      const newer = input(f, "-newer");
+      expect(call(f, "enqueue", older)).toMatchObject({ status: "queued" });
+      expect(call(f, "enqueue", older)).toEqual(call(f, "enqueue", older));
+      call(f, "enqueue", newer);
+      expect(
+        f.database.prepare("SELECT COUNT(*) FROM capability_invocation_receipts").pluck().get(),
+      ).toBe(0);
+      expect(
+        f.database.prepare("SELECT COUNT(*) FROM sandbox_workspace_occupancy").pluck().get(),
+      ).toBe(0);
+      expect(() => call(f, "reserve", newer)).toThrow("earlier conflicting request");
+      expect(
+        f.database.prepare("SELECT COUNT(*) FROM capability_invocation_receipts").pluck().get(),
+      ).toBe(0);
+      call(f, "cancelQueued", {
+        identity: older.plan.identity,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+      });
+      expect(call(f, "reserve", newer).applied).toBe(true);
+      expect(() => call(f, "reserve", older)).toThrow();
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("does not place unrelated resources behind an older queued request", async () => {
+    const f = await openSandboxJournal();
+    try {
+      call(f, "enqueue", input(f, "-waiting"));
+      const unrelated = input(f, "-unrelated");
+      const workspaces = unrelated.workspaces.map((claim) => ({
+        ...claim,
+        lineage: [
+          { device: "1", inode: "1" },
+          { device: "1", inode: "20" },
+        ],
+      }));
+      const ready = { ...unrelated, workspaces };
+      call(f, "enqueue", ready);
+      expect(call(f, "reserve", ready).applied).toBe(true);
+      expect(
+        f.database
+          .prepare("SELECT status FROM sandbox_admission_queue WHERE job_id=?")
+          .pluck()
+          .get("job-waiting"),
+      ).toBe("queued");
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("rejects changed queue identities and revoked Handles without creating occupancy", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const queued = input(f, "-queue");
+      call(f, "enqueue", queued);
+      expect(() =>
+        call(f, "enqueue", {
+          ...queued,
+          workspaces: queued.workspaces.map((claim) => ({ ...claim, access: "read" })),
+        }),
+      ).toThrow();
+      f.database
+        .prepare(
+          "UPDATE capability_handles SET revoked_at=?, record_json=json_set(record_json,'$.revokedAt',?) WHERE id=?",
+        )
+        .run(T1, T1, queued.plan.handleRef);
+      expect(() => call(f, "reserve", queued)).toThrow();
+      expect(
+        f.database.prepare("SELECT COUNT(*) FROM capability_invocation_receipts").pluck().get(),
+      ).toBe(0);
+      expect(
+        f.database.prepare("SELECT COUNT(*) FROM sandbox_workspace_occupancy").pluck().get(),
+      ).toBe(0);
+    } finally {
+      await f.close();
+    }
+  });
+
   it("preserves reservations and fixed start bindings across database reopen", async () => {
     const f = await openSandboxJournal();
     try {

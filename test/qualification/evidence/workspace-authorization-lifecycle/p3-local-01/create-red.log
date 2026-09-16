@@ -1,0 +1,66 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/constrained-file-system.unit.test.ts (34 tests | 2 failed) 123ms
+     × never exposes partial content at a newly created target 15ms
+     × leaves no partial final file when preparing a create fails 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/constrained-file-system.unit.test.ts > ConstrainedHostFileSystem > never exposes partial content at a newly created target
+AssertionError: promise resolved "Buffer[ 99, 111 ]" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "data": [
++     99,
++     111,
++   ],
++   "type": "Buffer",
+  }
+
+ ❯ packages/platform-node/test/constrained-file-system.unit.test.ts:166:62
+    164|     try {
+    165|       await writing;
+    166|       await expect(readFile(path.join(root, "complete.txt"))).rejects.…
+       |                                                              ^
+    167|     } finally {
+    168|       continueWrite();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |unit| packages/platform-node/test/constrained-file-system.unit.test.ts > ConstrainedHostFileSystem > leaves no partial final file when preparing a create fails
+AssertionError: promise resolved "Buffer[ 99, 111 ]" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "data": [
++     99,
++     111,
++   ],
++   "type": "Buffer",
+  }
+
+ ❯ packages/platform-node/test/constrained-file-system.unit.test.ts:196:60
+    194|       open.mockRestore();
+    195|     }
+    196|     await expect(readFile(path.join(root, "complete.txt"))).rejects.to…
+       |                                                            ^
+    197|   });
+    198|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 32 passed (34)
+   Start at  19:55:54
+   Duration  1.78s (transform 1.02s, setup 0ms, import 1.56s, tests 123ms, environment 0ms)

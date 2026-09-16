@@ -64,6 +64,7 @@ export class FileOperationService {
     readonly redactedDiffRef: string | null;
     readonly expiresAt: string;
   }): Promise<PreparedFileOperation> {
+    input = { ...input, candidateBytes: new Uint8Array(input.candidateBytes) };
     const grant = await this.#usableGrant(input.grantId, input.operation);
     const current = await this.#platform.inspect(grant, input.relativePath);
     if (input.operation === "create" && current)
@@ -104,6 +105,7 @@ export class FileOperationService {
     readonly expectedHash: string;
     readonly candidateBytes: Uint8Array;
   }): Promise<PreparedFileOperation> {
+    input = { ...input, candidateBytes: new Uint8Array(input.candidateBytes) };
     let operation = await this.#requiredPrepared(input.operationId);
     if (
       operation.canonicalHash !== input.expectedHash ||
@@ -112,34 +114,48 @@ export class FileOperationService {
       this.#reject("Prepared file operation changed");
     }
     if (operation.status === "verified") return operation;
-    if (operation.expiresAt <= this.#clock.now()) this.#reject("Prepared file operation expired");
-    const grant = await this.#usableGrant(operation.grantId, operation.operation);
     if (operation.status !== "prepared" && operation.status !== "executing")
       this.#reject("Prepared file operation is not recoverable");
+    if (operation.status === "executing" && operation.publication) {
+      // Historical effect verification and removal of our private staging alias
+      // cannot launch a new write or disclose file content after authority ends.
+      const recoveryGrant = await this.#state.readGrant(operation.grantId);
+      if (!recoveryGrant || recoveryGrant.hostId !== this.#hostId)
+        this.#reject("Publication recovery host is unavailable");
+      const observed = await this.#platform.recoverPublication(
+        recoveryGrant,
+        operation.relativePath,
+        operation.publication,
+      );
+      const currentDigest = this.#digest.digest(
+        await this.#platform.read(
+          recoveryGrant,
+          operation.relativePath,
+          operation.sizeBytes + 1,
+          observed,
+        ),
+      );
+      if (currentDigest !== operation.candidateDigest)
+        this.#conflict("Published file no longer matches this operation");
+      return this.#state.savePrepared(
+        Object.freeze({ ...operation, revision: operation.revision + 1, status: "verified" }),
+        operation.revision,
+      );
+    }
+    if (operation.expiresAt <= this.#clock.now()) this.#reject("Prepared file operation expired");
+    const grant = await this.#usableGrant(operation.grantId, operation.operation);
     const storage = await this.#platform.storageObservation(grant);
     if (
       storage.availableBytes <
       operation.sizeBytes + FileOperationService.MINIMUM_WRITE_RESERVE_BYTES
-    ) {
+    )
       this.#reject(
         "Storage reserve reached; write is blocked while read and recovery remain available",
       );
-    }
     const current = await this.#platform.inspect(grant, operation.relativePath);
-    if (
-      operation.status === "executing" &&
-      current?.sizeBytes === operation.sizeBytes &&
-      operation.candidateDigest
-    ) {
-      const currentDigest = this.#digest.digest(
-        await this.#platform.read(grant, operation.relativePath, operation.sizeBytes + 1),
-      );
-      if (currentDigest === operation.candidateDigest) {
-        return this.#state.savePrepared(
-          Object.freeze({ ...operation, revision: operation.revision + 1, status: "verified" }),
-          operation.revision,
-        );
-      }
+    if (!operation.targetIdentity && current) {
+      await this.#invalidate(operation);
+      this.#conflict("Create target exists without this operation's publication evidence");
     }
     if (
       operation.targetIdentity &&
@@ -164,6 +180,22 @@ export class FileOperationService {
         operation.revision,
       );
     }
+    const hooks = {
+      assertCurrentAuthority: async () => {
+        const current = await this.#usableGrant(operation.grantId, operation.operation);
+        if (current.revision !== grant.revision || operation.expiresAt <= this.#clock.now())
+          this.#reject("Prepared file authority changed before publication");
+      },
+      beforePublish: async (publication: import("../ports/host-files.js").HostFilePublication) => {
+        await this.#usableGrant(operation.grantId, operation.operation);
+        if (operation.expiresAt <= this.#clock.now())
+          this.#reject("Prepared file operation expired");
+        operation = await this.#state.savePrepared(
+          Object.freeze({ ...operation, revision: operation.revision + 1, publication }),
+          operation.revision,
+        );
+      },
+    };
     const identity = operation.targetIdentity
       ? await this.#platform.replaceAtomic(
           grant,
@@ -171,8 +203,14 @@ export class FileOperationService {
           operation.targetIdentity,
           input.candidateBytes,
           previousBytes,
+          hooks,
         )
-      : await this.#platform.createExclusive(grant, operation.relativePath, input.candidateBytes);
+      : await this.#platform.createExclusive(
+          grant,
+          operation.relativePath,
+          input.candidateBytes,
+          hooks,
+        );
     const verified = await this.#platform.read(
       grant,
       operation.relativePath,

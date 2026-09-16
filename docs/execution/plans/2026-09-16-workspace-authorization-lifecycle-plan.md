@@ -16,7 +16,7 @@ date: "2026-09-16"
 
 **架构：** 继续复用 Pi 工具与 Agent Loop、Anthropic Sandbox Runtime、现有 Agent/Worker 和 SQLite。Himawari 接好持久权限、资源身份、文件提交、恢复及页面投影；不重建工具协议、沙箱或工作流系统。
 
-**当前范围：** 用户于 2026-09-16 要求实施本 Plan。P0 的 r3 新增交互已获确认，P1 释放与交接修复已保存为本地提交 `fe92846`；P2 的审批身份、重复决定与额度预约正在实施。完整 P1～P7 未完成；详见[本次实施记录](#implementation-record)。Spec 已通过不等于自动审查配置或生产操作已获授权。
+**当前范围：** 用户于 2026-09-16 要求实施本 Plan。P0 的 r3 新增交互已获确认，P1 释放与交接修复已保存为本地提交 `fe92846`；P2 的审批身份、重复决定与额度预约已保存为本地提交 `e4eebf4`，P3 的文件发布与持久排队正在实施。完整 P1～P7 未完成；详见[本次实施记录](#implementation-record)。Spec 已通过不等于自动审查配置或生产操作已获授权。
 
 <a id="contents"></a>
 
@@ -506,8 +506,19 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 待完成：排队调度与公平性、所有历史消费恢复路径、执行中撤销的真实停止与效果核验、完整页面投影，以及与文件提交和自动审查的联合验收。当前 invocation receipt 被保守视为“可能派发”的承诺点；取得回执后尚未发送的情况仍保留额度，未实现对该情况的自动退款协议。
 
+### P3 文件发布与资源排队（局部实现）
+
+- 新建文件先在同一文件系统的私有恢复目录写完并同步，再用无覆盖 hard-link 发布；已存在的目标不会被覆盖。替换保留普通权限位，同步备份、候选与相关父目录。入口复制候选字节，异步检查期间不能改变将要保存的内容。
+- `PreparedFileOperation.publication` 在最终路径出现副作用前持久保存暂存文件身份。恢复核对 inode、大小、时间及内容摘要；仅内容相同不能认定操作成功。发布后中断可清理本次私有别名，权限撤销后只核实既有结果，不启动新写入。候选和备份不按超时自动删除。
+- Schema 35 的 `sandbox_admission_queue` 保存排队顺序。排队不创建调用回执、不占用任何资源；出队在同一事务重验并消费。新冲突请求不插队，无关目录继续；等待后复核期限、Run、Handle 和当前授权，取消后结束队列条目。只读准备可以并行。
+- [发布缺陷复现](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-01/publication-red.log)四项失败后，[候选固定与消费者回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-01/snapshot-green.log) 53 项通过，包括真实 SQLite 关闭、重开与独立读回。[排队生产准入回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-01/queue-consumers.log) 29 项通过；[只读并行修复](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-01/read-parallel-green.log) 13 项通过；[迁移与调用消费者](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-01/migration-and-invocation.log) 286 项通过。
+
+本批标准本地构建与测试通过：233 个文件、3,428 项测试、零跳过，见[标准验证结果](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-01/standard-ci-result.json)。类型检查、任务代码格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档校验通过。全仓 lint 的两处错误仍来自本任务前已有的 r1/r2 原型 `verify.cjs`；全仓格式检查亦有这两个原型目录的既有问题，未修改这些文件。
+
+仍未缩小任意进程的真实写入范围。精确文件提交需要受信提交者拥有可核验的生命周期，不能让已确认结束的沙箱之外再出现未登记的写者。已重新核对固定 Pi read/write/edit 的 Operations 注入路径：继续在现有 Job Host 所管理的可信 runner 内保存文件；先将 Operations 限定到固定目标，再为新版文件合同接入文件身份与目标槽位。旧合同保留目录协调，任意 Shell 继续按实际沙箱范围协调。短时提交权与持久发布证据仍需继续接通。目录改名原语、跨 Worker 文件并发、队列重启恢复、完整页面投影和 Mac/Linux 联合验收尚未完成。本段不是整个 P3 的完成声明。
+
 ### 当前完成边界与下一步
 
-P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 正在实现和验证；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
+P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 正在实现和验证；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
 
 [单一决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv) 记录本轮选择及证据；没有建立另一个项目状态缓存。

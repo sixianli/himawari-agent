@@ -22,6 +22,7 @@ import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { capabilityInvocationOutputOperationKey } from "./sqlite-run-payload-artifact-operations.ts";
 
+import { SqliteWorkspaceAdmissionQueue } from "./sqlite-workspace-admission-queue.ts";
 import { SqliteSandboxRecoveryOperations } from "./sqlite-sandbox-recovery-operations.ts";
 import { SqliteSandboxReleaseOperations } from "./sqlite-sandbox-release-operations.ts";
 
@@ -38,6 +39,7 @@ interface Row {
 }
 interface AuthorityDependencies {
   consume(value: unknown, owner: string, agent: string): CapabilityInvocationConsumeResult;
+  validateQueued(value: unknown, owner: string, agent: string): void;
   live(plan: SandboxExecutionPlanV2, authority: CapabilityInvocationAuthority, now: string): void;
   authority(value: unknown, owner: string, agent: string, now: string): void;
   disk(): void;
@@ -61,6 +63,7 @@ export class SqliteSandboxExecutionOperations {
   private readonly fail: SqliteApplicationFailure;
   private readonly authority: AuthorityDependencies;
   private readonly releases: SqliteSandboxReleaseOperations;
+  private readonly queue: SqliteWorkspaceAdmissionQueue;
   constructor(
     db: Database.Database,
     fail: SqliteApplicationFailure,
@@ -68,6 +71,7 @@ export class SqliteSandboxExecutionOperations {
   ) {
     this.db = db;
     this.releases = new SqliteSandboxReleaseOperations(db);
+    this.queue = new SqliteWorkspaceAdmissionQueue(db, fail, overlaps);
     this.fail = fail;
     this.authority = authority;
   }
@@ -162,6 +166,31 @@ export class SqliteSandboxExecutionOperations {
     this.authority.disk();
     return this.db
       .transaction(() => {
+        if (operation === "enqueue") {
+          const queued = raw as Parameters<SandboxExecutionPreparationPort["enqueue"]>[0];
+          const plan = sandboxExecutionPlanCandidateV2Schema.parse(queued.plan);
+          const reservation = sandboxExecutionReservationSchema.parse(queued.reservation);
+          const invocation = queued.invocation;
+          this.authority.authority(invocation.authority, owner, agent, invocation.consumedAt);
+          if (
+            !same(plan.identity, reservation.identity) ||
+            plan.identity.ownerId !== owner ||
+            plan.identity.agentId !== agent ||
+            plan.identity.runId !== invocation.requestScope.runId ||
+            plan.identity.invocationId !== invocation.invocationId ||
+            plan.identity.receiptRef !== invocation.receiptRef ||
+            plan.handleRef !== invocation.handleRef ||
+            plan.inputRef !== invocation.inputRef ||
+            plan.operation !== invocation.operation ||
+            plan.effectiveDeadlineAt > invocation.deadlineAt ||
+            plan.effectiveDeadlineAt <= invocation.consumedAt
+          )
+            this.fail("PORT_NOT_AUTHORITATIVE", "Queue binding is not authoritative");
+          const claims = this.claims(queued.workspaces, plan, reservation.workspaceConflictRefs);
+          return this.queue.enqueue({ ...queued, plan, reservation }, claims, () =>
+            this.authority.validateQueued(invocation, owner, agent),
+          );
+        }
         if (operation === "reserve")
           return this.reserve(
             raw as Parameters<SandboxExecutionPreparationPort["reserve"]>[0],
@@ -178,6 +207,10 @@ export class SqliteSandboxExecutionOperations {
         )
           return this.fail("PORT_INVALID_OPERATION", "Invalid observation time");
         this.authority.authority(input["authority"], owner, agent, now);
+        if (operation === "cancelQueued") {
+          this.queue.cancel(identity.jobId, owner, agent);
+          return undefined;
+        }
         if (operation === "bindAndStart")
           return this.bindAndStart(
             raw as Parameters<SandboxExecutionPreparationPort["bindAndStart"]>[0],
@@ -277,7 +310,7 @@ export class SqliteSandboxExecutionOperations {
   }
   private claims(
     raw: readonly SandboxWorkspaceClaim[],
-    plan: SandboxExecutionPlanV2,
+    plan: Pick<SandboxExecutionPlanV2, "identity">,
     conflictRefs: readonly string[],
   ): readonly SandboxWorkspaceClaim[] {
     if (!Array.isArray(raw) || raw.length === 0 || raw.length > 64)
@@ -325,6 +358,7 @@ export class SqliteSandboxExecutionOperations {
     exceptJob: string,
     now: string,
   ): void {
+    this.queue.assertFair(claims, exceptJob, now);
     for (const claim of claims) {
       const legacy = this.db
         .prepare(
@@ -341,8 +375,13 @@ export class SqliteSandboxExecutionOperations {
         const rawFacts = JSON.parse(row.facts) as { schemaVersion?: unknown };
         if (rawFacts.schemaVersion === "sandbox-preparation.v1") {
           sandboxExecutionReservationSchema.parse(rawFacts);
-          if (overlaps(claim, existing))
-            this.fail("PORT_CONFLICT", "Workspace has a pending preparation");
+          if (
+            overlaps(claim, existing) &&
+            (claim.access === "write" || existing.access === "write")
+          )
+            this.fail("PORT_CONFLICT", "Workspace has a pending preparation", {
+              reasonCode: "WORKSPACE_OCCUPIED",
+            });
           continue;
         }
         const facts = sandboxExecutionFactsSchema.parse(rawFacts);
@@ -357,7 +396,9 @@ export class SqliteSandboxExecutionOperations {
           overlaps(claim, existing) &&
           (claim.access === "write" || existing.access === "write" || uncertain)
         )
-          this.fail("PORT_CONFLICT", "Workspace remains occupied");
+          this.fail("PORT_CONFLICT", "Workspace remains occupied", {
+            reasonCode: "WORKSPACE_OCCUPIED",
+          });
       }
     }
   }
@@ -520,6 +561,7 @@ export class SqliteSandboxExecutionOperations {
         "INSERT INTO sandbox_execution_observations(job_id,sequence,facts_json) VALUES(?,1,?)",
       )
       .run(plan.identity.jobId, JSON.stringify(reservation));
+    this.queue.admitted(plan.identity.jobId);
     return {
       admission: { phase: "reserved" as const, plan, reservation, workspaces },
       applied: true,

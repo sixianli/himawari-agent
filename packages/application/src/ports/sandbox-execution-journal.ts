@@ -153,6 +153,16 @@ export type SandboxExecutionAdmissionRecord =
     }
   | { readonly phase: "bound"; readonly record: SandboxExecutionRecord };
 export interface SandboxExecutionPreparationPort {
+  /** Enqueue without consuming a Handle or acquiring any workspace resource. */
+  enqueue(input: Parameters<SandboxExecutionPreparationPort["reserve"]>[0]): Promise<{
+    readonly sequence: number;
+    readonly status: "queued" | "admitted" | "cancelled";
+  }>;
+  cancelQueued(input: {
+    readonly identity: SandboxJobIdentity;
+    readonly authority: CapabilityInvocationAuthority;
+    readonly now: string;
+  }): Promise<void>;
   reserve(input: {
     readonly invocation: ConsumeCapabilityInvocationInput;
     readonly plan: SandboxExecutionPlanCandidateV2;

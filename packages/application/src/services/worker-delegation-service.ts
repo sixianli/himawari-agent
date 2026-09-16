@@ -92,7 +92,8 @@ export interface WorkerDelegationAdmissionServiceOptions {
   readonly sandbox?: {
     readonly appliesTo?: (invocation: ConsumeCapabilityInvocationInput) => boolean;
     readonly journal: Pick<SandboxJobJournalPort, "admit">;
-    readonly preparations?: Pick<SandboxExecutionPreparationPort, "reserve">;
+    readonly preparations?: Pick<SandboxExecutionPreparationPort, "reserve"> &
+      Partial<Pick<SandboxExecutionPreparationPort, "enqueue" | "cancelQueued" | "readAdmission">>;
     readonly scopes: Pick<SandboxScopeService, "read">;
     readonly prepare: (
       invocation: ConsumeCapabilityInvocationInput,
@@ -106,6 +107,8 @@ export interface WorkerDelegationAdmissionServiceOptions {
   readonly invocationAuthority: () => CapabilityInvocationAuthority;
   readonly now: () => string;
   readonly nextId: (scope: string) => string;
+  /** Injectable wait for deterministic queue tests; authority is rechecked after every wait. */
+  readonly waitForWorkspace?: (milliseconds: number) => Promise<void>;
 }
 
 export interface WorkerDelegationProjection {
@@ -299,13 +302,76 @@ export class WorkerDelegationAdmissionService {
         );
       const plan = sandboxExecutionPlanCandidateV2Schema.parse(prepared.plan);
       const reservation = sandboxExecutionReservationSchema.parse(prepared.reservation);
-      await sandbox.scopes.read(plan, request.causationId);
-      const admitted = await sandbox.preparations.reserve({
-        plan,
-        reservation,
-        workspaces: prepared.workspaces,
-        invocation: { ...input, consumedAt: this.#options.now() },
-      });
+      const preparations = sandbox.preparations;
+      let queued = false;
+      let admitted: Awaited<ReturnType<SandboxExecutionPreparationPort["reserve"]>>;
+      try {
+        for (;;) {
+          await sandbox.scopes.read(plan, request.causationId);
+          const now = this.#options.now();
+          if (now >= plan.effectiveDeadlineAt)
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+              "Queued execution expired",
+            );
+          const candidate = {
+            plan,
+            reservation,
+            workspaces: prepared.workspaces,
+            invocation: { ...input, consumedAt: now },
+          };
+          if (preparations.enqueue && !(await preparations.readAdmission?.(plan.identity))) {
+            if (!preparations.cancelQueued)
+              throw new ApplicationPortError(
+                PORT_ERROR_CODES.INVALID_OPERATION,
+                "Queue cancellation owner unavailable",
+              );
+            const position = await preparations.enqueue(candidate);
+            if (position.status === "cancelled")
+              throw new ApplicationPortError(
+                PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+                "Queued execution was cancelled",
+              );
+            queued = position.status === "queued";
+          }
+          try {
+            admitted = await preparations.reserve(candidate);
+            break;
+          } catch (error) {
+            if (
+              !queued ||
+              !(error instanceof ApplicationPortError) ||
+              !["WORKSPACE_QUEUED", "WORKSPACE_OCCUPIED"].includes(
+                String(error.details["reasonCode"]),
+              )
+            )
+              throw error;
+            const remaining =
+              Date.parse(plan.effectiveDeadlineAt) - Date.parse(this.#options.now());
+            if (remaining <= 0) throw error;
+            await (
+              this.#options.waitForWorkspace ??
+              ((milliseconds) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)))
+            )(Math.min(250, remaining));
+          }
+        }
+      } catch (error) {
+        if (queued && preparations.cancelQueued) {
+          try {
+            await preparations.cancelQueued({
+              identity: plan.identity,
+              authority: this.#options.invocationAuthority(),
+              now: this.#options.now(),
+            });
+          } catch (cleanupError) {
+            throw new AggregateError(
+              [error, cleanupError],
+              "Queue cancellation requires reconciliation",
+            );
+          }
+        }
+        throw error;
+      }
       const saved =
         admitted.admission.phase === "reserved"
           ? admitted.admission.plan

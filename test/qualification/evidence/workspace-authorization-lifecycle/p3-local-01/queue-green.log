@@ -1,0 +1,33 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-execution-preparation.test.ts (9 tests | 9 failed) 1668ms
+     × queues without effects and prevents a newer conflicting request from jumping ahead 212ms
+     × does not place unrelated resources behind an older queued request 187ms
+     × rejects changed queue identities and revoked Handles without creating occupancy 179ms
+     × preserves reservations and fixed start bindings across database reopen 173ms
+     × admits without fabricated runtime values, then fixes the actual binding exactly once 182ms
+     × retains occupancy before preparation and rolls back a conflicting consume 184ms
+     × rejects revoked authority at binding and keeps the reservation unbound 164ms
+     × does not upgrade an existing unstarted v2 record into permission to launch 181ms
+     × rejects reservation mutation and binding that claims execution before start 205ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > queues without effects and prevents a newer conflicting request from jumping ahead
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > does not place unrelated resources behind an older queued request
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects changed queue identities and revoked Handles without creating occupancy
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > preserves reservations and fixed start bindings across database reopen
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > admits without fabricated runtime values, then fixes the actual binding exactly once
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > retains occupancy before preparation and rolls back a conflicting consume
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects revoked authority at binding and keeps the reservation unbound
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > does not upgrade an existing unstarted v2 record into permission to launch
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects reservation mutation and binding that claims execution before start
+Error: Cannot find module '/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/persistence-sqlite/src/sqlite-workspace-admission-queue.js' imported from /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  9 failed (9)
+   Start at  20:11:59
+   Duration  3.09s (transform 808ms, setup 0ms, import 1.30s, tests 1.67s, environment 0ms)

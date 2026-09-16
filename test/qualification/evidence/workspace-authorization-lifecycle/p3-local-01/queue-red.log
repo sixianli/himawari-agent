@@ -1,0 +1,60 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-execution-preparation.test.ts (9 tests | 3 failed) 2151ms
+     × queues without effects and prevents a newer conflicting request from jumping ahead 259ms
+     × does not place unrelated resources behind an older queued request 212ms
+     × rejects changed queue identities and revoked Handles without creating occupancy 188ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > queues without effects and prevents a newer conflicting request from jumping ahead
+ApplicationPortError: $: expected an object
+ ❯ SqliteCapabilityInvocationOperations.fail test/fixtures/sqlite-capability-invocation-fixture.ts:462:11
+    460|     details?: Readonly<Record<string, string>>,
+    461|   ): never => {
+    462|     throw new ApplicationPortError(code as PortErrorCode, message, det…
+       |           ^
+    463|   };
+    464|   const artifacts = new SqliteRunPayloadArtifactOperations(database, f…
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:535:21
+ ❯ call test/integration/sandbox-execution-preparation.test.ts:27:44
+ ❯ test/integration/sandbox-execution-preparation.test.ts:76:14
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > does not place unrelated resources behind an older queued request
+ApplicationPortError: $: expected an object
+ ❯ SqliteCapabilityInvocationOperations.fail test/fixtures/sqlite-capability-invocation-fixture.ts:462:11
+    460|     details?: Readonly<Record<string, string>>,
+    461|   ): never => {
+    462|     throw new ApplicationPortError(code as PortErrorCode, message, det…
+       |           ^
+    463|   };
+    464|   const artifacts = new SqliteRunPayloadArtifactOperations(database, f…
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:535:21
+ ❯ call test/integration/sandbox-execution-preparation.test.ts:27:44
+ ❯ test/integration/sandbox-execution-preparation.test.ts:92:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects changed queue identities and revoked Handles without creating occupancy
+ApplicationPortError: $: expected an object
+ ❯ SqliteCapabilityInvocationOperations.fail test/fixtures/sqlite-capability-invocation-fixture.ts:462:11
+    460|     details?: Readonly<Record<string, string>>,
+    461|   ): never => {
+    462|     throw new ApplicationPortError(code as PortErrorCode, message, det…
+       |           ^
+    463|   };
+    464|   const artifacts = new SqliteRunPayloadArtifactOperations(database, f…
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:535:21
+ ❯ call test/integration/sandbox-execution-preparation.test.ts:27:44
+ ❯ test/integration/sandbox-execution-preparation.test.ts:108:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 6 passed (9)
+   Start at  20:10:03
+   Duration  3.63s (transform 877ms, setup 0ms, import 1.38s, tests 2.15s, environment 0ms)

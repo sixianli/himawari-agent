@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:74542a37a6b9ee0ae3863869471f5e5c73c5904ec7f0083cfe49abba4f2d3989"
+contract_sha256: "sha256:b9d3639b5598955fcb92832d81d923741058ddca713789cf9ecdb68a24cf6200"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -11,6 +11,10 @@ date: "2026-09-11"
 # Hermes 控制中心升级与真实验收
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/migrations/0035_workspace_admission_queue.sql
+- packages/persistence-sqlite/src/sqlite-workspace-admission-queue.ts
+- packages/application/src/services/file-operation-service.ts
+- packages/platform-node/src/files/constrained-file-system.ts
 - packages/persistence-sqlite/src/migrations/0034_authorization_reservations.sql
 - packages/persistence-sqlite/src/sqlite-authorization-reservations.ts
 - packages/application/src/services/action-intent-snapshot.ts
@@ -228,3 +232,11 @@ ADR 0028 的受保护 Linux 安装是上述逐次全量校验的显式替代路�
 前台任务也必须核对清理。已取消/失败的 Run 可以通过原停止命令再次核对，禁止重新运行其模型或工具。协调器完整性核验使用现有 30 秒上限；不要把 Job Host 的 5 秒进程退出期限与包括安装文件核验的协调期限混为一谈。机械盘主机可配置 Worker 等待 300 秒、Run 900 秒、Provider 120 秒，仍逐项受已签名能力上限约束。升级旧安装前先使用相同安装和原受保护证据释放遗留环境；只有规范协调器核验并持久化 released 才能报告清理完成。
 
 若旧 fixed_read 已有真实结果及清理证据，却仍保留 SANDBOX_NOT_STARTED 效果，先核对其固定只读合同、结果绑定与原安装字节，再通过现有 Journal CAS 补充 not_applicable；不能把写操作、未知退出或未经验证的副作用套用此修复。维护进程在服务停止后正常取得独占 Authority，保留旧安装做核验，结束后释放 Authority；不继承旧 Worker 的执行权，不直接更新数据库列。候选版本的同一受测验证/持久化组件可用于这次受限修复，随后才替换安装树。
+
+### Schema 35 持久排队与文件发布证据
+
+Schema 35 新增 `sandbox_admission_queue`。备份应同时保留队列次序、冻结请求、调用回执、Handle 和额度预约；恢复不能把已准入请求重新派发。等待中的请求没有文件占用，也没有消费回执；取消、期限届满或授权失效后不能取得资源。当前版本尚未实现跨进程重启后自动续接等待请求，恢复时不能通过删除队列或更换调用身份绕过原次序。
+
+受控文件发布先完成并同步暂存内容，再发布最终路径。已保存的文件操作记录可包含暂存 inode 证据；恢复只核查最终文件身份与内容，并清除属于该操作的暂存硬链接，不重复写入。仅内容相同不足以证明是本操作产生的效果。文件候选位于原授权目录的 `.himawari-recovery/`；它不属于产品数据库备份包，不能据数据库恢复宣称候选内容或目标文件已恢复。
+
+Schema 35 也是旧 writer 的版本屏障：Schema 34 或更旧代码不理解持久公平队列及文件发布归属，禁止并行写入新库。回退须停止服务并恢复匹配旧版本的完整恢复点，不能只删除新表或降版本号。当前文件原语已有本地 macOS 回归证据；跨 Worker 的细粒度文件占用、Linux 文件系统资格和部署升级仍须独立验证。

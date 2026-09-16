@@ -100,9 +100,13 @@ export async function createSandboxedCodingOperations(input: {
       const storage = await platform.storageObservation(grant);
       if (storage.availableBytes < bytes.length + 64 * 1024 * 1024)
         throw new Error("PI_STORAGE_RESERVE");
+      const hooks = {
+        beforePublish: async () => check(),
+        assertCurrentAuthority: async () => check(),
+      };
       if (previous)
-        await platform.replaceAtomic(grant, name, previous.identity, bytes, previous.bytes);
-      else await platform.createExclusive(grant, name, bytes);
+        await platform.replaceAtomic(grant, name, previous.identity, bytes, previous.bytes, hooks);
+      else await platform.createExclusive(grant, name, bytes, hooks);
       const observed = await platform.read(grant, name, Math.max(1, bytes.length));
       if (!Buffer.from(observed).equals(bytes)) throw new Error("PI_WRITE_VERIFICATION_FAILED");
       input.onVerifiedWrite?.({

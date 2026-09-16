@@ -1,0 +1,125 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/constrained-file-system.unit.test.ts (36 tests | 4 failed) 132ms
+     × does not attribute another writer's identical file to an interrupted operation 11ms
+     × preserves ordinary permission bits when atomically replacing a file 10ms
+     × never exposes partial content at a newly created target 7ms
+     × leaves no partial final file when preparing a create fails 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/constrained-file-system.unit.test.ts > ConstrainedHostFileSystem > does not attribute another writer's identical file to an interrupted operation
+AssertionError: promise resolved "{ id: 'file-operation-2', …(16) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "candidateDigest": "sha256:15bbe85aac4518db7da507997bd8b9baa07ddea5d0a08d098f85f1bf08c02521",
++   "candidatePayloadRef": "payload:candidate",
++   "canonicalHash": "sha256:24ba44a94a6281890984b9b8b6bced67da7fb058eac15595d7a562854f89178b",
++   "destinationRelativePath": null,
++   "expiresAt": "2026-08-28T20:30:00.000Z",
++   "grantId": "directory-grant-1",
++   "id": "file-operation-2",
++   "operation": "create",
++   "previousDigest": null,
++   "recoveryStrategy": "exclusive_create",
++   "redactedDiffRef": null,
++   "relativePath": "note.txt",
++   "revision": 3,
++   "sizeBytes": 17,
++   "sourceRecordRef": null,
++   "status": "verified",
++   "targetIdentity": null,
+  }
+
+ ❯ packages/platform-node/test/constrained-file-system.unit.test.ts:157:46
+    155|     await expect(service.executeWrite(input)).rejects.toThrow("fixture…
+    156|     await writeFile(path.join(root, "note.txt"), candidateBytes);
+    157|     await expect(service.executeWrite(input)).rejects.toThrow();
+       |                                              ^
+    158|     expect((await state.readPrepared(prepared.id))?.status).not.toBe("…
+    159|     expect(await readFile(path.join(root, "note.txt"), "utf8")).toBe("…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |unit| packages/platform-node/test/constrained-file-system.unit.test.ts > ConstrainedHostFileSystem > preserves ordinary permission bits when atomically replacing a file
+AssertionError: expected 384 to be 488 // Object.is equality
+
+- Expected
++ Received
+
+- 488
++ 384
+
+ ❯ packages/platform-node/test/constrained-file-system.unit.test.ts:169:69
+    167|     if (!expected) throw new Error("fixture missing");
+    168|     await platform.replaceAtomic(grant, "script.sh", expected, new Tex…
+    169|     expect((await stat(path.join(root, "script.sh"))).mode & 0o777).to…
+       |                                                                     ^
+    170|   });
+    171|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |unit| packages/platform-node/test/constrained-file-system.unit.test.ts > ConstrainedHostFileSystem > never exposes partial content at a newly created target
+AssertionError: promise resolved "Buffer[ 99, 111 ]" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "data": [
++     99,
++     111,
++   ],
++   "type": "Buffer",
+  }
+
+ ❯ packages/platform-node/test/constrained-file-system.unit.test.ts:197:62
+    195|     try {
+    196|       await writing;
+    197|       await expect(readFile(path.join(root, "complete.txt"))).rejects.…
+       |                                                              ^
+    198|     } finally {
+    199|       continueWrite();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |unit| packages/platform-node/test/constrained-file-system.unit.test.ts > ConstrainedHostFileSystem > leaves no partial final file when preparing a create fails
+AssertionError: promise resolved "Buffer[ 99, 111 ]" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "data": [
++     99,
++     111,
++   ],
++   "type": "Buffer",
+  }
+
+ ❯ packages/platform-node/test/constrained-file-system.unit.test.ts:227:60
+    225|       open.mockRestore();
+    226|     }
+    227|     await expect(readFile(path.join(root, "complete.txt"))).rejects.to…
+       |                                                            ^
+    228|   });
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 32 passed (36)
+   Start at  19:56:20
+   Duration  1.47s (transform 795ms, setup 0ms, import 1.24s, tests 132ms, environment 0ms)

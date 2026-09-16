@@ -492,6 +492,16 @@ export class SqliteCapabilityInvocationOperations {
     this.sandboxExecutions = new SqliteSandboxExecutionOperations(database, fail, {
       disk: assertDiskHeadroom,
       consume: (value, owner, agent) => this.consume(parseConsume(value), owner, agent),
+      validateQueued: (value, owner, agent) => {
+        const input = parseConsume(value);
+        this.assertRequestScope(input, owner, agent);
+        if (
+          this.readReceiptByKey(owner, agent, input.idempotencyKey) ||
+          this.readReceiptByInvocation(owner, agent, input.requestScope.runId, input.invocationId)
+        )
+          this.fail("PORT_CONFLICT", "Consumed invocation cannot acquire a new queue position");
+        this.unconsumedHandle(input);
+      },
       authority: (value, owner, agent, now) =>
         this.assertAuthority(authority(value), owner, agent, now),
       live: (plan, value, now) => this.assertSandboxLive(plan, authority(value), now),
@@ -894,6 +904,22 @@ export class SqliteCapabilityInvocationOperations {
     };
   }
 
+  private unconsumedHandle(input: ConsumeInput): GovernedCapabilityExecutionHandle {
+    const row = this.readHandle(input.handleRef);
+    if (!row) return this.fail("PORT_NOT_FOUND", `Capability handle ${input.handleRef} not found`);
+    const current = this.assertLiveInvocationAuthority(row, input);
+    if (current.idempotencyKeys.includes(input.idempotencyKey)) {
+      return this.fail(
+        "PORT_CONFLICT",
+        "Capability Handle has a historical consume without a durable invocation receipt",
+        { handleRef: input.handleRef },
+      );
+    }
+
+    this.assertGrant(current, input);
+    return current;
+  }
+
   private consume(input: ConsumeInput, ownerId: string, agentId: string): ConsumeResult {
     this.assertDiskHeadroom();
     return this.database
@@ -916,19 +942,7 @@ export class SqliteCapabilityInvocationOperations {
           );
         }
 
-        const row = this.readHandle(input.handleRef);
-        if (!row)
-          return this.fail("PORT_NOT_FOUND", `Capability handle ${input.handleRef} not found`);
-        const current = this.assertLiveInvocationAuthority(row, input);
-        if (current.idempotencyKeys.includes(input.idempotencyKey)) {
-          return this.fail(
-            "PORT_CONFLICT",
-            "Capability Handle has a historical consume without a durable invocation receipt",
-            { handleRef: input.handleRef },
-          );
-        }
-
-        this.assertGrant(current, input);
+        const current = this.unconsumedHandle(input);
         if (
           !this.commitAuthorization &&
           this.database

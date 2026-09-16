@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:ab1b3fac3a3cc5b792a5a7cce730306b6d4de3c664dd46a83599a79ef67bf4c4"
+contract_sha256: "sha256:23e16f80053ffa0d53c103b775a68721354282e74aac48c6d811f7e1e09d5449"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,10 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/migrations/0035_workspace_admission_queue.sql
+- packages/persistence-sqlite/src/sqlite-workspace-admission-queue.ts
+- packages/application/src/services/file-operation-service.ts
+- packages/platform-node/src/files/constrained-file-system.ts
 - packages/persistence-sqlite/src/migrations/0034_authorization_reservations.sql
 - packages/persistence-sqlite/src/sqlite-authorization-reservations.ts
 - packages/application/src/services/action-intent-snapshot.ts
@@ -84,7 +88,6 @@ date: "2026-08-27"
 - apps/agent-service/src/production-file-read-workflow.ts
 - apps/agent-service/src/production-file-read-services.ts
 - packages/runtime-pi/src/governed-read-executor.ts
-- packages/platform-node/src/files/constrained-file-system.ts
 - packages/application/src/services/run-execution-input-service.ts
 - packages/application/src/services/run-coordinator.ts
 - packages/application/src/ports/run-dispatch.ts
@@ -399,3 +402,11 @@ Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释
 
 
 同次进程观察现在携带 Agent 在该次核验中产生的证据，保存时不重复扫描安装字节；外部 Worker 事实仍独立核验，序号、身份、有效期及事务检查保留。注册控制入口统一核对当前 Scope、Grant 和安装；终态工具仍保存结果并完成原清理核验。此调整不改变停机、恢复、迁移或重新授权步骤，不使旧进程证据恢复执行权限。
+
+### Schema 35 持久排队与文件发布证据
+
+Schema 35 新增 `sandbox_admission_queue`。备份应同时保留队列次序、冻结请求、调用回执、Handle 和额度预约；恢复不能把已准入请求重新派发。等待中的请求没有文件占用，也没有消费回执；取消、期限届满或授权失效后不能取得资源。当前版本尚未实现跨进程重启后自动续接等待请求，恢复时不能通过删除队列或更换调用身份绕过原次序。
+
+受控文件发布先完成并同步暂存内容，再发布最终路径。已保存的文件操作记录可包含暂存 inode 证据；恢复只核查最终文件身份与内容，并清除属于该操作的暂存硬链接，不重复写入。仅内容相同不足以证明是本操作产生的效果。文件候选位于原授权目录的 `.himawari-recovery/`；它不属于产品数据库备份包，不能据数据库恢复宣称候选内容或目标文件已恢复。
+
+Schema 35 也是旧 writer 的版本屏障：Schema 34 或更旧代码不理解持久公平队列及文件发布归属，禁止并行写入新库。回退须停止服务并恢复匹配旧版本的完整恢复点，不能只删除新表或降版本号。当前文件原语已有本地 macOS 回归证据；跨 Worker 的细粒度文件占用、Linux 文件系统资格和部署升级仍须独立验证。

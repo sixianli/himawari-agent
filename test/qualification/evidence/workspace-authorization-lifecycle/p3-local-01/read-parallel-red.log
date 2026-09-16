@@ -1,0 +1,33 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-execution-preparation.test.ts (13 tests | 1 failed) 3105ms
+     × allows two read-only preparations over the same workspace 210ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > allows two read-only preparations over the same workspace
+ApplicationPortError: Workspace has a pending preparation
+ ❯ SqliteSandboxExecutionOperations.fail test/fixtures/sqlite-capability-invocation-fixture.ts:462:11
+    460|     details?: Readonly<Record<string, string>>,
+    461|   ): never => {
+    462|     throw new ApplicationPortError(code as PortErrorCode, message, det…
+       |           ^
+    463|   };
+    464|   const artifacts = new SqliteRunPayloadArtifactOperations(database, f…
+ ❯ SqliteSandboxExecutionOperations.assertAvailable packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:379:18
+ ❯ SqliteSandboxExecutionOperations.reserve packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:525:10
+ ❯ Function.<anonymous> packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:195:23
+ ❯ Function.sqliteTransaction node_modules/better-sqlite3/lib/methods/transaction.js:65:24
+ ❯ SqliteSandboxExecutionOperations.execute packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:309:8
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:515:39
+ ❯ call test/integration/sandbox-execution-preparation.test.ts:30:44
+ ❯ test/integration/sandbox-execution-preparation.test.ts:83:14
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 12 passed (13)
+   Start at  20:17:27
+   Duration  4.53s (transform 849ms, setup 0ms, import 1.33s, tests 3.10s, environment 0ms)
