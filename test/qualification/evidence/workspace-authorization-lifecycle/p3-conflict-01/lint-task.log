@@ -1,0 +1,424 @@
+apps/agent-service/src/production-coding-workflow.ts:107:18 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    105 │   if (
+    106 │     tool === "web_search" &&
+  > 107 │     (typeof args["query"] !== "string" ||
+        │                  ^^^^^^^
+    108 │       !args["query"].trim() ||
+    109 │       Buffer.byteLength(args["query"]) > 4096 ||
+
+  i Unsafe fix: Use a literal key instead.
+
+    105 105 │     if (
+    106 106 │       tool === "web_search" &&
+    107     │ - ····(typeof·args["query"]·!==·"string"·||
+        107 │ + ····(typeof·args.query·!==·"string"·||
+    108 108 │         !args["query"].trim() ||
+    109 109 │         Buffer.byteLength(args["query"]) > 4096 ||
+
+
+apps/agent-service/src/production-coding-workflow.ts:108:13 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    106 │     tool === "web_search" &&
+    107 │     (typeof args["query"] !== "string" ||
+  > 108 │       !args["query"].trim() ||
+        │             ^^^^^^^
+    109 │       Buffer.byteLength(args["query"]) > 4096 ||
+    110 │       scanMachineSecrets(args["query"]).length ||
+
+  i Unsafe fix: Use a literal key instead.
+
+    106 106 │       tool === "web_search" &&
+    107 107 │       (typeof args["query"] !== "string" ||
+    108     │ - ······!args["query"].trim()·||
+        108 │ + ······!args.query.trim()·||
+    109 109 │         Buffer.byteLength(args["query"]) > 4096 ||
+    110 110 │         scanMachineSecrets(args["query"]).length ||
+
+
+apps/agent-service/src/production-coding-workflow.ts:109:30 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    107 │     (typeof args["query"] !== "string" ||
+    108 │       !args["query"].trim() ||
+  > 109 │       Buffer.byteLength(args["query"]) > 4096 ||
+        │                              ^^^^^^^
+    110 │       scanMachineSecrets(args["query"]).length ||
+    111 │       Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+
+  i Unsafe fix: Use a literal key instead.
+
+    107 107 │       (typeof args["query"] !== "string" ||
+    108 108 │         !args["query"].trim() ||
+    109     │ - ······Buffer.byteLength(args["query"])·>·4096·||
+        109 │ + ······Buffer.byteLength(args.query)·>·4096·||
+    110 110 │         scanMachineSecrets(args["query"]).length ||
+    111 111 │         Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+
+
+apps/agent-service/src/production-coding-workflow.ts:110:31 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    108 │       !args["query"].trim() ||
+    109 │       Buffer.byteLength(args["query"]) > 4096 ||
+  > 110 │       scanMachineSecrets(args["query"]).length ||
+        │                               ^^^^^^^
+    111 │       Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    112 │       (args["limit"] !== undefined &&
+
+  i Unsafe fix: Use a literal key instead.
+
+    108 108 │         !args["query"].trim() ||
+    109 109 │         Buffer.byteLength(args["query"]) > 4096 ||
+    110     │ - ······scanMachineSecrets(args["query"]).length·||
+        110 │ + ······scanMachineSecrets(args.query).length·||
+    111 111 │         Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    112 112 │         (args["limit"] !== undefined &&
+
+
+apps/agent-service/src/production-coding-workflow.ts:112:13 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    110 │       scanMachineSecrets(args["query"]).length ||
+    111 │       Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+  > 112 │       (args["limit"] !== undefined &&
+        │             ^^^^^^^
+    113 │         (!Number.isInteger(args["limit"]) ||
+    114 │           Number(args["limit"]) < 1 ||
+
+  i Unsafe fix: Use a literal key instead.
+
+    110 110 │         scanMachineSecrets(args["query"]).length ||
+    111 111 │         Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    112     │ - ······(args["limit"]·!==·undefined·&&
+        112 │ + ······(args.limit·!==·undefined·&&
+    113 113 │           (!Number.isInteger(args["limit"]) ||
+    114 114 │             Number(args["limit"]) < 1 ||
+
+
+apps/agent-service/src/production-coding-workflow.ts:113:33 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    111 │       Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    112 │       (args["limit"] !== undefined &&
+  > 113 │         (!Number.isInteger(args["limit"]) ||
+        │                                 ^^^^^^^
+    114 │           Number(args["limit"]) < 1 ||
+    115 │           Number(args["limit"]) > 10)))
+
+  i Unsafe fix: Use a literal key instead.
+
+    111 111 │         Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    112 112 │         (args["limit"] !== undefined &&
+    113     │ - ········(!Number.isInteger(args["limit"])·||
+        113 │ + ········(!Number.isInteger(args.limit)·||
+    114 114 │             Number(args["limit"]) < 1 ||
+    115 115 │             Number(args["limit"]) > 10)))
+
+
+apps/agent-service/src/production-coding-workflow.ts:114:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    112 │       (args["limit"] !== undefined &&
+    113 │         (!Number.isInteger(args["limit"]) ||
+  > 114 │           Number(args["limit"]) < 1 ||
+        │                       ^^^^^^^
+    115 │           Number(args["limit"]) > 10)))
+    116 │   )
+
+  i Unsafe fix: Use a literal key instead.
+
+    112 112 │         (args["limit"] !== undefined &&
+    113 113 │           (!Number.isInteger(args["limit"]) ||
+    114     │ - ··········Number(args["limit"])·<·1·||
+        114 │ + ··········Number(args.limit)·<·1·||
+    115 115 │             Number(args["limit"]) > 10)))
+    116 116 │     )
+
+
+apps/agent-service/src/production-coding-workflow.ts:115:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    113 │         (!Number.isInteger(args["limit"]) ||
+    114 │           Number(args["limit"]) < 1 ||
+  > 115 │           Number(args["limit"]) > 10)))
+        │                       ^^^^^^^
+    116 │   )
+    117 │     return failed("WEB_SEARCH_INPUT_INVALID");
+
+  i Unsafe fix: Use a literal key instead.
+
+    113 113 │           (!Number.isInteger(args["limit"]) ||
+    114 114 │             Number(args["limit"]) < 1 ||
+    115     │ - ··········Number(args["limit"])·>·10)))
+        115 │ + ··········Number(args.limit)·>·10)))
+    116 116 │     )
+    117 117 │       return failed("WEB_SEARCH_INPUT_INVALID");
+
+
+apps/agent-service/src/production-coding-workflow.ts:121:12 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    119 │     if (!grant) return failed("CODING_DIRECTORY_UNAVAILABLE");
+    120 │     const target =
+  > 121 │       args["path"] ?? (tool === "ls" || tool === "find" || tool === "grep" ? "." : undefined);
+        │            ^^^^^^
+    122 │     if (typeof target !== "string") return failed("CODING_PATH_REQUIRED");
+    123 │     try {
+
+  i Unsafe fix: Use a literal key instead.
+
+    119 119 │       if (!grant) return failed("CODING_DIRECTORY_UNAVAILABLE");
+    120 120 │       const target =
+    121     │ - ······args["path"]·??·(tool·===·"ls"·||·tool·===·"find"·||·tool·===·"grep"·?·"."·:·undefined);
+        121 │ + ······args.path·??·(tool·===·"ls"·||·tool·===·"find"·||·tool·===·"grep"·?·"."·:·undefined);
+    122 122 │       if (typeof target !== "string") return failed("CODING_PATH_REQUIRED");
+    123 123 │       try {
+
+
+apps/agent-service/src/production-coding-workflow.ts:188:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    186 │       { type: "model", ref: binding.modelIdentity },
+    187 │       ...(tool === "web_search" ? [{ type: "network-domain", ref: "mcp.exa.ai:443" }] : []),
+  > 188 │       ...(typeof args["path"] === "string" ? [{ type: "file-path", ref: args["path"] }] : []),
+        │                       ^^^^^^
+    189 │     ],
+    190 │     dataClassification: "private",
+
+  i Unsafe fix: Use a literal key instead.
+
+    186 186 │         { type: "model", ref: binding.modelIdentity },
+    187 187 │         ...(tool === "web_search" ? [{ type: "network-domain", ref: "mcp.exa.ai:443" }] : []),
+    188     │ - ······...(typeof·args["path"]·===·"string"·?·[{·type:·"file-path",·ref:·args["path"]·}]·:·[]),
+        188 │ + ······...(typeof·args.path·===·"string"·?·[{·type:·"file-path",·ref:·args["path"]·}]·:·[]),
+    189 189 │       ],
+    190 190 │       dataClassification: "private",
+
+
+apps/agent-service/src/production-coding-workflow.ts:188:78 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    186 │       { type: "model", ref: binding.modelIdentity },
+    187 │       ...(tool === "web_search" ? [{ type: "network-domain", ref: "mcp.exa.ai:443" }] : []),
+  > 188 │       ...(typeof args["path"] === "string" ? [{ type: "file-path", ref: args["path"] }] : []),
+        │                                                                              ^^^^^^
+    189 │     ],
+    190 │     dataClassification: "private",
+
+  i Unsafe fix: Use a literal key instead.
+
+    186 186 │         { type: "model", ref: binding.modelIdentity },
+    187 187 │         ...(tool === "web_search" ? [{ type: "network-domain", ref: "mcp.exa.ai:443" }] : []),
+    188     │ - ······...(typeof·args["path"]·===·"string"·?·[{·type:·"file-path",·ref:·args["path"]·}]·:·[]),
+        188 │ + ······...(typeof·args["path"]·===·"string"·?·[{·type:·"file-path",·ref:·args.path·}]·:·[]),
+    189 189 │       ],
+    190 190 │       dataClassification: "private",
+
+
+apps/agent-service/src/production-coding-workflow.ts:227:38 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    225 │       previous.call.toolCallId === call.toolCallId ||
+    226 │       hash(previous.binding) !== hash(binding) ||
+  > 227 │       typeof previous.call.arguments["path"] !== "string" ||
+        │                                      ^^^^^^
+    228 │       typeof args["path"] !== "string" ||
+    229 │       resolveHostFileReadPath(grant, previous.call.arguments["path"]) !==
+
+  i Unsafe fix: Use a literal key instead.
+
+    225 225 │         previous.call.toolCallId === call.toolCallId ||
+    226 226 │         hash(previous.binding) !== hash(binding) ||
+    227     │ - ······typeof·previous.call.arguments["path"]·!==·"string"·||
+        227 │ + ······typeof·previous.call.arguments.path·!==·"string"·||
+    228 228 │         typeof args["path"] !== "string" ||
+    229 229 │         resolveHostFileReadPath(grant, previous.call.arguments["path"]) !==
+
+
+apps/agent-service/src/production-coding-workflow.ts:228:19 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    226 │       hash(previous.binding) !== hash(binding) ||
+    227 │       typeof previous.call.arguments["path"] !== "string" ||
+  > 228 │       typeof args["path"] !== "string" ||
+        │                   ^^^^^^
+    229 │       resolveHostFileReadPath(grant, previous.call.arguments["path"]) !==
+    230 │         resolveHostFileReadPath(grant, args["path"]) ||
+
+  i Unsafe fix: Use a literal key instead.
+
+    226 226 │         hash(previous.binding) !== hash(binding) ||
+    227 227 │         typeof previous.call.arguments["path"] !== "string" ||
+    228     │ - ······typeof·args["path"]·!==·"string"·||
+        228 │ + ······typeof·args.path·!==·"string"·||
+    229 229 │         resolveHostFileReadPath(grant, previous.call.arguments["path"]) !==
+    230 230 │           resolveHostFileReadPath(grant, args["path"]) ||
+
+
+apps/agent-service/src/production-coding-workflow.ts:229:62 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    227 │       typeof previous.call.arguments["path"] !== "string" ||
+    228 │       typeof args["path"] !== "string" ||
+  > 229 │       resolveHostFileReadPath(grant, previous.call.arguments["path"]) !==
+        │                                                              ^^^^^^
+    230 │         resolveHostFileReadPath(grant, args["path"]) ||
+    231 │       !Number.isSafeInteger(previous.depth) ||
+
+  i Unsafe fix: Use a literal key instead.
+
+    227 227 │         typeof previous.call.arguments["path"] !== "string" ||
+    228 228 │         typeof args["path"] !== "string" ||
+    229     │ - ······resolveHostFileReadPath(grant,·previous.call.arguments["path"])·!==
+        229 │ + ······resolveHostFileReadPath(grant,·previous.call.arguments.path)·!==
+    230 230 │           resolveHostFileReadPath(grant, args["path"]) ||
+    231 231 │         !Number.isSafeInteger(previous.depth) ||
+
+
+apps/agent-service/src/production-coding-workflow.ts:230:45 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    228 │       typeof args["path"] !== "string" ||
+    229 │       resolveHostFileReadPath(grant, previous.call.arguments["path"]) !==
+  > 230 │         resolveHostFileReadPath(grant, args["path"]) ||
+        │                                             ^^^^^^
+    231 │       !Number.isSafeInteger(previous.depth) ||
+    232 │       previous.depth < 0 ||
+
+  i Unsafe fix: Use a literal key instead.
+
+    228 228 │         typeof args["path"] !== "string" ||
+    229 229 │         resolveHostFileReadPath(grant, previous.call.arguments["path"]) !==
+    230     │ - ········resolveHostFileReadPath(grant,·args["path"])·||
+        230 │ + ········resolveHostFileReadPath(grant,·args.path)·||
+    231 231 │         !Number.isSafeInteger(previous.depth) ||
+    232 232 │         previous.depth < 0 ||
+
+
+apps/agent-service/src/production-file-read-workflow.ts:117:29 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    115 │       call.capabilityHandleRef !== null ||
+    116 │       call.capabilityRef !== "host.file.read" ||
+  > 117 │       typeof call.arguments["path"] !== "string" ||
+        │                             ^^^^^^
+    118 │       !call.arguments["path"] ||
+    119 │       Object.keys(call.arguments).some((key) => !["path", "offset", "limit"].includes(key)) ||
+
+  i Unsafe fix: Use a literal key instead.
+
+    115 115 │         call.capabilityHandleRef !== null ||
+    116 116 │         call.capabilityRef !== "host.file.read" ||
+    117     │ - ······typeof·call.arguments["path"]·!==·"string"·||
+        117 │ + ······typeof·call.arguments.path·!==·"string"·||
+    118 118 │         !call.arguments["path"] ||
+    119 119 │         Object.keys(call.arguments).some((key) => !["path", "offset", "limit"].includes(key)) ||
+
+
+apps/agent-service/src/production-file-read-workflow.ts:118:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    116 │       call.capabilityRef !== "host.file.read" ||
+    117 │       typeof call.arguments["path"] !== "string" ||
+  > 118 │       !call.arguments["path"] ||
+        │                       ^^^^^^
+    119 │       Object.keys(call.arguments).some((key) => !["path", "offset", "limit"].includes(key)) ||
+    120 │       [call.arguments["offset"], call.arguments["limit"]].some(
+
+  i Unsafe fix: Use a literal key instead.
+
+    116 116 │         call.capabilityRef !== "host.file.read" ||
+    117 117 │         typeof call.arguments["path"] !== "string" ||
+    118     │ - ······!call.arguments["path"]·||
+        118 │ + ······!call.arguments.path·||
+    119 119 │         Object.keys(call.arguments).some((key) => !["path", "offset", "limit"].includes(key)) ||
+    120 120 │         [call.arguments["offset"], call.arguments["limit"]].some(
+
+
+apps/agent-service/test/production-coding-workflow.unit.test.ts:285:18 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    283 │   const lineage = f.values.get("conflict-lineage") as Record<string, unknown>;
+    284 │   expect(lineage).toMatchObject({ previousToolCallId: "previous", depth: 1 });
+  > 285 │   expect(lineage["intentId"]).not.toBe(lineage["previousIntentId"]);
+        │                  ^^^^^^^^^^
+    286 │   expect(f.authorize.mock.calls[0]?.[0]).toMatchObject({ id: lineage["intentId"] });
+    287 │   expect(f.services.issue).not.toHaveBeenCalled();
+
+  i Unsafe fix: Use a literal key instead.
+
+    283 283 │     const lineage = f.values.get("conflict-lineage") as Record<string, unknown>;
+    284 284 │     expect(lineage).toMatchObject({ previousToolCallId: "previous", depth: 1 });
+    285     │ - ··expect(lineage["intentId"]).not.toBe(lineage["previousIntentId"]);
+        285 │ + ··expect(lineage.intentId).not.toBe(lineage["previousIntentId"]);
+    286 286 │     expect(f.authorize.mock.calls[0]?.[0]).toMatchObject({ id: lineage["intentId"] });
+    287 287 │     expect(f.services.issue).not.toHaveBeenCalled();
+
+
+apps/agent-service/test/production-coding-workflow.unit.test.ts:285:48 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    283 │   const lineage = f.values.get("conflict-lineage") as Record<string, unknown>;
+    284 │   expect(lineage).toMatchObject({ previousToolCallId: "previous", depth: 1 });
+  > 285 │   expect(lineage["intentId"]).not.toBe(lineage["previousIntentId"]);
+        │                                                ^^^^^^^^^^^^^^^^^^
+    286 │   expect(f.authorize.mock.calls[0]?.[0]).toMatchObject({ id: lineage["intentId"] });
+    287 │   expect(f.services.issue).not.toHaveBeenCalled();
+
+  i Unsafe fix: Use a literal key instead.
+
+    283 283 │     const lineage = f.values.get("conflict-lineage") as Record<string, unknown>;
+    284 284 │     expect(lineage).toMatchObject({ previousToolCallId: "previous", depth: 1 });
+    285     │ - ··expect(lineage["intentId"]).not.toBe(lineage["previousIntentId"]);
+        285 │ + ··expect(lineage["intentId"]).not.toBe(lineage.previousIntentId);
+    286 286 │     expect(f.authorize.mock.calls[0]?.[0]).toMatchObject({ id: lineage["intentId"] });
+    287 287 │     expect(f.services.issue).not.toHaveBeenCalled();
+
+
+apps/agent-service/test/production-coding-workflow.unit.test.ts:286:70 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    284 │   expect(lineage).toMatchObject({ previousToolCallId: "previous", depth: 1 });
+    285 │   expect(lineage["intentId"]).not.toBe(lineage["previousIntentId"]);
+  > 286 │   expect(f.authorize.mock.calls[0]?.[0]).toMatchObject({ id: lineage["intentId"] });
+        │                                                                      ^^^^^^^^^^
+    287 │   expect(f.services.issue).not.toHaveBeenCalled();
+    288 │   expect(f.ctx.phase).not.toHaveBeenCalled();
+
+  i Unsafe fix: Use a literal key instead.
+
+    284 284 │     expect(lineage).toMatchObject({ previousToolCallId: "previous", depth: 1 });
+    285 285 │     expect(lineage["intentId"]).not.toBe(lineage["previousIntentId"]);
+    286     │ - ··expect(f.authorize.mock.calls[0]?.[0]).toMatchObject({·id:·lineage["intentId"]·});
+        286 │ + ··expect(f.authorize.mock.calls[0]?.[0]).toMatchObject({·id:·lineage.intentId·});
+    287 287 │     expect(f.services.issue).not.toHaveBeenCalled();
+    288 288 │     expect(f.ctx.phase).not.toHaveBeenCalled();
+
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 17.
+Checked 11 files in 76ms. No fixes applied.
+Found 37 infos.

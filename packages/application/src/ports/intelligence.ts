@@ -434,6 +434,8 @@ export interface RuntimeCustomToolDescriptor {
 }
 
 export interface RuntimeToolInvocation {
+  /** Product runtime history hint; the host verifies the prior durable failure. Not a tool argument. */
+  readonly fileConflictOf?: string;
   /** Captured by the runtime, never taken from model-generated tool arguments. */
   readonly context?: Pick<
     RuntimeRequest,

@@ -29,7 +29,7 @@ const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
-async function fixture(automaticReview?: AutomaticActionReviewPort) {
+async function fixture(automaticReview?: AutomaticActionReviewPort, coding = false) {
   const base = runtimeToolFixture(10_000);
   const root = await mkdtemp(path.join(tmpdir(), "file-workflow-"));
   roots.push(root);
@@ -42,7 +42,7 @@ async function fixture(automaticReview?: AutomaticActionReviewPort) {
     hostId: "mac:test",
     canonicalRootId: `${rootIdentity.device}:${rootIdentity.inode}`,
     displayPath: root,
-    operations: ["read"],
+    operations: coding ? ["read", "create", "update"] : ["read"],
     dataClassification: "private",
     disclosure: "model",
     pathPolicy: "same_filesystem_no_links",
@@ -77,7 +77,11 @@ async function fixture(automaticReview?: AutomaticActionReviewPort) {
     ...config,
     ownerId: base.options.ownerId,
     agentId: base.options.agentId,
-    runPolicy: { ...config.runPolicy, fileRead: route },
+    runPolicy: {
+      ...config.runPolicy,
+      fileRead: route,
+      ...(coding ? { coding: { ...route, enabledTools: ["read", "write", "edit"] as const } } : {}),
+    },
   };
   const store = new InMemoryAuthorizationStore();
   const capabilities = new InMemoryCapabilityRegistryStore(undefined, store);
@@ -85,7 +89,7 @@ async function fixture(automaticReview?: AutomaticActionReviewPort) {
     ...base.capability.declaration,
     ref: route.capabilityRef,
     manifestVersion: "capability.v2",
-    operations: ["inspect", "read", "disclose"],
+    operations: coding ? ["read", "write", "edit"] : ["inspect", "read", "disclose"],
     sourceIdentity: "test",
     artifact: {
       digest: "test",
@@ -169,7 +173,7 @@ async function fixture(automaticReview?: AutomaticActionReviewPort) {
     ...(automaticReview ? { automaticReview } : {}),
   });
   const approvals = new ApprovalService({ store, clock });
-  const permitted = new Set(["inspect", "read", "disclose"]);
+  const permitted = new Set(coding ? ["read", "write", "edit"] : ["inspect", "read", "disclose"]);
   const intents: GovernedActionIntent[] = [];
   const authorize = services.authorize;
   const respond = async (intent: GovernedActionIntent, approvalId: string) => {
@@ -189,7 +193,7 @@ async function fixture(automaticReview?: AutomaticActionReviewPort) {
         resourcePrefixes: [],
         resourceIdentities: intent.resourceRefs,
         maxDataClassification: intent.dataClassification,
-        sideEffects: ["none"],
+        sideEffects: [intent.sideEffect],
         maxCostMicrosPerUse: 0,
         maxFrequency: { count: 1, intervalMs: null },
         disclosure: intent.disclosure,
@@ -242,6 +246,7 @@ async function fixture(automaticReview?: AutomaticActionReviewPort) {
     ...base.options,
     clock,
     fileRead: services,
+    ...(coding ? { coding: configuration.runPolicy.coding } : {}),
     capabilities,
     ceiling: { ...base.options.ceiling, maxOutputBytes: 4096 },
   };
@@ -717,3 +722,95 @@ it("cancels production authorization review before opening confirmation or dispa
   expect(await f.store.listGrants(f.options.ownerId, f.options.agentId)).toEqual([]);
   expect(f.executeRequests()).toEqual([]);
 });
+
+it.each(["known", "missing-diagnostic", "possibly-sent"])(
+  "verifies durable file conflict after restart before new approval: %s",
+  async (mode) => {
+    const f = await fixture(undefined, true);
+    const call = {
+      ...f.call,
+      capabilityRef: "file:test.write",
+      arguments: { path: "note.txt", content: "mine" },
+    };
+    const unused = async (): Promise<never> => {
+      throw new Error("unexpected reservation");
+    };
+    const prepare = vi.fn(async (): Promise<never> => {
+      throw new Error("SANDBOX_FILE_VERSION_CHANGED");
+    });
+    const open = async () => {
+      const tool = new ProductionRuntimeTools({
+        ...f.options,
+        sandbox: { journal: { admit: unused }, scopes: { read: unused }, prepare },
+      });
+      await tool.listAuthorized(call.runId, []);
+      return tool;
+    };
+    const before = await readFile(path.join(f.root, "note.txt"), "utf8");
+    const first = await (await open()).execute(call);
+    const firstApproval = (await f.approvals())[0];
+    if (!firstApproval) throw new Error("first approval missing");
+    expect(first).toMatchObject({ outcome: "failed", errorCode: "FILE_VERSION_CONFLICT" });
+    expect(f.request).not.toHaveBeenCalled();
+    expect(await (await open()).execute(call)).toEqual(first);
+    expect(prepare).toHaveBeenCalledOnce();
+    f.permitted.delete("write");
+    const regenerated = {
+      ...call,
+      toolCallId: "regenerated",
+      fileConflictOf: call.toolCallId,
+      arguments: { path: "note.txt", content: `${before}mine` },
+    };
+    if (mode !== "known") {
+      const diagnostic = [...f.artifacts.values()].find((item) =>
+        item.operationKey.startsWith("runtime-tool-diagnostic:"),
+      );
+      if (!diagnostic) throw new Error("diagnostic missing");
+      if (mode === "missing-diagnostic") f.artifacts.delete(diagnostic.operationKey);
+      else {
+        const payload = f.payloads.get(diagnostic.payloadRef);
+        if (!payload) throw new Error("diagnostic payload missing");
+        const changed = {
+          ...JSON.parse(new TextDecoder().decode(payload.ciphertext)),
+          stage: "possibly_sent",
+        };
+        f.payloads.set(payload.ref, {
+          ...payload,
+          ciphertext: new TextEncoder().encode(JSON.stringify(changed)),
+        });
+      }
+      expect(await (await open()).execute(regenerated)).toMatchObject({
+        errorCode: "CODING_CONFLICT_REGENERATION_BLOCKED",
+      });
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(await f.approvals()).toHaveLength(1);
+      return;
+    }
+    expect(await (await open()).execute(regenerated)).toMatchObject({
+      outcome: "awaiting_approval",
+    });
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(await readFile(path.join(f.root, "note.txt"), "utf8")).toBe(before);
+    const approvals = await f.approvals();
+    expect(approvals).toHaveLength(2);
+    expect(approvals[0]?.intentId).not.toBe(approvals[1]?.intentId);
+    const lineageArtifact = [...f.artifacts.values()].find((item) =>
+      item.operationKey.endsWith(":conflict-lineage"),
+    );
+    if (!lineageArtifact) throw new Error("lineage missing");
+    const payload = f.payloads.get(lineageArtifact.payloadRef);
+    if (!payload) throw new Error("lineage payload missing");
+    expect(JSON.parse(new TextDecoder().decode(payload.ciphertext))).toMatchObject({
+      previousToolCallId: call.toolCallId,
+      previousIntentId: firstApproval.intentId,
+      intentId: approvals.find((approval) => approval.id !== firstApproval.id)?.intentId,
+      depth: 1,
+    });
+    f.permitted.add("write");
+    expect(await (await open()).execute(regenerated)).toMatchObject({
+      errorCode: "FILE_VERSION_CONFLICT",
+    });
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(f.request).not.toHaveBeenCalled();
+  },
+);

@@ -58,6 +58,43 @@ import {
 } from "./pi-tool-batch-continuation.js";
 import { PiToolProgressGuard, type PiToolProgressState } from "./pi-tool-progress-guard.js";
 
+/** A history hint, never authority. The product host checks the durable non-dispatch
+ * diagnostic and same target before associating a new immutable intent. */
+function previousFileConflict(
+  messages: AgentSession["agent"]["state"]["messages"],
+  runId: string,
+  target: unknown,
+): string | undefined {
+  if (typeof target !== "string") return undefined;
+  const calls = new Map<string, string>();
+  let previous: string | undefined;
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      for (const part of message.content)
+        if (
+          part.type === "toolCall" &&
+          ["write", "edit"].includes(part.name) &&
+          typeof part.arguments["path"] === "string"
+        )
+          calls.set(part.id, part.arguments["path"]);
+    } else if (message.role === "toolResult" && calls.get(message.toolCallId) === target) {
+      const details = message.details as
+        | {
+            productRunId?: unknown;
+            productOutcome?: unknown;
+            errorCode?: unknown;
+          }
+        | undefined;
+      if (details?.productRunId !== runId) continue;
+      previous =
+        details.productOutcome === "failed" && details.errorCode === "FILE_VERSION_CONFLICT"
+          ? message.toolCallId
+          : undefined;
+    }
+  }
+  return previous;
+}
+
 type RuntimeTurnId = Extract<RuntimeEvent, { readonly type: "runtime.turn_completed" }>["turnId"];
 type PiStreamFunction = (
   model: Model<Api>,
@@ -898,13 +935,19 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               // Pi marks resolved execute() values as success. Use its official
               // result hook to retain protected product details and error truth.
               pi.on("tool_result", (event) => {
-                const details = event.details as { productOutcome?: unknown } | undefined;
+                const details = event.details as
+                  | { productOutcome?: unknown; errorCode?: unknown }
+                  | undefined;
                 if (!suspended && !unknownTool && !replayedResults.delete(event.toolCallId))
                   toolProgress.observe(
                     event.toolName,
                     event.input,
                     toolProgressOutput(descriptorsByName.get(event.toolName), event.content),
                     event.isError || details?.productOutcome === "failed",
+                    descriptorsByName.get(event.toolName)?.definition === "builtin-coding" &&
+                      typeof details?.errorCode === "string"
+                      ? details.errorCode
+                      : undefined,
                   );
                 if (
                   details?.productOutcome === "failed" ||
@@ -1339,7 +1382,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             details: completed.details,
             isError: completed.isError,
           };
+        const conflictOf =
+          descriptor.definition === "builtin-coding" && ["write", "edit"].includes(descriptor.name)
+            ? previousFileConflict(
+                this.#activeSessions.get(request.runId)?.agent.state.messages ?? [],
+                request.runId,
+                (parameters as Record<string, unknown>)["path"],
+              )
+            : undefined;
         let invocation: RuntimeToolInvocation = {
+          ...(conflictOf ? { fileConflictOf: conflictOf } : {}),
           runId: request.runId,
           context: {
             threadId: request.threadId,
@@ -1416,6 +1468,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           details: {
             ...(result.executionTiming ? { executionTiming: result.executionTiming } : {}),
             productOutcome: result.outcome,
+            productRunId: request.runId,
             resultRef: result.resultRef,
             errorCode: result.errorCode,
             externalActionId: result.externalActionId,

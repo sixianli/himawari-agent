@@ -49,6 +49,41 @@ describe("ProductionRuntimeTools", () => {
     expect(f.request).not.toHaveBeenCalled();
   });
 
+  it.each(["read", "write"])(
+    "classifies pre-dispatch file version changes for %s and replays without dispatch",
+    async (operation) => {
+      const f = fixture();
+      const unused = async (): Promise<never> => {
+        throw new Error("unexpected admission");
+      };
+      const prepare = vi.fn(async (): Promise<never> => {
+        throw new Error("SANDBOX_FILE_VERSION_CHANGED");
+      });
+      const tool = new ProductionRuntimeTools({
+        ...f.options,
+        capabilities: {
+          ...f.options.capabilities,
+          getExecutionHandle: async (ref) => {
+            const handle = await f.options.capabilities.getExecutionHandle(ref);
+            if (!handle) return undefined;
+            return { ...handle, operation, operations: [operation] };
+          },
+        },
+        sandbox: { journal: { admit: unused }, scopes: { read: unused }, prepare },
+      });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+      const result = await tool.execute(invocation);
+      expect(result).toMatchObject({
+        outcome: "failed",
+        errorCode: operation === "write" ? "FILE_VERSION_CONFLICT" : "WORKER_NOT_DISPATCHED",
+      });
+      expect(result.modelContent.includes("重新读取")).toBe(operation === "write");
+      expect(await tool.execute(invocation)).toEqual(result);
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(f.request).not.toHaveBeenCalled();
+    },
+  );
+
   it("binds a protected recovery checkpoint before dispatch and preserves it on replay", async () => {
     const f = fixture();
     const call = {

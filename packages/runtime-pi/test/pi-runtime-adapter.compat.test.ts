@@ -364,6 +364,7 @@ function fakeSessionFactory(
     return {
       session: {
         agent: {
+          state: { messages: [] },
           abort() {},
           streamFunction: async () => {
             throw new Error("fake stream function was not configured");
@@ -2974,4 +2975,64 @@ it("forwards Pi cancellation to a product tool without persisting the signal in 
     await adapter.cancel(request.runId);
     await pending;
   }
+});
+
+it("links regenerated file calls through native Pi history and stops changing-content conflicts", async () => {
+  const calls = Array.from({ length: 4 }, (_, index) => ({
+    name: "write",
+    id: `file-conflict-${index}`,
+    arguments: { path: "note.txt", content: `new candidate ${index}` },
+  }));
+  const model = await createFauxModelFixture(
+    "文件持续变化，已停止重试并保留候选。",
+    calls[0],
+    calls
+      .slice(1)
+      .flatMap((call, index) => [
+        [{ name: "read", id: `refresh-${index}`, arguments: { path: "note.txt" } }],
+        [call],
+      ]),
+  );
+  const tools = new RecordingRuntimeTools();
+  vi.spyOn(tools, "listAuthorized").mockResolvedValue(
+    ["read", "write"].map((name) => ({
+      definition: "builtin-coding" as const,
+      name: name as "read" | "write",
+      capabilityRef: `coding.${name}`,
+      capabilityHandleRef: null,
+    })),
+  );
+  tools.execute.mockImplementation(async (call) => ({
+    outcome: call.capabilityRef === "coding.write" ? "failed" : "succeeded",
+    resultRef: null,
+    errorCode: call.capabilityRef === "coding.write" ? "FILE_VERSION_CONFLICT" : null,
+    externalActionId: null,
+    modelContent:
+      call.capabilityRef === "coding.write" ? "重新读取最新内容后生成新请求" : "其他人的修改",
+  }));
+  const adapter = new PiAgentRuntimeAdapter({
+    projection: new RecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `file-conflict:${ordinal}`,
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  const writes = tools.execute.mock.calls
+    .map(([call]) => call)
+    .filter((call) => call.capabilityRef === "coding.write");
+  expect(writes.map((call) => call.fileConflictOf)).toEqual([
+    undefined,
+    "file-conflict-0",
+    "file-conflict-1",
+    "file-conflict-2",
+  ]);
+  expect(events.at(-1)).toMatchObject({
+    type: "runtime.failed",
+    errorCode: "PI_TOOL_LOOP_DETECTED",
+  });
+  expect(model.observed).toHaveLength(8);
+  expect((model.observed.at(-1) as { tools: unknown[] }).tools).toEqual([]);
 });

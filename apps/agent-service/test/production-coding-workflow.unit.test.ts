@@ -80,7 +80,10 @@ function fixture() {
     })),
   };
   const authorize = vi.fn(
-    async (): Promise<PermissionDecision> => ({
+    async (
+      _intent: import("@himawari-agent/application").GovernedActionIntent,
+      _signal?: AbortSignal,
+    ): Promise<PermissionDecision> => ({
       decision: "DENY",
       reasonCode: "test-denied",
       alternativesAllowed: false,
@@ -93,7 +96,7 @@ function fixture() {
       throw new Error("must not issue before permission");
     }),
   };
-  return { call, binding, ctx, services, authorize };
+  return { base, values, call, binding, ctx, services, authorize };
 }
 describe("governed coding requests", () => {
   it("binds the exact tool input and recipient to approval before issuing a handle", async () => {
@@ -257,3 +260,62 @@ it("authorizes private-only search without a directory and rejects using that bi
   });
   expect(f.authorize).not.toHaveBeenCalled();
 });
+
+it("associates new content with the verified conflict and asks the original policy again", async () => {
+  const f = fixture();
+  const previous = { ...f.call, toolCallId: "previous" };
+  f.ctx.fileConflict = async (id) =>
+    id === previous.toolCallId ? { call: previous, binding: f.binding, depth: 0 } : undefined;
+  const result = await executeProductionCodingRequest(
+    {
+      ...f.call,
+      fileConflictOf: previous.toolCallId,
+      arguments: { path: "note.txt", content: "preserve their change and add mine" },
+    },
+    "write",
+    f.services,
+    f.ctx,
+  );
+  // The original permission service denies this new request; the old approval
+  // and the conflict hint must not be converted into a new execution handle.
+  expect(result.outcome).toBe("failed");
+  expect(f.authorize).toHaveBeenCalledOnce();
+  const lineage = f.values.get("conflict-lineage") as Record<string, unknown>;
+  expect(lineage).toMatchObject({ previousToolCallId: "previous", depth: 1 });
+  expect(lineage["intentId"]).not.toBe(lineage["previousIntentId"]);
+  expect(f.authorize.mock.calls[0]?.[0]).toMatchObject({ id: lineage["intentId"] });
+  expect(f.services.issue).not.toHaveBeenCalled();
+  expect(f.ctx.phase).not.toHaveBeenCalled();
+});
+
+it.each(["unverified", "different-target", "different-binding", "same-call", "limit"])(
+  "blocks invalid conflict regeneration before asking permission: %s",
+  async (mode) => {
+    const f = fixture();
+    const previous = {
+      ...f.call,
+      toolCallId: mode === "same-call" ? f.call.toolCallId : "previous",
+      arguments:
+        mode === "different-target" ? { path: "other.txt", content: "x" } : f.call.arguments,
+    };
+    f.ctx.fileConflict = async (id) =>
+      mode === "unverified" || id === f.call.toolCallId
+        ? undefined
+        : {
+            call: previous,
+            binding:
+              mode === "different-binding" ? { ...f.binding, hostId: "other-host" } : f.binding,
+            depth: mode === "limit" ? 3 : 0,
+          };
+    expect(
+      await executeProductionCodingRequest(
+        { ...f.call, fileConflictOf: previous.toolCallId },
+        "write",
+        f.services,
+        f.ctx,
+      ),
+    ).toMatchObject({ errorCode: "CODING_CONFLICT_REGENERATION_BLOCKED" });
+    expect(f.authorize).not.toHaveBeenCalled();
+    expect(f.services.issue).not.toHaveBeenCalled();
+  },
+);

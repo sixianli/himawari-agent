@@ -12,6 +12,7 @@ export interface PiToolProgressState {
   readonly lastResult: string | null;
   readonly consecutive: number;
   readonly stopped: boolean;
+  readonly fileConflicts?: number;
 }
 
 function stable(value: unknown): string {
@@ -33,6 +34,7 @@ export class PiToolProgressGuard {
   private lastResult: string | null = null;
   private consecutive = 0;
   private stopped = false;
+  private fileConflicts = 0;
 
   constructor(state?: PiToolProgressState) {
     if (state === undefined) return;
@@ -45,21 +47,35 @@ export class PiToolProgressGuard {
       !Number.isSafeInteger(state.consecutive) ||
       state.consecutive < 0 ||
       state.consecutive > 4 ||
-      typeof state.stopped !== "boolean"
+      typeof state.stopped !== "boolean" ||
+      (state.fileConflicts !== undefined &&
+        (!Number.isSafeInteger(state.fileConflicts) ||
+          state.fileConflicts < 0 ||
+          state.fileConflicts > 4))
     )
       throw new Error("PI_TOOL_PROGRESS_STATE_INVALID");
     this.recent = [...state.recent];
     this.lastResult = state.lastResult;
     this.consecutive = state.consecutive;
-    this.stopped = state.stopped;
+    this.fileConflicts = state.fileConflicts ?? 0;
+    this.stopped = state.stopped || this.fileConflicts >= 4;
   }
 
   get blocked(): boolean {
     return this.stopped;
   }
 
-  observe(name: string, input: unknown, output: unknown, isError: boolean): void {
+  observe(
+    name: string,
+    input: unknown,
+    output: unknown,
+    isError: boolean,
+    errorCode?: string,
+  ): void {
     if (this.stopped) return;
+    // Re-generating content and reading between attempts must not defeat the bound.
+    if (isError && ["write", "edit"].includes(name) && errorCode === "FILE_VERSION_CONFLICT")
+      this.fileConflicts++;
     const call = digest([name, input]);
     const result = digest([call, output, isError]);
     this.consecutive = result === this.lastResult ? this.consecutive + 1 : 1;
@@ -67,6 +83,7 @@ export class PiToolProgressGuard {
     this.recent.push(call);
     if (this.recent.length > 16) this.recent.shift();
     this.stopped =
+      this.fileConflicts >= 4 ||
       this.consecutive >= 4 ||
       (this.recent.length >= 12 && new Set(this.recent.slice(-12)).size <= 2) ||
       (this.recent.length === 16 && new Set(this.recent).size <= 4);
@@ -79,6 +96,7 @@ export class PiToolProgressGuard {
       lastResult: this.lastResult,
       consecutive: this.consecutive,
       stopped: this.stopped,
+      fileConflicts: this.fileConflicts,
     };
   }
 }

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:ad3d7a2ff5182a7541240d6a67ff2614f22dd2174c17a053651dd5d4d4ad6da5"
+contract_sha256: "sha256:05d1f670c4220476b9e633a82671d96fdc591383c4a5473be285a28828f11d03"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,8 @@ date: "2026-08-27"
 # 同机备份与恢复 Runbook
 
 <!-- runbook-contract:
+- packages/runtime-pi/src/pi-tool-progress-guard.ts
+- apps/agent-service/src/production-coding-workflow.ts
 - apps/agent-service/src/production-file-preparation.ts
 - packages/runtime-pi/src/prepare-file-mutation.ts
 - packages/runtime-pi/src/prepare-file-mutation-worker.ts
@@ -326,6 +328,8 @@ Schema 36 不重写旧记录；它为新增 JSON 字段建立 writer 版本屏�
 备份、迁移与恢复须一起保留 Scope Payload、排队身份及工作区 `.himawari-recovery/` 中的候选与结果；数据库备份不包含这些暂存文件。候选本身可能是唯一结果，不自动清理、不按当前文件重建旧基线、不覆盖后续编辑。准备后取消或版本冲突不授权重放；跨 boot/fence 的自动重新绑定仍未实现。旧程序不理解合同 3 或新增 Scope 字段时必须停止对应执行，不删字段降级，也不能仅凭 Schema 相同认定回退兼容。
 
 准备计算的线程入口必须随安装包交付；线程采用请求的时间预算、V8 堆上限和 Stop 信号，V8 堆上限不代表 OS 总内存资格。停止只在线程终止后返回，不能把主调用返回当作线程已停止。
+
+确定尚未派发的固定写入版本冲突返回 `FILE_VERSION_CONFLICT`，原调用重放只返回已知未执行事实。Pi 现有循环中的新调用携带受保护历史关联，宿主必须用原请求、未派发诊断及结果记录复核；关联不授予权限，新内容仍经原 ActionPolicy，确切单次批准不能扩大。备份需保留 `runtime-file-read:*:conflict-lineage` 与原工具诊断/结果 Payload。循环的受保护进度状态新增冲突计数；同一 Run 连续工作中累计四次版本冲突后停止继续调用工具并进入原有结果说明路径，读取或更换内容不清零。不能用忽略该计数或关联的旧运行时恢复此类 continuation。Worker 已派发后失败、结果未知和跨 boot 自动重绑定仍不得冒充可自动重试。
 
 新合同尚无生产切换或 Linux 资格。采用前须对实际安装字节、最终运行身份和目标文件系统完成资格并明确选择合同 3；旧合同 1/2 的行为保留，普通源码升级不自动改部署绑定。本节不授权启用模型、付费调用、生产迁移或部署。
 

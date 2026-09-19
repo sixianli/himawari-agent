@@ -35,10 +35,14 @@ import {
   type ExecutionV2Event,
   type ExecutionV2Request,
 } from "@himawari-agent/execution-contracts";
-import { executeProductionCodingRequest } from "./production-coding-workflow.js";
+import {
+  executeProductionCodingRequest,
+  fileVersionConflictResult,
+} from "./production-coding-workflow.js";
 import type { ProductionExecutionAdmissionParentBinding } from "./production-execution-admission-handler.js";
 import {
   type FileReadExecutionContext,
+  type CodingBinding,
   type ProductionFileReadServices,
   ProductionFileReadWorkflow,
 } from "./production-file-read-workflow.js";
@@ -482,6 +486,61 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         const saved = await this.#writeJson(invocation, operationKey(suffix), value);
         return { ref: saved.ref, value: await this.#readJson(saved.ref) };
       },
+      fileConflict: async (toolCallId) => {
+        if (!toolCallId) return undefined;
+        const previousKey = digest([invocation.runId, toolCallId]);
+        const read = async (operationKey: string) => {
+          const record = await this.#options.artifacts.lookup({
+            runId: invocation.runId,
+            purpose: "trace",
+            operationKey,
+          });
+          return record ? this.#readJson(record.payloadRef) : undefined;
+        };
+        const context = (await read(`runtime-file-read:${previousKey}:context`)) as
+          | {
+              call?: RuntimeToolInvocation;
+              binding?: CodingBinding;
+              tool?: string;
+            }
+          | undefined;
+        if (
+          !context?.call ||
+          !context.binding ||
+          !context.tool ||
+          context.call.runId !== invocation.runId ||
+          context.call.toolCallId !== toolCallId ||
+          !["write", "edit"].includes(context.tool) ||
+          context.call.capabilityHandleRef !== null ||
+          context.call.capabilityRef !== `${context.binding.capabilityRef}.${context.tool}`
+        )
+          return undefined;
+        const childKey = digest([
+          invocation.runId,
+          `file-phase:${digest([previousKey, context.tool])}`,
+        ]);
+        const result = (await read(`runtime-tool-result:${childKey}`)) as
+          | Partial<RuntimeToolSettledResult>
+          | undefined;
+        const diagnostic = (await read(`runtime-tool-diagnostic:${childKey}`)) as
+          | { stage?: string; reasonCode?: string }
+          | undefined;
+        // A tool's claimed error or a Worker failure alone is insufficient: require
+        // the host's persisted non-dispatch fact, so unknown effects never get retried.
+        if (
+          result?.outcome !== "failed" ||
+          result.errorCode !== "FILE_VERSION_CONFLICT" ||
+          diagnostic?.stage !== "not_dispatched" ||
+          diagnostic.reasonCode !== "FILE_VERSION_CONFLICT"
+        )
+          return undefined;
+        const lineage = (await read(`runtime-file-read:${previousKey}:conflict-lineage`)) as
+          | { depth?: number }
+          | undefined;
+        if (context.call.fileConflictOf !== undefined && lineage?.depth === undefined)
+          return undefined;
+        return { call: context.call, binding: context.binding, depth: lineage?.depth ?? 0 };
+      },
       phase: async (handle, phase, inputRef) => {
         signal?.throwIfAborted();
         const live = await this.#handle(invocation.runId, handle.ref);
@@ -924,22 +983,30 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       forwardingClosed = true;
       const conflict =
         error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.CONFLICT;
+      const fileConflict =
+        error instanceof Error &&
+        error.message === "SANDBOX_FILE_VERSION_CHANGED" &&
+        ["write", "edit"].includes(handle.operation);
       const reasonCode = possiblySent
         ? "WORKER_RESULT_RECONCILIATION_REQUIRED"
-        : conflict
-          ? "WORKER_ADMISSION_CONFLICT"
-          : "WORKER_NOT_DISPATCHED";
+        : fileConflict
+          ? "FILE_VERSION_CONFLICT"
+          : conflict
+            ? "WORKER_ADMISSION_CONFLICT"
+            : "WORKER_NOT_DISPATCHED";
       outcome = possiblySent
         ? unknownResult()
-        : {
-            outcome: "failed",
-            resultRef: null,
-            errorCode: reasonCode,
-            externalActionId: null,
-            modelContent: conflict
-              ? "操作尚未派发：资源或请求状态发生冲突。"
-              : "操作尚未派发，未开始执行。",
-          };
+        : fileConflict
+          ? fileVersionConflictResult()
+          : {
+              outcome: "failed",
+              resultRef: null,
+              errorCode: reasonCode,
+              externalActionId: null,
+              modelContent: conflict
+                ? "操作尚未派发：资源或请求状态发生冲突。"
+                : "操作尚未派发，未开始执行。",
+            };
       let authorityWithdrawalError: string | null = null;
       if (!possiblySent && this.#options.capabilities.revokeExecutionHandle) {
         try {

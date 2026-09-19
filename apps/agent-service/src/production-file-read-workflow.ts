@@ -38,6 +38,15 @@ export interface ProductionFileReadServices {
   ): ReturnType<CapabilityHandleService["issue"]>;
 }
 export interface FileReadExecutionContext {
+  /** Returns only a verified, never-dispatched file conflict in this same Run. */
+  fileConflict?(toolCallId: string): Promise<
+    | {
+        readonly call: RuntimeToolInvocation;
+        readonly binding: CodingBinding;
+        readonly depth: number;
+      }
+    | undefined
+  >;
   readonly signal?: AbortSignal;
   readonly ownerId: RuntimeRequest["ownerId"];
   readonly agentId: RuntimeRequest["agentId"];

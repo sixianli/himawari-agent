@@ -47,6 +47,15 @@ const failed = (code: string): RuntimeToolExecutionResult => ({
   modelContent: `工具未执行：${code}`,
 });
 
+export const fileVersionConflictResult = (): RuntimeToolExecutionResult => ({
+  outcome: "failed",
+  resultRef: null,
+  errorCode: "FILE_VERSION_CONFLICT",
+  externalActionId: null,
+  modelContent:
+    "目标文件已变化，本次修改未派发。已准备的候选仍保留；请重新读取最新内容，理解并保留他人修改后，用新的工具调用提出修改。新内容仍须经过原权限检查；无法确定意图时暂停说明。",
+});
+
 /** Freeze model parameters, obtain an actual action/disclosure grant, issue one
  * private handle, then use the existing Worker path. Model arguments never grant access. */
 export async function executeProductionCodingRequest(
@@ -200,6 +209,45 @@ export async function executeProductionCodingRequest(
     ],
     finalRisk: "HIGH",
   };
+  // Returning a known non-execution fact does not renew the withdrawn Handle or
+  // consume the old exact approval again. The frozen request above still must match.
+  if (["write", "edit"].includes(tool) && (await ctx.fileConflict?.(call.toolCallId))) {
+    await active();
+    return fileVersionConflictResult();
+  }
+  if (call.fileConflictOf !== undefined) {
+    const previous = await ctx.fileConflict?.(call.fileConflictOf);
+    if (
+      !["write", "edit"].includes(tool) ||
+      !grant ||
+      !previous ||
+      previous.call.runId !== call.runId ||
+      previous.call.toolCallId === call.toolCallId ||
+      hash(previous.binding) !== hash(binding) ||
+      typeof previous.call.arguments["path"] !== "string" ||
+      typeof args["path"] !== "string" ||
+      resolveHostFileReadPath(grant, previous.call.arguments["path"]) !==
+        resolveHostFileReadPath(grant, args["path"]) ||
+      !Number.isSafeInteger(previous.depth) ||
+      previous.depth < 0 ||
+      previous.depth >= 3
+    )
+      return failed("CODING_CONFLICT_REGENERATION_BLOCKED");
+    // This association grants no authority. New content still has its own immutable
+    // intent and passes the original permission service, including exact approvals.
+    await ctx.save("conflict-lineage", {
+      previousToolCallId: previous.call.toolCallId,
+      previousIntentId: `coding:${hash([
+        previous.call.runId,
+        previous.call.toolCallId,
+        previous.call.capabilityRef.slice(previous.binding.capabilityRef.length + 1),
+        previous.call.arguments,
+        previous.binding,
+      ])}`,
+      intentId: intent.id,
+      depth: previous.depth + 1,
+    });
+  }
   await active();
   const permission = await services.authorize(intent, ctx.signal);
   if (permission.decision !== "ALLOW") return runtimeToolAuthorizationResult(permission);
