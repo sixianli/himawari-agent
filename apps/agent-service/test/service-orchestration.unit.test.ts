@@ -250,6 +250,7 @@ beforeEach(() => {
     "authorityLeasePort",
     "sandboxJobJournal",
     "sandboxExecutionJournal",
+    "sandboxExecutionPreparations",
     "capabilityInvocationReceiptPort",
     "capabilityInvocationResultPort",
   ])

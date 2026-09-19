@@ -578,6 +578,10 @@ export async function runAgentService(
       now: () => clock.now(),
     });
     await recoverSandboxExecutionsAtStartup({
+      preparations: repository.sandboxExecutionPreparations(
+        configuration.ownerId,
+        configuration.agentId,
+      ),
       journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
       authority: invocationAuthority,
       now: () => clock.now(),

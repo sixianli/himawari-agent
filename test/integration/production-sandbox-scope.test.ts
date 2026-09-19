@@ -1,3 +1,5 @@
+import path from "node:path";
+import Database from "better-sqlite3";
 import { appendFile, mkdir, rename } from "node:fs/promises";
 import {
   type SandboxOperationBinding,
@@ -275,7 +277,7 @@ it("manages the original task and live output through SQLite and authenticated U
   await expect(f.services.managedTasks.execute(call)).rejects.toThrow();
 });
 
-it("stops foreground records and does not report reserved environments as released", async () => {
+it("persists a finite stop for unbound reservations without claiming resource release", async () => {
   const f = await productionSandboxScope(descriptor("read"));
   cleanups.push(f.close);
   const prepared = await f.services.runtime.prepare(f.input, f.call);
@@ -286,6 +288,46 @@ it("stops foreground records and does not report reserved environments as releas
   });
   if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
   expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: false });
+  const saved = await f.services.brokerV2.preparations.readAdmission(
+    admitted.admission.plan.identity,
+  );
+  expect(saved).toMatchObject({
+    phase: "reserved",
+    recovery: {
+      action: "stop",
+      status: "unresolved",
+      reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+      finishedAt: T1,
+    },
+  });
+  const rpc = await f.connect(admitted.admission.plan.identity);
+  await expect(rpc({ kind: "resolve" })).rejects.toThrow();
+  const readback = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"), {
+    readonly: true,
+  });
+  try {
+    expect(readback.prepare("SELECT count(*) FROM sandbox_release_receipts").pluck().get()).toBe(0);
+    expect(
+      readback
+        .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+        .pluck()
+        .get(),
+    ).toBeGreaterThan(0);
+  } finally {
+    readback.close();
+  }
+});
+
+it("stops bound foreground records without declaring unverified resources released", async () => {
+  const f = await productionSandboxScope(descriptor("read"));
+  cleanups.push(f.close);
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("expected v2");
+  const admitted = await f.services.brokerV2.preparations.reserve({
+    ...prepared,
+    invocation: f.input,
+  });
+  if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
   const { plan, reservation } = admitted.admission;
   const base = sandboxV2Admission(f.f).facts;
   const environment = {

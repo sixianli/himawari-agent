@@ -352,6 +352,16 @@ export function createProductionSandboxControl(options: Options) {
       } satisfies StoredControl);
       return true;
     },
+    async stopPreparation(plan: SandboxExecutionPlanV2) {
+      const observation = await inspect(plan, "stop");
+      // This is a cleanup request receipt, never an environment release proof.
+      // A stopped reservation remains protected until independent verification.
+      await options.write(plan, `${key(plan)}:preparation-stop:${observation.sequence}`, {
+        fingerprint: plan.semanticFingerprint,
+        environmentId: plan.environmentId,
+        observation,
+      });
+    },
     async verifyPreparation(plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) {
       const stored = await readControl(plan);
       const observed = await inspect(plan, "inspect");

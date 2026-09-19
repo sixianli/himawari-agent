@@ -317,6 +317,12 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       const admission = configured.preparations
         ? await configured.preparations.readAdmission(request.payload.identity)
         : undefined;
+      if (
+        admission?.phase === "reserved" &&
+        admission.stopRequestedAt &&
+        ["resolve", "register_control", "bind"].includes(request.payload.command.kind)
+      )
+        throw new Error("sandbox reservation stopped");
       const bound =
         admission?.phase === "bound"
           ? admission.record

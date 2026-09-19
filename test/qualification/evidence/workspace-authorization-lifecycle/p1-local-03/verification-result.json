@@ -1,0 +1,32 @@
+{
+  "scope": "combined local verification; not a rewritten full green run",
+  "originalRun": "standard-ci-result.json",
+  "originalCounts": {
+    "files": 240,
+    "executed": 3625,
+    "passed": 3624,
+    "failed": 1,
+    "skipped": 0
+  },
+  "remainingFailure": "model-budget migration test expected 39 ledger rows after schema 40 migration",
+  "correction": {
+    "path": "packages/persistence-sqlite/test/model-budget-migration.contract.test.ts",
+    "change": "expected ledger length 39 -> 40; no production change",
+    "sha256": "870ecfbb49d74236e29cc76ee1f5e7e20e813612b59dc3a978eb8024a8e9e434"
+  },
+  "rerun": {
+    "command": "vitest run --config vitest.workspace.ts --project contracts",
+    "evidence": "contracts-schema-final.log",
+    "files": 23,
+    "passed": 334,
+    "failed": 0
+  },
+  "unchangedProjects": [
+    "unit",
+    "integration",
+    "e2e",
+    "pi-compat"
+  ],
+  "productionSourceFrozen": true,
+  "note": "Later P6-only browser source changes are verified separately; original build archive retains this batch snapshot."
+}

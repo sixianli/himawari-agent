@@ -1,0 +1,5 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+test/integration/sandbox-v2-payload-broker.test.ts(68,9): error TS2741: Property 'interruptReservation' is missing in type '{ readQueuedByInvocation: (value: { readonly runId: string; readonly invocationId: string; }) => Promise<{ readonly sequence: number; readonly status: "cancelled" | "queued" | "admitted"; readonly plan: SandboxExecutionPlanCandidateV2; readonly reservation: Readonly<...>; readonly workspaces: readonly SandboxWorkspa...' but required in type 'SandboxExecutionPreparationPort'.

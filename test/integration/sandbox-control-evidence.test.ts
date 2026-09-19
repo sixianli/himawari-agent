@@ -362,3 +362,20 @@ it.each(["no-task", "exited", "no-samples", "expired", "supervisor-changed"])(
     expect(await f.control.evidence(record.plan, { ...record.facts, resource })).toEqual([]);
   },
 );
+
+it("sends an unbound stop to the original authenticated host without reauthorizing execution", async () => {
+  const f = await fixture();
+  const before = f.counts();
+  await f.control.stopPreparation(f.record.plan);
+  expect(f.order).toEqual(["stop"]);
+  expect(f.counts()).toEqual(before);
+  const receipts = [...f.stored.entries()].filter(([key]) => key.includes(":preparation-stop:"));
+  expect(receipts).toHaveLength(1);
+  expect(receipts[0]?.[1].value).toMatchObject({
+    observation: { phase: "stopping", taskStarted: false },
+  });
+  await rename(f.directory, `${f.directory}-replaced`);
+  await mkdir(f.directory, { mode: 0o700 });
+  await expect(f.control.stopPreparation(f.record.plan)).rejects.toThrow("DIRECTORY_CHANGED");
+  expect(f.order).toEqual(["stop"]);
+});

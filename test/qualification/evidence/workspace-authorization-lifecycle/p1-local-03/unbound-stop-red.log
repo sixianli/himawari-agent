@@ -1,0 +1,55 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.1414159999985714,"at":"2026-09-19T13:15:29.660Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":35.38733400000092,"at":"2026-09-19T13:15:29.696Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.324958000001061,"at":"2026-09-19T13:15:29.696Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8962910000009288,"at":"2026-09-19T13:15:29.697Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.7842089999994641,"at":"2026-09-19T13:15:29.698Z"}
+
+ ❯ |integration| test/integration/production-sandbox-scope.test.ts (21 tests | 1 failed) 10586ms
+   × persists a finite stop for unbound reservations without claiming resource release 432ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+AssertionError: expected { phase: 'reserved', …(3) } to match object { phase: 'reserved', …(1) }
+(31 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "phase": "reserved",
+-   "recovery": {
+-     "action": "stop",
+-     "finishedAt": "2026-09-04T00:00:01.000Z",
+-     "reasonCode": "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+-     "status": "unresolved",
+-   },
+  }
+
+ ❯ test/integration/production-sandbox-scope.test.ts:287:17
+    285|   expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ r…
+    286|   const saved = await f.services.brokerV2.preparations.readAdmission(a…
+    287|   expect(saved).toMatchObject({ phase: "reserved", recovery: {
+       |                 ^
+    288|     action: "stop", status: "unresolved", reasonCode: "SANDBOX_UNBOUND…
+    289|     finishedAt: T1,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 20 passed (21)
+   Start at  22:15:17
+   Duration  12.29s (transform 955ms, setup 0ms, import 1.58s, tests 10.59s, environment 0ms)

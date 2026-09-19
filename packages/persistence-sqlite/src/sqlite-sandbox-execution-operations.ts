@@ -5,6 +5,7 @@ import type {
   SandboxExecutionJournalPort,
   SandboxExecutionPreparationPort,
   SandboxExecutionRecord,
+  SandboxRecoveryState,
   SandboxWorkspaceClaim,
 } from "@himawari-agent/application";
 import { projectSandboxExecution } from "@himawari-agent/application/sandbox-execution-projection";
@@ -233,6 +234,37 @@ export class SqliteSandboxExecutionOperations {
         if (operation === "cancelQueued") {
           this.queue.cancel(identity.jobId, owner, agent);
           return undefined;
+        }
+        if (operation === "interruptReservation") {
+          const reasonCode = input["reasonCode"];
+          if (
+            reasonCode !== "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN" &&
+            reasonCode !== "SANDBOX_PREVIOUS_BOOT_UNKNOWN"
+          )
+            return this.fail("PORT_INVALID_OPERATION", "Invalid reservation stop reason");
+          const admission = this.readAdmission(identity, owner, agent);
+          if (!admission) return this.fail("PORT_NOT_FOUND", "Sandbox reservation missing");
+          if (admission.phase === "bound" || admission.stopRequestedAt)
+            return { admission, applied: false };
+          if (now < admission.reservation.createdAt)
+            return this.fail("PORT_INVALID_OPERATION", "Reservation stop precedes admission");
+          const recovery: SandboxRecoveryState = {
+            revision: 1,
+            owner: (input["authority"] as CapabilityInvocationAuthority).agentServiceBootId,
+            attempts: 0,
+            status: "unresolved",
+            action: "stop",
+            startedAt: now,
+            deadlineAt: now,
+            finishedAt: now,
+            reasonCode,
+          };
+          this.db
+            .prepare(
+              "UPDATE sandbox_execution_records SET recovery_json=?,reservation_stopped_at=? WHERE job_id=? AND preparation_state='reserved' AND reservation_stopped_at IS NULL",
+            )
+            .run(JSON.stringify(recovery), now, identity.jobId);
+          return { admission: { ...admission, stopRequestedAt: now, recovery }, applied: true };
         }
         if (operation === "bindAndStart")
           return this.bindAndStart(
@@ -518,10 +550,10 @@ export class SqliteSandboxExecutionOperations {
       return this.fail("PORT_NOT_AUTHORITATIVE", "Sandbox scope mismatch");
     const row = this.db
       .prepare(
-        "SELECT preparation_state AS phase,plan_json AS plan,facts_json AS facts FROM sandbox_execution_records WHERE job_id=? AND owner_id=? AND agent_id=?",
+        "SELECT preparation_state AS phase,plan_json AS plan,facts_json AS facts,reservation_stopped_at AS stoppedAt FROM sandbox_execution_records WHERE job_id=? AND owner_id=? AND agent_id=?",
       )
       .get(identity.jobId, owner, agent) as
-      | { phase: string; plan: string; facts: string }
+      | { phase: string; plan: string; facts: string; stoppedAt: string | null }
       | undefined;
     if (!row) return undefined;
     const plan = sandboxExecutionPlanV2Schema.parse(JSON.parse(row.plan));
@@ -540,7 +572,14 @@ export class SqliteSandboxExecutionOperations {
         )
         .all(identity.jobId) as { claim: string }[]
     ).map((row) => JSON.parse(row.claim) as SandboxWorkspaceClaim);
-    return { phase: "reserved", plan, reservation, workspaces };
+    return {
+      phase: "reserved",
+      ...(row.stoppedAt ? { stopRequestedAt: row.stoppedAt } : {}),
+      plan,
+      reservation,
+      workspaces,
+      ...new SqliteSandboxRecoveryOperations(this.db, this.fail).read(identity.jobId),
+    };
   }
   private reserve(
     input: Parameters<SandboxExecutionPreparationPort["reserve"]>[0],
@@ -640,6 +679,8 @@ export class SqliteSandboxExecutionOperations {
   ) {
     const admission = this.readAdmission(input.identity, owner, agent);
     if (!admission) return this.fail("PORT_NOT_FOUND", "Sandbox reservation missing");
+    if (admission.phase === "reserved" && admission.stopRequestedAt)
+      return this.fail("PORT_CONFLICT", "Sandbox reservation stopped");
     const plan = admission.phase === "reserved" ? admission.plan : admission.record.plan;
     this.authority.live(plan, input.authority, input.now);
     const facts = validateSandboxExecutionFacts(plan, input.facts, {

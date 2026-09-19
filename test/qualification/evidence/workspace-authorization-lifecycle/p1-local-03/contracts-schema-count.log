@@ -1,0 +1,32 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |contracts| packages/persistence-sqlite/test/model-budget-migration.contract.test.ts (4 tests | 1 failed) 673ms
+     × backfills historical occurrence reserved and spent facts without resetting them 299ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |contracts| packages/persistence-sqlite/test/model-budget-migration.contract.test.ts > model budget migration > backfills historical occurrence reserved and spent facts without resetting them
+AssertionError: expected [ { sequence: 1, …(4) }, …(39) ] to have a length of 39 but got 40
+
+- Expected
++ Received
+
+- 39
++ 40
+
+ ❯ packages/persistence-sqlite/test/model-budget-migration.contract.test.ts:116:52
+    114|       status: "active",
+    115|     });
+    116|     expect(readMigrationLedger(resource.database)).toHaveLength(39);
+       |                                                    ^
+    117|     resource.database.close();
+    118|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 22 passed (23)
+      Tests  1 failed | 333 passed (334)
+   Start at  22:31:37
+   Duration  10.50s (transform 17.76s, setup 0ms, import 33.58s, tests 9.69s, environment 3ms)

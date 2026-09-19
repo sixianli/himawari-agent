@@ -1,0 +1,5 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+test/integration/production-sandbox-scope.test.ts(305,95): error TS2554: Expected 1 arguments, but got 2.

@@ -905,7 +905,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           path.join(f.resource.stateRoot, "legacy-snapshot.sqlite"),
         );
         expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([
-          28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+          28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
         ]);
         expect(readMigrationLedger(old).slice(0, 27)).toEqual(ledger);
         expect(old.prepare("SELECT * FROM sandbox_jobs").all()).toEqual(before);
@@ -994,6 +994,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         let journal = repo.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
         expect(
           await recoverSandboxExecutionsAtStartup({
+            preparations: repo.sandboxExecutionPreparations(OWNER_ID, AGENT_ID),
             journal,
             authority: () => recoveryAuthority,
             now: () => T1,
@@ -1024,6 +1025,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         journal = repo.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
         expect(
           await recoverSandboxExecutionsAtStartup({
+            preparations: repo.sandboxExecutionPreparations(OWNER_ID, AGENT_ID),
             journal,
             authority: () => recoveryAuthority,
             now: () => T1,

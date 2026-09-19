@@ -34,7 +34,7 @@ export function auditWorkspaceLifecycle({
       if (
         !Number.isSafeInteger(version) ||
         version < 28 ||
-        version > 39 ||
+        version > 40 ||
         ledger.count !== version
       )
         throw new Error("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");
@@ -43,6 +43,10 @@ export function auditWorkspaceLifecycle({
         rows = db
           .prepare(`SELECT r.job_id AS jobId, r.run_id AS runId, r.sequence,
           r.operation_revision AS operationRevision, u.status AS runStatus,
+          ${version >= 40 ? "r.reservation_stopped_at" : "NULL"} AS stopRequestedAt,
+          ${version >= 33 ? "json_extract(r.recovery_json,'$.status')" : "NULL"} AS recoveryStatus,
+          ${version >= 33 ? "json_extract(r.recovery_json,'$.reasonCode')" : "NULL"} AS recoveryReason,
+          ${version >= 33 ? "json_extract(r.recovery_json,'$.finishedAt')" : "NULL"} AS recoveryFinishedAt,
           ${version >= 29 ? "r.preparation_state" : "'legacy_bound'"} AS preparation,
           json_extract(r.facts_json,'$.resource.supervision') AS supervision,
           json_extract(r.facts_json,'$.resource.cleanup') AS cleanup,
@@ -60,6 +64,8 @@ export function auditWorkspaceLifecycle({
             const reasons = [];
             const requiredEvidence = [];
             const released = row.supervision === "released";
+            if (row.preparation === "reserved" && row.stopRequestedAt !== null)
+              reasons.push("UNBOUND_RESERVATION_STOPPED");
             if (!released) reasons.push("RESOURCE_RELEASE_UNCONFIRMED");
             if (released && row.activeClaims) reasons.push("RELEASED_WITH_ACTIVE_CLAIMS");
             if (released && !row.releaseReceiptPresent) reasons.push("RELEASE_RECEIPT_MISSING");

@@ -101,7 +101,7 @@ date: "2026-09-16"
 
 源码依据：[工具身份与派发](../../../apps/agent-service/src/production-runtime-tools.ts)、[执行日志合同](../../../packages/application/src/ports/sandbox-execution-journal.ts)、[调用回执](../../../packages/application/src/ports/capability-invocations.ts)、[授权合同](../../../packages/application/src/ports/authorization.ts)、[文件准备](../../../packages/application/src/ports/host-files.ts)。以上是当前静态合同及已有局部测试的对应关系，不代表跨 boot 自动续接、所有风险保护或真实平台资格已完成。
 
-兼容顺序仍为：先核对目标和备份，再迁移数据库和升级唯一 writer，最后接入理解相应版本的 Worker/合同。当前 Schema 39 使用 migration ledger 与 `minimum_writer_sequence` 阻止旧 writer；固定文件合同 2 和无目录网络 Scope v2 不能交给仅理解旧合同的 Worker。旧记录保持原含义，不由迁移补造释放证明。目录改名原语、短时提交阶段与未绑定环境取消还需分别确定最小数据扩展及 reader/Worker 组合回归，故 P0 的完整兼容条目仍未勾选。
+兼容顺序仍为：先核对目标和备份，再迁移数据库和升级唯一 writer，最后接入理解相应版本的 Worker/合同。当前 Schema 40 使用 migration ledger 与 `minimum_writer_sequence` 阻止旧 writer；固定文件合同 2 和无目录网络 Scope v2 不能交给仅理解旧合同的 Worker。旧记录保持原含义，不由迁移补造释放证明。Schema 40 新增未绑定预约的停止标记，恢复记录仍独立保存；目录改名原语、短时提交阶段与未绑定环境释放证明还需分别确定最小数据扩展及 reader/Worker 组合回归，故 P0 的完整兼容条目仍未勾选。
 
 [↑ 返回阅读导航](#contents)
 
@@ -670,11 +670,20 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 ### P0 身份合同与首次加载测试（局部补充）
 
-[当前身份与持久化合同](#identity-contract)逐项记录 operation、attempt、invocation、审批、额度、占用、恢复及结果交付的关联和持久化点，并明确当前 Schema 39、固定文件合同 2、Scope v2 的兼容边界。短时提交与未绑定环境取消的数据扩展仍待实现，没有将这些设计目标写成现有能力。
+[当前身份与持久化合同](#identity-contract)逐项记录 operation、attempt、invocation、审批、额度、占用、恢复及结果交付的关联和持久化点，并明确当时 Schema 39、固定文件合同 2、Scope v2 的兼容边界。短时提交与未绑定环境取消的数据扩展仍待实现，没有将这些设计目标写成现有能力。
 
 在原 `qualifyControlCenterV4` 中加入四个首次访问场景：桌面/320 像素分别覆盖慢配置和配置失败后重试。配置未就绪时草稿保留且不提交；配置就绪后故意继续阻塞事件连接，立即发送并再按 Enter，只产生一次创建和一次消息提交；独立查询与刷新均读回一条消息和一个 Run。相关输入立即发生，没有共享“先等待已连接”的前置条件。
 
 [原 Chrome 浏览器入口](../../../test/qualification/evidence/workspace-authorization-lifecycle/p0-local-02/browser/browser.json)完整通过，包括新增四项、已有移动端、断线/历史恢复及自动审查执行链，零页面异常与可访问性违规。已实际查看窄屏截图，未见横向溢出。测试沿既有 CI browser 入口收集；这次执行在本机 Chrome 和隔离 HTTP 夹具完成，不代表托管 CI 或真实 Worker 验收。此批只增加测试和合同说明，没有改变产品代码；复用上一批 3,618 项通过结果，未伪造修复前失败。任务格式/lint、CI policy、严格文档与链接目标检查通过。
+
+### P1 未绑定预约的停止隔离与启动恢复（局部实现）
+
+- [复现停止后没有恢复记录](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/unbound-stop-red.log)。Schema 40 增加不可撤销的 `reservation_stopped_at`，与后续清理进度分开保存；停止和启动恢复将未绑定预约登记为有限的 `unresolved`，保留责任进程、时间和原因。重复请求返回原标记，不能重新绑定启动，也不增加工具回执或消耗第二次额度。
+- 停止与绑定在同一 SQLite writer 内比较：如果绑定先成功，返回原运行记录走既有清理；如果停止先成功，数据库约束阻止迟到绑定。Worker broker 不再给已停止预约解析执行范围或注册新控制端点。线上 Worker 消息不增加字段，旧 writer 由 Schema 40 版本门槛拒绝。
+- 已注册的私有 Job Host 通过原认证控制通道收到停止请求，控制目录身份不符时拒绝。请求观察保存为受保护记录，不作为释放证明；未注册或清理未知的环境继续保留占用，没有伪造运行时绑定。启动恢复扫描原预约，数据库重开后仍保留同一停止标记。只读清单支持 Schema 40，显示停止时间、恢复终点和 `UNBOUND_RESERVATION_STOPPED`。
+- [251 项相关回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/unbound-consumers-final.log)通过，覆盖真实 SQLite/关闭重开、认证 socket、生产 broker、启动装配及迁移。修复过程中发现的已关闭测试连接、序号 1 预约观察和迁移版本断言错误已修正，原日志保留，不列为产品故障。
+
+[完整本地构建与测试原始结果](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/standard-ci-result.json)执行 240 文件、3,625 项，3,624 通过、1 失败、零跳过；唯一失败是旧测试仍要求 39 条 migration ledger。改为 40 后，[334 项合同回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/contracts-schema-final.log)全部通过，复用未变产品代码的其他项目结果，见[组合验证](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/verification-result.json)。构建与发布扫描、类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和该批文档检查通过。真实未绑定环境的永久释放证明、实际平台进程树、停止端口的总等待上限及完整 P1 仍未完成。
 
 ### 当前完成边界与下一步
 

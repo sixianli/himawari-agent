@@ -60,12 +60,34 @@ export async function recoverSandboxJobsAtStartup(options: {
  */
 export async function recoverSandboxExecutionsAtStartup(options: {
   readonly journal: import("../ports/sandbox-execution-journal.js").SandboxExecutionJournalPort;
+  readonly preparations: import("../ports/sandbox-execution-journal.js").SandboxExecutionPreparationPort;
   readonly authority: () => CapabilityInvocationAuthority;
   readonly now: () => string;
 }): Promise<{ readonly examined: number; readonly quarantined: number }> {
   let afterJobId: string | null = null;
   let examined = 0;
   let quarantined = 0;
+  for (;;) {
+    const page = await options.preparations.listAdmissions({ afterJobId, limit: 100 });
+    if (!page.length) break;
+    for (const admission of page) {
+      const identity =
+        admission.phase === "reserved" ? admission.plan.identity : admission.record.plan.identity;
+      if (afterJobId !== null && identity.jobId <= afterJobId)
+        throw new Error("SANDBOX_RECOVERY_CURSOR_INVALID");
+      afterJobId = identity.jobId;
+      if (admission.phase !== "reserved") continue;
+      examined++;
+      const result = await options.preparations.interruptReservation({
+        identity,
+        authority: options.authority(),
+        now: options.now(),
+        reasonCode: "SANDBOX_PREVIOUS_BOOT_UNKNOWN",
+      });
+      if (result.applied) quarantined++;
+    }
+  }
+  afterJobId = null;
   for (;;) {
     const page = await options.journal.listPending({ afterJobId, limit: 100 });
     if (!page.length) return { examined, quarantined };

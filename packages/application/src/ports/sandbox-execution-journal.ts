@@ -157,10 +157,20 @@ export type SandboxExecutionAdmissionRecord =
       readonly phase: "reserved";
       readonly plan: SandboxExecutionPlanV2;
       readonly reservation: SandboxExecutionReservation;
+      /** Immutable start fence, separate from subsequent cleanup progress. */
+      readonly stopRequestedAt?: string;
+      readonly recovery?: SandboxRecoveryState;
       readonly workspaces: readonly SandboxWorkspaceClaim[];
     }
   | { readonly phase: "bound"; readonly record: SandboxExecutionRecord };
 export interface SandboxExecutionPreparationPort {
+  /** Fence an unbound attempt. A concurrent bind returns its bound record for cleanup. */
+  interruptReservation(input: {
+    readonly identity: SandboxJobIdentity;
+    readonly authority: CapabilityInvocationAuthority;
+    readonly now: string;
+    readonly reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN" | "SANDBOX_PREVIOUS_BOOT_UNKNOWN";
+  }): Promise<{ readonly admission: SandboxExecutionAdmissionRecord; readonly applied: boolean }>;
   /** Historical queue snapshot, including cancelled/admitted rows; never a replay permit. */
   readQueuedByInvocation(input: { readonly runId: string; readonly invocationId: string }): Promise<
     | {

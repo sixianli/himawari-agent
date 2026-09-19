@@ -1,4 +1,7 @@
-import { WorkerDelegationAdmissionService } from "@himawari-agent/application";
+import {
+  recoverSandboxExecutionsAtStartup,
+  WorkerDelegationAdmissionService,
+} from "@himawari-agent/application";
 import type {
   SandboxExecutionAdmissionRecord,
   SandboxExecutionPreparationPort,
@@ -71,6 +74,144 @@ function reserved(value: SandboxExecutionAdmissionRecord) {
 }
 
 describe("atomic execution reservation and runtime binding", () => {
+  it("fences a stopped reservation durably without fabricating release or execution", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const request = input(f);
+      call(f, "reserve", request);
+      const stop = {
+        identity: request.plan.identity,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+        reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN" as const,
+      };
+      const first = call(f, "interruptReservation", stop);
+      expect(first.applied).toBe(true);
+      expect(reserved(first.admission).recovery).toMatchObject({
+        status: "unresolved",
+        action: "stop",
+        attempts: 0,
+        finishedAt: T1,
+      });
+      expect(call(f, "interruptReservation", { ...stop, now: T2 })).toEqual({
+        ...first,
+        applied: false,
+      });
+      expect(() => call(f, "bindAndStart", binding(f))).toThrow("reservation stopped");
+      expect(() =>
+        f.database
+          .prepare(
+            "UPDATE sandbox_execution_records SET reservation_stopped_at=NULL WHERE job_id=?",
+          )
+          .run(stop.identity.jobId),
+      ).toThrow("cannot be revoked");
+      expect(() =>
+        f.database
+          .prepare(
+            "UPDATE sandbox_execution_records SET preparation_state='bound',started_at=?,start_policy_digest=? WHERE job_id=?",
+          )
+          .run(T1, "9".repeat(64), stop.identity.jobId),
+      ).toThrow("cannot bind");
+      expect(
+        f.database.prepare("SELECT count(*) FROM sandbox_release_receipts").pluck().get(),
+      ).toBe(0);
+      expect(
+        f.database
+          .prepare("SELECT count(*) FROM sandbox_execution_observations WHERE sequence>1")
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        f.database
+          .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+          .pluck()
+          .get(),
+      ).toBe(request.workspaces.length);
+      expect(() =>
+        call(f, "interruptReservation", {
+          ...stop,
+          identity: { ...stop.identity, ownerId: "other" },
+        }),
+      ).toThrow();
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("returns a concurrent bound attempt for normal cleanup instead of overwriting it", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const request = input(f);
+      call(f, "reserve", request);
+      const bound = call(f, "bindAndStart", binding(f));
+      expect(
+        call(f, "interruptReservation", {
+          identity: request.plan.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+        }),
+      ).toEqual({ admission: { phase: "bound", record: bound.record }, applied: false });
+      expect(call(f, "readAdmission", request.plan.identity)).toEqual({
+        phase: "bound",
+        record: bound.record,
+      });
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("finds an unbound prior attempt at startup and keeps its start fence after reopening", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const request = input(f),
+        start = binding(f);
+      call(f, "reserve", request);
+      f.database.close();
+      let repo = await SqliteProductStateRepository.open({ stateRoot: f.resource.stateRoot });
+      try {
+        let preparations = repo.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        expect(
+          await recoverSandboxExecutionsAtStartup({
+            preparations,
+            journal: repo.sandboxExecutionJournal(OWNER_ID, AGENT_ID),
+            authority: () => SERVICE_AUTHORITY,
+            now: () => T1,
+          }),
+        ).toEqual({ examined: 1, quarantined: 1 });
+        const first = await preparations.readAdmission(request.plan.identity);
+        expect(first).toMatchObject({
+          phase: "reserved",
+          recovery: {
+            status: "unresolved",
+            reasonCode: "SANDBOX_PREVIOUS_BOOT_UNKNOWN",
+            finishedAt: T1,
+          },
+        });
+        await repo.close();
+        repo = await SqliteProductStateRepository.open({ stateRoot: f.resource.stateRoot });
+        preparations = repo.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        expect(await preparations.readAdmission(request.plan.identity)).toEqual(first);
+        expect(
+          await recoverSandboxExecutionsAtStartup({
+            preparations,
+            journal: repo.sandboxExecutionJournal(OWNER_ID, AGENT_ID),
+            authority: () => SERVICE_AUTHORITY,
+            now: () => T1,
+          }),
+        ).toEqual({ examined: 1, quarantined: 0 });
+        await expect(preparations.bindAndStart(start)).rejects.toThrow("reservation stopped");
+        await expect(preparations.reserve(input(f, "-conflict"))).rejects.toThrow(
+          "pending preparation",
+        );
+      } finally {
+        await repo.close();
+      }
+    } finally {
+      await f.close();
+    }
+  });
+
   it.each(["claim", "contract", "deadline"] as const)(
     "rejects changing the persisted queued request at admission: %s",
     async (change) => {

@@ -1,0 +1,41 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.066541000000143,"at":"2026-09-19T13:19:12.520Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":34.13508300000012,"at":"2026-09-19T13:19:12.555Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.7381249999998545,"at":"2026-09-19T13:19:12.556Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":2.4442079999998896,"at":"2026-09-19T13:19:12.559Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.8282089999997879,"at":"2026-09-19T13:19:12.560Z"}
+
+ ❯ |integration| test/integration/production-sandbox-scope.test.ts (21 tests | 1 failed | 20 skipped) 550ms
+   × persists a finite stop for unbound reservations without claiming resource release 549ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+TypeError: The database connection is not open
+ ❯ Database.prepare node_modules/better-sqlite3/lib/methods/wrappers.js:5:21
+ ❯ test/integration/production-sandbox-scope.test.ts:301:23
+    299|     },
+    300|   });
+    301|   expect(f.f.database.prepare("SELECT count(*) FROM sandbox_release_re…
+       |                       ^
+    302|     0,
+    303|   );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 20 skipped (21)
+   Start at  22:19:10
+   Duration  2.17s (transform 926ms, setup 0ms, import 1.52s, tests 550ms, environment 0ms)

@@ -12,6 +12,9 @@ import {
   AGENT_ID,
   OWNER_ID,
   openSandboxJournal,
+  operationsForDatabase,
+  SERVICE_AUTHORITY,
+  T1,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
 type AuditInput = {
@@ -85,6 +88,54 @@ afterEach(async () => {
 });
 
 describe("workspace lifecycle read-only audit", () => {
+  it("lists stopped unbound reservations without presenting them as released", async () => {
+    const f = await openSandboxJournal();
+    close.push(f.close);
+    const { plan, invocation, workspaces } = sandboxV2Admission(f);
+    const call = (operation: string, input: unknown) =>
+      operationsForDatabase(f.database).execute(`capabilityInvocation.sandboxV2.${operation}`, {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        input,
+      });
+    call("reserve", {
+      plan,
+      invocation,
+      workspaces,
+      reservation: {
+        schemaVersion: "sandbox-preparation.v1",
+        identity: plan.identity,
+        environmentId: plan.environmentId,
+        resourceRef: null,
+        mode: plan.mode,
+        workspaceConflictRefs: workspaces.map((x) => x.ref),
+        sequence: 1,
+        createdAt: plan.requestedAt,
+      },
+    });
+    call("interruptReservation", {
+      identity: plan.identity,
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+    });
+    const before = f.database.serialize();
+    const result = auditWorkspaceLifecycle({
+      databasePath: path.join(f.resource.stateRoot, "product.sqlite"),
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+    });
+    expect(result.rows[0]).toMatchObject({
+      preparation: "reserved",
+      stopRequestedAt: T1,
+      recoveryStatus: "unresolved",
+      recoveryFinishedAt: T1,
+      releaseReceiptPresent: false,
+    });
+    expect(result.rows[0]?.reasons).toContain("UNBOUND_RESERVATION_STOPPED");
+    expect(f.database.serialize()).toEqual(before);
+  });
+
   it("reports held resources without creating release proof or changing database bytes", async () => {
     const f = await fixture();
     f.database.pragma("wal_checkpoint(TRUNCATE)");
@@ -93,7 +144,7 @@ describe("workspace lifecycle read-only audit", () => {
     const result = auditWorkspaceLifecycle(f.input);
     expect(result).toMatchObject({
       mode: "read_only",
-      schemaSequence: 39,
+      schemaSequence: 40,
       liveHostVerified: false,
       repairEligible: false,
     });

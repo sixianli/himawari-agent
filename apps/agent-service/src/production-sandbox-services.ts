@@ -1492,12 +1492,31 @@ export async function createProductionSandboxServices(options: {
         let released = true;
         for (;;) {
           const page = await preparations.listAdmissions({ runId, afterJobId, limit: 100 });
-          for (const admission of page) {
+          for (let admission of page) {
             const plan = admission.phase === "bound" ? admission.record.plan : admission.plan;
             if (plan.identity.runId !== runId) continue;
-            if (admission.phase !== "bound") {
-              released = false;
-              continue;
+            if (admission.phase === "reserved") {
+              try {
+                admission = (
+                  await preparations.interruptReservation({
+                    identity: plan.identity,
+                    authority: options.authority(),
+                    now: clock.now(),
+                    reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+                  })
+                ).admission;
+                if (admission.phase === "reserved") {
+                  // Stop only the original registered host; missing binding remains unknown.
+                  await control.stopPreparation(plan);
+                }
+              } catch {
+                released = false;
+                continue;
+              }
+              if (admission.phase === "reserved") {
+                released = false;
+                continue;
+              }
             }
             try {
               const result = { record: await stopRecord(admission.record) };

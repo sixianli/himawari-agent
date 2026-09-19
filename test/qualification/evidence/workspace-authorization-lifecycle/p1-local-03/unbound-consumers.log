@@ -1,0 +1,94 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.9753749999999854,"at":"2026-09-19T13:17:49.993Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":38.781166999999186,"at":"2026-09-19T13:17:50.032Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2944160000006377,"at":"2026-09-19T13:17:50.033Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.9229590000013559,"at":"2026-09-19T13:17:50.034Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.6200420000004669,"at":"2026-09-19T13:17:50.035Z"}
+
+ ❯ |integration| test/integration/production-sandbox-scope.test.ts (21 tests | 1 failed) 13356ms
+   × persists a finite stop for unbound reservations without claiming resource release 430ms
+ ❯ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts (96 tests | 14 failed) 14799ms
+       × upgrades populated schema 27 without reinterpreting prepared history 272ms
+       × upgrades populated schema 27 without reinterpreting starting history 252ms
+       × upgrades populated schema 27 without reinterpreting quarantined history 252ms
+       × upgrades populated schema 27 without reinterpreting completed history 246ms
+       × upgrades populated schema 27 without reinterpreting failed history 251ms
+       × upgrades populated schema 27 without reinterpreting missing_host history 246ms
+       × upgrades populated schema 27 without reinterpreting missing_state history 253ms
+       × upgrades populated schema 27 without reinterpreting prepared history 135ms
+       × upgrades populated schema 27 without reinterpreting starting history 139ms
+       × upgrades populated schema 27 without reinterpreting quarantined history 136ms
+       × upgrades populated schema 27 without reinterpreting completed history 136ms
+       × upgrades populated schema 27 without reinterpreting failed history 137ms
+       × upgrades populated schema 27 without reinterpreting missing_host history 134ms
+       × upgrades populated schema 27 without reinterpreting missing_state history 141ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 15 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-scope.test.ts > persists a finite stop for unbound reservations without claiming resource release
+TypeError: The database connection is not open
+ ❯ Database.prepare node_modules/better-sqlite3/lib/methods/wrappers.js:5:21
+ ❯ test/integration/production-sandbox-scope.test.ts:301:23
+    299|     },
+    300|   });
+    301|   expect(f.f.database.prepare("SELECT count(*) FROM sandbox_release_re…
+       |                       ^
+    302|     0,
+    303|   );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/15]⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting prepared history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting starting history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting quarantined history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting completed history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting failed history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting missing_host history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting missing_state history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting prepared history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting starting history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting quarantined history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting completed history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting failed history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting missing_host history
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting missing_state history
+AssertionError: expected [ Array(13) ] to deeply equal [ Array(12) ]
+
+- Expected
++ Received
+
+@@ -9,6 +9,7 @@
+    35,
+    36,
+    37,
+    38,
+    39,
++   40,
+  ]
+
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:907:81
+    905|           path.join(f.resource.stateRoot, "legacy-snapshot.sqlite"),
+    906|         );
+    907|         expect(applyMigrations(old, migrations, { snapshot }).appliedS…
+       |                                                                                 ^
+    908|           28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+    909|         ]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/15]⎯
+
+
+ Test Files  2 failed | 2 passed (4)
+      Tests  15 failed | 135 passed (150)
+   Start at  22:17:34
+   Duration  45.87s (transform 1.54s, setup 0ms, import 4.19s, tests 40.99s, environment 0ms)
