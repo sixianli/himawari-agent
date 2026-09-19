@@ -164,6 +164,10 @@ interface ExecutionAttempt {
   readonly cancelledWorkerRunIds: Set<string>;
 }
 
+// Risk-reduction waiting is separate from the Run's execution deadline. A
+// timeout reports unknown cleanup; it never releases claims or proves exit.
+const CLEANUP_WAIT_LIMIT_MS = 30_000;
+
 export class RunCoordinator {
   private readonly dependencies: RunCoordinatorDependencies;
   private readonly activeWorkers = new Map<RunId, Set<string>>();
@@ -244,38 +248,36 @@ export class RunCoordinator {
     }
     attempt.interrupted = Object.freeze({ ...input });
     attempt.cancellation.abort();
-    const cancellations: Promise<void>[] = [];
+    const cancellations: Promise<unknown>[] = [];
     const failures: ExecutionInterruptionFailure[] = [];
     const workerRunIds = [...attempt.activeWorkerRunIds];
     if (attempt.runtimeActive && !attempt.runtimeCancellationIssued) {
       attempt.runtimeCancellationIssued = true;
       cancellations.push(
-        Promise.resolve()
-          .then(() => this.dependencies.runtime.cancel(input.runId))
-          .catch((error: unknown) => {
+        this.requestCleanup(() => this.dependencies.runtime.cancel(input.runId)).catch(
+          (error: unknown) => {
             failures.push({ target: "runtime", error });
-          }),
+          },
+        ),
       );
     }
     for (const workerRunId of workerRunIds) {
       if (attempt.cancelledWorkerRunIds.has(workerRunId)) continue;
       attempt.cancelledWorkerRunIds.add(workerRunId);
       cancellations.push(
-        Promise.resolve()
-          .then(() => this.requireWorkers().cancel(workerRunId, input.reasonCode))
-          .catch((error: unknown) => {
-            failures.push({ target: "worker", workerRunId, error });
-          }),
+        this.requestCleanup(() =>
+          this.requireWorkers().cancel(workerRunId, input.reasonCode),
+        ).catch((error: unknown) => {
+          failures.push({ target: "worker", workerRunId, error });
+        }),
       );
     }
-    if (this.dependencies.resources)
+    const resources = this.dependencies.resources;
+    if (resources)
       cancellations.push(
-        Promise.resolve()
-          .then(() => this.dependencies.resources?.stopRun(input.runId))
-          .then(() => undefined)
-          .catch((error: unknown) => {
-            failures.push({ target: "resource", error });
-          }),
+        this.requestCleanup(() => resources.stopRun(input.runId)).catch((error: unknown) => {
+          failures.push({ target: "resource", error });
+        }),
       );
     attempt.interruption = Promise.all(cancellations).then(() => {
       attempt.interruptionResult = Object.freeze({
@@ -523,7 +525,34 @@ export class RunCoordinator {
         { runId: input.runId },
       );
     }
-    const resources = await this.dependencies.resources?.stopRun(input.runId);
+    const resourcePort = this.dependencies.resources;
+    let resources: { readonly released: boolean } | undefined;
+    if (resourcePort) {
+      try {
+        resources = await this.requestCleanup(() => resourcePort.stopRun(input.runId));
+      } catch (error: unknown) {
+        this.assertExecutionActive(attempt);
+        const recorded = await this.dependencies.trace.record({
+          ...this.traceScope(input),
+          parentEventId: storedCheckpoint.checkpoint.lastTraceEventId,
+          causationId: storedCheckpoint.checkpoint.lastTraceEventId,
+          eventType: "runtime.resource_cleanup_unconfirmed",
+          payload: {
+            reasonCode:
+              error instanceof Error && error.message === "RUN_CLEANUP_TIMEOUT"
+                ? "RUN_CLEANUP_TIMEOUT"
+                : "RUN_RESOURCE_CLEANUP_REJECTED",
+          },
+        });
+        this.assertExecutionActive(attempt);
+        storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
+          ...storedCheckpoint.checkpoint,
+          lastTraceEventId: recorded.event.id,
+        });
+        resources = { released: false };
+      }
+    }
+    this.assertExecutionActive(attempt);
     if (terminalStatus === "completed" && resources?.released === false) {
       storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
         ...storedCheckpoint.checkpoint,
@@ -531,7 +560,9 @@ export class RunCoordinator {
         terminalStatus: null,
         diagnosticCode: "RUN_RESOURCE_CLEANUP_UNCONFIRMED",
       });
+      this.assertExecutionActive(attempt);
       storedRun = await this.transition(input, storedRun, "reconciling_external_result");
+      this.assertExecutionActive(attempt);
       return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
     }
     if (terminalStatus === "completed") {
@@ -631,6 +662,29 @@ export class RunCoordinator {
     return storedRun;
   }
 
+  private requestCleanup<T>(stop: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("RUN_CLEANUP_TIMEOUT")),
+        CLEANUP_WAIT_LIMIT_MS,
+      );
+      // Retain handlers after timeout so a late rejection is observed. A late
+      // success cannot rewrite the already-returned uncertainty or restart work.
+      Promise.resolve()
+        .then(stop)
+        .then(
+          (result) => {
+            clearTimeout(timer);
+            resolve(result);
+          },
+          (error: unknown) => {
+            clearTimeout(timer);
+            reject(error);
+          },
+        );
+    });
+  }
+
   private async cancelExecutionTargets(
     input: Pick<CancelCoordinatedRunInput, "runId" | "reasonCode">,
     cancelRuntime: boolean,
@@ -646,7 +700,7 @@ export class RunCoordinator {
         (workerRunId) => () => this.requireWorkers().cancel(workerRunId, input.reasonCode),
       ),
     ];
-    const results = await Promise.allSettled(stops.map((stop) => Promise.resolve().then(stop)));
+    const results = await Promise.allSettled(stops.map((stop) => this.requestCleanup(stop)));
     const failures = results.flatMap((result) =>
       result.status === "rejected" ? [result.reason] : [],
     );

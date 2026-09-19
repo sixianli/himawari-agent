@@ -693,6 +693,14 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 浏览器构建、类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。后台代码未改变，复用 P1 的组合验证；本批 UI 验证仍使用隔离 HTTP 夹具，不代表真实 Worker 联合路径，完整 P6 仍待完成。
 
+### P1 清理等待有界且保留已完成输出（局部修复）
+
+Run 取消、执行权中断和运行时结束后的资源清理现在分别对每个异步停止端口限制调用方等待；当前实现上限为 30 秒，独立于 Run 执行截止时间。端口拒绝或不返回均不妨碍其他目标收到停止请求。超时只表示清理未确认，不能释放占用、证明后代进程退出或重新派发；迟到成功不会改写已返回的状态。此上限用于防止协调器无限等待，不作为全部工具停止宽限或恢复重试政策的最终配置。
+
+运行时已完成但资源清理拒绝或超时时，保留原输出和检查点，保存受保护的清理原因，进入 `reconciling_external_result`。再次领取不会重跑模型。执行权中断后禁止提交迟到的完成状态；运行时已有失败或取消事实继续保留，不因清理异常丢失。
+
+[停止等待修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-04/cleanup-timeout-red.log)三项失败、[完成后清理修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-04/completion-cleanup-red.log)两项失败均保留。可控计时器验证端口永久等待，不依靠真实睡眠或放宽测试期限。[168 项消费者回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-04/cleanup-consumers.log)全部通过，覆盖协调器、网关、Run 生命周期和生产派发；类型检查通过。[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-04/standard-ci-result.json)通过：240 文件、3,633 项，零失败、零跳过，发布扫描通过。任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。额外的 `biome check` 指出该文件原有 import 排序，项目规定的格式与 lint 入口均通过，未为此调整无关 import。多资源停止的逐条等待、未绑定环境释放证明、真实平台进程树资格及整个 P1 仍未完成。
+
 ### 当前完成边界与下一步
 
 P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。

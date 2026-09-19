@@ -1140,3 +1140,180 @@ it("records synchronous resource stop failures during execution interruption", a
     await ended;
   }
 });
+
+it.each(["runtime", "resource"] as const)(
+  "bounds a pending %s cancellation without pretending cleanup finished",
+  async (target) => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runtime = {
+      run: vi.fn(async function* () {}),
+      cancel: vi.fn(() => (target === "runtime" ? pending : Promise.resolve())),
+    };
+    const stopRun = vi.fn(async () => {
+      if (target === "resource") await pending;
+      return { released: false };
+    });
+    const f = await fixture(`cancel-timeout-${target}`, runtime, undefined, { stopRun });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let settled = false;
+    const result = f.coordinator
+      .cancel({
+        ownerId: f.input.ownerId,
+        agentId: f.input.agentId,
+        runId: f.input.runId,
+        authority: f.authority,
+        command: f.input.commands.cancelled,
+        reasonCode: "OWNER_REQUESTED",
+      })
+      .then(
+        (value) => {
+          settled = true;
+          return value;
+        },
+        (error) => {
+          settled = true;
+          return error;
+        },
+      );
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(runtime.cancel).toHaveBeenCalledOnce();
+      expect(stopRun).toHaveBeenCalledOnce();
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(settled).toBe(true);
+      expect(await result).toMatchObject({ errors: [new Error("RUN_CLEANUP_TIMEOUT")] });
+      expect((await f.runs.readRun(f.input.runId))?.run.status).toBe("cancelled");
+      expect(runtime.run).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await result;
+      vi.useRealTimers();
+    }
+  },
+);
+
+it("bounds execution interruption when the runtime stop never responds", async () => {
+  let ready!: () => void, release!: () => void, finishStop!: () => void;
+  const started = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const stopped = new Promise<void>((resolve) => {
+    finishStop = resolve;
+  });
+  const runtime: AgentRuntimePort = {
+    async *run(request) {
+      ready();
+      await pending;
+      yield {
+        type: "runtime.cancelled",
+        runId: request.runId,
+        reasonCode: "AUTHORITY_LOST",
+        occurredAt: T1,
+      };
+    },
+    cancel: vi.fn(() => stopped),
+  };
+  const stopRun = vi.fn(async () => ({ released: false }));
+  const f = await fixture("interrupt-runtime-timeout", runtime, undefined, { stopRun });
+  const execution = f.coordinator.execute(f.input);
+  const ended = expect(execution).rejects.toMatchObject({ reasonCode: "AUTHORITY_LOST" });
+  await started;
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  let settled = false;
+  const result = f.coordinator
+    .interruptExecution({
+      runId: f.input.runId,
+      executionLeaseId: f.input.executionLease.executionLeaseId,
+      reasonCode: "AUTHORITY_LOST",
+    })
+    .then((value) => {
+      settled = true;
+      return value;
+    });
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopRun).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(30_001);
+    expect(settled).toBe(true);
+    expect(await result).toMatchObject({
+      failures: [{ target: "runtime", error: new Error("RUN_CLEANUP_TIMEOUT") }],
+    });
+  } finally {
+    finishStop();
+    release();
+    await result;
+    await ended;
+    vi.useRealTimers();
+  }
+});
+
+it.each(["pending", "rejected"] as const)(
+  "preserves completed output and enters reconciliation when resource cleanup is %s",
+  async (failure) => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runtime = {
+      run: vi.fn(async function* (request: RuntimeRequest) {
+        yield {
+          type: "runtime.completed" as const,
+          runId: request.runId,
+          output: { kind: "assistant-answer" as const, contentRef: "completed-answer" },
+          occurredAt: T1,
+        };
+      }),
+      cancel: vi.fn(async () => {}),
+    };
+    const stopRun = vi.fn(async () => {
+      if (failure === "rejected") throw new Error("resource transport unavailable");
+      await pending;
+      return { released: false };
+    });
+    const f = await fixture(`completion-cleanup-${failure}`, runtime, undefined, { stopRun });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let settled = false;
+    const result = f.coordinator.execute(f.input).then(
+      (value) => {
+        settled = true;
+        return value;
+      },
+      (error) => {
+        settled = true;
+        return error;
+      },
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(stopRun).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(settled).toBe(true);
+      expect(await result).toMatchObject({
+        run: { run: { status: "reconciling_external_result" } },
+        checkpoint: {
+          diagnosticCode: "RUN_RESOURCE_CLEANUP_UNCONFIRMED",
+          output: { contentRef: "completed-answer" },
+        },
+      });
+      expect(
+        (await f.adapters.trace.readRun(f.run.id, 0, 30)).map(({ eventType }) => eventType),
+      ).toContain("runtime.resource_cleanup_unconfirmed");
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      const resumed = await f.coordinator.execute(f.input);
+      expect(resumed.run.run.status).toBe("reconciling_external_result");
+      expect(runtime.run).toHaveBeenCalledOnce();
+    } finally {
+      release();
+      await result;
+      vi.useRealTimers();
+    }
+  },
+);

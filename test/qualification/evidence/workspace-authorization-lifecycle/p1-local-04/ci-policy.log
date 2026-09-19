@@ -1,0 +1,16 @@
+{
+  "status": "passed",
+  "baseSha": "4a46df32e071290a2eae61d7dc3487a74a837d38",
+  "initialization": false,
+  "policySha256": "aac2dd0f1652b4873c162e40dd5e8eb9fb1bc0bdf0423c386d4d47df80c1f83d",
+  "toolchainSha256": "88005cb73e4fa6c87ffa251b78b1458a6c6780739787133ca149038757e4c58e",
+  "files": 287,
+  "projects": {
+    "unit": 129,
+    "contracts": 23,
+    "integration": 77,
+    "e2e": 1,
+    "pi-compat": 10,
+    "tooling": 38
+  }
+}

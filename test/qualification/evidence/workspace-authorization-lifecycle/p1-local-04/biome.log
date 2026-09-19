@@ -1,0 +1,81 @@
+packages/application/src/services/run-coordinator.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+
+  > 1 │ import { createIdempotencyKey } from "@himawari-agent/domain";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import { threadCommandFingerprint } from "./thread-command-service.js";
+    3 │ import type {
+
+  i Safe fix: Organize Imports (Biome)
+
+       1      │ - import·{·createIdempotencyKey·}·from·"@himawari-agent/domain";
+       2      │ - import·{·threadCommandFingerprint·}·from·"./thread-command-service.js";
+            1 │ + import·type·{
+            2 │ + ··AgentId,
+            3 │ + ··IdempotencyKey,
+            4 │ + ··OwnerId,
+            5 │ + ··RunExecutionLeaseId,
+            6 │ + ··RunId,
+            7 │ + ··RunStatus,
+            8 │ + }·from·"@himawari-agent/domain";
+            9 │ + import·{·createIdempotencyKey·}·from·"@himawari-agent/domain";
+       3   10 │   import type {
+       4      │ - ··AgentId,
+       5      │ - ··IdempotencyKey,
+       6      │ - ··OwnerId,
+       7      │ - ··RunExecutionLeaseId,
+       8      │ - ··RunId,
+       9      │ - ··RunStatus,
+      10      │ - }·from·"@himawari-agent/domain";
+      11      │ - import·type·{
+      12      │ - ··AgentRuntimePort,
+      13      │ - ··AuthorityFence,
+      14      │ - ··ClockPort,
+      15      │ - ··PayloadRef,
+      16      │ - ··RunCheckpoint,
+      17      │ - ··RunCheckpointStore,
+      18      │ - ··RunExecutionLeaseClaim,
+      19      │ - ··RunLifecyclePort,
+      20      │ - ··RuntimeEvent,
+      21      │ - ··RuntimeRequest,
+      22      │ - ··StoredRun,
+      23      │ - ··StoredRunCheckpoint,
+      24      │ - ··TraceEventId,
+      25      │ - ··WorkerRunEvent,
+      26      │ - ··WorkerRunPort,
+      27      │ - ··WorkerRunRequest,
+      28      │ - }·from·"../ports/index.js";
+      29      │ - import·{·ApplicationPortError,·PORT_ERROR_CODES·}·from·"../ports/index.js";
+      30      │ - import·type·{·ContextFormationPort,·ContextFormationRequest·}·from·"./context-formation-service.js";
+      31      │ - import·type·{·SessionTraceRecorder·}·from·"./session-trace-recorder.js";
+           11 │ + ··AgentRuntimePort,
+           12 │ + ··AuthorityFence,
+           13 │ + ··ClockPort,
+           14 │ + ··PayloadRef,
+           15 │ + ··RunCheckpoint,
+           16 │ + ··RunCheckpointStore,
+           17 │ + ··RunExecutionLeaseClaim,
+           18 │ + ··RunLifecyclePort,
+           19 │ + ··RuntimeEvent,
+           20 │ + ··RuntimeRequest,
+           21 │ + ··StoredRun,
+           22 │ + ··StoredRunCheckpoint,
+           23 │ + ··TraceEventId,
+           24 │ + ··WorkerRunEvent,
+           25 │ + ··WorkerRunPort,
+           26 │ + ··WorkerRunRequest,
+           27 │ + }·from·"../ports/index.js";
+           28 │ + import·{·ApplicationPortError,·PORT_ERROR_CODES·}·from·"../ports/index.js";
+           29 │ + import·type·{·ContextFormationPort,·ContextFormationRequest·}·from·"./context-formation-service.js";
+           30 │ + import·type·{·SessionTraceRecorder·}·from·"./session-trace-recorder.js";
+           31 │ + import·{·threadCommandFingerprint·}·from·"./thread-command-service.js";
+      32   32 │
+      33   33 │   export interface RunTransitionCommand {
+
+
+Checked 2 files in 95ms. No fixes applied.
+Found 1 error.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
