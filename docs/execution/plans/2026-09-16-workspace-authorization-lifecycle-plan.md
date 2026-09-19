@@ -25,7 +25,7 @@ date: "2026-09-16"
 - [本次实施记录与待审核交互](#implementation-record)
 
 - [一、先看实施顺序与交付结果](#roadmap)
-- [二、已经核对的代码与测试基础](#baseline)
+- [二、已经核对的代码与测试基础](#baseline)：[当前身份与持久化合同](#identity-contract)
 - [三、修改、新建与保留的文件边界](#files)
 - [四、分阶段实施任务](#tasks)：[P0 基线与合同](#p0)、[P1 释放与恢复](#p1)、[P2 授权连续性](#p2)、[P3 文件并发与保存](#p3)、[P4 执行方式](#p4)、[P5 自动审查](#p5)、[P6 页面与端到端](#p6)、[P7 迁移与交付](#p7)
 - [五、68 项验收要求如何验证](#acceptance)
@@ -77,6 +77,34 @@ date: "2026-09-16"
 
 当前 `.agents/skills/` 未发现项目验证 skill，因此不自动创建或声称执行维护流程；继续复用仓库现有 scripts、CI policy 和测试。若实施开始时已有相关 skill，再按其实际适用范围使用。
 
+<a id="identity-contract"></a>
+
+### 当前身份与持久化合同
+
+下表将 Spec 的逻辑名称对应到当前代码。身份相同只允许查询或幂等重放；是否可以执行还要核对当前权限、Run 租约、期限和对象版本。不同阶段使用不同身份，不能因为字符串相似而互换。
+
+| 对象 | 当前身份及关联 | 首次持久化点与重放规则 |
+| --- | --- | --- |
+| 逻辑工具操作 | `runId + toolCallId` 的稳定摘要；内部文件阶段再带阶段名并记录父工具调用 | Pi 在进入工具前保存 `tool-batch-recovery.v1`；生产工具以 `runtime-tool-intent:<key>` 冻结请求和语义摘要。新内容必须是新请求，不能覆盖原快照 |
+| 权限请求和审批 | `GovernedActionIntent.id`、规范化 `semanticSnapshotHash`、`ApprovalRequest.id/revision` | 原授权入口保存完整 intent；决定用审批 revision 和原摘要比较后写入。批准历史与当前是否可执行分开 |
+| 一次额度 | `AuthorizationReservation.id` 关联 Grant、完整 intent、Handle 和 invocation | Schema 34 在签发 Handle 前预约；准入与调用回执一起承诺。仅明确尚未派发才可释放，不确定调用不得退款 |
+| 实际 Worker 调用 | `invocationId` 等于 `work.execute.messageId`；`receiptRef` 绑定被消费的 Handle；保留原 `idempotencyKey` | 同一准入事务保存 `capability_invocation_receipts`，重复返回原回执，不生成第二条可执行消息 |
+| 执行尝试和环境 | `SandboxJobIdentity` 的 `jobId/attemptId/receiptRef/invocationId`，另绑定 `environmentId`、Agent/Worker boot 与执行租约 | 在调用准入时冻结；`reserved` 先保存未绑定预约，核验真实 Job Host 后由唯一 `bindAndStart` 比较写入运行环境。换 boot/fence 不是普通重放 |
+| 公平排队 | `sandbox_admission_queue.job_id` 唯一，`sequence` 为排序号；保存完整原请求、资源集合和原期限 | Schema 35 入队时无共享占用和调用回执；出队同事务比较原快照、全部资源及当前授权，再准入。取消条目保留身份，不能删除后插队 |
+| 文件协调资源 | 每个 Job 的 claim `ref`；目录 inode 祖先链、目标名称槽位和目标 inode | `sandbox_workspace_occupancy` 与准入同事务保存；全部相交资源一次取得。当前固定文件合同仍覆盖整个工具调用，短时提交权尚待实施 |
+| 文件准备及发布 | `PreparedFileOperation.id/revision/canonicalHash`；发布前的暂存 inode、摘要及父目录身份 | 受保护操作记录与 Job 发布日志先于最终路径副作用；恢复只核验原候选身份，不能仅凭内容相同推断本次成功。Schema 37 的恢复 artifact 关联原 invocation |
+| 永久释放事实 | `sandbox_release_receipts.job_id` 唯一，关联具体资源 sequence 与接纳时有效的核验证据 | Schema 33 同事务保存回执并结束原 occupancy；临时凭证随后过期不撤销历史释放 |
+| 后续风险保护 | `job_id + barrier_id`；当前已实现 `control_unacknowledged` | 可执行控制派发未确认时独立保存 barrier；只交付结果的 ACK 不建立新占用。其他迟到矛盾证据类型尚未扩展 |
+| 有界恢复 | 原 Job 内 `recovery.revision/owner/attempts`，独立 action、开始时间、期限及终点 | `beginRecovery` 取得有限期处理权，`finishRecovery` 比较 owner/revision 后结束；`unresolved` 不代表后台自动重试。启动只登记旧尝试未知，不自动运行工具 |
+| 结果交付 | `sandbox_execution_intents.intent_id`、`kind=tool_result`，绑定原 Job 和结果版本 | 准备、派发、确认分开记录；重试仅补原受保护交付回执，不能重跑工具。`kind=continue` 仍属于能够变更资源的控制 |
+| 自动审查 | 唯一 `reviewId/intentId`，绑定策略、模型配置和请求摘要 | Schema 39 先登记再调用模型，完成与审批、精确 Grant 和执行观察同事务；重复/迟到结果不产生第二次授权或步骤 |
+
+源码依据：[工具身份与派发](../../../apps/agent-service/src/production-runtime-tools.ts)、[执行日志合同](../../../packages/application/src/ports/sandbox-execution-journal.ts)、[调用回执](../../../packages/application/src/ports/capability-invocations.ts)、[授权合同](../../../packages/application/src/ports/authorization.ts)、[文件准备](../../../packages/application/src/ports/host-files.ts)。以上是当前静态合同及已有局部测试的对应关系，不代表跨 boot 自动续接、所有风险保护或真实平台资格已完成。
+
+兼容顺序仍为：先核对目标和备份，再迁移数据库和升级唯一 writer，最后接入理解相应版本的 Worker/合同。当前 Schema 39 使用 migration ledger 与 `minimum_writer_sequence` 阻止旧 writer；固定文件合同 2 和无目录网络 Scope v2 不能交给仅理解旧合同的 Worker。旧记录保持原含义，不由迁移补造释放证明。目录改名原语、短时提交阶段与未绑定环境取消还需分别确定最小数据扩展及 reader/Worker 组合回归，故 P0 的完整兼容条目仍未勾选。
+
+[↑ 返回阅读导航](#contents)
+
 <a id="files"></a>
 
 ## 三、修改、新建与保留的文件边界
@@ -114,11 +142,11 @@ date: "2026-09-16"
 
 - [x] 重新读取当前工作树、源 Spec、依赖与既有调用链；保存相关文件摘要和既有失败，不覆盖父任务正在修改的内容。
 - [x] 在既有 SQLite/journal 测试中复现凭证过期与 ACK 延迟 11ms/151ms 的边界，用可控时钟证明故障；该数字是历史复现输入，不是等待时间配置。见[复现日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/p0-local-01/reproduction-red.log)。
-- [ ] 明确 operation、attempt、invocation、审批、额度预约、文件占用、恢复任务与交付消息的身份关系和各自持久化点。复用现有字段，只对不能表达的部分版本化扩展。
+- [x] 明确 operation、attempt、invocation、审批、额度预约、文件占用、恢复任务与交付消息的身份关系和各自持久化点，见[当前身份与持久化合同](#identity-contract)。复用现有字段；尚未实现的跨 boot 续接与短时提交不被当成已具备能力。
 - [ ] 列出 release receipt（永久释放记录）、新风险保护、排队与文件提交阶段所需数据；确定迁移、reader、writer 和 Worker 的兼容顺序。没有可靠平台证据的安全原语列为后续资格检查，不能假定可用。
 - [x] 按既有 ADR 治理记录必须新增的持久决策；[ADR 0030](../../adr/0030-durable-workspace-release-facts.md) 仅记录本 Spec 已确认的释放事实与风险保护原则，不改变历史 ADR。
 - [x] 对照冻结 v4 原型补出新增场景并保存 r3；用户于 2026-09-16 明确确认，允许用于对应 UI 实现。冻结原型内“待审核”文字保留，批准事实以本条为准。
-- [ ] 检查现有真实浏览器路径是否都等待“已连接”；为首次打开立即点击/发送、慢配置、断线完成保留独立用例，不共享会掩盖问题的就绪前置。
+- [x] 检查现有真实浏览器路径的就绪条件；首次打开立即输入、慢配置/失败重试、连接未就绪时发送和重复 Enter 已加入原浏览器入口，断线完成继续复用执行链回归，见[首次加载证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p0-local-02/browser/immediate-startup.json)。这些是隔离 HTTP 夹具回归，真实服务验收仍由 P6 负责。
 
 **出口：** 故障复现、字段/事件兼容方案和测试接入点具体可用。未定模型配置不阻塞其他阶段；新交互审核只影响相关 UI，不把后台必要准备全部挂起。发现与已通过 Spec 矛盾的事实时先说明差异，不擅自重写产品规则。
 
@@ -241,13 +269,13 @@ date: "2026-09-16"
 
 [↑ 返回阅读导航](#contents)
 
-验收语义以来源 Spec 的矩阵为准。下面逐项分配实施责任、测试入口和必须检查的证据；**当前全部为待验证**。一个场景可能需要多个用例，68 行不代表恰好只写 68 个测试。失败前证据适用于可复现缺陷，不伪造新增功能的历史失败。
+验收语义以来源 Spec 的矩阵为准。下面逐项分配实施责任、测试入口和必须检查的证据；**完整产品验收仍待完成；已有局部验证的范围与限制见[本次实施记录](#implementation-record)**。一个场景可能需要多个用例，68 行不代表恰好只写 68 个测试。失败前证据适用于可复现缺陷，不伪造新增功能的历史失败。
 
 <a id="test-entries"></a>
 
 ### 测试入口索引
 
-下列代号只为减少表格重复，链接指向已存在的测试。它们是扩展入口，不代表已经覆盖新要求。
+下列代号只为减少表格重复，链接指向已存在的测试。它们是当前扩展入口；仅列出测试路径不代表已经覆盖整项要求，实际执行结果见[本次实施记录](#implementation-record)。
 
 - **J**：[SQLite 执行记录](../../../test/integration/sqlite-sandbox-execution-v2.test.ts)、[执行准备](../../../test/integration/sandbox-execution-preparation.test.ts)、[Worker 生命周期](../../../test/integration/sandbox-v2-worker-lifecycle.test.ts)。
 - **A**：[权限额度](../../../test/integration/permission-grants.test.ts)、[生产审批订阅](../../../test/integration/production-approval-subscription.test.ts)；补充生产 ActionPolicy 的直接集成断言。
@@ -255,7 +283,7 @@ date: "2026-09-16"
 - **S**：[生产范围](../../../test/integration/production-sandbox-scope.test.ts)、[运行库策略](../../../packages/runtime-sandbox/test/policy.unit.test.ts)、[候选工作区](../../../packages/platform-node/test/qualified-candidate-workspace.unit.test.ts)、[Git 适配](../../../packages/platform-node/test/git-workspace-adapter.unit.test.ts)。
 - **T**：[运行时工具](../../../apps/agent-service/test/production-runtime-tools.unit.test.ts)、[运行历史](../../../test/integration/runtime-history.test.ts)、[外部效果核验](../../../test/integration/external-action-reconciliation.test.ts)。
 - **B**：[页面投影](../../../apps/control-center/test/execution-view.unit.test.ts)、[Playwright 执行链](../../../scripts/test-execution-chain-browser.mjs)、[授权反馈](../../../scripts/test-authorization-feedback-browser.mjs)、[浏览器主入口](../../../scripts/qualify-control-center-browser.mjs)；P6 补真实服务路径，不能仅用 fixture。
-- **R（拟新增）**：ActionPolicy 自动审查单元/集成测试与真实配置资格测试；复用 A/T/S，新增文件按现有 runner 命名规则收集。
+- **R**：[自动审查与持久化](../../../test/integration/automatic-action-review.test.ts)；复用 A/T/S。真实配置资格测试仍待配置获确认后执行。
 - **M（拟扩展）**：既有 migration engine 与 J 的旧数据库 fixture，加兼容、只读修复预览、逐条恢复及回退测试。
 
 | Spec ID | 主责阶段 | 测试入口 | 必须读回或证明的结果 |
@@ -639,6 +667,14 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 - [独立停止修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-02/cancel-independent-red.log)四项失败、[再次停止修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-02/cancel-retry-red.log)两项失败、[同步异常修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-02/interrupt-resource-red.log)一项失败均保留。最终[155 项相关回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-02/cancel-consumers-final.log)全部通过，使用真实协调器/持久化与受控运行时和 Worker 边界。
 
 [完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-02/standard-ci-result.json)通过：240 文件、3,618 项，零失败、零跳过，发布扫描通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。未新增全局清理超时，也不将 `released: false` 当作释放成功；未绑定环境停止、进程树资格、其他恢复盲区及整个 P1 仍未完成。
+
+### P0 身份合同与首次加载测试（局部补充）
+
+[当前身份与持久化合同](#identity-contract)逐项记录 operation、attempt、invocation、审批、额度、占用、恢复及结果交付的关联和持久化点，并明确当前 Schema 39、固定文件合同 2、Scope v2 的兼容边界。短时提交与未绑定环境取消的数据扩展仍待实现，没有将这些设计目标写成现有能力。
+
+在原 `qualifyControlCenterV4` 中加入四个首次访问场景：桌面/320 像素分别覆盖慢配置和配置失败后重试。配置未就绪时草稿保留且不提交；配置就绪后故意继续阻塞事件连接，立即发送并再按 Enter，只产生一次创建和一次消息提交；独立查询与刷新均读回一条消息和一个 Run。相关输入立即发生，没有共享“先等待已连接”的前置条件。
+
+[原 Chrome 浏览器入口](../../../test/qualification/evidence/workspace-authorization-lifecycle/p0-local-02/browser/browser.json)完整通过，包括新增四项、已有移动端、断线/历史恢复及自动审查执行链，零页面异常与可访问性违规。已实际查看窄屏截图，未见横向溢出。测试沿既有 CI browser 入口收集；这次执行在本机 Chrome 和隔离 HTTP 夹具完成，不代表托管 CI 或真实 Worker 验收。此批只增加测试和合同说明，没有改变产品代码；复用上一批 3,618 项通过结果，未伪造修复前失败。任务格式/lint、CI policy、严格文档与链接目标检查通过。
 
 ### 当前完成边界与下一步
 

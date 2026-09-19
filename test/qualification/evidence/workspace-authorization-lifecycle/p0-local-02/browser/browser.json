@@ -1,0 +1,284 @@
+{
+  "schemaVersion": 2,
+  "mobileComposer": [
+    {
+      "locale": "ja",
+      "width": 320,
+      "passed": true
+    },
+    {
+      "locale": "ja",
+      "width": 393,
+      "passed": true
+    },
+    {
+      "locale": "ja",
+      "width": 430,
+      "passed": true
+    },
+    {
+      "locale": "zh-CN",
+      "width": 320,
+      "passed": true
+    },
+    {
+      "locale": "zh-CN",
+      "width": 393,
+      "passed": true
+    },
+    {
+      "locale": "zh-CN",
+      "width": 430,
+      "passed": true
+    },
+    {
+      "locale": "en",
+      "width": 320,
+      "passed": true
+    },
+    {
+      "locale": "en",
+      "width": 393,
+      "passed": true
+    },
+    {
+      "locale": "en",
+      "width": 430,
+      "passed": true
+    },
+    {
+      "locale": "zh-CN",
+      "width": 393,
+      "scenario": "authorization-load-recovery-and-action-error",
+      "passed": true
+    },
+    {
+      "locale": "zh-CN",
+      "width": 1280,
+      "scenario": "authorization-load-recovery-and-action-error",
+      "passed": true
+    }
+  ],
+  "v4Journeys": {
+    "scenario": "startup-before-readiness",
+    "passed": true,
+    "immediateStartup": [
+      {
+        "width": 1280,
+        "configFailure": false,
+        "passed": true
+      },
+      {
+        "width": 1280,
+        "configFailure": true,
+        "passed": true
+      },
+      {
+        "width": 320,
+        "configFailure": false,
+        "passed": true
+      },
+      {
+        "width": 320,
+        "configFailure": true,
+        "passed": true
+      }
+    ]
+  },
+  "executionChain": [
+    {
+      "locale": "zh-CN",
+      "width": 1280,
+      "passed": true
+    },
+    {
+      "locale": "zh-CN",
+      "width": 320,
+      "passed": true
+    },
+    {
+      "locale": "ja",
+      "width": 393,
+      "passed": true
+    },
+    {
+      "locale": "en",
+      "width": 430,
+      "passed": true
+    }
+  ],
+  "status": "passed",
+  "scope": "fixture-only",
+  "engine": "chromium",
+  "profile": "chrome",
+  "runtime": "installed-google-chrome",
+  "browserVersion": "153.0.8010.48",
+  "networkEmulation": [
+    {
+      "offline": true,
+      "reachable": false,
+      "onlineHint": false,
+      "supplementedOnlineEvent": false
+    },
+    {
+      "offline": false,
+      "reachable": true,
+      "onlineHint": true,
+      "supplementedOnlineEvent": false
+    },
+    {
+      "offline": true,
+      "reachable": false,
+      "onlineHint": false,
+      "supplementedOnlineEvent": false
+    },
+    {
+      "offline": false,
+      "reachable": true,
+      "onlineHint": true,
+      "supplementedOnlineEvent": false
+    }
+  ],
+  "platform": "darwin-arm64",
+  "emulation": null,
+  "surfaces": [
+    {
+      "label": "对话",
+      "policy": "allowed"
+    },
+    {
+      "label": "审批",
+      "policy": "allowed"
+    },
+    {
+      "label": "后台任务",
+      "policy": "allowed"
+    },
+    {
+      "label": "收件箱与摘要",
+      "policy": "allowed"
+    },
+    {
+      "label": "记忆",
+      "policy": "allowed"
+    },
+    {
+      "label": "能力与适配器",
+      "policy": "allowed"
+    },
+    {
+      "label": "授权与 Grant",
+      "policy": "allowed"
+    },
+    {
+      "label": "追踪",
+      "policy": "allowed"
+    },
+    {
+      "label": "设置",
+      "policy": "allowed"
+    },
+    {
+      "label": "会话与设备",
+      "policy": "allowed"
+    },
+    {
+      "label": "健康与部署",
+      "policy": "allowed"
+    }
+  ],
+  "journeys": [
+    "brand-image-loaded-from-build",
+    "mobile-composer-prototype-layout-and-menus",
+    "deployment-availability-no-unsupported-queries",
+    "installed-health-dependencies",
+    "thread-chat",
+    "expired-csrf-refresh-preserves-command",
+    "thread-ui-language-only",
+    "thread-search",
+    "thread-revision-conflict-reapply",
+    "thread-archive-restore",
+    "thread-deletion-controls-absent",
+    "thread-fork",
+    "thread-multi-tab",
+    "approval-approve-deny",
+    "approval-recent-authentication-gate",
+    "capability-review-install",
+    "capability-update-approve-deny",
+    "capability-rollback-disable",
+    "grant-revision-conflict-revoke",
+    "governance-offline-no-mutation",
+    "unapproved-capability-hidden-route-absent",
+    "task-budget-attention-pause",
+    "inbox-digest-result-sources",
+    "memory-sensitive-correction",
+    "trace-observable-causal-chain",
+    "settings-secret-reference-only",
+    "session-device-authoritative-detail",
+    "browser-private-storage-scan"
+  ],
+  "routeStates": [
+    "deep-link",
+    "focus-management",
+    "loading",
+    "empty",
+    "error",
+    "degraded",
+    "offline",
+    "session-revoked"
+  ],
+  "locales": [
+    "zh-CN",
+    "en",
+    "ja"
+  ],
+  "keyboard": [
+    "visible-focus",
+    "settings-keyboard-navigation"
+  ],
+  "sse": [
+    "durable-thread-cursor",
+    "event-id-deduplication",
+    "sequence-gap-snapshot-refresh",
+    "authority-scope-snapshot-refresh",
+    "offline-reconnect",
+    "multi-tab",
+    "close-reopen"
+  ],
+  "privacy": {
+    "indexedDbDatabases": 0,
+    "cacheEntries": 0,
+    "serviceWorkers": 0,
+    "sessionStorageKeys": 0,
+    "safeLogEntries": 0
+  },
+  "responsive": [
+    "desktop-chat-with-contextual-preview",
+    "mobile-single-pane",
+    "320px-reflow"
+  ],
+  "minimumTargetHeight": 44,
+  "axeViolations": 0,
+  "keyboardFocus": {
+    "tagName": "button",
+    "accessibleName": "设置",
+    "visible": true
+  },
+  "semanticLandmarks": [
+    "navigation",
+    "main",
+    "heading",
+    "complementary"
+  ],
+  "nonColorConnectionStatus": true,
+  "unsafeBaselineMutations": 0,
+  "expectedOfflineTransportErrors": 0,
+  "browserStorageKeys": [
+    "himawari.control-center.v1.draft.thread-main",
+    "himawari.control-center.v1.lastCursor",
+    "himawari.control-center.v1.locale",
+    "himawari.control-center.v1.preferences",
+    "himawari.control-center.v1.threadLastCursor"
+  ],
+  "cursorAfterReopen": "thread-cursor:46"
+}

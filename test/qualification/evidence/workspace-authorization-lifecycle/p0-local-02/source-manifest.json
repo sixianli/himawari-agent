@@ -1,0 +1,11 @@
+{
+  "sourceBaseCommit": "71506d258f7bee8e5df42ce2f6992ac3b103dc0b",
+  "recordedAt": "2026-09-19T13:11:56.127235+00:00",
+  "files": [
+    {
+      "path": "scripts/test-control-center-v4.mjs",
+      "sha256": "a9f89681aacda97a9262ee36a33639ecb8db9dfcb1aeef5450da85d22ac31994"
+    }
+  ],
+  "scope": "test-only change; browser report records the executed cases"
+}
