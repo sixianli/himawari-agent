@@ -23,9 +23,9 @@ function text(value: unknown): string {
       : value
     : "";
 }
-function identifier(value: unknown, fallback: string): string {
+function identifier(value: unknown, fallback: string, prefix = "tool"): string {
   return typeof value === "string" && value.length > 0
-    ? `tool:${threadCommandFingerprint({ value })
+    ? `${prefix}:${threadCommandFingerprint({ value })
         .replace(/[^a-zA-Z0-9]/g, "")
         .slice(-64)}`
     : fallback;
@@ -112,6 +112,23 @@ export class ThreadExecutionProjection {
         output: "",
         occurredAt: event.occurredAt,
       };
+      // Host-authored review observations carry no model text or protected input.
+      // Keep them as updated markers: they are not Run start/end timing boundaries.
+      if (
+        event.actorId === "automatic-review-control-plane" &&
+        event.payloadRef === null &&
+        event.causationId &&
+        ["started", "approved", "denied", "human", "alternative"].some(
+          (stage) => event.eventType === `runtime.authorization_review.${stage}`,
+        )
+      ) {
+        records.push({
+          ...base,
+          itemId: identifier(event.causationId, event.id, "review"),
+          phase: "updated",
+        });
+        continue;
+      }
       try {
         const envelope = object(await this.readPayload(event, event.payloadRef));
         if (

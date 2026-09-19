@@ -1,0 +1,58 @@
+{
+  "sourceBaseCommit": "227413796e7e6e93051a628454c376a37e60759f",
+  "recordedAt": "2026-09-19T12:39:05.738439+00:00",
+  "files": [
+    {
+      "path": "apps/control-center/src/components/execution-process.tsx",
+      "sha256": "fa0986963b348223517508c77220d1a9efd75874129e3130c81e01531206deaf"
+    },
+    {
+      "path": "apps/control-center/src/components/tool-icon.tsx",
+      "sha256": "404a24e2f75734e197d5d3d46dd6608e8880705341d3b34c43de4b9615f9b8f2"
+    },
+    {
+      "path": "apps/control-center/src/execution-view.ts",
+      "sha256": "ef4fa7c631da717722eb092e735e871cba0626e447f5ddc7592a4d4926755464"
+    },
+    {
+      "path": "apps/control-center/src/i18n/message-ids.ts",
+      "sha256": "d2513ac34f41142b68ce949cb17236c55af6983899bcaa4f078e78d718b02a37"
+    },
+    {
+      "path": "apps/control-center/src/i18n/resources/en.ts",
+      "sha256": "ce97ab10c72a23296bd428d3d4359593cac199e488142e7b2eb806467ccd0728"
+    },
+    {
+      "path": "apps/control-center/src/i18n/resources/ja.ts",
+      "sha256": "c58b432efe4d06cf497d83f262d909b4d022db2462b78772546abda1aaa46449"
+    },
+    {
+      "path": "apps/control-center/src/i18n/resources/zh-CN.ts",
+      "sha256": "bf5211862a3623a47fcb9f32ee0560e16be3865d444de6065391544bb97d985f"
+    },
+    {
+      "path": "apps/control-center/test/execution-view.unit.test.ts",
+      "sha256": "ceca2cdda0a4846a7509068429eb38950c57c86761e427c5425d37ed137af20f"
+    },
+    {
+      "path": "packages/application/src/services/thread-execution-projection.ts",
+      "sha256": "786a7e93dcff13dd660cf17303054e95b221256d6abe795dab1a7efbbf9467be"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/sqlite-automatic-action-review.ts",
+      "sha256": "f7ea4bf41f9bb023b323658fe14a41e94f78f6cc5b2d5af9c6a5b5f05c8c2392"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/sqlite-durable-operations.ts",
+      "sha256": "a4c5ac6a6946ff5d592dd8002ebd376a74071abfa297f912223f2dc4de513bc8"
+    },
+    {
+      "path": "scripts/test-execution-chain-browser.mjs",
+      "sha256": "df3255ebe350ae7ae8aa40a6f7e7d99e335ff80c247d38379bb76e7c6d26876d"
+    },
+    {
+      "path": "test/integration/automatic-action-review.test.ts",
+      "sha256": "5bf9f77fff39e73494973d88c97634d8a2514d056463f6c19fb0cb6982ec04dd"
+    }
+  ]
+}

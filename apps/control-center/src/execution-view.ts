@@ -28,6 +28,51 @@ export type RunSummary = Extract<
 export const isTerminalRun = (run: RunSummary) =>
   ["completed", "failed", "cancelled"].includes(run.status);
 
+const authorizationReviewLabels = {
+  "runtime.authorization_review.started": "review.authorizationStarted",
+  "runtime.authorization_review.approved": "review.authorizationApproved",
+  "runtime.authorization_review.denied": "review.authorizationDenied",
+  "runtime.authorization_review.human": "review.authorizationHuman",
+  "runtime.authorization_review.alternative": "review.authorizationAlternative",
+} as const satisfies Readonly<Record<string, MessageId>>;
+
+/** Only persisted host observations, with no inferred end time or human approval. */
+export function authorizationReviewSteps(records: readonly ThreadExecutionRecord[]) {
+  const groups = new Map<
+    string,
+    { first: ThreadExecutionRecord; start?: ThreadExecutionRecord; end?: ThreadExecutionRecord }
+  >();
+  for (const record of [...new Map(records.map((record) => [record.id, record])).values()].sort(
+    (a, b) => a.sequence - b.sequence,
+  )) {
+    if (
+      record.kind !== "status" ||
+      record.phase !== "updated" ||
+      !Object.hasOwn(authorizationReviewLabels, record.name)
+    )
+      continue;
+    const group = groups.get(record.itemId) ?? { first: record };
+    if (record.name === "runtime.authorization_review.started") group.start ??= record;
+    else group.end ??= record;
+    groups.set(record.itemId, group);
+  }
+  return [...groups.entries()].map(([itemId, { first, start, end }]) => {
+    const name = (end ?? start ?? first).name as keyof typeof authorizationReviewLabels;
+    const elapsed =
+      start && end && end.sequence > start.sequence
+        ? Date.parse(end.occurredAt) - Date.parse(start.occurredAt)
+        : NaN;
+    return {
+      id: first.id,
+      itemId,
+      sequence: first.sequence,
+      outcome: name.slice("runtime.authorization_review.".length),
+      label: authorizationReviewLabels[name],
+      elapsed: Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : null,
+    };
+  });
+}
+
 /** Connection health is distinct from execution progress; an old observation is not a heartbeat. */
 export function executionActivity(
   records: readonly ThreadExecutionRecord[],
@@ -42,6 +87,22 @@ export function executionActivity(
     (record) => record.kind === "tool" && record.phase === "started",
   );
   const age = Math.max(0, now - Date.parse(last?.occurredAt ?? run.updatedAt));
+  const review = authorizationReviewSteps(records).at(-1);
+  const reviewing =
+    !isTerminalRun(run) &&
+    review?.outcome === "started" &&
+    !ordered.some(
+      (record) =>
+        record.sequence > review.sequence &&
+        [
+          "runtime.model_started",
+          "runtime.suspended",
+          "runtime.completed",
+          "runtime.failed",
+          "runtime.cancelled",
+          "runtime.result_unknown",
+        ].includes(record.name),
+    );
   const label: MessageId =
     connection !== "connected" && !isTerminalRun(run)
       ? "chat.disconnected"
@@ -49,15 +110,17 @@ export function executionActivity(
         ? "chat.phase.unresolved"
         : run.status === "awaiting_approval"
           ? "runs.status.awaitingApproval"
-          : tool
-            ? "chat.activity.tool"
-            : activity?.name === "runtime.activity.thinking"
-              ? "chat.activity.thinking"
-              : activity?.name === "runtime.activity.text"
-                ? "chat.activity.output"
-                : activity?.name === "runtime.activity.toolCall"
-                  ? "chat.activity.preparingTool"
-                  : "chat.activity.waitingModel";
+          : reviewing
+            ? "review.authorizationChecking"
+            : tool
+              ? "chat.activity.tool"
+              : activity?.name === "runtime.activity.thinking"
+                ? "chat.activity.thinking"
+                : activity?.name === "runtime.activity.text"
+                  ? "chat.activity.output"
+                  : activity?.name === "runtime.activity.toolCall"
+                    ? "chat.activity.preparingTool"
+                    : "chat.activity.waitingModel";
   return {
     label,
     tool: tool?.name ?? "",

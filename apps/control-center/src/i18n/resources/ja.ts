@@ -1,6 +1,15 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "review.authorizationChecking": "この操作を確認しています",
+  "review.authorizationStarted": "自動審査を開始しました",
+  "review.authorizationApproved": "自動審査で今回の操作が許可されました",
+  "review.authorizationDenied": "自動審査で今回の操作は許可されませんでした",
+  "review.authorizationHuman": "自動審査には確認が必要です",
+  "review.authorizationAlternative": "自動審査で依頼の変更が提案されました",
+  "review.authorizationTiming":
+    "審査の登録から判断の保存までの実測時間です。ツールの実行時間ではありません。",
+
   "review.archivePending":
     "この会話には確認待ちの操作があります。対応してからアーカイブしてください。",
   "review.system": "システムに合わせる",

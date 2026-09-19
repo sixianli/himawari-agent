@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   actionIntentFingerprint,
   AutomaticActionReviewService,
+  ThreadExecutionProjection,
   ModelActionReviewer,
   ModelInvocationAdmissionService,
   type ModelDescriptor,
@@ -620,3 +621,123 @@ it.each(["approve", "deny", "budget-denied", "cancelled", "cancelled-with-usage"
     });
   },
 );
+
+it.each(["approve", "deny", "human", "alternative"] as const)(
+  "commits replayable, scoped review observations for %s without exposing protected text",
+  async (decision) => {
+    const f = await fixture();
+    f.db.prepare("UPDATE threads SET revision=1 WHERE id=?").run(f.intent.threadId);
+    await f.store().claim(f.start);
+    const started = await f.repository().traceStore().readRun(RUN_ID, 0, 100);
+    expect(started.map(({ eventType }) => eventType)).toEqual([
+      "runtime.authorization_review.started",
+    ]);
+    await f.finish(decision);
+    await f.finish(decision);
+    const expected =
+      decision === "approve" ? "approved" : decision === "deny" ? "denied" : decision;
+    const events = await f.repository().traceStore().readRun(RUN_ID, 0, 100);
+    expect(events.map(({ eventType }) => eventType)).toEqual([
+      "runtime.authorization_review.started",
+      `runtime.authorization_review.${expected}`,
+    ]);
+    expect(events.map(({ payloadRef }) => payloadRef)).toEqual([null, null]);
+    expect(events.map(({ causationId }) => causationId)).toEqual([
+      f.request.reviewId,
+      f.request.reviewId,
+    ]);
+    const notifications = await f
+      .repository()
+      .threadRepository()
+      .listGatewayEvents(OWNER_ID, AGENT_ID, null, 100);
+    expect(notifications.map(({ eventType }) => eventType)).toEqual([
+      "thread.execution.updated",
+      "thread.execution.updated",
+    ]);
+    await f.reopen();
+    expect(await f.repository().traceStore().readRun(RUN_ID, 0, 100)).toEqual(events);
+    const projection = new ThreadExecutionProjection({
+      threads: f.repository().threadRepository(),
+      trace: f.repository().traceStore(),
+      payloads: () => f.repository().payloadStore(OWNER_ID, AGENT_ID),
+      protector: {
+        rewrap: async () => {
+          throw Error("not used");
+        },
+        protect: async () => {
+          throw Error("not used");
+        },
+        unprotect: async () => {
+          throw Error("review text must not be read for status");
+        },
+      },
+    });
+    const query = {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: f.intent.threadId,
+      runId: RUN_ID,
+      afterSequence: 0,
+      limit: 1,
+    };
+    const first = await projection.read(query);
+    const last = await projection.read({ ...query, afterSequence: first.nextSequence ?? 0 });
+    expect(first.records[0]).toMatchObject({
+      name: "runtime.authorization_review.started",
+      phase: "updated",
+      input: "",
+      output: "",
+      text: "",
+    });
+    expect(last.records[0]).toMatchObject({
+      name: `runtime.authorization_review.${expected}`,
+      itemId: first.records[0]?.itemId,
+      phase: "updated",
+      input: "",
+      output: "",
+      text: "",
+    });
+    expect(last.records[0]?.occurredAt).toBe(
+      (await f.store().get(f.request.reviewId))?.result?.completedAt,
+    );
+    await expect(projection.read({ ...query, ownerId: "other-owner" })).rejects.toThrow(
+      "THREAD_EXECUTION_NOT_FOUND",
+    );
+    expect(JSON.stringify([...first.records, ...last.records])).not.toContain("Ignore rules");
+  },
+);
+
+it.each(["started", "approved"] as const)(
+  "rolls back review state when %s observation cannot commit",
+  async (stage) => {
+    const f = await fixture();
+    if (stage === "approved") await f.store().claim(f.start);
+    f.db.exec(
+      `CREATE TRIGGER reject_review_observation BEFORE INSERT ON trace_events WHEN NEW.event_type='runtime.authorization_review.${stage}' BEGIN SELECT RAISE(ABORT, 'test observation write failure'); END`,
+    );
+    await expect(stage === "started" ? f.store().claim(f.start) : f.finish()).rejects.toThrow(
+      "test observation write failure",
+    );
+    expect((await f.store().get(f.request.reviewId))?.status).toBe(
+      stage === "started" ? undefined : "pending",
+    );
+    expect(await f.approvalStore().listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect(await f.approvalStore().listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect(await f.repository().traceStore().readRun(RUN_ID, 0, 100)).toHaveLength(
+      stage === "started" ? 0 : 1,
+    );
+  },
+);
+
+it("rejects a review intent assigned to a different thread from its Run", async () => {
+  const f = await fixture();
+  const intent = { ...f.intent, threadId: "another-thread" };
+  const request = { ...f.request, intentFingerprint: actionIntentFingerprint(intent) };
+  f.db
+    .prepare("UPDATE product_state_records SET value_json=? WHERE key='review-policy'")
+    .run(JSON.stringify({ ...f.value, intentFingerprints: [request.intentFingerprint] }));
+  await expect(f.store().claim({ ...f.start, intent, request })).rejects.toThrow(
+    "Automatic review Run scope changed",
+  );
+  expect(await f.store().get(f.request.reviewId)).toBeUndefined();
+});

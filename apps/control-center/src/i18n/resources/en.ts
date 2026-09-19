@@ -1,6 +1,15 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "review.authorizationChecking": "Checking this operation",
+  "review.authorizationStarted": "Automatic review started",
+  "review.authorizationApproved": "Automatic review allowed this operation",
+  "review.authorizationDenied": "Automatic review did not allow this operation",
+  "review.authorizationHuman": "Automatic review needs your confirmation",
+  "review.authorizationAlternative": "Automatic review suggested changing the request",
+  "review.authorizationTiming":
+    "Measured from review registration to the saved decision; this is not tool execution time.",
+
   "review.archivePending":
     "This conversation has an action waiting for your confirmation. Resolve it before archiving.",
   "review.system": "System",

@@ -28,16 +28,19 @@ export class SqliteAutomaticActionReview {
     resolve(input: ResolveApprovalInput): ApprovalRequest;
   };
   private readonly now: () => string;
+  private readonly observe: (record: AutomaticReviewRecord) => void;
   constructor(
     db: Database.Database,
     fail: SqliteApplicationFailure,
     approvals: SqliteAutomaticActionReview["approvals"],
+    observe: (record: AutomaticReviewRecord) => void,
     now: () => string = () => new Date().toISOString(),
   ) {
     this.db = db;
     this.fail = fail;
     this.approvals = approvals;
     this.now = now;
+    this.observe = observe;
   }
 
   readDelegation(input: {
@@ -121,10 +124,16 @@ export class SqliteAutomaticActionReview {
       at: now,
     });
     const run = this.db
-      .prepare("SELECT status FROM runs WHERE id=? AND owner_id=? AND agent_id=?")
-      .get(intent.runId, intent.ownerId, intent.agentId) as { status: string } | undefined;
+      .prepare(
+        "SELECT status, thread_id AS threadId FROM runs WHERE id=? AND owner_id=? AND agent_id=?",
+      )
+      .get(intent.runId, intent.ownerId, intent.agentId) as
+      | { status: string; threadId: string | null }
+      | undefined;
     if (!run || ["completed", "failed", "cancelled"].includes(run.status))
       this.fail("PORT_NOT_AUTHORITATIVE", "Automatic review Run ended");
+    if (run.threadId !== intent.threadId)
+      this.fail("PORT_NOT_AUTHORITATIVE", "Automatic review Run scope changed");
   }
   private payload(start: AutomaticReviewStart, ref: string): void {
     if (
@@ -176,6 +185,7 @@ export class SqliteAutomaticActionReview {
             input.intent.runId,
             JSON.stringify(record),
           );
+        this.observe(record);
         return { record, claimed: true };
       })
       .immediate();
@@ -291,6 +301,7 @@ export class SqliteAutomaticActionReview {
         this.db
           .prepare("UPDATE automatic_action_reviews SET record_json=? WHERE id=?")
           .run(JSON.stringify(resolved), input.reviewId);
+        this.observe(resolved);
         return resolved;
       })
       .immediate();

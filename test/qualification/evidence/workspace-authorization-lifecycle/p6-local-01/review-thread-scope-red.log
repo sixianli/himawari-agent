@@ -1,0 +1,109 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/automatic-action-review.test.ts (34 tests | 1 failed | 33 skipped) 292ms
+   × rejects a review intent assigned to a different thread from its Run 291ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > rejects a review intent assigned to a different thread from its Run
+AssertionError: promise resolved "{ record: { …(7) }, claimed: true }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "claimed": true,
++   "record": {
++     "delegation": {
++       "key": "review-policy",
++       "revision": 1,
++     },
++     "executionLease": {
++       "authorityEpoch": 1,
++       "authorityFencingToken": 1,
++       "authorityLeaseId": "lease-capability-invocation",
++       "consumerId": "automatic-review-test",
++       "deploymentId": "deployment-capability-invocation",
++       "executionLeaseId": "review-lease",
++       "expectedLeaseRevision": 1,
++       "fencingToken": 1,
++     },
++     "intent": {
++       "actionKind": "READ",
++       "agentId": "agent-capability-invocation",
++       "capabilityRef": "capability-invocation",
++       "capabilityVersion": "1.0.0",
++       "contractVersion": "authorization.v2",
++       "credentialOrAccessChange": false,
++       "dataClassification": "private",
++       "deterministicFacts": [],
++       "disclosure": "none",
++       "estimatedCostMicros": 0,
++       "expiresAt": "2026-09-19T12:32:28.711Z",
++       "finalRisk": "LOW",
++       "frequency": {
++         "count": 1,
++         "intervalMs": null,
++       },
++       "id": "intent-capability-invocation-grant",
++       "idempotencyKey": "intent-capability-invocation-grant",
++       "modelClassification": {
++         "actionKind": "READ",
++         "reasonCode": "read",
++         "suggestedRisk": "LOW",
++       },
++       "operation": "read",
++       "ownerId": "owner-capability-invocation",
++       "recipients": [],
++       "requestedAt": "2026-09-19T12:27:28.711Z",
++       "resourceRef": "resource-capability-invocation",
++       "resourceRefs": [
++         "resource-capability-invocation",
++       ],
++       "reversible": true,
++       "runId": "run-capability-invocation",
++       "sideEffect": "none",
++       "targets": [
++         {
++           "ref": "resource-capability-invocation",
++           "type": "file",
++         },
++       ],
++       "threadId": "another-thread",
++     },
++     "request": {
++       "approvalExpiresAt": "2026-09-19T12:32:28.711Z",
++       "configurationVersion": "review-config:1",
++       "deadlineAt": "2026-09-19T12:32:28.711Z",
++       "inputRef": "payload-capability-invocation-trigger",
++       "intentFingerprint": "intent.v2.sha256:022bd49795b21fd16d1d3d5d8a35d2752483ab338536f6271e50921181057b92",
++       "modelRef": "model:test",
++       "policyVersion": "policy:1",
++       "reviewId": "review:one",
++       "runId": "run-capability-invocation",
++       "schemaVersion": "automatic-review.v1",
++     },
++     "result": null,
++     "startedAt": "2026-09-19T12:27:28.715Z",
++     "status": "pending",
++   },
+  }
+
+ ❯ test/integration/automatic-action-review.test.ts:681:65
+    679|   f.db.prepare("UPDATE product_state_records SET value_json=? WHERE ke…
+    680|     .run(JSON.stringify({ ...f.value, intentFingerprints: [request.int…
+    681|   await expect(f.store().claim({ ...f.start, intent, request })).rejec…
+       |                                                                 ^
+    682|   expect(await f.store().get(f.request.reviewId)).toBeUndefined();
+    683| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 33 skipped (34)
+   Start at  21:27:26
+   Duration  1.86s (transform 921ms, setup 0ms, import 1.46s, tests 292ms, environment 0ms)

@@ -1,0 +1,8 @@
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/backup-restore-runbook.md
+fingerprint: sha256:f0b89abf8358e44d3f01d3f20d6d861a0e749a9bc56a7c11fc25d67c41333e67
+mode: dry-run
+Static contract success does not prove Live-State Preflight and does not authorize any operation.
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/backup-restore-runbook.md
+fingerprint: sha256:f0b89abf8358e44d3f01d3f20d6d861a0e749a9bc56a7c11fc25d67c41333e67
+mode: apply
+Static contract success does not prove Live-State Preflight and does not authorize any operation.

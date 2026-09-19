@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { SqliteAutomaticActionReview } from "./sqlite-automatic-action-review.ts";
 import { SqliteAuthorizationReservations } from "./sqlite-authorization-reservations.ts";
 import {
@@ -7,6 +8,7 @@ import {
 import type {
   ApprovalRequest,
   AutomaticReviewStart,
+  AutomaticReviewRecord,
   AutomaticReviewFinish,
   ReserveAuthorizationInput,
   GovernedGrantRecord,
@@ -344,11 +346,16 @@ export class SqliteDurableOperations {
     assertDiskHeadroom: () => void,
   ) {
     this.builtInIdentity = new SqliteBuiltInIdentityOperations(database, fail, assertDiskHeadroom);
-    this.automaticReviews = new SqliteAutomaticActionReview(database, fail, {
-      find: (intentId) => this.findApprovalByIntent(intentId),
-      create: (request) => this.createApproval(request),
-      resolve: (input) => this.resolveApproval(input),
-    });
+    this.automaticReviews = new SqliteAutomaticActionReview(
+      database,
+      fail,
+      {
+        find: (intentId) => this.findApprovalByIntent(intentId),
+        create: (request) => this.createApproval(request),
+        resolve: (input) => this.resolveApproval(input),
+      },
+      (record) => this.appendAutomaticReviewObservation(record),
+    );
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
@@ -1334,6 +1341,56 @@ export class SqliteDurableOperations {
       )
       .run(input.consumerId, input.eventId, input.processedAt);
     return result.changes === 1;
+  }
+
+  /** Called inside the review transaction, so authority and its public observation agree. */
+  private appendAutomaticReviewObservation(record: AutomaticReviewRecord): void {
+    const { intent, request, result } = record;
+    const run = this.database
+      .prepare(
+        "SELECT session_id AS sessionId, thread_id AS threadId FROM runs WHERE id=? AND owner_id=? AND agent_id=?",
+      )
+      .get(intent.runId, intent.ownerId, intent.agentId) as
+      | { sessionId: string; threadId: string | null }
+      | undefined;
+    if (!run || run.threadId !== intent.threadId)
+      this.fail("PORT_NOT_AUTHORITATIVE", "Automatic review Run scope changed");
+    const previous = parseRecord<TraceEvent>(
+      this.database
+        .prepare(
+          "SELECT record_json AS recordJson FROM trace_events WHERE run_id=? ORDER BY sequence DESC LIMIT 1",
+        )
+        .get(intent.runId) as JsonRow | undefined,
+    );
+    const stage =
+      result === null
+        ? "started"
+        : result.decision === "approve"
+          ? "approved"
+          : result.decision === "deny"
+            ? "denied"
+            : result.decision;
+    const occurredAt = result?.completedAt ?? record.startedAt;
+    const id = createHash("sha256").update(request.reviewId).digest("hex");
+    this.appendNextTrace({
+      id: `trace:automatic-review:${id}:${stage}`,
+      schemaVersion: "trace.v1",
+      ownerId: intent.ownerId,
+      agentId: intent.agentId,
+      sessionId: run.sessionId as SessionId,
+      threadId: run.threadId as TraceEvent["threadId"],
+      runId: intent.runId,
+      turnId: null,
+      parentEventId: previous?.id ?? null,
+      causationId: request.reviewId,
+      correlationId: previous?.correlationId ?? `run:${intent.runId}`,
+      actorId: "automatic-review-control-plane",
+      dataClassification: intent.dataClassification,
+      eventType: `runtime.authorization_review.${stage}`,
+      payloadRef: null,
+      occurredAt,
+      recordedAt: occurredAt,
+    });
   }
 
   private appendNextTrace(input: Omit<TraceEvent, "sequence">): TraceEvent {

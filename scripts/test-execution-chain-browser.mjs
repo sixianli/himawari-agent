@@ -103,6 +103,38 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       assert(turnBox && inputBox && Math.abs(turnBox.x - inputBox.x) <= 1);
       await expect(process.locator(".execution-stage")).toHaveCount(1);
       await expect(process.locator(".execution-stage .step-status")).toHaveText("2s");
+      const reviewText = {
+        "zh-CN": ["正在检查这次操作", "自动审查已允许本次操作"],
+        en: ["Checking this operation", "Automatic review allowed this operation"],
+        ja: ["この操作を確認しています", "自動審査で今回の操作が許可されました"],
+      }[locale];
+      const reviewStart = record({
+        itemId: "review-one",
+        name: "runtime.authorization_review.started",
+      });
+      await send({ records: [reviewStart], replay: true });
+      const review = process.locator(".authorization-review");
+      await expect(review).toHaveCount(1);
+      await expect(page.locator(".turn-activity").first()).toContainText(reviewText[0]);
+      await expect(review.locator('[data-tool-category="review"]')).toHaveCount(1);
+      const attentionBeforeReview = await page.locator(".thread-attention").count();
+      await page.screenshot({ path: path.join(output, `${unique}-review-started.png`) });
+      await send({
+        records: [
+          record({
+            itemId: "review-one",
+            name: "runtime.authorization_review.approved",
+            occurredAt: new Date(Date.parse(reviewStart.occurredAt) + 1500).toISOString(),
+          }),
+        ],
+        replay: true,
+      });
+      await expect(review).toHaveCount(1);
+      await expect(review).toContainText(reviewText[1]);
+      await expect(review.locator(".step-status")).toHaveText("1.5s");
+      await expect(page.locator(".thread-attention")).toHaveCount(attentionBeforeReview);
+      await expect(page.locator(".approval-inline")).toHaveCount(0);
+      await page.screenshot({ path: path.join(output, `${unique}-review-approved.png`) });
       const first = tools.first();
       await first.locator(":scope > summary").click();
       await expect(first.locator("pre").first()).toContainText('"query":"Tokyo headlines"');
@@ -212,6 +244,9 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "connected");
       await expect(process).toHaveAttribute("open", "");
       await expect(tools).toHaveCount(2);
+      await expect(process.locator(".authorization-review")).toHaveCount(1);
+      await expect(process.locator(".authorization-review")).toContainText(reviewText[1]);
+      await expect(process.locator(".authorization-review .step-status")).toHaveText("1.5s");
       await process.locator(":scope > summary").scrollIntoViewIfNeeded();
       await page.screenshot({ path: path.join(output, `${unique}-overview.png`) });
       await first.locator(":scope > summary").click();

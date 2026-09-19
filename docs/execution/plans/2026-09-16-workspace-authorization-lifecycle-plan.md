@@ -623,6 +623,15 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 [405 项消费者回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-03/stop-consumers.log)通过，覆盖编码/文件入口、Pi 会话、Run 停止、预算和真实 SQLite；随后[复现审计写入期间取消仍返回 ALLOW](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-03/trace-cancel-red.log)，补充最终返回检查后，[37 项权限回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-03/trace-cancel-green.log)通过。[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-03/standard-ci-result.json)通过：240 个文件、3,601 项全部通过，零跳过，发布扫描通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。模型审查适配已保存为 `825a7a1`。自动审查真实配置仍未启用，用户页面联合验收和完整 P5 尚未完成。
 
+### P6 自动审查来源与实际用时（局部实现）
+
+- 审查开始、允许、拒绝、转人工和建议替代写入现有 Run 执行事件，与审查记录及批准同事务提交；事件写入失败回滚对应审查状态和授权，重复提交不重复发事件。仅保存宿主已确认的状态，不公开模型输入、输出或建议正文。
+- 事件沿现有 Thread 通知和归属校验后的执行投影进入页面。审查使用独立步骤标识，不能充当 Run 开始/结束边界；完整起止事件才计算审查用时，缺少边界时显示暂无时长。自动允许明确标为自动审查，不显示“用户已确认”，也不单独触发红点或人工确认卡片。
+- [先前缺口](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-local-01/review-projection-red.log)包含缺少新功能入口的脚手架失败；另行[复现请求 Thread 与 Run 不一致仍获接纳](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-local-01/review-thread-scope-red.log)，修复持久化归属检查。[189 项相关回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-local-01/review-consumers.log)全部通过，覆盖真实 SQLite 事务失败、关闭重开、分页读回和错误主体拒绝。
+- [4 组真实 Chrome 回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-local-01/browser/result.json)通过，覆盖中文桌面、320 像素窄屏、日文与英文、重复通知、断线及刷新后保留同一审查步骤。浏览器使用隔离 HTTP 夹具，不是生产 Worker 或真实模型联合验收。首次浏览器启动因受限环境 `SIGABRT` 失败，隔离本机重跑通过，原日志保留。
+
+本批沿用已确认的 r3 交互，未启用真实自动审查配置。[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-local-01/standard-ci-result.json)通过：240 文件、3,611 项，零失败、零跳过，发布扫描通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档校验通过。全部执行阶段的统一投影、真实服务端到端路径、跨平台验证和整个 P6 尚未完成。
+
 ### 当前完成边界与下一步
 
 P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。

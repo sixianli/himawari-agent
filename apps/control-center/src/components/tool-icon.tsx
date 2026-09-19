@@ -1,5 +1,11 @@
 import type { ReactNode } from "react";
 const symbols = {
+  review: (
+    <>
+      <path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Z" />
+      <path d="m8 12 3 3 5-6" />
+    </>
+  ),
   read: (
     <>
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
@@ -79,8 +85,16 @@ export function toolCategory(name: string): keyof typeof symbols {
   if (/delegate|spawn|worker/.test(value)) return "delegate";
   return "unknown";
 }
-export function ToolIcon({ name, thinking = false }: { name: string; thinking?: boolean }) {
-  const category = thinking ? "thinking" : toolCategory(name);
+export function ToolIcon({
+  name,
+  thinking = false,
+  review = false,
+}: {
+  name: string;
+  thinking?: boolean;
+  review?: boolean;
+}) {
+  const category = review ? "review" : thinking ? "thinking" : toolCategory(name);
   return (
     <svg
       className="tool-icon"

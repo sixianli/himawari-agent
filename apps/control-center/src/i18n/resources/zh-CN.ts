@@ -1,6 +1,14 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "review.authorizationChecking": "正在检查这次操作",
+  "review.authorizationStarted": "已开始自动审查",
+  "review.authorizationApproved": "自动审查已允许本次操作",
+  "review.authorizationDenied": "自动审查未允许本次操作",
+  "review.authorizationHuman": "自动审查需要你确认",
+  "review.authorizationAlternative": "自动审查建议调整请求",
+  "review.authorizationTiming": "从审查请求登记到决定保存的实际用时，不是工具执行时长。",
+
   "review.archivePending": "这个会话仍有待确认的操作，请先处理后再归档。",
   "review.system": "跟随系统",
   "review.localeNote": "界面语言不改变历史消息内容。",

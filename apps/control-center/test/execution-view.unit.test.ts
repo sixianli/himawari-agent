@@ -2,6 +2,7 @@ import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
 import {
   executionFailureMessage,
+  authorizationReviewSteps,
   executionToolPhase,
   executionActivity,
   executionItems,
@@ -228,4 +229,78 @@ it("uses durable admission and unresolved markers independently from Pi tool sta
       1000,
     ).label,
   ).toBe("chat.phase.unresolved");
+});
+
+it("shows the recorded automatic-review source and only complete review intervals", () => {
+  const start = record(2, 20, {
+    phase: "updated",
+    itemId: "review:one",
+    name: "runtime.authorization_review.started",
+  });
+  const end = record(3, 23, {
+    phase: "updated",
+    itemId: "review:one",
+    name: "runtime.authorization_review.approved",
+  });
+  expect(authorizationReviewSteps([end, start, end])).toEqual([
+    expect.objectContaining({
+      itemId: "review:one",
+      sequence: 2,
+      outcome: "approved",
+      elapsed: 3000,
+    }),
+  ]);
+  expect(authorizationReviewSteps([end])[0]?.elapsed).toBeNull();
+  expect(authorizationReviewSteps([start])[0]?.elapsed).toBeNull();
+  expect(
+    authorizationReviewSteps([start, { ...end, occurredAt: new Date(19000).toISOString() }])[0]
+      ?.elapsed,
+  ).toBeNull();
+  expect(
+    executionTime(
+      [record(1, 10), start, end, record(4, 30, { phase: "completed" })],
+      { ...run, status: "completed" },
+      999999,
+    ),
+  ).toEqual({ work: 20000, wait: 0, known: true });
+});
+
+it("prioritizes live review without reviving it after confirmation, cancellation or a later model turn", () => {
+  const start = record(3, 20, {
+    phase: "updated",
+    itemId: "review:one",
+    name: "runtime.authorization_review.started",
+  });
+  const call = record(2, 15, { kind: "tool", name: "write" });
+  expect(executionActivity([record(1, 10), call, start], run, "connected", 22000).label).toBe(
+    "review.authorizationChecking",
+  );
+  expect(
+    executionActivity([start], { ...run, status: "awaiting_approval" }, "connected", 22000).label,
+  ).toBe("runs.status.awaitingApproval");
+  expect(executionActivity([start], run, "offline", 22000).label).toBe("chat.disconnected");
+  expect(executionActivity([start, record(4, 24)], run, "connected", 25000).label).toBe(
+    "chat.activity.waitingModel",
+  );
+  expect(
+    executionActivity([start], { ...run, status: "cancelled" }, "connected", 25000).label,
+  ).not.toBe("review.authorizationChecking");
+  const approved = {
+    ...start,
+    id: "approved",
+    sequence: 4,
+    name: "runtime.authorization_review.approved",
+  };
+  expect(executionActivity([start, approved], run, "connected", 25000).label).not.toBe(
+    "review.authorizationChecking",
+  );
+});
+
+it("ignores unavailable or malformed review observations", () => {
+  expect(
+    authorizationReviewSteps([
+      record(1, 1, { phase: "unavailable", name: "runtime.authorization_review.approved" }),
+      record(2, 2, { phase: "updated", name: "runtime.authorization_review.injected" }),
+    ]),
+  ).toEqual([]);
 });

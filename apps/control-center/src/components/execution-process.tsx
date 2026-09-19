@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   duration,
   executionActivity,
+  authorizationReviewSteps,
   executionFailureMessage,
   executionItems,
   executionToolPhase,
@@ -71,8 +72,14 @@ export function ExecutionProcess({
   const steps = [
     ...items
       .filter((item) => item.kind === "tool")
-      .map((item) => ({ sequence: item.firstSequence, item, stage: null })),
-    ...thinking.map((stage) => ({ sequence: stage.sequence, item: null, stage })),
+      .map((item) => ({ sequence: item.firstSequence, item, stage: null, review: null })),
+    ...thinking.map((stage) => ({ sequence: stage.sequence, item: null, stage, review: null })),
+    ...authorizationReviewSteps(records).map((review) => ({
+      sequence: review.sequence,
+      item: null,
+      stage: null,
+      review,
+    })),
   ].sort((a, b) => a.sequence - b.sequence);
   const time = executionTime(records, run, now);
   const activity = executionActivity(records, run, connection, now);
@@ -117,7 +124,20 @@ export function ExecutionProcess({
           </span>
         </summary>
         <ol className="execution-chain" aria-label={message("chat.process")}>
-          {steps.map(({ item, stage }) => {
+          {steps.map(({ item, stage, review }) => {
+            if (review)
+              return (
+                <li className="execution-stage authorization-review" key={review.id}>
+                  <span className="step-marker" aria-hidden="true" />
+                  <ToolIcon name="" review />
+                  <span>{message(review.label)}</span>
+                  <span className="step-status" title={message("review.authorizationTiming")}>
+                    {review.elapsed === null
+                      ? message("chat.unknownTime")
+                      : duration(review.elapsed)}
+                  </span>
+                </li>
+              );
             if (stage)
               return (
                 <li className="execution-stage" key={stage.id}>

@@ -1,4 +1,12 @@
 export const MESSAGE_IDS = [
+  "review.authorizationChecking",
+  "review.authorizationStarted",
+  "review.authorizationApproved",
+  "review.authorizationDenied",
+  "review.authorizationHuman",
+  "review.authorizationAlternative",
+  "review.authorizationTiming",
+
   "review.archivePending",
   "review.system",
   "review.localeNote",
