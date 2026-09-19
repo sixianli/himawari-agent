@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:41a6c886e589a980b9a6c3f1676b85d3e349f42118b2ba571f8da0092cc5127b"
+contract_sha256: "sha256:cf7226e78935c0721c7049cda24244e204dfcd7ca1e0e311f56ff58d6cdb3e98"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -112,6 +112,8 @@ SRT 变更已包含产品作业合同、计划投影、Pi 调用绑定、固定�
 恢复包只包含 SQLite backup API 产生的 `data/product.sqlite` 一致性副本，以及该副本实际引用的 `data/payload-ciphertext/` 文件。Agent/Worker 启动身份文件位于 `runtime/`，不属于恢复数据；恢复后的服务必须重新建立当前 boot、authority lease 和握手，不能把旧启动文件当作恢复后的执行权限。`runtime/`、`cache/`、lock、socket、日志、secret、能力部署快照及其 runtime root 明确排除；恢复后仍须由安装流程独立提供并验证与 active Capability Registry 一致的不可变快照，不能从数据库记录重新生成可执行绑定。当前 CLI 通过权限受限的 secret 目录解析 `backup-encryption` 与 `payload-encryption` 引用；不得把密钥值写入参数、日志或证据。
 
 Schema 40 为尚未绑定的预约增加不可撤销的停止标记，并保留独立的有限恢复记录。停止或启动恢复遇到这类预约时禁止后续绑定；已注册环境只通过原认证 Job Host 控制通道请求停止。标记不证明私有环境已清理或共享占用可释放，缺少证据时仍保留 claim；不补造运行时身份或永久释放回执。升级必须先备份并迁移唯一 writer，Schema 39 及以前的 writer 不得接管。Worker 线上消息合同没有新增字段，旧 Worker 也不能绕过数据库绑定检查。
+
+轮次已取消、失败或完成后，如果某个工具只有准备事件而没有结束结果，页面显示“结果未确认”，不持续显示准备中；明确未派发的原证据仍显示“尚未派发”。缺少真实起止边界时不生成时长，刷新后沿用相同规则。
 
 ## Authoritative Sources
 

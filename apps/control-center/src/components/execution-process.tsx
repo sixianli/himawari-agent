@@ -152,7 +152,7 @@ export function ExecutionProcess({
             if (!item) return null;
             const incomplete = ["started", "updated"].includes(item.phase);
             const phase: MessageId =
-              executionToolPhase(item, records) ??
+              executionToolPhase(item, records, run) ??
               (isTerminalRun(run) && incomplete
                 ? run.status === "cancelled" && item.kind === "message"
                   ? "chat.phase.stopped"

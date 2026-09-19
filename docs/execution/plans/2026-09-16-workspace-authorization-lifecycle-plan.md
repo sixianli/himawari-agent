@@ -685,6 +685,14 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 [完整本地构建与测试原始结果](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/standard-ci-result.json)执行 240 文件、3,625 项，3,624 通过、1 失败、零跳过；唯一失败是旧测试仍要求 39 条 migration ledger。改为 40 后，[334 项合同回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/contracts-schema-final.log)全部通过，复用未变产品代码的其他项目结果，见[组合验证](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/verification-result.json)。构建与发布扫描、类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和该批文档检查通过。真实未绑定环境的永久释放证明、实际平台进程树、停止端口的总等待上限及完整 P1 仍未完成。
 
+### P6 终态工具不再持续显示准备中（局部修复）
+
+[真实 Chrome 复现](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-local-02/browser-confirmed-red.log)确认：轮次已经取消，但只有准备事件的工具行仍显示“正在准备”。自动审查行的“已开始自动审查”是历史记录，未被误改成拒绝或完成。工具行现在结合已保存的 Run 终态显示“结果未确认”；若已有明确未派发证据，继续显示“尚未派发”，不推断未修改文件或虚构执行用时。
+
+[三项单元失败](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-local-02/terminal-projection-red.log)在修复后通过；[全部 362 项前端回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-local-02/browser-unit.log)通过。[原执行链 Chrome 流程](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-local-02/browser-fixed/result.json)四组均通过，每组新增取消、失败、完成三种终态及刷新恢复，覆盖中文桌面/320 像素、日文 393 像素和英文 430 像素。已查看中文窄屏与日文截图。初次浏览器探针未等到记录加载，后续先作记录数量的正向断言再复现；测试中途重置同一页面的追加式历史也已改为新页面加载独立场景，相关日志保留，不将这些夹具问题记为产品缺陷。
+
+浏览器构建、类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。后台代码未改变，复用 P1 的组合验证；本批 UI 验证仍使用隔离 HTTP 夹具，不代表真实 Worker 联合路径，完整 P6 仍待完成。
+
 ### 当前完成边界与下一步
 
 P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。

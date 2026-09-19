@@ -133,6 +133,7 @@ export function executionActivity(
 export function executionToolPhase(
   item: ThreadExecutionRecord,
   records: readonly ThreadExecutionRecord[],
+  run: RunSummary,
 ): MessageId | undefined {
   const marker = [...records]
     .filter(
@@ -147,7 +148,9 @@ export function executionToolPhase(
     case "runtime.tool_outcome.unresolved":
       return "chat.phase.unresolved";
     case "runtime.tool_outcome.preparing":
-      return "chat.phase.preparing";
+      // The Run has ended, but no tool result establishes whether it started or
+      // changed a file. Keep that uncertainty without a perpetual active phase.
+      return isTerminalRun(run) ? "chat.phase.unresolved" : "chat.phase.preparing";
     default:
       return undefined;
   }

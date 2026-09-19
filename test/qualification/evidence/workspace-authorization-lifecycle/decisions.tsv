@@ -35,3 +35,4 @@ ts	phase	decision	why	evidence	result
 2026-09-19T13:10:21.895676+00:00	P1	独立发送停止请求并重试仍活跃目标	复现一处取消失败阻断其他清理以及再次停止遗漏原执行目标	p1-local-02/cancel-independent-red.log;p1-local-02/cancel-retry-red.log;p1-local-02/standard-ci-result.json	155 项相关和 3618 项完整测试通过；取消状态不代表进程树释放
 2026-09-19T13:11:56.131865+00:00	P0	冻结现有身份合同并在连接前执行首次加载回归	既有等待和菜单操作可能掩盖立即提交问题，需单独阻塞配置与事件连接	p0-local-02/browser/immediate-startup.json;p0-local-02/browser/browser.json	4 项新增场景及原 Chrome 流程通过；测试使用隔离 HTTP 夹具
 2026-09-19T13:38:42.126790+00:00	P1	以独立永久停止标记隔离未绑定预约并保留未知资源责任	数据库无绑定不能证明私有 Job Host 不存在；启动恢复原先漏掉预约	p1-local-03/unbound-stop-red.log;p1-local-03/unbound-consumers-final.log;p1-local-03/verification-result.json	251 项相关及组合全量验证通过；未签发释放证明或实际部署
+2026-09-19T13:40:50.767877+00:00	P6	终态下缺结果的准备步骤显示结果未确认	Chrome 复现顶部已取消但工具仍持续准备；终态不能推断工具未执行	p6-local-02/browser-confirmed-red.log;p6-local-02/browser-fixed/result.json;p6-local-02/browser-unit.log	362 项前端回归和 4 组 Chrome 通过；无虚构用时或真实 Worker 验收

@@ -265,8 +265,64 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       const composerBox = await page.locator(".composer").boundingBox();
       assert(resultBox && composerBox && resultBox.y + resultBox.height <= composerBox.y + 1);
       await page.screenshot({ path: path.join(output, `${unique}-result.png`), fullPage: true });
+      const phaseText = {
+        "zh-CN": ["结果未确认", "尚未派发", "暂无时长"],
+        en: ["Result unconfirmed", "Not dispatched", "Time not recorded"],
+        ja: ["結果未確認", "未送信", "時刻の記録なし"],
+      }[locale];
+      for (const status of ["cancelled", "failed", "completed"]) {
+        await send({
+          reset: true,
+          status,
+          records: [
+            record({
+              kind: "tool",
+              itemId: "pending-write",
+              name: "write",
+              phase: "updated",
+              input: '{"path":"note.txt"}',
+            }),
+            record({ itemId: "pending-write", name: "runtime.tool_outcome.preparing" }),
+            record({ kind: "tool", itemId: "rejected-write", name: "write", phase: "failed" }),
+            record({ itemId: "rejected-write", name: "runtime.tool_outcome.not_dispatched" }),
+          ],
+        });
+        // Each reset seeds a separate scenario; execution histories in a live
+        // page are append-only and must not be treated as a resettable cache.
+        const terminalPage = await context.newPage();
+        terminalPage.on("pageerror", (error) => errors.push(error.message));
+        try {
+          await terminalPage.goto(`${baseUrl}/threads/thread-main`);
+          const terminalTools = terminalPage
+            .locator(".turn-process")
+            .first()
+            .locator(".tool-record");
+          await expect(terminalTools).toHaveCount(2);
+          await expect(terminalTools.first().locator(".step-status")).toContainText(phaseText[0]);
+          await expect(terminalTools.first().locator(".step-status")).toContainText(phaseText[2]);
+          await expect(terminalTools.last().locator(".step-status")).toContainText(phaseText[1]);
+          await expect(terminalPage.locator(".turn-activity")).toHaveCount(0);
+          await terminalPage.reload();
+          await expect(terminalTools).toHaveCount(2);
+          await expect(terminalTools.first().locator(".step-status")).toContainText(phaseText[0]);
+          await expect(terminalTools.last().locator(".step-status")).toContainText(phaseText[1]);
+          await terminalPage.screenshot({ path: path.join(output, `${unique}-${status}.png`) });
+        } catch (error) {
+          await terminalPage.screenshot({
+            path: path.join(output, `${unique}-${status}-failure.png`),
+          });
+          throw error;
+        } finally {
+          await terminalPage.close();
+        }
+      }
       assert.deepEqual(errors, []);
-      cases.push({ locale, width, passed: true });
+      cases.push({
+        locale,
+        width,
+        passed: true,
+        terminalWithoutResult: ["cancelled", "failed", "completed"],
+      });
     } catch (error) {
       await writeFile(
         path.join(output, `${unique}-network.json`),

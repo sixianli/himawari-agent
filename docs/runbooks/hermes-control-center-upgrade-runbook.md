@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:603aa6200f221b16ac48dd5d9ed03431795244ec3d86a44e82cf8af826706c8c"
+contract_sha256: "sha256:7299577f92cdb2b785593bcdb3554f156e666cd9749e14b4bd25a8cab2e3456c"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -61,6 +61,8 @@ date: "2026-09-11"
 升级用户已明确授权的 Hermes Linux 上 Himawari 安装。目标限定 `/data/hermes/himawari`，以及经用户单独同意后用于程序和运行依赖的 `/opt/himawari/releases`，不操作父目录中的其他 Hermes Agent 服务或其他应用。既有网络资格探针另外使用 `/data/himawari-r8-web-2026-09-11` 中新建的唯一临时子目录；执行前须验证此专用验收根为当前服务账号所有、0700、普通规范目录且位于 `/data` 机械盘，不访问其他同级目录。Mac 仅用于源码开发、浏览器和交付查看，不作为运行主机。此流程不执行跨主机 Authority Transfer，不创建 PR 或推送。
 
 Schema 40 为尚未绑定的预约增加不可撤销的停止标记，并保留独立的有限恢复记录。停止或启动恢复遇到这类预约时禁止后续绑定；已注册环境只通过原认证 Job Host 控制通道请求停止。标记不证明私有环境已清理或共享占用可释放，缺少证据时仍保留 claim；不补造运行时身份或永久释放回执。升级必须先备份并迁移唯一 writer，Schema 39 及以前的 writer 不得接管。Worker 线上消息合同没有新增字段，旧 Worker 也不能绕过数据库绑定检查。
+
+轮次已取消、失败或完成后，如果某个工具只有准备事件而没有结束结果，页面显示“结果未确认”，不持续显示准备中；明确未派发的原证据仍显示“尚未派发”。缺少真实起止边界时不生成时长，刷新后沿用相同规则。
 
 ## Authoritative Sources
 

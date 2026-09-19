@@ -214,12 +214,16 @@ it("uses durable admission and unresolved markers independently from Pi tool sta
     phase: "updated",
     name: "runtime.tool_outcome.not_dispatched",
   });
-  expect(executionToolPhase(tool, [outcome, tool])).toBe("chat.phase.notDispatched");
-  expect(executionToolPhase(tool, [{ ...outcome, name: "runtime.tool_outcome.unresolved" }])).toBe(
-    "chat.phase.unresolved",
-  );
+  expect(executionToolPhase(tool, [outcome, tool], run)).toBe("chat.phase.notDispatched");
   expect(
-    executionToolPhase(tool, [{ ...outcome, sequence: 1, name: "runtime.tool_outcome.preparing" }]),
+    executionToolPhase(tool, [{ ...outcome, name: "runtime.tool_outcome.unresolved" }], run),
+  ).toBe("chat.phase.unresolved");
+  expect(
+    executionToolPhase(
+      tool,
+      [{ ...outcome, sequence: 1, name: "runtime.tool_outcome.preparing" }],
+      run,
+    ),
   ).toBeUndefined();
   expect(
     executionActivity(
@@ -304,3 +308,29 @@ it("ignores unavailable or malformed review observations", () => {
     ]),
   ).toEqual([]);
 });
+
+it.each(["cancelled", "failed", "completed"] as const)(
+  "does not keep a terminal %s tool in preparation when its result is missing",
+  (status) => {
+    const tool = record(2, 1, { kind: "tool", name: "write", phase: "updated" });
+    const preparing = record(3, 1, { phase: "updated", name: "runtime.tool_outcome.preparing" });
+    expect(executionToolPhase(tool, [tool, preparing], { ...run, status })).toBe(
+      "chat.phase.unresolved",
+    );
+    expect(executionToolPhase(tool, [tool, preparing], run)).toBe("chat.phase.preparing");
+    expect(
+      executionToolPhase(
+        tool,
+        [tool, { ...preparing, name: "runtime.tool_outcome.not_dispatched" }],
+        { ...run, status },
+      ),
+    ).toBe("chat.phase.notDispatched");
+    expect(
+      executionToolPhase({ ...tool, sequence: 4, phase: "completed" }, [preparing], {
+        ...run,
+        status,
+      }),
+    ).toBeUndefined();
+    expect(recordedInterval([tool, preparing], tool.itemId, "runtime.tool_execution")).toBeNull();
+  },
+);

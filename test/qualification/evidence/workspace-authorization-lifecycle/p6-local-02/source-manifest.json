@@ -1,0 +1,22 @@
+{
+  "sourceBaseCommit": "d840b80eda27aea64222b1810c0875349a2c541f",
+  "recordedAt": "2026-09-19T13:39:19.595691+00:00",
+  "files": [
+    {
+      "path": "apps/control-center/src/execution-view.ts",
+      "sha256": "daf0f7ce5812ac931cf4613dbdfa069802247aaa3bc49cbc92c72978e6bed589"
+    },
+    {
+      "path": "apps/control-center/src/components/execution-process.tsx",
+      "sha256": "df7a785ef459cb89b284ad05aea73d272c11ceb1fcf3129a9da2125e66971232"
+    },
+    {
+      "path": "apps/control-center/test/execution-view.unit.test.ts",
+      "sha256": "d8c12af49456c1f437dc110fd32d7e9d88dc84914dbf347addc34b61b74e2bba"
+    },
+    {
+      "path": "scripts/test-execution-chain-browser.mjs",
+      "sha256": "f62ed5defa943857ee004007c333ef7df48264131cd1aa5823f202154e9e25f8"
+    }
+  ]
+}
