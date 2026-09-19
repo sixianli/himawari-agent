@@ -530,3 +530,102 @@ describe("PiModelTransport", () => {
     expect(payloads.writes).toEqual([]);
   });
 });
+
+it("passes cancellation to the pinned Pi provider API without adding tools", async () => {
+  const controller = new AbortController();
+  let received: Record<string, unknown> | undefined;
+  let context: Context | undefined;
+  const runtime = runtimeWithTerminal(assistant("{}"), { fetchProvider: false });
+  const transport = new PiModelTransport({
+    models: {
+      resolve: async () =>
+        ({
+          model,
+          modelRuntime: {
+            stream: (chosen: Model<Api>, input: Context, options?: Record<string, unknown>) => {
+              received = options;
+              context = input;
+              return runtime.stream(chosen, input, options);
+            },
+          },
+        }) as unknown as PiModelBinding,
+    },
+    payloads: payloadBoundary().boundary,
+    clock: { now: () => NOW },
+  });
+  await collect(
+    transport.invoke({
+      descriptor,
+      request: { ...request, signal: controller.signal },
+      secretValues: [PROVIDER_SECRET],
+    }),
+  );
+  expect(received?.["signal"]).toBe(controller.signal);
+  expect(context?.tools).toBeUndefined();
+});
+
+it("does not read model input or resolve a binding after request cancellation", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const readText = vi.fn(async () => "private text");
+  const resolve = vi.fn(
+    async () =>
+      ({
+        model,
+        modelRuntime: runtimeWithTerminal(assistant("{}"), { fetchProvider: false }),
+      }) as unknown as PiModelBinding,
+  );
+  const transport = new PiModelTransport({
+    models: { resolve },
+    payloads: { ...payloadBoundary().boundary, readText },
+    clock: { now: () => NOW },
+  });
+  await expect(
+    collect(
+      transport.invoke({
+        descriptor,
+        request: { ...request, signal: controller.signal },
+        secretValues: [PROVIDER_SECRET],
+      }),
+    ),
+  ).rejects.toThrow();
+  expect(readText).not.toHaveBeenCalled();
+  expect(resolve).not.toHaveBeenCalled();
+});
+
+it("does not offer a retry after the caller cancels an active Pi stream", async () => {
+  const controller = new AbortController();
+  const transport = new PiModelTransport({
+    models: {
+      resolve: async () =>
+        ({
+          model,
+          modelRuntime: {
+            stream: () =>
+              (async function* (): AsyncIterable<AssistantMessageEvent> {
+                controller.abort();
+                yield {
+                  type: "error",
+                  reason: "aborted",
+                  error: { ...assistant(""), stopReason: "aborted" },
+                };
+              })(),
+          },
+        }) as unknown as PiModelBinding,
+    },
+    payloads: payloadBoundary().boundary,
+    clock: { now: () => NOW },
+  });
+  const events = await collect(
+    transport.invoke({
+      descriptor,
+      request: { ...request, signal: controller.signal },
+      secretValues: [PROVIDER_SECRET],
+    }),
+  );
+  expect(events.at(-1)).toMatchObject({
+    type: "model.failed",
+    errorCode: "MODEL_REQUEST_CANCELLED",
+    retryable: false,
+  });
+});

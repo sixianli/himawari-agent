@@ -1,5 +1,6 @@
 import {
   ActionPolicyService,
+  type AutomaticActionReviewPort,
   CapabilityHandleService,
   type CapabilityInvocationAuthority,
   type CapabilityManifest,
@@ -31,6 +32,8 @@ export function createProductionFileReadServices(options: {
   readonly authority: () => CapabilityInvocationAuthority;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
+  /** Opt-in host coordinator; absent until review configuration and delegation are approved. */
+  readonly automaticReview?: AutomaticActionReviewPort;
 }): ProductionFileReadServices {
   const { configuration, repository, clock, ids } = options;
   const capabilities = repository.capabilityStore(configuration.ownerId, configuration.agentId);
@@ -48,6 +51,7 @@ export function createProductionFileReadServices(options: {
     policy: { version: "file-read.v1", rules: [] },
     clock,
     ids,
+    ...(options.automaticReview ? { automaticReview: options.automaticReview } : {}),
   });
   const searchAuthorization = new PublicSearchAuthorization({
     configuration,

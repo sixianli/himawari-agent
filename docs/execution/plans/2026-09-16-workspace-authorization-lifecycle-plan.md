@@ -191,8 +191,8 @@ date: "2026-09-16"
 
 [↑ 返回阅读导航](#contents)
 
-- [ ] 在现有 ActionPolicy 中增加可选审查调用：硬拒绝 → 有效授权/允许规则 → 符合委托范围才自动审查 → 必要人工确认/拒绝。未配置时保留现有人工处理路径。
-- [ ] 定义结构化审查请求/结果并绑定请求摘要、政策版本、模型配置版本与决策来源。批准范围由宿主校验，审查模型的自由文本不能直接创建广泛 grant 或命令执行。
+- [x] 在现有 ActionPolicy 中增加可选审查调用：硬拒绝 → 有效授权/允许规则 → 符合委托范围才自动审查 → 必要人工确认/拒绝。未配置时保留现有人工处理路径。
+- [x] 定义结构化审查请求/结果并绑定请求摘要、政策版本、模型配置版本与决策来源。批准范围由宿主校验，审查模型的自由文本不能直接创建广泛 grant 或命令执行。
 - [ ] 通过现有 runtime-pi 模型访问边界、披露与预算治理接入选定服务；先用受控替身验证分支，不能为了测试擅自新增 provider 或付费调用。
 - [ ] 覆盖审查通过、建议安全替代、需要人工决定、拒绝、超时、无效输出和注入文本。安全替代产生新请求并重新准入；不确定/故障不默认放行。
 - [ ] 审查等待期间无本次文件 claim。重启/重复结果不再派发；迟到审查不能覆盖撤销、取消、过期或新请求。自动批准不展示成“用户已确认”。
@@ -606,8 +606,17 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 本批仍为基础接入，未创建真实模型配置、未启用生产自动审查，也未发生真实付费调用。Pi 模型边界与预算/披露装配、建议替代的新请求、页面来源/状态投影及真实模型验收尚未完成。[完整本地构建与测试原始结果](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-01/standard-ci-result.json)：构建通过；239 文件、3,562 项执行，3,561 通过、1 失败、零跳过。唯一失败为审计测试仍将已支持的 Schema 39 当作未知版本，夹具插入时主键冲突；改为当前最高版本加一后，[10 项真实 CLI/SQLite 审计测试全部通过](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-01/audit-schema-green.log)，未知版本拒绝断言保留。复用产品代码和输入未变的其余通过结果，见[组合验证记录](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-01/verification-result.json)；没有把原 CI 的失败改写成一次全量通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。不能据此标记整个 P5 完成。
 
+### P5 复用模型端口、预算与取消（局部实现）
+
+- 新增 `ModelActionReviewer`，复用产品 `ModelPort`、`TrustedModelProviderAdapter` 与 Pi 0.84.2 transport；模型及配置版本必须与请求完全相符，不能自动切换。宿主先提供当前披露许可，再调用模型；仅接收绑定原审查编号的有界 JSON 输出，不提供执行工具。生产文件授权工厂接受可选审查器，但实际启动配置仍未装配。
+- `ModelInvocationRequest.signal` 传到现有 Pi provider。调用开始前取消释放预算预约；已经开始且用量未知时保存 `cancel_unresolved`，不推断免费。已到达的完整用量继续结算，即使审查随后被取消；迟到输出不能生成批准。
+- 受保护输入准备器先获得冻结的完整审查标识，避免模型无法回传绑定字段。受控模型流、实际预算服务和真实 SQLite 联合验证批准、拒绝、预算不足、调用中取消及用量已知后取消；数据库重开独立读回费用和 Grant，全部场景均无工具调用回执。
+- [取消修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-02/cancellation-red.log)七项失败，[终止事件修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-02/terminal-cancel-red.log)两项失败；[最终相关回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-02/model-consumers.log)六文件、154 项全部通过。新增适配器最早的缺少模块失败属于功能脚手架，未作为既有产品缺陷。
+
+本批证明给定取消信号能够传至模型以及费用事实被保留；用户点击 Stop 到授权入口的上游信号仍需接通，不能将该局部结果写成完整 Stop 验收。真实模型、披露配置和生产委托尚未启用，没有真实付费调用。[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-02/standard-ci-result.json)通过：240 文件、3,595 项，零失败、零跳过，发布扫描通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。整个 P5 和 Plan 仍未完成。
+
 ### 当前完成边界与下一步
 
-P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
+P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
 
 [单一决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv) 记录本轮选择及证据；没有建立另一个项目状态缓存。

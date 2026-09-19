@@ -1,0 +1,54 @@
+{
+  "sourceBaseCommit": "f379f809f615a89756ab54529175f02daca437f9",
+  "recordedAt": "2026-09-19T11:59:29.374834+00:00",
+  "files": [
+    {
+      "path": "apps/agent-service/src/production-file-read-services.ts",
+      "sha256": "e00aab9cab2a0ed84565b18cba3abab47def857edce91acc02d929510101a2f9"
+    },
+    {
+      "path": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "sha256": "640e6f8db5e07335f0104665103fb74c78fc7dc977331bce1aa428e32be8f87d"
+    },
+    {
+      "path": "packages/application/src/ports/intelligence.ts",
+      "sha256": "a5a13f91755f226d230f9057e1f7fa989b652a6921e3d9d29a8d758b8f15daa8"
+    },
+    {
+      "path": "packages/application/src/services/automatic-action-review.ts",
+      "sha256": "d24e8ec7c01a640be2163add3c54fde95b30b43a47ac72f3e6158d01d7e1c3d7"
+    },
+    {
+      "path": "packages/application/src/services/index.ts",
+      "sha256": "39d506cbe395d8a6bf7a30ef64b350a0b22425b4d2148c73f4391b6807d2c6c3"
+    },
+    {
+      "path": "packages/application/src/services/model-action-reviewer.ts",
+      "sha256": "fd11fd876f461109a3e606326c4facf6004358b22d8cf1285b42b397131a1399"
+    },
+    {
+      "path": "packages/application/test/model-action-reviewer.unit.test.ts",
+      "sha256": "ecce19e8555fa4df296fb9cd16e035cc0474d3213df8bd68acb61536e46af3cc"
+    },
+    {
+      "path": "packages/platform-node/src/trusted-model-provider.ts",
+      "sha256": "bcf56bc0d5ee80db2e37a1510e6833e9f5a90863107f3a1ccc0194a92597b726"
+    },
+    {
+      "path": "packages/platform-node/test/trusted-model-provider.unit.test.ts",
+      "sha256": "743371b3b983acb161e1690baf7fdf2abf32bd8402006818f9ec57808d9a5289"
+    },
+    {
+      "path": "packages/runtime-pi/src/pi-model-transport.ts",
+      "sha256": "0757a017ec9beea2e91050f70cd7156ef0b320507b7567936b01e42e16522995"
+    },
+    {
+      "path": "packages/runtime-pi/test/pi-model-transport.unit.test.ts",
+      "sha256": "1892975d57769054885fde0cd16218cd780d3afaa8c408cf395c8e7431f46631"
+    },
+    {
+      "path": "test/integration/automatic-action-review.test.ts",
+      "sha256": "28a9fd0f40343d7a319c9bb01cc806698009fdd4ad9e3da1c6551d0d56ec865f"
+    }
+  ]
+}

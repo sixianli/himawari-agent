@@ -95,6 +95,8 @@ export interface ModelProviderRouting {
 }
 
 export interface ModelInvocationRequest {
+  /** In-process cancellation; never an authorization or serialized execution credential. */
+  readonly signal?: AbortSignal;
   readonly invocationId: string;
   readonly runId: RunId;
   readonly modelRef: string;

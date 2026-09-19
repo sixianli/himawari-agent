@@ -1,0 +1,140 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/trusted-model-provider.unit.test.ts (10 tests | 5 failed) 15ms
+     × preserves budget accounting when cancelled at before 5ms
+     × preserves budget accounting when cancelled at reserved 1ms
+     × preserves budget accounting when cancelled at secret 1ms
+     × preserves budget accounting when cancelled at started 1ms
+     × preserves budget accounting when cancelled at stream 1ms
+ ❯ |unit| packages/runtime-pi/test/pi-model-transport.unit.test.ts (13 tests | 2 failed) 18ms
+   × passes cancellation to the pinned Pi provider API without adding tools 2ms
+   × does not read model input or resolve a binding after request cancellation 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/trusted-model-provider.unit.test.ts > model request cancellation > preserves budget accounting when cancelled at before
+AssertionError: expected [ 'begin', 'secret', 'started', …(2) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "begin",
++   "secret",
++   "started",
++   "transport",
++   "unknown:transport_unresolved",
++ ]
+
+ ❯ packages/platform-node/test/trusted-model-provider.unit.test.ts:470:44
+    468|     await expect(async () => { for await (const _event of model.invoke…
+    469|     expect(events).not.toContain("settled");
+    470|     if (stage === "before") expect(events).toEqual([]);
+       |                                            ^
+    471|     else if (stage === "reserved" || stage === "secret") {
+    472|       expect(events).toContain("released");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  |unit| packages/platform-node/test/trusted-model-provider.unit.test.ts > model request cancellation > preserves budget accounting when cancelled at reserved
+ FAIL  |unit| packages/platform-node/test/trusted-model-provider.unit.test.ts > model request cancellation > preserves budget accounting when cancelled at secret
+AssertionError: expected [ 'begin', 'secret', 'started', …(2) ] to include 'released'
+ ❯ packages/platform-node/test/trusted-model-provider.unit.test.ts:472:22
+    470|     if (stage === "before") expect(events).toEqual([]);
+    471|     else if (stage === "reserved" || stage === "secret") {
+    472|       expect(events).toContain("released");
+       |                      ^
+    473|       expect(events).not.toContain("started");
+    474|       expect(events).not.toContain("transport");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  |unit| packages/platform-node/test/trusted-model-provider.unit.test.ts > model request cancellation > preserves budget accounting when cancelled at started
+ FAIL  |unit| packages/platform-node/test/trusted-model-provider.unit.test.ts > model request cancellation > preserves budget accounting when cancelled at stream
+AssertionError: expected [ 'begin', 'secret', 'started', …(2) ] to include 'unknown:cancel_unresolved'
+ ❯ packages/platform-node/test/trusted-model-provider.unit.test.ts:477:22
+    475|       if (stage === "reserved") expect(events).not.toContain("secret");
+    476|     } else {
+    477|       expect(events).toContain("unknown:cancel_unresolved");
+       |                      ^
+    478|       expect(events).not.toContain("released");
+    479|       if (stage === "started") expect(events).not.toContain("transport…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  |unit| packages/runtime-pi/test/pi-model-transport.unit.test.ts > passes cancellation to the pinned Pi provider API without adding tools
+AssertionError: expected undefined to be AbortSignal { aborted: false } // Object.is equality
+
+- Expected:
+AbortSignal {
+  Symbol(kEvents): Map {},
+  Symbol(events.maxEventTargetListeners): 0,
+  Symbol(events.maxEventTargetListenersWarned): false,
+  Symbol(kHandlers): Map {},
+  Symbol(kAborted): false,
+  Symbol(kReason): undefined,
+  Symbol(kComposite): false,
+}
+
++ Received:
+undefined
+
+ ❯ packages/runtime-pi/test/pi-model-transport.unit.test.ts:548:32
+    546|   });
+    547|   await collect(transport.invoke({ descriptor, request: { ...request, …
+    548|   expect(received?.["signal"]).toBe(controller.signal);
+       |                                ^
+    549|   expect(context?.tools).toBeUndefined();
+    550| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  |unit| packages/runtime-pi/test/pi-model-transport.unit.test.ts > does not read model input or resolve a binding after request cancellation
+AssertionError: promise resolved "[ …(3) ]" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+[
+  {
+    "invocationId": "invocation-pi-transport-01",
+    "occurredAt": "2026-08-27T16:00:00.000Z",
+    "type": "model.started",
+  },
+  {
+    "invocationId": "invocation-pi-transport-01",
+    "occurredAt": "2026-08-27T16:00:00.000Z",
+    "payloadRef": "payload-pi-output-1",
+    "sequence": 1,
+    "type": "model.output",
+  },
+  {
+    "errorCode": "OPENROUTER_PROVIDER_METADATA_MISSING",
+    "invocationId": "invocation-pi-transport-01",
+    "latencyMs": 0,
+    "occurredAt": "2026-08-27T16:00:00.000Z",
+    "retryable": false,
+    "type": "model.failed",
+  },
+]
+
+ ❯ packages/runtime-pi/test/pi-model-transport.unit.test.ts:557:143
+    555|   const resolve = vi.fn(async () => ({ model, modelRuntime: runtimeWit…
+    556|   const transport = new PiModelTransport({ models: { resolve }, payloa…
+    557|   await expect(collect(transport.invoke({ descriptor, request: { ...re…
+       |                                                                                                                                               ^
+    558|   expect(readText).not.toHaveBeenCalled();
+    559|   expect(resolve).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  7 failed | 16 passed (23)
+   Start at  20:40:47
+   Duration  1.78s (transform 647ms, setup 0ms, import 2.30s, tests 33ms, environment 0ms)

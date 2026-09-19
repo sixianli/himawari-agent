@@ -3,6 +3,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import {
   ApprovalService,
+  type AutomaticActionReviewPort,
   hostDirectoryGrantStateKey,
   type CapabilityManifest,
   type GovernedActionIntent,
@@ -28,7 +29,7 @@ const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
-async function fixture() {
+async function fixture(automaticReview?: AutomaticActionReviewPort) {
   const base = runtimeToolFixture(10_000);
   const root = await mkdtemp(path.join(tmpdir(), "file-workflow-"));
   roots.push(root);
@@ -165,6 +166,7 @@ async function fixture() {
     authority: base.options.authority,
     clock,
     ids: base.options.ids,
+    ...(automaticReview ? { automaticReview } : {}),
   });
   const approvals = new ApprovalService({ store, clock });
   const permitted = new Set(["inspect", "read", "disclose"]);
@@ -676,4 +678,20 @@ describe("production file read workflow through the Worker transport", () => {
     expect(result.modelContent).not.toContain("蓝鹭 731");
     expect(result.resultRef).toBeNull();
   });
+});
+
+it("passes optional review through the production authority entry before any file dispatch", async () => {
+  const review = vi.fn(async () => undefined);
+  const f = await fixture({ maximumWaitMs: 1000, review });
+  f.permitted.clear();
+  expect(await (await f.open()).execute(f.call)).toMatchObject({ outcome: "awaiting_approval" });
+  expect(review).toHaveBeenCalledTimes(1);
+  expect(review.mock.calls[0]).toMatchObject([
+    { policyVersion: "file-read.v1", intent: { operation: "inspect" } },
+    expect.any(AbortSignal),
+  ]);
+  expect(f.executeRequests()).toEqual([]);
+  expect(await f.approvals()).toHaveLength(1);
+  expect(await (await f.open()).execute(f.call)).toMatchObject({ outcome: "awaiting_approval" });
+  expect(review).toHaveBeenCalledTimes(1);
 });

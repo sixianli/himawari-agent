@@ -1,8 +1,12 @@
+import { TrustedModelProviderAdapter } from "@himawari-agent/platform-node";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import {
   actionIntentFingerprint,
   AutomaticActionReviewService,
+  ModelActionReviewer,
+  ModelInvocationAdmissionService,
+  type ModelDescriptor,
   claimFromRunExecutionLease,
   type AutomaticReviewDecision,
   type AutomaticReviewRequest,
@@ -142,6 +146,7 @@ async function fixture() {
     store,
     finish,
     approvalStore,
+    repository: () => repository,
     lease,
     dispatcher,
     value,
@@ -453,3 +458,165 @@ it("refuses a Grant whose expiry would outlive the Owner delegation", async () =
   );
   expect(await f.store().get(request.reviewId)).toBeUndefined();
 });
+
+it.each(["approve", "deny", "budget-denied", "cancelled", "cancelled-with-usage"] as const)(
+  "connects review to durable model budgets for %s",
+  async (mode) => {
+    const f = await fixture();
+    const controller = new AbortController();
+    const descriptor: ModelDescriptor = {
+      ref: f.request.modelRef,
+      provider: "fixture",
+      model: "review-fixture",
+      version: "1",
+      routingClass: "specialist",
+      priority: 1,
+      disclosure: "trusted_remote",
+      capabilities: ["text"],
+      allowedDataClassifications: ["private"],
+      secretRequirement: null,
+    };
+    const pricing = { input: 1, output: 2, cacheRead: 0.5, cacheWrite: 0.25 };
+    const gate = new ModelInvocationAdmissionService({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      executionLease: f.lease,
+      dispatch: f.dispatcher,
+      invocations: f
+        .repository()
+        .modelInvocationIdentityPort(
+          OWNER_ID,
+          AGENT_ID,
+          SERVICE_AUTHORITY.product,
+          SERVICE_AUTHORITY.lease,
+        ),
+      clock: { now: () => new Date().toISOString() },
+      registry: [{ ...descriptor, pricing, estimatedCostMicros: 100 }],
+      limits: {
+        accountCostMicros: mode === "budget-denied" ? 50 : 1000,
+        globalCostMicros: 1000,
+        perClassificationCostMicros: {
+          public: 1000,
+          private: 1000,
+          sensitive: 1000,
+          restricted: 1000,
+        },
+      },
+    });
+    let modelCalls = 0;
+    const model = new TrustedModelProviderAdapter({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      descriptors: [descriptor],
+      clock: { now: () => new Date().toISOString() },
+      admission: async () => gate,
+      admissionCost: () => ({ pricing, estimatedCostMicros: 100 }),
+      handles: {
+        issueHandle: async () => {
+          throw Error("no credential required");
+        },
+        inspectHandle: async () => undefined,
+        revokeHandle: async () => {
+          throw Error("no credential required");
+        },
+      },
+      secretSource: {
+        resolve: async () => {
+          throw Error("no credential required");
+        },
+      },
+      transport: {
+        invoke: async function* (input) {
+          modelCalls++;
+          if (mode === "cancelled") {
+            controller.abort();
+            yield {
+              type: "model.failed",
+              invocationId: input.request.invocationId,
+              errorCode: "MODEL_REQUEST_CANCELLED",
+              retryable: false,
+              latencyMs: 0,
+              occurredAt: f.now,
+            };
+            return;
+          }
+          yield {
+            type: "model.output",
+            invocationId: input.request.invocationId,
+            sequence: 1,
+            payloadRef: f.request.inputRef,
+            occurredAt: f.now,
+          };
+          if (mode === "cancelled-with-usage") controller.abort();
+          yield {
+            type: "model.completed",
+            invocationId: input.request.invocationId,
+            inputTokens: 12,
+            outputTokens: 4,
+            cacheReadTokens: 2,
+            cacheWriteTokens: 3,
+            costMicros: 999999,
+            latencyMs: 1,
+            occurredAt: f.now,
+          };
+        },
+      },
+    });
+    const reviewer = new ModelActionReviewer({
+      model,
+      descriptor,
+      configurationVersion: f.request.configurationVersion,
+      clock: { now: () => new Date().toISOString() },
+      authorize: async () => ({
+        dataClassification: "private",
+        allowedDisclosureRef: "fixture-disclosure",
+        secretHandleRefs: [],
+      }),
+      readOutput: async () => JSON.stringify(f.response(mode === "deny" ? "deny" : "approve")),
+    });
+    let prepared = false;
+    const service = f.service((request, signal) => reviewer.review(request, signal), {
+      prepareInput: async (_intent, envelope) => {
+        expect(envelope).toMatchObject({
+          reviewId: f.request.reviewId,
+          intentFingerprint: actionIntentFingerprint(f.intent),
+          modelRef: descriptor.ref,
+        });
+        expect(Object.isFrozen(envelope)).toBe(true);
+        prepared = true;
+        return f.request.inputRef;
+      },
+    });
+    if (mode === "budget-denied" || mode === "cancelled" || mode === "cancelled-with-usage")
+      await expect(service.review(f.call, controller.signal)).rejects.toThrow();
+    else await service.review(f.call, controller.signal);
+    expect(prepared).toBe(true);
+    expect(modelCalls).toBe(mode === "budget-denied" ? 0 : 1);
+    await f.reopen();
+    const snapshot = await f
+      .repository()
+      .modelBudgetPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product, SERVICE_AUTHORITY.lease)
+      .read({ parent: { kind: "run", runId: RUN_ID }, limit: 10 });
+    if (mode === "approve" || mode === "deny" || mode === "cancelled-with-usage") {
+      expect(snapshot?.account.spentCostMicros).toBe(17);
+      expect(snapshot?.allocations).toEqual([
+        expect.objectContaining({ status: "settled", actualCostMicros: 17 }),
+      ]);
+      if (mode === "cancelled-with-usage")
+        expect((await f.store().get(f.request.reviewId))?.status).toBe("pending");
+      else expect((await f.store().get(f.request.reviewId))?.result?.decision).toBe(mode);
+    } else if (mode === "cancelled") {
+      expect(snapshot?.allocations).toEqual([
+        expect.objectContaining({ status: "unknown", actualCostMicros: null }),
+      ]);
+      expect((await f.store().get(f.request.reviewId))?.status).toBe("pending");
+    }
+    expect(await f.approvalStore().listGrants(OWNER_ID, AGENT_ID)).toHaveLength(
+      mode === "approve" ? 1 : 0,
+    );
+    expect(f.db.prepare("SELECT count(*) AS n FROM capability_invocation_receipts").get()).toEqual({
+      n: 0,
+    });
+  },
+);

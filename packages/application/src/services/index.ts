@@ -71,3 +71,4 @@ export * from "./web-capability-service.js";
 export * from "./worker-delegation-service.js";
 export * from "./worker-result-service.js";
 export * from "./workspace-service.js";
+export * from "./model-action-reviewer.js";

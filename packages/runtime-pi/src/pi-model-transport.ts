@@ -407,6 +407,7 @@ export class PiModelTransport {
 
   async *invoke(input: PiModelTransportInput): AsyncIterable<ModelInvocationEvent> {
     const { descriptor, request, secretValues } = input;
+    request.signal?.throwIfAborted();
     const startedAt = Date.now();
     const now = () => this.#clock.now();
     yield Object.freeze({
@@ -483,6 +484,7 @@ export class PiModelTransport {
       });
     };
     try {
+      request.signal?.throwIfAborted();
       const stream = binding.modelRuntime.stream(binding.model, context, {
         apiKey: secret,
         fetch: observedFetch,
@@ -490,6 +492,7 @@ export class PiModelTransport {
         maxTokens: this.#maxOutputTokens,
         maxRetries: 0,
         timeoutMs: this.#requestTimeoutMs,
+        ...(request.signal ? { signal: request.signal } : {}),
         ...(this.#temperature === undefined ? {} : { temperature: this.#temperature }),
       });
       for await (const event of stream as AsyncIterable<AssistantMessageEvent>) {
@@ -518,17 +521,21 @@ export class PiModelTransport {
         }
       }
     } catch {
-      const failure = isFailureStatus(responseStatus)
-        ? statusFailure(responseStatus)
-        : { code: "PI_MODEL_STREAM_ERROR", retryable: true };
+      const failure = request.signal?.aborted
+        ? { code: "MODEL_REQUEST_CANCELLED", retryable: false }
+        : isFailureStatus(responseStatus)
+          ? statusFailure(responseStatus)
+          : { code: "PI_MODEL_STREAM_ERROR", retryable: true };
       yield failed(request, failure.code, failure.retryable, Date.now() - startedAt, now());
       return;
     }
 
     if (terminalError || terminalMessage === undefined) {
-      const failure = isFailureStatus(responseStatus)
-        ? statusFailure(responseStatus)
-        : { code: "OPENROUTER_RESPONSE_ERROR", retryable: false };
+      const failure = request.signal?.aborted
+        ? { code: "MODEL_REQUEST_CANCELLED", retryable: false }
+        : isFailureStatus(responseStatus)
+          ? statusFailure(responseStatus)
+          : { code: "OPENROUTER_RESPONSE_ERROR", retryable: false };
       yield failed(request, failure.code, failure.retryable, Date.now() - startedAt, now());
       return;
     }

@@ -1,0 +1,23 @@
+packages/application/test/model-action-reviewer.unit.test.ts:16:22 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    14 │   runId: createRunId("run:one"),
+    15 │   inputRef: "payload:request",
+  > 16 │   intentFingerprint: "intent.v2.sha256:" + "a".repeat(64),
+       │                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    17 │   configurationVersion: "config:1",
+    18 │   modelRef: "model:review",
+
+  i Unsafe fix: Use a template literal.
+
+     14  14 │     runId: createRunId("run:one"),
+     15  15 │     inputRef: "payload:request",
+     16     │ - ··intentFingerprint:·"intent.v2.sha256:"·+·"a".repeat(64),
+         16 │ + ··intentFingerprint:·`intent.v2.sha256:${"a".repeat(64)}`,
+     17  17 │     configurationVersion: "config:1",
+     18  18 │     modelRef: "model:review",
+
+
+Checked 12 files in 49ms. No fixes applied.
+Found 1 info.

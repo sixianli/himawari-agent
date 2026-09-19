@@ -27,7 +27,11 @@ export interface AutomaticActionReviewDependencies {
     runId: GovernedActionIntent["runId"],
   ) => Promise<RunExecutionLeaseClaim>;
   /** Uses the existing protected Payload and disclosure boundary; never reads files here. */
-  readonly prepareInput: (intent: GovernedActionIntent, signal: AbortSignal) => Promise<string>;
+  readonly prepareInput: (
+    intent: GovernedActionIntent,
+    request: Omit<AutomaticReviewRequest, "inputRef">,
+    signal: AbortSignal,
+  ) => Promise<string>;
   readonly saveOutput: (
     request: AutomaticReviewRequest,
     decision: AutomaticReviewDecision,
@@ -82,15 +86,15 @@ export class AutomaticActionReviewService implements AutomaticActionReviewPort {
       !automaticReviewDelegationCovers(delegated.value, identity, d.clock.now())
     )
       return;
-    const inputRef = await d.prepareInput(intent, signal);
-    if (!current()) return;
-    const request: AutomaticReviewRequest = Object.freeze({
+    const envelope = Object.freeze({
       ...identity,
-      schemaVersion: "automatic-review.v1",
+      schemaVersion: "automatic-review.v1" as const,
       reviewId: d.ids.next("automatic-review"),
       runId: intent.runId,
-      inputRef,
     });
+    const inputRef = await d.prepareInput(intent, envelope, signal);
+    if (!current()) return;
+    const request: AutomaticReviewRequest = Object.freeze({ ...envelope, inputRef });
     const executionLease = await d.executionLease(intent.runId);
     if (!current()) return;
     const claim = await d.store.claim({
