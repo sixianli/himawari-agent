@@ -214,12 +214,12 @@ async function fixture(automaticReview?: AutomaticActionReviewPort) {
       response: { decision: "approved", grant: approved, recentAuthenticationRef: null },
     });
   };
-  services.authorize = async (intent) => {
+  services.authorize = async (intent, signal) => {
     intents.push(intent);
-    let decision = await authorize(intent);
+    let decision = await authorize(intent, signal);
     if (decision.decision === "ASK" && permitted.has(intent.operation)) {
       await respond(intent, decision.approvalRequest.id);
-      decision = await authorize(intent);
+      decision = await authorize(intent, signal);
     }
     return decision;
   };
@@ -574,8 +574,8 @@ describe("production file read workflow through the Worker transport", () => {
   it("stops at a cancelled Run between phases", async () => {
     const f = await fixture();
     const authorize = f.services.authorize;
-    f.services.authorize = async (intent) => {
-      const decision = await authorize(intent);
+    f.services.authorize = async (intent, signal) => {
+      const decision = await authorize(intent, signal);
       if (intent.operation === "read")
         vi.mocked(f.options.assertRunActive).mockRejectedValue(new Error("RUN_NOT_ACTIVE"));
       return decision;
@@ -694,4 +694,26 @@ it("passes optional review through the production authority entry before any fil
   expect(await f.approvals()).toHaveLength(1);
   expect(await (await f.open()).execute(f.call)).toMatchObject({ outcome: "awaiting_approval" });
   expect(review).toHaveBeenCalledTimes(1);
+});
+
+it("cancels production authorization review before opening confirmation or dispatching a file tool", async () => {
+  const controller = new AbortController();
+  let forwarded = false;
+  const f = await fixture({
+    maximumWaitMs: 1000,
+    review: async (_input, signal) => {
+      controller.abort();
+      forwarded = signal.aborted;
+    },
+  });
+  f.permitted.clear();
+  expect(await (await f.open()).execute(f.call, { signal: controller.signal })).toMatchObject({
+    outcome: "failed",
+    errorCode: "action_cancelled",
+    resultRef: null,
+  });
+  expect(forwarded).toBe(true);
+  expect(await f.approvals()).toEqual([]);
+  expect(await f.store.listGrants(f.options.ownerId, f.options.agentId)).toEqual([]);
+  expect(f.executeRequests()).toEqual([]);
 });

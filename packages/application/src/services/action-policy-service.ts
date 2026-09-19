@@ -271,22 +271,42 @@ export class ActionPolicyService {
 
   async evaluate(
     source: GovernedActionIntent,
-    options: { readonly uiAvailable: boolean; readonly approvalExpiresAt: string },
+    options: {
+      readonly uiAvailable: boolean;
+      readonly approvalExpiresAt: string;
+      readonly signal?: AbortSignal;
+    },
   ): Promise<PermissionDecision> {
-    return this.evaluateCurrent(source, { ...options }, true);
+    const current = { ...options };
+    const decision = await this.evaluateCurrent(source, current, true);
+    // Final trace/store writes can yield too. They preserve historical facts but
+    // must not return fresh execution permission after the caller has stopped.
+    return current.signal?.aborted
+      ? Object.freeze({
+          decision: "DENY",
+          reasonCode: "action_cancelled",
+          alternativesAllowed: false,
+        })
+      : decision;
   }
 
   private async evaluateCurrent(
     source: GovernedActionIntent,
-    options: { readonly uiAvailable: boolean; readonly approvalExpiresAt: string },
+    options: {
+      readonly uiAvailable: boolean;
+      readonly approvalExpiresAt: string;
+      readonly signal?: AbortSignal;
+    },
     allowReview: boolean,
   ): Promise<PermissionDecision> {
     let intent: GovernedActionIntent;
     try {
+      options.signal?.throwIfAborted();
       intent = freezeGovernedActionIntent(source);
       let now = this.dependencies.clock.now();
       if (now >= intent.expiresAt) return this.finish(intent, "DENY", "intent_expired", now, false);
       const capability = await this.dependencies.capabilities.inspect(intent.capabilityRef);
+      options.signal?.throwIfAborted();
       now = this.dependencies.clock.now();
       if (now >= intent.expiresAt) return this.finish(intent, "DENY", "intent_expired", now, false);
       const denial = this.capabilityDenial(capability, intent);
@@ -304,6 +324,7 @@ export class ActionPolicyService {
       if (deniedRule) return this.finish(intent, "DENY", deniedRule.reasonCode, now, false);
 
       const existing = await this.dependencies.store.findApprovalByIntent(intent.id);
+      options.signal?.throwIfAborted();
       now = this.dependencies.clock.now();
       if (now >= intent.expiresAt) return this.finish(intent, "DENY", "intent_expired", now, false);
       if (existing) {
@@ -327,6 +348,7 @@ export class ActionPolicyService {
           false,
         );
       const grants = await this.dependencies.store.listGrants(intent.ownerId, intent.agentId);
+      options.signal?.throwIfAborted();
       now = this.dependencies.clock.now();
       if (now >= intent.expiresAt) return this.finish(intent, "DENY", "intent_expired", now, false);
       let quotaUnavailable = false;
@@ -365,6 +387,7 @@ export class ActionPolicyService {
           },
         });
       }
+      options.signal?.throwIfAborted();
       if (priorReservation)
         return this.finish(intent, "DENY", "reserved_authority_unavailable", now, false);
       if (quotaUnavailable)
@@ -404,13 +427,22 @@ export class ActionPolicyService {
         )
           throw new Error("Invalid automatic review deadline");
         const controller = new AbortController();
+        const signal = options.signal
+          ? AbortSignal.any([options.signal, controller.signal])
+          : controller.signal;
         let timer: ReturnType<typeof setTimeout> | undefined;
+        let onAbort: (() => void) | undefined;
         try {
           const duration = Math.min(
             review.maximumWaitMs,
             Date.parse(options.approvalExpiresAt) - Date.parse(this.dependencies.clock.now()),
           );
-          if (duration > 0)
+          if (duration > 0) {
+            const stopped = new Promise<void>((resolve) => {
+              onAbort = resolve;
+              signal.addEventListener("abort", onAbort, { once: true });
+            });
+            timer = setTimeout(() => controller.abort(), duration);
             await Promise.race([
               review.review(
                 {
@@ -421,25 +453,23 @@ export class ActionPolicyService {
                   ).toISOString(),
                   approvalExpiresAt: options.approvalExpiresAt,
                 },
-                controller.signal,
+                signal,
               ),
-              new Promise<void>((resolve) => {
-                timer = setTimeout(() => {
-                  controller.abort();
-                  resolve();
-                }, duration);
-              }),
+              stopped,
             ]);
+          }
         } catch {
           // Diagnostics stay with the review coordinator; failure is not a user denial.
         } finally {
           if (timer !== undefined) clearTimeout(timer);
+          if (onAbort) signal.removeEventListener("abort", onAbort);
           controller.abort();
         }
         // A return value cannot authorize anything. Re-read current policy, capability,
         // approval, quota and expiry after every await; review runs at most once here.
         return this.evaluateCurrent(intent, options, false);
       }
+      options.signal?.throwIfAborted();
       const request: GovernedApprovalRequest = Object.freeze({
         id: this.dependencies.ids.next("approval"),
         revision: 1,
@@ -472,7 +502,7 @@ export class ActionPolicyService {
     } catch {
       return Object.freeze({
         decision: "DENY",
-        reasonCode: "authorization_component_error",
+        reasonCode: options.signal?.aborted ? "action_cancelled" : "authorization_component_error",
         alternativesAllowed: false,
       });
     }

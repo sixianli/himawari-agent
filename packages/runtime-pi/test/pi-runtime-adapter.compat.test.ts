@@ -2909,3 +2909,69 @@ it.each(["saved", "storage-failed"] as const)(
     }
   },
 );
+
+it("forwards Pi cancellation to a product tool without persisting the signal in its identity", async () => {
+  const model = await createFauxModelFixture("Must not answer after Stop", {
+    name: "restaurant_search",
+    id: "stop-review-call",
+    arguments: { query: "test" },
+  });
+  const defaults = new RecordingRuntimeTools();
+  let started!: () => void;
+  let release!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let signal: AbortSignal | undefined;
+  let identity: unknown;
+  const execute = vi.fn(
+    async (
+      call: Parameters<RuntimeToolPort["execute"]>[0],
+      options?: { signal?: AbortSignal },
+    ): Promise<RuntimeToolExecutionResult> => {
+      identity = structuredClone(call);
+      signal = options?.signal;
+      signal?.addEventListener("abort", release, { once: true });
+      started();
+      await waiting;
+      return {
+        outcome: "failed",
+        resultRef: null,
+        errorCode: "action_cancelled",
+        externalActionId: null,
+        modelContent: "操作已取消",
+      };
+    },
+  );
+  const adapter = new PiAgentRuntimeAdapter({
+    projection: new RecordingProjection(),
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `stop-review:${ordinal}`,
+    tools: {
+      listAuthorized: () => defaults.listAuthorized(),
+      preflight: defaults.preflight,
+      execute,
+    },
+  });
+  const pending = collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  await entered;
+  try {
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(identity).not.toHaveProperty("signal");
+    await adapter.cancel(request.runId);
+    expect(signal?.aborted).toBe(true);
+    expect((await pending).at(-1)?.type).toBe("runtime.cancelled");
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(model.observed).toHaveLength(1);
+  } finally {
+    release();
+    await adapter.cancel(request.runId);
+    await pending;
+  }
+});

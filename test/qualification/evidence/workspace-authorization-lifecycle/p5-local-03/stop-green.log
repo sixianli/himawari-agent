@@ -1,0 +1,38 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts (37 tests | 1 failed) 192ms
+   × cancels production authorization review before opening confirmation or dispatching a file tool 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > cancels production authorization review before opening confirmation or dispatching a file tool
+AssertionError: expected { outcome: 'awaiting_approval', …(5) } to match object { outcome: 'failed', …(2) }
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "errorCode": "action_cancelled",
+-   "outcome": "failed",
++   "errorCode": null,
++   "outcome": "awaiting_approval",
+    "resultRef": null,
+  }
+
+ ❯ apps/agent-service/test/production-file-read-workflow.unit.test.ts:710:81
+    708|   });
+    709|   f.permitted.clear();
+    710|   expect(await (await f.open()).execute(f.call, { signal: controller.s…
+       |                                                                                 ^
+    711|     outcome: "failed",
+    712|     errorCode: "action_cancelled",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 148 passed (149)
+   Start at  21:07:23
+   Duration  3.07s (transform 1.51s, setup 0ms, import 4.21s, tests 729ms, environment 0ms)

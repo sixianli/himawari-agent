@@ -500,5 +500,9 @@ export interface RuntimeToolPort {
     capabilityHandleRefs: readonly string[],
   ): Promise<readonly RuntimeToolDescriptor[]>;
   preflight(invocation: RuntimeToolInvocation): Promise<RuntimeToolPreflightDecision>;
-  execute(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult>;
+  /** Cancellation is process-local and never part of the durable invocation identity. */
+  execute(
+    invocation: RuntimeToolInvocation,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<RuntimeToolExecutionResult>;
 }

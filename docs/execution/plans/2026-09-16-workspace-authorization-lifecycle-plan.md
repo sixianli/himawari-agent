@@ -615,6 +615,14 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 本批证明给定取消信号能够传至模型以及费用事实被保留；用户点击 Stop 到授权入口的上游信号仍需接通，不能将该局部结果写成完整 Stop 验收。真实模型、披露配置和生产委托尚未启用，没有真实付费调用。[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-02/standard-ci-result.json)通过：240 文件、3,595 项，零失败、零跳过，发布扫描通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。整个 P5 和 Plan 仍未完成。
 
+### P5 从 Pi Stop 传递取消到授权审查（局部实现）
+
+- Pi 的工具调用信号通过 `RuntimeToolPort.execute` 的独立选项传入生产读取/编码工作流，再传给 `ActionPolicyService`。信号不参与工具请求摘要，不写入受保护续接记录，既有请求身份保持不变。
+- 已取消的请求不调用审查、不新建人工确认；审查等待期间取消会结束等待并通知下游，即使审查器没有返回。普通超时继续走原人工确认路径，不能把超时等同用户拒绝。既有 Run/Worker 停止和效果核验仍由原持久化入口负责，取消信号不能证明进程树已清理。
+- [修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-03/stop-red.log)复现四处断言失败，其中生产文件用例同时被 unit 与 node-services 项目执行，共五次失败。第一次修复后剩余一项来自测试包装器遗漏转发新增参数；修正夹具后，[149 项入口回归通过](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-03/stop-green-final.log)。Pi 回归使用真实 Pi 会话取消入口和受控模型，不调用真实服务。
+
+[405 项消费者回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-03/stop-consumers.log)通过，覆盖编码/文件入口、Pi 会话、Run 停止、预算和真实 SQLite；随后[复现审计写入期间取消仍返回 ALLOW](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-03/trace-cancel-red.log)，补充最终返回检查后，[37 项权限回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-03/trace-cancel-green.log)通过。[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-03/standard-ci-result.json)通过：240 个文件、3,601 项全部通过，零跳过，发布扫描通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。模型审查适配已保存为 `825a7a1`。自动审查真实配置仍未启用，用户页面联合验收和完整 P5 尚未完成。
+
 ### 当前完成边界与下一步
 
 P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。

@@ -1390,3 +1390,93 @@ it("observes a decision that wins the race while creating the fallback approval"
     }),
   ).toMatchObject({ decision: "DENY", reasonCode: "approval_denied" });
 });
+
+it("does not enter review or create approval for an already cancelled action", async () => {
+  const f = await continuityFixture([]);
+  const controller = new AbortController();
+  controller.abort();
+  const review = vi.fn(async () => undefined);
+  expect(
+    await f.service([], { review }).evaluate(intent({ id: "cancel-before-review" }), {
+      uiAvailable: true,
+      approvalExpiresAt: T1,
+      signal: controller.signal,
+    }),
+  ).toMatchObject({ decision: "DENY", reasonCode: "action_cancelled" });
+  expect(review).not.toHaveBeenCalled();
+  expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+});
+
+it("ends an unresponsive review on caller cancellation without opening human approval", async () => {
+  vi.useFakeTimers();
+  try {
+    const f = await continuityFixture([]);
+    const controller = new AbortController();
+    let reviewSignal: AbortSignal | undefined;
+    let started!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const pending = f
+      .service([], {
+        review: async (_input, signal) => {
+          reviewSignal = signal;
+          started();
+          await new Promise<void>(() => {});
+        },
+      })
+      .evaluate(intent({ id: "cancel-during-review" }), {
+        uiAvailable: true,
+        approvalExpiresAt: T1,
+        signal: controller.signal,
+      });
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await entered;
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reviewSignal?.aborted).toBe(true);
+    expect(settled).toBe(true);
+    expect(await pending).toMatchObject({ decision: "DENY", reasonCode: "action_cancelled" });
+    expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    await vi.advanceTimersByTimeAsync(1000);
+    vi.useRealTimers();
+  }
+});
+
+it("does not return permission after cancellation during the final authority trace", async () => {
+  const f = await continuityFixture();
+  const controller = new AbortController();
+  const policy = new ActionPolicyService({
+    store: f.authorization,
+    clock: f.clock,
+    ids: f.ids,
+    policy: POLICY,
+    capabilities: {
+      inspect: async (ref) => {
+        const record = await f.store.get(ref);
+        return record
+          ? { lifecycle: record.lifecycle, manifest: record.declaration as CapabilityManifest }
+          : undefined;
+      },
+    },
+    trace: {
+      record: async () => {
+        controller.abort();
+      },
+    },
+  });
+  expect(
+    await policy.evaluate(intent({ id: "cancel-in-trace" }), {
+      uiAvailable: true,
+      approvalExpiresAt: T1,
+      signal: controller.signal,
+    }),
+  ).toMatchObject({ decision: "DENY", reasonCode: "action_cancelled" });
+  expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+});

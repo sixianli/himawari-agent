@@ -1,0 +1,124 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |pi-compat| packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts (76 tests | 1 failed) 499ms
+   × forwards Pi cancellation to a product tool without persisting the signal in its identity 7ms
+ ❯ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts (37 tests | 1 failed) 216ms
+   × cancels production authorization review before opening confirmation or dispatching a file tool 7ms
+ ❯ |node-services| apps/agent-service/test/production-file-read-workflow.unit.test.ts (37 tests | 1 failed) 223ms
+   × cancels production authorization review before opening confirmation or dispatching a file tool 7ms
+ ❯ |integration| test/integration/authorization-capability-governance.test.ts (36 tests | 2 failed) 45ms
+   × does not enter review or create approval for an already cancelled action 5ms
+   × ends an unresponsive review on caller cancellation without opening human approval 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |pi-compat| packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts > forwards Pi cancellation to a product tool without persisting the signal in its identity
+AssertionError: expected undefined to be an instance of AbortSignal
+ ❯ packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts:2940:20
+    2938|   await entered;
+    2939|   try {
+    2940|     expect(signal).toBeInstanceOf(AbortSignal);
+       |                    ^
+    2941|     expect(identity).not.toHaveProperty("signal");
+    2942|     await adapter.cancel(request.runId);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |node-services| apps/agent-service/test/production-file-read-workflow.unit.test.ts > cancels production authorization review before opening confirmation or dispatching a file tool
+AssertionError: expected { outcome: 'awaiting_approval', …(5) } to match object { outcome: 'failed', …(2) }
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "errorCode": "action_cancelled",
+-   "outcome": "failed",
++   "errorCode": null,
++   "outcome": "awaiting_approval",
+    "resultRef": null,
+  }
+
+ ❯ apps/agent-service/test/production-file-read-workflow.unit.test.ts:710:81
+    708|   });
+    709|   f.permitted.clear();
+    710|   expect(await (await f.open()).execute(f.call, { signal: controller.s…
+       |                                                                                 ^
+    711|     outcome: "failed", errorCode: "action_cancelled", resultRef: null,
+    712|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > does not enter review or create approval for an already cancelled action
+AssertionError: expected { decision: 'ASK', …(1) } to match object { decision: 'DENY', …(1) }
+(18 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "decision": "DENY",
+-   "reasonCode": "action_cancelled",
++   "decision": "ASK",
+  }
+
+ ❯ test/integration/authorization-capability-governance.test.ts:1401:7
+    1399|   expect(await f.service([], { review }).evaluate(intent({ id: "cancel…
+    1400|     uiAvailable: true, approvalExpiresAt: T1, signal: controller.signa…
+    1401|   })).toMatchObject({ decision: "DENY", reasonCode: "action_cancelled"…
+       |       ^
+    1402|   expect(review).not.toHaveBeenCalled();
+    1403|   expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEq…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > ends an unresponsive review on caller cancellation without opening human approval
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/integration/authorization-capability-governance.test.ts:1428:35
+    1426|     controller.abort();
+    1427|     await vi.advanceTimersByTimeAsync(0);
+    1428|     expect(reviewSignal?.aborted).toBe(true);
+       |                                   ^
+    1429|     expect(settled).toBe(true);
+    1430|     expect(await pending).toMatchObject({ decision: "DENY", reasonCode…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > cancels production authorization review before opening confirmation or dispatching a file tool
+AssertionError: expected { outcome: 'awaiting_approval', …(5) } to match object { outcome: 'failed', …(2) }
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "errorCode": "action_cancelled",
+-   "outcome": "failed",
++   "errorCode": null,
++   "outcome": "awaiting_approval",
+    "resultRef": null,
+  }
+
+ ❯ apps/agent-service/test/production-file-read-workflow.unit.test.ts:710:81
+    708|   });
+    709|   f.permitted.clear();
+    710|   expect(await (await f.open()).execute(f.call, { signal: controller.s…
+       |                                                                                 ^
+    711|     outcome: "failed", errorCode: "action_cancelled", resultRef: null,
+    712|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  4 failed (4)
+      Tests  5 failed | 181 passed (186)
+   Start at  21:05:53
+   Duration  3.60s (transform 3.33s, setup 0ms, import 7.30s, tests 982ms, environment 0ms)

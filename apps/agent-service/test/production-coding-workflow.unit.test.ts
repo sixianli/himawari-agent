@@ -107,6 +107,7 @@ describe("governed coding requests", () => {
         disclosure: "named_recipients",
         sideEffect: "reversible",
       }),
+      undefined,
     );
     expect(JSON.stringify(f.authorize.mock.calls)).not.toContain('"content":"hello"');
     expect(f.services.issue).not.toHaveBeenCalled();
@@ -135,7 +136,10 @@ describe("governed coding requests", () => {
       f.services,
       f.ctx,
     );
-    expect(f.authorize).toHaveBeenCalledWith(expect.objectContaining({ operation: "ls" }));
+    expect(f.authorize).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: "ls" }),
+      undefined,
+    );
     expect(f.ctx.phase).not.toHaveBeenCalled();
   });
   it("does not substitute changed arguments when a request is resumed", async () => {
@@ -187,6 +191,7 @@ it("binds public search disclosure to the provider and query without issuing bef
       targets: expect.arrayContaining([{ type: "network-domain", ref: "mcp.exa.ai:443" }]),
       sideEffect: "none",
     }),
+    undefined,
   );
   expect(f.services.issue).not.toHaveBeenCalled();
 });
@@ -200,6 +205,33 @@ it("rejects invalid public search queries before disclosure approval", async () 
   );
   expect(result.errorCode).toBe("WEB_SEARCH_INPUT_INVALID");
   expect(f.authorize).not.toHaveBeenCalled();
+});
+
+it("passes cancellation to coding authorization before a handle or file effect exists", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  const authorize = vi.fn<ProductionFileReadServices["authorize"]>(async (_intent, signal) => {
+    controller.abort();
+    expect(signal?.aborted).toBe(true);
+    return { decision: "DENY", reasonCode: "action_cancelled", alternativesAllowed: false };
+  });
+  expect(
+    await executeProductionCodingRequest(
+      f.call,
+      "write",
+      { ...f.services, authorize },
+      {
+        ...f.ctx,
+        signal: controller.signal,
+      },
+    ),
+  ).toMatchObject({ outcome: "failed", errorCode: "action_cancelled" });
+  expect(authorize).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ operation: "write" }),
+    controller.signal,
+  );
+  expect(f.services.issue).not.toHaveBeenCalled();
+  expect(f.ctx.phase).not.toHaveBeenCalled();
 });
 
 it("authorizes private-only search without a directory and rejects using that binding for files", async () => {
@@ -216,6 +248,7 @@ it("authorizes private-only search without a directory and rejects using that bi
       expiresAt: call.executionDeadlineAt,
       targets: expect.not.arrayContaining([expect.objectContaining({ type: "directory-grant" })]),
     }),
+    undefined,
   );
   expect(JSON.stringify(f.authorize.mock.calls)).not.toContain("/workspace");
   f.authorize.mockClear();

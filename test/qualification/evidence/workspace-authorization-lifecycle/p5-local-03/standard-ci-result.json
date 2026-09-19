@@ -1,0 +1,139 @@
+{
+  "sourceEvidenceDirectory": ".ci-output/local-1789819917347",
+  "summary": {
+    "schemaVersion": 1,
+    "scope": "local-platform-validation",
+    "context": {
+      "repository": "sixianli/himawari-agent",
+      "event": "workflow_dispatch",
+      "runId": "1789819917348",
+      "attempt": 1,
+      "testedSha": "825a7a1c452c4010e548ecf0ba33cc44f5774d59",
+      "headSha": "825a7a1c452c4010e548ecf0ba33cc44f5774d59",
+      "baseSha": "825a7a1c452c4010e548ecf0ba33cc44f5774d59",
+      "policySha256": "aac2dd0f1652b4873c162e40dd5e8eb9fb1bc0bdf0423c386d4d47df80c1f83d",
+      "toolchainSha256": "88005cb73e4fa6c87ffa251b78b1458a6c6780739787133ca149038757e4c58e",
+      "initialization": false
+    },
+    "status": "local_passed",
+    "platform": "macos-arm64",
+    "publicationFailures": [],
+    "checks": [
+      {
+        "checkId": "build",
+        "matrixKey": "macos-arm64",
+        "status": "passed",
+        "durationMs": 183449
+      },
+      {
+        "checkId": "test",
+        "matrixKey": "macos-arm64",
+        "status": "passed",
+        "durationMs": 581655
+      }
+    ],
+    "hostedGate": "not_executed",
+    "enforcement": "not_configured",
+    "pending": [
+      "真实 GitHub Linux/macOS 完整矩阵",
+      "Linux Node floor",
+      "真实取消、fork 审批与 Ruleset 拒绝合并",
+      "生产上线验收与 Owner 签署"
+    ]
+  },
+  "tests": {
+    "status": "passed",
+    "counts": {
+      "files": 240,
+      "executed": 3601,
+      "passed": 3601,
+      "failed": 0,
+      "skipped": 0
+    },
+    "projects": [
+      {
+        "id": "unit",
+        "counts": {
+          "files": 129,
+          "executed": 1764,
+          "passed": 1764,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "contracts",
+        "counts": {
+          "files": 23,
+          "executed": 333,
+          "passed": 333,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "integration",
+        "counts": {
+          "files": 77,
+          "executed": 1378,
+          "passed": 1378,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "e2e",
+        "counts": {
+          "files": 1,
+          "executed": 3,
+          "passed": 3,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "pi-compat",
+        "counts": {
+          "files": 10,
+          "executed": 123,
+          "passed": 123,
+          "failed": 0,
+          "skipped": 0
+        }
+      }
+    ],
+    "outcomes": [
+      {
+        "id": "unit",
+        "exitCode": 0,
+        "signal": null,
+        "durationMs": 115158
+      },
+      {
+        "id": "contracts",
+        "exitCode": 0,
+        "signal": null,
+        "durationMs": 9894
+      },
+      {
+        "id": "integration",
+        "exitCode": 0,
+        "signal": null,
+        "durationMs": 403271
+      },
+      {
+        "id": "e2e",
+        "exitCode": 0,
+        "signal": null,
+        "durationMs": 2411
+      },
+      {
+        "id": "pi-compat",
+        "exitCode": 0,
+        "signal": null,
+        "durationMs": 16034
+      }
+    ],
+    "archiveSha256": "5ecbb60e9eb5e8996224ae718b544e8eea7f3314a6216d176668e36bc76cd0ca"
+  }
+}

@@ -140,9 +140,14 @@ export function createProductionFileReadServices(options: {
         return undefined;
       return { ...common, revision: stored.revision, grant };
     },
-    authorize: async (intent) => {
+    authorize: async (intent, signal) => {
+      signal?.throwIfAborted();
       await searchAuthorization.authorize(intent);
-      return policy.evaluate(intent, { uiAvailable: true, approvalExpiresAt: intent.expiresAt });
+      return policy.evaluate(intent, {
+        uiAvailable: true,
+        approvalExpiresAt: intent.expiresAt,
+        ...(signal ? { signal } : {}),
+      });
     },
     issue: (input) => handles.issue(input),
   };

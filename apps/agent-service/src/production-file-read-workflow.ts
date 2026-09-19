@@ -32,12 +32,13 @@ export type CodingBinding =
   | (Omit<FileReadBinding, "grant"> & { readonly grant: null });
 export interface ProductionFileReadServices {
   binding(call: RuntimeToolInvocation): Promise<CodingBinding | undefined>;
-  authorize(intent: GovernedActionIntent): Promise<PermissionDecision>;
+  authorize(intent: GovernedActionIntent, signal?: AbortSignal): Promise<PermissionDecision>;
   issue(
     input: Parameters<CapabilityHandleService["issue"]>[0],
   ): ReturnType<CapabilityHandleService["issue"]>;
 }
 export interface FileReadExecutionContext {
+  readonly signal?: AbortSignal;
   readonly ownerId: RuntimeRequest["ownerId"];
   readonly agentId: RuntimeRequest["agentId"];
   readonly now: () => string;
@@ -238,7 +239,7 @@ export class ProductionFileReadWorkflow {
       action: GovernedActionIntent,
     ) => {
       await active();
-      const permission = await this.services.authorize(action);
+      const permission = await this.services.authorize(action, ctx.signal);
       if (permission.decision !== "ALLOW") return decisionFailure(permission);
       await active();
       let saved = (await ctx.load(`${phase}:handle`)) as
@@ -341,10 +342,10 @@ export class ProductionFileReadWorkflow {
     if (!["model", "external_approved"].includes(binding.grant.disclosure))
       return failure("FILE_READ_DIRECTORY_DISCLOSURE_DENIED");
     const readIntent = intent("read", target);
-    const readPermission = await this.services.authorize(readIntent);
+    const readPermission = await this.services.authorize(readIntent, ctx.signal);
     if (readPermission.decision !== "ALLOW") return decisionFailure(readPermission);
     const disclosureIntent = intent("disclose", target, true);
-    const disclosure = await this.services.authorize(disclosureIntent);
+    const disclosure = await this.services.authorize(disclosureIntent, ctx.signal);
     if (disclosure.decision !== "ALLOW") return decisionFailure(disclosure);
     const result = await runPhase(
       "read",
@@ -362,7 +363,7 @@ export class ProductionFileReadWorkflow {
     if (result.outcome !== "succeeded") return result;
     await active();
     if (result.outcome === "succeeded") {
-      const renewed = await this.services.authorize(disclosureIntent);
+      const renewed = await this.services.authorize(disclosureIntent, ctx.signal);
       if (renewed.decision !== "ALLOW") return decisionFailure(renewed);
     }
     return result;

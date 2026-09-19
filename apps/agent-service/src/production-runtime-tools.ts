@@ -373,8 +373,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
   }
 
-  async execute(value: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
+  async execute(
+    value: RuntimeToolInvocation,
+    options: Parameters<RuntimeToolPort["execute"]>[1] = {},
+  ): Promise<RuntimeToolExecutionResult> {
+    const signal = options.signal;
+    signal?.throwIfAborted();
     const invocation = await this.#taskStart(value);
+    signal?.throwIfAborted();
     if (this.#isTaskManagement(invocation)) {
       await this.#options.assertRunActive(invocation.runId);
       if (!this.#exposed.has(invocation.runId) || !this.#options.managedTasks) reject();
@@ -392,9 +398,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
       return this.#options.managedTasks.execute(invocation);
     }
-    return this.#executeCanonical(invocation);
+    return this.#executeCanonical(invocation, signal);
   }
-  #executeCanonical(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
+  #executeCanonical(
+    invocation: RuntimeToolInvocation,
+    signal?: AbortSignal,
+  ): Promise<RuntimeToolExecutionResult> {
     const key = digest([invocation.runId, invocation.toolCallId]);
     const fingerprint = digest(executionIdentity(invocation));
     const attemptFingerprint = digest(invocation);
@@ -408,14 +417,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
     const result =
       invocation.capabilityHandleRef === null && this.#options.fileRead
-        ? this.#executeRequest(invocation, key)
+        ? this.#executeRequest(invocation, key, signal)
         : this.#execute(invocation, key, fingerprint);
     this.#inFlight.set(key, { fingerprint: attemptFingerprint, result });
     void result.finally(() => this.#inFlight.delete(key)).catch(() => undefined);
     return result;
   }
 
-  async #executeRequest(invocation: RuntimeToolInvocation, key: string) {
+  async #executeRequest(invocation: RuntimeToolInvocation, key: string, signal?: AbortSignal) {
     if (!this.#exposed.has(invocation.runId) || !this.#options.fileRead) reject();
     const coding = this.#codingTool(invocation);
     if (coding)
@@ -423,24 +432,33 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         invocation,
         coding,
         this.#options.fileRead,
-        this.#workflowContext(invocation, key),
+        this.#workflowContext(invocation, key, signal),
       );
     return new ProductionFileReadWorkflow(this.#options.fileRead).execute(
       invocation,
-      this.#workflowContext(invocation, key),
+      this.#workflowContext(invocation, key, signal),
     );
   }
 
-  #workflowContext(invocation: RuntimeToolInvocation, key: string): FileReadExecutionContext {
+  #workflowContext(
+    invocation: RuntimeToolInvocation,
+    key: string,
+    signal?: AbortSignal,
+  ): FileReadExecutionContext {
     if (!this.#exposed.has(invocation.runId) || !this.#options.fileRead) reject();
     const operationKey = (suffix: string) => `runtime-file-read:${key}:${suffix}`;
     return {
+      ...(signal ? { signal } : {}),
       ownerId: this.#options.ownerId,
       agentId: this.#options.agentId,
       now: () => this.#options.clock.now(),
       authorityFence: () => this.#options.authority().product.fencingToken,
       workerInstanceId: () => this.#options.peer().workerInstanceId,
-      assertActive: () => this.#options.assertRunActive(invocation.runId),
+      assertActive: async () => {
+        signal?.throwIfAborted();
+        await this.#options.assertRunActive(invocation.runId);
+        signal?.throwIfAborted();
+      },
       load: async (suffix) => {
         const record = await this.#options.artifacts.lookup({
           runId: invocation.runId,
@@ -464,7 +482,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         return { ref: saved.ref, value: await this.#readJson(saved.ref) };
       },
       phase: async (handle, phase, inputRef) => {
+        signal?.throwIfAborted();
         const live = await this.#handle(invocation.runId, handle.ref);
+        signal?.throwIfAborted();
         if (
           live.operation !== phase ||
           live.capabilityVersion !== handle.capabilityVersion ||

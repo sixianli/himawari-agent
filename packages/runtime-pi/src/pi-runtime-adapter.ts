@@ -1386,7 +1386,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         signal?.throwIfAborted();
         let result: Awaited<ReturnType<RuntimeToolPort["execute"]>>;
         try {
-          result = await this.#dependencies.tools.execute(invocation);
+          result = await this.#dependencies.tools.execute(
+            invocation,
+            ...(signal ? [{ signal }] : []),
+          );
         } catch {
           // Once execution was entered, a thrown transport/storage error does not
           // prove that an external effect was absent. Do not disclose raw errors to Pi.

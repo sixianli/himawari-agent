@@ -201,7 +201,7 @@ export async function executeProductionCodingRequest(
     finalRisk: "HIGH",
   };
   await active();
-  const permission = await services.authorize(intent);
+  const permission = await services.authorize(intent, ctx.signal);
   if (permission.decision !== "ALLOW") return runtimeToolAuthorizationResult(permission);
   await active();
   let saved = (await ctx.load("handle")) as

@@ -1,0 +1,36 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/authorization-capability-governance.test.ts (37 tests | 1 failed) 48ms
+   × does not return permission after cancellation during the final authority trace 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > does not return permission after cancellation during the final authority trace
+AssertionError: expected { decision: 'ALLOW', …(2) } to match object { decision: 'DENY', …(1) }
+(12 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "decision": "DENY",
+-   "reasonCode": "action_cancelled",
++   "decision": "ALLOW",
+  }
+
+ ❯ test/integration/authorization-capability-governance.test.ts:1465:7
+    1463|   expect(await policy.evaluate(intent({ id: "cancel-in-trace" }), {
+    1464|     uiAvailable: true, approvalExpiresAt: T1, signal: controller.signa…
+    1465|   })).toMatchObject({ decision: "DENY", reasonCode: "action_cancelled"…
+       |       ^
+    1466|   expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEq…
+    1467| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 36 passed (37)
+   Start at  21:10:38
+   Duration  874ms (transform 598ms, setup 0ms, import 724ms, tests 48ms, environment 0ms)
