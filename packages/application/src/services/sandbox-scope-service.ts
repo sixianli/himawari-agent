@@ -3,10 +3,10 @@ import {
   type ResolvedSandboxScope,
   type SandboxExecutionPlanCandidate,
   type SandboxExecutionPlanCandidateV2,
-  type SandboxScope,
+  type SandboxExecutionScope,
   sandboxExecutionPlanCandidateSchema,
   sandboxExecutionPlanCandidateV2Schema,
-  sandboxScopeSchema,
+  sandboxExecutionScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import type { AuthorizationStorePort } from "../ports/authorization.js";
 import type { HostFileStatePort } from "../ports/host-files.js";
@@ -25,7 +25,7 @@ export interface SandboxScopeServiceOptions {
     readonly maximumDomains: readonly string[];
   };
   readonly verifyParent?: (
-    scope: SandboxScope,
+    scope: SandboxExecutionScope,
     plan: SandboxExecutionPlanCandidate | SandboxExecutionPlanCandidateV2,
   ) => Promise<void>;
   readonly now: () => string;
@@ -45,7 +45,7 @@ export class SandboxScopeService {
   async read(
     input: SandboxExecutionPlanCandidate | SandboxExecutionPlanCandidateV2,
     parentRequestId: string | null,
-  ): Promise<SandboxScope> {
+  ): Promise<SandboxExecutionScope> {
     return (await this.resolve(input, parentRequestId)).scope;
   }
 
@@ -81,7 +81,7 @@ export class SandboxScopeService {
         payload.contentDigest !== `sha256:${digest}`
       )
         throw new Error("digest mismatch");
-      const scope = sandboxScopeSchema.parse(
+      const scope = sandboxExecutionScopeSchema.parse(
         JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
       );
       for (const key of [
@@ -102,27 +102,44 @@ export class SandboxScopeService {
       ] as const)
         if (scope[key] !== plan[key]) throw new Error("plan mismatch");
       if (scope.parentRequestId !== parentRequestId) throw new Error("parent request mismatch");
-      const current = await this.#options.files.readGrant(scope.directoryGrant.ref);
       const now = this.#options.now();
-      if (
-        !current ||
-        scope.hostId !== this.#options.hostId ||
-        current.hostId !== this.#options.hostId ||
-        current.id !== scope.directoryGrant.ref ||
-        current.revision !== scope.directoryGrant.revision ||
-        current.canonicalRootId !== scope.directoryGrant.canonicalRootId ||
-        current.authorizationRef !== scope.directoryGrant.authorizationRef ||
-        current.revokedAt !== null ||
-        current.pathPolicy !== "same_filesystem_no_links" ||
-        current.mountPolicy !== "fixed_device" ||
-        !Number.isFinite(Date.parse(current.expiresAt)) ||
-        Date.parse(current.expiresAt) <= Date.parse(now) ||
-        Date.parse(current.expiresAt) < Date.parse(plan.effectiveDeadlineAt) ||
-        scope.directoryGrant.operations.length === 0 ||
-        new Set(scope.directoryGrant.operations).size !== scope.directoryGrant.operations.length ||
-        scope.directoryGrant.operations.some((operation) => !current.operations.includes(operation))
-      )
-        throw new Error("directory authority changed");
+      if (scope.hostId !== this.#options.hostId) throw new Error("host changed");
+      if (scope.directoryGrant === null) {
+        if (
+          plan.schemaVersion !== "sandbox-execution.v2" ||
+          plan.operationContract.kind !== "network_only"
+        )
+          throw new Error("private scope contract mismatch");
+      } else {
+        if (
+          plan.schemaVersion === "sandbox-execution.v2" &&
+          plan.operationContract.kind === "network_only"
+        )
+          throw new Error("network contract cannot access a directory");
+        const current = await this.#options.files.readGrant(scope.directoryGrant.ref);
+        if (
+          !current ||
+          scope.hostId !== this.#options.hostId ||
+          current.hostId !== this.#options.hostId ||
+          current.id !== scope.directoryGrant.ref ||
+          current.revision !== scope.directoryGrant.revision ||
+          current.canonicalRootId !== scope.directoryGrant.canonicalRootId ||
+          current.authorizationRef !== scope.directoryGrant.authorizationRef ||
+          current.revokedAt !== null ||
+          current.pathPolicy !== "same_filesystem_no_links" ||
+          current.mountPolicy !== "fixed_device" ||
+          !Number.isFinite(Date.parse(current.expiresAt)) ||
+          Date.parse(current.expiresAt) <= Date.parse(now) ||
+          Date.parse(current.expiresAt) < Date.parse(plan.effectiveDeadlineAt) ||
+          scope.directoryGrant.operations.length === 0 ||
+          new Set(scope.directoryGrant.operations).size !==
+            scope.directoryGrant.operations.length ||
+          scope.directoryGrant.operations.some(
+            (operation) => !current.operations.includes(operation),
+          )
+        )
+          throw new Error("directory authority changed");
+      }
       if (
         !Number.isFinite(Date.parse(now)) ||
         new Date(now).toISOString() !== now ||

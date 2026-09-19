@@ -5,8 +5,8 @@ import {
   type RuntimeToolExecutionResult,
   type RuntimeToolInvocation,
   resolveHostFileReadPath,
-  scanMachineSecrets,
   runtimeToolAuthorizationResult,
+  scanMachineSecrets,
 } from "@himawari-agent/application";
 import type {
   FileReadExecutionContext,
@@ -68,6 +68,8 @@ export async function executeProductionCodingRequest(
   )
     return failed("CODING_BINDING_UNAVAILABLE");
   const grant = binding.grant;
+  if (call.dataClassification !== "private" || (grant === null && tool !== "web_search"))
+    return failed("CODING_DIRECTORY_UNAVAILABLE");
   const write = ["write", "edit", "bash"].includes(tool);
   const required =
     tool === "write"
@@ -76,17 +78,17 @@ export async function executeProductionCodingRequest(
         ? ["read", "update"]
         : ["read"];
   if (
-    grant.hostId !== binding.hostId ||
-    grant.revokedAt !== null ||
-    required.some((op) => !grant.operations.some((allowed) => allowed === op)) ||
-    grant.pathPolicy !== "same_filesystem_no_links" ||
-    grant.mountPolicy !== "fixed_device" ||
-    !Number.isSafeInteger(grant.revision) ||
-    grant.revision < 1 ||
-    !Number.isFinite(Date.parse(grant.expiresAt)) ||
-    !["model", "external_approved"].includes(grant.disclosure) ||
-    grant.dataClassification !== "private" ||
-    call.dataClassification !== "private"
+    grant !== null &&
+    (grant.hostId !== binding.hostId ||
+      grant.revokedAt !== null ||
+      required.some((op) => !grant.operations.some((allowed) => allowed === op)) ||
+      grant.pathPolicy !== "same_filesystem_no_links" ||
+      grant.mountPolicy !== "fixed_device" ||
+      !Number.isSafeInteger(grant.revision) ||
+      grant.revision < 1 ||
+      !Number.isFinite(Date.parse(grant.expiresAt)) ||
+      !["model", "external_approved"].includes(grant.disclosure) ||
+      grant.dataClassification !== "private")
   )
     return failed("CODING_DIRECTORY_UNAVAILABLE");
   const args = call.arguments;
@@ -105,6 +107,7 @@ export async function executeProductionCodingRequest(
   )
     return failed("WEB_SEARCH_INPUT_INVALID");
   if (tool !== "bash" && tool !== "web_search") {
+    if (!grant) return failed("CODING_DIRECTORY_UNAVAILABLE");
     const target =
       args["path"] ?? (tool === "ls" || tool === "find" || tool === "grep" ? "." : undefined);
     if (typeof target !== "string") return failed("CODING_PATH_REQUIRED");
@@ -120,7 +123,7 @@ export async function executeProductionCodingRequest(
   if (!Number.isFinite(Date.parse(call.executionDeadlineAt)))
     return failed("CODING_REQUEST_EXPIRED");
   const expiresAt = new Date(
-    Math.min(Date.parse(grant.expiresAt), Date.parse(call.executionDeadlineAt)),
+    Math.min(grant ? Date.parse(grant.expiresAt) : Infinity, Date.parse(call.executionDeadlineAt)),
   ).toISOString();
   if (expiresAt <= now) return failed("CODING_REQUEST_EXPIRED");
   const proposed = {
@@ -163,8 +166,12 @@ export async function executeProductionCodingRequest(
     resourceRefs: [resourceRef],
     targets: [
       { type: "host", ref: binding.hostId },
-      { type: "directory-grant", ref: grant.id },
-      { type: "directory-path", ref: grant.displayPath },
+      ...(grant
+        ? [
+            { type: "directory-grant", ref: grant.id },
+            { type: "directory-path", ref: grant.displayPath },
+          ]
+        : []),
       { type: "tool", ref: tool },
       { type: "input-digest", ref: hash(args) },
       { type: "model", ref: binding.modelIdentity },

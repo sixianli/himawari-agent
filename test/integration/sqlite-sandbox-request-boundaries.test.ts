@@ -203,3 +203,36 @@ describe("SQLite sandbox request boundaries", () => {
     }
   });
 });
+
+it("admits private network execution without occupancy while rejecting shared claims", async () => {
+  const f = await openSandboxJournal();
+  try {
+    const a = admission(f);
+    const plan = {
+      ...a.plan,
+      operationContract: { ref: "network", version: "1", kind: "network_only" as const },
+    };
+    expect(() => call(f, "admit", { ...a, plan })).toThrow("cannot claim shared files");
+    expect(
+      f.database.prepare("SELECT count(*) AS count FROM capability_invocation_receipts").get(),
+    ).toEqual({ count: 0 });
+    const input = {
+      ...a,
+      plan,
+      workspaces: [],
+      facts: { ...a.facts, environment: { ...a.facts.environment, workspaceConflictRefs: [] } },
+    };
+    const accepted = call(f, "admit", input);
+    expect(accepted.applied).toBe(true);
+    expect(call(f, "read", plan.identity)?.workspaces).toEqual([]);
+    expect(
+      f.database.prepare("SELECT count(*) AS count FROM sandbox_workspace_occupancy").get(),
+    ).toEqual({ count: 0 });
+    expect(
+      f.database.prepare("SELECT count(*) AS count FROM capability_invocation_receipts").get(),
+    ).toEqual({ count: 1 });
+    expect(call(f, "admit", input).applied).toBe(false);
+  } finally {
+    await f.close();
+  }
+});

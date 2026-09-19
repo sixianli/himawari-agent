@@ -772,3 +772,34 @@ it("validates the versioned Run policy and rejects inconsistent Memory bounds", 
   };
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
 });
+
+it("parses private search without allowing a mixed directory grant", () => {
+  const raw = config("/tmp/config-fixture");
+  const route = {
+    scopeSource: "private_temp",
+    hostId: "host",
+    workerInstanceId: "worker",
+    capabilityRef: "search",
+    capabilityVersion: "1",
+    maximumBytes: 4096,
+  };
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+    maxMemoryClassification: "private",
+    publicSearch: route,
+  };
+  raw["runPolicy"] = policy;
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.publicSearch,
+  ).toEqual(route);
+  for (const changed of [
+    { ...route, grantId: "directory" },
+    { ...route, scopeSource: "directory" },
+  ]) {
+    raw["runPolicy"] = { ...policy, publicSearch: changed };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});

@@ -73,6 +73,7 @@ export function createProductionSandboxWorker(options: {
       const binding = await hostFor(plan);
       const resolved = await payloads.readSandboxScope(invocation, plan.identity);
       const scope = resolved.scope;
+      if (scope.schemaVersion !== "sandbox-scope.v1") throw new Error("SANDBOX_SCOPE_CHANGED");
       if (
         scope.operation !== plan.operation ||
         scope.authorizationRef !== plan.authorizationRef ||

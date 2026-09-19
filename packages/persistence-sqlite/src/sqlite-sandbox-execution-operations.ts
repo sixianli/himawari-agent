@@ -9,6 +9,8 @@ import type {
 } from "@himawari-agent/application";
 import { projectSandboxExecution } from "@himawari-agent/application/sandbox-execution-projection";
 import {
+  PI_FIXED_FILE_CONTRACT,
+  piFileRecoveryOperationKey,
   type SandboxExecutionPlanV2,
   type SandboxJobIdentity,
   sandboxExecutionFactsSchema,
@@ -17,16 +19,13 @@ import {
   sandboxExecutionReservationSchema,
   sandboxJobIdentitySchema,
   validateSandboxExecutionFacts,
-  PI_FIXED_FILE_CONTRACT,
-  piFileRecoveryOperationKey,
 } from "@himawari-agent/execution-contracts";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { capabilityInvocationOutputOperationKey } from "./sqlite-run-payload-artifact-operations.ts";
-
-import { SqliteWorkspaceAdmissionQueue } from "./sqlite-workspace-admission-queue.ts";
 import { SqliteSandboxRecoveryOperations } from "./sqlite-sandbox-recovery-operations.ts";
 import { SqliteSandboxReleaseOperations } from "./sqlite-sandbox-release-operations.ts";
+import { SqliteWorkspaceAdmissionQueue } from "./sqlite-workspace-admission-queue.ts";
 
 type Input<K extends keyof SandboxExecutionJournalPort> = Parameters<
   SandboxExecutionJournalPort[K]
@@ -334,9 +333,17 @@ export class SqliteSandboxExecutionOperations {
   }
   private claims(
     raw: readonly SandboxWorkspaceClaim[],
-    plan: Pick<SandboxExecutionPlanV2, "identity">,
+    plan: Pick<SandboxExecutionPlanV2, "identity" | "operationContract">,
     conflictRefs: readonly string[],
   ): readonly SandboxWorkspaceClaim[] {
+    if (plan.operationContract.kind === "network_only") {
+      if (!Array.isArray(raw) || raw.length !== 0 || conflictRefs.length !== 0)
+        return this.fail(
+          "PORT_INVALID_OPERATION",
+          "Private network execution cannot claim shared files",
+        );
+      return [];
+    }
     if (!Array.isArray(raw) || raw.length === 0 || raw.length > 64)
       return this.fail("PORT_INVALID_OPERATION", "Verified workspace coverage required");
     const claims = raw.map((c) => {

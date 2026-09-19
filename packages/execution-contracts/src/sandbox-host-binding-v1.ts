@@ -1,4 +1,3 @@
-import { withSandboxReadiness, type SandboxReadinessProbe } from "./sandbox-readiness.ts";
 import {
   type SandboxExecutionSupport,
   withSandboxExecutionSupport,
@@ -7,6 +6,7 @@ import {
   type SandboxOperationBinding,
   withSandboxOperationBindings,
 } from "./sandbox-operation-binding.ts";
+import { type SandboxReadinessProbe, withSandboxReadiness } from "./sandbox-readiness.ts";
 import {
   array,
   ContractValidationError,
@@ -108,13 +108,12 @@ export type SandboxHostBinding = InferSchema<typeof shape> & {
 function contains(parent: string, child: string) {
   return child === parent || child.startsWith(`${parent}/`);
 }
-export const sandboxHostBindingSchema: Schema<SandboxHostBinding> = withSandboxReadiness(
+const parsedSandboxHostBindingSchema = withSandboxReadiness(
   withSandboxOperationBindings(
     withSandboxExecutionSupport({
       parse(value, path = "$") {
         const binding = shape.parse(value, path);
         if (
-          binding.roots.length === 0 ||
           new Set(binding.roots.map((root) => root.canonicalRootId)).size !==
             binding.roots.length ||
           new Set(binding.allowedDomains).size !== binding.allowedDomains.length ||
@@ -150,3 +149,16 @@ export const sandboxHostBindingSchema: Schema<SandboxHostBinding> = withSandboxR
     }),
   ),
 );
+
+export const sandboxHostBindingSchema: Schema<SandboxHostBinding> = {
+  parse(value, path = "$") {
+    const binding = parsedSandboxHostBindingSchema.parse(value, path);
+    if (
+      binding.roots.length === 0 &&
+      (!binding.operationBindings?.length ||
+        binding.operationBindings.some((operation) => operation.scopeSource !== "private_temp"))
+    )
+      throw new ContractValidationError(path, "directory operations require installed roots");
+    return binding;
+  },
+};

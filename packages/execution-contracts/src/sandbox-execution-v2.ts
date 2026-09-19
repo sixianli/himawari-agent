@@ -61,6 +61,7 @@ const contractIdentity = { ref: machineString, version: machineString };
 export const sandboxOperationContractSchema = variant("kind", {
   fixed_read: object({ ...contractIdentity, kind: literal("fixed_read") }),
   command: object({ ...contractIdentity, kind: literal("command") }),
+  network_only: object({ ...contractIdentity, kind: literal("network_only") }),
   verified_effect: object({
     ...contractIdentity,
     kind: literal("verified_effect"),
@@ -104,7 +105,8 @@ function parsePlan<T extends SandboxExecutionPlan | SandboxExecutionPlanCandidat
   const kind = extra.operationContract.kind;
   if (
     (kind === "task_start") !== (mode === "background") ||
-    (kind === "service_start" && mode !== "service")
+    (kind === "service_start" && mode !== "service") ||
+    (kind === "network_only" && mode !== "foreground")
   )
     fail("operation contract does not support execution mode");
   // Reuse the exact v1 admission validation; no default fingerprint or implicit v1 upgrade.
@@ -469,13 +471,16 @@ export function validateSandboxExecutionFacts(
     } else if (
       result.kind === "error" &&
       result.termination.type === "exit" &&
-      contract.kind !== "command"
+      !["command", "network_only"].includes(contract.kind)
     ) {
       fail("exit branch requires command contract");
     } else if (result.kind === "result") {
       if (contract.kind === "task_start" || contract.kind === "service_start")
         fail("resource start cannot report operation completion");
-      if ((contract.kind === "command") !== (result.completion.type === "exit"))
+      if (
+        ["command", "network_only"].includes(contract.kind) !==
+        (result.completion.type === "exit")
+      )
         fail("completion branch does not match operation contract");
     }
   }
@@ -489,7 +494,7 @@ export function validateSandboxExecutionFacts(
     const registered =
       result?.kind === "started" &&
       (contract.kind === "task_start" || contract.kind === "service_start");
-    if (!(contract.kind === "command" && normalExit) && !registered)
+    if (!(["command", "network_only"].includes(contract.kind) && normalExit) && !registered)
       fail("missing normal result cannot weaken effects");
   }
   if (effect.kind === "verified") {

@@ -7,7 +7,7 @@ import { compileSandboxPolicy, type SandboxPolicyInput } from "../src/policy.js"
 
 describe("SRT candidate policy compilation", () => {
   let root: string;
-  let input: SandboxPolicyInput;
+  let input: SandboxPolicyInput & { readonly workspace: string };
   beforeEach(async () => {
     root = await realpath(await mkdtemp(path.join(tmpdir(), "himawari-srt-policy-")));
     for (const name of ["workspace", "private", "toolchain"]) await mkdir(path.join(root, name));
@@ -39,6 +39,27 @@ describe("SRT candidate policy compilation", () => {
     });
     expect(policy.allowAppleEvents).toBe(false);
     expect(result.policyDigest).toBe(createHash("sha256").update(result.policyJson).digest("hex"));
+  });
+
+  it("runs network-only programs in private scratch without opening a user workspace", async () => {
+    const result = await compileSandboxPolicy({
+      ...input,
+      workspace: null,
+      writable: false,
+      allowedDomains: ["example.com:443"],
+    });
+    const policy = JSON.parse(result.policyJson);
+    expect(result.cwd).toBe(input.privateDirectory);
+    expect(policy.filesystem.allowRead).toEqual(
+      [input.privateDirectory, ...input.readOnlyToolchainPaths].sort(),
+    );
+    expect(policy.filesystem.allowWrite).toEqual([input.privateDirectory]);
+    expect(policy.filesystem.denyRead).toContain("/");
+    expect(policy.network.allowedDomains).toEqual(["example.com:443"]);
+    expect(JSON.stringify(policy.filesystem.allowRead)).not.toContain(input.workspace);
+    await expect(
+      compileSandboxPolicy({ ...input, workspace: null, writable: true }),
+    ).rejects.toThrow();
   });
 
   it("keeps read-only workspaces out of write permissions", async () => {

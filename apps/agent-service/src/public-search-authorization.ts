@@ -1,16 +1,16 @@
 import { createHash } from "node:crypto";
 import {
-  ApprovalService,
-  GrantService,
-  actionIntentFingerprint,
   ApplicationPortError,
-  PORT_ERROR_CODES,
+  ApprovalService,
   type AuthorityFence,
+  actionIntentFingerprint,
   type ClockPort,
   type GovernedActionIntent,
   type GovernedApprovalRequest,
-  type IdGeneratorPort,
+  GrantService,
   type IdempotentAgentCommand,
+  type IdGeneratorPort,
+  PORT_ERROR_CODES,
   type ProductConfiguration,
 } from "@himawari-agent/application";
 import type {
@@ -170,9 +170,13 @@ export class PublicSearchAuthorization {
       !intent.recipients.includes(recipient) ||
       !intent.recipients.some((value) => binding.models.includes(value)) ||
       !intent.targets.some((target) => target.type === "host" && target.ref === route.hostId) ||
-      !intent.targets.some(
-        (target) => target.type === "directory-grant" && target.ref === route.grantId,
-      ) ||
+      ("scopeSource" in route
+        ? intent.targets.some((target) =>
+            ["directory-grant", "directory-path", "file-path"].includes(target.type),
+          )
+        : !intent.targets.some(
+            (target) => target.type === "directory-grant" && target.ref === route.grantId,
+          )) ||
       intent.targets.filter((target) => target.type === "network-domain").length !== 1 ||
       intent.targets
         .filter((target) => target.type === "network-domain")

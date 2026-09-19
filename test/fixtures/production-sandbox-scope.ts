@@ -89,6 +89,7 @@ export async function productionSandboxScope(
   const actualRoot = entry.binding.value.roots[0];
   if (options.realFileIdentity)
     actualRoot.canonicalRootId = `${actualRoot.device}:${actualRoot.inode}`;
+  if (descriptor.scopeSource === "private_temp") entry.binding.value.roots = [];
   const snapshotBytes = JSON.stringify(snapshot);
   await writeFile(host.capabilityDeployment.snapshotPath, snapshotBytes);
   const directory = {
@@ -97,17 +98,18 @@ export async function productionSandboxScope(
     displayPath: host.workspace,
     ...(options.realFileIdentity ? { canonicalRootId: actualRoot.canonicalRootId } : {}),
   };
-  f.database
-    .prepare(
-      "INSERT INTO product_state_records (key,owner_id,agent_id,revision,value_json,updated_at) VALUES (?,?,?,1,?,?)",
-    )
-    .run(
-      hostDirectoryGrantStateKey(directory.id),
-      OWNER_ID,
-      AGENT_ID,
-      JSON.stringify(directory),
-      T1,
-    );
+  if (descriptor.scopeSource !== "private_temp")
+    f.database
+      .prepare(
+        "INSERT INTO product_state_records (key,owner_id,agent_id,revision,value_json,updated_at) VALUES (?,?,?,1,?,?)",
+      )
+      .run(
+        hostDirectoryGrantStateKey(directory.id),
+        OWNER_ID,
+        AGENT_ID,
+        JSON.stringify(directory),
+        T1,
+      );
   f.database.close();
   const repository = await SqliteProductStateRepository.open({
     stateRoot: f.resource.stateRoot,
@@ -378,6 +380,7 @@ export async function productionSandboxScope(
   };
   return {
     connect,
+    model,
     setAfterResolve: (hook: () => Promise<void>) => {
       afterResolve = hook;
     },

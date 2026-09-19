@@ -145,7 +145,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
     process.env["CLAUDE_CODE_TMPDIR"] !== privateDirectory
   )
     throw new Error("JOB_HOST_ENVIRONMENT_INVALID");
-  process.chdir(request.policy.workspace);
+  process.chdir(request.policy.workspace ?? privateDirectory);
   const policy = await compileSandboxPolicy(request.policy);
   if (policy.policyDigest !== request.policyDigest) throw new Error("JOB_HOST_POLICY_CHANGED");
   if (controlValue !== undefined) {
@@ -165,7 +165,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
       );
     };
     for (const allowed of [
-      request.policy.workspace,
+      ...(request.policy.workspace ? [request.policy.workspace] : []),
       request.policy.privateDirectory,
       ...request.policy.readOnlyToolchainPaths,
     ]) {
@@ -270,7 +270,7 @@ async function start() {
   const executable = launch.argv[0];
   if (!executable) throw new Error("JOB_HOST_LAUNCH_INVALID");
   task = spawn(executable, launch.argv.slice(1), {
-    cwd: request.policy.workspace,
+    cwd: request.policy.workspace ?? request.policy.privateDirectory,
     env: launch.env,
     shell: false,
     detached: true,

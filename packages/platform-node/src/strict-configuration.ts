@@ -677,6 +677,35 @@ function parseFileReadRoute(value: unknown): NonNullable<RunPolicyConfiguration[
   });
 }
 
+function parsePublicSearchRoute(
+  value: unknown,
+): NonNullable<RunPolicyConfiguration["publicSearch"]> {
+  const field = "configuration.runPolicy.publicSearch";
+  const input = record(value, field);
+  if (input["scopeSource"] === undefined) return parseFileReadRoute(value);
+  rejectUnknown(
+    input,
+    [
+      "scopeSource",
+      "hostId",
+      "workerInstanceId",
+      "capabilityRef",
+      "capabilityVersion",
+      "maximumBytes",
+    ],
+    field,
+  );
+  if (input["scopeSource"] !== "private_temp") throw invalid(field, "requires private_temp scope");
+  return Object.freeze({
+    scopeSource: "private_temp" as const,
+    hostId: safeReference(input["hostId"], `${field}.hostId`),
+    workerInstanceId: safeReference(input["workerInstanceId"], `${field}.workerInstanceId`),
+    capabilityRef: safeReference(input["capabilityRef"], `${field}.capabilityRef`),
+    capabilityVersion: safeReference(input["capabilityVersion"], `${field}.capabilityVersion`),
+    maximumBytes: integer(input["maximumBytes"], `${field}.maximumBytes`, 1, 48 * 1024),
+  });
+}
+
 function parseCodingRoute(value: unknown): NonNullable<RunPolicyConfiguration["coding"]> {
   const input = record(value, "configuration.runPolicy.coding");
   const { enabledTools, ...route } = input;
@@ -737,7 +766,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(timeZone === undefined ? {} : { timeZone }),
     ...(input["publicSearch"] === undefined
       ? {}
-      : { publicSearch: parseFileReadRoute(input["publicSearch"]) }),
+      : { publicSearch: parsePublicSearchRoute(input["publicSearch"]) }),
     ...(input["coding"] === undefined ? {} : { coding: parseCodingRoute(input["coding"]) }),
     ...(input["fileRead"] === undefined ? {} : { fileRead: parseFileReadRoute(input["fileRead"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),

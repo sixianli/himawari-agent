@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { piRunnerInputSchema } from "../src/index.ts";
+import {
+  piRunnerInputSchema,
+  sandboxExecutionScopeSchema,
+  sandboxOperationBindingsSchema,
+  sandboxScopeSchema,
+} from "../src/index.ts";
 
 const input = {
   schemaVersion: "pi-runner.v1",
@@ -80,4 +85,42 @@ it("retains a host-frozen file version inside protected scope", () => {
     expect(() =>
       piRunnerInputSchema.parse({ ...envelope, scope: { ...input.scope, fileTarget: changed } }),
     ).toThrow();
+});
+
+it("keeps private network scopes distinct from directory and Pi file scopes", () => {
+  const scope = {
+    ...input.scope,
+    schemaVersion: "sandbox-scope.v2",
+    directoryGrant: null,
+    networkAuthorizationRef: "trusted",
+  };
+  expect(sandboxExecutionScopeSchema.parse(scope).directoryGrant).toBeNull();
+  expect(() => sandboxScopeSchema.parse(scope)).toThrow();
+  expect(() => piRunnerInputSchema.parse({ ...input, scope })).toThrow();
+  for (const changed of [
+    { ...scope, directoryGrant: input.scope.directoryGrant },
+    { ...scope, networkAuthorizationRef: null },
+    { ...scope, fileTarget: {} },
+  ])
+    expect(() => sandboxExecutionScopeSchema.parse(changed)).toThrow();
+});
+it("requires an explicit foreground network-only deployment contract for private scope", () => {
+  const binding = {
+    operation: "web_search",
+    mode: "foreground",
+    contract: { kind: "network_only", ref: "search", version: "1" },
+    backendRef: "srt",
+    scopeSource: "private_temp",
+    directoryOperations: [],
+    network: "grant_targets",
+  };
+  expect(sandboxOperationBindingsSchema.parse([binding])).toEqual([binding]);
+  for (const changed of [
+    { ...binding, directoryOperations: ["read"] },
+    { ...binding, scopeSource: "grant_targets" },
+    { ...binding, network: "disabled" },
+    { ...binding, mode: "background" },
+    { ...binding, contract: { ...binding.contract, kind: "fixed_read" } },
+  ])
+    expect(() => sandboxOperationBindingsSchema.parse([changed])).toThrow();
 });

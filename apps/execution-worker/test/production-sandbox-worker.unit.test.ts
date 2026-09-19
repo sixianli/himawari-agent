@@ -63,6 +63,7 @@ function fixture() {
   };
   const loaded = { snapshot: { capabilities: [entry] } };
   const scope = {
+    schemaVersion: "sandbox-scope.v1",
     operation: "read",
     authorizationRef: "authorization",
     modelRef: "model",

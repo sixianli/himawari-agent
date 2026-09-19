@@ -123,8 +123,8 @@ export function parseJobHostRequest(value: unknown): JobHostRequest {
     typeof policy !== "object" ||
     Array.isArray(policy) ||
     !("workspace" in policy) ||
-    typeof policy.workspace !== "string" ||
-    !path.isAbsolute(policy.workspace) ||
+    (policy.workspace !== null &&
+      (typeof policy.workspace !== "string" || !path.isAbsolute(policy.workspace))) ||
     !("privateDirectory" in policy) ||
     typeof policy.privateDirectory !== "string" ||
     !path.isAbsolute(policy.privateDirectory)

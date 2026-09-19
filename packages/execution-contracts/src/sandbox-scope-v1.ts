@@ -2,7 +2,6 @@ import { sandboxNetworkDomainSchema } from "./sandbox-host-binding-v1.ts";
 import {
   array,
   ContractValidationError,
-  type Schema,
   enumeration,
   type InferSchema,
   integer,
@@ -10,13 +9,13 @@ import {
   machineString,
   nullable,
   object,
+  type Schema,
   timestamp,
 } from "./validation.ts";
 
 /** Protected product scope metadata. Paths and platform policy are resolved on
  * the bound host, never supplied by model-side tool arguments. */
-const sandboxScopeShape = object({
-  schemaVersion: literal("sandbox-scope.v1"),
+const scopeIdentity = {
   ownerId: machineString,
   agentId: machineString,
   threadId: nullable(machineString),
@@ -31,6 +30,10 @@ const sandboxScopeShape = object({
   authorizationRef: machineString,
   modelRef: machineString,
   profileRef: machineString,
+};
+const sandboxScopeShape = object({
+  schemaVersion: literal("sandbox-scope.v1"),
+  ...scopeIdentity,
   directoryGrant: object({
     ref: machineString,
     revision: integer(1),
@@ -123,9 +126,31 @@ export const sandboxScopeSchema: Schema<SandboxScope> = {
   },
 };
 
+/** Private-only scope cannot carry a user directory or fixed-file target. Old readers reject v2. */
+const sandboxNetworkScopeShape = object({
+  schemaVersion: literal("sandbox-scope.v2"),
+  ...scopeIdentity,
+  directoryGrant: literal(null),
+  networkAuthorizationRef: machineString,
+  expiresAt: timestamp,
+});
+export type SandboxNetworkScope = InferSchema<typeof sandboxNetworkScopeShape> & {
+  readonly fileTarget?: never;
+};
+export type SandboxExecutionScope = SandboxScope | SandboxNetworkScope;
+export const sandboxExecutionScopeSchema: Schema<SandboxExecutionScope> = {
+  parse(value, path = "$") {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new ContractValidationError(path, "invalid sandbox scope");
+    return "schemaVersion" in value && value.schemaVersion === "sandbox-scope.v2"
+      ? sandboxNetworkScopeShape.parse(value, path)
+      : sandboxScopeSchema.parse(value, path);
+  },
+};
+
 /** Resolved by Agent authority for this invocation; contains no host paths. */
 export const resolvedSandboxScopeSchema = object({
-  scope: sandboxScopeSchema,
+  scope: sandboxExecutionScopeSchema,
   allowedDomains: array(sandboxNetworkDomainSchema),
 });
 export type ResolvedSandboxScope = InferSchema<typeof resolvedSandboxScopeSchema>;

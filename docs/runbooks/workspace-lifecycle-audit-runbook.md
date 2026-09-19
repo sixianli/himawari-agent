@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: standard
-contract_sha256: "sha256:60b3553136806882a10dc23782faf010bcb7f083bf9327ed3539d275646dc497"
+contract_sha256: "sha256:37b1415100cb314359f2adbbfeddbc84c62ad9ef62fbe6671caad8274216ef9d"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-19"
@@ -22,7 +22,7 @@ date: "2026-09-19"
 
 ## Scope
 
-本流程读取 Schema 28～37 的工作区占用、执行和排队元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
+本流程读取 Schema 28～38 的工作区占用、执行和排队元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
 
 这是数据库清单，不是实际宿主的停止证明。所有输出固定标明 `liveHostVerified: false` 和 `repairEligible: false`。即使数据库已有释放回执，也不据此生成自动解锁或重新执行命令。
 

@@ -11,8 +11,8 @@ import {
   createAuthorityLeaseId,
   createDeploymentId,
   createOwnerId,
-  createRunId,
   createRunExecutionLeaseId,
+  createRunId,
   createSessionId,
   createThreadId,
 } from "@himawari-agent/domain";
@@ -686,7 +686,7 @@ describe.each(["worker", "direct"] as const)(
           path.join(f.stateRoot, "schema31-backup.sqlite"),
         );
         expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([
-          32, 33, 34, 35, 36, 37,
+          32, 33, 34, 35, 36, 37, 38,
         ]);
         expect(old.prepare("SELECT * FROM run_payload_artifacts").all()).toEqual(
           before.map((row) => ({ ...row, history_sequence: 0 })),

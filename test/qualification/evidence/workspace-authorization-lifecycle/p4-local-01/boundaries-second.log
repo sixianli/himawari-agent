@@ -1,0 +1,52 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stdout | test/integration/production-sandbox-network-only.test.ts > resolves the production public search route without consulting directory state
+binding fixture {
+  threadId: 'thread-capability-invocation',
+  modelRef: 'model-fixture',
+  executionLease: {
+    executionLeaseId: 'sandbox-lease',
+    expectedLeaseRevision: 1,
+    authorityLeaseId: 'lease-capability-invocation',
+    authorityFencingToken: 1,
+    deploymentId: 'deployment-capability-invocation',
+    authorityEpoch: 1,
+    fencingToken: 1,
+    consumerId: 'sandbox-consumer'
+  }
+} undefined
+
+ ❯ |integration| test/integration/production-sandbox-network-only.test.ts (3 tests | 1 failed) 1248ms
+   × resolves the production public search route without consulting directory state 369ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-network-only.test.ts > resolves the production public search route without consulting directory state
+AssertionError: expected undefined to match object { grant: null, …(2) }
+
+- Expected:
+{
+  "grant": null,
+  "hostId": "sandbox-host",
+  "modelRef": "model-fixture",
+}
+
++ Received:
+undefined
+
+ ❯ test/integration/production-sandbox-network-only.test.ts:60:85
+     58|   const read = vi.spyOn(f.repository, "readScopedState");
+     59|   console.log("binding fixture", f.call.context, await f.repository.ru…
+     60|   expect(await services.binding({ ...f.call, capabilityRef: "search.we…
+       |                                                                                     ^
+     61|   expect(read).not.toHaveBeenCalled();
+     62| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 37 passed (38)
+   Start at  19:46:42
+   Duration  2.73s (transform 785ms, setup 0ms, import 1.30s, tests 1.27s, environment 0ms)

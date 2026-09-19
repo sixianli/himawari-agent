@@ -12,8 +12,8 @@ ts	phase	decision	why	evidence	result
 2026-09-16T09:56:02Z	P1	按原锁文件重装本地依赖	发布扫描命中未受审的重复依赖副本；不修改扫描例外	.ci-output/installation-p1-lifecycle/installation-result.json;test/qualification/evidence/workspace-authorization-lifecycle/p1-local-01/test-final.log	依赖版本与锁文件不变；重新构建与产物发布检查通过
 2026-09-16T10:39:56.452479+00:00	P2	以调用回执作为额度承诺点	预约和 Handle 关联持久化；取得执行权后不能因 ACK 缺失退费	p2-local-01/reservation-atomic.log; p2-local-01/withdrawal.log	30 项额度与迁移测试、60 项撤销消费者测试通过；完整 CI 尚未完成
 2026-09-16T10:39:56.452479+00:00	P2	保留完整测试发现的装配错误	新增预约不能在内存测试中静默绕过授权关联	p2-local-01/unit-failures.json; p2-local-01/file-read-fixture.log	23 项同因失败，连接共享测试存储后该文件 34 项通过
-2026-09-16	P3	复用 PreparedFileOperation 保存暂存 inode 作为发布归属证据；字节相同不认定成功	publication-red.log; file-publication-recovery.test.ts	实际文件与 SQLite 重启读回通过；精确共享写者生命周期仍待接入
-2026-09-16	P3	SQLite 公平队列只保存优先级，出队才在原调用事务取得全部占用并消费额度	queue-consumers.log; read-parallel-green.log	不缩小当前沙箱真实可写范围，不将队列局部测试称为全部文件并发通过
+2026-09-16	P3	复用 PreparedFileOperation 保存暂存 inode 作为发布归属证据；字节相同不认定成功	字节相同不能证明是本次发布，恢复必须核对候选身份	publication-red.log; file-publication-recovery.test.ts	实际文件与 SQLite 重启读回通过；精确共享写者生命周期仍待接入
+2026-09-16	P3	SQLite 公平队列只保存优先级，出队才在原调用事务取得全部占用并消费额度	等待不占资源，避免新冲突请求绕过已排队请求	queue-consumers.log; read-parallel-green.log	不缩小当前沙箱真实可写范围，不将队列局部测试称为全部文件并发通过
 2026-09-16T12:15:51Z	P3	固定文件合同版本化并冻结宿主基线	旧合同仍按目录协调；缩小 claim 必须绑定真正受限的 Operations 和原文件版本	p3-local-02/target-pin-red.log;p3-local-02/frozen-baseline-red.log;p3-local-02/nested-scope-consumers.log	88 项消费者通过；新合同未部署，缺失父目录保留目录协调
 2026-09-16T12:15:51Z	P3	显式选择读取已打开的完整版本	原子替换不应中断获准读取；默认核验和写入基线仍要求当前路径一致	p3-local-02/atomic-read-mechanism-red.log;p3-local-02/file-contracts.log	机制复现后修复；先前 fixture 未触发替换的日志保留
 2026-09-16T12:15:51Z	P3	Schema 36 阻止旧 writer 解释新文件范围	旧 Scope 和 claim 不回填；父目录身份与摘要必须来自原请求，不能恢复时改用当前文件	packages/persistence-sqlite/src/migrations/0036_fixed_file_scope_contract.sql	类型与静态检查通过；全量验证运行中
@@ -26,3 +26,4 @@ ts	phase	decision	why	evidence	result
 2026-09-19T09:32:37.428321+00:00	P7	提供只读分页核查，不生成自动修复候选	数据库标签和回执存在性不能证明旧进程及迟到派发已停止	p7-local-01/audit-cli.log;docs/runbooks/workspace-lifecycle-audit-runbook.md	10 项真实 CLI 和 SQLite 回归通过；现场宿主验证和历史修复未完成
 2026-09-19T09:53:35.393450+00:00	P3	先固定原队列，再允许相同执行身份重入	复现出队接受更改合同及重复队列；旧执行权不能自动转给新 boot	p3-local-04/queue-binding-red-final.log;p3-local-04/consumers.log	145 项消费者通过；跨 boot 权威重绑定与完整验证仍待完成
 2026-09-19T10:17:26.497354+00:00	P2	工具执行前保存受保护批次，并给 intent 绑定父工具引用	恢复需先保存原调用，不能从新模型输出重新推断	p2-local-02/checkpoint-red.log;p2-local-02/intent-binding-red-final.log;p2-local-02/checkpoint-consumers.log;p2-local-02/checkpoint-sqlite.log	完整 CI 3497 项通过；补充分类后 118 项、4 组浏览器夹具、构建与类型通过；跨 boot/fence 自动恢复尚未实现
+2026-09-19T10:54:50Z	P4	使用独立纯联网 Scope 与空文件 claim	私有目录不能伪装成用户目录授权；保留网络授权、执行权及资源生命周期	p4-local-01/consumers.log; p4-local-01/private-platform-final.log	334 项相关回归通过；Mac 真实越界拒绝通过，清理资格仍 unknown

@@ -38,6 +38,7 @@ afterEach(async () => {
 it.each([
   "normal",
   "command",
+  "network",
   "pi",
   "pi-fixed",
   "pi-fixed-without-target",
@@ -86,10 +87,14 @@ it.each([
             }
           : { kind: "task_start" as const, ref: "task", version: "1" },
       }
-    : scenario === "command"
+    : scenario === "command" || scenario === "network"
       ? {
           ...admitted.plan,
-          operationContract: { kind: "command" as const, ref: "command", version: "1" },
+          operationContract: {
+            kind: scenario === "network" ? ("network_only" as const) : ("command" as const),
+            ref: "command",
+            version: "1",
+          },
         }
       : piScenario
         ? {
@@ -163,7 +168,7 @@ it.each([
   });
   mocks.policy.mockResolvedValue({
     policy: {
-      workspace: root,
+      workspace: scenario === "network" ? null : root,
       privateDirectory: `${root}/scratch`,
       ...(service ? { allowedUnixSockets: [`${root}/scratch/ready.sock`] } : {}),
       writable: false,
@@ -171,7 +176,10 @@ it.each([
       protectedPaths: [],
       allowedDomains: [],
     },
-    compiled: { policyDigest: admitted.facts.environment.policyDigest },
+    compiled: {
+      cwd: scenario === "network" ? `${root}/scratch` : root,
+      policyDigest: admitted.facts.environment.policyDigest,
+    },
   });
   mocks.load.mockResolvedValue({
     snapshot: {
@@ -202,7 +210,8 @@ it.each([
   mocks.verify.mockResolvedValue(undefined);
   const reservation = {
     resourceRef: background ? "resource-task" : null,
-    workspaceConflictRefs: admitted.workspaces.map((item) => item.ref),
+    workspaceConflictRefs:
+      scenario === "network" ? [] : admitted.workspaces.map((item) => item.ref),
   };
   const payloads = {
     readInput: async () =>
@@ -291,8 +300,15 @@ it.each([
                       profileRef: "authorized-project.v1",
                       ...(scenario === "pi-fixed" ? { fileTarget: fixedTarget } : {}),
                     }
-                  : f.scope,
-                allowedDomains: [],
+                  : scenario === "network"
+                    ? {
+                        ...f.scope,
+                        schemaVersion: "sandbox-scope.v2",
+                        directoryGrant: null,
+                        networkAuthorizationRef: plan.authorizationRef,
+                      }
+                    : f.scope,
+                allowedDomains: scenario === "network" ? ["example.test:443"] : [],
               }
             : null,
         output: null,
@@ -334,6 +350,20 @@ it.each([
     },
   };
   const outcome = await worker.execute(request);
+  if (scenario === "network") {
+    expect(mocks.policy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspace: null,
+        writable: false,
+        allowedDomains: ["example.test:443"],
+      }),
+    );
+    expect(facts.environment.workspaceConflictRefs).toEqual([]);
+    expect(facts.result).toMatchObject({
+      kind: "result",
+      completion: { type: "exit", exitCode: 0 },
+    });
+  }
   expect(outcome.outcome).toBe(
     scenario === "background" || service ? "succeeded" : "result_unknown",
   );
@@ -356,6 +386,7 @@ it.each([
   expect(host.start).toHaveBeenCalledTimes(
     scenario === "normal" ||
       scenario === "command" ||
+      scenario === "network" ||
       validPi ||
       scenario === "finished-during-check" ||
       scenario === "revoked-running"
@@ -363,7 +394,8 @@ it.each([
       : 0,
   );
   if (scenario === "normal" || validPi) expect(facts.effect).toEqual({ kind: "not_applicable" });
-  if (scenario === "command") expect(facts.effect).toEqual({ kind: "not_asserted" });
+  if (scenario === "command" || scenario === "network")
+    expect(facts.effect).toEqual({ kind: "not_asserted" });
   if (scenario === "finished-during-check") {
     expect(calls).not.toContain("observe_control");
     expect(calls).toContain("append");
@@ -373,7 +405,7 @@ it.each([
     });
     expect(facts.resource).toMatchObject({ supervision: "lost", cleanup: "unknown" });
   }
-  if (scenario === "normal" || scenario === "command" || validPi) {
+  if (scenario === "normal" || scenario === "command" || scenario === "network" || validPi) {
     expect(calls.indexOf("register_control")).toBeLessThan(calls.indexOf("bind"));
     expect(calls.indexOf("bind")).toBeLessThan(calls.indexOf("host-start"));
     expect(facts.result).toMatchObject({

@@ -34,7 +34,7 @@ export function auditWorkspaceLifecycle({
       if (
         !Number.isSafeInteger(version) ||
         version < 28 ||
-        version > 37 ||
+        version > 38 ||
         ledger.count !== version
       )
         throw new Error("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");

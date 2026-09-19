@@ -149,6 +149,11 @@ export interface FileReadRouteConfiguration {
   readonly maximumBytes: number;
 }
 
+/** Pure search has host routing but no user directory authority. */
+export type PublicSearchRouteConfiguration =
+  | FileReadRouteConfiguration
+  | (Omit<FileReadRouteConfiguration, "grantId"> & { readonly scopeSource: "private_temp" });
+
 export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
   readonly enabledTools: readonly ("read" | "write" | "edit" | "bash" | "find" | "grep" | "ls")[];
 }
@@ -156,7 +161,7 @@ export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
   readonly coding?: CodingRouteConfiguration;
-  readonly publicSearch?: FileReadRouteConfiguration;
+  readonly publicSearch?: PublicSearchRouteConfiguration;
   readonly fileRead?: FileReadRouteConfiguration;
   readonly version: string;
   readonly systemInstruction: string;

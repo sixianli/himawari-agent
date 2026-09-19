@@ -1,0 +1,30 @@
+{
+  "platform": "darwin",
+  "architecture": "arm64",
+  "node": "v22.22.3",
+  "sourceBuildProbe": true,
+  "productionQualified": false,
+  "result": {
+    "reason": "exited",
+    "exitCode": 0,
+    "taskProcessExited": true,
+    "taskTreeCleanup": "unknown",
+    "network": {
+      "deniedTargets": 0,
+      "deniedAddresses": 0,
+      "connected": 0,
+      "closed": true
+    }
+  },
+  "stdout": "{\"cwd\":\"/private/tmp/hp4-afXWew/private\",\"outsideRead\":\"EPERM\",\"outsideWrite\":\"EPERM\",\"childRead\":\"EPERM\",\"network\":\"EPERM\"}\n",
+  "stderr": "",
+  "facts": {
+    "cwd": "/private/tmp/hp4-afXWew/private",
+    "outsideRead": "EPERM",
+    "outsideWrite": "EPERM",
+    "childRead": "EPERM",
+    "network": "EPERM"
+  },
+  "passed": true,
+  "ownedTemporaryFilesRemoved": true
+}

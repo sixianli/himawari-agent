@@ -46,6 +46,7 @@ const contracts = {
     targetRef: "file",
   },
   shell: { ref: "shell", version: "1", kind: "command" },
+  network: { ref: "network", version: "1", kind: "network_only" },
   background: { ref: "background", version: "1", kind: "task_start" },
   service: {
     ref: "service",
@@ -152,7 +153,10 @@ function fixture(kind: keyof typeof contracts = "read") {
           ...common,
           kind: "result",
           output,
-          completion: kind === "shell" ? { type: "exit", exitCode: 0 } : { type: "value" },
+          completion:
+            kind === "shell" || kind === "network"
+              ? { type: "exit", exitCode: 0 }
+              : { type: "value" },
         };
   const facts = sandboxExecutionFactsSchema.parse({
     schemaVersion: "sandbox-execution.v2",
@@ -868,4 +872,18 @@ describe("R1 strict branches, bindings and observation history", () => {
       }),
     ).toThrow();
   });
+});
+
+it("network-only reports exit status without asserting the absence of remote effects", () => {
+  const f = fixture("network");
+  expect(validateSandboxExecutionFacts(f.plan, f.facts, context(f.plan, f.facts))).toEqual(f.facts);
+  expect(f.facts.effect).toEqual({ kind: "not_asserted" });
+  expect(() => sandboxExecutionPlanV2Schema.parse({ ...f.plan, mode: "background" })).toThrow();
+  expect(() =>
+    validateSandboxExecutionFacts(
+      f.plan,
+      { ...f.facts, effect: { kind: "not_applicable" } },
+      context(f.plan, f.facts),
+    ),
+  ).toThrow();
 });

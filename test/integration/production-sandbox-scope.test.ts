@@ -76,7 +76,8 @@ it.each(["read", "edit", "write", "search", "bash", "background"])(
     expect(Buffer.byteLength(socketPath)).toBeLessThan(108);
     const send = await f.connect(admitted.admission.plan.identity);
     const scope = (await send({ kind: "resolve" })).resolvedScope;
-    if (!scope) throw new Error("scope missing");
+    if (!scope || scope.scope.schemaVersion !== "sandbox-scope.v1")
+      throw new Error("directory scope missing");
     expect(scope.allowedDomains).toEqual(["example.com:443"]);
     expect(scope.scope.networkAuthorizationRef).toBe(f.input.authorizationRef);
     expect(scope.scope.directoryGrant.operations).toEqual(

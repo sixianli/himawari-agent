@@ -57,7 +57,7 @@ export function prepareSandboxJobHost(
   let workerSequence = 0;
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
   const child = fork(fileURLToPath(new URL(`./job-host-main.${extension}`, import.meta.url)), [], {
-    cwd: request.policy.workspace,
+    cwd: request.policy.workspace ?? request.policy.privateDirectory,
     execArgv: [],
     detached: true,
     env: {

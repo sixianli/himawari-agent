@@ -1,0 +1,37 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/production-sandbox-network-only.test.ts (3 tests | 3 failed) 948ms
+   × admits a pure network grant with no directory lookup or shared workspace claim 370ms
+   × keeps directory-scoped requests out of the private network contract 293ms
+   × resolves the production public search route without consulting directory state 284ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-network-only.test.ts > admits a pure network grant with no directory lookup or shared workspace claim
+ FAIL  |integration| test/integration/production-sandbox-network-only.test.ts > keeps directory-scoped requests out of the private network contract
+ FAIL  |integration| test/integration/production-sandbox-network-only.test.ts > resolves the production public search route without consulting directory state
+ContractValidationError: $: sandbox host layout is ambiguous or reopens trusted paths
+ ❯ Object.parse packages/execution-contracts/src/sandbox-host-binding-v1.ts:144:17
+    142|           contains(binding.runtimeRoot, binding.privateRoot)
+    143|         )
+    144|           throw new ContractValidationError(
+       |                 ^
+    145|             path,
+    146|             "sandbox host layout is ambiguous or reopens trusted paths…
+ ❯ Object.parse packages/execution-contracts/src/sandbox-execution-support.ts:65:17
+ ❯ Object.parse packages/execution-contracts/src/sandbox-operation-binding.ts:64:17
+ ❯ Object.parse packages/execution-contracts/src/sandbox-readiness.ts:45:21
+ ❯ parseBinding packages/platform-node/src/capabilities/capability-deployment.ts:915:46
+ ❯ parseEntry packages/platform-node/src/capabilities/capability-deployment.ts:1088:19
+ ❯ packages/platform-node/src/capabilities/capability-deployment.ts:1136:5
+ ❯ parseSnapshot packages/platform-node/src/capabilities/capability-deployment.ts:1135:46
+ ❯ CapabilityDeploymentSnapshotLoader.load packages/platform-node/src/capabilities/capability-deployment.ts:1384:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed (3)
+   Start at  19:47:58
+   Duration  2.26s (transform 771ms, setup 0ms, import 1.20s, tests 948ms, environment 0ms)

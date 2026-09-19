@@ -110,6 +110,22 @@ export function createProductionFileReadServices(options: {
       );
       if (!model || !model.allowedDataClassifications.includes(call.dataClassification))
         return undefined;
+      // Freeze the configured provider/model/routing identity, including fallback changes.
+      const common = {
+        hostId: route.hostId,
+        workerInstanceId: route.workerInstanceId,
+        capabilityRef: route.capabilityRef,
+        capabilityVersion: route.capabilityVersion,
+        maximumBytes: route.maximumBytes,
+        threadId: context.threadId,
+        modelRef: context.modelRef,
+        modelIdentity: configuredModelDisclosureIdentity(model),
+      };
+      if ("scopeSource" in route && route.scopeSource === "private_temp") {
+        if (call.capabilityRef !== `${route.capabilityRef}.web_search`) return undefined;
+        return { ...common, revision: 1, grant: null };
+      }
+      if (!("grantId" in route)) return undefined;
       const stored = await repository.readScopedState(
         configuration.ownerId,
         configuration.agentId,
@@ -118,19 +134,7 @@ export function createProductionFileReadServices(options: {
       const grant = stored?.value as unknown as HostDirectoryGrant | undefined;
       if (!stored || !grant || grant.id !== route.grantId || grant.hostId !== route.hostId)
         return undefined;
-      // Freeze the configured provider/model/routing identity, including fallback changes.
-      return {
-        revision: stored.revision,
-        hostId: route.hostId,
-        workerInstanceId: route.workerInstanceId,
-        grant,
-        capabilityRef: route.capabilityRef,
-        capabilityVersion: route.capabilityVersion,
-        maximumBytes: route.maximumBytes,
-        threadId: context.threadId,
-        modelRef: context.modelRef,
-        modelIdentity: configuredModelDisclosureIdentity(model),
-      };
+      return { ...common, revision: stored.revision, grant };
     },
     authorize: async (intent) => {
       await searchAuthorization.authorize(intent);

@@ -1,0 +1,28 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-v2-worker-lifecycle.test.ts (14 tests | 1 failed) 3883ms
+   × v2 lifecycle: network 172ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-v2-worker-lifecycle.test.ts > v2 lifecycle: network
+AssertionError: expected "vi.fn()" to be called with arguments: [ ObjectContaining{…} ]
+
+Number of calls: 0
+
+ ❯ test/integration/sandbox-v2-worker-lifecycle.test.ts:339:26
+    337|   const outcome = await worker.execute(request);
+    338|   if (scenario === "network") {
+    339|     expect(mocks.policy).toHaveBeenCalledWith(expect.objectContaining(…
+       |                          ^
+    340|     expect(facts.environment.workspaceConflictRefs).toEqual([]);
+    341|     expect(facts.result).toMatchObject({ kind: "result", completion: {…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 5 passed (6)
+      Tests  1 failed | 73 passed (74)
+   Start at  19:42:30
+   Duration  14.78s (transform 1.60s, setup 0ms, import 2.63s, tests 12.31s, environment 0ms)

@@ -27,8 +27,11 @@ export interface FileReadBinding {
   readonly modelRef: string;
   readonly modelIdentity: string;
 }
+export type CodingBinding =
+  | FileReadBinding
+  | (Omit<FileReadBinding, "grant"> & { readonly grant: null });
 export interface ProductionFileReadServices {
-  binding(call: RuntimeToolInvocation): Promise<FileReadBinding | undefined>;
+  binding(call: RuntimeToolInvocation): Promise<CodingBinding | undefined>;
   authorize(intent: GovernedActionIntent): Promise<PermissionDecision>;
   issue(
     input: Parameters<CapabilityHandleService["issue"]>[0],
@@ -112,7 +115,7 @@ export class ProductionFileReadWorkflow {
     )
       return failure("FILE_READ_REQUEST_INVALID");
     const binding = await this.services.binding(call);
-    if (!binding) return failure("FILE_READ_BINDING_UNAVAILABLE");
+    if (!binding || binding.grant === null) return failure("FILE_READ_BINDING_UNAVAILABLE");
     const now = ctx.now();
     const ranks = ["public", "private", "sensitive", "restricted"];
     if (

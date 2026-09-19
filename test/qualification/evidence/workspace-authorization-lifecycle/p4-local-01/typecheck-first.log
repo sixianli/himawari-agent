@@ -1,0 +1,47 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+apps/agent-service/src/production-sandbox-services.ts(821,5): error TS2322: Type '(input: ConsumeCapabilityInvocationInput, request: Readonly<{ readonly payload: Readonly<{ readonly capabilityId: string; readonly capabilityVersion: string; readonly operation: string; ... 6 more ...; readonly deadlineAt: string; }> & { ...; }; ... 10 more ...; readonly scope: Readonly<...>; }>) => Promise<...>' is not assignable to type '(invocation: ConsumeCapabilityInvocationInput, request: Readonly<{ readonly payload: Readonly<{ readonly capabilityId: string; readonly capabilityVersion: string; readonly operation: string; ... 6 more ...; readonly deadlineAt: string; }> & { ...; }; ... 10 more ...; readonly scope: Readonly<...>; }>) => Promise<...>'.
+  Type 'Promise<{ plan: SandboxExecutionPlanCandidateV2; reservation: Readonly<{ readonly schemaVersion: "sandbox-preparation.v1"; readonly identity: Readonly<{ readonly jobId: string; ... 8 more ...; readonly toolCallId: string; }>; ... 5 more ...; readonly createdAt: string; }>; workspaces: readonly SandboxWorkspaceClaim[...' is not assignable to type 'Promise<Omit<{ readonly invocation: ConsumeCapabilityInvocationInput; readonly plan: Omit<Readonly<{ schemaVersion: "sandbox-execution.v1"; identity: Readonly<{ readonly jobId: string; ... 8 more ...; readonly toolCallId: string; }>; ... 13 more ...; binding: Readonly<...>; }>, "semanticFingerprint">; readonly obser...'.
+    Type '{ plan: SandboxExecutionPlanCandidateV2; reservation: Readonly<{ readonly schemaVersion: "sandbox-preparation.v1"; readonly identity: Readonly<{ readonly jobId: string; ... 8 more ...; readonly toolCallId: string; }>; ... 5 more ...; readonly createdAt: string; }>; workspaces: readonly SandboxWorkspaceClaim[]; } | {...' is not assignable to type 'Omit<{ readonly invocation: ConsumeCapabilityInvocationInput; readonly plan: Omit<Readonly<{ schemaVersion: "sandbox-execution.v1"; identity: Readonly<{ readonly jobId: string; ... 8 more ...; readonly toolCallId: string; }>; ... 13 more ...; binding: Readonly<...>; }>, "semanticFingerprint">; readonly observation: ...'.
+      Type '{ plan: SandboxExecutionPlanCandidateV2; reservation: Readonly<{ readonly schemaVersion: "sandbox-preparation.v1"; readonly identity: Readonly<{ readonly jobId: string; ... 8 more ...; readonly toolCallId: string; }>; ... 5 more ...; readonly createdAt: string; }>; workspaces: (SandboxWorkspaceClaim | null)[]; }' is not assignable to type 'Omit<{ readonly invocation: ConsumeCapabilityInvocationInput; readonly plan: Omit<Readonly<{ schemaVersion: "sandbox-execution.v1"; identity: Readonly<{ readonly jobId: string; ... 8 more ...; readonly toolCallId: string; }>; ... 13 more ...; binding: Readonly<...>; }>, "semanticFingerprint">; readonly observation: ...'.
+        Type '{ plan: SandboxExecutionPlanCandidateV2; reservation: Readonly<{ readonly schemaVersion: "sandbox-preparation.v1"; readonly identity: Readonly<{ readonly jobId: string; ... 8 more ...; readonly toolCallId: string; }>; ... 5 more ...; readonly createdAt: string; }>; workspaces: (SandboxWorkspaceClaim | null)[]; }' is not assignable to type 'Omit<{ readonly invocation: ConsumeCapabilityInvocationInput; readonly plan: SandboxExecutionPlanCandidateV2; readonly reservation: Readonly<...>; readonly workspaces: readonly SandboxWorkspaceClaim[]; }, "invocation">'.
+          Types of property 'workspaces' are incompatible.
+            Type '(SandboxWorkspaceClaim | null)[]' is not assignable to type 'readonly SandboxWorkspaceClaim[]'.
+              Type 'SandboxWorkspaceClaim | null' is not assignable to type 'SandboxWorkspaceClaim'.
+                Type 'null' is not assignable to type 'SandboxWorkspaceClaim'.
+apps/agent-service/src/production-sandbox-services.ts(857,22): error TS18047: 'inherited.scope.directoryGrant' is possibly 'null'.
+apps/agent-service/src/production-sandbox-services.ts(935,35): error TS18047: 'resolved.workspaceClaim' is possibly 'null'.
+apps/execution-worker/src/production-sandbox-execution-v2.ts(226,44): error TS18047: 'resolved.scope.directoryGrant' is possibly 'null'.
+apps/execution-worker/src/production-sandbox-execution-v2.ts(234,19): error TS18047: 'resolved.scope.directoryGrant' is possibly 'null'.
+apps/execution-worker/src/production-sandbox-execution-v2.ts(574,11): error TS2322: Type 'SandboxExecutionScope' is not assignable to type '{ readonly directoryGrant: Pick<Readonly<{ readonly ref: string; readonly revision: number; readonly canonicalRootId: string; readonly authorizationRef: string; readonly operations: readonly ("read" | "create" | "update" | "move" | "trash" | "restore" | "permanent_delete")[]; }>, "revision" | "ref">; }'.
+  Type 'SandboxNetworkScope' is not assignable to type '{ readonly directoryGrant: Pick<Readonly<{ readonly ref: string; readonly revision: number; readonly canonicalRootId: string; readonly authorizationRef: string; readonly operations: readonly ("read" | "create" | "update" | "move" | "trash" | "restore" | "permanent_delete")[]; }>, "revision" | "ref">; }'.
+    Types of property 'directoryGrant' are incompatible.
+      Type 'null' is not assignable to type 'Pick<Readonly<{ readonly ref: string; readonly revision: number; readonly canonicalRootId: string; readonly authorizationRef: string; readonly operations: readonly ("read" | "create" | "update" | "move" | "trash" | "restore" | "permanent_delete")[]; }>, "revision" | "ref">'.
+apps/execution-worker/src/production-sandbox-worker.ts(86,44): error TS18047: 'scope.directoryGrant' is possibly 'null'.
+apps/execution-worker/src/production-sandbox-worker.ts(91,19): error TS18047: 'scope.directoryGrant' is possibly 'null'.
+packages/runtime-sandbox/test/job-policy.unit.test.ts(40,43): error TS2345: Argument of type 'string | null' is not assignable to parameter of type 'PathLike'.
+  Type 'null' is not assignable to type 'PathLike'.
+packages/runtime-sandbox/test/policy.unit.test.ts(94,57): error TS2322: Type 'string | null' is not assignable to type 'string'.
+  Type 'null' is not assignable to type 'string'.
+packages/runtime-sandbox/test/policy.unit.test.ts(97,40): error TS2322: Type 'string | null' is not assignable to type 'string'.
+  Type 'null' is not assignable to type 'string'.
+packages/runtime-sandbox/test/policy.unit.test.ts(100,65): error TS2322: Type 'string | null' is not assignable to type 'string'.
+  Type 'null' is not assignable to type 'string'.
+packages/runtime-sandbox/test/policy.unit.test.ts(106,19): error TS2345: Argument of type 'string | null' is not assignable to parameter of type 'PathLike'.
+  Type 'null' is not assignable to type 'PathLike'.
+packages/runtime-sandbox/test/policy.unit.test.ts(116,53): error TS2345: Argument of type 'string | null' is not assignable to parameter of type 'string'.
+  Type 'null' is not assignable to type 'string'.
+packages/runtime-sandbox/test/policy.unit.test.ts(120,36): error TS2345: Argument of type 'string | null' is not assignable to parameter of type 'string'.
+  Type 'null' is not assignable to type 'string'.
+test/integration/production-sandbox-lineage.test.ts(240,12): error TS18047: 'scope.directoryGrant' is possibly 'null'.
+test/integration/production-sandbox-lineage.test.ts(553,26): error TS18047: 'scope.directoryGrant' is possibly 'null'.
+test/integration/production-sandbox-lineage.test.ts(560,9): error TS2375: Type 'SandboxExecutionScope' is not assignable to type 'SandboxScope' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Type 'SandboxNetworkScope' is not assignable to type 'SandboxScope' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+    Type 'SandboxNetworkScope' is not assignable to type 'Readonly<{ readonly directoryGrant: Readonly<{ readonly ref: string; readonly revision: number; readonly canonicalRootId: string; readonly authorizationRef: string; readonly operations: readonly ("read" | "create" | "update" | "move" | "trash" | "restore" | "permanent_delete")[]; }>; ... 16 more ...; readonly schema...'.
+      Types of property 'directoryGrant' are incompatible.
+        Type 'null' is not assignable to type 'Readonly<{ readonly ref: string; readonly revision: number; readonly canonicalRootId: string; readonly authorizationRef: string; readonly operations: readonly ("read" | "create" | "update" | "move" | "trash" | "restore" | "permanent_delete")[]; }>'.
+test/integration/production-sandbox-network-only.test.ts(26,52): error TS2339: Property 'plan' does not exist on type 'SandboxExecutionAdmissionRecord'.
+  Property 'plan' does not exist on type '{ readonly phase: "bound"; readonly record: SandboxExecutionRecord; }'.
+test/integration/production-sandbox-scope.test.ts(82,12): error TS18047: 'scope.scope.directoryGrant' is possibly 'null'.

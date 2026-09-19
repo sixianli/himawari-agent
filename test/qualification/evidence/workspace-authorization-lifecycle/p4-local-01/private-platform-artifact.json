@@ -1,0 +1,9 @@
+{
+  "artifactPath": ".ci-output/local-1789815003438/build-macos-arm64/build/macos-arm64-abi127-8e9eded8dbc0f12b41e35f9173c7c3e191abbacc-1789815003442-1.tar.gz",
+  "artifactSha256": "39bb7ac504c0952cae052345e729d79f68134a9e0e75bccf640ac8245409aa60",
+  "jobHostSha256": "e4a9174ac07f6bca9d30555f39de1ad735beeabc14b05ed69ee7ca18fc7f4aff",
+  "probeSha256": "9bbc62c66838e0cc934c905ba4de1c9b50dbbcde304005f0d0bdd16748bd625c",
+  "command": "node probe-private-scope.mjs <extracted-build>/runtime",
+  "validation": "Mac local synthetic filesystem and loopback probe; not full platform qualification",
+  "temporaryRuntimeRemoved": true
+}

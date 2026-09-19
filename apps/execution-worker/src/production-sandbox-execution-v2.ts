@@ -12,20 +12,21 @@ import {
   type ExecutionV2Request,
   executionV2MessageSchema,
   type PayloadBrokerSandboxExecutionResult,
-  PI_RUNNER_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
+  PI_RUNNER_CONTRACT,
   piCodingToolNameSchema,
   piRunnerInputSchema,
   type SandboxExecutionBrokerCommand,
   type SandboxExecutionPlanV2,
   type SandboxTaskTermination,
   sandboxExecutionFactsSchema,
+  sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import {
   CapabilityDeploymentSnapshotLoader,
   revalidateCapabilityDeploymentSnapshot,
-  verifySandboxHost,
   verifyPiWriteEvidence,
+  verifySandboxHost,
 } from "@himawari-agent/platform-node";
 import {
   prepareJobPolicy,
@@ -158,9 +159,14 @@ export class ProductionSandboxExecutionV2 {
       (plan.mode !== "foreground" &&
         !(plan.mode === "background" && plan.operationContract.kind === "task_start") &&
         !(plan.mode === "service" && plan.operationContract.kind === "service_start")) ||
-      !["fixed_read", "command", "verified_effect", "task_start", "service_start"].includes(
-        plan.operationContract.kind,
-      ) ||
+      ![
+        "fixed_read",
+        "command",
+        "network_only",
+        "verified_effect",
+        "task_start",
+        "service_start",
+      ].includes(plan.operationContract.kind) ||
       (plan.operationContract.kind === "verified_effect" &&
         plan.operationContract.ref !== PI_RUNNER_CONTRACT.ref) ||
       plan.executionLease.deploymentId !== request.scope.deploymentId ||
@@ -222,21 +228,26 @@ export class ProductionSandboxExecutionV2 {
         resolved.scope.operation !== plan.operation
       )
         throw new Error("SANDBOX_SCOPE_CHANGED");
-      const root = binding.roots.find(
-        (item) => item.canonicalRootId === resolved.scope.directoryGrant.canonicalRootId,
-      );
-      if (!root) throw new Error("SANDBOX_ROOT_UNAVAILABLE");
+      const scope = resolved.scope;
+      const privateOnly = plan.operationContract.kind === "network_only";
+      if (privateOnly !== (scope.directoryGrant === null)) throw new Error("SANDBOX_SCOPE_CHANGED");
+      const root =
+        scope.directoryGrant === null
+          ? undefined
+          : binding.roots.find(
+              (item) => item.canonicalRootId === scope.directoryGrant?.canonicalRootId,
+            );
+      if (!privateOnly && !root) throw new Error("SANDBOX_ROOT_UNAVAILABLE");
       const { policy, compiled } = await prepareJobPolicy({
-        workspace: root.canonicalPath,
+        workspace: root?.canonicalPath ?? null,
         privateRoot: binding.privateRoot,
         jobId: plan.identity.jobId,
         ...(readiness ? { readinessSocketName: readiness.socketName } : {}),
-        writable: resolved.scope.directoryGrant.operations.some(
-          (operation) => operation !== "read",
-        ),
+        writable:
+          scope.directoryGrant?.operations.some((operation) => operation !== "read") ?? false,
         readOnlyToolchainPaths: [binding.runtimeRoot, ...binding.readOnlyToolchainPaths],
         protectedPaths:
-          piRunner || plan.mode !== "foreground"
+          root && (piRunner || plan.mode !== "foreground")
             ? [
                 ...binding.protectedPaths,
                 ...[
@@ -276,7 +287,7 @@ export class ProductionSandboxExecutionV2 {
                 tool: piCodingToolNameSchema.parse(plan.operation),
                 executionMode: plan.mode,
                 scope: resolved.scope,
-                workspace: root.canonicalPath,
+                workspace: compiled.cwd,
                 runtimeRoot: binding.runtimeRoot,
                 privateDirectory: policy.privateDirectory,
                 maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
@@ -571,15 +582,15 @@ export class ProductionSandboxExecutionV2 {
           bytes: result.stdout,
           parameters: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input)),
           plan,
-          scope: resolved.scope,
-          workspace: root.canonicalPath,
+          scope: sandboxScopeSchema.parse(resolved.scope),
+          workspace: compiled.cwd,
         });
       const observation = sandboxExecutionFactsSchema.parse({
         ...latest.facts,
         effect:
           knownExit && plan.operationContract.kind === "fixed_read"
             ? { kind: "not_applicable" }
-            : knownExit && plan.operationContract.kind === "command"
+            : knownExit && ["command", "network_only"].includes(plan.operationContract.kind)
               ? { kind: "not_asserted" }
               : knownExit &&
                   result.exitCode === 0 &&
@@ -598,15 +609,15 @@ export class ProductionSandboxExecutionV2 {
             ? latest.facts.result
             : plan.mode !== "foreground" || !knownExit
               ? { ...resultFields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" }
-              : plan.operationContract.kind === "command" || result.exitCode === 0
+              : ["command", "network_only"].includes(plan.operationContract.kind) ||
+                  result.exitCode === 0
                 ? {
                     ...resultFields,
                     kind: "result",
                     output,
-                    completion:
-                      plan.operationContract.kind === "command"
-                        ? { type: "exit", exitCode: result.exitCode }
-                        : { type: "value" },
+                    completion: ["command", "network_only"].includes(plan.operationContract.kind)
+                      ? { type: "exit", exitCode: result.exitCode }
+                      : { type: "value" },
                   }
                 : {
                     ...resultFields,

@@ -1,0 +1,62 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts (10 tests | 1 failed) 31ms
+   × authorizes private-only search without a directory and rejects using that binding for files 3ms
+ ❯ |node-services| apps/agent-service/test/production-coding-workflow.unit.test.ts (10 tests | 1 failed) 32ms
+   × authorizes private-only search without a directory and rejects using that binding for files 4ms
+ ❯ |integration| test/integration/public-search-authorization.test.ts (2 tests | 1 failed) 386ms
+   × persists private search policy, derives exact grants and rejects use after revocation 173ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |node-services| apps/agent-service/test/production-coding-workflow.unit.test.ts > authorizes private-only search without a directory and rejects using that binding for files
+TypeError: Cannot read properties of null (reading 'hostId')
+ ❯ executeProductionCodingRequest apps/agent-service/src/production-coding-workflow.ts:79:11
+     77|         : ["read"];
+     78|   if (
+     79|     grant.hostId !== binding.hostId ||
+       |           ^
+     80|     grant.revokedAt !== null ||
+     81|     required.some((op) => !grant.operations.some((allowed) => allowed …
+ ❯ apps/agent-service/test/production-coding-workflow.unit.test.ts:209:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |integration| test/integration/public-search-authorization.test.ts > persists private search policy, derives exact grants and rejects use after revocation
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ test/integration/public-search-authorization.test.ts:131:20
+    129|     await service.authorize(intent);
+    130|     const grants = await resource.repository.authorizationStore().list…
+    131|     expect(grants).toHaveLength(1);
+       |                    ^
+    132|     const grant = grants[0];
+    133|     if (!grant) throw new Error("expected granted search");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > authorizes private-only search without a directory and rejects using that binding for files
+TypeError: Cannot read properties of null (reading 'hostId')
+ ❯ executeProductionCodingRequest apps/agent-service/src/production-coding-workflow.ts:79:11
+     77|         : ["read"];
+     78|   if (
+     79|     grant.hostId !== binding.hostId ||
+       |           ^
+     80|     grant.revokedAt !== null ||
+     81|     required.some((op) => !grant.operations.some((allowed) => allowed …
+ ❯ apps/agent-service/test/production-coding-workflow.unit.test.ts:209:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  3 failed (3)
+      Tests  3 failed | 19 passed (22)
+   Start at  19:43:40
+   Duration  2.56s (transform 2.16s, setup 0ms, import 2.84s, tests 449ms, environment 0ms)

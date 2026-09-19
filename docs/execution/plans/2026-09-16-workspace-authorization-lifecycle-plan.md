@@ -496,7 +496,7 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 | 资源恢复 | 执行记录 `recovery_json` 的 owner/revision/attempts/deadline/status | 当前服务只读核查或受限 stop；记录 resolved/unresolved，不借恢复重新获得业务执行权 |
 | 结果交接 | `sandbox-tool-result:<semanticFingerprint 摘要>`；`runtime-sandbox-delivery:` artifact | 复用原结果与交接回执，当前披露权限另验；不消费第二次额度，不重跑工具 |
 
-仍需补充的持久关系：当前 `RunCheckpoint.suspension` 与 Pi tool-batch continuation 只覆盖审批等待；运行中的工具批次中断仍进入 Run 结果核对。跨 Agent/Worker boot 的续排还需把可恢复批次与队列关联，并以新执行权原子接替**明确未准入**的旧绑定。旧调用可能已准入时只能核对结果。现有 Pi 0.84.2 的自定义工具边界和受保护 continuation 可复用；当前产品自定义工具显式设置 `executionMode: sequential`，现有批次恢复依赖已完成的顺序前缀。后续若改变工具调度模式，必须同时验证该恢复合同。
+仍需补充的持久关系：当前 Pi 工具批次已在执行前保存受保护检查点，执行 intent 也保存原批次引用；`RunCheckpoint.suspension` 的自动续接仍以审批等待为主，运行中的工具批次中断仍进入 Run 结果核对。跨 Agent/Worker boot 的续排还需把已保存批次与队列调度接通，并以新执行权原子接替**明确未准入**的旧绑定。旧调用可能已准入时只能核对结果。现有 Pi 0.84.2 的自定义工具边界和受保护 continuation 可复用；当前产品自定义工具显式设置 `executionMode: sequential`，现有批次恢复依赖已完成的顺序前缀。后续若改变工具调度模式，必须同时验证该恢复合同。
 
 ### P1 当前代码与验证记录
 
@@ -582,12 +582,23 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 ### P7 历史占用只读清单（局部实现）
 
-新增[只读核查 Runbook](../../runbooks/workspace-lifecycle-audit-runbook.md)及真实 CLI 入口，按 Owner/Agent 分页读取新版执行、旧版保护和持久队列。支持 Schema 28～37，不迁移、不消费额度、不派发，不依据数据库状态生成可执行解锁；每页独立快照，报告始终标明现场宿主未验证、不可直接修复。
+新增[只读核查 Runbook](../../runbooks/workspace-lifecycle-audit-runbook.md)及真实 CLI 入口，按 Owner/Agent 分页读取新版执行、旧版保护和持久队列。最初支持 Schema 28～37，P4 纯联网批次扩展只读兼容至 Schema 38；不迁移、不消费额度、不派发，不依据数据库状态生成可执行解锁；每页独立快照，报告始终标明现场宿主未验证、不可直接修复。
 
 [CLI 子进程回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p7-local-01/audit-cli-final.log) 10 项通过，使用真实 SQLite，包含旧 Schema 28 和数据库正文独立读回。最早缺少新模块的测试是功能脚手架失败，非历史产品故障；首次误放 tooling 项目导致夹具超时，已归入现有 integration 项目使用其正常时限；旧版夹具预先消费回执造成一次测试错误，改为合法准入。扩展用例也确认已取消队列被误归为待核对，已修正。完整 P7 的历史现场证明、修复候选、迁移/回退演练和部署尚未完成。
 
+### P4 纯联网搜索与用户目录脱钩（局部实现）
+
+- 受保护 `sandbox-scope.v2` 明确没有目录 Grant，部署操作使用 `private_temp` / `network_only`；仅前台、仅已授权网络目标。私有范围不能混入目录或文件目标，也不能给固定 Pi 文件工具使用。安装清单只有全部操作都使用私有范围时才允许没有用户目录根。
+- 公开搜索新增显式私有路由，冻结查询、模型接收方、搜索接收方与原期限，保留 Run 执行权和原网络授权重验；纯搜索无需读取目录授权状态。旧目录路由保持原行为，未切换实际部署配置；保存结果须另走文件授权。
+- Schema 38 阻止旧 writer 处理新范围。准入仍承诺同一调用回执和额度，但不写共享文件占用；私有临时区是实际 cwd，文件读写白名单只有本 Job 私有区及必要只读运行时。Job Host、网络出口和结束证据仍独立管理。
+- [初始缺口](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-local-01/network-red.log)、[搜索入口缺口](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-local-01/search-red.log)和[无目录安装清单缺口](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-local-01/rootless-red.log)已复现。[相关消费者回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-local-01/consumers.log)17 文件、334 项通过，包含真实 SQLite、受保护 Payload、UDS、配置解析和 Worker 装配；OS/SRT 边界仍使用受控替身。中间失败中的迁移脚本插入位置错误、合同测试遗漏上下文，以及 Run 测试夹具缺少已提交消息，都已更正并保留日志，未算作产品缺陷。
+
+[真实 Mac 私有范围验证](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-local-01/private-platform-final.log)使用本轮构建产物和合成文件：私有 cwd 可写，用户文件读写、子进程读取和本机 TCP 直连均收到 `EPERM`，外部标记未变、测试服务零连接。临时文件与解包运行时已清理，[产物摘要与复现入口](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-local-01/private-platform-artifact.json)保留。受限环境首次不能创建嵌套沙箱，获准在本机执行后完成；早期直接加载源码的模块扩展名错误仅是探针启动问题。Mac 返回 `taskTreeCleanup: unknown`，不能据此签发完整进程树清理或生产资格，Linux 尚未执行。
+
+[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-local-01/standard-ci-result.json)已通过：237 文件、3,511 项，零失败、零跳过，发布扫描通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。任意命令的更窄限制、可选副本与逐文件应用、完整页面和双平台产品验收仍未完成；本段不代表整个 P4 或 Plan 已完成。
+
 ### 当前完成边界与下一步
 
-P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
+P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
 
 [单一决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv) 记录本轮选择及证据；没有建立另一个项目状态缓存。

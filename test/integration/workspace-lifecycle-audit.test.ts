@@ -1,12 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   AGENT_ID,
@@ -93,7 +93,7 @@ describe("workspace lifecycle read-only audit", () => {
     const result = auditWorkspaceLifecycle(f.input);
     expect(result).toMatchObject({
       mode: "read_only",
-      schemaSequence: 37,
+      schemaSequence: 38,
       liveHostVerified: false,
       repairEligible: false,
     });
@@ -261,7 +261,7 @@ describe("workspace lifecycle read-only audit", () => {
     const f = await fixture();
     f.database
       .prepare(
-        "INSERT INTO schema_migration_ledger VALUES(38,'future','expand','digest','2026-09-19T00:00:00.000Z')",
+        "INSERT INTO schema_migration_ledger VALUES(39,'future','expand','digest','2026-09-19T00:00:00.000Z')",
       )
       .run();
     expect(() => auditWorkspaceLifecycle(f.input)).toThrow("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");

@@ -10,13 +10,13 @@ import {
   type SandboxOperationBinding,
   sandboxExecutionFactsSchema,
 } from "@himawari-agent/execution-contracts";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import {
   ConstrainedHostFileSystem,
   createPiFilePublicationJournal,
 } from "@himawari-agent/platform-node";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createProductionSandboxFileRecovery } from "../../apps/agent-service/src/production-sandbox-file-recovery.ts";
-import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import messages from "../../packages/execution-contracts/test/fixtures/v2/messages.json" with {
   type: "json",
 };
@@ -237,6 +237,7 @@ describe("production sandbox file and delegation lineage", () => {
     expect(child.plan.effectiveDeadlineAt <= parent.plan.effectiveDeadlineAt).toBe(true);
     const scope = await f.services.child.scopes.read(child.plan, f.input.invocationId);
     expect(scope.parentToolCallId).toBe(parent.plan.identity.toolCallId);
+    if (scope.schemaVersion !== "sandbox-scope.v1") throw new Error("expected directory scope");
     expect(scope.directoryGrant.operations).toEqual(["read"]);
     expect(scope.networkAuthorizationRef).toBeNull();
     expect(
@@ -546,6 +547,7 @@ describe("fixed file recovery into the original SQLite invocation", () => {
       cleanups.push(f.close);
       let record = await startParent(f, false);
       const { scope } = await f.services.brokerV2.resolveScope(record.plan);
+      if (scope.schemaVersion !== "sandbox-scope.v1") throw new Error("expected directory scope");
       const privateDirectory = path.join(f.host.binding.privateRoot, record.plan.identity.jobId);
       await mkdir(privateDirectory, { mode: 0o700 });
       const grant = {

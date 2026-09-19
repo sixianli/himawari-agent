@@ -201,3 +201,26 @@ it("rejects invalid public search queries before disclosure approval", async () 
   expect(result.errorCode).toBe("WEB_SEARCH_INPUT_INVALID");
   expect(f.authorize).not.toHaveBeenCalled();
 });
+
+it("authorizes private-only search without a directory and rejects using that binding for files", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({ ...f.binding, grant: null });
+  const call = {
+    ...f.call,
+    capabilityRef: "coding.web_search",
+    arguments: { query: "public weather" },
+  };
+  await executeProductionCodingRequest(call, "web_search", f.services, f.ctx);
+  expect(f.authorize).toHaveBeenCalledWith(
+    expect.objectContaining({
+      expiresAt: call.executionDeadlineAt,
+      targets: expect.not.arrayContaining([expect.objectContaining({ type: "directory-grant" })]),
+    }),
+  );
+  expect(JSON.stringify(f.authorize.mock.calls)).not.toContain("/workspace");
+  f.authorize.mockClear();
+  expect(await executeProductionCodingRequest(f.call, "write", f.services, f.ctx)).toMatchObject({
+    errorCode: "CODING_DIRECTORY_UNAVAILABLE",
+  });
+  expect(f.authorize).not.toHaveBeenCalled();
+});
