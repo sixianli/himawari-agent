@@ -1,0 +1,123 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.1482919999998558,"at":"2026-09-19T08:48:39.292Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.3326249999991,"at":"2026-09-19T08:48:39.330Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.27224999999998545,"at":"2026-09-19T08:48:39.330Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.807582999999795,"at":"2026-09-19T08:48:39.331Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5305829999997513,"at":"2026-09-19T08:48:39.332Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.22241700000085984,"at":"2026-09-19T08:48:39.339Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":33.64679199999955,"at":"2026-09-19T08:48:39.373Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3533340000012686,"at":"2026-09-19T08:48:39.373Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8859169999996084,"at":"2026-09-19T08:48:39.375Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.6735830000015994,"at":"2026-09-19T08:48:39.376Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.0058329999992566,"at":"2026-09-19T08:48:40.346Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.72308299999895,"at":"2026-09-19T08:48:40.384Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2952500000028522,"at":"2026-09-19T08:48:40.384Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.5759999999972933,"at":"2026-09-19T08:48:40.385Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.46045800000138115,"at":"2026-09-19T08:48:40.386Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.21258400000078836,"at":"2026-09-19T08:48:40.392Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.01708399999916,"at":"2026-09-19T08:48:40.424Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.4170830000002752,"at":"2026-09-19T08:48:40.425Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.797167000000627,"at":"2026-09-19T08:48:40.426Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.7582920000022568,"at":"2026-09-19T08:48:40.427Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.18383299999914016,"at":"2026-09-19T08:48:40.876Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":33.32212499999878,"at":"2026-09-19T08:48:40.910Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3851250000006985,"at":"2026-09-19T08:48:40.910Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6683329999978014,"at":"2026-09-19T08:48:40.911Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5903749999997672,"at":"2026-09-19T08:48:40.912Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.8096670000013546,"at":"2026-09-19T08:48:40.923Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":41.81962500000009,"at":"2026-09-19T08:48:40.965Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.5392500000016298,"at":"2026-09-19T08:48:40.966Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.831624999998894,"at":"2026-09-19T08:48:40.968Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.7637919999979204,"at":"2026-09-19T08:48:40.968Z"}
+
+ ❯ |integration| test/integration/production-sandbox-lineage.test.ts (28 tests | 3 failed) 14977ms
+     × requires release and bound durable output (released) 604ms
+     × requires release and bound durable output (unbound-artifact) 495ms
+     × requires release and bound durable output (wrong-invocation) 538ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+ FAIL  |integration| test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+ FAIL  |integration| test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+ContractValidationError: $.resource.reasonCode: unknown field
+ ❯ fail packages/execution-contracts/src/validation.ts:21:9
+     19|
+     20| function fail(path: string, message: string): never {
+     21|   throw new ContractValidationError(path, message);
+       |         ^
+     22| }
+     23|
+ ❯ Object.parse packages/execution-contracts/src/validation.ts:127:39
+ ❯ Object.parse packages/execution-contracts/src/sandbox-execution-v2.ts:49:21
+ ❯ Object.parse packages/execution-contracts/src/validation.ts:135:30
+ ❯ test/integration/production-sandbox-lineage.test.ts:556:51
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 25 passed (28)
+   Start at  17:48:23
+   Duration  17.05s (transform 1.28s, setup 0ms, import 1.97s, tests 14.98s, environment 0ms)

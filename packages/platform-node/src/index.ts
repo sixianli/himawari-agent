@@ -30,5 +30,6 @@ export * from "./built-in-identity-routes.js";
 export * from "./exa-public-search.js";
 
 export * from "./files/pi-write-evidence.js";
+export * from "./files/pi-file-publication.js";
 
 export * from "./thread-search-projector.js";

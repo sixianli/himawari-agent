@@ -256,7 +256,7 @@ describe("installed Pi coding program boundary", () => {
   it("records exactly one independently verified write", async () => {
     const proof = { path: "note.txt", contentDigest: "sha256:verified", byteLength: 4 };
     boundary.operations.mockImplementation(async ({ onVerifiedWrite }) => {
-      onVerifiedWrite(proof);
+      await onVerifiedWrite(proof);
       return { executeCommand: boundary.command };
     });
     await run(input("write"));
@@ -265,8 +265,18 @@ describe("installed Pi coding program boundary", () => {
   it("rejects multiple write proofs instead of presenting ambiguous provenance", async () => {
     boundary.operations.mockImplementation(async ({ onVerifiedWrite }) => {
       const proof = { path: "note.txt", contentDigest: "sha256:verified", byteLength: 4 };
-      onVerifiedWrite(proof);
-      onVerifiedWrite(proof);
+      await onVerifiedWrite(proof);
+      await onVerifiedWrite(proof);
+    });
+    await run(input("write"));
+    failed();
+    expect(boundary.process.stdout.write).not.toHaveBeenCalled();
+  });
+  it("rejects concurrent write proofs before accepting either as unique provenance", async () => {
+    boundary.operations.mockImplementation(async ({ onVerifiedWrite }) => {
+      const proof = { path: "note.txt", contentDigest: "sha256:verified", byteLength: 4 };
+      await Promise.all([onVerifiedWrite(proof), onVerifiedWrite(proof)]);
+      return { executeCommand: boundary.command };
     });
     await run(input("write"));
     failed();

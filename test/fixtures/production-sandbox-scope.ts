@@ -44,6 +44,7 @@ export async function productionSandboxScope(
   options: {
     readonly legacyFileRead?: boolean;
     readonly piParameters?: Readonly<Record<string, unknown>>;
+    readonly realFileIdentity?: boolean;
   } = {},
 ) {
   const f = await openSandboxJournal();
@@ -84,12 +85,16 @@ export async function productionSandboxScope(
   ];
   entry.binding.value.supportedExecutions = support;
   entry.qualification.sandbox.supportedExecutions = support;
+  const actualRoot = entry.binding.value.roots[0];
+  if (options.realFileIdentity)
+    actualRoot.canonicalRootId = `${actualRoot.device}:${actualRoot.inode}`;
   const snapshotBytes = JSON.stringify(snapshot);
   await writeFile(host.capabilityDeployment.snapshotPath, snapshotBytes);
   const directory = {
     ...f.directoryGrant,
     operations: ["read", "create", "update"] as const,
     displayPath: host.workspace,
+    ...(options.realFileIdentity ? { canonicalRootId: actualRoot.canonicalRootId } : {}),
   };
   f.database
     .prepare(
@@ -219,9 +224,29 @@ export async function productionSandboxScope(
     });
   await persist(`runtime-tool-intent:${hash([call.runId, call.toolCallId])}`, {
     request: {
+      schemaVersion: "execution.v2",
+      kind: "request",
+      type: "work.execute",
       messageId: invocationId,
+      correlationId: `run:${RUN_ID}`,
       causationId: RUN_ID,
-      payload: { inputRef: input.inputRef, capabilityHandleRef: h.ref },
+      dataClassification: input.dataClassification,
+      risk: "high",
+      authorizationRef: input.authorizationRef,
+      scope: input.requestScope,
+      idempotencyKey: input.idempotencyKey,
+      payload: {
+        inputRef: input.inputRef,
+        capabilityHandleRef: h.ref,
+        capabilityId: h.capabilityRef,
+        capabilityVersion: h.capabilityVersion,
+        operation: input.operation,
+        delegatedContextRefs: input.delegatedContextRefs,
+        secretRefs: input.secretRefs,
+        resourceCeiling: input.resourceCeiling,
+        requestedAt: input.requestedAt,
+        deadlineAt: input.deadlineAt,
+      },
     },
   });
   const fileBinding = {

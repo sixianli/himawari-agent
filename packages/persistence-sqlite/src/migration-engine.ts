@@ -329,6 +329,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0036_fixed_file_scope_contract.sql",
   },
+  {
+    sequence: 37,
+    name: "fixed_file_recovery_artifacts",
+    changeSet: "fixed-file-recovery-artifacts",
+    phase: "expand" as const,
+    file: "0037_fixed_file_recovery_artifacts.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

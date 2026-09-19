@@ -29,6 +29,7 @@ import {
 } from "@himawari-agent/application";
 import {
   EXECUTION_V2_SCHEMA_VERSION,
+  piFileRecoveryOperationKey,
   type ExecutionAdmissionPeerBinding,
   type ExecutionV2Event,
   type ExecutionV2Request,
@@ -623,13 +624,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       }
       if (replay.outcome === "succeeded") {
         await this.#assertDisclosure(invocation, key, internal);
-        const observed = await this.#options.results.lookupOutput({
-          handleRef: handle.ref,
-          invocationId: `runtime-tool:${key}`,
-          authority: this.#options.authority(),
-          now: this.#options.clock.now(),
-        });
-        if (!observed || observed.payloadRef !== replay.resultRef) reject();
+        if (!replay.resultRef) reject();
+        await this.#assertOutputObserved(invocation, key, handle.ref, replay.resultRef);
       }
       await this.#validate(invocation, internal);
       return replay;
@@ -890,15 +886,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (completion?.outcome === "succeeded") {
       if (!completion.outputRef) throw new Error("WORKER_OUTPUT_MISSING");
       await this.#assertDisclosure(invocation, key, internal);
-      const observed = await this.#options.results.lookupOutput({
-        handleRef: handleRef,
-        invocationId: `runtime-tool:${key}`,
-        authority: this.#options.authority(),
-        now: this.#options.clock.now(),
-      });
-      if (!observed || observed.payloadRef !== completion.outputRef)
-        throw new Error("WORKER_OUTPUT_OBSERVATION_MISSING");
-      const payload = await this.#options.payloads.get(observed.payloadRef);
+      await this.#assertOutputObserved(invocation, key, handleRef, completion.outputRef);
+      const payload = await this.#options.payloads.get(completion.outputRef);
       if (
         !payload ||
         RANK.indexOf(payload.dataClassification) > RANK.indexOf(invocation.dataClassification)
@@ -926,6 +915,40 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         modelContent: "操作未确认成功。",
       };
     }
+  }
+
+  async #assertOutputObserved(
+    invocation: RuntimeToolInvocation,
+    key: string,
+    handleRef: string,
+    outputRef: string,
+  ): Promise<void> {
+    const observed = await this.#options.results.lookupOutput({
+      handleRef,
+      invocationId: `runtime-tool:${key}`,
+      authority: this.#options.authority(),
+      now: this.#options.clock.now(),
+    });
+    if (observed?.payloadRef === outputRef) return;
+    // A recovery artifact alone is insufficient. Only the sandbox completion
+    // path can save the protected handoff receipt after fresh effect verification.
+    const recovered = await this.#options.artifacts.lookup({
+      runId: invocation.runId,
+      purpose: "trace",
+      operationKey: piFileRecoveryOperationKey(`runtime-tool:${key}`),
+    });
+    const delivered = await this.#options.artifacts.lookup({
+      runId: invocation.runId,
+      purpose: "trace",
+      operationKey: `runtime-sandbox-delivery:${key}`,
+    });
+    if (recovered?.payloadRef === outputRef && delivered) {
+      const receipt = (await this.#readJson(
+        delivered.payloadRef,
+      )) as Partial<SandboxToolCompletion>;
+      if (receipt.outcome === "succeeded" && receipt.outputRef === outputRef) return;
+    }
+    throw new Error("WORKER_OUTPUT_OBSERVATION_MISSING");
   }
 
   async #assertDisclosure(

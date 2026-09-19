@@ -10,6 +10,7 @@ import type {
   GovernedCodingOperationsPort,
   HostDirectoryGrant,
   HostFileIdentity,
+  HostFilePublication,
 } from "@himawari-agent/application";
 import { scanMachineSecrets } from "@himawari-agent/application";
 import { ConstrainedHostFileSystem } from "./constrained-file-system.js";
@@ -25,11 +26,17 @@ export async function createSandboxedCodingOperations(input: {
   readonly binaryDirectory: string;
   readonly maxOutputBytes: number;
   readonly signal?: AbortSignal;
+  readonly onPreparedWrite?: (proof: {
+    readonly relativePath: string;
+    readonly publication: HostFilePublication;
+    readonly contentDigest: string;
+    readonly byteLength: number;
+  }) => Promise<void>;
   readonly onVerifiedWrite?: (proof: {
     readonly path: string;
     readonly contentDigest: string;
     readonly byteLength: number;
-  }) => void;
+  }) => void | Promise<void>;
 }): Promise<GovernedCodingOperationsPort> {
   const platform = new ConstrainedHostFileSystem();
   const grant = structuredClone(input.grant);
@@ -166,9 +173,15 @@ export async function createSandboxedCodingOperations(input: {
       if (storage.availableBytes < bytes.length + 64 * 1024 * 1024)
         throw new Error("PI_STORAGE_RESERVE");
       const hooks = {
-        beforePublish: async () => {
+        beforePublish: async (publication: HostFilePublication) => {
           check();
           await assertExpectedParents();
+          await input.onPreparedWrite?.({
+            relativePath: name,
+            publication,
+            contentDigest: createHash("sha256").update(bytes).digest("hex"),
+            byteLength: bytes.byteLength,
+          });
         },
         assertCurrentAuthority: async () => {
           check();
@@ -180,7 +193,7 @@ export async function createSandboxedCodingOperations(input: {
       else await platform.createExclusive(grant, name, bytes, hooks);
       const observed = await platform.read(grant, name, Math.max(1, bytes.length));
       if (!Buffer.from(observed).equals(bytes)) throw new Error("PI_WRITE_VERIFICATION_FAILED");
-      input.onVerifiedWrite?.({
+      await input.onVerifiedWrite?.({
         path: absolute,
         contentDigest: createHash("sha256").update(observed).digest("hex"),
         byteLength: observed.byteLength,

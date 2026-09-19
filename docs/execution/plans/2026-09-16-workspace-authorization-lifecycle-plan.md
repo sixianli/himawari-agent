@@ -16,7 +16,7 @@ date: "2026-09-16"
 
 **架构：** 继续复用 Pi 工具与 Agent Loop、Anthropic Sandbox Runtime、现有 Agent/Worker 和 SQLite。Himawari 接好持久权限、资源身份、文件提交、恢复及页面投影；不重建工具协议、沙箱或工作流系统。
 
-**当前范围：** 用户于 2026-09-16 要求实施本 Plan。P0 的 r3 新增交互已获确认，P1 释放与交接修复已保存为本地提交 `fe92846`；P2 的审批身份、重复决定与额度预约已保存为本地提交 `e4eebf4`，P3 的文件发布与持久排队已保存为本地提交 `b5b3e9a`；文件级协调及固定目标合同正在实施。完整 P1～P7 未完成；详见[本次实施记录](#implementation-record)。Spec 已通过不等于自动审查配置或生产操作已获授权。
+**当前范围：** 用户于 2026-09-16 要求实施本 Plan。P0 的 r3 新增交互已获确认，P1 释放与交接修复已保存为本地提交 `fe92846`；P2 的审批身份、重复决定与额度预约已保存为本地提交 `e4eebf4`，P3 的文件发布与持久排队已保存为本地提交 `b5b3e9a`；文件级协调及固定目标合同已保存为 `0183db0`，生产发布恢复已完成本批实现与本地验证。完整 P1～P7 未完成；详见[本次实施记录](#implementation-record)。Spec 已通过不等于自动审查配置或生产操作已获授权。
 
 <a id="contents"></a>
 
@@ -527,8 +527,20 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 本批完整构建首次因新增名称校验的 TypeScript `unknown` 推断失败，见[编译日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-02/build-compile-red.log)；已修正，[标准本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-02/standard-ci-result.json)通过：233 个文件、3,448 项测试、零跳过。类型、任务代码格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档校验通过。新合同仍需安装资格和实际配置接入，未更改部署实例。当前占用覆盖整个工具调用，尚不是短时提交锁；私有候选准备、生产文件发布日志恢复、目录改名、跨 Worker 实测、队列重启续接、完整页面和 Mac/Linux 联合验收仍未完成。
 
+### P3 生产固定文件发布与结果恢复（2026-09-19 继续实施）
+
+固定文件合同批次已保存为本地提交 `0183db0`。本轮继续复用 Pi Write/Edit Operations，在原 Job Host 管理的 runner 内记录发布，未引入沙箱外业务写者或新模型工具。
+
+- 发布前记录失败时不保存最终文件；保存后等待异步核验记录完成才返回。[两个原缺口](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/publication-hooks-red.log)已复现并修复。发布日志只保存身份和摘要；候选正文继续留在原受控恢复目录。
+- 私有 Job 记录绑定原 Scope、输入、目标、候选 inode 与实际父目录；新建父目录也保存身份。[父目录替换复现](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/recovery-parent-red.log)后补入检查，[最终文件记录回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/publication-parent-green.log) 30 项通过。
+- Schema 37 使用独立受保护 artifact 保存原 invocation 的恢复结果。恢复服务只接纳已永久释放且没有新保护的操作；没有启动工具的端口。缺少最终记录时核实原发布，而非重新写入。已核验效果保留为历史事实，后续用户编辑不被覆盖。原已知错误结果不被改成成功。
+- 结果交接同时要求恢复 artifact、核验后的交接回执与当前披露权限。原运行时拒绝恢复来源的[回归复现](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/recovery-delivery-red.log)已修复，[56 项消费者测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/recovery-delivery-green.log)通过。
+- [实际生产装配的定向回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/recovery-production.log) 29 项通过：真实文件、加密 artifact、SQLite、恢复和交接一起执行；只有进程释放证据使用受控夹具。早期夹具使用抽象根 ID 和不合法状态转换，失败日志保留，没有算作产品缺陷。[迁移合同](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/migration-contracts.log) 24 项通过；[资源与持久化消费者](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/consumers-final.log) 205 项通过。
+
+本批类型与任务 lint 检查通过。首轮完整验证执行 3,468 项，3,467 项通过；旧 runner 测试未等待新的异步回调而失败，已修正测试调用。另加并发回调测试后[复现重复接纳](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/runner-concurrent-red.log)，将唯一性检查移到第一个异步等待之前，[42 项 runner 回归通过](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/runner-concurrent-green.log)。构建发布扫描还发现本地依赖目录存在 35,702 个相同内容的带编号副本；已逐项核对摘要并移入可恢复隔离目录，两个不同内容的带编号文件也单独保留，未修改依赖版本、锁文件或扫描规则，见[环境修复记录](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/dependency-duplicate-summary.json)。[首次失败记录](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/standard-ci-red-result.json)保留；[最终完整构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/standard-ci-result.json)通过：234 个文件、3,469 项、零失败、零跳过；发布扫描通过。短时提交锁、目录改名协议、排队重启续接、完整页面以及真实双平台验收仍未完成；不能把本段当作完整 P3 或整个 Plan 完成。
+
 ### 当前完成边界与下一步
 
-P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同正在实现和验证；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
+P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已完成本批实现和本地验证；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
 
 [单一决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv) 记录本轮选择及证据；没有建立另一个项目状态缓存。

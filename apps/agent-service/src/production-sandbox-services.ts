@@ -13,6 +13,7 @@ import {
   type ProductConfiguration,
   type RuntimeToolInvocation,
   resolveSandboxActionGrant,
+  scanMachineSecrets,
   type SandboxExecutionEvidencePort,
   type SandboxExecutionPlan,
   SandboxExecutionReconciliationService,
@@ -22,6 +23,8 @@ import {
 import {
   assertSandboxExecutionSupport,
   PI_FIXED_FILE_CONTRACT,
+  piFileRecoveryOperationKey,
+  executionV2MessageSchema,
   type SandboxHostBinding,
   type SandboxExecutionPlanCandidate,
   type SandboxExecutionPlanCandidateV2,
@@ -37,6 +40,7 @@ import {
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   CapabilityDeploymentSnapshotLoader,
+  createPiFilePublicationJournal,
   resolveSandboxWorkspaceClaim,
   resolveSandboxFileScope,
   revalidateCapabilityDeploymentSnapshot,
@@ -50,6 +54,7 @@ import type { ProductionRuntimeSandbox } from "./production-runtime-tools.js";
 import { createProductionSandboxControl } from "./production-sandbox-control.js";
 import { createProductionSandboxOutput } from "./production-sandbox-output.js";
 import { createProductionSandboxToolResult } from "./production-sandbox-tool-result.js";
+import { createProductionSandboxFileRecovery } from "./production-sandbox-file-recovery.js";
 import { createProductionSandboxStream } from "./production-sandbox-stream.js";
 
 // Job directory names encode the full digest compactly: SRT appends Unix socket
@@ -1052,7 +1057,19 @@ export async function createProductionSandboxServices(options: {
             authority: options.authority(),
             now,
           });
-        if (!artifact || artifact.payloadRef !== facts.result.output.ref)
+        const recovered =
+          fixedFileContract(plan.operationContract) &&
+          plan.operationContract.kind === "verified_effect"
+            ? await artifacts().lookup({
+                runId: plan.identity.runId as RuntimeToolInvocation["runId"],
+                purpose: "trace",
+                operationKey: piFileRecoveryOperationKey(plan.identity.invocationId),
+              })
+            : undefined;
+        if (
+          (!artifact || artifact.payloadRef !== facts.result.output.ref) &&
+          recovered?.payloadRef !== facts.result.output.ref
+        )
           throw new Error("SANDBOX_OUTPUT_BINDING_CHANGED");
       }
       const payload = await payloads.get(facts.result.output.ref);
@@ -1131,12 +1148,132 @@ export async function createProductionSandboxServices(options: {
       evidence: [...observed.evidence, ...effectEvidence],
     };
   };
+  const recoverFileResult = createProductionSandboxFileRecovery({
+    journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
+    authority: options.authority,
+    now: () => clock.now(),
+    verifyFresh: (record) => refreshVerification(record, true),
+    recoverOutput: async ({ plan }) => {
+      const key = {
+        runId: plan.identity.runId as RuntimeToolInvocation["runId"],
+        purpose: "trace" as const,
+        operationKey: piFileRecoveryOperationKey(plan.identity.invocationId),
+      };
+      const retained = await artifacts().lookup(key);
+      // An accepted recovery artifact survives later user edits and service boots.
+      // The immutable bytes are verified again by verifyOutput before journal CAS.
+      if (retained) {
+        const value = await readJson(retained.payloadRef);
+        const bytes = Buffer.from(JSON.stringify(value));
+        return { ref: retained.payloadRef, digest: bytesHash(bytes), byteLength: bytes.length };
+      }
+      const entry = await entryFor(plan.capabilityRef, plan.capabilityVersion);
+      await verifySandboxHost({ ...entry, hostId, plan });
+      const scope = sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef));
+      const root = entry.binding.roots.find(
+        (item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId,
+      );
+      if (!root || hash(scope) !== plan.binding.scopeDigest)
+        throw new Error("SANDBOX_RECOVERY_SCOPE_CHANGED");
+      const parameters = await readJson(plan.inputRef);
+      const grant: HostDirectoryGrant = {
+        id: scope.directoryGrant.ref,
+        revision: scope.directoryGrant.revision,
+        hostId: scope.hostId,
+        canonicalRootId: scope.directoryGrant.canonicalRootId,
+        displayPath: root.canonicalPath,
+        operations: scope.directoryGrant.operations,
+        authorizationRef: scope.directoryGrant.authorizationRef,
+        expiresAt: scope.expiresAt,
+        revokedAt: null,
+        dataClassification: "private",
+        disclosure: "none",
+        pathPolicy: "same_filesystem_no_links",
+        mountPolicy: "fixed_device",
+      };
+      const proof = await createPiFilePublicationJournal({
+        privateDirectory: path.join(entry.binding.privateRoot, plan.identity.jobId),
+        workspace: root.canonicalPath,
+        scope,
+        parametersJson: JSON.stringify(parameters),
+      }).recover(grant);
+      if (!proof) return undefined;
+      const invocationPrefix = "runtime-tool:";
+      if (!plan.identity.invocationId.startsWith(invocationPrefix))
+        throw new Error("SANDBOX_RECOVERY_REQUEST_UNAVAILABLE");
+      const original = await artifacts().lookup({
+        runId: key.runId,
+        purpose: "trace",
+        operationKey: `runtime-tool-intent:${plan.identity.invocationId.slice(invocationPrefix.length)}`,
+      });
+      if (!original) throw new Error("SANDBOX_RECOVERY_REQUEST_UNAVAILABLE");
+      const originalIntent = (await readJson(original.payloadRef)) as { request?: unknown };
+      const request = executionV2MessageSchema.parse(originalIntent.request);
+      if (
+        request.type !== "work.execute" ||
+        request.messageId !== plan.identity.invocationId ||
+        request.scope.runId !== plan.identity.runId ||
+        request.payload.capabilityHandleRef !== plan.handleRef ||
+        request.payload.inputRef !== plan.inputRef
+      )
+        throw new Error("SANDBOX_RECOVERY_REQUEST_CHANGED");
+      const value = {
+        schemaVersion: "pi-result.v1",
+        tool: plan.operation,
+        isError: false,
+        content: [
+          {
+            type: "text",
+            text: "已核验本次文件保存；结果来自原操作的持久发布记录，未再次执行写入。",
+          },
+        ],
+        details: { recoveredPublication: true },
+        fullOutput: null,
+        commandExitCode: null,
+        verifiedWrite: proof,
+        source: {
+          workspace: root.canonicalPath,
+          toolCallId: scope.toolCallId,
+          directoryGrantRef: scope.directoryGrant.ref,
+          directoryGrantRevision: scope.directoryGrant.revision,
+          parameters,
+        },
+      };
+      const plaintext = Buffer.from(JSON.stringify(value));
+      if (
+        plaintext.length > plan.resourceCeiling.maxOutputBytes ||
+        scanMachineSecrets(plaintext.toString()).length
+      )
+        throw new Error("SANDBOX_RECOVERY_OUTPUT_REJECTED");
+      verifyPiWriteEvidence({
+        bytes: plaintext,
+        parameters,
+        plan,
+        scope,
+        workspace: root.canonicalPath,
+      });
+      const payload = await protector.protect({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        ref: ids.next("sandbox-file-recovery"),
+        dataClassification: request.dataClassification,
+        contentType: "application/json",
+        plaintext,
+        createdAt: clock.now(),
+      });
+      const saved = await artifacts().commit({ ...key, payload });
+      if (hash(await readJson(saved.ref)) !== bytesHash(plaintext))
+        throw new Error("SANDBOX_RECOVERY_OUTPUT_CHANGED");
+      return { ref: saved.ref, digest: bytesHash(plaintext), byteLength: plaintext.length };
+    },
+  });
   const completeToolResult = createProductionSandboxToolResult({
     preparations,
     journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
     authority: options.authority,
     now: () => clock.now(),
     verifyFresh: (record) => refreshVerification(record, true),
+    recoverResult: recoverFileResult,
   });
   const outputOptions = {
     ownerId: configuration.ownerId,

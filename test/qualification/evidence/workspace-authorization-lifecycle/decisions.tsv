@@ -18,3 +18,8 @@ ts	phase	decision	why	evidence	result
 2026-09-16T12:15:51Z	P3	显式选择读取已打开的完整版本	原子替换不应中断获准读取；默认核验和写入基线仍要求当前路径一致	p3-local-02/atomic-read-mechanism-red.log;p3-local-02/file-contracts.log	机制复现后修复；先前 fixture 未触发替换的日志保留
 2026-09-16T12:15:51Z	P3	Schema 36 阻止旧 writer 解释新文件范围	旧 Scope 和 claim 不回填；父目录身份与摘要必须来自原请求，不能恢复时改用当前文件	packages/persistence-sqlite/src/migrations/0036_fixed_file_scope_contract.sql	类型与静态检查通过；全量验证运行中
 2026-09-19T08:32:04Z	P3	继续时核对并保存固定文件批次	暂停后核实原始 CI 结果与工作区，避免把运行中状态当验证结果	p3-local-02/standard-ci-result.json	本地构建通过；233 文件 3448 项通过，零跳过；未做生产部署
+2026-09-19T09:00:09Z	P3	发布与核验记录作为固定文件写入的必要步骤	日志失败不能仍报告成功；保持写者在原 Job Host 内	p3-local-03/publication-hooks-red.log;p3-local-03/publication-parent-green.log	复现 2 个缺口后通过；补新建父目录身份检查
+2026-09-19T09:00:09Z	P3	恢复结果独立保存并绑定原调用	不能覆盖原 Worker 输出，也不能因结果丢失再执行非幂等写入	p3-local-03/recovery-delivery-green.log;p3-local-03/recovery-production.log	生产装配 29 项通过；真实文件与 SQLite，OS 释放证据为受控夹具
+2026-09-19T09:00:09Z	P3	先接纳资源释放，再核实文件效果	文件恢复不能替代 Job Host 释放协议或扩大披露权限	apps/agent-service/src/production-sandbox-file-recovery.ts;p3-local-03/consumers-final.log	未释放时不读取日志；错 invocation 拒绝；待完整 CI
+2026-09-19T09:17:42.493547+00:00	P3	在异步文件核验开始前保留唯一回调权；按摘要隔离依赖副本	实际回归证实并发回调可重复接纳；构建扫描拒绝新增副本，不能扩大例外	p3-local-03/runner-concurrent-red.log;p3-local-03/runner-concurrent-green.log;p3-local-03/dependency-duplicate-summary.json	42 项 runner 回归通过；依赖版本和原文件未变，完整验证重跑
+2026-09-19T09:29:17.859081+00:00	P3	保存当前发布恢复实现	定向回归、完整本地构建测试与发布扫描均通过	p3-local-03/standard-ci-result.json	234 文件 3469 项通过；真实 OS 释放与双平台资格仍未完成

@@ -29,6 +29,7 @@ export function createProductionSandboxToolResult(options: {
   preparations: Pick<SandboxExecutionPreparationPort, "readAdmissionByInvocation">;
   journal: SandboxExecutionJournalPort;
   verifyFresh(record: SandboxExecutionRecord): Promise<SandboxExecutionVerification>;
+  recoverResult?(record: SandboxExecutionRecord): Promise<SandboxExecutionRecord>;
   authority(): CapabilityInvocationAuthority;
   now(): string;
 }) {
@@ -44,6 +45,8 @@ export function createProductionSandboxToolResult(options: {
     if (plan.mode !== "foreground") return null;
     if (plan.identity.runId !== input.runId || plan.identity.invocationId !== input.invocationId)
       throw new Error("SANDBOX_TOOL_RESULT_BINDING_CHANGED");
+    if ((!record.facts.result || record.facts.result.kind === "unknown") && options.recoverResult)
+      record = await options.recoverResult(record);
     const result = record.facts.result;
     if (!result || result.kind === "unknown" || result.kind === "started") return undefined;
     await delivery.assertDisclosure();

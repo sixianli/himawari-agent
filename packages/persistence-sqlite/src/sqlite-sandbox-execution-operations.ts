@@ -17,6 +17,8 @@ import {
   sandboxExecutionReservationSchema,
   sandboxJobIdentitySchema,
   validateSandboxExecutionFacts,
+  PI_FIXED_FILE_CONTRACT,
+  piFileRecoveryOperationKey,
 } from "@himawari-agent/execution-contracts";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
@@ -857,7 +859,25 @@ export class SqliteSandboxExecutionOperations {
           out.ref,
           `sha256:${out.digest}`,
         );
-      if (!exists) return this.fail("PORT_CONFLICT", "Output is not durably bound to invocation");
+      const recovered =
+        !exists &&
+        current.plan.operationContract.ref === PI_FIXED_FILE_CONTRACT.ref &&
+        current.plan.operationContract.version === PI_FIXED_FILE_CONTRACT.version &&
+        current.plan.operationContract.kind === "verified_effect" &&
+        ["write", "edit"].includes(current.plan.operation) &&
+        this.db
+          .prepare(`SELECT 1 FROM run_payload_artifacts a JOIN payloads p ON p.ref=a.payload_ref AND p.owner_id=a.owner_id AND p.agent_id=a.agent_id
+          WHERE a.owner_id=? AND a.agent_id=? AND a.run_id=? AND a.purpose='trace' AND a.operation_key=? AND a.payload_ref=? AND a.content_digest=? AND p.lifecycle_state='active'`)
+          .get(
+            owner,
+            agent,
+            current.plan.identity.runId,
+            piFileRecoveryOperationKey(current.plan.identity.invocationId),
+            out.ref,
+            `sha256:${out.digest}`,
+          );
+      if (!exists && !recovered)
+        return this.fail("PORT_CONFLICT", "Output is not durably bound to invocation");
     }
     const projection = projectSandboxExecution(current.plan, facts, {
       ...input.context,

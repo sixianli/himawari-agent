@@ -3,7 +3,11 @@ import path from "node:path";
 import process from "node:process";
 import { scanMachineSecrets } from "@himawari-agent/application";
 import { piRunnerInputSchema } from "@himawari-agent/execution-contracts";
-import { createSandboxedCodingOperations, exportPiOutputFile } from "@himawari-agent/platform-node";
+import {
+  createSandboxedCodingOperations,
+  createPiFilePublicationJournal,
+  exportPiOutputFile,
+} from "@himawari-agent/platform-node";
 
 // Installed program only. Worker launches it under SRT with fixed host identities.
 // Import Pi only after its process-local offline and private-directory settings.
@@ -73,9 +77,17 @@ try {
   if (input.scope.fileTarget && !["read", "write", "edit"].includes(input.tool))
     throw new Error("PI_FIXED_FILE_CONTRACT_INVALID");
   let verifiedWrite: { path: string; contentDigest: string; byteLength: number } | null = null;
+  let verificationStarted = false;
+  const publication =
+    input.scope.fileTarget && ["write", "edit"].includes(input.tool)
+      ? createPiFilePublicationJournal(input)
+      : undefined;
   const operations = await createSandboxedCodingOperations({
-    onVerifiedWrite: (proof) => {
-      if (verifiedWrite) throw new Error("PI_MULTIPLE_WRITES_UNSUPPORTED");
+    ...(publication ? { onPreparedWrite: publication.prepared } : {}),
+    onVerifiedWrite: async (proof) => {
+      if (verificationStarted) throw new Error("PI_MULTIPLE_WRITES_UNSUPPORTED");
+      verificationStarted = true;
+      await publication?.verified(proof);
       verifiedWrite = proof;
     },
     grant: {

@@ -55,6 +55,60 @@ async function setup(initial?: string) {
   return { root, file, grant, port };
 }
 describe("sandboxed coding file operations", () => {
+  it("does not publish when durable preparation fails", async () => {
+    const { root, file, grant } = await setup("original");
+    let calls = 0;
+    const options = {
+      grant,
+      targetPath: file,
+      shell: "/bin/bash",
+      privateDirectory: root,
+      binaryDirectory: "/usr/bin",
+      maxOutputBytes: 4096,
+      async onPreparedWrite() {
+        calls++;
+        throw new Error("JOURNAL_UNAVAILABLE");
+      },
+    };
+    const port = await createSandboxedCodingOperations(options);
+    await expect(port.writeFile(file, "new bytes")).rejects.toThrow("JOURNAL_UNAVAILABLE");
+    expect(calls).toBe(1);
+    expect(await readFile(file, "utf8")).toBe("original");
+  });
+  it("waits for durable write verification before reporting completion", async () => {
+    const { root, file, grant } = await setup("original");
+    let reached!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let release!: () => void;
+    const stored = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const port = await createSandboxedCodingOperations({
+      grant,
+      targetPath: file,
+      shell: "/bin/bash",
+      privateDirectory: root,
+      binaryDirectory: "/usr/bin",
+      maxOutputBytes: 4096,
+      async onVerifiedWrite() {
+        reached();
+        await stored;
+      },
+    });
+    let complete = false;
+    const write = port.writeFile(file, "new bytes").then(() => {
+      complete = true;
+    });
+    await entered;
+    // An observable filesystem read allows the old, unawaited callback path to finish.
+    expect(await readFile(file, "utf8")).toBe("new bytes");
+    const completedBeforeReceipt = complete;
+    release();
+    await write;
+    expect(completedBeforeReceipt).toBe(false);
+  });
   it("pins a fixed file call to its target even within a broader grant", async () => {
     const { root, file, port } = await setup("original");
     const other = path.join(root, "other.txt");

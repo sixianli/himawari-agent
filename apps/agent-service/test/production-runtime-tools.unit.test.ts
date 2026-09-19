@@ -1,6 +1,7 @@
 import { ApplicationPortError, type RuntimeToolInvocation } from "@himawari-agent/application";
 import { describe, expect, it, vi } from "vitest";
 import { ProductionRuntimeTools } from "../src/production-runtime-tools.js";
+import { piFileRecoveryOperationKey } from "@himawari-agent/execution-contracts";
 import {
   runtimeToolFixture as fixture,
   identities,
@@ -561,3 +562,52 @@ it("delivers a later verified sandbox result without resending an unknown operat
     1,
   );
 });
+
+it.each([true, false])(
+  "binds a recovered file output to its verified delivery receipt (%s)",
+  async (receiptAvailable) => {
+    const f = fixture();
+    let verified = false;
+    const completeSandboxToolResult = vi.fn(async (input, delivery) => {
+      if (!verified) return undefined;
+      await delivery.assertDisclosure();
+      const original = f.payloads.get("output:tools");
+      if (!original) throw new Error("missing fixture output");
+      const saved = await f.options.artifacts.commit({
+        runId: invocation.runId,
+        purpose: "trace",
+        operationKey: piFileRecoveryOperationKey(input.invocationId),
+        payload: { ...original, ref: "recovered:tools" },
+      });
+      const result = {
+        outcome: "succeeded" as const,
+        outputRef: saved.ref,
+        errorCode: null,
+        externalActionId: null,
+      };
+      if (receiptAvailable) await delivery.saveReceipt(result);
+      return result;
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    expect((await tool.execute(invocation)).outcome).toBe("result_unknown");
+    verified = true;
+    const resumed = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await resumed.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    if (receiptAvailable) {
+      expect(await resumed.execute(invocation)).toMatchObject({
+        outcome: "succeeded",
+        resultRef: "recovered:tools",
+      });
+      const replay = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+      await replay.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+      expect((await replay.execute(invocation)).outcome).toBe("succeeded");
+    } else
+      await expect(resumed.execute(invocation)).rejects.toThrow(
+        "WORKER_OUTPUT_OBSERVATION_MISSING",
+      );
+    expect(
+      f.request.mock.calls.filter(([request]) => request.type === "work.execute"),
+    ).toHaveLength(1);
+  },
+);
