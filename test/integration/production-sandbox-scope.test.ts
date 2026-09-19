@@ -30,6 +30,35 @@ const descriptor = (operation: string, background = false): SandboxOperationBind
     operation === "read" || operation === "search" ? ["read"] : ["read", "create", "update"],
   network: "grant_targets",
 });
+it("reuses the persisted queued plan with its original receipt and deadlines", async () => {
+  const f = await productionSandboxScope(descriptor("bash"));
+  cleanups.push(f.close);
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("expected v2");
+  const position = await f.services.brokerV2.preparations.enqueue({
+    ...prepared,
+    invocation: f.input,
+  });
+  const replay = await f.services.runtime.prepare(
+    { ...f.input, receiptRef: "newly-generated-receipt" },
+    f.call,
+  );
+  expect(replay).toEqual(prepared);
+  expect(
+    await f.services.brokerV2.preparations.readQueuedByInvocation({
+      runId: f.call.runId,
+      invocationId: f.input.invocationId,
+    }),
+  ).toMatchObject({ ...position, plan: prepared.plan });
+  await expect(
+    f.services.runtime.prepare(
+      { ...f.input, deadlineAt: new Date(Date.parse(f.input.deadlineAt) - 1).toISOString() },
+      f.call,
+    ),
+  ).rejects.toThrow();
+  await f.repository.authorizationStore().revokeGrant(f.input.authorizationRef ?? "", T1, "test");
+  await expect(f.services.runtime.prepare(f.input, f.call)).rejects.toThrow();
+});
 it.each(["read", "edit", "write", "search", "bash", "background"])(
   "production scope derives %s from the same durable Grant",
   async (operation) => {

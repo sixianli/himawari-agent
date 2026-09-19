@@ -30,6 +30,7 @@ import {
 import {
   EXECUTION_V2_SCHEMA_VERSION,
   piFileRecoveryOperationKey,
+  executionV2MessageSchema,
   type ExecutionAdmissionPeerBinding,
   type ExecutionV2Event,
   type ExecutionV2Request,
@@ -581,7 +582,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     };
     const existing = await this.#options.artifacts.lookup(intentKey);
     if (existing) {
-      const intent = (await this.#readJson(existing.payloadRef)) as { fingerprint?: string };
+      const intent = (await this.#readJson(existing.payloadRef)) as {
+        fingerprint?: string;
+        request?: unknown;
+      };
       if (intent.fingerprint !== fingerprint)
         throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
       const result = await this.#options.artifacts.lookup({
@@ -593,6 +597,33 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         operationKey: `runtime-tool-recovered-result:${key}`,
       });
       const storedResult = recovered ?? result;
+      if (!storedResult) {
+        const queued = await this.#options.sandbox?.preparations?.readQueuedByInvocation?.({
+          runId: invocation.runId,
+          invocationId: `runtime-tool:${key}`,
+        });
+        if (queued?.status === "queued") {
+          const original = executionV2MessageSchema.parse(intent.request);
+          if (
+            original.kind !== "request" ||
+            original.type !== "work.execute" ||
+            original.messageId !== `runtime-tool:${key}` ||
+            original.payload.capabilityHandleRef !== handle.ref ||
+            digest(queued.invocation.authority) !== digest(this.#options.authority()) ||
+            Object.entries(ceiling).some(
+              ([name, limit]) =>
+                original.payload.resourceCeiling[name as keyof CapabilityResourceCeiling] > limit,
+            )
+          )
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+              "Queued execution requires current authority",
+            );
+          // Only the durable queue permits re-entry. reserve still atomically
+          // compares its snapshot and commits at most one invocation receipt.
+          return this.#dispatch(invocation, key, handle, original, ceiling, internal, parentCall);
+        }
+      }
       let replay = storedResult
         ? ((await this.#readJson(storedResult.payloadRef)) as RuntimeToolExecutionResult)
         : unknownResult();
@@ -680,6 +711,35 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     // A concurrent writer won the durable operation key. Never forward a second request.
     if (committed.replayed)
       return this.#execute(invocation, key, fingerprint, internal, parentCall);
+    return this.#dispatch(invocation, key, handle, request, ceiling, internal, parentCall);
+  }
+
+  async #dispatch(
+    invocation: RuntimeToolInvocation,
+    key: string,
+    handle: GovernedCapabilityExecutionHandle,
+    request: ExecuteRequest,
+    ceiling: CapabilityResourceCeiling,
+    internal: boolean,
+    parentCall?: RuntimeToolInvocation,
+  ): Promise<RuntimeToolExecutionResult> {
+    const deadlineAt = request.payload.deadlineAt;
+    if (
+      request.scope.ownerId !== this.#options.ownerId ||
+      request.scope.agentId !== this.#options.agentId ||
+      request.scope.runId !== invocation.runId ||
+      !request.scope.workerRunId ||
+      Date.parse(deadlineAt) <= Date.parse(this.#options.clock.now())
+    )
+      reject();
+    const scope = {
+      ...request.scope,
+      ownerId: this.#options.ownerId,
+      agentId: this.#options.agentId,
+      runId: invocation.runId,
+      workerRunId: request.scope.workerRunId,
+    };
+    const authority = this.#options.authority();
     const monotonicDeadline =
       performance.now() +
       Math.max(0, Date.parse(deadlineAt) - Date.parse(this.#options.clock.now()));
@@ -717,6 +777,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         }),
         monotonicDeadline,
       );
+      // A replayed admission may belong to a concurrent dispatcher. A missing
+      // result is then unknown, even though this instance sent no executable message.
+      possiblySent = true;
       let cursor: string | null = null;
       let workerStartedAt: string | undefined;
       while (

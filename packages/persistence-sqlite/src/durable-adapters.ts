@@ -431,6 +431,12 @@ export class SqliteDurableAdapters {
     agentId: AgentId,
   ): SandboxExecutionPreparationPort {
     return Object.freeze<SandboxExecutionPreparationPort>({
+      readQueuedByInvocation: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.readQueuedByInvocation", {
+          ownerId,
+          agentId,
+          input,
+        }),
       enqueue: (input) =>
         this.context.write("capabilityInvocation.sandboxV2.enqueue", { ownerId, agentId, input }),
       cancelQueued: (input) =>

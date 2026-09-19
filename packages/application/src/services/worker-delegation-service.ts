@@ -93,7 +93,12 @@ export interface WorkerDelegationAdmissionServiceOptions {
     readonly appliesTo?: (invocation: ConsumeCapabilityInvocationInput) => boolean;
     readonly journal: Pick<SandboxJobJournalPort, "admit">;
     readonly preparations?: Pick<SandboxExecutionPreparationPort, "reserve"> &
-      Partial<Pick<SandboxExecutionPreparationPort, "enqueue" | "cancelQueued" | "readAdmission">>;
+      Partial<
+        Pick<
+          SandboxExecutionPreparationPort,
+          "enqueue" | "cancelQueued" | "readAdmission" | "readQueuedByInvocation"
+        >
+      >;
     readonly scopes: Pick<SandboxScopeService, "read">;
     readonly prepare: (
       invocation: ConsumeCapabilityInvocationInput,
@@ -318,7 +323,7 @@ export class WorkerDelegationAdmissionService {
             plan,
             reservation,
             workspaces: prepared.workspaces,
-            invocation: { ...input, consumedAt: now },
+            invocation: { ...input, receiptRef: plan.identity.receiptRef, consumedAt: now },
           };
           if (preparations.enqueue && !(await preparations.readAdmission?.(plan.identity))) {
             if (!preparations.cancelQueued)

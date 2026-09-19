@@ -477,6 +477,27 @@ Pi 复用已核对：固定依赖仍为 0.84.2；canonical `file-mutation-queue.
 
 P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”。该审核点只决定本稿新增交互是否可用于产品页面，不重新讨论已确认的后台原则，也不批准自动审查服务或生产操作。用户随后对该审核请求明确回复“已确认”。r3 新增交互审核通过，继续实施；该授权不包括真实自动审查模型启用或生产操作。
 
+### 已实现身份与持久化点
+
+下表记录当前代码的责任边界，供后续恢复使用。它不把尚未实现的跨启动续接写成已完成能力。
+
+| 对象 | 当前身份与存储位置 | 何时保存，允许恢复什么 |
+| --- | --- | --- |
+| 逻辑操作 | `GovernedActionIntent.id`；编码工作流以 Run、toolCallId、工具参数和绑定生成 `coding:` 摘要 | 审批或额度预约保存完整快照；参数、目标或披露主体改变必须作为新请求 |
+| 审批 | `approval_requests.id`、快照中的 `intentId`、版本化 `semantic_snapshot_hash` | 人工决定只改变原审批状态并关联 Grant；重复相同决定读回历史，不制造第二个 Grant |
+| 额度预约 | `authorization-reservation:<intent.id>`，存于 `authorization_reservations` | 先预约，Handle 绑定后仍未消费；调用回执承诺时同事务转 committed；可能派发后不退款 |
+| 执行 Handle | `capability_handles.id`、revision、authorityFence | 当前权限交给一次具体执行的受限凭据；到期或换执行权不能仅凭历史审批继续使用 |
+| 工具调用 | `runtime-tool:<Run/toolCallId 摘要>` 与 idempotencyKey；受保护的 `runtime-tool-intent:` artifact | 在准入前保存原 `work.execute`；原参数、期限和受保护输入可独立读回，不以日志文本猜测请求 |
+| 排队与尝试 | `sandbox_admission_queue.job_id` 和自增 sequence；计划保留 attemptId、invocationId、receiptRef | 入队不创建占用或消费回执；出队比较同一完整快照。队列位置不能成为新的执行权限 |
+| 准入承诺 | `capability_invocation_receipts` 与 `sandbox_execution_records` | 同事务承诺额度、Handle 使用和资源占用；重入只返回一个既有回执，不能第二次发 executable message |
+| 资源占用 | `sandbox_workspace_occupancy` 的 jobId/scopeRef 与具体目录链、文件槽位/身份 | 只协调实际声明资源；当前仍持有整个工具调用期间的 claim，短时提交锁尚未实现 |
+| 永久释放与新保护 | `sandbox_release_receipts`；独立 `sandbox_workspace_barriers` | 新证据接纳时核验并与释放占用同事务保存；晚到交付 ACK 不撤销旧释放 |
+| 文件发布 | 私有 Job 发布日志和候选身份；原调用的 `pi-file-recovery:` 受保护结果 | 固定文件合同 2 按原候选和父目录核实效果；恢复不重新发布，不覆盖后续编辑 |
+| 资源恢复 | 执行记录 `recovery_json` 的 owner/revision/attempts/deadline/status | 当前服务只读核查或受限 stop；记录 resolved/unresolved，不借恢复重新获得业务执行权 |
+| 结果交接 | `sandbox-tool-result:<semanticFingerprint 摘要>`；`runtime-sandbox-delivery:` artifact | 复用原结果与交接回执，当前披露权限另验；不消费第二次额度，不重跑工具 |
+
+仍需补充的持久关系：当前 `RunCheckpoint.suspension` 与 Pi tool-batch continuation 只覆盖审批等待；运行中的工具批次中断仍进入 Run 结果核对。跨 Agent/Worker boot 的续排还需把可恢复批次与队列关联，并以新执行权原子接替**明确未准入**的旧绑定。旧调用可能已准入时只能核对结果。现有 Pi 0.84.2 的自定义工具边界和受保护 continuation 可复用；当前产品自定义工具显式设置 `executionMode: sequential`，现有批次恢复依赖已完成的顺序前缀。后续若改变工具调度模式，必须同时验证该恢复合同。
+
 ### P1 当前代码与验证记录
 
 - 新释放观察在接纳时验证，Schema 33 同事务保存不可变回执并结束占用；迟到/重复 ACK 不回写释放时间。直连 SQLite 与数据库 Worker 路径均有到期边界回归。
@@ -538,6 +559,15 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 - [实际生产装配的定向回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/recovery-production.log) 29 项通过：真实文件、加密 artifact、SQLite、恢复和交接一起执行；只有进程释放证据使用受控夹具。早期夹具使用抽象根 ID 和不合法状态转换，失败日志保留，没有算作产品缺陷。[迁移合同](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/migration-contracts.log) 24 项通过；[资源与持久化消费者](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/consumers-final.log) 205 项通过。
 
 本批类型与任务 lint 检查通过。首轮完整验证执行 3,468 项，3,467 项通过；旧 runner 测试未等待新的异步回调而失败，已修正测试调用。另加并发回调测试后[复现重复接纳](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/runner-concurrent-red.log)，将唯一性检查移到第一个异步等待之前，[42 项 runner 回归通过](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/runner-concurrent-green.log)。构建发布扫描还发现本地依赖目录存在 35,702 个相同内容的带编号副本；已逐项核对摘要并移入可恢复隔离目录，两个不同内容的带编号文件也单独保留，未修改依赖版本、锁文件或扫描规则，见[环境修复记录](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/dependency-duplicate-summary.json)。[首次失败记录](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/standard-ci-red-result.json)保留；[最终完整构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/standard-ci-result.json)通过：234 个文件、3,469 项、零失败、零跳过；发布扫描通过。短时提交锁、目录改名协议、排队重启续接、完整页面以及真实双平台验收仍未完成；不能把本段当作完整 P3 或整个 Plan 完成。
+
+### P3 持久队列身份与工具续接（局部实现）
+
+- 出队事务核对原冻结计划、资源声明、期限和调用身份，再承诺回执；同一调用不能换 Job 编号获取第二个队列位置。历史多条相同调用记录拒绝自动选择，不删除或重排。
+- 新增按 Owner/Agent/Run/invocation 读回原队列的端口。数据库重开后保留队列顺序；生产准备复用原目标基线和 receiptRef，等待不更新 deadline，出队仍重验权限和资源。
+- 工具对象重新创建后，只有无已存结果、仍 queued 且完整服务/Worker 执行身份未变的原请求可以重新进入准入。并发续接由 SQLite 回执承诺保证只发送一条 executable message。已准入、已取消、身份变化、资源上限收紧均不会从该入口再次派发。
+- [冻结边界修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-04/queue-binding-red-final.log) 4 项失败；[生产准备修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-04/queue-replay-red.log)复现 receiptRef 被重建。[消费者回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-04/consumers.log) 6 文件、145 项通过，包括真实 SQLite 独立读回、数据库重开、生产装配和受控 Worker 消息。最早重入测试失败来自夹具连接已关闭，改用独立只读连接核对回执。
+
+本批沿用 Schema 37 的数据形状，不修改 Pi 或重新创建模型侧工具。跨 Agent/Worker boot、产品 authority fence 变化后的执行权重新绑定仍未实现；上述入口不能被称为完整服务重启恢复。后台自动调度、短时提交锁、目录改名及真实平台验收仍未完成。[完整构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-04/standard-ci-result.json)通过：236 个文件、3,491 项测试，零失败、零跳过，发布扫描通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档校验通过。
 
 ### P7 历史占用只读清单（局部实现）
 

@@ -4,9 +4,15 @@ import type {
   SandboxWorkspaceClaim,
 } from "@himawari-agent/application";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 
 type Request = Parameters<SandboxExecutionPreparationPort["reserve"]>[0];
 type Position = Awaited<ReturnType<SandboxExecutionPreparationPort["enqueue"]>>;
+
+function snapshot(input: Request, claims: readonly SandboxWorkspaceClaim[]) {
+  const { consumedAt: _now, ...invocation } = input.invocation;
+  return { plan: input.plan, reservation: input.reservation, invocation, claims };
+}
 
 /** Called only inside the journal's immediate transaction. Priority holds no resource. */
 export class SqliteWorkspaceAdmissionQueue {
@@ -31,20 +37,26 @@ export class SqliteWorkspaceAdmissionQueue {
     claims: readonly SandboxWorkspaceClaim[],
     validate: () => void,
   ): Position {
-    const { consumedAt: _now, ...invocation } = input.invocation;
-    const request = JSON.stringify({
-      plan: input.plan,
-      reservation: input.reservation,
-      invocation,
-      claims,
-    });
+    const request = JSON.stringify(snapshot(input, claims));
+    const identity = input.plan.identity;
+    const sameInvocation = this.read(
+      identity.ownerId,
+      identity.agentId,
+      identity.runId,
+      identity.invocationId,
+    );
+    if (sameInvocation && sameInvocation.plan.identity.jobId !== identity.jobId)
+      this.fail("PORT_CONFLICT", "Invocation already has a queue identity");
     const previous = this.db
       .prepare(
         "SELECT sequence, status, request_json AS request FROM sandbox_admission_queue WHERE job_id=?",
       )
       .get(input.plan.identity.jobId) as (Position & { request: string }) | undefined;
     if (previous) {
-      if (previous.request !== request)
+      if (
+        canonicalAuthorizationSnapshot(JSON.parse(previous.request)) !==
+        canonicalAuthorizationSnapshot(JSON.parse(request))
+      )
         this.fail("PORT_CONFLICT", "Queued request identity changed");
       if (previous.status === "queued") validate();
       return { sequence: previous.sequence, status: previous.status };
@@ -66,6 +78,49 @@ export class SqliteWorkspaceAdmissionQueue {
         JSON.stringify(claims),
       );
     return { sequence: Number(inserted.lastInsertRowid), status: "queued" };
+  }
+
+  /** This snapshot conveys no execution authority. The current authority and
+   * target must still pass admission before any receipt can be committed. */
+  read(owner: string, agent: string, runId: string, invocationId: string) {
+    const rows = this.db
+      .prepare(`SELECT sequence, status, request_json AS request
+      FROM sandbox_admission_queue WHERE owner_id=? AND agent_id=? AND run_id=?
+      AND json_extract(request_json,'$.plan.identity.invocationId')=? LIMIT 2`)
+      .all(owner, agent, runId, invocationId) as (Position & { request: string })[];
+    if (rows.length > 1) this.fail("PORT_CONFLICT", "Invocation has ambiguous queue history");
+    const row = rows[0];
+    if (!row) return undefined;
+    const saved = JSON.parse(row.request) as ReturnType<typeof snapshot>;
+    return {
+      sequence: row.sequence,
+      status: row.status,
+      plan: saved.plan,
+      reservation: saved.reservation,
+      invocation: saved.invocation,
+      workspaces: saved.claims,
+    };
+  }
+
+  assertUnchanged(input: Request, claims: readonly SandboxWorkspaceClaim[]): void {
+    const row = this.db
+      .prepare("SELECT request_json AS request FROM sandbox_admission_queue WHERE job_id=?")
+      .get(input.plan.identity.jobId) as { request: string } | undefined;
+    const identity = input.plan.identity;
+    const saved = this.read(
+      identity.ownerId,
+      identity.agentId,
+      identity.runId,
+      identity.invocationId,
+    );
+    if (saved && saved.plan.identity.jobId !== identity.jobId)
+      this.fail("PORT_CONFLICT", "Invocation already has a queue identity");
+    if (
+      row &&
+      canonicalAuthorizationSnapshot(JSON.parse(row.request)) !==
+        canonicalAuthorizationSnapshot(snapshot(input, claims))
+    )
+      this.fail("PORT_CONFLICT", "Queued request changed before admission");
   }
 
   cancel(jobId: string, owner: string, agent: string): void {

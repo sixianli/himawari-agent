@@ -71,6 +71,62 @@ function reserved(value: SandboxExecutionAdmissionRecord) {
 }
 
 describe("atomic execution reservation and runtime binding", () => {
+  it.each(["claim", "contract", "deadline"] as const)(
+    "rejects changing the persisted queued request at admission: %s",
+    async (change) => {
+      const f = await openSandboxJournal();
+      try {
+        const queued = input(f);
+        call(f, "enqueue", queued);
+        const changed = structuredClone(queued);
+        if (change === "claim")
+          changed.workspaces = changed.workspaces.map((claim) => ({ ...claim, access: "read" }));
+        if (change === "contract")
+          changed.plan = { ...changed.plan, backendRef: "another-backend" };
+        if (change === "deadline")
+          changed.plan = {
+            ...changed.plan,
+            effectiveDeadlineAt: new Date(
+              Date.parse(queued.plan.effectiveDeadlineAt) - 1,
+            ).toISOString(),
+          };
+        expect(() => call(f, "reserve", changed)).toThrow();
+        expect(
+          f.database.prepare("SELECT count(*) FROM capability_invocation_receipts").pluck().get(),
+        ).toBe(0);
+        expect(
+          f.database.prepare("SELECT count(*) FROM sandbox_workspace_occupancy").pluck().get(),
+        ).toBe(0);
+        expect(f.database.prepare("SELECT status FROM sandbox_admission_queue").pluck().get()).toBe(
+          "queued",
+        );
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it("does not give one invocation two queue identities or two places in line", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const first = input(f);
+      call(f, "enqueue", first);
+      const identity = { ...first.plan.identity, jobId: "different-job" };
+      expect(() =>
+        call(f, "enqueue", {
+          ...first,
+          plan: { ...first.plan, identity },
+          reservation: { ...first.reservation, identity },
+        }),
+      ).toThrow();
+      expect(f.database.prepare("SELECT count(*) FROM sandbox_admission_queue").pluck().get()).toBe(
+        1,
+      );
+    } finally {
+      await f.close();
+    }
+  });
+
   it.each(["different", "same-slot", "same-inode", "atomic-read", "directory-write"] as const)(
     "coordinates concrete file resources: %s",
     async (scenario) => {
@@ -166,9 +222,7 @@ describe("atomic execution reservation and runtime binding", () => {
           invocationAuthority: () => SERVICE_AUTHORITY,
           now: () => now,
           nextId: (kind) =>
-            kind === "capability-invocation-receipt"
-              ? waiting.plan.identity.receiptRef
-              : `test-${kind}`,
+            kind === "capability-invocation-receipt" ? "generated-after-reentry" : `test-${kind}`,
           waitForWorkspace: async () => {
             waits++;
             expect(waits).toBe(1);
@@ -348,6 +402,47 @@ describe("atomic execution reservation and runtime binding", () => {
         expect((await port.readAdmission(reserve.plan.identity))?.phase).toBe("bound");
         expect((await port.bindAndStart(start)).applied).toBe(false);
         await expect(port.reserve(input(f, "-conflict"))).rejects.toThrow("occupied");
+      } finally {
+        await repo.close();
+      }
+    } finally {
+      await f.close();
+    }
+  });
+  it("reads the original unconsumed queue snapshot after reopening the database", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const queued = input(f);
+      const position = call(f, "enqueue", queued);
+      const locator = {
+        runId: queued.plan.identity.runId,
+        invocationId: queued.invocation.invocationId,
+      };
+      f.database.close();
+      const repo = await SqliteProductStateRepository.open({ stateRoot: f.resource.stateRoot });
+      try {
+        const port = repo.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        const saved = await port.readQueuedByInvocation(locator);
+        expect(saved).toMatchObject({
+          ...position,
+          plan: queued.plan,
+          reservation: queued.reservation,
+          workspaces: queued.workspaces,
+        });
+        expect(saved?.invocation).not.toHaveProperty("consumedAt");
+        expect(await port.readAdmission(queued.plan.identity)).toBeUndefined();
+        expect(
+          await repo
+            .sandboxExecutionPreparations(OWNER_ID, "other-agent" as typeof AGENT_ID)
+            .readQueuedByInvocation(locator),
+        ).toBeUndefined();
+        const admission = await port.reserve(queued);
+        expect(admission.applied).toBe(true);
+        expect((await port.reserve(queued)).applied).toBe(false);
+        expect(await port.readQueuedByInvocation(locator)).toMatchObject({
+          sequence: position.sequence,
+          status: "admitted",
+        });
       } finally {
         await repo.close();
       }

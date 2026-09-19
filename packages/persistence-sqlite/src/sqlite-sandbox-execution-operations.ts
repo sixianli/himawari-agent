@@ -101,6 +101,11 @@ export class SqliteSandboxExecutionOperations {
     const input = raw as Record<string, unknown>;
     if (!input || typeof input !== "object" || Array.isArray(input))
       return this.fail("PORT_INVALID_OPERATION", "Invalid sandbox journal request");
+    if (operation === "readQueuedByInvocation") {
+      if (!id(input["runId"]) || !id(input["invocationId"]))
+        return this.fail("PORT_INVALID_OPERATION", "Invalid queued invocation locator");
+      return this.queue.read(owner, agent, input["runId"], input["invocationId"]);
+    }
     if (operation === "readAdmissionByResource") {
       if (!id(input["runId"]) || !id(input["resourceRef"]))
         return this.fail("PORT_INVALID_OPERATION", "Invalid resource locator");
@@ -537,6 +542,10 @@ export class SqliteSandboxExecutionOperations {
   ) {
     const candidate = sandboxExecutionPlanCandidateV2Schema.parse(input.plan);
     const reservation = sandboxExecutionReservationSchema.parse(input.reservation);
+    this.queue.assertUnchanged(
+      { ...input, plan: candidate, reservation },
+      this.claims(input.workspaces, candidate, reservation.workspaceConflictRefs),
+    );
     const consumed = this.authority.consume(input.invocation, owner, agent);
     const plan = sandboxExecutionPlanV2Schema.parse({
       ...candidate,

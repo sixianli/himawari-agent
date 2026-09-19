@@ -161,6 +161,18 @@ export type SandboxExecutionAdmissionRecord =
     }
   | { readonly phase: "bound"; readonly record: SandboxExecutionRecord };
 export interface SandboxExecutionPreparationPort {
+  /** Historical queue snapshot, including cancelled/admitted rows; never a replay permit. */
+  readQueuedByInvocation(input: { readonly runId: string; readonly invocationId: string }): Promise<
+    | {
+        readonly sequence: number;
+        readonly status: "queued" | "admitted" | "cancelled";
+        readonly plan: SandboxExecutionPlanCandidateV2;
+        readonly reservation: SandboxExecutionReservation;
+        readonly workspaces: readonly SandboxWorkspaceClaim[];
+        readonly invocation: Omit<ConsumeCapabilityInvocationInput, "consumedAt">;
+      }
+    | undefined
+  >;
   /** Enqueue without consuming a Handle or acquiring any workspace resource. */
   enqueue(input: Parameters<SandboxExecutionPreparationPort["reserve"]>[0]): Promise<{
     readonly sequence: number;

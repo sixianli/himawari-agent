@@ -45,6 +45,7 @@ export async function productionSandboxScope(
     readonly legacyFileRead?: boolean;
     readonly piParameters?: Readonly<Record<string, unknown>>;
     readonly realFileIdentity?: boolean;
+    readonly runtimeFingerprint?: (call: RuntimeToolInvocation) => string;
   } = {},
 ) {
   const f = await openSandboxJournal();
@@ -223,6 +224,7 @@ export async function productionSandboxScope(
       }),
     });
   await persist(`runtime-tool-intent:${hash([call.runId, call.toolCallId])}`, {
+    ...(options.runtimeFingerprint ? { fingerprint: options.runtimeFingerprint(call) } : {}),
     request: {
       schemaVersion: "execution.v2",
       kind: "request",

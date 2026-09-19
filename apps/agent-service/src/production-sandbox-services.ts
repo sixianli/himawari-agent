@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import {
   type CapabilityInvocationAuthority,
   type ClockPort,
@@ -526,6 +527,25 @@ export async function createProductionSandboxServices(options: {
       });
       await resolve(candidate);
       return { plan: candidate, reservation, workspaces };
+    }
+    const queued = await preparations.readQueuedByInvocation({
+      runId: input.requestScope.runId,
+      invocationId: input.invocationId,
+    });
+    if (queued) {
+      const { consumedAt: _now, ...invocation } = input;
+      if (
+        queued.status !== "queued" ||
+        canonicalAuthorizationSnapshot({
+          ...invocation,
+          receiptRef: queued.invocation.receiptRef,
+        }) !== canonicalAuthorizationSnapshot(queued.invocation)
+      )
+        throw new Error("SANDBOX_QUEUED_REQUEST_CHANGED");
+      // Reuse the approved target baseline and original deadline. Reconstructing
+      // them from the current file would silently authorize a changed object.
+      await resolve(queued.plan);
+      return { plan: queued.plan, reservation: queued.reservation, workspaces: queued.workspaces };
     }
     return undefined;
   };
