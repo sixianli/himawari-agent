@@ -1,0 +1,9 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+apps/agent-service/test/production-runtime-tools.unit.test.ts(60,52): error TS2345: Argument of type '{ context: { modelRef: string; continuationRef: string; executionLease: { executionLeaseId: NonNullable<RuntimeToolInvocation["context"]>["executionLease"]["executionLeaseId"]; ... 6 more ...; fencingToken: number; }; }; ... 5 more ...; dataClassification: "private"; }' is not assignable to parameter of type 'RuntimeToolInvocation'.
+  Types of property 'context' are incompatible.
+    Property 'threadId' is missing in type '{ modelRef: string; continuationRef: string; executionLease: { executionLeaseId: NonNullable<RuntimeToolInvocation["context"]>["executionLease"]["executionLeaseId"]; ... 6 more ...; fencingToken: number; }; }' but required in type 'Pick<RuntimeRequest, "threadId" | "modelRef" | "executionLease" | "continuationRef">'.
+apps/agent-service/test/production-runtime-tools.unit.test.ts(73,9): error TS2741: Property 'threadId' is missing in type '{ continuationRef: string; modelRef: string; executionLease: { executionLeaseId: NonNullable<RuntimeToolInvocation["context"]>["executionLease"]["executionLeaseId"]; ... 6 more ...; fencingToken: number; }; }' but required in type 'Pick<RuntimeRequest, "threadId" | "modelRef" | "executionLease" | "continuationRef">'.
+packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts(2844,14): error TS18048: 'call.context' is possibly 'undefined'.

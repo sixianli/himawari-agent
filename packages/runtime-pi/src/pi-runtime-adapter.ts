@@ -969,6 +969,26 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       let restored: ReturnType<typeof restorePiToolBatch> | undefined;
       if (!getSupportedThinkingLevels(binding.model).includes(request.thinkingLevel ?? "off"))
         throw new Error("PI_THINKING_LEVEL_UNSUPPORTED");
+      const toolCheckpoints = new Map<string, string>();
+      const saveToolCheckpoint = async (invocation: RuntimeToolInvocation) => {
+        const key = `${streamOrdinal}:${invocation.toolCallId}`;
+        const saved = toolCheckpoints.get(key);
+        if (saved) return saved;
+        const active = this.#activeSessions.get(request.runId);
+        if (!active || !this.#dependencies.continuations)
+          throw new Error("RUNTIME_CONTINUATION_STORAGE_UNAVAILABLE");
+        await eventChain;
+        const batch = capturePiToolBatch(active, invocation.toolCallId, streamOrdinal);
+        const ref = await this.#dependencies.continuations.save(request, {
+          identity,
+          batch,
+          turnIndex,
+          messageSequence,
+          toolProgress: toolProgress.snapshot(),
+        });
+        toolCheckpoints.set(key, ref);
+        return ref;
+      };
       const created = await sessionFactory({
         cwd: this.#dependencies.cwd,
         ...(this.#dependencies.agentDir ? { agentDir: this.#dependencies.agentDir } : {}),
@@ -987,19 +1007,14 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             assertKnown: () => {
               if (suspended || unknownTool) throw new Error("RUNTIME_TOOL_EXECUTION_STOPPED");
             },
+            checkpoint: (invocation) =>
+              this.#dependencies.continuations
+                ? saveToolCheckpoint(invocation)
+                : Promise.resolve(undefined),
             suspend: async (invocation, approval) => {
               const active = this.#activeSessions.get(request.runId);
-              if (!active || !this.#dependencies.continuations)
-                throw new Error("RUNTIME_CONTINUATION_STORAGE_UNAVAILABLE");
-              await eventChain;
-              const batch = capturePiToolBatch(active, invocation.toolCallId, streamOrdinal);
-              const continuationRef = await this.#dependencies.continuations.save(request, {
-                identity,
-                batch,
-                turnIndex,
-                messageSequence,
-                toolProgress: toolProgress.snapshot(),
-              });
+              if (!active) throw new Error("RUNTIME_CONTINUATION_STORAGE_UNAVAILABLE");
+              const continuationRef = await saveToolCheckpoint(invocation);
               suspended = {
                 type: "runtime.suspended",
                 runId: request.runId,
@@ -1240,6 +1255,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         toolCallId: string,
       ): PiToolBatchContinuation["completedResults"][number] | undefined;
       assertKnown(): void;
+      checkpoint(invocation: RuntimeToolInvocation): Promise<string | undefined>;
       suspend(invocation: RuntimeToolInvocation, approval: RuntimeApprovalWait): Promise<void>;
       unknown(
         invocation: RuntimeToolInvocation,
@@ -1323,7 +1339,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             details: completed.details,
             isError: completed.isError,
           };
-        const invocation: RuntimeToolInvocation = {
+        let invocation: RuntimeToolInvocation = {
           runId: request.runId,
           context: {
             threadId: request.threadId,
@@ -1354,6 +1370,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           };
         }
         reconciliation.assertKnown();
+        // Persist the exact Pi batch before a product tool can enqueue or cause
+        // effects. A failed checkpoint is a known non-execution, not a lost result.
+        try {
+          const continuationRef = await reconciliation.checkpoint(invocation);
+          if (continuationRef && invocation.context)
+            invocation = { ...invocation, context: { ...invocation.context, continuationRef } };
+        } catch {
+          return {
+            content: [{ type: "text", text: "工具未执行：无法保存恢复记录。" }],
+            details: { productOutcome: "failed", errorCode: "RUNTIME_TOOL_CHECKPOINT_FAILED" },
+            isError: true,
+          };
+        }
+        signal?.throwIfAborted();
         let result: Awaited<ReturnType<RuntimeToolPort["execute"]>>;
         try {
           result = await this.#dependencies.tools.execute(invocation);

@@ -209,7 +209,11 @@ export class ThreadExecutionProjection {
           const productOutcome = text(object(result["details"])["productOutcome"]);
           const lifecycle = !ended
             ? "preparing"
-            : ["WORKER_ADMISSION_CONFLICT", "WORKER_NOT_DISPATCHED"].includes(productError)
+            : [
+                  "WORKER_ADMISSION_CONFLICT",
+                  "WORKER_NOT_DISPATCHED",
+                  "RUNTIME_TOOL_CHECKPOINT_FAILED",
+                ].includes(productError)
               ? "not_dispatched"
               : productOutcome === "result_unknown" ||
                   [

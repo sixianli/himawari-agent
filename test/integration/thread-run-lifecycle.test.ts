@@ -2922,10 +2922,12 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     );
     for (const [errorCode, state] of [
       ["WORKER_ADMISSION_CONFLICT", "not_dispatched"],
+      ["WORKER_NOT_DISPATCHED", "not_dispatched"],
+      ["RUNTIME_TOOL_CHECKPOINT_FAILED", "not_dispatched"],
       ["WORKER_RESULT_RECONCILIATION_REQUIRED", "unresolved"],
     ]) {
-      const outcomeRef = await capture(`outcome-${state}`, {
-        toolCallId: `call-${state}`,
+      const outcomeRef = await capture(`outcome-${errorCode}`, {
+        toolCallId: `call-${errorCode}`,
         toolName: "write",
         isError: true,
         result: { details: { errorCode }, content: [] },
@@ -2935,8 +2937,13 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         eventType: "runtime.tool_result",
         payload: { payloadRef: outcomeRef },
       });
-      expect((await projection.read(query)).records).toContainEqual(
+      const projected = (await projection.read(query)).records;
+      const resultItem = projected.at(-1);
+      expect(resultItem).toMatchObject({ kind: "tool", phase: "failed" });
+      expect(projected).toContainEqual(
         expect.objectContaining({
+          itemId: resultItem?.itemId,
+          sequence: resultItem?.sequence,
           kind: "status",
           name: `runtime.tool_outcome.${state}`,
           phase: "updated",

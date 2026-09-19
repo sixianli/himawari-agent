@@ -1,0 +1,195 @@
+apps/agent-service/src/production-runtime-tools.ts:295:19 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    293 │     const args = invocation.arguments;
+    294 │     if (
+  > 295 │       typeof args["capabilityHandleRef"] !== "string" ||
+        │                   ^^^^^^^^^^^^^^^^^^^^^
+    296 │       typeof args["inputRef"] !== "string" ||
+    297 │       Object.keys(args).length !== 2 ||
+
+  i Unsafe fix: Use a literal key instead.
+
+     293  293 │       const args = invocation.arguments;
+     294  294 │       if (
+     295      │ - ······typeof·args["capabilityHandleRef"]·!==·"string"·||
+          295 │ + ······typeof·args.capabilityHandleRef·!==·"string"·||
+     296  296 │         typeof args["inputRef"] !== "string" ||
+     297  297 │         Object.keys(args).length !== 2 ||
+
+
+apps/agent-service/src/production-runtime-tools.ts:296:19 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    294 │     if (
+    295 │       typeof args["capabilityHandleRef"] !== "string" ||
+  > 296 │       typeof args["inputRef"] !== "string" ||
+        │                   ^^^^^^^^^^
+    297 │       Object.keys(args).length !== 2 ||
+    298 │       !this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+
+  i Unsafe fix: Use a literal key instead.
+
+     294  294 │       if (
+     295  295 │         typeof args["capabilityHandleRef"] !== "string" ||
+     296      │ - ······typeof·args["inputRef"]·!==·"string"·||
+          296 │ + ······typeof·args.inputRef·!==·"string"·||
+     297  297 │         Object.keys(args).length !== 2 ||
+     298  298 │         !this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+
+
+apps/agent-service/src/production-runtime-tools.ts:298:54 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    296 │       typeof args["inputRef"] !== "string" ||
+    297 │       Object.keys(args).length !== 2 ||
+  > 298 │       !this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+        │                                                      ^^^^^^^^^^^^^^^^^^^^^
+    299 │     )
+    300 │       reject();
+
+  i Unsafe fix: Use a literal key instead.
+
+     296  296 │         typeof args["inputRef"] !== "string" ||
+     297  297 │         Object.keys(args).length !== 2 ||
+     298      │ - ······!this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+          298 │ + ······!this.#exposed.get(invocation.runId)?.has(args.capabilityHandleRef)
+     299  299 │       )
+     300  300 │         reject();
+
+
+apps/agent-service/src/production-runtime-tools.ts:301:62 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    299 │     )
+    300 │       reject();
+  > 301 │     const handle = await this.#handle(invocation.runId, args["capabilityHandleRef"]);
+        │                                                              ^^^^^^^^^^^^^^^^^^^^^
+    302 │     if (!this.#options.taskHandle || !(await this.#options.taskHandle(handle))) reject();
+    303 │     return {
+
+  i Unsafe fix: Use a literal key instead.
+
+     299  299 │       )
+     300  300 │         reject();
+     301      │ - ····const·handle·=·await·this.#handle(invocation.runId,·args["capabilityHandleRef"]);
+          301 │ + ····const·handle·=·await·this.#handle(invocation.runId,·args.capabilityHandleRef);
+     302  302 │       if (!this.#options.taskHandle || !(await this.#options.taskHandle(handle))) reject();
+     303  303 │       return {
+
+
+apps/agent-service/src/production-runtime-tools.ts:307:35 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    305 │       capabilityRef: handle.capabilityRef,
+    306 │       capabilityHandleRef: handle.ref,
+  > 307 │       arguments: { inputRef: args["inputRef"] },
+        │                                   ^^^^^^^^^^
+    308 │     };
+    309 │   }
+
+  i Unsafe fix: Use a literal key instead.
+
+     305  305 │         capabilityRef: handle.capabilityRef,
+     306  306 │         capabilityHandleRef: handle.ref,
+     307      │ - ······arguments:·{·inputRef:·args["inputRef"]·},
+          307 │ + ······arguments:·{·inputRef:·args.inputRef·},
+     308  308 │       };
+     309  309 │     }
+
+
+apps/agent-service/src/production-runtime-tools.ts:548:35 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    546 │       keys.length !== 1 ||
+    547 │       keys[0] !== "inputRef" ||
+  > 548 │       typeof invocation.arguments["inputRef"] !== "string" ||
+        │                                   ^^^^^^^^^^
+    549 │       !handle.inputRefs.includes(invocation.arguments["inputRef"]) ||
+    550 │       RANK.indexOf(invocation.dataClassification) > RANK.indexOf(handle.maxDataClassification)
+
+  i Unsafe fix: Use a literal key instead.
+
+     546  546 │         keys.length !== 1 ||
+     547  547 │         keys[0] !== "inputRef" ||
+     548      │ - ······typeof·invocation.arguments["inputRef"]·!==·"string"·||
+          548 │ + ······typeof·invocation.arguments.inputRef·!==·"string"·||
+     549  549 │         !handle.inputRefs.includes(invocation.arguments["inputRef"]) ||
+     550  550 │         RANK.indexOf(invocation.dataClassification) > RANK.indexOf(handle.maxDataClassification)
+
+
+apps/agent-service/src/production-runtime-tools.ts:549:55 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    547 │       keys[0] !== "inputRef" ||
+    548 │       typeof invocation.arguments["inputRef"] !== "string" ||
+  > 549 │       !handle.inputRefs.includes(invocation.arguments["inputRef"]) ||
+        │                                                       ^^^^^^^^^^
+    550 │       RANK.indexOf(invocation.dataClassification) > RANK.indexOf(handle.maxDataClassification)
+    551 │     )
+
+  i Unsafe fix: Use a literal key instead.
+
+     547  547 │         keys[0] !== "inputRef" ||
+     548  548 │         typeof invocation.arguments["inputRef"] !== "string" ||
+     549      │ - ······!handle.inputRefs.includes(invocation.arguments["inputRef"])·||
+          549 │ + ······!handle.inputRefs.includes(invocation.arguments.inputRef)·||
+     550  550 │         RANK.indexOf(invocation.dataClassification) > RANK.indexOf(handle.maxDataClassification)
+     551  551 │       )
+
+
+apps/agent-service/src/production-runtime-tools.ts:698:40 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    696 │         capabilityVersion: handle.capabilityVersion,
+    697 │         operation: handle.operation,
+  > 698 │         inputRef: invocation.arguments["inputRef"] as string,
+        │                                        ^^^^^^^^^^
+    699 │         capabilityHandleRef: handle.ref,
+    700 │         delegatedContextRefs: [...handle.delegatedContextRefs],
+
+  i Unsafe fix: Use a literal key instead.
+
+     696  696 │           capabilityVersion: handle.capabilityVersion,
+     697  697 │           operation: handle.operation,
+     698      │ - ········inputRef:·invocation.arguments["inputRef"]·as·string,
+          698 │ + ········inputRef:·invocation.arguments.inputRef·as·string,
+     699  699 │           capabilityHandleRef: handle.ref,
+     700  700 │           delegatedContextRefs: [...handle.delegatedContextRefs],
+
+
+test/integration/sqlite-run-payload-artifacts.test.ts:217:43 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+
+    215 │           const payload = await repository.payloadStore(OWNER_ID, AGENT_ID).get(ref);
+    216 │           expect(payload).toBeDefined();
+  > 217 │           expect(new TextDecoder().decode(payload!.ciphertext)).not.toContain(
+        │                                           ^^^^^^^^
+    218 │             "private candidate text",
+    219 │           );
+
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+
+    215 215 │             const payload = await repository.payloadStore(OWNER_ID, AGENT_ID).get(ref);
+    216 216 │             expect(payload).toBeDefined();
+    217     │ - ··········expect(new·TextDecoder().decode(payload!.ciphertext)).not.toContain(
+        217 │ + ··········expect(new·TextDecoder().decode(payload?.ciphertext)).not.toContain(
+    218 218 │               "private candidate text",
+    219 219 │             );
+
+
+Checked 6 files in 60ms. No fixes applied.
+Found 1 warning.
+Found 8 infos.
+lint ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some warnings were emitted while running checks.

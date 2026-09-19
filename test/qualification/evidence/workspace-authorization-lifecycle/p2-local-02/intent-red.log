@@ -1,0 +1,28 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts (57 tests | 1 failed | 56 skipped) 7ms
+     × binds a protected recovery checkpoint before dispatch and preserves it on replay 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > binds a protected recovery checkpoint before dispatch and preserves it on replay
+TypeError: Cannot read properties of undefined (reading 'deploymentId')
+ ❯ executionIdentity apps/agent-service/src/production-runtime-tools.ts:85:38
+     83|       ...context,
+     84|       authority: {
+     85|         deploymentId: executionLease.deploymentId,
+       |                                      ^
+     86|         authorityEpoch: executionLease.authorityEpoch,
+     87|         fencingToken: executionLease.fencingToken,
+ ❯ ProductionRuntimeTools.#executeCanonical apps/agent-service/src/production-runtime-tools.ts:399:32
+ ❯ ProductionRuntimeTools.execute apps/agent-service/src/production-runtime-tools.ts:395:17
+ ❯ apps/agent-service/test/production-runtime-tools.unit.test.ts:39:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 56 skipped (57)
+   Start at  19:08:48
+   Duration  963ms (transform 719ms, setup 0ms, import 861ms, tests 7ms, environment 0ms)

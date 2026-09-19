@@ -16,6 +16,68 @@ async function exposed(f: ReturnType<typeof fixture>) {
 }
 
 describe("ProductionRuntimeTools", () => {
+  it("binds a protected recovery checkpoint before dispatch and preserves it on replay", async () => {
+    const f = fixture();
+    const call = {
+      ...invocation,
+      context: {
+        threadId: null,
+        modelRef: "model:test",
+        continuationRef: "checkpoint:original",
+        executionLease: {
+          ...f.options.authority().product,
+          executionLeaseId: "execution:test" as NonNullable<
+            RuntimeToolInvocation["context"]
+          >["executionLease"]["executionLeaseId"],
+          authorityLeaseId: f.options.authority().lease.leaseId,
+          authorityFencingToken: 1,
+          expectedLeaseRevision: 1,
+          consumerId: "consumer:test",
+        },
+      },
+    };
+    const original = f.request.getMockImplementation();
+    if (!original) throw new Error("fixture");
+    const readIntent = async () => {
+      const artifact = [...f.artifacts.values()].find((value) =>
+        value.operationKey.startsWith("runtime-tool-intent:"),
+      );
+      if (!artifact) throw new Error("intent missing");
+      const payload = await f.options.payloads.get(artifact.payloadRef);
+      if (!payload) throw new Error("payload missing");
+      const bytes = await f.options.protector.unprotect({
+        ownerId: artifact.ownerId,
+        agentId: artifact.agentId,
+        payload,
+      });
+      return JSON.parse(new TextDecoder().decode(bytes));
+    };
+    const recoveries: unknown[] = [];
+    f.request.mockImplementation(async (message) => {
+      recoveries.push((await readIntent()).recovery);
+      expect(JSON.stringify(message)).not.toContain("checkpoint:original");
+      return original(message);
+    });
+    const first = await (await exposed(f)).execute(call);
+    expect(recoveries).toEqual(
+      [0, 1].map(() => ({
+        version: "tool-batch-recovery.v1",
+        continuationRef: "checkpoint:original",
+        toolCallId: invocation.toolCallId,
+      })),
+    );
+    expect(first.outcome).toBe("succeeded");
+    expect(JSON.stringify(first)).not.toContain("checkpoint:original");
+    expect(
+      await (await exposed(f)).execute({
+        ...call,
+        context: { ...call.context, continuationRef: "checkpoint:later" },
+      }),
+    ).toEqual(first);
+    expect((await readIntent()).recovery.continuationRef).toBe("checkpoint:original");
+    expect(f.request).toHaveBeenCalledTimes(2);
+  });
+
   it("reports admission refusal as not dispatched and retains a protected diagnostic", async () => {
     const f = fixture();
     vi.spyOn(f.options.invocations, "consume").mockRejectedValue(

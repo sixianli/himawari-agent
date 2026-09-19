@@ -281,6 +281,35 @@ async function fixture() {
 }
 
 describe("production file read workflow through the Worker transport", () => {
+  it("binds both private phases to the original model tool checkpoint", async () => {
+    const f = await fixture();
+    if (!f.call.context) throw new Error("trusted context missing");
+    const call = {
+      ...f.call,
+      context: { ...f.call.context, continuationRef: "checkpoint:read-tool" },
+    };
+    expect((await (await f.open()).execute(call)).outcome).toBe("succeeded");
+    const phases = [...f.artifacts.values()].filter((value) =>
+      value.operationKey.startsWith("runtime-tool-intent:"),
+    );
+    expect(phases).toHaveLength(2);
+    for (const artifact of phases) {
+      const payload = await f.options.payloads.get(artifact.payloadRef);
+      if (!payload) throw new Error("payload missing");
+      const bytes = await f.options.protector.unprotect({
+        ownerId: artifact.ownerId,
+        agentId: artifact.agentId,
+        payload,
+      });
+      expect(JSON.parse(new TextDecoder().decode(bytes)).recovery).toEqual({
+        version: "tool-batch-recovery.v1",
+        continuationRef: "checkpoint:read-tool",
+        toolCallId: call.toolCallId,
+      });
+    }
+    expect(JSON.stringify(f.executeRequests())).not.toContain("checkpoint:read-tool");
+  });
+
   it("issues separate single-use credentials and feeds real Pi read output back; restart replays both stages", async () => {
     const f = await fixture();
     const tool = await f.open();

@@ -1,0 +1,8 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+test/integration/sqlite-run-payload-artifacts.test.ts(174,23): error TS2352: Conversion of type '{ ownerId: OwnerId; agentId: AgentId; runId: RunId; sessionId: SessionId; threadId: ThreadId; modelRef: string; systemInstructionRef: string; ... 7 more ...; executionLease: { ...; }; }' to type 'RuntimeRequest' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  The types of 'executionLease.executionLeaseId' are incompatible between these types.
+    Type 'string' is not comparable to type 'RunExecutionLeaseId'.
+      Type 'string' is not comparable to type '{ readonly [identifierBrand]: "RunExecutionLeaseId"; }'.

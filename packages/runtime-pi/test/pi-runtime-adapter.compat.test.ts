@@ -2401,6 +2401,18 @@ it("restores already disclosed batch results across consecutive approvals withou
   const suspended = first.at(-1);
   expect(suspended?.type).toBe("runtime.suspended");
   if (suspended?.type !== "runtime.suspended") throw new Error("Expected approval wait");
+  expect(snapshots.size).toBe(2);
+  expect(JSON.parse(snapshots.get(suspended.continuationRef) ?? "null")).toMatchObject({
+    batch: {
+      waitingToolCallId: "waiting-action",
+      completedResults: [
+        {
+          toolCallId: "completed-before-wait",
+          content: [{ type: "text", text: "first confirmed result" }],
+        },
+      ],
+    },
+  });
   approvals = 1;
   const secondWait = await collect(
     create().run({ ...input, continuationRef: suspended.continuationRef }),
@@ -2810,3 +2822,90 @@ it("preserves owner cancellation during admission of the loop summary", async ()
   expect(model.observed).toHaveLength(4);
   expect(tools.execute).toHaveBeenCalledTimes(4);
 });
+
+it.each(["saved", "storage-failed"] as const)(
+  "persists a protected Pi batch before entering the product tool: %s",
+  async (mode) => {
+    const model = await createFauxModelFixture("完成", {
+      name: "controlled_action",
+      id: "checkpoint-call",
+      arguments: { value: "test" },
+    });
+    const projection = new RecordingProjection();
+    let effects = 0;
+    const snapshots: unknown[] = [];
+    const save = vi.fn(async (_request: RuntimeRequest, value: unknown) => {
+      expect(effects).toBe(0);
+      if (mode === "storage-failed") throw new Error("private checkpoint storage diagnostic");
+      snapshots.push(structuredClone(value));
+      return "protected-before-tool";
+    });
+    const execute = vi.fn(async (call: Parameters<RuntimeToolPort["execute"]>[0]) => {
+      expect(call.context?.continuationRef).toBe("protected-before-tool");
+      expect(snapshots).toHaveLength(1);
+      effects++;
+      return {
+        outcome: "succeeded" as const,
+        resultRef: "result",
+        errorCode: null,
+        externalActionId: null,
+        modelContent: "已执行",
+      };
+    });
+    const adapter = new PiAgentRuntimeAdapter({
+      projection,
+      models: model.models,
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (_request, ordinal) => `pre-tool-checkpoint:${ordinal}`,
+      tools: {
+        listAuthorized: async () => [
+          {
+            name: "controlled_action",
+            description: "test",
+            capabilityRef: "test.checkpoint",
+            capabilityHandleRef: null,
+            parameters: {
+              type: "object",
+              properties: { value: { type: "string" } },
+              required: ["value"],
+            },
+          },
+        ],
+        preflight: async () => ({
+          allowed: true,
+          permissionDecisionRef: "test",
+          reasonCode: "test",
+        }),
+        execute,
+      },
+      continuations: {
+        save,
+        load: async () => {
+          throw new Error("not a resumed call");
+        },
+      },
+    });
+    const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(mode === "saved" ? 1 : 0);
+    if (mode === "saved")
+      expect(snapshots[0]).toMatchObject({
+        batch: {
+          version: "pi-tool-batch.v2",
+          waitingToolCallId: "checkpoint-call",
+          completedResults: [],
+        },
+      });
+    else {
+      expect(JSON.stringify(events)).not.toContain("private checkpoint storage diagnostic");
+      expect(projection.captures).toContainEqual(
+        expect.objectContaining({
+          kind: "tool_result",
+          value: expect.objectContaining({ toolCallId: "checkpoint-call", isError: true }),
+        }),
+      );
+    }
+  },
+);

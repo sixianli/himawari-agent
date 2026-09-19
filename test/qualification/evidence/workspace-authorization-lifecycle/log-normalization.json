@@ -1068,6 +1068,132 @@
       "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p3-local-04/typecheck.raw.log",
       "rawSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
       "normalizedSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/checkpoint-consumers.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/checkpoint-consumers.raw.log",
+      "rawSha256": "e23ec3658c5358f240247a62f2f55049ef8dfa4e29c18861c92c719e041bbdca",
+      "normalizedSha256": "df16e4e1e91b8b695328433e93a6525dd1af480b06cd8feb67bf7ce81f00facf"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/checkpoint-green.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/checkpoint-green.raw.log",
+      "rawSha256": "73c1e5a3320b56e208d00df980207a3ad992e487fd38c67e72d3f08fedb08f63",
+      "normalizedSha256": "58fb04d3d8add4d3844679f0c85ffaa6ca021abba756bee6864e745beb59a7af"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/checkpoint-red.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/checkpoint-red.raw.log",
+      "rawSha256": "d80324df2f4d434ddede3dcd83ef427a662f714fd30d5779fec78f7575b2c93e",
+      "normalizedSha256": "c63ede66ed57014ffcd958eb357aa205c3374c633caf939a5e24d3f72ec148ef"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/checkpoint-sqlite.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/checkpoint-sqlite.raw.log",
+      "rawSha256": "7093bac1dc59939323e0d5a48a9bc619c4e8ec43a15e781ed95ae425169d91ef",
+      "normalizedSha256": "66ae76ccb3d4aefacc74b0ae1e4e79428ec53f7994243f2cf1281fdf854e3a4c"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/intent-binding-red-final.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/intent-binding-red-final.raw.log",
+      "rawSha256": "8fdfc07a33e26ba172f70c9d2aba653442dc5e901be2545bd83d342ffecea654",
+      "normalizedSha256": "14125cebc867d94e2345bcbe30131b85481f1af160a805c5e93e818a6f1e0ec4"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/intent-binding-red.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/intent-binding-red.raw.log",
+      "rawSha256": "85ee39cf8751f020b4043805ae48d0771c94cbf13ad7a89de7bd2cd5f2a604bd",
+      "normalizedSha256": "8227f3ad180107a9e7c6c9cf756dac1c9c780863611dff76a800d9d9818f138e"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/intent-green.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/intent-green.raw.log",
+      "rawSha256": "32e729fd95e2949df665f1ead5f39968bc4f3bb7798771b3937cbe9aaffad8ef",
+      "normalizedSha256": "bb6f2206f96349914d2e60dc76eb553ff0296d9751a1786f7b3b804b43ea9185"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/intent-red.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/intent-red.raw.log",
+      "rawSha256": "183432d6211f1d2b9807cf7d5c5d64f07b58597865f6e4e0dd85521bff19daaf",
+      "normalizedSha256": "db92942afb4b89f07e2fd9d6896134b1a3370794477b3605502dde9050b166ca"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/lint-final.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/lint-final.raw.log",
+      "rawSha256": "80f73af653977f92aee013cf30da6b064b4fe12d14facd08402e1af985684f9c",
+      "normalizedSha256": "dfb4e41e978284a09633a911ac9a75707532c00e2c8de4ce41b4827f9ab4c4a7"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/lint.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/lint.raw.log",
+      "rawSha256": "0ca34c81f7c399c5d2c8c34e628276962494e2f84a6683fbfa5173f8edcdcea3",
+      "normalizedSha256": "28e6903d5c9d2aa0c269ef50739d373825c9db9ed4f8bb9c06bdaf352b9352e2"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/typecheck-final.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/typecheck-final.raw.log",
+      "rawSha256": "11f52399f729ea75e11f128fb3cbd0cbc48b9446b1fdb09d887fe4e7db72505f",
+      "normalizedSha256": "11f52399f729ea75e11f128fb3cbd0cbc48b9446b1fdb09d887fe4e7db72505f"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/typecheck-passed.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/typecheck-passed.raw.log",
+      "rawSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+      "normalizedSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/typecheck.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/typecheck.raw.log",
+      "rawSha256": "6ad5ece7209b2fbde8739651e118f1703fcfd9e8539b8586629f3236bf4f172b",
+      "normalizedSha256": "6ad5ece7209b2fbde8739651e118f1703fcfd9e8539b8586629f3236bf4f172b"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/browser-final.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/browser-final.raw.log",
+      "rawSha256": "6408d9fe34730a9a173c955c45bddd712700dbc075a47bd2d94a89b44ea06ad8",
+      "normalizedSha256": "6408d9fe34730a9a173c955c45bddd712700dbc075a47bd2d94a89b44ea06ad8"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/browser.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/browser.raw.log",
+      "rawSha256": "d94b208004b2313f13d8eaad7ac731b816cf45c4791777e4505a1d6cfad0db2c",
+      "normalizedSha256": "d94b208004b2313f13d8eaad7ac731b816cf45c4791777e4505a1d6cfad0db2c"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/build-final.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/build-final.raw.log",
+      "rawSha256": "3b3612c034d2d179cf6b5335f0dd54e21cad5e3a4830554c70d24f1dd8cef3c1",
+      "normalizedSha256": "a94811e2957dfaed9ec734da6448ef3581873922d5377953c0eaed87ca6b179f"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/projection-green.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/projection-green.raw.log",
+      "rawSha256": "eea61ed203a3f246d76f7292782648cbe63e625d3e9739e0796def6ee1b8e917",
+      "normalizedSha256": "536d7061da164fbd5d8b93db975517ddb0f9792c8818fbd24a789cbe40a74dbc"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/projection-lint.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/projection-lint.raw.log",
+      "rawSha256": "08a34d1c5ae0190802f23c0d8f5791305d574c84603ba9490346b8a3ce1154df",
+      "normalizedSha256": "49a6c38a6923994aadfe3dd00bee523be6eac6a646b0b0b066c98a0e74500ccb"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/projection-red.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/projection-red.raw.log",
+      "rawSha256": "12319bc79319523de21c18164d4100aacbea6000fcddab91796c0b2abdc87978",
+      "normalizedSha256": "def9f895fa21c9ff1ea54b389d566c2e7ffbd586bea83d94c2b20fdd46f62402"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/standard-ci.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/standard-ci.raw.log",
+      "rawSha256": "3419683062b7a67f248cdc02d0216268c71174e7209afdd81eafa6067015841d",
+      "normalizedSha256": "3419683062b7a67f248cdc02d0216268c71174e7209afdd81eafa6067015841d"
+    },
+    {
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/typecheck-complete.log",
+      "rawLocalPath": "test/qualification/evidence/workspace-authorization-lifecycle/p2-local-02/typecheck-complete.raw.log",
+      "rawSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+      "normalizedSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
     }
   ]
 }

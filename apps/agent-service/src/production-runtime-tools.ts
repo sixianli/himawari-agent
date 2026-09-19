@@ -704,9 +704,20 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         deadlineAt,
       },
     };
+    const recoveryCall = parentCall ?? invocation;
+    const continuationRef = recoveryCall.context?.continuationRef;
     const committed = await this.#writeJson(invocation, intentKey.operationKey, {
       fingerprint,
       request,
+      ...(continuationRef
+        ? {
+            recovery: {
+              version: "tool-batch-recovery.v1",
+              continuationRef,
+              toolCallId: recoveryCall.toolCallId,
+            },
+          }
+        : {}),
     });
     // A concurrent writer won the durable operation key. Never forward a second request.
     if (committed.replayed)

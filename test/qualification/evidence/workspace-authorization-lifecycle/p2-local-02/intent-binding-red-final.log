@@ -1,0 +1,44 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts (57 tests | 1 failed | 56 skipped) 20ms
+     × binds a protected recovery checkpoint before dispatch and preserves it on replay 19ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > binds a protected recovery checkpoint before dispatch and preserves it on replay
+AssertionError: expected [ undefined, undefined ] to deeply equal [ { …(3) }, { …(3) } ]
+
+- Expected
++ Received
+
+  [
+-   {
+-     "continuationRef": "checkpoint:original",
+-     "toolCallId": "call:tools",
+-     "version": "tool-batch-recovery.v1",
+-   },
+-   {
+-     "continuationRef": "checkpoint:original",
+-     "toolCallId": "call:tools",
+-     "version": "tool-batch-recovery.v1",
+-   },
++   undefined,
++   undefined,
+  ]
+
+ ❯ apps/agent-service/test/production-runtime-tools.unit.test.ts:46:24
+     44|     });
+     45|     const first = await (await exposed(f)).execute(call);
+     46|     expect(recoveries).toEqual([0, 1].map(() => ({ version: "tool-batc…
+       |                        ^
+     47|     expect(first.outcome).toBe("succeeded");
+     48|     expect(JSON.stringify(first)).not.toContain("checkpoint:original");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 56 skipped (57)
+   Start at  19:09:53
+   Duration  798ms (transform 551ms, setup 0ms, import 681ms, tests 20ms, environment 0ms)
