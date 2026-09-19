@@ -322,6 +322,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0035_workspace_admission_queue.sql",
   },
+  {
+    sequence: 36,
+    name: "fixed_file_scope_contract",
+    changeSet: "fixed-file-scope-contract",
+    phase: "expand" as const,
+    file: "0036_fixed_file_scope_contract.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

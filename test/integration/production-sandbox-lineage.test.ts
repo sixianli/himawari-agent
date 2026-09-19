@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import type { SandboxExecutionRecord, WorkerExecuteRequest } from "@himawari-agent/application";
 import {
   executionV2MessageSchema,
@@ -6,6 +8,7 @@ import {
   sandboxExecutionFactsSchema,
 } from "@himawari-agent/execution-contracts";
 import { afterEach, describe, expect, it } from "vitest";
+import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import messages from "../../packages/execution-contracts/test/fixtures/v2/messages.json" with {
   type: "json",
 };
@@ -481,4 +484,33 @@ describe("legacy sandbox parent lineage", () => {
     });
     await expect(f.services.broker.verifyStart(parent.record.plan)).resolves.toBeUndefined();
   });
+});
+
+it("freezes the host file version and rejects changes while waiting", async () => {
+  const f = await productionSandboxScope(
+    { ...descriptor, contract: { ref: "pi-coding-tool", version: "2", kind: "fixed_read" } },
+    undefined,
+    { piParameters: { path: "file.txt" } },
+  );
+  cleanups.push(f.close);
+  await writeFile(path.join(f.host.workspace, "file.txt"), "before");
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("Expected v2 reservation");
+  expect(prepared.workspaces[0]?.file?.name).toBe("file.txt");
+  const scope = await f.services.runtime.scopes.read(prepared.plan, f.call.runId);
+  expect(scope.fileTarget?.before?.contentDigest).toBe(
+    createHash("sha256").update("before").digest("hex"),
+  );
+  await writeFile(path.join(f.host.workspace, "file.txt"), "concurrent modification");
+  await expect(f.services.runtime.scopes.read(prepared.plan, f.call.runId)).rejects.toThrow(
+    "SANDBOX_FILE_VERSION_CHANGED",
+  );
+  const database = openQualifiedDatabase(path.join(f.f.resource.stateRoot, "product.sqlite"));
+  try {
+    expect(
+      database.prepare("SELECT COUNT(*) AS n FROM capability_invocation_receipts").get(),
+    ).toEqual({ n: 0 });
+  } finally {
+    database.close();
+  }
 });

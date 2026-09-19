@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
-import { lstat, realpath } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, realpath } from "node:fs/promises";
 import { release } from "node:os";
 import { Worker } from "node:worker_threads";
 import path from "node:path";
 import type { SandboxWorkspaceClaim } from "@himawari-agent/application";
 import {
   assertSandboxExecutionSupport,
+  sandboxFileTargetSchema,
+  type SandboxFileTarget,
   type SandboxExecutionPlan,
   type SandboxExecutionPlanCandidate,
   type SandboxExecutionPlanCandidateV2,
@@ -225,4 +228,171 @@ export async function resolveSandboxWorkspaceClaim(input: {
       metadata.map((info) => Object.freeze({ device: String(info.dev), inode: String(info.ino) })),
     ),
   });
+}
+
+/** Exact-file coordination for the installed fixed-target Operations contract.
+ * Missing parents retain directory coverage until a parent-creation protocol is
+ * available. Neither this resolver nor a model annotation grants filesystem I/O. */
+export async function resolveSandboxFileScope(input: {
+  readonly binding: SandboxHostBinding;
+  readonly scope: SandboxScope;
+  readonly relativePath: string;
+  readonly access: "read" | "write";
+}): Promise<{ readonly claim: SandboxWorkspaceClaim; readonly target: SandboxFileTarget }> {
+  input = {
+    binding: sandboxHostBindingSchema.parse(input.binding),
+    scope: sandboxScopeSchema.parse(input.scope),
+    relativePath: input.relativePath,
+    access: input.access,
+  };
+  if (
+    !["read", "write"].includes(input.access) ||
+    (input.access === "read" && !input.scope.directoryGrant.operations.includes("read"))
+  )
+    throw new Error("SANDBOX_FILE_ACCESS_DENIED");
+  const directory = await resolveSandboxWorkspaceClaim(input);
+  const root = input.binding.roots.find(
+    (item) => item.canonicalRootId === directory.canonicalRootId,
+  );
+  const parts = input.relativePath.split("/");
+  if (
+    !root ||
+    path.isAbsolute(input.relativePath) ||
+    parts.some(
+      (part) =>
+        !part ||
+        part === "." ||
+        part === ".." ||
+        part === ".git" ||
+        part === ".env" ||
+        part.startsWith(".himawari-") ||
+        Array.from(part).some(
+          (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+        ),
+    )
+  )
+    throw new Error("SANDBOX_HOST_PATH_UNSAFE");
+  if (input.access === "write" && directory.access !== "write")
+    throw new Error("SANDBOX_FILE_ACCESS_DENIED");
+  const lineage = [...directory.lineage];
+  const parents: { path: string; device: string; inode: string }[] = [];
+  let current = root.canonicalPath;
+  for (const part of parts.slice(0, -1)) {
+    current = path.join(current, part);
+    const info = await lstat(current, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (!info)
+      return {
+        claim: directory,
+        target: sandboxFileTargetSchema.parse({
+          schemaVersion: "sandbox-file-target.v1",
+          relativePath: input.relativePath,
+          lineage: lineage.slice(directory.lineage.length - 1),
+          before: null,
+          missingParents: parts.length - 1 - parents.length,
+        }),
+      };
+    if (!info.isDirectory() || info.isSymbolicLink() || String(info.dev) !== root.device)
+      throw new Error("SANDBOX_HOST_PATH_UNSAFE");
+    const identity = { device: String(info.dev), inode: String(info.ino) };
+    parents.push({ path: current, ...identity });
+    lineage.push(identity);
+  }
+  const name = parts.at(-1);
+  if (!name || Buffer.byteLength(name) > 255) throw new Error("SANDBOX_HOST_PATH_UNSAFE");
+  const target = path.join(current, name);
+  const info = await lstat(target, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (
+    info &&
+    (!info.isFile() ||
+      info.isSymbolicLink() ||
+      info.nlink !== 1n ||
+      String(info.dev) !== root.device)
+  )
+    throw new Error("SANDBOX_HOST_FILE_UNSAFE");
+  let versionDigest: string | undefined;
+  if (info) {
+    if (!input.scope.directoryGrant.operations.includes("read") || info.size > 16n * 1024n * 1024n)
+      throw new Error("SANDBOX_HOST_FILE_UNSAFE");
+    const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const before = await handle.stat({ bigint: true });
+      if (
+        before.dev !== info.dev ||
+        before.ino !== info.ino ||
+        before.size !== info.size ||
+        before.mtimeNs !== info.mtimeNs ||
+        before.ctimeNs !== info.ctimeNs ||
+        before.nlink !== 1n
+      )
+        throw new Error("SANDBOX_FILE_VERSION_CHANGED");
+      const bytes = Buffer.alloc(Number(before.size));
+      for (let offset = 0; offset < bytes.length; ) {
+        const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
+        if (!bytesRead) throw new Error("SANDBOX_FILE_VERSION_CHANGED");
+        offset += bytesRead;
+      }
+      const after = await handle.stat({ bigint: true });
+      const current = await lstat(target, { bigint: true });
+      if (
+        after.size !== before.size ||
+        after.mtimeNs !== before.mtimeNs ||
+        after.ctimeNs !== before.ctimeNs ||
+        current.dev !== before.dev ||
+        current.ino !== before.ino ||
+        current.nlink !== 1n
+      )
+        throw new Error("SANDBOX_FILE_VERSION_CHANGED");
+      versionDigest = createHash("sha256").update(bytes).digest("hex");
+    } finally {
+      await handle.close();
+    }
+  }
+  const fresh = await resolveSandboxWorkspaceClaim(input);
+  if (JSON.stringify(fresh.lineage) !== JSON.stringify(directory.lineage))
+    throw new Error("SANDBOX_HOST_ROOT_CHANGED");
+  for (const parent of parents) {
+    const after = await lstat(parent.path, { bigint: true });
+    if (
+      !after.isDirectory() ||
+      after.isSymbolicLink() ||
+      String(after.dev) !== parent.device ||
+      String(after.ino) !== parent.inode
+    )
+      throw new Error("SANDBOX_HOST_PATH_CHANGED");
+  }
+  const slotName = name.normalize("NFC").toLowerCase();
+  const claim = Object.freeze({
+    ...directory,
+    ref: `workspace:${createHash("sha256")
+      .update(JSON.stringify([input.binding.hostId, lineage.at(-1), slotName]))
+      .digest("hex")}`,
+    access: input.access,
+    lineage: Object.freeze(lineage),
+    file: Object.freeze({
+      name: slotName,
+      identity: info ? { device: String(info.dev), inode: String(info.ino) } : null,
+      atomicPublish: input.access === "write",
+      ...(versionDigest === undefined ? {} : { versionDigest }),
+    }),
+  });
+  return {
+    claim,
+    target: sandboxFileTargetSchema.parse({
+      schemaVersion: "sandbox-file-target.v1",
+      relativePath: input.relativePath,
+      lineage: lineage.slice(directory.lineage.length - 1),
+      before: claim.file.identity ? { ...claim.file.identity, contentDigest: versionDigest } : null,
+    }),
+  };
+}
+export async function resolveSandboxFileWorkspaceClaim(
+  input: Parameters<typeof resolveSandboxFileScope>[0],
+): Promise<SandboxWorkspaceClaim> {
+  return (await resolveSandboxFileScope(input)).claim;
 }

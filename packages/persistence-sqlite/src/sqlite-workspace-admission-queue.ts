@@ -12,15 +12,18 @@ type Position = Awaited<ReturnType<SandboxExecutionPreparationPort["enqueue"]>>;
 export class SqliteWorkspaceAdmissionQueue {
   private readonly db: Database.Database;
   private readonly fail: SqliteApplicationFailure;
-  private readonly overlaps: (left: SandboxWorkspaceClaim, right: SandboxWorkspaceClaim) => boolean;
+  private readonly conflicts: (
+    left: SandboxWorkspaceClaim,
+    right: SandboxWorkspaceClaim,
+  ) => boolean;
   constructor(
     db: Database.Database,
     fail: SqliteApplicationFailure,
-    overlaps: (left: SandboxWorkspaceClaim, right: SandboxWorkspaceClaim) => boolean,
+    conflicts: (left: SandboxWorkspaceClaim, right: SandboxWorkspaceClaim) => boolean,
   ) {
     this.db = db;
     this.fail = fail;
-    this.overlaps = overlaps;
+    this.conflicts = conflicts;
   }
 
   enqueue(
@@ -92,12 +95,7 @@ export class SqliteWorkspaceAdmissionQueue {
         .all(claim.hostId, own?.sequence ?? Number.MAX_SAFE_INTEGER, jobId) as { claims: string }[];
       for (const row of older) {
         const candidates = JSON.parse(row.claims) as SandboxWorkspaceClaim[];
-        if (
-          candidates.some(
-            (other) =>
-              this.overlaps(claim, other) && (claim.access === "write" || other.access === "write"),
-          )
-        )
+        if (candidates.some((other) => this.conflicts(claim, other)))
           this.fail("PORT_CONFLICT", "Workspace has an earlier conflicting request", {
             reasonCode: "WORKSPACE_QUEUED",
           });

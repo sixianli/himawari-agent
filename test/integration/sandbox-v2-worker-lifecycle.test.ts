@@ -39,6 +39,8 @@ it.each([
   "normal",
   "command",
   "pi",
+  "pi-fixed",
+  "pi-fixed-without-target",
   "replay",
   "bind-ack-loss",
   "registration-revoked",
@@ -54,6 +56,14 @@ it.each([
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const admitted = sandboxV2Call(f, "admit", sandboxV2Admission(f)).record;
   const service = scenario === "service";
+  const piScenario = scenario.startsWith("pi");
+  const validPi = piScenario && scenario !== "pi-fixed-without-target";
+  const fixedTarget = {
+    schemaVersion: "sandbox-file-target.v1",
+    relativePath: "file.txt",
+    lineage: [{ device: "1", inode: "10" }],
+    before: null,
+  };
   const background = scenario.startsWith("background") || service;
   const probe = {
     kind: "unix_http" as const,
@@ -81,10 +91,14 @@ it.each([
           ...admitted.plan,
           operationContract: { kind: "command" as const, ref: "command", version: "1" },
         }
-      : scenario === "pi"
+      : piScenario
         ? {
             ...admitted.plan,
-            operationContract: { kind: "fixed_read" as const, ref: "pi-coding-tool", version: "1" },
+            operationContract: {
+              kind: "fixed_read" as const,
+              ref: "pi-coding-tool",
+              version: scenario === "pi" ? "1" : "2",
+            },
           }
         : admitted.plan;
   const calls: string[] = [];
@@ -129,7 +143,7 @@ it.each([
   };
   mocks.prepare.mockImplementation((request) => {
     parseJobHostRequest({ ...request, deadlineAt: new Date(Date.now() + 60000).toISOString() });
-    if (scenario === "pi") {
+    if (piScenario) {
       const input = JSON.parse(Buffer.from(request.stdinBase64, "base64").toString("utf8"));
       expect(input).toMatchObject({
         schemaVersion: "pi-runner.v1",
@@ -137,6 +151,8 @@ it.each([
         workspace: root,
         scope: { authorizationRef: plan.authorizationRef, profileRef: "authorized-project.v1" },
       });
+      if (scenario === "pi-fixed") expect(input.scope.fileTarget).toEqual(fixedTarget);
+      else expect(input.scope.fileTarget).toBeUndefined();
       expect(JSON.parse(input.parametersJson)).toEqual({
         path: "file.txt",
         workspace: "/untrusted",
@@ -190,7 +206,7 @@ it.each([
   };
   const payloads = {
     readInput: async () =>
-      scenario === "pi"
+      piScenario
         ? Buffer.from(
             JSON.stringify({
               path: "file.txt",
@@ -269,8 +285,13 @@ it.each([
         resolvedScope:
           command.kind === "resolve"
             ? {
-                scope:
-                  scenario === "pi" ? { ...f.scope, profileRef: "authorized-project.v1" } : f.scope,
+                scope: piScenario
+                  ? {
+                      ...f.scope,
+                      profileRef: "authorized-project.v1",
+                      ...(scenario === "pi-fixed" ? { fileTarget: fixedTarget } : {}),
+                    }
+                  : f.scope,
                 allowedDomains: [],
               }
             : null,
@@ -335,14 +356,13 @@ it.each([
   expect(host.start).toHaveBeenCalledTimes(
     scenario === "normal" ||
       scenario === "command" ||
-      scenario === "pi" ||
+      validPi ||
       scenario === "finished-during-check" ||
       scenario === "revoked-running"
       ? 1
       : 0,
   );
-  if (scenario === "normal" || scenario === "pi")
-    expect(facts.effect).toEqual({ kind: "not_applicable" });
+  if (scenario === "normal" || validPi) expect(facts.effect).toEqual({ kind: "not_applicable" });
   if (scenario === "command") expect(facts.effect).toEqual({ kind: "not_asserted" });
   if (scenario === "finished-during-check") {
     expect(calls).not.toContain("observe_control");
@@ -353,7 +373,7 @@ it.each([
     });
     expect(facts.resource).toMatchObject({ supervision: "lost", cleanup: "unknown" });
   }
-  if (scenario === "normal" || scenario === "command" || scenario === "pi") {
+  if (scenario === "normal" || scenario === "command" || validPi) {
     expect(calls.indexOf("register_control")).toBeLessThan(calls.indexOf("bind"));
     expect(calls.indexOf("bind")).toBeLessThan(calls.indexOf("host-start"));
     expect(facts.result).toMatchObject({
@@ -362,6 +382,9 @@ it.each([
     });
     expect(facts.resource).toMatchObject({ supervision: "lost", cleanup: "unknown" });
   }
-  expect(host.cancel).toHaveBeenCalled();
+  if (scenario === "pi-fixed-without-target") {
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(host.cancel).not.toHaveBeenCalled();
+  } else expect(host.cancel).toHaveBeenCalled();
   await worker.shutdown();
 });

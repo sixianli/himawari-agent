@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:23e16f80053ffa0d53c103b775a68721354282e74aac48c6d811f7e1e09d5449"
+contract_sha256: "sha256:b31805584df528dd24314b4c8b2d7426b6770d7df73b18f9a95e6f18466b8902"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,11 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/migrations/0036_fixed_file_scope_contract.sql
+- packages/execution-contracts/src/sandbox-scope-v1.ts
+- packages/execution-contracts/src/pi-runner-v1.ts
+- packages/platform-node/src/capabilities/sandbox-host-verifier.ts
+- packages/platform-node/src/files/sandboxed-coding-operations.ts
 - packages/persistence-sqlite/src/migrations/0035_workspace_admission_queue.sql
 - packages/persistence-sqlite/src/sqlite-workspace-admission-queue.ts
 - packages/application/src/services/file-operation-service.ts
@@ -45,9 +50,7 @@ date: "2026-08-27"
 - packages/execution-contracts/src/sandbox-readiness.ts
 - apps/agent-service/src/capability-programs/pi-coding-main.ts
 - packages/runtime-pi/src/sandboxed-coding-executor.ts
-- packages/platform-node/src/files/sandboxed-coding-operations.ts
 - packages/platform-node/src/files/pi-output-export.ts
-- packages/execution-contracts/src/pi-runner-v1.ts
 - apps/agent-service/src/production-sandbox-output.ts
 - apps/agent-service/src/production-sandbox-control.ts
 - packages/application/src/services/sandbox-execution-reconciliation.ts
@@ -65,7 +68,6 @@ date: "2026-08-27"
 - packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts
 - apps/execution-worker/src/production-worker-composition.ts
 - apps/execution-worker/src/production-sandbox-worker.ts
-- packages/platform-node/src/capabilities/sandbox-host-verifier.ts
 - packages/application/src/services/sandbox-scope-service.ts
 - packages/application/src/services/sandbox-network-authorization.ts
 - packages/application/src/services/sandbox-startup-recovery.ts
@@ -410,3 +412,11 @@ Schema 35 新增 `sandbox_admission_queue`。备份应同时保留队列次序�
 受控文件发布先完成并同步暂存内容，再发布最终路径。已保存的文件操作记录可包含暂存 inode 证据；恢复只核查最终文件身份与内容，并清除属于该操作的暂存硬链接，不重复写入。仅内容相同不足以证明是本操作产生的效果。文件候选位于原授权目录的 `.himawari-recovery/`；它不属于产品数据库备份包，不能据数据库恢复宣称候选内容或目标文件已恢复。
 
 Schema 35 也是旧 writer 的版本屏障：Schema 34 或更旧代码不理解持久公平队列及文件发布归属，禁止并行写入新库。回退须停止服务并恢复匹配旧版本的完整恢复点，不能只删除新表或降版本号。当前文件原语已有本地 macOS 回归证据；跨 Worker 的细粒度文件占用、Linux 文件系统资格和部署升级仍须独立验证。
+
+### Schema 36 固定文件目标合同
+
+Schema 36 不重写旧记录；它为新增 JSON 字段建立 writer 版本屏障。`pi-coding-tool` 合同 2 在受保护 Scope 中保存 `sandbox-file-target.v1`：相对路径、授权根以下的已存在父目录身份，以及原文件 inode 和内容摘要。目标不存在与父目录尚未创建分别记录；父目录缺失时继续协调整个授权目录，不伪称已有精确父目录身份。备份必须保留原 Scope Payload、其摘要和对应 claim，不能恢复时按最新文件内容重建原基线。
+
+合同 1 继续使用目录级协调。合同 2 仅用于固定目标 read/write/edit；新 Worker 在启动 Job Host 前拒绝缺少文件快照的新合同，旧 Worker 会拒绝未知合同版本。它仍复用原 Job Host、SRT 与 Pi Operations；不能仅在登记数据里把版本改成 2 就视为安装资格通过。新安装的实际字节、冻结快照和目标主机资格必须匹配后才可采用新合同。
+
+恢复不能把目标版本冲突改写为允许覆盖。文件型 claim 同时保留父目录名称槽位和当前文件身份，原子替换后名称槽位仍冲突；硬链接、符号链接和跨设备目标被拒绝。名称保守归一化可能在区分大小写的文件系统上多排队，不能据此宣称所有别名场景的并行资格已通过。默认核验读取仍要求当前路径不变；固定文件读取可读完已经打开的完整旧版本，不能推广成任意原地写入都可并行。回退仍要求停止服务并恢复匹配旧版本的完整恢复点。

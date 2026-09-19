@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   chmod,
+  link,
   mkdir,
   mkdtemp,
   realpath,
@@ -21,6 +22,7 @@ import { afterEach, expect, it } from "vitest";
 import {
   digestSandboxRuntime,
   resolveSandboxWorkspaceClaim,
+  resolveSandboxFileWorkspaceClaim,
   verifySandboxHost,
 } from "../src/capabilities/sandbox-host-verifier.js";
 
@@ -337,3 +339,34 @@ it.each(["content", "file-link", "directory-link", "writable"])(
     await expect(verifySandboxHost(input)).rejects.toThrow(/SANDBOX_HOST/);
   },
 );
+
+it("resolves file slots and inode identities without locking sibling files", async () => {
+  const input = await fixture();
+  const scope = scopeFor(input);
+  const root = input.binding.roots[0];
+  if (!root) throw new Error("fixture root missing");
+  await mkdir(path.join(root.canonicalPath, "notes"));
+  await writeFile(path.join(root.canonicalPath, "notes", "A.txt"), "first");
+  const resolve = (relativePath: string) =>
+    resolveSandboxFileWorkspaceClaim({ ...input, scope, relativePath, access: "read" });
+  const existing = await resolve("notes/A.txt");
+  const absent = await resolve("notes/B.txt");
+  expect(existing.file?.name).toBe("a.txt");
+  expect(existing.file?.identity).toEqual({
+    device: String((await stat(path.join(root.canonicalPath, "notes/A.txt"))).dev),
+    inode: String((await stat(path.join(root.canonicalPath, "notes/A.txt"))).ino),
+  });
+  expect(absent.file).toEqual({ name: "b.txt", identity: null, atomicPublish: false });
+  expect(existing.lineage).toEqual(absent.lineage);
+  expect(existing.ref).not.toBe(absent.ref);
+  expect((await resolve("new-parent/file.txt")).file).toBeUndefined();
+  await link(
+    path.join(root.canonicalPath, "notes/A.txt"),
+    path.join(root.canonicalPath, "alias.txt"),
+  );
+  await expect(resolve("alias.txt")).rejects.toThrow("FILE_UNSAFE");
+  await expect(resolve("../outside")).rejects.toThrow();
+  await expect(resolve(".git/config")).rejects.toThrow();
+  await symlink(path.join(root.canonicalPath, "notes"), path.join(root.canonicalPath, "linked"));
+  await expect(resolve("linked/B.txt")).rejects.toThrow("PATH_UNSAFE");
+});

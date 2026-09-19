@@ -942,3 +942,45 @@ describe("host file read target resolution", () => {
     await expect(resolver(f).resolve("file.txt")).rejects.toThrow("HOST_ROOT_IDENTITY_CHANGED");
   });
 });
+
+it.each(["current_path", "opened_version"] as const)(
+  "preserves the chosen read contract during atomic replacement: %s",
+  async (consistency) => {
+    const { grant, platform } = await fixture();
+    const target = path.join(grant.displayPath, "atomic-read.txt");
+    await writeFile(target, "complete old version");
+    const expected = await platform.inspect(grant, "atomic-read.txt");
+    if (!expected) throw new Error("fixture file missing");
+    const original = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    let replaced = false;
+    const openSpy = vi.spyOn(fsPromises, "open").mockImplementation(async (...args) => {
+      const handle = await original.open(...args);
+      if (String(args[0]) === expected.canonicalPath && !replaced) {
+        const read = handle.read.bind(handle);
+        vi.spyOn(handle, "read").mockImplementation(async (...values) => {
+          if (!replaced) {
+            replaced = true;
+            await platform.replaceAtomic(
+              grant,
+              "atomic-read.txt",
+              expected,
+              new TextEncoder().encode("complete new version"),
+              new TextEncoder().encode("complete old version"),
+            );
+          }
+          return read(...values);
+        });
+      }
+      return handle;
+    });
+    try {
+      const reading = platform.read(grant, "atomic-read.txt", 100, expected, consistency);
+      if (consistency === "opened_version")
+        expect(new TextDecoder().decode(await reading)).toBe("complete old version");
+      else await expect(reading).rejects.toThrow("HOST_FILE_CONTENT_CHANGED");
+      expect(await readFile(target, "utf8")).toBe("complete new version");
+    } finally {
+      openSpy.mockRestore();
+    }
+  },
+);

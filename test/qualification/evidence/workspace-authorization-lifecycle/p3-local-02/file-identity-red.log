@@ -1,0 +1,26 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/sandbox-host-verifier.unit.test.ts (22 tests | 1 failed) 1736ms
+   × resolves file slots and inode identities without locking sibling files 44ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/sandbox-host-verifier.unit.test.ts > resolves file slots and inode identities without locking sibling files
+TypeError: resolveSandboxFileWorkspaceClaim is not a function
+ ❯ resolve packages/platform-node/test/sandbox-host-verifier.unit.test.ts:350:45
+    348|   await mkdir(path.join(root.canonicalPath, "notes"));
+    349|   await writeFile(path.join(root.canonicalPath, "notes", "A.txt"), "fi…
+    350|   const resolve = (relativePath: string) => resolveSandboxFileWorkspac…
+       |                                             ^
+    351|   const existing = await resolve("notes/A.txt");
+    352|   const absent = await resolve("notes/B.txt");
+ ❯ packages/platform-node/test/sandbox-host-verifier.unit.test.ts:351:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 21 passed (22)
+   Start at  20:41:08
+   Duration  2.00s (transform 114ms, setup 0ms, import 144ms, tests 1.74s, environment 0ms)

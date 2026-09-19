@@ -1,0 +1,47 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and keeps legacy scopes at directory coverage
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.0842090000005555,"at":"2026-09-16T11:54:43.594Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and keeps legacy scopes at directory coverage
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":34.23370900000009,"at":"2026-09-16T11:54:43.629Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and keeps legacy scopes at directory coverage
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2929169999988517,"at":"2026-09-16T11:54:43.629Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and keeps legacy scopes at directory coverage
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.5772499999984575,"at":"2026-09-16T11:54:43.630Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and keeps legacy scopes at directory coverage
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.4475830000010319,"at":"2026-09-16T11:54:43.630Z"}
+
+ ❯ |integration| test/integration/production-sandbox-lineage.test.ts (24 tests | 1 failed) 10530ms
+   × freezes the host file version and keeps legacy scopes at directory coverage 404ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-lineage.test.ts > freezes the host file version and keeps legacy scopes at directory coverage
+AssertionError: expected undefined to be 'file.txt' // Object.is equality
+
+- Expected:
+"file.txt"
+
++ Received:
+undefined
+
+ ❯ test/integration/production-sandbox-lineage.test.ts:494:46
+    492|   const prepared = await f.services.runtime.prepare(f.input, f.call);
+    493|   if (!("reservation" in prepared)) throw new Error("Expected v2 reser…
+    494|   expect(prepared.workspaces[0]?.file?.name).toBe("file.txt");
+       |                                              ^
+    495|   const scope = await f.services.runtime.scopes.read(prepared.plan, f.…
+    496|   expect(scope.fileTarget?.before?.contentDigest).toBe(createHash("sha…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 23 passed (24)
+   Start at  20:54:31
+   Duration  11.96s (transform 854ms, setup 0ms, import 1.34s, tests 10.53s, environment 0ms)

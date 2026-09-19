@@ -1,0 +1,4 @@
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts(365,28): error TS18046: 'character' is of type 'unknown'.
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts(365,60): error TS18046: 'character' is of type 'unknown'.
+
+{"exitCode":2,"signal":null,"durationMs":7707}

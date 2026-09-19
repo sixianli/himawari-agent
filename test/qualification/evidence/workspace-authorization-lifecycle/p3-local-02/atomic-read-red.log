@@ -1,0 +1,29 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/constrained-file-system.unit.test.ts (42 tests | 1 failed) 403ms
+   × reads a complete opened version while another operation atomically replaces its path 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/constrained-file-system.unit.test.ts > reads a complete opened version while another operation atomically replaces its path
+AssertionError: expected 'complete old version' to be 'complete new version' // Object.is equality
+
+Expected: "complete new version"
+Received: "complete old version"
+
+ ❯ packages/platform-node/test/constrained-file-system.unit.test.ts:971:44
+    969|   try {
+    970|     expect(new TextDecoder().decode(await platform.read(grant, "atomic…
+    971|     expect(await readFile(target, "utf8")).toBe("complete new version"…
+       |                                            ^
+    972|   } finally { vi.mocked(fsPromises.open).mockImplementation(original.o…
+    973| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 41 passed (42)
+   Start at  20:43:54
+   Duration  2.33s (transform 1.12s, setup 0ms, import 1.81s, tests 403ms, environment 0ms)

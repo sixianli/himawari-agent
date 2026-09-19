@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import path from "node:path";
 import {
   type CapabilityInvocationAuthority,
   type ClockPort,
@@ -20,6 +21,8 @@ import {
 } from "@himawari-agent/application";
 import {
   assertSandboxExecutionSupport,
+  PI_FIXED_FILE_CONTRACT,
+  type SandboxHostBinding,
   type SandboxExecutionPlanCandidate,
   type SandboxExecutionPlanCandidateV2,
   type SandboxExecutionPlanV2,
@@ -35,6 +38,7 @@ import type { SqliteProductStateRepository } from "@himawari-agent/persistence-s
 import {
   CapabilityDeploymentSnapshotLoader,
   resolveSandboxWorkspaceClaim,
+  resolveSandboxFileScope,
   revalidateCapabilityDeploymentSnapshot,
   verifyPiWriteEvidence,
   verifySandboxHost,
@@ -354,10 +358,68 @@ export async function createProductionSandboxServices(options: {
       )
     )
       throw new Error("SANDBOX_ROOT_UNAVAILABLE");
-    const workspaceClaim = await timed("workspace_identity", () =>
+    let workspaceClaim = await timed("workspace_identity", () =>
       resolveSandboxWorkspaceClaim({ binding, scope: resolved.scope }),
     );
+    const fixed =
+      plan.schemaVersion === "sandbox-execution.v2" && fixedFileContract(plan.operationContract);
+    if (Boolean(resolved.scope.fileTarget) !== fixed)
+      throw new Error("SANDBOX_FILE_CONTRACT_CHANGED");
+    if (fixed && plan.schemaVersion === "sandbox-execution.v2") {
+      const admission = await preparations.readAdmission(plan.identity);
+      if (admission?.phase === "bound") {
+        const retained = admission.record.workspaces[0];
+        if (
+          !retained ||
+          (!retained.file && !resolved.scope.fileTarget?.missingParents) ||
+          admission.record.workspaces.length !== 1
+        )
+          throw new Error("SANDBOX_FILE_CLAIM_CHANGED");
+        workspaceClaim = retained;
+      } else {
+        const current = await fileTarget(resolved.scope, binding);
+        if (hash(current.target) !== hash(resolved.scope.fileTarget))
+          throw new Error("SANDBOX_FILE_VERSION_CHANGED");
+        workspaceClaim = current.claim;
+      }
+    }
     return { binding, qualification, workspaceClaim, ...resolved };
+  };
+  const fixedFileContract = (contract: { readonly ref: string; readonly version: string }) =>
+    contract.ref === PI_FIXED_FILE_CONTRACT.ref &&
+    contract.version === PI_FIXED_FILE_CONTRACT.version;
+  const fileTarget = async (scope: SandboxScope, binding: SandboxHostBinding) => {
+    if (!["read", "write", "edit"].includes(scope.operation))
+      throw new Error("SANDBOX_FILE_CONTRACT_UNSUPPORTED");
+    const root = binding.roots.find(
+      (item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId,
+    );
+    const parameters = (await readJson(scope.inputRef)) as { path?: unknown };
+    if (!root || !parameters || typeof parameters.path !== "string")
+      throw new Error("SANDBOX_FILE_TARGET_INVALID");
+    const relativePath = path.relative(
+      root.canonicalPath,
+      path.resolve(root.canonicalPath, parameters.path),
+    );
+    return resolveSandboxFileScope({
+      binding,
+      scope,
+      relativePath,
+      access: scope.operation === "read" ? "read" : "write",
+    });
+  };
+  const freezeFileScope = async (
+    scope: SandboxScope,
+    binding: SandboxHostBinding,
+    contract: { readonly ref: string; readonly version: string },
+  ) => {
+    const { fileTarget: _parentTarget, ...plain } = scope;
+    return fixedFileContract(contract)
+      ? sandboxScopeSchema.parse({
+          ...plain,
+          fileTarget: (await fileTarget(plain, binding)).target,
+        })
+      : sandboxScopeSchema.parse(plain);
   };
   const persistScope = async (scope: SandboxScope, invocationId: string) => {
     const plaintext = new TextEncoder().encode(JSON.stringify(sandboxScopeSchema.parse(scope)));
@@ -562,7 +624,10 @@ export async function createProductionSandboxServices(options: {
         descriptor.network === "grant_targets" ? handle.authorizationRef : null,
       expiresAt,
     });
-    const scopeBinding = await persistScope(scope, input.invocationId);
+    const scopeBinding = await persistScope(
+      await freezeFileScope(scope, binding, descriptor.contract),
+      input.invocationId,
+    );
     const base = createSandboxExecutionPlanCandidate({
       admission: input,
       handle,
@@ -786,7 +851,10 @@ export async function createProductionSandboxServices(options: {
           },
           expiresAt,
         });
-        const scopeBinding = await persistScope(scope, input.invocationId);
+        const scopeBinding = await persistScope(
+          await freezeFileScope(scope, binding, descriptor.contract),
+          input.invocationId,
+        );
         const { semanticFingerprint: _fingerprint, ...candidate } = prior;
         const plan = sandboxExecutionPlanCandidateV2Schema.parse({
           ...candidate,

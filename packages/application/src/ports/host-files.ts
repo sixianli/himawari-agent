@@ -139,6 +139,7 @@ export interface HostFilePlatformPort {
     relativePath: string,
     maximumBytes: number,
     expected?: HostFileIdentity,
+    consistency?: "current_path" | "opened_version",
   ): Promise<Uint8Array>;
   createExclusive(
     grant: HostDirectoryGrant,

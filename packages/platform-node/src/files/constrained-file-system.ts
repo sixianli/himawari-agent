@@ -51,6 +51,7 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     relativePath: string,
     maximumBytes: number,
     expected?: HostFileIdentity,
+    consistency: "current_path" | "opened_version" = "current_path",
   ): Promise<Uint8Array> {
     if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1)
       throw new Error("HOST_FILE_READ_REJECTED");
@@ -80,11 +81,32 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
         offset += bytesRead;
       }
       const after = await handle.stat();
-      if (!same(observed, identity(target, after)) || info.ctimeMs !== after.ctimeMs)
+      // Atomic replacement unlinks the old inode without changing its bytes.
+      // Only explicitly versioned reads may finish from that opened descriptor;
+      // verification and write baselines still require the current path.
+      const openedVersion =
+        consistency === "opened_version" && info.nlink === 1 && after.nlink === 0;
+      const afterIdentity = identity(target, after);
+      if (
+        !same(
+          observed,
+          openedVersion ? { ...afterIdentity, linkCount: observed.linkCount } : afterIdentity,
+        ) ||
+        (!openedVersion && info.ctimeMs !== after.ctimeMs)
+      )
         throw new Error("HOST_FILE_CONTENT_CHANGED");
       await this.#assertParentChain(grant, relativePath, parentChain);
       const current = await this.inspect(grant, relativePath);
-      if (!current || !same(observed, current)) throw new Error("HOST_FILE_IDENTITY_CHANGED");
+      if (
+        !current ||
+        (!same(observed, current) &&
+          !(
+            openedVersion &&
+            current.device === observed.device &&
+            current.inode !== observed.inode
+          ))
+      )
+        throw new Error("HOST_FILE_IDENTITY_CHANGED");
       return bytes;
     } finally {
       await handle.close();

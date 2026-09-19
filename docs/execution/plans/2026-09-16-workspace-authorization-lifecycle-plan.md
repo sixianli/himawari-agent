@@ -16,7 +16,7 @@ date: "2026-09-16"
 
 **架构：** 继续复用 Pi 工具与 Agent Loop、Anthropic Sandbox Runtime、现有 Agent/Worker 和 SQLite。Himawari 接好持久权限、资源身份、文件提交、恢复及页面投影；不重建工具协议、沙箱或工作流系统。
 
-**当前范围：** 用户于 2026-09-16 要求实施本 Plan。P0 的 r3 新增交互已获确认，P1 释放与交接修复已保存为本地提交 `fe92846`；P2 的审批身份、重复决定与额度预约已保存为本地提交 `e4eebf4`，P3 的文件发布与持久排队正在实施。完整 P1～P7 未完成；详见[本次实施记录](#implementation-record)。Spec 已通过不等于自动审查配置或生产操作已获授权。
+**当前范围：** 用户于 2026-09-16 要求实施本 Plan。P0 的 r3 新增交互已获确认，P1 释放与交接修复已保存为本地提交 `fe92846`；P2 的审批身份、重复决定与额度预约已保存为本地提交 `e4eebf4`，P3 的文件发布与持久排队已保存为本地提交 `b5b3e9a`；文件级协调及固定目标合同正在实施。完整 P1～P7 未完成；详见[本次实施记录](#implementation-record)。Spec 已通过不等于自动审查配置或生产操作已获授权。
 
 <a id="contents"></a>
 
@@ -517,8 +517,18 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 仍未缩小任意进程的真实写入范围。精确文件提交需要受信提交者拥有可核验的生命周期，不能让已确认结束的沙箱之外再出现未登记的写者。已重新核对固定 Pi read/write/edit 的 Operations 注入路径：继续在现有 Job Host 所管理的可信 runner 内保存文件；先将 Operations 限定到固定目标，再为新版文件合同接入文件身份与目标槽位。旧合同保留目录协调，任意 Shell 继续按实际沙箱范围协调。短时提交权与持久发布证据仍需继续接通。目录改名原语、跨 Worker 文件并发、队列重启恢复、完整页面投影和 Mac/Linux 联合验收尚未完成。本段不是整个 P3 的完成声明。
 
+### P3 固定文件目标与版本化协调（继续实施）
+
+- Schema 36 为文件型 claim 和受保护 Scope 新字段建立 writer 屏障，不改写旧数据。合同 `pi-coding-tool` 1 保留目录级协调；合同 2 用于受信 runner 的 read/write/edit，携带目标路径、原 inode、内容摘要和授权根以下的父目录身份。旧 Worker 拒绝新合同；新版缺少目标快照时不启动 Job Host。
+- 固定文件 Operations 拒绝其他目标和任意 Shell；同目录其他文件不因目录授权宽而自动成为本次访问对象。宿主在准备、排队重验、启动前验证原目标；runner 在启动和发布前验证父目录，文件被替换、内容变化或原本不存在的目标被创建时拒绝覆盖。
+- 文件型 claim 同时协调父目录名称槽位和 inode，祖先路径稳定要求互相兼容。已有父目录的无关文件可分别准入；名称保守归一化可能让区分大小写的文件系统多排队。父目录尚不存在时保留目录级协调，并只允许从冻结的不存在基线创建。
+- 默认文件核验继续要求当前路径不变；显式 `opened_version` 读取可在原子替换发生后读完已打开的完整旧版本。原地写入变化检查、父目录检查和链接拒绝仍保留。
+- [固定目标复现](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-02/target-pin-red.log)两项失败；[启动基线复现](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-02/frozen-baseline-red.log)三项失败。初次并发读取测试未触发替换，修正 canonical path 后才[复现实际缺陷](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-02/atomic-read-mechanism-red.log)，未将先前测试失误算作产品故障证据。[文件与 Scope 消费者](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-02/nested-scope-consumers.log) 88 项通过；[Pi 兼容](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-02/pi-compat.log) 120 项通过。Worker 生命周期测试模拟 OS/SRT 边界，不代表真实平台资格。
+
+本批完整构建首次因新增名称校验的 TypeScript `unknown` 推断失败，见[编译日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-02/build-compile-red.log)；已修正，[标准本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-02/standard-ci-result.json)通过：233 个文件、3,448 项测试、零跳过。类型、任务代码格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档校验通过。新合同仍需安装资格和实际配置接入，未更改部署实例。当前占用覆盖整个工具调用，尚不是短时提交锁；私有候选准备、生产文件发布日志恢复、目录改名、跨 Worker 实测、队列重启续接、完整页面和 Mac/Linux 联合验收仍未完成。
+
 ### 当前完成边界与下一步
 
-P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 正在实现和验证；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
+P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同正在实现和验证；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
 
 [单一决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv) 记录本轮选择及证据；没有建立另一个项目状态缓存。

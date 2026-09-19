@@ -14,3 +14,7 @@ ts	phase	decision	why	evidence	result
 2026-09-16T10:39:56.452479+00:00	P2	保留完整测试发现的装配错误	新增预约不能在内存测试中静默绕过授权关联	p2-local-01/unit-failures.json; p2-local-01/file-read-fixture.log	23 项同因失败，连接共享测试存储后该文件 34 项通过
 2026-09-16	P3	复用 PreparedFileOperation 保存暂存 inode 作为发布归属证据；字节相同不认定成功	publication-red.log; file-publication-recovery.test.ts	实际文件与 SQLite 重启读回通过；精确共享写者生命周期仍待接入
 2026-09-16	P3	SQLite 公平队列只保存优先级，出队才在原调用事务取得全部占用并消费额度	queue-consumers.log; read-parallel-green.log	不缩小当前沙箱真实可写范围，不将队列局部测试称为全部文件并发通过
+2026-09-16T12:15:51Z	P3	固定文件合同版本化并冻结宿主基线	旧合同仍按目录协调；缩小 claim 必须绑定真正受限的 Operations 和原文件版本	p3-local-02/target-pin-red.log;p3-local-02/frozen-baseline-red.log;p3-local-02/nested-scope-consumers.log	88 项消费者通过；新合同未部署，缺失父目录保留目录协调
+2026-09-16T12:15:51Z	P3	显式选择读取已打开的完整版本	原子替换不应中断获准读取；默认核验和写入基线仍要求当前路径一致	p3-local-02/atomic-read-mechanism-red.log;p3-local-02/file-contracts.log	机制复现后修复；先前 fixture 未触发替换的日志保留
+2026-09-16T12:15:51Z	P3	Schema 36 阻止旧 writer 解释新文件范围	旧 Scope 和 claim 不回填；父目录身份与摘要必须来自原请求，不能恢复时改用当前文件	packages/persistence-sqlite/src/migrations/0036_fixed_file_scope_contract.sql	类型与静态检查通过；全量验证运行中
+2026-09-19T08:32:04Z	P3	继续时核对并保存固定文件批次	暂停后核实原始 CI 结果与工作区，避免把运行中状态当验证结果	p3-local-02/standard-ci-result.json	本地构建通过；233 文件 3448 项通过，零跳过；未做生产部署

@@ -11,6 +11,8 @@ import {
 } from "./validation.ts";
 
 export const PI_RUNNER_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "1" });
+/** Version 2 fixes the target and carries the host's pre-execution file version. */
+export const PI_FIXED_FILE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "2" });
 export const PI_WRITE_VERIFIER = Object.freeze({
   ref: "pi-atomic-write",
   version: "1",

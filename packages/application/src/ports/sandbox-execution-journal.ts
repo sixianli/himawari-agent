@@ -49,6 +49,14 @@ export interface SandboxWorkspaceClaim {
   readonly canonicalRootId: string;
   readonly access: "read" | "write";
   readonly lineage: readonly Pick<HostFileIdentity, "device" | "inode">[];
+  /** Absent means the whole directory tree. For files, lineage ends at the parent.
+   * The host resolves aliases; the slot survives atomic inode replacement. */
+  readonly file?: {
+    readonly name: string;
+    readonly identity: Pick<HostFileIdentity, "device" | "inode"> | null;
+    readonly atomicPublish: boolean;
+    readonly versionDigest?: string;
+  };
 }
 export interface SandboxExecutionRecord {
   readonly plan: SandboxExecutionPlanV2;

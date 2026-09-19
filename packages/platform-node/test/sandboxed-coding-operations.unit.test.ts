@@ -1,4 +1,14 @@
-import { link, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import {
+  rename,
+  link,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { HostDirectoryGrant } from "@himawari-agent/application";
@@ -45,6 +55,39 @@ async function setup(initial?: string) {
   return { root, file, grant, port };
 }
 describe("sandboxed coding file operations", () => {
+  it("pins a fixed file call to its target even within a broader grant", async () => {
+    const { root, file, port } = await setup("original");
+    const other = path.join(root, "other.txt");
+    await writeFile(other, "unrelated");
+    await expect(port.readFile(other)).rejects.toThrow("PI_FIXED_TARGET_CHANGED");
+    await expect(port.access(other, "read")).rejects.toThrow("PI_FIXED_TARGET_CHANGED");
+    await expect(port.writeFile(other, "replacement")).rejects.toThrow("PI_FIXED_TARGET_CHANGED");
+    await expect(port.makeDirectory(path.join(root, "elsewhere"))).rejects.toThrow(
+      "PI_FIXED_TARGET_CHANGED",
+    );
+    expect(await readFile(other, "utf8")).toBe("unrelated");
+    await port.makeDirectory(root);
+    await port.writeFile(file, "updated");
+    expect(await readFile(file, "utf8")).toBe("updated");
+  });
+  it("does not expose a shell through a fixed file call with broad directory authority", async () => {
+    const { root, file, grant } = await setup("original");
+    const port = await createSandboxedCodingOperations({
+      grant: {
+        ...grant,
+        operations: ["read", "create", "update", "move", "trash", "restore", "permanent_delete"],
+      },
+      targetPath: file,
+      shell: "/bin/bash",
+      privateDirectory: root,
+      binaryDirectory: "/usr/bin",
+      maxOutputBytes: 4096,
+    });
+    await expect(
+      port.executeCommand({ cwd: root, command: "printf bypass > other.txt", onData() {} }),
+    ).rejects.toThrow("PI_FIXED_FILE_COMMAND_DENIED");
+    await expect(readFile(path.join(root, "other.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
   it("creates missing parents exclusively and reads a genuine empty file", async () => {
     const { file, port } = await setup();
     await expect(port.readFile(file)).rejects.toThrow("PI_FILE_MISSING");
@@ -78,7 +121,15 @@ describe("sandboxed coding file operations", () => {
     await expect(port.writeFile(file, "replacement")).rejects.toThrow();
   });
   it("does not turn a partial file write grant into arbitrary shell authority", async () => {
-    const { root, port } = await setup();
+    const { root, grant } = await setup();
+    // Exercise the real command adapter; the fixed-file adapter rejects earlier.
+    const port = await createSandboxedCodingOperations({
+      grant,
+      shell: "/bin/bash",
+      privateDirectory: root,
+      binaryDirectory: "/usr/bin",
+      maxOutputBytes: 4096,
+    });
     await expect(port.executeCommand({ cwd: root, command: "true", onData() {} })).rejects.toThrow(
       "PI_SHELL_EFFECT_SCOPE_INCOMPLETE",
     );
@@ -139,4 +190,73 @@ describe("sandboxed shell result boundary", () => {
       "PI_COMMAND_OUTPUT_LIMIT",
     );
   });
+});
+
+it.each(["unchanged", "create", "content", "inode", "created"] as const)(
+  "enforces a host-frozen baseline at runner startup: %s",
+  async (change) => {
+    const { root, file, grant } = await setup(
+      change === "created" || change === "create" ? undefined : "approved baseline",
+    );
+    const identity = await new ConstrainedHostFileSystem().inspect(grant, "file.txt");
+    const [device, inode] = grant.canonicalRootId.split(":");
+    if (!device || !inode) throw new Error("fixture root identity missing");
+    const expectedTarget = {
+      schemaVersion: "sandbox-file-target.v1" as const,
+      relativePath: "file.txt",
+      lineage: [{ device, inode }],
+      before: identity
+        ? {
+            device: identity.device,
+            inode: identity.inode,
+            contentDigest: createHash("sha256").update("approved baseline").digest("hex"),
+          }
+        : null,
+    };
+    if (change === "inode") await rename(file, path.join(root, "old.txt"));
+    const unchanged = change === "unchanged" || change === "create";
+    if (!unchanged) await writeFile(file, "other writer's version");
+    const starting = createSandboxedCodingOperations({
+      grant,
+      targetPath: file,
+      expectedTarget,
+      shell: "/bin/bash",
+      privateDirectory: root,
+      binaryDirectory: "/usr/bin",
+      maxOutputBytes: 4096,
+    });
+    if (unchanged) {
+      const port = await starting;
+      await port.writeFile(file, "approved result");
+      expect(await readFile(file, "utf8")).toBe("approved result");
+    } else {
+      await expect(starting).rejects.toThrow("PI_FILE_VERSION_CHANGED");
+      expect(await readFile(file, "utf8")).toBe("other writer's version");
+    }
+  },
+);
+
+it("keeps directory coordination while creating previously missing parents", async () => {
+  const { root, grant } = await setup();
+  const [device, inode] = grant.canonicalRootId.split(":");
+  if (!device || !inode) throw new Error("fixture root identity missing");
+  const file = path.join(root, "new", "notes", "file.txt");
+  const port = await createSandboxedCodingOperations({
+    grant,
+    targetPath: file,
+    expectedTarget: {
+      schemaVersion: "sandbox-file-target.v1",
+      relativePath: "new/notes/file.txt",
+      lineage: [{ device, inode }],
+      before: null,
+      missingParents: 2,
+    },
+    shell: "/bin/bash",
+    privateDirectory: root,
+    binaryDirectory: "/usr/bin",
+    maxOutputBytes: 4096,
+  });
+  await port.makeDirectory(path.dirname(file));
+  await port.writeFile(file, "complete nested file");
+  expect(await readFile(file, "utf8")).toBe("complete nested file");
 });

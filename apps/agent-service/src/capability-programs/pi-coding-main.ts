@@ -70,6 +70,8 @@ try {
         .some((part) => part === ".git" || part === ".env" || part.startsWith(".himawari-")))
   )
     throw new Error("PI_PATH_OUTSIDE_SCOPE");
+  if (input.scope.fileTarget && !["read", "write", "edit"].includes(input.tool))
+    throw new Error("PI_FIXED_FILE_CONTRACT_INVALID");
   let verifiedWrite: { path: string; contentDigest: string; byteLength: number } | null = null;
   const operations = await createSandboxedCodingOperations({
     onVerifiedWrite: (proof) => {
@@ -92,6 +94,7 @@ try {
       mountPolicy: "fixed_device",
     },
     ...(["read", "edit", "write"].includes(input.tool) && target ? { targetPath: target } : {}),
+    ...(input.scope.fileTarget ? { expectedTarget: input.scope.fileTarget } : {}),
     shell: path.join(binaryDirectory, "bash"),
     privateDirectory: input.privateDirectory,
     binaryDirectory,

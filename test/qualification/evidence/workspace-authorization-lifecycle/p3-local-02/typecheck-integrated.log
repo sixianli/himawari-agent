@@ -1,0 +1,7 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+apps/execution-worker/src/production-sandbox-execution-v2.ts(203,13): error TS2345: Argument of type 'string' is not assignable to parameter of type '"1" | "2"'.
+apps/execution-worker/src/production-sandbox-execution-v2.ts(263,11): error TS2345: Argument of type 'string' is not assignable to parameter of type '"1" | "2"'.
+packages/platform-node/src/files/pi-write-evidence.ts(41,76): error TS2345: Argument of type 'string' is not assignable to parameter of type '"1" | "2"'.

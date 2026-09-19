@@ -59,3 +59,25 @@ describe("Pi runner protected input", () => {
     expect(() => piRunnerInputSchema.parse({ ...input, ...change })).toThrow();
   });
 });
+
+it("retains a host-frozen file version inside protected scope", () => {
+  const fileTarget = {
+    schemaVersion: "sandbox-file-target.v1",
+    relativePath: "notes/file.txt",
+    lineage: [
+      { device: "1", inode: "2" },
+      { device: "1", inode: "4" },
+    ],
+    before: { device: "1", inode: "3", contentDigest: "a".repeat(64) },
+  };
+  const envelope = { ...input, scope: { ...input.scope, fileTarget } };
+  expect(piRunnerInputSchema.parse(envelope).scope.fileTarget).toEqual(fileTarget);
+  for (const changed of [
+    { ...fileTarget, relativePath: "../escape" },
+    { ...fileTarget, lineage: [] },
+    { ...fileTarget, before: { ...fileTarget.before, contentDigest: "forged" } },
+  ])
+    expect(() =>
+      piRunnerInputSchema.parse({ ...envelope, scope: { ...input.scope, fileTarget: changed } }),
+    ).toThrow();
+});

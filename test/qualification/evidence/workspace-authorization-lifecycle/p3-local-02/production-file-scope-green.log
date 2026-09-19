@@ -1,0 +1,71 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.1678329999995185,"at":"2026-09-16T11:56:09.161Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.53833300000042,"at":"2026-09-16T11:56:09.193Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.40749999999934516,"at":"2026-09-16T11:56:09.194Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6594160000004194,"at":"2026-09-16T11:56:09.195Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.49087499999950523,"at":"2026-09-16T11:56:09.195Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.4953330000007554,"at":"2026-09-16T11:56:09.199Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":36.72949999999946,"at":"2026-09-16T11:56:09.236Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3112089999995078,"at":"2026-09-16T11:56:09.237Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7307079999991402,"at":"2026-09-16T11:56:09.238Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.44441700000061246,"at":"2026-09-16T11:56:09.238Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.24283400000058464,"at":"2026-09-16T11:56:09.241Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":31.46862499999952,"at":"2026-09-16T11:56:09.272Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.26316699999915727,"at":"2026-09-16T11:56:09.273Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.5664580000011483,"at":"2026-09-16T11:56:09.274Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.4898750000011205,"at":"2026-09-16T11:56:09.274Z"}
+
+ ❯ |integration| test/integration/production-sandbox-lineage.test.ts (24 tests | 1 failed) 10601ms
+   × freezes the host file version and rejects changes while waiting 516ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+TypeError: The database connection is not open
+ ❯ Database.prepare node_modules/better-sqlite3/lib/methods/wrappers.js:5:21
+ ❯ test/integration/production-sandbox-lineage.test.ts:508:18
+    506|   );
+    507|   expect(
+    508|     f.f.database.prepare("SELECT COUNT(*) AS n FROM capability_invocat…
+       |                  ^
+    509|   ).toEqual({ n: 0 });
+    510| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 23 passed (24)
+   Start at  20:55:57
+   Duration  12.08s (transform 896ms, setup 0ms, import 1.38s, tests 10.60s, environment 0ms)

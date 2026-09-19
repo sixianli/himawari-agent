@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { lstat, realpath } from "node:fs/promises";
+import {
+  sandboxFileTargetSchema,
+  type SandboxFileTarget,
+} from "@himawari-agent/execution-contracts";
 import type {
   GovernedCodingOperationsPort,
   HostDirectoryGrant,
@@ -14,6 +19,7 @@ import { ConstrainedHostFileSystem } from "./constrained-file-system.js";
 export async function createSandboxedCodingOperations(input: {
   readonly grant: HostDirectoryGrant;
   readonly targetPath?: string;
+  readonly expectedTarget?: SandboxFileTarget;
   readonly shell: string;
   readonly privateDirectory: string;
   readonly binaryDirectory: string;
@@ -27,6 +33,11 @@ export async function createSandboxedCodingOperations(input: {
 }): Promise<GovernedCodingOperationsPort> {
   const platform = new ConstrainedHostFileSystem();
   const grant = structuredClone(input.grant);
+  const fixedTarget = input.targetPath === undefined ? undefined : path.resolve(input.targetPath);
+  const expectedTarget =
+    input.expectedTarget === undefined
+      ? undefined
+      : sandboxFileTargetSchema.parse(structuredClone(input.expectedTarget));
   const baseline = new Map<string, { identity: HostFileIdentity; bytes: Uint8Array } | null>();
   const check = () => {
     input.signal?.throwIfAborted();
@@ -35,6 +46,8 @@ export async function createSandboxedCodingOperations(input: {
   };
   const relative = (absolute: string) => {
     check();
+    if (fixedTarget !== undefined && path.resolve(absolute) !== fixedTarget)
+      throw new Error("PI_FIXED_TARGET_CHANGED");
     const value = path.relative(grant.displayPath, absolute);
     if (!value || value === ".." || value.startsWith(`..${path.sep}`) || path.isAbsolute(value))
       throw new Error("PI_PATH_OUTSIDE_GRANT");
@@ -64,7 +77,50 @@ export async function createSandboxedCodingOperations(input: {
     }
     return name;
   };
-  if (input.targetPath) await capture(input.targetPath);
+  const assertExpectedParents = async () => {
+    if (!expectedTarget) return;
+    if (!fixedTarget || relative(fixedTarget) !== expectedTarget.relativePath)
+      throw new Error("PI_FIXED_TARGET_CHANGED");
+    let current = await realpath(grant.displayPath);
+    const directories = [current];
+    for (const part of expectedTarget.relativePath.split("/").slice(0, -1)) {
+      current = path.join(current, part);
+      directories.push(current);
+    }
+    if (directories.length !== expectedTarget.lineage.length + (expectedTarget.missingParents ?? 0))
+      throw new Error("PI_FILE_PARENT_CHANGED");
+    for (const [index, filename] of directories.entries()) {
+      const expected = expectedTarget.lineage[index];
+      const info = await lstat(filename, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
+        if (!expected && expectedTarget.missingParents && error.code === "ENOENT") return undefined;
+        throw error;
+      });
+      if (!info) return;
+      if (
+        !info.isDirectory() ||
+        info.isSymbolicLink() ||
+        String(info.dev) !== expectedTarget.lineage[0]?.device ||
+        (expected && String(info.ino) !== expected.inode)
+      )
+        throw new Error("PI_FILE_PARENT_CHANGED");
+    }
+  };
+  await assertExpectedParents();
+  if (fixedTarget) await capture(fixedTarget);
+  if (expectedTarget) {
+    const observed = baseline.get(expectedTarget.relativePath);
+    const before = expectedTarget.before;
+    if (
+      before === null
+        ? observed !== null
+        : !observed ||
+          observed.identity.device !== before.device ||
+          observed.identity.inode !== before.inode ||
+          createHash("sha256").update(observed.bytes).digest("hex") !== before.contentDigest
+    )
+      throw new Error("PI_FILE_VERSION_CHANGED");
+    await assertExpectedParents();
+  }
   return {
     async access(absolute, mode) {
       if (!grant.operations.includes(mode === "read" ? "read" : "update"))
@@ -77,7 +133,13 @@ export async function createSandboxedCodingOperations(input: {
       const name = await capture(absolute);
       const previous = baseline.get(name);
       if (!previous) throw new Error("PI_FILE_MISSING");
-      const bytes = await platform.read(grant, name, 16 * 1024 * 1024, previous.identity);
+      const bytes = await platform.read(
+        grant,
+        name,
+        16 * 1024 * 1024,
+        previous.identity,
+        "opened_version",
+      );
       const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       if (text.includes("\0") || scanMachineSecrets(text).length)
         throw new Error("PI_TEXT_READ_REJECTED");
@@ -87,7 +149,10 @@ export async function createSandboxedCodingOperations(input: {
       // createExclusive creates missing parents through the same no-link walk.
       // Pi calls mkdir before writeFile; do not introduce a separate raw mkdir.
       check();
-      if (absolute !== grant.displayPath) relative(absolute);
+      if (fixedTarget !== undefined) {
+        if (path.resolve(absolute) !== path.dirname(fixedTarget))
+          throw new Error("PI_FIXED_TARGET_CHANGED");
+      } else if (absolute !== grant.displayPath) relative(absolute);
     },
     async writeFile(absolute, content) {
       const name = relative(absolute);
@@ -101,8 +166,14 @@ export async function createSandboxedCodingOperations(input: {
       if (storage.availableBytes < bytes.length + 64 * 1024 * 1024)
         throw new Error("PI_STORAGE_RESERVE");
       const hooks = {
-        beforePublish: async () => check(),
-        assertCurrentAuthority: async () => check(),
+        beforePublish: async () => {
+          check();
+          await assertExpectedParents();
+        },
+        assertCurrentAuthority: async () => {
+          check();
+          await assertExpectedParents();
+        },
       };
       if (previous)
         await platform.replaceAtomic(grant, name, previous.identity, bytes, previous.bytes, hooks);
@@ -117,6 +188,7 @@ export async function createSandboxedCodingOperations(input: {
     },
     async executeCommand(command) {
       check();
+      if (fixedTarget !== undefined) throw new Error("PI_FIXED_FILE_COMMAND_DENIED");
       if (command.cwd !== grant.displayPath) throw new Error("PI_COMMAND_CWD_CHANGED");
       // Arbitrary shell can delete and move files. A partial write grant cannot
       // be promoted to a shell grant merely because the tool is called bash.

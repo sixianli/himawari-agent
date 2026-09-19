@@ -41,11 +41,15 @@ const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(valu
 export async function productionSandboxScope(
   descriptor: SandboxOperationBinding,
   changeIntent: (intent: GovernedActionIntent) => GovernedActionIntent = (value) => value,
-  options: { readonly legacyFileRead?: boolean } = {},
+  options: {
+    readonly legacyFileRead?: boolean;
+    readonly piParameters?: Readonly<Record<string, unknown>>;
+  } = {},
 ) {
   const f = await openSandboxJournal();
   const h = {
     ...grantHandle(),
+    ...(options.piParameters ? { inputRefs: ["payload-pi-parameters"] } : {}),
     operation: descriptor.operation,
     operations: [descriptor.operation],
   };
@@ -187,6 +191,7 @@ export async function productionSandboxScope(
   const invocationId = `runtime-tool:${hash([call.runId, call.toolCallId])}`;
   const input = invocation({
     handleRef: h.ref,
+    inputRef: h.inputRefs[0],
     invocationId,
     idempotencyKey: invocationId,
     operation: descriptor.operation,
@@ -232,6 +237,18 @@ export async function productionSandboxScope(
     modelIdentity: configuredModelDisclosureIdentity(model),
   };
   let fileBindingAvailable = options.legacyFileRead || descriptor.scopeSource === "file_workflow";
+  if (options.piParameters)
+    await repository.payloadStore(OWNER_ID, AGENT_ID).put(
+      await f.protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "payload-pi-parameters",
+        dataClassification: "private",
+        contentType: "application/json",
+        plaintext: Buffer.from(JSON.stringify(options.piParameters)),
+        createdAt: T1,
+      }),
+    );
   const services = await createProductionSandboxServices({
     configuration: {
       ownerId: OWNER_ID,

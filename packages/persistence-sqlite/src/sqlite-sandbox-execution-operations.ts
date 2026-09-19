@@ -49,14 +49,31 @@ const id = (v: unknown): v is string =>
   typeof v === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(v);
 function overlaps(a: SandboxWorkspaceClaim, b: SandboxWorkspaceClaim): boolean {
   if (a.hostId !== b.hostId) return false;
+  const equal = (
+    left: SandboxWorkspaceClaim["lineage"][number] | null | undefined,
+    right: SandboxWorkspaceClaim["lineage"][number] | null | undefined,
+  ) => left != null && right != null && left.device === right.device && left.inode === right.inode;
   const left = a.lineage.at(-1);
   const right = b.lineage.at(-1);
-  const contains = (items: SandboxWorkspaceClaim["lineage"], item: typeof left) =>
-    items.some(
-      (i: SandboxWorkspaceClaim["lineage"][number]) =>
-        i.device === item?.device && i.inode === item?.inode,
+  if (a.file && b.file)
+    return (
+      (equal(left, right) && a.file.name === b.file.name) || equal(a.file.identity, b.file.identity)
     );
-  return contains(a.lineage, right) || contains(b.lineage, left);
+  if (a.file) return a.lineage.some((item) => equal(item, right));
+  if (b.file) return b.lineage.some((item) => equal(item, left));
+  return (
+    a.lineage.some((item) => equal(item, right)) || b.lineage.some((item) => equal(item, left))
+  );
+}
+function conflicts(a: SandboxWorkspaceClaim, b: SandboxWorkspaceClaim, uncertain = false): boolean {
+  if (!overlaps(a, b)) return false;
+  if (uncertain) return true;
+  if (a.access === "read" && b.access === "read") return false;
+  if (a.file && b.file && a.access !== b.access) {
+    const writer = a.access === "write" ? a : b;
+    if (writer.file?.atomicPublish) return false;
+  }
+  return true;
 }
 export class SqliteSandboxExecutionOperations {
   private readonly db: Database.Database;
@@ -71,7 +88,7 @@ export class SqliteSandboxExecutionOperations {
   ) {
     this.db = db;
     this.releases = new SqliteSandboxReleaseOperations(db);
-    this.queue = new SqliteWorkspaceAdmissionQueue(db, fail, overlaps);
+    this.queue = new SqliteWorkspaceAdmissionQueue(db, fail, conflicts);
     this.fail = fail;
     this.authority = authority;
   }
@@ -335,11 +352,47 @@ export class SqliteSandboxExecutionOperations {
         )
       )
         return this.fail("PORT_INVALID_OPERATION", "Invalid directory identity chain");
+      if (
+        c.file !== undefined &&
+        (!c.file ||
+          typeof c.file.name !== "string" ||
+          c.file.name.length === 0 ||
+          Buffer.byteLength(c.file.name) > 255 ||
+          c.file.name.includes("/") ||
+          c.file.name === "." ||
+          c.file.name === ".." ||
+          Array.from(c.file.name as string).some(
+            (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+          ) ||
+          c.file.name !== c.file.name.normalize("NFC").toLowerCase() ||
+          typeof c.file.atomicPublish !== "boolean" ||
+          (c.file.versionDigest !== undefined &&
+            (typeof c.file.versionDigest !== "string" ||
+              !/^[a-f0-9]{64}$/.test(c.file.versionDigest))) ||
+          (c.file.identity !== null &&
+            (!c.file.identity || !id(c.file.identity.device) || !id(c.file.identity.inode))))
+      )
+        return this.fail("PORT_INVALID_OPERATION", "Invalid file resource identity");
       return {
         ref: c.ref,
         hostId: c.hostId,
         canonicalRootId: c.canonicalRootId,
         access: c.access,
+        ...(c.file === undefined
+          ? {}
+          : {
+              file: {
+                name: c.file.name,
+                identity:
+                  c.file.identity === null
+                    ? null
+                    : { device: c.file.identity.device, inode: c.file.identity.inode },
+                atomicPublish: c.file.atomicPublish,
+                ...(c.file.versionDigest === undefined
+                  ? {}
+                  : { versionDigest: c.file.versionDigest }),
+              },
+            }),
         lineage: c.lineage.map((i: SandboxWorkspaceClaim["lineage"][number]) => ({
           device: i.device,
           inode: i.inode,
@@ -375,10 +428,7 @@ export class SqliteSandboxExecutionOperations {
         const rawFacts = JSON.parse(row.facts) as { schemaVersion?: unknown };
         if (rawFacts.schemaVersion === "sandbox-preparation.v1") {
           sandboxExecutionReservationSchema.parse(rawFacts);
-          if (
-            overlaps(claim, existing) &&
-            (claim.access === "write" || existing.access === "write")
-          )
+          if (conflicts(claim, existing))
             this.fail("PORT_CONFLICT", "Workspace has a pending preparation", {
               reasonCode: "WORKSPACE_OCCUPIED",
             });
@@ -392,10 +442,7 @@ export class SqliteSandboxExecutionOperations {
           facts.resource.cleanup === "unknown" ||
           facts.resource.supervision === "reconciling" ||
           (facts.effect.kind === "unknown" && facts.result !== null);
-        if (
-          overlaps(claim, existing) &&
-          (claim.access === "write" || existing.access === "write" || uncertain)
-        )
+        if (conflicts(claim, existing, uncertain))
           this.fail("PORT_CONFLICT", "Workspace remains occupied", {
             reasonCode: "WORKSPACE_OCCUPIED",
           });

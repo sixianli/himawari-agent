@@ -71,6 +71,48 @@ function reserved(value: SandboxExecutionAdmissionRecord) {
 }
 
 describe("atomic execution reservation and runtime binding", () => {
+  it.each(["different", "same-slot", "same-inode", "atomic-read", "directory-write"] as const)(
+    "coordinates concrete file resources: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        const file = (
+          suffix: string,
+          name: string,
+          inode: string,
+          access: "read" | "write" = "write",
+        ) => {
+          const value = input(f, suffix);
+          return {
+            ...value,
+            workspaces: value.workspaces.map((claim) => ({
+              ...claim,
+              access,
+              file: { name, identity: { device: "1", inode }, atomicPublish: access === "write" },
+            })),
+          };
+        };
+        const first = file("-a", "a.txt", "801");
+        const second =
+          scenario === "directory-write"
+            ? input(f, "-b")
+            : file(
+                "-b",
+                scenario === "same-slot" || scenario === "atomic-read" ? "a.txt" : "b.txt",
+                scenario === "same-inode" || scenario === "atomic-read" ? "801" : "802",
+                scenario === "atomic-read" ? "read" : "write",
+              );
+        call(f, "enqueue", first);
+        call(f, "enqueue", second);
+        call(f, "reserve", first);
+        if (["different", "atomic-read"].includes(scenario))
+          expect(call(f, "reserve", second).applied).toBe(true);
+        else expect(() => call(f, "reserve", second)).toThrow();
+      } finally {
+        await f.close();
+      }
+    },
+  );
   it("allows two read-only preparations over the same workspace", async () => {
     const f = await openSandboxJournal();
     try {
