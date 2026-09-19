@@ -892,3 +892,251 @@ it("rechecks cleanup when a cancelled Run receives another stop without restarti
   expect(runtime.cancel).toHaveBeenCalledTimes(1);
   expect(runtime.run).not.toHaveBeenCalled();
 });
+
+it.each(["reject", "throw"] as const)(
+  "still stops resources when runtime cancellation fails via %s",
+  async (failure) => {
+    const error = new Error("runtime stop unavailable");
+    const runtime = {
+      run: vi.fn(async function* () {}),
+      cancel: vi.fn(() => {
+        if (failure === "throw") throw error;
+        return Promise.reject(error);
+      }),
+    };
+    const stopRun = vi.fn(async () => ({ released: false }));
+    const f = await fixture(`cancel-independent-${failure}`, runtime, undefined, { stopRun });
+    const result = await f.coordinator
+      .cancel({
+        ownerId: f.input.ownerId,
+        agentId: f.input.agentId,
+        runId: f.input.runId,
+        authority: f.authority,
+        command: f.input.commands.cancelled,
+        reasonCode: "OWNER_REQUESTED",
+      })
+      .catch((error: unknown) => error);
+    expect(stopRun).toHaveBeenCalledWith(f.input.runId);
+    expect(result).toBeInstanceOf(AggregateError);
+    expect((result as AggregateError).errors).toEqual([error]);
+    expect((await f.runs.readRun(f.input.runId))?.run.status).toBe("cancelled");
+    expect(runtime.run).not.toHaveBeenCalled();
+  },
+);
+
+it("starts resource stopping while runtime cancellation is still pending", async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const runtime = { run: vi.fn(async function* () {}), cancel: vi.fn(() => pending) };
+  const stopRun = vi.fn(async () => ({ released: false }));
+  const f = await fixture("cancel-independent-pending", runtime, undefined, { stopRun });
+  const result = f.coordinator.cancel({
+    ownerId: f.input.ownerId,
+    agentId: f.input.agentId,
+    runId: f.input.runId,
+    authority: f.authority,
+    command: f.input.commands.cancelled,
+    reasonCode: "OWNER_REQUESTED",
+  });
+  try {
+    await vi.waitFor(() => expect(stopRun).toHaveBeenCalledWith(f.input.runId));
+    expect((await f.runs.readRun(f.input.runId))?.run.status).toBe("cancelled");
+  } finally {
+    release();
+    await result;
+  }
+  expect(runtime.run).not.toHaveBeenCalled();
+});
+
+it.each([false, true])(
+  "still cancels the active Worker when resource stopping fails, retry=%s",
+  async (retry) => {
+    let ready!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const workers = new ScriptedWorkerRunPort();
+    vi.spyOn(workers, "run").mockImplementation(async function* (request) {
+      ready();
+      await pending;
+      yield {
+        type: "worker.cancelled",
+        workerRunId: request.workerRunId,
+        reasonCode: "OWNER_REQUESTED",
+        occurredAt: T1,
+      };
+    });
+    const workerError = new Error("worker stop unavailable");
+    const cancelWorker = vi.spyOn(workers, "cancel").mockImplementation(async () => {
+      if (retry) throw workerError;
+      release();
+    });
+    const runtime = { run: vi.fn(async function* () {}), cancel: vi.fn(async () => {}) };
+    const error = new Error("resource stop unavailable");
+    const stopRun = vi.fn(async (): Promise<{ released: boolean }> => {
+      throw error;
+    });
+    const f = await fixture("cancel-independent-worker", runtime, workers, { stopRun });
+    const request = {
+      workerRunId: "independent-worker",
+      idempotencyKey: "independent-worker-command",
+      ownerId: f.input.ownerId,
+      agentId: f.input.agentId,
+      parentRunId: f.run.id,
+      taskRef: "worker-task",
+      selectedModelRef: "model-worker-fixture",
+      allowedModelRefs: ["model-worker-fixture"],
+      outputSchema: { type: "object" },
+      delegatedContextRefs: [f.input.context.trigger.payloadRef],
+      capabilityHandleRefs: [],
+      secretRefs: [],
+      dataClassification: "private" as const,
+      budget: { maxDurationMs: 1000, maxCostMicros: 1000, maxProgressEvents: 2 },
+      deadlineAt: T2,
+    };
+    const execution = f.coordinator
+      .execute({ ...f.input, workers: [{ request }] })
+      .catch((error: unknown) => error);
+    try {
+      await started;
+      const result = await f.coordinator
+        .cancel({
+          ownerId: f.input.ownerId,
+          agentId: f.input.agentId,
+          runId: f.input.runId,
+          authority: f.authority,
+          command: f.input.commands.cancelled,
+          reasonCode: "OWNER_REQUESTED",
+        })
+        .catch((error: unknown) => error);
+      expect(cancelWorker).toHaveBeenCalledWith(request.workerRunId, "OWNER_REQUESTED");
+      expect(result).toBeInstanceOf(AggregateError);
+      expect((result as AggregateError).errors).toEqual(retry ? [error, workerError] : [error]);
+      expect((await f.runs.readRun(f.input.runId))?.run.status).toBe("cancelled");
+      if (retry) {
+        stopRun.mockImplementation(async () => ({ released: true }));
+        cancelWorker.mockImplementation(async () => {
+          release();
+        });
+        await f.coordinator.cancel({
+          ownerId: f.input.ownerId,
+          agentId: f.input.agentId,
+          runId: f.input.runId,
+          authority: f.authority,
+          command: f.input.commands.cancelled,
+          reasonCode: "OWNER_REQUESTED",
+        });
+        expect(cancelWorker).toHaveBeenCalledTimes(2);
+      }
+    } finally {
+      release();
+      await execution;
+    }
+    expect(runtime.run).not.toHaveBeenCalled();
+  },
+);
+
+it("retries a failed cancellation of a still-active runtime on a repeated Stop", async () => {
+  const suffix = "cancel-runtime-retry";
+  let ready!: () => void;
+  let release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const runtime: AgentRuntimePort = {
+    async *run(request) {
+      ready();
+      await pending;
+      yield {
+        type: "runtime.cancelled",
+        runId: request.runId,
+        reasonCode: "OWNER_REQUESTED",
+        occurredAt: T1,
+      };
+    },
+    cancel: vi.fn(async () => {
+      throw new Error("runtime stop unavailable");
+    }),
+  };
+  const stopRun = vi.fn(async () => ({ released: false }));
+  const f = await fixture(suffix, runtime, undefined, { stopRun });
+  const command = {
+    ownerId: f.input.ownerId,
+    agentId: f.input.agentId,
+    runId: f.input.runId,
+    authority: f.authority,
+    command: f.input.commands.cancelled,
+    reasonCode: "OWNER_REQUESTED",
+  };
+  const execution = f.coordinator.execute(f.input);
+  try {
+    await started;
+    await expect(f.coordinator.cancel(command)).rejects.toBeInstanceOf(AggregateError);
+    vi.mocked(runtime.cancel).mockImplementation(async () => {
+      release();
+    });
+    expect((await f.coordinator.cancel(command)).run.status).toBe("cancelled");
+    expect(runtime.cancel).toHaveBeenCalledTimes(2);
+  } finally {
+    release();
+    await execution;
+  }
+});
+
+it("records synchronous resource stop failures during execution interruption", async () => {
+  let ready!: () => void;
+  let release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const runtime: AgentRuntimePort = {
+    async *run(request) {
+      ready();
+      await pending;
+      yield {
+        type: "runtime.cancelled",
+        runId: request.runId,
+        reasonCode: "AUTHORITY_LOST",
+        occurredAt: T1,
+      };
+    },
+    cancel: vi.fn(async () => {
+      release();
+    }),
+  };
+  const error = new Error("resource stop unavailable");
+  const stopRun = vi.fn(() => {
+    throw error;
+  });
+  const f = await fixture("interrupt-independent-resource", runtime, undefined, { stopRun });
+  const execution = f.coordinator.execute(f.input);
+  const ended = expect(execution).rejects.toMatchObject({ reasonCode: "AUTHORITY_LOST" });
+  try {
+    await started;
+    const result = await f.coordinator.interruptExecution({
+      runId: f.input.runId,
+      executionLeaseId: f.input.executionLease.executionLeaseId,
+      reasonCode: "AUTHORITY_LOST",
+    });
+    expect(result).toMatchObject({
+      runtimeCancellationAttempted: true,
+      failures: [{ target: "resource", error }],
+    });
+    expect(runtime.cancel).toHaveBeenCalledOnce();
+  } finally {
+    release();
+    await ended;
+  }
+});

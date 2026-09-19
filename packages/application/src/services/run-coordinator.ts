@@ -270,8 +270,8 @@ export class RunCoordinator {
     }
     if (this.dependencies.resources)
       cancellations.push(
-        this.dependencies.resources
-          .stopRun(input.runId)
+        Promise.resolve()
+          .then(() => this.dependencies.resources?.stopRun(input.runId))
           .then(() => undefined)
           .catch((error: unknown) => {
             failures.push({ target: "resource", error });
@@ -607,7 +607,10 @@ export class RunCoordinator {
       // Cancellation is terminal for model execution, but cleanup may need a
       // later attempt after the original supervisor finishes. Never restart it.
       if (existing.run.status === "cancelled" || existing.run.status === "failed")
-        await this.dependencies.resources?.stopRun(input.runId);
+        await this.cancelExecutionTargets(
+          input,
+          this.executionAttempts.get(input.runId)?.runtimeActive === true,
+        );
       return existing;
     }
     await this.dependencies.runs.cancelRun({
@@ -624,12 +627,30 @@ export class RunCoordinator {
     if (storedRun.run.status !== "cancelled") return storedRun;
     this.cancelledRuns.add(input.runId);
     this.executionAttempts.get(input.runId)?.cancellation.abort();
-    await this.dependencies.runtime.cancel(input.runId);
-    await this.dependencies.resources?.stopRun(input.runId);
-    for (const workerRunId of this.activeWorkers.get(input.runId) ?? []) {
-      await this.requireWorkers().cancel(workerRunId, input.reasonCode);
-    }
+    await this.cancelExecutionTargets(input, true);
     return storedRun;
+  }
+
+  private async cancelExecutionTargets(
+    input: Pick<CancelCoordinatedRunInput, "runId" | "reasonCode">,
+    cancelRuntime: boolean,
+  ): Promise<void> {
+    // Capture active workers before cancellation can finish their iterators.
+    // Every stop must be issued even when another target rejects or is still
+    // waiting. A committed cancellation is not evidence of resource release.
+    const resources = this.dependencies.resources;
+    const stops: (() => Promise<unknown>)[] = [
+      ...(cancelRuntime ? [() => this.dependencies.runtime.cancel(input.runId)] : []),
+      ...(resources ? [() => resources.stopRun(input.runId)] : []),
+      ...[...(this.activeWorkers.get(input.runId) ?? [])].map(
+        (workerRunId) => () => this.requireWorkers().cancel(workerRunId, input.reasonCode),
+      ),
+    ];
+    const results = await Promise.allSettled(stops.map((stop) => Promise.resolve().then(stop)));
+    const failures = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (failures.length) throw new AggregateError(failures, "Run cancellation cleanup incomplete");
   }
 
   private async runWorkers(

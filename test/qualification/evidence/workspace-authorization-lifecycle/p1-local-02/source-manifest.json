@@ -1,0 +1,14 @@
+{
+  "sourceBaseCommit": "1e863f84592062008ba8ce8129a7d71ba90e17d8",
+  "recordedAt": "2026-09-19T12:55:57.027038+00:00",
+  "files": [
+    {
+      "path": "packages/application/src/services/run-coordinator.ts",
+      "sha256": "cbc8f53fe3282a98fa47f886ff3f56912298e0f8f3334c94854619c58f2d7e33"
+    },
+    {
+      "path": "test/integration/run-coordinator.test.ts",
+      "sha256": "1c4543cb7c7764a9753f9c8e9e6376f384c0e31467bb5c9271337e26f18ce5b3"
+    }
+  ]
+}

@@ -632,6 +632,14 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 本批沿用已确认的 r3 交互，未启用真实自动审查配置。[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-local-01/standard-ci-result.json)通过：240 文件、3,611 项，零失败、零跳过，发布扫描通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档校验通过。全部执行阶段的统一投影、真实服务端到端路径、跨平台验证和整个 P6 尚未完成。
 
+### P1 停止请求独立派发与清理重试（局部修复）
+
+- Run 取消决定先持久化，再分别请求运行时、资源管理器和当前 Worker 停止。一个目标同步抛错、异步拒绝或尚未返回，均不阻止其他停止请求发出；错误汇总返回，取消状态本身不证明进程或占用已释放。
+- 对已取消或失败的 Run 再次停止，只重试仍活跃的运行时/Worker 并重新核对资源，不启动新的模型或工具。执行权中断保留资源停止端口的同步异常，避免漏报清理失败。
+- [独立停止修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-02/cancel-independent-red.log)四项失败、[再次停止修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-02/cancel-retry-red.log)两项失败、[同步异常修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-02/interrupt-resource-red.log)一项失败均保留。最终[155 项相关回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-02/cancel-consumers-final.log)全部通过，使用真实协调器/持久化与受控运行时和 Worker 边界。
+
+[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-02/standard-ci-result.json)通过：240 文件、3,618 项，零失败、零跳过，发布扫描通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。未新增全局清理超时，也不将 `released: false` 当作释放成功；未绑定环境停止、进程树资格、其他恢复盲区及整个 P1 仍未完成。
+
 ### 当前完成边界与下一步
 
 P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
