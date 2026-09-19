@@ -1,0 +1,125 @@
+import {
+  automaticReviewDelegationCovers,
+  parseAutomaticReviewDecision,
+} from "./automatic-action-review-contract.js";
+import type {
+  AutomaticActionReviewerPort,
+  AutomaticReviewDecision,
+  AutomaticReviewRequest,
+  AutomaticReviewStorePort,
+} from "../ports/automatic-action-review.js";
+import type { AutomaticActionReviewPort, GovernedActionIntent } from "../ports/authorization.js";
+import type { RunExecutionLeaseClaim } from "../ports/run-dispatch.js";
+import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
+import { actionIntentFingerprint } from "./action-intent-snapshot.js";
+import { freezeGovernedActionIntent } from "./action-policy-service.js";
+
+export interface AutomaticActionReviewDependencies {
+  readonly maximumWaitMs: number;
+  readonly configurationVersion: string;
+  readonly modelRef: string;
+  readonly delegationKey: string;
+  readonly store: AutomaticReviewStorePort;
+  readonly reviewer: AutomaticActionReviewerPort;
+  readonly clock: ClockPort;
+  readonly ids: IdGeneratorPort;
+  readonly executionLease: (
+    runId: GovernedActionIntent["runId"],
+  ) => Promise<RunExecutionLeaseClaim>;
+  /** Uses the existing protected Payload and disclosure boundary; never reads files here. */
+  readonly prepareInput: (intent: GovernedActionIntent, signal: AbortSignal) => Promise<string>;
+  readonly saveOutput: (
+    request: AutomaticReviewRequest,
+    decision: AutomaticReviewDecision,
+    signal: AbortSignal,
+  ) => Promise<string>;
+}
+
+/** Disabled unless explicitly composed. It has no tool, Worker or file-execution port. */
+export class AutomaticActionReviewService implements AutomaticActionReviewPort {
+  readonly maximumWaitMs: number;
+  private readonly dependencies: AutomaticActionReviewDependencies;
+  constructor(dependencies: AutomaticActionReviewDependencies) {
+    this.dependencies = dependencies;
+    this.maximumWaitMs = dependencies.maximumWaitMs;
+    if (
+      !Number.isSafeInteger(this.maximumWaitMs) ||
+      this.maximumWaitMs < 1 ||
+      this.maximumWaitMs > 300_000
+    )
+      throw new Error("AUTOMATIC_REVIEW_CONFIGURATION_INVALID");
+  }
+
+  async review(
+    input: Parameters<AutomaticActionReviewPort["review"]>[0],
+    signal: AbortSignal,
+  ): Promise<void> {
+    const d = this.dependencies;
+    const intent = freezeGovernedActionIntent(input.intent);
+    const deadlineAt = new Date(
+      Math.min(Date.parse(input.deadlineAt), Date.parse(d.clock.now()) + this.maximumWaitMs),
+    ).toISOString();
+    const current = () =>
+      !signal.aborted && d.clock.now() < deadlineAt && d.clock.now() < intent.expiresAt;
+    // Critical actions still require recent Owner authentication through the human path.
+    if (!current() || intent.finalRisk === "CRITICAL" || intent.credentialOrAccessChange) return;
+    const identity = {
+      configurationVersion: d.configurationVersion,
+      modelRef: d.modelRef,
+      policyVersion: input.policyVersion,
+      intentFingerprint: actionIntentFingerprint(intent),
+      deadlineAt,
+      approvalExpiresAt: input.approvalExpiresAt,
+    };
+    const delegated = await d.store.readDelegation({
+      ownerId: intent.ownerId,
+      agentId: intent.agentId,
+      key: d.delegationKey,
+    });
+    if (
+      !delegated ||
+      !current() ||
+      !automaticReviewDelegationCovers(delegated.value, identity, d.clock.now())
+    )
+      return;
+    const inputRef = await d.prepareInput(intent, signal);
+    if (!current()) return;
+    const request: AutomaticReviewRequest = Object.freeze({
+      ...identity,
+      schemaVersion: "automatic-review.v1",
+      reviewId: d.ids.next("automatic-review"),
+      runId: intent.runId,
+      inputRef,
+    });
+    const executionLease = await d.executionLease(intent.runId);
+    if (!current()) return;
+    const claim = await d.store.claim({
+      request,
+      intent,
+      delegation: { key: d.delegationKey, revision: delegated.revision },
+      executionLease,
+      startedAt: d.clock.now(),
+    });
+    if (!claim?.claimed || !current()) return;
+    const decision = parseAutomaticReviewDecision(
+      request,
+      await d.reviewer.review(request, signal),
+    );
+    if (!current()) return;
+    const outputRef = await d.saveOutput(request, decision, signal);
+    const latestLease = await d.executionLease(intent.runId);
+    if (!current()) return;
+    await d.store.finish({
+      reviewId: request.reviewId,
+      decision,
+      outputRef,
+      executionLease: latestLease,
+      completedAt: d.clock.now(),
+    });
+  }
+}
+
+export {
+  automaticReviewDelegationCovers,
+  parseAutomaticReviewDecision,
+} from "./automatic-action-review-contract.js";

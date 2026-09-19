@@ -1,5 +1,6 @@
 import type {
   ActionKind,
+  AutomaticActionReviewPort,
   ActionRiskLevel,
   ApprovalRequest,
   AuthorizationReservation,
@@ -257,6 +258,8 @@ export interface ActionPolicyServiceDependencies {
   readonly ids: IdGeneratorPort;
   readonly policy: PermissionPolicy;
   readonly trace?: AuthorizationDecisionTracePort;
+  /** Absent in production unless an explicitly configured coordinator is supplied. */
+  readonly automaticReview?: AutomaticActionReviewPort;
 }
 
 export class ActionPolicyService {
@@ -269,6 +272,14 @@ export class ActionPolicyService {
   async evaluate(
     source: GovernedActionIntent,
     options: { readonly uiAvailable: boolean; readonly approvalExpiresAt: string },
+  ): Promise<PermissionDecision> {
+    return this.evaluateCurrent(source, { ...options }, true);
+  }
+
+  private async evaluateCurrent(
+    source: GovernedActionIntent,
+    options: { readonly uiAvailable: boolean; readonly approvalExpiresAt: string },
+    allowReview: boolean,
   ): Promise<PermissionDecision> {
     let intent: GovernedActionIntent;
     try {
@@ -384,6 +395,51 @@ export class ActionPolicyService {
       if (options.approvalExpiresAt <= now || options.approvalExpiresAt > intent.expiresAt) {
         return this.finish(intent, "DENY", "approval_expiry_invalid", now, true);
       }
+      if (allowReview && this.dependencies.automaticReview) {
+        const review = this.dependencies.automaticReview;
+        if (
+          !Number.isSafeInteger(review.maximumWaitMs) ||
+          review.maximumWaitMs < 1 ||
+          review.maximumWaitMs > 300_000
+        )
+          throw new Error("Invalid automatic review deadline");
+        const controller = new AbortController();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const duration = Math.min(
+            review.maximumWaitMs,
+            Date.parse(options.approvalExpiresAt) - Date.parse(this.dependencies.clock.now()),
+          );
+          if (duration > 0)
+            await Promise.race([
+              review.review(
+                {
+                  intent,
+                  policyVersion: this.dependencies.policy.version,
+                  deadlineAt: new Date(
+                    Date.parse(this.dependencies.clock.now()) + duration,
+                  ).toISOString(),
+                  approvalExpiresAt: options.approvalExpiresAt,
+                },
+                controller.signal,
+              ),
+              new Promise<void>((resolve) => {
+                timer = setTimeout(() => {
+                  controller.abort();
+                  resolve();
+                }, duration);
+              }),
+            ]);
+        } catch {
+          // Diagnostics stay with the review coordinator; failure is not a user denial.
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
+          controller.abort();
+        }
+        // A return value cannot authorize anything. Re-read current policy, capability,
+        // approval, quota and expiry after every await; review runs at most once here.
+        return this.evaluateCurrent(intent, options, false);
+      }
       const request: GovernedApprovalRequest = Object.freeze({
         id: this.dependencies.ids.next("approval"),
         revision: 1,
@@ -404,6 +460,8 @@ export class ActionPolicyService {
         grantId: null,
       });
       const stored = await this.dependencies.store.createApproval(request);
+      // Another device or review may have resolved the request during this write.
+      if (stored.status !== "pending") return this.evaluateCurrent(intent, options, false);
       await this.trace(
         intent,
         "ASK",

@@ -1,0 +1,36 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/authorization-capability-governance.test.ts (34 tests | 1 failed | 33 skipped) 14ms
+   × observes a decision that wins the race while creating the fallback approval 13ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > observes a decision that wins the race while creating the fallback approval
+AssertionError: expected { decision: 'ASK', …(1) } to match object { decision: 'DENY', …(1) }
+(18 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "decision": "DENY",
+-   "reasonCode": "approval_denied",
++   "decision": "ASK",
+  }
+
+ ❯ test/integration/authorization-capability-governance.test.ts:1385:128
+    1383|     });
+    1384|   });
+    1385|   expect(await f.service([]).evaluate(intent({ id: "approval-creation-…
+       |                                                                                                                                ^
+    1386| });
+    1387|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 33 skipped (34)
+   Start at  20:22:48
+   Duration  787ms (transform 545ms, setup 0ms, import 673ms, tests 14ms, environment 0ms)

@@ -28,6 +28,13 @@ function entry(
 
 export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
+    "automatic_action_reviews",
+    "AutomaticReviewStorePort",
+    "durable review identity and source, conditionally resolved through original authorization",
+    "payload_reference",
+    "retain decisions for audit; cascade with retired Run",
+  ),
+  entry(
     "sandbox_admission_queue",
     "SandboxExecutionPreparationPort",
     "fair admission priority without held resources or consumed invocation quota",

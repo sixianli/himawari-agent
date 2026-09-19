@@ -7,6 +7,7 @@ import type {
   AuthorityLeasePort,
   AuthorityLeaseRecord,
   AuthorizationStorePort,
+  AutomaticReviewStorePort,
   BackgroundWorkStatePort,
   CapabilityExecutionHandleStorePort,
   CapabilityInvocationReceiptPort,
@@ -372,6 +373,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   auditLedger(): AuditLedgerPort {
     return this.durable.auditLedger();
+  }
+
+  automaticReviewStore(): AutomaticReviewStorePort {
+    return this.durable.automaticReviewStore();
   }
 
   authorizationStore(): AuthorizationStorePort {

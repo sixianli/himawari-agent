@@ -6,6 +6,7 @@ export * from "./application-service-identity-factory.js";
 export * from "./approval-service.js";
 export * from "./attention-policy-service.js";
 export * from "./automatic-memory-service.js";
+export * from "./automatic-action-review.js";
 export * from "./autonomy-gateway-adapter.js";
 export * from "./capability-handle-service.js";
 export * from "./capability-lifecycle-service.js";

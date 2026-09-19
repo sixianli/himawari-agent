@@ -3,6 +3,7 @@ import type {
   AuditLedgerPort,
   AuthorityFence,
   AuthorizationStorePort,
+  AutomaticReviewStorePort,
   BackgroundWorkStatePort,
   BuiltInIdentityStatePort,
   CapabilityExecutionHandleStorePort,
@@ -306,6 +307,15 @@ export class SqliteDurableAdapters {
       append: (record) => this.context.write("audit.append", { record }),
       listByAgent: (agentId, afterId) =>
         this.context.read("audit.listByAgent", { agentId, afterId }),
+    });
+  }
+
+  automaticReviewStore(): AutomaticReviewStorePort {
+    return Object.freeze<AutomaticReviewStorePort>({
+      readDelegation: (input) => this.context.read("automaticReview.readDelegation", input),
+      get: (reviewId) => this.context.read("automaticReview.get", { reviewId }),
+      claim: (input) => this.context.write("automaticReview.claim", { input }),
+      finish: (input) => this.context.write("automaticReview.finish", { input }),
     });
   }
 

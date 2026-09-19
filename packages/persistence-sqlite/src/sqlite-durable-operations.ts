@@ -1,3 +1,4 @@
+import { SqliteAutomaticActionReview } from "./sqlite-automatic-action-review.ts";
 import { SqliteAuthorizationReservations } from "./sqlite-authorization-reservations.ts";
 import {
   approvalMatchesIntent,
@@ -5,6 +6,8 @@ import {
 } from "@himawari-agent/application/action-intent-snapshot";
 import type {
   ApprovalRequest,
+  AutomaticReviewStart,
+  AutomaticReviewFinish,
   ReserveAuthorizationInput,
   GovernedGrantRecord,
   AttentionDecisionCommit,
@@ -328,6 +331,7 @@ export class SqliteDurableOperations {
   private readonly builtInIdentity: SqliteBuiltInIdentityOperations;
   private readonly thread: SqliteThreadOperations;
   private readonly runs: SqliteRunLifecycleOperations;
+  private readonly automaticReviews: SqliteAutomaticActionReview;
   private readonly authorizationReservations: SqliteAuthorizationReservations;
   private readonly runCheckpoints: SqliteRunCheckpointOperations;
   private readonly runPayloadArtifacts: SqliteRunPayloadArtifactOperations;
@@ -340,6 +344,11 @@ export class SqliteDurableOperations {
     assertDiskHeadroom: () => void,
   ) {
     this.builtInIdentity = new SqliteBuiltInIdentityOperations(database, fail, assertDiskHeadroom);
+    this.automaticReviews = new SqliteAutomaticActionReview(database, fail, {
+      find: (intentId) => this.findApprovalByIntent(intentId),
+      create: (request) => this.createApproval(request),
+      resolve: (input) => this.resolveApproval(input),
+    });
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
@@ -523,6 +532,18 @@ export class SqliteDurableOperations {
         return this.appendAudit((payload as { record: AuditRecord }).record);
       case "audit.listByAgent":
         return this.listAudit(payload as { agentId: string; afterId: string | null });
+      case "automaticReview.readDelegation":
+        return this.automaticReviews.readDelegation(
+          payload as { ownerId: string; agentId: string; key: string },
+        );
+      case "automaticReview.get":
+        return this.automaticReviews.get((payload as { reviewId: string }).reviewId);
+      case "automaticReview.claim":
+        this.assertDiskHeadroom();
+        return this.automaticReviews.claim((payload as { input: AutomaticReviewStart }).input);
+      case "automaticReview.finish":
+        this.assertDiskHeadroom();
+        return this.automaticReviews.finish((payload as { input: AutomaticReviewFinish }).input);
       case "authorization.createApproval":
         return this.createApproval((payload as { request: ApprovalRequest }).request);
       case "authorization.findApprovalByIntent":

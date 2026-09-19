@@ -87,6 +87,23 @@ export interface PermissionPolicyRule {
   readonly reasonCode: string;
 }
 
+/** Host-owned review coordinator, not an untrusted model response or execution grant.
+ * It may persist a validated decision through the original Approval/Grant boundary.
+ * Apply only while the signal, request deadline and delegated policy remain current;
+ * repeated or late results must never overwrite another decision or repeat execution. */
+export interface AutomaticActionReviewPort {
+  readonly maximumWaitMs: number;
+  review(
+    input: {
+      readonly intent: GovernedActionIntent;
+      readonly policyVersion: string;
+      readonly deadlineAt: string;
+      readonly approvalExpiresAt: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void>;
+}
+
 export interface PermissionPolicy {
   readonly version: string;
   readonly rules: readonly PermissionPolicyRule[];
@@ -136,6 +153,12 @@ export interface GrantRecord {
 }
 
 export interface ApprovalRequest {
+  readonly automaticReview?: {
+    readonly reviewId: string;
+    readonly configurationVersion: string;
+    readonly modelRef: string;
+    readonly outputRef: string;
+  };
   /** A durable Owner policy decision, never a claim of a per-action human click. */
   readonly policyAuthorization?: { readonly key: string; readonly revision: number };
   readonly id: string;

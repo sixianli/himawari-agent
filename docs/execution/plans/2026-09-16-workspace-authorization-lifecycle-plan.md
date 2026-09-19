@@ -597,8 +597,17 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 [完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-local-01/standard-ci-result.json)已通过：237 文件、3,511 项，零失败、零跳过，发布扫描通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。任意命令的更窄限制、可选副本与逐文件应用、完整页面和双平台产品验收仍未完成；本段不代表整个 P4 或 Plan 已完成。
 
+### P5 默认关闭的自动审查基础（局部实现）
+
+- `ActionPolicyService` 在硬拒绝、既有审批/授权及安全读取规则之后接受可选宿主审查协调器；未装配时保持原路径。协调器的返回值本身没有授权作用，等待结束后重读能力、审批、额度和期限，失败或无效输出回到人工路径。
+- 结构化请求/建议绑定请求摘要、审查编号、政策版本、模型配置版本和模型引用；响应不得携带 Grant、命令或扩大后的范围。安全替代仅作为受保护文本保存，不执行文本中的指令。委托当前仅覆盖明确的原请求摘要，关键风险及凭据变更仍走人工确认。
+- Schema 39 保存模型调用前的唯一审查记录。重复请求和进程重开不再次调用模型；完成与原审批及一次性精确 Grant 同事务提交，使用数据库 writer 当前时间核验期限、委托和执行租约。人工请求已经存在、撤销、取消、过期或执行权失效时拒绝迟到结果。批准保存 `automaticReview` 来源，后续使用仍经过原额度预约和撤销检查；审查本身不创建文件 claim、Handle 或工具调用回执。
+- 审查等待期限独立于原授权期限，避免超时审查稍后写入授权，也避免正常批准被不必要地缩短。人工确认创建与决定竞争已[复现](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-01/fallback-race-red.log)并修复：不再向调用者返回已被拒绝请求的 ASK。[最终入口与持久化回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-01/entry-durable-final2.log) 56 项通过。
+
+本批仍为基础接入，未创建真实模型配置、未启用生产自动审查，也未发生真实付费调用。Pi 模型边界与预算/披露装配、建议替代的新请求、页面来源/状态投影及真实模型验收尚未完成。[完整本地构建与测试原始结果](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-01/standard-ci-result.json)：构建通过；239 文件、3,562 项执行，3,561 通过、1 失败、零跳过。唯一失败为审计测试仍将已支持的 Schema 39 当作未知版本，夹具插入时主键冲突；改为当前最高版本加一后，[10 项真实 CLI/SQLite 审计测试全部通过](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-01/audit-schema-green.log)，未知版本拒绝断言保留。复用产品代码和输入未变的其余通过结果，见[组合验证记录](../../../test/qualification/evidence/workspace-authorization-lifecycle/p5-local-01/verification-result.json)；没有把原 CI 的失败改写成一次全量通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。不能据此标记整个 P5 完成。
+
 ### 当前完成边界与下一步
 
-P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
+P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
 
 [单一决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv) 记录本轮选择及证据；没有建立另一个项目状态缓存。

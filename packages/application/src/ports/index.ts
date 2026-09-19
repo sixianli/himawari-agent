@@ -1,5 +1,6 @@
 export * from "./authority-identities.js";
 export * from "./authorization.js";
+export * from "./automatic-action-review.js";
 export * from "./automatic-memory.js";
 export * from "./backup-transfer.js";
 export * from "./built-in-identity.js";

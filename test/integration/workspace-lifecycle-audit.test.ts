@@ -93,7 +93,7 @@ describe("workspace lifecycle read-only audit", () => {
     const result = auditWorkspaceLifecycle(f.input);
     expect(result).toMatchObject({
       mode: "read_only",
-      schemaSequence: 38,
+      schemaSequence: 39,
       liveHostVerified: false,
       repairEligible: false,
     });
@@ -261,7 +261,7 @@ describe("workspace lifecycle read-only audit", () => {
     const f = await fixture();
     f.database
       .prepare(
-        "INSERT INTO schema_migration_ledger VALUES(39,'future','expand','digest','2026-09-19T00:00:00.000Z')",
+        "INSERT INTO schema_migration_ledger SELECT MAX(sequence)+1,'future','expand','digest','2026-09-19T00:00:00.000Z' FROM schema_migration_ledger",
       )
       .run();
     expect(() => auditWorkspaceLifecycle(f.input)).toThrow("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");

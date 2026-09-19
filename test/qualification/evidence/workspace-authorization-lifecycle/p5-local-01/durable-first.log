@@ -1,0 +1,55 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/automatic-action-review.test.ts (20 tests | 20 failed) 3297ms
+     × claims once across reopen, commits a single exact Grant, and replays without execution 226ms
+     × stores deny without creating any Grant 167ms
+     × stores human without creating any Grant 158ms
+     × stores alternative without creating any Grant 163ms
+     × rejects a late decision after revoked 156ms
+     × rejects a late decision after revision 174ms
+     × rejects a late decision after cancelled 162ms
+     × rejects a late decision after lease-ended 174ms
+     × rejects a late decision after expired 165ms
+     × rejects a late decision after changed-model 160ms
+     × rejects a late decision after unprotected-result 159ms
+     × never overwrites an existing human request, including a rejected request 158ms
+     × rolls approval and Grant back when the review result cannot be saved 157ms
+     × rechecks delegated authority when consuming the automatically approved Grant 154ms
+     × calls the model once under concurrent review and records its source 159ms
+     × does not disclose input or call a model when disabled 165ms
+     × does not disclose input or call a model when outside-scope 162ms
+     × does not disclose input or call a model when wrong-model 162ms
+     × discards an aborted late result and never retries its model call after reopening 159ms
+     × leaves malformed output without authority 155ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 20 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > claims once across reopen, commits a single exact Grant, and replays without execution
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > stores deny without creating any Grant
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > stores human without creating any Grant
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > stores alternative without creating any Grant
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > rejects a late decision after revoked
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > rejects a late decision after revision
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > rejects a late decision after cancelled
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > rejects a late decision after lease-ended
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > rejects a late decision after expired
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > rejects a late decision after changed-model
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > rejects a late decision after unprotected-result
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > never overwrites an existing human request, including a rejected request
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > rolls approval and Grant back when the review result cannot be saved
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review durable arbitration > rechecks delegated authority when consuming the automatically approved Grant
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review coordinator with a controlled model boundary > calls the model once under concurrent review and records its source
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review coordinator with a controlled model boundary > does not disclose input or call a model when disabled
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review coordinator with a controlled model boundary > does not disclose input or call a model when outside-scope
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review coordinator with a controlled model boundary > does not disclose input or call a model when wrong-model
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review coordinator with a controlled model boundary > discards an aborted late result and never retries its model call after reopening
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > automatic review coordinator with a controlled model boundary > leaves malformed output without authority
+Error: Cannot find module '/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/persistence-sqlite/src/sqlite-automatic-action-review.js' imported from /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/persistence-sqlite/src/sqlite-durable-operations.ts
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/20]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  20 failed (20)
+   Start at  20:18:51
+   Duration  4.61s (transform 751ms, setup 0ms, import 1.22s, tests 3.30s, environment 0ms)

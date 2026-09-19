@@ -343,6 +343,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0038_private_network_scope_contract.sql",
   },
+  {
+    sequence: 39,
+    name: "automatic_action_reviews",
+    changeSet: "automatic-action-reviews",
+    phase: "expand" as const,
+    file: "0039_automatic_action_reviews.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {
