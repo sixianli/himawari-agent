@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:d379811ef1724c7e560ac487347a36c6ddf0b5f1339b070b4eaf7fd960be880f"
+contract_sha256: "sha256:c3d13f1f3a9ba76741ec2782a61d729dc405e1c9e3d49042e13023b537b6233d"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -260,6 +260,8 @@ Schema 36 不重写旧记录；它为新增 JSON 字段建立 writer 版本屏�
 恢复不能把目标版本冲突改写为允许覆盖。文件型 claim 同时保留父目录名称槽位和当前文件身份，原子替换后名称槽位仍冲突；硬链接、符号链接和跨设备目标被拒绝。名称保守归一化可能在区分大小写的文件系统上多排队，不能据此宣称所有别名场景的并行资格已通过。默认核验读取仍要求当前路径不变；固定文件读取可读完已经打开的完整旧版本，不能推广成任意原地写入都可并行。回退仍要求停止服务并恢复匹配旧版本的完整恢复点。
 
 ### Schema 37 固定文件发布恢复
+
+历史占用可先按[只读核查流程](workspace-lifecycle-audit-runbook.md)从对应源码 checkout 读取已验证的数据库副本。该入口不随安装产物自动变成管理命令，也不执行迁移、解锁或重放；现场宿主停止证明与具体修复仍需单独核对。
 
 Schema 37 为原调用的恢复结果建立 writer 屏障。恢复结果保存在受保护的 `pi-file-recovery:<invocationId>` Trace artifact 中，与原 Worker 输出分开；不覆盖原输出，也不创建第二个调用回执。旧 writer 不理解该来源，不得直接写入新库。
 

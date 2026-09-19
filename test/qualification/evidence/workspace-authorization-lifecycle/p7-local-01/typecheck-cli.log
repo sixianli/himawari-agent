@@ -1,0 +1,11 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+test/integration/workspace-lifecycle-audit.test.ts(105,12): error TS2532: Object is possibly 'undefined'.
+test/integration/workspace-lifecycle-audit.test.ts(120,12): error TS18048: 'row' is possibly 'undefined'.
+test/integration/workspace-lifecycle-audit.test.ts(121,12): error TS18048: 'row' is possibly 'undefined'.
+test/integration/workspace-lifecycle-audit.test.ts(122,12): error TS18048: 'row' is possibly 'undefined'.
+test/integration/workspace-lifecycle-audit.test.ts(142,12): error TS2532: Object is possibly 'undefined'.
+test/integration/workspace-lifecycle-audit.test.ts(146,12): error TS2532: Object is possibly 'undefined'.
+test/integration/workspace-lifecycle-audit.test.ts(197,12): error TS2532: Object is possibly 'undefined'.

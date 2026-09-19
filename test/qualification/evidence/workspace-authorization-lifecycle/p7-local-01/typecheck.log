@@ -1,0 +1,7 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+test/integration/workspace-lifecycle-audit.test.ts(12,8): error TS7016: Could not find a declaration file for module '../../scripts/operations/workspace-lifecycle-audit.mjs'. '/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/scripts/operations/workspace-lifecycle-audit.mjs' implicitly has an 'any' type.
+test/integration/workspace-lifecycle-audit.test.ts(127,23): error TS7006: Parameter 'row' implicitly has an 'any' type.
+test/integration/workspace-lifecycle-audit.test.ts(132,23): error TS7006: Parameter 'row' implicitly has an 'any' type.

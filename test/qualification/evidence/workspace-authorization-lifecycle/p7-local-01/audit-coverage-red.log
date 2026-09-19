@@ -1,0 +1,54 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/workspace-lifecycle-audit.test.ts (10 tests | 2 failed) 11061ms
+     × distinguishes a queued request without a dispatch commit from cancellation 433ms
+     × inventories legacy obligations without consuming another invocation 490ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/workspace-lifecycle-audit.test.ts > workspace lifecycle read-only audit > distinguishes a queued request without a dispatch commit from cancellation
+AssertionError: expected [ Array(1) ] to deeply equal [ 'QUEUE_CANCELLED' ]
+
+- Expected
++ Received
+
+  [
+-   "QUEUE_CANCELLED",
++   "QUEUE_ADMISSION_REQUIRES_RECONCILIATION",
+  ]
+
+ ❯ test/integration/workspace-lifecycle-audit.test.ts:108:66
+    106|     const rows = auditWorkspaceLifecycle({ ...f.input, section: "queue…
+    107|     expect(rows.find(row => row.status === "queued")).toMatchObject({ …
+    108|     expect(rows.find(row => row.status === "cancelled").reasons).toEqu…
+       |                                                                  ^
+    109|     expect(f.database.prepare("SELECT count(*) AS n FROM sandbox_admis…
+    110|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |integration| test/integration/workspace-lifecycle-audit.test.ts > workspace lifecycle read-only audit > inventories legacy obligations without consuming another invocation
+ApplicationPortError: Consumed invocation has no sandbox journal; execution is unknown
+ ❯ SqliteCapabilityInvocationOperations.fail test/fixtures/sqlite-capability-invocation-fixture.ts:462:11
+    460|     details?: Readonly<Record<string, string>>,
+    461|   ): never => {
+    462|     throw new ApplicationPortError(code as PortErrorCode, message, det…
+       |           ^
+    463|   };
+    464|   const artifacts = new SqliteRunPayloadArtifactOperations(database, f…
+ ❯ Function.<anonymous> packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:690:25
+ ❯ Function.sqliteTransaction node_modules/better-sqlite3/lib/methods/transaction.js:65:24
+ ❯ SqliteCapabilityInvocationOperations.sandboxOperation packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:707:10
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:526:21
+ ❯ call test/fixtures/sqlite-capability-invocation-fixture.ts:685:25
+ ❯ Object.prepare test/fixtures/sqlite-capability-invocation-fixture.ts:704:5
+ ❯ test/integration/workspace-lifecycle-audit.test.ts:115:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 8 passed (10)
+   Start at  18:25:38
+   Duration  13.42s (transform 1.41s, setup 0ms, import 2.20s, tests 11.06s, environment 0ms)

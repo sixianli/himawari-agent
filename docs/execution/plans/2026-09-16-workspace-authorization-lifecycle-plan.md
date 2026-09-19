@@ -16,7 +16,7 @@ date: "2026-09-16"
 
 **架构：** 继续复用 Pi 工具与 Agent Loop、Anthropic Sandbox Runtime、现有 Agent/Worker 和 SQLite。Himawari 接好持久权限、资源身份、文件提交、恢复及页面投影；不重建工具协议、沙箱或工作流系统。
 
-**当前范围：** 用户于 2026-09-16 要求实施本 Plan。P0 的 r3 新增交互已获确认，P1 释放与交接修复已保存为本地提交 `fe92846`；P2 的审批身份、重复决定与额度预约已保存为本地提交 `e4eebf4`，P3 的文件发布与持久排队已保存为本地提交 `b5b3e9a`；文件级协调及固定目标合同已保存为 `0183db0`，生产发布恢复已完成本批实现与本地验证。完整 P1～P7 未完成；详见[本次实施记录](#implementation-record)。Spec 已通过不等于自动审查配置或生产操作已获授权。
+**当前范围：** 用户于 2026-09-16 要求实施本 Plan。P0 的 r3 新增交互已获确认，P1 释放与交接修复已保存为本地提交 `fe92846`；P2 的审批身份、重复决定与额度预约已保存为本地提交 `e4eebf4`，P3 的文件发布与持久排队已保存为本地提交 `b5b3e9a`；文件级协调及固定目标合同已保存为 `0183db0`，生产发布恢复已完成本批实现与本地验证，并保存为 `9e0a11e`。完整 P1～P7 未完成；详见[本次实施记录](#implementation-record)。Spec 已通过不等于自动审查配置或生产操作已获授权。
 
 <a id="contents"></a>
 
@@ -539,8 +539,14 @@ P0 原文要求“新增交互先交用户审核，再用于对应 UI 实现”�
 
 本批类型与任务 lint 检查通过。首轮完整验证执行 3,468 项，3,467 项通过；旧 runner 测试未等待新的异步回调而失败，已修正测试调用。另加并发回调测试后[复现重复接纳](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/runner-concurrent-red.log)，将唯一性检查移到第一个异步等待之前，[42 项 runner 回归通过](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/runner-concurrent-green.log)。构建发布扫描还发现本地依赖目录存在 35,702 个相同内容的带编号副本；已逐项核对摘要并移入可恢复隔离目录，两个不同内容的带编号文件也单独保留，未修改依赖版本、锁文件或扫描规则，见[环境修复记录](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/dependency-duplicate-summary.json)。[首次失败记录](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/standard-ci-red-result.json)保留；[最终完整构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-local-03/standard-ci-result.json)通过：234 个文件、3,469 项、零失败、零跳过；发布扫描通过。短时提交锁、目录改名协议、排队重启续接、完整页面以及真实双平台验收仍未完成；不能把本段当作完整 P3 或整个 Plan 完成。
 
+### P7 历史占用只读清单（局部实现）
+
+新增[只读核查 Runbook](../../runbooks/workspace-lifecycle-audit-runbook.md)及真实 CLI 入口，按 Owner/Agent 分页读取新版执行、旧版保护和持久队列。支持 Schema 28～37，不迁移、不消费额度、不派发，不依据数据库状态生成可执行解锁；每页独立快照，报告始终标明现场宿主未验证、不可直接修复。
+
+[CLI 子进程回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p7-local-01/audit-cli-final.log) 10 项通过，使用真实 SQLite，包含旧 Schema 28 和数据库正文独立读回。最早缺少新模块的测试是功能脚手架失败，非历史产品故障；首次误放 tooling 项目导致夹具超时，已归入现有 integration 项目使用其正常时限；旧版夹具预先消费回执造成一次测试错误，改为合法准入。扩展用例也确认已取消队列被误归为待核对，已修正。完整 P7 的历史现场证明、修复候选、迁移/回退演练和部署尚未完成。
+
 ### 当前完成边界与下一步
 
-P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已完成本批实现和本地验证；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
+P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
 
 [单一决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv) 记录本轮选择及证据；没有建立另一个项目状态缓存。

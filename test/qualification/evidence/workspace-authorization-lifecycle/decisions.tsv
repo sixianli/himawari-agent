@@ -23,3 +23,4 @@ ts	phase	decision	why	evidence	result
 2026-09-19T09:00:09Z	P3	先接纳资源释放，再核实文件效果	文件恢复不能替代 Job Host 释放协议或扩大披露权限	apps/agent-service/src/production-sandbox-file-recovery.ts;p3-local-03/consumers-final.log	未释放时不读取日志；错 invocation 拒绝；待完整 CI
 2026-09-19T09:17:42.493547+00:00	P3	在异步文件核验开始前保留唯一回调权；按摘要隔离依赖副本	实际回归证实并发回调可重复接纳；构建扫描拒绝新增副本，不能扩大例外	p3-local-03/runner-concurrent-red.log;p3-local-03/runner-concurrent-green.log;p3-local-03/dependency-duplicate-summary.json	42 项 runner 回归通过；依赖版本和原文件未变，完整验证重跑
 2026-09-19T09:29:17.859081+00:00	P3	保存当前发布恢复实现	定向回归、完整本地构建测试与发布扫描均通过	p3-local-03/standard-ci-result.json	234 文件 3469 项通过；真实 OS 释放与双平台资格仍未完成
+2026-09-19T09:32:37.428321+00:00	P7	提供只读分页核查，不生成自动修复候选	数据库标签和回执存在性不能证明旧进程及迟到派发已停止	p7-local-01/audit-cli.log;docs/runbooks/workspace-lifecycle-audit-runbook.md	10 项真实 CLI 和 SQLite 回归通过；现场宿主验证和历史修复未完成
