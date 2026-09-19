@@ -6,6 +6,7 @@ import type {
   SandboxExecutionFacts,
   SandboxExecutionRecord,
   SandboxReconciliationBackend,
+  SandboxReservationReleaseVerification,
 } from "@himawari-agent/application";
 import {
   type SandboxExecutionPlanV2,
@@ -80,6 +81,18 @@ function processAbsent(pid: number): boolean {
   } catch (error) {
     return !!error && typeof error === "object" && "code" in error && error.code === "ESRCH";
   }
+}
+function neverStartedReleased(
+  raw: JobHostControlObservation,
+  namespace: "alive" | "released" | "unknown",
+): boolean {
+  return (
+    raw.phase === "finished" &&
+    !raw.taskStarted &&
+    raw.srtReset &&
+    (raw.linuxNamespace === null || namespace === "released") &&
+    processAbsent(raw.processId)
+  );
 }
 
 /** Uses the existing protected Run artifacts for control bindings and raw facts.
@@ -157,14 +170,7 @@ export function createProductionSandboxControl(options: Options) {
       return "released";
     // A finished, never-started environment can be released only after the
     // original host PID is absent. PID reuse/permission errors remain unknown.
-    if (
-      raw.phase === "finished" &&
-      !raw.taskStarted &&
-      raw.srtReset &&
-      (raw.linuxNamespace === null || namespace === "released") &&
-      processAbsent(raw.processId)
-    )
-      return "released";
+    if (neverStartedReleased(raw, namespace)) return "released";
     // Mac's accepted profile binds inherited SRT restrictions and sampled
     // supervision, not a promise of arbitrary descendant reclamation. Linux's
     // stronger tree requirement is not inferred from this Mac evidence.
@@ -361,6 +367,53 @@ export function createProductionSandboxControl(options: Options) {
         environmentId: plan.environmentId,
         observation,
       });
+    },
+    async verifyReservationRelease(
+      plan: SandboxExecutionPlanV2,
+      stopRequestedAt: string,
+    ): Promise<SandboxReservationReleaseVerification | undefined> {
+      if (
+        !Number.isFinite(Date.parse(stopRequestedAt)) ||
+        new Date(stopRequestedAt).toISOString() !== stopRequestedAt ||
+        stopRequestedAt > options.now()
+      )
+        throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
+      // Recheck installed host identity, never the expired operation Grant.
+      await options.host(plan);
+      const raw = await inspect(plan, "inspect");
+      const namespace = raw.linuxNamespace
+        ? await readLinuxNamespaceState(raw.linuxNamespace)
+        : "unknown";
+      if (!neverStartedReleased(raw, namespace)) return undefined;
+      const checkedAt = options.now();
+      const validUntil = new Date(Date.parse(checkedAt) + 1000).toISOString();
+      const evidence = await options.write(
+        plan,
+        `${key(plan)}:reservation-release:${raw.sequence}:${checkedAt}`,
+        {
+          schemaVersion: "sandbox-reservation-release.v1",
+          identity: plan.identity,
+          environmentId: plan.environmentId,
+          fingerprint: plan.semanticFingerprint,
+          stopRequestedAt,
+          checkedAt,
+          observation: raw,
+        },
+      );
+      if (options.now() >= validUntil) return undefined;
+      return {
+        schemaVersion: "sandbox-reservation-release.v1",
+        basis: "host_never_started",
+        identity: plan.identity,
+        environmentId: plan.environmentId,
+        semanticFingerprint: plan.semanticFingerprint,
+        stopRequestedAt,
+        checkedAt,
+        validUntil,
+        processIdentityRef: raw.processIdentityRef,
+        controlSessionId: raw.sessionId,
+        evidence,
+      };
     },
     async verifyPreparation(plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) {
       const stored = await readControl(plan);

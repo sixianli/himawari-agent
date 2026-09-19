@@ -146,6 +146,18 @@ if (process.argv.includes("--worker")) {
         // In-memory artifact storage and qualification are fixtures; the process,
         // control protocol and product evidence verifier are real.
         const artifacts = new Map();
+        const verifiedHost = async () => ({
+          binding: {
+            privateRoot: directory,
+            runtimeRoot: "/unused-runtime",
+            readOnlyToolchainPaths: [],
+            roots: [],
+          },
+          qualification: {
+            platform: process.platform,
+            terminationMode: process.platform === "linux" ? "verified_tree" : "best_effort",
+          },
+        });
         const product = createProductionSandboxControl({
           now: () => new Date().toISOString(),
           read: async (_plan, key) => artifacts.get(key),
@@ -158,18 +170,8 @@ if (process.argv.includes("--worker")) {
             artifacts.set(key, artifact);
             return artifact;
           },
-          host: async () => ({
-            binding: {
-              privateRoot: directory,
-              runtimeRoot: "/unused-runtime",
-              readOnlyToolchainPaths: [],
-              roots: [],
-            },
-            qualification: {
-              platform: process.platform,
-              terminationMode: process.platform === "linux" ? "verified_tree" : "best_effort",
-            },
-          }),
+          host: verifiedHost,
+          admit: verifiedHost,
         });
         const identity = {
           jobId: scenario,
@@ -235,6 +237,7 @@ if (process.argv.includes("--worker")) {
           worker.send({ start: true });
           await delay(300);
         }
+        const stopRequestedAt = new Date().toISOString();
         if (scenario !== "observed-escape") {
           stage = "wrong-token";
           await assert.rejects(queryJobHostControl({ ...binding, token: "0".repeat(64) }, "stop"));
@@ -284,6 +287,13 @@ if (process.argv.includes("--worker")) {
             (await product.evidence(plan, { ...record.facts, resource: observed })).length,
             1,
           );
+        const reservationRelease = await product.verifyReservationRelease(plan, stopRequestedAt);
+        if (scenario === "never-started") {
+          assert.equal(reservationRelease?.basis, "host_never_started");
+          assert.deepEqual(reservationRelease.identity, plan.identity);
+          assert.equal(reservationRelease.stopRequestedAt, stopRequestedAt);
+          assert.ok(reservationRelease.evidence.ref);
+        } else assert.equal(reservationRelease, undefined);
         if (scenario === "stdin") assert.equal(workerResult.stdout, "synthetic\u0000first\nsecond");
         if (scenario === "observed-escape")
           assert.equal(
@@ -295,7 +305,12 @@ if (process.argv.includes("--worker")) {
         envelope.body = envelope.body.replace('"srtReset":true', '"srtReset":false');
         await writeFile(filename, JSON.stringify(envelope), { mode: 0o600 });
         await assert.rejects(readJobHostFinalEvidence(binding));
-        results.push({ scenario, passed: true, cleanup: observed.cleanup });
+        results.push({
+          scenario,
+          passed: true,
+          cleanup: observed.cleanup,
+          reservationReleased: Boolean(reservationRelease),
+        });
       } catch (error) {
         console.error(JSON.stringify({ scenario, stage, workerResult }));
         throw error;

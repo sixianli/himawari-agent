@@ -1,0 +1,32 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-execution-preparation.test.ts (27 tests | 1 failed) 7492ms
+   × releases stopped never-started reservations durably without manufacturing runtime facts 266ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > releases stopped never-started reservations durably without manufacturing runtime facts
+ApplicationPortError: Sandbox runtime has not been bound
+ ❯ SqliteSandboxExecutionOperations.fail test/fixtures/sqlite-capability-invocation-fixture.ts:462:11
+    460|     details?: Readonly<Record<string, string>>,
+    461|   ): never => {
+    462|     throw new ApplicationPortError(code as PortErrorCode, message, det…
+       |           ^
+    463|   };
+    464|   const artifacts = new SqliteRunPayloadArtifactOperations(database, f…
+ ❯ SqliteSandboxExecutionOperations.read packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:515:19
+ ❯ Function.<anonymous> packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:275:30
+ ❯ Function.sqliteTransaction node_modules/better-sqlite3/lib/methods/transaction.js:65:24
+ ❯ SqliteSandboxExecutionOperations.execute packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:364:8
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:515:39
+ ❯ call test/integration/sandbox-execution-preparation.test.ts:33:44
+ ❯ test/integration/sandbox-execution-preparation.test.ts:752:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 26 passed (27)
+   Start at  23:22:29
+   Duration  9.44s (transform 955ms, setup 0ms, import 1.83s, tests 7.49s, environment 0ms)

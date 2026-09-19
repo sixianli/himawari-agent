@@ -1,3 +1,10 @@
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { once } from "node:events";
+import {
+  openJobHostControl,
+  type JobHostControlObservation,
+} from "../../packages/runtime-sandbox/src/job-host-control.ts";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
@@ -505,3 +512,111 @@ it.each(["pending", "rejected"] as const)(
     }
   },
 );
+
+it("releases never-started reservations through the production stop path and retains the stop fence", async () => {
+  // Real SQLite, installed-byte checks, authenticated socket and process exit;
+  // supervisor facts and platform qualification remain controlled test inputs.
+  vi.stubEnv("TMPDIR", "/tmp");
+  let f: Awaited<ReturnType<typeof productionSandboxScope>>;
+  try {
+    f = await productionSandboxScope(descriptor("read"));
+  } finally {
+    vi.unstubAllEnvs();
+  }
+  cleanups.push(f.close);
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("expected v2");
+  const admitted = await f.services.brokerV2.preparations.reserve({
+    ...prepared,
+    invocation: f.input,
+  });
+  if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
+  const { plan } = admitted.admission;
+  const directory = path.join(f.host.binding.privateRoot, "c");
+  await mkdir(directory, { mode: 0o700 });
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  const exited = once(child, "exit");
+  cleanups.push(async () => {
+    child.kill();
+    await exited;
+  });
+  if (!child.pid) throw new Error("test host missing");
+  const binding = {
+    directory,
+    token: "a".repeat(64),
+    sessionId: randomUUID(),
+    jobId: plan.identity.jobId,
+    attemptId: plan.identity.attemptId,
+  };
+  let stops = 0;
+  let sequence = 0;
+  let observation: JobHostControlObservation = {
+    ...binding,
+    bootId: randomUUID(),
+    processIdentityRef: `job-host-process:${randomUUID()}`,
+    processId: child.pid,
+    processStartedAt: T1,
+    observedAt: T1,
+    sequence: 1,
+    phase: "ready",
+    policyDigest: "b".repeat(64),
+    privateDirectoryRef: `sandbox-private:${"a".repeat(64)}`,
+    linuxNamespace: null,
+    taskStarted: false,
+    taskProcessExited: false,
+    stdioClosed: false,
+    srtReset: false,
+    resources: null,
+  };
+  const server = await openJobHostControl(
+    binding,
+    () => ({ ...observation, sequence: ++sequence }),
+    () => {
+      stops++;
+      observation = { ...observation, phase: "finished", srtReset: true };
+      child.kill();
+    },
+  );
+  cleanups.push(() => server.finish());
+  await f.services.brokerV2.registerControl(plan, binding);
+  await f.services.resources.stopRun(f.call.runId);
+  await exited;
+  expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: true });
+  const saved = await f.services.brokerV2.preparations.readAdmission(plan.identity);
+  expect(saved).toMatchObject({
+    phase: "reserved",
+    stopRequestedAt: T1,
+    workspaceBlocked: false,
+    releaseReceipt: { acceptedAt: T1, verification: { basis: "host_never_started" } },
+    recovery: { status: "resolved" },
+  });
+  const readback = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"), {
+    readonly: true,
+  });
+  try {
+    expect(
+      readback
+        .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+        .pluck()
+        .get(),
+    ).toBe(0);
+    expect(
+      readback
+        .prepare("SELECT started_at FROM sandbox_execution_records WHERE job_id=?")
+        .pluck()
+        .get(plan.identity.jobId),
+    ).toBeNull();
+    expect(
+      readback.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
+    ).toBe(1);
+    expect(readback.prepare("SELECT count(*) FROM sandbox_release_receipts").pluck().get()).toBe(0);
+  } finally {
+    readback.close();
+  }
+  const previousStops = stops;
+  f.setNow(T2);
+  expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: true });
+  expect(stops).toBe(previousStops);
+  expect(await f.services.brokerV2.preparations.readAdmission(plan.identity)).toEqual(saved);
+  await expect(f.services.brokerV2.verifyStart(plan)).rejects.toThrow();
+});

@@ -34,7 +34,7 @@ export function auditWorkspaceLifecycle({
       if (
         !Number.isSafeInteger(version) ||
         version < 28 ||
-        version > 40 ||
+        version > 41 ||
         ledger.count !== version
       )
         throw new Error("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");
@@ -54,6 +54,7 @@ export function auditWorkspaceLifecycle({
           json_extract(r.facts_json,'$.result.kind') AS result,
           (SELECT count(*) FROM sandbox_workspace_occupancy o WHERE o.job_id=r.job_id AND o.released_at IS NULL) AS activeClaims,
           ${version >= 33 ? "EXISTS(SELECT 1 FROM sandbox_release_receipts x WHERE x.job_id=r.job_id)" : "0"} AS releaseReceiptPresent,
+          ${version >= 41 ? "EXISTS(SELECT 1 FROM sandbox_reservation_release_receipts x WHERE x.job_id=r.job_id)" : "0"} AS reservationReleaseReceiptPresent,
           ${version >= 33 ? "(SELECT count(*) FROM sandbox_workspace_barriers b WHERE b.job_id=r.job_id AND b.resolved_at IS NULL)" : "0"} AS activeBarriers,
           (SELECT count(*) FROM sandbox_execution_intents i WHERE i.job_id=r.job_id AND i.kind='continue' AND i.dispatched_at IS NOT NULL AND i.acknowledged_at IS NULL) AS pendingControl,
           (SELECT count(*) FROM sandbox_execution_intents i WHERE i.job_id=r.job_id AND i.kind='tool_result' AND i.dispatched_at IS NOT NULL AND i.acknowledged_at IS NULL) AS pendingDelivery
@@ -63,12 +64,15 @@ export function auditWorkspaceLifecycle({
           .map((row) => {
             const reasons = [];
             const requiredEvidence = [];
-            const released = row.supervision === "released";
+            const reservationReleased =
+              row.preparation === "reserved" && row.reservationReleaseReceiptPresent;
+            const released = row.supervision === "released" || reservationReleased;
+            const receiptPresent = row.releaseReceiptPresent || reservationReleased;
             if (row.preparation === "reserved" && row.stopRequestedAt !== null)
               reasons.push("UNBOUND_RESERVATION_STOPPED");
             if (!released) reasons.push("RESOURCE_RELEASE_UNCONFIRMED");
             if (released && row.activeClaims) reasons.push("RELEASED_WITH_ACTIVE_CLAIMS");
-            if (released && !row.releaseReceiptPresent) reasons.push("RELEASE_RECEIPT_MISSING");
+            if (released && !receiptPresent) reasons.push("RELEASE_RECEIPT_MISSING");
             if (
               ["completed", "failed", "cancelled"].includes(row.runStatus) &&
               (!released || row.activeClaims || row.activeBarriers)
@@ -77,26 +81,31 @@ export function auditWorkspaceLifecycle({
             if (row.activeBarriers) reasons.push("WORKSPACE_PROTECTION_ACTIVE");
             if (row.pendingControl) reasons.push("CONTROL_ACK_PENDING");
             if (row.pendingDelivery) reasons.push("RESULT_DELIVERY_PENDING");
-            if (row.result === null || row.result === "unknown") reasons.push("RESULT_UNRESOLVED");
+            if (!reservationReleased && (row.result === null || row.result === "unknown"))
+              reasons.push("RESULT_UNRESOLVED");
             if (row.effect === "unknown") reasons.push("EFFECT_UNRESOLVED");
             if (
               !released ||
               row.activeClaims ||
               row.activeBarriers ||
               row.pendingControl ||
-              !row.releaseReceiptPresent
+              !receiptPresent
             )
               requiredEvidence.push(
                 "ORIGINAL_PROCESS_IDENTITY",
                 "LATE_DISPATCH_FENCED",
                 "FRESH_HOST_RELEASE_PROOF",
               );
-            if (row.result === null || row.result === "unknown" || row.effect === "unknown")
+            if (
+              !reservationReleased &&
+              (row.result === null || row.result === "unknown" || row.effect === "unknown")
+            )
               requiredEvidence.push("ORIGINAL_OPERATION_EFFECT_PROOF");
             if (row.pendingDelivery) requiredEvidence.push("CURRENT_DISCLOSURE_AUTHORITY");
             return {
               ...row,
               releaseReceiptPresent: Boolean(row.releaseReceiptPresent),
+              reservationReleaseReceiptPresent: Boolean(row.reservationReleaseReceiptPresent),
               reasons,
               requiredEvidence,
             };

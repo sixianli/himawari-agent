@@ -1,0 +1,5 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+test/integration/workspace-lifecycle-audit.test.ts(127,35): error TS2339: Property 'semanticFingerprint' does not exist on type 'SandboxExecutionPlanCandidateV2'.

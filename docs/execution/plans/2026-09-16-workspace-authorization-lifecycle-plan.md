@@ -56,18 +56,18 @@ date: "2026-09-16"
 
 ### 当前实施进展
 
-下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-05/standard-ci-result.json)为 3,635 项全部通过，环境为本机 macOS。
+下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-06/standard-ci-result.json)为 3,653 项全部通过，环境为本机 macOS。
 
 | 阶段 | 已实现并验证的部分 | 仍需完成的重点 |
 | --- | --- | --- |
 | [P0](#p0) | r3 交互已确认；身份和持久化合同已记录；四项首次加载立即发送回归已接入原浏览器入口 | 完整基线、全部合同和 68 项联合验收仍不能划为已完成 |
-| [P1](#p1) | 永久释放事实、结果交接不反锁；未绑定预约停止隔离与启动发现；停止目标与同 Run 跨页资源独立派发、清理等待上限及完成输出保留 | 未绑定环境的独立释放证明、真实进程及后代资格、迟到矛盾证据、恢复错误分类与调度 |
+| [P1](#p1) | 永久释放事实、结果交接不反锁；未绑定预约停止隔离与启动发现；停止目标与同 Run 跨页资源独立派发、清理等待上限及完成输出保留；未启动宿主退出后的预约释放凭据与原停止隔离 | 已启动进程及后代资格、迟到矛盾证据、恢复错误分类与调度 |
 | [P2](#p2) | 审批摘要与重复决定、额度预约、排队身份、工具执行前检查点及取消传播 | 跨 boot/fence 的执行权重新绑定、执行中撤销及所有生产路径联合覆盖 |
 | [P3](#p3) | 文件路径槽位/身份/祖先协调、公平队列、固定目标合同、暂存发布与保存恢复记录 | 准备阶段不占共享提交锁、目录改名协议、冲突后重生成、跨 Worker 与多文件完整验收 |
 | [P4](#p4) | 纯联网私有范围、无用户目录 Grant/挂载/claim；本机越界拒绝探针 | 任意命令的更窄可强制范围、可选副本与逐文件应用、Linux 平台资格 |
 | [P5](#p5) | 默认关闭的审查持久化、宿主批准校验、现有模型边界适配、预算/取消和来源事件 | 替代方案建立新 intent 的完整路径；具体配置获确认后的真实模型、披露和费用验收 |
 | [P6](#p6) | 自动审查来源与真实起止计时、终态工具结果未确认、首次加载和多语言窄屏持久浏览器回归 | 后端统一状态/原因/动作/效果投影、全部阶段计时、真实网关至 Worker 文件操作和页面恢复联合路径 |
-| [P7](#p7) | 历史只读清单、Schema 28～40 的只读兼容及相关迁移回归 | 有现场证明的逐条修复候选、备份恢复演练、完整兼容矩阵与目标平台切换验收 |
+| [P7](#p7) | 历史只读清单、Schema 28～41 的只读兼容及相关迁移回归 | 有现场证明的逐条修复候选、备份恢复演练、完整兼容矩阵与目标平台切换验收 |
 
 原型、受控端口、隔离 HTTP 夹具与本机构建各有证据范围；它们不替代真实模型、真实 Worker 联合路径或目标部署资格。[本次实施记录](#implementation-record)保留具体命令、失败与通过结果及局部限制。
 
@@ -120,7 +120,7 @@ date: "2026-09-16"
 
 源码依据：[工具身份与派发](../../../apps/agent-service/src/production-runtime-tools.ts)、[执行日志合同](../../../packages/application/src/ports/sandbox-execution-journal.ts)、[调用回执](../../../packages/application/src/ports/capability-invocations.ts)、[授权合同](../../../packages/application/src/ports/authorization.ts)、[文件准备](../../../packages/application/src/ports/host-files.ts)。以上是当前静态合同及已有局部测试的对应关系，不代表跨 boot 自动续接、所有风险保护或真实平台资格已完成。
 
-兼容顺序仍为：先核对目标和备份，再迁移数据库和升级唯一 writer，最后接入理解相应版本的 Worker/合同。当前 Schema 40 使用 migration ledger 与 `minimum_writer_sequence` 阻止旧 writer；固定文件合同 2 和无目录网络 Scope v2 不能交给仅理解旧合同的 Worker。旧记录保持原含义，不由迁移补造释放证明。Schema 40 新增未绑定预约的停止标记，恢复记录仍独立保存；目录改名原语、短时提交阶段与未绑定环境释放证明还需分别确定最小数据扩展及 reader/Worker 组合回归，故 P0 的完整兼容条目仍未勾选。
+兼容顺序仍为：先核对目标和备份，再迁移数据库和升级唯一 writer，最后接入理解相应版本的 Worker/合同。当前 Schema 41 使用 migration ledger 与 `minimum_writer_sequence` 阻止旧 writer；固定文件合同 2 和无目录网络 Scope v2 不能交给仅理解旧合同的 Worker。旧记录保持原含义，不由迁移补造释放证明。Schema 40 新增未绑定预约的停止标记，Schema 41 独立保存未启动宿主释放回执；目录改名原语与短时提交阶段还需分别确定最小数据扩展及 reader/Worker 组合回归，故 P0 的完整兼容条目仍未勾选。
 
 [↑ 返回阅读导航](#contents)
 
@@ -419,6 +419,10 @@ node scripts/qualify-control-center-browser.mjs chromium --report-directory test
 fixture 测试可控制网关响应来覆盖展示，但真正的审批与文件安全验收必须使用真实权限、SQLite、Worker、沙箱和独立文件读回。真实模型资格在选定且获授权的配置下单独执行，费用与接收方可追溯。
 
 ### 6.4 阶段交付与最终验证
+
+实施批次按可验收行为组织，不按单个补丁或提交拆分。同一批次内先完成相关实现并运行定向测试；共享端口修改后立即检查调用方和测试替身，新运行模块先验证加载与类型。源码稳定后集中执行本节要求的交付验证，并一次更新相关文档；已有结果仅在输入与环境未受影响时复用。进展以原验收条件和剩余证据报告，不以提交数或测试总数估算完成度。
+
+当前批次为 W06 的未启动分支：停止标记、原宿主未启动及退出证明、原子释放、重复停止与重启后的历史读回，以及旧任务禁止再次启动。生产接入、迁移、只读审计和实际宿主探针一起验收；不将该分支通过等同于已启动进程及后代的完整资格。
 
 ```sh
 npm run check
@@ -725,6 +729,16 @@ Run 取消、执行权中断和运行时结束后的资源清理现在分别对�
 同一 Run 的资源停止原来按页逐条等待；第一条清理不返回时，后续资源甚至不能收到停止请求。现在继续枚举所有页并分别发出停止，最后汇总结果；任一资源缺少永久释放回执、仍有 barrier 或停止报错，整体仍返回 `released: false`。
 
 [有效复现](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-05/stop-pages-confirmed-red.log)显示第一条等待时仅发出一次停止，第二页未收到请求。修复后[52 项相关回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-05/stop-pages-green.log)与类型检查通过。新增用例采用真实 SQLite 预约/绑定与受控分页、清理端口，101 条记录验证跨页派发，分别覆盖等待和拒绝；不代表同时启动 101 个真实进程。初次测试试图修改冻结端口而失败，已改在工厂捕获前注入，保留[夹具失败日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-05/stop-pages-red.log)。[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-05/standard-ci-result.json)通过：240 文件、3,635 项，零失败、零跳过，发布扫描通过。任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。未绑定环境的独立释放证明、真实平台资格和完整 P1 仍待完成。
+
+### P1 未启动预约的原宿主释放凭据（W06 分支）
+
+Schema 41 保存独立的预约释放回执：原认证宿主从未启动任务、已退出并清理完成后，当前服务权威才可在同一 SQLite 事务中保存凭据并结束该预约的占用。仍保持 `reserved` 和不可撤销停止标记，不伪造运行时绑定、执行时间、工具成功结果或退款。重复停止、凭据有效期过后和数据库重开均读回已接纳事实；旧任务仍不可绑定或启动，其他合法冲突请求可以重新准入。回执与占用更新中途失败时一并回滚。
+
+[生产停止路径](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-06/production-stop.log) 24 项通过，新增场景使用真实 SQLite、安装文件检查、认证 socket 和受控子进程退出，监督事实与安装资格为测试输入。[预约接纳/拒绝矩阵](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-06/reservation-release-matrix.log) 36 项通过；[宿主及存储消费者](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-06/release-control-green.log) 65 项通过。新增 Schema 40→41 迁移不补造历史凭据，并阻止旧 writer；只读清单分别展示两类回执，保留旧 Schema 28/40 的实际迁移读取回归。
+
+[本机原生宿主探针](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-06/mac-host-probe-final.log) 五个场景通过，只有 `never-started` 返回预约释放证明；已启动任务的清理仍为 `unknown`，不会因此解除占用。探针经过真实 Job Host、SRT、控制通道和进程退出，资格及 artifact 存储仍受控，`productionQualified: false`。受限环境未 ready，以及旧探针遗漏现有 `admit` 装配的失败日志保留；修正测试装配后原生探针通过。完整 P1/W06、Linux 及任意后代进程资格仍未完成。
+
+[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-06/standard-ci-result.json)通过：240 文件、3,653 项，零失败、零跳过；产物检查通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 与严格文档检查通过。第一次构建期间修改探针导致 `ARTIFACT_BUILD_INPUT_MISMATCH`，失败证据保留；冻结全部构建输入后重跑通过。该错误属于执行安排失误，不是产品或机器故障。
 
 ### 当前完成边界与下一步
 

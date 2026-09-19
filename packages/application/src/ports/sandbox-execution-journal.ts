@@ -20,6 +20,27 @@ export interface SandboxReleaseReceipt {
   readonly verification: SandboxExecutionVerification;
 }
 
+/** Host-only attestation for an environment that never started user code.
+ * It creates no runtime binding, execution permission or business result. */
+export interface SandboxReservationReleaseVerification {
+  readonly schemaVersion: "sandbox-reservation-release.v1";
+  readonly basis: "host_never_started";
+  readonly identity: SandboxJobIdentity;
+  readonly environmentId: string;
+  readonly semanticFingerprint: string;
+  readonly stopRequestedAt: string;
+  readonly checkedAt: string;
+  readonly validUntil: string;
+  readonly processIdentityRef: string;
+  readonly controlSessionId: string;
+  readonly evidence: { readonly ref: string; readonly digest: string };
+}
+
+export interface SandboxReservationReleaseReceipt {
+  readonly acceptedAt: string;
+  readonly verification: SandboxReservationReleaseVerification;
+}
+
 /** Each request performs one bounded inspect/stop; unresolved never means a background retry. */
 export interface SandboxRecoveryState {
   readonly revision: number;
@@ -160,10 +181,19 @@ export type SandboxExecutionAdmissionRecord =
       /** Immutable start fence, separate from subsequent cleanup progress. */
       readonly stopRequestedAt?: string;
       readonly recovery?: SandboxRecoveryState;
+      readonly releaseReceipt?: SandboxReservationReleaseReceipt;
+      readonly workspaceBlocked?: boolean;
       readonly workspaces: readonly SandboxWorkspaceClaim[];
     }
   | { readonly phase: "bound"; readonly record: SandboxExecutionRecord };
 export interface SandboxExecutionPreparationPort {
+  /** Atomically accept a fresh host proof and release only this stopped attempt's claims. */
+  releaseReservation(input: {
+    readonly identity: SandboxJobIdentity;
+    readonly authority: CapabilityInvocationAuthority;
+    readonly now: string;
+    readonly verification: SandboxReservationReleaseVerification;
+  }): Promise<{ readonly admission: SandboxExecutionAdmissionRecord; readonly applied: boolean }>;
   /** Fence an unbound attempt. A concurrent bind returns its bound record for cleanup. */
   interruptReservation(input: {
     readonly identity: SandboxJobIdentity;

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: standard
-contract_sha256: "sha256:05201c7502dff88831acbab98e135e71d078d8dc2144b0b443ef6c7798f0617e"
+contract_sha256: "sha256:d44b1b96ca4cd333cadd9602caff97fe7ae3f7023fdddc5dc8d12b1b4f23754f"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-19"
@@ -22,7 +22,7 @@ date: "2026-09-19"
 
 ## Scope
 
-本流程读取 Schema 28～40 的工作区占用、执行和排队元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
+本流程读取 Schema 28～41 的工作区占用、执行和排队元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
 
 Schema 39 的自动审查记录不属于这三个工作区分区；空列表不证明没有审查或授权记录。
 
@@ -69,12 +69,14 @@ node scripts/operations/workspace-lifecycle-audit.mjs \
 
 ## Verification
 
+`releaseReceiptPresent` 表示已绑定资源的永久回执；`reservationReleaseReceiptPresent` 表示未绑定预约的独立回执。后者不补造资源 supervision 或工具结果，停止标记仍保留；只有回执存在且没有有效 claim/barrier，才不再列为未确认的资源责任。字段只反映数据库记录，仍不证明当前宿主安全，也不授予重新执行或修改数据库的权限。
+
 首先核对输出 `mode=read_only`、Owner/Agent、Schema 和分区。下表说明主要原因代码；同一条目可以有多个原因。
 
 | 代码 | 能说明什么 | 后续仍需核对什么 |
 | --- | --- | --- |
 | `UNBOUND_RESERVATION_STOPPED` | 未绑定预约已禁止启动；保留停止时间与恢复终点 | 原私有环境及占用是否真正释放；停止标记不是释放证明 |
-| `RESOURCE_RELEASE_UNCONFIRMED` | 数据库没有已释放的资源状态 | 原进程及后代是否仍能写入 |
+| `RESOURCE_RELEASE_UNCONFIRMED` | 数据库没有已释放的资源状态或未绑定预约释放回执 | 原进程及后代是否仍能写入 |
 | `RELEASED_WITH_ACTIVE_CLAIMS` | 已释放状态与仍有效占用同时存在 | 原身份、迟到派发隔离和有效释放证明 |
 | `RELEASE_RECEIPT_MISSING` | 没有永久释放回执 | 不得把旧过期凭据重新当作当前证明 |
 | `TERMINAL_RUN_HAS_RESOURCE_OBLIGATION` | Run 已结束，但仍有资源责任 | 结束对话不等于结束宿主进程 |

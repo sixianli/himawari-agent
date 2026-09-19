@@ -26,6 +26,7 @@ import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { capabilityInvocationOutputOperationKey } from "./sqlite-run-payload-artifact-operations.ts";
 import { SqliteSandboxRecoveryOperations } from "./sqlite-sandbox-recovery-operations.ts";
 import { SqliteSandboxReleaseOperations } from "./sqlite-sandbox-release-operations.ts";
+import { SqliteSandboxReservationRelease } from "./sqlite-sandbox-reservation-release.ts";
 import { SqliteWorkspaceAdmissionQueue } from "./sqlite-workspace-admission-queue.ts";
 
 type Input<K extends keyof SandboxExecutionJournalPort> = Parameters<
@@ -265,6 +266,21 @@ export class SqliteSandboxExecutionOperations {
             )
             .run(JSON.stringify(recovery), now, identity.jobId);
           return { admission: { ...admission, stopRequestedAt: now, recovery }, applied: true };
+        }
+        if (operation === "releaseReservation") {
+          const admission = this.readAdmission(identity, owner, agent);
+          if (!admission || admission.phase !== "reserved")
+            return this.fail("PORT_CONFLICT", "Sandbox reservation is not unbound");
+          const request = raw as Parameters<
+            SandboxExecutionPreparationPort["releaseReservation"]
+          >[0];
+          const applied = new SqliteSandboxReservationRelease(this.db, this.fail).accept(
+            admission,
+            request.verification,
+            request.authority,
+            now,
+          );
+          return { admission: this.readAdmission(identity, owner, agent), applied };
         }
         if (operation === "bindAndStart")
           return this.bindAndStart(
@@ -565,6 +581,10 @@ export class SqliteSandboxExecutionOperations {
       return { phase: "bound", record };
     }
     const reservation = sandboxExecutionReservationSchema.parse(JSON.parse(row.facts));
+    const releaseReceipt = new SqliteSandboxReservationRelease(this.db, this.fail).read(
+      plan,
+      row.stoppedAt ?? undefined,
+    );
     const workspaces = (
       this.db
         .prepare(
@@ -575,6 +595,18 @@ export class SqliteSandboxExecutionOperations {
     return {
       phase: "reserved",
       ...(row.stoppedAt ? { stopRequestedAt: row.stoppedAt } : {}),
+      ...(releaseReceipt
+        ? {
+            releaseReceipt,
+            workspaceBlocked: Boolean(
+              this.db
+                .prepare(
+                  "SELECT 1 FROM sandbox_workspace_occupancy WHERE job_id=? AND released_at IS NULL UNION ALL SELECT 1 FROM sandbox_workspace_barriers WHERE job_id=? AND resolved_at IS NULL LIMIT 1",
+                )
+                .get(identity.jobId, identity.jobId),
+            ),
+          }
+        : {}),
       plan,
       reservation,
       workspaces,

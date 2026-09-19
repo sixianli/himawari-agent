@@ -1,0 +1,29 @@
+{
+  "baseHead": "dd7de70a0a6c80bb2b812a6a193d026bfeda57b9",
+  "files": {
+    "apps/agent-service/src/production-sandbox-control.ts": "27b5f9cb4ba6f2ee1a0244cfb7f8d3aea4c1263dec93df5fb662072a0729ef71",
+    "apps/agent-service/src/production-sandbox-services.ts": "a7eaddc28f0f1334f561209091c3aa7dfd7d067b2bdfaebd08d9cb326d542dcb",
+    "packages/application/src/ports/sandbox-execution-journal.ts": "0914782e0a3fdeb8b3f3471203860bb67952b948aacd64ca49baead090b99606",
+    "packages/persistence-sqlite/src/durable-adapters.ts": "19d9e178c8a694f18ac6fd426924026700859b98737cf03e8bd9f8b5be5d9e78",
+    "packages/persistence-sqlite/src/migration-engine.ts": "55e8a3d36fe13df91f9eae44db47c33b7987366fb64fbe1d4bca0c694671a2e4",
+    "packages/persistence-sqlite/src/migrations/0041_sandbox_reservation_release_receipts.sql": "621d6e779c53c9c26639b27b7616594522aac31f1cee8dc8d1db33bd458d440e",
+    "packages/persistence-sqlite/src/schema-catalog.ts": "35d86c5e9388004d571f539158fcced2efd0bba50212c12897ee59b553b283e9",
+    "packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts": "b8b024af736fcdcf22d14f1e84d469728a59d9df77f1a214315cfe339584cf4e",
+    "packages/persistence-sqlite/src/sqlite-sandbox-reservation-release.ts": "b5fb3de8b0130ef1cef7c912d844bec04b08bafcd73c5fd4fe90466a368af929",
+    "packages/persistence-sqlite/test/migration-engine.contract.test.ts": "83eff2365c85d7944ee5f9be8b3422aa9af14f817a0da35e8bb6e520917633d1",
+    "packages/persistence-sqlite/test/model-budget-migration.contract.test.ts": "f7f83974484cd3a98605eb5f6b9c38464738e02b96b9fd58a2c8d2b525ac772b",
+    "packages/persistence-sqlite/test/run-checkpoint-migration.contract.test.ts": "b1e0dc3df7d97613f9f18ed4ef183b1f0da50b3ed6dbc04b0bd3812fab18b511",
+    "packages/runtime-sandbox/scripts/probe-job-host-control.mjs": "5cc21e00859be292d799daf4cf3cba0273c0c87c7ec3fa63afa055bb0b234730",
+    "scripts/operations/workspace-lifecycle-audit.mjs": "3e07c271cf8bd423b10a42f3ffc34df92cbb1efc5fc7b7a36bdfc430b4e1f2bf",
+    "test/integration/installable-node-services.test.ts": "f543dc0ac79e3b81b58ed587258ff26cf1ee3e01743814422b43f3ace3b39ee6",
+    "test/integration/production-sandbox-scope.test.ts": "2da7c36705c53ea3a0e4e309cd898791273509d70c47f205186ca10e7a5701c9",
+    "test/integration/sandbox-control-evidence.test.ts": "b90edd78e0831e1b3441cacfeacf0f1db92933ef59b6a849aa439144a6b6e8d3",
+    "test/integration/sandbox-execution-preparation.test.ts": "00410ecec160e24f1671f47f4f0fdb6b1879c59991a962fa2b3941da7788d465",
+    "test/integration/sandbox-v2-payload-broker.test.ts": "fb7243c0ab937a80673dd0276ad69b01a2088d5944da307051c2c92a4a840835",
+    "test/integration/sqlite-run-dispatch-lease.test.ts": "838a4157b691f4dc0f5c9821df764462940a694ec20004031f641bc26c2605a3",
+    "test/integration/sqlite-run-payload-artifacts.test.ts": "bc6b6caaa67f29bbd8ad90f4db2762ac701010b0cc8ebef245fb495fb8338dfd",
+    "test/integration/sqlite-sandbox-execution-v2.test.ts": "3226166ba602deb6f93c01c3f35ac7cb9eeda9a3c0c2fb1d40582413501a5410",
+    "test/integration/workspace-lifecycle-audit.test.ts": "47f3bc4754f1d65f7dd0fdd580c46e64d76eb2b19c185395ace0fc0a680599f2"
+  },
+  "scope": "Stable sources for final CI and independently completed native host probe"
+}

@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdir, mkdtemp, realpath, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import type { SandboxExecutionRecord } from "@himawari-agent/application";
@@ -379,3 +381,46 @@ it("sends an unbound stop to the original authenticated host without reauthorizi
   await expect(f.control.stopPreparation(f.record.plan)).rejects.toThrow("DIRECTORY_CHANGED");
   expect(f.order).toEqual(["stop"]);
 });
+
+it.each(["alive", "started", "cleanup-unknown", "verified"] as const)(
+  "attests a never-started reservation only with independent host exit proof: %s",
+  async (scenario) => {
+    const f = await fixture();
+    const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+    const departedPid = child.pid;
+    await once(child, "exit");
+    if (!departedPid) throw new Error("child PID missing");
+    // The socket is real; supervisor facts are controlled, as in the other
+    // verifier tests. A reaped child supplies an actually absent PID.
+    f.set({
+      phase: "finished",
+      taskStarted: scenario === "started",
+      srtReset: scenario !== "cleanup-unknown",
+      processId: scenario === "alive" ? process.pid : departedPid,
+    });
+    const before = f.counts();
+    const stoppedAt = new Date(Date.now() - 1000).toISOString();
+    const proof = await f.control.verifyReservationRelease(f.record.plan, stoppedAt);
+    expect(f.counts().admissionChecks).toBe(before.admissionChecks);
+    expect(f.counts().hostChecks).toBe(before.hostChecks + 1);
+    if (scenario !== "verified") {
+      expect(proof).toBeUndefined();
+      return;
+    }
+    expect(proof).toMatchObject({
+      schemaVersion: "sandbox-reservation-release.v1",
+      basis: "host_never_started",
+      identity: f.record.plan.identity,
+      environmentId: f.record.plan.environmentId,
+      semanticFingerprint: f.record.plan.semanticFingerprint,
+      stopRequestedAt: stoppedAt,
+    });
+    expect(proof?.evidence.ref).toBeTruthy();
+    expect([...f.stored.values()].some(({ ref }) => ref === proof?.evidence.ref)).toBe(true);
+    await rename(f.directory, `${f.directory}-replaced`);
+    await mkdir(f.directory, { mode: 0o700 });
+    await expect(f.control.verifyReservationRelease(f.record.plan, stoppedAt)).rejects.toThrow(
+      "DIRECTORY_CHANGED",
+    );
+  },
+);

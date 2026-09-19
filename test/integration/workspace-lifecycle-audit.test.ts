@@ -1,3 +1,4 @@
+import type { SandboxExecutionAdmissionRecord } from "@himawari-agent/application";
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -88,53 +89,81 @@ afterEach(async () => {
 });
 
 describe("workspace lifecycle read-only audit", () => {
-  it("lists stopped unbound reservations without presenting them as released", async () => {
-    const f = await openSandboxJournal();
-    close.push(f.close);
-    const { plan, invocation, workspaces } = sandboxV2Admission(f);
-    const call = (operation: string, input: unknown) =>
-      operationsForDatabase(f.database).execute(`capabilityInvocation.sandboxV2.${operation}`, {
+  it.each([false, true])(
+    "audits stopped unbound reservations with release receipt: %s",
+    async (released) => {
+      const f = await openSandboxJournal();
+      close.push(f.close);
+      const { plan, invocation, workspaces } = sandboxV2Admission(f);
+      const call = (operation: string, input: unknown) =>
+        operationsForDatabase(f.database).execute(`capabilityInvocation.sandboxV2.${operation}`, {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input,
+        });
+      call("reserve", {
+        plan,
+        invocation,
+        workspaces,
+        reservation: {
+          schemaVersion: "sandbox-preparation.v1",
+          identity: plan.identity,
+          environmentId: plan.environmentId,
+          resourceRef: null,
+          mode: plan.mode,
+          workspaceConflictRefs: workspaces.map((x) => x.ref),
+          sequence: 1,
+          createdAt: plan.requestedAt,
+        },
+      });
+      const stopped = call("interruptReservation", {
+        identity: plan.identity,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+        reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+      }) as { admission: SandboxExecutionAdmissionRecord };
+      if (stopped.admission.phase !== "reserved") throw new Error("expected reservation");
+      if (released)
+        call("releaseReservation", {
+          identity: plan.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          verification: {
+            schemaVersion: "sandbox-reservation-release.v1",
+            basis: "host_never_started",
+            identity: plan.identity,
+            environmentId: plan.environmentId,
+            semanticFingerprint: stopped.admission.plan.semanticFingerprint,
+            stopRequestedAt: T1,
+            checkedAt: T1,
+            validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
+            processIdentityRef: "job-host-process:original-host",
+            controlSessionId: "11111111-1111-1111-1111-111111111111",
+            evidence: { ref: "protected-release-proof", digest: "a".repeat(64) },
+          },
+        });
+      const before = f.database.serialize();
+      const result = auditWorkspaceLifecycle({
+        databasePath: path.join(f.resource.stateRoot, "product.sqlite"),
         ownerId: OWNER_ID,
         agentId: AGENT_ID,
-        input,
       });
-    call("reserve", {
-      plan,
-      invocation,
-      workspaces,
-      reservation: {
-        schemaVersion: "sandbox-preparation.v1",
-        identity: plan.identity,
-        environmentId: plan.environmentId,
-        resourceRef: null,
-        mode: plan.mode,
-        workspaceConflictRefs: workspaces.map((x) => x.ref),
-        sequence: 1,
-        createdAt: plan.requestedAt,
-      },
-    });
-    call("interruptReservation", {
-      identity: plan.identity,
-      authority: SERVICE_AUTHORITY,
-      now: T1,
-      reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
-    });
-    const before = f.database.serialize();
-    const result = auditWorkspaceLifecycle({
-      databasePath: path.join(f.resource.stateRoot, "product.sqlite"),
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-    });
-    expect(result.rows[0]).toMatchObject({
-      preparation: "reserved",
-      stopRequestedAt: T1,
-      recoveryStatus: "unresolved",
-      recoveryFinishedAt: T1,
-      releaseReceiptPresent: false,
-    });
-    expect(result.rows[0]?.reasons).toContain("UNBOUND_RESERVATION_STOPPED");
-    expect(f.database.serialize()).toEqual(before);
-  });
+      expect(result.rows[0]).toMatchObject({
+        preparation: "reserved",
+        stopRequestedAt: T1,
+        recoveryStatus: released ? "resolved" : "unresolved",
+        recoveryFinishedAt: T1,
+        releaseReceiptPresent: false,
+        reservationReleaseReceiptPresent: released,
+        activeClaims: released ? 0 : 1,
+      });
+      expect(result.rows[0]?.reasons).toContain("UNBOUND_RESERVATION_STOPPED");
+      expect(result.rows[0]?.reasons.includes("RESOURCE_RELEASE_UNCONFIRMED")).toBe(!released);
+      expect(result.rows[0]?.requiredEvidence.includes("FRESH_HOST_RELEASE_PROOF")).toBe(!released);
+      if (released) expect(result.rows[0]?.requiredEvidence).toEqual([]);
+      expect(f.database.serialize()).toEqual(before);
+    },
+  );
 
   it("reports held resources without creating release proof or changing database bytes", async () => {
     const f = await fixture();
@@ -144,7 +173,7 @@ describe("workspace lifecycle read-only audit", () => {
     const result = auditWorkspaceLifecycle(f.input);
     expect(result).toMatchObject({
       mode: "read_only",
-      schemaSequence: 40,
+      schemaSequence: 41,
       liveHostVerified: false,
       repairEligible: false,
     });
@@ -253,26 +282,29 @@ describe("workspace lifecycle read-only audit", () => {
     ).toEqual({ n: 1 });
   });
 
-  it("reads schema 28 using its actual migrations, without installing newer tables", async () => {
-    const f = await fixture();
-    const databasePath = path.join(f.resource.stateRoot, "historical.sqlite");
-    const historical = openQualifiedDatabase(databasePath);
-    try {
-      applyMigrations(
-        historical,
-        (await loadBundledMigrations()).filter((item) => item.sequence <= 28),
-      );
-    } finally {
-      historical.close();
-    }
-    const before = await readFile(databasePath);
-    for (const section of ["executions", "legacy", "queue"])
-      expect(auditWorkspaceLifecycle({ ...f.input, databasePath, section })).toMatchObject({
-        schemaSequence: 28,
-        rows: [],
-      });
-    expect(await readFile(databasePath)).toEqual(before);
-  });
+  it.each([28, 40])(
+    "reads schema %s using its actual migrations, without installing newer tables",
+    async (schemaSequence) => {
+      const f = await fixture();
+      const databasePath = path.join(f.resource.stateRoot, "historical.sqlite");
+      const historical = openQualifiedDatabase(databasePath);
+      try {
+        applyMigrations(
+          historical,
+          (await loadBundledMigrations()).filter((item) => item.sequence <= schemaSequence),
+        );
+      } finally {
+        historical.close();
+      }
+      const before = await readFile(databasePath);
+      for (const section of ["executions", "legacy", "queue"])
+        expect(auditWorkspaceLifecycle({ ...f.input, databasePath, section })).toMatchObject({
+          schemaSequence,
+          rows: [],
+        });
+      expect(await readFile(databasePath)).toEqual(before);
+    },
+  );
 
   it("rejects mutation flags and keeps failed CLI output free of database paths", () => {
     const stdout = { write: vi.fn() },

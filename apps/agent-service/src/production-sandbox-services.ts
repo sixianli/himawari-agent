@@ -1501,6 +1501,7 @@ export async function createProductionSandboxServices(options: {
             stops.push(
               (async () => {
                 if (admission.phase === "reserved") {
+                  if (admission.releaseReceipt && admission.workspaceBlocked === false) return;
                   try {
                     admission = (
                       await preparations.interruptReservation({
@@ -1513,13 +1514,28 @@ export async function createProductionSandboxServices(options: {
                     if (admission.phase === "reserved") {
                       // Stop only the original registered host; missing binding remains unknown.
                       await control.stopPreparation(plan);
+                      if (!admission.stopRequestedAt) throw new Error("SANDBOX_STOP_FENCE_MISSING");
+                      const verification = await control.verifyReservationRelease(
+                        plan,
+                        admission.stopRequestedAt,
+                      );
+                      if (verification)
+                        admission = (
+                          await preparations.releaseReservation({
+                            identity: plan.identity,
+                            authority: options.authority(),
+                            now: clock.now(),
+                            verification,
+                          })
+                        ).admission;
                     }
                   } catch {
                     released = false;
                     return;
                   }
                   if (admission.phase === "reserved") {
-                    released = false;
+                    if (!admission.releaseReceipt || admission.workspaceBlocked !== false)
+                      released = false;
                     return;
                   }
                 }

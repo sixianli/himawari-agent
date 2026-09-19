@@ -66,6 +66,10 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
   const invoke = (operation: string, value: unknown) =>
     operations.execute(operation, { ownerId: OWNER_ID, agentId: AGENT_ID, input: value });
   const preparations: SandboxExecutionPreparationPort = {
+    releaseReservation: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.releaseReservation", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["releaseReservation"]>
+      >,
     interruptReservation: async (value) =>
       invoke("capabilityInvocation.sandboxV2.interruptReservation", value) as Awaited<
         ReturnType<SandboxExecutionPreparationPort["interruptReservation"]>

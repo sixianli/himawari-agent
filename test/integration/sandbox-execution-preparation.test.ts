@@ -73,6 +73,22 @@ function reserved(value: SandboxExecutionAdmissionRecord) {
   return value;
 }
 
+function reservationReleaseProof(admission: ReturnType<typeof reserved>) {
+  return {
+    schemaVersion: "sandbox-reservation-release.v1" as const,
+    basis: "host_never_started" as const,
+    identity: admission.plan.identity,
+    environmentId: admission.plan.environmentId,
+    semanticFingerprint: admission.plan.semanticFingerprint,
+    stopRequestedAt: T1,
+    checkedAt: T1,
+    validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
+    processIdentityRef: "job-host-process:original",
+    controlSessionId: "00000000-0000-4000-8000-000000000001",
+    evidence: { ref: "protected-never-started-proof", digest: "a".repeat(64) },
+  };
+}
+
 describe("atomic execution reservation and runtime binding", () => {
   it("fences a stopped reservation durably without fabricating release or execution", async () => {
     const f = await openSandboxJournal();
@@ -716,3 +732,159 @@ describe("atomic execution reservation and runtime binding", () => {
     }
   });
 });
+
+it("releases stopped never-started reservations durably without manufacturing runtime facts", async () => {
+  const f = await openSandboxJournal();
+  try {
+    const request = input(f);
+    const admission = reserved(call(f, "reserve", request).admission);
+    const stopped = reserved(
+      call(f, "interruptReservation", {
+        identity: admission.plan.identity,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+        reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+      }).admission,
+    );
+    const verification = reservationReleaseProof(admission);
+    const release = {
+      identity: stopped.plan.identity,
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      verification,
+    };
+    const accepted = call(f, "releaseReservation", release);
+    expect(accepted.applied).toBe(true);
+    expect(accepted.admission).toMatchObject({
+      phase: "reserved",
+      stopRequestedAt: T1,
+      workspaceBlocked: false,
+      releaseReceipt: { acceptedAt: T1, verification },
+      recovery: { status: "resolved", reasonCode: "SANDBOX_RESERVATION_RELEASE_CONFIRMED" },
+    });
+    expect(call(f, "releaseReservation", { ...release, now: T2 })).toEqual({
+      ...accepted,
+      applied: false,
+    });
+    expect(() => call(f, "bindAndStart", binding(f))).toThrow("reservation stopped");
+    expect(
+      f.database.prepare("SELECT started_at FROM sandbox_execution_records").pluck().get(),
+    ).toBeNull();
+    expect(
+      f.database
+        .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+        .pluck()
+        .get(),
+    ).toBe(0);
+    expect(f.database.prepare("SELECT count(*) FROM sandbox_release_receipts").pluck().get()).toBe(
+      0,
+    );
+    expect(
+      f.database
+        .prepare("SELECT count(*) FROM sandbox_execution_observations WHERE sequence>1")
+        .pluck()
+        .get(),
+    ).toBe(0);
+    expect(() =>
+      f.database.prepare("UPDATE sandbox_reservation_release_receipts SET accepted_at=?").run(T2),
+    ).toThrow("immutable");
+    f.database.close();
+    const repo = await SqliteProductStateRepository.open({ stateRoot: f.resource.stateRoot });
+    try {
+      const preparations = repo.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+      expect(await preparations.readAdmission(admission.plan.identity)).toEqual(accepted.admission);
+      expect(
+        await recoverSandboxExecutionsAtStartup({
+          preparations,
+          journal: repo.sandboxExecutionJournal(OWNER_ID, AGENT_ID),
+          authority: () => SERVICE_AUTHORITY,
+          now: () => T2,
+        }),
+      ).toEqual({ examined: 1, quarantined: 0 });
+      expect(await preparations.readAdmission(admission.plan.identity)).toEqual(accepted.admission);
+      await expect(preparations.bindAndStart(binding(f))).rejects.toThrow("reservation stopped");
+      expect((await preparations.reserve(input(f, "-after-release"))).applied).toBe(true);
+    } finally {
+      await repo.close();
+    }
+  } finally {
+    await f.close();
+  }
+});
+
+it.each([
+  "not-stopped",
+  "attempt",
+  "intent",
+  "stop-fence",
+  "expired",
+  "future",
+  "evidence",
+  "authority",
+  "claim-write",
+] as const)(
+  "retains reservation protection when release verification fails: %s",
+  async (scenario) => {
+    const f = await openSandboxJournal();
+    try {
+      const admission = reserved(call(f, "reserve", input(f)).admission);
+      if (scenario !== "not-stopped")
+        call(f, "interruptReservation", {
+          identity: admission.plan.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+        });
+      const original = reservationReleaseProof(admission);
+      const verification = {
+        ...original,
+        ...(scenario === "attempt"
+          ? { identity: { ...original.identity, attemptId: "another-attempt" } }
+          : {}),
+        ...(scenario === "intent" ? { semanticFingerprint: "another-intent" } : {}),
+        ...(scenario === "stop-fence" ? { stopRequestedAt: T2 } : {}),
+        ...(scenario === "expired" ? { validUntil: T1 } : {}),
+        ...(scenario === "future"
+          ? { checkedAt: T2, validUntil: new Date(Date.parse(T2) + 1000).toISOString() }
+          : {}),
+        ...(scenario === "evidence" ? { evidence: { ref: "", digest: "invalid" } } : {}),
+      };
+      if (scenario === "claim-write")
+        f.database.exec(
+          "CREATE TRIGGER refuse_release BEFORE UPDATE OF released_at ON sandbox_workspace_occupancy BEGIN SELECT RAISE(ABORT, 'release storage failed'); END",
+        );
+      const authority =
+        scenario === "authority"
+          ? {
+              ...SERVICE_AUTHORITY,
+              product: { ...SERVICE_AUTHORITY.product, fencingToken: 999 },
+            }
+          : SERVICE_AUTHORITY;
+      expect(() =>
+        call(f, "releaseReservation", {
+          identity: admission.plan.identity,
+          authority,
+          now: T1,
+          verification,
+        }),
+      ).toThrow();
+      expect(
+        f.database
+          .prepare("SELECT count(*) FROM sandbox_reservation_release_receipts")
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        f.database
+          .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+          .pluck()
+          .get(),
+      ).toBeGreaterThan(0);
+      expect(call(f, "readAdmission", admission.plan.identity)).toMatchObject({
+        phase: "reserved",
+      });
+    } finally {
+      await f.close();
+    }
+  },
+);

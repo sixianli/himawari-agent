@@ -1,0 +1,61 @@
+{
+  "commands": [],
+  "failures": [
+    "ARTIFACT_BUILD_INPUT_MISMATCH"
+  ],
+  "scope": "local-platform-evidence",
+  "resources": {
+    "schemaVersion": 2,
+    "method": "sampled-allocated-disk-du-kib",
+    "intervalMs": 30000,
+    "peakIsLowerBound": true,
+    "hardware": {
+      "platform": "darwin",
+      "arch": "arm64",
+      "cpus": 8,
+      "cpuModel": "Apple M1",
+      "memoryBytes": 8589934592
+    },
+    "scopes": [
+      {
+        "label": "workspace",
+        "attempts": 5,
+        "samples": 5,
+        "failedSamples": 0,
+        "firstBytes": 34711416832,
+        "peakBytes": 35062571008,
+        "lastBytes": 34687012864
+      },
+      {
+        "label": "temporary",
+        "attempts": 5,
+        "samples": 5,
+        "failedSamples": 0,
+        "firstBytes": 0,
+        "peakBytes": 2662400,
+        "lastBytes": 2662400
+      }
+    ],
+    "failureCount": 0,
+    "failureDetailsLimit": 32,
+    "droppedFailureCount": 0,
+    "errors": [],
+    "pauses": {
+      "count": 1,
+      "totalDurationMs": 2715,
+      "droppedDetailsCount": 0,
+      "entries": [
+        {
+          "reason": "build-work-cleanup",
+          "startedAt": "2026-09-19T14:48:26.111Z",
+          "completedAt": "2026-09-19T14:48:28.825Z",
+          "durationMs": 2715,
+          "outcome": "passed"
+        }
+      ]
+    },
+    "startedAt": "2026-09-19T14:46:33.243Z",
+    "completedAt": "2026-09-19T14:48:34.744Z",
+    "status": "measured"
+  }
+}

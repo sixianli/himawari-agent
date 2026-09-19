@@ -77,6 +77,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "sandbox_execution_intents",
     "sandbox_legacy_occupancy",
     "sandbox_release_receipts",
+    "sandbox_reservation_release_receipts",
     "sandbox_workspace_barriers",
   ].map((table) =>
     entry(

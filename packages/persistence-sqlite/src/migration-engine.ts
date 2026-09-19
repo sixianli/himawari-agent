@@ -357,6 +357,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0040_sandbox_reservation_stop_fence.sql",
   },
+  {
+    sequence: 41,
+    name: "sandbox_reservation_release_receipts",
+    changeSet: "sandbox-reservation-release-receipts",
+    phase: "expand" as const,
+    file: "0041_sandbox_reservation_release_receipts.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {
