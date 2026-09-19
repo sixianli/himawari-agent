@@ -1,0 +1,14 @@
+{
+  "sourceBaseCommit": "b704eed71c0b48742e01e22bf4151c293da4d1b3",
+  "recordedAt": "2026-09-19T14:06:35.992204+00:00",
+  "files": [
+    {
+      "path": "apps/agent-service/src/production-sandbox-services.ts",
+      "sha256": "603de4e4af8dcc9b09534f911c8f8e99906c99743fa1b0567ba217928f9e266d"
+    },
+    {
+      "path": "test/integration/production-sandbox-scope.test.ts",
+      "sha256": "faf7ef5a1096814cd314ba9c6d5bce05462451f63084947dded3dccd0f9f3bfd"
+    }
+  ]
+}

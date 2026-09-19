@@ -16,7 +16,7 @@ date: "2026-09-16"
 
 **架构：** 继续复用 Pi 工具与 Agent Loop、Anthropic Sandbox Runtime、现有 Agent/Worker 和 SQLite。Himawari 接好持久权限、资源身份、文件提交、恢复及页面投影；不重建工具协议、沙箱或工作流系统。
 
-**当前范围：** 用户于 2026-09-16 要求实施本 Plan。P0 的 r3 新增交互已获确认，P1 释放与交接修复已保存为本地提交 `fe92846`；P2 的审批身份、重复决定与额度预约已保存为本地提交 `e4eebf4`，P3 的文件发布与持久排队已保存为本地提交 `b5b3e9a`；文件级协调及固定目标合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`。完整 P1～P7 未完成；详见[本次实施记录](#implementation-record)。Spec 已通过不等于自动审查配置或生产操作已获授权。
+**当前范围：** 用户已授权实施本 Plan，并确认 P0 的 r3 新增交互。多个局部实现已通过验证并保存为本地提交，完整 P0～P7 与 68 项产品验收尚未完成；见[当前实施进展](#implementation-progress)与[本次实施记录](#implementation-record)。自动审查真实配置、生产迁移和部署尚未执行。
 
 <a id="contents"></a>
 
@@ -24,7 +24,7 @@ date: "2026-09-16"
 
 - [本次实施记录与待审核交互](#implementation-record)
 
-- [一、先看实施顺序与交付结果](#roadmap)
+- [一、先看实施顺序与交付结果](#roadmap)：[当前实施进展](#implementation-progress)
 - [二、已经核对的代码与测试基础](#baseline)：[当前身份与持久化合同](#identity-contract)
 - [三、修改、新建与保留的文件边界](#files)
 - [四、分阶段实施任务](#tasks)：[P0 基线与合同](#p0)、[P1 释放与恢复](#p1)、[P2 授权连续性](#p2)、[P3 文件并发与保存](#p3)、[P4 执行方式](#p4)、[P5 自动审查](#p5)、[P6 页面与端到端](#p6)、[P7 迁移与交付](#p7)
@@ -51,6 +51,25 @@ date: "2026-09-16"
 | [P7 迁移与交付](#p7) | 历史记录有证据地恢复，新旧版本兼容，可验证并可回退 | 对应阶段和整体验收完成；实际生产操作须有具体授权 |
 
 优先完成 P1 的故障修复及对应页面状态。测试随每阶段建立，不延后到最后一次性补写。P5 的真实模型选择不影响先完成资源释放与文件并发。分阶段交付可以报告部分完成，但未执行的阶段不能被称为已完成，也不能把全部 Spec 标为关闭。
+
+<a id="implementation-progress"></a>
+
+### 当前实施进展
+
+下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-05/standard-ci-result.json)为 3,635 项全部通过，环境为本机 macOS。
+
+| 阶段 | 已实现并验证的部分 | 仍需完成的重点 |
+| --- | --- | --- |
+| [P0](#p0) | r3 交互已确认；身份和持久化合同已记录；四项首次加载立即发送回归已接入原浏览器入口 | 完整基线、全部合同和 68 项联合验收仍不能划为已完成 |
+| [P1](#p1) | 永久释放事实、结果交接不反锁；未绑定预约停止隔离与启动发现；停止目标与同 Run 跨页资源独立派发、清理等待上限及完成输出保留 | 未绑定环境的独立释放证明、真实进程及后代资格、迟到矛盾证据、恢复错误分类与调度 |
+| [P2](#p2) | 审批摘要与重复决定、额度预约、排队身份、工具执行前检查点及取消传播 | 跨 boot/fence 的执行权重新绑定、执行中撤销及所有生产路径联合覆盖 |
+| [P3](#p3) | 文件路径槽位/身份/祖先协调、公平队列、固定目标合同、暂存发布与保存恢复记录 | 准备阶段不占共享提交锁、目录改名协议、冲突后重生成、跨 Worker 与多文件完整验收 |
+| [P4](#p4) | 纯联网私有范围、无用户目录 Grant/挂载/claim；本机越界拒绝探针 | 任意命令的更窄可强制范围、可选副本与逐文件应用、Linux 平台资格 |
+| [P5](#p5) | 默认关闭的审查持久化、宿主批准校验、现有模型边界适配、预算/取消和来源事件 | 替代方案建立新 intent 的完整路径；具体配置获确认后的真实模型、披露和费用验收 |
+| [P6](#p6) | 自动审查来源与真实起止计时、终态工具结果未确认、首次加载和多语言窄屏持久浏览器回归 | 后端统一状态/原因/动作/效果投影、全部阶段计时、真实网关至 Worker 文件操作和页面恢复联合路径 |
+| [P7](#p7) | 历史只读清单、Schema 28～40 的只读兼容及相关迁移回归 | 有现场证明的逐条修复候选、备份恢复演练、完整兼容矩阵与目标平台切换验收 |
+
+原型、受控端口、隔离 HTTP 夹具与本机构建各有证据范围；它们不替代真实模型、真实 Worker 联合路径或目标部署资格。[本次实施记录](#implementation-record)保留具体命令、失败与通过结果及局部限制。
 
 <a id="baseline"></a>
 
@@ -700,6 +719,12 @@ Run 取消、执行权中断和运行时结束后的资源清理现在分别对�
 运行时已完成但资源清理拒绝或超时时，保留原输出和检查点，保存受保护的清理原因，进入 `reconciling_external_result`。再次领取不会重跑模型。执行权中断后禁止提交迟到的完成状态；运行时已有失败或取消事实继续保留，不因清理异常丢失。
 
 [停止等待修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-04/cleanup-timeout-red.log)三项失败、[完成后清理修复前](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-04/completion-cleanup-red.log)两项失败均保留。可控计时器验证端口永久等待，不依靠真实睡眠或放宽测试期限。[168 项消费者回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-04/cleanup-consumers.log)全部通过，覆盖协调器、网关、Run 生命周期和生产派发；类型检查通过。[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-04/standard-ci-result.json)通过：240 文件、3,633 项，零失败、零跳过，发布扫描通过。任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。额外的 `biome check` 指出该文件原有 import 排序，项目规定的格式与 lint 入口均通过，未为此调整无关 import。多资源停止的逐条等待、未绑定环境释放证明、真实平台进程树资格及整个 P1 仍未完成。
+
+### P1 多资源停止不被先前清理阻塞（局部修复）
+
+同一 Run 的资源停止原来按页逐条等待；第一条清理不返回时，后续资源甚至不能收到停止请求。现在继续枚举所有页并分别发出停止，最后汇总结果；任一资源缺少永久释放回执、仍有 barrier 或停止报错，整体仍返回 `released: false`。
+
+[有效复现](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-05/stop-pages-confirmed-red.log)显示第一条等待时仅发出一次停止，第二页未收到请求。修复后[52 项相关回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-05/stop-pages-green.log)与类型检查通过。新增用例采用真实 SQLite 预约/绑定与受控分页、清理端口，101 条记录验证跨页派发，分别覆盖等待和拒绝；不代表同时启动 101 个真实进程。初次测试试图修改冻结端口而失败，已改在工厂捕获前注入，保留[夹具失败日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-05/stop-pages-red.log)。[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-05/standard-ci-result.json)通过：240 文件、3,635 项，零失败、零跳过，发布扫描通过。任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。未绑定环境的独立释放证明、真实平台资格和完整 P1 仍待完成。
 
 ### 当前完成边界与下一步
 

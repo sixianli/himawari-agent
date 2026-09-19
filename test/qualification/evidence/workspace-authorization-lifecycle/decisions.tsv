@@ -37,3 +37,4 @@ ts	phase	decision	why	evidence	result
 2026-09-19T13:38:42.126790+00:00	P1	以独立永久停止标记隔离未绑定预约并保留未知资源责任	数据库无绑定不能证明私有 Job Host 不存在；启动恢复原先漏掉预约	p1-local-03/unbound-stop-red.log;p1-local-03/unbound-consumers-final.log;p1-local-03/verification-result.json	251 项相关及组合全量验证通过；未签发释放证明或实际部署
 2026-09-19T13:40:50.767877+00:00	P6	终态下缺结果的准备步骤显示结果未确认	Chrome 复现顶部已取消但工具仍持续准备；终态不能推断工具未执行	p6-local-02/browser-confirmed-red.log;p6-local-02/browser-fixed/result.json;p6-local-02/browser-unit.log	362 项前端回归和 4 组 Chrome 通过；无虚构用时或真实 Worker 验收
 2026-09-19T13:56:24.725177+00:00	P1	限制异步清理等待并保留已经完成的输出	端口不返回会阻止任务结束；清理失败不能否定已保存的模型结果	p1-local-04/cleanup-timeout-red.log;p1-local-04/completion-cleanup-red.log;p1-local-04/cleanup-consumers.log	30 秒是当前协调器等待上限；不证明资源释放；完整本地 3633 项通过
+2026-09-19T14:09:14.036403+00:00	P1	跨页独立派发资源停止请求后汇总清理结果	一条停止持续等待会阻止后续页收到风险降低请求	p1-local-05/stop-pages-confirmed-red.log;p1-local-05/stop-pages-green.log	52 项相关回归与完整本地 3635 项通过；分页与清理使用受控边界

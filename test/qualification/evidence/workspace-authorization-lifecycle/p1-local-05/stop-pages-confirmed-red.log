@@ -1,0 +1,85 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is pending
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.5021250000008877,"at":"2026-09-19T14:05:11.651Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is pending
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":34.28850000000057,"at":"2026-09-19T14:05:11.685Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is pending
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.28462500000023283,"at":"2026-09-19T14:05:11.685Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is pending
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.006999999999607,"at":"2026-09-19T14:05:11.687Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is pending
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5022080000017013,"at":"2026-09-19T14:05:11.687Z"}
+
+ ❯ |integration| test/integration/production-sandbox-scope.test.ts (23 tests | 1 failed) 12451ms
+   × sends stop to later admission pages while the first cleanup is pending 1452ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is pending
+AssertionError: expected "reconcile" to be called with arguments: [ ObjectContaining{…} ]
+
+Received:
+
+  1st reconcile call:
+
+  [
+-   ObjectContaining {
++   {
+      "action": "stop",
+-     "identity": ObjectContaining {
+-       "jobId": "stop-page-100",
++     "authority": {
++       "agentServiceBootId": "agent-service-boot-capability-invocation",
++       "agentServiceInstanceId": "agent-service-instance-capability-invocation",
++       "lease": {
++         "fencingToken": 1,
++         "leaseId": "lease-capability-invocation",
++       },
++       "product": {
++         "authorityEpoch": 1,
++         "deploymentId": "deployment-capability-invocation",
++         "fencingToken": 1,
++       },
++       "workerBootId": "worker-boot-capability-invocation",
++       "workerInstanceId": "worker-instance-capability-invocation",
++     },
++     "expectedSequence": 2,
++     "identity": {
++       "agentId": "agent-capability-invocation",
++       "attemptId": "sandbox-attempt:f2b99cdd701af9e235b83e89de0d48735d7356262daf0b5ca017c86c26458fda",
++       "hostId": "sandbox-host",
++       "invocationId": "runtime-tool:7b0c708d4516dd2fc00a3d9798393e211742584c979f0643da47671dc4219306",
++       "jobId": "stop-page-000",
++       "ownerId": "owner-capability-invocation",
++       "receiptRef": "receipt-capability-invocation",
++       "runId": "run-capability-invocation",
++       "threadId": "thread-capability-invocation",
++       "toolCallId": "tool-read",
+      },
+    },
+  ]
+
+
+Number of calls: 1
+
+ ❯ test/integration/production-sandbox-scope.test.ts:489:27
+    487|     try {
+    488|       await vi.waitFor(() =>
+    489|         expect(reconcile).toHaveBeenCalledWith(
+       |                           ^
+    490|           expect.objectContaining({
+    491|             identity: expect.objectContaining({ jobId: "stop-page-100"…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 22 passed (23)
+   Start at  23:04:59
+   Duration  13.96s (transform 869ms, setup 0ms, import 1.37s, tests 12.45s, environment 0ms)

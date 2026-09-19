@@ -1,5 +1,6 @@
 import path from "node:path";
 import Database from "better-sqlite3";
+import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { appendFile, mkdir, rename } from "node:fs/promises";
 import {
   type SandboxOperationBinding,
@@ -390,3 +391,117 @@ it("stops bound foreground records without declaring unverified resources releas
     expect.objectContaining({ identity: plan.identity, action: "stop" }),
   );
 });
+
+it.each(["pending", "rejected"] as const)(
+  "sends stop to later admission pages while the first cleanup is %s",
+  async (firstOutcome) => {
+    const pages = vi.fn();
+    const original = SqliteProductStateRepository.prototype.sandboxExecutionPreparations;
+    const preparationFactory = vi
+      .spyOn(SqliteProductStateRepository.prototype, "sandboxExecutionPreparations")
+      .mockImplementation(function (this: SqliteProductStateRepository, ...args) {
+        const port = original.apply(this, args);
+        return { ...port, listAdmissions: pages };
+      });
+    // Replace only pagination before the production factory captures its frozen
+    // port. Admission/binding still use SQLite; cleanup is the controlled boundary.
+    let f: Awaited<ReturnType<typeof productionSandboxScope>>;
+    try {
+      f = await productionSandboxScope(descriptor("read"));
+    } finally {
+      preparationFactory.mockRestore();
+    }
+    cleanups.push(f.close);
+    const prepared = await f.services.runtime.prepare(f.input, f.call);
+    if (!("reservation" in prepared)) throw new Error("expected v2");
+    const admitted = await f.services.brokerV2.preparations.reserve({
+      ...prepared,
+      invocation: f.input,
+    });
+    if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
+    const { plan, reservation } = admitted.admission;
+    const base = sandboxV2Admission(f.f).facts;
+    const environment = {
+      ...base.environment,
+      creator: plan.identity,
+      environmentId: plan.environmentId,
+      mode: plan.mode,
+      resourceRef: reservation.resourceRef,
+      scopeDigest: plan.binding.scopeDigest,
+      authorizationRef: plan.authorizationRef,
+      backendRef: plan.backendRef,
+      deadlineAt: plan.effectiveDeadlineAt,
+      workspaceConflictRefs: reservation.workspaceConflictRefs,
+    };
+    const facts = sandboxExecutionFactsSchema.parse({
+      ...base,
+      environment,
+      resource: {
+        ...base.resource,
+        creator: plan.identity,
+        environmentId: plan.environmentId,
+        scopeDigest: plan.binding.scopeDigest,
+        resourceRef: reservation.resourceRef,
+        status: { kind: "foreground" },
+        sequence: 2,
+      },
+    });
+    const bound = await f.services.brokerV2.preparations.bindAndStart({
+      identity: plan.identity,
+      expectedSequence: 1,
+      facts,
+      authority: f.input.authority,
+      now: T1,
+    });
+
+    const admissions = Array.from({ length: 101 }, (_, index) => ({
+      phase: "bound" as const,
+      record: {
+        ...bound.record,
+        plan: {
+          ...bound.record.plan,
+          identity: {
+            ...bound.record.plan.identity,
+            jobId: `stop-page-${String(index).padStart(3, "0")}`,
+          },
+        },
+      },
+    }));
+    pages
+      .mockResolvedValueOnce(admissions.slice(0, 100))
+      .mockResolvedValueOnce(admissions.slice(100));
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reconcile = vi
+      .spyOn(f.services.brokerV2.reconciliation, "reconcile")
+      .mockImplementation(async (input) => {
+        if (input.identity.jobId === "stop-page-000") {
+          if (firstOutcome === "rejected") throw new Error("original host unavailable");
+          await pending;
+        }
+        return { applied: false, record: bound.record };
+      });
+    const stopping = f.services.resources.stopRun(f.call.runId);
+    try {
+      await vi.waitFor(() =>
+        expect(reconcile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            identity: expect.objectContaining({ jobId: "stop-page-100" }),
+            action: "stop",
+          }),
+        ),
+      );
+      expect(pages).toHaveBeenLastCalledWith({
+        runId: f.call.runId,
+        afterJobId: "stop-page-099",
+        limit: 100,
+      });
+      expect(reconcile).toHaveBeenCalledTimes(101);
+    } finally {
+      release();
+      expect(await stopping).toEqual({ released: false });
+    }
+  },
+);

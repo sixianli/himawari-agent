@@ -1490,45 +1490,52 @@ export async function createProductionSandboxServices(options: {
       stopRun: async (runId: RuntimeToolInvocation["runId"]) => {
         let afterJobId: string | null = null;
         let released = true;
+        const stops: Promise<void>[] = [];
         for (;;) {
           const page = await preparations.listAdmissions({ runId, afterJobId, limit: 100 });
           for (let admission of page) {
             const plan = admission.phase === "bound" ? admission.record.plan : admission.plan;
             if (plan.identity.runId !== runId) continue;
-            if (admission.phase === "reserved") {
-              try {
-                admission = (
-                  await preparations.interruptReservation({
-                    identity: plan.identity,
-                    authority: options.authority(),
-                    now: clock.now(),
-                    reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
-                  })
-                ).admission;
+            // Enumerate and stop every owned admission before waiting for any
+            // cleanup result, including admissions on later pages.
+            stops.push(
+              (async () => {
                 if (admission.phase === "reserved") {
-                  // Stop only the original registered host; missing binding remains unknown.
-                  await control.stopPreparation(plan);
+                  try {
+                    admission = (
+                      await preparations.interruptReservation({
+                        identity: plan.identity,
+                        authority: options.authority(),
+                        now: clock.now(),
+                        reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+                      })
+                    ).admission;
+                    if (admission.phase === "reserved") {
+                      // Stop only the original registered host; missing binding remains unknown.
+                      await control.stopPreparation(plan);
+                    }
+                  } catch {
+                    released = false;
+                    return;
+                  }
+                  if (admission.phase === "reserved") {
+                    released = false;
+                    return;
+                  }
                 }
-              } catch {
-                released = false;
-                continue;
-              }
-              if (admission.phase === "reserved") {
-                released = false;
-                continue;
-              }
-            }
-            try {
-              const result = { record: await stopRecord(admission.record) };
-              if (
-                result.record.facts.resource.supervision !== "released" ||
-                !result.record.releaseReceipt ||
-                result.record.workspaceBlocked
-              )
-                released = false;
-            } catch {
-              released = false;
-            }
+                try {
+                  const result = { record: await stopRecord(admission.record) };
+                  if (
+                    result.record.facts.resource.supervision !== "released" ||
+                    !result.record.releaseReceipt ||
+                    result.record.workspaceBlocked
+                  )
+                    released = false;
+                } catch {
+                  released = false;
+                }
+              })(),
+            );
           }
           if (page.length < 100) break;
           const last = page.at(-1);
@@ -1536,6 +1543,7 @@ export async function createProductionSandboxServices(options: {
           afterJobId =
             last.phase === "bound" ? last.record.plan.identity.jobId : last.plan.identity.jobId;
         }
+        await Promise.all(stops);
         return { released };
       },
     },

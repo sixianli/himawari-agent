@@ -1,0 +1,18 @@
+{
+  "typecheck": "passed",
+  "scopedFormat": "passed",
+  "scopedLint": "passed",
+  "boundaries": "passed",
+  "invariants": "passed",
+  "coverageMap": "passed",
+  "secrets": "passed",
+  "ciPolicy": "passed",
+  "strictDocs": "passed: zero warnings",
+  "targeted": {
+    "files": 2,
+    "passed": 52,
+    "failed": 0
+  },
+  "fullLocalCI": "passed: 240 files, 3635 tests, zero failed or skipped",
+  "scope": "real production factory and SQLite admission; controlled paging and cleanup ports; not 101 real processes"
+}
