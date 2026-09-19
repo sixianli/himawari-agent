@@ -1,0 +1,5 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+test/integration/production-sandbox-lineage.test.ts(762,49): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.

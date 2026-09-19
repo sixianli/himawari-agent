@@ -1,0 +1,4 @@
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/authority-transfer-runbook.md
+fingerprint: sha256:07b6e3069b51a38b0788fef8fdf480e782b6c42e9babc03b75c5e55661a06171
+mode: dry-run
+Static contract success does not prove Live-State Preflight and does not authorize any operation.

@@ -1,0 +1,55 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |pi-compat| packages/runtime-pi/test/prepare-file-mutation.compat.test.ts (3 tests | 1 failed) 17ms
+   × stops preparation at its compute deadline before accepting a candidate 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |pi-compat| packages/runtime-pi/test/prepare-file-mutation.compat.test.ts > stops preparation at its compute deadline before accepting a candidate
+AssertionError: promise resolved "{ …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "bytes": Uint8Array [
++     99,
++     97,
++     110,
++     100,
++     105,
++     100,
++     97,
++     116,
++     101,
++   ],
++   "result": {
++     "content": [
++       {
++         "text": "Successfully wrote 9 bytes to note.txt",
++         "type": "text",
++       },
++     ],
++     "details": undefined,
++     "isError": false,
++   },
+  }
+
+ ❯ packages/runtime-pi/test/prepare-file-mutation.compat.test.ts:58:6
+     56|     before: null, parameters: { path: "note.txt", content: "candidate"…
+     57|     limits: { maxWallTimeMs: 1, maxCpuTimeMs: 1, maxMemoryBytes: 26843…
+     58|   })).rejects.toThrow("PI_PREPARATION_TIME_LIMIT");
+       |      ^
+     59| });
+     60|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  01:22:04
+   Duration  1.34s (transform 40ms, setup 0ms, import 1.22s, tests 17ms, environment 0ms)

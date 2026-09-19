@@ -1,0 +1,12 @@
+
+> himawari-agent@0.0.0 test:integration
+> vitest run --config vitest.workspace.ts --project integration test/integration/prepared-file-runner.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  01:04:14
+   Duration  14.97s (transform 1.57s, setup 0ms, import 3.67s, tests 11.11s, environment 0ms)

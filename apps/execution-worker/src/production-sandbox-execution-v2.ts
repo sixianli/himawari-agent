@@ -13,6 +13,7 @@ import {
   executionV2MessageSchema,
   type PayloadBrokerSandboxExecutionResult,
   PI_FIXED_FILE_CONTRACT,
+  PI_PREPARED_FILE_CONTRACT,
   PI_RUNNER_CONTRACT,
   piCodingToolNameSchema,
   piRunnerInputSchema,
@@ -205,10 +206,14 @@ export class ProductionSandboxExecutionV2 {
                   ? "verified_effect"
                   : "fixed_read";
         if (
-          ![PI_RUNNER_CONTRACT.version, PI_FIXED_FILE_CONTRACT.version].some(
+          ![
+            PI_RUNNER_CONTRACT.version,
+            PI_FIXED_FILE_CONTRACT.version,
+            PI_PREPARED_FILE_CONTRACT.version,
+          ].some((version) => version === plan.operationContract.version) ||
+          ([PI_FIXED_FILE_CONTRACT.version, PI_PREPARED_FILE_CONTRACT.version].some(
             (version) => version === plan.operationContract.version,
-          ) ||
-          (plan.operationContract.version === PI_FIXED_FILE_CONTRACT.version &&
+          ) &&
             !["read", "write", "edit"].includes(tool)) ||
           plan.operationContract.kind !== kind
         )
@@ -270,11 +275,16 @@ export class ProductionSandboxExecutionV2 {
       if (input.byteLength > 49152) throw new Error("SANDBOX_INPUT_TOO_LARGE");
       if (
         piRunner &&
-        (![PI_RUNNER_CONTRACT.version, PI_FIXED_FILE_CONTRACT.version].some(
-          (version) => version === plan.operationContract.version,
-        ) ||
-          (plan.operationContract.version === PI_FIXED_FILE_CONTRACT.version) !==
-            Boolean(resolved.scope.fileTarget) ||
+        (![
+          PI_RUNNER_CONTRACT.version,
+          PI_FIXED_FILE_CONTRACT.version,
+          PI_PREPARED_FILE_CONTRACT.version,
+        ].some((version) => version === plan.operationContract.version) ||
+          [PI_FIXED_FILE_CONTRACT.version, PI_PREPARED_FILE_CONTRACT.version].some(
+            (version) => version === plan.operationContract.version,
+          ) !== Boolean(resolved.scope.fileTarget) ||
+          (plan.operationContract.version === PI_PREPARED_FILE_CONTRACT.version) !==
+            Boolean(resolved.scope.preparedFile) ||
           resolved.scope.profileRef !== "authorized-project.v1")
       )
         throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");

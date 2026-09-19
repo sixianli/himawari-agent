@@ -42,6 +42,7 @@ export async function productionSandboxScope(
   descriptor: SandboxOperationBinding,
   changeIntent: (intent: GovernedActionIntent) => GovernedActionIntent = (value) => value,
   options: {
+    readonly resourceCeiling?: ConsumeCapabilityInvocationInput["resourceCeiling"];
     readonly legacyFileRead?: boolean;
     readonly piParameters?: Readonly<Record<string, unknown>>;
     readonly realFileIdentity?: boolean;
@@ -68,7 +69,11 @@ export async function productionSandboxScope(
     .run(h.ref, h.authorizationRef, JSON.stringify(h), f.plan.handleRef);
   const host = await macSandboxDeployment(
     f.resource.stateRoot,
-    { ...f.plan, operation: descriptor.operation },
+    {
+      ...f.plan,
+      operation: descriptor.operation,
+      ...(options.resourceCeiling ? { resourceCeiling: options.resourceCeiling } : {}),
+    },
     T1,
     true,
     process.platform === "darwin" ? "darwin" : "linux",
@@ -198,6 +203,7 @@ export async function productionSandboxScope(
   };
   const invocationId = `runtime-tool:${hash([call.runId, call.toolCallId])}`;
   const input = invocation({
+    ...(options.resourceCeiling ? { resourceCeiling: options.resourceCeiling } : {}),
     handleRef: h.ref,
     inputRef: h.inputRefs[0],
     invocationId,

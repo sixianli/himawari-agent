@@ -1,0 +1,42 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-execution-preparation.test.ts (22 tests | 4 failed) 5186ms
+     × rejects changing the persisted queued request at admission: claim 237ms
+     × rejects changing the persisted queued request at admission: contract 192ms
+     × rejects changing the persisted queued request at admission: deadline 177ms
+     × does not give one invocation two queue identities or two places in line 171ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects changing the persisted queued request at admission: claim
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects changing the persisted queued request at admission: contract
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects changing the persisted queued request at admission: deadline
+AssertionError: expected [Function] to throw an error
+ ❯ test/integration/sandbox-execution-preparation.test.ts:88:51
+     86|         if (change === "deadline")
+     87|           changed.plan = { ...changed.plan, effectiveDeadlineAt: new D…
+     88|         expect(() => call(f, "reserve", changed)).toThrow();
+       |                                                   ^
+     89|         expect(f.database.prepare("SELECT count(*) FROM capability_inv…
+     90|         expect(f.database.prepare("SELECT count(*) FROM sandbox_worksp…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > does not give one invocation two queue identities or two places in line
+AssertionError: expected [Function] to throw an error
+ ❯ test/integration/sandbox-execution-preparation.test.ts:108:11
+    106|         plan: { ...first.plan, identity },
+    107|         reservation: { ...first.reservation, identity },
+    108|       })).toThrow();
+       |           ^
+    109|       expect(f.database.prepare("SELECT count(*) FROM sandbox_admissio…
+    110|     } finally {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 18 passed (22)
+   Start at  18:44:12
+   Duration  6.60s (transform 851ms, setup 0ms, import 1.32s, tests 5.19s, environment 0ms)

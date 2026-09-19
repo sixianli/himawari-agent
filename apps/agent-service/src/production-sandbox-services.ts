@@ -25,6 +25,7 @@ import {
   assertSandboxExecutionSupport,
   executionV2MessageSchema,
   PI_FIXED_FILE_CONTRACT,
+  PI_PREPARED_FILE_CONTRACT,
   piFileRecoveryOperationKey,
   type SandboxExecutionPlanCandidate,
   type SandboxExecutionPlanCandidateV2,
@@ -50,6 +51,7 @@ import {
   verifyPiWriteEvidence,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
+import { prepareProductionFile } from "./production-file-preparation.js";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
 import { createProductionManagedTasks } from "./production-managed-tasks.js";
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
@@ -384,6 +386,15 @@ export async function createProductionSandboxServices(options: {
     );
     const fixed =
       plan.schemaVersion === "sandbox-execution.v2" && fixedFileContract(plan.operationContract);
+    const staged =
+      plan.schemaVersion === "sandbox-execution.v2" &&
+      plan.operationContract.ref === PI_PREPARED_FILE_CONTRACT.ref &&
+      plan.operationContract.version === PI_PREPARED_FILE_CONTRACT.version;
+    if (
+      Boolean(resolved.scope.preparedFile) !== staged ||
+      (staged && !["write", "edit"].includes(plan.operation))
+    )
+      throw new Error("SANDBOX_PREPARED_FILE_CONTRACT_CHANGED");
     if (Boolean(resolved.scope.fileTarget) !== fixed)
       throw new Error("SANDBOX_FILE_CONTRACT_CHANGED");
     if (fixed && plan.schemaVersion === "sandbox-execution.v2") {
@@ -408,7 +419,9 @@ export async function createProductionSandboxServices(options: {
   };
   const fixedFileContract = (contract: { readonly ref: string; readonly version: string }) =>
     contract.ref === PI_FIXED_FILE_CONTRACT.ref &&
-    contract.version === PI_FIXED_FILE_CONTRACT.version;
+    [PI_FIXED_FILE_CONTRACT.version, PI_PREPARED_FILE_CONTRACT.version].some(
+      (version) => version === contract.version,
+    );
   const fileTarget = async (scope: SandboxScope, binding: SandboxHostBinding) => {
     if (!["read", "write", "edit"].includes(scope.operation))
       throw new Error("SANDBOX_FILE_CONTRACT_UNSUPPORTED");
@@ -571,10 +584,20 @@ export async function createProductionSandboxServices(options: {
     call: RuntimeToolInvocation,
     parentCall: RuntimeToolInvocation | undefined,
     descriptor: SandboxOperationBinding,
+    signal?: AbortSignal,
   ) => {
+    signal?.throwIfAborted();
     const replay = await replayReservation(input);
     if (replay) return replay;
     const handle = await currentHandle(input);
+    if (input.authorizationRef !== null && input.authorizationRef !== handle.authorizationRef)
+      throw new Error("SANDBOX_EXECUTION_HANDLE_MISMATCH");
+    if (
+      canonicalAuthorizationSnapshot(input.authority) !==
+      canonicalAuthorizationSnapshot(options.authority())
+    )
+      throw new Error("SANDBOX_PREPARATION_AUTHORITY_CHANGED");
+    await preparations.validatePreparation({ ...input, consumedAt: clock.now() });
     if (!call.context || !call.executionDeadlineAt)
       throw new Error("SANDBOX_SCOPE_SOURCE_UNAVAILABLE");
     const { binding, qualification } = await entryFor(input.capabilityRef, input.capabilityVersion);
@@ -675,12 +698,70 @@ export async function createProductionSandboxServices(options: {
         descriptor.network === "grant_targets" ? handle.authorizationRef : null,
       expiresAt,
     });
-    const scopeBinding = await persistScope(
-      scope.schemaVersion === "sandbox-scope.v1"
-        ? await freezeFileScope(scope, binding, descriptor.contract)
-        : scope,
-      input.invocationId,
-    );
+    if (
+      grant &&
+      (grant.revokedAt !== null ||
+        grant.expiresAt <= clock.now() ||
+        grant.hostId !== hostId ||
+        grant.pathPolicy !== "same_filesystem_no_links" ||
+        grant.mountPolicy !== "fixed_device" ||
+        descriptor.directoryOperations.some((operation) => !grant.operations.includes(operation)))
+    )
+      throw new Error("SANDBOX_DIRECTORY_GRANT_UNAVAILABLE");
+    const retainedScope = await artifacts().lookup({
+      runId: scope.runId as RuntimeToolInvocation["runId"],
+      purpose: "trace",
+      operationKey: `sandbox-scope:${input.invocationId}`,
+    });
+    let frozenScope: SandboxExecutionScope;
+    if (retainedScope) {
+      frozenScope = sandboxExecutionScopeSchema.parse(await readJson(retainedScope.payloadRef));
+      const { fileTarget: _target, preparedFile: _prepared, ...baseScope } = frozenScope;
+      if (hash(baseScope) !== hash(scope)) throw new Error("SANDBOX_SCOPE_CHANGED");
+    } else {
+      frozenScope =
+        scope.schemaVersion === "sandbox-scope.v1"
+          ? await freezeFileScope(scope, binding, descriptor.contract)
+          : scope;
+      if (
+        descriptor.contract.ref === PI_PREPARED_FILE_CONTRACT.ref &&
+        descriptor.contract.version === PI_PREPARED_FILE_CONTRACT.version
+      ) {
+        if (
+          frozenScope.schemaVersion !== "sandbox-scope.v1" ||
+          !frozenScope.fileTarget ||
+          !grant ||
+          (input.operation !== "write" && input.operation !== "edit")
+        )
+          throw new Error("SANDBOX_PREPARED_FILE_CONTRACT_CHANGED");
+        frozenScope = sandboxScopeSchema.parse({
+          ...frozenScope,
+          preparedFile: await prepareProductionFile({
+            ...(signal ? { signal } : {}),
+            grant,
+            target: frozenScope.fileTarget,
+            tool: input.operation,
+            toolCallId: scope.toolCallId,
+            parameters: (await readJson(input.inputRef)) as Record<string, unknown>,
+            resourceCeiling: {
+              ...input.resourceCeiling,
+              maxWallTimeMs: Math.min(
+                input.resourceCeiling.maxWallTimeMs,
+                Date.parse(expiresAt) - Date.parse(clock.now()),
+              ),
+            },
+          }),
+        });
+      }
+    }
+    const scopeBinding = await persistScope(frozenScope, input.invocationId);
+    signal?.throwIfAborted();
+    if (
+      canonicalAuthorizationSnapshot(input.authority) !==
+      canonicalAuthorizationSnapshot(options.authority())
+    )
+      throw new Error("SANDBOX_PREPARATION_AUTHORITY_CHANGED");
+    await preparations.validatePreparation({ ...input, consumedAt: clock.now() });
     const base = createSandboxExecutionPlanCandidate({
       admission: input,
       handle,
@@ -739,14 +820,15 @@ export async function createProductionSandboxServices(options: {
     preparations,
     scopes,
     appliesTo,
-    prepare: async (input, call, parentCall) => {
+    prepare: async (input, call, parentCall, signal) => {
+      signal?.throwIfAborted();
       const selected = await entryFor(input.capabilityRef, input.capabilityVersion);
       if (selected.binding.operationBindings) {
         const descriptor = selected.binding.operationBindings.find(
           (item) => item.operation === input.operation,
         );
         if (!descriptor) throw new Error("SANDBOX_OPERATION_UNAVAILABLE");
-        return prepareRuntimeV2(input, call, parentCall, descriptor);
+        return prepareRuntimeV2(input, call, parentCall, descriptor, signal);
       }
       const existing = await journal.readByInvocation({
         runId: input.requestScope.runId,

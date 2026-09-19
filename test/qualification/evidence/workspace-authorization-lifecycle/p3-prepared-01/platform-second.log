@@ -1,0 +1,12 @@
+
+> himawari-agent@0.0.0 test:unit
+> vitest run --config vitest.workspace.ts --project unit packages/platform-node/test/constrained-file-system.unit.test.ts packages/platform-node/test/sandboxed-coding-operations.unit.test.ts packages/platform-node/test/pi-file-publication.unit.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+
+ Test Files  3 passed (3)
+      Tests  76 passed (76)
+   Start at  00:54:31
+   Duration  3.09s (transform 2.85s, setup 0ms, import 5.07s, tests 3.20s, environment 0ms)

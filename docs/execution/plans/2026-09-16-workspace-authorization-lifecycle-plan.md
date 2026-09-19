@@ -56,14 +56,14 @@ date: "2026-09-16"
 
 ### 当前实施进展
 
-下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-06/standard-ci-result.json)为 3,653 项全部通过，环境为本机 macOS。
+下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-prepared-02/standard-ci-result.json)为 3,676 项全部通过，环境为本机 macOS。
 
 | 阶段 | 已实现并验证的部分 | 仍需完成的重点 |
 | --- | --- | --- |
 | [P0](#p0) | r3 交互已确认；身份和持久化合同已记录；四项首次加载立即发送回归已接入原浏览器入口 | 完整基线、全部合同和 68 项联合验收仍不能划为已完成 |
 | [P1](#p1) | 永久释放事实、结果交接不反锁；未绑定预约停止隔离与启动发现；停止目标与同 Run 跨页资源独立派发、清理等待上限及完成输出保留；未启动宿主退出后的预约释放凭据与原停止隔离 | 已启动进程及后代资格、迟到矛盾证据、恢复错误分类与调度 |
 | [P2](#p2) | 审批摘要与重复决定、额度预约、排队身份、工具执行前检查点及取消传播 | 跨 boot/fence 的执行权重新绑定、执行中撤销及所有生产路径联合覆盖 |
-| [P3](#p3) | 文件路径槽位/身份/祖先协调、公平队列、固定目标合同、暂存发布与保存恢复记录 | 准备阶段不占共享提交锁、目录改名协议、冲突后重生成、跨 Worker 与多文件完整验收 |
+| [P3](#p3) | 文件路径槽位/身份/祖先协调、公平队列、固定目标合同、暂存发布与保存恢复记录；合同 3 的并行候选准备、可停止计算、原队列提交与安装入口已通过本地验收 | 目录改名协议、冲突后重生成、跨 Worker 与多文件完整验收；合同 3 的平台资格与部署未执行 |
 | [P4](#p4) | 纯联网私有范围、无用户目录 Grant/挂载/claim；本机越界拒绝探针 | 任意命令的更窄可强制范围、可选副本与逐文件应用、Linux 平台资格 |
 | [P5](#p5) | 默认关闭的审查持久化、宿主批准校验、现有模型边界适配、预算/取消和来源事件 | 替代方案建立新 intent 的完整路径；具体配置获确认后的真实模型、披露和费用验收 |
 | [P6](#p6) | 自动审查来源与真实起止计时、终态工具结果未确认、首次加载和多语言窄屏持久浏览器回归 | 后端统一状态/原因/动作/效果投影、全部阶段计时、真实网关至 Worker 文件操作和页面恢复联合路径 |
@@ -739,6 +739,38 @@ Schema 41 保存独立的预约释放回执：原认证宿主从未启动任务�
 [本机原生宿主探针](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-06/mac-host-probe-final.log) 五个场景通过，只有 `never-started` 返回预约释放证明；已启动任务的清理仍为 `unknown`，不会因此解除占用。探针经过真实 Job Host、SRT、控制通道和进程退出，资格及 artifact 存储仍受控，`productionQualified: false`。受限环境未 ready，以及旧探针遗漏现有 `admit` 装配的失败日志保留；修正测试装配后原生探针通过。完整 P1/W06、Linux 及任意后代进程资格仍未完成。
 
 [完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-local-06/standard-ci-result.json)通过：240 文件、3,653 项，零失败、零跳过；产物检查通过。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 与严格文档检查通过。第一次构建期间修改探针导致 `ARTIFACT_BUILD_INPUT_MISMATCH`，失败证据保留；冻结全部构建输入后重跑通过。该错误属于执行安排失误，不是产品或机器故障。
+
+### P3 完整候选先准备、再经原队列提交（初轮记录）
+
+本批核对的实际前置条件是：原队列已经按文件槽位与身份互斥，P1 的占用释放仍必须有原宿主不可再写的证明；不能仅把 runner 中的锁提前释放。P2 的当前执行身份、Grant、Run 与额度检查须在准备前和正式准入时都成立，跨 boot 的自动重绑定尚未完成。
+
+新增 `pi-coding-tool@3` 仅适用于固定目标 `write/edit`。在预约之前，通过固定 Pi 0.84.2 的原工具定义与 Operations 对不可变快照生成候选；Pi 继续负责参数正规化、编辑匹配、BOM/换行与差异结果。宿主只在 `.himawari-recovery` 保存完整候选与结果，`fsync` 后将身份和摘要保存到原受保护 Scope artifact；准备期间不登记工作区占用、不消费调用额度、不创建正式目标的父目录。候选可以同时准备，之后才使用原持久队列取得提交占用。
+
+Worker 重验 Scope、权限、目标版本、父目录、候选 inode/摘要及文件权限，再用原发布记录和原子发布接口保存同一个已暂存 inode，不重新生成内容。新建不覆盖，替换冲突保留候选；准备前已经取消、过期、撤权或来自旧 Worker boot 的请求不会开始暂存；准备期间失效后不能准入提交。Worker 检出候选被改写或权限位变化时拒绝覆盖正式文件，既有占用仍按实际资源状态清理。已成功发布的历史结果继续由原恢复路径确认，不覆盖之后的用户编辑。仍按原宿主停止证明释放本次提交占用，不把进程尚存时的“工具返回”当作释放证明。
+
+[生产准备入口与权限回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-prepared-01/production-authority-fixed.log)已验证两个 `write/edit` 候选同时到达暂存屏障，此时 SQLite 中占用和调用回执均为零；随后同文件请求互斥，等待期间目标变化会拒绝原请求且保留候选。测试使用真实文件、SQLite、保护载荷与生产装配，安装资格为受控夹具。[构建后 runner](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-prepared-01/runner-final.log)已通过原生子进程验证发布 inode、权限、编辑差异、新建父目录、篡改拒绝、重复执行拒绝和历史效果恢复；该入口尚未经过 SRT，不代表完整沙箱或 Linux 资格。
+
+新合同保持旧合同 1/2，不改变 Schema 41，也不修改现有生产配置；只有明确选择合同 3 且通过部署资格的绑定才使用新路径。旧执行器不能理解新合同/Scope 时必须拒绝，不能降级执行旧写法。初轮时完整本地验证仍待完成；后续结果见[本地批次验收](#p3-prepared-delivery)。合同 3 的跨 Worker 联合路径与目标平台资格仍待完成，不将本批标为整个 P3 完成。
+
+本批证据目录为 `p3-prepared-01`。首次误用已存在的 `p3-local-04`，消费者日志发生覆盖；历史文件已经按 HEAD 精确恢复，错误日志不计入验收，另行重跑。全库格式检查发现原有未跟踪 r1/r2 原型脚本问题；本批保留这些文件并单独验证修改范围。实施期间出现的四个带 ` 2` 后缀的无关副本也予以保留。
+
+<a id="p3-prepared-delivery"></a>
+
+### P3 准备计算的可停止边界与安装入口（本地批次已验收）
+
+根据本次 reflect，继续使用原 Plan、单一决策日志与现有测试入口。新日志目录以排他创建选择 `p3-prepared-02`，不复用历史目录。先核对准备计算、Stop 信号和安装产物的实际入口，再冻结源码进行完整验证。
+
+上一轮[完整验证结果](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-prepared-01/standard-ci-initial-result.json)为失败：构建成功，安装 runner 的初始化超过默认 10 秒 hook 限额，8 项行为检查未执行。该失败不是已确认的安装器故障。当前安装测试沿用仓库现有安装测试的 180 秒进程上限与 240 秒初始化上限；准备模块与提交 runner 均从同一构建或安装目录加载，不能再用源码准备结果代替安装入口证明。
+
+Pi 计算改为独立线程，复用请求已有时间及内存预算，不改变生产模型或部署配置。V8 堆上限不等于 OS 总内存或沙箱资格；输入/候选仍有原有字节限制。运行时把当前 Stop 信号传到准备计算，取消/超时只有在线程终止后才返回。准备前和提交准入时仍核验原授权，暂存完成后保留原 Scope artifact。
+
+[运行中中断检查](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-prepared-02/compute.log)用真实计算线程和受控计时，在确认计算已经开始后触发取消或期限，再检查线程已退出。[临时禁用终止调用](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-prepared-02/compute-stop-disabled.log)时两项检查均失败，原实现已恢复。此前 1ms 短字符串测试只能混合观察启动耗时，已由此替换。[生产准备权限回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-prepared-02/production-authority-fixed.log)通过；最初失败来自测试请求的资源预算与夹具宿主上限不一致，修正限定于测试夹具。
+
+[构建产物路径](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-prepared-02/built-runner.log)及[安装归档路径](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-prepared-02/installed-runner-ci-env.log)均实际执行了准备和提交两段的 8 项行为检查。首次定向安装命令缺少标准 CI 的 `HIMAWARI_CI_PYTHON`，安装器在执行行为断言前拒绝；复用锁定工具链环境后通过，未为此修改源码或放宽安装校验。
+
+[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-prepared-02/standard-ci-result.json)通过：243 文件、3,676 项，零失败、零跳过。[冻结清单复核](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-prepared-02/freeze-check-final.json)确认 1,232 个已跟踪及未忽略输入在构建、安装检查和完整验证期间没有新增、删除或内容变化；证据目录单独排除。类型、任务范围格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。全库格式/lint 仍受原有 r1/r2 原型脚本影响，本批保留这些无关改动，不把任务范围检查写成全库通过。
+
+已验收的用户行为是：两个候选可在零共享占用时准备；同文件提交仍由原队列互斥；目标变化不覆盖后续修改且保留候选；Stop 可中断准备计算且不会继续派发；成功发布的结果可恢复而不重复覆盖。此结论限定于本机文件系统、生产装配夹具和真实安装 runner。跨 Worker 联合路径、目录改名、冲突后新 intent、多文件及 Linux 资格仍未完成。
 
 ### 当前完成边界与下一步
 

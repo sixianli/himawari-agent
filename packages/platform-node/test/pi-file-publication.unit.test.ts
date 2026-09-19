@@ -258,3 +258,58 @@ describe("fixed Pi file publication records", () => {
     },
   );
 });
+
+describe("prepared candidates and short publication", () => {
+  it("keeps parallel candidates, commits one baseline and preserves the losing candidate", async () => {
+    const f = await setup("before");
+    const platform = new ConstrainedHostFileSystem();
+    const [first, second] = await Promise.all([
+      platform.stagePublication(f.grant, Buffer.from("first")),
+      platform.stagePublication(f.grant, Buffer.from("second")),
+    ]);
+    const before = await platform.inspect(f.grant, "file.txt");
+    if (!before) throw new Error("missing baseline");
+    expect(await readFile(f.target, "utf8")).toBe("before");
+    await platform.publishPrepared(f.grant, "file.txt", first, before, Buffer.from("before"));
+    await expect(
+      platform.publishPrepared(f.grant, "file.txt", second, before, Buffer.from("before")),
+    ).rejects.toThrow("HOST_FILE_IDENTITY_CHANGED");
+    expect(await readFile(f.target, "utf8")).toBe("first");
+    expect(Buffer.from(await platform.readPublication(f.grant, second)).toString()).toBe("second");
+  });
+  it("does not create target parents during preparation and rejects a replaced candidate", async () => {
+    const f = await setup();
+    const platform = new ConstrainedHostFileSystem();
+    const candidate = await platform.stagePublication(f.grant, Buffer.from("candidate"));
+    await expect(readFile(path.join(f.grant.displayPath, "new/file.txt"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await rename(candidate.identity.canonicalPath, `${candidate.identity.canonicalPath}.saved`);
+    await writeFile(candidate.identity.canonicalPath, "candidate");
+    await expect(
+      platform.publishPrepared(f.grant, "new/file.txt", candidate, null, new Uint8Array()),
+    ).rejects.toThrow("HOST_FILE_PUBLICATION_UNVERIFIED");
+    await expect(readFile(path.join(f.grant.displayPath, "new/file.txt"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+  it("rechecks authority after a prepared candidate waits and retains the original file", async () => {
+    const f = await setup("before");
+    const platform = new ConstrainedHostFileSystem();
+    const candidate = await platform.stagePublication(f.grant, Buffer.from("candidate"));
+    const baseline = await platform.inspect(f.grant, "file.txt");
+    if (!baseline) throw new Error("missing baseline");
+    await expect(
+      platform.publishPrepared(f.grant, "file.txt", candidate, baseline, Buffer.from("before"), {
+        beforePublish: async () => {},
+        assertCurrentAuthority: async () => {
+          throw new Error("REVOKED");
+        },
+      }),
+    ).rejects.toThrow("REVOKED");
+    expect(await readFile(f.target, "utf8")).toBe("before");
+    expect(Buffer.from(await platform.readPublication(f.grant, candidate)).toString()).toBe(
+      "candidate",
+    );
+  });
+});

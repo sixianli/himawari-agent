@@ -1,0 +1,88 @@
+
+> himawari-agent@0.0.0 test:integration
+> vitest run --config vitest.workspace.ts --project integration test/integration/production-sandbox-lineage.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.33429099999921164,"at":"2026-09-19T15:54:28.504Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.9235000000007858,"at":"2026-09-19T15:54:28.505Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":46.26970799999981,"at":"2026-09-19T15:54:28.551Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.39400000000023283,"at":"2026-09-19T15:54:28.552Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":47.72808300000179,"at":"2026-09-19T15:54:28.552Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.12854200000219862,"at":"2026-09-19T15:54:28.552Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.376209000001836,"at":"2026-09-19T15:54:28.554Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":6.22741600000154,"at":"2026-09-19T15:54:28.560Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.4814169999990554,"at":"2026-09-19T15:54:28.561Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.3962920000012673,"at":"2026-09-19T15:54:29.101Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.4150000000008731,"at":"2026-09-19T15:54:29.101Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":54.60795800000051,"at":"2026-09-19T15:54:29.155Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.45200000000113505,"at":"2026-09-19T15:54:29.156Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":55.2701249999991,"at":"2026-09-19T15:54:29.156Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.15908300000228337,"at":"2026-09-19T15:54:29.157Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.380833999999595,"at":"2026-09-19T15:54:29.158Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.9477919999990263,"at":"2026-09-19T15:54:29.159Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.9583750000019791,"at":"2026-09-19T15:54:29.160Z"}
+
+ ❯ |integration| test/integration/production-sandbox-lineage.test.ts (31 tests | 2 failed) 17902ms
+     × stages concurrent write requests before occupancy and preserves their frozen candidates 521ms
+     × stages concurrent edit requests before occupancy and preserves their frozen candidates 599ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+ FAIL  |integration| test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+Error: SANDBOX_SCOPE_UNAVAILABLE
+ ❯ SandboxScopeService.resolve packages/application/src/services/sandbox-scope-service.ts:168:13
+    166|     } catch {
+    167|       // Scope contents and protector errors may contain private host …
+    168|       throw new Error("SANDBOX_SCOPE_UNAVAILABLE");
+       |             ^
+    169|     }
+    170|   }
+ ❯ timed apps/agent-service/src/production-sandbox-services.ts:273:16
+ ❯ resolve apps/agent-service/src/production-sandbox-services.ts:372:22
+ ❯ prepareRuntimeV2 apps/agent-service/src/production-sandbox-services.ts:746:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 29 passed (31)
+   Start at  00:54:08
+   Duration  20.76s (transform 1.22s, setup 0ms, import 2.77s, tests 17.90s, environment 0ms)

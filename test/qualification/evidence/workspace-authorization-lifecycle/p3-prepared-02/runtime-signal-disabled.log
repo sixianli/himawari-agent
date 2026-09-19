@@ -1,0 +1,42 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |node-services| apps/agent-service/test/production-runtime-tools.unit.test.ts (58 tests | 1 failed | 57 skipped) 17ms
+     × passes the active cancellation signal into preparation before Worker dispatch 16ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |node-services| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > passes the active cancellation signal into preparation before Worker dispatch
+AssertionError: expected undefined to be AbortSignal { aborted: true } // Object.is equality
+
+- Expected:
+AbortSignal {
+  Symbol(kEvents): Map {},
+  Symbol(events.maxEventTargetListeners): 0,
+  Symbol(events.maxEventTargetListenersWarned): false,
+  Symbol(kHandlers): Map {},
+  Symbol(kAborted): true,
+  Symbol(kReason): AbortError {
+    "message": "This operation was aborted",
+  },
+  Symbol(kComposite): false,
+}
+
++ Received:
+undefined
+
+ ❯ apps/agent-service/test/production-runtime-tools.unit.test.ts:48:22
+     46|     await tool.execute(invocation, { signal: controller.signal });
+     47|     expect(prepare).toHaveBeenCalledOnce();
+     48|     expect(received).toBe(controller.signal);
+       |                      ^
+     49|     expect(f.request).not.toHaveBeenCalled();
+     50|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 57 skipped (58)
+   Start at  01:37:48
+   Duration  781ms (transform 553ms, setup 0ms, import 678ms, tests 17ms, environment 0ms)

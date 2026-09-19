@@ -5,6 +5,7 @@ import type { SandboxExecutionRecord, WorkerExecuteRequest } from "@himawari-age
 import {
   executionV2MessageSchema,
   PI_FIXED_FILE_CONTRACT,
+  PI_PREPARED_FILE_CONTRACT,
   PI_WRITE_VERIFIER,
   piFileRecoveryOperationKey,
   type SandboxOperationBinding,
@@ -729,3 +730,211 @@ describe("fixed file recovery into the original SQLite invocation", () => {
     },
   );
 });
+
+describe("prepared file admission", () => {
+  it.each(["write", "edit"] as const)(
+    "stages concurrent %s requests before occupancy and preserves their frozen candidates",
+    async (tool) => {
+      const f = await productionSandboxScope(
+        {
+          ...descriptor,
+          operation: tool,
+          directoryOperations: ["read", "create", "update"],
+          contract: {
+            ...PI_PREPARED_FILE_CONTRACT,
+            kind: "verified_effect",
+            verifierRef: PI_WRITE_VERIFIER.ref,
+            verifierVersion: PI_WRITE_VERIFIER.version,
+            targetRef: PI_WRITE_VERIFIER.targetRef,
+          },
+        },
+        undefined,
+        {
+          resourceCeiling: {
+            maxWallTimeMs: 10000,
+            maxCpuTimeMs: 10000,
+            maxMemoryBytes: 268435456,
+            maxOutputBytes: 65536,
+            maxProgressEvents: 10,
+          },
+          realFileIdentity: true,
+          piParameters:
+            tool === "write"
+              ? { path: "file.txt", content: "candidate" }
+              : { path: "file.txt", edits: [{ oldText: "before", newText: "candidate" }] },
+        },
+      );
+      cleanups.push(f.close);
+      const filename = path.join(f.host.workspace, "file.txt");
+      await writeFile(filename, "before");
+      const secondCall = { ...f.call, toolCallId: "second-preparation" };
+      const secondId = `runtime-tool:${createHash("sha256")
+        .update(JSON.stringify([secondCall.runId, secondCall.toolCallId]))
+        .digest("hex")}`;
+      const secondInput = {
+        ...f.input,
+        invocationId: secondId,
+        idempotencyKey: secondId,
+        receiptRef: "receipt-second-preparation",
+      };
+      await f.persist(`runtime-tool-intent:${secondId.slice("runtime-tool:".length)}`, {
+        request: {
+          messageId: secondId,
+          causationId: secondCall.runId,
+          payload: { inputRef: secondInput.inputRef, capabilityHandleRef: secondInput.handleRef },
+        },
+      });
+      const database = openQualifiedDatabase(path.join(f.f.resource.stateRoot, "product.sqlite"));
+      try {
+        let ready!: () => void, proceed!: () => void;
+        const arrived = new Promise<void>((resolve) => {
+          ready = resolve;
+        });
+        const barrier = new Promise<void>((resolve) => {
+          proceed = resolve;
+        });
+        const original = ConstrainedHostFileSystem.prototype.stagePublication;
+        let staged = 0;
+        const interception = vi
+          .spyOn(ConstrainedHostFileSystem.prototype, "stagePublication")
+          .mockImplementation(async function (this: ConstrainedHostFileSystem, grant, bytes, mode) {
+            const publication = await original.call(this, grant, bytes, mode);
+            if (++staged <= 2) {
+              if (staged === 2) ready();
+              await barrier;
+            }
+            return publication;
+          });
+        const firstPromise = f.services.runtime.prepare(f.input, f.call);
+        const secondPromise = f.services.runtime.prepare(secondInput, secondCall);
+        const pending = Promise.all([firstPromise, secondPromise]);
+        // Reject on setup failure rather than hiding it behind a barrier timeout.
+        await Promise.race([
+          arrived,
+          pending.then(() => {
+            throw new Error("preparation bypassed barrier");
+          }),
+        ]);
+        expect(
+          database.prepare("SELECT count(*) AS n FROM sandbox_workspace_occupancy").get(),
+        ).toEqual({ n: 0 });
+        expect(
+          database.prepare("SELECT count(*) AS n FROM capability_invocation_receipts").get(),
+        ).toEqual({ n: 0 });
+        expect(await readFile(filename, "utf8")).toBe("before");
+        proceed();
+        const [first, second] = await pending;
+        interception.mockRestore();
+        if (!("reservation" in first) || !("reservation" in second))
+          throw new Error("expected reservation candidates");
+        const scope = await f.services.runtime.scopes.read(second.plan, f.call.runId);
+        expect(scope.preparedFile).toBeDefined();
+        if (!scope.preparedFile) throw new Error("missing prepared candidate");
+        expect(await readFile(scope.preparedFile.content.identity.canonicalPath, "utf8")).toBe(
+          "candidate",
+        );
+        expect(await f.services.runtime.prepare(secondInput, secondCall)).toEqual(second);
+        await f.services.brokerV2.preparations.reserve({ ...first, invocation: f.input });
+        await expect(
+          f.services.brokerV2.preparations.reserve({ ...second, invocation: secondInput }),
+        ).rejects.toThrow(/Workspace/);
+        await f.services.brokerV2.preparations.enqueue({ ...second, invocation: secondInput });
+        expect(
+          database.prepare("SELECT count(*) AS n FROM capability_invocation_receipts").get(),
+        ).toEqual({ n: 1 });
+        await writeFile(filename, "external change");
+        await expect(f.services.runtime.prepare(secondInput, secondCall)).rejects.toThrow(
+          "SANDBOX_FILE_VERSION_CHANGED",
+        );
+        expect(await readFile(filename, "utf8")).toBe("external change");
+        expect(await readFile(scope.preparedFile.content.identity.canonicalPath, "utf8")).toBe(
+          "candidate",
+        );
+      } finally {
+        vi.restoreAllMocks();
+        database.close();
+      }
+    },
+  );
+});
+
+it.each(["cancelled-before", "revoked-before", "stale-authority", "cancelled-during"])(
+  "does not acquire occupancy or lose candidates when preparation authority changes (%s)",
+  async (scenario) => {
+    const f = await productionSandboxScope(
+      {
+        ...descriptor,
+        operation: "write",
+        directoryOperations: ["read", "create", "update"],
+        contract: {
+          ...PI_PREPARED_FILE_CONTRACT,
+          kind: "verified_effect",
+          verifierRef: PI_WRITE_VERIFIER.ref,
+          verifierVersion: PI_WRITE_VERIFIER.version,
+          targetRef: PI_WRITE_VERIFIER.targetRef,
+        },
+      },
+      undefined,
+      {
+        resourceCeiling: {
+          maxWallTimeMs: 10000,
+          maxCpuTimeMs: 10000,
+          maxMemoryBytes: 268435456,
+          maxOutputBytes: 65536,
+          maxProgressEvents: 10,
+        },
+        realFileIdentity: true,
+        piParameters: { path: "file.txt", content: "candidate" },
+      },
+    );
+    cleanups.push(f.close);
+    const database = openQualifiedDatabase(path.join(f.f.resource.stateRoot, "product.sqlite"));
+    try {
+      const original = ConstrainedHostFileSystem.prototype.stagePublication;
+      const stagedPaths: string[] = [];
+      const intercepted = vi
+        .spyOn(ConstrainedHostFileSystem.prototype, "stagePublication")
+        .mockImplementation(async function (this: ConstrainedHostFileSystem, grant, bytes, mode) {
+          const prepared = await original.call(this, grant, bytes, mode);
+          stagedPaths.push(prepared.identity.canonicalPath);
+          if (scenario === "cancelled-during")
+            database.prepare("UPDATE runs SET status='cancelled' WHERE id=?").run(f.call.runId);
+          return prepared;
+        });
+      if (scenario === "cancelled-before")
+        database.prepare("UPDATE runs SET status='cancelled' WHERE id=?").run(f.call.runId);
+      if (scenario === "revoked-before")
+        database
+          .prepare("UPDATE capability_handles SET revoked_at=? WHERE id=?")
+          .run(T1, f.input.handleRef);
+      const input =
+        scenario === "stale-authority"
+          ? { ...f.input, authority: { ...f.input.authority, workerBootId: "stale-boot" } }
+          : f.input;
+      await expect(f.services.runtime.prepare(input, f.call)).rejects.toThrow();
+      if (scenario === "cancelled-during") {
+        expect(stagedPaths).toHaveLength(2);
+        expect(await readFile(stagedPaths[0] as string, "utf8")).toBe("candidate");
+        expect(
+          await f.artifacts().lookup({
+            runId: f.call.runId,
+            purpose: "trace",
+            operationKey: `sandbox-scope:${f.input.invocationId}`,
+          }),
+        ).toBeDefined();
+      } else expect(intercepted).not.toHaveBeenCalled();
+      expect(
+        database.prepare("SELECT count(*) AS n FROM sandbox_workspace_occupancy").get(),
+      ).toEqual({ n: 0 });
+      expect(
+        database.prepare("SELECT count(*) AS n FROM capability_invocation_receipts").get(),
+      ).toEqual({ n: 0 });
+      await expect(readFile(path.join(f.host.workspace, "file.txt"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      vi.restoreAllMocks();
+      database.close();
+    }
+  },
+);

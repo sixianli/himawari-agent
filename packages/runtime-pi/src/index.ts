@@ -37,3 +37,5 @@ export {
   type PiRuntimeResourcePort,
 } from "./pi-runtime-adapter.js";
 export { executeSandboxedPiCodingTool } from "./sandboxed-coding-executor.js";
+
+export { preparePiFileMutation } from "./prepare-file-mutation.js";

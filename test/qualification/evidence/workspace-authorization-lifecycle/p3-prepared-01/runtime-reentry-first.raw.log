@@ -1,0 +1,95 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.4504170000000158,"at":"2026-09-19T09:49:58.122Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.604249999999865,"at":"2026-09-19T09:49:58.160Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.5104999999998654,"at":"2026-09-19T09:49:58.161Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":2.6675420000001395,"at":"2026-09-19T09:49:58.165Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":2.2812920000001213,"at":"2026-09-19T09:49:58.168Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.15141700000003766,"at":"2026-09-19T09:49:58.175Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":35.073959000000286,"at":"2026-09-19T09:49:58.210Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.4447500000001128,"at":"2026-09-19T09:49:58.211Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.1391250000001492,"at":"2026-09-19T09:49:58.213Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.775000000000091,"at":"2026-09-19T09:49:58.214Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.49737499999992,"at":"2026-09-19T09:49:58.216Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":44.260957999999846,"at":"2026-09-19T09:49:58.260Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.9099999999998545,"at":"2026-09-19T09:49:58.261Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.4661250000003747,"at":"2026-09-19T09:49:58.263Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.0561670000001868,"at":"2026-09-19T09:49:58.264Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state changed-boot
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.563249999999698,"at":"2026-09-19T09:49:59.617Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state changed-boot
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":35.19791699999996,"at":"2026-09-19T09:49:59.653Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state changed-boot
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.653041999999914,"at":"2026-09-19T09:49:59.653Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state changed-boot
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.3584160000000338,"at":"2026-09-19T09:49:59.655Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state changed-boot
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.8229169999999613,"at":"2026-09-19T09:49:59.656Z"}
+
+ ❯ |integration| test/integration/production-sandbox-queue-reentry.test.ts (4 tests | 2 failed) 2184ms
+   × resumes a durable unconsumed queue with one original receipt and no deadline extension 799ms
+   × does not resume queue state changed-boot 467ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+TypeError: The database connection is not open
+ ❯ Database.prepare node_modules/better-sqlite3/lib/methods/wrappers.js:5:21
+ ❯ test/integration/production-sandbox-queue-reentry.test.ts:62:23
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |integration| test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state changed-boot
+TypeError: The database connection is not open
+ ❯ Database.prepare node_modules/better-sqlite3/lib/methods/wrappers.js:5:21
+ ❯ test/integration/production-sandbox-queue-reentry.test.ts:74:46
+     72|   if (state === "cancelled") await f.services.brokerV2.preparations.ca…
+     73|   if (state === "admitted") await f.services.brokerV2.preparations.res…
+     74|   if (state === "changed-boot") f.f.database.prepare("UPDATE sandbox_a…
+       |                                              ^
+     75|   const resumed = f.tool();
+     76|   await resumed.listAuthorized(f.call.runId, [f.input.handleRef]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed (4)
+   Start at  18:49:55
+   Duration  3.74s (transform 943ms, setup 0ms, import 1.46s, tests 2.18s, environment 0ms)

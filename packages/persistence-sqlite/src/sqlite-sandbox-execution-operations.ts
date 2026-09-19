@@ -11,6 +11,7 @@ import type {
 import { projectSandboxExecution } from "@himawari-agent/application/sandbox-execution-projection";
 import {
   PI_FIXED_FILE_CONTRACT,
+  PI_PREPARED_FILE_CONTRACT,
   piFileRecoveryOperationKey,
   type SandboxExecutionPlanV2,
   type SandboxJobIdentity,
@@ -102,6 +103,10 @@ export class SqliteSandboxExecutionOperations {
     const input = raw as Record<string, unknown>;
     if (!input || typeof input !== "object" || Array.isArray(input))
       return this.fail("PORT_INVALID_OPERATION", "Invalid sandbox journal request");
+    if (operation === "validatePreparation") {
+      this.db.transaction(() => this.authority.validateQueued(raw, owner, agent))();
+      return;
+    }
     if (operation === "readQueuedByInvocation") {
       if (!id(input["runId"]) || !id(input["invocationId"]))
         return this.fail("PORT_INVALID_OPERATION", "Invalid queued invocation locator");
@@ -951,7 +956,9 @@ export class SqliteSandboxExecutionOperations {
       const recovered =
         !exists &&
         current.plan.operationContract.ref === PI_FIXED_FILE_CONTRACT.ref &&
-        current.plan.operationContract.version === PI_FIXED_FILE_CONTRACT.version &&
+        [PI_FIXED_FILE_CONTRACT.version, PI_PREPARED_FILE_CONTRACT.version].some(
+          (version) => version === current.plan.operationContract.version,
+        ) &&
         current.plan.operationContract.kind === "verified_effect" &&
         ["write", "edit"].includes(current.plan.operation) &&
         this.db

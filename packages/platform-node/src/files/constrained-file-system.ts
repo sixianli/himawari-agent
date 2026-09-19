@@ -121,20 +121,8 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
   ) {
     bytes = new Uint8Array(bytes);
     grant = structuredClone(grant);
-    const target = await this.#resolve(grant, relativePath, false, true);
-    const parentChain = await this.#captureParentChain(grant, relativePath);
-    const publication = await this.#stage(grant, bytes, 0o600);
-    await hooks?.beforePublish(publication);
-    await this.#assertParentChain(grant, relativePath, parentChain);
-    await this.#assertStaged(grant, publication);
-    // link is an atomic no-replace publication on the same filesystem. Readers
-    // never see partially written final content; a pre-existing target wins.
-    await hooks?.assertCurrentAuthority?.();
-    await link(publication.identity.canonicalPath, target);
-    await unlink(publication.identity.canonicalPath);
-    await syncDirectory(path.dirname(target));
-    await syncDirectory(path.dirname(publication.identity.canonicalPath));
-    return this.#requiredSafeIdentity(grant, relativePath);
+    const publication = await this.stagePublication(grant, bytes, 0o600);
+    return this.publishPrepared(grant, relativePath, publication, null, new Uint8Array(), hooks);
   }
 
   async replaceAtomic(
@@ -145,13 +133,49 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     previousBytes: Uint8Array,
     hooks?: HostFilePublishHooks,
   ) {
-    bytes = new Uint8Array(bytes);
-    previousBytes = new Uint8Array(previousBytes);
-    expected = { ...expected };
     grant = structuredClone(grant);
-    const target = await this.#resolve(grant, relativePath, true);
+    expected = { ...expected };
+    previousBytes = new Uint8Array(previousBytes);
+    const publication = await this.stagePublication(grant, bytes, expected.mode & 0o777);
+    return this.publishPrepared(grant, relativePath, publication, expected, previousBytes, hooks);
+  }
+
+  /** Preparation writes only our private recovery area, never the target or its parents. */
+  async stagePublication(grant: HostDirectoryGrant, bytes: Uint8Array, mode = 0o600) {
+    return this.#stage(structuredClone(grant), new Uint8Array(bytes), mode);
+  }
+
+  async readPublication(grant: HostDirectoryGrant, publication: HostFilePublication) {
+    grant = structuredClone(grant);
+    publication = structuredClone(publication);
+    await this.#assertStaged(grant, publication);
+    return this.read(
+      grant,
+      publication.stagedRelativePath,
+      Math.max(1, publication.identity.sizeBytes),
+      publication.identity,
+    );
+  }
+
+  /** Caller owns commit admission. A prepared inode is never regenerated on conflict. */
+  async publishPrepared(
+    grant: HostDirectoryGrant,
+    relativePath: string,
+    publication: HostFilePublication,
+    expected: HostFileIdentity | null,
+    previousBytes: Uint8Array,
+    hooks?: HostFilePublishHooks,
+  ) {
+    grant = structuredClone(grant);
+    publication = structuredClone(publication);
+    expected = expected ? { ...expected } : null;
+    previousBytes = new Uint8Array(previousBytes);
+    await this.#assertStaged(grant, publication);
+    const target = await this.#resolve(grant, relativePath, expected !== null, expected === null);
     const parentChain = await this.#captureParentChain(grant, relativePath);
+    const recoveryRoot = path.dirname(publication.identity.canonicalPath);
     const assertUnchanged = async () => {
+      if (!expected) return;
       const before = await this.#requiredSafeIdentity(grant, relativePath);
       if (identityKey(before) !== identityKey(expected))
         throw new Error("HOST_FILE_IDENTITY_CHANGED");
@@ -159,28 +183,32 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
       if (!Buffer.from(current).equals(previousBytes)) throw new Error("HOST_FILE_CONTENT_CHANGED");
     };
     await assertUnchanged();
-    const publication = await this.#stage(grant, bytes, expected.mode & 0o777);
-    const recoveryRoot = path.dirname(publication.identity.canonicalPath);
-    const recovery = path.join(
-      recoveryRoot,
-      `${createHash("sha256").update(relativePath).digest("hex")}-${randomUUID()}.bak`,
-    );
-    await this.#assertParentChain(grant, relativePath, parentChain);
-    await copyFile(target, recovery, constants.COPYFILE_EXCL);
-    const backup = await open(recovery, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try {
-      await backup.sync();
-    } finally {
-      await backup.close();
+    if (expected) {
+      const recovery = path.join(
+        recoveryRoot,
+        `${createHash("sha256").update(relativePath).digest("hex")}-${randomUUID()}.bak`,
+      );
+      await this.#assertParentChain(grant, relativePath, parentChain);
+      await copyFile(target, recovery, constants.COPYFILE_EXCL);
+      const backup = await open(recovery, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        await backup.sync();
+      } finally {
+        await backup.close();
+      }
+      await syncDirectory(recoveryRoot);
     }
-    await syncDirectory(recoveryRoot);
     await hooks?.beforePublish(publication);
     await this.#assertParentChain(grant, relativePath, parentChain);
     await this.#assertStaged(grant, publication);
-    // External writers must be isolated for a strict compare-and-replace guarantee.
     await assertUnchanged();
     await hooks?.assertCurrentAuthority?.();
-    await rename(publication.identity.canonicalPath, target);
+    // External uncooperative writers are detected, not a strict filesystem CAS.
+    if (expected) await rename(publication.identity.canonicalPath, target);
+    else {
+      await link(publication.identity.canonicalPath, target);
+      await unlink(publication.identity.canonicalPath);
+    }
     await syncDirectory(path.dirname(target));
     await syncDirectory(recoveryRoot);
     return this.#requiredSafeIdentity(grant, relativePath);

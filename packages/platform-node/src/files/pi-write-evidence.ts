@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   PI_RUNNER_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
+  PI_PREPARED_FILE_CONTRACT,
   PI_WRITE_VERIFIER,
   type SandboxExecutionPlanV2,
   type SandboxScope,
@@ -38,9 +39,11 @@ export function verifyPiWriteEvidence(input: {
   if (
     contract.kind !== "verified_effect" ||
     contract.ref !== PI_RUNNER_CONTRACT.ref ||
-    ![PI_RUNNER_CONTRACT.version, PI_FIXED_FILE_CONTRACT.version].some(
-      (version) => version === contract.version,
-    ) ||
+    ![
+      PI_RUNNER_CONTRACT.version,
+      PI_FIXED_FILE_CONTRACT.version,
+      PI_PREPARED_FILE_CONTRACT.version,
+    ].some((version) => version === contract.version) ||
     contract.verifierRef !== PI_WRITE_VERIFIER.ref ||
     contract.verifierVersion !== PI_WRITE_VERIFIER.version ||
     contract.targetRef !== PI_WRITE_VERIFIER.targetRef ||

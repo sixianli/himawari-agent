@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a5c447a5f593c9d9e6238f4d29d9c905de8a1a2a836510b442cfec66148952b0"
+contract_sha256: "sha256:cdcfe88d43b63bc1dada1de8971311d56fad4310eb54fd969572c010a189c46d"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,9 @@ date: "2026-08-27"
 # 停机加密 Authority Transfer Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/production-file-preparation.ts
+- packages/runtime-pi/src/prepare-file-mutation.ts
+- packages/runtime-pi/src/prepare-file-mutation-worker.ts
 - packages/persistence-sqlite/src/migrations/0037_fixed_file_recovery_artifacts.sql
 - packages/platform-node/src/files/pi-file-publication.ts
 - apps/agent-service/src/production-sandbox-file-recovery.ts
@@ -362,6 +365,16 @@ Schema 36 不重写旧记录；它为新增 JSON 字段建立 writer 版本屏�
 合同 1 继续使用目录级协调。合同 2 仅用于固定目标 read/write/edit；新 Worker 在启动 Job Host 前拒绝缺少文件快照的新合同，旧 Worker 会拒绝未知合同版本。它仍复用原 Job Host、SRT 与 Pi Operations；不能仅在登记数据里把版本改成 2 就视为安装资格通过。新安装的实际字节、冻结快照和目标主机资格必须匹配后才可采用新合同。
 
 恢复不能把目标版本冲突改写为允许覆盖。文件型 claim 同时保留父目录名称槽位和当前文件身份，原子替换后名称槽位仍冲突；硬链接、符号链接和跨设备目标被拒绝。名称保守归一化可能在区分大小写的文件系统上多排队，不能据此宣称所有别名场景的并行资格已通过。默认核验读取仍要求当前路径不变；固定文件读取可读完已经打开的完整旧版本，不能推广成任意原地写入都可并行。回退仍要求停止服务并恢复匹配旧版本的完整恢复点。
+
+### 固定文件合同 3：先准备候选，再取得提交占用
+
+`pi-coding-tool@3` 仅用于固定 `write/edit`；Schema 保持 41。准入前以 Pi Operations 的不可变快照准备完整候选，受控暂存区保存候选内容及工具结果；其 inode、摘要与原文件版本绑定到已有受保护 Scope artifact。此阶段没有调用消费回执或工作区占用，正式目标及缺失父目录保持不变。提交仍复用原持久队列、Worker、发布记录和原宿主释放证明；不能因候选已准备就提前派发或宣布保存成功。细节见[本批实施与验证范围](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
+
+备份、迁移与恢复须一起保留 Scope Payload、排队身份及工作区 `.himawari-recovery/` 中的候选与结果；数据库备份不包含这些暂存文件。候选本身可能是唯一结果，不自动清理、不按当前文件重建旧基线、不覆盖后续编辑。准备后取消或版本冲突不授权重放；跨 boot/fence 的自动重新绑定仍未实现。旧程序不理解合同 3 或新增 Scope 字段时必须停止对应执行，不删字段降级，也不能仅凭 Schema 相同认定回退兼容。
+
+准备计算的线程入口必须随安装包交付；线程采用请求的时间预算、V8 堆上限和 Stop 信号，V8 堆上限不代表 OS 总内存资格。停止只在线程终止后返回，不能把主调用返回当作线程已停止。
+
+新合同尚无生产切换或 Linux 资格。采用前须对实际安装字节、最终运行身份和目标文件系统完成资格并明确选择合同 3；旧合同 1/2 的行为保留，普通源码升级不自动改部署绑定。本节不授权启用模型、付费调用、生产迁移或部署。
 
 ### Schema 37 固定文件发布恢复
 

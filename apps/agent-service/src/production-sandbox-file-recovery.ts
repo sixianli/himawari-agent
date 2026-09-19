@@ -8,6 +8,7 @@ import {
 } from "@himawari-agent/application";
 import {
   PI_FIXED_FILE_CONTRACT,
+  PI_PREPARED_FILE_CONTRACT,
   PI_WRITE_VERIFIER,
   sandboxExecutionFactsSchema,
 } from "@himawari-agent/execution-contracts";
@@ -35,7 +36,9 @@ export function createProductionSandboxFileRecovery(options: {
     if (
       plan.mode !== "foreground" ||
       contract.ref !== PI_FIXED_FILE_CONTRACT.ref ||
-      contract.version !== PI_FIXED_FILE_CONTRACT.version ||
+      ![PI_FIXED_FILE_CONTRACT.version, PI_PREPARED_FILE_CONTRACT.version].some(
+        (version) => version === contract.version,
+      ) ||
       contract.kind !== "verified_effect" ||
       contract.verifierRef !== PI_WRITE_VERIFIER.ref ||
       contract.verifierVersion !== PI_WRITE_VERIFIER.version ||

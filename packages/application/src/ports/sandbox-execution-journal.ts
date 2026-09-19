@@ -187,6 +187,8 @@ export type SandboxExecutionAdmissionRecord =
     }
   | { readonly phase: "bound"; readonly record: SandboxExecutionRecord };
 export interface SandboxExecutionPreparationPort {
+  /** Check current execution authority without consuming usage, queueing or claiming resources. */
+  validatePreparation(input: ConsumeCapabilityInvocationInput): Promise<void>;
   /** Atomically accept a fresh host proof and release only this stopped attempt's claims. */
   releaseReservation(input: {
     readonly identity: SandboxJobIdentity;

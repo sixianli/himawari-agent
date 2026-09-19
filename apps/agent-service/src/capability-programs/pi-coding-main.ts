@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -5,6 +6,7 @@ import { scanMachineSecrets } from "@himawari-agent/application";
 import { piRunnerInputSchema } from "@himawari-agent/execution-contracts";
 import {
   createSandboxedCodingOperations,
+  ConstrainedHostFileSystem,
   createPiFilePublicationJournal,
   exportPiOutputFile,
 } from "@himawari-agent/platform-node";
@@ -107,6 +109,7 @@ try {
     },
     ...(["read", "edit", "write"].includes(input.tool) && target ? { targetPath: target } : {}),
     ...(input.scope.fileTarget ? { expectedTarget: input.scope.fileTarget } : {}),
+    ...(input.scope.preparedFile ? { preparedFile: input.scope.preparedFile } : {}),
     shell: path.join(binaryDirectory, "bash"),
     privateDirectory: input.privateDirectory,
     binaryDirectory,
@@ -130,31 +133,80 @@ try {
     if (end > emittedBytes) process.stdout.write(all.subarray(emittedBytes, end));
     emittedBytes = Math.max(emittedBytes, end);
   };
-  const result = await executeSandboxedPiCodingTool({
-    name: input.tool,
-    toolCallId: input.scope.toolCallId,
-    cwd: input.workspace,
-    parameters,
-    operations: {
-      ...operations,
-      async executeCommand(command) {
-        const completed = await operations.executeCommand({
-          ...command,
-          onData: (bytes) => {
-            command.onData(bytes);
-            if (input.executionMode !== "foreground") {
-              commandBytes += bytes.length;
-              if (commandBytes > input.maxOutputBytes) throw new Error("PI_RESULT_OUTPUT_LIMIT");
-              commandOutput.push(Buffer.from(bytes));
-              streamOutput(false);
-            }
+  const commitPrepared = async () => {
+    const prepared = input.scope.preparedFile;
+    if (!prepared || !target || !input.scope.fileTarget || !["write", "edit"].includes(input.tool))
+      throw new Error("PI_PREPARED_TARGET_REQUIRED");
+    const grant = {
+      id: input.scope.directoryGrant.ref,
+      revision: input.scope.directoryGrant.revision,
+      hostId,
+      canonicalRootId: input.scope.directoryGrant.canonicalRootId,
+      displayPath: input.workspace,
+      operations: input.scope.directoryGrant.operations,
+      authorizationRef: input.scope.directoryGrant.authorizationRef,
+      expiresAt: input.scope.expiresAt,
+      revokedAt: null,
+      dataClassification: "private" as const,
+      disclosure: "worker" as const,
+      pathPolicy: "same_filesystem_no_links" as const,
+      mountPolicy: "fixed_device" as const,
+    };
+    const platform = new ConstrainedHostFileSystem();
+    const bytes = await platform.readPublication(grant, prepared.content);
+    const resultBytes = await platform.readPublication(grant, prepared.result);
+    if (
+      createHash("sha256").update(bytes).digest("hex") !== prepared.contentDigest ||
+      createHash("sha256").update(resultBytes).digest("hex") !== prepared.resultDigest ||
+      resultBytes.length > input.maxOutputBytes
+    )
+      throw new Error("PI_PREPARED_CONTENT_CHANGED");
+    const result = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(resultBytes));
+    if (
+      !result ||
+      result.isError !== false ||
+      !Array.isArray(result.content) ||
+      result.content.some(
+        (part: { type?: unknown; text?: unknown }) =>
+          part.type !== "text" || typeof part.text !== "string",
+      )
+    )
+      throw new Error("PI_PREPARED_RESULT_INVALID");
+    await operations.writeFile(target, new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    return result as {
+      content: { type: "text"; text: string }[];
+      details?: unknown;
+      isError: boolean;
+    };
+  };
+  const result = input.scope.preparedFile
+    ? await commitPrepared()
+    : await executeSandboxedPiCodingTool({
+        name: input.tool,
+        toolCallId: input.scope.toolCallId,
+        cwd: input.workspace,
+        parameters,
+        operations: {
+          ...operations,
+          async executeCommand(command) {
+            const completed = await operations.executeCommand({
+              ...command,
+              onData: (bytes) => {
+                command.onData(bytes);
+                if (input.executionMode !== "foreground") {
+                  commandBytes += bytes.length;
+                  if (commandBytes > input.maxOutputBytes)
+                    throw new Error("PI_RESULT_OUTPUT_LIMIT");
+                  commandOutput.push(Buffer.from(bytes));
+                  streamOutput(false);
+                }
+              },
+            });
+            commandExitCode = completed.exitCode;
+            return completed;
           },
-        });
-        commandExitCode = completed.exitCode;
-        return completed;
-      },
-    },
-  });
+        },
+      });
   if (input.executionMode !== "foreground") {
     streamOutput(true);
     process.exitCode = commandExitCode ?? (result.isError ? 1 : 0);

@@ -117,6 +117,7 @@ export type ProductionRuntimeSandbox = Omit<SandboxAdmission, "prepare"> & {
     admission: ConsumeCapabilityInvocationInput,
     invocation: RuntimeToolInvocation,
     parentCall?: RuntimeToolInvocation,
+    signal?: AbortSignal,
   ) => ReturnType<SandboxAdmission["prepare"]>;
 };
 
@@ -418,7 +419,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     const result =
       invocation.capabilityHandleRef === null && this.#options.fileRead
         ? this.#executeRequest(invocation, key, signal)
-        : this.#execute(invocation, key, fingerprint);
+        : this.#execute(invocation, key, fingerprint, false, undefined, signal);
     this.#inFlight.set(key, { fingerprint: attemptFingerprint, result });
     void result.finally(() => this.#inFlight.delete(key)).catch(() => undefined);
     return result;
@@ -515,6 +516,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           digest(executionIdentity(child)),
           true,
           invocation,
+          signal,
         );
       },
     };
@@ -579,6 +581,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     fingerprint: string,
     internal = false,
     parentCall?: RuntimeToolInvocation,
+    signal?: AbortSignal,
   ): Promise<RuntimeToolExecutionResult> {
     const handle = await this.#validate(invocation, internal);
     const maximum = await this.#options.maximumResourceCeiling?.(
@@ -641,7 +644,16 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             );
           // Only the durable queue permits re-entry. reserve still atomically
           // compares its snapshot and commits at most one invocation receipt.
-          return this.#dispatch(invocation, key, handle, original, ceiling, internal, parentCall);
+          return this.#dispatch(
+            invocation,
+            key,
+            handle,
+            original,
+            ceiling,
+            internal,
+            parentCall,
+            signal,
+          );
         }
       }
       let replay = storedResult
@@ -741,8 +753,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     });
     // A concurrent writer won the durable operation key. Never forward a second request.
     if (committed.replayed)
-      return this.#execute(invocation, key, fingerprint, internal, parentCall);
-    return this.#dispatch(invocation, key, handle, request, ceiling, internal, parentCall);
+      return this.#execute(invocation, key, fingerprint, internal, parentCall, signal);
+    return this.#dispatch(invocation, key, handle, request, ceiling, internal, parentCall, signal);
   }
 
   async #dispatch(
@@ -753,6 +765,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     ceiling: CapabilityResourceCeiling,
     internal: boolean,
     parentCall?: RuntimeToolInvocation,
+    signal?: AbortSignal,
   ): Promise<RuntimeToolExecutionResult> {
     const deadlineAt = request.payload.deadlineAt;
     if (
@@ -796,7 +809,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       const delegation = sandbox
         ? this.#createDelegation({
             ...sandbox,
-            prepare: (admission) => sandbox.prepare(admission, invocation, parentCall),
+            prepare: (admission) => sandbox.prepare(admission, invocation, parentCall, signal),
           })
         : this.#delegation;
       await beforeDeadline(

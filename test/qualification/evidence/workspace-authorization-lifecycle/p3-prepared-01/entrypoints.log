@@ -1,0 +1,12 @@
+
+> himawari-agent@0.0.0 test:services
+> vitest run --config vitest.workspace.ts --project node-services apps/agent-service/test/pi-coding-program.unit.test.ts apps/agent-service/test/production-coding-workflow.unit.test.ts apps/agent-service/test/production-runtime-tools.unit.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+
+ Test Files  3 passed (3)
+      Tests  110 passed (110)
+   Start at  01:02:56
+   Duration  2.34s (transform 3.89s, setup 0ms, import 3.78s, tests 2.22s, environment 0ms)

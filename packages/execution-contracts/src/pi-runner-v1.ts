@@ -13,6 +13,8 @@ import {
 export const PI_RUNNER_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "1" });
 /** Version 2 fixes the target and carries the host's pre-execution file version. */
 export const PI_FIXED_FILE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "2" });
+/** Version 3 prepares write/edit candidates before workspace admission. */
+export const PI_PREPARED_FILE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "3" });
 /** Protected Agent artifact; separate from the original Worker's immutable output. */
 export const piFileRecoveryOperationKey = (invocationId: string) =>
   `pi-file-recovery:${invocationId}`;

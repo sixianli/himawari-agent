@@ -1,6 +1,9 @@
 import { ApplicationPortError, type RuntimeToolInvocation } from "@himawari-agent/application";
 import { describe, expect, it, vi } from "vitest";
-import { ProductionRuntimeTools } from "../src/production-runtime-tools.js";
+import {
+  ProductionRuntimeTools,
+  type ProductionRuntimeSandbox,
+} from "../src/production-runtime-tools.js";
 import { piFileRecoveryOperationKey } from "@himawari-agent/execution-contracts";
 import {
   runtimeToolFixture as fixture,
@@ -16,6 +19,36 @@ async function exposed(f: ReturnType<typeof fixture>) {
 }
 
 describe("ProductionRuntimeTools", () => {
+  it("passes the active cancellation signal into preparation before Worker dispatch", async () => {
+    const f = fixture();
+    const controller = new AbortController();
+    let received: AbortSignal | undefined;
+    const unused = async (): Promise<never> => {
+      throw new Error("unexpected admission");
+    };
+    const prepare = vi.fn<ProductionRuntimeSandbox["prepare"]>(
+      async (_input, _call, _parent, signal): Promise<never> => {
+        received = signal;
+        controller.abort();
+        signal?.throwIfAborted();
+        throw new Error("preparation did not receive cancellation");
+      },
+    );
+    const tool = new ProductionRuntimeTools({
+      ...f.options,
+      sandbox: {
+        journal: { admit: unused },
+        scopes: { read: unused },
+        prepare,
+      },
+    });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    await tool.execute(invocation, { signal: controller.signal });
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(received).toBe(controller.signal);
+    expect(f.request).not.toHaveBeenCalled();
+  });
+
   it("binds a protected recovery checkpoint before dispatch and preserves it on replay", async () => {
     const f = fixture();
     const call = {

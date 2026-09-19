@@ -5,6 +5,8 @@ import { lstat, realpath } from "node:fs/promises";
 import {
   sandboxFileTargetSchema,
   type SandboxFileTarget,
+  type SandboxPreparedFile,
+  sandboxPreparedFileSchema,
 } from "@himawari-agent/execution-contracts";
 import type {
   GovernedCodingOperationsPort,
@@ -21,6 +23,7 @@ export async function createSandboxedCodingOperations(input: {
   readonly grant: HostDirectoryGrant;
   readonly targetPath?: string;
   readonly expectedTarget?: SandboxFileTarget;
+  readonly preparedFile?: SandboxPreparedFile;
   readonly shell: string;
   readonly privateDirectory: string;
   readonly binaryDirectory: string;
@@ -45,6 +48,13 @@ export async function createSandboxedCodingOperations(input: {
     input.expectedTarget === undefined
       ? undefined
       : sandboxFileTargetSchema.parse(structuredClone(input.expectedTarget));
+  const preparedFile =
+    input.preparedFile === undefined
+      ? undefined
+      : sandboxPreparedFileSchema.parse(structuredClone(input.preparedFile));
+  if (preparedFile && (!expectedTarget || !fixedTarget))
+    throw new Error("PI_PREPARED_TARGET_REQUIRED");
+  let writeStarted = false;
   const baseline = new Map<string, { identity: HostFileIdentity; bytes: Uint8Array } | null>();
   const check = () => {
     input.signal?.throwIfAborted();
@@ -163,6 +173,8 @@ export async function createSandboxedCodingOperations(input: {
     },
     async writeFile(absolute, content) {
       const name = relative(absolute);
+      if (preparedFile && writeStarted) throw new Error("PI_MULTIPLE_WRITES_UNSUPPORTED");
+      writeStarted = true;
       if (!baseline.has(name)) throw new Error("PI_WRITE_BASELINE_MISSING");
       const previous = baseline.get(name);
       if (!grant.operations.includes(previous ? "update" : "create"))
@@ -188,7 +200,27 @@ export async function createSandboxedCodingOperations(input: {
           await assertExpectedParents();
         },
       };
-      if (previous)
+      if (preparedFile) {
+        if (
+          previous &&
+          (previous.identity.mode & 0o777) !== (preparedFile.content.identity.mode & 0o777)
+        )
+          throw new Error("PI_FILE_METADATA_CHANGED");
+        const staged = await platform.readPublication(grant, preparedFile.content);
+        if (
+          createHash("sha256").update(staged).digest("hex") !== preparedFile.contentDigest ||
+          !Buffer.from(staged).equals(bytes)
+        )
+          throw new Error("PI_PREPARED_CONTENT_CHANGED");
+        await platform.publishPrepared(
+          grant,
+          name,
+          preparedFile.content,
+          previous?.identity ?? null,
+          previous?.bytes ?? new Uint8Array(),
+          hooks,
+        );
+      } else if (previous)
         await platform.replaceAtomic(grant, name, previous.identity, bytes, previous.bytes, hooks);
       else await platform.createExclusive(grant, name, bytes, hooks);
       const observed = await platform.read(grant, name, Math.max(1, bytes.length));

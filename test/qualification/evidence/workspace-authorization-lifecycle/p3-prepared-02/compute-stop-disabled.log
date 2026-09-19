@@ -1,0 +1,52 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |pi-compat| packages/runtime-pi/test/preparation-worker.compat.test.ts (2 tests | 2 failed) 54ms
+   × stops running synchronous computation on timeout before settling 36ms
+   × stops running synchronous computation on cancel before settling 17ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |pi-compat| packages/runtime-pi/test/preparation-worker.compat.test.ts > stops running synchronous computation on timeout before settling
+AssertionError: expected 1 to be -1 // Object.is equality
+
+- Expected
++ Received
+
+- -1
++ 1
+
+ ❯ packages/runtime-pi/test/preparation-worker.compat.test.ts:36:31
+     34|       // Node sets -1 only when the worker is no longer running. A rej…
+     35|       // alone is insufficient evidence that synchronous computation s…
+     36|       expect(worker.threadId).toBe(-1);
+       |                               ^
+     37|     } finally {
+     38|       vi.useRealTimers();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |pi-compat| packages/runtime-pi/test/preparation-worker.compat.test.ts > stops running synchronous computation on cancel before settling
+AssertionError: expected 2 to be -1 // Object.is equality
+
+- Expected
++ Received
+
+- -1
++ 2
+
+ ❯ packages/runtime-pi/test/preparation-worker.compat.test.ts:36:31
+     34|       // Node sets -1 only when the worker is no longer running. A rej…
+     35|       // alone is insufficient evidence that synchronous computation s…
+     36|       expect(worker.threadId).toBe(-1);
+       |                               ^
+     37|     } finally {
+     38|       vi.useRealTimers();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  01:33:11
+   Duration  1.41s (transform 38ms, setup 0ms, import 1.22s, tests 54ms, environment 0ms)

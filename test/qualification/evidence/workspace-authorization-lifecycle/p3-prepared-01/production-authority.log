@@ -1,0 +1,200 @@
+
+> himawari-agent@0.0.0 test:integration
+> vitest run --config vitest.workspace.ts --project integration test/integration/production-sandbox-lineage.test.ts test/integration/sandbox-v2-payload-broker.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-lineage.test.ts > does not acquire occupancy or lose candidates when preparation authority changes (stale-authority)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.2590409999975236,"at":"2026-09-19T15:59:43.595Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > does not acquire occupancy or lose candidates when preparation authority changes (stale-authority)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":41.33316699999705,"at":"2026-09-19T15:59:43.636Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > does not acquire occupancy or lose candidates when preparation authority changes (stale-authority)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.34724999999889405,"at":"2026-09-19T15:59:43.637Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > does not acquire occupancy or lose candidates when preparation authority changes (stale-authority)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7593329999945126,"at":"2026-09-19T15:59:43.638Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > does not acquire occupancy or lose candidates when preparation authority changes (stale-authority)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5918339999989257,"at":"2026-09-19T15:59:43.639Z"}
+
+ ❯ |integration| test/integration/production-sandbox-lineage.test.ts (35 tests | 1 failed) 29207ms
+   × does not acquire occupancy or lose candidates when preparation authority changes (stale-authority) 535ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-lineage.test.ts > does not acquire occupancy or lose candidates when preparation authority changes (stale-authority)
+AssertionError: promise resolved "{ plan: { …(19) }, …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "plan": {
++     "authorizationRef": "grant-capability-invocation",
++     "backendRef": "srt",
++     "binding": {
++       "profileRef": "profile-fixture",
++       "qualificationRef": "qualification-fixture",
++       "requiredGuarantees": [
++         "filesystem_default_deny",
++         "network_allowlist",
++         "clean_environment",
++         "bounded_output",
++         "wall_clock_stop",
++         "resource_observation",
++         "durable_start_admission",
++         "unknown_quarantine",
++         "restart_reconciliation",
++         "best_effort_stop",
++       ],
++       "runnerDigest": "118a24b6818faf39af4a411ffb22a2023f009a00b6c7552ecd0ad0402bc971ec",
++       "runtimeDigest": "7b94266a459f2c14f63c2d589913b26c7bd5ab79568fc2164b55312619cabbbb",
++       "scopeDigest": "fa8f167968ed85f8e0c74e5213dd97c29cb4c0b0843431f3ceb1f4294d37eb4a",
++       "scopeRef": "scope-id:2",
++     },
++     "capabilityRef": "capability-invocation",
++     "capabilityVersion": "1.0.0",
++     "effectiveDeadlineAt": "2026-09-04T00:05:00.000Z",
++     "environmentId": "environment:33cd2dfb27afb7eef620a3427f4d91180bf91e6e3ecf5403beba3e6d0de3b936",
++     "executionLease": {
++       "authorityEpoch": 1,
++       "authorityFencingToken": 1,
++       "authorityLeaseId": "lease-capability-invocation",
++       "consumerId": "sandbox-consumer",
++       "deploymentId": "deployment-capability-invocation",
++       "executionLeaseId": "sandbox-lease",
++       "expectedLeaseRevision": 1,
++       "fencingToken": 1,
++     },
++     "handleRef": "handle-capability-invocation-grant",
++     "identity": {
++       "agentId": "agent-capability-invocation",
++       "attemptId": "sandbox-attempt:33cd2dfb27afb7eef620a3427f4d91180bf91e6e3ecf5403beba3e6d0de3b936",
++       "hostId": "sandbox-host",
++       "invocationId": "runtime-tool:e7c148531fbe18bbd81a8deef38f14a2c012fa1b22f4e56cf000684822ac9075",
++       "jobId": "jM80t-yevt-72IKNCf02RGAv5Hm4-z1QDvro-bQ3juTY",
++       "ownerId": "owner-capability-invocation",
++       "receiptRef": "receipt-capability-invocation",
++       "runId": "run-capability-invocation",
++       "threadId": "thread-capability-invocation",
++       "toolCallId": "tool-write",
++     },
++     "inputRef": "payload-pi-parameters",
++     "mode": "foreground",
++     "modelRef": "model-fixture",
++     "operation": "write",
++     "operationContract": {
++       "kind": "verified_effect",
++       "ref": "pi-coding-tool",
++       "targetRef": "pi-input:path",
++       "verifierRef": "pi-atomic-write",
++       "verifierVersion": "1",
++       "version": "3",
++     },
++     "originalDeadlineAt": "2026-09-04T00:05:00.000Z",
++     "requestedAt": "2026-09-04T00:00:01.000Z",
++     "resourceCeiling": {
++       "maxCpuTimeMs": 1000,
++       "maxMemoryBytes": 1000000,
++       "maxOutputBytes": 4096,
++       "maxProgressEvents": 10,
++       "maxWallTimeMs": 1000,
++     },
++     "schemaVersion": "sandbox-execution.v2",
++   },
++   "reservation": {
++     "createdAt": "2026-09-04T00:00:01.000Z",
++     "environmentId": "environment:33cd2dfb27afb7eef620a3427f4d91180bf91e6e3ecf5403beba3e6d0de3b936",
++     "identity": {
++       "agentId": "agent-capability-invocation",
++       "attemptId": "sandbox-attempt:33cd2dfb27afb7eef620a3427f4d91180bf91e6e3ecf5403beba3e6d0de3b936",
++       "hostId": "sandbox-host",
++       "invocationId": "runtime-tool:e7c148531fbe18bbd81a8deef38f14a2c012fa1b22f4e56cf000684822ac9075",
++       "jobId": "jM80t-yevt-72IKNCf02RGAv5Hm4-z1QDvro-bQ3juTY",
++       "ownerId": "owner-capability-invocation",
++       "receiptRef": "receipt-capability-invocation",
++       "runId": "run-capability-invocation",
++       "threadId": "thread-capability-invocation",
++       "toolCallId": "tool-write",
++     },
++     "mode": "foreground",
++     "resourceRef": null,
++     "schemaVersion": "sandbox-preparation.v1",
++     "sequence": 1,
++     "workspaceConflictRefs": [
++       "workspace:9a8c1fdeb20468fe106cb18021c7bed6b68ff3b13318f3f22cd3c4916112fbb3",
++     ],
++   },
++   "workspaces": [
++     {
++       "access": "write",
++       "canonicalRootId": "16777233:390225318",
++       "file": {
++         "atomicPublish": true,
++         "identity": null,
++         "name": "file.txt",
++       },
++       "hostId": "sandbox-host",
++       "lineage": [
++         {
++           "device": "16777233",
++           "inode": "2",
++         },
++         {
++           "device": "16777233",
++           "inode": "386813580",
++         },
++         {
++           "device": "16777233",
++           "inode": "386813614",
++         },
++         {
++           "device": "16777233",
++           "inode": "386829322",
++         },
++         {
++           "device": "16777233",
++           "inode": "27224",
++         },
++         {
++           "device": "16777233",
++           "inode": "27225",
++         },
++         {
++           "device": "16777233",
++           "inode": "27228",
++         },
++         {
++           "device": "16777233",
++           "inode": "390225304",
++         },
++         {
++           "device": "16777233",
++           "inode": "390225318",
++         },
++       ],
++       "ref": "workspace:9a8c1fdeb20468fe106cb18021c7bed6b68ff3b13318f3f22cd3c4916112fbb3",
++     },
++   ],
+  }
+
+ ❯ test/integration/production-sandbox-lineage.test.ts:820:62
+    818|       if (scenario === "revoked-before") database.prepare("UPDATE capa…
+    819|       const input = scenario === "stale-authority" ? { ...f.input, aut…
+    820|       await expect(f.services.runtime.prepare(input, f.call)).rejects.…
+       |                                                              ^
+    821|       if (scenario === "cancelled-during") {
+    822|         expect(stagedPaths).toHaveLength(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 45 passed (46)
+   Start at  00:59:09
+   Duration  37.71s (transform 1.73s, setup 0ms, import 5.78s, tests 31.66s, environment 0ms)

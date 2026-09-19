@@ -106,8 +106,60 @@ export const sandboxFileTargetSchema: Schema<SandboxFileTarget> = {
     return Object.freeze({ ...result, ...(absent ? { missingParents: absent } : {}) });
   },
 };
+const publicationPath: Schema<string> = {
+  parse(value, path = "$") {
+    if (
+      typeof value !== "string" ||
+      value.length > 4096 ||
+      !value.startsWith("/") ||
+      !/\/\.himawari-recovery\/staged-[0-9a-f-]{36}\.tmp$/.test(value) ||
+      value.split("/").some((part) => part === "." || part === "..")
+    )
+      throw new ContractValidationError(path, "invalid publication path");
+    return value;
+  },
+};
+const stagedPath: Schema<string> = {
+  parse(value, path = "$") {
+    if (
+      typeof value !== "string" ||
+      !/^\.himawari-recovery\/staged-[0-9a-f-]{36}\.tmp$/.test(value)
+    )
+      throw new ContractValidationError(path, "invalid staged path");
+    return value;
+  },
+};
+const finiteTime: Schema<number> = {
+  parse(value, path = "$") {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+      throw new ContractValidationError(path, "invalid file time");
+    return value;
+  },
+};
+const publication = object({
+  stagedRelativePath: stagedPath,
+  identity: object({
+    canonicalPath: publicationPath,
+    device: machineString,
+    inode: machineString,
+    mode: integer(0),
+    linkCount: integer(1, 1),
+    sizeBytes: integer(0, 16777216),
+    modifiedAtMillis: finiteTime,
+  }),
+});
+/** Host-created immutable candidates; these fields are never model arguments. */
+export const sandboxPreparedFileSchema = object({
+  schemaVersion: literal("sandbox-prepared-file.v1"),
+  content: publication,
+  contentDigest: digest,
+  result: publication,
+  resultDigest: digest,
+});
+export type SandboxPreparedFile = InferSchema<typeof sandboxPreparedFileSchema>;
 export type SandboxScope = InferSchema<typeof sandboxScopeShape> & {
   readonly fileTarget?: SandboxFileTarget;
+  readonly preparedFile?: SandboxPreparedFile;
 };
 /** An additive field is emitted only for the versioned fixed-file contract.
  * Old strict readers reject it; missing metadata never enables narrower access. */
@@ -115,10 +167,18 @@ export const sandboxScopeSchema: Schema<SandboxScope> = {
   parse(value, path = "$") {
     if (!value || typeof value !== "object" || Array.isArray(value))
       throw new ContractValidationError(path, "invalid sandbox scope");
-    const { fileTarget, ...base } = value as Record<string, unknown>;
+    const { fileTarget, preparedFile, ...base } = value as Record<string, unknown>;
     const scope = sandboxScopeShape.parse(base, path);
+    if (
+      preparedFile !== undefined &&
+      (fileTarget === undefined || !["write", "edit"].includes(scope.operation))
+    )
+      throw new ContractValidationError(path, "prepared file requires a fixed write target");
     return Object.freeze({
       ...scope,
+      ...(preparedFile === undefined
+        ? {}
+        : { preparedFile: sandboxPreparedFileSchema.parse(preparedFile, `${path}.preparedFile`) }),
       ...(fileTarget === undefined
         ? {}
         : { fileTarget: sandboxFileTargetSchema.parse(fileTarget, `${path}.fileTarget`) }),
@@ -136,6 +196,7 @@ const sandboxNetworkScopeShape = object({
 });
 export type SandboxNetworkScope = InferSchema<typeof sandboxNetworkScopeShape> & {
   readonly fileTarget?: never;
+  readonly preparedFile?: never;
 };
 export type SandboxExecutionScope = SandboxScope | SandboxNetworkScope;
 export const sandboxExecutionScopeSchema: Schema<SandboxExecutionScope> = {
@@ -148,7 +209,7 @@ export const sandboxExecutionScopeSchema: Schema<SandboxExecutionScope> = {
   },
 };
 
-/** Resolved by Agent authority for this invocation; contains no host paths. */
+/** Resolved by Agent authority; any prepared-file locator is bound to the target host. */
 export const resolvedSandboxScopeSchema = object({
   scope: sandboxExecutionScopeSchema,
   allowedDomains: array(sandboxNetworkDomainSchema),
