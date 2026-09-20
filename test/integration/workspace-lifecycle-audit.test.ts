@@ -88,6 +88,33 @@ afterEach(async () => {
   for (const cleanup of close.splice(0)) await cleanup();
 });
 
+it("reports queued action and next attempt without changing the database", async () => {
+  const f = await fixture();
+  const identity = sandboxV2Admission(f).plan.identity;
+  f.database.prepare("UPDATE runs SET status='completed' WHERE id=?").run(identity.runId);
+  operationsForDatabase(f.database).execute("capabilityInvocation.sandboxV2.scheduleRecovery", {
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    input: {
+      identity,
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      expectedSequence: 1,
+      expectedRecoveryRevision: 0,
+    },
+  });
+  const before = f.database.serialize();
+  expect(auditWorkspaceLifecycle(f.input).rows[0]).toMatchObject({
+    recoveryStatus: "scheduled",
+    recoveryAction: "stop",
+    recoveryNextAttemptAt: T1,
+    recoveryFinishedAt: null,
+    activeClaims: 1,
+    releaseReceiptPresent: false,
+  });
+  expect(f.database.serialize()).toEqual(before);
+});
+
 describe("workspace lifecycle read-only audit", () => {
   it.each([false, true])(
     "audits stopped unbound reservations with release receipt: %s",
@@ -173,7 +200,7 @@ describe("workspace lifecycle read-only audit", () => {
     const result = auditWorkspaceLifecycle(f.input);
     expect(result).toMatchObject({
       mode: "read_only",
-      schemaSequence: 42,
+      schemaSequence: 43,
       liveHostVerified: false,
       repairEligible: false,
     });

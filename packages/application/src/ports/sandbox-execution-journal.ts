@@ -41,8 +41,8 @@ export interface SandboxReservationReleaseReceipt {
   readonly verification: SandboxReservationReleaseVerification;
 }
 
-/** Each request performs one bounded inspect/stop; unresolved never means a background retry. */
-export interface SandboxRecoveryState {
+/** Each attempt performs one bounded inspect/stop; unresolved has no scheduled retry. */
+export interface SandboxRecoveryAttemptState {
   readonly revision: number;
   readonly owner: string;
   readonly attempts: number;
@@ -52,7 +52,29 @@ export interface SandboxRecoveryState {
   readonly deadlineAt: string;
   readonly finishedAt: string | null;
   readonly reasonCode: string;
+  readonly nextAttemptAt?: null;
 }
+interface SandboxScheduledRecovery {
+  readonly revision: number;
+  readonly owner: string;
+  readonly attempts: number;
+  readonly status: "scheduled";
+  readonly action: "inspect" | "stop";
+  readonly scheduledAt: string;
+  readonly nextAttemptAt: string;
+  readonly startedAt: null;
+  readonly deadlineAt: null;
+  readonly finishedAt: null;
+  readonly reasonCode: string;
+}
+export type SandboxRecoveryState =
+  | SandboxRecoveryAttemptState
+  | SandboxScheduledRecovery
+  | (Omit<SandboxScheduledRecovery, "status" | "nextAttemptAt" | "finishedAt"> & {
+      readonly status: "resolved";
+      readonly nextAttemptAt: null;
+      readonly finishedAt: string;
+    });
 export interface SandboxRecoveryInput {
   readonly identity: SandboxJobIdentity;
   readonly authority: CapabilityInvocationAuthority;
@@ -110,14 +132,15 @@ export interface SandboxExecutionJournalPort {
     input: SandboxRecoveryInput & {
       readonly action: "inspect" | "stop";
       readonly deadlineAt: string;
+      readonly expectedRecoveryRevision?: number;
     },
-  ): Promise<SandboxRecoveryState>;
+  ): Promise<SandboxRecoveryAttemptState>;
   finishRecovery(
     input: SandboxRecoveryInput & {
       readonly expectedRecoveryRevision: number;
       readonly reasonCode: string;
     },
-  ): Promise<SandboxRecoveryState>;
+  ): Promise<SandboxRecoveryAttemptState>;
   /** Startup records a finite unresolved state without launching or inspecting any process. */
   interruptRecovery(input: SandboxRecoveryInput): Promise<void>;
   /** One starting CAS. Returning applied:false never grants permission to launch. */
@@ -189,6 +212,31 @@ export type SandboxExecutionAdmissionRecord =
     }
   | { readonly phase: "bound"; readonly record: SandboxExecutionRecord };
 export interface SandboxExecutionPreparationPort {
+  /** Bounded, paged resource discovery independent of Run dispatchability. */
+  listRecoveryCandidates(input: {
+    readonly now: string;
+    readonly afterJobId: string | null;
+    readonly limit: number;
+  }): Promise<readonly SandboxExecutionAdmissionRecord[]>;
+  /** Rechecks current resource and Run facts in the writer transaction. No execution permit. */
+  scheduleRecovery(
+    input: Omit<SandboxRecoveryInput, "expectedSequence"> & {
+      readonly expectedSequence: number | null;
+      readonly expectedRecoveryRevision: number;
+    },
+  ): Promise<SandboxRecoveryState | undefined>;
+  beginReservationRecovery(
+    input: Omit<SandboxRecoveryInput, "expectedSequence"> & {
+      readonly expectedRecoveryRevision: number;
+      readonly deadlineAt: string;
+    },
+  ): Promise<SandboxRecoveryAttemptState>;
+  finishReservationRecovery(
+    input: Omit<SandboxRecoveryInput, "expectedSequence"> & {
+      readonly expectedRecoveryRevision: number;
+      readonly reasonCode: string;
+    },
+  ): Promise<SandboxRecoveryAttemptState>;
   /** Check current execution authority without consuming usage, queueing or claiming resources. */
   validatePreparation(input: ConsumeCapabilityInvocationInput): Promise<void>;
   /** Atomically accept a fresh host proof and release only this stopped attempt's claims. */
@@ -197,6 +245,7 @@ export interface SandboxExecutionPreparationPort {
     readonly authority: CapabilityInvocationAuthority;
     readonly now: string;
     readonly verification: SandboxReservationReleaseVerification;
+    readonly expectedRecoveryRevision?: number;
   }): Promise<{ readonly admission: SandboxExecutionAdmissionRecord; readonly applied: boolean }>;
   /** Fence an unbound attempt. A concurrent bind returns its bound record for cleanup. */
   interruptReservation(input: {

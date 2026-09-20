@@ -441,6 +441,30 @@ export class SqliteDurableAdapters {
     agentId: AgentId,
   ): SandboxExecutionPreparationPort {
     return Object.freeze<SandboxExecutionPreparationPort>({
+      listRecoveryCandidates: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.listRecoveryCandidates", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      scheduleRecovery: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.scheduleRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      beginReservationRecovery: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.beginReservationRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      finishReservationRecovery: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.finishReservationRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
       validatePreparation: (input) =>
         this.context.read("capabilityInvocation.sandboxV2.validatePreparation", {
           ownerId,

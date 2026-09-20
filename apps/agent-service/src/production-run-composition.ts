@@ -1,21 +1,21 @@
 import {
   type ClockPort,
-  type RuntimeRequest,
-  type ModelInvocationAdmissionPort,
   ContextFormationService,
   ContextProjectionService,
   type IdGeneratorPort,
   type MemoryPort,
   type ModelInvocationAdmissionDescriptor,
+  type ModelInvocationAdmissionPort,
   type ModelInvocationAdmissionResolver,
   ModelInvocationAdmissionService,
   type PayloadProtectorPort,
   type ProductConfiguration,
   RunCoordinator,
-  RuntimeContinuationService,
   RunExecutionInputService,
   type RunExecutionPolicy,
   type RunExecutionSource,
+  RuntimeContinuationService,
+  type RuntimeRequest,
   type RuntimeToolPort,
   SessionTraceRecorder,
   type WorkerRunPort,
@@ -28,8 +28,8 @@ import {
   type ProductionRunDispatchLoopFailure,
 } from "./production-run-dispatch-loop.js";
 import { ProductionRunDispatcher } from "./production-run-dispatcher.js";
-import { ProductionThreadTitles } from "./production-thread-titles.js";
 import { createProductionRunReconciler } from "./production-run-reconciler.js";
+import { ProductionThreadTitles } from "./production-thread-titles.js";
 
 export interface ProductionRunCompositionOptions {
   readonly generateTitle?: (
@@ -39,6 +39,7 @@ export interface ProductionRunCompositionOptions {
   ) => Promise<string>;
   readonly onTitleFailure?: (error: unknown) => void;
   readonly resources?: {
+    recoverPending?(signal: AbortSignal, maximum: number): Promise<void>;
     stopRun(
       runId: Parameters<RunCoordinator["cancel"]>[0]["runId"],
     ): Promise<{ released: boolean }>;
@@ -258,6 +259,14 @@ export function createProductionRunComposition(options: ProductionRunComposition
     dispatcher,
     fallbackScanIntervalMs: 1000,
     onFailure: options.onFailure,
+    ...(options.resources?.recoverPending
+      ? {
+          recoverResources: async (signal: AbortSignal) => {
+            await authority.assertActive();
+            await options.resources?.recoverPending?.(signal, configuration.concurrency.totalRuns);
+          },
+        }
+      : {}),
   });
   return Object.freeze({
     input,

@@ -735,7 +735,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           old,
           path.join(f.resource.stateRoot, "schema41-snapshot.sqlite"),
         );
-        expect(applyMigrations(old, migrations, { snapshot })).toEqual({
+        expect(applyMigrations(old, migrations.slice(0, 42), { snapshot })).toEqual({
           appliedSequences: [42],
           currentSequence: 42,
         });
@@ -1273,7 +1273,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           path.join(f.resource.stateRoot, "legacy-snapshot.sqlite"),
         );
         expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([
-          28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,
+          28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43,
         ]);
         expect(readMigrationLedger(old).slice(0, 27)).toEqual(ledger);
         expect(old.prepare("SELECT * FROM sandbox_jobs").all()).toEqual(before);

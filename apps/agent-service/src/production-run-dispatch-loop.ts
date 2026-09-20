@@ -21,7 +21,12 @@ export class ProductionRunDispatchLoopError extends Error {
   }
 }
 
-export type ProductionRunDispatchLoopFailurePhase = "startup" | "wakeup" | "interval" | "drain";
+export type ProductionRunDispatchLoopFailurePhase =
+  | "startup"
+  | "wakeup"
+  | "interval"
+  | "drain"
+  | "resource_recovery";
 
 export interface ProductionRunDispatchLoopFailure {
   readonly phase: ProductionRunDispatchLoopFailurePhase;
@@ -40,11 +45,14 @@ export interface ProductionRunDispatchLoopOptions {
     Partial<Pick<ProductionRunDispatcher, "recover">>;
   /** The bounded fallback scan interval. It is always unref'ed. */
   readonly fallbackScanIntervalMs: number;
+  /** A separate, single-flight resource scan; never replays a Run or blocks Run admission. */
+  readonly recoverResources?: (signal: AbortSignal) => Promise<void>;
   /** Called once for the first pump or drain failure. It must not restart the loop. */
   readonly onFailure?: (failure: ProductionRunDispatchLoopFailure) => void;
 }
 
 type LoopDispatcher = ProductionRunDispatchLoopOptions["dispatcher"];
+const DRAINED_RESOURCES = Object.freeze({ drained: true, inFlight: 0 });
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -97,6 +105,9 @@ export class ProductionRunDispatchLoop {
   readonly #dispatcher: LoopDispatcher;
   readonly #fallbackScanIntervalMs: number;
   readonly #onFailure: ProductionRunDispatchLoopOptions["onFailure"];
+  readonly #recoverResources: ProductionRunDispatchLoopOptions["recoverResources"];
+  readonly #resourceAbort = new AbortController();
+  #activeResourceRecovery: Promise<void> | undefined;
   #state: ProductionRunDispatchLoopState = "stopped";
   #failure: ProductionRunDispatchLoopFailure | undefined;
   #timer: ReturnType<typeof setInterval> | undefined;
@@ -111,6 +122,7 @@ export class ProductionRunDispatchLoop {
     this.#dispatcher = options.dispatcher;
     this.#fallbackScanIntervalMs = fallbackInterval(options.fallbackScanIntervalMs);
     this.#onFailure = options.onFailure;
+    this.#recoverResources = options.recoverResources;
   }
 
   get state(): ProductionRunDispatchLoopState {
@@ -157,6 +169,7 @@ export class ProductionRunDispatchLoop {
     const startup = initialPump.then(() => {
       if (this.#state === "starting") {
         this.#state = "running";
+        this.#scheduleResourceRecovery();
         this.#startTimer();
         if (recoveryOnly) void this.#schedulePump("wakeup").catch(() => undefined);
       }
@@ -187,6 +200,7 @@ export class ProductionRunDispatchLoop {
     if (this.#lastDrainResult !== undefined) return Promise.resolve(this.#lastDrainResult);
 
     this.#accepting = false;
+    this.#resourceAbort.abort();
     this.#stopTimer();
     if (this.#state !== "failed") this.#state = "stopping";
 
@@ -209,13 +223,12 @@ export class ProductionRunDispatchLoop {
 
   #accepting = false;
 
-  #requestWakeup(
-    phase: Exclude<ProductionRunDispatchLoopFailurePhase, "startup" | "drain">,
-  ): boolean {
+  #requestWakeup(phase: "wakeup" | "interval"): boolean {
     if (!this.#accepting || (this.#state !== "starting" && this.#state !== "running")) {
       return false;
     }
     this.#schedulePump(phase);
+    this.#scheduleResourceRecovery();
     return true;
   }
 
@@ -283,6 +296,50 @@ export class ProductionRunDispatchLoop {
     this.#timer = timer;
   }
 
+  #scheduleResourceRecovery(): void {
+    if (
+      !this.#recoverResources ||
+      this.#activeResourceRecovery ||
+      !this.#accepting ||
+      this.#state !== "running"
+    )
+      return;
+    const operation = Promise.resolve().then(() => {
+      if (!this.#resourceAbort.signal.aborted)
+        return this.#recoverResources?.(this.#resourceAbort.signal);
+    });
+    this.#activeResourceRecovery = operation;
+    void operation.then(
+      () => {
+        if (this.#activeResourceRecovery === operation) this.#activeResourceRecovery = undefined;
+      },
+      (error: unknown) => {
+        if (this.#activeResourceRecovery === operation) this.#activeResourceRecovery = undefined;
+        this.#failClosed({ phase: "resource_recovery", error });
+      },
+    );
+  }
+
+  async #drainResources(timeoutMs: number): Promise<ProductionRunDispatchDrainResult> {
+    const active = this.#activeResourceRecovery;
+    if (!active) return DRAINED_RESOURCES;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const drained = await Promise.race([
+        active.then(
+          () => true,
+          () => true,
+        ),
+        new Promise<false>((resolve) => {
+          timer = setTimeout(() => resolve(false), timeoutMs);
+        }),
+      ]);
+      return { drained, inFlight: drained ? 0 : 1 };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   #stopTimer(): void {
     if (this.#timer === undefined) return;
     clearInterval(this.#timer);
@@ -293,6 +350,7 @@ export class ProductionRunDispatchLoop {
     if (this.#failure !== undefined) return;
     this.#failure = Object.freeze(failure);
     this.#accepting = false;
+    this.#resourceAbort.abort();
     this.#pendingWake = false;
     this.#pendingPhase = undefined;
     this.#stopTimer();
@@ -308,7 +366,14 @@ export class ProductionRunDispatchLoop {
   async #stopInternal(timeoutMs: number): Promise<ProductionRunDispatchDrainResult> {
     let result: ProductionRunDispatchDrainResult;
     try {
-      result = await this.#dispatcher.drain(timeoutMs);
+      const [runs, resources] = await Promise.all([
+        this.#dispatcher.drain(timeoutMs),
+        this.#drainResources(timeoutMs),
+      ]);
+      result = {
+        drained: runs.drained && resources.drained,
+        inFlight: runs.inFlight + resources.inFlight,
+      };
     } catch (error) {
       this.#failClosed({ phase: "drain", error });
       throw error;

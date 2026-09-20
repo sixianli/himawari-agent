@@ -18,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const temporaryDirectories: string[] = [];
-const CURRENT_SCHEMA_SEQUENCE = 42;
+const CURRENT_SCHEMA_SEQUENCE = 43;
 
 afterEach(async () => {
   await Promise.all(
@@ -138,8 +138,8 @@ describe("immutable SQLite migration engine", () => {
       const before = readMigrationLedger(database);
       const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-        appliedSequences: [29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42],
-        currentSequence: 42,
+        appliedSequences: [29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43],
+        currentSequence: 43,
       });
       expect(readMigrationLedger(database).slice(0, 28)).toEqual(before);
       expect(database.pragma("foreign_key_check")).toEqual([]);
@@ -165,8 +165,8 @@ describe("immutable SQLite migration engine", () => {
       const ledger = readMigrationLedger(database);
       const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-        appliedSequences: [40, 41, 42],
-        currentSequence: 42,
+        appliedSequences: [40, 41, 42, 43],
+        currentSequence: 43,
       });
       expect(readMigrationLedger(database).slice(0, 39)).toEqual(ledger);
       expect(
@@ -196,8 +196,8 @@ describe("immutable SQLite migration engine", () => {
       const before = readMigrationLedger(database);
       const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-        appliedSequences: [41, 42],
-        currentSequence: 42,
+        appliedSequences: [41, 42, 43],
+        currentSequence: 43,
       });
       expect(readMigrationLedger(database).slice(0, 40)).toEqual(before);
       expect(

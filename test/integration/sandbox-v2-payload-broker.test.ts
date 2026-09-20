@@ -7,8 +7,8 @@ import {
   type CapabilityInvocationResultPort,
   type SandboxExecutionJournalPort,
   type SandboxExecutionPreparationPort,
-  type SandboxExecutionVerification,
   SandboxExecutionReconciliationService,
+  type SandboxExecutionVerification,
   SandboxScopeService,
 } from "@himawari-agent/application";
 import {
@@ -66,6 +66,22 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
   const invoke = (operation: string, value: unknown) =>
     operations.execute(operation, { ownerId: OWNER_ID, agentId: AGENT_ID, input: value });
   const preparations: SandboxExecutionPreparationPort = {
+    listRecoveryCandidates: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.listRecoveryCandidates", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["listRecoveryCandidates"]>
+      >,
+    scheduleRecovery: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.scheduleRecovery", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["scheduleRecovery"]>
+      >,
+    beginReservationRecovery: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.beginReservationRecovery", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["beginReservationRecovery"]>
+      >,
+    finishReservationRecovery: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.finishReservationRecovery", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["finishReservationRecovery"]>
+      >,
     validatePreparation: async (value) => {
       invoke("capabilityInvocation.sandboxV2.validatePreparation", value);
     },

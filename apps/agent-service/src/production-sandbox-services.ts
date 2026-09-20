@@ -16,6 +16,7 @@ import {
   type SandboxExecutionEvidencePort,
   type SandboxExecutionPlan,
   SandboxExecutionReconciliationService,
+  SandboxResourceRecoveryService,
   SandboxScopeService,
   scanMachineSecrets,
   type WorkerDelegationAdmissionServiceOptions,
@@ -1465,6 +1466,15 @@ export async function createProductionSandboxServices(options: {
     }
     throw new Error("SANDBOX_STOP_OBSERVATION_CONFLICT");
   };
+  const resourceRecovery = new SandboxResourceRecoveryService({
+    hostId,
+    preparations,
+    reconciliation,
+    reservations: { stop: control.stopPreparation, verify: control.verifyReservationRelease },
+    authority: options.authority,
+    now: () => clock.now(),
+    timeoutMs: 30000,
+  });
   const resolveTask = async (call: RuntimeToolInvocation, resourceRef: string) => {
     const admission = await preparations.readAdmissionByResource({
       runId: call.runId,
@@ -1569,6 +1579,8 @@ export async function createProductionSandboxServices(options: {
     child,
     managedTasks,
     resources: {
+      recoverPending: (signal: AbortSignal, maximum: number) =>
+        resourceRecovery.pump(signal, maximum),
       stopRun: async (runId: RuntimeToolInvocation["runId"]) => {
         let afterJobId: string | null = null;
         let released = true;

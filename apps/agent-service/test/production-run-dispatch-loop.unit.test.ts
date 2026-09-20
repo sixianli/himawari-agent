@@ -85,6 +85,79 @@ afterEach(() => {
 });
 
 describe("ProductionRunDispatchLoop", () => {
+  it("keeps resource recovery single-flight without blocking unrelated Run scans", async () => {
+    vi.useFakeTimers();
+    const dispatcher = new DispatcherStub();
+    const release = deferred<void>();
+    const signals: AbortSignal[] = [];
+    const recovery = vi.fn(async (signal: AbortSignal) => {
+      signals.push(signal);
+      await release.promise;
+    });
+    const loop = new ProductionRunDispatchLoop({
+      dispatcher,
+      fallbackScanIntervalMs: 25,
+      recoverResources: recovery,
+    });
+    await loop.start();
+    await vi.advanceTimersByTimeAsync(75);
+    expect(recovery).toHaveBeenCalledTimes(1);
+    expect(dispatcher.pumpCalls).toBe(4);
+    const stopped = loop.stop(100);
+    expect(signals[0]?.aborted).toBe(true);
+    release.resolve(undefined);
+    await expect(stopped).resolves.toEqual(DRAINED_RESULT);
+    expect(loop.state).toBe("stopped");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("bounds shutdown when a resource backend ignores cancellation", async () => {
+    vi.useFakeTimers();
+    const release = deferred<void>();
+    const recovery = vi.fn(() => release.promise);
+    const loop = new ProductionRunDispatchLoop({
+      dispatcher: new DispatcherStub(),
+      fallbackScanIntervalMs: 25,
+      recoverResources: recovery,
+    });
+    await loop.start();
+    const stopped = loop.stop(10);
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(stopped).resolves.toEqual({ drained: false, inFlight: 1 });
+    expect(loop.wakeup()).toBe(false);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(recovery).toHaveBeenCalledTimes(1);
+    release.resolve(undefined);
+    await flushMicrotasks();
+    await expect(loop.stop(10)).resolves.toEqual(DRAINED_RESULT);
+    expect(loop.state).toBe("stopped");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("fails closed on resource scheduler storage failures without automatically retrying", async () => {
+    vi.useFakeTimers();
+    const failure = new Error("RECOVERY_STORAGE_UNAVAILABLE");
+    const onFailure = vi.fn();
+    const recovery = vi.fn(async () => {
+      throw failure;
+    });
+    const loop = new ProductionRunDispatchLoop({
+      dispatcher: new DispatcherStub(),
+      fallbackScanIntervalMs: 25,
+      recoverResources: recovery,
+      onFailure,
+    });
+    await loop.start();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(loop.state).toBe("failed");
+    expect(loop.failure).toEqual({ phase: "resource_recovery", error: failure });
+    expect(onFailure).toHaveBeenCalledTimes(1);
+    expect(recovery).toHaveBeenCalledTimes(1);
+    expect(loop.wakeup()).toBe(false);
+    await loop.stop(100);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("runs the recovery pump immediately before enabling the fallback timer", async () => {
     const dispatcher = new DispatcherStub();
     const loop = createLoop(dispatcher);

@@ -1,0 +1,9 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+test/integration/sandbox-resource-recovery-scheduling.test.ts(146,45): error TS2339: Property 'semanticFingerprint' does not exist on type 'SandboxExecutionPlanCandidateV2'.
+test/integration/sandbox-resource-recovery-scheduling.test.ts(210,56): error TS2379: Argument of type '{ identity: Readonly<{ readonly jobId: string; readonly attemptId: string; readonly invocationId: string; readonly receiptRef: string; readonly hostId: string; readonly ownerId: string; readonly agentId: string; readonly threadId: string | null; readonly runId: string; readonly toolCallId: string; }>; authority: Cap...' is not assignable to parameter of type '{ readonly identity: Readonly<{ readonly jobId: string; readonly attemptId: string; readonly invocationId: string; readonly receiptRef: string; readonly hostId: string; readonly ownerId: string; readonly agentId: string; readonly threadId: string | null; readonly runId: string; readonly toolCallId: string; }>; reado...' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'expectedRecoveryRevision' are incompatible.
+    Type 'number | undefined' is not assignable to type 'number'.
+      Type 'undefined' is not assignable to type 'number'.

@@ -1,0 +1,16 @@
+{
+  "checked": 1092,
+  "changed": [],
+  "status": "passed",
+  "excluded": [
+    "docs/",
+    "test/qualification/evidence/"
+  ],
+  "testOnlyCorrection": {
+    "files": [
+      "test/integration/sandbox-resource-recovery-scheduling.test.ts"
+    ],
+    "reason": "Require an existing running recovery before asserting its revision; exactOptionalPropertyTypes rejected optional test value. Product build inputs unchanged. Correction made before integration test execution.",
+    "at": "2026-09-20T03:57:44.101915+00:00"
+  }
+}

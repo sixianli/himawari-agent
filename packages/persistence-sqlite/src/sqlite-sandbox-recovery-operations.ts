@@ -1,4 +1,5 @@
 import type {
+  SandboxExecutionAdmissionRecord,
   SandboxExecutionJournalPort,
   SandboxExecutionRecord,
   SandboxRecoveryState,
@@ -6,8 +7,11 @@ import type {
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
-type Request = Parameters<SandboxExecutionJournalPort["beginRecovery"]>[0] &
-  Parameters<SandboxExecutionJournalPort["finishRecovery"]>[0];
+type Request = Omit<
+  Parameters<SandboxExecutionJournalPort["beginRecovery"]>[0] &
+    Parameters<SandboxExecutionJournalPort["finishRecovery"]>[0],
+  "expectedSequence"
+> & { readonly expectedSequence: number | null };
 
 /** Invoked inside the existing authority-checked execution journal transaction. */
 export class SqliteSandboxRecoveryOperations {
@@ -28,13 +32,22 @@ export class SqliteSandboxRecoveryOperations {
   mutate(
     operation: string,
     input: Request,
-    record: SandboxExecutionRecord,
+    record:
+      | SandboxExecutionRecord
+      | Extract<SandboxExecutionAdmissionRecord, { phase: "reserved" }>,
   ): SandboxRecoveryState | undefined {
     const current = record.recovery;
     const owner = input.authority.agentServiceBootId;
-    if (input.expectedSequence !== record.facts.resource.sequence)
+    if (input.expectedSequence !== ("facts" in record ? record.facts.resource.sequence : null))
       return this.fail("PORT_CONFLICT", "Recovery resource sequence changed");
     if (operation === "interruptRecovery" && current?.status === "unresolved") return;
+    if (operation === "interruptRecovery" && current?.status === "scheduled") {
+      const state = { ...current, owner, revision: current.revision + 1 };
+      this.db
+        .prepare("UPDATE sandbox_execution_records SET recovery_json=? WHERE job_id=?")
+        .run(JSON.stringify(state), record.plan.identity.jobId);
+      return state;
+    }
     if (operation === "beginRecovery") {
       const duration = Date.parse(input.deadlineAt) - Date.parse(input.now);
       if (
@@ -46,6 +59,14 @@ export class SqliteSandboxRecoveryOperations {
         return this.fail("PORT_INVALID_OPERATION", "Invalid bounded recovery request");
       if (current?.status === "running" && current.deadlineAt > input.now)
         return this.fail("PORT_CONFLICT", "Recovery already running");
+      if (
+        input.expectedRecoveryRevision !== undefined &&
+        (current?.status !== "scheduled" ||
+          current.revision !== input.expectedRecoveryRevision ||
+          current.action !== input.action ||
+          current.nextAttemptAt > input.now)
+      )
+        return this.fail("PORT_CONFLICT", "Scheduled recovery changed");
     } else if (operation === "finishRecovery") {
       if (
         !current ||
@@ -74,6 +95,7 @@ export class SqliteSandboxRecoveryOperations {
             deadlineAt: input.deadlineAt,
             finishedAt: null,
             reasonCode: "SANDBOX_RECONCILIATION_REQUESTED",
+            nextAttemptAt: null,
           }
         : {
             revision: (current?.revision ?? 0) + 1,
@@ -89,6 +111,7 @@ export class SqliteSandboxRecoveryOperations {
             finishedAt: input.now,
             reasonCode:
               operation === "finishRecovery" ? input.reasonCode : "SANDBOX_PREVIOUS_BOOT_UNKNOWN",
+            nextAttemptAt: null,
           };
     this.db
       .prepare("UPDATE sandbox_execution_records SET recovery_json=? WHERE job_id=?")

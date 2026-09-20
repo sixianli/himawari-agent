@@ -122,6 +122,18 @@ export function createProductionSandboxControl(options: Options) {
           : { name: "UnknownError", message: String(error).slice(0, 4096) },
     });
   };
+  const withDiagnostic = async <T>(
+    plan: SandboxExecutionPlanV2,
+    command: "inspect" | "stop",
+    action: () => Promise<T>,
+  ): Promise<T> => {
+    try {
+      return await action();
+    } catch (error) {
+      await saveDiagnostic(plan, command, "control", error);
+      throw error;
+    }
+  };
   const readControl = async (plan: SandboxExecutionPlanV2): Promise<StoredControl> => {
     const stored = await options.read(plan, key(plan));
     const value = stored?.value as StoredControl | undefined;
@@ -335,12 +347,7 @@ export function createProductionSandboxControl(options: Options) {
     command: "inspect" | "stop",
     signal?: AbortSignal,
   ) => {
-    try {
-      return await observeUnchecked(record, command, signal);
-    } catch (error) {
-      await saveDiagnostic(record.plan, command, "control", error);
-      throw error;
-    }
+    return withDiagnostic(record.plan, command, () => observeUnchecked(record, command, signal));
   };
   const readinessEvidence = async (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) => {
     if (facts.result?.kind === "started" && facts.result.handle.kind === "service") {
@@ -408,62 +415,68 @@ export function createProductionSandboxControl(options: Options) {
       } satisfies StoredControl);
       return true;
     },
-    async stopPreparation(plan: SandboxExecutionPlanV2) {
-      const observation = await inspect(plan, "stop");
-      // This is a cleanup request receipt, never an environment release proof.
-      // A stopped reservation remains protected until independent verification.
-      await options.write(plan, `${key(plan)}:preparation-stop:${observation.sequence}`, {
-        fingerprint: plan.semanticFingerprint,
-        environmentId: plan.environmentId,
-        observation,
+    async stopPreparation(plan: SandboxExecutionPlanV2, signal?: AbortSignal) {
+      return withDiagnostic(plan, "stop", async () => {
+        const observation = await inspect(plan, "stop", signal);
+        // This is a cleanup request receipt, never an environment release proof.
+        // A stopped reservation remains protected until independent verification.
+        await options.write(plan, `${key(plan)}:preparation-stop:${observation.sequence}`, {
+          fingerprint: plan.semanticFingerprint,
+          environmentId: plan.environmentId,
+          observation,
+        });
       });
     },
     async verifyReservationRelease(
       plan: SandboxExecutionPlanV2,
       stopRequestedAt: string,
+      signal?: AbortSignal,
     ): Promise<SandboxReservationReleaseVerification | undefined> {
-      if (
-        !Number.isFinite(Date.parse(stopRequestedAt)) ||
-        new Date(stopRequestedAt).toISOString() !== stopRequestedAt ||
-        stopRequestedAt > options.now()
-      )
-        throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
-      // Recheck installed host identity, never the expired operation Grant.
-      await options.host(plan);
-      const raw = await inspect(plan, "inspect");
-      const namespace = raw.linuxNamespace
-        ? await readLinuxNamespaceState(raw.linuxNamespace)
-        : "unknown";
-      if (!neverStartedReleased(raw, namespace)) return undefined;
-      const checkedAt = options.now();
-      const validUntil = new Date(Date.parse(checkedAt) + 1000).toISOString();
-      const evidence = await options.write(
-        plan,
-        `${key(plan)}:reservation-release:${raw.sequence}:${checkedAt}`,
-        {
+      return withDiagnostic(plan, "inspect", async () => {
+        if (
+          !Number.isFinite(Date.parse(stopRequestedAt)) ||
+          new Date(stopRequestedAt).toISOString() !== stopRequestedAt ||
+          stopRequestedAt > options.now()
+        )
+          throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
+        // Recheck installed host identity, never the expired operation Grant.
+        await options.host(plan);
+        const raw = await inspect(plan, "inspect", signal);
+        const namespace = raw.linuxNamespace
+          ? await readLinuxNamespaceState(raw.linuxNamespace)
+          : "unknown";
+        if (!neverStartedReleased(raw, namespace)) return undefined;
+        if (signal?.aborted) throw new Error("SANDBOX_RECONCILIATION_INTERRUPTED");
+        const checkedAt = options.now();
+        const validUntil = new Date(Date.parse(checkedAt) + 1000).toISOString();
+        const evidence = await options.write(
+          plan,
+          `${key(plan)}:reservation-release:${raw.sequence}:${checkedAt}`,
+          {
+            schemaVersion: "sandbox-reservation-release.v1",
+            identity: plan.identity,
+            environmentId: plan.environmentId,
+            fingerprint: plan.semanticFingerprint,
+            stopRequestedAt,
+            checkedAt,
+            observation: raw,
+          },
+        );
+        if (options.now() >= validUntil) return undefined;
+        return {
           schemaVersion: "sandbox-reservation-release.v1",
+          basis: "host_never_started",
           identity: plan.identity,
           environmentId: plan.environmentId,
-          fingerprint: plan.semanticFingerprint,
+          semanticFingerprint: plan.semanticFingerprint,
           stopRequestedAt,
           checkedAt,
-          observation: raw,
-        },
-      );
-      if (options.now() >= validUntil) return undefined;
-      return {
-        schemaVersion: "sandbox-reservation-release.v1",
-        basis: "host_never_started",
-        identity: plan.identity,
-        environmentId: plan.environmentId,
-        semanticFingerprint: plan.semanticFingerprint,
-        stopRequestedAt,
-        checkedAt,
-        validUntil,
-        processIdentityRef: raw.processIdentityRef,
-        controlSessionId: raw.sessionId,
-        evidence,
-      };
+          validUntil,
+          processIdentityRef: raw.processIdentityRef,
+          controlSessionId: raw.sessionId,
+          evidence,
+        };
+      });
     },
     async verifyPreparation(plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) {
       const stored = await readControl(plan);

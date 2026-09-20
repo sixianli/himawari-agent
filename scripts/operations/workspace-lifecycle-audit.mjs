@@ -34,7 +34,7 @@ export function auditWorkspaceLifecycle({
       if (
         !Number.isSafeInteger(version) ||
         version < 28 ||
-        version > 42 ||
+        version > 43 ||
         ledger.count !== version
       )
         throw new Error("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");
@@ -47,6 +47,8 @@ export function auditWorkspaceLifecycle({
           ${version >= 33 ? "json_extract(r.recovery_json,'$.status')" : "NULL"} AS recoveryStatus,
           ${version >= 33 ? "json_extract(r.recovery_json,'$.reasonCode')" : "NULL"} AS recoveryReason,
           ${version >= 33 ? "json_extract(r.recovery_json,'$.finishedAt')" : "NULL"} AS recoveryFinishedAt,
+          ${version >= 33 ? "json_extract(r.recovery_json,'$.action')" : "NULL"} AS recoveryAction,
+          ${version >= 43 ? "json_extract(r.recovery_json,'$.nextAttemptAt')" : "NULL"} AS recoveryNextAttemptAt,
           ${version >= 29 ? "r.preparation_state" : "'legacy_bound'"} AS preparation,
           json_extract(r.facts_json,'$.resource.supervision') AS supervision,
           json_extract(r.facts_json,'$.resource.cleanup') AS cleanup,

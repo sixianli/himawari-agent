@@ -84,8 +84,18 @@ export class SqliteSandboxReservationRelease {
     verification: SandboxReservationReleaseVerification,
     authority: CapabilityInvocationAuthority,
     now: string,
+    expectedRecoveryRevision?: number,
   ): boolean {
     if (admission.releaseReceipt) return false;
+    const attempt = admission.recovery;
+    if (
+      expectedRecoveryRevision !== undefined &&
+      (attempt?.status !== "running" ||
+        attempt.revision !== expectedRecoveryRevision ||
+        attempt.owner !== authority.agentServiceBootId ||
+        attempt.deadlineAt <= now)
+    )
+      return this.fail("PORT_CONFLICT", "Reservation recovery ownership changed");
     this.validate(admission.plan, admission.stopRequestedAt, verification, now);
     const jobId = admission.plan.identity.jobId;
     this.db
@@ -100,14 +110,22 @@ export class SqliteSandboxReservationRelease {
       .run(now, jobId);
     const recovery: SandboxRecoveryState = {
       revision: (admission.recovery?.revision ?? 0) + 1,
-      attempts: (admission.recovery?.attempts ?? 0) + 1,
+      attempts:
+        (admission.recovery?.attempts ?? 0) + (expectedRecoveryRevision === undefined ? 1 : 0),
       owner: authority.agentServiceBootId,
       status: "resolved",
-      action: "inspect",
-      startedAt: verification.checkedAt,
-      deadlineAt: verification.validUntil,
+      action: expectedRecoveryRevision === undefined ? "inspect" : "stop",
+      startedAt:
+        expectedRecoveryRevision === undefined
+          ? verification.checkedAt
+          : (attempt?.startedAt ?? verification.checkedAt),
+      deadlineAt:
+        expectedRecoveryRevision === undefined
+          ? verification.validUntil
+          : (attempt?.deadlineAt ?? verification.validUntil),
       finishedAt: now,
       reasonCode: "SANDBOX_RESERVATION_RELEASE_CONFIRMED",
+      nextAttemptAt: null,
     };
     this.db
       .prepare("UPDATE sandbox_execution_records SET recovery_json=? WHERE job_id=?")

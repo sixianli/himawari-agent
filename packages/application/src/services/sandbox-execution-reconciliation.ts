@@ -41,6 +41,7 @@ export function sandboxReconciliationFailureReason(error: unknown): string {
         "SANDBOX_RECONCILIATION_PERMISSION_DENIED",
         "SANDBOX_CONTROL_EVIDENCE_INVALID",
         "SANDBOX_CONTROL_TIMED_OUT",
+        "SANDBOX_RECONCILIATION_INTERRUPTED",
       ].includes(error.message)
     )
       return error.message;
@@ -93,7 +94,10 @@ export class SandboxExecutionReconciliationService {
     readonly expectedSequence: number;
     readonly authority: CapabilityInvocationAuthority;
     readonly action: "inspect" | "stop";
+    readonly expectedRecoveryRevision?: number;
+    readonly signal?: AbortSignal;
   }): Promise<{ readonly record: SandboxExecutionRecord; readonly applied: boolean }> {
+    if (input.signal?.aborted) throw new Error("SANDBOX_RECONCILIATION_INTERRUPTED");
     const identity = sandboxJobIdentitySchema.parse(input.identity);
     let record = await this.options.journal.read(identity);
     if (!record || record.plan.identity.hostId !== this.options.hostId)
@@ -114,6 +118,9 @@ export class SandboxExecutionReconciliationService {
       now: startedAt,
       action: input.action,
       deadlineAt: new Date(Date.parse(startedAt) + this.options.timeoutMs).toISOString(),
+      ...(input.expectedRecoveryRevision === undefined
+        ? {}
+        : { expectedRecoveryRevision: input.expectedRecoveryRevision }),
     });
     const refreshOwned = async () => {
       const latest = await this.options.journal.read(identity);
@@ -129,6 +136,7 @@ export class SandboxExecutionReconciliationService {
     };
     const controller = new AbortController();
     const assertActive = () => {
+      if (input.signal?.aborted) throw new Error("SANDBOX_RECONCILIATION_INTERRUPTED");
       if (controller.signal.aborted || this.options.now() >= recovery.deadlineAt)
         throw new Error("SANDBOX_RECONCILIATION_TIMED_OUT");
     };
@@ -195,6 +203,7 @@ export class SandboxExecutionReconciliationService {
       return mutation;
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let removeAbortListener = () => {};
     let reasonCode = "SANDBOX_RECONCILIATION_UNCONFIRMED";
     let applied = false;
     try {
@@ -210,7 +219,17 @@ export class SandboxExecutionReconciliationService {
       if (!backend) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
       assertActive();
       const mutation = await Promise.race([
+        new Promise<never>((_resolve, reject) => {
+          const onAbort = () => {
+            controller.abort();
+            reject(new Error("SANDBOX_RECONCILIATION_INTERRUPTED"));
+          };
+          input.signal?.addEventListener("abort", onAbort, { once: true });
+          removeAbortListener = () => input.signal?.removeEventListener("abort", onAbort);
+          if (input.signal?.aborted) onAbort();
+        }),
         (async () => {
+          assertActive();
           const resource = await backend[input.action](structuredClone(record), controller.signal);
           assertActive();
           if (!["released", "lost"].includes(resource.supervision))
@@ -251,6 +270,7 @@ export class SandboxExecutionReconciliationService {
       if (record.facts.resource.supervision !== "released")
         applied = (await append(observation("lost", reasonCode))).applied;
     } finally {
+      removeAbortListener();
       clearTimeout(timer);
       controller.abort();
       // Concurrent operation results are independent of resource recovery. Finish
