@@ -1,0 +1,42 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts (174 tests | 2 failed | 172 skipped) 382ms
+     × keeps missing result delivery visible after accepting permanent resource release 287ms
+     × keeps missing result delivery visible after accepting permanent resource release 94ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > keeps missing result delivery visible after accepting permanent resource release
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > keeps missing result delivery visible after accepting permanent resource release
+AssertionError: expected { …(8) } to match object { allReleased: true, …(3) }
+(4 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "allReleased": true,
+    "pendingResources": false,
+    "phase": null,
+    "unresolvedResultItemIds": [
+-     "tool:sandbox-tool",
++     "tool:parent-tool",
+    ],
+  }
+
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:1945:26
+    1943|         itemId: (id) => `tool:${id}`,
+    1944|       });
+    1945|       expect(projection).toMatchObject({
+       |                          ^
+    1946|         allReleased: true,
+    1947|         pendingResources: false,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 172 skipped (174)
+   Start at  17:08:07
+   Duration  2.02s (transform 995ms, setup 0ms, import 1.54s, tests 382ms, environment 0ms)

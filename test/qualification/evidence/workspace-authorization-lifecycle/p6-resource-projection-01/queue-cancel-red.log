@@ -1,0 +1,41 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/application/test/thread-execution-state.unit.test.ts (21 tests | 1 failed) 49ms
+     × shows a cancelled queue as not dispatched only with positive queue and tool evidence 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > shows a cancelled queue as not dispatched only with positive queue and tool evidence
+AssertionError: expected { runRevision: 3, …(9) } to match object { Object (displayPhase, reasonCode, ...) }
+(9 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "availableActions": [],
+-   "displayPhase": "not_dispatched",
+-   "reasonCode": "RUN_CANCELLED_BEFORE_DISPATCH",
++   "availableActions": [
++     "retry_cleanup",
++   ],
++   "displayPhase": "unresolved",
++   "reasonCode": "RUN_CANCELLED_RESOURCE_STATE_UNCONFIRMED",
+  }
+
+ ❯ packages/application/test/thread-execution-state.unit.test.ts:184:8
+    182|     const records = [record(1, "queued", "failed"), record(2, "queued"…
+    183|     expect(projectThreadExecutionState({ ...run, status: "cancelled" }…
+    184|       .toMatchObject({ displayPhase: "not_dispatched", reasonCode: "RU…
+       |        ^
+    185|     expect(projectThreadExecutionState({ ...run, status: "cancelled" }…
+    186|       .toBe("unresolved");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 20 passed (21)
+   Start at  17:08:40
+   Duration  435ms (transform 210ms, setup 0ms, import 267ms, tests 49ms, environment 0ms)

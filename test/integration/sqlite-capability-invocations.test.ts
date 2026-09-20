@@ -19,6 +19,7 @@ import {
   type SandboxHostObservation,
   SandboxJobLifecycleService,
   SandboxScopeService,
+  readSandboxScopeSnapshot,
   WorkerDelegationService,
 } from "@himawari-agent/application";
 import {
@@ -2225,6 +2226,50 @@ describe("durable sandbox invocation journal", () => {
       }
     },
   );
+
+  it("reads authentic historical scope without renewing expired or revoked execution rights", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      const { semanticFingerprint: _fingerprint, ...candidate } = fixture.plan;
+      const dependencies = {
+        payloads: { get: async () => fixture.scopePayload },
+        protector: fixture.protector,
+        digest: (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex"),
+      };
+      expect(await readSandboxScopeSnapshot(candidate, dependencies)).toEqual(fixture.scope);
+      const execution = new SandboxScopeService({
+        ...dependencies,
+        files: { readGrant: async () => ({ ...fixture.directoryGrant, revokedAt: T1 }) },
+        hostId: "sandbox-host",
+        now: () => T2,
+      });
+      await expect(execution.read(candidate, fixture.scope.parentRequestId)).rejects.toThrow(
+        "SANDBOX_SCOPE_UNAVAILABLE",
+      );
+      // History still belongs to the original operation; it never invokes the live grant reader.
+      expect(await readSandboxScopeSnapshot(candidate, dependencies)).toEqual(fixture.scope);
+      await expect(
+        readSandboxScopeSnapshot(
+          {
+            ...candidate,
+            identity: { ...candidate.identity, runId: "other-run" },
+          },
+          dependencies,
+        ),
+      ).rejects.toThrow("SANDBOX_SCOPE_UNAVAILABLE");
+      await expect(
+        readSandboxScopeSnapshot(
+          {
+            ...candidate,
+            binding: { ...candidate.binding, scopeDigest: "0".repeat(64) },
+          },
+          dependencies,
+        ),
+      ).rejects.toThrow("SANDBOX_SCOPE_UNAVAILABLE");
+    } finally {
+      await fixture.close();
+    }
+  });
 
   it.each([
     ["revoked", { revokedAt: T1 }],

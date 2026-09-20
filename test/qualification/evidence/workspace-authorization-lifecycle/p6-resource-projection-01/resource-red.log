@@ -1,0 +1,24 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/thread-resource-projection.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/thread-resource-projection.test.ts [ test/integration/thread-resource-projection.test.ts ]
+Error: Cannot find module '../../packages/application/src/services/thread-execution-resources.js' imported from /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/test/integration/thread-resource-projection.test.ts
+ ❯ test/integration/thread-resource-projection.test.ts:3:1
+      1| import { createHash } from "node:crypto";
+      2| import { describe, expect, it } from "vitest";
+      3| import { readThreadExecutionResources } from "../../packages/applicati…
+       | ^
+      4| import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox…
+      5| import { openSandboxJournal, OWNER_ID, AGENT_ID, T1 } from "../fixture…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  16:30:54
+   Duration  370ms (transform 29ms, setup 0ms, import 0ms, tests 0ms, environment 0ms)

@@ -2,6 +2,7 @@ import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
 import {
   executionFailureMessage,
+  executionStateLabel,
   authorizationReviewSteps,
   executionToolPhase,
   executionActivity,
@@ -38,6 +39,22 @@ const run: RunSummary = {
   updatedAt: new Date(100000).toISOString(),
 };
 describe("durable execution presentation", () => {
+  it("localizes resource facts without requiring a new wire phase or inferring release", () => {
+    expect(executionStateLabel("unresolved", "RESOURCE_STOP_IN_PROGRESS")).toBe(
+      "chat.resource.stopping",
+    );
+    expect(executionStateLabel("unresolved", "RESOURCE_CHECK_IN_PROGRESS")).toBe(
+      "chat.resource.verifying",
+    );
+    expect(executionStateLabel("preparing", "RESOURCE_QUEUE_WAITING")).toBe("chat.resource.queued");
+    expect(executionStateLabel("preparing", "RESOURCE_EXECUTION_OBSERVED")).toBe(
+      "chat.resource.executing",
+    );
+    expect(executionStateLabel("unresolved", "RESOURCE_STATE_UNCONFIRMED")).toBe(
+      "chat.phase.unresolved",
+    );
+    expect(executionStateLabel("unresolved", "FUTURE_REASON")).toBe("chat.phase.unresolved");
+  });
   it("merges replayed out-of-order observations without erasing tool input", () => {
     const started = record(1, 10, { kind: "tool", name: "read", input: '{"path":"README.md"}' });
     const ended = record(3, 13, {

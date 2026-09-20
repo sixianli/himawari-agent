@@ -1,4 +1,6 @@
 import path from "node:path";
+import { createHash } from "node:crypto";
+import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.ts";
 import {
   type RunExecutionLeaseClaim,
   recoverSandboxExecutionsAtStartup,
@@ -1914,6 +1916,43 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       }
     },
   );
+
+  it("keeps missing result delivery visible after accepting permanent resource release", async () => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, resource(record, "lost"));
+      record = append(f, record, resource(record, "reconciling"));
+      record = append(f, record, resource(record, "released"));
+      const threadId = record.plan.identity.threadId;
+      if (!threadId) throw new Error("expected thread");
+      const projection = await readThreadExecutionResources({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId,
+        runId: record.plan.identity.runId,
+        now: T2,
+        inventory: {
+          admissions: [{ phase: "bound", record }],
+          queue: [],
+          legacyResourcesPending: false,
+        },
+        payloads: { get: async () => f.scopePayload },
+        protector: f.protector,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+        itemId: (id) => `tool:${id}`,
+      });
+      expect(projection).toMatchObject({
+        allReleased: true,
+        pendingResources: false,
+        phase: null,
+        unresolvedResultItemIds: [`tool:${f.scope.parentToolCallId ?? f.scope.toolCallId}`],
+      });
+      expect(call(f, "read", record.plan.identity)?.releaseReceipt).toEqual(record.releaseReceipt);
+    } finally {
+      await f.close();
+    }
+  });
 
   // Actual SQLite intents and output bindings; platform verification is synthetic.
   it.each([

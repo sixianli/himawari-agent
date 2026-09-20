@@ -36,6 +36,180 @@ const record = (
 });
 
 describe("backend execution state", () => {
+  it("shows resource recovery while preserving the successful tool effect", () => {
+    const state = projectThreadExecutionState(
+      { ...run, status: "cancelled" },
+      [record(1, "saved", "completed")],
+      true,
+      {
+        revision: "resource-1",
+        allReleased: false,
+        pendingResources: true,
+        unresolvedResultItemIds: [],
+        phase: "stopping",
+        reasonCode: "RESOURCE_STOP_IN_PROGRESS",
+        lastObservedAt: at(5),
+        operations: [
+          {
+            itemId: "saved",
+            phase: "stopping",
+            reasonCode: "RESOURCE_STOP_IN_PROGRESS",
+            lastObservedAt: at(5),
+          },
+        ],
+      },
+    );
+    expect(state).toMatchObject({
+      displayPhase: "unresolved",
+      reasonCode: "RESOURCE_STOP_IN_PROGRESS",
+      lastObservedAt: at(5),
+      effectSummary: [{ itemId: "saved", outcome: "succeeded" }],
+      operations: [
+        { itemId: "saved", displayPhase: "unresolved", reasonCode: "RESOURCE_STOP_IN_PROGRESS" },
+      ],
+      availableActions: [],
+    });
+    expect(threadExecutionStateSchema.parse(state)).toEqual(state);
+  });
+  it("ends cancelled cleanup only with complete release evidence, never an empty inventory", () => {
+    const resources = {
+      revision: "resource-1",
+      allReleased: true,
+      pendingResources: false,
+      unresolvedResultItemIds: [],
+      phase: null,
+      reasonCode: "RESOURCE_RELEASE_CONFIRMED",
+      lastObservedAt: at(5),
+      operations: [
+        {
+          itemId: "saved",
+          phase: "released" as const,
+          reasonCode: "RESOURCE_RELEASE_CONFIRMED",
+          lastObservedAt: at(5),
+        },
+      ],
+    };
+    const state = projectThreadExecutionState(
+      { ...run, status: "cancelled" },
+      [record(1, "saved", "completed")],
+      true,
+      resources,
+    );
+    expect(state).toMatchObject({
+      displayPhase: "stopped",
+      availableActions: [],
+      effectSummary: [{ itemId: "saved", outcome: "succeeded" }],
+    });
+    expect(
+      projectThreadExecutionState({ ...run, status: "cancelled" }, [], true, {
+        ...resources,
+        allReleased: false,
+        operations: [],
+      }).displayPhase,
+    ).toBe("unresolved");
+  });
+  it("does not hide an unrendered resource behind a completed Run or a last successful tool", () => {
+    const state = projectThreadExecutionState(
+      { ...run, status: "completed" },
+      [record(1, "saved", "completed")],
+      true,
+      {
+        revision: "resource-1",
+        allReleased: false,
+        pendingResources: true,
+        unresolvedResultItemIds: [],
+        phase: "unresolved",
+        reasonCode: "RESOURCE_STATE_UNCONFIRMED",
+        lastObservedAt: at(5),
+        operations: [
+          {
+            itemId: "other",
+            phase: "unresolved",
+            reasonCode: "RESOURCE_STATE_UNCONFIRMED",
+            lastObservedAt: at(5),
+          },
+        ],
+      },
+    );
+    expect(state.displayPhase).toBe("unresolved");
+    expect(state.effectSummary).toEqual([{ itemId: "saved", outcome: "succeeded" }]);
+  });
+
+  it("does not advertise execution when resource observation contradicts a terminal Run", () => {
+    const state = projectThreadExecutionState(
+      { ...run, status: "completed" },
+      [record(1, "saved", "completed")],
+      true,
+      {
+        revision: "resource-1",
+        allReleased: false,
+        pendingResources: true,
+        unresolvedResultItemIds: [],
+        phase: "executing",
+        reasonCode: "RESOURCE_EXECUTION_OBSERVED",
+        lastObservedAt: at(5),
+        operations: [],
+      },
+    );
+    expect(state).toMatchObject({
+      displayPhase: "unresolved",
+      reasonCode: "RESOURCE_STATE_UNCONFIRMED",
+    });
+  });
+
+  it("keeps an unrendered internal result unknown after every resource has released", () => {
+    const state = projectThreadExecutionState({ ...run, status: "cancelled" }, [], true, {
+      revision: "released-unknown",
+      allReleased: true,
+      pendingResources: false,
+      phase: null,
+      reasonCode: "RESOURCE_RELEASE_CONFIRMED",
+      lastObservedAt: at(5),
+      operations: [],
+      unresolvedResultItemIds: ["missing-parent"],
+    });
+    expect(state).toMatchObject({
+      displayPhase: "unresolved",
+      reasonCode: "EXECUTION_RESULT_UNCONFIRMED",
+      availableActions: [],
+    });
+  });
+
+  it("shows a cancelled queue as not dispatched only with positive queue and tool evidence", () => {
+    const resources = {
+      revision: "queue-cancelled",
+      allReleased: false,
+      pendingResources: false,
+      unresolvedResultItemIds: [],
+      phase: null,
+      reasonCode: "RESOURCE_QUEUE_CANCELLED",
+      lastObservedAt: null,
+      operations: [
+        {
+          itemId: "queued",
+          phase: "not_dispatched" as const,
+          reasonCode: "RESOURCE_QUEUE_CANCELLED",
+          lastObservedAt: null,
+        },
+      ],
+    };
+    const records = [
+      record(1, "queued", "failed"),
+      record(2, "queued", "updated", "runtime.tool_outcome.not_dispatched"),
+    ];
+    expect(
+      projectThreadExecutionState({ ...run, status: "cancelled" }, records, true, resources),
+    ).toMatchObject({
+      displayPhase: "not_dispatched",
+      reasonCode: "RUN_CANCELLED_BEFORE_DISPATCH",
+      availableActions: [],
+    });
+    expect(
+      projectThreadExecutionState({ ...run, status: "cancelled" }, [], true, resources)
+        .displayPhase,
+    ).toBe("unresolved");
+  });
+
   it("does not claim resource shutdown from a cancelled Run even when every tool returned", () => {
     expect(
       projectThreadExecutionState(
@@ -178,6 +352,23 @@ describe("execution state history read boundary", () => {
     const read = vi.spyOn(projection, "read");
     return { projection, read, listRuns };
   }
+  it("rejects resource changes across the Trace read even when the Run revision is unchanged", async () => {
+    const inventory = { admissions: [], queue: [], legacyResourcesPending: false };
+    const readInventory = vi
+      .fn()
+      .mockResolvedValueOnce(inventory)
+      .mockResolvedValueOnce({ ...inventory, legacyResourcesPending: true });
+    const projection = new ThreadExecutionProjection({
+      threads: { listRuns: async () => [run] },
+      payloads: () => ({ get: async () => undefined }),
+      protector: {},
+      resources: { readInventory, now: () => at(10), digest: () => "a".repeat(64) },
+    } as unknown as ConstructorParameters<typeof ThreadExecutionProjection>[0]);
+    vi.spyOn(projection, "read").mockResolvedValue({ records: [], nextSequence: null });
+    await expect(projection.readState(input)).rejects.toThrow(
+      "THREAD_EXECUTION_RESOURCES_CHANGED_DURING_READ",
+    );
+  });
   it("reads all pages so an earlier unresolved tool cannot be hidden by a later success", async () => {
     const { projection, read } = fixture();
     read.mockResolvedValueOnce({

@@ -1,0 +1,25 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-capability-invocations.test.ts (73 tests | 1 failed | 72 skipped) 264ms
+     × reads authentic historical scope without renewing expired or revoked execution rights 263ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-capability-invocations.test.ts > durable sandbox invocation journal > reads authentic historical scope without renewing expired or revoked execution rights
+TypeError: readSandboxScopeSnapshot is not a function
+ ❯ test/integration/sqlite-capability-invocations.test.ts:2239:20
+    2237|         digest: (bytes: Uint8Array) => createHash("sha256").update(byt…
+    2238|       };
+    2239|       expect(await readSandboxScopeSnapshot(candidate, dependencies)).…
+       |                    ^
+    2240|       const execution = new SandboxScopeService({
+    2241|         ...dependencies,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 72 skipped (73)
+   Start at  16:27:58
+   Duration  2.14s (transform 1.09s, setup 0ms, import 1.76s, tests 264ms, environment 0ms)

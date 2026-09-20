@@ -708,6 +708,20 @@ export async function createProductionHttpComposition(
       trace: repository.traceStore(),
       payloads: () => repository.payloadStore(ownerId, agentId),
       protector: payloadProtector,
+      resources: {
+        readInventory: async (scope) => {
+          if (scope.ownerId !== ownerId || scope.agentId !== agentId)
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+              "THREAD_EXECUTION_RESOURCE_SCOPE_MISMATCH",
+            );
+          return repository
+            .sandboxExecutionPreparations(ownerId, agentId)
+            .readRunInventory({ runId: scope.runId });
+        },
+        now: clock,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+      },
     }),
     repository: threads,
     checkpoints: repository.threadDistillationState(),

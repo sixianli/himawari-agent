@@ -331,18 +331,32 @@ export function thinkingSteps(records: readonly ThreadExecutionRecord[]) {
 }
 
 /** Localization only: all phase decisions belong to the backend projection. */
-export function executionStateLabel(phase: ThreadExecutionState["displayPhase"]): MessageId {
-  return {
-    preparing: "chat.phase.preparing",
-    awaiting_approval: "runs.status.awaitingApproval",
-    reviewing: "review.authorizationChecking",
-    model_waiting: "chat.activity.waitingModel",
-    model_thinking: "chat.activity.thinking",
-    model_output: "chat.activity.output",
-    completed: "chat.phase.completed",
-    failed: "chat.phase.failed",
-    stopped: "chat.phase.stopped",
-    unresolved: "chat.phase.unresolved",
-    not_dispatched: "chat.phase.notDispatched",
-  }[phase] as MessageId;
+export function executionStateLabel(
+  phase: ThreadExecutionState["displayPhase"],
+  reasonCode?: string,
+): MessageId {
+  const resourceLabels: Readonly<Record<string, MessageId>> = {
+    RESOURCE_STOP_IN_PROGRESS: "chat.resource.stopping",
+    RESOURCE_CHECK_IN_PROGRESS: "chat.resource.verifying",
+    RESOURCE_QUEUE_WAITING: "chat.resource.queued",
+    RESOURCE_EXECUTION_OBSERVED: "chat.resource.executing",
+  };
+  return (
+    (reasonCode && Object.hasOwn(resourceLabels, reasonCode)
+      ? resourceLabels[reasonCode]
+      : undefined) ??
+    ({
+      preparing: "chat.phase.preparing",
+      awaiting_approval: "runs.status.awaitingApproval",
+      reviewing: "review.authorizationChecking",
+      model_waiting: "chat.activity.waitingModel",
+      model_thinking: "chat.activity.thinking",
+      model_output: "chat.activity.output",
+      completed: "chat.phase.completed",
+      failed: "chat.phase.failed",
+      stopped: "chat.phase.stopped",
+      unresolved: "chat.phase.unresolved",
+      not_dispatched: "chat.phase.notDispatched",
+    }[phase] as MessageId)
+  );
 }

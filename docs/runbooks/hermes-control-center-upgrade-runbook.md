@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:6040f02b0f34644bddfdac826aa1d664789cb133ac741b23970de439b8e25d7d"
+contract_sha256: "sha256:0be4d7bc5ce288889e7a7c8398bdd51baa3f9049fe51233084591a8f7ed509d9"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -57,6 +57,8 @@ date: "2026-09-11"
 - packages/gateway-contracts/src/thread-contracts-v3.ts
 - packages/application/src/services/thread-execution-projection.ts
 - packages/application/src/services/thread-execution-state.ts
+- packages/application/src/services/thread-execution-resources.ts
+- packages/application/src/services/sandbox-scope-service.ts
 - packages/persistence-sqlite/src
 - packages/runtime-pi/src
 - packages/runtime-pi/test/fixtures/rejected-current-task-context.ts
@@ -83,7 +85,7 @@ Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认�
 新增的 `thread.execution_state` 状态查询只有服务配置声明 `executionStateAvailable` 时才由新页面使用；原事件查询保持严格兼容。安装验收须核对新页面与服务能力声明一致，整体与工具行共同保留未知结果，断线不会覆盖已完成事实；Stop/清理仍使用原 revision、权限和幂等入口。新查询仅从持久 Run/Trace 汇总已有事实，操作结果列表不是文件已回滚、资源已释放或所有后代已停止的证明。资源 journal、队列及全部阶段仍未完整接入，不能据此跳过本 Runbook 的平台与现场资格。本展示升级无新 migration，也不授权本机任务自动切换 Hermes。实现与本地证据见[统一状态接入记录](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-unified-state)。
 
 
-内部资源快照 `readRunInventory` 只读取已有同主体 Run 的预约、绑定、队列历史及旧格式未释放标记，不变更数据库版本、额度或执行权。它尚未替换页面查询或本 Runbook 的现场核验；空快照与旧权限都不能代替当前宿主停止证明。读取超过任一 10,000 条上限时必须报告失败，不接受截断后继续操作。
+内部资源快照 `readRunInventory` 只读取已有同主体 Run 的预约、绑定、队列历史及旧格式未释放标记，不变更数据库版本、额度或执行权。生产 `thread.execution_state` 已将该快照与 Run/Trace 聚合，读取期间资源或 Run 改变时拒绝混合结论。历史 Scope 仅用于验证原工具归属，不读取或续发当前 Grant；停止、核验和资源状态未确认通过既有 `reasonCode` 表达，保持 v3 阶段枚举兼容。工具效果与资源清理分别保留；已释放但未交接的内部结果仍显示结果未确认。当前可见会话每两秒重新只读核验，隐藏或断线时停止该轮询，不把连接心跳或本地计时当作执行事实；空快照与旧权限都不能代替当前宿主停止证明或本 Runbook 的现场核验。读取超过任一 10,000 条上限时必须报告失败，不接受截断后继续操作。
 
 ## Authoritative Sources
 

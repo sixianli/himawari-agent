@@ -7,6 +7,8 @@ import type {
   TraceEvent,
   TraceStorePort,
 } from "../ports/observability.js";
+import type { SandboxExecutionRunInventory } from "../ports/sandbox-execution-journal.js";
+import { readThreadExecutionResources } from "./thread-execution-resources.js";
 import type { ThreadRepositoryPort } from "../ports/threads.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
 import { projectThreadExecutionState } from "./thread-execution-state.js";
@@ -44,6 +46,16 @@ function visibleText(value: unknown): string {
   );
 }
 
+interface ThreadExecutionResourceReader {
+  readonly readInventory: (input: {
+    ownerId: string;
+    agentId: string;
+    runId: string;
+  }) => Promise<SandboxExecutionRunInventory>;
+  readonly now: () => string;
+  readonly digest: (bytes: Uint8Array) => string;
+}
+
 /** Owner-scoped presentation of existing durable observations, never arbitrary Trace JSON. */
 export class ThreadExecutionProjection {
   private readonly dependencies: {
@@ -51,12 +63,14 @@ export class ThreadExecutionProjection {
     readonly trace: TraceStorePort;
     readonly payloads: (ownerId: string, agentId: string) => PayloadStorePort;
     readonly protector: PayloadProtectorPort;
+    readonly resources?: ThreadExecutionResourceReader;
   };
   constructor(dependencies: {
     readonly threads: ThreadRepositoryPort;
     readonly trace: TraceStorePort;
     readonly payloads: (ownerId: string, agentId: string) => PayloadStorePort;
     readonly protector: PayloadProtectorPort;
+    readonly resources?: ThreadExecutionResourceReader;
   }) {
     this.dependencies = dependencies;
   }
@@ -359,6 +373,9 @@ export class ThreadExecutionProjection {
     );
     if (!before)
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "THREAD_EXECUTION_NOT_FOUND");
+    const resourceReader = this.dependencies.resources;
+    const inventory = await resourceReader?.readInventory({ ownerId, agentId, runId });
+    const resourceRevision = inventory ? threadCommandFingerprint(inventory) : null;
     const records: ThreadExecutionRecord[] = [];
     let afterSequence = 0;
     // Never return an aggregate of only the last page or a silently truncated history.
@@ -366,6 +383,31 @@ export class ThreadExecutionProjection {
       const page = await this.read({ ...input, afterSequence, limit: 1000 });
       records.push(...page.records);
       if (page.nextSequence === null) {
+        const resources =
+          inventory && resourceReader
+            ? await readThreadExecutionResources({
+                ownerId,
+                agentId,
+                threadId,
+                runId,
+                inventory,
+                now: resourceReader.now(),
+                payloads: this.dependencies.payloads(ownerId, agentId),
+                protector: this.dependencies.protector,
+                digest: resourceReader.digest,
+                itemId: (toolCallId) => identifier(toolCallId, toolCallId),
+              })
+            : undefined;
+        if (
+          resourceReader &&
+          threadCommandFingerprint(
+            await resourceReader.readInventory({ ownerId, agentId, runId }),
+          ) !== resourceRevision
+        )
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "THREAD_EXECUTION_RESOURCES_CHANGED_DURING_READ",
+          );
         const after = (await this.dependencies.threads.listRuns(ownerId, agentId, threadId)).find(
           (run) => run.runId === runId,
         );
@@ -374,7 +416,7 @@ export class ThreadExecutionProjection {
             PORT_ERROR_CODES.NOT_AUTHORITATIVE,
             "THREAD_EXECUTION_CHANGED_DURING_READ",
           );
-        return projectThreadExecutionState(after, records, input.canCancelRun);
+        return projectThreadExecutionState(after, records, input.canCancelRun, resources);
       }
       if (page.nextSequence <= afterSequence)
         throw new ApplicationPortError(

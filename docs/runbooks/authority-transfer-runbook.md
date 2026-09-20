@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a83f994705b3f94e156d34cee9d182316320b7668eda7240a5c59ace713c5abe"
+contract_sha256: "sha256:9f69e79c911e7df0611b89d3d7359b843ca45a39b8da5a57543a37ffc96477ec"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -45,6 +45,8 @@ date: "2026-08-27"
 - apps/agent-service/src/production-run-composition.ts
 - packages/application/src/services/thread-execution-projection.ts
 - packages/application/src/services/thread-execution-state.ts
+- packages/application/src/services/thread-execution-resources.ts
+- packages/application/src/services/sandbox-scope-service.ts
 - packages/gateway-contracts/src/thread-contracts-v3.ts
 - packages/persistence-sqlite/src/migrations/0032_runtime_history.sql
 - packages/application/src/services/runtime-history-service.ts
@@ -147,7 +149,7 @@ Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认�
 新控制中心在服务声明 `executionStateAvailable` 后另查 `thread.execution_state`，旧事件接口不增加字段，旧服务缺少该声明时仍走原兼容路径。恢复后应同时检查每个操作和整体结论，不能只看最后成功工具或 Run 终态；分页或版本变化造成的读取失败必须保留原结论并重新查询，不能重新执行工具。页面状态的内容 revision 不是执行权凭据；实际 Stop/清理仍经原 revision、权限和幂等控制。当前效果列表仅表示操作 outcome，不能代替原 journal 的资源释放证明。此展示升级无 migration，不修改已有恢复点，也不授权生产切换。
 
 
-内部资源快照 `readRunInventory` 只读取已有同主体 Run 的预约、绑定、队列历史及旧格式未释放标记，不变更数据库版本、额度或执行权。它尚未替换页面查询或本 Runbook 的现场核验；空快照与旧权限都不能代替当前宿主停止证明。读取超过任一 10,000 条上限时必须报告失败，不接受截断后继续操作。
+内部资源快照 `readRunInventory` 只读取已有同主体 Run 的预约、绑定、队列历史及旧格式未释放标记，不变更数据库版本、额度或执行权。生产 `thread.execution_state` 已将该快照与 Run/Trace 聚合，读取期间资源或 Run 改变时拒绝混合结论。历史 Scope 仅用于验证原工具归属，不读取或续发当前 Grant；停止、核验和资源状态未确认通过既有 `reasonCode` 表达，保持 v3 阶段枚举兼容。工具效果与资源清理分别保留；已释放但未交接的内部结果仍显示结果未确认。当前可见会话每两秒重新只读核验，隐藏或断线时停止该轮询，不把连接心跳或本地计时当作执行事实；空快照与旧权限都不能代替当前宿主停止证明或本 Runbook 的现场核验。读取超过任一 10,000 条上限时必须报告失败，不接受截断后继续操作。
 
 ## Authoritative Sources
 

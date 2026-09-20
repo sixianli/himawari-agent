@@ -1,0 +1,49 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/application/test/thread-execution-state.unit.test.ts (18 tests | 1 failed | 17 skipped) 24ms
+     × rejects resource changes across the Trace read even when the Run revision is unchanged 23ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > rejects resource changes across the Trace read even when the Run revision is unchanged
+AssertionError: promise resolved "{ runRevision: 3, …(9) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "availableActions": [
++     "stop",
++   ],
++   "displayPhase": "model_waiting",
++   "effectSummary": [],
++   "lastObservedAt": "2026-09-20T00:00:01.000Z",
++   "needsAttention": false,
++   "operations": [],
++   "reasonCode": "EXECUTION_MODEL_WAITING",
++   "revision": "thread-command:v1:8e99d28dbb20fea1b0008b552f89f15a",
++   "runRevision": 3,
++   "timing": {
++     "executionMilliseconds": null,
++     "reviewMilliseconds": null,
++   },
+  }
+
+ ❯ packages/application/test/thread-execution-state.unit.test.ts:222:46
+    220|     } as unknown as ConstructorParameters<typeof ThreadExecutionProjec…
+    221|     vi.spyOn(projection, "read").mockResolvedValue({ records: [], next…
+    222|     await expect(projection.readState(input)).rejects.toThrow("THREAD_…
+       |                                              ^
+    223|   });
+    224|   it("reads all pages so an earlier unresolved tool cannot be hidden b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 17 skipped (18)
+   Start at  16:35:12
+   Duration  271ms (transform 110ms, setup 0ms, import 140ms, tests 24ms, environment 0ms)

@@ -71,10 +71,11 @@ export function ExecutionProcess({
   const [now, setNow] = useState(Date.now());
   const [expanded, setExpanded] = useState(true);
   useEffect(() => {
-    if (isTerminalRun(run) || connection !== "connected") return;
+    if ((isTerminalRun(run) && state?.displayPhase !== "unresolved") || connection !== "connected")
+      return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [run, connection]);
+  }, [run, connection, state?.displayPhase]);
   const items = executionItems(records);
   const thinking = thinkingSteps(records);
   const steps = [
@@ -105,13 +106,13 @@ export function ExecutionProcess({
       observationAge >= 15000
     : activity.stale;
   const stateLabel = state
-    ? executionStateLabel(state.displayPhase)
+    ? executionStateLabel(state.displayPhase, state.reasonCode)
     : stateAvailable
       ? "chat.recordUnavailable"
       : undefined;
   return (
     <>
-      {!isTerminalRun(run) ? (
+      {!isTerminalRun(run) || state?.displayPhase === "unresolved" ? (
         <div className="turn-activity">
           {(
             state
@@ -191,7 +192,7 @@ export function ExecutionProcess({
             const incomplete = ["started", "updated"].includes(item.phase);
             const phase: MessageId =
               (operation
-                ? executionStateLabel(operation.displayPhase)
+                ? executionStateLabel(operation.displayPhase, operation.reasonCode)
                 : stateAvailable
                   ? "chat.recordUnavailable"
                   : undefined) ??
@@ -203,6 +204,16 @@ export function ExecutionProcess({
                 : item.kind === "tool" && item.phase === "updated"
                   ? "chat.callRequested"
                   : (`chat.phase.${item.phase}` as MessageId));
+            const effect = state?.effectSummary.find((effect) => effect.itemId === item.itemId);
+            const retainedEffect: MessageId | undefined = operation?.reasonCode.startsWith(
+              "RESOURCE_",
+            )
+              ? effect?.outcome === "succeeded"
+                ? "chat.phase.completed"
+                : effect?.outcome === "failed"
+                  ? "chat.phase.failed"
+                  : undefined
+              : undefined;
             const elapsed = operation
               ? operation.executionMilliseconds
               : recordedInterval(records, item.itemId, "runtime.tool_execution");
@@ -221,6 +232,7 @@ export function ExecutionProcess({
                     </span>
                     {hint ? <span className="step-preview">{hint}</span> : null}
                     <span className="step-status" title={message("review.workerTiming")}>
+                      {retainedEffect ? `${message(retainedEffect)} · ` : ""}
                       {message(phase)}
                       {` · ${elapsed !== null ? duration(elapsed) : message("chat.unknownTime")}`}
                     </span>

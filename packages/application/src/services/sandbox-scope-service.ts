@@ -6,6 +6,8 @@ import {
   type SandboxExecutionScope,
   sandboxExecutionPlanCandidateSchema,
   sandboxExecutionPlanCandidateV2Schema,
+  sandboxExecutionPlanV2Schema,
+  sandboxExecutionPlanSchema,
   sandboxExecutionScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import type { AuthorizationStorePort } from "../ports/authorization.js";
@@ -31,6 +33,70 @@ export interface SandboxScopeServiceOptions {
   readonly now: () => string;
   /** Trusted SHA-256 over exact bytes, returning lowercase hex. */
   readonly digest: (bytes: Uint8Array) => string;
+}
+
+/** Authenticate the original immutable scope for historical display. This reads
+ * no live Grant and returns no execution/disclosure permit or resolved domains. */
+export async function readSandboxScopeSnapshot(
+  input: SandboxExecutionPlanCandidate | SandboxExecutionPlanCandidateV2,
+  options: Pick<SandboxScopeServiceOptions, "payloads" | "protector" | "digest">,
+): Promise<SandboxExecutionScope> {
+  try {
+    const plan =
+      input.schemaVersion === "sandbox-execution.v2"
+        ? ("semanticFingerprint" in input
+            ? sandboxExecutionPlanV2Schema
+            : sandboxExecutionPlanCandidateV2Schema
+          ).parse(input)
+        : ("semanticFingerprint" in input
+            ? sandboxExecutionPlanSchema
+            : sandboxExecutionPlanCandidateSchema
+          ).parse(input);
+    const payload = await options.payloads.get(plan.binding.scopeRef);
+    if (
+      !payload ||
+      payload.ref !== plan.binding.scopeRef ||
+      payload.contentType !== "application/json" ||
+      payload.dataClassification === "public" ||
+      payload.ciphertext.byteLength > 131072
+    )
+      throw new Error("invalid payload");
+    const bytes = await options.protector.unprotect({
+      ownerId: createOwnerId(plan.identity.ownerId),
+      agentId: createAgentId(plan.identity.agentId),
+      payload,
+    });
+    if (bytes.byteLength === 0 || bytes.byteLength > 65536) throw new Error("invalid size");
+    const digest = options.digest(bytes);
+    if (
+      !/^[a-f0-9]{64}$/.test(digest) ||
+      digest !== plan.binding.scopeDigest ||
+      payload.contentDigest !== `sha256:${digest}`
+    )
+      throw new Error("digest mismatch");
+    const scope = sandboxExecutionScopeSchema.parse(
+      JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
+    );
+    for (const key of ["ownerId", "agentId", "threadId", "runId", "toolCallId", "hostId"] as const)
+      if (scope[key] !== plan.identity[key]) throw new Error("identity mismatch");
+    for (const key of [
+      "handleRef",
+      "inputRef",
+      "operation",
+      "authorizationRef",
+      "modelRef",
+    ] as const)
+      if (scope[key] !== plan[key]) throw new Error("plan mismatch");
+    if (
+      scope.profileRef !== plan.binding.profileRef ||
+      scope.parentToolCallId === scope.toolCallId ||
+      plan.effectiveDeadlineAt > scope.expiresAt
+    )
+      throw new Error("invalid scope binding");
+    return scope;
+  } catch {
+    throw new Error("SANDBOX_SCOPE_UNAVAILABLE");
+  }
 }
 
 /** Resolves protected scope and current directory/network authority. It does not
@@ -59,48 +125,7 @@ export class SandboxScopeService {
         ? sandboxExecutionPlanCandidateV2Schema.parse(input)
         : sandboxExecutionPlanCandidateSchema.parse(input);
     try {
-      const payload = await this.#options.payloads.get(plan.binding.scopeRef);
-      if (
-        !payload ||
-        payload.ref !== plan.binding.scopeRef ||
-        payload.contentType !== "application/json" ||
-        payload.dataClassification === "public" ||
-        payload.ciphertext.byteLength > 131072
-      )
-        throw new Error("invalid payload");
-      const bytes = await this.#options.protector.unprotect({
-        ownerId: createOwnerId(plan.identity.ownerId),
-        agentId: createAgentId(plan.identity.agentId),
-        payload,
-      });
-      if (bytes.byteLength === 0 || bytes.byteLength > 65536) throw new Error("invalid size");
-      const digest = this.#options.digest(bytes);
-      if (
-        !/^[a-f0-9]{64}$/.test(digest) ||
-        digest !== plan.binding.scopeDigest ||
-        payload.contentDigest !== `sha256:${digest}`
-      )
-        throw new Error("digest mismatch");
-      const scope = sandboxExecutionScopeSchema.parse(
-        JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
-      );
-      for (const key of [
-        "ownerId",
-        "agentId",
-        "threadId",
-        "runId",
-        "toolCallId",
-        "hostId",
-      ] as const)
-        if (scope[key] !== plan.identity[key]) throw new Error("identity mismatch");
-      for (const key of [
-        "handleRef",
-        "inputRef",
-        "operation",
-        "authorizationRef",
-        "modelRef",
-      ] as const)
-        if (scope[key] !== plan[key]) throw new Error("plan mismatch");
+      const scope = await readSandboxScopeSnapshot(plan, this.#options);
       if (scope.parentRequestId !== parentRequestId) throw new Error("parent request mismatch");
       const now = this.#options.now();
       if (scope.hostId !== this.#options.hostId) throw new Error("host changed");

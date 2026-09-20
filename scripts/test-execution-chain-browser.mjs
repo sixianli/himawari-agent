@@ -483,10 +483,80 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
         await expect(page.locator(".turn-process .tool-record .step-status").first()).toContainText(
           "完成",
         );
+        await send({
+          status: "cancelled",
+          state: {
+            ...state,
+            revision: "browser-resource-stopping",
+            reasonCode: "RESOURCE_STOP_IN_PROGRESS",
+            operations: state.operations.map((operation) =>
+              operation.itemId === "saved"
+                ? {
+                    ...operation,
+                    displayPhase: "unresolved",
+                    reasonCode: "RESOURCE_STOP_IN_PROGRESS",
+                  }
+                : operation,
+            ),
+            availableActions: [],
+          },
+        });
+        await expect(page.locator(".turn-activity output")).toContainText("正在停止");
+        await expect(page.locator(".turn-process .tool-record .step-status").first()).toContainText(
+          "正在停止",
+        );
+        await expect(
+          page.getByRole("button", { name: "再次停止并检查清理", exact: true }),
+        ).toHaveCount(0);
+        await expect(page.locator(".turn-process .tool-record .step-status").first()).toContainText(
+          "完成",
+        );
+        await send({
+          silent: true,
+          state: {
+            ...state,
+            revision: "browser-resource-verifying",
+            reasonCode: "RESOURCE_CHECK_IN_PROGRESS",
+            availableActions: [],
+          },
+        });
+        await expect(page.locator(".turn-activity output")).toContainText("正在核验原请求");
+        await send({
+          status: "cancelled",
+          state: {
+            ...state,
+            revision: "browser-resource-expired",
+            reasonCode: "RESOURCE_STATE_UNCONFIRMED",
+            availableActions: ["retry_cleanup"],
+          },
+        });
+        await expect(page.locator(".turn-activity output")).toContainText("结果未确认");
+        await expect(page.locator(".turn-activity .run-indicator")).toHaveCount(0);
+        await page.reload();
+        await expect(page.locator(".turn-activity output")).toContainText("结果未确认");
+        await page.screenshot({
+          path: path.join(output, `state-${width}-${colorScheme}-resource-expired.png`),
+        });
+        await send({
+          status: "cancelled",
+          state: {
+            ...state,
+            revision: "browser-resource-released",
+            displayPhase: "stopped",
+            reasonCode: "RUN_CANCELLED_RESOURCES_RELEASED",
+            availableActions: [],
+          },
+        });
+        await expect(page.locator(".turn-process .process-result").first()).toContainText("已停止");
+        await expect(page.locator(".turn-activity")).toHaveCount(0);
+        await expect(
+          page.getByRole("button", { name: "再次停止并检查清理", exact: true }),
+        ).toHaveCount(0);
         assert.deepEqual(errors, []);
         cases.push({
           width,
           colorScheme,
+          resourceRecovery: true,
           backendState: true,
           reconnect: true,
           noTraceReplay: true,

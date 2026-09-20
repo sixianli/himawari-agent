@@ -1337,11 +1337,12 @@ async function handleRequest(request, response) {
         committedAt: run.updatedAt,
       });
     }
-    writeThreadEvent(
-      { messageId: "fixture-execution" },
-      thread.threadId,
-      "thread.execution.updated",
-    );
+    if (!input.silent)
+      writeThreadEvent(
+        { messageId: "fixture-execution" },
+        thread.threadId,
+        "thread.execution.updated",
+      );
     if (input.replay) {
       const event = threadEvents.at(-1);
       for (const client of threadEventClients) client.write(`data: ${JSON.stringify(event)}\n\n`);

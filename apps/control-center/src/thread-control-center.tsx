@@ -497,6 +497,42 @@ export function useThreadControlCenter(
     [],
   );
 
+  useEffect(() => {
+    if (
+      !active ||
+      !selectedThreadId ||
+      !configuration?.executionStateAvailable ||
+      connection !== "connected" ||
+      !detail?.payload.runs.length
+    )
+      return;
+    // Journal changes and expired observation windows need not create a Thread
+    // event. Re-read authoritative state while this conversation is visible;
+    // transport heartbeats and local elapsed time never manufacture progress.
+    let stopped = false;
+    let timer: number;
+    const check = async () => {
+      if (document.visibilityState === "visible") await refreshLatest.current();
+      if (!stopped)
+        timer = window.setTimeout(() => {
+          void check();
+        }, 2000);
+    };
+    timer = window.setTimeout(() => {
+      void check();
+    }, 2000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    active,
+    selectedThreadId,
+    configuration?.executionStateAvailable,
+    connection,
+    detail?.payload.runs.length,
+  ]);
+
   const settleMutation = useCallback(
     async (
       identity: PendingThreadMutation,

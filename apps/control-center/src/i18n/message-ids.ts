@@ -138,6 +138,11 @@ export const MESSAGE_IDS = [
   "chat.phase.started",
   "chat.phase.notDispatched",
   "chat.phase.unresolved",
+  "chat.resource.stopping",
+  "chat.resource.verifying",
+  "chat.resource.queued",
+  "chat.resource.executing",
+
   "chat.phase.preparing",
   "chat.phase.updated",
   "chat.phase.completed",

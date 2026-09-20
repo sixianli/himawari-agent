@@ -469,6 +469,24 @@ describe("thread control center interactions", () => {
     ).toBeGreaterThanOrEqual(2);
     expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
     expect(container.textContent).toContain("Retained output");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    state = { ...state, revision: "state-3", reasonCode: "RESOURCE_EXECUTION_OBSERVED" };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(container.querySelector(".process-result")?.textContent).toContain(
+      messages["chat.resource.executing"],
+    );
+    visibility.mockReturnValue("hidden");
+    const requests = query.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+    expect(query).toHaveBeenCalledTimes(requests);
+    visibility.mockRestore();
     expect(mutate).not.toHaveBeenCalled();
   });
 
