@@ -61,7 +61,7 @@ date: "2026-09-16"
 | 阶段 | 已实现并验证的部分 | 仍需完成的重点 |
 | --- | --- | --- |
 | [P0](#p0) | r3 交互已确认；身份和持久化合同已记录；四项首次加载立即发送回归已接入原浏览器入口 | 完整基线、全部合同和 68 项联合验收仍不能划为已完成 |
-| [P1](#p1) | 永久释放事实、结果交接不反锁；未绑定预约停止隔离与启动发现；停止目标与同 Run 跨页资源独立派发、清理等待上限及完成输出保留；未启动宿主退出后的预约释放凭据与原停止隔离；恢复写入的事务内归属检查、超时回调隔离和并发结果保留 | 已启动进程及后代资格、迟到矛盾证据、完整恢复错误分类与调度 |
+| [P1](#p1) | 永久释放事实、结果交接不反锁；未绑定预约停止隔离与启动发现；停止目标与同 Run 跨页资源独立派发、清理等待上限及完成输出保留；未启动宿主退出后的预约释放凭据与原停止隔离；恢复写入的事务内归属检查、超时回调隔离和并发结果保留；Mac/Linux 真实后代写入与构建产品预约释放探针 | 完整安装资格、Mac 后代停止能力、迟到矛盾证据、完整恢复错误分类与调度 |
 | [P2](#p2) | 审批摘要与重复决定、额度预约、排队身份、工具执行前检查点及取消传播 | 跨 boot/fence 的执行权重新绑定、执行中撤销及所有生产路径联合覆盖 |
 | [P3](#p3) | 文件路径槽位/身份/祖先协调、公平队列、固定目标合同、暂存发布与保存恢复记录；合同 3 的并行候选准备、可停止计算、原队列提交与安装入口；确定未派发的冲突重放、新 intent 关联与有限重生成已通过本地验收 | 目录改名协议、Worker 执行后的冲突处理、跨 Worker 与多文件完整验收；合同 3 的平台资格与部署未执行 |
 | [P4](#p4) | 纯联网私有范围、无用户目录 Grant/挂载/claim；本机越界拒绝探针 | 任意命令的更窄可强制范围、可选副本与逐文件应用、Linux 平台资格 |
@@ -422,7 +422,7 @@ fixture 测试可控制网关响应来覆盖展示，但真正的审批与文件
 
 实施批次按可验收行为组织，不按单个补丁或提交拆分。同一批次内先完成相关实现并运行定向测试；共享端口修改后立即检查调用方和测试替身，新运行模块先验证加载与类型。源码稳定后集中执行本节要求的交付验证，并一次更新相关文档；已有结果仅在输入与环境未受影响时复用。进展以原验收条件和剩余证据报告，不以提交数或测试总数估算完成度。
 
-当前批次为 P1 的恢复尝试隔离：超时回调不再进入核验或写入，被接管的旧任务不能提交释放证明或结束新任务，并发操作结果与永久释放事实保持。服务入口、真实 SQLite 事务、生产存储端口及重开读回一起验收；不将此批通过等同于已启动进程及后代的完整资格。
+当前批次为 P1 的平台证据补充：复用原 JobHost 与构建产品探针，验证 Mac/Linux 后代写入、Worker 崩溃和释放前后预约准入。安装资格仍使用合成夹具；完整产品构建与 3,709 项测试复用前批未改变的产品源码结果，新探针分别在两端实际执行。
 
 ```sh
 npm run check
@@ -792,8 +792,18 @@ Pi 从当前 Run 的真实工具历史提出前序冲突关联，宿主复核同
 
 [恢复矩阵](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-01/recovery-matrix.log) 116 项通过，包含真实 SQLite、生产 repository 端口及数据库重开后的独立读回；定时器和宿主证据仍为受控输入。新增测试最初用了当前 TypeScript lib 未支持的 `Promise.withResolvers`，类型检查失败后改为本地 Promise 屏障，不改变工程编译目标。[消费者回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-01/consumers.log) 114 项通过；[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-01/standard-ci-result.json) 243 个文件、3,709 项全部通过，零失败、零跳过，产物发布扫描通过。[冻结复核](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-01/freeze-check-final.json)确认 1,179 个输入在构建及测试期间未变化，之后仅补验收记录。类型、任务范围格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过；全库 `npm run check` 与 lint 仍被原有未跟踪 r1/r2 原型脚本阻断。四份受影响 Runbook 已修正恢复归属说明并经治理工具重新封存；没有执行任何 Runbook 的生产操作。无需数据库迁移；端口字段为宿主内部附加校验，Schema 41 与原 Worker 工具合同保持不变。此批不代表进程后代资格、迟到矛盾证据的新风险保护、完整错误分类与调度已完成。
 
+### P1 真实后代写入与工作区释放的平台证据
+
+复用 [JobHost 控制探针](../../../packages/runtime-sandbox/scripts/probe-job-host-control.mjs)，增加 `writer-stop` 和 `writer-worker-crash`：Perl 子进程用 `setsid` 脱离原进程组，在测试文件中每 20ms 写入，最长 4 秒。以文件已至少写入三次作为停止前提，再发 Stop 或杀死测试 Worker；真实宿主最终证据经产品核验器分类，文件内容独立读回。
+
+[Mac 实测](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-platform-01/mac-descendant-writer.log)两个场景在观察后的 300ms 内仍各增加 30 字节，产品均保持 `cleanup=unknown`，不出具释放证明。[Linux 实测](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-platform-01/linux-descendant-writer.log)两个场景确认 PID namespace 释放后，观察期间均无新写入。每个平台共七个场景通过；300ms 的文件观察仅补充 namespace 身份与退出证据，不单独证明所有后代永远不能写入。Mac 的停止能力缺口是真实观察，不能以测试通过标为完整进程树资格。
+
+[构建产品组合探针](../../../test/qualification/sandbox-production-mac-probe.ts)继续经过真实 Worker、认证 UDS、SQLite 和产品释放核验。新增竞争预约在执行前必须拒绝，Linux 接纳永久释放事实后才允许预约，并独立读回新预约；Mac 保留占用，仍拒绝。重复执行仍未产生第二次执行。[汇总证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-platform-01/result.json)和[复现说明](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-platform-01/README.md)记录源摘要、平台、工具版本和边界。后代写入与竞争预约属于两个互补探针，未运行真正的第二个并发 writer；使用合成安装资格与受限 runner，`productionSuitable` 保持 false。
+
+Hermes 在确认 `/data` 独立挂载与容量后，于任务专属目录构建；复用 Node 22.22.3/npm 11.8.0 工具链并单独安装 Linux 原生依赖，没有安装系统工具或切换生产。两端构建、增强平台探针、类型和探针输出回归通过；产品源码与前批标准验证相同，本批只修改两个测试入口及证据文档。P1 的完整资格、迟到矛盾证据保护和调度分类仍未完成。
+
 ### 当前完成边界与下一步
 
-P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。本批恢复写入隔离已完成本地标准验证；下一优先项是 P1 已启动任务及后代的停止与释放资格，须用真实宿主证明旧 writer 不可再写，再验证冲突请求能否重新准入。其他 P1～P7 缺口继续以当前实施进展表为准。
+P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。本批补充了真实平台后代写入和构建产品预约释放证据；Mac 后代不能确认停止时必须继续阻止冲突任务。下一优先项是 P1 迟到矛盾证据的新风险保护，保留原释放事实并单独拦截新的实际风险。其他 P1～P7 缺口继续以当前实施进展表为准。
 
 [单一决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv) 记录本轮选择及证据；没有建立另一个项目状态缓存。

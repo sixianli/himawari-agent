@@ -59,12 +59,22 @@ if (process.argv.includes("--worker")) {
   );
   const results = [];
   try {
-    for (const scenario of ["stop", "worker-crash", "never-started", "observed-escape", "stdin"]) {
+    for (const scenario of [
+      "stop",
+      "worker-crash",
+      "never-started",
+      "observed-escape",
+      "stdin",
+      "writer-stop",
+      "writer-worker-crash",
+    ]) {
       const directory = path.join(root, String(results.length));
       await mkdir(directory, { mode: 0o700 });
       for (const child of ["workspace", "private", "control"])
         await mkdir(path.join(directory, child), { mode: 0o700 });
       const controlDirectory = path.join(directory, "control");
+      const writerPath = path.join(directory, "workspace", "descendant-writes");
+      const writerScenario = scenario.startsWith("writer-");
       await writeFile(path.join(controlDirectory, "sentinel"), "synthetic-only", { mode: 0o600 });
       const policy = {
         workspace: path.join(directory, "workspace"),
@@ -101,11 +111,14 @@ if (process.argv.includes("--worker")) {
         executable: "/usr/bin/perl",
         args: [
           "-e",
-          scenario === "stdin"
-            ? "binmode STDIN; local $/; my $input=<STDIN>; print $input; $|=1; sleep(4);"
-            : scenario === "observed-escape"
-              ? "use POSIX qw(setsid); my $p=fork(); if (!$p) { setsid(); sleep(4); exit(0); } sleep(3);"
-              : `open(my $f, '<', '${controlDirectory}/sentinel') and die 'control visible'; print qq(denied\\n); $|=1; sleep(4);`,
+          writerScenario
+            ? "use POSIX qw(setsid); use Time::HiRes qw(time usleep); my $p=fork(); defined($p) or die 'fork'; if (!$p) { setsid() >= 0 or die 'setsid'; open(my $f, '>>', $ARGV[0]) or die 'open'; select((select($f), $|=1)[0]); my $end=time()+4; while(time()<$end) { print $f qq(x\\n); usleep(20000); } exit(0); } sleep(4);"
+            : scenario === "stdin"
+              ? "binmode STDIN; local $/; my $input=<STDIN>; print $input; $|=1; sleep(4);"
+              : scenario === "observed-escape"
+                ? "use POSIX qw(setsid); my $p=fork(); if (!$p) { setsid(); sleep(4); exit(0); } sleep(3);"
+                : `open(my $f, '<', '${controlDirectory}/sentinel') and die 'control visible'; print qq(denied\\n); $|=1; sleep(4);`,
+          ...(writerScenario ? [writerPath] : []),
         ],
         ...(scenario === "stdin"
           ? { stdinBase64: Buffer.from("synthetic\u0000first\nsecond").toString("base64") }
@@ -235,7 +248,14 @@ if (process.argv.includes("--worker")) {
         await product.verifyPreparation(plan, record.facts);
         if (scenario !== "never-started") {
           worker.send({ start: true });
-          await delay(300);
+          if (writerScenario) {
+            stage = "descendant-writing";
+            const deadline = Date.now() + 3000;
+            while ((await readFile(writerPath).catch(() => Buffer.alloc(0))).length < 6) {
+              assert.ok(Date.now() < deadline, "descendant did not start writing");
+              await delay(20);
+            }
+          } else await delay(300);
         }
         const stopRequestedAt = new Date().toISOString();
         if (scenario !== "observed-escape") {
@@ -246,7 +266,8 @@ if (process.argv.includes("--worker")) {
             (await queryJobHostControl(binding, "inspect")).phase,
             scenario === "never-started" ? "ready" : "running",
           );
-          if (scenario === "worker-crash") worker.kill("SIGKILL");
+          if (scenario === "worker-crash" || scenario === "writer-worker-crash")
+            worker.kill("SIGKILL");
           else await queryJobHostControl(binding, "stop");
         }
         await exited;
@@ -287,6 +308,17 @@ if (process.argv.includes("--worker")) {
             (await product.evidence(plan, { ...record.facts, resource: observed })).length,
             1,
           );
+        let descendantWritesAfterObservation = null;
+        if (writerScenario) {
+          const before = await readFile(writerPath);
+          assert.ok(before.length >= 6);
+          // Bounded observation supplements namespace evidence; it is not itself
+          // proof that every possible descendant has terminated.
+          await delay(300);
+          const after = await readFile(writerPath);
+          descendantWritesAfterObservation = after.length - before.length;
+          if (observed.supervision === "released") assert.deepEqual(after, before);
+        }
         const reservationRelease = await product.verifyReservationRelease(plan, stopRequestedAt);
         if (scenario === "never-started") {
           assert.equal(reservationRelease?.basis, "host_never_started");
@@ -310,6 +342,9 @@ if (process.argv.includes("--worker")) {
           passed: true,
           cleanup: observed.cleanup,
           reservationReleased: Boolean(reservationRelease),
+          ...(writerScenario
+            ? { descendantStartedWriting: true, descendantWritesAfterObservation }
+            : {}),
         });
       } catch (error) {
         console.error(JSON.stringify({ scenario, stage, workerResult }));

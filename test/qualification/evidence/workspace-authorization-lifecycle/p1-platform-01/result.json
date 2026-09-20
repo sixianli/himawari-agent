@@ -1,0 +1,174 @@
+{
+  "baseCommit": "5ed9f89a3326b3ff6a9731632d3f090ebfdb31e6",
+  "sourceArchiveSha256": "3c9260989d2c5e85e1a3762d9812d6120397c69f59996c0405a7a56c8e387794",
+  "probeSourceDelta": {
+    "test/qualification/sandbox-production-mac-probe.ts": "a660b6989787dddb3ffe0bbbec0ecefbf9b71cdf11e47fa6a1468b2e3aa446ff",
+    "packages/runtime-sandbox/scripts/probe-job-host-control.mjs": "1cab7217b908c25b71db752a229ceb3535720eb74786fc2c8cc0c03422a0110f"
+  },
+  "linuxBuildRoot": "/data/hermes/himawari/builds/2026-09-20-workspace-lifecycle-5ed9f89",
+  "results": {
+    "mac-descendant-writer": {
+      "passed": true,
+      "productionQualified": false,
+      "results": [
+        {
+          "scenario": "stop",
+          "passed": true,
+          "cleanup": "unknown",
+          "reservationReleased": false
+        },
+        {
+          "scenario": "worker-crash",
+          "passed": true,
+          "cleanup": "unknown",
+          "reservationReleased": false
+        },
+        {
+          "scenario": "never-started",
+          "passed": true,
+          "cleanup": "confirmed",
+          "reservationReleased": true
+        },
+        {
+          "scenario": "observed-escape",
+          "passed": true,
+          "cleanup": "unknown",
+          "reservationReleased": false
+        },
+        {
+          "scenario": "stdin",
+          "passed": true,
+          "cleanup": "unknown",
+          "reservationReleased": false
+        },
+        {
+          "scenario": "writer-stop",
+          "passed": true,
+          "cleanup": "unknown",
+          "reservationReleased": false,
+          "descendantStartedWriting": true,
+          "descendantWritesAfterObservation": 30
+        },
+        {
+          "scenario": "writer-worker-crash",
+          "passed": true,
+          "cleanup": "unknown",
+          "reservationReleased": false,
+          "descendantStartedWriting": true,
+          "descendantWritesAfterObservation": 30
+        }
+      ]
+    },
+    "mac-workspace-protection": {
+      "productionSandboxProbePassed": true,
+      "schema": "sandbox-execution.v2",
+      "productionSuitable": false,
+      "networkDenial": "blocked-by-allowlist",
+      "networkRevocation": null,
+      "platform": "darwin",
+      "cleanup": "unknown",
+      "replayExecuted": false,
+      "workspaceProtection": {
+        "blockedBeforeExecution": true,
+        "admittedAfterExecution": false
+      },
+      "installedRuntime": "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime",
+      "installedModules": [
+        "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime/node_modules/@himawari-agent/agent-service/dist/production-payload-broker-handler.js",
+        "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime/node_modules/@himawari-agent/agent-service/dist/production-sandbox-services.js",
+        "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime/node_modules/@himawari-agent/application/dist/index.js",
+        "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime/node_modules/@himawari-agent/execution-contracts/dist/index.js",
+        "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime/node_modules/@himawari-agent/execution-worker/dist/production-payload-broker-client.js",
+        "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime/node_modules/@himawari-agent/execution-worker/dist/production-sandbox-execution-v2.js",
+        "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime/node_modules/@himawari-agent/execution-worker/dist/production-sandbox-worker.js",
+        "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime/node_modules/@himawari-agent/persistence-sqlite/dist/index.js",
+        "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime/node_modules/@himawari-agent/platform-node/dist/index.js"
+      ]
+    },
+    "linux-descendant-writer": {
+      "passed": true,
+      "productionQualified": false,
+      "results": [
+        {
+          "scenario": "stop",
+          "passed": true,
+          "cleanup": "confirmed",
+          "reservationReleased": false
+        },
+        {
+          "scenario": "worker-crash",
+          "passed": true,
+          "cleanup": "confirmed",
+          "reservationReleased": false
+        },
+        {
+          "scenario": "never-started",
+          "passed": true,
+          "cleanup": "confirmed",
+          "reservationReleased": true
+        },
+        {
+          "scenario": "observed-escape",
+          "passed": true,
+          "cleanup": "confirmed",
+          "reservationReleased": false
+        },
+        {
+          "scenario": "stdin",
+          "passed": true,
+          "cleanup": "confirmed",
+          "reservationReleased": false
+        },
+        {
+          "scenario": "writer-stop",
+          "passed": true,
+          "cleanup": "confirmed",
+          "reservationReleased": false,
+          "descendantStartedWriting": true,
+          "descendantWritesAfterObservation": 0
+        },
+        {
+          "scenario": "writer-worker-crash",
+          "passed": true,
+          "cleanup": "confirmed",
+          "reservationReleased": false,
+          "descendantStartedWriting": true,
+          "descendantWritesAfterObservation": 0
+        }
+      ]
+    },
+    "linux-workspace-protection": {
+      "productionSandboxProbePassed": true,
+      "schema": "sandbox-execution.v2",
+      "productionSuitable": false,
+      "networkDenial": "blocked-by-allowlist",
+      "networkRevocation": null,
+      "platform": "linux",
+      "cleanup": "confirmed",
+      "replayExecuted": false,
+      "workspaceProtection": {
+        "blockedBeforeExecution": true,
+        "admittedAfterExecution": true
+      },
+      "installedRuntime": "/data/hermes/himawari/builds/2026-09-20-workspace-lifecycle-5ed9f89/source/dist/node-runtime",
+      "installedModules": [
+        "/data/hermes/himawari/builds/2026-09-20-workspace-lifecycle-5ed9f89/source/dist/node-runtime/node_modules/@himawari-agent/agent-service/dist/production-payload-broker-handler.js",
+        "/data/hermes/himawari/builds/2026-09-20-workspace-lifecycle-5ed9f89/source/dist/node-runtime/node_modules/@himawari-agent/agent-service/dist/production-sandbox-services.js",
+        "/data/hermes/himawari/builds/2026-09-20-workspace-lifecycle-5ed9f89/source/dist/node-runtime/node_modules/@himawari-agent/application/dist/index.js",
+        "/data/hermes/himawari/builds/2026-09-20-workspace-lifecycle-5ed9f89/source/dist/node-runtime/node_modules/@himawari-agent/execution-contracts/dist/index.js",
+        "/data/hermes/himawari/builds/2026-09-20-workspace-lifecycle-5ed9f89/source/dist/node-runtime/node_modules/@himawari-agent/execution-worker/dist/production-payload-broker-client.js",
+        "/data/hermes/himawari/builds/2026-09-20-workspace-lifecycle-5ed9f89/source/dist/node-runtime/node_modules/@himawari-agent/execution-worker/dist/production-sandbox-execution-v2.js",
+        "/data/hermes/himawari/builds/2026-09-20-workspace-lifecycle-5ed9f89/source/dist/node-runtime/node_modules/@himawari-agent/execution-worker/dist/production-sandbox-worker.js",
+        "/data/hermes/himawari/builds/2026-09-20-workspace-lifecycle-5ed9f89/source/dist/node-runtime/node_modules/@himawari-agent/persistence-sqlite/dist/index.js",
+        "/data/hermes/himawari/builds/2026-09-20-workspace-lifecycle-5ed9f89/source/dist/node-runtime/node_modules/@himawari-agent/platform-node/dist/index.js"
+      ]
+    }
+  },
+  "limits": [
+    "Synthetic qualification and runner; not production installation qualification.",
+    "Competing reservation and descendant writer are separate probes; no simultaneous second writer was executed.",
+    "Mac descendants continued writing after stop; workspace must remain blocked.",
+    "No real model calls, production deployment, production data mutation or production permission changes.",
+    "300ms no-write observation supplements Linux namespace identity evidence; it is not independent proof of universal termination."
+  ]
+}

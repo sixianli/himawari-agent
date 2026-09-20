@@ -1,0 +1,4 @@
+source.tar.gz: OK
+TARGET SOURCE    FSTYPE OPTIONS
+/data  /dev/sda1 ext4   rw,noatime
+isolated build complete

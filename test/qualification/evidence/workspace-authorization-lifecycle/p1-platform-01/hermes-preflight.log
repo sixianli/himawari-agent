@@ -1,0 +1,22 @@
+Linux 5.15.0-185-generic x86_64 GNU/Linux
+TARGET SOURCE    FSTYPE OPTIONS
+/data  /dev/sda1 ext4   rw,noatime
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2  108G   90G   13G  88% /
+/dev/sda1       458G  242G  193G  56% /data
+               total        used        free      shared  buff/cache   available
+Mem:            15Gi       7.3Gi       1.3Gi       214Mi       6.8Gi       7.6Gi
+Swap:          8.2Gi       3.4Gi       4.8Gi
+/usr/bin/bwrap
+/usr/bin/socat
+2026-09-16-v4-0600b29
+2026-09-15-main-4f1e86f
+2026-09-14-ci-complete-repair
+2026-09-14-runbook-reconcile
+2026-09-14-web-3b21555
+2026-09-14-process-chain
+process-chain-20260914-source.tar.gz
+2026-09-14-startup-nvme-v2
+2026-09-14-startup-nvme
+2026-09-14-weather-timing-0169869
+lrwxrwxrwx 1 andy andy 32 Apr 17 11:36 /home/andy/.local/bin/node -> /home/andy/.hermes/node/bin/node

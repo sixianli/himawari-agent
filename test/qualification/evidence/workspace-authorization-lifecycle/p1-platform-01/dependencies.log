@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "platform": "linux-x64",
+  "node": "22.22.3",
+  "nodeAbi": "127",
+  "npm": "11.8.0",
+  "python": "3.12.10",
+  "packageLockSha256": "a1fdf9abfd529e4cc9b5c583914969aed320a56ed1353778f3dc9affa61203c3",
+  "toolchainSha256": "88005cb73e4fa6c87ffa251b78b1458a6c6780739787133ca149038757e4c58e",
+  "cache": "cold",
+  "lifecycle": "ignore-scripts-with-reviewed-native-build",
+  "durationMs": 130969,
+  "sqlite": {
+    "status": "passed",
+    "version": "3.53.2"
+  },
+  "packages": 693,
+  "workspaces": 16,
+  "pi": [
+    {
+      "path": "node_modules/@earendil-works/pi-ai",
+      "name": "@earendil-works/pi-ai",
+      "version": "0.84.2",
+      "resolved": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.84.2.tgz",
+      "integrity": "sha512-6MzsrYIYNVlE7SfpbL2yYb67Qo58p/7Q+xWG1RZvoX1P80aRCHSod2/13aFpxkow1lPO2LEh3c495J0Gwmyjig=="
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-coding-agent",
+      "name": "@earendil-works/pi-coding-agent",
+      "version": "0.84.2",
+      "resolved": "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-0.84.2.tgz",
+      "integrity": "sha512-l4E+B7hgXKWddRo8bC/eSue2aWZjEgJ9xIpf5p0Og+lq8a2TArCwJ0HCoCPCgaBP/tN4zbYH/wOwvx9pJpeLCA=="
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-agent-core",
+      "name": "@earendil-works/pi-agent-core",
+      "version": "0.84.2",
+      "resolved": "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-0.84.2.tgz",
+      "integrity": "sha512-8Pn3wSCxj0cfo5I6jxQYVB/3uuQRmHhAlEclyjqpOuMEdQMIODHizRogv56FLdbU+dTiGnybeHQ2N+sV1/L2YA=="
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai",
+      "name": "@earendil-works/pi-ai",
+      "version": "0.84.2",
+      "resolved": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.84.2.tgz",
+      "integrity": "sha512-6MzsrYIYNVlE7SfpbL2yYb67Qo58p/7Q+xWG1RZvoX1P80aRCHSod2/13aFpxkow1lPO2LEh3c495J0Gwmyjig=="
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-client",
+      "name": "@earendil-works/pi-client",
+      "version": "0.84.2",
+      "resolved": "https://registry.npmjs.org/@earendil-works/pi-client/-/pi-client-0.84.2.tgz",
+      "integrity": "sha512-/RFSPhD/bZbpOp1oJj+UneSUFSgZhWxzcSENUY+8+8xhoBrWXMYI2t77XNx4Yf+c8YK2qTHquForhNcelYpXvg=="
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-protocol",
+      "name": "@earendil-works/pi-protocol",
+      "version": "0.84.2",
+      "resolved": "https://registry.npmjs.org/@earendil-works/pi-protocol/-/pi-protocol-0.84.2.tgz",
+      "integrity": "sha512-jbBh03fkeckWEroHpcZBr4w5/Ibat8WwdXFlXHivYQImrQNFtLpDeL0t1cku4hmK0q3pceIRQHkw4fwbM4YILQ=="
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-telemetry",
+      "name": "@earendil-works/pi-telemetry",
+      "version": "0.84.2",
+      "resolved": "https://registry.npmjs.org/@earendil-works/pi-telemetry/-/pi-telemetry-0.84.2.tgz",
+      "integrity": "sha512-wg5caea7uIv1BHRBm2Y116RvFG4oSAiP5qk9tA2463PDGIr4K8M1Ceyyg5DOpF/shUUl0gk826yQJAeAcHYB9g=="
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui",
+      "name": "@earendil-works/pi-tui",
+      "version": "0.84.2",
+      "resolved": "https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-0.84.2.tgz",
+      "integrity": "sha512-ds2TLihOnM5sLJB3VpXV6y0uR5efVuHf4MN7yDpsty6hA2DUO/EDVzjp/0od0G2JslzVLMjT8T8zavtxVb+qbg=="
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-telemetry",
+      "name": "@earendil-works/pi-telemetry",
+      "version": "0.84.3",
+      "resolved": "https://registry.npmjs.org/@earendil-works/pi-telemetry/-/pi-telemetry-0.84.3.tgz",
+      "integrity": "sha512-sgEkWoKrvSGaKn+YfLLFZmn+/A7B/w62eLwTD57nI+C9to8ITlFFVbgC2OtwvPnT3NFGHdCd53qhBEMIlptD1g=="
+    }
+  ],
+  "resources": {
+    "schemaVersion": 2,
+    "method": "sampled-allocated-disk-du-kib",
+    "intervalMs": 30000,
+    "peakIsLowerBound": true,
+    "hardware": {
+      "platform": "linux",
+      "arch": "x64",
+      "cpus": 4,
+      "cpuModel": "Intel(R) Core(TM) i5-6300HQ CPU @ 2.30GHz",
+      "memoryBytes": 16550907904
+    },
+    "scopes": [
+      {
+        "label": "workspace",
+        "attempts": 5,
+        "samples": 5,
+        "failedSamples": 0,
+        "firstBytes": 18649088,
+        "peakBytes": 920166400,
+        "lastBytes": 920166400
+      },
+      {
+        "label": "tools",
+        "attempts": 5,
+        "samples": 5,
+        "failedSamples": 0,
+        "firstBytes": 917848064,
+        "peakBytes": 917848064,
+        "lastBytes": 917848064
+      }
+    ],
+    "failureCount": 0,
+    "failureDetailsLimit": 32,
+    "droppedFailureCount": 0,
+    "errors": [],
+    "pauses": {
+      "count": 0,
+      "totalDurationMs": 0,
+      "droppedDetailsCount": 0,
+      "entries": []
+    },
+    "startedAt": "2026-09-20T01:45:22.757Z",
+    "completedAt": "2026-09-20T01:47:34.006Z",
+    "status": "measured"
+  }
+}

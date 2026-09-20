@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { hostDirectoryGrantStateKey } from "@himawari-agent/application";
+import {
+  hostDirectoryGrantStateKey,
+  type SandboxExecutionPreparationPort,
+} from "@himawari-agent/application";
 import {
   type ExecutionV2Request,
   executionV2MessageSchema,
@@ -14,6 +17,7 @@ import {
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PayloadUdsServer, resolveSandboxWorkspaceClaim } from "@himawari-agent/platform-node";
 import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.js";
+import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.js";
 import {
   AGENT_ID,
   LIVE_SANDBOX,
@@ -106,8 +110,8 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
         T1,
       );
     let v2Plan: SandboxExecutionPlanV2 | undefined;
+    let competingReservation: Parameters<SandboxExecutionPreparationPort["reserve"]>[0] | undefined;
     if (v2) {
-      const { sandboxV2Admission } = await import("../fixtures/sandbox-execution-v2-fixture.js");
       const input = sandboxV2Admission(fixture);
       const { semanticFingerprint: _fingerprint, ...candidate } = plan;
       const next = sandboxExecutionPlanCandidateV2Schema.parse({
@@ -138,6 +142,22 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
         },
       ) as { admission: { plan: SandboxExecutionPlanV2 } };
       v2Plan = saved.admission.plan;
+      const competitor = sandboxV2Admission(fixture, "-competing");
+      const competingPlan = sandboxExecutionPlanCandidateV2Schema.parse({
+        ...next,
+        identity: competitor.plan.identity,
+        environmentId: competitor.plan.environmentId,
+      });
+      competingReservation = {
+        invocation: competitor.invocation,
+        plan: competingPlan,
+        reservation: sandboxExecutionReservationSchema.parse({
+          ...reservation,
+          identity: competingPlan.identity,
+          environmentId: competingPlan.environmentId,
+        }),
+        workspaces: [{ ...workspace, access: "write" }],
+      };
     } else
       fixture.call("Prepare", { plan, observation: { ...fixture.prepared, policyDigest: null } });
     fixture.database.close();
@@ -147,6 +167,12 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
       now: () => new Date().toISOString(),
     });
     cleanup.push(() => repository.close());
+    const preparations = repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+    const occupied = (error: unknown) =>
+      error instanceof Error &&
+      /Workspace (has a pending preparation|remains occupied)/.test(error.message);
+    if (competingReservation)
+      await assert.rejects(preparations.reserve(competingReservation), occupied);
     const directory = await mkdtemp("/tmp/h-live-");
     cleanup.push(() => rm(directory, { recursive: true, force: true }));
     const peer = { ...SERVICE_AUTHORITY, ...SERVICE_AUTHORITY.product };
@@ -346,6 +372,17 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
       assert.equal(observation.state, process.platform === "linux" ? "released" : "quarantined");
     if (revokeToReleasedMs !== null)
       assert.ok(revokeToReleasedMs < 8000, "NETWORK_REVOCATION_TOO_SLOW");
+    if (competingReservation) {
+      assert.ok(record && "facts" in record);
+      assert.equal(Boolean(record.releaseReceipt), process.platform === "linux");
+      assert.equal(record.workspaceBlocked, process.platform !== "linux");
+      if (process.platform === "linux") {
+        await preparations.reserve(competingReservation);
+        const admitted = await preparations.readAdmission(competingReservation.plan.identity);
+        assert.ok(admitted?.phase === "reserved");
+        assert.equal(admitted.plan.identity.jobId, competingReservation.plan.identity.jobId);
+      } else await assert.rejects(preparations.reserve(competingReservation), occupied);
+    }
     if (!revokeNetwork) {
       const outputRef =
         record && "facts" in record && record.facts.result && "output" in record.facts.result
@@ -400,6 +437,9 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
       platform: process.platform,
       cleanup: process.platform === "linux" ? "confirmed" : "unknown",
       replayExecuted: false,
+      workspaceProtection: v2
+        ? { blockedBeforeExecution: true, admittedAfterExecution: process.platform === "linux" }
+        : null,
     };
   } finally {
     await dispose();
