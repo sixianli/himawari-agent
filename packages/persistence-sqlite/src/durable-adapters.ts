@@ -497,6 +497,12 @@ export class SqliteDurableAdapters {
         }),
       enqueue: (input) =>
         this.context.write("capabilityInvocation.sandboxV2.enqueue", { ownerId, agentId, input }),
+      rebindQueued: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.rebindQueued", {
+          ownerId,
+          agentId,
+          input,
+        }),
       cancelQueued: (input) =>
         this.context.write("capabilityInvocation.sandboxV2.cancelQueued", {
           ownerId,

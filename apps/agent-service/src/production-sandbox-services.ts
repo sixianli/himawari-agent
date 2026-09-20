@@ -11,6 +11,7 @@ import {
   type IdGeneratorPort,
   type PayloadProtectorPort,
   type ProductConfiguration,
+  type RuntimeRequest,
   type RuntimeToolInvocation,
   resolveSandboxActionGrant,
   type SandboxExecutionEvidencePort,
@@ -1570,6 +1571,52 @@ export async function createProductionSandboxServices(options: {
     },
   });
   return {
+    rebindQueuedRun: async (
+      request: Pick<
+        RuntimeRequest,
+        | "runId"
+        | "threadId"
+        | "executionLease"
+        | "modelRef"
+        | "capabilityHandleRefs"
+        | "executionDeadlineAt"
+      >,
+    ): Promise<void> => {
+      const inventory = await preparations.readRunInventory({ runId: request.runId });
+      for (const queued of inventory.queue) {
+        if (queued.status !== "queued") continue;
+        const authority = options.authority();
+        const plan = sandboxExecutionPlanCandidateV2Schema.parse({
+          ...queued.plan,
+          executionLease: request.executionLease,
+        });
+        if (
+          plan.identity.threadId !== request.threadId ||
+          plan.modelRef !== request.modelRef ||
+          !request.capabilityHandleRefs.includes(plan.handleRef) ||
+          (request.executionDeadlineAt && plan.effectiveDeadlineAt > request.executionDeadlineAt)
+        )
+          throw new Error("SANDBOX_QUEUE_RUN_CONTEXT_CHANGED");
+        // Resolve the original protected scope and target against current grants.
+        // Rebuilding a scope from today's target would silently change the approval.
+        await resolve(plan);
+        await preparations.rebindQueued({
+          plan,
+          reservation: queued.reservation,
+          workspaces: queued.workspaces,
+          invocation: {
+            ...queued.invocation,
+            authority,
+            consumedAt: clock.now(),
+            requestScope: {
+              ...queued.invocation.requestScope,
+              ...authority.product,
+            },
+          },
+          expectedBindingRevision: queued.bindingRevision,
+        });
+      }
+    },
     maximumResourceCeiling: async (capabilityRef: string, capabilityVersion: string) => {
       if (!sandboxEntries.some((entry) => entry.manifest.ref === capabilityRef)) return undefined;
       return (await entryFor(capabilityRef, capabilityVersion)).binding.maximumResourceCeiling;

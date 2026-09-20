@@ -1,6 +1,5 @@
-import path from "node:path";
 import { createHash } from "node:crypto";
-import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.ts";
+import path from "node:path";
 import {
   type RunExecutionLeaseClaim,
   recoverSandboxExecutionsAtStartup,
@@ -26,6 +25,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { createProductionSandboxToolResult } from "../../apps/agent-service/src/production-sandbox-tool-result.ts";
+import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.ts";
 import {
   sandboxV2Admission as admission,
   sandboxV2Call as call,
@@ -1331,7 +1331,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           path.join(f.resource.stateRoot, "legacy-snapshot.sqlite"),
         );
         expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([
-          28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43,
+          28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
         ]);
         expect(readMigrationLedger(old).slice(0, 27)).toEqual(ledger);
         expect(old.prepare("SELECT * FROM sandbox_jobs").all()).toEqual(before);

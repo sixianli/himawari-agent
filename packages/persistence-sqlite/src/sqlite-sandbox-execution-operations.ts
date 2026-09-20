@@ -48,6 +48,15 @@ interface Row {
 }
 interface AuthorityDependencies {
   consume(value: unknown, owner: string, agent: string): CapabilityInvocationConsumeResult;
+  rebindQueued(
+    input: Parameters<SandboxExecutionPreparationPort["reserve"]>[0],
+    previous: Omit<
+      Parameters<SandboxExecutionPreparationPort["reserve"]>[0]["invocation"],
+      "consumedAt"
+    >,
+    owner: string,
+    agent: string,
+  ): void;
   validateQueued(value: unknown, owner: string, agent: string): void;
   live(plan: SandboxExecutionPlanV2, authority: CapabilityInvocationAuthority, now: string): void;
   authority(value: unknown, owner: string, agent: string, now: string): void;
@@ -275,7 +284,7 @@ export class SqliteSandboxExecutionOperations {
     this.authority.disk();
     return this.db
       .transaction(() => {
-        if (operation === "enqueue") {
+        if (operation === "enqueue" || operation === "rebindQueued") {
           const queued = raw as Parameters<SandboxExecutionPreparationPort["enqueue"]>[0];
           const plan = sandboxExecutionPlanCandidateV2Schema.parse(queued.plan);
           const reservation = sandboxExecutionReservationSchema.parse(queued.reservation);
@@ -296,6 +305,37 @@ export class SqliteSandboxExecutionOperations {
           )
             this.fail("PORT_NOT_AUTHORITATIVE", "Queue binding is not authoritative");
           const claims = this.claims(queued.workspaces, plan, reservation.workspaceConflictRefs);
+          if (operation === "rebindQueued") {
+            if (
+              this.db
+                .prepare(
+                  "SELECT 1 FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? AND invocation_id=?",
+                )
+                .get(owner, agent, plan.identity.runId, plan.identity.invocationId) ||
+              this.db
+                .prepare(
+                  "SELECT 1 FROM sandbox_jobs WHERE owner_id=? AND agent_id=? AND json_extract(plan_json,'$.identity.runId')=? AND json_extract(plan_json,'$.identity.invocationId')=?",
+                )
+                .get(owner, agent, plan.identity.runId, plan.identity.invocationId)
+            )
+              return this.fail(
+                "PORT_CONFLICT",
+                "Admitted invocation cannot change queue authority",
+              );
+            return this.queue.rebind(
+              { ...queued, plan, reservation },
+              claims,
+              (raw as Parameters<SandboxExecutionPreparationPort["rebindQueued"]>[0])
+                .expectedBindingRevision,
+              (previous) =>
+                this.authority.rebindQueued(
+                  { ...queued, plan, reservation },
+                  previous.invocation,
+                  owner,
+                  agent,
+                ),
+            );
+          }
           return this.queue.enqueue({ ...queued, plan, reservation }, claims, () =>
             this.authority.validateQueued(invocation, owner, agent),
           );

@@ -1,10 +1,10 @@
-import {
-  recoverSandboxExecutionsAtStartup,
-  WorkerDelegationAdmissionService,
-} from "@himawari-agent/application";
 import type {
   SandboxExecutionAdmissionRecord,
   SandboxExecutionPreparationPort,
+} from "@himawari-agent/application";
+import {
+  recoverSandboxExecutionsAtStartup,
+  WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
   sandboxExecutionFactsSchema,
@@ -20,8 +20,8 @@ import {
   operationsForDatabase,
   SERVICE_AUTHORITY,
   serviceRequest,
-  T2,
   T1,
+  T2,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
 type Fixture = Awaited<ReturnType<typeof openSandboxJournal>>;
@@ -657,6 +657,9 @@ describe("atomic execution reservation and runtime binding", () => {
         .get() as { request_json: string };
       const changed = JSON.parse(original.request_json);
       changed.plan.identity.agentId = "other-agent";
+      // Fault injection bypasses the write guard to test independent corruption detection.
+      // The binding tests separately verify that ordinary UPDATE is rejected.
+      f.database.exec("DROP TRIGGER sandbox_queue_original_request_immutable");
       f.database
         .prepare("UPDATE sandbox_admission_queue SET request_json=?")
         .run(JSON.stringify(changed));
@@ -997,3 +1000,238 @@ it.each([
     }
   },
 );
+
+describe("unadmitted queue authority binding", () => {
+  it("retains the original queue snapshot and consumes only once after Worker boot changes", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const original = input(f);
+      const position = call(f, "enqueue", original);
+      expect(position.status).toBe("queued");
+      expect(
+        f.database.prepare("SELECT count(*) FROM capability_invocation_receipts").pluck().get(),
+      ).toBe(0);
+      expect(
+        f.database.prepare("SELECT count(*) FROM sandbox_execution_records").pluck().get(),
+      ).toBe(0);
+      const saved = f.database
+        .prepare("SELECT request_json FROM sandbox_admission_queue")
+        .pluck()
+        .get();
+      const current = {
+        ...original,
+        invocation: {
+          ...original.invocation,
+          authority: { ...SERVICE_AUTHORITY, workerBootId: "worker-new-boot" },
+        },
+      };
+      const rebound = call(f, "rebindQueued", { ...current, expectedBindingRevision: 0 });
+      expect(rebound).toMatchObject({
+        sequence: position.sequence,
+        status: "queued",
+        bindingRevision: 1,
+      });
+      expect(
+        f.database.prepare("SELECT request_json FROM sandbox_admission_queue").pluck().get(),
+      ).toBe(saved);
+      expect(
+        f.database.prepare("SELECT count(*) FROM capability_invocation_receipts").pluck().get(),
+      ).toBe(0);
+      expect(() => call(f, "reserve", original)).toThrow();
+      expect(call(f, "reserve", current).applied).toBe(true);
+      expect(call(f, "reserve", current).applied).toBe(false);
+      expect(
+        f.database.prepare("SELECT count(*) FROM capability_invocation_receipts").pluck().get(),
+      ).toBe(1);
+      expect(
+        call(f, "readQueuedByInvocation", {
+          runId: original.plan.identity.runId,
+          invocationId: original.invocation.invocationId,
+        }),
+      ).toMatchObject({
+        bindingRevision: 1,
+        status: "admitted",
+        sequence: position.sequence,
+        plan: {
+          requestedAt: original.plan.requestedAt,
+          effectiveDeadlineAt: original.plan.effectiveDeadlineAt,
+        },
+      });
+    } finally {
+      await f.close();
+    }
+  });
+  it.each(["cancelled", "admitted", "target", "deadline"])(
+    "does not rebind %s queue inputs",
+    async (state) => {
+      const f = await openSandboxJournal();
+      try {
+        const original = input(f);
+        call(f, "enqueue", original);
+        if (state === "cancelled")
+          call(f, "cancelQueued", {
+            identity: original.plan.identity,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+          });
+        if (state === "admitted") call(f, "reserve", original);
+        const current = {
+          ...original,
+          plan: {
+            ...original.plan,
+            ...(state === "target" ? { inputRef: "different-input" } : {}),
+            ...(state === "deadline"
+              ? {
+                  effectiveDeadlineAt: new Date(
+                    Date.parse(original.plan.effectiveDeadlineAt) + 1000,
+                  ).toISOString(),
+                }
+              : {}),
+          },
+          invocation: {
+            ...original.invocation,
+            authority: { ...SERVICE_AUTHORITY, workerBootId: "worker-new-boot" },
+          },
+          expectedBindingRevision: 0,
+        };
+        if (state === "deadline")
+          expect(current.plan.effectiveDeadlineAt).not.toBe(original.plan.effectiveDeadlineAt);
+        expect(() => call(f, "rebindQueued", current)).toThrow();
+      } finally {
+        await f.close();
+      }
+    },
+  );
+});
+
+it.each([
+  "stale-cas",
+  "stale-lease",
+  "revoked",
+  "expired",
+  "used-handle",
+  "storage-failure",
+] as const)(
+  "rejects queue rebind without changing the original Handle or queue: %s",
+  async (scenario) => {
+    const f = await openSandboxJournal();
+    try {
+      const original = input(f);
+      call(f, "enqueue", original);
+      if (scenario === "revoked")
+        f.database
+          .prepare(
+            "UPDATE capability_handles SET revoked_at=?, record_json=json_set(record_json,'$.revokedAt',?) WHERE id=?",
+          )
+          .run(T1, T1, original.plan.handleRef);
+      if (scenario === "used-handle")
+        f.database
+          .prepare(
+            "UPDATE capability_handles SET record_json=json_set(record_json,'$.uses',1) WHERE id=?",
+          )
+          .run(original.plan.handleRef);
+      if (scenario === "storage-failure")
+        f.database.exec(
+          "CREATE TRIGGER refuse_queue_binding BEFORE INSERT ON sandbox_queue_authority_bindings BEGIN SELECT RAISE(ABORT, 'binding storage failed'); END",
+        );
+      const handle = f.database
+        .prepare("SELECT record_json FROM capability_handles WHERE id=?")
+        .pluck()
+        .get(original.plan.handleRef);
+      const saved = f.database
+        .prepare("SELECT request_json FROM sandbox_admission_queue")
+        .pluck()
+        .get();
+      const current = {
+        ...original,
+        plan: {
+          ...original.plan,
+          ...(scenario === "stale-lease"
+            ? { executionLease: { ...original.plan.executionLease, expectedLeaseRevision: 99 } }
+            : {}),
+        },
+        invocation: {
+          ...original.invocation,
+          consumedAt: scenario === "expired" ? T2 : T1,
+          authority: { ...SERVICE_AUTHORITY, workerBootId: "next-worker" },
+        },
+        expectedBindingRevision: scenario === "stale-cas" ? 1 : 0,
+      };
+      expect(() => call(f, "rebindQueued", current)).toThrow();
+      expect(
+        f.database
+          .prepare("SELECT record_json FROM capability_handles WHERE id=?")
+          .pluck()
+          .get(original.plan.handleRef),
+      ).toBe(handle);
+      expect(
+        f.database.prepare("SELECT request_json FROM sandbox_admission_queue").pluck().get(),
+      ).toBe(saved);
+      expect(
+        f.database.prepare("SELECT count(*) FROM sandbox_queue_authority_bindings").pluck().get(),
+      ).toBe(0);
+      expect(
+        f.database.prepare("SELECT count(*) FROM capability_invocation_receipts").pluck().get(),
+      ).toBe(0);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it("retains the binding across database reopen and serializes competing rebinds", async () => {
+  const f = await openSandboxJournal();
+  try {
+    const original = input(f);
+    call(f, "enqueue", original);
+    const current = {
+      ...original,
+      invocation: {
+        ...original.invocation,
+        authority: { ...SERVICE_AUTHORITY, workerBootId: "next-worker" },
+      },
+    };
+    call(f, "rebindQueued", { ...current, expectedBindingRevision: 0 });
+    expect(() =>
+      f.database.prepare("UPDATE sandbox_queue_authority_bindings SET revision=2").run(),
+    ).toThrow("immutable");
+    expect(() =>
+      f.database.prepare("UPDATE sandbox_admission_queue SET request_json=request_json").run(),
+    ).toThrow("immutable");
+    f.database.close();
+    const repo = await SqliteProductStateRepository.open({ stateRoot: f.resource.stateRoot });
+    try {
+      const preparations = repo.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+      expect(
+        await preparations.readQueuedByInvocation({
+          runId: original.plan.identity.runId,
+          invocationId: original.invocation.invocationId,
+        }),
+      ).toMatchObject({
+        bindingRevision: 1,
+        invocation: { authority: { workerBootId: "next-worker" } },
+      });
+      const attempt = {
+        ...current,
+        invocation: {
+          ...current.invocation,
+          authority: { ...SERVICE_AUTHORITY, workerBootId: "third-worker" },
+        },
+        expectedBindingRevision: 1,
+      };
+      const outcomes = await Promise.allSettled([
+        preparations.rebindQueued(attempt),
+        preparations.rebindQueued(attempt),
+      ]);
+      expect(outcomes.filter((value) => value.status === "fulfilled")).toHaveLength(1);
+      expect(outcomes.filter((value) => value.status === "rejected")).toHaveLength(1);
+      await expect(preparations.reserve(current)).rejects.toThrow("changed");
+      expect((await preparations.reserve(attempt)).applied).toBe(true);
+      expect((await preparations.reserve(attempt)).applied).toBe(false);
+    } finally {
+      await repo.close();
+    }
+  } finally {
+    await f.close();
+  }
+});

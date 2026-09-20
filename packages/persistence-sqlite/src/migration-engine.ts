@@ -378,6 +378,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0043_sandbox_recovery_scheduling.sql",
   },
+  {
+    sequence: 44,
+    name: "sandbox_queue_authority_bindings",
+    changeSet: "sandbox-queue-authority-bindings",
+    phase: "expand" as const,
+    file: "0044_sandbox_queue_authority_bindings.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

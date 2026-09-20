@@ -200,7 +200,7 @@ describe("workspace lifecycle read-only audit", () => {
     const result = auditWorkspaceLifecycle(f.input);
     expect(result).toMatchObject({
       mode: "read_only",
-      schemaSequence: 43,
+      schemaSequence: 44,
       liveHostVerified: false,
       repairEligible: false,
     });
@@ -328,7 +328,7 @@ describe("workspace lifecycle read-only audit", () => {
     ).toEqual({ n: 1 });
   });
 
-  it.each([28, 40])(
+  it.each([28, 40, 43])(
     "reads schema %s using its actual migrations, without installing newer tables",
     async (schemaSequence) => {
       const f = await fixture();

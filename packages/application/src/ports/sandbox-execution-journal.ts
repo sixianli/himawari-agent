@@ -271,12 +271,22 @@ export interface SandboxExecutionPreparationPort {
     | {
         readonly sequence: number;
         readonly status: "queued" | "admitted" | "cancelled";
+        readonly bindingRevision: number;
         readonly plan: SandboxExecutionPlanCandidateV2;
         readonly reservation: SandboxExecutionReservation;
         readonly workspaces: readonly SandboxWorkspaceClaim[];
         readonly invocation: Omit<ConsumeCapabilityInvocationInput, "consumedAt">;
       }
     | undefined
+  >;
+  /** Rebind only an unconsumed queue to current execution authority. The original
+   * request, target, queue position, approval and deadline remain immutable. */
+  rebindQueued(
+    input: Parameters<SandboxExecutionPreparationPort["reserve"]>[0] & {
+      readonly expectedBindingRevision: number;
+    },
+  ): Promise<
+    NonNullable<Awaited<ReturnType<SandboxExecutionPreparationPort["readQueuedByInvocation"]>>>
   >;
   /** Enqueue without consuming a Handle or acquiring any workspace resource. */
   enqueue(input: Parameters<SandboxExecutionPreparationPort["reserve"]>[0]): Promise<{

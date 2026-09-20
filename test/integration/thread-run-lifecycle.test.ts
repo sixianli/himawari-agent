@@ -9,6 +9,7 @@ import {
   type ExecuteCoordinatedRunInput,
   type ModelInvocationAdmissionPort,
   PORT_ERROR_CODES,
+  ProductThreadGatewayAdapter,
   type RunCompletionInput,
   RunCoordinator,
   type RunDispatchPort,
@@ -21,11 +22,10 @@ import {
   type RuntimeRequest,
   SessionTraceRecorder,
   ThreadCommandService,
-  ProductThreadGatewayAdapter,
-  ThreadQueryService,
-  ThreadForkService,
   ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
+  ThreadForkService,
+  ThreadQueryService,
   type TransitionRunStateInput,
   type WorkerRunEvent,
   type WorkerRunPort,
@@ -42,6 +42,7 @@ import {
   type ProductAuthorityFence,
   type RunId,
 } from "@himawari-agent/domain";
+import { threadGatewayMessageSchema } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -60,7 +61,6 @@ import {
   ScriptedAgentRuntime,
   ScriptedWorkerRunPort,
 } from "@himawari-agent/testing";
-import { threadGatewayMessageSchema } from "@himawari-agent/gateway-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProductionRunDispatcher } from "../../apps/agent-service/src/production-run-dispatcher.js";
 import { createProductionRunReconciler } from "../../apps/agent-service/src/production-run-reconciler.js";
@@ -2574,7 +2574,12 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
           return "自动生成的对话标题";
         },
       );
+      let queuePrepared = false;
+      const prepareQueuedSandboxExecutions = vi.fn(async () => {
+        queuePrepared = true;
+      });
       const compositionOptions: Parameters<typeof createProductionRunComposition>[0] = {
+        prepareQueuedSandboxExecutions,
         configuration: {
           ownerId,
           agentId,
@@ -2603,8 +2608,9 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         protector: setup.protector,
         memory: adapters.memory,
         tools: {
-          listAuthorized: async () =>
-            unknown || denied
+          listAuthorized: async () => {
+            expect(queuePrepared).toBe(true);
+            return unknown || denied
               ? [
                   {
                     name: "uncertain_tool",
@@ -2614,7 +2620,8 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
                     parameters: { type: "object", properties: {} },
                   },
                 ]
-              : [],
+              : [];
+          },
           preflight: async () => {
             if (!unknown && !denied) throw new Error("No tools are authorized in this test");
             return { allowed: true, permissionDecisionRef: "test-policy", reasonCode: "test" };

@@ -137,7 +137,7 @@ date: "2026-09-16"
 | 实施方向 | 保留原不可变队列快照，单独记录当前执行绑定；同一 SQLite 事务验证当前权威、Run 租约、原授权与零消费/零准入事实。优先接现有生产 Run 包装层，在 Pi 取得工具列表前完成必要绑定，不新建 Pi 协议 |
 | 验证入口 | 复用[生产队列续接](../../../test/integration/production-sandbox-queue-reentry.test.ts)、[准备与绑定](../../../test/integration/sandbox-execution-preparation.test.ts)、[额度预约](../../../test/integration/authorization-reservations.test.ts)；增加真实数据库重开、当前租约切换与并发竞争，先确认生产 Run 装配入口 |
 | 完成条件 | 未准入跨 boot/fence 成功且只有一次派发；旧调用、已准入/有回执/被取消、撤销/过期、目标改变、旧租约和并发输家均被拒绝；原期限、顺序、批准和次数独立读回。涉及存储格式时补旧 writer 屏障与兼容测试 |
-| 状态与后续 | 正在核对上述设计；尚未修改队列实现。先完成这条用户路径，再按原依赖顺序推进文件并发与其他待办；生产操作遵守[原授权边界](#decisions) |
+| 状态与后续 | 合法当前 Run 租约下的队列绑定与生产入口已通过 4,010 项完整标准测试，见[绑定证据](#p2-queue-binding)。实际租约切换又确认上游 `runtime_running` 中断核对与 Pi continuation 旧 fence 两个保护入口尚未支持此恢复；不通过放宽 checkpoint 或修改 fixture 冒充整轮恢复。先验证本次绑定，再完成这两处安全续接及真实重启路径；生产操作遵守[原授权边界](#decisions) |
 
 [↑ 返回阅读导航](#contents)
 
@@ -175,7 +175,7 @@ date: "2026-09-16"
 | [P4](#p4) | 纯联网私有范围、无用户目录 Grant/挂载/claim；本机越界拒绝探针 | 任意命令的更窄可强制范围、可选副本与逐文件应用、Linux 平台资格 |
 | [P5](#p5) | 默认关闭的审查持久化、宿主批准校验、现有模型边界适配、预算/取消和来源事件 | 替代方案建立新 intent 的完整路径；具体配置获确认后的真实模型、披露和费用验收 |
 | [P6](#p6) | 自动审查来源与真实起止计时、终态工具结果未确认、首次加载和多语言窄屏持久浏览器回归；[Run/Trace 统一状态查询与页面消费](#p6-unified-state) | 资源 journal/队列/文件阶段及全部会话注意状态接入、全部阶段计时、真实网关至 Worker 文件操作和页面恢复联合路径 |
-| [P7](#p7) | 历史只读清单、Schema 28～43 的只读兼容及相关迁移回归 | 有现场证明的逐条修复候选、备份恢复演练、完整兼容矩阵与目标平台切换验收 |
+| [P7](#p7) | 历史只读清单、Schema 28～44 的只读兼容及相关迁移回归 | 有现场证明的逐条修复候选、备份恢复演练、完整兼容矩阵与目标平台切换验收 |
 
 原型、受控端口、隔离 HTTP 夹具与本机构建各有证据范围；它们不替代真实模型、真实 Worker 联合路径或目标部署资格。[本次实施记录](#implementation-record)保留具体命令、失败与通过结果及局部限制。
 
@@ -1154,3 +1154,20 @@ node scripts/ci/local.mjs --check test --tools .ci-output/tools --output .ci-out
 记录时工作区仍有既有 `AGENTS.md` 改动，`execution-process 2.tsx`、`execution-view 2.ts`、对应 `execution-view.unit.test 2.ts`、`test-execution-chain-browser 2.mjs`，r1/r2 状态原型目录，以及 runtime-history 下既有 mobile/locale/CSRF 截图和浏览器证据目录。这些不属于当前资源快照批次；继续工作前按 Git 实际清单复核，不能重置、清理或一起提交。
 
 本地实现、必要测试、文档和验证后本地提交已有授权。没有创建分支、tag、PR、推送、部署、历史生产数据修复或新增真实付费调用的授权。本次没有更换模型/provider 或启用自动审查。后续具体真实模型配置、费用/披露、生产切换和历史修复继续遵循[待确定事项](#decisions)，不得把历史授权或 Runbook 静态通过当成当次现场操作授权。
+
+
+<a id="p2-queue-binding"></a>
+
+### P2：未准入队列的当前执行权绑定
+
+[↑ 返回阅读导航](#contents)
+
+Schema 44 在原队列之外追加 `sandbox_queue_authority_bindings`，并保护原请求 JSON、顺序、期限和 claims 不被 UPDATE。只有仍 queued、没有调用回执和准入记录、Handle 零消费、Grant 与原目标仍有效、当前 Authority/Run Lease 匹配的请求可进行 CAS 绑定；绑定与 Handle fence 更新在同一事务提交或回滚，不重新签发 Handle、延长期限、增加批准或消费次数。真正准入仍由原事务负责一次消费。旧 schema 43 writer 被阻止；历史读者的原快照不构成重新派发许可。
+
+生产 Run 包装层在 Pi 读取工具列表前调用当前绑定服务；工具续接用原 RPC authority 验证不变的逻辑摘要，以新绑定派发。受保护原 Scope、目标、资源上限与截止时间继续校验。已准入、未知或被取消的操作不因绑定获得第二次执行许可。没有添加 Pi 协议或 Worker 可调用的重新授权接口。
+
+**范围限制：**实际 Authority/Run Lease 接口测试发现，运行中崩溃的 `runtime_running` checkpoint 当前不可直接取得新执行租约，Pi continuation 也绑定旧 fence。本批服务测试明确从合法可派发 checkpoint 验证重新绑定；真实 Pi 包装层测试只证明调用顺序，两者不等于完整 Agent 重启恢复。上述两处入口及整轮重启联合路径仍须实现和验证；原待办保持未勾选。详见[绑定证据与失败记录](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-queue-binding-01/README.md)。
+
+交付前检查：存储/迁移直接消费者 315 项、生产队列服务 8 项、真实 Pi 包装层顺序 8 项、服务单元测试 125 项及其他授权/只读审计消费者通过；类型、任务范围 Biome、边界/覆盖/不变量/秘密/CI policy 通过。Schema 44 及更新的五份 Runbook 已静态封存，严格文档检查零警告。全库格式/lint 仍仅被原有两份未跟踪原型 `verify.cjs` 阻断。同一版冻结源码的标准构建及完整测试已通过：249 文件、4,010 项，零失败、零跳过；1,016 个输入摘要未变。原始报告见[本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-queue-binding-01/README.md)。此验证范围是已实现的安全绑定，完整 Run 崩溃自动恢复仍未交付。
+
+下一段按完整用户路径实施：先复用现有 Pi `capturePiToolBatch` / `restorePiToolBatch` 的等待调用与已完成结果，建立真实 Run 中断后重开的失败前测试；再确定只有哪些“未准入且原恢复记录完整”的事实足以取得当前 Run 租约。恢复仍须核对原受保护请求、当前权限、工具列表和调用摘要（包括 coding/file 外层调用），不能直接删除 `runtime_running` 核对规则或 continuation 的 fence 比较。存储绑定与 Run 续接必须一起通过这条路径后，才能勾选相关原待办。

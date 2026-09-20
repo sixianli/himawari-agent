@@ -66,6 +66,9 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
   const invoke = (operation: string, value: unknown) =>
     operations.execute(operation, { ownerId: OWNER_ID, agentId: AGENT_ID, input: value });
   const preparations: SandboxExecutionPreparationPort = {
+    rebindQueued: async () => {
+      throw new Error("Queue authority binding is Agent-internal");
+    },
     listRecoveryCandidates: async (value) =>
       invoke("capabilityInvocation.sandboxV2.listRecoveryCandidates", value) as Awaited<
         ReturnType<SandboxExecutionPreparationPort["listRecoveryCandidates"]>

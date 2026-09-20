@@ -58,6 +58,7 @@ export interface ProductionRunCompositionOptions {
   readonly protector: PayloadProtectorPort;
   readonly memory: Pick<MemoryPort, "search">;
   readonly tools: RuntimeToolPort;
+  readonly prepareQueuedSandboxExecutions?: (request: RuntimeRequest) => Promise<void>;
   readonly workers?: WorkerRunPort;
   readonly policy: (source: RunExecutionSource) => Promise<RunExecutionPolicy>;
   readonly clock: ClockPort;
@@ -201,6 +202,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
   const titledRuntime = {
     cancel: (runId: Parameters<typeof runtime.cancel>[0]) => runtime.cancel(runId),
     async *run(request: RuntimeRequest) {
+      await options.prepareQueuedSandboxExecutions?.(request);
       let requested = false;
       let titleAdmission: Promise<void> | undefined;
       for await (const event of runtime.run(request)) {

@@ -492,6 +492,49 @@ export class SqliteCapabilityInvocationOperations {
     this.sandboxExecutions = new SqliteSandboxExecutionOperations(database, fail, {
       disk: assertDiskHeadroom,
       consume: (value, owner, agent) => this.consume(parseConsume(value), owner, agent),
+      rebindQueued: (request, previous, owner, agent) => {
+        const input = parseConsume(request.invocation);
+        this.assertRequestScope(input, owner, agent);
+        this.assertAuthority(input.authority, owner, agent, input.consumedAt);
+        this.assertSandboxLease(request.plan, input.authority, input.consumedAt);
+        if (
+          this.readReceiptByKey(owner, agent, input.idempotencyKey) ||
+          this.readReceiptByInvocation(owner, agent, input.requestScope.runId, input.invocationId)
+        )
+          return this.fail("PORT_CONFLICT", "Consumed invocation cannot change queue authority");
+        const row = this.readHandle(input.handleRef);
+        if (!row) return this.fail("PORT_NOT_FOUND", "Queued Handle is missing");
+        const current = handleRecord(row);
+        if (
+          current.uses !== 0 ||
+          current.spentCostMicros !== 0 ||
+          current.idempotencyKeys.length !== 0 ||
+          current.authorityFence !== previous.authority.product.fencingToken
+        )
+          return this.fail(
+            "PORT_NOT_AUTHORITATIVE",
+            "Queued Handle is consumed or its binding changed",
+          );
+        if (current.authorityFence !== input.authority.product.fencingToken) {
+          if (
+            this.database
+              .prepare(
+                "SELECT 1 FROM sandbox_admission_queue WHERE handle_ref=? AND job_id!=? AND status='queued' LIMIT 1",
+              )
+              .get(input.handleRef, request.plan.identity.jobId)
+          )
+            return this.fail("PORT_CONFLICT", "Queued Handle has another pending request");
+          this.database.prepare("UPDATE capability_handles SET record_json=? WHERE id=?").run(
+            JSON.stringify({
+              ...current,
+              authorityFence: input.authority.product.fencingToken,
+              revision: current.revision + 1,
+            }),
+            input.handleRef,
+          );
+        }
+        this.unconsumedHandle(input);
+      },
       validateQueued: (value, owner, agent) => {
         const input = parseConsume(value);
         this.assertRequestScope(input, owner, agent);
@@ -616,6 +659,16 @@ export class SqliteCapabilityInvocationOperations {
     ) {
       this.fail("PORT_NOT_AUTHORITATIVE", "Sandbox job exceeds its consumed invocation");
     }
+    this.assertSandboxLease(plan, authority, now);
+  }
+
+  private assertSandboxLease(
+    plan:
+      | SandboxExecutionPlan
+      | import("@himawari-agent/execution-contracts").SandboxExecutionPlanCandidateV2,
+    authority: AuthorityInput,
+    now: string,
+  ): void {
     const lease = plan.executionLease;
     if (
       lease.authorityLeaseId !== authority.lease.leaseId ||

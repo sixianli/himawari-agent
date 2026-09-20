@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import {
   actionIntentFingerprint,
+  type CapabilityInvocationAuthority,
   type ConsumeCapabilityInvocationInput,
   type GovernedActionIntent,
   hostDirectoryGrantStateKey,
@@ -46,6 +47,7 @@ export async function productionSandboxScope(
     readonly legacyFileRead?: boolean;
     readonly piParameters?: Readonly<Record<string, unknown>>;
     readonly realFileIdentity?: boolean;
+    readonly authority?: () => CapabilityInvocationAuthority;
     readonly runtimeFingerprint?: (call: RuntimeToolInvocation) => string;
   } = {},
 ) {
@@ -215,7 +217,12 @@ export async function productionSandboxScope(
   let counter = 0;
   let now = T1;
   let workerSupport = support;
-  const artifacts = () => repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY);
+  const artifacts = () =>
+    repository.runPayloadArtifactPort(
+      OWNER_ID,
+      AGENT_ID,
+      options.authority?.() ?? SERVICE_AUTHORITY,
+    );
   const persist = async (operationKey: string, value: unknown) =>
     artifacts().commit({
       runId: RUN_ID,
@@ -296,7 +303,7 @@ export async function productionSandboxScope(
     },
     repository,
     protector: f.protector,
-    authority: () => SERVICE_AUTHORITY,
+    authority: options.authority ?? (() => SERVICE_AUTHORITY),
     fileRead: {
       binding: async () => (fileBindingAvailable ? fileBinding : undefined),
       authorize: async () => {

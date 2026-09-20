@@ -29,11 +29,11 @@ import {
 } from "@himawari-agent/application";
 import {
   EXECUTION_V2_SCHEMA_VERSION,
-  piFileRecoveryOperationKey,
-  executionV2MessageSchema,
   type ExecutionAdmissionPeerBinding,
   type ExecutionV2Event,
   type ExecutionV2Request,
+  executionV2MessageSchema,
+  piFileRecoveryOperationKey,
 } from "@himawari-agent/execution-contracts";
 import {
   executeProductionCodingRequest,
@@ -41,8 +41,8 @@ import {
 } from "./production-coding-workflow.js";
 import type { ProductionExecutionAdmissionParentBinding } from "./production-execution-admission-handler.js";
 import {
-  type FileReadExecutionContext,
   type CodingBinding,
+  type FileReadExecutionContext,
   type ProductionFileReadServices,
   ProductionFileReadWorkflow,
 } from "./production-file-read-workflow.js";
@@ -87,7 +87,10 @@ function digest(value: unknown): string {
     )
     .digest("hex");
 }
-function executionIdentity(invocation: RuntimeToolInvocation) {
+function executionIdentity(
+  invocation: RuntimeToolInvocation,
+  originalAuthority?: { deploymentId: string; authorityEpoch: number; fencingToken: number },
+) {
   if (!invocation.context) return invocation;
   const { executionLease, continuationRef: _continuation, ...context } = invocation.context;
   return {
@@ -95,9 +98,9 @@ function executionIdentity(invocation: RuntimeToolInvocation) {
     context: {
       ...context,
       authority: {
-        deploymentId: executionLease.deploymentId,
-        authorityEpoch: executionLease.authorityEpoch,
-        fencingToken: executionLease.fencingToken,
+        deploymentId: originalAuthority?.deploymentId ?? executionLease.deploymentId,
+        authorityEpoch: originalAuthority?.authorityEpoch ?? executionLease.authorityEpoch,
+        fencingToken: originalAuthority?.fencingToken ?? executionLease.fencingToken,
       },
     },
   };
@@ -710,8 +713,6 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         fingerprint?: string;
         request?: unknown;
       };
-      if (intent.fingerprint !== fingerprint)
-        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
       const result = await this.#options.artifacts.lookup({
         ...intentKey,
         operationKey: `runtime-tool-result:${key}`,
@@ -721,11 +722,28 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         operationKey: `runtime-tool-recovered-result:${key}`,
       });
       const storedResult = recovered ?? result;
+      const queued = await this.#options.sandbox?.preparations?.readQueuedByInvocation?.({
+        runId: invocation.runId,
+        invocationId: `runtime-tool:${key}`,
+      });
+      if (intent.fingerprint !== fingerprint) {
+        const original =
+          queued && queued.bindingRevision > 0
+            ? executionV2MessageSchema.parse(intent.request)
+            : undefined;
+        if (
+          !original ||
+          original.kind !== "request" ||
+          original.type !== "work.execute" ||
+          original.messageId !== `runtime-tool:${key}` ||
+          original.payload.capabilityHandleRef !== handle.ref ||
+          digest(queued?.invocation.authority) !== digest(this.#options.authority()) ||
+          digest(queued?.plan.executionLease) !== digest(invocation.context?.executionLease) ||
+          intent.fingerprint !== digest(executionIdentity(invocation, original.scope))
+        )
+          throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
+      }
       if (!storedResult) {
-        const queued = await this.#options.sandbox?.preparations?.readQueuedByInvocation?.({
-          runId: invocation.runId,
-          invocationId: `runtime-tool:${key}`,
-        });
         if (queued?.status === "queued") {
           const original = executionV2MessageSchema.parse(intent.request);
           if (
@@ -734,6 +752,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             original.messageId !== `runtime-tool:${key}` ||
             original.payload.capabilityHandleRef !== handle.ref ||
             digest(queued.invocation.authority) !== digest(this.#options.authority()) ||
+            digest(queued.plan.executionLease) !== digest(invocation.context?.executionLease) ||
             Object.entries(ceiling).some(
               ([name, limit]) =>
                 original.payload.resourceCeiling[name as keyof CapabilityResourceCeiling] > limit,
@@ -743,13 +762,19 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
               PORT_ERROR_CODES.NOT_AUTHORITATIVE,
               "Queued execution requires current authority",
             );
+          if (intent.fingerprint !== digest(executionIdentity(invocation, original.scope)))
+            throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
+          const reboundRequest = executionV2MessageSchema.parse({
+            ...original,
+            scope: { ...original.scope, ...queued.invocation.authority.product },
+          }) as ExecuteRequest;
           // Only the durable queue permits re-entry. reserve still atomically
           // compares its snapshot and commits at most one invocation receipt.
           return this.#dispatch(
             invocation,
             key,
             handle,
-            original,
+            reboundRequest,
             ceiling,
             internal,
             parentCall,

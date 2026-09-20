@@ -28,6 +28,13 @@ function entry(
 
 export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
+    "sandbox_queue_authority_bindings",
+    "SandboxExecutionPreparationPort",
+    "append-only authority bindings for an immutable unadmitted request",
+    "payload_reference",
+    "retain for audit; update and deletion are forbidden",
+  ),
+  entry(
     "automatic_action_reviews",
     "AutomaticReviewStorePort",
     "durable review identity and source, conditionally resolved through original authorization",

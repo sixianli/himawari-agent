@@ -912,7 +912,12 @@ export async function runAgentService(
             event: "thread-title.failed",
             code: stableErrorCode(error),
           }),
-        ...(sandboxServices ? { resources: sandboxServices.resources } : {}),
+        ...(sandboxServices
+          ? {
+              resources: sandboxServices.resources,
+              prepareQueuedSandboxExecutions: sandboxServices.rebindQueuedRun,
+            }
+          : {}),
         configuration,
         repository,
         authority: activeAuthority,
