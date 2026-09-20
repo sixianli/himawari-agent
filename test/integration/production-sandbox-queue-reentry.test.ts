@@ -147,8 +147,9 @@ it("resumes a durable unconsumed queue with one original receipt and no deadline
   const resumed = f.tool();
   await resumed.listAuthorized(f.call.runId, [f.input.handleRef]);
   expect(await resumed.execute(f.call)).toMatchObject({
-    outcome: "failed",
-    errorCode: "TEST_WORKER_CANCELLED",
+    outcome: "result_unknown",
+    dispatchState: "accepted",
+    errorCode: "WORKER_RESULT_RECONCILIATION_REQUIRED",
   });
   const dispatched = f.request.mock.calls.filter(([message]) => message.type === "work.execute");
   expect(dispatched).toHaveLength(1);
@@ -176,7 +177,14 @@ it("resumes a durable unconsumed queue with one original receipt and no deadline
   ).toMatchObject({ sequence: f.position.sequence, status: "admitted" });
   const replay = f.tool();
   await replay.listAuthorized(f.call.runId, [f.input.handleRef]);
-  expect((await replay.execute(f.call)).errorCode).toBe("TEST_WORKER_CANCELLED");
+  expect(await replay.execute(f.call)).toMatchObject({
+    outcome: "result_unknown",
+    errorCode: "WORKER_RESULT_RECONCILIATION_REQUIRED",
+  });
+  // The fixture only delivered a cancellation notification, not a host release proof.
+  expect(
+    await f.services.brokerV2.preparations.readAdmission(f.prepared.plan.identity),
+  ).toMatchObject({ phase: "reserved" });
   expect(f.request.mock.calls.filter(([message]) => message.type === "work.execute")).toHaveLength(
     1,
   );
@@ -212,7 +220,14 @@ it("concurrent re-entry commits one receipt and forwards only one executable mes
     second.listAuthorized(f.call.runId, [f.input.handleRef]),
   ]);
   const results = await Promise.all([first.execute(f.call), second.execute(f.call)]);
-  expect(results.every((result) => result.errorCode === "TEST_WORKER_CANCELLED")).toBe(true);
+  expect(results).toEqual(
+    results.map(() =>
+      expect.objectContaining({
+        outcome: "result_unknown",
+        errorCode: "WORKER_RESULT_RECONCILIATION_REQUIRED",
+      }),
+    ),
+  );
   expect(f.request.mock.calls.filter(([message]) => message.type === "work.execute")).toHaveLength(
     1,
   );

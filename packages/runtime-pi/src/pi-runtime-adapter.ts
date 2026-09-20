@@ -1417,6 +1417,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               permissionDecisionRef: decision.permissionDecisionRef,
               reasonCode: decision.reasonCode,
               productOutcome: "failed",
+              dispatchState: "not_sent",
             },
             isError: true,
           };
@@ -1431,7 +1432,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         } catch {
           return {
             content: [{ type: "text", text: "工具未执行：无法保存恢复记录。" }],
-            details: { productOutcome: "failed", errorCode: "RUNTIME_TOOL_CHECKPOINT_FAILED" },
+            details: {
+              productOutcome: "failed",
+              dispatchState: "not_sent",
+              errorCode: "RUNTIME_TOOL_CHECKPOINT_FAILED",
+            },
             isError: true,
           };
         }
@@ -1447,6 +1452,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           // prove that an external effect was absent. Do not disclose raw errors to Pi.
           result = {
             outcome: "result_unknown",
+            dispatchState: "possibly_sent",
             resultRef: null,
             errorCode: "RUNTIME_TOOL_EXECUTION_UNRESOLVED",
             externalActionId: null,
@@ -1468,6 +1474,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           details: {
             ...(result.executionTiming ? { executionTiming: result.executionTiming } : {}),
             productOutcome: result.outcome,
+            ...(result.dispatchState ? { dispatchState: result.dispatchState } : {}),
             productRunId: request.runId,
             resultRef: result.resultRef,
             errorCode: result.errorCode,

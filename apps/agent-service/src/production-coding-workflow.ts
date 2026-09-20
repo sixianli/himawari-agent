@@ -3,6 +3,7 @@ import {
   type GovernedActionIntent,
   type GovernedCapabilityExecutionHandle,
   type RuntimeToolExecutionResult,
+  type RuntimeToolSettledResult,
   type RuntimeToolInvocation,
   resolveHostFileReadPath,
   runtimeToolAuthorizationResult,
@@ -40,6 +41,7 @@ function stableCall(call: RuntimeToolInvocation) {
   };
 }
 const failed = (code: string): RuntimeToolExecutionResult => ({
+  dispatchState: "not_sent",
   outcome: "failed",
   resultRef: null,
   errorCode: code,
@@ -47,7 +49,8 @@ const failed = (code: string): RuntimeToolExecutionResult => ({
   modelContent: `工具未执行：${code}`,
 });
 
-export const fileVersionConflictResult = (): RuntimeToolExecutionResult => ({
+export const fileVersionConflictResult = (): RuntimeToolSettledResult => ({
+  dispatchState: "not_sent",
   outcome: "failed",
   resultRef: null,
   errorCode: "FILE_VERSION_CONFLICT",
@@ -250,7 +253,10 @@ export async function executeProductionCodingRequest(
   }
   await active();
   const permission = await services.authorize(intent, ctx.signal);
-  if (permission.decision !== "ALLOW") return runtimeToolAuthorizationResult(permission);
+  if (permission.decision !== "ALLOW") {
+    const result = runtimeToolAuthorizationResult(permission);
+    return result.outcome === "failed" ? { ...result, dispatchState: "not_sent" } : result;
+  }
   await active();
   let saved = (await ctx.load("handle")) as
     | { handle: GovernedCapabilityExecutionHandle; inputRef: string }

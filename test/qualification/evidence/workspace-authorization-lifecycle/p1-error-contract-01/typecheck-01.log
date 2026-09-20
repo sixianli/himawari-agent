@@ -1,0 +1,8 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+apps/agent-service/src/production-runtime-tools.ts(1004,7): error TS2322: Type 'RuntimeToolExecutionResult' is not assignable to type 'RuntimeToolSettledResult'.
+  Type 'RuntimeToolSuspendedResult' is not assignable to type 'RuntimeToolSettledResult'.
+    Types of property 'outcome' are incompatible.
+      Type '"awaiting_approval"' is not assignable to type '"failed" | "succeeded" | "result_unknown"'.

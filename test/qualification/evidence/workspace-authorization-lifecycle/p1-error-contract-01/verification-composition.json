@@ -1,0 +1,28 @@
+{
+  "scope": "local-verification-composition",
+  "status": "passed_by_compatible_result_reuse",
+  "checkedAt": "2026-09-20T09:34:09.648648+00:00",
+  "head": "e59ecbf5a582ce8fda7531defe98aabc881b50f8",
+  "standardRunStatus": "failed",
+  "standardReport": "standard-first/tests.json",
+  "replacementReport": "queue-final.json",
+  "replacedTestFile": "test/integration/production-sandbox-queue-reentry.test.ts",
+  "replacedTests": 6,
+  "unchangedBuildAndOtherTests": 3914,
+  "combinedCounts": {
+    "executed": 3920,
+    "passed": 3920,
+    "failed": 0,
+    "skipped": 0
+  },
+  "frozenInputCount": 1079,
+  "changedInputs": {
+    "test/integration/production-sandbox-queue-reentry.test.ts": "fe19a128225c5c807cd490cd364f304f4408ac3e0ac1774a5c1b8560ea9aa144"
+  },
+  "productionSourceUnchanged": true,
+  "limitations": [
+    "No second full standard CI execution was run after updating the two obsolete cancellation assertions.",
+    "The first full standard report remains failed; this report composes unchanged passing cases with all six newly rerun queue cases.",
+    "No hosted CI, production deployment, real provider or platform stop qualification."
+  ]
+}

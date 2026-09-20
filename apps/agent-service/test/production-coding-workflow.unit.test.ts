@@ -127,8 +127,9 @@ describe("governed coding requests", () => {
           f.services,
           f.ctx,
         ),
-      ).toMatchObject({ errorCode: "CODING_PATH_OUTSIDE_SCOPE" });
+      ).toMatchObject({ errorCode: "CODING_PATH_OUTSIDE_SCOPE", dispatchState: "not_sent" });
       expect(f.authorize).not.toHaveBeenCalled();
+      expect(f.ctx.phase).not.toHaveBeenCalled();
     },
   );
   it("accepts the grant root for directory queries but does not execute without approval", async () => {

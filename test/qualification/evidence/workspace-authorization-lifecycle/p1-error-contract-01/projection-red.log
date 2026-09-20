@@ -1,0 +1,66 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/thread-run-lifecycle.test.ts (156 tests | 4 failed | 152 skipped) 641ms
+     × preserves product outcome evidence: 'structured pre-dispatch rejection wit…' 270ms
+     × preserves product outcome evidence: 'success contradicts not sent evidence' 198ms
+     × preserves product outcome evidence: 'structured pre-dispatch rejection wit…' 80ms
+     × preserves product outcome evidence: 'success contradicts not sent evidence' 92ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'structured pre-dispatch rejection wit…'
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'structured pre-dispatch rejection wit…'
+AssertionError: expected [] to deeply equal [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+- [
+-   ObjectContaining {
+-     "itemId": "tool:threadcommandv1db1bc902c4d8530f6902857e053c0575",
+-     "name": "runtime.tool_outcome.not_dispatched",
+-     "sequence": 1,
+-   },
+- ]
++ []
+
+ ❯ test/integration/thread-run-lifecycle.test.ts:3077:22
+    3075|     const states = page.records.filter((record) => record.name.startsW…
+    3076|     if (marker)
+    3077|       expect(states).toEqual([
+       |                      ^
+    3078|         expect.objectContaining({
+    3079|           itemId: tool?.itemId,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'success contradicts not sent evidence'
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'success contradicts not sent evidence'
+AssertionError: expected { id: 'trace-0001', sequence: 1, …(8) } to match object { phase: 'failed', …(1) }
+(8 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "output": "Preserved result evidence",
+-   "phase": "failed",
++   "phase": "completed",
+  }
+
+ ❯ test/integration/thread-run-lifecycle.test.ts:3074:18
+    3072|     const page = await projection.read(query);
+    3073|     const tool = page.records.find((record) => record.kind === "tool");
+    3074|     expect(tool).toMatchObject({ phase, output: "Preserved result evid…
+       |                  ^
+    3075|     const states = page.records.filter((record) => record.name.startsW…
+    3076|     if (marker)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 152 skipped (156)
+   Start at  18:11:10
+   Duration  2.34s (transform 1.09s, setup 0ms, import 1.60s, tests 641ms, environment 0ms)

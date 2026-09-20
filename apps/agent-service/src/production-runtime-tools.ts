@@ -59,8 +59,13 @@ import { ProductionWorkerForwardTransport } from "./production-worker-forward-tr
 import type { ProductionWorkerParentBindingRegistryWriter } from "./production-worker-parent-binding-registry.js";
 
 type ExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
+type WorkerToolCompletion = Pick<
+  Extract<ExecutionV2Event, { type: "work.result" }>["payload"],
+  "outcome" | "outputRef" | "errorCode" | "externalActionId"
+>;
 const RANK = ["public", "private", "sensitive", "restricted"] as const;
-const unknownResult = (): RuntimeToolExecutionResult => ({
+const unknownResult = (): RuntimeToolSettledResult => ({
+  dispatchState: "possibly_sent",
   outcome: "result_unknown",
   resultRef: null,
   errorCode: "WORKER_RESULT_RECONCILIATION_REQUIRED",
@@ -919,8 +924,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             )
               continue;
             await this.#validate(invocation, internal);
-            let completion = event.type === "work.result" ? event.payload : undefined;
-            if (completion && this.#options.completeSandboxToolResult) {
+            let completion: WorkerToolCompletion | undefined =
+              event.type === "work.result" ? event.payload : undefined;
+            if (this.#options.completeSandboxToolResult) {
               const verified = await this.#options.completeSandboxToolResult(
                 { runId: invocation.runId, invocationId: request.messageId },
                 {
@@ -931,22 +937,29 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 },
               );
               if (verified !== null)
-                completion = {
-                  ...completion,
-                  ...(verified ?? {
-                    outcome: "result_unknown" as const,
-                    outputRef: null,
-                    errorCode: null,
-                  }),
+                completion = verified ?? {
+                  outcome: "result_unknown",
+                  outputRef: null,
+                  errorCode: null,
+                  externalActionId:
+                    event.type === "work.result" ? event.payload.externalActionId : null,
                 };
             }
-            if (event.type === "work.cancelled") {
+            if (event.type === "work.cancelled")
+              await this.#writeJson(invocation, `runtime-tool-diagnostic:${key}`, {
+                stage: "accepted",
+                reasonCode: "WORKER_CANCELLATION_OBSERVED",
+                operationId: key,
+                invocationId: request.messageId,
+                runId: invocation.runId,
+                authorityEpoch: authority.product.authorityEpoch,
+                occurredAt: this.#options.clock.now(),
+                cancellationReason: event.payload.reasonCode,
+              });
+            if (event.type === "work.cancelled" && !completion) {
               outcome = {
-                outcome: "failed",
-                resultRef: null,
-                errorCode: event.payload.reasonCode,
-                externalActionId: null,
-                modelContent: "操作已取消。",
+                ...unknownResult(),
+                dispatchState: "accepted",
               };
             } else {
               outcome = await this.#completionOutcome(
@@ -958,9 +971,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 internal,
               );
             }
-            const workerEndedAt =
-              event.type === "work.result" ? event.payload.completedAt : event.payload.cancelledAt;
-            if (workerStartedAt && Date.parse(workerEndedAt) >= Date.parse(workerStartedAt))
+            const workerEndedAt = event.type === "work.result" ? event.payload.completedAt : null;
+            if (
+              workerStartedAt &&
+              workerEndedAt &&
+              outcome.outcome !== "result_unknown" &&
+              Date.parse(workerEndedAt) >= Date.parse(workerStartedAt)
+            )
               outcome = {
                 ...outcome,
                 executionTiming: { startedAt: workerStartedAt, endedAt: workerEndedAt },
@@ -999,6 +1016,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         : fileConflict
           ? fileVersionConflictResult()
           : {
+              dispatchState: "not_sent",
               outcome: "failed",
               resultRef: null,
               errorCode: reasonCode,
@@ -1046,14 +1064,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     invocation: RuntimeToolInvocation,
     key: string,
     handleRef: string,
-    completion:
-      | {
-          outcome: "succeeded" | "failed" | "result_unknown";
-          outputRef: string | null;
-          errorCode: string | null;
-          externalActionId: string | null;
-        }
-      | undefined,
+    completion: WorkerToolCompletion | undefined,
     maxOutputBytes: number,
     internal: boolean,
   ): Promise<RuntimeToolSettledResult> {
@@ -1074,18 +1085,27 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       });
       if (bytes.byteLength > maxOutputBytes) throw new Error("WORKER_OUTPUT_LIMIT_EXCEEDED");
       return {
+        dispatchState: "accepted",
         outcome: "succeeded",
         resultRef: payload.ref,
         errorCode: null,
         externalActionId: null,
         modelContent: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
       };
+    } else if (!completion || completion.outcome === "result_unknown") {
+      return {
+        ...unknownResult(),
+        dispatchState: "accepted",
+        errorCode: completion?.errorCode ?? "WORKER_RESULT_RECONCILIATION_REQUIRED",
+        externalActionId: completion?.externalActionId ?? null,
+      };
     } else {
       return {
-        outcome: completion?.outcome ?? "result_unknown",
+        dispatchState: "accepted",
+        outcome: completion.outcome,
         resultRef: null,
-        errorCode: completion?.errorCode ?? null,
-        externalActionId: completion?.externalActionId ?? null,
+        errorCode: completion.errorCode,
+        externalActionId: completion.externalActionId,
         modelContent: "操作未确认成功。",
       };
     }

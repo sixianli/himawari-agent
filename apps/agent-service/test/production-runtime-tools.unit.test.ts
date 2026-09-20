@@ -2,6 +2,7 @@ import { ApplicationPortError, type RuntimeToolInvocation } from "@himawari-agen
 import { describe, expect, it, vi } from "vitest";
 import {
   ProductionRuntimeTools,
+  type ProductionRuntimeToolsOptions,
   type ProductionRuntimeSandbox,
 } from "../src/production-runtime-tools.js";
 import { piFileRecoveryOperationKey } from "@himawari-agent/execution-contracts";
@@ -302,38 +303,50 @@ describe("ProductionRuntimeTools", () => {
     expect(await (await exposed(f)).execute(invocation)).toEqual(result);
     expect(f.request).toHaveBeenCalledTimes(2);
   });
-  it("uses matching worker boundaries and preserves timing on replay", async () => {
-    const f = fixture();
-    const original = f.options.transport.events.bind(f.options.transport);
-    vi.spyOn(f.options.transport, "events").mockImplementation(async function* (cursor) {
-      for await (const event of original(cursor)) {
-        if (event.type === "work.result") {
-          yield {
-            ...event,
-            type: "work.progress",
-            messageId: "start:tools",
-            payload: {
-              requestId: event.payload.requestId,
-              cursor: "start",
-              sequence: 0,
-              stage: "worker.execution.started",
-              progressPermille: 0,
-              payloadRef: null,
-              occurredAt: new Date(Date.parse(now) - 1200).toISOString(),
-            },
-          };
+  it.each([true, false])(
+    "uses worker end timing only for settled effects (%s)",
+    async (settled) => {
+      const f = fixture();
+      const original = f.options.transport.events.bind(f.options.transport);
+      vi.spyOn(f.options.transport, "events").mockImplementation(async function* (cursor) {
+        for await (const event of original(cursor)) {
+          if (event.type === "work.result") {
+            yield {
+              ...event,
+              type: "work.progress",
+              messageId: "start:tools",
+              payload: {
+                requestId: event.payload.requestId,
+                cursor: "start",
+                sequence: 0,
+                stage: "worker.execution.started",
+                progressPermille: 0,
+                payloadRef: null,
+                occurredAt: new Date(Date.parse(now) - 1200).toISOString(),
+              },
+            };
+          }
+          yield event;
         }
-        yield event;
-      }
-    });
-    const tool = await exposed(f);
-    const result = await tool.execute(invocation);
-    expect(result).toMatchObject({
-      executionTiming: { startedAt: new Date(Date.parse(now) - 1200).toISOString(), endedAt: now },
-    });
-    expect(await (await exposed(f)).execute(invocation)).toEqual(result);
-    expect(f.request).toHaveBeenCalledTimes(2);
-  });
+      });
+      const tool = new ProductionRuntimeTools({
+        ...f.options,
+        ...(settled ? {} : { completeSandboxToolResult: async () => undefined }),
+      });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+      const result = await tool.execute(invocation);
+      if (settled)
+        expect(result).toMatchObject({
+          executionTiming: {
+            startedAt: new Date(Date.parse(now) - 1200).toISOString(),
+            endedAt: now,
+          },
+        });
+      else expect(result).not.toHaveProperty("executionTiming");
+      expect(await (await exposed(f)).execute(invocation)).toEqual(result);
+      expect(f.request).toHaveBeenCalledTimes(2);
+    },
+  );
   it("rejects expanded input, cross-Run and revoked handles without dispatch", async () => {
     const f = fixture();
     const tool = await exposed(f);
@@ -375,14 +388,84 @@ describe("ProductionRuntimeTools", () => {
       expect(f.request).toHaveBeenCalledTimes(2);
     },
   );
-  it("records a cancellation as failed", async () => {
+  it("keeps an unverified cancellation unknown and never resends it", async () => {
     const f = fixture();
     f.setMode("cancelled");
-    expect(await (await exposed(f)).execute(invocation)).toMatchObject({
-      outcome: "failed",
-      errorCode: "CANCELLED",
+    const result = await (await exposed(f)).execute(invocation);
+    expect(result).toMatchObject({
+      outcome: "result_unknown",
+      errorCode: "WORKER_RESULT_RECONCILIATION_REQUIRED",
     });
+    expect(await (await exposed(f)).execute(invocation)).toEqual(result);
+    expect(f.request).toHaveBeenCalledTimes(2);
+    const diagnostic = [...f.artifacts.values()].find((value) =>
+      value.operationKey.startsWith("runtime-tool-diagnostic:"),
+    );
+    if (!diagnostic) throw new Error("Missing cancellation diagnostic");
+    const payload = await f.options.payloads.get(diagnostic.payloadRef);
+    if (!payload) throw new Error("Missing protected diagnostic");
+    const bytes = await f.options.protector.unprotect({
+      ownerId: diagnostic.ownerId,
+      agentId: diagnostic.agentId,
+      payload,
+    });
+    expect(JSON.parse(new TextDecoder().decode(bytes))).toMatchObject({
+      stage: "accepted",
+      reasonCode: "WORKER_CANCELLATION_OBSERVED",
+      cancellationReason: "CANCELLED",
+    });
+    expect(result.modelContent).not.toContain("CANCELLED");
   });
+  it.each(["succeeded", "failed", null, undefined] as const)(
+    "verifies cancellation notifications before settling a tool: %s",
+    async (verified) => {
+      const f = fixture();
+      f.setMode("cancelled");
+      const original = f.options.transport.events.bind(f.options.transport);
+      vi.spyOn(f.options.transport, "events").mockImplementation(async function* (cursor) {
+        for await (const event of original(cursor)) {
+          if (event.type === "work.cancelled")
+            yield {
+              ...event,
+              type: "work.progress",
+              messageId: "start:tools",
+              payload: {
+                requestId: event.payload.requestId,
+                cursor: "start",
+                sequence: 0,
+                stage: "worker.execution.started",
+                progressPermille: 0,
+                payloadRef: null,
+                occurredAt: new Date(Date.parse(now) - 1200).toISOString(),
+              },
+            };
+          yield event;
+        }
+      });
+      const completeSandboxToolResult = vi.fn<
+        NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+      >(async (_input, delivery) => {
+        await delivery.assertDisclosure();
+        if (verified === null || verified === undefined) return verified;
+        const completion = {
+          outcome: verified,
+          outputRef: verified === "succeeded" ? "output:tools" : null,
+          errorCode: verified === "failed" ? "COMMAND_FAILED" : null,
+          externalActionId: null,
+        };
+        await delivery.saveReceipt(completion);
+        return completion;
+      });
+      const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+      const result = await tool.execute(invocation);
+      expect(result.outcome).toBe(verified ?? "result_unknown");
+      expect(completeSandboxToolResult).toHaveBeenCalledOnce();
+      // cancelledAt is a notification time, never the actual execution end.
+      expect(result).not.toHaveProperty("executionTiming");
+      expect(f.request).toHaveBeenCalledTimes(2);
+    },
+  );
   it("denies disclosure of a previously successful result after revocation", async () => {
     const f = fixture();
     const tool = await exposed(f);
@@ -666,32 +749,36 @@ it("recovers a persisted sandbox handoff after interruption without executing ag
   expect(completeSandboxToolResult).toHaveBeenCalledTimes(2);
 });
 
-it("delivers a later verified sandbox result without resending an unknown operation", async () => {
-  const f = fixture();
-  let verified = false;
-  const completeSandboxToolResult = vi.fn(async (_input, delivery) => {
-    await delivery.assertDisclosure();
-    if (!verified) return undefined;
-    const result = {
-      outcome: "succeeded" as const,
-      outputRef: "output:tools",
-      errorCode: null,
-      externalActionId: null,
-    };
-    await delivery.saveReceipt(result);
-    return result;
-  });
-  const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
-  await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
-  expect((await tool.execute(invocation)).outcome).toBe("result_unknown");
-  verified = true;
-  const resumed = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
-  await resumed.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
-  expect((await resumed.execute(invocation)).outcome).toBe("succeeded");
-  expect(f.request.mock.calls.filter(([request]) => request.type === "work.execute")).toHaveLength(
-    1,
-  );
-});
+it.each(["success", "cancelled"] as const)(
+  "delivers a later verified result without resending an unknown operation (%s)",
+  async (mode) => {
+    const f = fixture();
+    f.setMode(mode);
+    let verified = false;
+    const completeSandboxToolResult = vi.fn(async (_input, delivery) => {
+      await delivery.assertDisclosure();
+      if (!verified) return undefined;
+      const result = {
+        outcome: "succeeded" as const,
+        outputRef: "output:tools",
+        errorCode: null,
+        externalActionId: null,
+      };
+      await delivery.saveReceipt(result);
+      return result;
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    expect((await tool.execute(invocation)).outcome).toBe("result_unknown");
+    verified = true;
+    const resumed = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await resumed.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    expect((await resumed.execute(invocation)).outcome).toBe("succeeded");
+    expect(
+      f.request.mock.calls.filter(([request]) => request.type === "work.execute"),
+    ).toHaveLength(1);
+  },
+);
 
 it.each([true, false])(
   "binds a recovered file output to its verified delivery receipt (%s)",

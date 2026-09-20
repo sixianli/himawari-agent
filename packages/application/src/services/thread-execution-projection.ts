@@ -237,24 +237,35 @@ export class ThreadExecutionProjection {
           const result = object(tool["result"]);
           // Older Pi captures can report isError=false for a resolved product
           // failure. Retained product error evidence must not become success.
-          const productError = text(object(result["details"])["errorCode"]);
-          const productOutcome = text(object(result["details"])["productOutcome"]);
-          const notDispatched = [
+          const details = object(result["details"]);
+          const productError = text(details["errorCode"]);
+          const productOutcome = text(details["productOutcome"]);
+          const dispatchState = text(details["dispatchState"]);
+          const legacyNotDispatched = [
             "WORKER_ADMISSION_CONFLICT",
             "WORKER_NOT_DISPATCHED",
             "RUNTIME_TOOL_CHECKPOINT_FAILED",
             "FILE_VERSION_CONFLICT",
           ].includes(productError);
+          const notDispatched =
+            dispatchState === "not_sent" || (dispatchState === "" && legacyNotDispatched);
           const unresolved =
             productOutcome === "result_unknown" ||
             (productOutcome === "succeeded" && notDispatched) ||
+            (legacyNotDispatched && ["possibly_sent", "accepted"].includes(dispatchState)) ||
+            (details["dispatchState"] !== undefined &&
+              !["not_sent", "possibly_sent", "accepted"].includes(dispatchState)) ||
             ["RUNTIME_TOOL_EXECUTION_UNRESOLVED", "WORKER_RESULT_RECONCILIATION_REQUIRED"].includes(
               productError,
             );
           // Unknown or contradictory effects outrank an admission code. A missing
           // Pi error flag never turns a retained product failure into success.
           const failed =
-            tool["isError"] === true || productOutcome === "failed" || unresolved || !!productError;
+            tool["isError"] === true ||
+            productOutcome === "failed" ||
+            notDispatched ||
+            unresolved ||
+            !!productError;
           const lifecycle = !ended
             ? "preparing"
             : unresolved
@@ -271,7 +282,7 @@ export class ThreadExecutionProjection {
               phase: "updated",
               name: `runtime.tool_outcome.${lifecycle}`,
             });
-          const timing = object(object(result["details"])["executionTiming"]);
+          const timing = object(details["executionTiming"]);
           const start = text(timing["startedAt"]),
             end = text(timing["endedAt"]);
           if (

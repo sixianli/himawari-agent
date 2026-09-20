@@ -24,6 +24,7 @@ date: "2026-09-16"
 
 - [剩余工作依赖顺序与验收批次（2026-09-20）](#remaining-order)
 - [原完成结果交付恢复](#p1-result-delivery)
+- [取消通知与未派发错误合同](#p1-error-contract)
 - [历史恢复上下文（2026-09-20 15:52）](#checkpoint-2026-09-20)
 - [本次实施记录与待审核交互](#implementation-record)
 
@@ -71,6 +72,14 @@ date: "2026-09-16"
 2026-09-20 在当前 Mac 重建安装产物并运行七个真实 Job Host 场景。探针原先错误导入 `dist/node-build`，经 workspace exports 回到 TypeScript 源码而失败；已改用 `dist/node-runtime` 安装模块。未启动预约可核验释放，停止/Worker 崩溃后的脱离进程组后代仍继续写入，因此完整停止能力仍为 **inconclusive**，已测场景的 unknown/拒绝释放为 **verified**。证据见[平台前置核验](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-platform-preflight-02/README.md)。
 
 结合[现行 SRT 设计](../specs/2026-09-07-srt-unified-execution-design.md)，首批 Mac 已接受尽力停止与未知隔离。这次没有新增必须切换宿主后端的设计决定；后续资源展示、历史核验与恢复继续实施，保留占用直到得到有效证明。Linux 本次未重跑，最终双平台资格仍在第九批验证；不能将这一结果写成完整平台通过。
+
+### 恢复与授权子任务的依赖调整（2026-09-20）
+
+原结果补交已提交为 `e59ecbf`，取消/未派发证据已通过组合验证。后续第4/5批内部顺序细化为：**执行中撤销与每次后续派发检查 → 只读网络有限重试 → 跨 boot/fence 的未准入队列续接**。文件并发、副本与最终验收的依赖顺序保持。
+
+原因来自当前生产源码：通用 Worker 在入口核对委派，但 `CapabilityPort.invoke` 内的后续外发没有当前权威检查回调；生产装配使用内存委派 Store，不能把再次读取该内存对象当作 Agent 的实时 Grant 检查。`GrantService.revoke` 当前持久化撤销事实，仍需接原资源受控停止。若先增加自动重试，就可能在等待期间撤销后再次外发，因此先补这一前提。
+
+继续复用现有 Agent 权威、调用回执、受保护 Payload broker 和资源恢复服务。Worker 只查询当前调用是否仍获准，不接管全量 Grant Store。跨重启恢复则需要同时保持原审批内容、输入、候选文件、期限、额度预约、队列位置及 Pi 工具批次；只改 queue 的 boot 字符串不足以满足合同。准确接口和测试应在对应批次实施前按当前源码确定，不能把这段依赖判断当作已实现能力。
 
 ### 实施中保持的约束
 
@@ -962,13 +971,25 @@ P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 �
 
 [↑ 返回阅读导航](#contents)
 
-第3批资源投影已提交为 `e0b2de5`，探针安装入口修复为 `22ab7b3`。第4批继续复用原 Run 调度、冻结输入、checkpoint 和完成事务，新增内部 `deliver_completed` 分支，仅交付已保存的完成输出。原业务执行期限保持不变；当前权威/执行租约负责这次有限交付，不重新建立上下文、调用 Pi/Worker 或启动另一轮清理。
+第3批资源投影已提交为 `e0b2de5`，探针安装入口修复为 `22ab7b3`。原结果交付已保存为 `e59ecbf`。第4批继续复用原 Run 调度、冻结输入、checkpoint 和完成事务，新增内部 `deliver_completed` 分支，仅交付已保存的完成输出。原业务执行期限保持不变；当前权威/执行租约负责这次有限交付，不重新建立上下文、调用 Pi/Worker 或启动另一轮清理。
 
 SQLite 的候选筛选、领取及最终完成分别检查资格。最终写入回答的事务检查 checkpoint revision 与原输出，并覆盖全部前台/后台资源、未绑定预约、队列、永久释放和后续独立保护。已知输出刚保存后中断、等待清理记录保存而 Run 状态尚未更新时中断，都保留恢复身份。缺少可信完成输出的未知运行不能被自动重放；原输入读取或校验失败记录 `RUN_COMPLETION_DELIVERY_REJECTED`，保留输出并暂停自动补交。取消先提交时不交付回答；checkpoint 在最终事务前改变时旧尝试被拒绝，后续重新读取后只交付一次。
 
 [本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-result-delivery-01/README.md)已包含前台最终资源检查遗漏的失败证据、生产调度与真实 SQLite/Payload/消息读回，以及取消、中断和 checkpoint 竞争。450 项相邻消费者回归通过；随后增加的竞争和未知输出用例另有定向通过结果。[最终标准构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-result-delivery-01/standard-final/tests.json)为 246 文件、3,899 项全部通过，零失败、零跳过；1,079 项冻结输入回读未变。任务静态检查、严格文档和四份 Runbook 合同通过；全库格式问题仍限于既存无关原型。原结果补交这一子批已验证，完整恢复批次继续实施。模型和宿主证明仍是受控输入，不据此声称双平台资格或完整 Gateway→Worker 文件链路完成。
 
 本批只补交已经完成的原结果。全部业务错误分类、跨 boot 的未准入队列续接、执行中撤销、文件并发/目录改名、可选副本和其余阶段仍按[依赖顺序](#remaining-order)继续；P1 与整个 Plan 保持未完成。
+
+<a id="p1-error-contract"></a>
+
+### P1：取消通知与明确未派发的结果证据（2026-09-20）
+
+[↑ 返回阅读导航](#contents)
+
+当前调用链中，通用能力取消仅发出 Abort 信号，`work.cancelled` 不能证明外部效果已经停止。生产工具现将取消通知交给原沙箱结果核验入口；无确定结果时保留 `result_unknown`，后来核验得到原结果才补交，不重新派发原工具。取消原因只写受保护诊断，不泄露到模型或网页；取消/未知通知时间不生成执行结束耗时。
+
+产品工具结果增加可选 `dispatchState`，由执行边界表达明确未派发、可能派发、已接收。编码准入前拒绝、Pi preflight 与 checkpoint 失败保留明确未派发证据；页面投影直接消费该事实并兼容旧错误码。未知、互相矛盾或格式错误的证据优先显示未知，不依赖扩充错误码清单猜测成功。复用 Pi 的工具结果、现有未知中断与恢复机制；不增加第二套 Agent Loop、派发协议或授权入口。
+
+[本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-error-contract-01/README.md)保存失败前回归。168 项工具/Worker 消费者及 34 项真实 SQLite/Trace/状态投影回归通过，类型与任务 lint 通过。首轮正式构建通过，标准测试 3,918/3,920 通过，两项旧队列断言仍将取消通知视为确定失败；修正后整个六项队列测试通过，新增未释放预约检查并保留原一次回执/派发/期限断言。[组合验证报告](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-error-contract-01/verification-composition.json)回读 1,079 项输入，确认仅该测试文件变化，复用其余 3,914 项与构建结果；组合覆盖 3,920 项，未再次全套运行，原 failed 报告保留。四份 Runbook 及严格文档检查通过。这些检查采用受控 Worker 通知及模型端口，不能替代真实平台停止证明。全部业务阶段分类、只读网络有限重试与其余时间策略仍需继续，P1 保持未完成。
 
 <a id="checkpoint-2026-09-20"></a>
 

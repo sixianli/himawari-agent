@@ -2926,6 +2926,62 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       marker: null,
     },
     {
+      name: "structured pre-dispatch rejection with a new reason",
+      outcome: "failed",
+      dispatchState: "not_sent",
+      code: "CODING_PATH_REQUIRED",
+      phase: "failed",
+      marker: "not_dispatched",
+    },
+    {
+      name: "unknown result contradicts not sent evidence",
+      outcome: "result_unknown",
+      dispatchState: "not_sent",
+      code: null,
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "accepted dispatch contradicts legacy not dispatched reason",
+      outcome: "failed",
+      dispatchState: "accepted",
+      code: "WORKER_NOT_DISPATCHED",
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "unknown dispatch evidence is not a successful effect",
+      outcome: "succeeded",
+      dispatchState: "future_state",
+      code: null,
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "invalid dispatch evidence is not a successful effect",
+      outcome: "succeeded",
+      dispatchState: 42,
+      code: null,
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "not sent evidence without an outcome is not successful",
+      outcome: undefined,
+      dispatchState: "not_sent",
+      code: null,
+      phase: "failed",
+      marker: "not_dispatched",
+    },
+    {
+      name: "success contradicts not sent evidence",
+      outcome: "succeeded",
+      dispatchState: "not_sent",
+      code: null,
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
       name: "unknown product without Pi error",
       outcome: "result_unknown",
       code: null,
@@ -2981,7 +3037,9 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       phase: "completed",
       marker: null,
     },
-  ])("preserves product outcome evidence: $name", async ({ outcome, code, phase, marker }) => {
+  ])("preserves product outcome evidence: $name", async (item) => {
+    const { outcome, code, phase, marker } = item;
+    const dispatchState = "dispatchState" in item ? item.dispatchState : undefined;
     const setup = await executionFixture();
     const payloadRef = "outcome-evidence";
     await setup.repository
@@ -3005,7 +3063,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
               toolName: "write",
               isError: false,
               result: {
-                details: { productOutcome: outcome, errorCode: code },
+                details: { productOutcome: outcome, errorCode: code, dispatchState },
                 content: [{ type: "text", text: "Preserved result evidence" }],
               },
             }),

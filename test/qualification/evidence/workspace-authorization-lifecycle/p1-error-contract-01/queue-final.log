@@ -1,0 +1,197 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":8.697917000000416,"at":"2026-09-20T09:33:14.141Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":80.03837500000009,"at":"2026-09-20T09:33:14.224Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.6057919999993828,"at":"2026-09-20T09:33:14.225Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.8479999999999563,"at":"2026-09-20T09:33:14.228Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.8097079999997732,"at":"2026-09-20T09:33:14.229Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.2024169999995138,"at":"2026-09-20T09:33:14.235Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":38.456333000000086,"at":"2026-09-20T09:33:14.274Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.5564170000006925,"at":"2026-09-20T09:33:14.275Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.0248329999994894,"at":"2026-09-20T09:33:14.277Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.634541999999783,"at":"2026-09-20T09:33:14.278Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.2299170000005688,"at":"2026-09-20T09:33:14.278Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":36.00104199999987,"at":"2026-09-20T09:33:14.314Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.7317089999996824,"at":"2026-09-20T09:33:14.315Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.1463329999996859,"at":"2026-09-20T09:33:14.317Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > resumes a durable unconsumed queue with one original receipt and no deadline extension
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.8234159999992698,"at":"2026-09-20T09:33:14.318Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state cancelled
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.9881669999995211,"at":"2026-09-20T09:33:14.801Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state cancelled
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":34.40875000000051,"at":"2026-09-20T09:33:14.836Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state cancelled
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.650749999999789,"at":"2026-09-20T09:33:14.837Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state cancelled
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.400749999999789,"at":"2026-09-20T09:33:14.839Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state cancelled
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.7015000000001237,"at":"2026-09-20T09:33:14.840Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state admitted
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.2626250000002983,"at":"2026-09-20T09:33:15.288Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state admitted
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":48.346958000000086,"at":"2026-09-20T09:33:15.337Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state admitted
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.40824999999949796,"at":"2026-09-20T09:33:15.337Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state admitted
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":4.863292000000001,"at":"2026-09-20T09:33:15.343Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state admitted
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":2.0772909999996045,"at":"2026-09-20T09:33:15.345Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state changed-boot
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.18354199999885168,"at":"2026-09-20T09:33:15.946Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state changed-boot
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":39.700833000000785,"at":"2026-09-20T09:33:15.985Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state changed-boot
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.42062500000065484,"at":"2026-09-20T09:33:15.986Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state changed-boot
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.2927499999987049,"at":"2026-09-20T09:33:15.988Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume queue state changed-boot
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.6978340000005119,"at":"2026-09-20T09:33:15.989Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.6602089999996679,"at":"2026-09-20T09:33:16.458Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.90862500000003,"at":"2026-09-20T09:33:16.491Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3212500000008731,"at":"2026-09-20T09:33:16.491Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.737541999998939,"at":"2026-09-20T09:33:16.493Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.44241599999986647,"at":"2026-09-20T09:33:16.493Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.5632500000010623,"at":"2026-09-20T09:33:16.498Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.7032500000004802,"at":"2026-09-20T09:33:16.498Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":39.038666000000376,"at":"2026-09-20T09:33:16.537Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":39.3588749999999,"at":"2026-09-20T09:33:16.537Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.6010420000002341,"at":"2026-09-20T09:33:16.538Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.8273330000010901,"at":"2026-09-20T09:33:16.538Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.5229999999992287,"at":"2026-09-20T09:33:16.541Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.4815419999995356,"at":"2026-09-20T09:33:16.541Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.2484589999985474,"at":"2026-09-20T09:33:16.542Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.1052079999990383,"at":"2026-09-20T09:33:16.542Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.1734159999996336,"at":"2026-09-20T09:33:16.543Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.1385410000002594,"at":"2026-09-20T09:33:16.544Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":43.57220799999959,"at":"2026-09-20T09:33:16.587Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":44.13724999999977,"at":"2026-09-20T09:33:16.588Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.31883299999935844,"at":"2026-09-20T09:33:16.588Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.7059170000011363,"at":"2026-09-20T09:33:16.588Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":2.810290999999779,"at":"2026-09-20T09:33:16.592Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":2.8690409999999247,"at":"2026-09-20T09:33:16.593Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.7989159999997355,"at":"2026-09-20T09:33:16.593Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > concurrent re-entry commits one receipt and forwards only one executable message
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.1482499999983702,"at":"2026-09-20T09:33:16.594Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume an original request that exceeds a tightened resource ceiling
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.4552499999990687,"at":"2026-09-20T09:33:17.168Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume an original request that exceeds a tightened resource ceiling
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":53.15083299999969,"at":"2026-09-20T09:33:17.221Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume an original request that exceeds a tightened resource ceiling
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.9221250000009604,"at":"2026-09-20T09:33:17.222Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume an original request that exceeds a tightened resource ceiling
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":2.141166000001249,"at":"2026-09-20T09:33:17.226Z"}
+
+stderr | test/integration/production-sandbox-queue-reentry.test.ts > does not resume an original request that exceeds a tightened resource ceiling
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.6722079999999551,"at":"2026-09-20T09:33:17.227Z"}
+
+ ✓ |integration| test/integration/production-sandbox-queue-reentry.test.ts (6 tests) 3748ms
+   ✓ resumes a durable unconsumed queue with one original receipt and no deadline extension  847ms
+   ✓ does not resume queue state cancelled  513ms
+   ✓ does not resume queue state admitted  514ms
+   ✓ does not resume queue state changed-boot  635ms
+   ✓ concurrent re-entry commits one receipt and forwards only one executable message  666ms
+   ✓ does not resume an original request that exceeds a tightened resource ceiling  571ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  18:33:07
+   Duration  10.11s (transform 1.81s, setup 0ms, import 6.25s, tests 3.75s, environment 0ms)
+
+JSON report written to /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/test/qualification/evidence/workspace-authorization-lifecycle/p1-error-contract-01/queue-final.json

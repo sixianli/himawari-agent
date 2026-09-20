@@ -1,0 +1,3 @@
+ERROR: writing a seal requires both --confirm-reconciled and --apply
+Runbook static contract failed: <unresolved>
+Static contract success does not prove Live-State Preflight and does not authorize any operation.

@@ -470,6 +470,9 @@ export interface RuntimeContinuationPort {
 }
 
 export interface RuntimeToolSettledResult {
+  /** Product dispatch evidence, independent of the operation's effects.
+   * Optional for historical results; never inferred from cancellation alone. */
+  readonly dispatchState?: "not_sent" | "possibly_sent" | "accepted";
   /** Same-host worker timestamps. Includes worker setup/cleanup, excludes dispatch and approval. */
   readonly executionTiming?: { readonly startedAt: string; readonly endedAt: string };
   readonly outcome: "succeeded" | "failed" | "result_unknown";
