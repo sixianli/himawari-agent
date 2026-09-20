@@ -2,6 +2,7 @@ import { ContentPreview, type ContentPreviewValue } from "./components/content-p
 import { ArchivedConversations } from "./components/archived-conversations.js";
 import type {
   ThreadExecutionRecord,
+  ThreadExecutionState,
   ThreadGatewayRequestResult,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
@@ -139,6 +140,9 @@ export function useThreadControlCenter(
   const [execution, setExecution] = useState<
     Readonly<Record<string, readonly ThreadExecutionRecord[]>>
   >({});
+  const [executionStates, setExecutionStates] = useState<
+    Readonly<Record<string, ThreadExecutionState>>
+  >({});
   const [modelRef, setModelRef] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("off");
   const availableModels = configuration?.availableModels ?? [];
@@ -195,6 +199,7 @@ export function useThreadControlCenter(
     void client;
     setContentByRef({});
     setExecution({});
+    setExecutionStates({});
     return () => {
       refreshSequence.current++;
       payloadEpoch.current++;
@@ -411,6 +416,30 @@ export function useThreadControlCenter(
           );
           if (sequence !== refreshSequence.current) return;
           setExecution({ ...executionCache.current });
+        }
+        if (configuration.executionStateAvailable) {
+          const states = await Promise.all(
+            current.payload.runs.map(async (run) => {
+              const result = await client.queryThread(
+                threadQueryMessage(configuration, "thread.execution_state", {
+                  threadId: selectedThreadId,
+                  runId: run.runId,
+                }),
+                controller.signal,
+              );
+              if (
+                result.type !== "thread.execution_state_snapshot" ||
+                result.payload.threadId !== selectedThreadId ||
+                result.payload.runId !== run.runId
+              )
+                throw new Error("EXECUTION_STATE_SCOPE_MISMATCH");
+              if (result.payload.state.runRevision !== run.revision)
+                throw new Error("EXECUTION_STATE_REVISION_MISMATCH");
+              return [run.runId, result.payload.state] as const;
+            }),
+          );
+          if (sequence !== refreshSequence.current) return;
+          setExecutionStates(Object.fromEntries(states));
         }
         void loadPayloads([
           ...(current.payload.thread.titleRef ? [current.payload.thread.titleRef] : []),
@@ -815,6 +844,28 @@ export function useThreadControlCenter(
     }
   };
 
+  const currentExecutionStates = Object.fromEntries(
+    (detail?.payload.runs ?? []).flatMap((run) => {
+      const state = executionStates[run.runId];
+      return state?.runRevision === run.revision ? [[run.runId, state]] : [];
+    }),
+  );
+  const canStop = (run: { runId: string; status: string }) =>
+    configuration?.executionStateAvailable
+      ? currentExecutionStates[run.runId]?.availableActions.includes("stop") === true
+      : !["completed", "failed", "cancelled"].includes(run.status);
+  const projectedPendingThreadIds =
+    detail &&
+    configuration?.executionStateAvailable &&
+    detail.payload.runs.every((run) => currentExecutionStates[run.runId])
+      ? [
+          ...pendingThreadIds.filter((id) => id !== detail.payload.thread.threadId),
+          ...(Object.values(currentExecutionStates).some((state) => state.needsAttention)
+            ? [detail.payload.thread.threadId]
+            : []),
+        ]
+      : pendingThreadIds;
+
   const threadItems = collection?.payload.threads ?? [];
   const selectedSummary =
     detail?.payload.thread ?? threadItems.find(({ threadId }) => threadId === selectedThreadId);
@@ -836,7 +887,7 @@ export function useThreadControlCenter(
           : undefined
       }
       searchResults={searchResults?.payload.threads ?? []}
-      pendingThreadIds={pendingThreadIds}
+      pendingThreadIds={projectedPendingThreadIds}
       contentByRef={contentByRef}
       loading={loading}
       hasLoaded={collection !== undefined}
@@ -879,7 +930,7 @@ export function useThreadControlCenter(
         )
       }
       onArchive={(thread) => {
-        if (pendingThreadIds.includes(thread.threadId)) {
+        if (projectedPendingThreadIds.includes(thread.threadId)) {
           setError(message("review.archivePending"));
           return;
         }
@@ -968,6 +1019,8 @@ export function useThreadControlCenter(
               detail={detail}
               contentByRef={contentByRef}
               execution={execution}
+              executionStates={currentExecutionStates}
+              executionStateAvailable={configuration?.executionStateAvailable}
               onPreview={setPreview}
               connection={connection}
               renderApproval={(runId, records) =>
@@ -1022,14 +1075,9 @@ export function useThreadControlCenter(
           onModelChange={setModelRef}
           onThinkingChange={setThinkingLevel}
           onStop={
-            configuration?.canCancelRun &&
-            (detail?.payload.runs ?? []).some(
-              (run) => !["completed", "failed", "cancelled"].includes(run.status),
-            )
+            configuration?.canCancelRun && (detail?.payload.runs ?? []).some((run) => canStop(run))
               ? () => {
-                  const run = (detail?.payload.runs ?? []).find(
-                    (item) => !["completed", "failed", "cancelled"].includes(item.status),
-                  );
+                  const run = (detail?.payload.runs ?? []).find((item) => canStop(item));
                   if (run)
                     void performIntent({
                       kind: "stop",

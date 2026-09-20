@@ -36,6 +36,8 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.detail",
   "thread.execution",
   "thread.execution_snapshot",
+  "thread.execution_state",
+  "thread.execution_state_snapshot",
   "thread.search",
   "thread.lineage",
   "thread.checkpoint",
@@ -564,10 +566,73 @@ const threadExecutionSnapshotSchema = object({
   }),
 });
 
+/** Product conclusions; transport health and local clocks are deliberately absent. */
+export const threadExecutionDisplayPhaseSchema = enumeration([
+  "preparing",
+  "awaiting_approval",
+  "reviewing",
+  "model_waiting",
+  "model_thinking",
+  "model_output",
+  "completed",
+  "failed",
+  "stopped",
+  "unresolved",
+  "not_dispatched",
+]);
+const executionTimingSchema = object({
+  reviewMilliseconds: nullable(integer(0)),
+  executionMilliseconds: nullable(integer(0)),
+});
+const executionEffectSchema = enumeration([
+  "succeeded",
+  "failed",
+  "unknown",
+  "not_dispatched",
+  "pending",
+]);
+export const threadExecutionStateSchema = object({
+  runRevision: integer(1),
+  revision: machineString,
+  lastObservedAt: timestamp,
+  displayPhase: threadExecutionDisplayPhaseSchema,
+  reasonCode: machineString,
+  availableActions: array(enumeration(["stop", "review_approval", "retry_cleanup"])),
+  needsAttention: booleanValue,
+  timing: executionTimingSchema,
+  // These are operation results, not evidence that every side effect was rolled back or cleaned up.
+  effectSummary: array(object({ itemId: machineString, outcome: executionEffectSchema })),
+  operations: array(
+    object({
+      itemId: machineString,
+      displayPhase: threadExecutionDisplayPhaseSchema,
+      reasonCode: machineString,
+      lastObservedAt: timestamp,
+      executionMilliseconds: nullable(integer(0)),
+    }),
+  ),
+});
+export type ThreadExecutionState = InferSchema<typeof threadExecutionStateSchema>;
+const threadExecutionStateQuerySchema = object({
+  ...envelope("query", "thread.execution_state"),
+  payload: object({ threadId: machineString, runId: machineString }),
+});
+const threadExecutionStateSnapshotSchema = object({
+  ...envelope("snapshot", "thread.execution_state_snapshot"),
+  payload: object({
+    threadId: machineString,
+    runId: machineString,
+    state: threadExecutionStateSchema,
+    generatedAt: timestamp,
+  }),
+});
+
 const schemasByType = {
   "thread.message.submit_configured": submitConfiguredThreadMessageSchema,
   "thread.run.cancel": cancelThreadRunSchema,
   "thread.execution": threadExecutionQuerySchema,
+  "thread.execution_state": threadExecutionStateQuerySchema,
+  "thread.execution_state_snapshot": threadExecutionStateSnapshotSchema,
   "thread.execution_snapshot": threadExecutionSnapshotSchema,
   "thread.create": createThreadV3CommandSchema,
   "thread.message.submit": submitThreadMessageV3CommandSchema,

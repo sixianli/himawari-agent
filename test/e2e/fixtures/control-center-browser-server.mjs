@@ -16,6 +16,7 @@ if (!Number.isInteger(port) || port < 0 || port > 65535)
 const now = "2026-08-27T00:00:00.000Z";
 const executionQualification = process.env.HIMAWARI_EXECUTION_FIXTURE === "1";
 const executionRecords = new Map();
+const executionStates = new Map();
 const accepted = new Set();
 const acceptedThreadCommands = new Map();
 const acceptedGovernanceCommands = new Map();
@@ -965,6 +966,20 @@ function handleThreadQuery(message) {
   }
   const thread = threads.get(message.payload.threadId);
   if (!thread) return null;
+  if (message.type === "thread.execution_state" && executionQualification) {
+    const state = executionStates.get(message.payload.runId);
+    if (!state) return null;
+    return {
+      ...common,
+      type: "thread.execution_state_snapshot",
+      payload: {
+        threadId: thread.threadId,
+        runId: message.payload.runId,
+        state,
+        generatedAt: new Date().toISOString(),
+      },
+    };
+  }
   if (message.type === "thread.execution" && executionQualification) {
     const records = executionRecords.get(message.payload.runId) ?? [];
     return {
@@ -1199,6 +1214,7 @@ async function handleRequest(request, response) {
       ...(executionQualification
         ? {
             executionPresentationAvailable: true,
+            executionStateAvailable: executionStates.size > 0,
             canCancelRun: true,
             availableModels: [
               {
@@ -1279,7 +1295,10 @@ async function handleRequest(request, response) {
       json(response, 404, {});
       return;
     }
-    if (input.reset) executionRecords.delete(run.runId);
+    if (input.reset) {
+      executionRecords.delete(run.runId);
+      executionStates.delete(run.runId);
+    }
     if (typeof input.title === "string") {
       const ref = `payload:fixture-title:${thread.threadId}:${thread.titleRevision + 1}`;
       payloads.set(ref, { content: input.title, dataClassification: "private" });
@@ -1299,6 +1318,7 @@ async function handleRequest(request, response) {
       run.revision += 1;
       run.updatedAt = input.occurredAt ?? new Date().toISOString();
     }
+    if (input.state) executionStates.set(run.runId, { ...input.state, runRevision: run.revision });
     if (input.answer) {
       const ref = `payload:fixture-answer:${run.runId}`;
       payloads.set(ref, { content: input.answer, dataClassification: "private" });

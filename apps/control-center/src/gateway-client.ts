@@ -49,6 +49,7 @@ export interface AvailableModel {
 
 export interface ControlCenterRuntimeConfiguration {
   readonly executionPresentationAvailable?: boolean;
+  readonly executionStateAvailable?: boolean;
   readonly canCancelRun?: boolean;
   readonly availableModels?: readonly AvailableModel[];
   readonly healthDependenciesAvailable?: boolean;
@@ -107,6 +108,7 @@ export async function loadRuntimeConfiguration(
   }
   const value = body as {
     readonly executionPresentationAvailable?: unknown;
+    readonly executionStateAvailable?: unknown;
     readonly canCancelRun?: unknown;
     readonly availableModels?: unknown;
     readonly healthDependenciesAvailable?: unknown;
@@ -226,6 +228,7 @@ export async function loadRuntimeConfiguration(
       | "recentAuthenticationRef"
     >),
     executionPresentationAvailable: value.executionPresentationAvailable === true,
+    executionStateAvailable: value.executionStateAvailable === true,
     canCancelRun: value.canCancelRun === true,
     availableModels: Object.freeze(availableModels as AvailableModel[]),
     authorizationRef,

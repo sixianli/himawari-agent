@@ -16,6 +16,10 @@ date: "2026-08-25"
 
 `ThreadExecutionProjection` 从 Owner/Agent/Thread/Run 归属校验后的持久化 Trace 提取受限展示字段，经现有 Thread Gateway 查询返回。原始 JSON、未标记为可展示摘要的 thinking、签名与 provider 元数据不开放。Trace 追加事务同时发布 Thread 事件通知，浏览器重连读取持久化投影，不另建流式协议。
 
+当前生产组合还提供独立的 `thread.execution_state` / `thread.execution_state_snapshot` 查询。浏览器仅在配置声明 `executionStateAvailable` 时使用它，原 `thread.execution` 记录查询的严格合同保持不变。后端从归属校验后的全部 Trace 分页与 Run 版本生成阶段、原因、操作结果、现有 Stop/审批/清理动作、真实审查与工具执行区间的并集、稳定内容 revision 和最后观察时间；读取期间 Run revision 变化、分页停滞或超出有限读取预算时不返回部分结论。工具行与整体状态保留每个操作的未知结果，已成功操作不因其他操作失败而丢失；解密失败不能当作空的成功结果。页面断线提示与该持久结论分开，客户端不再用墙钟估算新查询中的工具执行时长。
+
+此投影只汇总目前已有的持久 Run/Trace 事实，`effectSummary` 表达操作 outcome，不构成文件已回滚、资源已释放或整个任务树已停止的证明。已选择会话的红点与可用动作使用匹配 Run revision 的状态；其他会话仍使用原待审批查询。资源 journal 的停止/核验/清理、队列等待、文件发布细节、其他阶段计时与全部会话统一注意状态仍待接入，见[统一状态实施记录](execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-unified-state)。即使所有工具已经返回，单独的 `Run.cancelled` 也只证明取消决定已保存；缺少资源证明时统一状态仍为“结果未确认”，保留已知成功操作及原有再次停止/清理入口。本批不改变 Pi 工具协议，不升级数据库，也不增加执行或重放入口。
+
 用户提交仍对应产品 Turn/Run，Pi 内部 turn 是轮内执行步骤。可选模型由已配置、允许 private 数据的 generation descriptor 与 Pi 0.84.2 能力共同决定；`thread.message.submit_configured` 在 migration 0030 的 `runs.model_selection_json` 保存本次选择，后续仍由 RunExecutionInputService 冻结策略并执行原预算/披露/授权检查。界面中的下一轮选择不会改变活动 Run。停止复用 RunCoordinator；文本附件经既有 private Payload 发送，仅“执行”模式可用。
 
 本轮实际验收按用户要求限于本机版本；真实服务与真实模型资格需单独取得。具体设计见 [SOURCE: docs/archive/specs/2026-09-10-control-center-product-refactor-design.md]。

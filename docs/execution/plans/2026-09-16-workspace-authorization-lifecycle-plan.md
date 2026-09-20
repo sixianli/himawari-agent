@@ -56,7 +56,7 @@ date: "2026-09-16"
 
 ### 当前实施进展
 
-下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-outcome-projection-01/standard-ci-result.json)为 3,840 项全部通过，环境为本机 macOS。
+下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-unified-state-01/standard-ci-result.json)为 3,859 项全部通过，环境为本机 macOS。
 
 | 阶段 | 已实现并验证的部分 | 仍需完成的重点 |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ date: "2026-09-16"
 | [P3](#p3) | 文件路径槽位/身份/祖先协调、公平队列、固定目标合同、暂存发布与保存恢复记录；合同 3 的并行候选准备、可停止计算、原队列提交与安装入口；确定未派发的冲突重放、新 intent 关联与有限重生成已通过本地验收 | 目录改名协议、Worker 执行后的冲突处理、跨 Worker 与多文件完整验收；合同 3 的平台资格与部署未执行 |
 | [P4](#p4) | 纯联网私有范围、无用户目录 Grant/挂载/claim；本机越界拒绝探针 | 任意命令的更窄可强制范围、可选副本与逐文件应用、Linux 平台资格 |
 | [P5](#p5) | 默认关闭的审查持久化、宿主批准校验、现有模型边界适配、预算/取消和来源事件 | 替代方案建立新 intent 的完整路径；具体配置获确认后的真实模型、披露和费用验收 |
-| [P6](#p6) | 自动审查来源与真实起止计时、终态工具结果未确认、首次加载和多语言窄屏持久浏览器回归 | 后端统一状态/原因/动作/效果投影、全部阶段计时、真实网关至 Worker 文件操作和页面恢复联合路径 |
+| [P6](#p6) | 自动审查来源与真实起止计时、终态工具结果未确认、首次加载和多语言窄屏持久浏览器回归；[Run/Trace 统一状态查询与页面消费](#p6-unified-state) | 资源 journal/队列/文件阶段及全部会话注意状态接入、全部阶段计时、真实网关至 Worker 文件操作和页面恢复联合路径 |
 | [P7](#p7) | 历史只读清单、Schema 28～43 的只读兼容及相关迁移回归 | 有现场证明的逐条修复候选、备份恢复演练、完整兼容矩阵与目标平台切换验收 |
 
 原型、受控端口、隔离 HTTP 夹具与本机构建各有证据范围；它们不替代真实模型、真实 Worker 联合路径或目标部署资格。[本次实施记录](#implementation-record)保留具体命令、失败与通过结果及局部限制。
@@ -255,7 +255,7 @@ date: "2026-09-16"
 
 本阶段贯穿 P1～P5，最后做跨阶段验收。前端以已确认的 v4 基准与 P0 新场景审核结果为准，不用演示时间或固定输出替代真实数据。
 
-- [ ] 由后端统一投影提供 phase、reason、actions、effect、timing、revision 与 needsAttention；顶部、工具行、Stop 和会话红点消费相同事实。
+- [ ] 由后端统一投影提供 phase、reason、actions、effect、timing、revision 与 needsAttention；顶部、工具行、Stop 和会话红点消费相同事实。 Run/Trace、选中会话和原有动作已接入[独立状态查询](#p6-unified-state)；资源和全部会话阶段未齐全，本项保持未完成。
 - [ ] 默认显示当前状态、必要动作和结果，步骤细节可展开；待确认卡片在窄屏保持可达。无用户行动需求时不点红点，保持无独立审批页/通用详情栏/删除会话。
 - [ ] 分别记录审查、用户确认、冲突等待、准备、执行、核验、清理与可观察模型输出。并行执行用区间并集；断线外推明确边界，最终时长由执行记录校正。
 - [ ] 扩展已有 Playwright 脚本与 fixture 服务验证新增状态、键盘、明暗、320/390/1024/1440 宽度、长路径与 200% 缩放；保留真实工具语义图标和中性焦点。
@@ -301,9 +301,11 @@ date: "2026-09-16"
 - **F**：[受控文件](../../../packages/platform-node/test/constrained-file-system.unit.test.ts)、[Pi 文件操作适配](../../../packages/platform-node/test/sandboxed-coding-operations.unit.test.ts)、[宿主身份](../../../packages/platform-node/test/sandbox-host-verifier.unit.test.ts)；新增跨 Worker 文件协调集成测试。
 - **S**：[生产范围](../../../test/integration/production-sandbox-scope.test.ts)、[运行库策略](../../../packages/runtime-sandbox/test/policy.unit.test.ts)、[候选工作区](../../../packages/platform-node/test/qualified-candidate-workspace.unit.test.ts)、[Git 适配](../../../packages/platform-node/test/git-workspace-adapter.unit.test.ts)。
 - **T**：[运行时工具](../../../apps/agent-service/test/production-runtime-tools.unit.test.ts)、[运行历史](../../../test/integration/runtime-history.test.ts)、[外部效果核验](../../../test/integration/external-action-reconciliation.test.ts)。
-- **B**：[页面投影](../../../apps/control-center/test/execution-view.unit.test.ts)、[Playwright 执行链](../../../scripts/test-execution-chain-browser.mjs)、[授权反馈](../../../scripts/test-authorization-feedback-browser.mjs)、[浏览器主入口](../../../scripts/qualify-control-center-browser.mjs)；P6 补真实服务路径，不能仅用 fixture。
+- **B**：[后端统一状态](../../../packages/application/test/thread-execution-state.unit.test.ts)、[真实 SQLite 与 Gateway 投影](../../../test/integration/thread-run-lifecycle.test.ts)、[页面状态与动作消费](../../../apps/control-center/test/thread-interactions.unit.test.ts)、[页面投影](../../../apps/control-center/test/execution-view.unit.test.ts)、[Playwright 执行链](../../../scripts/test-execution-chain-browser.mjs)、[授权反馈](../../../scripts/test-authorization-feedback-browser.mjs)、[浏览器主入口](../../../scripts/qualify-control-center-browser.mjs)；P6 补真实服务路径，不能仅用 fixture。
 - **R**：[自动审查与持久化](../../../test/integration/automatic-action-review.test.ts)；复用 A/T/S。真实配置资格测试仍待配置获确认后执行。
 - **M（拟扩展）**：既有 migration engine 与 J 的旧数据库 fixture，加兼容、只读修复预览、逐条恢复及回退测试。
+
+[统一状态首批证据](#p6-unified-state)补充 E05/E08 的取消决定与真实停止区分、未知结果不旋转，以及 U02～U05 的部分投影、重连、并行区间和四档屏宽/明暗验证。尚未覆盖全部资源阶段、真实 Worker 文件路径、200% 缩放与键盘联合验收，因此不将这些完整 Spec 条目标为通过。
 
 | Spec ID | 主责阶段 | 测试入口 | 必须读回或证明的结果 |
 | --- | --- | --- | --- |
@@ -856,6 +858,23 @@ Schema 42 扩展原 `sandbox_workspace_barriers`，增加 `resource_contradictio
 
 ### 当前完成边界与下一步
 
-P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。资源矛盾事件已完成独立保护与核验解除；资源恢复的安全原因和受保护诊断已完成本地验证。先前平台证据中的 Mac 后代停止限制仍存在，清理未知时必须继续阻止冲突任务。已配置沙箱的无 Web 模式现已接入独立资源恢复，并修正停止与扫描的关闭顺序。产品结果证据的展示优先级已修正。下一优先项是建立后端统一的阶段、原因、效果和可用动作合同，先验证 Gateway 新旧客户端的兼容边界，再接入生产投影与页面共同消费；完整结果交付恢复仍需继续实现。其他 P1～P7 缺口继续以当前实施进展表为准。
+P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。资源矛盾事件已完成独立保护与核验解除；资源恢复的安全原因和受保护诊断已完成本地验证。先前平台证据中的 Mac 后代停止限制仍存在，清理未知时必须继续阻止冲突任务。已配置沙箱的无 Web 模式现已接入独立资源恢复，并修正停止与扫描的关闭顺序。产品结果证据的展示优先级已修正。Run/Trace 的独立状态查询及当前会话页面消费已接入，见[本批记录](#p6-unified-state)。下一优先项是将原 journal 的资源核验/停止/清理与队列事实按逻辑工具身份接入该查询，提供确有生产执行入口的下一动作；完整结果交付恢复仍需继续实现。其他 P1～P7 缺口继续以当前实施进展表为准。
 
 [单一决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv) 记录本轮选择及证据；没有建立另一个项目状态缓存。
+
+
+<a id="p6-unified-state"></a>
+
+### P6：Run/Trace 统一执行状态的首批生产接入
+
+[↑ 返回阅读导航](#contents)
+
+新增独立 `thread.execution_state` 查询和严格 snapshot，不改变旧记录接口；生产服务声明能力后，新页面才使用它。后端读取全部事件分页，在读取前后核对 Run revision；分页不前进、超过 100 页或版本变化会明确拒绝本次聚合，不能将部分历史当成完整结果。内容 revision 随持久事实及可用动作变化，重读不随当前时间漂移。
+
+顶部、工具行、Stop、原有清理入口和当前会话红点开始消费同一状态；断线单独提示，未知工具结果不因最后一个工具成功或 Run 终态而丢失，工具解密失败保持未知。已完成工具输出继续保留。工具执行与自动审查时间只统计完整可信起止，并行区间取并集；缺失或倒序时间为未知。页面新路径不再展示前端估算的工作时长。
+
+即使所有工具已经返回，单独的 `Run.cancelled` 也只证明取消决定已保存；缺少资源证明时统一状态仍为“结果未确认”，保留已知成功操作及原有再次停止/清理入口。本批的效果列表是操作 outcome，不证明文件副作用回滚或资源释放。尚未接入资源 journal 的停止请求、真实开始、核验和清理状态，队列、保存、目录改名和全部会话注意状态也仍待完成；不增加重跑入口。上述混合验收条目保持未勾选。Pi 0.84.2 的既有工具事件和受保护产品结果继续复用，新增代码只承担产品展示聚合，不复制 Pi 协议。
+
+验证与实际限制见[本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-unified-state-01/README.md)。定向测试覆盖协议兼容、SQLite worker/direct、真实 Gateway adapter、并行与分页、Run 版本变化、缺失结果、未知计时和 UI 消费。持久 Chrome 测试覆盖 320/390/1024/1440、实际明暗主题、无新 Trace 时的状态刷新和断线重开；它使用隔离 HTTP 夹具，不是完整 Gateway→Worker 文件操作联合验收。最终[标准构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-unified-state-01/standard-ci-result.json)通过 245 文件、3,859 项，零失败、零跳过；1,094 个冻结输入回读未变。类型、任务范围 lint、边界/覆盖/不变量/秘密/CI policy 和严格文档检查通过，四份受影响 Runbook 已封存。全库 check 仍仅由两份原有未跟踪原型的格式问题阻断。本批复核还以失败前回归确认取消决定被误作资源已停止，修复后 14 项状态测试通过；旧候选标准运行被有界停止，最终结果仅来自 `.ci-output/p6-unified-state-03`。
+
+提交前复核另发现 Stop 可用性曾意外影响发送限制。[失败前断言](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-unified-state-01/send-guard-red.log)确认活动 Run 暂无 Stop 时不应允许新一轮；恢复独立发送限制后，[41 项交互测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-unified-state-01/send-guard-green.log)及 12 个 Chrome 场景通过。最终标准验证使用此修复后的冻结输入并全部通过；此前 `.ci-output/p6-unified-state-02` 是修复前结果。

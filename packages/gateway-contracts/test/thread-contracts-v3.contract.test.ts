@@ -13,6 +13,8 @@ import {
   threadDetailSnapshotV3Schema,
   threadEventsV3SubscriptionSchema,
   threadExecutionRecordSchema,
+  threadGatewayMessageSchema,
+  threadExecutionStateSchema,
 } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
 
@@ -30,6 +32,60 @@ const envelope = {
 };
 
 describe("Thread Gateway v3 contracts", () => {
+  it("adds an independent execution-state query without changing the strict legacy snapshot", () => {
+    const query = {
+      ...envelope,
+      kind: "query",
+      type: "thread.execution_state",
+      payload: { threadId: "thread-s2", runId: "run-s2" },
+    };
+    expect(threadGatewayMessageSchema.parse(query)).toEqual(query);
+    expect(() =>
+      threadGatewayMessageSchema.parse({
+        ...query,
+        payload: { ...query.payload, afterSequence: 0 },
+      }),
+    ).toThrow();
+    const legacy = {
+      ...envelope,
+      kind: "snapshot",
+      type: "thread.execution_snapshot",
+      payload: {
+        threadId: "thread-s2",
+        runId: "run-s2",
+        records: [],
+        nextSequence: null,
+        generatedAt: "2026-09-20T00:00:00.000Z",
+      },
+    };
+    expect(threadGatewayMessageSchema.parse(legacy)).toEqual(legacy);
+    expect(() =>
+      threadGatewayMessageSchema.parse({ ...legacy, payload: { ...legacy.payload, state: {} } }),
+    ).toThrow();
+  });
+
+  it("rejects invented phases, timing and unknown action commands in execution state", () => {
+    const state = {
+      runRevision: 1,
+      revision: "state-v1",
+      lastObservedAt: "2026-09-20T00:00:00.000Z",
+      displayPhase: "unresolved",
+      reasonCode: "EXECUTION_RESULT_UNCONFIRMED",
+      availableActions: [],
+      needsAttention: false,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      effectSummary: [],
+      operations: [],
+    };
+    expect(threadExecutionStateSchema.parse(state)).toEqual(state);
+    for (const patch of [
+      { displayPhase: "executing_without_start" },
+      { availableActions: ["rerun_tool"] },
+      { timing: { executionMilliseconds: -1, reviewMilliseconds: null } },
+    ])
+      expect(() => threadExecutionStateSchema.parse({ ...state, ...patch })).toThrow();
+  });
+
   it("freezes idempotent revision-checked message admission", () => {
     expect(
       submitThreadMessageV3CommandSchema.parse({

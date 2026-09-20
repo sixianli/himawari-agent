@@ -569,6 +569,9 @@ describe("Thread Gateway lifecycle and empty projections", () => {
         }),
       ).toMatchObject({ payload: { threads: [], nextCursor: null, degraded: false } });
       await expect(
+        read("thread.execution_state", { threadId, runId: "missing-run" }),
+      ).rejects.toThrow("THREAD_EXECUTION_STATE_NOT_INSTALLED");
+      await expect(
         read("thread.execution", { threadId, runId: "missing-run", afterSequence: 0, limit: 10 }),
       ).rejects.toThrow("THREAD_EXECUTION_NOT_INSTALLED");
       await expect(

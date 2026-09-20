@@ -487,6 +487,7 @@ function routeOptions(
     metrics,
     browserConfiguration: {
       executionPresentationAvailable: true,
+      executionStateAvailable: true,
       canCancelRun,
       availableModels: modelCatalog ?? [],
       installedGatewayV2Operations: PRODUCTION_APPROVAL_OPERATIONS,

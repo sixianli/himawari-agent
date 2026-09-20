@@ -1,5 +1,6 @@
 import type {
   ThreadExecutionRecord,
+  ThreadExecutionState,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -18,6 +19,8 @@ export function ChatHistory({
   detail,
   contentByRef,
   execution,
+  executionStates,
+  executionStateAvailable,
   connection,
   message,
   onFork,
@@ -28,6 +31,8 @@ export function ChatHistory({
   readonly detail: Detail;
   readonly contentByRef: Readonly<Record<string, string>>;
   readonly execution: Readonly<Record<string, readonly ThreadExecutionRecord[]>>;
+  readonly executionStates?: Readonly<Record<string, ThreadExecutionState>> | undefined;
+  readonly executionStateAvailable?: boolean | undefined;
   readonly connection: string;
   readonly message: Message;
   readonly renderApproval: (runId: string, records: readonly ThreadExecutionRecord[]) => ReactNode;
@@ -115,6 +120,8 @@ export function ChatHistory({
                       onPreview={onPreview}
                       run={group.run}
                       records={records}
+                      state={executionStates?.[group.run.runId]}
+                      stateAvailable={executionStateAvailable}
                       connection={connection}
                       message={message}
                     />
@@ -150,7 +157,11 @@ export function ChatHistory({
                   <div className="message-actions">
                     {onCleanup &&
                     group.run &&
-                    ["failed", "cancelled"].includes(group.run.status) ? (
+                    (executionStateAvailable
+                      ? executionStates?.[group.run.runId]?.availableActions.includes(
+                          "retry_cleanup",
+                        )
+                      : ["failed", "cancelled"].includes(group.run.status)) ? (
                       <ActionButton
                         variant="quiet"
                         onClick={() => group.run && onCleanup(group.run)}

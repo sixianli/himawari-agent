@@ -36,6 +36,13 @@ import type { ThreadQueryService } from "./thread-query-service.js";
 
 export interface ProductThreadGatewayAdapterDependencies {
   readonly execution?: {
+    readState?(input: {
+      ownerId: string;
+      agentId: string;
+      threadId: string;
+      runId: string;
+      canCancelRun: boolean;
+    }): Promise<import("@himawari-agent/gateway-contracts").ThreadExecutionState>;
     read(input: {
       ownerId: string;
       agentId: string;
@@ -260,6 +267,23 @@ export class ProductThreadGatewayAdapter
             snapshotRef,
             generatedAt,
           },
+        });
+      }
+      case "thread.execution_state": {
+        if (!this.#dependencies.execution?.readState)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "THREAD_EXECUTION_STATE_NOT_INSTALLED",
+          );
+        const state = await this.#dependencies.execution.readState({
+          ownerId,
+          agentId,
+          ...query.payload,
+          canCancelRun: !!this.#dependencies.cancelRun,
+        });
+        return parseResult({
+          ...responseEnvelope(query, "snapshot", "thread.execution_state_snapshot"),
+          payload: { ...query.payload, state, generatedAt },
         });
       }
       case "thread.execution": {

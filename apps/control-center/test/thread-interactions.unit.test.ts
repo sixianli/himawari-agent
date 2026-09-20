@@ -2,6 +2,7 @@
 
 import type {
   ThreadExecutionRecord,
+  ThreadExecutionState,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
 import { act, Fragment, createElement as h } from "react";
@@ -358,6 +359,142 @@ describe("thread control center interactions", () => {
     expect(document.body.textContent).toContain(messages["loading.retry"]);
     expect(mutate).not.toHaveBeenCalled();
   });
+  it("uses backend phases and actions, keeps connection loss separate, and refreshes state without new trace", async () => {
+    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+      },
+    };
+    let state: ThreadExecutionState = {
+      runRevision: 3,
+      revision: "state-1",
+      lastObservedAt: NOW,
+      displayPhase: "unresolved",
+      reasonCode: "EXECUTION_RESULT_UNCONFIRMED",
+      availableActions: [],
+      needsAttention: false,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [
+        {
+          itemId: "call",
+          displayPhase: "unresolved",
+          reasonCode: "TOOL_RESULT_UNCONFIRMED",
+          lastObservedAt: NOW,
+          executionMilliseconds: null,
+        },
+      ],
+      effectSummary: [{ itemId: "call", outcome: "unknown" }],
+    };
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      if (request.type === "thread.execution")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: "run-ui",
+            nextSequence: null,
+            generatedAt: NOW,
+            records:
+              request.payload.afterSequence === 0
+                ? [
+                    {
+                      id: "record",
+                      sequence: 1,
+                      itemId: "call",
+                      kind: "tool",
+                      phase: "failed",
+                      name: "write",
+                      text: "",
+                      input: "",
+                      output: "Retained output",
+                      occurredAt: NOW,
+                    },
+                  ]
+                : [],
+          },
+        };
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector(".process-result")?.textContent).toContain(
+      messages["chat.phase.unresolved"],
+    );
+    expect(container.querySelector(".tool-record .step-status")?.textContent).toContain(
+      messages["chat.phase.unresolved"],
+    );
+    expect(container.querySelector(".turn-activity .run-indicator")).toBeNull();
+    expect(container.querySelector('button[aria-label="停止"]')).toBeNull();
+    await input(container.querySelector("textarea"), "Do not submit another Run yet");
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="发送"]')?.disabled).toBe(
+      true,
+    );
+    options = { ...options, connection: "offline" };
+    await render();
+    expect(container.querySelector(".turn-activity strong")?.textContent).toContain(
+      messages["chat.phase.unresolved"],
+    );
+    expect(container.querySelector(".turn-activity")?.textContent).toContain(
+      messages["chat.disconnected"],
+    );
+    options = { ...options, connection: "connected" };
+    state = {
+      ...state,
+      revision: "state-2",
+      displayPhase: "preparing",
+      availableActions: ["stop"],
+    };
+    await render();
+    await refresh();
+    expect(container.querySelector(".process-result")?.textContent).toContain(
+      messages["chat.phase.preparing"],
+    );
+    expect(
+      query.mock.calls.filter(([request]) => request.type === "thread.execution_state").length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
+    expect(container.textContent).toContain("Retained output");
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it.each(["scope", "revision"])("rejects a mismatched backend state (%s)", async (mismatch) => {
+    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    options = { ...options, configuration: { ...configuration, executionStateAvailable: true } };
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) =>
+      request.type === "thread.execution_state"
+        ? {
+            type: "thread.execution_state_snapshot",
+            payload: {
+              threadId: mismatch === "scope" ? "other-thread" : "thread-ui",
+              runId: "run-ui",
+              state: { runRevision: 2 },
+            },
+          }
+        : original?.(request, signal),
+    );
+    await render();
+    await refresh();
+    expect(document.body.textContent).toContain(messages["loading.retry"]);
+    expect(container.querySelector('button[aria-label="停止"]')).toBeNull();
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
   it("paginates tool records, preserves their input, and resumes from the last confirmed sequence", async () => {
     runs = [{ runId: "run-ui", revision: 3, status: "completed", createdAt: NOW, updatedAt: NOW }];
     options = {

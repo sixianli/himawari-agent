@@ -336,6 +336,169 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
   }
   return cases;
 }
+export async function qualifyExecutionState(browser, baseUrl, output) {
+  const cases = [];
+  const at = "2026-09-20T00:00:00.000Z";
+  for (const width of [320, 390, 1024, 1440]) {
+    for (const colorScheme of ["light", "dark"]) {
+      const context = await browser.newContext({
+        locale: "zh-CN",
+        viewport: { width, height: 900 },
+        colorScheme,
+      });
+      await context.addInitScript(
+        (theme) =>
+          localStorage.setItem("himawari.control-center.v1.preferences", JSON.stringify({ theme })),
+        colorScheme,
+      );
+      const page = await context.newPage();
+      const errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      const state = {
+        runRevision: 1,
+        revision: "browser-state-1",
+        lastObservedAt: at,
+        displayPhase: "unresolved",
+        reasonCode: "EXECUTION_RESULT_UNCONFIRMED",
+        availableActions: [],
+        needsAttention: false,
+        timing: { reviewMilliseconds: null, executionMilliseconds: null },
+        effectSummary: [
+          { itemId: "saved", outcome: "succeeded" },
+          { itemId: "pending", outcome: "unknown" },
+        ],
+        operations: [
+          {
+            itemId: "saved",
+            displayPhase: "completed",
+            reasonCode: "TOOL_SUCCEEDED",
+            lastObservedAt: at,
+            executionMilliseconds: null,
+          },
+          {
+            itemId: "pending",
+            displayPhase: "unresolved",
+            reasonCode: "TOOL_RESULT_UNCONFIRMED",
+            lastObservedAt: at,
+            executionMilliseconds: null,
+          },
+        ],
+      };
+      const send = async (data) => {
+        const response = await page.request.post(`${baseUrl}/__fixture/execution`, {
+          data: { threadId: "thread-main", runId: "run-01", ...data },
+        });
+        assert.equal(response.ok(), true);
+      };
+      try {
+        await send({
+          reset: true,
+          status: "running",
+          state,
+          records: [
+            {
+              id: "saved-record",
+              sequence: 1,
+              itemId: "saved",
+              kind: "tool",
+              phase: "completed",
+              name: "write",
+              text: "",
+              input: "",
+              output: "Saved result remains available",
+              occurredAt: at,
+            },
+            {
+              id: "pending-record",
+              sequence: 2,
+              itemId: "pending",
+              kind: "tool",
+              phase: "started",
+              name: "edit",
+              text: "",
+              input: "",
+              output: "",
+              occurredAt: at,
+            },
+          ],
+        });
+        await page.goto(`${baseUrl}/threads/thread-main`);
+        const process = page.locator(".turn-process").first();
+        await expect(page.locator("html")).toHaveAttribute("data-theme", colorScheme);
+        await expect(process.locator(".process-result")).toContainText("结果未确认");
+        await expect(process.locator(".tool-record .step-status").nth(0)).toContainText("完成");
+        await expect(process.locator(".tool-record .step-status").nth(1)).toContainText(
+          "结果未确认",
+        );
+        await expect(page.locator(".turn-activity .run-indicator")).toHaveCount(0);
+        await expect(page.locator(".turn-activity")).not.toContainText("可等待结果或停止本轮");
+        await expect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0);
+        await page
+          .locator(".composer textarea")
+          .fill("Keep this draft while the current Run is active");
+        await expect(page.getByRole("button", { name: "发送", exact: true })).toBeDisabled();
+        await page.screenshot({
+          path: path.join(output, `state-${width}-${colorScheme}-unknown.png`),
+        });
+        // The backend conclusion can change independently of the trace cursor.
+        await send({
+          status: "completed",
+          state: {
+            ...state,
+            revision: "browser-state-2",
+            displayPhase: "completed",
+            operations: state.operations.map((operation) => ({
+              ...operation,
+              displayPhase: "completed",
+              reasonCode: "TOOL_SUCCEEDED",
+            })),
+            effectSummary: state.effectSummary.map((effect) => ({
+              ...effect,
+              outcome: "succeeded",
+            })),
+          },
+        });
+        await expect(process.locator(".process-result")).toContainText("完成");
+        await context.setOffline(true);
+        await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+        await expect(process.locator(".process-result")).toContainText("完成");
+        await context.setOffline(false);
+        await page.reload();
+        await expect(page.locator(".turn-process .process-result").first()).toContainText("完成");
+        await send({
+          status: "cancelled",
+          state: {
+            ...state,
+            revision: "browser-state-3",
+            reasonCode: "RUN_CANCELLED_RESOURCE_STATE_UNCONFIRMED",
+            availableActions: ["retry_cleanup"],
+          },
+        });
+        await expect(page.locator(".turn-process .process-result").first()).toContainText(
+          "结果未确认",
+        );
+        await expect(
+          page.getByRole("button", { name: "再次停止并检查清理", exact: true }),
+        ).toBeVisible();
+        await expect(page.locator(".turn-process .tool-record .step-status").first()).toContainText(
+          "完成",
+        );
+        assert.deepEqual(errors, []);
+        cases.push({
+          width,
+          colorScheme,
+          backendState: true,
+          reconnect: true,
+          noTraceReplay: true,
+        });
+      } finally {
+        await context.close();
+      }
+    }
+  }
+  return cases;
+}
+
 export async function qualifyExecutionChainFixture(browser, output, staticRoot) {
   await mkdir(output, { recursive: true });
   const server = spawn(process.execPath, ["test/e2e/fixtures/control-center-browser-server.mjs"], {
@@ -369,6 +532,7 @@ export async function qualifyExecutionChainFixture(browser, output, staticRoot) 
       });
     });
     const cases = await qualifyExecutionChain(browser, baseUrl, output);
+    cases.push(...(await qualifyExecutionState(browser, baseUrl, output)));
     await writeFile(
       path.join(output, "result.json"),
       JSON.stringify(

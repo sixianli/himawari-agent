@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:6a29fd78be1e3ca1f7c12cf17f386eb9331caba24a30af1745e7b3104e9ed141"
+contract_sha256: "sha256:2d4306c61fecd7325ec7a770b907a86d5dfc8eeab7bf2b2988f80947f9563813"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -44,6 +44,8 @@ date: "2026-08-27"
 - apps/agent-service/src/production-model-composition.ts
 - apps/agent-service/src/production-run-composition.ts
 - packages/application/src/services/thread-execution-projection.ts
+- packages/application/src/services/thread-execution-state.ts
+- packages/gateway-contracts/src/thread-contracts-v3.ts
 - packages/persistence-sqlite/src/migrations/0032_runtime_history.sql
 - packages/application/src/services/runtime-history-service.ts
 - packages/runtime-pi/src/pi-native-history.ts
@@ -141,6 +143,9 @@ Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认�
 轮次已取消、失败或完成后，如果某个工具只有准备事件而没有结束结果，页面显示“结果未确认”，不持续显示准备中；明确未派发的原证据仍显示“尚未派发”。缺少真实起止边界时不生成时长，刷新后沿用相同规则。
 
 历史工具结果以已持久保存的产品 outcome 为依据：`failed` 或 `result_unknown` 不因旧 Pi 记录的 `isError=false` 或缺少错误码变为完成。确定未派发的 `FILE_VERSION_CONFLICT` 显示“尚未派发”；若同时存在结果未知证据，或产品成功与未派发标记相互矛盾，优先保留“结果未确认”，不能据此推断没有写入。原输出内容与事件序号保持不变，不补造执行时长，也不重放工具。
+
+新控制中心在服务声明 `executionStateAvailable` 后另查 `thread.execution_state`，旧事件接口不增加字段，旧服务缺少该声明时仍走原兼容路径。恢复后应同时检查每个操作和整体结论，不能只看最后成功工具或 Run 终态；分页或版本变化造成的读取失败必须保留原结论并重新查询，不能重新执行工具。页面状态的内容 revision 不是执行权凭据；实际 Stop/清理仍经原 revision、权限和幂等控制。当前效果列表仅表示操作 outcome，不能代替原 journal 的资源释放证明。此展示升级无 migration，不修改已有恢复点，也不授权生产切换。
+
 
 ## Authoritative Sources
 

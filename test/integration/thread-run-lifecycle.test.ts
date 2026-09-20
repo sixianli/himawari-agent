@@ -21,6 +21,10 @@ import {
   type RuntimeRequest,
   SessionTraceRecorder,
   ThreadCommandService,
+  ProductThreadGatewayAdapter,
+  ThreadQueryService,
+  ThreadForkService,
+  ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
   type TransitionRunStateInput,
   type WorkerRunEvent,
@@ -56,6 +60,7 @@ import {
   ScriptedAgentRuntime,
   ScriptedWorkerRunPort,
 } from "@himawari-agent/testing";
+import { threadGatewayMessageSchema } from "@himawari-agent/gateway-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProductionRunDispatcher } from "../../apps/agent-service/src/production-run-dispatcher.js";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
@@ -2822,6 +2827,82 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     expect(page.records.some((record) => record.name.startsWith("runtime.tool_execution."))).toBe(
       false,
     );
+    const state = await projection.readState({ ...query, canCancelRun: true });
+    expect(state.operations).toEqual([
+      expect.objectContaining({
+        itemId: tool?.itemId,
+        displayPhase: marker ?? phase,
+        executionMilliseconds: null,
+      }),
+    ]);
+    expect(state.effectSummary).toEqual([
+      {
+        itemId: tool?.itemId,
+        outcome:
+          marker === "unresolved"
+            ? "unknown"
+            : marker === "not_dispatched"
+              ? "not_dispatched"
+              : phase === "completed"
+                ? "succeeded"
+                : "failed",
+      },
+    ]);
+    expect(await projection.readState({ ...query, canCancelRun: true })).toEqual(state);
+    const threads = setup.repository.threadRepository();
+    const gateway = new ProductThreadGatewayAdapter({
+      repository: threads,
+      checkpoints: setup.repository.threadDistillationState(),
+      commands: new ThreadCommandService({
+        repository: threads,
+        clock,
+        authority: () => authority,
+      }),
+      queries: new ThreadQueryService(threads),
+      forks: new ThreadForkService({ repository: threads, clock, authority: () => authority }),
+      deletion: new ThreadDeletionCoordinationService({
+        repository: threads,
+        clock,
+        authority: () => authority,
+      }),
+      clock,
+      execution: projection,
+    });
+    const request = threadGatewayMessageSchema.parse({
+      schemaVersion: "gateway.thread.v3",
+      kind: "query",
+      type: "thread.execution_state",
+      messageId: "execution-state-query",
+      correlationId: "execution-state-query",
+      causationId: null,
+      scope: { ownerId, agentId },
+      authority,
+      actor: { actorType: "owner", actorId: ownerId },
+      payload: { threadId: query.threadId, runId: query.runId },
+    });
+    if (request.kind !== "query") throw new Error("EXPECTED_QUERY");
+    const snapshot = await gateway.query({
+      authentication: {
+        subjectId: ownerId,
+        ownerId,
+        deviceId: "state-test-device",
+        authenticatedAt: clock.now(),
+        authenticationRef: "state-test-session",
+      },
+      query: request,
+    });
+    expect(snapshot).toMatchObject({
+      type: "thread.execution_state_snapshot",
+      payload: {
+        threadId: query.threadId,
+        runId: query.runId,
+        state: await projection.readState({ ...query, canCancelRun: false }),
+      },
+    });
+
+    await expect(
+      projection.readState({ ...query, ownerId: "other-owner", canCancelRun: true }),
+    ).rejects.toThrow("THREAD_EXECUTION_NOT_FOUND");
     // Re-reading persisted history must preserve the same conclusion and sequence.
     expect(await projection.read(query)).toEqual(page);
   });

@@ -1,0 +1,46 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/application/test/thread-execution-state.unit.test.ts (14 tests | 1 failed | 13 skipped) 17ms
+     × does not claim resource shutdown from a cancelled Run even when every tool returned 17ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > does not claim resource shutdown from a cancelled Run even when every tool returned
+AssertionError: expected { runRevision: 3, …(9) } to match object { displayPhase: 'unresolved', …(3) }
+(8 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "availableActions": [
+      "retry_cleanup",
+    ],
+-   "displayPhase": "unresolved",
++   "displayPhase": "stopped",
+    "effectSummary": [
+      {
+        "itemId": "saved",
+        "outcome": "succeeded",
+      },
+    ],
+-   "reasonCode": "RUN_CANCELLED_RESOURCE_STATE_UNCONFIRMED",
++   "reasonCode": "EXECUTION_STOPPED",
+  }
+
+ ❯ packages/application/test/thread-execution-state.unit.test.ts:40:115
+     38| describe("backend execution state", () => {
+     39|   it("does not claim resource shutdown from a cancelled Run even when …
+     40|     expect(projectThreadExecutionState({ ...run, status: "cancelled" }…
+       |                                                                                                                   ^
+     41|       displayPhase: "unresolved", reasonCode: "RUN_CANCELLED_RESOURCE_…
+     42|       effectSummary: [{ itemId: "saved", outcome: "succeeded" }],
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 13 skipped (14)
+   Start at  14:52:51
+   Duration  268ms (transform 113ms, setup 0ms, import 144ms, tests 17ms, environment 0ms)

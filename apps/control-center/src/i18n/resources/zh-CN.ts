@@ -186,6 +186,7 @@ export const messages = {
   "chat.thinking": "思考摘要",
   "chat.unknownTime": "暂无时长",
   "chat.workTime": "工作 {time}",
+  "chat.executionTime": "工具执行 {time}",
   "chat.waitTime": "等待确认 {time}",
 
   "authentication.required": "请登录以连接此浏览器",

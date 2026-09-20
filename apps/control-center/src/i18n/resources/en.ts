@@ -195,6 +195,7 @@ export const messages = {
   "chat.thinking": "Thinking summary",
   "chat.unknownTime": "Time not recorded",
   "chat.workTime": "Working {time}",
+  "chat.executionTime": "Tool execution {time}",
   "chat.waitTime": "Approval wait {time}",
 
   "authentication.required": "Sign in to connect this browser",

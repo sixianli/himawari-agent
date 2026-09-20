@@ -200,6 +200,7 @@ export const messages = {
   "chat.thinking": "思考の要約",
   "chat.unknownTime": "時刻の記録なし",
   "chat.workTime": "作業 {time}",
+  "chat.executionTime": "ツール実行 {time}",
   "chat.waitTime": "承認待ち {time}",
 
   "authentication.required": "このブラウザーでログインしてください",

@@ -9,6 +9,7 @@ import type {
 } from "../ports/observability.js";
 import type { ThreadRepositoryPort } from "../ports/threads.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
+import { projectThreadExecutionState } from "./thread-execution-state.js";
 import { redactTracePayload } from "./trace-redaction.js";
 
 function object(value: unknown): Record<string, unknown> {
@@ -340,6 +341,52 @@ export class ThreadExecutionProjection {
       records,
       nextSequence: events.length === input.limit ? (events.at(-1)?.sequence ?? null) : null,
     };
+  }
+
+  async readState(input: {
+    ownerId: string;
+    agentId: string;
+    threadId: string;
+    runId: string;
+    canCancelRun: boolean;
+  }) {
+    const ownerId = createOwnerId(input.ownerId),
+      agentId = createAgentId(input.agentId),
+      threadId = createThreadId(input.threadId),
+      runId = createRunId(input.runId);
+    const before = (await this.dependencies.threads.listRuns(ownerId, agentId, threadId)).find(
+      (run) => run.runId === runId,
+    );
+    if (!before)
+      throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "THREAD_EXECUTION_NOT_FOUND");
+    const records: ThreadExecutionRecord[] = [];
+    let afterSequence = 0;
+    // Never return an aggregate of only the last page or a silently truncated history.
+    for (let pageNumber = 0; pageNumber < 100; pageNumber++) {
+      const page = await this.read({ ...input, afterSequence, limit: 1000 });
+      records.push(...page.records);
+      if (page.nextSequence === null) {
+        const after = (await this.dependencies.threads.listRuns(ownerId, agentId, threadId)).find(
+          (run) => run.runId === runId,
+        );
+        if (!after || after.revision !== before.revision)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "THREAD_EXECUTION_CHANGED_DURING_READ",
+          );
+        return projectThreadExecutionState(after, records, input.canCancelRun);
+      }
+      if (page.nextSequence <= afterSequence)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "THREAD_EXECUTION_PAGE_NOT_ADVANCING",
+        );
+      afterSequence = page.nextSequence;
+    }
+    throw new ApplicationPortError(
+      PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      "THREAD_EXECUTION_HISTORY_LIMIT",
+    );
   }
 
   private async readPayload(event: TraceEvent, ref: unknown): Promise<unknown> {

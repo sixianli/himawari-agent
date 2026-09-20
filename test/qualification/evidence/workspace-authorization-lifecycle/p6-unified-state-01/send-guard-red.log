@@ -1,0 +1,32 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/control-center/test/thread-interactions.unit.test.ts (41 tests | 1 failed | 40 skipped) 149ms
+     × uses backend phases and actions, keeps connection loss separate, and refreshes state without new trace 148ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/control-center/test/thread-interactions.unit.test.ts > thread control center interactions > uses backend phases and actions, keeps connection loss separate, and refreshes state without new trace
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ apps/control-center/test/thread-interactions.unit.test.ts:444:93
+    442|     expect(container.querySelector('button[aria-label="停止"]')).toBeNul…
+    443|     await input(container.querySelector("textarea"), "Do not submit an…
+    444|     expect(container.querySelector<HTMLButtonElement>('button[aria-lab…
+       |                                                                                             ^
+    445|     options = { ...options, connection: "offline" };
+    446|     await render();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 40 skipped (41)
+   Start at  15:13:45
+   Duration  1.41s (transform 348ms, setup 0ms, import 503ms, tests 149ms, environment 637ms)

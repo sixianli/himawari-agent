@@ -98,6 +98,7 @@ export function threadQueryMessage(
   configuration: ControlCenterRuntimeConfiguration,
   type:
     | "thread.execution"
+    | "thread.execution_state"
     | "thread.list"
     | "thread.detail"
     | "thread.search"

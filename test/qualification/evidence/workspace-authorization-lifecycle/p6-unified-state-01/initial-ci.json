@@ -1,0 +1,12 @@
+{
+  "output": ".ci-output/p6-unified-state-01",
+  "status": "stopped",
+  "reason": "New regression proved cancelled Run was incorrectly displayed as stopped without resource shutdown evidence",
+  "processGroups": [
+    15111,
+    20172
+  ],
+  "exitCode": 143,
+  "independentProcessGroupReadback": "empty",
+  "finalEvidence": false
+}

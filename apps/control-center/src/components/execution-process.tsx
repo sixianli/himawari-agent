@@ -1,11 +1,15 @@
 import type { ContentPreviewValue } from "./content-preview.js";
 import { ActionButton } from "./primitives.js";
 import { ToolIcon } from "./tool-icon.js";
-import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
+import type {
+  ThreadExecutionRecord,
+  ThreadExecutionState,
+} from "@himawari-agent/gateway-contracts";
 import { useEffect, useState } from "react";
 import {
   duration,
   executionActivity,
+  executionStateLabel,
   authorizationReviewSteps,
   executionFailureMessage,
   executionItems,
@@ -50,6 +54,8 @@ function RecordedTime({ at }: { at: string }) {
 export function ExecutionProcess({
   run,
   records,
+  state,
+  stateAvailable,
   message,
   connection,
   onPreview,
@@ -57,6 +63,8 @@ export function ExecutionProcess({
   onPreview?: ((preview: ContentPreviewValue) => void) | undefined;
   run: RunSummary;
   records: readonly ThreadExecutionRecord[];
+  state?: ThreadExecutionState | undefined;
+  stateAvailable?: boolean | undefined;
   message: Message;
   connection: string;
 }) {
@@ -83,21 +91,46 @@ export function ExecutionProcess({
   ].sort((a, b) => a.sequence - b.sequence);
   const time = executionTime(records, run, now);
   const activity = executionActivity(records, run, connection, now);
+  const measuredTime = stateAvailable
+    ? (state?.timing.executionMilliseconds ?? null)
+    : time.known
+      ? time.work
+      : null;
+  const measuredTimeLabel = stateAvailable ? "chat.executionTime" : "chat.workTime";
+  const observationAge = state ? Math.max(0, now - Date.parse(state.lastObservedAt)) : activity.age;
+  const stale = stateAvailable
+    ? !!state &&
+      state.displayPhase !== "unresolved" &&
+      state.availableActions.includes("stop") &&
+      observationAge >= 15000
+    : activity.stale;
+  const stateLabel = state
+    ? executionStateLabel(state.displayPhase)
+    : stateAvailable
+      ? "chat.recordUnavailable"
+      : undefined;
   return (
     <>
       {!isTerminalRun(run) ? (
         <div className="turn-activity">
-          {run.status !== "reconciling_external_result" ? (
+          {(
+            state
+              ? state.displayPhase !== "unresolved"
+              : !stateAvailable && run.status !== "reconciling_external_result"
+          ) ? (
             <span className={`run-indicator run-${run.status}`} />
           ) : null}
           <output>
-            <strong>{message(activity.label, { tool: activity.tool })}</strong>
+            <strong>{message(stateLabel ?? activity.label, { tool: activity.tool })}</strong>
           </output>
-          {time.known ? (
-            <span>{message("chat.workTime", { time: duration(time.work) })}</span>
+          {state && connection !== "connected" ? (
+            <small>{message("chat.disconnected")}</small>
           ) : null}
-          <small>{message("chat.lastActivity", { time: duration(activity.age) })}</small>
-          {activity.stale ? <p>{message("chat.progressDelayed")}</p> : null}
+          {measuredTime !== null ? (
+            <span>{message(measuredTimeLabel, { time: duration(measuredTime) })}</span>
+          ) : null}
+          <small>{message("chat.lastActivity", { time: duration(observationAge) })}</small>
+          {stale ? <p>{message("chat.progressDelayed")}</p> : null}
         </div>
       ) : null}
       {run.status === "failed" ? (
@@ -118,9 +151,11 @@ export function ExecutionProcess({
               count: items.filter((item) => item.kind === "tool").length,
             })}
           </span>
-          <span className={`process-result run-text-${run.status}`}>
-            {message(statusId(run))}
-            {time.known ? ` · ${duration(time.work)}` : ""}
+          <span className={`process-result run-text-${state?.displayPhase ?? run.status}`}>
+            {message(stateLabel ?? statusId(run))}
+            {measuredTime !== null
+              ? ` · ${message(measuredTimeLabel, { time: duration(measuredTime) })}`
+              : ""}
           </span>
         </summary>
         <ol className="execution-chain" aria-label={message("chat.process")}>
@@ -150,8 +185,16 @@ export function ExecutionProcess({
                 </li>
               );
             if (!item) return null;
+            const operation = state?.operations.find(
+              (operation) => operation.itemId === item.itemId,
+            );
             const incomplete = ["started", "updated"].includes(item.phase);
             const phase: MessageId =
+              (operation
+                ? executionStateLabel(operation.displayPhase)
+                : stateAvailable
+                  ? "chat.recordUnavailable"
+                  : undefined) ??
               executionToolPhase(item, records, run) ??
               (isTerminalRun(run) && incomplete
                 ? run.status === "cancelled" && item.kind === "message"
@@ -160,10 +203,15 @@ export function ExecutionProcess({
                 : item.kind === "tool" && item.phase === "updated"
                   ? "chat.callRequested"
                   : (`chat.phase.${item.phase}` as MessageId));
-            const elapsed = recordedInterval(records, item.itemId, "runtime.tool_execution");
+            const elapsed = operation
+              ? operation.executionMilliseconds
+              : recordedInterval(records, item.itemId, "runtime.tool_execution");
             const hint = item.kind === "tool" ? item.text || preview(item.input) : item.text;
             return (
-              <li key={item.itemId} className={`execution-step tool-${item.phase}`}>
+              <li
+                key={item.itemId}
+                className={`execution-step tool-${operation?.displayPhase ?? item.phase}`}
+              >
                 <span className="step-marker" aria-hidden="true" />
                 <details className="tool-record">
                   <summary>

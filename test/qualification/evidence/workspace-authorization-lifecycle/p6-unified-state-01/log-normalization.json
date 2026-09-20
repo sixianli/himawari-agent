@@ -1,0 +1,91 @@
+{
+  "transformation": "Remove trailing whitespace and extra blank lines at EOF only; exact original bytes retained as gzip",
+  "files": [
+    {
+      "file": "browser-build.log",
+      "raw": "raw/browser-build.log.c2a954eb2c99.gz",
+      "rawSha256": "c2a954eb2c9991546be26cca7724e98025e2dd9d82375e84e6aa34921b0c690c",
+      "normalizedSha256": "96522020231678397eba897f3372248646989e0f14d73b6f9fc1b31997dd40ef"
+    },
+    {
+      "file": "cancellation-green.log",
+      "raw": "raw/cancellation-green.log.gz",
+      "rawSha256": "978dc17fd4759147f564322192b91dc9827a52febb460d62e901626f733688d4",
+      "normalizedSha256": "3a63d85712cd0f92858fa45595f2d665dd5ce765acda84da6b557acf6d0db5a4"
+    },
+    {
+      "file": "cancellation-red.log",
+      "raw": "raw/cancellation-red.log.gz",
+      "rawSha256": "de0376b95aebb37e0285482f116f734f1a650ce5900393144d1f7bceed86e9ad",
+      "normalizedSha256": "b0ebc16c4b1c86ee3375380de6797ca2a71d3d937e09120fb6b39a3144ae0d9b"
+    },
+    {
+      "file": "full-check.log",
+      "raw": "raw/full-check.log.gz",
+      "rawSha256": "bb5de918a6aa938a6046a4c8220da8b4e8c5b1d8bebbb64170576c368716bb1e",
+      "normalizedSha256": "dd9cc1e27193e9ccd9f45ce78f842ba78c9d4b4f69cf39babd593da55038cd8d"
+    },
+    {
+      "file": "initial-targeted.log",
+      "raw": "raw/initial-targeted.log.gz",
+      "rawSha256": "1e54211fb9cc5e17ab1a70a777fed8b31a39fe7e452b0a676bf7f28275e7bb60",
+      "normalizedSha256": "ec2c56d735c74928b3410e565ade6cfae3f577b18510e0e2fde755a52541815f"
+    },
+    {
+      "file": "lint.log",
+      "raw": "raw/lint.log.5c7380672b13.gz",
+      "rawSha256": "5c7380672b13ad44609a2f8ad24a45282b9cb7ea1ef736f2deabaa3b52430013",
+      "normalizedSha256": "6888d6da9d510407b3c6a5ecd66f15801cbefe0dc518b3d50bd22569e786dbb8"
+    },
+    {
+      "file": "send-guard-green.log",
+      "raw": "raw/send-guard-green.log.38b221938fa3.gz",
+      "rawSha256": "38b221938fa39b423ae8e5fb935cbffdeb5599970fd1396d87dad724cfaf63e0",
+      "normalizedSha256": "8ffec47d87a6a3878dee9cf910d5c3520da32d0c7b2292b921cad037c7db55ce"
+    },
+    {
+      "file": "send-guard-red.log",
+      "raw": "raw/send-guard-red.log.72150207e1b3.gz",
+      "rawSha256": "72150207e1b35bee3d6e5c3583a011d062c059316bb5e3cbca64d5f121451409",
+      "normalizedSha256": "3deeb72f8748e87fbcc32372233475b14ba21898659109abf42ca7fc270ce314"
+    },
+    {
+      "file": "targeted-final.log",
+      "raw": "raw/targeted-final.log.gz",
+      "rawSha256": "dab184afe21304c8ab07e6c9ba1d1dcc55c9da7c24204c7f772817cf79021ada",
+      "normalizedSha256": "6d429516987361c1660e164e7ab6aa71755833e1fe25ecfeafac379032e850a1"
+    },
+    {
+      "file": "targeted.log",
+      "raw": "raw/targeted.log.gz",
+      "rawSha256": "de69c861f15ca079130a945cfbc5f4f3447d076f970c190a29604d2987bb2818",
+      "normalizedSha256": "1eeeb795f1a23da45ac720016b15e6bca4bbef46edd1232702296587a9c9034f"
+    },
+    {
+      "file": "typecheck.log",
+      "raw": "raw/typecheck.log.fb0587f6d866.gz",
+      "rawSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+      "normalizedSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+    }
+  ],
+  "history": [
+    {
+      "file": "lint.log",
+      "raw": "raw/lint.log.gz",
+      "rawSha256": "7121f9402c0c3425a74c63fbc53e0120f9f6b5ec67c02897ed2578658efb29b2",
+      "normalizedSha256": "15fbd2cb3def42e2461468ab321a4d481685fcf0e754c34f7010c49d56b4240c"
+    },
+    {
+      "file": "typecheck.log",
+      "raw": "raw/typecheck.log.gz",
+      "rawSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+      "normalizedSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+    },
+    {
+      "file": "browser-build.log",
+      "raw": "raw/browser-build.log.gz",
+      "rawSha256": "a9d5851e7604d81d75339f344406c0783f7b2cb9671f5b3a636a249852d8cd74",
+      "normalizedSha256": "4c62bb42eeebf0ad927c0aa6f959dd9cbd3b7f3bedd06d732c86d968e630126f"
+    }
+  ]
+}

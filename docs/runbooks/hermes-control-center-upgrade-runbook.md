@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a7f3a9c239c97adeb03787b7d3d141a15a242f153705fe5b0f0efe25a7aacd67"
+contract_sha256: "sha256:c55a0a9f476d196acc713a62a966d4090fa804f918c245d4c197e5107f1d4fae"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -54,6 +54,9 @@ date: "2026-09-11"
 - packages/platform-node/src
 - packages/application/src/ports/configuration.ts
 - packages/gateway-contracts/src/contracts-v2.ts
+- packages/gateway-contracts/src/thread-contracts-v3.ts
+- packages/application/src/services/thread-execution-projection.ts
+- packages/application/src/services/thread-execution-state.ts
 - packages/persistence-sqlite/src
 - packages/runtime-pi/src
 - packages/runtime-pi/test/fixtures/rejected-current-task-context.ts
@@ -76,6 +79,9 @@ Schema 40 为尚未绑定的预约增加不可撤销的停止标记，并保留�
 Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认证宿主证明任务从未启动、原进程已退出且清理完成，当前 writer 才能同事务保存永久回执并释放该预约的占用。原停止标记保持不可撤销，不伪造运行时绑定、业务结果或退款；重复停止和恢复读回原事实，不因核验凭据过期重新占用。缺少宿主证明、仍有保护或已启动任务的后代状态未知时继续保留未确认状态。备份与权威迁移须同时保留回执、停止标记及受保护宿主证据；Schema 40 及以前的 writer 不得写入新库，回退仍需停机并恢复匹配旧版本的完整恢复点。
 
 轮次已取消、失败或完成后，如果某个工具只有准备事件而没有结束结果，页面显示“结果未确认”，不持续显示准备中；明确未派发的原证据仍显示“尚未派发”。缺少真实起止边界时不生成时长，刷新后沿用相同规则。
+
+新增的 `thread.execution_state` 状态查询只有服务配置声明 `executionStateAvailable` 时才由新页面使用；原事件查询保持严格兼容。安装验收须核对新页面与服务能力声明一致，整体与工具行共同保留未知结果，断线不会覆盖已完成事实；Stop/清理仍使用原 revision、权限和幂等入口。新查询仅从持久 Run/Trace 汇总已有事实，操作结果列表不是文件已回滚、资源已释放或所有后代已停止的证明。资源 journal、队列及全部阶段仍未完整接入，不能据此跳过本 Runbook 的平台与现场资格。本展示升级无新 migration，也不授权本机任务自动切换 Hermes。实现与本地证据见[统一状态接入记录](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-unified-state)。
+
 
 ## Authoritative Sources
 

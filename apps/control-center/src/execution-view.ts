@@ -1,5 +1,6 @@
 import type {
   ThreadExecutionRecord,
+  ThreadExecutionState,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
 import type { MessageId } from "./i18n/message-ids.js";
@@ -327,4 +328,21 @@ export function thinkingSteps(records: readonly ThreadExecutionRecord[]) {
         ),
     )
     .map((record) => ({ ...record, elapsed: null }));
+}
+
+/** Localization only: all phase decisions belong to the backend projection. */
+export function executionStateLabel(phase: ThreadExecutionState["displayPhase"]): MessageId {
+  return {
+    preparing: "chat.phase.preparing",
+    awaiting_approval: "runs.status.awaitingApproval",
+    reviewing: "review.authorizationChecking",
+    model_waiting: "chat.activity.waitingModel",
+    model_thinking: "chat.activity.thinking",
+    model_output: "chat.activity.output",
+    completed: "chat.phase.completed",
+    failed: "chat.phase.failed",
+    stopped: "chat.phase.stopped",
+    unresolved: "chat.phase.unresolved",
+    not_dispatched: "chat.phase.notDispatched",
+  }[phase] as MessageId;
 }

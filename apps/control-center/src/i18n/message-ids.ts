@@ -179,6 +179,7 @@ export const MESSAGE_IDS = [
   "chat.thinking",
   "chat.unknownTime",
   "chat.workTime",
+  "chat.executionTime",
   "chat.waitTime",
 
   "app.eyebrow",
@@ -535,6 +536,7 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   "review.thinkingCount": { count: 2 },
   "chat.turn": { number: 1 },
   "chat.workTime": { time: "00:42" },
+  "chat.executionTime": { time: "00:42" },
   "chat.lastActivity": { time: "3s" },
   "chat.activity.tool": { tool: "web_search" },
   "chat.waitTime": { time: "00:10" },

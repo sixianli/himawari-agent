@@ -100,6 +100,7 @@ export interface HttpGatewayServerOptions {
   readonly metrics?: HttpGatewayMetricsPort;
   readonly browserConfiguration?: {
     readonly executionPresentationAvailable?: boolean;
+    readonly executionStateAvailable?: boolean;
     readonly canCancelRun?: boolean;
     readonly availableModels?: readonly {
       ref: string;
@@ -724,6 +725,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         authorizationRef: authentication.authenticationRef,
         recentAuthenticationRef,
         executionPresentationAvailable: configuration.executionPresentationAvailable ?? false,
+        executionStateAvailable: configuration.executionStateAvailable ?? false,
         canCancelRun: configuration.canCancelRun ?? false,
         availableModels: configuration.availableModels ?? [],
         primaryModel: configuration.primaryModel ?? null,
