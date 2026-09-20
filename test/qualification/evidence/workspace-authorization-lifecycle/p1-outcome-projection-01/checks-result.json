@@ -1,0 +1,39 @@
+{
+  "typecheck": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "log": "typecheck-final.log"
+  },
+  "scoped": {
+    "files": 2,
+    "format": "passed",
+    "lint": "passed",
+    "log": "scoped-check-final.log",
+    "informationalDiagnostics": 50,
+    "note": "useLiteralKeys informational diagnostics; lint --error-on-warnings exited 0, with no warnings or errors"
+  },
+  "static": {
+    "checks": [
+      "boundaries",
+      "v0.2-coverage",
+      "v0.2-invariants",
+      "secrets",
+      "ci-policy"
+    ],
+    "exitCode": 0,
+    "log": "static-final.log"
+  },
+  "fullCheck": {
+    "command": "npm run check",
+    "exitCode": 1,
+    "unrelatedExistingFailures": [
+      "docs/assets/control-center/2026-09-16-state-review/verify.cjs",
+      "docs/assets/control-center/2026-09-16-state-review-r2/verify.cjs"
+    ],
+    "log": "full-check.log"
+  },
+  "governance": {
+    "strict": "passed",
+    "log": "docs-final.log"
+  }
+}

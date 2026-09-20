@@ -1,0 +1,50 @@
+{
+  "policy": "Remove only trailing whitespace and surplus terminal blank lines",
+  "changed": [
+    {
+      "file": "scoped-check.log",
+      "beforeSha256": "20b4802b85b306618331679c235f6aa0032c7d98c1ae32b92ec3b2b078b92f91",
+      "afterSha256": "2243a0a91e49e0b2bf9a4979aa7390e937e69522070efbcea2f6740655770f71"
+    },
+    {
+      "file": "typecheck-final.log",
+      "beforeSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+      "afterSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+    },
+    {
+      "file": "typecheck.log",
+      "beforeSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+      "afterSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+    },
+    {
+      "file": "projection-final.log",
+      "beforeSha256": "6b96f4adfc45cf6ad75fdfd0e8587d6e33a6e412b59219a39e877216d7b7c23a",
+      "afterSha256": "31e79ab9b63085870c4441063c36cbc7f3cb7e76c7697199307decc68d8b8000"
+    },
+    {
+      "file": "contradiction-red.log",
+      "beforeSha256": "bcaaf2eb9d008dd2e2a646d7417c4c8659a9a49d93358c0b76b2d66ae1b329f4",
+      "afterSha256": "600ac6d89778ffad1143b0a61ecc54ca4b86767b2d81f63805b4ab9950a3b86c"
+    },
+    {
+      "file": "projection-red.log",
+      "beforeSha256": "39bf22b50b7cf5e123e265d3d7bc48d297e08c203fe3abea253e30a366f4d169",
+      "afterSha256": "e24756d024bb95ebdb00568c2a0d9b0d54476887f7dea8740955edf8a705e9ff"
+    },
+    {
+      "file": "full-check.log",
+      "beforeSha256": "ff0aa3b68eceb96e88fdb30d36f5a644e7e5911c86c36a3f6d12a7d182b09681",
+      "afterSha256": "06bd6073e75ebcbe389a3dedb8a24c05d520ed0911502fb6259b8f78e9f3a3c9"
+    },
+    {
+      "file": "scoped-check-final.log",
+      "beforeSha256": "fdd782028060edb3b037c35c8b8ceb366c6cc7febd4348dfb63fd43518270de9",
+      "afterSha256": "a150a3ef95a0619f9a185bf8247855705c1865ebc06c23a1058773ed71a19252"
+    },
+    {
+      "file": "projection-green.log",
+      "beforeSha256": "0f67fb36412c79754fb8c06e09a7b3103abed54599794aaa73da41a3b0fa32d4",
+      "afterSha256": "baf372f7eb5089d956573465f94fb5eb4126b17e409ceac4b81f04cc9f075bd6"
+    }
+  ]
+}

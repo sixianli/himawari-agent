@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:7b8b9b7f9b8abaa47f15e96a7993a25fef6ecb6c249989201a7ded1d76a051b7"
+contract_sha256: "sha256:8015aea0bbfcd8f57c1b0aa4d0b5e95a37b00f1145b3c6cdd0dbfc8adbd738dd"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -126,6 +126,8 @@ Schema 40 为尚未绑定的预约增加不可撤销的停止标记，并保留�
 Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认证宿主证明任务从未启动、原进程已退出且清理完成，当前 writer 才能同事务保存永久回执并释放该预约的占用。原停止标记保持不可撤销，不伪造运行时绑定、业务结果或退款；重复停止和恢复读回原事实，不因核验凭据过期重新占用。缺少宿主证明、仍有保护或已启动任务的后代状态未知时继续保留未确认状态。备份与权威迁移须同时保留回执、停止标记及受保护宿主证据；Schema 40 及以前的 writer 不得写入新库，回退仍需停机并恢复匹配旧版本的完整恢复点。
 
 轮次已取消、失败或完成后，如果某个工具只有准备事件而没有结束结果，页面显示“结果未确认”，不持续显示准备中；明确未派发的原证据仍显示“尚未派发”。缺少真实起止边界时不生成时长，刷新后沿用相同规则。
+
+历史工具结果以已持久保存的产品 outcome 为依据：`failed` 或 `result_unknown` 不因旧 Pi 记录的 `isError=false` 或缺少错误码变为完成。确定未派发的 `FILE_VERSION_CONFLICT` 显示“尚未派发”；若同时存在结果未知证据，或产品成功与未派发标记相互矛盾，优先保留“结果未确认”，不能据此推断没有写入。原输出内容与事件序号保持不变，不补造执行时长，也不重放工具。
 
 ## Authoritative Sources
 

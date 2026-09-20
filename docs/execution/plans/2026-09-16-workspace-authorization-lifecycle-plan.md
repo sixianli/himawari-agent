@@ -56,12 +56,12 @@ date: "2026-09-16"
 
 ### 当前实施进展
 
-下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-startup-01/standard-ci-result.json)为 3,820 项全部通过，环境为本机 macOS。
+下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-outcome-projection-01/standard-ci-result.json)为 3,840 项全部通过，环境为本机 macOS。
 
 | 阶段 | 已实现并验证的部分 | 仍需完成的重点 |
 | --- | --- | --- |
 | [P0](#p0) | r3 交互已确认；身份和持久化合同已记录；四项首次加载立即发送回归已接入原浏览器入口 | 完整基线、全部合同和 68 项联合验收仍不能划为已完成 |
-| [P1](#p1) | 永久释放事实、结果交接不反锁；未绑定预约停止隔离与启动发现；停止目标与同 Run 跨页资源独立派发、清理等待上限及完成输出保留；未启动宿主退出后的预约释放凭据与原停止隔离；恢复写入的事务内归属检查、超时回调隔离和并发结果保留；Mac/Linux 真实后代写入与构建产品预约释放探针；释放后矛盾资源证据的独立保护与有限恢复；资源恢复安全原因与受保护诊断；[持久调度、独立扫描、取消和暂停](#p1-recovery-scheduling)；[无 Web 启动与停止生命周期](#p1-recovery-startup) | 完整安装资格、Mac 后代停止能力、完整业务阶段错误分类与页面下一动作 |
+| [P1](#p1) | 永久释放事实、结果交接不反锁；未绑定预约停止隔离与启动发现；停止目标与同 Run 跨页资源独立派发、清理等待上限及完成输出保留；未启动宿主退出后的预约释放凭据与原停止隔离；恢复写入的事务内归属检查、超时回调隔离和并发结果保留；Mac/Linux 真实后代写入与构建产品预约释放探针；释放后矛盾资源证据的独立保护与有限恢复；资源恢复安全原因与受保护诊断；[持久调度、独立扫描、取消和暂停](#p1-recovery-scheduling)；[无 Web 启动与停止生命周期](#p1-recovery-startup)；[产品结果证据的展示优先级](#p1-outcome-projection) | 完整安装资格、Mac 后代停止能力、完整业务阶段错误分类与页面下一动作 |
 | [P2](#p2) | 审批摘要与重复决定、额度预约、排队身份、工具执行前检查点及取消传播 | 跨 boot/fence 的执行权重新绑定、执行中撤销及所有生产路径联合覆盖 |
 | [P3](#p3) | 文件路径槽位/身份/祖先协调、公平队列、固定目标合同、暂存发布与保存恢复记录；合同 3 的并行候选准备、可停止计算、原队列提交与安装入口；确定未派发的冲突重放、新 intent 关联与有限重生成已通过本地验收 | 目录改名协议、Worker 执行后的冲突处理、跨 Worker 与多文件完整验收；合同 3 的平台资格与部署未执行 |
 | [P4](#p4) | 纯联网私有范围、无用户目录 Grant/挂载/claim；本机越界拒绝探针 | 任意命令的更窄可强制范围、可选副本与逐文件应用、Linux 平台资格 |
@@ -844,8 +844,18 @@ Schema 42 扩展原 `sandbox_workspace_barriers`，增加 `resource_contradictio
 
 [本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-startup-01/README.md)保存四组失败前复现，以及 72 项生命周期回归、229 项资源恢复消费者回归。[完整标准构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-startup-01/standard-ci-result.json)通过 244 文件、3,820 项，零失败、零跳过；输入复核确认 1,092 个代码、测试与配置文件未变。类型、任务范围格式/lint、边界、覆盖映射、不变量、秘密扫描、CI policy 和严格文档检查通过，四份受影响 Runbook 已重新封存。全库 check 仍仅被原有未跟踪 r1/r2 原型格式问题阻断。启动编排使用受控依赖，资源优先级使用真实 SQLite 的 worker/direct 两种执行方式；不代表任意进程树、真实服务部署或完整 P1 已通过。
 
+<a id="p1-outcome-projection"></a>
+
+### P1 产品结果证据与历史工具展示
+
+生产投影已修正三类误判：固定写入准入前的 `FILE_VERSION_CONFLICT` 缺少未派发标记；旧 Pi 记录的 `isError=false` 且没有错误码时，产品 `failed/result_unknown` 被显示为完成；未知产品结果与未派发错误码同时出现时，未知证据被覆盖。现在产品失败与未知不会被旧 Pi 标志变为成功，未知优先于相互矛盾的未派发标记，成功与未派发证据并存也保留为结果未确认；输出内容、事件序号和没有执行起止证据时的空时长保持不变。
+
+继续复用固定 Pi 0.84.2 的 `ToolResultMessage.details/isError` 与工具事件；没有新增 Agent loop、工具参数、事件协议或数据库迁移。Himawari 仅解释原有受保护产品结果，原有披露与归属检查继续适用。
+
+[失败前回归与本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-outcome-projection-01/README.md)记录 worker/direct SQLite 两种方式共 8 项失败、8 项通过，另 118 项由名称过滤。初轮修复后的完整 Thread 生命周期和前端状态消费者 152 项通过。补充审阅的[矛盾结果回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-outcome-projection-01/contradiction-red.log)再复现 4 项失败：成功与未派发证据并存时仍误报未派发。已停止旧候选版本的标准运行，补充修复后的完整 Thread 生命周期和前端消费者 156 项通过，类型和任务范围静态检查通过。[最终标准构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-outcome-projection-01/standard-ci-result.json)通过 244 文件、3,840 项，零失败、零跳过。最终输入复核确认 1,092 个文件未变；三个受影响 Runbook 已重新封存，严格文档检查通过；全库 check 仍仅由原有两份未跟踪原型格式问题阻断。测试使用真实持久 Trace/Payload 和生产投影，前端消费原有标记的单元回归；没有宣称真实 Gateway→Worker→浏览器联合验收完成，统一阶段、效果、下一动作和全部恢复路径仍未完成。
+
 ### 当前完成边界与下一步
 
-P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。资源矛盾事件已完成独立保护与核验解除；资源恢复的安全原因和受保护诊断已完成本地验证。先前平台证据中的 Mac 后代停止限制仍存在，清理未知时必须继续阻止冲突任务。已配置沙箱的无 Web 模式现已接入独立资源恢复，并修正停止与扫描的关闭顺序。下一优先项是继续按持久证据区分未派发、已执行失败、效果未知和仍有资源风险，接通相应页面动作与结果交付恢复。其他 P1～P7 缺口继续以当前实施进展表为准。
+P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。资源矛盾事件已完成独立保护与核验解除；资源恢复的安全原因和受保护诊断已完成本地验证。先前平台证据中的 Mac 后代停止限制仍存在，清理未知时必须继续阻止冲突任务。已配置沙箱的无 Web 模式现已接入独立资源恢复，并修正停止与扫描的关闭顺序。产品结果证据的展示优先级已修正。下一优先项是建立后端统一的阶段、原因、效果和可用动作合同，先验证 Gateway 新旧客户端的兼容边界，再接入生产投影与页面共同消费；完整结果交付恢复仍需继续实现。其他 P1～P7 缺口继续以当前实施进展表为准。
 
 [单一决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv) 记录本轮选择及证据；没有建立另一个项目状态缓存。

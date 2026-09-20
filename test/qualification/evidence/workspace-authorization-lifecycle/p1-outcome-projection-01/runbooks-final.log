@@ -1,0 +1,42 @@
+python3 /Users/triggerjames/.codex/skills/document-governance/scripts/runbook.py seal . docs/runbooks/authority-transfer-runbook.md
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/authority-transfer-runbook.md
+fingerprint: sha256:6a29fd78be1e3ca1f7c12cf17f386eb9331caba24a30af1745e7b3104e9ed141
+mode: dry-run
+Static contract success does not prove Live-State Preflight and does not authorize any operation.
+python3 /Users/triggerjames/.codex/skills/document-governance/scripts/runbook.py seal . docs/runbooks/authority-transfer-runbook.md --confirm-reconciled --apply
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/authority-transfer-runbook.md
+fingerprint: sha256:6a29fd78be1e3ca1f7c12cf17f386eb9331caba24a30af1745e7b3104e9ed141
+mode: apply
+Static contract success does not prove Live-State Preflight and does not authorize any operation.
+python3 /Users/triggerjames/.codex/skills/document-governance/scripts/runbook.py check . docs/runbooks/authority-transfer-runbook.md
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/authority-transfer-runbook.md
+fingerprint: sha256:6a29fd78be1e3ca1f7c12cf17f386eb9331caba24a30af1745e7b3104e9ed141
+Static contract success does not prove Live-State Preflight and does not authorize any operation.
+python3 /Users/triggerjames/.codex/skills/document-governance/scripts/runbook.py seal . docs/runbooks/backup-restore-runbook.md
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/backup-restore-runbook.md
+fingerprint: sha256:8015aea0bbfcd8f57c1b0aa4d0b5e95a37b00f1145b3c6cdd0dbfc8adbd738dd
+mode: dry-run
+Static contract success does not prove Live-State Preflight and does not authorize any operation.
+python3 /Users/triggerjames/.codex/skills/document-governance/scripts/runbook.py seal . docs/runbooks/backup-restore-runbook.md --confirm-reconciled --apply
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/backup-restore-runbook.md
+fingerprint: sha256:8015aea0bbfcd8f57c1b0aa4d0b5e95a37b00f1145b3c6cdd0dbfc8adbd738dd
+mode: apply
+Static contract success does not prove Live-State Preflight and does not authorize any operation.
+python3 /Users/triggerjames/.codex/skills/document-governance/scripts/runbook.py check . docs/runbooks/backup-restore-runbook.md
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/backup-restore-runbook.md
+fingerprint: sha256:8015aea0bbfcd8f57c1b0aa4d0b5e95a37b00f1145b3c6cdd0dbfc8adbd738dd
+Static contract success does not prove Live-State Preflight and does not authorize any operation.
+python3 /Users/triggerjames/.codex/skills/document-governance/scripts/runbook.py seal . docs/runbooks/install-start-stop-runbook.md
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/install-start-stop-runbook.md
+fingerprint: sha256:c6814bcb46df17ca9f214dd9fd35702643f39f07cec5259a640722d92a583be5
+mode: dry-run
+Static contract success does not prove Live-State Preflight and does not authorize any operation.
+python3 /Users/triggerjames/.codex/skills/document-governance/scripts/runbook.py seal . docs/runbooks/install-start-stop-runbook.md --confirm-reconciled --apply
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/install-start-stop-runbook.md
+fingerprint: sha256:c6814bcb46df17ca9f214dd9fd35702643f39f07cec5259a640722d92a583be5
+mode: apply
+Static contract success does not prove Live-State Preflight and does not authorize any operation.
+python3 /Users/triggerjames/.codex/skills/document-governance/scripts/runbook.py check . docs/runbooks/install-start-stop-runbook.md
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/install-start-stop-runbook.md
+fingerprint: sha256:c6814bcb46df17ca9f214dd9fd35702643f39f07cec5259a640722d92a583be5
+Static contract success does not prove Live-State Preflight and does not authorize any operation.

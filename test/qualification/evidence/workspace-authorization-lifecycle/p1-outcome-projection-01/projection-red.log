@@ -1,0 +1,105 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/thread-run-lifecycle.test.ts (134 tests | 8 failed | 118 skipped) 2277ms
+     × preserves product outcome evidence: 'file conflict before dispatch' 308ms
+     × preserves product outcome evidence: 'failed product without Pi error' 193ms
+     × preserves product outcome evidence: 'unknown product without Pi error' 191ms
+     × preserves product outcome evidence: 'unknown result outranks admission code' 192ms
+     × preserves product outcome evidence: 'file conflict before dispatch' 75ms
+     × preserves product outcome evidence: 'failed product without Pi error' 73ms
+     × preserves product outcome evidence: 'unknown product without Pi error' 72ms
+     × preserves product outcome evidence: 'unknown result outranks admission code' 68ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'file conflict before dispatch'
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'file conflict before dispatch'
+AssertionError: expected [] to deeply equal [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+- [
+-   ObjectContaining {
+-     "itemId": "tool:threadcommandv1db1bc902c4d8530f6902857e053c0575",
+-     "name": "runtime.tool_outcome.not_dispatched",
+-     "sequence": 1,
+-   },
+- ]
++ []
+
+ ❯ test/integration/thread-run-lifecycle.test.ts:2739:32
+    2737|     expect(tool).toMatchObject({ phase, output: "Preserved result evid…
+    2738|     const states = page.records.filter((record) => record.name.startsW…
+    2739|     if (marker) expect(states).toEqual([expect.objectContaining({ item…
+       |                                ^
+    2740|     else expect(states).toEqual([]);
+    2741|     expect(page.records.some((record) => record.name.startsWith("runti…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'failed product without Pi error'
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'unknown product without Pi error'
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'failed product without Pi error'
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'unknown product without Pi error'
+AssertionError: expected { id: 'trace-0001', sequence: 1, …(8) } to match object { phase: 'failed', …(1) }
+(8 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "output": "Preserved result evidence",
+-   "phase": "failed",
++   "phase": "completed",
+  }
+
+ ❯ test/integration/thread-run-lifecycle.test.ts:2737:18
+    2735|     const page = await projection.read(query);
+    2736|     const tool = page.records.find((record) => record.kind === "tool");
+    2737|     expect(tool).toMatchObject({ phase, output: "Preserved result evid…
+       |                  ^
+    2738|     const states = page.records.filter((record) => record.name.startsW…
+    2739|     if (marker) expect(states).toEqual([expect.objectContaining({ item…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'unknown result outranks admission code'
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'unknown result outranks admission code'
+AssertionError: expected [ { id: 'trace-0001:outcome', …(9) } ] to deeply equal [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
++     "id": "trace-0001:outcome",
++     "input": "",
+      "itemId": "tool:threadcommandv1db1bc902c4d8530f6902857e053c0575",
+-     "name": "runtime.tool_outcome.unresolved",
++     "kind": "status",
++     "name": "runtime.tool_outcome.not_dispatched",
++     "occurredAt": "2026-09-04T00:00:00.000Z",
++     "output": "",
++     "phase": "updated",
+      "sequence": 1,
++     "text": "",
+    },
+  ]
+
+ ❯ test/integration/thread-run-lifecycle.test.ts:2739:32
+    2737|     expect(tool).toMatchObject({ phase, output: "Preserved result evid…
+    2738|     const states = page.records.filter((record) => record.name.startsW…
+    2739|     if (marker) expect(states).toEqual([expect.objectContaining({ item…
+       |                                ^
+    2740|     else expect(states).toEqual([]);
+    2741|     expect(page.records.some((record) => record.name.startsWith("runti…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 8 passed | 118 skipped (134)
+   Start at  13:50:50
+   Duration  4.25s (transform 1.31s, setup 0ms, import 1.88s, tests 2.28s, environment 0ms)

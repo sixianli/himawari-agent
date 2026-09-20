@@ -2673,6 +2673,159 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     ).toEqual(selection);
   });
 
+  it.each([
+    {
+      name: "file conflict before dispatch",
+      outcome: "failed",
+      code: "FILE_VERSION_CONFLICT",
+      phase: "failed",
+      marker: "not_dispatched",
+    },
+    {
+      name: "failed product without Pi error",
+      outcome: "failed",
+      code: null,
+      phase: "failed",
+      marker: null,
+    },
+    {
+      name: "unknown product without Pi error",
+      outcome: "result_unknown",
+      code: null,
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "unknown result outranks admission code",
+      outcome: "result_unknown",
+      code: "WORKER_NOT_DISPATCHED",
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "unknown result outranks file conflict",
+      outcome: "result_unknown",
+      code: "FILE_VERSION_CONFLICT",
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "legacy unknown error code",
+      outcome: undefined,
+      code: "WORKER_RESULT_RECONCILIATION_REQUIRED",
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "confirmed product success",
+      outcome: "succeeded",
+      code: null,
+      phase: "completed",
+      marker: null,
+    },
+    {
+      name: "success contradicts admission code",
+      outcome: "succeeded",
+      code: "WORKER_NOT_DISPATCHED",
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "success contradicts file conflict",
+      outcome: "succeeded",
+      code: "FILE_VERSION_CONFLICT",
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "legacy tool success",
+      outcome: undefined,
+      code: null,
+      phase: "completed",
+      marker: null,
+    },
+  ])("preserves product outcome evidence: $name", async ({ outcome, code, phase, marker }) => {
+    const setup = await executionFixture();
+    const payloadRef = "outcome-evidence";
+    await setup.repository
+      .runPayloadArtifactPort(ownerId, agentId, {
+        product: authority,
+        lease,
+      })
+      .commit({
+        runId: setup.runId,
+        purpose: "trace",
+        operationKey: "outcome-evidence",
+        payload: await setup.protector.protect({
+          ownerId,
+          agentId,
+          ref: payloadRef,
+          dataClassification: "private",
+          contentType: "application/json",
+          plaintext: new TextEncoder().encode(
+            JSON.stringify({
+              toolCallId: "outcome-call",
+              toolName: "write",
+              isError: false,
+              result: {
+                details: { productOutcome: outcome, errorCode: code },
+                content: [{ type: "text", text: "Preserved result evidence" }],
+              },
+            }),
+          ),
+          createdAt: clock.now(),
+        }),
+      });
+    await setup.trace.record({
+      ownerId,
+      agentId,
+      sessionId: setup.input.runtime.sessionId,
+      threadId: setup.admitted.thread.id,
+      runId: setup.runId,
+      turnId: null,
+      parentEventId: null,
+      causationId: null,
+      correlationId: "outcome-test",
+      actorId: "outcome-test",
+      dataClassification: "private",
+      eventType: "runtime.tool_result",
+      payload: { payloadRef },
+    });
+    const projection = new ThreadExecutionProjection({
+      threads: setup.repository.threadRepository(),
+      trace: setup.repository.traceStore(),
+      payloads: (owner, agent) =>
+        setup.repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
+      protector: setup.protector,
+    });
+    const query = {
+      ownerId,
+      agentId,
+      threadId: setup.admitted.thread.id,
+      runId: setup.runId,
+      afterSequence: 0,
+      limit: 100,
+    };
+    const page = await projection.read(query);
+    const tool = page.records.find((record) => record.kind === "tool");
+    expect(tool).toMatchObject({ phase, output: "Preserved result evidence" });
+    const states = page.records.filter((record) => record.name.startsWith("runtime.tool_outcome."));
+    if (marker)
+      expect(states).toEqual([
+        expect.objectContaining({
+          itemId: tool?.itemId,
+          sequence: tool?.sequence,
+          name: `runtime.tool_outcome.${marker}`,
+        }),
+      ]);
+    else expect(states).toEqual([]);
+    expect(page.records.some((record) => record.name.startsWith("runtime.tool_execution."))).toBe(
+      false,
+    );
+    // Re-reading persisted history must preserve the same conclusion and sequence.
+    expect(await projection.read(query)).toEqual(page);
+  });
+
   it("projects encrypted execution history with owner isolation and no raw reasoning or credentials", async () => {
     const setup = await executionFixture();
     const artifactPort = setup.repository.runPayloadArtifactPort(ownerId, agentId, {

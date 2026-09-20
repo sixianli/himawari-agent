@@ -224,20 +224,28 @@ export class ThreadExecutionProjection {
           // failure. Retained product error evidence must not become success.
           const productError = text(object(result["details"])["errorCode"]);
           const productOutcome = text(object(result["details"])["productOutcome"]);
+          const notDispatched = [
+            "WORKER_ADMISSION_CONFLICT",
+            "WORKER_NOT_DISPATCHED",
+            "RUNTIME_TOOL_CHECKPOINT_FAILED",
+            "FILE_VERSION_CONFLICT",
+          ].includes(productError);
+          const unresolved =
+            productOutcome === "result_unknown" ||
+            (productOutcome === "succeeded" && notDispatched) ||
+            ["RUNTIME_TOOL_EXECUTION_UNRESOLVED", "WORKER_RESULT_RECONCILIATION_REQUIRED"].includes(
+              productError,
+            );
+          // Unknown or contradictory effects outrank an admission code. A missing
+          // Pi error flag never turns a retained product failure into success.
+          const failed =
+            tool["isError"] === true || productOutcome === "failed" || unresolved || !!productError;
           const lifecycle = !ended
             ? "preparing"
-            : [
-                  "WORKER_ADMISSION_CONFLICT",
-                  "WORKER_NOT_DISPATCHED",
-                  "RUNTIME_TOOL_CHECKPOINT_FAILED",
-                ].includes(productError)
-              ? "not_dispatched"
-              : productOutcome === "result_unknown" ||
-                  [
-                    "RUNTIME_TOOL_EXECUTION_UNRESOLVED",
-                    "WORKER_RESULT_RECONCILIATION_REQUIRED",
-                  ].includes(productError)
-                ? "unresolved"
+            : unresolved
+              ? "unresolved"
+              : notDispatched
+                ? "not_dispatched"
                 : null;
           if (lifecycle)
             records.push({
@@ -275,11 +283,7 @@ export class ThreadExecutionProjection {
             itemId: identifier(tool["toolCallId"], event.id),
             kind: "tool",
             text: text(redactTracePayload(text(tool["description"]))),
-            phase: ended
-              ? tool["isError"] === true || productError
-                ? "failed"
-                : "completed"
-              : "started",
+            phase: ended ? (failed ? "failed" : "completed") : "started",
             name: text(tool["toolName"]) || text(envelope["capabilityRef"]),
             input: ended
               ? ""

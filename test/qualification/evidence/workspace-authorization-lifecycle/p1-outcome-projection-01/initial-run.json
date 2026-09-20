@@ -1,0 +1,15 @@
+{
+  "output": ".ci-output/p1-outcome-projection-01",
+  "status": "interrupted_by_task",
+  "exitCode": 143,
+  "reason": "Four new regression failures proved that a succeeded product outcome combined with a not-dispatched code must remain unresolved. Final source and tests changed; initial CI result is not final validation.",
+  "signal": "SIGTERM",
+  "verifiedProcessGroup": 95060,
+  "sourceFilesChanged": [
+    "packages/application/src/services/thread-execution-projection.ts",
+    "test/integration/thread-run-lifecycle.test.ts"
+  ],
+  "orphanedIntegrationProcessGroup": 99315,
+  "orphanCleanupSignal": "SIGTERM",
+  "cleanupVerified": "Independent process-group readback returned no members for groups 95060 and 99315"
+}
