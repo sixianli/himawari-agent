@@ -1,0 +1,7 @@
+
+> himawari-agent@0.0.0 test
+> node scripts/ci/local.mjs --check test --output .ci-output/p1-recovery-01
+
+build/macos-arm64: passed
+test/macos-arm64: passed
+local_passed; hosted gate: not_executed

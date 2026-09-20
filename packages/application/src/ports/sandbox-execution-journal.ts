@@ -132,6 +132,8 @@ export interface SandboxExecutionJournalPort {
     readonly identity: SandboxJobIdentity;
     readonly expectedSequence: number;
     readonly expectedOperationRevision: number;
+    /** Recovery observations are fenced by the attempt in the same write transaction. */
+    readonly expectedRecoveryRevision?: number;
     readonly facts: SandboxExecutionFacts;
     readonly authority: CapabilityInvocationAuthority;
     readonly now: string;

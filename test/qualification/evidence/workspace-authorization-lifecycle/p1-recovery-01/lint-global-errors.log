@@ -1,0 +1,45 @@
+docs/assets/control-center/2026-09-16-state-review-r2/verify.cjs:18:5 lint/correctness/noInnerDeclarations ━━━━━━━━━━
+
+  × This function should be declared at the root of the enclosing function.
+
+    16 │     const frame = page.frameLocator('iframe');
+    17 │     const titles = {approval:'等待你的确认',queued:'等待保存秋雨东京.md',preparing:'正在准备执行',dispatched:'等待工具开始',running:'正在写入文件',verifying:'正在确认文件结果',cleaning:'文件已写入，正在结束操作',success:'已完成',not_executed:'未执行 · 文件未创建',denied:'未执行 · 你已拒绝',expired:'未执行 · 确认已过期',stopping:'正在停止',stopped:'已停止',cancelled:'已取消 · 未执行',reconciling:'正在核对文件结果',unresolved:'文件结果待确认',partial:'未完成 · 已产生部分修改',revoked:'文件已生成，后续处理已暂停',staging:'正在准备保存',conflict:'文件已被其他操作修改',isolated:'正在独立环境中检查',candidate:'修改已准备好',search:'正在搜索公开资料',not_published:'未保存 · 原文件保持不变'};
+  > 18 │     async function select(scenario) {
+       │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 19 │       await frame.locator('#scenario').selectOption(scenario);
+  > 20 │       await expect(frame.locator('#status strong')).toHaveText(titles[scenario]);
+  > 21 │       await frame.locator('body').evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  > 22 │     }
+       │     ^
+    23 │     await expect(frame.locator('#scenario option')).toHaveCount(24);
+    24 │     const scenarios = await frame.locator('#scenario option').evaluateAll(es => es.map(e => e.value));
+
+  i The function is accessible in the whole body of the enclosing function.
+    To avoid confusion, it should be declared at the root of the enclosing function.
+
+
+docs/assets/control-center/2026-09-16-state-review/verify.cjs:18:5 lint/correctness/noInnerDeclarations ━━━━━━━━━━
+
+  × This function should be declared at the root of the enclosing function.
+
+    16 │     const frame = page.frameLocator('iframe');
+    17 │     const titles = {approval:'等待你的确认',queued:'等待工作区可用',preparing:'正在准备执行',dispatched:'等待工具开始',running:'正在写入文件',verifying:'正在确认文件结果',cleaning:'文件已写入，正在结束操作',success:'已完成',not_executed:'未执行 · 文件未创建',denied:'未执行 · 你已拒绝',expired:'未执行 · 确认已过期',stopping:'正在停止',stopped:'已停止',cancelled:'已取消 · 未执行',reconciling:'正在核对文件结果',unresolved:'文件结果待确认',partial:'未完成 · 已产生部分修改',revoked:'文件已生成，后续处理已暂停'};
+  > 18 │     async function select(scenario) {
+       │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 19 │       await frame.locator('#scenario').selectOption(scenario);
+  > 20 │       await expect(frame.locator('#status strong')).toHaveText(titles[scenario]);
+  > 21 │       await frame.locator('body').evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  > 22 │     }
+       │     ^
+    23 │     await expect(frame.locator('#scenario option')).toHaveCount(18);
+    24 │     const scenarios = await frame.locator('#scenario option').evaluateAll(es => es.map(e => e.value));
+
+  i The function is accessible in the whole body of the enclosing function.
+    To avoid confusion, it should be declared at the root of the enclosing function.
+
+
+Checked 1275 files in 1524ms. No fixes applied.
+Found 2 errors.
+lint ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.

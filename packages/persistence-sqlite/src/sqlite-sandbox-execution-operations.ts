@@ -885,6 +885,19 @@ export class SqliteSandboxExecutionOperations {
     operationOnly = false,
   ) {
     const facts = sandboxExecutionFactsSchema.parse(input.facts);
+    if (input.expectedRecoveryRevision !== undefined) {
+      const recovery = current.recovery;
+      if (
+        !recovery ||
+        recovery.status !== "running" ||
+        recovery.owner !== input.authority.agentServiceBootId ||
+        recovery.revision !== input.expectedRecoveryRevision
+      )
+        return this.fail("PORT_CONFLICT", "Recovery ownership changed");
+      // A timed-out owner may record uncertainty, but cannot accept late proof.
+      if (facts.resource.supervision !== "lost" && input.now >= recovery.deadlineAt)
+        return this.fail("PORT_CONFLICT", "Recovery deadline elapsed");
+    }
     const old = this.db
       .prepare(
         "SELECT facts_json AS facts FROM sandbox_execution_observations WHERE job_id=? AND sequence=?",

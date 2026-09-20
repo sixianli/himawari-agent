@@ -1,0 +1,40 @@
+{
+  "scope": "P1 bounded recovery attempt fencing; local macOS only",
+  "reproductions": [
+    {
+      "log": "races-red.log",
+      "failed": 6,
+      "description": "Late callbacks reach verification/writes; old recovery can release after takeover"
+    },
+    {
+      "log": "ownership-red.log",
+      "failed": 2,
+      "description": "Independent SQLite readback proves old attempt changed successor resource and release facts"
+    }
+  ],
+  "targeted": [
+    {
+      "log": "recovery-matrix.log",
+      "passed": 116
+    },
+    {
+      "log": "consumers.log",
+      "passed": 114
+    }
+  ],
+  "static": {
+    "typecheck": "passed",
+    "scopedFormatAndLint": "passed",
+    "boundariesInvariantsCoverageSecretsPolicy": "passed",
+    "documentGovernance": "passed",
+    "globalCheck": "blocked by two pre-existing untracked prototype verify.cjs files",
+    "globalLint": "same two pre-existing noInnerDeclarations errors"
+  },
+  "notVerified": [
+    "real process descendant termination",
+    "Linux platform qualification",
+    "deployment or live database migration",
+    "complete P1-P7 acceptance"
+  ],
+  "logNormalization": "Trailing whitespace and extra final blank lines removed for git diff --check; diagnostic text and results retained."
+}

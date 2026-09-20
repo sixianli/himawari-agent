@@ -1,0 +1,222 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts (102 tests | 6 failed | 96 skipped) 906ms
+     × ignores late lost observations after recovery timeout without verification or writes 272ms
+     × ignores late released observations after recovery timeout without verification or writes 188ms
+     × fences recovery writes when another attempt takes ownership before the SQL transaction 213ms
+     × ignores late lost observations after recovery timeout without verification or writes 75ms
+     × ignores late released observations after recovery timeout without verification or writes 82ms
+     × fences recovery writes when another attempt takes ownership before the SQL transaction 75ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > ignores late lost observations after recovery timeout without verification or writes
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > ignores late lost observations after recovery timeout without verification or writes
+AssertionError: expected "vi.fn()" to be called 2 times, but got 3 times
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:1171:24
+    1169|         pending.resolve(resource(current, state).resource);
+    1170|         await vi.advanceTimersByTimeAsync(0);
+    1171|         expect(writes).toHaveBeenCalledTimes(count);
+       |                        ^
+    1172|         expect(verify).not.toHaveBeenCalled();
+    1173|         expect(call(f, "read", record.plan.identity)).toEqual(finished…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > ignores late released observations after recovery timeout without verification or writes
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > ignores late released observations after recovery timeout without verification or writes
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Object {
+        "facts": Object {
+          "effect": Object {
+            "kind": "unknown",
+            "reasonCode": "pending",
+          },
+          "environment": Object {
+            "authorizationRef": "policy-capability-invocation",
+            "backendRef": "srt",
+            "creator": Object {
+              "agentId": "agent-capability-invocation",
+              "attemptId": "attempt",
+              "hostId": "sandbox-host",
+              "invocationId": "invocation-capability-invocation",
+              "jobId": "job",
+              "ownerId": "owner-capability-invocation",
+              "receiptRef": "receipt-capability-invocation",
+              "runId": "run-capability-invocation",
+              "threadId": "thread-capability-invocation",
+              "toolCallId": "sandbox-tool",
+            },
+            "deadlineAt": "2026-09-04T00:05:00.000Z",
+            "environmentId": "environment",
+            "kind": "local",
+            "mode": "foreground",
+            "policyDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "privateDirectoryOwnerRef": "host",
+            "privateDirectoryRef": "private-dir",
+            "resourceRef": null,
+            "schemaVersion": "sandbox-execution.v2",
+            "scopeDigest": "0f765882dec4f102618ba6f9235f88381f159548a291aa4abf7a8b22fa525743",
+            "supervisor": Object {
+              "bootId": "boot",
+              "epoch": 1,
+              "supervisorId": "supervisor",
+            },
+            "workspaceConflictRefs": Array [
+              "workspace",
+            ],
+          },
+          "resource": Object {
+            "cleanup": "confirmed",
+            "creator": Object {
+              "agentId": "agent-capability-invocation",
+              "attemptId": "attempt",
+              "hostId": "sandbox-host",
+              "invocationId": "invocation-capability-invocation",
+              "jobId": "job",
+              "ownerId": "owner-capability-invocation",
+              "receiptRef": "receipt-capability-invocation",
+              "runId": "run-capability-invocation",
+              "threadId": "thread-capability-invocation",
+              "toolCallId": "sandbox-tool",
+            },
+            "environmentId": "environment",
+            "evidence": Object {
+              "digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "profileRef": "profile-fixture",
+              "qualificationRef": "qualification-fixture",
+              "ref": "supervision-evidence",
+              "subject": Object {
+                "kind": "local_process",
+                "processIdentityRef": "process",
+              },
+              "validUntil": "2026-09-04T00:05:00.000Z",
+            },
+            "metrics": null,
+            "occurredAt": "2026-09-04T00:00:01.000Z",
+            "policyDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "resourceRef": null,
+            "schemaVersion": "sandbox-execution.v2",
+            "scopeDigest": "0f765882dec4f102618ba6f9235f88381f159548a291aa4abf7a8b22fa525743",
+            "sequence": 4,
+            "status": Object {
+              "kind": "foreground",
+            },
+            "supervision": "released",
+            "supervisor": Object {
+              "bootId": "boot",
+              "epoch": 1,
+              "supervisorId": "supervisor",
+            },
+          },
+          "result": null,
+          "schemaVersion": "sandbox-execution.v2",
+        },
+        "now": "2026-09-04T00:00:01.000Z",
+        "plan": Object {
+          "authorizationRef": "policy-capability-invocation",
+          "backendRef": "srt",
+          "binding": Object {
+            "profileRef": "profile-fixture",
+            "qualificationRef": "qualification-fixture",
+            "requiredGuarantees": Array [
+              "filesystem",
+            ],
+            "runnerDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "runtimeDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "scopeDigest": "0f765882dec4f102618ba6f9235f88381f159548a291aa4abf7a8b22fa525743",
+            "scopeRef": "scope-fixture",
+          },
+          "capabilityRef": "capability-invocation",
+          "capabilityVersion": "1.0.0",
+          "effectiveDeadlineAt": "2026-09-04T00:05:00.000Z",
+          "environmentId": "environment",
+          "executionLease": Object {
+            "authorityEpoch": 1,
+            "authorityFencingToken": 1,
+            "authorityLeaseId": "lease-capability-invocation",
+            "consumerId": "sandbox-consumer",
+            "deploymentId": "deployment-capability-invocation",
+            "executionLeaseId": "sandbox-lease",
+            "expectedLeaseRevision": 1,
+            "fencingToken": 1,
+          },
+          "handleRef": "handle-capability-invocation",
+          "identity": Object {
+            "agentId": "agent-capability-invocation",
+            "attemptId": "attempt",
+            "hostId": "sandbox-host",
+            "invocationId": "invocation-capability-invocation",
+            "jobId": "job",
+            "ownerId": "owner-capability-invocation",
+            "receiptRef": "receipt-capability-invocation",
+            "runId": "run-capability-invocation",
+            "threadId": "thread-capability-invocation",
+            "toolCallId": "sandbox-tool",
+          },
+          "inputRef": "payload-input-capability-invocation",
+          "mode": "foreground",
+          "modelRef": "model-fixture",
+          "operation": "read",
+          "operationContract": Object {
+            "kind": "fixed_read",
+            "ref": "fixed-read",
+            "version": "1",
+          },
+          "originalDeadlineAt": "2026-09-04T00:05:00.000Z",
+          "requestedAt": "2026-09-04T00:00:01.000Z",
+          "resourceCeiling": Object {
+            "maxCpuTimeMs": 1000,
+            "maxMemoryBytes": 1000000,
+            "maxOutputBytes": 4096,
+            "maxProgressEvents": 10,
+            "maxWallTimeMs": 1000,
+          },
+          "schemaVersion": "sandbox-execution.v2",
+          "semanticFingerprint": "sha256:24a0916b4c757764183e82b3b6b5bb968c27b9487630bf2d44e26af81b8a0e36",
+        },
+      },
+    ]
+
+
+Number of calls: 1
+
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:1172:28
+    1170|         await vi.advanceTimersByTimeAsync(0);
+    1171|         expect(writes).toHaveBeenCalledTimes(count);
+    1172|         expect(verify).not.toHaveBeenCalled();
+       |                            ^
+    1173|         expect(call(f, "read", record.plan.identity)).toEqual(finished…
+    1174|         expect(() => call(f, "admit", admission(f, "-still-blocked")))…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > fences recovery writes when another attempt takes ownership before the SQL transaction
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > fences recovery writes when another attempt takes ownership before the SQL transaction
+AssertionError: expected [Function] to throw error including 'SANDBOX_RECONCILIATION_OWNERSHIP_CHAN…' but got 'Recovery ownership changed'
+
+Expected: "SANDBOX_RECONCILIATION_OWNERSHIP_CHANGED"
+Received: "Recovery ownership changed"
+
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:1224:10
+    1222|         authority: SERVICE_AUTHORITY,
+    1223|         action: "inspect",
+    1224|       })).rejects.toThrow("SANDBOX_RECONCILIATION_OWNERSHIP_CHANGED");
+       |          ^
+    1225|       expect(successor?.recovery).toMatchObject({ status: "running", a…
+    1226|       expect(call(f, "read", record.plan.identity)).toEqual(successor);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 96 skipped (102)
+   Start at  10:11:26
+   Duration  2.92s (transform 1.23s, setup 0ms, import 1.90s, tests 906ms, environment 0ms)

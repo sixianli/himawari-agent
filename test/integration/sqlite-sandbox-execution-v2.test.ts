@@ -41,6 +41,15 @@ import {
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 type Fixture = Awaited<ReturnType<typeof openSandboxJournal>>;
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {
+    throw new Error("deferred not initialized");
+  };
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
 const evidence = { ref: "supervision-evidence", digest: "e".repeat(64) };
 function context(
   record: SandboxExecutionRecord,
@@ -1117,6 +1126,268 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       }
     });
   }
+
+  it.each(["lost", "released"] as const)(
+    "ignores late %s observations after recovery timeout without verification or writes",
+    async (state) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "lost"));
+        const pending = deferred<ReturnType<typeof resource>["resource"]>();
+        const entered = deferred<SandboxExecutionRecord>();
+        const verify = vi.fn(async ({ facts }: { facts: SandboxExecutionFacts }) => {
+          const proof = context(record, facts).verification;
+          if (!proof) throw new Error("fixture proof missing");
+          return proof;
+        });
+        const writes = vi.fn(async (input: Parameters<SandboxExecutionJournalPort["append"]>[0]) =>
+          call(f, "append", input),
+        );
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: writes,
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          evidence: { verify },
+          now: () => T1,
+          timeoutMs: 10,
+          backend: {
+            inspect: async (current) => {
+              entered.resolve(current);
+              return pending.promise;
+            },
+            stop: async () => {
+              throw new Error("unexpected stop");
+            },
+          },
+        });
+        const request = service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        const current = await entered.promise;
+        await vi.advanceTimersByTimeAsync(10);
+        const finished = await request;
+        expect(finished.record.recovery).toMatchObject({
+          status: "unresolved",
+          reasonCode: "SANDBOX_RECONCILIATION_TIMED_OUT",
+        });
+        const count = writes.mock.calls.length;
+        pending.resolve(resource(current, state).resource);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(writes).toHaveBeenCalledTimes(count);
+        expect(verify).not.toHaveBeenCalled();
+        expect(call(f, "read", record.plan.identity)).toEqual(finished.record);
+        expect(() => call(f, "admit", admission(f, "-still-blocked"))).toThrow("occupied");
+      } finally {
+        vi.useRealTimers();
+        await f.close();
+      }
+    },
+  );
+
+  it("fences recovery writes when another attempt takes ownership before the SQL transaction", async () => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, resource(record, "lost"));
+      let now = T1;
+      let successor: SandboxExecutionRecord | undefined;
+      const service = new SandboxExecutionReconciliationService({
+        hostId: record.plan.identity.hostId,
+        journal: {
+          read: async (identity) => call(f, "read", identity),
+          append: async (input) => {
+            if (input.facts.resource.supervision === "released") {
+              now = new Date(Date.parse(T1) + 1000).toISOString();
+              call(f, "beginRecovery", {
+                identity: record.plan.identity,
+                expectedSequence: input.expectedSequence,
+                authority: SERVICE_AUTHORITY,
+                now,
+                action: "inspect",
+                deadlineAt: new Date(Date.parse(now) + 1000).toISOString(),
+              });
+              successor = call(f, "read", record.plan.identity);
+            }
+            return call(f, "append", input);
+          },
+          beginRecovery: async (input) => call(f, "beginRecovery", input),
+          finishRecovery: async (input) => call(f, "finishRecovery", input),
+        },
+        evidence: {
+          verify: async ({ facts }) => {
+            const proof = context(record, facts).verification;
+            if (!proof) throw new Error("fixture proof missing");
+            return proof;
+          },
+        },
+        now: () => now,
+        timeoutMs: 1000,
+        backend: {
+          inspect: async (current) => resource(current, "released").resource,
+          stop: async () => {
+            throw new Error("unexpected stop");
+          },
+        },
+      });
+      const outcome = await Promise.allSettled([
+        service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        }),
+      ]);
+      expect(successor?.recovery).toMatchObject({ status: "running", attempts: 2 });
+      expect(call(f, "read", record.plan.identity)).toEqual(successor);
+      expect(() => call(f, "admit", admission(f, "-still-blocked"))).toThrow("occupied");
+      expect(outcome[0]).toMatchObject({
+        status: "rejected",
+        reason: { message: "SANDBOX_RECONCILIATION_OWNERSHIP_CHANGED" },
+      });
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each(["preparation-deadline", "concurrent-result", "concurrent-release"] as const)(
+    "finishes bounded recovery using current durable facts: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "lost"));
+        let now = T1;
+        let concurrent: SandboxExecutionRecord | undefined;
+        const inspect = vi.fn(async (current: SandboxExecutionRecord) => {
+          concurrent = append(f, current, result(f, current), true);
+          if (scenario === "concurrent-release")
+            concurrent = append(f, concurrent, resource(concurrent, "released"));
+          throw new Error("private backend diagnostic must not become a reason code");
+        });
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: async (input) => {
+              const mutation = call(f, "append", input);
+              if (scenario === "preparation-deadline")
+                now = new Date(Date.parse(T1) + 1000).toISOString();
+              return mutation;
+            },
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          evidence: {
+            verify: async () => {
+              throw new Error("unexpected verification");
+            },
+          },
+          now: () => now,
+          timeoutMs: 1000,
+          backend: { inspect, stop: inspect },
+        });
+        const finished = await service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        expect(finished.record.recovery?.status).toBe(
+          scenario === "concurrent-release" ? "resolved" : "unresolved",
+        );
+        if (scenario === "preparation-deadline") {
+          expect(inspect).not.toHaveBeenCalled();
+          expect(finished.record.recovery?.reasonCode).toBe("SANDBOX_RECONCILIATION_TIMED_OUT");
+        } else {
+          expect(finished.record.facts.result).toEqual(concurrent?.facts.result);
+          expect(finished.record.facts.effect).toEqual(concurrent?.facts.effect);
+          expect(finished.record.recovery?.reasonCode).not.toContain("private");
+        }
+        if (scenario === "concurrent-release") {
+          expect(finished.record.releaseReceipt).toEqual(concurrent?.releaseReceipt);
+          expect(call(f, "admit", admission(f, "-released")).applied).toBe(true);
+        } else {
+          expect(() => call(f, "admit", admission(f, "-still-blocked"))).toThrow("occupied");
+        }
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each(["revision", "owner", "finished", "deadline"] as const)(
+    "rejects stale recovery proof through the repository port: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "lost"));
+        f.database.close();
+        repository = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+        });
+        let journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        const recovery = await journal.beginRecovery({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          action: "inspect",
+          deadlineAt: new Date(Date.parse(T1) + 1000).toISOString(),
+        });
+        if (scenario === "finished")
+          await journal.finishRecovery({
+            identity: record.plan.identity,
+            expectedSequence: record.facts.resource.sequence,
+            expectedRecoveryRevision: recovery.revision,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            reasonCode: "SANDBOX_RECONCILIATION_UNCONFIRMED",
+          });
+        const before = await journal.read(record.plan.identity);
+        const facts = resource(record, "released");
+        await expect(
+          journal.append({
+            identity: record.plan.identity,
+            expectedSequence: record.facts.resource.sequence,
+            expectedOperationRevision: record.operationRevision,
+            expectedRecoveryRevision:
+              scenario === "revision" ? recovery.revision + 1 : recovery.revision,
+            authority:
+              scenario === "owner"
+                ? { ...SERVICE_AUTHORITY, agentServiceBootId: "other-recovery" }
+                : SERVICE_AUTHORITY,
+            now: scenario === "deadline" ? recovery.deadlineAt : T1,
+            facts,
+            context: context(record, facts),
+          }),
+        ).rejects.toThrow(
+          scenario === "deadline" ? "Recovery deadline elapsed" : "Recovery ownership changed",
+        );
+        await repository.close();
+        repository = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+        });
+        journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        expect(await journal.read(record.plan.identity)).toEqual(before);
+      } finally {
+        await repository?.close();
+        await f.close();
+      }
+    },
+  );
 
   it.each(["verified", "expired", "unavailable"] as const)(
     "recovers legacy released occupancy with %s evidence",

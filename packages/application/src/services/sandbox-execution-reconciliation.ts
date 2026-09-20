@@ -74,6 +74,23 @@ export class SandboxExecutionReconciliationService {
       action: input.action,
       deadlineAt: new Date(Date.parse(startedAt) + this.options.timeoutMs).toISOString(),
     });
+    const refreshOwned = async () => {
+      const latest = await this.options.journal.read(identity);
+      if (!latest) throw new Error("SANDBOX_RECONCILIATION_BINDING_INVALID");
+      if (
+        latest.recovery?.status !== "running" ||
+        latest.recovery.owner !== input.authority.agentServiceBootId ||
+        latest.recovery.revision !== recovery.revision
+      )
+        throw new Error("SANDBOX_RECONCILIATION_OWNERSHIP_CHANGED");
+      record = latest;
+      return latest;
+    };
+    const controller = new AbortController();
+    const assertActive = () => {
+      if (controller.signal.aborted || this.options.now() >= recovery.deadlineAt)
+        throw new Error("SANDBOX_RECONCILIATION_TIMED_OUT");
+    };
 
     const observation = (
       state: "reconciling" | "lost",
@@ -98,8 +115,9 @@ export class SandboxExecutionReconciliationService {
         reasonCode,
       });
     };
-    const append = async (resource: SandboxResourceObservation) => {
+    const append = async (resource: SandboxResourceObservation, fromBackend = false) => {
       if (!record) throw new Error("SANDBOX_RECONCILIATION_BINDING_INVALID");
+      if (fromBackend) assertActive();
       let now = this.options.now();
       const facts = { ...record.facts, resource };
       const verification =
@@ -107,12 +125,12 @@ export class SandboxExecutionReconciliationService {
           ? await this.options.evidence.verify({ plan: record.plan, facts, now })
           : null;
       now = this.options.now();
-      if (resource.supervision === "released" && controller.signal.aborted)
-        throw new Error("SANDBOX_RECONCILIATION_TIMED_OUT");
+      if (fromBackend) assertActive();
       const mutation = await this.options.journal.append({
         identity,
         expectedSequence: record.facts.resource.sequence,
         expectedOperationRevision: record.operationRevision,
+        expectedRecoveryRevision: recovery.revision,
         authority: input.authority,
         now,
         facts,
@@ -135,7 +153,6 @@ export class SandboxExecutionReconciliationService {
       record = mutation.record;
       return mutation;
     };
-    const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let reasonCode = "SANDBOX_RECONCILIATION_UNCONFIRMED";
     let applied = false;
@@ -150,18 +167,23 @@ export class SandboxExecutionReconciliationService {
       }
       const backend = this.options.backend;
       if (!backend) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
+      assertActive();
       const mutation = await Promise.race([
         (async () => {
           const resource = await backend[input.action](structuredClone(record), controller.signal);
+          assertActive();
           if (!["released", "lost"].includes(resource.supervision))
             throw new Error("SANDBOX_RECONCILIATION_INCONCLUSIVE");
-          return append(sandboxResourceObservationSchema.parse(resource));
+          return append(sandboxResourceObservationSchema.parse(resource), true);
         })(),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            controller.abort();
-            reject(new Error("SANDBOX_RECONCILIATION_TIMED_OUT"));
-          }, this.options.timeoutMs);
+          timer = setTimeout(
+            () => {
+              controller.abort();
+              reject(new Error("SANDBOX_RECONCILIATION_TIMED_OUT"));
+            },
+            Math.max(1, Date.parse(recovery.deadlineAt) - Date.parse(this.options.now())),
+          );
         }),
       ]);
       reasonCode = mutation.record.workspaceBlocked
@@ -169,6 +191,8 @@ export class SandboxExecutionReconciliationService {
         : "SANDBOX_RECONCILIATION_CONFIRMED";
       applied = mutation.applied;
     } catch (error) {
+      // Stop accepting callbacks before persisting the terminal recovery state.
+      controller.abort();
       if (
         error instanceof Error &&
         [
@@ -178,12 +202,16 @@ export class SandboxExecutionReconciliationService {
         ].includes(error.message)
       )
         reasonCode = error.message;
+      await refreshOwned();
       // Failure never revokes a historical release or invents isolation evidence.
       if (record.facts.resource.supervision !== "released")
         applied = (await append(observation("lost", reasonCode))).applied;
     } finally {
       clearTimeout(timer);
       controller.abort();
+      // Concurrent operation results are independent of resource recovery. Finish
+      // against the latest sequence without replacing them or another owner.
+      await refreshOwned();
       await this.options.journal.finishRecovery({
         identity,
         expectedSequence: record.facts.resource.sequence,

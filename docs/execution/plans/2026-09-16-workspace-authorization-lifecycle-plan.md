@@ -56,12 +56,12 @@ date: "2026-09-16"
 
 ### 当前实施进展
 
-下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-conflict-01/standard-ci-result.json)为 3,689 项全部通过，环境为本机 macOS。
+下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-01/standard-ci-result.json)为 3,709 项全部通过，环境为本机 macOS。
 
 | 阶段 | 已实现并验证的部分 | 仍需完成的重点 |
 | --- | --- | --- |
 | [P0](#p0) | r3 交互已确认；身份和持久化合同已记录；四项首次加载立即发送回归已接入原浏览器入口 | 完整基线、全部合同和 68 项联合验收仍不能划为已完成 |
-| [P1](#p1) | 永久释放事实、结果交接不反锁；未绑定预约停止隔离与启动发现；停止目标与同 Run 跨页资源独立派发、清理等待上限及完成输出保留；未启动宿主退出后的预约释放凭据与原停止隔离 | 已启动进程及后代资格、迟到矛盾证据、恢复错误分类与调度 |
+| [P1](#p1) | 永久释放事实、结果交接不反锁；未绑定预约停止隔离与启动发现；停止目标与同 Run 跨页资源独立派发、清理等待上限及完成输出保留；未启动宿主退出后的预约释放凭据与原停止隔离；恢复写入的事务内归属检查、超时回调隔离和并发结果保留 | 已启动进程及后代资格、迟到矛盾证据、完整恢复错误分类与调度 |
 | [P2](#p2) | 审批摘要与重复决定、额度预约、排队身份、工具执行前检查点及取消传播 | 跨 boot/fence 的执行权重新绑定、执行中撤销及所有生产路径联合覆盖 |
 | [P3](#p3) | 文件路径槽位/身份/祖先协调、公平队列、固定目标合同、暂存发布与保存恢复记录；合同 3 的并行候选准备、可停止计算、原队列提交与安装入口；确定未派发的冲突重放、新 intent 关联与有限重生成已通过本地验收 | 目录改名协议、Worker 执行后的冲突处理、跨 Worker 与多文件完整验收；合同 3 的平台资格与部署未执行 |
 | [P4](#p4) | 纯联网私有范围、无用户目录 Grant/挂载/claim；本机越界拒绝探针 | 任意命令的更窄可强制范围、可选副本与逐文件应用、Linux 平台资格 |
@@ -114,7 +114,7 @@ date: "2026-09-16"
 | 文件准备及发布 | `PreparedFileOperation.id/revision/canonicalHash`；发布前的暂存 inode、摘要及父目录身份 | 受保护操作记录与 Job 发布日志先于最终路径副作用；恢复只核验原候选身份，不能仅凭内容相同推断本次成功。Schema 37 的恢复 artifact 关联原 invocation |
 | 永久释放事实 | `sandbox_release_receipts.job_id` 唯一，关联具体资源 sequence 与接纳时有效的核验证据 | Schema 33 同事务保存回执并结束原 occupancy；临时凭证随后过期不撤销历史释放 |
 | 后续风险保护 | `job_id + barrier_id`；当前已实现 `control_unacknowledged` | 可执行控制派发未确认时独立保存 barrier；只交付结果的 ACK 不建立新占用。其他迟到矛盾证据类型尚未扩展 |
-| 有界恢复 | 原 Job 内 `recovery.revision/owner/attempts`，独立 action、开始时间、期限及终点 | `beginRecovery` 取得有限期处理权，`finishRecovery` 比较 owner/revision 后结束；`unresolved` 不代表后台自动重试。启动只登记旧尝试未知，不自动运行工具 |
+| 有界恢复 | 原 Job 内 `recovery.revision/owner/attempts`，独立 action、开始时间、期限及终点 | `beginRecovery` 取得有限期处理权，恢复 `append` 携带 `expectedRecoveryRevision` 并在事务内检查 owner/revision/运行状态；期限到达后仅可记录未知。`finishRecovery` 比较 owner/revision 后结束；`unresolved` 不代表后台自动重试。启动只登记旧尝试未知，不自动运行工具 |
 | 结果交付 | `sandbox_execution_intents.intent_id`、`kind=tool_result`，绑定原 Job 和结果版本 | 准备、派发、确认分开记录；重试仅补原受保护交付回执，不能重跑工具。`kind=continue` 仍属于能够变更资源的控制 |
 | 自动审查 | 唯一 `reviewId/intentId`，绑定策略、模型配置和请求摘要 | Schema 39 先登记再调用模型，完成与审批、精确 Grant 和执行观察同事务；重复/迟到结果不产生第二次授权或步骤 |
 
@@ -422,7 +422,7 @@ fixture 测试可控制网关响应来覆盖展示，但真正的审批与文件
 
 实施批次按可验收行为组织，不按单个补丁或提交拆分。同一批次内先完成相关实现并运行定向测试；共享端口修改后立即检查调用方和测试替身，新运行模块先验证加载与类型。源码稳定后集中执行本节要求的交付验证，并一次更新相关文档；已有结果仅在输入与环境未受影响时复用。进展以原验收条件和剩余证据报告，不以提交数或测试总数估算完成度。
 
-当前批次为 W06 的未启动分支：停止标记、原宿主未启动及退出证明、原子释放、重复停止与重启后的历史读回，以及旧任务禁止再次启动。生产接入、迁移、只读审计和实际宿主探针一起验收；不将该分支通过等同于已启动进程及后代的完整资格。
+当前批次为 P1 的恢复尝试隔离：超时回调不再进入核验或写入，被接管的旧任务不能提交释放证明或结束新任务，并发操作结果与永久释放事实保持。服务入口、真实 SQLite 事务、生产存储端口及重开读回一起验收；不将此批通过等同于已启动进程及后代的完整资格。
 
 ```sh
 npm run check
@@ -782,8 +782,18 @@ Pi 从当前 Run 的真实工具历史提出前序冲突关联，宿主复核同
 
 定向验证已覆盖已知冲突重放、新批准、未派发记录缺失/可能已发送时拒绝关联、实际 Pi 循环的读取/新调用和持续冲突停止。早期版本误把重放送回授权入口的失败、测试使用了错误审批字段和列表次序的失败均保留在 `p3-conflict-01`。[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-conflict-01/standard-ci-result.json)通过：243 个文件、3,689 项，零失败、零跳过；发布扫描通过。[冻结审计](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-conflict-01/freeze-check-final.json)确认 1,232 个输入未变化。类型、打包后 Agent 入口、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查均通过。这些结果不证明模型能够理解任意合并意图、Worker 已启动后冲突自动恢复、完整页面或跨平台资格。
 
+<a id="p1-recovery-fencing"></a>
+
+### P1 恢复尝试隔离与并发结果保留
+
+本批沿用原恢复入口、持久任务与 SQLite 事务，不增加重试调度器或工具协议。新增回归先确认两处缺陷：超时后迟到的 `lost` 返回仍尝试写入、迟到的 `released` 返回仍触发证据核验；另一个恢复任务已接管时，原任务仍能提交释放事实。[超时复现](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-01/races-red.log)与[接管后错误释放复现](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-01/ownership-red.log)保留于独立目录。
+
+修复后，恢复写入带原任务 revision，并在同一 SQLite 事务中比较 owner、revision、运行状态和释放期限；过期任务仍可登记无结论，但被接管或结束的任务不能再改写资源。服务在调用宿主前及返回后检查剩余期限，超时后拒绝旧回调进入新校验或写入；登记本身耗尽期限时不再调用宿主。失败和结束前重新读取当前事实，保留并发到达的结果、效果与永久释放记录，旧任务不能替新任务结束恢复。此处拒绝的是旧恢复尝试；后续独立核验仍须重新取得有限期处理权。
+
+[恢复矩阵](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-01/recovery-matrix.log) 116 项通过，包含真实 SQLite、生产 repository 端口及数据库重开后的独立读回；定时器和宿主证据仍为受控输入。新增测试最初用了当前 TypeScript lib 未支持的 `Promise.withResolvers`，类型检查失败后改为本地 Promise 屏障，不改变工程编译目标。[消费者回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-01/consumers.log) 114 项通过；[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-01/standard-ci-result.json) 243 个文件、3,709 项全部通过，零失败、零跳过，产物发布扫描通过。[冻结复核](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-01/freeze-check-final.json)确认 1,179 个输入在构建及测试期间未变化，之后仅补验收记录。类型、任务范围格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过；全库 `npm run check` 与 lint 仍被原有未跟踪 r1/r2 原型脚本阻断。四份受影响 Runbook 已修正恢复归属说明并经治理工具重新封存；没有执行任何 Runbook 的生产操作。无需数据库迁移；端口字段为宿主内部附加校验，Schema 41 与原 Worker 工具合同保持不变。此批不代表进程后代资格、迟到矛盾证据的新风险保护、完整错误分类与调度已完成。
+
 ### 当前完成边界与下一步
 
-P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。完成当前授权回归与标准验证后，继续推进文件资源协调、保存协议和页面真实状态。
+P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 释放与交接修复已提交为 `fe92846`，P2 的当前实现已提交为 `e4eebf4`，P3 发布与队列已提交为 `b5b3e9a`，文件级合同已保存为 `0183db0`，生产发布恢复已保存为 `9e0a11e`，只读历史清单为 `649b5a4`，排队身份及同执行身份续接为 `ecefe09`，工具执行前检查点为 `8e9eded`，纯联网私有范围为 `58c6598`，默认关闭的审查持久化基础为 `f379f80`；尚无生产迁移或部署。Architecture/README 暂不将未验证阶段写成已完成能力，Spec/Plan 保持 active。本批恢复写入隔离已完成本地标准验证；下一优先项是 P1 已启动任务及后代的停止与释放资格，须用真实宿主证明旧 writer 不可再写，再验证冲突请求能否重新准入。其他 P1～P7 缺口继续以当前实施进展表为准。
 
 [单一决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv) 记录本轮选择及证据；没有建立另一个项目状态缓存。
