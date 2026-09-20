@@ -133,8 +133,8 @@ date: "2026-09-16"
 | --- | --- |
 | 原待办与验收 | [P2 执行中撤销](#p2)，重点 A08，关联 E05/E08/E09、U03；只覆盖本批实际证明的分支 |
 | 用户可观察结果 | 撤销生效后阻止新的派发和披露，原执行进入受控停止；已产生效果保留，未知状态不假报成功、失败或释放，页面反映同一后端事实 |
-| 已有基础 | `32cb658` 已保存[当前权限与停止局部验证](#p2-live-authority)。网络代理检查仍有未提交改动和局部测试，未完成生产装配、平台及页面联合验收，不视为本批完成 |
-| 首个具体动作 | 回读未提交网络改动及现有证据；在原测试体系补齐一条“生产权限撤销 → 原 Worker/Job Host 阻止后续外发并请求停止 → SQLite 独立读回效果/占用 → 当前状态查询与页面更新”的最小路径。先验证有效权限下能到达目标，再撤销，禁止用 fixture 替系统完成关键步骤 |
+| 已有基础 | `32cb658` 已保存[当前权限与停止局部验证](#p2-live-authority)。本轮已补网络逐次核验、实际目录撤销、原输出/占用读回及浏览器直接查询实时 SQLite 的最小路径，见[本轮联合验证](#p2-network-authority)；标准构建与完整测试已通过 |
+| 本轮下一动作 | 定向 220 项、类型与 Mac 实际路径已通过；冻结源码后的标准构建与完整测试通过 248 文件、3,968 项，原浏览器 12 场景通过。完成本批本地提交后进入只读网络有限重试。浏览器保留导航/认证夹具，执行状态来自实际 Worker 与 SQLite，撤销后不注入资源事件；不得把该边界写成完整生产登录、模型循环或 Linux 平台验收 |
 | 定向入口 | 复用[真实 UDS/SQLite 权限检查](../../../test/integration/production-invocation-authority.test.ts)、[生产范围](../../../test/integration/production-sandbox-scope.test.ts)、[生产 Worker 生命周期](../../../test/integration/sandbox-v2-worker-lifecycle.test.ts)、[资源恢复](../../../test/integration/sandbox-resource-recovery-scheduling.test.ts)、[生产装配](../../../apps/execution-worker/test/production-worker-composition.unit.test.ts)、[浏览器执行链](../../../scripts/test-execution-chain-browser.mjs)。这些是扩展入口，不是已存在完整联合测试的声明；新增路径实际运行后补准确命令 |
 | 完成条件与限制 | 原调用不重复消费/执行，撤销或核验不可用时无新的外发/披露，停止与已有效果分别持久且可独立读回，页面不靠伪造事件刷新；目录授权、网络出口及等待中撤销的相关生产分支均有覆盖说明。Mac 无法证明全部后代停止时保持 unknown 与必要占用，不据此勾选完整平台要求 |
 | 后续次序 | 满足上述检查后按影响做一次必要交付验证，再进入只读网络有限重试和未准入队列跨 boot/fence 续接；不能在撤销前提尚未成立时增加自动重试。具体模型与生产操作仍服从[原授权边界](#decisions) |
@@ -170,7 +170,7 @@ date: "2026-09-16"
 | --- | --- | --- |
 | [P0](#p0) | r3 交互已确认；身份和持久化合同已记录；四项首次加载立即发送回归已接入原浏览器入口 | 完整基线、全部合同和 68 项联合验收仍不能划为已完成 |
 | [P1](#p1) | 永久释放事实、结果交接不反锁；未绑定预约停止隔离与启动发现；停止目标与同 Run 跨页资源独立派发、清理等待上限及完成输出保留；未启动宿主退出后的预约释放凭据与原停止隔离；恢复写入的事务内归属检查、超时回调隔离和并发结果保留；Mac/Linux 真实后代写入与构建产品预约释放探针；释放后矛盾资源证据的独立保护与有限恢复；资源恢复安全原因与受保护诊断；[持久调度、独立扫描、取消和暂停](#p1-recovery-scheduling)；[无 Web 启动与停止生命周期](#p1-recovery-startup)；[产品结果证据的展示优先级](#p1-outcome-projection) | 完整安装资格、Mac 后代停止能力、完整业务阶段错误分类与页面下一动作 |
-| [P2](#p2) | 审批摘要与重复决定、额度预约、排队身份、工具执行前检查点及取消传播 | 跨 boot/fence 的执行权重新绑定、执行中撤销及所有生产路径联合覆盖 |
+| [P2](#p2) | 审批摘要与重复决定、额度预约、排队身份、工具执行前检查点及取消传播 | 跨 boot/fence 的执行权重新绑定；执行中撤销已有[实际网络与页面证据](#p2-network-authority)，完整生产登录/模型循环与其他平台联合覆盖仍待完成 |
 | [P3](#p3) | 文件路径槽位/身份/祖先协调、公平队列、固定目标合同、暂存发布与保存恢复记录；合同 3 的并行候选准备、可停止计算、原队列提交与安装入口；确定未派发的冲突重放、新 intent 关联与有限重生成已通过本地验收 | 目录改名协议、Worker 执行后的冲突处理、跨 Worker 与多文件完整验收；合同 3 的平台资格与部署未执行 |
 | [P4](#p4) | 纯联网私有范围、无用户目录 Grant/挂载/claim；本机越界拒绝探针 | 任意命令的更窄可强制范围、可选副本与逐文件应用、Linux 平台资格 |
 | [P5](#p5) | 默认关闭的审查持久化、宿主批准校验、现有模型边界适配、预算/取消和来源事件 | 替代方案建立新 intent 的完整路径；具体配置获确认后的真实模型、披露和费用验收 |
@@ -1057,6 +1057,20 @@ SQLite 的候选筛选、领取及最终完成分别检查资格。最终写入�
 资源扫描与排定事务现在识别 Grant/Handle 撤销、期限失效和能力禁用；Run 仍在运行也可排定原资源 stop。未绑定预约先持久禁止启动，已绑定资源走原核验入口；停止无结论时保留 claim、barrier 和明确暂停，不消耗第二次额度、不回滚已发生效果、不通过修改 Run 终态证明释放。当前沿用 Schema 43，没有新增迁移或实际生产操作。
 
 [本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-live-authority-01/README.md)保存四处失败前回归、实际 UDS＋SQLite 撤销与效果保留、官方 MCP SDK 及工具消费者、direct/worker 资源恢复。正式构建通过，完整标准测试 3,955/3,956 通过；唯一失败是安全矩阵仍引用扩展前的 MCP 测试名称。修正矩阵引用后该测试通过，回读 1,081 项输入确认仅矩阵 fixture 变化，复用其余通过项和构建，组合覆盖 3,956 项；未再次全套运行，原 failed 报告保留。任务范围内格式/lint、类型、安全/边界及四份 Runbook 检查通过；该记录不作为全计划完成证据。目录授权撤销、完整 Gateway→Worker→文件→页面联合验收和真实平台停止资格仍需继续核验。
+
+<a id="p2-network-authority"></a>
+
+### P2：网络逐次核验与撤销后的实际页面状态（2026-09-20）
+
+[↑ 返回阅读导航](#contents)
+
+本批对应 [P2 执行中撤销](#p2)与 A08，关联 E05/E08/E09、U03。Job Host 在 DNS 前、拨号前和已有连接的 250 ms 周期中，经原认证 IPC 向 Worker 请求一次性核验；Worker 通过原 Payload UDS 读取 Agent 当前 scope，不缓存许可、不再次消费，也不更新监督循环的状态快照。回复重放、核验拒绝或 1500 ms 未答均停止网络使用。TLS 内部请求不可见，不能宣称每个加密请求都有原子授权或跨进程瞬时撤销。
+
+沿用原构建产品探针，实测有效权限建立连接后分别撤销操作 Grant、目录 Grant；实际 Worker/Job Host 停止，SQLite 保留原输出与占用。目录撤销不靠撤销操作 Grant 代替。等待中的原计划也在目录撤销后拒绝续接，原队列、批准和次数不变。Mac 的后代清理仍未知，保持 `unresolved` 与相交占用，不据此完成完整平台停止要求。
+
+最小浏览器路径直接读取 `ThreadExecutionProjection`、真实 SQLite 与正在执行的 Worker，使用原页面测试入口承载导航和 Gateway 传输；没有生产登录/模型循环，未生成补救性的 Trace 或资源事件。联测发现真实控制仍有效时，投影把“尚无最终结果”误当作未知结果。新增回归先证明资源为执行中但页面结论错误，再修正等待结果与明确未知的区别；过期观察、显式未知及已停止无结果仍未确认。随后浏览器观察执行中→撤销后未确认，并验证刷新保持同一事实。
+
+交付前定向检查：15 文件、220 项通过；类型、任务范围格式/lint、真实目录撤销与浏览器轮询/刷新通过。实际测量、原始失败、夹具修正与证据边界见[本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-network-authority-01/README.md)。冻结源码后的[标准构建](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-network-authority-01/standard-build-result.json)及[完整测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-network-authority-01/standard-test-result.json)通过：248 文件、3,968 项，零失败、零跳过；[原 Chrome 回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-network-authority-01/browser-regression/result.json)12 场景通过。边界、覆盖映射、不变量、秘密扫描、CI policy、严格文档检查通过；全库格式与 lint 仍仅被两份原有未跟踪原型 verify.cjs 阻断，本批文件定向检查通过。四份 Runbook 已更新并重新封存，没有执行生产步骤。完整 P2/P6 与跨平台验收保持未完成。下一批先做只读网络有限重试，再做未准入队列跨 boot/fence 续接。
 
 <a id="checkpoint-2026-09-20"></a>
 

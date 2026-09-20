@@ -70,7 +70,11 @@ function endToEnd(headers: IncomingMessage["headers"]) {
 /** One Job Host owns one upstream. It accepts HTTP and CONNECT from SRT;
  * SRT translates SOCKS into CONNECT. No TLS interception, credential injection,
  * redirects, environment proxy discovery, or DNS cache is performed here. */
-export async function openNetworkEgress(allowedDomains: readonly string[]) {
+export async function openNetworkEgress(
+  allowedDomains: readonly string[],
+  assertCurrent: () => Promise<void>,
+) {
+  if (typeof assertCurrent !== "function") throw new Error("EGRESS_AUTHORITY_REQUIRED");
   const allowed = new Set(allowedDomains);
   const token = randomBytes(32).toString("hex");
   const expectedAuth = Buffer.from(`Basic ${Buffer.from(`job:${token}`).toString("base64")}`);
@@ -96,6 +100,8 @@ export async function openNetworkEgress(allowedDomains: readonly string[]) {
       deniedTargets++;
       throw new Error("denied");
     }
+    await assertCurrent();
+    if (stopped || client.destroyed) throw new Error("stopped");
     // Check every answer, then dial a numeric IP; no second resolver invocation.
     const addresses = await lookup(host, { all: true, verbatim: true });
     if (stopped || client.destroyed) throw new Error("stopped");
@@ -104,6 +110,8 @@ export async function openNetworkEgress(allowedDomains: readonly string[]) {
       deniedAddresses++;
       throw new Error("denied");
     }
+    await assertCurrent();
+    if (stopped || client.destroyed) throw new Error("stopped");
     return selected;
   }
   const server = createServer(
@@ -218,10 +226,23 @@ export async function openNetworkEgress(allowedDomains: readonly string[]) {
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("EGRESS_BIND_FAILED");
+  // TLS contents are opaque. Bound continued use of established tunnels using
+  // the existing Job Host heartbeat cadence; never cache an authority success.
+  let checking = false;
+  const authorityTimer = setInterval(() => {
+    if (stopped || checking || sockets.size === 0) return;
+    checking = true;
+    void assertCurrent()
+      .catch(() => close())
+      .finally(() => {
+        checking = false;
+      });
+  }, 250);
   let closing: Promise<void> | undefined;
   function close(): Promise<void> {
     if (closing) return closing;
     stopped = true;
+    clearInterval(authorityTimer);
     const draining = [...sockets].map(
       (socket) =>
         new Promise<void>((resolve) => {

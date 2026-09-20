@@ -12,6 +12,8 @@ const installed = process.env.HIMAWARI_QUALIFY_INSTALLED_RUNTIME
   : null;
 const installedRequire = installed ? createRequire(path.join(installed, "package.json")) : null;
 const resolvedModules = new Set();
+// Product diagnostics belong on stderr; stdout is the single machine-readable report.
+const originalConsole = globalThis.console;
 
 if (
   process.env.HIMAWARI_LIVE_SANDBOX_PROBE !== "1" ||
@@ -62,12 +64,30 @@ const server = await createServer({
     : [],
 });
 try {
+  globalThis.console = new Console({ stdout: process.stderr, stderr: process.stderr });
   const { qualifyProductionSandbox } = await server.ssrLoadModule(
     "/test/qualification/sandbox-production-mac-probe.ts",
   );
+  const execute = (browser) =>
+    qualifyProductionSandbox(
+      process.argv.includes("--v2"),
+      process.argv.includes("--revoke-network"),
+      process.argv.includes("--revoke-directory"),
+      browser,
+    );
+  const browserOutput = process.argv.indexOf("--browser-output");
+  if (browserOutput !== -1 && (!process.argv[browserOutput + 1] || process.platform !== "darwin"))
+    throw new Error("SANDBOX_BROWSER_OUTPUT_AND_MAC_REQUIRED");
+  const result =
+    browserOutput === -1
+      ? await execute()
+      : await (
+          await import("../../../test/qualification/sandbox-production-browser.mjs")
+        ).qualifySandboxBrowser(execute, path.resolve(process.argv[browserOutput + 1]));
   process.stdout.write(
-    `${JSON.stringify({ ...(await qualifyProductionSandbox(process.argv.includes("--v2"), process.argv.includes("--revoke-network"))), installedRuntime: installed, installedModules: [...resolvedModules].sort() })}\n`,
+    `${JSON.stringify({ ...result, installedRuntime: installed, installedModules: [...resolvedModules].sort() })}\n`,
   );
 } finally {
   await server.close();
+  globalThis.console = originalConsole;
 }

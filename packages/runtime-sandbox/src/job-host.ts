@@ -38,8 +38,11 @@ export interface SandboxJobHost {
 export function prepareSandboxJobHost(
   value: JobHostRequest,
   controlDirectory?: string,
+  assertNetworkAuthority?: () => Promise<void>,
 ): SandboxJobHost {
   const request = parseJobHostRequest(value);
+  if (request.policy.allowedDomains.length && !assertNetworkAuthority)
+    throw new Error("JOB_HOST_NETWORK_AUTHORITY_REQUIRED");
   const sessionId = randomUUID();
   const controlBinding =
     controlDirectory === undefined
@@ -54,6 +57,8 @@ export function prepareSandboxJobHost(
   let supervision: JobHostSupervision | null = null;
   let lastMessageTick = performance.now();
   let ipcSequence = 0;
+  let authorityCheckId = 0;
+  let authorityChecksPending = 0;
   let workerSequence = 0;
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
   const child = fork(fileURLToPath(new URL(`./job-host-main.${extension}`, import.meta.url)), [], {
@@ -119,6 +124,8 @@ export function prepareSandboxJobHost(
     request?: JobHostRequest;
     reason?: string;
     control?: JobHostControlBinding;
+    checkId?: number;
+    allowed?: boolean;
   }) => {
     if (child.connected)
       child.send(
@@ -213,6 +220,36 @@ export function prepareSandboxJobHost(
       taskTreeGuarantee: "unverified",
     };
     if (message["type"] === "heartbeat") return;
+    if (message["type"] === "authority_check") {
+      if (
+        !started ||
+        completion ||
+        message["checkId"] !== authorityCheckId + 1 ||
+        authorityChecksPending >= 128 ||
+        !assertNetworkAuthority
+      ) {
+        cancel("host_failure");
+        return;
+      }
+      const checkId = ++authorityCheckId;
+      authorityChecksPending++;
+      void (async () => {
+        let allowed = false;
+        try {
+          if (cancelled || ended || Date.now() >= Date.parse(request.deadlineAt))
+            throw new Error("stopped");
+          await assertNetworkAuthority();
+          allowed = !cancelled && !ended && Date.now() < Date.parse(request.deadlineAt);
+        } catch {
+          /* A missing answer or unavailable authority is denial. */
+        } finally {
+          authorityChecksPending--;
+        }
+        if (!ended) send({ type: "authority_result", checkId, allowed });
+        if (!allowed) cancel("cancelled");
+      })();
+      return;
+    }
     if (message["type"] === "ready") {
       if (
         prepared ||

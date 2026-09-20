@@ -15,6 +15,7 @@ import {
   openJobHostControl,
 } from "../../packages/runtime-sandbox/src/job-host-control.ts";
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
+import { revokeFixtureDirectoryGrant } from "../fixtures/revoke-directory-grant.ts";
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { AGENT_ID, OWNER_ID, T1, T2 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
@@ -68,6 +69,39 @@ it("reuses the persisted queued plan with its original receipt and deadlines", a
   ).rejects.toThrow();
   await f.repository.authorizationStore().revokeGrant(f.input.authorizationRef ?? "", T1, "test");
   await expect(f.services.runtime.prepare(f.input, f.call)).rejects.toThrow();
+});
+it("rejects a waiting original operation after only its directory Grant is withdrawn", async () => {
+  const f = await productionSandboxScope(descriptor("bash"));
+  cleanups.push(f.close);
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("expected v2");
+  const queued = await f.services.brokerV2.preparations.enqueue({
+    ...prepared,
+    invocation: f.input,
+  });
+  const beforeQueue = await f.services.brokerV2.preparations.readQueuedByInvocation({
+    runId: f.call.runId,
+    invocationId: f.input.invocationId,
+  });
+  expect(beforeQueue).toMatchObject({ ...queued, plan: prepared.plan });
+  // Positive control: unchanged authority can recover the original frozen plan.
+  expect(await f.services.runtime.prepare(f.input, f.call)).toEqual(prepared);
+  const grants = await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID);
+  expect(
+    (await revokeFixtureDirectoryGrant(f.repository, f.fileBinding.grant.id, T1))?.value[
+      "revokedAt"
+    ],
+  ).toBe(T1);
+  await expect(f.services.runtime.prepare(f.input, f.call)).rejects.toThrow();
+  expect(await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID)).toEqual(grants);
+  const original = await f.services.brokerV2.preparations.readQueuedByInvocation({
+    runId: f.call.runId,
+    invocationId: f.input.invocationId,
+  });
+  expect(original).toEqual(beforeQueue);
+  expect(
+    await f.services.brokerV2.preparations.readAdmission(prepared.plan.identity),
+  ).toBeUndefined();
 });
 it.each(["read", "edit", "write", "search", "bash", "background"])(
   "production scope derives %s from the same durable Grant",

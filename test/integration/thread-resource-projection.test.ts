@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.js";
+import { projectThreadExecutionState } from "../../packages/application/src/services/thread-execution-state.js";
+import { createRunId } from "@himawari-agent/domain";
+import { sandboxExecutionFactsSchema } from "@himawari-agent/execution-contracts";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   openSandboxJournal,
@@ -16,6 +19,91 @@ import {
 } from "@himawari-agent/application";
 
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+
+it("keeps a currently observed execution active until its missing result becomes uncertain", async () => {
+  const f = await openSandboxJournal();
+  try {
+    const { record } = sandboxV2Call(f, "admit", sandboxV2Admission(f));
+    const controlled = sandboxExecutionFactsSchema.parse({
+      ...record.facts,
+      resource: {
+        ...record.facts.resource,
+        supervision: "controlled",
+        evidence: {
+          ref: "observed-process",
+          digest: "a".repeat(64),
+          qualificationRef: record.plan.binding.qualificationRef,
+          profileRef: record.plan.binding.profileRef,
+          validUntil: T2,
+          subject: { kind: "local_process", processIdentityRef: "owned-process" },
+        },
+      },
+    });
+    const read = (facts = controlled, now = T1) =>
+      readThreadExecutionResources({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId: record.plan.identity.threadId ?? "",
+        runId: record.plan.identity.runId,
+        inventory: {
+          legacyResourcesPending: false,
+          queue: [],
+          admissions: [{ phase: "bound", record: { ...record, facts } }],
+        },
+        now,
+        payloads: { get: async () => f.scopePayload },
+        protector: f.protector,
+        digest,
+        itemId: (id) => id,
+      });
+    const running = await read();
+    // Same contract as the real Job Host observation: valid control, no final output yet.
+    expect(running.phase).toBe("executing");
+    const run = {
+      runId: createRunId(record.plan.identity.runId),
+      revision: 1,
+      status: "running" as const,
+      createdAt: T1,
+      updatedAt: T1,
+    };
+    expect(projectThreadExecutionState(run, [], true, running)).toMatchObject({
+      displayPhase: "preparing",
+      reasonCode: "RESOURCE_EXECUTION_OBSERVED",
+    });
+    expect(running.unresolvedResultItemIds).toEqual([]);
+    const explicitlyUnknown = await read(
+      sandboxExecutionFactsSchema.parse({
+        ...controlled,
+        result: {
+          schemaVersion: "sandbox-execution.v2",
+          kind: "unknown",
+          identity: record.plan.identity,
+          environmentId: record.plan.environmentId,
+          policyDigest: controlled.environment.policyDigest,
+          contract: {
+            ref: record.plan.operationContract.ref,
+            version: record.plan.operationContract.version,
+          },
+          occurredAt: T1,
+          reasonCode: "EXTERNAL_RESULT_UNKNOWN",
+        },
+      }),
+    );
+    expect(projectThreadExecutionState(run, [], true, explicitlyUnknown).displayPhase).toBe(
+      "unresolved",
+    );
+    const expired = await read(controlled, T2);
+    expect(projectThreadExecutionState(run, [], true, expired)).toMatchObject({
+      displayPhase: "unresolved",
+      reasonCode: "RESOURCE_STATE_UNCONFIRMED",
+    });
+    expect(expired.unresolvedResultItemIds).toEqual([
+      f.scope.parentToolCallId ?? f.scope.toolCallId,
+    ]);
+  } finally {
+    await f.close();
+  }
+});
 
 describe("historical resource display", () => {
   it("authenticates parent tool identity and refuses to call a dispatch CAS actual execution", async () => {

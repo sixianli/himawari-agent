@@ -353,3 +353,94 @@ it("does not renew supervision from a delayed message", async () => {
   process.emit("close");
   await host.result;
 });
+
+it("requires current authority for each original network check and never caches success", async () => {
+  const worker = child();
+  const input = request();
+  const authority = vi
+    .fn()
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new Error("revoked"));
+  const host = prepareSandboxJobHost(
+    { ...input, policy: { ...input.policy, allowedDomains: ["example.com:443"] } },
+    undefined,
+    authority,
+  );
+  worker.emitMessage({
+    type: "ready",
+    jobId: input.jobId,
+    attemptId: input.attemptId,
+    policyDigest: input.policyDigest,
+  });
+  await host.ready;
+  host.start();
+  worker.emitMessage({ type: "authority_check", checkId: 1 });
+  await vi.waitFor(() =>
+    expect(worker.send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "authority_result", checkId: 1, allowed: true }),
+      expect.any(Function),
+    ),
+  );
+  worker.emitMessage({ type: "authority_check", checkId: 2 });
+  await vi.waitFor(() =>
+    expect(worker.send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "authority_result", checkId: 2, allowed: false }),
+      expect.any(Function),
+    ),
+  );
+  expect(authority).toHaveBeenCalledTimes(2);
+  worker.emit("close");
+  await host.result;
+});
+
+it("rejects network-enabled preparation without a current authority callback before forking", () => {
+  const input = request();
+  const calls = fork.mock.calls.length;
+  expect(() =>
+    prepareSandboxJobHost({
+      ...input,
+      policy: { ...input.policy, allowedDomains: ["example.com:443"] },
+    }),
+  ).toThrow("JOB_HOST_NETWORK_AUTHORITY_REQUIRED");
+  expect(fork.mock.calls.length).toBe(calls);
+});
+
+it("does not authorize a late successful check after cancellation", async () => {
+  const worker = child();
+  const input = request();
+  let allow!: () => void;
+  const authority = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        allow = resolve;
+      }),
+  );
+  const host = prepareSandboxJobHost(
+    { ...input, policy: { ...input.policy, allowedDomains: ["example.com:443"] } },
+    undefined,
+    authority,
+  );
+  worker.emitMessage({
+    type: "ready",
+    jobId: input.jobId,
+    attemptId: input.attemptId,
+    policyDigest: input.policyDigest,
+  });
+  await host.ready;
+  host.start();
+  worker.emitMessage({ type: "authority_check", checkId: 1 });
+  expect(authority).toHaveBeenCalledTimes(1);
+  host.cancel();
+  allow();
+  await vi.waitFor(() =>
+    expect(worker.send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "authority_result", checkId: 1, allowed: false }),
+      expect.any(Function),
+    ),
+  );
+  expect(
+    worker.send.mock.calls.filter(([m]) => m.type === "authority_result" && m.allowed),
+  ).toEqual([]);
+  worker.emit("close");
+  expect((await host.result).taskTreeCleanup).toBe("unknown");
+});

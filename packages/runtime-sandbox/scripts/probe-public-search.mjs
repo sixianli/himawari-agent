@@ -64,6 +64,9 @@ try {
         cleanupTimeoutMs: 1000,
       },
       control,
+      async () => {
+        /* Explicit probe authority; no production Grant claim. */
+      },
     );
     await host.ready;
     host.start();

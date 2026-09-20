@@ -67,6 +67,7 @@ proxy_auth=$(printf 'srt:%s' "$proxy_token" | /usr/bin/base64)
 for i in $(/usr/bin/seq 1 100); do
   if /usr/bin/grep -q '200 Connection' "$TMPDIR/network-headers"; then
     printf 'run\\n' >> "$TMPDIR/runs"
+    printf '{"probe":"network-established"}'
     printf 'established' > "$TMPDIR/network-established"
     wait
     exit 0

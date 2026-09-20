@@ -119,6 +119,11 @@ export function createProductionSandboxWorker(options: {
           );
           return { outputRef, outputDigest: createHash("sha256").update(bytes).digest("hex") };
         },
+        async () => {
+          const current = await payloads.readSandboxScope(invocation, plan.identity);
+          if (JSON.stringify(current) !== JSON.stringify(resolved))
+            throw new Error("SANDBOX_SCOPE_CHANGED");
+        },
       );
     },
   });

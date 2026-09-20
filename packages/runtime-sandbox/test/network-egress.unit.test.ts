@@ -76,7 +76,7 @@ describe("per-job public network egress", () => {
     },
   );
   it("rejects wrong credentials and unapproved ports without DNS", async () => {
-    const proxy = await openNetworkEgress(["example.com:80"]);
+    const proxy = await openNetworkEgress(["example.com:80"], async () => {});
     try {
       expect((await get(proxy, undefined, false)).status).toBe(407);
       expect((await get(proxy, "http://example.com:81/")).status).toBe(403);
@@ -90,7 +90,7 @@ describe("per-job public network egress", () => {
       { address: "8.8.8.8", family: 4 },
       { address: "127.0.0.1", family: 4 },
     ]);
-    const proxy = await openNetworkEgress(["example.com:80"]);
+    const proxy = await openNetworkEgress(["example.com:80"], async () => {});
     try {
       expect((await get(proxy)).status).toBe(403);
       expect(dial).not.toHaveBeenCalled();
@@ -106,7 +106,7 @@ describe("per-job public network egress", () => {
           resolved = resolve;
         }),
     );
-    const proxy = await openNetworkEgress(["example.com:80"]);
+    const proxy = await openNetworkEgress(["example.com:80"], async () => {});
     const result = get(proxy).catch(() => null);
     await vi.waitFor(() => expect(lookup).toHaveBeenCalled());
     await proxy.close();
@@ -124,7 +124,10 @@ describe("per-job public network egress", () => {
     const port = (server.address() as net.AddressInfo).port;
     dial.mockImplementation((options) => real.connect({ ...options, host: "127.0.0.1", port }));
     lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
-    const proxy = await openNetworkEgress(["example.com:443"]);
+    let active = true;
+    const proxy = await openNetworkEgress(["example.com:443"], async () => {
+      if (!active) throw new Error("revoked");
+    });
     try {
       const endpoint = new URL(proxy.parentProxy.http);
       const client = real.connect(Number(endpoint.port), endpoint.hostname);
@@ -144,11 +147,61 @@ describe("per-job public network egress", () => {
         allowHalfOpen: true,
       });
       expect(lookup).toHaveBeenCalledTimes(1);
-      await proxy.close();
+      active = false;
       await closed;
     } finally {
       await proxy.close();
       server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+  it("rechecks current authority after DNS and rejects before an outbound dial", async () => {
+    // A legal dial must return an actual socket even when the implementation is
+    // faulty, so a failing regression reports the authorization error itself.
+    const real = await vi.importActual<typeof import("node:net")>("node:net");
+    const server = real.createServer();
+    const upstreams = new Set<net.Socket>();
+    server.on("connection", (socket) => {
+      upstreams.add(socket);
+      socket.on("close", () => upstreams.delete(socket));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as net.AddressInfo).port;
+    dial.mockImplementation((options) => real.connect({ ...options, host: "127.0.0.1", port }));
+    let active = true;
+    const authority = vi.fn(async () => {
+      if (!active) throw new Error("revoked");
+    });
+    lookup.mockImplementation(async () => {
+      active = false;
+      return [{ address: "8.8.8.8", family: 4 }];
+    });
+    const proxy = await openNetworkEgress(["example.com:443"], authority);
+    try {
+      const endpoint = new URL(proxy.parentProxy.http);
+      const status = await new Promise<number>((resolve, reject) => {
+        const req = request({
+          host: endpoint.hostname,
+          port: endpoint.port,
+          method: "CONNECT",
+          path: "example.com:443",
+          headers: {
+            "Proxy-Authorization": `Basic ${Buffer.from(`${endpoint.username}:${endpoint.password}`).toString("base64")}`,
+          },
+        });
+        req.on("connect", (response, socket) => {
+          socket.destroy();
+          resolve(response.statusCode ?? 0);
+        });
+        req.on("error", reject);
+        req.end();
+      });
+      expect(status).toBe(403);
+      expect(authority).toHaveBeenCalledTimes(2);
+      expect(dial).not.toHaveBeenCalled();
+    } finally {
+      await proxy.close();
+      for (const socket of upstreams) socket.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });

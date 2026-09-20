@@ -128,6 +128,9 @@ try {
         },
       },
       path.join(base, "control"),
+      async () => {
+        /* Explicit probe authority; no production Grant claim. */
+      },
     );
     try {
       await host.ready;

@@ -8,6 +8,7 @@ import { jobCommand } from "./job-command.ts";
 import { type JobHostControlBinding, openJobHostControl } from "./job-host-control.ts";
 import { type JobHostRequest, parseJobHostRequest } from "./job-host-protocol.ts";
 import { captureLinuxNamespace, type LinuxNamespaceIdentity } from "./linux-namespace.ts";
+import { JobHostNetworkAuthority } from "./job-host-network-authority.ts";
 import { openNetworkEgress } from "./network-egress.ts";
 import { compileSandboxPolicy } from "./policy.ts";
 import { startReadinessProbe } from "./readiness-probe.ts";
@@ -63,6 +64,8 @@ function send(message: Record<string, unknown>) {
       },
     );
 }
+const networkAuthority = new JobHostNetworkAuthority(send, () => stop("cancelled"));
+
 function killTask() {
   // After wait/exit, the numeric PID can be reused; never turn it into a
   // recovery handle. Surviving descendants remain explicitly unverified.
@@ -80,6 +83,7 @@ async function finish() {
   observer?.stop();
   clearInterval(heartbeat);
   phase = "stopping";
+  networkAuthority.close();
   void egress?.close();
   clearTimeout(deadline);
   killTask();
@@ -127,6 +131,7 @@ function stop(cause: string) {
   if (phase === "finished") return;
   if (phase !== "stopping") reason = cause;
   phase = "stopping";
+  networkAuthority.close();
   void egress?.close();
   killTask();
   emergency ??= setTimeout(() => {
@@ -227,7 +232,10 @@ async function prepare(value: unknown, controlValue?: unknown) {
   // mandatory routing implementation. Both proxy schemes disable all bypasses.
   sdkOperation = (async () => {
     const configuration = JSON.parse(policy.policyJson);
-    egress = await openNetworkEgress(configuration.network.allowedDomains);
+    egress = await openNetworkEgress(
+      configuration.network.allowedDomains,
+      networkAuthority.assertCurrent,
+    );
     if (phase !== "preparing") {
       await egress.close();
       return;
@@ -415,6 +423,13 @@ process.on("message", (message: unknown) => {
       }, 250);
     } else if (message.sessionId !== sessionId) throw new Error("JOB_HOST_SESSION_REPLACED");
     if (message.type === "heartbeat") return;
+    if (message.type === "authority_result") {
+      networkAuthority.receive(
+        "checkId" in message ? message.checkId : undefined,
+        "allowed" in message ? message.allowed : undefined,
+      );
+      return;
+    }
     if (message.type === "prepare" && "request" in message)
       await prepare(message.request, "control" in message ? message.control : undefined);
     else if (message.type === "start") await start();

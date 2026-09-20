@@ -325,6 +325,22 @@ export class ProductionSandboxExecutionV2 {
           cleanupTimeoutMs: 5000,
         },
         controlDirectory,
+        async () => {
+          if (entry.cancelled || this.closed) throw new Error("SANDBOX_STOPPED");
+          // Concurrent egress checks must not replace the supervision loop's
+          // record with an older snapshot returned by a delayed read.
+          const current = (
+            await this.options.payloads.sandboxExecution(entry.invocation, entry.identity, {
+              kind: "resolve",
+            })
+          ).resolvedScope;
+          if (
+            entry.cancelled ||
+            this.closed ||
+            JSON.stringify(current) !== JSON.stringify(resolved)
+          )
+            throw new Error("SANDBOX_SCOPE_CHANGED");
+        },
       );
       entry.host = host;
       await host.ready;

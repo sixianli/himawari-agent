@@ -15,7 +15,7 @@ it("rejects upstream initialization instead of returning a direct-egress fallbac
     ),
   });
   createServer.mockReturnValue(server);
-  await expect(openNetworkEgress(["example.com:443"])).rejects.toMatchObject({
+  await expect(openNetworkEgress(["example.com:443"], async () => {})).rejects.toMatchObject({
     code: "EADDRINUSE",
   });
 });

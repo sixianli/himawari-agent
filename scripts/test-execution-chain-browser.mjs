@@ -569,7 +569,15 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
   return cases;
 }
 
-export async function qualifyExecutionChainFixture(browser, output, staticRoot) {
+export async function qualifyExecutionChainFixture(
+  browser,
+  output,
+  staticRoot,
+  qualify = async (browser, baseUrl, output) => [
+    ...(await qualifyExecutionChain(browser, baseUrl, output)),
+    ...(await qualifyExecutionState(browser, baseUrl, output)),
+  ],
+) {
   await mkdir(output, { recursive: true });
   const server = spawn(process.execPath, ["test/e2e/fixtures/control-center-browser-server.mjs"], {
     env: {
@@ -601,8 +609,7 @@ export async function qualifyExecutionChainFixture(browser, output, staticRoot) 
         reject(new Error("Fixture exited"));
       });
     });
-    const cases = await qualifyExecutionChain(browser, baseUrl, output);
-    cases.push(...(await qualifyExecutionState(browser, baseUrl, output)));
+    const cases = await qualify(browser, baseUrl, output);
     await writeFile(
       path.join(output, "result.json"),
       JSON.stringify(

@@ -1,0 +1,8 @@
+{
+  "error": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"RESOURCE_EXECUTION_OBSERVED\"\nReceived: \"RESOURCE_STATE_UNCONFIRMED\"\n\nCall Log:\n- Timeout 5000ms exceeded while waiting on the predicate",
+  "queries": 0,
+  "errors": [],
+  "state": {
+    "error": "SqlitePersistenceError: The SQLite execution worker is not running"
+  }
+}

@@ -21,23 +21,28 @@ export function createProductSandboxHostSession(
   protectOutput: (
     result: JobHostResult,
   ) => Promise<{ readonly outputRef: string; readonly outputDigest: string }>,
+  assertNetworkAuthority?: () => Promise<void>,
 ): SandboxHostSession {
-  const host = prepareSandboxJobHost({
-    ...resolved,
-    jobId: plan.identity.jobId,
-    attemptId: plan.identity.attemptId,
-    deadlineAt: new Date(
-      Math.min(
-        Date.parse(plan.effectiveDeadlineAt),
-        Date.parse(plan.requestedAt) + plan.resourceCeiling.maxWallTimeMs,
-      ),
-    ).toISOString(),
-    maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
-    resourceLimits: {
-      maxCpuTimeMs: plan.resourceCeiling.maxCpuTimeMs,
-      maxMemoryBytes: plan.resourceCeiling.maxMemoryBytes,
+  const host = prepareSandboxJobHost(
+    {
+      ...resolved,
+      jobId: plan.identity.jobId,
+      attemptId: plan.identity.attemptId,
+      deadlineAt: new Date(
+        Math.min(
+          Date.parse(plan.effectiveDeadlineAt),
+          Date.parse(plan.requestedAt) + plan.resourceCeiling.maxWallTimeMs,
+        ),
+      ).toISOString(),
+      maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
+      resourceLimits: {
+        maxCpuTimeMs: plan.resourceCeiling.maxCpuTimeMs,
+        maxMemoryBytes: plan.resourceCeiling.maxMemoryBytes,
+      },
     },
-  });
+    undefined,
+    assertNetworkAuthority,
+  );
   const result: Promise<SandboxHostObservation> = host.result.then(async (observation) => {
     const outcome =
       observation.reason === "cancelled"

@@ -112,6 +112,9 @@ try {
         resourceLimits: { maxCpuTimeMs: 4000, maxMemoryBytes: 536870912 },
       },
       path.join(base, "control"),
+      async () => {
+        /* Explicit probe authority; no production Grant claim. */
+      },
     );
     try {
       await host.ready;

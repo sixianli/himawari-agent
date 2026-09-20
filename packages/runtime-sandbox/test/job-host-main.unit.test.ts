@@ -199,6 +199,25 @@ afterEach(() => {
 });
 
 describe("Job Host entrypoint protocol and lifecycle", () => {
+  it("routes egress checks through authenticated IPC and closes egress on a denied answer", async () => {
+    await prepare();
+    await startLinux();
+    const check = boundary.egress.mock.calls[0]?.[1] as () => Promise<void>;
+    expect(check).toBeTypeOf("function");
+    const first = check();
+    expect(sent.at(-1)).toMatchObject({ type: "authority_check", checkId: 1, sessionId: SESSION });
+    await receive("authority_result", { checkId: 1, allowed: true });
+    await first;
+    expect(network.close).not.toHaveBeenCalled();
+    const denied = expect(check()).rejects.toThrow("AUTHORITY_REJECTED");
+    await receive("authority_result", { checkId: 2, allowed: false });
+    await denied;
+    expect(network.close).toHaveBeenCalled();
+    expect(processBoundary.kill).toHaveBeenCalled();
+    await closeTask();
+    expect(result()).toMatchObject({ reason: "cancelled" });
+  });
+
   it("prepares without starting user code, binds namespace before stdin and returns truthful completion", async () => {
     await prepare({
       ...request(),

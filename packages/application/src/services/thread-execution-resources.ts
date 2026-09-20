@@ -176,8 +176,16 @@ export async function readThreadExecutionResources(input: {
       entry.phase === "reserved" ? entry.stopRequestedAt : null,
     ].filter((value): value is string => !!value);
     const itemId = await add(plan, phase, reason, dates.sort().at(-1) ?? null);
+    // An active operation has no final result yet. That absence becomes an
+    // uncertain outcome only when current preparation/execution is no longer
+    // established; an explicitly recorded unknown outcome remains unknown.
+    const awaitingResult =
+      entry.phase === "bound" &&
+      entry.record.facts.result === null &&
+      ["preparing", "executing"].includes(phase);
     if (
       entry.phase === "bound" &&
+      !awaitingResult &&
       (!entry.record.facts.result ||
         entry.record.facts.result.kind === "unknown" ||
         entry.record.facts.effect.kind === "unknown")
