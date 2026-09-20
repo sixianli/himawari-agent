@@ -559,6 +559,94 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
     }
   });
 
+  it.each(["inspect", "stop"] as const)(
+    "prioritizes an explicit stop over %s without duplicating an active stop",
+    async (previousAction) => {
+      const f = await fixture();
+      let release = () => {};
+      let initial: Promise<unknown> | undefined;
+      try {
+        const pending = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        let enter = () => {};
+        const entered = new Promise<void>((resolve) => {
+          enter = resolve;
+        });
+        const lost = (record: SandboxExecutionRecord) =>
+          sandboxResourceObservationSchema.parse({
+            ...record.facts.resource,
+            sequence: record.facts.resource.sequence + 1,
+            supervision: "lost",
+            cleanup: "unknown",
+            reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
+          });
+        const held = vi.fn(async (record: SandboxExecutionRecord) => {
+          enter();
+          await pending;
+          return lost(record);
+        });
+        const stop =
+          previousAction === "stop"
+            ? held
+            : vi.fn(async (record: SandboxExecutionRecord) => lost(record));
+        const service = new SandboxExecutionReconciliationService({
+          hostId: f.identity.hostId,
+          journal: f.journal,
+          now: () => T1,
+          timeoutMs: 30000,
+          backend: { inspect: held, stop },
+          evidence: { verify: vi.fn() },
+        });
+        const before = await f.journal.read(f.identity);
+        if (!before) throw new Error("missing original resource");
+        initial = service.reconcile({
+          identity: f.identity,
+          authority: SERVICE_AUTHORITY,
+          expectedSequence: before.facts.resource.sequence,
+          action: previousAction,
+        });
+        void initial.catch(() => {});
+        await entered;
+        const current = await f.journal.read(f.identity);
+        if (!current) throw new Error("missing running recovery");
+        const stopping = service.reconcile({
+          identity: f.identity,
+          authority: SERVICE_AUTHORITY,
+          expectedSequence: current.facts.resource.sequence,
+          action: "stop",
+        });
+        if (previousAction === "stop") {
+          await expect(stopping).rejects.toThrow("Recovery already running");
+          expect(stop).toHaveBeenCalledOnce();
+          release();
+          await initial;
+          expect(await f.status()).toMatchObject({
+            status: "unresolved",
+            action: "stop",
+            attempts: 1,
+          });
+        } else {
+          const stopped = await stopping;
+          expect(stop).toHaveBeenCalledOnce();
+          expect(stopped.record.recovery).toMatchObject({
+            status: "unresolved",
+            action: "stop",
+            attempts: 2,
+          });
+          expect(stopped.record.workspaceBlocked).toBe(true);
+          release();
+          await expect(initial).rejects.toThrow("SANDBOX_RECONCILIATION_OWNERSHIP_CHANGED");
+          expect(await f.journal.read(f.identity)).toEqual(stopped.record);
+        }
+      } finally {
+        release();
+        await initial?.catch(() => {});
+        await f.close();
+      }
+    },
+  );
+
   it("expires an abandoned attempt without granting a second attempt", async () => {
     const f = await fixture(true);
     try {

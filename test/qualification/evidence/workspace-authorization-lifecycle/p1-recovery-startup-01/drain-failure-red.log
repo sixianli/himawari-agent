@@ -1,0 +1,25 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/agent-service/test/service-orchestration.unit.test.ts (57 tests | 1 failed | 56 skipped) 13ms
+     × closes title consumers even when the Run loop drain rejects 12ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > closes title consumers even when the Run loop drain rejects
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ apps/agent-service/test/service-orchestration.unit.test.ts:698:32
+    696|     signal?.(); await settle();
+    697|     expect(await exit).toBe(1);
+    698|     expect(f.runs.titles.stop).toHaveBeenCalledOnce();
+       |                                ^
+    699|     expect(repository.close).toHaveBeenCalledOnce();
+    700|     expect(f.model.composition.close).toHaveBeenCalledOnce();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 56 skipped (57)
+   Start at  13:26:25
+   Duration  3.07s (transform 1.18s, setup 0ms, import 2.96s, tests 13ms, environment 0ms)

@@ -1,0 +1,14 @@
+{
+  "checkedDocuments": [
+    "docs/architecture-v0.1.md",
+    "docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md",
+    "docs/runbooks/authority-transfer-runbook.md",
+    "docs/runbooks/backup-restore-runbook.md",
+    "docs/runbooks/install-start-stop-runbook.md",
+    "docs/runbooks/hermes-control-center-upgrade-runbook.md",
+    "test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-startup-01/README.md"
+  ],
+  "localLinksChecked": 481,
+  "errors": [],
+  "scope": "Local target existence and explicit-anchor uniqueness only; reader clicks not performed"
+}

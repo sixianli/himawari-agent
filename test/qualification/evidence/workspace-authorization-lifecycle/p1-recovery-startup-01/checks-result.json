@@ -1,0 +1,37 @@
+{
+  "typecheck": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "log": "typecheck-complete.log"
+  },
+  "scoped": {
+    "files": 5,
+    "format": "passed",
+    "lint": "passed",
+    "log": "scoped-check.log"
+  },
+  "static": {
+    "checks": [
+      "boundaries",
+      "v0.2-coverage",
+      "v0.2-invariants",
+      "secrets",
+      "ci-policy"
+    ],
+    "exitCode": 0,
+    "log": "static.log"
+  },
+  "fullCheck": {
+    "command": "npm run check",
+    "exitCode": 1,
+    "unrelatedExistingFailures": [
+      "docs/assets/control-center/2026-09-16-state-review/verify.cjs",
+      "docs/assets/control-center/2026-09-16-state-review-r2/verify.cjs"
+    ],
+    "log": "full-check.log"
+  },
+  "governance": {
+    "strict": "passed",
+    "log": "docs-final.log"
+  }
+}

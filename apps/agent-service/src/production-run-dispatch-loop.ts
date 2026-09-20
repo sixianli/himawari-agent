@@ -41,8 +41,10 @@ export type ProductionRunDispatchLoopState =
   | "failed";
 
 export interface ProductionRunDispatchLoopOptions {
-  readonly dispatcher: Pick<ProductionRunDispatcher, "pump" | "drain"> &
-    Partial<Pick<ProductionRunDispatcher, "recover">>;
+  readonly dispatcher: Pick<ProductionRunDispatcher, "drain"> & {
+    /** Only completion matters here; resource-only services have no Run pump. */
+    pump(): Promise<unknown>;
+  } & Partial<Pick<ProductionRunDispatcher, "recover">>;
   /** The bounded fallback scan interval. It is always unref'ed. */
   readonly fallbackScanIntervalMs: number;
   /** A separate, single-flight resource scan; never replays a Run or blocks Run admission. */

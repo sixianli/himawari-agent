@@ -57,7 +57,17 @@ export class SqliteSandboxRecoveryOperations {
         duration > 30000
       )
         return this.fail("PORT_INVALID_OPERATION", "Invalid bounded recovery request");
-      if (current?.status === "running" && current.deadlineAt > input.now)
+      // An explicit stop must reach the original host even while a read-only
+      // inspection is waiting. Advancing the same recovery revision fences that
+      // inspection's late writes. A second active stop remains single-flight;
+      // a stale scheduled request cannot use this priority rule to take over.
+      if (
+        current?.status === "running" &&
+        current.deadlineAt > input.now &&
+        (input.action !== "stop" ||
+          current.action !== "inspect" ||
+          input.expectedRecoveryRevision !== undefined)
+      )
         return this.fail("PORT_CONFLICT", "Recovery already running");
       if (
         input.expectedRecoveryRevision !== undefined &&

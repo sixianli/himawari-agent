@@ -72,6 +72,7 @@ import {
 } from "./production-model-composition.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
+import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
   createProductionRunMemory,
   embeddingAdmissionDescriptor,
@@ -365,6 +366,9 @@ export async function runAgentService(
   let memoryWorker: ProductionMemoryWorker | undefined;
   let http: ProductionHttpComposition | undefined;
   let runs: ReturnType<typeof createProductionRunComposition> | undefined;
+  let runDrain: ReturnType<ProductionRunDispatchLoop["stop"]> | undefined;
+  let resourceOnlyLoop: ProductionRunDispatchLoop | undefined;
+  let resourceRecoveryDrain: ReturnType<ProductionRunDispatchLoop["stop"]> | undefined;
   let health: RuntimeHealthModel | undefined;
   let runStopTimeoutMs = 30_000;
   let runInterruption: Promise<void> | undefined;
@@ -378,6 +382,17 @@ export async function runAgentService(
   const authorityLoss = new Promise<void>((resolve) => {
     resolveAuthorityLoss = resolve;
   });
+  const failRuntime = (error: unknown) => {
+    writeServiceDiagnostic(errorOutput, {
+      component: "agent-service",
+      event: "runtime.failed",
+      code: stableErrorCode(error),
+    });
+    health?.setAuthorityActive(false);
+    authorityLost = true;
+    authorityLossError = error;
+    resolveAuthorityLoss?.();
+  };
   let reverseStop: Promise<void> | undefined;
   const stopReverseServices = (): Promise<void> => {
     if (reverseStop) return reverseStop;
@@ -412,17 +427,40 @@ export async function runAgentService(
     stopAccepting: () => {
       health?.setAuthorityActive(false);
       runs?.dispatcher.stopAccepting();
+      runDrain = runs?.loop.stop(runStopTimeoutMs);
+      void runDrain?.catch(() => undefined);
       runInterruption = runs?.coordinator.interruptAllExecutions("SERVICE_STOPPING");
+      void runInterruption?.catch(() => undefined);
     },
     drain: async () => {
       if (!runs) return;
       await runInterruption;
-      const drained = await runs.loop.stop(runStopTimeoutMs);
-      if (!drained.drained) throw new Error("RUN_DRAIN_DEADLINE_EXCEEDED");
+      const drained = await runDrain;
+      if (!drained?.drained) throw new Error("RUN_DRAIN_DEADLINE_EXCEEDED");
     },
     close: async () => {
-      await runs?.loop.stop(runStopTimeoutMs);
-      await runs?.titles?.stop();
+      try {
+        await runDrain;
+      } finally {
+        await runs?.titles?.stop();
+      }
+    },
+  });
+  lifecycle.register({
+    name: "resource-recovery",
+    stopAccepting: () => {
+      // Abort immediately, before draining or closing the authority and journal.
+      resourceRecoveryDrain = resourceOnlyLoop?.stop(runStopTimeoutMs);
+      void resourceRecoveryDrain?.catch(() => undefined);
+    },
+    drain: async () => {
+      const drained = await resourceRecoveryDrain;
+      if (drained && !drained.drained) throw new Error("RESOURCE_RECOVERY_DRAIN_DEADLINE_EXCEEDED");
+    },
+    close: async () => {
+      // Reuse the same bounded drain, including an unsuccessful one. Do not
+      // restart its timeout after dependencies have begun closing.
+      await resourceRecoveryDrain;
     },
   });
   lifecycle.register({
@@ -795,17 +833,6 @@ export async function runAgentService(
         publicMode: true,
         additionalRequired: ["run-dispatch", "memory-consumer"],
       });
-      const failRuntime = (error: unknown) => {
-        writeServiceDiagnostic(errorOutput, {
-          component: "agent-service",
-          event: "runtime.failed",
-          code: stableErrorCode(error),
-        });
-        health?.setAuthorityActive(false);
-        authorityLost = true;
-        authorityLossError = error;
-        resolveAuthorityLoss?.();
-      };
       const tools = new ProductionRuntimeTools({
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
@@ -1014,6 +1041,29 @@ export async function runAgentService(
       ])
         health.observe({ name, required: true, status: "healthy", reasonCode: null });
       health.setAuthorityActive(true);
+    }
+    if (!webEnabled && sandboxServices) {
+      const activeAuthority = authorityLifecycle;
+      // Reuse the existing bounded loop without creating Run/model execution
+      // services. Web mode already owns one resource lane in its Run loop.
+      resourceOnlyLoop = new ProductionRunDispatchLoop({
+        dispatcher: {
+          pump: async () => {},
+          drain: async () => ({ drained: true, inFlight: 0 }),
+        },
+        fallbackScanIntervalMs: 1000,
+        recoverResources: async (signal) => {
+          await activeAuthority.assertActive();
+          if (authorityLost) throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
+          await sandboxServices.resources.recoverPending(
+            signal,
+            configuration.concurrency.totalRuns,
+          );
+        },
+        onFailure: ({ error }) => failRuntime(error),
+      });
+      await resourceOnlyLoop.start();
+      if (authorityLost) throw authorityLossError;
     }
     lifecycle.ready();
     writeServiceDiagnostic(output, {

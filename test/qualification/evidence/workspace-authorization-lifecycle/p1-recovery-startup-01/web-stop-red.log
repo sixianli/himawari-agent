@@ -1,0 +1,25 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/agent-service/test/service-orchestration.unit.test.ts (55 tests | 1 failed | 54 skipped) 12ms
+     × stops background scans while Run interruption is still draining 12ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > stops background scans while Run interruption is still draining
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ apps/agent-service/test/service-orchestration.unit.test.ts:700:32
+    698|     try {
+    699|       signal?.(); await settle();
+    700|       expect(f.runs.loop.stop).toHaveBeenCalledOnce();
+       |                                ^
+    701|       expect(repository.close).not.toHaveBeenCalled();
+    702|     } finally { finish(); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 54 skipped (55)
+   Start at  13:20:51
+   Duration  3.16s (transform 1.13s, setup 0ms, import 3.04s, tests 12ms, environment 0ms)
