@@ -1,0 +1,34 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts (138 tests | 2 failed | 136 skipped) 425ms
+       × protects contradiction observed after release even when receipt acceptance was delayed 306ms
+       × protects contradiction observed after release even when receipt acceptance was delayed 116ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > protects contradiction observed after release even when receipt acceptance was delayed
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > protects contradiction observed after release even when receipt acceptance was delayed
+ApplicationPortError: Fresh contradictory resource proof required
+ ❯ SqliteSandboxExecutionOperations.fail test/fixtures/sqlite-capability-invocation-fixture.ts:462:11
+    460|     details?: Readonly<Record<string, string>>,
+    461|   ): never => {
+    462|     throw new ApplicationPortError(code as PortErrorCode, message, det…
+       |           ^
+    463|   };
+    464|   const artifacts = new SqliteRunPayloadArtifactOperations(database, f…
+ ❯ SqliteSandboxExecutionOperations.append packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:959:21
+ ❯ Function.<anonymous> packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:327:23
+ ❯ Function.sqliteTransaction node_modules/better-sqlite3/lib/methods/transaction.js:65:24
+ ❯ SqliteSandboxExecutionOperations.execute packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:388:8
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:515:39
+ ❯ sandboxV2Call test/fixtures/sandbox-execution-v2-fixture.ts:110:44
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:555:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 136 skipped (138)
+   Start at  11:20:54
+   Duration  2.56s (transform 1.38s, setup 0ms, import 1.99s, tests 425ms, environment 0ms)

@@ -1,7 +1,7 @@
-import type { SandboxExecutionAdmissionRecord } from "@himawari-agent/application";
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import type { SandboxExecutionAdmissionRecord } from "@himawari-agent/application";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -173,7 +173,7 @@ describe("workspace lifecycle read-only audit", () => {
     const result = auditWorkspaceLifecycle(f.input);
     expect(result).toMatchObject({
       mode: "read_only",
-      schemaSequence: 41,
+      schemaSequence: 42,
       liveHostVerified: false,
       repairEligible: false,
     });
@@ -189,6 +189,25 @@ describe("workspace lifecycle read-only audit", () => {
     expect(f.database.prepare("SELECT count(*) AS n FROM sandbox_release_receipts").get()).toEqual({
       n: 0,
     });
+  });
+
+  it("reports resource incidents without disclosing their protected evidence", async () => {
+    const f = await fixture();
+    f.database
+      .prepare(
+        "INSERT INTO sandbox_workspace_barriers(job_id,barrier_id,kind,reason_code,created_at,verification_json,authority_json) VALUES('job','risk','resource_contradiction','SANDBOX_RELEASE_CONTRADICTED',?, ?, ?)",
+      )
+      .run(
+        T1,
+        JSON.stringify({ privateDiagnostic: "must-not-leak" }),
+        JSON.stringify(SERVICE_AUTHORITY),
+      );
+    const before = f.database.serialize();
+    const result = auditWorkspaceLifecycle(f.input);
+    expect(result.rows[0]).toMatchObject({ resourceIncidents: 1 });
+    expect(result.rows[0]?.reasons).toContain("SANDBOX_RELEASE_CONTRADICTED");
+    expect(JSON.stringify(result)).not.toContain("must-not-leak");
+    expect(f.database.serialize()).toEqual(before);
   });
 
   it("finds historical released claims without treating a state label as release authority", async () => {

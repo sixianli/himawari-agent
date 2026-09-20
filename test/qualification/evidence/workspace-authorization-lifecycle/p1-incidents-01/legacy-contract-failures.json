@@ -1,0 +1,16 @@
+[
+  {
+    "file": "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/test/integration/sqlite-sandbox-execution-v2.test.ts",
+    "test": "SQLite component contracts (worker) released proof renewal rejects changed revive",
+    "failureMessages": [
+      "AssertionError: expected [Function] to throw an error\n    at Proxy.<anonymous> (file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/node_modules/@vitest/expect/dist/index.js:1552:16)\n    at Proxy.<anonymous> (file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/node_modules/chai/index.js:1700:25)\n    at /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/test/integration/sqlite-sandbox-execution-v2.test.ts:1991:50\n    at file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20"
+    ]
+  },
+  {
+    "file": "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/test/integration/sqlite-sandbox-execution-v2.test.ts",
+    "test": "SQLite component contracts (direct) released proof renewal rejects changed revive",
+    "failureMessages": [
+      "AssertionError: expected [Function] to throw an error\n    at Proxy.<anonymous> (file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/node_modules/@vitest/expect/dist/index.js:1552:16)\n    at Proxy.<anonymous> (file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/node_modules/chai/index.js:1700:25)\n    at /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/test/integration/sqlite-sandbox-execution-v2.test.ts:1991:50\n    at file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20"
+    ]
+  }
+]

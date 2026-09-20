@@ -1,0 +1,2 @@
+test/macos-arm64: passed
+local_passed; hosted gate: not_executed

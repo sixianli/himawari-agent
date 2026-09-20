@@ -34,7 +34,7 @@ export function auditWorkspaceLifecycle({
       if (
         !Number.isSafeInteger(version) ||
         version < 28 ||
-        version > 41 ||
+        version > 42 ||
         ledger.count !== version
       )
         throw new Error("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");
@@ -56,6 +56,7 @@ export function auditWorkspaceLifecycle({
           ${version >= 33 ? "EXISTS(SELECT 1 FROM sandbox_release_receipts x WHERE x.job_id=r.job_id)" : "0"} AS releaseReceiptPresent,
           ${version >= 41 ? "EXISTS(SELECT 1 FROM sandbox_reservation_release_receipts x WHERE x.job_id=r.job_id)" : "0"} AS reservationReleaseReceiptPresent,
           ${version >= 33 ? "(SELECT count(*) FROM sandbox_workspace_barriers b WHERE b.job_id=r.job_id AND b.resolved_at IS NULL)" : "0"} AS activeBarriers,
+          ${version >= 42 ? "(SELECT count(*) FROM sandbox_workspace_barriers b WHERE b.job_id=r.job_id AND b.kind='resource_contradiction' AND b.resolved_at IS NULL)" : "0"} AS resourceIncidents,
           (SELECT count(*) FROM sandbox_execution_intents i WHERE i.job_id=r.job_id AND i.kind='continue' AND i.dispatched_at IS NOT NULL AND i.acknowledged_at IS NULL) AS pendingControl,
           (SELECT count(*) FROM sandbox_execution_intents i WHERE i.job_id=r.job_id AND i.kind='tool_result' AND i.dispatched_at IS NOT NULL AND i.acknowledged_at IS NULL) AS pendingDelivery
           FROM sandbox_execution_records r JOIN runs u ON u.id=r.run_id AND u.owner_id=r.owner_id AND u.agent_id=r.agent_id
@@ -79,6 +80,7 @@ export function auditWorkspaceLifecycle({
             )
               reasons.push("TERMINAL_RUN_HAS_RESOURCE_OBLIGATION");
             if (row.activeBarriers) reasons.push("WORKSPACE_PROTECTION_ACTIVE");
+            if (row.resourceIncidents) reasons.push("SANDBOX_RELEASE_CONTRADICTED");
             if (row.pendingControl) reasons.push("CONTROL_ACK_PENDING");
             if (row.pendingDelivery) reasons.push("RESULT_DELIVERY_PENDING");
             if (!reservationReleased && (row.result === null || row.result === "unknown"))

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: standard
-contract_sha256: "sha256:d44b1b96ca4cd333cadd9602caff97fe7ae3f7023fdddc5dc8d12b1b4f23754f"
+contract_sha256: "sha256:ed817ea9f62d9ddde57260a37c7d05d9838bf6abd4aa9cb16f581aa4550385f5"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-19"
@@ -13,6 +13,7 @@ date: "2026-09-19"
 **来源：** [SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/migrations/0042_sandbox_resource_incidents.sql
 - scripts/operations/workspace-lifecycle-audit.mjs
 - test/integration/workspace-lifecycle-audit.test.ts
 - packages/persistence-sqlite/src/migrations
@@ -22,7 +23,7 @@ date: "2026-09-19"
 
 ## Scope
 
-本流程读取 Schema 28～41 的工作区占用、执行和排队元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
+本流程读取 Schema 28～42 的工作区占用、执行和排队元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
 
 Schema 39 的自动审查记录不属于这三个工作区分区；空列表不证明没有审查或授权记录。
 
@@ -80,6 +81,7 @@ node scripts/operations/workspace-lifecycle-audit.mjs \
 | `RELEASED_WITH_ACTIVE_CLAIMS` | 已释放状态与仍有效占用同时存在 | 原身份、迟到派发隔离和有效释放证明 |
 | `RELEASE_RECEIPT_MISSING` | 没有永久释放回执 | 不得把旧过期凭据重新当作当前证明 |
 | `TERMINAL_RUN_HAS_RESOURCE_OBLIGATION` | Run 已结束，但仍有资源责任 | 结束对话不等于结束宿主进程 |
+| `SANDBOX_RELEASE_CONTRADICTED` | 有独立资源矛盾事件，原释放事实仍保留 | 比事件更新且身份匹配的宿主停止证明；`resourceIncidents` 仅为计数，不披露证据正文 |
 | `WORKSPACE_PROTECTION_ACTIVE` / `CONTROL_ACK_PENDING` | 仍有新风险保护或未确认控制消息 | 控制消息是否仍可能引起写入 |
 | `RESULT_DELIVERY_PENDING` | 原结果交接尚未确认 | 当前披露权限；不得因此重新锁定或执行 |
 | `RESULT_UNRESOLVED` / `EFFECT_UNRESOLVED` | 结果或修改效果尚无明确记录 | 原发布记录或其他独立效果证据 |

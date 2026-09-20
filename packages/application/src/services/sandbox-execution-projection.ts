@@ -44,6 +44,49 @@ export interface SandboxExecutionProjection {
 }
 const sameIdentity = (a: SandboxJobIdentity, b: SandboxJobIdentity) =>
   (Object.keys(b) as (keyof SandboxJobIdentity)[]).every((key) => a[key] === b[key]);
+function snapshotVerified(
+  plan: SandboxExecutionPlanV2,
+  facts: SandboxExecutionFacts,
+  context: SandboxExecutionProjectionContext,
+): boolean {
+  const { resource, result, effect } = facts;
+  const now = Date.parse(context.now);
+  const proof = context.verification;
+  return (
+    proof !== null &&
+    JSON.stringify(sandboxExecutionFactsSchema.parse(proof.facts)) === JSON.stringify(facts) &&
+    sameIdentity(proof.identity, plan.identity) &&
+    proof.environmentId === plan.environmentId &&
+    proof.policyDigest === facts.environment.policyDigest &&
+    proof.resourceSequence === resource.sequence &&
+    context.currentResourceSequence === resource.sequence &&
+    Date.parse(proof.checkedAt) <= now &&
+    now < Date.parse(proof.validUntil) &&
+    Date.parse(resource.occurredAt) <= Date.parse(proof.checkedAt) &&
+    (!result || Date.parse(result.occurredAt) <= Date.parse(proof.checkedAt)) &&
+    (effect.kind !== "verified" || Date.parse(effect.occurredAt) <= Date.parse(proof.checkedAt))
+  );
+}
+/** A fresh host observation proves supervision independently of execution rights
+ * or the environment deadline. Expired authority may still require safe cleanup. */
+export function hasVerifiedSandboxSupervision(
+  plan: SandboxExecutionPlanV2,
+  input: SandboxExecutionFacts,
+  context: SandboxExecutionProjectionContext,
+): boolean {
+  const facts = validateSandboxExecutionFacts(plan, input, context);
+  const resource = facts.resource;
+  return (
+    (resource.supervision === "controlled" || resource.supervision === "released") &&
+    snapshotVerified(plan, facts, context) &&
+    Date.parse(context.now) < Date.parse(resource.evidence.validUntil) &&
+    Boolean(
+      context.verification?.evidence.some(
+        (item) => item.ref === resource.evidence.ref && item.digest === resource.evidence.digest,
+      ),
+    )
+  );
+}
 /** Shared read projection for Worker, Run and UI. It grants no authority and performs no dispatch.
  * Consumers must CAS the returned decision against the current sequence/fence, then recheck at dispatch.
  */
@@ -56,27 +99,15 @@ export function projectSandboxExecution(
   const { result, effect, resource } = facts;
   const now = Date.parse(context.now);
   const proof = context.verification;
-  const snapshotVerified =
-    proof !== null &&
-    JSON.stringify(sandboxExecutionFactsSchema.parse(proof.facts)) === JSON.stringify(facts) &&
-    sameIdentity(proof.identity, plan.identity) &&
-    proof.environmentId === plan.environmentId &&
-    proof.policyDigest === facts.environment.policyDigest &&
-    proof.resourceSequence === resource.sequence &&
-    context.currentResourceSequence === resource.sequence &&
-    Date.parse(proof.checkedAt) <= now &&
-    now < Date.parse(proof.validUntil) &&
-    Date.parse(resource.occurredAt) <= Date.parse(proof.checkedAt) &&
-    (!result || Date.parse(result.occurredAt) <= Date.parse(proof.checkedAt)) &&
-    (effect.kind !== "verified" || Date.parse(effect.occurredAt) <= Date.parse(proof.checkedAt));
+  const snapshotIsVerified = snapshotVerified(plan, facts, context);
   const hasEvidence = (value: { readonly ref: string; readonly digest: string }) =>
-    snapshotVerified &&
+    snapshotIsVerified &&
     proof !== null &&
     proof.evidence.some((item) => item.ref === value.ref && item.digest === value.digest);
   const outputProtected =
     result !== null &&
     result.kind !== "unknown" &&
-    snapshotVerified &&
+    snapshotIsVerified &&
     proof !== null &&
     proof.outputs.some(
       (item) =>
@@ -85,10 +116,7 @@ export function projectSandboxExecution(
         item.byteLength === result.output.byteLength,
     ) &&
     result.output.byteLength <= plan.resourceCeiling.maxOutputBytes;
-  const supervisionVerified =
-    (resource.supervision === "controlled" || resource.supervision === "released") &&
-    hasEvidence(resource.evidence) &&
-    now < Date.parse(resource.evidence.validUntil);
+  const supervisionVerified = hasVerifiedSandboxSupervision(plan, facts, context);
   const receipt = context.releaseReceipt;
   const historical = receipt?.verification.facts;
   const acceptedRelease =

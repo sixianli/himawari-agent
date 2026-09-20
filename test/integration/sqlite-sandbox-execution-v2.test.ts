@@ -15,6 +15,7 @@ import {
 } from "@himawari-agent/execution-contracts";
 import {
   applyMigrations,
+  assertWritableSchema,
   createVerifiedMigrationSnapshot,
   loadBundledMigrations,
   openQualifiedDatabase,
@@ -96,6 +97,23 @@ function append(
     now: T1,
     context: context(record, facts),
   }).record;
+}
+function freshObservation(
+  record: SandboxExecutionRecord,
+  facts: SandboxExecutionFacts,
+  now: string,
+) {
+  const proof = context(record, facts);
+  if (!proof.verification) throw new Error("test verification missing");
+  return {
+    identity: record.plan.identity,
+    expectedSequence: record.facts.resource.sequence,
+    expectedOperationRevision: record.operationRevision,
+    facts,
+    authority: SERVICE_AUTHORITY,
+    now,
+    context: { ...proof, now, verification: { ...proof.verification, checkedAt: now } },
+  };
 }
 function resource(
   record: SandboxExecutionRecord,
@@ -407,6 +425,347 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toEqual([]);
         expect(call(f, "admit", admission(f, "-next")).applied).toBe(true);
       } finally {
+        await f.close();
+      }
+    });
+    it.each([0, 1])(
+      "protects a fresh contradictory resource observation at +%sms without revoking release",
+      async (offset) => {
+        const f = await openSandboxJournal();
+        try {
+          let record = start(f);
+          record = append(f, record, result(f, record), true);
+          record = append(f, record, resource(record, "stopping"));
+          record = append(f, record, resource(record, "released"));
+          const released = structuredClone(record);
+          const now = new Date(Date.parse(T1) + offset).toISOString();
+          const facts = resource(record, "controlled");
+          const observed = { ...facts, resource: { ...facts.resource, occurredAt: now } };
+          const input = freshObservation(record, observed, now);
+          record = call(f, "append", input).record;
+          expect(record.facts).toEqual(released.facts);
+          expect(record.releaseReceipt).toEqual(released.releaseReceipt);
+          expect(record.workspaceBlocked).toBe(true);
+          expect(record.recovery).toMatchObject({
+            status: "unresolved",
+            owner: SERVICE_AUTHORITY.agentServiceBootId,
+            reasonCode: "SANDBOX_RELEASE_CONTRADICTED",
+          });
+          expect(() =>
+            call(f, "prepareIntent", {
+              identity: record.plan.identity,
+              intentId: "after-incident",
+              kind: "continue",
+              expectedSequence: record.facts.resource.sequence,
+              authority: SERVICE_AUTHORITY,
+              now,
+              context: context(record, record.facts),
+            }),
+          ).toThrow("Resource incident remains unresolved");
+          expect(() =>
+            f.database
+              .prepare("UPDATE sandbox_workspace_barriers SET resolved_at=? WHERE job_id=?")
+              .run(now, record.plan.identity.jobId),
+          ).toThrow("Resource incident evidence is immutable");
+          expect(call(f, "append", input).applied).toBe(false);
+          expect(() => call(f, "admit", admission(f, "-next"))).toThrow("occupied");
+          expect(
+            call(
+              f,
+              "admit",
+              admission(f, "-unrelated", [
+                { device: "1", inode: "1" },
+                { device: "1", inode: "90" },
+              ]),
+            ).applied,
+          ).toBe(true);
+
+          expect(
+            f.database
+              .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+              .get(record.plan.identity.jobId),
+          ).toEqual({ released_at: T1 });
+          expect(
+            f.database
+              .prepare(
+                "SELECT kind,reason_code FROM sandbox_workspace_barriers WHERE job_id=? AND resolved_at IS NULL",
+              )
+              .all(record.plan.identity.jobId),
+          ).toEqual([
+            { kind: "resource_contradiction", reason_code: "SANDBOX_RELEASE_CONTRADICTED" },
+          ]);
+        } finally {
+          await f.close();
+        }
+      },
+    );
+    it("records verified new risk after the original execution permission expires", async () => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const now = new Date(Date.parse(T2) + 1).toISOString();
+        const until = new Date(Date.parse(T2) + 1000).toISOString();
+        const risk = resource(record, "controlled");
+        if (risk.resource.supervision !== "controlled") throw new Error("test state");
+        const facts = {
+          ...risk,
+          resource: {
+            ...risk.resource,
+            occurredAt: now,
+            evidence: { ...risk.resource.evidence, validUntil: until },
+          },
+        };
+        const input = freshObservation(record, facts, now);
+        const protectedRecord = call(f, "append", {
+          ...input,
+          context: {
+            ...input.context,
+            verification: { ...input.context.verification, validUntil: until },
+          },
+        }).record;
+        expect(protectedRecord.workspaceBlocked).toBe(true);
+        expect(protectedRecord.facts).toEqual(record.facts);
+        expect(protectedRecord.releaseReceipt).toEqual(record.releaseReceipt);
+        expect(() =>
+          call(f, "start", {
+            identity: record.plan.identity,
+            expectedSequence: record.facts.resource.sequence,
+            policyDigest: record.facts.environment.policyDigest,
+            authority: SERVICE_AUTHORITY,
+            now,
+          }),
+        ).toThrow();
+      } finally {
+        await f.close();
+      }
+    });
+    it("protects contradiction observed after release even when receipt acceptance was delayed", async () => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        const at = (ms: number) => new Date(Date.parse(T1) + ms).toISOString();
+        record = call(
+          f,
+          "append",
+          freshObservation(record, resource(record, "released"), at(10)),
+        ).record;
+        expect(record.releaseReceipt?.acceptedAt).toBe(at(10));
+        const risk = resource(record, "controlled");
+        const facts = { ...risk, resource: { ...risk.resource, occurredAt: at(5) } };
+        const updated = call(f, "append", freshObservation(record, facts, at(11))).record;
+        expect(updated.workspaceBlocked).toBe(true);
+        expect(updated.facts).toEqual(record.facts);
+        expect(updated.releaseReceipt).toEqual(record.releaseReceipt);
+      } finally {
+        await f.close();
+      }
+    });
+    it("keeps an incident across reopen and only clears it with newer stop evidence", async () => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const receipt = record.releaseReceipt;
+        const at = (ms: number) => new Date(Date.parse(T1) + ms).toISOString();
+        const risk = resource(record, "controlled");
+        const request = freshObservation(
+          record,
+          { ...risk, resource: { ...risk.resource, occurredAt: at(1) } },
+          at(1),
+        );
+        record = call(f, "append", request).record;
+        f.database.close();
+        const repo = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+        });
+        try {
+          const journal = repo.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+          expect(await journal.read(record.plan.identity)).toMatchObject({
+            workspaceBlocked: true,
+            releaseReceipt: receipt,
+          });
+          await expect(journal.admit(admission(f, "-next"))).rejects.toThrow("occupied");
+          expect(await journal.listPending({ afterJobId: null, limit: 10 })).toHaveLength(1);
+          const oldStop = resource(record, "released");
+          record = (await journal.append(freshObservation(record, oldStop, at(2)))).record;
+          expect(record.workspaceBlocked).toBe(true);
+          const service = new SandboxExecutionReconciliationService({
+            hostId: record.plan.identity.hostId,
+            journal,
+            timeoutMs: 100,
+            now: () => at(3),
+            evidence: {
+              verify: async ({ plan, facts, now }) =>
+                freshObservation({ ...record, plan }, facts, now).context.verification,
+            },
+            backend: {
+              inspect: async () => {
+                throw new Error("stop required");
+              },
+              stop: async (current) => {
+                const stopped = resource(current, "released");
+                return { ...stopped.resource, occurredAt: at(3) };
+              },
+            },
+          });
+          record = (
+            await service.reconcile({
+              identity: record.plan.identity,
+              expectedSequence: record.facts.resource.sequence,
+              authority: SERVICE_AUTHORITY,
+              action: "stop",
+            })
+          ).record;
+          expect(record.recovery?.status).toBe("resolved");
+          expect(record.workspaceBlocked).toBe(false);
+          expect(record.releaseReceipt).toEqual(receipt);
+          expect((await journal.admit(admission(f, "-next"))).applied).toBe(true);
+        } finally {
+          await repo.close();
+        }
+      } finally {
+        await f.close();
+      }
+    });
+    it.each([
+      "missing-proof",
+      "expired-proof",
+      "wrong-subject",
+      "stale",
+      "future",
+      "changed-effect",
+    ] as const)("does not create a resource incident from %s evidence", async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const now = new Date(Date.parse(T1) + 1).toISOString();
+        const risk = resource(record, "controlled");
+        if (risk.resource.supervision !== "controlled") throw new Error("test state");
+        const facts = {
+          ...risk,
+          ...(scenario === "changed-effect" ? { effect: { kind: "not_applicable" as const } } : {}),
+          resource: {
+            ...risk.resource,
+            occurredAt:
+              scenario === "stale"
+                ? new Date(Date.parse(T1) - 1).toISOString()
+                : scenario === "future"
+                  ? T2
+                  : now,
+            evidence: {
+              ...risk.resource.evidence,
+              ...(scenario === "wrong-subject"
+                ? {
+                    subject: {
+                      kind: "local_process" as const,
+                      processIdentityRef: "other-process",
+                    },
+                  }
+                : {}),
+            },
+          },
+        };
+        const input = freshObservation(record, facts, now);
+        const verification =
+          scenario === "missing-proof"
+            ? null
+            : {
+                ...input.context.verification,
+                ...(scenario === "expired-proof" ? { validUntil: now } : {}),
+              };
+        expect(() =>
+          call(f, "append", { ...input, context: { ...input.context, verification } }),
+        ).toThrow();
+        expect(call(f, "read", record.plan.identity)).toEqual(record);
+        expect(call(f, "admit", admission(f, "-next")).applied).toBe(true);
+      } finally {
+        await f.close();
+      }
+    });
+    it("preserves schema 41 protections and release facts when adding resource incidents", async () => {
+      const f = await openSandboxJournal();
+      let old: ReturnType<typeof openQualifiedDatabase> | undefined;
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        f.database
+          .prepare(
+            "INSERT INTO sandbox_workspace_barriers(job_id,barrier_id,kind,reason_code,created_at) VALUES(?,'intent:legacy','control_unacknowledged','SANDBOX_CONTROL_ACK_PENDING',?)",
+          )
+          .run(record.plan.identity.jobId, T1);
+        const migrations = await loadBundledMigrations();
+        old = openQualifiedDatabase(path.join(f.resource.stateRoot, "schema41.sqlite"));
+        applyMigrations(old, migrations.slice(0, 41));
+        old.pragma("foreign_keys = OFF");
+        const tables = old
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='schema_migrations'",
+          )
+          .all() as { name: string }[];
+        for (const { name } of tables) {
+          if ((old.prepare(`SELECT count(*) FROM "${name}"`).pluck().get() as number) > 0) continue;
+          const columns = (
+            old.prepare(`PRAGMA table_info("${name}")`).all() as { name: string }[]
+          ).map((c) => c.name);
+          for (const row of f.database.prepare(`SELECT * FROM "${name}"`).all() as Record<
+            string,
+            unknown
+          >[]) {
+            old
+              .prepare(
+                `INSERT INTO "${name}" (${columns.map((c) => `"${c}"`).join(",")}) VALUES (${columns.map(() => "?").join(",")})`,
+              )
+              .run(...columns.map((c) => row[c]));
+          }
+        }
+        old.pragma("foreign_keys = ON");
+        const receipts = old.prepare("SELECT * FROM sandbox_release_receipts").all();
+        const claims = old.prepare("SELECT * FROM sandbox_workspace_occupancy").all();
+        const barriers = old.prepare("SELECT * FROM sandbox_workspace_barriers").all();
+        const before = readMigrationLedger(old);
+        const snapshot = await createVerifiedMigrationSnapshot(
+          old,
+          path.join(f.resource.stateRoot, "schema41-snapshot.sqlite"),
+        );
+        expect(applyMigrations(old, migrations, { snapshot })).toEqual({
+          appliedSequences: [42],
+          currentSequence: 42,
+        });
+        expect(readMigrationLedger(old).slice(0, 41)).toEqual(before);
+        expect(old.prepare("SELECT * FROM sandbox_release_receipts").all()).toEqual(receipts);
+        expect(old.prepare("SELECT * FROM sandbox_workspace_occupancy").all()).toEqual(claims);
+        expect(
+          old
+            .prepare(
+              "SELECT job_id,barrier_id,kind,reason_code,created_at,resolved_at FROM sandbox_workspace_barriers",
+            )
+            .all(),
+        ).toEqual(barriers);
+        expect(
+          old
+            .prepare(
+              "SELECT count(*) FROM sandbox_workspace_barriers WHERE kind='resource_contradiction'",
+            )
+            .pluck()
+            .get(),
+        ).toBe(0);
+        expect(old.pragma("foreign_key_check")).toEqual([]);
+        expect(() => assertWritableSchema(old as NonNullable<typeof old>, 41)).toThrow();
+        expect(() =>
+          old
+            ?.prepare("DELETE FROM sandbox_execution_records WHERE job_id=?")
+            .run(record.plan.identity.jobId),
+        ).toThrow("Unresolved sandbox barrier");
+      } finally {
+        old?.close();
         await f.close();
       }
     });
@@ -914,7 +1273,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           path.join(f.resource.stateRoot, "legacy-snapshot.sqlite"),
         );
         expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([
-          28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
+          28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,
         ]);
         expect(readMigrationLedger(old).slice(0, 27)).toEqual(ledger);
         expect(old.prepare("SELECT * FROM sandbox_jobs").all()).toEqual(before);
@@ -1601,7 +1960,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
   });
 
   it.each(["subject", "metrics", "revive"])(
-    "released proof renewal rejects changed %s",
+    "preserves release safety when observing changed %s",
     async (change) => {
       const f = await openSandboxJournal();
       try {
@@ -1629,7 +1988,20 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             ...(change === "revive" ? { supervision: "controlled", cleanup: "pending" } : {}),
           },
         });
-        expect(() => append(f, record, changed)).toThrow();
+        if (change === "revive") {
+          // The approved lifecycle contract records a separate incident rather
+          // than discarding contradictory evidence or reviving the old claim.
+          const protectedRecord = append(f, record, changed);
+          expect(protectedRecord.facts).toEqual(record.facts);
+          expect(protectedRecord.releaseReceipt).toEqual(record.releaseReceipt);
+          expect(protectedRecord.workspaceBlocked).toBe(true);
+          expect(() => call(f, "admit", admission(f, "-after-risk"))).toThrow("occupied");
+          expect(
+            f.database
+              .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+              .get(record.plan.identity.jobId),
+          ).toEqual({ released_at: T1 });
+        } else expect(() => append(f, record, changed)).toThrow();
       } finally {
         await f.close();
       }

@@ -8,7 +8,10 @@ import type {
   SandboxRecoveryState,
   SandboxWorkspaceClaim,
 } from "@himawari-agent/application";
-import { projectSandboxExecution } from "@himawari-agent/application/sandbox-execution-projection";
+import {
+  hasVerifiedSandboxSupervision,
+  projectSandboxExecution,
+} from "@himawari-agent/application/sandbox-execution-projection";
 import {
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
@@ -927,6 +930,56 @@ export class SqliteSandboxExecutionOperations {
       return this.fail("PORT_CONFLICT", "Operation observation CAS failed");
     if (input.expectedSequence !== current.facts.resource.sequence)
       return this.fail("PORT_CONFLICT", "Observation CAS failed");
+    if (!operationOnly && current.releaseReceipt && facts.resource.supervision === "controlled") {
+      // A new risk does not roll back the released incarnation or revive its
+      // execution authority. Keep evidence in a separate, scope-bound incident.
+      validateSandboxExecutionFacts(current.plan, facts, {
+        environment: current.facts.environment,
+        operationContract: current.plan.operationContract,
+      });
+      const previous = current.facts.resource;
+      const verification = input.context.verification;
+      if (
+        previous.supervision !== "released" ||
+        facts.resource.sequence !== previous.sequence + 1 ||
+        facts.resource.occurredAt < previous.occurredAt ||
+        !same(facts.resource.evidence.subject, previous.evidence.subject) ||
+        !same(facts.result, current.facts.result) ||
+        !same(facts.effect, current.facts.effect) ||
+        !verification ||
+        !hasVerifiedSandboxSupervision(current.plan, facts, {
+          ...input.context,
+          now: input.now,
+          environment: current.facts.environment,
+          operationContract: current.plan.operationContract,
+          currentResourceSequence: facts.resource.sequence,
+        })
+      )
+        return this.fail("PORT_NOT_AUTHORITATIVE", "Fresh contradictory resource proof required");
+      const applied = this.releases.contradiction(
+        current,
+        verification,
+        input.authority,
+        input.now,
+      );
+      if (applied) {
+        const recovery: SandboxRecoveryState = {
+          revision: (current.recovery?.revision ?? 0) + 1,
+          owner: input.authority.agentServiceBootId,
+          attempts: current.recovery?.attempts ?? 0,
+          status: "unresolved",
+          action: "inspect",
+          startedAt: input.now,
+          deadlineAt: input.now,
+          finishedAt: input.now,
+          reasonCode: "SANDBOX_RELEASE_CONTRADICTED",
+        };
+        this.db
+          .prepare("UPDATE sandbox_execution_records SET recovery_json=? WHERE job_id=?")
+          .run(JSON.stringify(recovery), current.plan.identity.jobId);
+      }
+      return { record: this.read(current.plan.identity, owner, agent), applied };
+    }
     validateSandboxExecutionFacts(
       current.plan,
       facts,
@@ -1101,6 +1154,8 @@ export class SqliteSandboxExecutionOperations {
       this.assertAvailable(current.workspaces, current.plan.identity.jobId, input.now);
     if (this.hasPendingIntent(current.plan.identity.jobId))
       return this.fail("PORT_CONFLICT", "Dispatched operation remains uncertain");
+    if (input.kind === "continue" && this.releases.hasContradiction(current.plan.identity.jobId))
+      return this.fail("PORT_CONFLICT", "Resource incident remains unresolved");
     const projection = projectSandboxExecution(current.plan, current.facts, {
       ...input.context,
       releaseReceipt: current.releaseReceipt ?? null,
