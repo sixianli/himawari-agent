@@ -1,7 +1,9 @@
-import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { setTimeout as delay } from "node:timers/promises";
 import type { PublicWebAdapterPort, WebSearchCandidate } from "@himawari-agent/application";
 import { scanMachineSecrets } from "@himawari-agent/application";
-import { fetch as proxyFetch, ProxyAgent } from "undici";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { ProxyAgent, fetch as proxyFetch } from "undici";
+import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";
 
 const endpoint = "https://mcp.exa.ai/mcp";
 export function parseExaSearchResults(text: string, limit: number): readonly WebSearchCandidate[] {
@@ -54,6 +56,8 @@ export class ExaPublicSearchAdapter implements Pick<PublicWebAdapterPort, "searc
       scanMachineSecrets(input.query).length
     )
       throw new Error("WEB_SEARCH_INPUT_INVALID");
+    const query = input.query.trim();
+    const limit = input.limit;
     const proxyUrl = process.env["HTTPS_PROXY"];
     if (!proxyUrl) throw new Error("WEB_SEARCH_SANDBOX_PROXY_REQUIRED");
     const proxy = new URL(proxyUrl);
@@ -67,21 +71,67 @@ export class ExaPublicSearchAdapter implements Pick<PublicWebAdapterPort, "searc
     const token = `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString("base64")}`;
     proxy.username = "";
     proxy.password = "";
-    const dispatcher = new ProxyAgent({ uri: proxy.href, token });
+    // Retain the existing 15 s connect + 30 s call budget across the one retry.
+    const deadline = performance.now() + 45000;
+    const lifetime = AbortSignal.timeout(45000);
+    let retried = false;
+    let dispatcher = new ProxyAgent({ uri: proxy.href, token });
+    const dispatchers = [dispatcher];
     const client = new Client({ name: "himawari-public-search", version: "1.0.0" });
     const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
       fetch: async (url, init) => {
         if (String(url) !== endpoint) throw new Error("WEB_SEARCH_ENDPOINT_CHANGED");
         if (init?.body !== undefined && init.body !== null && typeof init.body !== "string")
           throw new Error("WEB_SEARCH_REQUEST_INVALID");
-        const response = await proxyFetch(String(url), {
-          ...(init?.method ? { method: init.method } : {}),
-          headers: Object.fromEntries(new Headers(init?.headers).entries()),
-          ...(typeof init?.body === "string" ? { body: init.body } : {}),
-          ...(init?.signal ? { signal: init.signal } : {}),
-          redirect: "error",
-          dispatcher,
-        });
+        let readonlySearch = false;
+        if (init?.method === "POST" && typeof init.body === "string") {
+          try {
+            const message = JSON.parse(init.body);
+            readonlySearch =
+              message?.method === "tools/call" &&
+              message.params?.name === "web_search_exa" &&
+              message.params?.arguments?.query === query &&
+              message.params?.arguments?.numResults === limit;
+          } catch {
+            /* Unrecognized MCP bodies are never replayed. */
+          }
+        }
+        const signal = init?.signal ? AbortSignal.any([init.signal, lifetime]) : lifetime;
+        const send = () => {
+          signal.throwIfAborted();
+          if (performance.now() >= deadline) throw new Error("WEB_SEARCH_TIMEOUT");
+          return proxyFetch(String(url), {
+            ...(init?.method ? { method: init.method } : {}),
+            headers: Object.fromEntries(new Headers(init?.headers).entries()),
+            ...(typeof init?.body === "string" ? { body: init.body } : {}),
+            signal,
+            redirect: "error",
+            dispatcher,
+          });
+        };
+        let response: Awaited<ReturnType<typeof proxyFetch>> | undefined;
+        let failure: unknown;
+        try {
+          response = await send();
+        } catch (error) {
+          failure = error;
+        }
+        signal.throwIfAborted();
+        const backoff =
+          readonlySearch && !retried ? readonlyNetworkRetryDelay(response, failure) : null;
+        if (backoff !== null && !signal.aborted && deadline - performance.now() > backoff) {
+          retried = true;
+          await response?.body?.cancel().catch(() => undefined);
+          await delay(backoff, undefined, { signal });
+          // The original MCP request signal and SRT authority remain in force.
+          signal.throwIfAborted();
+          // A pooled TLS tunnel would skip CONNECT admission. A fresh proxy
+          // pool forces this attempt through SRT and the live authority check.
+          dispatcher = new ProxyAgent({ uri: proxy.href, token });
+          dispatchers.push(dispatcher);
+          response = await send();
+        }
+        if (!response) throw failure;
         if (!response.body)
           return new Response(null, {
             status: response.status,
@@ -112,10 +162,10 @@ export class ExaPublicSearchAdapter implements Pick<PublicWebAdapterPort, "searc
         {
           name: "web_search_exa",
           arguments: {
-            query: input.query.trim(),
+            query,
             objective:
               "Find current public sources matching the query. Return titles, source URLs, publication dates and relevant excerpts.",
-            numResults: input.limit,
+            numResults: limit,
           },
         },
         { timeout: 30000 },
@@ -127,10 +177,10 @@ export class ExaPublicSearchAdapter implements Pick<PublicWebAdapterPort, "searc
         .map((item) => item.text)
         .join("\n\n---\n\n");
       if (scanMachineSecrets(text).length) throw new Error("WEB_SEARCH_OUTPUT_REDACTED");
-      return parseExaSearchResults(text, input.limit);
+      return parseExaSearchResults(text, limit);
     } finally {
       await client.close().catch(() => undefined);
-      await dispatcher.close();
+      await Promise.all(dispatchers.map((entry) => entry.close()));
     }
   }
 }

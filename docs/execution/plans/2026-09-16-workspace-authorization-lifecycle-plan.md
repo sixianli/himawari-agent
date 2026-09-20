@@ -125,19 +125,19 @@ date: "2026-09-16"
 
 <a id="current-batch-contract"></a>
 
-### 当前批次完成条件：执行中撤销
+### 当前批次完成条件：未准入队列跨 boot/fence 续接
 
-这是后续实施的续接入口，状态必须结合 Git 与实际报告核对，不能将历史“正在运行”直接当作仍有进程。它替代验证章节过时的“当前资源矛盾事件批次”；十批总体依赖顺序保持。
+执行中撤销已提交为 `d20fcbf`，见[网络与实际页面状态](#p2-network-authority)；只读重试已完成[组合验证](#p1-readonly-retry)。当前继续原第 4/5 批内部顺序。
 
 | 项目 | 本批约束 |
 | --- | --- |
-| 原待办与验收 | [P2 执行中撤销](#p2)，重点 A08，关联 E05/E08/E09、U03；只覆盖本批实际证明的分支 |
-| 用户可观察结果 | 撤销生效后阻止新的派发和披露，原执行进入受控停止；已产生效果保留，未知状态不假报成功、失败或释放，页面反映同一后端事实 |
-| 已有基础 | `32cb658` 已保存[当前权限与停止局部验证](#p2-live-authority)。本轮已补网络逐次核验、实际目录撤销、原输出/占用读回及浏览器直接查询实时 SQLite 的最小路径，见[本轮联合验证](#p2-network-authority)；标准构建与完整测试已通过 |
-| 本轮下一动作 | 定向 220 项、类型与 Mac 实际路径已通过；冻结源码后的标准构建与完整测试通过 248 文件、3,968 项，原浏览器 12 场景通过。完成本批本地提交后进入只读网络有限重试。浏览器保留导航/认证夹具，执行状态来自实际 Worker 与 SQLite，撤销后不注入资源事件；不得把该边界写成完整生产登录、模型循环或 Linux 平台验收 |
-| 定向入口 | 复用[真实 UDS/SQLite 权限检查](../../../test/integration/production-invocation-authority.test.ts)、[生产范围](../../../test/integration/production-sandbox-scope.test.ts)、[生产 Worker 生命周期](../../../test/integration/sandbox-v2-worker-lifecycle.test.ts)、[资源恢复](../../../test/integration/sandbox-resource-recovery-scheduling.test.ts)、[生产装配](../../../apps/execution-worker/test/production-worker-composition.unit.test.ts)、[浏览器执行链](../../../scripts/test-execution-chain-browser.mjs)。这些是扩展入口，不是已存在完整联合测试的声明；新增路径实际运行后补准确命令 |
-| 完成条件与限制 | 原调用不重复消费/执行，撤销或核验不可用时无新的外发/披露，停止与已有效果分别持久且可独立读回，页面不靠伪造事件刷新；目录授权、网络出口及等待中撤销的相关生产分支均有覆盖说明。Mac 无法证明全部后代停止时保持 unknown 与必要占用，不据此勾选完整平台要求 |
-| 后续次序 | 满足上述检查后按影响做一次必要交付验证，再进入只读网络有限重试和未准入队列跨 boot/fence 续接；不能在撤销前提尚未成立时增加自动重试。具体模型与生产操作仍服从[原授权边界](#decisions) |
+| 原待办与验收 | [P2 额度与派发连续性](#p2)，重点 A07，关联 A01/A11/A13；仅允许尚未准入且无调用回执的原队列续接 |
+| 用户可观察结果 | Worker 重启或有效执行权更换后，仍有效的原批准、原输入、目标版本与期限继续适用；不重新询问相同批准、不额外消费，也不复活已派发或未知操作 |
+| 已知阻断 | Runtime 当前要求队列中的旧 authority 完全相等；Handle 绑定旧 fence，Run 租约与原 RPC scope 也需要核验。直接删除比较会绕过当前执行权 |
+| 实施方向 | 保留原不可变队列快照，单独记录当前执行绑定；同一 SQLite 事务验证当前权威、Run 租约、原授权与零消费/零准入事实。优先接现有生产 Run 包装层，在 Pi 取得工具列表前完成必要绑定，不新建 Pi 协议 |
+| 验证入口 | 复用[生产队列续接](../../../test/integration/production-sandbox-queue-reentry.test.ts)、[准备与绑定](../../../test/integration/sandbox-execution-preparation.test.ts)、[额度预约](../../../test/integration/authorization-reservations.test.ts)；增加真实数据库重开、当前租约切换与并发竞争，先确认生产 Run 装配入口 |
+| 完成条件 | 未准入跨 boot/fence 成功且只有一次派发；旧调用、已准入/有回执/被取消、撤销/过期、目标改变、旧租约和并发输家均被拒绝；原期限、顺序、批准和次数独立读回。涉及存储格式时补旧 writer 屏障与兼容测试 |
+| 状态与后续 | 正在核对上述设计；尚未修改队列实现。先完成这条用户路径，再按原依赖顺序推进文件并发与其他待办；生产操作遵守[原授权边界](#decisions) |
 
 [↑ 返回阅读导航](#contents)
 
@@ -534,7 +534,7 @@ fixture 测试可控制网关响应来覆盖展示，但真正的审批与文件
 
 实施批次按可验收行为组织，不按单个补丁或提交拆分。同一批次内先完成相关实现并运行定向测试；共享端口修改后立即检查调用方和测试替身，新运行模块先验证加载与类型。源码稳定后集中执行本节要求的交付验证，并一次更新相关文档；已有结果仅在输入与环境未受影响时复用。进展以原验收条件和剩余证据报告，不以提交数或测试总数估算完成度。
 
-完整验证前执行[五项实施规则](#execution-rules)，当前续接行为与出口见[执行中撤销批次](#current-batch-contract)。原资源矛盾事件是[已保存的历史批次](#p1-resource-incidents)，不再作为当前实施入口。
+完整验证前执行[五项实施规则](#execution-rules)，当前续接行为与出口见[当前批次完成条件](#current-batch-contract)。原资源矛盾事件是[已保存的历史批次](#p1-resource-incidents)，不再作为当前实施入口。
 
 ```sh
 npm run check
@@ -1071,6 +1071,14 @@ SQLite 的候选筛选、领取及最终完成分别检查资格。最终写入�
 最小浏览器路径直接读取 `ThreadExecutionProjection`、真实 SQLite 与正在执行的 Worker，使用原页面测试入口承载导航和 Gateway 传输；没有生产登录/模型循环，未生成补救性的 Trace 或资源事件。联测发现真实控制仍有效时，投影把“尚无最终结果”误当作未知结果。新增回归先证明资源为执行中但页面结论错误，再修正等待结果与明确未知的区别；过期观察、显式未知及已停止无结果仍未确认。随后浏览器观察执行中→撤销后未确认，并验证刷新保持同一事实。
 
 交付前定向检查：15 文件、220 项通过；类型、任务范围格式/lint、真实目录撤销与浏览器轮询/刷新通过。实际测量、原始失败、夹具修正与证据边界见[本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-network-authority-01/README.md)。冻结源码后的[标准构建](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-network-authority-01/standard-build-result.json)及[完整测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-network-authority-01/standard-test-result.json)通过：248 文件、3,968 项，零失败、零跳过；[原 Chrome 回归](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-network-authority-01/browser-regression/result.json)12 场景通过。边界、覆盖映射、不变量、秘密扫描、CI policy、严格文档检查通过；全库格式与 lint 仍仅被两份原有未跟踪原型 verify.cjs 阻断，本批文件定向检查通过。四份 Runbook 已更新并重新封存，没有执行生产步骤。完整 P2/P6 与跨平台验收保持未完成。下一批先做只读网络有限重试，再做未准入队列跨 boot/fence 续接。
+
+<a id="p1-readonly-retry"></a>
+
+### P1：只读网络错误的有限重试（2026-09-20）
+
+本批落实 W23/E09：零费用 GET 与固定公开搜索最多尝试两次，默认退避 250 ms，尊重 Retry-After 与原期限。GET 每次核对当前授权和秘密句柄；搜索重发原 RPC，保留现有 MCP/SRT 权限与超时边界，不重启工具或初始化。写入、有费用 endpoint、认证拒绝及未知非幂等结果不自动重发。
+
+[本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-readonly-retry-01/README.md)区分定向检查、真实 HTTP/生产 UDS/SQLite 当前授权联合路径、实际 MCP SDK 与替换的外部提供商传输。7 文件、81 项定向测试及类型、范围 Biome、边界/覆盖/不变量/秘密/CI policy 通过；首轮标准构建和完整测试通过 249 文件、3,993 项。随后发现原代理连接复用会遮住重试的出口核验，已用实际 CONNECT 回归复现并改为重试前新建代理池，相关 35 项通过；[新标准构建](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-readonly-retry-01/standard-build-result.json)通过；[组合验证](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-readonly-retry-01/verification-composition.json)保留未受影响的 3,959 项、替换受影响测试为新 35 项，覆盖 3,994 项、零失败/跳过；没有将它写成最终源码全套重跑。全库格式/lint 仍被原有两份原型脚本阻断，本批范围检查通过；四份 Runbook 和严格文档检查通过。调用重放和撤销联测独立读回 uses 未增加，不声称完整线上模型或提供商资格。下一批为未准入队列跨 boot/fence 续接。
 
 <a id="checkpoint-2026-09-20"></a>
 

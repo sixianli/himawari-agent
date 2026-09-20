@@ -64,3 +64,4 @@ ts	phase	decision	why	evidence	result
 2026-09-20T10:13:00Z	verify	保存当前权限批次组合验证并继续依赖工作	全套唯一失败为扩展测试后的旧矩阵名称引用；只修引用，复用输入未变结果	p2-live-authority-01/verification-composition.json	构建通过；3955原通过加1复验；非新的全套通过
 2026-09-20T11:29:57Z	documentation	将已确认复盘结论落实为原Plan的五项执行规则与当前批次完成条件	用户明确要求文档约束后续实施；减少局部交付、晚发现接线及重复证据整理	docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#execution-rules	仅文档；保留未提交网络改动；严格检查的四份Runbook摘要受既有网络源码变化影响，未重新盖章
 2026-09-20T12:31:45Z	P2	网络逐次权限检查与执行中撤销实际路径通过	重试之前先阻止撤销后的继续外发；先跑实际 Worker/SQLite/页面路径并修复活跃结果投影，再冻结源码运行全套	p2-network-authority-01/README.md; p2-network-authority-01/standard-test-result.json	3968 项完整测试与 12 个浏览器场景通过；Mac 后代清理保持未知；全库格式和 lint 被原有原型文件阻断；下一批只读有限重试
+2026-09-20T13:10:19Z	P1	只读网络有限重试及重新建立出口连接	复用原调用/额度/期限；全套后发现替身遮住隧道复用，补真实 CONNECT 失败前证据，仅重验受影响消费者与构建	p1-readonly-retry-01/README.md; p1-readonly-retry-01/verification-composition.json	首次全套 3993 项通过；最终组合覆盖 3994 项和新构建，原型全局格式/lint 阻断保留；下一批未准入队列跨 boot/fence

@@ -82,7 +82,7 @@ describe("public search MCP adapter transport contract", () => {
       method: "POST",
       body: "approved request",
       headers: { "content-type": "application/json" },
-      signal,
+      signal: expect.any(AbortSignal),
       redirect: "error",
       dispatcher: expect.any(Object),
     });
@@ -164,6 +164,7 @@ describe("public search MCP adapter transport contract", () => {
     expect(result.headers.get("x-fixture")).toBe("value");
     expect(state.proxyFetch).toHaveBeenCalledWith(endpoint, {
       headers: {},
+      signal: expect.any(AbortSignal),
       redirect: "error",
       dispatcher: expect.any(Object),
     });
@@ -188,4 +189,85 @@ describe("public search MCP adapter transport contract", () => {
       else await expect(result.arrayBuffer()).rejects.toThrow("WEB_SEARCH_RESPONSE_LIMIT");
     },
   );
+});
+
+describe("fixed readonly search retries", () => {
+  const body = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 7,
+    method: "tools/call",
+    params: {
+      name: "web_search_exa",
+      arguments: { query: "Tokyo weather", numResults: 2 },
+    },
+  });
+  it("retries the same fixed search once through a fresh authenticated proxy", async () => {
+    state.proxyFetch.mockResolvedValueOnce(new Response("busy", { status: 503 }));
+    state.callTool.mockImplementationOnce(async () => {
+      const response = await transportFetch()(endpoint, { method: "POST", body });
+      expect(response.ok).toBe(true);
+      return { content: [{ type: "text", text: searchText }] };
+    });
+    expect(await search()).toHaveLength(1);
+    expect(state.proxyFetch).toHaveBeenCalledTimes(2);
+    expect(state.proxyFetch.mock.calls.map(([, init]) => init.body)).toEqual([body, body]);
+    expect(state.callTool).toHaveBeenCalledOnce();
+    expect(state.proxyCreated).toHaveBeenCalledTimes(2);
+    expect(state.proxyFetch.mock.calls[1]?.[1]?.dispatcher).not.toBe(
+      state.proxyFetch.mock.calls[0]?.[1]?.dispatcher,
+    );
+    expect(state.closeProxy).toHaveBeenCalledTimes(2);
+  });
+  it("does not retry arbitrary MCP operations", async () => {
+    state.proxyFetch.mockResolvedValue(new Response("busy", { status: 503 }));
+    state.callTool.mockImplementationOnce(async () => {
+      const response = await transportFetch()(endpoint, {
+        method: "POST",
+        body: body.replace("web_search_exa", "write_file"),
+      });
+      expect(response.status).toBe(503);
+      return { content: [{ type: "text", text: searchText }] };
+    });
+    await search();
+    expect(state.proxyFetch).toHaveBeenCalledOnce();
+  });
+  it("caps attempts and does not turn a provider failure into empty success", async () => {
+    state.proxyFetch.mockResolvedValue(new Response("busy", { status: 503 }));
+    state.callTool.mockImplementationOnce(async () => {
+      const response = await transportFetch()(endpoint, { method: "POST", body });
+      if (!response.ok) throw new Error("provider unavailable");
+      return { content: [] };
+    });
+    await expect(search()).rejects.toThrow("provider unavailable");
+    expect(state.proxyFetch).toHaveBeenCalledTimes(2);
+    expect(state.closeClient).toHaveBeenCalledOnce();
+    expect(state.closeProxy).toHaveBeenCalledTimes(2);
+  });
+});
+
+it("propagates cancellation of the original MCP request during retry admission", async () => {
+  const controller = new AbortController();
+  const body = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 9,
+    method: "tools/call",
+    params: {
+      name: "web_search_exa",
+      arguments: { query: "Tokyo weather", numResults: 2 },
+    },
+  });
+  state.proxyFetch.mockImplementation(async () => {
+    controller.abort(new Error("fixture cancellation"));
+    return new Response("busy", { status: 503 });
+  });
+  state.callTool.mockImplementationOnce(async () => {
+    await transportFetch()(endpoint, { method: "POST", body, signal: controller.signal });
+    throw new Error("unexpected completion");
+  });
+  await expect(search()).rejects.toThrow("fixture cancellation");
+  expect(state.proxyFetch).toHaveBeenCalledOnce();
+  const sent = state.proxyFetch.mock.calls[0]?.[1]?.signal;
+  expect(sent?.aborted).toBe(true);
+  expect(state.closeClient).toHaveBeenCalledOnce();
+  expect(state.closeProxy).toHaveBeenCalledOnce();
 });

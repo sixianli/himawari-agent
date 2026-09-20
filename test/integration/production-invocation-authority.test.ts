@@ -1,26 +1,36 @@
+import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
-import type { ConsumeCapabilityInvocationInput } from "@himawari-agent/application";
-import { PayloadUdsServer } from "@himawari-agent/platform-node";
+import { createServer } from "node:http";
+import type {
+  CapabilityManifest,
+  ConsumeCapabilityInvocationInput,
+} from "@himawari-agent/application";
+import {
+  EphemeralSecretPort,
+  NodeCapabilityRuntimePort,
+  PayloadUdsServer,
+} from "@himawari-agent/platform-node";
 import { describe, expect, it } from "vitest";
 import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.js";
 import { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.js";
 import {
-  OWNER_ID,
   AGENT_ID,
-  T1,
-  T2,
-  SERVICE_AUTHORITY,
-  openRepository,
   capability,
-  grantApproval,
   grant,
+  grantApproval,
   grantHandle,
   invocation,
+  OWNER_ID,
+  openRepository,
   outputPayload,
+  RUN_ID,
+  SERVICE_AUTHORITY,
+  T1,
+  T2,
 } from "../fixtures/sqlite-capability-invocation-fixture.js";
 
 describe("current invocation authority over production Payload broker", () => {
-  it.each(["grant", "handle", "expiry"] as const)(
+  it.each(["grant", "handle", "expiry", "readonly-retry", "readonly-revoked"] as const)(
     "rejects %s withdrawal without another use or loss of original effects",
     async (mode) => {
       const resource = await openRepository();
@@ -115,6 +125,26 @@ describe("current invocation authority over production Payload broker", () => {
         await client.connect();
         await client.assertCurrent(identity);
         await client.assertCurrent(identity);
+        if (mode === "readonly-retry" || mode === "readonly-revoked") {
+          await checkReadonlyRetry(
+            client,
+            identity,
+            mode === "readonly-revoked"
+              ? () =>
+                  authorization
+                    .revokeGrant(permission.id, T1, "owner_withdrawal", 2)
+                    .then(() => undefined)
+              : undefined,
+          );
+          expect(
+            (await authorization.listGrants(OWNER_ID, AGENT_ID)).find(
+              ({ id }) => id === permission.id,
+            )?.uses,
+          ).toBe(1);
+          expect(await capabilities.getExecutionHandle(handle.ref)).toMatchObject({ uses: 1 });
+          expect(await receipts.consume(input)).toMatchObject({ replayed: true });
+          return;
+        }
         if (mode === "grant")
           await authorization.revokeGrant(permission.id, T1, "owner_withdrawal", 2);
         else if (mode === "handle") await capabilities.revokeExecutionHandle(handle.ref, T1);
@@ -151,3 +181,137 @@ describe("current invocation authority over production Payload broker", () => {
     },
   );
 });
+
+/** Real HTTP + production UDS + SQLite authority. Input/output boundary is a
+ * controlled provider fixture; this does not claim a full model/Worker run. */
+async function checkReadonlyRetry(
+  client: ProductionPayloadBrokerClient,
+  identity: { handleRef: string; invocationId: string },
+  revoke?: () => Promise<void>,
+) {
+  let calls = 0;
+  const methods: string[] = [];
+  const http = createServer((request, response) => {
+    void (async () => {
+      methods.push(request.method ?? "");
+      calls++;
+      if (calls === 1) {
+        await revoke?.();
+        response.writeHead(503).end("busy");
+      } else response.writeHead(200, { "content-type": "application/json" }).end('{"answer":42}');
+    })().catch(() => response.writeHead(500).end());
+  });
+  http.listen(0, "127.0.0.1");
+  await once(http, "listening");
+  const address = http.address();
+  if (!address || typeof address === "string") throw new Error("missing fixture listener");
+  const declaration = capability().declaration;
+  const manifest: CapabilityManifest = {
+    ...declaration,
+    manifestVersion: "capability.v2",
+    source: { type: "adapter", locator: "adapter:readonly-fixture" },
+    sourceIdentity: "adapter:readonly-fixture",
+    isolation: "remote",
+    artifact: {
+      digest: declaration.integrity,
+      signatureStatus: "verified",
+      signerRef: "fixture",
+      rollbackArtifactRef: null,
+    },
+    scopes: {
+      network: ["127.0.0.1"],
+      filesystem: [],
+      secrets: [],
+      dataClassifications: ["private"],
+    },
+    cost: { currency: "USD", maxMicrosPerInvocation: 0 },
+    health: { status: "healthy", checkedAt: T1 },
+    reviewedBy: "owner",
+    reviewedAt: T1,
+    contractCompatibility: ["capability-conformance.v1"],
+    runtime: {
+      kind: "adapter",
+      endpointIdentity: "adapter:readonly-fixture",
+      protectedReferenceOnly: true,
+    },
+  };
+  const outputs: string[] = [];
+  const runtime = new NodeCapabilityRuntimePort({
+    manifests: { listActive: async () => [manifest] },
+    invocationAuthority: client,
+    bindings: {
+      resolveProcess: async () => undefined,
+      resolveEndpoint: async () => ({
+        endpointIdentity: "adapter:readonly-fixture",
+        artifactDigest: declaration.integrity,
+        url: `http://127.0.0.1:${address.port}`,
+        allowedMethods: ["GET"],
+        operations: { read: { method: "GET", path: "/read", secretHeaders: {} } },
+        productionSuitable: true,
+        allowLoopbackQualification: true,
+      }),
+    },
+    isolation: {
+      qualify: async () => {
+        throw new Error("unexpected process");
+      },
+      createLaunch: async () => {
+        throw new Error("unexpected process");
+      },
+    },
+    payloads: {
+      readInput: async () => new TextEncoder().encode("{}"),
+      writeOutput: async (_request, bytes) => {
+        outputs.push(new TextDecoder().decode(bytes));
+        return "payload:readonly-result";
+      },
+    },
+    secretHandles: new EphemeralSecretPort({
+      clock: { now: () => T1 },
+      ids: { next: () => "unused" },
+    }),
+    secretSource: {
+      resolve: async () => {
+        throw new Error("unexpected secret");
+      },
+    },
+    clock: { now: () => T1 },
+  });
+  try {
+    const events = [];
+    for await (const event of runtime.invoke({
+      invocationId: identity.invocationId,
+      capabilityHandleRef: identity.handleRef,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      runId: RUN_ID,
+      capabilityRef: declaration.ref,
+      operation: "read",
+      inputRef: "payload-input-capability-invocation",
+      delegatedContextRefs: ["payload-context-capability-invocation"],
+      secretHandleRefs: [],
+      dataClassification: "private",
+      resourceCeiling: {
+        maxWallTimeMs: 1000,
+        maxCpuTimeMs: 1000,
+        maxMemoryBytes: 1000000,
+        maxOutputBytes: 4096,
+        maxProgressEvents: 10,
+      },
+    }))
+      events.push(event);
+    expect(events).toMatchObject([
+      revoke
+        ? { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_AUTHORITY_REJECTED" }
+        : { type: "capability.completed" },
+    ]);
+    expect(calls).toBe(revoke ? 1 : 2);
+    expect(methods).toEqual(revoke ? ["GET"] : ["GET", "GET"]);
+    expect(outputs).toEqual(revoke ? [] : ['{"answer":42}']);
+  } finally {
+    http.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      http.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}

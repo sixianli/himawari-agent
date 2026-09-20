@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:c13b698b9bc4a996021e1131b7f96187c5a0435b8509716cff7b2175ab8b6251"
+contract_sha256: "sha256:9f7b6159a1696f2fdddfcda6a518421bb2e0715621f7e1a629e377e396332c88"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -181,6 +181,8 @@ schema 28 在原数据库追加 v2 资源关联、独立操作/资源观察、�
 SRT 的 Agent Service 和 Worker 启动组合已连接现有准入、目录授权状态、受保护 scope、认证 Payload 通道与作业监督器；scope 来源已支持文件 inspect/read 工作流及已批准 Grant targets 的通用工具范围；七工具前台 runner 及后台执行已有专用假数据验收，目标安装资格仍须独立完成。网络范围须来自本次操作同一 Grant 的审批快照确切小写 hostname:port 目标，并与主机能力上界核对；不新增授权或再次消费 Grant。准入及启动前验证授权、父调用和真实 host/runtime/runner/qualification。缺少可信来源时拒绝。策略只由 Worker 编译，初始观察可无摘要，首次原子启动固定摘要后不可替换。
 
 R8 增加 Job Host 私有认证上游，初始化时强制 SRT 两种代理协议通过上游并禁用 bypass；解析后的非公网地址被拒绝。旧裸域名绑定与审批快照不可自动补端口，须由现有授权流程取得有效的明确端口目标。Worker 对所有 mode 每轮监督都重查原授权，失败后请求 Job Host 关闭；关闭出口会终止连接，不等于撤回已经外发的数据或未知后代的文件权限。监督间隔为 250 ms，但 RPC 和调度会增加实际停止延迟。Job Host 还在 DNS 解析前、拨号前通过原认证 Worker IPC 逐次核对 Agent 当前 scope，已有连接按 250 ms 周期重查；每次回复只供原检查使用，1500 ms 未答、撤销、断开或身份变化均拒绝并关闭出口。Worker 与 Job Host 必须来自匹配安装产物，不能用旧组件缺少核验回调作为继续联网的理由；TLS 内部请求不可见，周期核验不构成每个加密请求的原子授权。Node 客户端使用 SRT 生成并规范为数字回环地址的代理 URL，不需要为解析 localhost 开放额外 DNS 服务。联网工具仍须在主机 inventory 中声明其必要的只读系统工具链/证书文件，并验证下载、安装和重定向。出口测试计数不是生产签名资格；不得手工把测试证据复制到部署 qualification。
+
+只读网络重试只在原调用仍运行时发生：声明零费用的 GET 与固定公开 `web_search_exa` 查询，对明确暂时错误最多重试一次；默认退避 250 ms，有有效 Retry-After 时至少等待该值，原期限不足则停止。GET 每次重查当前授权和秘密句柄，搜索在重试前建立新代理连接以重新触发出口检查，并沿用原 MCP 请求期限；任意写入、未知非幂等结果和有费用的 endpoint 不自动重发。重启、备份恢复或权威迁移不会恢复重试计数或重新执行历史工具；此策略没有新增恢复表、迁移或部署开关。
 
 安装产物源码新增了 R1 的 v2 合同、类型端口和纯判断函数，以及 R2 的 SQLite 账本，正式组合按安装声明分别使用 v1 与 v2 foreground；声明不能代替目标平台资格。新增 `SandboxExecutionPortV2` 导出不代表 Job Host 取得新监督资格，也不会把旧 unknown 回执转换为已清理。后续接入 v2 正式适配器时，须重新核对本 Runbook 的迁移、恢复和安装验证。
 

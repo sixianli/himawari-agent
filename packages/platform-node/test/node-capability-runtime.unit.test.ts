@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import type {
-  CapabilityInvocationRequest,
   CapabilityInvocationAuthorityPort,
+  CapabilityInvocationRequest,
   CapabilityManifest,
   PayloadProtectorPort,
   PayloadRecord,
@@ -772,4 +772,249 @@ describe("NodeCapabilityRuntimePort", () => {
       },
     ]);
   });
+});
+
+async function readonlyEndpointFixture(
+  fetch: typeof globalThis.fetch,
+  authority?: CapabilityInvocationAuthorityPort,
+  method: "GET" | "POST" = "GET",
+  withSecret = false,
+  costMicros = 0,
+) {
+  const capability = manifest(
+    { kind: "adapter", endpointIdentity: "adapter:retry", protectedReferenceOnly: true },
+    "adapter",
+    { ref: "retry-adapter", isolation: "remote", secrets: withSecret ? ["provider-token"] : [] },
+  );
+  const fixture = await runtimeFixture(
+    [{ ...capability, cost: { currency: "USD", maxMicrosPerInvocation: costMicros } }],
+    {
+      resolveProcess: async () => undefined,
+      resolveEndpoint: async () => ({
+        endpointIdentity: "adapter:retry",
+        artifactDigest: DIGEST,
+        url: "https://api.example.test",
+        allowedMethods: [method],
+        operations: {
+          execute: {
+            method,
+            path: "/read",
+            secretHeaders: withSecret ? { "provider-token": "x-provider-token" } : {},
+          },
+        },
+        productionSuitable: true,
+        allowLoopbackQualification: false,
+      }),
+    },
+    {
+      qualify: async () => {
+        throw new Error("unexpected process");
+      },
+      createLaunch: async () => {
+        throw new Error("unexpected process");
+      },
+    },
+    fetch,
+    undefined,
+    undefined,
+    authority,
+  );
+  const base = request(capability.ref);
+  const secretHandle = withSecret
+    ? await fixture.secretHandles.issueHandle({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        secretRef: "provider-token",
+        secretVersion: "version-1",
+        purpose: "execute",
+        scopeRef: base.invocationId,
+        expiresAt: "2026-08-28T09:20:00.000Z",
+      })
+    : undefined;
+  const invocation = { ...base, secretHandleRefs: secretHandle ? [secretHandle.ref] : [] };
+  await fixture.putInput(invocation, {});
+  return { ...fixture, invocation };
+}
+
+describe("bounded readonly endpoint retry", () => {
+  it("retains one invocation and protected output after a transient HTTP failure", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(new Response('{"answer":42}'));
+    const fixture = await readonlyEndpointFixture(fetch);
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.completed" },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fixture.readInputCalls).toHaveLength(1);
+    expect(fixture.writeOutputCalls).toHaveLength(1);
+    expect(new TextDecoder().decode(fixture.writeOutputCalls[0]?.plaintext)).toBe('{"answer":42}');
+    for (const [, init] of fetch.mock.calls)
+      expect(new Headers(init?.headers).get("idempotency-key")).toBe(
+        fixture.invocation.invocationId,
+      );
+  });
+  it("bounds repeated transient socket failures at two attempts", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(
+      new TypeError("fetch failed", {
+        cause: Object.assign(new Error("reset"), { code: "ECONNRESET" }),
+      }),
+    );
+    const fixture = await readonlyEndpointFixture(fetch);
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.failed" },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fixture.writeOutputCalls).toHaveLength(0);
+  });
+  it.each([400, 401, 403, 404, 422])("does not retry permanent HTTP %s", async (status) => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response("rejected", { status }));
+    const fixture = await readonlyEndpointFixture(fetch);
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.failed" },
+    ]);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("does not repeat an uncertain POST even for HTTP 503", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response("busy", { status: 503 }));
+    const fixture = await readonlyEndpointFixture(fetch, undefined, "POST");
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.result_unknown" },
+    ]);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("does not shorten Retry-After to fit the original deadline", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response("busy", { status: 429, headers: { "retry-after": "60" } }));
+    const fixture = await readonlyEndpointFixture(fetch);
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.failed" },
+    ]);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("checks current authority again before retrying a previously admitted GET", async () => {
+    let active = true;
+    const authority = {
+      assertCurrent: async () => {
+        if (!active) throw new Error("revoked");
+      },
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => {
+      active = false;
+      return new Response("busy", { status: 503 });
+    });
+    const fixture = await readonlyEndpointFixture(fetch, authority);
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_AUTHORITY_REJECTED" },
+    ]);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(fixture.writeOutputCalls).toHaveLength(0);
+  });
+});
+
+describe("readonly retry withdrawal and deadline", () => {
+  it("does not replay a GET when cancelled after the first response", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const fixture = await readonlyEndpointFixture(fetch);
+    fetch.mockImplementation(async () => {
+      await fixture.port.cancel(fixture.invocation.invocationId, "owner_cancelled");
+      return new Response("busy", { status: 503 });
+    });
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.cancelled" },
+    ]);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it.each(["revoked", "expired"])(
+    "rechecks a %s secret handle before a second send",
+    async (mode) => {
+      const fetch = vi.fn<typeof globalThis.fetch>();
+      const fixture = await readonlyEndpointFixture(fetch, undefined, "GET", true);
+      const [ref] = fixture.invocation.secretHandleRefs;
+      if (!ref) throw new Error("missing fixture secret");
+      fetch.mockImplementation(async (_url, init) => {
+        expect(new Headers(init?.headers).get("x-provider-token")).toBe("fixture-secret");
+        if (mode === "revoked") await fixture.secretHandles.revokeHandle(ref, NOW);
+        else {
+          const handle = await fixture.secretHandles.inspectHandle(ref);
+          if (!handle) throw new Error("missing fixture handle");
+          vi.spyOn(fixture.secretHandles, "inspectHandle").mockResolvedValue({
+            ...handle,
+            expiresAt: NOW,
+          });
+        }
+        return new Response("busy", { status: 503 });
+      });
+      expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+        { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_SECRET_INVALID" },
+      ]);
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(fixture.writeOutputCalls).toHaveLength(0);
+    },
+  );
+  it("keeps one wall-time budget instead of granting the retry a new deadline", async () => {
+    let elapsed = 0;
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => {
+      elapsed = 2800;
+      return new Response("busy", { status: 503 });
+    });
+    const fixture = await readonlyEndpointFixture(fetch);
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    try {
+      expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+        { type: "capability.failed" },
+      ]);
+      expect(fetch).toHaveBeenCalledOnce();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it("does not retry certificate, schema or unknown failures", async () => {
+    for (const error of [
+      new TypeError("invalid URL"),
+      Object.assign(new Error("certificate"), { code: "CERT_HAS_EXPIRED" }),
+      new Error("unknown provider failure"),
+    ]) {
+      const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(error);
+      const fixture = await readonlyEndpointFixture(fetch);
+      expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+        { type: "capability.failed" },
+      ]);
+      expect(fetch).toHaveBeenCalledOnce();
+    }
+  });
+});
+
+it("honors a server Retry-After before the second readonly send", async () => {
+  const sends: number[] = [];
+  const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => {
+    sends.push(performance.now());
+    return sends.length === 1
+      ? new Response("busy", { status: 429, headers: { "retry-after": "1" } })
+      : new Response("{}");
+  });
+  const fixture = await readonlyEndpointFixture(fetch);
+  expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+    { type: "capability.completed" },
+  ]);
+  expect(sends).toHaveLength(2);
+  expect((sends[1] ?? 0) - (sends[0] ?? 0)).toBeGreaterThanOrEqual(990);
+});
+
+it("does not add a second provider request to a priced endpoint invocation", async () => {
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockResolvedValue(new Response("busy", { status: 503 }));
+  const fixture = await readonlyEndpointFixture(fetch, undefined, "GET", false, 1000);
+  expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+    { type: "capability.failed" },
+  ]);
+  expect(fetch).toHaveBeenCalledOnce();
 });
