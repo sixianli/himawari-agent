@@ -199,6 +199,7 @@ interface ExecutionInterruptInput {
 
 interface TestCoordinator {
   execute(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult>;
+  recoverCompleted?(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult>;
   interruptExecution?(
     input: ExecutionInterruptInput,
   ): Promise<ExecutionInterruptionResult | undefined>;
@@ -248,6 +249,11 @@ function dispatcher(
 ): ProductionRunDispatcher {
   const boundCoordinator = {
     execute: coordinator.execute,
+    recoverCompleted:
+      coordinator.recoverCompleted ??
+      (async () => {
+        throw new Error("Unexpected completion recovery");
+      }),
     interruptExecution: coordinator.interruptExecution ?? (async () => undefined),
   };
   return new ProductionRunDispatcher({

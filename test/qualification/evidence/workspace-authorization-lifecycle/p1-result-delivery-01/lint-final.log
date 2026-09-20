@@ -1,0 +1,428 @@
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:773:32 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    771 │   private candidate(row: Record<string, unknown>, reconciliation: boolean) {
+    772 │     const checkpointPhase = optionalTextValue(row, "checkpoint_phase");
+  > 773 │     const runStatus = text(row["status"], "status");
+        │                                ^^^^^^^^
+    774 │     const action =
+    775 │       reconciliation || checkpointPhase === null || checkpointPhase === "accepted"
+
+  i Unsafe fix: Use a literal key instead.
+
+     771  771 │     private candidate(row: Record<string, unknown>, reconciliation: boolean) {
+     772  772 │       const checkpointPhase = optionalTextValue(row, "checkpoint_phase");
+     773      │ - ····const·runStatus·=·text(row["status"],·"status");
+          773 │ + ····const·runStatus·=·text(row.status,·"status");
+     774  774 │       const action =
+     775  775 │         reconciliation || checkpointPhase === null || checkpointPhase === "accepted"
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:780:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    778 │           : "start"
+    779 │         : checkpointPhase === "reconciling_external_result" ||
+  > 780 │             row["checkpoint_terminal_status"] === "completed"
+        │                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    781 │           ? "deliver_completed"
+    782 │           : "resume";
+
+  i Unsafe fix: Use a literal key instead.
+
+     778  778 │             : "start"
+     779  779 │           : checkpointPhase === "reconciling_external_result" ||
+     780      │ - ············row["checkpoint_terminal_status"]·===·"completed"
+          780 │ + ············row.checkpoint_terminal_status·===·"completed"
+     781  781 │             ? "deliver_completed"
+     782  782 │             : "resume";
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:784:39 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    782 │           : "resume";
+    783 │     return {
+  > 784 │       ownerId: createOwnerId(text(row["owner_id"], "owner_id")),
+        │                                       ^^^^^^^^^^
+    785 │       agentId: createAgentId(text(row["agent_id"], "agent_id")),
+    786 │       runId: createRunId(text(row["id"], "id")),
+
+  i Unsafe fix: Use a literal key instead.
+
+     782  782 │             : "resume";
+     783  783 │       return {
+     784      │ - ······ownerId:·createOwnerId(text(row["owner_id"],·"owner_id")),
+          784 │ + ······ownerId:·createOwnerId(text(row.owner_id,·"owner_id")),
+     785  785 │         agentId: createAgentId(text(row["agent_id"], "agent_id")),
+     786  786 │         runId: createRunId(text(row["id"], "id")),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:785:39 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    783 │     return {
+    784 │       ownerId: createOwnerId(text(row["owner_id"], "owner_id")),
+  > 785 │       agentId: createAgentId(text(row["agent_id"], "agent_id")),
+        │                                       ^^^^^^^^^^
+    786 │       runId: createRunId(text(row["id"], "id")),
+    787 │       sessionId: text(row["session_id"], "session_id"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     783  783 │       return {
+     784  784 │         ownerId: createOwnerId(text(row["owner_id"], "owner_id")),
+     785      │ - ······agentId:·createAgentId(text(row["agent_id"],·"agent_id")),
+          785 │ + ······agentId:·createAgentId(text(row.agent_id,·"agent_id")),
+     786  786 │         runId: createRunId(text(row["id"], "id")),
+     787  787 │         sessionId: text(row["session_id"], "session_id"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:786:35 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    784 │       ownerId: createOwnerId(text(row["owner_id"], "owner_id")),
+    785 │       agentId: createAgentId(text(row["agent_id"], "agent_id")),
+  > 786 │       runId: createRunId(text(row["id"], "id")),
+        │                                   ^^^^
+    787 │       sessionId: text(row["session_id"], "session_id"),
+    788 │       triggerId: text(row["trigger_id"], "trigger_id"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     784  784 │         ownerId: createOwnerId(text(row["owner_id"], "owner_id")),
+     785  785 │         agentId: createAgentId(text(row["agent_id"], "agent_id")),
+     786      │ - ······runId:·createRunId(text(row["id"],·"id")),
+          786 │ + ······runId:·createRunId(text(row.id,·"id")),
+     787  787 │         sessionId: text(row["session_id"], "session_id"),
+     788  788 │         triggerId: text(row["trigger_id"], "trigger_id"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:787:27 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    785 │       agentId: createAgentId(text(row["agent_id"], "agent_id")),
+    786 │       runId: createRunId(text(row["id"], "id")),
+  > 787 │       sessionId: text(row["session_id"], "session_id"),
+        │                           ^^^^^^^^^^^^
+    788 │       triggerId: text(row["trigger_id"], "trigger_id"),
+    789 │       threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     785  785 │         agentId: createAgentId(text(row["agent_id"], "agent_id")),
+     786  786 │         runId: createRunId(text(row["id"], "id")),
+     787      │ - ······sessionId:·text(row["session_id"],·"session_id"),
+          787 │ + ······sessionId:·text(row.session_id,·"session_id"),
+     788  788 │         triggerId: text(row["trigger_id"], "trigger_id"),
+     789  789 │         threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:788:27 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    786 │       runId: createRunId(text(row["id"], "id")),
+    787 │       sessionId: text(row["session_id"], "session_id"),
+  > 788 │       triggerId: text(row["trigger_id"], "trigger_id"),
+        │                           ^^^^^^^^^^^^
+    789 │       threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+    790 │       runRevision: numberValue(row, "revision"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     786  786 │         runId: createRunId(text(row["id"], "id")),
+     787  787 │         sessionId: text(row["session_id"], "session_id"),
+     788      │ - ······triggerId:·text(row["trigger_id"],·"trigger_id"),
+          788 │ + ······triggerId:·text(row.trigger_id,·"trigger_id"),
+     789  789 │         threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+     790  790 │         runRevision: numberValue(row, "revision"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:789:21 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    787 │       sessionId: text(row["session_id"], "session_id"),
+    788 │       triggerId: text(row["trigger_id"], "trigger_id"),
+  > 789 │       threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+        │                     ^^^^^^^^^^^
+    790 │       runRevision: numberValue(row, "revision"),
+    791 │       runStatus,
+
+  i Unsafe fix: Use a literal key instead.
+
+     787  787 │         sessionId: text(row["session_id"], "session_id"),
+     788  788 │         triggerId: text(row["trigger_id"], "trigger_id"),
+     789      │ - ······threadId:·row["thread_id"]·===·null·?·null·:·text(row["thread_id"],·"thread_id"),
+          789 │ + ······threadId:·row.thread_id·===·null·?·null·:·text(row["thread_id"],·"thread_id"),
+     790  790 │         runRevision: numberValue(row, "revision"),
+     791  791 │         runStatus,
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:789:61 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    787 │       sessionId: text(row["session_id"], "session_id"),
+    788 │       triggerId: text(row["trigger_id"], "trigger_id"),
+  > 789 │       threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+        │                                                             ^^^^^^^^^^^
+    790 │       runRevision: numberValue(row, "revision"),
+    791 │       runStatus,
+
+  i Unsafe fix: Use a literal key instead.
+
+     787  787 │         sessionId: text(row["session_id"], "session_id"),
+     788  788 │         triggerId: text(row["trigger_id"], "trigger_id"),
+     789      │ - ······threadId:·row["thread_id"]·===·null·?·null·:·text(row["thread_id"],·"thread_id"),
+          789 │ + ······threadId:·row["thread_id"]·===·null·?·null·:·text(row.thread_id,·"thread_id"),
+     790  790 │         runRevision: numberValue(row, "revision"),
+     791  791 │         runStatus,
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:822:20 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    820 │     const row = record(value);
+    821 │     return {
+  > 822 │       id: text(row["id"], "id"),
+        │                    ^^^^
+    823 │       ownerId: text(row["owner_id"], "owner_id"),
+    824 │       agentId: text(row["agent_id"], "agent_id"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     820  820 │       const row = record(value);
+     821  821 │       return {
+     822      │ - ······id:·text(row["id"],·"id"),
+          822 │ + ······id:·text(row.id,·"id"),
+     823  823 │         ownerId: text(row["owner_id"], "owner_id"),
+     824  824 │         agentId: text(row["agent_id"], "agent_id"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:823:25 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    821 │     return {
+    822 │       id: text(row["id"], "id"),
+  > 823 │       ownerId: text(row["owner_id"], "owner_id"),
+        │                         ^^^^^^^^^^
+    824 │       agentId: text(row["agent_id"], "agent_id"),
+    825 │       sessionId: text(row["session_id"], "session_id"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     821  821 │       return {
+     822  822 │         id: text(row["id"], "id"),
+     823      │ - ······ownerId:·text(row["owner_id"],·"owner_id"),
+          823 │ + ······ownerId:·text(row.owner_id,·"owner_id"),
+     824  824 │         agentId: text(row["agent_id"], "agent_id"),
+     825  825 │         sessionId: text(row["session_id"], "session_id"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:824:25 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    822 │       id: text(row["id"], "id"),
+    823 │       ownerId: text(row["owner_id"], "owner_id"),
+  > 824 │       agentId: text(row["agent_id"], "agent_id"),
+        │                         ^^^^^^^^^^
+    825 │       sessionId: text(row["session_id"], "session_id"),
+    826 │       triggerId: text(row["trigger_id"], "trigger_id"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     822  822 │         id: text(row["id"], "id"),
+     823  823 │         ownerId: text(row["owner_id"], "owner_id"),
+     824      │ - ······agentId:·text(row["agent_id"],·"agent_id"),
+          824 │ + ······agentId:·text(row.agent_id,·"agent_id"),
+     825  825 │         sessionId: text(row["session_id"], "session_id"),
+     826  826 │         triggerId: text(row["trigger_id"], "trigger_id"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:825:27 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    823 │       ownerId: text(row["owner_id"], "owner_id"),
+    824 │       agentId: text(row["agent_id"], "agent_id"),
+  > 825 │       sessionId: text(row["session_id"], "session_id"),
+        │                           ^^^^^^^^^^^^
+    826 │       triggerId: text(row["trigger_id"], "trigger_id"),
+    827 │       threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     823  823 │         ownerId: text(row["owner_id"], "owner_id"),
+     824  824 │         agentId: text(row["agent_id"], "agent_id"),
+     825      │ - ······sessionId:·text(row["session_id"],·"session_id"),
+          825 │ + ······sessionId:·text(row.session_id,·"session_id"),
+     826  826 │         triggerId: text(row["trigger_id"], "trigger_id"),
+     827  827 │         threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:826:27 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    824 │       agentId: text(row["agent_id"], "agent_id"),
+    825 │       sessionId: text(row["session_id"], "session_id"),
+  > 826 │       triggerId: text(row["trigger_id"], "trigger_id"),
+        │                           ^^^^^^^^^^^^
+    827 │       threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+    828 │       revision: numberValue(row, "revision"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     824  824 │         agentId: text(row["agent_id"], "agent_id"),
+     825  825 │         sessionId: text(row["session_id"], "session_id"),
+     826      │ - ······triggerId:·text(row["trigger_id"],·"trigger_id"),
+          826 │ + ······triggerId:·text(row.trigger_id,·"trigger_id"),
+     827  827 │         threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+     828  828 │         revision: numberValue(row, "revision"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:827:21 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    825 │       sessionId: text(row["session_id"], "session_id"),
+    826 │       triggerId: text(row["trigger_id"], "trigger_id"),
+  > 827 │       threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+        │                     ^^^^^^^^^^^
+    828 │       revision: numberValue(row, "revision"),
+    829 │       status: text(row["status"], "status"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     825  825 │         sessionId: text(row["session_id"], "session_id"),
+     826  826 │         triggerId: text(row["trigger_id"], "trigger_id"),
+     827      │ - ······threadId:·row["thread_id"]·===·null·?·null·:·text(row["thread_id"],·"thread_id"),
+          827 │ + ······threadId:·row.thread_id·===·null·?·null·:·text(row["thread_id"],·"thread_id"),
+     828  828 │         revision: numberValue(row, "revision"),
+     829  829 │         status: text(row["status"], "status"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:827:61 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    825 │       sessionId: text(row["session_id"], "session_id"),
+    826 │       triggerId: text(row["trigger_id"], "trigger_id"),
+  > 827 │       threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+        │                                                             ^^^^^^^^^^^
+    828 │       revision: numberValue(row, "revision"),
+    829 │       status: text(row["status"], "status"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     825  825 │         sessionId: text(row["session_id"], "session_id"),
+     826  826 │         triggerId: text(row["trigger_id"], "trigger_id"),
+     827      │ - ······threadId:·row["thread_id"]·===·null·?·null·:·text(row["thread_id"],·"thread_id"),
+          827 │ + ······threadId:·row["thread_id"]·===·null·?·null·:·text(row.thread_id,·"thread_id"),
+     828  828 │         revision: numberValue(row, "revision"),
+     829  829 │         status: text(row["status"], "status"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:829:24 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    827 │       threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+    828 │       revision: numberValue(row, "revision"),
+  > 829 │       status: text(row["status"], "status"),
+        │                        ^^^^^^^^
+    830 │       checkpointPhase: optionalTextValue(row, "checkpoint_phase"),
+    831 │       checkpointTerminalStatus: optionalTextValue(row, "checkpoint_terminal_status"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     827  827 │         threadId: row["thread_id"] === null ? null : text(row["thread_id"], "thread_id"),
+     828  828 │         revision: numberValue(row, "revision"),
+     829      │ - ······status:·text(row["status"],·"status"),
+          829 │ + ······status:·text(row.status,·"status"),
+     830  830 │         checkpointPhase: optionalTextValue(row, "checkpoint_phase"),
+     831  831 │         checkpointTerminalStatus: optionalTextValue(row, "checkpoint_terminal_status"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:833:22 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    831 │       checkpointTerminalStatus: optionalTextValue(row, "checkpoint_terminal_status"),
+    832 │       leaseRevision: numberValue(row, "lease_revision"),
+  > 833 │       turnIndex: row["turn_index"] === null ? null : numberValue(row, "turn_index"),
+        │                      ^^^^^^^^^^^^
+    834 │     };
+    835 │   }
+
+  i Unsafe fix: Use a literal key instead.
+
+     831  831 │         checkpointTerminalStatus: optionalTextValue(row, "checkpoint_terminal_status"),
+     832  832 │         leaseRevision: numberValue(row, "lease_revision"),
+     833      │ - ······turnIndex:·row["turn_index"]·===·null·?·null·:·numberValue(row,·"turn_index"),
+          833 │ + ······turnIndex:·row.turn_index·===·null·?·null·:·numberValue(row,·"turn_index"),
+     834  834 │       };
+     835  835 │     }
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:881:25 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    879 │     const row = record(value);
+    880 │     return {
+  > 881 │       ownerId: text(row["owner_id"], "owner_id"),
+        │                         ^^^^^^^^^^
+    882 │       agentId: text(row["agent_id"], "agent_id"),
+    883 │       runId: text(row["run_id"], "run_id"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     879  879 │       const row = record(value);
+     880  880 │       return {
+     881      │ - ······ownerId:·text(row["owner_id"],·"owner_id"),
+          881 │ + ······ownerId:·text(row.owner_id,·"owner_id"),
+     882  882 │         agentId: text(row["agent_id"], "agent_id"),
+     883  883 │         runId: text(row["run_id"], "run_id"),
+
+
+packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts:882:25 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    880 │     return {
+    881 │       ownerId: text(row["owner_id"], "owner_id"),
+  > 882 │       agentId: text(row["agent_id"], "agent_id"),
+        │                         ^^^^^^^^^^
+    883 │       runId: text(row["run_id"], "run_id"),
+    884 │       revision: numberValue(row, "revision"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     880  880 │       return {
+     881  881 │         ownerId: text(row["owner_id"], "owner_id"),
+     882      │ - ······agentId:·text(row["agent_id"],·"agent_id"),
+          882 │ + ······agentId:·text(row.agent_id,·"agent_id"),
+     883  883 │         runId: text(row["run_id"], "run_id"),
+     884  884 │         revision: numberValue(row, "revision"),
+
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 124.
+Checked 12 files in 67ms. No fixes applied.
+Found 3 warnings.
+Found 141 infos.
+lint ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some warnings were emitted while running checks.

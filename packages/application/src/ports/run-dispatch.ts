@@ -36,7 +36,7 @@ interface RunDispatchRecord {
   readonly leaseRevision: number;
 }
 
-export type RunDispatchAction = "start" | "resume";
+export type RunDispatchAction = "start" | "resume" | "deliver_completed";
 
 export interface RunDispatchCandidate extends RunDispatchRecord {
   readonly action: RunDispatchAction;

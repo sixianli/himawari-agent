@@ -23,6 +23,7 @@ date: "2026-09-16"
 ## 阅读导航
 
 - [剩余工作依赖顺序与验收批次（2026-09-20）](#remaining-order)
+- [原完成结果交付恢复](#p1-result-delivery)
 - [历史恢复上下文（2026-09-20 15:52）](#checkpoint-2026-09-20)
 - [本次实施记录与待审核交互](#implementation-record)
 
@@ -46,7 +47,7 @@ date: "2026-09-16"
 ### 当前系统与依赖判断
 
 - **已有基础：** Pi 0.84.2 工具/Agent Loop、SRT 0.0.75、单一 Agent 权威、Worker、SQLite journal、永久释放记录、持久队列、文件合同 3、审批额度预约和默认关闭的审查适配都已有局部实现。继续组合既有能力，不重复实现 Pi 工具协议或另建调度存储。
-- **当前主要断点：** 资源快照与工具父子身份已接入当前会话投影，标准构建与 3,875 项测试及 12 个 Chrome 场景通过；完整结果交付恢复、跨 boot/fence 续排、执行中撤销、目录改名、Worker 执行后冲突、可选副本、真实自动审查和最终联合验收仍不完整。
+- **当前主要断点：** 资源快照与工具父子身份已接入当前会话投影，标准构建与 3,875 项测试及 12 个 Chrome 场景通过；原完成结果交付恢复已接入，最终标准构建与 3,899 项测试通过；跨 boot/fence 续排、执行中撤销、目录改名、Worker 执行后冲突、可选副本、真实自动审查和最终联合验收仍不完整。
 - **必须提前判定的平台前提：** Mac 原进程组停止不能覆盖通过 `setsid` 脱离的后代；已有真实探针观察到继续写入。当前保留 unknown/占用是必要保护，但不是停止能力完成。Linux namespace 探针通过也不等于完整安装资格。先确认可满足合同的执行边界，再扩大依赖它的功能。
 - **最新可复用结果：** `517c753` 已提交资源快照内部端口，标准构建及 245 文件/3,862 项测试通过；接手回读 1,094 项冻结输入无变化。`readRunInventory` 已在后续批次接入 `thread.execution_state`，见[资源与页面投影](#p6-resource-projection)。原有 AGENTS.md、编号副本、原型和其他浏览器证据继续保留；原型格式问题使全库 check 不能称为通过。
 
@@ -954,6 +955,20 @@ P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 �
 [本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-resource-projection-01/README.md)包含生产准备服务、真实 SQLite/ThreadExecutionProjection、撤销后的历史读取、队列归属拒绝、原释放读回，以及缺失结果和无事件通知的失败前/修复后检查。Chrome 的 12 场景通过；浏览器使用隔离 HTTP 夹具，尚非真实 Gateway→Worker→文件→页面联合验收。首轮标准验证为 246 文件、3,871 项通过；补入无事件刷新、内部缺失结果与取消细分后的[最终标准构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-resource-projection-01/standard-final/tests.json)为 246 文件、3,875 项通过，零失败、零跳过。1,078 项冻结输入最终回读无变化，最终 Chrome 的 12 场景通过；任务静态检查、严格文档和四份 Runbook 合同均通过，未声称 hosted CI 或生产资格。
 
 本批不改变 Pi 工具协议、执行权限或模型配置。全部会话注意状态、完整结果交付恢复、文件并发/改名、跨 boot 续排及其他阶段继续按[剩余依赖顺序](#remaining-order)实施；完整 P0～P7 与 68 项验收保持未完成。
+
+<a id="p1-result-delivery"></a>
+
+### P1：补交已保存的原完成输出（2026-09-20）
+
+[↑ 返回阅读导航](#contents)
+
+第3批资源投影已提交为 `e0b2de5`，探针安装入口修复为 `22ab7b3`。第4批继续复用原 Run 调度、冻结输入、checkpoint 和完成事务，新增内部 `deliver_completed` 分支，仅交付已保存的完成输出。原业务执行期限保持不变；当前权威/执行租约负责这次有限交付，不重新建立上下文、调用 Pi/Worker 或启动另一轮清理。
+
+SQLite 的候选筛选、领取及最终完成分别检查资格。最终写入回答的事务检查 checkpoint revision 与原输出，并覆盖全部前台/后台资源、未绑定预约、队列、永久释放和后续独立保护。已知输出刚保存后中断、等待清理记录保存而 Run 状态尚未更新时中断，都保留恢复身份。缺少可信完成输出的未知运行不能被自动重放；原输入读取或校验失败记录 `RUN_COMPLETION_DELIVERY_REJECTED`，保留输出并暂停自动补交。取消先提交时不交付回答；checkpoint 在最终事务前改变时旧尝试被拒绝，后续重新读取后只交付一次。
+
+[本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-result-delivery-01/README.md)已包含前台最终资源检查遗漏的失败证据、生产调度与真实 SQLite/Payload/消息读回，以及取消、中断和 checkpoint 竞争。450 项相邻消费者回归通过；随后增加的竞争和未知输出用例另有定向通过结果。[最终标准构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-result-delivery-01/standard-final/tests.json)为 246 文件、3,899 项全部通过，零失败、零跳过；1,079 项冻结输入回读未变。任务静态检查、严格文档和四份 Runbook 合同通过；全库格式问题仍限于既存无关原型。原结果补交这一子批已验证，完整恢复批次继续实施。模型和宿主证明仍是受控输入，不据此声称双平台资格或完整 Gateway→Worker 文件链路完成。
+
+本批只补交已经完成的原结果。全部业务错误分类、跨 boot 的未准入队列续接、执行中撤销、文件并发/目录改名、可选副本和其余阶段仍按[依赖顺序](#remaining-order)继续；P1 与整个 Plan 保持未完成。
 
 <a id="checkpoint-2026-09-20"></a>
 

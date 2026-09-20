@@ -34,6 +34,10 @@ import {
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import type { SqliteThreadOperations } from "./sqlite-thread-operations.js";
+import {
+  RUN_COMPLETION_RECOVERY_SQL,
+  RUN_RESOURCES_RELEASED_SQL,
+} from "./sqlite-run-resource-guard.ts";
 
 type RunMutationInput = TransitionRunStateInput | RunCompletionInput;
 type RunAuthorityInput = RunMutationInput | RunCancellationInput;
@@ -139,7 +143,14 @@ function completion(value: unknown): RunCompletionInput {
   else if (output["kind"] === "assistant-answer")
     parsed = { kind: "assistant-answer", contentRef: string(output["contentRef"]) };
   else throw new TypeError("Run completion output is invalid");
-  return { ...base, output: parsed, dataClassification: classification(raw["dataClassification"]) };
+  return {
+    ...base,
+    output: parsed,
+    dataClassification: classification(raw["dataClassification"]),
+    ...(raw["recoveryCheckpointRevision"] === undefined
+      ? {}
+      : { recoveryCheckpointRevision: integer(raw["recoveryCheckpointRevision"]) }),
+  };
 }
 
 function commandType(input: RunMutationInput): "run.transition" | "run.complete" {
@@ -616,13 +627,45 @@ export class SqliteRunLifecycleOperations {
         this.assertTransition(stored, "completed");
         const pendingResource = this.database
           .prepare(
-            `SELECT 1 FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=?
-           AND json_extract(plan_json, '$.mode') IN ('background','service')
-           AND COALESCE(json_extract(facts_json, '$.resource.supervision'), 'initializing') != 'released' LIMIT 1`,
+            `SELECT 1 FROM runs r WHERE r.owner_id=@ownerId AND r.agent_id=@agentId AND r.id=@runId
+              AND NOT (${RUN_RESOURCES_RELEASED_SQL})`,
           )
-          .get(input.ownerId, input.agentId, input.runId);
+          .get({
+            ownerId: input.ownerId,
+            agentId: input.agentId,
+            runId: input.runId,
+            resourceNow: now,
+          });
         if (pendingResource)
           return this.fail("PORT_CONFLICT", "Run still owns unreleased sandbox resources");
+        if (
+          stored.run.status === "reconciling_external_result" ||
+          input.recoveryCheckpointRevision !== undefined
+        ) {
+          const recoverable = this.database
+            .prepare(
+              `SELECT c.output_kind AS kind,c.final_answer_ref AS contentRef,c.revision AS revision
+              FROM runs r JOIN run_coordination_checkpoints c
+                ON c.run_id=r.id AND c.owner_id=r.owner_id AND c.agent_id=r.agent_id
+              WHERE r.id=@runId AND r.owner_id=@ownerId AND r.agent_id=@agentId
+                AND (${RUN_COMPLETION_RECOVERY_SQL})`,
+            )
+            .get({
+              runId: input.runId,
+              ownerId: input.ownerId,
+              agentId: input.agentId,
+              resourceNow: now,
+            }) as { kind: string; contentRef: string | null; revision: number } | undefined;
+          if (
+            !recoverable ||
+            (input.recoveryCheckpointRevision !== undefined &&
+              recoverable.revision !== input.recoveryCheckpointRevision) ||
+            recoverable.kind !== input.output.kind ||
+            (input.output.kind === "assistant-answer" &&
+              recoverable.contentRef !== input.output.contentRef)
+          )
+            return this.fail("PORT_CONFLICT", "Run completion recovery changed or is not eligible");
+        }
         this.assertPayload(input);
         let dataClassification = input.dataClassification;
         if (input.output.kind === "assistant-answer") {

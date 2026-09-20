@@ -1,0 +1,41 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/thread-run-lifecycle.test.ts (142 tests | 2 failed | 138 skipped) 970ms
+     × recovers original answer delivery after the execution deadline: cancelled 229ms
+     × recovers original answer delivery after the execution deadline: cancelled 219ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > recovers original answer delivery after the execution deadline: cancelled
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > recovers original answer delivery after the execution deadline: cancelled
+AssertionError: expected { phase: 'cancelled', …(7) } to match object { …(2) }
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "output": {
+      "contentRef": "payload-final-answer",
+      "kind": "assistant-answer",
+    },
+-   "phase": "reconciling_external_result",
++   "phase": "cancelled",
+  }
+
+ ❯ test/integration/thread-run-lifecycle.test.ts:504:71
+    502|       expect((await setup.runs.readRun(setup.runId))?.run.status).toBe…
+    503|       expect(stopRun).toHaveBeenCalledOnce();
+    504|       expect((await setup.checkpoints.read(setup.runId))?.checkpoint).…
+       |                                                                       ^
+    505|         phase: outcome === "delivered" ? "completed" : "reconciling_ex…
+    506|         output: { kind: "assistant-answer", contentRef: "payload-final…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed | 138 skipped (142)
+   Start at  17:38:20
+   Duration  2.67s (transform 1.05s, setup 0ms, import 1.59s, tests 970ms, environment 0ms)

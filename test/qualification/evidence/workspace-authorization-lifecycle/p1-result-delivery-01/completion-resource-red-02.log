@@ -1,0 +1,39 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts (176 tests | 2 failed | 170 skipped) 1616ms
+       × persists foreground creator, environment and resource handle in the admission transaction 464ms
+       × persists foreground creator, environment and resource handle in the admission transaction 116ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > persists foreground creator, environment and resource handle in the admission transaction
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > persists foreground creator, environment and resource handle in the admission transaction
+AssertionError: expected ApplicationPortError: Thread completion r… { …(2) } to match object { code: 'PORT_CONFLICT', …(1) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "code": "PORT_CONFLICT",
+-   "message": "Run still owns unreleased sandbox resources",
++ ApplicationPortError {
++   "code": "PORT_INVALID_OPERATION",
+  }
+
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:993:14
+    991|                 dataClassification: "private",
+    992|               }),
+    993|             ).rejects.toMatchObject({
+       |              ^
+    994|               code: "PORT_CONFLICT",
+    995|               message: "Run still owns unreleased sandbox resources",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 4 passed | 170 skipped (176)
+   Start at  17:28:37
+   Duration  3.63s (transform 1.26s, setup 0ms, import 1.86s, tests 1.62s, environment 0ms)

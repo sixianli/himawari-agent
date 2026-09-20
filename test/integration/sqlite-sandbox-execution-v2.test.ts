@@ -185,6 +185,41 @@ function result(f: Fixture, record: SandboxExecutionRecord) {
     },
   });
 }
+async function assertCompletionBlocked(f: Fixture, plan: ReturnType<typeof admission>["plan"]) {
+  f.database.prepare("UPDATE runs SET revision=1 WHERE id=?").run(plan.identity.runId);
+  const reopened = await SqliteProductStateRepository.open({
+    stateRoot: f.resource.stateRoot,
+    minimumFreeBytes: 0,
+    now: () => T1,
+  });
+  try {
+    const runs = reopened.runLifecycle(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product);
+    await expect(
+      runs.completeRun({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: createRunId(plan.identity.runId),
+        expectedRevision: 1,
+        idempotencyKey: createIdempotencyKey("r6-completion"),
+        commandFingerprint: "r6-completion",
+        authority: SERVICE_AUTHORITY.lease,
+        executionLease: plan.executionLease as RunExecutionLeaseClaim,
+        payloadRef: "payload-capability-invocation-trigger",
+        output: { kind: "no-answer" },
+        dataClassification: "private",
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_CONFLICT",
+      message: "Run still owns unreleased sandbox resources",
+    });
+    await expect(runs.readRun(createRunId(plan.identity.runId))).resolves.toMatchObject({
+      revision: 1,
+      run: { status: "running" },
+    });
+  } finally {
+    await reopened.close();
+  }
+}
 describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", (execution) => {
   useSqliteContractExecution(execution);
 
@@ -915,36 +950,41 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         await consumed.close();
       }
     });
-    it.each(["background", "service"] as const)(
+    it.each(["foreground", "background", "service"] as const)(
       "persists %s creator, environment and resource handle in the admission transaction",
       async (mode) => {
         const f = await openSandboxJournal();
         try {
           const a = admission(f);
           const contract =
-            mode === "background"
-              ? { ref: "task-create", version: "1", kind: "task_start" }
-              : {
-                  ref: "service-create",
-                  version: "1",
-                  kind: "service_start",
-                  readinessProbeRef: "ready",
-                };
+            mode === "foreground"
+              ? a.plan.operationContract
+              : mode === "background"
+                ? { ref: "task-create", version: "1", kind: "task_start" }
+                : {
+                    ref: "service-create",
+                    version: "1",
+                    kind: "service_start",
+                    readinessProbeRef: "ready",
+                  };
           const plan = sandboxExecutionPlanCandidateV2Schema.parse({
             ...a.plan,
             mode,
             operationContract: contract,
           });
+          const resourceRef = mode === "foreground" ? null : "resource";
           const facts = sandboxExecutionFactsSchema.parse({
             ...a.facts,
-            environment: { ...a.facts.environment, mode, resourceRef: "resource" },
+            environment: { ...a.facts.environment, mode, resourceRef },
             resource: {
               ...a.facts.resource,
-              resourceRef: "resource",
+              resourceRef,
               status:
-                mode === "background"
-                  ? { kind: "task", state: "starting" }
-                  : { kind: "service", readiness: "starting" },
+                mode === "foreground"
+                  ? { kind: "foreground" }
+                  : mode === "background"
+                    ? { kind: "task", state: "starting" }
+                    : { kind: "service", readiness: "starting" },
             },
           });
           const record = call(f, "admit", { ...a, plan, facts }).record;
@@ -957,45 +997,61 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               .get(),
           ).toEqual({
             environment_id: plan.environmentId,
-            resource_ref: "resource",
+            resource_ref: resourceRef,
             invocation_id: plan.identity.invocationId,
           });
           expect(call(f, "admit", { ...a, plan, facts }).applied).toBe(false);
           // Exercise the SQLite completion transaction independently of RunCoordinator:
           // a resource admitted after its last enumeration must still block completion.
-          f.database.prepare("UPDATE runs SET revision=1 WHERE id=?").run(plan.identity.runId);
-          const reopened = await SqliteProductStateRepository.open({
-            stateRoot: f.resource.stateRoot,
-            minimumFreeBytes: 0,
-            now: () => T1,
-          });
-          try {
-            const runs = reopened.runLifecycle(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product);
-            await expect(
-              runs.completeRun({
+          await assertCompletionBlocked(f, plan);
+        } finally {
+          await f.close();
+        }
+      },
+    );
+    it.each(["queued", "reserved", "released-incident"] as const)(
+      "blocks final completion with %s resources in the same transaction",
+      async (phase) => {
+        const f = await openSandboxJournal();
+        try {
+          const a = admission(f);
+          if (phase === "released-incident") {
+            let record = start(f, a);
+            record = append(f, record, resource(record, "stopping"));
+            record = append(f, record, resource(record, "released"));
+            const receipt = record.releaseReceipt;
+            record = call(
+              f,
+              "append",
+              freshObservation(record, resource(record, "controlled"), T1),
+            ).record;
+            expect(record.releaseReceipt).toEqual(receipt);
+            expect(record.workspaceBlocked).toBe(true);
+          } else {
+            operationsForDatabase(f.database).execute(
+              `capabilityInvocation.sandboxV2.${phase === "queued" ? "enqueue" : "reserve"}`,
+              {
                 ownerId: OWNER_ID,
                 agentId: AGENT_ID,
-                runId: createRunId(plan.identity.runId),
-                expectedRevision: 1,
-                idempotencyKey: createIdempotencyKey("r6-completion"),
-                commandFingerprint: "r6-completion",
-                authority: SERVICE_AUTHORITY.lease,
-                executionLease: plan.executionLease as RunExecutionLeaseClaim,
-                payloadRef: "payload-capability-invocation-trigger",
-                output: { kind: "no-answer" },
-                dataClassification: "private",
-              }),
-            ).rejects.toMatchObject({
-              code: "PORT_CONFLICT",
-              message: "Run still owns unreleased sandbox resources",
-            });
-            await expect(runs.readRun(createRunId(plan.identity.runId))).resolves.toMatchObject({
-              revision: 1,
-              run: { status: "running" },
-            });
-          } finally {
-            await reopened.close();
+                input: {
+                  plan: a.plan,
+                  invocation: a.invocation,
+                  workspaces: a.workspaces,
+                  reservation: {
+                    schemaVersion: "sandbox-preparation.v1",
+                    identity: a.plan.identity,
+                    environmentId: a.plan.environmentId,
+                    resourceRef: null,
+                    mode: a.plan.mode,
+                    workspaceConflictRefs: a.workspaces.map((item) => item.ref),
+                    sequence: 1,
+                    createdAt: a.plan.requestedAt,
+                  },
+                },
+              },
+            );
           }
+          await assertCompletionBlocked(f, a.plan);
         } finally {
           await f.close();
         }

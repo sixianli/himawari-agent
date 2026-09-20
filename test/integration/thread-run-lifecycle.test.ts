@@ -63,6 +63,7 @@ import {
 import { threadGatewayMessageSchema } from "@himawari-agent/gateway-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProductionRunDispatcher } from "../../apps/agent-service/src/production-run-dispatcher.js";
+import { createProductionRunReconciler } from "../../apps/agent-service/src/production-run-reconciler.js";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", (execution) => {
@@ -373,6 +374,236 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     }
   });
 
+  it.each([
+    "delivered",
+    "cancelled",
+    "input-rejected",
+    "crash-after-output",
+    "crash-before-transition",
+    "checkpoint-race",
+  ] as const)(
+    "recovers original answer delivery after the execution deadline: %s",
+    async (outcome) => {
+      const initialTime = clock.now();
+      const setup = await executionFixture();
+      try {
+        const dispatch = setup.repository.runDispatch(
+          ownerId,
+          agentId,
+          authority,
+          lease,
+          "thread-run-lifecycle",
+        );
+        const originalLease = await dispatch.assertHeld({
+          runId: setup.runId,
+          expectedLeaseRevision: 1,
+          executionLeaseId: executionLease(setup.runId).executionLeaseId,
+          at: clock.now(),
+        });
+        const policy = vi.fn(async () => ({
+          modelRef: setup.input.runtime.modelRef,
+          systemInstructionRef: setup.input.runtime.systemInstructionRef,
+          policyVersion: setup.input.context.policyVersion,
+          policies: setup.input.context.policies,
+          capabilities: setup.input.context.capabilities,
+          capabilityHandleRefs: [],
+          maxMemoryClassification: "private" as const,
+          memoryLimit: 10,
+          maxSelectedMemories: 0,
+        }));
+        const inputService = new RunExecutionInputService({
+          maximumRunDurationMs: 1000,
+          source: setup.repository.runExecutionSource(ownerId, agentId),
+          artifacts: setup.repository.runPayloadArtifactPort(ownerId, agentId, {
+            product: authority,
+            lease,
+          }),
+          payloads: setup.repository.payloadStore(ownerId, agentId),
+          protector: setup.protector,
+          clock,
+          ids: createReferenceAdapterSet({ clock }).ids,
+          dispatch,
+          policy,
+        });
+        const source = await setup.repository
+          .runExecutionSource(ownerId, agentId)
+          .read(setup.runId);
+        if (!source || source.threadId === null) throw new Error("missing canonical Thread source");
+        const originalInput = await inputService.create({
+          candidate: {
+            ...source,
+            action: "start",
+            runRevision: 1,
+            runStatus: "accepted",
+            checkpointPhase: null,
+            leaseRevision: 0,
+          },
+          lease: originalLease,
+        });
+        const stopRun = vi.fn(async () => ({ released: false }));
+        let checkpointRaced = false;
+        const coordinator = new RunCoordinator({
+          clock,
+          runs: {
+            readRun: (id) => setup.runs.readRun(id),
+            transitionRun: (value) => {
+              if (
+                outcome === "crash-before-transition" &&
+                value.nextStatus === "reconciling_external_result"
+              )
+                throw new Error("fixture crash before Run transition");
+              return setup.runs.transitionRun(value);
+            },
+            cancelRun: (value) => setup.runs.cancelRun(value),
+            completeRun: async (value) => {
+              if (outcome === "cancelled") {
+                const latest = await setup.runs.readRun(setup.runId);
+                if (!latest) throw new Error("missing Run before cancel");
+                await setup.runs.cancelRun({
+                  ...originalInput.commands.cancelled,
+                  ownerId,
+                  agentId,
+                  runId: setup.runId,
+                  authority: lease,
+                  expectedRevision: latest.revision,
+                });
+              }
+              if (outcome === "checkpoint-race" && !checkpointRaced) {
+                checkpointRaced = true;
+                const current = await setup.checkpoints.read(setup.runId);
+                if (!current || !value.executionLease)
+                  throw new Error("missing recovery checkpoint or lease");
+                await setup.checkpoints.compareAndSet({
+                  runId: setup.runId,
+                  expectedRevision: current.revision,
+                  checkpoint: current.checkpoint,
+                  executionLease: value.executionLease,
+                });
+              }
+              return setup.runs.completeRun(value);
+            },
+          },
+          checkpoints: {
+            read: (id) => setup.checkpoints.read(id),
+            compareAndSet: async (value) => {
+              const saved = await setup.checkpoints.compareAndSet(value);
+              if (
+                outcome === "crash-after-output" &&
+                value.checkpoint.phase === "runtime_settled" &&
+                value.checkpoint.terminalStatus === "completed"
+              )
+                throw new Error("fixture crash after output checkpoint");
+              return saved;
+            },
+          },
+          context: setup.context,
+          runtime: setup.runtime,
+          trace: setup.trace,
+          resources: { stopRun },
+        });
+        if (outcome.startsWith("crash-"))
+          await expect(coordinator.execute(originalInput)).rejects.toThrow("fixture crash");
+        else
+          expect((await coordinator.execute(originalInput)).run.run.status).toBe(
+            "reconciling_external_result",
+          );
+        await dispatch.release({
+          runId: setup.runId,
+          expectedLeaseRevision: originalLease.revision,
+          executionLeaseId: originalLease.executionLeaseId,
+          releasedAt: clock.now(),
+        });
+        const before = await setup.repository
+          .threadRepository()
+          .listMessages(ownerId, agentId, source.threadId, 0, 20);
+        expect(before.filter((message) => message.role === "agent")).toHaveLength(0);
+        clock.set(new Date(Date.parse(initialTime) + 2000).toISOString());
+        stopRun.mockResolvedValue({ released: true });
+        expect(await dispatch.listClaimable({ now: clock.now(), limit: 10 })).toEqual([
+          expect.objectContaining({ runId: setup.runId, action: "deliver_completed" }),
+        ]);
+        const dispatcher = new ProductionRunDispatcher({
+          authority: {
+            assertActive: async () => {
+              await setup.repository.deploymentAuthorityPort().assertCurrent(authority);
+            },
+            isAccepting: () => true,
+          },
+          dispatch,
+          coordinator,
+          input: (value) => {
+            if (outcome === "input-rejected") throw new Error("fixture recovery input unavailable");
+            return inputService.create(value);
+          },
+          reconcile: createProductionRunReconciler({
+            ownerId,
+            agentId,
+            runs: setup.runs,
+            recovery: setup.repository.runReconciliation(
+              ownerId,
+              agentId,
+              authority,
+              lease,
+              "thread-run-lifecycle",
+            ),
+            clock,
+          }),
+          clock,
+          executionLeaseDurationMs: 60_000,
+          maximumRunsPerPump: 1,
+          instanceId: "result-delivery",
+        });
+        if (outcome === "input-rejected") {
+          await expect(dispatcher.pump()).rejects.toThrow("fixture recovery input unavailable");
+          expect((await setup.checkpoints.read(setup.runId))?.checkpoint).toMatchObject({
+            diagnosticCode: "RUN_COMPLETION_DELIVERY_REJECTED",
+            output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+          });
+          expect(await dispatcher.pump()).toMatchObject({ claimed: 0 });
+          expect(setup.attempts()).toBe(1);
+          expect(policy).toHaveBeenCalledOnce();
+          expect(
+            (
+              await setup.repository
+                .threadRepository()
+                .listMessages(ownerId, agentId, source.threadId, 0, 20)
+            ).filter((message) => message.role === "agent"),
+          ).toHaveLength(0);
+          return;
+        }
+        expect(await dispatcher.pump()).toMatchObject({
+          claimed: 1,
+          settled: outcome !== "cancelled" && outcome !== "checkpoint-race" ? 1 : 0,
+          conflicts: outcome !== "cancelled" && outcome !== "checkpoint-race" ? 0 : 1,
+          unknown: 0,
+        });
+        if (outcome === "checkpoint-race")
+          expect(await dispatcher.pump()).toMatchObject({ claimed: 1, settled: 1, conflicts: 0 });
+        expect(await dispatcher.pump()).toMatchObject({ claimed: 0 });
+        expect(setup.attempts()).toBe(1);
+        expect(policy).toHaveBeenCalledOnce();
+        const messages = await setup.repository
+          .threadRepository()
+          .listMessages(ownerId, agentId, source.threadId, 0, 20);
+        expect(messages.filter((message) => message.role === "agent")).toEqual(
+          outcome !== "cancelled"
+            ? [expect.objectContaining({ contentRef: "payload-final-answer" })]
+            : [],
+        );
+        expect((await setup.runs.readRun(setup.runId))?.run.status).toBe(
+          outcome !== "cancelled" ? "completed" : "cancelled",
+        );
+        expect(stopRun).toHaveBeenCalledTimes(outcome === "crash-after-output" ? 0 : 1);
+        expect((await setup.checkpoints.read(setup.runId))?.checkpoint).toMatchObject({
+          phase: outcome !== "cancelled" ? "completed" : "cancelled",
+          output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+        });
+      } finally {
+        clock.set(initialTime);
+      }
+    },
+  );
+
   it("executes only once when two real SQLite dispatch pumps claim concurrently", async () => {
     const setup = await executionFixture();
     const initialDispatch = setup.repository.runDispatch(
@@ -428,6 +659,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     });
     const coordinator = {
       execute: (value: typeof setup.input) => setup.coordinator.execute(value),
+      recoverCompleted: (value: typeof setup.input) => setup.coordinator.recoverCompleted(value),
       interruptExecution: (value: Parameters<typeof setup.coordinator.interruptExecution>[0]) =>
         setup.coordinator.interruptExecution(value),
     };

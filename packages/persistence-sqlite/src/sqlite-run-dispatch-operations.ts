@@ -9,6 +9,7 @@ import {
   type ProductAuthorityFence,
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
+import { RUN_COMPLETION_RECOVERY_SQL } from "./sqlite-run-resource-guard.ts";
 
 type Failure = (code: string, message: string, details?: Readonly<Record<string, string>>) => never;
 
@@ -33,6 +34,7 @@ interface RunRow {
   readonly revision: number;
   readonly status: string;
   readonly checkpointPhase: string | null;
+  readonly checkpointTerminalStatus: string | null;
   readonly leaseRevision: number;
   readonly turnIndex: number | null;
 }
@@ -206,7 +208,7 @@ export class SqliteRunDispatchOperations {
     const rows = this.database
       .prepare(
         `SELECT r.id, r.owner_id, r.agent_id, r.session_id, r.trigger_id, r.thread_id,
-          r.revision, r.status, c.phase AS checkpoint_phase,
+          r.revision, r.status, c.phase AS checkpoint_phase, c.terminal_status AS checkpoint_terminal_status,
           COALESCE(l.revision, 0) AS lease_revision,
           current_turn.turn_index
          FROM runs r
@@ -221,9 +223,10 @@ export class SqliteRunDispatchOperations {
          ) current_turn
            ON current_turn.run_id = r.id AND current_turn.owner_id = r.owner_id
              AND current_turn.agent_id = r.agent_id
-         WHERE r.owner_id = ? AND r.agent_id = ?
-           AND r.status IN ('accepted', 'building_context', 'running', 'awaiting_approval')
+         WHERE r.owner_id = @ownerId AND r.agent_id = @agentId
+           AND r.status IN ('accepted', 'building_context', 'running', 'awaiting_approval', 'reconciling_external_result')
            AND (
+             (r.status<>'reconciling_external_result' AND COALESCE(c.terminal_status,'')<>'completed' AND (
              (r.status = 'accepted' AND (c.phase IS NULL OR c.phase = 'accepted'))
              OR c.phase IN ('context_formed', 'runtime_settled')
              OR (c.phase = 'awaiting_approval' AND EXISTS (
@@ -231,10 +234,12 @@ export class SqliteRunDispatchOperations {
                WHERE approval.id = json_extract(c.suspension_json, '$.approval.approvalRequestId')
                  AND approval.owner_id = r.owner_id AND approval.agent_id = r.agent_id AND approval.run_id = r.id
                  AND approval.semantic_snapshot_hash = json_extract(c.suspension_json, '$.approval.semanticSnapshotHash')
-                 AND (approval.status <> 'pending' OR MIN(json_extract(c.suspension_json, '$.approval.expiresAt'), COALESCE(json_extract(c.suspension_json, '$.executionDeadlineAt'), json_extract(c.suspension_json, '$.approval.expiresAt'))) <= ?)
+                 AND (approval.status <> 'pending' OR MIN(json_extract(c.suspension_json, '$.approval.expiresAt'), COALESCE(json_extract(c.suspension_json, '$.executionDeadlineAt'), json_extract(c.suspension_json, '$.approval.expiresAt'))) <= @resourceNow)
              ))
+             ))
+             OR (${RUN_COMPLETION_RECOVERY_SQL})
            )
-           AND (l.run_id IS NULL OR l.released_at IS NOT NULL OR l.expires_at <= ?)
+           AND (l.run_id IS NULL OR l.released_at IS NOT NULL OR l.expires_at <= @resourceNow)
            AND NOT EXISTS (
              SELECT 1 FROM model_budget_accounts budget
              WHERE budget.owner_id = r.owner_id
@@ -256,9 +261,9 @@ export class SqliteRunDispatchOperations {
                )
            )
          ORDER BY r.created_at, r.id
-         LIMIT ?`,
+         LIMIT @limit`,
       )
-      .all(this.scope.ownerId, this.scope.agentId, now, now, limit);
+      .all({ ownerId: this.scope.ownerId, agentId: this.scope.agentId, resourceNow: now, limit });
     return rows.map((row) => this.candidate(record(row), false));
   }
 
@@ -351,8 +356,17 @@ export class SqliteRunDispatchOperations {
         if (
           run.status === "reconciling_external_result" &&
           run.checkpointPhase === "reconciling_external_result"
-        )
+        ) {
+          if (reasonCode === "RUN_COMPLETION_DELIVERY_REJECTED")
+            this.database
+              .prepare(`UPDATE run_coordination_checkpoints
+              SET diagnostic_code=?,revision=revision+1,updated_at=?
+              WHERE run_id=? AND owner_id=? AND agent_id=?
+                AND phase='reconciling_external_result'
+                AND diagnostic_code='RUN_RESOURCE_CLEANUP_UNCONFIRMED'`)
+              .run(reasonCode, at, runId, this.scope.ownerId, this.scope.agentId);
           return;
+        }
         this.database
           .prepare(`UPDATE runs SET status = 'reconciling_external_result',
         revision = revision + 1, updated_at = ? WHERE id = ? AND owner_id = ? AND agent_id = ?`)
@@ -363,7 +377,14 @@ export class SqliteRunDispatchOperations {
         (run_id, owner_id, agent_id, revision, phase, runtime_event_count, diagnostic_code, updated_at)
         VALUES (?, ?, ?, 1, 'reconciling_external_result', 0, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET revision = revision + 1,
-        phase = 'reconciling_external_result', diagnostic_code = excluded.diagnostic_code,
+        phase = 'reconciling_external_result', diagnostic_code = CASE
+          WHEN excluded.diagnostic_code='RUN_COMPLETION_DELIVERY_REJECTED' THEN excluded.diagnostic_code
+          WHEN (run_coordination_checkpoints.phase='runtime_settled' AND run_coordination_checkpoints.terminal_status='completed')
+            OR (run_coordination_checkpoints.phase='reconciling_external_result'
+              AND run_coordination_checkpoints.diagnostic_code='RUN_RESOURCE_CLEANUP_UNCONFIRMED'
+              AND run_coordination_checkpoints.output_kind IS NOT NULL)
+            THEN 'RUN_RESOURCE_CLEANUP_UNCONFIRMED'
+          ELSE excluded.diagnostic_code END,
         updated_at = excluded.updated_at`)
           .run(runId, this.scope.ownerId, this.scope.agentId, reasonCode, at);
       })
@@ -755,7 +776,10 @@ export class SqliteRunDispatchOperations {
         ? reconciliation
           ? "reconcile"
           : "start"
-        : "resume";
+        : checkpointPhase === "reconciling_external_result" ||
+            row["checkpoint_terminal_status"] === "completed"
+          ? "deliver_completed"
+          : "resume";
     return {
       ownerId: createOwnerId(text(row["owner_id"], "owner_id")),
       agentId: createAgentId(text(row["agent_id"], "agent_id")),
@@ -775,7 +799,7 @@ export class SqliteRunDispatchOperations {
     const value = this.database
       .prepare(
         `SELECT r.id, r.owner_id, r.agent_id, r.session_id, r.trigger_id, r.thread_id,
-          r.revision, r.status, c.phase AS checkpoint_phase,
+          r.revision, r.status, c.phase AS checkpoint_phase, c.terminal_status AS checkpoint_terminal_status,
           COALESCE(l.revision, 0) AS lease_revision, current_turn.turn_index
          FROM runs r
          LEFT JOIN run_coordination_checkpoints c
@@ -804,6 +828,7 @@ export class SqliteRunDispatchOperations {
       revision: numberValue(row, "revision"),
       status: text(row["status"], "status"),
       checkpointPhase: optionalTextValue(row, "checkpoint_phase"),
+      checkpointTerminalStatus: optionalTextValue(row, "checkpoint_terminal_status"),
       leaseRevision: numberValue(row, "lease_revision"),
       turnIndex: row["turn_index"] === null ? null : numberValue(row, "turn_index"),
     };
@@ -889,6 +914,27 @@ export class SqliteRunDispatchOperations {
   }
 
   private assertDispatchable(run: RunRow, now: string): void {
+    const completionRecovery =
+      ["running", "reconciling_external_result"].includes(run.status) &&
+      Boolean(
+        this.database
+          .prepare(
+            `SELECT 1 FROM runs r JOIN run_coordination_checkpoints c
+        ON c.run_id=r.id AND c.owner_id=r.owner_id AND c.agent_id=r.agent_id
+        WHERE r.id=@runId AND r.owner_id=@ownerId AND r.agent_id=@agentId
+          AND (${RUN_COMPLETION_RECOVERY_SQL})`,
+          )
+          .get({
+            runId: run.id,
+            ownerId: this.scope.ownerId,
+            agentId: this.scope.agentId,
+            resourceNow: now,
+          }),
+      );
+    if (run.checkpointTerminalStatus === "completed" && !completionRecovery)
+      this.fail("PORT_CONFLICT", "Completed output is not ready for result delivery", {
+        runId: run.id,
+      });
     if (run.checkpointPhase === "awaiting_approval") {
       const ready = this.database
         .prepare(`SELECT 1 FROM run_coordination_checkpoints c
@@ -901,11 +947,13 @@ export class SqliteRunDispatchOperations {
       if (!ready) this.fail("PORT_CONFLICT", "Run approval is still pending", { runId: run.id });
     }
     if (
+      !completionRecovery &&
       !RUN_DISPATCHABLE_STATUSES.includes(run.status as (typeof RUN_DISPATCHABLE_STATUSES)[number])
     ) {
       this.fail("PORT_CONFLICT", "Run is not execution-eligible", { runId: run.id });
     }
     if (
+      !completionRecovery &&
       RECONCILIATION_CHECKPOINT_PHASES.includes(
         run.checkpointPhase as (typeof RECONCILIATION_CHECKPOINT_PHASES)[number],
       )
@@ -915,6 +963,7 @@ export class SqliteRunDispatchOperations {
       });
     }
     if (
+      !completionRecovery &&
       run.checkpointPhase !== null &&
       !RESUMABLE_CHECKPOINT_PHASES.includes(
         run.checkpointPhase as (typeof RESUMABLE_CHECKPOINT_PHASES)[number],

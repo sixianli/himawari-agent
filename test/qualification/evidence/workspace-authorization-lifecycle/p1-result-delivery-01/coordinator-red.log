@@ -1,0 +1,25 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/run-coordinator.test.ts (31 tests | 1 failed | 30 skipped) 12ms
+   × delivers the stored completion after resource cleanup without rerunning expired work 11ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/run-coordinator.test.ts > delivers the stored completion after resource cleanup without rerunning expired work
+TypeError: f.coordinator.recoverCompleted is not a function
+ ❯ test/integration/run-coordinator.test.ts:1339:41
+    1337|   f.clock.set(T2);
+    1338|   stopRun.mockResolvedValue({ released: true });
+    1339|   const recovered = await f.coordinator.recoverCompleted(input);
+       |                                         ^
+    1340|   expect(recovered.run.run.status).toBe("completed");
+    1341|   expect(recovered.checkpoint.output).toEqual({ kind: "assistant-answe…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 30 skipped (31)
+   Start at  17:31:11
+   Duration  1.78s (transform 1.13s, setup 0ms, import 1.35s, tests 12ms, environment 1ms)

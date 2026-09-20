@@ -82,7 +82,7 @@ export type ProductionRunReconciler = (input: ProductionRunReconciliationInput) 
 export interface ProductionRunDispatcherOptions {
   readonly authority: Pick<ProductionAuthorityLifecycle, "assertActive" | "isAccepting">;
   readonly dispatch: RunDispatchPort;
-  readonly coordinator: Pick<RunCoordinator, "execute" | "interruptExecution">;
+  readonly coordinator: Pick<RunCoordinator, "execute" | "recoverCompleted" | "interruptExecution">;
   readonly input: ProductionRunInputFactory;
   readonly reconcile: ProductionRunReconciler;
   readonly clock: ClockPort;
@@ -375,7 +375,10 @@ export class ProductionRunDispatcher {
         }
         let result: CoordinatedRunResult;
         try {
-          result = await this.#options.coordinator.execute(canonicalInput);
+          result =
+            candidate.action === "deliver_completed"
+              ? await this.#options.coordinator.recoverCompleted(canonicalInput)
+              : await this.#options.coordinator.execute(canonicalInput);
         } catch (error) {
           await renewal.stop();
           if (renewal.failure()) {
@@ -433,11 +436,21 @@ export class ProductionRunDispatcher {
           await reconcileLeaseFailure();
           continue;
         }
+        if (
+          candidate.action === "deliver_completed" &&
+          isPortError(error, PORT_ERROR_CODES.CONFLICT)
+        ) {
+          await this.releaseBestEffort(renewal.currentLease());
+          conflicts += 1;
+          continue;
+        }
         // Persist uncertainty before surfacing the failure. Merely expiring the
         // lease would redispatch accepted Runs whose input factory keeps failing.
         await this.reconcileUnknown(
           candidate,
-          "RUN_EXECUTION_FAILED_WITHOUT_RESULT",
+          candidate.action === "deliver_completed"
+            ? "RUN_COMPLETION_DELIVERY_REJECTED"
+            : "RUN_EXECUTION_FAILED_WITHOUT_RESULT",
           undefined,
           renewal.currentLease(),
         );

@@ -136,7 +136,7 @@ export class RunExecutionInputService {
     ) {
       invalid("Run execution source does not match the claimed candidate");
     }
-    const frozen = await this.#freeze(source);
+    const frozen = await this.#freeze(source, candidate.action !== "deliver_completed");
     const { policy } = frozen;
     const scope = {
       ownerId: source.ownerId,
@@ -217,7 +217,7 @@ export class RunExecutionInputService {
     };
   }
 
-  async #freeze(source: RunExecutionSource): Promise<FrozenRunInput> {
+  async #freeze(source: RunExecutionSource, allowCreate = true): Promise<FrozenRunInput> {
     const key = { runId: source.runId, purpose: "context" as const, operationKey: OPERATION_KEY };
     const existing = await this.#options.artifacts.lookup(key);
     if (existing) {
@@ -245,6 +245,7 @@ export class RunExecutionInputService {
       assertPolicy(frozen.policy);
       return frozen;
     }
+    if (!allowCreate) invalid("Completion recovery requires the original Run execution snapshot");
     const startedAt = this.#options.clock.now();
     if (!Number.isFinite(Date.parse(startedAt))) invalid("Run clock is invalid");
     const deadlineAt = new Date(

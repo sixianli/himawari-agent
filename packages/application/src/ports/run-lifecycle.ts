@@ -43,6 +43,8 @@ export interface RunCompletionInput extends RunCommandContext {
   readonly expectedRevision: number;
   readonly output: RuntimeSuccessfulOutput;
   readonly dataClassification: DataClassification;
+  /** Result-only recovery compares the original checkpoint inside the commit. */
+  readonly recoveryCheckpointRevision?: number;
 }
 
 export interface RunTransitionReceipt {
@@ -54,5 +56,8 @@ export interface RunLifecyclePort {
   readRun(runId: RunId): Promise<StoredRun | undefined>;
   transitionRun(input: TransitionRunStateInput): Promise<RunTransitionReceipt>;
   cancelRun(input: RunCancellationInput): Promise<RunTransitionReceipt>;
+  /** Commit only under the current lease, with no pending durable sandbox
+   * resource, queue or barrier. Recovery must match the original stored output;
+   * these guards and the answer write belong to one atomic transaction. */
   completeRun(input: RunCompletionInput): Promise<RunTransitionReceipt>;
 }

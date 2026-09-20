@@ -566,42 +566,7 @@ export class RunCoordinator {
       return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
     }
     if (terminalStatus === "completed") {
-      const output = storedCheckpoint.checkpoint.output;
-      if (!output)
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.INVALID_OPERATION,
-          "Runtime completion output is missing",
-        );
-      const latest = await this.requireRun(input.runId);
-      this.assertExecutionActive(attempt);
-      if (!isTerminalStatus(latest.run.status)) {
-        const classifications = ["public", "private", "sensitive", "restricted"] as const;
-        const dataClassification =
-          classifications[
-            Math.max(
-              classifications.indexOf(input.runtime.dataClassification),
-              classifications.indexOf(input.context.dataClassification),
-            )
-          ];
-        if (!dataClassification)
-          throw new ApplicationPortError(
-            PORT_ERROR_CODES.INVALID_OPERATION,
-            "Invalid completion classification",
-          );
-        await this.dependencies.runs.completeRun({
-          ...input.commands.completed,
-          ownerId: input.ownerId,
-          agentId: input.agentId,
-          runId: input.runId,
-          authority: input.authority,
-          expectedRevision: latest.revision,
-          output,
-          dataClassification,
-          executionLease: input.executionLease,
-        });
-      }
-      this.assertExecutionActive(attempt);
-      storedRun = await this.requireRun(input.runId);
+      storedRun = await this.commitCompletedOutput(input, storedCheckpoint, attempt);
     } else {
       this.assertExecutionActive(attempt);
       storedRun = await this.transition(input, storedRun, terminalStatus);
@@ -625,6 +590,123 @@ export class RunCoordinator {
     });
     this.assertExecutionActive(attempt);
     return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
+  }
+
+  private async commitCompletedOutput(
+    input: ExecuteCoordinatedRunInput,
+    storedCheckpoint: StoredRunCheckpoint,
+    attempt: ExecutionAttempt,
+    recoveryCheckpointRevision?: number,
+  ): Promise<StoredRun> {
+    const output = storedCheckpoint.checkpoint.output;
+    if (!output)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Runtime completion output is missing",
+      );
+    const latest = await this.requireRun(input.runId);
+    this.assertExecutionActive(attempt);
+    if (!isTerminalStatus(latest.run.status)) {
+      const classifications = ["public", "private", "sensitive", "restricted"] as const;
+      const dataClassification =
+        classifications[
+          Math.max(
+            classifications.indexOf(input.runtime.dataClassification),
+            classifications.indexOf(input.context.dataClassification),
+          )
+        ];
+      if (!dataClassification)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "Invalid completion classification",
+        );
+      await this.dependencies.runs.completeRun({
+        ...input.commands.completed,
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        runId: input.runId,
+        authority: input.authority,
+        expectedRevision: latest.revision,
+        output,
+        dataClassification,
+        executionLease: input.executionLease,
+        ...(recoveryCheckpointRevision === undefined ? {} : { recoveryCheckpointRevision }),
+      });
+    }
+    this.assertExecutionActive(attempt);
+    return this.requireRun(input.runId);
+  }
+
+  /** Deliver only a previously completed runtime output. This never forms
+   * context, runs Pi/Workers, or extends the original execution deadline.
+   * Current lease and resource checks still fence the final durable commit.
+   */
+  async recoverCompleted(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult> {
+    this.assertScope(input);
+    const { executionDeadlineAt: _executionDeadlineAt, ...delivery } = input;
+    const attempt = this.beginExecutionAttempt(delivery);
+    try {
+      const checkpoint = await this.readCheckpoint(input.runId);
+      const run = await this.requireRun(input.runId);
+      this.assertExecutionActive(attempt);
+      if (
+        run.run.ownerId !== input.ownerId ||
+        run.run.agentId !== input.agentId ||
+        run.run.sessionId !== input.runtime.sessionId ||
+        (run.run.threadId ?? null) !== input.runtime.threadId
+      )
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "Completion recovery scope mismatch",
+        );
+      if (isTerminalStatus(run.run.status))
+        return this.result(run, checkpoint?.checkpoint ?? defaultCheckpoint(), true);
+      if (
+        !checkpoint ||
+        !["running", "reconciling_external_result"].includes(run.run.status) ||
+        !(
+          (checkpoint.checkpoint.phase === "runtime_settled" &&
+            checkpoint.checkpoint.terminalStatus === "completed") ||
+          (checkpoint.checkpoint.phase === "reconciling_external_result" &&
+            checkpoint.checkpoint.diagnosticCode === "RUN_RESOURCE_CLEANUP_UNCONFIRMED" &&
+            (checkpoint.checkpoint.terminalStatus === null ||
+              checkpoint.checkpoint.terminalStatus === "completed"))
+        ) ||
+        checkpoint.checkpoint.output === null
+      )
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "RUN_COMPLETION_RECOVERY_NOT_ELIGIBLE",
+        );
+      // The lifecycle writer checks every durable resource in the same
+      // transaction as the answer. Recovery must not start another cleanup loop.
+      const current = await this.readCheckpoint(input.runId);
+      this.assertExecutionActive(attempt);
+      if (!current || current.revision !== checkpoint.revision)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.CONFLICT,
+          "RUN_COMPLETION_RECOVERY_CHANGED",
+        );
+      const completed = await this.commitCompletedOutput(
+        input,
+        checkpoint,
+        attempt,
+        checkpoint.revision,
+      );
+      this.assertExecutionActive(attempt);
+      if (completed.run.status !== "completed")
+        return this.result(completed, checkpoint.checkpoint, true);
+      const saved = await this.saveCheckpoint(input, checkpoint, {
+        ...checkpoint.checkpoint,
+        phase: "completed",
+        terminalStatus: "completed",
+      });
+      return this.result(completed, saved.checkpoint, true);
+    } finally {
+      clearTimeout(attempt.deadlineTimer);
+      if (attempt.interruption) await attempt.interruption;
+      this.endExecutionAttempt(attempt);
+    }
   }
 
   async cancel(input: CancelCoordinatedRunInput): Promise<StoredRun> {

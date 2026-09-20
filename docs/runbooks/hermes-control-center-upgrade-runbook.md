@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:0be4d7bc5ce288889e7a7c8398bdd51baa3f9049fe51233084591a8f7ed509d9"
+contract_sha256: "sha256:89c2e4d0f024d61a3c701c60d4299a38bee468dc2128b2c9f279fa6876882e68"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -11,6 +11,11 @@ date: "2026-09-11"
 # Hermes 控制中心升级与真实验收
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/sqlite-run-resource-guard.ts
+- packages/application/src/services/run-coordinator.ts
+- packages/application/src/services/run-execution-input-service.ts
+- packages/application/src/ports/run-dispatch.ts
+- packages/application/src/ports/run-lifecycle.ts
 - apps/agent-service/src/service-main.ts
 - packages/persistence-sqlite/src/migrations/0043_sandbox_recovery_scheduling.sql
 - packages/persistence-sqlite/src/sqlite-sandbox-recovery-scheduling.ts
@@ -86,6 +91,8 @@ Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认�
 
 
 内部资源快照 `readRunInventory` 只读取已有同主体 Run 的预约、绑定、队列历史及旧格式未释放标记，不变更数据库版本、额度或执行权。生产 `thread.execution_state` 已将该快照与 Run/Trace 聚合，读取期间资源或 Run 改变时拒绝混合结论。历史 Scope 仅用于验证原工具归属，不读取或续发当前 Grant；停止、核验和资源状态未确认通过既有 `reasonCode` 表达，保持 v3 阶段枚举兼容。工具效果与资源清理分别保留；已释放但未交接的内部结果仍显示结果未确认。当前可见会话每两秒重新只读核验，隐藏或断线时停止该轮询，不把连接心跳或本地计时当作执行事实；空快照与旧权限都不能代替当前宿主停止证明或本 Runbook 的现场核验。读取超过任一 10,000 条上限时必须报告失败，不接受截断后继续操作。
+
+原运行调度现在可补交已经保存的完成输出：仅接受原 `runtime_settled/completed`，或清理未确认而保存输出的记录。恢复仍要求原冻结输入、当前权威和执行租约，并在写入回答的同一事务核对 checkpoint revision、原结果、全部前台/后台资源的永久释放、队列及未解除保护；不延长业务执行期限、不调用模型/工具、不发起第二轮清理。原输出保存后或 Run 状态变更前中断均保留可恢复身份；未知输出不能走该路径。取消先提交时不写回答。原输入不能读取或校验失败时保存 `RUN_COMPLETION_DELIVERY_REJECTED` 并保留原输出，停止自动补交；不得通过改诊断码或续发旧授权强行恢复。备份/迁移须共同保留冻结输入、checkpoint、回答 Payload、完成命令与消息身份；本变更沿用 Schema 43，升级仍须替换唯一 writer，不能因 schema 相同认定旧程序具有这些行为检查。该能力由现有 Run 调度触发；仅运行资源核查的无 Web 模式不因此创建模型/Run 执行服务。
 
 ## Authoritative Sources
 

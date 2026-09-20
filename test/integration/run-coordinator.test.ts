@@ -1317,3 +1317,70 @@ it.each(["pending", "rejected"] as const)(
     }
   },
 );
+
+it("delivers the stored completion after resource cleanup without rerunning expired work", async () => {
+  const runtime = {
+    run: vi.fn(async function* (request: RuntimeRequest) {
+      yield {
+        type: "runtime.completed" as const,
+        runId: request.runId,
+        output: { kind: "assistant-answer" as const, contentRef: "completed-answer" },
+        occurredAt: T1,
+      };
+    }),
+    cancel: vi.fn(async () => {}),
+  };
+  const stopRun = vi.fn(async () => ({ released: false }));
+  const f = await fixture("recover-completed", runtime, undefined, { stopRun });
+  const input = { ...f.input, executionDeadlineAt: T1 };
+  expect((await f.coordinator.execute(input)).run.run.status).toBe("reconciling_external_result");
+  f.clock.set(T2);
+  stopRun.mockResolvedValue({ released: true });
+  const recovered = await f.coordinator.recoverCompleted(input);
+  expect(recovered.run.run.status).toBe("completed");
+  expect(recovered.checkpoint.output).toEqual({
+    kind: "assistant-answer",
+    contentRef: "completed-answer",
+  });
+  expect((await f.coordinator.recoverCompleted(input)).run.run.status).toBe("completed");
+  expect(runtime.run).toHaveBeenCalledOnce();
+  expect(stopRun).toHaveBeenCalledOnce();
+});
+
+it.each(["missing-output", "unknown-result", "failed-runtime"] as const)(
+  "refuses completion recovery for %s without another runtime call",
+  async (failure) => {
+    const runtime = {
+      run: vi.fn(async function* (request: RuntimeRequest) {
+        yield {
+          type: "runtime.completed" as const,
+          runId: request.runId,
+          output: { kind: "assistant-answer" as const, contentRef: "completed-answer" },
+          occurredAt: T1,
+        };
+      }),
+      cancel: vi.fn(async () => {}),
+    };
+    const f = await fixture(`recovery-${failure}`, runtime, undefined, {
+      stopRun: async () => ({ released: false }),
+    });
+    await f.coordinator.execute(f.input);
+    const current = await f.adapters.runCheckpoints.read(f.run.id);
+    if (!current) throw new Error("missing checkpoint");
+    await f.adapters.runCheckpoints.compareAndSet({
+      runId: f.run.id,
+      expectedRevision: current.revision,
+      checkpoint: {
+        ...current.checkpoint,
+        ...(failure === "missing-output" ? { output: null } : {}),
+        ...(failure === "unknown-result" ? { diagnosticCode: "RUNTIME_RESULT_UNKNOWN" } : {}),
+        ...(failure === "failed-runtime" ? { terminalStatus: "failed" as const } : {}),
+      },
+    });
+    await expect(f.coordinator.recoverCompleted(f.input)).rejects.toThrow(
+      "RUN_COMPLETION_RECOVERY_NOT_ELIGIBLE",
+    );
+    expect((await f.runs.readRun(f.run.id))?.run.status).toBe("reconciling_external_result");
+    expect(runtime.run).toHaveBeenCalledOnce();
+  },
+);

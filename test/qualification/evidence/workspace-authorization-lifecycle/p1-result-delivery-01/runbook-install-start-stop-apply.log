@@ -1,0 +1,4 @@
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/install-start-stop-runbook.md
+fingerprint: sha256:ca829a4f2576dd3b5436f2fdb49ec55510776a3790c8e2f6f27bf2b397e34efe
+mode: apply
+Static contract success does not prove Live-State Preflight and does not authorize any operation.

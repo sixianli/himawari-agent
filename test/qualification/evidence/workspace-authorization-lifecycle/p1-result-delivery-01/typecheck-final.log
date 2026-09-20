@@ -1,0 +1,8 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+test/integration/thread-run-lifecycle.test.ts(475,55): error TS2379: Argument of type '{ runId: RunId; expectedRevision: number; checkpoint: RunCheckpoint; executionLease: RunExecutionLeaseClaim | undefined; }' is not assignable to parameter of type 'CompareAndSetRunCheckpointInput' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'executionLease' are incompatible.
+    Type 'RunExecutionLeaseClaim | undefined' is not assignable to type 'RunExecutionLeaseClaim'.
+      Type 'undefined' is not assignable to type 'RunExecutionLeaseClaim'.
