@@ -1,0 +1,28 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-execution-preparation.test.ts (37 tests | 1 failed | 36 skipped) 261ms
+     × reads one owner-scoped Run inventory without consuming queue or admission state 260ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > reads one owner-scoped Run inventory without consuming queue or admission state
+ApplicationPortError: $: expected an object
+ ❯ SqliteCapabilityInvocationOperations.fail test/fixtures/sqlite-capability-invocation-fixture.ts:462:11
+    460|     details?: Readonly<Record<string, string>>,
+    461|   ): never => {
+    462|     throw new ApplicationPortError(code as PortErrorCode, message, det…
+       |           ^
+    463|   };
+    464|   const artifacts = new SqliteRunPayloadArtifactOperations(database, f…
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:545:21
+ ❯ read test/integration/sandbox-execution-preparation.test.ts:574:60
+ ❯ test/integration/sandbox-execution-preparation.test.ts:578:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 36 skipped (37)
+   Start at  15:37:37
+   Duration  1.69s (transform 826ms, setup 0ms, import 1.31s, tests 261ms, environment 0ms)

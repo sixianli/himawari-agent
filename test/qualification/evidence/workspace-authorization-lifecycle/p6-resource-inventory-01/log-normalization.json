@@ -1,0 +1,41 @@
+{
+  "transformation": "Remove trailing whitespace and trailing empty lines only; original bytes retained in gzip files.",
+  "files": [
+    {
+      "file": "full-check.log",
+      "raw": "full-check.log.raw.gz",
+      "originalSha256": "aaed714d35764722a48ded5fdd1f2d4bfdb17a94c7128c5fc3ba3059d014821d",
+      "readableSha256": "f1f68f4858c2c0a4c43c6811ccdb99361c6293b01d5231982d1c27817fb27702"
+    },
+    {
+      "file": "inventory-first-green.log",
+      "raw": "inventory-first-green.log.raw.gz",
+      "originalSha256": "540c68018f152cd527da4948fbbed5d37c8d03fd87df89165628be5a9bb21d6d",
+      "readableSha256": "b81dc5d1321f1d1e604561edb1821e3a163c313a3b19627eac2e3ca2c867e8f6"
+    },
+    {
+      "file": "inventory-red.log",
+      "raw": "inventory-red.log.raw.gz",
+      "originalSha256": "5adabb1a5ef26195086bf9463463ff4118a4e6337c8b860d722ae9aa0bc9b8e5",
+      "readableSha256": "f6c169e2e183e4eca500e21a6e7f69846564e4c037eb058033f93ad05eac6b41"
+    },
+    {
+      "file": "lint.log",
+      "raw": "lint.log.raw.gz",
+      "originalSha256": "40b953365373b429cc65ce485a98a0198976461088e20c82040faf46d86aef8e",
+      "readableSha256": "d291005cee6e612687a52dca5ded5f8a734748a6283c2f43403c403f2e1f28b8"
+    },
+    {
+      "file": "targeted.log",
+      "raw": "targeted.log.raw.gz",
+      "originalSha256": "0eabc6800628746c3c4615696a7d514dfafdd9f4f0e564268e2591ad72a9d786",
+      "readableSha256": "83478eb89f09e04055e372767f58abd916cb410bbfc9437c31e8056d5d454ecd"
+    },
+    {
+      "file": "typecheck.log",
+      "raw": "typecheck.log.raw.gz",
+      "originalSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+      "readableSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+[
+  {
+    "command": "npm run check:boundaries",
+    "exitCode": 0
+  },
+  {
+    "command": "npm run check:v0.2-coverage",
+    "exitCode": 0
+  },
+  {
+    "command": "npm run check:v0.2-invariants",
+    "exitCode": 0
+  },
+  {
+    "command": "npm run check:secrets",
+    "exitCode": 0
+  },
+  {
+    "command": "npm run check:ci-policy",
+    "exitCode": 0
+  },
+  {
+    "command": "npm run typecheck",
+    "exitCode": 0
+  },
+  {
+    "command": "scoped biome lint --error-on-warnings",
+    "exitCode": 0
+  },
+  {
+    "command": "npm run check",
+    "exitCode": 1,
+    "cause": "Existing untracked state-review/verify.cjs and state-review-r2/verify.cjs formatting only; preserved"
+  }
+]

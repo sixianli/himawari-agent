@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:5a6b37be1b1934da4f9679eb24fd86594b403c48ab1e9675011356404dd5277f"
+contract_sha256: "sha256:78cd8d944d5a961fac26430f6e116e929aeee2ff8afcc171734dedf6e7649377"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -133,6 +133,8 @@ Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认�
 
 新控制中心在服务声明 `executionStateAvailable` 后另查 `thread.execution_state`，旧事件接口不增加字段，旧服务缺少该声明时仍走原兼容路径。恢复后应同时检查每个操作和整体结论，不能只看最后成功工具或 Run 终态；分页或版本变化造成的读取失败必须保留原结论并重新查询，不能重新执行工具。页面状态的内容 revision 不是执行权凭据；实际 Stop/清理仍经原 revision、权限和幂等控制。当前效果列表仅表示操作 outcome，不能代替原 journal 的资源释放证明。此展示升级无 migration，不修改已有恢复点，也不授权生产切换。
 
+
+内部资源快照 `readRunInventory` 只读取已有同主体 Run 的预约、绑定、队列历史及旧格式未释放标记，不变更数据库版本、额度或执行权。它尚未替换页面查询或本 Runbook 的现场核验；空快照与旧权限都不能代替当前宿主停止证明。读取超过任一 10,000 条上限时必须报告失败，不接受截断后继续操作。
 
 ## Authoritative Sources
 

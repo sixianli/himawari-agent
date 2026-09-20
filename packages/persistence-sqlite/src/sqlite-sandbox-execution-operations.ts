@@ -107,6 +107,41 @@ export class SqliteSandboxExecutionOperations {
     const input = raw as Record<string, unknown>;
     if (!input || typeof input !== "object" || Array.isArray(input))
       return this.fail("PORT_INVALID_OPERATION", "Invalid sandbox journal request");
+    if (operation === "readRunInventory") {
+      if (!id(input["runId"]))
+        return this.fail("PORT_INVALID_OPERATION", "Invalid Run inventory locator");
+      const runId = input["runId"];
+      return this.db.transaction(() => {
+        const rows = this.db
+          .prepare(
+            "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? ORDER BY job_id LIMIT 10001",
+          )
+          .all(owner, agent, runId) as { plan: string }[];
+        if (rows.length > 10000)
+          return this.fail("PORT_INVALID_OPERATION", "SANDBOX_RUN_INVENTORY_LIMIT");
+        const admissions = rows.map((row) => {
+          const identity = sandboxExecutionPlanV2Schema.parse(JSON.parse(row.plan)).identity;
+          if (identity.ownerId !== owner || identity.agentId !== agent || identity.runId !== runId)
+            return this.fail("PORT_NOT_AUTHORITATIVE", "SANDBOX_RUN_INVENTORY_SCOPE_MISMATCH");
+          const admission = this.readAdmission(identity, owner, agent);
+          if (!admission)
+            return this.fail("PORT_NOT_AUTHORITATIVE", "SANDBOX_RUN_INVENTORY_CHANGED");
+          return admission;
+        });
+        const legacyResourcesPending =
+          this.db
+            .prepare(
+              `SELECT 1 FROM sandbox_legacy_occupancy AS occupancy JOIN sandbox_jobs AS jobs USING(job_id)
+          WHERE jobs.owner_id=? AND jobs.agent_id=? AND jobs.run_id=? AND occupancy.released_at IS NULL LIMIT 1`,
+            )
+            .get(owner, agent, runId) !== undefined;
+        return {
+          admissions,
+          queue: this.queue.readRun(owner, agent, runId, 10000),
+          legacyResourcesPending,
+        };
+      })();
+    }
     if (operation === "validatePreparation") {
       this.db.transaction(() => this.authority.validateQueued(raw, owner, agent))();
       return;

@@ -59,6 +59,15 @@ describe("SQLite sandbox request boundaries", () => {
         );
         expect(execute(operation, { runId: "valid", [field]: "missing" })).toBeUndefined();
       }
+      for (const runId of [undefined, null, "", "bad run", 42])
+        expect(() => execute("readRunInventory", { runId })).toThrow(
+          "Invalid Run inventory locator",
+        );
+      expect(execute("readRunInventory", { runId: "missing" })).toEqual({
+        admissions: [],
+        queue: [],
+        legacyResourcesPending: false,
+      });
       const a = admission(f);
       const record = call(f, "admit", a).record;
       for (const operation of ["read", "readAdmission"]) {

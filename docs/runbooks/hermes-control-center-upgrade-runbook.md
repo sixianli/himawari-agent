@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:c55a0a9f476d196acc713a62a966d4090fa804f918c245d4c197e5107f1d4fae"
+contract_sha256: "sha256:6040f02b0f34644bddfdac826aa1d664789cb133ac741b23970de439b8e25d7d"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -82,6 +82,8 @@ Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认�
 
 新增的 `thread.execution_state` 状态查询只有服务配置声明 `executionStateAvailable` 时才由新页面使用；原事件查询保持严格兼容。安装验收须核对新页面与服务能力声明一致，整体与工具行共同保留未知结果，断线不会覆盖已完成事实；Stop/清理仍使用原 revision、权限和幂等入口。新查询仅从持久 Run/Trace 汇总已有事实，操作结果列表不是文件已回滚、资源已释放或所有后代已停止的证明。资源 journal、队列及全部阶段仍未完整接入，不能据此跳过本 Runbook 的平台与现场资格。本展示升级无新 migration，也不授权本机任务自动切换 Hermes。实现与本地证据见[统一状态接入记录](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-unified-state)。
 
+
+内部资源快照 `readRunInventory` 只读取已有同主体 Run 的预约、绑定、队列历史及旧格式未释放标记，不变更数据库版本、额度或执行权。它尚未替换页面查询或本 Runbook 的现场核验；空快照与旧权限都不能代替当前宿主停止证明。读取超过任一 10,000 条上限时必须报告失败，不接受截断后继续操作。
 
 ## Authoritative Sources
 

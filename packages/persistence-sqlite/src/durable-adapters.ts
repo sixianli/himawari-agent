@@ -483,6 +483,12 @@ export class SqliteDurableAdapters {
           agentId,
           input,
         }),
+      readRunInventory: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.readRunInventory", {
+          ownerId,
+          agentId,
+          input,
+        }),
       readQueuedByInvocation: (input) =>
         this.context.read("capabilityInvocation.sandboxV2.readQueuedByInvocation", {
           ownerId,

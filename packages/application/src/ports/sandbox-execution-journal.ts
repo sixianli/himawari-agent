@@ -211,7 +211,19 @@ export type SandboxExecutionAdmissionRecord =
       readonly workspaces: readonly SandboxWorkspaceClaim[];
     }
   | { readonly phase: "bound"; readonly record: SandboxExecutionRecord };
+/** One database read snapshot. Internal identities and claims never go directly to the browser. */
+export interface SandboxExecutionRunInventory {
+  /** Old-format obligations remain visible; absence of v2 rows is not release proof. */
+  readonly legacyResourcesPending: boolean;
+  readonly admissions: readonly SandboxExecutionAdmissionRecord[];
+  readonly queue: readonly NonNullable<
+    Awaited<ReturnType<SandboxExecutionPreparationPort["readQueuedByInvocation"]>>
+  >[];
+}
 export interface SandboxExecutionPreparationPort {
+  /** Read all resource and queue facts for one Run atomically, or reject the bounded read.
+   * No authority renewal, dispatch, usage consumption, queue advancement or recovery. */
+  readRunInventory(input: { readonly runId: string }): Promise<SandboxExecutionRunInventory>;
   /** Bounded, paged resource discovery independent of Run dispatchability. */
   listRecoveryCandidates(input: {
     readonly now: string;

@@ -93,6 +93,10 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
       invoke("capabilityInvocation.sandboxV2.interruptReservation", value) as Awaited<
         ReturnType<SandboxExecutionPreparationPort["interruptReservation"]>
       >,
+    readRunInventory: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.readRunInventory", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["readRunInventory"]>
+      >,
     readQueuedByInvocation: async (value) =>
       invoke("capabilityInvocation.sandboxV2.readQueuedByInvocation", value) as Awaited<
         ReturnType<SandboxExecutionPreparationPort["readQueuedByInvocation"]>

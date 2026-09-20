@@ -22,6 +22,7 @@ date: "2026-09-16"
 
 ## 阅读导航
 
+- [最新工作与恢复上下文（2026-09-20）](#checkpoint-2026-09-20)
 - [本次实施记录与待审核交互](#implementation-record)
 
 - [一、先看实施顺序与交付结果](#roadmap)：[当前实施进展](#implementation-progress)
@@ -56,7 +57,7 @@ date: "2026-09-16"
 
 ### 当前实施进展
 
-下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-unified-state-01/standard-ci-result.json)为 3,859 项全部通过，环境为本机 macOS。
+下表区分已经验证的局部实现与尚未完成的阶段任务；不按提交数或测试数推算完成百分比。最近一次已完成的[完整本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-unified-state-01/standard-ci-result.json)为 3,859 项全部通过，环境为本机 macOS。资源快照内部接口的 54 项定向测试及完整标准构建/测试已通过（245 文件、3,862 项），1,094 项冻结输入回读未变；见[资源快照记录](#p6-resource-inventory)。15:52 的[恢复上下文](#checkpoint-2026-09-20)保留为历史检查点，后续仍须完成资源快照的生产投影接入与其他阶段缺口。
 
 | 阶段 | 已实现并验证的部分 | 仍需完成的重点 |
 | --- | --- | --- |
@@ -255,7 +256,7 @@ date: "2026-09-16"
 
 本阶段贯穿 P1～P5，最后做跨阶段验收。前端以已确认的 v4 基准与 P0 新场景审核结果为准，不用演示时间或固定输出替代真实数据。
 
-- [ ] 由后端统一投影提供 phase、reason、actions、effect、timing、revision 与 needsAttention；顶部、工具行、Stop 和会话红点消费相同事实。 Run/Trace、选中会话和原有动作已接入[独立状态查询](#p6-unified-state)；资源和全部会话阶段未齐全，本项保持未完成。
+- [ ] 由后端统一投影提供 phase、reason、actions、effect、timing、revision 与 needsAttention；顶部、工具行、Stop 和会话红点消费相同事实。 Run/Trace、选中会话和原有动作已接入[独立状态查询](#p6-unified-state)；已补[资源快照读取基础](#p6-resource-inventory)，尚未接入页面聚合；资源和全部会话阶段未齐全，本项保持未完成。
 - [ ] 默认显示当前状态、必要动作和结果，步骤细节可展开；待确认卡片在窄屏保持可达。无用户行动需求时不点红点，保持无独立审批页/通用详情栏/删除会话。
 - [ ] 分别记录审查、用户确认、冲突等待、准备、执行、核验、清理与可观察模型输出。并行执行用区间并集；断线外推明确边界，最终时长由执行记录校正。
 - [ ] 扩展已有 Playwright 脚本与 fixture 服务验证新增状态、键盘、明暗、320/390/1024/1440 宽度、长路径与 200% 缩放；保留真实工具语义图标和中性焦点。
@@ -869,6 +870,8 @@ P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 �
 
 [↑ 返回阅读导航](#contents)
 
+已提交为 `489c526d07c4e9365d03d35b1b4dcef031c18f60`（`feat(execution): unify execution display state`）。本批相关改动全部提交；下述资源快照批次是其后的未提交工作。
+
 新增独立 `thread.execution_state` 查询和严格 snapshot，不改变旧记录接口；生产服务声明能力后，新页面才使用它。后端读取全部事件分页，在读取前后核对 Run revision；分页不前进、超过 100 页或版本变化会明确拒绝本次聚合，不能将部分历史当成完整结果。内容 revision 随持久事实及可用动作变化，重读不随当前时间漂移。
 
 顶部、工具行、Stop、原有清理入口和当前会话红点开始消费同一状态；断线单独提示，未知工具结果不因最后一个工具成功或 Run 终态而丢失，工具解密失败保持未知。已完成工具输出继续保留。工具执行与自动审查时间只统计完整可信起止，并行区间取并集；缺失或倒序时间为未知。页面新路径不再展示前端估算的工作时长。
@@ -878,3 +881,90 @@ P0 尚未全部完成；P1～P7 和 68 项产品验收仍未全部完成。P1 �
 验证与实际限制见[本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-unified-state-01/README.md)。定向测试覆盖协议兼容、SQLite worker/direct、真实 Gateway adapter、并行与分页、Run 版本变化、缺失结果、未知计时和 UI 消费。持久 Chrome 测试覆盖 320/390/1024/1440、实际明暗主题、无新 Trace 时的状态刷新和断线重开；它使用隔离 HTTP 夹具，不是完整 Gateway→Worker 文件操作联合验收。最终[标准构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-unified-state-01/standard-ci-result.json)通过 245 文件、3,859 项，零失败、零跳过；1,094 个冻结输入回读未变。类型、任务范围 lint、边界/覆盖/不变量/秘密/CI policy 和严格文档检查通过，四份受影响 Runbook 已封存。全库 check 仍仅由两份原有未跟踪原型的格式问题阻断。本批复核还以失败前回归确认取消决定被误作资源已停止，修复后 14 项状态测试通过；旧候选标准运行被有界停止，最终结果仅来自 `.ci-output/p6-unified-state-03`。
 
 提交前复核另发现 Stop 可用性曾意外影响发送限制。[失败前断言](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-unified-state-01/send-guard-red.log)确认活动 Run 暂无 Stop 时不应允许新一轮；恢复独立发送限制后，[41 项交互测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-unified-state-01/send-guard-green.log)及 12 个 Chrome 场景通过。最终标准验证使用此修复后的冻结输入并全部通过；此前 `.ci-output/p6-unified-state-02` 是修复前结果。
+
+<a id="p6-resource-inventory"></a>
+
+### P6：按 Run 读取一致资源快照（内部基础）
+
+[↑ 返回阅读导航](#contents)
+
+2026-09-20 接手复核：本批标准构建与测试已结束并通过，245 文件、3,862 项，零失败、零跳过；1,094 项冻结输入均未变化。正式结果与摘要已复制到本批证据目录。15:52 的[现场记录](#checkpoint-2026-09-20)保留为历史，不再代表仍需等待原测试；后续实施先完成本批本地提交。
+
+`SandboxExecutionPreparationPort.readRunInventory` 在一个 SQLite 只读事务中读取同一 Owner/Agent/Run 的全部 v2 预约或绑定记录、队列历史及旧格式未释放资源标记。沿用现有 journal 的记录解释，包含释放回执、恢复状态和 workspaceBlocked；不修改 schema、额度、队列、权限或恢复任务。队列保留 queued/admitted/cancelled 历史，记录按固定顺序返回。预约/队列各超过 10,000 条即拒绝整个读取，身份矛盾也拒绝，不静默截断为完整状态。旧格式资源仍有占用时，即使 v2 记录为空也明确报告；空快照本身不是宿主停止证明。
+
+[本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-resource-inventory-01/README.md)包含缺少接口时的失败前证据、54 项定向测试、直接 SQLite 与正式仓库端口重启读回、取消历史、旧格式占用、跨主体隔离、异常身份与超量拒绝。此接口目前是内部读取基础，尚未被 `thread.execution_state` 消费；本批没有修改 UI、Pi 0.84.2 协议、工具执行方式或生产部署。下一步需要可信地关联外层工具与内部文件阶段，再复用已有资源凭据投影到顶部和工具行；不能将某个子阶段完成解释为整轮已释放。
+
+<a id="checkpoint-2026-09-20"></a>
+
+## 最新工作与恢复上下文（2026-09-20）
+
+[↑ 返回阅读导航](#contents)
+
+**后续复核：** 本节是历史检查点；原标准运行已通过，当前准确结果见[资源快照记录](#p6-resource-inventory)，不再按下表的“仍在运行”启动或等待同一测试。
+
+**记录时点：** 2026-09-20 15:52（Asia/Tokyo / 06:52 UTC）。本节根据当次 Git、源码摘要、测试报告及活进程回读编写，是恢复入口；继续工作时仍须重读可能变化的现场。用户本次要求先把已做工作和当前上下文写回本 Plan，没有授权把未完成项改成完成。完整目标仍是完成 P0～P7 与 68 项验收，Spec/Plan 保持 active。
+
+### 已完成并提交的最近工作
+
+| 本地提交 | 已完成内容 | 证据与边界 |
+| --- | --- | --- |
+| `afdf110` | 全部服务模式的资源恢复启动/停止生命周期；stop 可接替等待中的 inspect，并拒绝旧恢复 revision 的迟到写入 | [P1 生命周期记录](#p1-recovery-startup) |
+| `aa22759164cb33c8aa97485d9ba1ee7fae1c07d4` | 产品结果未知/失败、未派发及矛盾证据的展示优先级；保留成功输出 | [P1 产品结果记录](#p1-outcome-projection)；3,840 项标准测试通过 |
+| `489c526d07c4e9365d03d35b1b4dcef031c18f60`（当前 HEAD） | 独立统一状态查询及生产页面消费；取消不伪装成资源已停止；恢复独立发送限制 | [P6 状态接入记录](#p6-unified-state)；245 文件、3,859 项标准测试及 12 个 Chrome 场景通过。Chrome 使用隔离 HTTP 夹具，不能视为真实 Gateway→Worker→文件→页面联合验收 |
+
+上一批最终标准输出目录为 `.ci-output/p6-unified-state-03`，最终构建产物 SHA-256 为 `fd6caa190b901a714f1c5ef6691ba8408b7797f27d9d36046ae2cc6cb231a7e1`。更早的 `-01` 被停止、`-02` 在发送限制最后修复之前，不能替代 `-03`。源码及完整结果已保存在[上一批证据目录](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-unified-state-01/README.md)。没有推送、创建 PR 或部署。
+
+### 当前未提交批次及准确范围
+
+本批实现 `SandboxExecutionPreparationPort.readRunInventory({ runId })`。它在一个数据库读取事务中返回：v2 预约/绑定记录、queued/admitted/cancelled 队列历史和 `legacyResourcesPending`。现有 journal reader 继续负责读取释放回执、恢复任务和占用保护。任一资源/队列集合超过 10,000 条时拒绝整个读取；归属矛盾也拒绝。旧格式占用不会因 v2 集合为空而消失。该接口不派发、不消费额度、不推进队列、不执行核验或清理。
+
+**它尚未被 `thread.execution_state` 调用，也尚未改变页面资源阶段。** 不能把本批内部端口完成写成 P6 完成；不能从空集合、Run 终态或最后一个成功工具推断所有资源已释放。
+
+本批七个代码/测试文件均未提交：
+
+- [资源 journal 端口与快照类型](../../../packages/application/src/ports/sandbox-execution-journal.ts)
+- [正式持久层端口装配](../../../packages/persistence-sqlite/src/durable-adapters.ts)
+- [SQLite 同事务读取](../../../packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts)
+- [队列历史读取、归属校验与上限](../../../packages/persistence-sqlite/src/sqlite-workspace-admission-queue.ts)
+- [预约/队列/绑定、重开、取消、旧格式与超量测试](../../../test/integration/sandbox-execution-preparation.test.ts)
+- [Payload broker 测试端口更新](../../../test/integration/sandbox-v2-payload-broker.test.ts)
+- [非法 locator 与空集合测试](../../../test/integration/sqlite-sandbox-request-boundaries.test.ts)
+
+本批也已更新但尚未提交 [Architecture](../../architecture-v0.1.md)、本 Plan，以及安装/启动/停止、备份恢复、权威迁移、Hermes 升级四份 Runbook。四份 Runbook 已语义核对、seal 并通过静态检查；没有执行 Runbook 的生产步骤。本批新证据位于 [p6-resource-inventory-01](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-resource-inventory-01/README.md)，部分日志被 ignore；提交时只对这个任务证据目录作精确暂存，不扩大到其他 evidence。
+
+### 当前验证状态与仍在运行的任务
+
+| 检查 | 本次已观察结果 |
+| --- | --- |
+| 新接口失败前测试 | [inventory-red.log](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-resource-inventory-01/inventory-red.log) 失败，原因是接口尚不存在；这是新需求回归，不是历史产品缺陷复现 |
+| 定向持久层测试 | [targeted.log](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-resource-inventory-01/targeted.log)：3 文件、54 项通过；包含直接 SQLite 和正式仓库端口重开读取 |
+| 类型、范围 lint、边界、覆盖、不变量、秘密、CI policy | 通过；[检查汇总](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-resource-inventory-01/checks-result.json)。范围 lint 有 23 条信息提示、无错误/警告 |
+| 文档与四份 Runbook | 严格文档检查和静态合同检查通过；本次上下文补写后严格治理再次通过（0 warning），244 个本地文件链接及 32 个显式锚点检查通过。未声称实际点击验证 |
+| 全库 `npm run check` | 仍只在原有两份未跟踪原型的 `verify.cjs` 格式检查失败；文件未修改。不能报告全库 check 全通过 |
+| 本批标准构建 | `.ci-output/p6-resource-inventory-01/build-macos-arm64/result.json` 已为 passed |
+| 本批标准测试 | unit XML 为 1,819 项、contracts XML 为 337 项，均零失败/错误；integration XML 尚未完成，最终 `test-macos-arm64/result.json` 与 `local-summary.json` 尚不存在。不能使用上一批结果宣称本批完整通过 |
+| 冻结源码回读 | [source-freeze.json](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-resource-inventory-01/source-freeze.json) 中 1,094 个输入在记录时点全部未变；文档和证据不属于该源码集合 |
+
+原标准运行命令：
+
+```sh
+node scripts/ci/local.mjs --check test --tools .ci-output/tools --output .ci-output/p6-resource-inventory-01
+```
+
+输出重定向到[本批标准日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/p6-resource-inventory-01/standard-ci.log)。记录时主进程 PID `45145`、集成测试子进程 PID `50073` 均存活；Codex unified exec session 为 `18571`。此前对话/工具等待被用户中断，**不表示测试进程被终止**；包装等待 cell 可能已不存在，应查询原 session、精确命令进程和结果文件。PID 与 session 仅是当次定位信息，不可在未来未经核对就操作同号进程。不要因空日志、观察超时或等待工具中断而重启测试。
+
+### 恢复实施的顺序与已查明的代码入口
+
+1. 先核对当前 HEAD、Git 状态及原测试进程/结果。若原进程仍运行，沿用原运行；若已结束，读取退出结果与正式 JSON，不根据进程消失猜测成功。若失败，先读取该次日志和产物定位原因，不调整断言或增加重试来求通过。
+2. 本批最终测试通过后，复制正式 build/test/local-summary 和各项目计数到本批证据目录；重新回读冻结摘要，补上当前完整结果。再检查文档链接、严格治理和 Runbook 合同。证据文本若有尾部空白，保留原始字节及摘要后再规范化，不改写失败原因或计数。
+3. 审查并精确暂存上述七个代码/测试文件、六个文档文件和本批证据；运行 `git diff --cached --check`，创建范围一致的本地提交。当前本批尚未暂存/提交，不包含 `AGENTS.md` 或其他任务原型与证据。临时 `/private/tmp/himawari-resource-*.json`、`*-finalize.py` 等只是便利脚本，不是权威记录；最终整理脚本可能追加文档，不可未经检查重复执行。
+4. 然后把资源快照接入 [ThreadExecutionProjection](../../../packages/application/src/services/thread-execution-projection.ts) 及 [ThreadExecutionState](../../../packages/application/src/services/thread-execution-state.ts)，由生产 [HTTP composition](../../../apps/agent-service/src/production-http-composition.ts) 提供受主体约束的持久层依赖。对资源、队列和 Run/Trace 的读取版本/一致性作明确处理，不返回看似完整的截断结果。
+5. 工具关联优先使用已有计划的 `identity.toolCallId` 和 `binding.scopeRef/scopeDigest`。受保护 scope 包含 `parentToolCallId`，一个外层工具可能有多个内部文件阶段；[SandboxScopeService](../../../packages/application/src/services/sandbox-scope-service.ts) 已实现 Payload 归属、摘要、scope/plan 身份核对。历史展示需要复用这些身份核对，但**不能调用会重新验证当前 Grant/期限并授予执行依据的完整 resolve 流程来代替历史读取**；必要时抽出共享的只读快照核对，保留原执行入口的全部当前授权检查。
+6. 释放结论复用 [projectSandboxExecution](../../../packages/application/src/services/sandbox-execution-projection.ts) 与可信 journal release receipt；旧凭据证明的是当时已接纳的释放事实，不能续作新执行或披露授权。`startedAt`/派发 CAS 本身不是 Worker 已实际执行的证明。只有仍有效且真正运行的 recovery 记录才显示核验/停止进行时；已结束的 unresolved 不能继续转圈。并行资源必须聚合，不能由最后一个子阶段遮盖未知状态；已成功的工具效果继续保留。
+7. 接入后补统一状态、真实 SQLite、生产装配和已有持久浏览器测试，再推进完整 Gateway→ActionPolicy→SQLite→Worker→受限文件→页面恢复路径。模型替身可控，但关键权限、占用、文件效果和回传不得全部 mock。P1～P7 其余缺口仍按[实施进展](#implementation-progress)、[68 项验收](#acceptance)和[配置停止条件](#decisions)推进，不以本批替代全部目标。
+
+### 必须保留的既有工作与授权边界
+
+记录时工作区仍有既有 `AGENTS.md` 改动，`execution-process 2.tsx`、`execution-view 2.ts`、对应 `execution-view.unit.test 2.ts`、`test-execution-chain-browser 2.mjs`，r1/r2 状态原型目录，以及 runtime-history 下既有 mobile/locale/CSRF 截图和浏览器证据目录。这些不属于当前资源快照批次；继续工作前按 Git 实际清单复核，不能重置、清理或一起提交。
+
+本地实现、必要测试、文档和验证后本地提交已有授权。没有创建分支、tag、PR、推送、部署、历史生产数据修复或新增真实付费调用的授权。本次没有更换模型/provider 或启用自动审查。后续具体真实模型配置、费用/披露、生产切换和历史修复继续遵循[待确定事项](#decisions)，不得把历史授权或 Runbook 静态通过当成当次现场操作授权。

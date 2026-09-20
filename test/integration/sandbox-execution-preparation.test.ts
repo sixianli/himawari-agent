@@ -566,6 +566,115 @@ describe("atomic execution reservation and runtime binding", () => {
       await f.close();
     }
   });
+  it("reads one owner-scoped Run inventory without consuming queue or admission state", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const request = input(f);
+      call(f, "enqueue", request);
+      const read = () =>
+        operationsForDatabase(f.database).execute(
+          "capabilityInvocation.sandboxV2.readRunInventory",
+          { ownerId: OWNER_ID, agentId: AGENT_ID, input: { runId: request.plan.identity.runId } },
+        );
+      const before = read();
+      expect(before).toMatchObject({
+        admissions: [],
+        queue: [{ status: "queued", plan: request.plan }],
+      });
+      expect(read()).toEqual(before);
+      expect(call(f, "readAdmission", request.plan.identity)).toBeUndefined();
+      call(f, "reserve", request);
+      expect(read()).toMatchObject({
+        admissions: [{ phase: "reserved" }],
+        queue: [{ status: "admitted" }],
+      });
+      call(f, "bindAndStart", binding(f));
+      expect(read()).toMatchObject({
+        admissions: [{ phase: "bound" }],
+        queue: [{ status: "admitted" }],
+      });
+      expect(
+        operationsForDatabase(f.database).execute(
+          "capabilityInvocation.sandboxV2.readRunInventory",
+          {
+            ownerId: OWNER_ID,
+            agentId: "other-agent",
+            input: { runId: request.plan.identity.runId },
+          },
+        ),
+      ).toEqual({ admissions: [], queue: [], legacyResourcesPending: false });
+      f.database.close();
+      const repo = await SqliteProductStateRepository.open({ stateRoot: f.resource.stateRoot });
+      try {
+        const snapshot = await repo
+          .sandboxExecutionPreparations(OWNER_ID, AGENT_ID)
+          .readRunInventory({ runId: request.plan.identity.runId });
+        expect(snapshot).toMatchObject({
+          admissions: [{ phase: "bound" }],
+          queue: [{ status: "admitted" }],
+        });
+      } finally {
+        await repo.close();
+      }
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("does not hide an older sandbox obligation behind an empty v2 inventory", async () => {
+    const f = await openSandboxJournal();
+    try {
+      f.prepare();
+      expect(call(f, "readRunInventory", { runId: f.plan.identity.runId })).toEqual({
+        admissions: [],
+        queue: [],
+        legacyResourcesPending: true,
+      });
+      expect(call(f, "readRunInventory", { runId: "other-run" })).toEqual({
+        admissions: [],
+        queue: [],
+        legacyResourcesPending: false,
+      });
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("retains cancelled queue history and rejects corrupted identities or truncated inventories", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const request = input(f);
+      call(f, "enqueue", request);
+      call(f, "cancelQueued", {
+        identity: request.plan.identity,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+      });
+      const read = () => call(f, "readRunInventory", { runId: request.plan.identity.runId });
+      expect(read()).toMatchObject({ admissions: [], queue: [{ status: "cancelled" }] });
+      const original = f.database
+        .prepare("SELECT request_json FROM sandbox_admission_queue")
+        .get() as { request_json: string };
+      const changed = JSON.parse(original.request_json);
+      changed.plan.identity.agentId = "other-agent";
+      f.database
+        .prepare("UPDATE sandbox_admission_queue SET request_json=?")
+        .run(JSON.stringify(changed));
+      expect(read).toThrow("SANDBOX_RUN_INVENTORY_SCOPE_MISMATCH");
+      f.database
+        .prepare("UPDATE sandbox_admission_queue SET request_json=?")
+        .run(original.request_json);
+      // Deliberately oversized test database: the reader must fail before returning a partial history.
+      f.database.exec(`WITH RECURSIVE numbers(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM numbers WHERE n<10000)
+        INSERT INTO sandbox_admission_queue(job_id,owner_id,agent_id,run_id,host_id,handle_ref,deadline_at,status,request_json,claims_json)
+        SELECT job_id || '-' || n,owner_id,agent_id,run_id,host_id,handle_ref,deadline_at,status,request_json,claims_json
+        FROM sandbox_admission_queue, numbers WHERE sequence=1`);
+      expect(read).toThrow("SANDBOX_RUN_INVENTORY_LIMIT");
+    } finally {
+      await f.close();
+    }
+  });
+
   it("reads the original unconsumed queue snapshot after reopening the database", async () => {
     const f = await openSandboxJournal();
     try {

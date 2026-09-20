@@ -102,6 +102,37 @@ export class SqliteWorkspaceAdmissionQueue {
     };
   }
 
+  /** Called inside the journal's read transaction; overflow rejects rather than truncates. */
+  readRun(owner: string, agent: string, runId: string, limit: number) {
+    const rows = this.db
+      .prepare(`SELECT sequence, status, request_json AS request
+      FROM sandbox_admission_queue WHERE owner_id=? AND agent_id=? AND run_id=?
+      ORDER BY sequence LIMIT ?`)
+      .all(owner, agent, runId, limit + 1) as (Position & { request: string })[];
+    if (rows.length > limit) this.fail("PORT_INVALID_OPERATION", "SANDBOX_RUN_INVENTORY_LIMIT");
+    const seen = new Set<string>();
+    return rows.map((row) => {
+      const saved = JSON.parse(row.request) as ReturnType<typeof snapshot>;
+      const identity = saved.plan.identity;
+      if (
+        identity.ownerId !== owner ||
+        identity.agentId !== agent ||
+        identity.runId !== runId ||
+        seen.has(identity.invocationId)
+      )
+        this.fail("PORT_NOT_AUTHORITATIVE", "SANDBOX_RUN_INVENTORY_SCOPE_MISMATCH");
+      seen.add(identity.invocationId);
+      return {
+        sequence: row.sequence,
+        status: row.status,
+        plan: saved.plan,
+        reservation: saved.reservation,
+        invocation: saved.invocation,
+        workspaces: saved.claims,
+      };
+    });
+  }
+
   assertUnchanged(input: Request, claims: readonly SandboxWorkspaceClaim[]): void {
     const row = this.db
       .prepare("SELECT request_json AS request FROM sandbox_admission_queue WHERE job_id=?")
