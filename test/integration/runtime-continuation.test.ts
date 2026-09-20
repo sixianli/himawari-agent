@@ -1,6 +1,6 @@
+import { RuntimeContinuationService, type RuntimeRequest } from "@himawari-agent/application";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { describe, expect, it, vi } from "vitest";
-import { RuntimeContinuationService, type RuntimeRequest } from "@himawari-agent/application";
 
 const request = {
   ownerId: "owner-continuation",
@@ -99,4 +99,41 @@ describe("protected runtime continuation boundary", () => {
     await expect(f.service.load(request, ref)).rejects.toThrow("RUN_CANCELLED");
     expect(unprotect).not.toHaveBeenCalled();
   });
+});
+
+it("requires explicit queue proof for a changed authority and preserves every semantic input", async () => {
+  const f = fixture();
+  const snapshot = { originalBatch: true };
+  const ref = await f.service.save(request, snapshot);
+  const authorizeAuthorityChange = vi.fn(async () => true);
+  const resumed = {
+    ...request,
+    continuationRef: ref,
+    executionLease: Object.freeze({
+      ...request.executionLease,
+      fencingToken: 2,
+      authorityFencingToken: 2,
+    }),
+  };
+  const service = new RuntimeContinuationService({ ...f.dependencies, authorizeAuthorityChange });
+  expect(await service.load(resumed, ref)).toEqual(snapshot);
+  expect(authorizeAuthorityChange).toHaveBeenCalledWith(resumed, ref, {
+    deploymentId: request.executionLease.deploymentId,
+    authorityEpoch: 1,
+    fencingToken: 1,
+  });
+  for (const mutation of [
+    { budget: { cost: 2000 } },
+    { capabilityHandleRefs: ["another-handle"] },
+    { contextEnvelopeRef: "another-context" },
+    { modelRef: "another-model" },
+    { executionDeadlineAt: "2026-09-07T13:00:00.000Z" },
+  ]) {
+    await expect(service.load({ ...resumed, ...mutation }, ref)).rejects.toThrow(
+      "RUNTIME_CONTINUATION_CONTEXT_CHANGED",
+    );
+  }
+  expect(authorizeAuthorityChange).toHaveBeenCalledTimes(1);
+  authorizeAuthorityChange.mockResolvedValue(false);
+  await expect(service.load(resumed, ref)).rejects.toThrow("RUNTIME_CONTINUATION_CONTEXT_CHANGED");
 });

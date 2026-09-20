@@ -320,3 +320,45 @@ it.each(["unverified", "different-target", "different-binding", "same-call", "li
     expect(f.services.issue).not.toHaveBeenCalled();
   },
 );
+
+it("changes only authority after queue proof and still rejects changed outer tool arguments", async () => {
+  const f = fixture();
+  await executeProductionCodingRequest(f.call, "write", f.services, f.ctx);
+  if (!f.call.context) throw new Error("context missing");
+  const call = {
+    ...f.call,
+    context: {
+      ...f.call.context,
+      continuationRef: "original-batch",
+      executionLease: {
+        ...f.call.context.executionLease,
+        fencingToken: 2,
+        authorityFencingToken: 2,
+      },
+    },
+  };
+  const proof = vi.fn(async () => false);
+  const context = { ...f.ctx, authorityFence: () => 2, canResumeAuthority: proof };
+  expect(await executeProductionCodingRequest(call, "write", f.services, context)).toMatchObject({
+    errorCode: "CODING_CONTEXT_CHANGED",
+  });
+  proof.mockResolvedValue(true);
+  expect(await executeProductionCodingRequest(call, "write", f.services, context)).toMatchObject({
+    errorCode: "test-denied",
+  });
+  const calls = f.authorize.mock.calls.length;
+  expect(
+    await executeProductionCodingRequest(
+      { ...call, arguments: { ...call.arguments, content: "changed" } },
+      "write",
+      f.services,
+      context,
+    ),
+  ).toMatchObject({ errorCode: "CODING_CONTEXT_CHANGED" });
+  expect(f.authorize).toHaveBeenCalledTimes(calls);
+  expect(proof).toHaveBeenCalledWith({
+    deploymentId: f.call.context.executionLease.deploymentId,
+    authorityEpoch: 1,
+    fencingToken: 1,
+  });
+});

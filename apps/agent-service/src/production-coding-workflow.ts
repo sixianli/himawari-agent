@@ -3,8 +3,8 @@ import {
   type GovernedActionIntent,
   type GovernedCapabilityExecutionHandle,
   type RuntimeToolExecutionResult,
-  type RuntimeToolSettledResult,
   type RuntimeToolInvocation,
+  type RuntimeToolSettledResult,
   resolveHostFileReadPath,
   runtimeToolAuthorizationResult,
   scanMachineSecrets,
@@ -12,6 +12,7 @@ import {
 import type {
   FileReadExecutionContext,
   ProductionFileReadServices,
+  WorkflowAuthority,
 } from "./production-file-read-workflow.js";
 
 type Tool = "read" | "write" | "edit" | "bash" | "find" | "grep" | "ls" | "web_search";
@@ -25,14 +26,14 @@ const hash = (value: unknown) =>
       ),
     )
     .digest("hex");
-function stableCall(call: RuntimeToolInvocation) {
-  if (!call.context) return call;
+function stableCall(call: RuntimeToolInvocation, authority?: WorkflowAuthority) {
+  if (!call.context) throw new Error("CODING_CONTEXT_UNAVAILABLE");
   const { executionLease, continuationRef: _continuation, ...context } = call.context;
   return {
     ...call,
     context: {
       ...context,
-      authority: {
+      authority: authority ?? {
         deploymentId: executionLease.deploymentId,
         authorityEpoch: executionLease.authorityEpoch,
         fencingToken: executionLease.fencingToken,
@@ -147,16 +148,27 @@ export async function executeProductionCodingRequest(
     expiresAt,
   };
   const frozen = (await ctx.save("context", proposed)).value as typeof proposed;
+  const previousAuthority = frozen.call.context.authority;
+  const rebound =
+    frozen.authorityFence === previousAuthority.fencingToken &&
+    (await ctx.canResumeAuthority?.(previousAuthority));
+  const activeFence = rebound ? ctx.authorityFence() : frozen.authorityFence;
   if (
-    hash({ ...proposed, requestedAt: frozen.requestedAt, expiresAt: frozen.expiresAt }) !==
-    hash(frozen)
+    hash({
+      ...proposed,
+      ...(rebound
+        ? { call: stableCall(call, previousAuthority), authorityFence: frozen.authorityFence }
+        : {}),
+      requestedAt: frozen.requestedAt,
+      expiresAt: frozen.expiresAt,
+    }) !== hash(frozen)
   )
     return failed("CODING_CONTEXT_CHANGED");
   const active = async () => {
     await ctx.assertActive();
     if (
       ctx.now() >= frozen.expiresAt ||
-      ctx.authorityFence() !== frozen.authorityFence ||
+      ctx.authorityFence() !== activeFence ||
       hash(await services.binding(call)) !== hash(binding)
     )
       throw new Error("CODING_CONTEXT_CHANGED");

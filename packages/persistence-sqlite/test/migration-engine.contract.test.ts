@@ -18,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const temporaryDirectories: string[] = [];
-const CURRENT_SCHEMA_SEQUENCE = 44;
+const CURRENT_SCHEMA_SEQUENCE = 45;
 
 afterEach(async () => {
   await Promise.all(
@@ -138,8 +138,8 @@ describe("immutable SQLite migration engine", () => {
       const before = readMigrationLedger(database);
       const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-        appliedSequences: [29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44],
-        currentSequence: 44,
+        appliedSequences: [29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45],
+        currentSequence: 45,
       });
       expect(readMigrationLedger(database).slice(0, 28)).toEqual(before);
       expect(database.pragma("foreign_key_check")).toEqual([]);
@@ -165,8 +165,8 @@ describe("immutable SQLite migration engine", () => {
       const ledger = readMigrationLedger(database);
       const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-        appliedSequences: [40, 41, 42, 43, 44],
-        currentSequence: 44,
+        appliedSequences: [40, 41, 42, 43, 44, 45],
+        currentSequence: 45,
       });
       expect(readMigrationLedger(database).slice(0, 39)).toEqual(ledger);
       expect(
@@ -196,8 +196,8 @@ describe("immutable SQLite migration engine", () => {
       const before = readMigrationLedger(database);
       const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-        appliedSequences: [41, 42, 43, 44],
-        currentSequence: 44,
+        appliedSequences: [41, 42, 43, 44, 45],
+        currentSequence: 45,
       });
       expect(readMigrationLedger(database).slice(0, 40)).toEqual(before);
       expect(
@@ -324,8 +324,8 @@ it("preserves schema 43 history and bars writers that cannot read queue authorit
     const history = readMigrationLedger(database);
     const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
     expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-      appliedSequences: [44],
-      currentSequence: 44,
+      appliedSequences: [44, 45],
+      currentSequence: 45,
     });
     expect(readMigrationLedger(database).slice(0, 43)).toEqual(history);
     expect(
@@ -335,7 +335,31 @@ it("preserves schema 43 history and bars writers that cannot read queue authorit
       () => assertWritableSchema(database, 43),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 44)).not.toThrow();
+    expect(() => assertWritableSchema(database, 45)).not.toThrow();
+    expect(database.pragma("foreign_key_check")).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
+it("preserves schema 44 history and fences writers without queued Pi recovery", async () => {
+  const { databasePath, snapshotPath } = await temporaryDatabase();
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    const migrations = await loadBundledMigrations();
+    applyMigrations(database, migrations.slice(0, 44));
+    const history = readMigrationLedger(database);
+    const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+    expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+      appliedSequences: [45],
+      currentSequence: 45,
+    });
+    expect(readMigrationLedger(database).slice(0, 44)).toEqual(history);
+    expectMigrationCode(
+      () => assertWritableSchema(database, 44),
+      SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
+    );
+    expect(() => assertWritableSchema(database, 45)).not.toThrow();
     expect(database.pragma("foreign_key_check")).toEqual([]);
   } finally {
     database.close();

@@ -220,6 +220,13 @@ export interface SandboxExecutionRunInventory {
     Awaited<ReturnType<SandboxExecutionPreparationPort["readQueuedByInvocation"]>>
   >[];
 }
+/** Product-owned link to the protected Pi batch captured before this queue was created. */
+export interface SandboxQueuedToolBatch {
+  readonly version: "queued-tool-batch.v1";
+  readonly continuationRef: string;
+  readonly toolCallId: string;
+  readonly authority: CapabilityInvocationAuthority["product"];
+}
 export interface SandboxExecutionPreparationPort {
   /** Read all resource and queue facts for one Run atomically, or reject the bounded read.
    * No authority renewal, dispatch, usage consumption, queue advancement or recovery. */
@@ -272,6 +279,7 @@ export interface SandboxExecutionPreparationPort {
         readonly sequence: number;
         readonly status: "queued" | "admitted" | "cancelled";
         readonly bindingRevision: number;
+        readonly recovery?: SandboxQueuedToolBatch;
         readonly plan: SandboxExecutionPlanCandidateV2;
         readonly reservation: SandboxExecutionReservation;
         readonly workspaces: readonly SandboxWorkspaceClaim[];
@@ -299,6 +307,7 @@ export interface SandboxExecutionPreparationPort {
     readonly now: string;
   }): Promise<void>;
   reserve(input: {
+    readonly recovery?: SandboxQueuedToolBatch;
     readonly invocation: ConsumeCapabilityInvocationInput;
     readonly plan: SandboxExecutionPlanCandidateV2;
     readonly reservation: SandboxExecutionReservation;

@@ -17,7 +17,13 @@ type Position = Awaited<ReturnType<SandboxExecutionPreparationPort["enqueue"]>>;
 
 function snapshot(input: Request, claims: readonly SandboxWorkspaceClaim[]) {
   const { consumedAt: _now, ...invocation } = input.invocation;
-  return { plan: input.plan, reservation: input.reservation, invocation, claims };
+  return {
+    ...(input.recovery ? { recovery: input.recovery } : {}),
+    plan: input.plan,
+    reservation: input.reservation,
+    invocation,
+    claims,
+  };
 }
 
 /** Called only inside the journal's immediate transaction. Priority holds no resource. */
@@ -175,6 +181,7 @@ export class SqliteWorkspaceAdmissionQueue {
       sequence: row.sequence,
       bindingRevision: row.bindingRevision,
       status: row.status,
+      ...(saved.recovery ? { recovery: saved.recovery } : {}),
       plan: saved.plan,
       reservation: saved.reservation,
       invocation: saved.invocation,
@@ -206,6 +213,7 @@ export class SqliteWorkspaceAdmissionQueue {
         sequence: row.sequence,
         bindingRevision: row.bindingRevision,
         status: row.status,
+        ...(saved.recovery ? { recovery: saved.recovery } : {}),
         plan: saved.plan,
         reservation: saved.reservation,
         invocation: saved.invocation,

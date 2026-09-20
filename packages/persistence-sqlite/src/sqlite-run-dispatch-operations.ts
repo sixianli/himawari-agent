@@ -9,6 +9,7 @@ import {
   type ProductAuthorityFence,
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
+import { QUEUED_TOOL_BATCH_SQL, readQueuedToolBatch } from "./sqlite-queued-tool-batch.ts";
 import { RUN_COMPLETION_RECOVERY_SQL } from "./sqlite-run-resource-guard.ts";
 
 type Failure = (code: string, message: string, details?: Readonly<Record<string, string>>) => never;
@@ -229,6 +230,7 @@ export class SqliteRunDispatchOperations {
              (r.status<>'reconciling_external_result' AND COALESCE(c.terminal_status,'')<>'completed' AND (
              (r.status = 'accepted' AND (c.phase IS NULL OR c.phase = 'accepted'))
              OR c.phase IN ('context_formed', 'runtime_settled')
+             OR (${QUEUED_TOOL_BATCH_SQL})
              OR (c.phase = 'awaiting_approval' AND EXISTS (
                SELECT 1 FROM approval_requests approval
                WHERE approval.id = json_extract(c.suspension_json, '$.approval.approvalRequestId')
@@ -298,7 +300,7 @@ export class SqliteRunDispatchOperations {
            AND NOT (r.status = 'reconciling_external_result'
              AND COALESCE(c.phase, '') = 'reconciling_external_result')
            AND (
-             c.phase IN ('workers_running', 'runtime_running', 'reconciling_external_result')
+             (c.phase IN ('workers_running', 'runtime_running', 'reconciling_external_result') AND NOT (${QUEUED_TOOL_BATCH_SQL}))
              OR (c.phase IS NULL AND r.status IN ('building_context', 'running'))
              OR EXISTS (
                SELECT 1 FROM model_budget_accounts budget
@@ -914,6 +916,12 @@ export class SqliteRunDispatchOperations {
   }
 
   private assertDispatchable(run: RunRow, now: string): void {
+    const queuedRecovery = readQueuedToolBatch(
+      this.database,
+      this.scope.ownerId,
+      this.scope.agentId,
+      run.id,
+    );
     const completionRecovery =
       ["running", "reconciling_external_result"].includes(run.status) &&
       Boolean(
@@ -954,6 +962,7 @@ export class SqliteRunDispatchOperations {
     }
     if (
       !completionRecovery &&
+      !queuedRecovery &&
       RECONCILIATION_CHECKPOINT_PHASES.includes(
         run.checkpointPhase as (typeof RECONCILIATION_CHECKPOINT_PHASES)[number],
       )
@@ -964,6 +973,7 @@ export class SqliteRunDispatchOperations {
     }
     if (
       !completionRecovery &&
+      !queuedRecovery &&
       run.checkpointPhase !== null &&
       !RESUMABLE_CHECKPOINT_PHASES.includes(
         run.checkpointPhase as (typeof RESUMABLE_CHECKPOINT_PHASES)[number],

@@ -1,0 +1,148 @@
+{
+  "status": "passed-with-documented-global-check-baseline",
+  "scope": "original unadmitted Pi queue and Run continuation",
+  "targeted": {
+    "productionFinal": 10,
+    "integrationEarlier": 297,
+    "migration": 28,
+    "workflow": 59,
+    "auditAndScheduling": 62,
+    "countsAreOverlapping": true
+  },
+  "checks": {
+    "typecheck": "passed",
+    "scopedBiome": "passed",
+    "boundaries": "passed",
+    "v02Coverage": "passed",
+    "v02Invariants": "passed",
+    "secrets": "passed",
+    "ciPolicy": "passed",
+    "runbooks": {
+      "passed": 5,
+      "liveOperationsExecuted": false
+    },
+    "strictDocs": {
+      "status": "passed",
+      "warnings": 0
+    },
+    "links": {
+      "existingFileTargets": 604,
+      "uniquePlanExplicitAnchors": 44,
+      "readerClicks": false
+    },
+    "globalCheck": "blocked by two pre-existing untracked prototype verify.cjs format errors",
+    "globalLint": "blocked by the same two prototype noInnerDeclarations errors"
+  },
+  "limitations": [
+    "controlled Faux model",
+    "controlled Worker transport, no real JobHost or file effects",
+    "database reopened, no OS Agent process killed",
+    "legacy two-phase file inspection has workflow unit coverage only",
+    "full Plan and cross-platform qualification remain incomplete"
+  ],
+  "standardOutput": ".ci-output/p2-queued-run-restart-01",
+  "frozenInputs": 1024,
+  "standard": {
+    "build": "passed",
+    "test": "passed",
+    "counts": {
+      "files": 250,
+      "executed": 4024,
+      "passed": 4024,
+      "failed": 0,
+      "skipped": 0
+    },
+    "buildDurationMs": 200337,
+    "testDurationMs": 835661,
+    "testedBaseSha": "5bc5ba742fa596cb44e4da23545ba4592f74c35b",
+    "includesUncommittedTaskChanges": true
+  },
+  "frozenInputReadback": {
+    "count": 1024,
+    "changed": []
+  },
+  "rawLogs": {
+    "archive": "raw-logs.tar.gz",
+    "count": 19,
+    "byteReadback": "identical",
+    "sha256": "130e4b8c63c995b01fecb652769b16a4786247b8d1fcf5a3c654e054cb119d4a",
+    "entries": [
+      {
+        "name": "himawari-queued-run-audit.log",
+        "sha256": "331a882fed649c3da5f71a7bcbe5d2b3490d731dd8dba470bff24cb502fbfce7"
+      },
+      {
+        "name": "himawari-queued-run-biome.log",
+        "sha256": "b3fc27e8125b89af3bcacd1aa4b2d6689269cc166564b18409607c5c30bbd45e"
+      },
+      {
+        "name": "himawari-queued-run-dispatch.log",
+        "sha256": "171dc4751b0b83461722d2e4f674941f1354105153a5394760cdf1f970ed22b2"
+      },
+      {
+        "name": "himawari-queued-run-docs-final.log",
+        "sha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+      },
+      {
+        "name": "himawari-queued-run-docs.log",
+        "sha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+      },
+      {
+        "name": "himawari-queued-run-final-types.log",
+        "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+      },
+      {
+        "name": "himawari-queued-run-format.log",
+        "sha256": "21a305a736dc125e93aaf843ba550b89a86ed42859f7d8601097ee662455a820"
+      },
+      {
+        "name": "himawari-queued-run-global-check.log",
+        "sha256": "f6d2a8e4e975544d65f33499aa3a1a816a99b87c9777953b512c6ec5622691e9"
+      },
+      {
+        "name": "himawari-queued-run-global-lint-errors.log",
+        "sha256": "3a1e25570fd0f46a87e73e33cf4701f79a34ab24d731dfc03f4bf9435ebbd04f"
+      },
+      {
+        "name": "himawari-queued-run-global-lint.log",
+        "sha256": "8634009e4e53cd1dcc68d60e5ed58be63946e3c60762e1e65a40a6f117154098"
+      },
+      {
+        "name": "himawari-queued-run-integration.log",
+        "sha256": "72f5d764a11ef73a3c45fbbca888430a1e6a90075a8f80032907df2f879494a7"
+      },
+      {
+        "name": "himawari-queued-run-migrations.log",
+        "sha256": "a255b8eb20f8be017d2c59b0d14dff1c3bf53dbea3f2a23f0a7a39e296836099"
+      },
+      {
+        "name": "himawari-queued-run-policy.log",
+        "sha256": "1cd14b906b85f0b8f4fc1ab60ffa10affee4469f0140062af8a6e82ae178e7d2"
+      },
+      {
+        "name": "himawari-queued-run-progress.log",
+        "sha256": "fff722d123a73210b33fee9cdcf63f8605902e45b4cdc5df14280004682c4bed"
+      },
+      {
+        "name": "himawari-queued-run-red.log",
+        "sha256": "a2eb28389d9f0e1dbc63d42ecfb0bed9f7655f111bf8038180fbdeb63a19e19c"
+      },
+      {
+        "name": "himawari-queued-run-runbooks.log",
+        "sha256": "00940bd8a485fa2541dfd1e7647b407818fc00f50bacafa5f0de780b66c83855"
+      },
+      {
+        "name": "himawari-queued-run-standard.log",
+        "sha256": "3419683062b7a67f248cdc02d0216268c71174e7209afdd81eafa6067015841d"
+      },
+      {
+        "name": "himawari-queued-run-types.log",
+        "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+      },
+      {
+        "name": "himawari-queued-run-workflows.log",
+        "sha256": "7ac0a4ea4cea0e548651160c3cff6eebb17c2416b141aa663a0aefc8f790dde6"
+      }
+    ]
+  }
+}

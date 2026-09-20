@@ -577,7 +577,12 @@ export async function createProductionSandboxServices(options: {
       // Reuse the approved target baseline and original deadline. Reconstructing
       // them from the current file would silently authorize a changed object.
       await resolve(queued.plan);
-      return { plan: queued.plan, reservation: queued.reservation, workspaces: queued.workspaces };
+      return {
+        ...(queued.recovery ? { recovery: queued.recovery } : {}),
+        plan: queued.plan,
+        reservation: queued.reservation,
+        workspaces: queued.workspaces,
+      };
     }
     return undefined;
   };
@@ -811,7 +816,18 @@ export async function createProductionSandboxServices(options: {
       sequence: 1,
       createdAt: plan.requestedAt,
     });
+    const recoveryCall = parentCall ?? call;
     return {
+      ...(recoveryCall.context?.continuationRef
+        ? {
+            recovery: {
+              version: "queued-tool-batch.v1" as const,
+              continuationRef: recoveryCall.context.continuationRef,
+              toolCallId: recoveryCall.toolCallId,
+              authority: input.authority.product,
+            },
+          }
+        : {}),
       plan,
       reservation,
       workspaces: resolved.workspaceClaim ? [resolved.workspaceClaim] : [],
@@ -1580,6 +1596,7 @@ export async function createProductionSandboxServices(options: {
         | "modelRef"
         | "capabilityHandleRefs"
         | "executionDeadlineAt"
+        | "continuationRef"
       >,
     ): Promise<void> => {
       const inventory = await preparations.readRunInventory({ runId: request.runId });
@@ -1590,10 +1607,28 @@ export async function createProductionSandboxServices(options: {
           ...queued.plan,
           executionLease: request.executionLease,
         });
+        let privateChild = false;
+        if (queued.recovery && queued.recovery.continuationRef === request.continuationRef) {
+          const scope = sandboxExecutionScopeSchema.parse(await readJson(plan.binding.scopeRef));
+          const savedIntent = await artifacts().lookup({
+            runId: request.runId,
+            purpose: "trace",
+            operationKey: `runtime-tool-intent:${hash([request.runId, scope.toolCallId])}`,
+          });
+          const original = savedIntent
+            ? ((await readJson(savedIntent.payloadRef)) as {
+                recovery?: { continuationRef: string; toolCallId: string };
+              })
+            : undefined;
+          privateChild =
+            scope.parentToolCallId === queued.recovery.toolCallId &&
+            original?.recovery?.continuationRef === queued.recovery.continuationRef &&
+            original.recovery.toolCallId === queued.recovery.toolCallId;
+        }
         if (
           plan.identity.threadId !== request.threadId ||
           plan.modelRef !== request.modelRef ||
-          !request.capabilityHandleRefs.includes(plan.handleRef) ||
+          (!request.capabilityHandleRefs.includes(plan.handleRef) && !privateChild) ||
           (request.executionDeadlineAt && plan.effectiveDeadlineAt > request.executionDeadlineAt)
         )
           throw new Error("SANDBOX_QUEUE_RUN_CONTEXT_CHANGED");
@@ -1601,6 +1636,7 @@ export async function createProductionSandboxServices(options: {
         // Rebuilding a scope from today's target would silently change the approval.
         await resolve(plan);
         await preparations.rebindQueued({
+          ...(queued.recovery ? { recovery: queued.recovery } : {}),
           plan,
           reservation: queued.reservation,
           workspaces: queued.workspaces,

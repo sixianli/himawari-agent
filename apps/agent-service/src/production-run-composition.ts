@@ -20,6 +20,7 @@ import {
   SessionTraceRecorder,
   type WorkerRunPort,
 } from "@himawari-agent/application";
+import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PiAgentRuntimeAdapter, type PiModelBindingPort } from "@himawari-agent/runtime-pi";
 import type { ProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
@@ -135,6 +136,28 @@ export function createProductionRunComposition(options: ProductionRunComposition
     protector,
     clock,
     ids,
+    authorizeAuthorityChange: async (request, ref, previousAuthority) => {
+      const saved = await checkpoints.read(request.runId);
+      const recovery = saved?.queuedToolBatch;
+      if (
+        !recovery ||
+        recovery.continuationRef !== ref ||
+        canonicalAuthorizationSnapshot(previousAuthority) !==
+          canonicalAuthorizationSnapshot(recovery.authority)
+      )
+        return false;
+      const inventory = await repository
+        .sandboxExecutionPreparations(ownerId, agentId)
+        .readRunInventory({ runId: request.runId });
+      const pending = inventory.queue.filter((item) => item.status === "queued");
+      return (
+        pending.length === 1 &&
+        pending[0]?.recovery?.continuationRef === ref &&
+        pending[0].bindingRevision > 0 &&
+        canonicalAuthorizationSnapshot(pending[0].plan.executionLease) ===
+          canonicalAuthorizationSnapshot(request.executionLease)
+      );
+    },
     assertActive: async (request) => {
       if (request.ownerId !== ownerId || request.agentId !== agentId)
         throw new Error("RUNTIME_SCOPE_INVALID");

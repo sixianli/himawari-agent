@@ -503,6 +503,58 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       agentId: this.#options.agentId,
       now: () => this.#options.clock.now(),
       authorityFence: () => this.#options.authority().product.fencingToken,
+      canResumeAuthority: async (previous) => {
+        const codingTool = this.#codingTool(invocation);
+        const phases = codingTool ? [codingTool] : ["inspect", "read"];
+        for (const phase of phases) {
+          const childId = `file-phase:${digest([key, phase])}`;
+          const queued = await this.#options.sandbox?.preparations?.readQueuedByInvocation?.({
+            runId: invocation.runId,
+            invocationId: `runtime-tool:${digest([invocation.runId, childId])}`,
+          });
+          if (
+            queued?.status === "queued" &&
+            queued.bindingRevision > 0 &&
+            queued.recovery?.toolCallId === invocation.toolCallId &&
+            digest(queued.recovery.authority) === digest(previous) &&
+            digest(queued.invocation.authority) === digest(this.#options.authority()) &&
+            digest(queued.plan.executionLease) === digest(invocation.context?.executionLease)
+          )
+            return true;
+        }
+        return false;
+      },
+      restoreInspection: async (previous) => {
+        const read = async (operationKey: string) => {
+          const artifact = await this.#options.artifacts.lookup({
+            runId: invocation.runId,
+            purpose: "trace",
+            operationKey,
+          });
+          return artifact ? this.#readJson(artifact.payloadRef) : undefined;
+        };
+        const saved = (await read(operationKey("inspect:handle"))) as
+          | { handle: GovernedCapabilityExecutionHandle; inputRef: string }
+          | undefined;
+        if (!saved) return undefined;
+        const child = {
+          ...invocation,
+          toolCallId: `file-phase:${digest([key, "inspect"])}`,
+          capabilityHandleRef: saved.handle.ref,
+          capabilityRef: saved.handle.capabilityRef,
+          arguments: { inputRef: saved.inputRef },
+        };
+        const childKey = digest([child.runId, child.toolCallId]);
+        const intent = (await read(`runtime-tool-intent:${childKey}`)) as
+          | { fingerprint?: string }
+          | undefined;
+        if (intent?.fingerprint !== digest(executionIdentity(child, previous))) return undefined;
+        const result = ((await read(`runtime-tool-recovered-result:${childKey}`)) ??
+          (await read(`runtime-tool-result:${childKey}`))) as
+          | RuntimeToolExecutionResult
+          | undefined;
+        return result?.outcome === "succeeded" ? result : undefined;
+      },
       workerInstanceId: () => this.#options.peer().workerInstanceId,
       assertActive: async () => {
         signal?.throwIfAborted();

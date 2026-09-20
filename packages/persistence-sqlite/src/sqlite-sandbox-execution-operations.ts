@@ -304,6 +304,34 @@ export class SqliteSandboxExecutionOperations {
             plan.effectiveDeadlineAt <= invocation.consumedAt
           )
             this.fail("PORT_NOT_AUTHORITATIVE", "Queue binding is not authoritative");
+          if (queued.recovery) {
+            const recovery = queued.recovery;
+            if (
+              recovery.version !== "queued-tool-batch.v1" ||
+              typeof recovery.toolCallId !== "string" ||
+              !recovery.toolCallId.trim() ||
+              typeof recovery.continuationRef !== "string" ||
+              !recovery.continuationRef.trim() ||
+              !recovery.authority ||
+              (operation === "enqueue" &&
+                !this.queue.read(owner, agent, plan.identity.runId, plan.identity.invocationId) &&
+                !same(recovery.authority, invocation.authority.product)) ||
+              !this.db
+                .prepare(`SELECT 1 FROM run_payload_artifacts a JOIN payloads p
+                  ON p.ref=a.payload_ref AND p.owner_id=a.owner_id AND p.agent_id=a.agent_id
+                  WHERE a.owner_id=? AND a.agent_id=? AND a.run_id=? AND a.purpose='trace'
+                    AND a.operation_key=? AND a.payload_ref=? AND p.lifecycle_state='active'
+                    AND p.content_type='application/json'`)
+                .get(
+                  owner,
+                  agent,
+                  plan.identity.runId,
+                  `runtime-continuation:${recovery.continuationRef}`,
+                  recovery.continuationRef,
+                )
+            )
+              return this.fail("PORT_NOT_AUTHORITATIVE", "Queue recovery checkpoint is invalid");
+          }
           const claims = this.claims(queued.workspaces, plan, reservation.workspaceConflictRefs);
           if (operation === "rebindQueued") {
             if (

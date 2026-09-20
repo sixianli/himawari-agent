@@ -1,14 +1,14 @@
 import { mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   ApprovalService,
   type AutomaticActionReviewPort,
-  hostDirectoryGrantStateKey,
   type CapabilityManifest,
   type GovernedActionIntent,
   type GovernedGrantRecord,
   type HostDirectoryGrant,
+  hostDirectoryGrantStateKey,
   type RuntimeToolInvocation,
 } from "@himawari-agent/application";
 import {
@@ -22,8 +22,13 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { executeHostFileReadCapability } from "../src/capability-programs/host-file-read.js";
 import { createProductionFileReadServices } from "../src/production-file-read-services.js";
+import {
+  type FileReadBinding,
+  type FileReadExecutionContext,
+  ProductionFileReadWorkflow,
+} from "../src/production-file-read-workflow.js";
 import { ProductionRuntimeTools } from "../src/production-runtime-tools.js";
-import { runtimeToolFixture, invocation, now } from "./runtime-tools.fixture.js";
+import { invocation, now, runtimeToolFixture } from "./runtime-tools.fixture.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -814,3 +819,78 @@ it.each(["known", "missing-diagnostic", "possibly-sent"])(
     expect(f.request).not.toHaveBeenCalled();
   },
 );
+
+it("restores a known private inspection only after outer queue proof and validates its target", async () => {
+  const f = await fixture();
+  f.permitted.delete("read");
+  expect(await (await f.open()).execute(f.call)).toMatchObject({ outcome: "awaiting_approval" });
+  const values = new Map<string, unknown>();
+  let inspection: import("@himawari-agent/application").RuntimeToolExecutionResult | undefined;
+  for (const artifact of f.artifacts.values()) {
+    const payload = f.payloads.get(artifact.payloadRef);
+    if (!payload) continue;
+    const value = JSON.parse(new TextDecoder().decode(payload.ciphertext));
+    if (artifact.operationKey.startsWith("runtime-file-read:")) {
+      const suffix = artifact.operationKey.split(":").slice(2).join(":");
+      values.set(suffix, value);
+    }
+    if (artifact.operationKey.startsWith("runtime-tool-result:")) inspection = value;
+  }
+  if (!inspection || !f.call.context) throw new Error("inspection missing");
+  const frozen = values.get("context") as { binding: FileReadBinding };
+  const phase = vi.fn(async (..._args: Parameters<FileReadExecutionContext["phase"]>) => ({
+    outcome: "succeeded" as const,
+    resultRef: null,
+    errorCode: null,
+    externalActionId: null,
+    modelContent: "read result",
+  }));
+  const restoreInspection = vi.fn(async () => inspection);
+  const ctx: FileReadExecutionContext = {
+    ownerId: f.options.ownerId,
+    agentId: f.options.agentId,
+    now: () => now,
+    authorityFence: () => 2,
+    workerInstanceId: () => frozen.binding.workerInstanceId,
+    assertActive: async () => {},
+    canResumeAuthority: async () => true,
+    restoreInspection,
+    load: async (key) => values.get(key),
+    save: async (key, value) => {
+      if (!values.has(key)) values.set(key, value);
+      return { ref: `recovery:${key}`, value: values.get(key) };
+    },
+    phase,
+  };
+  f.permitted.add("read");
+  const services = { ...f.services, binding: async () => frozen.binding };
+  const workflow = new ProductionFileReadWorkflow(services);
+  const resumed = {
+    ...f.call,
+    context: {
+      ...f.call.context,
+      continuationRef: "original-queue",
+      executionLease: {
+        ...f.call.context.executionLease,
+        fencingToken: 2,
+        authorityFencingToken: 2,
+      },
+    },
+  };
+  expect(await workflow.execute(resumed, ctx)).toMatchObject({ outcome: "succeeded" });
+  expect(phase).toHaveBeenCalledTimes(1);
+  expect(phase.mock.calls[0]?.[1]).toBe("read");
+  if (inspection.outcome !== "succeeded") throw new Error("Expected completed inspection");
+  const target = JSON.parse(inspection.modelContent);
+  inspection = {
+    ...inspection,
+    modelContent: JSON.stringify({ ...target, relativePath: "different.txt" }),
+  };
+  expect(await workflow.execute(resumed, ctx)).toMatchObject({
+    errorCode: "FILE_READ_TARGET_INVALID",
+  });
+  expect(phase).toHaveBeenCalledTimes(1);
+  expect(
+    await workflow.execute({ ...resumed, arguments: { path: "different.txt" } }, ctx),
+  ).toMatchObject({ errorCode: "FILE_READ_CONTEXT_CHANGED" });
+});

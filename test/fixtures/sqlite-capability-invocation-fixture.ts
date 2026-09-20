@@ -17,7 +17,9 @@ import type {
 import {
   ApplicationPortError,
   actionIntentFingerprint,
+  claimFromRunExecutionLease,
   type PortErrorCode,
+  ThreadCommandService,
 } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -25,7 +27,10 @@ import {
   createDeploymentId,
   createIdempotencyKey,
   createOwnerId,
+  createRunExecutionLeaseId,
   createRunId,
+  createSessionId,
+  createThreadId,
 } from "@himawari-agent/domain";
 import {
   EXECUTION_V2_SCHEMA_VERSION,
@@ -127,7 +132,7 @@ export function serviceRequest(): Extract<ExecutionV2Request, { type: "work.exec
   }) as Extract<ExecutionV2Request, { type: "work.execute" }>;
 }
 
-export async function openRepository(): Promise<{
+export async function openRepository(realMessage = false): Promise<{
   readonly repository: SqliteProductStateRepository;
   readonly stateRoot: string;
 }> {
@@ -196,12 +201,88 @@ export async function openRepository(): Promise<{
         'trigger-capability-invocation', 0, 'running', ?, ?)`,
     )
     .run(RUN_ID, OWNER_ID, AGENT_ID, T0, T0);
+  if (realMessage) {
+    database.prepare("DELETE FROM runs WHERE id=?").run(RUN_ID);
+    database.prepare("DELETE FROM triggers WHERE id='trigger-capability-invocation'").run();
+    database.prepare("DELETE FROM threads WHERE id='thread-capability-invocation'").run();
+  }
   database.close();
   const repository = await SqliteProductStateRepository.open({
     stateRoot,
     minimumFreeBytes: 0,
     now: () => T1,
   });
+  if (realMessage) {
+    const protector = new EnvelopePayloadProtector({
+      keys: new InMemoryDevelopmentSecretSource({ "scope-test@v1": new Uint8Array(32).fill(42) }),
+      activeKey: { keyRef: "scope-test", kekVersion: "v1", dekVersion: "dek-v1" },
+    });
+    await repository.payloadStore(OWNER_ID, AGENT_ID).put(
+      await protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "restart-prompt",
+        dataClassification: "private",
+        contentType: "text/plain",
+        plaintext: Buffer.from("执行原先授权的操作"),
+        createdAt: T1,
+      }),
+    );
+    const commands = new ThreadCommandService({
+      repository: repository.threadRepository(),
+      clock: { now: () => T1 },
+      authority: () => SERVICE_AUTHORITY.product,
+    });
+    const thread = await commands.create({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: createThreadId("thread-capability-invocation"),
+      idempotencyKey: "restart-thread",
+      resultRef: "restart-prompt",
+    });
+    await commands.admitOwnerMessage({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: thread.thread.id,
+      expectedThreadRevision: thread.thread.revision,
+      sessionId: createSessionId("session-capability-invocation"),
+      runId: RUN_ID,
+      idempotencyKey: "restart-message",
+      contentRef: "restart-prompt",
+      sourceProofRef: "fixture-owner",
+      dataClassification: "private",
+      resultRef: "restart-prompt",
+    });
+    const execution = await repository
+      .runDispatch(
+        OWNER_ID,
+        AGENT_ID,
+        SERVICE_AUTHORITY.product,
+        SERVICE_AUTHORITY.lease,
+        "sandbox-consumer",
+      )
+      .claim({
+        runId: RUN_ID,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: createRunExecutionLeaseId("sandbox-lease"),
+        claimedAt: T0,
+        expiresAt: T2,
+      });
+    for (const [index, nextStatus] of (["building_context", "running"] as const).entries())
+      await repository.runLifecycle(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product).transitionRun({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        expectedRevision: index + 1,
+        nextStatus,
+        idempotencyKey: createIdempotencyKey(`restart-seed:${nextStatus}`),
+        commandFingerprint: `restart-seed:${nextStatus}`,
+        authority: SERVICE_AUTHORITY.lease,
+        executionLease: claimFromRunExecutionLease(execution),
+        payloadRef: "restart-prompt",
+      });
+  }
   return { repository, stateRoot };
 }
 
@@ -536,8 +617,12 @@ export async function seed(
   return value;
 }
 
-export async function openSandboxJournal(legacy = false, networkDomains: readonly string[] = []) {
-  const resource = await openRepository();
+export async function openSandboxJournal(
+  legacy = false,
+  networkDomains: readonly string[] = [],
+  realMessage = false,
+) {
+  const resource = await openRepository(realMessage);
   const seededHandle = await seed(resource.repository, networkDomains);
   const { database, operations } = await openOperations(resource);
   database.exec("SAVEPOINT preview_receipt");
@@ -548,20 +633,21 @@ export async function openSandboxJournal(legacy = false, networkDomains: readonl
   }) as { receipt: FrozenCapabilityInvocationReceipt };
   if (!legacy) database.exec("ROLLBACK TO preview_receipt");
   database.exec("RELEASE preview_receipt");
-  database
-    .prepare(`INSERT INTO run_execution_leases (owner_id, agent_id, run_id, revision, authority_lease_id,
+  if (!realMessage)
+    database
+      .prepare(`INSERT INTO run_execution_leases (owner_id, agent_id, run_id, revision, authority_lease_id,
     deployment_id, authority_epoch, fencing_token, consumer_id, execution_lease_id, claimed_at, initial_expires_at, expires_at)
     VALUES (?, ?, ?, 1, ?, ?, 1, 1, 'sandbox-consumer', 'sandbox-lease', ?, ?, ?)`)
-    .run(
-      OWNER_ID,
-      AGENT_ID,
-      RUN_ID,
-      SERVICE_AUTHORITY.lease.leaseId,
-      SERVICE_AUTHORITY.product.deploymentId,
-      T0,
-      T2,
-      T2,
-    );
+      .run(
+        OWNER_ID,
+        AGENT_ID,
+        RUN_ID,
+        SERVICE_AUTHORITY.lease.leaseId,
+        SERVICE_AUTHORITY.product.deploymentId,
+        T0,
+        T2,
+        T2,
+      );
   const receipt = consumed.receipt;
   const scope = {
     schemaVersion: "sandbox-scope.v1",

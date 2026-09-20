@@ -1,5 +1,3 @@
-import { createIdempotencyKey } from "@himawari-agent/domain";
-import { threadCommandFingerprint } from "./thread-command-service.js";
 import type {
   AgentId,
   IdempotencyKey,
@@ -8,6 +6,7 @@ import type {
   RunId,
   RunStatus,
 } from "@himawari-agent/domain";
+import { createIdempotencyKey } from "@himawari-agent/domain";
 import type {
   AgentRuntimePort,
   AuthorityFence,
@@ -29,6 +28,7 @@ import type {
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/index.js";
 import type { ContextFormationPort, ContextFormationRequest } from "./context-formation-service.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
+import { threadCommandFingerprint } from "./thread-command-service.js";
 
 export interface RunTransitionCommand {
   readonly idempotencyKey: IdempotencyKey;
@@ -402,9 +402,11 @@ export class RunCoordinator {
     if (isTerminalStatus(storedRun.run.status)) {
       return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
     }
+    const queuedToolBatch = storedCheckpoint.queuedToolBatch;
     const interrupted =
       storedCheckpoint.checkpoint.phase === "runtime_running" &&
-      storedCheckpoint.checkpoint.terminalStatus === null;
+      storedCheckpoint.checkpoint.terminalStatus === null &&
+      !queuedToolBatch;
     const missingOutput =
       storedCheckpoint.checkpoint.terminalStatus === "completed" &&
       storedCheckpoint.checkpoint.output === null;
@@ -498,7 +500,16 @@ export class RunCoordinator {
         phase: "runtime_running",
       });
       this.assertExecutionActive(attempt);
-      const terminal = await this.runRuntime(input, storedCheckpoint, attempt);
+      const terminal = await this.runRuntime(
+        queuedToolBatch
+          ? {
+              ...input,
+              runtime: { ...input.runtime, continuationRef: queuedToolBatch.continuationRef },
+            }
+          : input,
+        storedCheckpoint,
+        attempt,
+      );
       this.assertExecutionActive(attempt);
       storedCheckpoint = terminal.checkpoint;
     }

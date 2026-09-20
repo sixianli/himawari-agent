@@ -37,7 +37,15 @@ export interface ProductionFileReadServices {
     input: Parameters<CapabilityHandleService["issue"]>[0],
   ): ReturnType<CapabilityHandleService["issue"]>;
 }
+export type WorkflowAuthority = {
+  readonly deploymentId: string;
+  readonly authorityEpoch: number;
+  readonly fencingToken: number;
+};
 export interface FileReadExecutionContext {
+  /** True only for this outer call's original queue, already bound to the current Run lease. */
+  canResumeAuthority?(previous: WorkflowAuthority): Promise<boolean>;
+  restoreInspection?(previous: WorkflowAuthority): Promise<RuntimeToolExecutionResult | undefined>;
   /** Returns only a verified, never-dispatched file conflict in this same Run. */
   fileConflict?(toolCallId: string): Promise<
     | {
@@ -62,14 +70,14 @@ export interface FileReadExecutionContext {
     inputRef: string,
   ): Promise<RuntimeToolExecutionResult>;
 }
-function resumeIdentity(call: RuntimeToolInvocation) {
+function resumeIdentity(call: RuntimeToolInvocation, authority?: WorkflowAuthority) {
   if (!call.context) return call;
   const { executionLease, continuationRef: _continuation, ...context } = call.context;
   return {
     ...call,
     context: {
       ...context,
-      authority: {
+      authority: authority ?? {
         deploymentId: executionLease.deploymentId,
         authorityEpoch: executionLease.authorityEpoch,
         fencingToken: executionLease.fencingToken,
@@ -174,19 +182,33 @@ export class ProductionFileReadWorkflow {
       ).toISOString(),
     };
     const stored = (await ctx.save("context", snapshot)).value as typeof snapshot;
+    const previousLease = stored.call.context?.executionLease;
+    const previousAuthority = previousLease
+      ? {
+          deploymentId: previousLease.deploymentId,
+          authorityEpoch: previousLease.authorityEpoch,
+          fencingToken: previousLease.fencingToken,
+        }
+      : undefined;
+    const rebound =
+      previousAuthority &&
+      stored.authorityFence === previousAuthority.fencingToken &&
+      (await ctx.canResumeAuthority?.(previousAuthority));
+    const activeFence = rebound ? ctx.authorityFence() : stored.authorityFence;
     if (
       (call.context.continuationRef
-        ? hash(resumeIdentity(stored.call)) !== hash(resumeIdentity(call))
+        ? hash(resumeIdentity(stored.call)) !==
+          hash(resumeIdentity(call, rebound ? previousAuthority : undefined))
         : hash(stored.call) !== hash(call)) ||
       hash(stored.binding) !== hash(binding) ||
-      stored.authorityFence !== ctx.authorityFence()
+      activeFence !== ctx.authorityFence()
     )
       return failure("FILE_READ_CONTEXT_CHANGED");
     const active = async () => {
       await ctx.assertActive();
       if (
         Date.parse(ctx.now()) >= Date.parse(stored.expiresAt) ||
-        ctx.authorityFence() !== stored.authorityFence ||
+        ctx.authorityFence() !== activeFence ||
         ctx.workerInstanceId() !== binding.workerInstanceId ||
         hash((await this.services.binding(call)) ?? null) !== hash(binding)
       )
@@ -288,7 +310,13 @@ export class ProductionFileReadWorkflow {
       path: call.arguments["path"],
       maximumBytes: binding.maximumBytes,
     };
-    const inspection = await runPhase("inspect", inspectInput, intent("inspect", inspectInput));
+    // On a proved queue rebind, reuse only the original known inspection result.
+    // The target below and the pending read's frozen scope are checked again.
+    const retainedInspection =
+      rebound && previousAuthority ? await ctx.restoreInspection?.(previousAuthority) : undefined;
+    const inspection =
+      retainedInspection ??
+      (await runPhase("inspect", inspectInput, intent("inspect", inspectInput)));
     if (inspection.outcome !== "succeeded") return inspection;
     let target: ResolvedHostFileReadTarget;
     try {

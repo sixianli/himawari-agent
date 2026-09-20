@@ -48,10 +48,11 @@ export async function productionSandboxScope(
     readonly piParameters?: Readonly<Record<string, unknown>>;
     readonly realFileIdentity?: boolean;
     readonly authority?: () => CapabilityInvocationAuthority;
+    readonly seedRuntimeIntent?: boolean;
     readonly runtimeFingerprint?: (call: RuntimeToolInvocation) => string;
   } = {},
 ) {
-  const f = await openSandboxJournal();
+  const f = await openSandboxJournal(false, [], options.seedRuntimeIntent === false);
   const h = {
     ...grantHandle(),
     ...(options.piParameters ? { inputRefs: ["payload-pi-parameters"] } : {}),
@@ -82,6 +83,10 @@ export async function productionSandboxScope(
   );
   const snapshot = JSON.parse(await readFile(host.capabilityDeployment.snapshotPath, "utf8"));
   const entry = snapshot.capabilities[0];
+  if (options.seedRuntimeIntent === false)
+    f.database
+      .prepare("UPDATE capability_declarations SET record_json=? WHERE id=?")
+      .run(JSON.stringify({ ...c, declaration: entry.manifest }), c.ref);
   if (options.legacyFileRead) delete entry.binding.value.operationBindings;
   else entry.binding.value.operationBindings = [descriptor];
   entry.binding.value.allowedDomains = ["example.com:443"];
@@ -101,6 +106,7 @@ export async function productionSandboxScope(
   await writeFile(host.capabilityDeployment.snapshotPath, snapshotBytes);
   const directory = {
     ...f.directoryGrant,
+    ...(options.seedRuntimeIntent === false ? { disclosure: "model" as const } : {}),
     operations: ["read", "create", "update"] as const,
     displayPath: host.workspace,
     ...(options.realFileIdentity ? { canonicalRootId: actualRoot.canonicalRootId } : {}),
@@ -118,7 +124,7 @@ export async function productionSandboxScope(
         T1,
       );
   f.database.close();
-  const repository = await SqliteProductStateRepository.open({
+  let repository = await SqliteProductStateRepository.open({
     stateRoot: f.resource.stateRoot,
     minimumFreeBytes: 0,
     now: () => T1,
@@ -238,34 +244,35 @@ export async function productionSandboxScope(
         createdAt: T1,
       }),
     });
-  await persist(`runtime-tool-intent:${hash([call.runId, call.toolCallId])}`, {
-    ...(options.runtimeFingerprint ? { fingerprint: options.runtimeFingerprint(call) } : {}),
-    request: {
-      schemaVersion: "execution.v2",
-      kind: "request",
-      type: "work.execute",
-      messageId: invocationId,
-      correlationId: `run:${RUN_ID}`,
-      causationId: RUN_ID,
-      dataClassification: input.dataClassification,
-      risk: "high",
-      authorizationRef: input.authorizationRef,
-      scope: input.requestScope,
-      idempotencyKey: input.idempotencyKey,
-      payload: {
-        inputRef: input.inputRef,
-        capabilityHandleRef: h.ref,
-        capabilityId: h.capabilityRef,
-        capabilityVersion: h.capabilityVersion,
-        operation: input.operation,
-        delegatedContextRefs: input.delegatedContextRefs,
-        secretRefs: input.secretRefs,
-        resourceCeiling: input.resourceCeiling,
-        requestedAt: input.requestedAt,
-        deadlineAt: input.deadlineAt,
+  if (options.seedRuntimeIntent !== false)
+    await persist(`runtime-tool-intent:${hash([call.runId, call.toolCallId])}`, {
+      ...(options.runtimeFingerprint ? { fingerprint: options.runtimeFingerprint(call) } : {}),
+      request: {
+        schemaVersion: "execution.v2",
+        kind: "request",
+        type: "work.execute",
+        messageId: invocationId,
+        correlationId: `run:${RUN_ID}`,
+        causationId: RUN_ID,
+        dataClassification: input.dataClassification,
+        risk: "high",
+        authorizationRef: input.authorizationRef,
+        scope: input.requestScope,
+        idempotencyKey: input.idempotencyKey,
+        payload: {
+          inputRef: input.inputRef,
+          capabilityHandleRef: h.ref,
+          capabilityId: h.capabilityRef,
+          capabilityVersion: h.capabilityVersion,
+          operation: input.operation,
+          delegatedContextRefs: input.delegatedContextRefs,
+          secretRefs: input.secretRefs,
+          resourceCeiling: input.resourceCeiling,
+          requestedAt: input.requestedAt,
+          deadlineAt: input.deadlineAt,
+        },
       },
-    },
-  });
+    });
   const fileBinding = {
     workerInstanceId: "worker-instance-capability-invocation",
     revision: 1,
@@ -291,32 +298,37 @@ export async function productionSandboxScope(
         createdAt: T1,
       }),
     );
-  const services = await createProductionSandboxServices({
-    configuration: {
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      capabilityDeployment: {
-        ...host.capabilityDeployment,
-        sha256: `sha256:${createHash("sha256").update(snapshotBytes).digest("hex")}`,
+  const makeServices = async () => {
+    const result = await createProductionSandboxServices({
+      configuration: {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        capabilityDeployment: {
+          ...host.capabilityDeployment,
+          sha256: `sha256:${createHash("sha256").update(snapshotBytes).digest("hex")}`,
+        },
+        modelDescriptors: [model],
       },
-      modelDescriptors: [model],
-    },
-    repository,
-    protector: f.protector,
-    authority: options.authority ?? (() => SERVICE_AUTHORITY),
-    fileRead: {
-      binding: async () => (fileBindingAvailable ? fileBinding : undefined),
-      authorize: async () => {
-        throw new Error("not a file workflow");
+      repository,
+      protector: f.protector,
+      authority: options.authority ?? (() => SERVICE_AUTHORITY),
+      fileRead: {
+        binding: async () => (fileBindingAvailable ? fileBinding : undefined),
+        authorize: async () => {
+          throw new Error("not a file workflow");
+        },
+        issue: async () => {
+          throw new Error("unused");
+        },
       },
-      issue: async () => {
-        throw new Error("unused");
-      },
-    },
-    clock: { now: () => now },
-    ids: { next: () => `scope-id:${++counter}` },
-    workerSupport: () => workerSupport,
-  });
+      clock: { now: () => now },
+      ids: { next: () => `scope-id:${++counter}` },
+      workerSupport: () => workerSupport,
+    });
+    if (!result) throw new Error("composition absent");
+    return result;
+  };
+  let services = await makeServices();
   if (!services) throw new Error("composition absent");
   const connections: Array<() => Promise<void>> = [];
   let afterResolve = async () => {};
@@ -402,8 +414,22 @@ export async function productionSandboxScope(
     setFileBindingAvailable: (value: boolean) => {
       fileBindingAvailable = value;
     },
-    repository,
-    services,
+    get repository() {
+      return repository;
+    },
+    get services() {
+      if (!services) throw new Error("composition absent");
+      return services;
+    },
+    reopen: async () => {
+      await repository.close();
+      repository = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => now,
+      });
+      services = await makeServices();
+    },
     input,
     call,
     intent,

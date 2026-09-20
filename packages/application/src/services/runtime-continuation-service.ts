@@ -15,6 +15,11 @@ interface RuntimeContinuationDependencies {
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
+  readonly authorizeAuthorityChange?: (
+    request: RuntimeRequest,
+    ref: string,
+    previousAuthority: unknown,
+  ) => Promise<boolean>;
   readonly assertActive: (request: RuntimeRequest) => Promise<void>;
 }
 
@@ -84,15 +89,28 @@ export class RuntimeContinuationService implements RuntimeContinuationPort {
       scope: unknown;
       value: unknown;
     };
-    if (canonical(decoded.scope) !== canonical(this.scope(request)))
-      throw new Error("RUNTIME_CONTINUATION_CONTEXT_CHANGED");
+    const currentScope = this.scope(request);
+    if (canonical(decoded.scope) !== canonical(currentScope)) {
+      if (!decoded.scope || typeof decoded.scope !== "object" || Array.isArray(decoded.scope))
+        throw new Error("RUNTIME_CONTINUATION_CONTEXT_CHANGED");
+      const { authority: previousAuthority, ...previousSemantic } = decoded.scope as Record<
+        string,
+        unknown
+      >;
+      const { authority: _currentAuthority, ...currentSemantic } = currentScope;
+      if (
+        canonical(previousSemantic) !== canonical(currentSemantic) ||
+        !(await this.dependencies.authorizeAuthorityChange?.(request, ref, previousAuthority))
+      )
+        throw new Error("RUNTIME_CONTINUATION_CONTEXT_CHANGED");
+    }
     await this.dependencies.assertActive(request);
     return decoded.value;
   }
 
   private scope(request: RuntimeRequest) {
     const { continuationRef: _continuation, executionLease, ...semantic } = request;
-    // A fresh consumer/lease may resume; deployment authority and all task inputs may not change.
+    // A fresh consumer/lease may resume. Authority changes need separate queue proof; task inputs remain exact.
     return {
       ...semantic,
       authority: {

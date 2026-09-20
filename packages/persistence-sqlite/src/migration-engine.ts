@@ -385,6 +385,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0044_sandbox_queue_authority_bindings.sql",
   },
+  {
+    sequence: 45,
+    name: "queued_tool_batch_recovery",
+    changeSet: "queued-tool-batch-recovery",
+    phase: "expand" as const,
+    file: "0045_queued_tool_batch_recovery.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

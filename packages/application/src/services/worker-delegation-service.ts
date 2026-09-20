@@ -320,6 +320,7 @@ export class WorkerDelegationAdmissionService {
               "Queued execution expired",
             );
           const candidate = {
+            ...(prepared.recovery ? { recovery: prepared.recovery } : {}),
             plan,
             reservation,
             workspaces: prepared.workspaces,
