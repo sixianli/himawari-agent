@@ -7,13 +7,15 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { createProductionSandboxControl } from "../../../dist/node-build/apps/agent-service/src/production-sandbox-control.js";
+// Resolve through the packaged installation so workspace exports cannot lead
+// plain Node back to TypeScript sources and unresolved .js imports.
+import { createProductionSandboxControl } from "../../../dist/node-runtime/node_modules/@himawari-agent/agent-service/dist/production-sandbox-control.js";
 import {
   compileSandboxPolicy,
   prepareSandboxJobHost,
   queryJobHostControl,
   readJobHostFinalEvidence,
-} from "../../../dist/node-build/packages/runtime-sandbox/src/index.js";
+} from "../../../dist/node-runtime/node_modules/@himawari-agent/runtime-sandbox/dist/index.js";
 
 // Temporary Linux helpers are a probe-only override, never product configuration.
 if (process.platform === "linux" && process.env.HIMAWARI_R4_HELPERS) {
