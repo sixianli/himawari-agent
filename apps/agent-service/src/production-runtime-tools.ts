@@ -63,6 +63,10 @@ type WorkerToolCompletion = Pick<
   Extract<ExecutionV2Event, { type: "work.result" }>["payload"],
   "outcome" | "outputRef" | "errorCode" | "externalActionId"
 >;
+// Reuse the existing event polling cadence while an individual event read is pending.
+const EVENT_POLL_MS = 50;
+// Same bounded cleanup wait as RunCoordinator; expiry never cancels the duty to stop.
+const AUTHORITY_STOP_WAIT_MS = 30_000;
 const RANK = ["public", "private", "sensitive", "restricted"] as const;
 const unknownResult = (): RuntimeToolSettledResult => ({
   dispatchState: "possibly_sent",
@@ -116,6 +120,39 @@ async function beforeDeadline<T>(work: Promise<T>, deadline: number): Promise<T>
     clearTimeout(timer);
   }
 }
+async function nextWithAuthority<T>(
+  next: Promise<T>,
+  deadline: number,
+  assertCurrent: () => Promise<void>,
+): Promise<T> {
+  const pending = next.then(
+    (value) => ({ kind: "event" as const, value }),
+    (error: unknown) => ({ kind: "error" as const, error }),
+  );
+  while (true) {
+    await beforeDeadline(assertCurrent(), deadline);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await beforeDeadline(
+        Promise.race([
+          pending,
+          new Promise<{ kind: "check" }>((resolve) => {
+            timer = setTimeout(() => resolve({ kind: "check" }), EVENT_POLL_MS);
+          }),
+        ]),
+        deadline,
+      );
+      if (result.kind === "error") throw result.error;
+      if (result.kind === "event") {
+        await beforeDeadline(assertCurrent(), deadline);
+        return result.value;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
 function reject(): never {
   throw new ApplicationPortError(PORT_ERROR_CODES.HANDLE_REVOKED, "Runtime tool is not authorized");
 }
@@ -867,6 +904,16 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     let outcome = unknownResult();
     let possiblySent = false;
     let forwardingClosed = false;
+    let authorityWithdrawn = false;
+    const assertCurrent = async () => {
+      try {
+        signal?.throwIfAborted();
+        await this.#assertDisclosure(invocation, key, internal);
+      } catch (error) {
+        authorityWithdrawn = true;
+        throw error;
+      }
+    };
     try {
       await this.#options.assertRunActive(invocation.runId);
       const sandbox = this.#options.sandbox;
@@ -900,7 +947,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           [Symbol.asyncIterator]();
         try {
           while (true) {
-            const next = await beforeDeadline(iterator.next(), monotonicDeadline);
+            const next = await nextWithAuthority(iterator.next(), monotonicDeadline, assertCurrent);
             if (next.done) break;
             const event = next.value;
             cursor = event.payload.cursor;
@@ -992,7 +1039,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           void iterator.return?.().catch(() => undefined);
         }
         await beforeDeadline(
-          new Promise<void>((resolve) => setTimeout(resolve, 50)),
+          new Promise<void>((resolve) => setTimeout(resolve, EVENT_POLL_MS)),
           monotonicDeadline,
         );
       }
@@ -1025,6 +1072,42 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 ? "操作尚未派发：资源或请求状态发生冲突。"
                 : "操作尚未派发，未开始执行。",
             };
+      let stopRequest: "not_requested" | "requested" | "unconfirmed" = "not_requested";
+      let stopRequestError: string | null = null;
+      if (possiblySent && authorityWithdrawn) {
+        // A cancel acknowledgement is not effect or resource-release evidence.
+        try {
+          await beforeDeadline(
+            this.#options.transport.request({
+              ...request,
+              type: "work.cancel",
+              messageId: `runtime-tool-stop:${key}`,
+              causationId: request.messageId,
+              idempotencyKey: `runtime-tool-stop:${key}`,
+              payload: {
+                targetRequestId: request.messageId,
+                reasonCode: "AUTHORITY_WITHDRAWN",
+                requestedAt: this.#options.clock.now(),
+              },
+            }),
+            performance.now() + AUTHORITY_STOP_WAIT_MS,
+          );
+          stopRequest = "requested";
+        } catch (stopError) {
+          stopRequest = "unconfirmed";
+          stopRequestError =
+            stopError instanceof Error ? stopError.message.slice(0, 2048) : "unknown";
+        }
+      }
+      if (possiblySent && authorityWithdrawn)
+        outcome = {
+          ...unknownResult(),
+          errorCode: "WORKER_AUTHORITY_WITHDRAWN",
+          modelContent:
+            stopRequest === "requested"
+              ? "执行许可已失效，已请求停止；已产生的效果仍需核验。"
+              : "执行许可已失效，停止尚未确认；不能重新执行该操作。",
+        };
       let authorityWithdrawalError: string | null = null;
       if (!possiblySent && this.#options.capabilities.revokeExecutionHandle) {
         try {
@@ -1039,6 +1122,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       }
       await this.#writeJson(invocation, `runtime-tool-diagnostic:${key}`, {
         authorityWithdrawalError,
+        authorityWithdrawn,
+        stopRequest,
+        stopRequestError,
         stage: possiblySent ? "possibly_sent" : "not_dispatched",
         reasonCode,
         operationId: key,

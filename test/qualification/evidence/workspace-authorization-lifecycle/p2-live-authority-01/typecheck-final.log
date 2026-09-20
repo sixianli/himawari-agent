@@ -1,0 +1,5 @@
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+apps/execution-worker/test/production-worker-composition.unit.test.ts(312,15): error TS7034: Variable 'events' implicitly has type 'any[]' in some locations where its type cannot be determined.
+apps/execution-worker/test/production-worker-composition.unit.test.ts(327,16): error TS7005: Variable 'events' implicitly has an 'any[]' type.

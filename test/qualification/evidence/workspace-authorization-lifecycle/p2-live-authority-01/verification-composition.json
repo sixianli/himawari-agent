@@ -1,0 +1,25 @@
+{
+  "checkedAt": "2026-09-20T10:13:00.699191+00:00",
+  "scope": "compatible-result-reuse",
+  "frozenInputs": 1081,
+  "changedInputs": [
+    "test/fixtures/v0.2/s4-security-recovery-matrix.json"
+  ],
+  "change": "Update the existing security matrix selector to the expanded active/revoked MCP test. No production or test code changed after full run.",
+  "originalStandard": {
+    "build": "passed",
+    "tests": 3956,
+    "passed": 3955,
+    "failed": 1
+  },
+  "rerun": {
+    "file": "test/integration/s4-security-recovery-matrix.test.ts",
+    "passed": 1,
+    "failed": 0
+  },
+  "combined": {
+    "passed": 3956,
+    "freshFullSuite": false
+  },
+  "unchangedBuildReusable": true
+}

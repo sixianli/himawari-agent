@@ -26,6 +26,8 @@ import type {
 } from "@himawari-agent/execution-contracts";
 import {
   type PayloadBrokerInputReadRequest,
+  type PayloadBrokerInvocationValidateRequest,
+  payloadInvocationValidateRequestSchema,
   type PayloadBrokerOutputWriteRequest,
   type PayloadBrokerSandboxExecutionRequest,
   type PayloadBrokerSandboxExecutionResult,
@@ -179,6 +181,27 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       throw new TypeError("Payload handler requires an allowed content type");
     }
     this.#options = options;
+  }
+
+  async validateInvocation(value: PayloadBrokerInvocationValidateRequest): Promise<void> {
+    try {
+      const request = payloadInvocationValidateRequestSchema.parse(value);
+      const authority = this.authorityFor(request);
+      const receipt = await this.#options.receipts.read({
+        handleRef: request.payload.handleRef,
+        invocationId: request.payload.invocationId,
+        authority,
+        now: this.#options.clock.now(),
+      });
+      if (!receipt) throw new Error("invocation missing");
+      this.assertReceiptAttempt(receipt, request, authority);
+      if (!sameAuthority(authority, this.authorityFor(request)))
+        throw new Error("authority changed");
+    } catch {
+      throw new ProductionPayloadBrokerHandlerError(
+        PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES.AUTHORITY_REJECTED,
+      );
+    }
   }
 
   async sandboxJob(
@@ -541,6 +564,7 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
 
   private authorityFor(
     request:
+      | PayloadBrokerInvocationValidateRequest
       | PayloadBrokerInputReadRequest
       | PayloadBrokerOutputWriteRequest
       | PayloadBrokerSandboxJobRequest
@@ -574,6 +598,7 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       readonly authority: CapabilityInvocationAuthority;
     },
     request:
+      | PayloadBrokerInvocationValidateRequest
       | PayloadBrokerInputReadRequest
       | PayloadBrokerOutputWriteRequest
       | PayloadBrokerSandboxJobRequest
@@ -645,6 +670,7 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES.INPUT_REJECTED,
       );
     }
+    await this.validateInvocation({ ...request, type: "payload.invocation.validate" });
     return new Uint8Array(plaintext);
   }
 

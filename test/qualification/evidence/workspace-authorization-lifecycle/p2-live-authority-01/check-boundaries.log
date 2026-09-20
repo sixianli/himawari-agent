@@ -1,0 +1,4 @@
+> himawari-agent@0.0.0 check:boundaries
+> node scripts/check-boundaries.mjs
+
+Dependency boundary check passed for 16 workspaces.

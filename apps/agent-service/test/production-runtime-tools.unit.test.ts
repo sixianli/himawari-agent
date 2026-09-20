@@ -385,9 +385,67 @@ describe("ProductionRuntimeTools", () => {
         expect(await (await exposed(f)).execute(invocation)).toMatchObject({
           outcome: "result_unknown",
         });
-      expect(f.request).toHaveBeenCalledTimes(2);
+      expect(
+        f.request.mock.calls.filter(([message]) => message.type === "work.execute"),
+      ).toHaveLength(1);
+      expect(
+        f.request.mock.calls.filter(([message]) => message.type === "work.delegate"),
+      ).toHaveLength(1);
+      expect(
+        f.request.mock.calls.filter(([message]) => message.type === "work.cancel"),
+      ).toHaveLength(mode === "revoke" ? 1 : 0);
     },
   );
+  it.each(["requested", "unconfirmed"])(
+    "requests stop when authority is withdrawn during a hung event stream: %s",
+    async (stopState) => {
+      const f = fixture(250);
+      const send = f.request.getMockImplementation();
+      if (!send) throw new Error("missing transport");
+      f.request.mockImplementation(async (message) => {
+        if (message.type === "work.cancel" && stopState === "unconfirmed")
+          throw new Error("private stop transport failure");
+        return send(message);
+      });
+      vi.spyOn(f.options.transport, "events").mockImplementation(async function* () {
+        f.revoke();
+        await new Promise(() => {});
+      });
+      const tool = await exposed(f);
+      const result = await tool.execute(invocation);
+      expect(f.request.mock.calls.map(([message]) => message.type)).toEqual([
+        "work.delegate",
+        "work.execute",
+        "work.cancel",
+      ]);
+      expect(f.request.mock.calls[2]?.[0]).toMatchObject({
+        type: "work.cancel",
+        payload: {
+          targetRequestId: f.request.mock.calls[1]?.[0].messageId,
+          reasonCode: "AUTHORITY_WITHDRAWN",
+        },
+      });
+      expect(result).toMatchObject({ outcome: "result_unknown", resultRef: null });
+      expect(result).not.toHaveProperty("executionTiming");
+      expect(result).toMatchObject({ errorCode: "WORKER_AUTHORITY_WITHDRAWN" });
+      expect(result.modelContent).not.toContain("private stop transport failure");
+      const artifact = [...f.artifacts.values()].find((value) =>
+        value.operationKey.startsWith("runtime-tool-diagnostic:"),
+      );
+      const protectedRecord = artifact && f.payloads.get(artifact.payloadRef);
+      if (!protectedRecord) throw new Error("missing protected stop evidence");
+      expect(JSON.parse(new TextDecoder().decode(protectedRecord.ciphertext))).toMatchObject({
+        authorityWithdrawn: true,
+        stopRequest: stopState,
+      });
+      expect(f.options.invocations.consume).toHaveBeenCalledOnce();
+      await expect(tool.execute(invocation)).rejects.toThrow();
+      expect(
+        f.request.mock.calls.filter(([message]) => message.type === "work.execute"),
+      ).toHaveLength(1);
+    },
+  );
+
   it("keeps an unverified cancellation unknown and never resends it", async () => {
     const f = fixture();
     f.setMode("cancelled");

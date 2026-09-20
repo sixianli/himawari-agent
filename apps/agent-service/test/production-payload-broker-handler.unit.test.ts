@@ -191,6 +191,7 @@ function handlerFixture(
     readonly receipt?: FrozenCapabilityInvocationReceipt | undefined;
     readonly outputResult?: RunPayloadArtifactCommitResult;
     readonly inputPayload?: PayloadRecord;
+    readonly onUnprotect?: () => void;
   } = {},
 ) {
   const frozenReceipt = "receipt" in options ? options.receipt : receipt;
@@ -199,6 +200,7 @@ function handlerFixture(
     readonly plaintextByteLength: number;
   }> = [];
   const protectedRequests: PayloadProtectionRequest[] = [];
+  let active = true;
   let readCalls = 0;
   let unprotectCalls = 0;
   let lookupFrozenCalls = 0;
@@ -210,6 +212,7 @@ function handlerFixture(
     },
     read: async () => {
       readCalls += 1;
+      if (!active) throw new Error("Grant revoked");
       return frozenReceipt;
     },
   };
@@ -237,6 +240,7 @@ function handlerFixture(
     },
     unprotect: async () => {
       unprotectCalls += 1;
+      options.onUnprotect?.();
       return new Uint8Array([0x10, 0x11, 0x12]);
     },
     rewrap: async ({ payload }) => payload,
@@ -261,6 +265,9 @@ function handlerFixture(
     handler,
     observed,
     protectedRequests,
+    revoke: () => {
+      active = false;
+    },
     get readCalls() {
       return readCalls;
     },
@@ -277,13 +284,47 @@ function handlerFixture(
 }
 
 describe("production Payload broker trusted handler", () => {
+  it("validates current receipt authority without disclosing input or using frozen results", async () => {
+    const fixture = handlerFixture();
+    const request = { ...inputRequest(), type: "payload.invocation.validate" as const };
+    await fixture.handler.validateInvocation(request);
+    await fixture.handler.validateInvocation(request);
+    expect(fixture.readCalls).toBe(2);
+    expect(fixture.unprotectCalls).toBe(0);
+    expect(fixture.lookupFrozenCalls).toBe(0);
+    expect(fixture.payloadScope).toBeUndefined();
+  });
+
+  it.each([
+    undefined,
+    { ...receipt, invocationId: "another:invocation" },
+    { ...receipt, authority: { ...authority, workerBootId: "another:boot" } },
+  ])("rejects absent or mismatched current receipt without disclosing input", async (current) => {
+    const fixture = handlerFixture({ receipt: current });
+    await expect(
+      fixture.handler.validateInvocation({
+        ...inputRequest(),
+        type: "payload.invocation.validate",
+      }),
+    ).rejects.toMatchObject({ code: PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES.AUTHORITY_REJECTED });
+    expect(fixture.unprotectCalls).toBe(0);
+  });
+
+  it("does not disclose bytes when a Grant is revoked during input decryption", async () => {
+    const fixture = handlerFixture({ onUnprotect: () => fixture.revoke() });
+    await expect(fixture.handler.readInput(inputRequest())).rejects.toMatchObject({
+      code: PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES.AUTHORITY_REJECTED,
+    });
+    expect(fixture.unprotectCalls).toBe(1);
+  });
+
   it("reads input only through a live receipt and scoped protected Payload", async () => {
     const fixture = handlerFixture();
 
     await expect(fixture.handler.readInput(inputRequest())).resolves.toEqual(
       new Uint8Array([0x10, 0x11, 0x12]),
     );
-    expect(fixture.readCalls).toBe(1);
+    expect(fixture.readCalls).toBe(2);
     expect(fixture.unprotectCalls).toBe(1);
     expect(fixture.payloadScope).toEqual({ ownerId: OWNER_ID, agentId: AGENT_ID });
   });

@@ -70,6 +70,15 @@ export type CapabilityInvocationEvent =
       readonly occurredAt: string;
     };
 
+/** Current Agent-owned permission for an already admitted invocation. A successful
+ * check is not a reusable grant and does not consume another use. */
+export interface CapabilityInvocationAuthorityPort {
+  assertCurrent(input: {
+    readonly handleRef: string;
+    readonly invocationId: string;
+  }): Promise<void>;
+}
+
 export interface CapabilityPort {
   list(): Promise<readonly CapabilityDescriptor[]>;
   invoke(request: CapabilityInvocationRequest): AsyncIterable<CapabilityInvocationEvent>;

@@ -35,6 +35,8 @@ export const PAYLOAD_BROKER_V1_MESSAGE_TYPES = [
   "payload.sandbox.job.result",
   "payload.handshake",
   "payload.handshake.accepted",
+  "payload.invocation.validate",
+  "payload.invocation.validated",
   "payload.input.read",
   "payload.input.read.result",
   "payload.output.write",
@@ -160,6 +162,19 @@ const payloadResponseIdentitySchema = {
   agentServiceInstanceId: machineString,
   agentServiceBootId: machineString,
 } as const;
+
+export const payloadInvocationValidateRequestSchema = object({
+  ...requestEnvelope("payload.invocation.validate"),
+  payload: object(payloadIdentitySchema),
+});
+export const payloadInvocationValidatedSchema = object({
+  ...envelope("response", "payload.invocation.validated"),
+  payload: object(payloadResponseIdentitySchema),
+});
+export type PayloadBrokerInvocationValidateRequest = InferSchema<
+  typeof payloadInvocationValidateRequestSchema
+>;
+export type PayloadBrokerInvocationValidated = InferSchema<typeof payloadInvocationValidatedSchema>;
 
 export const payloadInputReadRequestSchema = object({
   ...requestEnvelope("payload.input.read"),
@@ -362,6 +377,7 @@ export type PayloadBrokerOutputWriteRequest = InferSchema<typeof payloadOutputWr
 export type PayloadBrokerOutputWriteAccepted = InferSchema<typeof payloadOutputWriteAcceptedSchema>;
 
 export type PayloadBrokerRequest =
+  | PayloadBrokerInvocationValidateRequest
   | PayloadBrokerSandboxExecutionRequest
   | PayloadBrokerSandboxJobRequest
   | PayloadBrokerHandshakeRequest
@@ -369,6 +385,7 @@ export type PayloadBrokerRequest =
   | PayloadBrokerOutputWriteRequest;
 
 export type PayloadBrokerResponse =
+  | PayloadBrokerInvocationValidated
   | PayloadBrokerSandboxExecutionResult
   | PayloadBrokerSandboxJobResult
   | PayloadBrokerHandshakeAccepted
@@ -386,6 +403,10 @@ function parsePayloadBrokerMessage(input: unknown): PayloadBrokerMessage {
     throw new ContractValidationError("$", "expected a payload broker message");
   }
   switch (input.type) {
+    case "payload.invocation.validate":
+      return payloadInvocationValidateRequestSchema.parse(input);
+    case "payload.invocation.validated":
+      return payloadInvocationValidatedSchema.parse(input);
     case "payload.sandbox.execution":
       return payloadSandboxExecutionRequestSchema.parse(input);
     case "payload.sandbox.execution.result":

@@ -25,6 +25,7 @@ date: "2026-09-16"
 - [剩余工作依赖顺序与验收批次（2026-09-20）](#remaining-order)
 - [原完成结果交付恢复](#p1-result-delivery)
 - [取消通知与未派发错误合同](#p1-error-contract)
+- [执行中的当前权限与受控停止](#p2-live-authority)
 - [历史恢复上下文（2026-09-20 15:52）](#checkpoint-2026-09-20)
 - [本次实施记录与待审核交互](#implementation-record)
 
@@ -990,6 +991,20 @@ SQLite 的候选筛选、领取及最终完成分别检查资格。最终写入�
 产品工具结果增加可选 `dispatchState`，由执行边界表达明确未派发、可能派发、已接收。编码准入前拒绝、Pi preflight 与 checkpoint 失败保留明确未派发证据；页面投影直接消费该事实并兼容旧错误码。未知、互相矛盾或格式错误的证据优先显示未知，不依赖扩充错误码清单猜测成功。复用 Pi 的工具结果、现有未知中断与恢复机制；不增加第二套 Agent Loop、派发协议或授权入口。
 
 [本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-error-contract-01/README.md)保存失败前回归。168 项工具/Worker 消费者及 34 项真实 SQLite/Trace/状态投影回归通过，类型与任务 lint 通过。首轮正式构建通过，标准测试 3,918/3,920 通过，两项旧队列断言仍将取消通知视为确定失败；修正后整个六项队列测试通过，新增未释放预约检查并保留原一次回执/派发/期限断言。[组合验证报告](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-error-contract-01/verification-composition.json)回读 1,079 项输入，确认仅该测试文件变化，复用其余 3,914 项与构建结果；组合覆盖 3,920 项，未再次全套运行，原 failed 报告保留。四份 Runbook 及严格文档检查通过。这些检查采用受控 Worker 通知及模型端口，不能替代真实平台停止证明。全部业务阶段分类、只读网络有限重试与其余时间策略仍需继续，P1 保持未完成。
+
+<a id="p2-live-authority"></a>
+
+### P2：执行中的当前权限、披露与受控停止（2026-09-20）
+
+[↑ 返回阅读导航](#contents)
+
+生产 Worker 的内存委派保持仅用于本 boot 的一次执行，当前 Grant/Handle/Run 权威仍由 Agent 的持久回执查询判断。已有受认证 Payload UDS 通道增加不携带正文的 `payload.invocation.validate`，校验成功不缓存、不消费额度、不续发授权；不支持该操作的旧 Agent 拒绝新 Worker 继续执行。入口、秘密句柄签发、远程外发、程序启动和 MCP 工具调用前分别检查；输入解密后、返回 Worker 前再查当前权威。原输出保留使用历史结果入口，不因撤销删除既有证据。
+
+通用工具等待事件流时沿用既有 50 毫秒查询节奏核对权限，即使单次事件读取不返回也能请求停止。当前校验拒绝或不可用时停止后续披露，并向原 Worker 发一次 `work.cancel`；停止请求最多等待 30 秒，与 Run 协调器现有清理等待边界一致。无论取消消息成功与否，未核验效果均保持 `result_unknown`，不补造执行结束耗时；发送状态及原错误写受保护诊断。实际撤销发现时间包含存储/通道延迟，不能宣称跨进程瞬时停止。
+
+资源扫描与排定事务现在识别 Grant/Handle 撤销、期限失效和能力禁用；Run 仍在运行也可排定原资源 stop。未绑定预约先持久禁止启动，已绑定资源走原核验入口；停止无结论时保留 claim、barrier 和明确暂停，不消耗第二次额度、不回滚已发生效果、不通过修改 Run 终态证明释放。当前沿用 Schema 43，没有新增迁移或实际生产操作。
+
+[本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-live-authority-01/README.md)保存四处失败前回归、实际 UDS＋SQLite 撤销与效果保留、官方 MCP SDK 及工具消费者、direct/worker 资源恢复。正式构建通过，完整标准测试 3,955/3,956 通过；唯一失败是安全矩阵仍引用扩展前的 MCP 测试名称。修正矩阵引用后该测试通过，回读 1,081 项输入确认仅矩阵 fixture 变化，复用其余通过项和构建，组合覆盖 3,956 项；未再次全套运行，原 failed 报告保留。任务范围内格式/lint、类型、安全/边界及四份 Runbook 检查通过；该记录不作为全计划完成证据。目录授权撤销、完整 Gateway→Worker→文件→页面联合验收和真实平台停止资格仍需继续核验。
 
 <a id="checkpoint-2026-09-20"></a>
 

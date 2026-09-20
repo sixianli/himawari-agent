@@ -33,8 +33,8 @@ import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.
 
 const deadlineAt = new Date(Date.parse(T1) + 1000).toISOString();
 
-async function fixture(reserved = false) {
-  const f = await openSandboxJournal();
+async function fixture(reserved = false, withGrant = false) {
+  const f = await openSandboxJournal(false, withGrant ? ["api.example.test"] : []);
   const repository = await SqliteProductStateRepository.open({
     stateRoot: f.resource.stateRoot,
     minimumFreeBytes: 0,
@@ -127,6 +127,68 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
         const before = await f.journal.read(f.identity);
         expect(before?.workspaceBlocked).toBe(true);
         expect(before?.releaseReceipt).toBeUndefined();
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    [false, "grant"],
+    [true, "grant"],
+    [false, "handle"],
+    [true, "handle"],
+    [false, "capability"],
+    [true, "capability"],
+  ] as const)(
+    "schedules original-resource stop for withdrawn authority (reserved=%s, %s)",
+    async (reserved, kind) => {
+      const f = await fixture(reserved, kind === "grant");
+      try {
+        expect(
+          await f.preparations.listRecoveryCandidates({ now: T1, afterJobId: null, limit: 100 }),
+        ).toEqual([]);
+        if (kind === "grant") {
+          const grants = await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID);
+          const grant = grants.find(({ id }) => id === f.request.plan.authorizationRef);
+          if (!grant) throw new Error("missing test Grant");
+          await f.repository
+            .authorizationStore()
+            .revokeGrant(grant.id, T1, "owner_revoked", grant.revision);
+        } else if (kind === "handle") {
+          await f.repository
+            .capabilityStore(OWNER_ID, AGENT_ID)
+            .revokeExecutionHandle(f.request.plan.handleRef, T1);
+        } else {
+          f.database
+            .prepare(
+              "UPDATE capability_declarations SET status='disabled', record_json=json_set(record_json,'$.lifecycle','disabled') WHERE id=?",
+            )
+            .run(f.request.plan.capabilityRef);
+        }
+        expect(
+          await f.preparations.listRecoveryCandidates({ now: T1, afterJobId: null, limit: 100 }),
+        ).toHaveLength(1);
+        expect(await f.preparations.scheduleRecovery(await f.requestFor())).toMatchObject({
+          status: "scheduled",
+          action: "stop",
+          attempts: 0,
+          nextAttemptAt: T1,
+        });
+        expect(
+          f.database.prepare("SELECT status FROM runs WHERE id=?").get(f.identity.runId),
+        ).toEqual({ status: "running" });
+        const admission = await f.preparations.readAdmission(f.identity);
+        const record = admission?.phase === "bound" ? admission.record : admission;
+        expect(
+          f.database
+            .prepare(
+              "SELECT count(*) AS n FROM sandbox_workspace_occupancy WHERE job_id=? AND released_at IS NULL",
+            )
+            .get(f.identity.jobId),
+        ).toEqual({ n: 1 });
+        expect(record?.releaseReceipt).toBeUndefined();
+        if (reserved) expect(admission).toMatchObject({ stopRequestedAt: T1 });
       } finally {
         await f.close();
       }
@@ -228,55 +290,66 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
     }
   });
 
-  it("runs one bounded original-resource stop then preserves an explicit pause across scans", async () => {
-    const f = await fixture();
-    try {
-      f.database.prepare("UPDATE runs SET status='completed' WHERE id=?").run(f.identity.runId);
-      const stop = vi.fn(async (_record: SandboxExecutionRecord) => {
-        throw new Error("SANDBOX_HOST_UNAVAILABLE");
-      });
-      const reconciliation = new SandboxExecutionReconciliationService({
-        hostId: f.identity.hostId,
-        journal: f.journal,
-        now: () => T1,
-        timeoutMs: 1000,
-        backend: { inspect: stop, stop },
-        evidence: {
-          verify: async () => {
-            throw new Error("unexpected proof");
+  it.each(["completed", "revoked_grant"])(
+    "runs one bounded original-resource stop and preserves a pause: %s",
+    async (reason) => {
+      const f = await fixture(false, reason === "revoked_grant");
+      try {
+        if (reason === "completed")
+          f.database.prepare("UPDATE runs SET status='completed' WHERE id=?").run(f.identity.runId);
+        else {
+          const grant = (await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID))[0];
+          if (!grant) throw new Error("missing Grant");
+          await f.repository
+            .authorizationStore()
+            .revokeGrant(grant.id, T1, "owner_revoked", grant.revision);
+        }
+        const stop = vi.fn(async (_record: SandboxExecutionRecord) => {
+          throw new Error("SANDBOX_HOST_UNAVAILABLE");
+        });
+        const reconciliation = new SandboxExecutionReconciliationService({
+          hostId: f.identity.hostId,
+          journal: f.journal,
+          now: () => T1,
+          timeoutMs: 1000,
+          backend: { inspect: stop, stop },
+          evidence: {
+            verify: async () => {
+              throw new Error("unexpected proof");
+            },
           },
-        },
-      });
-      const reservations = { stop: vi.fn(), verify: vi.fn() };
-      const service = new SandboxResourceRecoveryService({
-        hostId: f.identity.hostId,
-        preparations: f.preparations,
-        reconciliation,
-        reservations,
-        authority: () => SERVICE_AUTHORITY,
-        now: () => T1,
-        timeoutMs: 1000,
-      });
-      const signal = new AbortController().signal;
-      await service.pump(signal, 1);
-      expect(stop).toHaveBeenCalledTimes(1);
-      expect(await f.status()).toMatchObject({
-        status: "unresolved",
-        action: "stop",
-        attempts: 1,
-        nextAttemptAt: null,
-        reasonCode: "SANDBOX_HOST_UNAVAILABLE",
-        finishedAt: T1,
-      });
-      await service.pump(signal, 1);
-      await service.pump(signal, 1);
-      expect(stop).toHaveBeenCalledTimes(1);
-      expect(reservations.stop).not.toHaveBeenCalled();
-      expect((await f.journal.read(f.identity))?.workspaceBlocked).toBe(true);
-    } finally {
-      await f.close();
-    }
-  });
+        });
+        const reservations = { stop: vi.fn(), verify: vi.fn() };
+        const service = new SandboxResourceRecoveryService({
+          hostId: f.identity.hostId,
+          preparations: f.preparations,
+          reconciliation,
+          reservations,
+          authority: () => SERVICE_AUTHORITY,
+          now: () => T1,
+          timeoutMs: 1000,
+        });
+        const signal = new AbortController().signal;
+        await service.pump(signal, 1);
+        expect(stop).toHaveBeenCalledTimes(1);
+        expect(await f.status()).toMatchObject({
+          status: "unresolved",
+          action: "stop",
+          attempts: 1,
+          nextAttemptAt: null,
+          reasonCode: "SANDBOX_HOST_UNAVAILABLE",
+          finishedAt: T1,
+        });
+        await service.pump(signal, 1);
+        await service.pump(signal, 1);
+        expect(stop).toHaveBeenCalledTimes(1);
+        expect(reservations.stop).not.toHaveBeenCalled();
+        expect((await f.journal.read(f.identity))?.workspaceBlocked).toBe(true);
+      } finally {
+        await f.close();
+      }
+    },
+  );
   it("releases an unbound original reservation once without replaying a tool", async () => {
     const f = await fixture(true);
     try {

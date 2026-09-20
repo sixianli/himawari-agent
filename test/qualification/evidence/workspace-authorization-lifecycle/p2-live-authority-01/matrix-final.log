@@ -1,0 +1,10 @@
+RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ✓ |integration| test/integration/s4-security-recovery-matrix.test.ts (1 test) 9ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  19:11:55
+   Duration  122ms (transform 15ms, setup 0ms, import 21ms, tests 9ms, environment 0ms)
+
+JSON report written to /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/test/qualification/evidence/workspace-authorization-lifecycle/p2-live-authority-01/matrix-final.json

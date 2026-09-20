@@ -4,6 +4,7 @@ import type {
   SandboxRecoveryState,
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
+import { SANDBOX_AUTHORITY_WITHDRAWN_SQL } from "./sqlite-sandbox-authority-withdrawal.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 type Input = Parameters<SandboxExecutionPreparationPort["scheduleRecovery"]>[0];
@@ -68,7 +69,19 @@ export class SqliteSandboxRecoveryScheduling {
         record.plan.identity.agentId,
       ) as { status: string } | undefined;
     if (!run) return this.fail("PORT_NOT_FOUND", "Recovery Run missing");
+    const withdrawn =
+      this.db
+        .prepare(`SELECT 1 FROM sandbox_execution_records r
+      WHERE r.job_id=@jobId AND r.owner_id=@ownerId AND r.agent_id=@agentId
+      AND ${SANDBOX_AUTHORITY_WITHDRAWN_SQL}`)
+        .get({
+          jobId: record.plan.identity.jobId,
+          ownerId: record.plan.identity.ownerId,
+          agentId: record.plan.identity.agentId,
+          recoveryNow: input.now,
+        }) !== undefined;
     const stop =
+      withdrawn ||
       ["completed", "failed", "cancelled", "reconciling_external_result"].includes(run.status) ||
       record.plan.effectiveDeadlineAt <= input.now ||
       (admission.phase === "reserved" && admission.stopRequestedAt !== undefined);

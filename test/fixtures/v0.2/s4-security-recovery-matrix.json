@@ -110,7 +110,7 @@
         },
         {
           "source": "packages/platform-node/test/node-capability-runtime.unit.test.ts",
-          "selector": "uses the official MCP v2 stdio SDK, enforces exact server/tool identity, and protects output"
+          "selector": "uses the official MCP v2 SDK with current authority: %s"
         }
       ]
     },

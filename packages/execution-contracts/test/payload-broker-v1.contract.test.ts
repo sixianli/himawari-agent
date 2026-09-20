@@ -54,6 +54,19 @@ describe("payload-broker.v1 contract", () => {
   it("round-trips the handshake and both bounded byte operations", () => {
     const messages = [
       {
+        ...envelope("request", "payload.invocation.validate"),
+        idempotencyKey: "validation:1",
+        payload: identity,
+      },
+      {
+        ...envelope("response", "payload.invocation.validated"),
+        payload: {
+          ...identity,
+          agentServiceInstanceId: "agent:one",
+          agentServiceBootId: "agent-boot:one",
+        },
+      },
+      {
         ...envelope("request", "payload.handshake"),
         idempotencyKey: "payload.handshake:idempotency",
         payload: {
@@ -120,6 +133,19 @@ describe("payload-broker.v1 contract", () => {
       ).toEqual(message);
     }
   });
+
+  it.each(["ownerId", "grant", "allowed", "bytesBase64"])(
+    "rejects caller-supplied %s on invocation validation",
+    (key) => {
+      expect(() =>
+        payloadBrokerV1MessageSchema.parse({
+          ...envelope("request", "payload.invocation.validate"),
+          idempotencyKey: "validation:1",
+          payload: { ...identity, [key]: "untrusted" },
+        }),
+      ).toThrow();
+    },
+  );
 
   it.each([
     [

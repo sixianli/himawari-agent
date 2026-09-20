@@ -264,6 +264,51 @@ async function closeCleanup(): Promise<void> {
 }
 
 describe("payload-broker.v1 authenticated UDS transport", () => {
+  it("revalidates each admitted invocation without reading bytes or caching success", async () => {
+    let allowed = true;
+    const checked: string[] = [];
+    let reads = 0;
+    const server = await startServer({
+      validateInvocation: async (request) => {
+        checked.push(request.payload.invocationId);
+        if (!allowed) throw new Error("revoked private reason");
+      },
+      readInput: async () => {
+        reads += 1;
+        return new Uint8Array();
+      },
+      writeOutput: async () => {
+        throw new Error("unexpected output");
+      },
+    });
+    const client = new PayloadUdsClient(clientOptions(server.socketPath));
+    await expect(client.validateInvocation(identity)).rejects.toMatchObject({
+      code: PAYLOAD_UDS_ERROR_CODES.HANDSHAKE_REQUIRED,
+    });
+    await client.connect();
+    await expect(client.validateInvocation(identity)).resolves.toBeUndefined();
+    allowed = false;
+    await expect(client.validateInvocation(identity)).rejects.toBeInstanceOf(Error);
+    expect(checked).toEqual([identity.invocationId, identity.invocationId]);
+    expect(reads).toBe(0);
+    client.disconnect();
+  });
+
+  it("fails closed when the Agent does not support current invocation validation", async () => {
+    const server = await startServer({
+      readInput: async () => new Uint8Array(),
+      writeOutput: async () => {
+        throw new Error("unexpected output");
+      },
+    });
+    const client = new PayloadUdsClient(clientOptions(server.socketPath));
+    await client.connect();
+    await expect(client.validateInvocation(identity)).rejects.toMatchObject({
+      code: PAYLOAD_UDS_ERROR_CODES.HANDLER_FAILED,
+    });
+    client.disconnect();
+  });
+
   it("hands the Worker only opaque operation identity and never echoes output bytes", async () => {
     const inputRequests: unknown[] = [];
     const outputRequests: unknown[] = [];
@@ -489,7 +534,7 @@ describe("payload-broker.v1 authenticated UDS transport", () => {
     });
   });
 
-  it.each(["handshake-correlation", "handshake-boot", "read", "write"] as const)(
+  it.each(["handshake-correlation", "handshake-boot", "read", "write", "validation"] as const)(
     "rejects a stale %s response correlation or causation identity",
     async (mode) => {
       const directory = await runtimeDirectory();
@@ -530,29 +575,40 @@ describe("payload-broker.v1 authenticated UDS transport", () => {
                   acceptedAt: "2026-09-04T00:00:00.000Z",
                 },
               }
-            : body.type === "payload.input.read"
+            : body.type === "payload.invocation.validate"
               ? {
                   ...common,
-                  type: "payload.input.read.result" as const,
-                  correlationId: mode === "read" ? "stale-correlation" : body.correlationId,
+                  type: "payload.invocation.validated" as const,
                   payload: {
                     ...identity,
+                    workerBootId: "stale:boot",
                     agentServiceInstanceId,
                     agentServiceBootId,
-                    bytesBase64: "AQ==",
                   },
                 }
-              : {
-                  ...common,
-                  type: "payload.output.write.accepted" as const,
-                  payload: {
-                    ...identity,
-                    agentServiceInstanceId,
-                    agentServiceBootId,
-                    outputRef: "payload:stable",
-                    replayed: false,
-                  },
-                };
+              : body.type === "payload.input.read"
+                ? {
+                    ...common,
+                    type: "payload.input.read.result" as const,
+                    correlationId: mode === "read" ? "stale-correlation" : body.correlationId,
+                    payload: {
+                      ...identity,
+                      agentServiceInstanceId,
+                      agentServiceBootId,
+                      bytesBase64: "AQ==",
+                    },
+                  }
+                : {
+                    ...common,
+                    type: "payload.output.write.accepted" as const,
+                    payload: {
+                      ...identity,
+                      agentServiceInstanceId,
+                      agentServiceBootId,
+                      outputRef: "payload:stable",
+                      replayed: false,
+                    },
+                  };
         response.writeHead(200, { "content-type": "application/json" });
         response.end(JSON.stringify(result));
       });
@@ -568,7 +624,11 @@ describe("payload-broker.v1 authenticated UDS transport", () => {
           });
         } else {
           await client.connect();
-          if (mode === "read") {
+          if (mode === "validation") {
+            await expect(client.validateInvocation(identity)).rejects.toMatchObject({
+              code: PAYLOAD_UDS_ERROR_CODES.RESPONSE_IDENTITY_MISMATCH,
+            });
+          } else if (mode === "read") {
             await expect(client.readInput(identity)).rejects.toMatchObject({
               code: PAYLOAD_UDS_ERROR_CODES.RESPONSE_IDENTITY_MISMATCH,
             });

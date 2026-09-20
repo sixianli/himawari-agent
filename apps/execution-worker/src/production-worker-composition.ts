@@ -485,12 +485,14 @@ export async function createProductionWorkerComposition(
     isolation,
     payloads,
     secretHandles,
+    invocationAuthority: payloads,
     secretSource: providerSecrets,
     clock,
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
   });
   const service = new ExecutionWorkerServiceImplementation({
     handles: delegations,
+    invocationAuthority: payloads,
     capability: runtime,
     secrets: secretHandles,
     clock,

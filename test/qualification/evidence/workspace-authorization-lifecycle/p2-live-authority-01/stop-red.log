@@ -1,0 +1,68 @@
+RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts (46 tests | 14 failed | 32 skipped) 3446ms
+     × schedules original-resource stop for withdrawn authority (reserved=false, grant) 498ms
+     × schedules original-resource stop for withdrawn authority (reserved=true, grant) 442ms
+     × schedules original-resource stop for withdrawn authority (reserved=false, handle) 387ms
+     × schedules original-resource stop for withdrawn authority (reserved=true, handle) 349ms
+     × schedules original-resource stop for withdrawn authority (reserved=false, capability) 354ms
+     × schedules original-resource stop for withdrawn authority (reserved=true, capability) 368ms
+     × runs one bounded original-resource stop and preserves a pause: revoked_grant 378ms
+     × schedules original-resource stop for withdrawn authority (reserved=false, grant) 94ms
+     × schedules original-resource stop for withdrawn authority (reserved=true, grant) 95ms
+     × schedules original-resource stop for withdrawn authority (reserved=false, handle) 91ms
+     × schedules original-resource stop for withdrawn authority (reserved=true, handle) 92ms
+     × schedules original-resource stop for withdrawn authority (reserved=false, capability) 92ms
+     × schedules original-resource stop for withdrawn authority (reserved=true, capability) 103ms
+     × runs one bounded original-resource stop and preserves a pause: revoked_grant 101ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 14 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > schedules original-resource stop for withdrawn authority (reserved=false, grant)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > schedules original-resource stop for withdrawn authority (reserved=true, grant)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > schedules original-resource stop for withdrawn authority (reserved=false, handle)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > schedules original-resource stop for withdrawn authority (reserved=true, handle)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > schedules original-resource stop for withdrawn authority (reserved=false, capability)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > schedules original-resource stop for withdrawn authority (reserved=true, capability)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > schedules original-resource stop for withdrawn authority (reserved=false, grant)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > schedules original-resource stop for withdrawn authority (reserved=true, grant)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > schedules original-resource stop for withdrawn authority (reserved=false, handle)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > schedules original-resource stop for withdrawn authority (reserved=true, handle)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > schedules original-resource stop for withdrawn authority (reserved=false, capability)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > schedules original-resource stop for withdrawn authority (reserved=true, capability)
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ test/integration/sandbox-resource-recovery-scheduling.test.ts:153:102
+    151|         f.database.prepare("UPDATE capability_declarations SET status=…
+    152|       }
+    153|       expect(await f.preparations.listRecoveryCandidates({ now: T1, af…
+       |                                                                                                      ^
+    154|       expect(await f.preparations.scheduleRecovery(await f.requestFor(…
+    155|         status: "scheduled", action: "stop", attempts: 0, nextAttemptA…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > runs one bounded original-resource stop and preserves a pause: revoked_grant
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > runs one bounded original-resource stop and preserves a pause: revoked_grant
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ test/integration/sandbox-resource-recovery-scheduling.test.ts:297:20
+    295|       const signal = new AbortController().signal;
+    296|       await service.pump(signal, 1);
+    297|       expect(stop).toHaveBeenCalledTimes(1);
+       |                    ^
+    298|       expect(await f.status()).toMatchObject({
+    299|         status: "unresolved",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  14 failed | 32 skipped (46)
+   Start at  18:49:27
+   Duration  5.58s (transform 1.29s, setup 0ms, import 2.03s, tests 3.45s, environment 0ms)

@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import type {
   CapabilityInvocationRequest,
+  CapabilityInvocationAuthorityPort,
   CapabilityManifest,
   PayloadProtectorPort,
   PayloadRecord,
@@ -132,6 +133,7 @@ async function runtimeFixture(
   fetch?: typeof globalThis.fetch,
   listActive?: () => Promise<readonly CapabilityManifest[]>,
   payloadBoundaryOverrides?: Partial<CapabilityPayloadBoundary>,
+  invocationAuthority?: CapabilityInvocationAuthorityPort,
 ) {
   const clock = { now: () => NOW };
   const payloadStore = new FixturePayloadStore();
@@ -190,6 +192,7 @@ async function runtimeFixture(
     secretSource: { resolve: async () => "fixture-secret" },
     clock,
     ...(fetch ? { fetch } : {}),
+    ...(invocationAuthority ? { invocationAuthority } : {}),
   });
   const putInput = async (input: CapabilityInvocationRequest, value: unknown) => {
     await payloadStore.put(
@@ -322,100 +325,181 @@ describe("NodeCapabilityRuntimePort", () => {
     expect(new TextDecoder().decode(outputCall.plaintext)).toBe("program output");
   });
 
-  it("uses the official MCP v2 stdio SDK, enforces exact server/tool identity, and protects output", async () => {
-    const capability = manifest(
-      {
-        kind: "mcp",
-        serverIdentity: "himawari-qualified-echo@1.0.0",
-        transport: "stdio:mcp-2026-07-28",
-        mappedResources: ["tool:echo"],
-      },
-      "mcp",
-      { ref: "qualified-mcp", isolation: "sandbox", operations: ["echo"] },
-    );
-    const binding: CapabilityProcessBinding = {
-      capabilityRef: capability.ref,
-      capabilityVersion: capability.version,
-      artifactDigest: capability.integrity,
-      runtimeRoot: "/fixture/not-used-by-sdk-test",
-      command: process.execPath,
-      workdirRef: "fixture",
-      sandboxWorkdir: "/",
-      environment: {},
-      availableExecutables: [process.execPath],
-      resourceLimitExecutable: { sandboxPath: "/bin/prlimit", sha256: DIGEST },
-      filesystem: [],
-      maximumResourceCeiling: CEILING,
-      mcpServerIdentity: "himawari-qualified-echo@1.0.0",
-      mcpServerName: "himawari-qualified-echo",
-      mcpServerVersion: "1.0.0",
-      mcpOperationMap: { echo: "echo" },
-    };
-    const bindings: CapabilityRuntimeBindingPort = {
-      resolveProcess: async () => binding,
-      resolveEndpoint: async () => undefined,
-    };
-    const isolation: SandboxedProcessIsolationBackend = {
-      qualify: async () => ({
-        qualificationVersion: "capability-runtime-qualification.v1",
-        platform: "darwin",
-        runtimeIdentity: "test-only-direct-process",
-        productionSuitable: false,
-        artifactDigest: DIGEST,
-        enforcement: {
-          filesystem: false,
-          network: false,
-          processes: false,
-          secrets: false,
-          resourceCeilings: false,
-          termination: true,
+  it.each(["active", "revoked_before_tool"])(
+    "uses the official MCP v2 SDK with current authority: %s",
+    async (mode) => {
+      const capability = manifest(
+        {
+          kind: "mcp",
+          serverIdentity: "himawari-qualified-echo@1.0.0",
+          transport: "stdio:mcp-2026-07-28",
+          mappedResources: ["tool:echo"],
         },
-        reasonCodes: ["TEST_ONLY_NO_PRODUCTION_ISOLATION"],
-        checkedAt: NOW,
-      }),
-      createLaunch: async (_manifest, ceiling) => ({
+        "mcp",
+        { ref: "qualified-mcp", isolation: "sandbox", operations: ["echo"] },
+      );
+      const binding: CapabilityProcessBinding = {
+        capabilityRef: capability.ref,
+        capabilityVersion: capability.version,
+        artifactDigest: capability.integrity,
+        runtimeRoot: "/fixture/not-used-by-sdk-test",
         command: process.execPath,
-        args: [MCP_FIXTURE],
-        cwd: "/",
+        workdirRef: "fixture",
+        sandboxWorkdir: "/",
         environment: {},
-        ceiling,
-      }),
-    };
-    const fixture = await runtimeFixture([capability], bindings, isolation);
-    const invocation = request(capability.ref, "echo");
-    await fixture.putInput(invocation, { value: "hello from qualified MCP" });
-    const events = await collect(fixture.port, invocation);
-    expect(events).toEqual([
-      {
-        type: "capability.completed",
-        invocationId: invocation.invocationId,
-        resultRef: `payload:result:${invocation.invocationId}`,
-        occurredAt: NOW,
-      },
-    ]);
-    const output = await fixture.payloadStore.get(`payload:result:${invocation.invocationId}`);
-    expect(output).toBeDefined();
-    if (!output) throw new Error("protected MCP output is missing");
-    expect(JSON.stringify(output)).not.toContain("hello from qualified MCP");
-    expect(fixture.readInputCalls).toEqual([invocation]);
-    const outputCall = fixture.writeOutputCalls[0];
-    expect(outputCall).toBeDefined();
-    if (!outputCall) throw new Error("MCP output boundary call is missing");
-    expect(outputCall.request).toEqual(invocation);
-    expect(outputCall.contentType).toBe("application/json");
-    const decoded = JSON.parse(
-      new TextDecoder().decode(
-        await fixture.protector.unprotect({
-          ownerId: OWNER_ID,
-          agentId: AGENT_ID,
-          payload: output,
+        availableExecutables: [process.execPath],
+        resourceLimitExecutable: { sandboxPath: "/bin/prlimit", sha256: DIGEST },
+        filesystem: [],
+        maximumResourceCeiling: CEILING,
+        mcpServerIdentity: "himawari-qualified-echo@1.0.0",
+        mcpServerName: "himawari-qualified-echo",
+        mcpServerVersion: "1.0.0",
+        mcpOperationMap: { echo: "echo" },
+      };
+      const bindings: CapabilityRuntimeBindingPort = {
+        resolveProcess: async () => binding,
+        resolveEndpoint: async () => undefined,
+      };
+      const isolation: SandboxedProcessIsolationBackend = {
+        qualify: async () => ({
+          qualificationVersion: "capability-runtime-qualification.v1",
+          platform: "darwin",
+          runtimeIdentity: "test-only-direct-process",
+          productionSuitable: false,
+          artifactDigest: DIGEST,
+          enforcement: {
+            filesystem: false,
+            network: false,
+            processes: false,
+            secrets: false,
+            resourceCeilings: false,
+            termination: true,
+          },
+          reasonCodes: ["TEST_ONLY_NO_PRODUCTION_ISOLATION"],
+          checkedAt: NOW,
         }),
-      ),
-    );
-    expect(decoded).toMatchObject({
-      content: [{ type: "text", text: "hello from qualified MCP" }],
-    });
-  });
+        createLaunch: async (_manifest, ceiling) => ({
+          command: process.execPath,
+          args: [MCP_FIXTURE],
+          cwd: "/",
+          environment: {},
+          ceiling,
+        }),
+      };
+      let checks = 0;
+      const fixture = await runtimeFixture(
+        [capability],
+        bindings,
+        isolation,
+        undefined,
+        undefined,
+        undefined,
+        {
+          assertCurrent: async () => {
+            checks += 1;
+            if (mode === "revoked_before_tool" && checks === 4)
+              throw new Error("Grant revoked after tools/list");
+          },
+        },
+      );
+      const invocation = request(capability.ref, "echo");
+      await fixture.putInput(invocation, { value: "hello from qualified MCP" });
+      const events = await collect(fixture.port, invocation);
+      if (mode === "revoked_before_tool") {
+        expect(events).toMatchObject([
+          { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_AUTHORITY_REJECTED" },
+        ]);
+        expect(fixture.writeOutputCalls).toHaveLength(0);
+        return;
+      }
+      expect(events).toEqual([
+        {
+          type: "capability.completed",
+          invocationId: invocation.invocationId,
+          resultRef: `payload:result:${invocation.invocationId}`,
+          occurredAt: NOW,
+        },
+      ]);
+      const output = await fixture.payloadStore.get(`payload:result:${invocation.invocationId}`);
+      expect(output).toBeDefined();
+      if (!output) throw new Error("protected MCP output is missing");
+      expect(JSON.stringify(output)).not.toContain("hello from qualified MCP");
+      expect(fixture.readInputCalls).toEqual([invocation]);
+      const outputCall = fixture.writeOutputCalls[0];
+      expect(outputCall).toBeDefined();
+      if (!outputCall) throw new Error("MCP output boundary call is missing");
+      expect(outputCall.request).toEqual(invocation);
+      expect(outputCall.contentType).toBe("application/json");
+      const decoded = JSON.parse(
+        new TextDecoder().decode(
+          await fixture.protector.unprotect({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            payload: output,
+          }),
+        ),
+      );
+      expect(decoded).toMatchObject({
+        content: [{ type: "text", text: "hello from qualified MCP" }],
+      });
+    },
+  );
+
+  it.each(["revoked", "unavailable"])(
+    "blocks egress when current authority is %s after input was read",
+    async (reason) => {
+      let active = true;
+      const capability = manifest(
+        { kind: "adapter", endpointIdentity: "adapter:revocation", protectedReferenceOnly: true },
+        "adapter",
+        { ref: "revoked-adapter", isolation: "remote" },
+      );
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response("{}"));
+      const authority = {
+        assertCurrent: vi.fn(async () => {
+          if (!active) throw new Error(reason);
+        }),
+      };
+      const fixture = await runtimeFixture(
+        [capability],
+        {
+          resolveProcess: async () => undefined,
+          resolveEndpoint: async () => {
+            active = false;
+            return {
+              endpointIdentity: "adapter:revocation",
+              artifactDigest: DIGEST,
+              url: "https://api.example.test",
+              allowedMethods: ["POST"],
+              operations: { execute: { method: "POST", path: "/execute", secretHeaders: {} } },
+              productionSuitable: true,
+              allowLoopbackQualification: false,
+            };
+          },
+        },
+        {
+          qualify: async () => {
+            throw new Error("unexpected process");
+          },
+          createLaunch: async () => {
+            throw new Error("unexpected process");
+          },
+        },
+        fetch,
+        undefined,
+        undefined,
+        authority,
+      );
+      const invocation = request(capability.ref);
+      await fixture.putInput(invocation, { value: "private input" });
+      expect(await collect(fixture.port, invocation)).toMatchObject([
+        { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_AUTHORITY_REJECTED" },
+      ]);
+      expect(fixture.readInputCalls).toHaveLength(1);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(fixture.writeOutputCalls).toHaveLength(0);
+    },
+  );
 
   it("binds a remote adapter to one same-origin endpoint and reports uncertain side effects", async () => {
     const capability = manifest(

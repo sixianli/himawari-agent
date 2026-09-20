@@ -28,6 +28,7 @@ import {
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { capabilityInvocationOutputOperationKey } from "./sqlite-run-payload-artifact-operations.ts";
+import { SANDBOX_AUTHORITY_WITHDRAWN_SQL } from "./sqlite-sandbox-authority-withdrawal.ts";
 import { SqliteSandboxRecoveryOperations } from "./sqlite-sandbox-recovery-operations.ts";
 import { SqliteSandboxRecoveryScheduling } from "./sqlite-sandbox-recovery-scheduling.ts";
 import { SqliteSandboxReleaseOperations } from "./sqlite-sandbox-release-operations.ts";
@@ -198,19 +199,22 @@ export class SqliteSandboxExecutionOperations {
       const rows = this.db
         .prepare(`SELECT r.plan_json AS plan FROM sandbox_execution_records r
         JOIN runs run ON run.id=r.run_id AND run.owner_id=r.owner_id AND run.agent_id=r.agent_id
-        WHERE r.owner_id=? AND r.agent_id=? AND r.job_id>?
+        WHERE r.owner_id=@owner AND r.agent_id=@agent AND r.job_id>@afterJobId
         AND (EXISTS(SELECT 1 FROM sandbox_workspace_occupancy o WHERE o.job_id=r.job_id AND o.released_at IS NULL)
           OR EXISTS(SELECT 1 FROM sandbox_workspace_barriers b WHERE b.job_id=r.job_id AND b.resolved_at IS NULL)
           OR (r.preparation_state='reserved' AND NOT EXISTS(SELECT 1 FROM sandbox_reservation_release_receipts rr WHERE rr.job_id=r.job_id))
           OR json_extract(r.facts_json,'$.resource.supervision')!='released'
           OR json_extract(r.recovery_json,'$.status') IN ('scheduled','running'))
         AND (run.status IN ('completed','failed','cancelled','reconciling_external_result')
-          OR json_extract(r.plan_json,'$.effectiveDeadlineAt')<=?
+          OR json_extract(r.plan_json,'$.effectiveDeadlineAt')<=@recoveryNow
+          OR ${SANDBOX_AUTHORITY_WITHDRAWN_SQL}
           OR r.reservation_stopped_at IS NOT NULL
           OR json_extract(r.facts_json,'$.resource.supervision') IN ('lost','reconciling','released')
           OR json_extract(r.recovery_json,'$.status') IN ('scheduled','running'))
-        ORDER BY r.job_id LIMIT ?`)
-        .all(owner, agent, afterJobId ?? "", now, limit) as { plan: string }[];
+        ORDER BY r.job_id LIMIT @limit`)
+        .all({ owner, agent, afterJobId: afterJobId ?? "", recoveryNow: now, limit }) as {
+        plan: string;
+      }[];
       return rows.map((row) =>
         this.readAdmission(
           sandboxExecutionPlanV2Schema.parse(JSON.parse(row.plan)).identity,

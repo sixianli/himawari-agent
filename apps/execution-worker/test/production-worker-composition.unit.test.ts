@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ProductConfiguration } from "@himawari-agent/application";
-import type { ResourceCeiling } from "@himawari-agent/execution-contracts";
+import type { ExecutionWorkerEvent, ProductConfiguration } from "@himawari-agent/application";
+import type { ExecuteWorkRequest, ResourceCeiling } from "@himawari-agent/execution-contracts";
 import {
   CAPABILITY_DEPLOYMENT_ERROR_CODES,
   type ExecutionUdsCredential,
@@ -234,6 +234,121 @@ function configuration(
 }
 
 describe("production Worker composition", () => {
+  it.each(["active", "revoked"])(
+    "checks admitted delegated authority through production composition: %s",
+    async (mode) => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "himawari-worker-authority-"));
+      roots.push(root);
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response("{}"));
+      const composition = await createProductionWorkerComposition({
+        configuration: configuration(root, await snapshot(root)),
+        credential: CREDENTIAL,
+        authority: { authorityEpoch: 2, fencingToken: 3 },
+        agentServiceBootId: "agent-service-boot:composition",
+        platform: "linux",
+        clock: { now: () => NOW },
+        fetch,
+      });
+      const authority = vi.spyOn(composition.payloads, "assertCurrent").mockResolvedValue();
+      vi.spyOn(composition.payloads, "readInput").mockResolvedValue(new TextEncoder().encode("{}"));
+      vi.spyOn(composition.payloads, "writeOutput").mockResolvedValue("payload:composition-output");
+      const deadline = "2026-09-05T00:00:10.000Z";
+      composition.delegations.accept({
+        handleVersion: "capability-handle.v2",
+        ref: "handle:composition",
+        revision: 1,
+        authorityFence: 3,
+        ownerId: FIXTURE_SCOPE.ownerId,
+        agentId: FIXTURE_SCOPE.agentId,
+        runId: FIXTURE_SCOPE.runId,
+        capabilityRef: "fixture-endpoint",
+        capabilityVersion: "1.0.0",
+        authorizationType: "grant",
+        authorizationRef: "grant:composition",
+        operations: ["invoke"],
+        inputRefs: ["payload:composition-input"],
+        delegatedContextRefs: [],
+        secretRefs: [],
+        maxDataClassification: "public",
+        issuedAt: NOW,
+        expiresAt: deadline,
+        revokedAt: null,
+        operation: "invoke",
+        maxUses: 1,
+        uses: 0,
+        maxTotalCostMicros: 100,
+        spentCostMicros: 0,
+        idempotencyKeys: [],
+        workerEndedAt: null,
+      });
+      const request: ExecuteWorkRequest = {
+        schemaVersion: "execution.v1",
+        kind: "request",
+        type: "work.execute",
+        messageId: "invocation:composition",
+        correlationId: "invocation:composition",
+        causationId: "delegation:composition",
+        dataClassification: "public",
+        scope: {
+          ownerId: FIXTURE_SCOPE.ownerId,
+          agentId: FIXTURE_SCOPE.agentId,
+          runId: FIXTURE_SCOPE.runId,
+          workerRunId: "worker-run:composition",
+        },
+        idempotencyKey: "invocation:composition",
+        payload: {
+          capabilityId: "fixture-endpoint",
+          capabilityVersion: "1.0.0",
+          operation: "invoke",
+          inputRef: "payload:composition-input",
+          capabilityHandleRef: "handle:composition",
+          delegatedContextRefs: [],
+          secretRefs: [],
+          requestedAt: NOW,
+          deadlineAt: deadline,
+        },
+      };
+      try {
+        const events: ExecutionWorkerEvent[] = [];
+        const execute = async () => {
+          for await (const event of composition.service.execute(request, CEILING))
+            events.push(event);
+        };
+        if (mode === "revoked") {
+          authority.mockRejectedValue(new Error("Agent denied invocation"));
+          await expect(execute()).rejects.toThrow("Agent denied invocation");
+          expect(fetch).not.toHaveBeenCalled();
+          expect(
+            await composition.delegations.getExecutionHandle("handle:composition"),
+          ).toMatchObject({ uses: 0 });
+          return;
+        }
+        await execute();
+        expect(events).toMatchObject([
+          {
+            type: "work.result",
+            payload: {
+              outcome: "succeeded",
+              outputRef: "payload:composition-output",
+            },
+          },
+        ]);
+        expect(fetch).toHaveBeenCalledOnce();
+        expect(authority).toHaveBeenCalledWith({
+          handleRef: "handle:composition",
+          invocationId: "invocation:composition",
+        });
+        expect(
+          await composition.delegations.getExecutionHandle("handle:composition"),
+        ).toMatchObject({
+          uses: 1,
+        });
+      } finally {
+        await composition.close();
+      }
+    },
+  );
+
   it("requires a signed deployment and keeps readiness closed until Agent UDS handshakes", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "himawari-worker-composition-"));
     roots.push(root);
