@@ -134,11 +134,11 @@ date: "2026-09-16"
 | --- | --- |
 | 原待办与验收 | [P2 额度与派发连续性](#p2)，重点 A07，关联 A01/A11/A13；仅允许尚未准入且无调用回执的原队列续接 |
 | 用户可观察结果 | Worker 重启或有效执行权更换后，仍有效的原批准、原输入、目标版本与期限继续适用；不重新询问相同批准、不额外消费，也不复活已派发或未知操作 |
-| 当前实现 | Schema 45 保留原 Pi 批次关联；Run 调度、当前租约、队列绑定、continuation 与 coding/file 外层请求按同一原请求续接，仍保留全部语义比较。真实 Worker/JobHost 效果与安装进程重启的联合资格尚待最终产品验收 |
+| 当前实现 | Schema 45 保留原 Pi 批次关联；Run 调度、当前租约、队列绑定、continuation 与 coding/file 外层请求按同一原请求续接，仍保留全部语义比较。已补真实 Worker/JobHost 一次文件效果；安装进程重启、完整安装资格与页面联合验收仍未完成 |
 | 实施方向 | 保留原不可变队列快照，单独记录当前执行绑定；同一 SQLite 事务验证当前权威、Run 租约、原授权与零消费/零准入事实。优先接现有生产 Run 包装层，在 Pi 取得工具列表前完成必要绑定，不新建 Pi 协议 |
 | 验证入口 | 复用[生产队列续接](../../../test/integration/production-sandbox-queue-reentry.test.ts)、[准备与绑定](../../../test/integration/sandbox-execution-preparation.test.ts)、[额度预约](../../../test/integration/authorization-reservations.test.ts)；增加真实数据库重开、当前租约切换与并发竞争，先确认生产 Run 装配入口 |
 | 完成条件 | 未准入跨 boot/fence 成功且只有一次派发；旧调用、已准入/有回执/被取消、撤销/过期、目标改变、旧租约和并发输家均被拒绝；原期限、顺序、批准和次数独立读回。涉及存储格式时补旧 writer 屏障与兼容测试 |
-| 状态与后续 | 原模型批次→生产队列→数据库重开→两个生产调度器竞争→原批次续接已通过，显式 Handle 与内置 bash 均未新增批准或消费；取消/准入/回执/缺失内容/撤销/请求或工具列表变化被拒绝。同一冻结输入的标准构建与完整 4,024 项测试通过，见[本批记录](#p2-queued-run-restart) |
+| 状态与后续 | 原批次续接已通过[完整基线](#p2-queued-run-restart)，并补齐[真实 Worker 固定文件保存](#p2-queued-worker-proof)：一次批准/消费/文件效果，旧 fence 和重复请求不再写入。下一优先项为 [P2 不可变请求与并发决定](#p2)：复用 Approval/Grant 装配覆盖批准与拒绝、取消、过期以及两端重复决定的持久竞争；不重复本批已成立的恢复实现 |
 
 [↑ 返回阅读导航](#contents)
 
@@ -300,9 +300,9 @@ date: "2026-09-16"
 
 [↑ 返回阅读导航](#contents)
 
-- [ ] 直接覆盖生产使用的 `ActionPolicyService`、Approval/Grant 装配；不能仅凭旧 Permission 测试同名就判定生产路径已验证。
+- [x] 直接覆盖生产使用的 `ActionPolicyService`、Approval/Grant 装配；不能仅凭旧 Permission 测试同名就判定生产路径已验证。见[生产 Run 与真实 Worker 验收](#p2-queued-worker-proof)；其余权限竞争条件按下列独立待办验收。
 - [ ] 统一不可变请求快照、版本和幂等身份；两设备决定、批准与拒绝/过期/取消按持久顺序决定，错主体与跨会话请求被拒绝。
-- [ ] 将一次额度预约、实际派发承诺和明确未派发时释放分别处理；同操作排队/恢复不消耗第二次额度，可能已派发的不确定额度不能退给另一请求。
+- [x] 将一次额度预约、实际派发承诺和明确未派发时释放分别处理；同操作排队/恢复不消耗第二次额度，可能已派发的不确定额度不能退给另一请求。见[原队列真实效果与额度专项证据](#p2-queued-worker-proof)。
 - [ ] 出队与派发前重新检查期限、撤销、预算、目标、硬拒绝和取消；批准是历史事实，有效执行权限另判。
 - [ ] 区分具体内容单次批准与已有范围授权。新内容建立新 intent，确有覆盖的有效范围授权才复用；策略放宽不自动复活过去拒绝。
 - [ ] 执行中撤销阻止后续派发/披露，并进入受控停止与核实；已提交效果如实保留。沿用同会话确认与红点，不创建新的汇总入口。
@@ -1198,3 +1198,24 @@ Schema 44 在原队列之外追加 `sandbox_queue_authority_bindings`，并保�
 Pi 继续负责顺序工具执行、批次保存和已完成结果复用。Himawari 只保存受保护批次关联、核对队列资格与当前权限；没有另建 Pi 消息协议或调度系统。continuation 只在该队列已绑定当前 Run 租约时允许 authority 差异，模型、上下文、输入、预算、期限和工具定义仍须一致。原批次里结果未知的已执行操作不能自动重放。
 
 本批证据使用[同一标准 CI 与原始日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-queued-run-restart-01/README.md)。原 P2 复合待办尚包含更多生产权限竞争与终端效果验收，暂不因本分支通过而整项勾选。
+
+<a id="p2-queued-worker-proof"></a>
+
+### P2：原队列续接的真实 Worker 验收
+
+| 项目 | 本批完成条件 |
+| --- | --- |
+| 原待办 | P2 一次额度预约、原队列恢复与派发前重验；沿用上批恢复用例，不新建调度路径 |
+| 可观察结果 | 原批准后中断、数据库重开与执行权改变，真实 Worker/JobHost 在隔离临时工作区产生一次文件效果；独立读取文件、额度与资源记录 |
+| 验证入口 | 在原 production-queued-run-restart 集成测试增加显式 live opt-in，复用原受控宿主资格 fixture、正式 Worker 与 Payload UDS、构建版 Pi runner |
+| 拒绝与清理 | 旧执行权和重复派发不产生第二次效果；Mac 不能证明后代已停止时必须保留未知占用，不能为了通过测试伪造释放；测试只清理自己创建的临时资源 |
+| 证据边界 | 模型、宿主安装资格和 owner 决定仍为受控输入；不代表完整安装资格、生产登录页面、Linux 或操作系统 Agent 杀进程重启已验证 |
+| 验证策略 | 先运行新增实际路径及原有 10 项恢复回归；只有产品代码改变才评估新的完整验证，单独测试/fixture 增补按影响重验并复用有效基线 |
+
+本批已通过真实 Mac 路径，详见[原始日志、复现命令与组合验证](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-queued-worker-proof-01/README.md)。实际使用 ActionPolicy、Approval、SQLite、两个 Run dispatcher、Pi continuation、ProductionExecutionWorker、Payload UDS、JobHost/SRT 与构建版 Pi `write` runner。排队时没有文件效果；数据库重开与执行权更换后写入一次；原预约、Grant、Handle 仅消费一次，旧 fence 与同请求重复派发均不再修改文件。清理后独立检查宿主临时目录与 Payload socket 目录均已删除。
+
+P2 的“直接生产装配覆盖”和“额度预约/派发/未派发释放”两项据此完成：前者由实际生产装配执行，后者结合已有 6 项额度专项验证，覆盖未派发退款前撤销 Handle、回执与消费原子提交、数据库重开幂等和不确定退款拒绝。其余 P2 待办和整个 Plan 保持未完成。Mac 资源仍为未知占用、没有永久释放回执，不以文件存在推断后代停止；模型与安装资格为受控输入，执行消息采用 Worker 进程内端口，不能声称操作系统进程重启或生产页面已验证。
+
+最终真实配置 1 项通过；默认共享夹具消费者 6 文件/85 项与额度专项 6 项通过。Node 构建、最终类型、任务格式/lint、边界/覆盖/不变量/秘密/CI policy 通过；只修改测试与 fixture，回读原 1,024 个冻结输入后复用上批 4,024 项和标准构建。全库 check/lint 的两份既有原型错误仍保留。详情与未覆盖环境见证据目录，不把重叠测试相加。
+
+本次多轮失败主要来自 live 夹具前提未一次核对：构建中没有 bash、socket 路径过长、固定与真实时钟混用，以及旧 fence 用例误改消息身份。均已保留原始失败记录，未归类为产品缺陷。后续同类接入先独立核对构建入口、socket 长度、各层时钟和协议身份；取得具体错误后才重跑昂贵链路。约束继续使用[原五项规则](#execution-rules)与[原决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv)，不增加另一套执行流程。

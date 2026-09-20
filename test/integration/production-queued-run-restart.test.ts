@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   ActionPolicyService,
@@ -24,6 +25,7 @@ import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts"
 import {
   AGENT_ID,
   grant,
+  LIVE_SANDBOX,
   OWNER_ID,
   SERVICE_AUTHORITY,
   T1,
@@ -46,13 +48,38 @@ it.each([
 ])(
   "recovers the original Pi queue safely (coding=$coding, $scenario)",
   async ({ coding, scenario }) => {
+    const live = LIVE_SANDBOX && coding && scenario === "resume";
+    if (live && process.platform !== "darwin") throw new Error("QUEUED_LIVE_PROBE_REQUIRES_MACOS");
+    const codingName = live ? "write" : "bash";
+    let liveWorker:
+      | Awaited<ReturnType<typeof import("../fixtures/queued-live-worker.ts").queuedLiveWorker>>
+      | undefined;
+    const started = performance.now();
+    const milestone = (stage: string) => {
+      if (live)
+        console.log(
+          JSON.stringify({
+            queuedLiveStage: stage,
+            elapsedMs: Math.round(performance.now() - started),
+          }),
+        );
+    };
     let authority = SERVICE_AUTHORITY;
-    const clock = { now: () => T1 };
+    const clock = { now: () => (live ? new Date().toISOString() : T1) };
     const f = await productionSandboxScope(
       {
-        operation: "bash",
+        operation: codingName,
         mode: "foreground",
-        contract: { ref: "bash", version: "1", kind: "command" },
+        contract: live
+          ? {
+              ref: "pi-coding-tool",
+              version: "3",
+              kind: "verified_effect",
+              verifierRef: "pi-atomic-write",
+              verifierVersion: "1",
+              targetRef: "pi-input:path",
+            }
+          : { ref: "bash", version: "1", kind: "command" },
         backendRef: "srt",
         scopeSource: "grant_targets",
         directoryOperations: ["read", "create", "update"],
@@ -60,22 +87,26 @@ it.each([
       },
       undefined,
       {
+        ...(live
+          ? { piRuntimeRoot: path.resolve("dist/node-runtime"), realFileIdentity: true }
+          : {}),
         authority: () => authority,
         seedRuntimeIntent: false,
         resourceCeiling: {
-          maxWallTimeMs: 30000,
-          maxCpuTimeMs: 1000,
-          maxMemoryBytes: 1000000,
+          maxWallTimeMs: live ? 300000 : 30000,
+          maxCpuTimeMs: live ? 10000 : 1000,
+          maxMemoryBytes: live ? 268435456 : 1000000,
           maxOutputBytes: 4096,
           maxProgressEvents: 10,
         },
       },
     );
+    milestone("fixture-ready");
     const adapters = createReferenceAdapterSet({ clock });
     const runId = f.call.runId;
     const handleRef = f.input.handleRef;
     const name = coding
-      ? "bash"
+      ? codingName
       : `authorized_${createHash("sha256").update(JSON.stringify(handleRef)).digest("hex").slice(0, 24)}`;
     let completedProbeCalls = 0;
     const model = await createFauxModelFixture("恢复后的回答", [
@@ -83,7 +114,11 @@ it.each([
       {
         name,
         id: f.call.toolCallId,
-        arguments: coding ? { command: "printf queued" } : f.call.arguments,
+        arguments: coding
+          ? live
+            ? { path: "queued.txt", content: "queued" }
+            : { command: "printf queued" }
+          : f.call.arguments,
       },
     ]);
     const models = {
@@ -109,6 +144,17 @@ it.each([
     let toolResult: unknown;
     let sent: Extract<ExecutionV2Request, { type: "work.execute" }> | undefined;
     const request = vi.fn(async (message: ExecutionV2Request) => {
+      if (liveWorker) {
+        if (message.type === "work.execute") sent = message;
+        try {
+          return await liveWorker.worker.request(message);
+        } catch (error) {
+          console.error(
+            JSON.stringify({ liveWorkerRequestFailed: message.type, error: String(error) }),
+          );
+          throw error;
+        }
+      }
       if (message.type === "work.delegate")
         return {
           ...message,
@@ -233,7 +279,7 @@ it.each([
                 ...f.fileBinding,
                 grantId: f.fileBinding.grant.id,
                 capabilityRef: f.input.capabilityRef,
-                enabledTools: ["bash" as const],
+                enabledTools: [codingName],
               },
               fileRead,
             }
@@ -242,7 +288,9 @@ it.each([
         agentId: AGENT_ID,
         capabilities: f.repository.capabilityStore(OWNER_ID, AGENT_ID),
         invocations: f.repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
-        results: { lookupOutput: async () => undefined },
+        results: live
+          ? f.repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID)
+          : { lookupOutput: async () => undefined },
         artifacts: f.artifacts(),
         payloads: f.repository.payloadStore(OWNER_ID, AGENT_ID),
         protector: f.f.protector,
@@ -263,6 +311,11 @@ it.each([
         transport: {
           request,
           async *events() {
+            if (liveWorker) {
+              await liveWorker.worker.waitForIdle();
+              yield* liveWorker.worker.events(null);
+              return;
+            }
             if (sent)
               yield {
                 ...sent,
@@ -409,7 +462,7 @@ it.each([
         running.then(async (result) => {
           const hash = (value: unknown) =>
             createHash("sha256").update(JSON.stringify(value)).digest("hex");
-          const childId = `file-phase:${hash([hash([runId, f.call.toolCallId]), "bash"])}`;
+          const childId = `file-phase:${hash([hash([runId, f.call.toolCallId]), codingName])}`;
           const artifact = await f.artifacts().lookup({
             runId,
             purpose: "trace",
@@ -434,6 +487,10 @@ it.each([
       ).toBe("runtime_running");
       expect(model.observed).toHaveLength(1);
       expect(request.mock.calls.filter(([x]) => x.type === "work.execute")).toHaveLength(0);
+      if (live)
+        await expect(stat(path.join(f.host.workspace, "queued.txt"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
       const inventory = await f.services.brokerV2.preparations.readRunInventory({ runId });
       const original = inventory.queue[0];
       if (!original?.recovery) throw new Error("Missing original Pi queue recovery link");
@@ -451,6 +508,7 @@ it.each([
         }
       };
       const originalBytes = readOriginal();
+      milestone("original-queue-persisted");
       const readReservations = () => {
         const db = new Database(databasePath, { readonly: true });
         try {
@@ -552,6 +610,7 @@ it.each([
         };
       }
       await f.reopen();
+      milestone("database-reopened");
       const dispatch = f.repository.runDispatch(
         OWNER_ID,
         AGENT_ID,
@@ -575,6 +634,11 @@ it.each([
       const candidate = candidates.find((x) => x.runId === runId);
       if (!candidate) throw new Error("Resumable candidate missing");
       stopAtQueue = false;
+      if (live) {
+        const { queuedLiveWorker } = await import("../fixtures/queued-live-worker.ts");
+        liveWorker = await queuedLiveWorker(f, authority);
+        milestone("worker-ready");
+      }
       const resumed = make("restart-consumer");
       if (scenario === "changed-model") {
         const resumedLease = await dispatch.claim({
@@ -597,12 +661,13 @@ it.each([
       }
       const rival = make("restart-rival");
       const pumps = await Promise.allSettled([resumed.dispatcher.pump(), rival.dispatcher.pump()]);
+      milestone("dispatch-settled");
       if (scenario === "revoked") {
         const rejected = pumps.filter((item) => item.status === "rejected");
         expect(rejected).toHaveLength(1);
         expect(String(rejected[0]?.reason)).toContain("grant or approval changed");
       } else {
-        expect(pumps.every((item) => item.status === "fulfilled")).toBe(true);
+        expect(pumps.filter((item) => item.status === "rejected")).toEqual([]);
         expect(
           pumps.reduce(
             (sum, item) => sum + (item.status === "fulfilled" ? item.value.claimed : 0),
@@ -636,6 +701,59 @@ it.each([
         expect(model.observed).toHaveLength(1);
         return;
       }
+      if (live) {
+        const snapshot = await f.services.brokerV2.preparations.readAdmission(
+          original.plan.identity,
+        );
+        console.log(
+          JSON.stringify({
+            liveAdmission: snapshot?.phase,
+            calls: request.mock.calls.map(([call]) => call.type),
+            toolFailure: String(toolFailure),
+            toolResult,
+          }),
+        );
+        expect(await readFile(path.join(f.host.workspace, "queued.txt"), "utf8")).toBe("queued");
+        const record = await f.services.brokerV2.journal.read(original.plan.identity);
+        expect(record).toBeDefined();
+        // macOS best-effort termination cannot prove an arbitrary command's full tree stopped.
+        expect(record?.workspaceBlocked).toBe(process.platform === "darwin");
+        expect(Boolean(record?.releaseReceipt)).toBe(process.platform !== "darwin");
+        const events = [];
+        if (liveWorker)
+          for await (const event of liveWorker.worker.events(null)) events.push(event);
+        expect(events.filter((event) => event.type === "work.result")).toHaveLength(1);
+        if (!liveWorker || !sent) throw new Error("LIVE_WORKER_NOT_DISPATCHED");
+        const fileBeforeReplay = await stat(path.join(f.host.workspace, "queued.txt"));
+        await expect(
+          liveWorker.worker.request({
+            ...sent,
+            scope: { ...sent.scope, fencingToken: SERVICE_AUTHORITY.product.fencingToken },
+          }),
+        ).rejects.toThrow("WORKER_STALE_FENCE");
+        await liveWorker.worker.request(sent);
+        await liveWorker.worker.waitForIdle();
+        const fileAfterReplay = await stat(path.join(f.host.workspace, "queued.txt"));
+        expect([fileAfterReplay.ino, fileAfterReplay.mtimeMs, fileAfterReplay.ctimeMs]).toEqual([
+          fileBeforeReplay.ino,
+          fileBeforeReplay.mtimeMs,
+          fileBeforeReplay.ctimeMs,
+        ]);
+        expect(await readFile(path.join(f.host.workspace, "queued.txt"), "utf8")).toBe("queued");
+        const afterReplay = [];
+        for await (const event of liveWorker.worker.events(null)) afterReplay.push(event);
+        expect(afterReplay.filter((event) => event.type === "work.result")).toHaveLength(1);
+        console.log(
+          JSON.stringify({
+            liveQueuedRecovery: true,
+            file: "queued",
+            workspaceBlocked: record?.workspaceBlocked,
+            releaseReceipt: Boolean(record?.releaseReceipt),
+            resource: record?.facts.resource,
+            events: events.map((event) => event.type),
+          }),
+        );
+      }
       // Worker cancellation is intentionally unknown: it may not trigger a second execution.
       expect(result?.run.status).toBe("reconciling_external_result");
       expect(request.mock.calls.filter(([x]) => x.type === "work.execute")).toHaveLength(1);
@@ -667,7 +785,15 @@ it.each([
     } finally {
       releaseOld();
       await running?.catch(() => {});
+      await liveWorker?.close();
       await f.close();
+      if (live) {
+        await expect(stat(path.dirname(f.host.workspace))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        if (liveWorker)
+          await expect(stat(liveWorker.directory)).rejects.toMatchObject({ code: "ENOENT" });
+      }
     }
   },
 );

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import {
   actionIntentFingerprint,
   type CapabilityInvocationAuthority,
@@ -15,7 +15,11 @@ import type {
   SandboxOperationBinding,
 } from "@himawari-agent/execution-contracts";
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
-import { PayloadUdsClient, PayloadUdsServer } from "@himawari-agent/platform-node";
+import {
+  digestSandboxRuntime,
+  PayloadUdsClient,
+  PayloadUdsServer,
+} from "@himawari-agent/platform-node";
 import { configuredModelDisclosureIdentity } from "../../apps/agent-service/src/production-model-disclosure.ts";
 import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.ts";
 import { createProductionSandboxServices } from "../../apps/agent-service/src/production-sandbox-services.ts";
@@ -47,6 +51,7 @@ export async function productionSandboxScope(
     readonly legacyFileRead?: boolean;
     readonly piParameters?: Readonly<Record<string, unknown>>;
     readonly realFileIdentity?: boolean;
+    readonly piRuntimeRoot?: string;
     readonly authority?: () => CapabilityInvocationAuthority;
     readonly seedRuntimeIntent?: boolean;
     readonly runtimeFingerprint?: (call: RuntimeToolInvocation) => string;
@@ -70,8 +75,10 @@ export async function productionSandboxScope(
   f.database
     .prepare("UPDATE capability_handles SET id=?, authorization_ref=?, record_json=? WHERE id=?")
     .run(h.ref, h.authorizationRef, JSON.stringify(h), f.plan.handleRef);
+  // Real JobHost control sockets must fit the platform's Unix socket path limit.
+  const liveHostRoot = options.piRuntimeRoot ? await mkdtemp("/tmp/h-qh-") : undefined;
   const host = await macSandboxDeployment(
-    f.resource.stateRoot,
+    liveHostRoot ?? f.resource.stateRoot,
     {
       ...f.plan,
       operation: descriptor.operation,
@@ -83,10 +90,6 @@ export async function productionSandboxScope(
   );
   const snapshot = JSON.parse(await readFile(host.capabilityDeployment.snapshotPath, "utf8"));
   const entry = snapshot.capabilities[0];
-  if (options.seedRuntimeIntent === false)
-    f.database
-      .prepare("UPDATE capability_declarations SET record_json=? WHERE id=?")
-      .run(JSON.stringify({ ...c, declaration: entry.manifest }), c.ref);
   if (options.legacyFileRead) delete entry.binding.value.operationBindings;
   else entry.binding.value.operationBindings = [descriptor];
   entry.binding.value.allowedDomains = ["example.com:443"];
@@ -98,10 +101,43 @@ export async function productionSandboxScope(
   ];
   entry.binding.value.supportedExecutions = support;
   entry.qualification.sandbox.supportedExecutions = support;
+  if (options.piRuntimeRoot) {
+    const runtimeRoot = await realpath(options.piRuntimeRoot);
+    const executable = await realpath(process.execPath);
+    const runner = `${runtimeRoot}/node_modules/@himawari-agent/agent-service/dist/capability-programs/pi-coding-main.js`;
+    const fileHash = async (p: string) =>
+      createHash("sha256")
+        .update(await readFile(p))
+        .digest("hex");
+    const runnerDigest = await fileHash(runner);
+    const runtimeDigest = await digestSandboxRuntime(runtimeRoot);
+    Object.assign(entry.binding.value, {
+      runtimeRoot,
+      runtimeDigest,
+      profileRef: "authorized-project.v1",
+      executable: { path: executable, sha256: await fileHash(executable) },
+      runner: { path: runner, sha256: runnerDigest },
+      artifactDigest: `sha256:${runnerDigest}`,
+      readOnlyToolchainPaths: [...entry.binding.value.readOnlyToolchainPaths, executable],
+    });
+    Object.assign(entry.qualification.sandbox, {
+      runtimeDigest,
+      runnerDigest,
+      profileRef: "authorized-project.v1",
+    });
+    entry.qualification.artifactDigest = `sha256:${runnerDigest}`;
+    entry.manifest.integrity = `sha256:${runnerDigest}`;
+    entry.manifest.artifact.digest = `sha256:${runnerDigest}`;
+    entry.manifest.runtime.argv = [executable, runner];
+  }
   const actualRoot = entry.binding.value.roots[0];
   if (options.realFileIdentity)
     actualRoot.canonicalRootId = `${actualRoot.device}:${actualRoot.inode}`;
   if (descriptor.scopeSource === "private_temp") entry.binding.value.roots = [];
+  if (options.seedRuntimeIntent === false)
+    f.database
+      .prepare("UPDATE capability_declarations SET record_json=? WHERE id=?")
+      .run(JSON.stringify({ ...c, declaration: entry.manifest }), c.ref);
   const snapshotBytes = JSON.stringify(snapshot);
   await writeFile(host.capabilityDeployment.snapshotPath, snapshotBytes);
   const directory = {
@@ -222,6 +258,9 @@ export async function productionSandboxScope(
   }) as unknown as ConsumeCapabilityInvocationInput;
   let counter = 0;
   let now = T1;
+  // A real JobHost timestamps its own observations; a frozen fixture clock
+  // would incorrectly reject every later observation as coming from the future.
+  const clock = { now: () => (options.piRuntimeRoot ? new Date().toISOString() : now) };
   let workerSupport = support;
   const artifacts = () =>
     repository.runPayloadArtifactPort(
@@ -298,15 +337,16 @@ export async function productionSandboxScope(
         createdAt: T1,
       }),
     );
+  const capabilityDeployment = {
+    ...host.capabilityDeployment,
+    sha256: `sha256:${createHash("sha256").update(snapshotBytes).digest("hex")}`,
+  };
   const makeServices = async () => {
     const result = await createProductionSandboxServices({
       configuration: {
         ownerId: OWNER_ID,
         agentId: AGENT_ID,
-        capabilityDeployment: {
-          ...host.capabilityDeployment,
-          sha256: `sha256:${createHash("sha256").update(snapshotBytes).digest("hex")}`,
-        },
+        capabilityDeployment,
         modelDescriptors: [model],
       },
       repository,
@@ -321,7 +361,7 @@ export async function productionSandboxScope(
           throw new Error("unused");
         },
       },
-      clock: { now: () => now },
+      clock,
       ids: { next: () => `scope-id:${++counter}` },
       workerSupport: () => workerSupport,
     });
@@ -354,7 +394,7 @@ export async function productionSandboxScope(
       payloadsFor: (owner, agent) => repository.payloadStore(owner, agent),
       protector: f.protector,
       currentAuthority: () => SERVICE_AUTHORITY,
-      clock: { now: () => now },
+      clock,
       ids: { next: () => `rpc:${++counter}` },
       agentServiceInstanceId: shared.agentServiceInstanceId,
       agentServiceBootId: shared.agentServiceBootId,
@@ -404,6 +444,7 @@ export async function productionSandboxScope(
       );
   };
   return {
+    capabilityDeployment,
     connect,
     model,
     setAfterResolve: (hook: () => Promise<void>) => {
@@ -426,7 +467,7 @@ export async function productionSandboxScope(
       repository = await SqliteProductStateRepository.open({
         stateRoot: f.resource.stateRoot,
         minimumFreeBytes: 0,
-        now: () => now,
+        now: clock.now,
       });
       services = await makeServices();
     },
@@ -446,6 +487,7 @@ export async function productionSandboxScope(
       for (const close of connections.reverse()) await close();
       await repository.close();
       await f.close();
+      if (liveHostRoot) await rm(liveHostRoot, { recursive: true, force: true });
     },
   };
 }
