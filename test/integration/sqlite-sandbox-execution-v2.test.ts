@@ -1617,6 +1617,76 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     }
   });
 
+  it.each([
+    ["SANDBOX_CONTROL_DIRECTORY_CHANGED", "SANDBOX_CONTROL_DIRECTORY_CHANGED"],
+    ["SANDBOX_CONTROL_IDENTITY_CHANGED", "SANDBOX_CONTROL_IDENTITY_CHANGED"],
+    ["SANDBOX_CONTROL_BINDING_UNAVAILABLE", "SANDBOX_CONTROL_BINDING_UNAVAILABLE"],
+    ["SANDBOX_CONTROL_EVIDENCE_CHANGED", "SANDBOX_CONTROL_EVIDENCE_CHANGED"],
+    ["SANDBOX_HOST_UNAVAILABLE", "SANDBOX_HOST_UNAVAILABLE"],
+    ["private backend diagnostic", "SANDBOX_RECONCILIATION_UNCONFIRMED"],
+    ["SANDBOX_PRIVATE_SECRET", "SANDBOX_RECONCILIATION_UNCONFIRMED"],
+    ["EACCES", "SANDBOX_RECONCILIATION_PERMISSION_DENIED"],
+    ["EPERM", "SANDBOX_RECONCILIATION_PERMISSION_DENIED"],
+    ["ECONNREFUSED", "SANDBOX_SUPERVISOR_UNAVAILABLE"],
+    ["ETIMEDOUT", "SANDBOX_CONTROL_TIMED_OUT"],
+    ["JOB_HOST_CONTROL_TIMEOUT", "SANDBOX_CONTROL_TIMED_OUT"],
+    ["JOB_HOST_CONTROL_EVIDENCE_INVALID", "SANDBOX_CONTROL_EVIDENCE_INVALID"],
+    ["lost:SANDBOX_CONTROL_UNCONFIRMED", "SANDBOX_CONTROL_UNCONFIRMED"],
+    ["lost:SANDBOX_HOST_UNAVAILABLE", "SANDBOX_HOST_UNAVAILABLE"],
+    ["lost:SANDBOX_PRIVATE_SECRET", "SANDBOX_RECONCILIATION_UNCONFIRMED"],
+  ])("retains safe bounded recovery failure %s", async (message, expected) => {
+    const f = await openSandboxJournal();
+    try {
+      const record = start(f);
+      const inspect = vi.fn(async (current: SandboxExecutionRecord) => {
+        if (message.startsWith("lost:")) {
+          return { ...resource(current, "lost").resource, reasonCode: message.slice(5) };
+        }
+        if (["EACCES", "EPERM", "ECONNREFUSED", "ETIMEDOUT"].includes(message))
+          throw Object.assign(new Error("private path and diagnostic"), { code: message });
+        throw new Error(message);
+      });
+      const service = new SandboxExecutionReconciliationService({
+        hostId: record.plan.identity.hostId,
+        journal: {
+          read: async (identity) => call(f, "read", identity),
+          append: async (input) => call(f, "append", input),
+          beginRecovery: async (input) => call(f, "beginRecovery", input),
+          finishRecovery: async (input) => call(f, "finishRecovery", input),
+        },
+        evidence: {
+          verify: async () => {
+            throw new Error("unexpected verification");
+          },
+        },
+        now: () => T1,
+        timeoutMs: 1000,
+        backend: { inspect, stop: inspect },
+      });
+      await service.reconcile({
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence,
+        authority: SERVICE_AUTHORITY,
+        action: "inspect",
+      });
+      const persisted = call(f, "read", record.plan.identity);
+      expect(persisted?.recovery).toMatchObject({
+        status: "unresolved",
+        reasonCode: expected,
+        attempts: 1,
+        finishedAt: T1,
+      });
+      expect(persisted?.facts.resource).toMatchObject({
+        supervision: "lost",
+        reasonCode: expected,
+      });
+      expect(inspect).toHaveBeenCalledTimes(1);
+      expect(() => call(f, "admit", admission(f, "-still-blocked"))).toThrow("occupied");
+    } finally {
+      await f.close();
+    }
+  });
+
   it.each(["preparation-deadline", "concurrent-result", "concurrent-release"] as const)(
     "finishes bounded recovery using current durable facts: %s",
     async (scenario) => {
@@ -1673,6 +1743,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         }
         if (scenario === "concurrent-release") {
           expect(finished.record.releaseReceipt).toEqual(concurrent?.releaseReceipt);
+          expect(finished.record.recovery?.reasonCode).toBe("SANDBOX_RECONCILIATION_CONFIRMED");
           expect(call(f, "admit", admission(f, "-released")).applied).toBe(true);
         } else {
           expect(() => call(f, "admit", admission(f, "-still-blocked"))).toThrow("occupied");

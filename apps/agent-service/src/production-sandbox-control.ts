@@ -1,12 +1,13 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
-import type {
-  SandboxExecutionEvidencePort,
-  SandboxExecutionFacts,
-  SandboxExecutionRecord,
-  SandboxReconciliationBackend,
-  SandboxReservationReleaseVerification,
+import {
+  type SandboxExecutionEvidencePort,
+  type SandboxExecutionFacts,
+  type SandboxExecutionRecord,
+  type SandboxReconciliationBackend,
+  type SandboxReservationReleaseVerification,
+  sandboxReconciliationFailureReason,
 } from "@himawari-agent/application";
 import {
   type SandboxExecutionPlanV2,
@@ -100,6 +101,27 @@ function neverStartedReleased(
  * numeric PID. A live stop goes to the original authenticated Job Host only.
  */
 export function createProductionSandboxControl(options: Options) {
+  const saveDiagnostic = async (
+    plan: SandboxExecutionPlanV2,
+    command: "inspect" | "stop",
+    stage: "control" | "host" | "classification",
+    error: unknown,
+  ) => {
+    // The production writer encrypts these as restricted trace artifacts. Never
+    // include diagnostic text in resource facts, public reasons, or tool output.
+    await options.write(plan, `${key(plan)}:diagnostic:${randomUUID()}`, {
+      identity: plan.identity,
+      environmentId: plan.environmentId,
+      observedAt: options.now(),
+      command,
+      stage,
+      reasonCode: sandboxReconciliationFailureReason(error),
+      diagnostic:
+        error instanceof Error
+          ? { name: error.name.slice(0, 128), message: error.message.slice(0, 4096) }
+          : { name: "UnknownError", message: String(error).slice(0, 4096) },
+    });
+  };
   const readControl = async (plan: SandboxExecutionPlanV2): Promise<StoredControl> => {
     const stored = await options.read(plan, key(plan));
     const value = stored?.value as StoredControl | undefined;
@@ -129,8 +151,16 @@ export function createProductionSandboxControl(options: Options) {
     let observation: JobHostControlObservation;
     try {
       observation = await queryJobHostControl(stored.control, command, 1000, signal);
-    } catch {
-      observation = await readJobHostFinalEvidence(stored.control);
+    } catch (requestError) {
+      try {
+        observation = await readJobHostFinalEvidence(stored.control);
+      } catch (proofError) {
+        // An absent final file is not the cause of a failed live request. Keep
+        // its timeout/permission/connection reason; invalid final proof still wins.
+        if (proofError instanceof Error && "code" in proofError && proofError.code === "ENOENT")
+          throw requestError;
+        throw proofError;
+      }
     }
     if (signal?.aborted) throw new Error("SANDBOX_CONTROL_ABORTED");
     if (
@@ -190,7 +220,7 @@ export function createProductionSandboxControl(options: Options) {
       return "controlled";
     return "lost";
   };
-  const observe = async (
+  const observeUnchecked = async (
     record: SandboxExecutionRecord,
     command: "inspect" | "stop",
     signal?: AbortSignal,
@@ -201,10 +231,17 @@ export function createProductionSandboxControl(options: Options) {
     // Read installed bytes before sampling a live process. A slow disk must not
     // consume the observation's freshness window before classification begins.
     let host: Awaited<ReturnType<Options["host"]>> | undefined;
+    let reasonCode = "SANDBOX_CONTROL_UNCONFIRMED";
     try {
       host = await options.host(record.plan);
-    } catch {
+    } catch (error) {
       // Still retain the process observation; unqualified cleanup remains lost.
+      await saveDiagnostic(record.plan, command, "host", error);
+      const classified = sandboxReconciliationFailureReason(error);
+      reasonCode =
+        classified === "SANDBOX_RECONCILIATION_UNCONFIRMED"
+          ? "SANDBOX_HOST_UNAVAILABLE"
+          : classified;
     }
     const raw = await inspect(record.plan, "inspect", signal);
     if (record.plan.operationContract.kind === "service_start") {
@@ -238,8 +275,9 @@ export function createProductionSandboxControl(options: Options) {
     let state: "controlled" | "released" | "lost" = "lost";
     try {
       if (host) state = await classify(record, raw, host.qualification);
-    } catch {
-      /* Qualification loss cannot turn a cleanup attempt into a launch. */
+    } catch (error) {
+      await saveDiagnostic(record.plan, command, "classification", error);
+      reasonCode = sandboxReconciliationFailureReason(error);
     }
     if (command === "stop" && state === "controlled") state = "lost";
     const old = record.facts.resource;
@@ -279,7 +317,7 @@ export function createProductionSandboxControl(options: Options) {
       supervision: state,
       cleanup: state === "released" ? "confirmed" : state === "controlled" ? "pending" : "unknown",
       ...(state === "lost"
-        ? { reasonCode: "SANDBOX_CONTROL_UNCONFIRMED" }
+        ? { reasonCode }
         : {
             evidence: {
               ref: stored.ref,
@@ -291,6 +329,18 @@ export function createProductionSandboxControl(options: Options) {
             },
           }),
     });
+  };
+  const observe = async (
+    record: SandboxExecutionRecord,
+    command: "inspect" | "stop",
+    signal?: AbortSignal,
+  ) => {
+    try {
+      return await observeUnchecked(record, command, signal);
+    } catch (error) {
+      await saveDiagnostic(record.plan, command, "control", error);
+      throw error;
+    }
   };
   const readinessEvidence = async (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) => {
     if (facts.result?.kind === "started" && facts.result.handle.kind === "service") {

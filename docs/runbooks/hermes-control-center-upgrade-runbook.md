@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:255e1a7f6a96758744614df88864e16b3caa7b66ca3c48d2055c9c3d5a56f4f9"
+contract_sha256: "sha256:28b834abbd7b4f1fe6e14647281198b853ba2f9149be198a382123d4e80e05c4"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -226,6 +226,8 @@ v5 已完成后的服务恢复验收可使用 `scripts/operations/hermes-protect
 主机、路径、身份、预算不明确；静态合同或实际安装验证失败；签名/摘要/权限/namespace 证据不匹配；活跃 Run 无法正常停机；恢复点不通过；迁移、身份、握手失败；需要放宽授权、访问其他用户数据或修改 Cloudflare 策略。停止依赖步骤，继续不依赖它的源码修复和验证。
 
 ## Troubleshooting
+
+资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束，不表示后台正在重试。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
 
 `SANDBOX_HOST_PATH_UNSAFE` 先核对精确路径及 mode，以及 SRT Unix socket 路径长度；生产 jobId 使用完整 SHA-256 的 base64url 编码缩短目录名，外部恢复 ID 合同不变；重新正确打包和验证，不放宽检查。Provider 429 显示限流/过载，保留未知费用与失败记录，不伪造完成。`result_unknown` 检查原环境终态及 namespace，不能通过清空占用重跑。SSH 未认证先使用已授权替代链路；不得打印 Cloudflare 一次性认证链接中的令牌。
 

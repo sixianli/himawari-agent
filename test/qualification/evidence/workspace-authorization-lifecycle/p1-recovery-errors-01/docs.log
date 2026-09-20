@@ -1,0 +1,2 @@
+ERROR: docs/runbooks/hermes-control-center-upgrade-runbook.md: contract_sha256 does not match the current Runbook and contract sources
+Document governance validation failed: 1 error(s), 0 warning(s).

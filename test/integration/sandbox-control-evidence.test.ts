@@ -1,7 +1,8 @@
-import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { mkdir, mkdtemp, realpath, rename, rm } from "node:fs/promises";
+import { createServer, type Socket } from "node:net";
 import path from "node:path";
 import type { SandboxExecutionRecord } from "@himawari-agent/application";
 import type {
@@ -77,10 +78,14 @@ async function fixture() {
       observation = { ...observation, phase: "stopping" };
     },
   );
-  cleanups.push(async () => {
+  let controlFinished = false;
+  const finishControl = async () => {
+    if (controlFinished) return;
     observation = { ...observation, phase: "finished" };
     await server.finish();
-  });
+    controlFinished = true;
+  };
+  cleanups.push(finishControl);
   const stored = new Map<string, { ref: string; digest: string; value: unknown }>();
   let platform = "darwin";
   const verifiedHost = async () => ({
@@ -96,6 +101,7 @@ async function fixture() {
     } as unknown as SandboxRuntimeQualification,
   });
   let hostChecks = 0;
+  let hostFailure: Error | undefined;
   let admissionChecks = 0;
   const control = createProductionSandboxControl({
     now,
@@ -113,6 +119,7 @@ async function fixture() {
     host: async () => {
       order.push("verify-host");
       hostChecks++;
+      if (hostFailure) throw hostFailure;
       clockOffset += hostElapsed;
       return verifiedHost();
     },
@@ -138,8 +145,12 @@ async function fixture() {
   };
   return {
     control,
+    finishControl,
     order,
     counts: () => ({ hostChecks, admissionChecks }),
+    failHost: (error: Error) => {
+      hostFailure = error;
+    },
     setHostElapsed: (milliseconds: number) => {
       hostElapsed = milliseconds;
     },
@@ -207,6 +218,57 @@ it("delivers stop before expensive host verification and still requires cleanup 
   expect(f.order).toEqual(["stop", "verify-host"]);
   expect(resource.supervision).toBe("lost");
   expect(resource.cleanup).toBe("unknown");
+});
+it("keeps the authenticated control timeout when no final proof exists", async () => {
+  const f = await fixture();
+  await f.finishControl();
+  await rm(path.join(f.directory, "final.json"));
+  const connections = new Set<Socket>();
+  const stalled = createServer({ allowHalfOpen: true }, (socket) => {
+    connections.add(socket);
+    socket.resume();
+    socket.on("close", () => connections.delete(socket));
+  });
+  await new Promise<void>((resolve, reject) => {
+    stalled.once("error", reject);
+    stalled.listen(path.join(f.directory, "control.sock"), resolve);
+  });
+  cleanups.push(async () => {
+    for (const socket of connections) socket.destroy();
+    await new Promise<void>((resolve, reject) =>
+      stalled.close((error) => (error ? reject(error) : resolve())),
+    );
+  });
+  await expect(f.control.backend.inspect(f.record, new AbortController().signal)).rejects.toThrow(
+    "JOB_HOST_CONTROL_TIMEOUT",
+  );
+  const diagnostics = [...f.stored.entries()].filter(([key]) => key.includes(":diagnostic:"));
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]?.[1].value).toMatchObject({ reasonCode: "SANDBOX_CONTROL_TIMED_OUT" });
+});
+
+it.each([
+  [undefined, "SANDBOX_HOST_UNAVAILABLE"],
+  ["EACCES", "SANDBOX_RECONCILIATION_PERMISSION_DENIED"],
+])("retains protected host diagnostics with safe reason for %s", async (code, reasonCode) => {
+  const f = await fixture();
+  const diagnostic = "private host path must stay in protected artifact";
+  f.failHost(Object.assign(new Error(diagnostic), { code }));
+  const resource = await f.control.backend.stop(f.record, new AbortController().signal);
+  expect(f.order[0]).toBe("stop");
+  expect(resource).toMatchObject({ supervision: "lost", cleanup: "unknown", reasonCode });
+  expect(JSON.stringify(resource)).not.toContain(diagnostic);
+  const saved = [...f.stored.entries()].filter(([key]) => key.includes(":diagnostic:"));
+  expect(saved).toHaveLength(1);
+  expect(saved[0]?.[1].value).toMatchObject({
+    identity: f.record.plan.identity,
+    environmentId: f.record.plan.environmentId,
+    command: "stop",
+    stage: "host",
+    diagnostic: { message: diagnostic },
+  });
+  const observation = [...f.stored.entries()].find(([key]) => key.includes(":observation:"));
+  expect(observation).toBeDefined();
 });
 it("requires stored exact evidence and never promotes a Linux sample to tree proof", async () => {
   const f = await fixture();

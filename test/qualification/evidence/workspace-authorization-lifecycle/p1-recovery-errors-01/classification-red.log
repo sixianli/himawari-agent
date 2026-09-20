@@ -1,0 +1,152 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts (154 tests | 10 failed | 140 skipped) 1983ms
+     × retains safe bounded recovery failure SANDBOX_CONTROL_DIRECTORY_CHANGED 282ms
+     × retains safe bounded recovery failure SANDBOX_CONTROL_IDENTITY_CHANGED 185ms
+     × retains safe bounded recovery failure SANDBOX_CONTROL_BINDING_UNAVAILABLE 184ms
+     × retains safe bounded recovery failure SANDBOX_CONTROL_EVIDENCE_CHANGED 200ms
+     × retains safe bounded recovery failure SANDBOX_HOST_UNAVAILABLE 213ms
+     × retains safe bounded recovery failure SANDBOX_CONTROL_DIRECTORY_CHANGED 76ms
+     × retains safe bounded recovery failure SANDBOX_CONTROL_IDENTITY_CHANGED 75ms
+     × retains safe bounded recovery failure SANDBOX_CONTROL_BINDING_UNAVAILABLE 77ms
+     × retains safe bounded recovery failure SANDBOX_CONTROL_EVIDENCE_CHANGED 75ms
+     × retains safe bounded recovery failure SANDBOX_HOST_UNAVAILABLE 77ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure SANDBOX_CONTROL_DIRECTORY_CHANGED
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure SANDBOX_CONTROL_DIRECTORY_CHANGED
+AssertionError: expected { revision: 2, …(8) } to match object { status: 'unresolved', …(3) }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "attempts": 1,
+    "finishedAt": "2026-09-04T00:00:01.000Z",
+-   "reasonCode": "SANDBOX_CONTROL_DIRECTORY_CHANGED",
++   "reasonCode": "SANDBOX_RECONCILIATION_UNCONFIRMED",
+    "status": "unresolved",
+  }
+
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:1655:35
+    1653|       });
+    1654|       const persisted = call(f, "read", record.plan.identity);
+    1655|       expect(persisted?.recovery).toMatchObject({
+       |                                   ^
+    1656|         status: "unresolved", reasonCode: expected, attempts: 1, finis…
+    1657|       });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure SANDBOX_CONTROL_IDENTITY_CHANGED
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure SANDBOX_CONTROL_IDENTITY_CHANGED
+AssertionError: expected { revision: 2, …(8) } to match object { status: 'unresolved', …(3) }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "attempts": 1,
+    "finishedAt": "2026-09-04T00:00:01.000Z",
+-   "reasonCode": "SANDBOX_CONTROL_IDENTITY_CHANGED",
++   "reasonCode": "SANDBOX_RECONCILIATION_UNCONFIRMED",
+    "status": "unresolved",
+  }
+
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:1655:35
+    1653|       });
+    1654|       const persisted = call(f, "read", record.plan.identity);
+    1655|       expect(persisted?.recovery).toMatchObject({
+       |                                   ^
+    1656|         status: "unresolved", reasonCode: expected, attempts: 1, finis…
+    1657|       });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure SANDBOX_CONTROL_BINDING_UNAVAILABLE
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure SANDBOX_CONTROL_BINDING_UNAVAILABLE
+AssertionError: expected { revision: 2, …(8) } to match object { status: 'unresolved', …(3) }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "attempts": 1,
+    "finishedAt": "2026-09-04T00:00:01.000Z",
+-   "reasonCode": "SANDBOX_CONTROL_BINDING_UNAVAILABLE",
++   "reasonCode": "SANDBOX_RECONCILIATION_UNCONFIRMED",
+    "status": "unresolved",
+  }
+
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:1655:35
+    1653|       });
+    1654|       const persisted = call(f, "read", record.plan.identity);
+    1655|       expect(persisted?.recovery).toMatchObject({
+       |                                   ^
+    1656|         status: "unresolved", reasonCode: expected, attempts: 1, finis…
+    1657|       });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure SANDBOX_CONTROL_EVIDENCE_CHANGED
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure SANDBOX_CONTROL_EVIDENCE_CHANGED
+AssertionError: expected { revision: 2, …(8) } to match object { status: 'unresolved', …(3) }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "attempts": 1,
+    "finishedAt": "2026-09-04T00:00:01.000Z",
+-   "reasonCode": "SANDBOX_CONTROL_EVIDENCE_CHANGED",
++   "reasonCode": "SANDBOX_RECONCILIATION_UNCONFIRMED",
+    "status": "unresolved",
+  }
+
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:1655:35
+    1653|       });
+    1654|       const persisted = call(f, "read", record.plan.identity);
+    1655|       expect(persisted?.recovery).toMatchObject({
+       |                                   ^
+    1656|         status: "unresolved", reasonCode: expected, attempts: 1, finis…
+    1657|       });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure SANDBOX_HOST_UNAVAILABLE
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure SANDBOX_HOST_UNAVAILABLE
+AssertionError: expected { revision: 2, …(8) } to match object { status: 'unresolved', …(3) }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "attempts": 1,
+    "finishedAt": "2026-09-04T00:00:01.000Z",
+-   "reasonCode": "SANDBOX_HOST_UNAVAILABLE",
++   "reasonCode": "SANDBOX_RECONCILIATION_UNCONFIRMED",
+    "status": "unresolved",
+  }
+
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:1655:35
+    1653|       });
+    1654|       const persisted = call(f, "read", record.plan.identity);
+    1655|       expect(persisted?.recovery).toMatchObject({
+       |                                   ^
+    1656|         status: "unresolved", reasonCode: expected, attempts: 1, finis…
+    1657|       });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  10 failed | 4 passed | 140 skipped (154)
+   Start at  11:54:34
+   Duration  3.74s (transform 1.06s, setup 0ms, import 1.66s, tests 1.98s, environment 0ms)

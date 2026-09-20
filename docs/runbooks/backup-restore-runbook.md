@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:3d70da7b4ade529765e7b8efa88f4136b3d214508a75faa71abab4ffbd2b9121"
+contract_sha256: "sha256:70cf363101149da107b8cabb819069b922956f4e1f212d3e9108b050e75bb4c0"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -267,6 +267,8 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 - 要求把同机恢复点当作 off-host disaster recovery、改变 authority、回滚外部副作用、绕过验证、扩大目标或删除其他恢复点。
 
 ## Troubleshooting
+
+资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束，不表示后台正在重试。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
 
 | 症状 | 安全诊断 | 停止或有界修复 |
 | --- | --- | --- |

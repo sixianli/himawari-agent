@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:26df9284b830a7d8c801b56a41b948bf70c03720bd4d7b1a058ad918fe0b7a67"
+contract_sha256: "sha256:85613ba160ccea1c018ff5f6ef3861fba8ef525001ca6eb03dee14d31ddf1687"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -368,6 +368,8 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 - 要求把本地安装通过等同 Mac/Hermes transfer、真实外部账户、public URL、paid model 或 v0.2 production-ready。
 
 ## Troubleshooting
+
+资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束，不表示后台正在重试。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
 
 Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最多 107 字节（不含终止 NUL）。启动在绑定前拒绝超长路径；应选择更短的独立 state root，不能依靠系统截断后的文件名或手工改 socket 名称继续运行。
 
