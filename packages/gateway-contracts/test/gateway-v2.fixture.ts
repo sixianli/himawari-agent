@@ -356,6 +356,23 @@ const operationsMessages = [
     canonicalHash: "sha256-file-operation-01",
     recentAuthenticationRef: "authentication-recent-01",
   }),
+  fixture("command", "workspace.copy.create", {
+    grantId: "directory-grant:1",
+    expectedGrantRevision: 1,
+    inputPathRefs: ["payload:path-a"],
+    allowedPathRefs: ["payload:path-a"],
+    spaceBudgetBytes: 4096,
+  }),
+  fixture("command", "workspace.copy.select", {
+    threadId: "thread-01",
+    workspaceRef: "payload:workspace-copy",
+    expectedRevision: null,
+  }),
+  fixture("command", "workspace.copy.prepare", {
+    workspaceRef: "payload:workspace-copy",
+    pathRefs: ["payload:path-a"],
+    expiresAt: "2026-12-01T00:00:00.000Z",
+  }),
   fixture("command", "workspace.stage", {
     workspaceSnapshotId: "workspace-snapshot-01",
     expectedTaskChangeSetRevision: 2,

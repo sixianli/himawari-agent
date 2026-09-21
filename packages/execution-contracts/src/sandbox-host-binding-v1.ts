@@ -18,7 +18,7 @@ import {
   type Schema,
 } from "./validation.ts";
 
-const absolutePath: Schema<string> = {
+export const sandboxHostPathSchema: Schema<string> = {
   parse(value, path = "$") {
     if (
       typeof value !== "string" ||
@@ -76,21 +76,21 @@ const shape = object({
   artifactDigest,
   hostId: machineString,
   profileRef: machineString,
-  runtimeRoot: absolutePath,
+  runtimeRoot: sandboxHostPathSchema,
   runtimeDigest: digest,
-  executable: object({ path: absolutePath, sha256: digest }),
-  runner: object({ path: absolutePath, sha256: digest }),
-  privateRoot: absolutePath,
+  executable: object({ path: sandboxHostPathSchema, sha256: digest }),
+  runner: object({ path: sandboxHostPathSchema, sha256: digest }),
+  privateRoot: sandboxHostPathSchema,
   roots: array(
     object({
       canonicalRootId: machineString,
-      canonicalPath: absolutePath,
+      canonicalPath: sandboxHostPathSchema,
       device: machineString,
       inode: machineString,
     }),
   ),
-  readOnlyToolchainPaths: array(absolutePath),
-  protectedPaths: array(absolutePath),
+  readOnlyToolchainPaths: array(sandboxHostPathSchema),
+  protectedPaths: array(sandboxHostPathSchema),
   allowedDomains: array(sandboxNetworkDomainSchema),
   maximumResourceCeiling: object({
     maxWallTimeMs: integer(1),

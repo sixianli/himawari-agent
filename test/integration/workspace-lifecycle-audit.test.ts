@@ -200,7 +200,7 @@ describe("workspace lifecycle read-only audit", () => {
     const result = auditWorkspaceLifecycle(f.input);
     expect(result).toMatchObject({
       mode: "read_only",
-      schemaSequence: 46,
+      schemaSequence: 47,
       liveHostVerified: false,
       repairEligible: false,
     });

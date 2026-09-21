@@ -124,3 +124,25 @@ it("requires an explicit foreground network-only deployment contract for private
   ])
     expect(() => sandboxOperationBindingsSchema.parse([changed])).toThrow();
 });
+
+it("keeps optional copy authority separate from source writes and fixed-file targets", () => {
+  const scope = {
+    ...input.scope,
+    operation: "bash",
+    workspaceCopy: {
+      canonicalRootId: "workspace-copy:fixture",
+      canonicalPath: "/private/workspace-copies/copy-abc/source",
+      device: "1",
+      inode: "2",
+    },
+  };
+  expect(sandboxScopeSchema.parse(scope).workspaceCopy?.inode).toBe("2");
+  expect(() => sandboxScopeSchema.parse({ ...scope, operation: "write" })).toThrow();
+  expect(() =>
+    sandboxScopeSchema.parse({
+      ...scope,
+      directoryGrant: { ...scope.directoryGrant, operations: ["read", "update"] },
+    }),
+  ).toThrow();
+  expect(() => sandboxScopeSchema.parse({ ...scope, fileTarget: {} })).toThrow();
+});

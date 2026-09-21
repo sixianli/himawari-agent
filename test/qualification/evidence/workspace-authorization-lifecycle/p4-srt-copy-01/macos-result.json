@@ -1,0 +1,122 @@
+{
+  "platform": "darwin",
+  "runtimeRoot": "/private/tmp/himawari-p4-srt-01/runtime-mac",
+  "sourceReadOnly": true,
+  "sourceUnchanged": true,
+  "copyUpdated": true,
+  "originalContentHidden": true,
+  "manifestUnchanged": true,
+  "attemptedHostWrite": true,
+  "copyOnlyClaims": [
+    {
+      "ref": "workspace:946f59a8e788c704cdacccf407b05c46c84add3737cdad9c1059ddaf765b7c31",
+      "hostId": "sandbox-host",
+      "canonicalRootId": "workspace-copy:4259a13aebbf7acdb134d2f3839dfcac30fd46d7b3372b7992f9b8936427933b",
+      "access": "write",
+      "lineage": [
+        {
+          "device": "16777233",
+          "inode": "2"
+        },
+        {
+          "device": "16777233",
+          "inode": "386813580"
+        },
+        {
+          "device": "16777233",
+          "inode": "386829509"
+        },
+        {
+          "device": "16777233",
+          "inode": "400004204"
+        },
+        {
+          "device": "16777233",
+          "inode": "400004205"
+        },
+        {
+          "device": "16777233",
+          "inode": "400004238"
+        },
+        {
+          "device": "16777233",
+          "inode": "400004239"
+        },
+        {
+          "device": "16777233",
+          "inode": "400004240"
+        }
+      ]
+    }
+  ],
+  "result": {
+    "schemaVersion": "sandbox-execution.v2",
+    "identity": {
+      "jobId": "jUg5sE9k1Em1hu8V9RkxrwRHO7UFdNtPy12CgYKVeg3s",
+      "attemptId": "sandbox-attempt:520e6c13d935126d61bbc57d464c6bc111ceed415d36d3f2d760a060a55e837b",
+      "invocationId": "runtime-tool:dd535d49ed9f2ee85707ac132da6242a8eec925645355a79e0893a4f94b4df09",
+      "receiptRef": "receipt-capability-invocation",
+      "hostId": "sandbox-host",
+      "ownerId": "owner-capability-invocation",
+      "agentId": "agent-capability-invocation",
+      "threadId": "thread-capability-invocation",
+      "runId": "run-capability-invocation",
+      "toolCallId": "tool-bash"
+    },
+    "environmentId": "environment:520e6c13d935126d61bbc57d464c6bc111ceed415d36d3f2d760a060a55e837b",
+    "policyDigest": "35dd43ed7b2ab8c19e2b0c0da015259297a4031d495584694f03fadb4472102f",
+    "contract": {
+      "ref": "pi-coding-tool",
+      "version": "1"
+    },
+    "occurredAt": "2026-09-21T13:01:16.913Z",
+    "kind": "result",
+    "output": {
+      "ref": "queued-live:12",
+      "digest": "2fa01a737836d2fceb2d0e51d154c1a5702ef3db5e3858e9e1c9c881e60e4441",
+      "byteLength": 1445
+    },
+    "completion": {
+      "type": "exit",
+      "exitCode": 0
+    }
+  },
+  "resource": {
+    "schemaVersion": "sandbox-execution.v2",
+    "environmentId": "environment:520e6c13d935126d61bbc57d464c6bc111ceed415d36d3f2d760a060a55e837b",
+    "creator": {
+      "jobId": "jUg5sE9k1Em1hu8V9RkxrwRHO7UFdNtPy12CgYKVeg3s",
+      "attemptId": "sandbox-attempt:520e6c13d935126d61bbc57d464c6bc111ceed415d36d3f2d760a060a55e837b",
+      "invocationId": "runtime-tool:dd535d49ed9f2ee85707ac132da6242a8eec925645355a79e0893a4f94b4df09",
+      "receiptRef": "receipt-capability-invocation",
+      "hostId": "sandbox-host",
+      "ownerId": "owner-capability-invocation",
+      "agentId": "agent-capability-invocation",
+      "threadId": "thread-capability-invocation",
+      "runId": "run-capability-invocation",
+      "toolCallId": "tool-bash"
+    },
+    "policyDigest": "35dd43ed7b2ab8c19e2b0c0da015259297a4031d495584694f03fadb4472102f",
+    "scopeDigest": "5033cc76484780d9fd054fc649d1a1b9bf5f3ee2e55e3b00ca1af5601c94cc33",
+    "sequence": 5,
+    "occurredAt": "2026-09-21T13:01:18.616Z",
+    "supervisor": {
+      "supervisorId": "cb048f69-4075-4651-9247-1f818abc6f5b",
+      "bootId": "939d74d5-9924-4d96-bf1c-8fee93153d05",
+      "epoch": 1
+    },
+    "resourceRef": null,
+    "status": {
+      "kind": "foreground"
+    },
+    "metrics": {
+      "samples": 10,
+      "cpuTimeMs": 1220,
+      "peakMemoryBytes": 189136896
+    },
+    "supervision": "lost",
+    "cleanup": "unknown",
+    "reasonCode": "SANDBOX_CONTROL_UNCONFIRMED"
+  },
+  "output": "{\"schemaVersion\":\"pi-result.v1\",\"tool\":\"bash\",\"content\":[{\"type\":\"text\",\"text\":\"Error opening /private/var/select/sh: Operation not permitted\\nError opening /private/var/select/sh: Operation not permitted\\ncat: ../../../../live-workspace/copy-input.txt: Operation not permitted\\nsource-read-denied\\nError opening /private/var/select/sh: Operation not permitted\\n/bin/sh: ../../../../live-workspace/copy-input.txt: Operation not permitted\\nsource-write-denied\\ncat: ../manifest.json: Operation not permitted\\nmetadata-read-denied\\nError opening /private/var/select/sh: Operation not permitted\\n/bin/sh: ../manifest.json: Operation not permitted\\ncopy-isolated\"}],\"details\":{},\"fullOutput\":null,\"isError\":false,\"commandExitCode\":0,\"verifiedWrite\":null,\"source\":{\"workspace\":\"/private/tmp/h-qh-X28BFE/live-private/workspace-copies/copy-fixture-u9clpa/source\",\"toolCallId\":\"tool-bash\",\"directoryGrantRef\":\"grant-fixture\",\"directoryGrantRevision\":1,\"parameters\":{\"command\":\"printf 'candidate result' > copy-input.txt; if /bin/sh -c '/bin/cat ../../../../live-workspace/copy-input.txt'; then exit 91; fi; printf 'source-read-denied\\n'; if /bin/sh -c 'echo corrupt >> ../../../../live-workspace/copy-input.txt'; then printf 'shadow-write-succeeded\\n'; else printf 'source-write-denied\\n'; fi; if /bin/cat ../manifest.json; then exit 93; fi; printf 'metadata-read-denied\\n'; /bin/sh -c 'echo corrupt >> ../manifest.json' || :; printf 'copy-isolated'\"}}}"
+}

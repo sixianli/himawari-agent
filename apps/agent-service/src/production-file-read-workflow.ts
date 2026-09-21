@@ -15,7 +15,10 @@ import {
   runtimeToolAuthorizationResult,
 } from "@himawari-agent/application";
 
+import type { SandboxWorkspaceCopy } from "@himawari-agent/execution-contracts";
+
 export interface FileReadBinding {
+  readonly workspaceCopy?: SandboxWorkspaceCopy;
   readonly workerInstanceId: string;
   readonly revision: number;
   readonly hostId: string;

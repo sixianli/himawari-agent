@@ -143,18 +143,18 @@ date: "2026-09-16"
 
 ### 当前批次完成条件：P4 剩余项
 
-P2、P3 的完成证据分别保留在[P2 完成验收](#p2-completed)与[P3 完成证据](#p3-completed)。下一次产品实施按下表推进 P4；本轮为复盘，不将规划写入视为产品实现。
+P2、P3 的完成证据分别保留在[P2 完成验收](#p2-completed)与[P3 完成证据](#p3-completed)。P4 已完成当前目录执行的双平台越界复验及副本保存后端的定向回归；实际入口与执行后端资格仍按[本批证据及剩余条件](#p4-remaining-evidence)区分，不将后端测试视为正式启用。
 
 | 项目 | 本批约束 |
 | --- | --- |
 | 原待办与验收 | [P4 七项及出口](#p4)，W08/W13/W20/W21/W26～W28、U06，按原验收映射完成剩余条件；先核对[既有纯联网局部实现](#p4-local)，复用仍有效的证据 |
 | 用户可观察结果 | 命令只能访问真实获准范围；普通目录与 Git 不改变权限语义；副本按需选择，应用时不覆盖范围外或用户后续改动；服务启动后仍保留资源负责人 |
-| 第一动作 | 按[执行路线更正](#p4-route-correction)核对 ADR 0025 和正式 Owner/Agent/Worker 调用者，区分候选数据管理与旧执行后端；先接通并验证 SRT 副本最小路径。已有当前目录探针仅在相关输入变化或发现覆盖缺口时重跑 |
+| 第一动作 | SRT 副本执行与 Owner 创建/选择入口已有定向和双平台证据，见[本批续接记录](#p4-srt-copy)。下一步接入保存时复用 P3 原 Run/Worker 的短时提交占用、取消和恢复；不得直接启用绕过队列的旧 `host.file.execute`，也不得为复用表结构伪造 Run/Handle |
 | 实施顺序 | ①复用有效的分类、当前目录/纯联网和文件保存证据，按 SRT/Worker 完成副本最小正式路径；②扩展普通目录、Git 当前输入、逐文件保存、冲突、撤权及取消/恢复回归；③验证端口、Git index、数据库、远端效果和长运行 owner 的实际责任；④定向与消费者通过后冻结，再执行完整交付验证 |
 | 关键前提 | 保留部分写授权不能升级为任意 Shell 的限制；Git 的未提交/未跟踪内容不能被 HEAD 替代；等待确认不占共享锁，唯一候选不因超时自动清理；不新增并行调度或文件协议 |
 | 实际验证入口 | 复用原命令执行/沙箱越界测试及权限、SQLite、Worker、文件协议回归；按正式入口核对夹具的准入至结果交付链。平台权限能力须有实际越界尝试证据，受控安装资格不能当作生产资格 |
 | 完成条件 | 七项剩余行为与原出口均有可重复自动回归及适用实际平台证据；定向及消费者检查通过后冻结输入，执行标准构建/测试与适用检查，完整完成后统一交付 |
-| 当前状态 | **P4 尚未完成。** 既有纯联网局部实现保留；本次仅更新复盘约束及续接顺序，未继续修改 P4 产品代码或执行新的 P4 验收 |
+| 当前状态 | **P4 尚未完成。** 当前目录边界和副本命令隔离已在 Mac/Hermes 实测；Owner 创建、选择、准备入口已装配，逐文件保存后端已有回归。剩余是将保存接入原执行队列、正式路径的取消/恢复与资源协调验收；Mac 副本任务仍保留 cleanup=unknown，不能宣称资源全部释放，见[本批续接记录](#p4-srt-copy) |
 
 [↑ 返回阅读导航](#contents)
 
@@ -363,10 +363,10 @@ P2、P3 的完成证据分别保留在[P2 完成验收](#p2-completed)与[P3 完
 
 [↑ 返回阅读导航](#contents)
 
-- [ ] 复用工具描述、命令 profile 和 Pi Operations，按受控文件工具、任意程序、远程服务确定执行方式。模型自报与工具注解不是权限凭据。
-- [ ] 将 Bash 的当前目录、读写及网络上限落实到现有沙箱；协调范围与真实可强制的上限一致。当前适配器禁止把部分写授权升级为任意 Shell 的检查必须保留，除非已有可强制的更窄执行路径和相应测试。
-- [ ] 平台无法精确限制时，给出更窄方案、明确的真实共享范围或按任务需要选择私有环境；禁止只登记文件 A 却允许命令写整个目录，也不强制所有命令使用副本。
-- [ ] 纯联网搜索与用户目录授权/挂载/claim 脱钩，私有临时区单独管理；将搜索结果保存成文件是另一个获准文件操作。
+- [x] 复用工具描述、命令 profile 和 Pi Operations，按受控文件工具、任意程序、远程服务确定执行方式。模型自报与工具注解不是权限凭据。
+- [x] 将 Bash 的当前目录、读写及网络上限落实到现有沙箱；协调范围与真实可强制的上限一致。当前适配器禁止把部分写授权升级为任意 Shell 的检查必须保留，除非已有可强制的更窄执行路径和相应测试。
+- [x] 平台无法精确限制时，给出更窄方案、明确的真实共享范围或按任务需要选择私有环境；禁止只登记文件 A 却允许命令写整个目录，也不强制所有命令使用副本。
+- [x] 纯联网搜索与用户目录授权/挂载/claim 脱钩，私有临时区单独管理；将搜索结果保存成文件是另一个获准文件操作。
 - [ ] 复用已具备资格的候选环境/Git 适配能力。普通目录采用受限内容/身份基线；Git worktree 需明确未提交与未跟踪输入的处理，不把 HEAD 误当用户当前状态。不修改 Pi 上游、不自动切换产品 Git 工作方式。
 - [ ] 可选副本只应用本次授权差异：检查基线/现状、必要时重生成、受控逐文件提交、独立读回；不整目录覆盖。候选结果等待确认不占共享锁，唯一结果不因超时被清理。
 - [ ] 端口、Git index、数据库与远端效果分别协调；长运行任务/服务显式保留 owner，启动返回不等于资源结束。
@@ -1308,3 +1308,50 @@ P2 六个原待办全部完成。执行中撤销按实际连接已经建立、SQ
 Mac 未能证明任意后代全部退出时，实际结论仍是 cleanup=unknown、workspaceBlocked=true、无永久释放回执；该结论保留并阻止不安全复用。这满足 P2 对撤销后阻断、受控停止、核实与事实保留的要求，并不完成 P1 的全平台释放资格。P6 完整生产登录/模型/网关联测及 P7 部署也仍保留在原阶段，没有把它们记成已完成。
 
 [本次统一证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-completion-01/README.md)对应全部六项，保留两种真实撤销/浏览器报告、最终真实文件验收、307 项消费者通过结果及测试执行错误。只有三个现有测试/资格文件变化；生产、依赖、构建输入与 `3ece389` 的标准基线一致，复用其构建和 4,056 项标准测试，以最终新检查组成验证，不机械重跑全套。真实文件筛选执行 1 项、另 9 项 skipped 为筛选结果，普通模式的 10 项已单独通过；原资格入口的 240 秒上限不变。类型、范围 Biome、CI policy、四份 Runbook 静态合同及严格文档检查通过；全库 format/lint 原有两份未跟踪原型问题保持，不声称托管 CI 或生产部署完成。
+
+
+<a id="p4-remaining-evidence"></a>
+
+### P4 当前目录实测与工作副本保存后端（尚未完成整个阶段）
+
+[↑ 返回当前批次完成条件](#current-batch-contract)
+
+本批复用原 Pi Operations、固定工具与命令 profile、SRT Job Host、候选清单、文件发布服务及 SQLite scoped state。没有增加第二套文件发布协议，也没有把模型注解当作权限凭据。当前完成范围如下：
+
+| 行为 | 实现和证据边界 |
+| --- | --- |
+| 当前目录、网络与子进程边界 | 持久探针 `packages/runtime-sandbox/scripts/probe-workspace-access.mjs` 调用已构建 Job Host；Mac 和 Hermes 分别运行只读、读写、纯私有目录三模式。真实尝试范围外读写、符号链接和子进程越界；网络用宿主监听器的成功连接作正对照，Linux 另外核对独立网络命名空间。六个模式均通过。进程树清理仍报告 `unknown`，不据此生成生产资格 |
+| Linux 私有目录启动 | 原 Shell 先输出 `.bashrc` 拒绝诊断，旧代码误把 stderr 第一行当证明帧，在用户代码开始前失败。现在按随机令牌识别证明，仍验证 PID/命名空间、1024 字节总上限及原期限；诊断不延长期限、不触发启动。保留失败前日志和假令牌回归 |
+| 普通目录与 Git 当前输入 | `WorkspaceCopyService` 通过获准读取捕获明确选择的文件、缺失目标、内容摘要和文件身份。Git dirty/untracked 输入照当前内容捕获；不从 HEAD 代替当前状态，不复制未选路径，不把 `.git` 元数据视为普通文件 |
+| 授权差异与逐文件保存 | `QualifiedCandidateWorkspace` 复用原隔离资格与清单，新增当前输入基线；选中差异复用原 create/update/move/trash，唯一且内容未变的改名使用 move，保留 inode。每次新保存检查目标、依赖、目录授权版本与根身份；不整目录覆盖，过期保留唯一候选 |
+| 部分结果与恢复 | 新增真实 SQLite 关闭/重开回归，保存先前逐文件结果与依赖。重复调用不覆盖后来的人工编辑；已完成移除的恢复只核验原 inode 与保留内容，不重新移除文件。真实文件/Git/SQLite 后端回归同时在 Mac 与 Hermes 通过 |
+| 旧程序边界 | Schema 47 只增加 writer 版本边界，保留已有行和迁移历史。旧 writer 必须拒绝新库，防止忽略副本授权/依赖条件。已扩展原只读审计兼容范围；没有迁移实际实例 |
+
+**尚未完成的正式链路：** 新 `workspace.copy.create/prepare` 已接入原 `HostWorkspaceGatewayV2ControlPlane` 并有 Owner 命令与原 `host.file.execute` 的集成回归；生产 HTTP 的 `createProductionApprovalGateway` 当前只安装审批与搜索授权操作，并未装配该副本服务。因此这些回归不证明已安装产品能够创建、运行和保存工作副本。需要沿实际 Owner/Agent/Worker 入口完成装配、短时文件提交占用、取消/恢复及长运行 owner 验收，不能直接把库内服务当作完整产品入口。
+
+**旧候选后端调查及更正：** 当时 Hermes 的旧 Linux provider 版本要求未满足，Mac 未安装旧 Apple provider 所需的 container。这些事实仅证明旧候选执行路径不可用；不能推出 P4 必须补装该后端。此前据此安排宿主准备的判断已撤回，后续以[执行路线更正](#p4-route-correction)及 ADR 0025 为准，优先复用现有 SRT/Worker。
+
+副本文件回归使用受控资格且明确拒绝命令执行，只证明文件后端；当前目录 SRT 探针也不证明副本完整路径。先接通创建、执行和受控保存，再验证真实入口的取消/恢复及资源协调。P4 最后三项仍未完成，不降低任何必要资格或回退至无约束 Shell。
+
+**本批验证证据：** [当前目录双平台结果](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-sandbox-01/result.json)、[P4 后端范围与未完成条件](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-remaining-01/result.json)、[冻结后的标准测试结果](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-remaining-01/standard-test-result.json)。标准构建/测试通过，254 文件、4,105 项，零失败、零跳过，发布扫描通过；随后归档的 45 份证据通过原公开产物扫描及归档字节读回。类型、任务格式/lint、边界、不变量、覆盖映射、秘密扫描、CI policy 和严格文档检查通过。全目录 `npm run check` 仍受两个此前已存在且未跟踪的原型 `verify.cjs` 格式/lint 问题影响；本批没有修改它们，不将任务检查通过写成全目录检查通过。
+
+第一次标准验证期间继续编辑源码，造成 `ARTIFACT_BUILD_INPUT_MISMATCH`，并让新增恢复回归读到旧实现；该轮无效且保留在[首次失败摘要](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-remaining-01/standard-first-attempt.json)。完成恢复修复、所有定向测试和最终文件审阅后，冻结 32 个任务文件，再执行完整构建与测试；结束时摘要全部匹配。后续沿用最终冻结输入，不把第一轮结果并入通过数量。
+
+**已撤回的安装准备：** 此前已下载 Apple container 1.2.0，核验摘要及[Apple 签名归档](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-remaining-01/raw-logs.tar.gz)，未安装或启动。管理员检查失败只反映安装权限，不能作为当前 SRT 路线的阻塞。本段保留历史事实；继续实施无需用户先安装该软件，也不据此安排 Hermes 旧候选 provider 升级。
+
+
+<a id="p4-srt-copy"></a>
+
+### P4 SRT 副本入口续接记录
+
+[↑ 返回当前批次完成条件](#current-batch-contract)
+
+本次将候选数据管理抽出为 `WorkspaceCopyStore`；旧 `QualifiedCandidateWorkspace` 的执行资格断言保留。生产 HTTP 在已有 Bash 配置满足条件时安装 `workspace.copy.create/select/prepare`，Owner 鉴权、会话归属、来源目录授权版本与状态修订检查均沿用原机制。选择的副本只供前台 Bash 使用，不能把背景服务、子委托或原目录文件工具静默转入副本。原 ActionPolicy、Handle、Worker 与 SRT 路径冻结副本身份，协调占用只包含副本。清除选择恢复原目录路由。
+
+真实探针分别在 Mac 与 Hermes 调用生产 Worker 的 SRT 执行驱动：副本写入成功，尝试读取原文件和管理清单失败；尝试写入后，独立读回原文件及清单确认不变。Linux 隐藏未授权路径后可在隔离视图创建同名文件，不能把命令写入成功解释为宿主文件被修改；测试保留实际写入尝试，以宿主读回判定。证据为 [Mac 结果](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-srt-copy-01/macos-result.json)和 [Linux 结果](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-srt-copy-01/linux-result.json)。这些使用受控安装资格、实际 SRT 和文件系统；不是生产资格证书，也未运行真实模型。Mac 的监督/清理仍为 `lost/unknown`，Linux 本次为 `released/confirmed`，不能合并成全平台释放保证。
+
+本轮发现的验收前提已直接放入原测试：固定 Bash 必须存在且可执行；Linux SRT bridge socket 路径必须不超过平台上限。首次 Linux 测试把沙箱影子文件的写入成功当成隔离失败，后经宿主读回及同一测试在 `/data` 的观察确认是测试判据错误；保留失败日志与更正，不放宽“原文件不变”的断言。另一次启动失败确认来自 SRT bridge socket 路径过长，使用短的任务专属数据盘目录解决，未改系统配置。
+
+**保存路径仍未完成：** `prepare` 只产生受保护的逐文件操作计划，不修改原目录。生产入口尚未安装旧 `host.file.execute`，因为该入口直接调用文件服务，不能证明遵守 P3 队列。现有队列绑定真实 Run/Handle 和 Worker 生命周期；继续实施应复用这些真实身份及发布/核验/恢复职责，不为了让数据库接受记录而构造虚假的沙箱执行。接通正式保存及其相关资源验收之前，P4 最后三项保持未完成。
+
+**本轮集中验证：** [标准本地构建与测试](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-srt-copy-01/standard-test-result.json)通过 255 文件、4,111 项，零失败、零跳过；40 个改动产品/测试输入前后摘要一致。类型、任务范围格式/lint、依赖边界、需求映射、不变量、秘密扫描、CI policy、四份 Runbook 静态合同和严格文档检查通过。全目录 check 仍受此前两份未跟踪原型脚本格式问题影响；没有修改这些文件。双平台受控资格与实际执行范围、各次失败及复用命令见[本批证据说明](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-srt-copy-01/README.md)。

@@ -38,6 +38,7 @@ import {
   type SandboxHostBinding,
   type SandboxOperationBinding,
   type SandboxScope,
+  type SandboxWorkspaceCopy,
   sandboxExecutionPlanCandidateSchema,
   sandboxExecutionPlanCandidateV2Schema,
   sandboxExecutionReservationSchema,
@@ -324,7 +325,9 @@ export async function createProductionSandboxServices(options: {
           ? raw.directoryGrant !== null
           : raw.directoryGrant === null ||
             descriptor.directoryOperations.some(
-              (op) => !raw.directoryGrant?.operations.includes(op),
+              (op) =>
+                !(raw.schemaVersion === "sandbox-scope.v1" && raw.workspaceCopy) &&
+                !raw.directoryGrant?.operations.includes(op),
             ) ||
             raw.directoryGrant.operations.some(
               (op) => !descriptor.directoryOperations.includes(op),
@@ -332,6 +335,15 @@ export async function createProductionSandboxServices(options: {
         (descriptor.network === "disabled" && raw.networkAuthorizationRef !== null)
       )
         throw new Error("SANDBOX_OPERATION_SCOPE_CHANGED");
+      if (
+        raw.schemaVersion === "sandbox-scope.v1" &&
+        raw.workspaceCopy &&
+        (plan.operation !== "bash" ||
+          plan.mode !== "foreground" ||
+          plan.operationContract.kind !== "command" ||
+          descriptor.scopeSource !== "grant_targets")
+      )
+        throw new Error("SANDBOX_COPY_CONTRACT_CHANGED");
       if (descriptor.scopeSource === "grant_targets" || descriptor.scopeSource === "private_temp") {
         const { intent } = await resolveSandboxActionGrant({
           plan,
@@ -339,6 +351,14 @@ export async function createProductionSandboxServices(options: {
           now: () => clock.now(),
         });
         const directories = intent.targets.filter((item) => item.type === "directory-grant");
+        const copies = intent.targets.filter((item) => item.type === "workspace-copy");
+        const copy = raw.schemaVersion === "sandbox-scope.v1" ? raw.workspaceCopy : undefined;
+        if (
+          copy
+            ? copies.length !== 1 || copies[0]?.ref !== copy.canonicalRootId
+            : copies.length !== 0
+        )
+          throw new Error("SANDBOX_COPY_AUTHORIZATION_CHANGED");
         if (
           (descriptor.scopeSource === "private_temp"
             ? intent.targets.some((item) =>
@@ -689,6 +709,7 @@ export async function createProductionSandboxServices(options: {
       ),
     ).toISOString();
     let grant: HostDirectoryGrant | undefined;
+    let workspaceCopy: SandboxWorkspaceCopy | undefined;
     if (descriptor.scopeSource === "file_workflow") {
       const file = await options.fileRead.binding(parentCall ?? call);
       if (
@@ -719,6 +740,24 @@ export async function createProductionSandboxServices(options: {
         now: () => clock.now(),
       });
       const targets = intent.targets.filter((item) => item.type === "directory-grant");
+      const copyTargets = intent.targets.filter((item) => item.type === "workspace-copy");
+      if (copyTargets.length) {
+        const file = await options.fileRead.binding(parentCall ?? call);
+        if (
+          descriptor.scopeSource !== "grant_targets" ||
+          input.operation !== "bash" ||
+          descriptor.mode !== "foreground" ||
+          descriptor.contract.kind !== "command" ||
+          !file?.grant ||
+          !file.workspaceCopy ||
+          copyTargets.length !== 1 ||
+          copyTargets[0]?.ref !== file.workspaceCopy.canonicalRootId ||
+          targets.length !== 1 ||
+          targets[0]?.ref !== file.grant.id
+        )
+          throw new Error("SANDBOX_COPY_BINDING_CHANGED");
+        workspaceCopy = file.workspaceCopy;
+      }
       if (
         (descriptor.scopeSource === "private_temp"
           ? intent.targets.some((item) =>
@@ -767,9 +806,10 @@ export async function createProductionSandboxServices(options: {
             revision: grant.revision,
             canonicalRootId: grant.canonicalRootId,
             authorizationRef: grant.authorizationRef,
-            operations: descriptor.directoryOperations,
+            operations: workspaceCopy ? ["read"] : descriptor.directoryOperations,
           }
         : null,
+      ...(workspaceCopy ? { workspaceCopy } : {}),
       networkAuthorizationRef:
         descriptor.network === "grant_targets" ? handle.authorizationRef : null,
       expiresAt,
@@ -781,7 +821,11 @@ export async function createProductionSandboxServices(options: {
         grant.hostId !== hostId ||
         grant.pathPolicy !== "same_filesystem_no_links" ||
         grant.mountPolicy !== "fixed_device" ||
-        descriptor.directoryOperations.some((operation) => !grant.operations.includes(operation)))
+        (workspaceCopy
+          ? !grant.operations.includes("read")
+          : descriptor.directoryOperations.some(
+              (operation) => !grant.operations.includes(operation),
+            )))
     )
       throw new Error("SANDBOX_DIRECTORY_GRANT_UNAVAILABLE");
     const retainedScope = await artifacts().lookup({
@@ -1039,6 +1083,7 @@ export async function createProductionSandboxServices(options: {
         const inherited = await resolve(prior);
         if (
           inherited.scope.schemaVersion !== "sandbox-scope.v1" ||
+          inherited.scope.workspaceCopy !== undefined ||
           descriptor.scopeSource === "private_temp"
         )
           throw new Error("SANDBOX_CHILD_SCOPE_UNSUPPORTED");

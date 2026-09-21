@@ -65,6 +65,10 @@ import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
 } from "./production-approval-gateway.js";
+import {
+  createProductionWorkspaceCopies,
+  PRODUCTION_COPY_OPERATIONS,
+} from "./production-workspace-copies.js";
 
 type OwnerId = PayloadProtectionRequest["ownerId"];
 type AgentId = PayloadProtectionRequest["agentId"];
@@ -466,6 +470,7 @@ function routeOptions(
   authority: ProductAuthorityFence,
   modelCatalog: ProductionHttpCompositionOptions["modelCatalog"],
   canCancelRun: boolean,
+  workspaceCopiesAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -490,7 +495,10 @@ function routeOptions(
       executionStateAvailable: true,
       canCancelRun,
       availableModels: modelCatalog ?? [],
-      installedGatewayV2Operations: PRODUCTION_APPROVAL_OPERATIONS,
+      installedGatewayV2Operations: [
+        ...PRODUCTION_APPROVAL_OPERATIONS,
+        ...(workspaceCopiesAvailable ? PRODUCTION_COPY_OPERATIONS : []),
+      ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
       authorityEpoch: authority.authorityEpoch,
@@ -775,6 +783,15 @@ export async function createProductionHttpComposition(
   });
   const health = options.health ?? new RuntimeHealthModel({ publicMode: true, now: clock });
   const metrics = new RuntimeMetricsRegistry({ now: clock });
+  const workspaceCopies = options.executionAuthority
+    ? await createProductionWorkspaceCopies({
+        configuration,
+        repository,
+        protector: payloadProtector,
+        authority: options.executionAuthority,
+        clock: { now: clock },
+      })
+    : undefined;
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     repository,
@@ -782,6 +799,7 @@ export async function createProductionHttpComposition(
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
+    ...(workspaceCopies ? { workspaceCopies } : {}),
     ...(options.executionAuthority ? { executionAuthority: options.executionAuthority } : {}),
   });
   const app = buildHttpGatewayServer({
@@ -798,6 +816,7 @@ export async function createProductionHttpComposition(
       authority,
       options.modelCatalog,
       Boolean(options.cancelRun),
+      Boolean(workspaceCopies),
     ),
     gatewayV2,
     threadSearch,

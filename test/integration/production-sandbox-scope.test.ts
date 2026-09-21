@@ -682,3 +682,24 @@ it.each(["stopRun", "recovery"] as const)(
     await expect(f.services.brokerV2.verifyStart(plan)).rejects.toThrow();
   },
 );
+
+it("admits a source-read-only copy through production SRT scope resolution with copy-only occupancy", async () => {
+  const f = await productionSandboxScope(
+    { ...descriptor("bash"), network: "disabled" },
+    (value) => value,
+    { workspaceCopy: true, realFileIdentity: true, directoryOperations: ["read"] },
+  );
+  cleanups.push(f.close);
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("v2 required");
+  expect(f.workspaceCopy).toBeDefined();
+  if (!f.workspaceCopy) throw new Error("Copy fixture missing");
+  expect(prepared.workspaces).toHaveLength(1);
+  expect(prepared.workspaces[0]).toMatchObject({
+    canonicalRootId: f.workspaceCopy.root.canonicalRootId,
+    access: "write",
+  });
+  expect(prepared.workspaces[0]?.canonicalRootId).not.toBe(f.fileBinding.grant.canonicalRootId);
+  await revokeFixtureDirectoryGrant(f.repository, f.fileBinding.grant.id, T1);
+  await expect(f.services.runtime.prepare(f.input, f.call)).rejects.toThrow();
+});

@@ -1,0 +1,53 @@
+{
+  "scope": "P4 partial implementation and verification",
+  "stageComplete": false,
+  "standard": {
+    "status": "local_passed",
+    "files": 254,
+    "passed": 4105,
+    "failed": 0,
+    "skipped": 0,
+    "publicationFailures": 0,
+    "report": "standard-test-result.json"
+  },
+  "platformFileTests": {
+    "macos": 20,
+    "linux": 20
+  },
+  "checks": {
+    "taskFormat": "passed",
+    "taskLint": "passed",
+    "types": "passed",
+    "boundaries": "passed",
+    "invariants": "passed",
+    "coverageMapping": "passed",
+    "secrets": "passed",
+    "ciPolicy": "passed",
+    "fullNpmCheck": "blocked_by_two_preexisting_untracked_prototype_verify_cjs_files"
+  },
+  "sourceFreezeVerified": true,
+  "firstStandardAttempt": {
+    "status": "failed",
+    "cause": "Source changed during validation, invalidating install artifacts and mixing the new recovery test with old code",
+    "report": "standard-first-attempt.json"
+  },
+  "remaining": [
+    "Qualified candidate command execution environment",
+    "Installed Owner/Agent/Worker copy entrypoint and short publication occupancy",
+    "Resource coordination and long-running owner acceptance through that installed entrypoint"
+  ],
+  "environment": {
+    "hermesConnected": true,
+    "hermesBubblewrap": "0.6.1",
+    "hermesPrlimit": "2.37.2",
+    "requiredLinux": "bubblewrap 0.11.2 and prlimit >=2.38",
+    "macContainerInstalled": false,
+    "requiredMac": "Apple container 1.2.0 plus digest-pinned image",
+    "macAdministratorCheck": "sudo: a password is required",
+    "preparedInstallerSha256": "d140d4076ff0593d6b4f7c58722717b2abe87d75452cfe0a203792ba7f48f07c"
+  },
+  "limits": [
+    "Copy tests use controlled qualification and do not execute candidate commands",
+    "No production installation, qualification, database migration or push was performed"
+  ]
+}

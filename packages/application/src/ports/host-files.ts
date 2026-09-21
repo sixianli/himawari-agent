@@ -63,6 +63,14 @@ export interface ResolvedHostFileReadTarget {
   readonly observedAt: string;
 }
 
+export interface FileCopyDependency {
+  readonly path: string;
+  readonly identity: HostFileIdentity | null;
+  readonly digest: string | null;
+  /** Earlier save in the same copy batch; only its verified publication may replace this baseline. */
+  readonly priorOperationRef?: string;
+}
+
 export interface PreparedFileOperation {
   readonly id: string;
   readonly revision: number;
@@ -83,6 +91,8 @@ export interface PreparedFileOperation {
   readonly status: "prepared" | "executing" | "verified" | "invalidated" | "failed";
   /** Persisted before publishing; matching bytes alone never establish operation ownership. */
   readonly publication?: HostFilePublication;
+  readonly copyDependencies?: readonly FileCopyDependency[];
+  readonly copyAuthority?: { readonly grantRevision: number; readonly canonicalRootId: string };
 }
 
 export interface HostFilePublication {

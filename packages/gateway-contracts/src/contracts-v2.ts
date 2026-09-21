@@ -1,17 +1,17 @@
 import {
-  ContractValidationError,
-  type InferSchema,
-  type Schema,
   array,
-  boundedString,
   booleanValue,
+  boundedString,
+  ContractValidationError,
   enumeration,
+  type InferSchema,
   integer,
   literal,
   machineString,
   nullable,
   object,
   parseJson,
+  type Schema,
   timestamp,
 } from "./validation.js";
 
@@ -36,6 +36,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "capability.rollback",
   "host.file.prepare",
   "host.file.execute",
+  "workspace.copy.create",
+  "workspace.copy.prepare",
+  "workspace.copy.select",
   "workspace.stage",
   "workspace.commit",
   "suggestion.respond",
@@ -408,6 +411,35 @@ export const executeHostFileCommandSchema = object({
     operation: hostFileOperationSchema,
     canonicalHash: machineString,
     recentAuthenticationRef: nullable(machineString),
+  }),
+});
+
+export const createWorkspaceCopyCommandSchema = object({
+  ...commandEnvelope("workspace.copy.create"),
+  payload: object({
+    grantId: machineString,
+    expectedGrantRevision: integer(1),
+    inputPathRefs: array(machineString),
+    allowedPathRefs: array(machineString),
+    spaceBudgetBytes: integer(1),
+  }),
+});
+
+export const selectWorkspaceCopyCommandSchema = object({
+  ...commandEnvelope("workspace.copy.select"),
+  payload: object({
+    threadId: machineString,
+    workspaceRef: nullable(machineString),
+    expectedRevision: nullable(integer(1)),
+  }),
+});
+
+export const prepareWorkspaceCopyCommandSchema = object({
+  ...commandEnvelope("workspace.copy.prepare"),
+  payload: object({
+    workspaceRef: machineString,
+    pathRefs: array(machineString),
+    expiresAt: timestamp,
   }),
 });
 
@@ -1285,6 +1317,9 @@ const schemasByType = {
   "capability.rollback": rollbackCapabilityCommandSchema,
   "host.file.prepare": prepareHostFileCommandSchema,
   "host.file.execute": executeHostFileCommandSchema,
+  "workspace.copy.create": createWorkspaceCopyCommandSchema,
+  "workspace.copy.prepare": prepareWorkspaceCopyCommandSchema,
+  "workspace.copy.select": selectWorkspaceCopyCommandSchema,
   "workspace.stage": stageWorkspaceCommandSchema,
   "workspace.commit": commitWorkspaceCommandSchema,
   "suggestion.respond": respondSuggestionCommandSchema,

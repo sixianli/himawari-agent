@@ -138,7 +138,17 @@ try {
           hostId,
           canonicalRootId: input.scope.directoryGrant.canonicalRootId,
           displayPath: input.workspace,
-          operations: input.scope.directoryGrant.operations,
+          operations: input.scope.workspaceCopy
+            ? ([
+                "read",
+                "create",
+                "update",
+                "move",
+                "trash",
+                "restore",
+                "permanent_delete",
+              ] as const)
+            : input.scope.directoryGrant.operations,
           authorizationRef: input.scope.directoryGrant.authorizationRef,
           expiresAt: input.scope.expiresAt,
           revokedAt: null,

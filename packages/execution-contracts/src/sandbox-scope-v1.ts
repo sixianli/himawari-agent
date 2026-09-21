@@ -1,4 +1,4 @@
-import { sandboxNetworkDomainSchema } from "./sandbox-host-binding-v1.ts";
+import { sandboxNetworkDomainSchema, sandboxHostPathSchema } from "./sandbox-host-binding-v1.ts";
 import {
   array,
   ContractValidationError,
@@ -168,7 +168,18 @@ export const sandboxDirectoryMoveSchema = object({
 });
 export type SandboxDirectoryMove = InferSchema<typeof sandboxDirectoryMoveSchema>;
 
+/** Agent-authenticated copy directory. Source read authority stays in directoryGrant;
+ * this root never grants write access to the source. The host validates its private location. */
+export const sandboxWorkspaceCopySchema = object({
+  canonicalRootId: machineString,
+  canonicalPath: sandboxHostPathSchema,
+  device: machineString,
+  inode: machineString,
+});
+export type SandboxWorkspaceCopy = InferSchema<typeof sandboxWorkspaceCopySchema>;
+
 export type SandboxScope = InferSchema<typeof sandboxScopeShape> & {
+  readonly workspaceCopy?: SandboxWorkspaceCopy;
   readonly fileTarget?: SandboxFileTarget;
   readonly preparedFile?: SandboxPreparedFile;
   readonly directoryMove?: SandboxDirectoryMove;
@@ -179,8 +190,21 @@ export const sandboxScopeSchema: Schema<SandboxScope> = {
   parse(value, path = "$") {
     if (!value || typeof value !== "object" || Array.isArray(value))
       throw new ContractValidationError(path, "invalid sandbox scope");
-    const { fileTarget, preparedFile, directoryMove, ...base } = value as Record<string, unknown>;
+    const { fileTarget, preparedFile, directoryMove, workspaceCopy, ...base } = value as Record<
+      string,
+      unknown
+    >;
     const scope = sandboxScopeShape.parse(base, path);
+    if (
+      workspaceCopy !== undefined &&
+      (scope.operation !== "bash" ||
+        fileTarget !== undefined ||
+        preparedFile !== undefined ||
+        directoryMove !== undefined ||
+        scope.directoryGrant.operations.length !== 1 ||
+        scope.directoryGrant.operations[0] !== "read")
+    )
+      throw new ContractValidationError(path, "working copy requires a source-read Bash scope");
     if (
       directoryMove !== undefined &&
       (scope.operation !== "move_directory" ||
@@ -195,6 +219,11 @@ export const sandboxScopeSchema: Schema<SandboxScope> = {
       throw new ContractValidationError(path, "prepared file requires a fixed write target");
     return Object.freeze({
       ...scope,
+      ...(workspaceCopy === undefined
+        ? {}
+        : {
+            workspaceCopy: sandboxWorkspaceCopySchema.parse(workspaceCopy, `${path}.workspaceCopy`),
+          }),
       ...(directoryMove === undefined
         ? {}
         : {

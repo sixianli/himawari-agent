@@ -13,6 +13,8 @@ import {
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
 
+import { sandboxWorkspaceCopySchema } from "@himawari-agent/execution-contracts";
+
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
 
@@ -138,6 +140,31 @@ export function createProductionFileReadServices(options: {
       const grant = stored?.value as unknown as HostDirectoryGrant | undefined;
       if (!stored || !grant || grant.id !== route.grantId || grant.hostId !== route.hostId)
         return undefined;
+      const selection = await repository.readScopedState(
+        configuration.ownerId,
+        configuration.agentId,
+        `workspace-copy-selection:${context.threadId}`,
+      );
+      if (
+        selection?.value["workspaceRef"] !== undefined &&
+        selection.value["workspaceRef"] !== null
+      ) {
+        const selected = selection.value;
+        if (
+          route !== coding ||
+          call.capabilityRef !== `${coding.capabilityRef}.bash` ||
+          selected["grantId"] !== grant.id ||
+          selected["grantRevision"] !== grant.revision ||
+          selected["hostId"] !== grant.hostId
+        )
+          return undefined;
+        return {
+          ...common,
+          revision: stored.revision,
+          grant,
+          workspaceCopy: sandboxWorkspaceCopySchema.parse(selected["root"]),
+        };
+      }
       return { ...common, revision: stored.revision, grant };
     },
     authorize: async (intent, signal) => {

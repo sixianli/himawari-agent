@@ -525,3 +525,49 @@ it("moves a real directory without overwrite and recovers inode-bound results wi
   await mkdir(path.join(root.canonicalPath, "archive"));
   await expect(journal.recover()).rejects.toThrow("RESULT_UNKNOWN");
 });
+
+it("claims only the authenticated private copy and rejects arbitrary or replaced directories", async () => {
+  const input = await fixture();
+  const copyPath = path.join(
+    input.binding.privateRoot,
+    "workspace-copies",
+    "copy-abcdef",
+    "source",
+  );
+  await mkdir(copyPath, { recursive: true, mode: 0o700 });
+  const info = await stat(copyPath);
+  const scope = sandboxScopeSchema.parse({
+    ...scopeFor(input),
+    operation: "bash",
+    workspaceCopy: {
+      canonicalRootId: "workspace-copy:fixture",
+      canonicalPath: copyPath,
+      device: String(info.dev),
+      inode: String(info.ino),
+    },
+  });
+  const claim = await resolveSandboxWorkspaceClaim({ ...input, scope });
+  expect(claim.access).toBe("write");
+  expect(claim.canonicalRootId).toBe("workspace-copy:fixture");
+  expect(claim.lineage.at(-1)).toEqual({ device: String(info.dev), inode: String(info.ino) });
+  const copy = scope.workspaceCopy;
+  const source = input.binding.roots[0];
+  if (!copy || !source) throw new Error("Copy fixture root missing");
+  await expect(
+    resolveSandboxWorkspaceClaim({
+      ...input,
+      scope: {
+        ...scope,
+        workspaceCopy: {
+          ...copy,
+          canonicalPath: source.canonicalPath,
+        },
+      },
+    }),
+  ).rejects.toThrow("COPY_ROOT_INVALID");
+  await rename(copyPath, copyPath + "-old");
+  await mkdir(copyPath, { mode: 0o700 });
+  await expect(resolveSandboxWorkspaceClaim({ ...input, scope })).rejects.toThrow(
+    "COPY_ROOT_CHANGED",
+  );
+});

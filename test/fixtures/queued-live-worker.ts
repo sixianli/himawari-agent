@@ -161,7 +161,7 @@ export async function queuedLiveWorker(
         },
       }) as ExecutionV2Request,
     );
-    return { worker, close, directory };
+    return { worker, sandbox, close, directory };
   } catch (error) {
     await close();
     throw error;

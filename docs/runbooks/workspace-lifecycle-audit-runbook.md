@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: standard
-contract_sha256: "sha256:5d1d7a87b60214078d3c78dff90f93fb72e6cba27afc98c290aa1a821a8e2166"
+contract_sha256: "sha256:0f41d7b11a74236bc524af3c4c0cef2f23a6e92a9ef189f837138879747316cc"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-19"
@@ -23,7 +23,7 @@ date: "2026-09-19"
 
 ## Scope
 
-本流程读取 Schema 28～46 的工作区占用、执行和排队元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
+本流程读取 Schema 28～47 的工作区占用、执行和排队元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
 
 Schema 39 的自动审查记录不属于这三个工作区分区；空列表不证明没有审查或授权记录。
 

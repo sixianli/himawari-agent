@@ -17,6 +17,8 @@ import type {
 } from "@himawari-agent/execution-contracts";
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
+  ConstrainedHostFileSystem,
+  WorkspaceCopyStore,
   digestSandboxRuntime,
   PayloadUdsClient,
   PayloadUdsServer,
@@ -48,6 +50,7 @@ export async function productionSandboxScope(
   descriptor: SandboxOperationBinding,
   changeIntent: (intent: GovernedActionIntent) => GovernedActionIntent = (value) => value,
   options: {
+    readonly workspaceCopy?: boolean;
     readonly resourceCeiling?: ConsumeCapabilityInvocationInput["resourceCeiling"];
     readonly legacyFileRead?: boolean;
     readonly piParameters?: Readonly<Record<string, unknown>>;
@@ -55,6 +58,7 @@ export async function productionSandboxScope(
     readonly directoryOperations?: readonly HostFileOperationKind[];
     readonly fixedFileCompletionQualification?: boolean;
     readonly piRuntimeRoot?: string;
+    readonly liveHostParent?: string;
     readonly authority?: () => CapabilityInvocationAuthority;
     readonly seedRuntimeIntent?: boolean;
     readonly realRun?: boolean;
@@ -87,7 +91,9 @@ export async function productionSandboxScope(
     .prepare("UPDATE capability_handles SET id=?, authorization_ref=?, record_json=? WHERE id=?")
     .run(h.ref, h.authorizationRef, JSON.stringify(h), f.plan.handleRef);
   // Real JobHost control sockets must fit the platform's Unix socket path limit.
-  const liveHostRoot = options.piRuntimeRoot ? await mkdtemp("/tmp/h-qh-") : undefined;
+  const liveHostRoot = options.piRuntimeRoot
+    ? await mkdtemp(options.liveHostParent ? `${options.liveHostParent}/h-` : "/tmp/h-qh-")
+    : undefined;
   const host = await macSandboxDeployment(
     liveHostRoot ?? f.resource.stateRoot,
     {
@@ -193,6 +199,39 @@ export async function productionSandboxScope(
     minimumFreeBytes: 0,
     now: () => T1,
   });
+  let workspaceCopy: Awaited<ReturnType<WorkspaceCopyStore["describeCopy"]>> | undefined;
+  if (options.workspaceCopy) {
+    await writeFile(`${directory.displayPath}/copy-input.txt`, "current dirty input");
+    const platform = new ConstrainedHostFileSystem();
+    const identity = await platform.inspect(directory, "copy-input.txt");
+    if (!identity) throw new Error("copy input missing");
+    const bytes = await platform.read(directory, "copy-input.txt", 4096, identity);
+    const copies = new WorkspaceCopyStore({
+      candidateRoot: `${entry.binding.value.privateRoot}/workspace-copies`,
+      protectPayload: async () => {
+        throw new Error("diff protection unused in scope fixture");
+      },
+    });
+    const ref = await copies.createFromSnapshot({
+      candidateId: "copy-fixture",
+      baseline: {
+        grantId: directory.id,
+        grantRevision: directory.revision,
+        canonicalRootId: directory.canonicalRootId,
+        files: [
+          {
+            path: "copy-input.txt",
+            identity,
+            digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+          },
+        ],
+      },
+      files: [{ path: "copy-input.txt", bytes }],
+      allowedPaths: ["copy-input.txt"],
+      spaceBudgetBytes: 4096,
+    });
+    workspaceCopy = await copies.describeCopy(ref);
+  }
   const model: ProductConfiguration["modelDescriptors"][number] = {
     ref: "model-fixture",
     role: "primary",
@@ -223,6 +262,9 @@ export async function productionSandboxScope(
     targets: [
       { type: "directory-grant", ref: directory.id },
       { type: "host", ref: host.binding.hostId },
+      ...(workspaceCopy
+        ? [{ type: "workspace-copy", ref: workspaceCopy.root.canonicalRootId }]
+        : []),
       ...(descriptor.network === "grant_targets"
         ? [{ type: "network-domain", ref: "example.com:443" }]
         : []),
@@ -362,6 +404,7 @@ export async function productionSandboxScope(
       },
     });
   const fileBinding = {
+    ...(workspaceCopy ? { workspaceCopy: workspaceCopy.root } : {}),
     workerInstanceId: "worker-instance-capability-invocation",
     revision: 1,
     hostId: host.binding.hostId,
@@ -373,7 +416,8 @@ export async function productionSandboxScope(
     modelRef: model.ref,
     modelIdentity: configuredModelDisclosureIdentity(model),
   };
-  let fileBindingAvailable = options.legacyFileRead || descriptor.scopeSource === "file_workflow";
+  let fileBindingAvailable =
+    options.workspaceCopy || options.legacyFileRead || descriptor.scopeSource === "file_workflow";
   if (options.piParameters)
     await repository.payloadStore(OWNER_ID, AGENT_ID).put(
       await f.protector.protect({
@@ -494,6 +538,7 @@ export async function productionSandboxScope(
   };
   return {
     capabilityDeployment,
+    workspaceCopy,
     connect,
     model,
     setAfterResolve: (hook: () => Promise<void>) => {

@@ -1,0 +1,128 @@
+{
+  "platform": "linux",
+  "runtimeRoot": "/data/himawari-p4-20260921-01/runtime-srt-copy",
+  "sourceReadOnly": true,
+  "sourceUnchanged": true,
+  "copyUpdated": true,
+  "originalContentHidden": true,
+  "manifestUnchanged": true,
+  "attemptedHostWrite": true,
+  "copyOnlyClaims": [
+    {
+      "ref": "workspace:f18fd44962ebb43ed340394e61cb0c2d72476ca29d314c037e62a57f05f35005",
+      "hostId": "sandbox-host",
+      "canonicalRootId": "workspace-copy:3966d3656ceae604557b054796d5d44424b3b8c2666c709dd4ab7ebde7e87765",
+      "access": "write",
+      "lineage": [
+        {
+          "device": "66306",
+          "inode": "2"
+        },
+        {
+          "device": "2049",
+          "inode": "2"
+        },
+        {
+          "device": "2049",
+          "inode": "21889025"
+        },
+        {
+          "device": "2049",
+          "inode": "21889028"
+        },
+        {
+          "device": "2049",
+          "inode": "21889035"
+        },
+        {
+          "device": "2049",
+          "inode": "21889036"
+        },
+        {
+          "device": "2049",
+          "inode": "21889037"
+        }
+      ]
+    }
+  ],
+  "result": {
+    "schemaVersion": "sandbox-execution.v2",
+    "identity": {
+      "jobId": "jUg5sE9k1Em1hu8V9RkxrwRHO7UFdNtPy12CgYKVeg3s",
+      "attemptId": "sandbox-attempt:520e6c13d935126d61bbc57d464c6bc111ceed415d36d3f2d760a060a55e837b",
+      "invocationId": "runtime-tool:dd535d49ed9f2ee85707ac132da6242a8eec925645355a79e0893a4f94b4df09",
+      "receiptRef": "receipt-capability-invocation",
+      "hostId": "sandbox-host",
+      "ownerId": "owner-capability-invocation",
+      "agentId": "agent-capability-invocation",
+      "threadId": "thread-capability-invocation",
+      "runId": "run-capability-invocation",
+      "toolCallId": "tool-bash"
+    },
+    "environmentId": "environment:520e6c13d935126d61bbc57d464c6bc111ceed415d36d3f2d760a060a55e837b",
+    "policyDigest": "a77b0b6bddb205482dbd7f0f0fc698eddbfdbd95ddf91031c3ae168360c92698",
+    "contract": {
+      "ref": "pi-coding-tool",
+      "version": "1"
+    },
+    "occurredAt": "2026-09-21T13:00:31.304Z",
+    "kind": "result",
+    "output": {
+      "ref": "queued-live:12",
+      "digest": "cc236840e0de6394087b6ab2f53f1a4b7f8fd12dfdfacf0e4ff84a56bb9d59b7",
+      "byteLength": 1071
+    },
+    "completion": {
+      "type": "exit",
+      "exitCode": 0
+    }
+  },
+  "resource": {
+    "schemaVersion": "sandbox-execution.v2",
+    "environmentId": "environment:520e6c13d935126d61bbc57d464c6bc111ceed415d36d3f2d760a060a55e837b",
+    "creator": {
+      "jobId": "jUg5sE9k1Em1hu8V9RkxrwRHO7UFdNtPy12CgYKVeg3s",
+      "attemptId": "sandbox-attempt:520e6c13d935126d61bbc57d464c6bc111ceed415d36d3f2d760a060a55e837b",
+      "invocationId": "runtime-tool:dd535d49ed9f2ee85707ac132da6242a8eec925645355a79e0893a4f94b4df09",
+      "receiptRef": "receipt-capability-invocation",
+      "hostId": "sandbox-host",
+      "ownerId": "owner-capability-invocation",
+      "agentId": "agent-capability-invocation",
+      "threadId": "thread-capability-invocation",
+      "runId": "run-capability-invocation",
+      "toolCallId": "tool-bash"
+    },
+    "policyDigest": "a77b0b6bddb205482dbd7f0f0fc698eddbfdbd95ddf91031c3ae168360c92698",
+    "scopeDigest": "20a01c55dfdfb635b8d42063e34145891abbaa7906a6b350c0bd5a01e27cae53",
+    "sequence": 5,
+    "occurredAt": "2026-09-21T13:00:35.161Z",
+    "supervisor": {
+      "supervisorId": "f7a1beaa-1817-459c-810a-17a6b7c45342",
+      "bootId": "f5edf76f-f7c1-4579-a9a0-8c7cda772b47",
+      "epoch": 1
+    },
+    "resourceRef": null,
+    "status": {
+      "kind": "foreground"
+    },
+    "metrics": {
+      "samples": 18,
+      "cpuTimeMs": 2000,
+      "peakMemoryBytes": 208293888
+    },
+    "supervision": "released",
+    "cleanup": "confirmed",
+    "evidence": {
+      "ref": "scope-id:4",
+      "digest": "5592f99b6648c0185899c4d059bcfaae9813edc3618692d8185918158874d916",
+      "qualificationRef": "qualification-fixture",
+      "profileRef": "authorized-project.v1",
+      "validUntil": "2026-09-21T13:00:36.161Z",
+      "subject": {
+        "kind": "local_process",
+        "processIdentityRef": "job-host-process:cdc4a134-78a7-4fdb-8b37-a35e6684d3ce"
+      }
+    }
+  },
+  "output": "{\"schemaVersion\":\"pi-result.v1\",\"tool\":\"bash\",\"content\":[{\"type\":\"text\",\"text\":\"source-read-denied\\n/bin/cat: ../../../../live-workspace/copy-input.txt: No such file or directory\\nshadow-write-succeeded\\n/bin/cat: ../manifest.json: No such file or directory\\nmetadata-read-denied\\ncopy-isolated\"}],\"details\":{},\"fullOutput\":null,\"isError\":false,\"commandExitCode\":0,\"verifiedWrite\":null,\"source\":{\"workspace\":\"/data/h-ojhNeR/live-private/workspace-copies/copy-fixture-DnyXAR/source\",\"toolCallId\":\"tool-bash\",\"directoryGrantRef\":\"grant-fixture\",\"directoryGrantRevision\":1,\"parameters\":{\"command\":\"printf 'candidate result' > copy-input.txt; if /bin/sh -c '/bin/cat ../../../../live-workspace/copy-input.txt'; then exit 91; fi; printf 'source-read-denied\\n'; if /bin/sh -c 'echo corrupt >> ../../../../live-workspace/copy-input.txt'; then printf 'shadow-write-succeeded\\n'; else printf 'source-write-denied\\n'; fi; if /bin/cat ../manifest.json; then exit 93; fi; printf 'metadata-read-denied\\n'; /bin/sh -c 'echo corrupt >> ../manifest.json' || :; printf 'copy-isolated'\"}}}"
+}

@@ -1,13 +1,12 @@
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
 import {
-  gatewayV2MessageSchema,
   type GatewayV2Command,
   type GatewayV2Query,
   type GatewayV2Snapshot,
+  gatewayV2MessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import {
   ApplicationPortError,
-  PORT_ERROR_CODES,
   type GatewayAuthenticationContext,
   type GatewayCommandResult,
   type GatewayV2CommandExecution,
@@ -21,6 +20,7 @@ import {
   type HostWorkspaceGatewayPayloadPort,
   type HostWorkspaceProjectionPort,
   type HostWorkspaceProjectionRecord,
+  PORT_ERROR_CODES,
   type RecentAuthenticationGuardPort,
   type WorkspaceStatePort,
 } from "../ports/index.js";
@@ -29,6 +29,7 @@ import type { CommitGateService } from "./commit-gate-service.js";
 import type { FileOperationService } from "./file-operation-service.js";
 import type { HostFileReadService } from "./host-file-read-service.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
+import type { WorkspaceCopyService } from "./workspace-copy-service.js";
 import type { WorkspaceService } from "./workspace-service.js";
 
 type HostCommand = Extract<
@@ -37,6 +38,9 @@ type HostCommand = Extract<
     readonly type:
       | "host.file.prepare"
       | "host.file.execute"
+      | "workspace.copy.create"
+      | "workspace.copy.prepare"
+      | "workspace.copy.select"
       | "workspace.stage"
       | "workspace.commit";
   }
@@ -49,6 +53,9 @@ type HostQuery = Extract<
 const COMMANDS = new Set<GatewayV2Command["type"]>([
   "host.file.prepare",
   "host.file.execute",
+  "workspace.copy.create",
+  "workspace.copy.prepare",
+  "workspace.copy.select",
   "workspace.stage",
   "workspace.commit",
 ]);
@@ -63,6 +70,11 @@ interface HostWorkspaceControlDependencies {
   readonly files: FileOperationService;
   readonly reads: HostFileReadService;
   readonly workspaces: WorkspaceService;
+  readonly copies?: WorkspaceCopyService;
+  readonly selectCopy?: (
+    input: Extract<HostCommand, { type: "workspace.copy.select" }>["payload"],
+    commandId: string,
+  ) => Promise<string>;
   readonly commits: CommitGateService;
   readonly hostState: HostFileStatePort;
   readonly workspaceState: WorkspaceStatePort;
@@ -74,6 +86,21 @@ interface HostWorkspaceControlDependencies {
   readonly agentId: AgentId;
   readonly recentAuthentication?: RecentAuthenticationGuardPort;
 }
+
+export type WorkspaceCopyControlDependencies = Pick<
+  HostWorkspaceControlDependencies,
+  | "delegate"
+  | "copies"
+  | "selectCopy"
+  | "hostState"
+  | "projections"
+  | "payloads"
+  | "receipts"
+  | "clock"
+  | "ownerId"
+  | "agentId"
+  | "recentAuthentication"
+>;
 
 interface HostWorkspaceReadDependencies {
   readonly delegate: GatewayV2ReadModelPort;
@@ -93,10 +120,19 @@ function parseSnapshot(value: unknown): GatewayV2Snapshot {
 }
 
 export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlanePort {
-  readonly #dependencies: HostWorkspaceControlDependencies;
+  readonly #dependencies: HostWorkspaceControlDependencies | WorkspaceCopyControlDependencies;
 
-  constructor(dependencies: HostWorkspaceControlDependencies) {
+  constructor(dependencies: HostWorkspaceControlDependencies | WorkspaceCopyControlDependencies) {
     this.#dependencies = dependencies;
+  }
+
+  #full(): HostWorkspaceControlDependencies {
+    if (!("files" in this.#dependencies))
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Host operation is not installed",
+      );
+    return this.#dependencies;
   }
 
   async execute(input: GatewayV2CommandExecution): Promise<GatewayCommandResult> {
@@ -127,9 +163,60 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
     command: HostCommand,
     recovering: boolean,
   ): Promise<string> {
+    if (command.type === "workspace.copy.select") {
+      if (!this.#dependencies.selectCopy)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "Copy selection is not installed",
+        );
+      return this.#dependencies.selectCopy(command.payload, command.idempotencyKey);
+    }
     if (command.type === "host.file.prepare") return this.#prepareFile(command);
     if (command.type === "host.file.execute")
       return this.#executeFile(authentication, command, recovering);
+    if (command.type === "workspace.copy.create" || command.type === "workspace.copy.prepare") {
+      const copies = this.#dependencies.copies;
+      if (!copies)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "Qualified working copies are unavailable on this host",
+        );
+      const payloads = this.#dependencies.payloads;
+      if (command.type === "workspace.copy.create") {
+        const reference = await copies.create({
+          grantId: command.payload.grantId,
+          expectedGrantRevision: command.payload.expectedGrantRevision,
+          inputPaths: await Promise.all(
+            command.payload.inputPathRefs.map((ref) => payloads.readText(ref)),
+          ),
+          allowedPaths: await Promise.all(
+            command.payload.allowedPathRefs.map((ref) => payloads.readText(ref)),
+          ),
+          spaceBudgetBytes: command.payload.spaceBudgetBytes,
+        });
+        return payloads.protectJson({ workspaceRef: reference });
+      }
+      const record: unknown = JSON.parse(await payloads.readText(command.payload.workspaceRef));
+      if (
+        !record ||
+        typeof record !== "object" ||
+        !("workspaceRef" in record) ||
+        typeof record.workspaceRef !== "string"
+      )
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "Working copy reference is invalid",
+        );
+      const reference = record.workspaceRef;
+      const operations = await copies.prepare({
+        workspaceRef: reference,
+        paths: await Promise.all(command.payload.pathRefs.map((ref) => payloads.readText(ref))),
+        expiresAt: command.payload.expiresAt,
+      });
+      for (const operation of operations)
+        await this.#recordPreparedOperation(operation.grantId, operation.id);
+      return payloads.protectJson({ operationRefs: operations.map((operation) => operation.id) });
+    }
     if (command.type === "workspace.stage") return this.#stageWorkspace(command);
     return this.#commitWorkspace(authentication, command);
   }
@@ -150,7 +237,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
           PORT_ERROR_CODES.NOT_AUTHORITATIVE,
           "Directory Grant forbids disclosure",
         );
-      resultRef = await this.#dependencies.reads.readProtected({
+      resultRef = await this.#full().reads.readProtected({
         grantId: grant.id,
         relativePath,
         destination:
@@ -164,7 +251,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
           PORT_ERROR_CODES.INVALID_OPERATION,
           "Candidate payload missing",
         );
-      const operation = await this.#dependencies.files.prepareWrite({
+      const operation = await this.#full().files.prepareWrite({
         operationId: command.idempotencyKey,
         grantId: grant.id,
         operation: command.payload.operation,
@@ -181,7 +268,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
           PORT_ERROR_CODES.INVALID_OPERATION,
           "Move destination missing",
         );
-      const operation = await this.#dependencies.files.prepareMove({
+      const operation = await this.#full().files.prepareMove({
         operationId: command.idempotencyKey,
         grantId: grant.id,
         sourceRelativePath: relativePath,
@@ -193,7 +280,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
       resultRef = operation.id;
     } else if (command.payload.operation === "trash") {
       resultRef = (
-        await this.#dependencies.files.prepareTrash({
+        await this.#full().files.prepareTrash({
           operationId: command.idempotencyKey,
           grantId: grant.id,
           relativePath,
@@ -202,7 +289,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
       ).id;
     } else if (command.payload.operation === "restore") {
       resultRef = (
-        await this.#dependencies.files.prepareRestore({
+        await this.#full().files.prepareRestore({
           operationId: command.idempotencyKey,
           trashId: relativePath,
           expiresAt: command.payload.expiresAt,
@@ -215,7 +302,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
           "Irreversible scope missing",
         );
       resultRef = (
-        await this.#dependencies.files.preparePermanentDeletion({
+        await this.#full().files.preparePermanentDeletion({
           planId: command.idempotencyKey,
           grantId: grant.id,
           relativePath,
@@ -254,7 +341,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
         authentication,
         command.payload.recentAuthenticationRef,
       );
-      const result = await this.#dependencies.files.executePermanentDeletion({
+      const result = await this.#full().files.executePermanentDeletion({
         planId: plan.id,
         expectedHash: command.payload.canonicalHash,
         recentAuthenticationRef: authentication.authenticationRef,
@@ -277,7 +364,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
           PORT_ERROR_CODES.INVALID_OPERATION,
           "Candidate payload missing",
         );
-      const result = await this.#dependencies.files.executeWrite({
+      const result = await this.#full().files.executeWrite({
         operationId: operation.id,
         expectedHash: command.payload.canonicalHash,
         candidateBytes: await this.#dependencies.payloads.readBytes(operation.candidatePayloadRef),
@@ -285,21 +372,21 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
       return `file-operation:${result.id}:${result.revision}`;
     }
     if (operation.operation === "move") {
-      const result = await this.#dependencies.files.executeMove({
+      const result = await this.#full().files.executeMove({
         operationId: operation.id,
         expectedHash: command.payload.canonicalHash,
       });
       return `file-operation:${result.id}:${result.revision}`;
     }
     if (operation.operation === "trash") {
-      const result = await this.#dependencies.files.executeTrash({
+      const result = await this.#full().files.executeTrash({
         operationId: operation.id,
         expectedHash: command.payload.canonicalHash,
       });
       await this.#recordTrash(operation.grantId, result.record.id);
       return `host-trash:${result.record.id}`;
     }
-    const result = await this.#dependencies.files.executeRestore({
+    const result = await this.#full().files.executeRestore({
       operationId: operation.id,
       expectedHash: command.payload.canonicalHash,
     });
@@ -307,7 +394,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
   }
 
   async #stageWorkspace(command: Extract<HostCommand, { type: "workspace.stage" }>) {
-    const snapshot = await this.#dependencies.workspaceState.readSnapshot(
+    const snapshot = await this.#full().workspaceState.readSnapshot(
       command.payload.workspaceSnapshotId,
     );
     if (
@@ -323,9 +410,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
       snapshot.workspaceId,
     );
     const currentPreview = currentProjection?.commitPreviewRef
-      ? await this.#dependencies.workspaceState.readCommitPreview(
-          currentProjection.commitPreviewRef,
-        )
+      ? await this.#full().workspaceState.readCommitPreview(currentProjection.commitPreviewRef)
       : undefined;
     if (
       currentPreview &&
@@ -339,11 +424,11 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
     const paths = await Promise.all(
       command.payload.taskPathRefs.map((ref) => this.#dependencies.payloads.readText(ref)),
     );
-    const staged = await this.#dependencies.workspaces.stageTaskChanges({
+    const staged = await this.#full().workspaces.stageTaskChanges({
       snapshotId: snapshot.id,
       paths,
     });
-    const preview = await this.#dependencies.commits.prepare({
+    const preview = await this.#full().commits.prepare({
       workspaceId: snapshot.workspaceId,
       stagingRef: staged.stagingRef,
       taskChangeSetRevision: snapshot.taskChangeSetRevision,
@@ -359,7 +444,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
     authentication: GatewayAuthenticationContext,
     command: Extract<HostCommand, { type: "workspace.commit" }>,
   ) {
-    const preview = await this.#dependencies.workspaceState.readCommitPreview(
+    const preview = await this.#full().workspaceState.readCommitPreview(
       command.payload.commitPreviewId,
     );
     if (
@@ -369,7 +454,7 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
     )
       throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Commit preview revision changed");
     await this.#assertRecentAuthentication(authentication, command.payload.recentAuthenticationRef);
-    const result = await this.#dependencies.commits.commit({
+    const result = await this.#full().commits.commit({
       handle: {
         ref: `commit-handle:${command.idempotencyKey}`,
         previewId: preview.id,
@@ -420,9 +505,13 @@ export class HostWorkspaceGatewayV2ControlPlane implements GatewayV2ControlPlane
     command: Extract<HostCommand, { type: "host.file.prepare" }>,
     resultRef: string,
   ) {
-    const current = await this.#dependencies.projections.readDirectory(command.payload.grantId);
+    return this.#recordPreparedOperation(command.payload.grantId, resultRef);
+  }
+
+  async #recordPreparedOperation(grantId: string, resultRef: string) {
+    const current = await this.#dependencies.projections.readDirectory(grantId);
     const record: HostDirectoryProjectionRecord = Object.freeze({
-      grantId: command.payload.grantId,
+      grantId,
       ownerId: this.#dependencies.ownerId,
       agentId: this.#dependencies.agentId,
       preparedOperationRefs: Object.freeze([

@@ -23,7 +23,10 @@ import {
   type JsonObject,
   normalizeCandidatePath,
   normalizeCandidateScopes,
+  normalizeWorkspaceCopyPath,
   type PayloadRef,
+  type WorkspaceCopyBaseline,
+  type WorkspaceCopyPort,
 } from "@himawari-agent/application";
 
 const execFile = promisify(execFileCallback);
@@ -46,6 +49,7 @@ interface FrozenEntry extends TreeEntry {
 }
 interface CandidateManifest {
   readonly version: 1;
+  readonly currentBaseline?: WorkspaceCopyBaseline;
   readonly candidateId: string;
   readonly baseRevision: string;
   readonly baseDigest: string;
@@ -63,13 +67,208 @@ interface CandidateRecord {
   readonly manifest: CandidateManifest;
 }
 
-export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
+/** File storage for authorized current-content copies. It cannot execute commands
+ * or certify isolation. Production execution must still pass the SRT/Worker authority path.
+ * The legacy candidate subclass retains its separate high-isolation requirements. */
+export class WorkspaceCopyStore implements WorkspaceCopyPort {
+  protected readonly candidateRoot: string;
+  protected readonly protectPayload: (
+    bytes: Uint8Array,
+    contentType: string,
+  ) => Promise<PayloadRef>;
+
+  constructor(input: {
+    readonly candidateRoot: string;
+    readonly protectPayload: (bytes: Uint8Array, contentType: string) => Promise<PayloadRef>;
+  }) {
+    this.candidateRoot = path.resolve(input.candidateRoot);
+    this.protectPayload = input.protectPayload;
+  }
+
+  async createFromSnapshot(value: Parameters<WorkspaceCopyPort["createFromSnapshot"]>[0]) {
+    const input = structuredClone(value);
+    const allowedPaths = normalizeCandidateScopes(input.allowedPaths);
+    if (
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(input.candidateId) ||
+      !Number.isSafeInteger(input.spaceBudgetBytes) ||
+      input.spaceBudgetBytes < 1 ||
+      input.baseline.files.length === 0 ||
+      input.baseline.files.length > 1000 ||
+      new Set(input.baseline.files.map((file) => file.path)).size !== input.baseline.files.length ||
+      new Set(input.files.map((file) => file.path)).size !== input.files.length
+    )
+      throw new Error("CANDIDATE_MANIFEST_INVALID");
+    for (const file of input.baseline.files) {
+      normalizeWorkspaceCopyPath(file.path);
+      const content = input.files.find((entry) => entry.path === file.path);
+      if (
+        file.identity === null
+          ? file.digest !== null || content !== undefined
+          : !content || digest(content.bytes) !== file.digest
+      )
+        throw new Error("CANDIDATE_SNAPSHOT_CHANGED");
+    }
+    if (input.files.some((file) => !input.baseline.files.some((entry) => entry.path === file.path)))
+      throw new Error("CANDIDATE_SNAPSHOT_SCOPE_INVALID");
+    if (
+      input.files.reduce((size, file) => size + file.bytes.byteLength, 0) > input.spaceBudgetBytes
+    )
+      throw new Error("CANDIDATE_SPACE_BUDGET_EXCEEDED");
+    await mkdir(this.candidateRoot, { recursive: true, mode: 0o700 });
+    const manager = await mkdtemp(
+      path.join(await realpath(this.candidateRoot), `${input.candidateId}-`),
+    );
+    const source = path.join(manager, "source");
+    try {
+      await mkdir(source, { mode: 0o700 });
+      for (const file of input.files) {
+        const target = path.join(source, file.path);
+        await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+        await writeExclusive(target, file.bytes);
+        const mode = input.baseline.files.find((entry) => entry.path === file.path)?.identity?.mode;
+        if (mode === undefined || (mode & 0o170000) !== 0o100000 || (mode & 0o7000) !== 0)
+          throw new Error("CANDIDATE_SNAPSHOT_MODE_INVALID");
+        await chmod(target, mode & 0o777);
+      }
+      const entries = await inventory(source, input.spaceBudgetBytes);
+      const info = await lstat(source);
+      const manifest: CandidateManifest = {
+        version: 1,
+        currentBaseline: input.baseline,
+        candidateId: input.candidateId,
+        baseRevision: "current-files",
+        baseDigest: digest(Buffer.from(JSON.stringify(input.baseline))),
+        allowedPaths,
+        spaceBudgetBytes: input.spaceBudgetBytes,
+        sourceIdentity: identity(info),
+        sourceMode: info.mode & 0o7777,
+        baseEntries: entries.map(description),
+        lifecycle: "active",
+        quarantineReason: null,
+      };
+      await writeExclusive(
+        path.join(manager, "manifest.json"),
+        Buffer.from(JSON.stringify(manifest)),
+      );
+      await syncDirectory(manager);
+      return source;
+    } catch (error) {
+      await rm(manager, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  async readCopyChanges(workspaceRef: string): ReturnType<WorkspaceCopyPort["readCopyChanges"]> {
+    const { manifest, source } = await this.active(workspaceRef);
+    const baseline = manifest.currentBaseline;
+    if (!baseline || digest(Buffer.from(JSON.stringify(baseline))) !== manifest.baseDigest)
+      throw new Error("CANDIDATE_CURRENT_BASELINE_UNAVAILABLE");
+    const entries = await inventory(source, manifest.spaceBudgetBytes);
+    assertTreeScope(manifest, entries);
+    const changes = [];
+    for (const relative of changedTreePaths(manifest.baseEntries, entries)) {
+      const before = manifest.baseEntries.find((entry) => entry.path === relative);
+      const after = entries.find((entry) => entry.path === relative);
+      if ((after ?? before)?.kind === "directory") continue;
+      // Every save target must have been observed (including absence) in the approved baseline.
+      if (!baseline.files.some((file) => file.path === relative))
+        throw new Error("CANDIDATE_TARGET_NOT_IN_BASELINE");
+      if (before && after && before.mode !== after.mode)
+        throw new Error("CANDIDATE_MODE_CHANGE_UNSUPPORTED");
+      changes.push({
+        path: relative,
+        contentRef: after?.bytes
+          ? await this.protectPayload(after.bytes, "application/octet-stream")
+          : null,
+        contentDigest: after?.digest ?? null,
+      });
+    }
+    return Object.freeze({ baseline: structuredClone(baseline), changes: Object.freeze(changes) });
+  }
+
+  async describeCopy(workspaceRef: string) {
+    const record = await this.active(workspaceRef);
+    const baseline = record.manifest.currentBaseline;
+    if (!baseline || digest(Buffer.from(JSON.stringify(baseline))) !== record.manifest.baseDigest)
+      throw new Error("CANDIDATE_CURRENT_BASELINE_UNAVAILABLE");
+    const info = await lstat(record.source);
+    return {
+      baseline: structuredClone(baseline),
+      root: {
+        canonicalRootId: `workspace-copy:${digest(Buffer.from(record.source + record.manifest.baseDigest)).slice(7)}`,
+        canonicalPath: record.source,
+        device: String(info.dev),
+        inode: String(info.ino),
+      },
+    };
+  }
+
+  protected async record(reference: string): Promise<CandidateRecord> {
+    if (!path.isAbsolute(reference) || path.basename(reference) !== "source")
+      throw new Error("CANDIDATE_WORKSPACE_SCOPE_INVALID");
+    const manager = await realpath(path.dirname(reference));
+    const root = await realpath(this.candidateRoot);
+    if (
+      path.dirname(manager) !== root ||
+      !/^[A-Za-z0-9._:-]+-[A-Za-z0-9]+$/.test(path.basename(manager)) ||
+      path.resolve(reference) !== path.join(manager, "source")
+    )
+      throw new Error("CANDIDATE_WORKSPACE_SCOPE_INVALID");
+    const manifest = JSON.parse(
+      Buffer.from(await readSafeFile(path.join(manager, "manifest.json"))).toString("utf8"),
+    ) as CandidateManifest;
+    if (
+      manifest.version !== 1 ||
+      !manifest.candidateId ||
+      !/^sha256:[a-f0-9]{64}$/.test(manifest.baseDigest) ||
+      !Array.isArray(manifest.baseEntries) ||
+      !Number.isSafeInteger(manifest.spaceBudgetBytes) ||
+      !/^[0-9]+:[0-9]+$/.test(manifest.sourceIdentity)
+    )
+      throw new Error("CANDIDATE_MANIFEST_INVALID");
+    normalizeCandidateScopes(manifest.allowedPaths);
+    for (const entry of manifest.baseEntries) {
+      normalizeCandidatePath(entry.path);
+      if (
+        !["file", "directory"].includes(entry.kind) ||
+        !Number.isSafeInteger(entry.mode) ||
+        (entry.kind === "file" && !/^sha256:[a-f0-9]{64}$/.test(entry.digest ?? ""))
+      )
+        throw new Error("CANDIDATE_MANIFEST_INVALID");
+    }
+    return { manager, source: path.join(manager, "source"), manifest };
+  }
+
+  protected async active(reference: string): Promise<CandidateRecord> {
+    const record = await this.record(reference);
+    if (record.manifest.lifecycle !== "active") throw new Error("CANDIDATE_WORKSPACE_NOT_ACTIVE");
+    const info = await lstat(record.source);
+    assertDirectoryIdentity(info, record.manifest.sourceIdentity);
+    if ((info.mode & 0o7777) !== record.manifest.sourceMode)
+      throw new Error("CANDIDATE_ROOT_MODE_CHANGED");
+    return record;
+  }
+
+  protected async saveManifest(record: CandidateRecord, manifest: CandidateManifest) {
+    const temporary = path.join(record.manager, `.manifest-${randomUUID()}`);
+    try {
+      await writeExclusive(temporary, Buffer.from(JSON.stringify(manifest)));
+      await rename(temporary, path.join(record.manager, "manifest.json"));
+      await syncDirectory(record.manager);
+    } finally {
+      await rm(temporary, { force: true });
+    }
+  }
+}
+
+export class QualifiedCandidateWorkspace
+  extends WorkspaceCopyStore
+  implements CandidateWorkspacePort
+{
   readonly #baseRepository: string;
-  readonly #candidateRoot: string;
   readonly #sandbox: CommandSandboxPort;
   readonly #qualification: CandidateWorkspacePort["qualify"];
   readonly #readPayload: (ref: PayloadRef) => Promise<Uint8Array>;
-  readonly #protectPayload: (bytes: Uint8Array, contentType: string) => Promise<PayloadRef>;
   readonly #compareRunner: (input: {
     readonly baseRepository: string;
     readonly candidateRoot: string;
@@ -91,12 +290,11 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
       readonly comparisonDefinition: JsonObject;
     }) => Promise<ImprovementComparison>;
   }) {
+    super(input);
     this.#baseRepository = path.resolve(input.baseRepository);
-    this.#candidateRoot = path.resolve(input.candidateRoot);
     this.#sandbox = input.sandbox;
     this.#qualification = input.qualification;
     this.#readPayload = input.readPayload;
-    this.#protectPayload = input.protectPayload;
     this.#compareRunner = input.compareRunner;
   }
 
@@ -122,9 +320,9 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
       tree.split("\0").some((entry) => entry.startsWith("120000 ") || entry.startsWith("160000 "))
     )
       throw new Error("CANDIDATE_BASE_LINK_OR_SUBMODULE_FORBIDDEN");
-    await mkdir(this.#candidateRoot, { recursive: true, mode: 0o700 });
+    await mkdir(this.candidateRoot, { recursive: true, mode: 0o700 });
     const manager = await mkdtemp(
-      path.join(await realpath(this.#candidateRoot), `${input.candidateId}-`),
+      path.join(await realpath(this.candidateRoot), `${input.candidateId}-`),
     );
     const source = path.join(manager, "source");
     try {
@@ -171,8 +369,13 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
     }
   }
 
+  override async createFromSnapshot(value: Parameters<WorkspaceCopyPort["createFromSnapshot"]>[0]) {
+    if (!(await this.qualify()).qualified) throw new Error("CANDIDATE_ISOLATION_NOT_QUALIFIED");
+    return super.createFromSnapshot(value);
+  }
+
   async patch(input: Parameters<CandidateWorkspacePort["patch"]>[0]) {
-    const record = await this.#active(input.workspaceRef);
+    const record = await this.active(input.workspaceRef);
     const { manifest, source } = record;
     if (
       manifest.baseDigest !== input.expectedBaseDigest ||
@@ -212,7 +415,7 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
   }
 
   async validate(input: Parameters<CandidateWorkspacePort["validate"]>[0]) {
-    const record = await this.#active(input.workspaceRef);
+    const record = await this.active(input.workspaceRef);
     const { source, manifest } = record;
     const results = [];
     for (const profile of input.profiles) {
@@ -224,7 +427,7 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
         argv: profile.argvPattern,
         secretBindings: [],
       });
-      await this.#active(input.workspaceRef);
+      await this.active(input.workspaceRef);
       const after = await inventory(source, manifest.spaceBudgetBytes);
       const changedPaths = changedTreePaths(before, after);
       const scopePreserved = treeScopePreserved(manifest, after);
@@ -244,7 +447,7 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
       results.push(
         Object.freeze({
           profileId: profile.id,
-          commandObservationRef: await this.#protectPayload(bytes, "application/json"),
+          commandObservationRef: await this.protectPayload(bytes, "application/json"),
           outcome:
             observation.exitCode === 0 &&
             !observation.timedOut &&
@@ -263,7 +466,7 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
   }
 
   async compare(input: Parameters<CandidateWorkspacePort["compare"]>[0]) {
-    const record = await this.#active(input.workspaceRef);
+    const record = await this.active(input.workspaceRef);
     assertTreeScope(
       record.manifest,
       await inventory(record.source, record.manifest.spaceBudgetBytes),
@@ -277,7 +480,7 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
   }
 
   async packageArtifact(input: Parameters<CandidateWorkspacePort["packageArtifact"]>[0]) {
-    const record = await this.#active(input.workspaceRef);
+    const record = await this.active(input.workspaceRef);
     if (input.spaceBudgetBytes !== record.manifest.spaceBudgetBytes)
       throw new Error("CANDIDATE_ARTIFACT_BUDGET_CHANGED");
     const frozen = await inventory(record.source, record.manifest.spaceBudgetBytes);
@@ -309,7 +512,7 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
       if (archive.byteLength > input.spaceBudgetBytes)
         throw new Error("CANDIDATE_ARTIFACT_SPACE_EXCEEDED");
       return Object.freeze({
-        artifactRef: await this.#protectPayload(archive, "application/x-tar"),
+        artifactRef: await this.protectPayload(archive, "application/x-tar"),
         artifactDigest: digest(archive),
       });
     } finally {
@@ -322,10 +525,10 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
   }
 
   async quarantine(workspaceRef: string, reasonCode: string): Promise<void> {
-    const record = await this.#record(workspaceRef);
+    const record = await this.record(workspaceRef);
     if (record.manifest.lifecycle === "disposed" || record.manifest.lifecycle === "quarantined")
       return;
-    await this.#saveManifest(record, {
+    await this.saveManifest(record, {
       ...record.manifest,
       lifecycle: "quarantining",
       quarantineReason: reasonCode,
@@ -339,7 +542,7 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
       await rename(record.source, destination);
     } else if (destinationInfo)
       assertDirectoryIdentity(destinationInfo, record.manifest.sourceIdentity);
-    await this.#saveManifest(record, {
+    await this.saveManifest(record, {
       ...record.manifest,
       lifecycle: "quarantined",
       quarantineReason: reasonCode,
@@ -347,13 +550,13 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
   }
 
   async dispose(workspaceRef: string): Promise<void> {
-    const record = await this.#record(workspaceRef);
+    const record = await this.record(workspaceRef);
     const locations = [record.source, path.join(record.manager, "quarantine")];
     for (const location of locations) {
       const info = await lstat(location).catch(missing);
       if (info) assertDirectoryIdentity(info, record.manifest.sourceIdentity);
     }
-    await this.#saveManifest(record, { ...record.manifest, lifecycle: "disposing" });
+    await this.saveManifest(record, { ...record.manifest, lifecycle: "disposing" });
     for (const location of locations) await rm(location, { recursive: true, force: true });
     for (const name of await readdir(record.manager)) {
       if (
@@ -363,53 +566,7 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
       )
         await removeManagerScratch(path.join(record.manager, name));
     }
-    await this.#saveManifest(record, { ...record.manifest, lifecycle: "disposed" });
-  }
-
-  async #record(reference: string): Promise<CandidateRecord> {
-    if (!path.isAbsolute(reference) || path.basename(reference) !== "source")
-      throw new Error("CANDIDATE_WORKSPACE_SCOPE_INVALID");
-    const manager = await realpath(path.dirname(reference));
-    const root = await realpath(this.#candidateRoot);
-    if (
-      path.dirname(manager) !== root ||
-      !/^[A-Za-z0-9._:-]+-[A-Za-z0-9]+$/.test(path.basename(manager)) ||
-      path.resolve(reference) !== path.join(manager, "source")
-    )
-      throw new Error("CANDIDATE_WORKSPACE_SCOPE_INVALID");
-    const manifest = JSON.parse(
-      Buffer.from(await readSafeFile(path.join(manager, "manifest.json"))).toString("utf8"),
-    ) as CandidateManifest;
-    if (
-      manifest.version !== 1 ||
-      !manifest.candidateId ||
-      !/^sha256:[a-f0-9]{64}$/.test(manifest.baseDigest) ||
-      !Array.isArray(manifest.baseEntries) ||
-      !Number.isSafeInteger(manifest.spaceBudgetBytes) ||
-      !/^[0-9]+:[0-9]+$/.test(manifest.sourceIdentity)
-    )
-      throw new Error("CANDIDATE_MANIFEST_INVALID");
-    normalizeCandidateScopes(manifest.allowedPaths);
-    for (const entry of manifest.baseEntries) {
-      normalizeCandidatePath(entry.path);
-      if (
-        !["file", "directory"].includes(entry.kind) ||
-        !Number.isSafeInteger(entry.mode) ||
-        (entry.kind === "file" && !/^sha256:[a-f0-9]{64}$/.test(entry.digest ?? ""))
-      )
-        throw new Error("CANDIDATE_MANIFEST_INVALID");
-    }
-    return { manager, source: path.join(manager, "source"), manifest };
-  }
-
-  async #active(reference: string): Promise<CandidateRecord> {
-    const record = await this.#record(reference);
-    if (record.manifest.lifecycle !== "active") throw new Error("CANDIDATE_WORKSPACE_NOT_ACTIVE");
-    const info = await lstat(record.source);
-    assertDirectoryIdentity(info, record.manifest.sourceIdentity);
-    if ((info.mode & 0o7777) !== record.manifest.sourceMode)
-      throw new Error("CANDIDATE_ROOT_MODE_CHANGED");
-    return record;
+    await this.saveManifest(record, { ...record.manifest, lifecycle: "disposed" });
   }
 
   async #assertProfile(profile: CommandProfile, reference: string, source: string) {
@@ -426,17 +583,6 @@ export class QualifiedCandidateWorkspace implements CandidateWorkspacePort {
       profile.revokedAt !== null
     )
       throw new Error("CANDIDATE_COMMAND_PROFILE_SCOPE_INVALID");
-  }
-
-  async #saveManifest(record: CandidateRecord, manifest: CandidateManifest) {
-    const temporary = path.join(record.manager, `.manifest-${randomUUID()}`);
-    try {
-      await writeExclusive(temporary, Buffer.from(JSON.stringify(manifest)));
-      await rename(temporary, path.join(record.manager, "manifest.json"));
-      await syncDirectory(record.manager);
-    } finally {
-      await rm(temporary, { force: true });
-    }
   }
 
   async #git(root: string, args: readonly string[]): Promise<string> {

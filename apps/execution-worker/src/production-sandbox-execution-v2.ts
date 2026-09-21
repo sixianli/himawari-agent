@@ -25,6 +25,7 @@ import {
   sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import {
+  resolveSandboxWorkspaceRoot,
   CapabilityDeploymentSnapshotLoader,
   hasVerifiedPiFileConflict,
   revalidateCapabilityDeploymentSnapshot,
@@ -239,22 +240,29 @@ export class ProductionSandboxExecutionV2 {
       )
         throw new Error("SANDBOX_SCOPE_CHANGED");
       const scope = resolved.scope;
+      if (
+        scope.schemaVersion === "sandbox-scope.v1" &&
+        scope.workspaceCopy &&
+        (plan.mode !== "foreground" || plan.operationContract.kind !== "command")
+      )
+        throw new Error("SANDBOX_COPY_CONTRACT_CHANGED");
       const privateOnly = plan.operationContract.kind === "network_only";
       if (privateOnly !== (scope.directoryGrant === null)) throw new Error("SANDBOX_SCOPE_CHANGED");
       const root =
         scope.directoryGrant === null
           ? undefined
-          : binding.roots.find(
-              (item) => item.canonicalRootId === scope.directoryGrant?.canonicalRootId,
-            );
+          : await resolveSandboxWorkspaceRoot({ binding, scope });
       if (!privateOnly && !root) throw new Error("SANDBOX_ROOT_UNAVAILABLE");
       const { policy, compiled } = await prepareJobPolicy({
         workspace: root?.canonicalPath ?? null,
         privateRoot: binding.privateRoot,
         jobId: plan.identity.jobId,
         ...(readiness ? { readinessSocketName: readiness.socketName } : {}),
-        writable:
-          scope.directoryGrant?.operations.some((operation) => operation !== "read") ?? false,
+        writable: Boolean(
+          scope.directoryGrant &&
+            (scope.workspaceCopy ||
+              scope.directoryGrant.operations.some((operation) => operation !== "read")),
+        ),
         readOnlyToolchainPaths: [binding.runtimeRoot, ...binding.readOnlyToolchainPaths],
         protectedPaths:
           root && (piRunner || plan.mode !== "foreground")

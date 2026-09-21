@@ -91,6 +91,7 @@ export async function executeProductionCodingRequest(
     binding.workerInstanceId !== ctx.workerInstanceId()
   )
     return failed("CODING_BINDING_UNAVAILABLE");
+  if (binding.workspaceCopy && tool !== "bash") return failed("CODING_COPY_REQUIRES_BASH");
   const grant = binding.grant;
   if (call.dataClassification !== "private" || (grant === null && tool !== "web_search"))
     return failed("CODING_DIRECTORY_UNAVAILABLE");
@@ -216,6 +217,9 @@ export async function executeProductionCodingRequest(
             { type: "directory-grant", ref: grant.id },
             { type: "directory-path", ref: grant.displayPath },
           ]
+        : []),
+      ...(binding.workspaceCopy
+        ? [{ type: "workspace-copy", ref: binding.workspaceCopy.canonicalRootId }]
         : []),
       { type: "tool", ref: tool },
       { type: "input-digest", ref: hash(args) },

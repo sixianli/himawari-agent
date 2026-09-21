@@ -173,15 +173,43 @@ export async function verifySandboxHost(input: {
 
 /** Current host directory identities for R2 occupancy. Scope must already have
  * passed the existing directory/Grant/parent checks; inventory never grants access. */
+/** Resolve only an authenticated scope under this host's private copy store.
+ * No model path, arbitrary private directory, or source grant can select this root. */
+export async function resolveSandboxWorkspaceRoot(input: {
+  readonly binding: SandboxHostBinding;
+  readonly scope: SandboxScope;
+}) {
+  const { binding, scope } = input;
+  if (!scope.workspaceCopy)
+    return binding.roots.find(
+      (root) => root.canonicalRootId === scope.directoryGrant.canonicalRootId,
+    );
+  const root = scope.workspaceCopy;
+  const manager = path.dirname(root.canonicalPath);
+  if (
+    scope.operation !== "bash" ||
+    scope.directoryGrant.operations.join() !== "read" ||
+    !root.canonicalRootId.startsWith("workspace-copy:") ||
+    path.dirname(manager) !== path.join(binding.privateRoot, "workspace-copies") ||
+    path.basename(root.canonicalPath) !== "source" ||
+    !/^[A-Za-z0-9._:-]+-[A-Za-z0-9]+$/.test(path.basename(manager)) ||
+    !binding.roots.some((item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId)
+  )
+    throw new Error("SANDBOX_COPY_ROOT_INVALID");
+  await checkedPath(manager, true);
+  const info = await checkedPath(root.canonicalPath, true);
+  if (String(info.dev) !== root.device || String(info.ino) !== root.inode)
+    throw new Error("SANDBOX_COPY_ROOT_CHANGED");
+  return root;
+}
+
 export async function resolveSandboxWorkspaceClaim(input: {
   readonly binding: SandboxHostBinding;
   readonly scope: SandboxScope;
 }): Promise<SandboxWorkspaceClaim> {
   const binding = sandboxHostBindingSchema.parse(input.binding);
   const scope = sandboxScopeSchema.parse(input.scope);
-  const root = binding.roots.find(
-    (item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId,
-  );
+  const root = await resolveSandboxWorkspaceRoot({ binding, scope });
   if (
     !root ||
     scope.hostId !== binding.hostId ||
@@ -221,9 +249,11 @@ export async function resolveSandboxWorkspaceClaim(input: {
       .digest("hex")}`,
     hostId: binding.hostId,
     canonicalRootId: root.canonicalRootId,
-    access: scope.directoryGrant.operations.every((operation) => operation === "read")
-      ? "read"
-      : "write",
+    access:
+      !scope.workspaceCopy &&
+      scope.directoryGrant.operations.every((operation) => operation === "read")
+        ? "read"
+        : "write",
     lineage: Object.freeze(
       metadata.map((info) => Object.freeze({ device: String(info.dev), inode: String(info.ino) })),
     ),

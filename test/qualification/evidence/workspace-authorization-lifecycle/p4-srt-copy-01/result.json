@@ -1,0 +1,46 @@
+{
+  "stage": "P4",
+  "stageComplete": false,
+  "scope": "Owner copy controls and SRT foreground copy execution",
+  "sourceFreezeVerified": true,
+  "standard": {
+    "status": "local_passed",
+    "files": 255,
+    "executed": 4111,
+    "passed": 4111,
+    "failed": 0,
+    "skipped": 0,
+    "hostedGate": "not_executed"
+  },
+  "platforms": {
+    "macos": {
+      "isolation": "passed",
+      "supervision": "lost",
+      "cleanup": "unknown"
+    },
+    "linux": {
+      "isolation": "passed",
+      "supervision": "released",
+      "cleanup": "confirmed"
+    }
+  },
+  "checks": {
+    "types": "passed",
+    "taskFormat": "passed",
+    "taskLint": "passed",
+    "boundaries": "passed",
+    "coverageMapping": "passed",
+    "invariants": "passed",
+    "secrets": "passed",
+    "ciPolicy": "passed",
+    "docs": "passed",
+    "runbookContracts": "passed",
+    "fullCheck": "two_preexisting_untracked_prototype_format_failures"
+  },
+  "remaining": [
+    "Connect per-file copy saving to original Run/Worker queue",
+    "Validate formal saving cancellation, authority changes and recovery",
+    "Complete resource coordination and retained service owner acceptance"
+  ],
+  "qualification": "controlled fixture, not a production certificate"
+}

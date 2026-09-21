@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:29741f668d01d4f0733be1d5eed2d75ca131b3bc097c12b4bd17380c0ebaf4d8"
+contract_sha256: "sha256:7c9e2cc9303f1e0c237811267a340ad0560155be0d32e52cbe30b24835ba09c8"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,7 +11,11 @@ date: "2026-08-27"
 # 同机备份与恢复 Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/production-workspace-copies.ts
+- packages/platform-node/src/candidate-workspace/qualified-candidate-workspace.ts
 - packages/persistence-sqlite/src/migrations/0046_directory_move_contract.sql
+- packages/persistence-sqlite/src/migrations/0047_workspace_copy_contract.sql
+- packages/application/src/services/workspace-copy-service.ts
 - packages/application/src/services/workspace-claims.ts
 - packages/platform-node/src/capabilities/directory-move-scope.ts
 - packages/platform-node/src/files/directory-move.ts
@@ -173,6 +177,11 @@ Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认�
 
 
 P3 文件协议使用 Schema 46 的 writer 边界。升级和恢复必须保留原文件候选、逐文件发布记录、目录移动意图/收据、队列与占用；不得整批回滚已成功文件或覆盖后续人工修改。合同 3 的确定未发布冲突是失败结果，不是成功写入。目录工具合同 4 的 `rename-native` 随目标平台构建并受 runtime 摘要核验，Mac 包不能移作 Linux 包。新增固定文件完成资格仅适用于已验证的固定程序正常结束，旧资格与普通命令的未知清理仍保留保护；实际安装资格和启用不能由测试结果自动生成。详见 [SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]。
+
+P4 工作副本保存合同将当前 writer 边界推进至 Schema 47，保留已有行和历史迁移。副本的待保存操作包含目录授权版本、根身份、输入内容/身份基线及先前逐文件保存结果；Schema 46 或更旧的程序必须拒绝写入，不能忽略这些条件继续执行。恢复点须同时保留对应受保护内容和文件操作记录；若单独配置候选目录，须核对其备份范围，不能仅凭数据库备份宣称唯一候选已受保护。过期不自动应用或删除候选；回退须停止新 writer 并恢复匹配旧程序的完整恢复点。本批没有执行实际实例迁移，也没有为缺少资格的候选命令后端生成启用资格。
+
+SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件基线和候选内容，生产 Owner 入口按既有 Bash 配置装配创建、选择和准备操作。`prepare` 不表示已保存回原目录；原目录保存尚未接通正式执行队列，不能据此启用旧 `host.file.execute`。备份或权威迁移必须保留唯一副本和受保护的选择/操作记录；换主机或路径后重新验证目录身份、来源授权与执行资格，不能沿用旧 inode 或进程证明。具体已验证范围见[P4 SRT 副本续接记录](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-srt-copy)。
+
 
 ## Safety and Preconditions
 
@@ -390,7 +399,7 @@ Schema 36 不重写旧记录；它为新增 JSON 字段建立 writer 版本屏�
 
 ### 固定文件合同 3：先准备候选，再取得提交占用
 
-`pi-coding-tool@3` 仅用于固定 `write/edit`；该合同沿用 Schema 41 的保存结构，当前整体数据库已由目录移动合同迁移推进至 Schema 46。准入前以 Pi Operations 的不可变快照准备完整候选，受控暂存区保存候选内容及工具结果；其 inode、摘要与原文件版本绑定到已有受保护 Scope artifact。此阶段没有调用消费回执或工作区占用，正式目标及缺失父目录保持不变。提交仍复用原持久队列、Worker、发布记录和原宿主释放证明；不能因候选已准备就提前派发或宣布保存成功。细节见[本批实施与验证范围](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
+`pi-coding-tool@3` 仅用于固定 `write/edit`；该合同沿用 Schema 41 的保存结构，当前整体数据库已由工作副本保存合同迁移推进至 Schema 47。准入前以 Pi Operations 的不可变快照准备完整候选，受控暂存区保存候选内容及工具结果；其 inode、摘要与原文件版本绑定到已有受保护 Scope artifact。此阶段没有调用消费回执或工作区占用，正式目标及缺失父目录保持不变。提交仍复用原持久队列、Worker、发布记录和原宿主释放证明；不能因候选已准备就提前派发或宣布保存成功。细节见[本批实施与验证范围](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
 
 备份、迁移与恢复须一起保留 Scope Payload、排队身份及工作区 `.himawari-recovery/` 中的候选与结果；数据库备份不包含这些暂存文件。候选本身可能是唯一结果，不自动清理、不按当前文件重建旧基线、不覆盖后续编辑。准备后取消或版本冲突不授权重放；跨 boot/fence 重新绑定只允许原批次关联完整、未准入且当前权限有效的队列，固定文件候选的真实 Worker 恢复联合验收仍待完成。旧程序不理解合同 3 或新增 Scope 字段时必须停止对应执行，不删字段降级，也不能仅凭 Schema 相同认定回退兼容。
 
