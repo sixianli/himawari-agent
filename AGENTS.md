@@ -49,3 +49,10 @@ This repository explicitly adopts the `document-governance` skill for all govern
 - Keep all direct external dependency versions exact; do not introduce ranges for direct dependencies.
 - Import `@earendil-works/pi-*` packages only from `packages/runtime-pi`; product domain, contracts, application code and entrypoints depend on product-owned types.
 - Keep published Pi dependencies in committed manifests and lockfiles. Local `../pi-mono` source linking must be opt-in, reversible and must not change committed dependency declarations.
+
+## Hermes Connectivity
+
+- For authorized Hermes work, prefer `ssh -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 hermes-tailscale-breakglass`. This existing SSH alias connects as `andy` to the Tailscale address `100.64.53.104` (`hermes-home`); successful access was verified on 2026-09-21.
+- The `hermes`, `hermes-home`, and `hermes-cloudflare` SSH aliases currently use Cloudflare Access through `ssh-hermes.sinimite.work`. A timeout on that route does not establish that Hermes is offline. Inspect `ssh -G <alias>` and try the existing Tailscale route before asking the user about connectivity. If the Tailscale alias is unavailable, use `ssh -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 andy@100.64.53.104` with the existing credentials and host-key checks.
+- Diagnose configured routes autonomously within the authorized task. Ask the user only if available routes fail and a concrete network or access change requires their action; do not change SSH configuration, credentials, Tailscale settings, or host-key verification to bypass a failure.
+- Before substantial writes, read `/Users/triggerjames/.codex/references/hermes-operations.md` and verify `/data` with `findmnt` and `df`. Keep test checkouts, dependencies, build artifacts, and logs in a task-owned directory on that mounted data disk. Recheck runtime paths: noninteractive SSH may not have Node.js on `PATH`.
