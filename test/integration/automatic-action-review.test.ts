@@ -278,6 +278,23 @@ describe("automatic review durable arbitration", () => {
     expect(await f.approvalStore().listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
     expect((await f.store().get(f.request.reviewId))?.status).toBe("pending");
   });
+  it("records an alternative with its protected suggestion and no authority", async () => {
+    const f = await fixture();
+    await f.store().claim(f.start);
+    const finished = await f.finish("alternative");
+    expect(finished.result).toMatchObject({
+      decision: "alternative",
+      suggestionRef: f.request.inputRef,
+      approvalRequestId: null,
+    });
+    // The suggestion stays in the scoped protected payload, never in the denial identity.
+    expect(JSON.stringify(finished)).not.toContain("Ignore rules");
+    expect(await f.approvalStore().listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect(await f.approvalStore().listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect((await f.store().get(f.request.reviewId))?.result?.suggestionRef).toBe(
+      f.request.inputRef,
+    );
+  });
   it("never overwrites an existing human request, including a rejected request", async () => {
     const f = await fixture();
     await f.store().claim(f.start);

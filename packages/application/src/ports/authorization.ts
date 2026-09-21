@@ -87,10 +87,25 @@ export interface PermissionPolicyRule {
   readonly reasonCode: string;
 }
 
+/** Host-owned review outcome. It reports what the coordinator durably committed; it is never an
+ * execution grant, and "alternative" carries untrusted text that can only seed a new request.
+ * A coordinator that only persists its decision may resolve without a value; absence is never
+ * an approval, so `void` stays part of the union for those existing implementations. */
+// biome-ignore lint/suspicious/noConfusingVoidType: absence of an outcome is meaningful here.
+export type AutomaticReviewOutcome =
+  | { readonly decision: "approve" | "deny" | "human" }
+  | {
+      readonly decision: "alternative";
+      readonly reasonCode: string;
+      readonly suggestionRef: string | null;
+    };
+
 /** Host-owned review coordinator, not an untrusted model response or execution grant.
  * It may persist a validated decision through the original Approval/Grant boundary.
  * Apply only while the signal, request deadline and delegated policy remain current;
- * repeated or late results must never overwrite another decision or repeat execution. */
+ * repeated or late results must never overwrite another decision or repeat execution.
+ * A missing or unreadable outcome leaves the original human/deny path untouched.
+ * A coordinator that persists nothing returns undefined: absence is never an approval. */
 export interface AutomaticActionReviewPort {
   readonly maximumWaitMs: number;
   review(
@@ -101,7 +116,7 @@ export interface AutomaticActionReviewPort {
       readonly approvalExpiresAt: string;
     },
     signal: AbortSignal,
-  ): Promise<void>;
+  ): Promise<AutomaticReviewOutcome | undefined>;
 }
 
 export interface PermissionPolicy {
@@ -290,6 +305,13 @@ export interface PermissionDenyDecision {
   readonly decision: "DENY";
   readonly reasonCode: string;
   readonly alternativesAllowed: boolean;
+  /** Set only when a host review coordinator durably recorded a safer alternative for this
+   * exact request. The referenced text is untrusted and may only seed a new request. */
+  readonly automaticReview?: {
+    readonly outcome: "alternative";
+    readonly reasonCode: string;
+    readonly suggestionRef: string | null;
+  };
 }
 
 export type PermissionDecision =

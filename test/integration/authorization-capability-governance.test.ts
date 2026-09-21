@@ -1,31 +1,32 @@
 import {
+  ACTION_KIND_RISK_BASELINE,
+  ACTION_KINDS,
+  type ActionKind,
+  ActionPolicyService,
+  type ActionRiskLevel,
+  ApprovalService,
+  type AutomaticReviewOutcome,
+  actionIntentFingerprint,
+  assessActionIntentCompleteness,
+  type CapabilityArtifactVerifierPort,
+  CapabilityHandleService,
+  CapabilityLifecycleService,
+  type CapabilityManifest,
+  computeActionRisk,
+  ExecutionWorkerService,
+  type GovernedActionIntent,
+  type GovernedGrantRecord,
+  type GovernedGrantScope,
+  GrantService,
+  type PermissionPolicy,
+  PORT_ERROR_CODES,
+  validateCapabilityManifest,
+  validateGovernedActionIntent,
+} from "@himawari-agent/application";
+import {
   actionIntentFingerprintMatches,
   legacyActionIntentFingerprint,
 } from "@himawari-agent/application/action-intent-snapshot";
-import {
-  ACTION_KINDS,
-  ACTION_KIND_RISK_BASELINE,
-  ActionPolicyService,
-  ApprovalService,
-  CapabilityHandleService,
-  CapabilityLifecycleService,
-  ExecutionWorkerService,
-  GrantService,
-  PORT_ERROR_CODES,
-  actionIntentFingerprint,
-  assessActionIntentCompleteness,
-  computeActionRisk,
-  validateCapabilityManifest,
-  validateGovernedActionIntent,
-  type ActionKind,
-  type ActionRiskLevel,
-  type CapabilityArtifactVerifierPort,
-  type CapabilityManifest,
-  type GovernedActionIntent,
-  type GovernedGrantScope,
-  type GovernedGrantRecord,
-  type PermissionPolicy,
-} from "@himawari-agent/application";
 import {
   createAgentId,
   createIdempotencyKey,
@@ -37,10 +38,10 @@ import {
   type ExecuteWorkRequest,
 } from "@himawari-agent/execution-contracts";
 import {
+  createReferenceAdapterSet,
   InMemoryAuthorizationStore,
   InMemoryCapabilityRegistryStore,
   ManualClock,
-  createReferenceAdapterSet,
 } from "@himawari-agent/testing";
 import { describe, expect, it, vi } from "vitest";
 
@@ -924,9 +925,10 @@ async function continuityFixture(rules: PermissionPolicy["rules"] = POLICY.rules
           readonly intent: GovernedActionIntent;
           readonly policyVersion: string;
           readonly deadlineAt: string;
+          readonly approvalExpiresAt: string;
         },
         signal: AbortSignal,
-      ): Promise<void>;
+      ): Promise<AutomaticReviewOutcome | undefined>;
     },
   ) =>
     new ActionPolicyService({
@@ -1231,7 +1233,7 @@ describe("optional automatic review entry", () => {
   });
   it("falls back to the original human path when the reviewer fails", async () => {
     const f = await continuityFixture([]);
-    const review = vi.fn(async () => {
+    const review = vi.fn(async (): Promise<AutomaticReviewOutcome | undefined> => {
       throw new Error("private provider diagnostic");
     });
     const result = await f
@@ -1245,9 +1247,10 @@ describe("optional automatic review entry", () => {
     "rechecks %s after review before creating human approval",
     async (change) => {
       const f = await continuityFixture([]);
-      const review = vi.fn(async () => {
+      const review = vi.fn(async (): Promise<AutomaticReviewOutcome | undefined> => {
         if (change === "expiry") f.clock.set(T2);
         else await f.lifecycle.disable("governed-tool");
+        return undefined;
       });
       expect(
         await f.service([], { review }).evaluate(intent({ id: `review-${change}` }), {
@@ -1264,7 +1267,7 @@ describe("optional automatic review entry", () => {
   );
   it("keeps hard denial, existing approval and allowed reads ahead of review", async () => {
     const f = await continuityFixture();
-    const review = vi.fn(async () => {});
+    const review = vi.fn(async (): Promise<AutomaticReviewOutcome | undefined> => undefined);
     const service = f.service(POLICY.rules, { review });
     expect(
       await service.evaluate(intent({ id: "review-safe-read" }), {
@@ -1292,6 +1295,122 @@ describe("optional automatic review entry", () => {
     ).toMatchObject({ decision: "ASK" });
     expect(review).not.toHaveBeenCalled();
   });
+  it("turns a recorded safer alternative into a denial the model must re-request", async () => {
+    const f = await continuityFixture([]);
+    const review = vi.fn(
+      async (
+        _input: { readonly intent: GovernedActionIntent },
+        _signal: AbortSignal,
+      ): Promise<AutomaticReviewOutcome | undefined> => ({
+        decision: "alternative",
+        reasonCode: "OUT_OF_SCOPE",
+        suggestionRef: "protected-suggestion",
+      }),
+    );
+    const service = f.service([], { review });
+    const options = { uiAvailable: true, approvalExpiresAt: T1 };
+    const first = await service.evaluate(intent({ id: "review-alternative" }), options);
+    expect(first).toEqual({
+      decision: "DENY",
+      reasonCode: "automatic_review_suggested_alternative",
+      alternativesAllowed: true,
+      automaticReview: {
+        outcome: "alternative",
+        reasonCode: "OUT_OF_SCOPE",
+        suggestionRef: "protected-suggestion",
+      },
+    });
+    // No Grant, Approval or reservation is created for the suggestion itself.
+    expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+    // A different request is a new intent that passes the same entry again. The
+    // original alternative is never replayed as authority for it, and its fingerprint
+    // differs, so nothing about the first review can be reused for the new request.
+    const corrected = intent({ id: "review-alternative-corrected", resourceRef: "safe-resource" });
+    const second = await service.evaluate(corrected, options);
+    expect(second).toMatchObject({
+      decision: "DENY",
+      reasonCode: "automatic_review_suggested_alternative",
+    });
+    expect(review).toHaveBeenCalledTimes(2);
+    const reviewedIntents = review.mock.calls.map(([input]) => input.intent);
+    expect(reviewedIntents).toHaveLength(2);
+    expect(actionIntentFingerprint(reviewedIntents[0] as GovernedActionIntent)).not.toBe(
+      actionIntentFingerprint(reviewedIntents[1] as GovernedActionIntent),
+    );
+    expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+  });
+  it("does not let a late automatic approval outlive revocation or expiry", async () => {
+    for (const mode of ["revoked", "expired"] as const) {
+      const f = await continuityFixture([]);
+      const action = intent({ id: `review-late-${mode}` });
+      const review = vi.fn(
+        async (
+          _input: unknown,
+          _signal: AbortSignal,
+        ): Promise<AutomaticReviewOutcome | undefined> => {
+          // The review commits its exact one-time Grant, then authority changes before
+          // the caller can act on it.
+          const asked = await f
+            .service([])
+            .evaluate(action, { uiAvailable: false, approvalExpiresAt: T1 });
+          if (asked.decision !== "ASK") throw new Error("expected approval");
+          const grant = new GrantService({
+            store: f.authorization,
+            clock: f.clock,
+            ids: f.ids,
+          }).create({
+            kind: "one_time",
+            intent: action,
+            approvalRequestId: asked.approvalRequest.id,
+            expiresAt: T1,
+            maxUses: 1,
+            maxTotalCostMicros: action.estimatedCostMicros,
+            scope: {
+              capabilityRef: action.capabilityRef,
+              capabilityVersion: action.capabilityVersion,
+              operations: [action.operation],
+              exactResourceRef: action.resourceRef,
+              resourceIdentities: action.resourceRefs,
+              resourcePrefixes: [],
+              maxDataClassification: action.dataClassification,
+              disclosure: action.disclosure,
+              sideEffects: [action.sideEffect],
+              recipients: action.recipients,
+              credentialOrAccessChange: false,
+              maxCostMicrosPerUse: action.estimatedCostMicros,
+              maxFrequency: action.frequency,
+            },
+          });
+          await new ApprovalService({ store: f.authorization, clock: f.clock }).respond({
+            approvalRequestId: asked.approvalRequest.id,
+            expectedRevision: 1,
+            semanticSnapshotHash: asked.approvalRequest.semanticSnapshotHash,
+            response: { decision: "approved", grant, recentAuthenticationRef: null },
+          });
+          return { decision: "approve" };
+        },
+      );
+      const service = f.service([], { review });
+      const options = { uiAvailable: true, approvalExpiresAt: T1 };
+      expect(await service.evaluate(action, options)).toMatchObject({ decision: "ALLOW" });
+      if (mode === "revoked") {
+        const grant = (await f.authorization.listGrants(OWNER_ID, AGENT_ID))[0];
+        if (!grant) throw new Error("expected grant");
+        await f.authorization.revokeGrant(grant.id, T1, "owner_revoked");
+        expect(await service.evaluate(action, options)).toMatchObject({ decision: "DENY" });
+      } else if (mode === "expired") {
+        f.clock.set(T2);
+        expect(await service.evaluate(action, options)).toMatchObject({ decision: "DENY" });
+      }
+      // The late review never opens a second human request or a second Grant, and
+      // repeating the request keeps returning the already-decided outcome.
+      expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toHaveLength(1);
+      expect(await service.evaluate(action, options)).toMatchObject({ decision: "DENY" });
+      expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toHaveLength(1);
+    }
+  });
 });
 
 it("bounds an unresponsive review and aborts it before falling back to confirmation", async () => {
@@ -1304,6 +1423,7 @@ it("bounds an unresponsive review and aborts it before falling back to confirmat
         review: async (_input, cancellation) => {
           signal = cancellation;
           await new Promise<void>(() => {});
+          return undefined;
         },
       })
       .evaluate(intent({ id: "review-timeout" }), { uiAvailable: true, approvalExpiresAt: T1 });
@@ -1319,7 +1439,7 @@ it("bounds an unresponsive review and aborts it before falling back to confirmat
 it("reuses a host-persisted review grant through the existing quota reservation boundary", async () => {
   const f = await continuityFixture([]);
   const action = intent({ id: "review-stored-grant" });
-  const review = vi.fn(async () => {
+  const review = vi.fn(async (): Promise<AutomaticReviewOutcome | undefined> => {
     const asked = await f
       .service([])
       .evaluate(action, { uiAvailable: false, approvalExpiresAt: T1 });
@@ -1353,6 +1473,7 @@ it("reuses a host-persisted review grant through the existing quota reservation 
       semanticSnapshotHash: asked.approvalRequest.semanticSnapshotHash,
       response: { decision: "approved", grant, recentAuthenticationRef: null },
     });
+    return undefined;
   });
   const service = f.service([], { review });
   const options = { uiAvailable: true, approvalExpiresAt: T1 };
@@ -1423,6 +1544,7 @@ it("ends an unresponsive review on caller cancellation without opening human app
           reviewSignal = signal;
           started();
           await new Promise<void>(() => {});
+          return undefined;
         },
       })
       .evaluate(intent({ id: "cancel-during-review" }), {

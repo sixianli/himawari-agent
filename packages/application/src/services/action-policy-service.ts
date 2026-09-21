@@ -9,6 +9,7 @@ import type {
   GovernedApprovalRequest,
   GovernedGrantRecord,
   PermissionDecision,
+  PermissionDenyDecision,
   PermissionPolicy,
 } from "../ports/authorization.js";
 import { ACTION_KINDS, ACTION_RISK_LEVELS } from "../ports/authorization.js";
@@ -432,6 +433,7 @@ export class ActionPolicyService {
           : controller.signal;
         let timer: ReturnType<typeof setTimeout> | undefined;
         let onAbort: (() => void) | undefined;
+        let outcome: Awaited<ReturnType<AutomaticActionReviewPort["review"]>>;
         try {
           const duration = Math.min(
             review.maximumWaitMs,
@@ -443,7 +445,7 @@ export class ActionPolicyService {
               signal.addEventListener("abort", onAbort, { once: true });
             });
             timer = setTimeout(() => controller.abort(), duration);
-            await Promise.race([
+            outcome = await Promise.race([
               review.review(
                 {
                   intent,
@@ -455,7 +457,7 @@ export class ActionPolicyService {
                 },
                 signal,
               ),
-              stopped,
+              stopped.then(() => undefined),
             ]);
           }
         } catch {
@@ -465,6 +467,24 @@ export class ActionPolicyService {
           if (onAbort) signal.removeEventListener("abort", onAbort);
           controller.abort();
         }
+        // A safer alternative is a recorded observation, not authority: the model receives
+        // the reason and must propose a new request through this same entry. No Grant,
+        // Approval, Handle or file claim is created for it.
+        if (outcome?.decision === "alternative")
+          return this.finish(
+            intent,
+            "DENY",
+            "automatic_review_suggested_alternative",
+            this.dependencies.clock.now(),
+            true,
+            {
+              automaticReview: {
+                outcome: "alternative",
+                reasonCode: outcome.reasonCode,
+                suggestionRef: outcome.suggestionRef,
+              },
+            },
+          );
         // A return value cannot authorize anything. Re-read current policy, capability,
         // approval, quota and expiry after every await; review runs at most once here.
         return this.evaluateCurrent(intent, options, false);
@@ -578,9 +598,10 @@ export class ActionPolicyService {
     reasonCode: string,
     now: string,
     alternativesAllowed: boolean,
+    extra: Pick<PermissionDenyDecision, "automaticReview"> = {},
   ): Promise<PermissionDecision> {
     await this.trace(intent, decision, reasonCode, now);
-    return Object.freeze({ decision, reasonCode, alternativesAllowed });
+    return Object.freeze({ decision, reasonCode, alternativesAllowed, ...extra });
   }
 
   private async trace(

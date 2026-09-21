@@ -173,11 +173,27 @@ export interface RunPolicyConfiguration {
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;
   readonly fileRead?: FileReadRouteConfiguration;
+  /**
+   * Opt-in automatic review. Absent means no review coordinator is composed, so
+   * every request keeps the original human/deny path and no model disclosure or
+   * spend happens. `modelRef` must name a configured generation model that is
+   * distinct from the primary and fallback routing models.
+   */
+  readonly automaticReview?: AutomaticReviewConfiguration;
   readonly version: string;
   readonly systemInstruction: string;
   readonly memoryLimit: number;
   readonly maxSelectedMemories: number;
   readonly maxMemoryClassification: DataClassification;
+}
+
+/** Owner-authored delegation reference plus the frozen reviewer identity. */
+export interface AutomaticReviewConfiguration {
+  readonly delegationKey: string;
+  readonly configurationVersion: string;
+  readonly modelRef: string;
+  readonly maximumWaitMs: number;
+  readonly maxOutputBytes: number;
 }
 
 export interface ProductConfiguration {

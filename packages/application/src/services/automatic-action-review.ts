@@ -1,18 +1,23 @@
-import {
-  automaticReviewDelegationCovers,
-  parseAutomaticReviewDecision,
-} from "./automatic-action-review-contract.js";
+import type {
+  AutomaticActionReviewPort,
+  AutomaticReviewOutcome,
+  GovernedActionIntent,
+} from "../ports/authorization.js";
 import type {
   AutomaticActionReviewerPort,
   AutomaticReviewDecision,
+  AutomaticReviewRecord,
   AutomaticReviewRequest,
   AutomaticReviewStorePort,
 } from "../ports/automatic-action-review.js";
-import type { AutomaticActionReviewPort, GovernedActionIntent } from "../ports/authorization.js";
 import type { RunExecutionLeaseClaim } from "../ports/run-dispatch.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import { actionIntentFingerprint } from "./action-intent-snapshot.js";
 import { freezeGovernedActionIntent } from "./action-policy-service.js";
+import {
+  automaticReviewDelegationCovers,
+  parseAutomaticReviewDecision,
+} from "./automatic-action-review-contract.js";
 
 export interface AutomaticActionReviewDependencies {
   readonly maximumWaitMs: number;
@@ -57,7 +62,7 @@ export class AutomaticActionReviewService implements AutomaticActionReviewPort {
   async review(
     input: Parameters<AutomaticActionReviewPort["review"]>[0],
     signal: AbortSignal,
-  ): Promise<void> {
+  ): Promise<AutomaticReviewOutcome | undefined> {
     const d = this.dependencies;
     const intent = freezeGovernedActionIntent(input.intent);
     const deadlineAt = new Date(
@@ -66,7 +71,8 @@ export class AutomaticActionReviewService implements AutomaticActionReviewPort {
     const current = () =>
       !signal.aborted && d.clock.now() < deadlineAt && d.clock.now() < intent.expiresAt;
     // Critical actions still require recent Owner authentication through the human path.
-    if (!current() || intent.finalRisk === "CRITICAL" || intent.credentialOrAccessChange) return;
+    if (!current() || intent.finalRisk === "CRITICAL" || intent.credentialOrAccessChange)
+      return undefined;
     const identity = {
       configurationVersion: d.configurationVersion,
       modelRef: d.modelRef,
@@ -85,7 +91,7 @@ export class AutomaticActionReviewService implements AutomaticActionReviewPort {
       !current() ||
       !automaticReviewDelegationCovers(delegated.value, identity, d.clock.now())
     )
-      return;
+      return undefined;
     const envelope = Object.freeze({
       ...identity,
       schemaVersion: "automatic-review.v1" as const,
@@ -93,10 +99,10 @@ export class AutomaticActionReviewService implements AutomaticActionReviewPort {
       runId: intent.runId,
     });
     const inputRef = await d.prepareInput(intent, envelope, signal);
-    if (!current()) return;
+    if (!current()) return undefined;
     const request: AutomaticReviewRequest = Object.freeze({ ...envelope, inputRef });
     const executionLease = await d.executionLease(intent.runId);
-    if (!current()) return;
+    if (!current()) return undefined;
     const claim = await d.store.claim({
       request,
       intent,
@@ -104,21 +110,38 @@ export class AutomaticActionReviewService implements AutomaticActionReviewPort {
       executionLease,
       startedAt: d.clock.now(),
     });
-    if (!claim?.claimed || !current()) return;
+    if (!claim || !current()) return undefined;
+    // A repeated request reuses the first durable record; its committed decision still
+    // applies, but the authority is the stored Grant, never this return value.
+    if (!claim.claimed) return this.#outcome(claim.record);
     const decision = parseAutomaticReviewDecision(
       request,
       await d.reviewer.review(request, signal),
     );
-    if (!current()) return;
+    if (!current()) return undefined;
     const outputRef = await d.saveOutput(request, decision, signal);
     const latestLease = await d.executionLease(intent.runId);
-    if (!current()) return;
-    await d.store.finish({
-      reviewId: request.reviewId,
-      decision,
-      outputRef,
-      executionLease: latestLease,
-      completedAt: d.clock.now(),
+    if (!current()) return undefined;
+    return this.#outcome(
+      await d.store.finish({
+        reviewId: request.reviewId,
+        decision,
+        outputRef,
+        executionLease: latestLease,
+        completedAt: d.clock.now(),
+      }),
+    );
+  }
+
+  #outcome(record: AutomaticReviewRecord): AutomaticReviewOutcome | undefined {
+    const result = record.result;
+    if (!result) return undefined;
+    if (result.decision === "approve" || result.decision === "deny" || result.decision === "human")
+      return Object.freeze({ decision: result.decision });
+    return Object.freeze({
+      decision: "alternative",
+      reasonCode: result.reasonCode,
+      suggestionRef: result.suggestionRef,
     });
   }
 }

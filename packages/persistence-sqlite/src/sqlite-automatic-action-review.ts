@@ -1,10 +1,9 @@
-import type Database from "better-sqlite3";
 import type {
   ApprovalRequest,
   AutomaticReviewDelegation,
-  AutomaticReviewStart,
   AutomaticReviewFinish,
   AutomaticReviewRecord,
+  AutomaticReviewStart,
   GovernedApprovalRequest,
   GovernedGrantRecord,
   ResolveApprovalInput,
@@ -15,8 +14,9 @@ import {
   automaticReviewDelegationCovers,
   parseAutomaticReviewDecision,
 } from "@himawari-agent/application/automatic-action-review";
-import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
+import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
 
 /** Arbitration is synchronous: no model or payload I/O runs inside this transaction. */
 export class SqliteAutomaticActionReview {
@@ -196,6 +196,8 @@ export class SqliteAutomaticActionReview {
         const record = this.get(input.reviewId);
         if (!record) return this.fail("PORT_NOT_FOUND", "Automatic review missing");
         const decision = parseAutomaticReviewDecision(record.request, input.decision);
+        // The suggestion is stored protected and never becomes part of the decision identity.
+        const suggestionRef = decision.decision === "alternative" ? input.outputRef : null;
         if (record.result) {
           if (
             record.result.decision !== decision.decision ||
@@ -293,6 +295,7 @@ export class SqliteAutomaticActionReview {
           result: {
             decision: decision.decision,
             reasonCode: decision.reasonCode,
+            suggestionRef,
             outputRef: input.outputRef,
             completedAt: now,
             approvalRequestId,

@@ -714,6 +714,7 @@ it("cancels production authorization review before opening confirmation or dispa
     review: async (_input, signal) => {
       controller.abort();
       forwarded = signal.aborted;
+      return undefined;
     },
   });
   f.permitted.clear();

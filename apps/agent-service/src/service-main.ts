@@ -6,6 +6,7 @@ import type {
 } from "@himawari-agent/application";
 import {
   type ClockPort,
+  claimFromRunExecutionLease,
   DurableMemoryService,
   type IdGeneratorPort,
   type ProductConfiguration,
@@ -53,6 +54,7 @@ import {
   getPiModelPresentation,
 } from "@himawari-agent/runtime-pi";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
+import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
@@ -217,6 +219,11 @@ async function createDefaultModelComposition(
     });
     return Object.freeze({
       descriptors: created.descriptors,
+      // Revocable handle port and provider secret source stay owned here so the
+      // automatic reviewer can obtain scoped credentials without a second
+      // secret path. `close` clears both with the shared composition.
+      handles,
+      secretSource: sources.provider,
       composition: Object.freeze({
         ...created.composition,
         close: async () => {
@@ -580,6 +587,43 @@ export async function runAgentService(
       const memoryFactory = dependencies.memoryCompositionFactory ?? createDefaultMemoryComposition;
       memoryComposition = await memoryFactory({ configuration, repository, sources });
     }
+    // Opt-in only: without a configured review the value stays undefined, so the
+    // production entry keeps its original human/deny path with no disclosure. A
+    // deployment that configures review but cannot compose it fails startup rather
+    // than silently running without the review it asked for.
+    let automaticReview: ReturnType<typeof createProductionAutomaticReview>;
+    if (configuration.runPolicy?.automaticReview !== undefined) {
+      // Review needs the same product model boundary and protected payload store the
+      // Run uses. A deterministic-only or non-public deployment cannot evaluate a
+      // delegated request, so it must not silently ignore the configured review.
+      if (!modelComposition || !protector) throw new Error("AUTOMATIC_REVIEW_RUNTIME_UNAVAILABLE");
+      automaticReview = createProductionAutomaticReview({
+        configuration,
+        model: modelComposition.composition.model,
+        descriptors: modelComposition.descriptors.generation,
+        handles: modelComposition.handles,
+        payloads: activeRepository.payloadStore(configuration.ownerId, configuration.agentId),
+        protector,
+        store: activeRepository.automaticReviewStore(),
+        // Read-only view of the live lease; the durable review transaction
+        // still revalidates it before committing any decision.
+        executionLease: async (runId) => {
+          const lease = await activeRepository
+            .runDispatch(
+              configuration.ownerId,
+              configuration.agentId,
+              authority,
+              { leaseId: authorityLease.leaseId, fencingToken: authorityLease.fencingToken },
+              agentServiceInstanceId,
+            )
+            .currentExecutionLease?.({ runId, at: clock.now() });
+          if (!lease) throw new Error("AUTOMATIC_REVIEW_LEASE_UNAVAILABLE");
+          return claimFromRunExecutionLease(lease);
+        },
+        clock,
+        ids,
+      });
+    }
     const credential = await readRestrictedExecutionTokenFile(args.workerTokenPath);
     const workerBinding = await waitForWorkerBootBinding({
       layout,
@@ -630,6 +674,7 @@ export async function runAgentService(
       authority: invocationAuthority,
       clock,
       ids,
+      ...(automaticReview ? { automaticReview } : {}),
     });
     let workerSandboxSupport: SandboxExecutionSupport | undefined;
     const sandboxServices = await createProductionSandboxServices({

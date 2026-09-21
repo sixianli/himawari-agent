@@ -62,6 +62,8 @@ export interface AutomaticReviewRecord extends AutomaticReviewStart {
   readonly result: null | {
     readonly decision: AutomaticReviewDecision["decision"];
     readonly reasonCode: string;
+    /** Scoped protected payload holding the untrusted suggestion text, when one exists. */
+    readonly suggestionRef: string | null;
     readonly outputRef: PayloadRef;
     readonly completedAt: string;
     readonly approvalRequestId: string | null;

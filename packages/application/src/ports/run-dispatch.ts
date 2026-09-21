@@ -147,6 +147,17 @@ export interface RunDispatchPort {
     readonly executionLeaseId: RunExecutionLeaseId;
     readonly at: string;
   }): Promise<RunExecutionLease>;
+  /**
+   * Read-only lookup of the current unreleased lease for a Run, used by host
+   * coordinators that must bind a durable decision to the live execution
+   * authority. It grants nothing: every consumer still compares the returned
+   * lease against the claim it was given and revalidates inside its own
+   * transaction.
+   */
+  currentExecutionLease?(input: {
+    readonly runId: RunId;
+    readonly at: string;
+  }): Promise<RunExecutionLease | undefined>;
 }
 
 /** Recovery can quarantine uncertain work, but cannot grant permission to execute it. */

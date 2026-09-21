@@ -189,6 +189,10 @@ export class SqliteRunDispatchOperations {
           return this.assertHeldSync(
             value as Parameters<SqliteRunDispatchOperations["assertHeld"]>[0],
           );
+        case "runDispatch.currentExecutionLease":
+          return this.currentExecutionLeaseSync(
+            value as { readonly runId: string; readonly at: string },
+          );
         default:
           return this.fail("PORT_INVALID_OPERATION", "Unknown Run dispatch operation");
       }
@@ -675,6 +679,26 @@ export class SqliteRunDispatchOperations {
     readonly at: string;
   }) {
     return this.assertHeldSync(input);
+  }
+
+  /**
+   * Read-only current lease, including its live revision. The caller still has to
+   * compare it against the authority it already holds and revalidate in its own
+   * transaction; this never extends or renews a lease.
+   */
+  async currentExecutionLease(input: { readonly runId: string; readonly at: string }) {
+    return this.currentExecutionLeaseSync(input);
+  }
+
+  private currentExecutionLeaseSync(input: { readonly runId: string; readonly at: string }) {
+    const runId = createRunId(machineText(input.runId, "runId"));
+    const at = instant(input.at, "at");
+    this.assertCurrentAuthority(at);
+    const current = this.readLease(runId);
+    if (!current || current.releasedAt !== null || !isAfter(current.expiresAt, at))
+      return undefined;
+    this.assertLeaseScope(current, true);
+    return this.toLease(current);
   }
 
   private assertHeldSync(input: {

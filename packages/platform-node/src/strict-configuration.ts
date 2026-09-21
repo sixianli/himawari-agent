@@ -738,6 +738,28 @@ function parseCodingRoute(value: unknown): NonNullable<RunPolicyConfiguration["c
   };
 }
 
+function parseAutomaticReview(
+  value: unknown,
+): NonNullable<RunPolicyConfiguration["automaticReview"]> {
+  const field = "configuration.runPolicy.automaticReview";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["delegationKey", "configurationVersion", "modelRef", "maximumWaitMs", "maxOutputBytes"],
+    field,
+  );
+  return Object.freeze({
+    delegationKey: safeReference(input["delegationKey"], `${field}.delegationKey`),
+    configurationVersion: safeReference(
+      input["configurationVersion"],
+      `${field}.configurationVersion`,
+    ),
+    modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
+    maximumWaitMs: integer(input["maximumWaitMs"], `${field}.maximumWaitMs`, 1, 300_000),
+    maxOutputBytes: integer(input["maxOutputBytes"], `${field}.maxOutputBytes`, 1, 1_048_576),
+  });
+}
+
 function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   const input = record(value, "configuration.runPolicy");
   rejectUnknown(
@@ -752,6 +774,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "fileRead",
       "coding",
       "publicSearch",
+      "automaticReview",
     ],
     "configuration.runPolicy",
   );
@@ -780,6 +803,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       : { publicSearch: parsePublicSearchRoute(input["publicSearch"]) }),
     ...(input["coding"] === undefined ? {} : { coding: parseCodingRoute(input["coding"]) }),
     ...(input["fileRead"] === undefined ? {} : { fileRead: parseFileReadRoute(input["fileRead"]) }),
+    ...(input["automaticReview"] === undefined
+      ? {}
+      : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
     memoryLimit,
@@ -1007,6 +1033,22 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     ["runMs", "workerRequestMs", "providerRequestMs"],
     "configuration.deadlines",
   );
+  const runPolicy =
+    input["runPolicy"] === undefined ? undefined : parseRunPolicy(input["runPolicy"]);
+  const review = runPolicy?.automaticReview;
+  if (review) {
+    const descriptor = modelDescriptors.find(({ ref }) => ref === review.modelRef);
+    // The reviewer always speaks for exactly this configured generation identity: the
+    // frozen delegation pins it, and an embedding identity cannot answer a review.
+    // A dedicated descriptor is recommended so review spend and disclosure stay
+    // separable, but the schema has no third generation role, so an unselected
+    // primary/fallback identity remains legal when the Owner delegates it explicitly.
+    if (!descriptor || descriptor.role === "embedding")
+      throw invalid(
+        "configuration.runPolicy.automaticReview.modelRef",
+        "must name a configured generation model",
+      );
+  }
 
   return Object.freeze({
     schemaVersion: CONFIGURATION_SCHEMA_VERSION,
@@ -1020,7 +1062,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     cacheDirectory,
     publicOrigin,
     publicMode,
-    ...(input["runPolicy"] === undefined ? {} : { runPolicy: parseRunPolicy(input["runPolicy"]) }),
+    ...(runPolicy === undefined ? {} : { runPolicy }),
     ...(capabilityDeployment === undefined ? {} : { capabilityDeployment }),
     ...(http === undefined ? {} : { http }),
     ...(identity === undefined ? {} : { identity }),

@@ -100,6 +100,10 @@ export interface ProductionModelCompositionFromConfigurationOptions
 export interface ProductionConfiguredModelComposition {
   readonly descriptors: ProductionModelDescriptorSet;
   readonly composition: ProductionModelComposition;
+  /** Revocable secret handles owned by this composition; cleared on close. */
+  readonly handles: SecretPort;
+  /** The same host provider secret source the run model uses. */
+  readonly secretSource: HostProviderSecretSource;
 }
 
 export function resolveConfiguredSecretRequirement(
@@ -211,7 +215,12 @@ export function createProductionModelCompositionFromConfiguration(
     ...options,
     descriptors: descriptors.generation,
   });
-  return Object.freeze({ descriptors, composition });
+  return Object.freeze({
+    descriptors,
+    composition,
+    handles: options.handles,
+    secretSource: options.secretSource,
+  });
 }
 
 export function createProductionModelComposition(

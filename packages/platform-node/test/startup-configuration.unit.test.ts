@@ -803,3 +803,41 @@ it("parses private search without allowing a mixed directory grant", () => {
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
 });
+
+it("accepts a dedicated review model and rejects one the router could also select", () => {
+  const raw = config("/tmp/himawari-review-config");
+  const review = {
+    delegationKey: "automatic-review-delegation",
+    configurationVersion: "review-config:1",
+    modelRef: "model-fallback",
+    maximumWaitMs: 30_000,
+    maxOutputBytes: 32_768,
+  };
+  const policy = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+    maxMemoryClassification: "private",
+    automaticReview: review,
+  };
+  raw["runPolicy"] = policy;
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.automaticReview,
+  ).toEqual(review);
+  for (const changed of [
+    { ...review, modelRef: "model-unknown" },
+    // An embedding identity can never answer a review request.
+    { ...review, modelRef: "model-embedding" },
+    { ...review, modelRef: "model-embedding" },
+    { ...review, maximumWaitMs: 0 },
+    { ...review, maximumWaitMs: 300_001 },
+    { ...review, maxOutputBytes: 0 },
+    // Unknown or missing fields must not silently become defaults.
+    { ...review, extra: true },
+    { delegationKey: review.delegationKey, configurationVersion: review.configurationVersion },
+  ]) {
+    raw["runPolicy"] = { ...policy, automaticReview: changed };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});

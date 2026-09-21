@@ -233,6 +233,11 @@ export class SqliteDurableAdapters {
           ...scope,
           input,
         }),
+      currentExecutionLease: (input) =>
+        this.context.read<RunExecutionLease | undefined>("runDispatch.currentExecutionLease", {
+          ...scope,
+          input,
+        }),
     });
   }
 
