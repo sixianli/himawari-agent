@@ -88,7 +88,12 @@ it.each([
       undefined,
       {
         ...(live
-          ? { piRuntimeRoot: path.resolve("dist/node-runtime"), realFileIdentity: true }
+          ? {
+              piRuntimeRoot: path.resolve(
+                process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"] ?? "dist/node-runtime",
+              ),
+              realFileIdentity: true,
+            }
           : {}),
         authority: () => authority,
         seedRuntimeIntent: false,
@@ -715,7 +720,7 @@ it.each([
         );
         expect(await readFile(path.join(f.host.workspace, "queued.txt"), "utf8")).toBe("queued");
         const record = await f.services.brokerV2.journal.read(original.plan.identity);
-        expect(record).toBeDefined();
+        if (!record) throw new Error("LIVE_EXECUTION_RECORD_MISSING");
         // macOS best-effort termination cannot prove an arbitrary command's full tree stopped.
         expect(record?.workspaceBlocked).toBe(process.platform === "darwin");
         expect(Boolean(record?.releaseReceipt)).toBe(process.platform !== "darwin");
@@ -725,6 +730,24 @@ it.each([
         expect(events.filter((event) => event.type === "work.result")).toHaveLength(1);
         if (!liveWorker || !sent) throw new Error("LIVE_WORKER_NOT_DISPATCHED");
         const fileBeforeReplay = await stat(path.join(f.host.workspace, "queued.txt"));
+        const authorizations = f.repository.authorizationStore();
+        const committedGrant = (await authorizations.listGrants(OWNER_ID, AGENT_ID)).find(
+          (grant) => grant.id === original.plan.authorizationRef,
+        );
+        if (!committedGrant) throw new Error("LIVE_COMMITTED_GRANT_MISSING");
+        const approvedHistory = await authorizations.getApproval(
+          committedGrant.sourceApprovalRequestId,
+        );
+        await authorizations.revokeGrant(
+          committedGrant.id,
+          clock.now(),
+          "LIVE_REVOKE_AFTER_FILE_COMMIT",
+          committedGrant.revision,
+        );
+        await expect(f.services.brokerV2.resolveScope(record.plan)).rejects.toThrow();
+        expect(await authorizations.getApproval(committedGrant.sourceApprovalRequestId)).toEqual(
+          approvedHistory,
+        );
         await expect(
           liveWorker.worker.request({
             ...sent,
@@ -746,6 +769,9 @@ it.each([
         console.log(
           JSON.stringify({
             liveQueuedRecovery: true,
+            revokedAfterFileCommit: true,
+            approvalHistoryPreserved: true,
+            committedFilePreservedAfterRevocationAndReplay: true,
             file: "queued",
             workspaceBlocked: record?.workspaceBlocked,
             releaseReceipt: Boolean(record?.releaseReceipt),

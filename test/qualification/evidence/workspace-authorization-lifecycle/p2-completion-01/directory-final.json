@@ -1,0 +1,59 @@
+{
+  "productionSandboxProbePassed": true,
+  "schema": "sandbox-execution.v2",
+  "productionSuitable": false,
+  "networkDenial": null,
+  "networkRevocation": {
+    "connectionEstablished": true,
+    "authorityRevoked": "directory",
+    "grantRevoked": false,
+    "revokeToObservedStopMs": 143,
+    "jobHostExited": true,
+    "currentScopeRejected": true,
+    "approvalHistoryPreserved": true,
+    "quotaUsesUnchanged": true,
+    "preRevocationFileBytesAndIdentityPreserved": true,
+    "fileEvidenceBoundary": "private execution marker; user-file publication is independently covered by the existing queued Worker probe",
+    "taskNamespaceReleased": false
+  },
+  "platform": "darwin",
+  "resourceProjection": {
+    "revision": "thread-command:v1:ec0b579a6496f12a856e88e2db186c0e",
+    "allReleased": false,
+    "pendingResources": true,
+    "unresolvedResultItemIds": [
+      "probe:sandbox-tool"
+    ],
+    "lastObservedAt": "2026-09-21T03:55:15.374Z",
+    "phase": "unresolved",
+    "reasonCode": "RESOURCE_STATE_UNCONFIRMED",
+    "operations": [
+      {
+        "itemId": "probe:sandbox-tool",
+        "phase": "unresolved",
+        "reasonCode": "RESOURCE_STATE_UNCONFIRMED",
+        "lastObservedAt": "2026-09-21T03:55:15.374Z"
+      }
+    ]
+  },
+  "cleanup": "unknown",
+  "replayExecuted": false,
+  "workspaceProtection": {
+    "blockedBeforeExecution": true,
+    "admittedAfterExecution": null,
+    "occupiedAfterExecution": true
+  },
+  "installedRuntime": "/private/tmp/himawari-p2-completion-runtime-01/runtime",
+  "installedModules": [
+    "/private/tmp/himawari-p2-completion-runtime-01/runtime/node_modules/@himawari-agent/agent-service/dist/production-payload-broker-handler.js",
+    "/private/tmp/himawari-p2-completion-runtime-01/runtime/node_modules/@himawari-agent/agent-service/dist/production-sandbox-services.js",
+    "/private/tmp/himawari-p2-completion-runtime-01/runtime/node_modules/@himawari-agent/application/dist/index.js",
+    "/private/tmp/himawari-p2-completion-runtime-01/runtime/node_modules/@himawari-agent/application/dist/services/thread-execution-resources.js",
+    "/private/tmp/himawari-p2-completion-runtime-01/runtime/node_modules/@himawari-agent/execution-contracts/dist/index.js",
+    "/private/tmp/himawari-p2-completion-runtime-01/runtime/node_modules/@himawari-agent/execution-worker/dist/production-payload-broker-client.js",
+    "/private/tmp/himawari-p2-completion-runtime-01/runtime/node_modules/@himawari-agent/execution-worker/dist/production-sandbox-execution-v2.js",
+    "/private/tmp/himawari-p2-completion-runtime-01/runtime/node_modules/@himawari-agent/execution-worker/dist/production-sandbox-worker.js",
+    "/private/tmp/himawari-p2-completion-runtime-01/runtime/node_modules/@himawari-agent/persistence-sqlite/dist/index.js",
+    "/private/tmp/himawari-p2-completion-runtime-01/runtime/node_modules/@himawari-agent/platform-node/dist/index.js"
+  ]
+}

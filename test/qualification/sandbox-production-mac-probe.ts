@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   hostDirectoryGrantStateKey,
-  ThreadExecutionProjection,
   type SandboxExecutionPreparationPort,
+  ThreadExecutionProjection,
 } from "@himawari-agent/application";
-import { revokeFixtureDirectoryGrant } from "../fixtures/revoke-directory-grant.ts";
-import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.js";
 import {
   type ExecutionV2Request,
   executionV2MessageSchema,
@@ -20,6 +18,8 @@ import {
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PayloadUdsServer, resolveSandboxWorkspaceClaim } from "@himawari-agent/platform-node";
 import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.js";
+import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.js";
+import { revokeFixtureDirectoryGrant } from "../fixtures/revoke-directory-grant.ts";
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.js";
 import {
   AGENT_ID,
@@ -369,6 +369,10 @@ export async function qualifyProductionSandbox(
       },
     }) as Extract<ExecutionV2Request, { type: "work.execute" }>;
     let revocationStarted: number | undefined;
+    let originalApproval: unknown;
+    let originalUses: number | undefined;
+    let originalOutput: string | undefined;
+    let originalRunsIdentity: { ino: number; mtimeMs: number; ctimeMs: number } | undefined;
     const executing = worker.execute(request);
     if (withdraw) {
       const marker = path.join(host.privateRoot, plan.identity.jobId, "network-established");
@@ -404,6 +408,14 @@ export async function qualifyProductionSandbox(
         (value) => value.id === scope.authorizationRef,
       );
       assert.ok(grant);
+      originalApproval = await authorizations.getApproval(grant.sourceApprovalRequestId);
+      originalUses = grant.uses;
+      originalOutput = await readFile(
+        path.join(host.privateRoot, plan.identity.jobId, "runs"),
+        "utf8",
+      );
+      const before = await stat(path.join(host.privateRoot, plan.identity.jobId, "runs"));
+      originalRunsIdentity = { ino: before.ino, mtimeMs: before.mtimeMs, ctimeMs: before.ctimeMs };
       revocationStarted = performance.now();
       if (revokeDirectory) {
         const revokedAt = clock.now();
@@ -462,6 +474,20 @@ export async function qualifyProductionSandbox(
     if (projected) {
       assert.equal(projected.allReleased, process.platform === "linux");
       assert.equal(projected.pendingResources, process.platform !== "linux");
+    }
+    if (withdraw) {
+      assert.ok(v2Plan);
+      // Use the same live scope check as Worker disclosure/network admission.
+      await assert.rejects(services.brokerV2.resolveScope(v2Plan));
+      const grant = (await repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID)).find(
+        (value) => value.id === scope.authorizationRef,
+      );
+      assert.ok(grant);
+      assert.equal(grant.uses, originalUses);
+      assert.deepEqual(
+        await repository.authorizationStore().getApproval(grant.sourceApprovalRequestId),
+        originalApproval,
+      );
     }
     await browser?.stopped();
     if (competingReservation) {
@@ -530,6 +556,19 @@ export async function qualifyProductionSandbox(
       await readFile(path.join(host.privateRoot, plan.identity.jobId, "runs"), "utf8"),
       "run\n",
     );
+    if (withdraw) {
+      const preservedPath = path.join(host.privateRoot, plan.identity.jobId, "runs");
+      assert.equal(await readFile(preservedPath, "utf8"), originalOutput);
+      const after = await stat(preservedPath);
+      assert.deepEqual(
+        { ino: after.ino, mtimeMs: after.mtimeMs, ctimeMs: after.ctimeMs },
+        originalRunsIdentity,
+      );
+      const grant = (await repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID)).find(
+        (value) => value.id === scope.authorizationRef,
+      );
+      assert.equal(grant?.uses, originalUses);
+    }
     return {
       productionSandboxProbePassed: true,
       schema: v2 ? "sandbox-execution.v2" : "sandbox-execution.v1",
@@ -542,6 +581,12 @@ export async function qualifyProductionSandbox(
             grantRevoked: revokeNetwork,
             revokeToObservedStopMs,
             jobHostExited: true,
+            currentScopeRejected: true,
+            approvalHistoryPreserved: true,
+            quotaUsesUnchanged: true,
+            preRevocationFileBytesAndIdentityPreserved: true,
+            fileEvidenceBoundary:
+              "private execution marker; user-file publication is independently covered by the existing queued Worker probe",
             taskNamespaceReleased: process.platform === "linux",
           }
         : null,

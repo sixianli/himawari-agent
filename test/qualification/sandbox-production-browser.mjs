@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import path from "node:path";
 import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { chromium, expect } from "@playwright/test";
 import { qualifyExecutionChainFixture } from "../../scripts/test-execution-chain-browser.mjs";
 
@@ -87,6 +87,10 @@ export async function qualifySandboxBrowser(run, output) {
               await page.goto(`${baseUrl}/threads/thread-main`);
               await expect(page.locator(".turn-activity output")).toContainText("正在执行");
               runningQueries = queries;
+              await expect(page.locator('a[aria-current="page"]')).toHaveCount(1);
+              await expect(page.locator('a[aria-current="page"] .thread-attention')).toHaveCount(
+                lastState.needsAttention ? 1 : 0,
+              );
             } catch (error) {
               await close();
               throw error;
@@ -102,12 +106,23 @@ export async function qualifySandboxBrowser(run, output) {
                 queries > runningQueries,
                 "browser must query changed durable state without an event",
               );
+              assert.equal(new URL(page.url()).pathname, "/threads/thread-main");
+              assert.equal(lastState.displayPhase, "unresolved");
+              await expect(page.locator('a[aria-current="page"] .thread-attention')).toHaveCount(
+                lastState.needsAttention ? 1 : 0,
+              );
+              await expect(page.getByRole("link", { name: "审批", exact: true })).toHaveCount(0);
               await page.screenshot({
                 path: path.join(output, "revoked-unknown.png"),
                 fullPage: true,
               });
+              const beforeReload = structuredClone(lastState);
               await page.reload();
               await expect(page.locator(".turn-activity output")).toContainText("结果未确认");
+              await expect(page.locator('a[aria-current="page"] .thread-attention')).toHaveCount(
+                lastState.needsAttention ? 1 : 0,
+              );
+              assert.deepEqual(lastState.effectSummary, beforeReload.effectSummary);
             } finally {
               await close();
             }
@@ -124,6 +139,10 @@ export async function qualifySandboxBrowser(run, output) {
             fixtureBoundary:
               "navigation and gateway transport; no full production authentication or model loop",
             reload: true,
+            sameConversation: true,
+            attentionMatchesProductionState: true,
+            noSeparateApprovalLink: true,
+            effectsSurviveReload: true,
           },
         ];
       } catch (error) {

@@ -1,0 +1,142 @@
+{
+  "verifiedAt": "2026-09-21T04:01:44.839932+00:00",
+  "mode": "tests-only-composition",
+  "baselineCommit": "3ece389",
+  "baselineStandardTests": 4056,
+  "baselineEvidence": "../p2-scope-continuity-01/README.md",
+  "runtimeAndBrowserArchiveSha256": "f99126f922637a644d1b4110c1bd286721af05754d2c458a5a36732b25d6946e",
+  "unchangedInputs": 1087,
+  "changedTestInputs": {
+    "test/integration/production-queued-run-restart.test.ts": "a62bd1baa45413001bafcce7e0825ca29c46b00c2a7613ff239b4762746017eb",
+    "test/qualification/sandbox-production-browser.mjs": "7a967fbf3d153ffbb643dd69fb6eef0974c33462e470f9383eaf951a49da29d1",
+    "test/qualification/sandbox-production-mac-probe.ts": "b37fe2707019daedbac55f3a2f5181bbf0c1ba3b4a100267dfcc716568d0ffd9"
+  },
+  "productionAndBuildInputsUnchanged": true,
+  "targetedConsumers": {
+    "files": 8,
+    "passed": 307
+  },
+  "finalLiveFile": {
+    "selectedPassed": 1,
+    "filteredOut": 9,
+    "productionWorker": true,
+    "committedFilePreservedAfterRevocationAndReplay": true
+  },
+  "finalBrowserCases": [
+    "directory-final/result.json",
+    "action-final/result.json"
+  ],
+  "baselineReuseReason": "Only live qualification branches and assertions changed. The ordinary 10-case queue matrix passed with 307 consumers; final live branch and browser scripts executed separately. No production, global setup, fixture, dependency or build input changed.",
+  "platform": "macos-arm64",
+  "hostedGate": "not_executed",
+  "boundaries": [
+    "real Worker, Job Host, UDS, SQLite, current authority, private output and file readback",
+    "controlled model and host qualification; navigation/Gateway transport fixture",
+    "Mac descendant cleanup remains unknown and workspace stays blocked; P1/P6/P7 are not completed here"
+  ],
+  "archiveSha256": "b85ac2f6c96324309026c2230bfc7f6637c60a064a2e91b02ec8301dbf9846a7",
+  "archiveBytesVerified": true,
+  "duplicateArchiveRejected": true,
+  "logs": {
+    "himawari-p2-final-live-file.log": {
+      "bytes": 250,
+      "sha256": "457847adf93689b9ed2fad22e6c448cbc7daf802522da33ff592a7d4bbedde6d"
+    },
+    "himawari-p2-final-format.log": {
+      "bytes": 1117,
+      "sha256": "bad28081880392471e4a5c0d478f676f937fb75ffc4f1ba20c7691f801f0f1a4"
+    },
+    "himawari-p2-final-format2.log": {
+      "bytes": 2156,
+      "sha256": "8c0a7c1b038fc6d03b6a669df24a3dcc5aa1701150d28fef7fa6cef820d14f52"
+    },
+    "himawari-p2-final-directory-final.log": {
+      "bytes": 24763,
+      "sha256": "6285077fd15f8d33fa714c64abdf1844f14904c47b9f5a0fbba1b1883e2a227c"
+    },
+    "himawari-p2-final-action-final.log": {
+      "bytes": 22235,
+      "sha256": "e650d4d1c7884db5de37d65c19e22dbe8d50a3a3eecfd1f6774b7a25532a1acb"
+    },
+    "himawari-p2-final-directory02.log": {
+      "bytes": 20699,
+      "sha256": "b605dc65f7f95b855fef8545bd0236df6096ff4b5a3641c67e616e783f6f7759"
+    },
+    "himawari-p2-final-runbooks.log": {
+      "bytes": 1303,
+      "sha256": "5293b320fa9721e180ae3291f1c50ec09197675e48327c3c315956e4181df111"
+    },
+    "himawari-p2-final-consumers.log": {
+      "bytes": 255,
+      "sha256": "9e2afca0568a17515fe199d138fb148e23c84ec0f53c9bf2ac1f5efd4396600b"
+    },
+    "himawari-p2-final-biome.log": {
+      "bytes": 175,
+      "sha256": "712dc8f4a0296afa0a4770b60acadcce142234208b0399a55fb5efb963e23a09"
+    },
+    "himawari-p2-final-types4.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p2-final-types3.log": {
+      "bytes": 727,
+      "sha256": "d849f00588cf957ec3b6bb450812106ddbc15766dfd720b013fea0e3eeb79438"
+    },
+    "himawari-p2-final-directory.log": {
+      "bytes": 6921,
+      "sha256": "1b81d3c8167d20e8bfd72206be665d56c50fe33672f0543faf8430704f229f54"
+    },
+    "himawari-p2-final-types2.log": {
+      "bytes": 255,
+      "sha256": "f3f798ea2ae2275e12b41756517430d8d97ac55a64fe82f681dad031edc2f066"
+    },
+    "himawari-p2-final-action.log": {
+      "bytes": 15576,
+      "sha256": "81616e0bdd77bbbf94b5d4b168463fa5003386e8fd77877c40c510adb38176f1"
+    },
+    "himawari-p2-final-biome-final.log": {
+      "bytes": 175,
+      "sha256": "c47938fb67e43bc472ba20c5e1cc0ac2b3f45838077e3cd210ec20d6470c7c3b"
+    },
+    "himawari-p2-final-ci-policy.log": {
+      "bytes": 511,
+      "sha256": "4b5abc9bec1a5b36d18c1f52bdbbd3d7e3747d5f2f07bfc90406b00d070d659d"
+    },
+    "himawari-p2-final-live-file02.log": {
+      "bytes": 3121,
+      "sha256": "11c0c398f5ffe41be5558849369e8f9733075a1e0c84baaf199bc9dff19c7cf0"
+    },
+    "himawari-p2-final-types.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p2-final-live-file03.log": {
+      "bytes": 265,
+      "sha256": "a5619a8c5f87187a8a703334912133ea1932869a75995380fdb7e03e84ba3a83"
+    },
+    "himawari-p2-final-live-file-final.log": {
+      "bytes": 265,
+      "sha256": "3938da721debb2c9ce68ddf45b05072994e845826841dbf755f01d6a6d59540a"
+    },
+    "himawari-p2-final-action.json": {
+      "bytes": 2597,
+      "sha256": "8738fe29cec998db7965eba9e5dbe154bf1d4e8ad496c19e6b5e9a2351728910"
+    },
+    "himawari-p2-final-directory02.json": {
+      "bytes": 2595,
+      "sha256": "8e1bfc733bdbbed2941479e055401c5540cb87e4cbec4cc5137803996851757e"
+    },
+    "himawari-p2-final-action-final.json": {
+      "bytes": 2597,
+      "sha256": "399fb4afc8af4d9e26afb3999e5e010f33cc91ab5f2e94e12222cc9a003aba77"
+    },
+    "himawari-p2-final-directory.json": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "himawari-p2-final-directory-final.json": {
+      "bytes": 2595,
+      "sha256": "c8e725cf46c5f063140b934f45d2e6138baf6071e24ece5d7bd6339108df38c3"
+    }
+  }
+}
