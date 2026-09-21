@@ -7,7 +7,9 @@ import {
   type SandboxExecutionVerification,
 } from "@himawari-agent/application";
 import {
+  COPY_SAVE_VERIFIER,
   DIRECTORY_MOVE_VERIFIER,
+  PI_COPY_SAVE_CONTRACT,
   PI_DIRECTORY_MOVE_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
@@ -41,7 +43,13 @@ export function createProductionSandboxFileRecovery(options: {
     const moving =
       contract.version === PI_DIRECTORY_MOVE_CONTRACT.version &&
       plan.operation === "move_directory";
-    const verifier = moving ? DIRECTORY_MOVE_VERIFIER : PI_WRITE_VERIFIER;
+    const saving =
+      contract.version === PI_COPY_SAVE_CONTRACT.version && plan.operation === "save_copy";
+    const verifier = saving
+      ? COPY_SAVE_VERIFIER
+      : moving
+        ? DIRECTORY_MOVE_VERIFIER
+        : PI_WRITE_VERIFIER;
     if (
       plan.mode !== "foreground" ||
       contract.ref !== PI_FIXED_FILE_CONTRACT.ref ||
@@ -49,12 +57,13 @@ export function createProductionSandboxFileRecovery(options: {
         PI_FIXED_FILE_CONTRACT.version,
         PI_PREPARED_FILE_CONTRACT.version,
         PI_DIRECTORY_MOVE_CONTRACT.version,
+        PI_COPY_SAVE_CONTRACT.version,
       ].some((version) => version === contract.version) ||
       contract.kind !== "verified_effect" ||
       contract.verifierRef !== verifier.ref ||
       contract.verifierVersion !== verifier.version ||
       contract.targetRef !== verifier.targetRef ||
-      !(moving || ["write", "edit"].includes(plan.operation)) ||
+      !(saving || moving || ["write", "edit"].includes(plan.operation)) ||
       (record.facts.result && record.facts.result.kind !== "unknown")
     )
       return record;

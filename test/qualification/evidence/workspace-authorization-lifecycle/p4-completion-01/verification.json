@@ -1,0 +1,59 @@
+{
+  "sourceFreeze": {
+    "files": 25,
+    "unchanged": true
+  },
+  "standard": {
+    "build": "passed",
+    "test": "passed",
+    "files": 256,
+    "tests": 4128,
+    "failed": 0,
+    "skipped": 0
+  },
+  "targeted": {
+    "integration": [
+      6,
+      172
+    ],
+    "consumers": [
+      6,
+      198
+    ],
+    "resources": [
+      3,
+      51
+    ],
+    "realCopyProducerTests": 13
+  },
+  "platform": {
+    "macosFourOperations": "passed",
+    "hermesFourOperations": "passed",
+    "macosFinalCiArtifactCopyFlow": "passed",
+    "hermesFinalSourceCopyFlow": "passed",
+    "productionQualificationIssued": false
+  },
+  "static": {
+    "typecheck": "passed",
+    "scopedBiome": "passed",
+    "boundaries": "passed",
+    "requirementCoverage": "passed",
+    "invariants": "passed",
+    "ciPolicy": "passed",
+    "runbookContracts": 4,
+    "strictDocsWarnings": 0,
+    "publicArtifactScan": "passed"
+  },
+  "npmRunCheck": {
+    "status": "blocked_by_preexisting_format_errors",
+    "files": [
+      "docs/assets/control-center/2026-09-16-state-review-r2/verify.cjs",
+      "docs/assets/control-center/2026-09-16-state-review/verify.cjs"
+    ]
+  },
+  "retainedLimits": [
+    "Mac arbitrary Bash cleanup remains unknown under accepted SRT policy",
+    "One additional Mac run remained reserved without specific diagnostic; root cause unconfirmed, later original-configuration acceptance passed",
+    "No production deployment, live model call or hosted CI matrix in this batch"
+  ]
+}

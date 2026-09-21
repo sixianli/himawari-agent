@@ -270,26 +270,40 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         descriptors.splice(0, 1);
       for (const name of coding.enabledTools)
         descriptors.push(
-          name === "move_directory"
+          name === "save_copy"
             ? {
                 name,
                 capabilityRef: `${coding.capabilityRef}.${name}`,
                 capabilityHandleRef: null,
                 description:
-                  "在已授权目录内移动或重命名一个目录；目标必须不存在。等待相关文件操作后执行，不支持跨文件系统移动。",
+                  "保存 Owner 已准备的单个副本改动。需要准备结果中的 operationId 和 canonicalHash；逐文件执行，冲突时保留副本。",
                 parameters: {
                   type: "object",
-                  properties: { path: { type: "string" }, destination: { type: "string" } },
-                  required: ["path", "destination"],
+                  properties: { operationId: { type: "string" }, expectedHash: { type: "string" } },
+                  required: ["operationId", "expectedHash"],
                   additionalProperties: false,
                 },
               }
-            : {
-                definition: "builtin-coding",
-                name,
-                capabilityRef: `${coding.capabilityRef}.${name}`,
-                capabilityHandleRef: null,
-              },
+            : name === "move_directory"
+              ? {
+                  name,
+                  capabilityRef: `${coding.capabilityRef}.${name}`,
+                  capabilityHandleRef: null,
+                  description:
+                    "在已授权目录内移动或重命名一个目录；目标必须不存在。等待相关文件操作后执行，不支持跨文件系统移动。",
+                  parameters: {
+                    type: "object",
+                    properties: { path: { type: "string" }, destination: { type: "string" } },
+                    required: ["path", "destination"],
+                    additionalProperties: false,
+                  },
+                }
+              : {
+                  definition: "builtin-coding",
+                  name,
+                  capabilityRef: `${coding.capabilityRef}.${name}`,
+                  capabilityHandleRef: null,
+                },
         );
     }
     if (this.#options.publicSearch)

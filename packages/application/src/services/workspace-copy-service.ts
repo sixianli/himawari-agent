@@ -31,7 +31,7 @@ interface WorkspaceCopyDependencies {
 
 /** Explicit optional copies reuse the candidate manager and original per-file saving service.
  * This service never executes a command or applies a directory tree. Prepared operations
- * continue through the original authorized host.file.execute path and durable recovery. */
+ * continue through the production save_copy Run/Worker path and durable recovery. */
 export class WorkspaceCopyService {
   readonly #dependencies: WorkspaceCopyDependencies;
   constructor(dependencies: WorkspaceCopyDependencies) {

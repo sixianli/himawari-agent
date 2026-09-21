@@ -26,6 +26,7 @@ import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/acti
 import {
   assertSandboxExecutionSupport,
   executionV2MessageSchema,
+  PI_COPY_SAVE_CONTRACT,
   PI_DIRECTORY_MOVE_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
@@ -57,6 +58,11 @@ import {
   verifyPiWriteEvidence,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
+import {
+  importProductionCopySave,
+  prepareProductionCopySave,
+  resolveProductionCopySaveClaims,
+} from "./production-copy-save.js";
 import { prepareProductionFile } from "./production-file-preparation.js";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
 import { createProductionManagedTasks } from "./production-managed-tasks.js";
@@ -326,8 +332,10 @@ export async function createProductionSandboxServices(options: {
           : raw.directoryGrant === null ||
             descriptor.directoryOperations.some(
               (op) =>
-                !(raw.schemaVersion === "sandbox-scope.v1" && raw.workspaceCopy) &&
-                !raw.directoryGrant?.operations.includes(op),
+                !(
+                  raw.schemaVersion === "sandbox-scope.v1" &&
+                  (raw.workspaceCopy || raw.copySave)
+                ) && !raw.directoryGrant?.operations.includes(op),
             ) ||
             raw.directoryGrant.operations.some(
               (op) => !descriptor.directoryOperations.includes(op),
@@ -469,6 +477,19 @@ export async function createProductionSandboxServices(options: {
           throw new Error("SANDBOX_DIRECTORY_MOVE_TARGET_CHANGED");
         workspaceClaims = [...current.claims];
       }
+    }
+    const saving =
+      plan.schemaVersion === "sandbox-execution.v2" &&
+      plan.operationContract.ref === PI_COPY_SAVE_CONTRACT.ref &&
+      plan.operationContract.version === PI_COPY_SAVE_CONTRACT.version;
+    if (Boolean(directoryScope.copySave) !== saving) throw new Error("COPY_SAVE_CONTRACT_CHANGED");
+    if (saving && plan.schemaVersion === "sandbox-execution.v2") {
+      const admission = await preparations.readAdmission(plan.identity);
+      workspaceClaims =
+        admission?.phase === "bound"
+          ? [...admission.record.workspaces]
+          : await resolveProductionCopySaveClaims({ scope: directoryScope, binding });
+      if (!workspaceClaims.length) throw new Error("COPY_SAVE_CLAIMS_REQUIRED");
     }
     return { binding, qualification, workspaceClaims, ...resolved };
   };
@@ -784,6 +805,36 @@ export async function createProductionSandboxServices(options: {
       expiresAt = new Date(
         Math.min(Date.parse(expiresAt), Date.parse(grant.expiresAt)),
       ).toISOString();
+    let copyOperation: import("@himawari-agent/application").PreparedFileOperation | undefined;
+    if (input.operation === "save_copy") {
+      if (
+        !grant ||
+        descriptor.contract.ref !== PI_COPY_SAVE_CONTRACT.ref ||
+        descriptor.contract.version !== PI_COPY_SAVE_CONTRACT.version ||
+        descriptor.mode !== "foreground"
+      )
+        throw new Error("COPY_SAVE_CONTRACT_CHANGED");
+      const parameters = (await readJson(input.inputRef)) as {
+        operationId?: unknown;
+        expectedHash?: unknown;
+      };
+      if (typeof parameters.operationId !== "string") throw new Error("COPY_SAVE_INPUT_INVALID");
+      copyOperation = (
+        await repository.readScopedState(
+          configuration.ownerId,
+          configuration.agentId,
+          `host-workspace:file-operation:${parameters.operationId}`,
+        )
+      )?.value as unknown as typeof copyOperation;
+      if (
+        !copyOperation ||
+        copyOperation.canonicalHash !== parameters.expectedHash ||
+        copyOperation.grantId !== grant.id ||
+        !["create", "update", "move", "trash"].includes(copyOperation.operation) ||
+        !descriptor.directoryOperations.includes(copyOperation.operation)
+      )
+        throw new Error("COPY_SAVE_OPERATION_UNAVAILABLE");
+    }
     const scope = sandboxExecutionScopeSchema.parse({
       schemaVersion: grant ? "sandbox-scope.v1" : "sandbox-scope.v2",
       ownerId: configuration.ownerId,
@@ -806,7 +857,11 @@ export async function createProductionSandboxServices(options: {
             revision: grant.revision,
             canonicalRootId: grant.canonicalRootId,
             authorizationRef: grant.authorizationRef,
-            operations: workspaceCopy ? ["read"] : descriptor.directoryOperations,
+            operations: workspaceCopy
+              ? ["read"]
+              : copyOperation
+                ? ["read", copyOperation.operation]
+                : descriptor.directoryOperations,
           }
         : null,
       ...(workspaceCopy ? { workspaceCopy } : {}),
@@ -823,9 +878,10 @@ export async function createProductionSandboxServices(options: {
         grant.mountPolicy !== "fixed_device" ||
         (workspaceCopy
           ? !grant.operations.includes("read")
-          : descriptor.directoryOperations.some(
-              (operation) => !grant.operations.includes(operation),
-            )))
+          : (copyOperation
+              ? ["read", copyOperation.operation]
+              : descriptor.directoryOperations
+            ).some((operation) => !grant.operations.some((allowed) => allowed === operation))))
     )
       throw new Error("SANDBOX_DIRECTORY_GRANT_UNAVAILABLE");
     const retainedScope = await artifacts().lookup({
@@ -840,6 +896,7 @@ export async function createProductionSandboxServices(options: {
         fileTarget: _target,
         preparedFile: _prepared,
         directoryMove: _move,
+        copySave: _copySave,
         ...baseScope
       } = frozenScope;
       if (hash(baseScope) !== hash(scope)) throw new Error("SANDBOX_SCOPE_CHANGED");
@@ -848,6 +905,34 @@ export async function createProductionSandboxServices(options: {
         scope.schemaVersion === "sandbox-scope.v1"
           ? await freezeFileScope(scope, binding, descriptor.contract)
           : scope;
+      if (copyOperation && grant && frozenScope.schemaVersion === "sandbox-scope.v1") {
+        frozenScope = await prepareProductionCopySave({
+          scope: frozenScope,
+          binding,
+          grant,
+          now: clock.now(),
+          parameters: (await readJson(input.inputRef)) as Record<string, unknown>,
+          readPrepared: async (id) =>
+            (
+              await repository.readScopedState(
+                configuration.ownerId,
+                configuration.agentId,
+                `host-workspace:file-operation:${id}`,
+              )
+            )?.value as unknown as
+              | import("@himawari-agent/application").PreparedFileOperation
+              | undefined,
+          readBytes: async (ref) => {
+            const payload = await payloads.get(ref);
+            if (!payload) throw new Error("COPY_SAVE_PAYLOAD_MISSING");
+            return protector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            });
+          },
+        });
+      }
       if (
         descriptor.contract.ref === PI_PREPARED_FILE_CONTRACT.ref &&
         descriptor.contract.version === PI_PREPARED_FILE_CONTRACT.version
@@ -1084,6 +1169,7 @@ export async function createProductionSandboxServices(options: {
         if (
           inherited.scope.schemaVersion !== "sandbox-scope.v1" ||
           inherited.scope.workspaceCopy !== undefined ||
+          inherited.scope.copySave !== undefined ||
           descriptor.scopeSource === "private_temp"
         )
           throw new Error("SANDBOX_CHILD_SCOPE_UNSUPPORTED");
@@ -1405,6 +1491,31 @@ export async function createProductionSandboxServices(options: {
           (facts.result.kind === "error" && facts.result.reasonCode === "FILE_VERSION_CONFLICT")
         )
           throw new Error("PI_WRITE_EVIDENCE_INVALID");
+        if (plan.operation === "save_copy") {
+          const scope = sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef));
+          const { binding } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
+          const root = binding.roots.find(
+            (item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId,
+          );
+          if (!root) throw new Error("COPY_SAVE_ROOT_UNAVAILABLE");
+          const saved = await importProductionCopySave({
+            scope,
+            workspace: root.canonicalPath,
+            privateDirectory: path.join(binding.privateRoot, plan.identity.jobId),
+            repository,
+            authority: options.authority().lease,
+            now,
+          });
+          const proof = JSON.parse(Buffer.from(bytes).toString()).verifiedCopySave;
+          if (
+            !saved ||
+            (verifiedOutcome === "conflict"
+              ? !saved.conflict
+              : saved.operation.status !== "verified") ||
+            saved.operation.revision !== proof.revision
+          )
+            throw new Error("COPY_SAVE_CHECKPOINT_UNAVAILABLE");
+        }
         fixedFileClosed =
           JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)).fileCommitClosed ===
           true;
@@ -1510,25 +1621,53 @@ export async function createProductionSandboxServices(options: {
         mountPolicy: "fixed_device",
       };
       const moving = plan.operation === "move_directory";
+      const saving = plan.operation === "save_copy";
       const privateDirectory = path.join(entry.binding.privateRoot, plan.identity.jobId);
-      const publication = moving
-        ? undefined
-        : createPiFilePublicationJournal({
-            privateDirectory,
-            workspace: root.canonicalPath,
+      const savedCopy = saving
+        ? await importProductionCopySave({
             scope,
-            parametersJson: JSON.stringify(parameters),
-          });
-      const fileConflict = await publication?.recoverConflict();
-      const proof = fileConflict
-        ? undefined
-        : moving
-          ? await createDirectoryMoveJournal({
+            workspace: root.canonicalPath,
+            privateDirectory,
+            repository,
+            authority: options.authority().lease,
+            now: clock.now(),
+            recover: true,
+          })
+        : undefined;
+      const publication =
+        moving || saving
+          ? undefined
+          : createPiFilePublicationJournal({
               privateDirectory,
               workspace: root.canonicalPath,
               scope,
-            }).recover()
-          : await publication?.recover(grant);
+              parametersJson: JSON.stringify(parameters),
+            });
+      const fileConflict =
+        saving && savedCopy?.conflict
+          ? {
+              operationId: savedCopy.operation.id,
+              canonicalHash: savedCopy.operation.canonicalHash,
+            }
+          : await publication?.recoverConflict();
+      const proof = fileConflict
+        ? undefined
+        : saving
+          ? savedCopy?.operation.status === "verified"
+            ? {
+                operationId: savedCopy.operation.id,
+                canonicalHash: savedCopy.operation.canonicalHash,
+                status: "verified",
+                revision: savedCopy.operation.revision,
+              }
+            : undefined
+          : moving
+            ? await createDirectoryMoveJournal({
+                privateDirectory,
+                workspace: root.canonicalPath,
+                scope,
+              }).recover()
+            : await publication?.recover(grant);
       if (!proof && !fileConflict) return undefined;
       const invocationPrefix = "runtime-tool:";
       if (!plan.identity.invocationId.startsWith(invocationPrefix))
@@ -1567,10 +1706,24 @@ export async function createProductionSandboxServices(options: {
         fullOutput: null,
         commandExitCode: null,
         ...(fileConflict
-          ? { fileConflict }
-          : moving
-            ? { verifiedMove: proof }
-            : { verifiedWrite: proof }),
+          ? {
+              fileConflict,
+              ...(saving && savedCopy
+                ? {
+                    verifiedCopySave: {
+                      operationId: savedCopy.operation.id,
+                      canonicalHash: savedCopy.operation.canonicalHash,
+                      status: "not_started",
+                      revision: savedCopy.operation.revision,
+                    },
+                  }
+                : {}),
+            }
+          : saving
+            ? { verifiedCopySave: proof }
+            : moving
+              ? { verifiedMove: proof }
+              : { verifiedWrite: proof }),
         source: {
           workspace: root.canonicalPath,
           toolCallId: scope.toolCallId,

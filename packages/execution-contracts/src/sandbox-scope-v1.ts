@@ -1,4 +1,4 @@
-import { sandboxNetworkDomainSchema, sandboxHostPathSchema } from "./sandbox-host-binding-v1.ts";
+import { sandboxHostPathSchema, sandboxNetworkDomainSchema } from "./sandbox-host-binding-v1.ts";
 import {
   array,
   ContractValidationError,
@@ -178,8 +178,19 @@ export const sandboxWorkspaceCopySchema = object({
 });
 export type SandboxWorkspaceCopy = InferSchema<typeof sandboxWorkspaceCopySchema>;
 
+/** A single Owner-prepared copy change, carried as an immutable staged snapshot. */
+export const sandboxCopySaveSchema = object({
+  operationId: machineString,
+  canonicalHash: machineString,
+  snapshot: publication,
+  snapshotDigest: digest,
+  targets: array(sandboxFileTargetSchema),
+});
+export type SandboxCopySave = InferSchema<typeof sandboxCopySaveSchema>;
+
 export type SandboxScope = InferSchema<typeof sandboxScopeShape> & {
   readonly workspaceCopy?: SandboxWorkspaceCopy;
+  readonly copySave?: SandboxCopySave;
   readonly fileTarget?: SandboxFileTarget;
   readonly preparedFile?: SandboxPreparedFile;
   readonly directoryMove?: SandboxDirectoryMove;
@@ -190,11 +201,18 @@ export const sandboxScopeSchema: Schema<SandboxScope> = {
   parse(value, path = "$") {
     if (!value || typeof value !== "object" || Array.isArray(value))
       throw new ContractValidationError(path, "invalid sandbox scope");
-    const { fileTarget, preparedFile, directoryMove, workspaceCopy, ...base } = value as Record<
-      string,
-      unknown
-    >;
+    const { fileTarget, preparedFile, directoryMove, workspaceCopy, copySave, ...base } =
+      value as Record<string, unknown>;
     const scope = sandboxScopeShape.parse(base, path);
+    if (
+      copySave !== undefined &&
+      (scope.operation !== "save_copy" ||
+        workspaceCopy !== undefined ||
+        fileTarget !== undefined ||
+        preparedFile !== undefined ||
+        directoryMove !== undefined)
+    )
+      throw new ContractValidationError(path, "copy save requires its own fixed operation");
     if (
       workspaceCopy !== undefined &&
       (scope.operation !== "bash" ||
@@ -219,6 +237,9 @@ export const sandboxScopeSchema: Schema<SandboxScope> = {
       throw new ContractValidationError(path, "prepared file requires a fixed write target");
     return Object.freeze({
       ...scope,
+      ...(copySave === undefined
+        ? {}
+        : { copySave: sandboxCopySaveSchema.parse(copySave, `${path}.copySave`) }),
       ...(workspaceCopy === undefined
         ? {}
         : {
@@ -250,6 +271,7 @@ const sandboxNetworkScopeShape = object({
 export type SandboxNetworkScope = InferSchema<typeof sandboxNetworkScopeShape> & {
   readonly fileTarget?: never;
   readonly preparedFile?: never;
+  readonly copySave?: never;
   readonly directoryMove?: never;
 };
 export type SandboxExecutionScope = SandboxScope | SandboxNetworkScope;

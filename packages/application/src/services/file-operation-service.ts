@@ -117,8 +117,15 @@ export class FileOperationService {
     readonly operationId: string;
     readonly expectedHash: string;
     readonly candidateBytes: Uint8Array;
+    readonly preparedPublication?: import("../ports/host-files.js").HostFilePublication;
   }): Promise<PreparedFileOperation> {
-    input = { ...input, candidateBytes: new Uint8Array(input.candidateBytes) };
+    input = {
+      ...input,
+      candidateBytes: new Uint8Array(input.candidateBytes),
+      ...(input.preparedPublication
+        ? { preparedPublication: structuredClone(input.preparedPublication) }
+        : {}),
+    };
     let operation = await this.#requiredPrepared(input.operationId);
     if (
       operation.canonicalHash !== input.expectedHash ||
@@ -188,6 +195,18 @@ export class FileOperationService {
       await this.#invalidate(operation);
       this.#conflict("File content changed after prepare");
     }
+    if (
+      input.preparedPublication &&
+      this.#digest.digest(
+        await this.#platform.read(
+          grant,
+          input.preparedPublication.stagedRelativePath,
+          operation.sizeBytes + 1,
+          input.preparedPublication.identity,
+        ),
+      ) !== operation.candidateDigest
+    )
+      this.#reject("Staged copy content changed");
     if (operation.status === "prepared") {
       operation = await this.#state.savePrepared(
         Object.freeze({ ...operation, revision: operation.revision + 1, status: "executing" }),
@@ -211,21 +230,30 @@ export class FileOperationService {
         );
       },
     };
-    const identity = operation.targetIdentity
-      ? await this.#platform.replaceAtomic(
+    const identity = input.preparedPublication
+      ? await this.#platform.publishPrepared(
           grant,
           operation.relativePath,
+          input.preparedPublication,
           operation.targetIdentity,
-          input.candidateBytes,
           previousBytes,
           hooks,
         )
-      : await this.#platform.createExclusive(
-          grant,
-          operation.relativePath,
-          input.candidateBytes,
-          hooks,
-        );
+      : operation.targetIdentity
+        ? await this.#platform.replaceAtomic(
+            grant,
+            operation.relativePath,
+            operation.targetIdentity,
+            input.candidateBytes,
+            previousBytes,
+            hooks,
+          )
+        : await this.#platform.createExclusive(
+            grant,
+            operation.relativePath,
+            input.candidateBytes,
+            hooks,
+          );
     const verified = await this.#platform.read(
       grant,
       operation.relativePath,

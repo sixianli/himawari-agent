@@ -164,6 +164,7 @@ export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
     | "grep"
     | "ls"
     | "move_directory"
+    | "save_copy"
   )[];
 }
 

@@ -18,10 +18,10 @@ import type {
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   ConstrainedHostFileSystem,
-  WorkspaceCopyStore,
   digestSandboxRuntime,
   PayloadUdsClient,
   PayloadUdsServer,
+  WorkspaceCopyStore,
 } from "@himawari-agent/platform-node";
 import { configuredModelDisclosureIdentity } from "../../apps/agent-service/src/production-model-disclosure.ts";
 import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.ts";
@@ -54,6 +54,12 @@ export async function productionSandboxScope(
     readonly resourceCeiling?: ConsumeCapabilityInvocationInput["resourceCeiling"];
     readonly legacyFileRead?: boolean;
     readonly piParameters?: Readonly<Record<string, unknown>>;
+    readonly prepareParameters?: (input: {
+      repository: SqliteProductStateRepository;
+      grant: import("@himawari-agent/application").HostDirectoryGrant;
+      protect: (bytes: Uint8Array) => Promise<string>;
+      readBytes: (ref: string) => Promise<Uint8Array>;
+    }) => Promise<Readonly<Record<string, unknown>>>;
     readonly realFileIdentity?: boolean;
     readonly directoryOperations?: readonly HostFileOperationKind[];
     readonly fixedFileCompletionQualification?: boolean;
@@ -418,7 +424,31 @@ export async function productionSandboxScope(
   };
   let fileBindingAvailable =
     options.workspaceCopy || options.legacyFileRead || descriptor.scopeSource === "file_workflow";
-  if (options.piParameters)
+  const piParameters = options.prepareParameters
+    ? await options.prepareParameters({
+        repository,
+        grant: directory,
+        readBytes: async (ref) => {
+          const payload = await repository.payloadStore(OWNER_ID, AGENT_ID).get(ref);
+          if (!payload) throw new Error("missing copy payload");
+          return f.protector.unprotect({ ownerId: OWNER_ID, agentId: AGENT_ID, payload });
+        },
+        protect: async (bytes) => {
+          const payload = await f.protector.protect({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            ref: `copy-test:${hash(Array.from(bytes))}`,
+            plaintext: bytes,
+            contentType: "application/octet-stream",
+            dataClassification: "private",
+            createdAt: T1,
+          });
+          await repository.payloadStore(OWNER_ID, AGENT_ID).put(payload);
+          return payload.ref;
+        },
+      })
+    : options.piParameters;
+  if (piParameters)
     await repository.payloadStore(OWNER_ID, AGENT_ID).put(
       await f.protector.protect({
         ownerId: OWNER_ID,
@@ -426,7 +456,7 @@ export async function productionSandboxScope(
         ref: "payload-pi-parameters",
         dataClassification: "private",
         contentType: "application/json",
-        plaintext: Buffer.from(JSON.stringify(options.piParameters)),
+        plaintext: Buffer.from(JSON.stringify(piParameters)),
         createdAt: T1,
       }),
     );

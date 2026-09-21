@@ -18,6 +18,12 @@ export const PI_PREPARED_FILE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", 
 /** Product-owned directory move; built-in Pi tool definitions remain unchanged. */
 export const FIXED_FILE_COMPLETION_GUARANTEE = "fixed-file-terminal-no-writer.v1";
 export const PI_DIRECTORY_MOVE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "4" });
+export const PI_COPY_SAVE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "5" });
+export const COPY_SAVE_VERIFIER = Object.freeze({
+  ref: "host-copy-save",
+  version: "1",
+  targetRef: "pi-input:operation",
+});
 export const DIRECTORY_MOVE_VERIFIER = Object.freeze({
   ref: "host-directory-move",
   version: "1",
@@ -40,6 +46,7 @@ export const piCodingToolNameSchema = enumeration([
   "grep",
   "ls",
   "move_directory",
+  "save_copy",
 ]);
 const absolutePath: Schema<string> = {
   parse(value, location = "$") {

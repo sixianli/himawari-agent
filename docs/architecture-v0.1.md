@@ -355,6 +355,16 @@ Reflection checkpoint 持有有期限的执行 claim，并冻结 definition、co
 
 Improvement candidate 的 `allowedPaths` 表示相对源码变更范围，`CommandProfile.fileScopes` 表示绝对沙箱挂载根；两者职责分开。应用与平台共用目录后代匹配规则，平台核对真实 source root；manifest、临时 patch 和 archive 保存在该挂载根之外。发布产物前重新核对冻结基线、文件类型、模式和变更范围。过期、安全响应与资源清理分别记账；安全失败与待隔离意图在同一次 CAS 中保存，隔离和通知按持久阶段恢复，不等待 TTL。通知携带固定幂等键，接收端仍须持久去重。失败的 dispose 在后续恢复中继续尝试，quarantine 位置由管理记录跟踪，打包中断遗留的受管临时目录也在完成清理前移除。候选保持 `review_required`，Control Center 不提供 apply/commit/deploy/activate。上述本地合同和回归测试不替代 S6 双平台 sandbox qualification，候选 active 仍受其门禁约束。
 
+### 可选工作副本与逐文件保存
+
+Owner 通过 `workspace.copy.create/select/prepare` 指定当前输入和允许保存的路径。`WorkspaceCopyStore` 记录内容及身份基线，Git 的 dirty/untracked 输入与普通目录同样按当前字节处理；不自动创建 worktree 或切换产品 Git 方式。选中的 Bash 在 SRT 的私有副本中执行，对原目录只有读取授权，运行及等待确认不占原目录提交权。
+
+`save_copy` 是 Pi 工具循环上的产品扩展，使用 `pi-coding-tool@5`。它仅引用已准备操作的 ID/摘要，宿主解析实际 create/update/move/trash，复用原 ActionPolicy、Run/Handle、持久队列、固定 Worker 和 `FileOperationService`。候选内容在准入前完成暂存；提交时取得目标与必要依赖的短时占用，重新检查身份、授权和取消，直接发布已暂存文件。固定执行器复用 P3 私有持久记录格式保存阶段，Agent 逐 revision 导入原 SQLite 操作记录。最终回执丢失后仅核验原文件身份/摘要并恢复历史结果；不重放、整目录覆盖或回滚后续编辑。
+
+副本不隔离外部业务对象。当前 SRT 不开放宿主 TCP 监听、任意 Unix socket 或 Git index 写入；受管服务的就绪 socket 位于各自私有目录，原资源记录一直保留 owner，启动返回不释放资源。产品数据库仍只由 Agent 的带权威检查事务访问，外部服务沿用独立网络授权与调用回执，未知效果不自动重发。本实现不提供通用外部数据库事务或任意远端对象互斥。
+
+实现验收见[P4 完成记录](execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-completed)。生产启用仍要求 Agent/Worker 同时支持合同 5、配置 `save_copy` 及匹配的固定执行器资格；本地验收不替代实例安装资格。[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
+
 ### Memory and context formation
 
 Memory 端口使用产品自己的 proposal、record、candidate 和 correction 值；正文仍是 Payload 引用，provenance 是 source Trace reference。`packages/testing` 的内存适配器只按标准化 search terms 做可重复 overlap score 和稳定 ID tie-break，不读取正文，也不代表最终召回算法或供应商选择。

@@ -10,10 +10,9 @@ import {
   type IdGeneratorPort,
   type ProductConfiguration,
 } from "@himawari-agent/application";
+import { sandboxWorkspaceCopySchema } from "@himawari-agent/execution-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
-
-import { sandboxWorkspaceCopySchema } from "@himawari-agent/execution-contracts";
 
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
@@ -140,6 +139,47 @@ export function createProductionFileReadServices(options: {
       const grant = stored?.value as unknown as HostDirectoryGrant | undefined;
       if (!stored || !grant || grant.id !== route.grantId || grant.hostId !== route.hostId)
         return undefined;
+      if (
+        coding &&
+        route === coding &&
+        call.capabilityRef === `${coding.capabilityRef}.save_copy`
+      ) {
+        const args = call.arguments;
+        if (
+          typeof args["operationId"] !== "string" ||
+          typeof args["expectedHash"] !== "string" ||
+          Object.keys(args).some((key) => !["operationId", "expectedHash"].includes(key))
+        )
+          return undefined;
+        const operation = (
+          await repository.readScopedState(
+            configuration.ownerId,
+            configuration.agentId,
+            `host-workspace:file-operation:${args["operationId"]}`,
+          )
+        )?.value as unknown as
+          | import("@himawari-agent/application").PreparedFileOperation
+          | undefined;
+        if (
+          !operation ||
+          operation.canonicalHash !== args["expectedHash"] ||
+          operation.grantId !== grant.id ||
+          !["create", "update", "move", "trash"].includes(operation.operation) ||
+          operation.copyAuthority?.grantRevision !== grant.revision ||
+          operation.copyAuthority.canonicalRootId !== grant.canonicalRootId
+        )
+          return undefined;
+        return {
+          ...common,
+          revision: stored.revision,
+          grant,
+          copySaveOperation: {
+            id: operation.id,
+            operation: operation.operation as "create" | "update" | "move" | "trash",
+            canonicalHash: operation.canonicalHash,
+          },
+        };
+      }
       const selection = await repository.readScopedState(
         configuration.ownerId,
         configuration.agentId,

@@ -16,6 +16,7 @@ export * from "./files/directory-move.js";
 export * from "./files/index.js";
 export * from "./files/pi-file-publication.js";
 export * from "./files/pi-write-evidence.js";
+export * from "./files/workspace-copy-publication.js";
 export * from "./host-secret-source.js";
 export * from "./http-gateway-server.js";
 export * from "./identity-gateway.js";

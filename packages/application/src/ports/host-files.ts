@@ -167,6 +167,14 @@ export interface HostFilePlatformPort {
     previousBytes: Uint8Array,
     hooks?: HostFilePublishHooks,
   ): Promise<HostFileIdentity>;
+  publishPrepared(
+    grant: HostDirectoryGrant,
+    relativePath: string,
+    publication: HostFilePublication,
+    expected: HostFileIdentity | null,
+    previousBytes: Uint8Array,
+    hooks?: HostFilePublishHooks,
+  ): Promise<HostFileIdentity>;
   recoverPublication(
     grant: HostDirectoryGrant,
     relativePath: string,

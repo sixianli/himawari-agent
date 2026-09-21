@@ -19,6 +19,11 @@ import type { SandboxWorkspaceCopy } from "@himawari-agent/execution-contracts";
 
 export interface FileReadBinding {
   readonly workspaceCopy?: SandboxWorkspaceCopy;
+  readonly copySaveOperation?: {
+    readonly id: string;
+    readonly operation: "create" | "update" | "move" | "trash";
+    readonly canonicalHash: string;
+  };
   readonly workerInstanceId: string;
   readonly revision: number;
   readonly hostId: string;
@@ -80,6 +85,7 @@ export interface FileReadExecutionContext {
       | "grep"
       | "ls"
       | "move_directory"
+      | "save_copy"
       | "web_search",
     inputRef: string,
   ): Promise<RuntimeToolExecutionResult>;
@@ -289,6 +295,7 @@ export class ProductionFileReadWorkflow {
         | "grep"
         | "ls"
         | "move_directory"
+        | "save_copy"
         | "web_search",
       payload: unknown,
       action: GovernedActionIntent,

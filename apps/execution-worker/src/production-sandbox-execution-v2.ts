@@ -12,6 +12,7 @@ import {
   type ExecutionV2Request,
   executionV2MessageSchema,
   type PayloadBrokerSandboxExecutionResult,
+  PI_COPY_SAVE_CONTRACT,
   PI_DIRECTORY_MOVE_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
@@ -25,9 +26,9 @@ import {
   sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import {
-  resolveSandboxWorkspaceRoot,
   CapabilityDeploymentSnapshotLoader,
   hasVerifiedPiFileConflict,
+  resolveSandboxWorkspaceRoot,
   revalidateCapabilityDeploymentSnapshot,
   verifyPiWriteEvidence,
   verifySandboxHost,
@@ -205,7 +206,7 @@ export class ProductionSandboxExecutionV2 {
               ? "service_start"
               : tool === "bash"
                 ? "command"
-                : ["write", "edit", "move_directory"].includes(tool)
+                : ["write", "edit", "move_directory", "save_copy"].includes(tool)
                   ? "verified_effect"
                   : "fixed_read";
         if (
@@ -214,6 +215,7 @@ export class ProductionSandboxExecutionV2 {
             PI_FIXED_FILE_CONTRACT.version,
             PI_PREPARED_FILE_CONTRACT.version,
             PI_DIRECTORY_MOVE_CONTRACT.version,
+            PI_COPY_SAVE_CONTRACT.version,
           ].some((version) => version === plan.operationContract.version) ||
           ([PI_FIXED_FILE_CONTRACT.version, PI_PREPARED_FILE_CONTRACT.version].some(
             (version) => version === plan.operationContract.version,
@@ -221,6 +223,8 @@ export class ProductionSandboxExecutionV2 {
             !["read", "write", "edit"].includes(tool)) ||
           (plan.operationContract.version === PI_DIRECTORY_MOVE_CONTRACT.version) !==
             (tool === "move_directory") ||
+          (plan.operationContract.version === PI_COPY_SAVE_CONTRACT.version) !==
+            (tool === "save_copy") ||
           plan.operationContract.kind !== kind
         )
           throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");
@@ -271,8 +275,10 @@ export class ProductionSandboxExecutionV2 {
                 ...[
                   ".env",
                   ".git",
-                  ".himawari-trash",
-                  ...(["write", "edit"].includes(plan.operation) ? [] : [".himawari-recovery"]),
+                  ...(plan.operation === "save_copy" ? [] : [".himawari-trash"]),
+                  ...(["write", "edit", "save_copy"].includes(plan.operation)
+                    ? []
+                    : [".himawari-recovery"]),
                 ].map((name) => path.join(root.canonicalPath, name)),
               ]
             : binding.protectedPaths,
@@ -293,6 +299,7 @@ export class ProductionSandboxExecutionV2 {
           PI_FIXED_FILE_CONTRACT.version,
           PI_PREPARED_FILE_CONTRACT.version,
           PI_DIRECTORY_MOVE_CONTRACT.version,
+          PI_COPY_SAVE_CONTRACT.version,
         ].some((version) => version === plan.operationContract.version) ||
           [PI_FIXED_FILE_CONTRACT.version, PI_PREPARED_FILE_CONTRACT.version].some(
             (version) => version === plan.operationContract.version,
@@ -301,6 +308,8 @@ export class ProductionSandboxExecutionV2 {
             Boolean(resolved.scope.preparedFile) ||
           (plan.operationContract.version === PI_DIRECTORY_MOVE_CONTRACT.version) !==
             Boolean(resolved.scope.directoryMove) ||
+          (plan.operationContract.version === PI_COPY_SAVE_CONTRACT.version) !==
+            Boolean(resolved.scope.copySave) ||
           resolved.scope.profileRef !== "authorized-project.v1")
       )
         throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");

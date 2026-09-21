@@ -413,3 +413,40 @@ it("freezes both directory move paths under the original move permission", async
   ).toMatchObject({ outcome: "failed" });
   expect(f.authorize).not.toHaveBeenCalled();
 });
+
+it.each(["create", "update", "move", "trash"] as const)(
+  "authorizes the actual prepared copy %s effect",
+  async (operation) => {
+    const f = fixture();
+    f.services.binding = async () => ({
+      ...f.binding,
+      grant: { ...f.binding.grant, operations: ["read", operation] },
+      copySaveOperation: { id: "prepared:copy", operation, canonicalHash: "sha256:copy" },
+    });
+    const call = {
+      ...f.call,
+      capabilityRef: "coding.save_copy",
+      arguments: { operationId: "prepared:copy", expectedHash: "sha256:copy" },
+    };
+    await executeProductionCodingRequest(call, "save_copy", f.services, f.ctx);
+    expect(f.authorize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: operation === "trash" ? "DELETE" : "CREATE_OR_UPDATE",
+        targets: expect.arrayContaining([
+          { type: "prepared-file-operation", ref: "prepared:copy" },
+        ]),
+      }),
+      undefined,
+    );
+    f.authorize.mockClear();
+    expect(
+      await executeProductionCodingRequest(
+        { ...call, arguments: { ...call.arguments, expectedHash: "changed" } },
+        "save_copy",
+        f.services,
+        f.ctx,
+      ),
+    ).toMatchObject({ outcome: "failed" });
+    expect(f.authorize).not.toHaveBeenCalled();
+  },
+);

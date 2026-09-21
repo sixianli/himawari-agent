@@ -24,6 +24,7 @@ type Tool =
   | "grep"
   | "ls"
   | "move_directory"
+  | "save_copy"
   | "web_search";
 const hash = (value: unknown) =>
   createHash("sha256")
@@ -92,18 +93,27 @@ export async function executeProductionCodingRequest(
   )
     return failed("CODING_BINDING_UNAVAILABLE");
   if (binding.workspaceCopy && tool !== "bash") return failed("CODING_COPY_REQUIRES_BASH");
+  if (
+    tool === "save_copy" &&
+    (!binding.copySaveOperation ||
+      binding.copySaveOperation.id !== call.arguments["operationId"] ||
+      binding.copySaveOperation.canonicalHash !== call.arguments["expectedHash"])
+  )
+    return failed("COPY_SAVE_OPERATION_UNAVAILABLE");
   const grant = binding.grant;
   if (call.dataClassification !== "private" || (grant === null && tool !== "web_search"))
     return failed("CODING_DIRECTORY_UNAVAILABLE");
-  const write = ["write", "edit", "bash", "move_directory"].includes(tool);
+  const write = ["write", "edit", "bash", "move_directory", "save_copy"].includes(tool);
   const required =
-    tool === "move_directory"
-      ? ["move"]
-      : tool === "write"
-        ? ["read", "create", "update"]
-        : tool === "edit"
-          ? ["read", "update"]
-          : ["read"];
+    tool === "save_copy" && binding.copySaveOperation
+      ? ["read", binding.copySaveOperation.operation]
+      : tool === "move_directory"
+        ? ["move"]
+        : tool === "write"
+          ? ["read", "create", "update"]
+          : tool === "edit"
+            ? ["read", "update"]
+            : ["read"];
   if (
     grant !== null &&
     (grant.hostId !== binding.hostId ||
@@ -133,7 +143,7 @@ export async function executeProductionCodingRequest(
           Number(args["limit"]) > 10)))
   )
     return failed("WEB_SEARCH_INPUT_INVALID");
-  if (tool !== "bash" && tool !== "web_search") {
+  if (tool !== "bash" && tool !== "web_search" && tool !== "save_copy") {
     if (!grant) return failed("CODING_DIRECTORY_UNAVAILABLE");
     const target =
       args["path"] ?? (tool === "ls" || tool === "find" || tool === "grep" ? "." : undefined);
@@ -197,7 +207,13 @@ export async function executeProductionCodingRequest(
   };
   const resourceRef = `coding:${hash([call.runId, call.toolCallId, tool, args, binding])}`;
   const actionKind =
-    tool === "bash" ? "INSTALL_OR_EXECUTE_CODE" : write ? "CREATE_OR_UPDATE" : "READ";
+    tool === "bash"
+      ? "INSTALL_OR_EXECUTE_CODE"
+      : binding.copySaveOperation?.operation === "trash"
+        ? "DELETE"
+        : write
+          ? "CREATE_OR_UPDATE"
+          : "READ";
   const intent: GovernedActionIntent = {
     contractVersion: "authorization.v2",
     id: resourceRef,
@@ -220,6 +236,9 @@ export async function executeProductionCodingRequest(
         : []),
       ...(binding.workspaceCopy
         ? [{ type: "workspace-copy", ref: binding.workspaceCopy.canonicalRootId }]
+        : []),
+      ...(binding.copySaveOperation
+        ? [{ type: "prepared-file-operation", ref: binding.copySaveOperation.id }]
         : []),
       { type: "tool", ref: tool },
       { type: "input-digest", ref: hash(args) },

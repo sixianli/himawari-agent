@@ -11,6 +11,7 @@ import {
 } from "@himawari-agent/application";
 import {
   FIXED_FILE_COMPLETION_GUARANTEE,
+  PI_COPY_SAVE_CONTRACT,
   PI_DIRECTORY_MOVE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   type SandboxExecutionPlanV2,
@@ -222,9 +223,11 @@ export function createProductionSandboxControl(options: Options) {
     if (
       qualification.guarantees?.includes(FIXED_FILE_COMPLETION_GUARANTEE) &&
       record.plan.operationContract.ref === PI_PREPARED_FILE_CONTRACT.ref &&
-      [PI_PREPARED_FILE_CONTRACT.version, PI_DIRECTORY_MOVE_CONTRACT.version].some(
-        (version) => version === record.plan.operationContract.version,
-      ) &&
+      [
+        PI_PREPARED_FILE_CONTRACT.version,
+        PI_DIRECTORY_MOVE_CONTRACT.version,
+        PI_COPY_SAVE_CONTRACT.version,
+      ].some((version) => version === record.plan.operationContract.version) &&
       record.plan.mode === "foreground" &&
       raw.taskStarted &&
       raw.phase === "finished" &&

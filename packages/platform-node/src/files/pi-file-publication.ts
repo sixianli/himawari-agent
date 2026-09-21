@@ -37,6 +37,113 @@ const length = (value: unknown): value is number =>
   Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 16 * 1024 * 1024;
 const identityPart = (value: unknown) => typeof value === "string" && /^[0-9]+$/.test(value);
 
+/** Shared durable, scope-bound records for installed fixed-operation runners. */
+export function createPrivatePublicationRecords<K extends string>(input: {
+  readonly privateDirectory: string;
+  readonly bindingDigest: string;
+  readonly names: Readonly<Record<K, string>>;
+  readonly maximumBytes?: number;
+}) {
+  const { bindingDigest, names } = input;
+  const directory = async () => {
+    if ((await realpath(input.privateDirectory)) !== input.privateDirectory) fail();
+    const info = await lstat(input.privateDirectory);
+    if (
+      !info.isDirectory() ||
+      info.isSymbolicLink() ||
+      (info.mode & 0o077) !== 0 ||
+      (typeof process.getuid === "function" && info.uid !== process.getuid())
+    )
+      fail();
+    return `${info.dev}:${info.ino}`;
+  };
+  const syncDirectory = async () => {
+    const fd = await open(input.privateDirectory, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      await fd.sync();
+    } finally {
+      await fd.close();
+    }
+  };
+  const read = async (kind: K): Promise<unknown | undefined> => {
+    const parent = await directory();
+    const filename = path.join(input.privateDirectory, names[kind]);
+    const fd = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      },
+    );
+    if (!fd) return undefined;
+    try {
+      const before = await fd.stat();
+      if (
+        !before.isFile() ||
+        before.nlink !== 1 ||
+        before.size > (input.maximumBytes ?? 32768) ||
+        (before.mode & 0o077) !== 0
+      )
+        fail();
+      const bytes = Buffer.alloc(before.size);
+      for (let offset = 0; offset < bytes.length; ) {
+        const read = await fd.read(bytes, offset, bytes.length - offset, offset);
+        if (!read.bytesRead) fail();
+        offset += read.bytesRead;
+      }
+      const after = await fd.stat();
+      const current = await lstat(filename);
+      if (
+        bytes.length !== before.size ||
+        before.size !== after.size ||
+        before.mtimeMs !== after.mtimeMs ||
+        before.ctimeMs !== after.ctimeMs ||
+        current.dev !== before.dev ||
+        current.ino !== before.ino ||
+        current.nlink !== 1 ||
+        parent !== (await directory())
+      )
+        fail();
+      const parsed = record(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
+      if (
+        parsed["schemaVersion"] !== `pi-file-${kind}.v1` ||
+        parsed["bindingDigest"] !== bindingDigest
+      )
+        fail();
+      return parsed["proof"];
+    } finally {
+      await fd.close();
+    }
+  };
+  const write = async (kind: K, proof: unknown) => {
+    const parent = await directory();
+    const temporary = path.join(input.privateDirectory, `pi-publication-${randomUUID()}.tmp`);
+    const destination = path.join(input.privateDirectory, names[kind]);
+    const bytes = Buffer.from(
+      JSON.stringify({ schemaVersion: `pi-file-${kind}.v1`, bindingDigest, proof }),
+    );
+    if (bytes.length > (input.maximumBytes ?? 32768)) fail();
+    const fd = await open(
+      temporary,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      await fd.writeFile(bytes);
+      await fd.sync();
+    } finally {
+      await fd.close();
+    }
+    if (parent !== (await directory())) fail();
+    // A prior record is never replaced. An interrupted preparation cannot become
+    // a second write by reopening the runner with the same private directory.
+    await link(temporary, destination);
+    await unlink(temporary);
+    await syncDirectory();
+    if (parent !== (await directory())) fail();
+  };
+  return { read, write };
+}
+
 /** Private metadata for one installed fixed-file runner. It contains no candidate
  * text and grants no execution right. Scope and parsed input bind every record. */
 export function createPiFilePublicationJournal(value: Context) {
@@ -72,102 +179,7 @@ export function createPiFilePublicationJournal(value: Context) {
     commit: "pi-file-commit.v1.json",
     conflict: "pi-file-conflict.v1.json",
   } as const;
-  const directory = async () => {
-    if ((await realpath(input.privateDirectory)) !== input.privateDirectory) fail();
-    const info = await lstat(input.privateDirectory);
-    if (
-      !info.isDirectory() ||
-      info.isSymbolicLink() ||
-      (info.mode & 0o077) !== 0 ||
-      (typeof process.getuid === "function" && info.uid !== process.getuid())
-    )
-      fail();
-    return `${info.dev}:${info.ino}`;
-  };
-  const syncDirectory = async () => {
-    const fd = await open(input.privateDirectory, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try {
-      await fd.sync();
-    } finally {
-      await fd.close();
-    }
-  };
-  const read = async (kind: keyof typeof names): Promise<unknown | undefined> => {
-    const parent = await directory();
-    const filename = path.join(input.privateDirectory, names[kind]);
-    const fd = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW).catch(
-      (error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return undefined;
-        throw error;
-      },
-    );
-    if (!fd) return undefined;
-    try {
-      const before = await fd.stat();
-      if (
-        !before.isFile() ||
-        before.nlink !== 1 ||
-        before.size > 32768 ||
-        (before.mode & 0o077) !== 0
-      )
-        fail();
-      const bytes = Buffer.alloc(before.size);
-      for (let offset = 0; offset < bytes.length; ) {
-        const read = await fd.read(bytes, offset, bytes.length - offset, offset);
-        if (!read.bytesRead) fail();
-        offset += read.bytesRead;
-      }
-      const after = await fd.stat();
-      const current = await lstat(filename);
-      if (
-        bytes.length !== before.size ||
-        before.size !== after.size ||
-        before.mtimeMs !== after.mtimeMs ||
-        before.ctimeMs !== after.ctimeMs ||
-        current.dev !== before.dev ||
-        current.ino !== before.ino ||
-        current.nlink !== 1 ||
-        parent !== (await directory())
-      )
-        fail();
-      const parsed = record(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
-      if (
-        parsed["schemaVersion"] !== `pi-file-${kind}.v1` ||
-        parsed["bindingDigest"] !== bindingDigest
-      )
-        fail();
-      return parsed["proof"];
-    } finally {
-      await fd.close();
-    }
-  };
-  const write = async (kind: keyof typeof names, proof: unknown) => {
-    const parent = await directory();
-    const temporary = path.join(input.privateDirectory, `pi-publication-${randomUUID()}.tmp`);
-    const destination = path.join(input.privateDirectory, names[kind]);
-    const bytes = Buffer.from(
-      JSON.stringify({ schemaVersion: `pi-file-${kind}.v1`, bindingDigest, proof }),
-    );
-    if (bytes.length > 32768) fail();
-    const fd = await open(
-      temporary,
-      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
-      0o600,
-    );
-    try {
-      await fd.writeFile(bytes);
-      await fd.sync();
-    } finally {
-      await fd.close();
-    }
-    if (parent !== (await directory())) fail();
-    // A prior record is never replaced. An interrupted preparation cannot become
-    // a second write by reopening the runner with the same private directory.
-    await link(temporary, destination);
-    await unlink(temporary);
-    await syncDirectory();
-    if (parent !== (await directory())) fail();
-  };
+  const { read, write } = createPrivatePublicationRecords({ ...input, bindingDigest, names });
   type Parent = { readonly device: string; readonly inode: string };
   const captureParents = async (): Promise<readonly Parent[]> => {
     let current = input.workspace;

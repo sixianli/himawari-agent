@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import {
+  COPY_SAVE_VERIFIER,
   DIRECTORY_MOVE_VERIFIER,
+  PI_COPY_SAVE_CONTRACT,
   PI_DIRECTORY_MOVE_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   PI_RUNNER_CONTRACT,
   PI_WRITE_VERIFIER,
+  type SandboxCopySave,
   type SandboxDirectoryMove,
   type SandboxExecutionPlanV2,
   type SandboxFileTarget,
@@ -35,6 +38,7 @@ export function verifyPiWriteEvidence(input: {
   readonly scope: {
     readonly directoryGrant: Pick<SandboxScope["directoryGrant"], "ref" | "revision">;
     readonly directoryMove?: SandboxDirectoryMove;
+    readonly copySave?: SandboxCopySave;
     readonly preparedFile?: SandboxPreparedFile;
     readonly fileTarget?: SandboxFileTarget;
   };
@@ -44,6 +48,47 @@ export function verifyPiWriteEvidence(input: {
     throw new Error("PI_WRITE_EVIDENCE_INVALID");
   };
   const contract = input.plan.operationContract;
+  if (
+    contract.ref === PI_COPY_SAVE_CONTRACT.ref &&
+    contract.version === PI_COPY_SAVE_CONTRACT.version
+  ) {
+    const expected = input.scope.copySave;
+    const result = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input.bytes));
+    const parameters = input.parameters as { operationId?: unknown; expectedHash?: unknown };
+    const conflict =
+      result?.isError === true &&
+      result?.verifiedCopySave?.status === "not_started" &&
+      result?.fileConflict?.operationId === expected?.operationId &&
+      result?.fileConflict?.canonicalHash === expected?.canonicalHash;
+    if (
+      contract.kind !== "verified_effect" ||
+      contract.verifierRef !== COPY_SAVE_VERIFIER.ref ||
+      contract.verifierVersion !== COPY_SAVE_VERIFIER.version ||
+      contract.targetRef !== COPY_SAVE_VERIFIER.targetRef ||
+      input.plan.operation !== "save_copy" ||
+      !expected ||
+      result?.schemaVersion !== "pi-result.v1" ||
+      result.tool !== "save_copy" ||
+      (!conflict && result.isError !== false) ||
+      result.source?.toolCallId !== input.plan.identity.toolCallId ||
+      result.source.directoryGrantRef !== input.scope.directoryGrant.ref ||
+      result.source.directoryGrantRevision !== input.scope.directoryGrant.revision ||
+      hash(result.source.parameters) !== hash(input.parameters) ||
+      typeof result.source.workspace !== "string" ||
+      !path.isAbsolute(result.source.workspace) ||
+      path.normalize(result.source.workspace) !== result.source.workspace ||
+      (input.workspace !== undefined && input.workspace !== result.source.workspace) ||
+      parameters?.operationId !== expected.operationId ||
+      parameters.expectedHash !== expected.canonicalHash ||
+      result.verifiedCopySave?.operationId !== expected.operationId ||
+      result.verifiedCopySave.canonicalHash !== expected.canonicalHash ||
+      (!conflict && result.verifiedCopySave.status !== "verified") ||
+      !Number.isSafeInteger(result.verifiedCopySave.revision) ||
+      result.verifiedCopySave.revision < 1
+    )
+      reject();
+    return conflict ? "conflict" : "published";
+  }
   if (
     contract.ref === PI_DIRECTORY_MOVE_CONTRACT.ref &&
     contract.version === PI_DIRECTORY_MOVE_CONTRACT.version

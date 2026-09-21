@@ -1,0 +1,46 @@
+{
+  "projects": [
+    {
+      "project": "contracts",
+      "files": 23,
+      "total": 349,
+      "passed": 349,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "project": "e2e",
+      "files": 1,
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "project": "integration",
+      "files": 88,
+      "total": 1752,
+      "passed": 1752,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "project": "pi-compat",
+      "files": 12,
+      "total": 130,
+      "passed": 130,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "project": "unit",
+      "files": 132,
+      "total": 1894,
+      "passed": 1894,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "total": 4128,
+  "files": 256
+}

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:8e33188eea7a57071d22ab15e64055d29375e14d259b3a90b4bfbf7fa3a405c6"
+contract_sha256: "sha256:93abbf5aaba79cf2756f92f1372cea1db1f8b302478b18b5ecc19e8026043c3d"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,9 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- apps/agent-service/src/production-copy-save.ts
+- packages/platform-node/src/files/workspace-copy-publication.ts
+- packages/platform-node/src/files/pi-file-publication.ts
 - apps/agent-service/src/production-workspace-copies.ts
 - packages/platform-node/src/candidate-workspace/qualified-candidate-workspace.ts
 - packages/persistence-sqlite/src/migrations/0046_directory_move_contract.sql
@@ -35,7 +38,6 @@ date: "2026-08-27"
 - packages/runtime-pi/src/prepare-file-mutation.ts
 - packages/runtime-pi/src/prepare-file-mutation-worker.ts
 - packages/persistence-sqlite/src/migrations/0037_fixed_file_recovery_artifacts.sql
-- packages/platform-node/src/files/pi-file-publication.ts
 - apps/agent-service/src/production-sandbox-file-recovery.ts
 - apps/agent-service/src/production-sandbox-tool-result.ts
 - apps/agent-service/src/production-runtime-tools.ts
@@ -263,7 +265,7 @@ P3 文件协议使用 Schema 46 的 writer 边界。升级和恢复必须保留�
 
 P4 工作副本保存合同将当前 writer 边界推进至 Schema 47，保留已有行和历史迁移。副本的待保存操作包含目录授权版本、根身份、输入内容/身份基线及先前逐文件保存结果；Schema 46 或更旧的程序必须拒绝写入，不能忽略这些条件继续执行。恢复点须同时保留对应受保护内容和文件操作记录；若单独配置候选目录，须核对其备份范围，不能仅凭数据库备份宣称唯一候选已受保护。过期不自动应用或删除候选；回退须停止新 writer 并恢复匹配旧程序的完整恢复点。本批没有执行实际实例迁移，也没有为缺少资格的候选命令后端生成启用资格。
 
-SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件基线和候选内容，生产 Owner 入口按既有 Bash 配置装配创建、选择和准备操作。`prepare` 不表示已保存回原目录；原目录保存尚未接通正式执行队列，不能据此启用旧 `host.file.execute`。备份或权威迁移必须保留唯一副本和受保护的选择/操作记录；换主机或路径后重新验证目录身份、来源授权与执行资格，不能沿用旧 inode 或进程证明。具体已验证范围见[P4 SRT 副本续接记录](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-srt-copy)。
+SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件基线和候选内容，生产 Owner 入口按既有 Bash 配置装配创建、选择和准备操作。`prepare` 不表示已保存回原目录；保存须配置 `save_copy` 工具和 `pi-coding-tool@5` 前台 `verified_effect` 描述，经原 Run/Worker 准入队列逐文件执行，不能启用绕过该队列的旧 `host.file.execute`。描述的 `directoryOperations` 是上限，实际 scope 仅含 read 与当前操作；移入回收区仍须 trash 授权。 备份须同时保留任务私有目录中的 `copy-save-state-*.json`、原目录 `.himawari-recovery` 中的已暂存内容/快照以及 SQLite 操作记录；最终结果写回中断后，只能在原资源已确认释放后核验并导入历史效果，不能重新派发保存。旧严格 Scope 读者会拒绝合同 5，禁止混用不支持该合同的 Agent/Worker 或复用旧安装摘要。备份或权威迁移必须保留唯一副本和受保护的选择/操作记录；换主机或路径后重新验证目录身份、来源授权与执行资格，不能沿用旧 inode 或进程证明。具体已验证范围见[P4 完成验收](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-completed)。
 
 
 ## Safety and Preconditions

@@ -14,6 +14,7 @@ import {
 } from "@himawari-agent/application/sandbox-execution-projection";
 import { workspaceClaimsConflict as conflicts } from "@himawari-agent/application/workspace-claims";
 import {
+  PI_COPY_SAVE_CONTRACT,
   PI_DIRECTORY_MOVE_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
@@ -1169,9 +1170,10 @@ export class SqliteSandboxExecutionOperations {
           PI_FIXED_FILE_CONTRACT.version,
           PI_PREPARED_FILE_CONTRACT.version,
           PI_DIRECTORY_MOVE_CONTRACT.version,
+          PI_COPY_SAVE_CONTRACT.version,
         ].some((version) => version === current.plan.operationContract.version) &&
         current.plan.operationContract.kind === "verified_effect" &&
-        ["write", "edit", "move_directory"].includes(current.plan.operation) &&
+        ["write", "edit", "move_directory", "save_copy"].includes(current.plan.operation) &&
         this.db
           .prepare(`SELECT 1 FROM run_payload_artifacts a JOIN payloads p ON p.ref=a.payload_ref AND p.owner_id=a.owner_id AND p.agent_id=a.agent_id
           WHERE a.owner_id=? AND a.agent_id=? AND a.run_id=? AND a.purpose='trace' AND a.operation_key=? AND a.payload_ref=? AND a.content_digest=? AND p.lifecycle_state='active'`)

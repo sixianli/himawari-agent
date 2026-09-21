@@ -9,6 +9,7 @@ import {
   createDirectoryMoveJournal,
   createPiFilePublicationJournal,
   createSandboxedCodingOperations,
+  createWorkspaceCopyPublication,
   exportPiOutputFile,
 } from "@himawari-agent/platform-node";
 
@@ -79,7 +80,57 @@ try {
     throw new Error("PI_PATH_OUTSIDE_SCOPE");
   if (input.scope.fileTarget && !["read", "write", "edit"].includes(input.tool))
     throw new Error("PI_FIXED_FILE_CONTRACT_INVALID");
-  if (input.tool === "move_directory") {
+  if (input.tool === "save_copy") {
+    if (
+      input.executionMode !== "foreground" ||
+      !input.scope.copySave ||
+      args["operationId"] !== input.scope.copySave.operationId ||
+      args["expectedHash"] !== input.scope.copySave.canonicalHash ||
+      Object.keys(args).some((key) => !["operationId", "expectedHash"].includes(key))
+    )
+      throw new Error("COPY_SAVE_INPUT_CHANGED");
+    const journal = await createWorkspaceCopyPublication(input);
+    let conflict = false;
+    const verifiedCopySave = await journal.execute().catch(async (error) => {
+      const proof = await journal.conflicted(error);
+      conflict = true;
+      return proof;
+    });
+    const output = JSON.stringify({
+      schemaVersion: "pi-result.v1",
+      tool: input.tool,
+      isError: conflict,
+      ...(conflict
+        ? {
+            fileConflict: {
+              operationId: input.scope.copySave.operationId,
+              canonicalHash: input.scope.copySave.canonicalHash,
+            },
+          }
+        : {}),
+      content: [
+        {
+          type: "text",
+          text: conflict
+            ? "原文件或依赖已变化；尚未开始保存，副本保留。"
+            : "本次副本改动已逐文件保存并核验。",
+        },
+      ],
+      verifiedCopySave,
+      fileCommitClosed: true,
+      source: {
+        workspace: input.workspace,
+        toolCallId: input.scope.toolCallId,
+        directoryGrantRef: input.scope.directoryGrant.ref,
+        directoryGrantRevision: input.scope.directoryGrant.revision,
+        parameters,
+      },
+    });
+    if (Buffer.byteLength(output) > input.maxOutputBytes || scanMachineSecrets(output).length)
+      throw new Error("PI_RESULT_OUTPUT_LIMIT");
+    process.stdout.write(output);
+    if (conflict) process.exitCode = 1;
+  } else if (input.tool === "move_directory") {
     const move = input.scope.directoryMove;
     if (
       !move ||
