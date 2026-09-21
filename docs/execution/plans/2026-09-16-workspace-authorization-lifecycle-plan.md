@@ -16,7 +16,7 @@ date: "2026-09-16"
 
 **架构：** 继续复用 Pi 工具与 Agent Loop、Anthropic Sandbox Runtime、现有 Agent/Worker 和 SQLite。Himawari 接好持久权限、资源身份、文件提交、恢复及页面投影；不重建工具协议、沙箱或工作流系统。
 
-**当前范围：** 用户已授权实施本 Plan，并确认 P0 的 r3 新增交互。多个局部实现已通过验证并保存为本地提交，完整 P0～P7 与 68 项产品验收尚未完成；见[当前实施进展](#implementation-progress)与[本次实施记录](#implementation-record)。自动审查真实配置、生产迁移和部署尚未执行。
+**当前范围：** 用户已授权实施本 Plan，并确认 P0 的 r3 新增交互。多个局部实现已通过验证并保存为本地提交，完整 P0～P7 与 68 项产品验收尚未完成；见[当前实施进展](#implementation-progress)与[本次实施记录](#implementation-record)。P5 已完成本地接入、替代分支与受控测试，见[P5 本批完成条件](#p5-batch-contract)；真实审查模型配置、生产迁移和部署仍未执行。
 
 **后续实施入口：** 继续本 Plan 前先执行[复盘后实施约束](#execution-rules)，再按[当前批次完成条件](#current-batch-contract)续接；历史检查点只用于查证，不能作为当前运行状态。
 
@@ -24,7 +24,7 @@ date: "2026-09-16"
 
 ## 阅读导航
 
-- [复盘后实施约束与当前批次完成条件](#execution-rules)
+- [复盘后实施约束与当前批次完成条件](#execution-rules)：[P5 本批完成条件](#p5-batch-contract)
 - [剩余工作依赖顺序与验收批次（2026-09-20）](#remaining-order)
 - [原完成结果交付恢复](#p1-result-delivery)
 - [取消通知与未派发错误合同](#p1-error-contract)
@@ -119,6 +119,85 @@ date: "2026-09-16"
 
 这些主要是既有清晰规则未被执行，以及新验收出口改变后未重新检查前提；没有证据表明需要新增技能或修改技能触发描述。P3 的整阶段交付、冻结后集中验证、失败日志保留和真实双平台验收应继续保留：标准构建与全套测试约 13 分钟属于必要验收，不能为了节省 token 删除。本文不估算未经测量的节省比例。
 
+<a id="p5-batch-contract"></a>
+
+### 当前批次完成条件与结果：P5（2026-09-21）
+
+[↑ 返回阅读导航](#contents)
+
+承接 P4 已完成状态，本批只处理 [P5](#p5) 剩余四项。P5 不是从零开始：`ActionPolicyService` 的可选审查入口、结构化审查请求/决定、Schema 39 持久记录、`ModelActionReviewer`、预算/取消传递和审查来源页面投影均已存在（见[P5 默认关闭的自动审查基础](#implementation-record)、[复用模型端口、预算与取消](#implementation-record)、[从 Pi Stop 传递取消](#implementation-record)）。本批按当前源码与实际装配重新核对，只补真实缺口。
+
+| 项目 | 本批约束 |
+| --- | --- |
+| 原待办与验收 | [P5 剩余四项](#p5)：生产装配接入、结果分支与注入、等待/竞争条件、具体启用建议；对应 R01～R07、A05 与 P5 侧的 U07 消费边界 |
+| 用户可观察结果 | 未配置时人工/拒绝路径与今日完全一致；配置后委托范围内请求自动审查并标明来源，其余仍在会话内确认；建议替代不执行自由文本 |
+| 基线缺口（按符号核对） | ①`createProductionFileReadServices` 接受 `automaticReview`，但 `service-main.ts` 与 `production-approval-gateway.ts` 均未装配，`AutomaticActionReviewService`/`ModelActionReviewer` 在生产入口没有调用者；②`AutomaticActionReviewService.review` 丢弃结果，`ActionPolicyService` 无法区分“已自动批准”与“建议替代”，替代分支没有回到原权限入口；③`sqlite-automatic-action-review.finish` 只处理 `approve`/`deny`；④配置 schema 无自动审查段 |
+| 复用能力 | 产品 `ModelPort`、`TrustedModelProviderAdapter`、`ProtectedPiModelPayloadBoundary`（受保护输入/输出）、`ModelInvocationAdmissionService` 预算、`AutomaticReviewStorePort`、原 Approval/Grant/额度预约、Pi 顺序工具批次与 `runtimeToolAuthorizationResult` |
+| 不新增 | 第二个 provider 协议、授权旁路、调度队列、审查持久化体系、平行模型执行循环 |
+| 实施顺序 | ①生产装配（配置→审查服务→文件读取服务）；②建议替代的新请求与重新准入；③补充结果分支/注入/迟到竞争回归；④准备具体启用建议；⑤定向与消费者通过后冻结，执行交付验证 |
+| 实际验证入口 | `test/integration/automatic-action-review.test.ts`、`authorization-capability-governance.test.ts`、`production-file-read-workflow.unit.test.ts`、`apps/agent-service/test/*`、`packages/platform-node/test/strict-configuration*`；另加生产装配层受控模型回归与真实 SQLite 读回 |
+| 完成条件 | 四项待办都有可重复回归与实际生产入口证据；未配置路径零外发；模型建议不产生授权；替代走新 intent 与原准入；定向与消费者检查通过后冻结输入，执行标准构建/测试与适用检查 |
+| 当前状态 | **本地接入、受控测试与标准交付验证已完成；真实模型验证与启用待确认。** 第①②③项待办已有实现与回归；第④项在[自动审查启用建议](#automatic-review-enablement)给出可审阅方案，真实调用、费用与披露仍需按[配置与授权边界](#decisions)确认，因此 [P5](#p5) 第③④项不能勾选为完成 |
+
+### P5 本批实际改动与验证证据（2026-09-21）
+
+[↑ 返回阅读导航](#contents)
+
+按当前源码核实，生产入口确实没有审查消费者，且替代分支没有回到原权限入口；这就是本批补齐的部分。改动保持既有产品边界，没有新增 provider 协议、授权旁路、调度存储或平行模型循环。
+
+| 原待办 | 实际改动 | 生产入口与消费者 |
+| --- | --- | --- |
+| 通过现有 runtime-pi 模型边界、披露与预算接入 | 新增 `createProductionAutomaticReview`：按 `runPolicy.automaticReview` 组合 `AutomaticActionReviewService` + `ModelActionReviewer`，复用产品 `ModelPort`/`TrustedModelProviderAdapter`（持久准入与预算）、`ProtectedPiModelPayloadBoundary`（受保护输入输出）与 `AutomaticReviewStorePort`；`service-main.ts` 只在配置存在时装配，配置存在却缺少模型边界或受保护 payload 时以 `AUTOMATIC_REVIEW_RUNTIME_UNAVAILABLE` 失败，不静默降级 | `apps/agent-service/src/production-automatic-review.ts`、`service-main.ts`、`production-file-read-services.ts` 的 `automaticReview` 选项 |
+| 覆盖审查通过、建议替代、需人工、拒绝、超时、无效输出和注入 | `AutomaticActionReviewService.review` 返回宿主已提交的 `AutomaticReviewOutcome`；`ActionPolicyService` 只对 `alternative` 生成 `DENY automatic_review_suggested_alternative` 并附 `automaticReview.suggestionRef`，其余仍按原逻辑重读权限；`automaticReviewDelegationCovers` 与新 intent 摘要使修改后的请求缺少委托覆盖而回到人工；无效键、越范围文本与被替换绑定继续被 `parseAutomaticReviewDecision` 拒绝 | `runtimeToolAuthorizationResult`（文件读取与编码工作流共用）把替代渲染为“必须提出新的具体请求”的失败结果；仅暴露宿主限定的 reasonCode |
+| 等待无本次 claim、迟到结果不覆盖、自动批准来源 | SQLite `claim`/`finish` 不写 `sandbox_workspace_occupancy`、不建 Handle 或调用回执；`finish` 以事务内 lease、Run 与委托核验拒绝迟到结果，并在审批/Grant 上写入 `automaticReview` 与 `policyAuthorization` 来源 | 现有 `test/integration/automatic-action-review.test.ts`、`sqlite-durable-operations.ts` 的审查事件写入、`thread-execution-projection.ts` 与 `execution-view.ts` 的来源标签 |
+| 提交具体启用建议 | 见[自动审查启用建议](#automatic-review-enablement) | 待用户确认；未确认前不启用 |
+
+**定向与消费者验证：** 新增生产装配层回归 `production-automatic-review.unit.test.ts`（未配置不组合；委托范围内经真实 SQLite 提交一个 bounded Grant 且 `automaticReview` 来源可读回；替代不产生 Grant/Approval 且 `suggestionRef` 指向受保护 payload），并扩展 `automatic-action-review.unit.test.ts`（提示注入文本只作数据）、`runtime-tool-authorization.unit.test.ts`（替代走失败结果与新请求要求）、`automatic-action-review.test.ts`（替代的持久记录与无授权）、`authorization-capability-governance.test.ts`（替代后新请求按新 intent 重新审查）、`startup-configuration.unit.test.ts`（审查配置只接受已配置的生成模型）。
+
+本批改动期间，`apps/agent-service/test/service-orchestration.unit.test.ts` 曾因把审查组合写成“测试替身缺方法就静默跳过”而启动失败；已改为按显式配置门控并在缺少运行时依赖时明确失败，该文件 57 项恢复通过。所有测试数字、环境与未验证边界见[本次交付说明](#p5-delivery)。**这些是本地受控模型与真实 SQLite 的接入证据，不是真实审查模型、费用或生产启用证据。完整命令与限制见[本批交付说明](#p5-delivery)。**
+
+[↑ 返回阅读导航](#contents)
+
+<a id="automatic-review-enablement"></a>
+
+### 自动审查启用建议（待用户确认）
+
+[↑ 返回阅读导航](#contents)
+
+自动审查默认关闭。启用 = 同时提供配置段与 Owner 委托记录；二者缺一都不会外发。下表是本批准备的可审阅方案，**在用户逐项确认前不执行任何真实调用**。
+
+| 待确认事项 | 建议值 | 依据与影响 |
+| --- | --- | --- |
+| 审查模型身份 | `modelDescriptors` 中一个专用生成模型引用，独立 `secretRef`；当前 schema 只有 primary/fallback/embedding 三种角色，且只允许一个 fallback，因此可能需要新增第三个生成模型（建议角色 `specialist`）或明确允许复用未选中的 fallback | 审查决定绑定 `modelRef` 与 `configurationVersion`；模型或配置变化即失效旧委托。复用 Run 模型会让同一次执行自我审查，只应作为过渡 |
+| 接收方与披露 | 仅该模型 provider 的既有出口；不新增接收方。审查输入不包含目录路径、文件名、文件正文、凭据或会话文本 | 现有受保护输入只有：审查/请求身份与摘要、能力与操作、actionKind、sideEffect、finalRisk、数据分级、目标类型集合、确定性事实码与期限。若需要模型判断具体参数，必须单独批准扩大披露集 |
+| 最小输入集合 | `automatic-review-input.v1`：`reviewId/runId/intentFingerprint/policyVersion/configurationVersion/modelRef/deadlineAt/approvalExpiresAt` + `action{capabilityRef,capabilityVersion,operation,actionKind,sideEffect,finalRisk,dataClassification,targetKinds,deterministicFacts}` | 足以判断“是否落在委托范围、风险层级、是否需要人工”，不足以复原被写入内容 |
+| 费用上限 | 审查单独计入原模型预算：`maximumWaitMs` 内单次调用；在 `modelDescriptors.<reviewer>.cost` 上按真实单价计费，并在 `budgets.perClassificationCostMicros.private` 与 `budgets.globalCostMicros` 内单独预留一条额度。建议首轮 `maximumWaitMs` 20–30 秒、`maxOutputBytes` 32768 | 未配置费用时不得默认免费；未知用量保存为 `unknown`，不推断免费。真实单价需用户提供后再定具体额度 |
+| 超时与故障 | 超时、模型失败、无效输出、身份不符与披露被拒都不放行，回到原人工确认路径；调用中取消若用量未知保留 unresolved，不退款也不重试 | 已由 `ActionPolicyService` 回退与 `ModelActionReviewer` 取消处理实现；超时不是用户拒绝 |
+| 委托范围 | 委托记录 `intentFingerprints` 只列 Owner 明确接受的**确切请求摘要**；新内容、路径、接收方或预算变化都是新 intent，缺少覆盖即回到人工 | 与 A05、R02、R06 一致；现有配置没有“按风险类别批量委托”的开关，本批也不新增 |
+| 允许自动批准 | 仅：`dataClassification=private`、`sideEffect=reversible` 或 `none`、`finalRisk≠CRITICAL`、`credentialOrAccessChange=false`、接收方与预算均落在委托内、且摘要已被 Owner 逐条列入委托 | 自动批准仍生成一次性精确 Grant，经原额度预约、撤销与 Worker 核验执行 |
+| 必须人工确认 | `finalRisk=CRITICAL`、凭据/访问变更、`sideEffect=irreversible`（含 bash 与 trash）、新接收方、成本或频率变化、无覆盖摘要、审查超时/失败/无效输出、任何“建议替代” | 与 Spec 的 CRITICAL 近期认证要求及 R04 一致 |
+| 禁止 | 硬拒绝规则命中的操作、沙箱范围外目标、能力未注册/未激活/非健康、已撤销或过期请求、跨 Owner/Agent/会话请求、以及无法确认的主机身份 | 硬拒绝与沙箱限制在审查之前判定，模型建议不能覆盖 |
+
+**启用前需要的真实验收（尚未执行）：** 用上表配置与一条 Owner 明确委托的确切摘要，在隔离数据目录执行一次真实调用，核对：①请求只含上述最小输入；②决策、`automaticReview` 来源与一次性 Grant 可独立读回；③实际用量与费用写入预算账户；④接收方可追溯；⑤撤销、取消与重复结果不产生第二次授权。缺任何一项都只报告“接入与受控测试完成”，不勾选 P5 完成。
+
+<a id="p5-delivery"></a>
+
+### P5 本批交付说明与未验证边界（2026-09-21）
+
+[↑ 返回阅读导航](#contents)
+
+| 项目 | 事实 |
+| --- | --- |
+| 验证命令 | `npx vitest run --config vitest.workspace.ts --project unit`、`--project integration`、`--project node-services/contracts/pi-compat/browser/e2e/admin-cli/tooling`；以及各定向文件单独运行 |
+| 通过结果 | 标准本地 CI（`node scripts/ci/local.mjs --check test --tools .ci-output/tools --output .ci-output/p5-final`）构建与测试均通过：**258 文件/4139 项，0 失败、0 跳过**；分项 unit 134/1902、contracts 23/349、integration 88/1755、e2e 1/3、pi-compat 12/130 |
+| 环境已存在的失败 | `test/integration/installable-node-services.test.ts` 与 `production-http-composition-process.test.ts` 因缺少预构建产物（`HIMAWARI_TEST_ARTIFACT`/`HIMAWARI_TEST_CONTEXT`）失败；`tooling` 4 文件/11 项因缺少 `.ci-output/tools/installation.json` 失败。已在未修改工作树时复现同样的失败，与本批改动无关，未修改这些文件或放宽断言 |
+| 受控边界 | 审查模型是测试替身，但 SQLite journal、Schema 39 持久记录、Approval/Grant 事务、预算结算、受保护 payload 与取消信号均为真实实现；没有真实 provider 调用、没有真实费用、没有生产启用 |
+| 未验证 | 真实审查模型/provider 身份与接收方、真实用量与费用、真实披露目的地、生产历史数据与部署；页面侧的替代来源展示沿用已有 P6 事件投影，完整页面联合验收仍归 P6 |
+| 仍未完成 | `npm run check` 与 `npm run lint` 仍被两份既有未跟踪原型 `verify.cjs` 阻断：`format:check` 报这两份文件，`lint` 报它们的 `noInnerDeclarations` 错误，另有 `host-file-read.ts`/`web-search-main.ts` 的 `useLiteralKeys` 信息级诊断。用暂存本批全部跟踪改动后的工作树复现了同样的 2 个 lint error/1777 条 info，属既有基线；本批没有修改这些文件，也没有把任务范围检查写成全目录检查通过 |
+| 本批适用检查 | `npm run typecheck`、`npm run check:boundaries`、`npm run check:secrets`、`npm run check:ci-policy`、`npm run check:v0.2-coverage`、`npm run check:v0.2-invariants` 与严格文档校验通过；范围内格式由改动文件的格式检查与上述标准 CI 构建覆盖 |
+
+[↑ 返回阅读导航](#contents)
+
 <a id="p4-route-correction"></a>
 
 ### P4 执行路线更正与续接依据
@@ -206,7 +285,7 @@ P2、P3 的完成证据分别保留在[P2 完成验收](#p2-completed)与[P3 完
 | [P2](#p2) | 审批摘要与重复决定、额度预约、排队身份、工具执行前检查点及取消传播；[未准入原队列绑定和原 Pi 批次续接](#p2-queued-run-restart) | 真实 Worker 文件效果与进程重启恢复联合验收；执行中撤销已有[实际网络与页面证据](#p2-network-authority)，完整生产登录/模型循环与其他平台联合覆盖仍待完成 |
 | [P3](#p3) | **七项完成**：具体资源与公平准入、目录改名、完整候选短提交、逐文件恢复、Worker 确定未发布冲突、原 Pi 关联重生成和读取合同；Mac/APFS 与 Linux/ext4 的实际证据及最终标准全套通过，见[P3 完成证据](#p3-completed) | 不扩大为任意命令后代清理、生产安装资格或部署；这些继续按 P1/P7 的原边界验收 |
 | [P4](#p4) | 纯联网私有范围、无用户目录 Grant/挂载/claim；本机越界拒绝探针 | 任意命令的更窄可强制范围、可选副本与逐文件应用、Linux 平台资格 |
-| [P5](#p5) | 默认关闭的审查持久化、宿主批准校验、现有模型边界适配、预算/取消和来源事件 | 替代方案建立新 intent 的完整路径；具体配置获确认后的真实模型、披露和费用验收 |
+| [P5](#p5) | 默认关闭的审查持久化、宿主批准校验、现有模型边界适配、预算/取消和来源事件；本批补齐[生产装配、替代的新 intent 路径与结果分支](#p5-batch-contract) | 具体配置获确认后的真实模型、披露与费用验收；[启用建议](#automatic-review-enablement)已提交待确认 |
 | [P6](#p6) | 自动审查来源与真实起止计时、终态工具结果未确认、首次加载和多语言窄屏持久浏览器回归；[Run/Trace 统一状态查询与页面消费](#p6-unified-state) | 资源 journal/队列/文件阶段及全部会话注意状态接入、全部阶段计时、真实网关至 Worker 文件操作和页面恢复联合路径 |
 | [P7](#p7) | 历史只读清单、Schema 28～45 的只读兼容及相关迁移回归 | 有现场证明的逐条修复候选、备份恢复演练、完整兼容矩阵与目标平台切换验收 |
 
@@ -386,7 +465,7 @@ P2、P3 的完成证据分别保留在[P2 完成验收](#p2-completed)与[P3 完
 - [ ] 通过现有 runtime-pi 模型访问边界、披露与预算治理接入选定服务；先用受控替身验证分支，不能为了测试擅自新增 provider 或付费调用。
 - [ ] 覆盖审查通过、建议安全替代、需要人工决定、拒绝、超时、无效输出和注入文本。安全替代产生新请求并重新准入；不确定/故障不默认放行。
 - [ ] 审查等待期间无本次文件 claim。重启/重复结果不再派发；迟到审查不能覆盖撤销、取消、过期或新请求。自动批准不展示成“用户已确认”。
-- [ ] 提交[具体启用建议](#decisions)，配置获确认后验证真实模型的请求、决策、执行和费用记录，再启用自动审查。真实效果验证不足时仅报告接入/替身测试结果。
+- [ ] 提交[具体启用建议](#decisions)，配置获确认后验证真实模型的请求、决策、执行和费用记录，再启用自动审查。真实效果验证不足时仅报告接入/替身测试结果。[启用建议](#automatic-review-enablement)已按当前源码与 schema 准备完成；真实模型、披露目的地与费用额度待用户确认。
 
 **出口：** 自动审查与人工批准使用同一受限执行入口。既有授权场景不额外调用审查模型；硬拒绝不能绕过；真实服务未验证前不能宣称 Auto-review 已可生产使用。
 

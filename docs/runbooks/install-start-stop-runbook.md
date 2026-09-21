@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:93abbf5aaba79cf2756f92f1372cea1db1f8b302478b18b5ecc19e8026043c3d"
+contract_sha256: "sha256:16f79ddb5d2093d424d71490511109c755da7906b3d75195b53ad13ae09d1a7d"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -296,6 +296,8 @@ SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件�
 项目七工具使用独立的 `dist/capability-programs/pi-coding-main.js`，固定 argv 仍是 hostId/workerInstanceId；安装 operationBindings 显式声明 `pi-coding-tool` 版本 `1`，只读工具采用 fixed_read，bash 采用 command，write/edit 采用带 verifier 的 verified_effect。scope 必须是 authorized-project.v1，仍复用 Grant targets 和原准入通道。该入口不能替代 host-readonly.v1 的 inspect/read 审批。工具目录不会因为文件存在而自动向模型开放能力。
 
 在计算 runtimeDigest 和主机资格之前准备 `runtimeRoot/pi-tools/bin/bash`、`rg`、`fd`：必须为适合目标 OS、可实际执行的普通文件，不接受符号链接。运行环境仅使用该目录作为 PATH，PI_OFFLINE=1；缺依赖明确失败。不要直接复制 macOS 平台签名的系统 Bash 并假定副本能运行；须验证实际安装文件及其签名/加载依赖。其他命令依赖同样须先安装在允许且固定的工具链内，不能以工具运行触发隐式下载。新增二进制会改变 runtimeDigest，须重新取得当前主机资格。
+
+自动审查默认关闭：只有同时提供 `runPolicy.automaticReview`（`delegationKey`/`configurationVersion`/`modelRef`/`maximumWaitMs`/`maxOutputBytes`）和匹配的 Owner 委托记录才会外发。缺少该配置段时人工确认路径完全不变；配置存在但模型边界或受保护 Payload 不可用时启动以 `AUTOMATIC_REVIEW_RUNTIME_UNAVAILABLE` 失败，不会静默忽略。`modelRef` 必须指向已配置的生成模型；委托只覆盖逐条列出的确切请求摘要，审查输入只含冻结的操作摘要与版本身份，不含文件正文、路径或凭据。启用前须按 [P5 启用建议](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#automatic-review-enablement) 确认模型身份、接收方与费用额度。
 
 通用 HITL 需要 migration 0026、受保护恢复 Payload、审批存储和执行租约一同可用。公开入口使用已有身份与 CSRF 校验提供 `approval.list/detail/respond`，Thread 的等待、恢复和取消状态通过持久事件通知页面。等待审批不占用执行槽位；批准、拒绝、审批过期或原 Run 总期限到达后才重新领取。恢复仍使用原始截止时间，不能重新分配时长。其他治理操作未因审批入口接入而自动启用。
 
