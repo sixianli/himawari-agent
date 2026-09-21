@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { mkdir, rename } from "node:fs/promises";
 import path from "node:path";
 import {
   claimFromRunExecutionLease,
@@ -7,6 +8,7 @@ import {
 import {
   createAuthorityHolderId,
   createAuthorityLeaseId,
+  createIdempotencyKey,
   createRunExecutionLeaseId,
 } from "@himawari-agent/domain";
 import type { ExecutionV2Event, ExecutionV2Request } from "@himawari-agent/execution-contracts";
@@ -65,7 +67,13 @@ async function fixture() {
       network: "grant_targets",
     },
     (intent) => intent,
-    { runtimeFingerprint, authority: () => authority },
+    {
+      runtimeFingerprint,
+      authority: () => authority,
+      realRun: true,
+      reserveAuthorization: true,
+      policyAuthorization: { key: "queue-policy", revision: 1 },
+    },
   );
   close.push(f.close);
   const peer = {
@@ -78,8 +86,12 @@ async function fixture() {
   let registry = createProductionWorkerParentBindingRegistry({ trustedPeerBinding: () => peer });
   let sent: Extract<ExecutionV2Request, { type: "work.execute" }> | undefined;
   let id = 0;
+  let beforeAccept: (() => Promise<void>) | undefined;
+  let now = T1;
+  let maximumCpu = f.input.resourceCeiling.maxCpuTimeMs;
   const request = vi.fn(async (message: ExecutionV2Request) => {
-    if (message.type === "work.delegate")
+    if (message.type === "work.delegate") {
+      await beforeAccept?.();
       return {
         ...message,
         kind: "response" as const,
@@ -92,6 +104,7 @@ async function fixture() {
           acceptedAt: T1,
         },
       };
+    }
     if (message.type === "work.execute") sent = message;
     return null;
   });
@@ -109,9 +122,19 @@ async function fixture() {
       authority: () => authority,
       peer: () => peer,
       parents: registry.writer,
-      assertRunActive: async () => {},
+      assertRunActive: async (runId) => {
+        const current = await f.repository
+          .runLifecycle(OWNER_ID, AGENT_ID, authority.product)
+          .readRun(runId);
+        if (!current || !["accepted", "building_context", "running"].includes(current.run.status))
+          throw new Error("RUN_NOT_ACTIVE");
+      },
+      maximumResourceCeiling: async () => ({
+        ...f.input.resourceCeiling,
+        maxCpuTimeMs: maximumCpu,
+      }),
       ceiling: { ...f.input.resourceCeiling, maxCpuTimeMs },
-      clock: { now: () => T1 },
+      clock: { now: () => now },
       ids: { next: (scope) => `${scope}:reentry:${++id}` },
       transport: {
         request,
@@ -167,6 +190,31 @@ async function fixture() {
     request,
     prepared,
     position,
+    setClock: (value: string) => {
+      now = value;
+      f.setNow(value);
+    },
+    tightenCeiling: () => {
+      maximumCpu = 1;
+    },
+    cancelRun: async () => {
+      const runs = f.repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product);
+      const current = await runs.readRun(f.call.runId);
+      if (!current) throw new Error("Run missing");
+      await runs.cancelRun({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: f.call.runId,
+        authority: authority.lease,
+        expectedRevision: current.revision,
+        idempotencyKey: createIdempotencyKey("queue-cancel"),
+        commandFingerprint: "queue-cancel",
+        payloadRef: "restart-prompt",
+      });
+    },
+    setBeforeAccept: (hook: () => Promise<void>) => {
+      beforeAccept = hook;
+    },
     changeFence: async () => {
       if (!f.call.context) throw new Error("context required");
       const oldDispatch = f.repository.runDispatch(
@@ -450,4 +498,96 @@ it("rebinds the original approval after real authority and Run lease replacement
     scope: { fencingToken: 2 },
     payload: { requestedAt: f.input.requestedAt, deadlineAt: f.input.deadlineAt },
   });
+});
+
+it.each(
+  (
+    [
+      "grant-revoked",
+      "directory-replaced",
+      "expired",
+      "cancelled",
+      "capability-disabled",
+      "budget-tightened",
+      "policy-disabled",
+    ] as const
+  ).flatMap((change) =>
+    (["queued", "before-execute"] as const).map((boundary) => ({ change, boundary })),
+  ),
+)("blocks $change at $boundary while preserving approval history", async ({ change, boundary }) => {
+  const f = await fixture();
+  const resumed = f.tool();
+  await resumed.listAuthorized(f.call.runId, [f.input.handleRef]);
+  const store = f.repository.authorizationStore();
+  const approvals = await store.listApprovals(OWNER_ID, AGENT_ID);
+  let changed = false;
+  const changeAuthority = async () => {
+    if (change === "grant-revoked")
+      await store.revokeGrant(f.input.authorizationRef ?? "", T1, "owner_revoked");
+    else if (change === "directory-replaced") {
+      await rename(f.host.workspace, `${f.host.workspace}-old`);
+      await mkdir(f.host.workspace);
+    } else if (change === "expired") f.setClock(T2);
+    else if (change === "cancelled") await f.cancelRun();
+    else if (change === "budget-tightened") f.tightenCeiling();
+    else if (change === "policy-disabled") {
+      // Controlled policy edit at the durable boundary, not a browser settings test.
+      const db = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"));
+      try {
+        db.prepare("UPDATE product_state_records SET revision=2, value_json=? WHERE key=?").run(
+          JSON.stringify({ enabled: false }),
+          "queue-policy",
+        );
+      } finally {
+        db.close();
+      }
+    } else {
+      const capabilities = f.repository.capabilityStore(OWNER_ID, AGENT_ID);
+      const capability = await capabilities.get(f.input.capabilityRef);
+      if (!capability || !capabilities.invalidateCapabilityAuthority)
+        throw new Error("Capability missing");
+      await capabilities.invalidateCapabilityAuthority(
+        { ...capability, revision: capability.revision + 1, lifecycle: "revoked", updatedAt: T1 },
+        capability.revision,
+        T1,
+      );
+    }
+    changed = true;
+  };
+  if (boundary === "queued") await changeAuthority();
+  else f.setBeforeAccept(changeAuthority);
+  // Expired or cancelled Runs can no longer persist a tool result either.
+  const result = await resumed.execute(f.call).catch((error: unknown) => error);
+  expect(changed).toBe(true);
+  const delegated = boundary === "before-execute" ? 1 : 0;
+  expect(f.request.mock.calls.filter(([message]) => message.type === "work.delegate")).toHaveLength(
+    delegated,
+  );
+  expect(f.request.mock.calls.filter(([message]) => message.type === "work.execute")).toHaveLength(
+    0,
+  );
+  if (!(result instanceof Error))
+    expect(result).toMatchObject({ dispatchState: "not_sent", errorCode: "WORKER_NOT_DISPATCHED" });
+  expect(await store.listApprovals(OWNER_ID, AGENT_ID)).toEqual(approvals);
+  const db = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"), { readonly: true });
+  try {
+    expect(db.prepare("SELECT count(*) FROM capability_invocation_receipts").pluck().get()).toBe(
+      delegated,
+    );
+    expect(
+      db.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
+    ).toBe(0);
+    expect(db.prepare("SELECT count(*) FROM authorization_usage").pluck().get()).toBe(delegated);
+    expect((await store.listGrants(OWNER_ID, AGENT_ID))[0]?.uses).toBe(delegated);
+    if (delegated)
+      expect(db.prepare("SELECT status FROM authorization_reservations").pluck().get()).toBe(
+        "committed",
+      );
+  } finally {
+    db.close();
+  }
+  if (delegated)
+    expect(
+      await f.services.brokerV2.preparations.readAdmission(f.prepared.plan.identity),
+    ).toMatchObject({ phase: "reserved" });
 });

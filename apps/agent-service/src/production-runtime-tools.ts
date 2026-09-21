@@ -994,15 +994,36 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     try {
       await this.#options.assertRunActive(invocation.runId);
       const sandbox = this.#options.sandbox;
+      let dispatchPlan: Parameters<SandboxAdmission["scopes"]["read"]>[0] | undefined;
       const delegation = sandbox
         ? this.#createDelegation({
             ...sandbox,
-            prepare: (admission) => sandbox.prepare(admission, invocation, parentCall, signal),
+            prepare: async (admission) => {
+              const prepared = await sandbox.prepare(admission, invocation, parentCall, signal);
+              dispatchPlan = prepared.plan;
+              return prepared;
+            },
           })
         : this.#delegation;
       await beforeDeadline(
         delegation.dispatch(request, async () => {
-          await this.#validate(invocation, internal);
+          // Worker Handle delivery can await I/O. Revalidate the original target
+          // and live Grant after that wait; approval and receipt remain historical.
+          if (sandbox && dispatchPlan) await sandbox.scopes.read(dispatchPlan, request.causationId);
+          const maximum = await this.#options.maximumResourceCeiling?.(
+            handle.capabilityRef,
+            handle.capabilityVersion,
+          );
+          if (
+            maximum &&
+            Object.entries(maximum).some(
+              ([name, limit]) =>
+                request.payload.resourceCeiling[name as keyof CapabilityResourceCeiling] > limit,
+            )
+          )
+            throw new Error("WORKER_RESOURCE_CEILING_CHANGED");
+          await this.#assertDisclosure(invocation, key, internal);
+          signal?.throwIfAborted();
           if (forwardingClosed || performance.now() >= monotonicDeadline)
             throw new Error("WORKER_DEADLINE_EXCEEDED");
           possiblySent = true;

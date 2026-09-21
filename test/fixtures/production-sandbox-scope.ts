@@ -54,15 +54,23 @@ export async function productionSandboxScope(
     readonly piRuntimeRoot?: string;
     readonly authority?: () => CapabilityInvocationAuthority;
     readonly seedRuntimeIntent?: boolean;
+    readonly realRun?: boolean;
+    readonly reserveAuthorization?: boolean;
+    readonly policyAuthorization?: { readonly key: string; readonly revision: number };
     readonly runtimeFingerprint?: (call: RuntimeToolInvocation) => string;
   } = {},
 ) {
-  const f = await openSandboxJournal(false, [], options.seedRuntimeIntent === false);
+  const f = await openSandboxJournal(
+    false,
+    [],
+    options.realRun || options.seedRuntimeIntent === false,
+  );
   const h = {
     ...grantHandle(),
     ...(options.piParameters ? { inputRefs: ["payload-pi-parameters"] } : {}),
     operation: descriptor.operation,
     operations: [descriptor.operation],
+    ...(options.reserveAuthorization ? { maxUses: 1, maxTotalCostMicros: 0 } : {}),
   };
   const c = capability();
   f.database.prepare("UPDATE capability_declarations SET record_json=? WHERE id=?").run(
@@ -159,6 +167,21 @@ export async function productionSandboxScope(
         JSON.stringify(directory),
         T1,
       );
+  if (options.policyAuthorization)
+    f.database
+      .prepare(
+        "INSERT INTO product_state_records (key,owner_id,agent_id,revision,value_json,updated_at) VALUES (?,?,?,?,?,?)",
+      )
+      .run(
+        options.policyAuthorization.key,
+        OWNER_ID,
+        AGENT_ID,
+        options.policyAuthorization.revision,
+        JSON.stringify({ enabled: true }),
+        T1,
+      );
+  if (options.reserveAuthorization)
+    f.database.prepare("DELETE FROM capability_handles WHERE id=?").run(h.ref);
   f.database.close();
   let repository = await SqliteProductStateRepository.open({
     stateRoot: f.resource.stateRoot,
@@ -214,6 +237,7 @@ export async function productionSandboxScope(
     ...approval,
     intentSnapshot: intent,
     semanticSnapshotHash: fingerprint,
+    ...(options.policyAuthorization ? { policyAuthorization: options.policyAuthorization } : {}),
   });
   const g = grant();
   await authorization.resolveApproval({
@@ -224,11 +248,31 @@ export async function productionSandboxScope(
     decidedAt: T0,
     grant: {
       ...g,
-      uses: 1,
+      uses: options.reserveAuthorization ? 0 : 1,
       intentFingerprint: fingerprint,
-      scope: { ...g.scope, operations: [descriptor.operation] },
+      scope: {
+        ...g.scope,
+        operations: [descriptor.operation],
+        ...(options.reserveAuthorization
+          ? {
+              exactResourceRef: intent.resourceRef,
+              capabilityVersion: h.capabilityVersion,
+              resourceIdentities: intent.resourceRefs,
+              disclosure: intent.disclosure,
+              recipients: intent.recipients,
+              credentialOrAccessChange: false as const,
+            }
+          : {}),
+      },
     },
   });
+  if (options.reserveAuthorization) {
+    if (!authorization.reserveAuthorization) throw new Error("Reservation port missing");
+    const reserved = await authorization.reserveAuthorization({ grantId: g.id, intent, now: T1 });
+    await repository.capabilityStore(OWNER_ID, AGENT_ID).createExecutionHandle(h, {
+      authorizationReservationId: reserved.id,
+    });
+  }
   const call: RuntimeToolInvocation = {
     runId: RUN_ID,
     toolCallId: `tool-${descriptor.operation}`,

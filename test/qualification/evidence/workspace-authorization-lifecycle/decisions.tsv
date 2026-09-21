@@ -73,3 +73,6 @@ ts	phase	decision	why	evidence	result
 2026-09-20T16:05:40Z	P2	补真实 Worker 原队列文件效果，按完整证据完成生产装配与额度两项	复用实际 Worker/UDS/JobHost/Pi；不把文件写入当 Mac 资源释放证明	p2-queued-worker-proof-01/README.md; p2-queued-worker-proof-01/verification-composition.json	真实路径一次写入/消费，旧 fence 与重复无二次效果，清理读回通过；85 项消费者与 6 项额度回归通过，复用未变产品全套基线
 2026-09-20T16:05:40Z	P2	接真实进程前一次核对构建、短 socket 路径、统一时钟和消息身份	前提未整体核对造成多次昂贵夹具重跑；独立诊断比全链猜测更有效	p2-queued-worker-proof-01/raw-logs.tar.gz	保留全部实际日志，移除临时产品诊断；本次夹具失败不算产品缺陷，未放宽安全判断
 2026-09-21T01:27:23Z	P2	按生产单 writer 架构验证两端审批竞争，保留近期认证处的显式同步屏障	初始双 repository 正向控制被写入权锁拒绝，不能为测试绕过生产保护；并发决定由实际 SQLite 事务裁决	p2-approval-order-01/README.md; p2-approval-order-01/raw-logs.tar.gz	15 项新增与 63 项相关回归通过；原 P2 并发决定项完成；仅新增测试，复用未变生产完整基线
+2026-09-21T02:24:38.015727+00:00	P2	在 Worker 接收 Handle 后重新核对 Scope、Grant 和资源上限	原发送前回调只查 Handle/Run；等待期间的 Grant 撤销、目录换位和预算收紧仍会发送执行消息	p2-dispatch-revalidation-01/README.md; production-sandbox-queue-reentry.test.ts	三个实际错误均有失败前证据；最终 22 项矩阵及 235 项消费者通过，标准全套待结束
+2026-09-21T02:24:38.015727+00:00	P2	把队列夹具切换为真实 Run 和现代额度预约，并断言状态改变已完成	旧 revision=0 Run 不能进入真实取消接口，错误 Payload 也不能证明取消成功；不能把夹具异常算产品缺陷	p2-dispatch-revalidation-01/README.md	保留两类夹具失败；真实生命周期与正确 Payload 后矩阵通过；已承诺额度不退款
+2026-09-21T02:27:42.858101+00:00	P2	通过标准交付验证后勾选原派发前复核项	产品代码改变，因此重新运行标准构建与全套，不套用上批结果；独立保留旧原型静态阻塞	p2-dispatch-revalidation-01/README.md	构建通过；251 文件 4053 项通过，零失败跳过；本地验证不代表托管 CI 或生产部署
