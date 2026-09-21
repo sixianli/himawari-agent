@@ -126,19 +126,19 @@ date: "2026-09-16"
 
 <a id="current-batch-contract"></a>
 
-### 当前批次完成条件：未准入队列跨 boot/fence 续接
+### 当前批次完成条件：生产审批决定的并发持久顺序
 
-执行中撤销已提交为 `d20fcbf`，见[网络与实际页面状态](#p2-network-authority)；只读重试已完成[组合验证](#p1-readonly-retry)。当前继续原第 4/5 批内部顺序。
+上批[真实 Worker 恢复验收](#p2-queued-worker-proof)已完成；本批继续 P2 不可变请求与并发决定，不重新实现已经成立的队列恢复。
 
 | 项目 | 本批约束 |
 | --- | --- |
-| 原待办与验收 | [P2 额度与派发连续性](#p2)，重点 A07，关联 A01/A11/A13；仅允许尚未准入且无调用回执的原队列续接 |
-| 用户可观察结果 | Worker 重启或有效执行权更换后，仍有效的原批准、原输入、目标版本与期限继续适用；不重新询问相同批准、不额外消费，也不复活已派发或未知操作 |
-| 当前实现 | Schema 45 保留原 Pi 批次关联；Run 调度、当前租约、队列绑定、continuation 与 coding/file 外层请求按同一原请求续接，仍保留全部语义比较。已补真实 Worker/JobHost 一次文件效果；安装进程重启、完整安装资格与页面联合验收仍未完成 |
-| 实施方向 | 保留原不可变队列快照，单独记录当前执行绑定；同一 SQLite 事务验证当前权威、Run 租约、原授权与零消费/零准入事实。优先接现有生产 Run 包装层，在 Pi 取得工具列表前完成必要绑定，不新建 Pi 协议 |
-| 验证入口 | 复用[生产队列续接](../../../test/integration/production-sandbox-queue-reentry.test.ts)、[准备与绑定](../../../test/integration/sandbox-execution-preparation.test.ts)、[额度预约](../../../test/integration/authorization-reservations.test.ts)；增加真实数据库重开、当前租约切换与并发竞争，先确认生产 Run 装配入口 |
-| 完成条件 | 未准入跨 boot/fence 成功且只有一次派发；旧调用、已准入/有回执/被取消、撤销/过期、目标改变、旧租约和并发输家均被拒绝；原期限、顺序、批准和次数独立读回。涉及存储格式时补旧 writer 屏障与兼容测试 |
-| 状态与后续 | 原批次续接已通过[完整基线](#p2-queued-run-restart)，并补齐[真实 Worker 固定文件保存](#p2-queued-worker-proof)：一次批准/消费/文件效果，旧 fence 和重复请求不再写入。下一优先项为 [P2 不可变请求与并发决定](#p2)：复用 Approval/Grant 装配覆盖批准与拒绝、取消、过期以及两端重复决定的持久竞争；不重复本批已成立的恢复实现 |
+| 原待办与验收 | [P2 不可变快照与并发决定](#p2)，A03/A04/A06，关联 A05/A12 |
+| 用户可观察结果 | 两端重复批准只产生一个决定和一个 Grant；批准与拒绝按持久顺序裁决；取消或过期之后的批准不能取得新权限；错主体、变更请求和串会话快照被拒绝 |
+| 实际验证入口 | ProductionApprovalGateway → ApprovalService/GrantService → 两个独立 Gateway 实例共享正式 SQLite writer；复用原真实 Run 生命周期取消入口，独立读回批准、Grant、Run 与操作回执，重开后再次核对 |
+| 已有证据与缺口 | 既有 control-center 并发测试使用内存存储；持久创建审批和重复拒绝已有覆盖，本批补生产 Gateway 与多设备决定竞争，不用 test 名称代替真实装配 |
+| 完成条件 | 先跑合法批准正向控制；并发同意、同意/拒绝、取消/过期及身份/快照/幂等冲突均有可重复测试；不削弱原授权检查，确有缺陷才改产品代码 |
+| 验证边界 | 登录/设备认证与近期认证为受控边界；本批不宣称真实浏览器两设备、Worker 效果或付费服务验收。生产代码未变可复用原全套，变化则重新确定受影响验证 |
+| 状态与后续 | 本批 15 项生产路径及 63 项相关回归通过，原 P2 并发决定项完成，见[验收记录](#p2-approval-order)。下一项核对出队与派发前期限、撤销、预算、目标、硬拒绝和取消的完整组合；复用当前授权与队列入口 |
 
 [↑ 返回阅读导航](#contents)
 
@@ -301,7 +301,7 @@ date: "2026-09-16"
 [↑ 返回阅读导航](#contents)
 
 - [x] 直接覆盖生产使用的 `ActionPolicyService`、Approval/Grant 装配；不能仅凭旧 Permission 测试同名就判定生产路径已验证。见[生产 Run 与真实 Worker 验收](#p2-queued-worker-proof)；其余权限竞争条件按下列独立待办验收。
-- [ ] 统一不可变请求快照、版本和幂等身份；两设备决定、批准与拒绝/过期/取消按持久顺序决定，错主体与跨会话请求被拒绝。
+- [x] 统一不可变请求快照、版本和幂等身份；两设备决定、批准与拒绝/过期/取消按持久顺序决定，错主体与跨会话请求被拒绝。见[生产审批并发持久顺序](#p2-approval-order)；真实浏览器两设备联合验收仍归 P6。
 - [x] 将一次额度预约、实际派发承诺和明确未派发时释放分别处理；同操作排队/恢复不消耗第二次额度，可能已派发的不确定额度不能退给另一请求。见[原队列真实效果与额度专项证据](#p2-queued-worker-proof)。
 - [ ] 出队与派发前重新检查期限、撤销、预算、目标、硬拒绝和取消；批准是历史事实，有效执行权限另判。
 - [ ] 区分具体内容单次批准与已有范围授权。新内容建立新 intent，确有覆盖的有效范围授权才复用；策略放宽不自动复活过去拒绝。
@@ -406,7 +406,7 @@ date: "2026-09-16"
 下列代号只为减少表格重复，链接指向已存在的测试。它们是当前扩展入口；仅列出测试路径不代表已经覆盖整项要求，实际执行结果见[本次实施记录](#implementation-record)。
 
 - **J**：[SQLite 执行记录](../../../test/integration/sqlite-sandbox-execution-v2.test.ts)、[执行准备](../../../test/integration/sandbox-execution-preparation.test.ts)、[Worker 生命周期](../../../test/integration/sandbox-v2-worker-lifecycle.test.ts)。
-- **A**：[权限额度](../../../test/integration/permission-grants.test.ts)、[生产审批订阅](../../../test/integration/production-approval-subscription.test.ts)；补充生产 ActionPolicy 的直接集成断言。
+- **A**：[权限额度](../../../test/integration/permission-grants.test.ts)、[生产审批订阅](../../../test/integration/production-approval-subscription.test.ts)、[生产审批并发决定](../../../test/integration/production-approval-arbitration.test.ts)、[生产授权集成](../../../test/integration/authorization-capability-governance.test.ts)。
 - **F**：[受控文件](../../../packages/platform-node/test/constrained-file-system.unit.test.ts)、[Pi 文件操作适配](../../../packages/platform-node/test/sandboxed-coding-operations.unit.test.ts)、[宿主身份](../../../packages/platform-node/test/sandbox-host-verifier.unit.test.ts)；新增跨 Worker 文件协调集成测试。
 - **S**：[生产范围](../../../test/integration/production-sandbox-scope.test.ts)、[运行库策略](../../../packages/runtime-sandbox/test/policy.unit.test.ts)、[候选工作区](../../../packages/platform-node/test/qualified-candidate-workspace.unit.test.ts)、[Git 适配](../../../packages/platform-node/test/git-workspace-adapter.unit.test.ts)。
 - **T**：[运行时工具](../../../apps/agent-service/test/production-runtime-tools.unit.test.ts)、[运行历史](../../../test/integration/runtime-history.test.ts)、[外部效果核验](../../../test/integration/external-action-reconciliation.test.ts)。
@@ -1219,3 +1219,17 @@ P2 的“直接生产装配覆盖”和“额度预约/派发/未派发释放”
 最终真实配置 1 项通过；默认共享夹具消费者 6 文件/85 项与额度专项 6 项通过。Node 构建、最终类型、任务格式/lint、边界/覆盖/不变量/秘密/CI policy 通过；只修改测试与 fixture，回读原 1,024 个冻结输入后复用上批 4,024 项和标准构建。全库 check/lint 的两份既有原型错误仍保留。详情与未覆盖环境见证据目录，不把重叠测试相加。
 
 本次多轮失败主要来自 live 夹具前提未一次核对：构建中没有 bash、socket 路径过长、固定与真实时钟混用，以及旧 fence 用例误改消息身份。均已保留原始失败记录，未归类为产品缺陷。后续同类接入先独立核对构建入口、socket 长度、各层时钟和协议身份；取得具体错误后才重跑昂贵链路。约束继续使用[原五项规则](#execution-rules)与[原决策日志](../../../test/qualification/evidence/workspace-authorization-lifecycle/decisions.tsv)，不增加另一套执行流程。
+
+<a id="p2-approval-order"></a>
+
+### P2：生产审批决定的并发持久顺序
+
+本批依据[当前完成条件](#current-batch-contract)完成原 P2 不可变请求与审批竞争项。现有生产实现满足本批合同，仅新增[15 项生产集成测试](../../../test/integration/production-approval-arbitration.test.ts)，未改产品源码、协议、Schema、依赖或页面。
+
+两个独立 ProductionApprovalGateway 实例共享正式 SQLite writer；先让两个批准请求都读到 pending，再通过近期认证边界释放并发请求，最终仅一个决定、一个 Grant。不同命令各自保存完成回执；同一命令同时重传只有一份回执。拒绝、真实 Run 取消或过期先持久化时，暂停中的批准被拒绝；批准先提交时，后续拒绝不能改写历史，取消/到期也不会因历史回执重放生成新 Grant。关闭并重开 repository 后仍保持相同结果。独立只读连接核对审批、Grant、Run 和回执，未用内存替身替代这些事实。
+
+另覆盖服务端到期前 1 毫秒、到期及后 1 毫秒，认证等待期间到期，错误主体/Agent、跨会话快照、同 intent 身份换快照和同幂等键改决定。原 v2 密码学摘要、历史快照兼容、生产策略选择等相关 4 文件/63 项回归通过。最终类型、范围 Biome、边界/覆盖/不变量/秘密/CI policy 通过，runner 收集新文件。原冻结输入与上批测试变更摘要已回读，本批只有独立测试新增，复用原构建与 4,024 项基线，不再全套重跑；本批组合新增 15 项，总计 4,039 项，63 项属于基线重验，不重复相加。
+
+初始正向控制失败是测试误开第二个持有写入权的 repository，触发 `STATE_ROOT_LOCKED`；没有绕过锁。改为符合生产架构的单 writer 后，正向控制和竞争矩阵通过。该失败、静态类型修正与最终日志保存在[本批证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p2-approval-order-01/README.md)，不算产品缺陷复现。
+
+证据只覆盖服务层：登录/设备访问与近期认证仍受控，取消通过真实 Run API；本批没有浏览器、网络 Gateway 传输或 Worker 派发。全库 format/lint 的既有原型阻断沿用上批记录，本批未重跑或声称消除。未改产品行为，Architecture、ADR 与 Runbook 无需调整；严格文档检查单列。下一优先项是原 P2 出队与派发前重验，整个 Plan 保持 active。

@@ -1,0 +1,189 @@
+{
+  "status": "passed-with-existing-global-check-limitations",
+  "scope": "production approval arbitration; test-only addition",
+  "baseline": {
+    "path": "../p2-queued-run-restart-01/",
+    "passedTests": 4024,
+    "frozenInputsReadBack": 1024,
+    "alreadyVerifiedChangedInputs": [
+      "test/fixtures/production-sandbox-scope.ts",
+      "test/integration/production-queued-run-restart.test.ts"
+    ],
+    "priorComposition": "../p2-queued-worker-proof-01/verification-composition.json",
+    "priorChangedTestAndFixtureInputsReadBackUnchanged": 3,
+    "newProductionInputChanges": 0,
+    "buildReused": true
+  },
+  "addedTests": 15,
+  "combinedTests": 4039,
+  "relatedTests": {
+    "files": 4,
+    "passed": 63,
+    "includedInBaseline": true
+  },
+  "testInput": {
+    "path": "test/integration/production-approval-arbitration.test.ts",
+    "sha256": "23e53f0a98f0890537b69c8736373a1dd2eec2d371e0936b08f2b0b64d481cea"
+  },
+  "checks": {
+    "typecheck": "passed",
+    "scopedBiome": "passed",
+    "boundaries": "passed",
+    "v02Coverage": "passed",
+    "v02Invariants": "passed",
+    "secrets": "passed",
+    "ciPolicy": "passed",
+    "strictDocs": "passed",
+    "diffCheck": "passed"
+  },
+  "navigation": {
+    "staticLinksChecked": 582,
+    "clickedInBrowser": false
+  },
+  "globalCheck": "not rerun; two previously recorded untracked prototype verify.cjs files block full format/lint",
+  "substitutedBoundaries": [
+    "device/login access",
+    "recent authentication"
+  ],
+  "actualBoundaries": [
+    "ProductionApprovalGateway",
+    "ApprovalService and GrantService",
+    "single authoritative SQLite writer",
+    "Run cancellation API",
+    "independent read-only SQLite readback",
+    "repository close and reopen"
+  ],
+  "unverified": [
+    "two physical browser devices",
+    "Gateway network transport",
+    "Worker execution in this batch"
+  ],
+  "archive": {
+    "path": "raw-logs.tar.gz",
+    "sha256": "7a41ec91c3795a83298a1465218500ac370580abbf40f3bc2c31bb3b567f57d2",
+    "byteReadbackPassed": true,
+    "overwriteRejected": true,
+    "files": [
+      {
+        "name": "himawari-approval-order-biome-final.log",
+        "sha256": "73c8fa69f03406de89e1e1961713b3ebf5684493dcb6eef2fe8d38975b5d9fb0",
+        "bytes": 42
+      },
+      {
+        "name": "himawari-approval-order-biome.log",
+        "sha256": "51b29d35720ac9d7d956f7085ec90d95703a6780c45c28ae9b5a0718d31bccf5",
+        "bytes": 42
+      },
+      {
+        "name": "himawari-approval-order-boundaries.log",
+        "sha256": "38acf89f01a139db6583e68bd61c9f37466aec749cf1116a7527b1561e1b6a80",
+        "bytes": 130
+      },
+      {
+        "name": "himawari-approval-order-ci-policy.log",
+        "sha256": "ee06fc86e97355e444742d23efe9879a55c28e746ce24ebf3dd6a6af886c1972",
+        "bytes": 511
+      },
+      {
+        "name": "himawari-approval-order-control.log",
+        "sha256": "82ed77a1e5498fd77ae15ea962b7e5d3840627dae1672b12f6dd65454bc827db",
+        "bytes": 1526
+      },
+      {
+        "name": "himawari-approval-order-control2.log",
+        "sha256": "a7a2b021e35adfab18e434607a9e80909a1d84146985ad92606387882883d1b0",
+        "bytes": 261
+      },
+      {
+        "name": "himawari-approval-order-diff.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      {
+        "name": "himawari-approval-order-docs.log",
+        "sha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878",
+        "bytes": 53
+      },
+      {
+        "name": "himawari-approval-order-final.log",
+        "sha256": "15f0a654602df58e4729e7b04fe3e1669f8120a376c079ac92916f666e2c345a",
+        "bytes": 250
+      },
+      {
+        "name": "himawari-approval-order-format-final.log",
+        "sha256": "030e56c6c9370a50f737ff08693921d61e4f43bd8ff1406aa30ccd2cbea35611",
+        "bytes": 38
+      },
+      {
+        "name": "himawari-approval-order-format.log",
+        "sha256": "4f68a600b45745674371ea4e43fa43d55d0a5785e529b620c7ecda433d2f66e5",
+        "bytes": 6637
+      },
+      {
+        "name": "himawari-approval-order-format2.log",
+        "sha256": "a03d9fa260f14f312b74102534a94cc1b2f1ff067fdc9f232bf1003c4a023ce0",
+        "bytes": 38
+      },
+      {
+        "name": "himawari-approval-order-format3.log",
+        "sha256": "8c41e2adaf3a93de54025973b4b978445986f52249ef40463d9443c45d2499ff",
+        "bytes": 38
+      },
+      {
+        "name": "himawari-approval-order-links.log",
+        "sha256": "7ff4affcbb687f3c3f0a815070e2092681c7f0d898bbd6de75e915399bc96c4a",
+        "bytes": 56
+      },
+      {
+        "name": "himawari-approval-order-policy.log",
+        "sha256": "ee06fc86e97355e444742d23efe9879a55c28e746ce24ebf3dd6a6af886c1972",
+        "bytes": 511
+      },
+      {
+        "name": "himawari-approval-order-related.log",
+        "sha256": "2803d126687b6b0e3dda38a64fd1460a047e1c041aa3c748651a1ba65bc08b75",
+        "bytes": 251
+      },
+      {
+        "name": "himawari-approval-order-secrets.log",
+        "sha256": "10407716dd110b51da28c7145e972193fd97b0a2514dadf95d1b408bc47fc723",
+        "bytes": 119
+      },
+      {
+        "name": "himawari-approval-order-target-final.log",
+        "sha256": "1212e04f4407d2c454a07357bc3aefcd8acdfadf00442b549c4043aaf354d9de",
+        "bytes": 250
+      },
+      {
+        "name": "himawari-approval-order-target.log",
+        "sha256": "8236e754c73eb8229b156968d8003511a066fe4ba87f7c3458b6269a7993e1a3",
+        "bytes": 250
+      },
+      {
+        "name": "himawari-approval-order-types-final.log",
+        "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+        "bytes": 102
+      },
+      {
+        "name": "himawari-approval-order-types.log",
+        "sha256": "b27429289435bd92446d748f802839882caf8ce889cb7948dc159dbfa590f5b4",
+        "bytes": 2916
+      },
+      {
+        "name": "himawari-approval-order-types2.log",
+        "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+        "bytes": 102
+      },
+      {
+        "name": "himawari-approval-order-v0.2-coverage.log",
+        "sha256": "1b9451fdb7da719b550f1e9aeb0dbf4e089ce39a1655faba326dc3f13df4a187",
+        "bytes": 171
+      },
+      {
+        "name": "himawari-approval-order-v0.2-invariants.log",
+        "sha256": "3deac5aa3fb3af9f4ad7a46395d2086a52957a3131d338f618629bf4759e201b",
+        "bytes": 190
+      }
+    ]
+  }
+}
