@@ -1,0 +1,22 @@
+{
+  "platform": "linux",
+  "node": "v22.22.3",
+  "productionQualified": false,
+  "ownedTemporaryFilesRemoved": true,
+  "reports": [
+    {
+      "mode": "private",
+      "reason": "host_failure",
+      "elapsedMs": 567,
+      "policyDigest": "45ec296d061f47f5ae47b79d0fd1c8351f933d3c460404449e9c7b2a67bcefc7",
+      "exitCode": null,
+      "taskTreeCleanup": "not_started",
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\nnull !== 0\n",
+      "passed": false
+    }
+  ]
+}

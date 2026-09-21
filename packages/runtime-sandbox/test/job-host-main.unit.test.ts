@@ -218,6 +218,35 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     expect(result()).toMatchObject({ reason: "cancelled" });
   });
 
+  it("accepts bounded shell diagnostics before the authenticated namespace frame", async () => {
+    await prepare({ ...request(), maxOutputBytes: 1024 });
+    await receive("start");
+    const command = boundary.manager.wrapWithSandboxArgv.mock.calls[0]?.[0] as string;
+    const token = command.match(/printf '([a-f0-9-]+):/)?.[1];
+    if (!token) throw new Error("Missing namespace handshake");
+    task.stderr.write("/bin/bash: private/.bashrc: Permission denied\n");
+    await settle();
+    expect(boundary.namespace).not.toHaveBeenCalled();
+    expect(sent.some((item) => item["type"] === "started")).toBe(false);
+    task.stderr.write(`${token}:1:pid:[9001]\n`);
+    await settle();
+    expect(boundary.namespace).toHaveBeenCalledWith(7000, 1, "pid:[9001]");
+    expect(sent.some((item) => item["type"] === "started")).toBe(true);
+    await closeTask();
+  });
+  it("never treats diagnostic lines as proof or extends the namespace deadline", async () => {
+    await prepare();
+    await receive("start");
+    task.stderr.write("wrong-token:1:pid:[9001]\n");
+    await vi.advanceTimersByTimeAsync(1400);
+    await receive("heartbeat");
+    expect(boundary.namespace).not.toHaveBeenCalled();
+    expect(sent.some((item) => item["type"] === "started")).toBe(false);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(processBoundary.kill).toHaveBeenCalledWith(-7000, "SIGKILL");
+    await closeTask();
+    expect(result()).toMatchObject({ reason: "host_failure", taskStarted: false });
+  });
   it("prepares without starting user code, binds namespace before stdin and returns truthful completion", async () => {
     await prepare({
       ...request(),
@@ -416,7 +445,10 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
       boundary.namespace.mockRejectedValue(new Error("namespace unavailable"));
     if (kind === "namespace-invalid" || kind === "namespace-oversize") {
       await receive("start");
-      task.stderr.write(kind === "namespace-invalid" ? "wrong\n" : "x".repeat(1025));
+      const command = boundary.manager.wrapWithSandboxArgv.mock.calls[0]?.[0] as string;
+      const token = command.match(/printf '([a-f0-9-]+):/)?.[1];
+      if (!token) throw new Error("Missing namespace handshake");
+      task.stderr.write(kind === "namespace-invalid" ? `${token}:invalid\n` : "x".repeat(1025));
     } else await startLinux();
     if (kind === "output") task.stdout.write("x".repeat(20));
     if (kind === "spawn-error") task.emit("error", new Error("spawn unavailable"));

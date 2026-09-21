@@ -1,0 +1,28 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts (38 tests | 1 failed | 37 skipped) 36ms
+     × accepts bounded shell diagnostics before the authenticated namespace frame 35ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > accepts bounded shell diagnostics before the authenticated namespace frame
+AssertionError: expected "vi.fn()" to be called with arguments: [ 7000, 1, 'pid:[9001]' ]
+
+Number of calls: 0
+
+ ❯ packages/runtime-sandbox/test/job-host-main.unit.test.ts:233:32
+    231|     task.stderr.write(`${token}:1:pid:[9001]\n`);
+    232|     await settle();
+    233|     expect(boundary.namespace).toHaveBeenCalledWith(7000, 1, "pid:[900…
+       |                                ^
+    234|     expect(sent.some(item => item["type"] === "started")).toBe(true);
+    235|     await closeTask();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 37 skipped (38)
+   Start at  18:06:13
+   Duration  221ms (transform 64ms, setup 0ms, import 60ms, tests 36ms, environment 0ms)

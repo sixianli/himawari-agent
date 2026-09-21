@@ -6,9 +6,9 @@ import process from "node:process";
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
 import { jobCommand } from "./job-command.ts";
 import { type JobHostControlBinding, openJobHostControl } from "./job-host-control.ts";
+import { JobHostNetworkAuthority } from "./job-host-network-authority.ts";
 import { type JobHostRequest, parseJobHostRequest } from "./job-host-protocol.ts";
 import { captureLinuxNamespace, type LinuxNamespaceIdentity } from "./linux-namespace.ts";
-import { JobHostNetworkAuthority } from "./job-host-network-authority.ts";
 import { openNetworkEgress } from "./network-egress.ts";
 import { compileSandboxPolicy } from "./policy.ts";
 import { startReadinessProbe } from "./readiness-probe.ts";
@@ -332,6 +332,8 @@ async function start() {
     });
   }
   let gateBytes = Buffer.alloc(0);
+  let gateReceivedBytes = 0;
+  const gateDiagnostics: Buffer[] = [];
   let gatePending = namespaceGate;
   const gateTimeout = namespaceGate ? setTimeout(() => stop("host_failure"), 1500) : undefined;
   const receiveGate = async (line: string) => {
@@ -369,17 +371,29 @@ async function start() {
     stream?.on("data", (received: Buffer) => {
       let chunk = received;
       if (namespaceGate && channel === "stderr" && gatePending) {
+        gateReceivedBytes += chunk.byteLength;
         gateBytes = Buffer.concat([gateBytes, chunk]);
-        if (gateBytes.byteLength > 1024) {
+        if (gateReceivedBytes > 1024) {
           stop("host_failure");
           return;
         }
-        const newline = gateBytes.indexOf(10);
-        if (newline < 0) return;
-        gatePending = false;
-        const line = gateBytes.subarray(0, newline).toString("utf8");
-        chunk = gateBytes.subarray(newline + 1);
-        void receiveGate(line).catch(() => stop("host_failure"));
+        // stderr is also used by the wrapping shell for startup diagnostics.
+        // Only the unpredictable token identifies our control frame; diagnostics
+        // cannot start user code, renew the deadline, or bypass namespace capture.
+        while (gatePending) {
+          const newline = gateBytes.indexOf(10);
+          if (newline < 0) return;
+          const line = gateBytes.subarray(0, newline).toString("utf8");
+          const bytes = gateBytes.subarray(0, newline + 1);
+          gateBytes = gateBytes.subarray(newline + 1);
+          if (!line.startsWith(`${namespaceToken}:`)) {
+            gateDiagnostics.push(bytes);
+            continue;
+          }
+          gatePending = false;
+          chunk = Buffer.concat([...gateDiagnostics, gateBytes]);
+          void receiveGate(line).catch(() => stop("host_failure"));
+        }
       }
       const available = Math.max(0, (request?.maxOutputBytes ?? 0) - total);
       const accepted = chunk.subarray(0, available);
