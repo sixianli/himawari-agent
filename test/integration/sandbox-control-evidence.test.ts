@@ -25,7 +25,7 @@ afterEach(async () => {
 
 // A real authenticated socket and durable journal exercise the product verifier.
 // The supervisor and qualification facts here are synthetic, not platform qualification.
-async function fixture() {
+async function fixture(options: { qualified?: boolean; completed?: boolean } = {}) {
   let clockOffset = 0;
   let hostElapsed = 0;
   const order: string[] = [];
@@ -97,6 +97,7 @@ async function fixture() {
     } as unknown as SandboxHostBinding,
     qualification: {
       platform,
+      guarantees: options.qualified ? ["fixed-file-terminal-no-writer.v1"] : [],
       terminationMode: "best_effort",
     } as unknown as SandboxRuntimeQualification,
   });
@@ -104,6 +105,7 @@ async function fixture() {
   let hostFailure: Error | undefined;
   let admissionChecks = 0;
   const control = createProductionSandboxControl({
+    fixedFileCompleted: async () => options.completed === true,
     now,
     read: async (_plan, key) => structuredClone(stored.get(key)),
     write: async (_plan, key, value) => {
@@ -486,3 +488,44 @@ it.each(["alive", "started", "cleanup-unknown", "verified"] as const)(
     );
   },
 );
+
+it.each([
+  "verified",
+  "unqualified",
+  "unverified",
+  "arbitrary",
+  "interrupted",
+  "alive",
+  "cleanup-unknown",
+] as const)("releases only a qualified fixed file terminal program: %s", async (scenario) => {
+  const f = await fixture({
+    qualified: scenario !== "unqualified",
+    completed: scenario !== "unverified",
+  });
+  const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+  const pid = child.pid;
+  await once(child, "exit");
+  if (!pid) throw new Error("child PID missing");
+  f.set({
+    phase: scenario === "interrupted" ? "stopping" : "finished",
+    taskStarted: true,
+    taskProcessExited: true,
+    stdioClosed: true,
+    srtReset: scenario !== "cleanup-unknown",
+    processId: scenario === "alive" ? process.pid : pid,
+  });
+  const record = {
+    ...f.record,
+    plan: {
+      ...f.record.plan,
+      mode: "foreground" as const,
+      operationContract: {
+        ...f.record.plan.operationContract,
+        ref: "pi-coding-tool",
+        version: scenario === "arbitrary" ? "1" : "3",
+      },
+    },
+  };
+  const result = await f.control.refreshEvidence(record);
+  expect(result.resource.supervision).toBe(scenario === "verified" ? "released" : "lost");
+});

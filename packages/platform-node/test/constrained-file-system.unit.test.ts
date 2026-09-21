@@ -1,23 +1,23 @@
 import { createHash } from "node:crypto";
+import * as fsPromises from "node:fs/promises";
 import {
   chmod,
-  stat,
   link,
   mkdir,
   mkdtemp,
   readFile,
   rename,
   rm,
+  stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
-import * as fsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   FileOperationService,
-  HostFileReadService,
   type HostDirectoryGrant,
+  HostFileReadService,
   type HostFileStatePort,
   type HostTrashRecord,
   type PermanentDeletionPlan,
@@ -149,6 +149,58 @@ class CrashAfterEffectPlatform extends ConstrainedHostFileSystem {
 }
 
 describe("ConstrainedHostFileSystem", () => {
+  it("keeps different files simultaneously prepared and exposes only complete published versions", async () => {
+    const { root, grant, platform } = await fixture();
+    const old = "old".repeat(65536),
+      next = "new".repeat(65536);
+    await writeFile(path.join(root, "a.txt"), old);
+    await writeFile(path.join(root, "b.txt"), old);
+    const a = await platform.inspect(grant, "a.txt"),
+      b = await platform.inspect(grant, "b.txt");
+    if (!a || !b) throw new Error("fixture identities missing");
+    let release!: () => void, ready!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    let inFlight = 0;
+    const hooks = {
+      beforePublish: async () => {
+        if (++inFlight === 2) ready();
+        await barrier;
+      },
+    };
+    const writes = [
+      platform.replaceAtomic(grant, "a.txt", a, Buffer.from(next), Buffer.from(old), hooks),
+      platform.replaceAtomic(grant, "b.txt", b, Buffer.from(next), Buffer.from(old), hooks),
+    ];
+    try {
+      await entered;
+      expect(inFlight).toBe(2);
+      expect(await readFile(path.join(root, "a.txt"), "utf8")).toBe(old);
+      expect(await readFile(path.join(root, "b.txt"), "utf8")).toBe(old);
+    } finally {
+      release();
+    }
+    let done = false;
+    const completed = Promise.all(writes).finally(() => {
+      done = true;
+    });
+    while (!done) {
+      const observed = await readFile(path.join(root, "a.txt"), "utf8");
+      expect([old, next]).toContain(observed);
+    }
+    await completed;
+    expect(await readFile(path.join(root, "a.txt"), "utf8")).toBe(next);
+    expect(await readFile(path.join(root, "b.txt"), "utf8")).toBe(next);
+    await expect(
+      platform.replaceAtomic(grant, "a.txt", a, Buffer.from("stale"), Buffer.from(old)),
+    ).rejects.toThrow("IDENTITY_CHANGED");
+    expect(await readFile(path.join(root, "a.txt"), "utf8")).toBe(next);
+  });
+
   it("freezes create content before asynchronous filesystem checks", async () => {
     const { root, grant, platform } = await fixture();
     const bytes = new TextEncoder().encode("approved");

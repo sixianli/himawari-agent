@@ -155,7 +155,16 @@ export type PublicSearchRouteConfiguration =
   | (Omit<FileReadRouteConfiguration, "grantId"> & { readonly scopeSource: "private_temp" });
 
 export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
-  readonly enabledTools: readonly ("read" | "write" | "edit" | "bash" | "find" | "grep" | "ls")[];
+  readonly enabledTools: readonly (
+    | "read"
+    | "write"
+    | "edit"
+    | "bash"
+    | "find"
+    | "grep"
+    | "ls"
+    | "move_directory"
+  )[];
 }
 
 export interface RunPolicyConfiguration {

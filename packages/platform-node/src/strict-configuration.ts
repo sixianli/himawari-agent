@@ -714,7 +714,8 @@ function parseCodingRoute(value: unknown): NonNullable<RunPolicyConfiguration["c
     enabledTools.length === 0 ||
     new Set(enabledTools).size !== enabledTools.length ||
     enabledTools.some(
-      (tool) => !["read", "write", "edit", "bash", "find", "grep", "ls"].includes(tool),
+      (tool) =>
+        !["read", "write", "edit", "bash", "find", "grep", "ls", "move_directory"].includes(tool),
     )
   )
     throw invalid(

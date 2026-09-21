@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e47a7a74debfc4961d47f83d6743a07fb8abc8c82ad51ac1b0032b74944563d9"
+contract_sha256: "sha256:c1440e1bfbf913010b39249c024b9e628be3052d7e1fb89fcfd64d90be3436cb"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -11,6 +11,12 @@ date: "2026-09-11"
 # Hermes 控制中心升级与真实验收
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/migrations/0046_directory_move_contract.sql
+- packages/application/src/services/workspace-claims.ts
+- packages/application/src/services/sandbox-execution-reconciliation.ts
+- packages/platform-node/src/capabilities/directory-move-scope.ts
+- packages/platform-node/src/files/directory-move.ts
+- packages/platform-node/src/files/rename-native.c
 - packages/runtime-pi/src/pi-runtime-adapter.ts
 - packages/application/src/ports/intelligence.ts
 - packages/persistence-sqlite/src/sqlite-run-resource-guard.ts
@@ -134,6 +140,9 @@ Job Host 还在 DNS 解析前、拨号前通过原认证 Worker IPC 逐次核对
 `hermes-harness-finalization-comparison.mjs --compare` 用于已切换 `0d269e65…` 候选后的完成阶段诊断。只读取两条明确授权的四工具失败 Run：旧分支的 `run:cb547c58-80ea-42e6-8b90-4cfac81dcdf2` 和本次复测的 `run:d1872f77-4434-405f-af8c-ecb3cfbb485c`；先核对各四个作业均已清理、结果按原调用 ID 成对且全部成功。每条原始输入对照两种后续响应，各重复两次：原始工具选项，以及 Pi 在存在工具历史但当前工具列表为空时的 `tools: []` 序列化。所有消息、工具结果、推理和模型路由保持原值，不附加新请求，不执行返回工具。最多八次模型请求，本组预估上限 0.50 美元；费用合并所有前组实际费用、未知费用完整预留、新鲜产品费用及搜索预留，累计不得超过已授权 2 美元。结果仅导出结构、摘要、费用、工具状态标记及经既有产品脱敏器处理且不超过 2400 字符的合成验收回答。此步骤不写产品数据库、不更改服务或生产配置；通过只说明本次对照支持进一步设计完成阶段，不能据此关闭全部工具或宣称正式任务验收已通过。
 
 Worker 阶段编号修正候选使用 `hermes-loop-identity-qualify.py --qualify` 与 `hermes-loop-identity-cutover.py --apply --receipt <本次签署摘要>`，绑定 `2026-09-13-loop-identity` 构建和当前 `7b05555b…` 安装。其前一版真实验收在第四次相同目录结果后仍请求第五次审批，已取消且没有执行第五次；原因是内置文件工具的 Worker 阶段编号与模型调用编号不同。此修正只在产品内置工具的受保护 `pi-result.v1` 结果中排除瞬时来源调用编号，保留其他来源与内容变化，自定义工具输出仍作为不透明内容比较。使用原有六组隔离安装探针、schema 32 备份核验和安装切换，不修改模型路由或导入历史。安装后须重新完成逐项审批循环中止及单次说明验收；四工具正常汇总和旧对话当前来源仍分别验证，不能相互替代。历史固定日期脚本的摘要属于原冻结入口，格式整理后的源码不能冒充原字节重新执行；本候选每个辅助入口重新绑定实际使用的脚本摘要。
+
+
+P3 文件协议使用 Schema 46 的 writer 边界。升级和恢复必须保留原文件候选、逐文件发布记录、目录移动意图/收据、队列与占用；不得整批回滚已成功文件或覆盖后续人工修改。合同 3 的确定未发布冲突是失败结果，不是成功写入。目录工具合同 4 的 `rename-native` 随目标平台构建并受 runtime 摘要核验，Mac 包不能移作 Linux 包。新增固定文件完成资格仅适用于已验证的固定程序正常结束，旧资格与普通命令的未知清理仍保留保护；实际安装资格和启用不能由测试结果自动生成。详见 [SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]。
 
 ## Safety and Preconditions
 
@@ -336,7 +345,7 @@ Schema 36 不重写旧记录；它为新增 JSON 字段建立 writer 版本屏�
 
 ### 固定文件合同 3：先准备候选，再取得提交占用
 
-`pi-coding-tool@3` 仅用于固定 `write/edit`；该合同沿用 Schema 41 的保存结构，当前整体数据库已由队列恢复迁移推进至 Schema 45。准入前以 Pi Operations 的不可变快照准备完整候选，受控暂存区保存候选内容及工具结果；其 inode、摘要与原文件版本绑定到已有受保护 Scope artifact。此阶段没有调用消费回执或工作区占用，正式目标及缺失父目录保持不变。提交仍复用原持久队列、Worker、发布记录和原宿主释放证明；不能因候选已准备就提前派发或宣布保存成功。细节见[本批实施与验证范围](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
+`pi-coding-tool@3` 仅用于固定 `write/edit`；该合同沿用 Schema 41 的保存结构，当前整体数据库已由目录移动合同迁移推进至 Schema 46。准入前以 Pi Operations 的不可变快照准备完整候选，受控暂存区保存候选内容及工具结果；其 inode、摘要与原文件版本绑定到已有受保护 Scope artifact。此阶段没有调用消费回执或工作区占用，正式目标及缺失父目录保持不变。提交仍复用原持久队列、Worker、发布记录和原宿主释放证明；不能因候选已准备就提前派发或宣布保存成功。细节见[本批实施与验证范围](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
 
 备份、迁移与恢复须一起保留 Scope Payload、排队身份及工作区 `.himawari-recovery/` 中的候选与结果；数据库备份不包含这些暂存文件。候选本身可能是唯一结果，不自动清理、不按当前文件重建旧基线、不覆盖后续编辑。准备后取消或版本冲突不授权重放；跨 boot/fence 重新绑定只允许原批次关联完整、未准入且当前权限有效的队列，固定文件候选的真实 Worker 恢复联合验收仍待完成。旧程序不理解合同 3 或新增 Scope 字段时必须停止对应执行，不删字段降级，也不能仅凭 Schema 相同认定回退兼容。
 

@@ -8,7 +8,8 @@
     "./runtime-port": "./src/runtime-port.ts",
     "./sandbox-execution-projection": "./src/services/sandbox-execution-projection.ts",
     "./automatic-action-review": "./src/services/automatic-action-review-contract.ts",
-    "./action-intent-snapshot": "./src/services/action-intent-snapshot.ts"
+    "./action-intent-snapshot": "./src/services/action-intent-snapshot.ts",
+    "./workspace-claims": "./src/services/workspace-claims.ts"
   },
   "dependencies": {
     "@himawari-agent/domain": "0.0.0",

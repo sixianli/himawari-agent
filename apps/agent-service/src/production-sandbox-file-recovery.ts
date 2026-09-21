@@ -1,12 +1,14 @@
 import {
-  projectSandboxExecution,
   type CapabilityInvocationAuthority,
+  projectSandboxExecution,
   type SandboxExecutionJournalPort,
   type SandboxExecutionProjectionContext,
   type SandboxExecutionRecord,
   type SandboxExecutionVerification,
 } from "@himawari-agent/application";
 import {
+  DIRECTORY_MOVE_VERIFIER,
+  PI_DIRECTORY_MOVE_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   PI_WRITE_VERIFIER,
@@ -20,7 +22,10 @@ export function createProductionSandboxFileRecovery(options: {
   readonly verifyFresh: (record: SandboxExecutionRecord) => Promise<SandboxExecutionVerification>;
   readonly recoverOutput: (
     record: SandboxExecutionRecord,
-  ) => Promise<{ ref: string; digest: string; byteLength: number } | undefined>;
+  ) => Promise<
+    | { ref: string; digest: string; byteLength: number; outcome?: "published" | "conflict" }
+    | undefined
+  >;
   readonly authority: () => CapabilityInvocationAuthority;
   readonly now: () => string;
 }) {
@@ -33,17 +38,23 @@ export function createProductionSandboxFileRecovery(options: {
     )
       return record;
     const contract = plan.operationContract;
+    const moving =
+      contract.version === PI_DIRECTORY_MOVE_CONTRACT.version &&
+      plan.operation === "move_directory";
+    const verifier = moving ? DIRECTORY_MOVE_VERIFIER : PI_WRITE_VERIFIER;
     if (
       plan.mode !== "foreground" ||
       contract.ref !== PI_FIXED_FILE_CONTRACT.ref ||
-      ![PI_FIXED_FILE_CONTRACT.version, PI_PREPARED_FILE_CONTRACT.version].some(
-        (version) => version === contract.version,
-      ) ||
+      ![
+        PI_FIXED_FILE_CONTRACT.version,
+        PI_PREPARED_FILE_CONTRACT.version,
+        PI_DIRECTORY_MOVE_CONTRACT.version,
+      ].some((version) => version === contract.version) ||
       contract.kind !== "verified_effect" ||
-      contract.verifierRef !== PI_WRITE_VERIFIER.ref ||
-      contract.verifierVersion !== PI_WRITE_VERIFIER.version ||
-      contract.targetRef !== PI_WRITE_VERIFIER.targetRef ||
-      !["write", "edit"].includes(plan.operation) ||
+      contract.verifierRef !== verifier.ref ||
+      contract.verifierVersion !== verifier.version ||
+      contract.targetRef !== verifier.targetRef ||
+      !(moving || ["write", "edit"].includes(plan.operation)) ||
       (record.facts.result && record.facts.result.kind !== "unknown")
     )
       return record;
@@ -92,9 +103,10 @@ export function createProductionSandboxFileRecovery(options: {
         policyDigest: record.facts.environment.policyDigest,
         contract: { ref: contract.ref, version: contract.version },
         occurredAt: now,
-        kind: "result",
-        output,
-        completion: { type: "value" },
+        ...(output.outcome === "conflict"
+          ? { kind: "error", reasonCode: "FILE_VERSION_CONFLICT", termination: { type: "failure" } }
+          : { kind: "result", completion: { type: "value" } }),
+        output: { ref: output.ref, digest: output.digest, byteLength: output.byteLength },
       },
     });
     const verification = await options.verifyFresh({ ...record, facts });

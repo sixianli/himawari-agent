@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { link, lstat, open, realpath, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { HostDirectoryGrant, HostFilePublication } from "@himawari-agent/application";
-import { sandboxScopeSchema, type SandboxScope } from "@himawari-agent/execution-contracts";
+import { type SandboxScope, sandboxScopeSchema } from "@himawari-agent/execution-contracts";
 import { ConstrainedHostFileSystem } from "./constrained-file-system.js";
 
 export interface PiPreparedFileWrite {
@@ -69,6 +69,8 @@ export function createPiFilePublicationJournal(value: Context) {
   const names = {
     prepared: "pi-file-prepared.v1.json",
     verified: "pi-file-verified.v1.json",
+    commit: "pi-file-commit.v1.json",
+    conflict: "pi-file-conflict.v1.json",
   } as const;
   const directory = async () => {
     if ((await realpath(input.privateDirectory)) !== input.privateDirectory) fail();
@@ -240,7 +242,41 @@ export function createPiFilePublicationJournal(value: Context) {
       byteLength: preparation.byteLength,
     };
   };
+  const conflictProof = {
+    reasonCode: "FILE_VERSION_CONFLICT",
+    phase: "before_publish",
+    target,
+    candidateDigest: input.scope.preparedFile?.contentDigest,
+  };
   return {
+    async commitStarting() {
+      if (await read("conflict")) fail();
+      await write("commit", { target });
+    },
+    async conflicted() {
+      if (
+        !input.scope.preparedFile ||
+        target.missingParents ||
+        (await read("commit")) ||
+        (await read("verified"))
+      )
+        fail();
+      await write("conflict", conflictProof);
+      return conflictProof;
+    },
+    async recoverConflict() {
+      const proof = await read("conflict");
+      if (proof === undefined) return undefined;
+      if (
+        !input.scope.preparedFile ||
+        target.missingParents ||
+        (await read("commit")) ||
+        (await read("verified")) ||
+        JSON.stringify(proof) !== JSON.stringify(conflictProof)
+      )
+        fail();
+      return conflictProof;
+    },
     async prepared(value: PiPreparedFileWrite) {
       const proof = structuredClone(value);
       await write("prepared", prepared({ ...proof, parents: await captureParents() }));

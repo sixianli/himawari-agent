@@ -47,7 +47,7 @@ const sandboxScopeShape = object({
   expiresAt: timestamp,
 });
 
-const relativeFilePath: Schema<string> = {
+export const relativeFilePath: Schema<string> = {
   parse(value, path = "$") {
     if (
       typeof value !== "string" ||
@@ -157,9 +157,21 @@ export const sandboxPreparedFileSchema = object({
   resultDigest: digest,
 });
 export type SandboxPreparedFile = InferSchema<typeof sandboxPreparedFileSchema>;
+/** The host freezes both paths and parent chains before directory-move admission. */
+export const sandboxDirectoryMoveSchema = object({
+  schemaVersion: literal("sandbox-directory-move.v1"),
+  sourceRelativePath: relativeFilePath,
+  destinationRelativePath: relativeFilePath,
+  sourceIdentity: object({ device: machineString, inode: machineString }),
+  sourceLineage: array(object({ device: machineString, inode: machineString })),
+  destinationLineage: array(object({ device: machineString, inode: machineString })),
+});
+export type SandboxDirectoryMove = InferSchema<typeof sandboxDirectoryMoveSchema>;
+
 export type SandboxScope = InferSchema<typeof sandboxScopeShape> & {
   readonly fileTarget?: SandboxFileTarget;
   readonly preparedFile?: SandboxPreparedFile;
+  readonly directoryMove?: SandboxDirectoryMove;
 };
 /** An additive field is emitted only for the versioned fixed-file contract.
  * Old strict readers reject it; missing metadata never enables narrower access. */
@@ -167,8 +179,15 @@ export const sandboxScopeSchema: Schema<SandboxScope> = {
   parse(value, path = "$") {
     if (!value || typeof value !== "object" || Array.isArray(value))
       throw new ContractValidationError(path, "invalid sandbox scope");
-    const { fileTarget, preparedFile, ...base } = value as Record<string, unknown>;
+    const { fileTarget, preparedFile, directoryMove, ...base } = value as Record<string, unknown>;
     const scope = sandboxScopeShape.parse(base, path);
+    if (
+      directoryMove !== undefined &&
+      (scope.operation !== "move_directory" ||
+        fileTarget !== undefined ||
+        preparedFile !== undefined)
+    )
+      throw new ContractValidationError(path, "directory move must have its own fixed operation");
     if (
       preparedFile !== undefined &&
       (fileTarget === undefined || !["write", "edit"].includes(scope.operation))
@@ -176,6 +195,11 @@ export const sandboxScopeSchema: Schema<SandboxScope> = {
       throw new ContractValidationError(path, "prepared file requires a fixed write target");
     return Object.freeze({
       ...scope,
+      ...(directoryMove === undefined
+        ? {}
+        : {
+            directoryMove: sandboxDirectoryMoveSchema.parse(directoryMove, `${path}.directoryMove`),
+          }),
       ...(preparedFile === undefined
         ? {}
         : { preparedFile: sandboxPreparedFileSchema.parse(preparedFile, `${path}.preparedFile`) }),
@@ -197,6 +221,7 @@ const sandboxNetworkScopeShape = object({
 export type SandboxNetworkScope = InferSchema<typeof sandboxNetworkScopeShape> & {
   readonly fileTarget?: never;
   readonly preparedFile?: never;
+  readonly directoryMove?: never;
 };
 export type SandboxExecutionScope = SandboxScope | SandboxNetworkScope;
 export const sandboxExecutionScopeSchema: Schema<SandboxExecutionScope> = {

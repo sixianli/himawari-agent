@@ -392,6 +392,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0045_queued_tool_batch_recovery.sql",
   },
+  {
+    sequence: 46,
+    name: "directory_move_contract",
+    changeSet: "directory-move-contract",
+    phase: "expand" as const,
+    file: "0046_directory_move_contract.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

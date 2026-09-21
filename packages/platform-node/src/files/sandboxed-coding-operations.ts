@@ -1,13 +1,7 @@
-import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import path from "node:path";
+import { createHash } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
-import {
-  sandboxFileTargetSchema,
-  type SandboxFileTarget,
-  type SandboxPreparedFile,
-  sandboxPreparedFileSchema,
-} from "@himawari-agent/execution-contracts";
+import path from "node:path";
 import type {
   GovernedCodingOperationsPort,
   HostDirectoryGrant,
@@ -15,6 +9,12 @@ import type {
   HostFilePublication,
 } from "@himawari-agent/application";
 import { scanMachineSecrets } from "@himawari-agent/application";
+import {
+  type SandboxFileTarget,
+  type SandboxPreparedFile,
+  sandboxFileTargetSchema,
+  sandboxPreparedFileSchema,
+} from "@himawari-agent/execution-contracts";
 import { ConstrainedHostFileSystem } from "./constrained-file-system.js";
 
 /** A per-invocation adapter inside SRT, not an isolation backend or authority
@@ -35,6 +35,7 @@ export async function createSandboxedCodingOperations(input: {
     readonly contentDigest: string;
     readonly byteLength: number;
   }) => Promise<void>;
+  readonly onCommitStarting?: () => Promise<void>;
   readonly onVerifiedWrite?: (proof: {
     readonly path: string;
     readonly contentDigest: string;
@@ -185,6 +186,7 @@ export async function createSandboxedCodingOperations(input: {
       if (storage.availableBytes < bytes.length + 64 * 1024 * 1024)
         throw new Error("PI_STORAGE_RESERVE");
       const hooks = {
+        ...(input.onCommitStarting ? { commitStarting: input.onCommitStarting } : {}),
         beforePublish: async (publication: HostFilePublication) => {
           check();
           await assertExpectedParents();

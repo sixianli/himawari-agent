@@ -12,7 +12,9 @@ import {
   hasVerifiedSandboxSupervision,
   projectSandboxExecution,
 } from "@himawari-agent/application/sandbox-execution-projection";
+import { workspaceClaimsConflict as conflicts } from "@himawari-agent/application/workspace-claims";
 import {
+  PI_DIRECTORY_MOVE_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   piFileRecoveryOperationKey,
@@ -65,34 +67,6 @@ interface AuthorityDependencies {
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const id = (v: unknown): v is string =>
   typeof v === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(v);
-function overlaps(a: SandboxWorkspaceClaim, b: SandboxWorkspaceClaim): boolean {
-  if (a.hostId !== b.hostId) return false;
-  const equal = (
-    left: SandboxWorkspaceClaim["lineage"][number] | null | undefined,
-    right: SandboxWorkspaceClaim["lineage"][number] | null | undefined,
-  ) => left != null && right != null && left.device === right.device && left.inode === right.inode;
-  const left = a.lineage.at(-1);
-  const right = b.lineage.at(-1);
-  if (a.file && b.file)
-    return (
-      (equal(left, right) && a.file.name === b.file.name) || equal(a.file.identity, b.file.identity)
-    );
-  if (a.file) return a.lineage.some((item) => equal(item, right));
-  if (b.file) return b.lineage.some((item) => equal(item, left));
-  return (
-    a.lineage.some((item) => equal(item, right)) || b.lineage.some((item) => equal(item, left))
-  );
-}
-function conflicts(a: SandboxWorkspaceClaim, b: SandboxWorkspaceClaim, uncertain = false): boolean {
-  if (!overlaps(a, b)) return false;
-  if (uncertain) return true;
-  if (a.access === "read" && b.access === "read") return false;
-  if (a.file && b.file && a.access !== b.access) {
-    const writer = a.access === "write" ? a : b;
-    if (writer.file?.atomicPublish) return false;
-  }
-  return true;
-}
 export class SqliteSandboxExecutionOperations {
   private readonly db: Database.Database;
   private readonly fail: SqliteApplicationFailure;
@@ -1191,11 +1165,13 @@ export class SqliteSandboxExecutionOperations {
       const recovered =
         !exists &&
         current.plan.operationContract.ref === PI_FIXED_FILE_CONTRACT.ref &&
-        [PI_FIXED_FILE_CONTRACT.version, PI_PREPARED_FILE_CONTRACT.version].some(
-          (version) => version === current.plan.operationContract.version,
-        ) &&
+        [
+          PI_FIXED_FILE_CONTRACT.version,
+          PI_PREPARED_FILE_CONTRACT.version,
+          PI_DIRECTORY_MOVE_CONTRACT.version,
+        ].some((version) => version === current.plan.operationContract.version) &&
         current.plan.operationContract.kind === "verified_effect" &&
-        ["write", "edit"].includes(current.plan.operation) &&
+        ["write", "edit", "move_directory"].includes(current.plan.operation) &&
         this.db
           .prepare(`SELECT 1 FROM run_payload_artifacts a JOIN payloads p ON p.ref=a.payload_ref AND p.owner_id=a.owner_id AND p.agent_id=a.agent_id
           WHERE a.owner_id=? AND a.agent_id=? AND a.run_id=? AND a.purpose='trace' AND a.operation_key=? AND a.payload_ref=? AND a.content_digest=? AND p.lifecycle_state='active'`)

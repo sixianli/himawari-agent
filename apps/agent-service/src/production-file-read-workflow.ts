@@ -46,12 +46,13 @@ export interface FileReadExecutionContext {
   /** True only for this outer call's original queue, already bound to the current Run lease. */
   canResumeAuthority?(previous: WorkflowAuthority): Promise<boolean>;
   restoreInspection?(previous: WorkflowAuthority): Promise<RuntimeToolExecutionResult | undefined>;
-  /** Returns only a verified, never-dispatched file conflict in this same Run. */
+  /** Returns only a verified conflict with no publication in this same Run. */
   fileConflict?(toolCallId: string): Promise<
     | {
         readonly call: RuntimeToolInvocation;
         readonly binding: CodingBinding;
         readonly depth: number;
+        readonly dispatchState?: "not_sent" | "accepted";
       }
     | undefined
   >;
@@ -66,7 +67,17 @@ export interface FileReadExecutionContext {
   save(key: string, value: unknown): Promise<{ readonly ref: string; readonly value: unknown }>;
   phase(
     handle: GovernedCapabilityExecutionHandle,
-    phase: "inspect" | "read" | "write" | "edit" | "bash" | "find" | "grep" | "ls" | "web_search",
+    phase:
+      | "inspect"
+      | "read"
+      | "write"
+      | "edit"
+      | "bash"
+      | "find"
+      | "grep"
+      | "ls"
+      | "move_directory"
+      | "web_search",
     inputRef: string,
   ): Promise<RuntimeToolExecutionResult>;
 }
@@ -265,7 +276,17 @@ export class ProductionFileReadWorkflow {
       finalRisk: disclose ? "HIGH" : "LOW",
     });
     const runPhase = async (
-      phase: "inspect" | "read" | "write" | "edit" | "bash" | "find" | "grep" | "ls" | "web_search",
+      phase:
+        | "inspect"
+        | "read"
+        | "write"
+        | "edit"
+        | "bash"
+        | "find"
+        | "grep"
+        | "ls"
+        | "move_directory"
+        | "web_search",
       payload: unknown,
       action: GovernedActionIntent,
     ) => {

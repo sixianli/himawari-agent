@@ -12,6 +12,7 @@ import {
   type ExecutionV2Request,
   executionV2MessageSchema,
   type PayloadBrokerSandboxExecutionResult,
+  PI_DIRECTORY_MOVE_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   PI_RUNNER_CONTRACT,
@@ -25,6 +26,7 @@ import {
 } from "@himawari-agent/execution-contracts";
 import {
   CapabilityDeploymentSnapshotLoader,
+  hasVerifiedPiFileConflict,
   revalidateCapabilityDeploymentSnapshot,
   verifyPiWriteEvidence,
   verifySandboxHost,
@@ -202,7 +204,7 @@ export class ProductionSandboxExecutionV2 {
               ? "service_start"
               : tool === "bash"
                 ? "command"
-                : ["write", "edit"].includes(tool)
+                : ["write", "edit", "move_directory"].includes(tool)
                   ? "verified_effect"
                   : "fixed_read";
         if (
@@ -210,11 +212,14 @@ export class ProductionSandboxExecutionV2 {
             PI_RUNNER_CONTRACT.version,
             PI_FIXED_FILE_CONTRACT.version,
             PI_PREPARED_FILE_CONTRACT.version,
+            PI_DIRECTORY_MOVE_CONTRACT.version,
           ].some((version) => version === plan.operationContract.version) ||
           ([PI_FIXED_FILE_CONTRACT.version, PI_PREPARED_FILE_CONTRACT.version].some(
             (version) => version === plan.operationContract.version,
           ) &&
             !["read", "write", "edit"].includes(tool)) ||
+          (plan.operationContract.version === PI_DIRECTORY_MOVE_CONTRACT.version) !==
+            (tool === "move_directory") ||
           plan.operationContract.kind !== kind
         )
           throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");
@@ -279,12 +284,15 @@ export class ProductionSandboxExecutionV2 {
           PI_RUNNER_CONTRACT.version,
           PI_FIXED_FILE_CONTRACT.version,
           PI_PREPARED_FILE_CONTRACT.version,
+          PI_DIRECTORY_MOVE_CONTRACT.version,
         ].some((version) => version === plan.operationContract.version) ||
           [PI_FIXED_FILE_CONTRACT.version, PI_PREPARED_FILE_CONTRACT.version].some(
             (version) => version === plan.operationContract.version,
           ) !== Boolean(resolved.scope.fileTarget) ||
           (plan.operationContract.version === PI_PREPARED_FILE_CONTRACT.version) !==
             Boolean(resolved.scope.preparedFile) ||
+          (plan.operationContract.version === PI_DIRECTORY_MOVE_CONTRACT.version) !==
+            Boolean(resolved.scope.directoryMove) ||
           resolved.scope.profileRef !== "authorized-project.v1")
       )
         throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");
@@ -603,6 +611,17 @@ export class ProductionSandboxExecutionV2 {
       };
       const { evidence: _evidence, ...resourceFields } = latest.facts
         .resource as typeof latest.facts.resource & { evidence?: unknown };
+      const fileConflict =
+        knownExit &&
+        result.exitCode === 1 &&
+        plan.operationContract.kind === "verified_effect" &&
+        hasVerifiedPiFileConflict({
+          bytes: result.stdout,
+          parameters: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input)),
+          plan,
+          scope: sandboxScopeSchema.parse(resolved.scope),
+          workspace: compiled.cwd,
+        });
       if (knownExit && result.exitCode === 0 && plan.operationContract.kind === "verified_effect")
         verifyPiWriteEvidence({
           bytes: result.stdout,
@@ -619,7 +638,7 @@ export class ProductionSandboxExecutionV2 {
             : knownExit && ["command", "network_only"].includes(plan.operationContract.kind)
               ? { kind: "not_asserted" }
               : knownExit &&
-                  result.exitCode === 0 &&
+                  (result.exitCode === 0 || fileConflict) &&
                   plan.operationContract.kind === "verified_effect"
                 ? {
                     kind: "verified",
@@ -649,7 +668,7 @@ export class ProductionSandboxExecutionV2 {
                     ...resultFields,
                     kind: "error",
                     output,
-                    reasonCode: "SANDBOX_OPERATION_FAILED",
+                    reasonCode: fileConflict ? "FILE_VERSION_CONFLICT" : "SANDBOX_OPERATION_FAILED",
                     termination: { type: "failure" },
                   },
         resource: {

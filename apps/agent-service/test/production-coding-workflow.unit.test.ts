@@ -362,3 +362,54 @@ it("changes only authority after queue proof and still rejects changed outer too
     fencingToken: 1,
   });
 });
+
+it("replays a verified Worker conflict as accepted without dispatching or renewing approval", async () => {
+  const f = fixture();
+  f.ctx.fileConflict = async () => ({
+    call: f.call,
+    binding: f.binding,
+    depth: 0,
+    dispatchState: "accepted",
+  });
+  expect(await executeProductionCodingRequest(f.call, "write", f.services, f.ctx)).toMatchObject({
+    dispatchState: "accepted",
+    outcome: "failed",
+    errorCode: "FILE_VERSION_CONFLICT",
+  });
+  expect(f.authorize).not.toHaveBeenCalled();
+  expect(f.services.issue).not.toHaveBeenCalled();
+  expect(f.ctx.phase).not.toHaveBeenCalled();
+});
+it("freezes both directory move paths under the original move permission", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({
+    ...f.binding,
+    grant: { ...f.binding.grant, operations: ["read", "move"] },
+  });
+  const call = {
+    ...f.call,
+    capabilityRef: "coding.move_directory",
+    arguments: { path: "reports", destination: "archive" },
+  };
+  await executeProductionCodingRequest(call, "move_directory", f.services, f.ctx);
+  expect(f.authorize).toHaveBeenCalledWith(
+    expect.objectContaining({
+      operation: "move_directory",
+      targets: expect.arrayContaining([
+        { type: "file-path", ref: "reports" },
+        { type: "destination-path", ref: "archive" },
+      ]),
+    }),
+    undefined,
+  );
+  f.authorize.mockClear();
+  expect(
+    await executeProductionCodingRequest(
+      { ...call, arguments: { path: "reports", destination: "../outside" } },
+      "move_directory",
+      f.services,
+      f.ctx,
+    ),
+  ).toMatchObject({ outcome: "failed" });
+  expect(f.authorize).not.toHaveBeenCalled();
+});

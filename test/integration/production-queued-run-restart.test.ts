@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   ActionPolicyService,
@@ -49,8 +49,12 @@ it.each([
   "recovers the original Pi queue safely (coding=$coding, $scenario)",
   async ({ coding, scenario }) => {
     const live = LIVE_SANDBOX && coding && scenario === "resume";
-    if (live && process.platform !== "darwin") throw new Error("QUEUED_LIVE_PROBE_REQUIRES_MACOS");
-    const codingName = live ? "write" : "bash";
+    const fixedCompletion = live && process.env["HIMAWARI_FIXED_FILE_COMPLETION_PROBE"] === "1";
+    const conflicting = live && process.env["HIMAWARI_LIVE_FILE_CONFLICT"] === "1";
+    const expectedFile = conflicting ? "external edit" : "queued";
+    const moving = live && process.env["HIMAWARI_LIVE_DIRECTORY_MOVE"] === "1";
+    const codingName = live ? (moving ? "move_directory" : "write") : "bash";
+    const effectPath = moving ? "archive/queued.txt" : "queued.txt";
     let liveWorker:
       | Awaited<ReturnType<typeof import("../fixtures/queued-live-worker.ts").queuedLiveWorker>>
       | undefined;
@@ -73,16 +77,16 @@ it.each([
         contract: live
           ? {
               ref: "pi-coding-tool",
-              version: "3",
+              version: moving ? "4" : "3",
               kind: "verified_effect",
-              verifierRef: "pi-atomic-write",
+              verifierRef: moving ? "host-directory-move" : "pi-atomic-write",
               verifierVersion: "1",
-              targetRef: "pi-input:path",
+              targetRef: moving ? "pi-input:source-destination" : "pi-input:path",
             }
           : { ref: "bash", version: "1", kind: "command" },
         backendRef: "srt",
         scopeSource: "grant_targets",
-        directoryOperations: ["read", "create", "update"],
+        directoryOperations: moving ? ["move"] : ["read", "create", "update"],
         network: "disabled",
       },
       undefined,
@@ -93,6 +97,10 @@ it.each([
                 process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"] ?? "dist/node-runtime",
               ),
               realFileIdentity: true,
+              fixedFileCompletionQualification: fixedCompletion,
+              ...(moving
+                ? { directoryOperations: ["read", "create", "update", "move"] as const }
+                : {}),
             }
           : {}),
         authority: () => authority,
@@ -106,6 +114,10 @@ it.each([
         },
       },
     );
+    if (moving) {
+      await mkdir(path.join(f.host.workspace, "reports"));
+      await writeFile(path.join(f.host.workspace, "reports/queued.txt"), "queued");
+    }
     milestone("fixture-ready");
     const adapters = createReferenceAdapterSet({ clock });
     const runId = f.call.runId;
@@ -121,7 +133,9 @@ it.each([
         id: f.call.toolCallId,
         arguments: coding
           ? live
-            ? { path: "queued.txt", content: "queued" }
+            ? moving
+              ? { path: "reports", destination: "archive" }
+              : { path: "queued.txt", content: "queued" }
             : { command: "printf queued" }
           : f.call.arguments,
       },
@@ -300,6 +314,9 @@ it.each([
         payloads: f.repository.payloadStore(OWNER_ID, AGENT_ID),
         protector: f.f.protector,
         sandbox,
+        ...(live
+          ? { completeSandboxToolResult: (...args) => f.services.completeToolResult(...args) }
+          : {}),
         authority: () => authority,
         peer: () => peer,
         parents: registry.writer,
@@ -493,7 +510,7 @@ it.each([
       expect(model.observed).toHaveLength(1);
       expect(request.mock.calls.filter(([x]) => x.type === "work.execute")).toHaveLength(0);
       if (live)
-        await expect(stat(path.join(f.host.workspace, "queued.txt"))).rejects.toMatchObject({
+        await expect(stat(path.join(f.host.workspace, effectPath))).rejects.toMatchObject({
           code: "ENOENT",
         });
       const inventory = await f.services.brokerV2.preparations.readRunInventory({ runId });
@@ -641,7 +658,16 @@ it.each([
       stopAtQueue = false;
       if (live) {
         const { queuedLiveWorker } = await import("../fixtures/queued-live-worker.ts");
-        liveWorker = await queuedLiveWorker(f, authority);
+        let changedAfterBinding = false;
+        liveWorker = await queuedLiveWorker(f, authority, async () => {
+          if (!conflicting || changedAfterBinding) return;
+          const current = await f.services.brokerV2.preparations.readAdmission(
+            original.plan.identity,
+          );
+          if (current?.phase !== "bound") return;
+          changedAfterBinding = true;
+          await writeFile(path.join(f.host.workspace, effectPath), expectedFile);
+        });
         milestone("worker-ready");
       }
       const resumed = make("restart-consumer");
@@ -718,18 +744,36 @@ it.each([
             toolResult,
           }),
         );
-        expect(await readFile(path.join(f.host.workspace, "queued.txt"), "utf8")).toBe("queued");
+        expect(await readFile(path.join(f.host.workspace, effectPath), "utf8")).toBe(expectedFile);
         const record = await f.services.brokerV2.journal.read(original.plan.identity);
         if (!record) throw new Error("LIVE_EXECUTION_RECORD_MISSING");
+        if (conflicting) {
+          expect(record.facts.result).toMatchObject({
+            kind: "error",
+            reasonCode: "FILE_VERSION_CONFLICT",
+          });
+          expect(record.facts.effect.kind).toBe("verified");
+          expect(toolResult).toMatchObject({
+            dispatchState: "accepted",
+            outcome: "failed",
+            errorCode: "FILE_VERSION_CONFLICT",
+          });
+          const resolved = await f.services.brokerV2.resolveScope(record.plan);
+          const candidate = resolved.scope.directoryGrant && resolved.scope.preparedFile;
+          if (!candidate) throw new Error("LIVE_CANDIDATE_NOT_RETAINED");
+          expect(await readFile(candidate.content.identity.canonicalPath, "utf8")).toBe("queued");
+        }
         // macOS best-effort termination cannot prove an arbitrary command's full tree stopped.
-        expect(record?.workspaceBlocked).toBe(process.platform === "darwin");
-        expect(Boolean(record?.releaseReceipt)).toBe(process.platform !== "darwin");
+        expect(record?.workspaceBlocked).toBe(process.platform === "darwin" && !fixedCompletion);
+        expect(Boolean(record?.releaseReceipt)).toBe(
+          process.platform !== "darwin" || fixedCompletion,
+        );
         const events = [];
         if (liveWorker)
           for await (const event of liveWorker.worker.events(null)) events.push(event);
         expect(events.filter((event) => event.type === "work.result")).toHaveLength(1);
         if (!liveWorker || !sent) throw new Error("LIVE_WORKER_NOT_DISPATCHED");
-        const fileBeforeReplay = await stat(path.join(f.host.workspace, "queued.txt"));
+        const fileBeforeReplay = await stat(path.join(f.host.workspace, effectPath));
         const authorizations = f.repository.authorizationStore();
         const committedGrant = (await authorizations.listGrants(OWNER_ID, AGENT_ID)).find(
           (grant) => grant.id === original.plan.authorizationRef,
@@ -756,13 +800,13 @@ it.each([
         ).rejects.toThrow("WORKER_STALE_FENCE");
         await liveWorker.worker.request(sent);
         await liveWorker.worker.waitForIdle();
-        const fileAfterReplay = await stat(path.join(f.host.workspace, "queued.txt"));
+        const fileAfterReplay = await stat(path.join(f.host.workspace, effectPath));
         expect([fileAfterReplay.ino, fileAfterReplay.mtimeMs, fileAfterReplay.ctimeMs]).toEqual([
           fileBeforeReplay.ino,
           fileBeforeReplay.mtimeMs,
           fileBeforeReplay.ctimeMs,
         ]);
-        expect(await readFile(path.join(f.host.workspace, "queued.txt"), "utf8")).toBe("queued");
+        expect(await readFile(path.join(f.host.workspace, effectPath), "utf8")).toBe(expectedFile);
         const afterReplay = [];
         for await (const event of liveWorker.worker.events(null)) afterReplay.push(event);
         expect(afterReplay.filter((event) => event.type === "work.result")).toHaveLength(1);
@@ -781,9 +825,11 @@ it.each([
         );
       }
       // Worker cancellation is intentionally unknown: it may not trigger a second execution.
-      expect(result?.run.status).toBe("reconciling_external_result");
+      expect(result?.run.status).toBe(
+        fixedCompletion ? "completed" : "reconciling_external_result",
+      );
       expect(request.mock.calls.filter(([x]) => x.type === "work.execute")).toHaveLength(1);
-      expect(model.observed).toHaveLength(1);
+      expect(model.observed).toHaveLength(fixedCompletion ? 2 : 1);
       expect(approvalCount).toBe(coding ? 1 : 0);
       expect(issueCount).toBe(coding ? 1 : 0);
       expect(completedProbeCalls).toBe(1);

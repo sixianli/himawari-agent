@@ -5,6 +5,7 @@ import {
   type CapabilityInvocationAuthority,
   type ConsumeCapabilityInvocationInput,
   type GovernedActionIntent,
+  type HostFileOperationKind,
   hostDirectoryGrantStateKey,
   type ProductConfiguration,
   type RuntimeToolInvocation,
@@ -51,6 +52,8 @@ export async function productionSandboxScope(
     readonly legacyFileRead?: boolean;
     readonly piParameters?: Readonly<Record<string, unknown>>;
     readonly realFileIdentity?: boolean;
+    readonly directoryOperations?: readonly HostFileOperationKind[];
+    readonly fixedFileCompletionQualification?: boolean;
     readonly piRuntimeRoot?: string;
     readonly authority?: () => CapabilityInvocationAuthority;
     readonly seedRuntimeIntent?: boolean;
@@ -133,6 +136,8 @@ export async function productionSandboxScope(
       runnerDigest,
       profileRef: "authorized-project.v1",
     });
+    if (options.fixedFileCompletionQualification)
+      entry.qualification.sandbox.guarantees.push("fixed-file-terminal-no-writer.v1");
     entry.qualification.artifactDigest = `sha256:${runnerDigest}`;
     entry.manifest.integrity = `sha256:${runnerDigest}`;
     entry.manifest.artifact.digest = `sha256:${runnerDigest}`;
@@ -151,7 +156,7 @@ export async function productionSandboxScope(
   const directory = {
     ...f.directoryGrant,
     ...(options.seedRuntimeIntent === false ? { disclosure: "model" as const } : {}),
-    operations: ["read", "create", "update"] as const,
+    operations: options.directoryOperations ?? (["read", "create", "update"] as const),
     displayPath: host.workspace,
     ...(options.realFileIdentity ? { canonicalRootId: actualRoot.canonicalRootId } : {}),
   };

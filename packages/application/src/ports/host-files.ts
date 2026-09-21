@@ -94,6 +94,8 @@ export interface HostFilePublishHooks {
   /** Persist the exact staged inode and recheck authority before any final-path effect. */
   beforePublish(publication: HostFilePublication): Promise<void>;
   assertCurrentAuthority?(): Promise<void>;
+  /** Durable commit intent immediately before the first final-path syscall. */
+  commitStarting?(): Promise<void>;
 }
 
 export interface PermanentDeletionTarget {

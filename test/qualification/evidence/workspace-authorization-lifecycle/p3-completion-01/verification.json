@@ -1,0 +1,431 @@
+{
+  "verifiedAt": "2026-09-21T06:40:16.890489+00:00",
+  "scope": "P3-seven-requirements",
+  "frozenInputsUnchanged": 1113,
+  "standardBuild": "passed",
+  "standardTests": {
+    "files": 253,
+    "executed": 4086,
+    "passed": 4086,
+    "failed": 0,
+    "skipped": 0
+  },
+  "macArtifactSha256": "8cc8ae2f5415b521bc413909c20319594e8e9adb632e09389cf0bcf8422cdc06",
+  "platforms": {
+    "mac": "APFS, standard artifact, write/directory/conflict real Worker paths passed",
+    "linux": "ext4, Node 22.22.3/npm 11.8.0, native Linux build, file matrix and write/directory/conflict real Worker paths passed"
+  },
+  "archiveSha256": "c77fa0732a106edb78991d6557c4856cf17bf6396651c08f93d3b638a31d77dc",
+  "archiveBytesVerified": true,
+  "duplicateArchiveRejected": true,
+  "hostedGate": "not_executed",
+  "productionDeployment": "not_executed",
+  "boundaries": [
+    "controlled model and owner decisions",
+    "controlled installation qualification; not production qualification",
+    "arbitrary descendant termination and interrupted unknown effects remain protected",
+    "filesystem durability verified through fsync protocol and injected interruption; no power-loss certification"
+  ],
+  "logs": {
+    "himawari-p3-check-boundaries.log": {
+      "bytes": 130,
+      "sha256": "38acf89f01a139db6583e68bd61c9f37466aec749cf1116a7527b1561e1b6a80"
+    },
+    "himawari-p3-check-ci-policy.log": {
+      "bytes": 511,
+      "sha256": "f20ddb28efd0bd8c528fc21a89d2d433bc0e25914c03f1db0184a202d3d83e76"
+    },
+    "himawari-p3-check-secrets.log": {
+      "bytes": 119,
+      "sha256": "94f00ca2f6cc7400a4a8dadbd0f688f4dffa2999165823aa40b05d0ef2beacbd"
+    },
+    "himawari-p3-check-v0.2-coverage.log": {
+      "bytes": 171,
+      "sha256": "1b9451fdb7da719b550f1e9aeb0dbf4e089ce39a1655faba326dc3f13df4a187"
+    },
+    "himawari-p3-check-v0.2-invariants.log": {
+      "bytes": 190,
+      "sha256": "fd82a2bd99c73f5929e79b1b5e714bf147b8d7c02f96a7a88de89dd58fc62c6a"
+    },
+    "himawari-p3-claims-green.log": {
+      "bytes": 244,
+      "sha256": "66a4e39b8b35b62c52f11bd7eeefbb16b2475cf7e02ba42aff555e92cc51e50f"
+    },
+    "himawari-p3-claims-red.log": {
+      "bytes": 1402,
+      "sha256": "517cf594f5810e998fa7babee165c1ef5b54d534aa57ba5edbd0d7382f335f92"
+    },
+    "himawari-p3-concurrency-02.log": {
+      "bytes": 1382,
+      "sha256": "08e64650850100e96fcb60d8581b3177d85e12693854fbc25b7329c0ed0a8b7f"
+    },
+    "himawari-p3-conflict-queue-03.log": {
+      "bytes": 254,
+      "sha256": "020b690c60c7f882f55399fd74f0a97639896b2feb136a18d1a35e4c70eb6353"
+    },
+    "himawari-p3-consumers-01.log": {
+      "bytes": 40628,
+      "sha256": "00e2e09128d082cbc4188b0353f96206dfeece42b9f66522c4c0ee18389a5b81"
+    },
+    "himawari-p3-consumers-02.log": {
+      "bytes": 254,
+      "sha256": "1ace9db858ef1ac867d9085785d06f5ca0d7d76f15775bdf05b2cd58708dc197"
+    },
+    "himawari-p3-control-01.log": {
+      "bytes": 254,
+      "sha256": "ed8930a906b6b980497ab8567043df56e3bff8eb93064083790ccf8a99b4a35f"
+    },
+    "himawari-p3-dev-build-01.log": {
+      "bytes": 230,
+      "sha256": "f88fd37f692372065358f3761ca24b6767fe589cb065149a03f9ea4bc731a8a3"
+    },
+    "himawari-p3-dev-build-02.log": {
+      "bytes": 230,
+      "sha256": "f88fd37f692372065358f3761ca24b6767fe589cb065149a03f9ea4bc731a8a3"
+    },
+    "himawari-p3-digest-compare.log": {
+      "bytes": 358,
+      "sha256": "d8d2b9c181650ea4f962109e4f18edc45de115fac30e3030d9a04e492041e6b1"
+    },
+    "himawari-p3-directory-01.log": {
+      "bytes": 250,
+      "sha256": "bcfdeed5ba64dee907f9d4faca185a8b4a6b95b49e1e0b10a91cb1de1b078c36"
+    },
+    "himawari-p3-directory-02.log": {
+      "bytes": 952,
+      "sha256": "bdd90360826baa8ea9efd54c504a7faef73f4fe5d846aaf4ebc7c4b6665311bf"
+    },
+    "himawari-p3-directory-recovery-01.log": {
+      "bytes": 263,
+      "sha256": "7f5bf7cc9653e6e1353f0f576c7f1cffc1d3f57e8c5c49e86bbfe956a24effe1"
+    },
+    "himawari-p3-docs-final-02.log": {
+      "bytes": 53,
+      "sha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+    },
+    "himawari-p3-docs-final.log": {
+      "bytes": 196,
+      "sha256": "fde90d9be4368c9e9a9dcb4ea42e0a885bea28354a88d975c9d60c641b5fb1a6"
+    },
+    "himawari-p3-docs-frozen.log": {
+      "bytes": 53,
+      "sha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+    },
+    "himawari-p3-format-01.log": {
+      "bytes": 21625,
+      "sha256": "14b38ecd9d76fb716965413718ae20513515ad2958c7e19d44326c8745db0dba"
+    },
+    "himawari-p3-format-02.log": {
+      "bytes": 41564,
+      "sha256": "369854e01875c4a1d09de4dafe36b3f0b94976eb2750649c1820c843d18a9b6e"
+    },
+    "himawari-p3-format-final-02.log": {
+      "bytes": 167,
+      "sha256": "5741eaa01a17bba83f1b95703cff5f00e64465b223ffa99031107ba80543c0e9"
+    },
+    "himawari-p3-format-final.log": {
+      "bytes": 168,
+      "sha256": "0edf68f6542dfd05f60aafdb8cebbbd51ff4d9fbb87304644056f72c40bb1400"
+    },
+    "himawari-p3-format-frozen.log": {
+      "bytes": 45,
+      "sha256": "92b37323eb4cc6a4a38082263e9929b837e83216b83ea560ea32ef1ba4348ceb"
+    },
+    "himawari-p3-format-review.log": {
+      "bytes": 30975,
+      "sha256": "217db40208ae1b50bef7228170ee4116e2fddffe00a232e41f07bb3899ab4f4c"
+    },
+    "himawari-p3-handoff-consumers-01.log": {
+      "bytes": 1428,
+      "sha256": "94eb6ca93ba57758d040e560c80dafe232a1434ac483832a6dc9af9566ba2f7b"
+    },
+    "himawari-p3-installed-files-02.log": {
+      "bytes": 252,
+      "sha256": "8a5ead75283713077ba9aff2a38f63f858986950e3f8c28c5ea02c8fe819937d"
+    },
+    "himawari-p3-jobhost-load.log": {
+      "bytes": 22,
+      "sha256": "66c5c24e976d7b982a51f24a81cc6dc0c4450cb5bdca62e6d978cf1c73ba99a1"
+    },
+    "himawari-p3-lint-01.log": {
+      "bytes": 4078,
+      "sha256": "f2d1e867e85922e3e14159f2088a8298cbaa63d4c2ccd01d068617432c967c36"
+    },
+    "himawari-p3-linux-platform-final.log": {
+      "bytes": 94,
+      "sha256": "06ed5b490231c3c8b5301e1c0321bd188ddff7831b8b9c6edd70b5ff1fe4cb93"
+    },
+    "himawari-p3-live-conflict-mac-01.log": {
+      "bytes": 263,
+      "sha256": "6791159e40db36d0ed87d0f385646cb6824a742164ee4eacd6f7c07df27f94d0"
+    },
+    "himawari-p3-live-conflict-mac-final.log": {
+      "bytes": 263,
+      "sha256": "f0e894af81e682c4688cba1b7fe0589a2e5559b0601d2c1091bed8f8df110997"
+    },
+    "himawari-p3-live-directory-mac-01.log": {
+      "bytes": 263,
+      "sha256": "9752a9452d176e325bf0aec52df6672bc4f6d196b85ee537cc3cba0e6d772ec3"
+    },
+    "himawari-p3-live-directory-mac-final.log": {
+      "bytes": 263,
+      "sha256": "c5171237837213c7dcb1db64eb80abaf2093c2654c4ba25b41daa582a5f62391"
+    },
+    "himawari-p3-live-fixed-mac-01.log": {
+      "bytes": 12971,
+      "sha256": "a6dcc7bb6b836266a874aeebcaadbb6aa289210a6c2b5080c5ce5bb3185ce81f"
+    },
+    "himawari-p3-live-fixed-mac-02.log": {
+      "bytes": 13522,
+      "sha256": "7ba9aff40f48fa028df39f58958f8f726a7d44461a09a95a06afffb0e58a2da4"
+    },
+    "himawari-p3-live-fixed-mac-03.log": {
+      "bytes": 19814,
+      "sha256": "33270e7e8c9dea446cffd8e2b908ef87a25347a3cd1caeeb2d01c0373c21994c"
+    },
+    "himawari-p3-live-fixed-mac-04.log": {
+      "bytes": 16915,
+      "sha256": "3e07a22cacf5d9db0e8997375cc2b10a6a5826a5beca13c4e78b2696f1d81db4"
+    },
+    "himawari-p3-live-fixed-mac-05.log": {
+      "bytes": 21666,
+      "sha256": "e9f875f6cc685d595512c9928417d180da1b048040d42a5be638d7f5ef0f7d31"
+    },
+    "himawari-p3-live-fixed-mac-06.log": {
+      "bytes": 21666,
+      "sha256": "cc158c0ebdda0f124ad668fc04bf6a1efa14e613c0c83d8a2646c41b4f90f668"
+    },
+    "himawari-p3-live-fixed-mac-07.log": {
+      "bytes": 22168,
+      "sha256": "65642366b4b158b7906596164fd8806319a7e60e0a5d1651908515d83975a1f3"
+    },
+    "himawari-p3-live-fixed-mac-08.log": {
+      "bytes": 21714,
+      "sha256": "e283cb3567c8e6a1638f1a8da70b43a6d3d422beda78c6ef035b6603465b2b79"
+    },
+    "himawari-p3-live-fixed-mac-09.log": {
+      "bytes": 263,
+      "sha256": "3a034dffe1bae0e43a94371f1f6546d59cf0c01e3b89fa42579e14a2aca4dbfe"
+    },
+    "himawari-p3-live-write-mac-final.log": {
+      "bytes": 263,
+      "sha256": "89634377bb1c5af9a051873cd86e5007e1ac643f5a19a79dd077887e97996582"
+    },
+    "himawari-p3-mac-filesystem.log": {
+      "bytes": 156,
+      "sha256": "7a1686a3f42f9a06d45b89234df05ef439a5ec0db3099a164a9e9c030668852c"
+    },
+    "himawari-p3-mac-platform-final.log": {
+      "bytes": 67,
+      "sha256": "3e9e3eca88a0343d16c0d3758e3a3d93e38edf5965c0784d5c0c4a91640e7efe"
+    },
+    "himawari-p3-mac-runtime-digest-final.log": {
+      "bytes": 159,
+      "sha256": "1597c2be0b40d6a31265785a7d201b0e3779977da2d4bf54f77d462fc2414675"
+    },
+    "himawari-p3-migration-01.log": {
+      "bytes": 5107,
+      "sha256": "8b8eae365b584658c2d16d29ef0e5f6de53852e212ab70d630d26be6b5481056"
+    },
+    "himawari-p3-migration-02.log": {
+      "bytes": 9136,
+      "sha256": "0bbb264be548713f39fee71810bcfe2389cc25178da9461e65215b7ce1b15554"
+    },
+    "himawari-p3-migration-03.log": {
+      "bytes": 252,
+      "sha256": "f85185b4a4a07d3c624a1f5c6e83af96ce8793cd2b1183d2eee16a66d2f470fc"
+    },
+    "himawari-p3-multifile-01.log": {
+      "bytes": 248,
+      "sha256": "883cde9493fbba93ce712a6d1c960329aa82c5bec91d0cdb3e0a99ca29f56bab"
+    },
+    "himawari-p3-parallel-files-01.log": {
+      "bytes": 3533,
+      "sha256": "e15d1756143c70d559a42414f503515ec7d7c9f2edc2f33a45702a4fd3e51429"
+    },
+    "himawari-p3-queue-01.log": {
+      "bytes": 1587,
+      "sha256": "63f8a9ce6520de1e8aba45f6e6ccd0e9be46bf92f71fbac0b8c4b95dbbaff926"
+    },
+    "himawari-p3-reconcile-01.log": {
+      "bytes": 254,
+      "sha256": "411c3f28a84cdfc7b17e6bafb1a2f3a4fac72f401c869b833fa771e582c50db6"
+    },
+    "himawari-p3-runner-srt-mac-01.log": {
+      "bytes": 263,
+      "sha256": "2cdc0b85d0a4912cb7698f150e35c0228d2c0c9122c42ca66982af8484127636"
+    },
+    "himawari-p3-standard-final.log": {
+      "bytes": 91,
+      "sha256": "3419683062b7a67f248cdc02d0216268c71174e7209afdd81eafa6067015841d"
+    },
+    "himawari-p3-type-08.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-type-09.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-type-10.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-type-11.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-type-12.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-type-13.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-type-14.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-type-15.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-type-16.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-type-final.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-type-frozen.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-types-01.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-types-02.log": {
+      "bytes": 1683,
+      "sha256": "0035ef6b95131dcb49629006c3ea7a22486fd7119b71e7c1eb51c5ddf9c89c5c"
+    },
+    "himawari-p3-types-03.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-types-04.log": {
+      "bytes": 215,
+      "sha256": "f563273ee87dee3c385f45cf2079e4e91f8a2c6b74d14218ba1a5306f0c7325c"
+    },
+    "himawari-p3-types-05.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-types-06.log": {
+      "bytes": 558,
+      "sha256": "d3e94947c01d006318f11c89ef9127493574363b1863dccbec98ab81dbbe9d6a"
+    },
+    "himawari-p3-types-07.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-p3-verifiers-02.log": {
+      "bytes": 253,
+      "sha256": "653efff742edcdb63c35d8910901e4686c7c8b908ffaa686701d8324141e6e99"
+    },
+    "himawari-p3-workflow-01.log": {
+      "bytes": 252,
+      "sha256": "18676ad7b3702db5aadccaf8ee7f177834d912ac1771c806298d25252cef242f"
+    },
+    "linux-build-01.log": {
+      "bytes": 202,
+      "sha256": "99c6ab02e09163f2b8fef109dc099c6d899e4411720c14d958e02a998c79ebe1"
+    },
+    "linux-build-final.log": {
+      "bytes": 202,
+      "sha256": "99c6ab02e09163f2b8fef109dc099c6d899e4411720c14d958e02a998c79ebe1"
+    },
+    "linux-files-01.log": {
+      "bytes": 11078,
+      "sha256": "d0738ceccc0c30a2f9ba1a2af33456aec6e4684de6ccdc76e7259d1813c819de"
+    },
+    "linux-files-final-02.log": {
+      "bytes": 11726,
+      "sha256": "5cb145e84959a197f2754ae38fb2bc32889cf8c705dd250013210d4cbfd5af81"
+    },
+    "linux-files-final.log": {
+      "bytes": 8610,
+      "sha256": "ec97079b3db1a33f9fe7c2d2fea4575b818d9d4f5498c0df35ae1c6cc53978a1"
+    },
+    "linux-inputs-final.log": {
+      "bytes": 42,
+      "sha256": "bf6f074b426c4bcac307ef7ae65731a0d05198573bf0b3f3eebb02171a019dc0"
+    },
+    "linux-live-conflict-01.log": {
+      "bytes": 25031,
+      "sha256": "0407bbe7e8712d6b15005328eb36c55e7575d2e97e304cf15fd7a4fc3595c122"
+    },
+    "linux-live-conflict-final.log": {
+      "bytes": 25026,
+      "sha256": "403fe7a60e077f8bfe9bdd94d0501a7a9c54e27287f556cb77b64a6cd33b5564"
+    },
+    "linux-live-directory-01.log": {
+      "bytes": 23849,
+      "sha256": "69f5d4a50a43b01008989527fe398249a281c204fec41fe74888a9a2f1063401"
+    },
+    "linux-live-directory-final.log": {
+      "bytes": 23844,
+      "sha256": "fabadeec5e6ab504b07f9439d44899b797430ac6e1ea03857dff3fe08af69547"
+    },
+    "linux-live-fixed-01.log": {
+      "bytes": 21997,
+      "sha256": "9c7ef2a155bd15e6ecce89f311b082360f9e1ff9226b39f27c3f69e008e0a24a"
+    },
+    "linux-live-fixed-02.log": {
+      "bytes": 3030,
+      "sha256": "45c8f526d73b58a1749bc692eda6384befa82d6ab8e1626a23ecb1e8bf1cd4e2"
+    },
+    "linux-live-fixed-03.log": {
+      "bytes": 25456,
+      "sha256": "201e88d4d3a79200b22771de3feff17c23f9882b9f0f51bb7505a7c627aca0a3"
+    },
+    "linux-live-fixed-04.log": {
+      "bytes": 28372,
+      "sha256": "9c9a03dd9e7cb4d539fce7b1621038c37a50ee5ff725dcd4d0aaf8183208bdb2"
+    },
+    "linux-live-fixed-05.log": {
+      "bytes": 23918,
+      "sha256": "a9bdfa82100ce4d65ec71a7efbf8e826bb8233d462ec63e8a4e4efaeda90e3ea"
+    },
+    "linux-live-write-final.log": {
+      "bytes": 23922,
+      "sha256": "2f78e9cc13f7d64b7bc10a1aa8700abb0a25c5844532df63c6646fc93b7739ff"
+    },
+    "linux-runner-srt-01.log": {
+      "bytes": 4469,
+      "sha256": "71a6f96d4a0085b897e1407cfac22a028e28d6a56ceda7179b8210d3569cb5e4"
+    },
+    "linux-runner-srt-02.log": {
+      "bytes": 4702,
+      "sha256": "be969661b6d2ef28fbac6f8dc1a16eee063e00e2dc54572af2135f507e52dc64"
+    },
+    "linux-runner-srt-03.log": {
+      "bytes": 848,
+      "sha256": "81a34d7bd349fb1483a9210dbbf1f5cf8ff0c35964ce81829e69d1dc042f53c6"
+    },
+    "linux-runtime-digest-final.log": {
+      "bytes": 166,
+      "sha256": "a34bfd4cf0445ba57d4732708ae67f133166b48a1e32de42525cda98ce42419f"
+    },
+    "npm-ci-pinned.log": {
+      "bytes": 576,
+      "sha256": "99254b566abf53777dd6fc8bc5c8e080c31abcd8622d85075254aac925a3312c"
+    },
+    "npm-ci.log": {
+      "bytes": 784,
+      "sha256": "bdf7df24b091194d84178b034ec0b9ffc950db1a8787c2d04b5dad5772cdd5e1"
+    }
+  }
+}

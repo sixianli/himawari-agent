@@ -1,0 +1,22 @@
+{
+  "check:boundaries": {
+    "exitCode": 0,
+    "output": "\n> himawari-agent@0.0.0 check:boundaries\n> node scripts/check-boundaries.mjs\n\nDependency boundary check passed for 16 workspaces.\n"
+  },
+  "check:v0.2-coverage": {
+    "exitCode": 0,
+    "output": "\n> himawari-agent@0.0.0 check:v0.2-coverage\n> node scripts/check-v0.2-coverage.mjs\n\nv0.2 coverage check passed for 79 requirements, 53 acceptance IDs, and 10 Specs/Plans.\n"
+  },
+  "check:v0.2-invariants": {
+    "exitCode": 0,
+    "output": "\n> himawari-agent@0.0.0 check:v0.2-invariants\n> node scripts/check-v0.2-invariants.mjs\n\n{\"status\":\"passed\",\"errors\":[],\"scannedSourceFiles\":367,\"scannedPackageFiles\":27,\"reviewedRoutes\":20}\n"
+  },
+  "check:secrets": {
+    "exitCode": 0,
+    "output": "\n> himawari-agent@0.0.0 check:secrets\n> node scripts/scan-machine-secrets.mjs\n\n{\"status\":\"passed\",\"scannedFiles\":3614}\n"
+  },
+  "check:ci-policy": {
+    "exitCode": 0,
+    "output": "\n> himawari-agent@0.0.0 check:ci-policy\n> node scripts/ci/check-policy.mjs\n\n{\n  \"status\": \"passed\",\n  \"baseSha\": \"36a20d339cc31fdb4190eaded2026598e2f1e0a3\",\n  \"initialization\": false,\n  \"policySha256\": \"aac2dd0f1652b4873c162e40dd5e8eb9fb1bc0bdf0423c386d4d47df80c1f83d\",\n  \"toolchainSha256\": \"88005cb73e4fa6c87ffa251b78b1458a6c6780739787133ca149038757e4c58e\",\n  \"files\": 300,\n  \"projects\": {\n    \"unit\": 132,\n    \"contracts\": 23,\n    \"integration\": 85,\n    \"e2e\": 1,\n    \"pi-compat\": 12,\n    \"tooling\": 38\n  }\n}\n"
+  }
+}

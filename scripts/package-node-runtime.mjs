@@ -1,8 +1,10 @@
+import { execFile } from "node:child_process";
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { builtinModules, createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 import { collectArtifactFiles } from "./ci/artifact-files.mjs";
 
@@ -83,6 +85,18 @@ export async function packageNodeRuntime({
       path.join(destination, "package.json"),
       `${JSON.stringify(runtimeManifest(manifest, relativeRoot), null, 2)}\n`,
     );
+    if (relativeRoot === "packages/platform-node") {
+      await promisify(execFile)("cc", [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-O2",
+        path.join(repositoryRoot, relativeRoot, "src/files/rename-native.c"),
+        "-o",
+        path.join(destination, "dist/files/rename-native"),
+      ]);
+    }
     if (relativeRoot === "packages/persistence-sqlite") {
       await cp(
         path.join(repositoryRoot, relativeRoot, "src/migrations"),

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { SandboxExecutionRecord, WorkerExecuteRequest } from "@himawari-agent/application";
 import {
   executionV2MessageSchema,
@@ -14,6 +15,7 @@ import {
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import {
   ConstrainedHostFileSystem,
+  createDirectoryMoveJournal,
   createPiFilePublicationJournal,
 } from "@himawari-agent/platform-node";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -526,46 +528,87 @@ it("freezes the host file version and rejects changes while waiting", async () =
 });
 
 describe("fixed file recovery into the original SQLite invocation", () => {
-  it.each(["released", "still-running", "unbound-artifact", "wrong-invocation", "production"])(
-    "requires release and bound durable output (%s)",
-    async (scenario) => {
-      const f = await productionSandboxScope(
-        {
-          ...descriptor,
-          operation: "write",
-          directoryOperations: ["read", "create", "update"],
-          contract: {
-            ...PI_FIXED_FILE_CONTRACT,
-            kind: "verified_effect",
-            verifierRef: PI_WRITE_VERIFIER.ref,
-            verifierVersion: PI_WRITE_VERIFIER.version,
-            targetRef: PI_WRITE_VERIFIER.targetRef,
-          },
+  it.each([
+    "released",
+    "still-running",
+    "unbound-artifact",
+    "wrong-invocation",
+    "production",
+    "production-directory",
+  ])("requires release and bound durable output (%s)", async (scenario) => {
+    const moving = scenario === "production-directory";
+    const parameters = moving
+      ? { path: "reports", destination: "recovered" }
+      : { path: "recovered.txt", content: "candidate" };
+    const targetPath = moving ? "recovered/note.txt" : "recovered.txt";
+    const f = await productionSandboxScope(
+      {
+        ...descriptor,
+        operation: moving ? "move_directory" : "write",
+        directoryOperations: moving ? ["move"] : ["read", "create", "update"],
+        contract: {
+          ...PI_FIXED_FILE_CONTRACT,
+          ...(moving ? { version: "4" } : {}),
+          kind: "verified_effect",
+          verifierRef: moving ? "host-directory-move" : PI_WRITE_VERIFIER.ref,
+          verifierVersion: PI_WRITE_VERIFIER.version,
+          targetRef: moving ? "pi-input:source-destination" : PI_WRITE_VERIFIER.targetRef,
         },
-        undefined,
-        { piParameters: { path: "recovered.txt", content: "candidate" }, realFileIdentity: true },
-      );
-      cleanups.push(f.close);
-      let record = await startParent(f, false);
-      const { scope } = await f.services.brokerV2.resolveScope(record.plan);
-      if (scope.schemaVersion !== "sandbox-scope.v1") throw new Error("expected directory scope");
-      const privateDirectory = path.join(f.host.binding.privateRoot, record.plan.identity.jobId);
-      await mkdir(privateDirectory, { mode: 0o700 });
-      const grant = {
-        ...f.f.directoryGrant,
-        canonicalRootId: scope.directoryGrant.canonicalRootId,
-        displayPath: f.host.workspace,
-        operations: ["read", "create", "update"] as const,
-      };
-      const publication = createPiFilePublicationJournal({
-        privateDirectory,
-        workspace: f.host.workspace,
-        scope,
-        parametersJson: JSON.stringify({ path: "recovered.txt", content: "candidate" }),
-      });
-      const bytes = Buffer.from("candidate"),
-        digest = createHash("sha256").update(bytes).digest("hex");
-      const platform = new ConstrainedHostFileSystem();
+      },
+      undefined,
+      {
+        piParameters: parameters,
+        realFileIdentity: true,
+        ...(moving ? { directoryOperations: ["read", "move"] as const } : {}),
+      },
+    );
+    cleanups.push(f.close);
+    if (moving) {
+      await mkdir(path.join(f.host.workspace, "reports"));
+      await writeFile(path.join(f.host.workspace, "reports/note.txt"), "candidate");
+    }
+    let record = await startParent(f, false);
+    const { scope } = await f.services.brokerV2.resolveScope(record.plan);
+    if (scope.schemaVersion !== "sandbox-scope.v1") throw new Error("expected directory scope");
+    const privateDirectory = path.join(f.host.binding.privateRoot, record.plan.identity.jobId);
+    await mkdir(privateDirectory, { mode: 0o700 });
+    const grant = {
+      ...f.f.directoryGrant,
+      canonicalRootId: scope.directoryGrant.canonicalRootId,
+      displayPath: f.host.workspace,
+      operations: ["read", "create", "update"] as const,
+    };
+    const publication = moving
+      ? undefined
+      : createPiFilePublicationJournal({
+          privateDirectory,
+          workspace: f.host.workspace,
+          scope,
+          parametersJson: JSON.stringify({ path: "recovered.txt", content: "candidate" }),
+        });
+    const bytes = Buffer.from("candidate"),
+      digest = createHash("sha256").update(bytes).digest("hex");
+    const platform = new ConstrainedHostFileSystem();
+    if (moving) {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        vi.setSystemTime(new Date(T1));
+        await createDirectoryMoveJournal({
+          scope,
+          workspace: f.host.workspace,
+          privateDirectory,
+          directoryRenameExecutable: fileURLToPath(
+            new URL(
+              "../../dist/node-runtime/node_modules/@himawari-agent/platform-node/dist/files/rename-native",
+              import.meta.url,
+            ),
+          ),
+        }).execute();
+      } finally {
+        vi.useRealTimers();
+      }
+    } else {
+      if (!publication) throw new Error("publication missing");
       await platform.createExclusive(grant, "recovered.txt", bytes, {
         beforePublish: (proof) =>
           publication.prepared({
@@ -575,160 +618,157 @@ describe("fixed file recovery into the original SQLite invocation", () => {
             contentDigest: digest,
           }),
       });
-      // No verified runner record: simulate a crash immediately after publication.
-      const recoverOutput = vi.fn(async () => {
-        const proof = await publication.recover(grant);
-        expect(proof).toMatchObject({ contentDigest: digest });
-        const value = { recovered: proof };
-        const encoded = Buffer.from(JSON.stringify(value));
-        const key =
-          scenario === "wrong-invocation"
-            ? piFileRecoveryOperationKey("another-call")
-            : piFileRecoveryOperationKey(record.plan.identity.invocationId);
-        const saved = await f.persist(key, value);
-        return {
-          ref: scenario === "unbound-artifact" ? "missing-output" : saved.ref,
-          digest: createHash("sha256").update(encoded).digest("hex"),
-          byteLength: encoded.length,
-        };
-      });
-      const supervision = {
-        ref: "release-fixture",
-        digest: "e".repeat(64),
-        qualificationRef: record.plan.binding.qualificationRef,
-        profileRef: record.plan.binding.profileRef,
-        validUntil: T2,
-        subject: { kind: "local_process", processIdentityRef: "test-process" },
+    }
+    // Preserve the native publication, but omit the Worker result in SQLite.
+    const recoverOutput = vi.fn(async () => {
+      if (!publication) throw new Error("directory recovery must use production composition");
+      const proof = await publication.recover(grant);
+      expect(proof).toMatchObject({ contentDigest: digest });
+      const value = { recovered: proof };
+      const encoded = Buffer.from(JSON.stringify(value));
+      const key =
+        scenario === "wrong-invocation"
+          ? piFileRecoveryOperationKey("another-call")
+          : piFileRecoveryOperationKey(record.plan.identity.invocationId);
+      const saved = await f.persist(key, value);
+      return {
+        ref: scenario === "unbound-artifact" ? "missing-output" : saved.ref,
+        digest: createHash("sha256").update(encoded).digest("hex"),
+        byteLength: encoded.length,
       };
-      const journal = f.repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
-      if (scenario !== "still-running") {
-        for (const state of ["stopping", "released"] as const) {
-          const resourceState = { ...record.facts.resource } as Record<string, unknown>;
-          delete resourceState["reasonCode"];
-          delete resourceState["evidence"];
-          const facts = sandboxExecutionFactsSchema.parse({
-            ...record.facts,
-            resource: {
-              ...resourceState,
-              sequence: record.facts.resource.sequence + 1,
-              supervision: state,
-              cleanup: state === "released" ? "confirmed" : "pending",
-              ...(state === "released"
-                ? { evidence: supervision }
-                : { reasonCode: "TEST_STOP_REQUESTED" }),
-            },
-          });
-          record = (
-            await journal.append({
-              identity: record.plan.identity,
-              expectedSequence: record.facts.resource.sequence,
-              expectedOperationRevision: record.operationRevision,
-              facts,
-              authority: f.input.authority,
-              now: T1,
-              context: {
-                now: T1,
-                environment: record.facts.environment,
-                operationContract: record.plan.operationContract,
-                verification: {
-                  facts,
-                  identity: record.plan.identity,
-                  environmentId: record.plan.environmentId,
-                  policyDigest: facts.environment.policyDigest,
-                  resourceSequence: facts.resource.sequence,
-                  checkedAt: T1,
-                  validUntil: T2,
-                  outputs: [],
-                  evidence: [supervision],
-                },
-                currentResourceSequence: facts.resource.sequence,
-                runState: "terminated",
-                currentAuthority: false,
-                currentFence: false,
-                userDisclosureAllowed: false,
-                modelDisclosureAllowed: false,
-                conflictingWorkspaceRisk: false,
-                pendingApprovalOrReconciliation: false,
-                resultAlreadyDelivered: false,
-              },
-            })
-          ).record;
-        }
-      }
-      if (scenario === "production") {
-        const delivery = {
-          assertDisclosure: vi.fn(async () => {}),
-          saveReceipt: vi.fn(async () => {}),
-        };
-        const request = {
-          runId: record.plan.identity.runId,
-          invocationId: record.plan.identity.invocationId,
-        };
-        const completed = await f.services.completeToolResult(request, delivery);
-        expect(completed?.outcome).toBe("succeeded");
-        expect(delivery.saveReceipt).toHaveBeenCalledTimes(1);
-        const durable = await journal.read(record.plan.identity);
-        expect(durable?.facts.effect.kind).toBe("verified");
-        const uses = await handleUses(f);
-        await writeFile(path.join(f.host.workspace, "recovered.txt"), "later edit");
-        expect(await f.services.completeToolResult(request, delivery)).toEqual(completed);
-        expect(await handleUses(f)).toBe(uses);
-        expect(await readFile(path.join(f.host.workspace, "recovered.txt"), "utf8")).toBe(
-          "later edit",
-        );
-        return;
-      }
-      const recover = createProductionSandboxFileRecovery({
-        journal,
-        authority: () => f.input.authority,
-        now: () => T1,
-        recoverOutput,
-        // OS/process observation is the only synthetic evidence here. File records,
-        // publication, encrypted artifacts and journal acceptance are real.
-        verifyFresh: async (current) => {
-          const facts = current.facts;
-          return {
+    });
+    const supervision = {
+      ref: "release-fixture",
+      digest: "e".repeat(64),
+      qualificationRef: record.plan.binding.qualificationRef,
+      profileRef: record.plan.binding.profileRef,
+      validUntil: T2,
+      subject: { kind: "local_process", processIdentityRef: "test-process" },
+    };
+    const journal = f.repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    if (scenario !== "still-running") {
+      for (const state of ["stopping", "released"] as const) {
+        const resourceState = { ...record.facts.resource } as Record<string, unknown>;
+        delete resourceState["reasonCode"];
+        delete resourceState["evidence"];
+        const facts = sandboxExecutionFactsSchema.parse({
+          ...record.facts,
+          resource: {
+            ...resourceState,
+            sequence: record.facts.resource.sequence + 1,
+            supervision: state,
+            cleanup: state === "released" ? "confirmed" : "pending",
+            ...(state === "released"
+              ? { evidence: supervision }
+              : { reasonCode: "TEST_STOP_REQUESTED" }),
+          },
+        });
+        record = (
+          await journal.append({
+            identity: record.plan.identity,
+            expectedSequence: record.facts.resource.sequence,
+            expectedOperationRevision: record.operationRevision,
             facts,
-            identity: current.plan.identity,
-            environmentId: current.plan.environmentId,
-            policyDigest: facts.environment.policyDigest,
-            resourceSequence: facts.resource.sequence,
-            checkedAt: T1,
-            validUntil: T2,
-            outputs: facts.result && facts.result.kind !== "unknown" ? [facts.result.output] : [],
-            evidence: [
-              supervision,
-              ...(facts.effect.kind === "verified" ? [facts.effect.evidence] : []),
-            ],
-          };
-        },
-      });
-      const uses = await handleUses(f);
-      if (["unbound-artifact", "wrong-invocation"].includes(scenario)) {
-        await expect(recover(record)).rejects.toThrow("durably bound");
-        expect((await journal.read(record.plan.identity))?.facts.result).toBeNull();
-      } else {
-        const completed = await recover(record);
-        if (scenario === "still-running") {
-          expect(recoverOutput).not.toHaveBeenCalled();
-          expect(completed.facts.result).toBeNull();
-        } else {
-          expect(completed.facts.result?.kind).toBe("result");
-          expect(completed.facts.effect.kind).toBe("verified");
-          expect(completed.releaseReceipt).toBeDefined();
-          const after = await journal.read(record.plan.identity);
-          expect(after?.operationRevision).toBe(completed.operationRevision);
-          expect(after?.workspaceBlocked).toBe(false);
-          expect(await recover(completed)).toEqual(completed);
-          expect(recoverOutput).toHaveBeenCalledTimes(1);
-        }
+            authority: f.input.authority,
+            now: T1,
+            context: {
+              now: T1,
+              environment: record.facts.environment,
+              operationContract: record.plan.operationContract,
+              verification: {
+                facts,
+                identity: record.plan.identity,
+                environmentId: record.plan.environmentId,
+                policyDigest: facts.environment.policyDigest,
+                resourceSequence: facts.resource.sequence,
+                checkedAt: T1,
+                validUntil: T2,
+                outputs: [],
+                evidence: [supervision],
+              },
+              currentResourceSequence: facts.resource.sequence,
+              runState: "terminated",
+              currentAuthority: false,
+              currentFence: false,
+              userDisclosureAllowed: false,
+              modelDisclosureAllowed: false,
+              conflictingWorkspaceRisk: false,
+              pendingApprovalOrReconciliation: false,
+              resultAlreadyDelivered: false,
+            },
+          })
+        ).record;
       }
+    }
+    if (scenario === "production" || moving) {
+      const delivery = {
+        assertDisclosure: vi.fn(async () => {}),
+        saveReceipt: vi.fn(async () => {}),
+      };
+      const request = {
+        runId: record.plan.identity.runId,
+        invocationId: record.plan.identity.invocationId,
+      };
+      const completed = await f.services.completeToolResult(request, delivery);
+      expect(completed?.outcome).toBe("succeeded");
+      expect(delivery.saveReceipt).toHaveBeenCalledTimes(1);
+      const durable = await journal.read(record.plan.identity);
+      expect(durable?.facts.effect.kind).toBe("verified");
+      const uses = await handleUses(f);
+      await writeFile(path.join(f.host.workspace, targetPath), "later edit");
+      expect(await f.services.completeToolResult(request, delivery)).toEqual(completed);
       expect(await handleUses(f)).toBe(uses);
-      expect(await readFile(path.join(f.host.workspace, "recovered.txt"), "utf8")).toBe(
-        "candidate",
-      );
-    },
-  );
+      expect(await readFile(path.join(f.host.workspace, targetPath), "utf8")).toBe("later edit");
+      return;
+    }
+    const recover = createProductionSandboxFileRecovery({
+      journal,
+      authority: () => f.input.authority,
+      now: () => T1,
+      recoverOutput,
+      // OS/process observation is the only synthetic evidence here. File records,
+      // publication, encrypted artifacts and journal acceptance are real.
+      verifyFresh: async (current) => {
+        const facts = current.facts;
+        return {
+          facts,
+          identity: current.plan.identity,
+          environmentId: current.plan.environmentId,
+          policyDigest: facts.environment.policyDigest,
+          resourceSequence: facts.resource.sequence,
+          checkedAt: T1,
+          validUntil: T2,
+          outputs: facts.result && facts.result.kind !== "unknown" ? [facts.result.output] : [],
+          evidence: [
+            supervision,
+            ...(facts.effect.kind === "verified" ? [facts.effect.evidence] : []),
+          ],
+        };
+      },
+    });
+    const uses = await handleUses(f);
+    if (["unbound-artifact", "wrong-invocation"].includes(scenario)) {
+      await expect(recover(record)).rejects.toThrow("durably bound");
+      expect((await journal.read(record.plan.identity))?.facts.result).toBeNull();
+    } else {
+      const completed = await recover(record);
+      if (scenario === "still-running") {
+        expect(recoverOutput).not.toHaveBeenCalled();
+        expect(completed.facts.result).toBeNull();
+      } else {
+        expect(completed.facts.result?.kind).toBe("result");
+        expect(completed.facts.effect.kind).toBe("verified");
+        expect(completed.releaseReceipt).toBeDefined();
+        const after = await journal.read(record.plan.identity);
+        expect(after?.operationRevision).toBe(completed.operationRevision);
+        expect(after?.workspaceBlocked).toBe(false);
+        expect(await recover(completed)).toEqual(completed);
+        expect(recoverOutput).toHaveBeenCalledTimes(1);
+      }
+    }
+    expect(await handleUses(f)).toBe(uses);
+    expect(await readFile(path.join(f.host.workspace, targetPath), "utf8")).toBe("candidate");
+  });
 });
 
 describe("prepared file admission", () => {
@@ -938,3 +978,43 @@ it.each(["cancelled-before", "revoked-before", "stale-authority", "cancelled-dur
     }
   },
 );
+
+it("freezes three directory resources and rejects a queued path replacement before admission", async () => {
+  const f = await productionSandboxScope(
+    {
+      ...descriptor,
+      operation: "move_directory",
+      directoryOperations: ["move"],
+      contract: {
+        ref: "pi-coding-tool",
+        version: "4",
+        kind: "verified_effect",
+        verifierRef: "host-directory-move",
+        verifierVersion: "1",
+        targetRef: "pi-input:source-destination",
+      },
+    },
+    undefined,
+    {
+      realFileIdentity: true,
+      directoryOperations: ["read", "move"],
+      piParameters: { path: "reports", destination: "archive" },
+    },
+  );
+  cleanups.push(f.close);
+  await mkdir(path.join(f.host.workspace, "reports"));
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("expected reservation");
+  expect(prepared.workspaces).toHaveLength(3);
+  expect(prepared.reservation.workspaceConflictRefs).toHaveLength(3);
+  await f.services.brokerV2.preparations.enqueue({ ...prepared, invocation: f.input });
+  await rename(path.join(f.host.workspace, "reports"), path.join(f.host.workspace, "old"));
+  await mkdir(path.join(f.host.workspace, "reports"));
+  await expect(f.services.runtime.prepare(f.input, f.call)).rejects.toThrow(
+    "DIRECTORY_MOVE_TARGET_CHANGED",
+  );
+  expect(
+    (await f.services.brokerV2.preparations.readRunInventory({ runId: f.call.runId })).queue[0]
+      ?.status,
+  ).toBe("queued");
+});

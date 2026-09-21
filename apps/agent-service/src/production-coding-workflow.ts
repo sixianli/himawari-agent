@@ -15,7 +15,16 @@ import type {
   WorkflowAuthority,
 } from "./production-file-read-workflow.js";
 
-type Tool = "read" | "write" | "edit" | "bash" | "find" | "grep" | "ls" | "web_search";
+type Tool =
+  | "read"
+  | "write"
+  | "edit"
+  | "bash"
+  | "find"
+  | "grep"
+  | "ls"
+  | "move_directory"
+  | "web_search";
 const hash = (value: unknown) =>
   createHash("sha256")
     .update(
@@ -50,14 +59,16 @@ const failed = (code: string): RuntimeToolExecutionResult => ({
   modelContent: `工具未执行：${code}`,
 });
 
-export const fileVersionConflictResult = (): RuntimeToolSettledResult => ({
-  dispatchState: "not_sent",
+export const fileVersionConflictResult = (
+  dispatchState: "not_sent" | "accepted" = "not_sent",
+): RuntimeToolSettledResult => ({
+  dispatchState,
   outcome: "failed",
   resultRef: null,
   errorCode: "FILE_VERSION_CONFLICT",
   externalActionId: null,
   modelContent:
-    "目标文件已变化，本次修改未派发。已准备的候选仍保留；请重新读取最新内容，理解并保留他人修改后，用新的工具调用提出修改。新内容仍须经过原权限检查；无法确定意图时暂停说明。",
+    "目标文件已变化，已确认本次候选未发布。已准备的候选仍保留；请重新读取最新内容，理解并保留他人修改后，用新的工具调用提出修改。新内容仍须经过原权限检查；无法确定意图时暂停说明。",
 });
 
 /** Freeze model parameters, obtain an actual action/disclosure grant, issue one
@@ -83,13 +94,15 @@ export async function executeProductionCodingRequest(
   const grant = binding.grant;
   if (call.dataClassification !== "private" || (grant === null && tool !== "web_search"))
     return failed("CODING_DIRECTORY_UNAVAILABLE");
-  const write = ["write", "edit", "bash"].includes(tool);
+  const write = ["write", "edit", "bash", "move_directory"].includes(tool);
   const required =
-    tool === "write"
-      ? ["read", "create", "update"]
-      : tool === "edit"
-        ? ["read", "update"]
-        : ["read"];
+    tool === "move_directory"
+      ? ["move"]
+      : tool === "write"
+        ? ["read", "create", "update"]
+        : tool === "edit"
+          ? ["read", "update"]
+          : ["read"];
   if (
     grant !== null &&
     (grant.hostId !== binding.hostId ||
@@ -128,6 +141,14 @@ export async function executeProductionCodingRequest(
       const rootQuery =
         ["ls", "find", "grep"].includes(tool) && (target === "." || target === grant.displayPath);
       if (!rootQuery) resolveHostFileReadPath(grant, target);
+      if (tool === "move_directory") {
+        if (
+          typeof args["destination"] !== "string" ||
+          Object.keys(args).some((key) => !["path", "destination"].includes(key))
+        )
+          return failed("CODING_PATH_REQUIRED");
+        resolveHostFileReadPath(grant, args["destination"]);
+      }
     } catch {
       return failed("CODING_PATH_OUTSIDE_SCOPE");
     }
@@ -200,6 +221,9 @@ export async function executeProductionCodingRequest(
       { type: "input-digest", ref: hash(args) },
       { type: "model", ref: binding.modelIdentity },
       ...(tool === "web_search" ? [{ type: "network-domain", ref: "mcp.exa.ai:443" }] : []),
+      ...(typeof args["destination"] === "string"
+        ? [{ type: "destination-path", ref: args["destination"] }]
+        : []),
       ...(typeof args["path"] === "string" ? [{ type: "file-path", ref: args["path"] }] : []),
     ],
     dataClassification: "private",
@@ -226,9 +250,12 @@ export async function executeProductionCodingRequest(
   };
   // Returning a known non-execution fact does not renew the withdrawn Handle or
   // consume the old exact approval again. The frozen request above still must match.
-  if (["write", "edit"].includes(tool) && (await ctx.fileConflict?.(call.toolCallId))) {
-    await active();
-    return fileVersionConflictResult();
+  if (["write", "edit"].includes(tool)) {
+    const previous = await ctx.fileConflict?.(call.toolCallId);
+    if (previous) {
+      await active();
+      return fileVersionConflictResult(previous.dispatchState);
+    }
   }
   if (call.fileConflictOf !== undefined) {
     const previous = await ctx.fileConflict?.(call.fileConflictOf);

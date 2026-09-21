@@ -15,6 +15,14 @@ export const PI_RUNNER_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version
 export const PI_FIXED_FILE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "2" });
 /** Version 3 prepares write/edit candidates before workspace admission. */
 export const PI_PREPARED_FILE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "3" });
+/** Product-owned directory move; built-in Pi tool definitions remain unchanged. */
+export const FIXED_FILE_COMPLETION_GUARANTEE = "fixed-file-terminal-no-writer.v1";
+export const PI_DIRECTORY_MOVE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "4" });
+export const DIRECTORY_MOVE_VERIFIER = Object.freeze({
+  ref: "host-directory-move",
+  version: "1",
+  targetRef: "pi-input:source-destination",
+});
 /** Protected Agent artifact; separate from the original Worker's immutable output. */
 export const piFileRecoveryOperationKey = (invocationId: string) =>
   `pi-file-recovery:${invocationId}`;
@@ -31,6 +39,7 @@ export const piCodingToolNameSchema = enumeration([
   "find",
   "grep",
   "ls",
+  "move_directory",
 ]);
 const absolutePath: Schema<string> = {
   parse(value, location = "$") {

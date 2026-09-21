@@ -284,48 +284,142 @@ describe("atomic execution reservation and runtime binding", () => {
     }
   });
 
-  it.each(["different", "same-slot", "same-inode", "atomic-read", "directory-write"] as const)(
-    "coordinates concrete file resources: %s",
-    async (scenario) => {
-      const f = await openSandboxJournal();
-      try {
-        const file = (
-          suffix: string,
-          name: string,
-          inode: string,
-          access: "read" | "write" = "write",
-        ) => {
-          const value = input(f, suffix);
-          return {
-            ...value,
-            workspaces: value.workspaces.map((claim) => ({
-              ...claim,
-              access,
-              file: { name, identity: { device: "1", inode }, atomicPublish: access === "write" },
-            })),
-          };
+  it.each([
+    "different",
+    "same-slot",
+    "same-inode",
+    "atomic-read",
+    "inplace-read",
+    "directory-write",
+  ] as const)("coordinates concrete file resources: %s", async (scenario) => {
+    const f = await openSandboxJournal();
+    try {
+      const file = (
+        suffix: string,
+        name: string,
+        inode: string,
+        access: "read" | "write" = "write",
+      ) => {
+        const value = input(f, suffix);
+        return {
+          ...value,
+          workspaces: value.workspaces.map((claim) => ({
+            ...claim,
+            access,
+            file: { name, identity: { device: "1", inode }, atomicPublish: access === "write" },
+          })),
         };
-        const first = file("-a", "a.txt", "801");
-        const second =
-          scenario === "directory-write"
-            ? input(f, "-b")
-            : file(
-                "-b",
-                scenario === "same-slot" || scenario === "atomic-read" ? "a.txt" : "b.txt",
-                scenario === "same-inode" || scenario === "atomic-read" ? "801" : "802",
-                scenario === "atomic-read" ? "read" : "write",
-              );
-        call(f, "enqueue", first);
-        call(f, "enqueue", second);
-        call(f, "reserve", first);
-        if (["different", "atomic-read"].includes(scenario))
-          expect(call(f, "reserve", second).applied).toBe(true);
-        else expect(() => call(f, "reserve", second)).toThrow();
-      } finally {
-        await f.close();
+      };
+      const first = file("-a", "a.txt", "801");
+      if (scenario === "inplace-read")
+        first.workspaces.forEach((claim) => {
+          claim.file.atomicPublish = false;
+        });
+      const second =
+        scenario === "directory-write"
+          ? input(f, "-b")
+          : file(
+              "-b",
+              ["same-slot", "atomic-read", "inplace-read"].includes(scenario) ? "a.txt" : "b.txt",
+              ["same-inode", "atomic-read", "inplace-read"].includes(scenario) ? "801" : "802",
+              ["atomic-read", "inplace-read"].includes(scenario) ? "read" : "write",
+            );
+      call(f, "enqueue", first);
+      call(f, "enqueue", second);
+      call(f, "reserve", first);
+      if (["different", "atomic-read"].includes(scenario))
+        expect(call(f, "reserve", second).applied).toBe(true);
+      else expect(() => call(f, "reserve", second)).toThrow();
+    } finally {
+      await f.close();
+    }
+  });
+  it("reserves every directory move resource atomically and prevents descendant overtaking", async () => {
+    const f = await openSandboxJournal();
+    try {
+      f.database
+        .prepare("UPDATE capability_handles SET record_json=json_set(record_json, '$.maxUses', 10)")
+        .run();
+      const ancestor = { device: "1", inode: "100" };
+      const moved = { device: "1", inode: "101" };
+      const file = (suffix: string, name: string, child = true) => {
+        const value = input(f, suffix);
+        return {
+          ...value,
+          workspaces: value.workspaces.map((claim) => ({
+            ...claim,
+            lineage: child ? [ancestor, moved] : [ancestor],
+            file: { name, identity: null, atomicPublish: true },
+          })),
+        };
+      };
+      const first = file("-first", "a.txt");
+      const second = file("-second", "b.txt");
+      const moving = input(f, "-moving");
+      const base = moving.workspaces[0];
+      if (!base) throw new Error("missing fixture workspace");
+      const claims = [
+        { ...base, ref: "move-tree", lineage: [ancestor, moved] },
+        {
+          ...base,
+          ref: "move-source",
+          lineage: [ancestor],
+          file: { name: "reports", identity: moved, atomicPublish: false },
+        },
+        {
+          ...base,
+          ref: "move-destination",
+          lineage: [ancestor],
+          file: { name: "archive", identity: null, atomicPublish: false },
+        },
+      ];
+      const move = {
+        ...moving,
+        workspaces: claims,
+        reservation: { ...moving.reservation, workspaceConflictRefs: claims.map((c) => c.ref) },
+      };
+      const newer = file("-newer", "c.txt");
+      const unrelated = file("-sibling", "sibling.txt", false);
+      for (const request of [first, second, move, newer, unrelated]) call(f, "enqueue", request);
+      expect(call(f, "reserve", first).applied).toBe(true);
+      expect(call(f, "reserve", second).applied).toBe(true);
+      expect(() => call(f, "reserve", move)).toThrow();
+      expect(() => call(f, "reserve", newer)).toThrow("earlier conflicting request");
+      expect(call(f, "reserve", unrelated).applied).toBe(true);
+      expect(
+        f.database.prepare("SELECT COUNT(*) FROM sandbox_workspace_occupancy").pluck().get(),
+      ).toBe(3);
+      for (const request of [first, second]) {
+        const stopped = reserved(
+          call(f, "interruptReservation", {
+            identity: request.plan.identity,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+          }).admission,
+        );
+        expect(
+          call(f, "releaseReservation", {
+            identity: request.plan.identity,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            verification: reservationReleaseProof(stopped),
+          }).applied,
+        ).toBe(true);
       }
-    },
-  );
+      expect(call(f, "reserve", move).applied).toBe(true);
+      expect(
+        f.database
+          .prepare("SELECT COUNT(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+          .pluck()
+          .get(),
+      ).toBe(4);
+      expect(() => call(f, "reserve", newer)).toThrow();
+    } finally {
+      await f.close();
+    }
+  });
+
   it("allows two read-only preparations over the same workspace", async () => {
     const f = await openSandboxJournal();
     try {

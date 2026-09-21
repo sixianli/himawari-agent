@@ -149,11 +149,7 @@ exit 21
               "/proc",
               path.resolve(
                 path.dirname(
-                  createRequire(
-                    process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"]
-                      ? path.join(process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"], "package.json")
-                      : import.meta.url,
-                  ).resolve("@anthropic-ai/sandbox-runtime"),
+                  createRequire(import.meta.url).resolve("@anthropic-ai/sandbox-runtime"),
                 ),
                 "../vendor/seccomp",
               ),

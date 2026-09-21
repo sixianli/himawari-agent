@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:10fe34fea01792acabf66ce1b66d107e0d43135e5bec8f070b06877769a3d9be"
+contract_sha256: "sha256:ff7be8bd5d6da4b1096ffcf7edf1ce0016b7342d62b666b0019e497f504f8bc8"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,11 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/migrations/0046_directory_move_contract.sql
+- packages/application/src/services/workspace-claims.ts
+- packages/platform-node/src/capabilities/directory-move-scope.ts
+- packages/platform-node/src/files/directory-move.ts
+- packages/platform-node/src/files/rename-native.c
 - packages/application/src/ports/intelligence.ts
 - packages/persistence-sqlite/src/sqlite-run-resource-guard.ts
 - packages/application/src/ports/run-lifecycle.ts
@@ -248,6 +253,9 @@ Hermes 的 systemd、Cloudflare 入口、Host 签名与付费模型验收是 Own
 打包会规范普通文件与目录权限，去掉 group/other write 并保留可执行位，避免构建主机 umask 让运行时拒绝实际安装。增加 Pi 工具与公开搜索的请求路由并不创建权限：`runPolicy.coding`/`publicSearch` 必须引用真实目录 Grant 和合格 Capability；搜索使用固定 Exa MCP 出口及受保护结果，不能把查询摘录当作完整网页。工作目录和 Capability 登记使用离线 CLI，要求独占锁、活动身份及明确目标确认。
 
 每次启动检查新鲜资格；同一次启动内复查不可变快照原字节与实时安装摘要，不以五分钟经过自动撤销正常工具，也不接受修改后的配置。快照不能迁移成另一主机的资格。当前 Hermes 操作由 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md] 单独约束。
+
+
+P3 文件协议使用 Schema 46 的 writer 边界。升级和恢复必须保留原文件候选、逐文件发布记录、目录移动意图/收据、队列与占用；不得整批回滚已成功文件或覆盖后续人工修改。合同 3 的确定未发布冲突是失败结果，不是成功写入。目录工具合同 4 的 `rename-native` 随目标平台构建并受 runtime 摘要核验，Mac 包不能移作 Linux 包。新增固定文件完成资格仅适用于已验证的固定程序正常结束，旧资格与普通命令的未知清理仍保留保护；实际安装资格和启用不能由测试结果自动生成。详见 [SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]。
 
 ## Safety and Preconditions
 
@@ -493,7 +501,7 @@ Schema 36 不重写旧记录；它为新增 JSON 字段建立 writer 版本屏�
 
 ### 固定文件合同 3：先准备候选，再取得提交占用
 
-`pi-coding-tool@3` 仅用于固定 `write/edit`；该合同沿用 Schema 41 的保存结构，当前整体数据库已由队列恢复迁移推进至 Schema 45。准入前以 Pi Operations 的不可变快照准备完整候选，受控暂存区保存候选内容及工具结果；其 inode、摘要与原文件版本绑定到已有受保护 Scope artifact。此阶段没有调用消费回执或工作区占用，正式目标及缺失父目录保持不变。提交仍复用原持久队列、Worker、发布记录和原宿主释放证明；不能因候选已准备就提前派发或宣布保存成功。细节见[本批实施与验证范围](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
+`pi-coding-tool@3` 仅用于固定 `write/edit`；该合同沿用 Schema 41 的保存结构，当前整体数据库已由目录移动合同迁移推进至 Schema 46。准入前以 Pi Operations 的不可变快照准备完整候选，受控暂存区保存候选内容及工具结果；其 inode、摘要与原文件版本绑定到已有受保护 Scope artifact。此阶段没有调用消费回执或工作区占用，正式目标及缺失父目录保持不变。提交仍复用原持久队列、Worker、发布记录和原宿主释放证明；不能因候选已准备就提前派发或宣布保存成功。细节见[本批实施与验证范围](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
 
 备份、迁移与恢复须一起保留 Scope Payload、排队身份及工作区 `.himawari-recovery/` 中的候选与结果；数据库备份不包含这些暂存文件。候选本身可能是唯一结果，不自动清理、不按当前文件重建旧基线、不覆盖后续编辑。准备后取消或版本冲突不授权重放；跨 boot/fence 重新绑定只允许原批次关联完整、未准入且当前权限有效的队列，固定文件候选的真实 Worker 恢复联合验收仍待完成。旧程序不理解合同 3 或新增 Scope 字段时必须停止对应执行，不删字段降级，也不能仅凭 Schema 相同认定回退兼容。
 

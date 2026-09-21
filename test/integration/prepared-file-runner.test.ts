@@ -1,19 +1,23 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile, chmod, stat } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { HostDirectoryGrant } from "@himawari-agent/application";
 import {
-  sandboxScopeSchema,
   type PiRunnerInput,
   type SandboxFileTarget,
+  sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import {
   ConstrainedHostFileSystem,
   createPiFilePublicationJournal,
+  hasVerifiedPiFileConflict,
+  verifyPiWriteEvidence,
 } from "@himawari-agent/platform-node";
+import { compileSandboxPolicy, prepareSandboxJobHost } from "@himawari-agent/runtime-sandbox";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { prepareProductionFile } from "../../apps/agent-service/src/production-file-preparation.ts";
 
@@ -187,7 +191,80 @@ async function setup(tool: "write" | "edit", relativePath = "file.txt") {
 }
 /** Real built runner process and filesystem; SQLite admission and SRT isolation
  * are verified separately. This launch is not a platform qualification claim. */
-function run(input: PiRunnerInput) {
+async function run(input: PiRunnerInput) {
+  if (process.env["HIMAWARI_FIXED_RUNNER_SANDBOX"] === "1") {
+    const policy = {
+      workspace: input.workspace,
+      writable: true,
+      privateDirectory: input.privateDirectory,
+      readOnlyToolchainPaths: [
+        ...new Set(
+          await Promise.all(
+            [
+              runtimeRoot,
+              process.execPath,
+              "/bin",
+              "/usr/bin",
+              "/usr/lib",
+              ...(process.platform === "darwin"
+                ? ["/System"]
+                : [
+                    "/lib",
+                    "/lib64",
+                    "/proc",
+                    "/dev",
+                    path.resolve(
+                      path.dirname(
+                        createRequire(import.meta.url).resolve("@anthropic-ai/sandbox-runtime"),
+                      ),
+                      "../vendor/seccomp",
+                    ),
+                  ]),
+            ].map((filename) => realpath(filename)),
+          ),
+        ),
+      ],
+      protectedPaths: [],
+      allowedDomains: [],
+    };
+    const compiled = await compileSandboxPolicy(policy);
+    const host = prepareSandboxJobHost({
+      jobId: "fixed-runner-test",
+      attemptId: "attempt",
+      policy,
+      policyDigest: compiled.policyDigest,
+      executable: process.execPath,
+      args: [
+        path.join(
+          runtimeRoot,
+          "node_modules/@himawari-agent/agent-service/dist/capability-programs/pi-coding-main.js",
+        ),
+        "host",
+        "worker",
+      ],
+      stdinBase64: Buffer.from(JSON.stringify(input)).toString("base64"),
+      deadlineAt: new Date(Date.now() + 30000).toISOString(),
+      maxOutputBytes: 65536,
+      cleanupTimeoutMs: 5000,
+      resourceLimits: { maxCpuTimeMs: 10000, maxMemoryBytes: 268435456 },
+    });
+    try {
+      await host.ready;
+      host.start();
+      const result = await host.result;
+      return {
+        code: result.exitCode,
+        out: Buffer.from(result.stdout).toString(),
+        err: Buffer.from(result.stderr).toString(),
+        taskStarted: result.taskStarted,
+        taskProcessExited: result.taskProcessExited,
+        reason: result.reason,
+      };
+    } finally {
+      host.cancel();
+      await host.result;
+    }
+  }
   return new Promise<{ code: number | null; out: string; err: string }>((resolve, reject) => {
     const program = path.join(
       runtimeRoot,
@@ -239,6 +316,86 @@ describe("prepared files through the installed runner", () => {
       expect(await readFile(f.filename, "utf8")).toBe("later user edit");
     },
   );
+  it("runs the installed no-overwrite directory program and verifies the original inode", async () => {
+    const f = await setup("write");
+    const workspace = f.input.workspace;
+    await mkdir(path.join(workspace, "reports"));
+    await writeFile(path.join(workspace, "reports/note.txt"), "retained");
+    const root = await stat(workspace),
+      source = await stat(path.join(workspace, "reports"));
+    const rootIdentity = { device: String(root.dev), inode: String(root.ino) };
+    const sourceIdentity = { device: String(source.dev), inode: String(source.ino) };
+    const { fileTarget: _file, preparedFile: _prepared, ...base } = f.input.scope;
+    const scope = sandboxScopeSchema.parse({
+      ...base,
+      operation: "move_directory",
+      directoryGrant: { ...base.directoryGrant, operations: ["read", "move"] },
+      directoryMove: {
+        schemaVersion: "sandbox-directory-move.v1",
+        sourceRelativePath: "reports",
+        destinationRelativePath: "archive",
+        sourceIdentity,
+        sourceLineage: [rootIdentity, sourceIdentity],
+        destinationLineage: [rootIdentity],
+      },
+    });
+    const parameters = { path: "reports", destination: "archive" };
+    const input: PiRunnerInput = {
+      ...f.input,
+      tool: "move_directory",
+      scope,
+      parametersJson: JSON.stringify(parameters),
+    };
+    const result = await run(input);
+    expect(result, result.err).toMatchObject({ code: 0, err: "" });
+    const verification = {
+      bytes: Buffer.from(result.out),
+      parameters,
+      scope,
+      workspace,
+      plan: {
+        operation: "move_directory",
+        identity: { toolCallId: scope.toolCallId },
+        operationContract: {
+          ref: "pi-coding-tool",
+          version: "4",
+          kind: "verified_effect" as const,
+          verifierRef: "host-directory-move",
+          verifierVersion: "1",
+          targetRef: "pi-input:source-destination",
+        },
+      },
+    };
+    expect(verifyPiWriteEvidence(verification)).toBe("published");
+    const changed = JSON.parse(result.out);
+    changed.verifiedMove.inode = "999999";
+    expect(() =>
+      verifyPiWriteEvidence({ ...verification, bytes: Buffer.from(JSON.stringify(changed)) }),
+    ).toThrow("PI_WRITE_EVIDENCE_INVALID");
+    expect((await stat(path.join(workspace, "archive"))).ino).toBe(source.ino);
+    expect(await readFile(path.join(workspace, "archive/note.txt"), "utf8")).toBe("retained");
+    await expect(stat(path.join(workspace, "reports"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await run(input)).code).toBe(1);
+    expect(await readFile(path.join(workspace, "archive/note.txt"), "utf8")).toBe("retained");
+  });
+
+  it("never certifies no effect once the publication syscall was durably armed", async () => {
+    const f = await setup("edit");
+    const journal = createPiFilePublicationJournal(f.input);
+    await journal.commitStarting();
+    await expect(journal.conflicted()).rejects.toThrow();
+    expect(await journal.recoverConflict()).toBeUndefined();
+    expect(await readFile(f.filename, "utf8")).toBe("before\n");
+  });
+  it("cannot publish again after an immutable conflict receipt", async () => {
+    const f = await setup("edit");
+    const journal = createPiFilePublicationJournal(f.input);
+    await journal.conflicted();
+    await expect(journal.commitStarting()).rejects.toThrow();
+    expect(await journal.recoverConflict()).toMatchObject({ phase: "before_publish" });
+    expect(await readFile(f.filename, "utf8")).toBe("before\n");
+  });
+
   it("creates missing parents only when committing and retains the actual published inode", async () => {
     const f = await setup("write", "new/file.txt");
     await expect(stat(path.dirname(f.filename))).rejects.toMatchObject({ code: "ENOENT" });
@@ -258,7 +415,37 @@ describe("prepared files through the installed runner", () => {
         changed === "expired"
           ? { ...f.input, scope: { ...f.input.scope, expiresAt: "2000-01-01T00:00:00.000Z" } }
           : f.input;
-      expect((await run(input)).code).toBe(1);
+      const result = await run(input);
+      expect(result.code).toBe(1);
+      if (changed === "target") {
+        const proof = JSON.parse(result.out);
+        expect(proof).toMatchObject({
+          isError: true,
+          fileConflict: { phase: "before_publish", reasonCode: "FILE_VERSION_CONFLICT" },
+        });
+        const verified = hasVerifiedPiFileConflict({
+          bytes: Buffer.from(result.out),
+          parameters: JSON.parse(input.parametersJson),
+          scope: input.scope,
+          plan: {
+            operation: input.tool,
+            identity: { toolCallId: input.scope.toolCallId },
+            operationContract: {
+              ref: "pi-coding-tool",
+              version: "3",
+              kind: "verified_effect",
+              verifierRef: "pi-atomic-write",
+              verifierVersion: "1",
+              targetRef: "pi-input:path",
+            },
+          },
+          workspace: input.workspace,
+        });
+        expect(verified).toBe(true);
+        expect(await createPiFilePublicationJournal(input).recoverConflict()).toEqual(
+          proof.fileConflict,
+        );
+      }
       if (changed === "mode") expect((await stat(f.filename)).mode & 0o777).toBe(0o600);
       expect(await readFile(f.filename, "utf8")).toBe(
         changed === "target" ? "external edit" : "before\n",

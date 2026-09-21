@@ -1,18 +1,22 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmod,
   link,
   mkdir,
   mkdtemp,
+  readFile,
   realpath,
   rename,
   rm,
   stat,
   symlink,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { release, tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   SandboxHostBinding,
   SandboxRuntimeQualification,
@@ -21,10 +25,11 @@ import { sandboxScopeSchema } from "@himawari-agent/execution-contracts";
 import { afterEach, expect, it } from "vitest";
 import {
   digestSandboxRuntime,
-  resolveSandboxWorkspaceClaim,
   resolveSandboxFileWorkspaceClaim,
+  resolveSandboxWorkspaceClaim,
   verifySandboxHost,
 } from "../src/capabilities/sandbox-host-verifier.js";
+import { createDirectoryMoveJournal, resolveSandboxDirectoryMoveScope } from "../src/index.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -369,4 +374,154 @@ it("resolves file slots and inode identities without locking sibling files", asy
   await expect(resolve(".git/config")).rejects.toThrow();
   await symlink(path.join(root.canonicalPath, "notes"), path.join(root.canonicalPath, "linked"));
   await expect(resolve("linked/B.txt")).rejects.toThrow("PATH_UNSAFE");
+});
+
+it("resolves directory source, source slot and destination slot without serializing sibling files", async () => {
+  const f = await fixture();
+  const base = scopeFor(f);
+  const root = f.binding.roots[0];
+  if (!root) throw new Error("fixture root missing");
+  await mkdir(path.join(root.canonicalPath, "reports"));
+  await mkdir(path.join(root.canonicalPath, "diary"));
+  const scope = {
+    ...base,
+    operation: "move_directory",
+    directoryGrant: { ...base.directoryGrant, operations: ["read", "move"] as const },
+  };
+  const resolved = await resolveSandboxDirectoryMoveScope({
+    ...f,
+    scope,
+    sourceRelativePath: "reports",
+    destinationRelativePath: "archive",
+  });
+  expect(resolved.claims).toHaveLength(3);
+  expect(resolved.claims.filter((claim) => claim.file)).toHaveLength(2);
+  expect(resolved.target.sourceLineage).toHaveLength(2);
+  expect(resolved.target.destinationLineage).toHaveLength(1);
+  await expect(
+    resolveSandboxDirectoryMoveScope({
+      ...f,
+      scope,
+      sourceRelativePath: "reports",
+      destinationRelativePath: "diary",
+    }),
+  ).rejects.toThrow("TARGET_EXISTS");
+  await expect(
+    resolveSandboxDirectoryMoveScope({
+      ...f,
+      scope,
+      sourceRelativePath: "reports",
+      destinationRelativePath: "reports/child",
+    }),
+  ).rejects.toThrow("PATH_INVALID");
+  await rename(path.join(root.canonicalPath, "reports"), path.join(root.canonicalPath, "old"));
+  await mkdir(path.join(root.canonicalPath, "reports"));
+  const replaced = await resolveSandboxDirectoryMoveScope({
+    ...f,
+    scope,
+    sourceRelativePath: "reports",
+    destinationRelativePath: "archive",
+  });
+  expect(replaced.target.sourceIdentity).not.toEqual(resolved.target.sourceIdentity);
+});
+
+it("moves a real directory without overwrite and recovers inode-bound results without replay", async () => {
+  const f = await fixture();
+  const root = f.binding.roots[0];
+  if (!root) throw new Error("fixture root missing");
+  const info = await stat(root.canonicalPath);
+  const canonicalRootId = `${info.dev}:${info.ino}`;
+  const binding = { ...f.binding, roots: [{ ...root, canonicalRootId }] };
+  const base = scopeFor(f);
+  const scope = {
+    ...base,
+    operation: "move_directory",
+    directoryGrant: {
+      ...base.directoryGrant,
+      canonicalRootId,
+      operations: ["read", "move"] as const,
+    },
+  };
+  await mkdir(path.join(root.canonicalPath, "reports"));
+  await writeFile(path.join(root.canonicalPath, "reports", "a.txt"), "retained");
+  const resolved = await resolveSandboxDirectoryMoveScope({
+    binding,
+    scope,
+    sourceRelativePath: "reports",
+    destinationRelativePath: "archive",
+  });
+  const privateDirectory = await mkdtemp(path.join(tmpdir(), "directory-move-journal-"));
+  roots.push(privateDirectory);
+  const executable = path.join(privateDirectory, "rename-native");
+  execFileSync("cc", [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    fileURLToPath(new URL("../src/files/rename-native.c", import.meta.url)),
+    "-o",
+    executable,
+  ]);
+  const context = {
+    scope: { ...scope, directoryMove: resolved.target },
+    workspace: root.canonicalPath,
+    privateDirectory,
+    directoryRenameExecutable: executable,
+  };
+  // Call the native boundary directly with a destination created after resolution.
+  await mkdir(path.join(root.canonicalPath, "archive"));
+  const occupied = await stat(path.join(root.canonicalPath, "archive"));
+  const argv = [
+    root.canonicalPath,
+    "reports",
+    "archive",
+    String(info.dev),
+    String(info.ino),
+    resolved.target.sourceIdentity.device,
+    resolved.target.sourceIdentity.inode,
+  ];
+  expect(() => execFileSync(executable, argv, { stdio: "pipe" })).toThrow();
+  expect((await stat(path.join(root.canonicalPath, "archive"))).ino).toBe(occupied.ino);
+  expect(await readFile(path.join(root.canonicalPath, "reports/a.txt"), "utf8")).toBe("retained");
+  await rm(path.join(root.canonicalPath, "archive"), { recursive: true });
+  if (process.platform === "linux") {
+    const machineRoot = await stat("/");
+    const otherDevice = await stat("/dev/shm");
+    expect(otherDevice.dev).not.toBe(info.dev);
+    expect(() =>
+      execFileSync(
+        executable,
+        [
+          "/",
+          path.relative("/", path.join(root.canonicalPath, "reports")),
+          `dev/shm/himawari-never-created-${info.ino}`,
+          String(machineRoot.dev),
+          String(machineRoot.ino),
+          resolved.target.sourceIdentity.device,
+          resolved.target.sourceIdentity.inode,
+        ],
+        { stdio: "pipe" },
+      ),
+    ).toThrow();
+    expect(await readFile(path.join(root.canonicalPath, "reports/a.txt"), "utf8")).toBe("retained");
+  }
+  const journal = createDirectoryMoveJournal(context);
+  const proof = await journal.execute();
+  expect(await readFile(path.join(root.canonicalPath, "archive/a.txt"), "utf8")).toBe("retained");
+  expect(await journal.recover()).toEqual(proof);
+  await expect(journal.execute()).rejects.toThrow();
+  // The original durable receipt is historical even after a later user edit.
+  await writeFile(path.join(root.canonicalPath, "archive/a.txt"), "later edit");
+  expect(await journal.recover()).toEqual(proof);
+  expect(await readFile(path.join(root.canonicalPath, "archive/a.txt"), "utf8")).toBe("later edit");
+  // Without the final receipt, matching source identity still explains the FS/DB gap.
+  await unlink(path.join(privateDirectory, "directory-move-verified.json"));
+  expect(await journal.recover()).toEqual(proof);
+  await rename(
+    path.join(root.canonicalPath, "archive"),
+    path.join(root.canonicalPath, "moved-again"),
+  );
+  await mkdir(path.join(root.canonicalPath, "archive"));
+  await expect(journal.recover()).rejects.toThrow("RESULT_UNKNOWN");
 });

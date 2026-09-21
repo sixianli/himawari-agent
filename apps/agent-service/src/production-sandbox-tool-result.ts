@@ -108,7 +108,10 @@ export function createProductionSandboxToolResult(options: {
             }
           : {
               outcome: "failed",
-              outputRef: null,
+              outputRef:
+                result.kind === "error" && result.reasonCode === "FILE_VERSION_CONFLICT"
+                  ? result.output.ref
+                  : null,
               errorCode: result.kind === "error" ? result.reasonCode : "SANDBOX_COMMAND_FAILED",
               externalActionId: null,
             };

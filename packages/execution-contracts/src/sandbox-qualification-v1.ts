@@ -33,6 +33,7 @@ const guarantees = [
   "best_effort_stop",
   "task_tree_termination",
   "worker_crash_cleanup",
+  "fixed-file-terminal-no-writer.v1",
 ] as const;
 const shape = object({
   schemaVersion: literal("sandbox-runtime-qualification.v1"),

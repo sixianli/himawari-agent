@@ -10,6 +10,9 @@ import {
   sandboxReconciliationFailureReason,
 } from "@himawari-agent/application";
 import {
+  FIXED_FILE_COMPLETION_GUARANTEE,
+  PI_DIRECTORY_MOVE_CONTRACT,
+  PI_PREPARED_FILE_CONTRACT,
   type SandboxExecutionPlanV2,
   type SandboxHostBinding,
   type SandboxJobControlBinding,
@@ -56,6 +59,9 @@ interface Options {
   readonly host: (
     plan: SandboxExecutionPlanV2,
   ) => Promise<{ binding: SandboxHostBinding; qualification: SandboxRuntimeQualification }>;
+  /** Verify the protected terminal proof of the qualified, closed fixed-file
+   * program. Never supplied by the model, and never used for arbitrary commands. */
+  readonly fixedFileCompleted?: (record: SandboxExecutionRecord) => Promise<boolean>;
   /** Admission checks current scope/Grant and host bytes together before registration. */
   readonly admit: (
     plan: SandboxExecutionPlanV2,
@@ -208,6 +214,25 @@ export function createProductionSandboxControl(options: Options) {
       raw.srtReset &&
       namespace === "released" &&
       processAbsent(raw.processId)
+    )
+      return "released";
+    // This qualification concerns a closed program, not arbitrary process-tree
+    // termination. Its only shared publisher has returned; its native helper is
+    // awaited and cannot fork. Interrupted/unverified programs remain unknown.
+    if (
+      qualification.guarantees?.includes(FIXED_FILE_COMPLETION_GUARANTEE) &&
+      record.plan.operationContract.ref === PI_PREPARED_FILE_CONTRACT.ref &&
+      [PI_PREPARED_FILE_CONTRACT.version, PI_DIRECTORY_MOVE_CONTRACT.version].some(
+        (version) => version === record.plan.operationContract.version,
+      ) &&
+      record.plan.mode === "foreground" &&
+      raw.taskStarted &&
+      raw.phase === "finished" &&
+      raw.taskProcessExited &&
+      raw.stdioClosed &&
+      raw.srtReset &&
+      processAbsent(raw.processId) &&
+      (await options.fixedFileCompleted?.(record))
     )
       return "released";
     // A finished, never-started environment can be released only after the
@@ -511,8 +536,12 @@ export function createProductionSandboxControl(options: Options) {
     observe: (record: SandboxExecutionRecord) => observe(record, "inspect"),
     // Carry proof produced by this same host/process verification. Do not repeat
     // the expensive installed-byte check after issuing a one-second proof.
-    async refreshEvidence(record: SandboxExecutionRecord) {
-      const resource = await observe(record, "inspect");
+    async refreshEvidence(
+      record: SandboxExecutionRecord,
+      command: "inspect" | "stop" = "inspect",
+      signal?: AbortSignal,
+    ) {
+      const resource = await observe(record, command, signal);
       return {
         resource,
         evidence:

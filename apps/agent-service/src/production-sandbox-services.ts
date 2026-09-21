@@ -26,6 +26,7 @@ import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/acti
 import {
   assertSandboxExecutionSupport,
   executionV2MessageSchema,
+  PI_DIRECTORY_MOVE_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   piFileRecoveryOperationKey,
@@ -46,7 +47,9 @@ import {
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   CapabilityDeploymentSnapshotLoader,
+  createDirectoryMoveJournal,
   createPiFilePublicationJournal,
+  resolveSandboxDirectoryMoveScope,
   resolveSandboxFileScope,
   resolveSandboxWorkspaceClaim,
   revalidateCapabilityDeploymentSnapshot,
@@ -376,7 +379,7 @@ export async function createProductionSandboxServices(options: {
     );
     const directoryScope = resolved.scope;
     if (directoryScope.directoryGrant === null)
-      return { binding, qualification, workspaceClaim: null, ...resolved };
+      return { binding, qualification, workspaceClaims: [], ...resolved };
     if (
       !binding.roots.some(
         (root) => root.canonicalRootId === directoryScope.directoryGrant.canonicalRootId,
@@ -417,7 +420,37 @@ export async function createProductionSandboxServices(options: {
         workspaceClaim = current.claim;
       }
     }
-    return { binding, qualification, workspaceClaim, ...resolved };
+    let workspaceClaims = [workspaceClaim];
+    const moving =
+      plan.schemaVersion === "sandbox-execution.v2" &&
+      plan.operationContract.ref === PI_DIRECTORY_MOVE_CONTRACT.ref &&
+      plan.operationContract.version === PI_DIRECTORY_MOVE_CONTRACT.version;
+    if (Boolean(directoryScope.directoryMove) !== moving)
+      throw new Error("SANDBOX_DIRECTORY_MOVE_CONTRACT_CHANGED");
+    if (moving && plan.schemaVersion === "sandbox-execution.v2") {
+      if (plan.operation !== "move_directory")
+        throw new Error("SANDBOX_DIRECTORY_MOVE_CONTRACT_CHANGED");
+      const admission = await preparations.readAdmission(plan.identity);
+      if (admission?.phase === "bound") {
+        workspaceClaims = [...admission.record.workspaces];
+        if (workspaceClaims.length !== 3) throw new Error("SANDBOX_DIRECTORY_MOVE_CLAIMS_CHANGED");
+      } else {
+        const current = await directoryMoveTarget(directoryScope, binding).catch(
+          (error: NodeJS.ErrnoException) => {
+            if (
+              error.code === "ENOENT" ||
+              ["HOST_FILE_TARGET_EXISTS", "SANDBOX_HOST_PATH_CHANGED"].includes(error.message)
+            )
+              throw new Error("SANDBOX_DIRECTORY_MOVE_TARGET_CHANGED");
+            throw error;
+          },
+        );
+        if (hash(current.target) !== hash(directoryScope.directoryMove))
+          throw new Error("SANDBOX_DIRECTORY_MOVE_TARGET_CHANGED");
+        workspaceClaims = [...current.claims];
+      }
+    }
+    return { binding, qualification, workspaceClaims, ...resolved };
   };
   const fixedFileContract = (contract: { readonly ref: string; readonly version: string }) =>
     contract.ref === PI_FIXED_FILE_CONTRACT.ref &&
@@ -444,12 +477,48 @@ export async function createProductionSandboxServices(options: {
       access: scope.operation === "read" ? "read" : "write",
     });
   };
+  const directoryMoveTarget = async (scope: SandboxScope, binding: SandboxHostBinding) => {
+    const parameters = (await readJson(scope.inputRef)) as {
+      path?: unknown;
+      destination?: unknown;
+    };
+    const root = binding.roots.find(
+      (item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId,
+    );
+    if (
+      !root ||
+      typeof parameters?.path !== "string" ||
+      typeof parameters.destination !== "string" ||
+      Object.keys(parameters).some((key) => !["path", "destination"].includes(key))
+    )
+      throw new Error("SANDBOX_DIRECTORY_MOVE_INPUT_INVALID");
+    return resolveSandboxDirectoryMoveScope({
+      binding,
+      scope,
+      sourceRelativePath: path.relative(
+        root.canonicalPath,
+        path.resolve(root.canonicalPath, parameters.path),
+      ),
+      destinationRelativePath: path.relative(
+        root.canonicalPath,
+        path.resolve(root.canonicalPath, parameters.destination),
+      ),
+    });
+  };
   const freezeFileScope = async (
     scope: SandboxScope,
     binding: SandboxHostBinding,
     contract: { readonly ref: string; readonly version: string },
   ) => {
-    const { fileTarget: _parentTarget, ...plain } = scope;
+    const { fileTarget: _parentTarget, directoryMove: _parentMove, ...plain } = scope;
+    if (
+      contract.ref === PI_DIRECTORY_MOVE_CONTRACT.ref &&
+      contract.version === PI_DIRECTORY_MOVE_CONTRACT.version
+    )
+      return sandboxScopeSchema.parse({
+        ...plain,
+        directoryMove: (await directoryMoveTarget(plain, binding)).target,
+      });
     return fixedFileContract(contract)
       ? sandboxScopeSchema.parse({
           ...plain,
@@ -723,7 +792,12 @@ export async function createProductionSandboxServices(options: {
     let frozenScope: SandboxExecutionScope;
     if (retainedScope) {
       frozenScope = sandboxExecutionScopeSchema.parse(await readJson(retainedScope.payloadRef));
-      const { fileTarget: _target, preparedFile: _prepared, ...baseScope } = frozenScope;
+      const {
+        fileTarget: _target,
+        preparedFile: _prepared,
+        directoryMove: _move,
+        ...baseScope
+      } = frozenScope;
       if (hash(baseScope) !== hash(scope)) throw new Error("SANDBOX_SCOPE_CHANGED");
     } else {
       frozenScope =
@@ -812,7 +886,7 @@ export async function createProductionSandboxServices(options: {
       environmentId: plan.environmentId,
       resourceRef: plan.mode === "foreground" ? null : ids.next("sandbox-resource"),
       mode: plan.mode,
-      workspaceConflictRefs: resolved.workspaceClaim ? [resolved.workspaceClaim.ref] : [],
+      workspaceConflictRefs: resolved.workspaceClaims.map((claim) => claim.ref),
       sequence: 1,
       createdAt: plan.requestedAt,
     });
@@ -830,7 +904,7 @@ export async function createProductionSandboxServices(options: {
         : {}),
       plan,
       reservation,
-      workspaces: resolved.workspaceClaim ? [resolved.workspaceClaim] : [],
+      workspaces: resolved.workspaceClaims,
     };
   };
   const runtime: ProductionRuntimeSandbox = {
@@ -1053,7 +1127,7 @@ export async function createProductionSandboxServices(options: {
           },
         });
         const resolved = await resolve(plan);
-        if (!resolved.workspaceClaim) throw new Error("SANDBOX_CHILD_SCOPE_UNSUPPORTED");
+        if (!resolved.workspaceClaims.length) throw new Error("SANDBOX_CHILD_SCOPE_UNSUPPORTED");
         if (resolved.allowedDomains.some((domain) => !inherited.allowedDomains.includes(domain)))
           throw new Error("SANDBOX_CHILD_SCOPE_EXCEEDED");
         const reservation = sandboxExecutionReservationSchema.parse({
@@ -1062,11 +1136,11 @@ export async function createProductionSandboxServices(options: {
           environmentId: plan.environmentId,
           resourceRef: plan.mode === "foreground" ? null : ids.next("sandbox-resource"),
           mode: plan.mode,
-          workspaceConflictRefs: [resolved.workspaceClaim.ref],
+          workspaceConflictRefs: resolved.workspaceClaims.map((claim) => claim.ref),
           sequence: 1,
           createdAt: plan.requestedAt,
         });
-        return { plan, reservation, workspaces: [resolved.workspaceClaim] };
+        return { plan, reservation, workspaces: resolved.workspaceClaims };
       }
       if (!request.causationId) throw new Error("SANDBOX_PARENT_UNAVAILABLE");
       const parent = await journal.readByInvocation({
@@ -1147,6 +1221,22 @@ export async function createProductionSandboxServices(options: {
     },
   };
   const control = createProductionSandboxControl({
+    fixedFileCompleted: async (record) => {
+      const result = record.facts.result;
+      if (
+        record.facts.effect.kind !== "verified" ||
+        !result ||
+        (result.kind !== "result" &&
+          !(result.kind === "error" && result.reasonCode === "FILE_VERSION_CONFLICT"))
+      )
+        return false;
+      const verified = await verifyOutput({
+        plan: record.plan,
+        facts: record.facts,
+        now: clock.now(),
+      });
+      return verified.effectEvidence.length === 1 && verified.fixedFileClosed;
+    },
     now: () => clock.now(),
     admit: resolve,
     host: async (plan) => {
@@ -1195,6 +1285,7 @@ export async function createProductionSandboxServices(options: {
     facts,
     now,
   }: Parameters<SandboxExecutionEvidencePort["verify"]>[0]) => {
+    let fixedFileClosed = false;
     const effectEvidence: { ref: string; digest: string }[] = [];
     const outputs: { ref: string; digest: string; byteLength: number }[] = [];
     if (facts.result && facts.result.kind !== "unknown") {
@@ -1218,7 +1309,9 @@ export async function createProductionSandboxServices(options: {
             now,
           });
         const recovered =
-          fixedFileContract(plan.operationContract) &&
+          (fixedFileContract(plan.operationContract) ||
+            (plan.operationContract.ref === PI_DIRECTORY_MOVE_CONTRACT.ref &&
+              plan.operationContract.version === PI_DIRECTORY_MOVE_CONTRACT.version)) &&
           plan.operationContract.kind === "verified_effect"
             ? await artifacts().lookup({
                 runId: plan.identity.runId as RuntimeToolInvocation["runId"],
@@ -1248,22 +1341,33 @@ export async function createProductionSandboxServices(options: {
         throw new Error("SANDBOX_OUTPUT_CHANGED");
       if (facts.effect.kind === "verified") {
         if (
-          facts.result.kind !== "result" ||
+          (facts.result.kind !== "result" &&
+            !(
+              facts.result.kind === "error" && facts.result.reasonCode === "FILE_VERSION_CONFLICT"
+            )) ||
           facts.effect.evidence.ref !== facts.result.output.ref ||
           facts.effect.evidence.digest !== facts.result.output.digest
         )
           throw new Error("PI_WRITE_EVIDENCE_INVALID");
-        verifyPiWriteEvidence({
+        const verifiedOutcome = verifyPiWriteEvidence({
           bytes,
           parameters: await readJson(plan.inputRef),
           plan,
           scope: sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef)),
         });
+        if (
+          (verifiedOutcome === "conflict") !==
+          (facts.result.kind === "error" && facts.result.reasonCode === "FILE_VERSION_CONFLICT")
+        )
+          throw new Error("PI_WRITE_EVIDENCE_INVALID");
+        fixedFileClosed =
+          JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)).fileCommitClosed ===
+          true;
         effectEvidence.push({ ...facts.effect.evidence });
       }
       outputs.push({ ...facts.result.output });
     }
-    return { outputs, effectEvidence };
+    return { outputs, effectEvidence, fixedFileClosed };
   };
   const evidence: SandboxExecutionEvidencePort = {
     verify: async ({ plan, facts, now }) => {
@@ -1284,6 +1388,8 @@ export async function createProductionSandboxServices(options: {
   const refreshVerification = async (
     record: Parameters<typeof control.refreshEvidence>[0],
     retainedRelease = false,
+    action: "inspect" | "stop" = "inspect",
+    signal?: AbortSignal,
   ) => {
     const { outputs, effectEvidence } = await verifyOutput({
       plan: record.plan,
@@ -1293,7 +1399,7 @@ export async function createProductionSandboxServices(options: {
     const observed =
       retainedRelease && record.releaseReceipt
         ? { resource: record.facts.resource, evidence: [] }
-        : await control.refreshEvidence(record);
+        : await control.refreshEvidence(record, action, signal);
     const facts = { ...record.facts, resource: observed.resource };
     const now = clock.now();
     return {
@@ -1325,7 +1431,14 @@ export async function createProductionSandboxServices(options: {
       if (retained) {
         const value = await readJson(retained.payloadRef);
         const bytes = Buffer.from(JSON.stringify(value));
-        return { ref: retained.payloadRef, digest: bytesHash(bytes), byteLength: bytes.length };
+        return {
+          ref: retained.payloadRef,
+          digest: bytesHash(bytes),
+          byteLength: bytes.length,
+          outcome: (value as { fileConflict?: unknown }).fileConflict
+            ? ("conflict" as const)
+            : ("published" as const),
+        };
       }
       const entry = await entryFor(plan.capabilityRef, plan.capabilityVersion);
       await verifySandboxHost({ ...entry, hostId, plan });
@@ -1351,13 +1464,27 @@ export async function createProductionSandboxServices(options: {
         pathPolicy: "same_filesystem_no_links",
         mountPolicy: "fixed_device",
       };
-      const proof = await createPiFilePublicationJournal({
-        privateDirectory: path.join(entry.binding.privateRoot, plan.identity.jobId),
-        workspace: root.canonicalPath,
-        scope,
-        parametersJson: JSON.stringify(parameters),
-      }).recover(grant);
-      if (!proof) return undefined;
+      const moving = plan.operation === "move_directory";
+      const privateDirectory = path.join(entry.binding.privateRoot, plan.identity.jobId);
+      const publication = moving
+        ? undefined
+        : createPiFilePublicationJournal({
+            privateDirectory,
+            workspace: root.canonicalPath,
+            scope,
+            parametersJson: JSON.stringify(parameters),
+          });
+      const fileConflict = await publication?.recoverConflict();
+      const proof = fileConflict
+        ? undefined
+        : moving
+          ? await createDirectoryMoveJournal({
+              privateDirectory,
+              workspace: root.canonicalPath,
+              scope,
+            }).recover()
+          : await publication?.recover(grant);
+      if (!proof && !fileConflict) return undefined;
       const invocationPrefix = "runtime-tool:";
       if (!plan.identity.invocationId.startsWith(invocationPrefix))
         throw new Error("SANDBOX_RECOVERY_REQUEST_UNAVAILABLE");
@@ -1380,17 +1507,25 @@ export async function createProductionSandboxServices(options: {
       const value = {
         schemaVersion: "pi-result.v1",
         tool: plan.operation,
-        isError: false,
+        isError: Boolean(fileConflict),
         content: [
           {
             type: "text",
-            text: "已核验本次文件保存；结果来自原操作的持久发布记录，未再次执行写入。",
+            text: fileConflict
+              ? "已核验原操作在发布前因版本冲突停止；候选保留，未重新执行。"
+              : moving
+                ? "已核验本次目录移动；结果来自原操作记录，未再次执行移动。"
+                : "已核验本次文件保存；结果来自原操作的持久发布记录，未再次执行写入。",
           },
         ],
         details: { recoveredPublication: true },
         fullOutput: null,
         commandExitCode: null,
-        verifiedWrite: proof,
+        ...(fileConflict
+          ? { fileConflict }
+          : moving
+            ? { verifiedMove: proof }
+            : { verifiedWrite: proof }),
         source: {
           workspace: root.canonicalPath,
           toolCallId: scope.toolCallId,
@@ -1424,7 +1559,12 @@ export async function createProductionSandboxServices(options: {
       const saved = await artifacts().commit({ ...key, payload });
       if (hash(await readJson(saved.ref)) !== bytesHash(plaintext))
         throw new Error("SANDBOX_RECOVERY_OUTPUT_CHANGED");
-      return { ref: saved.ref, digest: bytesHash(plaintext), byteLength: plaintext.length };
+      return {
+        ref: saved.ref,
+        digest: bytesHash(plaintext),
+        byteLength: plaintext.length,
+        outcome: fileConflict ? ("conflict" as const) : ("published" as const),
+      };
     },
   });
   const completeToolResult = createProductionSandboxToolResult({
@@ -1450,7 +1590,11 @@ export async function createProductionSandboxServices(options: {
     hostId,
     journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
     evidence,
-    backend: control.backend,
+    backend: {
+      ...control.backend,
+      observeVerified: (record, action, signal) =>
+        refreshVerification(record, false, action, signal),
+    },
     // Reconciliation verifies installed runtime bytes on the host as well as process facts.
     // Use the existing bounded maximum so mechanical-disk verification can finish.
     timeoutMs: 30000,

@@ -23,6 +23,7 @@ import { AGENT_ID, OWNER_ID } from "./sqlite-capability-invocation-fixture.ts";
 export async function queuedLiveWorker(
   f: Awaited<ReturnType<typeof productionSandboxScope>>,
   authority: CapabilityInvocationAuthority,
+  beforeResolvedReply?: () => Promise<void>,
 ) {
   const directory = await mkdtemp("/tmp/h-qr-");
   const clock = { now: () => new Date().toISOString() };
@@ -49,7 +50,7 @@ export async function queuedLiveWorker(
     agentServiceInstanceId: common.agentServiceInstanceId,
     agentServiceBootId: common.agentServiceBootId,
     maximumPayloadBytes: common.maximumPayloadBytes,
-    allowedContentTypes: ["application/json"],
+    allowedContentTypes: ["application/json", "application/octet-stream"],
     sandboxExecutions: f.services.brokerV2,
   });
   const identity = {
@@ -71,7 +72,9 @@ export async function queuedLiveWorker(
   const rpc = payloads.sandboxExecution.bind(payloads);
   payloads.sandboxExecution = async (...args) => {
     try {
-      return await rpc(...args);
+      const result = await rpc(...args);
+      if (args[2].kind === "resolve") await beforeResolvedReply?.();
+      return result;
     } catch (error) {
       console.error(JSON.stringify({ queuedLiveRpcFailure: args[2].kind, error: String(error) }));
       throw error;

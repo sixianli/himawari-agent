@@ -16,10 +16,10 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_ID,
   OWNER_ID,
+  openRepository,
   SERVICE_AUTHORITY,
   T0,
   T2,
-  openRepository,
 } from "../fixtures/sqlite-capability-invocation-fixture.js";
 
 class InterruptedPublication extends ConstrainedHostFileSystem {
@@ -55,6 +55,7 @@ function service(repository: SqliteProductStateRepository, platform: Constrained
       ).state;
     },
   };
+  let sequence = 0;
   return new FileOperationService({
     state: new DurableHostWorkspaceStateAdapter(state),
     platform,
@@ -63,12 +64,71 @@ function service(repository: SqliteProductStateRepository, platform: Constrained
       digestCanonical: (value) => `sha256:${digest(value)}`,
     },
     clock: { now: () => T0 },
-    ids: { next: (prefix) => `${prefix}:publication-fixture` },
+    ids: { next: (prefix) => `${prefix}:publication-fixture:${++sequence}` },
     hostId: "host-publication",
   });
 }
 
 describe("file publication durable ownership", () => {
+  it("retains per-file partial results after restart without rolling back later edits", async () => {
+    const resource = await openRepository();
+    let repository = resource.repository;
+    const root = path.join(resource.stateRoot, "workspace");
+    await mkdir(root, { mode: 0o700 });
+    try {
+      const files = service(repository, new ConstrainedHostFileSystem());
+      const grant = await files.grant({
+        hostId: "host-publication",
+        displayPath: root,
+        operations: ["create", "read"],
+        dataClassification: "private",
+        disclosure: "none",
+        pathPolicy: "same_filesystem_no_links",
+        mountPolicy: "fixed_device",
+        authorizationRef: "authorization:publication",
+        expiresAt: T2,
+        revokedAt: null,
+      });
+      const candidateBytes = Buffer.from("candidate");
+      const operations = [];
+      for (const name of ["first.txt", "second.txt", "third.txt"])
+        operations.push(
+          await files.prepareWrite({
+            grantId: grant.id,
+            operation: "create",
+            relativePath: name,
+            candidatePayloadRef: `payload:${name}`,
+            candidateBytes,
+            redactedDiffRef: null,
+            expiresAt: T2,
+          }),
+        );
+      const inputs = operations.map((operation) => ({
+        operationId: operation.id,
+        expectedHash: operation.canonicalHash,
+        candidateBytes,
+      }));
+      const [first, second, third] = inputs;
+      if (!first || !second || !third) throw new Error("fixture operations missing");
+      expect((await files.executeWrite(first)).status).toBe("verified");
+      const crashing = service(repository, new InterruptedPublication());
+      await expect(crashing.executeWrite(second)).rejects.toThrow("fixture process died");
+      await writeFile(path.join(root, "first.txt"), "newer user edit");
+      await repository.close();
+      repository = await SqliteProductStateRepository.open({ stateRoot: resource.stateRoot });
+      const resumed = service(repository, new ConstrainedHostFileSystem());
+      expect((await resumed.executeWrite(first)).status).toBe("verified");
+      expect((await resumed.executeWrite(second)).status).toBe("verified");
+      expect(await readFile(path.join(root, "first.txt"), "utf8")).toBe("newer user edit");
+      expect(await readFile(path.join(root, "second.txt"), "utf8")).toBe("candidate");
+      await expect(stat(path.join(root, "third.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect((await resumed.executeWrite(third)).status).toBe("verified");
+    } finally {
+      await repository.close();
+      await rm(resource.stateRoot, { recursive: true, force: true });
+    }
+  });
+
   it.each([false, true])(
     "uses persisted inode evidence after restart (target replaced: %s)",
     async (replaced) => {

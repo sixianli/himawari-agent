@@ -1,9 +1,10 @@
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
   copyFile,
-  lstat,
   link,
+  lstat,
   mkdir,
   open,
   readdir,
@@ -14,6 +15,8 @@ import {
   unlink,
 } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import type {
   HostDirectoryGrant,
   HostFileIdentity,
@@ -24,6 +27,12 @@ import type {
 import { identityKey, normalizeRelativePath } from "@himawari-agent/application";
 
 export class ConstrainedHostFileSystem implements HostFilePlatformPort {
+  readonly #directoryRenameExecutable: string;
+  constructor(input: { readonly directoryRenameExecutable?: string } = {}) {
+    this.#directoryRenameExecutable =
+      input.directoryRenameExecutable ?? fileURLToPath(new URL("./rename-native", import.meta.url));
+  }
+
   async inspectRoot(root: string): Promise<HostFileIdentity> {
     const canonical = await realpath(root);
     const info = await lstat(canonical);
@@ -203,6 +212,8 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     await this.#assertStaged(grant, publication);
     await assertUnchanged();
     await hooks?.assertCurrentAuthority?.();
+    await hooks?.commitStarting?.();
+    await hooks?.assertCurrentAuthority?.();
     // External uncooperative writers are detected, not a strict filesystem CAS.
     if (expected) await rename(publication.identity.canonicalPath, target);
     else {
@@ -319,17 +330,65 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     destinationRelativePath: string,
     expected: HostFileIdentity,
   ) {
+    grant = structuredClone(grant);
+    expected = { ...expected };
     const source = await this.#resolve(grant, sourceRelativePath, true);
-    const destination = await this.#resolve(grant, destinationRelativePath, false, true);
+    // Directory moves must not create parents as a hidden side effect before admission.
+    const destination = await this.#resolve(
+      grant,
+      destinationRelativePath,
+      false,
+      (expected.mode & constants.S_IFMT) !== constants.S_IFDIR,
+    );
     const sourceChain = await this.#captureParentChain(grant, sourceRelativePath);
     const destinationChain = await this.#captureParentChain(grant, destinationRelativePath);
-    if (await lstat(destination).catch(() => undefined)) throw new Error("HOST_FILE_TARGET_EXISTS");
+    if (
+      await lstat(destination).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      })
+    )
+      throw new Error("HOST_FILE_TARGET_EXISTS");
     const current = await this.#requiredSafeIdentity(grant, sourceRelativePath);
     if (identityKey(current) !== identityKey(expected))
       throw new Error("HOST_FILE_IDENTITY_CHANGED");
     await this.#assertParentChain(grant, sourceRelativePath, sourceChain);
     await this.#assertParentChain(grant, destinationRelativePath, destinationChain);
-    await rename(source, destination);
+    if ((current.mode & constants.S_IFMT) === constants.S_IFDIR) {
+      if (destination.startsWith(`${source}${path.sep}`))
+        throw new Error("HOST_DIRECTORY_DESTINATION_INSIDE_SOURCE");
+      const root = await this.#resolveRoot(grant);
+      const rootInfo = await lstat(root);
+      const executable = await lstat(this.#directoryRenameExecutable);
+      if (!executable.isFile() || executable.isSymbolicLink() || !(executable.mode & 0o111))
+        throw new Error("HOST_DIRECTORY_RENAME_UNAVAILABLE");
+      try {
+        await promisify(execFile)(
+          this.#directoryRenameExecutable,
+          [
+            root,
+            normalizeRelativePath(sourceRelativePath),
+            normalizeRelativePath(destinationRelativePath),
+            String(rootInfo.dev),
+            String(rootInfo.ino),
+            expected.device,
+            expected.inode,
+          ],
+          { maxBuffer: 1024, env: {} },
+        );
+      } catch (error) {
+        const code = (error as { stderr?: string }).stderr?.trim();
+        throw new Error(
+          code && /^HOST_[A-Z_]+$/.test(code) ? code : "HOST_DIRECTORY_RESULT_UNKNOWN",
+        );
+      }
+    } else {
+      await rename(source, destination);
+      await syncDirectory(path.dirname(source));
+      await syncDirectory(path.dirname(destination));
+    }
+    await this.#assertParentChain(grant, sourceRelativePath, sourceChain);
+    await this.#assertParentChain(grant, destinationRelativePath, destinationChain);
     return this.#requiredSafeIdentity(grant, destinationRelativePath);
   }
 

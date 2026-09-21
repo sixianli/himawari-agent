@@ -5,7 +5,10 @@ import {
   sandboxResourceObservationSchema,
 } from "@himawari-agent/execution-contracts";
 import type { CapabilityInvocationAuthority } from "../ports/capability-invocations.js";
-import type { SandboxExecutionEvidencePort } from "../ports/sandbox-execution.js";
+import type {
+  SandboxExecutionEvidencePort,
+  SandboxExecutionVerification,
+} from "../ports/sandbox-execution.js";
 import type {
   SandboxExecutionJournalPort,
   SandboxExecutionRecord,
@@ -16,6 +19,13 @@ import type {
  * Absence of that identity is uncertainty, never permission to adopt a PID.
  */
 export interface SandboxReconciliationBackend {
+  /** A trusted host may return the observation and its proof from one verification.
+   * This avoids aging a short proof by auditing the same installation twice. */
+  observeVerified?(
+    record: SandboxExecutionRecord,
+    action: "inspect" | "stop",
+    signal: AbortSignal,
+  ): Promise<SandboxExecutionVerification>;
   inspect(record: SandboxExecutionRecord, signal: AbortSignal): Promise<SandboxResourceObservation>;
   stop(record: SandboxExecutionRecord, signal: AbortSignal): Promise<SandboxResourceObservation>;
 }
@@ -164,14 +174,20 @@ export class SandboxExecutionReconciliationService {
         reasonCode,
       });
     };
-    const append = async (resource: SandboxResourceObservation, fromBackend = false) => {
+    const append = async (
+      resource: SandboxResourceObservation,
+      fromBackend = false,
+      supplied?: SandboxExecutionVerification,
+    ) => {
       if (!record) throw new Error("SANDBOX_RECONCILIATION_BINDING_INVALID");
       if (fromBackend) assertActive();
       let now = this.options.now();
       const facts = { ...record.facts, resource };
+      if (supplied && JSON.stringify(supplied.facts) !== JSON.stringify(facts))
+        throw new Error("SANDBOX_RECONCILIATION_EVIDENCE_CHANGED");
       const verification =
         resource.supervision === "released"
-          ? await this.options.evidence.verify({ plan: record.plan, facts, now })
+          ? (supplied ?? (await this.options.evidence.verify({ plan: record.plan, facts, now })))
           : null;
       now = this.options.now();
       if (fromBackend) assertActive();
@@ -230,7 +246,14 @@ export class SandboxExecutionReconciliationService {
         }),
         (async () => {
           assertActive();
-          const resource = await backend[input.action](structuredClone(record), controller.signal);
+          const supplied = await backend.observeVerified?.(
+            structuredClone(record),
+            input.action,
+            controller.signal,
+          );
+          const resource = supplied
+            ? supplied.facts.resource
+            : await backend[input.action](structuredClone(record), controller.signal);
           assertActive();
           if (!["released", "lost"].includes(resource.supervision))
             throw new Error("SANDBOX_RECONCILIATION_INCONCLUSIVE");
@@ -243,6 +266,7 @@ export class SandboxExecutionReconciliationService {
                 }
               : parsed,
             true,
+            parsed.supervision === "released" ? supplied : undefined,
           );
         })(),
         new Promise<never>((_, reject) => {

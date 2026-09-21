@@ -269,12 +269,28 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       )
         descriptors.splice(0, 1);
       for (const name of coding.enabledTools)
-        descriptors.push({
-          definition: "builtin-coding",
-          name,
-          capabilityRef: `${coding.capabilityRef}.${name}`,
-          capabilityHandleRef: null,
-        });
+        descriptors.push(
+          name === "move_directory"
+            ? {
+                name,
+                capabilityRef: `${coding.capabilityRef}.${name}`,
+                capabilityHandleRef: null,
+                description:
+                  "在已授权目录内移动或重命名一个目录；目标必须不存在。等待相关文件操作后执行，不支持跨文件系统移动。",
+                parameters: {
+                  type: "object",
+                  properties: { path: { type: "string" }, destination: { type: "string" } },
+                  required: ["path", "destination"],
+                  additionalProperties: false,
+                },
+              }
+            : {
+                definition: "builtin-coding",
+                name,
+                capabilityRef: `${coding.capabilityRef}.${name}`,
+                capabilityHandleRef: null,
+              },
+        );
     }
     if (this.#options.publicSearch)
       descriptors.push({
@@ -627,8 +643,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         if (
           result?.outcome !== "failed" ||
           result.errorCode !== "FILE_VERSION_CONFLICT" ||
-          diagnostic?.stage !== "not_dispatched" ||
-          diagnostic.reasonCode !== "FILE_VERSION_CONFLICT"
+          !["not_dispatched", "verified_no_file_effect"].includes(diagnostic?.stage ?? "") ||
+          diagnostic?.reasonCode !== "FILE_VERSION_CONFLICT"
         )
           return undefined;
         const lineage = (await read(`runtime-file-read:${previousKey}:conflict-lineage`)) as
@@ -636,7 +652,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           | undefined;
         if (context.call.fileConflictOf !== undefined && lineage?.depth === undefined)
           return undefined;
-        return { call: context.call, binding: context.binding, depth: lineage?.depth ?? 0 };
+        return {
+          call: context.call,
+          binding: context.binding,
+          depth: lineage?.depth ?? 0,
+          dispatchState: diagnostic.stage === "verified_no_file_effect" ? "accepted" : "not_sent",
+        };
       },
       phase: async (handle, phase, inputRef) => {
         signal?.throwIfAborted();
@@ -1149,13 +1170,17 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         error instanceof Error &&
         error.message === "SANDBOX_FILE_VERSION_CHANGED" &&
         ["write", "edit"].includes(handle.operation);
+      const directoryChanged =
+        error instanceof Error && error.message === "SANDBOX_DIRECTORY_MOVE_TARGET_CHANGED";
       const reasonCode = possiblySent
         ? "WORKER_RESULT_RECONCILIATION_REQUIRED"
         : fileConflict
           ? "FILE_VERSION_CONFLICT"
-          : conflict
-            ? "WORKER_ADMISSION_CONFLICT"
-            : "WORKER_NOT_DISPATCHED";
+          : directoryChanged
+            ? "DIRECTORY_TARGET_CHANGED"
+            : conflict
+              ? "WORKER_ADMISSION_CONFLICT"
+              : "WORKER_NOT_DISPATCHED";
       outcome = possiblySent
         ? unknownResult()
         : fileConflict
@@ -1166,9 +1191,11 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
               resultRef: null,
               errorCode: reasonCode,
               externalActionId: null,
-              modelContent: conflict
-                ? "操作尚未派发：资源或请求状态发生冲突。"
-                : "操作尚未派发，未开始执行。",
+              modelContent: directoryChanged
+                ? "目录位置或目标已变化，本次操作未执行。请重新读取目录位置后提出新请求。"
+                : conflict
+                  ? "操作尚未派发：资源或请求状态发生冲突。"
+                  : "操作尚未派发，未开始执行。",
             };
       let stopRequest: "not_requested" | "requested" | "unconfirmed" = "not_requested";
       let stopRequestError: string | null = null;
@@ -1252,6 +1279,41 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     maxOutputBytes: number,
     internal: boolean,
   ): Promise<RuntimeToolSettledResult> {
+    if (
+      completion?.outcome === "failed" &&
+      completion.errorCode === "FILE_VERSION_CONFLICT" &&
+      completion.outputRef
+    ) {
+      const delivered = await this.#options.artifacts.lookup({
+        runId: invocation.runId,
+        purpose: "trace",
+        operationKey: `runtime-sandbox-delivery:${key}`,
+      });
+      const receipt = delivered
+        ? ((await this.#readJson(delivered.payloadRef)) as Partial<SandboxToolCompletion>)
+        : undefined;
+      if (
+        receipt?.outcome === "failed" &&
+        receipt.errorCode === "FILE_VERSION_CONFLICT" &&
+        receipt.outputRef === completion.outputRef
+      ) {
+        await this.#assertDisclosure(invocation, key, internal);
+        await this.#writeJson(invocation, `runtime-tool-diagnostic:${key}`, {
+          stage: "verified_no_file_effect",
+          reasonCode: "FILE_VERSION_CONFLICT",
+          invocationId: `runtime-tool:${key}`,
+          outputRef: completion.outputRef,
+        });
+        return {
+          ...fileVersionConflictResult(),
+          dispatchState: "accepted",
+          resultRef: completion.outputRef,
+          modelContent:
+            "目标文件已变化。Worker 已结束发布检查，并核验本次未发布；候选已保留。请读取最新内容后，用新工具调用重新生成；新内容仍须经过原权限检查。",
+        };
+      }
+      return unknownResult();
+    }
     if (completion?.outcome === "succeeded") {
       if (!completion.outputRef) throw new Error("WORKER_OUTPUT_MISSING");
       await this.#assertDisclosure(invocation, key, internal);

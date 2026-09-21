@@ -1331,7 +1331,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           path.join(f.resource.stateRoot, "legacy-snapshot.sqlite"),
         );
         expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([
-          28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+          28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
         ]);
         expect(readMigrationLedger(old).slice(0, 27)).toEqual(ledger);
         expect(old.prepare("SELECT * FROM sandbox_jobs").all()).toEqual(before);
@@ -1872,6 +1872,58 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         expect(await journal.read(record.plan.identity)).toEqual(before);
       } finally {
         await repository?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each(["fresh", "expired", "changed"] as const)(
+    "commits a single host observation with %s proof without repeating verification",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "lost"));
+        const repeated = vi.fn(async () => {
+          throw new Error("must not repeat host audit");
+        });
+        const observeVerified = vi.fn(async (current: SandboxExecutionRecord) => {
+          const facts = resource(current, "released");
+          const proof = context(current, facts).verification;
+          if (!proof) throw new Error("missing fixture proof");
+          return scenario === "expired"
+            ? { ...proof, validUntil: T1 }
+            : scenario === "changed"
+              ? { ...proof, facts: { ...facts, result: null } }
+              : proof;
+        });
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          now: () => T1,
+          timeoutMs: 1000,
+          evidence: { verify: repeated },
+          backend: { observeVerified, inspect: repeated, stop: repeated },
+        });
+        const reconciled = await service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        expect(observeVerified).toHaveBeenCalledTimes(1);
+        expect(repeated).not.toHaveBeenCalled();
+        expect(reconciled.record.workspaceBlocked).toBe(scenario !== "fresh");
+        expect(reconciled.record.facts.result).toEqual(record.facts.result);
+        expect(Boolean(reconciled.record.releaseReceipt)).toBe(scenario === "fresh");
+        expect(call(f, "read", record.plan.identity)).toEqual(reconciled.record);
+      } finally {
         await f.close();
       }
     },
