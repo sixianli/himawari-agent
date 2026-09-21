@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:861c2b0e4d58cc28e7ad9a736d91eca4b8a0e297cb0034825777301d2cebb907"
+contract_sha256: "sha256:10fe34fea01792acabf66ce1b66d107e0d43135e5bec8f070b06877769a3d9be"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -543,3 +543,5 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 清理端口的调用方等待现在有独立的 30 秒上限，取消、执行权中断及运行时完成均适用；这不是资源释放证明，也不替代平台停止宽限和按错误类别的恢复政策。运行时已生成输出但清理拒绝或超时，保留输出与受保护原因，Run 进入 `reconciling_external_result`；恢复不得重新执行模型或工具。取消、失败状态与仍需清理的资源分别核对，迟到成功不能直接覆盖原未知状态。备份和权威迁移须一并保留该检查点、清理事件及原资源证据。
 
 同一 Run 有多个资源时，停止入口会继续枚举后续页并独立请求各资源停止，最后汇总清理结论。一条资源等待或报错不阻止其他资源收到停止；只有每条资源均有永久释放回执且无残留保护时，整体才报告已释放。
+
+长期 Grant 的现时覆盖检查与创建条件一致：仅允许低风险 READ；新请求风险提高或动作类别变化时重新询问，不能因资源相同就复用。恢复、转移和升级时保留原 intent、审批及额度记录，不把过去拒绝改成批准。具体写入内容仍使用精确单次批准；记住搜索选择会为新请求派生独立单次 Grant，不是长期写权限。参见[单次批准与范围授权实施记录](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-scope-continuity)。

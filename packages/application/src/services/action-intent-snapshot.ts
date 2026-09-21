@@ -3,9 +3,9 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import type {
   ActionIntent,
   ApprovalRequest,
-  GrantRecord,
   GovernedActionIntent,
   GovernedGrantRecord,
+  GrantRecord,
   ResolveApprovalInput,
 } from "../ports/authorization.js";
 
@@ -152,6 +152,8 @@ export function governedGrantAuthorityCovers(
   return (
     grant.ownerId === intent.ownerId &&
     grant.agentId === intent.agentId &&
+    // Scope reuse must preserve the safe READ restriction enforced at grant creation.
+    (grant.kind !== "long_term" || (intent.actionKind === "READ" && intent.finalRisk === "LOW")) &&
     grant.revokedAt === null &&
     now >= grant.validFrom &&
     now < grant.expiresAt &&

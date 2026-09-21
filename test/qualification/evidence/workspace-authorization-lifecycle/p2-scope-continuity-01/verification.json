@@ -1,0 +1,185 @@
+{
+  "verifiedAt": "2026-09-21T03:38:30.954903+00:00",
+  "standardStatus": "local_passed",
+  "frozenInputsUnchanged": 1090,
+  "sourceTreeSha256": "2dd9897961aeecd31cc380defa1b73e964ab0c9e4304caf6c6ff88953966eeed",
+  "artifactSourceMatches": true,
+  "archiveSha256": "bc172537e8cd0a1406999e8badce0d7fcb13d52e3adb227262b24a095d016a72",
+  "archiveBytesVerified": true,
+  "duplicateArchiveRejected": true,
+  "logs": {
+    "himawari-scope-red.log": {
+      "bytes": 3160,
+      "sha256": "b063f86cc546fde6beb549005f8804461d7d0bb5778f2f0e81b39a1ea6c38ea3"
+    },
+    "himawari-scope-docs.log": {
+      "bytes": 53,
+      "sha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+    },
+    "himawari-scope-green.log": {
+      "bytes": 248,
+      "sha256": "ce2044e115e89a31a7938f56f77c1cc4989fc5771d687e68f688e8af32a4a154"
+    },
+    "himawari-scope-types-initial.log": {
+      "bytes": 2536,
+      "sha256": "c66103e627c8b3c752aa98dac735c40a4f325c77cc7e3dcb5c2c77c08f278031"
+    },
+    "himawari-scope-typecheck.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-scope-global-format.log": {
+      "bytes": 26987,
+      "sha256": "ad6dc7c5bd4bf1d0e4d960f21fd18a144638da8f4ab1cee05b30d72646fa0858"
+    },
+    "himawari-scope-runbooks.log": {
+      "bytes": 4013,
+      "sha256": "9c1968be8737c7673af3d2e4c066dffa8fe26c46ec7c931fd8a4c7c30c9a41df"
+    },
+    "himawari-scope-red2.log": {
+      "bytes": 2911,
+      "sha256": "b837e83b286427b710d26d908fd7bcf631f2eba70137a4df1d252a7ac6c6fa59"
+    },
+    "himawari-scope-format2.log": {
+      "bytes": 40,
+      "sha256": "277775226f94f4a95369a44cb10c58ea59e880276d34c9d48c80e5b50e04e954"
+    },
+    "himawari-scope-format3.log": {
+      "bytes": 38,
+      "sha256": "750514c70288e695e20cca9d12b73fd01aaccc44317081c60ded235d45276085"
+    },
+    "himawari-scope-standard.log": {
+      "bytes": 91,
+      "sha256": "3419683062b7a67f248cdc02d0216268c71174e7209afdd81eafa6067015841d"
+    },
+    "himawari-scope-format.log": {
+      "bytes": 38,
+      "sha256": "030e56c6c9370a50f737ff08693921d61e4f43bd8ff1406aa30ccd2cbea35611"
+    },
+    "himawari-scope-red-confirmed.log": {
+      "bytes": 2233,
+      "sha256": "ed9252048fe3b23373306bf52f8636fe7c33e9800ca07638f30158c4f835ca88"
+    },
+    "himawari-scope-consumers.log": {
+      "bytes": 252,
+      "sha256": "a45a275eb8ca9a1b8b11accde26e042332e8b49608547bbbad8a55a46bcb248c"
+    },
+    "himawari-scope-biome.log": {
+      "bytes": 43,
+      "sha256": "02d724c477aed22ed91f945c651890f22f42e5fc907bcb0fa679df808f9a2afd"
+    },
+    "himawari-scope-global-lint.log": {
+      "bytes": 19174,
+      "sha256": "e5c8c41d378b2b5eda275a50966597260cf8f085f6a013e0d6a4dce0da915b4a"
+    },
+    "build-macos-arm64-browser-budget.json": {
+      "bytes": 709,
+      "sha256": "631c7386ca79377ba55ea9e2ba682bdf064692b6a0b7d03d653fd2ee9b1bde7e"
+    },
+    "build-macos-arm64-browser-budget.log": {
+      "bytes": 545,
+      "sha256": "afb0a4ed98bca822277016764ac7fe6ef5219b74b7a7e5e0ed0d8964f5909306"
+    },
+    "build-macos-arm64-compile-node.log": {
+      "bytes": 49,
+      "sha256": "a32fbd088e81307b0ef941cb9328fdedfaf2e7946c194da00ad8e8fd8ad342e9"
+    },
+    "build-macos-arm64-native-probe.log": {
+      "bytes": 47,
+      "sha256": "95bbeb77eefc0491ca2a436d8b13a417feab05773cd0ebc306ad4557b81ad340"
+    },
+    "build-macos-arm64-build-manifest.json": {
+      "bytes": 7845498,
+      "sha256": "ee48196518239c36f6a34c64c056dece168e656ce979c87579b78be4a5b51bea"
+    },
+    "build-macos-arm64-compile-browser.log": {
+      "bytes": 1794,
+      "sha256": "746a3610a16d9dff1b18982b6df77ce40b2acdb384d5206e98315b72f770f588"
+    },
+    "build-macos-arm64-provider-imports.log": {
+      "bytes": 48,
+      "sha256": "2b5a7ceb691c35d0ac3e2c6869b6e24fffa3a37317c2b5911e16a9ca32032a12"
+    },
+    "build-macos-arm64-build.json": {
+      "bytes": 8498283,
+      "sha256": "457d2d3013b56c781463ab09d70d4d23518f62ed50e5c8016e11bcf378639b78"
+    },
+    "test-macos-arm64-e2e.xml": {
+      "bytes": 1047,
+      "sha256": "a00e6b565e74ba7c79cfc1da7557d13bdc13dbf46fef4126985c342c7dd1265d"
+    },
+    "test-macos-arm64-contracts.log": {
+      "bytes": 369,
+      "sha256": "e693095724cadf068c2a2a74c02567f783c98b5e8235132afded96a379e61eaa"
+    },
+    "test-macos-arm64-tests.json": {
+      "bytes": 1657,
+      "sha256": "71241146e923746bbf0e6e12797227df9a2232ad1cf13438c213d5c7e964b062"
+    },
+    "test-macos-arm64-pi-compat.xml": {
+      "bytes": 34728,
+      "sha256": "bd700b220b2fa2468b326d8cba6adebbd0aaf1e7bf9ac66090d5a1cc4ea1b660"
+    },
+    "test-macos-arm64-unit.xml": {
+      "bytes": 484952,
+      "sha256": "25859f906d3815537fe73ac4392676e1f2663888c7015ed9476fe4bb2f1751f8"
+    },
+    "test-macos-arm64-e2e.json": {
+      "bytes": 1830,
+      "sha256": "96b8b395e74b2362b1a6809f1c0e542d3616ce474eebcba8865e4060eb272854"
+    },
+    "test-macos-arm64-integration.log": {
+      "bytes": 2523,
+      "sha256": "41006971134bacd3a065996f32b8b0bfa514498b9f205d126901ee28357e19c2"
+    },
+    "test-macos-arm64-contracts.json": {
+      "bytes": 215296,
+      "sha256": "4cd5e800949d2d2ae3917c177f9043283f101d00aed8ce3f196f61b99dda32fe"
+    },
+    "test-macos-arm64-context.json": {
+      "bytes": 456,
+      "sha256": "ed6e270ff865b0c4e381eab11d5110c8e051736f71ea512e1d0316d6a762cbd9"
+    },
+    "test-macos-arm64-unit.log": {
+      "bytes": 359,
+      "sha256": "37dfb9dc6bfc56ff2639c050fa5c07552dbb18a6212be992fe5cd2d7fc78dd8d"
+    },
+    "test-macos-arm64-integration.xml": {
+      "bytes": 701406,
+      "sha256": "ca2753cff2bb731a785d100949914f1f9d70de233b71f6599f891dd58f9b7ade"
+    },
+    "test-macos-arm64-unit.json": {
+      "bytes": 653260,
+      "sha256": "ccc858ed9eca8869e3f2893f3ed78af5ef261f6a3a0f311c7a6d96aea77639df"
+    },
+    "test-macos-arm64-pi-compat.json": {
+      "bytes": 47856,
+      "sha256": "31d4e4cd0a1afdd73b6a99bef974c553c009eafe2976de545c0a629e509b9483"
+    },
+    "test-macos-arm64-e2e.log": {
+      "bytes": 356,
+      "sha256": "e60ea0d2faabc6f384c72f7504b68375ce627440fd84109158adae093751e0ec"
+    },
+    "test-macos-arm64-integration.json": {
+      "bytes": 622435,
+      "sha256": "a95cdd52438a14e2a7a3321cdbe6300ef584cfd9b8c87653c592f36c1bf806fe"
+    },
+    "test-macos-arm64-contracts.xml": {
+      "bytes": 139387,
+      "sha256": "e65e6433de812c8c0bb38aa77f202f9ece3158e73be0eaa1a9457dac01f0c6c8"
+    },
+    "test-macos-arm64-pi-compat.log": {
+      "bytes": 369,
+      "sha256": "e2afbf369a4d849d0991ad04cc96528be8c4f78b29e37911dceecd20f1d8c0b0"
+    }
+  },
+  "boundaries": [
+    "real SQLite, production Coding and FileReadServices, approvals, quota reservations and Handle consumption",
+    "controlled capability inventory, model, checkpoint index and final Worker boundary",
+    "no browser, paid provider or file effect claims"
+  ],
+  "knownGlobalStaticBlockers": [
+    "docs/assets/control-center/2026-09-16-state-review-r2/verify.cjs",
+    "docs/assets/control-center/2026-09-16-state-review/verify.cjs"
+  ]
+}

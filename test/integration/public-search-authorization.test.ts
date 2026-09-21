@@ -1,5 +1,10 @@
 import { readFile, rm } from "node:fs/promises";
-import { type GovernedActionIntent, resolveSandboxActionGrant } from "@himawari-agent/application";
+import {
+  ApprovalService,
+  actionIntentFingerprint,
+  type GovernedActionIntent,
+  resolveSandboxActionGrant,
+} from "@himawari-agent/application";
 import { createIdempotencyKey } from "@himawari-agent/domain";
 import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import { expect, it } from "vitest";
@@ -115,6 +120,34 @@ it.each(["directory", "private"] as const)(
       expect(
         await resource.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID),
       ).toHaveLength(0);
+      const store = resource.repository.authorizationStore();
+      const deniedIntent = {
+        ...intent,
+        id: "previously-denied",
+        idempotencyKey: createIdempotencyKey("previously-denied"),
+      };
+      const denied = await store.createApproval({
+        id: "explicit-denial",
+        revision: 1,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        intentId: deniedIntent.id,
+        intentSnapshot: deniedIntent,
+        semanticSnapshotHash: actionIntentFingerprint(deniedIntent),
+        status: "pending",
+        deliveryState: "deliverable",
+        requestedAt: T1,
+        expiresAt: T2,
+        decidedAt: null,
+        grantId: null,
+      });
+      await new ApprovalService({ store, clock: { now: () => T1 } }).respond({
+        approvalRequestId: denied.id,
+        expectedRevision: 1,
+        semanticSnapshotHash: denied.semanticSnapshotHash,
+        response: { decision: "denied" },
+      });
       await change(true, 0, "enable-search");
       expect(await change(true, 0, "enable-search")).toMatchObject({ replayed: true });
       await service.authorize({ ...intent, operation: "write" });
@@ -163,6 +196,36 @@ it.each(["directory", "private"] as const)(
           })
         ).grant.id,
       ).toBe(grant.id);
+      const next = {
+        ...intent,
+        id: "new-search-content",
+        resourceRef: "coding:new-query",
+        resourceRefs: ["coding:new-query"],
+        idempotencyKey: createIdempotencyKey("new-search-content"),
+      };
+      await service.authorize(next);
+      await service.authorize(next);
+      const nextApproval = await store.findApprovalByIntent(next.id);
+      expect(nextApproval).toMatchObject({
+        status: "approved",
+        intentSnapshot: next,
+        policyAuthorization: { revision: 1 },
+      });
+      expect(nextApproval?.grantId).not.toBe(grant.id);
+      const all = await store.listGrants(OWNER_ID, AGENT_ID);
+      expect(all).toHaveLength(2);
+      expect(all.find(({ id }) => id === nextApproval?.grantId)).toMatchObject({
+        kind: "one_time",
+        maxUses: 1,
+        intentFingerprint: actionIntentFingerprint(next),
+      });
+      await service.authorize(deniedIntent);
+      expect(await store.getApproval(denied.id)).toMatchObject({
+        status: "denied",
+        revision: 2,
+        grantId: null,
+      });
+      expect(await store.listGrants(OWNER_ID, AGENT_ID)).toHaveLength(2);
       await change(false, 1, "revoke-search");
       await expect(
         resolveSandboxActionGrant({
