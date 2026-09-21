@@ -6,14 +6,23 @@ This repository explicitly adopts the `document-governance` skill for all govern
 
 ## Documentation Language and Clarity
 
-- Write all project documentation content in Simplified Chinese.
+- Keep this `AGENTS.md` entirely in English. Write all other project documentation content in Simplified Chinese.
 
-## 已确认的 Web 设计基准
+## Document Readability and Navigation
 
-- 在修改控制中心的视觉、聊天交互或品牌资源前，先阅读 [当前 v4 交互与视觉基准](docs/execution/specs/2026-09-15-control-center-v4-design.md) 和 [Logo 原始基准](docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md)，并打开其中的交互原型和效果图。
-- `assets/brand/himawari/v1/` 与 `docs/assets/control-center/2026-09-10-v1/` 保存用户于 2026-09-10 确认的原始设计。后续实现以此核对布局、主题、逐轮过程与工具展示；不要直接覆盖基准文件。设计发生经用户确认的变化时，另存新版本并更新文档引用。
-- 当前聊天页面以 `docs/assets/control-center/2026-09-15-v4/` 的冻结原型为准，v1 作为历史与品牌来源保留。新修改不得恢复独立审批入口、通用详情栏或删除会话操作。
-- 原型中的消息、模型、thinking 摘要、工具输出、计时和审批均为演示数据，不能作为正式功能已实现或真实执行成功的证据。
+- When creating or revising project documentation, provide convenient navigation links wherever practical. Place a clickable table of contents or review summary at the beginning of long documents; do not add unnecessary structure solely for navigation in short documents.
+- When referring to sections within the same document, use internal links with descriptive section titles rather than bare references such as "Sections 2 and 9" or "5.1 and 5.4". References to detailed rules in summary tables should also link directly to the relevant sections.
+- Where useful, provide "Back to contents" or "Back to review summary" links in longer sections reached from the table of contents or review summary, so readers can easily navigate back and forth.
+- When referring to other project documents, use meaningful link text and repository-relative paths. Link to the relevant section whenever practical if a specific passage is intended. Preserve the SOURCE markers required by documentation governance; navigation links must not replace source declarations.
+- Use heading anchors or explicit anchors supported by the target Markdown reader. Update related links when headings, sections, or paths change. Before delivery, check that targets exist and anchors are unique; do not claim that navigation works in the reader unless it has been verified by actually clicking the links.
+- Improve navigation incrementally within the scope of the current documentation task. Do not rewrite unrelated documents or reorganize historical content in bulk merely to add links.
+
+## Approved Web Design Baselines
+
+- Before changing the control center's visual design, chat interactions, or brand assets, read the [current v4 interaction and visual baseline](docs/execution/specs/2026-09-15-control-center-v4-design.md) and the [original logo baseline](docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md), and open the interactive prototypes and visual mockups referenced in them.
+- `assets/brand/himawari/v1/` and `docs/assets/control-center/2026-09-10-v1/` preserve the original design approved by the user on 2026-09-10. Check subsequent implementations against these references for layout, themes, per-turn execution processes, and tool displays; do not overwrite the baseline files. When the user approves a design change, save it as a new version and update the documentation references.
+- The current chat page must follow the frozen prototype in `docs/assets/control-center/2026-09-15-v4/`; retain v1 as a historical reference and the source for brand assets. Changes must not reintroduce a standalone approval entry point, a general-purpose details sidebar, or conversation deletion actions.
+- Messages, models, thinking summaries, tool outputs, timings, and approvals in the prototypes are all demonstration data. They are not evidence that production features have been implemented or that real execution has succeeded.
 
 ## Engineering Diagrams
 
