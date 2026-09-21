@@ -4,6 +4,10 @@
 
 This repository explicitly adopts the `document-governance` skill for all governed project documentation under `docs/`.
 
+## Project Instruction Commits
+
+- Changes to this project-level `AGENTS.md` may be committed separately after review and applicable checks, without asking the user for confirmation. Stage only this file in such a commit and preserve unrelated work. This does not authorize pushing or other remote changes.
+
 ## Documentation Language and Clarity
 
 - Keep this `AGENTS.md` entirely in English. Write all other project documentation content in Simplified Chinese.
