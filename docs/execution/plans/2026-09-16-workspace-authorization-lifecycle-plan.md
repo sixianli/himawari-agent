@@ -180,6 +180,28 @@ date: "2026-09-16"
 | 必须人工确认 | `finalRisk=CRITICAL`、凭据/访问变更、`sideEffect=irreversible`（含 bash 与 trash）、新接收方、成本或频率变化、无覆盖摘要、审查超时/失败/无效输出、任何“建议替代” | 与 Spec 的 CRITICAL 近期认证要求及 R04 一致 |
 | 禁止 | 硬拒绝规则命中的操作、沙箱范围外目标、能力未注册/未激活/非健康、已撤销或过期请求、跨 Owner/Agent/会话请求、以及无法确认的主机身份 | 硬拒绝与沙箱限制在审查之前判定，模型建议不能覆盖 |
 
+#### TypeSafe JEV 作为审查模型的接入（2026-09-22）
+
+用户在 2026-09-22 指定用 TypeSafe 的 JEV 决策模型做自动审查，并确认：审查模型**只用 JEV 一个描述符但保持配置可换**、`model` 使用最新别名（`jev-latest`，版本号留作配置项）、置信度阈值先用 **0.8**。JEV 与前几版设想不同——它不是 LLM，只返回 typed choice 与校准置信度，走独立的 `POST https://api.typesafe.ai/v1/systemone`，按 input token 计价、输出免费。因此接入不是"换个模型引用"，而是**新增一种 provider 协议**。
+
+实现按"复用治理边界、只新增协议"的分层完成：
+
+| 层 | 改动 | 说明 |
+| --- | --- | --- |
+| 配置契约 | `api` 由固定值改为判别式：`openai-completions`（保留 reasoning/contextWindow/maxTokens/providerRouting）或 `typesafe-systemone`（只允许 `modelVersion`） | 决策端点不接受对话专有字段，也不允许非零 output 价格；这些在严格解析中是 unknown/非法字段而非静默忽略 |
+| 严格解析 | 按 `api` 分支校验；`automaticReview.confidenceThreshold` 限定 `[0,1]`，可省略 | 省略时装配层取 0.8 |
+| transport 选择 | 原"单一 Pi transport"改为按 descriptor 的 `api` 选择：Pi transport 只绑定 openai-completions 描述符，JEV transport 处理决策描述符 | 选择完全由冻结描述符决定，请求中途不会换协议 |
+| JEV transport | 冻结摘要作为 `state`，host 拥有的 typed questions（`within_delegated_scope`/`decision`/`reason_code`）决定答案空间；响应由**宿主确定性合成**成现有决策 JSON，置信度随 approve 附带 | 不要求 JEV 生成自由文本；答案越出宿主词表、置信度越界、model 身份不符、缺凭据、HTTP 错误与取消全部 fail-closed；503/429 有界重试、4xx 不重试 |
+| 审查服务 | 新增 `confidenceThreshold`：低于阈值或未报告置信度的 approve **一律转人工**，不提交 Grant | 复用既有协调器与 Schema 39 事务，未改 `ActionPolicyService` 判定顺序 |
+
+**本轮验证状态（2026-09-22）：本地接入与受控端到端已完成。** 配置契约、严格解析、transport 选择与 JEV transport 均已实现；`unit` 项目下 JEV transport 14 项、配置解析 38 项、审查契约 22 项、模型审查器 18 项通过（合计 92 项）。生产端到端回归 `test/integration/production-jev-review.test.ts` **3 项通过**：真实 `TrustedModelProviderAdapter`（真实预算准入与结算）+ 真实 SQLite 审查记录/审批/Grant + 本地假 JEV 端点，覆盖"高置信批准并生成一次性精确 Grant"、"低置信转人工且不生成 Grant"、"越范围转人工且只调用一次"。
+
+期间修复的真实缺陷：① `production-model-composition.ts` 重复导入导致模块解析失败；② JEV 合成出的答案缺少绑定字段，未通过共享决策契约；③ 置信度门控把 `approve` 改写为 `human` 时保留了仅批准允许携带的 `confidence`，导致完成事务校验失败；④ 编辑器重写 transport 时产生重复方法块。前两项是接入缺陷，第三项是门控与决策形状的契约不一致，均已修复并有回归覆盖。
+
+**环境限制仍存在：** 工作区读取间歇性 `ETIMEDOUT`（errno -60），`node scripts/ci/local.mjs --check test` 曾在 build 阶段以该错误失败、个别 vitest 运行长时间无输出；同一工具链此前完整跑过 4139 项，故按环境故障记录。**标准本地 CI 尚未在本轮改动上重新取得完整通过结果**，因此不声称"冻结后全套通过"。
+
+**与现有代码的关系：** `ActionPolicyService`、`AutomaticActionReviewService`、`sqlite-automatic-action-review`、`runtime-tool-authorization` 均未改动判定逻辑；`production-model-composition` 的 transport 选择是唯一结构性重构，目的是让"每个描述符自带协议"。Pi-first 说明：**复用** Pi/产品的模型治理边界（`ModelPort`、`TrustedModelProviderAdapter` 的准入、预算、密钥句柄、披露与结算）与受保护 payload；**新增**仅是 TypeSafe 协议本身，因为固定 Pi 运行时只暴露 OpenAI-compatible transport，没有 evaluate 类端点。
+
 **启用前需要的真实验收（尚未执行）：** 用上表配置与一条 Owner 明确委托的确切摘要，在隔离数据目录执行一次真实调用，核对：①请求只含上述最小输入；②决策、`automaticReview` 来源与一次性 Grant 可独立读回；③实际用量与费用写入预算账户；④接收方可追溯；⑤撤销、取消与重复结果不产生第二次授权。缺任何一项都只报告“接入与受控测试完成”，不勾选 P5 完成。
 
 <a id="p5-delivery"></a>
