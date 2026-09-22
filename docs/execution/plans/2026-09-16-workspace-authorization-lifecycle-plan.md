@@ -164,14 +164,16 @@ date: "2026-09-16"
 
 [↑ 返回阅读导航](#contents)
 
-自动审查默认关闭。启用 = 同时提供配置段与 Owner 委托记录；二者缺一都不会外发。下表是本批准备的可审阅方案，**在用户逐项确认前不执行任何真实调用**。
+自动审查默认关闭。启用 = 同时提供配置段与 Owner 委托记录；二者缺一都不会外发。下表是本批准备的可审阅方案。
+
+**2026-09-21 用户决定：** 本轮**暂不启用**自动审查，也不授权任何真实调用、费用或披露；仅确认边界参数——`maximumWaitMs=30000`、`maxOutputBytes=32768`、单次费用按该模型真实单价计费并单独记一条预算额度、审查输入保持当前最小集合（不含路径、文件正文与凭据）。真实模型身份、provider 与接收方仍待用户提供；在提供之前 P5 第③④项保持未勾选，也不执行真实验收。
 
 | 待确认事项 | 建议值 | 依据与影响 |
 | --- | --- | --- |
 | 审查模型身份 | `modelDescriptors` 中一个专用生成模型引用，独立 `secretRef`；当前 schema 只有 primary/fallback/embedding 三种角色，且只允许一个 fallback，因此可能需要新增第三个生成模型（建议角色 `specialist`）或明确允许复用未选中的 fallback | 审查决定绑定 `modelRef` 与 `configurationVersion`；模型或配置变化即失效旧委托。复用 Run 模型会让同一次执行自我审查，只应作为过渡 |
 | 接收方与披露 | 仅该模型 provider 的既有出口；不新增接收方。审查输入不包含目录路径、文件名、文件正文、凭据或会话文本 | 现有受保护输入只有：审查/请求身份与摘要、能力与操作、actionKind、sideEffect、finalRisk、数据分级、目标类型集合、确定性事实码与期限。若需要模型判断具体参数，必须单独批准扩大披露集 |
-| 最小输入集合 | `automatic-review-input.v1`：`reviewId/runId/intentFingerprint/policyVersion/configurationVersion/modelRef/deadlineAt/approvalExpiresAt` + `action{capabilityRef,capabilityVersion,operation,actionKind,sideEffect,finalRisk,dataClassification,targetKinds,deterministicFacts}` | 足以判断“是否落在委托范围、风险层级、是否需要人工”，不足以复原被写入内容 |
-| 费用上限 | 审查单独计入原模型预算：`maximumWaitMs` 内单次调用；在 `modelDescriptors.<reviewer>.cost` 上按真实单价计费，并在 `budgets.perClassificationCostMicros.private` 与 `budgets.globalCostMicros` 内单独预留一条额度。建议首轮 `maximumWaitMs` 20–30 秒、`maxOutputBytes` 32768 | 未配置费用时不得默认免费；未知用量保存为 `unknown`，不推断免费。真实单价需用户提供后再定具体额度 |
+| 最小输入集合（已确认保持） | `automatic-review-input.v1`：`reviewId/runId/intentFingerprint/policyVersion/configurationVersion/modelRef/deadlineAt/approvalExpiresAt` + `action{capabilityRef,capabilityVersion,operation,actionKind,sideEffect,finalRisk,dataClassification,targetKinds,deterministicFacts}` | 足以判断“是否落在委托范围、风险层级、是否需要人工”，不足以复原被写入内容 |
+| 费用上限 | 审查单独计入原模型预算：`maximumWaitMs` 内单次调用；在 `modelDescriptors.<reviewer>.cost` 上按真实单价计费，并在 `budgets.perClassificationCostMicros.private` 与 `budgets.globalCostMicros` 内单独预留一条额度。**已确认**首轮 `maximumWaitMs=30000`、`maxOutputBytes=32768`；单次费用额度待模型单价确定后填入 | 未配置费用时不得默认免费；未知用量保存为 `unknown`，不推断免费。真实单价需用户提供后再定具体额度 |
 | 超时与故障 | 超时、模型失败、无效输出、身份不符与披露被拒都不放行，回到原人工确认路径；调用中取消若用量未知保留 unresolved，不退款也不重试 | 已由 `ActionPolicyService` 回退与 `ModelActionReviewer` 取消处理实现；超时不是用户拒绝 |
 | 委托范围 | 委托记录 `intentFingerprints` 只列 Owner 明确接受的**确切请求摘要**；新内容、路径、接收方或预算变化都是新 intent，缺少覆盖即回到人工 | 与 A05、R02、R06 一致；现有配置没有“按风险类别批量委托”的开关，本批也不新增 |
 | 允许自动批准 | 仅：`dataClassification=private`、`sideEffect=reversible` 或 `none`、`finalRisk≠CRITICAL`、`credentialOrAccessChange=false`、接收方与预算均落在委托内、且摘要已被 Owner 逐条列入委托 | 自动批准仍生成一次性精确 Grant，经原额度预约、撤销与 Worker 核验执行 |
@@ -194,6 +196,7 @@ date: "2026-09-16"
 | 受控边界 | 审查模型是测试替身，但 SQLite journal、Schema 39 持久记录、Approval/Grant 事务、预算结算、受保护 payload 与取消信号均为真实实现；没有真实 provider 调用、没有真实费用、没有生产启用 |
 | 未验证 | 真实审查模型/provider 身份与接收方、真实用量与费用、真实披露目的地、生产历史数据与部署；页面侧的替代来源展示沿用已有 P6 事件投影，完整页面联合验收仍归 P6 |
 | 仍未完成 | `npm run check` 与 `npm run lint` 仍被两份既有未跟踪原型 `verify.cjs` 阻断：`format:check` 报这两份文件，`lint` 报它们的 `noInnerDeclarations` 错误，另有 `host-file-read.ts`/`web-search-main.ts` 的 `useLiteralKeys` 信息级诊断。用暂存本批全部跟踪改动后的工作树复现了同样的 2 个 lint error/1777 条 info，属既有基线；本批没有修改这些文件，也没有把任务范围检查写成全目录检查通过 |
+| 本次文档校验观察 | 全量严格校验曾多次因读取 macOS 文稿目录下的副本而出现 `Errno 60` 超时（本次会话中出现了 `docs/runbooks/* 2.md` 等与旧同步冲突同形的未跟踪副本），补充读取后改为只在 4 份同名未跟踪副本上报 `contract_sha256` 不匹配；已跟踪的 Plan、Spec、ADR 与 4 份 Runbook 均通过，4 份 Runbook 已重新盖章。未删除这些不属于本任务的副本，只按事实记录 |
 | 本批适用检查 | `npm run typecheck`、`npm run check:boundaries`、`npm run check:secrets`、`npm run check:ci-policy`、`npm run check:v0.2-coverage`、`npm run check:v0.2-invariants` 与严格文档校验通过；范围内格式由改动文件的格式检查与上述标准 CI 构建覆盖 |
 
 [↑ 返回阅读导航](#contents)
