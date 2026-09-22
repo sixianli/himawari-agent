@@ -55,6 +55,7 @@ export function parseAutomaticReviewDecision(
     ...bindings,
     "reasonCode",
     "decision",
+    ...(record["confidence"] === undefined ? [] : ["confidence"]),
     ...(record["decision"] === "alternative" ? ["suggestion"] : []),
   ];
   if (
@@ -65,6 +66,13 @@ export function parseAutomaticReviewDecision(
   const reasonCode = record["reasonCode"];
   if (typeof reasonCode !== "string" || !/^[A-Z][A-Z0-9_]{0,79}$/.test(reasonCode))
     return invalid();
+  // A reported confidence must be a real probability; anything else is malformed output.
+  const confidence = record["confidence"];
+  if (
+    confidence !== undefined &&
+    (typeof confidence !== "number" || !Number.isFinite(confidence) || confidence < 0 || confidence > 1)
+  )
+    return invalid();
   const identity = {
     schemaVersion: request.schemaVersion,
     reviewId: request.reviewId,
@@ -73,6 +81,7 @@ export function parseAutomaticReviewDecision(
     configurationVersion: request.configurationVersion,
     modelRef: request.modelRef,
     reasonCode,
+    ...(confidence === undefined ? {} : { confidence }),
   };
   const decision = record["decision"];
   if (decision === "approve" || decision === "deny" || decision === "human")

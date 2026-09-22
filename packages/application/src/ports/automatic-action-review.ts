@@ -25,6 +25,12 @@ interface ReviewDecisionIdentity {
   readonly configurationVersion: string;
   readonly modelRef: string;
   readonly reasonCode: string;
+  /**
+   * Calibrated confidence reported by the reviewer, when it provides one. It is not
+   * authority: `AutomaticActionReviewService` routes a below-threshold approval to
+   * human confirmation instead of committing it.
+   */
+  readonly confidence?: number;
 }
 /** No decision contains a Grant, command, resource scope, or execution handle. */
 export type AutomaticReviewDecision = ReviewDecisionIdentity &

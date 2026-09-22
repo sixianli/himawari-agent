@@ -35,10 +35,15 @@ interface ConfiguredModelDescriptorBase {
   readonly providerRouting?: ModelProviderRouting;
 }
 
-export interface ConfiguredGenerationModelDescriptor extends ConfiguredModelDescriptorBase {
+interface ConfiguredGenerationModelDescriptorBase extends ConfiguredModelDescriptorBase {
   readonly role: "primary" | "fallback";
   readonly priority: number;
   readonly name: string;
+}
+
+/** Conversational generation through the pinned Pi runtime and its OpenAI-compatible API. */
+export interface ConfiguredCompletionsGenerationModelDescriptor
+  extends ConfiguredGenerationModelDescriptorBase {
   readonly api: "openai-completions";
   readonly reasoning: boolean;
   readonly reasoningRequired?: boolean;
@@ -47,13 +52,31 @@ export interface ConfiguredGenerationModelDescriptor extends ConfiguredModelDesc
   readonly maxTokens: number;
 }
 
+/**
+ * A decision model reached through its own protocol instead of a chat
+ * completion. TypeSafe Jev answers typed questions with a choice and a
+ * calibrated confidence, so it has no context window, token ceiling, reasoning
+ * switch or provider routing. `modelVersion` is the version TypeSafe reports
+ * for billing and audit; `model` may be an alias such as `jev-latest`.
+ */
+export interface ConfiguredTypeSafeGenerationModelDescriptor
+  extends ConfiguredGenerationModelDescriptorBase {
+  readonly api: "typesafe-systemone";
+  readonly modelVersion?: string;
+}
+
+export type ConfiguredGenerationModelDescriptor =
+  | ConfiguredCompletionsGenerationModelDescriptor
+  | ConfiguredTypeSafeGenerationModelDescriptor;
+
 export interface ConfiguredEmbeddingModelDescriptor extends ConfiguredModelDescriptorBase {
   readonly role: "embedding";
   readonly dimensions: number;
 }
 
 export type ConfiguredModelDescriptor =
-  | ConfiguredGenerationModelDescriptor
+  | ConfiguredCompletionsGenerationModelDescriptor
+  | ConfiguredTypeSafeGenerationModelDescriptor
   | ConfiguredEmbeddingModelDescriptor;
 
 export interface ConfiguredMemoryDescriptor {
@@ -194,6 +217,11 @@ export interface AutomaticReviewConfiguration {
   readonly modelRef: string;
   readonly maximumWaitMs: number;
   readonly maxOutputBytes: number;
+  /**
+   * Minimum calibrated confidence for an automatic approval. A lower value on the
+   * approve branch is routed to human confirmation instead of approving.
+   */
+  readonly confidenceThreshold?: number;
 }
 
 export interface ProductConfiguration {

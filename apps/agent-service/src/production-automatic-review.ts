@@ -142,6 +142,9 @@ export function createProductionAutomaticReview(
     configurationVersion: review.configurationVersion,
     modelRef: review.modelRef,
     delegationKey: review.delegationKey,
+    // A calibrated approval below this boundary becomes human confirmation. The
+    // documented default is 0.8 when the configuration omits it.
+    confidenceThreshold: review.confidenceThreshold ?? 0.8,
     store: options.store,
     reviewer,
     clock: options.clock,

@@ -30,5 +30,6 @@ export * from "./state-root-layout.js";
 export * from "./strict-configuration.js";
 export * from "./thread-search-projector.js";
 export * from "./trusted-model-provider.js";
+export * from "./typesafe-jev-transport.js";
 export * from "./web-host-boundary.js";
 export * from "./workspaces/index.js";

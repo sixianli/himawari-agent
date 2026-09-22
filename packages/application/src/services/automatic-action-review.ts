@@ -24,6 +24,12 @@ export interface AutomaticActionReviewDependencies {
   readonly configurationVersion: string;
   readonly modelRef: string;
   readonly delegationKey: string;
+  /**
+   * Minimum calibrated confidence for an automatic approval. A lower-confidence
+   * approval is recorded as `human` instead, so the request still reaches the
+   * original confirmation path. Absent means no confidence gate.
+   */
+  readonly confidenceThreshold?: number;
   readonly store: AutomaticReviewStorePort;
   readonly reviewer: AutomaticActionReviewerPort;
   readonly clock: ClockPort;
@@ -57,6 +63,28 @@ export class AutomaticActionReviewService implements AutomaticActionReviewPort {
       this.maximumWaitMs > 300_000
     )
       throw new Error("AUTOMATIC_REVIEW_CONFIGURATION_INVALID");
+    const threshold = dependencies.confidenceThreshold;
+    if (threshold !== undefined && (!Number.isFinite(threshold) || threshold < 0 || threshold > 1))
+      throw new Error("AUTOMATIC_REVIEW_CONFIGURATION_INVALID");
+  }
+
+  /**
+   * A calibrated confidence below the configured threshold is never an approval:
+   * the recorded decision becomes `human` so the request keeps its confirmation path.
+   */
+  #gate(decision: AutomaticReviewDecision): AutomaticReviewDecision {
+    const threshold = this.dependencies.confidenceThreshold;
+    if (
+      decision.decision !== "approve" ||
+      threshold === undefined ||
+      decision.confidence === undefined ||
+      decision.confidence >= threshold
+    )
+      return decision;
+    // The bound decision shape carries confidence only on an approval, so the
+    // gate necessarily drops it when routing to the human path.
+    const { confidence: _confidence, ...rest } = decision;
+    return Object.freeze({ ...rest, decision: "human", reasonCode: "LOW_CONFIDENCE" });
   }
 
   async review(
@@ -114,9 +142,8 @@ export class AutomaticActionReviewService implements AutomaticActionReviewPort {
     // A repeated request reuses the first durable record; its committed decision still
     // applies, but the authority is the stored Grant, never this return value.
     if (!claim.claimed) return this.#outcome(claim.record);
-    const decision = parseAutomaticReviewDecision(
-      request,
-      await d.reviewer.review(request, signal),
+    const decision = this.#gate(
+      parseAutomaticReviewDecision(request, await d.reviewer.review(request, signal)),
     );
     if (!current()) return undefined;
     const outputRef = await d.saveOutput(request, decision, signal);

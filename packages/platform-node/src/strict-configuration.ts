@@ -111,6 +111,14 @@ function nonNegativeNumber(value: unknown, field: string): number {
   return value;
 }
 
+/** A calibrated probability boundary: inclusive 0..1 with a finite decimal value. */
+function unitInterval(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw invalid(field, "must be a finite number from 0 to 1");
+  }
+  return value;
+}
+
 function absolutePath(value: unknown, field: string): string {
   const candidate = string(value, field);
   if (!path.isAbsolute(candidate) || path.normalize(candidate) !== candidate) {
@@ -231,6 +239,10 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     throw invalid(`${field}.role`, "is not a supported role");
   }
   const generation = role !== "embedding";
+  // The api discriminator decides which generation fields are legal, so an
+  // OpenAI-only field on a decision descriptor is an unknown field, not a
+  // silently ignored one. The discriminator itself is validated after this.
+  const declaredApi = generation ? input["api"] : undefined;
   rejectUnknown(
     input,
     [
@@ -245,17 +257,19 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       "capabilities",
       "cost",
       ...(generation
-        ? [
-            "priority",
-            "name",
-            "api",
-            "reasoning",
-            "reasoningRequired",
-            "input",
-            "contextWindow",
-            "maxTokens",
-            "providerRouting",
-          ]
+        ? declaredApi === "typesafe-systemone"
+          ? ["priority", "name", "api", "modelVersion"]
+          : [
+              "priority",
+              "name",
+              "api",
+              "reasoning",
+              "reasoningRequired",
+              "input",
+              "contextWindow",
+              "maxTokens",
+              "providerRouting",
+            ]
         : ["dimensions"]),
     ],
     field,
@@ -297,8 +311,31 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     return Object.freeze(descriptor);
   }
   const api = string(input["api"], `${field}.api`);
-  if (api !== "openai-completions") throw invalid(`${field}.api`, "is unsupported");
-  const descriptor: ConfiguredGenerationModelDescriptor = {
+  if (api !== "openai-completions" && api !== "typesafe-systemone")
+    throw invalid(`${field}.api`, "is unsupported");
+  if (api === "typesafe-systemone") {
+    const descriptor: ConfiguredModelDescriptor = {
+      ...base,
+      role: role as "primary" | "fallback",
+      priority: integer(input["priority"], `${field}.priority`, 1, 10_000),
+      name: string(input["name"], `${field}.name`),
+      api: "typesafe-systemone",
+      ...(input["modelVersion"] === undefined
+        ? {}
+        : { modelVersion: safeReference(input["modelVersion"], `${field}.modelVersion`) }),
+    };
+    // The decision endpoint has no output tokens, so an output price would book spend
+    // the provider never charges.
+    if (descriptor.cost.output !== 0)
+      throw invalid(`${field}.cost.output`, "must be zero for the decision endpoint");
+    if (role === "fallback" && !exactlyPrivate(descriptor.allowedDataClassifications))
+      throw invalid(
+        `${field}.allowedDataClassifications`,
+        "fallback must allow exactly the private classification",
+      );
+    return Object.freeze(descriptor);
+  }
+  const descriptor: ConfiguredCompletionsGenerationModelDescriptor = {
     ...base,
     role: role as "primary" | "fallback",
     priority: integer(input["priority"], `${field}.priority`, 1, 10_000),
@@ -323,18 +360,17 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
   if (descriptor.reasoningRequired && !descriptor.reasoning) {
     throw invalid(`${field}.reasoningRequired`, "requires a reasoning-capable model");
   }
-  if (role === "fallback") {
-    if (
-      descriptor.allowedDataClassifications.length !== 1 ||
-      descriptor.allowedDataClassifications[0] !== "private"
-    ) {
-      throw invalid(
-        `${field}.allowedDataClassifications`,
-        "fallback must allow exactly the private classification",
-      );
-    }
+  if (role === "fallback" && !exactlyPrivate(descriptor.allowedDataClassifications)) {
+    throw invalid(
+      `${field}.allowedDataClassifications`,
+      "fallback must allow exactly the private classification",
+    );
   }
   return Object.freeze(descriptor);
+}
+
+function exactlyPrivate(classifications: readonly DataClassification[]): boolean {
+  return classifications.length === 1 && classifications[0] === "private";
 }
 
 function parseCostMap(value: unknown) {
@@ -745,7 +781,14 @@ function parseAutomaticReview(
   const input = record(value, field);
   rejectUnknown(
     input,
-    ["delegationKey", "configurationVersion", "modelRef", "maximumWaitMs", "maxOutputBytes"],
+    [
+      "delegationKey",
+      "configurationVersion",
+      "modelRef",
+      "maximumWaitMs",
+      "maxOutputBytes",
+      "confidenceThreshold",
+    ],
     field,
   );
   return Object.freeze({
@@ -757,6 +800,14 @@ function parseAutomaticReview(
     modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
     maximumWaitMs: integer(input["maximumWaitMs"], `${field}.maximumWaitMs`, 1, 300_000),
     maxOutputBytes: integer(input["maxOutputBytes"], `${field}.maxOutputBytes`, 1, 1_048_576),
+    ...(input["confidenceThreshold"] === undefined
+      ? {}
+      : {
+          confidenceThreshold: unitInterval(
+            input["confidenceThreshold"],
+            `${field}.confidenceThreshold`,
+          ),
+        }),
   });
 }
 

@@ -841,3 +841,90 @@ it("accepts a dedicated review model and rejects one the router could also selec
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
 });
+
+it("accepts a TypeSafe decision model as the configured reviewer and rejects its invalid shapes", () => {
+  const raw = config("/tmp/himawari-jev-config");
+  const decisionModel = {
+    ref: "model-reviewer",
+    role: "fallback",
+    provider: "typesafe",
+    model: "jev-latest",
+    modelVersion: "jev-1.13.0",
+    version: "snapshot-1",
+    priority: 2,
+    name: "Jev reviewer",
+    api: "typesafe-systemone",
+    capabilities: ["text"],
+    cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+    allowedDataClassifications: ["private"],
+    disclosure: "external_remote",
+    secretRef: "provider-reviewer",
+  };
+  // Replace the conversational fallback with the decision model so the role stays unique.
+  const descriptors = raw["modelDescriptors"] as Record<string, unknown>[];
+  descriptors[1] = decisionModel;
+  (raw["secretReferences"] as Record<string, unknown>[]).push({
+    ref: "provider-reviewer",
+    version: "v1",
+    purpose: "model-auth",
+    scope: "model-reviewer",
+  });
+  const review = {
+    delegationKey: "automatic-review-delegation",
+    configurationVersion: "review-config:1",
+    modelRef: "model-reviewer",
+    maximumWaitMs: 30_000,
+    maxOutputBytes: 32_768,
+  };
+  const policy = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+    maxMemoryClassification: "private",
+    automaticReview: review,
+  };
+  raw["runPolicy"] = policy;
+  const parsed = parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z");
+  expect(parsed.modelDescriptors[1]).toMatchObject({
+    api: "typesafe-systemone",
+    model: "jev-latest",
+    modelVersion: "jev-1.13.0",
+  });
+  expect(parsed.runPolicy?.automaticReview).toEqual(review);
+
+  // The calibrated boundary is optional but must be a real probability.
+  raw["runPolicy"] = { ...policy, automaticReview: { ...review, confidenceThreshold: 0.8 } };
+  expect(
+    parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z").runPolicy?.automaticReview,
+  ).toMatchObject({ confidenceThreshold: 0.8 });
+  for (const changed of [
+    { ...review, confidenceThreshold: -0.1 },
+    { ...review, confidenceThreshold: 1.1 },
+    { ...review, confidenceThreshold: 1 },
+    { ...review, confidenceThreshold: 0 },
+  ]) {
+    raw["runPolicy"] = { ...policy, automaticReview: changed };
+    if (changed.confidenceThreshold === 0 || changed.confidenceThreshold === 1) {
+      // Inclusive boundaries are valid.
+      expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).not.toThrow();
+    } else {
+      expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).toThrow();
+    }
+  }
+
+  // A decision endpoint never charges for output, and it carries no chat-only fields.
+  for (const [mutate, label] of [
+    [(m: Record<string, unknown>) => ({ ...m, cost: { ...(m["cost"] as object), output: 1 } }), "output"],
+    [(m: Record<string, unknown>) => ({ ...m, reasoning: false }), "reasoning"],
+    [(m: Record<string, unknown>) => ({ ...m, contextWindow: 8192 }), "contextWindow"],
+    [(m: Record<string, unknown>) => ({ ...m, maxTokens: 16 }), "maxTokens"],
+    [(m: Record<string, unknown>) => ({ ...m, input: ["text"] }), "input"],
+  ] as const) {
+    const descriptorsNext = [...(raw["modelDescriptors"] as Record<string, unknown>[])];
+    descriptorsNext[1] = mutate(decisionModel);
+    raw["modelDescriptors"] = descriptorsNext;
+    expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).toThrow();
+    void label;
+  }
+});

@@ -116,6 +116,7 @@ function reviewConfiguration(): NonNullable<
     modelRef: REVIEW_MODEL,
     maximumWaitMs: MAXIMUM_WAIT_MS,
     maxOutputBytes: 4096,
+    confidenceThreshold: 0.8,
   };
 }
 
@@ -415,9 +416,12 @@ function reviewerResponse(
     configurationVersion: "review-config:1",
     modelRef: REVIEW_MODEL,
     reasonCode: "WITHIN_DELEGATION",
+    // Approvals carry a calibrated confidence above the configured 0.8 boundary.
     ...(decision === "alternative"
       ? { decision, suggestion: "改为只读取目标文件，不做写入。" }
-      : { decision }),
+      : decision === "approve"
+        ? { decision, confidence: 0.93 }
+        : { decision }),
   };
 }
 
