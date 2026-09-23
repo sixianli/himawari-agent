@@ -846,7 +846,7 @@ it("accepts a TypeSafe decision model as the configured reviewer and rejects its
   const raw = config("/tmp/himawari-jev-config");
   const decisionModel = {
     ref: "model-reviewer",
-    role: "fallback",
+    role: "specialist",
     provider: "typesafe",
     model: "jev-latest",
     modelVersion: "jev-1.13.0",
@@ -860,9 +860,9 @@ it("accepts a TypeSafe decision model as the configured reviewer and rejects its
     disclosure: "external_remote",
     secretRef: "provider-reviewer",
   };
-  // Replace the conversational fallback with the decision model so the role stays unique.
+  // Keep the conversational fallback; review uses its own model and budget identity.
   const descriptors = raw["modelDescriptors"] as Record<string, unknown>[];
-  descriptors[1] = decisionModel;
+  descriptors.push(decisionModel);
   (raw["secretReferences"] as Record<string, unknown>[]).push({
     ref: "provider-reviewer",
     version: "v1",
@@ -886,7 +886,7 @@ it("accepts a TypeSafe decision model as the configured reviewer and rejects its
   };
   raw["runPolicy"] = policy;
   const parsed = parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z");
-  expect(parsed.modelDescriptors[1]).toMatchObject({
+  expect(parsed.modelDescriptors.at(-1)).toMatchObject({
     api: "typesafe-systemone",
     model: "jev-latest",
     modelVersion: "jev-1.13.0",
@@ -915,16 +915,23 @@ it("accepts a TypeSafe decision model as the configured reviewer and rejects its
 
   // A decision endpoint never charges for output, and it carries no chat-only fields.
   for (const [mutate, label] of [
-    [(m: Record<string, unknown>) => ({ ...m, cost: { ...(m["cost"] as object), output: 1 } }), "output"],
+    [
+      (m: Record<string, unknown>) => ({ ...m, cost: { ...(m["cost"] as object), output: 1 } }),
+      "output",
+    ],
     [(m: Record<string, unknown>) => ({ ...m, reasoning: false }), "reasoning"],
     [(m: Record<string, unknown>) => ({ ...m, contextWindow: 8192 }), "contextWindow"],
     [(m: Record<string, unknown>) => ({ ...m, maxTokens: 16 }), "maxTokens"],
     [(m: Record<string, unknown>) => ({ ...m, input: ["text"] }), "input"],
   ] as const) {
-    const descriptorsNext = [...(raw["modelDescriptors"] as Record<string, unknown>[])];
-    descriptorsNext[1] = mutate(decisionModel);
+    const descriptorsNext = [...descriptors];
+    descriptorsNext[descriptorsNext.length - 1] = mutate(decisionModel);
     raw["modelDescriptors"] = descriptorsNext;
     expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).toThrow();
     void label;
   }
+  raw["modelDescriptors"] = [...descriptors, { ...decisionModel, ref: "second-reviewer" }];
+  expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).toThrow();
+  raw["modelDescriptors"] = [...descriptors.slice(0, -1), { ...decisionModel, role: "fallback" }];
+  expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).toThrow();
 });

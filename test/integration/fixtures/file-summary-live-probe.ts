@@ -13,7 +13,10 @@ import {
   MacOsKeychainProviderSecretSource,
   parseProductConfiguration,
 } from "@himawari-agent/platform-node";
-import { ConfiguredPiModelBindingPort } from "@himawari-agent/runtime-pi";
+import {
+  ConfiguredPiModelBindingPort,
+  type ConfiguredPiModelDescriptor,
+} from "@himawari-agent/runtime-pi";
 import { expect } from "vitest";
 import { createProductionMemoryCompositionFromConfiguration } from "../../../apps/agent-service/src/production-memory-composition.js";
 import { resolveConfiguredModelDescriptorSet } from "../../../apps/agent-service/src/production-model-composition.js";
@@ -45,7 +48,10 @@ export async function qualifyFileSummary() {
     account: "himawari-agent",
   });
   const bindings = new ConfiguredPiModelBindingPort({
-    descriptors: resolveConfiguredModelDescriptorSet(configuration).generation,
+    descriptors: resolveConfiguredModelDescriptorSet(configuration).generation.filter(
+      (descriptor): descriptor is ConfiguredPiModelDescriptor =>
+        descriptor.api === "openai-completions",
+    ),
     secretSource: source,
   });
   const generations: Record<string, unknown>[] = [];

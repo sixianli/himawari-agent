@@ -77,14 +77,10 @@ export class AutomaticActionReviewService implements AutomaticActionReviewPort {
     if (
       decision.decision !== "approve" ||
       threshold === undefined ||
-      decision.confidence === undefined ||
-      decision.confidence >= threshold
+      (decision.confidence !== undefined && decision.confidence >= threshold)
     )
       return decision;
-    // The bound decision shape carries confidence only on an approval, so the
-    // gate necessarily drops it when routing to the human path.
-    const { confidence: _confidence, ...rest } = decision;
-    return Object.freeze({ ...rest, decision: "human", reasonCode: "LOW_CONFIDENCE" });
+    return Object.freeze({ ...decision, decision: "human", reasonCode: "LOW_CONFIDENCE" });
   }
 
   async review(

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:ac4c1769d0ac67f8b2f5c05fd325f30ef915ad83363edd505c909724df09f356"
+contract_sha256: "sha256:f5afac424093bbf47aaaffac4eccb8ec774c778056227da6851b8fe8ac553128"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -439,6 +439,8 @@ Schema 38 为 `sandbox-scope.v2` 和 `network_only` 合同建立 writer 屏障�
 Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请求身份，完成时与原审批及一次性 Grant 同事务写入。备份和恢复须保留审查记录、Owner 委托版本、原请求摘要、受保护输入/输出 Payload、审批来源和原模型费用记录。`pending` 只表示没有已提交决定，不能推断模型未调用，更不能删除该记录后重试付费调用。已完成记录读回历史决定，不重新派发工具。
 
 自动审查默认未装配。当前委托只接受精确请求摘要，批准不能扩成其他文件、命令或长期授权；写入时使用 writer 当前时间，重新核验请求期限、委托版本和 Run 执行租约。已有人工请求或决定优先，撤销、取消、过期及执行权变化阻止迟到批准。审查等待不创建共享文件占用；自动批准保存 `automaticReview` 来源，不能解释为用户对本次操作点击了确认。
+
+备份和恢复必须连同审查决定保留已报告的置信度、已配置的模型版本及模型预算账户中的 `unknown` 结算状态；不能把旧估算值当实际用量，也不能在恢复后重放不确定的审查调用。若配置了独立 `specialist` JEV 描述符，目标配置需保留同一身份、披露和单价；未配置固定版本时，当前记录不能单独证明 `jev-latest` 实际解析到哪一版，真实服务调用与费用仍须单独验收。
 
 恢复不会自动续跑未完成审查，也不会启用模型。当前真实模型接入、披露和费用配置仍须按实施 Plan 单独完成；受控模型替身与 SQLite 回归不代表真实服务验收。Schema 38 或更旧 writer 不得写入新库，回退不得删表或修改账本以绕过版本屏障，也不得覆盖升级后新增的决定和消息。
 

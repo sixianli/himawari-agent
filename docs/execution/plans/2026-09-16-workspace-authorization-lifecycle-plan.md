@@ -8,6 +8,8 @@ date: "2026-09-16"
 
 # 工作区占用、授权与执行状态协同实施计划
 
+> **2026-09-23 审查更正：** 下方 2026-09-21/22 的 P5 测试计数与接入描述是当时的历史记录，不能证明 `68bc801` 上的 TypeSafe 实际协议或生产默认组合正确。旧 JEV 替身使用了 `{value, confidence}`、省略 `output_tokens`，并由测试自行构造顶层 `dataClassification`；TypeSafe 官方 Choice 实际返回 `type/choice/probabilities/confidence`，响应带具体模型版本与 input/output 用量。本轮修复、现行检查和未验证范围见[自动审查缺陷修复计划](../../archive/plans/2026-09-23-automatic-review-defect-repair-plan.md)。历史 JSON 证据保留原样。
+
 **来源 Spec：** [SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
 
 **设计入口：** [第三稿已确认方案摘要](../specs/2026-09-16-workspace-authorization-lifecycle-design.md#review-summary)。用户于 2026-09-16 在本次会话明确确认该 Spec 审核通过，并授权编写本 Plan。
@@ -133,7 +135,7 @@ date: "2026-09-16"
 | 用户可观察结果 | 未配置时人工/拒绝路径与今日完全一致；配置后委托范围内请求自动审查并标明来源，其余仍在会话内确认；建议替代不执行自由文本 |
 | 基线缺口（按符号核对） | ①`createProductionFileReadServices` 接受 `automaticReview`，但 `service-main.ts` 与 `production-approval-gateway.ts` 均未装配，`AutomaticActionReviewService`/`ModelActionReviewer` 在生产入口没有调用者；②`AutomaticActionReviewService.review` 丢弃结果，`ActionPolicyService` 无法区分“已自动批准”与“建议替代”，替代分支没有回到原权限入口；③`sqlite-automatic-action-review.finish` 只处理 `approve`/`deny`；④配置 schema 无自动审查段 |
 | 复用能力 | 产品 `ModelPort`、`TrustedModelProviderAdapter`、`ProtectedPiModelPayloadBoundary`（受保护输入/输出）、`ModelInvocationAdmissionService` 预算、`AutomaticReviewStorePort`、原 Approval/Grant/额度预约、Pi 顺序工具批次与 `runtimeToolAuthorizationResult` |
-| 不新增 | 第二个 provider 协议、授权旁路、调度队列、审查持久化体系、平行模型执行循环 |
+| 原 P5 批次不新增 | 当时未选定 TypeSafe；2026-09-22 用户选定 JEV 后新增其 evaluate 协议，仍不新增授权旁路、调度队列、审查持久化体系或平行模型执行循环 |
 | 实施顺序 | ①生产装配（配置→审查服务→文件读取服务）；②建议替代的新请求与重新准入；③补充结果分支/注入/迟到竞争回归；④准备具体启用建议；⑤定向与消费者通过后冻结，执行交付验证 |
 | 实际验证入口 | `test/integration/automatic-action-review.test.ts`、`authorization-capability-governance.test.ts`、`production-file-read-workflow.unit.test.ts`、`apps/agent-service/test/*`、`packages/platform-node/test/strict-configuration*`；另加生产装配层受控模型回归与真实 SQLite 读回 |
 | 完成条件 | 四项待办都有可重复回归与实际生产入口证据；未配置路径零外发；模型建议不产生授权；替代走新 intent 与原准入；定向与消费者检查通过后冻结输入，执行标准构建/测试与适用检查 |
@@ -170,9 +172,9 @@ date: "2026-09-16"
 
 | 待确认事项 | 建议值 | 依据与影响 |
 | --- | --- | --- |
-| 审查模型身份 | `modelDescriptors` 中一个专用生成模型引用，独立 `secretRef`；当前 schema 只有 primary/fallback/embedding 三种角色，且只允许一个 fallback，因此可能需要新增第三个生成模型（建议角色 `specialist`）或明确允许复用未选中的 fallback | 审查决定绑定 `modelRef` 与 `configurationVersion`；模型或配置变化即失效旧委托。复用 Run 模型会让同一次执行自我审查，只应作为过渡 |
+| 审查模型身份 | `modelDescriptors` 可配置一个独立的 `specialist` TypeSafe 描述符与 `secretRef`，primary/fallback 仍由 Pi 负责对话 | 审查决定绑定 `modelRef` 与 `configurationVersion`；模型或配置变化即失效旧委托。旧版中“只有三种角色”的记录已过时 |
 | 接收方与披露 | 仅该模型 provider 的既有出口；不新增接收方。审查输入不包含目录路径、文件名、文件正文、凭据或会话文本 | 现有受保护输入只有：审查/请求身份与摘要、能力与操作、actionKind、sideEffect、finalRisk、数据分级、目标类型集合、确定性事实码与期限。若需要模型判断具体参数，必须单独批准扩大披露集 |
-| 最小输入集合（已确认保持） | `automatic-review-input.v1`：`reviewId/runId/intentFingerprint/policyVersion/configurationVersion/modelRef/deadlineAt/approvalExpiresAt` + `action{capabilityRef,capabilityVersion,operation,actionKind,sideEffect,finalRisk,dataClassification,targetKinds,deterministicFacts}` | 足以判断“是否落在委托范围、风险层级、是否需要人工”，不足以复原被写入内容 |
+| 最小输入集合（已确认保持） | `automatic-review-input.v1`：`reviewId/runId/intentFingerprint/policyVersion/configurationVersion/modelRef/deadlineAt/approvalExpiresAt/dataClassification` + `action{capabilityRef,capabilityVersion,operation,actionKind,sideEffect,finalRisk,dataClassification,targetKinds,deterministicFacts}` | 数据分级同时位于顶层与 action，供宿主校验；不含被写入内容 |
 | 费用上限 | 审查单独计入原模型预算：`maximumWaitMs` 内单次调用；在 `modelDescriptors.<reviewer>.cost` 上按真实单价计费，并在 `budgets.perClassificationCostMicros.private` 与 `budgets.globalCostMicros` 内单独预留一条额度。**已确认**首轮 `maximumWaitMs=30000`、`maxOutputBytes=32768`；单次费用额度待模型单价确定后填入 | 未配置费用时不得默认免费；未知用量保存为 `unknown`，不推断免费。真实单价需用户提供后再定具体额度 |
 | 超时与故障 | 超时、模型失败、无效输出、身份不符与披露被拒都不放行，回到原人工确认路径；调用中取消若用量未知保留 unresolved，不退款也不重试 | 已由 `ActionPolicyService` 回退与 `ModelActionReviewer` 取消处理实现；超时不是用户拒绝 |
 | 委托范围 | 委托记录 `intentFingerprints` 只列 Owner 明确接受的**确切请求摘要**；新内容、路径、接收方或预算变化都是新 intent，缺少覆盖即回到人工 | 与 A05、R02、R06 一致；现有配置没有“按风险类别批量委托”的开关，本批也不新增 |
@@ -191,7 +193,7 @@ date: "2026-09-16"
 | 配置契约 | `api` 由固定值改为判别式：`openai-completions`（保留 reasoning/contextWindow/maxTokens/providerRouting）或 `typesafe-systemone`（只允许 `modelVersion`） | 决策端点不接受对话专有字段，也不允许非零 output 价格；这些在严格解析中是 unknown/非法字段而非静默忽略 |
 | 严格解析 | 按 `api` 分支校验；`automaticReview.confidenceThreshold` 限定 `[0,1]`，可省略 | 省略时装配层取 0.8 |
 | transport 选择 | 原"单一 Pi transport"改为按 descriptor 的 `api` 选择：Pi transport 只绑定 openai-completions 描述符，JEV transport 处理决策描述符 | 选择完全由冻结描述符决定，请求中途不会换协议 |
-| JEV transport | 冻结摘要作为 `state`，host 拥有的 typed questions（`within_delegated_scope`/`decision`/`reason_code`）决定答案空间；响应由**宿主确定性合成**成现有决策 JSON，置信度随 approve 附带 | 不要求 JEV 生成自由文本；答案越出宿主词表、置信度越界、model 身份不符、缺凭据、HTTP 错误与取消全部 fail-closed；503/429 有界重试、4xx 不重试 |
+| JEV transport | 冻结摘要作为 `state`，宿主拥有的 typed questions 决定答案空间；按官方 Choice 的 `type/choice/probabilities/confidence` 校验，保留置信度并由宿主合成决策 | 不要求 JEV 生成自由文本；缺失身份、置信度或 input/output 用量时不批准；仅明确拒绝的 429/529 有界重试，模糊网络失败不重放 |
 | 审查服务 | 新增 `confidenceThreshold`：低于阈值或未报告置信度的 approve **一律转人工**，不提交 Grant | 复用既有协调器与 Schema 39 事务，未改 `ActionPolicyService` 判定顺序 |
 
 **本轮验证状态（2026-09-22）：本地接入与受控端到端已完成。** 配置契约、严格解析、transport 选择与 JEV transport 均已实现；`unit` 项目下 JEV transport 14 项、配置解析 38 项、审查契约 22 项、模型审查器 18 项通过（合计 92 项）。生产端到端回归 `test/integration/production-jev-review.test.ts` **3 项通过**：真实 `TrustedModelProviderAdapter`（真实预算准入与结算）+ 真实 SQLite 审查记录/审批/Grant + 本地假 JEV 端点，覆盖"高置信批准并生成一次性精确 Grant"、"低置信转人工且不生成 Grant"、"越范围转人工且只调用一次"。
@@ -203,6 +205,8 @@ date: "2026-09-16"
 **与现有代码的关系：** `ActionPolicyService`、`AutomaticActionReviewService`、`sqlite-automatic-action-review`、`runtime-tool-authorization` 均未改动判定逻辑；`production-model-composition` 的 transport 选择是唯一结构性重构，目的是让"每个描述符自带协议"。Pi-first 说明：**复用** Pi/产品的模型治理边界（`ModelPort`、`TrustedModelProviderAdapter` 的准入、预算、密钥句柄、披露与结算）与受保护 payload；**新增**仅是 TypeSafe 协议本身，因为固定 Pi 运行时只暴露 OpenAI-compatible transport，没有 evaluate 类端点。
 
 **启用前需要的真实验收（尚未执行）：** 用上表配置与一条 Owner 明确委托的确切摘要，在隔离数据目录执行一次真实调用，核对：①请求只含上述最小输入；②决策、`automaticReview` 来源与一次性 Grant 可独立读回；③实际用量与费用写入预算账户；④接收方可追溯；⑤撤销、取消与重复结果不产生第二次授权。缺任何一项都只报告“接入与受控测试完成”，不勾选 P5 完成。
+
+**2026-09-23 对上述历史断言的更正：** 共享决策契约允许人工决定携带已报告的置信度，新的低置信门控保留该值；`AutomaticActionReviewService` 因而已改动。固定 Pi 源码支持多种生成 API 与自定义 provider；JEV 的 typed evaluate 端点不同于对话生成流，所以对话继续复用 Pi，JEV 使用独立 transport。旧 95 项测试使用的响应替身与官方协议不符，不能充当当前协议或真实费用证据。实际修复验证见[本轮 Plan](../../archive/plans/2026-09-23-automatic-review-defect-repair-plan.md)。
 
 <a id="p5-delivery"></a>
 

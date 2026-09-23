@@ -1,6 +1,6 @@
 import type {
   ConfiguredEmbeddingModelDescriptor,
-  ConfiguredGenerationModelDescriptor,
+  ConfiguredCompletionsGenerationModelDescriptor,
   ProductConfiguration,
 } from "@himawari-agent/application";
 import {
@@ -32,7 +32,7 @@ export interface ProductionMemoryComposition {
 
 function primaryDescriptor(
   configuration: ProductConfiguration,
-): ConfiguredGenerationModelDescriptor {
+): ConfiguredCompletionsGenerationModelDescriptor {
   const descriptor = configuration.modelDescriptors.find(({ role }) => role === "primary");
   if (!descriptor || descriptor.role !== "primary") {
     throw new Error("MEM0_PRIMARY_DESCRIPTOR_MISSING");

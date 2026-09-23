@@ -430,6 +430,7 @@ function modelDouble(
   decision: "approve" | "deny" | "human" | "alternative",
   calls: ModelInvocationRequest[],
   readInput?: (payloadRef: string) => Promise<string>,
+  omitConfidence = false,
 ) {
   return {
     listAvailable: async () => [reviewDescriptor()],
@@ -438,13 +439,16 @@ function modelDouble(
       calls.push(request);
       if (readInput && request.inputRef) await readInput(request.inputRef);
       const outputRef = `review-model-output:${calls.length}:${request.invocationId}`;
+      const response = reviewerResponse(request, decision);
+      // biome-ignore lint/complexity/useLiteralKeys: the fixture response is index typed
+      if (omitConfidence) delete response["confidence"];
       const output = await fixtureValue.protector.protect({
         ownerId: OWNER_ID,
         agentId: AGENT_ID,
         ref: outputRef,
         dataClassification: "private",
         contentType: "application/json",
-        plaintext: new TextEncoder().encode(JSON.stringify(reviewerResponse(request, decision))),
+        plaintext: new TextEncoder().encode(JSON.stringify(response)),
         createdAt: NOW,
       });
       await fixtureValue.repository.payloadStore(OWNER_ID, AGENT_ID).put(output);
@@ -536,6 +540,7 @@ describe("production automatic review composition", () => {
       schemaVersion: "automatic-review-input.v1",
       runId: RUN_ID,
       modelRef: REVIEW_MODEL,
+      dataClassification: "private",
       action: {
         operation: "write",
         finalRisk: "HIGH",
@@ -576,6 +581,37 @@ describe("production automatic review composition", () => {
     expect(result).toMatchObject({ decision: "ALLOW", basis: { type: "grant" } });
     // Review allocates no executable invocation; the Grant stays unconsumed here.
     expect(grant.uses).toBe(0);
+  });
+
+  it("routes an approval without calibrated confidence to human confirmation", async () => {
+    const f = await fixture();
+    const calls: ModelInvocationRequest[] = [];
+    await seedDelegation(f.repository, [actionIntentFingerprint(action())]);
+    const review = createProductionAutomaticReview({
+      configuration: configuration(true),
+      model: modelDouble(f, "approve", calls, undefined, true),
+      descriptors: [reviewDescriptor()],
+      handles: f.handles,
+      payloads: f.repository.payloadStore(OWNER_ID, AGENT_ID),
+      protector: f.protector,
+      store: f.repository.automaticReviewStore(),
+      executionLease: f.executionLease,
+      clock: { now: () => NOW },
+      ids: f.ids,
+    });
+    if (!review) throw new Error("expected a composed reviewer");
+    const result = await policy(f.repository.authorizationStore(), review).evaluate(action(), {
+      uiAvailable: true,
+      approvalExpiresAt: EXPIRES_AT,
+    });
+    expect(result).toMatchObject({ decision: "ASK" });
+    expect(calls).toHaveLength(1);
+    expect(await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
+    const call = calls[0];
+    if (!call) throw new Error("review model was not called");
+    expect(await f.repository.automaticReviewStore().get(call.invocationId)).toMatchObject({
+      result: { decision: "human", reasonCode: "LOW_CONFIDENCE" },
+    });
   });
 
   it("turns a review alternative into a failed, non-authorizing result without a Grant", async () => {

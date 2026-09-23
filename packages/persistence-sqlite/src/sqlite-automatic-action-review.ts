@@ -202,6 +202,7 @@ export class SqliteAutomaticActionReview {
           if (
             record.result.decision !== decision.decision ||
             record.result.reasonCode !== decision.reasonCode ||
+            record.result.confidence !== decision.confidence ||
             record.result.outputRef !== input.outputRef
           )
             this.fail("PORT_CONFLICT", "Automatic review result changed");
@@ -295,6 +296,7 @@ export class SqliteAutomaticActionReview {
           result: {
             decision: decision.decision,
             reasonCode: decision.reasonCode,
+            ...(decision.confidence === undefined ? {} : { confidence: decision.confidence }),
             suggestionRef,
             outputRef: input.outputRef,
             completedAt: now,

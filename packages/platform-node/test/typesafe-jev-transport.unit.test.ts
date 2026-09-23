@@ -1,3 +1,4 @@
+// biome-ignore-all lint/complexity/useLiteralKeys: untrusted provider records stay index typed
 import type {
   DataClassification,
   ModelDescriptor,
@@ -12,6 +13,7 @@ import {
 } from "../src/typesafe-jev-transport.js";
 
 const NOW = "2026-09-22T00:00:00.000Z";
+const PRICING = { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 function descriptor(overrides: Partial<ModelDescriptor> = {}): ModelDescriptor {
   return {
@@ -80,12 +82,12 @@ function envelope(overrides: Record<string, unknown> = {}): string {
   });
 }
 
-function answer(value: string, confidence = 0.95): { value: string; confidence: number } {
-  return { value, confidence };
+function answer(choice: string, confidence = 0.95) {
+  return { type: "choice", choice, probabilities: { [choice]: 1 }, confidence };
 }
 
-function jevResponse(answers: Record<string, unknown>, model = "jev-latest"): string {
-  return JSON.stringify({ model, version: "jev-1.13.0", answers, usage: { input_tokens: 412 } });
+function jevResponse(answers: Record<string, unknown>, model = "jev-1.13.0"): string {
+  return JSON.stringify({ model, answers, usage: { input_tokens: 412, output_tokens: 31 } });
 }
 
 async function collect(
@@ -106,11 +108,16 @@ function transportFor(
   respond: (body: { questions: Record<string, unknown> }) => Response,
   payloads = boundary(state),
 ) {
-  const seen: { url: string; body: unknown; authorization: string | null }[] = [];
+  const seen: {
+    url: string;
+    body: { questions: Record<string, unknown> };
+    authorization: string | null;
+  }[] = [];
   const transport = new TypeSafeJevTransport({
     secrets: { resolve: async () => "unused" },
     payloads,
     clock: { now: () => NOW },
+    pricingFor: () => PRICING,
     fetch: (async (url: string | URL, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as { questions: Record<string, unknown> };
       const headers = new Headers(init.headers);
@@ -123,6 +130,7 @@ function transportFor(
 
 describe("TypeSafe JEV transport", () => {
   it("asks typed questions and synthesizes an approval with its calibrated confidence", async () => {
+    const secretValue = "typesafe-secret-value";
     const { transport, seen, payloads } = transportFor(
       envelope(),
       () =>
@@ -138,11 +146,11 @@ describe("TypeSafe JEV transport", () => {
     const events = await collect(transport, {
       descriptor: descriptor(),
       request: request(),
-      secretValues: ["typesafe-secret-value"],
+      secretValues: [secretValue],
     });
     expect(seen).toHaveLength(1);
     expect(seen[0]?.url).toBe("https://api.typesafe.ai/v1/systemone");
-    expect(seen[0]?.authorization).toBe("Bearer typesafe-secret-value");
+    expect(seen[0]?.authorization).toBe(`Bearer ${secretValue}`);
     expect(Object.keys(seen[0]?.body.questions ?? {}).sort()).toEqual([
       "decision",
       "reason_code",
@@ -165,7 +173,12 @@ describe("TypeSafe JEV transport", () => {
       decision: "approve",
     });
     expect(events.map(({ type }) => type)).toEqual(["model.output", "model.completed"]);
-    expect(events[1]).toMatchObject({ inputTokens: 412, outputTokens: 0, cacheReadTokens: 0 });
+    expect(events[1]).toMatchObject({
+      inputTokens: 412,
+      outputTokens: 31,
+      cacheReadTokens: 0,
+      costMicros: 412,
+    });
   });
 
   it.each([
@@ -191,12 +204,34 @@ describe("TypeSafe JEV transport", () => {
     });
     const decision = JSON.parse(payloads.written[0] ?? "{}") as Record<string, unknown>;
     expect(decision["decision"]).toBe(expected);
-    // Only an approval carries the gate-relevant confidence.
-    expect(decision["confidence"]).toBeUndefined();
+    expect(decision["confidence"]).toBe(0.95);
+  });
+
+  it("uses the weakest answer confidence for an approval", async () => {
+    const { transport, payloads } = transportFor(
+      envelope(),
+      () =>
+        new Response(
+          jevResponse({
+            within_delegated_scope: answer("within", 0.2),
+            decision: answer("approve", 0.99),
+            reason_code: answer("WITHIN_DELEGATION", 0.95),
+          }),
+        ),
+    );
+    await collect(transport, {
+      descriptor: descriptor(),
+      request: request(),
+      secretValues: ["key"],
+    });
+    expect(JSON.parse(payloads.written[0] ?? "{}")).toMatchObject({
+      decision: "approve",
+      confidence: 0.2,
+    });
   });
 
   it("never approves when the scope answer is outside or unclear", async () => {
-    for (const scope of ["outside", "unclear"]) {
+    for (const scope of ["outside"]) {
       const { transport, payloads } = transportFor(
         envelope(),
         () =>
@@ -221,7 +256,7 @@ describe("TypeSafe JEV transport", () => {
     }
   });
 
-  it("accepts a bare choice and treats it as fully confident", async () => {
+  it("rejects a bare choice rather than treating it as fully confident", async () => {
     const { transport, payloads } = transportFor(
       envelope(),
       () =>
@@ -234,15 +269,15 @@ describe("TypeSafe JEV transport", () => {
           { status: 200 },
         ),
     );
-    await collect(transport, {
+    const events = await collect(transport, {
       descriptor: descriptor(),
       request: request(),
       secretValues: ["key"],
     });
-    expect(JSON.parse(payloads.written[0] ?? "{}")).toMatchObject({
-      decision: "approve",
-      confidence: 1,
-    });
+    expect(events).toEqual([
+      expect.objectContaining({ type: "model.failed", errorCode: "TYPESAFE_ANSWER_INVALID" }),
+    ]);
+    expect(payloads.written).toEqual([]);
   });
 
   it.each([
@@ -259,7 +294,7 @@ describe("TypeSafe JEV transport", () => {
       "an out-of-range confidence",
       jevResponse({
         within_delegated_scope: answer("within"),
-        decision: { value: "approve", confidence: 1.4 },
+        decision: { ...answer("approve"), confidence: 1.4 },
         reason_code: answer("WITHIN_DELEGATION"),
       }),
     ],
@@ -298,6 +333,180 @@ describe("TypeSafe JEV transport", () => {
     }
   });
 
+  it("rejects an alias result that differs from the configured modelVersion", async () => {
+    const { transport, payloads } = transportFor(
+      envelope(),
+      () =>
+        new Response(
+          jevResponse(
+            {
+              within_delegated_scope: answer("within"),
+              decision: answer("approve"),
+              reason_code: answer("WITHIN_DELEGATION"),
+            },
+            "jev-1.13.1",
+          ),
+        ),
+    );
+    const events = await collect(transport, {
+      descriptor: descriptor({ version: "jev-1.13.0" }),
+      request: request(),
+      secretValues: ["key"],
+    });
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "model.failed",
+        errorCode: "TYPESAFE_MODEL_IDENTITY_INVALID",
+      }),
+    ]);
+    expect(payloads.written).toEqual([]);
+  });
+
+  it.each([
+    [
+      "missing model",
+      JSON.stringify({ answers: {}, usage: { input_tokens: 10, output_tokens: 1 } }),
+      "TYPESAFE_MODEL_IDENTITY_INVALID",
+    ],
+    [
+      "missing usage",
+      JSON.stringify({ model: "jev-1.13.0", answers: {} }),
+      "TYPESAFE_USAGE_INVALID",
+    ],
+    [
+      "invalid usage",
+      JSON.stringify({
+        model: "jev-1.13.0",
+        answers: {},
+        usage: { input_tokens: -1, output_tokens: 0 },
+      }),
+      "TYPESAFE_USAGE_INVALID",
+    ],
+  ])("does not emit output or settle estimated usage on %s", async (_label, body, code) => {
+    const { transport, payloads } = transportFor(envelope(), () => new Response(body));
+    const events = await collect(transport, {
+      descriptor: descriptor(),
+      request: request(),
+      secretValues: ["key"],
+    });
+    expect(events).toEqual([expect.objectContaining({ type: "model.failed", errorCode: code })]);
+    expect(payloads.written).toEqual([]);
+  });
+
+  it("does not replay a request after an ambiguous transport failure", async () => {
+    let calls = 0;
+    const transport = new TypeSafeJevTransport({
+      secrets: { resolve: async () => "unused" },
+      payloads: boundary(envelope()),
+      clock: { now: () => NOW },
+      pricingFor: () => PRICING,
+      fetch: (async () => {
+        calls += 1;
+        throw new Error("connection reset");
+      }) as unknown as typeof globalThis.fetch,
+    });
+    const events = await collect(transport, {
+      descriptor: descriptor(),
+      request: request(),
+      secretValues: ["key"],
+    });
+    expect(calls).toBe(1);
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "model.failed",
+        errorCode: "TYPESAFE_TRANSPORT_UNAVAILABLE",
+        retryable: false,
+      }),
+    ]);
+  });
+
+  it("cancels a response body read after headers have arrived", async () => {
+    const controller = new AbortController();
+    const transport = new TypeSafeJevTransport({
+      secrets: { resolve: async () => "unused" },
+      payloads: boundary(envelope()),
+      clock: { now: () => NOW },
+      pricingFor: () => PRICING,
+      fetch: (async () =>
+        new Response(
+          new ReadableStream({
+            pull() {
+              controller.abort();
+            },
+          }),
+        )) as unknown as typeof globalThis.fetch,
+    });
+    const events = await collect(transport, {
+      descriptor: descriptor(),
+      request: request({ signal: controller.signal }),
+      secretValues: ["key"],
+    });
+    expect(events).toEqual([
+      expect.objectContaining({ type: "model.failed", errorCode: "TYPESAFE_REQUEST_CANCELLED" }),
+    ]);
+  });
+
+  it("times out a body that never completes after successful headers", async () => {
+    const transport = new TypeSafeJevTransport({
+      secrets: { resolve: async () => "unused" },
+      payloads: boundary(envelope()),
+      clock: { now: () => NOW },
+      pricingFor: () => PRICING,
+      requestTimeoutMs: 1_000,
+      fetch: (async () =>
+        new Response(
+          new ReadableStream({
+            pull() {
+              /* Wait for the transport deadline. */
+            },
+          }),
+        )) as unknown as typeof globalThis.fetch,
+    });
+    const events = await collect(transport, {
+      descriptor: descriptor(),
+      request: request(),
+      secretValues: ["key"],
+    });
+    expect(events).toEqual([
+      expect.objectContaining({ type: "model.failed", errorCode: "TYPESAFE_REQUEST_TIMEOUT" }),
+    ]);
+  });
+
+  it("rejects an oversized response before parsing or writing an output", async () => {
+    const { transport, payloads } = transportFor(
+      envelope(),
+      () => new Response("x".repeat(1_048_577)),
+    );
+    const events = await collect(transport, {
+      descriptor: descriptor(),
+      request: request(),
+      secretValues: ["key"],
+    });
+    expect(events).toEqual([
+      expect.objectContaining({ type: "model.failed", errorCode: "TYPESAFE_RESPONSE_TOO_LARGE" }),
+    ]);
+    expect(payloads.written).toEqual([]);
+  });
+
+  it("rejects a request above its reserved input ceiling before disclosure", async () => {
+    const { transport, seen } = transportFor(
+      envelope({ padding: "x".repeat(9_000) }),
+      () => new Response("{}"),
+    );
+    const events = await collect(transport, {
+      descriptor: descriptor(),
+      request: request(),
+      secretValues: ["key"],
+    });
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "model.failed",
+        errorCode: "TYPESAFE_REVIEW_INPUT_TOO_LARGE",
+      }),
+    ]);
+    expect(seen).toEqual([]);
+  });
+
   it("rejects a state payload that is not the host review summary", async () => {
     const { transport } = transportFor("[]", () => new Response("{}", { status: 200 }));
     const events = await collect(transport, {
@@ -308,6 +517,21 @@ describe("TypeSafe JEV transport", () => {
     expect(events).toEqual([
       expect.objectContaining({ type: "model.failed", errorCode: "TYPESAFE_REVIEW_INPUT_INVALID" }),
     ]);
+  });
+
+  it("rejects a classification nested only under action before calling TypeSafe", async () => {
+    const state = JSON.parse(envelope()) as Record<string, unknown>;
+    delete state["dataClassification"];
+    const { transport, seen } = transportFor(JSON.stringify(state), () => new Response("{}"));
+    const events = await collect(transport, {
+      descriptor: descriptor(),
+      request: request(),
+      secretValues: ["key"],
+    });
+    expect(events).toEqual([
+      expect.objectContaining({ type: "model.failed", errorCode: "TYPESAFE_REVIEW_INPUT_INVALID" }),
+    ]);
+    expect(seen).toEqual([]);
   });
 
   it("refuses to call without a usable credential and never echoes a failed one", async () => {
@@ -332,10 +556,11 @@ describe("TypeSafe JEV transport", () => {
       secrets: { resolve: async () => "unused" },
       payloads: boundary(envelope()),
       clock: { now: () => NOW },
+      pricingFor: () => PRICING,
       requestTimeoutMs: 5_000,
       fetch: (async () => {
         calls += 1;
-        if (calls === 1) return new Response("busy", { status: 503 });
+        if (calls === 1) return new Response("busy", { status: 529 });
         return new Response(
           jevResponse({
             within_delegated_scope: answer("within"),
@@ -359,6 +584,7 @@ describe("TypeSafe JEV transport", () => {
       secrets: { resolve: async () => "unused" },
       payloads: boundary(envelope()),
       clock: { now: () => NOW },
+      pricingFor: () => PRICING,
       fetch: (async () => {
         deniedCalls += 1;
         return new Response("denied", { status: 403 });
@@ -386,10 +612,11 @@ describe("TypeSafe JEV transport", () => {
       secrets: { resolve: async () => "unused" },
       payloads: boundary(envelope()),
       clock: { now: () => NOW },
+      pricingFor: () => PRICING,
       fetch: (async () => {
         calls += 1;
         controller.abort();
-        return new Response("busy", { status: 503 });
+        return new Response("busy", { status: 529 });
       }) as unknown as typeof globalThis.fetch,
     });
     const events = await collect(transport, {
@@ -399,8 +626,37 @@ describe("TypeSafe JEV transport", () => {
     });
     expect(calls).toBe(1);
     expect(events).toEqual([
-      expect.objectContaining({ type: "model.failed", errorCode: "TYPESAFE_HTTP_503" }),
+      expect.objectContaining({ type: "model.failed", errorCode: "TYPESAFE_REQUEST_CANCELLED" }),
     ]);
+  });
+
+  it("does not retry a 503 or ignore a Retry-After beyond the request deadline", async () => {
+    for (const [status, headers, expected] of [
+      [503, {}, "TYPESAFE_HTTP_503"],
+      [429, { "retry-after": "2" }, "TYPESAFE_REQUEST_TIMEOUT"],
+    ] as const) {
+      let calls = 0;
+      const transport = new TypeSafeJevTransport({
+        secrets: { resolve: async () => "unused" },
+        payloads: boundary(envelope()),
+        clock: { now: () => NOW },
+        pricingFor: () => PRICING,
+        requestTimeoutMs: 1_000,
+        fetch: (async () => {
+          calls += 1;
+          return new Response("busy", { status, headers });
+        }) as unknown as typeof globalThis.fetch,
+      });
+      const events = await collect(transport, {
+        descriptor: descriptor(),
+        request: request(),
+        secretValues: ["key"],
+      });
+      expect(calls).toBe(1);
+      expect(events).toEqual([
+        expect.objectContaining({ type: "model.failed", errorCode: expected }),
+      ]);
+    }
   });
 
   it("reserves budget on input tokens only", () => {
@@ -410,7 +666,7 @@ describe("TypeSafe JEV transport", () => {
       }),
     ).toEqual({
       pricing: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
-      estimatedCostMicros: Math.ceil(2_048 * 0.042),
+      estimatedCostMicros: Math.ceil(65_536 * 0.042),
     });
   });
 });

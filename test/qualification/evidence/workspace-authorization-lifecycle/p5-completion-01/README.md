@@ -1,6 +1,6 @@
 # P5 自动审查接入：本批证据说明（2026-09-21）
 
-本目录保存 [P5 本批完成条件](../../../../docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p5-batch-contract) 的机器可读摘要与复现入口。范围只覆盖自动审查的生产装配、替代分支、结果/竞争条件与启用建议；它不把真实模型、真实费用或生产启用写成已验证。
+本目录保存 [P5 本批完成条件](../../../../../docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p5-batch-contract) 的历史机器可读摘要与复现入口。`verification.json` 中 `testedSha` 为 `20a7ec2`，仅证明那一版的本地检查；不能证明 2026-09-22/23 后续 TypeSafe 提交或当前工作树通过。本目录不把真实模型、真实费用或生产启用写成已验证。当前修复见[缺陷修复计划](../../../../../docs/archive/plans/2026-09-23-automatic-review-defect-repair-plan.md)。
 
 ## 本次交付的行为
 

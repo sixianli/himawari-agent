@@ -3,6 +3,7 @@ import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import {
   admissionCostForConfiguredPiModel,
   ConfiguredPiModelBindingPort,
+  type ConfiguredPiModelDescriptor,
 } from "@himawari-agent/runtime-pi";
 import { describe, expect, it, vi } from "vitest";
 import { createProductionMemoryCompositionFromConfiguration } from "../src/production-memory-composition.js";
@@ -46,15 +47,19 @@ describe("file summary qualification configuration", () => {
   it("registers the configured generation models in real Pi without resolving credentials", async () => {
     const config = await configuration();
     const descriptors = resolveConfiguredModelDescriptorSet(config);
+    const generation = descriptors.generation.filter(
+      (descriptor): descriptor is ConfiguredPiModelDescriptor =>
+        descriptor.api === "openai-completions",
+    );
     const resolve = vi.fn(async () => {
       throw new Error("offline preparation must not read a provider credential");
     });
     const bindings = new ConfiguredPiModelBindingPort({
-      descriptors: descriptors.generation,
+      descriptors: generation,
       secretSource: { productionSuitable: true, resolve },
     });
     try {
-      for (const descriptor of descriptors.generation) {
+      for (const descriptor of generation) {
         const binding = await bindings.resolve(descriptor.ref);
         expect(binding.model.id).toBe(descriptor.model);
         expect(binding.model.baseUrl).toBe("https://openrouter.ai/api/v1");
@@ -69,9 +74,13 @@ describe("file summary qualification configuration", () => {
   it("fits two generation reservations and embedding within the proposed shared budget", async () => {
     const config = await configuration();
     const descriptors = resolveConfiguredModelDescriptorSet(config);
+    const generationDescriptors = descriptors.generation.filter(
+      (descriptor): descriptor is ConfiguredPiModelDescriptor =>
+        descriptor.api === "openai-completions",
+    );
     const embedding = embeddingAdmissionDescriptor(config);
     const generation = Math.max(
-      ...descriptors.generation.map(
+      ...generationDescriptors.map(
         (descriptor) => admissionCostForConfiguredPiModel(descriptor).estimatedCostMicros,
       ),
     );

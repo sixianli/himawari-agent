@@ -28,6 +28,7 @@ import {
   assertProductionSecretSource,
   EnvelopePayloadProtector,
   EphemeralSecretPort,
+  TypeSafeJevTransport,
   EXECUTION_UDS_ERROR_CODES,
   ExecutionAdmissionUdsServer,
   ExecutionUdsError,
@@ -106,6 +107,7 @@ export interface AgentServiceModelCompositionContext {
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
   readonly sources?: ReturnType<typeof hostModelSources>;
+  readonly admission?: ModelInvocationAdmissionResolver;
 }
 
 export type AgentServiceModelCompositionFactory = (
@@ -214,6 +216,7 @@ async function createDefaultModelComposition(
       ids,
       clock,
       requestTimeoutMs: configuration.deadlines.providerRequestMs,
+      ...(context.admission === undefined ? {} : { admission: context.admission }),
       siteUrl: configuration.publicOrigin,
       appName: "himawari-agent",
     });
@@ -581,9 +584,41 @@ export async function runAgentService(
       },
     });
     const embedding = configuredEmbedding(configuration);
+    const currentRunExecutionLease = async (
+      runId: Parameters<ModelInvocationAdmissionResolver>[0]["runId"],
+    ) => {
+      const lease = await activeRepository
+        .runDispatch(
+          configuration.ownerId,
+          configuration.agentId,
+          authority,
+          { leaseId: authorityLease.leaseId, fencingToken: authorityLease.fencingToken },
+          agentServiceBootId,
+        )
+        .currentExecutionLease?.({ runId, at: clock.now() });
+      if (!lease) throw new Error("AUTOMATIC_REVIEW_LEASE_UNAVAILABLE");
+      return claimFromRunExecutionLease(lease);
+    };
+    const modelAdmission: ModelInvocationAdmissionResolver = async (scope) => {
+      if (scope.ownerId !== configuration.ownerId || scope.agentId !== configuration.agentId)
+        return undefined;
+      try {
+        return runs?.admission({
+          ...scope,
+          executionLease: await currentRunExecutionLease(scope.runId),
+        });
+      } catch {
+        return undefined;
+      }
+    };
     if (!isDeterministicOnly(configuration)) {
       const factory = dependencies.modelCompositionFactory ?? createDefaultModelComposition;
-      modelComposition = await factory({ configuration, repository, sources });
+      modelComposition = await factory({
+        configuration,
+        repository,
+        sources,
+        admission: modelAdmission,
+      });
       const memoryFactory = dependencies.memoryCompositionFactory ?? createDefaultMemoryComposition;
       memoryComposition = await memoryFactory({ configuration, repository, sources });
     }
@@ -607,19 +642,7 @@ export async function runAgentService(
         store: activeRepository.automaticReviewStore(),
         // Read-only view of the live lease; the durable review transaction
         // still revalidates it before committing any decision.
-        executionLease: async (runId) => {
-          const lease = await activeRepository
-            .runDispatch(
-              configuration.ownerId,
-              configuration.agentId,
-              authority,
-              { leaseId: authorityLease.leaseId, fencingToken: authorityLease.fencingToken },
-              agentServiceInstanceId,
-            )
-            .currentExecutionLease?.({ runId, at: clock.now() });
-          if (!lease) throw new Error("AUTOMATIC_REVIEW_LEASE_UNAVAILABLE");
-          return claimFromRunExecutionLease(lease);
-        },
+        executionLease: currentRunExecutionLease,
         clock,
         ids,
       });
@@ -970,7 +993,9 @@ export async function runAgentService(
         modelRegistry: [
           ...modelComposition.descriptors.generation.map((descriptor) => ({
             ...descriptor,
-            ...admissionCostForConfiguredPiModel(descriptor),
+            ...(descriptor.api === "typesafe-systemone"
+              ? TypeSafeJevTransport.estimatedAdmissionCost(descriptor)
+              : admissionCostForConfiguredPiModel(descriptor)),
           })),
           embeddingAdmissionDescriptor(configuration),
         ],
@@ -996,7 +1021,11 @@ export async function runAgentService(
       http = await createProductionHttpComposition({
         modelCatalog: await Promise.all(
           modelComposition.descriptors.generation
-            .filter((descriptor) => descriptor.allowedDataClassifications.includes("private"))
+            .filter(
+              (descriptor) =>
+                descriptor.api === "openai-completions" &&
+                descriptor.allowedDataClassifications.includes("private"),
+            )
             .map(async (descriptor) =>
               getPiModelPresentation(await configuredPiModels.resolve(descriptor.ref)),
             ),

@@ -77,7 +77,7 @@ export function boundedOpenRouterFetch(
       }
       if (Buffer.byteLength(body["input"]) > 16384) throw new Error("PROBE_EMBEDDING_INPUT_LIMIT");
       cost = Math.ceil(16384 * descriptor.cost.input);
-    } else {
+    } else if (descriptor.api === "openai-completions") {
       const maximum = body["max_tokens"] ?? body["max_completion_tokens"];
       if (maximum !== 2048 || body["stream"] !== true) throw new Error("PROBE_OUTPUT_LIMIT");
       if (JSON.stringify(body["provider"]) !== JSON.stringify(descriptor.providerRouting)) {
@@ -88,6 +88,8 @@ export function boundedOpenRouterFetch(
         descriptor.contextWindow * Math.max(descriptor.cost.input, descriptor.cost.cacheRead) +
           maximum * descriptor.cost.output,
       );
+    } else {
+      throw new Error("PROBE_MODEL_DENIED");
     }
     if (requests.filter((request) => request.kind === kind).length >= 3) {
       throw new Error("PROBE_CALL_LIMIT");

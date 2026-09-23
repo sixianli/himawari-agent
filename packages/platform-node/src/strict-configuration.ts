@@ -6,7 +6,7 @@ import {
   type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
   type ConfiguredEmbeddingModelDescriptor,
-  type ConfiguredGenerationModelDescriptor,
+  type ConfiguredCompletionsGenerationModelDescriptor,
   type ConfiguredModelDescriptor,
   type DataClassification,
   type HttpConfiguration,
@@ -235,7 +235,7 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
   const field = `modelDescriptors[${index}]`;
   const input = record(value, field);
   const role = string(input["role"], `${field}.role`);
-  if (!(["primary", "fallback", "embedding"] as const).includes(role as never)) {
+  if (!(["primary", "fallback", "specialist", "embedding"] as const).includes(role as never)) {
     throw invalid(`${field}.role`, "is not a supported role");
   }
   const generation = role !== "embedding";
@@ -316,7 +316,7 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
   if (api === "typesafe-systemone") {
     const descriptor: ConfiguredModelDescriptor = {
       ...base,
-      role: role as "primary" | "fallback",
+      role: "specialist",
       priority: integer(input["priority"], `${field}.priority`, 1, 10_000),
       name: string(input["name"], `${field}.name`),
       api: "typesafe-systemone",
@@ -328,13 +328,12 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     // the provider never charges.
     if (descriptor.cost.output !== 0)
       throw invalid(`${field}.cost.output`, "must be zero for the decision endpoint");
-    if (role === "fallback" && !exactlyPrivate(descriptor.allowedDataClassifications))
-      throw invalid(
-        `${field}.allowedDataClassifications`,
-        "fallback must allow exactly the private classification",
-      );
+    if (role !== "specialist")
+      throw invalid(`${field}.role`, "TypeSafe requires the specialist role");
     return Object.freeze(descriptor);
   }
+  if (role === "specialist")
+    throw invalid(`${field}.role`, "specialist requires the TypeSafe decision API");
   const descriptor: ConfiguredCompletionsGenerationModelDescriptor = {
     ...base,
     role: role as "primary" | "fallback",
@@ -967,6 +966,8 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       throw invalid("configuration.modelDescriptors", `must contain exactly one ${role}`);
     }
   }
+  if (modelDescriptors.filter((descriptor) => descriptor.role === "specialist").length > 1)
+    throw invalid("configuration.modelDescriptors", "must contain at most one specialist");
 
   const memory = record(input["memory"], "configuration.memory");
   rejectUnknown(
@@ -1091,9 +1092,8 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     const descriptor = modelDescriptors.find(({ ref }) => ref === review.modelRef);
     // The reviewer always speaks for exactly this configured generation identity: the
     // frozen delegation pins it, and an embedding identity cannot answer a review.
-    // A dedicated descriptor is recommended so review spend and disclosure stay
-    // separable, but the schema has no third generation role, so an unselected
-    // primary/fallback identity remains legal when the Owner delegates it explicitly.
+    // A specialist has its own admission and pricing identity; existing Pi review
+    // identities remain valid for configurations that intentionally use them.
     if (!descriptor || descriptor.role === "embedding")
       throw invalid(
         "configuration.runPolicy.automaticReview.modelRef",

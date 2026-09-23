@@ -1,3 +1,4 @@
+// biome-ignore-all lint/complexity/useLiteralKeys: mock repository uses dynamic ports
 import { PassThrough } from "node:stream";
 import { EXECUTION_UDS_ERROR_CODES, ExecutionUdsError } from "@himawari-agent/platform-node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -689,6 +690,81 @@ function web() {
   return { model, memory, runs, http, port };
 }
 describe("web service composition and readiness", () => {
+  it("registers specialist pricing without asking Pi to present the reviewer", async () => {
+    const f = web();
+    const primary = f.model.descriptors.generation[0];
+    if (!primary) throw new Error("PRIMARY_FIXTURE_MISSING");
+    f.model.descriptors.generation.push({
+      ...primary,
+      ref: "review-specialist",
+      api: "typesafe-systemone",
+      routingClass: "specialist",
+      provider: "typesafe",
+      model: "jev-latest",
+      cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+    });
+    start();
+    await settle();
+    expect(boundary.runs.mock.calls[0]?.[0].modelRegistry).toContainEqual(
+      expect.objectContaining({
+        ref: "review-specialist",
+        estimatedCostMicros: Math.ceil(65_536 * 0.042),
+      }),
+    );
+    expect(boundary.http.mock.calls[0]?.[0].modelCatalog).toMatchObject([{ ref: "primary" }]);
+    expect(f.model.composition.piModels.resolve).toHaveBeenCalledWith("primary");
+    expect(f.model.composition.piModels.resolve).not.toHaveBeenCalledWith("review-specialist");
+    signal?.();
+    await settle();
+    expect(await exit).toBe(0);
+  });
+  it("binds the default model admission to the Run boot lease consumer", async () => {
+    const f = web();
+    const gate = {
+      context: { ownerId: authority.ownerId, agentId: authority.agentId, runId: "run-fixture" },
+      begin: vi.fn(),
+    };
+    f.runs.admission.mockReturnValue(gate);
+    repository["runDispatch"] = vi.fn((_ownerId, _agentId, _fence, _lease, consumerId) => ({
+      currentExecutionLease: vi.fn(async () => ({
+        executionLeaseId: "execution-fixture",
+        revision: 1,
+        authorityLeaseId: "lease-entry",
+        deploymentId: authority.id,
+        authorityEpoch: 1,
+        fencingToken: 1,
+        consumerId,
+        releasedAt: null,
+      })),
+    }));
+    start();
+    await settle();
+    const runOptions = boundary.runs.mock.calls[0]?.[0];
+    const modelOptions = boundary.modelComposition.mock.calls[0]?.[0];
+    expect(modelOptions.admission).toEqual(expect.any(Function));
+    expect(
+      await modelOptions.admission({
+        ownerId: authority.ownerId,
+        agentId: authority.agentId,
+        runId: "run-fixture",
+      }),
+    ).toBe(gate);
+    expect(repository["runDispatch"]).toHaveBeenCalledWith(
+      authority.ownerId,
+      authority.agentId,
+      expect.anything(),
+      expect.anything(),
+      runOptions.instanceId,
+    );
+    expect(f.runs.admission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionLease: expect.objectContaining({ consumerId: runOptions.instanceId }),
+      }),
+    );
+    signal?.();
+    await settle();
+    expect(await exit).toBe(0);
+  });
   it("closes title consumers even when the Run loop drain rejects", async () => {
     const f = web();
     f.runs.loop.stop.mockRejectedValue(new Error("RUN_DRAIN_FAILED"));

@@ -60,7 +60,8 @@ export interface ConfiguredCompletionsGenerationModelDescriptor
  * for billing and audit; `model` may be an alias such as `jev-latest`.
  */
 export interface ConfiguredTypeSafeGenerationModelDescriptor
-  extends ConfiguredGenerationModelDescriptorBase {
+  extends Omit<ConfiguredGenerationModelDescriptorBase, "role"> {
+  readonly role: "specialist";
   readonly api: "typesafe-systemone";
   readonly modelVersion?: string;
 }

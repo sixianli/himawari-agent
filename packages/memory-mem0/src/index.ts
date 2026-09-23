@@ -2,6 +2,7 @@ import path from "node:path";
 import {
   ApplicationPortError,
   type ConfiguredEmbeddingModelDescriptor,
+  type ConfiguredCompletionsGenerationModelDescriptor,
   type ConfiguredGenerationModelDescriptor,
   type ConfiguredMemoryDescriptor,
   type MemoryProviderHit,
@@ -139,7 +140,7 @@ export interface Mem0ProviderSecretSource {
 export interface OpenRouterMem0ProjectionOptions {
   readonly stateRoot: string;
   readonly memory: ConfiguredMemoryDescriptor;
-  readonly llm: ConfiguredGenerationModelDescriptor;
+  readonly llm: ConfiguredCompletionsGenerationModelDescriptor;
   readonly embedding: ConfiguredEmbeddingModelDescriptor;
   readonly llmSecret: ModelSecretRequirement;
   readonly embeddingSecret: ModelSecretRequirement;

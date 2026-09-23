@@ -68,6 +68,8 @@ export interface AutomaticReviewRecord extends AutomaticReviewStart {
   readonly result: null | {
     readonly decision: AutomaticReviewDecision["decision"];
     readonly reasonCode: string;
+    /** Reported confidence is retained even when the effective decision is human. */
+    readonly confidence?: number;
     /** Scoped protected payload holding the untrusted suggestion text, when one exists. */
     readonly suggestionRef: string | null;
     readonly outputRef: PayloadRef;

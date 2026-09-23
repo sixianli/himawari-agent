@@ -1,5 +1,7 @@
 # P5 TypeSafe JEV 自动审查接入：受控验证（2026-09-22）
 
+> **2026-09-23 更正：** 下述 95 项是 2026-09-22 的历史替身测试结果，不可作为当前 TypeSafe 协议验收。替身当时采用 `{value, confidence}`、`model: jev-latest`，缺少官方 Choice 的 `type/choice/probabilities`、具体版本模型名及 `usage.output_tokens`；测试还手工构造了生产代码当时缺失的顶层数据分级。修复与现行测试结果见[缺陷修复计划](../../../../../docs/archive/plans/2026-09-23-automatic-review-defect-repair-plan.md)。本文件其余内容保留历史口径，不代表当前实现。
+
 本目录记录以 TypeSafe JEV 作为自动审查模型的本地接入与受控验证。**没有真实 provider 调用、没有真实费用、没有生产启用**；JEV 端点是本地假端点。
 
 ## 交付行为

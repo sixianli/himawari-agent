@@ -1,3 +1,4 @@
+// biome-ignore-all lint/complexity/useLiteralKeys: provider JSON is untrusted until parsed
 import { setTimeout as wait } from "node:timers/promises";
 import {
   type AutomaticReviewDecision,
@@ -5,6 +6,7 @@ import {
   type ClockPort,
   type DataClassification,
   type ModelDescriptor,
+  type ModelCostDescriptor,
   type ModelInvocationEvent,
   type ModelInvocationRequest,
   type PayloadRef,
@@ -29,6 +31,8 @@ export interface TypeSafeJevTransportOptions {
   readonly secrets: SecretMaterialSource;
   readonly payloads: JevModelPayloadBoundary;
   readonly clock: ClockPort;
+  /** The same frozen pricing supplied to the invocation admission gate. */
+  readonly pricingFor: (descriptor: ModelDescriptor) => ModelCostDescriptor;
   readonly fetch?: typeof globalThis.fetch;
   /** Defaults to the documented decision endpoint. */
   readonly baseUrl?: string;
@@ -39,6 +43,13 @@ export interface TypeSafeJevTransportOptions {
 /** The host's frozen review summary, mirrored from the protected input payload. */
 interface ReviewInputEnvelope {
   readonly reviewId?: unknown;
+  readonly runId?: unknown;
+  readonly intentFingerprint?: unknown;
+  readonly policyVersion?: unknown;
+  readonly configurationVersion?: unknown;
+  readonly modelRef?: unknown;
+  readonly deadlineAt?: unknown;
+  readonly approvalExpiresAt?: unknown;
   readonly dataClassification?: unknown;
   readonly action?: {
     readonly capabilityRef?: unknown;
@@ -56,21 +67,19 @@ interface JevAnswerValue {
 }
 
 interface JevResponseBody {
-  readonly model?: unknown;
-  readonly version?: unknown;
+  readonly model: string;
   readonly answers?: unknown;
-  readonly usage?: { readonly input_tokens?: unknown; readonly output_tokens?: unknown };
+  readonly usage: { readonly input_tokens: number; readonly output_tokens: number };
 }
 
 const DEFAULT_BASE_URL = "https://api.typesafe.ai";
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAXIMUM_ATTEMPTS = 2;
-/**
- * The decision endpoint has no output tokens; pricing is per input token only.
- * This bound keeps a conservative reservation while the real prompt is a few
- * hundred tokens of frozen summary.
- */
-const ESTIMATED_INPUT_TOKENS = 2_048;
+/** Bound the disclosed request independently of the provider's token count. */
+const MAX_REQUEST_BYTES = 8_192;
+/** The documented Jev 1.13 context limit; reserve the full bound before a call. */
+const MAX_ADMISSION_INPUT_TOKENS = 65_536;
+const MAX_RESPONSE_BYTES = 1_048_576;
 /** Reason codes the host asked for; anything else is malformed model output. */
 const DECISION_REASON_CODES = new Set([
   "WITHIN_DELEGATION",
@@ -94,27 +103,50 @@ function boundedInteger(
     : fallback;
 }
 
-function validConfidence(value: JevAnswerValue): boolean {
-  return Number.isFinite(value.confidence) && value.confidence >= 0 && value.confidence <= 1;
+function retryAfterMilliseconds(value: string | null): number | undefined {
+  if (value === null) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1_000);
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-/** A typed answer may be a bare choice or carry a calibrated confidence. */
+/** Parse the documented Choice answer; confidence is never synthesized. */
 function answerValue(value: unknown): JevAnswerValue | undefined {
-  if (typeof value === "string") return { value, confidence: 1 };
   if (!isRecord(value)) return undefined;
-  const choice = value["value"];
+  if (value["type"] !== "choice") return undefined;
+  const choice = value["choice"];
   if (typeof choice !== "string") return undefined;
   const confidence = value["confidence"];
-  if (confidence === undefined) return { value: choice, confidence: 1 };
   if (
     typeof confidence !== "number" ||
     !Number.isFinite(confidence) ||
     confidence < 0 ||
     confidence > 1
+  )
+    return undefined;
+  const probabilities = value["probabilities"];
+  if (!isRecord(probabilities) || !Object.hasOwn(probabilities, choice)) return undefined;
+  const values = Object.values(probabilities);
+  if (
+    values.length === 0 ||
+    values.some(
+      (probability) =>
+        typeof probability !== "number" ||
+        !Number.isFinite(probability) ||
+        probability < 0 ||
+        probability > 1,
+    )
+  )
+    return undefined;
+  const total = (values as number[]).reduce((sum, probability) => sum + probability, 0);
+  if (
+    Math.abs(total - 1) > 0.001 ||
+    (probabilities[choice] as number) < Math.max(...(values as number[]))
   )
     return undefined;
   return { value: choice, confidence };
@@ -128,11 +160,11 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
   }
 
   /** Reserved budget for a decision call: input tokens only, output is free. */
-  static estimatedAdmissionCost(descriptor: Pick<ModelDescriptor, "cost">): {
+  static estimatedAdmissionCost(descriptor: { readonly cost: ModelCostDescriptor }): {
     readonly pricing: { input: number; output: number; cacheRead: number; cacheWrite: number };
     readonly estimatedCostMicros: number;
   } {
-    const estimatedCostMicros = Math.ceil(ESTIMATED_INPUT_TOKENS * descriptor.cost.input);
+    const estimatedCostMicros = Math.ceil(MAX_ADMISSION_INPUT_TOKENS * descriptor.cost.input);
     if (!Number.isSafeInteger(estimatedCostMicros) || estimatedCostMicros < 0)
       throw new TypeError("TYPESAFE_MODEL_ADMISSION_ESTIMATE_UNSAFE");
     return Object.freeze({
@@ -157,11 +189,25 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
     }
     const { body, envelope, apiKey } = prepared;
     const attempts = boundedInteger(this.options.maximumAttempts, DEFAULT_MAXIMUM_ATTEMPTS, 1, 4);
+    const deadline =
+      Date.now() +
+      boundedInteger(this.options.requestTimeoutMs, DEFAULT_TIMEOUT_MS, 1_000, 300_000);
     let lastError: unknown;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        const parsed = await this.#call(descriptor, request, body, apiKey);
+        const parsed = await this.#call(descriptor, request, body, apiKey, deadline);
         const decision = this.#validateDecision(envelope, this.#synthesize(envelope, parsed));
+        const pricing = this.options.pricingFor(descriptor);
+        if (
+          [pricing.input, pricing.output, pricing.cacheRead, pricing.cacheWrite].some(
+            (price) => !Number.isFinite(price) || price < 0,
+          )
+        )
+          throw new JevTransportFailure("TYPESAFE_MODEL_PRICING_INVALID", false);
+        const cost =
+          parsed.usage.input_tokens * pricing.input + parsed.usage.output_tokens * pricing.output;
+        if (!Number.isSafeInteger(Math.ceil(cost)) || cost < 0)
+          throw new JevTransportFailure("TYPESAFE_MODEL_PRICING_INVALID", false);
         const outputRef = await this.options.payloads.writeText({
           invocationId: request.invocationId,
           sequence: 1,
@@ -179,17 +225,12 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
         yield {
           type: "model.completed",
           invocationId: request.invocationId,
-          inputTokens: boundedInteger(
-            parsed.usage?.input_tokens,
-            this.#estimatedTokens(body),
-            1,
-            1_000_000,
-          ),
-          // The decision endpoint never bills or returns output tokens.
-          outputTokens: 0,
+          inputTokens: parsed.usage.input_tokens,
+          // Output tokens are reported even when the output price is zero.
+          outputTokens: parsed.usage.output_tokens,
           cacheReadTokens: 0,
           cacheWriteTokens: 0,
-          costMicros: 0,
+          costMicros: Math.ceil(cost),
           latencyMs: Math.max(0, Date.now() - startedAt),
           occurredAt: this.options.clock.now(),
         };
@@ -198,7 +239,20 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
         lastError = error;
         const retryable = error instanceof JevTransportFailure && error.retryable;
         if (!retryable || attempt === attempts || request.signal?.aborted) break;
-        await wait(Math.min(250 * attempt, 1_000), undefined, { ref: false });
+        const delay = Math.max(
+          Math.min(250 * 2 ** (attempt - 1), 1_000),
+          error instanceof JevTransportFailure ? (error.retryAfterMs ?? 0) : 0,
+        );
+        if (Date.now() + delay >= deadline) {
+          lastError = new JevTransportFailure("TYPESAFE_REQUEST_TIMEOUT", false);
+          break;
+        }
+        try {
+          await wait(delay, undefined, { ref: false, signal: request.signal });
+        } catch {
+          lastError = new JevTransportFailure("TYPESAFE_REQUEST_CANCELLED", false);
+          break;
+        }
       }
     }
     yield {
@@ -228,7 +282,7 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
   > {
     try {
       const state = await this.options.payloads.readText(request.inputRef);
-      const envelope = this.#parseEnvelope(state);
+      const envelope = this.#parseEnvelope(state, request);
       const body = JSON.stringify({
         state: envelope,
         model: descriptor.model,
@@ -267,6 +321,8 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
           },
         },
       });
+      if (Buffer.byteLength(body, "utf8") > MAX_REQUEST_BYTES)
+        throw new JevTransportFailure("TYPESAFE_REVIEW_INPUT_TOO_LARGE", false);
       assertMachineSecretFree(body);
       return { body, envelope, apiKey: this.#apiKey(secretValues) };
     } catch (error) {
@@ -286,7 +342,7 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
     }
   }
 
-  #parseEnvelope(state: string): ReviewInputEnvelope {
+  #parseEnvelope(state: string, request: ModelInvocationRequest): ReviewInputEnvelope {
     let parsed: unknown;
     try {
       parsed = JSON.parse(state);
@@ -294,6 +350,22 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
       throw new JevTransportFailure("TYPESAFE_REVIEW_INPUT_INVALID", false);
     }
     if (!isRecord(parsed)) throw new JevTransportFailure("TYPESAFE_REVIEW_INPUT_INVALID", false);
+    if (
+      parsed["schemaVersion"] !== "automatic-review-input.v1" ||
+      parsed["reviewId"] !== request.invocationId ||
+      parsed["runId"] !== request.runId ||
+      parsed["modelRef"] !== request.modelRef ||
+      parsed["dataClassification"] !== request.dataClassification ||
+      [
+        "intentFingerprint",
+        "policyVersion",
+        "configurationVersion",
+        "deadlineAt",
+        "approvalExpiresAt",
+      ].some((key) => typeof parsed[key] !== "string" || (parsed[key] as string).length === 0) ||
+      !isRecord(parsed["action"])
+    )
+      throw new JevTransportFailure("TYPESAFE_REVIEW_INPUT_INVALID", false);
     return parsed;
   }
 
@@ -303,68 +375,137 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
     return key;
   }
 
-  #estimatedTokens(body: string): number {
-    // Conservative character-based estimate; TypeSafe reports real usage when present.
-    return Math.max(1, Math.ceil(Buffer.byteLength(body, "utf8") / 4));
-  }
-
   async #call(
     descriptor: ModelDescriptor,
     request: ModelInvocationRequest,
     body: string,
     apiKey: string,
+    deadline: number,
   ): Promise<JevResponseBody> {
+    if (Date.now() >= deadline) throw new JevTransportFailure("TYPESAFE_REQUEST_TIMEOUT", false);
     const base = (this.options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
     const timeout = new AbortController();
     const signals = request.signal
       ? AbortSignal.any([request.signal, timeout.signal])
       : timeout.signal;
-    const timer = setTimeout(
-      () => timeout.abort(),
-      boundedInteger(this.options.requestTimeoutMs, DEFAULT_TIMEOUT_MS, 1_000, 300_000),
-    );
-    let response: Response;
+    const timer = setTimeout(() => timeout.abort(), Math.max(1, deadline - Date.now()));
     try {
       const fetchImpl = this.options.fetch ?? globalThis.fetch;
-      response = await fetchImpl(`${base}/v1/systemone`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json",
-          accept: "application/json",
+      const response = await this.#withAbort(
+        fetchImpl(`${base}/v1/systemone`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            "content-type": "application/json",
+            accept: "application/json",
+          },
+          body,
+          signal: signals,
+        }),
+        signals,
+      );
+      if (!response.ok) {
+        // A definite rate/overload rejection has not accepted a decision request.
+        const retryable = response.status === 429 || response.status === 529;
+        throw new JevTransportFailure(
+          `TYPESAFE_HTTP_${response.status}`,
+          retryable,
+          undefined,
+          retryAfterMilliseconds(response.headers.get("retry-after")),
+        );
+      }
+      const text = await this.#readResponse(response, signals);
+      assertMachineSecretFree(text);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new JevTransportFailure("TYPESAFE_RESPONSE_INVALID", false);
+      }
+      if (!isRecord(parsed)) throw new JevTransportFailure("TYPESAFE_RESPONSE_INVALID", false);
+      const reportedModel = parsed["model"];
+      const configuredVersion = descriptor.version;
+      const alias = descriptor.model === "jev-latest";
+      if (
+        typeof reportedModel !== "string" ||
+        (alias
+          ? !/^jev-\d+\.\d+\.\d+$/.test(reportedModel) ||
+            (/^jev-\d+\.\d+\.\d+$/.test(configuredVersion) && reportedModel !== configuredVersion)
+          : reportedModel !== descriptor.model)
+      )
+        throw new JevTransportFailure("TYPESAFE_MODEL_IDENTITY_INVALID", false);
+      const usage = parsed["usage"];
+      if (
+        !isRecord(usage) ||
+        !Number.isSafeInteger(usage["input_tokens"]) ||
+        (usage["input_tokens"] as number) < 1 ||
+        (usage["input_tokens"] as number) > MAX_ADMISSION_INPUT_TOKENS ||
+        !Number.isSafeInteger(usage["output_tokens"]) ||
+        (usage["output_tokens"] as number) < 0
+      )
+        throw new JevTransportFailure("TYPESAFE_USAGE_INVALID", false);
+      return {
+        model: reportedModel,
+        answers: parsed["answers"],
+        usage: {
+          input_tokens: usage["input_tokens"] as number,
+          output_tokens: usage["output_tokens"] as number,
         },
-        body,
-        signal: signals,
-      });
+      };
     } catch (error) {
-      // Cancellation is never retried; a transport error is retryable within the bound.
+      if (error instanceof JevTransportFailure) throw error;
       const cancelled = request.signal?.aborted === true;
       throw new JevTransportFailure(
-        cancelled ? "TYPESAFE_REQUEST_CANCELLED" : "TYPESAFE_TRANSPORT_UNAVAILABLE",
-        !cancelled,
+        cancelled
+          ? "TYPESAFE_REQUEST_CANCELLED"
+          : timeout.signal.aborted
+            ? "TYPESAFE_REQUEST_TIMEOUT"
+            : "TYPESAFE_TRANSPORT_UNAVAILABLE",
+        false,
         error,
       );
     } finally {
       clearTimeout(timer);
     }
-    if (!response.ok) {
-      // Diagnostics stay in the transport; never surface provider text or credentials.
-      const retryable = response.status === 429 || response.status >= 500;
-      throw new JevTransportFailure(`TYPESAFE_HTTP_${response.status}`, retryable);
-    }
-    const text = await response.text();
-    assertMachineSecretFree(text);
-    let parsed: unknown;
+  }
+
+  async #withAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+    if (signal.aborted) throw signal.reason;
+    let onAbort: (() => void) | undefined;
+    const aborted = new Promise<never>((_resolve, reject) => {
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
     try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw new JevTransportFailure("TYPESAFE_RESPONSE_INVALID", false);
+      return await Promise.race([operation, aborted]);
+    } finally {
+      if (onAbort) signal.removeEventListener("abort", onAbort);
     }
-    if (!isRecord(parsed)) throw new JevTransportFailure("TYPESAFE_RESPONSE_INVALID", false);
-    if (parsed["model"] !== undefined && parsed["model"] !== descriptor.model) {
-      throw new JevTransportFailure("TYPESAFE_MODEL_IDENTITY_INVALID", false);
+  }
+
+  async #readResponse(response: Response, signal: AbortSignal): Promise<string> {
+    if (!response.body) throw new JevTransportFailure("TYPESAFE_RESPONSE_INVALID", false);
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const result = await this.#withAbort(reader.read(), signal);
+        if (result.done) break;
+        total += result.value.byteLength;
+        if (total > MAX_RESPONSE_BYTES)
+          throw new JevTransportFailure("TYPESAFE_RESPONSE_TOO_LARGE", false);
+        chunks.push(result.value);
+      }
+      return Buffer.concat(chunks, total).toString("utf8");
+    } finally {
+      void reader.cancel().catch(() => undefined);
+      try {
+        reader.releaseLock();
+      } catch {
+        /* A cancelled read may still be pending. */
+      }
     }
-    return parsed as JevResponseBody;
   }
 
   /**
@@ -380,14 +521,7 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
     const reason = answerValue(answersValue["reason_code"]);
     // Every reported answer must be well formed, including its confidence: a
     // malformed calibrated value is not something the host may interpret.
-    if (
-      !scope ||
-      !decision ||
-      !reason ||
-      !validConfidence(scope) ||
-      !validConfidence(decision) ||
-      !validConfidence(reason)
-    )
+    if (!scope || !decision || !reason || !["within", "outside"].includes(scope.value))
       throw new JevTransportFailure("TYPESAFE_ANSWER_INVALID", false);
     // The answer vocabulary is host-owned. An answer outside it is malformed
     // output, not something the host silently reinterprets.
@@ -406,8 +540,7 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
       schemaVersion: "automatic-review.v1",
       reviewId,
       reasonCode: outside ? "OUTSIDE_DELEGATION" : reason.value,
-      // Only an approval carries the gate-relevant confidence.
-      ...(outcome === "approve" ? { confidence: decision.confidence } : {}),
+      confidence: Math.min(scope.confidence, decision.confidence, reason.confidence),
       decision: outcome,
     };
   }
@@ -457,11 +590,13 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
 class JevTransportFailure extends Error {
   readonly errorCode: string;
   readonly retryable: boolean;
-  constructor(errorCode: string, retryable: boolean, cause?: unknown) {
+  readonly retryAfterMs?: number;
+  constructor(errorCode: string, retryable: boolean, cause?: unknown, retryAfterMs?: number) {
     super(errorCode, cause === undefined ? undefined : { cause });
     this.name = "JevTransportFailure";
     this.errorCode = errorCode;
     this.retryable = retryable;
+    if (retryAfterMs !== undefined) this.retryAfterMs = retryAfterMs;
   }
 }
 

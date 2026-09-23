@@ -24,11 +24,11 @@ import type {
 } from "@himawari-agent/runtime-pi";
 import { createReferenceAdapterSet, type ReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createProductionMemoryCompositionFromConfiguration } from "../src/production-memory-composition.js";
 import {
-  createProductionMemoryCompositionFromConfiguration,
   createProductionModelComposition,
   resolveConfiguredModelDescriptorSet,
-} from "../src/index.js";
+} from "../src/production-model-composition.js";
 
 let temporaryDirectory: string;
 
@@ -430,6 +430,54 @@ describe("production model composition", () => {
     expect(resolved.embedding).not.toHaveProperty("api");
   });
 
+  it("keeps a dedicated TypeSafe reviewer outside the two Pi generation routes", () => {
+    const base = selectedEmbeddingConfiguration(temporaryDirectory);
+    const configuration = {
+      ...base,
+      modelDescriptors: [
+        ...base.modelDescriptors,
+        {
+          ref: "model-specialist",
+          role: "specialist" as const,
+          provider: "typesafe",
+          model: "jev-latest",
+          version: "review-config-1",
+          modelVersion: "jev-1.13.0",
+          priority: 3,
+          name: "JEV reviewer",
+          api: "typesafe-systemone" as const,
+          capabilities: ["text"],
+          cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+          allowedDataClassifications: ["private" as const],
+          disclosure: "external_remote" as const,
+          secretRef: "typesafe-api-key",
+        },
+      ],
+      secretReferences: [
+        ...base.secretReferences,
+        { ref: "typesafe-api-key", version: "v1", purpose: "model-provider-auth", scope: "model" },
+      ],
+    };
+    const resolved = resolveConfiguredModelDescriptorSet(configuration);
+    expect(resolved.generation).toHaveLength(3);
+    expect(resolved.generation.map(({ routingClass }) => routingClass)).toEqual([
+      "primary",
+      "fallback",
+      "specialist",
+    ]);
+    expect(resolved.generation[2]).toMatchObject({
+      api: "typesafe-systemone",
+      model: "jev-latest",
+      version: "jev-1.13.0",
+      secretRequirement: { secretRef: "typesafe-api-key", secretVersion: "v1" },
+    });
+    const piRoutes = resolved.generation.filter(
+      (descriptor): descriptor is ConfiguredPiModelDescriptor =>
+        descriptor.api === "openai-completions",
+    );
+    expect(piRoutes).toHaveLength(2);
+  });
+
   it("fails closed instead of inventing a Pi route for an unregistered generation provider", () => {
     const configuration = {
       modelDescriptors: [
@@ -793,8 +841,9 @@ it.each([false, true])(
       ...prepared.options,
       descriptors: prepared.options.descriptors.map((descriptor) => ({
         ...descriptor,
-        reasoning: reasoningRequired || descriptor.reasoning,
-        reasoningRequired,
+        ...(descriptor.api === "openai-completions"
+          ? { reasoning: reasoningRequired || descriptor.reasoning, reasoningRequired }
+          : {}),
       })),
     });
     try {

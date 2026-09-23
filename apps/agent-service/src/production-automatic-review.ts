@@ -33,7 +33,7 @@ import { configuredReviewDisclosureIdentity } from "./production-model-disclosur
  */
 export interface ProductionAutomaticReviewOptions {
   readonly configuration: ProductConfiguration;
-  /** The same product model boundary the Run uses; no second provider protocol. */
+  /** The same admitted product model boundary the Run uses. */
   readonly model: ModelPort;
   readonly descriptors: readonly ModelDescriptor[];
   readonly handles: SecretPort;
@@ -82,6 +82,7 @@ export function createProductionAutomaticReview(
       content: JSON.stringify({
         ...envelope,
         schemaVersion: "automatic-review-input.v1",
+        dataClassification: intent.dataClassification,
         action: {
           capabilityRef: intent.capabilityRef,
           capabilityVersion: intent.capabilityVersion,

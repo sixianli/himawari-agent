@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:aabf1f7a79010eb8ace593c74293c6def4e8382184f00c2d9abc9b0fb3097b0f"
+contract_sha256: "sha256:4400ac09b2778e5416874199ff50f5a3a92d262c832cf581b531a0a5ee044252"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -486,6 +486,8 @@ Schema 38 为 `sandbox-scope.v2` 和 `network_only` 合同建立 writer 屏障�
 Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请求身份，完成时与原审批及一次性 Grant 同事务写入。备份和恢复须保留审查记录、Owner 委托版本、原请求摘要、受保护输入/输出 Payload、审批来源和原模型费用记录。`pending` 只表示没有已提交决定，不能推断模型未调用，更不能删除该记录后重试付费调用。已完成记录读回历史决定，不重新派发工具。
 
 自动审查默认未装配。当前委托只接受精确请求摘要，批准不能扩成其他文件、命令或长期授权；写入时使用 writer 当前时间，重新核验请求期限、委托版本和 Run 执行租约。已有人工请求或决定优先，撤销、取消、过期及执行权变化阻止迟到批准。审查等待不创建共享文件占用；自动批准保存 `automaticReview` 来源，不能解释为用户对本次操作点击了确认。
+
+迁移时保留审查决定中的已报告置信度、配置的 `specialist` 模型身份和预算账户的 `unknown` 结算状态。目标 Agent Service 必须以自己的启动实例取得新的 Run 执行租约；旧租约和用量不明的审查不能被当作可重放的批准。真实 TypeSafe 调用与费用不由静态迁移检查证明。
 
 恢复不会自动续跑未完成审查，也不会启用模型。当前真实模型接入、披露和费用配置仍须按实施 Plan 单独完成；受控模型替身与 SQLite 回归不代表真实服务验收。Schema 38 或更旧 writer 不得写入新库，回退不得删表或修改账本以绕过版本屏障，也不得覆盖升级后新增的决定和消息。
 
