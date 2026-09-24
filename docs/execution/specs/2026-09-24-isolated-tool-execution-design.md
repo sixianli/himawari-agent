@@ -14,10 +14,10 @@ date: "2026-09-24"
 
 - [目标与来源](#goal)
 - [当前代码与目标差距](#baseline)
-- [任务身份与共享边界](#identity)
-- [组件职责与后端合同](#backend)
-- [授权与安全策略](#policy)
-- [状态、停止与释放证明](#lifecycle)
+- [任务身份与共享边界](#identity)：[能力包络与环境轮换](#envelope)、[Run 边界的用户可见后果](#run-boundary)
+- [组件职责与后端合同](#backend)：[环境内 runner 的信任域](#runner-trust)
+- [授权与安全策略](#policy)：[原目录模式的平台门禁](#host-mount-gate)
+- [状态、停止与释放证明](#lifecycle)：[停止顺序](#stop-order)、[不依赖控制进程存活的硬期限](#deadline)
 - [持久化、恢复与兼容](#recovery)
 - [浏览器与外部资源](#browser)
 - [错误与产品投影](#errors)
@@ -41,6 +41,8 @@ date: "2026-09-24"
 - Workspace authorization / claim / barrier：[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
 
 对 2026-09-07 Spec 的 Host SRT 首选、每调用环境及 Mac 尽力停止目标，由本 Spec 的新路径设计取代；旧运行证据保持原含义。2026-09-16 Spec 的权限、原目录/工作副本、版本比较、队列、自动审查与展示合同保留，仅将其底层执行和环境释放条件改由本文约束。不新增自动审批权限，不改变模型或费用配置，不启用 MCP、Git push 或跨 Run 常驻服务。
+
+2026-09-25 修订：依据文档审阅补充[能力包络与环境轮换](#envelope)、[Run 边界的用户可见后果](#run-boundary)、[环境内 runner 的信任域](#runner-trust)、[原目录模式的平台门禁](#host-mount-gate)和[不依赖控制进程存活的硬期限](#deadline)，并新增 ITE-16～19。这些内容把已有原则（不合并 Grant、权限变化须轮换、环境归属于 Run、runner 输出不可信、额度不可强制则拒绝）落实为可实施规则；ADR 0031 的决定不变。
 
 <a id="baseline"></a>
 
@@ -75,13 +77,47 @@ date: "2026-09-24"
 
 新增产品拥有的 `executionJobId` 与 `environmentGeneration`；现有 `SandboxJobIdentity.jobId` 保留调用作业的历史语义，不批量改名、不把旧 invocation 合并。`environmentId` 由可信协调器创建，持久绑定 executionJob、backend、runtime 实例、不可变 runtime environment ID、generation、策略摘要和镜像/runner 摘要。名称、PID、容器 label 或模型提供的 ID 均不是授权证明。
 
-默认一个 Run 的执行任务只使用一个同时存活的环境。权限上界变化时，必须停止并证明旧环境释放，再以同一任务的下一 generation 创建环境；不得同时保有相交写能力。新环境只按明确授权导入必要 workspace/产物，不能恢复旧进程、秘密或无限延长原期限。这是权限变更/恢复的显式轮换，不是每个 tool call 创建环境。
+一个 Run 同时最多存活一个**主环境**，即挂载用户 workspace 或运行任意代码的环境。不挂载任何用户目录、只需要网络能力的工具（例如纯 web_search）使用同一 Run 的**网络辅助环境**：它继续满足原合同中“无用户目录 grant、挂载或 claim”的要求，不持有 workspace lease，但同样要取得整体停止证明，以确认出口和凭据已关闭，并计入 Run 结束前的核对。除这两类外不另建环境。
+
+能力包络变化时，按[能力包络与环境轮换](#envelope)先停止并证明旧 generation 已释放，再创建下一 generation；任何时刻不得同时保有相交的写能力。新 generation 不恢复旧进程、秘密或 broker 凭据，也不延长原期限。这是权限变化或恢复时的显式轮换，不是每个 tool call 创建一个环境。
 
 ### 同一环境共享什么
 
 同一任务保有 cwd、workspace、Git 工作树、任务私有 HOME/tmp/cache、依赖及构建产物。后台程序属于父环境；单个前台工具返回不清理这些状态，不证明任务结束。默认串行处理同一环境的前台变更；同任务并发需满足资源冲突规则，不能用“相同 Run”绕过文件发布的版本检查。
 
-共享以**已经明确授权整个环境存续期的能力上界**为前提。批准一次精确命令不等于批准后续程序任意复用其能力；如果授权仅覆盖某次操作且能力无法在共享环境内可靠隔离/撤回，就停止轮换或拒绝组合，不能把多个一次 Grant 的并集挂进同一个长寿环境。每个工具仍需当前 ActionPolicy、Grant/Handle、输入指纹、期限、预算与取消检查；这些检查不能代替 OS/后端权限限制。
+共享以**已经明确授权整个环境存续期的能力上界**为前提。批准一次精确命令不等于批准后续程序任意复用其能力；如果授权仅覆盖某次操作且能力无法在共享环境内可靠隔离/撤回，就停止轮换或拒绝组合，不能把多个一次 Grant 的并集挂进同一个长寿环境。每个工具仍需当前 ActionPolicy、Grant/Handle、输入指纹、期限、预算与取消检查；这些检查不能代替 OS/后端权限限制。具体判定见下文。
+
+<a id="envelope"></a>
+
+### 能力包络与环境轮换
+
+**能力包络（capability envelope）**指环境内任何代码实际能够取得的全部能力：可读与可写挂载、网络出口策略、broker 凭据和资源额度。它由后端强制并冻结在 generation 上；环境运行中不追加挂载、网络目标或凭据。
+
+| 规则 | 判定方式 |
+| --- | --- |
+| 初始包络 | 首次需要环境时惰性创建，包络取**触发创建的那次调用**经 ActionPolicy 准入后的可强制范围，计算方式沿用[工作区 Spec 的执行范围规则](2026-09-16-workspace-authorization-lifecycle-design.md#execution-scope)；资源额度按策略与主机预算冻结。不预先加入其他授权，不合并多个 Grant |
+| 所需能力须在包络内 | 任一调用需要的能力超出当前包络时，不在当前 generation 执行，转入轮换 |
+| 任意代码调用还须覆盖包络 | Bash、脚本、构建、包管理、后台任务等任意程序会以包络的全部能力运行，因此它的有效授权必须覆盖整个包络。例如当前包络含 npm registry 出口，而新 Bash 只获准无网络运行，就不能在该 generation 执行 |
+| 固定实现的精确文件工具 | read / write / edit / find / grep / ls 等由宿主解析目标的工具只需落在包络内；它们不扩大包络，逐次目标、授权与版本检查照旧，效果按[runner 信任域](#runner-trust)由宿主独立读回 |
+| 已启动的后台程序 | 按工作区 Spec 既有合同（W13），获准命令启动的后台程序在本 Run 内仍属于原任务，能力以当时的包络为限。后续批准不会把新增能力交给它们：能力只能通过轮换增加，而轮换会先停止它们 |
+| 包络期限 | 取 Run 结束、触发授权的有效期（范围授权时）和环境 wall timeout 三者中最早者；撤权或过期按[停止顺序](#stop-order)整体停止 |
+
+**轮换**的步骤是：对当前 generation 请求整体停止 → 取得并接纳 release proof → 以触发调用的可强制范围作为新包络，创建下一 generation。
+
+- 当前 generation 仍有本任务启动的后台程序时，轮换会停止它们。这一影响作为该次请求的事实进入既有会话内审批或自动审查判定，不能静默停止，也不新增独立审批入口；没有后台程序时直接轮换。
+- 任务私有 HOME/cache 卷属于 executionJob，可以挂载到下一 generation，避免重复下载依赖。它不携带进程；旧 generation 的 broker 凭据在停止时已撤销，文件里即使残留旧凭据也不可再用。tmp 不跨 generation 保留。
+- 代价：权限需求来回变化的任务会多次轮换，例如“无网络构建 → 联网安装依赖 → 无网络测试”会创建三个 generation。这是不合并单次批准的直接结果。验收记录每个 Run 的轮换次数和耗时，不以放宽包络规则来减少轮换。
+
+<a id="run-boundary"></a>
+
+### Run 边界的用户可见后果
+
+当前产品中一次用户提交对应一个 Run（见 [当前架构](../../architecture-v0.1.md)：[SOURCE: docs/architecture-v0.1.md]），而第一阶段环境归属于 Run 且不跨 Run 转移。因此任务环境最长只存在于一轮对话：
+
+- Run 结束（成功、失败或取消）时请求整体停止。上一轮启动的 dev server、watcher 等后台程序随之停止，下一轮不会继承。需要跨轮次常驻的服务不在本阶段范围。
+- 写入 workspace（原目录或工作副本）的文件、依赖目录和构建产物按原合同保留；任务私有 HOME、cache 和 tmp 不跨 Run 保留，下一轮在新环境中重新准备。
+- 等待用户批准或自动审查仍在同一 Run 内：等待期间环境及其 lease 保持，但等待不延长环境期限。超过期限就先整体停止，批准后以新 generation 执行。
+- Run 的业务结果与环境释放按[环境状态与操作状态独立](#lifecycle)分开记录。用户能从既有 thread execution resources 投影看到“本轮后台程序已随本轮结束而停止”或“停止待确认”，不新增页面。
 
 <a id="backend"></a>
 
@@ -92,7 +128,8 @@ date: "2026-09-24"
 | Agent Service / application | Pi orchestration、授权/HITL、execution job、lease、持久 intent/fence、结果披露和 recovery |
 | Worker | 读取当前 authority，调用 backend，维持认证通信、输出回传与执行观察；不在 Worker 运行任意工具实现 |
 | Execution Backend adapter | 受保护 runtime 管理接口，编译/验证策略，创建与定位环境，执行、整体停止、核查并提供可信证据 |
-| 环境内 executor | 复用 Pi 工具、Shell/CLI/浏览器及其子进程；不得签发释放证明或读取控制平面秘密 |
+| 环境内 executor | 复用 Pi 工具、Shell/CLI/浏览器及其子进程；不得签发释放证明或读取控制平面秘密；与任务代码处于同一信任域，见[runner 信任域](#runner-trust) |
+| 环境内受保护 init | 作为环境 PID 1 只负责[硬期限](#deadline)计时与到期退出；不运行工具、不接收任务输入、不签发证明 |
 | SQLite 与 evidence reader | 事务接纳事实、验证证据主体和摘要、处理 CAS 竞争、维护 lease/barrier；runner 输出不直接写权威状态 |
 
 产品 port 放在 application；版本化序列化合同放在 execution-contracts。具体容器适配隔离于基础设施模块，只有组合根选择实现。沿现有 execution.v2 / Payload 认证通道扩展版本，不能让 application 调用 Docker CLI。第一阶段适配器可使用受保护的 Docker-compatible API 或固定 CLI argv；模型不能提供 daemon endpoint、image、mount、启动器或 runtime 参数。CLI 只是实现细节，不是公开产品合同。
@@ -101,15 +138,25 @@ date: "2026-09-24"
 
 | 操作 | 输入及约束 | 返回和失败语义 |
 | --- | --- | --- |
-| `capabilities` / `health` | 受信配置的 backend/host 及 qualification 绑定 | 明确可强制的策略、生命周期与资源保证；健康不等于安全资格；不支持的能力拒绝 |
-| `create` | 已持久化 execution job、generation、create intent 幂等键、冻结策略、资源预算、镜像/runner digest、已核查 workspace | 创建尚不可接收用户工具的环境；返回不可变定位与有效策略；响应丢失按同一 intent 核查，不盲建第二个环境 |
-| `execute` | 已绑定环境、当前 fence、调用身份、受保护参数引用和期限 | 同一环境执行；稳定输出 cursor、操作结果与独立环境观察；重投递只读已登记结果/状态，不重新执行未知动作 |
+| `capabilities` / `health` | 受信配置的 backend/host 及 qualification 绑定 | 明确可强制的策略、生命周期与资源保证，其中必须包含不依赖控制进程存活的[硬期限](#deadline)；健康不等于安全资格；不支持的能力拒绝 |
+| `create` | 已持久化 execution job、generation、create intent 幂等键、冻结的能力包络与策略、资源预算、硬期限、镜像/runner digest、已核查 workspace | 创建尚不可接收用户工具的环境，并把剩余期限交给受保护 init；返回不可变定位与有效策略；响应丢失按同一 intent 核查，不盲建第二个环境 |
+| `execute` | 已绑定环境、当前 fence、调用身份、受保护参数引用和期限 | 发送前持久化 execute intent；同一环境执行，返回稳定输出 cursor、不可信操作结果与独立环境观察。Docker-compatible exec 没有幂等键，因此响应丢失时不再发送，只读取 runner 已写出的输出（仍不可信）和 backend 观察，并按[runner 信任域](#runner-trust)冻结该 generation |
 | `inspect` | 完整 backend/runtime/environment/generation 身份和期望序号 | `running` / `stopped` / `unknown` 等可信观察及证据；连接失败、daemon 被替换、仅名称匹配或不明确的 not-found 均不是 stopped |
 | `stop` | 原环境身份、持久 stop intent、当前控制 authority、有限清理期限 | 幂等风险缩减，阻止新的 execute，整体停止环境及关联资源；返回请求接纳与终止观察，接纳不是证明 |
 | `verifyStopped` | stop fence、原 runtime 实例、不可变定位与所需证明维度 | 可信、带摘要且有接纳时效的停止证明，或 unknown；不能由任务 stdout/exit code 推导 |
 | `destroy` | 已停止且证据已持久保存的任务自有资源清单 | 回收环境层、私有 profile/tmp/cache；保留用户 workspace 和验证证据；失败保留 GC 义务，不抹掉已接纳停止事实 |
 
 Adapter 必须有同一语义的合约测试；未来 remote backend 只改变定位、传输和证明机制。运行远端工作区时需显式导入/发布及版本检查，不能把本机路径直接解释成远端路径。
+
+<a id="runner-trust"></a>
+
+### 环境内 runner 的信任域
+
+环境内的 runner 与任务代码使用同一 uid 和 namespace。一旦某个 generation 执行过任意代码，留下的程序就可能结束、替换或篡改 runner，因此之后该 generation 内**所有调用**的 runner 输出都只算不可信操作结果，包括精确文件工具报告的目标、摘要和成功与否。
+
+- 用于版本比较、候选发布、变更回执、release 判定和效果审计的事实，由宿主侧可信组件独立读回：原目录模式直接读取宿主文件身份与摘要；工作副本模式经受控导出校验。无法独立读回时按效果未知处理，保留相应 barrier，不发布、不宣称成功。
+- execute 响应丢失时，该调用记为结果未知且不重发。由于无法确认命令是否仍在运行，该 generation 立即冻结新的 execute 并请求整体停止；本 Run 后续调用使用新 generation，相交范围须等旧 generation 的 release proof 接纳后才能执行。
+- runner 可被篡改不扩大权限：它能做的事已被包络和后端策略限制。本节约束的是**结果可信度**，不是能力边界。
 
 [↑ 返回阅读导航](#contents)
 
@@ -126,7 +173,7 @@ Adapter 必须有同一语义的合约测试；未来 remote backend 只改变�
 ### 文件与 workspace lease
 
 - 仅挂载明确批准的真实目录/必要输入；只读和可写分别声明，根文件系统默认只读，临时写入只在限额的任务目录。HOME 为任务私有目录，不是用户 Home。
-- 原目录执行仍可通过限定 bind mount 支持，不强迫所有任务先建工作副本。挂载会真实写回 Host；容器停止不回滚这些修改。工作副本仍是既有可选模式，导出沿原版本比较与发布协议。
+- 原目录执行仍可通过限定 bind mount 支持，不强迫所有任务先建工作副本；但每个平台须先通过[原目录模式的平台门禁](#host-mount-gate)。挂载会真实写回 Host；容器停止不回滚这些修改。工作副本仍是既有可选模式，导出沿原版本比较与发布协议。
 - 检查 canonical path、目录身份、符号链接、嵌套挂载、Git worktree 的外置 gitdir/common dir；不得为使 Git 可用而自动挂载父目录或其他仓库。需要的 Git 元数据必须属于授权集合；不足时拒绝或在授权副本内执行。
 - `.env`、私钥、credential 配置、Host 安装目录、数据库、control socket 和运行产物不能因处在授权根下而自动可读写；若后端无法隔离这类嵌套保护范围，该挂载模式不可启用。
 - 维护环境级 lease，范围至少覆盖环境可实际写入/保持文件句柄的全部资源。任意 Shell 若可写整个授权 workspace，就必须占用对应目录范围直到环境停止。只拥有受限文件能力的任务可沿既有细粒度 claim 协调，不把授权目录一概变为目录独占。
@@ -146,6 +193,18 @@ Adapter 必须有同一语义的合约测试；未来 remote backend 只改变�
 
 磁盘不能只限制可写容器层而忽略 bind-mounted workspace。必须验证所用文件系统/runtime 的配额或使用有界存储与受控发布；原目录模式无法强制所需额度时返回不支持，不能用“容器有 quota”掩盖宿主盘无界写入。清理有独立有限预算，超时保持 blocked，不延长用户执行。
 
+<a id="host-mount-gate"></a>
+
+### 原目录模式的平台门禁
+
+原目录模式在某个平台启用前，必须同时满足三项条件：bind mount 的磁盘/workspace 额度可以强制；授权根下的嵌套敏感文件可以隔离；路径身份（大小写、硬链接、inode/device、符号链接）要么在宿主与环境内解释一致，要么全部由宿主侧解析。
+
+macOS 上宿主目录要经 runtime 的共享文件系统进入 Linux VM。APFS 通常不为任意目录提供配额，默认不区分大小写，而容器按区分大小写的 Linux 语义访问。这两点都可能让原目录模式在 Mac 上无法取得资格。
+
+- 该可行性在 Plan 的 P0 就要核查，不留到后端实现末尾。
+- 某平台取得资格前不启用原目录模式（fail closed），只提供有界存储的工作副本，或拒绝执行。
+- 如果 P0 确认某平台无法强制额度，就与[工作区 Spec](2026-09-16-workspace-authorization-lifecycle-design.md) 验收矩阵 W20 的“普通命令不被强制转入副本”冲突。这是产品决定，有两个选项：(a) 该平台普通命令也改用有界工作副本，并修订工作区 Spec 的适用范围；(b) 接受非硬额度的磁盘保护（例如宿主剩余空间下限，加上增长观察后整体停止），这与 ADR 0031 的资源要求冲突，须另立 ADR 修正。实施者在此停止并请用户选择，不自行采用任一方案。
+
 <a id="lifecycle"></a>
 
 ## 状态、停止与释放证明
@@ -156,6 +215,8 @@ Adapter 必须有同一语义的合约测试；未来 remote backend 只改变�
 
 环境可在多个工具调用之间保持 `running`；单个命令结束不转入环境停止。正常任务完成、Run 取消、期限/资源超限、撤权、监督失联或服务退出需求均请求整体停止。全局 coordinator 完成 Run 前要原子核对没有新派发、未释放环境及必要 barrier。
 
+<a id="stop-order"></a>
+
 ### 停止顺序
 
 1. SQLite 持久 stop intent 并提升执行 fence，禁止后续 create/start/execute；与准入/派发使用同一权威事务规则。backend 对延迟请求再次检查该 fence，不能只依赖调用端已取消。
@@ -164,6 +225,17 @@ Adapter 必须有同一语义的合约测试；未来 remote backend 只改变�
 4. 保存环境终止及必要能力关闭证据；持久化失败保留 lease，重复核查不能重放工具。
 5. 在短事务中接纳 release proof、完成环境占用释放、更新任务终态；交付 ACK 独立处理。有关文件完整性或未决发布的 barrier 仍阻止相应冲突。
 6. 环境删除、临时文件回收等无执行能力残留可以在后续 GC 完成。安全相关清理未完成不得释放；纯存储回收失败不把已经可靠停止的环境重新描述为活着。
+
+<a id="deadline"></a>
+
+### 不依赖控制进程存活的硬期限
+
+Worker 或 Agent 内的计时器会随进程崩溃失效；任务环境内的普通看门狗可以被任务代码结束；Docker-compatible runtime 也没有“运行满时长自动停止”或“调用方断开即停止”的选项（`docker container run` 只有停止宽限 `--stop-timeout` 和 restart 策略）。因此硬期限分两层落实：
+
+1. **环境内受保护 init**：create 时把剩余期限交给作为 PID 1 的固定程序。它来自受摘要约束的只读镜像，以不同于任务的非 root uid 运行，只负责计时和到期退出。Linux PID namespace 的成员只能向 init 发送 init 已设置处理器的信号；init 退出时，内核以 SIGKILL 终止该 namespace 内的全部进程。再加上 uid 不同、无 capability、no-new-privileges 和只读根文件系统，任务无法结束、追踪或替换它。到期终止后，证明仍由 backend 的 inspect / verifyStopped 取得，init 本身不签发证明。
+2. **宿主侧恢复**：Worker/Agent 恢复后，既有 startup / reconciliation 按持久化的 stop intent 和期限执行 inspect / stop；恢复完成并接纳证明之前，lease 一直保持。
+
+监督通道失联时不宣称立即停止；最坏情况是环境运行到硬期限后终止，其间占用不释放。remote backend 或 MicroVM 可以用自身等价的 TTL 机制替代第 1 层，但须在能力声明中给出并通过同等资格。主机休眠、VM 挂起和时钟调整对期限的实际影响纳入资格，按实测确定可以保证的上界；给不出上界的组合不签发资格。
 
 ### Release proof 的最低内容
 
@@ -190,7 +262,7 @@ Adapter 必须有同一语义的合约测试；未来 remote backend 只改变�
 - 环境绑定事务保证一个 execution job/generation 只有一个获准环境；create 前持久 intent，create 后绑定实际 locator，再允许用户 execute。
 - 每调用仍保存旧语义的调用回执、输入指纹、输出与结果；新 reader 将环境状态关联到旧操作视图。环境可有多个子调用，release 判定必须查父 lease。
 - 重启先恢复所有未释放环境、未决 create/stop 和 barrier，再开放相交准入。reconciler 只有 inspect/stop 权限，无 execute/start 权限。
-- Worker/Agent 崩溃后由可信后端监管执行期限及停止，不依赖已崩溃进程的定时器；监督通道失联触发后端停止。runtime 恢复后原环境不得自动复活；恢复流程核查原 ID，不能先建替代容器。
+- Worker/Agent 崩溃后，环境的最长存续由[不依赖控制进程存活的硬期限](#deadline)限定，恢复后按持久 intent 执行 inspect / stop；不依赖已崩溃进程的定时器，也不宣称失联时立即停止。runtime 恢复后原环境不得自动复活；恢复流程核查原 ID，不能先建替代容器。
 - 当前 authority 接纳新证明并使用 CAS，旧 Worker 迟到结果不能覆盖新 generation。证明首次接纳要验证时效，历史读取验证当时接纳事实；TTL、ACK 不反向改变释放状态。
 - 释放后出现可信的矛盾写入证据时，新建 incident/barrier 保护真实受影响资源，保留原释放历史；调查后端资格并禁止新准入，不用重新锁旧记录伪装从未释放。
 - legacy 环境保留原 SRT/namespace 观察和恢复路径，unknown 不能批量升级成 stopped。混合版本 writer 必须显式拒绝不理解的新环境/lease 合同；升级失败回退到停止新工具准入及保留恢复能力，不恢复 Host 执行。
@@ -235,7 +307,7 @@ Adapter 必须有同一语义的合约测试；未来 remote backend 只改变�
 | ITE-04 | 后端缺失、未启动、健康失败或创建失败；发起工具；明确拒绝，无 Host spawn、无重复 create；创建响应不确定保持 lease |
 | ITE-05 | 旧环境可能仍写入且 stop/inspect 超时、断线或身份改变；冲突新任务不能启动，不相交任务仍按既有规则运行 |
 | ITE-06 | Agent/Worker 在 create、bind、execute、stop、proof 接纳、lease release 前后崩溃；恢复核查原身份，不重放未知命令，不提前释放；runtime 重启也不复活已停环境 |
-| ITE-07 | 授权文件与假秘密/邻仓/Host socket 并存；尝试越界读写、symlink、外置 gitdir；仅允许显式范围，写能力覆盖的父 lease 保持到停止 |
+| ITE-07 | 授权文件与假秘密/邻仓/Host socket 并存；尝试越界读写、symlink、外置 gitdir、大小写别名与硬链接；仅允许显式范围，路径身份按宿主侧解析协调，写能力覆盖的父 lease 保持到停止 |
 | ITE-08 | deny-all 或 allowlist 网络；直连、代理、IPv6、UDP/DNS、重定向、私网及迟到 DNS；未授权请求均被阻止，停止后已有连接不能继续使用 |
 | ITE-09 | CPU/memory/pids/timeout/disk 限制及输出洪泛；触发限制；Host 保持可用，任务整体停止或 blocked；bind mount 额度不能绕过 |
 | ITE-10 | 原权限撤销/过期，或旧 execute 延迟到达；不再派发，后台进程与出口停止；原 Grant 失效不阻止可信紧急清理 |
@@ -244,6 +316,10 @@ Adapter 必须有同一语义的合约测试；未来 remote backend 只改变�
 | ITE-13 | 真实 browser fixture 有导航、下载、cookie 与子进程；停止后 profile 隔离、下载不继续；未启用的 Host/remote browser 路径被拒绝 |
 | ITE-14 | 替换实现或使用不支持必需能力的 backend；上层只使用产品合同；未知能力拒绝，不包含 OrbStack/Docker 专用分支 |
 | ITE-15 | 原目录有用户 dirty 修改、工作副本发布遇版本变化或 cleanup 失败；保留用户数据/产物及证据，不 reset、不删除授权 workspace，不虚构成功 |
+| ITE-16 | 同一 Run 先以 workspace 可写、无网络运行 Bash 并启动后台 writer，再依次请求联网安装、无网络测试和纯 web_search；需要更大或更小能力的任意代码调用触发轮换，有后台程序时先进入会话内判定；后台程序拿不到新网络能力；web_search 在无 workspace 挂载的网络辅助环境运行；记录轮换次数与耗时 |
+| ITE-17 | 环境运行中强制结束 Worker 与 Agent 且不恢复；任务尝试 kill / ptrace / 替换 init 或修改时钟；环境在硬期限终止，恢复并接纳证明之前 lease 保持；休眠/挂起下的期限行为有实测记录 |
+| ITE-18 | 第一轮启动 watcher 并写入 HOME/cache 后 Run 结束；第二轮在新环境中不含旧进程和 HOME/cache，workspace 文件与依赖目录保留；等待审批超过期限时先停止环境，批准后以新 generation 执行 |
+| ITE-19 | 任意代码篡改 runner 或伪造后续精确写入的目标/摘要；宿主独立读回发现不一致并按效果未知处理，不发布、不释放相关 barrier；execute 响应丢失后该 generation 不再接收 execute |
 
 <a id="verification"></a>
 
@@ -251,12 +327,17 @@ Adapter 必须有同一语义的合约测试；未来 remote backend 只改变�
 
 以真实产品入口的持久 E2E 为主要覆盖，使用现有 Vitest e2e/integration、真实 SQLite/认证通道/Worker 和实际容器。测试后端仅覆盖不可可靠触发的竞态与能力协商，不代替真实 runtime 的 containment、网络、挂载或资源验证。每个失败窗口由可观测同步点控制，禁止固定 sleep 冒充停止证明；有限观测必须结合后端强制机制，不宣称有限等待可证明所有未来行为。
 
-在 Mac + Docker-compatible runtime 上完成主验收；Linux container 平台另行执行相同合同。每种安装版本、镜像、策略、挂载方式和模式都有独立资格。用户已验证 OrbStack 可用只支持候选选择，不能当作 ITE-01～15 全部通过。具体文件、命令、留存证据和阶段门禁见 [Implementation Plan](../plans/2026-09-24-isolated-tool-execution-plan.md)。
+在 Mac + Docker-compatible runtime 上完成主验收；Linux container 平台另行执行相同合同。每种安装版本、镜像、策略、挂载方式和模式都有独立资格。用户已验证 OrbStack 可用只支持候选选择，不能当作 ITE-01～19 全部通过。具体文件、命令、留存证据和阶段门禁见 [Implementation Plan](../plans/2026-09-24-isolated-tool-execution-plan.md)。
 
 查阅的官方资料（2026-09-24）用于约束适配设计，不代替平台实测：
 
 - [Docker run](https://docs.docker.com/engine/containers/run/)：网络与 bind mount 默认行为不能直接作为产品策略；必须显式配置。
 - [Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/)：资源限制需要配置；资源观察不是额度强制。
 - [Docker Engine security](https://docs.docker.com/engine/security/)：runtime 管理面属于可信边界，任务不能获得其控制权。
+
+2026-09-25 补充查阅，用于[硬期限](#deadline)设计：
+
+- [docker container run](https://docs.docker.com/reference/cli/docker/container/run/)：只有 `--stop-timeout`（停止后的宽限）、`--restart` 和 `--init`（信号转发与回收僵尸进程），没有按运行时长自动停止的选项。
+- [pid_namespaces(7)](https://man7.org/linux/man-pages/man7/pid_namespaces.7.html)：namespace 成员只能向 init 发送其已设置处理器的信号；init 终止时内核以 SIGKILL 终止该 namespace 的全部进程。
 
 [↑ 返回阅读导航](#contents)

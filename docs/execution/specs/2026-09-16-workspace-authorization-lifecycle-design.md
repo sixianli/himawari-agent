@@ -11,7 +11,7 @@ date: "2026-09-16"
 > 2026-09-24 架构修正：本文的审批、授权、claim/barrier、文件发布、排队和展示合同继续有效；“Pi 与 Anthropic 沙箱继续作为核心”等表述不再强制具体 SRT binary 或宿主执行路线。新路径的底层执行改为任务级隔离环境；调用 claim 结束不得释放仍存活父环境的 lease。原目录/可选工作副本选择保持，由具体后端验证挂载与最小权限。适用决定见 [ADR 0031](../../adr/0031-isolated-tool-execution.md#amendments)，具体新合同见[隔离执行 Spec](2026-09-24-isolated-tool-execution-design.md)与[迁移 Plan](../plans/2026-09-24-isolated-tool-execution-plan.md)。
 > [SOURCE: docs/adr/0031-isolated-tool-execution.md]
 
-> 2026-09-24 实施责任转交：原 Plan 已以任务转交归档，后续统一由[隔离执行主计划](../plans/2026-09-24-isolated-tool-execution-plan.md#transfer)承接。本文保持 active；原 68 项验收继续有效，并与 ITE-01～15 分别追踪。转交不表示未完成任务已实现。
+> 2026-09-24 实施责任转交：原 Plan 已以任务转交归档，后续统一由[隔离执行主计划](../plans/2026-09-24-isolated-tool-execution-plan.md#transfer)承接。本文保持 active；原 68 项验收继续有效，并与 ITE-01～19 分别追踪。转交不表示未完成任务已实现。
 
 ## 目标与交付边界
 
