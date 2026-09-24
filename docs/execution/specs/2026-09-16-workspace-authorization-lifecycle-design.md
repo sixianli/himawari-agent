@@ -8,6 +8,9 @@ date: "2026-09-16"
 
 # 工作区占用、授权与执行状态协同设计（第三稿，已确认方案修订）
 
+> 2026-09-24 架构修正：本文的审批、授权、claim/barrier、文件发布、排队和展示合同继续有效；“Pi 与 Anthropic 沙箱继续作为核心”等表述不再强制具体 SRT binary 或宿主执行路线。新路径的底层执行改为任务级隔离环境；调用 claim 结束不得释放仍存活父环境的 lease。原目录/可选工作副本选择保持，由具体后端验证挂载与最小权限。适用决定见 [ADR 0031](../../adr/0031-isolated-tool-execution.md#amendments)，具体新合同见[隔离执行 Spec](2026-09-24-isolated-tool-execution-design.md)与[迁移 Plan](../plans/2026-09-24-isolated-tool-execution-plan.md)。
+> [SOURCE: docs/adr/0031-isolated-tool-execution.md]
+
 ## 目标与交付边界
 
 让已经完成的任务可靠释放工作区，让仍可能运行的任务保持必要隔离；批准、执行、结果确认、资源清理和用户看到的状态保持一致。覆盖正常流程、并发竞争和各持久化边界的中断，不承诺有限测试可以枚举现实中所有故障组合。

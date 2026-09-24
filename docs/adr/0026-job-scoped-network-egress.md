@@ -4,10 +4,17 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0031-isolated-tool-execution.md"
 date: "2026-09-10"
 ---
 
 # ADR 0026：Job Host 管理每作业可信网络出口
+
+## 后续部分修正（2026-09-24）
+
+本文的可信出口、地址核查和停止关闭原则继续有效；强制 SRT 客户端代理、parentProxy 与 Job Host 的具体组合只适用于 legacy SRT 路径。新隔离后端可用等价且经资格验证的网络策略；本文的 Mac 清理限制不是新路径的资格豁免。
+
+适用范围以 [ADR 0031 的修正表](0031-isolated-tool-execution.md#amendments) 为准：[SOURCE: docs/adr/0031-isolated-tool-execution.md]。本文原决定正文保留为历史记录，`active / accepted` 不表示被修正条款仍可用于新路径；本次不是整份替代，既有 supersession 链保持不变。
 
 ## 背景
 

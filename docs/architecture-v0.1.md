@@ -10,6 +10,12 @@ date: "2026-08-25"
 
 ## 执行架构：当前实现与已采纳设计
 
+### 任务级隔离执行的已采纳变更（2026-09-24，待实施）
+
+[ADR 0031](adr/0031-isolated-tool-execution.md) 已固定 Control Plane 与 Effectful Execution Plane 分离、任务级环境共享和环境停止证明后释放 lease 的目标架构，并部分修正 ADR 0025/0026。以下 SRT / Job Host 描述仍是已有实现及其时间限定，不是新目标已经交付：当前准入代码仍以 invocation 派生多个 job/environment 绑定，尚不能将这些绑定直接称为多工具共享的任务环境。具体差距见[新 Spec 的源码核查](execution/specs/2026-09-24-isolated-tool-execution-design.md#baseline)，迁移顺序见[新 Plan](execution/plans/2026-09-24-isolated-tool-execution-plan.md)。
+
+本轮只增加架构决定与设计文档，未改运行路径；现有 Mac 未知清理和 Linux namespace 证据保持原含义，不能推定已取得新容器资格。ADR 0030 的持久释放事实继续保留，新环境级 lease 与 proof 尚待接入。[SOURCE: docs/adr/0031-isolated-tool-execution.md]
+
 ### 控制中心展示与执行选择（2026-09-10）
 
 控制中心采用已确认的侧栏、聊天阅读区、固定输入和按需详情；Light/Dark 与六种主题色保存在客户端界面偏好中，三语与管理模块入口继续保留。原始品牌/原型资源不覆盖。

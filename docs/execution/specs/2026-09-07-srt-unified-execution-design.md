@@ -8,6 +8,9 @@ date: "2026-09-07"
 
 # Pi 工具复用与 SRT 受管理执行设计
 
+> 2026-09-24 架构修正：本设计的宿主 SRT 首选、单次调用环境和 Mac 尽力停止路线，仅保留为 legacy 实现/证据背景；新执行路径采用任务级隔离环境、可替换 backend 与严格停止证明。其余授权、Pi 复用、结果分离与输出合同继续复用。适用决定见 [ADR 0031](../../adr/0031-isolated-tool-execution.md#amendments)，具体新合同见[隔离执行 Spec](2026-09-24-isolated-tool-execution-design.md)与[迁移 Plan](../plans/2026-09-24-isolated-tool-execution-plan.md)。
+> [SOURCE: docs/adr/0031-isolated-tool-execution.md]
+
 ## 目标
 
 让 Himawari 的 Agent 通过统一的产品执行入口使用文件、Shell 和程序，不在 Agent loop 或工具业务代码中分辨 macOS 与 Linux。由 Anthropic Sandbox Runtime（下称 SRT）实现受限进程启动，Himawari 管理授权、执行生命周期、持久恢复和输出披露，Pi 继续管理模型交互及工具循环。
