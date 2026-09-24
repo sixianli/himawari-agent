@@ -1,6 +1,6 @@
 # P2 原队列恢复的真实 Worker 验收
 
-[对应 Plan](../../../../../docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-queued-worker-proof)。本批补充上批已实现恢复行为的真实执行验证，未修改产品源码、Schema、依赖或权限规则。
+[对应 Plan](../../../../../docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-queued-worker-proof)。本批补充上批已实现恢复行为的真实执行验证，未修改产品源码、Schema、依赖或权限规则。
 
 导航：[已验证的行为](#已验证的行为) · [复现](#复现) · [验证结果与复用边界](#验证结果与复用边界) · [开发失败与复用经验](#开发失败与复用经验)
 

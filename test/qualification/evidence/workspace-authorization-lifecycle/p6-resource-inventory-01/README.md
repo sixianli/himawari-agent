@@ -1,6 +1,6 @@
 # P6 一致资源快照证据
 
-对应[实施记录](../../../../../docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-resource-inventory)。本批新增内部只读端口，尚未接到页面状态，不代表完整 P6 或整个 Plan 完成。
+对应[实施记录](../../../../../docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-resource-inventory)。本批新增内部只读端口，尚未接到页面状态，不代表完整 P6 或整个 Plan 完成。
 
 - [失败前](inventory-red.log)：新需求回归因接口尚不存在而失败，不是历史产品缺陷的复现。
 - [首个通过结果](inventory-first-green.log)：同一 Run 的队列/预约/绑定、重复读、跨 Agent 和重开仓库读取通过。

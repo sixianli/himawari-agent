@@ -1,6 +1,6 @@
 # P2 原队列、原 Pi 批次与中断 Run 续接
 
-本批补齐上批尚未实现的两个入口：安全的 `runtime_running` Run 重新取得租约，以及经过原队列绑定证明的跨 authority Pi continuation 恢复。对应 [Plan 当前批次](../../../../../docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-queued-run-restart)。P2 复合待办与完整产品验收仍未完成。
+本批补齐上批尚未实现的两个入口：安全的 `runtime_running` Run 重新取得租约，以及经过原队列绑定证明的跨 authority Pi continuation 恢复。对应 [Plan 当前批次](../../../../../docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-queued-run-restart)。P2 复合待办与完整产品验收仍未完成。
 
 ## 实现与验证边界
 

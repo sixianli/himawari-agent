@@ -1,18 +1,26 @@
 ---
-status: active
+status: "archived"
 document_type: plan
 supersedes: ""
-superseded_by: ""
+superseded_by: "docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md"
 date: "2026-09-16"
 ---
 
 # 工作区占用、授权与执行状态协同实施计划
 
-> **2026-09-23 审查更正：** 下方 2026-09-21/22 的 P5 测试计数与接入描述是当时的历史记录，不能证明 `68bc801` 上的 TypeSafe 实际协议或生产默认组合正确。旧 JEV 替身使用了 `{value, confidence}`、省略 `output_tokens`，并由测试自行构造顶层 `dataClassification`；TypeSafe 官方 Choice 实际返回 `type/choice/probabilities/confidence`，响应带具体模型版本与 input/output 用量。本轮修复、现行检查和未验证范围见[自动审查缺陷修复计划](../../archive/plans/2026-09-23-automatic-review-defect-repair-plan.md)。历史 JSON 证据保留原样。
+<a id="transfer-closure"></a>
+
+> **2026-09-24 转交结案：** 本 Plan 因任务转交而归档，并非全部实施完成。55 项阶段任务与 A01～A13、W01～W30、R01～R07、E01～E09、U01～U07、M01～M02 共 68 项验收已由[9 月 24 日主计划](../../execution/plans/2026-09-24-isolated-tool-execution-plan.md#transfer)逐项承接。后续只从该主计划安排工作；本文件以下的“当前范围”“后续实施入口”、旧执行顺序与授权描述均为历史记录，不是新的实施或外部操作授权。
+>
+> 原 Spec 的授权、文件并发、候选发布和页面合同继续有效；旧 Host/SRT 首选及 macOS best-effort 长期路线按 [ADR 0031](../../adr/0031-isolated-tool-execution.md)修正。SRT 可以实现权限策略，但新任务以独立环境提供生命周期 containment。原勾选、失败记录及局部证据保留，不把旧资格改写成新 backend 已通过。顶部进度表中落后于后文 P2/P4 完成记录的内容仅供追溯，当前责任见主计划[过期表述处理](../../execution/plans/2026-09-24-isolated-tool-execution-plan.md#obsolete-guidance)。
+>
+> [SOURCE: docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md]
+
+> **2026-09-23 审查更正：** 下方 2026-09-21/22 的 P5 测试计数与接入描述是当时的历史记录，不能证明 `68bc801` 上的 TypeSafe 实际协议或生产默认组合正确。旧 JEV 替身使用了 `{value, confidence}`、省略 `output_tokens`，并由测试自行构造顶层 `dataClassification`；TypeSafe 官方 Choice 实际返回 `type/choice/probabilities/confidence`，响应带具体模型版本与 input/output 用量。本轮修复、现行检查和未验证范围见[自动审查缺陷修复计划](2026-09-23-automatic-review-defect-repair-plan.md)。历史 JSON 证据保留原样。
 
 **来源 Spec：** [SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
 
-**设计入口：** [第三稿已确认方案摘要](../specs/2026-09-16-workspace-authorization-lifecycle-design.md#review-summary)。用户于 2026-09-16 在本次会话明确确认该 Spec 审核通过，并授权编写本 Plan。
+**设计入口：** [第三稿已确认方案摘要](../../execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#review-summary)。用户于 2026-09-16 在本次会话明确确认该 Spec 审核通过，并授权编写本 Plan。
 
 **目标：** 修复结束后残留占用，按实际资源协调并发，把已确认的授权连续性、自动审查、异常恢复和真实页面状态接入现有产品。
 
@@ -78,7 +86,7 @@ date: "2026-09-16"
 
 2026-09-20 在当前 Mac 重建安装产物并运行七个真实 Job Host 场景。探针原先错误导入 `dist/node-build`，经 workspace exports 回到 TypeScript 源码而失败；已改用 `dist/node-runtime` 安装模块。未启动预约可核验释放，停止/Worker 崩溃后的脱离进程组后代仍继续写入，因此完整停止能力仍为 **inconclusive**，已测场景的 unknown/拒绝释放为 **verified**。证据见[平台前置核验](../../../test/qualification/evidence/workspace-authorization-lifecycle/p1-platform-preflight-02/README.md)。
 
-结合[现行 SRT 设计](../specs/2026-09-07-srt-unified-execution-design.md)，首批 Mac 已接受尽力停止与未知隔离。这次没有新增必须切换宿主后端的设计决定；后续资源展示、历史核验与恢复继续实施，保留占用直到得到有效证明。Linux 本次未重跑，最终双平台资格仍在第九批验证；不能将这一结果写成完整平台通过。
+结合[现行 SRT 设计](../../execution/specs/2026-09-07-srt-unified-execution-design.md)，首批 Mac 已接受尽力停止与未知隔离。这次没有新增必须切换宿主后端的设计决定；后续资源展示、历史核验与恢复继续实施，保留占用直到得到有效证明。Linux 本次未重跑，最终双平台资格仍在第九批验证；不能将这一结果写成完整平台通过。
 
 ### 恢复与授权子任务的依赖调整（2026-09-20）
 
@@ -206,7 +214,7 @@ date: "2026-09-16"
 
 **启用前需要的真实验收（尚未执行）：** 用上表配置与一条 Owner 明确委托的确切摘要，在隔离数据目录执行一次真实调用，核对：①请求只含上述最小输入；②决策、`automaticReview` 来源与一次性 Grant 可独立读回；③实际用量与费用写入预算账户；④接收方可追溯；⑤撤销、取消与重复结果不产生第二次授权。缺任何一项都只报告“接入与受控测试完成”，不勾选 P5 完成。
 
-**2026-09-23 对上述历史断言的更正：** 共享决策契约允许人工决定携带已报告的置信度，新的低置信门控保留该值；`AutomaticActionReviewService` 因而已改动。固定 Pi 源码支持多种生成 API 与自定义 provider；JEV 的 typed evaluate 端点不同于对话生成流，所以对话继续复用 Pi，JEV 使用独立 transport。旧 95 项测试使用的响应替身与官方协议不符，不能充当当前协议或真实费用证据。实际修复验证见[本轮 Plan](../../archive/plans/2026-09-23-automatic-review-defect-repair-plan.md)。
+**2026-09-23 对上述历史断言的更正：** 共享决策契约允许人工决定携带已报告的置信度，新的低置信门控保留该值；`AutomaticActionReviewService` 因而已改动。固定 Pi 源码支持多种生成 API 与自定义 provider；JEV 的 typed evaluate 端点不同于对话生成流，所以对话继续复用 Pi，JEV 使用独立 transport。旧 95 项测试使用的响应替身与官方协议不符，不能充当当前协议或真实费用证据。实际修复验证见[本轮 Plan](2026-09-23-automatic-review-defect-repair-plan.md)。
 
 <a id="p5-delivery"></a>
 
@@ -1477,6 +1485,6 @@ Mac 未能证明任意后代全部退出时，实际结论仍是 cleanup=unknown
 
 类型、范围内格式/检查、边界、需求覆盖、不变量、CI policy、四份 Runbook 合同及严格文档检查通过。`npm run check` 实际停在两份原有未跟踪原型 `verify.cjs` 的格式错误，未修改这两份无关文件。最终安装包曾有一次 reserved 原因未确认以及一次诊断用例超时，保留原始失败；原配置最终复验通过，不把通过写成已定位或修复最初异常。受控平台验收不签发生产资格，也不代表已部署。
 
-资源边界按[Spec 的副本与非文件效果合同](../specs/2026-09-16-workspace-authorization-lifecycle-design.md#optional-workcopies)执行：当前支持的服务只使用私有就绪 socket，owner 不随启动返回结束；宿主 TCP 监听、任意 socket 和 Git index 不借文件权限开放。产品数据库由原 Agent 事务管理，远端请求保留独立网络授权和调用效果记录；不把副本或文件锁宣传为外部数据库事务或远端 exactly-once。
+资源边界按[Spec 的副本与非文件效果合同](../../execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#optional-workcopies)执行：当前支持的服务只使用私有就绪 socket，owner 不随启动返回结束；宿主 TCP 监听、任意 socket 和 Git index 不借文件权限开放。产品数据库由原 Agent 事务管理，远端请求保留独立网络授权和调用效果记录；不把副本或文件锁宣传为外部数据库事务或远端 exactly-once。
 
 [↑ 返回当前批次](#current-batch-contract)

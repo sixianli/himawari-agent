@@ -13,7 +13,7 @@ date: "2026-09-16"
 
 用户已确认工作区、授权与执行状态 Spec，并于 2026-09-16 要求实施其 Plan。本决定记录该 Spec 已确认的持久化原则，补充 ADR 0025 的生命周期分离，不替代其 Pi、沙箱和平台资格决定。`accepted` 表示设计决定已经确认，不表示对应代码、迁移或生产恢复已经完成。
 
-基线 `753fb63` 的 SQLite 实验复现了资源已结束、ACK 已确认而工作区仍被占用的问题：在释放凭证到期时及到期后 11ms、151ms 接收 ACK，`released_at` 保持为空，后续写入被拦截。该实验使用隔离 SQLite 和受控平台证据，不是生产环境复测。原始命令、测试源和日志见 [Plan 的实施记录](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
+基线 `753fb63` 的 SQLite 实验复现了资源已结束、ACK 已确认而工作区仍被占用的问题：在释放凭证到期时及到期后 11ms、151ms 接收 ACK，`released_at` 保持为空，后续写入被拦截。该实验使用隔离 SQLite 和受控平台证据，不是生产环境复测。原始命令、测试源和日志见 [Plan 的实施记录](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
 
 ## 决定
 
@@ -51,4 +51,4 @@ date: "2026-09-16"
 - [SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]
 - [SOURCE: docs/adr/0018-sqlite-product-state-authority.md]
 - [SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
-- [SOURCE: docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md]
+- [SOURCE: docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md]

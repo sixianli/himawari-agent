@@ -1,6 +1,6 @@
 # P2 网络权限与实际撤销状态
 
-本批按 [Plan 当前批次](../../../../../docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#current-batch-contract)实施。基线 `e0f2b8d`，使用 Node 22.22.3、SRT 0.0.75 和本机 Mac。标准构建与完整测试通过；本记录只覆盖下述行为，Plan 其他待办继续保留。
+本批按 [Plan 当前批次](../../../../../docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#current-batch-contract)实施。基线 `e0f2b8d`，使用 Node 22.22.3、SRT 0.0.75 和本机 Mac。标准构建与完整测试通过；本记录只覆盖下述行为，Plan 其他待办继续保留。
 
 ## 已建立的行为
 

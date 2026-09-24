@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: standard
-contract_sha256: "sha256:0f41d7b11a74236bc524af3c4c0cef2f23a6e92a9ef189f837138879747316cc"
+contract_sha256: "sha256:f932c1d89b2d9a61aa009032c321bc7c24439ede59038ce7ecd650daa193a615"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-19"
@@ -34,7 +34,7 @@ Schema 46 的目录移动合同复用原执行、占用和队列表；此清单�
 ## Authoritative Sources
 
 - [执行与恢复约束](../execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#七恢复与错误合同)。
-- [实施进度和验收边界](../execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
+- [实施进度和验收边界](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
 - [核查入口](../../scripts/operations/workspace-lifecycle-audit.mjs)与[真实 CLI/SQLite 回归](../../test/integration/workspace-lifecycle-audit.test.ts)。
 - [数据库备份与恢复流程](backup-restore-runbook.md)。复制活动数据库时应使用合适的 SQLite 备份方法，不只复制主文件而遗漏 WAL 中的数据。
 

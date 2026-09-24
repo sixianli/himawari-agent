@@ -1,6 +1,6 @@
 # P3 文件占用、保存与恢复验收
 
-本批对应 [Plan 的 P3 七项](../../../../../docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p3)；源码冻结后执行最终构建与测试。**P3 七项全部通过。** 最终状态、日志摘要和计数见 [verification.json](verification.json)，标准结果见 [standard-summary.json](standard-summary.json)。
+本批对应 [Plan 的 P3 七项](../../../../../docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p3)；源码冻结后执行最终构建与测试。**P3 七项全部通过。** 最终状态、日志摘要和计数见 [verification.json](verification.json)，标准结果见 [standard-summary.json](standard-summary.json)。
 
 ## 行为与证据入口
 

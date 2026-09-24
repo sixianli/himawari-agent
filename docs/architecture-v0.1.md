@@ -24,7 +24,7 @@ date: "2026-08-25"
 
 当前生产组合还提供独立的 `thread.execution_state` / `thread.execution_state_snapshot` 查询。浏览器仅在配置声明 `executionStateAvailable` 时使用它，原 `thread.execution` 记录查询的严格合同保持不变。后端从归属校验后的全部 Trace 分页与 Run 版本生成阶段、原因、操作结果、现有 Stop/审批/清理动作、真实审查与工具执行区间的并集、稳定内容 revision 和最后观察时间；读取期间 Run revision 变化、分页停滞或超出有限读取预算时不返回部分结论。工具行与整体状态保留每个操作的未知结果，已成功操作不因其他操作失败而丢失；解密失败不能当作空的成功结果。页面断线提示与该持久结论分开，客户端不再用墙钟估算新查询中的工具执行时长。
 
-此投影只汇总目前已有的持久 Run/Trace 事实，`effectSummary` 表达操作 outcome，不构成文件已回滚、资源已释放或整个任务树已停止的证明。已选择会话的红点与可用动作使用匹配 Run revision 的状态；其他会话仍使用原待审批查询。资源 journal 的停止/核验/清理、队列等待、文件发布细节、其他阶段计时与全部会话统一注意状态仍待接入，见[统一状态实施记录](execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-unified-state)。即使所有工具已经返回，单独的 `Run.cancelled` 也只证明取消决定已保存；缺少资源证明时统一状态仍为“结果未确认”，保留已知成功操作及原有再次停止/清理入口。本批不改变 Pi 工具协议，不升级数据库，也不增加执行或重放入口。
+此投影只汇总目前已有的持久 Run/Trace 事实，`effectSummary` 表达操作 outcome，不构成文件已回滚、资源已释放或整个任务树已停止的证明。已选择会话的红点与可用动作使用匹配 Run revision 的状态；其他会话仍使用原待审批查询。资源 journal 的停止/核验/清理、队列等待、文件发布细节、其他阶段计时与全部会话统一注意状态仍待接入，见[统一状态实施记录](archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-unified-state)。即使所有工具已经返回，单独的 `Run.cancelled` 也只证明取消决定已保存；缺少资源证明时统一状态仍为“结果未确认”，保留已知成功操作及原有再次停止/清理入口。本批不改变 Pi 工具协议，不升级数据库，也不增加执行或重放入口。
 
 用户提交仍对应产品 Turn/Run，Pi 内部 turn 是轮内执行步骤。可选模型由已配置、允许 private 数据的 generation descriptor 与 Pi 0.84.2 能力共同决定；`thread.message.submit_configured` 在 migration 0030 的 `runs.model_selection_json` 保存本次选择，后续仍由 RunExecutionInputService 冻结策略并执行原预算/披露/授权检查。界面中的下一轮选择不会改变活动 Run。停止复用 RunCoordinator；文本附件经既有 private Payload 发送，仅“执行”模式可用。
 
@@ -101,7 +101,7 @@ flowchart TB
 
 工具结果落库、模型披露、后续动作准入、环境复用和 Run 完成分别判断。受管理任务可以在调用返回句柄后运行；首批以原 Run 和授权期限为上限，Run 结束要停止其资源，不默认跨 Run 续命。失联后的输出可作为带限制的事实展示，不能触发未经核实的后续副作用或伪造整体成功。详细判定只由 Spec 定义，避免架构文档维护另一套状态机。
 
-当前资源恢复沿用 SQLite 中的有期限任务。核验观察的写入与任务的 owner、revision 和运行状态在同一事务内比较；旧任务被接管或结束后不能继续写入释放证明。超时后的后端返回不再触发新校验或写入，仍持有处理权的任务只能记录无结论并保留相交资源保护。恢复结束前重新读取资源与操作事实，保留同期收到的工具结果和永久释放记录。这些约束属于 Himawari 的持久恢复职责，继续复用 Pi 的工具及取消信号，不证明宿主进程与后代已退出。实现进度与本地验证见[工作区授权计划的恢复尝试隔离记录](execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p1-recovery-fencing)。
+当前资源恢复沿用 SQLite 中的有期限任务。核验观察的写入与任务的 owner、revision 和运行状态在同一事务内比较；旧任务被接管或结束后不能继续写入释放证明。超时后的后端返回不再触发新校验或写入，仍持有处理权的任务只能记录无结论并保留相交资源保护。恢复结束前重新读取资源与操作事实，保留同期收到的工具结果和永久释放记录。这些约束属于 Himawari 的持久恢复职责，继续复用 Pi 的工具及取消信号，不证明宿主进程与后代已退出。实现进度与本地验证见[工作区授权计划的恢复尝试隔离记录](archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p1-recovery-fencing)。
 
 资源恢复只保存固定安全原因码，区分权限拒绝、宿主不可用、身份与证据变化、控制连接超时和整体核查到期；后端无结论不能抹去具体原因。原始错误经既有受保护 Trace 保存，关联原 Job、环境、动作与失败阶段，不进入公共资源事实。并发释放得到充分证明时，恢复终点以最新持久事实为准。此路径仍为单次有期限 inspect/stop，不将未知结果变成工具重试或后台无限核查。
 
@@ -113,7 +113,7 @@ Schema 42 在原工作区保护表增加资源矛盾事件：永久释放后，�
 
 SRT 继续用于本机授权目录；Gondolin/容器/远端沙箱是有独立资格的可选后端方向，当前未启用且不构成自动 fallback。Git push 继续使用 Pi Bash 意图、产品内部专用动作和标准 Git，冻结仓库/ref/OID，凭据只由专用传输使用；本地兼容实验不等于真实 GitHub 验收。
 
-现有 SQLite preparations 端口新增内部 `readRunInventory`：同一只读事务返回一个 Owner/Agent/Run 的 v2 预约/绑定记录、完整队列历史和旧格式未释放资源标记；身份异常或任一集合超过 10,000 条会拒绝整个读取。它不推进队列、不消费额度、不刷新旧权限，也不触发宿主核验。当前尚未接入网页状态查询，空记录不能作为资源已停止证明，见[资源快照基础](execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-resource-inventory)。
+现有 SQLite preparations 端口新增内部 `readRunInventory`：同一只读事务返回一个 Owner/Agent/Run 的 v2 预约/绑定记录、完整队列历史和旧格式未释放资源标记；身份异常或任一集合超过 10,000 条会拒绝整个读取。它不推进队列、不消费额度、不刷新旧权限，也不触发宿主核验。当前尚未接入网页状态查询，空记录不能作为资源已停止证明，见[资源快照基础](archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-resource-inventory)。
 
 ## 架构总览图
 
@@ -369,7 +369,7 @@ Owner 通过 `workspace.copy.create/select/prepare` 指定当前输入和允许�
 
 副本不隔离外部业务对象。当前 SRT 不开放宿主 TCP 监听、任意 Unix socket 或 Git index 写入；受管服务的就绪 socket 位于各自私有目录，原资源记录一直保留 owner，启动返回不释放资源。产品数据库仍只由 Agent 的带权威检查事务访问，外部服务沿用独立网络授权与调用回执，未知效果不自动重发。本实现不提供通用外部数据库事务或任意远端对象互斥。
 
-实现验收见[P4 完成记录](execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-completed)。生产启用仍要求 Agent/Worker 同时支持合同 5、配置 `save_copy` 及匹配的固定执行器资格；本地验收不替代实例安装资格。[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
+实现验收见[P4 完成记录](archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-completed)。生产启用仍要求 Agent/Worker 同时支持合同 5、配置 `save_copy` 及匹配的固定执行器资格；本地验收不替代实例安装资格。[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
 
 ### Memory and context formation
 

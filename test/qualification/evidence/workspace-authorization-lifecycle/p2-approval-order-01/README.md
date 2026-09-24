@@ -1,6 +1,6 @@
 # P2 生产审批决定的并发持久顺序
 
-本批完成 [Plan 的不可变请求与审批竞争项](../../../../../docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-approval-order)。现有生产实现通过验收；仅新增独立测试、更新 Plan 和证据，未修改产品源码或协议。
+本批完成 [Plan 的不可变请求与审批竞争项](../../../../../docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-approval-order)。现有生产实现通过验收；仅新增独立测试、更新 Plan 和证据，未修改产品源码或协议。
 
 ## 覆盖与边界
 

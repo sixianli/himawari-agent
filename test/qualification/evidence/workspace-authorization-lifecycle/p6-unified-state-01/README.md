@@ -1,6 +1,6 @@
 # P6 统一执行状态首批接入证据
 
-对应 [实施记录](../../../../../docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-unified-state)。本批将已有 Run/Trace 事实接入独立状态查询及生产页面，不代表完整 P6、全部资源阶段或 68 项验收完成。
+对应 [实施记录](../../../../../docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-unified-state)。本批将已有 Run/Trace 事实接入独立状态查询及生产页面，不代表完整 P6、全部资源阶段或 68 项验收完成。
 
 - [定向验证](targeted-final.log)：6 文件、227 项通过，包含真实 SQLite worker/direct、Gateway adapter、协议兼容、分页/并行/版本变化和页面消费。
 - [真实 Chrome 回归](browser/result.json)：12 个场景通过，其中新增 8 个检查四种宽度、实际明暗主题、状态刷新不依赖新 Trace、完成事实在断线重开后保留。使用隔离 HTTP 夹具，不调用真实模型或 Worker。
