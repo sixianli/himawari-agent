@@ -135,7 +135,7 @@
 | `npm run check:pi-compat` | 12 个文件，130 项通过 |
 | `python3 <document-governance>/scripts/validate_docs.py --strict .` | 通过（5 个 Runbook 重新封存后） |
 
-**没有运行的 2 个集成测试文件**：`installable-node-services.test.ts` 和 `production-http-composition-process.test.ts` 需要预先打好的安装包，只能经 `npm test` 提供（报错 `INSTALL_TEST_REQUIRES_PREBUILT_ARTIFACT`）。`npm test` 又要求先用 `npm run ci:tools` 准备 CI 工具目录，这一步会从 PyPI 等站点下载固定版本的工具，本批没有得到下载许可，因此没有运行。其中 `installable-node-services.test.ts` 本批只把期望的数据库版本号从 47 改为 48，这处改动没有经过实际运行。
+**补跑的完整 `npm test`（2026-09-25，用户同意下载 CI 工具之后）**：`npm run ci:tools` 按仓库锁定文件下载并校验固定版本的工具，放在已被 Git 忽略的 `.ci-output/tools`；随后运行 `npm test`（`scripts/ci/local.mjs --check test`）。它按提交 `970e094` 打安装包，再单线程逐个运行全部测试项目，并核对实际运行的测试文件与登记的一致。结果为构建和测试两步都通过：contracts 354 项、unit 1953 项、integration 1777 项（没有跳过）、e2e 3 项、pi-compat 130 项。上一轮缺安装包而没有运行的 `installable-node-services.test.ts`（4 项，含本批改的数据库版本号 48）和 `production-http-composition-process.test.ts`（2 项）这次都已运行并通过。报告在 [`npm-test-970e094.tar.gz`](npm-test-970e094.tar.gz)，包括各项目的 JSON、JUnit 和日志、本次运行的上下文和安装包的 SHA-256；64 MB 的安装包本身没有保存。“hosted gate: not_executed” 指 GitHub 上的托管检查，本地流程不运行它。
 
 改前失败和反向检查的运行只保留在开发过程中，没有单独留日志。
 
