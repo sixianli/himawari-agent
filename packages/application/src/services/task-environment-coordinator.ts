@@ -12,6 +12,7 @@ import type {
   ExecutionEnvironmentStorePort,
 } from "../ports/execution-environment.js";
 import type { SandboxWorkspaceClaim } from "../ports/sandbox-execution-journal.js";
+import { type EnvelopeCapability, envelopeAfterWithdrawal } from "./execution-envelope-policy.js";
 
 export type ExecutionEnvironmentErrorCode =
   | "EXECUTION_BACKEND_UNAVAILABLE"
@@ -104,6 +105,65 @@ export class TaskEnvironmentCoordinator {
     return next.finally(() => {
       if (this.runs.get(input.runId) === next) this.runs.delete(input.runId);
     });
+  }
+
+  async rotate(
+    input: Parameters<TaskEnvironmentCoordinator["acquire"]>[0] & {
+      readonly environmentId: string;
+      readonly reason: "expansion" | "revocation" | "expiry" | "failure";
+      readonly stoppedResourceRefs: readonly string[];
+    },
+  ): Promise<ExecutionEnvironmentRecord> {
+    const { environmentId, reason, stoppedResourceRefs, ...next } = input;
+    const current = await this.store.read(environmentId);
+    if (!current || current.identity.runId !== next.runId || current.identity.role !== "primary")
+      throw new ExecutionEnvironmentError("EXECUTION_BINDING_CHANGED");
+    await this.stop({ environmentId, reason, stoppedResourceRefs });
+    return this.acquire(next);
+  }
+
+  async withdraw(input: {
+    readonly environmentId: string;
+    readonly withdrawnAuthorizationRefs: readonly string[];
+    readonly stoppedResourceRefs: readonly string[];
+  }): Promise<{
+    readonly environment: ExecutionEnvironmentRecord;
+    readonly removed: readonly EnvelopeCapability[];
+    readonly nextExpiryAt: string | null;
+  }> {
+    const current = await this.store.read(input.environmentId);
+    if (!current || current.identity.role !== "primary")
+      throw new ExecutionEnvironmentError("EXECUTION_BINDING_CHANGED");
+    const remaining = envelopeAfterWithdrawal(current.envelope, {
+      now: this.clock.now(),
+      withdrawnAuthorizationRefs: input.withdrawnAuthorizationRefs,
+    });
+    if (remaining.removed.length === 0)
+      return { environment: current, removed: [], nextExpiryAt: remaining.nextExpiryAt };
+    const revoked = [...current.envelope.directories, ...current.envelope.network].some((item) =>
+      input.withdrawnAuthorizationRefs.includes(item.source.authorizationRef),
+    );
+    const environment = await this.rotate({
+      environmentId: input.environmentId,
+      reason: revoked ? "revocation" : "expiry",
+      stoppedResourceRefs: input.stoppedResourceRefs,
+      runId: current.identity.runId,
+      hostId: current.identity.hostId,
+      envelope: remaining.envelope,
+      leases: current.leases.filter((lease) =>
+        remaining.envelope.directories.some(
+          (directory) =>
+            directory.hostId === lease.hostId &&
+            directory.canonicalRootId === lease.canonicalRootId &&
+            directory.access === lease.access,
+        ),
+      ),
+      policyDigest: current.policyDigest,
+      imageDigest: current.imageDigest,
+      runnerDigest: current.runnerDigest,
+      deadlineAt: current.deadlineAt,
+    });
+    return { environment, removed: remaining.removed, nextExpiryAt: remaining.nextExpiryAt };
   }
 
   async resolveUnknown(environmentId: string): Promise<ExecutionEnvironmentRecord> {

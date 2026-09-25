@@ -4,6 +4,7 @@ import {
   EXECUTION_BACKEND_PROTOCOL_V1,
   EXECUTION_ENVIRONMENT_V1,
   executionBackendCapabilitiesSchema,
+  executionDelegationListSchema,
   executionEnvelopeSchema,
   executionEnvironmentIdentitySchema,
   executionEnvironmentLocatorSchema,
@@ -152,5 +153,32 @@ describe("execution environment contract v1", () => {
       expect(() => executionEnvironmentStopProofSchema.parse(value)).toThrow(
         ContractValidationError,
       );
+  });
+
+  it("accepts only exact network targets and directory reads in a delegation list", () => {
+    const list = {
+      schemaVersion: "execution-delegation-list.v1",
+      ref: "delegation-list-1",
+      revision: 1,
+      items: [
+        { kind: "network", target: "registry.npmjs.org:443" },
+        { kind: "directory_read", hostId: "host-1", canonicalRootId: "root-docs" },
+      ],
+    };
+    expect(executionDelegationListSchema.parse(list)).toEqual(list);
+    for (const item of [
+      { kind: "directory_write", hostId: "host-1", canonicalRootId: "root-docs" },
+      { kind: "directory_read", hostId: "host-1", canonicalRootId: "root-docs", access: "write" },
+      { kind: "credential", secretRef: "secret-github" },
+      { kind: "network", target: "*:443" },
+      { kind: "network", target: "0.0.0.0:0" },
+      { kind: "network", target: "registry.npmjs.org" },
+    ])
+      expect(() => executionDelegationListSchema.parse({ ...list, items: [item] })).toThrow(
+        ContractValidationError,
+      );
+    expect(() =>
+      executionDelegationListSchema.parse({ ...list, items: [list.items[0], list.items[0]] }),
+    ).toThrow(ContractValidationError);
   });
 });

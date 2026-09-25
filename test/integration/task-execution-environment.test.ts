@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { RunExecutionLeaseClaim } from "@himawari-agent/application";
 import {
+  decideEnvelopeChange,
   type ExecutionBackendPort,
   type ExecutionEnvironmentStorePort,
   type SandboxWorkspaceClaim,
@@ -790,5 +791,171 @@ describe("task execution environment protocol on real SQLite", () => {
       code: "PORT_INVALID_OPERATION",
       message: "Thread completion requires an assistant answer",
     });
+  });
+});
+
+describe("changing the environment envelope", () => {
+  const withSources = (
+    directories: readonly { lease: SandboxWorkspaceClaim; expiresAt: string; ref: string }[],
+    network: readonly { target: string; expiresAt: string; ref: string }[],
+  ): ExecutionEnvelope => ({
+    ...envelope(),
+    directories: directories.map(({ lease, expiresAt, ref }) => ({
+      hostId: lease.hostId,
+      grantRef: `grant-${lease.canonicalRootId}`,
+      canonicalRootId: lease.canonicalRootId,
+      access: lease.access,
+      source: { ...source, authorizationRef: ref, expiresAt },
+    })),
+    network: network.map(({ target, expiresAt, ref }) => ({
+      target,
+      source: { ...source, authorizationRef: ref, expiresAt },
+    })),
+  });
+  const acquireWith = (f: Fixture, next: ExecutionEnvelope, leases: SandboxWorkspaceClaim[]) =>
+    f.coordinator.acquire({
+      runId: RUN_ID,
+      hostId: HOST,
+      envelope: next,
+      leases,
+      ...digests,
+      deadlineAt: T2,
+    });
+
+  it("adds a delegated capability only by stopping the environment and creating the next one", async () => {
+    const f = await fixture();
+    const lease = root("root-a", 10, "write");
+    const first = await acquire(f, RUN_ID, lease);
+    const decision = decideEnvelopeChange({
+      current: first.envelope,
+      call: {
+        capabilities: [{ kind: "network", target: "registry.npmjs.org:443" }],
+        credentials: [],
+        expandsEnvelope: true,
+        approval: {
+          authorizationRef: "review-npm",
+          decidedBy: "automatic_review",
+          delegationListRef: "delegation-list-1",
+          expiresAt: T2,
+        },
+      },
+      standing: [],
+      delegation: {
+        schemaVersion: "execution-delegation-list.v1",
+        ref: "delegation-list-1",
+        revision: 1,
+        items: [{ kind: "network", target: "registry.npmjs.org:443" }],
+      },
+      resources: first.envelope.resources,
+      now: T1,
+    });
+    if (decision.kind !== "change" || !decision.nextEnvelope) throw new Error("expected approval");
+    expect(decision.rotationRequired).toBe(true);
+    const next = await f.coordinator.rotate({
+      environmentId: first.identity.environmentId,
+      reason: "expansion",
+      stoppedResourceRefs: ["resource-watcher"],
+      runId: RUN_ID,
+      hostId: HOST,
+      envelope: decision.nextEnvelope,
+      leases: [lease],
+      ...digests,
+      deadlineAt: T2,
+    });
+    expect(next).toMatchObject({
+      state: "ready",
+      rotationReason: "expansion",
+      identity: { environmentGeneration: 2, executionJobId: first.identity.executionJobId },
+      envelope: decision.nextEnvelope,
+    });
+    expect(await f.store.read(first.identity.environmentId)).toMatchObject({
+      state: "released",
+      stopIntent: { reason: "expansion", stoppedResourceRefs: ["resource-watcher"] },
+    });
+    expect(f.backend.calls.filter((call) => call.startsWith("create:"))).toHaveLength(2);
+  });
+
+  it("drops the earliest expiring capability first and a revoked directory with its lease", async () => {
+    const f = await fixture();
+    const lease = root("root-a", 10, "write");
+    const soon = later(60_000);
+    const first = await acquireWith(
+      f,
+      withSources(
+        [{ lease, expiresAt: T2, ref: "grant-directory" }],
+        [
+          { target: "registry.npmjs.org:443", expiresAt: soon, ref: "grant-npm" },
+          { target: "example.org:443", expiresAt: T2, ref: "grant-example" },
+        ],
+      ),
+      [lease],
+    );
+    const unchanged = await f.coordinator.withdraw({
+      environmentId: first.identity.environmentId,
+      withdrawnAuthorizationRefs: [],
+      stoppedResourceRefs: ["resource-watcher"],
+    });
+    expect(unchanged).toEqual({ environment: first, removed: [], nextExpiryAt: soon });
+    f.setNow(soon);
+    const expired = await f.coordinator.withdraw({
+      environmentId: first.identity.environmentId,
+      withdrawnAuthorizationRefs: [],
+      stoppedResourceRefs: ["resource-watcher"],
+    });
+    expect(expired).toMatchObject({
+      removed: [{ kind: "network", target: "registry.npmjs.org:443" }],
+      nextExpiryAt: T2,
+      environment: {
+        rotationReason: "expiry",
+        identity: { environmentGeneration: 2 },
+        leases: [lease],
+      },
+    });
+    expect(expired.environment.envelope.network.map((item) => item.target)).toEqual([
+      "example.org:443",
+    ]);
+    expect(await f.store.read(first.identity.environmentId)).toMatchObject({
+      state: "released",
+      stopIntent: { reason: "expiry", stoppedResourceRefs: ["resource-watcher"] },
+    });
+    const revoked = await f.coordinator.withdraw({
+      environmentId: expired.environment.identity.environmentId,
+      withdrawnAuthorizationRefs: ["grant-directory"],
+      stoppedResourceRefs: ["resource-server"],
+    });
+    expect(revoked).toMatchObject({
+      removed: [{ kind: "directory", canonicalRootId: "root-a", access: "write" }],
+      environment: {
+        rotationReason: "revocation",
+        identity: { environmentGeneration: 3 },
+        leases: [],
+      },
+    });
+    expect(revoked.environment.envelope.directories).toEqual([]);
+    expect(await acquire(f, RUN_B, lease)).toMatchObject({ state: "ready" });
+  });
+
+  it("keeps the current environment when the stop before a change cannot be confirmed", async () => {
+    const f = await fixture();
+    const lease = root("root-a", 10, "write");
+    const first = await acquire(f, RUN_ID, lease);
+    f.backend.verifyMode = "unconfirmed";
+    await expect(
+      f.coordinator.rotate({
+        environmentId: first.identity.environmentId,
+        reason: "revocation",
+        stoppedResourceRefs: [],
+        runId: RUN_ID,
+        hostId: HOST,
+        envelope: { ...first.envelope, directories: [] },
+        leases: [],
+        ...digests,
+        deadlineAt: T2,
+      }),
+    ).rejects.toEqual(failure("EXECUTION_STOP_UNCONFIRMED"));
+    expect((await f.store.readRun(RUN_ID))?.environments.map((item) => item.state)).toEqual([
+      "stop_requested",
+    ]);
+    await expect(acquire(f, RUN_B, lease)).rejects.toEqual(reason("WORKSPACE_OCCUPIED"));
   });
 });

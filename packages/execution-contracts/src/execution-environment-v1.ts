@@ -121,6 +121,42 @@ export const executionEnvelopeSchema = object({
 });
 export type ExecutionEnvelope = InferSchema<typeof executionEnvelopeSchema>;
 
+export const EXECUTION_DELEGATION_LIST_V1 = "execution-delegation-list.v1" as const;
+const delegatedNetwork = object({ kind: literal("network"), target: networkTarget });
+const delegatedDirectoryRead = object({
+  kind: literal("directory_read"),
+  hostId: machineString,
+  canonicalRootId: machineString,
+});
+export type ExecutionDelegationItem =
+  | InferSchema<typeof delegatedNetwork>
+  | InferSchema<typeof delegatedDirectoryRead>;
+const delegationItem: Schema<ExecutionDelegationItem> = {
+  parse(value, path = "$") {
+    const kind =
+      value !== null && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)["kind"]
+        : undefined;
+    if (kind === "network") return delegatedNetwork.parse(value, path);
+    if (kind === "directory_read") return delegatedDirectoryRead.parse(value, path);
+    throw new ContractValidationError(
+      `${path}.kind`,
+      "only exact network targets and directory reads can be delegated",
+    );
+  },
+};
+export const executionDelegationListSchema = object({
+  schemaVersion: literal(EXECUTION_DELEGATION_LIST_V1),
+  ref: machineString,
+  revision: integer(1),
+  items: unique(array(delegationItem), (item) =>
+    item.kind === "network"
+      ? `network\n${item.target}`
+      : `read\n${item.hostId}\n${item.canonicalRootId}`,
+  ),
+});
+export type ExecutionDelegationList = InferSchema<typeof executionDelegationListSchema>;
+
 export const executionBackendCapabilitiesSchema = object({
   protocolVersion: literal(EXECUTION_BACKEND_PROTOCOL_V1),
   backendRef: machineString,
