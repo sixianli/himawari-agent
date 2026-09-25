@@ -8,6 +8,7 @@
     "./control": "./src/job-host-control-client.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sandbox-runtime": "0.0.75"
+    "@anthropic-ai/sandbox-runtime": "0.0.75",
+    "@himawari-agent/execution-contracts": "0.0.0"
   }
 }

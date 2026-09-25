@@ -363,16 +363,16 @@ date: "2026-09-24"
 
 覆盖 ITE-03、04、07、08、09、13、14、15、17、21。
 
-- [ ] 在真实容器测试样例上先建立负向矩阵：相邻仓库/假秘密/宿主 socket、符号链接、外置 gitdir、网络绕行、特权、进程数/内存/磁盘上限、挂载写回和用户未提交修改的保留。
-- [ ] 实现可信的运行时管理适配、固定镜像/runner 摘要、非 root 和只读根文件系统、有额度的显式挂载、任务私有 HOME/tmp/cache；任务拿不到 daemon 或控制 socket。
+- [ ] 在真实容器测试样例上先建立负向矩阵：相邻仓库/假秘密/宿主 socket、符号链接、外置 gitdir、网络绕行、特权、进程数/内存/磁盘上限、挂载写回和用户未提交修改的保留。 2026-09-25 进度，见[P2 第一批的真实容器结果](../../../test/qualification/evidence/isolated-tool-execution/p2-container-lifecycle-01/README.md#qualification)：Mac 与 Hermes 上已验证没有宿主 Docker socket、没有特权、根文件系统只读、无网络，进程数、内存和私有存储上限生效；与挂载目录有关的各项（相邻仓库、假秘密、符号链接、外置 gitdir、挂载写回、未提交修改）要等目录挂载实现后验证，网络绕行属于任务出口批次。
+- [ ] 实现可信的运行时管理适配、固定镜像/runner 摘要、非 root 和只读根文件系统、有额度的显式挂载、任务私有 HOME/tmp/cache；任务拿不到 daemon 或控制 socket。 2026-09-25 进度，见[P2 第一批的实现](../../../test/qualification/evidence/isolated-tool-execution/p2-container-lifecycle-01/README.md#implementation)：运行时管理适配只用固定参数调用 Docker 命令行，忽略调用方的 `DOCKER_HOST` 等设置；只接受固定镜像和固定 runner 摘要，创建后读回实际配置逐项核对；init 与任务使用不同的非 root 用户，根文件系统只读，HOME、临时目录和缓存放在有容量上限的私有 tmpfs 里，任务拿不到 Docker socket。显式挂载尚未实现，当前 runner 只有 BusyBox 的 `sh`，运行 Pi 工具的 runner 镜像待定。
 - [ ] 建立任务专属的网络出口，以及临时凭据的发放和撤销，复用地址校验规则；证明直连以及经 DNS/IPv6/UDP 的绕行被限制。如果替换 SRT，要验证同样的策略，不能用特权运行解决嵌套沙箱的问题。
 - [ ] 实现凭据进入容器的路径（ITE-21 的容器部分）：先换新环境、停掉后台程序，只发临时凭据，调用结束立即撤销并验证撤销后不可再用，凭据不进入本轮权限上限。
-- [ ] 实现 create/inspect/stop/verifyStopped/destroy；关闭自动重启，先保存证据再删除。
-- [ ] 实现[不依赖控制进程存活的硬期限](../specs/2026-09-24-isolated-tool-execution-design.md#deadline)：受保护 init 计入镜像/runner 摘要，用和任务不同的非 root 用户运行；能力声明缺少这项保证时 `capabilities` 拒绝。负向探针沿用 P0 的结论，纳入资格矩阵。
-- [ ] 验证停止在 `setsid`、两次 fork、daemon 场景下覆盖整个环境，并区分：连错运行时、not-found、暂停、重启、超时和可信的已停止。
+- [x] 实现 create/inspect/stop/verifyStopped/destroy；关闭自动重启，先保存证据再删除。 2026-09-25 完成，见[P2 第一批的实现](../../../test/qualification/evidence/isolated-tool-execution/p2-container-lifecycle-01/README.md#implementation)：容器不自动重启；停止先写停止标记再整体停止；停止证明只在同一运行时实例上、容器已退出且未被重新启动时给出，证据带摘要保存在宿主上；删除前先保存证据和删除记录，删除后仍能按记录给出证明。
+- [x] 实现[不依赖控制进程存活的硬期限](../specs/2026-09-24-isolated-tool-execution-design.md#deadline)：受保护 init 计入镜像/runner 摘要，用和任务不同的非 root 用户运行；能力声明缺少这项保证时 `capabilities` 拒绝。负向探针沿用 P0 的结论，纳入资格矩阵。 2026-09-25 完成，见[P2 第一批的真实容器结果](../../../test/qualification/evidence/isolated-tool-execution/p2-container-lifecycle-01/README.md#qualification)：init 脚本计入 runner 摘要，按墙上时间计时，用 65532 用户运行，任务用 65534 用户；Mac 与 Hermes 上 8 秒期限分别在 8.7 秒和 9.1 秒整体停止，不会重启；任务向 init 发信号、读 init 内存、替换 init、修改时钟均失败。协调服务在能力声明缺少保证时拒绝，这一点 P1 已有测试。
+- [ ] 验证停止在 `setsid`、两次 fork、daemon 场景下覆盖整个环境，并区分：连错运行时、not-found、暂停、重启、超时和可信的已停止。 2026-09-25 进度，见[P2 第一批的真实容器结果](../../../test/qualification/evidence/isolated-tool-execution/p2-container-lifecycle-01/README.md#qualification)：两个平台上 `setsid`、两次 fork 和 `nohup` 启动的后台程序都随环境一起停止；连错运行时、被外部删除、暂停、证明后又被启动都不算已停止，命令超时由单元测试覆盖。运行时本身（OrbStack 或 Hermes 的 Docker）重启后的核实没有测，因为会影响机器上的其他容器，需要另行安排。
 - [ ] 用真实浏览器测试样例验证进程、profile、下载和出口一起被管住；没有登记浏览器后端的产品入口继续拒绝。
 - [ ] 按 [ADR 0032](../../adr/0032-original-directory-disk-and-sensitive-file-limits.md#decision) 和 [Spec 的平台门禁](../specs/2026-09-24-isolated-tool-execution-design.md#host-mount-gate)实现原目录模式：先写验收再实现宿主一侧的磁盘保护（剩余空间下限、固定间隔的增长观察、超限整体停止、观察不可用时拒绝），实测并记录下限、间隔和最大超出量；创建前遮挡已存在的受保护文件，其中有文件硬链接数大于 1 时拒绝；路径身份由宿主一侧解析。工作副本保持容量上限。资格记录写明磁盘保护不是硬性额度，不能签发“全面合格”。
-- [ ] 按 P0 确定的放置方式登记真实容器的资格验证入口；打开 opt-in 后运行时缺失必须失败，不能跳过。
+- [ ] 按 P0 确定的放置方式登记真实容器的资格验证入口；打开 opt-in 后运行时缺失必须失败，不能跳过。 2026-09-25 进度，见[P2 第一批的验证命令](../../../test/qualification/evidence/isolated-tool-execution/p2-container-lifecycle-01/README.md#verification)：`test/integration/container-execution-backend-qualification.test.ts` 已在 `ci/policy.json` 登记为 `kind: qualification`（项目 `qualification-container`），开关是 `HIMAWARI_CONTAINER_QUALIFICATION=1`，运行时由 `HIMAWARI_CONTAINER_DOCKER_CLI` 与 `HIMAWARI_CONTAINER_DOCKER_HOST` 指定；打开开关而运行时不存在时 5 项全部失败。`scripts/ci/quality.mjs` 检查项、`qualify:*` 命令和 `quality.yml` 的 Linux 任务尚未添加。
 
 完成条件：可信后端合同和实机策略矩阵通过；资格严格绑定版本、镜像和模式。此时仍不切换产品的默认路径。
 
@@ -492,7 +492,7 @@ date: "2026-09-24"
 | 环境合同与持久化（针对性） | `npx vitest run --config vitest.workspace.ts --project contracts packages/execution-contracts/test/execution-v2.contract.test.ts`；新增的环境测试使用同一个 project |
 | 既有释放与恢复回归 | `npx vitest run --config vitest.workspace.ts --project integration test/integration/sqlite-sandbox-execution-v2.test.ts test/integration/sandbox-resource-recovery-scheduling.test.ts test/integration/sandbox-control-evidence.test.ts` |
 | 新用户路径（针对性，不需要真实运行时） | `npm run test:e2e -- test/e2e/isolated-tool-execution.test.ts --reporter=default --reporter=json --outputFile=test/qualification/evidence/isolated-tool-execution/<run-id>/focused.json` |
-| 真实容器资格验证 | P2 登记后使用新的 `qualify:*` 入口和它的 opt-in 环境变量；名称和命令在登记时写回本表，登记前不存在 |
+| 真实容器资格验证 | 2026-09-25 已登记 Vitest 项目 `qualification-container`：`HIMAWARI_CONTAINER_QUALIFICATION=1 HIMAWARI_CONTAINER_DOCKER_CLI=<docker 路径> HIMAWARI_CONTAINER_DOCKER_HOST=<unix:// 或 ssh:// 地址> HIMAWARI_CONTAINER_EVIDENCE_PATH=<输出文件> npx vitest run --config vitest.workspace.ts --project qualification-container`，用法见 [P2 第一批的验证命令](../../../test/qualification/evidence/isolated-tool-execution/p2-container-lifecycle-01/README.md#verification)。`scripts/ci/quality.mjs` 的检查项和对应的 `qualify:*` 命令尚未添加，添加后写回本表 |
 | 最终完整 E2E | `npm run test:e2e -- --reporter=default --reporter=json --outputFile=test/qualification/evidence/isolated-tool-execution/<run-id>/e2e.json`，再加上一行的真实容器资格验证 |
 | 项目必需的静态检查与构建 | `npm run check`、`npm run build` |
 | 合同、集成、Pi 与项目测试 | `npm run test:contracts`、`npm run test:integration`、`npm run check:pi-compat`、`npm test`；输入没变的通过结果可以复用，不无故重复运行 |

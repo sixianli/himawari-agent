@@ -208,7 +208,8 @@
         "test/integration/scale-qualification.test.ts",
         "test/integration/thread-scale-qualification.test.ts",
         "test/integration/openrouter-generation-live.test.ts",
-        "test/integration/openrouter-embedding-live.test.ts"
+        "test/integration/openrouter-embedding-live.test.ts",
+        "test/integration/container-execution-backend-qualification.test.ts"
       ],
       "fileParallelism": false
     },
@@ -259,6 +260,13 @@
       "project": "qualification-embedding-live",
       "reason": "真实向量 provider 需要单独凭据与授权",
       "allowedModifiers": ["skipIf"]
+    },
+    {
+      "path": "test/integration/container-execution-backend-qualification.test.ts",
+      "kind": "qualification",
+      "project": "qualification-container",
+      "reason": "真实容器运行时的资格验证依赖显式 opt-in 与可用的 Docker 兼容运行时",
+      "allowedModifiers": ["skip"]
     },
     {
       "path": "test/fixtures/durable-phase-child.test.ts",
