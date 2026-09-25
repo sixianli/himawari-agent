@@ -5,6 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md, docs/adr/0026-job-scoped-network-egress.md"
+amended_by: "docs/adr/0032-original-directory-disk-and-sensitive-file-limits.md"
 date: "2026-09-24"
 ---
 
@@ -96,7 +97,7 @@ Browser 同样进入 Execution Plane：它的网络、下载、文件、cookie�
 | Network | 默认拒绝，按授权使用 allowlist、egress proxy 或等价机制；必须实际阻断绕过代理的直连、私网/元数据服务及未授权出口，而非只设置代理环境变量 |
 | Secrets | 不无条件暴露长期 credentials；优先 scoped、short-lived、brokered 或 proxy-mediated 凭据，绑定目标、任务、用途和期限；撤销与停止联动 |
 | Privileges | 默认 non-root、非 privileged，最小 capabilities、no-new-privileges，使用适当 namespace、syscall 与 IPC 限制；任务不得取得 runtime 管理权或 Host root |
-| Resources | 明确 CPU、memory、process count、timeout 和 disk / workspace 额度；所需限制不可强制时拒绝相应执行模式，不能把进程采样等同硬资源边界 |
+| Resources | 明确 CPU、memory、process count、timeout 和 disk / workspace 额度；所需限制不可强制时拒绝相应执行模式，不能把进程采样等同硬资源边界。原目录模式下挂载的用户工作目录改用非硬性磁盘保护，见 [ADR 0032](0032-original-directory-disk-and-sensitive-file-limits.md#decision) |
 
 backend 不存在、未启动、health check 失败、environment 创建失败或 stop / inspect 无法确认时，返回明确、可恢复、可审计的错误；**禁止静默 fallback 到 Host execution**。恢复 backend 可用性不构成重放工具或重新消费批准的许可。
 

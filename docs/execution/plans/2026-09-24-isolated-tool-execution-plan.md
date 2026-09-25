@@ -12,7 +12,7 @@ date: "2026-09-24"
 
 **继承的产品合同：** [SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
 
-**架构决定：** [SOURCE: docs/adr/0031-isolated-tool-execution.md]
+**架构决定：** [SOURCE: docs/adr/0031-isolated-tool-execution.md]；原目录模式的磁盘保护与敏感文件遮挡范围由 [SOURCE: docs/adr/0032-original-directory-disk-and-sensitive-file-limits.md] 部分修正
 
 **目标：** 从现在“每次工具调用各起一套进程级沙箱（SRT / Job Host）”的方式，迁移到“一轮对话一个隔离环境”；不破坏现有的授权、结果和永久释放记录，并以“整个环境确实已停止”的证明，决定何时把工作目录交给别的任务。
 
@@ -332,7 +332,7 @@ date: "2026-09-24"
 - [x] 核查候选 Docker 兼容运行时能否整体停止环境、关闭自动重启、给出可核对的环境身份，以及它的策略和资源能力；`docker info` 成功不算资格验证。镜像、挂载方式和工具链都算资格验证的输入。2026-09-25 在 Mac + OrbStack 2.2.3 和 Hermes（Ubuntu 22.04 + Docker 29.6.1）上用同一脚本实测，见[P0 平台探针结果](../../../test/qualification/evidence/isolated-tool-execution/p0-platform-probe-01/README.md#results)：两个平台都能整体停止 `setsid`、两次 fork 和后台写入程序，重启策略为 `no` 时不复活，任务私有临时目录额度生效；挂载目录没有运行时额度，Hermes 的 `--storage-opt` 被接受却不生效。运行时重启后的行为留到 P2。
 - [ ] 按转交表核对旧 55 项任务的代码和证据，确定现有测试对原 68 项验收和 ITE-01～21 的覆盖与缺口，建立本计划的验收记录；不用旧的通过日志证明新环境。
 - [ ] 用可重复运行的测试样例留存三条基线：“每次调用各算一个环境”“Mac 上已启动环境的停止结果为 unknown”“`lease` 阻塞”。历史 `setsid` 证据可以作为动机，但新的前后对比要有本次日志。
-- [ ] **原目录模式平台门禁**（原在 P2 末尾，已前移）：在 Mac + 候选运行时和 Linux 上分别核查：挂进容器的工作目录能否强制磁盘额度、授权目录下嵌套的敏感文件能否隔离、大小写/硬链接/inode 身份在宿主和容器里是否一致。任一平台无法强制额度时，按 [Spec 的平台门禁](../specs/2026-09-24-isolated-tool-execution-design.md#host-mount-gate)停下来请用户二选一；结论出来之前，该平台不启用原目录模式。2026-09-25 实测结论见[门禁结果](../../../test/qualification/evidence/isolated-tool-execution/p0-platform-probe-01/README.md#host-mount-gate)：两个平台的容器运行时都不能给挂载目录限额；按路径遮挡敏感文件挡不住另一个硬链接名和启动后新增的文件；Mac 的 inode 编号与宿主不同，两个平台对指向目录外的符号链接解释不同，需由宿主一侧解析。已停下来等用户选择，原目录模式在两个平台都不启用。
+- [x] **原目录模式平台门禁**（原在 P2 末尾，已前移）：在 Mac + 候选运行时和 Linux 上分别核查：挂进容器的工作目录能否强制磁盘额度、授权目录下嵌套的敏感文件能否隔离、大小写/硬链接/inode 身份在宿主和容器里是否一致。任一平台无法强制额度时，按 [Spec 的平台门禁](../specs/2026-09-24-isolated-tool-execution-design.md#host-mount-gate)停下来请用户二选一；结论出来之前，该平台不启用原目录模式。2026-09-25 实测结论见[门禁结果](../../../test/qualification/evidence/isolated-tool-execution/p0-platform-probe-01/README.md#host-mount-gate)：两个平台的容器运行时都不能给挂载目录限额；按路径遮挡敏感文件挡不住另一个硬链接名和启动后新增的文件；Mac 的 inode 编号与宿主不同，两个平台对指向目录外的符号链接解释不同，需由宿主一侧解析。用户同日选择 (b) 非硬性磁盘保护，并决定运行期间新建的敏感文件不遮挡、改为审批时告知，记录在 [ADR 0032](../../adr/0032-original-directory-disk-and-sensitive-file-limits.md#decision)；具体规则见 [Spec 的平台门禁](../specs/2026-09-24-isolated-tool-execution-design.md#host-mount-gate)。
 - [x] **硬期限可行性**：用受保护 init 的原型做负向探针：任务用户尝试 kill、ptrace、替换 init 或修改时钟；实测主机休眠和虚拟机挂起时的期限行为。探针不成立的运行时不能进入 P2 的资格路线，另找等价机制并记录。2026-09-25 结论见[硬期限与休眠](../../../test/qualification/evidence/isolated-tool-execution/p0-platform-probe-01/README.md#deadline)：init 与任务使用不同的非 root 用户时，任务的 kill、读 init 内存（与 ptrace 同类权限检查）、替换或删除 init、修改时钟全部被拒绝，到期后整个环境停止；Mac 休眠 542 秒时，按运行时间计时的 `sleep` 期限被推迟同样时长，按墙上时间计时的 init 准时结束。因此 init 必须按墙上时间计算到期。Hermes 的休眠或挂起、真实 ptrace 附加未测。
 - [ ] 确定真实容器场景的测试放置方式：沿用现有 `qualify:scale` 的做法（`scripts/ci/quality.mjs`、`ci/quality-policy.json`、`ci/policy.json` 中 `kind: qualification` 的登记，以及显式的 opt-in 环境变量），并决定 Linux 场景是否在 GitHub `ubuntu-24.04` 上作为单独任务运行；是否设为必需检查按当时的 CI 策略提出，不在本计划中预设。
 
@@ -371,7 +371,7 @@ date: "2026-09-24"
 - [ ] 实现[不依赖控制进程存活的硬期限](../specs/2026-09-24-isolated-tool-execution-design.md#deadline)：受保护 init 计入镜像/runner 摘要，用和任务不同的非 root 用户运行；能力声明缺少这项保证时 `capabilities` 拒绝。负向探针沿用 P0 的结论，纳入资格矩阵。
 - [ ] 验证停止在 `setsid`、两次 fork、daemon 场景下覆盖整个环境，并区分：连错运行时、not-found、暂停、重启、超时和可信的已停止。
 - [ ] 用真实浏览器测试样例验证进程、profile、下载和出口一起被管住；没有登记浏览器后端的产品入口继续拒绝。
-- [ ] 按 P0 的原目录门禁结论实现挂载模式：已取得资格的平台启用原目录挂载并强制额度；没取得资格的平台只提供有容量上限的工作副本或拒绝，不能签发“全面合格”。
+- [ ] 按 [ADR 0032](../../adr/0032-original-directory-disk-and-sensitive-file-limits.md#decision) 和 [Spec 的平台门禁](../specs/2026-09-24-isolated-tool-execution-design.md#host-mount-gate)实现原目录模式：先写验收再实现宿主一侧的磁盘保护（剩余空间下限、固定间隔的增长观察、超限整体停止、观察不可用时拒绝），实测并记录下限、间隔和最大超出量；创建前遮挡已存在的受保护文件，其中有文件硬链接数大于 1 时拒绝；路径身份由宿主一侧解析。工作副本保持容量上限。资格记录写明磁盘保护不是硬性额度，不能签发“全面合格”。
 - [ ] 按 P0 确定的放置方式登记真实容器的资格验证入口；打开 opt-in 后运行时缺失必须失败，不能跳过。
 
 完成条件：可信后端合同和实机策略矩阵通过；资格严格绑定版本、镜像和模式。此时仍不切换产品的默认路径。
@@ -440,7 +440,7 @@ date: "2026-09-24"
 
 - [ ] 保留已实现的 Run/Trace/资源显示，补齐所有会话的“需要处理”（needsAttention）、文件阶段，以及统一的原因、可用动作、效果和版本号；顶部、工具行、Stop 按钮和红点读取同一份后端事实。
 - [ ] 验证这些状态：未派发、部分生效、停止中、unknown/阻塞、已释放但结果待送达；不把 Run.cancelled 当成环境已停止，不无限转圈，不抹掉成功结果。
-- [ ] 会话内的审批卡片按 [Spec 的环境权限上限与换新环境](../specs/2026-09-24-isolated-tool-execution-design.md#envelope)显示当前环境已有的能力，以及换新环境时会被停掉的后台程序；凭据进入容器时显示“这次调用期间，环境里的其他程序也能使用它”；自动审查批准的扩权会停掉后台程序时，会话中明确显示这些程序。不新增独立审批入口。
+- [ ] 会话内的审批卡片按 [Spec 的环境权限上限与换新环境](../specs/2026-09-24-isolated-tool-execution-design.md#envelope)显示当前环境已有的能力，以及换新环境时会被停掉的后台程序；凭据进入容器时显示“这次调用期间，环境里的其他程序也能使用它”；授权原目录时写明“运行期间新放进这个目录的敏感文件，本轮任务能读到”（[ADR 0032](../../adr/0032-original-directory-disk-and-sensitive-file-limits.md#decision)）；自动审查批准的扩权会停掉后台程序时，会话中明确显示这些程序。不新增独立审批入口。
 - [ ] 补齐审查、批准、排队、准备、执行、核验、清理各阶段的真实起止时间和并行区间，刷新或恢复后显示最终时长；没有数据来源的就显示“不可用”。
 - [ ] 扩展现有的 Playwright 测试：320/390/1024/1440 四种宽度、明暗主题、200% 缩放、键盘操作、长路径和窄屏下的动作可达；每个场景保留 trace、断言和持久结果。
 - [ ] 通过真实链路“Gateway → ActionPolicy → SQLite → 认证 Worker → 隔离环境 → 文件 → 页面恢复”验证：首次打开立即发送、配置慢或连接失败后恢复、重复发送、创建中切换、断线期间批准或完成、两台设备竞争、撤权以及停止结果 unknown。模型输入可以用受控数据，但准入、文件、停止和状态回传不能用模拟代替。
@@ -588,7 +588,7 @@ date: "2026-09-24"
 
 ## 2026-09-25 审阅修订记录
 
-2026-09-25 共修订三次，都只改文档，没有实施代码、没有运行产品测试或容器探针。上方“计划转交自审记录”保留 2026-09-24 的原结论，其中“ITE-01～15”是当时的范围。
+2026-09-25 共修订四次。前三次只改文档，没有实施代码、没有运行产品测试或容器探针；第四次依据同日 P0 的容器探针实测和用户决定修订，仍没有实施产品代码。上方“计划转交自审记录”保留 2026-09-24 的原结论，其中“ITE-01～15”是当时的范围。
 
 | 审阅发现或用户决定 | 修订内容 |
 | --- | --- |
@@ -602,7 +602,8 @@ date: "2026-09-24"
 | 引用本机未安装的 `maintain-verification-skill` | P8 改为按项目 verification skill 自身的说明维护，该技能不再是前置依赖 |
 | **用户 2026-09-25 确认的七项决定**（第二次修订） | ① 环境权限上限只增不减：初始上限取本轮第一个调用获准的范围，扩权一律换新环境，新上限 = 旧上限 + 新批准的能力，审批时列出会被停掉的后台程序；② “环境最多能做什么”和“这条命令要不要问”分开判断，删除“任意代码调用须覆盖整个上限”，每次审批展示当前环境能力；③ 自动审查只能批准委托清单里事先列好的扩权，写入新目录、使用凭据、访问任意外网必须由人批准，确定初始上限时用同一套分类；④ web_search 在网络辅助环境运行，不计入上限；⑤ 撤权或过期时换成更小上限的新环境，最早到期的能力先生效；⑥ 凭据每次由人批准、只给那一次调用，优先在环境外的专用执行程序中完成，必须进容器时先停后台程序、用后立即撤销并在审批中提示；⑦ 自动审查批准的扩权会停掉后台程序时，在会话中明确显示。落实位置：Spec 改写[环境权限上限与换新环境](../specs/2026-09-24-isolated-tool-execution-design.md#envelope)，新增[谁可以批准扩权](../specs/2026-09-24-isolated-tool-execution-design.md#expansion-approval)、[凭据的使用方式](../specs/2026-09-24-isolated-tool-execution-design.md#credentials)，改写 ITE-10、ITE-16，新增 ITE-20、ITE-21；workspace Spec [4.1 审批决定](../specs/2026-09-16-workspace-authorization-lifecycle-design.md#approval)新增“本轮环境扩权”决定类型（验收为 ITE-20，不新增 R 编号）；本计划更新 P1、P2、P3 的任务和覆盖的 ITE，P5 新增“预列扩权清单”任务。同时把 Spec、本计划和 workspace Spec 新增文字改成大白话，并在两份文档开头增加术语说明 |
 | **用户 2026-09-25 的补充决定**（第三次修订） | 由人作出、仍然有效、明确覆盖该能力的范围授权，可以代替扩权时的当次人工确认，不再询问；自动审查作出的授权不算，凭据仍每次由人确认。落实位置：Spec [谁可以批准扩权](../specs/2026-09-24-isolated-tool-execution-design.md#expansion-approval) 写明三个条件（由人作出、仍然有效、明确覆盖）以及期限跟随该授权，ITE-20 增加对应断言；workspace Spec 4.1 第 2 条同步；本计划 P1、P3 的任务同步 |
+| **P0 实测后用户 2026-09-25 的两项决定**（第四次修订） | P0 实测两个平台都不能给挂载目录限额，按路径遮挡挡不住另一个硬链接名和启动后新增的文件。用户选择非硬性磁盘保护，并接受运行期间新建的敏感文件不遮挡、改为审批时告知。落实位置：新增 [ADR 0032](../../adr/0032-original-directory-disk-and-sensitive-file-limits.md) 部分修正 ADR 0031；Spec 的[平台门禁](../specs/2026-09-24-isolated-tool-execution-design.md#host-mount-gate)、文件规则、[硬期限](../specs/2026-09-24-isolated-tool-execution-design.md#deadline)（按墙上时间到期）以及 ITE-07、ITE-09 同步；本计划 P0 勾选门禁与硬期限两项，P2 挂载任务和 P6 审批卡片任务同步 |
 
-ADR 0031 的决定不变；workspace Spec 只改了 4.1 的自动审查规则和关联的 ITE 范围（ITE-01～21）。尚待用户决定的只有平台门禁在 P0 实测后可能触发的二选一。
+ADR 0031 只由 ADR 0032 部分修正原目录模式的磁盘额度和敏感文件遮挡范围，其余决定不变；workspace Spec 只改了 4.1 的自动审查规则和关联的 ITE 范围（ITE-01～21），W20 保持不变。平台门禁的二选一已由用户决定。
 
 [↑ 返回阅读导航](#contents)
