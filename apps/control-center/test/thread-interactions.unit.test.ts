@@ -438,6 +438,9 @@ describe("thread control center interactions", () => {
     expect(container.querySelector(".tool-record .step-status")?.textContent).toContain(
       messages["chat.phase.unresolved"],
     );
+    expect(container.querySelector(".execution-next-action")?.textContent).toContain(
+      messages["chat.nextAction.unresolved"],
+    );
     expect(container.querySelector(".turn-activity .run-indicator")).toBeNull();
     expect(container.querySelector('button[aria-label="停止"]')).toBeNull();
     await input(container.querySelector("textarea"), "Do not submit another Run yet");
@@ -469,6 +472,31 @@ describe("thread control center interactions", () => {
     ).toBeGreaterThanOrEqual(2);
     expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
     expect(container.textContent).toContain("Retained output");
+    state = {
+      ...state,
+      revision: "state-reason",
+      displayPhase: "not_dispatched",
+      reasonCode: "WORKER_DEADLINE_EXCEEDED",
+      availableActions: [],
+      operations: [
+        {
+          itemId: "call",
+          displayPhase: "not_dispatched",
+          reasonCode: "WORKER_DEADLINE_EXCEEDED",
+          lastObservedAt: NOW,
+          executionMilliseconds: null,
+        },
+      ],
+      effectSummary: [{ itemId: "call", outcome: "not_dispatched" }],
+    };
+    await render();
+    await refresh();
+    expect(container.querySelector(".tool-record .step-status")?.textContent).toContain(
+      messages["chat.reason.deadlineExceeded"],
+    );
+    expect(container.querySelector(".execution-next-action")?.textContent).toContain(
+      messages["chat.nextAction.notDispatched"],
+    );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });

@@ -1,17 +1,21 @@
-import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
+import type {
+  ThreadExecutionRecord,
+  ThreadExecutionState,
+} from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
 import {
-  executionFailureMessage,
-  executionStateLabel,
   authorizationReviewSteps,
-  executionToolPhase,
   executionActivity,
+  executionFailureMessage,
   executionItems,
   executionItemWorkTime,
+  executionNextAction,
+  executionStateLabel,
   executionTime,
+  executionToolPhase,
+  type RunSummary,
   recordedInterval,
   thinkingSteps,
-  type RunSummary,
 } from "../src/execution-view.js";
 
 const record = (
@@ -39,6 +43,74 @@ const run: RunSummary = {
   updatedAt: new Date(100000).toISOString(),
 };
 describe("durable execution presentation", () => {
+  it.each([
+    {
+      displayPhase: "unresolved",
+      availableActions: [],
+      effectSummary: [{ itemId: "call", outcome: "unknown" }],
+      expected: "chat.nextAction.unresolved",
+    },
+    {
+      displayPhase: "unresolved",
+      availableActions: ["stop"],
+      effectSummary: [{ itemId: "call", outcome: "unknown" }],
+      expected: "chat.nextAction.stop",
+    },
+    {
+      displayPhase: "unresolved",
+      availableActions: ["retry_cleanup"],
+      effectSummary: [{ itemId: "call", outcome: "unknown" }],
+      expected: "chat.nextAction.retryCleanup",
+    },
+    {
+      displayPhase: "not_dispatched",
+      availableActions: [],
+      effectSummary: [{ itemId: "call", outcome: "not_dispatched" }],
+      expected: "chat.nextAction.notDispatched",
+    },
+    {
+      displayPhase: "stopped",
+      availableActions: [],
+      effectSummary: [{ itemId: "call", outcome: "succeeded" }],
+      expected: "chat.nextAction.stoppedWithResults",
+    },
+    {
+      displayPhase: "failed",
+      availableActions: [],
+      effectSummary: [
+        { itemId: "call:one", outcome: "succeeded" },
+        { itemId: "call:two", outcome: "failed" },
+      ],
+      expected: "chat.nextAction.partial",
+    },
+    {
+      displayPhase: "failed",
+      availableActions: [],
+      effectSummary: [{ itemId: "call", outcome: "failed" }],
+      expected: "chat.nextAction.failed",
+    },
+    {
+      displayPhase: "completed",
+      availableActions: [],
+      effectSummary: [{ itemId: "call", outcome: "succeeded" }],
+      expected: undefined,
+    },
+  ] as const)("shows a safe next action for $displayPhase execution", (scenario) => {
+    const state: ThreadExecutionState = {
+      runRevision: 1,
+      revision: "state-1",
+      lastObservedAt: new Date(1000).toISOString(),
+      displayPhase: scenario.displayPhase,
+      reasonCode: "EXECUTION_STATE",
+      availableActions: scenario.availableActions,
+      needsAttention: false,
+      timing: { reviewMilliseconds: null, executionMilliseconds: null },
+      effectSummary: scenario.effectSummary,
+      operations: [],
+    };
+    expect(executionNextAction(state)).toBe(scenario.expected);
+  });
+
   it("localizes resource facts without requiring a new wire phase or inferring release", () => {
     expect(executionStateLabel("unresolved", "RESOURCE_STOP_IN_PROGRESS")).toBe(
       "chat.resource.stopping",
@@ -49,6 +121,18 @@ describe("durable execution presentation", () => {
     expect(executionStateLabel("preparing", "RESOURCE_QUEUE_WAITING")).toBe("chat.resource.queued");
     expect(executionStateLabel("preparing", "RESOURCE_EXECUTION_OBSERVED")).toBe(
       "chat.resource.executing",
+    );
+    expect(executionStateLabel("failed", "WORKER_DEADLINE_EXCEEDED")).toBe(
+      "chat.reason.deadlineExceeded",
+    );
+    expect(executionStateLabel("failed", "WORKER_RESOURCE_CEILING_CHANGED")).toBe(
+      "chat.reason.resourceCeilingChanged",
+    );
+    expect(executionStateLabel("failed", "WORKER_AUTHORIZATION_DENIED")).toBe(
+      "chat.reason.authorizationDenied",
+    );
+    expect(executionStateLabel("failed", "SANDBOX_COMMAND_EFFECT_UNVERIFIED")).toBe(
+      "chat.reason.commandEffectUnverified",
     );
     expect(executionStateLabel("unresolved", "RESOURCE_STATE_UNCONFIRMED")).toBe(
       "chat.phase.unresolved",

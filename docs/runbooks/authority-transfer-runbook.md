@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:2a825ff4aba4ab313b318c64d3714403f1bffa40f2a7323f7ddbdfd12624c590"
+contract_sha256: "sha256:7ad6a565e101871dc0a059985f5084cf51ee7015c5104d96d18a4e36a2421c5c"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -321,6 +321,8 @@ Schema 34 新增 `authorization_reservations` 并为使用记录增加请求身�
 本次调整增加 Worker 工具实际起止事件和 Pi 可观测思考边界的展示投影，沿用原有 Trace/Payload 存储，不增加数据库迁移。备份、恢复及权威迁移仍须完整保留这些记录；缺少旧时长边界的历史显示“暂无时长”，不得在恢复时补造计时或重放工具。原有停止、安装资格、加密与权威检查程序继续适用。
 
 聊天页的新建先进入本地草稿，首次发送才创建持久会话。审批在所属轮次处理，侧栏红点提醒；归档管理位于齿轮设置的“会话与数据”。联网搜索开关与会话内“记住我的选择”复用原来的受限搜索授权合同。设置不展示内部 checkpoint、修订和连接绿点。安装后须验证草稿恢复、幂等重试、当前轮审批以及真实模型支持的强度档位，不能以原型演示数据作为运行证据。语言切换应保持设置弹窗及当前页面状态。
+
+执行状态的下一步提示只读取持久 `ThreadExecutionState` 和当前有效 `availableActions`。迁移后的旧会话不能沿用来源宿主仍有效的 Stop/清理操作、旧 Grant 或旧释放推断；目标应按当前权威重算动作。命令非零退出且效果未断言时保留确定失败，同时提示工作区可能已有改动、效果尚未核验，不自动重发。当前本地只有状态与页面单测，真实跨权威页面验收尚未完成；静态 Runbook 检查也不证明目标服务已具备这些结果。
 
 
 自动标题沿用既有 Thread、受保护 Payload 和模型费用账本，不新增 schema。迁移须共同保留 `threads.title_ref`、标题来源与 revision、标题 Payload，以及 `thread-title:<runId>` 对应的调用身份和费用状态；目标不能因标题缺失清除 started/unknown 记录或重放源请求。正常停机先停止 Run 循环，再等待已发起的标题请求结束；标题请求最多等待 20 秒，仍受配置的更短期限约束。强制中断后的进程内标题队列不属于迁移数据，目标以已提交状态为准。已有标题和手动改名优先，不在 import/activate 时批量请求模型。

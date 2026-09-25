@@ -1,27 +1,28 @@
-import type { ContentPreviewValue } from "./content-preview.js";
-import { ActionButton } from "./primitives.js";
-import { ToolIcon } from "./tool-icon.js";
 import type {
   ThreadExecutionRecord,
   ThreadExecutionState,
 } from "@himawari-agent/gateway-contracts";
 import { useEffect, useState } from "react";
 import {
+  authorizationReviewSteps,
   duration,
   executionActivity,
-  executionStateLabel,
-  authorizationReviewSteps,
   executionFailureMessage,
   executionItems,
-  executionToolPhase,
-  recordedInterval,
-  thinkingSteps,
+  executionNextAction,
+  executionStateLabel,
   executionTime,
+  executionToolPhase,
   isTerminalRun,
   type RunSummary,
+  recordedInterval,
+  thinkingSteps,
 } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
+import type { ContentPreviewValue } from "./content-preview.js";
+import { ActionButton } from "./primitives.js";
+import { ToolIcon } from "./tool-icon.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
 function statusId(run: RunSummary): MessageId {
@@ -110,6 +111,7 @@ export function ExecutionProcess({
     : stateAvailable
       ? "chat.recordUnavailable"
       : undefined;
+  const nextAction = state ? executionNextAction(state) : undefined;
   return (
     <>
       {!isTerminalRun(run) || state?.displayPhase === "unresolved" ? (
@@ -137,6 +139,7 @@ export function ExecutionProcess({
       {run.status === "failed" ? (
         <p role="alert">{message(executionFailureMessage(records))}</p>
       ) : null}
+      {nextAction ? <output className="execution-next-action">{message(nextAction)}</output> : null}
       <details
         className="turn-process"
         open={expanded}

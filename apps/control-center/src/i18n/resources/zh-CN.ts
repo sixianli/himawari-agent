@@ -147,6 +147,18 @@ export const messages = {
   "chat.resource.verifying": "正在核验原请求",
   "chat.resource.queued": "正在等待资源",
   "chat.resource.executing": "正在执行",
+  "chat.reason.admissionConflict": "准入时发现资源或请求状态冲突",
+  "chat.reason.authorizationDenied": "执行权限已失效或不允许",
+  "chat.reason.authorityUnavailable": "当前执行权不可用",
+  "chat.reason.admissionResourceMissing": "执行所需资源已不存在",
+  "chat.reason.admissionAlreadyRecorded": "请求已记录，请先检查原请求状态",
+  "chat.reason.operationUnavailable": "当前执行方式不可用",
+  "chat.reason.admissionUnavailable": "执行准入服务暂不可用",
+  "chat.reason.deadlineExceeded": "执行期限已到，操作未派发",
+  "chat.reason.resourceCeilingChanged": "允许的资源上限已变化，操作未派发",
+  "chat.reason.directoryTargetChanged": "目录位置或目标已变化",
+  "chat.reason.fileVersionConflict": "文件版本已变化，候选未发布",
+  "chat.reason.commandEffectUnverified": "命令执行失败；工作区文件可能已变化，具体效果尚未核验",
   "chat.phase.unresolved": "结果未确认",
   "chat.phase.preparing": "正在准备",
   "chat.phase.started": "执行中",
@@ -156,6 +168,18 @@ export const messages = {
   "chat.phase.waiting": "等待确认",
   "chat.phase.stopped": "已停止",
   "chat.phase.unavailable": "记录不可用",
+  "chat.nextAction.unresolved": "结果仍未确认。在原资源核验为已释放之前，不要再次发起写操作。",
+  "chat.nextAction.stop": "结果仍未确认。先停止本轮并核验资源；确认释放前不要重试写操作。",
+  "chat.nextAction.retryCleanup":
+    "结果仍未确认。请使用“再次停止并检查清理”核验资源；确认释放前不要重试写操作。",
+  "chat.nextAction.notDispatched":
+    "本次操作没有派发。若仍需执行，请发起新请求；系统会重新检查当前权限和工作区状态。",
+  "chat.nextAction.stoppedWithResults":
+    "本轮已停止。下方保留着已完成的工具记录和结果；请先查看，再决定下一步。",
+  "chat.nextAction.partial":
+    "本轮失败前已有部分工具操作完成。请逐项查看结果；后续失败不会自动撤销先前操作。",
+  "chat.nextAction.failed":
+    "请查看失败操作的记录并核对工作区，再决定是否发起新请求；失败结果不证明副作用已撤销。",
   "appearance.title": "外观与主题色",
   "appearance.theme": "外观",
   "appearance.accent": "主题色",

@@ -160,6 +160,85 @@ function reject(): never {
   throw new ApplicationPortError(PORT_ERROR_CODES.HANDLE_REVOKED, "Runtime tool is not authorized");
 }
 
+function preDispatchFailure(error: unknown): { reasonCode: string; modelContent: string } {
+  if (error instanceof ApplicationPortError) {
+    switch (error.code) {
+      case PORT_ERROR_CODES.CONFLICT:
+        return {
+          reasonCode: "WORKER_ADMISSION_CONFLICT",
+          modelContent: "操作尚未派发：资源或请求状态发生冲突。",
+        };
+      case PORT_ERROR_CODES.HANDLE_REVOKED:
+        return {
+          reasonCode: "WORKER_AUTHORIZATION_DENIED",
+          modelContent: "操作尚未派发：执行权限已失效或不再允许本次操作。",
+        };
+      case PORT_ERROR_CODES.NOT_AUTHORITATIVE:
+        return {
+          reasonCode: "WORKER_AUTHORITY_UNAVAILABLE",
+          modelContent: "操作尚未派发：当前执行权不可用。",
+        };
+      case PORT_ERROR_CODES.NOT_FOUND:
+        return {
+          reasonCode: "WORKER_ADMISSION_RESOURCE_MISSING",
+          modelContent: "操作尚未派发：执行所需资源已不存在。",
+        };
+      case PORT_ERROR_CODES.DUPLICATE:
+        return {
+          reasonCode: "WORKER_ADMISSION_ALREADY_RECORDED",
+          modelContent: "操作尚未派发：该请求已被记录，请先检查原请求状态。",
+        };
+      case PORT_ERROR_CODES.INVALID_OPERATION:
+      case PORT_ERROR_CODES.OPERATION_NOT_INSTALLED:
+        return {
+          reasonCode: "WORKER_OPERATION_UNAVAILABLE",
+          modelContent: "操作尚未派发：当前执行方式不可用。",
+        };
+      case PORT_ERROR_CODES.PROVIDER_FAILURE:
+      case PORT_ERROR_CODES.INJECTED_FAILURE:
+        return {
+          reasonCode: "WORKER_ADMISSION_UNAVAILABLE",
+          modelContent: "操作尚未派发：执行准入服务暂不可用。",
+        };
+    }
+  }
+
+  const code = error instanceof Error ? error.message : "";
+  switch (code) {
+    case "WORKER_DEADLINE_EXCEEDED":
+      return {
+        reasonCode: code,
+        modelContent: "操作未派发：执行期限已到。请重新检查当前期限后再决定是否发起新请求。",
+      };
+    case "WORKER_RESOURCE_CEILING_CHANGED":
+      return {
+        reasonCode: code,
+        modelContent: "操作未派发：允许的资源上限已变化，请重新检查授权和资源上限。",
+      };
+    case "SANDBOX_PREPARATION_AUTHORITY_CHANGED":
+    case "SANDBOX_CHILD_SCOPE_EXCEEDED":
+      return {
+        reasonCode: "WORKER_AUTHORITY_UNAVAILABLE",
+        modelContent: "操作尚未派发：当前执行权或授权范围已变化。",
+      };
+    case "SANDBOX_DIRECTORY_GRANT_UNAVAILABLE":
+      return {
+        reasonCode: "WORKER_AUTHORIZATION_DENIED",
+        modelContent: "操作尚未派发：目录授权已失效或不可用。",
+      };
+    case "SANDBOX_DIRECTORY_MOVE_TARGET_CHANGED":
+      return {
+        reasonCode: "DIRECTORY_TARGET_CHANGED",
+        modelContent: "目录位置或目标已变化，本次操作未执行。请重新读取目录位置后提出新请求。",
+      };
+    default:
+      return {
+        reasonCode: "WORKER_NOT_DISPATCHED",
+        modelContent: "操作尚未派发，未开始执行。",
+      };
+  }
+}
+
 type SandboxAdmission = NonNullable<WorkerDelegationAdmissionServiceOptions["sandbox"]>;
 export type ProductionRuntimeSandbox = Omit<SandboxAdmission, "prepare"> & {
   readonly prepare: (
@@ -1178,23 +1257,16 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       }
     } catch (error) {
       forwardingClosed = true;
-      const conflict =
-        error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.CONFLICT;
       const fileConflict =
         error instanceof Error &&
         error.message === "SANDBOX_FILE_VERSION_CHANGED" &&
         ["write", "edit"].includes(handle.operation);
-      const directoryChanged =
-        error instanceof Error && error.message === "SANDBOX_DIRECTORY_MOVE_TARGET_CHANGED";
+      const classification = preDispatchFailure(error);
       const reasonCode = possiblySent
         ? "WORKER_RESULT_RECONCILIATION_REQUIRED"
         : fileConflict
           ? "FILE_VERSION_CONFLICT"
-          : directoryChanged
-            ? "DIRECTORY_TARGET_CHANGED"
-            : conflict
-              ? "WORKER_ADMISSION_CONFLICT"
-              : "WORKER_NOT_DISPATCHED";
+          : classification.reasonCode;
       outcome = possiblySent
         ? unknownResult()
         : fileConflict
@@ -1205,11 +1277,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
               resultRef: null,
               errorCode: reasonCode,
               externalActionId: null,
-              modelContent: directoryChanged
-                ? "目录位置或目标已变化，本次操作未执行。请重新读取目录位置后提出新请求。"
-                : conflict
-                  ? "操作尚未派发：资源或请求状态发生冲突。"
-                  : "操作尚未派发，未开始执行。",
+              modelContent: classification.modelContent,
             };
       let stopRequest: "not_requested" | "requested" | "unconfirmed" = "not_requested";
       let stopRequestError: string | null = null;
@@ -1360,13 +1428,16 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         externalActionId: completion?.externalActionId ?? null,
       };
     } else {
+      const commandEffectUnverified = completion.errorCode === "SANDBOX_COMMAND_EFFECT_UNVERIFIED";
       return {
         dispatchState: "accepted",
         outcome: completion.outcome,
         resultRef: null,
         errorCode: completion.errorCode,
         externalActionId: completion.externalActionId,
-        modelContent: "操作未确认成功。",
+        modelContent: commandEffectUnverified
+          ? "命令执行失败，但这不代表工作区没有变化；命令可能已修改工作区文件，具体效果尚未核验。请先检查工作区再决定下一步。"
+          : "操作未确认成功。",
       };
     }
   }

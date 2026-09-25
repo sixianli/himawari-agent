@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a009b9fe1e0e36977a6077a9e24a44d1246906c302c55a9f19aaab0400ca3d35"
+contract_sha256: "sha256:487fb81cbebb6878abc092c2dc78634885a3b1e333de6476351c386aee6b0298"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -111,6 +111,8 @@ Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认�
 轮次已取消、失败或完成后，如果某个工具只有准备事件而没有结束结果，页面显示“结果未确认”，不持续显示准备中；明确未派发的原证据仍显示“尚未派发”。缺少真实起止边界时不生成时长，刷新后沿用相同规则。
 
 新增的 `thread.execution_state` 状态查询只有服务配置声明 `executionStateAvailable` 时才由新页面使用；原事件查询保持严格兼容。安装验收须核对新页面与服务能力声明一致，整体与工具行共同保留未知结果，断线不会覆盖已完成事实；Stop/清理仍使用原 revision、权限和幂等入口。新查询仅从持久 Run/Trace 汇总已有事实，操作结果列表不是文件已回滚、资源已释放或所有后代已停止的证明。资源 journal、队列及全部阶段仍未完整接入，不能据此跳过本 Runbook 的平台与现场资格。本展示升级无新 migration，也不授权本机任务自动切换 Hermes。实现与本地证据见[统一状态接入记录](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-unified-state)。
+
+执行状态旁的下一步提示必须从持久 `ThreadExecutionState` 和当前 `availableActions` 得出；不得展示后端没有提供的 Stop/清理动作，不自动重发工具，也不推断失败已回滚或资源已释放。命令以非零码退出且效果未断言时，页面应保留“已失败”事实，同时说明工作区可能已有改动、具体效果尚未核验，并要求先检查工作区。安装复核须覆盖至少一个明确未派发、一个效果未知和一个非零命令退出场景，并核对刷新后的持久状态。当前本地通过了页面/状态单测，以及在模拟浏览器环境中渲染会话页面的组件测试（2026-09-25 复验）；完整安装资格与真实 Gateway→Worker→页面联合路径尚未通过，不能将这段提示视为已完成现场验收。实现证据见[P1 页面下一步记录](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p1-next-action)。
 
 
 Job Host 还在 DNS 解析前、拨号前通过原认证 Worker IPC 逐次核对 Agent 当前 scope，已有连接按 250 ms 周期重查；每次回复只供原检查使用，1500 ms 未答、撤销、断开或身份变化均拒绝并关闭出口。Worker 与 Job Host 必须来自匹配安装产物，不能用旧组件缺少核验回调作为继续联网的理由；TLS 内部请求不可见，周期核验不构成每个加密请求的原子授权。

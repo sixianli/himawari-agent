@@ -1,11 +1,11 @@
 import { ApplicationPortError, type RuntimeToolInvocation } from "@himawari-agent/application";
+import { piFileRecoveryOperationKey } from "@himawari-agent/execution-contracts";
 import { describe, expect, it, vi } from "vitest";
 import {
+  type ProductionRuntimeSandbox,
   ProductionRuntimeTools,
   type ProductionRuntimeToolsOptions,
-  type ProductionRuntimeSandbox,
 } from "../src/production-runtime-tools.js";
-import { piFileRecoveryOperationKey } from "@himawari-agent/execution-contracts";
 import {
   runtimeToolFixture as fixture,
   identities,
@@ -179,6 +179,25 @@ describe("ProductionRuntimeTools", () => {
     expect(await (await exposed(f)).execute(invocation)).toEqual(result);
     expect(f.options.invocations.consume).toHaveBeenCalledTimes(1);
   });
+  it.each([
+    ["PORT_HANDLE_REVOKED", "WORKER_AUTHORIZATION_DENIED"],
+    ["PORT_NOT_AUTHORITATIVE", "WORKER_AUTHORITY_UNAVAILABLE"],
+    ["PORT_NOT_FOUND", "WORKER_ADMISSION_RESOURCE_MISSING"],
+  ] as const)("keeps a safe reason for pre-dispatch refusal (%s)", async (portCode, reasonCode) => {
+    const f = fixture();
+    vi.spyOn(f.options.invocations, "consume").mockRejectedValue(
+      new ApplicationPortError(portCode, "private host path and token"),
+    );
+    const tool = await exposed(f);
+    const result = await tool.execute(invocation);
+    expect(result).toMatchObject({
+      dispatchState: "not_sent",
+      outcome: "failed",
+      errorCode: reasonCode,
+    });
+    expect(JSON.stringify(result)).not.toContain("private host path");
+    expect(f.request.mock.calls.some(([message]) => message.type === "work.execute")).toBe(false);
+  });
   it("never sends a late execute after delegation outlives the caller deadline", async () => {
     const f = fixture(10);
     const original = f.request.getMockImplementation();
@@ -192,7 +211,7 @@ describe("ProductionRuntimeTools", () => {
       return original(message);
     });
     const result = await (await exposed(f)).execute(invocation);
-    expect(result).toMatchObject({ outcome: "failed", errorCode: "WORKER_NOT_DISPATCHED" });
+    expect(result).toMatchObject({ outcome: "failed", errorCode: "WORKER_DEADLINE_EXCEEDED" });
     resume();
     // Flush the admitted continuation, then independently inspect sent requests.
     await new Promise((resolve) => setImmediate(resolve));
@@ -215,6 +234,25 @@ describe("ProductionRuntimeTools", () => {
       },
     });
     expect(maximumResourceCeiling).toHaveBeenCalledWith(invocation.capabilityRef, "1.0.0");
+  });
+  it("reports a tightened Worker ceiling as a distinct pre-dispatch reason", async () => {
+    const f = fixture();
+    let reads = 0;
+    const maximumResourceCeiling = vi.fn(async () => {
+      reads += 1;
+      return reads === 1
+        ? f.options.ceiling
+        : { ...f.options.ceiling, maxCpuTimeMs: f.options.ceiling.maxCpuTimeMs - 1 };
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, maximumResourceCeiling });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    const result = await tool.execute(invocation);
+    expect(result).toMatchObject({
+      dispatchState: "not_sent",
+      outcome: "failed",
+      errorCode: "WORKER_RESOURCE_CEILING_CHANGED",
+    });
+    expect(f.request.mock.calls.some(([message]) => message.type === "work.execute")).toBe(false);
   });
   it("offers a path request without a Handle and never dispatches it before authorization exists", async () => {
     const f = fixture();
@@ -302,6 +340,34 @@ describe("ProductionRuntimeTools", () => {
     ]);
     expect(await (await exposed(f)).execute(invocation)).toEqual(result);
     expect(f.request).toHaveBeenCalledTimes(2);
+  });
+  it("warns that a failed command may have changed the workspace", async () => {
+    const f = fixture();
+    const completeSandboxToolResult = vi.fn<
+      NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+    >(async (_input, delivery) => {
+      await delivery.assertDisclosure();
+      const completion = {
+        outcome: "failed" as const,
+        outputRef: null,
+        errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+        externalActionId: null,
+      };
+      await delivery.saveReceipt(completion);
+      return completion;
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+
+    expect(await tool.execute(invocation)).toMatchObject({
+      dispatchState: "accepted",
+      outcome: "failed",
+      errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+      modelContent: expect.stringContaining("命令可能已修改工作区文件"),
+    });
+    expect(
+      f.request.mock.calls.filter(([message]) => message.type === "work.execute"),
+    ).toHaveLength(1);
   });
   it.each([true, false])(
     "uses worker end timing only for settled effects (%s)",

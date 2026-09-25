@@ -335,15 +335,27 @@ export function executionStateLabel(
   phase: ThreadExecutionState["displayPhase"],
   reasonCode?: string,
 ): MessageId {
-  const resourceLabels: Readonly<Record<string, MessageId>> = {
+  const reasonLabels: Readonly<Record<string, MessageId>> = {
     RESOURCE_STOP_IN_PROGRESS: "chat.resource.stopping",
     RESOURCE_CHECK_IN_PROGRESS: "chat.resource.verifying",
     RESOURCE_QUEUE_WAITING: "chat.resource.queued",
     RESOURCE_EXECUTION_OBSERVED: "chat.resource.executing",
+    WORKER_ADMISSION_CONFLICT: "chat.reason.admissionConflict",
+    WORKER_AUTHORIZATION_DENIED: "chat.reason.authorizationDenied",
+    WORKER_AUTHORITY_UNAVAILABLE: "chat.reason.authorityUnavailable",
+    WORKER_ADMISSION_RESOURCE_MISSING: "chat.reason.admissionResourceMissing",
+    WORKER_ADMISSION_ALREADY_RECORDED: "chat.reason.admissionAlreadyRecorded",
+    WORKER_OPERATION_UNAVAILABLE: "chat.reason.operationUnavailable",
+    WORKER_ADMISSION_UNAVAILABLE: "chat.reason.admissionUnavailable",
+    WORKER_DEADLINE_EXCEEDED: "chat.reason.deadlineExceeded",
+    WORKER_RESOURCE_CEILING_CHANGED: "chat.reason.resourceCeilingChanged",
+    DIRECTORY_TARGET_CHANGED: "chat.reason.directoryTargetChanged",
+    FILE_VERSION_CONFLICT: "chat.reason.fileVersionConflict",
+    SANDBOX_COMMAND_EFFECT_UNVERIFIED: "chat.reason.commandEffectUnverified",
   };
   return (
-    (reasonCode && Object.hasOwn(resourceLabels, reasonCode)
-      ? resourceLabels[reasonCode]
+    (reasonCode && Object.hasOwn(reasonLabels, reasonCode)
+      ? reasonLabels[reasonCode]
       : undefined) ??
     ({
       preparing: "chat.phase.preparing",
@@ -359,4 +371,26 @@ export function executionStateLabel(
       not_dispatched: "chat.phase.notDispatched",
     }[phase] as MessageId)
   );
+}
+
+/** Give the owner a safe follow-up based only on durable execution facts. */
+export function executionNextAction(state: ThreadExecutionState): MessageId | undefined {
+  if (state.displayPhase === "unresolved") {
+    if (state.availableActions.includes("retry_cleanup")) return "chat.nextAction.retryCleanup";
+    if (state.availableActions.includes("stop")) return "chat.nextAction.stop";
+    return "chat.nextAction.unresolved";
+  }
+  if (state.displayPhase === "not_dispatched") return "chat.nextAction.notDispatched";
+  if (
+    state.displayPhase === "stopped" &&
+    state.effectSummary.some(
+      (effect) => effect.outcome === "succeeded" || effect.outcome === "failed",
+    )
+  )
+    return "chat.nextAction.stoppedWithResults";
+  if (state.displayPhase === "failed")
+    return state.effectSummary.some((effect) => effect.outcome === "succeeded")
+      ? "chat.nextAction.partial"
+      : "chat.nextAction.failed";
+  return undefined;
 }

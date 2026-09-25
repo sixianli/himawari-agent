@@ -3,11 +3,11 @@ import type {
   ThreadExecutionState,
 } from "@himawari-agent/gateway-contracts";
 import type { ThreadRunSummaryRecord } from "../ports/threads.js";
+import { threadCommandFingerprint } from "./thread-command-service.js";
 import type {
   ThreadExecutionResources,
   ThreadResourcePhase,
 } from "./thread-execution-resources.js";
-import { threadCommandFingerprint } from "./thread-command-service.js";
 
 // Keep the v3 wire enum readable by already installed clients. Detailed resource
 // facts travel through its existing reasonCode; old clients stay conservative.
@@ -16,6 +16,20 @@ function resourceDisplayPhase(phase: ThreadResourcePhase): ThreadExecutionState[
 }
 
 type Interval = readonly [number, number];
+const SAFE_TOOL_REASON_CODES = new Set([
+  "WORKER_ADMISSION_CONFLICT",
+  "WORKER_AUTHORIZATION_DENIED",
+  "WORKER_AUTHORITY_UNAVAILABLE",
+  "WORKER_ADMISSION_RESOURCE_MISSING",
+  "WORKER_ADMISSION_ALREADY_RECORDED",
+  "WORKER_OPERATION_UNAVAILABLE",
+  "WORKER_ADMISSION_UNAVAILABLE",
+  "WORKER_DEADLINE_EXCEEDED",
+  "WORKER_RESOURCE_CEILING_CHANGED",
+  "DIRECTORY_TARGET_CHANGED",
+  "FILE_VERSION_CONFLICT",
+  "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+]);
 
 /** Only complete persisted intervals qualify. Parallel intervals contribute their union. */
 function intervals(records: readonly ThreadExecutionRecord[], prefix: string): Interval[] {
@@ -81,6 +95,11 @@ export function projectThreadExecutionState(
     );
     if (!tool) continue;
     const marker = group.findLast((record) => record.name.startsWith("runtime.tool_outcome."));
+    const reason = group.findLast((record) => record.name.startsWith("runtime.tool_reason."));
+    const toolReasonCode =
+      reason && reason.sequence >= tool.sequence
+        ? reason.name.slice("runtime.tool_reason.".length)
+        : "";
     const outcome = marker && marker.sequence >= tool.sequence ? marker.name : "";
     const phase =
       tool.phase === "unavailable" || outcome === "runtime.tool_outcome.unresolved"
@@ -101,11 +120,15 @@ export function projectThreadExecutionState(
         phase === "unresolved"
           ? "TOOL_RESULT_UNCONFIRMED"
           : phase === "not_dispatched"
-            ? "TOOL_NOT_DISPATCHED"
+            ? SAFE_TOOL_REASON_CODES.has(toolReasonCode)
+              ? toolReasonCode
+              : "TOOL_NOT_DISPATCHED"
             : phase === "completed"
               ? "TOOL_SUCCEEDED"
               : phase === "failed"
-                ? "TOOL_FAILED"
+                ? SAFE_TOOL_REASON_CODES.has(toolReasonCode)
+                  ? toolReasonCode
+                  : "TOOL_FAILED"
                 : "TOOL_START_UNCONFIRMED",
       lastObservedAt: tool.occurredAt,
       executionMilliseconds: unionDuration(intervals(group, "runtime.tool_execution.")),

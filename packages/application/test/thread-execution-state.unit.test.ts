@@ -1,12 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
 import { createRunId } from "@himawari-agent/domain";
 import {
-  threadExecutionStateSchema,
   type ThreadExecutionRecord,
+  threadExecutionStateSchema,
 } from "@himawari-agent/gateway-contracts";
-import { projectThreadExecutionState } from "../src/services/thread-execution-state.js";
-import { ThreadExecutionProjection } from "../src/services/thread-execution-projection.js";
+import { describe, expect, it, vi } from "vitest";
 import type { ThreadRunSummaryRecord } from "../src/ports/threads.js";
+import { ThreadExecutionProjection } from "../src/services/thread-execution-projection.js";
+import { projectThreadExecutionState } from "../src/services/thread-execution-state.js";
 
 const at = (seconds: number) => new Date(Date.UTC(2026, 8, 20, 0, 0, seconds)).toISOString();
 const run: ThreadRunSummaryRecord = {
@@ -36,6 +36,29 @@ const record = (
 });
 
 describe("backend execution state", () => {
+  it.each([
+    ["WORKER_DEADLINE_EXCEEDED", "WORKER_DEADLINE_EXCEEDED"],
+    ["SANDBOX_COMMAND_EFFECT_UNVERIFIED", "SANDBOX_COMMAND_EFFECT_UNVERIFIED"],
+    ["/private/host/token", "TOOL_FAILED"],
+  ] as const)("projects only allowlisted tool failure reasons (%s)", (reason, expected) => {
+    const state = projectThreadExecutionState(
+      { ...run, status: "failed" },
+      [
+        record(1, "failed-call", "failed"),
+        record(2, "failed-call", "updated", `runtime.tool_reason.${reason}`),
+      ],
+      true,
+    );
+    expect(state.operations).toEqual([
+      expect.objectContaining({
+        itemId: "failed-call",
+        displayPhase: "failed",
+        reasonCode: expected,
+      }),
+    ]);
+    expect(threadExecutionStateSchema.parse(state)).toEqual(state);
+  });
+
   it("shows resource recovery while preserving the successful tool effect", () => {
     const state = projectThreadExecutionState(
       { ...run, status: "cancelled" },
@@ -387,6 +410,77 @@ describe("execution state history read boundary", () => {
       operations: [{ itemId: "first" }, { itemId: "last" }],
     });
     expect(read.mock.calls.map(([query]) => query.afterSequence)).toEqual([0, 1000]);
+  });
+  it("projects a safe product failure reason to the tool row without exposing raw diagnostics", async () => {
+    const payloadValues = new Map([
+      ["outer", { payloadRef: "tool-result" }],
+      [
+        "tool-result",
+        {
+          toolCallId: "deadline-call",
+          toolName: "write",
+          arguments: {},
+          isError: true,
+          result: {
+            details: {
+              dispatchState: "not_sent",
+              productOutcome: "failed",
+              errorCode: "WORKER_DEADLINE_EXCEEDED",
+              protectedDiagnostic: "/private/host/token",
+            },
+            content: [],
+          },
+        },
+      ],
+    ]);
+    const traceEvent = {
+      id: "tool-event",
+      schemaVersion: "trace.v1",
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      sessionId: "session-state",
+      threadId: input.threadId,
+      runId: input.runId,
+      turnId: null,
+      parentEventId: null,
+      causationId: null,
+      correlationId: "run-state",
+      sequence: 1,
+      occurredAt: at(2),
+      recordedAt: at(2),
+      actorId: "runtime",
+      dataClassification: "private",
+      eventType: "runtime.tool_result",
+      payloadRef: "outer",
+    };
+    const projection = new ThreadExecutionProjection({
+      threads: {
+        read: async () => ({ status: "active" }),
+        listRuns: async () => [run],
+      },
+      trace: { readRun: async () => [traceEvent] },
+      payloads: () => ({
+        get: async (ref: string) => ({
+          ref,
+          dataClassification: "private",
+          contentType: "application/json",
+          ciphertext: new TextEncoder().encode(JSON.stringify(payloadValues.get(ref))),
+        }),
+      }),
+      protector: {
+        unprotect: async ({ payload }: { payload: { ciphertext: Uint8Array } }) =>
+          payload.ciphertext,
+      },
+    } as unknown as ConstructorParameters<typeof ThreadExecutionProjection>[0]);
+    const state = await projection.readState(input);
+    expect(state.operations).toEqual([
+      expect.objectContaining({
+        itemId: expect.stringMatching(/^tool:/),
+        displayPhase: "not_dispatched",
+        reasonCode: "WORKER_DEADLINE_EXCEEDED",
+      }),
+    ]);
+    expect(JSON.stringify(state)).not.toContain("/private/host/token");
   });
   it("rejects a Run revision change instead of mixing old observations with new controls", async () => {
     const { projection, read, listRuns } = fixture();

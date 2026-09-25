@@ -156,6 +156,20 @@ export const messages = {
   "chat.resource.verifying": "Checking the original request",
   "chat.resource.queued": "Waiting for resources",
   "chat.resource.executing": "Executing",
+  "chat.reason.admissionConflict": "Resource or request state conflicted during admission",
+  "chat.reason.authorizationDenied": "Execution authorization expired or was denied",
+  "chat.reason.authorityUnavailable": "Execution authority is unavailable",
+  "chat.reason.admissionResourceMissing": "A required execution resource is missing",
+  "chat.reason.admissionAlreadyRecorded": "Request already recorded; check its original status",
+  "chat.reason.operationUnavailable": "This execution method is unavailable",
+  "chat.reason.admissionUnavailable": "Execution admission service is unavailable",
+  "chat.reason.deadlineExceeded": "Execution deadline expired; the operation was not dispatched",
+  "chat.reason.resourceCeilingChanged":
+    "Allowed resource limits changed; the operation was not dispatched",
+  "chat.reason.directoryTargetChanged": "The directory location or target changed",
+  "chat.reason.fileVersionConflict": "The file version changed; the candidate was not published",
+  "chat.reason.commandEffectUnverified":
+    "The command failed; it may have changed workspace files, and those effects are unverified",
   "chat.phase.unresolved": "Result unconfirmed",
   "chat.phase.preparing": "Preparing",
   "chat.phase.started": "Running",
@@ -165,6 +179,20 @@ export const messages = {
   "chat.phase.waiting": "Awaiting approval",
   "chat.phase.stopped": "Stopped",
   "chat.phase.unavailable": "Record unavailable",
+  "chat.nextAction.unresolved":
+    "The result is unconfirmed. Do not repeat a write operation until the original resource is verified as released.",
+  "chat.nextAction.stop":
+    "The result is unconfirmed. Stop this run and verify its resources before retrying a write.",
+  "chat.nextAction.retryCleanup":
+    "The result is unconfirmed. Retry the stop and cleanup check; do not repeat a write until release is confirmed.",
+  "chat.nextAction.notDispatched":
+    "The operation was not dispatched. If it is still needed, submit a new request; current permissions and workspace state will be checked again.",
+  "chat.nextAction.stoppedWithResults":
+    "This run stopped. Completed tool records and results remain below; review them before continuing.",
+  "chat.nextAction.partial":
+    "Some tool operations completed before this run failed. Review each result; a later failure does not undo earlier operations.",
+  "chat.nextAction.failed":
+    "Review the failed operation and workspace state before submitting a new request; a failed result does not prove its effects were rolled back.",
   "appearance.title": "Appearance and accent",
   "appearance.theme": "Theme",
   "appearance.accent": "Accent color",

@@ -161,6 +161,20 @@ export const messages = {
   "chat.resource.verifying": "元のリクエストを確認中",
   "chat.resource.queued": "リソース待機中",
   "chat.resource.executing": "実行中",
+  "chat.reason.admissionConflict": "受付時にリソースまたはリクエストの状態が競合しました",
+  "chat.reason.authorizationDenied": "実行権限の期限切れまたは拒否により停止しました",
+  "chat.reason.authorityUnavailable": "実行権限を確認できません",
+  "chat.reason.admissionResourceMissing": "実行に必要なリソースがありません",
+  "chat.reason.admissionAlreadyRecorded": "リクエストは記録済みです。元の状態を確認してください",
+  "chat.reason.operationUnavailable": "この実行方法は利用できません",
+  "chat.reason.admissionUnavailable": "実行受付サービスを利用できません",
+  "chat.reason.deadlineExceeded": "実行期限が切れ、操作は派遣されませんでした",
+  "chat.reason.resourceCeilingChanged":
+    "許可されたリソース上限が変わり、操作は派遣されませんでした",
+  "chat.reason.directoryTargetChanged": "ディレクトリの場所または対象が変わりました",
+  "chat.reason.fileVersionConflict": "ファイルの版が変わり、候補は公開されませんでした",
+  "chat.reason.commandEffectUnverified":
+    "コマンドは失敗しました。ワークスペースのファイルが変更された可能性がありますが、影響は未確認です",
   "chat.phase.unresolved": "結果未確認",
   "chat.phase.preparing": "準備中",
   "chat.phase.started": "実行中",
@@ -170,6 +184,20 @@ export const messages = {
   "chat.phase.waiting": "承認待ち",
   "chat.phase.stopped": "停止済み",
   "chat.phase.unavailable": "記録を利用できません",
+  "chat.nextAction.unresolved":
+    "結果は未確認です。元のリソースが解放されたと確認できるまで、書き込み操作を再実行しないでください。",
+  "chat.nextAction.stop":
+    "結果は未確認です。書き込みを再試行する前に、この実行を停止してリソースを確認してください。",
+  "chat.nextAction.retryCleanup":
+    "結果は未確認です。「停止と終了処理の確認を再試行」を実行してください。解放確認前に書き込みを再実行しないでください。",
+  "chat.nextAction.notDispatched":
+    "操作は派遣されていません。必要であれば新しいリクエストを送信してください。現在の権限とワークスペース状態が再確認されます。",
+  "chat.nextAction.stoppedWithResults":
+    "この実行は停止しました。完了したツール記録と結果は下に残っています。続行する前に確認してください。",
+  "chat.nextAction.partial":
+    "この実行が失敗する前に一部のツール操作は完了しました。結果を個別に確認してください。後続の失敗によって以前の操作が取り消されることはありません。",
+  "chat.nextAction.failed":
+    "新しいリクエストを送信する前に、失敗した操作とワークスペースの状態を確認してください。失敗結果だけでは副作用が取り消されたとは確認できません。",
   "appearance.title": "外観とアクセント",
   "appearance.theme": "テーマ",
   "appearance.accent": "アクセント色",

@@ -1,5 +1,8 @@
+import { execFile as execFileCallback } from "node:child_process";
 import { createHash } from "node:crypto";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import {
   type RunExecutionLeaseClaim,
   recoverSandboxExecutionsAtStartup,
@@ -44,6 +47,7 @@ import {
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 type Fixture = Awaited<ReturnType<typeof openSandboxJournal>>;
+const execFile = promisify(execFileCallback);
 function deferred<T>() {
   let resolve: (value: T) => void = () => {
     throw new Error("deferred not initialized");
@@ -2172,6 +2176,111 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           expect(receipt).toHaveBeenCalledTimes(2);
         }
       }
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("retains a failed command as a known failure with unverified file effects", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const workspace = path.join(f.resource.stateRoot, "workspace");
+      const changedFile = path.join(workspace, "partial-output.txt");
+      await mkdir(workspace, { recursive: true });
+      const command = await execFile(
+        "/bin/sh",
+        ["-c", 'printf "partial" > "$1"; exit 7', "sh", changedFile],
+        { cwd: workspace },
+      ).catch((error: unknown) => error as NodeJS.ErrnoException);
+      expect(command).toMatchObject({ code: 7 });
+      expect(await readFile(changedFile, "utf8")).toBe("partial");
+
+      const record = start(
+        f,
+        admission(f, "-failed-command", undefined, "write", {
+          ref: "shell",
+          version: "1",
+          kind: "command",
+        }),
+      );
+      const output = { ref: "output", digest: "f".repeat(64), byteLength: 0 };
+      const observedOutput = operationsForDatabase(f.database).execute(
+        "capabilityInvocationResult.observeOutput",
+        {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: outputObservation({
+            invocationId: record.plan.identity.invocationId,
+            payload: outputPayload(output.ref, `sha256:${output.digest}`),
+          }),
+        },
+      ) as { artifact?: Record<string, unknown> };
+      expect(observedOutput.artifact).toMatchObject({
+        runId: record.plan.identity.runId,
+        purpose: "worker_result",
+        operationKey: `capability-output:${record.plan.identity.invocationId}`,
+        payloadRef: output.ref,
+        contentDigest: `sha256:${output.digest}`,
+      });
+      const failedCommand = sandboxExecutionFactsSchema.parse({
+        ...record.facts,
+        effect: { kind: "not_asserted" },
+        result: {
+          schemaVersion: "sandbox-execution.v2",
+          identity: record.plan.identity,
+          environmentId: record.plan.environmentId,
+          policyDigest: record.facts.environment.policyDigest,
+          contract: { ref: "shell", version: "1" },
+          occurredAt: T1,
+          kind: "error",
+          output,
+          reasonCode: "exit_failed",
+          termination: { type: "exit", exitCode: 7 },
+        },
+      });
+      let settled = append(f, record, failedCommand, true);
+      settled = append(f, settled, resource(settled, "stopping"));
+      settled = append(f, settled, resource(settled, "released"));
+      const journal = Object.fromEntries(
+        [
+          "read",
+          "append",
+          "prepareIntent",
+          "dispatchIntent",
+          "acknowledgeIntent",
+          "observeIntent",
+        ].map((name) => [
+          name,
+          async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
+        ]),
+      ) as unknown as SandboxExecutionJournalPort;
+      const complete = createProductionSandboxToolResult({
+        journal,
+        preparations: {
+          readAdmissionByInvocation: async () => ({
+            phase: "bound",
+            record: call(f, "read", settled.plan.identity) as SandboxExecutionRecord,
+          }),
+        },
+        authority: () => SERVICE_AUTHORITY,
+        now: () => T1,
+        verifyFresh: async (current) => {
+          const facts = current.releaseReceipt ? current.facts : resource(current, "released");
+          const proof = context(current, facts).verification;
+          if (!proof) throw new Error("missing synthetic evidence");
+          return proof;
+        },
+      });
+      const receipt = vi.fn(async () => {});
+      const completion = await complete(
+        { runId: settled.plan.identity.runId, invocationId: settled.plan.identity.invocationId },
+        { assertDisclosure: async () => {}, saveReceipt: receipt },
+      );
+      expect(completion).toMatchObject({
+        outcome: "failed",
+        errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+      });
+      expect(receipt).toHaveBeenCalledTimes(1);
     } finally {
       await f.close();
     }

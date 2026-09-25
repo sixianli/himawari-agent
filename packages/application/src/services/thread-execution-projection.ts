@@ -8,11 +8,26 @@ import type {
   TraceStorePort,
 } from "../ports/observability.js";
 import type { SandboxExecutionRunInventory } from "../ports/sandbox-execution-journal.js";
-import { readThreadExecutionResources } from "./thread-execution-resources.js";
 import type { ThreadRepositoryPort } from "../ports/threads.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
+import { readThreadExecutionResources } from "./thread-execution-resources.js";
 import { projectThreadExecutionState } from "./thread-execution-state.js";
 import { redactTracePayload } from "./trace-redaction.js";
+
+const SAFE_TOOL_REASON_CODES = new Set([
+  "WORKER_ADMISSION_CONFLICT",
+  "WORKER_AUTHORIZATION_DENIED",
+  "WORKER_AUTHORITY_UNAVAILABLE",
+  "WORKER_ADMISSION_RESOURCE_MISSING",
+  "WORKER_ADMISSION_ALREADY_RECORDED",
+  "WORKER_OPERATION_UNAVAILABLE",
+  "WORKER_ADMISSION_UNAVAILABLE",
+  "WORKER_DEADLINE_EXCEEDED",
+  "WORKER_RESOURCE_CEILING_CHANGED",
+  "DIRECTORY_TARGET_CHANGED",
+  "FILE_VERSION_CONFLICT",
+  "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+]);
 
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -281,6 +296,15 @@ export class ThreadExecutionProjection {
               kind: "status",
               phase: "updated",
               name: `runtime.tool_outcome.${lifecycle}`,
+            });
+          if (ended && productOutcome === "failed" && SAFE_TOOL_REASON_CODES.has(productError))
+            records.push({
+              ...base,
+              id: `${event.id}:reason`,
+              itemId: identifier(tool["toolCallId"], event.id),
+              kind: "status",
+              phase: "updated",
+              name: `runtime.tool_reason.${productError}`,
             });
           const timing = object(details["executionTiming"]);
           const start = text(timing["startedAt"]),

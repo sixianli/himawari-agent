@@ -8,6 +8,11 @@ import {
   type SandboxExecutionRecord,
   type SandboxExecutionVerification,
 } from "@himawari-agent/application";
+import type {
+  SandboxEffectObservation,
+  SandboxOperationContract,
+  SandboxOperationResult,
+} from "@himawari-agent/execution-contracts";
 
 export interface SandboxToolCompletion {
   readonly outcome: "succeeded" | "failed";
@@ -20,6 +25,24 @@ export interface SandboxToolDelivery {
   assertDisclosure(): Promise<void>;
   /** A protected receipt for this handoff, separate from the returned tool result. */
   saveReceipt(value: SandboxToolCompletion): Promise<void>;
+}
+
+/** A nonzero shell exit is a known command failure, but it does not prove that
+ * the command left the workspace unchanged. Preserve that distinction for Pi
+ * and the durable execution projection. */
+export function sandboxCommandEffectReason(input: {
+  readonly operationKind: SandboxOperationContract["kind"];
+  readonly result: SandboxOperationResult | null;
+  readonly effectKind: SandboxEffectObservation["kind"];
+}): "SANDBOX_COMMAND_EFFECT_UNVERIFIED" | null {
+  const result = input.result;
+  return input.operationKind === "command" &&
+    result?.kind === "error" &&
+    result.termination.type === "exit" &&
+    result.termination.exitCode !== 0 &&
+    input.effectKind === "not_asserted"
+    ? "SANDBOX_COMMAND_EFFECT_UNVERIFIED"
+    : null;
 }
 
 /** Worker completion is a notification. Only the Agent's existing verified
@@ -112,7 +135,12 @@ export function createProductionSandboxToolResult(options: {
                 result.kind === "error" && result.reasonCode === "FILE_VERSION_CONFLICT"
                   ? result.output.ref
                   : null,
-              errorCode: result.kind === "error" ? result.reasonCode : "SANDBOX_COMMAND_FAILED",
+              errorCode:
+                sandboxCommandEffectReason({
+                  operationKind: record.plan.operationContract.kind,
+                  result: record.facts.result,
+                  effectKind: record.facts.effect.kind,
+                }) ?? (result.kind === "error" ? result.reasonCode : "SANDBOX_COMMAND_FAILED"),
               externalActionId: null,
             };
       await delivery.saveReceipt(completion);

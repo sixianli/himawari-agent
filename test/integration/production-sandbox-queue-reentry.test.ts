@@ -566,8 +566,14 @@ it.each(
   expect(f.request.mock.calls.filter(([message]) => message.type === "work.execute")).toHaveLength(
     0,
   );
+  const notDispatchedReason =
+    change === "capability-disabled"
+      ? "WORKER_AUTHORIZATION_DENIED"
+      : change === "budget-tightened"
+        ? "WORKER_RESOURCE_CEILING_CHANGED"
+        : "WORKER_NOT_DISPATCHED";
   if (!(result instanceof Error))
-    expect(result).toMatchObject({ dispatchState: "not_sent", errorCode: "WORKER_NOT_DISPATCHED" });
+    expect(result).toMatchObject({ dispatchState: "not_sent", errorCode: notDispatchedReason });
   expect(await store.listApprovals(OWNER_ID, AGENT_ID)).toEqual(approvals);
   const db = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"), { readonly: true });
   try {
