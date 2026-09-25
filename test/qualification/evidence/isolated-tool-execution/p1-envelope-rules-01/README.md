@@ -115,7 +115,9 @@
 | `npm run check:pi-compat` | 130 项通过 |
 | `validate_docs.py --strict .` | 通过 |
 
-完整输出在 [`raw-logs.tar.gz`](raw-logs.tar.gz)。提交后另跑正式的 `npm test`，结果见下一段。
+完整输出在 [`raw-logs.tar.gz`](raw-logs.tar.gz)。
+
+**正式的 `npm test`**：提交 `b6ef11a` 之后在本机沙箱外运行 `npm test`（`scripts/ci/local.mjs --check test`，使用已下载的 CI 工具）。它按 `b6ef11a` 打安装包，再单线程逐个运行全部测试项目，并核对实际运行的测试文件与登记的一致。构建和测试两步都通过：contracts 355 项、unit 1967 项、integration 1780 项（包括上一轮没有运行的两个安装包测试文件共 6 项，没有跳过）、e2e 3 项、pi-compat 130 项。报告在 [`npm-test-b6ef11a.tar.gz`](npm-test-b6ef11a.tar.gz)，包括各项目的 JSON、JUnit 和日志、运行上下文和安装包的 SHA-256；安装包本身没有保存。“hosted gate: not_executed” 指 GitHub 上的托管检查，本地流程不运行它。
 
 [↑ 返回目录](#contents)
 
