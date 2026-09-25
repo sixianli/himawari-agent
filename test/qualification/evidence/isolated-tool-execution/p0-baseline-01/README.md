@@ -36,9 +36,13 @@
 
 | 基线 | 本次证据 | 结果 |
 | --- | --- | --- |
-| 1. 每次调用各算一个环境 | 代码证据（见上一节） | **只有代码证据，没有可运行的测试。** 要在生产路径上造出“同一 Run 的第二次调用”，需要另建一套授权句柄和意图记录，现有测试夹具不支持；硬凑出来的测试很可能因为无关原因失败，说明不了问题。改由 P1 第一个验收测试（“同一 Run 的两次调用共用一个环境”）在改造前的首次失败来留存这条基线。 |
+| 1. 每次调用各算一个环境 | [`same-run-identity.log`](same-run-identity.log)：[`production-sandbox-environment-identity.test.ts`](../../../../integration/production-sandbox-environment-identity.test.ts) 在真实 SQLite 上经生产准入入口准备同一 Run 的两次 `bash` 调用 | 1 项通过。两次调用各得一个环境 ID（`environment:` 加调用 ID 的哈希）和一个作业 ID；第一次调用保存占用后，同一 Run 的第二次调用保存占用时被拒绝，原因码 `WORKSPACE_OCCUPIED`，没有留下记录。也就是说，现有占用只认单次调用、不认同一 Run。补充记录见下文。 |
 | 2. Mac 上已启动的环境停止后结果为 unknown | [`mac-job-host-control.log`](mac-job-host-control.log)，由 `node packages/runtime-sandbox/scripts/probe-job-host-control.mjs` 在本机用真实 Job Host 和 SRT 运行 | 7 个场景全部符合预期，`productionQualified: false`。`writer-stop` 和 `writer-worker-crash` 中，停止或 Worker 崩溃后，用 `setsid` 脱离进程组的后代在观察窗口里又写入了 28 字节，清理结果为 `unknown`，预约没有释放；只有 `never-started`（从未启动）能被确认释放。 |
 | 3. 清理结果未知时，占用一直挡住冲突的任务 | [`lease-blocking.log`](lease-blocking.log)：`sqlite-sandbox-execution-v2.test.ts` 中的“活跃写入者挡住嵌套和别名目录”“失去监管后仍挡住相交的读取”“旧版 unknown 记录不能取得新执行权” | 6 项通过（3 个用例 × `worker`、`direct` 两种模式）。这说明现有占用登记是按单次调用建立的：清理结果未知时，占用不释放，冲突的新任务被挡住；同一 Run 里后续的冲突调用也会被挡住。 |
+
+**基线 1 的记录方式**：原计划由 P1 第一个验收测试在改造前的首次失败留存这条基线。核对计划后改为现在的做法，原因是“Agent 第一次需要工具时创建主环境、后续调用复用”属于 P3 的接入工作，P1 只做数据库协议、产品接口和权限上限规则；如果现在写一条“生产准入让两次调用共用环境”的测试，它要到 P3 才能通过。现有 SRT 路线每次调用确实启动独立的 Job Host，给每次调用各算一个环境对这条路线是如实的，所以这条测试作为长期保留的回归测试：旧路线不能声称自己共用环境。
+- 这条测试在 2026-09-25 最终通过之前运行过两次失败，都是测试构造问题，不是产品行为：第一次第二个调用沿用了第一个调用的回执编号（`receiptRef`，每次调用的消费记录编号），被“同一回执不能对应两个调用”拒绝；第二次原本断言两次调用都能保存占用，实际第二次被第一次挡住，于是改为如实断言这一行为。
+- 日志去掉了本机沙箱打印的、与测试无关的 `failed to copy trust settings of system certificate` 行和行尾空白。
 
 **基线 2 的两次失败**：在得到上面的通过结果之前，同一命令先连续失败了两次，错误都是 `JOB_HOST_NOT_READY`，几秒内就出现，并不是 30 秒的准备超时。之后原样的构建产物连续运行三次都通过。两次失败的原始输出保存在 [`mac-job-host-control-failed-1.log`](mac-job-host-control-failed-1.log) 和 [`mac-job-host-control-failed-2.log`](mac-job-host-control-failed-2.log)。第一次失败时临时目录路径较长，但第二次用默认短路径同样失败，所以“路径过长”这个推测已被否定。
 - Job Host 准备失败时，会把具体的错误码写到它自己的错误输出，但 `job-host.ts` 第 176 行按设计丢弃了这些输出，所以这次无法确认原因。
@@ -55,7 +59,7 @@
 
 | ITE | 现有可复用的覆盖 | 缺口 |
 | --- | --- | --- |
-| 01 同一 Run 共用环境 | 无；代码仍按调用生成身份 | 全部（P1 身份与 `lease`，P3 真实路径） |
+| 01 同一 Run 共用环境 | 无；代码仍按调用生成身份，[基线 1](#baselines) 有本次日志 | 全部（P1 身份与 `lease`，P3 真实路径） |
 | 02 不同任务不共享 | 旧的授权句柄与 Grant 范围检查（按调用） | 环境级拒绝复用与审计 |
 | 03 整体停止后代 | [P0 平台探针](../p0-platform-probe-01/README.md#results)：容器运行时在两个平台都能停止 `setsid`、两次 fork 和后台写入程序；基线 2 证明现有 SRT 做不到 | 产品接入、停止证明、`lease` 只在证明被接收后释放 |
 | 04 后端缺失时拒绝 | 无 | 全部 |
