@@ -148,7 +148,22 @@ Hermes 把 `HIMAWARI_CONTAINER_DOCKER_HOST` 设为 `ssh://hermes-tailscale-break
 | 容器后端单元测试 | 16 项通过（`unit-container-backend.log`） |
 | `npm run typecheck`、`npm run check:boundaries`；改动文件的 `biome format` 与 `biome lint --error-on-warnings` | 通过 |
 
-`npm run check:ci-policy` 在提交前报 “Vitest file selection differs from policy: integration”：这项检查同时用上一个提交里已接受的登记核对 Vitest 的文件选择，本批把资格测试文件从 integration 项目中排除，改动登记前后必然不一致。提交后以新提交为基准重新检查；向 `main` 提 PR 时，托管 CI 会把它作为一次测试登记变更来核对。完整 `npm test` 在提交后运行，结果补记在本文件。
+`npm run check:ci-policy` 在提交前报 “Vitest file selection differs from policy: integration”：这项检查同时用上一个提交里已接受的登记核对 Vitest 的文件选择，本批把资格测试文件从 integration 项目中排除，改动登记前后必然不一致。提交 `e5195c3` 之后以它为基准重新检查，通过。向 `main` 提 PR 时，托管 CI 会把它作为一次测试登记变更来核对。
+
+**正式的 `npm test`**：提交 `e5195c3` 之后在本机沙箱外运行 `npm test`（`scripts/ci/local.mjs --check test`，使用已下载的 CI 工具），按 `e5195c3` 打安装包后单线程运行全部测试项目。构建和测试两步都通过：contracts 355 项、unit 1983 项（比上一批多 16 项容器后端测试）、integration 1779 项、e2e 3 项、pi-compat 130 项，没有失败或跳过。报告在 [`npm-test-e5195c3.tar.gz`](npm-test-e5195c3.tar.gz)，包括各项目的 JSON、JUnit 和日志、运行上下文和安装包的 SHA-256；安装包本身没有保存。
+
+integration 比上一批少 1 项，已逐项比对两次报告的测试清单：唯一少掉的是 `workspace-boundaries.test.ts` 里的 “rejects @himawari-agent/runtime-sandbox -> @himawari-agent/execution-contracts”。这个测试按 [`scripts/boundary-policy.mjs`](../../../../../scripts/boundary-policy.mjs) 为每一条**不允许**的包依赖自动生成一项反向检查；本批允许 `runtime-sandbox` 依赖版本化合同包 `execution-contracts`（后端要按合同解析和返回定位信息与停止证明），这一条就不再生成。其他反向检查照常运行，`runtime-sandbox` 仍不能依赖 application 等其他包。
+
+**覆盖率检查**：真实容器资格测试不计入覆盖率，所以另在本机沙箱外运行 `node scripts/ci/local.mjs --check coverage`（针对 `e5195c3`）。unit 1983 项、contracts 355 项、integration 1779 项全部通过；tooling 1042 项中 4 项失败，检查因此在计算改动行阈值之前停止，**这台 Mac 上没有得到覆盖率检查的正式通过结果**。4 项失败逐一核对如下：
+
+| 失败的测试 | 原因 | 与本批的关系 |
+| --- | --- | --- |
+| `test/tooling/policy.test.mjs` 的 Vitest 项目数 | 期望 10 个项目，本批登记资格测试后是 11 个 | 本批造成；已把期望值改为 11，该文件 393 项通过 |
+| `test/tooling/toolchain.test.mjs` 的治理快照 | 工作目录的 `tools/document-governance/` 里有一个 2026-09-24 生成、被 `.gitignore` 忽略的 `.DS_Store`（macOS Finder 的文件夹显示信息），检查要求目录里只有登记过的文件 | 本机环境造成，干净检出里没有这个文件；在 `ec1bb3e` 的干净工作副本里该项通过 |
+| `test/tooling/gate-installation.test.mjs` | macOS 的 `/var` 实际指向 `/private/var`，测试比较未解析的路径 | 本批之前已存在：在 `ec1bb3e` 的干净工作副本里同样失败 |
+| `test/tooling/main-confirmation.test.mjs` | 期望对象与实际不符 | 本批之前已存在：在 `ec1bb3e` 的干净工作副本里同样失败，未进一步排查 |
+
+检查已生成覆盖率报告，按其中的 lcov 数据直接计算本批新增文件：`container-execution-backend.ts` 行 228/245（93.1%）、分支 178/223（79.8%）、函数 43/44；`docker-command.ts` 行 29/31（93.5%）、分支 6/8（75.0%）。项目阈值是改动行 80%、函数分支 70%。这是按报告自行计算的数字，不能代替覆盖率检查的正式结论。检查的结果、日志和 lcov 数据在 [`coverage-e5195c3.tar.gz`](coverage-e5195c3.tar.gz)。
 
 原始输出打包在 [`raw-logs.tar.gz`](raw-logs.tar.gz)（用 `tar -xzf raw-logs.tar.gz` 解开）。
 
